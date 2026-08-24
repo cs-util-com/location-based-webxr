@@ -18,6 +18,31 @@ The frustum constants (`AR_CAMERA_FOV` 70°, `AR_CAMERA_NEAR` 0.01 m,
 `AR_CAMERA_FAR` 200 m) are module-private; they are observable only on the
 returned camera.
 
+## Where do I attach my content?
+
+**Answer this first — getting it wrong produces content pinned to the session's
+arbitrary start pose, which reads as "AR is broken" rather than as a parenting
+mistake.**
+
+- **Fixed geographic content, built once (a city mesh, building outlines, any
+  map-derived geometry) → the SCENE ROOT, raw GPS-world NUE coordinates.**
+  Nothing to pre-multiply, no container, nothing per frame. The scene root _is_
+  the GPS-world frame; the lerped alignment on `arWorldGroup` moves the CAMERA
+  through a world that stands still.
+- **Content glued to what SLAM sees, or re-solved from GPS repeatedly → under
+  `arWorldGroup`**, via `createGpsAnchor`, which applies alignment⁻¹ for you.
+
+The trade, so this is a choice rather than a copy: scene-root content is
+geographically truthful but shifts against the passthrough as the fusion
+refines the alignment (the lerp smooths that); `arWorldGroup` content is locked
+to the real world but its geographic position drifts, which is why an anchor
+there re-solves.
+
+**Two independent readers got this wrong from the "two NUE frames" caution
+below** — both concluded GPS-world content had to sit under `arWorldGroup`
+behind an inverse-alignment container. That caution says what to do _if_ you
+put it there. It is not a reason to avoid the scene root.
+
 ## Invariants & assumptions
 
 - **The hierarchy is exactly** `scene → arWorldGroup → basisChangeNode → arpose

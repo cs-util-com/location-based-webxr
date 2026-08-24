@@ -1,8 +1,8 @@
 /**
  * One background tile at a time, dropped the moment the user leaves (W8).
  *
- * WHY THIS EXISTS. Crossing a res-7 fetch-tile boundary costs an 18–110 s
- * Overpass request for 28–68 MB, and nothing tells the user which click will pay
+ * WHY THIS EXISTS. Crossing a res-7 fetch-tile boundary costs a ~15–90 s
+ * Overpass request for ~21 MB, and nothing tells the user which click will pay
  * it — which is most of what the round-3 notes called "undeterministisch". The
  * answer, decided in round 2 as DEC-R2-6 and carried here as W8, is to pull the
  * six neighbouring tiles in the background so the boundary crossing is already
@@ -99,7 +99,7 @@ export function createPrefetchQueue(
       const wanted = new Set(tiles.filter((tile) => isLoaded?.(tile) !== true));
 
       // ABORT THE IN-FLIGHT ONE IF IT IS NO LONGER WANTED. This is the half of
-      // DEC-R2-6 that has to genuinely work rather than be nominal — a 28–68 MB
+      // DEC-R2-6 that has to genuinely work rather than be nominal — a ~21 MB
       // request for ground the user has left is exactly the waste the whole
       // discipline exists to avoid. `finally` above will start the next one.
       if (active !== undefined && !wanted.has(active.tile)) {

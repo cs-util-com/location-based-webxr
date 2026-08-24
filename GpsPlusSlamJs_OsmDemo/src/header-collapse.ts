@@ -14,18 +14,20 @@
  * makes it a better change than the one requested. (Making it an overlay as well
  * is a separate change with a separate effect, and was not taken.)
  *
- * WHAT STAYS VISIBLE WHEN COLLAPSED (DEC-R2-4). The title, the category picker and
- * the legend. The picker is one of the demo's two primary inputs and collapsing it
- * away would put it two taps from reach; the legend was added in round 1
- * specifically because nothing on screen named the current category (DEC-1), so a
- * collapsed bar without it re-creates the confusion it was built to fix.
+ * WHAT STAYS VISIBLE WHEN COLLAPSED (DEC-R2-4, narrowed since). The category
+ * picker — one of the demo's two primary inputs, which collapsing away would
+ * put two taps from reach — and the caret itself. This paragraph used to list
+ * the title and the legend too (PR #329 review): the title TEXT was removed by
+ * F3b, so the `<h1>` holds only the caret, and DEC-W4 hides `#legend` when
+ * collapsed — the argument was always about the collapsed bar, so the
+ * expanded legend keeps its place.
  *
- * THE ERROR RULE (DEC-R2-15). The status line is hidden when collapsed, and the
- * locate button plus the fetch path both report failures **into** the status line.
- * That is a message written into something invisible — so any error expands the
- * header. It stays expanded until dismissed, because auto-collapsing again would
- * race the user reading it. This is the smallest rule that keeps ONE error channel
- * instead of growing a second one.
+ * THE ERROR RULE IS RETIRED (DEC-R2-15 → DEC-U10). It said "any error expands
+ * the header", because errors reported into the status line, which is hidden
+ * when collapsed. Errors have a toast now — a channel visible while the
+ * header is collapsed — so `revealForError` is gone
+ * (`header-collapse.test.ts` pins its absence) and the collapse behaviour is
+ * entirely user-driven.
  *
  * @see header-collapse.ts.md
  */
@@ -51,8 +53,6 @@ export interface HeaderCollapse {
   /** Collapses or expands, and reports through `onToggle`. */
   set(collapsed: boolean): void;
   readonly collapsed: boolean;
-  /** Expands if collapsed. Called when an error needs to be readable. */
-  revealForError(): void;
   dispose(): void;
 }
 
@@ -78,6 +78,21 @@ export function attachHeaderCollapse(
   function apply(): void {
     header.dataset["collapsed"] = String(collapsed);
     toggle.setAttribute("aria-expanded", String(!collapsed));
+    // THE ACCESSIBLE NAME, SET HERE BECAUSE THE TITLE TEXT IS GONE (F3b).
+    //
+    // This element used to read "OSM affordance demo", and that text WAS the
+    // control's name — a screen reader announced "OSM affordance demo, button,
+    // expanded". Dropping the text for a tidier bar leaves a button that
+    // announces as nothing at all, which is a regression nobody sees and no
+    // visual test can catch.
+    //
+    // `aria-expanded` alone is not a substitute: it says what STATE the control
+    // is in, never what it controls. Both are needed, and the label tracks the
+    // state so the announcement stays a sentence rather than a contradiction.
+    toggle.setAttribute(
+      "aria-label",
+      collapsed ? "Show details" : "Hide details",
+    );
     onToggle();
   }
 
@@ -107,9 +122,6 @@ export function attachHeaderCollapse(
     set,
     get collapsed() {
       return collapsed;
-    },
-    revealForError: () => {
-      set(false);
     },
     dispose: () => {
       toggle.removeEventListener("click", onClick);

@@ -38,6 +38,7 @@
 
 import type { OsmFeatureKey } from "../model/osm-feature.js";
 import { containsPoint } from "../spatial/point-in-ring.js";
+import { buildHostGrid } from "./host-grid.js";
 import { poiModelFor } from "./poi-models.js";
 import type { EnuPoint } from "./enu.js";
 
@@ -220,8 +221,36 @@ export function footprintAnchor(footprint: readonly EnuPoint[]): {
   x: number;
   y: number;
   spanM: number;
+  /**
+   * The footprint's axis-aligned bounds, for a broad-phase reject.
+   *
+   * **RETURNED RATHER THAN RECOMPUTED, and it is free.** This function already
+   * walked every vertex tracking exactly these four numbers in order to derive
+   * `spanM`; it simply threw them away. Handing them back costs nothing
+   * asymptotically and is what lets {@link annotatePoiHosts} reject a
+   * (marker, candidate) pair with four float compares instead of a full ray
+   * cast — the difference between 81x and ~9x growth over a 9x working set.
+   *
+   * An empty footprint yields an INVERTED box (min > max), which
+   * {@link withinFootprintBounds} rejects for every point. That is the correct
+   * reading: a footprint with no vertices contains nothing.
+   */
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
 } {
-  if (footprint.length === 0) return { x: 0, y: 0, spanM: 0 };
+  if (footprint.length === 0) {
+    return {
+      x: 0,
+      y: 0,
+      spanM: 0,
+      minX: Infinity,
+      maxX: -Infinity,
+      minY: Infinity,
+      maxY: -Infinity,
+    };
+  }
   let sumX = 0;
   let sumY = 0;
   let minX = Infinity;
@@ -240,7 +269,41 @@ export function footprintAnchor(footprint: readonly EnuPoint[]): {
     x: sumX / footprint.length,
     y: sumY / footprint.length,
     spanM: Math.hypot(maxX - minX, maxY - minY),
+    minX,
+    maxX,
+    minY,
+    maxY,
   };
+}
+
+/**
+ * Whether a point could possibly be inside a footprint with these bounds.
+ *
+ * **CONSERVATIVE BY CONSTRUCTION, which is the whole safety argument.** A point
+ * outside a ring's axis-aligned bounding box cannot be inside the ring, so
+ * rejecting on the box can never discard a host that {@link containsPoint} would
+ * have accepted. It can only skip work. That is why this needed no design
+ * decision and changes no behaviour — the same shape `buildings.ts` already uses
+ * before its own `containsPoint`.
+ *
+ * Inclusive on all four edges, deliberately: a marker exactly on a footprint
+ * edge is a real tagging case, and the ray cast — not the box — owns that call.
+ */
+function withinFootprintBounds(
+  bounds: {
+    readonly minX: number;
+    readonly maxX: number;
+    readonly minY: number;
+    readonly maxY: number;
+  },
+  point: { readonly x: number; readonly y: number },
+): boolean {
+  return (
+    point.x >= bounds.minX &&
+    point.x <= bounds.maxX &&
+    point.y >= bounds.minY &&
+    point.y <= bounds.maxY
+  );
 }
 
 /** A drawn piece of geometry a marker could belong to. */
@@ -255,6 +318,30 @@ export interface HostCandidate {
 export interface PlacedMarker {
   readonly kind: string;
   readonly position: { readonly x: number; readonly y: number };
+}
+
+/**
+ * What {@link annotatePoiHosts} actually did, for a cost guard to assert on.
+ *
+ * **COUNTS, NOT MILLISECONDS, and the choice is the repo's rather than mine.**
+ * `site-obstacle-index-cost.test.ts` states the rule — a deterministic count is
+ * "the same number, on any machine under any suite load", while a wall-clock
+ * threshold "would be a flake on CI and a false green on a fast laptop". The
+ * only thing that ever caught a growth defect here would have been a count, and
+ * `chunk-cost`'s 100 ms ceiling was reverted after failing at 104 ms under the
+ * nine-package cascade.
+ *
+ * `containsPointCalls` is the one that matters. It is the ray-cast, it is 77 %
+ * of this function's cost at a realistic kind mix, and — unlike
+ * `pairsConsidered` — it is what a bounding-box reject is supposed to collapse.
+ * Pinning the pair count alone would document the cross product rather than
+ * bound it.
+ */
+export interface PoiHostStats {
+  /** (marker, candidate) pairs the loop reached at all. */
+  pairsConsidered: number;
+  /** Full point-in-ring ray casts performed. The number a broad phase reduces. */
+  containsPointCalls: number;
 }
 
 /**
@@ -282,6 +369,7 @@ export interface PlacedMarker {
 export function annotatePoiHosts<T extends PlacedMarker>(
   markers: readonly T[],
   candidates: readonly HostCandidate[],
+  stats?: PoiHostStats,
 ): (T & { hosts: readonly PoiHostAnchor[] })[] {
   // The anchors are derived ONCE per candidate rather than per marker: a city
   // block is thousands of markers against hundreds of footprints, and
@@ -290,10 +378,39 @@ export function annotatePoiHosts<T extends PlacedMarker>(
     candidate,
     anchor: footprintAnchor(candidate.footprint),
   }));
+  // INDEXED, NOT SCANNED (2026-08-22). The broad phase below is four float
+  // compares, so the constant was always tiny — but the shape was
+  // `markers x candidates` and both grow with the working set, which made this
+  // the last quadratic in the mesh build and 17.3 % of it. The grid returns a
+  // superset of the candidates whose bounds contain the marker, in ASCENDING
+  // candidate order, so every filter below and the resulting host order are
+  // exactly as they were. See `host-grid.ts` for why the order is the hard part.
+  const grid = buildHostGrid(prepared.map((entry) => entry.anchor));
   return markers.map((marker) => {
+    // HOISTED OUT OF THE PAIR LOOP. `hostMatches` reads only `marker.kind` and
+    // `candidate.layer`, and there are exactly two layers — so re-deriving it
+    // per candidate re-ran a Set lookup and a registry lookup millions of times
+    // to get one of two answers. Cheap per call, and the call count is the
+    // problem.
+    const matches: Record<PoiHostLayer, boolean> = {
+      buildings: hostMatches(marker.kind, { layer: "buildings" }),
+      plates: hostMatches(marker.kind, { layer: "plates" }),
+    };
     const hosts: PoiHostAnchor[] = [];
-    for (const { candidate, anchor } of prepared) {
-      if (!hostMatches(marker.kind, candidate)) continue;
+    for (const index of grid.candidatesAt(marker.position)) {
+      const { candidate, anchor } = prepared[
+        index
+      ] as (typeof prepared)[number];
+      if (stats !== undefined) stats.pairsConsidered++;
+      if (!matches[candidate.layer]) continue;
+      // THE BROAD PHASE. Four float compares before the ray cast, which walks
+      // every edge of the footprint and has no bounding-box short-circuit of its
+      // own. Nearly every (marker, candidate) pair in a real working set is a
+      // marker in one part of the city against a building in another, and this
+      // is what makes rejecting those cost four comparisons instead of a full
+      // ring walk. See `poi-hosts-cost.test.ts` for the growth this bounds.
+      if (!withinFootprintBounds(anchor, marker.position)) continue;
+      if (stats !== undefined) stats.containsPointCalls++;
       if (!containsPoint(candidate.footprint, marker.position)) continue;
       hosts.push({
         layer: candidate.layer,

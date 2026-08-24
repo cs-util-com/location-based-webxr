@@ -22,10 +22,12 @@ import {
   OverpassSource,
   RateLimitedError,
   DEFAULT_OVERPASS_ENDPOINTS,
+  DEFAULT_OPERATOR_WEIGHTS,
 } from "./overpass-source.js";
 import { OverpassSlotBudget } from "./slot-budget.js";
 import { OVERPASS_SCHEMA_VERSION } from "./overpass-query.js";
 import { FETCH_RES } from "../spatial/resolutions.js";
+import { operatorForUrl } from "./overpass-operators.js";
 
 const TILE = latLngToCell(50.9413, 6.9583, FETCH_RES);
 const TILE_B = latLngToCell(52.52, 13.405, FETCH_RES);
@@ -59,8 +61,11 @@ function makeSource(
   const source = new OverpassSource({
     userAgent: "gps-plus-slam-osm-tests/1.0 (+https://example.invalid)",
     fetchImpl: fetchImpl as unknown as typeof fetch,
-    // Zero jitter. Endpoint choice no longer depends on `random` at all — the
-    // pool is walked in preference order — so this only pins the backoff.
+    // `random` drives TWO things since M6: the backoff jitter and the per-tile
+    // endpoint draw. Zero pins both deterministically — zero jitter, and a draw
+    // that always takes the heaviest operator first, so the default order is
+    // lz4 → maps.mail.ru → private.coffee → z. → overpass-api.de. Tests that
+    // care about the distribution rather than one sequence override it.
     random: () => 0,
     now: () => 1_000_000,
     sleepImpl: (ms: number) => {
@@ -150,7 +155,17 @@ describe("single in-flight request per tile — the quota-burning bug", () => {
     const [ra, rb] = await Promise.all([a, b]);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(source.stats.deduplicated).toBe(1);
-    expect(ra).toBe(rb); // the very same promise result
+
+    // THE GUARANTEE IS ONE NETWORK CALL AND ONE FEATURE SET — asserted above
+    // and on the next line. This used to read `expect(ra).toBe(rb)`, i.e.
+    // object identity, which was a PROXY for dedup rather than the thing
+    // itself, and it stopped holding when timings arrived: a joiner now gets a
+    // copy carrying its own cost, because it did not pay the originator's.
+    // Identity was never the contract — nothing downstream depends on the two
+    // callers sharing an object, and the features are still one array.
+    expect(rb.features).toBe(ra.features);
+    const kinds = [ra.timings?.servedBy, rb.timings?.servedBy].sort();
+    expect(kinds).toEqual(["joined", "network"]);
   });
 
   it("different tiles are NOT deduplicated", async () => {
@@ -314,35 +329,85 @@ describe("retry, rotation and backoff", () => {
     },
   );
 
-  it("always starts at the FIRST endpoint, whatever `random` returns", async () => {
+  it("prefers the heaviest operator without ALWAYS starting there", async () => {
     /**
-     * WHY THIS MATTERS. The pool is a PREFERENCE ORDER, measured
-     * 2026-07-28: `lz4` and VK answered the same res-7 tile in 27.6 s and
-     * 22.9 s, `private.coffee` in 110.4 s, and the FOSSGIS main entry 504'd.
-     * A 4.2x spread is the difference between a usable demo and one that
-     * looks broken.
+     * THIS TEST REPLACES ONE THAT ASSERTED THE OPPOSITE, and the replacement is
+     * deliberate rather than incidental — deleting a guard written to stop a
+     * specific silent regression needs saying out loud.
      *
-     * `pickEndpoint` used to start at a RANDOM offset, which spread load but
-     * also made the order decorative — every client drew uniformly, so the
-     * slowest instance served a quarter of all traffic. Ordering the list
-     * without this change would have looked like a fix and done nothing, so
-     * the test pins the property rather than the list.
+     * It used to read "always starts at the FIRST endpoint, whatever `random`
+     * returns", and it existed for a good reason: `pickEndpoint` had started at
+     * a RANDOM offset, which spread load but made the pool order decorative —
+     * every client drew uniformly, so the slowest instance served its full
+     * share. Measured 2026-07-28, that share was 4.2x slower than the fastest
+     * host. Ordering the list without removing the random start "would have
+     * looked like a fix and done nothing", so the test pinned the property.
      *
-     * `random` is still injected — it drives backoff jitter (see the
-     * exponential-growth test below), which is the one place randomness is
-     * still wanted.
+     * What the strict order then cost is what the twelfth testing session
+     * reported: EVERY client tries entry 0 first, so entry 0 hands out 429s.
+     * The property worth pinning is therefore no longer "always first" but
+     * "usually first" — the preference survives, the herd does not.
+     *
+     * Both halves are asserted, because a draw that always returned the
+     * heaviest would satisfy the first and reinstate the bug.
      */
+    const firstHosts = new Set<string>();
+    let heaviestFirst = 0;
+    const draws = 200;
+
+    for (let i = 0; i < draws; i++) {
+      const fetchImpl = vi
+        .fn()
+        .mockImplementation(() => Promise.resolve(jsonResponse(OK_BODY)));
+      // A deterministic sweep across [0, 1) rather than Math.random, so this
+      // samples the distribution exactly and cannot flake.
+      const { source } = makeSource(fetchImpl, {
+        random: () => (i + 0.5) / draws,
+      });
+      await source.fetchTile(TILE);
+
+      const host = String(fetchImpl.mock.calls[0]![0]);
+      firstHosts.add(host);
+      if (operatorForUrl(host) === "fossgis") heaviestFirst++;
+    }
+
+    // THE EXPECTED SHARE IS DERIVED FROM THE WEIGHTS, not hardcoded. The
+    // weights are expected to move whenever the pool is re-measured, and a
+    // literal band here would turn every honest re-weighting into a spurious
+    // failure — which is how a test stops being maintained. What must hold
+    // across any weighting is that the draw REALISES the weights.
+    const total = Object.values(DEFAULT_OPERATOR_WEIGHTS).reduce(
+      (sum, w) => sum + w,
+      0,
+    );
+    const expected = (DEFAULT_OPERATOR_WEIGHTS["fossgis"] ?? 1) / total;
+    expect(heaviestFirst / draws).toBeGreaterThan(expected - 0.05);
+    expect(heaviestFirst / draws).toBeLessThan(expected + 0.05);
+
+    // …and more than one host must be able to open, or the preference has
+    // quietly become the strict order again. This is the half that the test
+    // this replaced would have failed.
+    expect(firstHosts.size).toBeGreaterThan(1);
+  });
+
+  it("spends its first attempts on DISTINCT operators", async () => {
+    // The property that makes a retry mean something, and the reason the draw
+    // is over operators rather than entries. Five entries are three operators,
+    // so an entry-level draw gives FOSSGIS three tickets and a 429 on one
+    // predicts a 429 on the next.
     const fetchImpl = vi
       .fn()
-      .mockImplementationOnce(() => Promise.resolve(errorResponse(504)))
+      .mockResolvedValueOnce(errorResponse(429))
+      .mockResolvedValueOnce(errorResponse(429))
       .mockImplementationOnce(() => Promise.resolve(jsonResponse(OK_BODY)));
-    // Under the old behaviour this offset started at the LAST endpoint.
-    const { source } = makeSource(fetchImpl, { random: () => 0.999999 });
+    const { source } = makeSource(fetchImpl, { random: () => 0.42 });
 
     await source.fetchTile(TILE);
 
-    expect(fetchImpl.mock.calls[0]![0]).toBe(DEFAULT_OVERPASS_ENDPOINTS[0]);
-    expect(fetchImpl.mock.calls[1]![0]).toBe(DEFAULT_OVERPASS_ENDPOINTS[1]);
+    const operators = fetchImpl.mock.calls.map((call) =>
+      operatorForUrl(String(call[0])),
+    );
+    expect(new Set(operators).size).toBe(operators.length);
   });
 
   it("does NOT retry a non-retryable status", async () => {
@@ -357,12 +422,28 @@ describe("retry, rotation and backoff", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
+  /**
+   * A pool of ONE, so every retry returns to the same operator.
+   *
+   * The three backoff tests below are about **how long** a wait is, and since
+   * 2026-08-19 that is a separate question from **whether** there is one: the
+   * client no longer sleeps when the next attempt goes to a different operator
+   * (see `shouldWaitBeforeRetry`). Against the default pool a single failure is
+   * now followed immediately by a different host and no sleep at all, which
+   * would make these assertions vacuous rather than wrong. Pinning the pool to
+   * one entry isolates the duration arithmetic from the rotation policy, and
+   * the rotation policy has its own tests further down.
+   */
+  const ONE_OPERATOR = ["https://lz4.overpass-api.de/api/interpreter"];
+
   it("honours `Retry-After` in seconds over its own backoff", async () => {
     const fetchImpl = vi
       .fn()
       .mockResolvedValueOnce(errorResponse(429, { "Retry-After": "7" }))
       .mockImplementationOnce(() => Promise.resolve(jsonResponse(OK_BODY)));
-    const { source, sleeps } = makeSource(fetchImpl);
+    const { source, sleeps } = makeSource(fetchImpl, {
+      endpoints: ONE_OPERATOR,
+    });
 
     await source.fetchTile(TILE);
     expect(sleeps).toEqual([7000]);
@@ -376,7 +457,10 @@ describe("retry, rotation and backoff", () => {
         errorResponse(503, { "Retry-After": "Wed, 06 May 2026 03:25:05 GMT" }),
       )
       .mockImplementationOnce(() => Promise.resolve(jsonResponse(OK_BODY)));
-    const { source, sleeps } = makeSource(fetchImpl, { now: () => now });
+    const { source, sleeps } = makeSource(fetchImpl, {
+      now: () => now,
+      endpoints: ONE_OPERATOR,
+    });
 
     await source.fetchTile(TILE);
     expect(sleeps).toEqual([5000]);
@@ -393,11 +477,112 @@ describe("retry, rotation and backoff", () => {
     const { source, sleeps } = makeSource(fetchImpl, {
       random: () => 0.999999,
       backoff: { baseDelayMs: 100, maxDelayMs: 10_000 },
+      endpoints: ONE_OPERATOR,
     });
 
     await source.fetchTile(TILE);
     expect(sleeps).toHaveLength(2);
     expect(sleeps[1]!).toBeGreaterThan(sleeps[0]!);
+  });
+
+  it("does NOT sleep when the next attempt goes to a different operator", async () => {
+    // THE REPORTED DEFECT (F2c). The owner saw a 429 from `lz4.overpass-api.de`
+    // followed by "another 30 seconds" before anything appeared. The loop
+    // rotated endpoints on every attempt AND slept the full backoff between
+    // them — so the client waited for FOSSGIS's quota to recover, honouring
+    // `Retry-After` up to a 30 s clamp, and then asked `maps.mail.ru`, whose
+    // quota was never the problem. The sleep bought nothing for the host that
+    // was about to be asked.
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(errorResponse(429, { "Retry-After": "30" }))
+      .mockImplementationOnce(() => Promise.resolve(jsonResponse(OK_BODY)));
+    const { source, sleeps } = makeSource(fetchImpl);
+
+    await source.fetchTile(TILE);
+
+    expect(sleeps).toEqual([]);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    // Entry 1 is `maps.mail.ru` — a different operator from entry 0's FOSSGIS.
+    expect(String(fetchImpl.mock.calls[1]?.[0])).toContain("maps.mail.ru");
+  });
+
+  it("DOES sleep once the next attempt would return to a refused operator", async () => {
+    // The other half, and the reason this is not simply "never sleep". Backoff
+    // is pressure relief on a QUOTA, so it belongs exactly where a quota that
+    // has already refused is about to be asked again — which, with three
+    // operators in the pool, is the FOURTH attempt.
+    //
+    // UPDATED BY M6, and the update is the improvement rather than a
+    // regression in the test. Before the weighted draw the fixed order was
+    // lz4 → mail.ru → z., and z. is FOSSGIS again, so the first repeat came on
+    // attempt 2. The draw visits all three distinct operators before repeating
+    // any, so the first repeat — and therefore the first wait — moved one
+    // attempt later.
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(errorResponse(429))
+      .mockResolvedValueOnce(errorResponse(429))
+      .mockResolvedValueOnce(errorResponse(429))
+      .mockImplementationOnce(() => Promise.resolve(jsonResponse(OK_BODY)));
+    const { source, sleeps } = makeSource(fetchImpl);
+
+    await source.fetchTile(TILE);
+
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+    // Three fresh operators, then a repeat: exactly one wait, before the repeat.
+    expect(sleeps).toHaveLength(1);
+    const operators = fetchImpl.mock.calls.map((call) =>
+      operatorForUrl(String(call[0])),
+    );
+    expect(new Set(operators.slice(0, 3)).size).toBe(3);
+    expect(operators.slice(0, 3)).toContain(operators[3]);
+  });
+
+  it("never sleeps after the LAST attempt, which nothing can use", async () => {
+    // A pure-waste sleep nobody reported, found while fixing F2c: the
+    // retryable-status path had no `attempt >= maxRetries` guard, so the final
+    // attempt slept up to 30 s and then fell out of the loop and threw. With a
+    // one-entry pool every retry sleeps, which isolates the question to whether
+    // the LAST one does.
+    const fetchImpl = vi
+      .fn()
+      .mockImplementation(() =>
+        Promise.resolve(errorResponse(429, { "Retry-After": "30" })),
+      );
+    const { source, sleeps } = makeSource(fetchImpl, {
+      endpoints: ONE_OPERATOR,
+      maxRetries: 2,
+    });
+
+    await expect(source.fetchTile(TILE)).rejects.toThrow(/429/);
+
+    // Three attempts (0, 1, 2) but only two gaps between them.
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(sleeps).toHaveLength(2);
+  });
+
+  it("can reach EVERY endpoint in the default pool before giving up", async () => {
+    // WHY maxRetries WENT FROM 3 TO 4. The loop is `attempt <= maxRetries`, so
+    // 3 gave four attempts against a five-entry pool — and under the old
+    // `attempt % length` selection that made bare `overpass-api.de`
+    // unreachable by any request, in the shipped configuration, with nothing
+    // naming it. A host in the pool that nothing can ever ask is not a fallback,
+    // it is decoration.
+    //
+    // Asserted on the DEFAULTS deliberately: the bug was a relationship between
+    // two constants, so a test that set either of them locally would pin an
+    // arrangement no user has.
+    const fetchImpl = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(errorResponse(504)));
+    const { source } = makeSource(fetchImpl);
+
+    await expect(source.fetchTile(TILE)).rejects.toThrow(/attempt\(s\)/);
+
+    const asked = new Set(fetchImpl.mock.calls.map((call) => String(call[0])));
+    expect(asked.size).toBe(DEFAULT_OVERPASS_ENDPOINTS.length);
+    expect([...asked].sort()).toEqual([...DEFAULT_OVERPASS_ENDPOINTS].sort());
   });
 
   it("gives up after maxRetries and reports how many attempts it made", async () => {
@@ -490,6 +675,13 @@ describe("AbortSignal support, end to end", () => {
       .fn()
       .mockImplementation(() => Promise.resolve(errorResponse(504)));
     const { source } = makeSource(fetchImpl, {
+      // ONE ENTRY, so a retry wait actually happens. Since 2026-08-19 the
+      // client skips the wait when the next attempt goes to a different
+      // operator, and against the default pool that means the first failure is
+      // followed straight by another host — this test would then abort on the
+      // SECOND gap rather than the first, quietly testing something else.
+      // Pinning the pool keeps it about the abort.
+      endpoints: ["https://lz4.overpass-api.de/api/interpreter"],
       sleepImpl: () => {
         const error = new Error("aborted");
         error.name = "AbortError";
@@ -562,10 +754,16 @@ describe("the slot budget gates dispatch", () => {
     expect(budget.available).toBe(1);
   });
 
-  it("penalises the SHARED budget on a 429, not just this request's retry", async () => {
+  it("penalises the SHARED budget on a 429, attributed to the refusing operator", async () => {
     // A second tile requested in the same tick must not walk into the same wall
     // and earn a second strike. The penalty belongs to the client, not to the
     // request that discovered it.
+    //
+    // CHANGED 2026-08-19 (F2c, DEC-U2). This test used to assert an
+    // UNQUALIFIED `msUntilAvailable()` of 42 s and that the very next tile was
+    // refused — i.e. it pinned the defect: one operator's 429 stopping the
+    // client reaching the other two. The sharing it was written to protect is
+    // still asserted, now per operator.
     const fetchImpl = vi
       .fn()
       .mockImplementation(() =>
@@ -575,8 +773,11 @@ describe("the slot budget gates dispatch", () => {
     const { source } = makeSource(fetchImpl, { budget, maxRetries: 0 });
 
     await expect(source.fetchTile(TILE)).rejects.toThrow();
-    expect(budget.msUntilAvailable()).toBe(42_000);
-    await expect(source.fetchTile(TILE_B)).rejects.toThrow(RateLimitedError);
+    // The draw with `random: () => 0` opens on lz4.overpass-api.de, a FOSSGIS
+    // mirror, so that is the quota the 429 spent.
+    expect(budget.msUntilAvailable(["fossgis"])).toBe(42_000);
+    expect(budget.availableFor("fossgis")).toBe(0);
+    expect(budget.availableFor("vk-maps")).toBeGreaterThan(0);
   });
 
   it("falls back to a measured default penalty when 429 carries no Retry-After", async () => {
@@ -589,78 +790,86 @@ describe("the slot budget gates dispatch", () => {
     const { source } = makeSource(fetchImpl, { budget, maxRetries: 0 });
 
     await expect(source.fetchTile(TILE)).rejects.toThrow();
-    expect(budget.msUntilAvailable()).toBeGreaterThanOrEqual(30_000);
+    expect(budget.msUntilAvailable(["fossgis"])).toBeGreaterThanOrEqual(30_000);
   });
 });
 
-describe("syncBudget", () => {
-  const STATUS_BODY = [
-    "Connected as: 1354464119",
-    "Current time: 2026-07-28T08:40:04Z",
-    "Rate limit: 2",
-    "Currently running queries (pid, space limit, time limit, start time):",
-  ].join("\n");
+describe("one operator's 429 does not block the others (F2c, DEC-U2)", () => {
+  /**
+   * WHY THESE TESTS MATTER. The owner reported "a 429, then another thirty
+   * seconds before anything appeared". Round one fixed one mechanism that
+   * produces that number — the retry sleeping before it rotated — and left a
+   * second untouched: a single 429 penalised ONE GLOBAL slot budget, so the
+   * client stopped dispatching to every operator for ~35 s. On a cold start
+   * with an empty cache that is 35 s of blank screen.
+   *
+   * DEC-U2 chose to fix the second without first reproducing which one the
+   * owner actually hit, so these tests are the evidence that the second is
+   * gone; nothing here proves which mechanism caused the original report, and
+   * the docs say so rather than claiming otherwise.
+   */
 
-  it("reads /api/status on the SAME instance it queries", async () => {
-    // Reading one server's budget while querying another's would be worse than
-    // not checking at all, so the URL is derived rather than configured apart.
+  it("sends the NEXT tile to a live operator instead of refusing it", async () => {
+    // The whole point: FOSSGIS said no, VK never did, and VK is reachable in
+    // the same tick.
     const fetchImpl = vi
       .fn()
-      .mockImplementation(() => Promise.resolve(new Response(STATUS_BODY)));
-    const { source } = makeSource(fetchImpl, {
-      endpoints: ["https://example.invalid/api/interpreter"],
-    });
+      .mockImplementation((url: string) =>
+        Promise.resolve(
+          url.includes("overpass-api.de")
+            ? errorResponse(429, { "Retry-After": "35" })
+            : jsonResponse(OK_BODY),
+        ),
+      );
+    const budget = new OverpassSlotBudget({ slots: 2, now: () => 1_000_000 });
+    const { source } = makeSource(fetchImpl, { budget, maxRetries: 0 });
 
-    await source.syncBudget();
-    expect(fetchImpl.mock.calls[0]![0]).toBe(
-      "https://example.invalid/api/status",
-    );
+    await expect(source.fetchTile(TILE)).rejects.toThrow();
+    fetchImpl.mockClear();
+
+    await expect(source.fetchTile(TILE_B)).resolves.toBeDefined();
+    const asked = fetchImpl.mock.calls.map((call) => String(call[0]));
+    expect(asked.every((url) => !url.includes("overpass-api.de"))).toBe(true);
   });
 
-  it("costs no slot — checking the budget must not consume it", async () => {
-    const fetchImpl = vi
-      .fn()
-      .mockImplementation(() => Promise.resolve(new Response(STATUS_BODY)));
-    const budget = new OverpassSlotBudget({ slots: 2 });
-    const { source } = makeSource(fetchImpl, { budget });
-
-    await source.syncBudget();
-    expect(budget.available).toBe(2);
-  });
-
-  it("swallows a failure rather than blocking tile fetches", async () => {
-    // A status endpoint that is down, moved, or has changed shape must not stop
-    // us fetching. It only means we fly on local accounting, which is the
-    // authority anyway.
-    const { source: onReject } = makeSource(
-      vi.fn().mockRejectedValue(new Error("network down")),
-    );
-    await expect(onReject.syncBudget()).resolves.toBeUndefined();
-
-    const { source: onGarbage } = makeSource(
-      vi.fn().mockResolvedValue(new Response("<html>nope</html>")),
-    );
-    await expect(onGarbage.syncBudget()).resolves.toBeUndefined();
-
-    const { source: onError } = makeSource(
-      vi.fn().mockResolvedValue(new Response("nope", { status: 500 })),
-    );
-    await expect(onError.syncBudget()).resolves.toBeUndefined();
-  });
-
-  it("adopts the reported allocation", async () => {
+  it("refuses the tile once EVERY operator is blocked, so the cache can step in", async () => {
+    // The other half of the contract, and the one a careless fix deletes.
+    // `CachingSource` serves a stale copy and `area-loader` backs its prefetch
+    // off ONLY on `RateLimitedError`; if the budget stops throwing it when
+    // there is genuinely nowhere to go, both silently stop working.
     const fetchImpl = vi
       .fn()
       .mockImplementation(() =>
-        Promise.resolve(
-          new Response(STATUS_BODY.replace("Rate limit: 2", "Rate limit: 6")),
-        ),
+        Promise.resolve(errorResponse(429, { "Retry-After": "35" })),
       );
-    const { source } = makeSource(fetchImpl);
+    const budget = new OverpassSlotBudget({ slots: 2, now: () => 1_000_000 });
+    const { source } = makeSource(fetchImpl, { budget });
 
-    const status = await source.syncBudget();
-    expect(status?.rateLimit).toBe(6);
-    expect(source.budget.capacity).toBe(6);
+    // maxRetries defaults to 4 over a pool of three operators, so one tile is
+    // enough to collect a refusal from all of them.
+    await expect(source.fetchTile(TILE)).rejects.toThrow();
+
+    await expect(source.fetchTile(TILE_B)).rejects.toThrow(RateLimitedError);
+  });
+
+  it("reports the SOONEST recovery, not the longest, when everything is blocked", async () => {
+    // This number becomes `RateLimitedError.retryAfterMs`, which the prefetch
+    // sleeps on. Reporting the longest would idle past the moment the
+    // faster-recovering operator could legitimately have been asked again.
+    const budget = new OverpassSlotBudget({ slots: 2, now: () => 1_000_000 });
+    budget.penalise(35_000, "fossgis");
+    budget.penalise(12_000, "vk-maps");
+    budget.penalise(20_000, "private.coffee");
+    const fetchImpl = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse(OK_BODY)));
+    const { source } = makeSource(fetchImpl, { budget });
+
+    await expect(source.fetchTile(TILE)).rejects.toMatchObject({
+      name: "RateLimitedError",
+      retryAfterMs: 12_000,
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
 

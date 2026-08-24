@@ -91,7 +91,22 @@ describe("FixtureSource honours the OsmDataSource contract", () => {
     );
     const direct = await cache.fetchTile(park.tile);
     const fromCache = await cache.fetchTile(park.tile);
-    expect(JSON.stringify(fromCache)).toBe(JSON.stringify(direct));
+
+    // TIMINGS ARE EXCLUDED FROM THE COMPARISON, and their exclusion is itself
+    // the point rather than a concession to make the test pass. `timings`
+    // describes one DELIVERY: a miss and a hit for the same tile are supposed
+    // to differ there, and they are supposed to agree on everything else. A
+    // whole-object comparison would assert the opposite of the contract.
+    const { timings: _direct, ...directData } = direct;
+    const { timings: _cached, ...cachedData } = fromCache;
+    expect(JSON.stringify(cachedData)).toBe(JSON.stringify(directData));
+
+    // And the round trip must not have SMUGGLED timings through the store —
+    // the failure mode that would make every warm click report the fetch that
+    // filled the cache. `FixtureSource` measures nothing, so the miss has none
+    // to leak, and the hit's are minted fresh on read.
+    expect(direct.timings).toBeUndefined();
+    expect(fromCache.timings?.servedBy).toBe("cache");
   });
 });
 

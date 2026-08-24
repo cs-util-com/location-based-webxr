@@ -23,11 +23,10 @@
     "check:dup": "node ../scripts/test-timing/timed-stage.mjs check:dup",
     "check:cycles": "node ../scripts/test-timing/timed-stage.mjs check:cycles",
     "check:boundaries": "node ../scripts/test-timing/timed-stage.mjs check:boundaries",
-    "check:deadcode": "node ../scripts/test-timing/timed-stage.mjs check:deadcode",
-    "check:all": "pnpm run check:dup && pnpm run check:cycles && pnpm run check:boundaries && pnpm run check:deadcode"
+    "check:all": "pnpm run check:dup && pnpm run check:cycles && pnpm run check:boundaries"
   },
   "engines": {
-    "node": ">=22.14.0"
+    "node": ">=22.15.0"
   },
   "dependencies": {
     "animejs": "^4.5.0",
@@ -49,6 +48,7 @@
     "fast-check": "^4.8.0",
     "globals": "^17.6.0",
     "jscpd": "^4.1.1",
+    "marked": "^18.0.10",
     "postcss-html": "^1.8.1",
     "prettier": "^3.8.3",
     "stylelint": "^17.11.0",

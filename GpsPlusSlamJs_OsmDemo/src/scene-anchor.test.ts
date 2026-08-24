@@ -95,6 +95,62 @@ describe("nextAnchor", () => {
     expect(result.origin).toEqual(TOKYO);
   });
 
+  describe("frozen — AR milestone 3", () => {
+    it("refuses the DISTANCE re-anchor, which is what suppression actually means", () => {
+      // §2.4: "Suppressing the re-anchor takes more than not setting
+      // `declared`." AR only ever calls this without `declared`, so it is easy
+      // to believe the origin is already safe — and it is not. `nextAnchor`
+      // re-anchors on distance INDEPENDENTLY past the threshold, so a long walk
+      // or a single wild fix moves the frame under a live session with nothing
+      // in AR's own code having asked for it.
+      //
+      // Why that is fatal rather than untidy: the framework's `zero` is
+      // immutable for the session, so a scene frame that moves and a GPS frame
+      // that does not are two disagreeing origins — the exact disagreement the
+      // fixed-origin work removed. The city would jump by kilometres.
+      const far = northOf(COLOGNE, REANCHOR_THRESHOLD_M + 500);
+
+      const result = nextAnchor(COLOGNE, far, { frozen: true });
+
+      expect(result.reanchored).toBe(false);
+      expect(result.origin).toEqual(COLOGNE);
+    });
+
+    it("beats `declared`, because a picker jump during AR is the same problem", () => {
+      // The precedence matters and could plausibly go the other way: `declared`
+      // means "the user chose this", which normally overrides everything. It
+      // must not here — the site picker is reachable while AR runs (DEC-12
+      // keeps the map), and honouring it would move the scene frame away from a
+      // `zero` that cannot follow.
+      const result = nextAnchor(COLOGNE, TOKYO, {
+        declared: true,
+        frozen: true,
+      });
+
+      expect(result.reanchored).toBe(false);
+      expect(result.origin).toEqual(COLOGNE);
+    });
+
+    it("still adopts a FIRST anchor, since there is nothing to protect yet", () => {
+      // `current === undefined` is the seed, not a re-anchor. Freezing that
+      // would hand back an origin of `undefined` or throw, and the holder is
+      // constructed before AR ever starts.
+      const result = nextAnchor(undefined, COLOGNE, { frozen: true });
+
+      expect(result.reanchored).toBe(true);
+      expect(result.origin).toEqual(COLOGNE);
+    });
+
+    it("does not change ordinary behaviour when absent", () => {
+      // The counterweight: a `frozen` that defaulted to true would silently
+      // freeze the desktop map, where re-anchoring is correct and load-bearing.
+      const far = northOf(COLOGNE, REANCHOR_THRESHOLD_M + 500);
+
+      expect(nextAnchor(COLOGNE, far, {}).reanchored).toBe(true);
+      expect(nextAnchor(COLOGNE, far, { frozen: false }).reanchored).toBe(true);
+    });
+  });
+
   describe("the threshold itself", () => {
     it("is 5 km, the conservative end of the owner's range", () => {
       // Stated as a number so a later edit has to argue with a test. The owner

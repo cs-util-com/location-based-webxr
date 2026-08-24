@@ -56,9 +56,11 @@ State lives in `header[data-collapsed]`, so the CSS, the tests and
   `data-collapsed` and stops. Every decision about what disappears is CSS in
   `index.html`, and the assertions live in the e2e suite, because jsdom does not
   apply that stylesheet.
-- **Attribution is never collapsed away.** The Terrarium credit moved into
-  Leaflet's attribution control (`MapView.setTerrainAttribution`), which is always
-  visible. The header span was REMOVED rather than kept as a mirror: two copies of
+- **Attribution is never collapsed away.** The Terrarium credit moved into the
+  map's attribution line (`MapView.setTerrainAttribution`), which is always
+  visible. Since round three that line has an expander of its own — and every
+  source keeps a permanently VISIBLE short name outside it (DEC-W1), so the rule
+  in this bullet still holds exactly as written. The header span was REMOVED rather than kept as a mirror: two copies of
   one credit is one too many, and the header copy is the one that disappears on
   collapse — i.e. the copy that does not satisfy the obligation, sitting beside the
   one that does.
@@ -95,3 +97,32 @@ Three e2e cover what only a browser shows: that collapsing transfers height to t
 3D view (asserted as a height change, not visibility), that a **real** refused
 geolocation permission expands the bar, and that the attribution survives a
 collapse.
+
+## The accessible name (F3b — 2026-08-19)
+
+The control's visible text was removed and only the caret remains, so
+`attachHeaderCollapse` now sets an explicit **`aria-label`** that tracks the
+state — "Show details" when collapsed, "Hide details" when expanded.
+
+**That text WAS the accessible name.** An empty `role="button"` announces as
+nothing, and `aria-expanded` is not a substitute: it says what state the control
+is in, never what it controls. Both are needed. It is correct on first paint
+because `apply()` runs at attach.
+
+**The caret is an inline `<svg class="header-caret">` since round three**, not
+the `h1::before` it was when the paragraph above was written, and not the
+`<span>` an earlier draft of this sidecar described — that shape was **rejected**
+by the round-three review, because a `<span>` holding "▾" measures its line box
+rather than its ink, which is how a `>= 24 px` assertion passed while the owner
+was shown a ~12 px triangle. It carries `aria-hidden`, so nothing here changes:
+the accessible name still comes entirely from the `aria-label` this module sets.
+What changed is that the glyph can now be MEASURED — a pseudo-element is not a
+DOM node, so `boundingBox()` could not address it, and the caret being too small
+on a phone was the one complaint in this bar no test could express. See
+`index.html`'s `.header-caret` rule and the
+e2e _"shows a caret big enough to see, on the row the feedback asked for"_.
+
+`revealForError()` is **gone** (DEC-U10). It expanded the header whenever an
+error occurred, which existed only because the status line inside the header was
+the sole channel a failure could reach; errors now go to a toast that is visible
+either way. Collapse is entirely user-driven from here on.

@@ -127,6 +127,13 @@ export function extractActionTimestamp(action: ReplayAction): number | null {
       // timestamps; this pacing function deliberately ignores it.
       return null;
 
+    case 'diagnostics/note':
+      // payload.atMs — epoch ms BY CONTRACT (see `diagnostics-action.ts`: the
+      // caller measures on whatever clock it likes and converts at dispatch).
+      // Without this case a sparse note between two paced actions nulled both
+      // sides of the pairwise delay, so the real gap around it was skipped.
+      return typeof payload.atMs === 'number' ? payload.atMs : null;
+
     case 'recording/endSession':
       // No timestamp in payload
       return null;

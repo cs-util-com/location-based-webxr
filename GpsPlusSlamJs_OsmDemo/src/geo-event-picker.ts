@@ -1,16 +1,24 @@
 /**
- * The geo-event time picker: the SECOND press asks when, not again (G1, DEC-G1).
+ * The quest time picker: it opens on the FIRST press, alongside the search
+ * (F4f, DEC-U13).
  *
  * WHY IT EXISTS. Pressing the button twice used to run the identical search
  * twice — and "identical" is exact rather than approximate: the event is a pure
  * function of tile and quarter-hour, so within one 15-minute slot the second
- * press cannot produce anything new. It read as a broken button. The dialog
- * turns the second press into the question the first one answered implicitly.
+ * press cannot produce anything new. It read as a broken button.
  *
- * WHY THE FIRST PRESS DOES NOT OPEN IT. "Find me an event now" is the common
- * case and should stay one tap. The dialog appears only once there is a result
- * to be dissatisfied with, which is also when "when?" becomes a sensible
- * question to be asked.
+ * **THE FIX FOR THAT WAS ITSELF REVERSED (2026-08-19).** Giving the SECOND
+ * press a different meaning removed the identical re-run, and the twelfth
+ * testing session then reported the two-step as the problem: the choice should
+ * be visible immediately. So the dialog now opens on the first press, next to
+ * a search that still runs — which removes the original complaint by a
+ * different route, because no press re-runs anything without the user having
+ * changed the question first.
+ *
+ * The paragraph this replaces argued the opposite ("the dialog appears only
+ * once there is a result to be dissatisfied with"), and it was left standing
+ * for a commit after the behaviour changed. Recorded rather than quietly
+ * deleted, because it is a real design argument that lost to a real report.
  *
  * WHY IT ALSO CLEARS. The #271 e2e review recorded the geo-event marker as the
  * one thing `resetUi` could not reset, "because no control and no store action
@@ -140,7 +148,17 @@ export class GeoEventPicker {
     this.container.hidden = true;
   }
 
-  /** Open if closed, closed if open — what a second press on the button does. */
+  /**
+   * Open if closed, closed if open.
+   *
+   * NO PRODUCTION CALLER SINCE 2026-08-19 (F4f): the button opens the picker on
+   * the first press and does not toggle it. Kept rather than deleted because it
+   * is the honest primitive for a control that toggles, and the demo is one
+   * decision away from wanting it again — but it is exercised only by its own
+   * test, so a reader should not infer that pressing the button twice closes
+   * anything. It does not; `main.ts` guards on {@link isOpen} instead, so a
+   * second press cannot overwrite a time the user has just typed.
+   */
   toggle(at: Date): void {
     if (this.isOpen) this.close();
     else this.open(at);

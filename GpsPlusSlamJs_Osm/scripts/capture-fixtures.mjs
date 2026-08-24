@@ -51,11 +51,13 @@ const SITES_OUT_DIR = join(OUT_DIR, "sites");
  * The 2026-07-28 morning session concluded that public instances were saturated
  * and full-size tiles uncapturable. That was an artefact of the key REGEX this
  * script used to build; a union of exact-key statements over the same 32 keys
- * returns a whole res-7 tile (21,847 elements, 28.31 MB) in 18.2 s. See
+ * returns a whole res-7 tile at all. See
  * `GpsPlusSlamJs_Docs/docs/2026-07-28-1040-overpass-remeasurement-findings.md`.
+ * That run's "21,847 elements, 28.31 MB" is retracted (2026-08-09, N2/W2 — see
+ * `src/spatial/resolutions.ts` FETCH_RES); it is ~21 MB under today's query.
  *
  * So a full-size capture is possible. What stops it now is repo weight: a res-7
- * tile is ~28 MB and the merge tests want a second overlapping one, against a
+ * tile is ~21 MB and the merge tests want a second overlapping one, against a
  * corpus that is 4.8 MB today. That decision is open (plan §10).
  *
  * These four stay the everyday corpus regardless: small, fast in CI, and REAL
@@ -204,7 +206,7 @@ const SELECT_KEYS = [
  * `nwr[~"^(k1|k2|…)$"~"."]` makes Overpass evaluate a regex against every key of
  * every element in the bbox, and the cost grows with the alternation count — 3
  * keys fine, 32 keys a 504. Exact-key statements use the key index instead.
- * Measured 2026-07-28 on the same res-7 tile: union 200 OK in 18.2 s, regex 504
+ * Measured 2026-07-28 on the same res-7 tile: union 200 OK, regex 504
  * in 8 s. This one query form cost the project a day of believing public
  * instances were saturated.
  *

@@ -7,7 +7,22 @@ read — and stating the scale so the picture can be checked.
 
 ## Public API
 
-- `heatScale(scores, threshold): HeatScale`
+- `HEAT_CAP` — 1e4, the FIXED top of the ramp for every category and place.
+- `fixedScale(threshold): HeatScale` — `{ threshold, max: HEAT_CAP }` for every
+  threshold below the cap, which is every threshold that leaves a ramp.
+  - **The one exception**: at `threshold >= HEAT_CAP` the ramp would be
+    degenerate (span <= 0, so `heatFraction` returns 0 for every score and the
+    whole grid paints the dark end with no message). There the max becomes
+    `threshold * 10`. Still a pure function of a table constant, so the scale is
+    fixed rather than data-derived — but in that band it is per-CATEGORY, which
+    is the one property DEC-H5 otherwise removes.
+  - **Takes the threshold, not the category.** The cap is category-independent
+    (measured across all six), while the threshold already arrives per-category
+    from `thresholdFor(table, category)`, so a `category` parameter would look
+    nothing up. This is where a per-category cap would go if one were ever
+    justified.
+  - Replaces `heatScale(scores, threshold)`, which took the maximum score on
+    screen.
 - `heatFraction(score, scale): number` — 0..1, logarithmic
 - `heatColour(score, scale): Rgb`, `toHex(rgb): string`
 - `describeScale(scale): string` — the strip's **title and screen-reader text**,
@@ -38,9 +53,26 @@ read — and stating the scale so the picture can be checked.
 - **Cells at or below the threshold are off the ramp entirely.** "No rule said
   anything here" and "this scored badly" are different claims; colouring the
   first as the bottom of the ramp asserts knowledge the data does not have.
-- **The scale is derived from the data on screen**, because the useful range
-  differs by category and place — `walkable` in a city saturates where
-  `restingArea` has a handful of cells at 6.
+- **The scale is FIXED, not derived from the data on screen** (DEC-H5). It used
+  to be the maximum score present, which made a cell's colour depend on cells
+  the user could not see: walk far enough for the hottest cell to leave the
+  retained set and every remaining cell brightened with no change in its own
+  data — **the picture reporting a change that did not happen**. AR is what
+  promoted that from wart to defect, because the user walks continuously and the
+  grid is what they are reading. It also made two observations incomparable:
+  here versus a kilometre back, today versus last week.
+  - **The objection this file used to carry is measured and does not hold.** It
+    said a fixed scale "would make most categories look uniformly dark and hide
+    precisely the variation being judged". The ramp is logarithmic, so at the
+    weaker corpus site the five non-`walkable` categories' maxima land at 68 %,
+    76 %, 91 %, 95 % and 107 % of a ramp running 1 → 1e4. See
+    `category-score-distributions.test.ts`.
+  - **The accepted cost:** `walkable` runs to 1e11 and 3e17 at the two corpus
+    sites, so ~10–14 % of its coloured cells saturate. An outstanding spot stops
+    being distinguishable from a merely very good one.
+  - **The legend compensates**, and has to: `legend-model.ts` reports the
+    observed maximum beside the fixed ramp, because otherwise a field where
+    everything saturates reads identically to a flat field.
 - **A degenerate scale collapses to flat, never to NaN.** A flat map is the
   correct picture of flat data; NaN is a black screen with no explanation.
 - **Viridis-like, perceptually near-uniform, colour-blind safe.** A rainbow ramp
@@ -52,7 +84,7 @@ read — and stating the scale so the picture can be checked.
 ## Examples
 
 ```ts
-const scale = heatScale(scores, thresholdFor(table, "walkable"));
+const scale = fixedScale(thresholdFor(table, "walkable"));
 element.style.fill = toHex(heatColour(score, scale));
 caption.textContent = describeScale(scale);
 ```
@@ -62,3 +94,25 @@ caption.textContent = describeScale(scale);
 `heat-colours.test.ts` — equal ratios giving equal steps, the threshold being
 off-ramp, clamping, the degenerate collapse, monotonicity, valid hex, and the
 scale description including the identity and the rounded max.
+
+## `formatFixedScore` (DEC-U8 — 2026-08-19)
+
+- `formatFixedScore(value)` — a ramp endpoint, spelled out with narrow
+  no-break separators (`10 000`) below **1e6**, and abbreviated by
+  `formatScore` at or above it.
+
+**Why a threshold rather than an unconditional spell-out**, which is what the
+decision was written expecting. DEC-U8 rested on the ramp's top being the
+constant `HEAT_CAP` — true for every category whose threshold sits under it,
+which is the case the owner reported. It is not universal: `fixedScale` falls
+back to `threshold * 10` once a threshold reaches the cap, so a rule table with
+a high threshold can put ten digits on that label. Spelling that out
+unconditionally would reintroduce the defect DEC-R6b-6 removed, in the place it
+was reported from.
+
+**U+202F, not U+2009.** A plain thin space is a line-break opportunity under
+UAX-14 and `#legend` is a wrapping flex row, so the endpoint could split across
+two lines — the same instability, arriving by a new route.
+
+`formatScore` is unchanged and still serves the OBSERVED maximum, which
+genuinely reaches `1.7e11`.

@@ -34,7 +34,7 @@ pre-existing behaviour, and therefore already known to work.
 
 - `REANCHOR_THRESHOLD_M = 5_000`
 - `AnchorDecision` — `{ origin, reanchored }`
-- `AnchorOptions` — `{ declared? }`
+- `AnchorOptions` — `{ declared?, frozen? }`
 - `nextAnchor(current, position, options?) => AnchorDecision` — the rule, pure.
 - `AnchorHolder` — `{ origin, advance(position, options?) }`
 - `createAnchorHolder(start) => AnchorHolder` — the rule, held for a session.
@@ -93,9 +93,25 @@ SLAM, which is a separate concern.
   compare against nothing.
 - **`declared` ignores the distance entirely.** It is a statement about the kind
   of change, not its size.
-- **Under AR, `declared` must never be set.** The framework's `zero` is
-  immutable, and re-anchoring during a live session would reintroduce the exact
-  disagreement this module removes.
+- **Under AR, pass `frozen: true` — and that is NOT the same as leaving
+  `declared` unset** (plan §2.4, AR milestone 3). AR never sets `declared`, so
+  the origin looks safe already; but `nextAnchor` re-anchors on **distance**
+  independently past `REANCHOR_THRESHOLD_M`, so a long walk or one wild fix
+  moves the frame under a live session with nothing in AR's code having asked
+  for it. The framework's `zero` is immutable, so a scene frame that moves and a
+  GPS frame that does not are two disagreeing origins — the exact disagreement
+  this module removes — and the city jumps by kilometres.
+  - **`frozen` beats `declared`.** The site picker stays reachable while AR runs
+    (DEC-12 keeps the map), and honouring a picker jump would move the scene
+    frame away from a `zero` that cannot follow. The user's route to a new
+    origin is to RELOAD the page there — leaving AR and re-entering does not do
+    it, because `setZeroPos` is a no-op once set and a new session re-reads the
+    same `zero` (r509 review corrected the opposite claim here).
+  - **It does not suppress the FIRST anchor.** `current === undefined` is a
+    seed, not a re-anchor, and the holder is constructed before AR ever starts.
+  - The suppression is decided in `nextAnchor` rather than at the call site,
+    because a call site that has to remember is the failure mode this module
+    exists to remove.
 - **The holder is seeded, never empty.** `createAnchorHolder(start)` takes the
   resolved start position, because the demo has no GPS path and something — the
   initial terrain load — reads `origin` before any `advance` has happened.
@@ -116,6 +132,12 @@ in the scene. Failing loudly is the only visible option.
 crossing, declared changes at any distance, the picker's real Cologne→Tokyo
 span, an undeclared continent-scale move, the first call, and the non-finite
 guard.
+
+For `frozen`: the distance re-anchor refused, `declared` overruled, the first
+anchor still adopted, and — the counterweight — ordinary behaviour unchanged
+when it is absent or false, since a `frozen` that defaulted to true would
+silently freeze the desktop map, where re-anchoring is correct and load-bearing.
+That `main.ts` actually passes it is pinned by `ar-walk-wiring.test.ts`.
 
 **Mutation-checked**, six of seven caught.
 

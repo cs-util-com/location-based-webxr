@@ -84,8 +84,14 @@ const BUILD_OSM_STAGE = Object.freeze({
 });
 
 /** Format command shared by the app packages (framework differs). */
+// `"scripts"` is in the list because it was NOT, and that was a hole: the
+// Landing package grew node-side build tooling under `scripts/blog/` that no
+// format stage could see, so 15 files drifted out of style with a green gate.
+// `GpsPlusSlamJs_Osm`'s stage already listed `"scripts"`; this makes the shared
+// command match. `--no-error-on-unmatched-pattern` keeps it a no-op for the
+// packages that have no `scripts/` directory.
 const APP_FORMAT_COMMAND =
-  'prettier --log-level warn --write --ignore-unknown --no-error-on-unmatched-pattern "src" "config" "playwright-tests" index.html README.md package.json';
+  'prettier --log-level warn --write --ignore-unknown --no-error-on-unmatched-pattern "src" "config" "playwright-tests" "scripts" index.html README.md package.json';
 
 /**
  * The stage set shared verbatim by the four uniform demo apps (AnchorStarter,
@@ -130,11 +136,6 @@ function demoAppStages(extraCycleRoots = []) {
     {
       name: 'check:boundaries',
       command: 'depcruise -c config/.dependency-cruiser.cjs src',
-      counts: null,
-    },
-    {
-      name: 'check:deadcode',
-      command: 'pnpm --workspace-root run check:deadcode',
       counts: null,
     },
     {
@@ -205,6 +206,26 @@ export const PROJECTS = [
       // library with no framework dependency, so a break here is never caused
       // by an app and should surface before the slow app gates run.
       packageGateStage('test:osm', 'gps-plus-slam-osm'),
+      // ONE workspace-wide knip for the whole cascade, not one per package.
+      // It used to sit in seven package stage lists running the IDENTICAL
+      // analysis each time — ~26 s warm, plus a ~25 s cold pass in whichever
+      // package happened to run first.
+      //
+      // PLACED HERE, NOT EARLIER, so its preconditions are unchanged: knip
+      // resolves workspace dependencies through their dist, and this is exactly
+      // where it first ran before — after the framework and osm gates have built
+      // theirs. Moving it to the front would fail faster and sometimes for the
+      // wrong reason.
+      //
+      // A standalone `pnpm --filter X test` no longer checks dead code. That is
+      // a deliberate narrowing (F3, 2026-05-30 static-analysis open items):
+      // .github/workflows/ci.yml runs a dedicated root-level `deadcode` job that
+      // the same doc calls the authoritative gate.
+      {
+        name: 'check:deadcode',
+        command: 'knip',
+        counts: null,
+      },
       packageGateStage('test:recorder', 'gps-plus-slam-recorder'),
       packageGateStage('test:starter', 'gps-plus-slam-anchor-starter'),
       packageGateStage('test:example', 'gps-plus-slam-minimal-example'),
@@ -340,11 +361,6 @@ export const PROJECTS = [
         counts: null,
       },
       {
-        name: 'check:deadcode',
-        command: 'pnpm --workspace-root run check:deadcode',
-        counts: null,
-      },
-      {
         name: 'typecheck',
         command: 'tsc -p tsconfig.app.json --noEmit',
         counts: null,
@@ -399,14 +415,31 @@ export const PROJECTS = [
     //    `gps-plus-slam-osm`, so `tsc` cannot see one of its types until dist
     //    exists — and until this stage was added, nothing in the workspace
     //    built it at all, which is what broke the /osm/ deployment.
-    // 2. It has no `build:framework` stage, because `pnpm run dev` — the
-    //    Playwright webServer command — already runs `build:deps`. That build
-    //    is unconditional (no staleness skip) and its cost lands inside the
-    //    `test:e2e` row rather than a row of its own.
+    // 2. It needs `build:framework` FIRST TOO, since 2026-08-15. It used to
+    //    have no such stage at all — see the retracted paragraph below — and
+    //    that made the gate's correctness depend on a side effect of the e2e
+    //    stage. `tsc` and `vitest` here resolve `gps-plus-slam-app-framework`
+    //    through the package `exports` -> dist (this package declares NO
+    //    tsconfig `paths`; only RecorderApp does), so the same argument that
+    //    puts `build:osm` first puts this first.
+    //
+    //    RETRACTED, and kept because the reasoning reads plausible: "It has no
+    //    `build:framework` stage, because `pnpm run dev` — the
+    //    Playwright webServer command — already runs `build:deps`, whose cost
+    //    lands inside the `test:e2e` row rather than a row of its own. Since
+    //    2026-08-09 that build goes through the same staleness check as the
+    //    stage above, so the webServer no longer rebuilds what the gate just
+    //    built — it was costing ~3.5 s per e2e package, in six of them."
+    //
+    //    It is true that the webServer builds it. What it misses is that the
+    //    build was then reachable ONLY through a stage that DEC-G2 removes,
+    //    and that the other five consumers keep their own build — so a
+    //    dependent run would have type-checked OsmDemo against whichever
+    //    framework dist a sibling package happened to leave on disk.
     //
     // Otherwise it now runs the SAME stage set as every other demo app. It
     // previously ran only typecheck/test:unit/test:e2e — no format, lint,
-    // lint:css, check:dup, check:cycles, check:boundaries, check:deadcode or
+    // lint:css, check:dup, check:cycles, check:boundaries or
     // typecheck:tests — because the package was created without the demo-app
     // tooling (no config/ directory and none of the 14 tool devDependencies).
     name: 'GpsPlusSlamJs_OsmDemo',
@@ -414,6 +447,9 @@ export const PROJECTS = [
     chainNames: ['test:core', 'check:all'],
     stages: [
       BUILD_OSM_STAGE,
+      // FIRST, not in demoAppStages' post-typecheck slot — see reason 2 above.
+      // The filter below drops that late copy so this one is the only build.
+      BUILD_FRAMEWORK_STAGE,
       // The worker entry is a second cycle root: `main.ts` reaches it only
       // through `new Worker(new URL(...))`, so `demo-worker.ts` and the three
       // modules it alone imports were outside the cycle gate until PR #241.
@@ -426,13 +462,64 @@ export const PROJECTS = [
         // app boot. Nothing was watching, and by the time it was measured every
         // lever for recovering it was spent (findings 2026-08-07, Areas 3-5b).
         //
-        // 740 s is the recorded MEDIAN (567 s) plus ~30 %. Loose on purpose:
+        // 900 s is the recorded MEDIAN (690.1 s) plus ~30 %. Loose on purpose:
         // this suite is contention-bound — its own Playwright config records a
         // 21x inflation of identical work under load — so a tight ceiling would
         // be one more load-dependent failure rather than a regrowth alarm.
         // `budget.mjs` carries the rule for changing it.
+        //
+        // RE-DERIVED 2026-08-17, and the reason matters more than the number.
+        // The previous ceiling was 740 s = median 567 s + 30 %. The median has
+        // since risen to 690.1 s (history in `GpsPlusSlamJs_OsmDemo/docs/
+        // test-timings.md`), which left the ceiling only +7 % above it — so the
+        // guard had quietly stopped being the LOOSE regrowth alarm it is
+        // designed as and become a tight performance target, firing on ordinary
+        // load. It tripped on a comments-and-docs change that added no e2e test
+        // (56 tests, +0): 769.3 s and 770.6 s on consecutive runs, against
+        // 707.1 s for the same 56 tests two hours earlier on the same tree.
+        //
+        // WHERE THE 567 -> 690 DRIFT CAME FROM, investigated 2026-08-17 from the
+        // versioned history rather than guessed at. The first draft of this
+        // comment blamed r519-r525; THAT WAS WRONG and the history says so.
+        // The ceiling was set 2026-08-07 on a 468-614 s history. By 2026-08-14
+        // the recorded runs were already 678-728 s, i.e. the drift had happened
+        // BEFORE the branches blamed for it, spread across ~40 commits with no
+        // step change attributable to any one of them.
+        //
+        // ⚠️ AND THE DRIFT IS SMALLER THAN THE NOISE. On 2026-08-11 alone the
+        // recorded runs span 563-820 s — a 1.46x same-day spread on a suite
+        // whose own Playwright config records a 21x inflation of identical work
+        // under load. So "the suite grew ~22 %" overstates a signal that
+        // day-to-day variance already exceeds, and a ceiling sitting +7 % above
+        // the median could not have survived it whatever the suite did.
+        // Removing work is still worth doing, but it is a throughput argument
+        // rather than the regrowth alarm this guard exists to be.
+        //
+        // RAISED 740 -> 900 -> 1300 (DEC-K1, 2026-08-22), AND THIS RAISE IS A
+        // PRODUCT CHANGE RATHER THAN SUITE REGROWTH — which is the distinction
+        // this guard exists to force someone to make out loud.
+        //
+        // The suite did NOT grow: 74 tests before and after, +0. What grew is the
+        // work the app does per refresh. DEC-K1 took `SCORE_DISK_MAX_RADIUS` from
+        // 4 to 6 on a field request, so every refresh now scores 127 chunks where
+        // it scored 61, and the e2e suite drives real refreshes end to end.
+        //
+        // MEASURED, two clean runs with nothing else on the machine:
+        // **806.6 s immediately before the change, then 1011.9 s and 1020.8 s
+        // after** — +26 %, reproducible, all 74 passing throughout. A third,
+        // contended run in the same window read 1090.7 s, which is why the two
+        // quiet samples are the ones quoted.
+        //
+        // 1300 s is ~1016 s + 28 %, keeping the same loose-alarm shape the 900
+        // had against its own median. It is NOT a licence to grow into: the next
+        // reader should read the two numbers above as the price of two rings and
+        // ask whether a third is worth another quarter.
+        //        // LOCAL RUNS ONLY, since 2026-08-10: this is a same-machine median plus
+        // 30 %, and CI records no median of its own, so enforcing it there
+        // measured the runner and failed two all-green PRs. See the CI note in
+        // `budget.mjs`.
         .map((stage) =>
-          stage.name === 'test:e2e' ? { ...stage, budgetSeconds: 740 } : stage
+          stage.name === 'test:e2e' ? { ...stage, budgetSeconds: 1300 } : stage
         ),
     ],
   },
@@ -491,4 +578,79 @@ export function getStage(project, name) {
  */
 export function stageOrder(project) {
   return project.stages.map((stage) => stage.name);
+}
+
+/**
+ * Does this stage boot a browser?
+ *
+ * Matched on the COMMAND, deliberately, not on `counts: 'playwright'`. That
+ * field names the JSON reporter to inject — it happens to select the same rows
+ * today, but a stage could run playwright without being counted by it, and the
+ * thing being decided here is "does this cost a headless Chromium", not "how is
+ * it reported". Nor on the stage NAME: `test:e2e` is a convention, and a
+ * convention is what a future stage breaks.
+ *
+ * @param {{ command: string }} stage
+ * @returns {boolean}
+ */
+export function isBrowserStage(stage) {
+  // `playwright` as a WHOLE TOKEN — the command invokes the CLI. `\bplaywright\b`
+  // was the first attempt and it is wrong: `\b` matches at the hyphen, so the
+  // shared app `format` command, which lists the `"playwright-tests"` DIRECTORY
+  // among prettier's targets, was classified as a browser stage and silently
+  // dropped from dependent runs. Caught by running the mode for real, not by the
+  // unit test — which had compared the implementation against its own regex.
+  return /(?:^|\s)playwright(?:\s|$)/.test(stage.command);
+}
+
+/**
+ * The stages a gate run should execute.
+ *
+ * `skipBrowser` is DEC-G2's dependent mode: a package that is only in the run
+ * because something it depends on changed pays for its static checks, its
+ * builds and its unit tests, but not for a browser.
+ *
+ * **Builds are never excluded, and that is the whole point of routing this
+ * through the real stage list.** Two earlier designs for this mode were
+ * rejected because each dropped a build that a `typecheck` downstream of it
+ * depends on — `test:core` omits `build:osm`, and "the stage list minus
+ * playwright" omitted `build:framework` back when OsmDemo had no such stage and
+ * got its framework built as a side effect of the e2e webServer. Both produced
+ * the same failure: a green local gate type-checking against a stale dist.
+ * `projects.test.mjs` pins that builds survive, for every project.
+ *
+ * @param {ProjectConfig} project
+ * @param {{ skipBrowser?: boolean }} [options]
+ * @returns {readonly StageConfig[]}
+ */
+export function gateStages(project, { skipBrowser = false } = {}) {
+  return skipBrowser
+    ? project.stages.filter((stage) => !isBrowserStage(stage))
+    : project.stages;
+}
+
+/** Env var that puts a gate run in DEC-G2's dependent mode. */
+export const SKIP_BROWSER_ENV = 'GATE_SKIP_BROWSER_STAGES';
+
+/**
+ * Resolve the gate mode from the environment.
+ *
+ * **An env var on the existing `test` script, NOT a new per-package script.**
+ * The rejected alternative was `pnpm --filter "...<x>" run <mode-script>`, and
+ * it fails silently: pnpm errors only when NO selected package has the script,
+ * so a package missing it is skipped with a green exit code. Every package
+ * already has `test`, so this cannot select nothing by accident.
+ *
+ * @param {Record<string, string | undefined>} [env] - process.env or a stub.
+ *   Omitted means "no mode": a caller that forgets it runs the FULL gate, which
+ *   is the safe direction.
+ * @returns {{ skipBrowser: boolean }}
+ */
+export function resolveGateMode(env = {}) {
+  const raw = env[SKIP_BROWSER_ENV];
+  // Same truthiness rule as `budgetBreach`'s CI check: any non-empty value
+  // means on. `'0'` deliberately counts as ON — an env var set to a string is
+  // set, and inventing a second falsy spelling is how a mode gets enabled by
+  // accident and disabled by a typo.
+  return { skipBrowser: Boolean(raw) };
 }

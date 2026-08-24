@@ -24,18 +24,34 @@
  * @see osm-store.ts.md
  */
 
-import { configureStore } from "@reduxjs/toolkit";
+// NARROW SUBPATHS, NOT THE BARREL. The framework's root export pulls in
+// Leaflet (for the minimap overlay), which touches `window` at import time —
+// so importing it here breaks every node-environment test that reaches the
+// store, and drags a mapping library into the demo's bundle for a store
+// factory. The subpaths are the published entry points for exactly this.
 import {
   createOsmViewSlice,
+  createSlamAppStore,
   type OsmViewState,
 } from "gps-plus-slam-app-framework/state";
+import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 import type { GeoEvent, LatLng } from "gps-plus-slam-osm";
 
 import type { DemoSnapshot } from "./demo-pipeline.js";
 import { DEFAULT_GROUND_MODE } from "./ground-mode.js";
 import { DEFAULT_LAYERS, type LayerSet } from "./layers.js";
 
-/** The demo's root state. One slice; the demo has no other durable state. */
+/**
+ * The demo's root state.
+ *
+ * **`osmView` is the only slice the demo WRITES**, and it is the only one named
+ * here — but the store also carries the framework's `gpsData`, `gpsElements`,
+ * `arElements`, `recording`, `tracking` and `trackingQuality` since the AR
+ * migration. Those are read through the framework's own selectors
+ * (`selectZeroReference`, `selectAlignmentMatrix`), which take the library's
+ * root type, so re-declaring them here would be a second, divergable copy of a
+ * shape the framework owns.
+ */
 export interface DemoRootState {
   readonly osmView: OsmViewState<DemoSnapshot, GeoEvent>;
 }
@@ -109,10 +125,9 @@ export function summariseSnapshot<S>(state: S): S {
 /**
  * Builds the store, its action creators and a change-only subscriber.
  *
- * A plain `configureStore` rather than the framework's `createSlamAppStore`:
- * that factory wires the library's GPS/AR reducers, licence validation and
- * persistence middleware, none of which this demo has. The slice is identical
- * either way, so switching to it if AR mode ever arrives is a one-line change.
+ * **Backed by the framework's `createSlamAppStore` since AR milestone 1**, so
+ * the library's GPS/AR reducers are present for the alignment wiring to read.
+ * The demo dispatches none of them itself; AR mode does.
  */
 export function createDemoStore(options: CreateDemoStoreOptions) {
   const slice = createOsmViewSlice<DemoSnapshot, GeoEvent>({
@@ -123,47 +138,68 @@ export function createDemoStore(options: CreateDemoStoreOptions) {
     initialGroundMode: DEFAULT_GROUND_MODE,
   });
 
-  const store = configureStore({
-    reducer: { osmView: slice.reducer },
-    devTools: { stateSanitizer: summariseSnapshot },
-    middleware: (getDefault) =>
-      getDefault({
-        /**
-         * The snapshot is exempt from the deep serialisability scan.
-         *
-         * MEASURED, not assumed: with it included, RTK logged
-         * "SerializableStateInvariantMiddleware took 71ms, more than the
-         * warning threshold of 32ms" on every action — it walks ~931 cells and
-         * their provenance records twice per dispatch, in development, which is
-         * exactly when someone is trying to judge whether the app feels fast.
-         *
-         * Nothing is given up. The guarantee moves from a runtime scan to a
-         * test: `demo-pipeline.test.ts` drives the real producer and asserts
-         * the snapshot it emits survives a JSON round-trip, and the framework
-         * slice has the same property over arbitrary action sequences. A `Map`
-         * sneaking into the snapshot fails a gate there instead of printing a
-         * `console.error` nobody reads.
-         *
-         * The pointer matters: the round-trip assertion lived in
-         * `osm-store.test.ts` for one commit before moving, and the test left
-         * behind there deliberately no longer guards the snapshot — it covers
-         * the REST of the state, which is still scanned.
-         */
-        serializableCheck: {
-          ignoredPaths: ["osmView.snapshot"],
-          /**
-           * The STATE path above is only half of it: the middleware scans the
-           * dispatched ACTION too, and `snapshotReady` carries the same ~931
-           * cells as its payload. Excluding the state alone left the per-
-           * dispatch scan exactly where it was on every refresh.
-           *
-           * Written as an action TYPE rather than a path, and taken from the
-           * action creator rather than spelled out, so a change to the slice's
-           * name cannot silently stop matching.
-           */
-          ignoredActions: [slice.actions.snapshotReady.type],
-        },
-      }),
+  /**
+   * THE FRAMEWORK'S FACTORY, not a bare `configureStore` (AR milestone 1).
+   *
+   * The comment this replaces said switching was "a one-line change… the slice
+   * is identical either way". The SLICE is; the MIDDLEWARE was not. Until
+   * 2026-08-12 the factory hardcoded its dev-check exemptions to the
+   * framework's own `tracking` slice with no consumer hook, so adopting it
+   * meant either paying the 71 ms scan documented below on every dispatch or
+   * turning every dev check off. The factory now APPENDS caller-supplied
+   * exemptions to its own, which is what makes this migration honest rather
+   * than a silent regression.
+   *
+   * WHY MIGRATE AT ALL: AR mode reads the framework's GPS state. The origin
+   * comes from `selectZeroReference`, and `enableArWorldGroupAlignment`
+   * subscribes to the alignment matrix — neither exists in a store holding
+   * only this demo's view slice.
+   */
+  const store = createSlamAppStore({
+    // NOTHING IS PERSISTED BY THIS DEMO. The backend bridges Redux actions to
+    // durable storage for recording sessions; this demo records nothing, and a
+    // real backend here would start writing GPS actions to OPFS behind the
+    // user's back.
+    storageBackend: new NullStorageBackend(),
+    extraReducers: { osmView: slice.reducer },
+    // RESTORED AFTER THE MIGRATION DROPPED IT. The old bare store passed this
+    // as ; the factory hardcoded its own and had no
+    // hook, so for one commit devtools deep-walked the whole ~931-cell snapshot
+    // TWICE per dispatch (state and action) -- reintroducing the 71 ms cost
+    // documented below through the other channel, in the same change that
+    // carefully preserved it for the serialisable check. The factory now
+    // COMPOSES this with its own sanitizer rather than replacing it.
+    devToolsStateSanitizer: summariseSnapshot,
+    /**
+     * The snapshot is exempt from the deep serialisability scan.
+     *
+     * MEASURED, not assumed: with it included, RTK logged
+     * "SerializableStateInvariantMiddleware took 71ms, more than the warning
+     * threshold of 32ms" on every action — it walks ~931 cells and their
+     * provenance records twice per dispatch, in development, which is exactly
+     * when someone is trying to judge whether the app feels fast.
+     *
+     * Nothing is given up. The guarantee moves from a runtime scan to a test:
+     * `demo-pipeline.test.ts` drives the real producer and asserts the
+     * snapshot it emits survives a JSON round-trip, and the framework slice
+     * has the same property over arbitrary action sequences. A `Map` sneaking
+     * into the snapshot fails a gate there instead of printing a
+     * `console.error` nobody reads.
+     *
+     * The pointer matters: the round-trip assertion lived in
+     * `osm-store.test.ts` for one commit before moving, and the test left
+     * behind there deliberately no longer guards the snapshot — it covers the
+     * REST of the state, which is still scanned.
+     *
+     * THE STATE PATH IS ONLY HALF OF IT: the middleware scans the dispatched
+     * ACTION too, and `snapshotReady` carries the same ~931 cells as its
+     * payload. Excluding the state alone left the per-dispatch scan exactly
+     * where it was on every refresh. Taken from the action creator rather than
+     * spelled out, so a slice rename cannot silently stop matching.
+     */
+    serializableIgnoredPaths: ["osmView.snapshot"],
+    serializableIgnoredActions: [slice.actions.snapshotReady.type],
+    immutableIgnoredPaths: ["osmView.snapshot"],
   });
 
   /**

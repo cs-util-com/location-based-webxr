@@ -9,7 +9,12 @@
  * reasoning for why the whole suite is offline.
  */
 
-import { test, expect } from "@playwright/test";
+import {
+  test,
+  expect,
+  attachOnFailure,
+  createPageDiagnostics,
+} from "./e2e-test.js";
 
 import {
   AT_FIXTURE,
@@ -18,7 +23,9 @@ import {
   stubNetwork,
   waitForRefresh,
   enableCellLayer,
+  walkByMapClick,
   REPAINT,
+  pinQuestClock,
 } from "./fixtures.js";
 
 /**
@@ -52,8 +59,21 @@ let shared;
 /** @type {{category: string, cells: boolean, showBelow: boolean}} */
 let baseline;
 
+/**
+ * THE SHARED PAGE'S OWN DIAGNOSTICS. `e2e-test.js` wraps the `page` fixture, and
+ * this file does not use it — so without this wiring the largest spec file in the
+ * suite would be the one place a browser-side failure stays invisible. Created
+ * before the first navigation, because a boot failure is exactly what it is for.
+ *
+ * @type {ReturnType<typeof createPageDiagnostics>}
+ */
+let sharedDiagnostics;
+
 test.beforeAll(async ({ browser }) => {
   shared = await browser.newPage();
+  sharedDiagnostics = createPageDiagnostics(shared, {
+    baseUrl: test.info().project.use.baseURL,
+  });
   await stubNetwork(shared);
   await shared.goto(AT_FIXTURE);
   await waitForRefresh(shared);
@@ -73,6 +93,21 @@ test.afterAll(async () => {
 // this hook into all five subject describes, or guarding on the test's name).
 test.beforeEach(async () => {
   await resetUi(shared, baseline);
+});
+
+// Attach what the browser said, then clear it: one collector serves every test in
+// this file, so without the reset each attachment would replay its predecessors'.
+// TWO TOOLS DISAGREE HERE, and the disable is the resolution rather than a
+// shortcut. Playwright REQUIRES a hook's first argument to be an object
+// destructuring pattern — `async (_fixtures, testInfo)` fails at collection with
+// "First argument must use the object destructuring pattern" — while eslint's
+// `no-empty-pattern` rejects the `{}` that requirement forces. This hook needs no
+// fixture at all, and naming one (`{ page }`) would instantiate a browser context
+// for every test in the file, which is precisely what this file avoids.
+// eslint-disable-next-line no-empty-pattern
+test.afterEach(async ({}, testInfo) => {
+  await attachOnFailure(sharedDiagnostics, testInfo);
+  sharedDiagnostics.reset();
 });
 
 test.describe("the affordance map", () => {
@@ -260,10 +295,14 @@ test.describe("the affordance map", () => {
       // proves a person could tell. Until the legend landed, the only place the
       // app named the current category was inside a tooltip, so the reported
       // symptom — "switching category did not reset the map" — was reachable with
-      // this test passing: every category scores nearly every rule, and
-      // `heatScale` re-normalises to each category's own maximum, so the same
-      // hexagons come back in similar colours. The legend is the fix, and this is
-      // the assertion that keeps it honest.
+      // this test passing: every category scores nearly every rule, so the same
+      // hexagons come back in similar colours whichever one is selected. The
+      // legend is the fix, and this is the assertion that keeps it honest.
+      //
+      // (This used to cite `heatScale` re-normalising to each category's own
+      // maximum. DEC-H5 deleted that mechanism and the reason outlived it: the
+      // ambiguity is the OVERLAP between categories, which a fixed ramp does
+      // nothing about.)
       await expect(shared.locator("#legend .legend-category")).toHaveText(
         other,
       );
@@ -444,22 +483,19 @@ test.describe("explaining one cell", () => {
       // The click has to land on BARE map, and that is not incidental. A click on
       // a cell selects without moving — Leaflet's `bindPopup` stops propagation,
       // so the map's own click handler never fires — while a click on empty map
-      // moves without selecting. Asserting the precondition means a fixture whose
-      // grid grows to cover this point fails loudly here rather than quietly
-      // passing for the wrong reason.
-      const point = { x: 60, y: 60 };
-      const box = await shared.locator("#map").boundingBox();
-      if (box === null) throw new Error("no map box");
-      const onCell = await shared.evaluate(
-        ([x, y]) =>
-          document
-            .elementFromPoint(x, y)
-            ?.classList.contains("affordance-cell") === true,
-        [box.x + point.x, box.y + point.y],
-      );
-      expect(onCell).toBe(false);
-
-      await shared.locator("#map").click({ position: point });
+      // moves without selecting.
+      //
+      // THE PRECONDITION IS NOW ENFORCED BY CONSTRUCTION rather than asserted
+      // after the fact. This step used to pin `{x: 60, y: 60}` and check that
+      // nothing was under it, with a comment predicting that "a fixture whose
+      // grid grows to cover this point fails loudly here". What actually moved
+      // was not the fixture but the MAP: Leaflet holds the centre, so the
+      // header growing ~7 px (J2's blocks) re-framed the view and slid a cell
+      // under that pixel. The prediction was right about the failure mode and
+      // wrong about the cause, which is why the fix is to stop naming a pixel:
+      // `walkByMapClick` hit-tests candidates and throws if the map is wholly
+      // covered — the same loud failure, without the standing coin-flip.
+      await walkByMapClick(shared);
       await expect(panel).toBeHidden();
     });
   });
@@ -781,6 +817,15 @@ test.describe("selecting a region", () => {
     await page.locator("#layer-cells").uncheck();
     await expect(page.locator("#map path.affordance-cell")).toHaveCount(0);
 
+    // AND THE GROUND HIDDEN, which is the narrow case DEC-R11-21 left this
+    // behaviour alive in. Stage 4 made a click on drawn ground ORDER THE AGENT,
+    // and the ground outranks a region — because the slabs blanket the demo's
+    // opening view, and with the old order the agent could never be ordered at
+    // all. `building-view.ts` keeps a hidden ground plane out of the raycast
+    // set, so with the "none" ground mode the slab genuinely is the thing under
+    // the pointer and this route to `regionSelected` still exists.
+    await page.locator("#ground-mode").selectOption("none");
+
     const canvas = page.locator("#scene canvas");
     const box = await canvas.boundingBox();
     if (box === null) throw new Error("no canvas box");
@@ -834,43 +879,168 @@ test.describe("the geo-event", () => {
     await waitForRefresh(page);
 
     const button = page.locator("#geo-event");
-    await expect(button).toHaveText(/Next geo-event/);
+    // "Show Quests" since 2026-08-19 (F4b). A UI STRING ONLY (DEC-U11): the
+    // store, the worker protocol and every doc still say `geoEvent`, which is
+    // why the selector below is unchanged and only the visible text moved.
+    //
+    // The label is also one of two CONSTANTS now (F4a) rather than the whole
+    // description, so a test asserting it no longer proves a search ran -- what
+    // proves that is the marker on the map and the toast, both asserted
+    // elsewhere in this file.
+    await expect(button).toHaveText(/Show Quests/);
 
     await button.click();
 
-    // The label must reach a terminal state. Either outcome is a pass — a
-    // fixture with no qualifying ground genuinely has no event, and asserting
-    // "an event was found" would make this test depend on the fixture's heat
-    // rather than on the wiring.
-    await expect(button).toHaveText(/Event at|No event nearby/, {
+    // THE RESULT MOVED OFF THE BUTTON (F4a, 2026-08-19). It used to become the
+    // description — which is exactly why it grew and shrank on every press —
+    // and the outcome is now announced in the toast instead. So the terminal
+    // state is asserted where it actually appears.
+    //
+    // Either outcome is a pass: a fixture with no qualifying ground genuinely
+    // has no quest, and asserting "one was found" would make this test depend
+    // on the fixture's heat rather than on the wiring.
+    const toast = page.locator("#toast-root .toast");
+    await expect(toast).toHaveText(/Quest at|No quest nearby/, {
       timeout: 30_000,
     });
-    await expect(button).toBeEnabled();
 
-    // And nothing failed: a geo-event error routes through the same channel a
-    // fetch failure does, so the header would be showing it.
-    await expect(page.locator("#status")).not.toContainText("geo-event failed");
+    // CAPTURED THE MOMENT IT IS KNOWN PRESENT, NOT RE-READ LATER (2026-08-24).
+    // The shared toast REMOVES ITSELF from the DOM DEFAULT_TOAST_LINGER_MS
+    // (6 s) after `show()`. Every read below used to happen after the two
+    // button assertions, and on a loaded machine that lost the race in two
+    // distinct ways:
+    //
+    //   - `textContent()` waited for an element that had already been
+    //     removed, so it burned the whole 180 s test timeout — the observed
+    //     failure, on a cascade run where this suite took 22.6 min against a
+    //     16.5 min baseline;
+    //   - `not.toContainText("geo-event failed")` passed VACUOUSLY once the
+    //     toast was gone, because an absent element contains nothing. So the
+    //     "and nothing failed" guarantee quietly stopped holding.
+    //
+    // The second is the worse of the two: a green assertion proving nothing.
+    // One read, here, fixes both — and the linger is deliberately NOT widened,
+    // since 6 s is the product's chosen lifetime and the test has no business
+    // reshaping it.
+    const announced = (await toast.textContent()) ?? "";
+
+    await expect(button).toBeEnabled();
+    // AND THE BUTTON WENT BACK TO ITS CONSTANT, which is the half that would
+    // otherwise go unasserted: a button still reading "Finding…" after the
+    // search settled is the async-feedback defect, and a button that grew again
+    // is the reported one.
+    await expect(button).toHaveText(/Show Quests/);
+
+    // And nothing failed. ASSERTED ON THE CAPTURED STRING, for the reason
+    // given above — watching the live locator could not fail once the toast
+    // had lingered out. Watched on the toast rather than the status line:
+    // errors stopped being written to `#status` when the header's
+    // self-expanding rule was retired (DEC-U10), so `geo-event failed` can
+    // never appear there and this assertion held for a broken app too. Its
+    // sibling in boot-and-shell.spec.js was repointed at the time; this one
+    // was missed.
+    expect(announced).not.toContain("geo-event failed");
 
     // If it found one, it is on the map. The winner carries a class of its own
     // so this cannot pass on a candidate marker.
-    const label = await button.textContent();
-    if (label?.includes("Event at") === true) {
+    if (announced.includes("Quest at")) {
       // THE DISTANCE AND DIRECTION ARE THE POINT (F56), not decoration. The
       // winner is usually off-screen, so this string is the only feedback the
       // user gets; a label that lost them would look identical to a working
       // one on a map that happens to be showing nothing.
-      expect(label).toMatch(
-        /\d+(\.\d+)? (m|km) (N|NE|E|SE|S|SW|W|NW) · searched \d+ tiles?$/,
+      // THE TILE COUNT IS GONE FROM THE SUCCESS PATH (F4e) and the distance
+      // now lives in its own standing readout (F4a), so this asserts both
+      // surfaces rather than one string:
+      //
+      // - the toast announces WHAT happened, once;
+      // - the readout keeps saying WHERE, and re-reads as the user walks, which
+      //   is F56's recorded win and the thing a constant label would otherwise
+      //   have deleted.
+      expect(announced).toMatch(
+        /Quest at .+ · \d+(\.\d+)? (m|km) (N|NE|E|SE|S|SW|W|NW)$/,
+      );
+      expect(announced).not.toContain("searched");
+      await expect(page.locator("#quest-readout")).toHaveText(
+        /\d+(\.\d+)? (m|km) (N|NE|E|SE|S|SW|W|NW)/,
       );
 
-      // PRESENT, not VISIBLE, and the difference is a real property of the
-      // feature rather than a test convenience. An event tile is ~900 m across
-      // and the demo opens at zoom 18, which shows a couple of hundred metres --
-      // so the winner is very often outside the viewport, and Leaflet renders an
-      // off-screen path as `d="M0 0"`, which reads as hidden. Asserting
-      // visibility would make this test pass or fail on where the seeded
-      // candidate happened to land.
+      // VISIBLE, NOT MERELY PRESENT — AND THAT IS THE PAN'S TEST (F4c,
+      // DEC-U12, 2026-08-19).
+      //
+      // This used to assert PRESENCE only, with a comment explaining that an
+      // event tile is ~900 m across against a viewport showing a couple of
+      // hundred metres, so the winner is very often outside it and Leaflet
+      // renders an off-screen path as `d="M0 0"` — which reads as hidden.
+      //
+      // That reasoning was exactly what F56's label existed to compensate for,
+      // and DEC-U12 removes the premise: the map now pans to the winner, so it
+      // is ON SCREEN. Asserting visibility is therefore both stronger and the
+      // only test the pan has — without it, deleting the `panTo` call leaves
+      // the whole suite green.
       await expect(page.locator("#map .geo-winner")).not.toHaveCount(0);
+
+      // THE WINNER IS AT THE VIEWPORT CENTRE, WHICH IS THE PAN (F4c, DEC-U12).
+      //
+      // `toBeVisible()` was tried first and is NOT a test of the pan: with the
+      // `panTo` call deleted the seeded winner still happened to be on screen,
+      // so the assertion passed against the mutant. Centring is the thing
+      // `panTo` actually does, so it is the thing to assert.
+      //
+      // This also replaces an older comment claiming the winner is "very often
+      // outside the viewport" and that asserting visibility would make the test
+      // depend on where the candidate landed. That was true, and DEC-U12
+      // removed the premise it rested on.
+      // MEASURED UNTIL IT SETTLES, NOT ONCE — and the single read is what made
+      // this test fail intermittently for two days.
+      //
+      // ⚠️ THE MECHANISM, finally measured rather than guessed at a third time.
+      // Something resizes the map pane by ~42 px shortly after the marker is
+      // drawn (the status line's own text changes as the search completes).
+      // Leaflet's cached size is briefly stale, `map-view.ts`'s ResizeObserver
+      // corrects it, and the correction lands WITHIN ONE FRAME. Provoked
+      // directly: growing `#map` by 42 px and reading with **zero** wait gives
+      // **21.172 px**; reading 16 ms later gives **0.172 px**. 21.172 is exactly
+      // half the height delta plus the settled offset, and it is the
+      // bit-identical value every failing run reported.
+      //
+      // So the app converges and the test did not wait for it. Under load the
+      // sub-frame window widens until a single read lands inside it, which is
+      // why this failed on a busy machine and passed on a quiet one — and why
+      // two earlier investigations, both reasoning from one sample, concluded
+      // "deterministic" and "stale cache" respectively. Neither survived.
+      //
+      // THE BOUND IS UNCHANGED AT 8 px. This waits for the state the bound
+      // describes; it does not widen the bound to admit a state the app is
+      // leaving. A genuine regression — the 61 px one this replaced — never
+      // settles, so the poll times out and fails exactly as before.
+      const offsetNow = async () => {
+        const winnerBox = await page
+          .locator("#map .geo-winner")
+          .first()
+          .boundingBox();
+        const mapBox = await page.locator("#map").boundingBox();
+        if (winnerBox === null || mapBox === null) throw new Error("no boxes");
+        return Math.hypot(
+          winnerBox.x + winnerBox.width / 2 - (mapBox.x + mapBox.width / 2),
+          winnerBox.y + winnerBox.height / 2 - (mapBox.y + mapBox.height / 2),
+        );
+      };
+
+      // 8 px, DERIVED: the settled offset measures 0.2 px, so this is 40x the
+      // real value and still catches anything that moves the target off centre.
+      //
+      // IT USED TO BE 80, justified by a comment saying a marker's anchor is
+      // its tip rather than its centre. That is false for THIS marker —
+      // `map-view.ts` sets `iconAnchor: [QUEST_MARKER_PX / 2, ...]` and says
+      // why — and the slack it bought hid a real defect for as long as it
+      // existed: Leaflet's cached container size was ~122 px too tall, so
+      // every `setView` landed its target 61 px below the visible centre. The
+      // old bound passed at 61.2 locally and failed at 86.5 on CI, which is
+      // the only reason anyone looked.
+      //
+      // So a wider bound here would not have been a tolerance — it would have
+      // been the defect's hiding place.
+      await expect.poll(offsetNow, { timeout: 15_000 }).toBeLessThan(8);
       await expect(page.locator("#map .geo-candidate")).not.toHaveCount(0);
     }
   });
@@ -882,13 +1052,24 @@ test.describe("the geo-event", () => {
    * quarter-hour — so within one 15-minute slot the second press could not
    * produce anything new, and it read as a broken button.
    *
+   * INVERTED 2026-08-19 (F4f, DEC-U13). The two-press behaviour was itself the
+   * fix for that complaint, and the owner then reported the two-step as the
+   * problem: the choice should be visible on the FIRST press. The picker now
+   * opens alongside the search rather than instead of it, so a second press no
+   * longer means something different from the first — which removes the
+   * original complaint by a different route.
+   *
    * The unit tests cover the dialog's own behaviour. What only an e2e can show
-   * is that the BUTTON changed meaning: one press searches, the next opens the
-   * picker rather than searching again.
+   * is that one press does both.
    */
-  test("opens a time picker on the second press, and can clear the event", async ({
+  test("opens a time picker on the FIRST press, and can clear the event", async ({
     page,
   }) => {
+    // CLOCK PINNED FIRST (see `pinQuestClock`). The geo-event is a pure
+    // function of tile and quarter-hour, so without this the test executes or
+    // not depending on when the suite runs — CI went red on a quarter-hour
+    // that yields nothing, on a change that touched none of this.
+    await pinQuestClock(page);
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
@@ -898,28 +1079,50 @@ test.describe("the geo-event", () => {
     await expect(picker).toBeHidden();
 
     await button.click();
-    await expect(button).toHaveText(/Event at|No event nearby/, {
-      timeout: 30_000,
-    });
-    // The FIRST press searched rather than asking when — the common case stays
-    // one tap.
-    await expect(picker).toBeHidden();
 
-    await button.click();
+    // THE PICKER IS ALREADY OPEN (F4f, DEC-U13) — that is the whole change.
+    // It used to take a second press, which made the second press mean
+    // something different from the first; the owner asked for the choice to be
+    // visible immediately, so it opens alongside the search.
     await expect(picker).toBeVisible();
+
+    // AND THE SEARCH RAN ANYWAY, which is the half that would otherwise go
+    // unasserted: a picker that opened INSTEAD of searching would satisfy the
+    // line above and break the common one-tap case.
+    await expect(page.locator("#toast-root .toast")).toHaveText(
+      /Quest at|No quest nearby/,
+      { timeout: 30_000 },
+    );
     // Pre-filled from the event on the map, so the common edit is "later", not
     // "type a whole date".
     await expect(page.locator("#geo-event-date")).not.toHaveValue("");
     await expect(page.locator("#geo-event-time")).not.toHaveValue("");
 
+    // FAILS RATHER THAN SKIPS (owner decision 2026-08-17). This used to be
+    // `test.skip(drawn === 0, "fixture yielded no event to clear")`, which read
+    // like a data problem and is actually a CLOCK one: the geo-event is a pure
+    // function of tile and quarter-hour, so whether this test executes at all
+    // depended on which quarter-hour the suite happened to run in. Three runs of
+    // the same commit reported 56, 56 and 54-passed-2-skipped — and every one of
+    // them looked green. A test that cannot run is a defect, not a pass.
     const drawn = await page.locator("#map .geo-winner").count();
-    test.skip(drawn === 0, "fixture yielded no event to clear");
+    expect(
+      drawn,
+      "no geo-event was drawn for the fixture tile in the CURRENT quarter-hour, " +
+        "so this test cannot exercise clearing one. The event is a pure function " +
+        "of tile and quarter-hour; the fix is to pin the clock or choose a " +
+        "tile/instant known to yield one, not to skip. See " +
+        "2026-08-17-0019-geo-event-e2e-wall-clock-skip-followup.md",
+    ).toBeGreaterThan(0);
 
     await page.locator("#geo-event-clear").click();
     await expect(picker).toBeHidden();
     await expect(page.locator("#map .geo-winner")).toHaveCount(0);
-    // The label is derived from the same state, so it goes back with them.
-    await expect(button).toHaveText(/Next geo-event/);
+    // THE READOUT is what is derived from that state now, so it is what goes
+    // back with the markers (F4a). The button's label is a constant and would
+    // read "Show Quests" whether or not the clear worked — asserting it here
+    // would be an assertion that cannot fail.
+    await expect(page.locator("#quest-readout")).toBeHidden();
   });
 
   /**
@@ -934,21 +1137,38 @@ test.describe("the geo-event", () => {
    * subscriber in `main.ts`, which has no other coverage.
    */
   test("takes the markers down when the category changes", async ({ page }) => {
+    // CLOCK PINNED FIRST (see `pinQuestClock`). The geo-event is a pure
+    // function of tile and quarter-hour, so without this the test executes or
+    // not depending on when the suite runs — CI went red on a quarter-hour
+    // that yields nothing, on a change that touched none of this.
+    await pinQuestClock(page);
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
 
     const button = page.locator("#geo-event");
     await button.click();
-    await expect(button).toHaveText(/Event at|No event nearby/, {
-      timeout: 30_000,
-    });
+    // The outcome is announced in the toast now, not on the button (F4a).
+    await expect(page.locator("#toast-root .toast")).toHaveText(
+      /Quest at|No quest nearby/,
+      { timeout: 30_000 },
+    );
 
     // Only meaningful if something was actually drawn — a fixture with no
     // qualifying ground has nothing to clear, and asserting on it would make
     // this pass for the wrong reason.
+    //
+    // FAILS RATHER THAN SKIPS, for the reason given at the sibling assertion
+    // above: "nothing was drawn" is a wall-clock condition, and skipping on it
+    // let this test silently stop covering anything in some quarter-hours while
+    // the run still reported success.
     const drawn = await page.locator("#map .geo-winner").count();
-    test.skip(drawn === 0, "fixture yielded no event to clear");
+    expect(
+      drawn,
+      "no geo-event was drawn for the fixture tile in the CURRENT quarter-hour, " +
+        "so this test cannot exercise the markers coming down. See " +
+        "2026-08-17-0019-geo-event-e2e-wall-clock-skip-followup.md",
+    ).toBeGreaterThan(0);
 
     const other = await page.evaluate(() => {
       const select = document.getElementById("category");
@@ -962,14 +1182,175 @@ test.describe("the geo-event", () => {
 
     await expect(page.locator("#map .geo-winner")).toHaveCount(0);
     await expect(page.locator("#map .geo-candidate")).toHaveCount(0);
-    // The label is derived from the same state, so it must go back with them —
-    // a button still describing an event that is no longer drawn is the same
-    // disagreement in a different pane.
-    await expect(button).toHaveText(/Next geo-event/);
+    // THE READOUT is derived from that state now, so it is what must go back
+    // with them (F4a) — a readout still naming a distance to a quest that is no
+    // longer drawn is the same disagreement in a different pane. The button's
+    // label is a constant and would read "Show Quests" either way, so asserting
+    // it here would be an assertion that cannot fail.
+    await expect(page.locator("#quest-readout")).toBeHidden();
+  });
+
+  test("keeps the map's own controls tappable, and stays small, once the picker is open", async ({
+    page,
+    context,
+  }) => {
+    /**
+     * WHY THIS TEST MATTERS (field report, 2026-08-23).
+     *
+     * "Behind it the DPS and AR buttons are not clickable anymore because this
+     * quest box is on top of the AR button. I can't first click Show Quest and
+     * then switch to AR mode because I just can't click the AR button."
+     *
+     * The picker shipped at `right: 0.5rem; bottom: 0.5rem; z-index: 1000` —
+     * the exact corner `main.ts` moves the AR and locate buttons into at
+     * runtime, and above them in z-order. With `max-width: calc(100% - 1rem)`
+     * it also spanned the pane on a phone, so it covered the map as well as the
+     * controls.
+     *
+     * A TRIAL CLICK rather than a box comparison, following the AR offer's own
+     * guard: what matters is that the picker cannot SWALLOW a tap meant for the
+     * control, and Playwright's actionability check states exactly that.
+     * Overlap arithmetic would pass the moment the boxes merely touch.
+     */
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({ latitude: 50.9231, longitude: 6.9445 });
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "xr", {
+        configurable: true,
+        value: { isSessionSupported: () => Promise.resolve(true) },
+      });
+    });
+    await pinQuestClock(page);
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    // AT 390 px, WHICH IS THE WHOLE POINT — the report is a phone one. On a
+    // desktop split the picker has room to the left of the controls and every
+    // assertion below holds whatever the width rule is.
+    await page.setViewportSize({ width: 390, height: 780 });
+
+    // The hotkey list FIRST, before the picker can take focus into its input
+    // (`isTyping` would swallow the press there). It shares the bottom-left
+    // corner with the picker, and the non-overlap claim below is asserted
+    // rather than assumed.
+    await page.keyboard.press("?");
+    await expect(page.locator("#hotkey-help")).toBeVisible();
+
+    await page.locator("#geo-event").click();
+    await expect(page.locator("#geo-event-picker")).toBeVisible();
+
+    // THE PICKER MUST NOT COVER THE CONTROLS AT ALL — geometry, not a tap.
+    //
+    // ⚠️ A TRIAL CLICK WAS THE FIRST INSTRUMENT HERE AND IT PASSED ON A BROKEN
+    // LAYOUT. Measured at 390 px, the picker's box was x 8→382, y 697→772 and
+    // the AR button's x 346→378, y 712→744 — the control ENTIRELY inside the
+    // overlay — and Playwright still found it actionable, because Leaflet's
+    // control happens to win the hit test in desktop Chromium. The field
+    // report says it does not win on a real phone.
+    //
+    // So tap-through is a z-order coincidence and cannot be the assertion. The
+    // precedent guard on `#ar-offer` makes the opposite choice deliberately,
+    // for the opposite reason: that overlay legitimately overlaps these
+    // controls on a desktop split, so only the tap can be asserted. This one
+    // must simply not be there.
+    const overlaps = (a, b) =>
+      a.x < b.x + b.width &&
+      b.x < a.x + a.width &&
+      a.y < b.y + b.height &&
+      b.y < a.y + a.height;
+
+    const arBox = await page.locator("#enter-ar").boundingBox();
+    const locateBox = await page.locator(".locate-button").boundingBox();
+    const pickerBox = await page.locator("#geo-event-picker").boundingBox();
+    if (arBox === null || locateBox === null || pickerBox === null) {
+      throw new Error("no boxes");
+    }
+
+    // Both, because the report named both and they share a stack — a fix that
+    // clears one by moving up a row leaves the other underneath.
+    expect(overlaps(pickerBox, arBox)).toBe(false);
+    expect(overlaps(pickerBox, locateBox)).toBe(false);
+
+    // And the tap still has to land, which is the harm the user actually felt.
+    await page.locator("#enter-ar").click({ trial: true });
+    await page.locator(".locate-button").click({ trial: true });
+
+    // AND IT DOES NOT SPAN THE SCREEN. The tap is the harm; the width is the
+    // complaint — "unnecessarily large … it fills the entire screen space".
+    // Two thirds is deliberately loose: this pins that a bound EXISTS, not a
+    // particular design, so a later re-layout does not fail here for being
+    // different rather than for being wrong.
+    expect(pickerBox.width).toBeLessThan(390 * 0.67);
+
+    // AND IT DOES NOT COVER THE TOAST, which is the app's only 2D message
+    // channel — and this very flow writes to it ("Quest at …" / "No quest
+    // nearby"). The `#ar-offer` guard makes the same assertion for the same
+    // reason: a message hidden under an overlay is one the user never sees.
+    // ⚠️ WAITED FOR, AND THE FIRST VERSION DID NOT WAIT. It read the box a few
+    // tens of milliseconds after the click, while the search that produces the
+    // toast takes seconds — the sibling assertion in this file allows it 30 s.
+    // So `boundingBox()` returned `null`, the `if` skipped the assertion
+    // entirely, and the guard the fix was argued hardest for never ran. The
+    // 6rem offset was measured against a toast this test never observed.
+    // Caught by the PR #344 review.
+    //
+    // The wait is generous for the same reason the sibling's is: the search
+    // hits a stubbed network but still crosses the worker boundary.
+    const toast = page.locator("#toast-root .toast").first();
+    await expect(toast).toBeVisible({ timeout: 30_000 });
+
+    // MEASURED PROMPTLY, because the toast clears itself after
+    // `DEFAULT_TOAST_LINGER_MS` (6 s) — a box read after that is `null` again
+    // and the assertion would go quiet in exactly the same way.
+    const toastBox = await toast.boundingBox();
+    if (toastBox === null) throw new Error("no toast box");
+    expect(overlaps(pickerBox, toastBox)).toBe(false);
+
+    // AND IT DOES NOT COVER THE HOTKEY LIST — the third occupant of this
+    // corner, and the one the picker's move dropped silently: the old
+    // bottom-right position carried the invariant "sits opposite the hotkey
+    // list so the two cannot cover each other", and the move re-argued the
+    // toast band and Leaflet's controls but not this. The list is rendered
+    // from `hotkeys.bindings()`, so EVERY future hotkey grows it by a row —
+    // this assertion is what turns the CSS offset from a measurement into a
+    // maintained claim. Caught by the PR #345 review.
+    const helpBox = await page.locator("#hotkey-help").boundingBox();
+    if (helpBox === null) throw new Error("no hotkey-help box");
+    expect(overlaps(pickerBox, helpBox)).toBe(false);
   });
 });
 
 test.describe("the cell layer toggle", () => {
+  test("hides 'below threshold' while the cell layer is off (DEC-U9)", async ({
+    page,
+  }) => {
+    // WHY THIS TEST EXISTS, and it is not tidiness: the bug it catches shipped.
+    //
+    // DEC-U9 hides this checkbox while `cells` is off, because it has nothing
+    // to be below the threshold OF. The first implementation painted it only
+    // from the layers SUBSCRIBER — and `subscribe` fires on CHANGE, never on
+    // registration. `cells` is off in DEFAULT_LAYERS, so the one state the
+    // decision exists to cover was the one state never painted, and the
+    // checkbox was visible on every fresh load.
+    //
+    // THE FIRST ASSERTION IS THE WHOLE POINT. A test that only toggled the
+    // layer and back would have passed against the broken build, because every
+    // path it exercised went through the subscriber.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const showBelow = page.locator("#show-below-label");
+    await expect(showBelow).toBeHidden();
+
+    await page.locator("#layer-cells").check();
+    await expect(showBelow).toBeVisible();
+
+    await page.locator("#layer-cells").uncheck();
+    await expect(showBelow).toBeHidden();
+  });
+
   /**
    * WHY THIS TEST EXISTS (F58).
    *

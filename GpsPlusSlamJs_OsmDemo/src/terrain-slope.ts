@@ -28,6 +28,8 @@
  * @see terrain-slope.ts.md
  */
 
+import { smoothstep } from "./easing.js";
+
 /**
  * How many isocline periods span the full range of steepness.
  *
@@ -112,9 +114,14 @@ export function isoclinePhase(normal: Normal): number {
  * the shader so the two cannot disagree about where the treatment starts.
  */
 export function slopeTreatmentStrength(normal: Normal): number {
+  // The clamp stays HERE rather than moving into `smoothstep`. This is the one
+  // caller whose `t` is a ratio of two physical quantities and can genuinely
+  // exceed 1 — the AR-entry fades all bound their own `t` from elapsed time —
+  // and a clamp inside the shared curve would hide that difference instead of
+  // stating it. See `easing.ts`.
   const t = Math.min(
     1,
     Math.max(0, slopeSteepness(normal) / FLAT_FADE_STEEPNESS),
   );
-  return t * t * (3 - 2 * t);
+  return smoothstep(t);
 }

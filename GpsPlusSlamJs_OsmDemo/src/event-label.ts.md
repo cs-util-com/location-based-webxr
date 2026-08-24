@@ -50,8 +50,13 @@ pointed at the Leaflet map, so it is a new feature rather than reuse.
 - `bearingDegrees(from, to) -> number` — initial great-circle bearing, in
   `[0, 360)`.
 - `compassPoint(bearing) -> string` — one of the eight points.
-- `formatDistance(metres) -> string` — `"640 m"` below a kilometre, else
+- `formatEventDistance(metres) -> string` — `"640 m"` below a kilometre, else
   `"1.2 km"`.
+  - A thin wrapper over the framework's `utils/format-distance`, holding **this
+    app's rule** (`metreStep: 10`) rather than the formatting itself. Renamed
+    from `formatDistance` on 2026-08-24: a wrapper wearing the shared helper's
+    own name is the confusion the duplicate-helper guard exists to prevent, and
+    that guard says so by failing.
 
 ## Invariants & assumptions
 
@@ -96,3 +101,31 @@ are easy to get wrong and impossible to see:
   whose seed sits exactly at the user, so the wrong field would read `0 m`.
 
 No fixtures or test data required; every case is a literal coordinate pair.
+
+## Round two rewrote most of this (F4a, F4b, F4c, F4e — 2026-08-19)
+
+**Everything above that describes the button as carrying the description is
+stale.** It did, and that is exactly why it resized on every press.
+
+- `GEO_EVENT_IDLE_LABEL` is now **"Show Quests"** (DEC-U11 — a UI string only;
+  the store, the worker protocol and this module still say `geoEvent`).
+- `geoEventButtonLabel(busy)` takes **only `busy`** and returns one of two
+  constants. It no longer sees the position or the held quest, and no longer
+  takes a time formatter.
+- **`geoEventReadout(view)` is new, and it is where F56's win went.** The label
+  used to re-read as the user walked — "640 m NE" becoming "210 m NE" — because
+  it was derived from the current position rather than frozen when the search
+  returned. A constant label deletes that, and neither replacement restores it:
+  a toast fades and a map pan does not restate. This returns distance and
+  bearing only (no time, no tile count — those do not change as you move), and
+  the empty string when there is no quest, so the caller hides the element
+  rather than reserving space.
+- **`describeGeoEvent` drops the tile count on the SUCCESS path** and keeps it
+  when nothing was found (F4e). On success there is a marker on the map, which
+  answers the question the count was helping with; in the empty case it is the
+  only thing separating "there is none here" from "you have not loaded enough
+  to know" (F57), and the second reads as a bug. Its wording is now "Quest at …"
+  and "No quest nearby · searched N tiles".
+- **The module header's F56 argument is reversed** (DEC-U12): the map DOES move
+  now, on an explicit press, at the current zoom. F56 objected to an _uninvited_
+  takeover, which a button press is not.

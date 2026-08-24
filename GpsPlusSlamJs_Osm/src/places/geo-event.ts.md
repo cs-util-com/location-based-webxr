@@ -55,6 +55,26 @@ what let it be written before the wide-heat work exists.
   immediately.
 - **The climb compares NEIGHBOURHOOD heat**, as `GetHeatForTilePlusNeighbours`
   does — it walks towards a broad warm area rather than an isolated spike.
+  - **So the winner is very often NOT the highest-scoring cell in sight, and
+    this reads as a bug on the map.** It was reported as one from a live
+    session: the marker sat on a cell whose tooltip said `battleArea = 1` with
+    visibly higher-scoring cells directly beside it. Being SURROUNDED by
+    strength beats being strong — a weak cell inside a warm cluster outranks a
+    strong cell on that cluster's edge, because the edge cell's own
+    neighbourhood reaches outward into the cold. Measured on the reported shape
+    (a ring of 1.37 around a single 1, on a flat field of 1): the centre sums
+    **11.96** against the ring's **10.85**, and the centre wins.
+  - **The same property is what makes the quality gate mean anything.** The gate
+    is `heat > neighbours(cell).length * threshold` — a sum over the
+    neighbourhood — so one very high cell surrounded by identity ground FAILS
+    it: a `4` among `0.5`s scores 8 against a gate of 9. An event is meant to
+    land somewhere playable, not on one lucky hexagon.
+  - **Nothing in the 2D map draws this metric**, which is why it is unverifiable
+    from the picture: every cell is painted by its OWN score, and the marker's
+    tooltip reports `heat`, which is already the neighbourhood sum but is not
+    labelled as such. Both facts are pinned by
+    "the winner is the warmest NEIGHBOURHOOD, not the warmest cell" in
+    `geo-event.test.ts`.
 - **It is bounded by `steps`**, because it runs in the worker and an
   ever-rising field would otherwise walk until the process died.
 
@@ -146,6 +166,16 @@ because two callers deriving it separately is exactly how they drifted apart.
 time and minute-quantisation, candidate spread and containment, and the climb's
 uphill / flat / bounded / left-the-field behaviours.
 
+It also pins **why a low-scoring cell can win**, from a live report that read as
+a bug: the fixture is the reported screenshot (a ring of 1.37 around a single 1)
+and the centre is asserted to be both the weakest cell of the nine and the
+climb's answer. Its counterweight asserts that a lone spike fails the gate, so
+the two together say what the neighbourhood metric buys and what it costs. The
+counterweight uses `steps: 0` deliberately — written with a real climb first, it
+measured the wrong cell, because from an isolated spike the climb walks OUT to
+the surrounding field, whose neighbourhood is warmer than the pit the spike sits
+in.
+
 For `newGeoEventFor` it also pins ordering by the SETTLED position (mutating
 the sort key back to `candidate` fails exactly that test) and the longitude
 cosine at 51° N, where the correction flips the order. Note that the ordering
@@ -153,3 +183,75 @@ tests use a position-PRESERVING `toCell`/`toLatLng` pair: an earlier
 `toCell: () => "0,0"` collapsed every tile onto one cell, which was invisible
 while the sort key was `candidate` and made the sort a no-op the moment it
 became `position`. A constant `toCell` cannot test ordering at all.
+
+## `rankedPeaks` — the exhaustive alternative to climbing (DEC-A5)
+
+`climbToLocalMaximum` **samples**: it drops candidates at random and walks each a
+little way uphill, so it finds a peak only when a candidate lands on one.
+Measured over a field with a single obvious maximum, the event landed on it
+**0 times out of 24** — though see the caveat under "Wired but inert" below: the
+instrument that produced that figure reads only the pick nearest the user, and
+the peak is not in the tile that pick comes from.
+
+Two attempts to widen the sampling were refuted on one invariant — **anything
+that searches more of the tile must score more of the tile** — and the arithmetic
+then pointed somewhere unexpected: a res-8 event tile holds only **343 res-11
+chunks**, _fewer_ than a climb with useful reach needs (a 5-step res-11 climb
+needs ~684 against a 488-chunk cache cap). Once all 343 are scored there is
+nothing left to search for — the answer can be read off. Measured at **364 ms**
+over 2 259 real features, which is a lower bound because no fixture holds a full
+tile.
+
+- **Separation is the difficulty, not the ranking.** The top cells of any real
+  field are neighbours of each other — one hill yields its summit and the six
+  cells around it — so a naive "top N" returns one place N times. Each pick
+  excludes its own neighbourhood from those that follow.
+- **Why N and not just the maximum**, which is the non-obvious half. Event
+  positions **rotate every quarter hour** and must be identical across clients
+  sharing a seed. Returning the single global maximum would make the event
+  **static forever** — a regression against documented behaviour, dressed as a
+  fix. The shortlist keeps the best ground always in the running while which of
+  the good places wins still rotates.
+- **Ties break by cell id**, so two areas of identical heat order the same way on
+  every client. A result depending on `Map` iteration order would differ between
+  clients that must agree.
+- **`undefined` heat is skipped, not read as cold** — the `cellState`
+  distinction between "nothing here" and "nobody looked".
+
+## `bestPickOverField` — the pick built on the ranking
+
+`rankedPeaks` says which places are good; this chooses between them, and the
+choosing is the part with a claim in it.
+
+- **Weighted by heat, not uniform over the shortlist**, and the difference is the
+  whole feature. A uniform roll throws the ranking away: the best ground would
+  win exactly 1 time in `EXHAUSTIVE_SHORTLIST` — 1 in 6 over a field with one
+  real peak and five bumps, barely better than the sampling this replaces, after
+  paying to scan the tile. On the fixture (a peak at 560 against five bumps at 84) weighting makes it **57 %** of quarter hours rather than 17 %.
+- **Every shortlisted place stays reachable**, so the event still rotates. Both
+  halves are asserted together: the peak's share, _and_ that all six places win
+  some minute.
+- **The same quality gate as the climb**, `heat > neighbours(cell).length ×
+threshold` — shared so two gates cannot drift and put an event where the map
+  draws empty ground. Failing it returns `undefined`, never a pick.
+- **`candidate` equals `position`**, because nothing was climbed; the field is
+  kept so `BestPick`'s shape is unchanged for the map, and `evaluated` reports
+  genuine runners-up rather than the climb's discarded seeds.
+
+**Wired but inert.** `demo-pipeline.ts` has the `cellsOfTile` wiring behind
+`const EXHAUSTIVE_GEO_EVENT = false`, so the demo still climbs. The outcome test
+that stays red until the flag flips is `geo-event-search-shape.test.ts` ("lands
+on the peak far more often than chance", currently 0/24).
+
+⚠️ **That 0/24 may be the instrument, not the search** (2026-08-11, from geometry
+rather than a run). The test asserts on `picks[0]`, and `newGeoEventFor` sorts
+picks by distance **to the user** across up to 7 searched tiles. In the fixture
+the peak is 395 m from the user in the user's own tile, and the user stands ~30 m
+from that tile's western edge with scored ground beyond it — so a neighbour tile
+supplies a nearer pick and the peak's tile is never examined. **Print every pick
+with its tile before drawing any conclusion from that number**, and note the same
+instrument produced the climb path's 0/24 too.
+
+Both paths stay live on purpose: the scan is measured at 364 ms over _one_ tile
+and that is a lower bound, so the climb stays reachable and its tests keep
+running rather than becoming a fallback nobody exercises.

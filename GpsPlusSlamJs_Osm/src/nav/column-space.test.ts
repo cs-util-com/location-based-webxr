@@ -133,15 +133,20 @@ describe("the column state space", () => {
     // directly, so removing the cell itself from its own candidate list left
     // it passing — the move was legal but the search could never propose it.
     //
-    // THE ORIGIN SITS AT -0.5, and that is what makes the step load-bearing.
-    // The first draft put it at 0, from which the landing's upper level was
-    // directly enterable — so the route skipped the in-place step and the test
-    // proved nothing. Offset, the arithmetic leaves exactly one way through:
+    // THE GROUND IS FLAT AND EVERY LEVEL IS A HEIGHT ABOVE IT, which is what
+    // makes the ladder load-bearing. An earlier version of this fixture put the
+    // origin at -0.5 and gave each cell a single level, so the blocked moves
+    // were blocked by an ABSOLUTE height difference — and once the predicate
+    // learned to read a ground, that 0.5 m became a 7 % slope it was happy to
+    // walk, opening a direct route and leaving the test proving nothing. Here
+    // every cell's lowest level is 0, so no slope allowance exists anywhere and
+    // the arithmetic leaves exactly one way through:
     //
-    //   origin@-0.5 → landing@0     0.5 — legal, just
-    //   origin@-0.5 → landing@0.4   0.9 — refused
-    //   landing@0   → far@0.8       0.8 — refused
-    //   landing@0   → landing@0.4   0.4 — legal, and the only remaining move
+    //   origin@0    → landing@0.8   0.8 — refused
+    //   origin@0    → landing@0.4   0.4 — legal, the way in
+    //   landing@0.4 → far@1.2       0.8 — refused
+    //   landing@0.4 → landing@0.8   0.4 — legal, and the only remaining move
+    //   landing@0.8 → far@1.2       0.4 — legal, out
     const landing = gridRingUnsafe(ORIGIN, 1)[0]!;
     const far = gridDisk(landing, 1).find(
       (cell) => gridDistance(ORIGIN, cell) === 2,
@@ -149,20 +154,27 @@ describe("the column state space", () => {
 
     const stepped = columnSpace({
       levelsAt: (cell) => {
-        if (cell === ORIGIN) return [-0.5];
-        if (cell === landing) return [0, 0.4];
-        if (cell === far) return [0.8];
+        if (cell === ORIGIN) return [0];
+        if (cell === landing) return [0, 0.4, 0.8];
+        if (cell === far) return [0, 1.2];
         return [];
       },
     });
 
-    const path = findStatePath(at(ORIGIN, -0.5), isCell(far), stepped);
+    // THE GOAL IS A STATE, NOT A CELL. `far` is standable at ground level too,
+    // and a cell-shaped goal would be satisfied by walking there flat — which
+    // is a fine route and no evidence at all about level changes.
+    const path = findStatePath(
+      at(ORIGIN, 0),
+      (state) => state.cell === far && state.heightM === 1.2,
+      stepped,
+    );
 
     expect(path).toBeDefined();
-    // Both levels of the landing appear, which is what "changed level in
+    // Two levels of the landing appear, which is what "changed level in
     // place" looks like in a route.
     expect(path!.filter((state) => state.cell === landing)).toHaveLength(2);
-    expect(path!.at(-1)).toEqual(at(far, 0.8));
+    expect(path!.at(-1)).toEqual(at(far, 1.2));
   });
 
   it("generates no state for a cell with no standable level", () => {
@@ -252,5 +264,144 @@ describe("routing with the column model", () => {
     for (let i = 1; i < path.length; i++) {
       expect(space.canEnter!(path[i - 1]!, path[i]!)).toBe(true);
     }
+  });
+});
+
+/**
+ * The ground under a column, and the slope rule it enables.
+ *
+ * Why these tests matter:
+ * `columnsAdjacent` can only separate a hillside from a wall when it is told
+ * where the walking surface is, and THIS is the module that knows: the lowest
+ * level of a cell is its ground, by construction of `obstacleLevelsAt`. Before
+ * this, every route over real terrain compared absolute DEM samples against a
+ * 0.5 m step limit and refused anything steeper than ~7.5 %.
+ *
+ * The load-bearing case is "looks the ground up itself": the SEARCH's start
+ * state is built by the caller and carries no ground, so a space that trusted
+ * its inputs would apply the old absolute rule to the agent's very first step.
+ *
+ * @see ../../docs/2026-08-18-0659-nav-terrain-slope-vs-step-plan.md
+ */
+describe("the ground beneath a column", () => {
+  /** A hillside: 1.2 m of fall per ring, ~17 % at res 13. Walkable, not flat. */
+  const HILL_FALL_M = 1.2;
+  const hillGround = (cell: string): number =>
+    -HILL_FALL_M * gridDistance(ORIGIN, cell);
+
+  const hill = columnSpace({
+    levelsAt: (cell) => (FIELD.has(cell) ? [hillGround(cell)] : []),
+  });
+
+  const downhill = gridRingUnsafe(ORIGIN, 1)[0]!;
+
+  it("admits a step down a hillside that the absolute rule refused", () => {
+    // THE REPORTED DEFECT, at the seam where it was introduced. 1.2 m over
+    // ~7.1 m is ~17 %: an ordinary steep street, and four times the old limit.
+    expect(
+      hill.canEnter!(
+        { cell: ORIGIN, heightM: hillGround(ORIGIN) },
+        { cell: downhill, heightM: hillGround(downhill) },
+      ),
+    ).toBe(true);
+  });
+
+  it("looks the ground up itself rather than trusting the states given to it", () => {
+    // THE CASE A NAIVE WIRING GETS WRONG. `findStatePath` is handed a start
+    // state built by the CALLER — `planRouteWithIndex` constructs
+    // `{ cell, heightM }` from the obstacle levels — so if this space read a
+    // ground off the state instead of resolving it per cell, the agent's first
+    // step would still be judged by the old absolute rule and a route out of a
+    // hillside would still be refused.
+    const path = findStatePath(
+      { cell: ORIGIN, heightM: hillGround(ORIGIN) },
+      isCell(gridRingUnsafe(ORIGIN, 4)[0]!),
+      hill,
+    );
+    expect(path).toBeDefined();
+  });
+
+  it("still refuses ground too steep to walk", () => {
+    // The control. Without it "slopes are walkable" would be indistinguishable
+    // from "the slope rule does nothing".
+    const cliff = columnSpace({
+      levelsAt: (cell) =>
+        FIELD.has(cell) ? [-8 * gridDistance(ORIGIN, cell)] : [],
+    });
+    expect(
+      cliff.canEnter!(
+        { cell: ORIGIN, heightM: 0 },
+        { cell: downhill, heightM: -8 },
+      ),
+    ).toBe(false);
+  });
+
+  it("keeps a wall on the hillside unclimbable", () => {
+    // The slope allowance is for the GROUND. A wall standing on a slope is
+    // still 8 m above the ground beneath it, and no relief adds to the budget
+    // for climbing it — the property the decomposition exists to preserve.
+    const walledHill = columnSpace({
+      levelsAt: (cell) =>
+        !FIELD.has(cell)
+          ? []
+          : WALL.has(cell)
+            ? [hillGround(cell), hillGround(cell) + WALL_HEIGHT_M]
+            : [hillGround(cell)],
+    });
+    const wallCell = [...WALL][0]!;
+    const beside = gridDisk(wallCell, 1).find(
+      (cell) => cell !== wallCell && !WALL.has(cell) && FIELD.has(cell),
+    )!;
+
+    expect(
+      walledHill.canEnter!(
+        { cell: beside, heightM: hillGround(beside) },
+        { cell: wallCell, heightM: hillGround(wallCell) + WALL_HEIGHT_M },
+      ),
+    ).toBe(false);
+    // ...while the ground beside it stays walkable, or the assertion above
+    // would pass on a space that had severed the hill entirely.
+    expect(
+      walledHill.canEnter!(
+        { cell: beside, heightM: hillGround(beside) },
+        { cell: wallCell, heightM: hillGround(wallCell) },
+      ),
+    ).toBe(true);
+  });
+
+  it("takes a caller-supplied gradient", () => {
+    const cliffed = columnSpace({
+      levelsAt: (cell) =>
+        FIELD.has(cell) ? [-8 * gridDistance(ORIGIN, cell)] : [],
+      maxGroundGradient: 2,
+    });
+    expect(
+      cliffed.canEnter!(
+        { cell: ORIGIN, heightM: 0 },
+        { cell: downhill, heightM: -8 },
+      ),
+    ).toBe(true);
+  });
+
+  it("asks its level source once per cell", () => {
+    // MEMOISED FOR THE LIFE OF ONE SPACE, and asserted because the cost is
+    // real rather than theoretical: the ground is now resolved on the
+    // `canEnter` path as well as the `candidates` path, and the demo's
+    // `levelsAt` walks an obstacle index and samples a heightfield per call.
+    const seen = new Map<string, number>();
+    const counted = columnSpace({
+      levelsAt: (cell) => {
+        seen.set(cell, (seen.get(cell) ?? 0) + 1);
+        return FIELD.has(cell) ? [0] : [];
+      },
+    });
+    counted.candidates({ cell: ORIGIN, heightM: 0 });
+    counted.candidates({ cell: downhill, heightM: 0 });
+    counted.canEnter!(
+      { cell: ORIGIN, heightM: 0 },
+      { cell: downhill, heightM: 0 },
+    );
+
+    expect([...seen.values()].every((count) => count === 1)).toBe(true);
   });
 });

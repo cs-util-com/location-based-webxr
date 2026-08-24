@@ -1,0 +1,157 @@
+/**
+ * Guardrail: the AR entry's readiness signals are actually CONNECTED in
+ * `main.ts` (DEC-M1, DEC-M4).
+ *
+ * WHY SOURCE TEXT, and it is the same argument `ar-walk-wiring.test.ts` makes at
+ * length: `main.ts` builds a Leaflet map, a `WebGLRenderer` and a worker, so the
+ * unit suite cannot run it, and headless Chromium has no WebXR device, so the
+ * e2e cannot reach the AR path either. A static check is what is left.
+ *
+ * WHY IT IS WORTH HAVING HERE IN PARTICULAR. Both decisions this file guards
+ * are of the shape "a value already computed correctly somewhere is never
+ * handed to the thing that needs it":
+ *
+ * - the entry pass settles and nothing told the veil (DEC-M1), and
+ * - the terrain field is replaced and nothing re-derives the quest marks
+ *   (DEC-M4) — which is the ~100 m defect the eighteenth field session
+ *   reported, and which every green gate in this repo missed because each
+ *   module was correct in isolation.
+ *
+ * WHAT IT CANNOT DO: prove the calls RUN, or that their arguments are right.
+ * `ar-mode.test.ts` owns the veil's behaviour and
+ * `quest-beacon-placement.test.ts` owns the placement arithmetic. This only
+ * closes the gap between "each piece works" and "the app uses them".
+ *
+ * @see ar-entry-dom-veil.ts.md
+ */
+
+import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const MAIN = readFileSync(path.join(HERE, "main.ts"), "utf-8");
+
+/** Source with comments stripped, so a mention in prose cannot satisfy a guard. */
+const CODE = MAIN.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+
+describe("the AR entry readiness gate is wired into main.ts (DEC-M1)", () => {
+  it("hands `startArMode` a getter for the entry pass having settled", () => {
+    // Without this the veil gates on the alignment alone and uncovers while the
+    // city on screen is still the one built for the DESKTOP datum.
+    expect(CODE).toMatch(/entryContentReady:\s*\(\)\s*=>\s*arContentReady/);
+  });
+
+  it("sets the flag from the promise startWalking created, on BOTH settle paths", () => {
+    // `finally`, not `then`: a failed fetch that left this false would hold
+    // every later entry to the 8 s ceiling for the rest of the page's life.
+    //
+    // AND FROM A LOCAL, not from `currentPass` — the position subscriber and
+    // the session teardown both reassign that, so attaching to it would set the
+    // flag on whichever pass happened to be current instead of on the entry's.
+    expect(CODE).toMatch(
+      /const entryPass = runPassFor\([\s\S]{0,600}?entryPass\.finally\(\(\) => \{[\s\S]{0,200}?arContentReady = true;/,
+    );
+  });
+
+  it("keys the flag on the entry that started the pass, not on the latest one", () => {
+    // THE RE-ENTRY RACE (milestone review, finding 1). Clearing the flag in
+    // `enterAr` does not cancel the PREVIOUS entry's pending pass — and backing
+    // out of a slow entry to try again is the case `ar-mode.ts` calls common.
+    // Without the generation check, entry #1's pass settling opens entry #2's
+    // veil while its own rebuild is still running: the desktop-datum city
+    // uncovered, which is the failure the gate exists to prevent.
+    expect(CODE).toMatch(/arEntryGeneration \+= 1;/);
+    expect(CODE).toMatch(
+      /const generation = arEntryGeneration;[\s\S]{0,300}?if \(generation !== arEntryGeneration\) return;/,
+    );
+  });
+
+  it("clears the flag when an entry STARTS, not only when one ends", () => {
+    // A second AR entry in the same page session would otherwise inherit the
+    // first one's `true` and uncover before its own rebuild had run.
+    expect(CODE).toMatch(
+      /const enterAr = [\s\S]{0,400}?arContentReady = false;/,
+    );
+  });
+
+  it("reports how long the wait took, so the ceiling can be measured", () => {
+    // DEC-M1a. `ENTRY_READY_MAX_WAIT_S` is a guess; a field session that comes
+    // back with "gave up waiting" is one where the ceiling, not the readiness,
+    // ended the black screen — and that is the number the next run has to
+    // bring back.
+    expect(CODE).toMatch(/onEntryReady:/);
+  });
+
+  it("also files both measurements as log-only diagnostics", () => {
+    // Owner decision, 2026-08-23: a toast can be read once, on a walk, and
+    // never again — the same numbers dispatched as `diagnostics/note` land in
+    // the persisted action stream, where a recording can be asked about them
+    // later.
+    //
+    // ⚠️ INERT IN THIS APP TODAY, and that is why a source-text guard is worth
+    // having at all: the demo's store uses a `NullStorageBackend`, so nothing
+    // is written and no runtime assertion here could tell a live dispatch from
+    // a deleted one.
+    expect(CODE).toMatch(/kind: "ar-entry-ready"/);
+    expect(CODE).toMatch(/kind: "ar-elevation-estimate-engaged"/);
+    // BOTH FLAGS WITH THE TIME. `afterS` alone cannot distinguish "ready at
+    // 2 s" from "gave up at the ceiling", which is the whole measurement.
+    // The fields are matched independently rather than as one rendered object
+    // literal: `detail: \{ afterS, aligned, contentReady \}` asserted
+    // Prettier's CURRENT one-line formatting, so a fourth field or deeper
+    // indentation would reflow the object and fail this on a change that is
+    // strictly correct. A dropped flag still fails.
+    expect(CODE).toMatch(
+      /kind: "ar-entry-ready",[\s\S]{0,200}?detail: \{[\s\S]{0,200}?afterS[\s\S]{0,200}?aligned[\s\S]{0,200}?contentReady/,
+    );
+    // AN ABSOLUTE TIMELINE, not the XR frame clock: the note is read back
+    // months later, out of a zip.
+    expect(CODE).toMatch(/atMs: nowEpochMs\(\)/);
+  });
+
+  it("gives each measurement a console copy that survives toast supersession", () => {
+    // Both instruments share ONE single-slot toast, and show() clears the
+    // previous message — so whichever fires second evicts the first, and both
+    // docstrings make ABSENCE data ("no toast in a whole session means the
+    // estimator never engaged"). A superseded stamp and a never-fired one are
+    // indistinguishable to the field observer, so the wrong negative the
+    // instruments exist to avoid comes back. The console line is strictly
+    // additive: unreadable in the field, but the only copy that survives
+    // supersession, recoverable with a cable — and the diagnostics note is
+    // inert in this demo (NullStorageBackend). Found by claude[bot] review on
+    // PR #349.
+    expect(CODE.match(/console\.info\(line\)/g)).toHaveLength(2);
+  });
+});
+
+describe("the quest marks are re-derived with the terrain field (DEC-M4)", () => {
+  it("re-derives the held event's placements where the field is applied", () => {
+    // THE DEFECT THIS EXISTS FOR. `setQuestBeacons` had exactly one call site —
+    // the `geoEvent` subscriber — so the marks were placed once, against the
+    // field as it stood then. AR entry replaces that field with one on a
+    // different datum and rebuilds everything else against it; the marks kept
+    // the old one and ended up ~100 m below the city.
+    //
+    // Asserted on the terrain-apply path specifically, because re-deriving in
+    // the subscriber alone is exactly the state this fixes.
+    expect(CODE).toMatch(/apply:\s*\(\{[\s\S]{0,4000}?drawQuestBeacons\(\)/);
+  });
+
+  it("draws them from ONE function, so the two triggers cannot disagree", () => {
+    // The two triggers answer different questions — "the quest changed" and
+    // "the ground under it changed" — and two copies of the placement call is
+    // how they would drift. There is exactly one `setQuestBeacons` call site,
+    // and both triggers go through it.
+    expect(CODE.match(/buildingView\.setQuestBeacons\(/g)?.length ?? 0).toBe(1);
+    expect(
+      CODE.match(/drawQuestBeacons\(\);/g)?.length ?? 0,
+    ).toBeGreaterThanOrEqual(2);
+    // AND IT READS THE EVENT FROM THE STORE, so there is no second copy of
+    // "which quest is held" for the terrain path to get wrong.
+    expect(CODE).toMatch(
+      /const drawQuestBeacons[\s\S]{0,200}?selectOsmView\(store\.getState\(\)\)\.geoEvent/,
+    );
+  });
+});

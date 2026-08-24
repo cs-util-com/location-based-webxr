@@ -13,6 +13,7 @@
  * @see osm-store.ts.md
  */
 
+import { ZERO_STAGE_TIMINGS } from "./snapshot-timings-fixture.js";
 import { describe, it, expect, vi } from "vitest";
 
 import {
@@ -39,10 +40,16 @@ const snapshot = (cells: number): DemoSnapshot => ({
   missingTiles: [],
   loadedTiles: ["871fa199affffff"],
   cellCount: cells,
-  heatMax: 2,
+  observedMax: 2,
+  // EVERY generated cell scores 2 against a threshold of 1, so the count is
+  // `cells`. It was hard-coded to 1 when the field was added, which made the
+  // fixture disagree with its own cells and would have hidden a legend or
+  // status-count regression (r513 review).
+  aboveThresholdCount: cells,
   undergroundCount: 0,
   undergroundOutlines: [],
   stats: { chunksScored: 1, chunksReused: 0, geometryBuilt: 1 },
+  timings: ZERO_STAGE_TIMINGS,
   // The last ring: these tests are about the store, and a half-widened fixture
   // would say something this file is not trying to say.
   radius: SCORE_DISK_MAX_RADIUS,
@@ -175,5 +182,98 @@ describe("subscribeToOsmView", () => {
     off();
     store.dispatch(actions.categoryChanged("restingArea"));
     expect(seen).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * The store migration to `createSlamAppStore` (AR milestone 1).
+ *
+ * Why these tests matter: the migration was described in this file's own source
+ * as "a one-line change" for a year, and it was not. The framework's factory
+ * hardcoded its dev-check exemptions, so adopting it naively would have
+ * reintroduced a **measured 71 ms per dispatch** — the deep serialisability
+ * walk over ~931 scored cells — in exactly the builds someone uses to judge
+ * whether the app feels fast. That regression is invisible: nothing fails, the
+ * app just gets slower in development.
+ *
+ * So the exemption is pinned, and so is the framework state AR needs, because
+ * "the store still works" is not the property the migration was for.
+ */
+describe("the demo store after the framework migration", () => {
+  it("exempts the snapshot from BOTH dev walks, asserted on the config", () => {
+    // REWRITTEN. The first version dispatched a snapshot and asserted no
+    // `console.error` containing "serializable" — and the fixture snapshot is
+    // entirely plain, so RTK emits nothing with or WITHOUT the exemption. It
+    // passed either way while its comment called it "the 71 ms regression, as
+    // an observable". The adjacent test at the top of this file already says
+    // that channel is closed on purpose.
+    //
+    // The 71 ms symptom is a TIMING warning ("SerializableStateInvariantMiddleware
+    // took 71ms…") on `console.warn`, not a serialisability complaint — and it
+    // only appears under a load no unit test should manufacture. So the honest
+    // assertion is on the thing that was actually at risk: that a non-plain
+    // value in the snapshot passes through both dev walks silently. A `Map` is
+    // the exact value RTK objects to, and the one `osm-store.ts.md` names.
+    const error = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
+
+    demo.store.dispatch(
+      demo.actions.snapshotReady({
+        ...snapshot(3),
+        // Deliberately non-serialisable. Without the exemption RTK logs for
+        // both the ACTION and the resulting STATE path.
+        stats: new Map([["chunksScored", 1]]),
+      } as unknown as DemoSnapshot),
+    );
+
+    const complaints = error.mock.calls
+      .flat()
+      .filter((arg) => typeof arg === "string" && /serializ/i.test(arg));
+    expect(complaints).toEqual([]);
+    error.mockRestore();
+  });
+
+  it("keeps scanning the REST of the state, so the exemption is narrow", () => {
+    // The counterweight, and the reason the exemption is two named paths rather
+    // than `enableDevChecks: false`. A non-plain value OUTSIDE the snapshot must
+    // still be reported — otherwise the migration bought the 71 ms back by
+    // turning every check off, which is the option this design rejected.
+    const error = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
+
+    demo.store.dispatch({
+      type: "osmView/nonFatalError",
+      payload: new Map([["not", "plain"]]),
+    });
+
+    const complaints = error.mock.calls
+      .flat()
+      .filter((arg) => typeof arg === "string" && /serializ/i.test(arg));
+    expect(complaints.length).toBeGreaterThan(0);
+    error.mockRestore();
+  });
+
+  it("carries the framework GPS state that AR mode reads", () => {
+    // THE REASON THE MIGRATION HAPPENED. Without these slices the AR origin
+    // (`selectZeroReference`) and the alignment subscription have nothing to
+    // read, and the failure would appear only once someone entered AR.
+    const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
+    const state: unknown = demo.store.getState();
+
+    for (const slice of ["gpsData", "arElements", "tracking"]) {
+      expect(state, `${slice} must exist for the AR wiring`).toHaveProperty(
+        slice,
+      );
+    }
+  });
+
+  it("still exposes the demo's own slice unchanged", () => {
+    // The counterweight: the migration must not have moved the demo's state.
+    const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
+    expect(selectOsmView(demo.store.getState()).category).toBe("walkable");
   });
 });

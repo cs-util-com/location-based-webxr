@@ -1,0 +1,310 @@
+/**
+ * The two conversions AR mode needs, and the gate on entering at all.
+ *
+ * Why these tests matter: both conversions are one-liners of the kind that stay
+ * wrong for months, because both fail SILENTLY and both fail as something else.
+ * A `lon`/`lng` slip reads as a city in the Gulf of Guinea; a sign slip on the
+ * geoid puts everything ~94 m out at Cologne, in the direction `geoid.ts` warns
+ * "does not look like a bug in this file — it looks like a bug in the GPS+SLAM
+ * fusion, which is a much more expensive place to go looking".
+ *
+ * @see ar-origin.ts.md
+ */
+
+import { describe, it, expect } from "vitest";
+
+import {
+  absoluteDatumFor,
+  canEnterAr,
+  fieldMatchesArDatum,
+  nueBearingDeg,
+  sceneAnchorOffsetNue,
+  terrainReadout,
+  toDemoLatLng,
+  type FrameworkLatLong,
+} from "./ar-origin.js";
+
+/** Cologne, and the framework's spelling of it. */
+const ORIGIN: FrameworkLatLong = { lat: 50.9413, lon: 6.9583 };
+
+describe("the framework/demo coordinate adapter", () => {
+  it("moves the longitude across the lon/lng spelling difference", () => {
+    // The framework says `lon`, this demo says `lng`. Asserted on the VALUE
+    // rather than on the shape, because the failure that matters is a longitude
+    // that silently became `undefined` and then `NaN` two frames later.
+    expect(toDemoLatLng(ORIGIN)).toEqual({ lat: 50.9413, lng: 6.9583 });
+  });
+
+  it("does not confuse the two axes", () => {
+    // A transposition survives every same-value fixture, so the fixture here
+    // deliberately has lat and lng far apart and of different signs.
+    expect(toDemoLatLng({ lat: 10, lon: -70 })).toEqual({
+      lat: 10,
+      lng: -70,
+    });
+  });
+});
+
+describe("the absolute elevation datum", () => {
+  it("negates the undulation, because heightAt SUBTRACTS the datum", () => {
+    // `heightAt` returns `surfaceHeight - datum`. To turn an orthometric DEM
+    // height into the ellipsoidal one the GPS-world frame is measured in, the
+    // wanted result is `surface + N` — so the datum must be `-N`.
+    expect(absoluteDatumFor(46.9)).toBeCloseTo(-46.9, 6);
+  });
+
+  it("composes to DEM + N, which is the property that actually matters", () => {
+    // Stated as the end-to-end arithmetic rather than as a sign, because the
+    // sign alone is exactly what a reader cannot check. A 53 m orthometric post
+    // at Cologne must read as 99.9 m ellipsoidal — what a GNSS altitude reports
+    // standing on it.
+    const surfaceHeight = 53;
+    const undulation = 46.9;
+
+    const read = surfaceHeight - absoluteDatumFor(undulation);
+
+    expect(read).toBeCloseTo(99.9, 6);
+  });
+
+  it("is symmetric about a zero geoid, so ZERO_GEOID changes nothing", () => {
+    // `ZERO_GEOID` is the library default and means "apply no correction". It
+    // must pass through as a no-op rather than as a small wrong number.
+    expect(absoluteDatumFor(0)).toBe(-0);
+    expect(53 - absoluteDatumFor(0)).toBe(53);
+  });
+});
+
+describe("the offset between the demo's anchor and the GPS origin", () => {
+  /** A stand-in for the package's `enuFrameAt`, in metres-per-degree terms. */
+  const fakeFrame = (origin: { lat: number; lng: number }) => ({
+    toEnu: (p: { lat: number; lng: number }) => ({
+      x: (p.lng - origin.lng) * 70_000, // east
+      y: (p.lat - origin.lat) * 111_320, // north
+    }),
+  });
+
+  it("measures FROM the GPS origin, in NUE terms", () => {
+    // r507 REVIEW. The city is authored about the demo's scene anchor and the
+    // GPS-world frame is about `zero`; without this offset the city renders at
+    // the right orientation and the wrong place.
+    const offset = sceneAnchorOffsetNue(
+      { lat: 50.0, lon: 6.0 },
+      { lat: 50.001, lng: 6.001 },
+      fakeFrame,
+    );
+
+    expect(offset.north).toBeCloseTo(111.32, 2);
+    expect(offset.east).toBeCloseTo(70, 2);
+  });
+
+  it("is zero when the anchor and the fix coincide", () => {
+    // The common case once someone presses locate before entering AR, and the
+    // one where a sign error would be invisible.
+    const offset = sceneAnchorOffsetNue(
+      { lat: 50.9413, lon: 6.9583 },
+      { lat: 50.9413, lng: 6.9583 },
+      fakeFrame,
+    );
+
+    expect(offset.north).toBeCloseTo(0, 9);
+    expect(offset.east).toBeCloseTo(0, 9);
+  });
+
+  it("carries no vertical term, so the geoid is not double-counted", () => {
+    // The height comes from the terrain's absolute datum. A vertical offset
+    // here would apply the correction twice.
+    expect(
+      sceneAnchorOffsetNue(
+        { lat: 50.0, lon: 6.0 },
+        { lat: 51.0, lng: 7.0 },
+        fakeFrame,
+      ).up,
+    ).toBe(0);
+  });
+});
+
+describe("the gate on entering AR", () => {
+  it("refuses while the origin is null", () => {
+    // `zero` is null until the first GPS fix. Entering then anchors the city to
+    // nothing, and DEC-R11-6 rejected re-anchoring on the first non-null
+    // `zero` — so there is no correction available later. Waiting is the only
+    // correct behaviour.
+    expect(canEnterAr(null)).toBe(false);
+  });
+
+  it("allows it once a fix has landed", () => {
+    expect(canEnterAr(ORIGIN)).toBe(true);
+  });
+
+  it("allows an origin at exactly 0,0 rather than treating it as absent", () => {
+    // Null Island is a real coordinate and a falsy-LOOKING one.
+    //
+    // HONEST ABOUT WHAT THIS CAN CATCH: the argument is an object, so
+    // `!!{lat:0,lon:0}` is already `true` and the classic truthiness bug is
+    // unreachable through this signature — an earlier version of this comment
+    // claimed otherwise. What it does pin is that the guard stays a check on
+    // the ORIGIN rather than becoming one on its fields, which is the
+    // refactor that would reintroduce it (`origin?.lat` is `0`, which is
+    // falsy).
+    expect(canEnterAr({ lat: 0, lon: 0 })).toBe(true);
+  });
+});
+
+/**
+ * Why this test matters: the axis convention is the entire risk in this
+ * function. `ar-scene-hierarchy.ts` records that two independent readers already
+ * got the alignment frame backwards, and an earlier draft of the AR HUD review
+ * did too. A bearing computed on the wrong axes is not obviously wrong on
+ * screen — it is a plausible number that is simply not north, which is the worst
+ * failure available for a compass readout.
+ */
+describe("nueBearingDeg", () => {
+  it("maps the four cardinal directions in NUE (x=north, z=east)", () => {
+    expect(nueBearingDeg(1, 0)).toBe(0); // facing north
+    expect(nueBearingDeg(0, 1)).toBe(90); // facing east
+    expect(nueBearingDeg(-1, 0)).toBe(180); // facing south
+    expect(nueBearingDeg(0, -1)).toBe(270); // facing west
+  });
+
+  it("turns CLOCKWISE from north, which is what a compass does", () => {
+    // The sign error that would pass every cardinal test but one: swapping the
+    // atan2 arguments gives anticlockwise, and north/south/east/west alone
+    // cannot always catch it.
+    expect(nueBearingDeg(1, 1)).toBeCloseTo(45, 6); // north-east
+    expect(nueBearingDeg(-1, 1)).toBeCloseTo(135, 6); // south-east
+  });
+
+  it("always lands in [0, 360)", () => {
+    expect(nueBearingDeg(1, -0.0001)).toBeGreaterThanOrEqual(0);
+    expect(nueBearingDeg(1, -0.0001)).toBeLessThan(360);
+  });
+
+  it("refuses a degenerate direction rather than claiming north", () => {
+    // Looking straight up or down projects to nothing horizontal. Reporting 0
+    // there would be a confident "facing north" while the phone points at the
+    // ground.
+    expect(nueBearingDeg(0, 0)).toBeUndefined();
+    expect(nueBearingDeg(1e-9, -1e-9)).toBeUndefined();
+    expect(nueBearingDeg(Number.NaN, 1)).toBeUndefined();
+  });
+});
+
+/**
+ * Why this test matters: found in review of PR #311. Publishing a terrain height
+ * from the desktop field while AR is running produces a residual that is wrong
+ * by tens of metres — the same magnitude as the ~10 m symptom the residual line
+ * exists to diagnose. A reading that is wrong by exactly the quantity under
+ * measurement is worse than no reading, because it looks like the answer.
+ */
+describe("fieldMatchesArDatum", () => {
+  it("accepts a field sampled against AR's datum", () => {
+    const undulation = 46.2;
+    expect(
+      fieldMatchesArDatum({ datum: absoluteDatumFor(undulation) }, undulation),
+    ).toBe(true);
+  });
+
+  it("REJECTS the desktop field, whose datum is the window-centre height", () => {
+    // The live failure: entering AR while this field is still held publishes
+    // relief as though it were an ellipsoidal height.
+    expect(fieldMatchesArDatum({ datum: 0 }, 46.2)).toBe(false);
+    expect(fieldMatchesArDatum({ datum: 118.4 }, 46.2)).toBe(false);
+  });
+
+  it("rejects a field sampled against a DIFFERENT undulation", () => {
+    // Re-anchoring far enough to change N leaves a field that is subtly wrong
+    // rather than obviously so.
+    expect(fieldMatchesArDatum({ datum: absoluteDatumFor(46.2) }, 31.4)).toBe(
+      false,
+    );
+  });
+
+  it("says no when there is no field or no AR datum", () => {
+    // The desktop has no AR datum at all, so there is nothing to match against.
+    expect(fieldMatchesArDatum(undefined, 46.2)).toBe(false);
+    expect(fieldMatchesArDatum({ datum: 0 }, undefined)).toBe(false);
+    expect(fieldMatchesArDatum(undefined, undefined)).toBe(false);
+  });
+});
+
+/**
+ * Why these tests matter (PR #312 review): the datum guard above is right, and
+ * applying it to the WHOLE terrain payload silently disabled the alarm it sits
+ * next to.
+ *
+ * A failed or all-missing DEM load returns `flat(...)`, which hardcodes
+ * `datum: 0` regardless of the undulation requested (`heightfield.ts:189`). So
+ * for any non-zero undulation — −46.2 at Cologne — `fieldMatchesArDatum`
+ * REJECTS the failed field, and if `terrainHasData` is published only inside
+ * that gate then `terrainHasData: false` is never published at all.
+ *
+ * `ar-measurements.ts` calls that flag "THE MOST IMPORTANT FLAG IN THIS
+ * INTERFACE" and `describeArMeasurements` puts `terrain: no DEM` in the
+ * always-shown collapsed set precisely so a silent terrain failure cannot pass
+ * as flat ground. Gated, an AR session whose DEM failed showed NO terrain line —
+ * indistinguishable from "the AR field has not landed yet", which is the same
+ * silence the flag exists to break.
+ *
+ * The datum mismatch invalidates the HEIGHT, not the hasData CLAIM, so the two
+ * are gated separately. These tests exist because the predicate above was
+ * covered in isolation while the payload that consumes it was not — which is
+ * exactly how this passed review.
+ */
+describe("terrainReadout", () => {
+  const UNDULATION = 46.2;
+  const HERE = { x: 10, y: 20 };
+  /** What a failed or empty DEM load produces: flat, datum 0, honest. */
+  const failed = {
+    datum: 0,
+    hasData: false,
+    heightAt: () => 0,
+  };
+
+  it("publishes hasData:false for a FAILED load, though its datum cannot match", () => {
+    // The regression this describe block exists for. `flat()` hardcodes
+    // datum 0, so the datum guard can never accept it — and the "no DEM" alarm
+    // must fire anyway.
+    const readout = terrainReadout(failed, HERE, UNDULATION);
+
+    expect(readout.terrainHasData).toBe(false);
+  });
+
+  it("still withholds the HEIGHT from a field whose datum does not match", () => {
+    // The half that must NOT regress: publishing a height off the desktop field
+    // prints a confident residual tens of metres out.
+    const readout = terrainReadout(failed, HERE, UNDULATION);
+
+    expect(readout.terrainHeightM).toBeUndefined();
+  });
+
+  it("publishes both once the field is AR's own", () => {
+    const arField = {
+      datum: absoluteDatumFor(UNDULATION),
+      hasData: true,
+      heightAt: () => 123.5,
+    };
+    const readout = terrainReadout(arField, HERE, UNDULATION);
+
+    expect(readout.terrainHasData).toBe(true);
+    expect(readout.terrainHeightM).toBe(123.5);
+  });
+
+  it("publishes nothing at all before any field exists", () => {
+    // "No field yet" is genuinely unknown and must stay silent — publishing
+    // hasData:false here would raise the DEM alarm during normal startup.
+    expect(terrainReadout(undefined, HERE, UNDULATION)).toEqual({});
+  });
+
+  it("withholds the height when the user's position is unknown", () => {
+    // No ENU point to sample at, but the field's own hasData is still a fact.
+    const arField = {
+      datum: absoluteDatumFor(UNDULATION),
+      hasData: true,
+      heightAt: () => 123.5,
+    };
+    const readout = terrainReadout(arField, undefined, UNDULATION);
+
+    expect(readout.terrainHasData).toBe(true);
+    expect(readout.terrainHeightM).toBeUndefined();
+  });
+});

@@ -7,6 +7,40 @@ OSM features to building volumes, honouring `building:part`.
 ## Public API
 
 - `buildBuildings(features, { frame, groundHeightM? }): BuildingVolume[]`
+- `solidBuildingFootprints(features): SolidFootprint[]` — the same
+  parts-else-outline selection, **in lat/lng and with no frame**, for
+  [`nav/obstacles.ts`](../nav/obstacles.ts.md). Returns `{ feature,
+parentFeature?, rings }` with rings as `x = lng, y = lat`.
+  - **Shares `assignPartsToOutlines` rather than repeating it.** That function
+    is generic over the footprint type because the rule is affine-invariant:
+    crossing parity does not care about the frame, and the ENU map scales
+    longitude by a constant `cos(lat)`, so the AREA ORDER a smallest-containing
+    rule depends on survives too. Two implementations would drift, and the drift
+    shows as an agent walking through a building that is plainly on screen.
+  - **Skips volumes that are passable underneath, for TWO independent reasons.**
+    - **`min_height > 0`** — the S3DB form for an arch or a gateway. Sealing the
+      ground under one closes the route through it, and walking under a gate is
+      the case the navigation design names.
+    - **`building=roof`** — a canopy is a roof on posts (DEC-R11-14). It needs
+      its own clause because most canopies carry no `min_height` at all, so the
+      first rule misses them, and they are not small: Cologne's station
+      forecourt roof is **~16 200 m², the largest single outline in the whole
+      corpus**, so treating it as solid puts a building-sized hole in the middle
+      of the one site the demo opens on.
+      - **The accepted cost, stated:** a roof mapped over solid walls becomes
+        walk-through. That is rarer than the canopy case and fails towards
+        movement rather than towards an invisible obstruction.
+    - **Note the asymmetry with PICKING in the demo**: both of these are still
+      DRAWN, and `GpsPlusSlamJs_OsmDemo` marks every drawn building chunk as a
+      click blocker — so a canopy is navigable and still swallows a click. See
+      `mesh-layers.ts` there; it is a known gap, not an inconsistency to "fix"
+      by making these solid again.
+  - **The skip happens AFTER the assignment, and that order is load-bearing:**
+    filtering floating parts first changes which outlines get claimed, so a
+    building whose only parts float came back solid as a whole outline while the
+    extruder drew it as floating slabs. Caught by the corpus test at Cologne and
+    Berlin; no hand-built fixture would have.
+  - **No area cap** — a measured deviation from DEC-R11-9. See below.
 - `interface BuildingVolume` — `feature`, `parentFeature?`, `heights`, `mesh`,
   `roofIsApproximate`
   - **`roofIsApproximate` is the real flag from `buildRoof`, not a proxy.**
@@ -80,6 +114,29 @@ OSM features to building volumes, honouring `building:part`.
   rather than of its transport.
   - **`buildings.property.test.ts` is what keeps that true**, and it goes red the
     moment the rule is replaced by "first" again.
+- **The part→outline assignment is INDEXED, not scanned (2026-08-22).**
+  `smallestContaining` walked every outline for every part, so the work was
+  `parts × outlines` and both grow with the working set — the same cross product
+  `annotatePoiHosts` had, found by the same profile and answered by the same
+  `host-grid.ts`.
+  - **Safe for a stronger reason than the host join.** That one depends on
+    candidate ORDER (first enabled host wins), so its index must promise
+    ascending output. This rule picks by smallest area with an explicit key
+    tie-break, so it is order-independent by construction and needs only the
+    grid's superset guarantee. The bounds test and the ray cast are unchanged and
+    still run, so the answer cannot differ.
+  - **Measured, devbox-win11** (Node 24.14.1): the hot path itself —
+    `assignPartsToOutlines` plus `smallestContaining` — went **~102 → ~24 ms per
+    call at k=4, −76 %**, dropping out of the profile's top ten entirely.
+    `buildBuildings` **487.65 → 430.08 ms (−11.8 %)**, diluted by the extrusion
+    work around it; `solidBuildingFootprints`, which is little more than this
+    rule, **156.20 → 85.95 ms (−45.0 %)**.
+  - **The first attempt made `solidBuildingFootprints` 16.8 % SLOWER**, and the
+    reason is worth keeping: `host-grid.ts` had a pitch floor in METRES, while
+    this function is generic over the frame and passes **lat/lng degrees**. One
+    cell then covered the planet, so the index pruned nothing and charged its own
+    overhead. Nothing failed — it was caught only because that caller happened to
+    be benched. `host-grid.ts` is now unit-free and pins that with a test.
 - **The nested case (R5-7, DEC-R5-2) is fixed by the smallest-container rule
   ALONE**, through the pre-existing "an outline with parts is not extruded" line.
   Cologne Cathedral's `way/645732604` (`building=tower`, height 157, "Nordturm")
@@ -112,6 +169,29 @@ OSM features to building volumes, honouring `building:part`.
   all of them under one set of heights would be inventing buildings.
 - Non-buildings are ignored; a feature whose geometry cannot be built is skipped
   rather than throwing, matching the rest of the package.
+
+## Why there is no area cap on outlines
+
+DEC-R11-9 asked for a footprint-area threshold above which a `building=*`
+outline stops counting as solid — to stop a castle-sized outline sealing its own
+courtyard — and deliberately left the value to be **measured against
+`testdata/sites/` rather than guessed**. The measurement says no such threshold
+exists, on two counts:
+
+- **The hazard is not in the corpus.** Heidelberg's defensive castle
+  (`way/254154168`, `historic=castle`, `castle_type=defensive`) carries **no
+  `building` tag at all**, so it never becomes a volume under any rule. The way
+  the design cites as the trap — `historic=castle` also tagged
+  `building=university` (`way/32200575`) — is **533 m²**: a wing, not a bailey.
+- **A cap would break real buildings.** The largest outlines the parts rule
+  leaves standing are Cologne's train station (~14 000 m²), a Berlin office
+  block (~10 200 m²) and Tokyo's Keio department store (~7 200 m²). Any cap low
+  enough to catch an enclosure makes all three walk-through, which is a louder
+  bug than the one it prevents.
+
+`testdata/sites/site-building-obstacles.test.ts` pins both facts, so a corpus
+refresh that introduces a real enclosure fails rather than inheriting this
+answer quietly.
 
 ## Examples
 

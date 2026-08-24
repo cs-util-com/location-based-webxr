@@ -48,6 +48,7 @@ import {
   selectZeroReference,
 } from './app-selectors';
 import { selectTrackingPhase } from './tracking-slice';
+import { clamp01 } from '../utils/clamp01.js';
 
 // ===========================================================================
 // Public types
@@ -179,13 +180,6 @@ const initialState: TrackingQualitySliceState = {
 // ===========================================================================
 // Pure compute helpers
 // ===========================================================================
-
-function clamp01(x: number): number {
-  if (!Number.isFinite(x)) return 0;
-  if (x < 0) return 0;
-  if (x > 1) return 1;
-  return x;
-}
 
 /**
  * §4.8b (Finding 4) — exponential moving-average blend. When `prev` is

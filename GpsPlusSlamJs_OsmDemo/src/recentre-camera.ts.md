@@ -41,8 +41,13 @@ point — **without rotating the camera**.
 - **The `y = 0` pivot plane is untouched.** DEC-R3-6 left that open on purpose;
   it is a separate and much smaller effect. The caller passes `y: 0` and maps
   ENU north to `-z`.
-- **The 2D map's scroll does not drive this.** Declined in the notes themselves:
-  moving the two views independently is wanted.
+- **The 2D map's scroll DOES drive this, since DEC-L4 (2026-08-23).** It was
+  declined in the earlier notes — "moving the two views independently is
+  wanted" — and the seventeenth field session asked for the reversal: a user
+  drag of the map recentres the camera through this function, the same way a map
+  click already did. Only a **user** gesture does; programmatic pans are filtered
+  out by [`map-drag-latch.ts`](./map-drag-latch.ts.md), because two of them aim
+  the camera themselves and would be undone.
 
 ## Examples
 

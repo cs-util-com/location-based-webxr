@@ -8,13 +8,13 @@ and a reticle tracks real-world surfaces under the screen centre.
 
 It is a structural port of the stock three.js `webxr_ar_hittest` example
 (button → AR session → reticle → tap-to-place), adapted for the GPS-aligned
-framework. The full design rationale lives in the plan doc
-[2026-06-03-0553-threejs-arbutton-minimal-ar-example-user-feedback.md](../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-03-0553-threejs-arbutton-minimal-ar-example-user-feedback.md).
+framework. The two deltas that adaptation forces are below, and they are the
+whole lesson of this example.
 
 ## The two framework deltas (what a porting developer must not get wrong)
 
 1. **App-rendered button.** Unlike three.js' `ARButton` (which injects its own
-   DOM), the framework exposes the permission / enter-AR *sequence* as a
+   DOM), the framework exposes the permission / enter-AR _sequence_ as a
    headless controller (`createEnableGpsArController`). The app renders and
    styles its **own** `<button>` over the controller's observable state.
 2. **Parenting.** Placed AR content (here, the reticle) is added under

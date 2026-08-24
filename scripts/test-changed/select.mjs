@@ -57,3 +57,46 @@ export function selectPackages({ trackedChanges, untracked, packageDirs }) {
   }
   return { mode: 'packages', packages: [...selected].sort() };
 }
+
+/**
+ * The commands a `test:changed` run executes, in order.
+ *
+ * Pure so the SPLIT is testable. `selectPackages` above cannot compute the
+ * dependent set — it maps changed paths to top-level dirs and nothing more —
+ * and the closure comes from pnpm's workspace graph at execution time. So the
+ * thing worth asserting is not "which packages are dependents" (pnpm's job,
+ * already correct) but "which commands are emitted, with which environment",
+ * which is where DEC-G2 either holds or silently does not.
+ *
+ * @param {readonly string[]} names - pnpm names of the DIRECTLY changed packages
+ * @param {{ skipBrowserEnv: string }} options - name of the env var that puts a
+ *   gate run in dependent mode
+ * @returns {{ command: string, env: Record<string, string> }[]}
+ */
+export function gateCommands(names, { skipBrowserEnv }) {
+  /** @type {{ command: string, env: Record<string, string> }[]} */
+  const commands = [{ command: 'pnpm run test:repo-config', env: {} }];
+  if (names.length === 0) {
+    return commands;
+  }
+  const filters = (/** @type {(name: string) => string} */ shape) =>
+    names.map(shape).join(' ');
+
+  // Changed packages FIRST and in FULL — e2e included. Fail fast on what was
+  // actually edited.
+  commands.push({
+    command: `pnpm --workspace-concurrency=1 ${filters((n) => `--filter ${n}`)} test`,
+    env: {},
+  });
+  // Then dependents, WITHOUT the browser stages. `...X` is X plus dependents;
+  // `!X` subtracts the ones that just ran in full. An empty result is a safe
+  // no-op: pnpm prints "No projects matched the filters" and exits 0.
+  commands.push({
+    command: `pnpm --workspace-concurrency=1 ${[
+      filters((n) => `--filter "...${n}"`),
+      filters((n) => `--filter "!${n}"`),
+    ].join(' ')} test`,
+    env: { [skipBrowserEnv]: '1' },
+  });
+  return commands;
+}

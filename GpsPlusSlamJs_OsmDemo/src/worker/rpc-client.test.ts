@@ -126,7 +126,7 @@ describe("createRpcClient", () => {
   it("tells the WORKER about an abort, not just the caller", async () => {
     // WHY THIS TEST MATTERS, and it is the reason abort exists at all. Dropping
     // the reply on this side is easy and useless: the worker would keep
-    // fetching 28-68 MB for a position the user has left. The observable
+    // fetching ~21 MB for a position the user has left. The observable
     // requirement is the outgoing `abort` message naming the superseded id.
     const fake = fakeTransport();
     const client = createRpcClient(fake.transport);

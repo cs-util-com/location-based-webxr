@@ -36,7 +36,7 @@ cancellation that reaches the worker, and cleanup.
   whatever else posts to it (a bundler's HMR ping is the usual one), and throwing
   inside a `message` listener is uncatchable by the caller.
 - **Abort posts to the worker, it does not merely drop the reply.** Dropping the
-  reply locally is easy and useless — the worker would keep pulling 28–68 MB for a
+  reply locally is easy and useless — the worker would keep pulling ~21 MB for a
   position the user has left. `DemoPipeline` checks the signal **per tile**, which
   is the granularity where the saving actually is.
 - **An already-aborted signal posts nothing.** Posting and immediately cancelling

@@ -49,7 +49,6 @@ function boundsOf(cell: string): [number, number, number, number] {
   return [south, west, north, east];
 }
 import { DemoPipeline } from "./demo-pipeline.js";
-import { heatScale } from "./heat-colours.js";
 
 describe("chunkFor names the chunk that was actually scored", () => {
   /**
@@ -229,7 +228,7 @@ describe("DemoPipeline.update — abort", () => {
   /**
    * WHY THESE TESTS MATTER, AND WHY THEY ARE HERE RATHER THAN IN AN E2E. The abort
    * signal is the mechanism that stops a superseded position from continuing to
-   * pull tiles, and a tile is 28-68 MB. What makes it real is that `update()`
+   * pull tiles, and a tile is ~21 MB. What makes it real is that `update()`
    * checks the signal BETWEEN tiles, so the saving is "the remaining tiles are
    * never requested".
    *
@@ -415,7 +414,7 @@ describe("the fetch set follows the ring being scored (W4, finding N1)", () => {
 
   it("does NOT fetch it for the first pass, which is what the user waits on", () => {
     // The other direction, and the reason the radius is a parameter rather than
-    // a constant: a res-7 tile is 28–68 MB and 18–110 s. Paying that before the
+    // a constant: a res-7 tile is ~21 MB and ~15–90 s. Paying that before the
     // ring-2 answer would undo W16 entirely.
     const { asked, source } = recordingSource();
     const pipeline = new DemoPipeline({ source, table: TABLE });
@@ -603,7 +602,7 @@ describe("DemoPipeline.geoEvent", () => {
   it("downloads ONLY for the tile the user is standing in", async () => {
     // WHY THIS TEST MATTERS, and it is the rule the code already claims.
     // `geoEvent`'s docstring justifies searching a neighbour only when its data
-    // is present: "a neighbour whose data is missing costs an 18–110 s
+    // is present: "a neighbour whose data is missing costs a ~15–90 s
     // download… Those are free; the rest are skipped." The centre tile is
     // exempt by design — the user is standing in it, so it must be searched
     // whatever it costs.
@@ -651,6 +650,16 @@ describe("DemoPipeline.geoEvent", () => {
     expect(notTheCentres).toEqual([]);
   });
 
+  // 20 s, RAISED FROM THE 5 s DEFAULT BY DEC-K1 — and the reason is the cost of
+  // the change rather than a slow machine. This test runs five full
+  // `update()` passes at `SCORE_DISK_MAX_RADIUS`, which the radius 4 -> 6 rise
+  // took from 61 to 127 chunks each. Measured 8.1 s afterwards against ~4 s
+  // before, so it crossed the default while the suite's workers were busy and
+  // passed when run alone — the shape that reads as flakiness and is not.
+  //
+  // The fixture is NOT trimmed to fit: "five tiles, ~290 chunks" against "one
+  // tile, ~127" is what makes the comparison falsifiable, and shrinking it to
+  // save seconds would weaken the assertion to protect a timeout.
   it("reports THIS search's pinned set, not the session's high-water mark", async () => {
     // WHY THIS TEST MATTERS. `stats.chunksPinnedPeak` on the index is a
     // session-lifetime maximum that is deliberately never reset — its own test
@@ -667,7 +676,7 @@ describe("DemoPipeline.geoEvent", () => {
     // Big: enough ground loaded that several neighbours qualify — five tiles,
     // ~290 chunks. Small: a position 150 km away with nothing loaded around it,
     // so no neighbour qualifies and only the centre's reach is pinned — one
-    // tile, ~61 chunks. A factor of five apart, so this cannot pass by accident.
+    // tile, ~127 chunks. Still far enough apart that this cannot pass by accident.
     const pipeline = new DemoPipeline({ source: wideSource(), table: TABLE });
     for (const offset of [0, 0.01, -0.01, 0.02, -0.02]) {
       await pipeline.update(
@@ -692,7 +701,7 @@ describe("DemoPipeline.geoEvent", () => {
     // And the session maximum really did stay at the bigger value, so the
     // assertion above is about a leak that was available to happen.
     expect(pipeline.stats().chunksPinnedPeak).toBe(big.stats.chunksPinnedPeak);
-  });
+  }, 20_000);
 
   it("measures over-cap against THIS search's pins, not a stale eviction", async () => {
     // WHY THE INDEX'S OWN COUNTER CANNOT ANSWER THIS. `evictBeyond` runs from
@@ -945,11 +954,14 @@ describe("the snapshot carries the heat max, so the cells need not travel", () =
       .update(AT, "walkable")
       .then((snapshot) => {
         expect(snapshot.cells.length).toBeGreaterThan(0);
-        const onThePage = heatScale(
-          snapshot.cells.map((cell) => cell.scores["walkable"] ?? 1),
-          snapshot.threshold,
-        );
-        expect(snapshot.heatMax).toBe(onThePage.max);
+        // RECOMPUTED THE WAY THE PAGE WOULD HAVE, including the `?? 1` identity
+        // for a cell with no entry for this category.
+        let onThePage = 0;
+        for (const cell of snapshot.cells) {
+          const score = cell.scores["walkable"] ?? 1;
+          if (score > onThePage) onThePage = score;
+        }
+        expect(snapshot.observedMax).toBe(onThePage);
       });
   });
 
@@ -961,7 +973,7 @@ describe("the snapshot carries the heat max, so the cells need not travel", () =
       AT,
       "walkable",
     );
-    expect(withCells.heatMax).toBeGreaterThan(withCells.threshold);
+    expect(withCells.observedMax).toBeGreaterThan(withCells.threshold);
 
     const without = await new DemoPipeline({ source, table }).update(
       AT,
@@ -972,7 +984,8 @@ describe("the snapshot carries the heat max, so the cells need not travel", () =
     );
 
     expect(without.cells).toEqual([]);
-    expect(without.heatMax).toBe(withCells.heatMax);
+    expect(without.observedMax).toBe(withCells.observedMax);
+    expect(without.aboveThresholdCount).toBe(withCells.aboveThresholdCount);
     // And the count survives, because the status line reports it.
     expect(without.cellCount).toBe(withCells.cells.length);
   });

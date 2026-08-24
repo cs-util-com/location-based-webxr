@@ -9,7 +9,7 @@
  * reasoning for why the whole suite is offline.
  */
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./e2e-test.js";
 
 import {
   AT_FIXTURE,
@@ -23,6 +23,7 @@ import {
   waitForRefresh,
   enableCellLayer,
   REPAINT,
+  pinQuestClock,
 } from "./fixtures.js";
 
 test.describe("the 3D view", () => {
@@ -525,7 +526,7 @@ test.describe("the 3D view", () => {
       //
       // The fixture has one region in the displayed category, and it is coloured
       // through the SAME
-      // heatColour/heatScale pair the 2D map paints with. That sharing is the point
+      // heatColour/fixedScale pair the 2D map paints with. That sharing is the point
       // of W14: a region reading as "good" in one pane and "poor" in the other is
       // the cross-view disagreement the store exists to prevent.
 
@@ -1057,12 +1058,18 @@ test.describe("the 3D view", () => {
       expect(counts.terrain).toBeGreaterThan(0);
 
       // Attribution is required wherever the data is shown, exactly as for OSM —
-      // and it lives in Leaflet's attribution control rather than the header,
+      // and it lives in the map's attribution line rather than the header,
       // because the header collapses and a credit that can be collapsed away does
       // not satisfy the obligation (DEC-R2-4).
+      //
+      // VISIBLE, not merely present in `textContent` (round three, F10). The
+      // line has an expander now, so a `toContainText` assertion here would
+      // match a credit hidden behind it and report the obligation as met.
       await expect(
-        page.locator("#map .leaflet-control-attribution"),
-      ).toContainText(/Terrain|Mapzen/);
+        page
+          .locator("#map .map-attribution-short")
+          .filter({ hasText: /Mapzen/ }),
+      ).toBeVisible();
 
       // And the terrain is actually doing something, not merely fetched. The
       // relief is in the status line because a viewer needs it for the same
@@ -1552,8 +1559,21 @@ test.describe("the time of day", () => {
       // and this suite has already shipped one vacuous test (§14.5's isocline
       // check, which asserted a constant against an argument it never took):
       //
-      //   plain `cpu`   -> 9.285
-      //   `cpu-slope`   -> 9.302  (the default)
+      //   plain `cpu`   -> 9.285  ->  6.351 after DEC-H5
+      //   `cpu-slope`   -> 9.302  ->  6.435 after DEC-H5  (the default)
+      //
+      // **THE FIXED COLOUR CAP COST A THIRD OF THE MARGIN, and that was the
+      // acceptance criterion for making the change.** Anchoring the ramp at a
+      // constant 1e4 instead of at the brightest cell on screen means the
+      // typical cell no longer reaches the yellow end — which is precisely what
+      // "the data layer is less loud" means, measured. It was predicted before
+      // the change and measured after.
+      //
+      // The margin still clears the bound, at ~127 % of it rather than ~186 %.
+      // **That is a real loss of headroom and it is accepted knowingly**: the
+      // thing bought is that a cell's colour no longer depends on cells the user
+      // cannot see. A future backdrop change has a third less room than it had,
+      // and the rule below applies to it unchanged.
       //
       // **The two agree to within 0.02, and that is the honest reading of F49:
       // the gate WAS sound at the default — by accident.** The aspect tint is
@@ -1564,7 +1584,8 @@ test.describe("the time of day", () => {
       // the accident; it is not carrying its weight in this number today, and
       // that is fine — it is carrying it against the change nobody has made yet.
       //
-      // The bound of 5 therefore sits at ~54 % of the observed margin in both.
+      // The bound of 5 sat at ~54 % of the observed margin in both before the
+      // colour cap; it now sits at ~78 %.
       //
       // **The wrong response to a red here is lowering the margin.** It is
       // either fixing the backdrop or re-judging the decision that made it the
@@ -1660,5 +1681,439 @@ test.describe("the affordance-tile look presets", () => {
       await expect(page.locator("#hotkey-help")).toContainText("preset");
       await page.keyboard.press("?");
     });
+  });
+});
+
+test.describe("the NPC agent", () => {
+  test("routes on a click, walks it, and lets the scene go quiet again", async ({
+    page,
+  }) => {
+    // ONE BOOT FOR THE WHOLE OF STAGE 4 (DEC-R11-18), and the reason is
+    // measured rather than stylistic. The e2e pyramid plan timed this suite's
+    // boot at ~4.8 s and found the e2e stage to be 93 % of this package's gate,
+    // and it named the exact pattern this stage was about to repeat: "rounds
+    // 7-10 each added a feature test with its own boot", which took the
+    // post-fusion suite from ~200 s back to ~547 s. DEC-R11-15 ships stage 4
+    // whole, so one test covering the whole of it is that decision's shape.
+    //
+    // THE FOUR STEPS, and why they have to share a boot: the control click is
+    // what stops the walking assertions being satisfied by an agent that always
+    // takes the long way (the fixture trap the plan's §6 names), and the quiet
+    // assertion is only meaningful against frames that were RISING a moment
+    // earlier.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const scene = page.locator("#scene");
+
+    // NOTHING IS TURNED OFF FIRST, and that is the assertion hiding in the
+    // setup. For one commit this test had to `uncheck` the `areas` layer,
+    // because a region slab outranked the ground and the four `battleArea`
+    // slabs blanket everything near the user at this fixture — so every click
+    // resolved to a region and the agent could never be ordered. DEC-R11-21
+    // reversed that precedence, and the demo's DEFAULT configuration is what
+    // this test now runs against.
+    const canvas = page.locator("#scene canvas");
+    const box = await canvas.boundingBox();
+    if (box === null) throw new Error("no canvas box");
+    /** A click at a fraction of the canvas, in page coordinates. */
+    const clickAt = (fx, fy) =>
+      page.mouse.click(box.x + box.width * fx, box.y + box.height * fy);
+    /** The same click, with a named mouse button. */
+    const clickAtWith = (fx, fy, button) =>
+      page.mouse.click(box.x + box.width * fx, box.y + box.height * fy, {
+        button,
+      });
+
+    await test.step("a right-click on open ground orders nothing", async () => {
+      // THE STEP GOES FIRST because "no route was drawn" is only an assertion
+      // while no route has ever been drawn — after the next step there is a
+      // stale `data-route` to confuse it, and "unchanged" is a much weaker
+      // observation than "still absent".
+      //
+      // R13-7: the view picked on `pointerup` without reading `event.button`,
+      // so this exact gesture ordered the NPC *and* opened the context menu.
+      // DEC-R13-8 reserves the secondary button for the coordinate-copy
+      // affordance, and reserving it means first making it inert.
+      await clickAtWith(0.5, 0.72, "right");
+      // A NEGATIVE ASSERTION NEEDS A REAL WINDOW, and `expect.poll(…).toBe(null)`
+      // does not give one: it passes at t=0, before the worker could possibly
+      // have answered, so it would stay green with the guard deleted. That is
+      // exactly the vacuous assertion the comments further down this test warn
+      // about. TWO SUCCESSIVE POLLS AGREEING is the same idiom the quiescence
+      // step uses, and for the same reason — the poll's own interval supplies
+      // the gap, so there is no `waitForTimeout` to tune. If a route does
+      // appear, the attribute never goes back to null and this times out.
+      let absentBefore = false;
+      await expect
+        .poll(
+          async () => {
+            const absent = (await scene.getAttribute("data-route")) === null;
+            const twice = absent && absentBefore;
+            absentBefore = absent;
+            return twice;
+          },
+          { timeout: 10000, intervals: [500] },
+        )
+        .toBe(true);
+    });
+
+    await test.step("a click on open ground draws a route, near-straight", async () => {
+      // THE CONTROL, and it is the first step for the reason the unit suite
+      // puts its own control first: without it, "a route was drawn" and "a
+      // route wanders" are the same observation. The ratio is what makes it an
+      // assertion rather than a sighting.
+      //
+      // Just below the camera's pivot, which is open ground at the fixture —
+      // the buildings sit in the upper-middle of the frame (the existing
+      // unpickable test relies on the same layout).
+      await clickAt(0.5, 0.72);
+
+      await expect
+        .poll(() => scene.getAttribute("data-route"), REPAINT)
+        .not.toBe(null);
+      const drawn = await scene.getAttribute("data-route");
+      const [points, lengthM, straightM] = String(drawn).split(":").map(Number);
+
+      // A polyline, not a single point: the agent has somewhere to walk.
+      expect(points).toBeGreaterThan(1);
+      expect(lengthM).toBeGreaterThan(0);
+      // NEAR-STRAIGHT. A hex grid cannot draw a perfect line and the route is
+      // quantised to res-13 cell centres, so 1.6x is loose for the
+      // quantisation and far tighter than any detour around a building.
+      expect(lengthM).toBeLessThan(straightM * 1.6);
+    });
+
+    await test.step("the agent moves, so the scene keeps drawing", async () => {
+      // Frames are scheduled ON DEMAND in this view (DEC-R3-9) — there is no
+      // permanent rAF loop — so a rising counter here is only explicable by
+      // something actually animating.
+      const frames = () => scene.getAttribute("data-frames").then(Number);
+      const before = await frames();
+      await expect.poll(frames, REPAINT).toBeGreaterThan(before);
+    });
+
+    await test.step("and the scene goes QUIET once it arrives", async () => {
+      // THE ASSERTION THE WHOLE STAGE RESTS ON (DEC-R11-15). The accepted risk
+      // was a reintroduced permanent render loop — measured at ~6x slower e2e
+      // with one test into a timeout — and this is the only thing that catches
+      // one. It had to exist in W3's first commit rather than be added
+      // afterwards, because landing the frame scheduling together with new UI
+      // is what would make such a regression hard to attribute.
+      //
+      // QUIESCENCE, not a fixed wait: the walk's duration depends on whatever
+      // route the fixture produced, so "it stopped" is the observable and "it
+      // stopped by now" is not. Two SUCCESSIVE POLLS agreeing is the whole
+      // measurement — the poll's own interval supplies the gap, so there is no
+      // `waitForTimeout` here and nothing to tune if the route length changes.
+      let previous = -1;
+      await expect
+        .poll(
+          async () => {
+            const now = Number(await scene.getAttribute("data-frames"));
+            const unchanged = now === previous;
+            previous = now;
+            return unchanged;
+          },
+          { timeout: 30000, intervals: [500] },
+        )
+        .toBe(true);
+    });
+
+    await test.step("a second order replaces the first route", async () => {
+      // THE SUPERSEDING PATH, which is the one thing about clicking twice that
+      // only the running app can show: the click handler, `latestOnly`, the
+      // worker queue and the polyline teardown all have to agree that the
+      // newest destination wins. The route search is SYNCHRONOUS inside the
+      // worker and an `abort` cannot preempt it, so "the newest click wins" is
+      // the honest guarantee — and this is what proves it holds.
+      //
+      // NOT A BUILDING CLICK. DEC-R11-17's blocker — a click on a facade
+      // resolving to nothing rather than to the ground behind it — is pinned by
+      // five assertions in `pick.test.ts`, and asserting it here would need a
+      // building at a KNOWN screen coordinate, which this fixture does not
+      // guarantee: the first attempt clicked what the older "buildings stay
+      // unpickable" test uses and landed on open ground, drawing a route. A
+      // browser test that silently clicks empty ground while claiming to click
+      // a building is exactly the vacuous assertion the plan's §6 warns about.
+      const before = await scene.getAttribute("data-route");
+      // WHERE THE AGENT IS STANDING when the second order is given — the end of
+      // the first route, since the step above waited for the walk to finish.
+      const stoodAt = await scene.getAttribute("data-agent");
+      expect(stoodAt).not.toBeNull();
+
+      await clickAt(0.35, 0.62);
+      await expect
+        .poll(() => scene.getAttribute("data-route"), REPAINT)
+        .not.toBe(before);
+
+      // AND IT DID NOT TELEPORT BACK TO THE START (raised in review on #274).
+      // The cycle read the USER's position for both the click target and the
+      // agent's, so a second order without moving planned from the user again
+      // and snapped the cone back before it began walking. The agent's own
+      // position is the start of the new route, so one frame into the walk it
+      // is still within a stride of where it stopped.
+      const [stoodX, stoodZ] = String(stoodAt).split(",").map(Number);
+      const [nowX, nowZ] = String(await scene.getAttribute("data-agent"))
+        .split(",")
+        .map(Number);
+      // Generous: one frame of walking at AGENT_SPEED_MPS is metres, while the
+      // teleport this catches is the whole distance of the first route.
+      expect(Math.hypot(nowX - stoodX, nowZ - stoodZ)).toBeLessThan(20);
+    });
+
+    await test.step("a click on a drawn cell both opens the panel and orders", async () => {
+      // STAGE 3 (DEC-R13-6), AND BOTH HALVES HAVE TO BE ASSERTED: opening the
+      // panel alone is what shipped before, and ordering alone is the naive
+      // fix. Either one on its own passes half of this step.
+      //
+      // THE CELL LAYER IS OFF BY DEFAULT (DEC-R7b-6), which is exactly why the
+      // bug went unnoticed — so the step turns it on first, through the helper
+      // that also waits out the progressive widening. Nothing else in this test
+      // needs cells, and it runs last for that reason.
+      await enableCellLayer(page);
+
+      const panel = page.locator("#details");
+      /** Whether the route attribute moved off `was` within a worker round trip. */
+      const routeChanged = async (was) =>
+        page
+          .waitForFunction(
+            (previous) =>
+              document.querySelector("#scene")?.getAttribute("data-route") !==
+              previous,
+            was,
+            { timeout: 4000 },
+          )
+          .then(
+            () => true,
+            () => false,
+          );
+
+      // A SWEEP, FOR THE REASON THE OLDER GRID-PICK TEST SWEEPS: the fixture's
+      // grid covers the centre of the view, but which pixel is over a CELL
+      // depends on how large a working set that run happened to score. A fixed
+      // point landed on a region slab instead, which opens the panel and orders
+      // nothing — so a single click would fail intermittently, and a weaker
+      // assertion would pass on the wrong thing.
+      //
+      // THE PAIR IS SELF-DISCRIMINATING, which is what makes this a test of
+      // DEC-R13-6 rather than of two unrelated facts:
+      //
+      // - a REGION click opens the panel and leaves the route alone;
+      // - a GROUND click orders the agent and opens no panel;
+      // - only a CELL does both, which is exactly the behaviour this stage adds.
+      //
+      // Opening the panel alone is what shipped BEFORE this stage, and ordering
+      // alone is the naive fix, so either half on its own proves nothing.
+      // THE PANEL IS CLOSED BEFORE EVERY CLICK, and that is not tidiness
+      // (raised in review on #276). It stays open once opened, so without this
+      // a region click on one offset could leave it visible and a GROUND click
+      // on the next offset could change the route — two different clicks
+      // satisfying the two halves, which is precisely the vacuous pass this
+      // pair was written to prevent. Closing first makes "visible" mean "THIS
+      // click opened it".
+      const sweep = async () => {
+        for (const [dx, dy] of [
+          [0, 0],
+          [-40, 20],
+          [40, 20],
+          [0, 60],
+          [-80, 60],
+          [0, 120],
+          [-60, 140],
+          [60, 140],
+        ]) {
+          if (await panel.isVisible()) {
+            await panel.locator(".panel-close").click();
+            await expect(panel).toBeHidden();
+          }
+          const before = await scene.getAttribute("data-route");
+          await page.mouse.click(
+            box.x + box.width / 2 + dx,
+            box.y + box.height / 2 + dy,
+          );
+          if (!(await panel.isVisible())) continue;
+          if (await routeChanged(before)) return true;
+        }
+        return false;
+      };
+      await expect.poll(sweep, { timeout: 40_000 }).toBe(true);
+      await expect(panel).toBeVisible();
+    });
+  });
+
+  test("the render-distance dial moves the camera AND the fog, boots at 2x, and is still inert at 1x", async ({
+    page,
+  }) => {
+    /**
+     * WHY THIS TEST MATTERS (r541 Q9/Q10, owner decision 2026-08-21).
+     *
+     * "Der 3D-View läuft stabil auf 60 FPS. Ich würde gerne wissen, wie viel
+     * weiter man rendern könnte." The dial is the instrument for answering that
+     * on a session that has accumulated tiles.
+     *
+     * WHAT IT ASSERTS AND WHY IT IS NOT VACUOUS. The readout is painted from
+     * `buildingView.farPlaneM()` and `fogNearM()`, which read back from the
+     * CAMERA and the FOG rather than from the slider — so asserting the text
+     * proves the projection matrix and the fog were actually written. A readout
+     * fed from the requested value would keep reporting 24000 while a
+     * `setFarPlane` that had stopped writing the camera did nothing.
+     *
+     * THE FOG HALF IS THE POINT, not a bonus. `THREE.Fog` is linear and built
+     * with `far = FAR_PLANE_M`, so everything past it is already fully fog
+     * coloured: moving the camera's far plane alone would draw more geometry
+     * and show an identical image. That is the failure this pins.
+     *
+     * `BuildingView` constructs a `WebGLRenderer`, so none of this can be a unit
+     * test — `building-view-content.test.ts` records that constraint.
+     */
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const readout = page.locator("#render-distance-value");
+
+    // BOOTS AT 2x (DEC-K2, superseding DEC-Y24). It used to say "INERT AT 1x —
+    // the shipped view must be untouched until the operator moves the dial".
+    // A field session tested 4800 m on a phone and asked for it as the default,
+    // so the page now applies the markup's value at boot instead of only
+    // painting it.
+    //
+    // THIS ASSERTION IS THE ONLY THING PINNING THE BOOT PATH. The unit suite
+    // can pin the markup against the constant, but `BuildingView` constructs a
+    // `WebGLRenderer` and cannot be instantiated there — so "the camera was
+    // actually moved to match" is provable only here. Painting without applying
+    // would leave this reading 2400 while the thumb sat at 2.
+    await expect(readout).toHaveText("draw 4800 m · haze 3168 m");
+
+    const slider = page.locator("#render-distance");
+    await slider.fill("10");
+    await slider.dispatchEvent("input");
+
+    // BOTH MOVED, BY THE SAME FACTOR. 10x is 24000, and the haze keeps its
+    // 0.66 ratio at 15840 — a far plane that moved without the fog would read
+    // "draw 24000 m · haze 1584 m" and fail here.
+    await expect(readout).toHaveText("draw 24000 m · haze 15840 m");
+
+    // AND BACK, so the dial is reversible on the street rather than a one-way
+    // door that needs a reload to undo.
+    //
+    // ⚠️ THIS ONE STAYS 2400. It follows an explicit `fill("1")`, so it asserts
+    // the 1x BASELINE and not the boot default — the two were the same number
+    // until DEC-K2 and are not any more. Changing it alongside the boot
+    // expectation above would turn a correct test red; the cold review of the
+    // plan caught exactly that edit.
+    await slider.fill("1");
+    await slider.dispatchEvent("input");
+    await expect(readout).toHaveText("draw 2400 m · haze 1584 m");
+  });
+
+  test("draws a quest beacon in the 3D view, and takes it down again", async ({
+    page,
+  }) => {
+    /**
+     * WHY THIS TEST EXISTS NOW AND NOT BEFORE. N6's beacons shipped without an
+     * e2e, deliberately: a search panned the map and left the 3D camera where
+     * it was, so the marker sat outside the frustum — measured at ~370 m out —
+     * and a pixel test could not tell "drawn" from "drawn somewhere else". The
+     * first attempt proved that the hard way: it passed its first assertion by
+     * measuring the map-driven camera move, and reported nothing when the quest
+     * was cleared, because the beacon had never been visible.
+     *
+     * Once the camera follows the search, the marker is in view and pixels mean
+     * what they say. THE CLEAR IS THE ASSERTION THAT CARRIES THE WEIGHT: the
+     * camera does not move when a quest is cleared, so a frame that changes then
+     * changed because the beacon left it.
+     */
+    await pinQuestClock(page);
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    await page.locator("#geo-event").click();
+    // The map marker is the proof a quest was actually found; without it the
+    // pixel work below would be measuring an empty search.
+    await expect(page.locator("#map .geo-winner")).not.toHaveCount(0);
+
+    await installFrameProbe(page);
+    await stashStableFrame(page);
+
+    // CLEARING IS THE CLEAN EDGE. Searching moves the camera, so the frame
+    // changes either way and proves nothing about the beacon; clearing moves
+    // nothing but the marker.
+    await page.locator("#geo-event-clear").click();
+    await expect(page.locator("#map .geo-winner")).toHaveCount(0);
+
+    // THE FLOOR IS SET FROM A MEASUREMENT, and the measurement moved once.
+    // With the original 6 m mark this read 110 differing pixels; enlarging it
+    // to the size the report asked for took it to 286. 100 sits below both and
+    // far above the only failure that matters — 0, which is what this returned
+    // for the whole time the camera did not follow the search.
+    //
+    // Deliberately not tight: pinning 286 would fail a later restyle for being
+    // different rather than wrong.
+    await expect
+      .poll(async () => (await diffFromStash(page, 24)).differing, {
+        timeout: 15_000,
+      })
+      .toBeGreaterThan(100);
+  });
+
+  test("brings the beacon into frame even from a CLOSE camera", async ({
+    page,
+  }) => {
+    /**
+     * WHY A SECOND, CLOSER TEST (PR #344 review).
+     *
+     * `lookAtFrom` preserves the current distance, so where it AIMS decides
+     * whether the mark lands in frame. Aiming at the ground under the beacon
+     * works at the default zoom — the mark is only ~11-26 m above the pivot and
+     * the frustum is hundreds of metres wide there — and fails close in, where
+     * that same offset pushes the marker off the top of the screen.
+     *
+     * The sibling test above cannot see the difference: at the default distance
+     * both aim points keep the beacon on screen, so it passed against the bug.
+     * This one starts the camera at `MIN_CAMERA_DISTANCE_M` via the shareable
+     * camera link, which is the route a user takes by pasting one.
+     *
+     * **MEASURED, and the distance had to be measured too.** Differing pixels
+     * when the quest is cleared, aiming at the ground versus at the mark:
+     *
+     * - `cdist=30`: **5 289** vs **16 072** — a 3x difference, and the only
+     *   regime where the two are far enough apart to assert on;
+     * - `cdist=45`: 6 439 vs 6 725 — indistinguishable, which is why a first
+     *   version of this test at 45 m PASSED against the bug;
+     * - `cdist=80`: 2 658 vs 2 067 — the ground aim is marginally better.
+     *
+     * ⚠️ It also refines the review's wording: aiming at the ground does not
+     * push the marker off screen, it cuts roughly two thirds of it off. The fix
+     * is the same; the claim is smaller than "invisible".
+     */
+    await pinQuestClock(page);
+    await stubNetwork(page);
+    await page.goto(`${AT_FIXTURE}&clat=50.9231&clng=6.9445&cdist=30`);
+    await waitForRefresh(page);
+
+    await page.locator("#geo-event").click();
+    await expect(page.locator("#map .geo-winner")).not.toHaveCount(0);
+
+    await installFrameProbe(page);
+    await stashStableFrame(page);
+
+    // Same edge as the sibling: clearing moves nothing but the marker, so a
+    // frame that changes changed because the beacon left it.
+    await page.locator("#geo-event-clear").click();
+    await expect(page.locator("#map .geo-winner")).toHaveCount(0);
+
+    // 10 000 SITS BETWEEN THE TWO MEASURED REGIMES (5 289 aiming at the ground,
+    // 16 072 aiming at the mark). Tuned to a measurement rather than guessed,
+    // and stated as such: a looser bound would pass against the bug, which is
+    // exactly what the 45 m version of this test did.
+    await expect
+      .poll(async () => (await diffFromStash(page, 24)).differing, {
+        timeout: 15_000,
+      })
+      .toBeGreaterThan(10_000);
   });
 });

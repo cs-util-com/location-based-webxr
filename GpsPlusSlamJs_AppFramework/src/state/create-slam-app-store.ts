@@ -62,6 +62,7 @@ import {
   createSlamAppStoreListenerMiddleware,
   type CompassOptIn,
 } from './slam-app-store-listener';
+import { recordDiagnostic } from './diagnostics-action';
 
 /**
  * Slice prefixes the framework always persists, derived from the actual
@@ -72,6 +73,12 @@ import {
 const BUILTIN_PERSISTED_PREFIXES: readonly string[] = [
   slicePrefixOf(setZeroPos.type), // library `gpsData` slice
   slicePrefixOf(recordWriteFailure.type), // framework `recording` slice
+  // Log-only notes an app makes about itself (owner decision, 2026-08-23).
+  // Built in rather than opt-in: the whole value is that a recording made by
+  // ANY consumer can be asked what happened, and an app that never dispatches
+  // one pays nothing for the prefix being listed. See `diagnostics-action.ts`
+  // for why the action has no reducer.
+  slicePrefixOf(recordDiagnostic.type),
 ];
 
 type LibraryGpsDataState = NonNullable<LibraryRootState['gpsData']>;
@@ -122,6 +129,24 @@ export interface SlamAppRootState extends LibraryRootState {
 export type SlamAppMiddleware = Middleware<any, any, any>;
 
 /**
+ * Consumer summariser THEN framework sanitizer.
+ *
+ * Exported so the ORDER is testable. Inline in the factory it was reachable
+ * only through the devtools extension, i.e. not at all from a test -- and the
+ * order is the whole safety property: the consumer collapses its own large
+ * slice, and the framework then redacts pose and GPS data from what is left.
+ * Reversed, a consumer summariser that dropped fields could drop the redaction
+ * with them.
+ */
+export function composeStateSanitizer(
+  consumer: (<S>(state: S) => S) | undefined,
+  framework: <T>(value: T, depth?: number) => T
+): <S>(state: S) => S {
+  if (consumer === undefined) return framework;
+  return <S>(state: S): S => framework(consumer(state));
+}
+
+/**
  * Options for {@link createSlamAppStore}.
  */
 export interface SlamAppStoreOptions<
@@ -148,7 +173,7 @@ export interface SlamAppStoreOptions<
 
   /**
    * Additional slice prefixes to persist beyond the framework built-ins
-   * (`gpsData`, `recording`). Pass caller-owned slice names derived from
+   * (`gpsData`, `recording`, `diagnostics`). Pass caller-owned slice names derived from
    * the slice itself — e.g. `slicePrefixOf(addRefPointEntry.type)` or
    * `refPointsSlice.name` — never a hand-typed literal, so a rename can
    * never silently drop the slice's actions from recordings.
@@ -165,6 +190,53 @@ export interface SlamAppStoreOptions<
    * checks). Default `true`; set `false` for high-throughput replay scenarios.
    */
   enableDevChecks?: boolean;
+
+  /**
+   * Action types the serializable check should skip, ADDED to the framework's.
+   *
+   * **A consumer with a large non-serialisable value of its own had no option
+   * short of `enableDevChecks: false`**, which trades one slice's cost for
+   * every check in the app. The OSM demo is the case that surfaced it: it
+   * exempts its scored snapshot on a measured 71 ms per dispatch, and AR mode
+   * requires it to adopt this factory because the alignment wiring reads
+   * framework GPS state.
+   *
+   * ADDED, never replacing. A caller-supplied list that overrode the defaults
+   * would silently reintroduce a deep walk on `tracking/poseReceived`, which
+   * dispatches at 60–90 Hz — the exact cost E-7 removed.
+   */
+  serializableIgnoredActions?: readonly string[];
+
+  /** State paths the serializable check should skip. Added, never replacing. */
+  serializableIgnoredPaths?: readonly string[];
+
+  /** State paths the immutable check should skip. Added, never replacing. */
+  immutableIgnoredPaths?: readonly string[];
+
+  /**
+   * Summarise consumer state before the devtools extension serialises it.
+   *
+   * **Composed WITH the framework's sanitizer, not instead of it** — this runs
+   * first and its result is then passed through `sanitizeForDevTools`, so a
+   * consumer can collapse its own large slice without disabling the framework's
+   * own redaction of pose and GPS data.
+   *
+   * The framework's sanitizer walks and rebuilds every array and plain object
+   * to depth 10 on every dispatch. That is the right default and it is
+   * expensive for a consumer holding a large slice: the OSM demo's snapshot is
+   * ~931 scored cells, deep-copied on every dispatch after migrating to this
+   * factory — reintroducing the cost its `serializableIgnoredPaths` exemption
+   * exists to avoid, through the other channel.
+   *
+   * **STATE ONLY, and the limit is worth stating because it is easy to assume
+   * otherwise.** `actionSanitizer` is not configurable and still walks every
+   * dispatched payload to depth 10, so the demo's `snapshotReady` action is
+   * still rebuilt on every refresh. That is a cost this factory INTRODUCED —
+   * the demo previously ran with a state sanitizer and no action one — and it
+   * is open, not fixed. An earlier version of this comment claimed the hook
+   * "removes both"; it removes the state half.
+   */
+  devToolsStateSanitizer?: <S>(state: S) => S;
 
   /**
    * License key for the core library. Defaults to the bundled community key.
@@ -337,6 +409,10 @@ export function createSlamAppStore<
     enableCompassExperiment = false,
     enableRobustSolverComparison = false,
     compassVoteWeight,
+    serializableIgnoredActions,
+    serializableIgnoredPaths,
+    immutableIgnoredPaths,
+    devToolsStateSanitizer,
   } = options;
 
   validateLicenseKey(licenseKey);
@@ -353,14 +429,22 @@ export function createSlamAppStore<
     tracking: trackingReducer,
     trackingQuality: trackingQualityReducer,
   };
+  // Reserved WITHOUT a reducer: `diagnostics` deliberately has none (see
+  // `diagnostics-action.ts`), so it cannot sit in `builtins` — but its prefix
+  // is on the built-in persistence whitelist above, so a consumer slice with
+  // that name would have EVERY one of its actions silently written into
+  // recordings. A silent WRITE, the inverse of the silent drop the whitelist
+  // guards against, and invisible to the reducer-collision check alone.
+  const reservedPrefixOnlyKeys = [slicePrefixOf(recordDiagnostic.type)];
   if (extraReducers) {
+    const reserved = [...Object.keys(builtins), ...reservedPrefixOnlyKeys];
     const collisions = Object.keys(extraReducers).filter((key) =>
-      Object.prototype.hasOwnProperty.call(builtins, key)
+      reserved.includes(key)
     );
     if (collisions.length > 0) {
       throw new Error(
         `extraReducers must not overwrite framework-reserved slice(s): ` +
-          `${collisions.join(', ')}. Reserved keys: ${Object.keys(builtins).join(', ')}.`
+          `${collisions.join(', ')}. Reserved keys: ${reserved.join(', ')}.`
       );
     }
   }
@@ -552,18 +636,35 @@ export function createSlamAppStore<
         // (immutable) are excluded specifically. Everything else stays fully
         // checked in dev builds; RTK strips both checks from production
         // builds entirely, so this is a dev-experience fix, not a prod one.
+        // CONSUMER EXEMPTIONS ARE APPENDED, NEVER SUBSTITUTED. Replacing the
+        // framework defaults would silently reintroduce the deep walk on the
+        // 60-90 Hz pose action that E-7 removed.
         serializableCheck: enableDevChecks
-          ? { ignoredActions: ['tracking/poseReceived'] }
+          ? {
+              ignoredActions: [
+                'tracking/poseReceived',
+                ...(serializableIgnoredActions ?? []),
+              ],
+              ...(serializableIgnoredPaths === undefined
+                ? {}
+                : { ignoredPaths: [...serializableIgnoredPaths] }),
+            }
           : false,
         immutableCheck: enableDevChecks
-          ? { ignoredPaths: ['tracking'] }
+          ? { ignoredPaths: ['tracking', ...(immutableIgnoredPaths ?? [])] }
           : false,
       })
         .prepend(...prependedListeners)
         .concat(persistenceMiddleware, ...(extraMiddleware ?? [])),
     devTools: {
       actionSanitizer: sanitizeForDevTools,
-      stateSanitizer: sanitizeForDevTools,
+      // COMPOSED, NOT REPLACED. The consumer's summariser runs first and its
+      // result goes through the framework's own sanitizer, so collapsing a
+      // large app slice cannot switch off the redaction of pose and GPS data.
+      stateSanitizer: composeStateSanitizer(
+        devToolsStateSanitizer,
+        sanitizeForDevTools
+      ),
     },
   });
 

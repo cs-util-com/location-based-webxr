@@ -14,6 +14,17 @@ union, and two runtime guards. No behaviour.
   points at.
 - `TransferableMesh` — built geometry plus the status-line counters.
 - `UpdateResult`, `TerrainResult` — the two compound results.
+  - `TerrainResult.demSourceId` — the worker provider's own `sourceId`
+    (`mapterhorn+terrarium`), reported **on the result rather than shared as a
+    constant** so the label the AR readout renders can only describe the
+    provider that actually sampled the field. Composed, never per-sample —
+    see `dem-provider.ts.md`.
+  - `TerrainResult.demStats` — a snapshot of the composed provider's
+    session-cumulative serving counters (`FallbackProviderStats`: positions
+    the primary answered, the fallback filled, and neither). The three raw
+    counts rather than a derived percentage: a pct would invent a rounding
+    and a 0/0 corner and hide the denominator. Optional, so a fake or an
+    older worker degrades to the composed-id-only HUD label.
 - `WorkerEnvelope` — what the main thread posts, including `{ kind: 'abort',
 target }`.
 - `WorkerReply` — `{ id, ok: true, value } | { id, ok: false, message }`.
@@ -40,6 +51,24 @@ target }`.
 - **Replies are a discriminated result, never a thrown error.** An exception in a
   worker rejects nothing on the main thread. A failure not turned into a message
   is a hung demo, which is strictly worse than a reported one.
+- **Three calls run in the worker because their state cannot cross, not because
+  they are slow**: `geoEvent` (the affordance index is private inside the
+  pipeline and the hill climb reads it through synchronous callbacks),
+  `explain` (the provenance map), and `planRoute` (`ObstacleIndex` exposes
+  `obstaclesIn` as a **method** and holds `Map`s). Only the finished answer
+  crosses in each case.
+  - `planRoute` additionally runs **synchronously**, so it delays the next
+    `update` — i.e. the publish. The expansion cap in `agent-route.ts` is
+    therefore a publish-latency bound as well as a click-freeze bound, and an
+    `abort` cannot preempt a route in flight because the search never yields to
+    check the signal. A second click queues behind the first; `latest-only.ts`
+    keeps the superseded REPLY from being applied, and the worker still pays for
+    both searches.
+  - `planRoute`'s `frameOrigin` is **required**, unlike the optional one on
+    `update`, `terrain` and `cellMesh`. Those default to their own position so a
+    caller predating the fixed origin is unchanged; nothing predates this call,
+    and a route planned in a frame the scene is not drawn in puts the polyline
+    where the agent is not.
 
 ## Examples
 

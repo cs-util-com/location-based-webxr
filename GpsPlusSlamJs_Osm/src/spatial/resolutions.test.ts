@@ -190,7 +190,7 @@ describe("fetch coverage is DERIVED from the score working set, not guessed", ()
   // Why these tests matter:
   // The movement trigger used to fetch "the tile I am in, plus one ring" — a
   // fixed guess that over-fetches in the interior and can still under-fetch at
-  // a boundary. With FETCH_RES = 7 a fixed ring costs ~140 MB, so the guess got
+  // a boundary. With FETCH_RES = 7 a fixed ring costs ~150 MB (7 tiles x ~21 MB), so the guess got
   // expensive at exactly the moment it stopped being needed. Deriving the tile
   // set from the chunks we are actually going to score is both cheaper and
   // strictly more correct, and it stays correct if either resolution moves.
@@ -296,11 +296,12 @@ describe("scoreWorkingSet — progressive radii (W16, DEC-R2-30)", () => {
     expect(scoreWorkingSet(CHUNK, 2.7)).toEqual(scoreWorkingSet(CHUNK, 2));
   });
 
-  it("reaches 61 chunks at the maximum radius", () => {
-    // 1 + 6 + 12 + 18 + 24 = 61, the hexagonal ring sum. Pinned as a NUMBER
-    // because DEC-R2-30 was taken on a stated cost, and a change to the radius
-    // that did not change this count would mean the constant is not being read.
-    expect(scoreWorkingSet(CHUNK, SCORE_DISK_MAX_RADIUS)).toHaveLength(61);
+  it("reaches 127 chunks at the maximum radius", () => {
+    // 1 + 6 + 12 + 18 + 24 + 30 + 36 = 127, the hexagonal ring sum. Pinned as a
+    // NUMBER because the radius decisions were taken on a stated cost, and a
+    // change to the radius that did not change this count would mean the
+    // constant is not being read. Was 61 at radius 4; DEC-K1 raised it to 6.
+    expect(scoreWorkingSet(CHUNK, SCORE_DISK_MAX_RADIUS)).toHaveLength(127);
   });
 });
 
@@ -317,7 +318,7 @@ describe("EVENT_TILE_RES — the geo-event tile", () => {
   });
 
   it("contains the scored disk it has to cover", () => {
-    // A res-8 hexagon has a ~460 m inradius and the scored disk reaches ~250 m
+    // A res-8 hexagon has a ~460 m inradius and the scored disk reaches ~326 m
     // from the user, so a climb starting anywhere in the tile stays inside the
     // ground the ensure step can cover. If this ever inverted, candidates near
     // a tile edge would need data from two fetch tiles to be judged at all.

@@ -89,6 +89,19 @@ export interface GeoEventCycleOptions {
    * for a diagnostic line.
    */
   readonly onStats?: (stats: GeoEventStats) => void;
+  /**
+   * Called with a quest the search actually produced.
+   *
+   * WHY A CALLBACK AND NOT A STORE SUBSCRIPTION. The two things it drives —
+   * announcing the result in a toast, and panning the map to the winner — are
+   * responses to THIS PRESS, not properties of the current state. A subscriber
+   * on `view.geoEvent` would also fire when the same event is republished by a
+   * refresh, panning the map out from under someone who did not ask.
+   *
+   * Not called when the search fails: the previous quest deliberately stays
+   * published, and announcing it again would report a stale result as new.
+   */
+  readonly onFound?: (event: GeoEvent) => void;
 }
 
 /** `Error` messages when we have one, the value's text when we do not. */
@@ -114,6 +127,7 @@ export function createGeoEventCycle(
     republish,
     now = () => Date.now(),
     onStats,
+    onFound,
   } = options;
 
   return async (requested?: number): Promise<void> => {
@@ -170,6 +184,20 @@ export function createGeoEventCycle(
     // in step. An empty `picks` is published too: "no event nearby" is a result,
     // and it is what takes the previous search's markers down.
     store.dispatch(actions.geoEventFound(event));
+
+    // AFTER THE SUPERSESSION GUARD, and that placement is the whole point.
+    //
+    // The first version called this the instant the RPC resolved, twenty lines
+    // above the category check — so a search abandoned by a category change
+    // still panned the map to the old category's winner and announced it in a
+    // toast, while the store correctly refused to publish it. The user saw the
+    // viewport yanked to a quest that is deliberately not drawn.
+    //
+    // That is the same defect class the DEM upgrade path was fixed for earlier
+    // in this round: a long-running callback outliving the state it describes.
+    // Anything with a user-visible side effect belongs on this side of the
+    // guard, beside the dispatch it agrees with.
+    onFound?.(event);
 
     // ITS OWN CATCH, and the wording is the reason. `refresh` is `latestOnly`,
     // which never rejects, so this is unreachable with the real wiring — but

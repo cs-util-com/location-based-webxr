@@ -813,8 +813,8 @@ describe('handleStartRecording', () => {
   it('cleanupForNewRecording stops the live feeds too — captures, watches, analyzer worker (teardown parity with performStop)', async () => {
     // Why this test matters (recurring PR #115/#120/#123 review finding):
     // performStop was the only path that stopped captures/watches and disposed
-    // the quality-gate worker; cleanupForNewRecording (the XR-session-end /
-    // start-over path) only cleared subscriptions and trackers, so a session
+    // the quality-gate worker; cleanupForNewRecording (the start-over path)
+    // only cleared subscriptions and trackers, so a session
     // torn down through it left the camera/GPS feeds running and the worker
     // alive. Both paths now share stopLiveFeeds().
     const opts: RecordingOptions = {
@@ -964,9 +964,14 @@ describe('handleStartRecording', () => {
   });
 
   it('does NOT spawn the analyzer when qualityFilter is disabled, but still clears it', async () => {
-    // Image capture ON but the quality gate OFF (the default): no worker is
-    // spawned, and the analyzer is explicitly cleared so a previous recording's
-    // worker can't leak into this one.
+    // Image capture ON but the quality gate OFF: no worker is spawned, and the
+    // analyzer is explicitly cleared so a previous recording's worker can't
+    // leak into this one.
+    //
+    // The gate is set off EXPLICITLY here. It used to be the shipped default
+    // and this test spread the defaults; when the default flipped on
+    // 2026-08-20 the test started asserting the opposite of its own name.
+    // A test about "when X is off" should set X off.
     const opts: RecordingOptions = {
       images: {
         enabled: true,
@@ -974,7 +979,10 @@ describe('handleStartRecording', () => {
         quality: 0.7,
         resolutionDivisor: 1,
         motionFilter: { ...DEFAULT_RECORDING_OPTIONS.images.motionFilter },
-        qualityFilter: { ...DEFAULT_RECORDING_OPTIONS.images.qualityFilter },
+        qualityFilter: {
+          ...DEFAULT_RECORDING_OPTIONS.images.qualityFilter,
+          enabled: false,
+        },
       },
       depth: { enabled: false, intervalMs: 1000, gridSize: 3, rgb: true },
       arCrashIsolation: { ...DEFAULT_RECORDING_OPTIONS.arCrashIsolation },

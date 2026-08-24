@@ -106,6 +106,18 @@ function cycleFor(provider: ElevationProvider): {
         return {
           field: field.hasData ? field : undefined,
           note: describeTerrain(field),
+          // Reported with every load, like the real worker: the label must
+          // travel WITH the field it describes, never separately.
+          demSourceId: "test-dem",
+          // The serving stats travel the same way, for the same reason: a
+          // snapshot applied on its own could describe a different load.
+          demStats: {
+            servedBy: "test-dem",
+            upgrades: 0,
+            preferredWins: 1,
+            fastWins: 0,
+            emptyBatches: 0,
+          },
           // The real worker reports this even for a failed load; the fake must
           // too, or these tests would pass for a worker that stopped.
           centreEnu: enuFrameAt(payload.frameOrigin).toEnu(payload.centre),
@@ -149,6 +161,20 @@ describe("createTerrainCycle", () => {
     expect(calls[1]?.centreLat).toBeCloseTo(BONN.lat, 3);
     calls[1]?.resolve(200);
     await settle();
+
+    // The provider identity travels WITH the load, so the UI can never label
+    // a field with a source that did not produce it — same atomicity argument
+    // as the note and the centre.
+    expect(applied[0]?.demSourceId).toBe("test-dem");
+    // And so do the serving stats: the HUD's "which DEM actually served" line
+    // must describe the field on screen, never a snapshot from another load.
+    expect(applied[0]?.demStats).toEqual({
+      servedBy: "test-dem",
+      upgrades: 0,
+      preferredWins: 1,
+      fastWins: 0,
+      emptyBatches: 0,
+    });
 
     // The last state applied belongs to the last position the user asked for —
     // which is the whole guarantee, since `apply` is what the UI reads.
@@ -282,6 +308,7 @@ describe("createTerrainCycle — a superseded load applies nothing", () => {
           return {
             field: field.hasData ? field : undefined,
             note: describeTerrain(field),
+            demSourceId: "test-dem",
             centreEnu: enuFrameAt(payload.frameOrigin).toEnu(payload.centre),
           };
         },
@@ -334,6 +361,7 @@ describe("createTerrainCycle — the frame is SENT, not re-derived", () => {
         return Promise.resolve({
           field: undefined,
           note: "terrain unavailable — ground is flat",
+          demSourceId: "test-dem",
           centreEnu: enuFrameAt(payload.frameOrigin).toEnu(payload.centre),
         });
       },
@@ -389,5 +417,193 @@ describe("createTerrainCycle — the frame is SENT, not re-derived", () => {
     // anchored at Bonn is ~23 km from its origin, so a dropped or swapped pair
     // cannot round to the same numbers.
     expect(applied[0]?.centreEnu).toEqual(enuFrameAt(BONN).toEnu(COLOGNE));
+  });
+});
+
+describe("collecting the DEM race's better answer (N2)", () => {
+  /**
+   * WHY THESE TESTS MATTER MORE THAN THEY LOOK. The DEM race publishes the fast
+   * source's heights and applies the preferred source's when they land — but
+   * the preferred source lands AFTER the `terrain` reply was built, and the
+   * worker protocol is strictly request/reply keyed on `id` with no
+   * unsolicited worker-to-page channel. So the page has to ASK for the upgrade,
+   * and the only thing that tells it to is `upgradePending` on the reply.
+   *
+   * If this line is ever lost, nothing else fails. The map still shows terrain,
+   * every provider test still passes, the worker still applies the better
+   * heights internally — and the user permanently sees the coarse ones. That is
+   * exactly the silent no-op the cold plan review flagged as this milestone's
+   * defining risk, which is why the trigger has its own tests rather than
+   * riding on the provider's.
+   */
+
+  /** A worker that records which kinds it was asked for, in order. */
+  function recordingWorker(replies: {
+    terrain: Partial<Record<string, unknown>>;
+    terrainUpgrade?: Partial<Record<string, unknown>>;
+  }) {
+    const kinds: string[] = [];
+    const base = {
+      field: undefined,
+      note: "flat",
+      demSourceId: "test-dem",
+      centreEnu: { x: 0, y: 0 },
+    };
+    return {
+      kinds,
+      worker: {
+        call: async (kind: string) => {
+          kinds.push(kind);
+          await Promise.resolve();
+          return {
+            ...base,
+            ...(kind === "terrainUpgrade"
+              ? (replies.terrainUpgrade ?? {})
+              : replies.terrain),
+          };
+        },
+      } as unknown as Parameters<typeof createTerrainCycle>[0]["worker"],
+    };
+  }
+
+  const LOAD = {
+    centre: { lat: 50.9413, lng: 6.958 },
+    frameOrigin: { lat: 50.9413, lng: 6.958 },
+  };
+
+  it("asks for the upgrade when the reply says one is pending", async () => {
+    const applied: string[] = [];
+    const { kinds, worker } = recordingWorker({
+      terrain: { upgradePending: true, note: "first" },
+      terrainUpgrade: { upgradePending: false, note: "upgraded" },
+    });
+    const load = createTerrainCycle({
+      worker,
+      extentM: 100,
+      spacingM: 10,
+      apply: (state) => applied.push(state.note),
+    });
+
+    await load(LOAD);
+    // The upgrade runs on its OWN latestOnly cycle, so it is not awaited by the
+    // load. Drain the microtasks it needs rather than sleeping.
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+
+    expect(kinds).toEqual(["terrain", "terrainUpgrade"]);
+    expect(applied).toEqual(["first", "upgraded"]);
+  });
+
+  it("does NOT ask when the published heights are already the best available", async () => {
+    // The other half of the contract. A page that always asks would hold a
+    // worker call open for every load on a fast connection, where the preferred
+    // source simply won and there is nothing to collect.
+    const { kinds, worker } = recordingWorker({
+      terrain: { upgradePending: false, note: "already best" },
+    });
+    const load = createTerrainCycle({
+      worker,
+      extentM: 100,
+      spacingM: 10,
+      apply: () => {},
+    });
+
+    await load(LOAD);
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+
+    expect(kinds).toEqual(["terrain"]);
+  });
+
+  it("does NOT apply an upgrade for a window the user has already left", async () => {
+    // THE DEFECT THE MILESTONE REVIEW FOUND, and it is the nastiest shape this
+    // module can produce: the ground moving back under a view that has already
+    // moved on.
+    //
+    // The upgrade runs on its own `latestOnly`, which a new LOAD cannot abort —
+    // different wrapper, different controller. It is superseded only by another
+    // `collectUpgrade`, and that only happens if the NEW load also reports an
+    // upgrade pending. On cached tiles the preferred source wins outright and it
+    // does not, so the outstanding call for the old window survives and applies
+    // the old window's field on top of the new one. This test drives exactly
+    // that sequence, which is why load B reports `upgradePending: false`.
+    const applied: string[] = [];
+    let releaseUpgrade!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      releaseUpgrade = resolve;
+    });
+    const worker = {
+      call: async (
+        kind: string,
+        payload: { centre: { lat: number; lng: number } },
+      ) => {
+        if (kind === "terrainUpgrade") await pending;
+        return {
+          field: undefined,
+          note: `${kind}@${payload.centre.lat}`,
+          demSourceId: "test-dem",
+          centreEnu: { x: 0, y: 0 },
+          upgradePending: kind === "terrain" && payload.centre.lat === 1,
+        };
+      },
+    };
+
+    const load = createTerrainCycle({
+      worker,
+      extentM: 100,
+      spacingM: 10,
+      apply: (state) => applied.push(state.note),
+    });
+
+    const a = { centre: { lat: 1, lng: 1 }, frameOrigin: { lat: 1, lng: 1 } };
+    const b = { centre: { lat: 2, lng: 2 }, frameOrigin: { lat: 2, lng: 2 } };
+
+    await load(a);
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    await load(b);
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+
+    // A's upgrade only now comes back, long after B is on screen.
+    releaseUpgrade();
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+
+    expect(applied).toEqual(["terrain@1", "terrain@2"]);
+    expect(applied).not.toContain("terrainUpgrade@1");
+  });
+
+  it("does not hold the LOAD cycle busy while the upgrade is outstanding", async () => {
+    // WHY A SEPARATE CYCLE. The upgrade call can wait tens of seconds for the
+    // preferred DEM. Run inside the load cycle it would keep that cycle
+    // `busy` for the whole wait, delaying the next position's terrain and
+    // making every readout keyed on `busy` claim the view is still loading
+    // when it finished half a minute ago.
+    let releaseUpgrade!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      releaseUpgrade = resolve;
+    });
+    const worker = {
+      call: async (kind: string) => {
+        if (kind === "terrainUpgrade") await pending;
+        return {
+          field: undefined,
+          note: kind,
+          demSourceId: "test-dem",
+          centreEnu: { x: 0, y: 0 },
+          upgradePending: kind === "terrain",
+        };
+      },
+    } as unknown as Parameters<typeof createTerrainCycle>[0]["worker"];
+
+    const load = createTerrainCycle({
+      worker,
+      extentM: 100,
+      spacingM: 10,
+      apply: () => {},
+    });
+
+    await load(LOAD);
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+
+    expect(load.busy).toBe(false);
+    releaseUpgrade();
+    await pending;
   });
 });

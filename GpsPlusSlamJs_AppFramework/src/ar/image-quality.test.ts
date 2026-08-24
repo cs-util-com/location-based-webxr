@@ -333,25 +333,47 @@ describe('blurMetricScorer', () => {
  * which used to encode this gate's ranges in its own table.)
  */
 describe('validateQualityFilterConfig', () => {
-  it('default-fills an empty, null or undefined group (gate stays DISABLED)', () => {
+  // CHANGED 2026-08-20 with the corpus-tuned default. This previously asserted
+  // "gate stays DISABLED", which was the right invariant while the threshold
+  // was an unvalidated placeholder. Now that k = 0.8 is measured, a config that
+  // never expressed a preference SHOULD inherit the improvement — and note what
+  // this does not do: an explicit `enabled: false` is a valid boolean and is
+  // preserved untouched below, so nobody who opted out is opted back in.
+  it('default-fills an empty, null or undefined group to the shipped defaults', () => {
     for (const empty of [{}, null, undefined]) {
       expect(validateQualityFilterConfig(empty)).toEqual(
         DEFAULT_QUALITY_FILTER
       );
-      expect(validateQualityFilterConfig(empty).enabled).toBe(false);
+      expect(validateQualityFilterConfig(empty).enabled).toBe(
+        DEFAULT_QUALITY_FILTER.enabled
+      );
     }
+  });
+
+  it('preserves an explicit opt-out', () => {
+    // The population that matters for the default flip: someone who stored
+    // `false` deliberately must stay off, or the flip is a silent override
+    // rather than a new default.
+    expect(validateQualityFilterConfig({ enabled: false }).enabled).toBe(false);
   });
 
   it('honors an explicit enabled=true', () => {
     expect(validateQualityFilterConfig({ enabled: true }).enabled).toBe(true);
   });
 
-  it('falls back to OFF for a non-boolean enabled (never self-enables)', () => {
+  it('falls back to the shipped default for a non-boolean enabled', () => {
+    // Also changed with the default flip. The old name was "never
+    // self-enables", which encoded a real asymmetry: garbage input must not
+    // switch on something risky. That asymmetry existed because the gate was
+    // unvalidated; now it is the shipped behaviour, and treating `enabled`
+    // differently from every other malformed field would be a surprise of its
+    // own. Garbage still does not mean "the opposite of the default" — it
+    // means "no preference expressed".
     expect(
       validateQualityFilterConfig({
         enabled: 'yes' as unknown as boolean,
       }).enabled
-    ).toBe(false);
+    ).toBe(DEFAULT_QUALITY_FILTER.enabled);
   });
 
   it('clamps thresholds to QUALITY_FILTER_CONSTRAINTS', () => {

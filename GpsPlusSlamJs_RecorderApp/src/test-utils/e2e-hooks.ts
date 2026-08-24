@@ -32,6 +32,7 @@ import {
 } from '../ui/hud';
 import { showSessionSummary } from '../ui/session-summary';
 import { showLogPanel, hideLogPanel, toggleLogPanel } from '../ui/log-panel';
+import { showToast } from '../ui/toast';
 import { createMapBrowser } from '../ui/map-browser';
 import { type RecordingCoverage } from '../ui/recording-index';
 import { gpsPathToCoverageCells } from 'gps-plus-slam-app-framework/geo';
@@ -106,7 +107,13 @@ export function installE2eTestHooks(deps: E2eHookDeps): void {
     updateArInfo,
     updatePermissionStatus,
     setPermissionsReady,
-    // Log panel hooks (Issue #5)
+    // Toast (2026-08-24). The toast is the ONLY UI in this app rewritten onto
+    // the framework's shared mechanism, and it had no e2e coverage at all â
+    // the suite mentioned the word once, in a comment. Its two new behaviours
+    // (attach-on-show, and a text write deferred by one task) are exactly the
+    // kind that a jsdom suite can assert and a real browser can still get
+    // wrong, so the hook exists to let a spec watch the real element.
+    showToast,
     showLogPanel,
     hideLogPanel,
     toggleLogPanel,

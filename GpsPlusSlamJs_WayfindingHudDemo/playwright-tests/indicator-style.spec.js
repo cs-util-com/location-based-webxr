@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./e2e-test.js";
 
 /**
  * Image-indicator toggle e2e — switches the REAL HUD between the procedural

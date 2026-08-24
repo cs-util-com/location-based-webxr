@@ -5,12 +5,29 @@
 // synthetic `total` row and prints the consolidated delta table. A timing
 // failure never changes the gate's exit code; only the underlying commands
 // do.
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 
 import { budgetBreach } from './budget.mjs';
 import { checkChainDrift } from './chain-guard.mjs';
-import { resolveProject, PROJECTS, TOTAL_STAGE, stageOrder } from './projects.mjs';
+import {
+  GATE_RUN_ENV,
+  clearLock,
+  decideGateLock,
+  lockPath,
+  pidAlive,
+  readLock,
+  writeLock,
+} from './gate-lock.mjs';
+import {
+  resolveProject,
+  PROJECTS,
+  TOTAL_STAGE,
+  stageOrder,
+  gateStages,
+  resolveGateMode,
+  SKIP_BROWSER_ENV,
+} from './projects.mjs';
 import {
   WORKSPACE_ROOT,
   projectRoot,
@@ -93,14 +110,129 @@ function printSummaryTable() {
   }
 }
 
+/**
+ * ONE GATE RUN PER WORKING TREE — see gate-lock.mjs for why this is a refusal
+ * rather than a queue. Taken before any stage runs, so a second run is turned
+ * away in milliseconds instead of after a build has already started rewriting
+ * a `dist/` the first run is importing through.
+ */
+const lockFile = lockPath(WORKSPACE_ROOT);
+const lockDecision = decideGateLock({
+  existing: readLock(lockFile),
+  env: process.env,
+  isAlive: pidAlive,
+  now: Date.now(),
+});
+
+if (lockDecision.action === 'refuse') {
+  console.error(`\n✖ ${lockDecision.reason}`);
+  process.exit(1);
+}
+
+let ownsLock = false;
+if (lockDecision.action === 'acquire' || lockDecision.action === 'steal') {
+  const runId = `${process.pid}-${Date.now().toString(36)}`;
+  try {
+    mkdirSync(path.dirname(lockFile), { recursive: true });
+    // EXCLUSIVE on `acquire`: read-decide-write is not atomic, so two gates
+    // starting within milliseconds both saw an empty slot and both "won" —
+    // the first to finish then cleared the lock from under the survivor.
+    // `flag: 'wx'` makes the filesystem the arbiter; `steal` keeps the plain
+    // overwrite, having already established the owner is gone (PR #338
+    // review).
+    writeLock(
+      lockFile,
+      {
+        runId,
+        pid: process.pid,
+        project: project.name,
+        startedAt: Date.now(),
+      },
+      { exclusive: lockDecision.action === 'acquire' },
+    );
+    ownsLock = true;
+  } catch (error) {
+    const code = /** @type {NodeJS.ErrnoException} */ (error).code;
+    if (lockDecision.action === 'acquire' && code === 'EEXIST') {
+      // Someone else won the race between our read and our write. This is a
+      // REFUSAL, not a degrade-to-absent: the other run is live and about to
+      // rewrite dist/, which is exactly what the lock exists to prevent.
+      console.error(
+        `\n✖ another gate acquired the lock first (${lockFile}); ` +
+          `re-run when it finishes.`,
+      );
+      process.exit(1);
+    }
+    // Any other failure: a tree where the lock cannot be written is not a
+    // tree where the gate should refuse to run; the guard degrades to absent
+    // rather than fatal.
+    console.warn(`test-timing: could not take the gate lock: ${String(error)}`);
+  }
+  // Children inherit this and re-enter instead of competing — see gate-lock.mjs.
+  //
+  // ONLY when we actually own the record on disk. If `writeLock` threw, the
+  // disk still holds whatever was there before — on the `steal` path that is
+  // ANOTHER run's record — and a child inheriting our runId would find a
+  // mismatch, take the nested branch and `refuse` with exit 1. That turns a
+  // write failure into a RED GATE, contradicting the module's stated safety
+  // property that it "degrades to absent, never to fatal". Setting nothing
+  // puts children on the un-nested path, where a dead owner's lock is stolen
+  // (see gate-lock.test.mjs, 'steals a lock whose owner is gone'), which is
+  // what degrading to absent actually means. Found in review of PR #331.
+  //
+  // This branch is REACHABLE HERE in a way it is not in the library: the root
+  // cascade runs each package's gate through this same file, so the children
+  // exist.
+  if (ownsLock) {
+    process.env[GATE_RUN_ENV] = runId;
+  }
+  if (lockDecision.action === 'steal') {
+    console.warn(`test-timing: ${lockDecision.reason}`);
+  }
+}
+if (lockDecision.overridden === true) {
+  // NAMED, never silent: the same rule the skip-browser banner follows.
+  // `override` deliberately leaves `ownsLock` false, so this run neither
+  // rewrites the incumbent's record nor clears it on the way out.
+  console.warn(`\n⚠ test-timing: ${lockDecision.reason}\n`);
+}
+
+process.on('exit', () => {
+  if (ownsLock) {
+    clearLock(lockFile);
+  }
+});
+for (const signal of /** @type {const} */ (['SIGINT', 'SIGTERM'])) {
+  process.on(signal, () => {
+    if (ownsLock) {
+      clearLock(lockFile);
+    }
+    process.exit(130);
+  });
+}
+
 warnOnChainDrift();
+
+const { skipBrowser } = resolveGateMode(process.env);
+const stages = gateStages(project, { skipBrowser });
+
+if (skipBrowser) {
+  // NAMED, never silent. The repo's rule for a run that covers less than the
+  // full gate is that it says so — a quiet subset reads as "everything passed".
+  const skipped = project.stages
+    .filter((stage) => !stages.includes(stage))
+    .map((stage) => stage.name);
+  console.log(
+    `\n⏭ ${project.name}: ${SKIP_BROWSER_ENV} set — running ${stages.length} of ${project.stages.length} stages, skipping ${skipped.join(', ') || '(none)'}.\n   Dependent mode (DEC-G2): builds, static checks and unit tests only.`
+  );
+}
 
 const gateStart = performance.now();
 /** @type {(TestCounts | null)[]} */
 const stageCounts = [];
 let allRecorded = true;
 
-for (const stage of project.stages) {
+for (const stage of stages) {
   console.log(`\n▶ ${project.name} ${stage.name}`);
   const result = await runStage(project, stage.name, []);
   if (result.exitCode !== 0) {
@@ -111,7 +243,9 @@ for (const stage of project.stages) {
   }
   // AFTER the pass/fail check, so a red stage still reports its own failure
   // rather than a budget message about a run that never finished its work.
-  const breach = budgetBreach(stage, result.durationMs);
+  // `process.env` because the ceiling is calibrated from the local median and
+  // CI records none of its own — see the CI note in budget.mjs.
+  const breach = budgetBreach(stage, result.durationMs, process.env);
   if (breach !== null) {
     console.error(`\n✖ gate failed on a wall-clock budget:\n${breach}`);
     process.exit(1);
@@ -123,7 +257,17 @@ for (const stage of project.stages) {
 const totalMs = Math.round(performance.now() - gateStart);
 // The total row must reflect a complete recorded gate run; if any stage
 // skipped recording (e.g. CI), the total is skipped too.
-if (allRecorded) {
+//
+// AND NOT IN DEPENDENT MODE, which is the same rule for a different reason and
+// is load-bearing: a browser-less OsmDemo run totals ~119 s against a real
+// ~700 s, `HISTORY_LIMIT` is 10, so ten dependent runs would evict every
+// genuine cascade total from the artefact. The next full run would then flag
+// itself 🔺 slower by ~500 % against a median built from partial runs, and
+// every flag in between is noise. The 2026-08-09 gate-cost decision (§4)
+// permits a LABELLED discontinuity in this artefact and forbids a silent one;
+// this is silent by construction, so the row is simply not written. Per-stage
+// rows are unaffected — same command, same work, comparable to their history.
+if (allRecorded && !skipBrowser) {
   try {
     console.log(
       `\n${recordStage(project, TOTAL_STAGE, totalMs, sumCounts(stageCounts))}`

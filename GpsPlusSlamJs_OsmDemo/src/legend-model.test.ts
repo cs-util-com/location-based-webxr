@@ -21,7 +21,26 @@
 import { describe, it, expect } from "vitest";
 
 import { classifyScore, legendModel } from "./legend-model.js";
-import { describeScale } from "./heat-colours.js";
+import { describeScale, fixedScale } from "./heat-colours.js";
+
+/**
+ * What the DATA does, for tests that are about the RAMP rather than the data.
+ *
+ * Non-degenerate on purpose: `legendModel` keys its "nothing here" message on
+ * `aboveThresholdCount` now (DEC-H7), so a zero here would put every test below
+ * into the empty state.
+ */
+const SOME_DATA = { aboveThresholdCount: 12, observedMax: 8 };
+
+/**
+ * No cell clears the bar — the R3-8 case.
+ *
+ * KEYED ON THE COUNT, not on a degenerate scale. `max <= threshold` used to
+ * mean this, and it only worked because the max was observed; under a fixed
+ * ramp it can never be true again, so the fix would have died silently and its
+ * e2e stayed green.
+ */
+const NOTHING_HERE = { aboveThresholdCount: 0, observedMax: 1 };
 
 const SCALE = { threshold: 1, max: 8 };
 
@@ -29,19 +48,25 @@ describe("legendModel — the ramp", () => {
   it("names the category, so the colours belong to something visible", () => {
     // The M2 fix: a picture that does not say what it is a picture OF cannot be
     // checked by eye against a category switch.
-    expect(legendModel(SCALE, "walkable", false).category).toBe("walkable");
+    expect(legendModel(SCALE, "walkable", false, SOME_DATA).category).toBe(
+      "walkable",
+    );
   });
 
   it("labels the ends with the threshold and the max actually on screen", () => {
-    const model = legendModel(SCALE, "walkable", false);
+    const model = legendModel(SCALE, "walkable", false, SOME_DATA);
     expect(model.minLabel).toBe("1");
     expect(model.maxLabel).toBe("8");
   });
 
   it("rounds a messy max, because a product prints as 3.6000000000000005", () => {
     expect(
-      legendModel({ threshold: 1, max: 3.6000000000000005 }, "x", false)
-        .maxLabel,
+      legendModel(
+        { threshold: 1, max: 3.6000000000000005 },
+        "x",
+        false,
+        SOME_DATA,
+      ).maxLabel,
     ).toBe("3.6");
   });
 
@@ -56,8 +81,12 @@ describe("legendModel — the ramp", () => {
     // as reported — which is why this file had its own `round` and why that copy
     // is now gone.
     expect(
-      legendModel({ threshold: 1, max: 27992463056732.17 }, "walkable", false)
-        .maxLabel,
+      legendModel(
+        { threshold: 1, max: 27992463056732.17 },
+        "walkable",
+        false,
+        SOME_DATA,
+      ).maxLabel,
     ).toBe("2.8e13");
   });
 
@@ -65,22 +94,94 @@ describe("legendModel — the ramp", () => {
     // The duplicate `round` in this file is what let the two drift apart. They
     // are now the same function, and this pins that rather than the coincidence
     // that both currently abbreviate.
-    const model = legendModel({ threshold: 1, max: 1.4e12 }, "walkable", false);
+    const model = legendModel(
+      { threshold: 1, max: 1.4e12 },
+      "walkable",
+      false,
+      SOME_DATA,
+    );
     expect(model.maxLabel).toBe("1.4e12");
     expect(model.description).toContain("1.4e12");
   });
 
-  it("abbreviates the empty-state message too, so no path prints the long number", () => {
-    // `emptyMessage` names the threshold, and a large threshold off the rule
-    // sheet would otherwise reproduce the defect on the one screen where there
-    // is nothing else to look at.
-    const model = legendModel({ threshold: 250000, max: 250000 }, "x", false);
-    expect(model.emptyMessage).toContain("2.5e5");
-    expect(model.emptyMessage).not.toContain("250000");
+  it("spells the RAMP'S TOP out, which is what the owner reported", () => {
+    // THE HEADLINE OF DEC-U8, and it was asserted nowhere. Every other test in
+    // this file happens to use a value where the two formatters agree, so
+    // reverting `legend-model.ts` to `formatScore` passed the entire suite
+    // while undoing the owner's request on the surface they reported it from.
+    const model = legendModel(fixedScale(1), "walkable", false, {
+      observedMax: 512.4,
+      aboveThresholdCount: 3,
+    });
+
+    expect(model.maxLabel).toBe("10 000");
+    expect(model.maxLabel).not.toContain("e4");
+  });
+
+  it("spells a readable threshold out in the empty-state message", () => {
+    // DEC-U8, 2026-08-19. This used to assert `2.5e5`, because every endpoint
+    // was abbreviated alike. The owner asked for the ramp's numbers to be
+    // written out, and 250 000 is comfortably readable — the exponential form
+    // was protecting against twelve digits, not six.
+    //
+    // EMPTY IS NOW A COUNT (DEC-H7). The scale can no longer be degenerate, so
+    // nothing-here has to be said by the data rather than inferred from a
+    // collapsed ramp.
+    const model = legendModel(fixedScale(250000), "x", false, NOTHING_HERE);
+    expect(model.emptyMessage).toContain("250 000");
+    expect(model.emptyMessage).not.toContain("2.5e5");
+  });
+
+  it("STILL abbreviates a threshold that would print without bound", () => {
+    // The half of DEC-R6b-6 that survives DEC-U8, and the reason the spell-out
+    // is a threshold rather than unconditional. `scaleFor` falls back to
+    // `threshold * 10` once a threshold reaches the cap, so a rule table with a
+    // high threshold can put a ten-digit number on this label — which is the
+    // defect DEC-R6b-6 removed, on the one screen where there is nothing else
+    // to look at.
+    const model = legendModel(fixedScale(2.5e9), "x", false, NOTHING_HERE);
+    expect(model.emptyMessage).toContain("2.5e9");
+  });
+
+  it("reports what the DATA reaches, not just where the ramp ends", () => {
+    // THE COMPENSATING HALF OF DEC-H7, and it was asserted nowhere until the
+    // r513 review said so. `heat-colours.ts.md` accepts saturating ~10-14 % of
+    // `walkable` explicitly on the grounds that "the legend compensates, and
+    // has to" — so this is the assertion that claim rests on. Wiring
+    // `observedLabel` to `maxLabel`, or deleting the span from the view, kept
+    // every test green.
+    //
+    // The two must be able to DIFFER: `maxLabel` is the fixed cap and is the
+    // same everywhere, `observedLabel` is what is on screen here.
+    const model = legendModel(fixedScale(1), "walkable", false, {
+      aboveThresholdCount: 40,
+      observedMax: 512.4,
+    });
+
+    expect(model.observedLabel).toBe("512.4");
+    expect(model.maxLabel).not.toBe(model.observedLabel);
+    expect(model.aboveThresholdCount).toBe(40);
+  });
+
+  it("reports a saturating field differently from a flat one", () => {
+    // WHY THE READOUT EXISTS AT ALL. On a clipped ramp both look identical —
+    // every cell at the yellow end. The observed max is the only thing that
+    // separates "everything here is off the top of the scale" from "everything
+    // here is merely at it".
+    const saturating = legendModel(fixedScale(1), "walkable", false, {
+      aboveThresholdCount: 900,
+      observedMax: 3e17,
+    });
+    const flat = legendModel(fixedScale(1), "walkable", false, {
+      aboveThresholdCount: 900,
+      observedMax: 1e4,
+    });
+
+    expect(saturating.observedLabel).not.toBe(flat.observedLabel);
   });
 
   it("gives every ramp swatch a distinct colour, low to high", () => {
-    const swatches = legendModel(SCALE, "walkable", false).ramp;
+    const swatches = legendModel(SCALE, "walkable", false, SOME_DATA).ramp;
     expect(swatches.length).toBeGreaterThanOrEqual(5);
     expect(new Set(swatches.map((s) => s.colour)).size).toBe(swatches.length);
     // Ordered dark-to-bright the same way the map is, or the legend is a lie
@@ -91,14 +192,19 @@ describe("legendModel — the ramp", () => {
   it("keeps `describeScale` as the accessible text, so the claim survives", () => {
     // DEC-13: the sentence is replaced pictorially, not deleted. It stays as the
     // legend's title/aria text — the same claim, legible to a screen reader.
-    const model = legendModel(SCALE, "walkable", false);
+    const model = legendModel(SCALE, "walkable", false, SOME_DATA);
     expect(model.description).toBe(describeScale(SCALE));
   });
 
   it("degrades to a single stop when every cell scores the same", () => {
     // `heatScale` collapses max===threshold; a legend that divided by the span
     // would emit NaN colours and Leaflet would drop every path.
-    const model = legendModel({ threshold: 1, max: 1 }, "walkable", false);
+    const model = legendModel(
+      { threshold: 1, max: 1 },
+      "walkable",
+      false,
+      SOME_DATA,
+    );
     expect(model.ramp.every((s) => s.colour.startsWith("#"))).toBe(true);
     expect(model.minLabel).toBe("1");
     expect(model.maxLabel).toBe("1");
@@ -137,11 +243,11 @@ describe("classifyScore — which band a cell belongs to", () => {
 
 describe("legendModel — the sub-threshold bands (DEC-7)", () => {
   it("shows no bands until the user asks for them", () => {
-    expect(legendModel(SCALE, "walkable", false).bands).toEqual([]);
+    expect(legendModel(SCALE, "walkable", false, SOME_DATA).bands).toEqual([]);
   });
 
   it("shows exactly three, and they are visually distinct from each other", () => {
-    const bands = legendModel(SCALE, "walkable", true).bands;
+    const bands = legendModel(SCALE, "walkable", true, SOME_DATA).bands;
     expect(bands.map((b) => b.kind)).toEqual(["veto", "identity", "below"]);
     // The whole reason the checkbox exists is to tell a hard veto apart from
     // "no rule said anything". Two bands that render identically would answer
@@ -152,7 +258,7 @@ describe("legendModel — the sub-threshold bands (DEC-7)", () => {
   it("draws the identity band as an outline with no fill", () => {
     // "Nothing known here" must not assert knowledge the data does not have —
     // the claim `map-view.ts` has always made in a comment, now made in pixels.
-    const identity = legendModel(SCALE, "walkable", true).bands.find(
+    const identity = legendModel(SCALE, "walkable", true, SOME_DATA).bands.find(
       (b) => b.kind === "identity",
     );
     expect(identity?.fill).toBe(false);
@@ -160,7 +266,7 @@ describe("legendModel — the sub-threshold bands (DEC-7)", () => {
   });
 
   it("labels the veto band with its number, not just a word", () => {
-    const veto = legendModel(SCALE, "walkable", true).bands.find(
+    const veto = legendModel(SCALE, "walkable", true, SOME_DATA).bands.find(
       (b) => b.kind === "veto",
     );
     expect(veto?.label).toContain("0");
@@ -168,9 +274,12 @@ describe("legendModel — the sub-threshold bands (DEC-7)", () => {
   });
 
   it("labels the partial band against the threshold that hides it", () => {
-    const below = legendModel({ threshold: 2, max: 8 }, "x", true).bands.find(
-      (b) => b.kind === "below",
-    );
+    const below = legendModel(
+      { threshold: 2, max: 8 },
+      "x",
+      true,
+      SOME_DATA,
+    ).bands.find((b) => b.kind === "below");
     expect(below?.label).toContain("2");
   });
 });
@@ -185,7 +294,7 @@ describe("the empty state (W12, finding R3-8)", () => {
    * between two identical labels is a picture that explains nothing.
    */
   it("says so when nothing scores above the bar", () => {
-    const model = legendModel({ threshold: 1, max: 1 }, "spawnPoint", false);
+    const model = legendModel(fixedScale(1), "spawnPoint", false, NOTHING_HERE);
 
     expect(model.emptyMessage).toContain("spawnPoint");
     expect(model.emptyMessage).toContain("1");
@@ -195,7 +304,7 @@ describe("the empty state (W12, finding R3-8)", () => {
     // The other direction: a legend that claimed emptiness over a real ramp
     // would be worse than the bug.
     expect(
-      legendModel({ threshold: 1, max: 1.0001 }, "walkable", false)
+      legendModel({ threshold: 1, max: 1.0001 }, "walkable", false, SOME_DATA)
         .emptyMessage,
     ).toBeUndefined();
   });
@@ -203,7 +312,7 @@ describe("the empty state (W12, finding R3-8)", () => {
   it("still offers the sub-threshold bands, which is when they matter most", () => {
     // "Nothing qualifies" is exactly the moment someone wants to see what IS
     // there — a veto reads very differently from "no rule ever mentioned this".
-    const model = legendModel({ threshold: 1, max: 1 }, "spawnPoint", true);
+    const model = legendModel(fixedScale(1), "spawnPoint", true, NOTHING_HERE);
 
     expect(model.bands).toHaveLength(3);
   });

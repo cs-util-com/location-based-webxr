@@ -1,10 +1,9 @@
 # GpsPlusSlamJs_QrTrackingDemo
 
 A standalone QR-tracking **debug/demo** app consuming
-`gps-plus-slam-app-framework`. It is the realization of **Note 4** of the
-[QR-tracking follow-up plan](../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-15-1219-qr-tracking-generalization-overlay-and-north-followup.md)
-and the desktop stand-in for the mandatory, manual **§5 on-device verification
-gate** ("green axis-overlay glued to a printed code").
+`gps-plus-slam-app-framework`. It is the desktop stand-in for the mandatory,
+manual on-device verification gate — "green axis-overlay glued to a printed
+code" — which is the only check that proves marker tracking actually works.
 
 ## What it does
 

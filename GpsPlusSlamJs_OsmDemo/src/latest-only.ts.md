@@ -20,7 +20,7 @@ recent one, so a slow fetch cannot be overtaken by a newer click.
   arrives. Originally the in-flight run was left to finish and only its result was
   discarded, because on the main thread there was nothing to cancel. Since the
   pipeline moved into a worker there is: a superseded position keeps pulling tiles
-  at 28–68 MB each for ground the user has left.
+  at ~21 MB each for ground the user has left.
   - **Each run gets a FRESH controller.** Reusing one would leave it aborted
     forever after the first supersession, so every later run would start cancelled
     and nothing would complete again.

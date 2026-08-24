@@ -1,9 +1,20 @@
 #!/usr/bin/env node
-// Dependency-aware ITERATION gate (speedup plan Phase B): runs the gates of
-// changed packages plus every package that depends on them, instead of the
-// full 8-package cascade. Iteration-only by design — THE FULL `pnpm test`
-// CASCADE REMAINS THE COMMIT GATE; nothing here may replace it before a
-// commit is declared ready.
+// Dependency-aware COMMIT gate (DEC-G1, 2026-08-15). Runs the changed packages'
+// gates in full, plus every package that depends on them WITHOUT their browser
+// stages (DEC-G2), instead of the full 11-package cascade.
+//
+// It was the ITERATION gate until 2026-08-15, and its header said "THE FULL
+// `pnpm test` CASCADE REMAINS THE COMMIT GATE". That changed because the
+// cascade was measured at 22.7 min run ~10x on an active day — 4+ hours — while
+// CI runs the identical cascade on every PR. The full cascade now runs ONCE per
+// session before the PR (DEC-G3), and in CI.
+//
+// WHAT THIS GIVES UP, stated because a weaker gate must never look like a
+// stronger one: a change that breaks only a DEPENDENT's rendering (its e2e) is
+// not caught here — it is caught by the session-end cascade or by CI.
+//
+// Scope: `location-based-webxr` only. `GpsPlusSlamJs` and
+// `GpsPlusSlamJs_Investigation` have no equivalent and keep their own full gate.
 //
 // Usage: pnpm run test:changed [--all] [--ref <git-ref>] [--dry-run]
 //   --all      run the full cascade (escape hatch, e.g. after a change to
@@ -18,9 +29,10 @@
 // - `git diff --name-only <ref>` for tracked changes (staged + unstaged);
 // - `git status --porcelain` `??` entries for untracked files, which git
 //   diff never lists — a brand-new test file must still count as a change;
-// - selected packages run via `pnpm --filter ...<name>` (the package AND its
-//   dependents — pnpm's workspace graph provides the safety closure) with
-//   --workspace-concurrency=1 (parallel gates would race e2e ports);
+// - changed packages run via `pnpm --filter <name> test` (full gate); their
+//   dependents run via `--filter "...<name>" --filter "!<name>"` with
+//   GATE_SKIP_BROWSER_STAGES set; --workspace-concurrency=1 throughout
+//   (parallel gates would race e2e ports);
 // - the root repo-config tests always run first: they are seconds-cheap and
 //   guard the root config this selection logic itself depends on.
 
@@ -29,7 +41,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { selectPackages } from './select.mjs';
+import { SKIP_BROWSER_ENV } from '../test-timing/projects.mjs';
+import { gateCommands, selectPackages } from './select.mjs';
 
 const WORKSPACE_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 
@@ -95,23 +108,28 @@ function execAndExit(command) {
   process.exit(child.status ?? 1);
 }
 
-function warnOnLibraryLinkOverride() {
+/** @returns {boolean} is the sibling library link-overridden into this repo? */
+function libraryLinkOverrideActive() {
   try {
     const yaml = readFileSync(
       path.join(WORKSPACE_ROOT, 'pnpm-workspace.yaml'),
       'utf8'
     );
-    if (/gps-plus-slam-js:\s*link:/.test(yaml)) {
-      console.warn(
-        'test-changed: ⚠ gps-plus-slam-js is link-overridden to the sibling repo — library changes are INVISIBLE to this selection. After a library change, use `pnpm run test:changed --all` (or at least the framework+consumer gates).'
-      );
-    }
+    return /gps-plus-slam-js:\s*link:/.test(yaml);
   } catch {
-    // Advisory only — never block the gate on the warning path.
+    // Unreadable workspace file: report "not active" and let the run proceed.
+    // The alternative — treating an IO error as an override — would block the
+    // gate on the diagnostic path.
+    return false;
   }
 }
 
-warnOnLibraryLinkOverride();
+const linkOverride = libraryLinkOverrideActive();
+if (linkOverride) {
+  console.warn(
+    'test-changed: ⚠ gps-plus-slam-js is link-overridden to the sibling repo — library changes are INVISIBLE to this selection.'
+  );
+}
 
 if (runAll) {
   if (dryRun) {
@@ -150,19 +168,56 @@ if (dryRun) {
   process.exit(0);
 }
 
-const filters = names.map((name) => `--filter "...${name}"`).join(' ');
-const command =
-  names.length === 0
-    ? 'pnpm run test:repo-config'
-    : `pnpm run test:repo-config && pnpm --workspace-concurrency=1 ${filters} test`;
-const child = spawnSync(command, {
-  shell: true,
-  stdio: 'inherit',
-  cwd: WORKSPACE_ROOT,
-});
-if ((child.status ?? 1) === 0 && names.length > 0) {
+// A LIBRARY-ONLY CHANGE MUST NOT PASS AS A 4-SECOND NO-OP. With the override
+// installed, webxr consumes the sibling library from source, so a change there
+// is real and this selection cannot see any of it — `git` in THIS repo reports
+// nothing. Before DEC-G1 that was harmless (the full cascade was still the
+// commit gate); now it would be the whole gate. Without the override the repo
+// consumes the published library and a library change genuinely cannot affect
+// it, so the guard is deliberately conditioned on the override.
+if (names.length === 0 && linkOverride) {
+  console.error(
+    'test-changed: ✖ no webxr package changed, but the gps-plus-slam-js link: override is active.\n' +
+      '  A library change is invisible here, so this run would prove almost nothing.\n' +
+      '  Run `pnpm run test:changed --all`, or `cd ../gps-plus-slam/GpsPlusSlamJs && pnpm test` if only the library changed.'
+  );
+  process.exit(2);
+}
+
+/**
+ * @param {string} command
+ * @param {Record<string, string>} [extraEnv] - merged over process.env. Passed
+ *   through spawnSync's `env` rather than inlined as `VAR=1 cmd`, which is not
+ *   valid syntax in the cmd.exe shell `shell: true` uses on Windows.
+ * @returns {number} exit status
+ */
+function run(command, extraEnv = {}) {
+  console.log(`\ntest-changed: ${command}`);
+  const child = spawnSync(command, {
+    shell: true,
+    stdio: 'inherit',
+    cwd: WORKSPACE_ROOT,
+    env: { ...process.env, ...extraEnv },
+  });
+  return child.status ?? 1;
+}
+
+// Construction lives in `select.mjs` so the split is unit-tested; this loop
+// only executes it, fail-fast, in order.
+let status = 0;
+for (const { command, env } of gateCommands(names, {
+  skipBrowserEnv: SKIP_BROWSER_ENV,
+})) {
+  status = run(command, env);
+  if (status !== 0) {
+    break;
+  }
+}
+
+if (status === 0 && names.length > 0) {
   console.log(
-    '\ntest-changed: ✔ iteration gate green — remember: the full `pnpm test` cascade is still the commit gate.'
+    '\ntest-changed: ✔ commit gate green (DEC-G1) — changed packages in full, dependents without e2e.\n' +
+      '  The whole-repo cascade runs once per session before the PR, and on every PR in CI.'
   );
 }
-process.exit(child.status ?? 1);
+process.exit(status);

@@ -178,15 +178,45 @@ function appsMissingContracts(discovered, registered) {
  * single function name. The framework itself never imports its own package
  * name, so this also excludes it.
  */
+/**
+ * Does this source text actually IMPORT the framework?
+ *
+ * A bare `includes('gps-plus-slam-app-framework')` used to answer this, and it
+ * was wrong in the direction that costs the most: a file that merely NAMES the
+ * package — in a comment explaining why the package deliberately is not a
+ * dependency, which is exactly the comment someone writes — made its whole app
+ * look like an AR app and failed the coverage guard below with a message about
+ * a missing overlay contract. That happened for real on 2026-08-24.
+ *
+ * So the match is anchored to the syntax that constitutes a dependency:
+ * `from '…'`, a side-effect `import '…'`, a dynamic `import('…')`, or
+ * `require('…')` — with comments stripped first, because prose that QUOTES an
+ * import line would satisfy syntax anchoring alone, and with the specifier
+ * required to be the exact package name (optionally with a `/` subpath), so a
+ * lookalike package cannot classify its importer as an AR app.
+ */
+export function textImportsFramework(source) {
+  // Comments stripped first: the regex below is anchored to import SYNTAX,
+  // but prose that QUOTES an import line ("we deliberately don't import
+  // '…'") still satisfies it. Same approach as `ar-entry-wiring.test.ts` —
+  // "so a mention in prose cannot satisfy a guard".
+  const code = source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/[^\n]*/g, '');
+  // The specifier must be the exact package name, or the name plus a `/`
+  // subpath — a lookalike (`…-mock`, `not-…`) is a different dependency.
+  return /(?:\bfrom|\bimport|\brequire)\s*\(?\s*['"]gps-plus-slam-app-framework(?:\/[^'"]*)?['"]/.test(
+    code,
+  );
+}
+
 function srcImportsFramework(appDir) {
   const srcDir = join(appDir, 'src');
   if (!existsSync(srcDir)) return false;
   return readdirSync(srcDir, { recursive: true, withFileTypes: true })
     .filter((e) => e.isFile() && /\.(ts|tsx|js|jsx|mts|cts)$/.test(e.name))
     .some((e) =>
-      readFileSync(join(e.parentPath, e.name), 'utf8').includes(
-        'gps-plus-slam-app-framework',
-      ),
+      textImportsFramework(readFileSync(join(e.parentPath, e.name), 'utf8')),
     );
 }
 
@@ -267,6 +297,60 @@ describe('overlay-contract coverage guard', () => {
           ['a/index.html', 'x/index.html'],
         ),
       ).toEqual([]);
+    });
+  });
+
+  describe('textImportsFramework', () => {
+    // WHY THIS MATTERS: the discovery rule decides which apps the coverage
+    // guard demands an overlay contract from. Before 2026-08-24 it matched the
+    // package name anywhere in a file, so a COMMENT saying the package is
+    // deliberately not a dependency turned that app into an AR app and failed
+    // the guard with an unrelated message. Both directions are pinned here.
+    it('matches real import forms', () => {
+      for (const source of [
+        `import { x } from 'gps-plus-slam-app-framework/utils/escape-html';`,
+        `import "gps-plus-slam-app-framework";`,
+        `const m = await import('gps-plus-slam-app-framework/ar');`,
+        `const m = require("gps-plus-slam-app-framework");`,
+      ]) {
+        expect(textImportsFramework(source)).toBe(true);
+      }
+    });
+
+    it('does not match the package name in prose', () => {
+      expect(
+        textImportsFramework(
+          '// Landing does not depend on gps-plus-slam-app-framework, and\n' +
+            '// adding that edge to a marketing site is the worse trade.',
+        ),
+      ).toBe(false);
+    });
+
+    it('does not match an import QUOTED inside a comment', () => {
+      // The 2026-08-24 incident's other shape: prose that quotes the import
+      // line satisfies a regex anchored to import syntax. Comments are
+      // stripped before matching — the idiom `ar-entry-wiring.test.ts` uses
+      // "so a mention in prose cannot satisfy a guard". Found by claude[bot]
+      // review on PR #351.
+      for (const source of [
+        `// we deliberately don't import "gps-plus-slam-app-framework" here`,
+        `// the alternative was import('gps-plus-slam-app-framework/utils/escape-html')`,
+        `/* import { x } from 'gps-plus-slam-app-framework'; */`,
+      ]) {
+        expect(textImportsFramework(source)).toBe(false);
+      }
+    });
+
+    it('does not match a package whose name merely contains the framework name', () => {
+      // `[^'"]*` matched any specifier CONTAINING the name, so a lookalike
+      // package classified its importer as an AR app. Only the exact name, or
+      // the exact name plus a `/` subpath, is a framework dependency.
+      for (const source of [
+        `import 'gps-plus-slam-app-framework-mock';`,
+        `import { y } from "not-gps-plus-slam-app-framework";`,
+      ]) {
+        expect(textImportsFramework(source)).toBe(false);
+      }
     });
   });
 

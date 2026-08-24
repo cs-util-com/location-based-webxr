@@ -21,6 +21,14 @@ const captureArtifacts = process.env.PLAYWRIGHT_CAPTURE === "1";
 
 export default defineConfig({
   testDir: ".",
+  // REFUSE TO RUN AGAINST A DEV SERVER OLDER THAN THE LAST LIBRARY BUILD.
+  // `reuseExistingServer` below asks only whether the URL responds, and a server
+  // that predates a rebuild of a linked workspace library still rewrites imports
+  // to content-hashed files the rebuild renamed away — one 404, no boot, and every
+  // spec that waits for the app times out looking exactly like a code defect.
+  // That cost a session and a mislabelled commit on 2026-08-16.
+  // See scripts/e2e/dev-server-freshness.mjs.md.
+  globalSetup: "../../scripts/e2e/playwright-global-setup.mjs",
   // 90 s, not Playwright's 30 s default, and the default was INCOHERENT with this
   // suite's own waits: `waitForRefresh` allows the pipeline 60 s to finish, which
   // it could never use, because the test was killed at 30 s first. The boot chain
@@ -111,6 +119,25 @@ export default defineConfig({
     baseURL: "http://127.0.0.1:5186",
     trace: captureArtifacts ? "on" : "on-first-retry",
     screenshot: captureArtifacts ? "on" : "only-on-failure",
+    // `retain-on-failure`, KEPT AFTER MEASURING THE ALTERNATIVE AND REJECTING IT.
+    //
+    // A findings doc measured `video` at ~29 % of the e2e stage on a SEVEN-test
+    // suite and recommended `on-first-retry`, matching `trace` -- explicitly
+    // "measure it before adopting it across all seven" packages. Measured here:
+    //
+    //   retain-on-failure   861.7 s median
+    //   on-first-retry      899.5 s  (one run, flagged as within noise)
+    //
+    // NO SAVING. The 29 % does not generalise. That suite's tests are short, so
+    // per-test encode is a large share of them; here each of 72 tests boots a
+    // WebGL scene, and at `workers: 1` the encode overlaps the next test's
+    // setup rather than adding wall clock.
+    //
+    // AND THE COST WOULD HAVE BEEN REAL. `retries` is 0 locally, so
+    // `on-first-retry` records NOTHING on a local failure -- and since `trace`
+    // is already `on-first-retry`, the video is the ONLY local failure artefact
+    // there is. The trade was: lose the last thing you can look at when a test
+    // fails on this machine, in exchange for nothing measurable.
     video: captureArtifacts ? "on" : "retain-on-failure",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],

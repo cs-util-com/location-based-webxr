@@ -47,7 +47,7 @@
     "capture:sites": "node --experimental-strip-types scripts/capture-fixtures.mjs --sites"
   },
   "engines": {
-    "node": ">=22.14.0"
+    "node": ">=22.15.0"
   },
   "peerDependencies": {
     "h3-js": ">=4.2.1"
@@ -62,6 +62,7 @@
     "eslint": "^10.3.0",
     "eslint-config-prettier": "^10.1.8",
     "fast-check": "^4.8.0",
+    "flatbush": "^4.6.2",
     "globals": "^17.6.0",
     "h3-js": "^4.4.0",
     "osmtogeojson": "3.0.0-beta.5",

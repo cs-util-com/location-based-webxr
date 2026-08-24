@@ -3,7 +3,7 @@
  *
  * WHY THE DEMO NEEDS THIS. `refresh()` is fired by every map click and every
  * category change, and it awaits `pipeline.update()` — a real Overpass fetch,
- * measured at 18.2 s for a res-7 tile. The map stays clickable for that whole
+ * a res-7 tile takes ~15–90 s. The map stays clickable for that whole
  * window, so without a guard two clicks give two `pipeline.update()` calls
  * racing into the same `AffordanceIndex`, two `mapView.render()` calls, and a
  * status line written by whichever settles last, which may be the EARLIER
@@ -79,7 +79,7 @@ export function latestOnly<T>(
       // Originally the in-flight run was left to finish, because on the main
       // thread there was nothing to cancel — the work was synchronous once it
       // started. Since the pipeline moved into a worker there is: a superseded
-      // position's fetch is 28–68 MB per tile, pulled for ground the user has
+      // position's fetch is ~21 MB per tile, pulled for ground the user has
       // already left. `DemoPipeline` checks the signal between tiles, which is
       // the granularity where the saving actually is.
       //

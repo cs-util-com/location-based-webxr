@@ -22,7 +22,7 @@
  *    "not mapped there" and "our capture filter dropped it".
  * 2. The script builds the UNION form, not a regex. This is a correctness
  *    property of the query, not a style preference: measured 2026-07-28, union
- *    200 OK in 18.2 s vs regex 504 in 8 s on the same res-7 tile.
+ *    200 OK vs regex 504 in 8 s on the same res-7 tile.
  *
  * Reading the script as text is deliberate. The alternative — importing the
  * built `dist/` from the script — removes the duplication entirely but couples

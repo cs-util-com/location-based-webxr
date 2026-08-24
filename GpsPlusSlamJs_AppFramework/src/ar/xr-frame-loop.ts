@@ -36,7 +36,19 @@ export interface XrFrameContext {
   readonly session: XRSession;
   /** Seconds since the previous frame (0 on the first frame after a reset). */
   readonly dt: number;
-  /** Seconds since the session started. */
+  /**
+   * Seconds from the animation-frame timestamp — **page-relative, NOT
+   * session-relative**, despite what this said until 2026-08-13.
+   *
+   * `onXRFrame` computes it as `time / 1000`, and `time` is the rAF timestamp,
+   * so a session entered thirty seconds after page load sees its FIRST frame at
+   * `elapsed ≈ 30`. It is monotonic and safe to difference; it is not safe to
+   * treat as "time since entry".
+   *
+   * The old wording cost a consumer a real defect: a frame-rate average
+   * initialised its window to `0`, which on a device made the first window as
+   * long as the page had been open and reported ~0 fps.
+   */
   readonly elapsed: number;
 }
 

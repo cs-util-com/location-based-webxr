@@ -1,0 +1,48 @@
+/* ==========================================================================
+   Tailwind, built LOCALLY rather than fetched from a CDN
+   ==========================================================================
+
+   WHY THIS FILE EXISTS. `index.html` used to load
+   `https://cdn.tailwindcss.com` — the Play CDN, which compiles in the browser
+   by scanning the live DOM. That made every page load depend on a third-party
+   host being reachable AND fast, and on 2026-08-19 it took the whole e2e suite
+   down: the host answered 302 in ~13 s twice and not at all on a third
+   attempt, so `page.goto`'s 30 s budget expired and every spec failed with a
+   timeout that looks exactly like an app defect. `playwright.config.js` warns
+   about that shape at the top of the file; it had already cost a session once.
+
+   The Play CDN is also documented by Tailwind as not for production.
+
+   WHAT CHANGES BEHAVIOURALLY, stated because it is the real risk of this swap.
+   The CDN scanned the live DOM, so it generated CSS for classes added at
+   runtime by any means. The build-time scanner reads SOURCE TEXT instead, so a
+   class assembled from fragments would silently lose its style. Checked before
+   switching: this app has no fragment interpolation in a class name. Every
+   utility appears as a literal, including the ones inside template literals,
+   where the interpolation substitutes a whole token and the rest are literals
+   the scanner sees.
+
+   IT IS ALSO A MAJOR VERSION JUMP, which the first version of this file did
+   not mention and review caught. `cdn.tailwindcss.com` served Tailwind v3;
+   this builds v4, which renamed and rescaled part of the utility set — a
+   second way styles could change, independent of the scanner difference.
+
+   WHAT WAS MEASURED, rather than argued. All 235 Tailwind utilities this app
+   uses were checked against the built CSS: none is missing, including the ones
+   review flagged as removed or renamed. `flex-shrink-0`, bare `rounded` (still
+   .25rem, as in v3), `backdrop-blur-sm` and `focus:outline-none` all emit
+   rules; v4 keeps the v3 names.
+
+   ONE VALUE DID CHANGE: `--blur-sm` is 8px in v4 where v3's was 4px, so the
+   single `backdrop-blur-sm` in `map-browser.ts` blurs twice as much as before.
+   Cosmetic, on one overlay panel, recorded here rather than discovered later.
+
+   THE GUARD IS NOT THIS COMMENT. `playwright-tests/smoke.spec.js` asserts a
+   computed style in a real browser, so "Tailwind silently stopped applying"
+   fails a test. That guard earned its keep immediately: it caught this file
+   being served as a 500 while every other spec stayed green, because the rest
+   of the suite asserts that elements exist rather than how they look.
+
+   ========================================================================== */
+
+@import "tailwindcss";

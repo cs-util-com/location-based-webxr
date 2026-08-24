@@ -14,6 +14,7 @@
  * `selectOnboardingGuidance(state)` wrapper is provided for convenience.
  */
 
+import { clamp01 } from '../utils/clamp01.js';
 import type { CombinedRootState } from './combined-root-state.js';
 import {
   selectTrackingQuality,
@@ -65,13 +66,6 @@ const HINTS: Record<OnboardingPhase, string> = {
   'almost-ready': 'Almost there — keep moving to sharpen the alignment.',
   ready: 'Tracking is ready — you can place your anchor now.',
 };
-
-function clamp01(value: number): number {
-  if (Number.isNaN(value)) return 0;
-  if (value < 0) return 0;
-  if (value > 1) return 1;
-  return value;
-}
 
 /**
  * Map a tracking-quality report (or `null` when none has been produced yet)

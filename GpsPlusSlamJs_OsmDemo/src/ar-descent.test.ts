@@ -1,0 +1,289 @@
+/**
+ * Tests for the AR entry fly-down (H5, Q5).
+ *
+ * Why these tests matter: the descent moves the whole city, on the same axis the
+ * auto-elevation estimator and the manual trim already move it. Three properties
+ * carry the feature — it holds, it lands exactly at zero, and it never produces
+ * a value that could put the scene somewhere unrecoverable. The last one is not
+ * defensive padding: `applyElevation` writes this straight into the position the
+ * city is drawn at, and a NaN there raises no error anywhere. The failure would
+ * read as "AR is empty", which is indistinguishable from several other causes.
+ */
+
+import { describe, expect, it } from "vitest";
+import * as fc from "fast-check";
+
+import {
+  descentComplete,
+  descentMayStart,
+  descentOffsetM,
+  DESCENT_ESTIMATE_WAIT_S,
+  DESCENT_FALL_S,
+  DESCENT_HOLD_S,
+  DESCENT_MAX_START_M,
+} from "./ar-descent.js";
+
+const START_M = 60;
+
+describe("the direction of travel (DEC-Y14)", () => {
+  /**
+   * Why these tests matter: r541 shipped this term POSITIVE, and a positive
+   * offset RAISES the content — `applyElevation` writes
+   * `up: geometricOffset.up + offsetM`. So the city started above the user and
+   * descended onto them, which is the inverse of the intent and was reported
+   * from the field as "genau falsch rum".
+   *
+   * The intent has always been that the CAMERA starts high. The XR camera is
+   * the device pose and cannot be moved, so the height is simulated by moving
+   * the world instead: a camera at +H above the world is identical to the world
+   * at −H below the camera. The term must therefore be NEGATIVE and rise to 0.
+   *
+   * Q5's name — "the fly-down" — describes the camera, and reading it as
+   * describing the content is how the sign got lost. These tests pin the frame
+   * of reference so the next reader cannot make the same substitution.
+   */
+
+  it("starts BELOW the user, not above", () => {
+    expect(descentOffsetM({ elapsedS: 0, startM: START_M })).toBeLessThan(0);
+  });
+
+  it("stays below or level for the whole descent, never above", () => {
+    // The single assertion that would have caught r541. A positive value here
+    // means the city is over the user's head.
+    fc.assert(
+      fc.property(fc.double({ min: 0, max: 20, noNaN: true }), (elapsedS) => {
+        expect(
+          descentOffsetM({ elapsedS, startM: START_M }),
+        ).toBeLessThanOrEqual(0);
+      }),
+    );
+  });
+
+  // THE CAMERA-FADE HALF OF THIS SIGN GUARD MOVED (DEC-M3). The veil no
+  // longer derives its alpha from the offset -- it holds at 1 for the whole
+  // fly-in and fades afterwards -- so the "a bare sign flip pins the alpha at
+  // 1" trap it guarded cannot arise any more. What survives of it is in
+  // `ar-entry-veil.test.ts`, against the new curve.
+});
+
+describe("descentOffsetM", () => {
+  it("HOLDS at the starting depth for the first few seconds", () => {
+    // The request is "nach ein paar Sekunden fängt er dann an". Without the
+    // hold the scene is already falling before the user has looked up from the
+    // button they pressed, which reads as a slow load rather than a move.
+    for (const elapsedS of [0, 1, DESCENT_HOLD_S]) {
+      expect(descentOffsetM({ elapsedS, startM: START_M })).toBe(-START_M);
+    }
+  });
+
+  it("lands at EXACTLY zero, and stays there", () => {
+    // Exactly, not approximately: this term is added to the applied elevation
+    // forever after, so a residual millimetre is a permanent offset on the
+    // whole city.
+    const end = DESCENT_HOLD_S + DESCENT_FALL_S;
+    expect(descentOffsetM({ elapsedS: end, startM: START_M })).toBe(0);
+    expect(descentOffsetM({ elapsedS: end + 60, startM: START_M })).toBe(0);
+  });
+
+  it("moves nothing on the first frame after the hold, and nothing at the end", () => {
+    // Zero slope at both ends is what makes this read as flying rather than as
+    // two jumps. A linear ramp starts and stops abruptly, which on a phone at
+    // arm's length looks like the scene was dropped.
+    const justAfterHold = descentOffsetM({
+      elapsedS: DESCENT_HOLD_S + 0.01,
+      startM: START_M,
+    });
+    expect(Math.abs(justAfterHold - -START_M)).toBeLessThan(0.05);
+
+    const justBeforeEnd = descentOffsetM({
+      elapsedS: DESCENT_HOLD_S + DESCENT_FALL_S - 0.01,
+      startM: START_M,
+    });
+    expect(Math.abs(justBeforeEnd)).toBeLessThan(0.05);
+  });
+
+  it("is monotone non-DEcreasing, so the city never sinks mid-ascent", () => {
+    // RENAMED AND INVERTED with DEC-Y14, not merely re-greened. The old title
+    // said "never rises mid-descent" and, once the sign was corrected, asserted
+    // the exact opposite of the behaviour it named. The city now travels UP
+    // from below, so the offset must never decrease.
+    fc.assert(
+      fc.property(
+        fc.double({ min: 0, max: 20, noNaN: true }),
+        fc.double({ min: 0, max: 20, noNaN: true }),
+        (a, b) => {
+          const [earlier, later] = a <= b ? [a, b] : [b, a];
+          expect(
+            descentOffsetM({ elapsedS: later, startM: START_M }),
+          ).toBeGreaterThanOrEqual(
+            descentOffsetM({ elapsedS: earlier, startM: START_M }) - 1e-9,
+          );
+        },
+      ),
+    );
+  });
+
+  it("CAPS the starting height, so a zoomed-out map cannot launch the session to orbit", () => {
+    // The 3D view can sit a kilometre up. Starting AR there means looking at
+    // nothing, with no way to tell the session from a failed load.
+    expect(descentOffsetM({ elapsedS: 0, startM: 5000 })).toBe(
+      -DESCENT_MAX_START_M,
+    );
+  });
+
+  it("never returns a non-finite or POSITIVE offset, for any input", () => {
+    // INVERTED with DEC-Y14: a positive value here is the defect r541 shipped -
+    // the city over the user's head. The bound that matters is now the upper
+    // one, and the magnitude is still capped.
+    fc.assert(
+      fc.property(
+        fc.oneof(
+          fc.double({ min: -100, max: 100, noNaN: true }),
+          fc.constant(Number.NaN),
+          fc.constant(Number.POSITIVE_INFINITY),
+        ),
+        fc.oneof(
+          fc.double({ min: -500, max: 5000, noNaN: true }),
+          fc.constant(Number.NaN),
+        ),
+        (elapsedS, startM) => {
+          const offset = descentOffsetM({ elapsedS, startM });
+          expect(Number.isFinite(offset)).toBe(true);
+          expect(offset).toBeLessThanOrEqual(0);
+          expect(offset).toBeGreaterThanOrEqual(-DESCENT_MAX_START_M);
+        },
+      ),
+    );
+  });
+
+  it("treats a zero start as no descent at all, not as a zero-length animation", () => {
+    // AR entered from a ground-level 3D view must behave exactly as it did
+    // before this feature existed — including the camera being visible at once.
+    expect(descentOffsetM({ elapsedS: 0, startM: 0 })).toBe(0);
+    expect(descentComplete({ elapsedS: 0, startM: 0 })).toBe(true);
+  });
+});
+
+describe("descentComplete", () => {
+  it("is the END-STATE SIGNAL a stalled descent needs", () => {
+    // Why this exists at all: a descent that stalls is indistinguishable from
+    // the recorded "flying roughly 50 m above the OSM buildings" datum bug, and
+    // that ambiguity is what would make a field report unactionable. A caller
+    // uses this to say on screen that the descent finished.
+    expect(descentComplete({ elapsedS: 0, startM: START_M })).toBe(false);
+    expect(
+      descentComplete({
+        elapsedS: DESCENT_HOLD_S + DESCENT_FALL_S,
+        startM: START_M,
+      }),
+    ).toBe(true);
+  });
+});
+
+describe("descentMayStart — the entry gate (r543)", () => {
+  // WHY THESE TESTS MATTER. The r543 field report: entering AR the first time
+  // placed the city from an elevation estimate that had not arrived, so the
+  // user started far under the world and everything jumped when the estimate
+  // landed. The descent must not begin until the number it is measured from
+  // exists — but it must still begin on a device that never produces one.
+
+  it("starts as soon as an ENGAGED estimate exists, without waiting out the clock", () => {
+    expect(descentMayStart({ waitedS: 0, estimateReady: true })).toBe(true);
+  });
+
+  it("holds while the estimate is missing", () => {
+    // The whole point: this is the state the reported jump came from.
+    expect(descentMayStart({ waitedS: 0, estimateReady: false })).toBe(false);
+    expect(
+      descentMayStart({
+        waitedS: DESCENT_ESTIMATE_WAIT_S - 0.01,
+        estimateReady: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("gives up and starts anyway once the wait is over", () => {
+    // A device with no depth and no DEM never engages the estimator. Waiting
+    // forever there is a black screen with no way out — a worse failure than
+    // the jump.
+    expect(
+      descentMayStart({
+        waitedS: DESCENT_ESTIMATE_WAIT_S,
+        estimateReady: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("treats a non-finite clock as 'not yet', never as 'go'", () => {
+    // Failing the other way would place the city from the zeroed estimate this
+    // gate exists to wait for — i.e. straight back into the reported bug.
+    // BOTH MEMBERS OF THE CLASS. The first version wrote
+    // `Number.POSITIVE_INFINITY * 0` for the second case, which IS `NaN` -- so
+    // it tested the same input twice and never passed an infinity at all. It
+    // would not have caught a mutation from `Number.isFinite` to
+    // `!Number.isNaN`. Cold review caught it.
+    for (const bad of [
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+    ]) {
+      expect(descentMayStart({ waitedS: bad, estimateReady: false })).toBe(
+        false,
+      );
+    }
+    // ...but an engaged estimate still wins, because then the clock is moot.
+    expect(descentMayStart({ waitedS: Number.NaN, estimateReady: true })).toBe(
+      true,
+    );
+  });
+});
+
+describe("the total length of the entry animation (DEC-L2)", () => {
+  /**
+   * Why these tests matter: the seventeenth field session watched the entry on
+   * a phone and asked for the whole fade-in to take "doppelt so lang" — the
+   * sphere's fade to transparent and the city's climb are one clock, so one
+   * constant carries both. These assertions pin the AGREED DURATION, which is
+   * the requirement itself.
+   *
+   * **LITERAL SECONDS ON PURPOSE**, unlike every other test in this file. The
+   * symbolic tests above pin the SHAPE of the curve and follow any retiming for
+   * free — which is exactly why they cannot notice a retiming that was never
+   * asked for. 12 s is the number the owner chose after watching 6 s, so it is
+   * the number written down.
+   *
+   * The reason behind it is not aesthetic: the auto-elevation correction glides
+   * in at 1.5 m/s, so a 10 m residual takes ~6.7 s from the moment the
+   * estimator engages. Against a 6 s animation that correction landed after the
+   * veil had gone and was visible as late movement. It does not GUARANTEE the
+   * correction is hidden — engagement time standing still is unmeasured, see
+   * `2026-08-21-1120-ar-entry-gate-fallback-may-be-the-normal-path-followup.md`
+   * — but 12 s makes it far more likely.
+   */
+
+  it("has NOT landed at 11.9 s, and has landed at exactly 12 s", () => {
+    expect(descentOffsetM({ elapsedS: 11.9, startM: START_M })).toBeLessThan(0);
+    expect(descentOffsetM({ elapsedS: 12, startM: START_M })).toBe(0);
+  });
+
+  it("is barely a third of the way up at 6 s, where the old timing had already landed", () => {
+    // The single assertion that fails on the OLD constants: at 6 s the previous
+    // 2 s + 4 s animation was over. With 2 s + 10 s the fall is 40 % elapsed,
+    // and smoothstep(0.4) = 0.352 — so 35.2 % of the height has been travelled
+    // and the city is still 64.8 % of `startM` below the user.
+    expect(descentOffsetM({ elapsedS: 6, startM: START_M })).toBeCloseTo(
+      -0.648 * START_M,
+      6,
+    );
+    // The veil half of this assertion moved to `ar-entry-veil.test.ts` with
+    // DEC-M3: the sphere no longer tracks the fly-in's progress at all.
+  });
+
+  it("keeps the hold short, so the extra time goes into visible motion", () => {
+    // DEC-L2 rejected doubling the hold as well. A motionless picture is the
+    // ambiguity the waiting line exists to cover, so the hold stays where it
+    // was and the fall absorbs the whole increase.
+    expect(DESCENT_HOLD_S).toBe(2);
+    expect(DESCENT_HOLD_S + DESCENT_FALL_S).toBe(12);
+  });
+});

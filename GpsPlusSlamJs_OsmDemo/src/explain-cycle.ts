@@ -11,7 +11,7 @@
  * this reason, having been missed here because the geo-event did not exist yet.
  *
  * WHY IT NEEDS STALENESS CHECKS AT ALL. Explaining a cell is an RPC now, because
- * the explanation needs the merged features (28–68 MB) and the rule table, both of
+ * the explanation needs the merged features (~21 MB) and the rule table, both of
  * which live in the worker. So an answer can arrive after the user has clicked a
  * different cell, or switched category. Rendering it then would put a confident
  * description of one cell under a map showing another — exactly the cross-view

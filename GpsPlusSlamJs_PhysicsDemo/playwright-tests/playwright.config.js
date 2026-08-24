@@ -17,10 +17,34 @@ const captureArtifacts = process.env.PLAYWRIGHT_CAPTURE === "1";
 
 export default defineConfig({
   testDir: ".",
+  // REFUSE TO RUN AGAINST A DEV SERVER OLDER THAN THE LAST LIBRARY BUILD.
+  // `reuseExistingServer` below asks only whether the URL responds, and a server
+  // that predates a rebuild of a linked workspace library still rewrites imports
+  // to content-hashed files the rebuild renamed away — one 404, no boot, and every
+  // spec that waits for the app times out looking exactly like a code defect.
+  // That cost a session and a mislabelled commit on 2026-08-16.
+  // See scripts/e2e/dev-server-freshness.mjs.md.
+  globalSetup: "../../scripts/e2e/playwright-global-setup.mjs",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : 3,
+  // ONE worker, locally as well as in CI (decided 2026-08-17, DEC-N8). Three
+  // parallel workers each drive a full WebGL scene, so they queue on one GPU
+  // instead of overlapping, and the queueing is what expires the per-test
+  // budget — every failure these suites produced on a developer machine was a
+  // TIMEOUT, never an assertion.
+  //
+  // THE MEASUREMENT BEHIND DEC-N8 WAS TAKEN ON THE WAYFINDING SUITE, not here:
+  // serial, its seven tests finished in 26.6 s with one dropping 39.6 s ->
+  // 907 ms. The reasoning transfers (same GPU, same contention), the numbers do
+  // not — an earlier version of this comment was pasted verbatim into three
+  // configs and claimed "all seven specs" in each, which is true of none of
+  // them. Found in review of PR #336.
+  // This suite: 2 spec files, 2 tests — not separately measured.
+  // workers therefore buy latency and flakes, not throughput. The sibling
+  // Landing and OsmDemo suites reached the same setting from their own
+  // measurements — see their configs for the numbers.
+  workers: 1,
   reporter: process.env.CI
     ? [["github"], ["json", { outputFile: "../test-results/results.json" }]]
     : [["list"], ["html", { open: "never" }]],

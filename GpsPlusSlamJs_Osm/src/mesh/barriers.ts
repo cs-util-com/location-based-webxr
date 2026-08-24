@@ -17,7 +17,9 @@
  * @see barriers.ts.md
  */
 
-import type { OsmFeature, OsmTags } from "../model/osm-feature.js";
+import type { LatLng, OsmFeature, OsmTags } from "../model/osm-feature.js";
+import { toGeometry } from "../model/osm-geometry.js";
+import { type GateOpenings, splitAtGates } from "./barrier-gates.js";
 import { parseLengthMetres } from "./building-heights.js";
 
 /**
@@ -86,8 +88,27 @@ export interface BarrierDimensions {
  */
 export function isSolidBarrier(feature: OsmFeature): boolean {
   if (feature.type === "node") return false;
+  if (isCityWall(feature.tags)) return true;
   const value = feature.tags["barrier"];
   return value !== undefined && SOLID_BARRIERS.has(value);
+}
+
+/**
+ * A city wall under either of the two tags OSM uses for one.
+ *
+ * **`historic=citywalls` carries no `barrier` tag**, which is not a guess: all
+ * four such ways in the checked-in Cologne extract are tagged that way and only
+ * that way. Keying the solid set solely on `barrier=*` therefore dropped every
+ * one of them — and a city wall is the design's motivating example, so the one
+ * feature the work exists for was the one it could not see. Measured rather
+ * than assumed; `site-barriers.test.ts` asserts it against the real extract.
+ *
+ * NARROW ON PURPOSE. `historic=castle` stays out: a castle outline is a
+ * building question, and treating it as a barrier would trace a solid band
+ * around the whole bailey — the inverse failure the design calls the louder one.
+ */
+function isCityWall(tags: OsmTags): boolean {
+  return tags["barrier"] === "city_wall" || tags["historic"] === "citywalls";
 }
 
 /**
@@ -101,10 +122,9 @@ export function isSolidBarrier(feature: OsmFeature): boolean {
  * defensive formality.
  */
 export function resolveBarrier(tags: OsmTags): BarrierDimensions {
-  const fallback =
-    tags["barrier"] === "city_wall"
-      ? DEFAULT_CITY_WALL_HEIGHT_M
-      : DEFAULT_BARRIER_HEIGHT_M;
+  const fallback = isCityWall(tags)
+    ? DEFAULT_CITY_WALL_HEIGHT_M
+    : DEFAULT_BARRIER_HEIGHT_M;
 
   return {
     heightM: positiveOr(parseLengthMetres(tags["height"]), fallback),
@@ -120,4 +140,84 @@ function positiveOr(value: number | undefined, fallback: number): number {
   return value !== undefined && Number.isFinite(value) && value > 0
     ? value
     : fallback;
+}
+
+/**
+ * Every lat/lng line a barrier feature runs along, with mapped gates opened.
+ *
+ * **ONE DEFINITION, TWO CONSUMERS.** `nav/obstacles.ts` indexes these lines and
+ * `barrier-volumes.ts` draws them, and the two must agree exactly: a wall drawn
+ * where nothing is indexed is an agent walking through a visible wall, and a
+ * wall indexed where nothing is drawn is a detour around thin air. Both are
+ * bugs a reader would diagnose in the wrong file, so the geometry decision lives
+ * here rather than in either of them.
+ *
+ * **`gates` IS REQUIRED, AND THAT IS THE POINT** (DEC-R12-1). A gap cut in the
+ * drawn band but not in the index is an agent detouring through a visible
+ * opening; a gap cut in the index but not in the band is an agent walking
+ * through a visible wall. Making the argument optional would let one consumer
+ * quietly omit it — the exact drift this function exists to prevent — so a
+ * caller with no feature list passes {@link NO_GATES} explicitly and says so.
+ *
+ * **A LIST, because a multipolygon has PARTS.** An earlier version took
+ * `polygons[0][0]`: the inner index correctly ignores holes, but the outer one
+ * silently discarded `polygons[1..]` — disjoint parts of the same barrier, not
+ * holes. One part was indexed and the other was invisible, which is precisely
+ * the "a barrier the index simply did not see" failure the multipolygon branch
+ * was added to remove. Raised in review on #260.
+ *
+ * Empty when nothing usable is there — a one-node way and an empty way are both
+ * ordinary Overpass output rather than errors.
+ */
+export function barrierCentrelines(
+  feature: OsmFeature,
+  gates: GateOpenings,
+): readonly (readonly LatLng[])[] {
+  const result = toGeometry(feature);
+  if (!result.ok) return [];
+
+  const geometry = result.geometry;
+  // MULTIPOLYGON IS HANDLED, not silently dropped (#259). A `barrier=wall`
+  // mapped as a multipolygon relation is rare, but it is neither "not a
+  // barrier" nor "unusable geometry" — it would have been a barrier the index
+  // simply did not see, which is the one skip reason with no stated rationale.
+  //
+  // OUTER RINGS ONLY, and ALL of them — but NOT because holes must stay closed.
+  // Every ring here is a CENTRELINE: `barrierFootprints` emits one
+  // `thicknessM`-wide quad per segment, so what becomes solid is a ~0.5 m band
+  // along the ring itself and the interior is walkable whether or not the inner
+  // rings are read. An area-mapped barrier is therefore treated as a wall along
+  // its OUTLINE, not as a filled region.
+  //
+  // What that costs, stated rather than implied (#263): an area-mapped
+  // `barrier=city_wall` is normally outer = outer face, inner = inner face, with
+  // the wall material between them. This puts a default-thickness band on the
+  // outer face and ignores the inner one. Disjoint outers are all used — those
+  // are PARTS of one barrier, not holes (#260).
+  //
+  // `multilinestring` is deliberately absent. `toGeometry` never produces one —
+  // only `clip.ts` does, and clipping is not in this path — so a branch for it
+  // would be code no test could ever cover (#260). The `[0]` assertions below
+  // are there for the same reason the `multilinestring` branch is not: both
+  // `wayToGeometry` (`rings: [way.geometry]`) and `relationToGeometry`
+  // (`polygons[0]!`, seeded `[outer]` by `groupRingsIntoPolygons`) always
+  // produce an outer ring, so a `?? []` fallback would be a branch no test can
+  // cover and no mutant can be killed on (#263).
+  const lines: readonly (readonly LatLng[])[] =
+    geometry.kind === "linestring"
+      ? [geometry.positions]
+      : geometry.kind === "polygon"
+        ? [geometry.rings[0]!]
+        : geometry.kind === "multipolygon"
+          ? geometry.polygons.map((polygon) => polygon[0]!)
+          : [];
+
+  // A single node has no direction, so it can be neither drawn nor indexed.
+  // Filtered BEFORE the gate split, so `splitAtGates` never sees a degenerate
+  // line, and again inside it, since a piece swallowed by its own gate is gone
+  // and a piece shorter than this barrier is thick is not a barrier.
+  const { thicknessM } = resolveBarrier(feature.tags);
+  return lines
+    .filter((line) => line.length >= 2)
+    .flatMap((line) => splitAtGates(line, gates, thicknessM));
 }

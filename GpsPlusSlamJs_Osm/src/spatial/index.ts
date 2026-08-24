@@ -10,6 +10,7 @@ export {
   FETCH_DISK_RADIUS,
   SCORE_DISK_MAX_RADIUS,
   SCORE_DISK_RADIUS,
+  PROGRESSIVE_RADII,
   RES13_CELLS_PER_CHUNK,
   AFFORDANCE_CELL_AREA_M2,
   toEventTile,
@@ -51,3 +52,12 @@ export {
 
 export type { PlanarPoint } from "./point-in-ring.js";
 export { containsPoint } from "./point-in-ring.js";
+export { segmentCrossesRing, segmentsIntersect } from "./segment-crossing.js";
+
+export type { PlanarPolygon } from "./ring-overlap.js";
+export { ringsOverlap, polygonsOverlap } from "./ring-overlap.js";
+
+export type { PlanarGeometry } from "./geometry-overlap.js";
+export { geometryOverlaps, toPlanarGeometry } from "./geometry-overlap.js";
+
+export { bboxOverlapsPolygon } from "./bbox-overlap.js";

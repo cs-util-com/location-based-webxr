@@ -95,3 +95,66 @@ geometry full of holes. The helper does a plan-view point-in-triangle test and
 explicitly rejects degenerate triangles, so the "not covered" assertions cannot
 silently become no-ops. Mutation-checked: removing the discs fails
 "leaves NO GAP at a right-angle corner" and nothing else.
+
+## `isPedestrianPath(feature)` — the path-ness signal (DEC-R2)
+
+Whether a way is one a person walks **along**. Added 2026-08-16 for routing, not
+for rendering, and it lives here because `PATH_WIDTH_M` — the allowlist it tests
+against — already does. A second copy of that list in the demo is the "two
+implementations of one predicate" mistake this package has had to fix before.
+
+**It is not the `walkable` score, and the difference is the point.** `walkable`
+rates GROUND QUALITY: under "can a person walk on this surface",
+`surface=grass` 9 outranking `highway=footway` 3 is correct, because a footway
+LINE carries no surface information of its own. Path-ness is a property of the
+way. A router wanting "prefer the paths" needs both, as separate multipliers —
+asking one number to carry both made the preference track how thoroughly a place
+is mapped rather than whether a cell is a path.
+
+**It also answers a case the score structurally cannot.** Scoring is
+multiplicative with zero absorbing, so a footbridge sharing a res-13 cell with a
+river scores exactly 0 — indistinguishable from open water. The provenance map
+still records the footway, so this predicate sees the bridge.
+
+Exclusions are `isRoad`'s, shared deliberately: tunnels and covered ways are not
+surface paths (F10), and a `highway` AREA is a plate rather than a ribbon.
+
+Tested in `roads.test.ts` — the allowlist, carriageways and non-highways refused,
+the shared exclusions, and nodes (no length to walk along).
+
+## `isBridgeCrossing(feature)` — the bank opener (DEC-R1)
+
+Whether a way is a **ground-level** crossing carried over something. It decides
+where a river bank may be opened, so a wrong `true` puts an agent on open water
+and a wrong `false` leaves a shipped picker location unroutable.
+
+**Three earlier formulations were each refuted against
+`testdata/sites/london-tower-bridge.json`, so every clause names a real way:**
+
+- **Any truthy `bridge`, not `bridge=yes`** — the bascule spans are
+  `bridge=movable`, 6 of the 14 ground-level ways at the site the rule exists
+  for. An exact match misses the bridge the place is named after.
+- **A `highway` is required** — ways 367652753 / 367653917 are
+  `bridge=yes building:part=yes min_height=40`, closed areas carrying no way. A
+  bare `bridge=*` rule opens the bank along their outline, from 40 m overhead.
+- **`layer` must be ground level** — ways 153173986 / 153173987 _are_
+  `highway=footway bridge=yes`, at `layer=2`, 43 m up and behind a turnstile. The
+  highway clause alone admits them.
+  - Absent or non-numeric `layer` reads as ground, matching the tag's default;
+    refusing the absent case would drop the common bridge to catch a rare
+    mis-tagged one.
+- **BELOW the surface is not a crossing either, and the shared `isBelowSurface`
+  decides it** — not a bespoke test here. The clause above was once
+  `level <= 1`, which bounded only the TOP: a `layer=-1` way passed, so through
+  `bridgeDeckLines` → `addWater` it opened a 10 m passage corridor through a
+  river bank and an agent could cross the water along something running under
+  it. `tunnel=culvert` slipped through the old `tunnel === "yes"` test for the
+  same reason.
+  - **The asymmetry was the tell** (PR #315 review): `gateOpenings` vetoes a
+    below-surface gate node and `canCorroborate` vetoes a below-surface way,
+    while this third sibling rule in the same package did not. Three rules, two
+    answers — now one definition.
+
+Pinned against the real fixture in `bridge-crossing.corpus.test.ts` — 18 tagged,
+exactly 14 selected — with counts chosen so each refuted draft would fail it
+(8, 18 and 16 respectively).

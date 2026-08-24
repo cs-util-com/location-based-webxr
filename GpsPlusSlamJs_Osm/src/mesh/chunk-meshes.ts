@@ -60,6 +60,28 @@ export interface MeshChunk {
    * per-feature colour meets per-chunk batching, and nothing upstream needs it.
    */
   readonly colors?: Float32Array;
+  /**
+   * Per-vertex height within the vertex's OWN feature, 0 at its base and 1 at
+   * its top. Present only when `shellRandOf` was supplied.
+   *
+   * **Per FEATURE, not per chunk and not above the terrain.** A `building:part`
+   * starting at `min_height` reads 0 at its own base, so each part breathes over
+   * its own extent rather than over the tower it belongs to. That is the right
+   * behaviour for a shell effect and the wrong one for anything measuring
+   * absolute height — hence the name.
+   *
+   * A zero-height feature (degenerate footprint, flat plate) yields 0
+   * everywhere rather than a division by zero.
+   */
+  readonly height01?: Float32Array;
+  /**
+   * A stable per-feature random in 0..1, repeated on every vertex of that
+   * feature. Present only when `shellRandOf` was supplied.
+   *
+   * Exists so a shell effect can be phase-offset per building. Without it every
+   * building pulses in lockstep and the city reads as one organism.
+   */
+  readonly featureRand?: Float32Array;
 }
 
 /** Which chunk an ENU point falls in. */
@@ -90,20 +112,51 @@ export function chunkMeshes<T>(
    * varies is bytes and a shader define bought for nothing.
    */
   colourOf?: (item: T) => number,
+  /**
+   * A stable 0..1 random per feature, when the layer feeds a shell shader.
+   *
+   * **Supplying this produces BOTH `featureRand` AND `height01`**, and the
+   * bundling is deliberate rather than lazy: the AR shell shader needs the two
+   * together (one for phase offset, one for the vertical term), neither has any
+   * other consumer, and `height01` can only be computed HERE — after this
+   * function knows each feature's own vertex range and before `mergeMeshes`
+   * dissolves the boundaries between features. Splitting them into two
+   * parameters would mean walking the parts twice for one effect.
+   *
+   * Omitted for every layer that does not draw a shell, so nobody pays the two
+   * extra `Float32Array`s for bytes they never read.
+   */
+  shellRandOf?: (item: T) => number,
 ): MeshChunk[] {
-  const grouped = new Map<string, { mesh: MeshData; colour: number }[]>();
+  const grouped = new Map<
+    string,
+    { mesh: MeshData; colour: number; rand: number }[]
+  >();
   for (const item of items) {
     const mesh = meshOf(item);
     // A feature that produced no triangles must not create a chunk — see above.
     if (mesh.triangleCount === 0) continue;
     const key = chunkKeyFor(positionOf(item), sizeM);
     const list = grouped.get(key) ?? [];
-    list.push({ mesh, colour: colourOf?.(item) ?? 0xffffff });
+    list.push({
+      mesh,
+      colour: colourOf?.(item) ?? 0xffffff,
+      rand: shellRandOf?.(item) ?? 0,
+    });
     grouped.set(key, list);
   }
   return [...grouped].map(([key, parts]) => {
     const mesh = mergeMeshes(parts.map((part) => part.mesh));
-    if (colourOf === undefined) return { key, mesh };
+    // WALKED IN THE SAME ORDER AS THE COLOUR FILL BELOW, because `mergeMeshes`
+    // preserves order and that is the only thing keeping a per-vertex value on
+    // the feature it belongs to.
+    const shell =
+      shellRandOf === undefined
+        ? undefined
+        : shellAttributes(parts, mesh.positions.length / 3);
+    if (colourOf === undefined) {
+      return shell === undefined ? { key, mesh } : { key, mesh, ...shell };
+    }
     // FLAT PER FEATURE, never interpolated across one: a building whose walls
     // faded from one class colour to its neighbour's would read as a gradient
     // someone chose. The merge preserves order, so filling in the same order is
@@ -121,8 +174,47 @@ export function chunkMeshes<T>(
         at += 3;
       }
     }
-    return { key, mesh, colors };
+    return shell === undefined
+      ? { key, mesh, colors }
+      : { key, mesh, colors, ...shell };
   });
+}
+
+/**
+ * `height01` and `featureRand` for one chunk's parts, in merge order.
+ *
+ * SPLIT OUT so the two loops in `chunkMeshes` stay readable, not because it is
+ * reusable — it depends on the caller having the parts un-merged.
+ *
+ * The vertical range is taken from the part's OWN vertices (`positions[i+1]` is
+ * the up axis in the render frame). A feature with no vertical extent — a flat
+ * plate, a degenerate footprint — yields 0 rather than dividing by zero.
+ */
+function shellAttributes(
+  parts: readonly { mesh: MeshData; rand: number }[],
+  vertexCount: number,
+): { height01: Float32Array; featureRand: Float32Array } {
+  const height01 = new Float32Array(vertexCount);
+  const featureRand = new Float32Array(vertexCount);
+  let at = 0;
+  for (const part of parts) {
+    const positions = part.mesh.positions;
+    const count = positions.length / 3;
+    let min = Infinity;
+    let max = -Infinity;
+    for (let i = 0; i < count; i += 1) {
+      const y = positions[i * 3 + 1]!;
+      if (y < min) min = y;
+      if (y > max) max = y;
+    }
+    const span = max - min;
+    for (let i = 0; i < count; i += 1) {
+      height01[at] = span > 0 ? (positions[i * 3 + 1]! - min) / span : 0;
+      featureRand[at] = part.rand;
+      at += 1;
+    }
+  }
+  return { height01, featureRand };
 }
 
 /**

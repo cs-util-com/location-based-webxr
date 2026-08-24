@@ -13,6 +13,7 @@ import type { RefPointMarkerInput } from './draw-ref-point-markers';
 import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
 import { formatFileSize } from 'gps-plus-slam-app-framework/utils/format-file-size';
 import { getRequiredElement } from '../utils/dom-helpers';
+import { formatDistance } from 'gps-plus-slam-app-framework/utils/format-distance';
 import type {
   GpsCoord,
   RawGpsSample,
@@ -154,12 +155,17 @@ function formatGps(gps: GpsCoord | null): string {
 
 /**
  * Format distance in meters for display.
+ *
+ * The workspace's shared formatter (2026-08-24) with this screen's rule: two
+ * decimals on kilometres, because a session total is a figure the user compares
+ * between recordings rather than glances at, and 1.23 km distinguishes two
+ * walks that 1.2 km does not. Output unchanged for non-negative finite input —
+ * the framework's `format-distance.test.ts` pins it differentially against the
+ * old body. Outside that range it DID change on purpose: this summary used to
+ * print "NaN m", and now formats that as "0.0 m".
  */
-function formatDistance(meters: number): string {
-  if (meters < 1000) {
-    return `${meters.toFixed(1)} m`;
-  }
-  return `${(meters / 1000).toFixed(2)} km`;
+function formatSummaryDistance(meters: number): string {
+  return formatDistance(meters, { kmDecimals: 2 });
 }
 
 /**
@@ -349,7 +355,7 @@ export function showSessionSummary(data: SessionSummaryData): void {
   cachedElements.errors.textContent = formatErrors(data.errors);
   cachedElements.firstGps.textContent = formatGps(data.firstGps);
   cachedElements.lastGps.textContent = formatGps(data.lastGps);
-  cachedElements.distance.textContent = formatDistance(
+  cachedElements.distance.textContent = formatSummaryDistance(
     data.totalDistanceMeters
   );
 

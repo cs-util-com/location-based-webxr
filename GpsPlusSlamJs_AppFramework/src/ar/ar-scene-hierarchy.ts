@@ -58,6 +58,28 @@ const AR_CAMERA_FAR = 200;
  * local space in the **NUE axis convention** (X=North, Y=Up, Z=East), so no
  * WebXR↔NUE swizzle is needed for children.
  *
+ * ─────────────────────────────────────────────────────────────────────────
+ * WHERE DO I ATTACH MY CONTENT? Answer this before reading anything else.
+ * ─────────────────────────────────────────────────────────────────────────
+ *
+ * **Content at a fixed GEOGRAPHIC place (lat/lon), built once → THE SCENE
+ * ROOT, with raw GPS-world NUE coordinates.** Nothing to pre-multiply, no
+ * container, nothing per frame. The scene root IS the GPS-world frame, so a
+ * city mesh, a building outline or any pre-built geographic geometry simply
+ * goes there, and the lerped alignment on arWorldGroup moves the CAMERA
+ * through a world that stands still. This is the common case for map-derived
+ * content and it is the cheap one.
+ *
+ * **Content that must stay glued to what SLAM sees, or that is RE-SOLVED from
+ * GPS repeatedly → under arWorldGroup**, and then the alignment⁻¹ rule below
+ * applies. Use `createGpsAnchor`, which does the conversion for you.
+ *
+ * The trade, so the choice is informed rather than copied: scene-root content
+ * is geographically truthful but appears to shift against the camera
+ * passthrough as the fusion refines the alignment (the lerp is what smooths
+ * that). arWorldGroup content is visually locked to the real world but its
+ * geographic position drifts, which is why an anchor there re-solves.
+ *
  * CAUTION — two NUE frames: arWorldGroup's local space is the *AR-odometry*
  * NUE frame, i.e. the **domain** of the alignment matrix, NOT the GPS-world
  * NUE frame of the scene root. Only content authored in AR-odometry
@@ -67,6 +89,15 @@ const AR_CAMERA_FAR = 200;
  * local position under arWorldGroup — see createGpsAnchor and the
  * alignment-frame bug doc
  * (GpsPlusSlamJs_Docs/docs/2026-05-31-gps-anchor-alignment-frame-bug.md).
+ *
+ * **That rule is about placing GPS-world content UNDER arWorldGroup. It is not
+ * a reason to avoid the scene root** — a reading this comment invited twice.
+ * Two independent readers (one an agent writing an AR plan, one an agent
+ * reviewing it) concluded from the paragraph above that GPS-world content had
+ * to live under arWorldGroup behind an inverse-alignment container, and both
+ * were wrong in a way that would have produced a city pinned to the session's
+ * arbitrary start pose. The paragraph says what to do IF you put it there; the
+ * block at the top says where to put it.
  *
  * - Recording: arpose stays at identity; WebXRManager writes to camera.
  * - Replay: arpose receives recorded odomPosition/odomRotation;

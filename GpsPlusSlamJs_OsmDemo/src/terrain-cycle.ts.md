@@ -15,7 +15,7 @@
   - Reports the loaded field through `apply` exactly once per load that is not
     superseded.
   - Coalesced through `latestOnly`: at most one load in flight, only the newest waiting position survives, never rejects.
-- `interface TerrainState` — `field` (`Heightfield | undefined`; `undefined` means the ground stays flat), `note` (one status-line phrase, never empty) and `centreEnu` (where the window was sampled, in the scene’s frame).
+- `interface TerrainState` — `field` (`Heightfield | undefined`; `undefined` means the ground stays flat), `note` (one status-line phrase, never empty), `demSourceId` (which DEM composition sampled the field — the worker provider's `sourceId`, applied atomically with the field for the same reason the note is), `demStats` (which member of that composition actually served, as position counts — the worker's snapshot, optional, applied atomically for the same reason again) and `centreEnu` (where the window was sampled, in the scene’s frame).
   - **`centreEnu` is reported even when `field` is `undefined`**, and that is the point of it being a separate value. The ground plane follows this centre and the plane is FINITE — it reaches `TERRAIN_EXTENT_M` and stops — so one left behind during a DEM outage stops covering the user as soon as they walk past that, and the 5 km re-anchor threshold puts that well inside a single anchor. Raised in review on #269, where the code returned early instead: that fixed the appearance (moving a flat plane is invisible) and missed the coverage.
 - `interface TerrainCycleOptions` — `worker` (the narrowed RPC surface), `extentM`, `spacingM`, `apply`. The SAMPLING moved into the worker; this module is now the coalescing wrapper around an RPC call, and `apply` receives `HeightfieldData` (not `Heightfield` — `heightAt` is a method and structured clone drops methods silently).
 
@@ -36,7 +36,7 @@ const loadTerrain = createTerrainCycle({
   worker,
   extentM: TERRAIN_EXTENT_M,
   spacingM: 12,
-  apply: ({ field, note, centreEnu }) => {
+  apply: ({ field, note, centreEnu, demSourceId }) => {
     terrain = field === undefined ? undefined : heightfieldFrom(field);
     terrainNote = note;
     // `centreEnu` is passed separately because it is reported even for a FAILED
@@ -67,3 +67,30 @@ Plus the frame-forwarding pair, added after review on #269: `centre` and `frameO
 That a FAILED load then moves the ground plane is the e2e’s (“keeps the ground under the user even when the terrain fails to load”, driven by `stubNetwork`’s `failTerrain`), since neither the worker nor `BuildingView` can be constructed in a unit test.
 
 Related: `latest-only.ts.md` (the coalescing contract), `refresh-cycle.ts.md` (the other half of the same click), `heightfield.ts.md` (what a field is and why it is relative).
+
+## Collecting the DEM race's better answer (2026-08-19)
+
+`createTerrainCycle` now owns a **second `latestOnly` cycle** that issues the
+`terrainUpgrade` RPC.
+
+**Why the page has to ask at all.** The preferred DEM settles after the
+`terrain` reply was built, and the worker protocol is strictly request/reply
+keyed on `id` — `isWorkerReply` rejects anything without an `id`/`ok` pair,
+so there is no unsolicited worker-to-page channel to announce the upgrade on.
+Adding a push envelope would be real protocol surface for one boolean. Instead
+the reply carries `upgradePending`, and the page asks.
+
+**If that trigger is ever lost, nothing else fails.** The map still shows
+terrain, the provider tests still pass, the worker still applies the better
+heights internally — and the user permanently sees the coarse ones. It has its
+own tests for that reason.
+
+**Why a separate cycle.** The upgrade call waits for the preferred source, which
+was measured at up to 21.7 s per tile. Run inside the load cycle it would hold
+that cycle `busy` for the whole wait, delaying the next position's terrain and
+making every readout keyed on `busy` claim the view is still loading long after
+it finished. `latestOnly` also gives the right cancellation for free: walking
+away supersedes an upgrade for a window nobody is looking at.
+
+The upgrade reply is the SAME shape as `terrain`'s, so `apply` — including the
+`meshOutdated` rebuild — is reused rather than duplicated.

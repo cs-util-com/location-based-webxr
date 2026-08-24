@@ -13,12 +13,38 @@ export const CHAPTER_DOTS_CONTAINER_ID = "chapter-dots";
 
 const ACTIVE_CLASS = "active";
 
+/**
+ * A DELIBERATE COPY of the framework's `utils/escape-html.ts`, which is the
+ * canonical escaper for this workspace.
+ *
+ * Landing does not depend on the framework package — its dependencies are
+ * three, animejs, postprocessing and uqr — and adding that edge to a marketing
+ * site so it can share ten lines of string replacement is the worse trade. So
+ * the copy stays.
+ *
+ * It is NOT character-identical to the framework's and cannot be: that package
+ * sets `singleQuote: true` and this one takes prettier's default, so the two
+ * files disagree on every quote in the table below. What must stay identical is
+ * the CONTRACT — the same five characters mapped to the same five entities —
+ * and `tests/repo-config/escape-html-copies.test.js` compares exactly that,
+ * plus the regex's character class. Editing the table below without editing the
+ * framework's turns that test red.
+ *
+ * It used to escape FOUR characters, missing `'`. That was safe only by
+ * accident of its single call site — an `aria-label="…"` attribute, where an
+ * apostrophe cannot break out. Two implementations mean two chances to miss a
+ * character class, which is the whole reason the guard exists.
+ */
+const REPLACEMENTS: Readonly<Record<string, string>> = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#39;",
+};
+
 function escapeHtml(text: string): string {
-  return text
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
+  return text.replace(/[&<>"']/g, (char) => REPLACEMENTS[char] ?? char);
 }
 
 /**

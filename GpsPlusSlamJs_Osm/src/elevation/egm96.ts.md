@@ -27,6 +27,21 @@ import.
   itself is ~45 m in central Europe, so the residual is an order of magnitude
   below the error it removes. A 2° grid (0.50 m mean, 8.4 m max, a quarter of
   the size) was measured and rejected.
+  - **THE MAX IS AN OCEAN-TRENCH FIGURE AND SAYS NOTHING ABOUT EUROPE.** A wider
+    run (4 000 global + 1 000 near Cologne, 2026-08-12) puts the worst global
+    point at **44.56 N, 150.75 E over the Kuril trench** — the same point at
+    every resolution, because trenches carry the geoid's steepest
+    short-wavelength signal. **Within ~150 km of Cologne the same grid is mean
+    0.18 m, p95 0.44 m, max 0.59 m.** That run reads 6.40 m globally rather than
+    5.0 m purely because more samples find a worse worst case; the means agree.
+  - **Finer grids were measured so the question does not have to be reopened**:
+    0.5° → 677 KB, global max 1.60 m, Cologne max 0.31 m · 0.4° → 1.03 MB, 1.13 m
+    / 0.24 m · 0.25° → 2.64 MB, 0.49 m / 0.11 m. Error falls **second-order**, so
+    the 2°→1° note above understates what a finer grid buys. **0.25° is the end
+    of the road for this encoding** — its 0.03 m global mean IS the decimetre
+    quantisation floor. Full reasoning and the recommendation (170 KB while the
+    demo is European, 677 KB if it goes global) in
+    `GpsPlusSlamJs_Docs/docs/2026-08-12-0047-egm96-grid-resolution-findings.md`.
 - **A truncated payload throws rather than degrading.** Interpolating smoothly
   over zeros is the silent failure this whole area exists to prevent.
 - **`atob` rather than `Buffer`**, so it works unchanged in the browser, in a

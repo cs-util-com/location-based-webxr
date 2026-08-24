@@ -16,12 +16,22 @@
  *    indexed and used. What the 1.39× costs is that neighbouring tiles' bboxes
  *    overlap, so shared ground is downloaded once per tile covering it.
  *
- * A res-7 fetch measured ~68 MB and ~23-110 s depending on the host. Note that
- * shrinking the tile does NOT shrink that proportionally: res 9 is 49x less
- * ground and still returned 38.7 MB, because `out geom` prints the full
- * geometry of every element that intersects the bbox. Seeing the box is still
- * worth it — it makes the unit the plan is written in concrete — but it is not
- * an argument for a smaller `FETCH_RES`.
+ * A res-7 fetch measures **~21 MB** (2026-08-01 matrix sweep, `areal-only`,
+ * replicated three ways) **and ~15–90 s, which does not replicate** — see
+ * `resolutions.ts` FETCH_RES for why latency here is a range and never a single
+ * figure. Seeing the box is worth it — it makes the unit the plan is written in
+ * concrete — but it is still not an argument for a smaller `FETCH_RES`, and the
+ * reason has CHANGED rather than merely being re-measured:
+ *
+ * - **The old reason (superseded).** Under the pre-F32 `nwr` form the payload
+ *   barely tracked area — res 9 is 49x less ground and still returned 38.7 MB —
+ *   so shrinking the tile bought almost nothing. That figure and the ~68 MB /
+ *   ~23–110 s it sat beside are both retracted; they describe a query this app
+ *   has not issued since 2026-08-03.
+ * - **The current reason.** Areal-only restored proportionality (res 7 → res 9
+ *   is 21x), so a smaller tile now WOULD be smaller. It is still the wrong move:
+ *   `FETCH_RES` was raised 8 → 7 deliberately, to spend bytes on rarer requests,
+ *   and that trade is about request count rather than payload.
  *
  * The arithmetic lives here rather than in `map-view.ts` so it can be tested
  * without a DOM — the view is Leaflet wiring and has no unit tests, which is the

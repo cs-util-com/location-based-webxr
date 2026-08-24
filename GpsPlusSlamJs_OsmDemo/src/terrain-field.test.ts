@@ -30,8 +30,12 @@ import {
 import type { ElevationProvider, LatLng } from "gps-plus-slam-osm";
 
 import { createTerrainField } from "./terrain-field.js";
+import { heightfieldFrom } from "./heightfield.js";
 
 const COLOGNE: LatLng = { lat: 50.9413, lng: 6.9583 };
+
+/** The ENU frame every datum test samples against. */
+const FRAME = enuFrameAt(COLOGNE);
 
 /**
  * A provider whose height is a known function of longitude, and which records
@@ -51,6 +55,30 @@ function rampProvider() {
     },
   };
   return { provider, asked };
+}
+
+/** A provider that reports the same orthometric height everywhere. */
+function constantProvider(metres: number): ElevationProvider {
+  return {
+    attribution: "test",
+    sourceId: "fixture:flat",
+    elevationAt: (positions) => Promise.resolve(positions.map(() => metres)),
+  };
+}
+
+/**
+ * A provider whose height varies with longitude.
+ *
+ * Used where a FLAT fixture would make the relative and absolute datums agree
+ * by accident and the test would prove nothing.
+ */
+function slopedProvider(): ElevationProvider {
+  return {
+    attribution: "test",
+    sourceId: "fixture:slope",
+    elevationAt: (positions) =>
+      Promise.resolve(positions.map((p) => 50 + (p.lng - 6.9583) * 20_000)),
+  };
 }
 
 /** Total posts requested across every call. */
@@ -383,5 +411,110 @@ describe("a superseded load", () => {
       field.ensureAround(COLOGNE, 40, controller.signal),
     ).resolves.toBeUndefined();
     expect(field.postCount).toBe(0);
+  });
+});
+
+/**
+ * The ABSOLUTE elevation datum — what AR needs and desktop must not get.
+ *
+ * Why this matters, and it is the sharpest arithmetic in the AR plan: the demo
+ * subtracts the height at the terrain window's CENTRE, so the surface is
+ * relief and the datum cancels exactly under the user. AR cannot use that —
+ * the window follows the user, so the datum moves mid-session and the whole
+ * scene's Y baseline shifts with it.
+ *
+ * AR wants heights referenced to the ELLIPSOID, because the framework's
+ * GPS-world Y is the raw GNSS altitude (`calcRelativeCoordsInMeters` is called
+ * with `originAltitude = 0` everywhere). `heightAt` returns
+ * `surfaceHeight - datum`, so the datum AR wants is **−N**: the geoid
+ * undulation, negated, which turns an orthometric DEM height into an
+ * ellipsoidal one.
+ *
+ * Plan §2.5. The plan's draft 3 wrote `− ellipsoidalAltitudeAtOrigin` on the
+ * end of that and was wrong by ~98 m at Cologne; there is no origin term.
+ */
+describe("the elevation datum, absolute for AR and relative for desktop", () => {
+  it("defaults to the window centre, which is the desktop behaviour", async () => {
+    // The regression guard for the view that exists today. Relief, not
+    // altitude: whatever the ground is under the user reads as ~0.
+    const field = createTerrainField({
+      provider: constantProvider(53),
+    });
+    await field.ensureAround(COLOGNE, 300);
+    const data = field.sampleGrid({
+      frame: FRAME,
+      extentM: 60,
+      spacingM: 30,
+    });
+
+    expect(data.datum).toBeCloseTo(53, 3);
+    expect(heightfieldFrom(data).heightAt({ x: 0, y: 0 })).toBeCloseTo(0, 3);
+  });
+
+  it("uses −N when an absolute datum is asked for, so heights are ellipsoidal", async () => {
+    // AR's case. With N = 46.9 m at Cologne, a 53 m orthometric DEM post must
+    // read as 99.9 m ellipsoidal — which is what a GNSS altitude at that spot
+    // reports, and therefore what the GPS-world frame expects.
+    const field = createTerrainField({
+      provider: constantProvider(53),
+    });
+    await field.ensureAround(COLOGNE, 300);
+    const data = field.sampleGrid({
+      frame: FRAME,
+      extentM: 60,
+      spacingM: 30,
+      absoluteDatum: { undulationMetres: 46.9 },
+    });
+
+    expect(data.datum).toBeCloseTo(-46.9, 3);
+    expect(heightfieldFrom(data).heightAt({ x: 0, y: 0 })).toBeCloseTo(
+      53 + 46.9,
+      3,
+    );
+  });
+
+  it("keeps the absolute datum FIXED as the window moves", async () => {
+    // The property the whole decision rests on, and the one the relative datum
+    // cannot have. Two windows centred 500 m apart over the same flat terrain
+    // must agree on the datum — under the window-centre rule they agree only
+    // because the terrain is flat, so the fixture deliberately is NOT flat.
+    const field = createTerrainField({
+      provider: slopedProvider(),
+    });
+    await field.ensureAround(COLOGNE, 900);
+    await field.ensureAround(FRAME.toLatLng({ x: 500, y: 0 }), 300);
+    const absolute = { undulationMetres: 46.9 };
+
+    const here = field.sampleGrid({
+      frame: FRAME,
+      extentM: 60,
+      spacingM: 30,
+      absoluteDatum: absolute,
+    });
+    const there = field.sampleGrid({
+      frame: FRAME,
+      extentM: 60,
+      spacingM: 30,
+      centreEnu: { x: 500, y: 0 },
+      absoluteDatum: absolute,
+    });
+
+    expect(there.datum).toBe(here.datum);
+
+    // …while the relative datum genuinely moves, which is the failure AR would
+    // inherit. Asserted so the test proves a DIFFERENCE rather than restating
+    // one branch.
+    const relativeHere = field.sampleGrid({
+      frame: FRAME,
+      extentM: 60,
+      spacingM: 30,
+    });
+    const relativeThere = field.sampleGrid({
+      frame: FRAME,
+      extentM: 60,
+      spacingM: 30,
+      centreEnu: { x: 500, y: 0 },
+    });
+    expect(relativeThere.datum).not.toBeCloseTo(relativeHere.datum, 1);
   });
 });

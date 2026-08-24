@@ -13,7 +13,7 @@
         "build:qr-demo": "pnpm run --filter gps-plus-slam-qr-tracking-demo... build",
         "build:landing": "pnpm run --filter gps-plus-slam-landing... build",
         "build:site": "node scripts/build-site.mjs",
-        "check:deadcode": "knip",
+        "check:deadcode": "node scripts/test-timing/timed-stage.mjs check:deadcode",
         "test:repo-config": "node scripts/test-timing/timed-stage.mjs test:repo-config",
         "test:framework": "node scripts/test-timing/timed-stage.mjs test:framework",
     "test:osm": "node scripts/test-timing/timed-stage.mjs test:osm",
@@ -31,7 +31,7 @@
         "test:changed": "node scripts/test-changed/test-changed.mjs"
     },
     "engines": {
-        "node": ">=22.14.0"
+        "node": ">=22.15.0"
     },
     "license": "Apache-2.0",
     "devDependencies": {

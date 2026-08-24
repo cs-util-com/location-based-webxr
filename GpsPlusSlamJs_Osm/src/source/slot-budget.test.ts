@@ -335,3 +335,190 @@ describe("acquisitions are counted even while unlimited", () => {
     expect(budget.available).toBe(2);
   });
 });
+
+describe("a penalty is attributed to the operator that issued it (F2c, DEC-U2)", () => {
+  /**
+   * WHY THESE TESTS MATTER. Until 2026-08-19 a single 429 from one operator set
+   * one global `blockedUntilMs`, so the client stopped dispatching to ALL
+   * operators for the full penalty — 35 s by default. That is the same flawed
+   * premise the retry loop was fixed for one level up: a 429 from FOSSGIS says
+   * nothing about VK's quota. On a cold start with an empty cache it is 35 s of
+   * nothing on screen, and it is one of the two mechanisms that could have
+   * produced the owner's reported "another thirty seconds".
+   *
+   * The pool has three operators, so these use plain names rather than URLs —
+   * attribution is the caller's job (`operatorForUrl`), and the budget only has
+   * to keep the accounts apart.
+   */
+
+  it("blocks only the refusing operator, leaving the others dispatchable in the same tick", () => {
+    const clock = testClock();
+    const budget = new OverpassSlotBudget({ now: clock.now });
+
+    budget.penalise(35_000, "fossgis");
+
+    expect(budget.availableFor("fossgis")).toBe(0);
+    expect(budget.availableFor("vk-maps")).toBe(2);
+    expect(budget.availableFor("private.coffee")).toBe(2);
+  });
+
+  it("still blocks the refusing operator for the FULL penalty", () => {
+    // The fix must not weaken the protection it is narrowing. An operator that
+    // said "too many requests" is still off limits for exactly as long as it
+    // asked for.
+    const clock = testClock();
+    const budget = new OverpassSlotBudget({ now: clock.now });
+
+    budget.penalise(35_000, "fossgis");
+    clock.advance(34_999);
+    expect(budget.availableFor("fossgis")).toBe(0);
+    clock.advance(1);
+    expect(budget.availableFor("fossgis")).toBe(2);
+  });
+
+  it("keeps the longest outstanding penalty per operator, independently", () => {
+    // The global version took the longest of everything, which is right within
+    // one operator and wrong across two: a short penalty on VK must not shorten
+    // a long one on FOSSGIS, and must not be lengthened by it either.
+    const clock = testClock();
+    const budget = new OverpassSlotBudget({ now: clock.now });
+
+    budget.penalise(60_000, "fossgis");
+    budget.penalise(5_000, "fossgis");
+    budget.penalise(5_000, "vk-maps");
+
+    clock.advance(6_000);
+    expect(budget.availableFor("fossgis")).toBe(0);
+    expect(budget.availableFor("vk-maps")).toBe(2);
+  });
+
+  it("clamps a per-operator penalty exactly as it clamps a global one", () => {
+    // `Retry-After` is third-party input on this path too; an absurd value must
+    // not brick one operator for a day.
+    const clock = testClock();
+    const budget = new OverpassSlotBudget({
+      now: clock.now,
+      maxPenaltyMs: 10_000,
+    });
+
+    budget.penalise(999_999_999, "fossgis");
+    clock.advance(10_001);
+    expect(budget.availableFor("fossgis")).toBe(2);
+  });
+});
+
+describe("tryAcquire refuses only when EVERY operator is blocked", () => {
+  /**
+   * WHY THIS MATTERS MORE THAN IT LOOKS. `tryAcquire` runs once per TILE, in
+   * `fetchTileUncached`, BEFORE any endpoint is drawn — so it has no operator
+   * of its own to check. Getting this wrong in either direction breaks
+   * something shipped:
+   *
+   * - refuse whenever any operator is blocked → the original bug, unfixed;
+   * - never refuse → `RateLimitedError` stops being thrown, and with it
+   *   `CachingSource`'s stale-serve and `area-loader`'s prefetch back-off,
+   *   both of which branch on that error type.
+   *
+   * So the caller passes the operators it could actually reach, and the budget
+   * answers for the set.
+   */
+
+  it("admits a tile while at least one operator in the pool is free", () => {
+    const clock = testClock();
+    const budget = new OverpassSlotBudget({ now: clock.now });
+    const pool = ["fossgis", "vk-maps", "private.coffee"];
+
+    budget.penalise(35_000, "fossgis");
+
+    expect(budget.tryAcquire(pool)).toBe(true);
+  });
+
+  it("refuses a tile once every operator in the pool is blocked", () => {
+    const clock = testClock();
+    const budget = new OverpassSlotBudget({ now: clock.now });
+    const pool = ["fossgis", "vk-maps"];
+
+    budget.penalise(35_000, "fossgis");
+    budget.penalise(20_000, "vk-maps");
+
+    expect(budget.tryAcquire(pool)).toBe(false);
+  });
+
+  it("reports the SOONEST recovery across the pool, not the longest", () => {
+    // This value becomes `RateLimitedError.retryAfterMs`, which the prefetch
+    // back-off sleeps on. Reporting the longest would idle the client past the
+    // moment it could legitimately have asked the faster-recovering operator.
+    const clock = testClock();
+    const budget = new OverpassSlotBudget({ now: clock.now });
+    const pool = ["fossgis", "vk-maps"];
+
+    budget.penalise(35_000, "fossgis");
+    budget.penalise(20_000, "vk-maps");
+
+    expect(budget.msUntilAvailable(pool)).toBe(20_000);
+  });
+
+  it("keeps the old global behaviour when no operator is named", () => {
+    // `penalise(ms)` with no operator, and `tryAcquire()` with no pool, are the
+    // pre-2026-08-19 surface. External consumers hold this class through the
+    // package index, so the unqualified calls must keep meaning what they did.
+    const clock = testClock();
+    const budget = new OverpassSlotBudget({ now: clock.now });
+
+    budget.penalise(35_000);
+
+    expect(budget.tryAcquire()).toBe(false);
+    expect(budget.tryAcquire(["fossgis", "vk-maps"])).toBe(false);
+    expect(budget.msUntilAvailable()).toBe(35_000);
+  });
+
+  it("still refuses on a spent allocation, however free the operators are", () => {
+    // The concurrency cap stays GLOBAL: it models our own outbound limit, not
+    // any server's quota, so splitting it per operator would let one client
+    // dispatch three times its allocation by spreading it across the pool.
+    const budget = new OverpassSlotBudget({ slots: 1 });
+    const pool = ["fossgis", "vk-maps"];
+
+    expect(budget.tryAcquire(pool)).toBe(true);
+    expect(budget.tryAcquire(pool)).toBe(false);
+  });
+});
+
+describe("isBlocked asks about the SERVER's quota, not ours", () => {
+  /**
+   * WHY THE DISTINCTION HAS TEETH. `availableFor` reports 0 both when an
+   * operator is penalised AND when the shared allocation is spent — and the
+   * allocation is spent during any ordinary area load, since the default is two
+   * slots and the retry loop runs after this tile already took one. The retry
+   * loop used `availableFor` to decide which endpoints to skip, so under load
+   * every operator looked blocked, the filter emptied, and it fell through to
+   * the unfiltered order: the skip did nothing exactly when it mattered.
+   */
+
+  it("reports a penalised operator as blocked", () => {
+    const clock = testClock();
+    const budget = new OverpassSlotBudget({ now: clock.now });
+    budget.penalise(35_000, "fossgis");
+
+    expect(budget.isBlocked("fossgis")).toBe(true);
+    expect(budget.isBlocked("vk-maps")).toBe(false);
+  });
+
+  it("does NOT report an operator as blocked merely because the slots are spent", () => {
+    // The regression this method was extracted for.
+    const budget = new OverpassSlotBudget({ slots: 1 });
+    expect(budget.tryAcquire(["fossgis"])).toBe(true);
+
+    expect(budget.availableFor("fossgis")).toBe(0);
+    expect(budget.isBlocked("fossgis")).toBe(false);
+  });
+
+  it("still honours an unqualified global penalty", () => {
+    const clock = testClock();
+    const budget = new OverpassSlotBudget({ now: clock.now });
+    budget.penalise(35_000);
+
+    expect(budget.isBlocked("fossgis")).toBe(true);
+    expect(budget.isBlocked("vk-maps")).toBe(true);
+  });
+});

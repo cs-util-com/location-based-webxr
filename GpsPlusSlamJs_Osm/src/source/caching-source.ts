@@ -10,6 +10,7 @@
  */
 
 import type { OsmDataSource, OsmTileResult } from "./osm-data-source.js";
+import { elapsedMs, joinedTimings } from "./osm-data-source.js";
 import type { OsmBlobStore } from "./osm-blob-store.js";
 import { OVERPASS_SCHEMA_VERSION } from "./overpass-query.js";
 import { RateLimitedError } from "./overpass-source.js";
@@ -22,6 +23,11 @@ export interface CachingSourceOptions {
    */
   readonly schemaVersion?: number;
   readonly now?: () => number;
+  /**
+   * Monotonic clock for `timings` durations. See `OverpassSource`'s option of
+   * the same name for why this is separate from {@link now}.
+   */
+  readonly monotonicNow?: () => number;
 }
 
 export interface EnsureOptions {
@@ -52,6 +58,7 @@ export class CachingSource implements OsmDataSource {
 
   private readonly schemaVersion: number;
   private readonly now: () => number;
+  private readonly monotonicNow: () => number;
   private readonly inFlight = new InFlightRequests<OsmTileResult>();
 
   readonly stats = {
@@ -61,6 +68,15 @@ export class CachingSource implements OsmDataSource {
     deduplicated: 0,
     /** Refetches a rate limit refused, answered from the stale copy instead. */
     staleOnRateLimit: 0,
+    /**
+     * Tiles fetched successfully whose cache WRITE failed.
+     *
+     * The tile was still returned — see `fetchAndStore`. Non-zero here means
+     * the cache is not retaining, so every later click refetches, and the cause
+     * is local storage rather than the network. Without the counter that reads
+     * as an unexplained slowdown.
+     */
+    storeFailures: 0,
   };
 
   constructor(
@@ -72,6 +88,10 @@ export class CachingSource implements OsmDataSource {
     this.sourceId = `cached(${inner.sourceId})`;
     this.schemaVersion = options.schemaVersion ?? OVERPASS_SCHEMA_VERSION;
     this.now = options.now ?? Date.now;
+    this.monotonicNow =
+      options.monotonicNow ??
+      (() =>
+        typeof performance === "undefined" ? Date.now() : performance.now());
   }
 
   /**
@@ -100,10 +120,32 @@ export class CachingSource implements OsmDataSource {
     tile: string,
     options: EnsureOptions = {},
   ): Promise<OsmTileResult> {
-    const cached = await this.readCached(tile);
+    // TIMED AROUND THE READ, not around the whole call, because `readCached`
+    // runs on EVERY path — hit, miss and stale. On a hit its cost IS the
+    // delivery; on a miss and a stale hit it is a probe that did not serve the
+    // answer, and it is carried down to `fetchAndStore` as `probeMs` rather
+    // than dropped. On a large blob a stale probe is the second largest term on
+    // that path, and an unattributed one would sit in the residual looking like
+    // an unenumerated stage.
+    const read = await this.readCachedTimed(tile);
+    const cached = read.result;
     if (cached !== undefined && !this.isStale(cached, options.maxAgeMs)) {
       this.stats.hits++;
-      return cached;
+      return {
+        ...cached,
+        timings: {
+          servedBy: "cache",
+          slotWaitMs: 0,
+          transportMs: read.transportMs,
+          decodeMs: read.decodeMs,
+          // TRULY ZERO, not unmeasured. The blob already holds features, so
+          // `parseOverpassJson` never runs on this path — which is a real and
+          // useful fact about the warm click, and `servedBy` is what stops it
+          // being read as "nobody looked".
+          parseMs: 0,
+          attempts: 0,
+        },
+      };
     }
     if (cached !== undefined) {
       this.stats.staleRefetches++;
@@ -111,13 +153,41 @@ export class CachingSource implements OsmDataSource {
       this.stats.misses++;
     }
 
-    if (this.inFlight.has(tile)) this.stats.deduplicated++;
+    // THIS is the layer that actually dedups in the demo's wiring, and the
+    // joiner copy has to be here rather than only in the inner source. This
+    // class runs its own `InFlightRequests` and joins FIRST, so the inner
+    // Overpass client sees exactly one caller and its own joiner branch never
+    // runs. Without the copy below, two colliding refresh passes were both told
+    // the click cost a full network fetch.
+    const joined = this.inFlight.has(tile);
+    if (joined) this.stats.deduplicated++;
+    const startedAt = this.monotonicNow();
 
-    return this.inFlight.join(
+    const result = await this.inFlight.join(
       tile,
-      (dedupSignal) => this.fetchAndStore(tile, cached, dedupSignal),
+      (dedupSignal) =>
+        this.fetchAndStore(tile, cached, read.probeMs, dedupSignal),
       options.signal,
     );
+    if (!joined) return result;
+    return {
+      ...result,
+      timings: {
+        ...joinedTimings(elapsedMs(startedAt, this.monotonicNow())),
+        // THE JOINER PAID FOR ITS OWN PROBE AND MUST BE CHARGED FOR IT
+        // (r504 review). It has already run a full `readCachedTimed` above —
+        // a `store.get` plus a `JSON.parse` of a multi-megabyte blob — and
+        // `startedAt` is only taken AFTER that, so without this the probe
+        // belongs to no stage at all. That is the exact gap `probeMs` was
+        // added to close on the miss and stale paths.
+        //
+        // It surfaces downstream as residual rather than vanishing, so it was
+        // an attribution gap rather than a lost measurement — but a joining
+        // caller is precisely the collision case (`prefetch-queue` against a
+        // user click) where the warm-probe cost is real and worth seeing.
+        probeMs: read.probeMs,
+      },
+    };
   }
 
   /**
@@ -131,13 +201,53 @@ export class CachingSource implements OsmDataSource {
   private fetchAndStore(
     tile: string,
     cached: OsmTileResult | undefined,
+    probeMs: number,
     signal: AbortSignal,
   ): Promise<OsmTileResult> {
     return this.inner
       .fetchTile(tile, signal)
       .then(async (result) => {
-        await this.store.put(this.cacheKey(tile), JSON.stringify(result));
-        return result;
+        // STRIPPED BEFORE PERSISTING, and this is the single most consequential
+        // line in the file for the click-path breakdown. `timings` describes
+        // one DELIVERY; a cached blob describes a TILE, and a tile has no fetch
+        // duration. Left on, the originating network's `transportMs` would be
+        // written into OPFS and handed back on every later hit forever — so the
+        // warm path would report a 60 s fetch it never made, and parse, the
+        // term the plan is hunting, would be measured on the wrong path.
+        const { timings, ...persistable } = result;
+        const storeStart = this.monotonicNow();
+        // A FAILED WRITE MUST NOT LOSE THE TILE. This used to let the rejection
+        // propagate to the `.catch` below, which rethrows anything that is not
+        // a `RateLimitedError` — so a res-7 tile that cost 15–90 s of donated
+        // infrastructure was DISCARDED because the local disk was full, and the
+        // caller rendered nothing while a perfectly good tile sat in memory.
+        //
+        // That inverts what a cache is for: it turns a storage problem into a
+        // data problem. OPFS quota-exceeded is the realistic trigger and it is
+        // not exotic — a tile is ~21 MB and this library never evicts on its
+        // own by design (eviction is the host app's policy), so a user who
+        // browses enough ground WILL reach it. What they would have seen is
+        // "the map stopped working", not "storage is full".
+        //
+        // COUNTED, because the failure is otherwise invisible: the tile draws,
+        // and the only symptom is that every later click refetches it — which
+        // reads as a slow network rather than as a full disk.
+        try {
+          await this.store.put(
+            this.cacheKey(tile),
+            JSON.stringify(persistable),
+          );
+        } catch {
+          this.stats.storeFailures++;
+        }
+        const storeMs = elapsedMs(storeStart, this.monotonicNow());
+        // THE WRITE IS ON THE CLICK PATH because it is awaited before the
+        // caller gets its tile, so it is reported rather than absorbed. Only
+        // when the inner source measured at all — a source without timings must
+        // not acquire a partial object here, since absent and zero are
+        // different facts everywhere else in this type.
+        if (timings === undefined) return result;
+        return { ...result, timings: { ...timings, storeMs, probeMs } };
       })
       .catch((error: unknown) => {
         // A refused slot is not a data problem, and it is the ONE failure where
@@ -154,7 +264,31 @@ export class CachingSource implements OsmDataSource {
         // that the caller needs to be able to tell from "no data here".
         if (cached !== undefined && error instanceof RateLimitedError) {
           this.stats.staleOnRateLimit++;
-          return cached;
+          // ITS OWN `servedBy`, because this is neither a network fetch nor a
+          // cache hit: the read already happened above, the fetch was refused,
+          // and a breakdown filing this under either would misattribute a
+          // refusal as a cost.
+          //
+          // **`probeMs` CARRIES THE REAL COST, and the other fields are zero
+          // because they really are zero here** — no request went out, nothing
+          // was decoded, nothing was parsed. The first version reported four
+          // hard zeros and nothing else, which said "this delivery cost
+          // nothing" about a path that had just paid a full `store.get` plus
+          // `JSON.parse` on a ~21 MB blob. That is exactly the absent-vs-zero
+          // confusion this type is shaped to prevent, committed by the type's
+          // own author.
+          return {
+            ...cached,
+            timings: {
+              servedBy: "stale-on-rate-limit",
+              slotWaitMs: 0,
+              transportMs: 0,
+              decodeMs: 0,
+              parseMs: 0,
+              attempts: 0,
+              probeMs,
+            },
+          };
         }
         throw error;
       });
@@ -198,27 +332,69 @@ export class CachingSource implements OsmDataSource {
    * throw. The cost of being wrong is one refetch; the cost of throwing is a
    * permanently poisoned tile that no amount of retrying fixes.
    */
-  private async readCached(tile: string): Promise<OsmTileResult | undefined> {
+  /**
+   * Reads, validates, and reports what the attempt cost either way.
+   *
+   * `probeMs` is the WHOLE attempt — read plus decode — and is what a miss or a
+   * stale hit carries forward, because on those paths this work bought nothing
+   * and still has to belong to a stage. **Every return path funnels through the
+   * `outcome()` closure below**, so the corrupt-entry path reports it too: a
+   * `JSON.parse` that spent real time on a large damaged blob before throwing is
+   * precisely where the wasted cost is largest, and the first version was the
+   * one branch that dropped it. (This used to say "measured in a `finally`";
+   * the behaviour was right and there is no `finally` here, so a reader looking
+   * for one would not find it.)
+   */
+  private async readCachedTimed(tile: string): Promise<{
+    readonly result: OsmTileResult | undefined;
+    readonly transportMs: number;
+    readonly decodeMs: number;
+    readonly probeMs: number;
+  }> {
+    const probeStart = this.monotonicNow();
+    let transportMs = 0;
+    let decodeMs = 0;
+    const outcome = (
+      result: OsmTileResult | undefined,
+    ): {
+      result: OsmTileResult | undefined;
+      transportMs: number;
+      decodeMs: number;
+      probeMs: number;
+    } => ({
+      result,
+      transportMs,
+      decodeMs,
+      probeMs: elapsedMs(probeStart, this.monotonicNow()),
+    });
+
     let raw: string | undefined;
+    const readStart = this.monotonicNow();
     try {
       raw = await this.store.get(this.cacheKey(tile));
     } catch {
-      return undefined;
+      return outcome(undefined);
     }
+    // THE OPFS READ IS THIS PATH'S TRANSPORT. Same role as the HTTP round trip
+    // on a miss: bytes in hand. Naming it the same thing is what lets a warm
+    // click and a cold one be compared line by line.
+    transportMs = elapsedMs(readStart, this.monotonicNow());
     if (raw === undefined) {
-      return undefined;
+      return outcome(undefined);
     }
     try {
+      const decodeStart = this.monotonicNow();
       const parsed: unknown = JSON.parse(raw);
+      decodeMs = elapsedMs(decodeStart, this.monotonicNow());
       if (
         !isTileResult(parsed) ||
         parsed.schemaVersion !== this.schemaVersion
       ) {
-        return undefined;
+        return outcome(undefined);
       }
-      return parsed;
+      return outcome(parsed);
     } catch {
-      return undefined;
+      return outcome(undefined);
     }
   }
 }

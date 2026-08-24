@@ -18,7 +18,6 @@
 import {
   AffordanceIndex,
   buildRegions,
-  cellsAboveThreshold,
   connectedComponents,
   thresholdFor,
   type CellScore,
@@ -42,23 +41,19 @@ import {
   nextEventTime,
   toFetchTile,
 } from "gps-plus-slam-osm";
-import { cellToBoundary, cellToLatLng, gridDisk, latLngToCell } from "h3-js";
+import {
+  cellToBoundary,
+  cellToChildren,
+  cellToLatLng,
+  gridDisk,
+  latLngToCell,
+} from "h3-js";
 import type { GeoEventStats } from "./geo-event-stats.js";
-import { heatScale } from "./heat-colours.js";
+import { nowMs } from "./monotonic-clock.js";
 
-/**
- * A monotonic clock, or `Date.now` where there is not one.
- *
- * `performance` exists in a real worker and in the browser; the fallback is for
- * a unit test that constructs a `DemoPipeline` directly under a runtime that
- * has not defined it. Timings are reported in whole milliseconds, so the
- * difference between the two clocks is below the reporting resolution — what
- * matters is that a missing global cannot throw inside the one method the
- * benchmark exists to measure.
- */
-function nowMs(): number {
-  return typeof performance === "undefined" ? Date.now() : performance.now();
-}
+// `nowMs` moved to `monotonic-clock.ts` when the worker handler and the page
+// needed the same clock for the click-path breakdown. Three copies of the
+// `typeof performance` guard is three places for the fallback to drift.
 
 /**
  * The seed every device shares (DEC-R9-7).
@@ -92,6 +87,70 @@ const GEO_EVENT_BATCH = CANDIDATES_PER_BATCH;
  * a port; see resolutions.ts.
  */
 const CLIMB_STEPS = 5;
+
+/**
+ * SCAN the event tile rather than climbing within it (DEC-A5).
+ *
+ * The reported bug is that an event never lands on the obviously best ground:
+ * measured on a field with one clear peak, **0 hits in 24 searches**. Climbing
+ * samples — it walks each seeded candidate ~1.5 of its 5 allowed steps before
+ * sticking on the nearest bump — so it finds a peak only when a candidate lands
+ * on one.
+ *
+ * Scanning is affordable for a reason that is the opposite of intuitive: a res-8
+ * tile holds only **343 res-11 chunks** to score, FEWER than a climb with useful
+ * reach needs.
+ *
+ * ⚠️ **THE "404 OF 488" THIS USED TO CLAIM IS SINGLE-TILE ARITHMETIC, and the
+ * search is not single-tile.** The reach accumulates over the centre tile AND
+ * every admitted neighbour — measured at **2 401 cells, i.e. 343 x 7** — so the
+ * pinned set can reach ~2 401 against a 488 cap. Pins beat the cap, so nothing
+ * evicts mid-search and this is a memory spike rather than a correctness break;
+ * but the comfortable-sounding 404 described one tile of seven.
+ *
+ * **The climb is kept, not deleted.** The 364 ms scan measurement is a LOWER
+ * bound — no fixture holds a full tile — so this constant is the way back, and
+ * the climb path keeps its own tests running rather than becoming a fallback
+ * nobody exercises.
+ *
+ * ⚠️ **OFF: it runs, and it still does not find the peak. Cause NOT established.**
+ *
+ * What is established, by measurement:
+ *
+ * - the exhaustive branch really is taken — `evaluated` carries the shortlist
+ *   size rather than the climb's ten seeded candidates;
+ * - the reach is the whole tile — `reachCells` reads 2 401, i.e. 343 x 7 tiles;
+ * - the target peak IS scored, at 80;
+ * - and it still loses, 0 hits in 24, even after the draw was weighted by heat.
+ *
+ * **An earlier comment here blamed unscored neighbours (peak 80 + 0 against a
+ * bump at 84). That diagnosis is NOT proven and a review argues it is wrong**:
+ * the peak sits 17 rings inside the tile, the ensure set covers the enumerated
+ * field exactly, and `cellState` answers `empty` (heat 1) rather than
+ * `unknown` for any cell in a scored chunk — which would floor the peak at
+ * 80 + 6 = 86 and win. Observation and that argument disagree, and **resolving
+ * that contradiction is the next step**, not another fix.
+ *
+ * Two candidate explanations: the peak's neighbourhood may genuinely span chunks
+ * the ensure set missed, or `picks[0]` may be a nearer tile's pick rather than
+ * this tile's (`newGeoEventFor` sorts by distance to the user, and 5 tiles
+ * produced picks).
+ *
+ * **THE SECOND ONE IS NOW THE FAVOURITE, on geometry rather than on a run**
+ * (2026-08-11). In the graded fixture the peak is **395 m** from the user and in
+ * the user's OWN res-8 tile, while the user stands **~30 m from that tile's
+ * western edge** with the fixture's background covering ~350 m beyond it. A
+ * neighbour tile therefore yields a pick nearer than 395 m on essentially every
+ * roll, so the peak's tile's pick is never the one the test asserts on — and
+ * "0 of 24" would read 0 for a perfect search. **Print every pick with its tile
+ * before changing anything here**; the same instrument produced the climb path's
+ * 0 of 24, so both figures are in doubt together.
+ *
+ * Left wired and inert rather than reverted: the path, the weighted draw and the
+ * enumeration are all correct as far as they go, and a review confirmed the
+ * enumeration is exactly complete. Only the outcome is missing.
+ */
+const EXHAUSTIVE_GEO_EVENT = false;
 
 /**
  * A feature's outlines, for drawing it without knowing what kind it is.
@@ -133,6 +192,112 @@ export interface DemoPipelineOptions {
   readonly table: RuleTable;
   /** Categories to score. Defaults to every category the table declares. */
   readonly categories?: readonly string[];
+  /**
+   * Monotonic clock for `DemoStageTimings`. Injected so ATTRIBUTION is testable.
+   *
+   * **This seam was missing and its absence was a real gap**, not a
+   * convenience. `OverpassSource` and `CachingSource` both take one precisely
+   * so a test can make exactly one stage expensive and assert the others are
+   * zero; without it here, `scoreMs` and `deriveMs` could be swapped and every
+   * test stayed green. The plan mandates that test (§5) and it could not be
+   * written against a hard-wired clock.
+   */
+  readonly monotonicNow?: () => number;
+  /**
+   * Retained scored chunks before the furthest-from-the-user are dropped.
+   *
+   * FORWARDED, not invented here — `AffordanceIndexOptions.maxChunks` has
+   * always been public and this wrapper simply never passed it on, the same
+   * omission `categories` did not have. Omitted means the index's own default
+   * of `CHUNKS_PER_WORKING_SET × WORKING_SETS_RETAINED` = 1 016 (it was 488
+   * until DEC-K1 took the scoring radius from 4 to 6; the derivation is
+   * unchanged and the figures elsewhere in this file were measured at 488).
+   *
+   * It exists as an option here because the cap is what BOUNDS stage 5:
+   * `derive-growth.test.ts` walks until eviction starts and asserts the derive
+   * cost plateaus with the retained set, which at the production cap needs
+   * 2.6 km of walking and ~15 s of gate time. A smaller cap reaches the same
+   * plateau in a few steps. The full-scale figures are recorded in the AR
+   * milestone-4 findings doc.
+   */
+  readonly maxChunks?: number;
+}
+
+/**
+ * Where the wall clock went in stages 1–5 of one refresh pass.
+ *
+ * **Stages 1–5 and no more, because this method owns no more.** Fetch, parse,
+ * merge, score and derive all happen inside `DemoPipeline.update`; the terrain
+ * join, the mesh build, the structured clone and the draw happen outside it and
+ * are added by the worker handler and the page. Pretending otherwise here would
+ * produce a "complete" breakdown that is quietly missing four stages — which is
+ * the failure the whole plan exists to correct, one level down.
+ *
+ * **REQUIRED, not optional.** `update` is the only producer of a
+ * `DemoSnapshot` and it always measures, so an optional field could only ever
+ * mean "a future path dropped it silently" — and silence reading as measured is
+ * precisely what let a six-week performance loop miss this path entirely.
+ *
+ * @see demo-pipeline.ts.md
+ */
+export interface DemoStageTimings {
+  /**
+   * Stage 1–2, SUMMED over the tiles this pass fetched, from
+   * `OsmTileResult.timings`.
+   *
+   * Summed rather than sampled: a working set is 1–3 tiles depending on how
+   * near a res-7 boundary the click landed, so sampling would divide the fetch
+   * stage by three exactly where the click is slowest and read correctly
+   * everywhere else.
+   */
+  readonly transportMs: number;
+  readonly decodeMs: number;
+  readonly parseMs: number;
+  /** The awaited cache write, and the cache read that did not serve. */
+  readonly storeMs: number;
+  readonly probeMs: number;
+  /** Queued behind the source's concurrency cap, and waiting on a dedup peer. */
+  readonly slotWaitMs: number;
+  readonly joinedMs: number;
+  /**
+   * Wall clock around the ENTIRE fetch loop, merge included.
+   *
+   * The anchor that makes the parts falsifiable. Any set of plausible per-stage
+   * numbers adds up to something; only a separately measured whole can say the
+   * parts are wrong, and `fetchMs` minus the parts is the first place an
+   * unattributed cost inside fetching shows up.
+   */
+  readonly fetchMs: number;
+  /**
+   * Stage 3 — `acceptTile`, i.e. `mergeTiles` over every tile held this session.
+   *
+   * Measured apart from `fetchMs` even though it runs inside the same loop,
+   * because this is the stage the plan predicts GROWS across a session:
+   * `this.tiles` is never evicted, so the cost of clicking around is quadratic
+   * in tiles visited. Folded into fetching, that growth would be invisible.
+   */
+  readonly mergeMs: number;
+  /** Stage 4 — `AffordanceIndex.update`: sweep, clip, cover, score. */
+  readonly scoreMs: number;
+  /** Stage 5 — thresholding, components, regions, heat scale, outlines. */
+  readonly deriveMs: number;
+  /** Wall clock of the whole method — the second reconciliation anchor. */
+  readonly pipelineMs: number;
+  /** Tiles this pass actually fetched (0 on a fully warm pass). */
+  readonly tilesFetched: number;
+  /** Tiles held by the index — the denominator merge cost grows against. */
+  readonly tilesHeld: number;
+  readonly tilesFromNetwork: number;
+  readonly tilesFromCache: number;
+  /**
+   * Tiles whose source reported nothing.
+   *
+   * A COUNT rather than an absence, because a fixture-backed run would
+   * otherwise read as a click whose network cost nothing — true of the fixture
+   * and false of the app. A breakdown has to be able to say how much of itself
+   * is unmeasured.
+   */
+  readonly tilesUnmeasured: number;
 }
 
 export interface DemoSnapshot {
@@ -188,7 +353,16 @@ export interface DemoSnapshot {
    */
   readonly cellCount: number;
   /**
-   * The top of the heat ramp for `category` — `heatScale(...).max`.
+   * The highest score present for `category` — OBSERVED, not the ramp.
+   *
+   * **The ramp is fixed at `HEAT_CAP` now (DEC-H5), so this no longer decides
+   * any colour.** It is reported because the legend still has to say something
+   * about the data on screen: a constant ramp otherwise removes the only thing
+   * `describeScale` exists for, and a field of saturated cells would be
+   * indistinguishable from a flat field.
+   *
+   * Renamed from `heatMax` deliberately rather than kept — the old name says
+   * "this is the top of the ramp", which is exactly what it has stopped being.
    *
    * COMPUTED HERE BECAUSE IT IS WHY THE CELLS TRAVELLED (round 10, stage B).
    * The page derived this by mapping every cell's score for the current
@@ -197,12 +371,25 @@ export interface DemoSnapshot {
    * produce ONE NUMBER. The regions were already computed here; this was the
    * only other thing the default configuration used the array for.
    */
-  readonly heatMax: number;
+  readonly observedMax: number;
+  /**
+   * How many cells clear the threshold for `category`.
+   *
+   * THE LEGEND KEYS ITS "nothing here" MESSAGE ON THIS (DEC-H7). It used to ask
+   * `max <= threshold`, which only ever worked BECAUSE the max was observed —
+   * under a fixed ramp `max > threshold` always, so the R3-8 fix would have died
+   * silently and its e2e would have stayed green.
+   *
+   * Free: `above.length` from the fused derive pass.
+   */
+  readonly aboveThresholdCount: number;
   readonly stats: {
     readonly chunksScored: number;
     readonly chunksReused: number;
     readonly geometryBuilt: number;
   };
+  /** Stages 1–5 of this pass. See {@link DemoStageTimings}. */
+  readonly timings: DemoStageTimings;
   /**
    * How many rings of chunks this snapshot covers — which ring of the widening
    * it is (F42).
@@ -247,6 +434,8 @@ export class DemoPipeline {
   private readonly source: OsmDataSource;
   private readonly index: AffordanceIndex;
   private readonly table: RuleTable;
+  /** Monotonic clock for the stage timings — injectable so attribution is testable. */
+  private readonly clock: () => number;
 
   /** Tiles already handed to the index, so a redraw does not refetch. */
   private readonly loaded = new Set<string>();
@@ -254,11 +443,16 @@ export class DemoPipeline {
   constructor(options: DemoPipelineOptions) {
     this.source = options.source;
     this.table = options.table;
-    this.index = new AffordanceIndex(
-      options.categories === undefined
-        ? { table: options.table }
-        : { table: options.table, categories: options.categories },
-    );
+    this.clock = options.monotonicNow ?? nowMs;
+    this.index = new AffordanceIndex({
+      table: options.table,
+      ...(options.categories === undefined
+        ? {}
+        : { categories: options.categories }),
+      ...(options.maxChunks === undefined
+        ? {}
+        : { maxChunks: options.maxChunks }),
+    });
     // A late tile invalidates chunks; the demo simply redraws from the next
     // snapshot, so nothing needs to listen. Registering a no-op listener would
     // imply a reactivity this app does not have.
@@ -323,7 +517,7 @@ export class DemoPipeline {
     //    ground": a plausible wrong answer within ~250 m of any res-7 boundary.
     //  - Deriving from the MAXIMUM on every pass blocks the FIRST answer on a
     //    tile only the outer rings need. The fetch loop below runs before any
-    //    scoring, so near a boundary that is 18–110 s added to the one thing the
+    //    scoring, so near a boundary that is ~15–90 s added to the one thing the
     //    user is actually waiting for — undoing W16, whose whole point is that
     //    the extra reach costs nothing at the moment of waiting.
     //
@@ -334,10 +528,28 @@ export class DemoPipeline {
     // `DemoSnapshot.radius`). Two `?? SCORE_DISK_RADIUS` expressions could drift
     // into a snapshot claiming a ring the fetch never covered.
     const scoredRadius = radius ?? SCORE_DISK_RADIUS;
+    const pipelineStart = this.clock();
+    // ACCUMULATED ACROSS THE TILES, because a working set is 1–3 of them. The
+    // per-tile records are summed rather than sampled; see `DemoStageTimings`.
+    const totals = {
+      transportMs: 0,
+      decodeMs: 0,
+      parseMs: 0,
+      storeMs: 0,
+      probeMs: 0,
+      slotWaitMs: 0,
+      joinedMs: 0,
+      tilesFetched: 0,
+      tilesFromNetwork: 0,
+      tilesFromCache: 0,
+      tilesUnmeasured: 0,
+    };
+    let mergeMs = 0;
+    const fetchStart = this.clock();
     for (const tile of fetchTilesForScoreWorkingSet(chunk, scoredRadius)) {
       if (this.loaded.has(tile)) continue;
       // CHECKED PER TILE, which is the granularity that matters: a tile is
-      // 28-68 MB, so stopping between tiles is most of the saving available from
+      // ~21 MB, so stopping between tiles is most of the saving available from
       // abort at all. Once the worker's caller has moved on, continuing to pull
       // tiles for a position the user has left is exactly the waste the fetch
       // discipline exists to avoid.
@@ -354,11 +566,36 @@ export class DemoPipeline {
         // comment outlived the constraint it described.
         const result: OsmTileResult = await this.source.fetchTile(tile, signal);
         this.loaded.add(tile);
+        totals.tilesFetched++;
+        // ABSENT IS COUNTED, NEVER ZEROED. A source that does not instrument
+        // itself must show up as `tilesUnmeasured`, or a fixture-backed run
+        // reads as a click whose network cost nothing.
+        const t = result.timings;
+        if (t === undefined) {
+          totals.tilesUnmeasured++;
+        } else {
+          totals.transportMs += t.transportMs;
+          totals.decodeMs += t.decodeMs;
+          totals.parseMs += t.parseMs;
+          totals.storeMs += t.storeMs ?? 0;
+          totals.probeMs += t.probeMs ?? 0;
+          totals.slotWaitMs += t.slotWaitMs;
+          totals.joinedMs += t.joinedMs ?? 0;
+          if (t.servedBy === "network") totals.tilesFromNetwork++;
+          else if (t.servedBy === "cache") totals.tilesFromCache++;
+        }
+        // STAGE 3, CLOCKED SEPARATELY THOUGH IT SITS INSIDE THIS LOOP. It is
+        // the term the plan predicts grows across a session, and it is the term
+        // nothing has ever measured; inside the fetch stage that growth would
+        // be invisible.
+        const mergeStart = this.clock();
         this.index.acceptTile(result);
+        mergeMs += Math.max(0, this.clock() - mergeStart);
       } catch {
         missingTiles.push(tile);
       }
     }
+    const fetchMs = Math.max(0, this.clock() - fetchStart);
 
     // CHECKED AGAIN AFTER THE FETCH LOOP, and this is not redundant. The
     // per-tile check only fires when there is a NEXT tile, and at an interior
@@ -370,15 +607,25 @@ export class DemoPipeline {
       throw new DOMException("Aborted", "AbortError");
     }
 
+    const scoreStart = this.clock();
     this.index.update(position, radius);
+    const scoreMs = Math.max(0, this.clock() - scoreStart);
 
+    const deriveStart = this.clock();
     const threshold = thresholdFor(this.table, category);
     const scoresByCell = this.index.scoresByCell();
-    // MATERIALISED ONCE. This used to be spread here AND again below for the
-    // heat scale -- two full copies of ~24 000 cells, in the round whose whole
-    // subject is not copying them. Small beside the structured clone stage B
-    // removes, and on the same hot path. Raised in review on #254.
-    const cells = [...scoresByCell.values()];
+    // MATERIALISED ONLY WHEN IT TRAVELS (r513 review). It used to be spread
+    // here AND again below for the heat scale — two full copies of ~24 000
+    // cells, in the round whose whole subject was not copying them (#254).
+    //
+    // The heat-scale copy is gone with the fixed ramp, and this one is now
+    // conditional: the DEFAULT configuration has the `cells` layer off, so the
+    // array had no reader at all and was allocated on every publish regardless.
+    // Building it only when `includeCells` is not `false` is what makes the
+    // fused loop below genuinely ONE pass rather than two — the claim the first
+    // version of that comment made and the spread quietly falsified.
+    const includeCells = options?.includeCells !== false;
+    const cells: CellScore[] = [];
     // THE COUNT IS ALWAYS WANTED; THE FEATURES ALMOST NEVER ARE. The status
     // line reports how many features were excluded whether or not the layer is
     // drawn, so calling `belowSurfaceFeatures()` here put an array of ~13 % of
@@ -397,34 +644,53 @@ export class DemoPipeline {
       undergroundFeatures?.flatMap((feature) => outlinesOf(feature)) ?? [];
     const undergroundCount =
       undergroundFeatures?.length ?? this.index.belowSurfaceCount();
-    const above = cellsAboveThreshold(
-      { cells, unmappedTagCounts: {}, lookups: 0 },
-      category,
-      threshold,
-    );
+    // ONE PASS, not four (DEC-H6/H10) — and it is one only because the `cells`
+    // array is filled HERE rather than spread separately above. The first cut
+    // of this comment claimed one and delivered two; review caught it.
+    //
+    // It used to be the `values()` spread, then `cellsAboveThreshold`, then a
+    // `cells.map` allocating a score array over every retained cell, then
+    // `heatScale` scanning that array — four full-length walks over up to
+    // 23 912 cells, three times per move.
+    //
+    // They are independent reductions over the same sequence, so they fuse.
+    // Measured before this change: derive reached ~1.1 s per refresh once the
+    // chunk cap was full, after a 2.6 km walk
+    // (`GpsPlusSlamJs_OsmDemo/src/derive-growth.test.ts`).
+    //
+    // `observedMax` is NOT the ramp any more — the ramp is fixed. It is
+    // reported so the legend can still say something about the data on screen,
+    // which is `describeScale`'s stated purpose and the thing a constant ramp
+    // would otherwise remove (DEC-H7). Same `?? 1` identity the page used, so
+    // the number does not shift because the computation moved.
+    const above: string[] = [];
+    let observedMax = 0;
+    let cellCount = 0;
+    for (const cell of scoresByCell.values()) {
+      cellCount += 1;
+      if (includeCells) cells.push(cell);
+      const score = cell.scores[category] ?? 1;
+      if (score > threshold) above.push(cell.cell);
+      if (Number.isFinite(score) && score > observedMax) observedMax = score;
+    }
     const regions = buildRegions(
       connectedComponents(above),
       category,
       scoresByCell,
     );
 
-    // OVER THE SAME VALUES THE PAGE USED, including the `?? 1` identity for a
-    // cell with no entry for this category — the ramp must not shift because
-    // the computation moved.
-    const { max: heatMax } = heatScale(
-      cells.map((cell) => cell.scores[category] ?? 1),
-      threshold,
-    );
-
     return {
       position,
       category,
       threshold,
-      cells: options?.includeCells === false ? [] : cells,
-      cellCount: cells.length,
+      cells,
+      // COUNTED IN THE LOOP, not from `cells.length` — the array is empty when
+      // the layer is off, and the status line reports this number either way.
+      cellCount,
       undergroundCount,
       undergroundOutlines,
-      heatMax,
+      observedMax,
+      aboveThresholdCount: above.length,
       regions,
       missingTiles,
       loadedTiles: [...this.loaded],
@@ -434,6 +700,17 @@ export class DemoPipeline {
         geometryBuilt: this.index.stats.geometryBuilt,
       },
       radius: scoredRadius,
+      timings: {
+        ...totals,
+        fetchMs,
+        mergeMs,
+        scoreMs,
+        // CLOSED HERE, on the last line before the snapshot leaves, so stage 5
+        // covers everything after scoring including building this object.
+        deriveMs: Math.max(0, this.clock() - deriveStart),
+        pipelineMs: Math.max(0, this.clock() - pipelineStart),
+        tilesHeld: this.loaded.size,
+      },
     };
   }
 
@@ -481,7 +758,7 @@ export class DemoPipeline {
    * Exists so `explainCell` can be answered inside the worker. Before the worker
    * split, the caller found this by scanning `snapshot.cells` on the main thread;
    * that no longer works, because answering it there would mean shipping the
-   * merged features across the boundary — 28–68 MB of them — to explain one cell.
+   * merged features across the boundary — ~21 MB of them — to explain one cell.
    * Asking the side that already holds them is the whole point.
    */
   scoreFor(cell: string): CellScore | undefined {
@@ -576,7 +853,7 @@ export class DemoPipeline {
     // STEP 0 — which tiles (DEC-R9-15). Standing near a tile edge, your own
     // tile's event can be 500 m away while a neighbour's sits 50 m across the
     // boundary, invisible — so one tile is a real quality loss. But a neighbour
-    // whose data is missing costs an 18–110 s download, and the C#'s four-tile
+    // whose data is missing costs a ~15–90 s download, and the C#'s four-tile
     // answer could mean several of them.
     //
     // The app downloads in RES-7 UNITS, each covering seven event tiles, so
@@ -626,7 +903,33 @@ export class DemoPipeline {
      * `deriveMs`, which is the number W7's benchmark is read off — so the
      * measurement would be reporting work the search did not need.
      */
-    const reachOf = (
+    /**
+     * EXHAUSTIVE REACH: one res-13 seed per res-11 chunk of the tile.
+     *
+     * 343 seeds rather than the ~1 270 cells ten candidate discs cover, because
+     * `ensureScored` maps each seed to its res-11 parent and scores the whole
+     * chunk. Scanning the tile is CHEAPER than climbing far within it — a 5-step
+     * res-11 climb needs ~684 chunks against a 488 cap, while the whole tile is
+     * 343 per tile. (Across the admitted neighbours the reach is ~2 401 — see
+     * the flag's own note; the 404 figure was one tile of seven.)
+     */
+    const exhaustiveReachOf = (
+      each: string,
+      requireLoaded = false,
+    ): string[] | undefined => {
+      const cells: string[] = [];
+      for (const chunk of cellToChildren(each, SCORE_CHUNK_RES)) {
+        const seed = cellToChildren(chunk, AFFORDANCE_RES)[0];
+        if (seed === undefined) continue;
+        if (requireLoaded && !this.loaded.has(toFetchTile(seed))) {
+          return undefined;
+        }
+        cells.push(seed);
+      }
+      return cells;
+    };
+
+    const climbReachOf = (
       each: string,
       requireLoaded = false,
     ): string[] | undefined => {
@@ -648,6 +951,8 @@ export class DemoPipeline {
       return cells;
     };
 
+    const reachOf = EXHAUSTIVE_GEO_EVENT ? exhaustiveReachOf : climbReachOf;
+
     const tiles = [tile];
     // The centre is searched unconditionally — the user is standing in it — so
     // it is derived without the `requireLoaded` abort and can never be
@@ -660,9 +965,15 @@ export class DemoPipeline {
       tiles.push(neighbour);
       for (const cell of cells) reach.add(cell);
     }
+    // The bbox objects are freshly built here, so identity is a safe key back to
+    // the tile CELL — which `EventTile` does not carry and the exhaustive scan
+    // needs in order to enumerate the tile's cells.
+    const cellOfBox = new Map<object, string>();
     const boxes = tiles.map((each) => {
       const [s, w, n, e] = boundsOfCell(each);
-      return { south: s, west: w, north: n, east: e };
+      const box = { south: s, west: w, north: n, east: e };
+      cellOfBox.set(box, each);
+      return box;
     });
     const deriveMs = nowMs() - deriveStart;
 
@@ -731,6 +1042,16 @@ export class DemoPipeline {
         // they agree by construction, and a `__threshold__` row in the rule
         // table moves both together.
         threshold: thresholdFor(this.table, category),
+        ...(EXHAUSTIVE_GEO_EVENT
+          ? {
+              cellsOfTile: (each: { bbox: object }) => {
+                const cell = cellOfBox.get(each.bbox);
+                return cell === undefined
+                  ? []
+                  : cellToChildren(cell, AFFORDANCE_RES);
+              },
+            }
+          : {}),
       });
     });
     const climbMs = nowMs() - climbStart;

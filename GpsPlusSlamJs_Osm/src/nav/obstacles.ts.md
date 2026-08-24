@@ -33,13 +33,118 @@ when the user does.
 
 ## Public API
 
-- `Obstacle` — `{ feature, heightM, rings }`. `rings` are `x = lng, y = lat`,
-  ready for `containsPoint` (crossing parity is affine-invariant, so the
-  lat/lng anisotropy needs no correction — see
+- `Obstacle` — `{ feature, heightM, rings, passages? }`. `rings` are
+  `x = lng, y = lat`, ready for `containsPoint` (crossing parity is
+  affine-invariant, so the lat/lng anisotropy needs no correction — see
   [`point-in-ring.ts.md`](../spatial/point-in-ring.ts.md)).
+  - `passages` are **LINES along which the obstacle is open** (DEC-R12-3) —
+    the `tunnel=building_passage` ways running through a building, and since
+    2026-08-17 the **ground-level bridge decks crossing a water feature**.
+    **Lines, not the mouths**: a step is admitted when it runs along one, which
+    is a claim `crossesObstacle` can make about a step _inside_ the footprint as
+    well as one crossing its boundary, and the inside is where a corridor stops
+    being a corridor if nobody asks.
+    - **The bridge case is why the field is not building-specific.** A bank ring
+      cannot be cut the way `barrier-gates.ts` cuts a barrier centreline —
+      `segmentCrossesRing` treats a ring as closed regardless of whether the
+      first vertex was repeated — so the corridor is the only available shape,
+      and it is the right one: a deck admits exactly the steps that run along
+      it. Selector and corpus evidence in `isBridgeCrossing` (`mesh/roads.ts`):
+      14 of 18 `bridge`-tagged ways at `london-tower-bridge` are decks; the 4
+      rejected are structural areas and ways 43 m up behind a turnstile.
+    - **Water carries every deck in the extract, not the intersecting ones**,
+      unlike buildings, which are filtered per footprint by `passageLines`. The
+      asymmetry is deliberate: decks are few per city, and
+      `blockedDespitePassages` requires the step to be crossing or inside _this_
+      obstacle before any passage is consulted, so a distant deck cannot admit
+      anything.
+    - **Absent on almost everything**, which is why it is optional rather than
+      an empty array: `crossesObstacle` is the search's hottest path and pays one
+      `undefined` test per obstacle for it. See
+      [`building-passages.ts.md`](building-passages.ts.md).
+    - **This field was called `openings` in an earlier draft of this document,
+      and described as boundary POINTS.** It is neither. Corrected 2026-08-10.
+    - **"Inside the footprint" is decided BY RING PARITY, through the shared
+      `insideRingsByParity` in `building-passages.ts`** — not by "inside any
+      ring". A point in a courtyard is inside the outer ring and inside a hole:
+      two rings, even, therefore outside the building. This file had its own
+      `rings.some(...)` copy until 2026-08-12, which made **a courtyard inside a
+      pierced building unwalkable**, and disagreed both with
+      `building-passages.ts` and with the non-pierced path here, which tests
+      only for a crossing and so already let courtyards through. One predicate
+      now, not three readings of it.
 - `ObstacleIndex` — `obstaclesIn(cell)`, `cells`.
-- `buildObstacleIndex(features, resolution?) => ObstacleIndex`
+- `buildObstacleIndex(features, resolution?, options?) => ObstacleIndex` —
+  **barriers, buildings and water**. (This line said "barriers and buildings"
+  until 2026-08-17, having missed `addWater` entirely.) Barriers become
+  `thicknessM`-wide bands along their centrelines; buildings follow
+  `solidBuildingFootprints`' parts-else-outline rule, which is the same
+  selection [`buildings.ts`](../mesh/buildings.ts.md) extrudes; water becomes
+  bands along its BANKS carrying every ground-level bridge deck as a `passage`.
+  - `options.clipWaterTo?: Bbox` clips water before banding. ⚠️ **No production
+    caller passes it** — the demo builds through
+    `createObstacleIndexCache(buildObstacleIndex)`, whose `build` parameter takes
+    `features` alone — so water ships unclipped. See
+    [`2026-08-17-2210-obstacle-index-water-clipping-followup.md`](../../docs/2026-08-17-2210-obstacle-index-water-clipping-followup.md).
 - `obstacleLevelsAt(index, cell, groundAt) => number[]`
+- `crossesObstacle(index, fromCell, toCell) => boolean` — **the predicate that
+  makes a wall block.**
+
+## What actually blocks, and why it is a step predicate
+
+`obstacleLevelsAt` only ever ADDS a standable level. On its own that stops
+nothing: a walled cell offers the ground and the wall top, and an agent walks
+along the ground straight through the wall. Blocking is `crossesObstacle`, and
+it is a property of the **step**, not of the cell:
+
+- A res-13 cell is ~8 m across and a wall ~0.5 m thick, so a wall contains a
+  cell's centre roughly one time in sixteen. Any rule of the form "you may not
+  stand in a walled cell" is transparent to pathfinding the other fifteen.
+- It tests the segment between the two **cell centres** against every obstacle
+  ring, using [`segmentCrossesRing`](../spatial/segment-crossing.ts.md).
+- Obstacles are gathered from the whole `gridDisk(fromCell, 1)`, not from the
+  two endpoints: a thin wall's footprint covers the cells the BAND passes
+  through, which can be neither endpoint. Asking only the endpoints missed
+  exactly that, silently — the wall indexed correctly and blocked nothing.
+- **Defined for neighbouring cells**, which is all the search asks: every
+  candidate `columnSpace` generates comes from `gridDisk(state.cell, 1)`.
+- A step within one cell is never blocked — moving between two LEVELS of one
+  cell crosses no boundary, and it is the one move a column model has that a 2D
+  model does not.
+
+Wire it in through `ColumnSpaceOptions.canCross`; the default admits everything,
+which is design rung 5.3 where agents deliberately do walk up walls.
+
+### Its cost, and what dominates it
+
+Measured in [`obstacles.bench.ts`](./obstacles.bench.ts) — **~0.83 µs per step**,
+from ~6.2 µs before the two memos. A\* calls this as `canCross` for every newly
+discovered state, up to `DEFAULT_ROUTE_EXPANSIONS` = 20 000 per click, so a route
+request pays **~17 ms** of it rather than the ~124 ms it used to.
+
+**The bill WAS the fixed per-call work, not the ring tests**, and the bench
+showed it the only way that is convincing: a step whose whole disk contained
+**no obstacle at all** — running zero ring tests — cost the same 6.2 µs as one on
+indexed cells. Two memos removed almost all of it:
+
+- **cell centres** (−38 %), because a cell is asked about once as `from` and up
+  to six times as `to`;
+- **radius-1 disks** (a further −78 %), which was the larger of the two: `gridDisk`
+  allocates seven fresh strings per call, and the `toCell` is now visited
+  separately instead of being spread into an eighth array with them.
+
+**The two populations now DIFFER** — 0.33 µs against 0.22 µs per step — which is
+the check that the remaining cost really is the ring tests rather than more
+floor. While they read the same, no geometry change could have been visible.
+
+- **Cell centres are memoised**, capped and cleared wholesale, exactly as
+  `cell-overlap.ts` memoises cell boundaries and for the same reason: a cell is
+  asked about once as `from` and up to six times as `to`. The cached points are
+  **shared and read-only**.
+- **Consequence for anything added to the index:** the ring tests have headroom,
+  so a new feature class is cheaper than it looks — _provided its geometry is
+  clipped_. An unclipped kilometre-scale relation puts thousands of vertices into
+  every call within its span, which is the one shape that would move this number.
 
 ## Invariants
 
@@ -51,11 +156,34 @@ when the user does.
 - **Obstacle heights are relative to the ground beneath them.** A 2 m wall on a
   30 m hill is standable at 32 m. Treating them as absolute would put every wall
   top underground on any real slope.
-- **Levels are distinct and ascending.** Two walls of the same height crossing
-  one cell are one standable level, not two identical ones; and a route that
-  varied with the order Overpass returned features would be unreproducible.
+- **Levels are distinct and ascending, and the FIRST is the ground.** Two walls
+  of the same height crossing one cell are one standable level, not two identical
+  ones; and a route that varied with the order Overpass returned features would
+  be unreproducible.
+  - **The "first is the ground" half became load-bearing on 2026-08-18.**
+    `column-space.ts` reads a cell's walking surface as the lowest of its levels
+    in order to price a slope separately from a climb, so a wall top sorting
+    below the ground would make an agent walk off one. It holds by construction —
+    the set is seeded with the ground and only ever gains `ground + heightM`
+    above it — and `obstacles.test.ts` now pins it at several ground heights
+    rather than leaving it implied by the sort.
 - **One obstacle appears once per cell**, however many of its segments cover it.
   The segments of one wall are one wall.
+- **A mapped opening admits the step that goes through it, and nothing else**
+  (DEC-R12-1, DEC-R12-3). Barriers and buildings reach that by different routes,
+  and the difference is not arbitrary:
+  - a **barrier** is cut in the shared geometry (`barrierCentrelines`), because
+    the barrier is DRAWN from the same lines and the drawn-iff-indexed property
+    would otherwise break;
+  - a **building** keeps its rings and carries `passages` instead, because
+    `segmentCrossesRing` closes a ring implicitly so it cannot be cut — and
+    because a building's passability has always been index-only here
+    (`min_height` and `building=roof` volumes are drawn exactly as before and
+    simply do not obstruct).
+- **The opening test is the only place in this module that is not
+  affine-invariant.** It is a RADIUS in metres, so longitude is scaled by
+  cos(latitude) before the distance is taken. Everything else compares crossings,
+  which are affine-invariant and need no correction.
 - **Every segment is indexed**, not just the first — an L-shaped wall that
   blocked along one leg and not the other is exactly the kind of defect a
   single-segment fixture cannot see. Mutation testing found that gap here.
@@ -85,13 +213,21 @@ when the user does.
   - **`multilinestring` is deliberately not handled.** `toGeometry` never
     produces one — only `clip.ts` does, and clipping is not in this path — so a
     branch for it would be code no test could ever cover.
-    - **The `[0]` assertions in `barrierLines` are the same argument.**
+    - **The `[0]` assertions in `barrierCentrelines` are the same argument.**
       `wayToGeometry` builds `rings: [way.geometry]` and `relationToGeometry`
       returns `polygons[0]!` from rings `groupRingsIntoPolygons` seeds as
       `[outer]`, so an outer ring is always present and a `?? []` fallback would
       be an uncoverable branch. Changed on #263 for consistency with the rule
       above; it also drops three whole-ring array copies that existed only to
       satisfy mutability variance.
+  - **All of the above now lives in `mesh/barriers.ts`, not here.** The rules
+    moved to `barrierCentrelines` when the barriers became drawn, because
+    [`barrier-volumes.ts`](../mesh/barrier-volumes.ts.md) needs the identical
+    lines: an indexed wall that is not drawn is a detour around thin air, and a
+    drawn wall that is not indexed is an agent walking through visible geometry.
+    A property test pins **drawn iff indexed, at the same height**. This module
+    keeps only the `LatLng` → `x = lng, y = lat` mapping its own ring format
+    needs.
 
 ## Defensive behaviour
 
@@ -115,17 +251,28 @@ catchable after a bent-barrier fixture was added.
 
 **What these do NOT cover — and this is the larger gap:**
 
-- **Nothing blocks anything yet.** `Obstacle.rings` is built, stored and
-  exported, but no code in this slice ever asks `containsPoint` about it. The
-  only consumer surface is `obstacleLevelsAt`, which **adds** a level and never
-  removes one. So wiring this into `columnSpace` today gives an agent the wall
-  top as an extra state and leaves the ground under the wall fully traversable
-  — agents walk through walls that are walls, not merely through walls that are
-  houses. Review on #259 caught an earlier version of this section claiming
-  otherwise. **The footprint test is the next slice.**
-- **Buildings are not indexed at all.** Only barriers are, so even once the
-  footprint test lands, a house is not an obstacle until the building half is
-  built.
+- **⚠️ THE TWO ENTRIES THAT USED TO HEAD THIS LIST WERE BOTH FALSE, and are
+  corrected rather than deleted so the drift is visible** (2026-08-10). They read
+  _"Nothing blocks anything yet"_ and _"Buildings are not indexed at all"_. Both
+  described the state before `crossesObstacle` and `addBuildings` landed, and the
+  second contradicted this file's own API section — which has said "barriers
+  **and** buildings" for as long as the claim sat below it.
+  - **Blocking works.** `crossesObstacle` is the veto, `planRouteWithIndex`
+    passes it to `columnSpace` as `canCross`, and it is what makes a route go
+    around a wall.
+  - **Buildings are indexed**, via `solidBuildingFootprints`' parts-else-outline
+    rule — the same selection `buildings.ts` extrudes.
+  - Anyone planning work from those two lines would have planned a slice that
+    already shipped. That is the second time in one week a stale sidecar
+    sentence nearly did that, so the correction is named in place.
+- **Blocking is 2D and height-blind, which is easy to misread from the rest of
+  this file.** `crossesObstacle` never consults `heightM`; height enters only
+  through `obstacleLevelsAt`, which **adds** a standable level and never removes
+  one. Two consequences worth stating before anyone extends this:
+  - an obstacle with `heightM = 0` blocks perfectly well — it simply contributes
+    no extra level, which is what a footprint with no volume should do;
+  - conversely, a veto applies at **every** level, so anything with a deck over
+    it needs the passage mechanism rather than a height comparison.
 - **The antimeridian.** A barrier crossing ±180° would be treated as spanning
   almost the whole world, because `enuFrameAt` and the stored rings both use
   canonical longitudes. This matches the package's existing stance rather than

@@ -5,11 +5,11 @@
 ## Public API
 
 - `createDemoStore({ start, category })` → `{ store, actions, subscribe }`
-  - `store` — a plain RTK `configureStore` with one reducer mounted at `osmView`.
+  - `store` — the framework's `createSlamAppStore`, with this demo's slice mounted at `osmView` via `extraReducers`. It therefore also carries the library's `gpsData`, `gpsElements`, `arElements`, `recording`, `tracking` and `trackingQuality` slices, which AR mode reads and the demo never writes.
   - `actions` — the slice's action creators (`positionChanged`, `categoryChanged`, `showBelowThresholdChanged`, `cellSelected`, `fetchStarted`, `scoringStarted`, `snapshotReady`, `fetchFailed`, `nonFatalError`).
   - `subscribe(select, onChange)` — calls `onChange(current, previous)` only when `select`'s result changes by **reference**. Returns an unsubscribe function.
 - `selectOsmView(state)` — the slice state from the root. The one place the mount key is named.
-- `summariseSnapshot(state)` — the devtools `stateSanitizer`. Exported for its test, not for callers.
+- `summariseSnapshot(state)` — passed to the factory as `devToolsStateSanitizer`, which COMPOSES it with the framework's own sanitizer rather than replacing it. Also exported for its test.
 - Types: `DemoRootState`, `CreateDemoStoreOptions`, `DemoStore`.
 
 ## Invariants & assumptions
@@ -20,7 +20,10 @@
   - The store test that dispatches a real `DemoSnapshot` and asserts nothing was logged does **not** support this bullet for the snapshot — both exclusions above close that channel, so a `Map` in the snapshot produces zero `console.error` calls and the assertion would pass regardless. It still earns its place for the rest of the state, which is scanned.
 - **`subscribe` compares by reference, never deeply.** Every producer returns a fresh object per refresh and the same object otherwise, so `!==` is both correct and free. Deep-comparing ~931 cells to decide whether to redraw them would cost more than the redraw.
 - **Views do not import this module.** Each view keeps a plain `render(...)` taking the data it draws; `main.ts` subscribes and calls them. A view that imported the store would be untestable without one, and the seam that makes "is the data wrong or the drawing wrong?" answerable is the same seam that makes the views mockable.
-- **Plain `configureStore`, not `createSlamAppStore`.** That factory wires the library's GPS/AR reducers, licence validation and persistence middleware, none of which this demo has. The slice is identical either way, so switching if AR mode ever arrives is a one-line change.
+- **`createSlamAppStore`, not a plain `configureStore` — since AR milestone 1.** AR reads framework GPS state (`selectZeroReference` for the origin, the alignment matrix for the world group), and neither exists in a store holding only this demo's view slice.
+  - **This entry used to say switching was "a one-line change… the slice is identical either way", and that was wrong for a year.** The slice is; the MIDDLEWARE was not. The factory hardcoded its dev-check exemptions and its devtools sanitizers, so a naive migration reintroduced the measured 71 ms snapshot walk — twice, through two different channels. Both now have additive consumer hooks (`serializableIgnoredPaths`/`serializableIgnoredActions`/`immutableIgnoredPaths`, and `devToolsStateSanitizer`), and each is APPENDED or COMPOSED rather than substituted.
+  - Nothing is persisted: the demo passes `NullStorageBackend` because it records nothing, and a real backend would start writing GPS actions to OPFS unasked.
+  - Store construction now runs `validateLicenseKey`, the same exposure the framework's other five consumers already carry.
 - `summariseSnapshot` must never throw — devtools sanitises state the developer may not know is being inspected, and an exception there takes the whole app down. It tolerates a missing slice and a missing snapshot.
 
 ## Examples

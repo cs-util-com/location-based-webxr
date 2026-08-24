@@ -37,20 +37,55 @@
  * A backstop, not a schedule. Every ordinary path settles the gate — the terrain
  * handler settles in a `finally`, so even a DEM outage releases waiters — so
  * reaching this means a load was dropped in a way nothing modelled. Long enough
- * to cover a real DEM fetch (tiles are 28-68 MB of OSM's neighbour, but a
+ * to cover a real DEM fetch (tiles are ~21 MB of OSM's neighbour, but a
  * Terrarium tile is small and slow only on a cold network), short enough that a
  * user is not looking at a frozen scene.
  *
- * NOT EXPORTED: nothing outside this module has any business branching on it,
+ * EXPORTED SINCE 2026-08-19, and the reason it was not is worth keeping. It
+ * used to say: "nothing outside this module has any business branching on it,
  * and an export nobody imports is dead surface the dead-code gate is right to
- * reject. Callers that need a different bound pass `timeoutMs`.
+ * reject." Both halves still hold — no caller branches on it, and callers that
+ * need a different bound still pass `timeoutMs`.
+ *
+ * What changed is that this value became one end of a BUDGET. That relationship
+ * has to be asserted somewhere, and asserting it against a copy of the number
+ * would be a copy that can drift from this one — so the export exists to be
+ * *read by a test*, not branched on.
+ *
+ * WHICH DEM NUMBER IT BOUNDS CHANGED ON 2026-08-19, and this comment said the
+ * wrong one for a commit. Under `fallbackProvider` the sources were serial and
+ * it was their SUM. Under the race they are concurrent and nothing waits for
+ * the preferred one, so it is `PUBLISH_DEADLINE_MS` — the bound on the
+ * composition — and neither per-source deadline. Asserting the old
+ * relationship would now pass while the real publish path ran past this gate.
  */
-const TERRAIN_WAIT_TIMEOUT_MS = 15_000;
+export const TERRAIN_WAIT_TIMEOUT_MS = 15_000;
 
 /** A position, structurally — this module never looks at anything else. */
 export interface GateCentre {
   readonly lat: number;
   readonly lng: number;
+  /**
+   * The geoid undulation the field must be sampled against, or `undefined` for
+   * the window-centre datum.
+   *
+   * **PART OF THE IDENTITY, not a detail** (2026-08-14 field report). A field
+   * is defined by where it was sampled AND what its heights are measured from.
+   * `terrain-field.ts` uses the window-centre height for the desktop view — so
+   * heights come out as relief around zero — and `−N` for AR, so they come out
+   * ellipsoidal, ~99 m at Cologne, which is where the fusion puts the camera.
+   * Two fields at one position with different datums are ~99 m apart and are
+   * NOT interchangeable.
+   *
+   * Left out until now, and the cost was exactly the failure `demo-worker.ts`
+   * predicted for a different axis: AR entry re-runs the pass at the unchanged
+   * position, the gate answered "no new terrain needed", and the mesh was built
+   * on the desktop field while the camera sat at ellipsoidal height. The owner
+   * reported flying ~50 m above the buildings on first entry and landing within
+   * ~4 m on the second — the second entry being fine is the tell, because by
+   * then the AR field was already held.
+   */
+  readonly undulationM?: number | undefined;
 }
 
 export interface TerrainGate {
@@ -79,9 +114,43 @@ export interface TerrainGateOptions {
   readonly clearTimer?: (handle: unknown) => void;
 }
 
-/** `lat,lng` — exact, because both sides derive it from the same numbers. */
+/**
+ * `lat,lng,datum` — exact, because both sides derive it from the same numbers.
+ *
+ * The datum is in the key for the same reason it is in {@link GateCentre}: an
+ * AR-entry wait must not be released by the desktop field that settled just
+ * before it. Changing the predicate without changing the key would move the bug
+ * one layer down rather than fix it.
+ */
 function keyOf(centre: GateCentre): string {
-  return `${centre.lat},${centre.lng}`;
+  return `${centre.lat},${centre.lng},${centre.undulationM ?? "window"}`;
+}
+
+/**
+ * Whether two centres name the SAME field — position and datum together.
+ *
+ * **EXPORTED SO EVERY SUPERSESSION CHECK USES ONE DEFINITION.** `keyOf`'s own
+ * docstring warns that "changing the predicate without changing the key would
+ * move the bug one layer down rather than fix it", and that is exactly what had
+ * happened elsewhere: `demo-worker.ts`'s terrain-upgrade guard compared `lat`
+ * and `lng` only, while this module, `needsTerrainFor` and `terrainCentre`
+ * itself all treat the datum as part of the identity.
+ *
+ * The hole that opened: AR entry and AR exit both re-sample at the UNCHANGED
+ * position with a different datum, so a slow upgrade issued before the switch
+ * passed a lat/lng-only guard and re-sampled the held field against the wrong
+ * datum — leaving the worker holding a field ~99 m from where the camera is.
+ * That is the "flying ~50 m above the buildings on first entry" symptom this
+ * module's `undulationM` was added to remove, arriving through the one seam
+ * that did not check it. Found in review of PR #334.
+ *
+ * `undefined` on the left means "nothing held yet", which is never a match.
+ */
+export function sameGateCentre(
+  held: GateCentre | undefined,
+  wanted: GateCentre,
+): boolean {
+  return held !== undefined && keyOf(held) === keyOf(wanted);
 }
 
 /**
@@ -103,7 +172,15 @@ export function needsTerrainFor(
   position: GateCentre,
 ): boolean {
   if (held === undefined) return true;
-  return held.lat !== position.lat || held.lng !== position.lng;
+  return (
+    held.lat !== position.lat ||
+    held.lng !== position.lng ||
+    // THE DATUM IS THE SECOND MOVER. See `GateCentre.undulationM`: AR entry and
+    // AR exit both change what the heights are measured from without moving the
+    // user, so a position-only comparison answers "no wait" on precisely the
+    // two transitions where the held field is ~99 m out.
+    held.undulationM !== position.undulationM
+  );
 }
 
 /**
@@ -112,8 +189,29 @@ export function needsTerrainFor(
  * ONE SETTLED CENTRE IS REMEMBERED, not a set, and that is deliberate: the
  * question is only ever "is the CURRENT position's terrain resolved?", and a
  * growing set of every centre ever visited would be a leak whose entries are
- * never read. A new load for the same centre clears it, so a re-load is waited
- * for rather than answered from the previous one.
+ * never read. Settling a DIFFERENT centre is what displaces the memory, and it
+ * is the only thing that does — `settle` assigns `settledKey` and nothing else
+ * ever writes it.
+ *
+ * **A RE-LOAD AT THE SAME CENTRE IS THEREFORE ANSWERED FROM THE PREVIOUS
+ * SETTLE, NOT WAITED FOR** — and this comment claimed the exact opposite until
+ * 2026-08-19, when a cold review checked it against the code. The gate has no
+ * "a load began" signal to react to: it learns only that one finished. So a
+ * re-sample at an unchanged centre (a retried DEM, a widened extent) releases
+ * waiters on the OLD field's result.
+ *
+ * That is a real limitation rather than a bug to fix here, and the way to lift
+ * it is already visible in the design: `keyOf` is the identity, so anything
+ * that makes the second load a genuinely different field belongs IN the key.
+ * `undulationM` is in there for precisely that reason. A change that makes two
+ * different fields share one centre and one datum — the planned Mapterhorn
+ * upgrade is exactly that — must add a third component, or the gate silently
+ * stops being able to answer the question it exists for.
+ *
+ * `terrain-gate.test.ts` pins both halves: displacement by another centre, and
+ * the same-centre pass-through. The second test is new, because the test that
+ * appeared to cover it settled a different centre in the middle and so proved
+ * only the first.
  */
 export function createTerrainGate(
   options: TerrainGateOptions = {},

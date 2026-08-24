@@ -2,7 +2,11 @@
  * Source module — data acquisition. The only place that touches the network.
  */
 
-export type { OsmDataSource, OsmTileResult } from "./osm-data-source.js";
+export type {
+  OsmDataSource,
+  OsmTileResult,
+  OsmTileTimings,
+} from "./osm-data-source.js";
 export { OSM_ATTRIBUTION } from "./osm-data-source.js";
 
 export { InFlightRequests } from "./in-flight-requests.js";

@@ -5,7 +5,7 @@
  * large part of that look is that its tiles are hexagonal PRISMS: the side faces
  * catch the light at a different angle from the top, so every tile has an edge
  * highlight. Ours are flat fans, and making them real prisms costs roughly three
- * times the vertices on up to 2 989 cells, rebuilt on every publish.
+ * times the vertices on up to 6 223 cells, rebuilt on every publish.
  *
  * So this lies instead. Each corner's normal leans outward from the cell's
  * centroid, and the fan interpolates between them — the tile shades as though

@@ -3,7 +3,7 @@
  *
  * WHY THESE TESTS MATTER. Two of §3's four axes change the VERTEX BUFFERS rather
  * than a material, which means they run in the worker on every publish and are
- * paid for on up to ~2 989 cells. That makes their cost a design fact rather
+ * paid for on up to ~6 223 cells. That makes their cost a design fact rather
  * than a detail, and it makes the buffer shapes worth pinning: an indexing
  * mistake here does not throw, it produces a grid with holes in it or triangles
  * stretched to the origin — and the origin is where the user is standing.

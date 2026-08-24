@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./e2e-test.js";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 

@@ -15,9 +15,13 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { createSlice } from '@reduxjs/toolkit';
 import { setZeroPos, setColdStartOverrideEnabled } from 'gps-plus-slam-js';
-import { createSlamAppStore } from './create-slam-app-store';
+import {
+  composeStateSanitizer,
+  createSlamAppStore,
+} from './create-slam-app-store';
 import { startSession, endSession } from './recording-slice';
 import type { StorageBackend } from '../storage/storage-backend';
 import { NullStorageBackend } from '../storage/null-storage-backend';
@@ -89,6 +93,21 @@ describe('createSlamAppStore', () => {
           },
         })
       ).toThrow(/recording.*trackingQuality|trackingQuality.*recording/);
+    });
+
+    it('rejects a consumer slice named diagnostics, whose prefix is persisted unconditionally', () => {
+      // Why this test matters: `diagnostics` has no reducer ON PURPOSE, so the
+      // reducer-collision check alone cannot see it — but its prefix is on the
+      // built-in persistence whitelist, so a consumer slice with that name
+      // would have EVERY one of its actions silently written into recordings.
+      // A silent WRITE, the inverse of the silent drop the whitelist guards
+      // against. Found by claude[bot] review on PR #350.
+      expect(() =>
+        createSlamAppStore({
+          storageBackend: backend,
+          extraReducers: { diagnostics: () => ({}) },
+        })
+      ).toThrow(/diagnostics/);
     });
 
     it('still accepts non-colliding extraReducers unchanged', () => {
@@ -557,5 +576,138 @@ describe('createSlamAppStore', () => {
         createSlamAppStore({ storageBackend: backend, licenseKey: '' })
       ).toThrow();
     });
+  });
+});
+
+/**
+ * Dev-check exemptions a consumer needs for its OWN slices.
+ *
+ * Why these tests matter: the factory's ignore lists were hardcoded to the
+ * framework's `tracking` slice, so a consumer holding a large non-serialisable
+ * value of its own had exactly two options — pay RTK's deep walk on every
+ * dispatch, or turn `enableDevChecks` off and lose every check in the app.
+ *
+ * The OSM demo is that consumer. It exempts its scored snapshot on a MEASURED
+ * 71 ms per dispatch ("SerializableStateInvariantMiddleware took 71ms"), and it
+ * cannot adopt this factory — which AR mode requires, because the alignment
+ * wiring reads framework GPS state — without carrying that exemption across.
+ *
+ * ADDITIVE AND DEFAULTED, so the five existing consumers are unaffected: with
+ * the options absent the behaviour is exactly what it was.
+ */
+describe('consumer-supplied dev-check exemptions', () => {
+  it('keeps the framework defaults when the caller passes nothing', () => {
+    // The regression guard for the other five apps. The per-frame pose action
+    // and the tracking slice must stay exempt whether or not a consumer adds
+    // its own — a caller-supplied list that REPLACED the defaults would
+    // reintroduce a deep walk at 60–90 Hz.
+    const store = createSlamAppStore({
+      storageBackend: new NullStorageBackend(),
+    });
+
+    expect(() => {
+      store.dispatch({ type: 'tracking/poseReceived', payload: {} });
+    }).not.toThrow();
+  });
+
+  it('accepts a consumer action without warning about its payload', () => {
+    // The demo's case in miniature: an action whose payload is deliberately not
+    // plain. Without the exemption RTK logs a serializability warning and walks
+    // the whole payload on every dispatch.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const error = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+
+    const store = createSlamAppStore({
+      storageBackend: new NullStorageBackend(),
+      serializableIgnoredActions: ['demo/snapshotReady'],
+      serializableIgnoredPaths: ['demo.snapshot'],
+      immutableIgnoredPaths: ['demo.snapshot'],
+    });
+    store.dispatch({
+      type: 'demo/snapshotReady',
+      payload: { cells: new Float32Array(8) },
+    });
+
+    const complaints = [...warn.mock.calls, ...error.mock.calls]
+      .flat()
+      .filter((arg) => typeof arg === 'string' && arg.includes('serializable'));
+    expect(complaints).toEqual([]);
+
+    warn.mockRestore();
+    error.mockRestore();
+  });
+});
+
+describe('composeStateSanitizer', () => {
+  it('runs the consumer summariser BEFORE the framework sanitizer', () => {
+    // THE ORDER IS THE SAFETY PROPERTY. The consumer collapses its own large
+    // slice; the framework then redacts pose and GPS data from what is left.
+    // Reversed, a consumer summariser that dropped fields could drop the
+    // redaction with them — and the framework's own walk would still have paid
+    // the full cost the consumer was trying to avoid.
+    const calls: string[] = [];
+    const consumer = (<S>(state: S): S => {
+      calls.push('consumer');
+      return state;
+    }) as <S>(state: S) => S;
+    const framework = (<T>(value: T): T => {
+      calls.push('framework');
+      return value;
+    }) as <T>(value: T) => T;
+
+    composeStateSanitizer(consumer, framework)({ any: 'state' });
+
+    expect(calls).toEqual(['consumer', 'framework']);
+  });
+
+  it("passes the consumer's OUTPUT to the framework, not the original", () => {
+    // The composition that matters: if the framework saw the raw state, the
+    // consumer's summary would be computed and thrown away — the deep walk it
+    // exists to prevent would still happen.
+    let frameworkSaw: unknown;
+    const consumer = (<S>(): S => ({ demo: 'summary' }) as S) as <S>(
+      state: S
+    ) => S;
+    const framework = (<T>(value: T): T => {
+      frameworkSaw = value;
+      return value;
+    }) as <T>(value: T) => T;
+
+    composeStateSanitizer(consumer, framework)({ demo: { huge: [1, 2, 3] } });
+
+    expect(frameworkSaw).toEqual({ demo: 'summary' });
+  });
+
+  it('returns the framework sanitizer unchanged when no consumer is given', () => {
+    // The regression guard for the other five consumers: adding the option must
+    // not wrap, allocate or otherwise change a store that does not pass it.
+    const framework = (<T>(value: T): T => value) as <T>(value: T) => T;
+    expect(composeStateSanitizer(undefined, framework)).toBe(framework);
+  });
+});
+
+describe('the devtools sanitizer is actually WIRED, not just composable', () => {
+  it('routes the consumer option through composeStateSanitizer', () => {
+    // `composeStateSanitizer` is tested as a pure function above, but nothing
+    // asserted the FACTORY uses it — and deleting that one line leaves every
+    // other test green. That is precisely how the demo's own sanitizer got
+    // silently dropped in the migration this option repairs.
+    //
+    // A SOURCE-TEXT CHECK, because the only consumer of
+    // `devTools.stateSanitizer` is the browser extension: RTK does not expose
+    // the resolved value, and there is no extension in a node test run. The
+    // repo has four existing guards of this shape for the same reason —
+    // `ip-guardrail.test.ts`, `internal-subpath-guardrail.test.ts` and
+    // friends.
+    const source = readFileSync(
+      new URL('./create-slam-app-store.ts', import.meta.url),
+      'utf-8'
+    );
+
+    expect(source).toMatch(
+      /stateSanitizer:\s*composeStateSanitizer\(\s*devToolsStateSanitizer,\s*sanitizeForDevTools,?\s*\)/
+    );
   });
 });

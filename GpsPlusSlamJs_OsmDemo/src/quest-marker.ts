@@ -38,7 +38,7 @@ export const QUEST_MARKER_PX = 22;
  *
  * No interpolation of anything external: the only substitution is a colour
  * constant this module imports, so there is no path by which caller data
- * reaches the markup. (`escape-html.ts` exists for the tooltips, which do carry
+ * reaches the markup. (the framework’s `escape-html.ts` exists for the tooltips, which do carry
  * rule-sheet strings.)
  */
 export function questMarkerSvg(): string {

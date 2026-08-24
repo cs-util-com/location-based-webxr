@@ -39,6 +39,17 @@ const entryFiles = [
   // the recorder's live-occlusion wiring, so it must be built per-file.
   'src/ar/depth-occluder.ts',
   'src/ar/depth-unprojection.ts',
+  // Pure column-histogram + plane-fit floor estimator over the occupancy
+  // grid — deep-importable via the `./ar/*` wildcard, so it must be built
+  // per-file (a missing entry breaks Vite resolution at runtime; see
+  // 2026-04-29-recorder-e2e-import-resolution-failure.md).
+  'src/ar/floor-estimator.ts',
+  // Production elevation-offset estimator (slew-limited weighted median +
+  // CUSUM freeze layer over baseline-free floor-vs-terrain deltas) — deep-
+  // importable via the `./ar/*` wildcard, so it must be built per-file (a
+  // missing entry breaks Vite resolution at runtime; see
+  // 2026-04-29-recorder-e2e-import-resolution-failure.md).
+  'src/ar/elevation-offset-estimator.ts',
   'src/ar/occupancy-grid.ts',
   // Pure voxel→surface mesher — deep-importable (the `./ar/*` wildcard
   // advertises this subpath), so it must be built per-file.
@@ -152,6 +163,11 @@ const entryFiles = [
   'src/test-utils/browser-mocks.ts',
   'src/test-utils/zip-round-trip-helpers.ts',
   'src/test-utils/pointer-gestures.ts',
+  // Synthetic depth samples at exact world points — consumed by the OsmDemo's
+  // auto-elevation tests (M4 wiring), which exercise the REAL fold →
+  // floor-estimate → offset chain against a demo-owned grid. Advertised by the
+  // `./test-utils/*` wildcard, so it must be built per-file like the rest.
+  'src/test-utils/synthetic-depth-samples.ts',
 
   // types/
   'src/types/index.ts',
@@ -162,6 +178,7 @@ const entryFiles = [
   'src/utils/index.ts',
   'src/utils/concurrency.ts',
   'src/utils/failure-tracker.ts',
+  'src/utils/escape-html.ts',
   'src/utils/format-file-size.ts',
   'src/utils/fused-path.ts',
   'src/utils/list-formatter.ts',
@@ -176,6 +193,8 @@ const entryFiles = [
   // barrel, which would pull in the logger and friends). The `./utils/*`
   // exports wildcard advertises this subpath, so it must be built per-file.
   'src/utils/slider-scroll-guard.ts',
+  'src/utils/format-distance.ts',
+  'src/utils/toast-core.ts',
 
   // visualization/
   'src/visualization/index.ts',

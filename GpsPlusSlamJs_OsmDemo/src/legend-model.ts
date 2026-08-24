@@ -12,10 +12,18 @@
  *
  * WHY THE CATEGORY NAME IS PART OF IT. The reported symptom was "switching
  * category did not reset the map". The map does redraw — but every category
- * scores nearly every rule, and `heatScale` re-normalises the ramp to each
- * category's own maximum, so the same hexagons are drawn in similar colours. A
- * picture that does not say what it is a picture OF cannot be checked by eye.
- * Naming the category is the smallest thing that makes the redraw visible.
+ * scores nearly every rule, so the same hexagons come back in similar colours
+ * whatever category is selected. A picture that does not say what it is a
+ * picture OF cannot be checked by eye, and naming the category is the smallest
+ * thing that makes the redraw visible.
+ *
+ * **This reason used to be stated as "`heatScale` re-normalises the ramp to
+ * each category's own maximum", and that mechanism was deleted by DEC-H5.** The
+ * reason survives the mechanism — what makes the picture ambiguous is the
+ * OVERLAP between categories, not the normalisation, and a fixed ramp does
+ * nothing about overlap. Corrected rather than dropped because it is the
+ * rationale for a test, and a rationale citing a function that no longer exists
+ * reads as though the test is obsolete.
  *
  * WHY IT IS A PURE MODEL AND NOT A DOM BUILDER. The interesting parts — which
  * bands exist, what they are labelled, that no two of them render alike — are
@@ -26,6 +34,7 @@
 
 import {
   describeScale,
+  formatFixedScore,
   formatScore,
   heatColour,
   toHex,
@@ -129,7 +138,20 @@ export interface LegendModel {
   /** Swatches from the threshold up to the highest score on screen. */
   readonly ramp: readonly LegendStop[];
   readonly minLabel: string;
+  /** The top of the FIXED ramp — the same number for every category and place. */
   readonly maxLabel: string;
+  /**
+   * The highest score actually present, formatted (DEC-H7).
+   *
+   * Beside the ramp rather than on it. Once the ramp stopped being derived,
+   * every number in this model became a constant, and a legend that reports
+   * nothing about the data on screen is against `describeScale`'s stated
+   * purpose. It is also the only way to tell "everything here saturates" from
+   * "everything here is flat" — which look identical on a clipped ramp.
+   */
+  readonly observedLabel: string;
+  /** How many cells clear the bar. Drives {@link emptyMessage}. */
+  readonly aboveThresholdCount: number;
   /** The three sub-threshold bands, or empty when they are not being drawn. */
   readonly bands: readonly LegendStop[];
   /** `describeScale`'s sentence, kept as the strip's title / screen-reader text. */
@@ -189,6 +211,15 @@ export function legendModel(
   scale: HeatScale,
   category: string,
   showBelowThreshold: boolean,
+  /**
+   * What the DATA does, now that the ramp no longer says (DEC-H7).
+   *
+   * REQUIRED, not optional. An optional argument would let a caller silently
+   * stop supplying it and get the pre-fix behaviour back — and the pre-fix
+   * behaviour is a legend that cannot say "nothing here", which is the exact
+   * defect (R3-8) this pair exists to keep fixed.
+   */
+  data: { readonly aboveThresholdCount: number; readonly observedMax: number },
 ): LegendModel {
   const ramp: LegendStop[] = [];
   for (let i = 0; i < RAMP_STOPS; i++) {
@@ -208,23 +239,39 @@ export function legendModel(
     });
   }
 
-  // NO RANGE MEANS NO RAMP. `heatScale` returns `max === threshold` when nothing
-  // on screen clears the bar, and every stop above then samples the identical
-  // colour — seven grey squares between two labels reading "1". Saying so is the
-  // whole fix; the bands are still offered, because "nothing qualifies" is
-  // exactly when someone wants to see what IS there.
-  const empty = scale.max <= scale.threshold;
+  // NOTHING HERE IS NOW A COUNT, NOT A DEGENERATE SCALE (DEC-H7).
+  //
+  // This used to ask `scale.max <= scale.threshold`, which worked only BECAUSE
+  // the max was observed: `heatScale` collapsed it onto the threshold when
+  // nothing cleared the bar, and every ramp stop then sampled the identical
+  // colour — the reported bug, seven grey squares between two labels reading
+  // "1" (R3-8).
+  //
+  // Under a FIXED ramp `max > threshold` always, so that test can never be true
+  // again. The fix would have died silently and its e2e would have stayed
+  // green, which is why the count is threaded in rather than inferred. It is
+  // also what the condition always MEANT.
+  const empty = data.aboveThresholdCount === 0;
 
   return {
     category,
     ramp,
-    minLabel: formatScore(scale.threshold),
-    maxLabel: formatScore(scale.max),
+    // THE RAMP'S ENDPOINTS ARE CONSTANTS, so they are spelled out (DEC-U8).
+    // `observedLabel` below keeps the exponential form because it is the one
+    // number here that comes from the data and can reach twelve digits.
+    minLabel: formatFixedScore(scale.threshold),
+    maxLabel: formatFixedScore(scale.max),
+    // WHAT THE DATA DOES, beside a ramp that no longer moves. `describeScale`'s
+    // stated purpose is letting the picture be checked against the arithmetic,
+    // and a constant ramp removes every number that came from the data — so a
+    // field of saturated cells would read identically to a flat field.
+    observedLabel: formatScore(data.observedMax),
+    aboveThresholdCount: data.aboveThresholdCount,
     bands: showBelowThreshold ? bandsFor(scale) : [],
     description: describeScale(scale),
     ...(empty
       ? {
-          emptyMessage: `no cell scores above ${formatScore(scale.threshold)} for ${category} here`,
+          emptyMessage: `no cell scores above ${formatFixedScore(scale.threshold)} for ${category} here`,
         }
       : {}),
   };

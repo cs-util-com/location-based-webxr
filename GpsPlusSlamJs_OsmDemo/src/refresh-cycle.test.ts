@@ -14,9 +14,17 @@
  * @see refresh-cycle.ts.md
  */
 
+import {
+  ZERO_STAGE_TIMINGS,
+  ZERO_WORKER_TIMINGS,
+} from "./snapshot-timings-fixture.js";
 import { describe, it, expect, vi } from "vitest";
 
-import { SCORE_DISK_MAX_RADIUS, SCORE_DISK_RADIUS } from "gps-plus-slam-osm";
+import {
+  PROGRESSIVE_RADII,
+  SCORE_DISK_MAX_RADIUS,
+  SCORE_DISK_RADIUS,
+} from "gps-plus-slam-osm";
 
 import { createDemoStore, selectLayers, selectOsmView } from "./osm-store.js";
 import {
@@ -26,6 +34,7 @@ import {
 } from "./refresh-cycle.js";
 import { createAnchorHolder } from "./scene-anchor.js";
 import type { DemoSnapshot } from "./demo-pipeline.js";
+import type { ClickSummary } from "./click-timings.js";
 import type { TransferableMesh } from "./worker/protocol.js";
 
 const COLOGNE = { lat: 50.9413, lng: 6.9583 };
@@ -41,6 +50,12 @@ const snapshotAt = (category: string, radius: number): DemoSnapshot => ({
     scores: { [category]: 3 },
     contributors: { [category]: {} },
   })),
+  // DERIVED FROM THE CELLS THIS FIXTURE ACTUALLY GENERATES. Both were inherited
+  // from `snapshot(category)` and described one cell while `radius` were built,
+  // so the fixture contradicted itself (r513 review). Every generated cell
+  // scores 3 against a threshold of 1.
+  cellCount: radius,
+  aboveThresholdCount: radius,
 });
 
 const snapshot = (category: string): DemoSnapshot => ({
@@ -58,10 +73,12 @@ const snapshot = (category: string): DemoSnapshot => ({
   missingTiles: [],
   loadedTiles: ["871fa199affffff"],
   cellCount: 1,
-  heatMax: 3,
+  observedMax: 3,
+  aboveThresholdCount: 1,
   undergroundCount: 0,
   undergroundOutlines: [],
   stats: { chunksScored: 1, chunksReused: 0, geometryBuilt: 0 },
+  timings: ZERO_STAGE_TIMINGS,
   // A FINAL snapshot by default: these tests are about failure handling and
   // ordering, not about widening, so the base should not look half-delivered.
   radius: SCORE_DISK_MAX_RADIUS,
@@ -91,6 +108,7 @@ const NO_MESH: TransferableMesh = {
   parts: 0,
   guessedHeights: 0,
   approximateRoofs: 0,
+  barriers: 0,
 };
 
 /**
@@ -151,10 +169,15 @@ function setup(update: Update, onReply?: (signal: AbortSignal) => void) {
         // cycle is driven by what it will really receive.
         calls += 1;
         return calls === 1
-          ? { snapshot, mesh: { kind: "full" as const, mesh: NO_MESH } }
+          ? {
+              snapshot,
+              mesh: { kind: "full" as const, mesh: NO_MESH },
+              workerTimings: ZERO_WORKER_TIMINGS,
+            }
           : {
               snapshot,
               mesh: { kind: "regions" as const, regions: [], underground: [] },
+              workerTimings: ZERO_WORKER_TIMINGS,
             };
       },
     },
@@ -218,7 +241,10 @@ describe("createRefreshCycle — the happy path", () => {
     // ONE PAIR PER RING now (W16), and the ORDER within each pair is the
     // invariant — not the count. A dispatch before its mesh would draw the new
     // ring's cells over the previous ring's geometry.
-    expect(events).toHaveLength(6);
+    //
+    // COUNTED FROM THE RING LIST, because the literal 6 said "three rings" and
+    // nothing said so out loud.
+    expect(events).toHaveLength(PROGRESSIVE_RADII.length * 2);
     for (let i = 0; i < events.length; i += 2) {
       expect(events[i]).toBe("mesh");
       expect(events[i + 1]).toBe("snapshot");
@@ -240,7 +266,9 @@ describe("createRefreshCycle — the happy path", () => {
 
     // Once per ring, and every ring reads the SAME current intent — a widening
     // pass must not drift onto a category the store has moved off.
-    expect(seen).toEqual(["battleArea", "battleArea", "battleArea"]);
+    // One read per ring: the category is re-read for every ring, so a switch
+    // mid-widening takes effect rather than finishing with a stale one.
+    expect(seen).toEqual(PROGRESSIVE_RADII.map(() => "battleArea"));
   });
 
   it("coalesces overlapping refreshes to the most recent intent", async () => {
@@ -268,12 +296,13 @@ describe("createRefreshCycle — the happy path", () => {
 
     // The middle intent was superseded before it started, so it never runs. The
     // first run contributes only its opening ring — it is aborted after that —
-    // and the survivor runs all three.
+    // and the survivor runs the whole list.
+    //
+    // DERIVED: the tail used to be three literal `restingArea` entries, which
+    // encoded the ring count in a place nobody would think to update.
     expect(categories).toEqual([
       "walkable",
-      "restingArea",
-      "restingArea",
-      "restingArea",
+      ...PROGRESSIVE_RADII.map(() => "restingArea"),
     ]);
   });
 });
@@ -464,7 +493,9 @@ describe("createRefreshCycle — a superseded run applies nothing", () => {
     // THREE handovers, one per ring, and all three belong to the SURVIVING run:
     // the superseded run applied nothing. Without the guard its rings would
     // interleave with the survivor's, and the last one to land would win.
-    expect(events.filter((e) => e === "mesh")).toHaveLength(3);
+    expect(events.filter((e) => e === "mesh")).toHaveLength(
+      PROGRESSIVE_RADII.length,
+    );
     // The surviving run still published, so the guard did not simply break the cycle.
     expect(selectOsmView(store.getState()).snapshot).toBeDefined();
     // And a supersession is not a failure.
@@ -546,15 +577,14 @@ describe("createRefreshCycle — progressive scoring (W16, DEC-R2-30)", () => {
     await refresh();
 
     // The first run got exactly one ring in before it was superseded; the run
-    // that replaced it did all three. Four calls, not six.
-    expect(radii).toEqual([
-      SCORE_DISK_RADIUS,
-      SCORE_DISK_RADIUS,
-      SCORE_DISK_RADIUS + 1,
-      SCORE_DISK_MAX_RADIUS,
-    ]);
+    // that replaced it did the whole list. DERIVED, not counted by hand: this
+    // block used to spell the rings out and say "Four calls, not six", which
+    // stopped being true the moment the radius moved.
+    expect(radii).toEqual([SCORE_DISK_RADIUS, ...PROGRESSIVE_RADII]);
     // And only the survivor's rings reached the store.
-    expect(events.filter((e) => e === "snapshot")).toHaveLength(3);
+    expect(events.filter((e) => e === "snapshot")).toHaveLength(
+      PROGRESSIVE_RADII.length,
+    );
   });
 });
 
@@ -613,6 +643,7 @@ describe("createRefreshCycle — the mesh is built once per click (W6)", () => {
               ? {
                   snapshot: snapshotAt(payload.category, payload.radius),
                   mesh: { kind: "full" as const, mesh: NO_MESH },
+                  workerTimings: ZERO_WORKER_TIMINGS,
                 }
               : {
                   snapshot: snapshotAt(payload.category, payload.radius),
@@ -631,6 +662,7 @@ describe("createRefreshCycle — the mesh is built once per click (W6)", () => {
                     ],
                     underground: [],
                   },
+                  workerTimings: ZERO_WORKER_TIMINGS,
                 },
           );
         },
@@ -722,6 +754,7 @@ describe("the refresh cycle asks for cells only when they are drawn", () => {
           return Promise.resolve({
             snapshot: snapshot("walkable"),
             mesh: { kind: "regions" as const, regions: [], underground: [] },
+            workerTimings: ZERO_WORKER_TIMINGS,
           });
         },
       },
@@ -781,6 +814,7 @@ describe("the refresh cycle asks for cells only when they are drawn", () => {
           return Promise.resolve({
             snapshot: snapshot("walkable"),
             mesh: { kind: "regions" as const, regions: [], underground: [] },
+            workerTimings: ZERO_WORKER_TIMINGS,
           });
         },
       },
@@ -791,7 +825,9 @@ describe("the refresh cycle asks for cells only when they are drawn", () => {
 
     // A CAPTURED-ONCE implementation gives [true, true, true]; naming it is what
     // makes this test bite rather than merely pass.
-    expect(asked).toEqual([true, false, false]);
+    // TRUE FOR THE FIRST RING ONLY, then false for every remaining one —
+    // derived, so the shape survives a change to the ring count.
+    expect(asked).toEqual(PROGRESSIVE_RADII.map((_, i) => i === 0));
   });
 });
 
@@ -824,6 +860,7 @@ describe("the scene anchor", () => {
           return Promise.resolve({
             snapshot: snapshot("walkable"),
             mesh: { kind: "regions" as const, regions: [], underground: [] },
+            workerTimings: ZERO_WORKER_TIMINGS,
           });
         },
       },
@@ -879,6 +916,7 @@ describe("the scene anchor", () => {
           return Promise.resolve({
             snapshot: snapshot("walkable"),
             mesh: { kind: "regions" as const, regions: [], underground: [] },
+            workerTimings: ZERO_WORKER_TIMINGS,
           });
         },
       },
@@ -915,6 +953,7 @@ describe("the scene anchor", () => {
           return Promise.resolve({
             snapshot: snapshot("walkable"),
             mesh: { kind: "regions" as const, regions: [], underground: [] },
+            workerTimings: ZERO_WORKER_TIMINGS,
           });
         },
       },
@@ -942,5 +981,178 @@ describe("the scene anchor", () => {
     ]);
 
     expect(origins.at(-1)).not.toEqual(COLOGNE);
+  });
+});
+
+describe("the click-path breakdown is reported exactly once per PUBLISHED ring", () => {
+  /**
+   * Why these tests matter: `onTimings` sits behind three guards that each
+   * exist because of a real, reported bug — the superseded-run guard (a flash
+   * of the previous position), the error guard (W16's erased error message) and
+   * the abort `catch` (finding R3-5, "the scene resets"). The callback was
+   * added behind all three and pinned by none of them, so a future reorder that
+   * hoisted it above the superseded check would print a ranked breakdown for a
+   * position the user had already left, and every test would stay green.
+   *
+   * A breakdown of a discarded pass is worse than no breakdown: it is a
+   * confident, decimal-pointed answer about work nobody is waiting for.
+   */
+  function timingSetup(
+    update: Update,
+    onReply?: (signal: AbortSignal) => void,
+  ) {
+    const seen: number[] = [];
+    const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
+    const refresh = createRefreshCycle({
+      store: demo.store,
+      actions: demo.actions,
+      anchors: createAnchorHolder(COLOGNE),
+      worker: {
+        call: async (_kind, payload, options) => {
+          onReply?.(options.signal);
+          const snapshot = await update(
+            payload.position,
+            payload.category,
+            payload.radius,
+          );
+          return {
+            snapshot,
+            mesh: { kind: "regions" as const, regions: [], underground: [] },
+            workerTimings: ZERO_WORKER_TIMINGS,
+          };
+        },
+      },
+      onMesh: () => {},
+      onTimings: (t) => seen.push(t.radius),
+    });
+    return { ...demo, refresh, seen };
+  }
+
+  it("emits one breakdown per ring, tagged with the ring it belongs to", async () => {
+    // Per pass rather than per click, because stages 6 and 7 are near-zero on
+    // rings 3 and 4 by design and a per-click sum would hide exactly that.
+    const { refresh, seen } = timingSetup((_position, category, radius) =>
+      Promise.resolve({ ...snapshot(category), radius }),
+    );
+
+    await refresh();
+
+    // DERIVED. This was `[SCORE_DISK_RADIUS, 3, SCORE_DISK_MAX_RADIUS]` — with
+    // a bare literal in the middle, so it described a three-ring world and
+    // nothing else.
+    expect(seen).toEqual([...PROGRESSIVE_RADII]);
+  });
+
+  it("reports only AFTER the snapshot is published, which is what the guards protect", async () => {
+    // The structural property that makes all three guards protective. Every
+    // early `return` in the loop — superseded run, error phase on screen, and
+    // the `catch` — sits BEFORE the publish, so anything ordered after the
+    // publish cannot fire for a pass that did not publish.
+    //
+    // Asserted as ordering rather than by simulating each guard, because that
+    // is the invariant a future reorder would break: hoisting `onTimings`
+    // above the publish would print a ranked breakdown for a position the user
+    // had already left, and nothing else in this file would notice.
+    const order: string[] = [];
+    const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
+    const refresh = createRefreshCycle({
+      store: demo.store,
+      actions: demo.actions,
+      anchors: createAnchorHolder(COLOGNE),
+      worker: {
+        call: (_kind, payload) =>
+          Promise.resolve({
+            snapshot: { ...snapshot(payload.category), radius: payload.radius },
+            mesh: { kind: "regions" as const, regions: [], underground: [] },
+            workerTimings: ZERO_WORKER_TIMINGS,
+          }),
+      },
+      onMesh: () => order.push("mesh"),
+      onTimings: () => order.push("timings"),
+    });
+    demo.store.subscribe(() => {
+      if (selectOsmView(demo.store.getState()).snapshot !== undefined) {
+        order.push("published");
+      }
+    });
+
+    await refresh();
+
+    // First ring: mesh, then publish, then the breakdown. Never before.
+    expect(order.slice(0, 3)).toEqual(["mesh", "published", "timings"]);
+    expect(order.indexOf("timings")).toBeGreaterThan(
+      order.indexOf("published"),
+    );
+  });
+
+  it("opens the click clock BEFORE the fetchStarted dispatch", async () => {
+    // r504 REVIEW. The clock used to open twenty-two lines after the dispatch,
+    // while three separate documents said `pageResidualMs` covers "the
+    // `fetchStarted` dispatch and its subscriber renders". A synchronous store
+    // dispatch with subscriber renders behind it is exactly the page-side stage
+    // this summary exists to make visible — and it was the only page-side stage
+    // the docs named by hand while measuring none of it.
+    //
+    // It matters beyond bookkeeping: `pageResidualMs` is the ONLY clock in the
+    // instrument that can see page time at all (the per-ring algebra cancels
+    // it), so an unmeasured page stage here is unmeasurable everywhere.
+    //
+    // Driven by burning REAL time inside the subscriber rather than by mocking
+    // the clock, because the property under test is WHERE the clock opens
+    // relative to a synchronous dispatch — against a mocked clock the test
+    // would pass with the call in either position.
+    const BURN_MS = 20;
+    let burned = false;
+    let summary: ClickSummary | undefined;
+
+    const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
+    const refresh = createRefreshCycle({
+      store: demo.store,
+      actions: demo.actions,
+      anchors: createAnchorHolder(COLOGNE),
+      worker: {
+        call: (_kind, payload) =>
+          Promise.resolve({
+            snapshot: { ...snapshot(payload.category), radius: payload.radius },
+            mesh: { kind: "regions" as const, regions: [], underground: [] },
+            workerTimings: ZERO_WORKER_TIMINGS,
+          }),
+      },
+      onMesh: () => {},
+      onClickSummary: (s) => {
+        summary = s;
+      },
+    });
+
+    // The first notification after this point is `fetchStarted` — the cycle
+    // dispatches it before anything else it does.
+    demo.store.subscribe(() => {
+      if (burned) return;
+      burned = true;
+      const until = performance.now() + BURN_MS;
+      while (performance.now() < until) {
+        /* spin — standing in for an expensive subscriber render */
+      }
+    });
+
+    await refresh();
+
+    expect(burned).toBe(true);
+    // The rings resolve immediately here, so essentially the whole click IS
+    // the burn. With the clock opened after the dispatch this was ~0.
+    expect(summary?.pageResidualMs ?? 0).toBeGreaterThanOrEqual(BURN_MS - 5);
+  });
+
+  it("says nothing when the pass fails", async () => {
+    // A thrown pass never reaches the publish, so it never reaches the report.
+    // A breakdown printed from the `catch` would be a ranking of a click that
+    // produced no answer at all.
+    const { refresh, seen } = timingSetup(() =>
+      Promise.reject(new Error("overpass exploded")),
+    );
+
+    await refresh();
+
+    expect(seen).toEqual([]);
   });
 });

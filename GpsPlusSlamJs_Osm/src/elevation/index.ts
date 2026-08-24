@@ -3,12 +3,25 @@
  * and the geoid conversion.
  */
 
-export type { ElevationProvider } from "./elevation-provider.js";
+export type {
+  ElevationProvider,
+  FallbackElevationProvider,
+  FallbackProviderStats,
+} from "./elevation-provider.js";
 export {
   NullElevationProvider,
   consensusProvider,
+  fallbackProvider,
   median,
 } from "./elevation-provider.js";
+
+export type {
+  Heights,
+  RacingElevationProvider,
+  RacingProviderOptions,
+  RacingProviderStats,
+} from "./racing-provider.js";
+export { racingProvider } from "./racing-provider.js";
 
 export type {
   WorldPixel,
@@ -22,6 +35,8 @@ export {
   fromWorldPixel,
   toWorldPixel,
   DEFAULT_TERRARIUM_ZOOM,
+  MAPTERHORN_ATTRIBUTION,
+  MAPTERHORN_URL_TEMPLATE,
   TERRARIUM_ATTRIBUTION,
   TERRARIUM_URL_TEMPLATE,
   TerrariumProvider,
@@ -31,6 +46,13 @@ export {
   toElevationTile,
   toTilePixel,
 } from "./terrarium.js";
+
+export type {
+  CachingTileFetch,
+  CachingTileFetchOptions,
+  CachingTileFetchStats,
+} from "./caching-tile-fetch.js";
+export { createCachingTileFetch } from "./caching-tile-fetch.js";
 
 export type { OpenTopoDataOptions } from "./opentopodata-provider.js";
 export {

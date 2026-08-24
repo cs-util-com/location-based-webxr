@@ -13,6 +13,7 @@ export default defineConfig({
       'scripts/*.test.mjs',
       'scripts/test-timing/**/*.test.mjs',
       'scripts/test-changed/**/*.test.mjs',
+      'scripts/e2e/**/*.test.mjs',
     ],
     environment: 'node',
   },

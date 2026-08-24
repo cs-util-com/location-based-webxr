@@ -87,10 +87,16 @@ describe("indexing one res-11 working set stays inside the frame budget", () => 
           `(${perChunk.toFixed(2)} ms/chunk)`,
       );
 
-      // Deterministic assertions only. `perChunk` is reported above, never
-      // asserted — see the file header for why a timing gate belongs in a
-      // benchmark rather than in a parallel test run.
-      expect(perChunk).toBeGreaterThan(0);
+      // Deterministic assertions only. `perChunk` is reported above and is now
+      // GENUINELY never asserted — see the file header for why a timing gate
+      // belongs in a benchmark rather than in a parallel test run.
+      //
+      // It used to be followed by `expect(perChunk).toBeGreaterThan(0)`, which
+      // made the comment false and bought nothing: an elapsed time is > 0 for
+      // any work at all, so the assertion could not distinguish a fast index
+      // from a slow one. Worse, it could FAIL for the wrong reason — a coarse
+      // timer quantises a short measurement to exactly 0, so the one machine
+      // that could trip it is a fast one. Removed under plan M4.
       expect(index.byCell.size).toBeGreaterThan(0);
       expect(index.byCell.size).toBeLessThanOrEqual(cells.length);
       expect(indexEntryCount(index)).toBeGreaterThanOrEqual(index.byCell.size);

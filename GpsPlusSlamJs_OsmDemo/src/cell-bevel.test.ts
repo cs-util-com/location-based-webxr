@@ -6,7 +6,7 @@ import { bevelNormals, BEVEL_STRENGTH } from "./cell-bevel.js";
  * The faked bevel on affordance cells (DEC-S2).
  *
  * WHY THESE TESTS MATTER. The cells are flat hexagons and are going to stay flat
- * — real extrusion would be ~3x the vertices on up to 2989 cells, rebuilt on
+ * — real extrusion would be ~3x the vertices on up to 6223 cells, rebuilt on
  * every publish. DEC-S2 buys the edge highlight instead by LYING about the
  * normals: each corner's normal leans outward, so the tile shades as though its
  * rim were bevelled and a specular highlight sweeps across it as the camera

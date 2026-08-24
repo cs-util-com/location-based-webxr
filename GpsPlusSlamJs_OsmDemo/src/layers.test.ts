@@ -71,7 +71,7 @@ describe("the layer set", () => {
     // underground diagnostic makes a third. Ground
     // PLATES go off because the terrain relief now carries the ground on its
     // own; cells go off because the 2D map draws one Leaflet polygon per cell
-    // and the final ring is ~2 989 of them.
+    // and the final ring is ~6 223 of them.
     //
     // (Named "landuse" here until 2026-08-05, after the LayerKind was renamed
     // `plates`. The assertion was right the whole time; the title named an id

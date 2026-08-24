@@ -82,6 +82,14 @@ entirely after confirming they were only transitively pulled in.
   plugin auto-detects `src/main.ts` from `index.html`; explicit entries
   for the stylelint config and `playwright-tests/**` (the e2e smoke
   suite); the three stylelint tooling packages ignored.
+  - **Plus `scripts/blog/`, which is node tooling rather than app code**: the
+    blog renderer that turns the project wiki's markdown into `/blog/`. Both
+    of its outside callers are invisible to static analysis, so both are
+    explicit entries — `build-blog.mjs` is spawned as a child process by the
+    root `scripts/build-site.mjs`, and `trigger-deploy.mjs` is called by the
+    local publishing run. Without the matching `project` glob, knip does not
+    look inside the directory at all and reported `marked` — the build-time
+    markdown renderer — as an unused devDependency.
 - **GpsPlusSlamJs_OsmDemo** — two entries are listed explicitly because
   knip's Vite plugin finds neither of them. `src/worker/demo-worker.ts`
   is reached through `new Worker(new URL(...), { type: "module" })`,
@@ -92,6 +100,23 @@ entirely after confirming they were only transitively pulled in.
   whole gallery as an unused file and `buildGallery` as an unused export,
   which is how it failed the first time it was added. **If another page
   is ever added, its entry belongs here too.**
+  - **`ignoreUnresolved: ["/src/ar-compass-control.ts"]`** — the AR compass
+    e2e mounts the REAL control instead of a replica by
+    `await import("/src/ar-compass-control.ts")` inside `page.evaluate`
+    (`playwright-tests/boot-and-shell.spec.js`). That specifier is resolved by
+    the Vite DEV SERVER at runtime, from the page's root URL — it is not a
+    node-resolvable path relative to the spec file, so knip reports it as an
+    unresolved import and fails the gate at `error` severity.
+    - **The ignore cannot hide a regression here**, which is the only reason it
+      is acceptable: if the module is renamed or moved, the import 404s and the
+      e2e throws immediately. The spec's own comment says so. Knip's static
+      check was never the thing protecting this link; the runtime failure is.
+    - **It is an exact-string ignore, not a glob** — a second such import would
+      fail the gate and have to be added deliberately, which is the point.
+    - Found by the once-per-session root cascade, NOT by the per-commit gate:
+      `test:changed` never runs knip, and neither does any package's own
+      `pnpm test`. `check:deadcode` exists only as a root stage, which is why
+      the M3 commit that introduced the import passed its own gate green.
 
 ## Tests
 
@@ -99,3 +124,21 @@ This config is verified by running it: `pnpm run check:deadcode`. No
 unit tests cover it — knip itself is the gate. The
 [follow-up doc](../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-04-28-knip-unused-exports-followup.md)
 lists the current findings; the report is also visible in CI.
+
+## `tailwindcss` in the recorder's `ignoreDependencies` (2026-08-19)
+
+Knip reads JavaScript and TypeScript, not CSS. The recorder pulls Tailwind in
+through `@import "tailwindcss"` in `styles/tailwind.css`, so no `.ts` file
+mentions it and knip reports it as an unused devDependency.
+
+**It must nevertheless be a DIRECT dependency**, not a transitive one via
+`@tailwindcss/vite`: pnpm's strict `node_modules` layout means a bare
+`@import "tailwindcss"` resolves only when the importing workspace declares
+the package itself.
+
+The alternative — teaching knip to parse CSS imports — is a much larger change
+for one entry. What actually protects this is
+`GpsPlusSlamJs_RecorderApp/src/no-external-page-assets.test.ts`: if Tailwind
+ever stopped being built and went back to a CDN, that test fails. So the ignore
+here cannot hide a regression, only a bookkeeping question knip is not equipped
+to answer.

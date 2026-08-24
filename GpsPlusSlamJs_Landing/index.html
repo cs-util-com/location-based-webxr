@@ -1500,6 +1500,13 @@ world.add(marker);               <span class="c">// marker: any three.js Object3
             rel="noopener"
             >Documentation</a
           >
+          <!-- Same-origin, so no target/rel: the blog is part of this site.
+               It is also the ONLY inbound link a crawler has to /blog/, which
+               is what the canonical-copy argument rests on — see
+               scripts/blog/render.mjs.md. `assertLandingHtml` in
+               scripts/build-site.mjs requires it, so it cannot be dropped
+               silently. -->
+          <a href="/blog/">Blog</a>
           <a
             href="https://www.npmjs.com/package/gps-plus-slam-app-framework"
             target="_blank"

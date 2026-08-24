@@ -22,12 +22,38 @@
  * much larger burst (20×) and assert the ratio stays below a generous
  * factor. O(1) work yields a ratio near 1; an accidental O(n) regression
  * in the hot path (e.g. scanning the growing WriteQueue on each enqueue)
- * would balloon the large-burst figure and trip the assertion. Because both
- * figures scale together with machine speed, the ratio is robust to load.
+ * would balloon the large-burst figure and trip the assertion.
  *
- * A very generous absolute ceiling (far above observed ~0.01 ms) is kept
+ * A RATIO IS NOT AUTOMATICALLY ROBUST TO LOAD, and this file used to claim it
+ * was ("because both figures scale together with machine speed"). That is true
+ * of STATIC machine speed and false of TRANSIENT preemption, which is the thing
+ * that actually happens: the two arms are measured sequentially, so a scheduler
+ * slice lands in one and not the other. On 2026-08-20 this test failed with the
+ * ratio at 9.53 against a bound of 4, on unchanged code.
+ *
+ * What makes it robust is the DENOMINATOR being large enough to resolve — see
+ * `MIN_WINDOW_MS`. A single burst of 200 dispatches measured ~1.0 ms, so one
+ * ~15 ms slice moved it by an order of magnitude. Accumulating to 200 ms puts
+ * that same slice at ~7 %.
+ *
+ * A very generous absolute ceiling (far above observed ~0.002 ms) is kept
  * only as a backstop against a catastrophic regression, not as the primary
- * signal.
+ * signal. Note it is the RATIO that has failed here, never the ceiling.
+ *
+ * ⚠️ WHAT THIS TEST DOES NOT EXERCISE — read before trusting it.
+ * The docblock above names "WriteQueue enqueue" as part of the hot path being
+ * measured, and offers "scanning the growing WriteQueue on each enqueue" as the
+ * regression it would catch. Injecting exactly that regression on 2026-08-20 did
+ * NOT trip either assertion, and instrumenting `WriteQueue.enqueue` recorded no
+ * calls at all, and spying the mock backend reports writeAction called ZERO times
+ * across the recording arm. The cause is that `startSession()` sets
+ * `isRecording` synchronously while the backend's `createSession` is never
+ * awaited, and the measurement loop cannot yield, so the middleware early-exits
+ * on every dispatch and BOTH arms measure the same path. The stabilisation below therefore
+ * makes a test that may be largely vacuous merely STABLE; it does not make it
+ * meaningful. Verified against the pre-2026-08-20 version too, so this is a
+ * pre-existing gap and not something the rework introduced.
+ * Filed: GpsPlusSlamJs_Docs/docs/2026-08-20-1745-persistence-perf-test-may-not-exercise-the-queue-followup.md
  */
 
 import { describe, expect, test, vi } from 'vitest';
@@ -115,22 +141,51 @@ function makeStore(recording: boolean) {
 const SAMPLE_ACTION = testGpsDataSlice.actions.setZeroPos({ lat: 48, lon: 2 });
 
 /**
- * Measure the average synchronous overhead per dispatch over a single burst.
- * A fresh store is used per call so the WriteQueue does not carry state across
- * measurements (microtasks that drain the queue cannot run inside this
- * synchronous loop, so reusing a store would let the queue grow unbounded
- * across passes and pollute the comparison).
+ * Minimum ACCUMULATED measurement window, ms.
+ *
+ * THIS IS THE FIX FOR THE FLAKE, and the reason is arithmetic. A single burst
+ * of `SMALL_BURST` dispatches measured ~1.0 ms recording and ~0.32 ms not
+ * recording (2026-08-20, this machine). One scheduler slice is ~15 ms, so a
+ * single preemption inside the small arm inflated it by an order of magnitude —
+ * and since that arm is the RATIO'S DENOMINATOR, the ratio moved by the same
+ * order. That is how a bound of 4 was observed at 9.53 on code that had not
+ * changed.
+ *
+ * Repeating the burst until the accumulated window reaches 200 ms puts a single
+ * 15 ms slice at ~7 % of the measurement instead of ~1500 %. The median across
+ * passes then suppresses what is left.
+ */
+const MIN_WINDOW_MS = 200;
+
+/**
+ * Average per-dispatch cost, measured over enough repetitions of `dispatchCount`
+ * to make the window resolvable.
+ *
+ * THE BURST SIZE IS UNCHANGED ON PURPOSE. What the two arms compare is the
+ * queue DEPTH the middleware works against, so each repetition starts a fresh
+ * store and dispatches exactly `dispatchCount` — the small arm's queue never
+ * exceeds `SMALL_BURST`, the large arm's reaches `LARGE_BURST`, exactly as
+ * before. Only the number of repetitions changes, and store construction is
+ * kept OUTSIDE the clock so the small arm (which builds more stores per unit
+ * time) is not charged for it.
  */
 function measureAvgPerDispatchMs(
   recording: boolean,
-  dispatchCount: number
+  dispatchCount: number,
+  minWindowMs = MIN_WINDOW_MS
 ): number {
-  const store = makeStore(recording);
-  const start = performance.now();
-  for (let i = 0; i < dispatchCount; i += 1) {
-    store.dispatch(SAMPLE_ACTION);
-  }
-  return (performance.now() - start) / dispatchCount;
+  let dispatches = 0;
+  let elapsed = 0;
+  do {
+    const store = makeStore(recording);
+    const start = performance.now();
+    for (let i = 0; i < dispatchCount; i += 1) {
+      store.dispatch(SAMPLE_ACTION);
+    }
+    elapsed += performance.now() - start;
+    dispatches += dispatchCount;
+  } while (elapsed < minWindowMs);
+  return elapsed / dispatches;
 }
 
 /** Median of several measurement passes — robust to occasional GC/scheduler spikes. */
@@ -198,7 +253,7 @@ describe('persistence middleware synchronous overhead', () => {
     { timeout: 15_000 },
     () => {
       // Warm up the hot path (JIT) before timing.
-      measureAvgPerDispatchMs(true, WARMUP_DISPATCHES);
+      measureAvgPerDispatchMs(true, WARMUP_DISPATCHES, 0);
 
       const small = medianAvgPerDispatchMs(
         true,
@@ -231,7 +286,7 @@ describe('persistence middleware synchronous overhead', () => {
     { timeout: 15_000 },
     () => {
       // Warm up the early-exit path (JIT) before timing.
-      measureAvgPerDispatchMs(false, WARMUP_DISPATCHES);
+      measureAvgPerDispatchMs(false, WARMUP_DISPATCHES, 0);
 
       const small = medianAvgPerDispatchMs(
         false,

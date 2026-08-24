@@ -4,7 +4,7 @@
  * WHY THIS MATTERS ENOUGH TO BE ITS OWN MODULE. `main.ts` fires `refresh()` on
  * every map click and every category change, and `pipeline.update()` is a real
  * Overpass fetch — `capture-script-query.test.ts` records a res-7 tile at
- * **18.2 seconds**. Across that window the map stays clickable, so two clicks
+ * **tens of seconds**. Across that window the map stays clickable, so two clicks
  * produce two `pipeline.update()` calls racing into the same `AffordanceIndex`,
  * two `mapView.render()` calls, and a status line written by whichever settles
  * last — which may be the EARLIER position.
@@ -155,7 +155,7 @@ describe("latestOnly — cancelling a superseded run", () => {
     // to completion synchronously.
     //
     // Since the pipeline moved into a worker there is something to cancel, and it
-    // is expensive: a superseded position's fetch is 28-68 MB per tile, pulled for
+    // is expensive: a superseded position's fetch is ~21 MB per tile, pulled for
     // ground the user has already walked away from. That is precisely the waste
     // the fetch discipline (DEC-R2-6) exists to prevent, and the prefetch work
     // leans on this signal.

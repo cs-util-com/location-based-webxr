@@ -28,7 +28,7 @@
  *
  * WHY THE CHOICE COSTS A COLD FETCH, and that is accepted rather than hidden
  * (DEC-R4-11): the picker moves the user and the ordinary pipeline fetches. A
- * first visit to a site is an 18-110 s res-7 Overpass fetch; every later visit
+ * first visit to a site is a ~15–90 s res-7 Overpass fetch; every later visit
  * is served from OPFS. Loading the committed offline extract instead was
  * offered and rejected — the demo would be showing fixture data while looking
  * identical to live data, which is the "two claims that look the same" defect
@@ -37,15 +37,21 @@
  * @see site-picker.ts.md
  */
 
-import type { LatLng } from "gps-plus-slam-osm";
-
-import { PICKER_PLACES, placeById } from "./picker-places.js";
+import { PICKER_PLACES, placeById, type PickerPlace } from "./picker-places.js";
 
 export interface SitePickerOptions {
   /** The `<select>` to populate. Emptied first, so a re-attach is idempotent. */
   readonly select: HTMLSelectElement;
-  /** Called with the chosen site's position. Never called for an unknown id. */
-  readonly onChoose: (position: LatLng) => void;
+  /**
+   * Called with the chosen PLACE. Never called for an unknown id.
+   *
+   * THE WHOLE PLACE RATHER THAN ITS POSITION (DEC-R12-5). The URL writer has to
+   * know that a NAMED place was chosen so it can write `?site=<id>` instead of
+   * coordinates, and a bare `LatLng` had already thrown that away by the time it
+   * reached the caller. Recovering it by matching the position back against the
+   * table would be a second representation of the same fact.
+   */
+  readonly onChoose: (place: PickerPlace) => void;
 }
 
 export interface SitePicker {
@@ -79,7 +85,11 @@ export function attachSitePicker(options: SitePickerOptions): SitePicker {
 
   const placeholder = document.createElement("option");
   placeholder.value = NO_SITE;
-  placeholder.textContent = "jump to…";
+  // "Jump to City", capitalised, as the thirteenth session asked (G4). The
+  // wording is free: the select is sized by its widest OPTION, not by the
+  // placeholder, so a longer resting label costs no width — and since round
+  // three the element is capped anyway (DEC-W6).
+  placeholder.textContent = "Jump to City";
   select.append(placeholder);
 
   for (const place of PICKER_PLACES) {
@@ -93,17 +103,35 @@ export function attachSitePicker(options: SitePickerOptions): SitePicker {
     select.append(option);
   }
 
+  /**
+   * Puts the chosen place's full name in the element's own `title`.
+   *
+   * The select is width-capped since round three (DEC-W6) so the header's first
+   * row fits a 390 px phone, which means a long resting face is CLIPPED — and a
+   * user whose selection reads "London — Tower B…" otherwise has no way to read
+   * it back without reopening the list. This restores that, on a pointer device
+   * at least; on touch the open list remains the answer, which is why the cap
+   * was judged the cheaper half to lose in the first place.
+   */
+  const paintTitle = (): void => {
+    const place = placeById(select.value);
+    if (place === undefined) select.removeAttribute("title");
+    else select.title = place.name;
+  };
+  paintTitle();
+
   // Held rather than anonymous, so `dispose()` can actually remove it. The same
   // rule every listener in `building-view.ts` follows: an orphaned listener
   // keeps the whole view graph reachable.
   const onChange = (): void => {
+    paintTitle();
     const place = placeById(select.value);
     // Unknown ids are ignored rather than reported or thrown. A browser
     // restores a stale `<select>` value across a reload when the option list
     // has changed, and moving the demo to `undefined` would be worse than
     // doing nothing for a control that is a convenience.
     if (place === undefined) return;
-    onChoose(place.position);
+    onChoose(place);
   };
   select.addEventListener("change", onChange);
 

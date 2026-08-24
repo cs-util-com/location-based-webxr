@@ -31,24 +31,70 @@ import { metresToDegrees } from "./clip.js";
  * of res-8 cells covered, so this is one request per move instead of seven —
  * and moves are ~7x rarer because a res-7 cell is crossed far less often.
  *
- * **A res-7 tile is ~68 MB of decompressed JSON and 23–110 s depending on the
- * host** (Cologne). That figure — not the request — is the number to design
- * against; it is why parsing belongs in a worker.
+ * **RE-OPENED AND RE-CONFIRMED ON 2026-08-19, this time with a measurement of
+ * the alternative rather than an argument against it** (DEC-T4/DEC-T11; the
+ * twelfth testing session asked for res 8 to be reconsidered). Measured on the
+ * `areal-only` form, FOSSGIS medians:
  *
- * CORRECTED FROM "18.2 s and 28.31 MB (21,847 elements)" (N2, W2). That number
- * was under half the real payload and had no host, query or artefact behind it,
- * so where it came from is not recoverable — most plausibly a narrower key list
- * than `OVERPASS_SELECT_KEYS` at the time. Three independent measurements agree
- * on ~68 MB: the six-host sweep in `docs/overpass-endpoint-benchmark.json`
- * (66.35–67.97 MB), `fetch-extent.ts`'s note, and the 2026-08-01 matrix sweep
- * (67.9 MB). See `GpsPlusSlamJs_Docs/docs/2026-08-01-1324-overpass-matrix-sweep-results.md`.
+ * - res 7 — 21.2 MB — **27.7 s** (n=4)
+ * - res 8 — 4.58 MB — **21.6 s** (n=5)
+ * - res 10 — 0.33 MB — **~21.5 s**
  *
- * **AND THE PAYLOAD IS MOSTLY AVOIDABLE, which is the newer and more useful
- * fact.** Selecting only areal relations returns 21.1 MB for the same tile, and
- * — the part that matters — makes payload track AREA again: res 7 to res 9 is
- * 21x under that form against 1.76x under this one. Adopting it is its own
- * investigation (it drops route/waterway/power relations that currently arrive
- * carrying scoring tags), not a query tweak.
+ * **Latency here is almost entirely FIXED COST.** A res-10 cell is 1/343 the
+ * area and 1/64 the payload of a res-7 cell and takes the same time. So res 8
+ * buys 6 s on the first tile and costs 3.1x on the SAME ground — seven cells
+ * against two concurrent slots is ~86 s — plus seven times the requests. The
+ * 2026-07-28 decision stands, now for a measured reason.
+ *
+ * That finding has a consequence beyond this constant, recorded here because
+ * this comment is where the next person will look: **asking Overpass for less
+ * ground does not make it answer sooner.** Any plan whose speed-up is "fetch a
+ * smaller area" is already refuted; see
+ * `GpsPlusSlamJs_Docs/docs/2026-08-19-0430-overpass-endpoint-and-resolution-remeasure-results.md`.
+ *
+ * **A res-7 tile is ~21 MB of decompressed JSON.** That figure — not the
+ * request — is the number to design against; it is why parsing belongs in a
+ * worker. It is the sturdiest number in this package: 21.1 MB in the 2026-08-01
+ * matrix sweep and 20.97–21.11 MB in the 2026-08-03 re-run, replicating to
+ * three significant figures across three separate runs under `areal-only`.
+ *
+ * **LATENCY IS A RANGE, DELIBERATELY NOT A MEDIAN: ~15–90 s, and it does not
+ * replicate.** The four successful `areal-only` res-7 fetches in
+ * `docs/overpass-matrix-sweep.json` are 15.1 / 32.9 / 82.9 / 91.1 s, alongside
+ * two 504s — and the 2026-08-03 re-run's own §2b records medians 4.6x the
+ * morning's on identical work, concluding that **"the bytes replicate to three
+ * significant figures; the timings do not replicate at all"**. Design for the
+ * 90 s end. A single latency quoted here is quoting noise.
+ *
+ * SUPERSEDED FIGURES, kept because this comment has now been wrong three times
+ * and every wrong version is still quotable elsewhere:
+ *
+ * - **"~68 MB, 23–110 s" is retracted** — that is the pre-F32 `nwr` form, which
+ *   took every relation touching the bbox. `overpass-query.ts` adopted
+ *   areal-only on 2026-08-03; the payload fell 3.2x, provably without changing
+ *   a single cell score. **Whether latency moved with it is unknown** — the two
+ *   forms were never timed under comparable load.
+ * - **"18.2 s and 28.31 MB (21,847 elements)" is retracted** (N2, W2). It was
+ *   under half even the `nwr` payload and had no host, query or artefact behind
+ *   it; where it came from is not recoverable, most plausibly a narrower key
+ *   list than `OVERPASS_SELECT_KEYS` at the time.
+ * - **"~20 s median" is retracted, and it lasted one day (2026-08-11).** This
+ *   comment carried it and fifteen other sites copied it. It came from
+ *   `overpass-query.ts`'s own prose rather than from an artefact; it was the
+ *   fastest sample of three non-replicating runs rather than a median; and the
+ *   (itself retracted) `18–110 s` string it replaced bracketed the real
+ *   distribution better than it did.
+ *   **A correction sourced from another comment is not a correction.**
+ *
+ * See `GpsPlusSlamJs_Docs/docs/2026-08-01-1324-overpass-matrix-sweep-results.md`
+ * §1 for the per-form byte table — it has no latency column at all, and that
+ * absence is what the third retraction above turned on —
+ * `GpsPlusSlamJs_Docs/docs/2026-08-03-0802-overpass-matrix-sweep-rerun-results.md`
+ * §2b for the non-replication finding, and
+ * `GpsPlusSlamJs_Docs/docs/2026-08-11-0717-osm-demo-click-path-stage-timing-plan.md`
+ * §8 for why a stale figure here is a defect rather than untidiness: this
+ * comment is the most quotable source for the number, so a plan written from it
+ * inherits whatever it says.
  *
  * One res-7 tile contains ~117,649 (7^6) res-13 cells, so scoring must NEVER be
  * eager over a whole fetch tile.
@@ -72,7 +118,7 @@ export const AFFORDANCE_RES = 13;
  * ("download this area for offline use").
  *
  * NOT used by the movement trigger any more. A fixed ring is a guess: at
- * FETCH_RES = 7 it over-fetches ~140 MB in the interior while still not being
+ * FETCH_RES = 7 it over-fetches ~150 MB (7 tiles x ~21 MB) in the interior while still not being
  * provably sufficient at a boundary. The trigger uses
  * {@link fetchTilesForScoreWorkingSet} instead, which derives the answer.
  */
@@ -86,9 +132,39 @@ export const FETCH_DISK_RADIUS = 1;
 export const SCORE_DISK_RADIUS = 2;
 
 /**
- * How far scoring eventually reaches, in `gridDisk` rings (W16, DEC-R2-30).
+ * How far scoring eventually reaches, in `gridDisk` rings (W16, DEC-R2-30;
+ * raised 4 -> 6 by DEC-K1, 2026-08-22).
  *
- * 4 rings = 61 chunks = ~2 989 res-13 cells, reaching ~250 m from the user.
+ * 6 rings = 127 chunks = ~6 223 res-13 cells, reaching ~326 m from the user
+ * (`6 x 49.6 m` centre-to-centre plus a 28.66 m edge).
+ *
+ * **RAISED ON A FIELD REPORT, once the build got fast enough to afford it.**
+ * Three performance commits (typed-array mesh accumulators, an indexed POI
+ * host join, an indexed building part-to-outline assignment) removed the cost
+ * that justified stopping at 4, and the reporter asked for "noch einen
+ * weiteren Ring oder vielleicht sogar zwei".
+ *
+ * **THE CONSTRAINT THAT ALMOST STOPPED THIS WAS MISREAD, and the correction is
+ * why 6 rather than 5.** A first draft argued the grid must stay under
+ * `AR_FOG_NEAR_M = 400`. That is where AR's fade BEGINS; a `fog: false`
+ * material never fades and clips at `AR_CAMERA_FAR_M = 1000`. Against the real
+ * ceiling ~326 m is comfortable. A second draft argued from the ~10 ms
+ * per-chunk frame budget, which is the cost of ONE chunk and does not move
+ * with the ring count at all.
+ *
+ * ⚠️ **IT ALSO RAISES THE SCORE-CACHE CEILING, which is a separate decision
+ * the owner took knowingly.** `affordance-index.ts` derives
+ * `CHUNKS_PER_WORKING_SET` from this constant, so the retained-chunk cap goes
+ * 488 -> 1 016 and the `scoresByCell` ceiling 23 912 -> 49 784 cells. At the
+ * corpus-measured 808 bytes/cell that is ~19.3 MB -> ~40 MB serialised, and
+ * `chunk-cap.corpus.test.ts` warns real heap is several times that. That test
+ * bounds per-chunk cost only, so **no gate asserts the total** - a phone-side
+ * eviction would arrive as a field report rather than a red test.
+ *
+ * **Network cost is mitigated by ordering, not avoided:** a wider outermost
+ * ring straddles res-7 fetch boundaries more often, and each new tile is
+ * ~21 MB / 15-90 s. Ring 6 is emitted LAST, so a stall there delays the outer
+ * ring rather than the first answer.
  *
  * **`SCORE_DISK_RADIUS` is still what the FIRST pass scores, and that is the
  * point rather than an implementation detail.** The rings beyond it are scored
@@ -100,7 +176,34 @@ export const SCORE_DISK_RADIUS = 2;
  * The C# reference's analogue is one ring of ~153 m tiles around a ~153 m
  * centre; two extra rings here is the same shape at this grid's scale.
  */
-export const SCORE_DISK_MAX_RADIUS = 4;
+export const SCORE_DISK_MAX_RADIUS = 6;
+
+/**
+ * The rings one refresh publishes, inner first: `[2, 3, 4, 5, 6]`.
+ *
+ * **DERIVED AND EXPORTED FROM HERE, because three separate places were deriving
+ * it by hand and one of them was wrong.** `refresh-cycle.ts` computed it
+ * privately; `refresh-cycle.test.ts` wrote `[SCORE_DISK_RADIUS, 3,
+ * SCORE_DISK_MAX_RADIUS]` with a bare literal in the middle; and
+ * `derive-growth.test.ts` wrote `[R, R + 1, MAX]`, which was correct only while
+ * exactly three rings existed. Raising `SCORE_DISK_MAX_RADIUS` turned that last
+ * one into `[2, 3, 6]` — a list that still PASSED while silently measuring a
+ * working set the cycle never builds.
+ *
+ * That is the failure worth designing against: a hard-coded ring list does not
+ * go red when the radius moves, it goes quietly wrong. Living here means the
+ * data-only tests can import it without dragging `refresh-cycle.ts` and its
+ * store dependency in, which is the reason they re-derived it in the first
+ * place.
+ *
+ * The FIRST entry is the full original working set, and that is a requirement
+ * rather than an accident of ordering: the user waits for the first answer and
+ * for nothing else, so progressive scoring must not make it later.
+ */
+export const PROGRESSIVE_RADII: readonly number[] = Array.from(
+  { length: SCORE_DISK_MAX_RADIUS - SCORE_DISK_RADIUS + 1 },
+  (_, step) => SCORE_DISK_RADIUS + step,
+);
 
 /**
  * Number of res-13 children a res-11 chunk normally has: 7^2, two levels down.
@@ -217,7 +320,7 @@ export function scoreWorkingSet(
  *
  * Returns a small handful: 1 tile when the working set sits inside one fetch
  * cell, more when it straddles an edge or a vertex. This replaces "the tile I am
- * in, plus a ring": a ring both over-fetches in the interior (~140 MB at
+ * in, plus a ring": a ring both over-fetches in the interior (~150 MB (7 tiles x ~21 MB) at
  * FETCH_RES = 7) and is only heuristically sufficient at a boundary, whereas
  * asking the working set what it needs is exact by construction.
  *
@@ -231,7 +334,7 @@ export function scoreWorkingSet(
  * progressive passes must not be handed a gap. A caller that scores ring by ring
  * passes its own ring, and that matters in the other direction: with the default
  * the fetch loop blocks the FIRST answer on a tile only the outer rings need,
- * which is 18–110 s at a res-7 boundary and undoes exactly the property W16 was
+ * which is ~15–90 s at a res-7 boundary and undoes exactly the property W16 was
  * built for (see {@link SCORE_DISK_MAX_RADIUS}).
  *
  * This parameter arrived because scoring outgrew fetching silently: W16 widened

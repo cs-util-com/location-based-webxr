@@ -299,3 +299,160 @@ describe("MeshBuilder colours", () => {
     expect(colours?.[2]).toBeCloseTo(0x99 / 255, 6);
   });
 });
+
+/**
+ * WHY THESE TESTS MATTER (2026-08-22 perf loop, OSM iteration 10). The builder's
+ * accumulators became growable typed arrays doubled in place, replacing
+ * `number[]` with `push`. That removed the largest single cost in the demo's
+ * mesh build — but it introduced a failure mode the old design could not have:
+ * a buffer whose written prefix and whose capacity disagree.
+ *
+ * Every case below crosses at least one growth boundary (`INITIAL_CAPACITY` is
+ * 96 floats, i.e. 32 vertices), which is the ONLY place the new arithmetic can
+ * be wrong. A misplaced `slice` bound would hand back spare capacity as real
+ * vertices — trailing zeroes that render as geometry collapsed to the origin,
+ * and that no existing test would see, because every existing test builds
+ * meshes far below the first growth step.
+ */
+describe("MeshBuilder buffer growth", () => {
+  /** `count` distinct vertices, each carrying its own index as its x. */
+  function ramp(builder: MeshBuilder, count: number): void {
+    for (let i = 0; i < count; i++) builder.vertex(i, 0, 0, 0, 1, 0);
+  }
+
+  it("returns exactly the vertices written, not the capacity reserved", () => {
+    // 100 vertices is past the 32-vertex initial capacity and NOT a power of
+    // two, so the buffer is over-allocated when `build` runs — which is the
+    // whole point: the slice bound has to be the write cursor, not the length.
+    const builder = new MeshBuilder();
+    ramp(builder, 100);
+    const mesh = builder.build();
+    expect(mesh.positions).toHaveLength(300);
+    expect(mesh.normals).toHaveLength(300);
+    expect(mesh.positions[297]).toBe(99);
+  });
+
+  it("preserves every value across repeated doublings", () => {
+    // Several growth steps, each of which copies the prefix into a new buffer.
+    // A wrong copy length loses the tail of the previous buffer silently.
+    const builder = new MeshBuilder();
+    const COUNT = 1000;
+    ramp(builder, COUNT);
+    const { positions } = builder.build();
+    for (let i = 0; i < COUNT; i++) expect(positions[i * 3]).toBe(i);
+  });
+
+  it("grows the index buffer independently of the vertex buffer", () => {
+    // Indices grow at a different rate from positions (3 per triangle against
+    // 3 per vertex), so sharing a length between them would truncate one.
+    const builder = new MeshBuilder();
+    ramp(builder, 3);
+    for (let i = 0; i < 200; i++) builder.triangle(0, 1, 2);
+    const mesh = builder.build();
+    expect(mesh.indices).toHaveLength(600);
+    expect(mesh.triangleCount).toBe(200);
+    expect(mesh.positions).toHaveLength(9);
+  });
+
+  it("keeps colours aligned to positions across a growth boundary", () => {
+    // The colour buffer is a third array with its OWN cursor, because `append`
+    // writes it before the positions. That extra cursor is exactly what a
+    // growth step can desynchronise.
+    const builder = new MeshBuilder();
+    builder.paint(0xff0000);
+    ramp(builder, 100);
+    const mesh = builder.build();
+    expect(mesh.colours).toHaveLength(mesh.positions.length);
+    expect(mesh.colours?.[297]).toBeCloseTo(1, 6);
+    expect(mesh.colours?.[299]).toBeCloseTo(0, 6);
+  });
+
+  it("backfills white to the written prefix when paint arrives late", () => {
+    // `ensureColours` fills white up to the CURRENT vertex count and no
+    // further; filling the whole capacity would paint vertices that do not
+    // exist yet with white instead of the colour they are about to be given.
+    const builder = new MeshBuilder();
+    ramp(builder, 100);
+    builder.paint(0x00ff00);
+    ramp(builder, 10);
+    const colours = builder.build().colours;
+    expect(colours).toHaveLength(330);
+    expect(colours?.[0]).toBeCloseTo(1, 6); // backfilled white
+    expect(colours?.[2]).toBeCloseTo(1, 6);
+    expect(colours?.[300]).toBeCloseTo(0, 6); // painted green
+    expect(colours?.[301]).toBeCloseTo(1, 6);
+  });
+
+  it("appends a mesh larger than the target's whole capacity", () => {
+    // The merge path's normal case: an empty builder receives a mesh of
+    // thousands of vertices in one call, so the growth loop has to double past
+    // the requested size rather than allocate one step.
+    const source = new MeshBuilder();
+    ramp(source, 500);
+    for (let i = 0; i < 100; i++) source.triangle(i, i + 1, i + 2);
+    const mesh = source.build();
+
+    const target = new MeshBuilder();
+    target.append(mesh);
+    const merged = target.build();
+    expect(merged.positions).toEqual(mesh.positions);
+    expect(merged.normals).toEqual(mesh.normals);
+    expect(merged.indices).toEqual(mesh.indices);
+  });
+
+  it("re-bases indices when appending across a growth boundary", () => {
+    // Two large meshes joined: the second's indices must be offset by the
+    // first's VERTEX count, which is the write cursor divided by three rather
+    // than the buffer length divided by three.
+    const source = new MeshBuilder();
+    ramp(source, 100);
+    source.triangle(0, 1, 2);
+    const mesh = source.build();
+
+    const target = new MeshBuilder();
+    target.append(mesh);
+    target.append(mesh);
+    const merged = target.build();
+    expect(merged.positions).toHaveLength(600);
+    // `triangle` reverses (a, c, b), so the first mesh emits 0, 2, 1.
+    expect([...merged.indices]).toEqual([0, 2, 1, 100, 102, 101]);
+  });
+
+  it("rejects a mesh whose normals do not match its positions", () => {
+    // Positions and normals share one write cursor, so a mismatch would
+    // misalign every vertex after the join. The old element-wise loop wrote
+    // NaN normals instead — equally wrong, and harder to trace back here.
+    const target = new MeshBuilder();
+    expect(() =>
+      target.append({
+        positions: new Float32Array(9),
+        normals: new Float32Array(3),
+        indices: new Uint32Array(0),
+        triangleCount: 0,
+        forcedEars: 0,
+      }),
+    ).toThrow(/normals/);
+  });
+
+  it("rejects a mesh whose colours do not match its positions", () => {
+    // Colours carry the SAME cursor invariant as normals: `cxLen` and `pxLen`
+    // are independent write cursors, so a colours array that is not exactly
+    // positions-length desynchronises them permanently — every later vertex
+    // writes its RGB at the wrong offset, and `build()` returns a colours
+    // buffer three.js reads as a short/long attribute rather than an error,
+    // painting the wrong faces. The reasoning that rejects mismatched normals
+    // at the boundary applies unchanged; only the guard was missing. Found by
+    // claude[bot] review on PR #339.
+    const target = new MeshBuilder();
+    expect(() =>
+      target.append({
+        positions: new Float32Array(9),
+        normals: new Float32Array(9),
+        colours: new Float32Array(6),
+        indices: new Uint32Array(0),
+        triangleCount: 0,
+        forcedEars: 0,
+      }),
+    ).toThrow(/colours/);
+  });
+});

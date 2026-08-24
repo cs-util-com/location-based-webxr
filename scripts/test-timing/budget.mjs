@@ -28,19 +28,48 @@
  *   is already the problem it is meant to protect.
  * - It is a REGROWTH alarm, not a performance target. It should fire when the
  *   suite has grown a limb, not when the laptop is busy.
+ *
+ * WHY IT IS SKIPPED ON CI, added 2026-08-10 after it failed two PRs whose every
+ * test passed. The rule above says "derive it from the stage's recorded median"
+ * — and `decideRecording` refuses to record on CI, deliberately, so the GitHub
+ * runner has never contributed a single data point. A ceiling calibrated on one
+ * machine was therefore being enforced on another whose speed it knows nothing
+ * about, and that machine is far noisier: the same 51 e2e tests, no retries and
+ * no flakes, took 474 s, 576 s, 642 s and 771 s on four consecutive CI runs,
+ * while the LOCAL recording across exactly that commit range stayed flat at
+ * 586.6 -> 594.5 -> 587.9 s. The suite did not grow; the runner got slower.
+ *
+ * So the guard now runs only where the median it is derived from is kept, which
+ * is also where regrowth is authored. Making CI enforce it properly would mean
+ * letting CI record its own median — and given a 1.6x spread on identical work,
+ * a CI ceiling loose enough not to be a noise alarm would sit near 1000 s and
+ * catch almost nothing. Full reasoning and the rejected alternatives:
+ * `GpsPlusSlamJs_Docs/docs/2026-08-10-0507-e2e-budget-ci-false-positive-findings.md`.
+ *
+ * The cost is real and worth stating: the alarm now exists only on the machine
+ * that runs the full local gate. If that habit lapses, the guard lapses with it
+ * — the same silence, arriving by a different road.
  */
 
 /**
  * The ceiling breach for a finished stage, or `null` when it is within budget.
  *
  * Pure and total: an absent or non-finite budget means "not guarded", which is
- * every stage except the ones named in `projects.mjs`.
+ * every stage except the ones named in `projects.mjs`. On CI nothing is ever
+ * guarded — see the CI note above.
  *
  * @param {{name: string, budgetSeconds?: number}} stage
  * @param {number} durationMs
+ * @param {Record<string, string | undefined>} [env] - process.env (or a stub).
+ *   Omitted means "not CI": a caller that forgets it keeps the guard rather
+ *   than silently losing it.
  * @returns {string | null}
  */
-export function budgetBreach(stage, durationMs) {
+export function budgetBreach(stage, durationMs, env = {}) {
+  // Same truthiness check as `decideRecording`, and it has to stay the same: if
+  // the two disagreed, a run could skip the budget while still recording a row.
+  if (env.CI) return null;
+
   const budget = stage.budgetSeconds;
   if (typeof budget !== 'number' || !Number.isFinite(budget) || budget <= 0) {
     return null;

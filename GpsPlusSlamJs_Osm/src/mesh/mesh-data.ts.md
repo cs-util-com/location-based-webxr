@@ -19,6 +19,61 @@ What a mesh IS — the buffer type and the builder that accumulates one.
   needs the builder; the repo's `check:cycles` gate caught it immediately. The
   split is also the right shape: this file says what a mesh is, the other two say
   how particular meshes are made.
+- **The accumulators are GROWABLE TYPED ARRAYS, doubled in place** — not
+  `number[]` with `push`. This is the hottest data structure in the package and
+  the shape is a measured decision, not a style one.
+  - **What it replaced.** `px`, `nx`, `idx` and `cx` were plain `number[]`, one
+    `push` per element, converted in `build()` by `new Float32Array(this.px)`.
+    Every float therefore made the trip **float32 → boxed double → float32**,
+    and a merge of one chunk's buildings ran ~5.6 million individual `push`
+    calls.
+  - **Why the old shape was invisible.** Every instrument in this package
+    measures a GEOMETRY algorithm — ear clipping, hole bridging, polygon cover,
+    spatial queries. An accumulator is a cost _underneath_ all of them, and it
+    only shows up in a profile taken over the whole composition. A `--cpu-prof`
+    of the demo's `buildMesh` at a 36 144-feature working set ranked it first:
+    `build` **11.3 %**, `append` **6.5 %**, `vertex` **2.9 %** of sampled CPU —
+    **20.6 %** in one class, against 8.9 % for `clipEars`, plus an unattributed
+    share of the 7.7 % spent in GC.
+  - **Why the new shape is fast.** `vertex` writes three floats into a
+    pre-sized buffer behind one length comparison. `append` is the bigger win:
+    both sides are already `Float32Array`, so positions, normals and colours are
+    whole-array `set()` copies — a memcpy instead of an element-by-element round
+    trip through boxed doubles. Only the indices are still walked, because each
+    one is re-based onto this builder's vertex numbering. `build()` is a
+    `slice(0, cursor)` per buffer: one copy, no conversion.
+  - **Capacity doubles rather than growing to fit**, which is what keeps `n`
+    appends `O(n)` amortised. `INITIAL_CAPACITY` is 96 floats — 32 vertices, one
+    `box` — so the thousands of transient POI meshes never grow at all and none
+    of them over-allocates.
+  - **Measured, devbox-win11** (Win 11 Pro, 11th Gen Intel i7-1185G7 @ 3.00 GHz,
+    Node 24.14.1), medians of 9 against the built `dist`:
+    - `mergeMeshes` (1 097 meshes, 52 712 vertices) — **5.55 → 1.91 ms, −66 %**
+    - `vertex + triangle` (200 000 vertices) — **19.58 → 8.61 ms, −56 %**
+    - `vertex + paint` (200 000 vertices) — **32.65 → 20.60 ms, −37 %**
+    - `chunkMeshes` over a k=4 working set — buildings **183.2 → 100.1 ms**,
+      roads **66.1 → 32.1 ms**, plates **7.5 → 5.1 ms**
+    - the demo's whole `buildMesh` at that working set — **1 564.1 → 1 185.2 ms,
+      −24.2 %**
+  - **Output is byte-identical**, and that was checked rather than assumed: the
+    element sums and lengths of every buffer match to the last digit before and
+    after, for both a merged mesh and a painted emitted one. The float32 →
+    double → float32 round trip the old code made was exact, so removing it
+    changes no value.
+  - **The new failure mode is a cursor/capacity disagreement**, which the old
+    design could not have — `build()` handing back spare capacity as real
+    vertices would render geometry collapsed to the origin. Every case in the
+    `MeshBuilder buffer growth` block crosses at least one growth boundary,
+    because no other test in the suite builds a mesh past 32 vertices.
+- **`append` REJECTS a mesh whose normals do not match its positions.**
+  Positions and normals share one write cursor, so a mismatch would misalign
+  every vertex after the join. The old element-wise loop wrote `NaN` normals
+  instead — equally wrong and harder to trace back to here.
+- **And a mesh whose colours do not match its positions, for the same reason**
+  (PR #339 review). `cxLen` and `pxLen` are independent write cursors, so a
+  mismatched colours array desynchronises them permanently: every later vertex
+  writes its RGB at the wrong offset, and three.js reads the short/long buffer
+  as a plausible attribute — the wrong faces painted, no error anywhere.
 - **Typed arrays, so results TRANSFER across a worker boundary** rather than
   being copied — §4.2 asks for this explicitly, and it matters at building
   counts.
@@ -112,9 +167,23 @@ const mesh = builder.build();
 Exercised through `buildings.test.ts` — wall and cap triangle counts, normal
 directions, and merging with index re-basing.
 
+`mesh-data.bench.ts` is the cost instrument for the accumulator, benching the
+merge path (`mergeMeshes` over every building volume of a real site) and the
+emitter path (`vertex`/`triangle`, painted and unpainted) separately, because
+the two have different fixes and one number would hide which moved.
+
 `mesh-data.test.ts` covers the colour half directly: that an unpainted mesh
 allocates no array (the cost guard, and the reason it is the first test), that
 painting yields one RGB triple per vertex, that two faces can differ, that
 unpainted vertices are white, that the packed hex decodes in the right channel
 order, and that `append` keeps colours aligned in BOTH mixed directions plus the
 unpainted/unpainted case.
+
+Its `MeshBuilder buffer growth` block covers the typed-array accumulators: that
+`build` returns the written prefix rather than the reserved capacity, that
+values survive repeated doublings, that the index buffer grows independently of
+the vertex buffer, that colours stay aligned across a growth boundary and that a
+late `paint` backfills white only to the written prefix, that a mesh larger than
+the target's whole capacity appends intact, that indices are re-based by the
+vertex cursor rather than the buffer length, and that mismatched normals and
+mismatched colours are rejected.

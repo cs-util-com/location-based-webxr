@@ -1193,7 +1193,9 @@ function onXRFrame(time: number, frame: XRFrame | undefined): void {
   updateTrackingState(arPose);
 
   // Tick the per-frame callback registry. `dt`/`elapsed` are derived from
-  // the XR `time` argument (monotonic ms since session start) — not from
+  // the XR `time` argument — monotonic ms since PAGE LOAD, not since the
+  // session started, so `elapsed` is a stamp to difference rather than a
+  // session duration (see `frame-loop.ts.md`) — not from
   // `THREE.Clock` — so replay/test harnesses that drive `onXRFrame` with
   // synthetic timestamps see deterministic ticks. See `frame-loop.ts.md`
   // and `2026-05-13-ecs-migration-plan.md`.
@@ -1419,6 +1421,31 @@ export function getArWorldGroup(): THREE.Group | null {
  */
 export function getCamera(): THREE.PerspectiveCamera | null {
   return activeSession.sceneGraph.camera;
+}
+
+/**
+ * Get the session's WebGL renderer, or `null` when no session is running.
+ *
+ * WHY A CONSUMER NEEDS THIS. The renderer is created here with deliberately
+ * neutral settings — no tone mapping, default output colour space — because the
+ * framework has no opinion about how a consumer's content should be graded. A
+ * consumer that authored its materials and colours under a different grade
+ * (say `ACESFilmicToneMapping` at exposure 0.5) renders visibly differently in
+ * AR than in its own view, and cannot correct it without reaching the renderer.
+ *
+ * The same handle answers the other question consumers ask, which is what a
+ * frame actually costs: `renderer.info.render` is the only source for draw
+ * calls and triangles, and it is per-renderer.
+ *
+ * READ-ONLY BY CONVENTION. This exposes the object rather than a settings API
+ * on purpose — an allow-list of "safe" properties would be a guess about what
+ * consumers need, and this is a library for applications that already own their
+ * rendering. Anything a consumer changes here it must also restore, because the
+ * renderer is torn down with the session and a half-configured one is worse
+ * than either state.
+ */
+export function getRenderer(): THREE.WebGLRenderer | null {
+  return activeSession.sceneGraph.renderer;
 }
 
 /**
