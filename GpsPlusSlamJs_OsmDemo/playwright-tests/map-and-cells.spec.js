@@ -903,6 +903,27 @@ test.describe("the geo-event", () => {
     await expect(toast).toHaveText(/Quest at|No quest nearby/, {
       timeout: 30_000,
     });
+
+    // CAPTURED THE MOMENT IT IS KNOWN PRESENT, NOT RE-READ LATER (2026-08-24).
+    // The shared toast REMOVES ITSELF from the DOM DEFAULT_TOAST_LINGER_MS
+    // (6 s) after `show()`. Every read below used to happen after the two
+    // button assertions, and on a loaded machine that lost the race in two
+    // distinct ways:
+    //
+    //   - `textContent()` waited for an element that had already been
+    //     removed, so it burned the whole 180 s test timeout — the observed
+    //     failure, on a cascade run where this suite took 22.6 min against a
+    //     16.5 min baseline;
+    //   - `not.toContainText("geo-event failed")` passed VACUOUSLY once the
+    //     toast was gone, because an absent element contains nothing. So the
+    //     "and nothing failed" guarantee quietly stopped holding.
+    //
+    // The second is the worse of the two: a green assertion proving nothing.
+    // One read, here, fixes both — and the linger is deliberately NOT widened,
+    // since 6 s is the product's chosen lifetime and the test has no business
+    // reshaping it.
+    const announced = (await toast.textContent()) ?? "";
+
     await expect(button).toBeEnabled();
     // AND THE BUTTON WENT BACK TO ITS CONSTANT, which is the half that would
     // otherwise go unasserted: a button still reading "Finding…" after the
@@ -910,18 +931,18 @@ test.describe("the geo-event", () => {
     // is the reported one.
     await expect(button).toHaveText(/Show Quests/);
 
-    // And nothing failed. WATCHED ON THE TOAST, not the status line: errors
-    // stopped being written to `#status` when the header's self-expanding rule
-    // was retired (DEC-U10), so `geo-event failed` can never appear there and
-    // this assertion held for a broken app too. Its sibling in
-    // boot-and-shell.spec.js was repointed at the time; this one was missed.
-    await expect(page.locator("#toast-root .toast")).not.toContainText(
-      "geo-event failed",
-    );
+    // And nothing failed. ASSERTED ON THE CAPTURED STRING, for the reason
+    // given above — watching the live locator could not fail once the toast
+    // had lingered out. Watched on the toast rather than the status line:
+    // errors stopped being written to `#status` when the header's
+    // self-expanding rule was retired (DEC-U10), so `geo-event failed` can
+    // never appear there and this assertion held for a broken app too. Its
+    // sibling in boot-and-shell.spec.js was repointed at the time; this one
+    // was missed.
+    expect(announced).not.toContain("geo-event failed");
 
     // If it found one, it is on the map. The winner carries a class of its own
     // so this cannot pass on a candidate marker.
-    const announced = (await toast.textContent()) ?? "";
     if (announced.includes("Quest at")) {
       // THE DISTANCE AND DIRECTION ARE THE POINT (F56), not decoration. The
       // winner is usually off-screen, so this string is the only feedback the
