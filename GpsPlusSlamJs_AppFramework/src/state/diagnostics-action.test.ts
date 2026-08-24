@@ -68,7 +68,7 @@ describe('recordDiagnostic', () => {
     });
   });
 
-  it('is written to the recording while a session is running', () => {
+  it('is written to the recording while a session is running', async () => {
     // THE ASSERTION THIS FILE EXISTS FOR. Without the prefix in the store's
     // whitelist the dispatch below succeeds and writes nothing — the exact
     // silent failure the middleware's drop path produces.
@@ -85,13 +85,17 @@ describe('recordDiagnostic', () => {
     store.dispatch(
       recordDiagnostic({ kind: 'ar-entry-ready', atMs: 1, detail: {} })
     );
+    // The write queue is asynchronous by contract, so the spy is inspected
+    // only after the store's own flush — not on the accident that today's
+    // queue starts a write synchronously when a slot is free.
+    await store.flushPendingActionWrites();
 
     expect(written.map((action) => action.type)).toContain(
       recordDiagnostic.type
     );
   });
 
-  it('is NOT written when no session is recording', () => {
+  it('is NOT written when no session is recording', async () => {
     // The middleware's session gate applies to this action like any other: a
     // diagnostic dispatched outside a recording is a no-op, not a stray file.
     const { backend, written } = recordingBackend();
@@ -100,6 +104,9 @@ describe('recordDiagnostic', () => {
     store.dispatch(
       recordDiagnostic({ kind: 'ar-entry-ready', atMs: 1, detail: {} })
     );
+    // Flushed BEFORE the negative assertion: an empty spy checked
+    // synchronously would also pass while a wrong write was still queued.
+    await store.flushPendingActionWrites();
 
     expect(written).toHaveLength(0);
   });
