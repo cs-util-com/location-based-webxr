@@ -69,7 +69,15 @@ the fixes.
   information, not interruptions, and an assertive region cuts across whatever a
   screen reader is currently saying.
 - **`append`, not `insertBefore`** — in the AR root the XR canvas sits at the
-  front of the container and the toast must paint over it.
+  front of the container and the toast must paint over it. **Skipped when the
+  element is already a child of `root`**: `append` on a current child is a
+  spec-level remove-then-insert, which would tear the live region out of the
+  accessibility tree on every replacement and re-insert it populated.
+- **A replacement empties the element FIRST.** A `show()` while a message is
+  standing clears the text before the class change and before the deferred
+  write is queued, so the region never wears the new severity over the old text
+  for a task, and its content change (old → empty → new) is announceable like
+  the first show. Found by review on PR #352.
 
 ## Example
 
@@ -84,8 +92,9 @@ toast.show('No quest nearby — searched 7 tiles');
   deferral; a test checking only the final text passes for the silent version
   too), linger, replacement, same-task supersession, withdrawal beating a queued
   write, idempotent clear, single-element reuse, the custom class/linger, the
-  per-message overrides and their reset on the next message, and the optional
-  `id`.
+  per-message overrides and their reset on the next message, the optional
+  `id`, and the replace path: the element is emptied before the new text lands
+  and is not re-inserted while standing.
   - The first eight of those moved here from `GpsPlusSlamJs_OsmDemo` **without a
     single edit**, which is the evidence that the move was a move and not a
     rewrite.

@@ -119,13 +119,21 @@ export function createToast(
 
   return {
     show(message: string, showOptions: ToastShowOptions = {}): void {
+      if (pending !== undefined) clearTimeout(pending);
+      // EMPTIED FIRST, for the reason `clear()` gives: on a replacement this
+      // element is already attached and still carrying the previous message,
+      // so without this it would wear the new severity over the old text for
+      // one task, and a re-inserted region would arrive populated.
+      element.textContent = '';
       // Applied BEFORE attaching, so the element never appears in the DOM
       // wearing the previous message's severity for a frame.
       element.className = showOptions.className ?? defaultClassName;
       // `append`, not `insertBefore`: in an AR root the XR canvas sits at the
-      // FRONT of the container and the toast has to paint over it.
-      root.append(element);
-      if (pending !== undefined) clearTimeout(pending);
+      // FRONT of the container and the toast has to paint over it. Skipped
+      // when already parented, because `append` on a current child is a
+      // spec-level remove-then-insert — it would tear the live region out of
+      // the accessibility tree on every replacement.
+      if (element.parentNode !== root) root.append(element);
       pending = setTimeout(() => {
         pending = undefined;
         element.textContent = message;

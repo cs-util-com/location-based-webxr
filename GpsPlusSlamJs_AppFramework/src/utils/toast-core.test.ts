@@ -89,6 +89,43 @@ describe('createToast', () => {
     expect(toastIn(root)?.textContent).toBe('second');
   });
 
+  it('empties a standing message on replace, before the new text lands', () => {
+    // The replace path must honour the same announcement contract as the first
+    // show: the region's content CHANGES (old text -> empty -> new text) rather
+    // than the new severity class painting over the old text for a task. Found
+    // by review on PR #352 — `show()` set the class and re-appended while the
+    // element still carried the previous message.
+    const toast = createToast(root, { className: 'toast' });
+    toast.show('old info');
+    vi.advanceTimersByTime(0);
+    expect(toastIn(root)?.textContent).toBe('old info');
+
+    toast.show('new error', { className: 'toast toast-error' });
+    const element = root.querySelector('.toast-error');
+    expect(element).not.toBeNull();
+    expect(element?.textContent).toBe('');
+
+    vi.advanceTimersByTime(0);
+    expect(element?.textContent).toBe('new error');
+  });
+
+  it('does not re-insert the live region when replacing a standing message', () => {
+    // `append` on a node that is already a child is a spec-level
+    // remove-then-insert, which tears the live region out of the accessibility
+    // tree and re-inserts it populated — the state the deferred write exists to
+    // avoid. Observable as reordering: a re-append would move the element past
+    // the sentinel to the end of the container.
+    const toast = createToast(root);
+    toast.show('first');
+    vi.advanceTimersByTime(0);
+
+    const sentinel = document.createElement('span');
+    root.append(sentinel);
+    toast.show('second');
+
+    expect(root.lastElementChild).toBe(sentinel);
+  });
+
   it('never shows a superseded message, even for one task', () => {
     // The cancellation contract. Two `show` calls in the same task must not
     // produce a flash of the first text — which is what would happen if the
