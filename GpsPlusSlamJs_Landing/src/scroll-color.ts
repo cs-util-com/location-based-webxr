@@ -14,6 +14,8 @@
  * scroll→timeline mapping.
  */
 
+import { clamp01 } from "./clamp01";
+
 export interface ColorBands {
   /** Element-top fraction of the viewport at/below which strength is 0
    * (the block has just faded in near the bottom). */
@@ -24,10 +26,6 @@ export interface ColorBands {
 }
 
 const DEFAULT_BANDS: ColorBands = { start: 0.85, full: 0.2 };
-
-function clamp01(v: number): number {
-  return v < 0 ? 0 : v > 1 ? 1 : v;
-}
 
 /**
  * Highlight color strength (0..1) for a copy element whose top edge sits

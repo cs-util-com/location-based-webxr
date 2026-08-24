@@ -17,6 +17,7 @@
  * @see elevation-offset-scenarios.ts.md for detailed documentation
  */
 
+import { clamp01 } from '../utils/clamp01.js';
 import type {
   ElevationOffsetSample,
   ElevationOffsetTick,
@@ -54,10 +55,6 @@ export function gaussOf(rng: () => number): number {
   const u = Math.max(rng(), 1e-12);
   const v = rng();
   return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
-}
-
-function clamp01(x: number): number {
-  return Math.min(1, Math.max(0, x));
 }
 
 interface TickSpec {

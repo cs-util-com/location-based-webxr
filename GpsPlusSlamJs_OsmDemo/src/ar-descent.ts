@@ -18,6 +18,7 @@
  *
  * @see ar-descent.ts.md
  */
+import { smoothstep } from "./easing.js";
 
 /**
  * How long the view holds at the starting height before falling.
@@ -82,9 +83,6 @@ export const DESCENT_FALL_S = 10;
  * did not ask for this height and has not been given a reason to expect it.
  */
 export const DESCENT_MAX_START_M = 100;
-
-/** Smoothstep — zero slope at both ends, so neither the start nor the landing steps. */
-const smoothstep = (t: number): number => t * t * (3 - 2 * t);
 
 export interface DescentInput {
   /** Seconds since the descent began. */

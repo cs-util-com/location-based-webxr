@@ -1,3 +1,4 @@
+import { smoothstep } from "./easing.js";
 import { ENTRY_VEIL_COLOUR } from "./ar-entry-veil.js";
 
 /**
@@ -138,9 +139,6 @@ export function entryFadeMayStart(gate: EntryFadeGate): boolean {
   if (!gate.aligned || !gate.contentReady) return false;
   return gate.waitedS >= ENTRY_DOM_VEIL_HOLD_S;
 }
-
-/** Smoothstep — zero slope at both ends, like every other fade in this entry. */
-const smoothstep = (t: number): number => t * t * (3 - 2 * t);
 
 /**
  * The veil's opacity `s` seconds into the fade, `[0,1]`.

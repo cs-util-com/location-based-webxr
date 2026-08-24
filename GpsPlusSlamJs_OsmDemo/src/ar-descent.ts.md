@@ -65,7 +65,8 @@ the fall therefore lengthens the opaque period rather than stretching a fade.
 - **It lands at exactly 0**, not approximately: this term is added to the applied
   elevation for the rest of the session, so a residual millimetre is a permanent
   offset on the whole city.
-- **Zero slope at both ends** (smoothstep). A linear ramp starts and stops
+- **Zero slope at both ends** (`smoothstep`, shared from [`easing.ts`](./easing.ts.md)
+  since 2026-08-24). A linear ramp starts and stops
   abruptly, which at arm's length looks like the scene was dropped.
 - **`DESCENT_MAX_START_M` is at or below `NUDGE_LIMIT_M`, and that is a real
   constraint** — it was 120 against a nudge reach of 100 until a test caught it.

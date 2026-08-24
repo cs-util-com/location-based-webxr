@@ -1,3 +1,4 @@
+import { smoothstep } from "./easing.js";
 import * as THREE from "three";
 
 import {
@@ -82,9 +83,6 @@ const ENTRY_VEIL_RENDER_ORDER = -1000;
  * Kamera sind."*
  */
 export const ENTRY_VEIL_FADE_S = 2;
-
-/** Smoothstep — zero slope at both ends, like every other fade in this entry. */
-const smoothstep = (t: number): number => t * t * (3 - 2 * t);
 
 /**
  * How opaque the veil is, `[0,1]`.

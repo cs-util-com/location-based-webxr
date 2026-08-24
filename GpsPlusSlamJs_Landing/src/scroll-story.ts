@@ -23,6 +23,8 @@
  * timeline scrub relies on all of it.
  */
 
+import { clamp01 } from "./clamp01";
+
 export interface SectionMetrics {
   /** Document-space top offset of the section in px. */
   readonly top: number;
@@ -45,10 +47,6 @@ const INERT_STATE: ChapterScrollState = {
   chapterProgress: 0,
   storyProgress: 0,
 };
-
-function clamp01(value: number): number {
-  return value < 0 ? 0 : value > 1 ? 1 : value;
-}
 
 /**
  * Last section whose top is at or above the center line; the line being
