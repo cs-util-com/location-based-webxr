@@ -278,18 +278,18 @@ tracking-quality path.
   fallback for older recordings.
 - `OpenCvQrFrontEnd` is removed; QR decoding is `BarcodeDetector`-only.
 
-## [1.3.0] — 2026-06-13
+## [1.3.0] - 2026-06-13
 
 ### Features
 
-- **Captured-image pixel dimensions for aspect-correct frame tiles** — the image-capture pipeline now surfaces each captured frame's encoded pixel size. `CameraBlitCapture` exposes `getWidth()`/`getHeight()` (the render-target size, which equals the encoded JPEG size); the `captureFrame` callback returns a `CapturedFrame` (`{ blob, width, height }`) instead of a bare `Blob`; `ImageCaptureManager` attaches `width`/`height` to `CapturedImage` (blit render-target size, or canvas backing-store size on the `toBlob` fallback) when positive; and `selectFrameTilesInWebXR` projects the new `width`/`height` fields (exhaustiveness guard extended). These flow into `ArImageCapture.width`/`height` so consumers (e.g. the recorder's 3D frame-tile visualizer) can render frames at their true aspect ratio. Requires `gps-plus-slam-js` ≥ 1.3.0 (the schema carrier). Old recordings and captures without dimensions are unaffected (consumers fall back to square).
+- **Captured-image pixel dimensions for aspect-correct frame tiles** - the image-capture pipeline now surfaces each captured frame's encoded pixel size. `CameraBlitCapture` exposes `getWidth()`/`getHeight()` (the render-target size, which equals the encoded JPEG size); the `captureFrame` callback returns a `CapturedFrame` (`{ blob, width, height }`) instead of a bare `Blob`; `ImageCaptureManager` attaches `width`/`height` to `CapturedImage` (blit render-target size, or canvas backing-store size on the `toBlob` fallback) when positive; and `selectFrameTilesInWebXR` projects the new `width`/`height` fields (exhaustiveness guard extended). These flow into `ArImageCapture.width`/`height` so consumers (e.g. the recorder's 3D frame-tile visualizer) can render frames at their true aspect ratio. Requires `gps-plus-slam-js` ≥ 1.3.0 (the schema carrier). Old recordings and captures without dimensions are unaffected (consumers fall back to square).
 
-## [1.2.0] — 2026-06-13
+## [1.2.0] - 2026-06-13
 
 ### Features
 
-- **Depth → occupancy-grid mapping** — ported the Unity occupancy-grid core (`bresenham3d` ray-carving + `OccupancyGrid`) into the framework, added a `depth-unprojection` helper (screen + depth → raw WebXR point), captured each `XRView` `projectionMatrix` in depth samples (with a denser default grid), stored `latestDepthSample`, and wired the occupancy grid into the recorder store. `DepthCaptureOptions` now plumb depth recording options through the sampler without dropping `projectionMatrix`.
-- **RGB voxel coloring (occupancy-grid port Iter 8)** — `DepthPoint` gains an optional, additive `rgb: [r, g, b]` (0–255) sampled from the camera frame in the same XR frame as the depth read; `DepthSampler` gains a `rgb` config (default true) + lazy `acquireRgbLookup` callback (at most one small GPU blit+readback per emitted sample via the new `CameraBlitCapture.captureToPixels()` and the pure `ar/depth-rgb-lookup`); `OccupancyGrid.getCellColor()` exposes a per-cell running average of the colored observations; `DepthCaptureOptions.rgb` recording option (default on). Old recordings and rgb-off sessions are unaffected (consumers fall back to height-based coloring).
+- **Depth → occupancy-grid mapping** - ported the Unity occupancy-grid core (`bresenham3d` ray-carving + `OccupancyGrid`) into the framework, added a `depth-unprojection` helper (screen + depth → raw WebXR point), captured each `XRView` `projectionMatrix` in depth samples (with a denser default grid), stored `latestDepthSample`, and wired the occupancy grid into the recorder store. `DepthCaptureOptions` now plumb depth recording options through the sampler without dropping `projectionMatrix`.
+- **RGB voxel coloring (occupancy-grid port Iter 8)** - `DepthPoint` gains an optional, additive `rgb: [r, g, b]` (0–255) sampled from the camera frame in the same XR frame as the depth read; `DepthSampler` gains a `rgb` config (default true) + lazy `acquireRgbLookup` callback (at most one small GPU blit+readback per emitted sample via the new `CameraBlitCapture.captureToPixels()` and the pure `ar/depth-rgb-lookup`); `OccupancyGrid.getCellColor()` exposes a per-cell running average of the colored observations; `DepthCaptureOptions.rgb` recording option (default on). Old recordings and rgb-off sessions are unaffected (consumers fall back to height-based coloring).
 
 ### Bug Fixes
 
@@ -305,21 +305,21 @@ tracking-quality path.
 - Hoist the projection inverse + camera quaternion to a sample-scoped `DepthUnprojector`
 - Pass `projectionMatrix` straight to `mat4.invert` in depth-unprojection
 
-## [1.1.0] — 2026-06-08
+## [1.1.0] - 2026-06-08
 
 ### Features
 
-- **ArWorldGroupAlignment** — `enableArWorldGroupAlignment()` applies lerped GPS→AR alignment on `arWorldGroup`, replacing per-anchor lerps with a single group-level correction
-- **AR re-entry** — `enable()` now exposes `disable()` teardown with a `stopping` state, allowing clean AR session restart without stale state
-- **`onBootstrapComplete` callback** — `createGpsAnchor` accepts an optional callback fired once the anchor's world-pose bootstraps
-- **Hit-test reticle** — promoted from consumer apps into the framework as a first-class visualization primitive
-- **Headless Enable GPS AR seam** — `enable-gps-ar` module provides a headless entry point for starting AR+GPS without UI
-- **`registerXrFrameUpdate`** — new seam for per-frame XR callbacks + `requestHitTest` opt-in
-- **Capability checker** — promoted to `ar/` with `contextLabel` for richer diagnostics
-- **Onboarding-guidance coaching** — coaching seam over tracking-quality for consumer UIs
-- **GPS-anchor guard** — `createGpsAnchor` now validates that the target `Object3D` is a descendant of `arWorldGroup`
-- **Smooth steady-state corrections** — GPS-anchor corrections default to smooth interpolation
-- **Chromium camera-access workaround** — version-gated `baseLayer` persistence for affected Chrome builds
+- **ArWorldGroupAlignment** - `enableArWorldGroupAlignment()` applies lerped GPS→AR alignment on `arWorldGroup`, replacing per-anchor lerps with a single group-level correction
+- **AR re-entry** - `enable()` now exposes `disable()` teardown with a `stopping` state, allowing clean AR session restart without stale state
+- **`onBootstrapComplete` callback** - `createGpsAnchor` accepts an optional callback fired once the anchor's world-pose bootstraps
+- **Hit-test reticle** - promoted from consumer apps into the framework as a first-class visualization primitive
+- **Headless Enable GPS AR seam** - `enable-gps-ar` module provides a headless entry point for starting AR+GPS without UI
+- **`registerXrFrameUpdate`** - new seam for per-frame XR callbacks + `requestHitTest` opt-in
+- **Capability checker** - promoted to `ar/` with `contextLabel` for richer diagnostics
+- **Onboarding-guidance coaching** - coaching seam over tracking-quality for consumer UIs
+- **GPS-anchor guard** - `createGpsAnchor` now validates that the target `Object3D` is a descendant of `arWorldGroup`
+- **Smooth steady-state corrections** - GPS-anchor corrections default to smooth interpolation
+- **Chromium camera-access workaround** - version-gated `baseLayer` persistence for affected Chrome builds
 
 ### Bug Fixes
 
@@ -340,7 +340,7 @@ tracking-quality path.
 ### Refactoring
 
 - Tie `ArWorldGroupAlignment` disposal to the XR session lifecycle
-- Remove D1 per-anchor lerp — steady-state corrections now snap instantly at the group level
+- Remove D1 per-anchor lerp - steady-state corrections now snap instantly at the group level
 - Derive recording action types from action creators in persistence middleware
 
 ### Documentation
