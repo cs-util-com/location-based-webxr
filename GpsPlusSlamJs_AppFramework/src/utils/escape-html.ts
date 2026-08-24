@@ -1,37 +1,38 @@
 /**
  * Escapes text destined for an HTML sink.
  *
- * WHY THE DEMO NEEDS THIS AT ALL. Leaflet's `bindTooltip`/`bindPopup` render
- * their argument as HTML, and the strings this demo interpolates into them are
- * not ours: category names come from `discoverCategories`, which reads the
- * column headers of a **publicly editable Google Sheet** and accepts any name
- * up to 20 characters with no character-set restriction. `<svg onload=x>` fits
- * in 20 characters.
+ * WHY THE FRAMEWORK OWNS THIS. It was written in `GpsPlusSlamJs_OsmDemo`, and a
+ * second, WEAKER copy grew independently in `GpsPlusSlamJs_Landing` — four
+ * characters instead of five. That is the failure mode a shared escaper exists
+ * to prevent: two implementations mean two chances to miss a character class,
+ * and the weaker one is only safe by accident of its current call site.
  *
- * `rule-table-loader.ts` already describes that sheet as "the only thing
- * standing between a bad edit to a publicly-editable Google Sheet and every
- * downstream app's behaviour", so handing its column names straight to an HTML
- * sink is inconsistent with how the rest of the pipeline treats them.
+ * THE ORIGINAL REASON IT WAS NEEDED, kept because it is the clearest statement
+ * of when to reach for this. Leaflet's `bindTooltip`/`bindPopup` render their
+ * argument as HTML, and the OSM demo interpolates strings it does not own:
+ * category names come from a **publicly editable Google Sheet**, accepted at any
+ * name up to 20 characters with no character-set restriction. `<svg onload=x>`
+ * fits in 20 characters, so the length cap is not a mitigation.
  *
- * WHY HERE AND NOT AT THE SOURCE. Restricting category names to `[A-Za-z0-9_]`
- * in `discoverCategories` was the alternative. It is rejected for now because it
- * silently drops legitimate owner-authored names (spaces, umlauts) from every
- * consumer, which is a behaviour change to owner-published data made to fix a
- * problem that belongs to the sink. Escaping is complete, costs nothing, and
- * breaks nobody.
+ * WHY HERE AND NOT AT THE SOURCE. Restricting those names to `[A-Za-z0-9_]` was
+ * the alternative. It is rejected because it silently drops legitimate
+ * owner-authored names (spaces, umlauts) from every consumer, to fix a problem
+ * that belongs to the sink. Escaping is complete, costs nothing, and breaks
+ * nobody.
  *
  * Deliberately a plain string transform rather than `textContent` on a detached
- * node: this module is unit-tested in Node, where there is no DOM.
+ * node: this module is unit-tested in Node, where there is no DOM, and callers
+ * that DO have a DOM should prefer `textContent` over building markup at all.
  *
  * @see escape-html.ts.md
  */
 
 const REPLACEMENTS: Readonly<Record<string, string>> = {
-  "&": "&amp;",
-  "<": "&lt;",
-  ">": "&gt;",
-  '"': "&quot;",
-  "'": "&#39;",
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
 };
 
 /**

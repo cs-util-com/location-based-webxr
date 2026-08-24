@@ -178,6 +178,7 @@ const entryFiles = [
   'src/utils/index.ts',
   'src/utils/concurrency.ts',
   'src/utils/failure-tracker.ts',
+  'src/utils/escape-html.ts',
   'src/utils/format-file-size.ts',
   'src/utils/fused-path.ts',
   'src/utils/list-formatter.ts',

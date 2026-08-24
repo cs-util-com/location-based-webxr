@@ -35,6 +35,18 @@ describe("chapterDotsHtml", () => {
     const html = chapterDotsHtml([{ id: "x", label: '<b>&"quoted"' }]);
     expect(html).toContain("&lt;b&gt;&amp;&quot;quoted&quot;");
   });
+
+  it("escapes the apostrophe too, matching the canonical escaper", () => {
+    // WHY THIS MATTERS: this escaper is a deliberate copy of the framework's
+    // `utils/escape-html.ts`, and until 2026-08-24 it silently escaped only
+    // four of the five characters — `'` was missing. That was safe by accident
+    // of the single call site (a double-quoted attribute), not by design, and a
+    // second call site would have inherited a hole. The copies are held
+    // identical by `tests/repo-config/escape-html-copies.test.js`; this test is
+    // the behavioural half of the same claim.
+    const html = chapterDotsHtml([{ id: "x", label: "it's fine" }]);
+    expect(html).toContain("it&#39;s fine");
+  });
 });
 
 describe("updateActiveDot", () => {

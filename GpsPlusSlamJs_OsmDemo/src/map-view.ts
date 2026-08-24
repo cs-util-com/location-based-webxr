@@ -25,7 +25,7 @@ import type { CellScore, GeoEvent, LatLng, Region } from "gps-plus-slam-osm";
 import { describeEventTime } from "./event-label.js";
 import { describeScale, type HeatScale } from "./heat-colours.js";
 import { tileBounds } from "./fetch-extent.js";
-import { escapeHtml } from "./escape-html.js";
+import { escapeHtml } from "gps-plus-slam-app-framework/utils/escape-html";
 import { regionStyle } from "./region-style.js";
 import { QUEST_MARKER_PX, questMarkerSvg } from "./quest-marker.js";
 import {
@@ -577,7 +577,8 @@ export class MapView {
         )
           .bindTooltip(
             // Escaped: `category` is a column header from the publicly editable
-            // rule sheet, and `bindTooltip` renders HTML. See `escape-html.ts`.
+            // rule sheet, and `bindTooltip` renders HTML. See the framework’s
+            // `escape-html.ts`.
             `${escapeHtml(region.category)}: ${region.cellCount} cells, ` +
               `${Math.round(region.areaM2)} m², median ${round(region.medianScore)}`,
           )
@@ -705,7 +706,8 @@ function popupFor(cell: CellScore, category: string, score: number): string {
 
   return (
     // `category` comes from the publicly editable rule sheet — see
-    // `escape-html.ts` for why the 20-character cap is not a mitigation.
+    // the framework’s `escape-html.ts` for why the 20-character cap is not a
+    // mitigation.
     `<strong>${escapeHtml(category)} = ${round(score)}</strong><br>` +
     (lines.length > 0
       ? lines.join("<br>") + more

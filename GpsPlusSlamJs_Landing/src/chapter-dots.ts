@@ -13,12 +13,32 @@ export const CHAPTER_DOTS_CONTAINER_ID = "chapter-dots";
 
 const ACTIVE_CLASS = "active";
 
+/**
+ * A DELIBERATE COPY of the framework's `utils/escape-html.ts`, which is the
+ * canonical escaper for this workspace.
+ *
+ * Landing does not depend on `gps-plus-slam-app-framework` — its dependencies
+ * are three, animejs, postprocessing and uqr — and adding that edge to a
+ * marketing site so it can share ten lines of string replacement is the worse
+ * trade. So the copy stays, and
+ * `tests/repo-config/escape-html-copies.test.js` fails if the two ever escape
+ * different characters.
+ *
+ * It used to escape FOUR characters, missing `'`. That was safe only by
+ * accident of its single call site — an `aria-label="…"` attribute, where an
+ * apostrophe cannot break out. Two implementations mean two chances to miss a
+ * character class, which is the whole reason the guard exists.
+ */
+const REPLACEMENTS: Readonly<Record<string, string>> = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#39;",
+};
+
 function escapeHtml(text: string): string {
-  return text
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
+  return text.replace(/[&<>"']/g, (char) => REPLACEMENTS[char] ?? char);
 }
 
 /**

@@ -101,7 +101,7 @@ raster basemap.
     reading `map-view.ts`'s constructor. **Every credit must go through
     `AttributionView`.**
 - **Everything interpolated into a tooltip or popup is escaped** — see
-  [`escape-html.ts.md`](./escape-html.ts.md). `bindTooltip` and `bindPopup` render HTML, and
+  `escapeHtml` (`gps-plus-slam-app-framework/utils/escape-html`). `bindTooltip` and `bindPopup` render HTML, and
   `category` is a column header from the publicly editable rule sheet; the
   20-character name limit does not exclude `<svg onload=x>`. Feature keys are
   escaped too, belt-and-braces, because they land in an `href` attribute.
@@ -122,7 +122,7 @@ const scale = view.render(cells, regions, "walkable", threshold, showBelow);
 None directly (Leaflet needs a DOM); the data it draws is tested in
 `demo-pipeline`, the colours in `heat-colours.test.ts`, the band classifier in
 `legend-model.test.ts`, the contributor ordering in `contributor-order.test.ts`,
-and the escaping in `escape-html.test.ts`. What only a browser can show — that
+and the escaping in the framework’s `escape-html.test.ts`. What only a browser can show — that
 the popup opens and its links are clickable, and that the checkbox reveals three
 distinct bands — is covered in `playwright-tests/`.
 

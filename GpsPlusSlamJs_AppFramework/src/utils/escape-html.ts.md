@@ -5,14 +5,27 @@
 Escapes text before it reaches an HTML sink — in practice, Leaflet's
 `bindTooltip`, which renders its argument as HTML.
 
+**The canonical escaper for this workspace.** It lived in
+`GpsPlusSlamJs_OsmDemo` until 2026-08-24 and moved here when a second, weaker
+copy was found in `GpsPlusSlamJs_Landing` — four characters instead of five.
+Landing keeps a copy rather than importing this one, because it does not depend
+on this package and adding that edge to a marketing site to share ten lines is
+the worse trade. The two are kept from diverging by
+`tests/repo-config/escape-html-copies.test.js`, which requires them to be
+character-identical.
+
 ## Public API
 
 - `escapeHtml(value: string): string` — replaces `& < > " '` with their
   entities. Total; never throws.
+- Import it **deep** — `gps-plus-slam-app-framework/utils/escape-html` — rather
+  than through the `/utils` barrel, which would pull the logger and its friends
+  into a consumer that wanted five lines of string replacement.
 
 ## Invariants & assumptions
 
-- **The inputs are untrusted.** Category names come from `discoverCategories`,
+- **The inputs are untrusted** in the case this was written for. Category names
+  come from `discoverCategories` in the OSM demo,
   which reads the column headers of a **publicly editable Google Sheet** and
   accepts any name up to `MAX_CATEGORY_NAME_LENGTH` (20) with no character-set
   restriction. `<svg onload=x>` is 14 characters, so the length cap is not a

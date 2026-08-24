@@ -27,6 +27,11 @@ export {
 export { mapWithConcurrencyLimit } from './concurrency.js';
 export { geodesicAngleRad } from './geodesic-angle.js';
 export { formatFileSize } from './format-file-size.js';
+// Re-exported so this package's public surface names it, but consumers should
+// DEEP-import `gps-plus-slam-app-framework/utils/escape-html`: reaching five
+// lines of string replacement through this barrel pulls in the logger and
+// everything else listed here.
+export { escapeHtml } from './escape-html.js';
 export { listFormatter } from './list-formatter.js';
 export {
   validateOptionFields,

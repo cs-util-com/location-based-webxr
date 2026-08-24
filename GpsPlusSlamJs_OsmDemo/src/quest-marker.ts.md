@@ -33,7 +33,7 @@ imported from `surface-colours.ts`.
   was a four-way collision that survived because the colours lived in CSS and in
   two TS literals with nothing able to compare them.
 - **No caller data reaches the markup**, so no escaping is needed here. Tooltips
-  do carry rule-sheet strings and go through `escape-html.ts`.
+  do carry rule-sheet strings and go through the framework’s `escape-html.ts`.
 
 ## Examples
 

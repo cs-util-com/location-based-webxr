@@ -7,7 +7,7 @@
  *
  * WHY IT IS BUILT WITH `textContent` AND NOT A TEMPLATE STRING. The category
  * name is a column header from the publicly editable rule sheet, and so is
- * anything derived from it. `escape-html.ts` exists because this app already
+ * anything derived from it. The framework’s `escape-html.ts` exists because this app already
  * renders sheet-derived text into HTML sinks; the legend avoids the sink
  * entirely rather than escaping its way through one.
  *
