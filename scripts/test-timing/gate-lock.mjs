@@ -246,12 +246,27 @@ export function readLock(file) {
 }
 
 /**
+ * Writes the lock record; with `exclusive`, the write IS the acquisition.
+ *
+ * `readLock → decideGateLock → writeLock` is not atomic: two gates starting
+ * within the same few milliseconds each see `existing: null`, each decide
+ * `acquire`, and each write — the second overwrites the first's record, both
+ * believe they own the lock, and the first to finish clears it out from under
+ * the one still running. `flag: 'wx'` makes the filesystem the arbiter: the
+ * loser gets `EEXIST` and treats it as a refusal (PR #338 review). `steal`
+ * keeps the plain overwrite — it has already established the previous owner
+ * is gone, and an exclusive steal could never replace a dead owner's record.
+ *
  * @param {string} file
  * @param {LockRecord} record
+ * @param {{ exclusive?: boolean }} [options]
  * @returns {void}
  */
-export function writeLock(file, record) {
-  writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`, 'utf8');
+export function writeLock(file, record, { exclusive = false } = {}) {
+  writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`, {
+    encoding: 'utf8',
+    ...(exclusive ? { flag: 'wx' } : {}),
+  });
 }
 
 /**

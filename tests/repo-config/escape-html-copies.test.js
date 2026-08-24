@@ -1,0 +1,173 @@
+// Repo-meta test: the two HTML escapers escape the same characters.
+//
+// WHY THERE ARE TWO AT ALL. `GpsPlusSlamJs_Landing` does not depend on
+// `gps-plus-slam-app-framework` — its dependencies are three, animejs,
+// postprocessing and uqr — and adding that edge to a marketing site so it can
+// share ten lines of string replacement is the worse trade. So the copy stays,
+// and this guard is what makes it safe.
+//
+// WHY IT COMPARES THE TABLE AND NOT THE TEXT. The obvious guard —
+// "character-identical modulo whitespace" — is unachievable: the framework sets
+// `singleQuote: true` and the landing page takes prettier's default, so the two
+// files disagree on every quote in the table and always will. A guard that
+// cannot be satisfied is a guard nobody writes. What must actually agree is the
+// CONTRACT: the same characters mapped to the same entities, and the same
+// character class in the regex.
+//
+// WHAT IT IS FOR. Until 2026-08-24 the landing page's copy escaped FOUR of the
+// five characters — `'` was missing. It was safe only by accident of its single
+// call site, an `aria-label="…"` where an apostrophe cannot break out; a second
+// call site would have inherited a hole. Two implementations mean two chances
+// to miss a character class, and one of them had already taken it.
+//
+// WHAT IT CANNOT DO, since "the guard is what makes the copy safe" would
+// otherwise be read as more than it is. It compares two extracted artifacts,
+// not behaviour, so a copy that keeps an identical table and regex but stops
+// USING them — `return text;`, or a `.replace(…)` whose result is discarded —
+// passes. The table check below is paired with an assertion that the function
+// body actually applies the regex to its parameter, which closes the obvious
+// shape of that; a behavioural check is impossible while Landing's copy is
+// unexported, and exporting it to enable one would widen that module's surface
+// for the benefit of a test.
+//
+// `GpsPlusSlamJs_Landing/src/chapter-dots.test.ts` carries the behavioural half
+// for the character the copy used to miss.
+
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { describe, it, expect } from 'vitest';
+
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+
+const CANONICAL = 'GpsPlusSlamJs_AppFramework/src/utils/escape-html.ts';
+const COPY = 'GpsPlusSlamJs_Landing/src/chapter-dots.ts';
+
+/**
+ * The `character -> entity` pairs of a `REPLACEMENTS` table, quote-agnostic.
+ *
+ * Matches `'&': '&amp;'` and `"&": "&amp;"` alike, and returns them sorted so
+ * the comparison does not depend on declaration order either.
+ */
+export function replacementPairs(source) {
+  const pairs = [];
+  const entry = /(['"])(.)\1\s*:\s*(['"])(&[a-z#0-9]+;)\3/gi;
+  let match;
+  while ((match = entry.exec(source)) !== null) {
+    pairs.push(`${match[2]} -> ${match[4]}`);
+  }
+  return pairs.sort();
+}
+
+/**
+ * The character class of the escapeHtml-shaped replace in `source`.
+ *
+ * Scoped to the exact shape the "both actually apply the regex" assertion
+ * below pins — `return X.replace(/[…]/g, (c) => REPLACEMENTS[…` — rather than
+ * the first `/[…]/g` literal anywhere in the file. In `chapter-dots.ts` the
+ * escaper shares the file with unrelated code, so a positional match would let
+ * any future `.replace(/[…]/g` added above it silently become the thing this
+ * guard compares.
+ */
+export function escapedCharacterClass(source) {
+  const match =
+    /return\s+\w+\s*\.replace\(\s*\/\[([^\]]+)\]\/g\s*,\s*\(\w+\)\s*=>\s*REPLACEMENTS\[/.exec(
+      source,
+    );
+  return match ? [...match[1]].sort().join('') : null;
+}
+
+const read = (file) => readFileSync(resolve(repoRoot, file), 'utf8');
+
+describe('escapeHtml copies', () => {
+  describe('replacementPairs', () => {
+    // The extractor is the guard; tested against both quote styles so a green
+    // result cannot mean "the regex matched nothing in either file".
+    it('reads either quote style', () => {
+      expect(replacementPairs(`{ '&': '&amp;', '<': '&lt;' }`)).toEqual([
+        '& -> &amp;',
+        '< -> &lt;',
+      ]);
+      expect(replacementPairs(`{ "&": "&amp;", "<": "&lt;" }`)).toEqual([
+        '& -> &amp;',
+        '< -> &lt;',
+      ]);
+    });
+
+    it('is order-independent', () => {
+      expect(replacementPairs(`{ '<': '&lt;', '&': '&amp;' }`)).toEqual(
+        replacementPairs(`{ '&': '&amp;', '<': '&lt;' }`)
+      );
+    });
+
+    it('notices a missing character', () => {
+      const five = replacementPairs(
+        `{ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }`
+      );
+      const four = replacementPairs(
+        `{ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }`
+      );
+
+      expect(five).toHaveLength(5);
+      expect(four).not.toEqual(five);
+    });
+  });
+
+  describe('escapedCharacterClass', () => {
+    it('reads the class from the escapeHtml shape, not the first replace in the file', () => {
+      // The old extractor took the FIRST `/[…]/g` replace anywhere in the
+      // source. For `chapter-dots.ts` that is positional: `escapeHtml` sits
+      // near the top today, and any `.replace(/[…]/g` added above it would
+      // silently become the thing this guard compares — while the vacuity
+      // check below stays green, because it reads the table, not the regex.
+      // Found by claude[bot] review on PR #352.
+      const source = [
+        `const slug = title.replace(/[abc]/g, '-');`,
+        `return text.replace(/[<>]/g, (ch) => REPLACEMENTS[ch] ?? ch);`,
+      ].join('\n');
+
+      expect(escapedCharacterClass(source)).toBe('<>');
+    });
+
+    it('returns null when no escapeHtml-shaped replace exists', () => {
+      // A bare regex literal elsewhere must not satisfy the not-null vacuity
+      // assertion in the character-class comparison below.
+      expect(escapedCharacterClass(`const x = s.replace(/[abc]/g, '-');`)).toBe(
+        null,
+      );
+    });
+  });
+
+  it('both files really contain a table (so the guard is not vacuous)', () => {
+    // The failure this repo has been bitten by: a source-text guard whose
+    // pattern matches nothing passes silently and forever.
+    expect(replacementPairs(read(CANONICAL))).toHaveLength(5);
+    expect(replacementPairs(read(COPY))).toHaveLength(5);
+  });
+
+  it('escape the same characters to the same entities', () => {
+    expect(replacementPairs(read(COPY))).toEqual(
+      replacementPairs(read(CANONICAL))
+    );
+  });
+
+  it('match the same character class in the regex', () => {
+    // The table is only half the contract: a character present in the map but
+    // absent from the class is never looked up.
+    const canonical = escapedCharacterClass(read(CANONICAL));
+
+    expect(canonical).not.toBeNull();
+    expect(escapedCharacterClass(read(COPY))).toBe(canonical);
+  });
+
+  it('both actually apply the regex and return the result', () => {
+    // Closes the obvious way the two checks above can be satisfied by a broken
+    // copy: keep the table, keep the regex, and stop using them. Still a
+    // source-text check — see the header for what it does not reach.
+    for (const file of [CANONICAL, COPY]) {
+      expect(read(file)).toMatch(
+        /return\s+\w+\s*\.replace\(\s*\/\[[^\]]+\]\/g\s*,\s*\((\w+)\)\s*=>\s*REPLACEMENTS\[\1\]\s*\?\?\s*\1\s*\)/
+      );
+    }
+  });
+});

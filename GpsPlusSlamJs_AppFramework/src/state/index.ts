@@ -14,6 +14,11 @@ export {
   recordingReducer,
 } from './recording-slice.js';
 
+// --- diagnostics-action (log-only notes an app makes about itself; recorded
+//     into the action stream, consumed by no reducer — owner decision
+//     2026-08-23). ---
+export { type DiagnosticNote, recordDiagnostic } from './diagnostics-action.js';
+
 // --- tracking-slice (AR tracking state machine; ports the AR-tracking
 //     state machine that previously lived in `ar/tracking-state.ts` — see
 //     P2 step 2 in 2026-05-07-csharp-features-not-yet-ported.md). ---

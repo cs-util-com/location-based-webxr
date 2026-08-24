@@ -73,4 +73,31 @@ describe("triggerDeploy", () => {
       expect(error.message).not.toContain(HOOK);
     }
   });
+
+  it("never puts the secret in the CAUSE chain either", async () => {
+    // Node prints the WHOLE cause chain — for an uncaught exception and for
+    // `console.error(err)` — and this module's real call sites (a CI or local
+    // publish step) let the error escape. A raw `{ cause }` therefore printed
+    // the unredacted message right under the redacted one, undoing the
+    // redaction in exactly the scenario it was written for. Found by
+    // claude[bot] review on PR #332.
+    const fetchImpl = async () => {
+      throw new Error(`connect ECONNREFUSED for ${HOOK}`);
+    };
+
+    const error = await triggerDeploy({ hookUrl: HOOK, fetchImpl }).catch(
+      (err) => err,
+    );
+    expect(error).toBeInstanceOf(Error);
+    let cause = error.cause;
+    while (cause !== undefined) {
+      const rendered =
+        cause instanceof Error
+          ? `${cause.message}\n${cause.stack}`
+          : String(cause);
+      expect(rendered).not.toContain("xyz");
+      expect(rendered).not.toContain(HOOK);
+      cause = cause instanceof Error ? cause.cause : undefined;
+    }
+  });
 });

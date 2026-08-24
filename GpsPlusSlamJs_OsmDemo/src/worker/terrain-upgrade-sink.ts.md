@@ -8,7 +8,8 @@ change only when the lattice actually took them.
 ## Public API
 
 - `createTerrainUpgradeSink(field, onChanged)` → the callback to hand to
-  `createDemProvider`'s `onUpgrade`.
+  `createDemProvider`'s `onUpgrade`. **Returns `replacePosts`' verdict**, so
+  the provider withholds its `servedBy` claim on a refusal (PR #332 review).
   - `field` — anything with `replacePosts(positions, heights): boolean`. Narrowed
     to that one method so tests need no terrain field.
   - `onChanged` — called **only** when `replacePosts` returned `true`. In the

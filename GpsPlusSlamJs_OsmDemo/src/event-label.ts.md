@@ -50,8 +50,13 @@ pointed at the Leaflet map, so it is a new feature rather than reuse.
 - `bearingDegrees(from, to) -> number` — initial great-circle bearing, in
   `[0, 360)`.
 - `compassPoint(bearing) -> string` — one of the eight points.
-- `formatDistance(metres) -> string` — `"640 m"` below a kilometre, else
+- `formatEventDistance(metres) -> string` — `"640 m"` below a kilometre, else
   `"1.2 km"`.
+  - A thin wrapper over the framework's `utils/format-distance`, holding **this
+    app's rule** (`metreStep: 10`) rather than the formatting itself. Renamed
+    from `formatDistance` on 2026-08-24: a wrapper wearing the shared helper's
+    own name is the confusion the duplicate-helper guard exists to prevent, and
+    that guard says so by failing.
 
 ## Invariants & assumptions
 

@@ -202,6 +202,33 @@ describe('extractActionTimestamp', () => {
     expect(extractActionTimestamp(makeDepthSampleAction(12345.67))).toBeNull();
   });
 
+  it('returns epoch ms from diagnostics/note.payload.atMs', () => {
+    // Why: `atMs` is epoch ms BY CONTRACT (both real callers pass
+    // `nowEpochMs()`, and `ar-entry-wiring.test.ts` pins it as "AN ABSOLUTE
+    // TIMELINE, not the XR frame clock"). Without this case a sparse note
+    // between two paced actions returned null on both sides of the pairwise
+    // delay, so the whole real gap around it was silently skipped on replay —
+    // found by claude[bot] review on PR #351.
+    const ts = 1708300007000;
+    expect(
+      extractActionTimestamp({
+        type: 'diagnostics/note',
+        payload: { kind: 'ar-entry-ready', atMs: ts, detail: {} },
+      })
+    ).toBe(ts);
+  });
+
+  it('returns null for a diagnostics note whose atMs is not a number', () => {
+    // Why: a non-finite atMs is persisted as JSON null; pacing must degrade to
+    // "no delay" rather than compute with a non-number.
+    expect(
+      extractActionTimestamp({
+        type: 'diagnostics/note',
+        payload: { kind: 'ar-entry-ready', atMs: null, detail: {} },
+      })
+    ).toBeNull();
+  });
+
   it('returns null for endSession (no timestamp)', () => {
     // Why: endSession has no timestamp in its payload
     expect(extractActionTimestamp(makeEndSessionAction())).toBeNull();

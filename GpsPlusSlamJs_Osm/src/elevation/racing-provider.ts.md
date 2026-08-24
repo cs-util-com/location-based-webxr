@@ -27,10 +27,15 @@ heights, and swaps the better source's heights in when they land.
     - Checked once at construction rather than per call: the ids are known there,
       and a throw at wiring time is findable in a way a silently disabled upgrade
       path is not. Found by a PR review bot on #329.
-  - `options.onUpgrade(positions, heights)` — called when `preferred` lands
-    after `fast` already published. **Late binding is expected**: the worker
-    builds the provider before the terrain field that consumes the upgrade, so
-    this is normally a closure over a `let` assigned afterwards.
+  - `options.onUpgrade(positions, heights): boolean | void` — called when
+    `preferred` lands after `fast` already published. **Late binding is
+    expected**: the worker builds the provider before the terrain field that
+    consumes the upgrade, so this is normally a closure over a `let` assigned
+    afterwards. **An explicit `false` means the sink refused the batch**, and
+    the provider then withholds its `servedBy` claim — an attribution
+    committed before that verdict named a source the field is not standing on
+    (PR #332 review). A sink returning nothing keeps the old always-claim
+    behaviour; the counters stay unconditional either way.
 - The returned provider adds, beyond `ElevationProvider`:
   - `stats: RacingProviderStats` — `servedBy` (the `sourceId` whose heights are
     current, or `"none"`), `upgrades`, `preferredWins`, `fastWins`,

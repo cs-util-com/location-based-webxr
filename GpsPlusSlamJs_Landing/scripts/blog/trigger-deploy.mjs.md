@@ -29,8 +29,12 @@ found this before any code existed.
     they were handed (`connect ECONNREFUSED for https://…/deploy/<secret>`), so
     passing the cause's message through verbatim leaked the credential. Both
     the full URL and its final path segment are scrubbed from the rendered
-    message; the cause object is still attached for a debugger. The test that
-    proves this was itself broken first — see below.
+    message **and from the attached cause** (PR #332 review): Node prints the
+    whole cause chain for an uncaught error and for `console.error(err)`, so a
+    raw `{ cause }` printed the unredacted message right under the redacted
+    one. The cause is now a scrubbed clone that keeps the (scrubbed) original
+    stack for a debugger. The test that proves the message half was itself
+    broken first — see below.
 - Cloudflare deploy hooks take a bare `POST` with no body and no auth header.
 
 ## Examples

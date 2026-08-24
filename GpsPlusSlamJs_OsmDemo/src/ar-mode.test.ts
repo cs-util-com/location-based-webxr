@@ -1651,6 +1651,35 @@ describe("the dom-overlay input contract (DEC-Y18)", () => {
       "beforexrselect was not cancelled, so a tap on the overlay also reaches the XR session",
     ).toBe(true);
   });
+
+  it("removes the listener when the AR prompt is dismissed", async () => {
+    // The listener registers BEFORE `initAR`, on the page-lifetime `#ar-root`,
+    // and the two early-return paths (the `initAR` catch — the path every
+    // dismissed permission prompt takes — and the scene-null guard) skipped
+    // `releaseXrSelect`, so one handler accumulated per declined entry for the
+    // life of the tab. Benign today (N idempotent preventDefault calls), which
+    // is precisely why it would have survived until it was not. Found by
+    // claude[bot] review on PR #338.
+    // A DETACHED container, deliberately: several earlier tests in this suite
+    // pass `container: document.body` and never end their sessions, so body
+    // carries exactly the accumulated stale handlers this test is about — a
+    // bubbling event dispatched under body would be prevented by one of THEM
+    // and hide the answer for this container.
+    initAR.mockRejectedValueOnce(new Error("no session"));
+    const container = document.createElement("div");
+
+    const d = deps({ container });
+    await startArMode(d);
+    expect(d.onError).toHaveBeenCalledWith("no session");
+
+    const event = new Event("beforexrselect", { cancelable: true });
+    container.dispatchEvent(event);
+
+    expect(
+      event.defaultPrevented,
+      "the beforexrselect handler outlived the failed AR start",
+    ).toBe(false);
+  });
 });
 
 describe("the AR entry fly-down (H5, Q5)", () => {
@@ -1928,6 +1957,38 @@ describe("the AR entry fly-down (H5, Q5)", () => {
     runFrames(1, LANDED_S);
 
     expect(setClearAlpha).not.toHaveBeenCalled();
+  });
+
+  it("tears the veil and the waiting line down when the session ends mid-entry", async () => {
+    // The release path is "the common case when someone backs out because the
+    // entry looked wrong" (ar-mode.ts's own words) — and it was uncovered: the
+    // session-end tests build `fakeView()` with no `cameraHeightM`, so no veil
+    // is ever created there, and deleting the teardown left the whole suite
+    // green. What that teardown prevents is an opaque sphere LEFT in the
+    // framework scene (a lid over the passthrough, "strictly worse than having
+    // no veil at all") plus a stranded "Finding your position…" over the
+    // desktop. Found by claude[bot] review on PR #339.
+    const container = document.createElement("div");
+    document.body.append(container);
+    const view = viewAtHeight(START_M);
+    await startArMode(
+      deps({
+        container,
+        buildingView: view as unknown as ArModeDeps["buildingView"],
+      }),
+    );
+
+    // Mid-entry: the veil is up and the waiting line is showing.
+    expect(entryVeilIn(scene)).toBeDefined();
+    expect(container.querySelector(".ar-entry-wait")).not.toBeNull();
+
+    const sessionOptions = initAR.mock.calls[0]?.[3] as {
+      onSessionEnd: () => void;
+    };
+    sessionOptions.onSessionEnd();
+
+    expect(entryVeilIn(scene)).toBeUndefined();
+    expect(container.querySelector(".ar-entry-wait")).toBeNull();
   });
 
   it("adds NO entry veil when there is no height to fall from", async () => {

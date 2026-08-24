@@ -22,7 +22,10 @@
  * @see ar-toast.ts.md
  */
 
-import { createToast, type Toast } from "./toast.js";
+import {
+  createToast,
+  type Toast,
+} from "gps-plus-slam-app-framework/utils/toast-core";
 
 /** How long a message stays before it fades, ms. */
 export const AR_TOAST_LINGER_MS = 8_000;
@@ -35,9 +38,9 @@ export const AR_TOAST_LINGER_MS = 8_000;
  * handle supersession by cancelling rather than by guarding — cost three review
  * rounds to get right, and none of it is visible in the finished code. A second
  * hand-written copy in `main.ts` would have reproduced the bugs rather than the
- * fixes. `toast.ts` carries the reasoning; this file keeps the argument for why
- * AR needs a channel of its own at all, which is a different question and still
- * true.
+ * fixes. The framework's `utils/toast-core.ts` carries the reasoning; this file
+ * keeps the argument for why AR needs a channel of its own at all, which is a
+ * different question and still true.
  *
  * The linger stays LONGER than the 2D default: a message in AR competes with
  * the camera feed and with the user's attention on the physical world, and

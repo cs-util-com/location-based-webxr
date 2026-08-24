@@ -62,6 +62,7 @@ import {
   createSlamAppStoreListenerMiddleware,
   type CompassOptIn,
 } from './slam-app-store-listener';
+import { recordDiagnostic } from './diagnostics-action';
 
 /**
  * Slice prefixes the framework always persists, derived from the actual
@@ -72,6 +73,12 @@ import {
 const BUILTIN_PERSISTED_PREFIXES: readonly string[] = [
   slicePrefixOf(setZeroPos.type), // library `gpsData` slice
   slicePrefixOf(recordWriteFailure.type), // framework `recording` slice
+  // Log-only notes an app makes about itself (owner decision, 2026-08-23).
+  // Built in rather than opt-in: the whole value is that a recording made by
+  // ANY consumer can be asked what happened, and an app that never dispatches
+  // one pays nothing for the prefix being listed. See `diagnostics-action.ts`
+  // for why the action has no reducer.
+  slicePrefixOf(recordDiagnostic.type),
 ];
 
 type LibraryGpsDataState = NonNullable<LibraryRootState['gpsData']>;
@@ -166,7 +173,7 @@ export interface SlamAppStoreOptions<
 
   /**
    * Additional slice prefixes to persist beyond the framework built-ins
-   * (`gpsData`, `recording`). Pass caller-owned slice names derived from
+   * (`gpsData`, `recording`, `diagnostics`). Pass caller-owned slice names derived from
    * the slice itself — e.g. `slicePrefixOf(addRefPointEntry.type)` or
    * `refPointsSlice.name` — never a hand-typed literal, so a rename can
    * never silently drop the slice's actions from recordings.
@@ -422,14 +429,22 @@ export function createSlamAppStore<
     tracking: trackingReducer,
     trackingQuality: trackingQualityReducer,
   };
+  // Reserved WITHOUT a reducer: `diagnostics` deliberately has none (see
+  // `diagnostics-action.ts`), so it cannot sit in `builtins` — but its prefix
+  // is on the built-in persistence whitelist above, so a consumer slice with
+  // that name would have EVERY one of its actions silently written into
+  // recordings. A silent WRITE, the inverse of the silent drop the whitelist
+  // guards against, and invisible to the reducer-collision check alone.
+  const reservedPrefixOnlyKeys = [slicePrefixOf(recordDiagnostic.type)];
   if (extraReducers) {
+    const reserved = [...Object.keys(builtins), ...reservedPrefixOnlyKeys];
     const collisions = Object.keys(extraReducers).filter((key) =>
-      Object.prototype.hasOwnProperty.call(builtins, key)
+      reserved.includes(key)
     );
     if (collisions.length > 0) {
       throw new Error(
         `extraReducers must not overwrite framework-reserved slice(s): ` +
-          `${collisions.join(', ')}. Reserved keys: ${Object.keys(builtins).join(', ')}.`
+          `${collisions.join(', ')}. Reserved keys: ${reserved.join(', ')}.`
       );
     }
   }

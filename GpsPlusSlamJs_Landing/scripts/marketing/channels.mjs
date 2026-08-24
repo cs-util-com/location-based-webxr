@@ -108,8 +108,11 @@ export function validateChannels(channels) {
   /** @type {string[]} */
   const problems = [];
   for (const [name, config] of Object.entries(channels)) {
-    if (typeof config.minIntervalMs !== "number" || config.minIntervalMs <= 0) {
-      problems.push(`${name}: minIntervalMs must be a positive number`);
+    // `Number.isFinite`, not `typeof`: `NaN <= 0` is false, so a NaN interval
+    // passed the old check while every downstream comparison in `selectDue`
+    // read it as "unlimited" (PR #337 review).
+    if (!Number.isFinite(config.minIntervalMs) || config.minIntervalMs <= 0) {
+      problems.push(`${name}: minIntervalMs must be a positive finite number`);
     }
     if (config.autonomy !== "auto" && config.autonomy !== "manual") {
       problems.push(`${name}: autonomy must be 'auto' or 'manual'`);
@@ -121,6 +124,14 @@ export function validateChannels(channels) {
         `${name}: maxPerWindow and windowMs must be set together — a cap with ` +
           `no window never applies, which reads as a cap that is working`,
       );
+    }
+    // Same hole, same consequence: `inWindow.length >= NaN` is false, so a
+    // NaN cap silently never fires while the table reads as capped.
+    if (hasCap && !Number.isFinite(config.maxPerWindow)) {
+      problems.push(`${name}: maxPerWindow must be finite when set`);
+    }
+    if (hasWindow && !Number.isFinite(config.windowMs)) {
+      problems.push(`${name}: windowMs must be finite when set`);
     }
   }
   return problems;

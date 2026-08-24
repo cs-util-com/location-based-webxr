@@ -28,6 +28,7 @@
  * @see event-label.ts.md
  */
 
+import { formatDistance } from "gps-plus-slam-app-framework/utils/format-distance";
 import type { GeoEvent, LatLng } from "gps-plus-slam-osm";
 
 /** The eight compass points, in bearing order from north. */
@@ -102,11 +103,13 @@ export function compassPoint(bearing: number): string {
  * Rounded to 10 m under 1 km because the underlying cell is ~4 m across and a
  * bare metre count would imply precision the H3 quantisation does not have.
  */
-export function formatDistance(metres: number): string {
-  if (metres < 1000) {
-    return `${Math.max(0, Math.round(metres / 10) * 10)} m`;
-  }
-  return `${(metres / 1000).toFixed(1)} km`;
+export function formatEventDistance(metres: number): string {
+  // The workspace's shared formatter (2026-08-24), with this app's rule:
+  // metres to the nearest 10, kilometres to one decimal. The step is the
+  // decision worth keeping - these distances come from a GPS fix and a tile
+  // centre, so a metre of apparent precision would be a claim the data does not
+  // support. `format-distance.test.ts` pins the output against the old body.
+  return formatDistance(metres, { metreStep: 10, metreDecimals: 0 });
 }
 
 /**
@@ -173,7 +176,7 @@ export function describeGeoEvent(
   // that half stays exactly as it was.
   const metres = distanceMetres(user, nearest.position);
   const where = compassPoint(bearingDegrees(user, nearest.position));
-  return `Quest at ${formatTime(event.eventTime)} · ${formatDistance(metres)} ${where}`;
+  return `Quest at ${formatTime(event.eventTime)} · ${formatEventDistance(metres)} ${where}`;
 }
 
 /**
@@ -225,5 +228,5 @@ export function geoEventReadout(view: {
   const nearest = view.geoEvent?.picks[0];
   if (nearest === undefined) return "";
   const metres = distanceMetres(view.position, nearest.position);
-  return `${formatDistance(metres)} ${compassPoint(bearingDegrees(view.position, nearest.position))}`;
+  return `${formatEventDistance(metres)} ${compassPoint(bearingDegrees(view.position, nearest.position))}`;
 }

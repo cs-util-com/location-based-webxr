@@ -105,7 +105,7 @@ describe("attachHeaderCollapse", () => {
     // was the only channel an error could reach, so a collapsed header made
     // failures invisible.
     //
-    // `toast.ts` removed that premise, and the owner reported the
+    // The toast removed that premise, and the owner reported the
     // self-expanding header as a bug in the twelfth testing session. Errors
     // now go to a toast that is visible whether or not the header is
     // collapsed, and `writeStatus` no longer renders the error phase at all

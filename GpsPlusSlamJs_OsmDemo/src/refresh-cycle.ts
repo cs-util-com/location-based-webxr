@@ -83,20 +83,12 @@ interface RefreshWorker {
   ): Promise<UpdateResult>;
 }
 
-/**
- * `PROGRESSIVE_RADII` LIVES IN `resolutions.ts` NOW (DEC-K1), beside the two
- * constants it derives from — this file only consumes it.
- *
- * It moved because three places were deriving the ring list by hand and one of
- * them was wrong: `derive-growth.test.ts` wrote `[R, R + 1, MAX]`, which at a
- * radius of 6 becomes `[2, 3, 6]` and would have stayed GREEN while measuring a
- * working set the cycle never builds. Exporting the derived list is what stops
- * the next radius change being silent.
- *
- * The FIRST entry is the full original working set, and that is a requirement
- * rather than an accident of ordering: the user waits for the first answer and
- * for nothing else, so progressive scoring must not make it later.
- */
+// `PROGRESSIVE_RADII` LIVES IN `resolutions.ts` NOW (DEC-K1), beside the two
+// constants it derives from — this file only consumes it. `//` on purpose: a
+// signpost, not a docstring, so it cannot be read as documenting the function
+// below (PR #343 review). The move's full story — the hand-derived copy that
+// went quietly wrong, and why the FIRST entry must stay the full working set —
+// is told once, on the constant itself.
 
 /**
  * Whether a snapshot of this radius is the LAST one a refresh will publish (F42).

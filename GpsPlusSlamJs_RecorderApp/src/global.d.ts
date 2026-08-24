@@ -40,6 +40,16 @@ declare global {
       updateArInfo: (tracking: string) => void;
       updatePermissionStatus: (result: PermissionCheckResult) => void;
       setPermissionsReady: (ready: boolean) => void;
+      /**
+       * Show a real toast (2026-08-24). Exists so the toast has e2e coverage
+       * at all: it is the one UI this app moved onto the framework's shared
+       * mechanism, and its behaviour â attach on show, text written one task
+       * later, removed on linger â is only fully observable in a browser.
+       */
+      showToast: (
+        message: string,
+        options?: { duration?: number; severity?: 'info' | 'warning' | 'error' }
+      ) => void;
       // Log panel hooks (Issue #5)
       showLogPanel: () => void;
       hideLogPanel: () => void;

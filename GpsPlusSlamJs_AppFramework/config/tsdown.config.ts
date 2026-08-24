@@ -178,6 +178,7 @@ const entryFiles = [
   'src/utils/index.ts',
   'src/utils/concurrency.ts',
   'src/utils/failure-tracker.ts',
+  'src/utils/escape-html.ts',
   'src/utils/format-file-size.ts',
   'src/utils/fused-path.ts',
   'src/utils/list-formatter.ts',
@@ -192,6 +193,8 @@ const entryFiles = [
   // barrel, which would pull in the logger and friends). The `./utils/*`
   // exports wildcard advertises this subpath, so it must be built per-file.
   'src/utils/slider-scroll-guard.ts',
+  'src/utils/format-distance.ts',
+  'src/utils/toast-core.ts',
 
   // visualization/
   'src/visualization/index.ts',

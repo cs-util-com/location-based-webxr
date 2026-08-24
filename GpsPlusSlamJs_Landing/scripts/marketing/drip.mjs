@@ -197,6 +197,29 @@ function flag(argv, name) {
   return index === -1 ? undefined : argv[index + 1];
 }
 
+/**
+ * Refuses a posting run with no history file (PR #338 review).
+ *
+ * `readJson`'s `{}` fallback makes a missing `--history` indistinguishable
+ * from "never posted anything": every `minIntervalMs` check takes the
+ * `lastAt === undefined` branch and every `maxPerWindow` check sees zero
+ * in-window posts, so ALL channels are due at once — including the 21-day
+ * reddit/hackernews intervals that exist to stop the project's name being
+ * shadowbanned. The failure is public and irreversible, which is the same
+ * argument this module makes for `minIntervalMs` being an error rather than
+ * a default. A dry run stays allowed: it sends nothing.
+ *
+ * @param {boolean} post @param {string | undefined} historyPath
+ */
+export function requireHistoryForPost(post, historyPath) {
+  if (post && !historyPath) {
+    throw new Error(
+      "drip: --post requires --history. Without it every rate limit reads as " +
+        "'never posted' and the interval guards do not apply.",
+    );
+  }
+}
+
 /** @param {string | undefined} path @param {unknown} fallback */
 function readJson(path, fallback) {
   if (!path) {
@@ -213,8 +236,10 @@ if (
 ) {
   const argv = process.argv.slice(2);
   const queue = readJson(flag(argv, "--queue"), []);
-  const history = readJson(flag(argv, "--history"), {});
+  const historyPath = flag(argv, "--history");
   const post = argv.includes("--post");
+  requireHistoryForPost(post, historyPath);
+  const history = readJson(historyPath, {});
 
   console.log(post ? "• Drip run (POSTING)" : "• Drip run (dry run)");
   const result = await runDrip({

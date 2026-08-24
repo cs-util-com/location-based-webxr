@@ -461,7 +461,7 @@ describe("the map zoom is wired to the 3D camera in main.ts", () => {
     expect(CODE).not.toMatch(/vfovDeg:\s*55/);
   });
 
-  it("arms the drag latch on dragstart ONLY, never on zoomstart (DEC-L4)", () => {
+  it("arms the drag latch on dragend ONLY — not dragstart, never zoomstart (DEC-L4)", () => {
     // WHY THIS TEST MATTERS, and it is the one assertion that pins a MEASURED
     // regression rather than an intention. Arming on `zoomstart` is the
     // plausible-looking version — it covers a drag that becomes a pinch — and
@@ -469,11 +469,20 @@ describe("the map zoom is wired to the 3D camera in main.ts", () => {
     // pan: every wheel or button zoom then consumed the latch and snapped the
     // camera's target to the map centre, ~100 m in the e2e fixture.
     //
+    // `dragend`, not `dragstart` (PR #347 review): a latch armed for the whole
+    // gesture is stolen by any programmatic `moveend` that lands mid-drag —
+    // locate's `centreOn` after a slow fix re-aimed the camera AND ate the
+    // latch, so the user's own drag was then not followed. Leaflet fires
+    // `dragend` before either `moveend` branch (direct, or via inertia), so
+    // arming there keeps the inertia-safe read on `moveend` while a mid-drag
+    // programmatic move can no longer consume the latch.
+    //
     // The e2e guards the behaviour. This guards the SHAPE, in the file whose
     // whole purpose is "a pure function nothing calls changes nothing on
     // screen" — because the next person to meet the pinch case will reach for
     // exactly the line this forbids.
-    expect(CODE).toContain('mapView.map.on("dragstart"');
+    expect(CODE).toContain('mapView.map.on("dragend"');
+    expect(CODE).not.toContain('mapView.map.on("dragstart"');
     expect(CODE).not.toContain('mapView.map.on("zoomstart"');
   });
 

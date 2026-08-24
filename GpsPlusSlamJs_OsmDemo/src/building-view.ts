@@ -23,6 +23,10 @@ import {
   createPerfStatsOverlay,
   type PerfStatsOverlayHandle,
 } from "gps-plus-slam-app-framework/visualization/perf-stats-overlay";
+// The shared mesh teardown, deep-imported for the same reason as the overlay
+// above: the `/visualization` barrel would pull the whole AR/scene stack into a
+// module that already costs enough to import.
+import { disposeObject3D } from "gps-plus-slam-app-framework/visualization/three-dispose";
 
 import type { CellMesh } from "./cell-mesh.js";
 import {
@@ -803,6 +807,23 @@ export class BuildingView {
   }
 
   /**
+   * Show a beacon for every held quest, or none at all.
+   *
+   * A PUBLIC METHOD BECAUSE `content` IS PRIVATE, and deliberately so — the
+   * AR content seam is guarded by source text in
+   * `building-view-content.test.ts`, and a caller reaching into the scene
+   * graph directly would route around that guard entirely.
+   *
+   * REPAINTS, because the demo has no permanent render loop (DEC-R3-9). A
+   * marker added between frames would appear only when something else
+   * happened to request one — which, on a still desktop view, can be never.
+   */
+  setQuestBeacons(placements: readonly QuestBeaconPlacement[]): void {
+    this.questBeacons.set(placements);
+    this.requestFrame();
+  }
+
+  /**
    * Move how far the view draws (r541 Q9/Q10, owner decision 2026-08-21).
    *
    * **THE FOG MOVES WITH IT, and that is why this is a method rather than a
@@ -835,23 +856,6 @@ export class BuildingView {
    * and raises no error -- which reads as 'the 3D view is empty' and is
    * indistinguishable from half a dozen other causes.
    */
-  /**
-   * Show a beacon for every held quest, or none at all.
-   *
-   * A PUBLIC METHOD BECAUSE `content` IS PRIVATE, and deliberately so — the
-   * AR content seam is guarded by source text in
-   * `building-view-content.test.ts`, and a caller reaching into the scene
-   * graph directly would route around that guard entirely.
-   *
-   * REPAINTS, because the demo has no permanent render loop (DEC-R3-9). A
-   * marker added between frames would appear only when something else
-   * happened to request one — which, on a still desktop view, can be never.
-   */
-  setQuestBeacons(placements: readonly QuestBeaconPlacement[]): void {
-    this.questBeacons.set(placements);
-    this.requestFrame();
-  }
-
   setFarPlane(farPlaneM: number): void {
     if (!Number.isFinite(farPlaneM) || farPlaneM <= 0) return;
     this.camera.far = farPlaneM;
@@ -1363,7 +1367,7 @@ export class BuildingView {
   renderCells(mesh: CellMesh): void {
     if (this.cellMesh !== undefined) {
       this.content.remove(this.cellMesh);
-      disposeMesh(this.cellMesh);
+      disposeObject3D(this.cellMesh);
       this.cellMesh = undefined;
     }
     if (this.cellOutlines !== undefined) {
@@ -2196,16 +2200,18 @@ export class BuildingView {
   }
 
   dispose(): void {
-    // THE BEACONS OWN THREE GEOMETRIES AND A MATERIAL, and nothing else frees
-    // them: they hang off `this.content`, so the scene-level teardown below
-    // never sees them, and `quest-beacon.test.ts` exercises `dispose()` in
-    // isolation — which is exactly why the missing call here stayed green.
-    // Caught by the PR #342 review.
-    this.questBeacons.dispose();
     // Cancelled FIRST: a frame already queued would otherwise fire against a
     // disposed context, which crashes rather than leaks.
     if (this.frame !== undefined) cancelAnimationFrame(this.frame);
     this.frame = undefined;
+    // THE BEACONS OWN THREE GEOMETRIES AND A MATERIAL, and nothing else frees
+    // them: they hang off `this.content`, so the scene-level teardown below
+    // never sees them, and `quest-beacon.test.ts` exercises `dispose()` in
+    // isolation — which is exactly why the missing call here stayed green.
+    // Caught by the PR #342 review; ordered after the cancellation so
+    // "cancelled FIRST" stays literally true (PR #343 review), and pinned —
+    // call and order — by `building-view-content.test.ts`.
+    this.questBeacons.dispose();
     this.container.removeEventListener("pointerdown", this.onPointerStart);
     this.container.removeEventListener("pointerup", this.onPointerDown);
     this.controls.dispose();
@@ -2225,7 +2231,7 @@ export class BuildingView {
     // disposed view, and the whole point of holding the resize listener and the
     // rAF handle is that this method actually cleans up.
     // BOTH GROUND MATERIALS BY NAME, not whichever one is currently assigned
-    // (raised in review on #233). `disposeMesh` frees `mesh.material`, and the
+    // (raised in review on #233). Mesh teardown frees `mesh.material`, and the
     // height ramp SWAPS that field — so with the ramp active it disposed the ramp
     // material twice and never freed the standard one. Naming both is the only
     // form that does not depend on which mode the view happened to be in.
@@ -2249,9 +2255,9 @@ export class BuildingView {
     // routes — so the disposal has to happen here, once, at the end of the
     // view's life.
     this.removeRoute();
-    if (this.agent !== undefined) disposeMesh(this.agent);
+    if (this.agent !== undefined) disposeObject3D(this.agent);
     this.agent = undefined;
-    if (this.cellMesh !== undefined) disposeMesh(this.cellMesh);
+    if (this.cellMesh !== undefined) disposeObject3D(this.cellMesh);
     this.cellMesh = undefined;
     if (this.cellOutlines !== undefined) {
       this.cellOutlines.geometry.dispose();
@@ -2262,16 +2268,28 @@ export class BuildingView {
   }
 }
 
-/** Frees a mesh GPU-side. Materials may be an array; three does not do this. */
-function disposeMesh(mesh: THREE.Mesh): void {
-  mesh.geometry.dispose();
-  const material = mesh.material;
-  if (Array.isArray(material)) {
-    for (const one of material) one.dispose();
-  } else {
-    material.dispose();
-  }
-}
+/*
+ * The private `disposeMesh` that used to live here is gone: the framework's
+ * `disposeObject3D` does the same job — including the array-material case this
+ * file's copy was written for — and OsmDemo already depended on that package.
+ * It is not a drop-in equivalent, so the preconditions that make the swap safe
+ * (both meshes are leaves, and neither material carries a texture) are pinned
+ * by `building-view-dispose.test.ts` rather than left to the next reader.
+ *
+ * WHAT WAS DELIBERATELY NOT SWAPPED, because the same body still appears inline
+ * in `clear()` and a review rightly asked why:
+ *
+ * - **`clear()`'s loop** skips `userData.sharedResources` children and
+ *   non-`Mesh` children by design — the POI pins borrow one geometry and one
+ *   material across every marker, and freeing those would silently blank the
+ *   layer from the next frame on. `disposeObject3D` traverses into DESCENDANTS
+ *   and frees material textures, so it could reach a borrowed resource nested
+ *   under an owned mesh. Swapping it needs that question answered first, and
+ *   the answer is not "probably fine".
+ * - **The single-resource sites** (`undergroundLines`, `cellOutlines`,
+ *   `routeLine`, `ground`) dispose one geometry and one named material each,
+ *   which is less than `disposeObject3D` does, not more.
+ */
 
 /**
  * Injects GPU height displacement into a ground material (W23).

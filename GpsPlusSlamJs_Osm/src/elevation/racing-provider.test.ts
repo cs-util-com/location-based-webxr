@@ -131,6 +131,34 @@ describe("the upgrade — the half that silently does nothing if it is wrong", (
     expect(onUpgrade).toHaveBeenCalledWith(POSITIONS, [200, 201]);
   });
 
+  it("does not claim servedBy when the sink REFUSES the upgrade", async () => {
+    // WHY THIS TEST MATTERS (PR #332 review). `replacePosts`' return value is
+    // load-bearing — the demo's sink refuses a batch that would leave the
+    // window standing on two DEMs at once, and the all-or-nothing rule makes
+    // that refusal ordinary. `servedBy` used to be committed BEFORE the sink
+    // was consulted, so the AR readout named Mapterhorn for a field that was
+    // entirely the fast source's — the exact "stale attribution reads as
+    // working" this interface argues against. The counters stay unconditional
+    // (they count batches); only the attribution follows the sink's verdict.
+    const preferred = deferredProvider("mapterhorn");
+    const fast = deferredProvider("aws");
+    const onUpgrade = vi.fn().mockReturnValue(false);
+    const provider = racingProvider(preferred, fast, { onUpgrade });
+
+    const answer = provider.elevationAt(POSITIONS);
+    fast.resolve([100, 101]);
+    expect(await answer).toEqual([100, 101]);
+    expect(provider.stats.servedBy).toBe("aws");
+
+    preferred.resolve([200, 201]);
+    await provider.awaitUpgrades();
+
+    expect(onUpgrade).toHaveBeenCalledTimes(1);
+    expect(provider.stats.upgrades).toBe(1);
+    // The field is still standing on the fast source's heights.
+    expect(provider.stats.servedBy).toBe("aws");
+  });
+
   it("does NOT upgrade when the preferred source lands with no usable data", async () => {
     // Replacing measured heights with a batch of `undefined` would turn a
     // working window into a hole. "It answered" is not "it has data".

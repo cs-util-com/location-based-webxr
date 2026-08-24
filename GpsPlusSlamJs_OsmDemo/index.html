@@ -934,13 +934,17 @@
          reads as hovering in the middle of the map rather than as a corner
          panel.
 
-         IT STILL CLEARS THE TOAST BAND, which is why the bottom offset is not
-         0.5rem. `.toast` is `left: 0.75rem; bottom: 0.75rem` — the same corner
-         — and this sits ABOVE it in z-order, so a flush-to-the-corner picker
-         would bury the result message this very flow writes ("Quest at …" /
-         "No quest nearby"). 6rem clears a TWO-line toast, which is the case
-         that matters: a one-line clearance covers the second line of the
-         longer message.
+         IT CLEARS BOTH OTHER OCCUPANTS OF THIS CORNER, which is why the bottom
+         offset is not 0.5rem. `.toast` is `left: 0.75rem; bottom: 0.75rem` —
+         a two-line toast reaches ~70px — and `#hotkey-help` sits at the same
+         corner and reaches ~102px with today's four bindings (4 rows ≈ 94px
+         + the 0.5rem offset). 6rem (96px) cleared the toast but already
+         covered the list's top row — the move from bottom-right silently
+         dropped the old "sits opposite the hotkey list" invariant (PR #345
+         review). 8rem (128px) clears both with about one row of slack; the
+         list grows a row per future hotkey, so the e2e overlap guard in
+         `map-and-cells.spec.js` (picker vs `#hotkey-help`, list open) is what
+         keeps this offset honest rather than merely measured-once.
 
          The bottom-RIGHT corner is Leaflet's control column (the AR and locate
          buttons, moved there by `main.ts` at runtime). Being on the opposite
@@ -949,7 +953,7 @@
       #geo-event-picker {
         position: absolute;
         left: 0.5rem;
-        bottom: 6rem;
+        bottom: 8rem;
         z-index: 1000;
         display: flex;
         flex-wrap: wrap;

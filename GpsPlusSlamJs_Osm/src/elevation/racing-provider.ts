@@ -35,7 +35,14 @@ export interface RacingProviderStats {
   preferredWins: number;
   /** Batches the fast source published first. */
   fastWins: number;
-  /** Batches where neither source had usable data. */
+  /**
+   * Batches that published nothing: neither source had usable data, **or**
+   * the publish deadline expired before either answered. The second kind — a
+   * source whose usable answer simply arrived late — usually turns into an
+   * `upgrades` shortly afterwards, and the AR readout and milestone docs are
+   * read against these counters, so the distinction is stated rather than
+   * folded in (PR #329 review).
+   */
   emptyBatches: number;
 }
 
@@ -86,7 +93,10 @@ export interface RacingProviderOptions {
    * terrain field that consumes the upgrade, so this is normally a closure over
    * a `let` the caller assigns afterwards rather than the final sink itself.
    */
-  readonly onUpgrade?: (positions: readonly LatLng[], heights: Heights) => void;
+  readonly onUpgrade?: (
+    positions: readonly LatLng[],
+    heights: Heights,
+  ) => boolean | void;
 }
 
 /** Whether an answer carries at least one real height. */
@@ -329,8 +339,18 @@ export function racingProvider(
             // own check rather than inheriting one.
             if (signal?.aborted === true) return;
             stats.upgrades += 1;
-            publishServedBy(preferred.sourceId);
-            sink(positions, better);
+            // THE SINK IS CONSULTED FIRST, and the attribution follows its
+            // verdict (PR #332 review). `replacePosts`' refusal of a batch
+            // that would leave the window on two DEMs is ORDINARY under the
+            // demo's all-or-nothing rule, and a `servedBy` committed before
+            // the refusal named a source the field is not standing on — the
+            // stale attribution this interface argues against most
+            // explicitly. A sink that returns nothing keeps the old
+            // behaviour: only an explicit `false` withholds the claim.
+            // `upgrades` above stays unconditional, like every counter here —
+            // it counts batches, not what is on screen.
+            const applied = sink(positions, better);
+            if (applied !== false) publishServedBy(preferred.sourceId);
           }),
         );
       };

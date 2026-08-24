@@ -1,6 +1,26 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { buildPack, runDrip } from "./drip.mjs";
+import { buildPack, requireHistoryForPost, runDrip } from "./drip.mjs";
+
+describe("requireHistoryForPost", () => {
+  // Why this test matters: omitting --history silently disabled EVERY rate
+  // limit on a --post run — readJson's {} fallback makes each minIntervalMs
+  // check take the never-posted branch and each maxPerWindow check see zero
+  // in-window posts, so all channels are due at once, including the 21-day
+  // reddit/hackernews intervals that exist to stop the project's name being
+  // shadowbanned. A missing file is indistinguishable from a genuinely empty
+  // one, and the failure is public and irreversible — the same argument the
+  // module makes for minIntervalMs being an error rather than a default.
+  // Found by claude[bot] review on PR #338.
+  it("refuses a posting run with no history file", () => {
+    expect(() => requireHistoryForPost(true, undefined)).toThrow(/--history/);
+  });
+
+  it("allows a dry run without history, and a posting run with one", () => {
+    expect(() => requireHistoryForPost(false, undefined)).not.toThrow();
+    expect(() => requireHistoryForPost(true, "history.json")).not.toThrow();
+  });
+});
 
 // Why this test matters: this is the one function that can actually publish.
 // Its defaults therefore have to be the safe ones, and "safe" has to hold

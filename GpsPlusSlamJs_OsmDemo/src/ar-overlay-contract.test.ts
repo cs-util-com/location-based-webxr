@@ -28,7 +28,16 @@ const INDEX_HTML = path.join(PACKAGE_ROOT, "index.html");
 /** Source files that could plausibly carry the CSS, excluding build output. */
 function styleSources(): string[] {
   const found: string[] = [];
-  const skip = new Set(["node_modules", "dist", "test-results", "coverage"]);
+  // `playwright-report` included: the html reporter writes its own bundled
+  // HTML/CSS there on any local failing run, and a deny-list walk that reads
+  // it would flip this test on CSS nobody wrote (PR #333 review).
+  const skip = new Set([
+    "node_modules",
+    "dist",
+    "test-results",
+    "coverage",
+    "playwright-report",
+  ]);
   const walk = (dir: string): void => {
     for (const entry of readdirSync(dir)) {
       if (skip.has(entry)) continue;

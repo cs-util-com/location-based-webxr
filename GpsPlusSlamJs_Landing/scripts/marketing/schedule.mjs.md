@@ -10,7 +10,9 @@ the safety-critical half of the publishing pipeline.
     sends it.
   - `withheld`: `{ item, reason, nextEligibleAt? }[]` — every withheld item
     carries a reason.
-  - **Throws** when a channel is configured without `minIntervalMs`.
+  - **Throws** when a channel is configured without a finite `minIntervalMs` —
+    `NaN` included (PR #337 review): `typeof NaN === "number"`, and every
+    downstream comparison against `NaN` is false, so it read as "unlimited".
 
 ## Invariants & assumptions
 

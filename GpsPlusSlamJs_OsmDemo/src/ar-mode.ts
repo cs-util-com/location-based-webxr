@@ -449,9 +449,6 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     // `runSessionDisposers()` has usually already called it by the time a
     // system-initiated end reaches us.
     session.alignment?.dispose();
-    // THE FRAME CALLBACK FIRST. It reads the renderer and writes the DOM, and
-    // both are about to be torn down — an unregister that ran after the scene
-    // changed would leave one more sample running against half-dead state.
     // THE DOM VEIL FIRST, and unconditionally. It is an OPAQUE, full-viewport
     // child of `#ar-root`, which is `position: fixed; inset: 0` and hidden only
     // while `:empty` — so one left behind is a black rectangle over the whole
@@ -466,6 +463,11 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     // having even where no path reaches it.
     session.entryDomVeil = undefined;
     session.releaseXrSelect?.();
+    // THE FRAME CALLBACK before the scene and DOM teardown below. It reads the
+    // renderer and writes the DOM — an unregister that ran after the scene
+    // changed would leave one more sample running against half-dead state.
+    // (This comment sat two insertions above its statement, still saying
+    // "FIRST" — PR #333 review.)
     session.unregisterFrame?.();
     session.hud?.dispose();
     // BEFORE the city is handed back, so the control cannot outlive the scene
@@ -707,6 +709,11 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     // by dismissing the AR permission prompt, so leaving an opaque child here
     // would black out the desktop app on a refusal.
     session.entryDomVeil?.remove();
+    // AND THE `beforexrselect` LISTENER, registered before `initAR` on the
+    // page-lifetime `#ar-root`. This is the path every dismissed permission
+    // prompt takes, and skipping the release accumulated one handler per
+    // declined entry for the life of the tab (PR #338 review).
+    session.releaseXrSelect?.();
     void endARSession();
     deps.onError(
       error instanceof Error ? error.message : "Failed to start AR.",
@@ -724,8 +731,9 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
   if (scene === null || arWorldGroup === null || camera === null) {
     deps.onError("AR scene not ready.");
     // Same reasoning as the reject path above: `endARSession` clears the
-    // framework's canvas, not our overlay children.
+    // framework's canvas, not our overlay children — and not our listener.
     session.entryDomVeil?.remove();
+    session.releaseXrSelect?.();
     void endARSession();
     return NOOP_AR_MODE;
   }

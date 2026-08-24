@@ -19,6 +19,11 @@ metres and cost nothing to fetch.
 
 - `createQuestBeacons(): QuestBeacons` — `{ root, set(placements), dispose() }`.
   `set` replaces every beacon; an empty list clears them.
+  - **`dispose()` is called by `BuildingView.dispose()`**, and by nothing else:
+    the beacons hang off the view's content root, so the scene-level teardown
+    never reaches them, and the geometries and material would leak GPU-side
+    without that call. The call and its ordering are pinned by
+    `building-view-content.test.ts` (PR #342 review).
 - `questBeaconMaterials()` — the materials, exported so
   `ar-content-materials.test.ts` can check them **by name** rather than absorb
   them into a count.

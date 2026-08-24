@@ -8,7 +8,7 @@ the map, or did code?** Leaflet's `moveend` cannot tell them apart; this can.
 ## Public API
 
 - `createMapDragLatch(): MapDragLatch`
-  - `gestureStarted()` — arm. Wired to `dragstart` **only** — see below.
+  - `gestureStarted()` — arm. Wired to `dragend` **only** — see below.
   - `moveEnded(): boolean` — read and clear. `true` exactly once per armed
     gesture, `false` for every move nobody made.
 
@@ -33,10 +33,19 @@ the map, or did code?** Leaflet's `moveend` cannot tell them apart; this can.
 - **Two arms then one read is still ONE move**, and the unit test keeps saying
   so: nothing in the latch depends on which event armed it, so a future caller
   that adds a second arming source cannot get a double move for free.
-- **Read on `moveend`, never on `dragend`.** `dragend` fires when the finger
-  lifts, before the inertia glide settles, so the centre read there is not where
-  the map ends up. Leaflet raises `moveend` on both drag-end branches — directly
-  when inertia is off, and via the inertia animation's end when it is not.
+- **Armed on `dragend`, read on `moveend`, and the centre is never read at
+  `dragend`.** `dragend` fires when the finger lifts, before the inertia glide
+  settles, so the centre there is not where the map ends up. Leaflet raises
+  `moveend` on both drag-end branches — directly when inertia is off, and via
+  the inertia animation's end when it is not — and fires `dragend` **before**
+  either, so the drag's own `moveend` always finds the latch armed.
+- ⚠️ **`dragstart` IS NOT ARMED ON either** (PR #347 review): a latch armed
+  for the whole gesture is stolen by any programmatic `moveend` landing
+  mid-drag. The concrete path: locate is pressed, the fix takes seconds, the
+  user drags while waiting — `centreOn` fires `moveend`, consumes the latch,
+  the camera is re-aimed by the recentre, and the drag's own end then finds
+  the latch already clear, so the user's drag is not followed. Both halves
+  inverted against the contract. Armed only at `dragend`, that window closes.
 - ⚠️ **Accepted residual risk:** if a gesture ever armed the latch and no
   `moveend` followed, the next _programmatic_ pan would move the camera once.
   Read-and-clear bounds it to that single move, and no such path is known in
@@ -65,7 +74,7 @@ review pointed out it already existed under another name.
 
 ```ts
 const latch = createMapDragLatch();
-mapView.map.on("dragstart", () => latch.gestureStarted());
+mapView.map.on("dragend", () => latch.gestureStarted());
 mapView.map.on("moveend", () => {
   if (!latch.moveEnded()) return;
   const centre = mapView.map.getCenter();

@@ -27,10 +27,15 @@ through it on the way out, so there is nothing for a caller to do.
   than `summary` would — a bare text card, on exactly the channels this blog
   exists to feed. `og:image`/`twitter:image` point at the landing page's
   existing `{origin}/og-card.png`.
-- **Metadata is always escaped; post bodies are not sanitised.** Bodies come
-  from a repository only the owner can push to, so raw HTML in markdown
-  (diagrams, `<video>`) is passed through deliberately. If authorship ever
-  widens beyond the owner, this assumption must be revisited.
+- **Metadata is always escaped; post bodies are sanitised by construction.**
+  This bullet used to say bodies were "passed through deliberately" on the
+  strength of "a repository only the owner can push to" — a claim the code
+  retracted (PR #330 review): wiki push access is a repo _setting_, not a
+  default, so raw HTML in an already-published page could ship straight into
+  the site. `render.mjs` now DROPS raw HTML blocks/inlines and
+  scheme-allowlists link and image URLs; anything that needs `<video>` or a
+  diagram gets an explicit allowlist entry, never a hole. Deliberately not a
+  general-purpose sanitiser — see the module header.
 - CSS is inlined and self-contained — no external requests, no asset pipeline,
   light/dark via `prefers-color-scheme`.
 - `marked` is a **devDependency** used at build time only; nothing extra ships

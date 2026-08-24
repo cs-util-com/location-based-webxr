@@ -14,6 +14,9 @@
 // than a wait to schedule.
 
 import { spawn } from 'node:child_process';
+import { mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -24,6 +27,7 @@ import {
   decideGateLock,
   describeRefusal,
   pidAlive,
+  writeLock,
 } from './gate-lock.mjs';
 
 /** @param {Partial<import('./gate-lock.mjs').LockRecord>} [over] */
@@ -246,6 +250,45 @@ describe('decideGateLock', () => {
       now: 1_000_000 + 60_000,
     });
     expect(decision.action).toBe('refuse');
+  });
+});
+
+describe('writeLock', () => {
+  // Why these tests matter: `readLock → decideGateLock → writeLock` is not
+  // atomic, so two gates starting within the same few milliseconds each saw
+  // `existing: null`, each got `acquire`, and each wrote its own record — the
+  // second overwrote the first's, both set `ownsLock`, and the first to finish
+  // cleared the lock out from under the one still running, which then raced on
+  // `dist/` exactly as this module's header describes, with the guard
+  // reporting nothing. "Start the gate twice" is usually a fat-fingered
+  // double-run or two shells — the correlated-in-time case. `flag: 'wx'`
+  // makes the acquire itself the mutual exclusion. Found by claude[bot]
+  // review on PR #338.
+  const dir = () => mkdtempSync(path.join(tmpdir(), 'gate-lock-'));
+
+  it('exclusive: wins an empty slot, and the record lands intact', () => {
+    const file = path.join(dir(), 'gate.lock');
+    writeLock(file, lockRecord(), { exclusive: true });
+    expect(JSON.parse(readFileSync(file, 'utf8')).runId).toBe('run-a');
+  });
+
+  it('exclusive: throws EEXIST when someone already won the race', () => {
+    const file = path.join(dir(), 'gate.lock');
+    writeLock(file, lockRecord({ runId: 'first' }), { exclusive: true });
+    expect(() =>
+      writeLock(file, lockRecord({ runId: 'second' }), { exclusive: true }),
+    ).toThrow(/EEXIST/);
+    // And the incumbent's record is untouched.
+    expect(JSON.parse(readFileSync(file, 'utf8')).runId).toBe('first');
+  });
+
+  it('non-exclusive (the steal path) still overwrites', () => {
+    // `steal` has already established the previous owner is gone; making it
+    // exclusive would leave a dead owner's record unstealable.
+    const file = path.join(dir(), 'gate.lock');
+    writeLock(file, lockRecord({ runId: 'dead-owner' }));
+    writeLock(file, lockRecord({ runId: 'thief' }));
+    expect(JSON.parse(readFileSync(file, 'utf8')).runId).toBe('thief');
   });
 });
 

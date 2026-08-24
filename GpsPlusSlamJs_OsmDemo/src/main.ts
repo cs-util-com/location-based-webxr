@@ -54,6 +54,16 @@ import {
 import { describeExtent } from "./fetch-extent.js";
 import { probeImmersiveArSupport } from "gps-plus-slam-app-framework/ar";
 import { setZeroPos } from "gps-plus-slam-app-framework/state";
+// LOG-ONLY, and inert in this app today (owner decision, 2026-08-23). The
+// measurements below are dispatched so a RECORDING can be asked about them
+// later; this demo builds its store with a `NullStorageBackend` and records
+// nothing, so they are dropped until that changes. Shipped anyway so nothing
+// else has to be built the day it does -- see `diagnostics-action.ts`.
+import { recordDiagnostic } from "gps-plus-slam-app-framework/state";
+// `nowEpochMs`, NOT the frame clock and not `nowMs`: a note read back out of a
+// recording months later needs an absolute timeline, and the durations it
+// carries are already measured on whichever clock produced them.
+import { nowEpochMs } from "./monotonic-clock.js";
 // The eight that together mean "the compass has this much say, under these
 // experimental conditions" — see `compass-influence.ts` for why silencing it is
 // not one setting, and why the last four exist at all.
@@ -79,7 +89,7 @@ import { startArMode, type ArMode } from "./ar-mode.js";
 import { autoElevationEnabled } from "./ar-elevation-auto.js";
 import { startArWalk, type ArWalk } from "./ar-walk-controller.js";
 import { createArToast } from "./ar-toast.js";
-import { createToast } from "./toast.js";
+import { createToast } from "gps-plus-slam-app-framework/utils/toast-core";
 import { canEnterAr, terrainReadout } from "./ar-origin.js";
 import { createGeoEventCycle } from "./geo-event-cycle.js";
 import { GeoEventPicker } from "./geo-event-picker.js";
@@ -1179,7 +1189,7 @@ async function main(): Promise<void> {
   // locate button and the site picker recentre on the user. Every one of those
   // raises `moveend`, and a blanket rule would fire on them and re-aim at ground
   // level — undoing a fix made in the PR #344 review.
-  // ⚠️ ARMED ON `dragstart` AND NOTHING ELSE. The first version also armed on
+  // ⚠️ ARMED ON `dragend` AND NOTHING ELSE. The first version also armed on
   // `zoomstart`, to cover a drag that becomes a pinch — and that was a
   // regression, caught by the milestone review and then measured: Leaflet
   // raises `moveend` for a ZOOM as well as for a pan, so every wheel or button
@@ -1189,11 +1199,20 @@ async function main(): Promise<void> {
   // routinely — a map click recentres the camera without moving the map, a 3D
   // drag moves the target without moving the map.
   //
+  // `dragend`, not `dragstart` (PR #347 review): a latch armed for the whole
+  // gesture was stolen by any programmatic `moveend` landing mid-drag — the
+  // locate fix arriving while the user dragged consumed it, re-aiming the
+  // camera at the recentre AND ignoring the drag when it ended. Leaflet fires
+  // `dragend` before both `moveend` branches (direct, and via the inertia
+  // glide), so the drag's own `moveend` still finds the latch armed and the
+  // centre is still read inertia-safe on `moveend`, never at `dragend`.
+  //
   // The pinch case is the accepted cost and is smaller: the camera lands on the
   // centre at the moment the second finger arrived rather than on the final
-  // one. `boot-and-shell.spec.js` guards both halves.
+  // one (`Draggable.finishDrag` fires `dragend` there too). `boot-and-shell.spec.js`
+  // guards both halves.
   const mapDrag = createMapDragLatch();
-  mapView.map.on("dragstart", () => {
+  mapView.map.on("dragend", () => {
     mapDrag.gestureStarted();
   });
   //
@@ -1370,6 +1389,11 @@ async function main(): Promise<void> {
    * Bumped by every press, and captured by the entry pass's own `finally`, so a
    * pass belonging to an abandoned entry cannot mark a later one ready. See the
    * capture site in `startWalking` for the failure it prevents.
+   *
+   * The same shape as `gps-registration.ts`'s `startGeneration`, and a cousin
+   * of `latest-only.ts` — which wraps an async function rather than guarding a
+   * later callback, so it does not fit here. Cross-referenced rather than
+   * merged (2026-08-24 duplicated-helper review).
    */
   let arEntryGeneration = 0;
 
@@ -1760,16 +1784,30 @@ async function main(): Promise<void> {
       // engage while a user STANDS STILL. DEC-L2's 12 s fly-in was argued partly
       // from that number, and nobody has ever measured it.
       //
-      // A TOAST, not `console.info`. The measurement has to be taken in the
-      // field, on a phone, where a console line needs a cable and a laptop —
-      // i.e. where it would never actually be read. The AR readout's row is
+      // A TOAST FIRST, because the measurement has to be taken in the field,
+      // on a phone, where a console line needs a cable and a laptop — i.e.
+      // where it would never actually be read. The AR readout's row is
       // width-constrained (DEC-J8), so a transient line is also the only place
       // this fits. Same reasoning as DEC-K6's trust-gate acknowledgement.
       //
       // AND ITS ABSENCE IS THE OTHER HALF OF THE MEASUREMENT: no toast in a
-      // whole session means the estimator never engaged at all.
+      // whole session means the estimator never engaged at all. Which is why
+      // the console copy below is not redundant: this stamp and the entry
+      // stamp share ONE single-slot toast, so whichever fires second evicts
+      // the first, and a superseded stamp would read as that false "never
+      // engaged". The console line survives supersession (PR #349 review);
+      // the diagnostics note is the durable copy, inert in this demo today.
       onEstimateEngaged: (afterS) => {
-        arToast.show(`Elevation estimate engaged after ${afterS.toFixed(1)} s`);
+        const line = `Elevation estimate engaged after ${afterS.toFixed(1)} s`;
+        console.info(line);
+        arToast.show(line);
+        store.dispatch(
+          recordDiagnostic({
+            kind: "ar-elevation-estimate-engaged",
+            atMs: nowEpochMs(),
+            detail: { afterS },
+          }),
+        );
       },
       // WHETHER THE ENTRY REBUILD HAS SETTLED (DEC-M1). The entry veil holds
       // until this says yes, so the user never meets the city built for the
@@ -1791,10 +1829,23 @@ async function main(): Promise<void> {
           aligned ? undefined : "no alignment",
           contentReady ? undefined : "no content",
         ].filter((part) => part !== undefined);
-        arToast.show(
+        const line =
           held.length === 0
             ? `Entry ready after ${afterS.toFixed(1)} s`
-            : `Entry gave up waiting after ${afterS.toFixed(1)} s (${held.join(", ")})`,
+            : `Entry gave up waiting after ${afterS.toFixed(1)} s (${held.join(", ")})`;
+        // The console copy survives toast supersession — see the comment on
+        // `onEstimateEngaged` above.
+        console.info(line);
+        arToast.show(line);
+        // BOTH FLAGS TRAVEL WITH THE TIME, for the reason `onEntryReady` gives:
+        // the duration alone cannot distinguish "ready at 2 s" from "gave up at
+        // the ceiling", and that distinction is the entire measurement.
+        store.dispatch(
+          recordDiagnostic({
+            kind: "ar-entry-ready",
+            atMs: nowEpochMs(),
+            detail: { afterS, aligned, contentReady },
+          }),
         );
       },
       // THE AUTO ELEVATION OFFSET (plan §2.6). Presence is the switch: the

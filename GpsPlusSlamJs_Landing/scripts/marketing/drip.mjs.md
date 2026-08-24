@@ -36,6 +36,13 @@ else, which today is everything).
   otherwise read as if the interval guard were enforced; the fix (append the
   send time, return the updated history, persist it atomically, and decide how
   a mid-batch transport failure keeps the ids already sent) is filed, not done.
+  - **The other half of that honesty (PR #338 review): a `--post` run now
+    REQUIRES `--history`.** Omitting the flag handed `selectDue` the `{}`
+    fallback, which reads as "never posted anything" — every rate limit
+    passed at once, including the 21-day reddit/hackernews intervals, with
+    only the per-run `served` set between a typo and simultaneous posts on
+    every channel. `requireHistoryForPost` throws instead; a dry run stays
+    allowed, since it sends nothing.
 
 ## Tests
 

@@ -409,6 +409,16 @@ export class MeshBuilder {
     // top — leaving the array longer than the positions by exactly the appended
     // mesh. Caught by the alignment test, which is why it exists.
     if (mesh.colours !== undefined) {
+      // The SAME cursor invariant as the normals guard above: `cxLen` and
+      // `pxLen` are independent write cursors, so a colours array that is not
+      // exactly positions-length desynchronises them permanently — every later
+      // vertex writes its RGB at the wrong offset, and three.js reads the
+      // mismatched buffer as a short/long attribute rather than an error.
+      if (mesh.colours.length !== mesh.positions.length) {
+        throw new Error(
+          `MeshBuilder.append: colours (${mesh.colours.length}) must match positions (${mesh.positions.length})`,
+        );
+      }
       this.ensureColours();
       const colours = grownF32(
         this.cx as Float32Array,

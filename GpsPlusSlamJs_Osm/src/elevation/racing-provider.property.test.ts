@@ -157,7 +157,13 @@ describe("racingProvider, over arbitrary answers and arrival orders", () => {
           const racer = racingProvider(
             provider("preferred", preferredResult, preferredDelay),
             provider("fast", fastResult, fastDelay),
-            { onUpgrade: (_positions, heights) => delivered.push(heights) },
+            {
+              // Braced so nothing is returned: `push` returns a number, and
+              // `onUpgrade`'s return is now a verdict (`boolean | void`).
+              onUpgrade: (_positions, heights) => {
+                delivered.push(heights);
+              },
+            },
           );
 
           await racer.elevationAt(POSITIONS);
