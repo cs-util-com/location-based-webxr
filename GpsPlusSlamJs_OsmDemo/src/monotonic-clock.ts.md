@@ -8,6 +8,13 @@ One monotonic millisecond clock, used by every stage timer in the demo.
 
 - `nowMs(): number` — `performance.now()`, or `Date.now()` where there is no
   `performance` global.
+- `nowEpochMs(): number` — `performance.timeOrigin + performance.now()` (or
+  `Date.now()` under the same fallback): an ABSOLUTE epoch reading from the
+  monotonic clock. Reserved for the two places an absolute origin is genuinely
+  needed — the worker queue wait (a cross-boundary comparison) and the
+  diagnostics notes (timestamps that outlive the page, read back out of a
+  recording zip). Deliberately coarse (0.1–1 ms timing-attack rounding), so
+  never for a sub-millisecond stage.
 
 ## Invariants & assumptions
 

@@ -34,9 +34,12 @@ export function nowMs(): number {
  * `timeOrigin + now()` is a timeline BOTH SIDES SHARE, unlike `now()` alone,
  * which is relative to a different origin in each.
  *
- * **Use it only where a cross-boundary comparison is genuinely needed** — today
- * that is exactly one thing, the worker queue wait (post → dispatch), which no
- * single-sided duration can express. Everything else stays a duration measured
+ * **Use it only where an absolute origin is genuinely needed.** Today that is
+ * two things: the worker queue wait (post → dispatch), a cross-boundary
+ * comparison no single-sided duration can express; and the diagnostics notes
+ * (`recordDiagnostic` in `main.ts`), timestamps that OUTLIVE the page — read
+ * back months later out of a recording zip, where only an epoch value can be
+ * placed on the session timeline. Everything else stays a duration measured
  * wholly on one side, because that needs no shared origin and cannot be wrong
  * about one.
  *
