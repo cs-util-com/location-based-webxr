@@ -173,7 +173,7 @@ export interface SlamAppStoreOptions<
 
   /**
    * Additional slice prefixes to persist beyond the framework built-ins
-   * (`gpsData`, `recording`). Pass caller-owned slice names derived from
+   * (`gpsData`, `recording`, `diagnostics`). Pass caller-owned slice names derived from
    * the slice itself — e.g. `slicePrefixOf(addRefPointEntry.type)` or
    * `refPointsSlice.name` — never a hand-typed literal, so a rename can
    * never silently drop the slice's actions from recordings.
