@@ -171,6 +171,13 @@ export function createGpsRegistration<TStore, TPose>(
    * The `handler === undefined` half of the check is not redundant — it catches
    * a stop that happened with no intervening start, where the counter is
    * unchanged.
+   *
+   * RELATED BUT NOT THE SAME AS `latest-only.ts`, which six cycle modules use.
+   * That wraps an async FUNCTION and discards all but the newest call's result;
+   * this guards a callback that fires later against an identity that has since
+   * changed. Cousins, not twins — recorded here rather than merged, so the next
+   * reader finds the shared helper and can judge for themselves (2026-08-24
+   * duplicated-helper review).
    */
   let startGeneration = 0;
 

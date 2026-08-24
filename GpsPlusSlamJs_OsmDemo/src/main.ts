@@ -1380,6 +1380,11 @@ async function main(): Promise<void> {
    * Bumped by every press, and captured by the entry pass's own `finally`, so a
    * pass belonging to an abandoned entry cannot mark a later one ready. See the
    * capture site in `startWalking` for the failure it prevents.
+   *
+   * The same shape as `gps-registration.ts`'s `startGeneration`, and a cousin
+   * of `latest-only.ts` — which wraps an async function rather than guarding a
+   * later callback, so it does not fit here. Cross-referenced rather than
+   * merged (2026-08-24 duplicated-helper review).
    */
   let arEntryGeneration = 0;
 
