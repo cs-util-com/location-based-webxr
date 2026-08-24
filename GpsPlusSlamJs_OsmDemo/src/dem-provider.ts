@@ -11,11 +11,13 @@
  * `decodePng`, `fetchImpl`) makes exactly that testable; the worker supplies
  * the browser-only pieces.
  *
- * WHY FALLBACK, NOT CONSENSUS. Mapterhorn is national LiDAR (with Copernicus
+ * WHY PRECEDENCE, NOT CONSENSUS. Mapterhorn is national LiDAR (with Copernicus
  * GLO-30 where none exists) against the AWS tiles' ~30 m SRTM/NED posting — a
- * strictly better source wherever it has data. `fallbackProvider`'s own header
- * carries the argument: a two-source median degenerates to their average and
- * throws the resolution advantage away, so precedence is the right shape here.
+ * strictly better source wherever it has data. The full argument (a two-source
+ * median degenerates to their average and throws the resolution advantage
+ * away) lives in `racing-provider.ts`, the composition this file actually
+ * builds; this paragraph used to attribute it to `fallbackProvider`, which
+ * this file no longer constructs (PR #329 review).
  *
  * WHY ONE `createCachingTileFetch` FOR BOTH. The cache keys are full request
  * URLs, so the two sources cannot collide — and one wrapper means one stats
@@ -47,10 +49,12 @@ import type { AttributionEntry } from "./attribution-view.js";
  *
  * COMPOSED, NOT PER-SAMPLE: the `ElevationProvider` seam returns heights with
  * no per-position provenance, so which of the two sources answered a given
- * post is not observable here. What IS observable is the aggregate — the
- * returned provider's `stats` counts positions per source, which is how the
- * HUD reports the primary's share. See the sidecar before inventing
- * per-sample tracking.
+ * post is not observable here. What IS observable is which source's answer
+ * the CURRENT heights came from — `RacingProviderStats.servedBy`, which is
+ * what the AR readout prints. (This doc used to claim per-source position
+ * counts and a "primary's share" ratio — precisely the partition
+ * `RacingProviderStats` was written to refuse; PR #329 review.) See the
+ * sidecar before inventing per-sample tracking.
  */
 export const DEM_SOURCE_ID = "mapterhorn+terrarium";
 

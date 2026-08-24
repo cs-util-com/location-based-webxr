@@ -13,12 +13,13 @@
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='40' fill='%23ef4444'/%3E%3Ccircle cx='50' cy='50' r='15' fill='%23fff'/%3E%3C/svg%3E"
       type="image/svg+xml"
     />
-    <!-- Leaflet's CSS and Tailwind are imported from `src/main.ts`, not linked
-         here: both need Vite to resolve an import, which a raw <link> cannot do
-         (it 500s in dev and renders the app unstyled). They come from the local
-         `leaflet` and `tailwindcss` packages rather than a CDN — see
-         `styles/tailwind.css` for what the CDN cost when it was slow. -->
-    <!-- App styles (behavioral CSS + log/legend colors) -->
+    <!-- Styles are LINKED here as local files under /styles/ — Tailwind's
+         build output, a vendored Leaflet CSS, and the app's own — never a CDN
+         (see `styles/tailwind.css` for what the CDN cost when it was slow).
+         `no-external-page-assets.test.ts` pins exactly these link tags. This
+         comment claimed the opposite ("imported from src/main.ts, not linked")
+         until the PR #329 review caught the leftover from an earlier attempt
+         at the swap. -->
     <link rel="stylesheet" href="/styles/tailwind.css" />
     <link rel="stylesheet" href="/styles/leaflet.css" />
     <link rel="stylesheet" href="/styles/app.css" />

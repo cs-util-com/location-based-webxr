@@ -35,7 +35,14 @@ export interface RacingProviderStats {
   preferredWins: number;
   /** Batches the fast source published first. */
   fastWins: number;
-  /** Batches where neither source had usable data. */
+  /**
+   * Batches that published nothing: neither source had usable data, **or**
+   * the publish deadline expired before either answered. The second kind — a
+   * source whose usable answer simply arrived late — usually turns into an
+   * `upgrades` shortly afterwards, and the AR readout and milestone docs are
+   * read against these counters, so the distinction is stated rather than
+   * folded in (PR #329 review).
+   */
   emptyBatches: number;
 }
 
