@@ -1189,7 +1189,7 @@ async function main(): Promise<void> {
   // locate button and the site picker recentre on the user. Every one of those
   // raises `moveend`, and a blanket rule would fire on them and re-aim at ground
   // level — undoing a fix made in the PR #344 review.
-  // ⚠️ ARMED ON `dragstart` AND NOTHING ELSE. The first version also armed on
+  // ⚠️ ARMED ON `dragend` AND NOTHING ELSE. The first version also armed on
   // `zoomstart`, to cover a drag that becomes a pinch — and that was a
   // regression, caught by the milestone review and then measured: Leaflet
   // raises `moveend` for a ZOOM as well as for a pan, so every wheel or button
@@ -1199,11 +1199,20 @@ async function main(): Promise<void> {
   // routinely — a map click recentres the camera without moving the map, a 3D
   // drag moves the target without moving the map.
   //
+  // `dragend`, not `dragstart` (PR #347 review): a latch armed for the whole
+  // gesture was stolen by any programmatic `moveend` landing mid-drag — the
+  // locate fix arriving while the user dragged consumed it, re-aiming the
+  // camera at the recentre AND ignoring the drag when it ended. Leaflet fires
+  // `dragend` before both `moveend` branches (direct, and via the inertia
+  // glide), so the drag's own `moveend` still finds the latch armed and the
+  // centre is still read inertia-safe on `moveend`, never at `dragend`.
+  //
   // The pinch case is the accepted cost and is smaller: the camera lands on the
   // centre at the moment the second finger arrived rather than on the final
-  // one. `boot-and-shell.spec.js` guards both halves.
+  // one (`Draggable.finishDrag` fires `dragend` there too). `boot-and-shell.spec.js`
+  // guards both halves.
   const mapDrag = createMapDragLatch();
-  mapView.map.on("dragstart", () => {
+  mapView.map.on("dragend", () => {
     mapDrag.gestureStarted();
   });
   //

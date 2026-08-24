@@ -51,6 +51,21 @@ describe("the map drag latch (DEC-L4)", () => {
     expect(latch.moveEnded()).toBe(false);
   });
 
+  it("is not stolen by a programmatic move that lands mid-drag", () => {
+    // The PR #347 review finding, as a sequence: the user presses locate, the
+    // fix takes seconds, the user drags while waiting. Armed on `dragstart`,
+    // the locate's `centreOn` fired `moveend` first, consumed the latch (the
+    // camera re-aimed by the RECENTRE), and the drag's own end found the latch
+    // clear (the DRAG not followed) — both halves inverted. Armed on
+    // `dragend`, the programmatic `moveend` arrives while unarmed and the
+    // drag's own `moveend` still reads true.
+    const latch = createMapDragLatch();
+
+    expect(latch.moveEnded()).toBe(false); // centreOn's moveend, mid-drag
+    latch.gestureStarted(); // the drag's dragend
+    expect(latch.moveEnded()).toBe(true); // the drag's own moveend
+  });
+
   it("can be armed again for the next gesture", () => {
     // The ordinary case: a user drags, looks, drags again.
     const latch = createMapDragLatch();
