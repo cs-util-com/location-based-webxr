@@ -134,16 +134,38 @@ if (lockDecision.action === 'acquire' || lockDecision.action === 'steal') {
   const runId = `${process.pid}-${Date.now().toString(36)}`;
   try {
     mkdirSync(path.dirname(lockFile), { recursive: true });
-    writeLock(lockFile, {
-      runId,
-      pid: process.pid,
-      project: project.name,
-      startedAt: Date.now(),
-    });
+    // EXCLUSIVE on `acquire`: read-decide-write is not atomic, so two gates
+    // starting within milliseconds both saw an empty slot and both "won" —
+    // the first to finish then cleared the lock from under the survivor.
+    // `flag: 'wx'` makes the filesystem the arbiter; `steal` keeps the plain
+    // overwrite, having already established the owner is gone (PR #338
+    // review).
+    writeLock(
+      lockFile,
+      {
+        runId,
+        pid: process.pid,
+        project: project.name,
+        startedAt: Date.now(),
+      },
+      { exclusive: lockDecision.action === 'acquire' },
+    );
     ownsLock = true;
   } catch (error) {
-    // A tree where the lock cannot be written is not a tree where the gate
-    // should refuse to run; the guard degrades to absent rather than fatal.
+    const code = /** @type {NodeJS.ErrnoException} */ (error).code;
+    if (lockDecision.action === 'acquire' && code === 'EEXIST') {
+      // Someone else won the race between our read and our write. This is a
+      // REFUSAL, not a degrade-to-absent: the other run is live and about to
+      // rewrite dist/, which is exactly what the lock exists to prevent.
+      console.error(
+        `\n✖ another gate acquired the lock first (${lockFile}); ` +
+          `re-run when it finishes.`,
+      );
+      process.exit(1);
+    }
+    // Any other failure: a tree where the lock cannot be written is not a
+    // tree where the gate should refuse to run; the guard degrades to absent
+    // rather than fatal.
     console.warn(`test-timing: could not take the gate lock: ${String(error)}`);
   }
   // Children inherit this and re-enter instead of competing — see gate-lock.mjs.

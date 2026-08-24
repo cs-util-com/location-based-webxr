@@ -47,8 +47,11 @@ insofar as an orphan's parent is gone, so its lock is reclaimable.
   throwing, `ESRCH` means dead and `EPERM` means alive, and an inline version
   that treated every throw as "alive" made stale locks unreclaimable. Injected
   probes in the tests cannot catch that, so the probe has its own tests.
-- `readLock(file)` / `writeLock(file, record)` / `clearLock(file)` — I/O.
-  `readLock` returns `null` for absent, truncated, or hand-edited files.
+- `readLock(file)` / `writeLock(file, record, { exclusive? })` /
+  `clearLock(file)` — I/O. `readLock` returns `null` for absent, truncated, or
+  hand-edited files. With `exclusive`, `writeLock` uses `flag: 'wx'` so the
+  write itself is the acquisition — it throws `EEXIST` if someone won the
+  race.
 - `lockPath(workspaceRoot)` → `node_modules/.cache/.gate-run.lock`
 - Constants: `GATE_RUN_ENV`, `GATE_ALLOW_CONCURRENT_ENV`, `MAX_LOCK_AGE_MS`,
   `LOCK_FILE_NAME`
@@ -61,13 +64,15 @@ insofar as an orphan's parent is gone, so its lock is reclaimable.
   that spawned it and release it on its own exit, leaving the remaining ~20
   minutes unprotected. Enforced by a property test.
 - **A live, recent, independently-owned lock is refused**, once it is on disk.
-  Also a property test — this is the guarantee the module exists for. The read
-  and the write are NOT atomic, so two runs starting within the same few
-  milliseconds can both see no lock and both acquire; the scenario this module
-  targets — a second cascade started minutes into the first — is unaffected, and
-  the fix (`writeFileSync(..., { flag: 'wx' })`, re-read and re-decide on
-  `EEXIST`) is filed rather than done. Stated here because the guarantee above
-  would otherwise read as unconditional.
+  Also a property test — this is the guarantee the module exists for.
+  - **And the simultaneous-start race is closed too (PR #338 review).** The
+    read and the decision are still not atomic, but the WRITE now is:
+    `run-gate.mjs` acquires with `exclusive`, so of two runs that both saw an
+    empty slot only one lands its record — the loser gets `EEXIST` and refuses
+    with a message naming the lock, instead of both believing they own it and
+    the first finisher clearing the lock from under the survivor. `steal`
+    keeps the plain overwrite, having already established the owner is gone;
+    every other write failure still degrades to absent, never to fatal.
 - **Re-entrancy travels by environment.** The outermost run writes
   `GATE_RUN_ID` into `process.env`; `run-stage.mjs` spawns children with
   `{ ...process.env }`, so they inherit it. A child whose inherited id does not
