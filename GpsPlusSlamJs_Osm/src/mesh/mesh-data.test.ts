@@ -433,4 +433,26 @@ describe("MeshBuilder buffer growth", () => {
       }),
     ).toThrow(/normals/);
   });
+
+  it("rejects a mesh whose colours do not match its positions", () => {
+    // Colours carry the SAME cursor invariant as normals: `cxLen` and `pxLen`
+    // are independent write cursors, so a colours array that is not exactly
+    // positions-length desynchronises them permanently — every later vertex
+    // writes its RGB at the wrong offset, and `build()` returns a colours
+    // buffer three.js reads as a short/long attribute rather than an error,
+    // painting the wrong faces. The reasoning that rejects mismatched normals
+    // at the boundary applies unchanged; only the guard was missing. Found by
+    // claude[bot] review on PR #339.
+    const target = new MeshBuilder();
+    expect(() =>
+      target.append({
+        positions: new Float32Array(9),
+        normals: new Float32Array(9),
+        colours: new Float32Array(6),
+        indices: new Uint32Array(0),
+        triangleCount: 0,
+        forcedEars: 0,
+      }),
+    ).toThrow(/colours/);
+  });
 });

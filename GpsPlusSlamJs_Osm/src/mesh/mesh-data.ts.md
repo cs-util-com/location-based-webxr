@@ -69,6 +69,11 @@ What a mesh IS — the buffer type and the builder that accumulates one.
   Positions and normals share one write cursor, so a mismatch would misalign
   every vertex after the join. The old element-wise loop wrote `NaN` normals
   instead — equally wrong and harder to trace back to here.
+- **And a mesh whose colours do not match its positions, for the same reason**
+  (PR #339 review). `cxLen` and `pxLen` are independent write cursors, so a
+  mismatched colours array desynchronises them permanently: every later vertex
+  writes its RGB at the wrong offset, and three.js reads the short/long buffer
+  as a plausible attribute — the wrong faces painted, no error anywhere.
 - **Typed arrays, so results TRANSFER across a worker boundary** rather than
   being copied — §4.2 asks for this explicitly, and it matters at building
   counts.
@@ -180,5 +185,5 @@ values survive repeated doublings, that the index buffer grows independently of
 the vertex buffer, that colours stay aligned across a growth boundary and that a
 late `paint` backfills white only to the written prefix, that a mesh larger than
 the target's whole capacity appends intact, that indices are re-based by the
-vertex cursor rather than the buffer length, and that mismatched normals are
-rejected.
+vertex cursor rather than the buffer length, and that mismatched normals and
+mismatched colours are rejected.
