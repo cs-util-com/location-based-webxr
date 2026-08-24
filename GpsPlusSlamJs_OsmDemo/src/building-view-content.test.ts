@@ -128,6 +128,22 @@ describe("BuildingView routes AR content through the content root", () => {
       ).toBe(true);
     }
   });
+
+  it("frees the beacons on teardown, after the frame is cancelled", () => {
+    // The symmetric half of the attachment guard above. The beacons hang off
+    // `this.content`, so the scene-level teardown never sees them, and
+    // `quest-beacon.test.ts` exercises `dispose()` in isolation — which is
+    // exactly why the missing CALL stayed green until the PR #342 review
+    // caught it; without this guard it is exactly as droppable again (PR #343
+    // review). The ordering half keeps the file's own "Cancelled FIRST" claim
+    // and `building-view.ts.md`'s teardown invariant true — inert in effect
+    // today, because `dispose()` is synchronous and no queued frame can
+    // interleave, but a guard that pins the call may as well pin the order
+    // the docs promise.
+    expect(SOURCE).toMatch(
+      /dispose\(\): void \{[\s\S]*?this\.frame = undefined;[\s\S]*?this\.questBeacons\.dispose\(\)/,
+    );
+  });
 });
 
 describe("the demo store keeps its devtools summariser wired", () => {

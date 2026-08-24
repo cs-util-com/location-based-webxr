@@ -807,6 +807,23 @@ export class BuildingView {
   }
 
   /**
+   * Show a beacon for every held quest, or none at all.
+   *
+   * A PUBLIC METHOD BECAUSE `content` IS PRIVATE, and deliberately so — the
+   * AR content seam is guarded by source text in
+   * `building-view-content.test.ts`, and a caller reaching into the scene
+   * graph directly would route around that guard entirely.
+   *
+   * REPAINTS, because the demo has no permanent render loop (DEC-R3-9). A
+   * marker added between frames would appear only when something else
+   * happened to request one — which, on a still desktop view, can be never.
+   */
+  setQuestBeacons(placements: readonly QuestBeaconPlacement[]): void {
+    this.questBeacons.set(placements);
+    this.requestFrame();
+  }
+
+  /**
    * Move how far the view draws (r541 Q9/Q10, owner decision 2026-08-21).
    *
    * **THE FOG MOVES WITH IT, and that is why this is a method rather than a
@@ -839,23 +856,6 @@ export class BuildingView {
    * and raises no error -- which reads as 'the 3D view is empty' and is
    * indistinguishable from half a dozen other causes.
    */
-  /**
-   * Show a beacon for every held quest, or none at all.
-   *
-   * A PUBLIC METHOD BECAUSE `content` IS PRIVATE, and deliberately so — the
-   * AR content seam is guarded by source text in
-   * `building-view-content.test.ts`, and a caller reaching into the scene
-   * graph directly would route around that guard entirely.
-   *
-   * REPAINTS, because the demo has no permanent render loop (DEC-R3-9). A
-   * marker added between frames would appear only when something else
-   * happened to request one — which, on a still desktop view, can be never.
-   */
-  setQuestBeacons(placements: readonly QuestBeaconPlacement[]): void {
-    this.questBeacons.set(placements);
-    this.requestFrame();
-  }
-
   setFarPlane(farPlaneM: number): void {
     if (!Number.isFinite(farPlaneM) || farPlaneM <= 0) return;
     this.camera.far = farPlaneM;
@@ -2200,16 +2200,18 @@ export class BuildingView {
   }
 
   dispose(): void {
-    // THE BEACONS OWN THREE GEOMETRIES AND A MATERIAL, and nothing else frees
-    // them: they hang off `this.content`, so the scene-level teardown below
-    // never sees them, and `quest-beacon.test.ts` exercises `dispose()` in
-    // isolation — which is exactly why the missing call here stayed green.
-    // Caught by the PR #342 review.
-    this.questBeacons.dispose();
     // Cancelled FIRST: a frame already queued would otherwise fire against a
     // disposed context, which crashes rather than leaks.
     if (this.frame !== undefined) cancelAnimationFrame(this.frame);
     this.frame = undefined;
+    // THE BEACONS OWN THREE GEOMETRIES AND A MATERIAL, and nothing else frees
+    // them: they hang off `this.content`, so the scene-level teardown below
+    // never sees them, and `quest-beacon.test.ts` exercises `dispose()` in
+    // isolation — which is exactly why the missing call here stayed green.
+    // Caught by the PR #342 review; ordered after the cancellation so
+    // "cancelled FIRST" stays literally true (PR #343 review), and pinned —
+    // call and order — by `building-view-content.test.ts`.
+    this.questBeacons.dispose();
     this.container.removeEventListener("pointerdown", this.onPointerStart);
     this.container.removeEventListener("pointerup", this.onPointerDown);
     this.controls.dispose();
