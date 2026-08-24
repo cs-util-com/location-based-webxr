@@ -61,13 +61,29 @@ export async function triggerDeploy({ hookUrl, fetchImpl = fetch }) {
     // REDACTED, not merely "not added". Node's fetch failures embed the URL
     // they were given (`connect ECONNREFUSED for https://…/deploy/<secret>`),
     // so passing the cause's message through verbatim leaks the credential
-    // into exactly the logs that get pasted into issues. The cause object is
-    // still attached for a debugger; only the rendered message is scrubbed.
+    // into exactly the logs that get pasted into issues.
+    //
+    // AND THE CAUSE IS A REDACTED CLONE, not the raw error (PR #332 review):
+    // Node prints the whole cause chain — for an uncaught exception and for
+    // `console.error(err)` — and this module's real call sites let the error
+    // escape, so a raw `{ cause }` printed the unredacted message right under
+    // the redacted one. The clone keeps the original stack (scrubbed) so a
+    // debugger still sees where the failure came from; only the secret is
+    // gone.
     const detail = cause instanceof Error ? cause.message : String(cause);
+    const scrubbedCause = new Error(redact(detail, hookUrl));
+    if (cause instanceof Error && cause.stack) {
+      scrubbedCause.stack = redact(cause.stack, hookUrl);
+    }
+    // Deliberate rule break: the caught error's message and stack embed the
+    // secret hook URL, so the cause is a scrubbed clone, not the original
+    // (PR #332 review).
+    /* eslint-disable preserve-caught-error */
     throw new Error(
       `triggerDeploy: deploy hook request failed: ${redact(detail, hookUrl)}`,
-      { cause },
+      { cause: scrubbedCause },
     );
+    /* eslint-enable preserve-caught-error */
   }
 
   if (!response.ok) {
