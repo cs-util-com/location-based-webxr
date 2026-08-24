@@ -89,8 +89,14 @@ test.describe('Toast', () => {
   test('goes away on its own, against a real clock', async ({ page }) => {
     // The unit suite drives this with fake timers, which cannot show that the
     // timer is armed against the real event loop at all.
+    //
+    // 2 s, not shorter: `toBeVisible` has to win a race against the toast's
+    // own removal, and on a loaded runner the evaluate round-trip plus locator
+    // resolution is not bounded. When the budget loses, the failure blames the
+    // code under test ("the toast never appeared") for a harness stall. Both
+    // assertions stay condition-based, so the test is no slower in practice.
     await page.evaluate(() => {
-      window.testHooks?.showToast('Brief', { duration: 700 });
+      window.testHooks?.showToast('Brief', { duration: 2_000 });
     });
 
     const toast = page.locator('#toast-container');
