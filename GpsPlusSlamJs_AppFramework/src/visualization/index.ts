@@ -175,3 +175,69 @@ export {
 
 // --- vis-colors ---
 export { VIS_COLORS } from './vis-colors.js';
+
+// --- clamp ---
+export { clamp01 } from './clamp.js';
+
+// --- panel-geometry (UV rectangles + hit test) ---
+export { type Rect, contains } from './panel-geometry.js';
+
+// --- canvas-panel (canvas draw helpers) ---
+export { toPx, roundRect } from './canvas-panel.js';
+
+// --- billboard-math (face-the-user yaw) ---
+export { type HorizontalPoint, computeBillboardYaw } from './billboard-math.js';
+
+// --- tap-gate (tap-vs-drag predicate) ---
+export { type PointerSample, isTap } from './tap-gate.js';
+
+// --- pointer-tap-picker (tap-gated raycast picking) ---
+export {
+  type PointerTapPickerTargetOptions,
+  createPointerTapPicker,
+} from './pointer-tap-picker.js';
+
+// --- playback-transport (pure transport reducer) ---
+export {
+  type TransportState,
+  type TransportAction,
+  INITIAL,
+  transportReducer,
+  isActive,
+  isPlaying,
+  progressFraction,
+} from './playback-transport.js';
+
+// --- panel-layout (in-world transport-panel UV layout) ---
+export {
+  type PanelLayout,
+  type PanelTapAction,
+  DEFAULT_PANEL_LAYOUT,
+  hitToAction,
+} from './panel-layout.js';
+
+// --- transport-reconcile (transport-model <-> audio-element reconcile) ---
+export {
+  type PlayerSnapshot,
+  type ReconcileCommands,
+  reconcilePlayer,
+} from './transport-reconcile.js';
+
+// --- audio-player (spatialized HTMLAudioElement wrapper) ---
+export { type AudioPlayer, createAudioPlayer } from './audio-player.js';
+
+// --- transport-panel-view (in-world transport-panel canvas view) ---
+export {
+  type TransportPanel,
+  createTransportPanel,
+} from './transport-panel-view.js';
+
+// --- billboard-interaction (billboard pointer-pick classification) ---
+export { createBillboardInteraction } from './billboard-interaction.js';
+
+// --- clickable-billboard (clickable cylindrical AR billboard) ---
+export {
+  type BillboardUserData,
+  type ClickableBillboard,
+  createClickableBillboard,
+} from './clickable-billboard.js';
