@@ -110,6 +110,20 @@ describe("the AR entry readiness gate is wired into main.ts (DEC-M1)", () => {
     // months later, out of a zip.
     expect(CODE).toMatch(/atMs: nowEpochMs\(\)/);
   });
+
+  it("gives each measurement a console copy that survives toast supersession", () => {
+    // Both instruments share ONE single-slot toast, and show() clears the
+    // previous message — so whichever fires second evicts the first, and both
+    // docstrings make ABSENCE data ("no toast in a whole session means the
+    // estimator never engaged"). A superseded stamp and a never-fired one are
+    // indistinguishable to the field observer, so the wrong negative the
+    // instruments exist to avoid comes back. The console line is strictly
+    // additive: unreadable in the field, but the only copy that survives
+    // supersession, recoverable with a cable — and the diagnostics note is
+    // inert in this demo (NullStorageBackend). Found by claude[bot] review on
+    // PR #349.
+    expect(CODE.match(/console\.info\(line\)/g)).toHaveLength(2);
+  });
 });
 
 describe("the quest marks are re-derived with the terrain field (DEC-M4)", () => {

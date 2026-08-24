@@ -1775,16 +1775,23 @@ async function main(): Promise<void> {
       // engage while a user STANDS STILL. DEC-L2's 12 s fly-in was argued partly
       // from that number, and nobody has ever measured it.
       //
-      // A TOAST, not `console.info`. The measurement has to be taken in the
-      // field, on a phone, where a console line needs a cable and a laptop —
-      // i.e. where it would never actually be read. The AR readout's row is
+      // A TOAST FIRST, because the measurement has to be taken in the field,
+      // on a phone, where a console line needs a cable and a laptop — i.e.
+      // where it would never actually be read. The AR readout's row is
       // width-constrained (DEC-J8), so a transient line is also the only place
       // this fits. Same reasoning as DEC-K6's trust-gate acknowledgement.
       //
       // AND ITS ABSENCE IS THE OTHER HALF OF THE MEASUREMENT: no toast in a
-      // whole session means the estimator never engaged at all.
+      // whole session means the estimator never engaged at all. Which is why
+      // the console copy below is not redundant: this stamp and the entry
+      // stamp share ONE single-slot toast, so whichever fires second evicts
+      // the first, and a superseded stamp would read as that false "never
+      // engaged". The console line survives supersession (PR #349 review);
+      // the diagnostics note is the durable copy, inert in this demo today.
       onEstimateEngaged: (afterS) => {
-        arToast.show(`Elevation estimate engaged after ${afterS.toFixed(1)} s`);
+        const line = `Elevation estimate engaged after ${afterS.toFixed(1)} s`;
+        console.info(line);
+        arToast.show(line);
         store.dispatch(
           recordDiagnostic({
             kind: "ar-elevation-estimate-engaged",
@@ -1813,11 +1820,14 @@ async function main(): Promise<void> {
           aligned ? undefined : "no alignment",
           contentReady ? undefined : "no content",
         ].filter((part) => part !== undefined);
-        arToast.show(
+        const line =
           held.length === 0
             ? `Entry ready after ${afterS.toFixed(1)} s`
-            : `Entry gave up waiting after ${afterS.toFixed(1)} s (${held.join(", ")})`,
-        );
+            : `Entry gave up waiting after ${afterS.toFixed(1)} s (${held.join(", ")})`;
+        // The console copy survives toast supersession — see the comment on
+        // `onEstimateEngaged` above.
+        console.info(line);
+        arToast.show(line);
         // BOTH FLAGS TRAVEL WITH THE TIME, for the reason `onEntryReady` gives:
         // the duration alone cannot distinguish "ready at 2 s" from "gave up at
         // the ceiling", and that distinction is the entire measurement.
