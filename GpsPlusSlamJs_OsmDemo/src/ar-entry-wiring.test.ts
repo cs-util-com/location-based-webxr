@@ -98,8 +98,13 @@ describe("the AR entry readiness gate is wired into main.ts (DEC-M1)", () => {
     expect(CODE).toMatch(/kind: "ar-elevation-estimate-engaged"/);
     // BOTH FLAGS WITH THE TIME. `afterS` alone cannot distinguish "ready at
     // 2 s" from "gave up at the ceiling", which is the whole measurement.
+    // The fields are matched independently rather than as one rendered object
+    // literal: `detail: \{ afterS, aligned, contentReady \}` asserted
+    // Prettier's CURRENT one-line formatting, so a fourth field or deeper
+    // indentation would reflow the object and fail this on a change that is
+    // strictly correct. A dropped flag still fails.
     expect(CODE).toMatch(
-      /kind: "ar-entry-ready",[\s\S]{0,200}?detail: \{ afterS, aligned, contentReady \}/,
+      /kind: "ar-entry-ready",[\s\S]{0,200}?detail: \{[\s\S]{0,200}?afterS[\s\S]{0,200}?aligned[\s\S]{0,200}?contentReady/,
     );
     // AN ABSOLUTE TIMELINE, not the XR frame clock: the note is read back
     // months later, out of a zip.
