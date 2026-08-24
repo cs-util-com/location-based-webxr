@@ -28,6 +28,7 @@
  * @see event-label.ts.md
  */
 
+import { formatDistance as sharedFormatDistance } from "gps-plus-slam-app-framework/utils/format-distance";
 import type { GeoEvent, LatLng } from "gps-plus-slam-osm";
 
 /** The eight compass points, in bearing order from north. */
@@ -103,10 +104,12 @@ export function compassPoint(bearing: number): string {
  * bare metre count would imply precision the H3 quantisation does not have.
  */
 export function formatDistance(metres: number): string {
-  if (metres < 1000) {
-    return `${Math.max(0, Math.round(metres / 10) * 10)} m`;
-  }
-  return `${(metres / 1000).toFixed(1)} km`;
+  // The workspace's shared formatter (2026-08-24), with this app's rule:
+  // metres to the nearest 10, kilometres to one decimal. The step is the
+  // decision worth keeping - these distances come from a GPS fix and a tile
+  // centre, so a metre of apparent precision would be a claim the data does not
+  // support. `format-distance.test.ts` pins the output against the old body.
+  return sharedFormatDistance(metres, { metreStep: 10, metreDecimals: 0 });
 }
 
 /**

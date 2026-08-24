@@ -17,6 +17,7 @@
  */
 
 import * as THREE from 'three';
+import { formatDistance } from '../utils/format-distance.js';
 
 /** Indicator state for one target. */
 export type TargetPlacementState = 'hidden' | 'circle' | 'arrow';
@@ -132,7 +133,15 @@ const DEFAULT_EDGE_MARGIN = 0.9;
 
 /** Formats a numeric distance (meters) into a readable label, e.g. "1.5 m". */
 export function formatDistanceLabel(distance: number): string {
-  return `${distance.toFixed(1)} m`;
+  // Delegates to the workspace's one distance formatter (2026-08-24). The
+  // output is unchanged and `format-distance.test.ts` pins that differentially.
+  //
+  // `kilometreAboveM: null` keeps this label in metres at any range, which is
+  // what it always did. That is a real decision, not inertia: this is a
+  // world-space AR label on a target the user is walking to, and a target 1.5 km
+  // away is not a situation this HUD is for — switching units there would only
+  // make the common case read less consistently.
+  return formatDistance(distance, { kilometreAboveM: null });
 }
 
 /**
