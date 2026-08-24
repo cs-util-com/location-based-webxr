@@ -1651,6 +1651,35 @@ describe("the dom-overlay input contract (DEC-Y18)", () => {
       "beforexrselect was not cancelled, so a tap on the overlay also reaches the XR session",
     ).toBe(true);
   });
+
+  it("removes the listener when the AR prompt is dismissed", async () => {
+    // The listener registers BEFORE `initAR`, on the page-lifetime `#ar-root`,
+    // and the two early-return paths (the `initAR` catch — the path every
+    // dismissed permission prompt takes — and the scene-null guard) skipped
+    // `releaseXrSelect`, so one handler accumulated per declined entry for the
+    // life of the tab. Benign today (N idempotent preventDefault calls), which
+    // is precisely why it would have survived until it was not. Found by
+    // claude[bot] review on PR #338.
+    // A DETACHED container, deliberately: several earlier tests in this suite
+    // pass `container: document.body` and never end their sessions, so body
+    // carries exactly the accumulated stale handlers this test is about — a
+    // bubbling event dispatched under body would be prevented by one of THEM
+    // and hide the answer for this container.
+    initAR.mockRejectedValueOnce(new Error("no session"));
+    const container = document.createElement("div");
+
+    const d = deps({ container });
+    await startArMode(d);
+    expect(d.onError).toHaveBeenCalledWith("no session");
+
+    const event = new Event("beforexrselect", { cancelable: true });
+    container.dispatchEvent(event);
+
+    expect(
+      event.defaultPrevented,
+      "the beforexrselect handler outlived the failed AR start",
+    ).toBe(false);
+  });
 });
 
 describe("the AR entry fly-down (H5, Q5)", () => {

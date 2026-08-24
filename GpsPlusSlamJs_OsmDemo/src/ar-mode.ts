@@ -707,6 +707,11 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     // by dismissing the AR permission prompt, so leaving an opaque child here
     // would black out the desktop app on a refusal.
     session.entryDomVeil?.remove();
+    // AND THE `beforexrselect` LISTENER, registered before `initAR` on the
+    // page-lifetime `#ar-root`. This is the path every dismissed permission
+    // prompt takes, and skipping the release accumulated one handler per
+    // declined entry for the life of the tab (PR #338 review).
+    session.releaseXrSelect?.();
     void endARSession();
     deps.onError(
       error instanceof Error ? error.message : "Failed to start AR.",
@@ -724,8 +729,9 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
   if (scene === null || arWorldGroup === null || camera === null) {
     deps.onError("AR scene not ready.");
     // Same reasoning as the reject path above: `endARSession` clears the
-    // framework's canvas, not our overlay children.
+    // framework's canvas, not our overlay children — and not our listener.
     session.entryDomVeil?.remove();
+    session.releaseXrSelect?.();
     void endARSession();
     return NOOP_AR_MODE;
   }
