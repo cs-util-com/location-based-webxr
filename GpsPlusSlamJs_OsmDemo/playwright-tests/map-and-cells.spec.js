@@ -1209,6 +1209,13 @@ test.describe("the geo-event", () => {
     // assertion below holds whatever the width rule is.
     await page.setViewportSize({ width: 390, height: 780 });
 
+    // The hotkey list FIRST, before the picker can take focus into its input
+    // (`isTyping` would swallow the press there). It shares the bottom-left
+    // corner with the picker, and the non-overlap claim below is asserted
+    // rather than assumed.
+    await page.keyboard.press("?");
+    await expect(page.locator("#hotkey-help")).toBeVisible();
+
     await page.locator("#geo-event").click();
     await expect(page.locator("#geo-event-picker")).toBeVisible();
 
@@ -1278,6 +1285,18 @@ test.describe("the geo-event", () => {
     const toastBox = await toast.boundingBox();
     if (toastBox === null) throw new Error("no toast box");
     expect(overlaps(pickerBox, toastBox)).toBe(false);
+
+    // AND IT DOES NOT COVER THE HOTKEY LIST — the third occupant of this
+    // corner, and the one the picker's move dropped silently: the old
+    // bottom-right position carried the invariant "sits opposite the hotkey
+    // list so the two cannot cover each other", and the move re-argued the
+    // toast band and Leaflet's controls but not this. The list is rendered
+    // from `hotkeys.bindings()`, so EVERY future hotkey grows it by a row —
+    // this assertion is what turns the CSS offset from a measurement into a
+    // maintained claim. Caught by the PR #345 review.
+    const helpBox = await page.locator("#hotkey-help").boundingBox();
+    if (helpBox === null) throw new Error("no hotkey-help box");
+    expect(overlaps(pickerBox, helpBox)).toBe(false);
   });
 });
 
