@@ -429,14 +429,22 @@ export function createSlamAppStore<
     tracking: trackingReducer,
     trackingQuality: trackingQualityReducer,
   };
+  // Reserved WITHOUT a reducer: `diagnostics` deliberately has none (see
+  // `diagnostics-action.ts`), so it cannot sit in `builtins` — but its prefix
+  // is on the built-in persistence whitelist above, so a consumer slice with
+  // that name would have EVERY one of its actions silently written into
+  // recordings. A silent WRITE, the inverse of the silent drop the whitelist
+  // guards against, and invisible to the reducer-collision check alone.
+  const reservedPrefixOnlyKeys = [slicePrefixOf(recordDiagnostic.type)];
   if (extraReducers) {
+    const reserved = [...Object.keys(builtins), ...reservedPrefixOnlyKeys];
     const collisions = Object.keys(extraReducers).filter((key) =>
-      Object.prototype.hasOwnProperty.call(builtins, key)
+      reserved.includes(key)
     );
     if (collisions.length > 0) {
       throw new Error(
         `extraReducers must not overwrite framework-reserved slice(s): ` +
-          `${collisions.join(', ')}. Reserved keys: ${Object.keys(builtins).join(', ')}.`
+          `${collisions.join(', ')}. Reserved keys: ${reserved.join(', ')}.`
       );
     }
   }

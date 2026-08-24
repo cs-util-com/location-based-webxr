@@ -82,16 +82,22 @@ thin `createRecorderStore` that calls this factory with its own extras.
   keys; there is no bypass.
 - `extraReducers` keys must not collide with the framework-reserved slice keys
   (`gpsData`, `gpsElements`, `arElements`, `recording`, `tracking`,
-  `trackingQuality`). The factory **throws at construction** naming every
+  `trackingQuality`), **nor with `diagnostics`**, which is reserved without a
+  reducer: its prefix is on the built-in persistence whitelist, so a consumer
+  slice with that name would have every one of its actions silently written
+  into recordings — a silent WRITE, invisible to the reducer-collision check
+  alone (PR #350 review). The factory **throws at construction** naming every
   colliding key (2026-07-04, PR #17 review) — previously the spread silently
   replaced the built-in reducer, corrupting framework state with no diagnostic.
 - `extraMiddleware` is appended **after** the persistence middleware, so
   consumer middleware sees actions that have already been persisted.
 - **Persisted-action whitelist is slice-derived, not literal.** The factory
   builds the persistence middleware's `persistedPrefixes` from the actual
-  action creators: `slicePrefixOf(setZeroPos.type)` (`gpsData`) and
-  `slicePrefixOf(recordWriteFailure.type)` (`recording`), plus any
-  `persistedExtraPrefixes` the caller supplies. The recorder passes
+  action creators: `slicePrefixOf(setZeroPos.type)` (`gpsData`),
+  `slicePrefixOf(recordWriteFailure.type)` (`recording`) and
+  `slicePrefixOf(recordDiagnostic.type)` (`diagnostics`, the reducer-less
+  log-only notes — see [diagnostics-action.ts.md](diagnostics-action.ts.md)),
+  plus any `persistedExtraPrefixes` the caller supplies. The recorder passes
   `slicePrefixOf(addRefPointEntry.type)` (`refPoints`). Callers MUST derive
   these from the slice (never hand-type a literal) so a slice rename cannot
   silently drop its actions from recordings — see

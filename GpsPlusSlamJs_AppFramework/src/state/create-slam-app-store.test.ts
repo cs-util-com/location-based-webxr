@@ -95,6 +95,21 @@ describe('createSlamAppStore', () => {
       ).toThrow(/recording.*trackingQuality|trackingQuality.*recording/);
     });
 
+    it('rejects a consumer slice named diagnostics, whose prefix is persisted unconditionally', () => {
+      // Why this test matters: `diagnostics` has no reducer ON PURPOSE, so the
+      // reducer-collision check alone cannot see it — but its prefix is on the
+      // built-in persistence whitelist, so a consumer slice with that name
+      // would have EVERY one of its actions silently written into recordings.
+      // A silent WRITE, the inverse of the silent drop the whitelist guards
+      // against. Found by claude[bot] review on PR #350.
+      expect(() =>
+        createSlamAppStore({
+          storageBackend: backend,
+          extraReducers: { diagnostics: () => ({}) },
+        })
+      ).toThrow(/diagnostics/);
+    });
+
     it('still accepts non-colliding extraReducers unchanged', () => {
       const store = createSlamAppStore({
         storageBackend: backend,
