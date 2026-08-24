@@ -7,7 +7,7 @@ A toast notification system for displaying temporary messages to users. Primaril
 **This module owns the recorder's PLACEMENT and LOOK only.** Since 2026-08-24 the mechanism — the element, the ARIA contract, the timer, replace-and-restart — comes from the framework's `utils/toast-core`, the one toast implementation in the workspace. The public API here did not change; two behaviours did:
 
 - **Messages are now announced to assistive technology.** This module had no `role` and no `aria-live`, so every message it had ever shown was silent to a screen reader.
-- **The element is attached on show and removed on hide**, instead of living in the DOM permanently behind a `hidden` class. An always-present child of a `position: fixed; inset: 0` overlay root eats every tap on the page whenever AR is not running.
+- **The element is attached on show and removed on hide**, instead of living in the DOM permanently behind a `hidden` class. This is inherited from the shared mechanism rather than needed here: the rule exists for the OSM demo's `#ar-root` (`position: fixed; inset: 0`, hidden only while `:empty`), where a permanent child keeps a full-viewport click-eating layer over the page. This app's `#app` is `position: relative` and the old element carried Tailwind's `hidden` when idle, so neither problem applied. One rule for both callers is the reason, and it is worth more than the saved DOM operation.
 
 **User Feedback Issue #1 Part B**: Users need immediate feedback when file write operations fail, not just a count at the end of the session.
 

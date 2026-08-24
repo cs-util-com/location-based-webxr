@@ -172,7 +172,7 @@ export function createGpsRegistration<TStore, TPose>(
    * a stop that happened with no intervening start, where the counter is
    * unchanged.
    *
-   * RELATED BUT NOT THE SAME AS `latest-only.ts`, which six cycle modules use.
+   * RELATED BUT NOT THE SAME AS `latest-only.ts`, which four modules use across six call sites.
    * That wraps an async FUNCTION and discards all but the newest call's result;
    * this guards a callback that fires later against an identity that has since
    * changed. Cousins, not twins — recorded here rather than merged, so the next

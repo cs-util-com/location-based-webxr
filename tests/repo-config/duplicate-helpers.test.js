@@ -13,7 +13,10 @@
 // guard has two shapes, `shared` and `perPackage`, and which one a name gets is
 // the decision, not an implementation detail.
 //
-// WHAT IT CANNOT DO, stated here rather than discovered later:
+// WHAT IT CANNOT DO. Stated in full, because a guard whose limits are unwritten
+// gets read as covering everything. A review found most of these by trying to
+// construct violations that slip past — which is the right way to read a
+// source-text guard, and the right way to extend this list.
 //
 //  - **It is blind to the same helper under a different name.** The `el(id)`
 //    family exists as `el`, `requireEl` and `getRequiredElement`; a fourth
@@ -23,6 +26,18 @@
 //    duplicated helper, only re-duplication of a known one. That is the trade
 //    accepted when the cross-package detector (which could find new ones, at an
 //    unmeasured noise cost) was deliberately not adopted.
+//  - **It sees ONE workspace root.** `git ls-files` runs at the webxr repo
+//    root, so `c:\gps\gps-plus-slam\GpsPlusSlamJs` — the core library, and the
+//    largest single body of code the rule covers — is invisible to it. Making
+//    it cross-root would mean a test in one repository reading another by
+//    hardcoded sibling path, which is the coupling the pnpm-override rule
+//    exists to keep out of CI. The rule still applies there; this guard does
+//    not enforce it.
+//  - **It sees `<pkg>/src/**.ts` only.** A copy in `scripts/`, `config/`, at a
+//    package root, or in a `.js`/`.mjs`/`.tsx` file is out of scope.
+//  - **A class method or object-literal shorthand is not matched.**
+//    `class Util { clamp01(v) {} }` reads as a member, and matching that shape
+//    would collide with every ordinary method name.
 //
 // It is still worth having: every entry below is a unification that was paid
 // for once, and this is what stops it being undone by the next session that
@@ -64,6 +79,12 @@ const CANONICAL = [
     why: 'the announcement contract cost three review rounds and is invisible in finished code',
   },
   {
+    name: 'formatDistanceLabel',
+    rule: 'shared',
+    home: 'GpsPlusSlamJs_AppFramework/src/visualization/wayfinding-placement.ts',
+    why: 'the same helper under a second name — it is a thin wrapper over format-distance now, and it is the only one of the three wrappers still wearing a formatter name, because it is published API and renaming it would break consumers',
+  },
+  {
     name: 'clamp01',
     rule: 'perPackage',
     why: 'five copies gave three different answers for NaN and Infinity',
@@ -95,7 +116,17 @@ const JUSTIFIED = [
   },
 ];
 
-/** Source files this guard reads: every package's `src/`, tests included. */
+/**
+ * Source files this guard reads: every package's production `src/`.
+ *
+ * **Test files are excluded**, and that is a decision rather than an oversight.
+ * A test-local stub — `const clamp01 = vi.fn()`, or a differential test
+ * re-implementing an old body under its real name — is not duplication of
+ * production behaviour, but it IS a second definition in the package, so
+ * including tests would fail the gate for a legitimate technique. M6 of the
+ * unification plan used exactly that technique and only escaped by naming its
+ * re-implementation `previous`; the next person would not be so lucky.
+ */
 function sourceFiles() {
   return execFileSync('git', ['ls-files', '*/src/**.ts'], {
     cwd: repoRoot,
@@ -104,7 +135,8 @@ function sourceFiles() {
   })
     .split('\n')
     .filter(Boolean)
-    .filter((file) => !file.endsWith('.d.ts'));
+    .filter((file) => !file.endsWith('.d.ts'))
+    .filter((file) => !/\.(test|spec)\.ts$/.test(file));
 }
 
 /**
@@ -120,8 +152,11 @@ function sourceFiles() {
 export function definesHelper(source, name) {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(
-    `(?:^|\\n)\\s*(?:export\\s+)?(?:async\\s+)?function\\s+${escaped}\\s*[(<]` +
-      `|(?:^|\\n)\\s*(?:export\\s+)?(?:const|let)\\s+${escaped}\\s*[:=]`
+    // `export default async function name(` and every shorter form of it. A
+    // review found `export default` and `var` slipping past the first version:
+    // both are working ways to re-duplicate a canonical helper.
+    `(?:^|\\n)\\s*(?:export\\s+(?:default\\s+)?)?(?:async\\s+)?function\\s+${escaped}\\s*[(<]` +
+      `|(?:^|\\n)\\s*(?:export\\s+)?(?:const|let|var)\\s+${escaped}\\s*[:=]`
   ).test(source);
 }
 
@@ -207,6 +242,60 @@ describe('duplicate-helper guard', () => {
         )[0];
         expect(definesHelper(source, name)).toBe(true);
       }
+    });
+
+    it('matches the shapes the repo really writes', () => {
+      // NOT hand-written one-liners: these are the actual bodies that existed
+      // before the unification, JSDoc and all. The plan asked for exactly this
+      // and the first version of the file did not do it — one-line snippets
+      // cannot tell you whether the regex survives a doc comment above the
+      // declaration, a generic parameter, or a multi-line signature.
+      const historical = [
+        [
+          'clamp01',
+          `/**\n * Pure compute helpers\n */\n\nfunction clamp01(x: number): number {\n  if (!Number.isFinite(x)) return 0;\n  if (x < 0) return 0;\n  if (x > 1) return 1;\n  return x;\n}`,
+        ],
+        [
+          'clamp01',
+          `function clamp01(x: number): number {\n  return Math.min(1, Math.max(0, x));\n}`,
+        ],
+        [
+          'clamp01',
+          `function clamp01(v: number): number {\n  return v < 0 ? 0 : v > 1 ? 1 : v;\n}`,
+        ],
+        [
+          'smoothstep',
+          `/** Smoothstep - zero slope at both ends. */\nconst smoothstep = (t: number): number => t * t * (3 - 2 * t);`,
+        ],
+        [
+          'smoothstep',
+          `function smoothstep(edge0: number, edge1: number, x: number): number {\n  const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));\n  return t * t * (3 - 2 * t);\n}`,
+        ],
+        [
+          'escapeHtml',
+          `function escapeHtml(text: string): string {\n  return text\n    .replaceAll("&", "&amp;");\n}`,
+        ],
+        [
+          'createToast',
+          `export function createToast(\n  root: HTMLElement,\n  options: ToastOptions = {}\n): Toast {`,
+        ],
+      ];
+
+      for (const [name, source] of historical) {
+        expect(definesHelper(source, name)).toBe(true);
+      }
+    });
+
+    it('matches the forms that used to slip past', () => {
+      // Each of these was a working way to re-duplicate a canonical helper
+      // until a review pointed them out.
+      expect(
+        definesHelper('export default function clamp01(v) {}', 'clamp01')
+      ).toBe(true);
+      expect(
+        definesHelper('export default async function createToast(r) {}', 'createToast')
+      ).toBe(true);
+      expect(definesHelper('var clamp01 = (v) => v;', 'clamp01')).toBe(true);
     });
 
     it('does not match calls, imports, properties or prose', () => {

@@ -114,9 +114,17 @@ function classNameFor(severity: ToastSeverity): string {
  * Safe to call multiple times (idempotent).
  *
  * Nothing appears in the DOM until {@link showToast} is called — the core
- * attaches its element on show and removes it on hide. That is not a detail:
- * an always-present child of a `position: fixed; inset: 0` overlay root eats
- * every tap on the page whenever AR is not running.
+ * attaches its element on show and removes it on hide.
+ *
+ * **That is inherited, not required here.** The rule exists for the OSM demo's
+ * `#ar-root`, which is `position: fixed; inset: 0` and hidden only while
+ * `:empty`, so a permanent child there keeps a full-viewport click-eating layer
+ * over the page whenever AR is not running. This app's `#app` is
+ * `position: relative` (see `styles/app.css`) and the old element carried
+ * Tailwind's `hidden` when idle, so neither problem applied here. One rule for
+ * both callers is worth more than the saved DOM operation — and a review
+ * rightly rejected an earlier version of this comment that claimed the demo's
+ * reason as this module's own.
  *
  * **The overlay root is resolved HERE rather than at module load**, so a page
  * whose `#app` arrives late (or is replaced) still gets a toast inside it.

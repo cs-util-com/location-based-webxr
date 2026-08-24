@@ -19,6 +19,19 @@
 // call site, an `aria-label="…"` where an apostrophe cannot break out; a second
 // call site would have inherited a hole. Two implementations mean two chances
 // to miss a character class, and one of them had already taken it.
+//
+// WHAT IT CANNOT DO, since "the guard is what makes the copy safe" would
+// otherwise be read as more than it is. It compares two extracted artifacts,
+// not behaviour, so a copy that keeps an identical table and regex but stops
+// USING them — `return text;`, or a `.replace(…)` whose result is discarded —
+// passes. The table check below is paired with an assertion that the function
+// body actually applies the regex to its parameter, which closes the obvious
+// shape of that; a behavioural check is impossible while Landing's copy is
+// unexported, and exporting it to enable one would widen that module's surface
+// for the benefit of a test.
+//
+// `GpsPlusSlamJs_Landing/src/chapter-dots.test.ts` carries the behavioural half
+// for the character the copy used to miss.
 
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
@@ -108,5 +121,16 @@ describe('escapeHtml copies', () => {
 
     expect(canonical).not.toBeNull();
     expect(escapedCharacterClass(read(COPY))).toBe(canonical);
+  });
+
+  it('both actually apply the regex and return the result', () => {
+    // Closes the obvious way the two checks above can be satisfied by a broken
+    // copy: keep the table, keep the regex, and stop using them. Still a
+    // source-text check — see the header for what it does not reach.
+    for (const file of [CANONICAL, COPY]) {
+      expect(read(file)).toMatch(
+        /return\s+\w+\s*\.replace\(\s*\/\[[^\]]+\]\/g\s*,\s*\((\w+)\)\s*=>\s*REPLACEMENTS\[\1\]\s*\?\?\s*\1\s*\)/
+      );
+    }
   });
 });

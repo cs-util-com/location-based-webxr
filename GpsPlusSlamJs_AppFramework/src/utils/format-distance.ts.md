@@ -27,10 +27,17 @@ string a user reads.
   `NaN` reaching the screen as the literal text `"NaN m"` is worse still,
   because it looks like a value. The three formatters this replaces disagreed
   here — one clamped, two did not, and none said so.
-- **The output is unchanged for all three original call sites**, and that is
-  asserted differentially rather than claimed: `format-distance.test.ts`
-  re-implements each old body and compares string for string across a range of
-  inputs.
+- **The output is unchanged for all three original call sites — for
+  non-negative finite input**, which is every value any of them can actually
+  receive. That much is asserted differentially rather than claimed:
+  `format-distance.test.ts` re-implements each old body and compares string for
+  string, with the kilometre boundary sampled from both sides.
+  - **Outside that domain the output DID change**, deliberately, and an earlier
+    version of this file claimed otherwise without qualification: the wayfinding
+    label used to render `-3` as `"-3.0 m"`, and both the wayfinding label and
+    the session summary used to render `NaN` as the literal text `"NaN m"`. The
+    unification is what makes all three agree, and the new answer is the one
+    that does not look like a value.
 - **Options, not one output.** The three callers genuinely want different
   precision and the difference is not an accident to flatten:
   - `wayfinding-placement.ts` — `{ kilometreAboveM: null }`. A world-space AR

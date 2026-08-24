@@ -99,10 +99,17 @@ describe('sidecar coverage guard', () => {
   it('every sidecar documents a file that exists', () => {
     // A non-empty result names the orphan(s): either delete the sidecar, or
     // restore the file it documents.
-    const orphans = orphanSidecars(trackedFiles(), (path) =>
-      existsSync(resolve(repoRoot, path))
-    );
+    //
+    // Existence is BOTH tracked and on disk, and the pairing matters on each
+    // side. `existsSync` alone is case-insensitive on Windows, so a sidecar
+    // `Foo.ts.md` beside `foo.ts` would pass here and fail on Linux CI; the
+    // tracked-path set is case-exact and settles that. And the tracked set
+    // alone would report a sidecar deleted in the working tree but not yet
+    // committed — failing the gate for the very fix that resolves it.
+    const tracked = new Set(trackedFiles());
+    const exists = (path) =>
+      tracked.has(path) && existsSync(resolve(repoRoot, path));
 
-    expect(orphans).toEqual([]);
+    expect(orphanSidecars(trackedFiles(), exists)).toEqual([]);
   });
 });

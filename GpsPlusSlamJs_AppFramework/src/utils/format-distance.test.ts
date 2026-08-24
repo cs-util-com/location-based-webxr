@@ -5,6 +5,12 @@
  * produce — so "the unification changed nothing on screen" is a claim the suite
  * makes rather than one the commit message asserts.
  *
+ * **The differential loops sample non-negative finite values only, and that is
+ * the honest scope of the claim.** Outside it the output DID change on purpose:
+ * two of the three used to print `"NaN m"`, and one used to print a negative
+ * distance. Those cases are asserted separately, as the new contract rather
+ * than as parity.
+ *
  * The rest pin the parts that WERE unified: the kilometre boundary, rounding,
  * and what happens to a value that should not exist.
  *

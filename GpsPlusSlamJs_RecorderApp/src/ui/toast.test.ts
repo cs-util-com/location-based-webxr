@@ -60,22 +60,32 @@ describe('Toast Notification', () => {
 
   describe('initToast', () => {
     it('shows nothing until a message is given', () => {
-      // Why: the element is attached on show. An always-present container is
-      // what the AR overlay root must not have — `#ar-root`-style roots are
-      // `position: fixed; inset: 0` and a permanent child eats every tap.
+      // Why: the element is attached on show. That rule is inherited from the
+      // shared mechanism — it exists for the OSM demo's `#ar-root`, which is
+      // `position: fixed; inset: 0` and hidden only while `:empty`. This app's
+      // `#app` is `position: relative`, so the rule costs nothing here and
+      // keeps one mechanism rather than two.
       initToast();
 
       expect(toastElement()).toBeNull();
     });
 
-    it('is idempotent (multiple calls do not create duplicates)', () => {
-      // Why: safe to call init multiple times, and a second init must not
-      // orphan the first toast's timer.
+    it('is idempotent — a second init does not discard the live toast', () => {
+      // Why: `initToast()` runs at boot and is called defensively elsewhere. A
+      // non-idempotent version would build a second toast and leave the first
+      // one showing, with a timer nothing can cancel.
+      //
+      // ASSERTED THROUGH THE HANDLE, not by counting elements. Counting
+      // `#toast-container` cannot fail here: the element attaches on SHOW, so
+      // three non-idempotent inits would build three detached divs and attach
+      // only the last — one element in the DOM either way. A review caught that
+      // the first version of this test asserted exactly that, having replaced
+      // an older one that could genuinely fail.
       initToast();
+      show('First message');
       initToast();
-      initToast();
-      show('Test message');
 
+      expect(toastElement()?.textContent).toBe('First message');
       expect(document.querySelectorAll('#toast-container')).toHaveLength(1);
     });
 
@@ -259,6 +269,12 @@ describe('Toast Notification', () => {
     it('lets a later showToast build a fresh toast', () => {
       // Why: destroy is used for test cleanup and app lifecycle; a module left
       // holding a dead handle would silently stop showing anything.
+      //
+      // Weaker than it looks, and kept anyway: it passes whether or not
+      // `destroyToast` nulls the handle, because the element and root are
+      // unchanged either way. The null-ing is what
+      // 'the overlay root is re-resolved when the toast is rebuilt' actually
+      // pins; this one guards the plain "still works afterwards" case.
       initToast();
       destroyToast();
       show('After destroy');

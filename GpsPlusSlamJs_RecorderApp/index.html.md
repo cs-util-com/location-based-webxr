@@ -313,7 +313,7 @@ These elements do **not** exist in the static HTML — they are created by TypeS
 
 | Component | Module | What's created | Where attached |
 |---|---|---|---|
-| Toast container | `toast.ts` | `<div id="toast-container">` + child toast elements | `document.body` |
+| Toast container | `toast.ts` | `<div id="toast-container">` carrying the message text — **only while a message is showing**, attached on show and removed on hide (2026-08-24) | `#app` (the AR DOM-overlay root), falling back to `document.body` |
 | Confirm dialog | `confirm-dialog.ts` | Backdrop `<div>` + dialog `<div>` with `<p>` + buttons | `document.body` |
 | Ref-point picker content | `ref-point-picker.ts` | Full form HTML (input, dropdown, buttons) via `createRefPointPickerHtml()` | `#ref-point-picker-modal` (innerHTML) |
 | Summary map controls | `summary-map.ts` | Expand (⛶) and collapse (✕) buttons with `data-testid` | `#summary-map-container` |

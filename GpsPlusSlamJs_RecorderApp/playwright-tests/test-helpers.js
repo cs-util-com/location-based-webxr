@@ -172,6 +172,9 @@ export const REQUIRED_TEST_HOOKS = [
   'streamMapBrowserRecording',
   // Coverage backfill CTA (Slice B / B1)
   'mountMapBrowserBackfill',
+  // Toast (2026-08-24) - the toast had no e2e coverage at all until it was
+  // rewritten onto the framework's shared mechanism; see toast.spec.js.
+  'showToast',
 ];
 
 /**
