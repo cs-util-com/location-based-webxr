@@ -51,6 +51,17 @@ export interface DistanceFormatOptions {
  * strictly less useful than "0 m" for finding that out. Non-finite input
  * likewise formats as zero rather than propagating `NaN` into the UI.
  */
+/**
+ * Rounds `value` to the nearest multiple of `step`.
+ *
+ * `> 0` and not just `!== 1`: a zero step would divide by zero and a negative
+ * one would flip the sign — both leave the value unstepped instead. A
+ * FRACTIONAL step is honoured; the option doc promises "this multiple".
+ */
+function stepMetres(value: number, step: number): number {
+  return step > 0 && step !== 1 ? Math.round(value / step) * step : value;
+}
+
 export function formatDistance(
   metres: number,
   options: DistanceFormatOptions = {}
@@ -68,7 +79,5 @@ export function formatDistance(
     return `${(safe / 1000).toFixed(kmDecimals)} km`;
   }
 
-  const stepped =
-    metreStep > 1 ? Math.round(safe / metreStep) * metreStep : safe;
-  return `${stepped.toFixed(metreDecimals)} m`;
+  return `${stepMetres(safe, metreStep).toFixed(metreDecimals)} m`;
 }

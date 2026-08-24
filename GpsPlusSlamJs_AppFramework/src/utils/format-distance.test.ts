@@ -74,6 +74,21 @@ describe('formatDistance', () => {
     );
   });
 
+  it('honours a fractional step — the doc says "this multiple", not "≥ 1"', () => {
+    // A `metreStep > 1` guard made any sub-metre step a silent no-op:
+    // `{ metreStep: 0.5 }` read as "round to half metres" and did nothing.
+    // Found by claude[bot] review on PR #352. Rounding a near-field AR label
+    // to half metres is exactly what a fourth caller would ask for.
+    expect(formatDistance(1.27, { metreStep: 0.5 })).toBe('1.5 m');
+    expect(formatDistance(1.1, { metreStep: 0.25, metreDecimals: 2 })).toBe(
+      '1.00 m'
+    );
+    // Zero and negative steps stay unstepped: no division by zero, no sign
+    // flip. This is the guard the old condition was (over-)protecting.
+    expect(formatDistance(1.27, { metreStep: 0 })).toBe('1.3 m');
+    expect(formatDistance(1.27, { metreStep: -5 })).toBe('1.3 m');
+  });
+
   it('clamps a negative distance to zero rather than printing it', () => {
     // Distance is a magnitude. A negative one means a caller subtracted in the
     // wrong order, and "-3.0 m" on screen is less useful for finding that out

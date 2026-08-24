@@ -10,7 +10,10 @@ string a user reads.
 - `formatDistance(metres, options?): string` — total; never throws.
 - `DistanceFormatOptions`:
   - `metreStep` (default `1`) — round the metre value to this multiple before
-    printing. `10` gives `"120 m"` rather than `"123.4 m"`.
+    printing. `10` gives `"120 m"` rather than `"123.4 m"`. Fractional
+    multiples are honoured (`0.5` rounds to half metres); `0` and negative
+    values leave the value unstepped rather than dividing by zero or flipping
+    the sign.
   - `metreDecimals` (default `1`) — decimals on the metre form.
   - `kmDecimals` (default `1`) — decimals on the kilometre form.
   - `kilometreAboveM` (default `1000`) — switch to kilometres at or above this
