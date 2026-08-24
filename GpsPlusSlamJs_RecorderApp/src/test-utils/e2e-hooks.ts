@@ -1,5 +1,5 @@
 /**
- * Playwright e2e hooks — the `window.testHooks` surface plus the map-browser
+ * Playwright e2e hooks - the `window.testHooks` surface plus the map-browser
  * fixture builders. Extracted from main.ts (2026-07-11 lifecycle-scope plan
  * step 3) so the production entry file stays free of fixture scaffolding.
  *
@@ -10,7 +10,7 @@
  * CONTRACT: `window.testHooks` is assigned as ONE object literal and its key
  * set is pinned bidirectionally against `REQUIRED_TEST_HOOKS` in
  * `playwright-tests/test-helpers.js` (the coverage-guard spec fails within
- * seconds naming any hook that drifts — see the guard-hardening note in the
+ * seconds naming any hook that drifts - see the guard-hardening note in the
  * 2026-07-10 quality-review follow-ups doc §4). Add/remove keys in BOTH
  * places in the same commit.
  */
@@ -47,7 +47,7 @@ import {
  * Offline scene fixture for `addGpsEventForTest` (§3c). Playwright specs call
  * that hook without an active WebXR session, so the visualizer needs SOME
  * scene graph to parent markers into. The fixture used to inject a scene into
- * the webxr-session singleton (`setScene`/`setArWorldGroup` — deleted by
+ * the webxr-session singleton (`setScene`/`setArWorldGroup` - deleted by
  * surface-reduction step 2); now it keeps its own module-level scene and
  * points `gpsEventVisualizer` at it via `setSceneSource`, preferring the live
  * scene whenever one exists. Module-level + lazily created = idempotent
@@ -108,7 +108,7 @@ export function installE2eTestHooks(deps: E2eHookDeps): void {
     updatePermissionStatus,
     setPermissionsReady,
     // Toast (2026-08-24). The toast is the ONLY UI in this app rewritten onto
-    // the framework's shared mechanism, and it had no e2e coverage at all â
+    // the framework's shared mechanism, and it had no e2e coverage at all -
     // the suite mentioned the word once, in a comment. Its two new behaviours
     // (attach-on-show, and a text write deferred by one task) are exactly the
     // kind that a jsdom suite can assert and a real browser can still get
@@ -127,11 +127,11 @@ export function installE2eTestHooks(deps: E2eHookDeps): void {
       gpsEventVisualizer.setZeroRef({ lat, lon }),
     clearGpsEventVisualizer: () => gpsEventVisualizer.clearAll(),
     /**
-     * §3c — Add a GPS event with optional accuracy directly to the
+     * §3c - Add a GPS event with optional accuracy directly to the
      * visualizer. Ensures an offline `THREE.Scene` + `arWorldGroup` exist
      * (Playwright tests don't have an active WebXR session) and points the
-     * visualizer at them via `setSceneSource` — the live scene still wins
-     * when a real AR session is active. Idempotent — subsequent calls reuse
+     * visualizer at them via `setSceneSource` - the live scene still wins
+     * when a real AR session is active. Idempotent - subsequent calls reuse
      * the same offline scene.
      */
     addGpsEventForTest: (
@@ -189,7 +189,7 @@ export function installE2eTestHooks(deps: E2eHookDeps): void {
       return instance !== null;
     },
     /**
-     * Slice A — mount the browser EMPTY and prime the progress pill to
+     * Slice A - mount the browser EMPTY and prime the progress pill to
      * `0 / total`, so the e2e test can then stream recordings in via
      * {@link streamMapBrowserRecording} and assert progressive behaviour
      * (map interactive before indexing, pill counts up then hides).
@@ -210,7 +210,7 @@ export function installE2eTestHooks(deps: E2eHookDeps): void {
       return instance !== null;
     },
     /**
-     * Slice A — stream one fixture recording into the already-mounted browser
+     * Slice A - stream one fixture recording into the already-mounted browser
      * and advance the progress pill to `done / total`. Mirrors what the real
      * `streamRecordingIndex` → `addRecording`/`setIndexingProgress` wiring does.
      */
@@ -228,7 +228,7 @@ export function installE2eTestHooks(deps: E2eHookDeps): void {
       return true;
     },
     /**
-     * Slice B (B1) — mount the browser with backfillable (legacy) recordings and
+     * Slice B (B1) - mount the browser with backfillable (legacy) recordings and
      * a **deferred** `onBackfill` so Playwright can observe the transitional
      * "Embedding…" state, then release the promise with `outcome` to assert the
      * final state. Marks indexing complete so the CTA appears immediately.

@@ -43,8 +43,8 @@ declare global {
       /**
        * Show a real toast (2026-08-24). Exists so the toast has e2e coverage
        * at all: it is the one UI this app moved onto the framework's shared
-       * mechanism, and its behaviour â attach on show, text written one task
-       * later, removed on linger â is only fully observable in a browser.
+       * mechanism, and its behaviour - attach on show, text written one task
+       * later, removed on linger - is only fully observable in a browser.
        */
       showToast: (
         message: string,
@@ -62,7 +62,7 @@ declare global {
       setGpsEventVisualizerZeroRef: (lat: number, lng: number) => void;
       clearGpsEventVisualizer: () => void;
       /**
-       * §3c — Replay-mode diagnostic. Adds a GPS event with optional 1σ
+       * §3c - Replay-mode diagnostic. Adds a GPS event with optional 1σ
        * accuracy to the visualizer. Creates a module-local offline scene +
        * arWorldGroup in e2e-hooks and points the visualizer at it via
        * `gpsEventVisualizer.setSceneSource` (live scene wins when present),
@@ -74,7 +74,7 @@ declare global {
         accuracy?: { horizontal?: number; vertical?: number }
       ) => void;
       /**
-       * §3c — Reads back the world-space bounding-box size of each raw-GPS
+       * §3c - Reads back the world-space bounding-box size of each raw-GPS
        * marker via `THREE.Box3.setFromObject` in insertion order.
        */
       getRawGpsMarkerWorldSizes: () => Array<{
@@ -90,7 +90,7 @@ declare global {
       setFolderImportProgress: (state: FolderImportProgressState) => void;
       setSaveLocationSelected: (selected: boolean) => void;
       /**
-       * Step 4B — mount the map-centric recording browser with fixture tours
+       * Step 4B - mount the map-centric recording browser with fixture tours
        * (each `path` of `{lat,lng}` is reduced to H3 coverage cells). Returns
        * `true` on success. See `window.__mapBrowserInstance` /
        * `window.__mapBrowserPlayed` for the e2e assertion surface.
@@ -103,12 +103,12 @@ declare global {
         }>
       ) => boolean;
       /**
-       * Slice A — mount the browser empty and prime the progress pill to
+       * Slice A - mount the browser empty and prime the progress pill to
        * `0 / total`, then stream recordings via `streamMapBrowserRecording`.
        */
       mountMapBrowserEmpty: (total: number) => boolean;
       /**
-       * Slice A — stream one fixture recording into the mounted browser and
+       * Slice A - stream one fixture recording into the mounted browser and
        * advance the progress pill to `done / total`. Returns `false` if no
        * browser is mounted.
        */
@@ -122,7 +122,7 @@ declare global {
         total: number
       ) => boolean;
       /**
-       * Slice B (B1) — mount the browser with backfillable recordings and a
+       * Slice B (B1) - mount the browser with backfillable recordings and a
        * deferred onBackfill returning `outcome` once `window.__releaseBackfill`
        * is called. Drives the "Speed up future loads" CTA e2e.
        */
