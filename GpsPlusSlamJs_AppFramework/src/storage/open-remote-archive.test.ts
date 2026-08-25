@@ -222,6 +222,29 @@ describe('openRemoteArchive — warm-to-cache', () => {
     expect(cached?.blob.size).toBe(ARCHIVE.length);
   });
 
+  // Why this test matters (PR #359 review): the warm download pulls the
+  // whole archive over the network but wrapped its blob as a 'cache' source,
+  // so a stats consumer showed "132 KB fetched · serving from cache" after
+  // 3.5 MB actually crossed the wire — the same metric inversion PR #358
+  // review #3 fixed for the eager-local/full-download opens.
+  it('the warm download reports its whole-archive network read', async () => {
+    const { fetchImpl } = fakeServer({ etag: '"v1"' });
+    const store = new InMemoryLocalCacheStore();
+    const events: ArchiveReadEvent[] = [];
+    const opened = await openRemoteArchive(URL_, {
+      fetchImpl,
+      cacheStore: store,
+      onRead: (e) => events.push(e),
+    });
+
+    await expect(opened.warmed).resolves.toBe(true);
+    expect(events).toContainEqual({
+      origin: 'network',
+      offset: 0,
+      length: ARCHIVE.length,
+    });
+  });
+
   // Why this test matters (PR #358 review #2): evict() awaited only the
   // recovery download, so a caller trusting the bare-evict() contract could
   // clear the store and have the still-running warm re-poison it moments
@@ -485,6 +508,52 @@ describe('openRemoteArchive — mid-session range-ignore recovery', () => {
     await evicting;
 
     await expect(store.get(URL_)).resolves.toBeUndefined();
+  });
+
+  // Why this test matters (PR #359 review): evict() awaits the writers that
+  // exist NOW, but the session stays live after eviction (the TourViewer
+  // evicts, clears, and keeps streaming) — a RangeIgnoredError on any LATER
+  // read used to run the recovery download and store.put the archive right
+  // back into the store the user was just told is empty. The latch permits
+  // the recovery to still SERVE the read; only the persistence is disarmed.
+  it('a recovery that starts after evict() serves the read but never repersists', async () => {
+    const { fetchImpl } = fakeServer({ flipRangesAfterProbe: true });
+    const store = new InMemoryLocalCacheStore();
+    const opened = await openRemoteArchive(URL_, {
+      fetchImpl,
+      cacheStore: store,
+      warm: false,
+    });
+
+    await opened.evict();
+    // The flipped host fails the range read AFTER the eviction — recovery
+    // downloads, serves the exact slice, and must not touch the store.
+    await expect(opened.source.read(2, 3)).resolves.toEqual(
+      new Uint8Array([3, 4, 5])
+    );
+    await expect(store.get(URL_)).resolves.toBeUndefined();
+  });
+
+  // Why this test matters (PR #359 review, same inversion as the warm half):
+  // the recovery download is a whole-archive network transfer and must
+  // report itself, or the panel proves "how little was fetched" with a lie.
+  it('the recovery download reports its whole-archive network read', async () => {
+    const { fetchImpl } = fakeServer({ flipRangesAfterProbe: true });
+    const events: ArchiveReadEvent[] = [];
+    const opened = await openRemoteArchive(URL_, {
+      fetchImpl,
+      warm: false,
+      onRead: (e) => events.push(e),
+    });
+
+    await expect(opened.source.read(2, 3)).resolves.toEqual(
+      new Uint8Array([3, 4, 5])
+    );
+    expect(events).toContainEqual({
+      origin: 'network',
+      offset: 0,
+      length: ARCHIVE.length,
+    });
   });
 
   it('persists the recovered copy so the next visit skips the broken host', async () => {

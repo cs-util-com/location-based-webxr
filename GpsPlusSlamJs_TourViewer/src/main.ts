@@ -28,6 +28,7 @@ import { authorModeEnabledFromSearch } from "./author-mode-flag.js";
 import {
   arButtonView,
   buildArEnableConfig,
+  endTourArRuntime,
   startTourArRuntime,
 } from "./ar-mode.js";
 import { getSeams } from "./seams.js";
@@ -274,7 +275,14 @@ async function enterAr(): Promise<void> {
         renderArStatus();
       },
       onSessionEnd: () => {
-        seams.stopCameraFrameCapture();
+        // Full teardown, not just capture stop: the AR entry is
+        // re-enterable, and an open recording would blend the dead
+        // session's odom frame into the next alignment (PR #359 review).
+        endTourArRuntime(arStore, {
+          stopCameraFrameCapture: () => {
+            seams.stopCameraFrameCapture();
+          },
+        });
         renderArStatus();
       },
       onGpsPosition: (position) => {

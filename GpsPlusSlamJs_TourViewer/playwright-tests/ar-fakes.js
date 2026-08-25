@@ -36,6 +36,11 @@ export async function installTourViewerArFakes(page) {
           });
         }
       },
+      sessionEndCallback: /** @type {any} */ (null),
+      /** Simulate a SYSTEM session end (the Android back gesture). */
+      endXrSession() {
+        test.sessionEndCallback?.({ requestedByApp: false });
+      },
     };
     /** @type {any} */ (window).__tourViewerTest = test;
 
@@ -57,6 +62,9 @@ export async function installTourViewerArFakes(page) {
             isolationOptions,
           });
           test.cameraFrameCallback = callbacks?.cameraFrame?.onFrame ?? null;
+          // The controller's WRAPPED onSessionEnd — invoking it simulates
+          // the XR session dying out from under the app.
+          test.sessionEndCallback = callbacks?.onSessionEnd ?? null;
           return Promise.resolve();
         },
         endARSession: () => {

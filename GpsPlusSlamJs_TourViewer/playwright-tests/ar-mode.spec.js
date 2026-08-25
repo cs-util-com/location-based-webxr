@@ -102,6 +102,45 @@ test("author mode (?author=1) boots the same foundation under its own labels", a
   expect(wiring.isRecording).toBe(true);
 });
 
+test("a system session end tears the runtime down, and a re-entry starts a clean session", async ({
+  page,
+}) => {
+  // Why this matters (PR #359 review): unlike the single-shot demos, this
+  // AR entry is a toggle a visitor uses repeatedly. Without the teardown the
+  // first session's recording stayed open, and its GPS elements — anchored
+  // to the DEAD session's odom origin — blended into the next session's
+  // alignment solve.
+  await page.goto("/");
+  await enterAr(page);
+  await expect(page.getByTestId("enter-ar")).toHaveText("AR running");
+
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.endXrSession();
+  });
+  await expect(page.getByTestId("enter-ar")).toHaveText("Start AR view");
+  const afterEnd = await page.evaluate(() => {
+    const t = /** @type {any} */ (window).__tourViewerTest;
+    return {
+      stopCaptureCalls: t.stopCaptureCalls,
+      isRecording: t.alignmentStore?.getState().recording.isRecording,
+    };
+  });
+  expect(afterEnd.stopCaptureCalls).toBe(1);
+  expect(afterEnd.isRecording).toBe(false);
+
+  await enterAr(page);
+  await expect(page.getByTestId("enter-ar")).toHaveText("AR running");
+  const afterReenter = await page.evaluate(() => {
+    const t = /** @type {any} */ (window).__tourViewerTest;
+    return {
+      initARCount: t.initARCalls.length,
+      isRecording: t.alignmentStore?.getState().recording.isRecording,
+    };
+  });
+  expect(afterReenter.initARCount).toBe(2);
+  expect(afterReenter.isRecording).toBe(true);
+});
+
 test("without fakes the button reports AR unsupported instead of breaking the page", async ({
   browser,
 }) => {

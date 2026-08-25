@@ -42,10 +42,12 @@ archive-format-agnostic; zip.js enters only where a caller wraps
   failed read from there. Single-flight applies to SUCCESS only: a failed
   recovery download resets the slot so the next read retries instead of
   replaying a memoised transient failure forever.
-- **`evict()` is self-sufficient**: it awaits any in-flight WARM and
-  RECOVERY download (success or failure) before deleting, so a late write
-  cannot re-poison the cache the eviction just cleared — a bare `evict()`
-  is safe; dispose-first merely makes it faster (PR #358 review #2).
+- **`evict()` is self-sufficient AND permanent**: it awaits any in-flight
+  WARM and RECOVERY download (success or failure) before deleting — a bare
+  `evict()` is safe; dispose-first merely makes it faster (PR #358 review
+  #2) — and it latches the session as evicted, so a writer that STARTS
+  later (a post-evict range-ignore recovery on the still-live session)
+  still serves its read but never repersists the archive (PR #359 review).
 - **A definitive 404/410 on the revalidation HEAD evicts** — deletion is an
   author action the viewer honors; only genuine unreachability (network
   failure, HEAD-refusing host) serves the cache.
@@ -58,11 +60,12 @@ archive-format-agnostic; zip.js enters only where a caller wraps
   either way the link is unusable from here.
 - `onRead` fires per read served through the returned source with the true
   origin (`network` before the swap, `cache` after) — the seam TourViewer's
-  live counters hang on. The eager-local and full-download opens additionally
-  report ONE synthetic whole-archive `network` read up front: they pulled the
-  file over the network before any read is served locally, and without that
-  event a stats consumer shows "0 B fetched" right after downloading
-  everything (PR #358 review #3).
+  live counters hang on. Every whole-archive network transfer additionally
+  reports ONE synthetic `network` read: the eager-local and full-download
+  opens (PR #358 review #3) and the background WARM and range-ignore
+  RECOVERY downloads (PR #359 review) — without those events a stats
+  consumer shows "132 KB fetched · serving from cache" right after the
+  full file crossed the wire, inverting its headline metric.
 
 ## Examples
 

@@ -268,6 +268,12 @@ function openRanged(
   // from there. Declared before `switchable` and wired via a closure — the
   // recovery needs the switchable that wraps it.
   let recoveryDownload: Promise<ByteSource> | null = null;
+  // Once evicted, the session may keep streaming (and keep recovering), but
+  // no writer — warm or recovery, present OR FUTURE — may repersist the
+  // archive: a post-evict RangeIgnoredError read used to store.put the copy
+  // right back into the store the user was just told is empty (PR #359
+  // review). Awaiting in evict() only covers writers that already exist.
+  let evicted = false;
   const runRecoveryDownload = async (): Promise<ByteSource> => {
     const res = await fetchImpl(url, {
       signal: AbortSignal.any([
@@ -281,13 +287,18 @@ function openRanged(
       );
     }
     const blob = await res.blob();
+    // The recovery pulled the WHOLE archive over the network; without this
+    // synthetic event a stats consumer proves "how little was fetched" with
+    // an inverted headline (PR #359 review — the warm-path twin of the
+    // eager-local fix in openLocal).
+    options.onRead?.({ origin: 'network', offset: 0, length: blob.size });
     if (blob.size !== size) {
       throw new StructuralReadError(
         `range-ignore recovery downloaded ${blob.size} bytes, expected ${size} — the file changed mid-session`
       );
     }
     const local = instrument(new LocalCacheByteSource(blob), 'cache', options);
-    if (switchable.switchTo(local) && store !== undefined) {
+    if (switchable.switchTo(local) && store !== undefined && !evicted) {
       await requestPersistentStorage();
       await store.put(url, {
         blob,
@@ -330,7 +341,8 @@ function openRanged(
           store,
           switchable,
           options,
-          controller.signal
+          controller.signal,
+          () => evicted
         )
       : Promise.resolve(false);
   return {
@@ -346,7 +358,11 @@ function openRanged(
       // cache the eviction just cleared (PR #357 review; PR #358 review #2
       // added the warm half so a bare `evict()` is self-sufficient — the
       // dispose → await warmed → evict incantation is belt-and-braces, not
-      // a requirement). Await both — success or failure — then delete.
+      // a requirement). Await both — success or failure — then delete. The
+      // latch additionally disarms writers that START after this call
+      // (PR #359 review): the live session may keep recovering reads, but
+      // never repersists.
+      evicted = true;
       await warmed.catch(() => undefined);
       await recoveryDownload?.catch(() => undefined);
       await store?.delete(url);
@@ -368,7 +384,8 @@ async function warmToCache(
   store: LocalCacheStore,
   switchable: SwitchableByteSource,
   options: OpenRemoteArchiveOptions,
-  signal: AbortSignal
+  signal: AbortSignal,
+  isEvicted: () => boolean
 ): Promise<boolean> {
   try {
     // The one deliberate persistence moment (D6): before the expensive
@@ -385,8 +402,13 @@ async function warmToCache(
     });
     if (!res.ok) return false;
     const blob = await res.blob();
+    // The warm pulled the WHOLE archive over the network; report it, or the
+    // stats headline shows "132 KB fetched · serving from cache" after the
+    // full file crossed the wire (PR #359 review).
+    options.onRead?.({ origin: 'network', offset: 0, length: blob.size });
     const local = instrument(new LocalCacheByteSource(blob), 'cache', options);
     if (!switchable.switchTo(local)) return false;
+    if (isEvicted()) return true; // swapped local, but never repersist
     await store.put(url, {
       blob,
       ...(validators !== undefined ? { validators } : {}),

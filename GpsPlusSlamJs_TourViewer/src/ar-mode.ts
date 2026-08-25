@@ -24,6 +24,8 @@ import type {
   RawDeviceOrientation,
 } from "gps-plus-slam-app-framework/sensors";
 import {
+  endSession,
+  resetCoordinatorState,
   startSession,
   type SlamAppStore,
   type SubscribableStore,
@@ -175,4 +177,23 @@ export function startTourArRuntime(
   deps.enableArWorldGroupAlignment({ store, arWorldGroup });
   deps.startCameraFrameCapture({ intervalMs: CAMERA_FRAME_INTERVAL_MS });
   return { ok: true };
+}
+
+/**
+ * The teardown counterpart of {@link startTourArRuntime} — this AR entry is
+ * explicitly RE-ENTERABLE (the controller returns to `ready` on session
+ * end), and re-entering without this used to mix two odometry frames: the
+ * first session's GPS elements stayed in the store, anchored to the DEAD
+ * session's odom origin, while WebXR handed the new session a fresh one —
+ * so the alignment solve blended both (PR #359 review). `endSession` closes
+ * the recording; `resetCoordinatorState` drops the coordinator's per-session
+ * accumulations so the next start begins clean.
+ */
+export function endTourArRuntime(
+  store: SlamAppStore,
+  deps: { stopCameraFrameCapture(): void },
+): void {
+  deps.stopCameraFrameCapture();
+  store.dispatch(endSession());
+  resetCoordinatorState();
 }

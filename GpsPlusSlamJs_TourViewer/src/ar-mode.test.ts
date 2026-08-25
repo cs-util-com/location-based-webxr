@@ -8,6 +8,7 @@ import {
   CAMERA_FRAME_INTERVAL_MS,
   arButtonView,
   buildArEnableConfig,
+  endTourArRuntime,
   startTourArRuntime,
   type ArEnableHooks,
   type TourArRuntimeDeps,
@@ -171,6 +172,45 @@ describe("startTourArRuntime", () => {
     expect(capture).not.toHaveBeenCalled();
   });
 });
+
+describe("endTourArRuntime", () => {
+  // Why this test matters (PR #359 review): the AR entry is re-enterable,
+  // and without a teardown the first session's recording stayed open — its
+  // GPS elements, anchored to the DEAD session's odom origin, then blended
+  // into the next session's alignment solve. The teardown must close the
+  // recording so a re-entry starts a clean session.
+  it("closes the recording and stops capture, so a re-entry starts clean", () => {
+    const store = createSlamAppStore({
+      storageBackend: new NullStorageBackend(),
+    });
+    const { deps } = fakeDepsFor();
+    startTourArRuntime(store, deps);
+    expect(store.getState().recording.isRecording).toBe(true);
+
+    const stopCapture = vi.fn();
+    endTourArRuntime(store, { stopCameraFrameCapture: stopCapture });
+
+    expect(stopCapture).toHaveBeenCalledTimes(1);
+    expect(store.getState().recording.isRecording).toBe(false);
+
+    // A second start must succeed and open a FRESH session.
+    const second = startTourArRuntime(store, deps);
+    expect(second.ok).toBe(true);
+    expect(store.getState().recording.isRecording).toBe(true);
+  });
+});
+
+function fakeDepsFor(): { deps: TourArRuntimeDeps } {
+  const worldGroup = { name: "fake-world-group" } as Object3D;
+  return {
+    deps: {
+      getArWorldGroup: () => worldGroup,
+      enableArWorldGroupAlignment: vi.fn(),
+      startCameraFrameCapture: vi.fn(),
+      now: () => 1234,
+    },
+  };
+}
 
 describe("arButtonView", () => {
   it.each([
