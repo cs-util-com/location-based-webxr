@@ -53,12 +53,14 @@ describe('SwitchableByteSource', () => {
     expect(await s.read(0, 3)).toEqual(new Uint8Array([9, 9, 9]));
   });
 
-  it('ignores a second switch (idempotent — at most one swap)', async () => {
+  it('ignores a second switch (idempotent — at most one swap), reporting it', async () => {
     const s = new SwitchableByteSource(memSource(REMOTE));
     const other = new Uint8Array([7, 7, 7, 7, 7, 7, 7, 7]);
 
-    s.switchTo(memSource(LOCAL));
-    s.switchTo(memSource(other)); // a duplicate warm/fallback race must not re-swap
+    expect(s.switchTo(memSource(LOCAL))).toBe(true);
+    // A duplicate warm/fallback race must not re-swap — and the caller must
+    // learn its swap did not take (it must not persist bytes it did not land).
+    expect(s.switchTo(memSource(other))).toBe(false);
 
     expect(await s.read(0, 3)).toEqual(new Uint8Array([9, 9, 9]));
   });
@@ -67,11 +69,11 @@ describe('SwitchableByteSource', () => {
     const s = new SwitchableByteSource(memSource(REMOTE));
     const wrongSize = new Uint8Array([9, 9, 9]); // e.g. a login-page redirect body
 
-    s.switchTo(memSource(wrongSize));
+    expect(s.switchTo(memSource(wrongSize))).toBe(false);
 
     // Still reading from remote — and a later, correct swap must still work.
     expect(await s.read(0, 3)).toEqual(new Uint8Array([1, 2, 3]));
-    s.switchTo(memSource(LOCAL));
+    expect(s.switchTo(memSource(LOCAL))).toBe(true);
     expect(await s.read(0, 3)).toEqual(new Uint8Array([9, 9, 9]));
   });
 

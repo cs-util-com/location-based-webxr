@@ -13,7 +13,9 @@ to a local cache mid-session without whatever reads through it (e.g. a zip.js
 - `interface ByteSource { readonly size: number; read(offset, length): Promise<Uint8Array> }`
 - `class SwitchableByteSource implements ByteSource`
   - `constructor(initial: ByteSource)`
-  - `switchTo(next: ByteSource): void` — swaps the backing source.
+  - `switchTo(next: ByteSource): boolean` — swaps the backing source; reports
+    whether the swap took effect (`false` on size mismatch or duplicate — a
+    warm-download caller must not persist bytes whose swap was refused).
 
 ## Invariants & assumptions
 

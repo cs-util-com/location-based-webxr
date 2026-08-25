@@ -23,6 +23,10 @@ export class LocalCacheByteSource implements ByteSource {
   }
 
   async read(offset: number, length: number): Promise<Uint8Array> {
+    // Uniform ByteSource invariant: zero/negative-length reads resolve empty
+    // locally (mirrors RemoteRangeByteSource, where they would be an invalid
+    // Range header).
+    if (length <= 0) return new Uint8Array(0);
     const slice = this.#blob.slice(offset, offset + length);
     return new Uint8Array(await slice.arrayBuffer());
   }
@@ -58,14 +62,31 @@ export class InMemoryLocalCacheStore implements LocalCacheStore {
 }
 
 /**
- * Cache API store (browser). Requests persistent storage so a warmed copy is
- * not evicted mid-session. `cache.put` only exposes an entry once its body
+ * Ask the browser to exempt this origin's storage from automatic eviction —
+ * best-effort, returns whether persistence is (now) granted. Deliberately a
+ * SEPARATE, explicit call rather than a side effect of `CacheApiStore.put`:
+ * in Firefox `storage.persist()` can raise a permission prompt, which must
+ * happen at one deliberate moment a caller chooses (e.g. when a warm-download
+ * begins), never on every cache write mid-flow.
+ */
+export async function requestPersistentStorage(): Promise<boolean> {
+  try {
+    return (await navigator.storage?.persist?.()) ?? false;
+  } catch {
+    return false; // absent API (older browsers, Node) counts as not granted
+  }
+}
+
+/**
+ * Cache API store (browser). `cache.put` only exposes an entry once its body
  * has been fully consumed, and a caller that re-parses a cached copy before
  * trusting it (evicting a poisoned one) needs no extra write-then-promote
- * dance here.
+ * dance here. Eviction protection is the caller's move: call
+ * `requestPersistentStorage()` once at a deliberate moment — `put` itself
+ * never triggers a permission prompt.
  *
- * Not exercised by a Node suite (`caches` is browser-only) — proven only in a
- * real browser.
+ * Exercised in Node with stubbed `caches`/`navigator` globals; the real Cache
+ * API behavior is proven by the TourViewer e2e suite.
  */
 export class CacheApiStore implements LocalCacheStore {
   readonly #cacheName: string;
@@ -82,7 +103,6 @@ export class CacheApiStore implements LocalCacheStore {
   }
 
   async put(url: string, blob: Blob): Promise<void> {
-    await navigator.storage?.persist?.();
     const cache = await caches.open(this.#cacheName);
     await cache.put(url, new Response(blob));
   }

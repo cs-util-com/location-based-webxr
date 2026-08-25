@@ -102,6 +102,7 @@ export {
   type LocalCacheStore,
   InMemoryLocalCacheStore,
   CacheApiStore,
+  requestPersistentStorage,
 } from './local-cache-byte-source.js';
 
 // --- zip-byte-source-reader ---

@@ -13,14 +13,21 @@ blow-up). `LocalCacheStore` abstracts _where_ the complete copy lives.
 - `interface LocalCacheStore { get(url): Promise<Blob | undefined>; put(url, blob): Promise<void>; delete(url): Promise<void> }`
 - `class InMemoryLocalCacheStore implements LocalCacheStore` — Node/test backing.
 - `class CacheApiStore implements LocalCacheStore` — browser backing (Cache API).
+- `requestPersistentStorage(): Promise<boolean>` — best-effort
+  `navigator.storage.persist()`, false when absent/denied. Explicit and
+  separate from `put` on purpose: in Firefox it can raise a permission
+  prompt, so a caller chooses the one deliberate moment (e.g. warm-download
+  start).
 
 ## Invariants & assumptions
 
-- `CacheApiStore.put` calls `navigator.storage?.persist?.()` first so a warmed
-  copy is not evicted mid-session; it is a best-effort call (optional
-  chaining — absent in older browsers).
-- Not exercised by a Node test suite (`caches` is browser-only); proven only
-  by driving the real browser Cache API.
+- `CacheApiStore.put` never calls `navigator.storage.persist()` (D6):
+  eviction protection is the caller's explicit move via
+  `requestPersistentStorage()`, so no permission prompt can fire mid-flow on
+  a cache write.
+- `LocalCacheByteSource.read` resolves zero/negative-length reads empty —
+  the uniform `ByteSource` invariant (a remote source would otherwise emit an
+  invalid Range header).
 - Callers own cache-poisoning recovery (e.g. re-parsing a cached copy before
   trusting it, and calling `delete` on failure) — this module only stores and
   retrieves bytes.
@@ -38,6 +45,8 @@ if (cached) return new LocalCacheByteSource(cached);
 
 ## Tests
 
-No dedicated unit test — `CacheApiStore` is browser-only and
-`InMemoryLocalCacheStore`/`LocalCacheByteSource` are exercised through a
-consumer's integration test (e.g. TourBuilder's `cloud-loader` component).
+`local-cache-byte-source.test.ts` — Blob-slice reads incl. the zero-length
+short-circuit, the in-memory store round-trip, `CacheApiStore` against
+stubbed `caches`/`navigator` globals (put stays prompt-free), and
+`requestPersistentStorage`'s grant/absent paths. Real Cache API behavior is
+proven by the TourViewer e2e suite.

@@ -46,10 +46,15 @@ export class SwitchableByteSource implements ByteSource {
    * swap): every parsed zip offset is anchored to `this.size`, so mismatched
    * bytes (redirect page, truncated body) would silently corrupt every later
    * read.
+   *
+   * Returns whether the swap took effect. A caller that just warmed a local
+   * copy must know: `false` on a size mismatch means the downloaded bytes are
+   * WRONG for this archive and must not be persisted to a cache.
    */
-  switchTo(next: ByteSource): void {
-    if (this.#switched || next.size !== this.size) return;
+  switchTo(next: ByteSource): boolean {
+    if (this.#switched || next.size !== this.size) return false;
     this.#switched = true;
     this.#current = next;
+    return true;
   }
 }
