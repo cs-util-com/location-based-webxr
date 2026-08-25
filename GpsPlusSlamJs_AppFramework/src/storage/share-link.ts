@@ -30,6 +30,9 @@
  * sources, fallback) stays provider-agnostic.
  */
 
+import { encodeBase64Url } from '../utils/qr-payload/base64url';
+import { utf8Encode } from '../utils/qr-payload/utf8';
+
 export interface NormalizeShareUrlOptions {
   /** Google Drive API key: unlocks the `drive/v3 … alt=media` URL, the only
    *  Drive form that serves Range + CORS to a browser (public files only). */
@@ -99,7 +102,7 @@ function normalizeGoogleDrive(url: URL, apiKey?: string): string | null {
   return `https://drive.usercontent.google.com/download?id=${id}&export=download&confirm=t`;
 }
 
-function normalizeOneDrive(url: URL, rawUrl: string): string {
+function normalizeOneDrive(url: URL, rawUrl: string): string | null {
   // New-style `/u/c/<cid>/<shareId>` links belong to accounts migrated to the
   // SharePoint backend (the 1drv.ms redirect carries `migratedtospo=true`),
   // where the legacy shares API below answers 401. Their SPO download form
@@ -108,10 +111,29 @@ function normalizeOneDrive(url: URL, rawUrl: string): string {
   if (m) {
     return `https://my.microsoftpersonalcontent.com/personal/${m[1]}/_layouts/15/download.aspx?share=${m[2]}`;
   }
-  // Legacy links: the shares API addresses any share link as `u!` + base64url.
-  const token = btoa(rawUrl)
-    .replaceAll('+', '-')
-    .replaceAll('/', '_')
-    .replace(/=+$/, '');
+  if (!isOneDriveShareShape(url)) return null; // e.g. an about page — not ours
+  // Legacy links: the shares API addresses any share link as `u!` + base64url
+  // over the link's UTF-8 BYTES — `btoa` alone throws on any character
+  // outside Latin-1 (a Unicode filename in a query param).
+  const token = encodeBase64Url(utf8Encode(rawUrl));
   return `https://api.onedrive.com/v1.0/shares/u!${token}/root/content`;
+}
+
+/** Positively recognized OneDrive share-link shapes; anything else must pass
+ *  through byte-identical rather than be wrapped in the shares API. */
+function isOneDriveShareShape(url: URL): boolean {
+  if (url.hostname === '1drv.ms') {
+    // Short share links are `/<type letter(s)>/<token…>` — a bare host or
+    // marketing path is not a share.
+    return /^\/[a-z]{1,2}\//.test(url.pathname);
+  }
+  // onedrive.live.com addresses shared items via resid/id/cid params or the
+  // /redir and /embed routes.
+  return (
+    url.pathname.startsWith('/redir') ||
+    url.pathname.startsWith('/embed') ||
+    url.searchParams.has('resid') ||
+    url.searchParams.has('id') ||
+    url.searchParams.has('cid')
+  );
 }

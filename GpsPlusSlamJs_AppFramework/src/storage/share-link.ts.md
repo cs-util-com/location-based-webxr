@@ -16,7 +16,15 @@ user might paste.
 ## Invariants & assumptions
 
 - Returns anything it does not positively recognize **byte-identical** —
-  direct URLs, proxy URLs, relative paths, non-URLs. Never throws.
+  direct URLs, proxy URLs, relative paths, non-URLs. Never throws. This
+  includes OneDrive hosts: only positively recognized share shapes (`1drv.ms`
+  short links, `onedrive.live.com` with `resid`/`id`/`cid` or `/redir`,
+  `/embed`) are wrapped in the shares API; an about/marketing page passes
+  through.
+- The legacy-OneDrive shares-API token is base64url over the link's **UTF-8
+  bytes** (via `utils/qr-payload/{utf8,base64url}` — the repo's one
+  implementation of each): bare `btoa` throws on any character outside
+  Latin-1.
 - Provider quirks (interstitials, CORS behavior, migrated-account URL forms)
   are current as probed against each provider; a provider changing its
   download-URL scheme would need this file updated, not a caller.

@@ -15,17 +15,17 @@ describe('normalizeShareUrl — Dropbox', () => {
   it('rewrites an scl share link to the content host and drops dl=', () => {
     expect(
       normalizeShareUrl(
-        'https://www.dropbox.com/scl/fi/abc123/tour.zip?rlkey=k42&st=xy&dl=0'
+        'https://www.dropbox.com/scl/fi/abc123/recording.zip?rlkey=k42&st=xy&dl=0'
       )
     ).toBe(
-      'https://dl.dropboxusercontent.com/scl/fi/abc123/tour.zip?rlkey=k42&st=xy'
+      'https://dl.dropboxusercontent.com/scl/fi/abc123/recording.zip?rlkey=k42&st=xy'
     );
   });
 
   it('rewrites a legacy /s/ share link', () => {
     expect(
-      normalizeShareUrl('https://www.dropbox.com/s/abc/tour.zip?dl=0')
-    ).toBe('https://dl.dropboxusercontent.com/s/abc/tour.zip');
+      normalizeShareUrl('https://www.dropbox.com/s/abc/recording.zip?dl=0')
+    ).toBe('https://dl.dropboxusercontent.com/s/abc/recording.zip');
   });
 
   it('leaves a Dropbox folder link untouched (no single-file raw form)', () => {
@@ -37,14 +37,16 @@ describe('normalizeShareUrl — Dropbox', () => {
 describe('normalizeShareUrl — GitHub', () => {
   it('rewrites a blob page to raw.githubusercontent.com', () => {
     expect(
-      normalizeShareUrl('https://github.com/user/repo/blob/main/a/tour.zip')
-    ).toBe('https://raw.githubusercontent.com/user/repo/main/a/tour.zip');
+      normalizeShareUrl(
+        'https://github.com/user/repo/blob/main/a/recording.zip'
+      )
+    ).toBe('https://raw.githubusercontent.com/user/repo/main/a/recording.zip');
   });
 
   it('rewrites a /raw/ link the same way', () => {
     expect(
-      normalizeShareUrl('https://github.com/user/repo/raw/main/tour.zip')
-    ).toBe('https://raw.githubusercontent.com/user/repo/main/tour.zip');
+      normalizeShareUrl('https://github.com/user/repo/raw/main/recording.zip')
+    ).toBe('https://raw.githubusercontent.com/user/repo/main/recording.zip');
   });
 });
 
@@ -96,15 +98,48 @@ describe('normalizeShareUrl — OneDrive', () => {
     const token = /u!([A-Za-z0-9_-]+)\//.exec(out)![1]!;
     expect(atob(token.replaceAll('-', '+').replaceAll('_', '/'))).toBe(share);
   });
+
+  // Why this test matters (D4): `btoa` throws InvalidCharacterError on any
+  // character outside Latin-1, so a share link carrying Unicode (a filename in
+  // a query, an IDN written out) crashed normalization outright. The shares-API
+  // token must be base64url over the UTF-8 BYTES of the link.
+  it('encodes a Unicode legacy link as UTF-8 without throwing, round-trip intact', () => {
+    const share = 'https://1drv.ms/u/s!AbCdEf?name=T%C3%BCr-Straße';
+    const out = normalizeShareUrl(share);
+
+    const token = /u!([A-Za-z0-9_-]+)\//.exec(out)![1]!;
+    const padded = token.replaceAll('-', '+').replaceAll('_', '/');
+    const bytes = Uint8Array.from(atob(padded), (c) => c.codePointAt(0)!);
+    expect(new TextDecoder().decode(bytes)).toBe(share);
+  });
+
+  // Why these tests matter (D5): the OneDrive branch used to wrap EVERY URL on
+  // its hosts in the shares-API form — including pages that are not share
+  // links at all, corrupting URLs the passthrough contract promises to leave
+  // byte-identical.
+  it.each(['https://1drv.ms/', 'https://onedrive.live.com/about/en-us/'])(
+    'passes through the non-share OneDrive URL %s byte-identical',
+    (url) => {
+      expect(normalizeShareUrl(url)).toBe(url);
+    }
+  );
+
+  it('wraps an onedrive.live.com redir share link in the shares-API content URL', () => {
+    const share = 'https://onedrive.live.com/redir?resid=ABC123!456&authkey=xy';
+    const out = normalizeShareUrl(share);
+    expect(out).toMatch(
+      /^https:\/\/api\.onedrive\.com\/v1\.0\/shares\/u![A-Za-z0-9_-]+\/root\/content$/
+    );
+  });
 });
 
 describe('normalizeShareUrl — passthrough', () => {
   it.each([
-    'https://raw.githubusercontent.com/u/r/main/tour.zip',
-    'https://dl.dropboxusercontent.com/scl/fi/abc/tour.zip?rlkey=k',
-    'https://my-worker.workers.dev/?u=https%3A%2F%2Fexample.com%2Ftour.zip',
-    '/tour-proxy?u=https%3A%2F%2Fexample.com%2Ftour.zip',
-    'http://127.0.0.1:4173/ranges-ok/tour.zip',
+    'https://raw.githubusercontent.com/u/r/main/recording.zip',
+    'https://dl.dropboxusercontent.com/scl/fi/abc/recording.zip?rlkey=k',
+    'https://my-worker.workers.dev/?u=https%3A%2F%2Fexample.com%2Frecording.zip',
+    '/recording-proxy?u=https%3A%2F%2Fexample.com%2Frecording.zip',
+    'http://127.0.0.1:4173/ranges-ok/recording.zip',
     'not a url at all',
   ])('returns %s byte-identical', (url) => {
     expect(normalizeShareUrl(url)).toBe(url);
