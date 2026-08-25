@@ -33,9 +33,11 @@ import {
 import {
   fetchRemoteValidators,
   probeRemote,
+  RangeIgnoredError,
   RemoteRangeByteSource,
   type FetchImpl,
 } from './remote-range-byte-source.js';
+import { StructuralReadError } from './structural-read-error.js';
 import { normalizeShareUrl } from './share-link.js';
 
 /** Where a read was served from — feeds a consumer's live streaming stats. */
@@ -243,8 +245,65 @@ function openRanged(
     'network',
     options
   );
-  const switchable = new SwitchableByteSource(remote);
   const controller = new AbortController();
+  // Mid-session range-ignore recovery: a host that 206'd the probe can start
+  // answering range reads with 200 full bodies (CDN node variance, a backend
+  // flip). That surfaces as RangeIgnoredError; instead of failing the
+  // session, download the archive whole ONCE (single-flight), switch the
+  // live session onto the local copy, persist it, and serve the failed read
+  // from there. Declared before `switchable` and wired via a closure — the
+  // recovery needs the switchable that wraps it.
+  let recoveryDownload: Promise<ByteSource> | null = null;
+  const recoverToLocal = (): Promise<ByteSource> => {
+    recoveryDownload ??= (async () => {
+      const res = await fetchImpl(url, {
+        signal: AbortSignal.any([
+          controller.signal,
+          AbortSignal.timeout(FULL_DOWNLOAD_TIMEOUT_MS),
+        ]),
+      });
+      if (!res.ok) {
+        throw new StructuralReadError(
+          `range-ignore recovery download of ${url} failed (${res.status})`
+        );
+      }
+      const blob = await res.blob();
+      if (blob.size !== size) {
+        throw new StructuralReadError(
+          `range-ignore recovery downloaded ${blob.size} bytes, expected ${size} — the file changed mid-session`
+        );
+      }
+      const local = instrument(
+        new LocalCacheByteSource(blob),
+        'cache',
+        options
+      );
+      if (switchable.switchTo(local) && store !== undefined) {
+        await requestPersistentStorage();
+        await store.put(url, {
+          blob,
+          ...(validators !== undefined ? { validators } : {}),
+        });
+      }
+      // Even when the swap was refused (the warm won the race), this copy is
+      // size-validated — serving the failed read from it is correct.
+      return local;
+    })();
+    return recoveryDownload;
+  };
+  const remoteWithRecovery: ByteSource = {
+    size,
+    read: async (offset, length) => {
+      try {
+        return await remote.read(offset, length);
+      } catch (err) {
+        if (!(err instanceof RangeIgnoredError)) throw err;
+        const local = await recoverToLocal();
+        return local.read(offset, length);
+      }
+    },
+  };
+  const switchable = new SwitchableByteSource(remoteWithRecovery);
   const warmed =
     store !== undefined && options.warm !== false
       ? warmToCache(

@@ -30,6 +30,9 @@ interface ServerOptions {
   fullBody?: 'ok' | 'wrong-size' | 'hang';
   /** Reject every fetch — the offline / CORS-blocked case. */
   reject?: boolean;
+  /** Honor Range only for the probe (bytes=0-0), then flip to 200 full-body —
+   *  the mid-session CDN behavior change the recovery path exists for. */
+  flipRangesAfterProbe?: boolean;
 }
 
 interface Call {
@@ -119,11 +122,26 @@ function fakeServer(opts: ServerOptions = {}): {
       );
     }
     if (range !== null && opts.supportsRanges !== false) {
-      return Promise.resolve(rangeResponse(range, baseHeaders));
+      return Promise.resolve(rangedOrFlipped(opts, calls, range, baseHeaders));
     }
     return fullBodyResponse(opts, init, baseHeaders);
   };
   return { fetchImpl, calls };
+}
+
+/** A 206 slice — or, once `flipRangesAfterProbe` is armed and the probe is
+ *  past, the 200 whole-body answer of a host that stopped honoring Range. */
+function rangedOrFlipped(
+  opts: ServerOptions,
+  calls: Call[],
+  range: string,
+  baseHeaders: Record<string, string>
+): Response {
+  const rangesSoFar = calls.filter((c) => c.range !== null).length;
+  if (opts.flipRangesAfterProbe === true && rangesSoFar > 1) {
+    return respond(200, ARCHIVE, baseHeaders);
+  }
+  return rangeResponse(range, baseHeaders);
 }
 
 describe('openRemoteArchive — ranged path', () => {
@@ -308,6 +326,68 @@ describe('openRemoteArchive — cache lookup', () => {
     expect(opened.origin).toBe('network');
     await opened.evict();
     await expect(store.get(URL_)).resolves.toBeUndefined();
+  });
+});
+
+describe('openRemoteArchive — mid-session range-ignore recovery', () => {
+  // Why these tests matter: a host that 206s on the probe and 200s later
+  // (CDN node variance, a backend flip) used to fail the session permanently
+  // — the documented "re-probe and fall back" recovery did not exist
+  // (milestone review #2). The one-shot switch seam is exactly the mechanism
+  // to swap the live session onto a full local copy instead.
+  it('recovers a read transparently when the host stops honoring Range', async () => {
+    const { fetchImpl } = fakeServer({ flipRangesAfterProbe: true });
+    const opened = await openRemoteArchive(URL_, { fetchImpl, warm: false });
+
+    // The first real read hits the flipped host, triggers the recovery
+    // download, and still returns the exact requested slice.
+    await expect(opened.source.read(2, 3)).resolves.toEqual(
+      new Uint8Array([3, 4, 5])
+    );
+    // Later reads are served locally (no further network needed).
+    await expect(opened.source.read(5, 2)).resolves.toEqual(
+      new Uint8Array([6, 7])
+    );
+  });
+
+  it('downloads the archive exactly once for concurrent failing reads', async () => {
+    const { fetchImpl, calls } = fakeServer({ flipRangesAfterProbe: true });
+    const opened = await openRemoteArchive(URL_, { fetchImpl, warm: false });
+
+    const reads = await Promise.all([
+      opened.source.read(0, 2),
+      opened.source.read(2, 2),
+      opened.source.read(4, 2),
+    ]);
+    expect(reads).toEqual([
+      new Uint8Array([1, 2]),
+      new Uint8Array([3, 4]),
+      new Uint8Array([5, 6]),
+    ]);
+    // Exactly one recovery full-body GET (range-less).
+    expect(
+      calls.filter((c) => c.method === 'GET' && c.range === null)
+    ).toHaveLength(1);
+  });
+
+  it('persists the recovered copy so the next visit skips the broken host', async () => {
+    const { fetchImpl } = fakeServer({
+      flipRangesAfterProbe: true,
+      etag: '"v1"',
+    });
+    const store = new InMemoryLocalCacheStore();
+    const opened = await openRemoteArchive(URL_, {
+      fetchImpl,
+      cacheStore: store,
+      warm: false,
+    });
+
+    await expect(opened.source.read(0, 3)).resolves.toEqual(
+      new Uint8Array([1, 2, 3])
+    );
+    const cached = await store.get(URL_);
+    expect(cached?.blob.size).toBe(ARCHIVE.length);
+    expect(cached?.validators).toEqual({ etag: '"v1"' });
   });
 });
 

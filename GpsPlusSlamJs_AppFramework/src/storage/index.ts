@@ -95,6 +95,7 @@ export {
   type FetchImpl,
   fetchRemoteValidators,
   probeRemote,
+  RangeIgnoredError,
   RemoteRangeByteSource,
 } from './remote-range-byte-source.js';
 

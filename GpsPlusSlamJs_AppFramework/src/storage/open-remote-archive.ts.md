@@ -33,8 +33,14 @@ archive-format-agnostic; zip.js enters only where a caller wraps
   both immediately before a persist: warm start, and the eager/full-download
   persist in `openLocal` (D6 — never per cache write). The warm fetch carries
   a timeout alongside the dispose signal so `warmed` always settles.
-- **`dispose()`** aborts the in-flight warm fetch; `warmed` then resolves
-  false and the session simply stays remote.
+- **Mid-session range-ignore recovery:** a host that 206'd the probe but
+  answers a later range read with 200 (`RangeIgnoredError`) does not fail
+  the session — the orchestrator downloads the archive whole once
+  (single-flight across concurrent failing reads), switches the live
+  session onto the size-validated local copy, persists it, and serves the
+  failed read from there.
+- **`dispose()`** aborts the in-flight warm fetch (and a recovery download);
+  `warmed` then resolves false and the session simply stays remote.
 - **Poisoned-cache recovery is the caller's loop:** a cached copy that fails
   to parse → `evict()` → reopen with `skipCache: true`.
 - A `fetch`-level rejection maps to rejectCause `'cors'` — in a browser a

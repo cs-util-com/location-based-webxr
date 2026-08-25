@@ -19,6 +19,17 @@ import { StructuralReadError } from './structural-read-error.js';
 
 export type FetchImpl = typeof fetch;
 
+/**
+ * The one structurally-recoverable read failure: the host answered a range
+ * read with 200 (ignored `Range` mid-session — CDN node variance, a backend
+ * flip). Distinguishable from other `StructuralReadError`s so the
+ * orchestrator can swap the session onto a full local copy instead of
+ * failing it (`open-remote-archive.ts`).
+ */
+export class RangeIgnoredError extends StructuralReadError {
+  override readonly name: string = 'RangeIgnoredError';
+}
+
 /** A header value as archive size: finite safe non-negative integer, or null. */
 function parseArchiveSize(header: string | null): number | null {
   if (header === null || header.trim() === '') return null;
@@ -29,11 +40,11 @@ function parseArchiveSize(header: string | null): number | null {
 /**
  * Why a range-read response is unusable, or null when it is good. A 200 means
  * the host ignored `Range` and streamed the full file — returning that body as
- * the slice would silently corrupt every downstream parse, so it is permanent
- * for this URL. Nothing re-probes automatically today: the permanent/transient
- * split is informational for a consumer's retry policy, and the manual
- * recovery is simply opening the URL again (the fresh probe then picks the
- * fallback). 4xx (expired signed
+ * the slice would silently corrupt every downstream parse, so it throws the
+ * distinguishable `RangeIgnoredError`, which the orchestrator
+ * (`open-remote-archive.ts`) recovers from by swapping the session onto a
+ * full local copy. A bare `RemoteRangeByteSource` consumer sees the error
+ * as permanent. 4xx (expired signed
  * link, file gone, bad range) is likewise permanent; anything else non-206 is
  * transient. A readable `Content-Range` naming different offsets means the
  * server answered a different slice — but the header is not CORS-safelisted
@@ -47,7 +58,7 @@ function classifyRangeResponse(
   end: number
 ): Error | null {
   if (status === 200) {
-    return new StructuralReadError(
+    return new RangeIgnoredError(
       `host ignored Range (200) at ${offset}-${end} — fall back to a full download`
     );
   }

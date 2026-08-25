@@ -36,15 +36,15 @@ qr-level's tests to fake more than they consume.
   so a hung connection becomes a rejection instead of stalling forever.
 - A range read requires **exactly 206**. A 200 means the host ignored `Range`
   and streamed the whole archive — returning that as the slice would silently
-  corrupt every downstream parse, so it throws `StructuralReadError`. A 4xx
-  (expired signed link, file gone, bad range) also throws
-  `StructuralReadError` (permanent, never retried); any other failure is a
-  plain `Error` (transient, retry-eligible by a caller's policy). **Nothing
-  re-probes automatically today** — the permanent/transient split is
-  informational for a consumer's retry policy, and the manual recovery for a
-  mid-session 200 is opening the URL again (the fresh probe picks the
-  fallback). Filed as a follow-up: an automatic mid-session re-probe in the
-  orchestrator.
+  corrupt every downstream parse, so it throws the distinguishable
+  `RangeIgnoredError` (a `StructuralReadError` subclass), which the
+  orchestrator (`open-remote-archive.ts`) recovers from automatically by
+  downloading the archive whole and switching the live session onto the
+  local copy. A bare `RemoteRangeByteSource` consumer without the
+  orchestrator sees it as a permanent failure. A 4xx (expired signed link,
+  file gone, bad range) throws plain `StructuralReadError` (permanent,
+  never retried); any other failure is a plain `Error` (transient,
+  retry-eligible by a caller's policy).
 - The returned body must be exactly `length` bytes, or the read fails
   structurally. `Content-Range` is additionally validated against the
   requested offsets — but only when readable: the header is not

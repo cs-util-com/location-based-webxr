@@ -6,5 +6,7 @@
  * byte-source backing is treated as transient and eligible for retry.
  */
 export class StructuralReadError extends Error {
-  override readonly name = 'StructuralReadError';
+  // Typed as string (not the literal) so subclasses like RangeIgnoredError can
+  // carry their own name.
+  override readonly name: string = 'StructuralReadError';
 }
