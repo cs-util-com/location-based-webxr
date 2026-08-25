@@ -96,10 +96,14 @@ function normalizeGoogleDrive(url: URL, apiKey?: string): string | null {
   const id =
     /^\/file\/d\/([^/]+)/.exec(url.pathname)?.[1] ?? url.searchParams.get('id');
   if (id === null || id === undefined || id === '') return null;
+  // `searchParams.get` returns the DECODED value — re-encode so an id (or
+  // key) containing `&`/`=` stays one opaque value instead of smuggling
+  // extra query parameters into the rewritten URL (PR #357 review).
+  const safeId = encodeURIComponent(id);
   if (apiKey !== undefined && apiKey !== '') {
-    return `https://www.googleapis.com/drive/v3/files/${id}?alt=media&key=${apiKey}`;
+    return `https://www.googleapis.com/drive/v3/files/${safeId}?alt=media&key=${encodeURIComponent(apiKey)}`;
   }
-  return `https://drive.usercontent.google.com/download?id=${id}&export=download&confirm=t`;
+  return `https://drive.usercontent.google.com/download?id=${safeId}&export=download&confirm=t`;
 }
 
 function normalizeOneDrive(url: URL, rawUrl: string): string | null {

@@ -29,16 +29,26 @@ archive-format-agnostic; zip.js enters only where a caller wraps
 - **Warm safety:** the warm download persists only when its
   `SwitchableByteSource.switchTo` returned true — a refused swap means the
   bytes mismatch the session's size and caching them would poison every later
-  visit. `requestPersistentStorage()` has exactly two deliberate call sites,
-  both immediately before a persist: warm start, and the eager/full-download
-  persist in `openLocal` (D6 — never per cache write). The warm fetch carries
-  a timeout alongside the dispose signal so `warmed` always settles.
+  visit. `requestPersistentStorage()` has exactly three deliberate call
+  sites, each immediately before a persist: warm start, the range-ignore
+  recovery, and the eager/full-download persist in `openLocal` (D6 — never
+  per cache write). The warm fetch carries a timeout alongside the dispose
+  signal so `warmed` always settles.
 - **Mid-session range-ignore recovery:** a host that 206'd the probe but
   answers a later range read with 200 (`RangeIgnoredError`) does not fail
   the session — the orchestrator downloads the archive whole once
   (single-flight across concurrent failing reads), switches the live
   session onto the size-validated local copy, persists it, and serves the
-  failed read from there.
+  failed read from there. Single-flight applies to SUCCESS only: a failed
+  recovery download resets the slot so the next read retries instead of
+  replaying a memoised transient failure forever.
+- **`evict()` awaits an in-flight recovery download** (success or failure)
+  before deleting — a late recovery write must not re-poison the cache the
+  eviction just cleared. Its contract stays "call after the parse settled,
+  then reopen with `skipCache`".
+- **A definitive 404/410 on the revalidation HEAD evicts** — deletion is an
+  author action the viewer honors; only genuine unreachability (network
+  failure, HEAD-refusing host) serves the cache.
 - **`dispose()`** aborts the in-flight warm fetch (and a recovery download);
   `warmed` then resolves false and the session simply stays remote.
 - **Poisoned-cache recovery is the caller's loop:** a cached copy that fails

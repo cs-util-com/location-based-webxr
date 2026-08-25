@@ -10,6 +10,7 @@ import { toStatsView } from "./stats-view.js";
  */
 
 const STATS = {
+  origin: "network" as const,
   networkRequests: 9,
   networkBytes: 10_638,
   cacheReads: 4,

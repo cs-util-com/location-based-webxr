@@ -88,11 +88,11 @@ async function teardownSession(): Promise<void> {
 
 function renderStats(): void {
   if (session === null) return;
-  const view = toStatsView(
-    session.stats(),
-    session.archive.size,
-    session.archive.origin,
-  );
+  // stats().origin tracks the LATEST read, so the label flips to "serving
+  // from cache" once the warm download swaps the session over —
+  // archive.origin is only the initial state (PR #357 review).
+  const stats = session.stats();
+  const view = toStatsView(stats, session.archive.size, stats.origin);
   statsPanel.hidden = false;
   statsHeadline.textContent = view.headline;
   statsDetail.textContent = view.detail;
@@ -117,6 +117,9 @@ async function fillGallery(current: TourSession): Promise<void> {
         img.alt = entry.filename;
         item.append(img);
       } catch {
+        // A rejection landing after a newer open replaced the gallery must
+        // not append an old archive's caption to it (PR #357 review).
+        if (session !== current) return;
         caption.textContent = `${entry.filename} — failed to load`;
       }
     }
@@ -129,11 +132,12 @@ async function fillGallery(current: TourSession): Promise<void> {
 async function openUrl(url: string): Promise<void> {
   const generation = ++openGeneration;
   errorBox.textContent = "";
-  await teardownSession();
-  // Async-UI rule: a visible in-progress state for the whole open, restored
-  // (or replaced by the error banner) when the promise settles.
+  // Async-UI rule: the in-progress state engages BEFORE the first await —
+  // teardown of a previous session is async, and a second submission landing
+  // in that window used to race the button state (PR #357 review).
   openButton.disabled = true;
   openButton.textContent = "Opening…";
+  await teardownSession();
   try {
     const opened = await openTourSession(url, {
       ...(cacheStore !== undefined ? { cacheStore } : {}),
@@ -155,8 +159,13 @@ async function openUrl(url: string): Promise<void> {
       errorBox.textContent = describeOpenError(err);
     }
   } finally {
-    openButton.disabled = false;
-    openButton.textContent = "Open";
+    // Guarded like every other effect in this function: a superseded open's
+    // finally must not undo the newer open's in-progress state (PR #357
+    // review).
+    if (generation === openGeneration) {
+      openButton.disabled = false;
+      openButton.textContent = "Open";
+    }
   }
 }
 

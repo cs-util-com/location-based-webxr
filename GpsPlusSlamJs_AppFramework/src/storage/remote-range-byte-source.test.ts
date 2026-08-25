@@ -141,6 +141,24 @@ describe('RemoteRangeByteSource', () => {
     await expect(source.read(2, 3)).rejects.toBeInstanceOf(StructuralReadError);
   });
 
+  // Why this test matters (PR #357 review): a Content-Range that is PRESENT
+  // but unparseable must reject — a server can pair a garbage header with an
+  // exact-length body for the WRONG offset, and length alone cannot catch
+  // that. Absence stays acceptable (CORS-hidden header).
+  it('rejects a 206 whose exposed Content-Range is malformed', async () => {
+    const fetchImpl: typeof fetch = () =>
+      Promise.resolve(
+        fakeResponse({
+          status: 206,
+          headers: { 'content-range': 'utter garbage' },
+          body: new Uint8Array([1, 2, 3]),
+        })
+      );
+    const source = new RemoteRangeByteSource('https://x/t.zip', 10, fetchImpl);
+
+    await expect(source.read(2, 3)).rejects.toBeInstanceOf(StructuralReadError);
+  });
+
   // Why this test matters: `Content-Range` is NOT CORS-safelisted, and e.g.
   // raw.githubusercontent sends no Access-Control-Expose-Headers — so in a real
   // browser the header is often unreadable (null) on a perfectly good 206.
@@ -226,6 +244,33 @@ describe('probeRemote', () => {
       etag: '"v1"',
       lastModified: 'Mon, 24 Aug 2026 00:00:00 GMT',
     });
+  });
+
+  // Why this test matters (PR #357 review): a HEAD Content-Length and a 206
+  // Content-Range total that DISAGREE mean the host is confused about the
+  // archive's size — anchoring zip offsets to either guess risks corrupt
+  // reads. The size degrades to unknown (→ full-download) instead.
+  it('drops the size when HEAD and Content-Range disagree about it', async () => {
+    let call = 0;
+    const fetchImpl: typeof fetch = () => {
+      call += 1;
+      if (call === 1) {
+        return Promise.resolve(
+          fakeResponse({ status: 200, headers: { 'content-length': '10' } })
+        );
+      }
+      return Promise.resolve(
+        fakeResponse({
+          status: 206,
+          headers: { 'content-range': 'bytes 0-0/999' },
+          body: new Uint8Array(1),
+        })
+      );
+    };
+
+    const probe = await probeRemote('https://x/t.zip', fetchImpl);
+
+    expect(probe.size).toBeNull();
   });
 
   it('falls back to the probe GET headers for validators when HEAD fails', async () => {

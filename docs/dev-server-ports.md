@@ -24,7 +24,7 @@ Next free: **5188**.
   ports in the 519x range and list them here — the guard test only scans
   `vite.config.ts` files, so this table is the only place that knows them.
 
-Each port appears in three places for its package — `vite.config.ts` (`server.port`) and
+Each VITE port above appears in three places for its package — `vite.config.ts` (`server.port`) and
 `playwright-tests/playwright.config.js` (`baseURL` and the `webServer` `command`/`url`).
 `tests/repo-config/dev-server-ports.test.js` asserts the set is unique.
 

@@ -75,6 +75,20 @@ describe('normalizeShareUrl — Google Drive', () => {
       'https://drive.usercontent.google.com/download?id=ID42&export=download&confirm=t'
     );
   });
+
+  // Why this test matters (PR #357 review): searchParams.get returns the
+  // DECODED value, so an id carrying encoded '&'/'=' used to smuggle extra
+  // query parameters into the rewritten URL. It must stay one opaque value.
+  it('keeps a hostile id opaque instead of smuggling query parameters', () => {
+    const out = normalizeShareUrl(
+      'https://drive.google.com/uc?id=ID42%26export%3Dview'
+    );
+    expect(out).toBe(
+      'https://drive.usercontent.google.com/download?id=ID42%26export%3Dview&export=download&confirm=t'
+    );
+    // The rewritten URL parses back to the SAME single id.
+    expect(new URL(out).searchParams.get('id')).toBe('ID42&export=view');
+  });
 });
 
 describe('normalizeShareUrl — OneDrive', () => {

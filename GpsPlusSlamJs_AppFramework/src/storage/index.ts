@@ -93,6 +93,7 @@ export {
 // --- remote-range-byte-source ---
 export {
   type FetchImpl,
+  type RemoteValidatorProbe,
   fetchRemoteValidators,
   probeRemote,
   RangeIgnoredError,

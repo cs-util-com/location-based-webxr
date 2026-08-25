@@ -69,6 +69,23 @@ describe("openTourSession", () => {
     await session.close();
   });
 
+  // Why this test matters (PR #357 review): the stats panel used to keep
+  // saying "serving from network" after the warm swap while its own
+  // cache-read counter climbed — the origin must follow the LATEST read.
+  it("flips stats.origin to cache once the warm swap serves reads locally", async () => {
+    const fetchImpl = rangeServer(await buildZip());
+    const store = new InMemoryLocalCacheStore();
+    const session = await openTourSession("https://x/tour.zip", {
+      fetchImpl,
+      cacheStore: store,
+    });
+
+    await session.archive.warmed;
+    await session.loadEntry("images/a.jpg");
+    expect(session.stats().origin).toBe("cache");
+    await session.close();
+  });
+
   it("feeds live stats as reads happen", async () => {
     const fetchImpl = rangeServer(await buildZip());
     let latest = { networkRequests: 0, networkBytes: 0 };

@@ -33,6 +33,12 @@ interface ServerOptions {
   /** Honor Range only for the probe (bytes=0-0), then flip to 200 full-body —
    *  the mid-session CDN behavior change the recovery path exists for. */
   flipRangesAfterProbe?: boolean;
+  /** First range-less GET answers 500, later ones succeed — the transient
+   *  recovery-download failure that must not be memoised forever. */
+  fullBodyFailFirst?: boolean;
+  /** Box for a manually-resolved range-less GET — the in-flight recovery
+   *  write the evict ordering must not race past. */
+  deferredFullBody?: { resolve?: () => void };
 }
 
 interface Call {
@@ -77,8 +83,21 @@ function rangeResponse(
 function fullBodyResponse(
   opts: ServerOptions,
   init: RequestInit | undefined,
-  baseHeaders: Record<string, string>
+  baseHeaders: Record<string, string>,
+  tally: { fullBodyCalls: number }
 ): Promise<Response> {
+  tally.fullBodyCalls += 1;
+  if (opts.fullBodyFailFirst === true && tally.fullBodyCalls === 1) {
+    return Promise.resolve(respond(500, new Uint8Array(0), baseHeaders));
+  }
+  if (opts.deferredFullBody !== undefined) {
+    const box = opts.deferredFullBody;
+    return new Promise((resolve) => {
+      box.resolve = () => {
+        resolve(respond(200, ARCHIVE, baseHeaders));
+      };
+    });
+  }
   if (opts.fullBody === 'hang') {
     // Real fetch rejects immediately on an already-aborted signal — the
     // dispose-before-fetch-starts race depends on this.
@@ -105,6 +124,7 @@ function fakeServer(opts: ServerOptions = {}): {
   calls: Call[];
 } {
   const calls: Call[] = [];
+  const tally = { fullBodyCalls: 0 };
   const fetchImpl: FetchImpl = (input, init) => {
     const range = new Headers(init?.headers).get('range');
     const method = init?.method ?? 'GET';
@@ -124,7 +144,7 @@ function fakeServer(opts: ServerOptions = {}): {
     if (range !== null && opts.supportsRanges !== false) {
       return Promise.resolve(rangedOrFlipped(opts, calls, range, baseHeaders));
     }
-    return fullBodyResponse(opts, init, baseHeaders);
+    return fullBodyResponse(opts, init, baseHeaders, tally);
   };
   return { fetchImpl, calls };
 }
@@ -313,6 +333,29 @@ describe('openRemoteArchive — cache lookup', () => {
     );
   });
 
+  // Why this test matters (PR #357 review): a definitive 404 on the
+  // revalidation HEAD used to be lumped with "host unreachable", so a
+  // DELETED archive was served from cache forever. Deletion is an author
+  // action the viewer must honor; only genuine unreachability keeps the
+  // availability-over-freshness behavior.
+  it('evicts the cached copy when the revalidation HEAD says the archive is gone', async () => {
+    const fetchImpl: FetchImpl = () =>
+      Promise.resolve(respond(404, new Uint8Array(0), {}));
+    const store = await seededStore('"v1"');
+
+    const err = await openRemoteArchive(URL_, {
+      fetchImpl,
+      cacheStore: store,
+    }).then(
+      () => null,
+      (e: unknown) => e
+    );
+
+    expect(err).toBeInstanceOf(OpenRemoteArchiveError);
+    expect((err as OpenRemoteArchiveError).rejectCause).toBe('missing');
+    await expect(store.get(URL_)).resolves.toBeUndefined();
+  });
+
   it('skipCache bypasses the lookup, and evict drops the entry', async () => {
     const { fetchImpl } = fakeServer({ etag: '"v1"' });
     const store = await seededStore('"v1"');
@@ -368,6 +411,57 @@ describe('openRemoteArchive — mid-session range-ignore recovery', () => {
     expect(
       calls.filter((c) => c.method === 'GET' && c.range === null)
     ).toHaveLength(1);
+  });
+
+  // Why this test matters (PR #357 review): the single-flight promise used to
+  // memoise a REJECTION too, so one transient failure during the recovery
+  // download permanently bricked the session — every later read replayed the
+  // same cached error with no way out but a full reopen.
+  it('retries the recovery download after a transient failure', async () => {
+    const { fetchImpl } = fakeServer({
+      flipRangesAfterProbe: true,
+      fullBodyFailFirst: true,
+    });
+    const opened = await openRemoteArchive(URL_, { fetchImpl, warm: false });
+
+    await expect(opened.source.read(0, 3)).rejects.toThrow();
+    // The next read must attempt a fresh download, not replay the failure.
+    await expect(opened.source.read(0, 3)).resolves.toEqual(
+      new Uint8Array([1, 2, 3])
+    );
+  });
+
+  // Why this test matters (PR #357 review): the recovery's cache write was
+  // not awaited by evict(), so the documented dispose → await warmed → evict
+  // cleanup could run BEFORE a late recovery write landed — re-poisoning the
+  // cache the eviction had just cleared.
+  it('evict waits for an in-flight recovery write instead of racing past it', async () => {
+    const deferredFullBody: { resolve?: () => void } = {};
+    const { fetchImpl } = fakeServer({
+      flipRangesAfterProbe: true,
+      deferredFullBody,
+    });
+    const store = new InMemoryLocalCacheStore();
+    const opened = await openRemoteArchive(URL_, {
+      fetchImpl,
+      cacheStore: store,
+      warm: false,
+    });
+
+    const reading = opened.source.read(0, 3);
+    // Let the failed range read register the recovery download (one
+    // macrotask); the download itself stays pending on the deferred body —
+    // exactly the "write still in flight" window the review named. (evict's
+    // contract is "after the parse settled", so racing INSIDE the register
+    // gap is out of contract.)
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const evicting = opened.evict(); // must wait for the write, then delete
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    deferredFullBody.resolve?.(); // the late write lands
+    await expect(reading).resolves.toEqual(new Uint8Array([1, 2, 3]));
+    await evicting;
+
+    await expect(store.get(URL_)).resolves.toBeUndefined();
   });
 
   it('persists the recovered copy so the next visit skips the broken host', async () => {

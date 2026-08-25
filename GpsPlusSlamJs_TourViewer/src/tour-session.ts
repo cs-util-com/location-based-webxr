@@ -36,6 +36,10 @@ export interface StreamStats {
   networkBytes: number;
   cacheReads: number;
   cacheBytes: number;
+  /** Where the MOST RECENT read was served from — flips to 'cache' when the
+   *  background warm swaps the session onto a local copy (the archive's own
+   *  `origin` field is the initial state and never changes). */
+  origin: "network" | "cache";
 }
 
 export interface OpenTourOptions {
@@ -75,8 +79,10 @@ export async function openTourSession(
     networkBytes: 0,
     cacheReads: 0,
     cacheBytes: 0,
+    origin: "network",
   };
   const onRead = (event: ArchiveReadEvent): void => {
+    stats.origin = event.origin;
     if (event.origin === "network") {
       stats.networkRequests += 1;
       stats.networkBytes += event.length;

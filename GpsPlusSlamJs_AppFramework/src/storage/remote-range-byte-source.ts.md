@@ -13,10 +13,13 @@ that issues one HTTP Range fetch per read).
   `range-probe.ts` for `ProbeResult`. Throws if `fetch` rejects (CORS/network).
   Captures freshness validators (ETag/Last-Modified) where readable — from
   the HEAD, or the probe GET when HEAD fails.
-- `fetchRemoteValidators(url, fetchImpl): Promise<{ size, validators? } | null>`
-  — one lightweight HEAD for size + validators; null when the HEAD fails or
-  is refused. The cache-revalidation check `open-remote-archive.ts` runs
-  before deciding whether a full probe is needed.
+- `fetchRemoteValidators(url, fetchImpl): Promise<RemoteValidatorProbe | null>`
+  — one lightweight HEAD; `{ kind: 'ok', size, validators? }` on success,
+  `{ kind: 'missing' }` on a definitive 404/410 (the archive is GONE — a
+  revalidating caller must evict, not serve its cache), null when the HEAD
+  fails or is refused (unreachable — serving the cache is right). The
+  cache-revalidation check `open-remote-archive.ts` runs before deciding
+  whether a full probe is needed.
 - `class RemoteRangeByteSource implements ByteSource`
   - `constructor(url: string, size: number, fetchImpl: FetchImpl)`
   - `read(offset, length): Promise<Uint8Array>`

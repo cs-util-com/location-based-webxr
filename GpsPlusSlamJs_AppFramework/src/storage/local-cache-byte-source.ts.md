@@ -54,7 +54,7 @@ const store =
     ? new CacheApiStore()
     : new InMemoryLocalCacheStore();
 const cached = await store.get(url);
-if (cached) return new LocalCacheByteSource(cached);
+if (cached) return new LocalCacheByteSource(cached.blob);
 ```
 
 ## Tests

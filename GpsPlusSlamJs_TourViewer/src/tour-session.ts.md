@@ -13,7 +13,10 @@ loading with MIME types, and the poisoned-cache recovery loop.
   `OpenTourOptions { fetchImpl?; cacheStore?; googleDriveApiKey?; onStats? }`
 - `TourSession { entries; archive; stats(); loadEntry(filename); close() }`
 - `TourEntry { filename; size; isImage }` (reached via `TourSession.entries`, not separately exported),
-  `StreamStats { networkRequests; networkBytes; cacheReads; cacheBytes }`
+  `StreamStats { networkRequests; networkBytes; cacheReads; cacheBytes; origin }`
+  — `origin` tracks the LATEST read, flipping to `'cache'` once the warm
+  swap serves reads locally (the archive's own `origin` field is only the
+  initial state).
 
 ## Invariants & assumptions
 

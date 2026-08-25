@@ -69,8 +69,11 @@ function classifyRangeResponse(
       : new Error(message);
   }
   if (contentRange !== null) {
+    // Present but unparseable is as bad as mismatched: a garbage header can
+    // pair with an exact-length body for the WRONG offset, and length alone
+    // cannot catch that (PR #357 review). Only ABSENCE (CORS-hidden) is fine.
     const m = /^bytes\s+(\d+)-(\d+)\//.exec(contentRange.trim());
-    if (m && (Number(m[1]) !== offset || Number(m[2]) !== end)) {
+    if (m === null || Number(m[1]) !== offset || Number(m[2]) !== end) {
       return new StructuralReadError(
         `server answered range ${contentRange} instead of ${offset}-${end}`
       );
@@ -86,8 +89,10 @@ const HEAD_TIMEOUT_MS = 15_000;
  *  a full download on a slow cellular link, not just headers. */
 const PROBE_GET_TIMEOUT_MS = 300_000;
 /** A range read returns a small slice; a stalled one must fail fast so a
- *  transient-retry policy above this module gets a chance instead of hanging
- *  forever on a dead connection. */
+ *  caller that chooses to retry gets the chance instead of hanging forever
+ *  on a dead connection. (Nothing retries automatically today — the
+ *  orchestrator adds recovery only for the range-ignored 200 case; PR #357
+ *  review.) */
 const RANGE_READ_TIMEOUT_MS = 20_000;
 
 /** Freshness validators readable off a response, where CORS lets us. */
@@ -101,6 +106,18 @@ function readValidators(headers: Headers): ArchiveValidators | undefined {
   };
 }
 
+/** Result of the lightweight validator HEAD. `'missing'` is a DEFINITIVE
+ *  404/410 — the archive is gone, which is different from `null`
+ *  (unreachable / HEAD refused): a revalidating caller serves its cache when
+ *  the host cannot be asked, but must honor a deletion (PR #357 review). */
+export type RemoteValidatorProbe =
+  | {
+      readonly kind: 'ok';
+      readonly size: number | null;
+      readonly validators?: ArchiveValidators;
+    }
+  | { readonly kind: 'missing' };
+
 /**
  * Size + freshness validators via a single HEAD, or null when the HEAD fails
  * or is refused — the lightweight check a cache-revalidating caller runs
@@ -109,7 +126,7 @@ function readValidators(headers: Headers): ArchiveValidators | undefined {
 export async function fetchRemoteValidators(
   url: string,
   fetchImpl: FetchImpl
-): Promise<{ size: number | null; validators?: ArchiveValidators } | null> {
+): Promise<RemoteValidatorProbe | null> {
   try {
     const head = await fetchImpl(url, {
       method: 'HEAD',
@@ -124,13 +141,17 @@ export async function fetchRemoteValidators(
       cache: 'no-cache',
       signal: AbortSignal.timeout(HEAD_TIMEOUT_MS),
     });
-    // Only a SUCCESSFUL HEAD may size the archive: a 404/403 also carries a
+    if (head.status === 404 || head.status === 410) {
+      return { kind: 'missing' };
+    }
+    // Only a SUCCESSFUL HEAD may size the archive: a 403 also carries a
     // Content-Length — of the error page. And only a finite safe non-negative
     // integer may pass: `Number('abc')` is NaN, and `NaN ?? fallback` never
     // falls back, so an unvalidated value would propagate into ProbeResult.
     if (!head.ok) return null;
     const validators = readValidators(head.headers);
     return {
+      kind: 'ok',
       size: parseArchiveSize(head.headers.get('content-length')),
       ...(validators !== undefined ? { validators } : {}),
     };
@@ -141,13 +162,37 @@ export async function fetchRemoteValidators(
   }
 }
 
+function asOkHead(
+  info: RemoteValidatorProbe | null
+): Extract<RemoteValidatorProbe, { kind: 'ok' }> | null {
+  return info?.kind === 'ok' ? info : null;
+}
+
+/**
+ * The archive size a probe yields. On a 206, `Content-Range`'s total (when
+ * CORS lets us read it) recovers a size HEAD could not supply — this is what
+ * makes the loader work behind a CORS proxy — and when BOTH are readable
+ * they must agree: a host confused about its own size gets no size at all
+ * (→ full-download degrade) rather than a guess that zip offsets would be
+ * anchored to (PR #357 review).
+ */
+function resolveProbeSize(
+  headSize: number | null,
+  probe: Response
+): number | null {
+  if (probe.status !== 206) return headSize;
+  const total = parseContentRangeTotal(probe.headers.get('content-range'));
+  if (total === null) return headSize;
+  if (headSize !== null && headSize !== total) return null;
+  return total;
+}
+
 /** HEAD for size + `bytes=0-0` GET for range support. Throws if `fetch` rejects. */
 export async function probeRemote(
   url: string,
   fetchImpl: FetchImpl
 ): Promise<ProbeResult> {
-  const headInfo = await fetchRemoteValidators(url, fetchImpl);
-  let size: number | null = headInfo?.size ?? null;
+  const okHead = asOkHead(await fetchRemoteValidators(url, fetchImpl));
 
   const probe = await fetchImpl(url, {
     headers: { Range: 'bytes=0-0' },
@@ -155,21 +200,14 @@ export async function probeRemote(
   });
   // Prefer HEAD validators; when HEAD failed, the probe GET's own headers
   // still carry them on many hosts.
-  const validators = headInfo?.validators ?? readValidators(probe.headers);
+  const validators = okHead?.validators ?? readValidators(probe.headers);
   const validatorsField =
     validators !== undefined ? { validators } : ({} as const);
+  const size = resolveProbeSize(okHead?.size ?? null, probe);
 
   if (probe.status === 200) {
     const body = new Uint8Array(await probe.arrayBuffer());
     return { status: 200, size: size ?? body.length, body, ...validatorsField };
-  }
-
-  // On a 206, if HEAD gave no size, recover it from Content-Range — this is
-  // what makes the loader work behind a CORS proxy (or any host that answers
-  // a ranged GET but no HEAD Content-Length). The proxy must expose
-  // Content-Range.
-  if (probe.status === 206 && size === null) {
-    size = parseContentRangeTotal(probe.headers.get('content-range'));
   }
 
   // Drain the small range body so the connection can be reused/closed.
@@ -201,9 +239,10 @@ export class RemoteRangeByteSource implements ByteSource {
     // probing at EOF) resolves locally, never on the network.
     if (length <= 0) return new Uint8Array(0);
     const end = offset + length - 1;
-    // The timeout turns a *hanging* connection into a rejection, so a
-    // transient-retry policy above this module actually gets to run (a stall
-    // would otherwise never fail and strand the caller forever).
+    // The timeout turns a *hanging* connection into a rejection a caller can
+    // act on (a stall would otherwise never fail and strand the caller
+    // forever). No retry is built in — the transient/permanent error split
+    // below is information for the caller's own policy.
     const res = await this.#fetch(this.#url, {
       headers: { Range: `bytes=${offset}-${end}` },
       signal: AbortSignal.timeout(RANGE_READ_TIMEOUT_MS),

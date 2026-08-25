@@ -148,12 +148,14 @@ test("a ?qr= launch forwards to the tour viewer with the payload intact", async 
   await page.waitForURL(/\/tour\/\?qr=https%3A%2F%2Fexample\.com%2Ftour\.zip/);
 });
 
-test("all seven demo apps stay launchable from the demos hub", async ({
+test("all eight demo apps stay launchable from the demos hub", async ({
   page,
 }) => {
   await page.goto("/");
   // Keep in sync with requiredDemoLinks in scripts/build-site.mjs (the
   // deploy-time guard); this e2e re-checks the same set in the LIVE page.
+  // (/osm/ had been missing from this list since that card was added —
+  // PR #357 review.)
   for (const href of [
     "/starter/",
     "/minimal/",
@@ -161,6 +163,7 @@ test("all seven demo apps stay launchable from the demos hub", async ({
     "/recorder/",
     "/physics/",
     "/wayfinding/",
+    "/osm/",
     "/tour/",
   ]) {
     const card = page.locator(`a.demo-card[href="${href}"]`);

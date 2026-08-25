@@ -187,6 +187,10 @@ async function isCachedCopyServable(
 ): Promise<boolean> {
   const live = await fetchRemoteValidators(url, fetchImpl);
   if (live === null) return true;
+  // A definitive 404/410 is the author DELETING the archive — honoring it
+  // means evicting, not serving the ghost from cache forever (PR #357
+  // review). Only genuine unreachability keeps availability-over-freshness.
+  if (live.kind === 'missing') return false;
   return cachedCopyMatchesLive(cached, live);
 }
 
@@ -254,41 +258,44 @@ function openRanged(
   // from there. Declared before `switchable` and wired via a closure — the
   // recovery needs the switchable that wraps it.
   let recoveryDownload: Promise<ByteSource> | null = null;
-  const recoverToLocal = (): Promise<ByteSource> => {
-    recoveryDownload ??= (async () => {
-      const res = await fetchImpl(url, {
-        signal: AbortSignal.any([
-          controller.signal,
-          AbortSignal.timeout(FULL_DOWNLOAD_TIMEOUT_MS),
-        ]),
-      });
-      if (!res.ok) {
-        throw new StructuralReadError(
-          `range-ignore recovery download of ${url} failed (${res.status})`
-        );
-      }
-      const blob = await res.blob();
-      if (blob.size !== size) {
-        throw new StructuralReadError(
-          `range-ignore recovery downloaded ${blob.size} bytes, expected ${size} — the file changed mid-session`
-        );
-      }
-      const local = instrument(
-        new LocalCacheByteSource(blob),
-        'cache',
-        options
+  const runRecoveryDownload = async (): Promise<ByteSource> => {
+    const res = await fetchImpl(url, {
+      signal: AbortSignal.any([
+        controller.signal,
+        AbortSignal.timeout(FULL_DOWNLOAD_TIMEOUT_MS),
+      ]),
+    });
+    if (!res.ok) {
+      throw new StructuralReadError(
+        `range-ignore recovery download of ${url} failed (${res.status})`
       );
-      if (switchable.switchTo(local) && store !== undefined) {
-        await requestPersistentStorage();
-        await store.put(url, {
-          blob,
-          ...(validators !== undefined ? { validators } : {}),
-        });
-      }
-      // Even when the swap was refused (the warm won the race), this copy is
-      // size-validated — serving the failed read from it is correct.
-      return local;
-    })();
+    }
+    const blob = await res.blob();
+    if (blob.size !== size) {
+      throw new StructuralReadError(
+        `range-ignore recovery downloaded ${blob.size} bytes, expected ${size} — the file changed mid-session`
+      );
+    }
+    const local = instrument(new LocalCacheByteSource(blob), 'cache', options);
+    if (switchable.switchTo(local) && store !== undefined) {
+      await requestPersistentStorage();
+      await store.put(url, {
+        blob,
+        ...(validators !== undefined ? { validators } : {}),
+      });
+    }
+    // Even when the swap was refused (the warm won the race), this copy is
+    // size-validated — serving the failed read from it is correct.
+    return local;
+  };
+  const recoverToLocal = (): Promise<ByteSource> => {
+    // Single-flight for SUCCESS only: a rejection resets the slot so the next
+    // read retries instead of replaying a memoised transient failure forever
+    // (PR #357 review). Concurrent readers still share one in-flight attempt.
+    recoveryDownload ??= runRecoveryDownload().catch((err: unknown) => {
+      recoveryDownload = null;
+      throw err;
+    });
     return recoveryDownload;
   };
   const remoteWithRecovery: ByteSource = {
@@ -324,6 +331,11 @@ function openRanged(
     warmed,
     dispose: () => controller.abort(),
     evict: async () => {
+      // An in-flight recovery download persists on completion; deleting
+      // before it settles would let that late write re-poison the cache the
+      // eviction just cleared (PR #357 review). Await it — success or
+      // failure — then delete.
+      await recoveryDownload?.catch(() => undefined);
       await store?.delete(url);
     },
   };
