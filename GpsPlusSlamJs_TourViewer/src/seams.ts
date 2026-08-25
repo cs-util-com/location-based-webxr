@@ -17,10 +17,26 @@
 
 import {
   getArWorldGroup,
+  getCamera,
+  getCurrentArPose,
   startCameraFrameCapture,
   stopCameraFrameCapture,
   type EnableGpsArDeps,
 } from "gps-plus-slam-app-framework/ar";
+import {
+  createBarcodeDetectorFrontEnd,
+  type QrFrontEnd,
+  type RgbaImage,
+} from "gps-plus-slam-app-framework/ar/qr/qr-frontend";
+import {
+  intrinsicsFromProjection,
+  solveQrPose,
+  type CameraIntrinsics,
+  type Pose,
+  type QrPoseSolution,
+} from "gps-plus-slam-app-framework/ar/qr/qr-pose";
+import type { QrSolvePoseInput } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
+import { PlanarPnpSquare } from "gps-plus-slam-app-framework/ar/qr/planar-pnp";
 // Deep import on purpose: the /visualization barrel pulls the leaflet-based
 // map modules, which crash in a windowless (node) unit-test environment.
 import { enableArWorldGroupAlignment } from "gps-plus-slam-app-framework/visualization/ar-world-group-alignment";
@@ -43,6 +59,16 @@ export interface TourViewerSeams {
   }): unknown;
   startCameraFrameCapture(config?: { intervalMs?: number }): void;
   stopCameraFrameCapture(): void;
+  /** BarcodeDetector-backed detect+decode, or `null` where unavailable
+   *  (desktop Chromium — there is no fallback detector by design). */
+  createQrFrontEnd(): QrFrontEnd | null;
+  /** The planar-PnP square solver (pure JS, OpenCV-free). */
+  solveQrPose(input: QrSolvePoseInput): QrPoseSolution | null;
+  /** Current XR-frame camera pose in RAW WebXR/odom space, as tuples. */
+  getCameraPose(): Pose | null;
+  /** PnP intrinsics from the in-session camera projection, scaled to the
+   *  DETECTOR buffer's dimensions (buffer mismatch is the #1 PnP risk). */
+  getIntrinsics(image: RgbaImage): CameraIntrinsics | null;
 }
 
 declare global {
@@ -52,6 +78,9 @@ declare global {
   }
 }
 
+/** One shared solver instance — stateless between solves. */
+const pnpSolver = /* @__PURE__ */ new PlanarPnpSquare();
+
 /** The production seams — the unmodified framework device wiring. */
 export const realSeams: TourViewerSeams = {
   controllerDeps: {},
@@ -59,6 +88,36 @@ export const realSeams: TourViewerSeams = {
   enableArWorldGroupAlignment,
   startCameraFrameCapture,
   stopCameraFrameCapture,
+  createQrFrontEnd: () => createBarcodeDetectorFrontEnd(),
+  solveQrPose: (input) => solveQrPose({ ...input, solver: pnpSolver }),
+  // The CURRENT XR-frame pose, reshaped from ARPose objects to Pose tuples —
+  // the RecorderApp's documented recipe (raw WebXR/odom space).
+  getCameraPose: () => {
+    const arPose = getCurrentArPose();
+    if (!arPose) return null;
+    return {
+      position: [arPose.position.x, arPose.position.y, arPose.position.z],
+      rotation: [
+        arPose.orientation.x,
+        arPose.orientation.y,
+        arPose.orientation.z,
+        arPose.orientation.w,
+      ],
+    };
+  },
+  // Depth is OFF in this app (QD-5), so the projection comes from the
+  // in-session three camera — WebXR owns its projectionMatrix during an
+  // immersive session (the wayfinding-placement precedent) — scaled to the
+  // DETECTOR buffer's width/height, never the render size.
+  getIntrinsics: (image) => {
+    const camera = getCamera();
+    if (!camera) return null;
+    return intrinsicsFromProjection(
+      camera.projectionMatrix.toArray(),
+      image.width,
+      image.height,
+    );
+  },
 };
 
 /**

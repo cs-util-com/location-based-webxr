@@ -11,9 +11,16 @@ Keeps `main.ts` glue-only.
 
 - `interface TourViewerSeams { controllerDeps; getArWorldGroup;
 enableArWorldGroupAlignment; startCameraFrameCapture;
-stopCameraFrameCapture }` — `controllerDeps` is a
+stopCameraFrameCapture; createQrFrontEnd; solveQrPose; getCameraPose;
+getIntrinsics }` — `controllerDeps` is a
   `Partial<EnableGpsArDeps>` injected into `createEnableGpsArController`
-  (empty in production; the e2e fake supplies the full dep set there).
+  (empty in production; the e2e fake supplies the full dep set there). The
+  QR quartet (M3) is the author pipeline's device layer: BarcodeDetector
+  front end (or `null` — desktop has no fallback by design), the pure-JS
+  planar-PnP solver, the current XR-frame pose as tuples (raw WebXR/odom),
+  and PnP intrinsics from the in-session camera projection scaled to the
+  DETECTOR buffer's dimensions (depth is OFF in this app, so the projection
+  matrix is the only source).
 - `realSeams: TourViewerSeams` — the unmodified framework wiring.
 - `getSeams(): TourViewerSeams` — real seams unless the DEV-only override is
   present.

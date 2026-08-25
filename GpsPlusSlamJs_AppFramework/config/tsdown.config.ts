@@ -215,10 +215,14 @@ const entryFiles = [
   // these subpaths, so they must be built per-file.
   'src/utils/qr-payload/codec-dictionary.ts',
   'src/utils/qr-payload/qr-launch-url.ts',
-  // QR anchor minting — deep-importable via the `./ar/*` wildcard for the
-  // TourViewer's authoring mode (QR-pose plan M1), so it must be built
-  // per-file.
+  // QR anchor minting + level schema + tracking controller — deep-importable
+  // via the `./ar/*` wildcard for the TourViewer's authoring mode (QR-pose
+  // plan M1/M3; the /ar/qr barrel would eagerly pull the whole QR cluster
+  // into node unit tests), so each must be built per-file.
   'src/ar/qr/qr-geo-pose-minting.ts',
+  'src/ar/qr/qr-level.ts',
+  'src/ar/qr/qr-gps-vote.ts',
+  'src/ar/qr/qr-tracking-controller.ts',
 
   // visualization/
   'src/visualization/index.ts',

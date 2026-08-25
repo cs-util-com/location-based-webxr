@@ -35,6 +35,13 @@ None (app entry point). Interesting seams for the e2e suite are the
   (PR #358 review #1).
 - Bare-name `?qr=` payloads resolve under `DEFAULT_ASSET_PREFIX`
   (the GeoTales raw-GitHub prefix the QR builder's docs use as the example).
+- **Author panel (M3):** exists only under `?author=1`, and lives INSIDE
+  `#ar-root` so it stays visible while the AR session composites the DOM
+  overlay. The printed size is captured once per AR entry (changing it =
+  exit + re-enter); the mint gate follows the store (stability + alignment)
+  via `authorStatusLine`; the export offers copy + a `qr/<c>.json`
+  download. The store carries the opt-in `qrDetected` reducer for both
+  modes.
 - **AR entry (M2):** `?author=1` is read once at boot (switching = reload);
   `#ar-status` and `#enter-ar` must stay DOM children of `#ar-root` — the
   `initAR` container is the WebXR DOM-Overlay root, so only its subtree is

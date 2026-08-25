@@ -34,5 +34,7 @@ via the server's `/flip` route), clear-cache, and clear-cache-during-warm
 `/warm-gate`). `launch-and-errors.spec.js`
 — the `?qr=` boot path, the async-UI in-progress/final states for success
 and failure, and the no-console-errors smoke. `ar-mode.spec.js` — the M2 AR
-foundation booting both modes through the fake seams (`ar-fakes.js`), plus
-the honest unsupported state without fakes.
+foundation booting both modes through the fake seams (`ar-fakes.js`), the
+session-end teardown + re-entry, the M3 author flow (scripted detect/solve
+through the REAL controller/slice/stability/alignment/mint to an exported
+level the parser accepts), plus the honest unsupported state without fakes.

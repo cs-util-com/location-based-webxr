@@ -16,13 +16,21 @@ import { openTourSession } from "./tour-session.js";
  * viewer for that URL on EVERY future visit.
  */
 
-async function buildZip(): Promise<Uint8Array> {
+async function buildZip(
+  extraEntries: Record<string, string> = {},
+): Promise<Uint8Array> {
   const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
   await writer.add("session.json", new TextReader('{"v":1}'));
   await writer.add("images/a.jpg", new TextReader("AAAA"));
   await writer.add("images/b.png", new TextReader("BBBBBB"));
+  for (const [name, text] of Object.entries(extraEntries)) {
+    await writer.add(name, new TextReader(text));
+  }
   return writer.close();
 }
+
+/** A minimal valid geo-less level document. */
+const LEVEL_JSON = '{"version":1,"qr":{"physicalSizeM":0.2}}';
 
 /** Serves `bytes` with real 206 slices; range-request pattern only. */
 function rangeServer(bytes: Uint8Array): FetchImpl {
@@ -52,6 +60,44 @@ function rangeServer(bytes: Uint8Array): FetchImpl {
     );
   };
 }
+
+describe("loadQrLevels", () => {
+  // Why these tests matter (QR-pose plan M3): the viewer's relocalization
+  // (M4) selects `qr/<c>.json` from whatever the author put in the zip —
+  // zero files is the common tour, and a corrupt file must degrade to "that
+  // code has no level", never brick the whole archive.
+  it("returns an empty map for a tour with no level files", async () => {
+    const fetchImpl = rangeServer(await buildZip());
+    const session = await openTourSession("https://x/tour.zip", { fetchImpl });
+    await expect(session.loadQrLevels()).resolves.toEqual(new Map());
+    await session.close();
+  });
+
+  it("loads one and two levels, keyed by their discriminator", async () => {
+    const fetchImpl = rangeServer(
+      await buildZip({ "qr/1.json": LEVEL_JSON, "qr/2.json": LEVEL_JSON }),
+    );
+    const session = await openTourSession("https://x/tour.zip", { fetchImpl });
+    const levels = await session.loadQrLevels();
+    expect([...levels.keys()].sort()).toEqual(["1", "2"]);
+    expect(levels.get("1")?.qr.physicalSizeM).toBe(0.2);
+    await session.close();
+  });
+
+  it("skips a corrupt level file instead of failing the archive (null-tolerant)", async () => {
+    const fetchImpl = rangeServer(
+      await buildZip({
+        "qr/1.json": "{not json",
+        "qr/2.json": '{"version":1}',
+        "qr/3.json": LEVEL_JSON,
+      }),
+    );
+    const session = await openTourSession("https://x/tour.zip", { fetchImpl });
+    const levels = await session.loadQrLevels();
+    expect([...levels.keys()]).toEqual(["3"]);
+    await session.close();
+  });
+});
 
 describe("openTourSession", () => {
   it("lists entries with image classification and loads one to a typed Blob", async () => {

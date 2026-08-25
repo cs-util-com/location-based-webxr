@@ -17,7 +17,11 @@ camera, so `installTourViewerArFakes(page)` installs
   binding received — specs assert `recording.isRecording` through it),
   `stopCaptureCalls`, `endARSessionCalls`, `cameraFrameCallback`,
   `emitFrames(n)` (delivers fake RGBA frames through the initAR camera
-  callback).
+  callback), `sessionEndCallback` + `endXrSession()` (simulate a system
+  session end), and `armQrDetection(text, position?)` + `nextDetection` /
+  `nextSolution` — scripted device-level QR results for the author
+  pipeline; the REAL controller, slice, stability gate and mint run over
+  them.
 
 ## Invariants & assumptions
 

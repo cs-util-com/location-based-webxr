@@ -27,7 +27,6 @@ import {
   endSession,
   resetCoordinatorState,
   startSession,
-  type SlamAppStore,
   type SubscribableStore,
 } from "gps-plus-slam-app-framework/state";
 import type { Object3D } from "three";
@@ -146,6 +145,19 @@ export interface TourArRuntimeDeps {
 export type TourArRuntimeResult = { ok: true } | { ok: false; error: string };
 
 /**
+ * The store surface the runtime start/end needs — STRUCTURAL on purpose:
+ * `SlamAppStore` is generic over its extra reducers (this app adds the
+ * `qrDetected` slice), and the framework's own guidance for consumers with
+ * extra slices is to pass the store structurally (see
+ * `combined-root-state.ts`; MinimalExample documents the same widening).
+ */
+export type TourArRuntimeStore = SubscribableStore & {
+  dispatch(
+    action: ReturnType<typeof startSession> | ReturnType<typeof endSession>,
+  ): unknown;
+};
+
+/**
  * The on-running sequence, in one place so it cannot be half-done:
  * 1. `startSession` — WITHOUT this the gps-event-coordinator silently drops
  *    every GPS fix (`isRecording` gate, no log), alignment never computes,
@@ -157,7 +169,7 @@ export type TourArRuntimeResult = { ok: true } | { ok: false; error: string };
  * capture), so the caller can surface one coherent error.
  */
 export function startTourArRuntime(
-  store: SlamAppStore,
+  store: TourArRuntimeStore,
   deps: TourArRuntimeDeps,
 ): TourArRuntimeResult {
   const arWorldGroup = deps.getArWorldGroup();
@@ -190,7 +202,7 @@ export function startTourArRuntime(
  * accumulations so the next start begins clean.
  */
 export function endTourArRuntime(
-  store: SlamAppStore,
+  store: TourArRuntimeStore,
   deps: { stopCameraFrameCapture(): void },
 ): void {
   deps.stopCameraFrameCapture();

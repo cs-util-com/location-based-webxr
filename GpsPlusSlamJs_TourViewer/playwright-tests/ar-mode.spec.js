@@ -141,6 +141,94 @@ test("a system session end tears the runtime down, and a re-entry starts a clean
   expect(afterReenter.isRecording).toBe(true);
 });
 
+test("author mode mints and exports a level that the parser round-trips", async ({
+  page,
+}) => {
+  // Why this matters (QR-pose plan M3): this drives the COMPOSED author
+  // pipeline — scripted device detect/solve, but the REAL tracking
+  // controller, the real qrDetected slice + stability gate, the real
+  // alignment solve fed through the store, the real mint conversion and the
+  // real serializer — and asserts the exported JSON is a parseable level
+  // with a geo pose. Frame-exactness is pinned by the unit tests; this
+  // proves the pieces are actually wired to each other.
+  await page.goto("/?author=1");
+  await expect(page.getByTestId("author-panel")).toBeVisible();
+  await enterAr(page);
+  await expect(page.getByTestId("enter-ar")).toHaveText("Authoring in AR");
+  await expect(page.getByTestId("author-status")).toHaveText(
+    /point the camera/i,
+  );
+
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.armQrDetection(
+      "https://gps.csutil.com/tour/?qr=x&c=1",
+    );
+  });
+  // One frame per poll tick: detects are async and coalesced, so a burst
+  // would collapse into one observation. Stability needs ≥5.
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return page.getByTestId("author-status").textContent();
+      },
+      { timeout: 15000 },
+    )
+    .toMatch(/waiting for GPS alignment/i);
+  await expect(page.getByTestId("mint-export")).toBeDisabled();
+
+  // Feed the REAL alignment solve: three odom↔GPS pairs, ~15 m apart, in a
+  // consistent identity-ish mapping around the zero reference.
+  await page.evaluate(() => {
+    const store = /** @type {any} */ (window).__tourViewerTest.alignmentStore;
+    // gpsData starts null; the zero reference is what creates it (the
+    // coordinator's first-fix behaviour, replayed here by hand).
+    store.dispatch({
+      type: "gpsData/setZeroPos",
+      payload: { lat: 47.5, lon: 8.7 },
+    });
+    const pairs = [
+      { odom: [0, 0, 0], lat: 47.5, lon: 8.7 },
+      { odom: [0, 0, -15], lat: 47.500135, lon: 8.7 },
+      { odom: [15, 0, 0], lat: 47.5, lon: 8.7002 },
+    ];
+    for (const [i, p] of pairs.entries()) {
+      store.dispatch({
+        type: "gpsData/recordGpsEvent",
+        payload: {
+          odomPosition: p.odom,
+          odomRotation: [0, 0, 0, 1],
+          rawGpsPoint: {
+            id: `e2e-${String(i)}`,
+            latitude: p.lat,
+            longitude: p.lon,
+            altitude: 400,
+            latLongAccuracy: 5,
+            timestamp: 1756150000000 + i * 1000,
+          },
+        },
+      });
+    }
+  });
+  await expect(page.getByTestId("author-status")).toHaveText(/ready to mint/i, {
+    timeout: 10000,
+  });
+
+  await page.getByTestId("mint-export").click();
+  const json = await page.getByTestId("author-json").inputValue();
+  const level = JSON.parse(json);
+  expect(level.version).toBe(1);
+  expect(level.qr.physicalSizeM).toBeCloseTo(0.2, 9);
+  expect(level.qr.geo.lat).toEqual(expect.any(Number));
+  expect(level.qr.geo.lon).toEqual(expect.any(Number));
+  expect(level.qr.geo.rotation).toHaveLength(4);
+  expect(level.qr.mintQuality.mintedAtIso).toEqual(expect.any(String));
+  await expect(page.getByTestId("author-download")).toBeVisible();
+  await expect(page.getByTestId("author-copy")).toBeVisible();
+});
+
 test("without fakes the button reports AR unsupported instead of breaking the page", async ({
   browser,
 }) => {

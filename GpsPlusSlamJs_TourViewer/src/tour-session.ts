@@ -12,7 +12,12 @@
  * network-served archive is reported as-is: the file itself is broken.
  */
 
-import { BlobWriter, ZipReader, type FileEntry } from "@zip.js/zip.js";
+import {
+  BlobWriter,
+  TextWriter,
+  ZipReader,
+  type FileEntry,
+} from "@zip.js/zip.js";
 import {
   ByteSourceReader,
   openRemoteArchive,
@@ -21,6 +26,10 @@ import {
   type OpenedArchive,
   type FetchImpl,
 } from "gps-plus-slam-app-framework/storage";
+import {
+  parseQrLevel,
+  type QrLevel,
+} from "gps-plus-slam-app-framework/ar/qr/qr-level";
 
 /** One archive entry as the gallery sees it (reached via `TourSession.entries`
  *  — not separately exported; knip counts a standalone export as dead). */
@@ -56,8 +65,18 @@ export interface TourSession {
   stats(): Readonly<StreamStats>;
   /** Decompress one entry to a Blob (images get their MIME type). */
   loadEntry(filename: string): Promise<Blob>;
+  /**
+   * The tour's authored QR levels: every `qr/<c>.json`, keyed by `<c>` (the
+   * printed `&c=` discriminator). NULL-TOLERANT by design (QR-pose plan
+   * M3): zero files is the common tour, and a corrupt file degrades to
+   * "that code has no level" — it must never brick the whole archive.
+   */
+  loadQrLevels(): Promise<ReadonlyMap<string, QrLevel>>;
   close(): Promise<void>;
 }
+
+/** `qr/<c>.json` → `<c>` (the level-file naming the author mode exports). */
+const QR_LEVEL_ENTRY = /^qr\/([\w.-]+)\.json$/;
 
 const IMAGE_EXTENSION = /\.(jpe?g|png|webp|gif|avif)$/i;
 
@@ -174,6 +193,21 @@ async function buildSession(
           MIME_BY_EXTENSION[extension] ?? "application/octet-stream",
         ),
       );
+    },
+    loadQrLevels: async () => {
+      const levels = new Map<string, QrLevel>();
+      for (const [filename, entry] of byName) {
+        const match = QR_LEVEL_ENTRY.exec(filename);
+        if (match?.[1] === undefined) continue;
+        try {
+          const text = await entry.getData(new TextWriter());
+          levels.set(match[1], parseQrLevel(JSON.parse(text)));
+        } catch {
+          // Null-tolerant: a corrupt level file means "this code has no
+          // level", never a broken archive.
+        }
+      }
+      return levels;
     },
     close: async () => {
       archive.dispose();

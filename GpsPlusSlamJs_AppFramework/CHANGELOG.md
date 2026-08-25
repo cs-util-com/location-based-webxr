@@ -21,6 +21,11 @@
   tokens, and a measured request-budget test. The `utils/qr-payload`
   launch-URL codec (`buildQrLaunchUrl`, `decodeDictionaryPayload`) is now
   deep-importable for `?qr=` launch handlers.
+- **QR-pose authoring surface deep-importable** — `ar/qr/qr-level`,
+  `ar/qr/qr-gps-vote` and `ar/qr/qr-tracking-controller` are now per-file
+  dist entries (alongside `ar/qr/qr-geo-pose-minting`), so a consumer app
+  can wire the QR tracking pipeline without pulling the whole `/ar/qr`
+  barrel into node unit tests.
 
 ## [1.3.0] — 2026-06-13
 

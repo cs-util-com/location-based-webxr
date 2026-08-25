@@ -36,6 +36,26 @@ export async function installTourViewerArFakes(page) {
           });
         }
       },
+      /** Scripted device-level QR results for the author pipeline (M3). */
+      nextDetection: /** @type {any} */ (null),
+      nextSolution: /** @type {any} */ (null),
+      /** Arm a consistent detection+solution for the given text/pose. */
+      armQrDetection(text, position = [1, 1.5, -2]) {
+        test.nextDetection = {
+          text,
+          corners: [
+            { x: 10, y: 10 },
+            { x: 20, y: 10 },
+            { x: 20, y: 20 },
+            { x: 10, y: 20 },
+          ],
+        };
+        test.nextSolution = {
+          qrPoseWorld: { position, rotation: [0, 0, 0, 1] },
+          qrPoseInCamera: { position, rotation: [0, 0, 0, 1] },
+          reprojectionErrorPx: 1,
+        };
+      },
       sessionEndCallback: /** @type {any} */ (null),
       /** Simulate a SYSTEM session end (the Android back gesture). */
       endXrSession() {
@@ -73,6 +93,15 @@ export async function installTourViewerArFakes(page) {
         },
       },
       getArWorldGroup: () => worldGroup,
+      // --- author-pipeline fakes (M3): the REAL controller/slice/stability
+      // machinery runs; only the device-level detect/solve are scripted. ---
+      createQrFrontEnd: () => ({
+        kind: "barcode-detector",
+        detect: () => Promise.resolve(test.nextDetection),
+      }),
+      solveQrPose: () => test.nextSolution,
+      getCameraPose: () => ({ position: [0, 0, 0], rotation: [0, 0, 0, 1] }),
+      getIntrinsics: () => ({ fx: 500, fy: 500, cx: 1, cy: 1 }),
       enableArWorldGroupAlignment: (options) => {
         test.alignmentCalls.push({
           hasStore: Boolean(options.store),

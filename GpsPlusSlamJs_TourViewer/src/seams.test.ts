@@ -23,5 +23,9 @@ describe("getSeams", () => {
     expect(typeof realSeams.enableArWorldGroupAlignment).toBe("function");
     expect(typeof realSeams.startCameraFrameCapture).toBe("function");
     expect(typeof realSeams.stopCameraFrameCapture).toBe("function");
+    expect(typeof realSeams.createQrFrontEnd).toBe("function");
+    expect(typeof realSeams.solveQrPose).toBe("function");
+    expect(typeof realSeams.getCameraPose).toBe("function");
+    expect(typeof realSeams.getIntrinsics).toBe("function");
   });
 });

@@ -14,8 +14,15 @@ import {
 import {
   createGpsPositionHandler,
   createSlamAppStore,
+  qrDetectedReducer,
+  recordQrDetection,
+  selectAlignmentMatrix,
+  selectQrPoseStability,
+  selectStableQrPose,
+  selectZeroReference,
   updateDeviceOrientation,
 } from "gps-plus-slam-app-framework/state";
+import { createQrTrackingController } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
 import {
   BoundedLocalCacheStore,
   CacheApiStore,
@@ -31,6 +38,12 @@ import {
   endTourArRuntime,
   startTourArRuntime,
 } from "./ar-mode.js";
+import {
+  AUTHOR_DEFAULT_SIZE_M,
+  authorStatusLine,
+  buildAuthorControllerConfig,
+  mintAuthorLevel,
+} from "./qr-author-mode.js";
 import { getSeams } from "./seams.js";
 import { resolveQrPayload } from "./qr-launch-dispatch.js";
 import { toStatsView } from "./stats-view.js";
@@ -240,14 +253,134 @@ const authorMode = authorModeEnabledFromSearch(location.search);
 const seams = getSeams();
 const arStore = createSlamAppStore({
   storageBackend: new NullStorageBackend(),
+  // The qrDetected slice is opt-in; both modes need it (author: stability
+  // gate for minting; viewer M4: relocalization votes read the same window).
+  extraReducers: { qrDetected: qrDetectedReducer },
 });
 const gpsHandler = createGpsPositionHandler({
   store: arStore,
   getArPose: getCurrentArPose,
 });
 const arController = createEnableGpsArController(seams.controllerDeps);
-/** Foundation observable until M3 points the frames at the QR pipeline. */
 let cameraFrameCount = 0;
+
+// --- Author mode (QR-pose plan M3) ---------------------------------------
+// The author panel exists only under ?author=1; its tracking controller is
+// (re)created per AR entry so the printed-size input is captured once at
+// start (changing it means exit + re-enter — cheap, and honest about what
+// the synthetic level actually carried).
+const authorPanel = element<HTMLElement>("author-panel");
+const authorSizeInput = element<HTMLInputElement>("author-size");
+const authorCInput = element<HTMLInputElement>("author-c");
+const authorStatus = element<HTMLDivElement>("author-status");
+const mintButton = element<HTMLButtonElement>("mint-export");
+const authorJsonBox = element<HTMLTextAreaElement>("author-json");
+const authorCopyButton = element<HTMLButtonElement>("author-copy");
+const authorDownloadButton = element<HTMLButtonElement>("author-download");
+
+authorPanel.hidden = !authorMode;
+authorSizeInput.value = String(AUTHOR_DEFAULT_SIZE_M);
+if (authorMode) {
+  // Alignment arrives via GPS dispatches, not via controller state — the
+  // readout must follow the store, or "waiting for GPS alignment" sticks.
+  arStore.subscribe(() => {
+    renderAuthorReadout();
+  });
+}
+
+let qrController: ReturnType<typeof createQrTrackingController> | null = null;
+/** The most recently detected code — the one the stability gate tracks. */
+let lastDetectedText: string | null = null;
+
+function renderAuthorReadout(): void {
+  if (!authorMode) return;
+  const state = arStore.getState();
+  const stability =
+    lastDetectedText === null
+      ? null
+      : selectQrPoseStability(state, lastDetectedText);
+  const readout = authorStatusLine(
+    lastDetectedText,
+    stability,
+    selectAlignmentMatrix(state) !== null,
+  );
+  authorStatus.textContent = readout.text;
+  mintButton.disabled = !readout.canMint;
+}
+
+function startAuthorPipeline(): void {
+  const sizeM = Number(authorSizeInput.value);
+  const frontEnd = seams.createQrFrontEnd();
+  if (frontEnd === null) {
+    authorStatus.textContent =
+      "This browser has no QR detector (BarcodeDetector) — use Android Chrome to author.";
+    return;
+  }
+  qrController = createQrTrackingController(
+    buildAuthorControllerConfig(sizeM, {
+      frontEnd,
+      solvePose: (input) => seams.solveQrPose(input),
+      getCameraPose: () => seams.getCameraPose(),
+      getIntrinsics: (image) => seams.getIntrinsics(image),
+      recordDetection: (event) => {
+        lastDetectedText = event.text;
+        arStore.dispatch(recordQrDetection(event));
+        renderAuthorReadout();
+      },
+    }),
+  );
+  renderAuthorReadout();
+}
+
+mintButton.addEventListener("click", () => {
+  if (lastDetectedText === null) return;
+  const state = arStore.getState();
+  const stablePose = selectStableQrPose(state, lastDetectedText);
+  if (stablePose === null) return; // the gate lost stability since render
+  const result = mintAuthorLevel({
+    stablePose,
+    alignmentMatrix: selectAlignmentMatrix(state),
+    zero: selectZeroReference(state),
+    sizeM: Number(authorSizeInput.value),
+    nowIso: new Date().toISOString(),
+  });
+  if (!result.ok) {
+    errorBox.textContent = result.error;
+    return;
+  }
+  authorJsonBox.value = result.json;
+  authorJsonBox.hidden = false;
+  authorCopyButton.hidden = false;
+  authorDownloadButton.hidden = false;
+});
+
+authorCopyButton.addEventListener("click", () => {
+  // Async-UI rule + the AnchorStarter label-revert guard: a second click
+  // during the transient label must not capture it as the idle label.
+  navigator.clipboard.writeText(authorJsonBox.value).then(
+    () => {
+      authorCopyButton.textContent = "Copied ✓";
+      setTimeout(() => (authorCopyButton.textContent = "Copy JSON"), 2000);
+    },
+    () => {
+      authorCopyButton.textContent = "Copy failed — select the text above";
+      setTimeout(() => (authorCopyButton.textContent = "Copy JSON"), 2000);
+    },
+  );
+});
+
+authorDownloadButton.addEventListener("click", () => {
+  // Hidden-anchor download (the session-summary precedent); the file name
+  // is the zip path the author adds it under: qr/<c>.json.
+  const c = authorCInput.value.trim() === "" ? "1" : authorCInput.value.trim();
+  const blob = new Blob([authorJsonBox.value], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `${c}.json`;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+});
 
 function renderArStatus(): void {
   const mode = authorMode ? "Author mode" : "Viewer mode";
@@ -267,17 +400,20 @@ function renderArState(state: EnableGpsArState): void {
 
 async function enterAr(): Promise<void> {
   cameraFrameCount = 0;
+  if (authorMode) startAuthorPipeline();
   const result = await arController.enable(
     buildArEnableConfig({
       container: arRoot,
-      onFrame: () => {
+      onFrame: (image) => {
         cameraFrameCount += 1;
+        qrController?.offerFrame(image);
         renderArStatus();
       },
       onSessionEnd: () => {
         // Full teardown, not just capture stop: the AR entry is
         // re-enterable, and an open recording would blend the dead
         // session's odom frame into the next alignment (PR #359 review).
+        qrController = null;
         endTourArRuntime(arStore, {
           stopCameraFrameCapture: () => {
             seams.stopCameraFrameCapture();

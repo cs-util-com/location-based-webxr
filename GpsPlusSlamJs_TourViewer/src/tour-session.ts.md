@@ -1,5 +1,11 @@
 # tour-session.ts
 
+> M3 addition: `loadQrLevels(): Promise<ReadonlyMap<string, QrLevel>>` —
+> every `qr/<c>.json` in the archive, keyed by `<c>` (the printed `&c=`
+> discriminator). NULL-TOLERANT by design: zero files is the common tour,
+> and a corrupt file degrades to "that code has no level", never a broken
+> archive. Covered by the 0/1/2-files and corrupt-file tests.
+
 ## Purpose
 
 One open tour archive: the framework's `openRemoteArchive` wired to zip.js
