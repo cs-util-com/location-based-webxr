@@ -36,13 +36,13 @@ describe('LocalCacheByteSource', () => {
 });
 
 describe('InMemoryLocalCacheStore', () => {
-  it('round-trips put/get and forgets on delete', async () => {
+  it('round-trips put/get incl. validators and forgets on delete', async () => {
     const store = new InMemoryLocalCacheStore();
-    const blob = new Blob([BYTES]);
+    const entry = { blob: new Blob([BYTES]), validators: { etag: '"v1"' } };
 
     await expect(store.get('u')).resolves.toBeUndefined();
-    await store.put('u', blob);
-    await expect(store.get('u')).resolves.toBe(blob);
+    await store.put('u', entry);
+    await expect(store.get('u')).resolves.toBe(entry);
     await store.delete('u');
     await expect(store.get('u')).resolves.toBeUndefined();
   });
@@ -76,18 +76,23 @@ describe('CacheApiStore (stubbed Cache API)', () => {
     vi.stubGlobal('navigator', { storage: { persist } });
 
     const store = new CacheApiStore();
-    await store.put('https://x/a.zip', new Blob([BYTES]));
+    await store.put('https://x/a.zip', { blob: new Blob([BYTES]) });
 
     expect(persist).not.toHaveBeenCalled();
   });
 
-  it('round-trips a blob through the stubbed cache and deletes it', async () => {
+  it('round-trips blob + validators through the stubbed cache and deletes it', async () => {
     stubCaches();
     const store = new CacheApiStore();
+    const validators = {
+      etag: '"v1"',
+      lastModified: 'Mon, 24 Aug 2026 00:00:00 GMT',
+    };
 
-    await store.put('https://x/a.zip', new Blob([BYTES]));
-    const blob = await store.get('https://x/a.zip');
-    expect(new Uint8Array(await blob!.arrayBuffer())).toEqual(BYTES);
+    await store.put('https://x/a.zip', { blob: new Blob([BYTES]), validators });
+    const entry = await store.get('https://x/a.zip');
+    expect(new Uint8Array(await entry!.blob.arrayBuffer())).toEqual(BYTES);
+    expect(entry!.validators).toEqual(validators);
 
     await store.delete('https://x/a.zip');
     await expect(store.get('https://x/a.zip')).resolves.toBeUndefined();

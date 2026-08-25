@@ -10,7 +10,11 @@ blow-up). `LocalCacheStore` abstracts _where_ the complete copy lives.
 ## Public API
 
 - `class LocalCacheByteSource implements ByteSource` — `constructor(blob: Blob)`.
-- `interface LocalCacheStore { get(url): Promise<Blob | undefined>; put(url, blob): Promise<void>; delete(url): Promise<void> }`
+- `interface CachedArchive { blob: Blob; validators?: ArchiveValidators }` —
+  the copy plus the freshness validators it was stored with (see
+  `range-probe.ts`); `CacheApiStore` rides them as headers on the stored
+  Response.
+- `interface LocalCacheStore { get(url): Promise<CachedArchive | undefined>; put(url, entry: CachedArchive): Promise<void>; delete(url): Promise<void> }`
 - `class InMemoryLocalCacheStore implements LocalCacheStore` — Node/test backing.
 - `class CacheApiStore implements LocalCacheStore` — browser backing (Cache API).
 - `requestPersistentStorage(): Promise<boolean>` — best-effort

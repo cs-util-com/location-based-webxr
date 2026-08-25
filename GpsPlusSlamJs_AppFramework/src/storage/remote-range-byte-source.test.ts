@@ -194,6 +194,61 @@ describe('probeRemote', () => {
     expect(probe.size).toBeNull(); // never 1234
   });
 
+  // Why this test matters (cache revalidation): the orchestrator compares a
+  // cached copy against the live file using validators captured here.
+  // Last-Modified is CORS-safelisted; ETag often is not — both must surface
+  // when readable, from the HEAD or (when HEAD fails) from the probe GET.
+  it('captures ETag and Last-Modified validators from the responses', async () => {
+    let call = 0;
+    const fetchImpl: typeof fetch = () => {
+      call += 1;
+      if (call === 1) {
+        return Promise.resolve(
+          fakeResponse({
+            status: 200,
+            headers: {
+              'content-length': '10',
+              etag: '"v1"',
+              'last-modified': 'Mon, 24 Aug 2026 00:00:00 GMT',
+            },
+          })
+        );
+      }
+      return Promise.resolve(
+        fakeResponse({ status: 206, body: new Uint8Array(1) })
+      );
+    };
+
+    const probe = await probeRemote('https://x/t.zip', fetchImpl);
+
+    expect(probe.size).toBe(10);
+    expect(probe.validators).toEqual({
+      etag: '"v1"',
+      lastModified: 'Mon, 24 Aug 2026 00:00:00 GMT',
+    });
+  });
+
+  it('falls back to the probe GET headers for validators when HEAD fails', async () => {
+    let call = 0;
+    const fetchImpl: typeof fetch = () => {
+      call += 1;
+      if (call === 1) {
+        return Promise.resolve(fakeResponse({ status: 405 }));
+      }
+      return Promise.resolve(
+        fakeResponse({
+          status: 206,
+          headers: { etag: '"v2"' },
+          body: new Uint8Array(1),
+        })
+      );
+    };
+
+    const probe = await probeRemote('https://x/t.zip', fetchImpl);
+
+    expect(probe.validators).toEqual({ etag: '"v2"' });
+  });
+
   // Why this test matters (D3): `Number('abc')` is NaN and `NaN ?? fallback`
   // never falls back — an unvalidated Content-Length propagates NaN into
   // ProbeResult.size. Only finite safe non-negative integers may pass.

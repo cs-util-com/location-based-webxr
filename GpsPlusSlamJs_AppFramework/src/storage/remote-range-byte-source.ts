@@ -10,7 +10,11 @@
  */
 
 import type { ByteSource } from './byte-source.js';
-import { parseContentRangeTotal, type ProbeResult } from './range-probe.js';
+import {
+  parseContentRangeTotal,
+  type ArchiveValidators,
+  type ProbeResult,
+} from './range-probe.js';
 import { StructuralReadError } from './structural-read-error.js';
 
 export type FetchImpl = typeof fetch;
@@ -72,12 +76,26 @@ const PROBE_GET_TIMEOUT_MS = 300_000;
  *  forever on a dead connection. */
 const RANGE_READ_TIMEOUT_MS = 20_000;
 
-/** HEAD for size + `bytes=0-0` GET for range support. Throws if `fetch` rejects. */
-export async function probeRemote(
+/** Freshness validators readable off a response, where CORS lets us. */
+function readValidators(headers: Headers): ArchiveValidators | undefined {
+  const etag = headers.get('etag');
+  const lastModified = headers.get('last-modified');
+  if (etag === null && lastModified === null) return undefined;
+  return {
+    ...(etag !== null ? { etag } : {}),
+    ...(lastModified !== null ? { lastModified } : {}),
+  };
+}
+
+/**
+ * Size + freshness validators via a single HEAD, or null when the HEAD fails
+ * or is refused — the lightweight check a cache-revalidating caller runs
+ * before deciding whether a full probe is needed at all.
+ */
+export async function fetchRemoteValidators(
   url: string,
   fetchImpl: FetchImpl
-): Promise<ProbeResult> {
-  let size: number | null = null;
+): Promise<{ size: number | null; validators?: ArchiveValidators } | null> {
   try {
     const head = await fetchImpl(url, {
       method: 'HEAD',
@@ -87,22 +105,40 @@ export async function probeRemote(
     // Content-Length — of the error page. And only a finite safe non-negative
     // integer may pass: `Number('abc')` is NaN, and `NaN ?? fallback` never
     // falls back, so an unvalidated value would propagate into ProbeResult.
-    if (head.ok) {
-      size = parseArchiveSize(head.headers.get('content-length'));
-    }
+    if (!head.ok) return null;
+    const validators = readValidators(head.headers);
+    return {
+      size: parseArchiveSize(head.headers.get('content-length')),
+      ...(validators !== undefined ? { validators } : {}),
+    };
   } catch {
-    // Some hosts reject HEAD; fall through and let the range GET decide. A hard
-    // network/CORS failure will re-throw from the GET below.
+    // Some hosts reject HEAD; the caller falls through to the range GET. A
+    // hard network/CORS failure will re-throw from that GET.
+    return null;
   }
+}
+
+/** HEAD for size + `bytes=0-0` GET for range support. Throws if `fetch` rejects. */
+export async function probeRemote(
+  url: string,
+  fetchImpl: FetchImpl
+): Promise<ProbeResult> {
+  const headInfo = await fetchRemoteValidators(url, fetchImpl);
+  let size: number | null = headInfo?.size ?? null;
 
   const probe = await fetchImpl(url, {
     headers: { Range: 'bytes=0-0' },
     signal: AbortSignal.timeout(PROBE_GET_TIMEOUT_MS),
   });
+  // Prefer HEAD validators; when HEAD failed, the probe GET's own headers
+  // still carry them on many hosts.
+  const validators = headInfo?.validators ?? readValidators(probe.headers);
+  const validatorsField =
+    validators !== undefined ? { validators } : ({} as const);
 
   if (probe.status === 200) {
     const body = new Uint8Array(await probe.arrayBuffer());
-    return { status: 200, size: size ?? body.length, body };
+    return { status: 200, size: size ?? body.length, body, ...validatorsField };
   }
 
   // On a 206, if HEAD gave no size, recover it from Content-Range — this is
@@ -115,7 +151,7 @@ export async function probeRemote(
 
   // Drain the small range body so the connection can be reused/closed.
   await probe.arrayBuffer().catch(() => undefined);
-  return { status: probe.status, size };
+  return { status: probe.status, size, ...validatorsField };
 }
 
 export class RemoteRangeByteSource implements ByteSource {

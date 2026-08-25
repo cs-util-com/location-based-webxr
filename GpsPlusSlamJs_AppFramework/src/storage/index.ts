@@ -82,6 +82,7 @@ export { type ByteSource, SwitchableByteSource } from './byte-source.js';
 
 // --- range-probe ---
 export {
+  type ArchiveValidators,
   type ProbeResult,
   type RangeProbeRejectCause,
   type FallbackDecision,
@@ -92,6 +93,7 @@ export {
 // --- remote-range-byte-source ---
 export {
   type FetchImpl,
+  fetchRemoteValidators,
   probeRemote,
   RemoteRangeByteSource,
 } from './remote-range-byte-source.js';
@@ -99,11 +101,25 @@ export {
 // --- local-cache-byte-source ---
 export {
   LocalCacheByteSource,
+  type CachedArchive,
   type LocalCacheStore,
   InMemoryLocalCacheStore,
   CacheApiStore,
   requestPersistentStorage,
 } from './local-cache-byte-source.js';
+
+// --- bounded-local-cache-store ---
+export { BoundedLocalCacheStore } from './bounded-local-cache-store.js';
+
+// --- open-remote-archive ---
+export {
+  openRemoteArchive,
+  OpenRemoteArchiveError,
+  type ArchiveReadEvent,
+  type ArchiveReadOrigin,
+  type OpenedArchive,
+  type OpenRemoteArchiveOptions,
+} from './open-remote-archive.js';
 
 // --- zip-byte-source-reader ---
 export { ByteSourceReader } from './zip-byte-source-reader.js';

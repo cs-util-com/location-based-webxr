@@ -14,7 +14,10 @@ branch is provable without a server.
   from a `Content-Range: bytes <range>/<total>` header, or null if
   unknown/absent/malformed — or not a safe integer (an imprecise double must
   never anchor zip offsets).
-- `interface ProbeResult { status: number; size: number | null; body?: Uint8Array }`
+- `interface ProbeResult { status: number; size: number | null; body?: Uint8Array; validators?: ArchiveValidators }`
+- `interface ArchiveValidators { etag?: string; lastModified?: string }` —
+  freshness validators for cache revalidation; `lastModified` is
+  CORS-safelisted, `etag` often unreadable cross-origin, hence both optional.
 - `type RangeProbeRejectCause = "unusable-link" | "cors" | "corrupt" | "missing"`
 - `type FallbackDecision = { mode: "ranges"; size } | { mode: "eager-local"; body } | { mode: "full-download" } | { mode: "reject"; cause: RangeProbeRejectCause }`
 - `decideFallback(probe: ProbeResult): FallbackDecision`

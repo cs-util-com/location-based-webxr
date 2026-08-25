@@ -11,6 +11,7 @@
  */
 
 import type { ByteSource } from './byte-source.js';
+import type { ArchiveValidators } from './range-probe.js';
 
 /** Random-access reader over a complete, locally-held archive Blob. */
 export class LocalCacheByteSource implements ByteSource {
@@ -32,26 +33,33 @@ export class LocalCacheByteSource implements ByteSource {
   }
 }
 
+/** A complete cached copy plus the freshness validators it was stored with —
+ *  what a revalidating open compares against the live file. */
+export interface CachedArchive {
+  readonly blob: Blob;
+  readonly validators?: ArchiveValidators;
+}
+
 /** Persistent store of complete archives, keyed by URL. */
 export interface LocalCacheStore {
   /** The complete cached copy, or undefined if not present. */
-  get(url: string): Promise<Blob | undefined>;
+  get(url: string): Promise<CachedArchive | undefined>;
   /** Store a complete copy atomically (only a finished copy is ever readable). */
-  put(url: string, blob: Blob): Promise<void>;
+  put(url: string, entry: CachedArchive): Promise<void>;
   /** Evict a copy — used to purge a cached blob that no longer parses. */
   delete(url: string): Promise<void>;
 }
 
 /** In-memory store — the Node test/demo backing where `caches` is unavailable. */
 export class InMemoryLocalCacheStore implements LocalCacheStore {
-  readonly #map = new Map<string, Blob>();
+  readonly #map = new Map<string, CachedArchive>();
 
-  get(url: string): Promise<Blob | undefined> {
+  get(url: string): Promise<CachedArchive | undefined> {
     return Promise.resolve(this.#map.get(url));
   }
 
-  put(url: string, blob: Blob): Promise<void> {
-    this.#map.set(url, blob);
+  put(url: string, entry: CachedArchive): Promise<void> {
+    this.#map.set(url, entry);
     return Promise.resolve();
   }
 
@@ -95,16 +103,37 @@ export class CacheApiStore implements LocalCacheStore {
     this.#cacheName = cacheName;
   }
 
-  async get(url: string): Promise<Blob | undefined> {
+  async get(url: string): Promise<CachedArchive | undefined> {
     const cache = await caches.open(this.#cacheName);
     const res = await cache.match(url);
     if (!res) return undefined;
-    return res.blob();
+    const etag = res.headers.get('etag');
+    const lastModified = res.headers.get('last-modified');
+    const validators =
+      etag !== null || lastModified !== null
+        ? {
+            ...(etag !== null ? { etag } : {}),
+            ...(lastModified !== null ? { lastModified } : {}),
+          }
+        : undefined;
+    return {
+      blob: await res.blob(),
+      ...(validators !== undefined ? { validators } : {}),
+    };
   }
 
-  async put(url: string, blob: Blob): Promise<void> {
+  async put(url: string, entry: CachedArchive): Promise<void> {
     const cache = await caches.open(this.#cacheName);
-    await cache.put(url, new Response(blob));
+    // The validators ride as headers on the stored Response — the Cache API's
+    // natural metadata slot, read back verbatim in get().
+    const headers = new Headers();
+    if (entry.validators?.etag !== undefined) {
+      headers.set('etag', entry.validators.etag);
+    }
+    if (entry.validators?.lastModified !== undefined) {
+      headers.set('last-modified', entry.validators.lastModified);
+    }
+    await cache.put(url, new Response(entry.blob, { headers }));
   }
 
   async delete(url: string): Promise<void> {

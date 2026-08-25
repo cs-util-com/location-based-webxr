@@ -25,6 +25,18 @@ export function parseContentRangeTotal(header: string | null): number | null {
   return Number.isSafeInteger(total) ? total : null;
 }
 
+/**
+ * Freshness validators captured from response headers, for cache
+ * revalidation. `lastModified` is CORS-safelisted (readable everywhere);
+ * `etag` is NOT, so on hosts without `Access-Control-Expose-Headers` it stays
+ * undefined — which is why both are optional and a size comparison remains
+ * the weakest always-available signal.
+ */
+export interface ArchiveValidators {
+  readonly etag?: string;
+  readonly lastModified?: string;
+}
+
 /** Raw result of the opening probe. */
 export interface ProbeResult {
   /** HTTP status of the `Range: bytes=0-0` GET. */
@@ -33,6 +45,8 @@ export interface ProbeResult {
   readonly size: number | null;
   /** Full body — present only when the host ignored Range and answered 200. */
   readonly body?: Uint8Array;
+  /** Freshness validators from the probe responses, where readable. */
+  readonly validators?: ArchiveValidators;
 }
 
 /** Why the probe could not be turned into a usable open — the four causes a
