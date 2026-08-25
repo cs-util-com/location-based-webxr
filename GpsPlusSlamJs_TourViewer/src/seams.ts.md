@@ -12,7 +12,7 @@ Keeps `main.ts` glue-only.
 - `interface TourViewerSeams { controllerDeps; getArWorldGroup;
 enableArWorldGroupAlignment; startCameraFrameCapture;
 stopCameraFrameCapture; createQrFrontEnd; solveQrPose; getCameraPose;
-getIntrinsics }` — `controllerDeps` is a
+getIntrinsics; getScene }` — `controllerDeps` is a
   `Partial<EnableGpsArDeps>` injected into `createEnableGpsArController`
   (empty in production; the e2e fake supplies the full dep set there). The
   QR quartet (M3) is the author pipeline's device layer: BarcodeDetector

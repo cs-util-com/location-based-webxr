@@ -42,7 +42,7 @@ import type { RecordingOptions } from '../state/recording-options';
 import { wireRefPointViews } from '../ui/ref-point-view-wiring';
 import { refPointVisualizer } from '../visualization/ref-point-visualizer';
 import { FrameTileVisualizer } from '../visualization/frame-tile-visualizer';
-import { decodeFrameTexture } from '../visualization/frame-texture-decoder';
+import { decodeFrameTexture } from 'gps-plus-slam-app-framework/visualization/frame-texture-decoder';
 import { wireFrameTileSubscribers } from '../visualization/wire-frame-tile-subscribers';
 import type { FrameBlobCache } from '../visualization/frame-blob-cache';
 import {

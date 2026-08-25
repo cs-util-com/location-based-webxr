@@ -50,6 +50,20 @@ async function buildZip() {
       new Uint8ArrayReader(TINY_PNG.slice()),
     );
   }
+  // An authored QR level (QR-pose plan M4): the viewer spec relocalizes
+  // against it. Geo sits ~13 m from the spec's zero reference.
+  await writer.add(
+    "qr/1.json",
+    new TextReader(
+      JSON.stringify({
+        version: 1,
+        qr: {
+          physicalSizeM: 0.2,
+          geo: { lat: 47.5001, lon: 8.7001, alt: 400, rotation: [0, 0, 0, 1] },
+        },
+      }),
+    ),
+  );
   // Padding entry so the archive is comfortably larger than what a
   // metadata+images session needs — the partial-fetch assertion depends on
   // the gap being wide.

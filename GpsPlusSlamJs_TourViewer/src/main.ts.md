@@ -42,6 +42,12 @@ None (app entry point). Interesting seams for the e2e suite are the
   via `authorStatusLine`; the export offers copy + a `qr/<c>.json`
   download. The store carries the opt-in `qrDetected` reducer for both
   modes.
+- **Viewer pipeline (M4):** the default mode relocalizes against the open
+  tour: the detected code's `qr/<c>.json` resolves live from
+  `loadQrLevels()`, budgeted synthetic votes flow into `recordGpsEvent`,
+  the glue marker rides detections in BOTH modes, and the first voted lock
+  places the image ring (scene root, raw NUE) — all torn down with the AR
+  session and on tour close.
 - **AR entry (M2):** `?author=1` is read once at boot (switching = reload);
   `#ar-status` and `#enter-ar` must stay DOM children of `#ar-root` — the
   `initAR` container is the WebXR DOM-Overlay root, so only its subtree is

@@ -144,6 +144,11 @@ export {
   createTextSprite,
 } from './text-sprite.js';
 
+// --- frame-texture-decoder (Blob → upright THREE.Texture; promoted from the
+// recorder 2026-08-26 so the TourViewer's image planes share the orientation
+// contract instead of copying it — DEC-H3) ---
+export { decodeFrameTexture } from './frame-texture-decoder.js';
+
 // --- wayfinding-hud (frustum-locked target indicators as camera children) ---
 export {
   type WayfindingHud,

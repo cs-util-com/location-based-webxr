@@ -41,6 +41,7 @@ export async function installTourViewerArFakes(page) {
       nextSolution: /** @type {any} */ (null),
       qrDebugUpdates: 0,
       qrDebugDisposals: 0,
+      fakeScene: /** @type {any} */ (null),
       /** Arm a consistent detection+solution for the given text/pose. */
       armQrDetection(text, position = [1, 1.5, -2]) {
         test.nextDetection = {
@@ -67,6 +68,18 @@ export async function installTourViewerArFakes(page) {
     /** @type {any} */ (window).__tourViewerTest = test;
 
     const worldGroup = { name: "fake-world-group" };
+    /** Scene-root stub for the image planes (real three meshes land here). */
+    const fakeScene = {
+      name: "fake-scene",
+      children: /** @type {unknown[]} */ ([]),
+      add(object) {
+        this.children.push(object);
+      },
+      remove(object) {
+        this.children = this.children.filter((c) => c !== object);
+      },
+    };
+    test.fakeScene = fakeScene;
     /** @type {any} */ (window).__tourViewerSeams = {
       controllerDeps: {
         isWebXRSupported: () => Promise.resolve(true),
@@ -107,6 +120,7 @@ export async function installTourViewerArFakes(page) {
       solveQrPose: () => test.nextSolution,
       getCameraPose: () => ({ position: [0, 0, 0], rotation: [0, 0, 0, 1] }),
       getIntrinsics: () => ({ fx: 500, fy: 500, cx: 1, cy: 1 }),
+      getScene: () => (test.initARCalls.length > 0 ? fakeScene : null),
       createQrDebugView: () => ({
         update: () => {
           test.qrDebugUpdates += 1;

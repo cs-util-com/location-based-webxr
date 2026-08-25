@@ -73,7 +73,9 @@ test("camera frames flow through the foundation and surface in the status line",
   await page.evaluate(() => {
     /** @type {any} */ (window).__tourViewerTest.emitFrames(3);
   });
-  await expect(page.getByTestId("ar-status")).toHaveText(
+  // containText, not exact: the viewer QR pipeline appends its own status
+  // segment to the same line once frames start flowing (M4).
+  await expect(page.getByTestId("ar-status")).toContainText(
     "Viewer mode — AR running · 3 camera frames",
   );
 });
@@ -270,6 +272,130 @@ test("author mode mints and exports a level that the parser round-trips", async 
     )
     .toMatch(/0 of 3 fixes/i);
   await expect(page.getByTestId("mint-export")).toBeDisabled();
+});
+
+test("viewer mode relocalizes against the tour's level: budgeted votes, marker, image ring", async ({
+  page,
+}) => {
+  // Why this matters (QR-pose plan M4): the COMPOSED viewer loop — the
+  // zip-carried qr/1.json resolved for the DETECTED code, the REAL vote
+  // builder writing budgeted synthetic GPS events into the real store, and
+  // the visible payoff (glue marker + the tour's images ringed around the
+  // anchor). The budget is the guardrail: without it every locked frame
+  // votes and a lingering visitor pins the alignment centroid.
+  const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/tour.zip";
+  await page.goto("/");
+  await page.getByTestId("link-input").fill(ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+
+  await enterAr(page);
+  await expect(page.getByTestId("enter-ar")).toHaveText("AR running");
+
+  // The session zero + a few real fixes (the alignment the votes refine).
+  await page.evaluate(() => {
+    const store = /** @type {any} */ (window).__tourViewerTest.alignmentStore;
+    store.dispatch({
+      type: "gpsData/setZeroPos",
+      payload: { lat: 47.5, lon: 8.7 },
+    });
+    const pairs = [
+      { odom: [0, 0, 0], lat: 47.5, lon: 8.7 },
+      { odom: [0, 0, -15], lat: 47.500135, lon: 8.7 },
+      { odom: [15, 0, 0], lat: 47.5, lon: 8.7002 },
+    ];
+    for (const [i, p] of pairs.entries()) {
+      store.dispatch({
+        type: "gpsData/recordGpsEvent",
+        payload: {
+          odomPosition: p.odom,
+          odomRotation: [0, 0, 0, 1],
+          rawGpsPoint: {
+            id: `seed-${String(i)}`,
+            latitude: p.lat,
+            longitude: p.lon,
+            altitude: 400,
+            latLongAccuracy: 5,
+            timestamp: 1756150000000 + i * 1000,
+          },
+        },
+      });
+    }
+  });
+
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.armQrDetection(
+      "https://gps.csutil.com/tour/?qr=x&c=1",
+    );
+  });
+  // Frames until the budget is SPENT — proves votes flowed and then stopped.
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return page.getByTestId("ar-status").textContent();
+      },
+      { timeout: 20000 },
+    )
+    .toMatch(/vote budget spent/i);
+
+  const afterBudget = await page.evaluate(() => {
+    const t = /** @type {any} */ (window).__tourViewerTest;
+    return {
+      gpsCount:
+        t.alignmentStore.getState().gpsData.gpsEvents.gpsPositions.length,
+      markerUpdates: t.qrDebugUpdates,
+      planes: t.fakeScene.children.length,
+    };
+  });
+  // 3 seeded fixes + 10 vote batches × 4 correspondences = 43.
+  expect(afterBudget.gpsCount).toBe(43);
+  expect(afterBudget.markerUpdates).toBeGreaterThan(0);
+  expect(afterBudget.planes).toBe(3); // the image ring, placed once
+
+  // Budget holds: more locked frames add NOTHING.
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.emitFrames(5);
+  });
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          /** @type {any} */ (window).__tourViewerTest.alignmentStore.getState()
+            .gpsData.gpsEvents.gpsPositions.length,
+      ),
+    )
+    .toBe(43);
+});
+
+test("a scanned code with no level reads as unknown instead of flapping", async ({
+  page,
+}) => {
+  // The deferred negative cache (delta #8): a rejecting fetch would flap
+  // the controller error↔scanning at the detection cadence; the placeholder
+  // resolves once and the visitor gets a plain answer.
+  await page.goto("/");
+  await enterAr(page);
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.armQrDetection(
+      "https://gps.csutil.com/tour/?qr=x&c=9",
+    );
+  });
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return page.getByTestId("ar-status").textContent();
+      },
+      { timeout: 15000 },
+    )
+    .toMatch(/code 9 has no level/i);
 });
 
 test("without fakes the button reports AR unsupported instead of breaking the page", async ({

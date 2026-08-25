@@ -28,5 +28,6 @@ describe("getSeams", () => {
     expect(typeof realSeams.getCameraPose).toBe("function");
     expect(typeof realSeams.getIntrinsics).toBe("function");
     expect(typeof realSeams.createQrDebugView).toBe("function");
+    expect(typeof realSeams.getScene).toBe("function");
   });
 });

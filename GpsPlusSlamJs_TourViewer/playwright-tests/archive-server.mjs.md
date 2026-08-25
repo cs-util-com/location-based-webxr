@@ -5,7 +5,8 @@
 The e2e suite's local cloud stand-in: builds one test zip in memory at
 startup (session.json + eight 1×1 PNGs + a 200 KB padding entry — no
 committed fixture, so nothing can rot out of sync with the specs or trip the
-2 MiB tracked-file cap) and serves it on two routes: `/ranges-ok/tour.zip`
+2 MiB tracked-file cap) — including an authored `qr/1.json` geo level the M4 viewer spec
+relocalizes against — and serves it on two routes: `/ranges-ok/tour.zip`
 (honors `Range` with 206 slices) and `/no-ranges/tour.zip` (ignores `Range`,
 streams 200 — the fallback host), plus `/flippable/tour.zip` whose ETag is
 settable via `/flip?etag=<v>` — the "author overwrote the archive at the

@@ -19,6 +19,7 @@ import {
   getArWorldGroup,
   getCamera,
   getCurrentArPose,
+  getScene,
   startCameraFrameCapture,
   stopCameraFrameCapture,
   type EnableGpsArDeps,
@@ -77,6 +78,10 @@ export interface TourViewerSeams {
    *  one accuracy check a human at the poster can perform (spread alone is
    *  precision). */
   createQrDebugView(parent: Object3D): QrDebugView;
+  /** The SCENE ROOT — where built-once content in raw GPS-world NUE lives
+   *  (the framework's parenting rule; `arWorldGroup` children would need
+   *  alignment-inverse coordinates instead). */
+  getScene(): Object3D | null;
 }
 
 declare global {
@@ -127,6 +132,7 @@ export const realSeams: TourViewerSeams = {
     );
   },
   createQrDebugView,
+  getScene,
 };
 
 /**

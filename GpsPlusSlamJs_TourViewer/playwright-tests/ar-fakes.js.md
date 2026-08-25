@@ -21,7 +21,9 @@ camera, so `installTourViewerArFakes(page)` installs
   session end), and `armQrDetection(text, position?)` + `nextDetection` /
   `nextSolution` — scripted device-level QR results for the author
   pipeline; the REAL controller, slice, stability gate and mint run over
-  them.
+  them — plus `fakeScene` (a scene-root stub the image planes land in);
+  `getArWorldGroup`/`getScene` return null until initAR ran, pinning the
+  production ordering.
 
 ## Invariants & assumptions
 

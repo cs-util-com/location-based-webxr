@@ -16,6 +16,7 @@ import {
   createGpsPositionHandler,
   createSlamAppStore,
   qrDetectedReducer,
+  recordGpsEvent,
   recordQrDetection,
   selectAlignmentMatrix,
   selectGpsPositions,
@@ -47,6 +48,18 @@ import {
   mintAuthorLevel,
   type AuthorAlignmentInfo,
 } from "./qr-author-mode.js";
+import {
+  buildViewerControllerConfig,
+  imagePlaneRingNue,
+  viewerStatusLine,
+} from "./qr-viewer-mode.js";
+import { codeFromDetectedText } from "./code-param.js";
+import { placeImagePlanes, type PlacedImagePlanes } from "./image-planes.js";
+import type { Texture } from "three";
+import type { QrTrackingStatus } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
+import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
+import { calcRelativeCoordsInMeters } from "gps-plus-slam-app-framework/core";
+import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
 import { getSeams } from "./seams.js";
 import { resolveQrPayload } from "./qr-launch-dispatch.js";
 import { toStatsView } from "./stats-view.js";
@@ -89,6 +102,8 @@ const cacheStore: LocalCacheStore | undefined =
     : new BoundedLocalCacheStore(new CacheApiStore(), MAX_CACHED_ARCHIVES);
 
 let session: TourSession | null = null;
+/** The open tour's authored QR levels — the viewer pipeline's level source. */
+let currentLevels: ReadonlyMap<string, QrLevel> | null = null;
 let objectUrls: string[] = [];
 /** Bumped per open; a slower open that finishes after a newer one started
  *  must close itself instead of clobbering the newer session. */
@@ -117,6 +132,11 @@ async function teardownSession(): Promise<void> {
   for (const url of objectUrls) URL.revokeObjectURL(url);
   objectUrls = [];
   gallery.replaceChildren();
+  // The viewer pipeline's level source and the placed planes belong to the
+  // closing tour — a newly opened tour must not relocalize against them.
+  currentLevels = null;
+  imagePlanes?.dispose();
+  imagePlanes = null;
   if (session !== null) {
     const closing = session;
     session = null;
@@ -192,6 +212,11 @@ async function openUrl(url: string): Promise<void> {
     session = opened;
     renderStats();
     void fillGallery(opened);
+    // The authored levels ride the same zip; a newer open's guard keeps a
+    // slow load from installing a closed tour's levels.
+    void opened.loadQrLevels().then((levels) => {
+      if (session === opened) currentLevels = levels;
+    });
   } catch (err) {
     if (generation === openGeneration) {
       errorBox.textContent = describeOpenError(err);
@@ -391,6 +416,122 @@ function startAuthorPipeline(): boolean {
   return true;
 }
 
+// --- Viewer mode (QR-pose plan M4) ----------------------------------------
+// The default passerby flow: scanned codes relocalize the session via
+// budgeted synthetic GPS votes, the glue marker rides the detections, and
+// the first voted lock places a ring of the tour's images around the code.
+let viewerQrStatus: QrTrackingStatus | null = null;
+let viewerUnknownCode: string | null = null;
+let viewerVotedLocks = 0;
+let viewerLockedText: string | null = null;
+let imagePlanes: PlacedImagePlanes | null = null;
+
+function viewerQrLine(): string {
+  if (authorMode) return "";
+  return viewerStatusLine({
+    status: viewerQrStatus,
+    unknownCode: viewerUnknownCode,
+    votedLocks: viewerVotedLocks,
+    lockedText: viewerLockedText,
+  });
+}
+
+/** Levels are only useful with an open tour; the viewer pipeline reads them
+ *  live so a tour opened AFTER entering AR still resolves. */
+function startViewerPipeline(): boolean {
+  const frontEnd = seams.createQrFrontEnd();
+  if (frontEnd === null) {
+    // Viewing without a detector still works as plain AR — no error state,
+    // the QR line just never appears.
+    return false;
+  }
+  qrController = createQrTrackingController(
+    buildViewerControllerConfig({
+      frontEnd,
+      solvePose: (input) => seams.solveQrPose(input),
+      getCameraPose: () => seams.getCameraPose(),
+      getIntrinsics: (image) => seams.getIntrinsics(image),
+      getLevels: () => currentLevels,
+      dispatchVote: (payload) => {
+        arStore.dispatch(recordGpsEvent(payload));
+      },
+      recordDetection: (event) => {
+        viewerUnknownCode = null; // a level-carrying detection supersedes it
+        arStore.dispatch(recordQrDetection(event));
+        const level = currentLevels?.get(codeFromDetectedText(event.text));
+        qrDebugView?.update(event.qrPoseWorld, level?.qr.physicalSizeM ?? null);
+      },
+      onError: (message) => {
+        errorBox.textContent = `QR tracking failed: ${message}`;
+      },
+      onStatus: (status) => {
+        viewerQrStatus = status;
+        renderArStatus();
+      },
+      onUnknownCode: (code) => {
+        viewerUnknownCode = code;
+        renderArStatus();
+      },
+      onVotedLock: (text, votedLocks) => {
+        viewerLockedText = text;
+        viewerVotedLocks = votedLocks;
+        if (imagePlanes === null) void placeTourImagePlanes(text);
+        renderArStatus();
+      },
+    }),
+  );
+  return true;
+}
+
+/** QD-3's payoff, once per session: a ring of the tour's images around the
+ *  relocalized code, at the SCENE ROOT in raw GPS-world NUE. */
+async function placeTourImagePlanes(lockedText: string): Promise<void> {
+  const current = session;
+  const scene = seams.getScene();
+  const zero = selectZeroReference(arStore.getState());
+  const geo = currentLevels?.get(codeFromDetectedText(lockedText))?.qr.geo;
+  if (current === null || scene === null || zero === null || geo === undefined)
+    return;
+  const centerNue = calcRelativeCoordsInMeters(
+    zero,
+    { lat: geo.lat, lon: geo.lon },
+    geo.alt,
+    0,
+  );
+  const textures = await decodeTourTextures(current);
+  if (textures.length === 0 || imagePlanes !== null || session !== current)
+    return;
+  imagePlanes = placeImagePlanes({
+    scene,
+    positionsNue: imagePlaneRingNue(
+      [centerNue[0], centerNue[1], centerNue[2]],
+      textures.length,
+    ),
+    textures,
+    centerNue: [centerNue[0], centerNue[1], centerNue[2]],
+  });
+  renderArStatus();
+}
+
+/** First three streamed images → upright textures; a broken image just
+ *  leaves a gap in the ring. */
+async function decodeTourTextures(current: TourSession): Promise<Texture[]> {
+  const textures: Texture[] = [];
+  for (const entry of current.entries
+    .filter((candidate) => candidate.isImage)
+    .slice(0, 3)) {
+    try {
+      const texture = await decodeFrameTexture(
+        await current.loadEntry(entry.filename),
+      );
+      if (texture !== null) textures.push(texture);
+    } catch {
+      // A broken image just leaves a gap in the ring.
+    }
+  }
+  return textures;
+}
+
 mintButton.addEventListener("click", () => {
   if (lastDetectedText === null) return;
   const state = arStore.getState();
@@ -449,10 +590,14 @@ authorDownloadButton.addEventListener("click", () => {
 function renderArStatus(): void {
   const mode = authorMode ? "Author mode" : "Viewer mode";
   const status = arController.getState().status;
+  if (status !== "running") {
+    arStatus.textContent = `${mode} — ${status}`;
+    return;
+  }
+  const qrLine = viewerQrLine();
   arStatus.textContent =
-    status === "running"
-      ? `${mode} — AR running · ${String(cameraFrameCount)} camera frames`
-      : `${mode} — ${status}`;
+    `${mode} — AR running · ${String(cameraFrameCount)} camera frames` +
+    (qrLine === "" ? "" : ` · ${qrLine}`);
 }
 
 function renderArState(state: EnableGpsArState): void {
@@ -472,9 +617,12 @@ function renderArState(state: EnableGpsArState): void {
 
 async function enterAr(): Promise<void> {
   cameraFrameCount = 0;
-  // A refused pipeline (bad size, no detector) keeps AR unstarted — the
-  // message is already in the author panel, where the author is looking.
+  // A refused AUTHOR pipeline (bad size, no detector) keeps AR unstarted —
+  // the message is already in the author panel, where the author is
+  // looking. The viewer pipeline is best-effort: without a detector the
+  // session is plain AR.
   if (authorMode && !startAuthorPipeline()) return;
+  if (!authorMode) startViewerPipeline();
   const result = await arController.enable(
     buildArEnableConfig({
       container: arRoot,
@@ -495,6 +643,12 @@ async function enterAr(): Promise<void> {
         qrDebugView = null;
         lastDetectedText = null;
         authorErrorText = null;
+        imagePlanes?.dispose();
+        imagePlanes = null;
+        viewerQrStatus = null;
+        viewerUnknownCode = null;
+        viewerVotedLocks = 0;
+        viewerLockedText = null;
         arStore.dispatch(clearAllQrMarkers());
         endTourArRuntime(arStore, {
           stopCameraFrameCapture: () => {
@@ -533,13 +687,13 @@ async function enterAr(): Promise<void> {
   // (PR #360 review). The snapshot for the alignment gate belongs to the
   // same moment: this session's fixes start counting now.
   gpsSamplesAtSessionStart = selectGpsPositions(arStore.getState()).length;
-  if (authorMode) {
-    const worldGroup = seams.getArWorldGroup();
-    if (worldGroup !== null) {
-      qrDebugView = seams.createQrDebugView(worldGroup);
-    }
-    renderAuthorReadout();
+  // BOTH modes glue the marker to detections — the author's accuracy check
+  // and the viewer's "it relocalized" proof are the same axis+cube.
+  const worldGroup = seams.getArWorldGroup();
+  if (worldGroup !== null) {
+    qrDebugView = seams.createQrDebugView(worldGroup);
   }
+  if (authorMode) renderAuthorReadout();
 }
 
 arController.subscribe(renderArState);

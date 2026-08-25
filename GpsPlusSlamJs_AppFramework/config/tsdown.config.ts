@@ -232,6 +232,10 @@ const entryFiles = [
   'src/visualization/camera-follower.ts',
   'src/visualization/css3d-renderer-manager.ts',
   'src/visualization/frame-conversions.ts',
+  // Blob → upright THREE.Texture (promoted from the recorder, DEC-H3) —
+  // deep-imported by the recorder and the TourViewer via the
+  // `./visualization/*` wildcard, so it must be built per-file.
+  'src/visualization/frame-texture-decoder.ts',
   'src/visualization/frustum-visibility.ts',
   'src/visualization/gps-anchor.ts',
   'src/visualization/gps-compass-cubes.ts',
