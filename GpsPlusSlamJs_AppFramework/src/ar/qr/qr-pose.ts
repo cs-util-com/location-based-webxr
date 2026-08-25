@@ -343,7 +343,13 @@ export function reprojectionErrorPx(
 }
 
 /**
- * Rotate a vector by a unit quaternion in FULL double precision:
+ * Rotate a vector by a unit quaternion in FULL double precision. (The core
+ * library carries the same expansion as a module-PRIVATE helper,
+ * `orientation-heading.ts`'s `rotateVectorByQuat` — deliberately not
+ * importable since quality-review A-7, hence this per-package copy, allowed
+ * under DEC-H3; both files cross-reference so a third copy is never
+ * re-derived.)
+ *
  * v' = v + 2·qv×(qv×v + w·v). Deliberately not gl-matrix (`transformPoint`
  * below): its default Float32Array backing loses ~2e-8 relative — fine for
  * odom-space points, not for geo offsets that get compared exactly in tests

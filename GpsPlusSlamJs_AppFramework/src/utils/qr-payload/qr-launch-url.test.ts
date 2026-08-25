@@ -175,4 +175,14 @@ describe('buildQrLaunchUrl — extraQuery', () => {
     const without = await buildQrLaunchUrl('https://gps.csutil.com', DATA_URL);
     expect(withEmpty.url).toBe(without.url);
   });
+
+  it('an EMPTY extraQuery keeps the /S/ path form competing', async () => {
+    const plan = await buildQrLaunchUrl('https://gps.csutil.com', DATA_URL, {
+      allowPathForm: true,
+      extraQuery: {},
+    });
+    expect(
+      plan.candidates.some((cand) => cand.strategy === 'path-base32')
+    ).toBe(true);
+  });
 });

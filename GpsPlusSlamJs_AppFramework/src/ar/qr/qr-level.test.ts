@@ -198,7 +198,8 @@ describe('parseQrLevel — 6-DoF rotation', () => {
     expect(level.qr.geo?.headingDeg).toBeUndefined();
   });
 
-  it('accepts geo with both rotation and headingDeg', () => {
+  it('accepts geo with both fields when they AGREE', () => {
+    // Identity quaternion = a vertical poster at bearing 0.
     const level = parseQrLevel({
       ...base,
       qr: {
@@ -207,13 +208,56 @@ describe('parseQrLevel — 6-DoF rotation', () => {
           lat: 47.5,
           lon: 8.7,
           alt: 400,
-          headingDeg: 30,
+          headingDeg: 0.5,
           rotation: IDENTITY,
         },
       },
     });
-    expect(level.qr.geo?.headingDeg).toBe(30);
+    expect(level.qr.geo?.headingDeg).toBe(0.5);
     expect(level.qr.geo?.rotation).toEqual(IDENTITY);
+  });
+
+  // Why this matters (M1 milestone review #5): the optional-heading change
+  // exists because a WRONG heading read by a rotation-unaware consumer
+  // mis-places the code silently — so a document whose two orientation
+  // fields disagree must reject, not validate.
+  it('rejects geo whose headingDeg contradicts its rotation', () => {
+    expect(() =>
+      parseQrLevel({
+        ...base,
+        qr: {
+          ...base.qr,
+          geo: {
+            lat: 47.5,
+            lon: 8.7,
+            alt: 400,
+            headingDeg: 30, // identity rotation implies bearing 0
+            rotation: IDENTITY,
+          },
+        },
+      })
+    ).toThrow(QrLevelValidationError);
+  });
+
+  it('rejects a headingDeg paired with a non-vertical rotation', () => {
+    // −90° about North: face-up table code — no heading is honest.
+    const half = (-90 * Math.PI) / 180 / 2;
+    const faceUp = [Math.sin(half), 0, 0, Math.cos(half)];
+    expect(() =>
+      parseQrLevel({
+        ...base,
+        qr: {
+          ...base.qr,
+          geo: {
+            lat: 47.5,
+            lon: 8.7,
+            alt: 400,
+            headingDeg: 30,
+            rotation: faceUp,
+          },
+        },
+      })
+    ).toThrow(QrLevelValidationError);
   });
 
   it('rejects geo with neither headingDeg nor rotation', () => {
@@ -250,8 +294,9 @@ describe('serializeQrLevel', () => {
       qr: {
         physicalSizeM: 0.18,
         geo: { lat: 47.5, lon: 8.7, alt: 401.5, rotation: [0, 0, 0, 1] },
+        mintQuality: { gpsAccuracyM: 3.4, alignmentSampleCount: 120 },
       },
-      content: { mintQuality: { gpsAccuracyM: 3.4 } },
+      content: { note: 'opaque payload' },
     });
 
     const reparsed = parseQrLevel(JSON.parse(serializeQrLevel(level)));
@@ -260,6 +305,44 @@ describe('serializeQrLevel', () => {
 
   it('refuses to serialize an invalid level (fail loud, not a broken file)', () => {
     expect(() => serializeQrLevel({ version: Number.NaN, qr: {} })).toThrow(
+      QrLevelValidationError
+    );
+  });
+});
+
+// Why these tests matter (M1 milestone review #6): the mint-quality block
+// was an unpinned convention buried in opaque content — M4's placement
+// readout and M5's attributable error numbers read these exact fields, so
+// they need a schema and loud validation, not a guess.
+describe('parseQrLevel — mintQuality', () => {
+  const base = { version: 1, qr: {} };
+
+  it('accepts a full quality block and round-trips it', () => {
+    const level = parseQrLevel({
+      ...base,
+      qr: {
+        mintQuality: {
+          gpsAccuracyM: 3.4,
+          alignmentSampleCount: 120,
+          alignmentRmseM: 0.8,
+          mintedAtIso: '2026-08-25T12:00:00Z',
+        },
+      },
+    });
+    expect(level.qr.mintQuality?.alignmentSampleCount).toBe(120);
+    const reparsed = parseQrLevel(JSON.parse(serializeQrLevel(level)));
+    expect(reparsed).toEqual(level);
+  });
+
+  it.each([
+    [{ gpsAccuracyM: 0 }, 'zero accuracy'],
+    [{ gpsAccuracyM: Number.NaN }, 'NaN accuracy'],
+    [{ alignmentSampleCount: 2.5 }, 'fractional sample count'],
+    [{ alignmentRmseM: -1 }, 'negative RMSE'],
+    [{ mintedAtIso: '' }, 'empty timestamp'],
+    ['not-an-object', 'not an object'],
+  ] as [unknown, string][])('rejects mintQuality %j (%s)', (mintQuality) => {
+    expect(() => parseQrLevel({ ...base, qr: { mintQuality } })).toThrow(
       QrLevelValidationError
     );
   });

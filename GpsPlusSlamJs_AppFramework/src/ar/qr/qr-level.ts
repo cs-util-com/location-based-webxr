@@ -14,8 +14,9 @@
  * NOT interpreted here; only the fields the pose + vote need are validated.
  */
 
-import type { Quaternion } from 'gps-plus-slam-js';
-import type { QrGeoPose } from './qr-gps-vote.js';
+import { bearingDeltaDeg, type Quaternion } from 'gps-plus-slam-js';
+import { deriveVerticalHeading } from './qr-geo-pose-minting.js';
+import type { QrGeoOrientation, QrGeoPose } from './qr-gps-vote.js';
 
 /**
  * A validated QR level file.
@@ -37,9 +38,27 @@ export interface QrLevel {
     physicalSizeM?: number;
     /** Absolute geo pose of the QR center + heading. Optional — geo-less levels skip the vote. */
     geo?: QrGeoPose;
+    /** How trustworthy the minted `geo` is (QR-pose plan M1) — recorded at
+     *  authoring time so viewers and the field validation can attribute
+     *  error instead of guessing. Optional; validated when present. */
+    mintQuality?: QrMintQuality;
   };
   /** AR content to instantiate (format deferred — plan §12). Opaque here. */
   content?: unknown;
+}
+
+/** Measurement quality captured when a `QrGeoPose` was minted. All fields
+ *  optional (authoring surfaces differ in what they know); each is
+ *  validated when present so a broken value fails loud at the boundary. */
+export interface QrMintQuality {
+  /** Reported GPS accuracy (m) at mint time. Positive. */
+  gpsAccuracyM?: number;
+  /** Number of GPS observations in the alignment solve at mint time. */
+  alignmentSampleCount?: number;
+  /** Alignment residual RMSE (m) at mint time. Non-negative. */
+  alignmentRmseM?: number;
+  /** ISO-8601 timestamp of the mint. Non-empty when present. */
+  mintedAtIso?: string;
 }
 
 /** Thrown when a fetched level file fails validation. */
@@ -100,6 +119,11 @@ function parseGeo(value: unknown): QrGeoPose | undefined {
   return { lat, lon, alt, ...parseOrientation(headingDeg, value.rotation) };
 }
 
+/** Max tolerated disagreement between an authored `headingDeg` and the
+ *  bearing its `rotation` implies before the document rejects as
+ *  self-contradictory (milestone review #5). */
+const HEADING_CONSISTENCY_TOLERANCE_DEG = 2;
+
 /**
  * The orientation half of `qr.geo` (6-DoF extension, QR-pose plan
  * 2026-08-25): `headingDeg` is optional WHEN a rotation is present — a
@@ -110,24 +134,44 @@ function parseGeo(value: unknown): QrGeoPose | undefined {
 function parseOrientation(
   headingDeg: unknown,
   rotationValue: unknown
-): Pick<QrGeoPose, 'headingDeg' | 'rotation'> {
+): QrGeoOrientation {
   const rotation = parseRotation(rotationValue);
-  if (headingDeg === undefined && rotation === undefined) {
-    throw new QrLevelValidationError(
-      '"qr.geo" must carry "headingDeg" and/or "rotation"'
-    );
-  }
   if (headingDeg !== undefined && !isFiniteNumber(headingDeg)) {
     throw new QrLevelValidationError(
       '"qr.geo.headingDeg" must be a finite number when present'
     );
   }
-  return {
-    ...(headingDeg !== undefined
-      ? { headingDeg: ((headingDeg % 360) + 360) % 360 }
-      : {}),
-    ...(rotation !== undefined ? { rotation } : {}),
-  };
+  const normalized = isFiniteNumber(headingDeg)
+    ? ((headingDeg % 360) + 360) % 360
+    : undefined;
+  if (rotation === undefined) {
+    if (normalized === undefined) {
+      throw new QrLevelValidationError(
+        '"qr.geo" must carry "headingDeg" and/or "rotation"'
+      );
+    }
+    return { headingDeg: normalized };
+  }
+  if (normalized === undefined) return { rotation };
+  // Both present: they must AGREE. The whole point of the optional heading
+  // is that a wrong one read by a rotation-unaware consumer mis-places the
+  // code silently — accepting a contradictory pair would leave exactly that
+  // failure open for hand-authored or half-migrated files.
+  const derived = deriveVerticalHeading(rotation);
+  if (derived === undefined) {
+    throw new QrLevelValidationError(
+      '"qr.geo.headingDeg" contradicts "rotation": the rotation is not near-vertical, so no heading is honest'
+    );
+  }
+  if (
+    Math.abs(bearingDeltaDeg(derived, normalized)) >
+    HEADING_CONSISTENCY_TOLERANCE_DEG
+  ) {
+    throw new QrLevelValidationError(
+      `"qr.geo.headingDeg" (${normalized.toFixed(1)}°) contradicts "rotation" (bearing ${derived.toFixed(1)}°)`
+    );
+  }
+  return { headingDeg: normalized, rotation };
 }
 
 /**
@@ -167,7 +211,9 @@ function parseRotation(value: unknown): Quaternion | undefined {
       '"qr.geo.rotation" must be a unit quaternion'
     );
   }
-  return [x / norm, y / norm, z / norm, w / norm];
+  // +0 canonicalization: JSON cannot represent -0, so a parsed level must
+  // never carry one (the round-trip property distinguishes them).
+  return [x / norm + 0, y / norm + 0, z / norm + 0, w / norm + 0];
 }
 
 /**
@@ -186,14 +232,66 @@ export function parseQrLevel(data: unknown): QrLevel {
   }
   const physicalSizeM = parsePhysicalSize(data.qr.physicalSizeM);
   const geo = parseGeo(data.qr.geo);
+  const mintQuality = parseMintQuality(data.qr.mintQuality);
 
   return {
     version: data.version,
     qr: {
       ...(physicalSizeM !== undefined ? { physicalSizeM } : {}),
       ...(geo !== undefined ? { geo } : {}),
+      ...(mintQuality !== undefined ? { mintQuality } : {}),
     },
     content: 'content' in data ? data.content : undefined,
+  };
+}
+
+/** Validate the optional `qr.mintQuality` (see {@link QrMintQuality}). */
+function parseMintQuality(value: unknown): QrMintQuality | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) {
+    throw new QrLevelValidationError(
+      '"qr.mintQuality" must be an object when present'
+    );
+  }
+  const { gpsAccuracyM, alignmentSampleCount, alignmentRmseM, mintedAtIso } =
+    value;
+  if (gpsAccuracyM !== undefined) {
+    if (!isFiniteNumber(gpsAccuracyM) || gpsAccuracyM <= 0) {
+      throw new QrLevelValidationError(
+        '"qr.mintQuality.gpsAccuracyM" must be a positive number when present'
+      );
+    }
+  }
+  if (alignmentSampleCount !== undefined) {
+    if (
+      !isFiniteNumber(alignmentSampleCount) ||
+      alignmentSampleCount < 0 ||
+      !Number.isInteger(alignmentSampleCount)
+    ) {
+      throw new QrLevelValidationError(
+        '"qr.mintQuality.alignmentSampleCount" must be a non-negative integer when present'
+      );
+    }
+  }
+  if (alignmentRmseM !== undefined) {
+    if (!isFiniteNumber(alignmentRmseM) || alignmentRmseM < 0) {
+      throw new QrLevelValidationError(
+        '"qr.mintQuality.alignmentRmseM" must be a non-negative number when present'
+      );
+    }
+  }
+  if (mintedAtIso !== undefined) {
+    if (typeof mintedAtIso !== 'string' || mintedAtIso.trim() === '') {
+      throw new QrLevelValidationError(
+        '"qr.mintQuality.mintedAtIso" must be a non-empty string when present'
+      );
+    }
+  }
+  return {
+    ...(gpsAccuracyM !== undefined ? { gpsAccuracyM } : {}),
+    ...(alignmentSampleCount !== undefined ? { alignmentSampleCount } : {}),
+    ...(alignmentRmseM !== undefined ? { alignmentRmseM } : {}),
+    ...(mintedAtIso !== undefined ? { mintedAtIso } : {}),
   };
 }
 

@@ -122,15 +122,7 @@ export async function buildQrLaunchUrl(
         : null,
     ],
   ];
-  const candidates: QrLaunchCandidate[] = [];
-  for (const [strategy, url] of urls) {
-    const printed =
-      url === null || strategy === 'path-base32' ? url : url + extraSuffix;
-    const estimate = printed === null ? null : estimateQrSize(printed, ecLevel);
-    if (printed !== null && estimate !== null) {
-      candidates.push({ strategy, url: printed, estimate });
-    }
-  }
+  const candidates = collectCandidates(urls, extraSuffix, ecLevel);
 
   const best = pickFewestBits(candidates);
   if (best === null) {
@@ -139,6 +131,25 @@ export async function buildQrLaunchUrl(
     );
   }
   return { ...best, candidates };
+}
+
+/** Estimate each printable candidate (suffix included — path-base32 is
+ *  already null whenever the suffix is non-empty, and appending '' is a
+ *  no-op, so one uniform expression covers every case). */
+function collectCandidates(
+  urls: readonly [QrLaunchStrategy, string | null][],
+  extraSuffix: string,
+  ecLevel: QrEcLevel
+): QrLaunchCandidate[] {
+  const candidates: QrLaunchCandidate[] = [];
+  for (const [strategy, url] of urls) {
+    const printed = url === null ? null : url + extraSuffix;
+    const estimate = printed === null ? null : estimateQrSize(printed, ecLevel);
+    if (printed !== null && estimate !== null) {
+      candidates.push({ strategy, url: printed, estimate });
+    }
+  }
+  return candidates;
 }
 
 /** Fewest bits wins; ties keep the earlier (more readable) candidate. */

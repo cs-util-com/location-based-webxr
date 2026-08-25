@@ -330,7 +330,7 @@ describe('buildQrGpsVotes — 6-DoF rotation', () => {
       buildQrGpsVotes({
         qrPoseWorld: POSE,
         sizeM: 0.2,
-        qrGeo: { ...GEO_BASE },
+        qrGeo: { ...GEO_BASE } as unknown as QrGeoPose,
         syntheticAccuracyM: 0.05,
       })
     ).toThrow();

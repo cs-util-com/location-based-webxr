@@ -57,9 +57,9 @@ A QR does **not** rigidly re-anchor the scene; it votes (heavily) via the normal
   well; the QR-normal (depth) DOF stays weakest — exactly what
   [qr-occupancy-check.ts.md](qr-occupancy-check.ts.md) guards. Do not treat the
   4 corners as a substitute for the size sanity check.
-- **Vertical-QR geo convention:** local +Y = world up (altitude), local +X =
-  horizontal at `headingDeg`. A flat-on-floor QR would need a different mapping;
-  the demonstrator assumes wall-mounted.
+- **Vertical-QR geo convention (legacy heading path):** local +Y = world up,
+  local +X = horizontal at `headingDeg`. A flat-on-floor or tilted QR is
+  carried by the 6-DoF `rotation` path (see the extension section above).
 - **Frame split:** `odomPosition` is raw-WebXR/odom (the reducer applies
   `webxrToNUE` on store); `rawGpsPoint` is absolute lat/lon/alt. The library
   computes the derived NUE coordinates + weight on dispatch.

@@ -6,8 +6,8 @@
  *
  * Honesty contract (plan §2): the result inherits this session's alignment
  * error — it buys later visitors CONSISTENCY with the author's session, not
- * absolute truth. Callers should record measurement quality alongside (GPS
- * accuracy, alignment sample count) in the level's opaque `content`.
+ * absolute truth. Callers record measurement quality alongside in the
+ * level's typed `qr.mintQuality` block (see `qr-level.ts`).
  *
  * Frame contract (the bug class this signature exists to prevent): inputs
  * are **GPS-world NUE** (x = North, y = Up, z = East) — i.e. sampled from an
@@ -24,7 +24,11 @@ import type { QrGeoPose } from './qr-gps-vote.js';
 import { rotateVectorByQuaternion } from './qr-pose.js';
 
 export interface MintQrGeoPoseInput {
-  /** QR centre in GPS-world NUE metres (x=North, y=Up, z=East). */
+  /** QR centre in GPS-world NUE metres (x=North, y=Up, z=East). NOTE the
+   *  stack's altitude convention: GPS points enter alignment with
+   *  `calcRelativeCoordsInMeters(zero, …, altitude, 0)` — the zero's
+   *  altitude term is hardcoded `0` (`gpsDataSlice`), so GPS-world `y` IS
+   *  the absolute altitude, not an offset from the zero reference. */
   readonly worldNuePosition: {
     readonly x: number;
     readonly y: number;
@@ -32,39 +36,51 @@ export interface MintQrGeoPoseInput {
   };
   /** QR orientation as a unit quaternion in the NUE GPS-world frame, over
    *  the local axes `buildObjectPoints` pins (+x right, +y up, +z out of
-   *  the printed face). */
+   *  the printed face). Recipe for a QR-glued three.js object riding the
+   *  `WEBXR_TO_NUE` basis node under an aligned `arWorldGroup`
+   *  (`qr-debug-view`): `object.getWorldQuaternion(q)` →
+   *  `[q.x, q.y, q.z, q.w]` — that basis is a proper rotation (det +1), so
+   *  no handedness correction is needed. */
   readonly worldNueRotation: Quaternion;
   /** The session's GPS zero reference. */
   readonly zero: LatLong;
-  /** Absolute altitude (m) of the zero reference — `worldNuePosition.y` is
-   *  Up RELATIVE to it, and `QrGeoPose.alt` is absolute. */
-  readonly zeroAltitude: number;
 }
 
-/** A code is "near-vertical" (wall-poster convention, compat `headingDeg`
- *  emitted) when its local +y stays within this many degrees of world Up. */
-const VERTICAL_TOLERANCE_DEG = 10;
+/**
+ * A code is "near-vertical" (wall-poster convention, compat `headingDeg`
+ * emitted) when its local +y stays within this many degrees of world Up.
+ * Derivation (milestone review #7): the heading path idealizes tilt away,
+ * and a rotation-unaware reader pays ≈ baseline·sin(tilt) per wide-baseline
+ * correspondence — 3° at a 10 m ring is ≈0.52 m, inside the field-test's
+ * 2 m walk-away budget; the plan's earlier guardrail number was also 3°.
+ * Rotation-aware readers are unaffected (they use the exact quaternion).
+ */
+const VERTICAL_TOLERANCE_DEG = 3;
 
 export function mintQrGeoPose(input: MintQrGeoPoseInput): QrGeoPose {
-  const { worldNuePosition, worldNueRotation, zero, zeroAltitude } = input;
+  const { worldNuePosition, worldNueRotation, zero } = input;
   if (
     ![worldNuePosition.x, worldNuePosition.y, worldNuePosition.z].every(
       Number.isFinite
-    ) ||
-    !Number.isFinite(zeroAltitude)
+    )
   ) {
-    throw new RangeError(
-      'mintQrGeoPose: position and zeroAltitude must be finite'
-    );
+    throw new RangeError('mintQrGeoPose: position must be finite');
   }
   const rotation = normalizeUnitQuaternion(worldNueRotation);
 
+  // `worldNueToGps` already returns the ABSOLUTE altitude (= worldNue.y —
+  // the alignment maps odom into a frame whose Up is absolute altitude, see
+  // MintQrGeoPoseInput). The first version added a zeroAltitude on top,
+  // double-counting by the fix altitude; the milestone review's consumer
+  // round-trip test now pins the correct semantics.
   const gps = worldNueToGps(worldNuePosition, zero);
   const headingDeg = deriveVerticalHeading(rotation);
   return {
     lat: gps.lat,
     lon: gps.lon,
-    alt: zeroAltitude + worldNuePosition.y,
+    // = gps.altitude by worldNueToGps's contract; spelled as the input so
+    // the optionally-typed altitude field cannot type-launder undefined.
+    alt: worldNuePosition.y,
     rotation,
     ...(headingDeg !== undefined ? { headingDeg } : {}),
   };
@@ -81,17 +97,21 @@ function normalizeUnitQuaternion(q: Quaternion): Quaternion {
       `mintQrGeoPose: rotation must be a unit quaternion (|q| = ${norm})`
     );
   }
-  return [x / norm, y / norm, z / norm, w / norm];
+  // +0 canonicalization mirrors parseRotation: JSON cannot carry -0.
+  return [x / norm + 0, y / norm + 0, z / norm + 0, w / norm + 0];
 }
 
 /**
- * The compat `headingDeg` — emitted only when the code is near-vertical
+ * The compat `headingDeg` — defined only when the code is near-vertical
  * (local +y within {@link VERTICAL_TOLERANCE_DEG} of Up): the bearing of the
  * rotated local +x, clockwise from North. A tilted/flat code gets no
  * heading; a rotation-unaware reader then fails LOUD in `parseQrLevel`
- * instead of silently placing it as a wall poster.
+ * instead of silently placing it as a wall poster. Exported for
+ * `qr-level.ts`'s both-fields consistency check (milestone review #5).
  */
-function deriveVerticalHeading(rotation: Quaternion): number | undefined {
+export function deriveVerticalHeading(
+  rotation: Quaternion
+): number | undefined {
   const localUp = rotateVectorByQuaternion(rotation, [0, 1, 0]);
   const cosTolerance = Math.cos((VERTICAL_TOLERANCE_DEG * Math.PI) / 180);
   if (localUp[1] < cosTolerance) return undefined;

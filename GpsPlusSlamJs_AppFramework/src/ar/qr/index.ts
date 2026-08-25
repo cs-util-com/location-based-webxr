@@ -96,6 +96,7 @@ export {
 // --- qr-level ---
 export {
   type QrLevel,
+  type QrMintQuality,
   type FetchLike,
   type FetchQrLevelOptions,
   QrLevelValidationError,
@@ -152,6 +153,7 @@ export {
 // --- qr-gps-vote ---
 export {
   type QrGeoPose,
+  type QrGeoOrientation,
   type QrGpsVoteInput,
   type Enu,
   localPlaneToEnu,

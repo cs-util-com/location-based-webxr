@@ -18,6 +18,7 @@ import { mat4, quat, vec3 } from 'gl-matrix';
 import type { Matrix4, Quaternion, Vector3 } from 'gps-plus-slam-js';
 import {
   buildObjectPoints,
+  rotateVectorByQuaternion,
   intrinsicsFromProjection,
   projectViewPoint,
   qrInCameraFromOpenCv,
@@ -384,5 +385,43 @@ describe('reprojectionErrorPx', () => {
     const obj = buildObjectPoints(0.1);
     const img: Point2[] = obj.map(() => ({ x: 0, y: 0 }));
     expect(reprojectionErrorPx(obj, img, pose, intr)).toBe(Infinity);
+  });
+});
+
+// Why these tests matter (M1 milestone review #3): rotateVectorByQuaternion
+// is the double-precision kernel every geo-side rotation (vote offsets,
+// minting) rides on, and it shipped without a direct test — including zero
+// coverage of the quaternion cross-terms. The composite-axis case below is
+// the one a single-axis rotation can never exercise.
+describe('rotateVectorByQuaternion', () => {
+  it('rotates 90° about y right-handedly (x → −z)', () => {
+    const s = Math.SQRT1_2;
+    const q: Quaternion = [0, s, 0, s];
+    const r = rotateVectorByQuaternion(q, [1, 0, 0]);
+    expect(r[0]).toBeCloseTo(0, 12);
+    expect(r[1]).toBeCloseTo(0, 12);
+    expect(r[2]).toBeCloseTo(-1, 12);
+  });
+
+  it('matches the hand-derived result for a composite-axis rotation', () => {
+    // 120° about the normalized (1,1,1) axis cyclically permutes the basis:
+    // x → y → z → x. All quaternion cross-terms participate.
+    const c = Math.sin(Math.PI / 3) / Math.sqrt(3); // sin(60°)/√3
+    const q: Quaternion = [c, c, c, Math.cos(Math.PI / 3)];
+    const rx = rotateVectorByQuaternion(q, [1, 0, 0]);
+    expect(rx[0]).toBeCloseTo(0, 12);
+    expect(rx[1]).toBeCloseTo(1, 12);
+    expect(rx[2]).toBeCloseTo(0, 12);
+    const rz = rotateVectorByQuaternion(q, [0, 0, 1]);
+    expect(rz[0]).toBeCloseTo(1, 12);
+    expect(rz[1]).toBeCloseTo(0, 12);
+    expect(rz[2]).toBeCloseTo(0, 12);
+  });
+
+  it('preserves vector length for arbitrary rotations (isometry)', () => {
+    const q: Quaternion = [0.1, 0.2, -0.3, Math.sqrt(1 - 0.01 - 0.04 - 0.09)];
+    const v: Vector3 = [3, -4, 12];
+    const r = rotateVectorByQuaternion(q, v);
+    expect(Math.hypot(r[0], r[1], r[2])).toBeCloseTo(13, 12);
   });
 });

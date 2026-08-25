@@ -47,7 +47,15 @@ debug/observe or trigger-only level. `qr` itself is still required as an object.
   code has no honest heading, and geo with NEITHER rejects loudly.
 - `serializeQrLevel(level)` — the writer half: re-validates through
   `parseQrLevel` (fail loud, never a broken file) and emits the JSON the
-  parser reads. Round-trip property-tested.
+  parser reads. Round-trip property-tested over the whole capability
+  lattice (`qr-level.property.test.ts`).
+- When BOTH orientation fields are present they must AGREE (2 degrees
+  tolerance, and the rotation must be near-vertical for any heading to be
+  honest) — a contradictory pair rejects, because a wrong heading read by a
+  rotation-unaware consumer mis-places the code silently.
+- `qr.mintQuality` (optional, typed `QrMintQuality`): GPS accuracy,
+  alignment sample count/RMSE and mint timestamp — validated when present
+  so M4 reads real fields, not a convention buried in opaque content.
 
 ## Tests
 

@@ -39,36 +39,36 @@ import {
 } from './qr-pose.js';
 
 /**
- * Absolute geo pose of the printed QR, from the level file.
+ * The orientation half of a {@link QrGeoPose} — a UNION so an in-repo
+ * construction carrying neither field fails at `tsc`, not at 8 Hz inside a
+ * vote loop (milestone review #8). `parseQrLevel` stays the runtime guard
+ * for external files; when both fields are present they must AGREE (it
+ * rejects contradictions) and `rotation` wins at read time.
  *
- * At least ONE of `headingDeg` / `rotation` must be present (enforced by
- * `parseQrLevel` and by `buildQrGpsVotes`). When both are present,
- * `rotation` wins.
+ * - `headingDeg`: compass bearing (degrees clockwise from true North) the
+ *   QR's local +X axis points toward. Vertical-poster convention: local +Y
+ *   = world up, local +X horizontal at this bearing — which puts the
+ *   printed face's NORMAL at `headingDeg + 90°`. Optional since the 6-DoF
+ *   extension: a floor/ceiling code has no honest heading.
+ * - `rotation`: full orientation as a unit quaternion `[x, y, z, w]` in the
+ *   **NUE GPS-world frame** (x = North, y = Up, z = East — the same y-up
+ *   frame every other quaternion in this stack uses; a mislabeled basis is
+ *   a 120° bug), rotating the QR local axes (+x right, +y up, +z out of
+ *   the printed face — `buildObjectPoints`'s convention) into NUE. A
+ *   vertical wall poster at heading `h` is the rotation of `−h` about Up.
  */
-export interface QrGeoPose {
+export type QrGeoOrientation =
+  | { headingDeg: number; rotation?: Quaternion }
+  | { headingDeg?: number; rotation: Quaternion };
+
+/** Absolute geo pose of the printed QR, from the level file. */
+export type QrGeoPose = {
   lat: number;
   lon: number;
-  /** Altitude of the QR center, meters. */
+  /** Altitude of the QR center, meters — ABSOLUTE (GPS-world Up is absolute
+   *  altitude in this stack; see `mintQrGeoPose`). */
   alt: number;
-  /**
-   * Compass bearing (degrees clockwise from true North) that the QR's local +X
-   * axis points toward. The QR is assumed vertical (wall-mounted): local +Y =
-   * world up, local +X = horizontal at this bearing — which puts the printed
-   * face's NORMAL at `headingDeg + 90°`. Optional since the 6-DoF extension
-   * (QR-pose plan 2026-08-25): a floor/ceiling code has no honest heading.
-   */
-  headingDeg?: number;
-  /**
-   * Full 6-DoF orientation of the printed code as a unit quaternion
-   * `[x, y, z, w]` in the **NUE GPS-world frame** (x = North, y = Up,
-   * z = East — the same y-up frame every other quaternion in this stack
-   * uses; a mislabeled basis is a 120° bug). It rotates the QR's local axes
-   * (+x right, +y up, +z out of the printed face — `buildObjectPoints`'s
-   * convention) into NUE. A vertical wall poster at compass heading `h` is
-   * the rotation of `−h` about the Up axis.
-   */
-  rotation?: Quaternion;
-}
+} & QrGeoOrientation;
 
 export interface QrGpsVoteInput {
   /** Solved QR pose in raw-WebXR/odom space (`solveQrPose().qrPoseWorld`). */

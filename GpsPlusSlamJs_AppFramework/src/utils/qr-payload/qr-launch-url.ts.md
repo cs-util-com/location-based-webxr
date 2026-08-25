@@ -72,7 +72,9 @@ const svg = await QRCode.toString(plan.url, {
   discriminator `{ c: '2' }`) into every candidate BEFORE size estimation,
   so the estimate and the fits-a-QR guarantee hold for the printed string.
   The all-caps `/S/` form cannot carry `&`/`=`/lowercase and is dropped
-  whenever extra params are present.
+  whenever extra params are present (an EMPTY extraQuery keeps it) — a
+  payload that only fits via /S/ therefore throws the fits-no-QR TypeError
+  the moment extras are used, by design.
 
 ## Tests
 

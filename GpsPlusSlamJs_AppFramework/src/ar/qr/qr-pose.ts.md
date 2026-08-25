@@ -76,12 +76,16 @@ const solution = solveQrPose({
 if (solution) placeUnderArWorldGroup(solution.qrPoseWorld);
 ```
 
-## Precision note
+## Precision note (kernel: `rotateVectorByQuaternion`)
 
 - `rotateVectorByQuaternion` is the DOUBLE-precision rotation;
   `transformPoint` runs on gl-matrix's Float32Array backing (~2e-8
   relative loss — fine for odom points). Geo-side math (vote offsets,
-  minting) must use the double variant.
+  minting) must use the double variant. The core library carries a
+  module-PRIVATE twin (`orientation-heading.ts`'s `rotateVectorByQuat`) —
+  the two cross-reference so a third copy is never re-derived; direct tests
+  live in `qr-pose.test.ts` (90° golden, composite-axis permutation,
+  isometry).
 
 ## Tests
 
