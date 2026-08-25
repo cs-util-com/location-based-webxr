@@ -83,6 +83,8 @@ Focused demos of individual framework capabilities:
 - [`GpsPlusSlamJs_QrTrackingDemo`](GpsPlusSlamJs_QrTrackingDemo/) — QR tracking end to end: detect any printed QR, measure its physical size from the depth map, and glue a pose overlay to it. The desktop stand-in for the on-device QR verification gate.
 - [`GpsPlusSlamJs_PhysicsDemo`](GpsPlusSlamJs_PhysicsDemo/) — Physics balls bounce off the reconstructed occupancy mesh of a real space, live in AR or against a replayed recording on the desktop.
 - [`GpsPlusSlamJs_WayfindingHudDemo`](GpsPlusSlamJs_WayfindingHudDemo/) — The wayfinding HUD: edge arrows for off-screen targets, on-screen rings, live distance labels, and an anti-flicker hysteresis deadband. Runs in AR on a phone or as a WASD walk simulator on the desktop.
+- [`GpsPlusSlamJs_OsmDemo`](GpsPlusSlamJs_OsmDemo/) — OSM affordance demo: scores OpenStreetMap data into a hex grid beside extruded 3D buildings. Desktop only.
+- [`GpsPlusSlamJs_TourViewer`](GpsPlusSlamJs_TourViewer/) — The QR-scan landing experience: open a cloud-hosted tour zip (share link or ?qr= launch) and stream it via HTTP range requests into a progressive gallery with live stats.
 
 [`GpsPlusSlamJs_ExampleRecordings`](GpsPlusSlamJs_ExampleRecordings/) holds real-world RecorderApp session ZIPs (data only, not a package) so you can exercise replay without going outside first.
 
@@ -156,6 +158,8 @@ startGpsWatch(
 | [`GpsPlusSlamJs_QrTrackingDemo/`](GpsPlusSlamJs_QrTrackingDemo/) | QR detection + pose overlay demo.                         |
 | [`GpsPlusSlamJs_PhysicsDemo/`](GpsPlusSlamJs_PhysicsDemo/)  | Physics against the reconstructed occupancy mesh.              |
 | [`GpsPlusSlamJs_WayfindingHudDemo/`](GpsPlusSlamJs_WayfindingHudDemo/) | Wayfinding HUD (AR + desktop walk simulator).        |
+| [`GpsPlusSlamJs_OsmDemo/`](GpsPlusSlamJs_OsmDemo/)          | OSM affordance scoring demo (desktop).                        |
+| [`GpsPlusSlamJs_TourViewer/`](GpsPlusSlamJs_TourViewer/)    | QR-launch streaming tour viewer.                              |
 | [`GpsPlusSlamJs_ExampleRecordings/`](GpsPlusSlamJs_ExampleRecordings/) | Real-world session ZIPs (data only, not a package).   |
 | [`GpsPlusSlamJs_Landing/`](GpsPlusSlamJs_Landing/)          | Static landing page served at the deployment root.            |
 | `signatures/`                                               | License-key public signatures for the closed-source core.     |
@@ -183,6 +187,8 @@ pnpm run build:site   # framework + every app + landing, into one dist-site/
 - `/qr-demo/` → QR-tracking demo, built with `base=/qr-demo/`
 - `/physics/` → physics demo, built with `base=/physics/`
 - `/wayfinding/` → wayfinding HUD demo, built with `base=/wayfinding/`
+- `/osm/` → OSM affordance demo, built with `base=/osm/`
+- `/tour/` → tour viewer (QR-launch landing target), built with `base=/tour/`
 
 The Cloudflare Git integration runs `pnpm run build:site` and serves `./dist-site`
 (see [`wrangler.toml`](wrangler.toml)). The orchestration script

@@ -29,7 +29,10 @@ archive-format-agnostic; zip.js enters only where a caller wraps
 - **Warm safety:** the warm download persists only when its
   `SwitchableByteSource.switchTo` returned true — a refused swap means the
   bytes mismatch the session's size and caching them would poison every later
-  visit. `requestPersistentStorage()` is called once, at warm start (D6).
+  visit. `requestPersistentStorage()` has exactly two deliberate call sites,
+  both immediately before a persist: warm start, and the eager/full-download
+  persist in `openLocal` (D6 — never per cache write). The warm fetch carries
+  a timeout alongside the dispose signal so `warmed` always settles.
 - **`dispose()`** aborts the in-flight warm fetch; `warmed` then resolves
   false and the session simply stays remote.
 - **Poisoned-cache recovery is the caller's loop:** a cached copy that fails

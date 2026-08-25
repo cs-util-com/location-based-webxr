@@ -10,6 +10,9 @@
  *   what the background warm-download issues).
  * - `/no-ranges/tour.zip`  — IGNORES `Range` and streams the whole body with
  *   200, the "host without range support" the fallback path exists for.
+ * - `/flippable/tour.zip` — 200 full body with a SETTABLE ETag (`/flip`),
+ *   the "author overwrote the archive at the same URL" host the
+ *   revalidation spec drives.
  *
  * CORS: the app origin (the vite port) differs from this server's,
  * and `Range` is not a CORS-safelisted request header, so the preflight
@@ -53,6 +56,14 @@ async function buildZip() {
 const zipBytes = await buildZip();
 const ETAG = '"e2e-tour-v1"';
 
+/**
+ * The `/flippable/tour.zip` route's ETag version — settable via
+ * `/flip?etag=<v>` (explicit set, not a toggle, so a retried spec stays
+ * deterministic). Only the revalidation spec uses this route, so the global
+ * state cannot leak into parallel siblings.
+ */
+let flippableEtagVersion = "v1";
+
 const CORS_HEADERS = {
   "access-control-allow-origin": "*",
   "access-control-allow-headers": "range,if-none-match,if-modified-since",
@@ -72,11 +83,17 @@ function handleUtilityRoute(req, res, pathname) {
   return false;
 }
 
+/** `/flip?etag=v2` — change what the flippable route reports as its ETag. */
+function handleFlip(res, url) {
+  flippableEtagVersion = url.searchParams.get("etag") ?? "v1";
+  res.writeHead(200, CORS_HEADERS).end(flippableEtagVersion);
+}
+
 /** Serve the archive: HEAD metadata, 206 slices (ranges-ok), or a 200 body. */
 function handleArchive(req, res, mode) {
   const baseHeaders = {
     ...CORS_HEADERS,
-    etag: ETAG,
+    etag: mode === "flippable" ? `"e2e-tour-${flippableEtagVersion}"` : ETAG,
     "last-modified": "Mon, 24 Aug 2026 12:00:00 GMT",
   };
   if (req.method === "HEAD") {
@@ -117,7 +134,13 @@ function handleArchive(req, res, mode) {
 createServer((req, res) => {
   const url = new URL(req.url ?? "/", `http://127.0.0.1:${String(port)}`);
   if (handleUtilityRoute(req, res, url.pathname)) return;
-  const match = /^\/(ranges-ok|no-ranges)\/tour\.zip$/.exec(url.pathname);
+  if (url.pathname === "/flip") {
+    handleFlip(res, url);
+    return;
+  }
+  const match = /^\/(ranges-ok|no-ranges|flippable)\/tour\.zip$/.exec(
+    url.pathname,
+  );
   if (match === null) {
     res.writeHead(404, CORS_HEADERS).end();
     return;

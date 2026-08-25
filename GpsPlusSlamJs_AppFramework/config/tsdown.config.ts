@@ -153,6 +153,19 @@ const entryFiles = [
   'src/storage/zip-export.ts',
   'src/storage/zip-reader.ts',
   'src/storage/zip-coverage-embed.ts',
+  // Range-based zip streaming transport — the `./storage/*` exports wildcard
+  // advertises every one of these subpaths, so each must be built per-file
+  // (same reasoning as the utils/qr-payload entries below; a missing entry
+  // breaks Vite resolution at runtime for deep imports).
+  'src/storage/byte-source.ts',
+  'src/storage/range-probe.ts',
+  'src/storage/remote-range-byte-source.ts',
+  'src/storage/local-cache-byte-source.ts',
+  'src/storage/bounded-local-cache-store.ts',
+  'src/storage/open-remote-archive.ts',
+  'src/storage/share-link.ts',
+  'src/storage/structural-read-error.ts',
+  'src/storage/zip-byte-source-reader.ts',
   // File System Access write-with-abort helper — deep-imported by three
   // recorder storage modules (ref-point-loader, scenario-zip-export,
   // coverage-backfill). The `./storage/*` exports wildcard advertises this

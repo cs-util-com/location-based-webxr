@@ -52,6 +52,9 @@ const cacheStore: LocalCacheStore | undefined =
 
 let session: TourSession | null = null;
 let objectUrls: string[] = [];
+/** Bumped per open; a slower open that finishes after a newer one started
+ *  must close itself instead of clobbering the newer session. */
+let openGeneration = 0;
 
 function describeOpenError(err: unknown): string {
   if (err instanceof OpenRemoteArchiveError) {
@@ -124,6 +127,7 @@ async function fillGallery(current: TourSession): Promise<void> {
 }
 
 async function openUrl(url: string): Promise<void> {
+  const generation = ++openGeneration;
   errorBox.textContent = "";
   await teardownSession();
   // Async-UI rule: a visible in-progress state for the whole open, restored
@@ -137,11 +141,19 @@ async function openUrl(url: string): Promise<void> {
         renderStats();
       },
     });
+    if (generation !== openGeneration) {
+      // A newer open superseded this one while it was in flight (e.g. a
+      // click racing the ?qr= boot) — the loser cleans itself up.
+      await opened.close().catch(() => undefined);
+      return;
+    }
     session = opened;
     renderStats();
     void fillGallery(opened);
   } catch (err) {
-    errorBox.textContent = describeOpenError(err);
+    if (generation === openGeneration) {
+      errorBox.textContent = describeOpenError(err);
+    }
   } finally {
     openButton.disabled = false;
     openButton.textContent = "Open";
@@ -154,17 +166,28 @@ element<HTMLFormElement>("open-form").addEventListener("submit", (event) => {
   if (url !== "") void openUrl(url);
 });
 
+// Without a cache there is nothing to clear — a dead button would just
+// confuse; hide it (e.g. ?nocache=1, or a browser without the Cache API).
+if (!(cacheStore instanceof BoundedLocalCacheStore)) {
+  clearCacheButton.hidden = true;
+}
 clearCacheButton.addEventListener("click", () => {
   if (!(cacheStore instanceof BoundedLocalCacheStore)) return;
   clearCacheButton.disabled = true;
   clearCacheButton.textContent = "Clearing…";
-  void cacheStore
-    .clear()
-    .catch(() => undefined)
-    .then(() => {
+  void cacheStore.clear().then(
+    () => {
       clearCacheButton.disabled = false;
       clearCacheButton.textContent = "Cache cleared";
-    });
+    },
+    (err: unknown) => {
+      // Async-UI rule: a failure must surface and the in-progress state must
+      // revert — the old version reported "Cache cleared" either way.
+      clearCacheButton.disabled = false;
+      clearCacheButton.textContent = "Clear cache";
+      errorBox.textContent = `Clearing the cache failed: ${err instanceof Error ? err.message : String(err)}`;
+    },
+  );
 });
 
 /** `?qr=` launch: the QR-scan entry path — resolve the payload and open. */
@@ -180,4 +203,9 @@ async function boot(): Promise<void> {
   await openUrl(url);
 }
 
-void boot();
+// The QR launch is the one flow with no retry (a printed code) — an
+// unexpected boot failure must reach the error box, not vanish in an
+// unhandled rejection.
+boot().catch((err: unknown) => {
+  errorBox.textContent = describeOpenError(err);
+});

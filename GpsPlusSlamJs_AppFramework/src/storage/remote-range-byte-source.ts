@@ -30,7 +30,10 @@ function parseArchiveSize(header: string | null): number | null {
  * Why a range-read response is unusable, or null when it is good. A 200 means
  * the host ignored `Range` and streamed the full file — returning that body as
  * the slice would silently corrupt every downstream parse, so it is permanent
- * for this URL (the caller must re-probe and fall back). 4xx (expired signed
+ * for this URL. Nothing re-probes automatically today: the permanent/transient
+ * split is informational for a consumer's retry policy, and the manual
+ * recovery is simply opening the URL again (the fresh probe then picks the
+ * fallback). 4xx (expired signed
  * link, file gone, bad range) is likewise permanent; anything else non-206 is
  * transient. A readable `Content-Range` naming different offsets means the
  * server answered a different slice — but the header is not CORS-safelisted
@@ -99,6 +102,15 @@ export async function fetchRemoteValidators(
   try {
     const head = await fetchImpl(url, {
       method: 'HEAD',
+      // `cache: 'no-cache'` (the RequestInit member, NOT a Cache-Control
+      // request header): without it the BROWSER's HTTP cache can answer this
+      // HEAD with heuristically-fresh old headers, so a cache revalidation
+      // that never leaves the machine can never see the author's overwrite.
+      // A `Cache-Control` HEADER is not CORS-safelisted and would trigger a
+      // preflight most hosts refuse — the fetch then rejects and the caller
+      // wrongly takes the offline path. Both found by the TourViewer's
+      // changed-ETag e2e. Node's fetch accepts and ignores the member.
+      cache: 'no-cache',
       signal: AbortSignal.timeout(HEAD_TIMEOUT_MS),
     });
     // Only a SUCCESSFUL HEAD may size the archive: a 404/403 also carries a

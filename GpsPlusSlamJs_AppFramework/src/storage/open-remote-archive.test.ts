@@ -33,6 +33,7 @@ interface ServerOptions {
 }
 
 interface Call {
+  url: string;
   method: string;
   range: string | null;
 }
@@ -91,15 +92,20 @@ function fullBodyResponse(
   return Promise.resolve(respond(200, body, baseHeaders));
 }
 
+function urlOf(input: Parameters<FetchImpl>[0]): string {
+  if (typeof input === 'string') return input;
+  return input instanceof URL ? input.href : input.url;
+}
+
 function fakeServer(opts: ServerOptions = {}): {
   fetchImpl: FetchImpl;
   calls: Call[];
 } {
   const calls: Call[] = [];
-  const fetchImpl: FetchImpl = (_input, init) => {
+  const fetchImpl: FetchImpl = (input, init) => {
     const range = new Headers(init?.headers).get('range');
     const method = init?.method ?? 'GET';
-    calls.push({ method, range });
+    calls.push({ url: urlOf(input), method, range });
     if (opts.reject === true) {
       return Promise.reject(new TypeError('fetch failed'));
     }
@@ -145,8 +151,15 @@ describe('openRemoteArchive — ranged path', () => {
       fetchImpl,
     });
 
-    // Every call went to the raw host, not the share page.
+    // Every call went to the raw host, not the share page. (The first
+    // version asserted only calls.length > 0 — true for any implementation
+    // that fetches at all; milestone review #7.)
     expect(calls.length).toBeGreaterThan(0);
+    for (const call of calls) {
+      expect(call.url).toBe(
+        'https://raw.githubusercontent.com/u/r/main/archive.zip'
+      );
+    }
   });
 });
 
@@ -242,7 +255,7 @@ describe('openRemoteArchive — cache lookup', () => {
     );
     expect(events).toEqual([{ origin: 'cache', offset: 1, length: 2 }]);
     // Exactly one revalidation HEAD, never a probe/range GET.
-    expect(calls).toEqual([{ method: 'HEAD', range: null }]);
+    expect(calls).toEqual([{ url: URL_, method: 'HEAD', range: null }]);
   });
 
   it('evicts a stale copy (ETag changed) and reopens remote', async () => {
@@ -316,10 +329,8 @@ describe('openRemoteArchive — fallbacks and rejections', () => {
   });
 
   it('rejects a missing archive with cause "missing"', async () => {
-    const fetchImpl: FetchImpl = (_input, init) =>
-      Promise.resolve(
-        respond(init?.method === 'HEAD' ? 404 : 404, new Uint8Array(0), {})
-      );
+    const fetchImpl: FetchImpl = () =>
+      Promise.resolve(respond(404, new Uint8Array(0), {}));
 
     const err = await openRemoteArchive(URL_, { fetchImpl }).then(
       () => null,

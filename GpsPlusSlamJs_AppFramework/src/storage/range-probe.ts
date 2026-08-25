@@ -49,8 +49,10 @@ export interface ProbeResult {
   readonly validators?: ArchiveValidators;
 }
 
-/** Why the probe could not be turned into a usable open — the four causes a
- *  probe itself can produce. A consumer with app-specific fatal causes of its
+/** Why an open could not be turned into a usable archive. `decideFallback`
+ *  itself produces `missing`/`corrupt`/`unusable-link`; `'cors'` is produced
+ *  by the orchestrator (`open-remote-archive.ts`) when `fetch` rejects before
+ *  any HTTP status exists. A consumer with app-specific fatal causes of its
  *  own (e.g. "the file parsed but its contents were invalid") is expected to
  *  extend this union locally. */
 export type RangeProbeRejectCause =
@@ -66,16 +68,16 @@ export type FallbackDecision =
   | { readonly mode: 'full-download' }
   | { readonly mode: 'reject'; readonly cause: RangeProbeRejectCause };
 
+/** Boundary defense: even if a caller lets an unvalidated size (NaN, a
+ *  negative, a float) through, it must never anchor a range-reading parser —
+ *  a bogus size corrupts every read. */
+function isUsableArchiveSize(size: number | null): size is number {
+  return size !== null && Number.isSafeInteger(size) && size >= 0;
+}
+
 export function decideFallback(probe: ProbeResult): FallbackDecision {
   if (probe.status === 206) {
-    // Boundary defense: even if a caller lets an unvalidated size (NaN, a
-    // negative, a float) through, it must never become mode 'ranges' — a
-    // range-reading parser anchored to a bogus size corrupts every read.
-    if (
-      probe.size !== null &&
-      Number.isSafeInteger(probe.size) &&
-      probe.size >= 0
-    ) {
+    if (isUsableArchiveSize(probe.size)) {
       return { mode: 'ranges', size: probe.size };
     }
     // Ranges work but neither HEAD nor Content-Range yielded a total, and a
@@ -85,6 +87,12 @@ export function decideFallback(probe: ProbeResult): FallbackDecision {
     return { mode: 'full-download' };
   }
   if (probe.status === 200 && probe.body !== undefined) {
+    // A known HEAD size that disagrees with the streamed body means the 200
+    // was truncated (connection dropped mid-body) — caching/parsing those
+    // bytes would fail now and poison later visits (milestone review #13).
+    if (isUsableArchiveSize(probe.size) && probe.body.length !== probe.size) {
+      return { mode: 'reject', cause: 'corrupt' };
+    }
     return { mode: 'eager-local', body: probe.body };
   }
   if (probe.status === 404) {

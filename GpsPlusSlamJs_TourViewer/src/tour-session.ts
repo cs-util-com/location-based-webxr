@@ -91,13 +91,25 @@ export async function openTourSession(
   try {
     return await buildSession(first, stats);
   } catch (err) {
-    // Only a cache-served archive earns the evict-and-retry: a remote parse
-    // failure means the hosted file itself is broken.
-    if (first.origin !== "cache") throw err;
-    await first.evict();
+    // Whatever failed to parse must not stay cached and must not keep
+    // downloading. Order matters: dispose (aborts an in-flight warm), await
+    // the warm settling (it may already be past the abort and about to
+    // persist), THEN evict — evicting first would race a late warm put.
     first.dispose();
+    await first.warmed;
+    await first.evict();
+    // Only a cache-served archive earns the retry: a remote parse failure
+    // means the hosted file itself is broken.
+    if (first.origin !== "cache") throw err;
     const second = await openArchive(url, options, onRead, true);
-    return buildSession(second, stats);
+    try {
+      return await buildSession(second, stats);
+    } catch (retryErr) {
+      second.dispose();
+      await second.warmed;
+      await second.evict();
+      throw retryErr;
+    }
   }
 }
 

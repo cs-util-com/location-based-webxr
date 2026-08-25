@@ -111,6 +111,68 @@ test("second visit serves from the cache: no archive GETs, only revalidation", a
   expect(tally.gets).toBe(0);
 });
 
+test("an overwritten archive (changed ETag) is evicted and refetched, not served stale", async ({
+  page,
+  request,
+}) => {
+  // Why this matters: the authoring loop overwrites the zip at a STABLE URL
+  // (print the QR first, then update the content) — a cache that never
+  // revalidates would serve the stale copy forever on every device that
+  // visited once. This drives a real ETag change through the browser path.
+  const FLIPPABLE_URL = `${ARCHIVE_HOST}/flippable/tour.zip`;
+  await request.get(`${ARCHIVE_HOST}/flip?etag=v1`);
+  try {
+    await page.goto("/");
+    await openArchive(page, FLIPPABLE_URL);
+    await expectGalleryStreamedIn(page);
+    await expect
+      .poll(
+        async () =>
+          page.evaluate(async () => {
+            for (const key of await caches.keys()) {
+              const cache = await caches.open(key);
+              if ((await cache.keys()).length > 0) return true;
+            }
+            return false;
+          }),
+        { timeout: 15000 },
+      )
+      .toBe(true);
+
+    // The "author" overwrites the archive: same URL, new ETag.
+    await request.get(`${ARCHIVE_HOST}/flip?etag=v2`);
+
+    await page.goto("/");
+    const tally = trackArchiveTraffic(page, FLIPPABLE_URL);
+    const heads = [];
+    page.on("response", (response) => {
+      if (
+        response.url() === FLIPPABLE_URL &&
+        response.request().method() === "HEAD"
+      ) {
+        heads.push(response.headers()["etag"] ?? "(none)");
+      }
+    });
+    await openArchive(page, FLIPPABLE_URL);
+    await expectGalleryStreamedIn(page);
+    const cachedEtag = await page.evaluate(async (url) => {
+      for (const key of await caches.keys()) {
+        const cache = await caches.open(key);
+        const res = await cache.match(url);
+        if (res) return res.headers.get("etag") ?? "(none)";
+      }
+      return "(no entry)";
+    }, FLIPPABLE_URL);
+    // Revalidation saw the new ETag, evicted, and refetched from the network.
+    expect(
+      tally.gets,
+      `heads seen: ${JSON.stringify(heads)}; cached etag now: ${cachedEtag}`,
+    ).toBeGreaterThan(0);
+  } finally {
+    await request.get(`${ARCHIVE_HOST}/flip?etag=v1`);
+  }
+});
+
 test("clear cache empties the store and the next open goes to the network again", async ({
   page,
 }) => {

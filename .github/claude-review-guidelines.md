@@ -4,7 +4,8 @@ Apache-2.0 pnpm workspace of TypeScript/Vite packages: `GpsPlusSlamJs_AppFramewo
 (the shared AR+GPS framework — WebXR session management, Three.js visualization,
 sensors, storage, replay, store wiring) plus consumer apps and demos
 (`_RecorderApp`, `_AnchorStarter`, `_MinimalExample`, `_QrTrackingDemo`,
-`_PhysicsDemo`, `_WayfindingHudDemo`, `_Landing`). All of these depend on the
+`_PhysicsDemo`, `_WayfindingHudDemo`, `_OsmDemo`, `_TourViewer`, `_Landing`).
+All of these depend on the
 published `gps-plus-slam-js` library, which lives in a separate repository.
 
 ## Flag these

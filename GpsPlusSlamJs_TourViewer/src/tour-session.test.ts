@@ -130,4 +130,18 @@ describe("openTourSession", () => {
       openTourSession("https://x/tour.zip", { fetchImpl }),
     ).rejects.toThrow();
   });
+
+  // Why this test matters (milestone review #1): a broken remote archive used
+  // to leak its OpenedArchive — the background warm download kept pulling the
+  // whole file and then CACHED the bytes that had just failed to parse,
+  // poisoning the next visit.
+  it("does not leave a failed remote archive in the cache", async () => {
+    const fetchImpl = rangeServer(new Uint8Array(64).fill(0x5a));
+    const store = new InMemoryLocalCacheStore();
+
+    await expect(
+      openTourSession("https://x/tour.zip", { fetchImpl, cacheStore: store }),
+    ).rejects.toThrow();
+    await expect(store.get("https://x/tour.zip")).resolves.toBeUndefined();
+  });
 });

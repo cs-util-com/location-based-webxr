@@ -34,10 +34,14 @@ branch is provable without a server.
   `NaN`, a negative, or a float through) is treated as unknown →
   `full-download`, never `ranges` — boundary defense mirroring the validation
   in `probeRemote`.
-- `RangeProbeRejectCause` covers only what the probe itself can produce. A
-  consumer with its own fatal causes (e.g. "the file parsed but its contents
-  were invalid") extends this union locally rather than this module growing
-  app-specific causes.
+- `RangeProbeRejectCause`: `decideFallback` produces
+  `missing`/`corrupt`/`unusable-link`; `'cors'` is produced by the
+  orchestrator when `fetch` rejects before any status exists. A consumer with
+  its own fatal causes (e.g. "the file parsed but its contents were invalid")
+  extends this union locally rather than this module growing app-specific
+  causes.
+- A `200` whose body length disagrees with a known HEAD size is rejected as
+  `corrupt` — a truncated download must not become the archive.
 
 ## Examples
 

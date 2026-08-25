@@ -50,9 +50,26 @@ describe('decideFallback', () => {
   });
 
   it('falls back to an eager local read when a 200 streams the whole file', () => {
-    expect(decideFallback({ status: 200, size: SIZE, body: BODY })).toEqual({
+    expect(
+      decideFallback({ status: 200, size: BODY.length, body: BODY })
+    ).toEqual({
       mode: 'eager-local',
       body: BODY,
+    });
+    // No HEAD size to compare against: the body's own length is the size.
+    expect(decideFallback({ status: 200, size: null, body: BODY })).toEqual({
+      mode: 'eager-local',
+      body: BODY,
+    });
+  });
+
+  // Why this test matters (milestone review #13): a 200 whose body is shorter
+  // than the HEAD-announced size is a TRUNCATED download — treating it as the
+  // archive fails now and, once persisted, poisons every later visit.
+  it('rejects a 200 whose body length disagrees with the known size', () => {
+    expect(decideFallback({ status: 200, size: SIZE, body: BODY })).toEqual({
+      mode: 'reject',
+      cause: 'corrupt',
     });
   });
 

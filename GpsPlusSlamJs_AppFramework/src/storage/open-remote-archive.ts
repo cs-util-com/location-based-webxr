@@ -290,7 +290,15 @@ async function warmToCache(
     // The one deliberate persistence moment (D6): before the expensive
     // download, once, never per cache write.
     await requestPersistentStorage();
-    const res = await fetchImpl(url, { signal });
+    // Timeout alongside the dispose() signal: `warmed` is a public promise,
+    // and a stalled connection must settle it (false) rather than leave a
+    // consumer awaiting it forever (milestone review #6).
+    const res = await fetchImpl(url, {
+      signal: AbortSignal.any([
+        signal,
+        AbortSignal.timeout(FULL_DOWNLOAD_TIMEOUT_MS),
+      ]),
+    });
     if (!res.ok) return false;
     const blob = await res.blob();
     const local = instrument(new LocalCacheByteSource(blob), 'cache', options);
