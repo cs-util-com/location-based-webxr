@@ -14,10 +14,19 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   throws on a non-positive/non-finite size.
 - `buildAuthorControllerConfig(sizeM, deps: AuthorPipelineDeps)` — deps:
   `{ frontEnd, solvePose, getCameraPose, getIntrinsics, recordDetection }`.
-- `authorStatusLine(detectedText, stability, hasAlignment): { text; canMint }`
-  — the mint gate's only UI; each blocked state names what is missing.
-- `mintAuthorLevel({ stablePose, alignmentMatrix, zero, sizeM, nowIso })` →
-  `{ ok: true, level, json } | { ok: false, error }`.
+- `MIN_ALIGNMENT_SAMPLES = 3` — the mint gate's alignment floor. A non-null
+  matrix is VACUOUS (the store ships an identity matrix from the first GPS
+  fix), so the gate counts solved-in fixes (milestone review #1).
+- `authorStatusLine(detectedText, stability, alignment: AuthorAlignmentInfo)`
+  → `{ text; canMint }` — the mint gate's only UI; each blocked state names
+  what is missing, including the fix count.
+- `buildAuthorControllerConfig` wires `onError` too — a throwing detector
+  must surface, not leave the panel saying "point the camera" forever.
+- `mintAuthorLevel({ stablePose, alignmentMatrix, zero, alignment, sizeM,
+nowIso })` → `{ ok: true, level, json } | { ok: false, error }` — enforces
+  the sample floor itself (defense in depth) and records the full
+  `mintQuality` block (`mintedAtIso`, `alignmentSampleCount`,
+  `gpsAccuracyM`) for M5's error attribution.
 
 ## Invariants & assumptions
 

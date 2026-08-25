@@ -12,11 +12,13 @@ import {
   type EnableGpsArState,
 } from "gps-plus-slam-app-framework/ar";
 import {
+  clearAllQrMarkers,
   createGpsPositionHandler,
   createSlamAppStore,
   qrDetectedReducer,
   recordQrDetection,
   selectAlignmentMatrix,
+  selectGpsPositions,
   selectQrPoseStability,
   selectStableQrPose,
   selectZeroReference,
@@ -43,6 +45,7 @@ import {
   authorStatusLine,
   buildAuthorControllerConfig,
   mintAuthorLevel,
+  type AuthorAlignmentInfo,
 } from "./qr-author-mode.js";
 import { getSeams } from "./seams.js";
 import { resolveQrPayload } from "./qr-launch-dispatch.js";
@@ -277,6 +280,7 @@ const mintButton = element<HTMLButtonElement>("mint-export");
 const authorJsonBox = element<HTMLTextAreaElement>("author-json");
 const authorCopyButton = element<HTMLButtonElement>("author-copy");
 const authorDownloadButton = element<HTMLButtonElement>("author-download");
+const authorHint = element<HTMLParagraphElement>("author-hint");
 
 authorPanel.hidden = !authorMode;
 authorSizeInput.value = String(AUTHOR_DEFAULT_SIZE_M);
@@ -291,9 +295,34 @@ if (authorMode) {
 let qrController: ReturnType<typeof createQrTrackingController> | null = null;
 /** The most recently detected code — the one the stability gate tracks. */
 let lastDetectedText: string | null = null;
+/** The printed size CAPTURED at AR entry — the size the solves actually
+ *  used; the input is disabled while running (milestone review #3). */
+let activeSizeM = AUTHOR_DEFAULT_SIZE_M;
+/** A persistent pipeline error (no detector, controller failure) — shown
+ *  with priority so store updates cannot clobber it (milestone review #5). */
+let authorErrorText: string | null = null;
+/** The in-scene glue check (axis+cube on the code) — the one check a human
+ *  at the poster can perform; spread alone is precision, not accuracy
+ *  (milestone review #8). */
+let qrDebugView: ReturnType<typeof seams.createQrDebugView> | null = null;
+
+function authorAlignmentInfo(): AuthorAlignmentInfo {
+  const state = arStore.getState();
+  const accuracy = state.gpsData?.gpsEvents?.gpsAccuracyMedian;
+  return {
+    hasMatrix: selectAlignmentMatrix(state) !== null,
+    sampleCount: selectGpsPositions(state).length,
+    ...(typeof accuracy === "number" ? { gpsAccuracyM: accuracy } : {}),
+  };
+}
 
 function renderAuthorReadout(): void {
   if (!authorMode) return;
+  if (authorErrorText !== null) {
+    authorStatus.textContent = authorErrorText;
+    mintButton.disabled = true;
+    return;
+  }
   const state = arStore.getState();
   const stability =
     lastDetectedText === null
@@ -302,33 +331,45 @@ function renderAuthorReadout(): void {
   const readout = authorStatusLine(
     lastDetectedText,
     stability,
-    selectAlignmentMatrix(state) !== null,
+    authorAlignmentInfo(),
   );
   authorStatus.textContent = readout.text;
   mintButton.disabled = !readout.canMint;
 }
 
 function startAuthorPipeline(): void {
-  const sizeM = Number(authorSizeInput.value);
+  authorErrorText = null;
+  activeSizeM = Number(authorSizeInput.value);
   const frontEnd = seams.createQrFrontEnd();
   if (frontEnd === null) {
-    authorStatus.textContent =
+    authorErrorText =
       "This browser has no QR detector (BarcodeDetector) — use Android Chrome to author.";
+    renderAuthorReadout();
     return;
   }
   qrController = createQrTrackingController(
-    buildAuthorControllerConfig(sizeM, {
+    buildAuthorControllerConfig(activeSizeM, {
       frontEnd,
       solvePose: (input) => seams.solveQrPose(input),
       getCameraPose: () => seams.getCameraPose(),
       getIntrinsics: (image) => seams.getIntrinsics(image),
       recordDetection: (event) => {
+        authorErrorText = null; // a live detection supersedes a stale error
         lastDetectedText = event.text;
         arStore.dispatch(recordQrDetection(event));
+        qrDebugView?.update(event.qrPoseWorld, activeSizeM);
+        renderAuthorReadout();
+      },
+      onError: (message) => {
+        authorErrorText = `QR tracking failed: ${message}`;
         renderAuthorReadout();
       },
     }),
   );
+  const worldGroup = seams.getArWorldGroup();
+  if (worldGroup !== null) {
+    qrDebugView = seams.createQrDebugView(worldGroup);
+  }
   renderAuthorReadout();
 }
 
@@ -341,17 +382,21 @@ mintButton.addEventListener("click", () => {
     stablePose,
     alignmentMatrix: selectAlignmentMatrix(state),
     zero: selectZeroReference(state),
-    sizeM: Number(authorSizeInput.value),
+    alignment: authorAlignmentInfo(),
+    sizeM: activeSizeM,
     nowIso: new Date().toISOString(),
   });
   if (!result.ok) {
-    errorBox.textContent = result.error;
+    // Inside the DOM-overlay root — errorBox is a sibling of #ar-root and
+    // therefore INVISIBLE during the AR session (milestone review #4).
+    authorStatus.textContent = result.error;
     return;
   }
   authorJsonBox.value = result.json;
   authorJsonBox.hidden = false;
   authorCopyButton.hidden = false;
   authorDownloadButton.hidden = false;
+  authorHint.hidden = false;
 });
 
 authorCopyButton.addEventListener("click", () => {
@@ -370,8 +415,9 @@ authorCopyButton.addEventListener("click", () => {
 });
 
 authorDownloadButton.addEventListener("click", () => {
-  // Hidden-anchor download (the session-summary precedent); the file name
-  // is the zip path the author adds it under: qr/<c>.json.
+  // Hidden-anchor download (the session-summary precedent). Browsers strip
+  // path separators from `download`, so the file arrives as `<c>.json`; the
+  // panel's hint tells the author to place it under `qr/` in the zip.
   const c = authorCInput.value.trim() === "" ? "1" : authorCInput.value.trim();
   const blob = new Blob([authorJsonBox.value], { type: "application/json" });
   const url = URL.createObjectURL(blob);
@@ -395,6 +441,14 @@ function renderArState(state: EnableGpsArState): void {
   const view = arButtonView(state, authorMode);
   enterArButton.disabled = view.disabled;
   enterArButton.textContent = view.label;
+  // The printed size is CAPTURED at AR entry (the solves use it) — editing
+  // it mid-session would stamp a size the pose was never solved with
+  // (milestone review #3).
+  const sessionActive =
+    state.status === "starting" ||
+    state.status === "running" ||
+    state.status === "stopping";
+  authorSizeInput.disabled = sessionActive;
   renderArStatus();
 }
 
@@ -413,13 +467,22 @@ async function enterAr(): Promise<void> {
         // Full teardown, not just capture stop: the AR entry is
         // re-enterable, and an open recording would blend the dead
         // session's odom frame into the next alignment (PR #359 review).
+        // The QR window and its tracked text are session state too — a
+        // re-entry must not mint from the dead session's odom-frame poses
+        // (milestone review #2).
         qrController = null;
+        qrDebugView?.dispose();
+        qrDebugView = null;
+        lastDetectedText = null;
+        authorErrorText = null;
+        arStore.dispatch(clearAllQrMarkers());
         endTourArRuntime(arStore, {
           stopCameraFrameCapture: () => {
             seams.stopCameraFrameCapture();
           },
         });
         renderArStatus();
+        renderAuthorReadout();
       },
       onGpsPosition: (position) => {
         gpsHandler(position);

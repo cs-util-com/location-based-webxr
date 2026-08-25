@@ -39,6 +39,8 @@ export async function installTourViewerArFakes(page) {
       /** Scripted device-level QR results for the author pipeline (M3). */
       nextDetection: /** @type {any} */ (null),
       nextSolution: /** @type {any} */ (null),
+      qrDebugUpdates: 0,
+      qrDebugDisposals: 0,
       /** Arm a consistent detection+solution for the given text/pose. */
       armQrDetection(text, position = [1, 1.5, -2]) {
         test.nextDetection = {
@@ -102,6 +104,14 @@ export async function installTourViewerArFakes(page) {
       solveQrPose: () => test.nextSolution,
       getCameraPose: () => ({ position: [0, 0, 0], rotation: [0, 0, 0, 1] }),
       getIntrinsics: () => ({ fx: 500, fy: 500, cx: 1, cy: 1 }),
+      createQrDebugView: () => ({
+        update: () => {
+          test.qrDebugUpdates += 1;
+        },
+        dispose: () => {
+          test.qrDebugDisposals += 1;
+        },
+      }),
       enableArWorldGroupAlignment: (options) => {
         test.alignmentCalls.push({
           hasStore: Boolean(options.store),

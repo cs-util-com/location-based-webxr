@@ -198,8 +198,12 @@ export function startTourArRuntime(
  * first session's GPS elements stayed in the store, anchored to the DEAD
  * session's odom origin, while WebXR handed the new session a fresh one —
  * so the alignment solve blended both (PR #359 review). `endSession` closes
- * the recording; `resetCoordinatorState` drops the coordinator's per-session
- * accumulations so the next start begins clean.
+ * the recording; `resetCoordinatorState` clears the coordinator's cached
+ * device-orientation state. KNOWN LIMIT (M3 milestone review #2): the
+ * gpsData slice itself has no reset action, so a re-entry's GPS pairs are
+ * appended to the previous session's — filed as a follow-up
+ * (2026-08-25-2012-ar-session-teardown-siblings-followup.md); the QR
+ * window IS cleared by the caller (`clearAllQrMarkers`).
  */
 export function endTourArRuntime(
   store: TourArRuntimeStore,

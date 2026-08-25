@@ -37,6 +37,10 @@ import {
 } from "gps-plus-slam-app-framework/ar/qr/qr-pose";
 import type { QrSolvePoseInput } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
 import { PlanarPnpSquare } from "gps-plus-slam-app-framework/ar/qr/planar-pnp";
+import {
+  createQrDebugView,
+  type QrDebugView,
+} from "gps-plus-slam-app-framework/ar/qr/qr-debug-view";
 // Deep import on purpose: the /visualization barrel pulls the leaflet-based
 // map modules, which crash in a windowless (node) unit-test environment.
 import { enableArWorldGroupAlignment } from "gps-plus-slam-app-framework/visualization/ar-world-group-alignment";
@@ -69,6 +73,10 @@ export interface TourViewerSeams {
   /** PnP intrinsics from the in-session camera projection, scaled to the
    *  DETECTOR buffer's dimensions (buffer mismatch is the #1 PnP risk). */
   getIntrinsics(image: RgbaImage): CameraIntrinsics | null;
+  /** The shared axis+cube glue check, parented under the world group — the
+   *  one accuracy check a human at the poster can perform (spread alone is
+   *  precision). */
+  createQrDebugView(parent: Object3D): QrDebugView;
 }
 
 declare global {
@@ -118,6 +126,7 @@ export const realSeams: TourViewerSeams = {
       image.height,
     );
   },
+  createQrDebugView,
 };
 
 /**

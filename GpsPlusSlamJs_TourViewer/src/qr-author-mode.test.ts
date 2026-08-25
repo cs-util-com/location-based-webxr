@@ -39,6 +39,11 @@ const ZERO = { lat: 47.5, lon: 8.7 };
 const IDENTITY_ALIGNMENT = [
   1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
 ] as const;
+const GOOD_ALIGNMENT_INFO = {
+  hasMatrix: true,
+  sampleCount: 5,
+  gpsAccuracyM: 4.2,
+};
 
 function fakeDeps(): AuthorPipelineDeps {
   return {
@@ -50,6 +55,7 @@ function fakeDeps(): AuthorPipelineDeps {
     getCameraPose: () => null,
     getIntrinsics: () => null,
     recordDetection: vi.fn(),
+    onError: vi.fn(),
   };
 }
 
@@ -100,6 +106,7 @@ describe("mintAuthorLevel", () => {
       stablePose: { position: [1, 2, 3], rotation: [0, 0, 0, 1] },
       alignmentMatrix: IDENTITY_ALIGNMENT,
       zero: ZERO,
+      alignment: GOOD_ALIGNMENT_INFO,
       sizeM: 0.2,
       nowIso: "2026-08-25T20:30:00.000Z",
     });
@@ -132,6 +139,7 @@ describe("mintAuthorLevel", () => {
       stablePose: { position: [0, 0, -5], rotation: [0, 0, 0, 1] },
       alignmentMatrix: yaw90PlusShift,
       zero: ZERO,
+      alignment: GOOD_ALIGNMENT_INFO,
       sizeM: 0.2,
       nowIso: "2026-08-25T20:30:00.000Z",
     });
@@ -155,6 +163,7 @@ describe("mintAuthorLevel", () => {
       stablePose: { position: [0, 1.5, -2], rotation: [0, 0, 0, 1] },
       alignmentMatrix: IDENTITY_ALIGNMENT,
       zero: ZERO,
+      alignment: GOOD_ALIGNMENT_INFO,
       sizeM: AUTHOR_DEFAULT_SIZE_M,
       nowIso: "2026-08-25T20:30:00.000Z",
     });
@@ -184,27 +193,92 @@ describe("mintAuthorLevel", () => {
       inlierCount: 8,
       sampleCount: 8,
     };
-    expect(authorStatusLine(null, null, false).canMint).toBe(false);
+    const noAlign = { hasMatrix: false, sampleCount: 0 };
+    expect(authorStatusLine(null, null, noAlign).canMint).toBe(false);
     const measuring = authorStatusLine(
       "text",
       { ...stable, status: "measuring" as const },
-      true,
+      GOOD_ALIGNMENT_INFO,
     );
     expect(measuring.canMint).toBe(false);
     expect(measuring.text).toMatch(/measuring/i);
-    const noAlignment = authorStatusLine("text", stable, false);
-    expect(noAlignment.canMint).toBe(false);
-    expect(noAlignment.text).toMatch(/alignment/i);
-    const ready = authorStatusLine("text", stable, true);
+    // Milestone review #1 — the identity-matrix hole: a matrix EXISTS from
+    // the very first GPS fix (the store ships identity), so a matrix-only
+    // gate is vacuous and would mint a heading wrong by the session's
+    // arbitrary WebXR yaw. The gate must count solved-in fixes.
+    const identityOnly = authorStatusLine("text", stable, {
+      hasMatrix: true,
+      sampleCount: 1,
+    });
+    expect(identityOnly.canMint).toBe(false);
+    expect(identityOnly.text).toMatch(/1 of 3 fixes/);
+    const ready = authorStatusLine("text", stable, GOOD_ALIGNMENT_INFO);
     expect(ready.canMint).toBe(true);
     expect(ready.text).toMatch(/ready/i);
   });
 
-  it("refuses to mint before GPS alignment exists, in plain words", () => {
+  it("derives the heading from the composed rotation (the conjugation trap)", () => {
+    // Milestone review #6: with an identity RAW rotation the position tests
+    // cannot distinguish B·M from B·M·B⁻¹ — the HEADING can. The QR's local
+    // +x under an identity WebXR rotation is WebXR X = East, so the correct
+    // composition yields headingDeg 90; the (wrong) conjugated form would
+    // leave the rotation identity → local +x = North → heading 0.
+    const identity = mintAuthorLevel({
+      stablePose: { position: [0, 0, -2], rotation: [0, 0, 0, 1] },
+      alignmentMatrix: IDENTITY_ALIGNMENT,
+      zero: ZERO,
+      alignment: GOOD_ALIGNMENT_INFO,
+      sizeM: 0.2,
+      nowIso: "2026-08-25T20:30:00.000Z",
+    });
+    expect(identity.ok).toBe(true);
+    if (!identity.ok) return;
+    expect(identity.level.qr.geo?.headingDeg).toBeCloseTo(90, 6);
+
+    // A −90° yaw about WebXR Up turns local +x from East to South → 180°.
+    const half = (-90 * Math.PI) / 180 / 2;
+    const yawed = mintAuthorLevel({
+      stablePose: {
+        position: [0, 0, -2],
+        rotation: [0, Math.sin(half), 0, Math.cos(half)],
+      },
+      alignmentMatrix: IDENTITY_ALIGNMENT,
+      zero: ZERO,
+      alignment: GOOD_ALIGNMENT_INFO,
+      sizeM: 0.2,
+      nowIso: "2026-08-25T20:30:00.000Z",
+    });
+    expect(yawed.ok).toBe(true);
+    if (!yawed.ok) return;
+    expect(yawed.level.qr.geo?.headingDeg).toBeCloseTo(180, 6);
+  });
+
+  it("records the alignment quality into the exported mintQuality block", () => {
+    // Milestone review #7: M5's error attribution needs to know what the
+    // alignment looked like at MINT time, not just when the mint happened.
+    const result = mintAuthorLevel({
+      stablePose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+      alignmentMatrix: IDENTITY_ALIGNMENT,
+      zero: ZERO,
+      alignment: GOOD_ALIGNMENT_INFO,
+      sizeM: 0.2,
+      nowIso: "2026-08-25T20:30:00.000Z",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.level.qr.mintQuality).toEqual({
+      mintedAtIso: "2026-08-25T20:30:00.000Z",
+      alignmentSampleCount: 5,
+      gpsAccuracyM: 4.2,
+    });
+  });
+
+  it("refuses to mint before a USABLE GPS alignment exists, in plain words", () => {
     const result = mintAuthorLevel({
       stablePose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
       alignmentMatrix: null,
       zero: ZERO,
+      alignment: GOOD_ALIGNMENT_INFO,
       sizeM: 0.2,
       nowIso: "2026-08-25T20:30:00.000Z",
     });
@@ -213,10 +287,23 @@ describe("mintAuthorLevel", () => {
       error: expect.stringMatching(/alignment/i) as unknown,
     });
 
+    // Defense in depth for the identity-matrix hole: a present matrix with
+    // too few solved-in fixes refuses too.
+    const identityOnly = mintAuthorLevel({
+      stablePose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+      alignmentMatrix: IDENTITY_ALIGNMENT,
+      zero: ZERO,
+      alignment: { hasMatrix: true, sampleCount: 1 },
+      sizeM: 0.2,
+      nowIso: "2026-08-25T20:30:00.000Z",
+    });
+    expect(identityOnly.ok).toBe(false);
+
     const noZero = mintAuthorLevel({
       stablePose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
       alignmentMatrix: IDENTITY_ALIGNMENT,
       zero: null,
+      alignment: GOOD_ALIGNMENT_INFO,
       sizeM: 0.2,
       nowIso: "2026-08-25T20:30:00.000Z",
     });

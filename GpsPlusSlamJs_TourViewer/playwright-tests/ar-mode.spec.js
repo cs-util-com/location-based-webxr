@@ -178,17 +178,25 @@ test("author mode mints and exports a level that the parser round-trips", async 
     )
     .toMatch(/waiting for GPS alignment/i);
   await expect(page.getByTestId("mint-export")).toBeDisabled();
+  // The size input is locked while the session runs — the solves used the
+  // captured value (milestone review #3).
+  await expect(page.getByTestId("author-size")).toBeDisabled();
+
+  // The identity-matrix hole (milestone review #1): creating gpsData ships
+  // an IDENTITY alignment matrix — the gate must NOT open on it.
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.alignmentStore.dispatch({
+      type: "gpsData/setZeroPos",
+      payload: { lat: 47.5, lon: 8.7 },
+    });
+  });
+  await expect(page.getByTestId("author-status")).toHaveText(/0 of 3 fixes/i);
+  await expect(page.getByTestId("mint-export")).toBeDisabled();
 
   // Feed the REAL alignment solve: three odom↔GPS pairs, ~15 m apart, in a
   // consistent identity-ish mapping around the zero reference.
   await page.evaluate(() => {
     const store = /** @type {any} */ (window).__tourViewerTest.alignmentStore;
-    // gpsData starts null; the zero reference is what creates it (the
-    // coordinator's first-fix behaviour, replayed here by hand).
-    store.dispatch({
-      type: "gpsData/setZeroPos",
-      payload: { lat: 47.5, lon: 8.7 },
-    });
     const pairs = [
       { odom: [0, 0, 0], lat: 47.5, lon: 8.7 },
       { odom: [0, 0, -15], lat: 47.500135, lon: 8.7 },
@@ -225,8 +233,17 @@ test("author mode mints and exports a level that the parser round-trips", async 
   expect(level.qr.geo.lon).toEqual(expect.any(Number));
   expect(level.qr.geo.rotation).toHaveLength(4);
   expect(level.qr.mintQuality.mintedAtIso).toEqual(expect.any(String));
+  // The quality block records what the alignment looked like at MINT time
+  // (milestone review #7) — M5's error attribution reads these.
+  expect(level.qr.mintQuality.alignmentSampleCount).toBe(3);
+  expect(level.qr.mintQuality.gpsAccuracyM).toBe(5);
   await expect(page.getByTestId("author-download")).toBeVisible();
   await expect(page.getByTestId("author-copy")).toBeVisible();
+  // The glue check received the detections (milestone review #8).
+  const debugUpdates = await page.evaluate(
+    () => /** @type {any} */ (window).__tourViewerTest.qrDebugUpdates,
+  );
+  expect(debugUpdates).toBeGreaterThan(0);
 });
 
 test("without fakes the button reports AR unsupported instead of breaking the page", async ({

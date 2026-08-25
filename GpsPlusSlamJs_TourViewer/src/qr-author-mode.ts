@@ -53,6 +53,24 @@ import type { QrPoseStability } from "gps-plus-slam-app-framework/state";
 export const AUTHOR_DEFAULT_SIZE_M = 0.2;
 
 /**
+ * The mint gate's alignment requirement (milestone review #1): a non-null
+ * alignment matrix is VACUOUS — the store ships an IDENTITY matrix from the
+ * very first GPS fix, and an identity-composed mint stamps a heading that is
+ * wrong by the session's arbitrary WebXR yaw. Requiring several solved-in
+ * GPS fixes is the cheap honest floor; M5's field numbers may raise it.
+ */
+export const MIN_ALIGNMENT_SAMPLES = 3;
+
+/** What the mint gate knows about the session's GPS alignment. */
+export interface AuthorAlignmentInfo {
+  hasMatrix: boolean;
+  /** GPS fixes actually solved into the alignment (`selectGpsPositions`). */
+  sampleCount: number;
+  /** Median GPS accuracy (m) — recorded into `mintQuality`. */
+  gpsAccuracyM?: number;
+}
+
+/**
  * Geo-less until minted (QD-4): `syntheticAccuracyM` is required by the
  * controller config but unreachable — a geo-less level never votes.
  */
@@ -76,6 +94,9 @@ export interface AuthorPipelineDeps {
   getIntrinsics(image: RgbaImage): CameraIntrinsics | null;
   /** onDetection → the `qrDetected` slice (`recordQrDetection`). */
   recordDetection(event: QrDetectionEvent): void;
+  /** Controller failures MUST surface (async-UI rule) — a throwing detector
+   *  otherwise leaves the panel saying "point the camera" forever. */
+  onError(message: string): void;
 }
 
 /**
@@ -102,6 +123,9 @@ export function buildAuthorControllerConfig(
     },
     getCameraPose: () => deps.getCameraPose(),
     getIntrinsics: (image) => deps.getIntrinsics(image),
+    onError: (err) => {
+      deps.onError(err instanceof Error ? err.message : String(err));
+    },
     syntheticAccuracyM: UNREACHABLE_SYNTHETIC_ACCURACY_M,
     minIntervalMs: 0,
   };
@@ -122,7 +146,7 @@ export interface AuthorReadout {
 export function authorStatusLine(
   detectedText: string | null,
   stability: QrPoseStability | null,
-  hasAlignment: boolean,
+  alignment: AuthorAlignmentInfo,
 ): AuthorReadout {
   if (detectedText === null || stability === null) {
     return {
@@ -137,9 +161,12 @@ export function authorStatusLine(
       canMint: false,
     };
   }
-  if (!hasAlignment) {
+  if (!alignment.hasMatrix || alignment.sampleCount < MIN_ALIGNMENT_SAMPLES) {
     return {
-      text: `Pose stable (${spread}) — waiting for GPS alignment. Walk a few metres with GPS reception.`,
+      text:
+        `Pose stable (${spread}) — waiting for GPS alignment ` +
+        `(${String(alignment.sampleCount)} of ${String(MIN_ALIGNMENT_SAMPLES)} fixes). ` +
+        `Walk a few metres with GPS reception.`,
       canMint: false,
     };
   }
@@ -153,6 +180,9 @@ export interface MintAuthorLevelInput {
   alignmentMatrix: AlignmentMatrix | null;
   /** `selectZeroReference` — the session's GPS zero. */
   zero: LatLong | null;
+  /** The mint gate's alignment info — enforced HERE too (defense in depth:
+   *  the matrix alone is vacuous, see {@link MIN_ALIGNMENT_SAMPLES}). */
+  alignment: AuthorAlignmentInfo;
   sizeM: number;
   /** Injected timestamp (ISO) — becomes `mintQuality.mintedAtIso`. */
   nowIso: string;
@@ -170,12 +200,16 @@ export type MintAuthorLevelResult =
 export function mintAuthorLevel(
   input: MintAuthorLevelInput,
 ): MintAuthorLevelResult {
-  const { stablePose, alignmentMatrix, zero, sizeM, nowIso } = input;
-  if (alignmentMatrix === null || zero === null) {
+  const { stablePose, alignmentMatrix, zero, alignment, sizeM, nowIso } = input;
+  if (
+    alignmentMatrix === null ||
+    zero === null ||
+    alignment.sampleCount < MIN_ALIGNMENT_SAMPLES
+  ) {
     return {
       ok: false,
       error:
-        "No GPS alignment yet — walk a few metres with GPS reception, then mint once the pose is stable.",
+        "No usable GPS alignment yet — walk a few metres with GPS reception, then mint once the pose is stable.",
     };
   }
   try {
@@ -203,7 +237,18 @@ export function mintAuthorLevel(
       qr: {
         physicalSizeM: sizeM,
         geo,
-        mintQuality: { mintedAtIso: nowIso },
+        // The full quality block (milestone review #7): M5's error
+        // attribution needs to know what the alignment looked like at mint
+        // time, not just when the mint happened.
+        mintQuality: {
+          mintedAtIso: nowIso,
+          alignmentSampleCount: alignment.sampleCount,
+          ...(alignment.gpsAccuracyM !== undefined &&
+          Number.isFinite(alignment.gpsAccuracyM) &&
+          alignment.gpsAccuracyM > 0
+            ? { gpsAccuracyM: alignment.gpsAccuracyM }
+            : {}),
+        },
       },
     };
     return { ok: true, level, json: serializeQrLevel(level) };
