@@ -306,12 +306,22 @@ let authorErrorText: string | null = null;
  *  (milestone review #8). */
 let qrDebugView: ReturnType<typeof seams.createQrDebugView> | null = null;
 
+/** GPS-fix count snapshot taken when THIS session's runtime started: the
+ *  gpsData slice has no reset, so the lifetime count would re-open the mint
+ *  gate instantly on a re-entry over an alignment blended across two odom
+ *  origins (PR #360 review). Only fixes since the snapshot count. */
+let gpsSamplesAtSessionStart = 0;
+
 function authorAlignmentInfo(): AuthorAlignmentInfo {
   const state = arStore.getState();
   const accuracy = state.gpsData?.gpsEvents?.gpsAccuracyMedian;
+  const sinceSessionStart = Math.max(
+    0,
+    selectGpsPositions(state).length - gpsSamplesAtSessionStart,
+  );
   return {
     hasMatrix: selectAlignmentMatrix(state) !== null,
-    sampleCount: selectGpsPositions(state).length,
+    sampleCount: sinceSessionStart,
     ...(typeof accuracy === "number" ? { gpsAccuracyM: accuracy } : {}),
   };
 }
@@ -337,15 +347,26 @@ function renderAuthorReadout(): void {
   mintButton.disabled = !readout.canMint;
 }
 
-function startAuthorPipeline(): void {
+function startAuthorPipeline(): boolean {
   authorErrorText = null;
-  activeSizeM = Number(authorSizeInput.value);
+  // Validate BEFORE starting anything: a cleared number input yields 0, the
+  // min attribute never fires outside a form, and the resulting RangeError
+  // used to unwind into the generic error box — the surface the author is
+  // not looking at (PR #360 review).
+  const parsedSize = Number(authorSizeInput.value);
+  if (!Number.isFinite(parsedSize) || parsedSize <= 0) {
+    authorErrorText =
+      "Enter the printed code's side length in metres (e.g. 0.2) before starting.";
+    renderAuthorReadout();
+    return false;
+  }
+  activeSizeM = parsedSize;
   const frontEnd = seams.createQrFrontEnd();
   if (frontEnd === null) {
     authorErrorText =
       "This browser has no QR detector (BarcodeDetector) — use Android Chrome to author.";
     renderAuthorReadout();
-    return;
+    return false;
   }
   qrController = createQrTrackingController(
     buildAuthorControllerConfig(activeSizeM, {
@@ -366,11 +387,8 @@ function startAuthorPipeline(): void {
       },
     }),
   );
-  const worldGroup = seams.getArWorldGroup();
-  if (worldGroup !== null) {
-    qrDebugView = seams.createQrDebugView(worldGroup);
-  }
   renderAuthorReadout();
+  return true;
 }
 
 mintButton.addEventListener("click", () => {
@@ -454,7 +472,9 @@ function renderArState(state: EnableGpsArState): void {
 
 async function enterAr(): Promise<void> {
   cameraFrameCount = 0;
-  if (authorMode) startAuthorPipeline();
+  // A refused pipeline (bad size, no detector) keeps AR unstarted — the
+  // message is already in the author panel, where the author is looking.
+  if (authorMode && !startAuthorPipeline()) return;
   const result = await arController.enable(
     buildArEnableConfig({
       container: arRoot,
@@ -506,6 +526,19 @@ async function enterAr(): Promise<void> {
   if (!runtime.ok) {
     errorBox.textContent = runtime.error;
     await arController.disable();
+    return;
+  }
+  // The world group exists only AFTER initAR built the scene graph —
+  // creating the glue check earlier made it dead code in production
+  // (PR #360 review). The snapshot for the alignment gate belongs to the
+  // same moment: this session's fixes start counting now.
+  gpsSamplesAtSessionStart = selectGpsPositions(arStore.getState()).length;
+  if (authorMode) {
+    const worldGroup = seams.getArWorldGroup();
+    if (worldGroup !== null) {
+      qrDebugView = seams.createQrDebugView(worldGroup);
+    }
+    renderAuthorReadout();
   }
 }
 

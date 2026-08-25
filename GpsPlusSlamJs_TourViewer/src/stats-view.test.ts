@@ -23,7 +23,7 @@ describe("toStatsView", () => {
     expect(view.headline).toContain("of");
     expect(view.headline).toContain("(12.0%)");
     expect(view.detail).toBe(
-      "9 range requests · 4 cache reads · serving from network",
+      "9 network reads · 4 cache reads · serving from network",
     );
   });
 

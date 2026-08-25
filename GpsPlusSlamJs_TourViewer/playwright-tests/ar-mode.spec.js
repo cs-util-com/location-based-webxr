@@ -239,11 +239,37 @@ test("author mode mints and exports a level that the parser round-trips", async 
   expect(level.qr.mintQuality.gpsAccuracyM).toBe(5);
   await expect(page.getByTestId("author-download")).toBeVisible();
   await expect(page.getByTestId("author-copy")).toBeVisible();
-  // The glue check received the detections (milestone review #8).
+  // The glue check received the detections (milestone review #8). The fake
+  // world group is null until initAR ran, so this also pins the creation
+  // ORDER — a view created before the session exists is dead code in
+  // production (PR #360 review).
   const debugUpdates = await page.evaluate(
     () => /** @type {any} */ (window).__tourViewerTest.qrDebugUpdates,
   );
   expect(debugUpdates).toBeGreaterThan(0);
+
+  // Re-entry must NOT inherit the dead session's evidence (PR #360 review):
+  // the gpsData slice keeps its lifetime GPS pairs, so a fresh session's
+  // gate would open at frame 0 on an alignment blended across two odom
+  // origins. The snapshot makes the count session-relative.
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.endXrSession();
+  });
+  await expect(page.getByTestId("enter-ar")).toHaveText("Start AR authoring");
+  await enterAr(page);
+  await expect(page.getByTestId("enter-ar")).toHaveText("Authoring in AR");
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return page.getByTestId("author-status").textContent();
+      },
+      { timeout: 15000 },
+    )
+    .toMatch(/0 of 3 fixes/i);
+  await expect(page.getByTestId("mint-export")).toBeDisabled();
 });
 
 test("without fakes the button reports AR unsupported instead of breaking the page", async ({

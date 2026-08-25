@@ -11,7 +11,7 @@ import type { StreamStats } from "./tour-session.js";
 export interface StatsView {
   /** e.g. "132 KB of 3.4 MB fetched (3.8%)" */
   readonly headline: string;
-  /** e.g. "9 range requests · 4 cache reads · serving from network" */
+  /** e.g. "9 network reads · 4 cache reads · serving from network" */
   readonly detail: string;
 }
 
@@ -26,6 +26,10 @@ export function toStatsView(
       : 0;
   return {
     headline: `${formatFileSize(stats.networkBytes)} of ${formatFileSize(archiveSize)} fetched (${percent.toFixed(1)}%)`,
-    detail: `${String(stats.networkRequests)} range requests · ${String(stats.cacheReads)} cache reads · serving from ${origin}`,
+    // "network reads", not "range requests": the counter also carries the
+    // synthetic whole-archive events the transport emits for eager/warm/
+    // recovery downloads, so the old label lied after a warm (PR #360
+    // review).
+    detail: `${String(stats.networkRequests)} network reads · ${String(stats.cacheReads)} cache reads · serving from ${origin}`,
   };
 }

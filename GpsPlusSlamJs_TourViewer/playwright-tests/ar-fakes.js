@@ -94,7 +94,10 @@ export async function installTourViewerArFakes(page) {
           return Promise.resolve();
         },
       },
-      getArWorldGroup: () => worldGroup,
+      // Null until initAR ran — the framework builds the scene graph inside
+      // initAR, and a fake that always returns the group made the debug-view
+      // wiring assertion vacuous (PR #360 review).
+      getArWorldGroup: () => (test.initARCalls.length > 0 ? worldGroup : null),
       // --- author-pipeline fakes (M3): the REAL controller/slice/stability
       // machinery runs; only the device-level detect/solve are scripted. ---
       createQrFrontEnd: () => ({
