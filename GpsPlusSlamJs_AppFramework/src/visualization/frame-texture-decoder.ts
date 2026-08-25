@@ -4,7 +4,8 @@
  *
  * Decodes a JPEG blob into a `THREE.Texture` via `createImageBitmap`.
  * Compatible with the `decodeTexture` slot of
- * [`wireFrameTileSubscribers`](./wire-frame-tile-subscribers.ts).
+ * `wireFrameTileSubscribers` (the recorder's frame-tile pipeline) and the
+ * TourViewer's image planes.
  *
  * **Orientation contract (2026-06-13 fix,
  * [frame-tile-rendering-bugs-user-feedback.md](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-13-1311-frame-tile-rendering-bugs-user-feedback.md)

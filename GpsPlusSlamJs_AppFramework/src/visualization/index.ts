@@ -144,10 +144,10 @@ export {
   createTextSprite,
 } from './text-sprite.js';
 
-// --- frame-texture-decoder (Blob → upright THREE.Texture; promoted from the
-// recorder 2026-08-26 so the TourViewer's image planes share the orientation
-// contract instead of copying it — DEC-H3) ---
-export { decodeFrameTexture } from './frame-texture-decoder.js';
+// frame-texture-decoder is deliberately NOT re-exported here: every consumer
+// deep-imports `visualization/frame-texture-decoder` (this barrel feeds the
+// package-root `export *`, and DEC-H3's shared helpers stay off the root
+// export surface; the barrel is also unusable in node unit tests — leaflet).
 
 // --- wayfinding-hud (frustum-locked target indicators as camera children) ---
 export {

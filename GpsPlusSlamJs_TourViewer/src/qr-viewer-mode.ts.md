@@ -13,10 +13,17 @@ carrying the two review-ordered guardrails and the deferred negative cache.
   `MAX_VOTED_LOCKS_PER_CODE = 10` (review #6 budget; M5 tunes).
 - `buildViewerControllerConfig(deps: ViewerPipelineDeps)` — deps: the QR
   device quartet plus `getLevels` (live, from the open tour),
-  `dispatchVote` (one payload → `recordGpsEvent`), `recordDetection`,
-  `onError`, and the optional `onStatus` / `onUnknownCode` /
-  `onVotedLock` UI hooks.
-- `viewerStatusLine({...}): string` — the visitor-facing line, pure.
+  `dispatchVote` (one payload → `recordGpsEvent`), `canAcceptVotes` (the
+  budget must NOT be charged while the store drops votes — before the
+  first GPS fix), `resolveStablePose` (the same convergence gate minting
+  uses; the controller skips unconverged votes with the budget untouched),
+  `pageCode` (the launch fallback for payloads without `&c=`),
+  `recordDetection`, `onError`, and the optional `onStatus` /
+  `onUnknownCode` / `onUnusableLevel` (a level with geo but no printed
+  size) / `onVotedLock` UI hooks.
+- `viewerStatusLine({...}): string` — the visitor-facing line, pure;
+  carries the last lock's reprojection error (px) as the placement-quality
+  number M5's probe reads.
 - `imagePlaneRingNue(centerNue, count, radiusM?)` — ring positions in
   GPS-world NUE at the anchor's height.
 
@@ -36,7 +43,12 @@ carrying the two review-ordered guardrails and the deferred negative cache.
 - The DETECTED code's `&c=` wins over the page's launch param
   (`codeFromDetectedText`); votes only flow once the session has a zero
   reference (the store drops `recordGpsEvent` while `gpsData` is null —
-  matching production, where the GPS watch starts with AR).
+  matching production, where the GPS watch starts with AR) — and the
+  budget is NOT charged while they would be dropped.
+- **The controller's per-text level cache outlives level changes** — the
+  app calls `qrController.reset()` whenever `loadQrLevels` installs or the
+  tour closes, or a late-arriving tour could never relocalize (and a
+  closed one would keep voting).
 - **V1 deviation, deliberate:** recording zips carry no per-image GPS
   (images store odom pose only), so the image ring sits around the anchor
   instead of at capture positions — a capture-time geo join is future work.

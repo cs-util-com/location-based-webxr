@@ -4,7 +4,9 @@ import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 
 import {
   MAX_VOTED_LOCKS_PER_CODE,
+  VIEWER_SYNTHETIC_ACCURACY_M,
   VIEWER_VOTE_BASELINE_M,
+  VIEWER_VOTE_COUNT,
   buildViewerControllerConfig,
   imagePlaneRingNue,
   viewerStatusLine,
@@ -45,9 +47,12 @@ function fakeDeps(
     getIntrinsics: () => null,
     getLevels: () => new Map([["1", LEVEL]]),
     dispatchVote: vi.fn(),
+    canAcceptVotes: () => true,
+    resolveStablePose: () => null,
     recordDetection: vi.fn(),
     onError: vi.fn(),
     onUnknownCode: vi.fn(),
+    onUnusableLevel: vi.fn(),
     ...overrides,
   };
 }
@@ -59,6 +64,8 @@ describe("buildViewerControllerConfig", () => {
     const config = buildViewerControllerConfig(fakeDeps());
     expect(VIEWER_VOTE_BASELINE_M).toBe(2);
     expect(config.voteBaselineM).toBe(VIEWER_VOTE_BASELINE_M);
+    expect(config.voteCount).toBe(VIEWER_VOTE_COUNT);
+    expect(config.syntheticAccuracyM).toBe(VIEWER_SYNTHETIC_ACCURACY_M);
     expect(config.minIntervalMs).toBe(0); // single cadence owner (Option A)
   });
 
@@ -113,6 +120,68 @@ describe("buildViewerControllerConfig", () => {
     );
   });
 
+  it("does not charge the budget while the store cannot accept votes", () => {
+    // Why this matters (M4 milestone review #2): recordGpsEvent silently
+    // no-ops until the session zero exists (first real GPS fix). Ten locked
+    // frames arrive in ~1.3 s — comfortably inside first-fix latency — so a
+    // budget charged for dropped votes told the visitor "Relocalized" after
+    // writing NOTHING, with no recovery inside the session.
+    let canAccept = false;
+    const deps = fakeDeps({ canAcceptVotes: () => canAccept });
+    const config = buildViewerControllerConfig(deps);
+    const votes = [{ v: 1 }] as never[];
+    for (let i = 0; i < 5; i += 1) {
+      config.onDetection?.({ text: TEXT, timestamp: i } as QrDetectionEvent);
+      config.dispatchVotes(votes);
+    }
+    expect(deps.dispatchVote).not.toHaveBeenCalled();
+
+    canAccept = true; // the first fix landed — the FULL budget is available
+    for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) {
+      config.onDetection?.({
+        text: TEXT,
+        timestamp: 10 + i,
+      } as QrDetectionEvent);
+      config.dispatchVotes(votes);
+    }
+    expect(deps.dispatchVote).toHaveBeenCalledTimes(MAX_VOTED_LOCKS_PER_CODE);
+  });
+
+  it("wires the stability gate the controller skips unconverged votes on", () => {
+    // Why this matters (M4 milestone review #3): without resolveStablePose
+    // the controller votes the RAW single-frame solve — the jittery pose
+    // the plan's minting delta explicitly rejected — and the budget bounds
+    // volume without buying any averaging.
+    const stable = { position: [0, 0, 0], rotation: [0, 0, 0, 1] } as never;
+    const deps = fakeDeps({ resolveStablePose: () => stable });
+    const config = buildViewerControllerConfig(deps);
+    expect(config.resolveStablePose?.(TEXT)).toBe(stable);
+  });
+
+  it("falls back to the PAGE's launch code for payloads without a discriminator", async () => {
+    // Why this matters (M4 milestone review #6): a printed payload that is
+    // not a URL, or a URL without &c=, must resolve to the code the visitor
+    // actually scanned to get here — not silently to "1".
+    const deps = fakeDeps({
+      pageCode: "2",
+      getLevels: () => new Map([["2", LEVEL]]),
+    });
+    const config = buildViewerControllerConfig(deps);
+    await expect(
+      config.fetchLevel("https://gps.csutil.com/tour/?qr=x"),
+    ).resolves.toBe(LEVEL);
+  });
+
+  it("reports a level that exists but cannot solve (no printed size)", async () => {
+    const deps = fakeDeps({
+      getLevels: () =>
+        new Map([["1", { version: 1, qr: { geo: LEVEL.qr.geo } } as QrLevel]]),
+    });
+    const config = buildViewerControllerConfig(deps);
+    await config.fetchLevel(TEXT);
+    expect(deps.onUnusableLevel).toHaveBeenCalledWith("1");
+  });
+
   it("still records every detection while the budget is spent", () => {
     const deps = fakeDeps();
     const config = buildViewerControllerConfig(deps);
@@ -163,6 +232,25 @@ describe("viewerStatusLine", () => {
         lockedText: null,
       }),
     ).toMatch(/code 7 has no/i);
+    expect(
+      viewerStatusLine({
+        status: "tracking",
+        unknownCode: null,
+        unusableCode: "3",
+        votedLocks: 0,
+        lockedText: null,
+      }),
+    ).toMatch(/no printed size/i);
+    // The quality number (M4 review #8) rides the relocalizing states.
+    expect(
+      viewerStatusLine({
+        status: "tracking",
+        unknownCode: null,
+        votedLocks: 2,
+        lockedText: TEXT,
+        reprojectionErrorPx: 1.234,
+      }),
+    ).toMatch(/pose error 1.2 px/i);
   });
 });
 

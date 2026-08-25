@@ -39,7 +39,10 @@ import type {
 } from "gps-plus-slam-app-framework/ar/qr/qr-frontend";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 
-import { codeFromDetectedText } from "./code-param.js";
+import {
+  DEFAULT_CODE_DISCRIMINATOR,
+  codeFromDetectedText,
+} from "./code-param.js";
 
 /** Synthetic per-vote GPS accuracy (m) — the vote weight's input; M5 tunes. */
 export const VIEWER_SYNTHETIC_ACCURACY_M = 5;
@@ -56,6 +59,9 @@ const NO_LEVEL_PLACEHOLDER: QrLevel = { version: 1, qr: {} };
 
 /** The device/store functions the viewer pipeline needs — seam-injected. */
 export interface ViewerPipelineDeps {
+  /** The PAGE's own `&c=` launch code — the fallback when a detected
+   *  payload carries none (QD-6: a printed URL must never dead-end). */
+  pageCode?: string;
   frontEnd: QrFrontEnd;
   solvePose(input: QrSolvePoseInput): QrPoseSolution | null;
   getCameraPose(): Pose | null;
@@ -65,11 +71,25 @@ export interface ViewerPipelineDeps {
   getLevels(): ReadonlyMap<string, QrLevel> | null;
   /** One synthetic GPS vote → `recordGpsEvent` into the store. */
   dispatchVote(payload: RecordGpsEventPayload): void;
+  /** Can the store ACCEPT votes right now? `recordGpsEvent` silently
+   *  no-ops until the session zero exists (first real GPS fix) — charging
+   *  the budget for dropped votes would tell the visitor "Relocalized"
+   *  after writing nothing (M4 milestone review #2). */
+  canAcceptVotes(): boolean;
+  /** The STABLE aggregated pose for a code, or null while converging —
+   *  the same gate minting uses (M4 milestone review #3): raw single-frame
+   *  solves are the jittery pose the plan rejected, and the controller
+   *  skips the vote (budget untouched) while this returns null. */
+  resolveStablePose(text: string): Pose | null;
   recordDetection(event: QrDetectionEvent): void;
   onError(message: string): void;
   onStatus?(status: QrTrackingStatus): void;
   /** A scanned code with no level in this tour (fires once per fetch). */
   onUnknownCode?(code: string): void;
+  /** A level that exists but cannot solve (no printed size) — without
+   *  this the visitor gets NO feedback at all for that code (M4 milestone
+   *  review #5). */
+  onUnusableLevel?(code: string): void;
   /** A locked frame's votes were dispatched (budget progress for the UI). */
   onVotedLock?(text: string, votedLocks: number): void;
 }
@@ -86,17 +106,24 @@ export function buildViewerControllerConfig(
     frontEnd: deps.frontEnd,
     solvePose: (input) => deps.solvePose(input),
     fetchLevel: (text) => {
-      const code = codeFromDetectedText(text);
+      const code = codeFromDetectedText(
+        text,
+        deps.pageCode ?? DEFAULT_CODE_DISCRIMINATOR,
+      );
       const level = deps.getLevels()?.get(code);
       if (level === undefined) {
         deps.onUnknownCode?.(code);
         return Promise.resolve(NO_LEVEL_PLACEHOLDER);
+      }
+      if (level.qr.physicalSizeM === undefined) {
+        deps.onUnusableLevel?.(code);
       }
       return Promise.resolve(level);
     },
     dispatchVotes: (votes) => {
       const text = lastDetectedText;
       if (text === null) return;
+      if (!deps.canAcceptVotes()) return; // budget untouched — see the dep
       const votedLocks = votedLocksByText.get(text) ?? 0;
       if (votedLocks >= MAX_VOTED_LOCKS_PER_CODE) return;
       votedLocksByText.set(text, votedLocks + 1);
@@ -109,6 +136,7 @@ export function buildViewerControllerConfig(
     },
     getCameraPose: () => deps.getCameraPose(),
     getIntrinsics: (image) => deps.getIntrinsics(image),
+    resolveStablePose: (text) => deps.resolveStablePose(text),
     onError: (err) => {
       deps.onError(err instanceof Error ? err.message : String(err));
     },
@@ -126,17 +154,28 @@ export function buildViewerControllerConfig(
 export function viewerStatusLine(input: {
   status: QrTrackingStatus | null;
   unknownCode: string | null;
+  unusableCode?: string | null;
   votedLocks: number;
   lockedText: string | null;
+  /** Last lock's RMS reprojection error (px) — the on-device placement
+   *  quality number M5's probe reads (M4 milestone review #8). */
+  reprojectionErrorPx?: number | null;
 }): string {
   if (input.unknownCode !== null) {
     return `Code ${input.unknownCode} has no level in this tour.`;
   }
+  if (input.unusableCode != null) {
+    return `Code ${input.unusableCode}'s level has no printed size — it cannot relocalize.`;
+  }
   if (input.status === null) return "";
   if (input.lockedText !== null && input.votedLocks > 0) {
+    const quality =
+      input.reprojectionErrorPx != null
+        ? ` Pose error ${input.reprojectionErrorPx.toFixed(1)} px.`
+        : "";
     return input.votedLocks >= MAX_VOTED_LOCKS_PER_CODE
-      ? `Relocalized — vote budget spent, placement holds.`
-      : `Relocalizing — ${String(input.votedLocks)} of ${String(MAX_VOTED_LOCKS_PER_CODE)} vote batches.`;
+      ? `Relocalized — vote budget spent, placement holds.${quality}`
+      : `Relocalizing — ${String(input.votedLocks)} of ${String(MAX_VOTED_LOCKS_PER_CODE)} vote batches.${quality}`;
   }
   return "Scanning for the printed code…";
 }

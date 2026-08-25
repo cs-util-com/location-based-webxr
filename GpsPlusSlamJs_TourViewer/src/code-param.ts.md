@@ -10,8 +10,10 @@ level a launch or a detected code refers to.
 - `DEFAULT_CODE_DISCRIMINATOR = "1"`.
 - `codeFromSearch(search): string` — from a query string; absent/empty ⇒
   the default (a printed URL must never dead-end over a missing param).
-- `codeFromDetectedText(text): string` — from a DETECTED code's decoded
-  launch URL; non-URL text or a URL without `c` falls back to the default.
+- `codeFromDetectedText(text, fallback?): string` — from a DETECTED code's
+  decoded launch URL; non-URL text or a URL without `c` falls back to
+  `fallback` (the viewer passes the PAGE's own launch code), else the
+  default.
 
 ## Invariants & assumptions
 

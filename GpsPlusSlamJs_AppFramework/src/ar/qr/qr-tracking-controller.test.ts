@@ -99,6 +99,26 @@ describe('createQrTrackingController', () => {
     expect(dispatched).toHaveLength(4); // 4-corner multi-correspondence
   });
 
+  // Why this test matters (M4 milestone review #10): the TourViewer's vote
+  // budget keys each vote batch by the text `onDetection` delivered for the
+  // SAME frame — the sidecar documents that ordering, but nothing asserted
+  // it. A reorder here would silently charge the wrong code's budget.
+  it('fires onDetection synchronously before the same frame’s dispatchVotes', async () => {
+    const calls: string[] = [];
+    const { controller } = setup({
+      onDetection: () => calls.push('detection'),
+      dispatchVotes: () => calls.push('votes'),
+    });
+    await tick(controller); // 1st success — no lock yet
+    await tick(controller); // lock → detection then votes, same frame
+
+    const beforeEachVote = calls
+      .map((call, i) => (call === 'votes' ? calls[i - 1] : null))
+      .filter((previous) => previous !== null);
+    expect(beforeEachVote.length).toBeGreaterThan(0);
+    expect(beforeEachVote).toEqual(beforeEachVote.map(() => 'detection'));
+  });
+
   it('fetches the level only once per URL (cache)', async () => {
     const { controller, fetchLevel } = setup();
     await tick(controller);

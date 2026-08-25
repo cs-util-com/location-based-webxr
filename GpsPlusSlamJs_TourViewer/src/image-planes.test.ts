@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { Object3D, Texture } from "three";
+import { Object3D, Texture, Vector3 } from "three";
 
 import { placeImagePlanes } from "./image-planes";
 
@@ -72,6 +72,26 @@ describe("placeImagePlanes", () => {
     placed.dispose();
     expect(scene.children).toHaveLength(0);
     expect(texture.dispose).toHaveBeenCalled();
-    expect(placed.count === 0 || placed.count === 1).toBe(true); // count is pre-dispose
+  });
+
+  it("faces each plane toward the ring centre and falls back to 4:3", () => {
+    const scene = new Object3D();
+    const noDims = new Texture();
+    noDims.dispose = vi.fn();
+    placeImagePlanes({
+      scene,
+      positionsNue: [[2, 0, 0]],
+      textures: [noDims],
+      centerNue: [0, 0, 0],
+    });
+    const mesh = scene.children[0] as unknown as {
+      geometry: { parameters: { height: number } };
+      getWorldDirection(v: { x: number; z: number }): { x: number; z: number };
+    };
+    expect(mesh.geometry.parameters.height).toBeCloseTo(0.75, 9); // 4:3
+    // lookAt turns +z toward the centre: from [2,0,0] that is -x.
+    const direction = mesh.getWorldDirection(new Vector3());
+    expect(direction.x).toBeCloseTo(-1, 6);
+    expect(direction.z).toBeCloseTo(0, 6);
   });
 });

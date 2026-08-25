@@ -45,9 +45,12 @@ export function placeImagePlanes(options: {
     if (texture === undefined || position === undefined) continue;
     const image = texture.image as
       | { width?: number; height?: number }
+      | null
       | undefined;
+    // `!= null` on purpose: a bare `new Texture()` carries `image: null`
+    // (found by the facing test — the undefined-only guard crashed).
     const aspect =
-      image !== undefined &&
+      image != null &&
       typeof image.width === "number" &&
       typeof image.height === "number" &&
       image.height > 0

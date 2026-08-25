@@ -53,7 +53,7 @@ import {
   imagePlaneRingNue,
   viewerStatusLine,
 } from "./qr-viewer-mode.js";
-import { codeFromDetectedText } from "./code-param.js";
+import { codeFromDetectedText, codeFromSearch } from "./code-param.js";
 import { placeImagePlanes, type PlacedImagePlanes } from "./image-planes.js";
 import type { Texture } from "three";
 import type { QrTrackingStatus } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
@@ -135,6 +135,8 @@ async function teardownSession(): Promise<void> {
   // The viewer pipeline's level source and the placed planes belong to the
   // closing tour — a newly opened tour must not relocalize against them.
   currentLevels = null;
+  // Same cache: the closed tour's levels must stop voting (M4 review #1).
+  qrController?.reset();
   imagePlanes?.dispose();
   imagePlanes = null;
   if (session !== null) {
@@ -215,7 +217,15 @@ async function openUrl(url: string): Promise<void> {
     // The authored levels ride the same zip; a newer open's guard keeps a
     // slow load from installing a closed tour's levels.
     void opened.loadQrLevels().then((levels) => {
-      if (session === opened) currentLevels = levels;
+      if (session !== opened) return;
+      currentLevels = levels;
+      // The controller caches a level (or the negative-cache placeholder)
+      // per decoded text; levels arriving AFTER a scan would otherwise be
+      // invisible until AR re-entry (M4 milestone review #1).
+      qrController?.reset();
+      viewerUnknownCode = null;
+      viewerUnusableCode = null;
+      renderArStatus();
     });
   } catch (err) {
     if (generation === openGeneration) {
@@ -422,8 +432,15 @@ function startAuthorPipeline(): boolean {
 // the first voted lock places a ring of the tour's images around the code.
 let viewerQrStatus: QrTrackingStatus | null = null;
 let viewerUnknownCode: string | null = null;
+let viewerUnusableCode: string | null = null;
 let viewerVotedLocks = 0;
 let viewerLockedText: string | null = null;
+let viewerReprojectionPx: number | null = null;
+/** Last detection's RMS reprojection error — the on-device quality number. */
+let latestReprojectionPx: number | null = null;
+/** In-flight guard: without it every voted lock during the decode window
+ *  started ANOTHER placement run (M4 milestone review #4). */
+let imagePlanesLoading = false;
 let imagePlanes: PlacedImagePlanes | null = null;
 
 function viewerQrLine(): string {
@@ -431,8 +448,10 @@ function viewerQrLine(): string {
   return viewerStatusLine({
     status: viewerQrStatus,
     unknownCode: viewerUnknownCode,
+    unusableCode: viewerUnusableCode,
     votedLocks: viewerVotedLocks,
     lockedText: viewerLockedText,
+    reprojectionErrorPx: viewerReprojectionPx,
   });
 }
 
@@ -447,6 +466,7 @@ function startViewerPipeline(): boolean {
   }
   qrController = createQrTrackingController(
     buildViewerControllerConfig({
+      pageCode: codeFromSearch(location.search),
       frontEnd,
       solvePose: (input) => seams.solveQrPose(input),
       getCameraPose: () => seams.getCameraPose(),
@@ -455,8 +475,16 @@ function startViewerPipeline(): boolean {
       dispatchVote: (payload) => {
         arStore.dispatch(recordGpsEvent(payload));
       },
+      // recordGpsEvent silently no-ops until the session zero exists — the
+      // budget must not be charged for dropped votes (M4 review #2).
+      canAcceptVotes: () => arStore.getState().gpsData !== null,
+      // The same convergence gate minting uses (M4 review #3): the
+      // controller skips the vote — budget untouched — while null.
+      resolveStablePose: (text) => selectStableQrPose(arStore.getState(), text),
       recordDetection: (event) => {
         viewerUnknownCode = null; // a level-carrying detection supersedes it
+        viewerUnusableCode = null;
+        latestReprojectionPx = event.reprojectionErrorPx;
         arStore.dispatch(recordQrDetection(event));
         const level = currentLevels?.get(codeFromDetectedText(event.text));
         qrDebugView?.update(event.qrPoseWorld, level?.qr.physicalSizeM ?? null);
@@ -472,10 +500,17 @@ function startViewerPipeline(): boolean {
         viewerUnknownCode = code;
         renderArStatus();
       },
+      onUnusableLevel: (code) => {
+        viewerUnusableCode = code;
+        renderArStatus();
+      },
       onVotedLock: (text, votedLocks) => {
         viewerLockedText = text;
         viewerVotedLocks = votedLocks;
-        if (imagePlanes === null) void placeTourImagePlanes(text);
+        viewerReprojectionPx = latestReprojectionPx;
+        if (imagePlanes === null && !imagePlanesLoading) {
+          void placeTourImagePlanes(text);
+        }
         renderArStatus();
       },
     }),
@@ -498,17 +533,43 @@ async function placeTourImagePlanes(lockedText: string): Promise<void> {
     geo.alt,
     0,
   );
+  const centerTuple: [number, number, number] = [
+    centerNue[0],
+    centerNue[1],
+    centerNue[2],
+  ];
+  imagePlanesLoading = true;
+  try {
+    await placeDecodedPlanes(current, scene, centerTuple);
+  } finally {
+    imagePlanesLoading = false;
+  }
+}
+
+async function placeDecodedPlanes(
+  current: TourSession,
+  scene: NonNullable<ReturnType<typeof seams.getScene>>,
+  centerNue: readonly [number, number, number],
+): Promise<void> {
   const textures = await decodeTourTextures(current);
-  if (textures.length === 0 || imagePlanes !== null || session !== current)
+  // Re-checked AFTER the awaits: the tour may have closed, the AR session
+  // may have ended (qrController is nulled then), or a sibling run may have
+  // won — every bail path must FREE its textures, not leak them (M4
+  // milestone review #4).
+  if (
+    textures.length === 0 ||
+    imagePlanes !== null ||
+    session !== current ||
+    qrController === null
+  ) {
+    for (const texture of textures) texture.dispose();
     return;
+  }
   imagePlanes = placeImagePlanes({
     scene,
-    positionsNue: imagePlaneRingNue(
-      [centerNue[0], centerNue[1], centerNue[2]],
-      textures.length,
-    ),
+    positionsNue: imagePlaneRingNue(centerNue, textures.length),
     textures,
-    centerNue: [centerNue[0], centerNue[1], centerNue[2]],
+    centerNue,
   });
   renderArStatus();
 }
@@ -647,8 +708,11 @@ async function enterAr(): Promise<void> {
         imagePlanes = null;
         viewerQrStatus = null;
         viewerUnknownCode = null;
+        viewerUnusableCode = null;
         viewerVotedLocks = 0;
         viewerLockedText = null;
+        viewerReprojectionPx = null;
+        imagePlanesLoading = false;
         arStore.dispatch(clearAllQrMarkers());
         endTourArRuntime(arStore, {
           stopCameraFrameCapture: () => {

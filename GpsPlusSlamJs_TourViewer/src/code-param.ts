@@ -18,11 +18,17 @@ export function codeFromSearch(search: string): string {
 }
 
 /** From a DETECTED code's decoded text (a printed launch URL). Non-URL
- *  text — or a URL without `c` — falls back to the default. */
-export function codeFromDetectedText(text: string): string {
+ *  text — or a URL without `c` — falls back to `fallback`: the PAGE's own
+ *  launch code, so a payload without a discriminator resolves to the code
+ *  the visitor actually scanned to get here (M4 milestone review #6). */
+export function codeFromDetectedText(
+  text: string,
+  fallback: string = DEFAULT_CODE_DISCRIMINATOR,
+): string {
   try {
-    return codeFromSearch(new URL(text).search);
+    const raw = new URLSearchParams(new URL(text).search).get("c")?.trim();
+    return raw !== undefined && raw !== "" ? raw : fallback;
   } catch {
-    return DEFAULT_CODE_DISCRIMINATOR;
+    return fallback;
   }
 }
