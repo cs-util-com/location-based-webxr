@@ -4,15 +4,16 @@
 
 The thin DOM shell: wires the `?qr=` launch dispatch, the paste-a-link form,
 the streaming session, the live stats panel, the progressive image gallery,
-and the clear-cache action. All policy lives in the framework and the
-colocated view-model modules; the e2e suite drives this file in a real
-browser.
+the clear-cache action, and (M2) the AR entry — controller, store, and the
+on-running runtime start, composed from `ar-mode.ts` / `author-mode-flag.ts`
+/ `seams.ts`. All policy lives in the framework and the colocated view-model
+modules; the e2e suite drives this file in a real browser.
 
 ## Public API
 
 None (app entry point). Interesting seams for the e2e suite are the
 `data-testid` attributes in `index.html`: `link-input`, `open-button`,
-`clear-cache`, `stats`, `error`, `gallery`.
+`clear-cache`, `stats`, `error`, `gallery`, `ar-status`, `enter-ar`.
 
 ## Invariants & assumptions
 
@@ -34,6 +35,13 @@ None (app entry point). Interesting seams for the e2e suite are the
   (PR #358 review #1).
 - Bare-name `?qr=` payloads resolve under `DEFAULT_ASSET_PREFIX`
   (the GeoTales raw-GitHub prefix the QR builder's docs use as the example).
+- **AR entry (M2):** `?author=1` is read once at boot (switching = reload);
+  `#ar-status` and `#enter-ar` must stay DOM children of `#ar-root` — the
+  `initAR` container is the WebXR DOM-Overlay root, so only its subtree is
+  visible in AR (enforced by the repo's `hud-overlay-nesting` guard). On
+  `enable()` success the runtime start is all-or-nothing
+  (`startTourArRuntime`); its failure surfaces in the error box and
+  disables back to `ready`.
 
 ## Examples
 
@@ -43,5 +51,7 @@ pasting the same URL into the input does the same interactively.
 ## Tests
 
 Driven end-to-end by `playwright-tests/*.spec.js` (streaming, fallback,
-cache-hit revisit, error paths). The logic beneath is unit-tested in
-`qr-launch-dispatch.test.ts`, `tour-session.test.ts`, `stats-view.test.ts`.
+cache-hit revisit, error paths, and the faked-AR boot of both modes). The
+logic beneath is unit-tested in `qr-launch-dispatch.test.ts`,
+`tour-session.test.ts`, `stats-view.test.ts`, `ar-mode.test.ts`,
+`author-mode-flag.test.ts`, `seams.test.ts`.

@@ -7,12 +7,30 @@
  */
 
 import {
+  createEnableGpsArController,
+  getCurrentArPose,
+  type EnableGpsArState,
+} from "gps-plus-slam-app-framework/ar";
+import {
+  createGpsPositionHandler,
+  createSlamAppStore,
+  updateDeviceOrientation,
+} from "gps-plus-slam-app-framework/state";
+import {
   BoundedLocalCacheStore,
   CacheApiStore,
+  NullStorageBackend,
   OpenRemoteArchiveError,
   type LocalCacheStore,
 } from "gps-plus-slam-app-framework/storage";
 
+import { authorModeEnabledFromSearch } from "./author-mode-flag.js";
+import {
+  arButtonView,
+  buildArEnableConfig,
+  startTourArRuntime,
+} from "./ar-mode.js";
+import { getSeams } from "./seams.js";
 import { resolveQrPayload } from "./qr-launch-dispatch.js";
 import { toStatsView } from "./stats-view.js";
 import { openTourSession, type TourSession } from "./tour-session.js";
@@ -39,6 +57,9 @@ const statsHeadline = element<HTMLDivElement>("stats-headline");
 const statsDetail = element<HTMLDivElement>("stats-detail");
 const errorBox = element<HTMLDivElement>("error");
 const gallery = element<HTMLUListElement>("gallery");
+const arRoot = element<HTMLElement>("ar-root");
+const arStatus = element<HTMLDivElement>("ar-status");
+const enterArButton = element<HTMLButtonElement>("enter-ar");
 
 // `?nocache=1` disables the local copy entirely — the pure-streaming mode the
 // e2e suite uses to prove range reads alone can render the gallery, and a
@@ -207,6 +228,90 @@ clearCacheButton.addEventListener("click", () => {
         errorBox.textContent = `Clearing the cache failed: ${err instanceof Error ? err.message : String(err)}`;
       },
     );
+});
+
+// --- AR foundation (QR-pose plan M2): both modes share one AR entry -------
+// Author mode (`?author=1`) is read once at boot; switching is a page reload
+// (the controller refuses enable() while a session runs). The seams resolve
+// to the real framework device wiring in production and to the e2e fakes in
+// a DEV Playwright run.
+const authorMode = authorModeEnabledFromSearch(location.search);
+const seams = getSeams();
+const arStore = createSlamAppStore({
+  storageBackend: new NullStorageBackend(),
+});
+const gpsHandler = createGpsPositionHandler({
+  store: arStore,
+  getArPose: getCurrentArPose,
+});
+const arController = createEnableGpsArController(seams.controllerDeps);
+/** Foundation observable until M3 points the frames at the QR pipeline. */
+let cameraFrameCount = 0;
+
+function renderArStatus(): void {
+  const mode = authorMode ? "Author mode" : "Viewer mode";
+  const status = arController.getState().status;
+  arStatus.textContent =
+    status === "running"
+      ? `${mode} — AR running · ${String(cameraFrameCount)} camera frames`
+      : `${mode} — ${status}`;
+}
+
+function renderArState(state: EnableGpsArState): void {
+  const view = arButtonView(state, authorMode);
+  enterArButton.disabled = view.disabled;
+  enterArButton.textContent = view.label;
+  renderArStatus();
+}
+
+async function enterAr(): Promise<void> {
+  cameraFrameCount = 0;
+  const result = await arController.enable(
+    buildArEnableConfig({
+      container: arRoot,
+      onFrame: () => {
+        cameraFrameCount += 1;
+        renderArStatus();
+      },
+      onSessionEnd: () => {
+        seams.stopCameraFrameCapture();
+        renderArStatus();
+      },
+      onGpsPosition: (position) => {
+        gpsHandler(position);
+      },
+      onOrientation: (orientation) => {
+        updateDeviceOrientation(orientation);
+      },
+    }),
+  );
+  // Failure states surface via the subscribed button view (Retry — <reason>).
+  if (!result.ok) return;
+  const runtime = startTourArRuntime(arStore, {
+    getArWorldGroup: () => seams.getArWorldGroup(),
+    enableArWorldGroupAlignment: (options) =>
+      seams.enableArWorldGroupAlignment(options),
+    startCameraFrameCapture: (config) => {
+      seams.startCameraFrameCapture(config);
+    },
+    now: Date.now,
+  });
+  if (!runtime.ok) {
+    errorBox.textContent = runtime.error;
+    await arController.disable();
+  }
+}
+
+arController.subscribe(renderArState);
+renderArState(arController.getState());
+void arController.refreshSupport();
+enterArButton.addEventListener("click", () => {
+  // Defensive: enable() reports failures via its state machine, but a
+  // rejection anywhere else (e.g. the rollback disable()) must reach the
+  // error box, not die as an unhandled rejection.
+  enterAr().catch((err: unknown) => {
+    errorBox.textContent = describeOpenError(err);
+  });
 });
 
 /** `?qr=` launch: the QR-scan entry path — resolve the payload and open. */

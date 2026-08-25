@@ -45,6 +45,14 @@
         margin: 1rem 0;
         white-space: pre-wrap;
       }
+      #ar-root {
+        margin: 1rem 0;
+      }
+      #ar-status {
+        color: #8889;
+        font-size: 0.9rem;
+        margin-bottom: 0.5rem;
+      }
       #gallery {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
@@ -103,6 +111,18 @@
         <div id="stats-detail"></div>
       </div>
       <div id="error" role="alert" data-testid="error"></div>
+      <!--
+        AR entry (QR-pose plan M2). Under WebXR DOM Overlay only the subtree
+        of the element passed to initAR composites over the camera feed, so
+        the status line and button MUST stay children of #ar-root (enforced
+        by tests/repo-config/hud-overlay-nesting.test.js).
+      -->
+      <section id="ar-root">
+        <div id="ar-status" data-testid="ar-status"></div>
+        <button type="button" id="enter-ar" data-testid="enter-ar" disabled>
+          Checking AR support…
+        </button>
+      </section>
       <ul id="gallery" data-testid="gallery"></ul>
     </main>
     <script type="module" src="/src/main.ts"></script>

@@ -76,6 +76,12 @@ const APP_OVERLAY_CONTRACTS = [
     containerId: 'app',
     overlayIds: ['overlay'],
   },
+  {
+    name: 'TourViewer',
+    htmlPath: 'GpsPlusSlamJs_TourViewer/index.html',
+    containerId: 'ar-root',
+    overlayIds: ['ar-status', 'enter-ar'],
+  },
 ];
 
 /**
