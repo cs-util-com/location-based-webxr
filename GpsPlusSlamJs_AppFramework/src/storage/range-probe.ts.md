@@ -12,7 +12,8 @@ branch is provable without a server.
 
 - `parseContentRangeTotal(header: string | null): number | null` — total size
   from a `Content-Range: bytes <range>/<total>` header, or null if
-  unknown/absent/malformed.
+  unknown/absent/malformed — or not a safe integer (an imprecise double must
+  never anchor zip offsets).
 - `interface ProbeResult { status: number; size: number | null; body?: Uint8Array }`
 - `type RangeProbeRejectCause = "unusable-link" | "cors" | "corrupt" | "missing"`
 - `type FallbackDecision = { mode: "ranges"; size } | { mode: "eager-local"; body } | { mode: "full-download" } | { mode: "reject"; cause: RangeProbeRejectCause }`
@@ -26,6 +27,10 @@ branch is provable without a server.
   download still works). `200` + body → `eager-local` (host ignored Range and
   streamed the whole file). `404` → reject(`missing`). `416` → reject(`corrupt`).
   Anything else → reject(`unusable-link`).
+- A `206` size that is not a finite safe non-negative integer (a caller let
+  `NaN`, a negative, or a float through) is treated as unknown →
+  `full-download`, never `ranges` — boundary defense mirroring the validation
+  in `probeRemote`.
 - `RangeProbeRejectCause` covers only what the probe itself can produce. A
   consumer with its own fatal causes (e.g. "the file parsed but its contents
   were invalid") extends this union locally rather than this module growing
@@ -36,7 +41,7 @@ branch is provable without a server.
 ```ts
 const probe = await probeRemote(url, fetch); // see remote-range-byte-source.ts
 const decision = decideFallback(probe);
-if (decision.mode === "reject") throw new MyOpenError(decision.cause);
+if (decision.mode === 'reject') throw new MyOpenError(decision.cause);
 ```
 
 ## Tests

@@ -22,8 +22,12 @@ export class ByteSourceReader extends Reader<ByteSource> {
   }
 
   override readUint8Array(index: number, length: number): Promise<Uint8Array> {
-    // zip.js may request past EOF near the central directory — clamp to remaining.
+    // zip.js may request past EOF near the central directory — clamp to
+    // remaining, and resolve empty reads locally: a zero-length request must
+    // never reach the source (a remote source would turn it into an invalid
+    // HTTP Range header).
     const clamped = Math.max(0, Math.min(length, this.size - index));
+    if (clamped === 0) return Promise.resolve(new Uint8Array(0));
     return this.#source.read(index, clamped);
   }
 }

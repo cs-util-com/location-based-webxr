@@ -24,7 +24,7 @@ to a local cache mid-session without whatever reads through it (e.g. a zip.js
   mismatched bytes (redirect page, truncated body) would silently corrupt
   every later read.
 - A read captures its source **at call entry**: an in-flight read finishes
-  from the source it started on; only reads issued *after* `switchTo` see the
+  from the source it started on; only reads issued _after_ `switchTo` see the
   new source.
 
 ## Examples

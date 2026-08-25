@@ -29,6 +29,13 @@ describe('parseContentRangeTotal', () => {
     expect(parseContentRangeTotal(null)).toBeNull();
     expect(parseContentRangeTotal('nonsense')).toBeNull();
   });
+
+  // Why this test matters (D3): a total beyond Number.MAX_SAFE_INTEGER parses
+  // to an imprecise double; anchoring zip offsets to it corrupts reads. Only
+  // safe integers may become an archive size.
+  it('returns null for a total that is not a safe integer', () => {
+    expect(parseContentRangeTotal('bytes 0-0/9007199254740993')).toBeNull();
+  });
 });
 
 const SIZE = 4096;
@@ -62,6 +69,18 @@ describe('decideFallback', () => {
       cause: 'corrupt',
     });
   });
+
+  // Why this test matters (D3): ProbeResult.size is typed number|null but a
+  // caller bug (NaN from an unvalidated header) must not become mode 'ranges'
+  // with an unusable size — degrade to full-download at this boundary too.
+  it.each([Number.NaN, -1, 1.5, Number.MAX_SAFE_INTEGER + 2])(
+    'degrades to a full download when a 206 carries the unusable size %s',
+    (size) => {
+      expect(decideFallback({ status: 206, size })).toEqual({
+        mode: 'full-download',
+      });
+    }
+  );
 
   it('degrades to a full download when ranges work but the size is unreadable', () => {
     // 206 with no readable Content-Length or Content-Range total: ranges

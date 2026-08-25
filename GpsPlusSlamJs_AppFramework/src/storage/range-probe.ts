@@ -18,7 +18,11 @@
 export function parseContentRangeTotal(header: string | null): number | null {
   if (!header) return null;
   const m = /^bytes\s+(?:\d+-\d+|\*)\/(\d+)$/.exec(header.trim());
-  return m ? Number(m[1]) : null;
+  if (!m) return null;
+  // Beyond MAX_SAFE_INTEGER the double is imprecise — anchoring zip offsets to
+  // it would corrupt reads, so an unsafe total counts as unknown.
+  const total = Number(m[1]);
+  return Number.isSafeInteger(total) ? total : null;
 }
 
 /** Raw result of the opening probe. */
@@ -50,7 +54,16 @@ export type FallbackDecision =
 
 export function decideFallback(probe: ProbeResult): FallbackDecision {
   if (probe.status === 206) {
-    if (probe.size !== null) return { mode: 'ranges', size: probe.size };
+    // Boundary defense: even if a caller lets an unvalidated size (NaN, a
+    // negative, a float) through, it must never become mode 'ranges' — a
+    // range-reading parser anchored to a bogus size corrupts every read.
+    if (
+      probe.size !== null &&
+      Number.isSafeInteger(probe.size) &&
+      probe.size >= 0
+    ) {
+      return { mode: 'ranges', size: probe.size };
+    }
     // Ranges work but neither HEAD nor Content-Range yielded a total, and a
     // range-reading zip/archive parser needs the size to anchor its central
     // directory. A plain full download still works — degrade to it instead of

@@ -16,6 +16,9 @@ fetch or a local cache, and may switch between them mid-session.
 - `readUint8Array(index, length)` clamps `length` to the remaining bytes —
   zip.js may request past EOF while locating the central directory near the
   archive's tail.
+- A read that clamps to zero (at/past EOF, or zero-length) resolves to an
+  empty array **without touching the source** — a remote source would turn it
+  into an invalid HTTP Range header.
 
 ## Examples
 
@@ -26,5 +29,5 @@ const entries = await new ZipReader(new ByteSourceReader(source)).getEntries();
 
 ## Tests
 
-No dedicated unit test — exercised through a consumer's integration test
-against a real zip (e.g. TourBuilder's `cloud-loader` component).
+`zip-byte-source-reader.test.ts` — size exposure, in-bounds delegation, EOF
+clamping, and the zero-length/past-EOF local resolve (source never called).

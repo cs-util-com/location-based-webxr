@@ -15,6 +15,52 @@ import { StructuralReadError } from './structural-read-error.js';
 
 export type FetchImpl = typeof fetch;
 
+/** A header value as archive size: finite safe non-negative integer, or null. */
+function parseArchiveSize(header: string | null): number | null {
+  if (header === null || header.trim() === '') return null;
+  const value = Number(header);
+  return Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
+/**
+ * Why a range-read response is unusable, or null when it is good. A 200 means
+ * the host ignored `Range` and streamed the full file — returning that body as
+ * the slice would silently corrupt every downstream parse, so it is permanent
+ * for this URL (the caller must re-probe and fall back). 4xx (expired signed
+ * link, file gone, bad range) is likewise permanent; anything else non-206 is
+ * transient. A readable `Content-Range` naming different offsets means the
+ * server answered a different slice — but the header is not CORS-safelisted
+ * (e.g. raw.githubusercontent exposes no headers), so null is normal and the
+ * caller's body-length check stays the always-on guard.
+ */
+function classifyRangeResponse(
+  status: number,
+  contentRange: string | null,
+  offset: number,
+  end: number
+): Error | null {
+  if (status === 200) {
+    return new StructuralReadError(
+      `host ignored Range (200) at ${offset}-${end} — fall back to a full download`
+    );
+  }
+  if (status !== 206) {
+    const message = `range read failed (${status}) at ${offset}-${end}`;
+    return status >= 400 && status < 500
+      ? new StructuralReadError(message)
+      : new Error(message);
+  }
+  if (contentRange !== null) {
+    const m = /^bytes\s+(\d+)-(\d+)\//.exec(contentRange.trim());
+    if (m && (Number(m[1]) !== offset || Number(m[2]) !== end)) {
+      return new StructuralReadError(
+        `server answered range ${contentRange} instead of ${offset}-${end}`
+      );
+    }
+  }
+  return null;
+}
+
 /** A HEAD is headers-only — anything slower than this is a hung connection. */
 const HEAD_TIMEOUT_MS = 15_000;
 /** The probe GET may legitimately stream the whole archive (a 200 from a
@@ -37,8 +83,13 @@ export async function probeRemote(
       method: 'HEAD',
       signal: AbortSignal.timeout(HEAD_TIMEOUT_MS),
     });
-    const len = head.headers.get('content-length');
-    if (len !== null && len !== '') size = Number(len);
+    // Only a SUCCESSFUL HEAD may size the archive: a 404/403 also carries a
+    // Content-Length — of the error page. And only a finite safe non-negative
+    // integer may pass: `Number('abc')` is NaN, and `NaN ?? fallback` never
+    // falls back, so an unvalidated value would propagate into ProbeResult.
+    if (head.ok) {
+      size = parseArchiveSize(head.headers.get('content-length'));
+    }
   } catch {
     // Some hosts reject HEAD; fall through and let the range GET decide. A hard
     // network/CORS failure will re-throw from the GET below.
@@ -87,6 +138,9 @@ export class RemoteRangeByteSource implements ByteSource {
   }
 
   async read(offset: number, length: number): Promise<Uint8Array> {
+    // `bytes=X-(X-1)` is an invalid Range header — a zero-length read (zip.js
+    // probing at EOF) resolves locally, never on the network.
+    if (length <= 0) return new Uint8Array(0);
     const end = offset + length - 1;
     // The timeout turns a *hanging* connection into a rejection, so a
     // transient-retry policy above this module actually gets to run (a stall
@@ -95,15 +149,23 @@ export class RemoteRangeByteSource implements ByteSource {
       headers: { Range: `bytes=${offset}-${end}` },
       signal: AbortSignal.timeout(RANGE_READ_TIMEOUT_MS),
     });
-    if (!res.ok) {
-      const message = `range read failed (${res.status}) at ${offset}-${end}`;
-      // 4xx is permanent for this URL (expired signed link, file gone, bad
-      // range) — retrying with backoff cannot fix it, so fail structurally.
-      if (res.status >= 400 && res.status < 500) {
-        throw new StructuralReadError(message);
-      }
-      throw new Error(message);
+    const failure = classifyRangeResponse(
+      res.status,
+      res.headers.get('content-range'),
+      offset,
+      end
+    );
+    if (failure !== null) {
+      // Cancel the body before failing — on a 200 it is the WHOLE archive.
+      await res.body?.cancel().catch(() => undefined);
+      throw failure;
     }
-    return new Uint8Array(await res.arrayBuffer());
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    if (bytes.length !== length) {
+      throw new StructuralReadError(
+        `range read at ${offset}-${end} returned ${bytes.length} bytes, expected ${length}`
+      );
+    }
+    return bytes;
   }
 }

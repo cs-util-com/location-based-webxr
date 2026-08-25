@@ -5,7 +5,7 @@
 The local half of range-based archive streaming: a persistent full copy that
 on-demand reads switch to once a background warm-download completes.
 `LocalCacheByteSource` serves ranges by slicing a held `Blob` (lazy, no heap
-blow-up). `LocalCacheStore` abstracts *where* the complete copy lives.
+blow-up). `LocalCacheStore` abstracts _where_ the complete copy lives.
 
 ## Public API
 
@@ -28,7 +28,10 @@ blow-up). `LocalCacheStore` abstracts *where* the complete copy lives.
 ## Examples
 
 ```ts
-const store = typeof caches !== "undefined" ? new CacheApiStore() : new InMemoryLocalCacheStore();
+const store =
+  typeof caches !== 'undefined'
+    ? new CacheApiStore()
+    : new InMemoryLocalCacheStore();
 const cached = await store.get(url);
 if (cached) return new LocalCacheByteSource(cached);
 ```
