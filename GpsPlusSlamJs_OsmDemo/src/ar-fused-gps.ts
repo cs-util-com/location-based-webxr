@@ -23,12 +23,11 @@
  * same arithmetic. Both are wrapped in `gateFunction` → `assertLicenseActive()`.
  * That is satisfied at runtime — the demo's store activates a licence — and
  * hostile in this package's unit tests, which import no library function and
- * have no setup that activates one. Reaching for
- * `gps-plus-slam-js/internal`'s `_setLicenseActiveForTesting` would couple these
- * tests to an `@internal` API to obtain six lines of flat-earth arithmetic. The
- * OSM package's `enuFrameAt(origin).toLatLng(point)` is the same approximation,
- * already injected into `ar-mode.ts` as `enuFrameAt`, ungated and directly
- * testable — so this reuses that instead.
+ * have no setup that activates one. Coupling these tests to license
+ * activation to obtain six lines of flat-earth arithmetic would be the wrong
+ * trade. The OSM package's `enuFrameAt(origin).toLatLng(point)` is the same
+ * approximation, already injected into `ar-mode.ts` as `enuFrameAt`, ungated
+ * and directly testable — so this reuses that instead.
  *
  * @see ar-fused-gps.ts.md
  */

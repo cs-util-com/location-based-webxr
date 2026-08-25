@@ -61,9 +61,9 @@ with the alignment applied. Nothing is multiplied here — `fusedBearingDeg` in
 Both do this arithmetic, and both are wrapped in `gateFunction` →
 `assertLicenseActive()`. That is satisfied at runtime — the demo's store
 activates a licence — and **hostile in this package's unit tests**, which import
-no library function and have no setup that activates one. Reaching for
-`gps-plus-slam-js/internal`'s `_setLicenseActiveForTesting` would couple the
-demo's tests to an `@internal` API to obtain six lines of flat-earth arithmetic.
+no library function and have no setup that activates one. Coupling the demo's
+tests to license activation just to obtain six lines of flat-earth arithmetic
+would be the wrong trade.
 
 `gps-plus-slam-osm`'s `enuFrameAt(origin).toLatLng(point)` is the same
 approximation, already injected into `ArModeDeps` as `enuFrameAt`, ungated and
