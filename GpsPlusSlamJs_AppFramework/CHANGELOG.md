@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Features
+
+- **Range-based zip streaming transport** (`storage` subpath) — open a
+  cloud-hosted archive without downloading it whole: `openRemoteArchive` runs
+  share-link normalization (Dropbox/GitHub/Google Drive/OneDrive →
+  raw-download URLs) → a revalidated cache lookup (ETag / Last-Modified /
+  size) → an HTTP range probe with a pure fallback policy (206 ranges, 200
+  eager-local, full-download degrade, typed rejections) → the right
+  `ByteSource`, plus a background warm-download that switches a live session
+  onto a local copy exactly once and persists it via the Cache API only when
+  the switch took (size-mismatch poison guard). Includes
+  `BoundedLocalCacheStore` (LRU cap + `clear()`), `ByteSourceReader` (zip.js
+  adapter with EOF clamping), a per-read instrumentation seam (`onRead`), and
+  `StructuralReadError`'s permanent-vs-transient failure split. Originates
+  from community PR #322 (thanks @superhellth), hardened with strict 206 +
+  body-length validation, safe-integer size parsing, UTF-8 share-link
+  tokens, and a measured request-budget test. The `utils/qr-payload`
+  launch-URL codec (`buildQrLaunchUrl`, `decodeDictionaryPayload`) is now
+  deep-importable for `?qr=` launch handlers.
+
 ## [1.3.0] — 2026-06-13
 
 ### Features
