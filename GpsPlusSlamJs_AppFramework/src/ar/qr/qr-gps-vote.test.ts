@@ -227,3 +227,112 @@ describe('buildQrGpsVotes', () => {
     });
   });
 });
+
+// Why these tests matter (QR-pose plan 2026-08-25, QD-5 + delta review #4):
+// the vote geometry becomes rotation-aware, and the equivalence between the
+// legacy headingDeg path and a vertical-poster quaternion is the contract
+// that keeps every existing level file meaning what it always meant. The
+// convention is subtle and MUST be encoded here, not intuited: local +x
+// points toward `headingDeg`, so the printed face's normal points at
+// headingDeg + 90° — and in the y-up NUE frame the vertical-poster
+// quaternion is a rotation of −heading about the Up axis.
+describe('buildQrGpsVotes — 6-DoF rotation', () => {
+  const GEO_BASE = { lat: 47.5, lon: 8.7, alt: 400 };
+  const POSE: Pose = {
+    position: [1, 2, 3],
+    rotation: [0, 0, 0, 1],
+  };
+
+  /** Vertical-poster quaternion for a compass heading (see docblock above). */
+  function verticalQuaternion(headingDeg: number): Quaternion {
+    const half = (-headingDeg * Math.PI) / 180 / 2;
+    return [0, Math.sin(half), 0, Math.cos(half)];
+  }
+
+  it('a vertical-poster rotation reproduces the headingDeg votes exactly', () => {
+    const byHeading = buildQrGpsVotes({
+      qrPoseWorld: POSE,
+      sizeM: 0.2,
+      qrGeo: { ...GEO_BASE, headingDeg: 73 },
+      syntheticAccuracyM: 0.05,
+      timestamp: 1000,
+    });
+    const byRotation = buildQrGpsVotes({
+      qrPoseWorld: POSE,
+      sizeM: 0.2,
+      qrGeo: { ...GEO_BASE, rotation: verticalQuaternion(73) },
+      syntheticAccuracyM: 0.05,
+      timestamp: 1000,
+    });
+
+    expect(byRotation).toHaveLength(byHeading.length);
+    byRotation.forEach((vote, i) => {
+      expect(vote.rawGpsPoint.latitude).toBeCloseTo(
+        byHeading[i]!.rawGpsPoint.latitude,
+        12
+      );
+      expect(vote.rawGpsPoint.longitude).toBeCloseTo(
+        byHeading[i]!.rawGpsPoint.longitude,
+        12
+      );
+      expect(vote.rawGpsPoint.altitude).toBeCloseTo(
+        byHeading[i]!.rawGpsPoint.altitude!,
+        9
+      );
+    });
+  });
+
+  it('a face-up table code maps the printed plane onto the ground plane', () => {
+    // Rotation of −90° about the North axis: local +y → −East, +z → Up.
+    const half = (-90 * Math.PI) / 180 / 2;
+    const faceUp: Quaternion = [Math.sin(half), 0, 0, Math.cos(half)];
+    const s = 5; // wide baseline makes the offsets visible at lat/lon scale
+
+    const votes = buildQrGpsVotes({
+      qrPoseWorld: POSE,
+      sizeM: 0.2,
+      qrGeo: { ...GEO_BASE, rotation: faceUp },
+      syntheticAccuracyM: 0.05,
+      baselineM: s,
+      count: 4,
+      timestamp: 1000,
+    });
+
+    // Ring points start at local +x (→ North) then local +y (→ −East).
+    const expectedNorth = offsetGeo(
+      { ...GEO_BASE, headingDeg: 0 },
+      { north: s, east: 0, up: 0 }
+    );
+    const expectedWest = offsetGeo(
+      { ...GEO_BASE, headingDeg: 0 },
+      { north: 0, east: -s, up: 0 }
+    );
+    expect(votes[0]!.rawGpsPoint.latitude).toBeCloseTo(
+      expectedNorth.latitude,
+      12
+    );
+    expect(votes[0]!.rawGpsPoint.longitude).toBeCloseTo(
+      expectedNorth.longitude,
+      12
+    );
+    expect(votes[1]!.rawGpsPoint.longitude).toBeCloseTo(
+      expectedWest.longitude,
+      12
+    );
+    // The printed plane lies IN the ground plane: no altitude spread.
+    for (const vote of votes) {
+      expect(vote.rawGpsPoint.altitude).toBeCloseTo(GEO_BASE.alt, 9);
+    }
+  });
+
+  it('rejects a geo pose carrying neither headingDeg nor rotation', () => {
+    expect(() =>
+      buildQrGpsVotes({
+        qrPoseWorld: POSE,
+        sizeM: 0.2,
+        qrGeo: { ...GEO_BASE },
+        syntheticAccuracyM: 0.05,
+      })
+    ).toThrow();
+  });
+});

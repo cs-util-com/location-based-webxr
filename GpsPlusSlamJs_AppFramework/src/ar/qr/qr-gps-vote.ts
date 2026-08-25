@@ -31,9 +31,20 @@ import type {
 } from 'gps-plus-slam-js';
 import type { Vector3 } from 'gps-plus-slam-js';
 import { calcGpsCoords } from 'gps-plus-slam-js';
-import { buildObjectPoints, transformPoint, type Pose } from './qr-pose.js';
+import {
+  buildObjectPoints,
+  rotateVectorByQuaternion,
+  transformPoint,
+  type Pose,
+} from './qr-pose.js';
 
-/** Absolute geo pose of the printed QR, from the level file. */
+/**
+ * Absolute geo pose of the printed QR, from the level file.
+ *
+ * At least ONE of `headingDeg` / `rotation` must be present (enforced by
+ * `parseQrLevel` and by `buildQrGpsVotes`). When both are present,
+ * `rotation` wins.
+ */
 export interface QrGeoPose {
   lat: number;
   lon: number;
@@ -42,9 +53,21 @@ export interface QrGeoPose {
   /**
    * Compass bearing (degrees clockwise from true North) that the QR's local +X
    * axis points toward. The QR is assumed vertical (wall-mounted): local +Y =
-   * world up, local +X = horizontal along the wall at this bearing.
+   * world up, local +X = horizontal at this bearing — which puts the printed
+   * face's NORMAL at `headingDeg + 90°`. Optional since the 6-DoF extension
+   * (QR-pose plan 2026-08-25): a floor/ceiling code has no honest heading.
    */
-  headingDeg: number;
+  headingDeg?: number;
+  /**
+   * Full 6-DoF orientation of the printed code as a unit quaternion
+   * `[x, y, z, w]` in the **NUE GPS-world frame** (x = North, y = Up,
+   * z = East — the same y-up frame every other quaternion in this stack
+   * uses; a mislabeled basis is a 120° bug). It rotates the QR's local axes
+   * (+x right, +y up, +z out of the printed face — `buildObjectPoints`'s
+   * convention) into NUE. A vertical wall poster at compass heading `h` is
+   * the rotation of `−h` about the Up axis.
+   */
+  rotation?: Quaternion;
 }
 
 export interface QrGpsVoteInput {
@@ -139,6 +162,29 @@ export function localPlaneToEnu(
   };
 }
 
+/**
+ * Map a QR-local point (meters, `buildObjectPoints` axes) to an
+ * East/North/Up offset using whichever orientation the geo pose carries:
+ * the full `rotation` quaternion (6-DoF, wins when both are present) or the
+ * legacy vertical-poster `headingDeg`. A vertical-poster quaternion
+ * reproduces the heading path exactly (property-tested). Throws when the
+ * pose carries neither — that level should never have parsed.
+ */
+export function localPlaneOffset(local: Vector3, geo: QrGeoPose): Enu {
+  if (geo.rotation !== undefined) {
+    // Double-precision rotation (NOT the float32 `transformPoint`); with a
+    // NUE quaternion the result is a NUE offset.
+    const nue = rotateVectorByQuaternion(geo.rotation, local);
+    return { north: nue[0], up: nue[1], east: nue[2] };
+  }
+  if (geo.headingDeg === undefined) {
+    throw new RangeError(
+      'qr-gps-vote: QrGeoPose carries neither headingDeg nor rotation'
+    );
+  }
+  return localPlaneToEnu(local[0], local[1], geo.headingDeg);
+}
+
 /** Apply an ENU meter offset to a geo pose (equirectangular; exact enough for sub-meter QR corners). */
 export function offsetGeo(
   center: QrGeoPose,
@@ -214,10 +260,7 @@ export function buildQrGpsVotes(
 
   return localPoints.map((local, i) => {
     const odomPosition = transformPoint(local, qrPoseWorld);
-    const geo = offsetGeo(
-      qrGeo,
-      localPlaneToEnu(local[0], local[1], qrGeo.headingDeg)
-    );
+    const geo = offsetGeo(qrGeo, localPlaneOffset(local, qrGeo));
     const rawGpsPoint: RawGpsPoint = {
       id: `${idPrefix}-${timestamp}-${i}`,
       latitude: geo.latitude,

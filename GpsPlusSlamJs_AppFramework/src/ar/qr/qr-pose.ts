@@ -342,6 +342,29 @@ export function reprojectionErrorPx(
   return Math.sqrt(sumSq / objectPoints.length);
 }
 
+/**
+ * Rotate a vector by a unit quaternion in FULL double precision:
+ * v' = v + 2·qv×(qv×v + w·v). Deliberately not gl-matrix (`transformPoint`
+ * below): its default Float32Array backing loses ~2e-8 relative — fine for
+ * odom-space points, not for geo offsets that get compared exactly in tests
+ * and serialized into level files.
+ */
+export function rotateVectorByQuaternion(
+  rotation: Quaternion,
+  v: Vector3
+): Vector3 {
+  const [qx, qy, qz, qw] = rotation;
+  const [vx, vy, vz] = v;
+  const tx = 2 * (qy * vz - qz * vy);
+  const ty = 2 * (qz * vx - qx * vz);
+  const tz = 2 * (qx * vy - qy * vx);
+  return [
+    vx + qw * tx + (qy * tz - qz * ty),
+    vy + qw * ty + (qz * tx - qx * tz),
+    vz + qw * tz + (qx * ty - qy * tx),
+  ];
+}
+
 /** Apply a rigid pose to a point: result = rotation·p + position. */
 export function transformPoint(point: Vector3, pose: Pose): Vector3 {
   const q = quat.fromValues(

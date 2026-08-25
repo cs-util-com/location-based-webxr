@@ -39,6 +39,16 @@ debug/observe or trigger-only level. `qr` itself is still required as an object.
 - Injected `fetchImpl` keeps the loader unit-testable and lets callers add
   caching/headers; the controller (`qr-tracking-controller.ts`) caches by URL.
 
+## 6-DoF + writer (QR-pose plan 2026-08-25)
+
+- `qr.geo.rotation` (optional): unit quaternion [x,y,z,w], NUE GPS-world
+  frame; small norm drift (≤1e-3) renormalizes, worse rejects.
+  `headingDeg` is optional when rotation is present — a floor/ceiling
+  code has no honest heading, and geo with NEITHER rejects loudly.
+- `serializeQrLevel(level)` — the writer half: re-validates through
+  `parseQrLevel` (fail loud, never a broken file) and emits the JSON the
+  parser reads. Round-trip property-tested.
+
 ## Tests
 
 - `qr-level.test.ts` — valid parse (content preserved, heading normalized),

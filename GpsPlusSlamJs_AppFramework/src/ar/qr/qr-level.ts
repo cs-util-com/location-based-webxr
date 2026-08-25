@@ -14,6 +14,7 @@
  * NOT interpreted here; only the fields the pose + vote need are validated.
  */
 
+import type { Quaternion } from 'gps-plus-slam-js';
 import type { QrGeoPose } from './qr-gps-vote.js';
 
 /**
@@ -96,12 +97,77 @@ function parseGeo(value: unknown): QrGeoPose | undefined {
   if (!isFiniteNumber(alt)) {
     throw new QrLevelValidationError('"qr.geo.alt" must be a finite number');
   }
-  if (!isFiniteNumber(headingDeg)) {
+  return { lat, lon, alt, ...parseOrientation(headingDeg, value.rotation) };
+}
+
+/**
+ * The orientation half of `qr.geo` (6-DoF extension, QR-pose plan
+ * 2026-08-25): `headingDeg` is optional WHEN a rotation is present — a
+ * floor/ceiling code has no honest heading, and a filler read by a
+ * rotation-unaware consumer would silently mis-place it. A pose with
+ * NEITHER cannot orient anything and rejects loudly.
+ */
+function parseOrientation(
+  headingDeg: unknown,
+  rotationValue: unknown
+): Pick<QrGeoPose, 'headingDeg' | 'rotation'> {
+  const rotation = parseRotation(rotationValue);
+  if (headingDeg === undefined && rotation === undefined) {
     throw new QrLevelValidationError(
-      '"qr.geo.headingDeg" must be a finite number'
+      '"qr.geo" must carry "headingDeg" and/or "rotation"'
     );
   }
-  return { lat, lon, alt, headingDeg: ((headingDeg % 360) + 360) % 360 };
+  if (headingDeg !== undefined && !isFiniteNumber(headingDeg)) {
+    throw new QrLevelValidationError(
+      '"qr.geo.headingDeg" must be a finite number when present'
+    );
+  }
+  return {
+    ...(headingDeg !== undefined
+      ? { headingDeg: ((headingDeg % 360) + 360) % 360 }
+      : {}),
+    ...(rotation !== undefined ? { rotation } : {}),
+  };
+}
+
+/**
+ * Validate an optional `qr.geo.rotation`: a unit quaternion `[x, y, z, w]`
+ * in the NUE GPS-world frame (see {@link QrGeoPose}). A small norm drift
+ * (≤ 1e-3, e.g. JSON round-trip loss) is renormalized; anything further off
+ * is a broken file, not a rotation.
+ */
+function parseRotation(value: unknown): Quaternion | undefined {
+  if (value === undefined) return undefined;
+  if (
+    !Array.isArray(value) ||
+    value.length !== 4 ||
+    !value.every(isFiniteNumber)
+  ) {
+    throw new QrLevelValidationError(
+      '"qr.geo.rotation" must be an array of 4 finite numbers when present'
+    );
+  }
+  // Checked element reads: the length===4 guard above makes these always
+  // defined, but `noUncheckedIndexedAccess` (tsc) and the every()-narrowing
+  // eslint sees disagree about destructuring — this form satisfies both.
+  const [x, y, z, w] = [value[0], value[1], value[2], value[3]];
+  if (
+    x === undefined ||
+    y === undefined ||
+    z === undefined ||
+    w === undefined
+  ) {
+    throw new QrLevelValidationError(
+      '"qr.geo.rotation" must be an array of 4 finite numbers when present'
+    );
+  }
+  const norm = Math.hypot(x, y, z, w);
+  if (Math.abs(norm - 1) > 1e-3) {
+    throw new QrLevelValidationError(
+      '"qr.geo.rotation" must be a unit quaternion'
+    );
+  }
+  return [x / norm, y / norm, z / norm, w / norm];
 }
 
 /**
@@ -129,6 +195,18 @@ export function parseQrLevel(data: unknown): QrLevel {
     },
     content: 'content' in data ? data.content : undefined,
   };
+}
+
+/**
+ * Serialize a {@link QrLevel} to the JSON document `parseQrLevel` reads —
+ * the writer half the schema never had (the authoring loop stands on the
+ * exported file being re-readable). The input is re-validated first so a
+ * programming error fails LOUD here instead of producing a broken file an
+ * author uploads and a visitor cannot open.
+ */
+export function serializeQrLevel(level: QrLevel): string {
+  const validated = parseQrLevel(level);
+  return JSON.stringify(validated, null, 2);
 }
 
 /** Minimal `fetch` slice used by {@link fetchQrLevel}. */

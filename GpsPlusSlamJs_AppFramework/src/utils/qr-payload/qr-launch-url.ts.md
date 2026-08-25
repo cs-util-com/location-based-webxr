@@ -66,6 +66,14 @@ const svg = await QRCode.toString(plan.url, {
 });
 ```
 
+## extraQuery (QR-pose plan 2026-08-25)
+
+- `options.extraQuery` prints extra query params (e.g. the per-code
+  discriminator `{ c: '2' }`) into every candidate BEFORE size estimation,
+  so the estimate and the fits-a-QR guarantee hold for the printed string.
+  The all-caps `/S/` form cannot carry `&`/`=`/lowercase and is dropped
+  whenever extra params are present.
+
 ## Tests
 
 `qr-launch-url.test.ts` — the developer walkthrough (template win,

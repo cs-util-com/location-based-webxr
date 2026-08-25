@@ -47,6 +47,7 @@ export {
   composePose,
   invertPose,
   transformPoint,
+  rotateVectorByQuaternion,
   signedQuadArea,
   validateQuad,
   reprojectionErrorPx,
@@ -99,6 +100,7 @@ export {
   type FetchQrLevelOptions,
   QrLevelValidationError,
   parseQrLevel,
+  serializeQrLevel,
   fetchQrLevel,
 } from './qr-level.js';
 
@@ -153,9 +155,16 @@ export {
   type QrGpsVoteInput,
   type Enu,
   localPlaneToEnu,
+  localPlaneOffset,
   offsetGeo,
   buildQrGpsVotes,
 } from './qr-gps-vote.js';
+
+// --- qr-geo-pose-minting ---
+export {
+  type MintQrGeoPoseInput,
+  mintQrGeoPose,
+} from './qr-geo-pose-minting.js';
 
 // --- qr-occupancy-check ---
 export {

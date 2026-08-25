@@ -10,6 +10,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   parseQrLevel,
+  serializeQrLevel,
   fetchQrLevel,
   QrLevelValidationError,
   type FetchLike,
@@ -168,5 +169,98 @@ describe('fetchQrLevel', () => {
     await expect(
       fetchQrLevel('https://lvl/x', { fetchImpl: okFetch({ version: 1 }) })
     ).rejects.toThrow(QrLevelValidationError);
+  });
+});
+
+// Why these tests matter (QR-pose plan 2026-08-25, QD-5): the schema gains an
+// optional 6-DoF `rotation` quaternion (NUE GPS-world frame). The invariants
+// that keep old and new files honest: rotation-only files are valid (a
+// floor/ceiling code has no honest heading, and a filler heading read by a
+// rotation-unaware consumer would silently mis-place it), garbage rotations
+// reject loudly, and geo with NEITHER heading nor rotation rejects.
+describe('parseQrLevel — 6-DoF rotation', () => {
+  const base = {
+    version: 1,
+    qr: { physicalSizeM: 0.2 },
+  };
+  /** Identity quaternion — a valid unit rotation. */
+  const IDENTITY = [0, 0, 0, 1];
+
+  it('accepts geo with rotation only (no headingDeg)', () => {
+    const level = parseQrLevel({
+      ...base,
+      qr: {
+        ...base.qr,
+        geo: { lat: 47.5, lon: 8.7, alt: 400, rotation: IDENTITY },
+      },
+    });
+    expect(level.qr.geo?.rotation).toEqual(IDENTITY);
+    expect(level.qr.geo?.headingDeg).toBeUndefined();
+  });
+
+  it('accepts geo with both rotation and headingDeg', () => {
+    const level = parseQrLevel({
+      ...base,
+      qr: {
+        ...base.qr,
+        geo: {
+          lat: 47.5,
+          lon: 8.7,
+          alt: 400,
+          headingDeg: 30,
+          rotation: IDENTITY,
+        },
+      },
+    });
+    expect(level.qr.geo?.headingDeg).toBe(30);
+    expect(level.qr.geo?.rotation).toEqual(IDENTITY);
+  });
+
+  it('rejects geo with neither headingDeg nor rotation', () => {
+    expect(() =>
+      parseQrLevel({
+        ...base,
+        qr: { ...base.qr, geo: { lat: 47.5, lon: 8.7, alt: 400 } },
+      })
+    ).toThrow(QrLevelValidationError);
+  });
+
+  it.each([
+    [[0, 0, 0, 1, 0], 'wrong length'],
+    [[0, 0, 0, Number.NaN], 'NaN component'],
+    [[0, 0, 0, 0.5], 'non-unit norm'],
+    ['not-an-array', 'not an array'],
+  ] as [unknown, string][])('rejects rotation %j (%s)', (rotation) => {
+    expect(() =>
+      parseQrLevel({
+        ...base,
+        qr: { ...base.qr, geo: { lat: 47.5, lon: 8.7, alt: 400, rotation } },
+      })
+    ).toThrow(QrLevelValidationError);
+  });
+});
+
+// Why these tests matter: the writer did not exist before the QR-pose plan
+// (the schema was reader-only), and the authoring loop stands on the exported
+// JSON being re-readable byte-for-semantics by parseQrLevel.
+describe('serializeQrLevel', () => {
+  it('round-trips a rotation-carrying level through parseQrLevel', () => {
+    const level = parseQrLevel({
+      version: 1,
+      qr: {
+        physicalSizeM: 0.18,
+        geo: { lat: 47.5, lon: 8.7, alt: 401.5, rotation: [0, 0, 0, 1] },
+      },
+      content: { mintQuality: { gpsAccuracyM: 3.4 } },
+    });
+
+    const reparsed = parseQrLevel(JSON.parse(serializeQrLevel(level)));
+    expect(reparsed).toEqual(level);
+  });
+
+  it('refuses to serialize an invalid level (fail loud, not a broken file)', () => {
+    expect(() => serializeQrLevel({ version: Number.NaN, qr: {} })).toThrow(
+      QrLevelValidationError
+    );
   });
 });

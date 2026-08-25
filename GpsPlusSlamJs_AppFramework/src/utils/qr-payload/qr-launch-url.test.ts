@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import QRCode from 'qrcode';
 import { buildQrLaunchUrl } from './qr-launch-url';
+import { estimateQrSize } from './qr-size-estimator';
 import { decodeDictionaryPayload } from './codec-dictionary';
 
 /**
@@ -119,5 +120,59 @@ describe('buildQrLaunchUrl — developer walkthrough', () => {
     await expect(
       buildQrLaunchUrl(BASE, `https://example.com/${'x'.repeat(2000)}`)
     ).rejects.toThrow(TypeError); // beyond QR v25 — not printable
+  });
+});
+
+// Why these tests matter (QR-pose plan 2026-08-25, delta review #3): the
+// per-code discriminator `&c=<n>` must live INSIDE the size optimization —
+// a suffix appended after the winner is picked voids both the returned
+// estimate and the fits-a-QR guarantee, and the all-caps /S/ form cannot
+// carry '&'/'='/lowercase at all, so that candidate must simply not compete.
+describe('buildQrLaunchUrl — extraQuery', () => {
+  const DATA_URL =
+    'https://raw.githubusercontent.com/user/repo/main/recording.zip';
+
+  it('appends the extra params to every candidate, inside the estimate', async () => {
+    const plan = await buildQrLaunchUrl('https://gps.csutil.com', DATA_URL, {
+      extraQuery: { c: '2' },
+    });
+
+    for (const candidate of plan.candidates) {
+      expect(candidate.url).toContain('&c=2');
+      // The estimate was computed on the FULL printed string.
+      expect(candidate.estimate.bits).toBe(
+        estimateQrSize(candidate.url, 'Q')?.bits
+      );
+    }
+    expect(plan.url).toContain('&c=2');
+  });
+
+  it('percent-encodes extra keys and values', async () => {
+    const plan = await buildQrLaunchUrl('https://gps.csutil.com', DATA_URL, {
+      extraQuery: { c: 'a b' },
+    });
+    expect(plan.url).toContain('&c=a%20b');
+  });
+
+  it('drops the /S/ path form when extraQuery is present, even if allowed', async () => {
+    const plan = await buildQrLaunchUrl('https://gps.csutil.com', DATA_URL, {
+      allowPathForm: true,
+      extraQuery: { c: '1' },
+    });
+    expect(
+      plan.candidates.every((cand) => cand.strategy !== 'path-base32')
+    ).toBe(true);
+  });
+
+  it('changes nothing when extraQuery is absent', async () => {
+    const withEmpty = await buildQrLaunchUrl(
+      'https://gps.csutil.com',
+      DATA_URL,
+      {
+        extraQuery: {},
+      }
+    );
+    const without = await buildQrLaunchUrl('https://gps.csutil.com', DATA_URL);
+    expect(withEmpty.url).toBe(without.url);
   });
 });
