@@ -7,6 +7,7 @@ import type { QrDetectionEvent } from "gps-plus-slam-app-framework/ar/qr/qr-trac
 
 import {
   AUTHOR_DEFAULT_SIZE_M,
+  MIN_ALIGNMENT_SAMPLES,
   authorStatusLine,
   buildAuthorControllerConfig,
   mintAuthorLevel,
@@ -211,7 +212,11 @@ describe("mintAuthorLevel", () => {
       sampleCount: 1,
     });
     expect(identityOnly.canMint).toBe(false);
-    expect(identityOnly.text).toMatch(/1 of 3 fixes/);
+    // The constant is the tuning knob M5 may raise - the readout must
+    // follow it, not restate 3.
+    expect(identityOnly.text).toMatch(
+      new RegExp(String.raw`1 of ${MIN_ALIGNMENT_SAMPLES} fixes`),
+    );
     const ready = authorStatusLine("text", stable, GOOD_ALIGNMENT_INFO);
     expect(ready.canMint).toBe(true);
     expect(ready.text).toMatch(/ready/i);
