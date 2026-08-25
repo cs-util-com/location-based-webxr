@@ -26,6 +26,12 @@ None (app entry point). Interesting seams for the e2e suite are the
   teardown.
 - The cache is `BoundedLocalCacheStore(CacheApiStore, 5)` where the Cache API
   exists, else no cache (the app still works, purely remote).
+- **Clear-cache settles only once the store is durably empty:** the open
+  session's warm (or recovery) download persists on completion, so the
+  handler runs the session's self-sufficient `archive.evict()` — which
+  awaits both in-flight writers — before `clear()`. "Cache cleared" therefore
+  never precedes a background write that would silently repopulate the store
+  (PR #358 review #1).
 - Bare-name `?qr=` payloads resolve under `DEFAULT_ASSET_PREFIX`
   (the GeoTales raw-GitHub prefix the QR builder's docs use as the example).
 

@@ -29,6 +29,8 @@ readiness.
 `streaming.spec.js` — range streaming with per-page partial-fetch
 accounting, the 200-fallback, the cached second visit (zero archive GETs),
 the changed-ETag eviction/refetch (the authoring-loop revalidation, driven
-via the server's `/flip` route), and clear-cache. `launch-and-errors.spec.js`
+via the server's `/flip` route), clear-cache, and clear-cache-during-warm
+(the held warm download must not repopulate a cleared store, driven via
+`/warm-gate`). `launch-and-errors.spec.js`
 — the `?qr=` boot path, the async-UI in-progress/final states for success
 and failure, and the no-console-errors smoke.

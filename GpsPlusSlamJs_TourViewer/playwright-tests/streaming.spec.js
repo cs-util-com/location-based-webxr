@@ -189,3 +189,53 @@ test("clear cache empties the store and the next open goes to the network again"
   await expectGalleryStreamedIn(page);
   expect(tally.gets).toBeGreaterThan(0);
 });
+
+test("clear cache during an in-flight warm download settles only once the store is durably empty", async ({
+  page,
+  request,
+}) => {
+  // Why this matters (PR #358 review): the warm download persists on
+  // completion, so a clear that ignored it reported "Cache cleared" and then
+  // watched the background write silently repopulate the store — the next
+  // visit served from cache after the user was told there was none. The
+  // server's warm gate holds the warm GET open, giving a deterministic
+  // in-flight window instead of racing a real download.
+  const SLOW_WARM_URL = `${ARCHIVE_HOST}/slow-warm/tour.zip`;
+  await request.get(`${ARCHIVE_HOST}/warm-gate?state=hold`);
+  try {
+    await page.goto("/");
+    await openArchive(page, SLOW_WARM_URL);
+    await expectGalleryStreamedIn(page); // ranges flow; the warm GET is held
+
+    // Arm the completion watcher BEFORE releasing the gate so the ordering
+    // of "Cache cleared" relative to the release is observable.
+    await page.getByTestId("clear-cache").click();
+    const clearedAt = page
+      .waitForFunction(
+        () =>
+          document.querySelector('[data-testid="clear-cache"]')?.textContent ===
+          "Cache cleared",
+        undefined,
+        { timeout: 15000, polling: 25 },
+      )
+      .then(() => Date.now());
+    // The buggy handler settled within a few event-loop turns; this margin
+    // is orders of magnitude above that. (Node-side sleep — the page itself
+    // waits on real conditions.)
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const releasedAt = Date.now();
+    await request.get(`${ARCHIVE_HOST}/warm-gate?state=release`);
+    // The clear must have WAITED on the held warm write, not raced past it.
+    expect(await clearedAt).toBeGreaterThanOrEqual(releasedAt);
+
+    // Durably empty: the next visit must hit the network again — a
+    // repopulated store would serve it with zero GETs.
+    await page.goto("/");
+    const tally = trackArchiveTraffic(page, SLOW_WARM_URL);
+    await openArchive(page, SLOW_WARM_URL);
+    await expectGalleryStreamedIn(page);
+    expect(tally.gets).toBeGreaterThan(0);
+  } finally {
+    await request.get(`${ARCHIVE_HOST}/warm-gate?state=release`);
+  }
+});

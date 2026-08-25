@@ -184,19 +184,29 @@ clearCacheButton.addEventListener("click", () => {
   if (!(cacheStore instanceof BoundedLocalCacheStore)) return;
   clearCacheButton.disabled = true;
   clearCacheButton.textContent = "Clearing…";
-  void cacheStore.clear().then(
-    () => {
-      clearCacheButton.disabled = false;
-      clearCacheButton.textContent = "Cache cleared";
-    },
-    (err: unknown) => {
-      // Async-UI rule: a failure must surface and the in-progress state must
-      // revert — the old version reported "Cache cleared" either way.
-      clearCacheButton.disabled = false;
-      clearCacheButton.textContent = "Clear cache";
-      errorBox.textContent = `Clearing the cache failed: ${err instanceof Error ? err.message : String(err)}`;
-    },
-  );
+  // The open session's warm (or range-ignore recovery) download persists on
+  // completion, so clearing around it would report "Cache cleared" and then
+  // watch the store silently repopulate in the background (PR #358 review
+  // #1). `evict()` is self-sufficient — it awaits both in-flight writers
+  // before deleting — so evict-then-clear settles only once the store is
+  // durably empty.
+  const settleSessionWriters =
+    session !== null ? session.archive.evict() : Promise.resolve();
+  void settleSessionWriters
+    .then(() => cacheStore.clear())
+    .then(
+      () => {
+        clearCacheButton.disabled = false;
+        clearCacheButton.textContent = "Cache cleared";
+      },
+      (err: unknown) => {
+        // Async-UI rule: a failure must surface and the in-progress state must
+        // revert — the old version reported "Cache cleared" either way.
+        clearCacheButton.disabled = false;
+        clearCacheButton.textContent = "Clear cache";
+        errorBox.textContent = `Clearing the cache failed: ${err instanceof Error ? err.message : String(err)}`;
+      },
+    );
 });
 
 /** `?qr=` launch: the QR-scan entry path — resolve the payload and open. */

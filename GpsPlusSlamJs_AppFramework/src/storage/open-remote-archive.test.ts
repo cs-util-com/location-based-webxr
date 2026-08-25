@@ -222,6 +222,29 @@ describe('openRemoteArchive — warm-to-cache', () => {
     expect(cached?.blob.size).toBe(ARCHIVE.length);
   });
 
+  // Why this test matters (PR #358 review #2): evict() awaited only the
+  // recovery download, so a caller trusting the bare-evict() contract could
+  // clear the store and have the still-running warm re-poison it moments
+  // later. Self-sufficiency means NO dispose-first incantation: a bare
+  // evict() lets the in-flight warm write land, then deletes it.
+  it('a bare evict() waits for the in-flight warm write instead of racing past it', async () => {
+    const deferredFullBody: { resolve?: () => void } = {};
+    const { fetchImpl } = fakeServer({ etag: '"v1"', deferredFullBody });
+    const store = new InMemoryLocalCacheStore();
+    const opened = await openRemoteArchive(URL_, {
+      fetchImpl,
+      cacheStore: store,
+    });
+
+    const evicting = opened.evict(); // deliberately no dispose() first
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    deferredFullBody.resolve?.(); // the late warm write lands
+    await expect(opened.warmed).resolves.toBe(true);
+    await evicting;
+
+    await expect(store.get(URL_)).resolves.toBeUndefined();
+  });
+
   it('refuses to persist a size-mismatched warm download (cache poisoning)', async () => {
     const { fetchImpl } = fakeServer({ fullBody: 'wrong-size' });
     const store = new InMemoryLocalCacheStore();
@@ -500,6 +523,30 @@ describe('openRemoteArchive — fallbacks and rejections', () => {
       new Uint8Array([5, 6])
     );
     await expect(store.get(URL_)).resolves.toBeDefined();
+  });
+
+  // Why this test matters (PR #358 review #3): the eager-local and
+  // full-download paths pull the WHOLE archive over the network, yet every
+  // later read is served locally and reported 'cache' — so a stats consumer
+  // showed "0 B fetched · serving from cache" right after downloading
+  // everything, inverting its headline metric. The open itself must report
+  // one whole-archive network read (both paths share `openLocal`, so one
+  // test covers the seam for both).
+  it('reports the whole-archive network read when degrading to an eager local copy', async () => {
+    const { fetchImpl } = fakeServer({ supportsRanges: false });
+    const events: ArchiveReadEvent[] = [];
+    const opened = await openRemoteArchive(URL_, {
+      fetchImpl,
+      onRead: (e) => events.push(e),
+    });
+
+    expect(events).toEqual([
+      { origin: 'network', offset: 0, length: ARCHIVE.length },
+    ]);
+    await expect(opened.source.read(0, 2)).resolves.toEqual(
+      new Uint8Array([1, 2])
+    );
+    expect(events.at(-1)).toEqual({ origin: 'cache', offset: 0, length: 2 });
   });
 
   it('rejects a missing archive with cause "missing"', async () => {

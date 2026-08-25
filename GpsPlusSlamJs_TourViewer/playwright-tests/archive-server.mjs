@@ -13,6 +13,10 @@
  * - `/flippable/tour.zip` — 200 full body with a SETTABLE ETag (`/flip`),
  *   the "author overwrote the archive at the same URL" host the
  *   revalidation spec drives.
+ * - `/slow-warm/tour.zip` — ranges like `ranges-ok`, but a range-less GET
+ *   (the background warm download) is HELD while the warm gate is closed
+ *   (`/warm-gate?state=hold` / `?state=release`) — the deterministic
+ *   in-flight-warm window the clear-cache-during-warm spec needs.
  *
  * CORS: the app origin (the vite port) differs from this server's,
  * and `Range` is not a CORS-safelisted request header, so the preflight
@@ -64,6 +68,17 @@ const ETAG = '"e2e-tour-v1"';
  */
 let flippableEtagVersion = "v1";
 
+/**
+ * The `/slow-warm` route's warm gate: while held, range-less GETs (the warm
+ * download) queue instead of answering; `release` answers everything queued
+ * and lets later ones straight through. Explicit hold/release (never a
+ * toggle) keeps a retried spec deterministic, and `release` is idempotent so
+ * ordering between the release call and the queued request cannot deadlock.
+ * Only the clear-cache-during-warm spec drives this route, so the global
+ * state cannot leak into parallel siblings.
+ */
+let warmGate = { released: true, waiters: [] };
+
 const CORS_HEADERS = {
   "access-control-allow-origin": "*",
   "access-control-allow-headers": "range,if-none-match,if-modified-since",
@@ -89,6 +104,19 @@ function handleFlip(res, url) {
   res.writeHead(200, CORS_HEADERS).end(flippableEtagVersion);
 }
 
+/** `/warm-gate?state=hold|release` — control the `/slow-warm` warm gate. */
+function handleWarmGate(res, url) {
+  const state = url.searchParams.get("state");
+  if (state === "hold") {
+    warmGate = { released: false, waiters: [] };
+  } else {
+    warmGate.released = true;
+    for (const answer of warmGate.waiters) answer();
+    warmGate.waiters = [];
+  }
+  res.writeHead(200, CORS_HEADERS).end(warmGate.released ? "released" : "held");
+}
+
 /** Serve the archive: HEAD metadata, 206 slices (ranges-ok), or a 200 body. */
 function handleArchive(req, res, mode) {
   const baseHeaders = {
@@ -107,7 +135,7 @@ function handleArchive(req, res, mode) {
   }
   const range = req.headers.range;
   const rangeMatch =
-    mode === "ranges-ok" && typeof range === "string"
+    (mode === "ranges-ok" || mode === "slow-warm") && typeof range === "string"
       ? /^bytes=(\d+)-(\d+)$/.exec(range)
       : null;
   if (rangeMatch !== null) {
@@ -123,12 +151,19 @@ function handleArchive(req, res, mode) {
       .end(Buffer.from(slice));
     return;
   }
-  res
-    .writeHead(200, {
-      ...baseHeaders,
-      "content-length": String(zipBytes.length),
-    })
-    .end(Buffer.from(zipBytes));
+  const answer = () => {
+    res
+      .writeHead(200, {
+        ...baseHeaders,
+        "content-length": String(zipBytes.length),
+      })
+      .end(Buffer.from(zipBytes));
+  };
+  if (mode === "slow-warm" && !warmGate.released) {
+    warmGate.waiters.push(answer); // held until /warm-gate?state=release
+    return;
+  }
+  answer();
 }
 
 createServer((req, res) => {
@@ -138,7 +173,11 @@ createServer((req, res) => {
     handleFlip(res, url);
     return;
   }
-  const match = /^\/(ranges-ok|no-ranges|flippable)\/tour\.zip$/.exec(
+  if (url.pathname === "/warm-gate") {
+    handleWarmGate(res, url);
+    return;
+  }
+  const match = /^\/(ranges-ok|no-ranges|flippable|slow-warm)\/tour\.zip$/.exec(
     url.pathname,
   );
   if (match === null) {

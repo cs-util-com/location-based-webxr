@@ -9,14 +9,19 @@ committed fixture, so nothing can rot out of sync with the specs or trip the
 (honors `Range` with 206 slices) and `/no-ranges/tour.zip` (ignores `Range`,
 streams 200 — the fallback host), plus `/flippable/tour.zip` whose ETag is
 settable via `/flip?etag=<v>` — the "author overwrote the archive at the
-same URL" host the revalidation spec drives.
+same URL" host the revalidation spec drives — and `/slow-warm/tour.zip`,
+which serves ranges normally but HOLDS a range-less GET (the background warm
+download) while the warm gate is closed (`/warm-gate?state=hold` /
+`?state=release`), the deterministic in-flight-warm window the
+clear-cache-during-warm spec needs. `release` is idempotent and answers
+already-queued requests, so call ordering cannot deadlock.
 
 ## Public API
 
 `node archive-server.mjs <port>` (default 5197 — registered in
 `../../docs/dev-server-ports.md` under auxiliary e2e servers). Routes:
-`/health` (readiness for the playwright `webServer` gate), the two archive
-routes, and a CORS preflight handler.
+`/health` (readiness for the playwright `webServer` gate), the four archive
+routes, `/flip`, `/warm-gate`, and a CORS preflight handler.
 
 ## Invariants & assumptions
 

@@ -42,10 +42,10 @@ archive-format-agnostic; zip.js enters only where a caller wraps
   failed read from there. Single-flight applies to SUCCESS only: a failed
   recovery download resets the slot so the next read retries instead of
   replaying a memoised transient failure forever.
-- **`evict()` awaits an in-flight recovery download** (success or failure)
-  before deleting — a late recovery write must not re-poison the cache the
-  eviction just cleared. Its contract stays "call after the parse settled,
-  then reopen with `skipCache`".
+- **`evict()` is self-sufficient**: it awaits any in-flight WARM and
+  RECOVERY download (success or failure) before deleting, so a late write
+  cannot re-poison the cache the eviction just cleared — a bare `evict()`
+  is safe; dispose-first merely makes it faster (PR #358 review #2).
 - **A definitive 404/410 on the revalidation HEAD evicts** — deletion is an
   author action the viewer honors; only genuine unreachability (network
   failure, HEAD-refusing host) serves the cache.
@@ -58,7 +58,11 @@ archive-format-agnostic; zip.js enters only where a caller wraps
   either way the link is unusable from here.
 - `onRead` fires per read served through the returned source with the true
   origin (`network` before the swap, `cache` after) — the seam TourViewer's
-  live counters hang on.
+  live counters hang on. The eager-local and full-download opens additionally
+  report ONE synthetic whole-archive `network` read up front: they pulled the
+  file over the network before any read is served locally, and without that
+  event a stats consumer shows "0 B fetched" right after downloading
+  everything (PR #358 review #3).
 
 ## Examples
 
@@ -72,7 +76,7 @@ try {
   const entries = await reader.getEntries();
 } catch (err) {
   if (opened.origin === 'cache') {
-    await opened.evict(); // poisoned copy — drop it,
+    await opened.evict(); // self-sufficient: awaits in-flight downloads
     // …reopen with { skipCache: true }
   }
 }

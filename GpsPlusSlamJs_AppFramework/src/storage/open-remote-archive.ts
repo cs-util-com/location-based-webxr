@@ -80,8 +80,11 @@ export interface OpenedArchive {
   readonly warmed: Promise<boolean>;
   /** Abort the in-flight warm download (leaving the page, opening another). */
   dispose(): void;
-  /** Drop this archive's cached copy — call when a cached copy fails to parse,
-   *  then reopen with `skipCache: true`. */
+  /** Drop this archive's cached copy — call when a cached copy fails to
+   *  parse, then reopen with `skipCache: true`. Self-sufficient: it awaits
+   *  any in-flight warm/recovery download before deleting, so a late write
+   *  cannot re-poison the cleared cache (no dispose-first incantation
+   *  required). */
   evict(): Promise<void>;
 }
 
@@ -218,6 +221,13 @@ async function openLocal(
   origin: ArchiveReadOrigin,
   behavior: { persist?: boolean } = {}
 ): Promise<OpenedArchive> {
+  if (origin === 'network') {
+    // The eager-local / full-download paths pulled the WHOLE archive over
+    // the network before any read is served locally — without this synthetic
+    // event a stats consumer shows "0 B fetched" right after downloading
+    // everything, inverting its headline metric (PR #358 review #3).
+    options.onRead?.({ origin: 'network', offset: 0, length: entry.blob.size });
+  }
   if (behavior.persist === true && store !== undefined) {
     await requestPersistentStorage();
     await store.put(url, entry);
@@ -331,10 +341,13 @@ function openRanged(
     warmed,
     dispose: () => controller.abort(),
     evict: async () => {
-      // An in-flight recovery download persists on completion; deleting
-      // before it settles would let that late write re-poison the cache the
-      // eviction just cleared (PR #357 review). Await it — success or
-      // failure — then delete.
+      // In-flight WARM and RECOVERY downloads both persist on completion;
+      // deleting before they settle would let a late write re-poison the
+      // cache the eviction just cleared (PR #357 review; PR #358 review #2
+      // added the warm half so a bare `evict()` is self-sufficient — the
+      // dispose → await warmed → evict incantation is belt-and-braces, not
+      // a requirement). Await both — success or failure — then delete.
+      await warmed.catch(() => undefined);
       await recoveryDownload?.catch(() => undefined);
       await store?.delete(url);
     },
