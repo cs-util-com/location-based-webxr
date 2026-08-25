@@ -195,6 +195,13 @@ const entryFiles = [
   'src/utils/slider-scroll-guard.ts',
   'src/utils/format-distance.ts',
   'src/utils/toast-core.ts',
+  // QR launch payload codec — deep-imported by the TourViewer app: the decode
+  // side (codec-dictionary) implements the ?qr= launch-handler dispatch, and
+  // the encode side (qr-launch-url) is the authoring counterpart that builds
+  // the printable launch URLs. The `./utils/*` exports wildcard advertises
+  // these subpaths, so they must be built per-file.
+  'src/utils/qr-payload/codec-dictionary.ts',
+  'src/utils/qr-payload/qr-launch-url.ts',
 
   // visualization/
   'src/visualization/index.ts',

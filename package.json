@@ -11,6 +11,7 @@
         "build:starter": "pnpm run --filter gps-plus-slam-anchor-starter... build",
         "build:example": "pnpm run --filter gps-plus-slam-minimal-example... build",
         "build:qr-demo": "pnpm run --filter gps-plus-slam-qr-tracking-demo... build",
+        "build:tour": "pnpm run --filter gps-plus-slam-tour-viewer... build",
         "build:landing": "pnpm run --filter gps-plus-slam-landing... build",
         "build:site": "node scripts/build-site.mjs",
         "check:deadcode": "node scripts/test-timing/timed-stage.mjs check:deadcode",
@@ -28,6 +29,7 @@
         "test": "node scripts/test-timing/run-gate.mjs",
         "test:physics": "node scripts/test-timing/timed-stage.mjs test:physics",
         "test:wayfinding": "node scripts/test-timing/timed-stage.mjs test:wayfinding",
+        "test:tour": "node scripts/test-timing/timed-stage.mjs test:tour",
         "test:changed": "node scripts/test-changed/test-changed.mjs"
     },
     "engines": {

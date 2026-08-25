@@ -131,7 +131,24 @@ test("palette button cycles the palette and the choice persists across reload", 
   await expect(page.locator(`html[data-theme="${cycled}"]`)).toBeAttached();
 });
 
-test("all six demo apps stay launchable from the demos hub", async ({
+test("a ?qr= launch forwards to the tour viewer with the payload intact", async ({
+  page,
+}) => {
+  // Why this matters: printed QR codes encode the BARE host so the densest
+  // QR forms stay available (ZD-9); this forward is the only thing standing
+  // between a physical, unchangeable printout and a dead link. The dev
+  // server SPA-falls-back on /tour/, so the URL is the assertion. The head
+  // script replaces the location DURING the first load, which aborts that
+  // navigation (net::ERR_ABORTED) — expected, hence the catch.
+  await page
+    .goto("/?qr=https%3A%2F%2Fexample.com%2Ftour.zip&nocache=1")
+    .catch(() => undefined);
+  // RegExp, not a URL glob: a glob's `?` is a single-character wildcard and
+  // can never match the literal query separator.
+  await page.waitForURL(/\/tour\/\?qr=https%3A%2F%2Fexample\.com%2Ftour\.zip/);
+});
+
+test("all seven demo apps stay launchable from the demos hub", async ({
   page,
 }) => {
   await page.goto("/");
@@ -144,6 +161,7 @@ test("all six demo apps stay launchable from the demos hub", async ({
     "/recorder/",
     "/physics/",
     "/wayfinding/",
+    "/tour/",
   ]) {
     const card = page.locator(`a.demo-card[href="${href}"]`);
     await expect(card).toBeAttached();

@@ -1,0 +1,41 @@
+# main.ts
+
+## Purpose
+
+The thin DOM shell: wires the `?qr=` launch dispatch, the paste-a-link form,
+the streaming session, the live stats panel, the progressive image gallery,
+and the clear-cache action. All policy lives in the framework and the
+colocated view-model modules; the e2e suite drives this file in a real
+browser.
+
+## Public API
+
+None (app entry point). Interesting seams for the e2e suite are the
+`data-testid` attributes in `index.html`: `link-input`, `open-button`,
+`clear-cache`, `stats`, `error`, `gallery`.
+
+## Invariants & assumptions
+
+- **Async-UI rule:** an open disables the button and shows "Opening…" until
+  the promise settles; failures land in the `role="alert"` error box with a
+  cause-specific message — including the key-less Google Drive limitation,
+  stated instead of implied.
+- The gallery streams images SEQUENTIALLY, each appended as its bytes arrive
+  — the visible proof of range streaming. A newer open supersedes an
+  in-flight fill (checked per entry), and object URLs are revoked on
+  teardown.
+- The cache is `BoundedLocalCacheStore(CacheApiStore, 5)` where the Cache API
+  exists, else no cache (the app still works, purely remote).
+- Bare-name `?qr=` payloads resolve under `DEFAULT_ASSET_PREFIX`
+  (the GeoTales raw-GitHub prefix the QR builder's docs use as the example).
+
+## Examples
+
+`/?qr=https%3A%2F%2Fexample.com%2Ftour.zip` opens the archive on load;
+pasting the same URL into the input does the same interactively.
+
+## Tests
+
+Driven end-to-end by `playwright-tests/*.spec.js` (streaming, fallback,
+cache-hit revisit, error paths). The logic beneath is unit-tested in
+`qr-launch-dispatch.test.ts`, `tour-session.test.ts`, `stats-view.test.ts`.

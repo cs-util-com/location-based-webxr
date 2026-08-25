@@ -250,7 +250,7 @@ function srcImportsFramework(appDir) {
  * overlay.** It is kept tiny and explicit for that reason — the guard's whole
  * value is that a real AR app cannot be added without noticing.
  */
-const NON_AR_APPS = new Set(['GpsPlusSlamJs_OsmDemo']);
+const NON_AR_APPS = new Set(['GpsPlusSlamJs_OsmDemo', 'GpsPlusSlamJs_TourViewer']);
 
 function discoverArAppHtmlPaths(root) {
   return readdirSync(root, { withFileTypes: true })

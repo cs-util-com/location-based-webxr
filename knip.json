@@ -46,9 +46,9 @@
         "src/test-utils/**/*.ts",
         "src/state/replay-session.ts",
         "src/state/replay-occupancy-subscriber.ts",
-      "src/utils/escape-html.ts",
-      "src/utils/format-distance.ts",
-      "src/utils/toast-core.ts",
+        "src/utils/escape-html.ts",
+        "src/utils/format-distance.ts",
+        "src/utils/toast-core.ts",
         "config/eslint.config.mjs"
       ],
       "project": [
@@ -186,6 +186,24 @@
       ]
     },
     "GpsPlusSlamJs_WayfindingHudDemo": {
+      "entry": [
+        "config/stylelint.config.mjs",
+        "playwright-tests/**/*.{js,ts}",
+        "config/eslint.config.mjs"
+      ],
+      "project": [
+        "src/**/*.ts"
+      ],
+      "ignoreDependencies": [
+        "@carlosjeurissen/stylelint-csstree-validator",
+        "dependency-cruiser",
+        "dpdm",
+        "jscpd",
+        "postcss-html",
+        "stylelint-config-standard"
+      ]
+    },
+    "GpsPlusSlamJs_TourViewer": {
       "entry": [
         "config/stylelint.config.mjs",
         "playwright-tests/**/*.{js,ts}",

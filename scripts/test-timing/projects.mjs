@@ -234,6 +234,7 @@ export const PROJECTS = [
       packageGateStage('test:landing', 'gps-plus-slam-landing'),
       packageGateStage('test:physics', 'gps-plus-slam-physics-demo'),
       packageGateStage('test:wayfinding', 'gps-plus-slam-wayfinding-hud-demo'),
+      packageGateStage('test:tour', 'gps-plus-slam-tour-viewer'),
     ],
   },
   {
@@ -393,6 +394,7 @@ export const PROJECTS = [
     ],
   },
   demoAppProject('GpsPlusSlamJs_AnchorStarter'),
+  demoAppProject('GpsPlusSlamJs_TourViewer'),
   {
     name: 'GpsPlusSlamJs_MinimalExample',
     dir: 'GpsPlusSlamJs_MinimalExample',

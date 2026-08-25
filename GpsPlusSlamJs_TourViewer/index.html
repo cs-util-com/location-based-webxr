@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tour Viewer</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: system-ui, sans-serif;
+      }
+      body {
+        margin: 0 auto;
+        max-width: 60rem;
+        padding: 1rem;
+      }
+      header p {
+        color: #8889;
+        margin-top: 0.25rem;
+      }
+      form {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+      }
+      input#link {
+        flex: 1 1 20rem;
+        padding: 0.5rem;
+      }
+      button {
+        padding: 0.5rem 1rem;
+      }
+      #stats {
+        margin: 1rem 0;
+        padding: 0.75rem;
+        border: 1px solid #8886;
+        border-radius: 0.5rem;
+        font-variant-numeric: tabular-nums;
+      }
+      #stats[hidden] {
+        display: none;
+      }
+      #error {
+        color: #c0392b;
+        margin: 1rem 0;
+        white-space: pre-wrap;
+      }
+      #gallery {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+        gap: 0.5rem;
+        list-style: none;
+        padding: 0;
+      }
+      #gallery li {
+        border: 1px solid #8884;
+        border-radius: 0.5rem;
+        overflow: hidden;
+        min-height: 6rem;
+        display: grid;
+        align-content: end;
+      }
+      #gallery img {
+        width: 100%;
+        aspect-ratio: 4 / 3;
+        object-fit: cover;
+        display: block;
+      }
+      #gallery figcaption {
+        font-size: 0.7rem;
+        padding: 0.25rem 0.4rem;
+        overflow-wrap: anywhere;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Tour Viewer</h1>
+      <p>
+        Paste a link to a hosted tour/recording zip (Dropbox, GitHub, Google
+        Drive, OneDrive share links work) — entries stream in via HTTP range
+        requests instead of downloading the whole archive first.
+      </p>
+    </header>
+    <main>
+      <form id="open-form">
+        <input
+          id="link"
+          name="link"
+          type="text"
+          placeholder="https://… link to a .zip"
+          autocomplete="off"
+          data-testid="link-input"
+        />
+        <button type="submit" id="open" data-testid="open-button">Open</button>
+        <button type="button" id="clear-cache" data-testid="clear-cache">
+          Clear cache
+        </button>
+      </form>
+      <div id="stats" hidden data-testid="stats">
+        <div id="stats-headline"></div>
+        <div id="stats-detail"></div>
+      </div>
+      <div id="error" role="alert" data-testid="error"></div>
+      <ul id="gallery" data-testid="gallery"></ul>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

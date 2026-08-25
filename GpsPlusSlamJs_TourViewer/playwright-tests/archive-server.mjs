@@ -1,0 +1,128 @@
+// @ts-check
+/**
+ * Local archive server for the e2e suite: builds one test zip IN MEMORY at
+ * startup (no committed fixture — the repo caps tracked files at 2 MiB and a
+ * generated archive can never rot out of sync with the specs) and serves it
+ * on two routes:
+ *
+ * - `/ranges-ok/tour.zip`  — honors `Range` with 206 slices (plus HEAD with
+ *   Content-Length/ETag, and a 200 full body for range-less GETs, which is
+ *   what the background warm-download issues).
+ * - `/no-ranges/tour.zip`  — IGNORES `Range` and streams the whole body with
+ *   200, the "host without range support" the fallback path exists for.
+ *
+ * CORS: the app origin (the vite port) differs from this server's,
+ * and `Range` is not a CORS-safelisted request header, so the preflight
+ * OPTIONS must allow it and `Content-Range`/`ETag` must be exposed.
+ */
+
+import { createServer } from "node:http";
+import {
+  TextReader,
+  Uint8ArrayReader,
+  Uint8ArrayWriter,
+  ZipWriter,
+} from "@zip.js/zip.js";
+
+const port = Number(process.argv[2] ?? "5197");
+
+/** 1×1 red PNG — a real decodable image, 67 bytes. */
+const TINY_PNG = Uint8Array.from(
+  atob(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  ),
+  (c) => c.codePointAt(0),
+);
+
+async function buildZip() {
+  const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
+  await writer.add("session.json", new TextReader('{"kind":"e2e-tour"}'));
+  for (let i = 0; i < 8; i += 1) {
+    await writer.add(
+      `images/frame-${String(i)}.png`,
+      new Uint8ArrayReader(TINY_PNG.slice()),
+    );
+  }
+  // Padding entry so the archive is comfortably larger than what a
+  // metadata+images session needs — the partial-fetch assertion depends on
+  // the gap being wide.
+  await writer.add("padding.bin", new TextReader("p".repeat(200_000)));
+  return writer.close();
+}
+
+const zipBytes = await buildZip();
+const ETAG = '"e2e-tour-v1"';
+
+const CORS_HEADERS = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-headers": "range,if-none-match,if-modified-since",
+  "access-control-expose-headers": "content-range,content-length,etag",
+};
+
+/** The utility routes: preflight + health. True if handled. */
+function handleUtilityRoute(req, res, pathname) {
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, CORS_HEADERS).end();
+    return true;
+  }
+  if (pathname === "/health") {
+    res.writeHead(200, CORS_HEADERS).end("ok");
+    return true;
+  }
+  return false;
+}
+
+/** Serve the archive: HEAD metadata, 206 slices (ranges-ok), or a 200 body. */
+function handleArchive(req, res, mode) {
+  const baseHeaders = {
+    ...CORS_HEADERS,
+    etag: ETAG,
+    "last-modified": "Mon, 24 Aug 2026 12:00:00 GMT",
+  };
+  if (req.method === "HEAD") {
+    res
+      .writeHead(200, {
+        ...baseHeaders,
+        "content-length": String(zipBytes.length),
+      })
+      .end();
+    return;
+  }
+  const range = req.headers.range;
+  const rangeMatch =
+    mode === "ranges-ok" && typeof range === "string"
+      ? /^bytes=(\d+)-(\d+)$/.exec(range)
+      : null;
+  if (rangeMatch !== null) {
+    const start = Number(rangeMatch[1]);
+    const end = Math.min(Number(rangeMatch[2]), zipBytes.length - 1);
+    const slice = zipBytes.slice(start, end + 1);
+    res
+      .writeHead(206, {
+        ...baseHeaders,
+        "content-range": `bytes ${String(start)}-${String(end)}/${String(zipBytes.length)}`,
+        "content-length": String(slice.length),
+      })
+      .end(Buffer.from(slice));
+    return;
+  }
+  res
+    .writeHead(200, {
+      ...baseHeaders,
+      "content-length": String(zipBytes.length),
+    })
+    .end(Buffer.from(zipBytes));
+}
+
+createServer((req, res) => {
+  const url = new URL(req.url ?? "/", `http://127.0.0.1:${String(port)}`);
+  if (handleUtilityRoute(req, res, url.pathname)) return;
+  const match = /^\/(ranges-ok|no-ranges)\/tour\.zip$/.exec(url.pathname);
+  if (match === null) {
+    res.writeHead(404, CORS_HEADERS).end();
+    return;
+  }
+  handleArchive(req, res, match[1]);
+}).listen(port, () => {
+  console.log(`archive-server on http://127.0.0.1:${String(port)}`);
+});
