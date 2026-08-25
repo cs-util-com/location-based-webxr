@@ -36,6 +36,16 @@ blow-up). `LocalCacheStore` abstracts _where_ the complete copy lives.
   trusting it, and calling `delete` on failure) — this module only stores and
   retrieves bytes.
 
+## Why this does not merge with the OSM tile cache
+
+`GpsPlusSlamJs_Osm`'s `caching-tile-fetch` also caches bytes behind a fetch
+seam, but it is a whole-response wrapper over small tiles in a string/base64
+blob store — request-in/response-out, no random access. This module serves
+**ranges** out of one large Blob and must slice lazily without materializing
+the archive. Same instinct, different access pattern; merging them would give
+the tile path Blob machinery it does not want and this path a base64 detour
+it cannot afford.
+
 ## Examples
 
 ```ts

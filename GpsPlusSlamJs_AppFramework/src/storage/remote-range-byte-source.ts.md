@@ -21,6 +21,15 @@ that issues one HTTP Range fetch per read).
   - `constructor(url: string, size: number, fetchImpl: FetchImpl)`
   - `read(offset, length): Promise<Uint8Array>`
 
+## Relation to `FetchLike` (qr-level.ts)
+
+`ar/qr/qr-level.ts` declares its own injection seam `FetchLike`, a narrower
+JSON-only subset. `FetchImpl` here is the full `typeof fetch` because range
+transport needs headers, status semantics and `arrayBuffer`/`blob`. A real
+`fetch` satisfies both; the types stay separate because narrowing `FetchImpl`
+would lose what this module uses, and widening `FetchLike` would force
+qr-level's tests to fake more than they consume.
+
 ## Invariants & assumptions
 
 - Every fetch (HEAD, probe GET, range read) carries an `AbortSignal.timeout`

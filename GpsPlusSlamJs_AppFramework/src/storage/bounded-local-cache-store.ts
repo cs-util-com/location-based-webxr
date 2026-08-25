@@ -1,6 +1,6 @@
 /**
  * An LRU bound around any {@link LocalCacheStore}, so persist()-pinned
- * archives (3–68 MB each) cannot grow without limit. Recency is ORDER-based —
+ * archives (tens of megabytes each) cannot grow without limit. Recency is ORDER-based —
  * a small JSON index entry updated on every get/put — deliberately not
  * timestamp-based: `Date.now()` adds nothing an order cannot express, and the
  * index doubles as the enumeration a `clear()` needs (the base interface has

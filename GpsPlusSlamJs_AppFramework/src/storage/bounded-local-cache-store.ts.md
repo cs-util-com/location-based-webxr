@@ -3,7 +3,7 @@
 ## Purpose
 
 An LRU bound around any `LocalCacheStore`, so persist()-pinned archives
-(3–68 MB each) cannot grow without limit. Also carries the enumeration a
+(tens of megabytes each) cannot grow without limit. Also carries the enumeration a
 "clear cache" action needs, which the base interface deliberately lacks.
 
 ## Public API

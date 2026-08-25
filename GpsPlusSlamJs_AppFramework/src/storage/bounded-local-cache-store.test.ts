@@ -4,9 +4,9 @@ import { BoundedLocalCacheStore } from './bounded-local-cache-store.js';
 import { InMemoryLocalCacheStore } from './local-cache-byte-source.js';
 
 /**
- * Why these tests matter: cached archives are persist()-pinned and 3–68 MB
- * each, so an unbounded store grows until the browser (or the user) gives
- * up. The bound must evict the LEAST recently used entry — including
+ * Why these tests matter: cached archives are persist()-pinned and tens of
+ * megabytes each, so an unbounded store grows until the browser (or the
+ * user) gives up. The bound must evict the LEAST recently used entry — including
  * treating a get as use, or a viewer's favorite archive would be evicted by
  * two one-off opens — and `clear()` must actually remove the archives, not
  * just the index.

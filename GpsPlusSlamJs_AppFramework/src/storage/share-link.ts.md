@@ -44,6 +44,15 @@ normalizeShareUrl('https://drive.google.com/file/d/ID/view', {
 // → "https://www.googleapis.com/drive/v3/files/ID?alt=media&key=KEY"
 ```
 
+## Related host knowledge elsewhere
+
+`utils/qr-payload/codec-dictionary.ts` and `utils/qr-payload/qr-launch-url.ts`
+carry some of the same provider hosts (raw.githubusercontent, drive.google.com)
+in the **inverse** direction — compressing an already-direct asset URL into a
+short QR payload, where this module expands a pasted share page into a direct
+URL. Different transforms over overlapping host tables; when a provider
+changes its URL scheme, check both places.
+
 ## Tests
 
 `share-link.test.ts` — per-provider rewrites (Dropbox scl/legacy/folder,

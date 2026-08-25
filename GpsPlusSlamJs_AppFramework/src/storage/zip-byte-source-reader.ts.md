@@ -11,6 +11,17 @@ fetch or a local cache, and may switch between them mid-session.
 
 - `class ByteSourceReader extends Reader<ByteSource>` — `constructor(source: ByteSource)`.
 
+## Why not zip.js's built-in `HttpRangeReader`
+
+zip.js ships an HTTP range reader of its own, and the framework's peer floor
+(`>=2.7.0`) includes it. It is deliberately not used: it binds the reader to
+one URL for the archive's lifetime, so it cannot express the remote→local
+mid-session switch (`SwitchableByteSource`), the probe/fallback policy
+(`range-probe.ts`), share-link normalization, or the cache/warm story the
+orchestrator (`open-remote-archive.ts`) runs. The `ByteSource` seam is the
+part that carries all of that; this adapter is the thin bridge back into
+zip.js.
+
 ## Invariants & assumptions
 
 - `readUint8Array(index, length)` clamps `length` to the remaining bytes —

@@ -51,3 +51,4 @@ debug/observe or trigger-only level. `qr` itself is still required as an object.
 
 - `qr.geo` → [qr-gps-vote.ts.md](qr-gps-vote.ts.md) (`QrGeoPose`).
 - Consumed by [qr-tracking-controller.ts.md](qr-tracking-controller.ts.md).
+- `FetchLike` is deliberately narrower than `storage/remote-range-byte-source.ts`'s `FetchImpl` (the full `typeof fetch`) - see that sidecar for why the two seams stay separate.
