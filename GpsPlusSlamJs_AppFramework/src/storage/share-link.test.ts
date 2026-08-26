@@ -91,6 +91,76 @@ describe('normalizeShareUrl — Google Drive', () => {
   });
 });
 
+describe('normalizeShareUrl — Google Drive via the CORS proxy', () => {
+  // Why these tests matter (drive-proxy plan Rev 2, 2026-08-26): the
+  // usercontent form 403s every real browser fetch (Sec-Fetch-Site
+  // sniffing, verified 2026-08-25), so the proxy is the first Drive path
+  // that actually works keyless in a browser. The precedence and the
+  // URL-building rules here each answer a named review finding.
+  const proxy = 'https://gps.csutil.com/api/drive-proxy';
+
+  it('rewrites a share link to the proxy when corsProxyBaseUrl is set', () => {
+    expect(
+      normalizeShareUrl('https://drive.google.com/file/d/ID42/view', {
+        corsProxyBaseUrl: proxy,
+      })
+    ).toBe(`${proxy}?id=ID42`);
+  });
+
+  it('prefers the proxy over an API key when both are configured', () => {
+    // Review finding 7: an explicitly configured proxy is the deliberate,
+    // observable choice — a later-added key must not silently switch Drive
+    // onto the never-live-verified drive/v3 endpoint.
+    expect(
+      normalizeShareUrl('https://drive.google.com/file/d/ID42/view', {
+        corsProxyBaseUrl: proxy,
+        googleDriveApiKey: 'KEY',
+      })
+    ).toBe(`${proxy}?id=ID42`);
+  });
+
+  it('keeps a hostile id one opaque value in the proxy URL too', () => {
+    const out = normalizeShareUrl(
+      'https://drive.google.com/uc?id=ID42%26export%3Dview',
+      { corsProxyBaseUrl: proxy }
+    );
+    expect(new URL(out).searchParams.get('id')).toBe('ID42&export=view');
+  });
+
+  it('survives a proxy base that already carries a query', () => {
+    // Review finding 12: string concatenation would produce "…?v=1?id=…".
+    expect(
+      normalizeShareUrl('https://drive.google.com/file/d/ID42/view', {
+        corsProxyBaseUrl: 'https://proxy.example/p?v=1',
+      })
+    ).toBe('https://proxy.example/p?v=1&id=ID42');
+  });
+
+  it('rewrites a directly-pasted usercontent link to the proxy', () => {
+    // Review finding 8: this is the exact URL this app itself produced for
+    // keyless Drive — and the one proven browser-blocked. Bookmarked or
+    // re-shared copies must benefit from the proxy too.
+    expect(
+      normalizeShareUrl(
+        'https://drive.usercontent.google.com/download?id=ID42&export=download&confirm=t',
+        { corsProxyBaseUrl: proxy }
+      )
+    ).toBe(`${proxy}?id=ID42`);
+  });
+
+  it('passes a usercontent link through untouched when no proxy is set', () => {
+    const raw =
+      'https://drive.usercontent.google.com/download?id=ID42&export=download&confirm=t';
+    expect(normalizeShareUrl(raw)).toBe(raw);
+  });
+
+  it('passes an id-less usercontent URL through untouched', () => {
+    const noId =
+      'https://drive.usercontent.google.com/download?export=download';
+    expect(normalizeShareUrl(noId, { corsProxyBaseUrl: proxy })).toBe(noId);
+  });
+});
+
 describe('normalizeShareUrl — OneDrive', () => {
   it('maps a new-style (SPO-migrated) link to the personal-content download form', () => {
     expect(

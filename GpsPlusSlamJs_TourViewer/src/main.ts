@@ -107,6 +107,13 @@ const enterArButton = element<HTMLButtonElement>("enter-ar");
 // `?nocache=1` disables the local copy entirely — the pure-streaming mode the
 // e2e suite uses to prove range reads alone can render the gallery, and a
 // handy demo mode for showing the raw transport.
+/** The site worker's Drive CORS proxy (drive-proxy plan, 2026-08-26):
+ *  keyless Drive links 403 real browser fetches, so they rewrite to this
+ *  route. Absolute on purpose — production is same-origin with it, and dev
+ *  servers are on the worker's localhost CORS allowlist, so one value
+ *  serves both. */
+const DRIVE_PROXY_BASE_URL = "https://gps.csutil.com/api/drive-proxy";
+
 const cacheDisabled =
   new URLSearchParams(location.search).get("nocache") === "1";
 const cacheStore: LocalCacheStore | undefined =
@@ -122,7 +129,22 @@ let objectUrls: string[] = [];
  *  must close itself instead of clobbering the newer session. */
 let openGeneration = 0;
 
-function describeOpenError(err: unknown): string {
+/** True for the URLs whose open failures are Drive's to explain: the share
+ *  page, the raw download host, and the site worker's proxy route. */
+function isDriveUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url, location.href);
+    return (
+      parsed.hostname === "drive.google.com" ||
+      parsed.hostname === "drive.usercontent.google.com" ||
+      parsed.pathname.endsWith("/api/drive-proxy")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function describeOpenError(err: unknown, url?: string): string {
   if (err instanceof OpenRemoteArchiveError) {
     switch (err.rejectCause) {
       case "missing":
@@ -132,9 +154,16 @@ function describeOpenError(err: unknown): string {
       case "cors":
         return (
           "The host refused the browser access (network down, or the host blocks cross-site reads).\n" +
-          "Note: key-less Google Drive links block browser fetches — Drive needs an API key or a CORS proxy."
+          "Note: Google Drive links go through the site's proxy automatically — for other hosts the file must allow cross-site reads."
         );
       default:
+        // A Drive link refused with a non-404 (e.g. the proxy's 400 for a
+        // malformed id, or Drive refusing a non-public file) would
+        // otherwise read as the generic archive error and hide the actual
+        // cause (drive-proxy plan Rev 2, review finding 12).
+        if (url !== undefined && isDriveUrl(url)) {
+          return "Google Drive refused that file — check that the file is shared publicly (“Anyone with the link”) and the link carries a valid file id.";
+        }
         return "That link cannot be opened as an archive.";
     }
   }
@@ -223,6 +252,7 @@ async function openUrl(url: string): Promise<void> {
     await teardownSession();
     const opened = await openTourSession(url, {
       ...(cacheStore !== undefined ? { cacheStore } : {}),
+      corsProxyBaseUrl: DRIVE_PROXY_BASE_URL,
       onStats: () => {
         renderStats();
       },
@@ -258,7 +288,7 @@ async function openUrl(url: string): Promise<void> {
     });
   } catch (err) {
     if (generation === openGeneration) {
-      errorBox.textContent = describeOpenError(err);
+      errorBox.textContent = describeOpenError(err, url);
     }
   } finally {
     // Guarded like every other effect in this function: a superseded open's

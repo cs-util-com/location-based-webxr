@@ -13,7 +13,11 @@ archive-format-agnostic; zip.js enters only where a caller wraps
 ## Public API
 
 - `openRemoteArchive(rawUrl, options?): Promise<OpenedArchive>`
-- `interface OpenRemoteArchiveOptions { fetchImpl?; cacheStore?; googleDriveApiKey?; onRead?; warm?; skipCache? }`
+- `interface OpenRemoteArchiveOptions { fetchImpl?; cacheStore?; googleDriveApiKey?; corsProxyBaseUrl?; onRead?; warm?; skipCache? }`
+  — `corsProxyBaseUrl` routes Drive links through the site worker's CORS
+  proxy (precedence over the API key; see `share-link.ts.md`). Note the
+  cache keys on the NORMALIZED url, so changing which Drive form is active
+  orphans previously cached copies (one re-download, then LRU eviction).
 - `interface OpenedArchive { source; size; url; origin; warmed; dispose(); evict() }`
 - `class OpenRemoteArchiveError extends Error { rejectCause: RangeProbeRejectCause }`
 - `type ArchiveReadOrigin = 'network' | 'cache'`,

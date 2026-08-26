@@ -34,9 +34,18 @@ import { encodeBase64Url } from '../utils/qr-payload/base64url';
 import { utf8Encode } from '../utils/qr-payload/utf8';
 
 export interface NormalizeShareUrlOptions {
-  /** Google Drive API key: unlocks the `drive/v3 … alt=media` URL, the only
-   *  Drive form that serves Range + CORS to a browser (public files only). */
+  /** Google Drive API key: unlocks the `drive/v3 … alt=media` URL — Range +
+   *  CORS per Google's API contract (public files only). Only used when no
+   *  `corsProxyBaseUrl` is configured: an explicitly configured proxy is
+   *  the deliberate, observable Drive path (drive-proxy plan Rev 2,
+   *  review finding 7). */
   googleDriveApiKey?: string | undefined;
+  /** Base URL of the site worker's Drive proxy (`/api/drive-proxy`): the
+   *  keyless Drive path that actually works in browsers — the usercontent
+   *  endpoint 403s any request carrying `Sec-Fetch-Site: cross-site`,
+   *  which every real browser fetch does. When set, Drive share links AND
+   *  directly-pasted usercontent links rewrite to `<base>?id=<fileId>`. */
+  corsProxyBaseUrl?: string | undefined;
 }
 
 /** Rewrite a known share-page link to its raw download form; else return as-is. */
@@ -66,7 +75,13 @@ function resolveKnownProvider(
     case 'github.com':
       return normalizeGithub(url);
     case 'drive.google.com':
-      return normalizeGoogleDrive(url, opts.googleDriveApiKey);
+      return normalizeGoogleDrive(url, opts);
+    case 'drive.usercontent.google.com':
+      // The raw download form this layer itself used to emit for keyless
+      // Drive — browser-blocked, so a pasted/bookmarked copy is rewritten
+      // to the proxy when one is configured; otherwise it passes through
+      // (non-browser consumers can still use it directly).
+      return normalizeGoogleDrive(url, opts);
     case '1drv.ms':
     case 'onedrive.live.com':
       return normalizeOneDrive(url, rawUrl);
@@ -92,10 +107,25 @@ function normalizeGithub(url: URL): string | null {
   return `https://raw.githubusercontent.com/${m[1]}/${m[2]}/${m[3]}`;
 }
 
-function normalizeGoogleDrive(url: URL, apiKey?: string): string | null {
+function normalizeGoogleDrive(
+  url: URL,
+  opts: NormalizeShareUrlOptions
+): string | null {
   const id =
     /^\/file\/d\/([^/]+)/.exec(url.pathname)?.[1] ?? url.searchParams.get('id');
   if (id === null || id === undefined || id === '') return null;
+  // Precedence: proxy → API key → raw usercontent (drive-proxy plan Rev 2,
+  // review finding 7 — a later-added key must not silently switch Drive off
+  // the configured, observable proxy path).
+  const { corsProxyBaseUrl, googleDriveApiKey: apiKey } = opts;
+  if (corsProxyBaseUrl !== undefined && corsProxyBaseUrl !== '') {
+    // Built via URL/searchParams, never concatenation: a base already
+    // carrying a query (or a trailing `?`) must still yield one valid URL,
+    // and searchParams encodes the id so it stays one opaque value.
+    const proxied = new URL(corsProxyBaseUrl);
+    proxied.searchParams.set('id', id);
+    return proxied.toString();
+  }
   // `searchParams.get` returns the DECODED value — re-encode so an id (or
   // key) containing `&`/`=` stays one opaque value instead of smuggling
   // extra query parameters into the rewritten URL (PR #357 review).

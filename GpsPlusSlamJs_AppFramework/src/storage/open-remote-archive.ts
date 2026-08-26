@@ -56,6 +56,9 @@ export interface OpenRemoteArchiveOptions {
   cacheStore?: LocalCacheStore;
   /** Unlocks the Range+CORS-capable Google Drive URL form (see share-link). */
   googleDriveApiKey?: string;
+  /** Base URL of the site worker's Drive CORS proxy; when set, Drive links
+   *  rewrite to it (precedence over the API key — see share-link). */
+  corsProxyBaseUrl?: string;
   /** Observer for every read served through the returned source. */
   onRead?: (event: ArchiveReadEvent) => void;
   /** Set false to keep a ranged session remote (no background download). */
@@ -111,6 +114,7 @@ export async function openRemoteArchive(
     options.fetchImpl ?? ((input, init) => fetch(input, init));
   const url = normalizeShareUrl(rawUrl, {
     googleDriveApiKey: options.googleDriveApiKey,
+    corsProxyBaseUrl: options.corsProxyBaseUrl,
   });
   const store = options.cacheStore;
 

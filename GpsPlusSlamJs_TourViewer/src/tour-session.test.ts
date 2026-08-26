@@ -263,3 +263,38 @@ describe("loadRecordingActions / loadSessionMeta", () => {
     await expect(session.loadSessionMeta()).resolves.toBeNull();
   });
 });
+
+describe("corsProxyBaseUrl plumbing", () => {
+  // Why this test matters (drive-proxy plan Rev 2, M-B): the option rides
+  // three layers (viewer -> openRemoteArchive -> normalizeShareUrl), and a
+  // dropped spread anywhere leaves Drive tours silently on the
+  // browser-blocked usercontent URL. This proves a Drive share link puts
+  // the PROXY URL on the wire, end to end.
+  it("routes a Drive share link through the configured proxy", async () => {
+    const bytes = await buildZip();
+    const urls: string[] = [];
+    const inner = rangeServer(bytes);
+    const fetchImpl: FetchImpl = (input, init) => {
+      urls.push(
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url,
+      );
+      return inner(input, init);
+    };
+    const session = await openTourSession(
+      "https://drive.google.com/file/d/ID42/view",
+      {
+        fetchImpl,
+        corsProxyBaseUrl: "https://proxy.example/api/drive-proxy",
+      },
+    );
+    expect(urls.length).toBeGreaterThan(0);
+    for (const url of urls) {
+      expect(url).toBe("https://proxy.example/api/drive-proxy?id=ID42");
+    }
+    await session.close();
+  });
+});

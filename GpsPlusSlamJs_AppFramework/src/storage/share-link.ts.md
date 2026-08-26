@@ -10,8 +10,16 @@ user might paste.
 
 ## Public API
 
-- `interface NormalizeShareUrlOptions { googleDriveApiKey?: string }`
+- `interface NormalizeShareUrlOptions { googleDriveApiKey?: string; corsProxyBaseUrl?: string }`
 - `normalizeShareUrl(rawUrl: string, opts?: NormalizeShareUrlOptions): string`
+- Drive precedence: **proxy → API key → raw usercontent** (drive-proxy plan
+  Rev 2, review finding 7 — an explicitly configured proxy is the
+  deliberate, observable path; a later-added key must not silently switch
+  Drive onto the never-live-verified `drive/v3` endpoint). With
+  `corsProxyBaseUrl` set, `drive.google.com` share links AND
+  directly-pasted `drive.usercontent.google.com` links rewrite to
+  `<base>?id=<fileId>` (built via `URL`/`searchParams`, so a base carrying
+  a query stays valid and the id stays one opaque value).
 
 ## Invariants & assumptions
 
@@ -28,9 +36,12 @@ user might paste.
 - Provider quirks (interstitials, CORS behavior, migrated-account URL forms)
   are current as probed against each provider; a provider changing its
   download-URL scheme would need this file updated, not a caller.
-- Key-less Google Drive and Dropbox still commonly need a CORS proxy on the
-  caller's side even after normalization — this module only fixes the URL
-  _shape_, not cross-origin headers.
+- Key-less Google Drive is browser-blocked outright (403 on
+  `Sec-Fetch-Site: cross-site`, verified 2026-08-25) — which is what
+  `corsProxyBaseUrl` exists for: the site worker's `/api/drive-proxy`
+  (`GpsPlusSlamJs_SiteWorker`) fetches server-side, where the block does
+  not apply. This module still only fixes the URL _shape_; the proxy is
+  where the cross-origin problem is actually solved.
 
 ## Examples
 

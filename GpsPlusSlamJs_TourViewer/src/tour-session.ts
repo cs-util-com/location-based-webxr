@@ -57,6 +57,9 @@ export interface OpenTourOptions {
   fetchImpl?: FetchImpl;
   cacheStore?: LocalCacheStore;
   googleDriveApiKey?: string;
+  /** The site worker's Drive CORS proxy base URL (precedence over the API
+   *  key — see the framework's share-link). */
+  corsProxyBaseUrl?: string;
   /** Fired after every read with the updated totals. */
   onStats?: (stats: Readonly<StreamStats>) => void;
 }
@@ -168,6 +171,9 @@ function openArchive(
       : {}),
     ...(options.googleDriveApiKey !== undefined
       ? { googleDriveApiKey: options.googleDriveApiKey }
+      : {}),
+    ...(options.corsProxyBaseUrl !== undefined
+      ? { corsProxyBaseUrl: options.corsProxyBaseUrl }
       : {}),
     onRead,
     skipCache,

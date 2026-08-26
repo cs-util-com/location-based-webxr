@@ -22,7 +22,7 @@ loading with MIME types, and the poisoned-cache recovery loop.
 ## Public API
 
 - `openTourSession(url, options?): Promise<TourSession>` with
-  `OpenTourOptions { fetchImpl?; cacheStore?; googleDriveApiKey?; onStats? }`
+  `OpenTourOptions { fetchImpl?; cacheStore?; googleDriveApiKey?; corsProxyBaseUrl?; onStats? }`
 - `TourSession { entries; archive; stats(); loadEntry(filename); close() }`
 - `TourEntry { filename; size; isImage }` (reached via `TourSession.entries`, not separately exported),
   `StreamStats { networkRequests; networkBytes; cacheReads; cacheBytes; origin }`
