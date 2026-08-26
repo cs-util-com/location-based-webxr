@@ -16,6 +16,13 @@ into the `QrGeoPose` a level file carries.
   non-finite inputs or a non-unit rotation.
 - `deriveVerticalHeading(rotation): number | undefined` — the compat-bearing
   derivation, exported for `qr-level.ts`'s both-fields consistency check.
+- `renormalizeUnitQuaternion(q): Quaternion | undefined` — the ONE
+  writer/reader renormalization contract (also used by `qr-level.ts`'s
+  rotation parsing): accepts norm drift ≤ 1e-3, `undefined` beyond it,
+  canonicalizes -0 → +0, and is IDEMPOTENT — a norm within 1e-12 of 1
+  passes through bit-exact, so repeated parse/serialize cycles cannot
+  drift the components by a last-bit step per pass (CI property seed,
+  r574). Not on the `ar/qr` barrel — a cross-file internal.
 - `interface MintQrGeoPoseInput { worldNuePosition; worldNueRotation; zero }`
 
 ## Invariants & assumptions

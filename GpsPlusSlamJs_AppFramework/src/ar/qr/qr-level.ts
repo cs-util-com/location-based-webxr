@@ -15,7 +15,10 @@
  */
 
 import { bearingDeltaDeg, type Quaternion } from 'gps-plus-slam-js';
-import { deriveVerticalHeading } from './qr-geo-pose-minting.js';
+import {
+  deriveVerticalHeading,
+  renormalizeUnitQuaternion,
+} from './qr-geo-pose-minting.js';
 import type { QrGeoOrientation, QrGeoPose } from './qr-gps-vote.js';
 
 /**
@@ -205,15 +208,17 @@ function parseRotation(value: unknown): Quaternion | undefined {
       '"qr.geo.rotation" must be an array of 4 finite numbers when present'
     );
   }
-  const norm = Math.hypot(x, y, z, w);
-  if (Math.abs(norm - 1) > 1e-3) {
+  // The tolerance, the idempotent renormalization (the exact-round-trip
+  // guarantee stands on it — CI property seed on r574) and the -0
+  // canonicalization all live in the shared writer/reader contract:
+  // `renormalizeUnitQuaternion` in qr-geo-pose-minting.ts.
+  const renormalized = renormalizeUnitQuaternion([x, y, z, w]);
+  if (renormalized === undefined) {
     throw new QrLevelValidationError(
       '"qr.geo.rotation" must be a unit quaternion'
     );
   }
-  // +0 canonicalization: JSON cannot represent -0, so a parsed level must
-  // never carry one (the round-trip property distinguishes them).
-  return [x / norm + 0, y / norm + 0, z / norm + 0, w / norm + 0];
+  return renormalized;
 }
 
 /**

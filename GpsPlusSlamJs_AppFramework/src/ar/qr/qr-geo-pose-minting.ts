@@ -91,14 +91,39 @@ function normalizeUnitQuaternion(q: Quaternion): Quaternion {
   if (![x, y, z, w].every(Number.isFinite)) {
     throw new RangeError('mintQrGeoPose: rotation must be finite');
   }
-  const norm = Math.hypot(x, y, z, w);
-  if (Math.abs(norm - 1) > 1e-3) {
+  const renormalized = renormalizeUnitQuaternion(q);
+  if (renormalized === undefined) {
     throw new RangeError(
-      `mintQrGeoPose: rotation must be a unit quaternion (|q| = ${norm})`
+      `mintQrGeoPose: rotation must be a unit quaternion (|q| = ${Math.hypot(x, y, z, w)})`
     );
   }
-  // +0 canonicalization mirrors parseRotation: JSON cannot carry -0.
-  return [x / norm + 0, y / norm + 0, z / norm + 0, w / norm + 0];
+  return renormalized;
+}
+
+/**
+ * The ONE renormalization contract for authored/minted unit quaternions —
+ * shared by `mintQrGeoPose` (writer) and `parseQrLevel`'s rotation parsing
+ * (reader), so the two halves of the level-file round-trip can never
+ * disagree (DEC-H3: shared behaviour is unified). Accepts a norm within
+ * 1e-3 of 1 (JSON round-trip loss), returns `undefined` for anything
+ * further off (callers throw their own error type).
+ *
+ * Renormalization is IDEMPOTENT: a norm already within 1e-12 of 1 passes
+ * the components through bit-exact. Dividing by a 1-within-rounding norm
+ * shifts each component a last-bit step per application, so a
+ * parse → serialize(re-validates) → parse cycle drifted 1 ULP and broke
+ * the exact round-trip property (CI seed on r574). One real division lands
+ * the norm within a few ULP of 1 — inside the threshold — making a second
+ * pass the identity. Also canonicalizes -0 → +0 (JSON cannot carry -0).
+ */
+export function renormalizeUnitQuaternion(
+  q: Quaternion
+): Quaternion | undefined {
+  const [x, y, z, w] = q;
+  const norm = Math.hypot(x, y, z, w);
+  if (Math.abs(norm - 1) > 1e-3) return undefined;
+  const scale = Math.abs(norm - 1) > 1e-12 ? norm : 1;
+  return [x / scale + 0, y / scale + 0, z / scale + 0, w / scale + 0];
 }
 
 /**

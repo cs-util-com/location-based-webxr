@@ -43,6 +43,10 @@ debug/observe or trigger-only level. `qr` itself is still required as an object.
 
 - `qr.geo.rotation` (optional): unit quaternion [x,y,z,w], NUE GPS-world
   frame; small norm drift (≤1e-3) renormalizes, worse rejects.
+  Renormalization is IDEMPOTENT: a norm already within 1e-12 of 1 passes
+  the values through bit-exact (dividing anyway shifts components by a
+  last-bit step per parse, which broke the exact serialize→parse
+  round-trip — CI property seed on r574).
   `headingDeg` is optional when rotation is present — a floor/ceiling
   code has no honest heading, and geo with NEITHER rejects loudly.
 - `serializeQrLevel(level)` — the writer half: re-validates through

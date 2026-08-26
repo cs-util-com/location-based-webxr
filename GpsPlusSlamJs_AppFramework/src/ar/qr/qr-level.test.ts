@@ -303,6 +303,24 @@ describe('serializeQrLevel', () => {
     expect(reparsed).toEqual(level);
   });
 
+  // Why this test matters: CI's property run (seed -783670882, r574) caught
+  // parseRotation renormalizing on EVERY parse — and dividing by a norm that
+  // is already 1-within-rounding shifts components by one last-bit step, so
+  // parse → serialize(re-validates) → parse drifted the quaternion by 1 ULP
+  // and the round-trip property failed. Renormalization must be idempotent:
+  // a quaternion whose norm is already unit-within-tolerance passes through
+  // bit-exact. This pins the exact CI counterexample deterministically.
+  it('round-trips a near-unit rotation bit-exactly (renormalization is idempotent)', () => {
+    const rotation = [0, -0.0008920303016105935, 0, 0.9999996021408913];
+    const level = parseQrLevel({
+      version: 1,
+      qr: { geo: { lat: 0, lon: 0, alt: 0, rotation } },
+    });
+
+    const reparsed = parseQrLevel(JSON.parse(serializeQrLevel(level)));
+    expect(reparsed).toEqual(level);
+  });
+
   it('refuses to serialize an invalid level (fail loud, not a broken file)', () => {
     expect(() => serializeQrLevel({ version: Number.NaN, qr: {} })).toThrow(
       QrLevelValidationError
