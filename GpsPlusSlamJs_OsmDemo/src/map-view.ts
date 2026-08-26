@@ -330,7 +330,9 @@ export class MapView {
    */
   centreOn(position: { lat: number; lng: number }): void {
     this.setPosition(position);
-    this.map.setView([position.lat, position.lng], this.map.getZoom());
+    this.map.setView([position.lat, position.lng], this.map.getZoom(), {
+      animate: false,
+    });
   }
 
   /**
@@ -346,7 +348,19 @@ export class MapView {
    * rather than the viewport takeover F56 declined.
    */
   panTo(position: { lat: number; lng: number }): void {
-    this.map.setView([position.lat, position.lng], this.map.getZoom());
+    // `animate: false` ON BOTH PROGRAMMATIC PANS, and it is a bug fix, not a
+    // taste choice (settle-flake forensics, 2026-08-26 — the followup doc in
+    // the primary repo holds the captures). At the same zoom Leaflet runs
+    // setView as an ANIMATED pan (~250 ms) whose end transform is
+    // precomputed. When the container resizes inside that window — the
+    // status line reflowing as a search completes does exactly that — the
+    // ResizeObserver's `invalidateSize` compensation is a raw pane shift
+    // that the animation's end state then OVERWRITES, leaving the target
+    // exactly half the resize delta off centre, permanently (measured
+    // 21.17 px, 11 of 30 soak runs). An instant pan has no window to lose.
+    this.map.setView([position.lat, position.lng], this.map.getZoom(), {
+      animate: false,
+    });
   }
 
   /**
