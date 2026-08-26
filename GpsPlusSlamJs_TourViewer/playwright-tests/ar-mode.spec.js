@@ -275,6 +275,77 @@ test("author mode mints and exports a level that the parser round-trips", async 
   await expect(page.getByTestId("mint-export")).toBeDisabled();
 });
 
+test("a recording-carrying tour places photos at CAPTURE SPOTS, not the ring", async ({
+  page,
+}) => {
+  // Why this matters (geo-join plan Rev 2 §4 — the plan's own verification
+  // clause): the fake tour gains a REAL action stream (era-5 session.json,
+  // a zero, four consistent GPS↔odom pairs that solve a translation
+  // alignment, two captures after the zero), and the COMPOSED viewer loop
+  // must run the whole join — gates → chunked replay → decode → placement —
+  // and say so in the status line. The ring wording must NOT appear: a
+  // silent decline that still shows a ring is exactly the failure the
+  // taxonomy exists to make visible.
+  const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/recording-tour.zip";
+  await page.goto("/");
+  await page.getByTestId("link-input").fill(ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(2, {
+    timeout: 15000,
+  });
+
+  await enterAr(page);
+  await expect(page.getByTestId("enter-ar")).toHaveText("AR running");
+
+  await page.evaluate(() => {
+    const store = /** @type {any} */ (window).__tourViewerTest.alignmentStore;
+    store.dispatch({
+      type: "gpsData/setZeroPos",
+      payload: { lat: 47.5, lon: 8.7 },
+    });
+    const pairs = [
+      { odom: [0, 0, 0], lat: 47.5, lon: 8.7 },
+      { odom: [0, 0, -15], lat: 47.500135, lon: 8.7 },
+      { odom: [15, 0, 0], lat: 47.5, lon: 8.7002 },
+    ];
+    for (const [i, p] of pairs.entries()) {
+      store.dispatch({
+        type: "gpsData/recordGpsEvent",
+        payload: {
+          odomPosition: p.odom,
+          odomRotation: [0, 0, 0, 1],
+          rawGpsPoint: {
+            id: `seed-${String(i)}`,
+            latitude: p.lat,
+            longitude: p.lon,
+            altitude: 400,
+            latLongAccuracy: 5,
+            timestamp: 1756150000000 + i * 1000,
+          },
+        },
+      });
+    }
+  });
+
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.armQrDetection(
+      "https://gps.csutil.com/tour/?qr=x&c=1",
+    );
+  });
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return page.getByTestId("ar-status").textContent();
+      },
+      { timeout: 20000 },
+    )
+    .toMatch(/photos at capture spots \(4 fixes/);
+  await expect(page.getByTestId("ar-status")).not.toContainText("photo ring");
+});
+
 test("viewer mode relocalizes against the tour's level: budgeted votes, marker, image ring", async ({
   page,
 }) => {

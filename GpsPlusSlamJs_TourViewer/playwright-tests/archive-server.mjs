@@ -71,7 +71,93 @@ async function buildZip() {
   return writer.close();
 }
 
+/**
+ * A tour zip that IS a recording (geo-join e2e): era-5 session.json plus an
+ * action stream whose four consistent GPS↔odom pairs solve a clean
+ * translation alignment ([+2 m N] and the 400 m altitude datum), and two
+ * captures taken AFTER the zero — so the viewer's capture-time join
+ * accepts and places photos at capture spots instead of the ring.
+ * Payload frames match the recorder's writes exactly: odom positions are
+ * RAW WEBXR ([E, y, −N] for a NUE (N, E)); the reducer converts on replay.
+ */
+async function buildRecordingZip() {
+  const degPerMLat = 8.9832e-6;
+  const degPerMLon = 1.32966e-5; // at lat 47.5
+  const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
+  await writer.add(
+    "session.json",
+    new TextReader(JSON.stringify({ version: 1, odomCoordVersion: 5 })),
+  );
+  const actions = [
+    { type: "gpsData/setZeroPos", payload: { lat: 47.5, lon: 8.7 } },
+  ];
+  const pairsNue = [
+    [0, 0],
+    [10, 0],
+    [0, 10],
+    [10, 10],
+  ];
+  for (const [i, [n, e]] of pairsNue.entries()) {
+    actions.push({
+      type: "gpsData/recordGpsEvent",
+      payload: {
+        odomPosition: [e, 0, -n],
+        odomRotation: [0, 0, 0, 1],
+        rawGpsPoint: {
+          id: `rec-${String(i)}`,
+          latitude: 47.5 + (n + 2) * degPerMLat,
+          longitude: 8.7 + e * degPerMLon,
+          altitude: 400,
+          latLongAccuracy: 4,
+          timestamp: 1756150000000 + i * 1000,
+        },
+      },
+    });
+  }
+  for (const [i, [n, e]] of [
+    [0, 0],
+    [10, 0],
+  ].entries()) {
+    actions.push({
+      type: "gpsData/add2dImage",
+      payload: {
+        imageFile: `images/frame-${String(i)}.png`,
+        position: [e, 0, -n],
+        rotation: [0, 0, 0, 1],
+        screenRotation: 0,
+        capturedAt: 1756150005000 + i * 1000,
+      },
+    });
+  }
+  for (const [i, action] of actions.entries()) {
+    await writer.add(
+      `actions/${String(i + 1).padStart(6, "0")}.json`,
+      new TextReader(JSON.stringify(action)),
+    );
+  }
+  for (let i = 0; i < 2; i += 1) {
+    await writer.add(
+      `images/frame-${String(i)}.png`,
+      new Uint8ArrayReader(TINY_PNG.slice()),
+    );
+  }
+  await writer.add(
+    "qr/1.json",
+    new TextReader(
+      JSON.stringify({
+        version: 1,
+        qr: {
+          physicalSizeM: 0.2,
+          geo: { lat: 47.5001, lon: 8.7001, alt: 400, rotation: [0, 0, 0, 1] },
+        },
+      }),
+    ),
+  );
+  return writer.close();
+}
+
 const zipBytes = await buildZip();
+const recordingZipBytes = await buildRecordingZip();
 const ETAG = '"e2e-tour-v1"';
 
 /**
@@ -131,18 +217,20 @@ function handleWarmGate(res, url) {
   res.writeHead(200, CORS_HEADERS).end(warmGate.released ? "released" : "held");
 }
 
-/** Serve the archive: HEAD metadata, 206 slices (ranges-ok), or a 200 body. */
-function handleArchive(req, res, mode) {
+/** Serve the archive: HEAD metadata, 206 slices (ranges-ok), or a 200 body.
+ *  `bytes` defaults to the standard tour; the recording route passes its own
+ *  archive (distinct etag so caches cannot cross the two). */
+function handleArchive(req, res, mode, bytes = zipBytes, etag = ETAG) {
   const baseHeaders = {
     ...CORS_HEADERS,
-    etag: mode === "flippable" ? `"e2e-tour-${flippableEtagVersion}"` : ETAG,
+    etag: mode === "flippable" ? `"e2e-tour-${flippableEtagVersion}"` : etag,
     "last-modified": "Mon, 24 Aug 2026 12:00:00 GMT",
   };
   if (req.method === "HEAD") {
     res
       .writeHead(200, {
         ...baseHeaders,
-        "content-length": String(zipBytes.length),
+        "content-length": String(bytes.length),
       })
       .end();
     return;
@@ -154,12 +242,12 @@ function handleArchive(req, res, mode) {
       : null;
   if (rangeMatch !== null) {
     const start = Number(rangeMatch[1]);
-    const end = Math.min(Number(rangeMatch[2]), zipBytes.length - 1);
-    const slice = zipBytes.slice(start, end + 1);
+    const end = Math.min(Number(rangeMatch[2]), bytes.length - 1);
+    const slice = bytes.slice(start, end + 1);
     res
       .writeHead(206, {
         ...baseHeaders,
-        "content-range": `bytes ${String(start)}-${String(end)}/${String(zipBytes.length)}`,
+        "content-range": `bytes ${String(start)}-${String(end)}/${String(bytes.length)}`,
         "content-length": String(slice.length),
       })
       .end(Buffer.from(slice));
@@ -169,9 +257,9 @@ function handleArchive(req, res, mode) {
     res
       .writeHead(200, {
         ...baseHeaders,
-        "content-length": String(zipBytes.length),
+        "content-length": String(bytes.length),
       })
-      .end(Buffer.from(zipBytes));
+      .end(Buffer.from(bytes));
   };
   if (mode === "slow-warm" && !warmGate.released) {
     warmGate.waiters.push(answer); // held until /warm-gate?state=release
@@ -189,6 +277,10 @@ createServer((req, res) => {
   }
   if (url.pathname === "/warm-gate") {
     handleWarmGate(res, url);
+    return;
+  }
+  if (url.pathname === "/ranges-ok/recording-tour.zip") {
+    handleArchive(req, res, "ranges-ok", recordingZipBytes, '"e2e-rec-v1"');
     return;
   }
   const match = /^\/(ranges-ok|no-ranges|flippable|slow-warm)\/tour\.zip$/.exec(
