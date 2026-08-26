@@ -53,6 +53,8 @@ import {
   imagePlaneRingNue,
   viewerStatusLine,
 } from "./qr-viewer-mode.js";
+import QRCode from "qrcode";
+import { planPrintCode, printedSideCss } from "./qr-print.js";
 import { codeFromDetectedText, codeFromSearch } from "./code-param.js";
 import { placeImagePlanes, type PlacedImagePlanes } from "./image-planes.js";
 import type { Texture } from "three";
@@ -214,6 +216,11 @@ async function openUrl(url: string): Promise<void> {
     session = opened;
     renderStats();
     void fillGallery(opened);
+    // The open tour's hosting URL is what a creator prints — prefill the
+    // panel without clobbering something they typed.
+    if (authorMode && printUrlInput.value.trim() === "") {
+      printUrlInput.value = url;
+    }
     // The authored levels ride the same zip; a newer open's guard keeps a
     // slow load from installing a closed tour's levels.
     void opened.loadQrLevels().then((levels) => {
@@ -600,6 +607,55 @@ async function decodeTourTextures(current: TourSession): Promise<Texture[]> {
   }
   return textures;
 }
+
+// --- Print a code (creator step zero, owner-requested 2026-08-26) ---------
+const printUrlInput = element<HTMLInputElement>("print-url");
+const printGenerateButton = element<HTMLButtonElement>("print-generate");
+const printInfo = element<HTMLDivElement>("print-info");
+const printArea = element<HTMLDivElement>("print-area");
+const printCanvas = element<HTMLCanvasElement>("print-canvas");
+const printButton = element<HTMLButtonElement>("print-button");
+const printUrlOut = element<HTMLDivElement>("print-url-out");
+
+printGenerateButton.addEventListener("click", () => {
+  // Async-UI rule: in-progress before the awaits, durable end state after.
+  printGenerateButton.disabled = true;
+  printGenerateButton.textContent = "Generating…";
+  generatePrintCode()
+    .catch((err: unknown) => {
+      printInfo.textContent = err instanceof Error ? err.message : String(err);
+      printArea.hidden = true;
+      printButton.hidden = true;
+    })
+    .finally(() => {
+      printGenerateButton.disabled = false;
+      printGenerateButton.textContent = "Generate QR";
+    });
+});
+
+async function generatePrintCode(): Promise<void> {
+  const sideCss = printedSideCss(Number(authorSizeInput.value)); // validates
+  const c = authorCInput.value.trim() === "" ? "1" : authorCInput.value.trim();
+  const plan = await planPrintCode(printUrlInput.value.trim(), c);
+  // margin 0: the canvas carries the SYMBOL only — the printed side equals
+  // the size the author types when minting; the quiet zone is CSS padding.
+  await QRCode.toCanvas(printCanvas, plan.url, {
+    errorCorrectionLevel: "Q",
+    margin: 0,
+    scale: 8,
+  });
+  document.documentElement.style.setProperty("--print-side", sideCss);
+  printArea.hidden = false;
+  printButton.hidden = false;
+  printInfo.textContent =
+    `QR version ${String(plan.qrVersion)}, code ${c}, prints at ${sideCss} — ` +
+    `use 100% scale (no fit-to-page).`;
+  printUrlOut.textContent = plan.url;
+}
+
+printButton.addEventListener("click", () => {
+  window.print();
+});
 
 mintButton.addEventListener("click", () => {
   if (lastDetectedText === null) return;

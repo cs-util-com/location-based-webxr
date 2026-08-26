@@ -38,5 +38,5 @@ foundation booting both modes through the fake seams (`ar-fakes.js`), the
 session-end teardown + re-entry, the M3 author flow (scripted detect/solve
 through the REAL controller/slice/stability/alignment/mint to an exported
 level the parser accepts), the M4 viewer loop (budgeted votes into the real store, the negative-cache
-unknown-code state, the image ring), plus the honest unsupported state
-without fakes.
+unknown-code state, the image ring), the print panel (real builder + real renderer, both async-UI states),
+plus the honest unsupported state without fakes.

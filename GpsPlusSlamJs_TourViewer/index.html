@@ -66,6 +66,56 @@
         font-family: monospace;
         font-size: 0.75rem;
       }
+      #print-panel {
+        display: grid;
+        gap: 0.5rem;
+        border: 1px solid #8886;
+        border-radius: 0.5rem;
+        padding: 0.75rem;
+      }
+      #print-url-out {
+        font-family: monospace;
+        font-size: 0.7rem;
+        overflow-wrap: anywhere;
+      }
+      /* On screen the code previews at a fixed size; on paper it takes the
+         exact physical side length (print CSS cm are exact at 100% scale).
+         The canvas carries the SYMBOL only (margin 0) — the quiet zone is
+         this white padding, so the printed symbol side equals the size the
+         author types when minting. */
+      #print-canvas {
+        display: block;
+        width: 12rem;
+        height: 12rem;
+        image-rendering: pixelated;
+      }
+      #print-quiet {
+        background: #fff;
+        padding: 1rem;
+        width: fit-content;
+      }
+
+      @media print {
+        body * {
+          visibility: hidden;
+        }
+        #print-area,
+        #print-area * {
+          visibility: visible;
+        }
+        #print-area {
+          position: absolute;
+          left: 0;
+          top: 0;
+        }
+        #print-canvas {
+          width: var(--print-side, 20cm);
+          height: var(--print-side, 20cm);
+        }
+        #print-quiet {
+          padding: calc(var(--print-side, 20cm) * 0.08);
+        }
+      }
       #gallery {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
@@ -196,6 +246,41 @@
             <code>qr/&lt;c&gt;.json</code>, then re-upload the zip to the same
             URL — viewers pick the change up automatically.
           </p>
+          <!-- Print a code (creator step zero): the QR renders at the TRUE
+               physical size via print CSS cm units, so the paper matches
+               the size the author later types when minting. -->
+          <fieldset id="print-panel">
+            <legend>Print a code</legend>
+            <input
+              id="print-url"
+              data-testid="print-url"
+              type="text"
+              autocomplete="off"
+              placeholder="https://… link to the tour .zip"
+            />
+            <button
+              type="button"
+              id="print-generate"
+              data-testid="print-generate"
+            >
+              Generate QR
+            </button>
+            <div id="print-info" data-testid="print-info"></div>
+            <div id="print-area" hidden>
+              <div id="print-quiet">
+                <canvas id="print-canvas" data-testid="print-canvas"></canvas>
+              </div>
+            </div>
+            <button
+              type="button"
+              id="print-button"
+              data-testid="print-button"
+              hidden
+            >
+              Print at true size
+            </button>
+            <div id="print-url-out" data-testid="print-url-out"></div>
+          </fieldset>
         </div>
       </section>
       <ul id="gallery" data-testid="gallery"></ul>

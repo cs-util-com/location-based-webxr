@@ -398,6 +398,44 @@ test("a scanned code with no level reads as unknown instead of flapping", async 
     .toMatch(/code 9 has no level/i);
 });
 
+test("the print panel renders a scannable code at a declared true size", async ({
+  page,
+}) => {
+  // Why this matters (owner request 2026-08-26): the printed artifact is
+  // creator step ZERO and expensive to redo. This drives the real measured
+  // URL builder and the real QR renderer in a browser: a code appears, the
+  // info line carries the version + the physical size + the 100%-scale
+  // instruction, and the full launch URL is shown for copying.
+  await page.goto("/?author=1");
+  await page
+    .getByTestId("print-url")
+    .fill("https://www.dropbox.com/scl/fi/abc/tour.zip?rlkey=k&dl=0");
+  await page.getByTestId("print-generate").click();
+
+  await expect(page.getByTestId("print-canvas")).toBeVisible();
+  const drawn = await page.evaluate(() => {
+    const canvas = document.querySelector("canvas#print-canvas");
+    return canvas instanceof HTMLCanvasElement
+      ? { width: canvas.width, blank: canvas.toDataURL().length < 200 }
+      : null;
+  });
+  expect(drawn?.width).toBeGreaterThan(0);
+  expect(drawn?.blank).toBe(false);
+  await expect(page.getByTestId("print-info")).toContainText("100% scale");
+  await expect(page.getByTestId("print-info")).toContainText("20cm");
+  await expect(page.getByTestId("print-button")).toBeVisible();
+  await expect(page.getByTestId("print-url-out")).toContainText(
+    "https://gps.csutil.com/tour/?qr=",
+  );
+
+  // Failure path (async-UI rule): a bad URL surfaces in the panel and the
+  // button restores.
+  await page.getByTestId("print-url").fill("not a url");
+  await page.getByTestId("print-generate").click();
+  await expect(page.getByTestId("print-info")).toContainText(/http/i);
+  await expect(page.getByTestId("print-generate")).toBeEnabled();
+});
+
 test("without fakes the button reports AR unsupported instead of breaking the page", async ({
   browser,
 }) => {

@@ -42,6 +42,12 @@ None (app entry point). Interesting seams for the e2e suite are the
   via `authorStatusLine`; the export offers copy + a `qr/<c>.json`
   download. The store carries the opt-in `qrDetected` reducer for both
   modes.
+- **Print a code (owner request 2026-08-26):** the author panel carries a
+  print section — paste the hosting URL (prefilled from the open tour),
+  reuse the size/c inputs, and the measured launch URL renders as a QR at
+  the TRUE physical size on paper (print CSS cm at 100% scale; the canvas
+  carries the symbol only, the quiet zone is CSS padding). See
+  `qr-print.ts.md` for the size contract.
 - **Viewer pipeline (M4):** the default mode relocalizes against the open
   tour: the detected code's `qr/<c>.json` resolves live from
   `loadQrLevels()`, budgeted synthetic votes flow into `recordGpsEvent`,
