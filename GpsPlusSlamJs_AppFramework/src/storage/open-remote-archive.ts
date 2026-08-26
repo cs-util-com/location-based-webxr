@@ -456,9 +456,15 @@ function instrument(
   if (onRead === undefined) return inner;
   return {
     size: inner.size,
-    read: (offset, length) => {
-      onRead({ origin, offset, length });
-      return inner.read(offset, length);
+    read: async (offset, length) => {
+      // Report AFTER the read settles, with the DELIVERED length: a rejected
+      // read must not count as bytes fetched (on the range-ignore recovery
+      // path every failed slice would otherwise be double-counted on top of
+      // the recovery download), and an EOF-clamped read must report what it
+      // returned, not what was asked (PR #363 review).
+      const bytes = await inner.read(offset, length);
+      onRead({ origin, offset, length: bytes.length });
+      return bytes;
     },
   };
 }

@@ -554,6 +554,15 @@ describe('openRemoteArchive — mid-session range-ignore recovery', () => {
       offset: 0,
       length: ARCHIVE.length,
     });
+    // The range read that FAILED (200-answered slice → RangeIgnoredError)
+    // must not be counted: onRead reports delivered bytes after the read
+    // settles, so the stats the panel shows cannot overstate by every failed
+    // slice on top of the recovery download (PR #363 review).
+    expect(events).not.toContainEqual({
+      origin: 'network',
+      offset: 2,
+      length: 3,
+    });
   });
 
   it('persists the recovered copy so the next visit skips the broken host', async () => {

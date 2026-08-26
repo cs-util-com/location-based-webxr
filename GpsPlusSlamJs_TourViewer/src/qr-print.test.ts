@@ -44,6 +44,15 @@ describe("printedSideCss", () => {
     expect(printedSideCss(0.145)).toBe("14.5cm");
   });
 
+  it("keeps a hand-typed off-step size to 0.1 mm, as documented", () => {
+    // The size input's `step` only gates the spinner — a typed 0.1234 m must
+    // print as 12.34 cm, not snap to a full millimetre while the PnP solve
+    // keeps the un-snapped value (PR #363 review: a silent ~0.3% scale bias).
+    expect(printedSideCss(0.1234)).toBe("12.34cm");
+    // ...and 0.1 mm is where the rounding stops: 123.46 mm → 12.35 cm.
+    expect(printedSideCss(0.12346)).toBe("12.35cm");
+  });
+
   it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])(
     "rejects a non-positive/non-finite size (%s)",
     (sizeM) => {

@@ -47,7 +47,11 @@ export function printedSideCss(sizeM: number): string {
       `printed size must be a positive number of metres, got ${String(sizeM)}`,
     );
   }
-  // Round to 0.1 mm — beyond print-registration accuracy either way.
-  const cm = Math.round(sizeM * 1000) / 10;
+  // Round to 0.1 mm — beyond print-registration accuracy either way. The
+  // first cut rounded to a full millimetre while claiming 0.1 mm (PR #363
+  // review): inert for step-aligned inputs, but a hand-typed off-step size
+  // (the input's `step` only gates the spinner) would print ~0.3 % off the
+  // sizeM the PnP solve assumes — a depth bias on the least-constrained axis.
+  const cm = Math.round(sizeM * 10000) / 100;
   return `${String(cm)}cm`;
 }
