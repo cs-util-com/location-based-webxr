@@ -137,6 +137,13 @@ test.describe("Anchor starter — Tier 1 placement flow", () => {
     });
     expect(after.wired).toBe(true);
     expect(after.isRecording).toBe(false);
+
+    // The DEVICE-and-DOM half (PR #366 review): the store-only teardown left
+    // the start screen hidden forever — a dead end with GPS polling still
+    // running. The rollback must restore the way back in.
+    await expect(page.getByTestId("start-screen")).toBeVisible();
+    await expect(page.getByTestId("start-button")).toBeEnabled();
+    await expect(page.getByTestId("placement")).toBeHidden();
   });
 
   test("saves the anchor and surfaces the share/reload affordances", async ({

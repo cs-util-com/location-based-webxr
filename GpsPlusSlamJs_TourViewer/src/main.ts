@@ -236,6 +236,7 @@ async function openUrl(url: string): Promise<void> {
       qrController?.reset();
       viewerUnknownCode = null;
       viewerUnusableCode = null;
+      viewerPlanesError = null;
       renderArStatus();
     });
   } catch (err) {
@@ -452,6 +453,10 @@ let viewerUnusableCode: string | null = null;
 let viewerVotedLocks = 0;
 let viewerLockedText: string | null = null;
 let viewerReprojectionPx: number | null = null;
+/** A failed image-plane placement, surfaced in the AR status line —
+ *  `#error-box` is a sibling of `#ar-root` and invisible during the
+ *  session (the milestone-review-#4 trap; PR #366 review). */
+let viewerPlanesError: string | null = null;
 /** Last detection's RMS reprojection error — the on-device quality number. */
 let latestReprojectionPx: number | null = null;
 /** In-flight guard: without it every voted lock during the decode window
@@ -527,7 +532,14 @@ function startViewerPipeline(): boolean {
         viewerVotedLocks = votedLocks;
         viewerReprojectionPx = latestReprojectionPx;
         if (imagePlanes === null && !imagePlanesLoading) {
-          void placeTourImagePlanes(text);
+          // The one fire-and-forget that had no .catch (PR #366 review): a
+          // throw below the loader's try/finally rejected unhandled inside
+          // an ~8 Hz detection callback — the visitor saw "Relocalized"
+          // with no ring and no error.
+          void placeTourImagePlanes(text).catch((err: unknown) => {
+            viewerPlanesError = describeOpenError(err);
+            renderArStatus();
+          });
         }
         renderArStatus();
       },
@@ -731,7 +743,10 @@ function renderArStatus(): void {
   const qrLine = viewerQrLine();
   arStatus.textContent =
     `${mode} — AR running · ${String(cameraFrameCount)} camera frames` +
-    (qrLine === "" ? "" : ` · ${qrLine}`);
+    (qrLine === "" ? "" : ` · ${qrLine}`) +
+    (viewerPlanesError === null
+      ? ""
+      : ` · images failed: ${viewerPlanesError}`);
 }
 
 function renderArState(state: EnableGpsArState): void {

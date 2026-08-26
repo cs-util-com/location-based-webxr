@@ -521,15 +521,35 @@ async function failStart(err: unknown, fallbackMessage: string): Promise<void> {
     // ended or never started — either way the framework is back to clean.
   }
 
+  rollbackSession();
+  dom.capabilityMessage.hidden = false;
+  dom.capabilityMessage.textContent =
+    err instanceof Error ? err.message : fallbackMessage;
+  console.error("[anchor-starter] AR boot failed; rolled back.", err);
+}
+
+/**
+ * The DEVICE-and-DOM half of ending a session, shared by BOTH unwind paths
+ * (PR #366 review — the first onSessionEnd fix closed only the STORE half,
+ * leaving the GPS/orientation watches running past the session, the
+ * anchor/reticle undisposed, and the start screen hidden with no way back
+ * short of a reload): stop the sensor watches, drop the AR objects, run the
+ * framework-shared store teardown, and restore the start screen so re-entry
+ * is possible. Every call is idempotent. (The previous store's subscription
+ * does not leak across re-entries: `startAr` replaces the module `store`,
+ * and the listener registration lives ON the replaced store, which nothing
+ * references afterwards.)
+ */
+function rollbackSession(): void {
   stopGpsWatch();
   stopOrientationWatch();
   anchor?.dispose();
   anchor = null;
   reticleHandle?.dispose();
   reticleHandle = null;
-  // The store half of the session teardown (framework-shared): without it
-  // a retry's second session appended its odometry-GPS pairs onto the dead
-  // session's and the alignment solve blended two odometry origins.
+  // The store half (framework-shared): without it a retry's second session
+  // appended its odometry-GPS pairs onto the dead session's and the
+  // alignment solve blended two odometry origins.
   if (store) teardownArSessionState(store);
 
   dom.startScreen.hidden = false;
@@ -537,10 +557,6 @@ async function failStart(err: unknown, fallbackMessage: string): Promise<void> {
   dom.placement.hidden = true;
   dom.startButton.disabled = false;
   dom.startButton.textContent = "Start AR";
-  dom.capabilityMessage.hidden = false;
-  dom.capabilityMessage.textContent =
-    err instanceof Error ? err.message : fallbackMessage;
-  console.error("[anchor-starter] AR boot failed; rolled back.", err);
 }
 
 async function startAr(): Promise<void> {
@@ -586,14 +602,13 @@ async function startAr(): Promise<void> {
       { requestHitTest: true },
       {
         // A session the USER ends (system back gesture, headset "Exit AR")
-        // never reaches `failStart` — without this callback the recording
-        // stayed open and the dead session's odometry↔GPS pairs blended into
-        // the next entry's alignment solve, the exact DEC-H3 failure. The
-        // start-failure path tears down via `failStart`; this covers the
-        // user-ended path (PR #364 review — AnchorStarter was the one app
-        // in the unification still missing it).
+        // never reaches `failStart` — this callback is the only hook the
+        // hand-rolled lifecycle has (PR #364 review added it; PR #366
+        // review widened it to the FULL rollback: watches stopped, AR
+        // objects disposed, start screen restored — the store-only version
+        // left the app dead-ended with GPS polling running).
         onSessionEnd: () => {
-          if (store) teardownArSessionState(store);
+          rollbackSession();
         },
         tracking: {
           store,
