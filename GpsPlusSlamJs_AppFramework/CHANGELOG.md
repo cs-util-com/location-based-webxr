@@ -1,6 +1,8 @@
 # Changelog
 
-## [Unreleased]
+## [1.20.0] — 2026-08-26
+
+Requires `gps-plus-slam-js` ≥ 1.20 (the `resetGpsSessionData` carrier).
 
 ### Features
 
