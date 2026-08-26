@@ -100,6 +100,9 @@ export {
 //     `gps-plus-slam-app-framework/state` imports). ---
 export {
   setZeroPos,
+  // Drops per-session odometry↔GPS pairs while keeping the zero — the AR
+  // session-end teardown action (core 1.20; the re-entry blend fix).
+  resetGpsSessionData,
   recordGpsEvent,
   add2dImage,
   calcRelativeCoordsInMeters,

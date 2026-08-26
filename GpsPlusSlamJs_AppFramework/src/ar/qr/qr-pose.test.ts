@@ -425,3 +425,43 @@ describe('rotateVectorByQuaternion', () => {
     expect(Math.hypot(r[0], r[1], r[2])).toBeCloseTo(13, 12);
   });
 });
+
+describe('quaternion-rotate golden sync (twin contract)', () => {
+  // QUAT_ROTATE_GOLDEN_START v1
+  // This block is BYTE-IDENTICAL in the two quaternion-rotate twins' test
+  // files (see the cross-reference comments on the implementations). The
+  // closed-source sync guard fails when the copies drift — the shared
+  // contract is the axis convention and the [x, y, z, w] component order,
+  // where a silent divergence would rotate content by the difference.
+  const QUAT_ROTATE_GOLDEN: ReadonlyArray<{
+    q: [number, number, number, number];
+    v: [number, number, number];
+    expected: [number, number, number];
+  }> = [
+    // 90 deg about +Y: +X maps to -Z.
+    {
+      q: [0, Math.SQRT1_2, 0, Math.SQRT1_2],
+      v: [1, 0, 0],
+      expected: [0, 0, -1],
+    },
+    // 120 deg about the (1,1,1) diagonal cycles the axes: +X maps to +Y.
+    { q: [0.5, 0.5, 0.5, 0.5], v: [1, 0, 0], expected: [0, 1, 0] },
+    // 90 deg about +X: +Y maps to +Z.
+    {
+      q: [Math.SQRT1_2, 0, 0, Math.SQRT1_2],
+      v: [0, 1, 0],
+      expected: [0, 0, 1],
+    },
+  ];
+  // QUAT_ROTATE_GOLDEN_END
+
+  it.each(QUAT_ROTATE_GOLDEN)(
+    'reproduces the shared golden rotation %#',
+    ({ q, v, expected }) => {
+      const result = rotateVectorByQuaternion(q, v);
+      expect(result[0]).toBeCloseTo(expected[0], 12);
+      expect(result[1]).toBeCloseTo(expected[1], 12);
+      expect(result[2]).toBeCloseTo(expected[2], 12);
+    }
+  );
+});

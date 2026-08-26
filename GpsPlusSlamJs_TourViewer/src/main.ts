@@ -288,6 +288,11 @@ clearCacheButton.addEventListener("click", () => {
 // to the real framework device wiring in production and to the e2e fakes in
 // a DEV Playwright run.
 const authorMode = authorModeEnabledFromSearch(location.search);
+/** The page's own &c= launch code — the ONE fallback every code lookup
+ *  shares (PR #361 review: three sites resolving with different fallbacks
+ *  meant votes flowed under "7" while the marker and the image ring
+ *  looked up "1" and never appeared). */
+const pageCode = codeFromSearch(location.search);
 const seams = getSeams();
 const arStore = createSlamAppStore({
   storageBackend: new NullStorageBackend(),
@@ -466,7 +471,7 @@ function startViewerPipeline(): boolean {
   }
   qrController = createQrTrackingController(
     buildViewerControllerConfig({
-      pageCode: codeFromSearch(location.search),
+      pageCode,
       frontEnd,
       solvePose: (input) => seams.solveQrPose(input),
       getCameraPose: () => seams.getCameraPose(),
@@ -486,7 +491,9 @@ function startViewerPipeline(): boolean {
         viewerUnusableCode = null;
         latestReprojectionPx = event.reprojectionErrorPx;
         arStore.dispatch(recordQrDetection(event));
-        const level = currentLevels?.get(codeFromDetectedText(event.text));
+        const level = currentLevels?.get(
+          codeFromDetectedText(event.text, pageCode),
+        );
         qrDebugView?.update(event.qrPoseWorld, level?.qr.physicalSizeM ?? null);
       },
       onError: (message) => {
@@ -524,7 +531,8 @@ async function placeTourImagePlanes(lockedText: string): Promise<void> {
   const current = session;
   const scene = seams.getScene();
   const zero = selectZeroReference(arStore.getState());
-  const geo = currentLevels?.get(codeFromDetectedText(lockedText))?.qr.geo;
+  const geo = currentLevels?.get(codeFromDetectedText(lockedText, pageCode))?.qr
+    .geo;
   if (current === null || scene === null || zero === null || geo === undefined)
     return;
   const centerNue = calcRelativeCoordsInMeters(

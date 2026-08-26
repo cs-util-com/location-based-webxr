@@ -120,6 +120,26 @@ describe("buildViewerControllerConfig", () => {
     );
   });
 
+  it("shares ONE budget across payload variants of the same code (PR #361)", () => {
+    // An explicit ?c=1 payload and a c-less payload resolving via the page
+    // fallback are the SAME printed code — separate budgets would double
+    // what "per code" promises.
+    const deps = fakeDeps({ pageCode: "1" });
+    const config = buildViewerControllerConfig(deps);
+    const votes = [{ v: 1 }] as never[];
+    for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) {
+      config.onDetection?.({ text: TEXT, timestamp: i } as QrDetectionEvent);
+      config.dispatchVotes(votes);
+    }
+    // The same code, now via the fallback path — budget already spent.
+    config.onDetection?.({
+      text: "https://gps.csutil.com/tour/?qr=x",
+      timestamp: 99,
+    } as QrDetectionEvent);
+    config.dispatchVotes(votes);
+    expect(deps.dispatchVote).toHaveBeenCalledTimes(MAX_VOTED_LOCKS_PER_CODE);
+  });
+
   it("does not charge the budget while the store cannot accept votes", () => {
     // Why this matters (M4 milestone review #2): recordGpsEvent silently
     // no-ops until the session zero exists (first real GPS fix). Ten locked

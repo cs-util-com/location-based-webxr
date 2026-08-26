@@ -101,7 +101,10 @@ export function buildViewerControllerConfig(
    *  ordering contract fires `onDetection` synchronously before the same
    *  frame's vote dispatch, which is what lets the budget key by text. */
   let lastDetectedText: string | null = null;
-  const votedLocksByText = new Map<string, number>();
+  /** Keyed by the RESOLVED code, not the raw text (PR #361 review): two
+   *  payloads mapping to the same `c` — one explicit, one via the page
+   *  fallback — must share ONE budget, as "per code" claims. */
+  const votedLocksByCode = new Map<string, number>();
   return {
     frontEnd: deps.frontEnd,
     solvePose: (input) => deps.solvePose(input),
@@ -124,9 +127,13 @@ export function buildViewerControllerConfig(
       const text = lastDetectedText;
       if (text === null) return;
       if (!deps.canAcceptVotes()) return; // budget untouched — see the dep
-      const votedLocks = votedLocksByText.get(text) ?? 0;
+      const code = codeFromDetectedText(
+        text,
+        deps.pageCode ?? DEFAULT_CODE_DISCRIMINATOR,
+      );
+      const votedLocks = votedLocksByCode.get(code) ?? 0;
       if (votedLocks >= MAX_VOTED_LOCKS_PER_CODE) return;
-      votedLocksByText.set(text, votedLocks + 1);
+      votedLocksByCode.set(code, votedLocks + 1);
       for (const vote of votes) deps.dispatchVote(vote);
       deps.onVotedLock?.(text, votedLocks + 1);
     },

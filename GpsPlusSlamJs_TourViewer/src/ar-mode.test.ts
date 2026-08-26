@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
+import {
+  createSlamAppStore,
+  recordGpsEvent,
+  selectGpsPositions,
+  selectZeroReference,
+  setZeroPos,
+} from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 import type { RgbaImage } from "gps-plus-slam-app-framework/ar";
 import type { Object3D } from "three";
@@ -187,11 +193,36 @@ describe("endTourArRuntime", () => {
     startTourArRuntime(store, deps);
     expect(store.getState().recording.isRecording).toBe(true);
 
+    // Seed a session zero + one odometry-GPS pair: the teardown must drop
+    // the PAIRS (they anchor to the dead session's odometry origin) while
+    // PRESERVING the zero (scene content is placed relative to it) - the
+    // core resetGpsSessionData contract (M3 review #2, closed in 1.20).
+    store.dispatch(setZeroPos({ lat: 47.5, lon: 8.7 }));
+    store.dispatch(
+      recordGpsEvent({
+        odomPosition: [0, 0, 0],
+        odomRotation: [0, 0, 0, 1],
+        rawGpsPoint: {
+          id: "fix-1",
+          latitude: 47.5,
+          longitude: 8.7,
+          latLongAccuracy: 5,
+          timestamp: 1756150000000,
+        },
+      }),
+    );
+    expect(selectGpsPositions(store.getState()).length).toBe(1);
+
     const stopCapture = vi.fn();
     endTourArRuntime(store, { stopCameraFrameCapture: stopCapture });
 
     expect(stopCapture).toHaveBeenCalledTimes(1);
     expect(store.getState().recording.isRecording).toBe(false);
+    expect(selectGpsPositions(store.getState()).length).toBe(0);
+    expect(selectZeroReference(store.getState())).toEqual({
+      lat: 47.5,
+      lon: 8.7,
+    });
 
     // A second start must succeed and open a FRESH session.
     const second = startTourArRuntime(store, deps);

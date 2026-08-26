@@ -26,6 +26,7 @@ import type {
 import {
   endSession,
   resetCoordinatorState,
+  resetGpsSessionData,
   startSession,
   type SubscribableStore,
 } from "gps-plus-slam-app-framework/state";
@@ -153,7 +154,10 @@ export type TourArRuntimeResult = { ok: true } | { ok: false; error: string };
  */
 export type TourArRuntimeStore = SubscribableStore & {
   dispatch(
-    action: ReturnType<typeof startSession> | ReturnType<typeof endSession>,
+    action:
+      | ReturnType<typeof startSession>
+      | ReturnType<typeof endSession>
+      | ReturnType<typeof resetGpsSessionData>,
   ): unknown;
 };
 
@@ -199,11 +203,12 @@ export function startTourArRuntime(
  * session's odom origin, while WebXR handed the new session a fresh one —
  * so the alignment solve blended both (PR #359 review). `endSession` closes
  * the recording; `resetCoordinatorState` clears the coordinator's cached
- * device-orientation state. KNOWN LIMIT (M3 milestone review #2): the
- * gpsData slice itself has no reset action, so a re-entry's GPS pairs are
- * appended to the previous session's — filed as a follow-up
- * (2026-08-25-2012-ar-session-teardown-siblings-followup.md); the QR
- * window IS cleared by the caller (`clearAllQrMarkers`).
+ * device-orientation state; `resetGpsSessionData` (core 1.20, closing the
+ * M3 review #2 limit) drops the session's odometry↔GPS pairs and solved
+ * alignment while PRESERVING the zero reference — WebXR hands the next
+ * session a fresh odometry origin, so stale pairs would blend two frames
+ * into one solve. The QR window is cleared by the caller
+ * (`clearAllQrMarkers`).
  */
 export function endTourArRuntime(
   store: TourArRuntimeStore,
@@ -211,5 +216,6 @@ export function endTourArRuntime(
 ): void {
   deps.stopCameraFrameCapture();
   store.dispatch(endSession());
+  store.dispatch(resetGpsSessionData());
   resetCoordinatorState();
 }

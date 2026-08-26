@@ -21,10 +21,13 @@ identical here — they diverge in M3/M4.
   deps: `{ getArWorldGroup, enableArWorldGroupAlignment,
 startCameraFrameCapture, now }` (seam-injected).
 - `endTourArRuntime(store, { stopCameraFrameCapture })` — the teardown
-  counterpart, run on session end: stops capture, dispatches `endSession`,
-  and `resetCoordinatorState()`. Without it a RE-ENTRY (this entry is a
+  counterpart, run on session end: stops capture, dispatches `endSession`
+  AND `resetGpsSessionData` (core 1.20: drops the session's odometry↔GPS
+  pairs and solved alignment, keeps the zero), and
+  `resetCoordinatorState()`. Without it a RE-ENTRY (this entry is a
   toggle, not a single-shot demo) blended the dead session's odom-anchored
-  GPS elements into the next session's alignment solve (PR #359 review).
+  GPS elements into the next session's alignment solve (PR #359 review;
+  the store half closed via the M3 review #2 follow-up).
 
 ## Invariants & assumptions
 
