@@ -13,7 +13,11 @@
  * See also: Finding F5 in docs/2026-02-15-replay-integration-test-review.md
  */
 
-import { loadActionsFromZip, type RecordedAction } from '../storage/zip-reader';
+import {
+  loadActionsFromZip,
+  type RecordedAction,
+  type ZipSource,
+} from '../storage/zip-reader';
 import { NullStorageBackend } from '../storage/null-storage-backend';
 import { createSlamAppStore } from './create-slam-app-store';
 import type { CombinedRootState } from './combined-root-state';
@@ -32,7 +36,22 @@ export interface ReplayRecordingOptions {
    * When not provided, actions are dispatched as-is from the ZIP.
    */
   readonly migrateActions?: (actions: RecordedAction[]) => RecordedAction[];
+
+  /**
+   * Called after each dispatched chunk, AFTER the loop yielded to the event
+   * loop — a progress hook for callers replaying inside a live UI (the
+   * TourViewer's geo join runs this in an XR session's detection path).
+   */
+  readonly onChunk?: (dispatched: number, total: number) => void;
 }
+
+/**
+ * Dispatch this many actions between event-loop yields. Sized so a chunk
+ * stays well under a frame even when it lands several full alignment
+ * re-solves (~10–18 ms each, per the library's bench docs) — replaying a
+ * long recording must not freeze a live session (geo-join plan Rev 2).
+ */
+const REPLAY_CHUNK_SIZE = 25;
 
 /**
  * Replay a recording session from zip data, returning the final state.
@@ -41,13 +60,17 @@ export interface ReplayRecordingOptions {
  * optionally migrates old-format actions, dispatches in order, and returns
  * the resulting state.
  *
- * @param zipData - The zip file content as a Uint8Array
+ * @param zipData - The zip content: whole bytes, or any zip.js Reader —
+ *   the same `ZipSource` `loadActionsFromZip` accepts. The Reader form is
+ *   what lets a range-streaming consumer (the TourViewer's ByteSource)
+ *   replay without ever holding the archive in memory (geo-join plan
+ *   Rev 2 — this widening gave the function its first production caller).
  * @param options - Optional replay configuration (e.g., action migration)
  * @returns The fully-replayed combined state (library + recorder)
  * @throws If the zip cannot be parsed or contains invalid data
  */
 export async function replayRecording(
-  zipData: Uint8Array,
+  zipData: ZipSource,
   options?: ReplayRecordingOptions
 ): Promise<CombinedRootState> {
   const store = createSlamAppStore({
@@ -61,8 +84,18 @@ export async function replayRecording(
     actions = options.migrateActions(actions);
   }
 
-  for (const action of actions) {
-    store.dispatch(action);
+  // CHUNKED, not one synchronous burst: a long recording's dispatches cost
+  // whole seconds (each GPS event can re-solve the alignment), and callers
+  // replay inside live sessions. Yield between chunks so frames render.
+  for (let i = 0; i < actions.length; i += REPLAY_CHUNK_SIZE) {
+    for (const action of actions.slice(i, i + REPLAY_CHUNK_SIZE)) {
+      store.dispatch(action);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    options?.onChunk?.(
+      Math.min(i + REPLAY_CHUNK_SIZE, actions.length),
+      actions.length
+    );
   }
 
   return store.getState();

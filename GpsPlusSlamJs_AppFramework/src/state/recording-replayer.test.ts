@@ -140,3 +140,41 @@ describe('replayRecording', () => {
     );
   });
 });
+
+describe('replayRecording — ZipSource widening + chunked dispatch (geo-join M-A)', () => {
+  // Why these tests matter (geo-join plan Revision 2): the TourViewer holds
+  // only a range-reading ByteSource, never whole-zip bytes — the join needs
+  // replayRecording to accept the same ZipSource (Uint8Array | Reader) its
+  // own loadActionsFromZip already takes. And the dispatch loop runs inside
+  // a live XR session's detection path, so it must YIELD to the event loop
+  // instead of blocking for the whole recording.
+  it('accepts a zip.js Reader (the range-streaming path), not only bytes', async () => {
+    const { Uint8ArrayReader } = await import('@zip.js/zip.js');
+    const zip = await produceTestZip();
+    const state = await replayRecording(new Uint8ArrayReader(zip.zipData));
+    expect(state.gpsData).not.toBeNull();
+    expect(state.gpsData!.gpsEvents.gpsPositions.length).toBeGreaterThan(0);
+  });
+
+  it('yields to the event loop during dispatch (chunked replay)', async () => {
+    // A macrotask scheduled BEFORE the replay must run BEFORE the replay
+    // finishes — impossible if the dispatch loop is one synchronous burst
+    // after the zip read.
+    const zip = await produceTestZip();
+    let macrotaskRan = false;
+    const timer = setTimeout(() => {
+      macrotaskRan = true;
+    }, 0);
+    const seen: boolean[] = [];
+    const state = await replayRecording(zip.zipData, {
+      onChunk: () => {
+        seen.push(macrotaskRan);
+      },
+    });
+    clearTimeout(timer);
+    expect(state.gpsData).not.toBeNull();
+    // At least one chunk boundary observed the macrotask having run — the
+    // loop genuinely yielded rather than merely calling the hook inline.
+    expect(seen.some(Boolean)).toBe(true);
+  });
+});

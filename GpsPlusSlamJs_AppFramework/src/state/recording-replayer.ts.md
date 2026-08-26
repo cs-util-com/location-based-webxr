@@ -6,13 +6,14 @@ Convenience module for replaying a recorded session from a zip file into a fresh
 
 ## Public API
 
-### `replayRecording(zipData: Uint8Array, options?: ReplayRecordingOptions): Promise<CombinedRootState>`
+### `replayRecording(zipData: ZipSource, options?: ReplayRecordingOptions): Promise<CombinedRootState>`
 
 Loads all actions from a recording zip, creates a store with `NullStorageBackend` (no OPFS writes), optionally transforms actions via a caller-provided migration callback, dispatches every action in chronological order, and returns the final combined state.
 
 **Parameters:**
 
-- `zipData` — The zip file content as a `Uint8Array` (from `fs.readFileSync`, `fetch`, or `FileReader`).
+- `zipData` — `ZipSource` = `Uint8Array` OR any zip.js `Reader` (widened 2026-08-26 for the TourViewer geo join, the function's first production caller: a range-streaming consumer replays through `new ByteSourceReader(archive.source)` without holding the archive in memory).
+- `options.onChunk?(dispatched, total)` — progress hook, called AFTER each chunk's event-loop yield. The dispatch loop is CHUNKED (25 actions per yield): replaying a long recording costs whole seconds of alignment re-solves and callers replay inside live XR sessions.
 - `options` — Optional `ReplayRecordingOptions`:
   - `migrateActions?: (actions: RecordedAction[]) => RecordedAction[]` — Transform actions before dispatch (e.g., era migration).
 
