@@ -10,6 +10,7 @@ packages:
   - GpsPlusSlamJs_WayfindingHudDemo
   - GpsPlusSlamJs_OsmDemo
   - GpsPlusSlamJs_TourViewer
+  - GpsPlusSlamJs_SiteWorker
 
 # pnpm 11: only these packages may run install/postinstall build scripts
 # (strictDepBuilds is on by default in v11, so anything else errors loudly
@@ -20,6 +21,10 @@ allowBuilds:
   "@sentry/cli": true
   "@playwright/test": true
   esbuild: true
+  # wrangler's local-simulator runtime; its postinstall downloads a binary
+  # that only `wrangler dev` needs. We deploy with `wrangler versions
+  # upload` (pure API call), so the build stays disallowed on purpose.
+  workerd: false
 
 # Supply-chain embargo (decided 2026-07-09, see the private repo's
 # GpsPlusSlamJs_Docs/docs/2026-07-09-2329-pnpm11-upgrade-and-publish-via-pnpm-plan.md

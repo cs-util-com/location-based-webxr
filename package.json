@@ -17,7 +17,7 @@
         "check:deadcode": "node scripts/test-timing/timed-stage.mjs check:deadcode",
         "test:repo-config": "node scripts/test-timing/timed-stage.mjs test:repo-config",
         "test:framework": "node scripts/test-timing/timed-stage.mjs test:framework",
-    "test:osm": "node scripts/test-timing/timed-stage.mjs test:osm",
+        "test:osm": "node scripts/test-timing/timed-stage.mjs test:osm",
         "test:recorder": "node scripts/test-timing/timed-stage.mjs test:recorder",
         "test:recorder:unit": "pnpm --filter gps-plus-slam-recorder run test:unit",
         "test:recorder:e2e": "pnpm --filter gps-plus-slam-recorder run test:e2e",
@@ -30,7 +30,9 @@
         "test:physics": "node scripts/test-timing/timed-stage.mjs test:physics",
         "test:wayfinding": "node scripts/test-timing/timed-stage.mjs test:wayfinding",
         "test:tour": "node scripts/test-timing/timed-stage.mjs test:tour",
-        "test:changed": "node scripts/test-changed/test-changed.mjs"
+        "test:site-worker": "node scripts/test-timing/timed-stage.mjs test:site-worker",
+        "test:changed": "node scripts/test-changed/test-changed.mjs",
+        "deploy:site": "wrangler versions upload"
     },
     "engines": {
         "node": ">=22.15.0"
@@ -40,6 +42,7 @@
         "fast-check": "^4.8.0",
         "knip": "^6.13.1",
         "vitest": "^4.1.6",
+        "wrangler": "^4.126.0",
         "yaml": "^2.9.0"
     }
 }

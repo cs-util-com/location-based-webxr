@@ -3,10 +3,13 @@
 ## Purpose
 
 Cloudflare Workers config used by the Cloudflare Git integration to deploy the
-combined multi-app static site as static assets. Without this file, the deploy
-step (`npx wrangler versions upload`) fails with **"Missing entry-point to
-Worker script or to assets directory"** because Wrangler 4.x has no implicit
-default.
+combined multi-app static site **plus the site worker**
+(`GpsPlusSlamJs_SiteWorker/src/site-worker.ts` — the Drive CORS proxy and
+asset dispatcher; see that package's README and the drive-proxy plan,
+`gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-08-26-2145-drive-cors-proxy-worker-plan.md`).
+Without this file, the deploy step (`npx wrangler versions upload`) fails with
+**"Missing entry-point to Worker script or to assets directory"** because
+Wrangler 4.x has no implicit default.
 
 ## Public API
 
@@ -26,9 +29,17 @@ Not applicable — declarative config consumed by Cloudflare's build pipeline.
 - The deployed URL map is: `/` → landing page, `/recorder/` → RecorderApp,
   `/starter/` → AnchorStarter, `/minimal/` → MinimalExample. See
   [2026-06-01-0424-multi-app-subpath-deployment-plan.md](../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-01-0424-multi-app-subpath-deployment-plan.md).
-- `compatibility_date` is bumped to deploy date when Cloudflare APIs change;
-  no behaviour depends on it for a pure static-asset site.
-- No Worker script (`main`) — assets-only deployment.
+- `compatibility_date` is bumped to deploy date when Cloudflare APIs change.
+- `main` points at the site worker's TypeScript entry — wrangler bundles it
+  itself at deploy; the wrangler version this config is written against is
+  pinned as a root devDependency (`package.json`, used by the integration's
+  `npx wrangler` through the lockfile).
+- `[assets] binding = "ASSETS"` is load-bearing: with `main` present, every
+  request matching no static asset invokes the worker, and the dispatcher
+  needs the binding to delegate those back to the assets — without it the
+  site's 404 surface would become worker errors.
+- `run_worker_first = ["/api/*"]` routes API paths to the worker BEFORE
+  asset matching; everything else still serves assets first.
 - Observability is mostly off; logs are persisted for post-deploy debugging.
 
 ## History

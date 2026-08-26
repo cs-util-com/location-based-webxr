@@ -220,6 +220,14 @@
         "postcss-html",
         "stylelint-config-standard"
       ]
+    },
+    "GpsPlusSlamJs_SiteWorker": {
+      "entry": [
+        "src/site-worker.ts"
+      ],
+      "project": [
+        "src/**/*.ts"
+      ]
     }
   }
 }

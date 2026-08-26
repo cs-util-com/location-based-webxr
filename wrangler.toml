@@ -1,13 +1,26 @@
 name = "gps-plus-slam"
 compatibility_date = "2026-04-28"
 
-# Static-site deploy. Cloudflare's Git integration runs the build first
+# Site deploy. Cloudflare's Git integration runs the build first
 # (`pnpm run build:site`), which writes the combined multi-app output to
 # ./dist-site (landing page at /, recorder at /recorder/, starter at /starter/,
-# minimal example at /minimal/), then this config tells `wrangler versions
-# upload` where to find the assets. No Worker script is involved.
+# minimal example at /minimal/, tour viewer at /tour/), then this config tells
+# `wrangler versions upload` where to find the assets and the worker script.
+#
+# The worker (drive-proxy plan, 2026-08-26) fronts the site: run_worker_first
+# sends /api/* to it BEFORE asset matching, and — a routing consequence of
+# `main` existing at all — every request matching NO asset also invokes it.
+# The dispatcher in site-worker.ts therefore delegates everything outside
+# /api/ to the ASSETS binding, keeping the site's 404 surface identical to
+# the previous assets-only deployment. Wrangler bundles the TypeScript entry
+# itself; the pinned root devDependency (package.json) is the wrangler
+# version this config is written against.
+main = "GpsPlusSlamJs_SiteWorker/src/site-worker.ts"
+
 [assets]
 directory = "./dist-site"
+binding = "ASSETS"
+run_worker_first = ["/api/*"]
 
 # Observability settings for logging and debugging.
 # Enabled via Cloudflare Dashboard - logs persist for debugging deployments.
