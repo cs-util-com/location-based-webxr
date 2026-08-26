@@ -1013,6 +1013,7 @@ test.describe("the geo-event", () => {
       // describes; it does not widen the bound to admit a state the app is
       // leaving. A genuine regression — the 61 px one this replaced — never
       // settles, so the poll times out and fails exactly as before.
+      let lastAxes = { dx: 0, dy: 0 };
       const offsetNow = async () => {
         const winnerBox = await page
           .locator("#map .geo-winner")
@@ -1020,10 +1021,15 @@ test.describe("the geo-event", () => {
           .boundingBox();
         const mapBox = await page.locator("#map").boundingBox();
         if (winnerBox === null || mapBox === null) throw new Error("no boxes");
-        return Math.hypot(
-          winnerBox.x + winnerBox.width / 2 - (mapBox.x + mapBox.width / 2),
-          winnerBox.y + winnerBox.height / 2 - (mapBox.y + mapBox.height / 2),
-        );
+        // Kept per-axis: the stuck values seen so far (21.17 locally, 30.22
+        // on CI) are consistent with HALF a #map height delta on one or both
+        // axes, and the hypot alone cannot tell those apart.
+        lastAxes = {
+          dx: winnerBox.x + winnerBox.width / 2 - (mapBox.x + mapBox.width / 2),
+          dy:
+            winnerBox.y + winnerBox.height / 2 - (mapBox.y + mapBox.height / 2),
+        };
+        return Math.hypot(lastAxes.dx, lastAxes.dy);
       };
 
       // 8 px, DERIVED: the settled offset measures 0.2 px, so this is 40x the
@@ -1040,7 +1046,34 @@ test.describe("the geo-event", () => {
       //
       // So a wider bound here would not have been a tolerance — it would have
       // been the defect's hiding place.
-      await expect.poll(offsetNow, { timeout: 15_000 }).toBeLessThan(8);
+      // ON TIMEOUT, ATTACH THE FORENSICS (owner-approved instrumentation,
+      // docs 2026-08-26-0105 in the primary repo). The stuck-offset failure
+      // has burned two investigations that reasoned from the offset alone;
+      // this captures what discriminates the surviving theories in the SAME
+      // failing run: did map-view's ResizeObserver fire (count + when), what
+      // container sizes it saw, and whether Leaflet's cached size still
+      // disagrees with the real container at timeout — plus the per-axis
+      // offset, since one-axis vs both-axes stuck values differ between the
+      // local and CI failures.
+      try {
+        await expect.poll(offsetNow, { timeout: 15_000 }).toBeLessThan(8);
+      } catch (error) {
+        const forensics = await page.evaluate(() => {
+          const d = globalThis.__osmDemoMapDiagnostics;
+          if (d === undefined) return "no diagnostics hook";
+          return {
+            resize: d.resize,
+            leafletSize: d.leafletSize(),
+            containerSize: d.containerSize(),
+          };
+        });
+        throw new Error(
+          `geo-winner never settled: last per-axis offset ${JSON.stringify(
+            lastAxes,
+          )}, map diagnostics ${JSON.stringify(forensics)}`,
+          { cause: error },
+        );
+      }
       await expect(page.locator("#map .geo-candidate")).not.toHaveCount(0);
     }
   });

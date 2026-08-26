@@ -116,6 +116,25 @@ export class MapView {
    */
   private readonly containerResize: ResizeObserver | undefined;
 
+  /**
+   * FORENSICS FOR THE GEO-EVENT SETTLE FLAKE, not a feature (docs:
+   * `2026-08-26-0105-osm-demo-geo-event-settle-flake-followup.md` — the
+   * owner-approved instrumentation step). Failing runs report the winner
+   * marker stuck at exactly HALF a recent `#map` height delta for a full
+   * 15 s poll, which the one-frame `invalidateSize` model cannot explain —
+   * it predicts the observer corrects it. This records whether the
+   * callback actually fired (count), what sizes it saw (bounded history),
+   * and when it last invalidated, so the NEXT failing run is attributable
+   * instead of guessed at — the spec's history holds two failed guesses
+   * already. Exposed to the e2e via `globalThis.__osmDemoMapDiagnostics`;
+   * remove both together once the flake is explained and fixed.
+   */
+  private readonly resizeDiagnostics: {
+    fires: number;
+    lastInvalidateAt: number | null;
+    history: { t: number; w: number; h: number }[];
+  } = { fires: 0, lastInvalidateAt: null, history: [] };
+
   constructor(options: MapViewOptions) {
     this.onCellClick = options.onCellClick;
     this.onRegionClick = options.onRegionClick;
@@ -140,10 +159,42 @@ export class MapView {
     this.containerResize =
       typeof ResizeObserver === "undefined"
         ? undefined
-        : new ResizeObserver(() => {
+        : new ResizeObserver((entries) => {
+            // Diagnostics BEFORE the correction, so a callback that throws
+            // still leaves its trace. See the docblock on `resizeDiagnostics`.
+            this.resizeDiagnostics.fires += 1;
+            const rect = entries[0]?.contentRect;
+            if (rect !== undefined) {
+              this.resizeDiagnostics.history.push({
+                t: Math.round(performance.now()),
+                w: rect.width,
+                h: rect.height,
+              });
+              if (this.resizeDiagnostics.history.length > 20) {
+                this.resizeDiagnostics.history.shift();
+              }
+            }
             this.map.invalidateSize();
+            this.resizeDiagnostics.lastInvalidateAt = Math.round(
+              performance.now(),
+            );
           });
     this.containerResize?.observe(options.container);
+    // The e2e reads this on a settle-poll timeout — production behaviour is
+    // unchanged; only the trace is exposed.
+    (
+      globalThis as { __osmDemoMapDiagnostics?: unknown }
+    ).__osmDemoMapDiagnostics = {
+      resize: this.resizeDiagnostics,
+      leafletSize: () => {
+        const size = this.map.getSize();
+        return { w: size.x, h: size.y };
+      },
+      containerSize: () => {
+        const rect = options.container.getBoundingClientRect();
+        return { w: rect.width, h: rect.height };
+      },
+    };
 
     // ADDED FIRST OF THIS CORNER'S CONTROLS, and that is load-bearing rather
     // than incidental. Leaflet PREPENDS into a bottom corner
