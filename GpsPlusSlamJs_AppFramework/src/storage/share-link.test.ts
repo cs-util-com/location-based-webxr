@@ -154,6 +154,25 @@ describe('normalizeShareUrl — Google Drive via the CORS proxy', () => {
     expect(normalizeShareUrl(raw)).toBe(raw);
   });
 
+  it('passes a usercontent link through BYTE-identical: odd param order and extras survive', () => {
+    // Milestone review finding 6: routing usercontent through the Drive
+    // normalizer re-canonicalized it (fixed param order, extras like
+    // authuser dropped) — silently changing the local-cache key for a URL
+    // that already worked. Without a proxy this host must be untouchable.
+    const odd =
+      'https://drive.usercontent.google.com/download?export=download&id=ID42&authuser=0';
+    expect(normalizeShareUrl(odd)).toBe(odd);
+  });
+
+  it('does NOT let an API key alone switch a usercontent link onto drive/v3', () => {
+    // Same finding: the inverted precedence protects SHARE links from a
+    // later-added key, and a pasted usercontent link deserves the same —
+    // drive/v3 is the endpoint the 0757 doc records as never live-verified.
+    const raw =
+      'https://drive.usercontent.google.com/download?id=ID42&export=download&confirm=t';
+    expect(normalizeShareUrl(raw, { googleDriveApiKey: 'KEY' })).toBe(raw);
+  });
+
   it('passes an id-less usercontent URL through untouched', () => {
     const noId =
       'https://drive.usercontent.google.com/download?export=download';

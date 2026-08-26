@@ -29,10 +29,12 @@ whole file first.
 - **Dropbox / OneDrive** — the rewritten content-host URLs serve Range; see
   `../GpsPlusSlamJs_AppFramework/src/storage/share-link.ts.md` for forms and
   caveats.
-- **Google Drive, key-less** — the host 403s browser fetches
-  (`Sec-Fetch-Site`); Drive needs an API key
-  (`googleDriveApiKey`) or a CORS proxy. The app states this in its error
-  message rather than implying Drive "just works".
+- **Google Drive** — the keyless host 403s browser fetches
+  (`Sec-Fetch-Site`), so the viewer routes Drive links through the site
+  worker's CORS proxy (`/api/drive-proxy`, see `../GpsPlusSlamJs_SiteWorker/`)
+  automatically — public files stream with Range support, no key needed.
+  An API key (`googleDriveApiKey`) remains a supported alternative for
+  consumers without the proxy.
 
 ## Development
 

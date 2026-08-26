@@ -166,6 +166,28 @@ describe("handleDriveProxy — downstream response", () => {
     }
   });
 
+  it("keeps an HTML-bodied error's STATUS — Drive's 404 page stays a 404", async () => {
+    // Milestone review finding 1: Drive answers a bogus id with an HTML 404
+    // page and a non-public file with an HTML sign-in page. The interstitial
+    // guard must not convert those to 502 — downstream, only a literal
+    // 404/410 classifies as 'missing', and a 502 reads as "host
+    // unreachable", which serves a DELETED Drive file from the local cache
+    // forever. The HTML body itself is dropped (the status is the
+    // information; the markup is dead weight toward a zip parser).
+    const { fetchImpl } = recordingFetch(
+      upstreamResponse(
+        404,
+        { "content-type": "text/html; charset=utf-8" },
+        "<html>Not found</html>",
+      ),
+    );
+    const response = await handleDriveProxy(request("?id=gone123"), {
+      fetchImpl,
+    });
+    expect(response.status).toBe(404);
+    expect(response.body).toBeNull();
+  });
+
   it("answers HEAD with a body-less response that still carries content-length", async () => {
     // The transport takes the archive size from the HEAD probe, and the
     // Workers runtime chunk-encodes STREAMED bodies (dropping the length) —
@@ -214,9 +236,17 @@ describe("handleDriveProxy — CORS", () => {
       { origin: "http://localhost:5187", allowed: true },
       { origin: "http://127.0.0.1:4173", allowed: true },
       { origin: "http://localhost", allowed: true },
+      // The documented on-device flows (milestone review finding 2): vite's
+      // host:true exposes the dev server on the LAN, and ngrok fronts it
+      // for HTTPS.
+      { origin: "http://192.168.1.42:5187", allowed: true },
+      { origin: "http://10.0.0.7:5187", allowed: true },
+      { origin: "https://abc-123.ngrok-free.app", allowed: true },
       { origin: "https://evil.example", allowed: false },
       { origin: "http://localhost.evil.example", allowed: false },
       { origin: "https://gps.csutil.com.evil.example", allowed: false },
+      { origin: "https://abc.ngrok-free.app.evil.example", allowed: false },
+      { origin: "http://192.168.1.42.evil.example", allowed: false },
     ];
     for (const { origin, allowed } of cases) {
       const { fetchImpl } = recordingFetch(upstreamResponse(200, {}));

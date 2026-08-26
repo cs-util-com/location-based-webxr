@@ -46,8 +46,12 @@ const EXPOSE_HEADERS =
   "Content-Type, Content-Length, Content-Range, Accept-Ranges, ETag, Last-Modified";
 
 /** Dev servers only — production is same-origin with the worker and never
- *  needs CORS. This is NOT the abuse guard (CORS binds browsers alone). */
-const DEV_ORIGIN = /^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/;
+ *  needs CORS. Covers the repo's documented device-test flows too (vite
+ *  `host: true` on the LAN, ngrok for HTTPS — milestone review, finding 2);
+ *  widening this costs nothing, because CORS was never the abuse guard
+ *  (it binds browsers alone — the free-tier request cap is the bound). */
+const DEV_ORIGIN =
+  /^(?:http:\/\/(?:localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3})(?::\d+)?|https:\/\/[\w-]+\.ngrok-free\.app)$/;
 
 export interface DriveProxyOptions {
   fetchImpl: FetchLike;
@@ -88,9 +92,17 @@ export async function handleDriveProxy(
     headers: upstreamHeaders,
   });
 
-  // text/html from the download endpoint is the virus-scan interstitial
-  // leaking past confirm=t — never stream HTML into a zip parser.
-  if ((upstream.headers.get("content-type") ?? "").includes("text/html")) {
+  const isHtml = (upstream.headers.get("content-type") ?? "").includes(
+    "text/html",
+  );
+  // text/html on a SUCCESS is the virus-scan interstitial leaking past
+  // confirm=t — never stream HTML into a zip parser. On an ERROR status it
+  // is just Drive's HTML error page (bogus id → 404 page, non-public file →
+  // sign-in page): the STATUS is the information, and it must pass through
+  // unchanged — a 502 here would make a deleted Drive file unclassifiable
+  // as 'missing' downstream and served from the local cache forever
+  // (milestone review, finding 1).
+  if (upstream.ok && isHtml) {
     return jsonError(
       502,
       "Drive answered with its virus-scan interstitial HTML page instead of the file",
@@ -108,7 +120,9 @@ export async function handleDriveProxy(
   // Workers runtime chunk-encodes streamed bodies and drops the length, and
   // the transport sizes the archive from this probe — a lost size silently
   // degrades every Drive tour to full-download (plan Rev 2, finding 3).
-  const body = request.method === "HEAD" ? null : upstream.body;
+  // An error's HTML body is dropped too: the status carries the meaning,
+  // and the page's markup is dead weight toward a zip parser.
+  const body = request.method === "HEAD" || isHtml ? null : upstream.body;
   return new Response(body, { status: upstream.status, headers });
 }
 

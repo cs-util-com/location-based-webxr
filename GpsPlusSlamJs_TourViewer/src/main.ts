@@ -104,16 +104,16 @@ const arRoot = element<HTMLElement>("ar-root");
 const arStatus = element<HTMLDivElement>("ar-status");
 const enterArButton = element<HTMLButtonElement>("enter-ar");
 
-// `?nocache=1` disables the local copy entirely — the pure-streaming mode the
-// e2e suite uses to prove range reads alone can render the gallery, and a
-// handy demo mode for showing the raw transport.
 /** The site worker's Drive CORS proxy (drive-proxy plan, 2026-08-26):
  *  keyless Drive links 403 real browser fetches, so they rewrite to this
  *  route. Absolute on purpose — production is same-origin with it, and dev
- *  servers are on the worker's localhost CORS allowlist, so one value
- *  serves both. */
+ *  servers (localhost, LAN, ngrok) are on the worker's CORS allowlist, so
+ *  one value serves both. */
 const DRIVE_PROXY_BASE_URL = "https://gps.csutil.com/api/drive-proxy";
 
+// `?nocache=1` disables the local copy entirely — the pure-streaming mode the
+// e2e suite uses to prove range reads alone can render the gallery, and a
+// handy demo mode for showing the raw transport.
 const cacheDisabled =
   new URLSearchParams(location.search).get("nocache") === "1";
 const cacheStore: LocalCacheStore | undefined =
@@ -593,7 +593,10 @@ function startViewerPipeline(): boolean {
           // an ~8 Hz detection callback — the visitor saw "Relocalized"
           // with no ring and no error.
           void placeTourImagePlanes(text).catch((err: unknown) => {
-            viewerPlanesError = describeOpenError(err);
+            // The archive URL is known here — a Drive failure during plane
+            // loading deserves the Drive-specific message too (milestone
+            // review, finding 7).
+            viewerPlanesError = describeOpenError(err, session?.archive.url);
             renderArStatus();
           });
         }

@@ -19,9 +19,12 @@ Plan and decision record:
   `drive.usercontent.google.com/download?id=…&export=download&confirm=t`;
   `OPTIONS` answers the dev-origin preflight locally. Error modes: `400`
   (id missing/over 300 chars/contains `/` — JSON body naming the id), `405`
-  (other methods), `502` (upstream answered `text/html`, i.e. the
-  virus-scan interstitial leaked past `confirm=t`). All other upstream
-  statuses (`200/206/304/404/416`) pass through.
+  (other methods), `502` (a SUCCESS status carrying `text/html`, i.e. the
+  virus-scan interstitial leaked past `confirm=t`). Upstream error statuses
+  (`304/404/416/…`) pass through with their status even when Drive bodies
+  them with an HTML error page — a 404 must stay classifiable as `missing`
+  downstream, or a deleted file is cache-served forever (milestone review,
+  finding 1); the HTML body itself is dropped.
 - `FetchLike` — the injected fetch shape; the entry point passes the
   runtime's `fetch`, every test injects a recorder.
 
@@ -39,10 +42,11 @@ Plan and decision record:
   size silently degrades Drive tours to full-download (plan Rev 2,
   review finding 3). The live check for this is in the plan's M-C
   checklist; no unit test can see a runtime-level rewrite.
-- **CORS ≠ abuse guard**: the allowlist (`http://localhost[:port]`,
-  `http://127.0.0.1[:port]`) exists for dev servers only; production is
-  same-origin. The abuse bound is the Workers free tier's hard request cap
-  (owner decision 2026-08-26: accept-as-bounded).
+- **CORS ≠ abuse guard**: the allowlist (localhost/127.0.0.1, private-LAN
+  `192.168.*`/`10.*` for vite `host: true` device testing,
+  `*.ngrok-free.app` for the HTTPS device flow) exists for dev only;
+  production is same-origin. The abuse bound is the Workers free tier's
+  hard request cap (owner decision 2026-08-26: accept-as-bounded).
 - `Vary: Origin` on every response, so caches never cross origins.
 
 ## Examples

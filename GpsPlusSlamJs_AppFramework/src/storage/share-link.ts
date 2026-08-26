@@ -7,14 +7,18 @@
  * - Dropbox `www.dropbox.com/scl/fi/…` (and legacy `/s/…`) → the
  *   `dl.dropboxusercontent.com` content host (drops `dl=`).
  * - GitHub `github.com/u/r/blob|raw/branch/path` → `raw.githubusercontent.com`.
- * - Google Drive `file/d/<id>`, `open?id=`, `uc?id=` → the
- *   `drive.usercontent.google.com/download?…&confirm=t` form: serves 206 +
- *   `Accept-Ranges`, and `confirm=t` skips the "can't scan for viruses" HTML
- *   interstitial on larger files. Caveat: it advertises
- *   `Access-Control-Allow-Origin: *` to plain clients but 403s any request
- *   carrying `Sec-Fetch-Site: cross-site` — i.e. every real browser fetch —
- *   so key-less Drive still needs a CORS proxy. With an API key the official
- *   `drive/v3/files/<id>?alt=media` endpoint is used instead.
+ * - Google Drive `file/d/<id>`, `open?id=`, `uc?id=` → with a
+ *   `corsProxyBaseUrl`, the site worker's Drive proxy (`<base>?id=<id>`) —
+ *   the keyless form that actually works in browsers, since the raw
+ *   usercontent endpoint 403s any request carrying
+ *   `Sec-Fetch-Site: cross-site` (every real browser fetch). Precedence:
+ *   proxy → API key (`drive/v3/files/<id>?alt=media`) → the raw
+ *   `drive.usercontent.google.com/download?…&confirm=t` form (206 +
+ *   `Accept-Ranges` for non-browser clients; `confirm=t` skips the
+ *   virus-scan HTML interstitial). A directly-pasted usercontent link is
+ *   rewritten to the proxy too — but ONLY when a proxy is configured;
+ *   otherwise it passes through byte-identical (never re-canonicalized,
+ *   never switched onto drive/v3 by a key alone).
  * - OneDrive: new-style `1drv.ms/<t>/c/<cid>/<shareId>` links (accounts on the
  *   SharePoint backend, where the legacy shares API answers 401) → the
  *   `my.microsoftpersonalcontent.com/personal/<cid>/_layouts/15/download.aspx
@@ -79,9 +83,14 @@ function resolveKnownProvider(
     case 'drive.usercontent.google.com':
       // The raw download form this layer itself used to emit for keyless
       // Drive — browser-blocked, so a pasted/bookmarked copy is rewritten
-      // to the proxy when one is configured; otherwise it passes through
-      // (non-browser consumers can still use it directly).
-      return normalizeGoogleDrive(url, opts);
+      // to the proxy when one is configured. WITHOUT a proxy it passes
+      // through byte-identical — never re-canonicalized (param order and
+      // extras like `authuser` preserved, the cache key stays stable) and
+      // never switched onto the drive/v3 endpoint by an API key alone
+      // (milestone review, finding 6).
+      return opts.corsProxyBaseUrl !== undefined && opts.corsProxyBaseUrl !== ''
+        ? normalizeGoogleDrive(url, opts)
+        : null;
     case '1drv.ms':
     case 'onedrive.live.com':
       return normalizeOneDrive(url, rawUrl);
