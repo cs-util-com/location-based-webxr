@@ -183,7 +183,7 @@ export {
 //     (`OCCLUDER_DEBUG_STYLES` / `OccluderDebugStyle`). ---
 
 // --- recording-replayer ---
-export { replayRecording } from './recording-replayer.js';
+export { replayActions, replayRecording } from './recording-replayer.js';
 export type { ReplayRecordingOptions } from './recording-replayer.js';
 
 // --- persistence-middleware ---

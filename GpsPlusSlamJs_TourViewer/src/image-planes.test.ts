@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { Object3D, Texture, Vector3 } from "three";
+import { Object3D, Texture, Vector3, type Mesh } from "three";
 
-import { placeImagePlanes } from "./image-planes";
+import { placeCapturedImagePlanes, placeImagePlanes } from "./image-planes";
 
 /**
  * Why these tests matter: the planes are the visible payoff of the whole
@@ -93,5 +93,47 @@ describe("placeImagePlanes", () => {
     const direction = mesh.getWorldDirection(new Vector3());
     expect(direction.x).toBeCloseTo(-1, 6);
     expect(direction.z).toBeCloseTo(0, 6);
+  });
+});
+
+// Why these tests matter (geo-join plan Rev 2 D3): the capture variant's
+// whole point is ORIENTATION — the plane must carry the capture's world
+// rotation verbatim (a window back in time), not a lookAt toward anything.
+// A silent fallback to ring-facing would look plausible in AR and be wrong.
+describe("placeCapturedImagePlanes", () => {
+  it("places one plane per pose at its position with the capture quaternion", () => {
+    const scene = new Object3D();
+    const texture = new Texture();
+    const placed = placeCapturedImagePlanes({
+      scene,
+      poses: [
+        {
+          positionNue: [1, 2, 3],
+          rotationNue: [0, Math.SQRT1_2, 0, Math.SQRT1_2],
+        },
+      ],
+      textures: [texture],
+    });
+    expect(placed.count).toBe(1);
+    const mesh = scene.children[0] as Mesh;
+    expect(mesh.position.toArray()).toEqual([1, 2, 3]);
+    expect(mesh.quaternion.y).toBeCloseTo(Math.SQRT1_2, 10);
+    expect(mesh.quaternion.w).toBeCloseTo(Math.SQRT1_2, 10);
+    placed.dispose();
+    expect(scene.children.length).toBe(0);
+  });
+
+  it("pairs poses and textures, skipping the excess of either", () => {
+    const scene = new Object3D();
+    const placed = placeCapturedImagePlanes({
+      scene,
+      poses: [
+        { positionNue: [0, 0, 0], rotationNue: [0, 0, 0, 1] },
+        { positionNue: [1, 0, 0], rotationNue: [0, 0, 0, 1] },
+      ],
+      textures: [new Texture()],
+    });
+    expect(placed.count).toBe(1);
+    placed.dispose();
   });
 });

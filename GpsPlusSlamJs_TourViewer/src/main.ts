@@ -18,6 +18,7 @@ import {
   qrDetectedReducer,
   recordGpsEvent,
   recordQrDetection,
+  replayActions,
   selectAlignmentMatrix,
   selectGpsPositions,
   selectQrPoseStability,
@@ -56,7 +57,17 @@ import {
 import QRCode from "qrcode";
 import { homePrintWarning, planPrintCode, printedSideCss } from "./qr-print.js";
 import { codeFromDetectedText, codeFromSearch } from "./code-param.js";
-import { placeImagePlanes, type PlacedImagePlanes } from "./image-planes.js";
+import {
+  placeCapturedImagePlanes,
+  placeImagePlanes,
+  type PlacedImagePlanes,
+} from "./image-planes.js";
+import {
+  assessReplayedJoin,
+  computeCaptureGeoJoin,
+  preflightCaptureJoin,
+  type ReplayedJoinState,
+} from "./capture-geo-join.js";
 import type { Texture } from "three";
 import type { QrTrackingStatus } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
@@ -237,6 +248,7 @@ async function openUrl(url: string): Promise<void> {
       viewerUnknownCode = null;
       viewerUnusableCode = null;
       viewerPlanesError = null;
+      viewerPlanesInfo = null;
       renderArStatus();
     });
   } catch (err) {
@@ -457,6 +469,10 @@ let viewerReprojectionPx: number | null = null;
  *  `#error-box` is a sibling of `#ar-root` and invisible during the
  *  session (the milestone-review-#4 trap; PR #366 review). */
 let viewerPlanesError: string | null = null;
+/** What the photo placement actually did — capture spots with quality, or
+ *  the ring with the join's plain-words decline reason. A silent decline
+ *  is the failure mode; this line is its visibility. */
+let viewerPlanesInfo: string | null = null;
 /** Last detection's RMS reprojection error — the on-device quality number. */
 let latestReprojectionPx: number | null = null;
 /** In-flight guard: without it every voted lock during the decode window
@@ -548,8 +564,10 @@ function startViewerPipeline(): boolean {
   return true;
 }
 
-/** QD-3's payoff, once per session: a ring of the tour's images around the
- *  relocalized code, at the SCENE ROOT in raw GPS-world NUE. */
+/** QD-3's payoff, once per session — now capture-first (geo-join plan
+ *  Rev 2): photos at their CAPTURE positions when the recording supports
+ *  it, the ring around the code otherwise. Either way at the SCENE ROOT
+ *  in raw GPS-world NUE. */
 async function placeTourImagePlanes(lockedText: string): Promise<void> {
   const current = session;
   const scene = seams.getScene();
@@ -571,10 +589,126 @@ async function placeTourImagePlanes(lockedText: string): Promise<void> {
   ];
   imagePlanesLoading = true;
   try {
-    await placeDecodedPlanes(current, scene, centerTuple);
+    const joined = await placeJoinedCapturePlanes(current, scene, zero);
+    if (!joined) await placeDecodedPlanes(current, scene, centerTuple);
   } finally {
     imagePlanesLoading = false;
   }
+}
+
+/**
+ * The capture-time geo join's viewer glue (lazy — this runs only once the
+ * code relocalized): gates → chunked replay → per-capture placement.
+ * Returns false whenever the ring should be placed instead; the reason
+ * lands in the AR status line so a decline is visible, never silent.
+ */
+async function placeJoinedCapturePlanes(
+  current: TourSession,
+  scene: NonNullable<ReturnType<typeof seams.getScene>>,
+  viewerZero: { lat: number; lon: number },
+): Promise<boolean> {
+  const [meta, actions] = await Promise.all([
+    current.loadSessionMeta(),
+    current.loadRecordingActions(),
+  ]);
+  if (actions === null) {
+    viewerPlanesInfo = "photo ring (no recording in this tour)";
+    return false;
+  }
+  const pre = preflightCaptureJoin(
+    meta,
+    actions.map((a) => a.type),
+  );
+  if (!pre.ok) {
+    viewerPlanesInfo = `photo ring (${pre.reason})`;
+    return false;
+  }
+  const state = (await replayActions(actions, {
+    onChunk: (done, total) => {
+      viewerPlanesInfo = `reading the walk ${String(done)}/${String(total)}…`;
+      renderArStatus();
+    },
+  })) as unknown as ReplayedJoinState;
+  const verdict = assessReplayedJoin(state);
+  if (!verdict.ok) {
+    viewerPlanesInfo = `photo ring (${verdict.reason})`;
+    return false;
+  }
+  const paired = await decodeJoinedPoses(
+    current,
+    computeCaptureGeoJoin(state),
+    viewerZero,
+  );
+  // Re-checked AFTER the awaits — same bail contract as the ring path
+  // (M4 milestone review #4): every loser frees its textures.
+  if (
+    paired.length === 0 ||
+    imagePlanes !== null ||
+    session !== current ||
+    qrController === null
+  ) {
+    for (const entry of paired) entry.texture.dispose();
+    if (paired.length === 0) {
+      viewerPlanesInfo = "photo ring (no readable capture photos)";
+    }
+    return paired.length === 0 ? false : true;
+  }
+  imagePlanes = placeCapturedImagePlanes({
+    scene,
+    poses: paired,
+    textures: paired.map((entry) => entry.texture),
+  });
+  const accuracy =
+    verdict.quality.gpsAccuracyMedianM === null
+      ? ""
+      : ` ±${verdict.quality.gpsAccuracyMedianM.toFixed(1)}m`;
+  viewerPlanesInfo =
+    `${String(imagePlanes.count)} photos at capture spots ` +
+    `(${String(verdict.quality.pairCount)} fixes${accuracy})`;
+  renderArStatus();
+  return true;
+}
+
+/** Decode each joined capture's photo and express its geo in the VIEWER's
+ *  NUE frame; a broken image just leaves that capture out. */
+async function decodeJoinedPoses(
+  current: TourSession,
+  poses: readonly ReturnType<typeof computeCaptureGeoJoin>[number][],
+  viewerZero: { lat: number; lon: number },
+): Promise<
+  {
+    positionNue: readonly [number, number, number];
+    rotationNue: readonly [number, number, number, number];
+    texture: Texture;
+  }[]
+> {
+  const paired: {
+    positionNue: readonly [number, number, number];
+    rotationNue: readonly [number, number, number, number];
+    texture: Texture;
+  }[] = [];
+  for (const pose of poses) {
+    try {
+      const texture = await decodeFrameTexture(
+        await current.loadEntry(pose.imageFile),
+      );
+      if (texture === null) continue;
+      const nue = calcRelativeCoordsInMeters(
+        viewerZero,
+        { lat: pose.geo.lat, lon: pose.geo.lon },
+        pose.geo.altitude,
+        0,
+      );
+      paired.push({
+        positionNue: [nue[0], nue[1], nue[2]],
+        rotationNue: pose.rotationNue,
+        texture,
+      });
+    } catch {
+      // A broken image just leaves that capture out.
+    }
+  }
+  return paired;
 }
 
 async function placeDecodedPlanes(
@@ -744,6 +878,7 @@ function renderArStatus(): void {
   arStatus.textContent =
     `${mode} — AR running · ${String(cameraFrameCount)} camera frames` +
     (qrLine === "" ? "" : ` · ${qrLine}`) +
+    (viewerPlanesInfo === null ? "" : ` · ${viewerPlanesInfo}`) +
     (viewerPlanesError === null
       ? ""
       : ` · images failed: ${viewerPlanesError}`);
