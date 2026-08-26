@@ -8,6 +8,11 @@ raw GPS-world NUE.
 
 ## Public API
 
+- `placeCapturedImagePlanes({ scene, poses, textures })` — the geo-join
+  variant (plan Rev 2 D3/D4): one plane per captured photo at its capture
+  position with the capture's world-NUE QUATERNION verbatim (front faces
+  the photographer's viewpoint - a window back in time), same dispose
+  contract.
 - `placeImagePlanes({ scene, positionsNue, textures, centerNue }):
 PlacedImagePlanes` — pairs positions with textures (excess of either
   skipped), sizes each plane by the image's aspect (1 m wide), turns it to

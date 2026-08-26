@@ -225,7 +225,10 @@ async function buildSession(
       return levels;
     },
     loadRecordingActions: async () => {
-      if (![...byName.keys()].some((name) => name.startsWith("actions/"))) {
+      // `includes`, not `startsWith`: the framework's own parser tolerates a
+      // wrapping folder (`<name>/actions/…`), and this pre-check must not be
+      // stricter than the parser it guards (milestone review, finding 10).
+      if (![...byName.keys()].some((name) => name.includes("actions/"))) {
         return null; // a hand-built tour zip is normal, not an error
       }
       try {
@@ -242,7 +245,11 @@ async function buildSession(
       }
     },
     loadSessionMeta: async () => {
-      const entry = byName.get("session.json");
+      // `endsWith`, matching the framework's zip-coverage-embed tolerance
+      // for a wrapping folder (milestone review, finding 10).
+      const entry = [...byName.entries()].find(([name]) =>
+        name.endsWith("session.json"),
+      )?.[1];
       if (entry === undefined) return null;
       try {
         return JSON.parse(await entry.getData(new TextWriter())) as {

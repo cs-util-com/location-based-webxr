@@ -23,6 +23,7 @@
 import { Quaternion as ThreeQuaternion } from "three";
 import { fusedGpsFromOdom } from "gps-plus-slam-app-framework/utils/fused-path";
 import { isIdentityMatrix4 } from "gps-plus-slam-app-framework/core";
+import { WEBXR_TO_NUE } from "gps-plus-slam-app-framework/ar/webxr-nue-basis";
 
 import { MIN_ALIGNMENT_SAMPLES } from "./qr-author-mode.js";
 
@@ -92,12 +93,16 @@ const SEGMENTING_ACTION_TYPES = [
 ] as const;
 
 /**
- * The one recording era this viewer replays without migration. The action
- * migration for older eras lives in the RecorderApp (era ≤4 payloads are
- * differently framed — replaying them raw double-converts every pose);
- * promoting it is the filed follow-up, declining is the honest V1.
+ * The oldest recording era this viewer replays without migration. Eras 4
+ * and 5 have IDENTICAL action formats (the RecorderApp's own migration
+ * says so: era 5 was a state-side rotation-convention change only) — it
+ * is eras 1–3 whose payloads are differently framed and would
+ * double-convert if replayed raw. Their migration lives in the
+ * RecorderApp; promoting it is the filed follow-up, declining is the
+ * honest V1. (This milestone's cold review, finding 3: the first cut
+ * required === 5 and declined era-4 zips for nothing.)
  */
-const SUPPORTED_ODOM_COORD_VERSION = 5;
+const MIN_SUPPORTED_ODOM_COORD_VERSION = 4;
 
 /**
  * The BEFORE-replay half of the decision: era and segment gates run on the
@@ -108,7 +113,10 @@ export function preflightCaptureJoin(
   meta: { odomCoordVersion?: number } | null,
   actionTypes: readonly string[],
 ): { ok: true } | { ok: false; reason: string } {
-  if (meta?.odomCoordVersion !== SUPPORTED_ODOM_COORD_VERSION) {
+  if (
+    meta?.odomCoordVersion === undefined ||
+    meta.odomCoordVersion < MIN_SUPPORTED_ODOM_COORD_VERSION
+  ) {
     return {
       ok: false,
       reason: "the recording predates the current format (no migration here)",
@@ -180,15 +188,23 @@ export function computeCaptureGeoJoin(
   const matrix = toAlignmentMatrix(gpsData.gpsEvents.alignmentMatrix);
   const [ax, ay, az, aw] = gpsData.gpsEvents.alignmentRotation;
   const alignmentQuat = new ThreeQuaternion(ax, ay, az, aw);
+  const basisQuat = new ThreeQuaternion().setFromRotationMatrix(WEBXR_TO_NUE);
   return gpsData.odometryPath.points.map((point) => {
     const geo = fusedGpsFromOdom(matrix, [...point.position], zero);
     const [cx, cy, cz, cw] = point.rotation;
-    // World orientation = the alignment's rotation applied to the capture's
-    // odom-NUE orientation; three's multiply is `this = this * q`, which is
-    // exactly `alignment ∘ capture` (apply capture first, then alignment).
+    // World orientation. The scene-root convention for a mesh carrying a
+    // camera pose is `alignment × WEBXR_TO_NUE × R_webxr` (the same chain
+    // qr-author-mode's mint uses). But the replayed STATE stores the
+    // CONJUGATED quaternion R_nue = B·R_webxr·B⁻¹ (the reducer relabels the
+    // body axes too, serializableTypes' webxrQuaternionToNUE), so
+    // A·B·R_webxr = A·(B·R_webxr·B⁻¹)·B = A·R_nue·B — the trailing basis
+    // factor is LOAD-BEARING. Without it every plane is yawed 90° about Up
+    // (this milestone's cold review, finding 1; the directional test below
+    // pins South-facing for a North-looking capture).
     const world = alignmentQuat
       .clone()
-      .multiply(new ThreeQuaternion(cx, cy, cz, cw));
+      .multiply(new ThreeQuaternion(cx, cy, cz, cw))
+      .multiply(basisQuat);
     return {
       imageFile: point.imageFile,
       geo: { lat: geo.lat, lon: geo.lon, altitude: geo.altitude ?? 0 },

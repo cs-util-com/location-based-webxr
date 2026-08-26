@@ -152,6 +152,7 @@ async function teardownSession(): Promise<void> {
   qrController?.reset();
   imagePlanes?.dispose();
   imagePlanes = null;
+  planesRunGeneration += 1; // invalidate any in-flight placement run
   if (session !== null) {
     const closing = session;
     session = null;
@@ -479,6 +480,11 @@ let latestReprojectionPx: number | null = null;
  *  started ANOTHER placement run (M4 milestone review #4). */
 let imagePlanesLoading = false;
 let imagePlanes: PlacedImagePlanes | null = null;
+/** Bumped on session end and tour teardown: an in-flight placement run
+ *  captures the value and every post-await step re-checks it — a run its
+ *  session outlived frees its textures instead of planting planes into a
+ *  dead scene (milestone review, finding 6). */
+let planesRunGeneration = 0;
 
 function viewerQrLine(): string {
   if (authorMode) return "";
@@ -588,11 +594,27 @@ async function placeTourImagePlanes(lockedText: string): Promise<void> {
     centerNue[2],
   ];
   imagePlanesLoading = true;
+  const generation = planesRunGeneration;
   try {
-    const joined = await placeJoinedCapturePlanes(current, scene, zero);
-    if (!joined) await placeDecodedPlanes(current, scene, centerTuple);
+    // A join failure is a taxonomy entry, not a dead end (milestone review,
+    // finding 2): whatever the replay/compute throws, the visitor still
+    // gets the ring, with the failure visible in the status line.
+    let joined = false;
+    try {
+      joined = await placeJoinedCapturePlanes(current, scene, zero, generation);
+    } catch (err) {
+      viewerPlanesInfo = `photo ring (reading the recording failed: ${
+        err instanceof Error ? err.message : String(err)
+      })`;
+    }
+    if (!joined && generation === planesRunGeneration) {
+      await placeDecodedPlanes(current, scene, centerTuple);
+    }
   } finally {
-    imagePlanesLoading = false;
+    // Only the run that still owns the latch may clear it — a stale run's
+    // finally must not clobber a successor's in-progress state (milestone
+    // review, finding 6).
+    if (generation === planesRunGeneration) imagePlanesLoading = false;
   }
 }
 
@@ -606,6 +628,7 @@ async function placeJoinedCapturePlanes(
   current: TourSession,
   scene: NonNullable<ReturnType<typeof seams.getScene>>,
   viewerZero: { lat: number; lon: number },
+  generation: number,
 ): Promise<boolean> {
   const [meta, actions] = await Promise.all([
     current.loadSessionMeta(),
@@ -625,6 +648,7 @@ async function placeJoinedCapturePlanes(
   }
   const state = (await replayActions(actions, {
     onChunk: (done, total) => {
+      if (generation !== planesRunGeneration) return;
       viewerPlanesInfo = `reading the walk ${String(done)}/${String(total)}…`;
       renderArStatus();
     },
@@ -638,17 +662,21 @@ async function placeJoinedCapturePlanes(
     current,
     computeCaptureGeoJoin(state),
     viewerZero,
+    generation,
   );
   // Re-checked AFTER the awaits — same bail contract as the ring path
-  // (M4 milestone review #4): every loser frees its textures.
+  // (M4 milestone review #4) plus the GENERATION token (finding 6): every
+  // loser frees its textures, and a run the session outlived must not
+  // plant planes into a dead scene.
   if (
     paired.length === 0 ||
+    generation !== planesRunGeneration ||
     imagePlanes !== null ||
     session !== current ||
     qrController === null
   ) {
     for (const entry of paired) entry.texture.dispose();
-    if (paired.length === 0) {
+    if (paired.length === 0 && generation === planesRunGeneration) {
       viewerPlanesInfo = "photo ring (no readable capture photos)";
     }
     return paired.length === 0 ? false : true;
@@ -658,10 +686,14 @@ async function placeJoinedCapturePlanes(
     poses: paired,
     textures: paired.map((entry) => entry.texture),
   });
+  // HONEST label (finding 5): the replayed state exposes no solve-error
+  // metric (meanAlignmentError is model-internal), so the line reports
+  // what the numbers actually are — fixes and their median GPS accuracy —
+  // never a claimed placement error.
   const accuracy =
     verdict.quality.gpsAccuracyMedianM === null
       ? ""
-      : ` ±${verdict.quality.gpsAccuracyMedianM.toFixed(1)}m`;
+      : `, median GPS ±${verdict.quality.gpsAccuracyMedianM.toFixed(1)}m`;
   viewerPlanesInfo =
     `${String(imagePlanes.count)} photos at capture spots ` +
     `(${String(verdict.quality.pairCount)} fixes${accuracy})`;
@@ -669,12 +701,23 @@ async function placeJoinedCapturePlanes(
   return true;
 }
 
+/** The display downscale for capture planes — the framework decoder's
+ *  documented OOM mitigation (the recorder defaults to 2 for the same
+ *  reason): D4 places ALL captures, and full-res textures for a long walk
+ *  are a GPU-memory hazard the owner's decision did not include
+ *  (milestone review, finding 4). */
+const CAPTURE_PLANE_DECODE_DIVISOR = 2;
+
 /** Decode each joined capture's photo and express its geo in the VIEWER's
- *  NUE frame; a broken image just leaves that capture out. */
+ *  NUE frame; a broken image just leaves that capture out. The geo
+ *  conversion runs BEFORE the decode so a conversion throw cannot leak an
+ *  already-decoded texture (finding 7), and the decode — the slowest
+ *  phase — reports progress (finding 4's async-UI half). */
 async function decodeJoinedPoses(
   current: TourSession,
   poses: readonly ReturnType<typeof computeCaptureGeoJoin>[number][],
   viewerZero: { lat: number; lon: number },
+  generation: number,
 ): Promise<
   {
     positionNue: readonly [number, number, number];
@@ -687,25 +730,32 @@ async function decodeJoinedPoses(
     rotationNue: readonly [number, number, number, number];
     texture: Texture;
   }[] = [];
+  let index = 0;
   for (const pose of poses) {
+    index += 1;
+    if (generation === planesRunGeneration) {
+      viewerPlanesInfo = `loading photos ${String(index)}/${String(poses.length)}…`;
+      renderArStatus();
+    }
     try {
-      const texture = await decodeFrameTexture(
-        await current.loadEntry(pose.imageFile),
-      );
-      if (texture === null) continue;
       const nue = calcRelativeCoordsInMeters(
         viewerZero,
         { lat: pose.geo.lat, lon: pose.geo.lon },
         pose.geo.altitude,
         0,
       );
+      const texture = await decodeFrameTexture(
+        await current.loadEntry(pose.imageFile),
+        CAPTURE_PLANE_DECODE_DIVISOR,
+      );
+      if (texture === null) continue;
       paired.push({
         positionNue: [nue[0], nue[1], nue[2]],
         rotationNue: pose.rotationNue,
         texture,
       });
     } catch {
-      // A broken image just leaves that capture out.
+      // A broken image (or a degenerate geo) just leaves that capture out.
     }
   }
   return paired;
@@ -935,7 +985,16 @@ async function enterAr(): Promise<void> {
         viewerVotedLocks = 0;
         viewerLockedText = null;
         viewerReprojectionPx = null;
+        viewerPlanesInfo = null;
+        viewerPlanesError = null;
         imagePlanesLoading = false;
+        // Invalidate any join still awaiting: it cannot be cancelled, but
+        // every post-await guard checks this token, so a stale run frees
+        // its textures instead of planting planes into a dead scene and
+        // clobbering the next session's latch (milestone review, finding 6
+        // — the join's tens-of-seconds decode turned this race from
+        // theoretical into expected).
+        planesRunGeneration += 1;
         arStore.dispatch(clearAllQrMarkers());
         endTourArRuntime(arStore, {
           stopCameraFrameCapture: () => {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { Quaternion as ThreeQuaternion, Vector3 as ThreeVector3 } from "three";
 import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 
@@ -129,17 +130,81 @@ describe("computeCaptureGeoJoin", () => {
     expect(pose!.geo.lat - 47.5).toBeLessThan(1e-4);
   });
 
-  it("composes the capture rotation with the alignment rotation (world = alignment ∘ capture)", () => {
+  // DIRECTIONAL tests, not component tests (this milestone's cold review,
+  // finding 1): the state stores basis-CONJUGATED quaternions, and a
+  // composition missing the trailing basis factor yawed every plane 90°
+  // while every component-level assertion on identity captures stayed
+  // green. These pin what the visitor actually sees: where the plane's
+  // FRONT (+Z of PlaneGeometry) points in NUE (x=North, z=East).
+  const front = (q: readonly [number, number, number, number]) =>
+    new ThreeVector3(0, 0, 1)
+      .applyQuaternion(new ThreeQuaternion(q[0], q[1], q[2], q[3]))
+      .toArray();
+
+  it("an identity capture (camera looking North) yields a SOUTH-facing plane front", () => {
+    const [pose] = computeCaptureGeoJoin(baseState());
+    const [fx, fy, fz] = front(pose!.rotationNue);
+    expect(fx).toBeCloseTo(-1, 10); // South
+    expect(fy).toBeCloseTo(0, 10);
+    expect(fz).toBeCloseTo(0, 10);
+  });
+
+  it("the alignment's rotation composes on the LEFT (world frame), turning the front with it", () => {
     const state = baseState();
-    // 90° yaw about Up for the ALIGNMENT, identity capture → world = the
-    // alignment's own rotation, unchanged.
+    const alignmentQ: [number, number, number, number] = [
+      0,
+      Math.SQRT1_2,
+      0,
+      Math.SQRT1_2,
+    ];
     state.gpsData!.gpsEvents = {
       ...state.gpsData!.gpsEvents,
-      alignmentRotation: [0, Math.SQRT1_2, 0, Math.SQRT1_2],
+      alignmentRotation: alignmentQ,
     };
     const [pose] = computeCaptureGeoJoin(state);
-    expect(pose!.rotationNue[1]).toBeCloseTo(Math.SQRT1_2, 10);
-    expect(pose!.rotationNue[3]).toBeCloseTo(Math.SQRT1_2, 10);
+    const expected = new ThreeVector3(-1, 0, 0) // the identity-capture front
+      .applyQuaternion(
+        new ThreeQuaternion(
+          alignmentQ[0],
+          alignmentQ[1],
+          alignmentQ[2],
+          alignmentQ[3],
+        ),
+      )
+      .toArray();
+    const got = front(pose!.rotationNue);
+    expect(got[0]).toBeCloseTo(expected[0], 10);
+    expect(got[1]).toBeCloseTo(expected[1], 10);
+    expect(got[2]).toBeCloseTo(expected[2], 10);
+  });
+
+  it("a stored NUE yaw turns the front by the same yaw (yaws commute with the basis)", () => {
+    const state = baseState();
+    const yaw90: [number, number, number, number] = [
+      0,
+      Math.SQRT1_2,
+      0,
+      Math.SQRT1_2,
+    ];
+    state.gpsData!.odometryPath = {
+      points: [
+        {
+          imageFile: "images/a.jpg",
+          position: [1, 0, 0],
+          rotation: yaw90,
+        },
+      ],
+    };
+    const [pose] = computeCaptureGeoJoin(state);
+    const expected = new ThreeVector3(-1, 0, 0)
+      .applyQuaternion(
+        new ThreeQuaternion(yaw90[0], yaw90[1], yaw90[2], yaw90[3]),
+      )
+      .toArray();
+    const got = front(pose!.rotationNue);
+    expect(got[0]).toBeCloseTo(expected[0], 10);
+    expect(got[1]).toBeCloseTo(expected[1], 10);
+    expect(got[2]).toBeCloseTo(expected[2], 10);
   });
 
   it("throws when called without a passing assessment (programming error, not a fallback)", () => {

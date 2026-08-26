@@ -46,10 +46,14 @@ export interface ReplayRecordingOptions {
 }
 
 /**
- * Dispatch this many actions between event-loop yields. Sized so a chunk
- * stays well under a frame even when it lands several full alignment
- * re-solves (~10–18 ms each, per the library's bench docs) — replaying a
- * long recording must not freeze a live session (geo-join plan Rev 2).
+ * Dispatch this many actions between event-loop yields. Honest sizing
+ * (milestone review, finding 9): a single alignment re-solve costs
+ * ~10–18 ms, so a chunk that lands several is NOT sub-frame — the yields
+ * bound how long the loop can monopolize the thread between frames, they
+ * do not guarantee per-frame smoothness. Measured on the repo's sample
+ * recording (85 actions, 46 GPS events): the whole chunked replay
+ * completes in ~0.25 s; the number for a long walk goes in the geo-join
+ * results doc.
  */
 const REPLAY_CHUNK_SIZE = 25;
 
@@ -61,10 +65,12 @@ const REPLAY_CHUNK_SIZE = 25;
  * the resulting state.
  *
  * @param zipData - The zip content: whole bytes, or any zip.js Reader —
- *   the same `ZipSource` `loadActionsFromZip` accepts. The Reader form is
- *   what lets a range-streaming consumer (the TourViewer's ByteSource)
- *   replay without ever holding the archive in memory (geo-join plan
- *   Rev 2 — this widening gave the function its first production caller).
+ *   the same `ZipSource` `loadActionsFromZip` accepts. The Reader form
+ *   lets a range-streaming caller replay without holding the archive in
+ *   memory. NOTE: a caller that must SCAN the stream before replaying
+ *   (the TourViewer's geo join) uses `loadActionsFromZip` +
+ *   `replayActions` instead — this convenience wrapper is the
+ *   no-gates path, exercised today by tests.
  * @param options - Optional replay configuration (e.g., action migration)
  * @returns The fully-replayed combined state (library + recorder)
  * @throws If the zip cannot be parsed or contains invalid data

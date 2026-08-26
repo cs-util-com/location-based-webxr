@@ -1,5 +1,11 @@
 # tour-session.ts
 
+> Geo-join addition (2026-08-26): `loadRecordingActions()` (the parsed
+> action stream via the framework parser over a second range-streaming
+> reader) and `loadSessionMeta()` (`session.json`, the era gate's input) —
+> BOTH null-tolerant: a hand-built zip or a corrupt stream reads as "keep
+> the ring", never a broken archive.
+>
 > M3 addition: `loadQrLevels(): Promise<ReadonlyMap<string, QrLevel>>` —
 > every `qr/<c>.json` in the archive, keyed by `<c>` (the printed `&c=`
 > discriminator). NULL-TOLERANT by design: zero files is the common tour,

@@ -29,17 +29,21 @@ taken instead of ringing them around the QR code.
 - `computeCaptureGeoJoin(state): CaptureWorldPose[]` — per capture:
   `fusedGpsFromOdom(alignmentMatrix, odomPos, zero)` → geo with ABSOLUTE
   altitude (the library's documented contract — NOT zero-relative), plus
-  `rotationNue = alignmentRotation ∘ captureRotation` (D3: photos face as
-  captured). Throws if called without a passing assessment.
+  `rotationNue = alignmentRotation ∘ captureRotation ∘ WEBXR_TO_NUE` —
+  the trailing basis factor is LOAD-BEARING because the state stores
+  CONJUGATED quaternions (milestone review, finding 1; the directional
+  tests pin it). D3: photos face as captured. Throws if called without a passing assessment.
 - `ReplayedJoinState` — structural slice of the replayed
   `CombinedRootState`, deliberately narrow so tests need no full store.
 
 ## Invariants & assumptions
 
 - **Inputs are REPLAYED STATE (NUE)**, never raw action payloads (those
-  are raw WebXR; the reducer converts on dispatch). The caller must use
-  `replayRecording` — which this feature widened to accept the streaming
-  `ZipSource` — not hand-parsed zip entries.
+  are raw WebXR; the reducer converts on dispatch). The caller loads the
+  stream ONCE (`loadRecordingActions`), gates, then replays the SAME
+  array via `replayActions` - never `replayRecording` over the source,
+  which would re-read the zip and replay before the era gate (milestone
+  review, finding 8).
 - **Accuracy model (owner-corrected, plan Rev 2):** the captures are a
   rigid constellation in SLAM space; the whole set shares the final
   alignment's error. Quality is reported, not guessed.
@@ -49,9 +53,14 @@ taken instead of ringing them around the QR code.
 ## Examples
 
 ```ts
-const state = await replayRecording(new ByteSourceReader(archive.source));
-const pre = preflightCaptureJoin(await session.loadSessionMeta(), actionTypes);
-const verdict = pre.ok ? assessReplayedJoin(state) : pre;
+const actions = await session.loadRecordingActions();
+const pre = preflightCaptureJoin(
+  await session.loadSessionMeta(),
+  actions?.map((a) => a.type) ?? [],
+);
+if (actions === null || !pre.ok) return placeRing(pre);
+const state = await replayActions(actions, { onChunk: showProgress });
+const verdict = assessReplayedJoin(state);
 if (verdict.ok) {
   const poses = computeCaptureGeoJoin(state);
   // place each pose via calcRelativeCoordsInMeters(viewerZero, pose.geo, …)
