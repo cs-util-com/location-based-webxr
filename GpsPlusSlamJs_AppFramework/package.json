@@ -58,7 +58,7 @@
   "dependencies": {
     "@reduxjs/toolkit": "^2.11.2",
     "gl-matrix": "3.4.4",
-    "gps-plus-slam-js": "^1.19.0",
+    "gps-plus-slam-js": "^1.20.0",
     "redux": "^5.0.1"
   },
   "peerDependencies": {
