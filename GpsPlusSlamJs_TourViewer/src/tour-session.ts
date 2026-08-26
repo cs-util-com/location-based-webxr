@@ -86,7 +86,7 @@ export interface TourSession {
    * `odomCoordVersion`. NULL when absent/corrupt (legacy or hand-built
    * zip): the join declines, the tour still works.
    */
-  loadSessionMeta(): Promise<{ odomCoordVersion?: number } | null>;
+  loadSessionMeta(): Promise<{ odomCoordVersion?: unknown } | null>;
   close(): Promise<void>;
 }
 
@@ -252,8 +252,11 @@ async function buildSession(
       )?.[1];
       if (entry === undefined) return null;
       try {
+        // Typed `unknown`, deliberately: this is hand-editable JSON, and a
+        // declared `number` here would launder whatever the file contains
+        // past the era gate's runtime check (PR #367 review).
         return JSON.parse(await entry.getData(new TextWriter())) as {
-          odomCoordVersion?: number;
+          odomCoordVersion?: unknown;
         };
       } catch {
         return null;

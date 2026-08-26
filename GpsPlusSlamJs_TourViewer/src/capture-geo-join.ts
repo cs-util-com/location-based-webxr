@@ -110,11 +110,15 @@ const MIN_SUPPORTED_ODOM_COORD_VERSION = 4;
  * seconds-long replay. Every `ok: false` means: keep the ring.
  */
 export function preflightCaptureJoin(
-  meta: { odomCoordVersion?: number } | null,
+  meta: { odomCoordVersion?: unknown } | null,
   actionTypes: readonly string[],
 ): { ok: true } | { ok: false; reason: string } {
+  // TYPE-checked, not just compared (PR #367 review): session.json is
+  // hand-editable, and `null < 4` is false — a null/string version would
+  // otherwise slip PAST the gate into a raw replay of an unknown era.
   if (
-    meta?.odomCoordVersion === undefined ||
+    typeof meta?.odomCoordVersion !== "number" ||
+    !Number.isInteger(meta.odomCoordVersion) ||
     meta.odomCoordVersion < MIN_SUPPORTED_ODOM_COORD_VERSION
   ) {
     return {

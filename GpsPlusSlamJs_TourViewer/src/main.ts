@@ -152,6 +152,10 @@ async function teardownSession(): Promise<void> {
   qrController?.reset();
   imagePlanes?.dispose();
   imagePlanes = null;
+  // Clear the latch HERE too (PR #367 review): the stale run's finally is
+  // generation-guarded and cannot clear it any more, and a latched
+  // imagePlanesLoading blocks every later placement in the session.
+  imagePlanesLoading = false;
   planesRunGeneration += 1; // invalidate any in-flight placement run
   if (session !== null) {
     const closing = session;
@@ -733,10 +737,13 @@ async function decodeJoinedPoses(
   let index = 0;
   for (const pose of poses) {
     index += 1;
-    if (generation === planesRunGeneration) {
-      viewerPlanesInfo = `loading photos ${String(index)}/${String(poses.length)}…`;
-      renderArStatus();
-    }
+    // A bumped token means the session ended or a newer run won: STOP
+    // decoding into a dead scene (PR #367 review — noticing the token
+    // only for the status text kept burning tens of seconds of decode +
+    // GPU uploads the caller would immediately dispose).
+    if (generation !== planesRunGeneration) break;
+    viewerPlanesInfo = `loading photos ${String(index)}/${String(poses.length)}…`;
+    renderArStatus();
     try {
       const nue = calcRelativeCoordsInMeters(
         viewerZero,

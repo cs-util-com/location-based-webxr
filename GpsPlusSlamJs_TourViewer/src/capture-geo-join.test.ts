@@ -75,7 +75,14 @@ describe("assessReplayForJoin", () => {
     });
   });
 
-  it.each([[null], [{}], [{ odomCoordVersion: 2 }]])(
+  it.each([
+    [null],
+    [{}],
+    [{ odomCoordVersion: 2 }],
+    [{ odomCoordVersion: null }],
+    [{ odomCoordVersion: "9" }],
+    [{ odomCoordVersion: 4.5 }],
+  ])(
     "preflight declines a non-current-era recording (%o) BEFORE any replay — legacy actions without the RecorderApp migration double-convert every pose",
     (meta) => {
       expect(preflightCaptureJoin(meta, []).ok).toBe(false);
