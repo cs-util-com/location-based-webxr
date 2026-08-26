@@ -49,8 +49,13 @@ import type {
 } from "gps-plus-slam-app-framework/core";
 import type { QrPoseStability } from "gps-plus-slam-app-framework/state";
 
-/** Default printed side length (m) prefilled in the author panel. */
-export const AUTHOR_DEFAULT_SIZE_M = 0.2;
+/** Default printed side length (m) prefilled in the author panel.
+ *  0.16, not 0.2 (PR #364 review): with the 8% quiet zone each side the
+ *  printed content is sizeM × 1.16, and 0.2 m → 23.2 cm exceeds the ~19 cm
+ *  printable width of A4/Letter — at the mandated 100% scale the symbol's
+ *  edge modules are CLIPPED and the code does not decode. 0.16 m → 18.6 cm
+ *  fits; larger sizes are allowed but warned about in the print panel. */
+export const AUTHOR_DEFAULT_SIZE_M = 0.16;
 
 /**
  * The mint gate's alignment requirement (milestone review #1): a non-null

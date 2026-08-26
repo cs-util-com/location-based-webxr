@@ -20,8 +20,37 @@
 
 import { buildQrLaunchUrl } from "gps-plus-slam-app-framework/utils/qr-payload/qr-launch-url";
 
-/** The deployed viewer the printed codes launch. */
-export const PRINT_BASE_URL = "https://gps.csutil.com/tour/";
+import { DEFAULT_CODE_DISCRIMINATOR } from "./code-param";
+
+/**
+ * The BARE host, not `/tour/` (ZD-9, and the PR #364 review caught the two
+ * contradicting each other in one PR): the landing page owns `/` and
+ * forwards any `?qr=` launch untouched to the viewer, precisely so printed
+ * codes never spend payload bits on a path — a path in the printed base
+ * would forfeit the densest QR encodings forever.
+ */
+export const PRINT_BASE_URL = "https://gps.csutil.com/";
+
+/**
+ * Printable-width budget (m) for a home printer: ~19 cm of printable width
+ * on A4/Letter with default margins, divided by 1.16 (the 8% quiet zone on
+ * each side). At the mandated 100% scale a larger symbol is CLIPPED — and a
+ * clipped QR does not decode at all. Larger prints stay allowed (print
+ * shops, tiling) but the panel warns in plain words.
+ */
+export const MAX_HOME_PRINTABLE_SIDE_M = 0.19 / 1.16;
+
+/** A plain-words warning when `sizeM` will not fit a home printer's page,
+ *  or `null` when it fits. */
+export function homePrintWarning(sizeM: number): string | null {
+  if (sizeM <= MAX_HOME_PRINTABLE_SIDE_M) return null;
+  return (
+    `Warning: ${printedSideCss(sizeM)} plus the quiet zone is wider than an ` +
+    `A4/Letter page — at 100% scale the code would be cut off and will not ` +
+    `scan. Use ${printedSideCss(Math.floor(MAX_HOME_PRINTABLE_SIDE_M * 1000) / 1000)} ` +
+    `or less, or print on a larger sheet.`
+  );
+}
 
 export interface QrPrintPlan {
   /** The full printable launch URL (the QR's payload). */
@@ -34,9 +63,15 @@ export async function planPrintCode(
   dataUrl: string,
   c: string,
 ): Promise<QrPrintPlan> {
-  const plan = await buildQrLaunchUrl(PRINT_BASE_URL, dataUrl, {
-    extraQuery: { c },
-  });
+  // `&c=` is omitted when it equals the default: both readers fall back to
+  // "1" when the parameter is absent, so printing it spends 4 bytes of a
+  // payload the builder costs bit-by-bit — and any non-empty suffix
+  // disqualifies the densest path-form candidates (PR #364 review).
+  const plan = await buildQrLaunchUrl(
+    PRINT_BASE_URL,
+    dataUrl,
+    c === DEFAULT_CODE_DISCRIMINATOR ? {} : { extraQuery: { c } },
+  );
   return { url: plan.url, qrVersion: plan.estimate.version };
 }
 

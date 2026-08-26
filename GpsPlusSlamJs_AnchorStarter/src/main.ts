@@ -585,6 +585,16 @@ async function startAr(): Promise<void> {
       },
       { requestHitTest: true },
       {
+        // A session the USER ends (system back gesture, headset "Exit AR")
+        // never reaches `failStart` — without this callback the recording
+        // stayed open and the dead session's odometry↔GPS pairs blended into
+        // the next entry's alignment solve, the exact DEC-H3 failure. The
+        // start-failure path tears down via `failStart`; this covers the
+        // user-ended path (PR #364 review — AnchorStarter was the one app
+        // in the unification still missing it).
+        onSessionEnd: () => {
+          if (store) teardownArSessionState(store);
+        },
         tracking: {
           store,
           onRestarted: (payload) => {

@@ -230,7 +230,8 @@ test("author mode mints and exports a level that the parser round-trips", async 
   const json = await page.getByTestId("author-json").inputValue();
   const level = JSON.parse(json);
   expect(level.version).toBe(1);
-  expect(level.qr.physicalSizeM).toBeCloseTo(0.2, 9);
+  // 0.16 — the page-fitting default (PR #364 review; see the print spec).
+  expect(level.qr.physicalSizeM).toBeCloseTo(0.16, 9);
   expect(level.qr.geo.lat).toEqual(expect.any(Number));
   expect(level.qr.geo.lon).toEqual(expect.any(Number));
   expect(level.qr.geo.rotation).toHaveLength(4);
@@ -422,11 +423,25 @@ test("the print panel renders a scannable code at a declared true size", async (
   expect(drawn?.width).toBeGreaterThan(0);
   expect(drawn?.blank).toBe(false);
   await expect(page.getByTestId("print-info")).toContainText("100% scale");
-  await expect(page.getByTestId("print-info")).toContainText("20cm");
+  // 16cm: the default PRINTED size must fit an A4/Letter page with the
+  // quiet zone at 100% scale — 20cm did not, and the symbol clipped
+  // (PR #364 review). The default therefore may NOT trigger the page-fit
+  // warning, which is asserted absent here.
+  await expect(page.getByTestId("print-info")).toContainText("16cm");
+  await expect(page.getByTestId("print-info")).not.toContainText("cut off");
   await expect(page.getByTestId("print-button")).toBeVisible();
+  // BARE host (ZD-9): the landing forward carries ?qr= to the viewer, so
+  // printed codes never spend payload bits on a path.
   await expect(page.getByTestId("print-url-out")).toContainText(
-    "https://gps.csutil.com/tour/?qr=",
+    "https://gps.csutil.com/?qr=",
   );
+
+  // An oversized size warns in the same info line the scale instruction
+  // lives in — a clipped code does not decode, so silence is the bug.
+  await page.getByTestId("author-size").fill("0.3");
+  await page.getByTestId("print-generate").click();
+  await expect(page.getByTestId("print-info")).toContainText("cut off");
+  await page.getByTestId("author-size").fill("0.16");
 
   // Failure path (async-UI rule): a bad URL surfaces in the panel and the
   // button restores.

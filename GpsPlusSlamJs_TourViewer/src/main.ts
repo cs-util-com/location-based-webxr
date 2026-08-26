@@ -54,7 +54,7 @@ import {
   viewerStatusLine,
 } from "./qr-viewer-mode.js";
 import QRCode from "qrcode";
-import { planPrintCode, printedSideCss } from "./qr-print.js";
+import { homePrintWarning, planPrintCode, printedSideCss } from "./qr-print.js";
 import { codeFromDetectedText, codeFromSearch } from "./code-param.js";
 import { placeImagePlanes, type PlacedImagePlanes } from "./image-planes.js";
 import type { Texture } from "three";
@@ -647,9 +647,14 @@ async function generatePrintCode(): Promise<void> {
   document.documentElement.style.setProperty("--print-side", sideCss);
   printArea.hidden = false;
   printButton.hidden = false;
+  // The page-fit warning rides IN #print-info, not a separate channel: it
+  // must be read in the same glance as the "100% scale" instruction whose
+  // combination with an oversized symbol clips the code (PR #364 review).
+  const warning = homePrintWarning(Number(authorSizeInput.value));
   printInfo.textContent =
     `QR version ${String(plan.qrVersion)}, code ${c}, prints at ${sideCss} — ` +
-    `use 100% scale (no fit-to-page).`;
+    `use 100% scale (no fit-to-page).` +
+    (warning === null ? "" : ` ${warning}`);
   printUrlOut.textContent = plan.url;
 }
 
