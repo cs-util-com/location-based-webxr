@@ -180,21 +180,26 @@ export class MapView {
             );
           });
     this.containerResize?.observe(options.container);
-    // The e2e reads this on a settle-poll timeout — production behaviour is
-    // unchanged; only the trace is exposed.
-    (
-      globalThis as { __osmDemoMapDiagnostics?: unknown }
-    ).__osmDemoMapDiagnostics = {
-      resize: this.resizeDiagnostics,
-      leafletSize: () => {
-        const size = this.map.getSize();
-        return { w: size.x, h: size.y };
-      },
-      containerSize: () => {
-        const rect = options.container.getBoundingClientRect();
-        return { w: rect.width, h: rect.height };
-      },
-    };
+    // The e2e reads this on a settle-poll timeout, and the e2e runs against
+    // the vite DEV server — so the global is DEV-gated and a production
+    // build statically drops it (the same prod-inert seam pattern the
+    // TourViewer uses; PR #365 review). The bounded per-instance recording
+    // above stays unconditional. Last-constructed MapView wins the global;
+    // the demo builds one.
+    if (import.meta.env.DEV)
+      (
+        globalThis as { __osmDemoMapDiagnostics?: unknown }
+      ).__osmDemoMapDiagnostics = {
+        resize: this.resizeDiagnostics,
+        leafletSize: () => {
+          const size = this.map.getSize();
+          return { w: size.x, h: size.y };
+        },
+        containerSize: () => {
+          const rect = options.container.getBoundingClientRect();
+          return { w: rect.width, h: rect.height };
+        },
+      };
 
     // ADDED FIRST OF THIS CORNER'S CONTROLS, and that is load-bearing rather
     // than incidental. Leaflet PREPENDS into a bottom corner

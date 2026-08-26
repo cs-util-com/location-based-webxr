@@ -199,8 +199,12 @@ async function openUrl(url: string): Promise<void> {
   // in that window used to race the button state (PR #357 review).
   openButton.disabled = true;
   openButton.textContent = "Opening…";
-  await teardownSession();
   try {
+    // INSIDE the try (PR #365 review): a throw from the previous session's
+    // teardown (controller reset, three.js disposals) otherwise rejected
+    // openUrl before the catch/finally existed — the button stayed
+    // "Opening…" forever and the error surfaced nowhere.
+    await teardownSession();
     const opened = await openTourSession(url, {
       ...(cacheStore !== undefined ? { cacheStore } : {}),
       onStats: () => {
