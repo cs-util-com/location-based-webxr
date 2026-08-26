@@ -10,17 +10,22 @@ taken instead of ringing them around the QR code.
 
 ## Public API
 
-- `assessReplayForJoin(actionTypes, state): JoinAssessment` — every
+- `preflightCaptureJoin(meta, actionTypes)` — the BEFORE-replay half (era
+  `odomCoordVersion === 5` and the segmenting-action scan) so a declined
+  zip never pays the seconds-long replay.
+- `assessReplayedJoin(state): JoinAssessment` — the AFTER-replay half; every
   `ok: false` carries a plain-words reason and means "keep the ring".
-  Declines: a segmenting action present (`odometryTrackingRestarted` /
-  `arLoopClosureDetected` — a restart WIPES and a loop closure DEFORMS the
-  alignment's odometry history while `odometryPath.points` keeps every
-  capture, so the final alignment is only valid for the last segment; V1
-  declines whole recordings, per-segment joins are the filed follow-up),
-  null `gpsData`, missing zero, pairs < `MIN_ALIGNMENT_SAMPLES`, the
-  IDENTITY alignment (the degenerate solve's default), zero captures.
-  `ok: true` carries `{ pairCount, gpsAccuracyMedianM }` — the honest
-  quality the viewer surfaces ("placed from N fixes, ±X m").
+  - Preflight declines: wrong/unknown era, or a segmenting action present
+    (`odometryTrackingRestarted` / `arLoopClosureDetected` — a restart
+    WIPES and a loop closure DEFORMS the alignment's odometry history
+    while `odometryPath.points` keeps every capture, so the final
+    alignment is only valid for the last segment; V1 declines whole
+    recordings, per-segment joins are the filed follow-up).
+  - State declines: null `gpsData`, missing zero, pairs <
+    `MIN_ALIGNMENT_SAMPLES`, malformed or IDENTITY alignment (the
+    degenerate solve's default), zero captures.
+  - `ok: true` carries `{ pairCount, gpsAccuracyMedianM }` — the honest
+    quality the viewer surfaces ("placed from N fixes, ±X m").
 - `computeCaptureGeoJoin(state): CaptureWorldPose[]` — per capture:
   `fusedGpsFromOdom(alignmentMatrix, odomPos, zero)` → geo with ABSOLUTE
   altitude (the library's documented contract — NOT zero-relative), plus
@@ -38,14 +43,15 @@ taken instead of ringing them around the QR code.
 - **Accuracy model (owner-corrected, plan Rev 2):** the captures are a
   rigid constellation in SLAM space; the whole set shares the final
   alignment's error. Quality is reported, not guessed.
-- Era gating (`session.json` `odomCoordVersion`) is the CALLER's job —
-  this module never sees the zip.
+- This module never touches the zip: the caller feeds it `loadSessionMeta()`,
+  the action-type list, and the replayed state.
 
 ## Examples
 
 ```ts
 const state = await replayRecording(new ByteSourceReader(archive.source));
-const verdict = assessReplayForJoin(actionTypes, state);
+const pre = preflightCaptureJoin(await session.loadSessionMeta(), actionTypes);
+const verdict = pre.ok ? assessReplayedJoin(state) : pre;
 if (verdict.ok) {
   const poses = computeCaptureGeoJoin(state);
   // place each pose via calcRelativeCoordsInMeters(viewerZero, pose.geo, …)

@@ -3,7 +3,8 @@ import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 
 import {
-  assessReplayForJoin,
+  assessReplayedJoin,
+  preflightCaptureJoin,
   computeCaptureGeoJoin,
   type ReplayedJoinState,
 } from "./capture-geo-join";
@@ -62,13 +63,28 @@ function baseState(overrides?: {
   };
 }
 
+const CURRENT_ERA = { odomCoordVersion: 5 };
+
 describe("assessReplayForJoin", () => {
-  it("accepts a solved recording and reports its quality", () => {
-    const verdict = assessReplayForJoin([], baseState());
+  it("accepts a solved current-era recording and reports its quality", () => {
+    const verdict = assessReplayedJoin(baseState());
     expect(verdict).toEqual({
       ok: true,
       quality: { pairCount: 5, gpsAccuracyMedianM: 4.2 },
     });
+  });
+
+  it.each([[null], [{}], [{ odomCoordVersion: 2 }]])(
+    "preflight declines a non-current-era recording (%o) BEFORE any replay — legacy actions without the RecorderApp migration double-convert every pose",
+    (meta) => {
+      expect(preflightCaptureJoin(meta, []).ok).toBe(false);
+    },
+  );
+
+  it("preflight accepts the current era with no segmenting actions", () => {
+    expect(preflightCaptureJoin(CURRENT_ERA, ["gpsData/setZeroPos"]).ok).toBe(
+      true,
+    );
   });
 
   it.each([
@@ -77,22 +93,21 @@ describe("assessReplayForJoin", () => {
   ])(
     "declines when the recording contains %s — the final alignment is only valid for the last segment",
     (type) => {
-      const verdict = assessReplayForJoin([type], baseState());
-      expect(verdict.ok).toBe(false);
+      expect(preflightCaptureJoin(CURRENT_ERA, [type]).ok).toBe(false);
     },
   );
 
   it("declines a null gpsData, a missing zero, too few pairs, and no captures — each with plain words", () => {
-    expect(assessReplayForJoin([], { gpsData: null }).ok).toBe(false);
+    expect(assessReplayedJoin({ gpsData: null }).ok).toBe(false);
     const noZero = baseState();
     noZero.gpsData!.zero = null;
-    expect(assessReplayForJoin([], noZero).ok).toBe(false);
-    expect(assessReplayForJoin([], baseState({ pairCount: 2 })).ok).toBe(false);
-    expect(assessReplayForJoin([], baseState({ points: [] })).ok).toBe(false);
+    expect(assessReplayedJoin(noZero).ok).toBe(false);
+    expect(assessReplayedJoin(baseState({ pairCount: 2 })).ok).toBe(false);
+    expect(assessReplayedJoin(baseState({ points: [] })).ok).toBe(false);
   });
 
   it("declines the IDENTITY alignment — the degenerate solve's default, not a real solve", () => {
-    const verdict = assessReplayForJoin([], baseState({ matrix: IDENTITY16 }));
+    const verdict = assessReplayedJoin(baseState({ matrix: IDENTITY16 }));
     expect(verdict.ok).toBe(false);
   });
 });

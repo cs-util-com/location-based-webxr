@@ -208,3 +208,58 @@ describe("openTourSession", () => {
     await expect(store.get("https://x/tour.zip")).resolves.toBeUndefined();
   });
 });
+
+// Why these tests matter (geo-join M-B): the join's inputs come through
+// these two accessors, and BOTH are null-tolerant by contract — a
+// hand-built tour zip (no recording) and a corrupt stream must read as
+// "keep the ring", never as a broken archive.
+/** Exactly the given entries - no defaults; the recording tests need to
+ *  control session.json themselves. */
+async function buildExactZip(
+  entries: Record<string, string>,
+): Promise<Uint8Array> {
+  const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
+  for (const [name, text] of Object.entries(entries)) {
+    await writer.add(name, new TextReader(text));
+  }
+  return writer.close();
+}
+
+describe("loadRecordingActions / loadSessionMeta", () => {
+  it("returns the parsed action stream and session meta for a recording zip", async () => {
+    const fetchImpl = rangeServer(
+      await buildExactZip({
+        "session.json": '{"version":1,"odomCoordVersion":5}',
+        "actions/000001.json":
+          '{"type":"gpsData/setZeroPos","payload":{"lat":1,"lon":2}}',
+        "actions/000002.json": '{"type":"recording/startSession","payload":{}}',
+      }),
+    );
+    const session = await openTourSession("https://x/tour.zip", { fetchImpl });
+    const actions = await session.loadRecordingActions();
+    expect(actions?.map((a) => a.type)).toEqual([
+      "gpsData/setZeroPos",
+      "recording/startSession",
+    ]);
+    await expect(session.loadSessionMeta()).resolves.toMatchObject({
+      odomCoordVersion: 5,
+    });
+  });
+
+  it("returns null for a hand-built zip without a recording — the ring path, not an error", async () => {
+    const fetchImpl = rangeServer(
+      await buildExactZip({ "qr/1.json": LEVEL_JSON }),
+    );
+    const session = await openTourSession("https://x/tour.zip", { fetchImpl });
+    await expect(session.loadRecordingActions()).resolves.toBeNull();
+    await expect(session.loadSessionMeta()).resolves.toBeNull();
+  });
+
+  it("returns null session meta for corrupt session.json", async () => {
+    const fetchImpl = rangeServer(
+      await buildExactZip({ "session.json": "not json {{" }),
+    );
+    const session = await openTourSession("https://x/tour.zip", { fetchImpl });
+    await expect(session.loadSessionMeta()).resolves.toBeNull();
+  });
+});

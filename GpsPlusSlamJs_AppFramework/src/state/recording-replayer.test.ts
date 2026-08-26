@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, beforeAll, vi } from 'vitest';
-import { replayRecording } from './recording-replayer';
+import { replayActions, replayRecording } from './recording-replayer';
 import type { CombinedRootState } from './combined-root-state';
 import type { RecordedAction } from '../storage/zip-reader';
 import { isIdentityMatrix4 } from 'gps-plus-slam-js';
@@ -176,5 +176,26 @@ describe('replayRecording — ZipSource widening + chunked dispatch (geo-join M-
     // At least one chunk boundary observed the macrotask having run — the
     // loop genuinely yielded rather than merely calling the hook inline.
     expect(seen.some(Boolean)).toBe(true);
+  });
+});
+
+describe('replayActions — the pre-loaded half (geo-join M-B)', () => {
+  // Why this test matters: the TourViewer must scan the action stream
+  // (era/segment gates) BEFORE deciding to replay — loading the zip twice
+  // through a range-streaming source would double the transfer, so the
+  // load and the dispatch are separate entry points and replayRecording is
+  // their composition. The two paths must agree on the resulting state.
+  it('produces the same state as replayRecording over the same zip', async () => {
+    const zip = await produceTestZip();
+    const { loadActionsFromZip } = await import('../storage/zip-reader');
+    const entries = await loadActionsFromZip(zip.zipData);
+    const viaActions = await replayActions(entries.map((e) => e.action));
+    const viaZip = await replayRecording(zip.zipData);
+    expect(viaActions.gpsData?.gpsEvents.alignmentMatrix).toEqual(
+      viaZip.gpsData?.gpsEvents.alignmentMatrix
+    );
+    expect(viaActions.gpsData?.odometryPath.points.length).toBe(
+      viaZip.gpsData?.odometryPath.points.length
+    );
   });
 });

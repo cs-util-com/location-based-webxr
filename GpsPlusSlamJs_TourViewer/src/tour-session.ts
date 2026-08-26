@@ -20,11 +20,13 @@ import {
 } from "@zip.js/zip.js";
 import {
   ByteSourceReader,
+  loadActionsFromZip,
   openRemoteArchive,
   type ArchiveReadEvent,
   type LocalCacheStore,
   type OpenedArchive,
   type FetchImpl,
+  type RecordedAction,
 } from "gps-plus-slam-app-framework/storage";
 import {
   parseQrLevel,
@@ -72,6 +74,19 @@ export interface TourSession {
    * "that code has no level" — it must never brick the whole archive.
    */
   loadQrLevels(): Promise<ReadonlyMap<string, QrLevel>>;
+  /**
+   * The recording's action stream, range-streamed and parsed — the input
+   * to the capture-geo join's gates and replay. NULL when the archive has
+   * no readable action stream (a hand-built zip is a normal tour): null
+   * means "keep the ring", never an error.
+   */
+  loadRecordingActions(): Promise<readonly RecordedAction[] | null>;
+  /**
+   * `session.json`, parsed — the join's era gate reads
+   * `odomCoordVersion`. NULL when absent/corrupt (legacy or hand-built
+   * zip): the join declines, the tour still works.
+   */
+  loadSessionMeta(): Promise<{ odomCoordVersion?: number } | null>;
   close(): Promise<void>;
 }
 
@@ -208,6 +223,34 @@ async function buildSession(
         }
       }
       return levels;
+    },
+    loadRecordingActions: async () => {
+      if (![...byName.keys()].some((name) => name.startsWith("actions/"))) {
+        return null; // a hand-built tour zip is normal, not an error
+      }
+      try {
+        // Reuses the framework parser over a SECOND reader on the same
+        // range-streaming source (a few extra directory reads, no
+        // re-download) — re-implementing the index-ordered parse here
+        // would be the DEC-H3 drift.
+        const loaded = await loadActionsFromZip(
+          new ByteSourceReader(archive.source),
+        );
+        return loaded.map((e) => e.action);
+      } catch {
+        return null; // corrupt stream → the join declines, the tour works
+      }
+    },
+    loadSessionMeta: async () => {
+      const entry = byName.get("session.json");
+      if (entry === undefined) return null;
+      try {
+        return JSON.parse(await entry.getData(new TextWriter())) as {
+          odomCoordVersion?: number;
+        };
+      } catch {
+        return null;
+      }
     },
     close: async () => {
       archive.dispose();

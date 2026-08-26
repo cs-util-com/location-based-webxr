@@ -92,14 +92,28 @@ const SEGMENTING_ACTION_TYPES = [
 ] as const;
 
 /**
- * Decide whether the replayed recording supports a trustworthy join. Every
- * `ok: false` carries a plain-words reason (surfaced in the AR status) and
- * means: keep the ring.
+ * The one recording era this viewer replays without migration. The action
+ * migration for older eras lives in the RecorderApp (era ≤4 payloads are
+ * differently framed — replaying them raw double-converts every pose);
+ * promoting it is the filed follow-up, declining is the honest V1.
  */
-export function assessReplayForJoin(
+const SUPPORTED_ODOM_COORD_VERSION = 5;
+
+/**
+ * The BEFORE-replay half of the decision: era and segment gates run on the
+ * cheap inputs (meta + action types) so a declined zip never pays the
+ * seconds-long replay. Every `ok: false` means: keep the ring.
+ */
+export function preflightCaptureJoin(
+  meta: { odomCoordVersion?: number } | null,
   actionTypes: readonly string[],
-  state: ReplayedJoinState,
-): JoinAssessment {
+): { ok: true } | { ok: false; reason: string } {
+  if (meta?.odomCoordVersion !== SUPPORTED_ODOM_COORD_VERSION) {
+    return {
+      ok: false,
+      reason: "the recording predates the current format (no migration here)",
+    };
+  }
   for (const type of SEGMENTING_ACTION_TYPES) {
     if (actionTypes.includes(type)) {
       return {
@@ -109,6 +123,15 @@ export function assessReplayForJoin(
       };
     }
   }
+  return { ok: true };
+}
+
+/**
+ * The AFTER-replay half: quality gates on the replayed state. Every
+ * `ok: false` carries a plain-words reason (surfaced in the AR status) and
+ * means: keep the ring.
+ */
+export function assessReplayedJoin(state: ReplayedJoinState): JoinAssessment {
   const gpsData = state.gpsData;
   if (gpsData === null) return { ok: false, reason: "no GPS data recorded" };
   if (gpsData.zero === null)
@@ -143,7 +166,7 @@ export function assessReplayForJoin(
 
 /**
  * Compute every capture's world pose. Call only after
- * {@link assessReplayForJoin} returned `ok` — a null `gpsData`/zero here is
+ * {@link assessReplayedJoin} returned `ok` — a null `gpsData`/zero here is
  * a programming error and throws.
  */
 export function computeCaptureGeoJoin(

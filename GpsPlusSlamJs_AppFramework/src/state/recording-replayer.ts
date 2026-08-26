@@ -73,16 +73,30 @@ export async function replayRecording(
   zipData: ZipSource,
   options?: ReplayRecordingOptions
 ): Promise<CombinedRootState> {
+  const actionEntries = await loadActionsFromZip(zipData);
+  return replayActions(
+    actionEntries.map((e) => e.action),
+    options
+  );
+}
+
+/**
+ * Replay ALREADY-LOADED actions into a fresh store — the dispatch half of
+ * {@link replayRecording}, separated so a caller that must SCAN the stream
+ * before deciding to replay (the TourViewer's era/segment gates) does not
+ * read the zip twice through a range-streaming source.
+ */
+export async function replayActions(
+  loadedActions: readonly RecordedAction[],
+  options?: ReplayRecordingOptions
+): Promise<CombinedRootState> {
   const store = createSlamAppStore({
     storageBackend: new NullStorageBackend(),
   });
 
-  const actionEntries = await loadActionsFromZip(zipData);
-  let actions = actionEntries.map((e) => e.action);
-
-  if (options?.migrateActions) {
-    actions = options.migrateActions(actions);
-  }
+  const actions = options?.migrateActions
+    ? options.migrateActions([...loadedActions])
+    : loadedActions;
 
   // CHUNKED, not one synchronous burst: a long recording's dispatches cost
   // whole seconds (each GPS event can re-solve the alignment), and callers
