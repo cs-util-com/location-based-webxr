@@ -23,6 +23,7 @@
 
 import {
   createSlamAppStore,
+  teardownArSessionState,
   createGpsPositionHandler,
   updateDeviceOrientation,
   startSession,
@@ -526,6 +527,10 @@ async function failStart(err: unknown, fallbackMessage: string): Promise<void> {
   anchor = null;
   reticleHandle?.dispose();
   reticleHandle = null;
+  // The store half of the session teardown (framework-shared): without it
+  // a retry's second session appended its odometry-GPS pairs onto the dead
+  // session's and the alignment solve blended two odometry origins.
+  if (store) teardownArSessionState(store);
 
   dom.startScreen.hidden = false;
   dom.guidance.hidden = true;

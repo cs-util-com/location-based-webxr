@@ -21,6 +21,11 @@
   tokens, and a measured request-budget test. The `utils/qr-payload`
   launch-URL codec (`buildQrLaunchUrl`, `decodeDictionaryPayload`) is now
   deep-importable for `?qr=` launch handlers.
+- **`teardownArSessionState` (`state/ar-session-teardown`)** — the shared
+  AR session-end STATE teardown (close the recording, drop the session's
+  odometry↔GPS pairs via the core's `resetGpsSessionData` while keeping
+  the zero, clear the coordinator cache). Unified from three identical
+  app sequences (DEC-H3); requires gps-plus-slam-js ≥ 1.20.
 - **`decodeFrameTexture` promoted from the recorder** —
   `visualization/frame-texture-decoder` decodes an image Blob into an
   UPRIGHT `THREE.Texture` (the ImageBitmap orientation contract: browsers

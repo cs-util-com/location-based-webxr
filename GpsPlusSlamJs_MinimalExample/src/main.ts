@@ -37,6 +37,7 @@ import {
   selectAlignmentMatrix,
   selectZeroReference,
   startSession,
+  teardownArSessionState,
   updateDeviceOrientation,
   type SubscribableStore,
 } from 'gps-plus-slam-app-framework/state';

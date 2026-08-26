@@ -24,11 +24,13 @@ import type {
   RawDeviceOrientation,
 } from "gps-plus-slam-app-framework/sensors";
 import {
-  endSession,
-  resetCoordinatorState,
-  resetGpsSessionData,
   startSession,
+  teardownArSessionState,
   type SubscribableStore,
+} from "gps-plus-slam-app-framework/state";
+import type {
+  endSession,
+  resetGpsSessionData,
 } from "gps-plus-slam-app-framework/state";
 import type { Object3D } from "three";
 
@@ -215,7 +217,7 @@ export function endTourArRuntime(
   deps: { stopCameraFrameCapture(): void },
 ): void {
   deps.stopCameraFrameCapture();
-  store.dispatch(endSession());
-  store.dispatch(resetGpsSessionData());
-  resetCoordinatorState();
+  // The store half is the shared framework sequence (DEC-H3 unification):
+  // endSession + resetGpsSessionData + coordinator reset.
+  teardownArSessionState(store);
 }

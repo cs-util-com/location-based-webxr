@@ -120,6 +120,9 @@ const entryFiles = [
 
   // state/
   'src/state/index.ts',
+  // Shared AR session-end STATE teardown (DEC-H3 unification, 2026-08-26)
+  // — deep-importable via the ./state/* wildcard → per-file entry.
+  'src/state/ar-session-teardown.ts',
   'src/state/app-selectors.ts',
   'src/state/combined-root-state.ts',
   'src/state/create-slam-app-store.ts',
