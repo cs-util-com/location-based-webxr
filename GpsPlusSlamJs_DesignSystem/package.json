@@ -8,7 +8,8 @@
     "test": "node ../scripts/test-timing/run-gate.mjs",
     "format": "node ../scripts/test-timing/timed-stage.mjs format",
     "format:check": "prettier --check --ignore-unknown .",
-    "shoot": "node shoot.mjs"
+    "shoot": "node shoot.mjs",
+    "serve": "node serve.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",

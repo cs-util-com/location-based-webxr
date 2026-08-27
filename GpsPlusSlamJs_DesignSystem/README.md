@@ -51,6 +51,17 @@ console/page errors fail the run - including the page's own atom-drift
 assertion, which checks that the atoms column and the screens still
 show identical markup for the duplicated atoms (radar, annotations).
 
+## Phone rounds
+
+```bash
+pnpm run serve   # then open the printed http://<lan-ip>:4173/ on the phone
+```
+
+Plain HTTP on the LAN: refresh-speed iteration on a real device, at the
+accepted cost that Android blocks `getUserMedia` without HTTPS - the
+live camera background shows its error toast there; every other
+background works.
+
 ## Hard constraint carried from the real apps
 
 `backdrop-filter` is banned in anything meant for the immersive path: in
