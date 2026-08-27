@@ -422,6 +422,21 @@
       </section>
 
       <section>
+        <h3>Motion — calm instrument, transient by default</h3>
+        <!-- motion exists to COMMUNICATE STATE: arrivals rise/settle at
+             --t-enter (ease-out), exits fade at --t-state (ease-in),
+             indirect state changes cross-fade at --t-state, direct
+             responses stay at --t-fast. Loops only for ongoing states
+             (locating). Replay buttons re-trigger the real atoms. -->
+        <div class="row">
+          <button class="btn" id="replay-toast">Toast</button>
+          <button class="btn" id="replay-modal">Modal</button>
+          <button class="btn" id="replay-warn">Warn onset</button>
+          <button class="btn" id="replay-anno">Annotation</button>
+        </div>
+      </section>
+
+      <section>
         <h3>Badge — normal / warning</h3>
         <!-- real strings from the RecorderApp tracking-quality badge -->
         <div class="row">
@@ -847,14 +862,34 @@
 
       // Toast (also the error channel for the live-camera button)
       const toast = document.getElementById("toast");
+      // Leave choreography: [data-leaving] runs the exit animation and
+      // hiding waits for it - except under prefers-reduced-motion, where
+      // the animation never fires an end event, so hide immediately.
+      const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+      function leaveThenHide(el) {
+        if (reducedMotion.matches) {
+          el.hidden = true;
+          return;
+        }
+        el.setAttribute("data-leaving", "");
+        el.addEventListener(
+          "animationend",
+          () => {
+            el.hidden = true;
+            el.removeAttribute("data-leaving");
+          },
+          { once: true },
+        );
+      }
       let toastTimer;
       function showToast(message) {
         toast.textContent = message;
+        toast.removeAttribute("data-leaving");
         toast.hidden = false;
         clearTimeout(toastTimer);
         // 6000ms matches DEFAULT_TOAST_LINGER_MS in the real toast-core.ts —
         // linger length is a taste judgement, so judge the shipped number.
-        toastTimer = setTimeout(() => (toast.hidden = true), 6000);
+        toastTimer = setTimeout(() => leaveThenHide(toast), 6000);
       }
       document
         .getElementById("toast-demo")
@@ -870,11 +905,36 @@
       });
       veil.addEventListener("click", (event) => {
         if (event.target === veil || event.target.closest(".btn")) {
-          veil.hidden = true;
+          leaveThenHide(veil);
         }
       });
       document.addEventListener("keydown", (event) => {
-        if (event.key === "Escape") veil.hidden = true;
+        if (event.key === "Escape" && !veil.hidden) leaveThenHide(veil);
+      });
+
+      // Motion replays: re-trigger the real atoms. Restarting a CSS
+      // animation needs the remove/reflow/re-add dance.
+      const replay = (el) => {
+        el.style.animation = "none";
+        void el.offsetWidth;
+        el.style.animation = "";
+      };
+      document
+        .getElementById("replay-toast")
+        .addEventListener("click", () => showToast("Re-observed from here"));
+      document.getElementById("replay-modal").addEventListener("click", () => {
+        veil.removeAttribute("data-leaving");
+        veil.hidden = false;
+      });
+      document.getElementById("replay-warn").addEventListener("click", () => {
+        for (const el of document.querySelectorAll(
+          '.num[data-degraded="true"], .badge[data-tone="warn"]',
+        )) {
+          replay(el);
+        }
+      });
+      document.getElementById("replay-anno").addEventListener("click", () => {
+        for (const el of document.querySelectorAll(".atoms .anno")) replay(el);
       });
 
       // KEEP-IN-SYNC, made executable: every [data-atom-copy] must carry

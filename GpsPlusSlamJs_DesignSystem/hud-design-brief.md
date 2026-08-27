@@ -94,7 +94,8 @@ full-width with the decisive action last and wearing the accent. State grammar: 
 enumerations), semantic variants ride `data-tone="..."`, and pressed/expanded
 truth rides the ARIA attributes (`aria-pressed`, `aria-expanded`) which the
 CSS styles directly. Surfaces near-solidify under
-prefers-reduced-transparency / prefers-contrast. The design should read as
+prefers-reduced-transparency / prefers-contrast; every animation
+honors prefers-reduced-motion. The design should read as
 the same instrument family as the reference screenshots, extended.
 
 ---
@@ -155,8 +156,16 @@ honest against `styles.css`.
   (the signature strip width - plate's right edge only) · `--groove` 18
   (slider channel = thumb = switch knob) · `--line` 0.5 / `--line-strong` 2 ·
   `--tap` 44 (touch floor).
-- **Motion**: `--t-fast` 120ms (state response) · `--t-enter` 400ms
-  (arrivals over a moving camera are slow on purpose).
+- **Motion** ("calm instrument": motion communicates STATE, never
+  decorates - short distances, opacity-first, no bounce): `--t-fast`
+  120ms (direct response: press, drag, knob) · `--t-state` 250ms
+  (indirect changes: engage fill, tone, exits) · `--t-enter` 400ms
+  (arrivals rise/settle - slow on purpose over a moving camera) ·
+  `--ease-out` (arrivals settle) · `--ease-in` (exits accelerate
+  away). Transient by default: a LOOP is allowed only while a state is
+  ongoing-and-unresolved (locating); ambient loops cost frames on a
+  phone already running camera + 3D. A warn state flashes ONCE on
+  onset (brightness settle), never repeatedly.
 
 ---
 
