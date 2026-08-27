@@ -111,6 +111,17 @@
     );
     /* the radar's view-cone fill */
     --cone: rgb(255 255 255 / 0.22);
+    /* TRY (research round): a fading 160deg edge drawn in the border
+       box - same light direction as the raise shadows, one layer
+       further out. Rescues plate edges over dark backgrounds where a
+       dark cast shadow vanishes. NOT an outline in the brief's sense:
+       the shadow still owns the boundary; this fades to near-nothing
+       on the shadow side. */
+    --edge-gradient: linear-gradient(
+      160deg,
+      rgb(255 255 255 / 0.3),
+      rgb(255 255 255 / 0.08) 55%
+    );
     --ring: #c9cdd8;
 
     /* line weights */
@@ -242,7 +253,12 @@
     /* no outline: the translucent dark surface + rounded clip IS the
        box; the soft shadow alone separates it from the camera */
     overflow: hidden;
-    background: var(--surface-gradient);
+    /* two paint layers: the surface fills the padding box, the edge
+       gradient paints only the transparent 1px border ring */
+    border: 1px solid transparent;
+    background:
+      var(--surface-gradient) padding-box,
+      var(--edge-gradient) border-box;
     border-radius: var(--radius);
     box-shadow: var(--raise);
     /* extra right padding clears the accent strip + a breath */
