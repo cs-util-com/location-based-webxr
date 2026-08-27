@@ -23,7 +23,11 @@
     are deterministic where pixels are not. The page's keep-in-sync
     atom-drift assertion (data-atom / data-atom-copy pairs) reports
     through exactly this channel, so drift between the atoms column
-    and the screens is caught headlessly.
+    and the screens is caught headlessly. Two SOURCE checks also run
+    before any browser work: color literals in the atoms/screen layers
+    (must be var(--token); comments and mask stencils exempt, demo
+    layer exempt) and brief-vs-CSS token-name drift (every --name the
+    brief mentions must exist in styles.css). Both negative-tested.
   - `--bg=live` renders the getUserMedia background, which headless
     Chromium will fail to open; the page surfaces that in its toast, and
     the shot shows the failure state — that is honest, not a bug.

@@ -102,6 +102,15 @@
     /* dark stripes over a warn fill, so "lost" never speaks through
        color alone (WCAG 1.4.1) */
     --hatch: rgb(0 0 0 / 0.3);
+    /* READ surfaces (modal): stronger than the glanced 0.35 surfaces
+       on purpose - a modal is read, not glanced past */
+    --surface-read-gradient: linear-gradient(
+      160deg,
+      rgb(52 58 80 / 0.75),
+      rgb(20 24 36 / 0.75)
+    );
+    /* the radar's view-cone fill */
+    --cone: rgb(255 255 255 / 0.22);
     --ring: #c9cdd8;
 
     /* line weights */
@@ -140,6 +149,9 @@
       0 0 2px rgb(0 0 0 / 0.95), 0 0 5px rgb(0 0 0 / 0.85),
       0 1px 14px rgb(0 0 0 / 0.65);
     --halo-drop: drop-shadow(0 1px 2px rgb(0 0 0 / 0.8));
+    /* the halo idea in box-shadow form, for marks too small for a
+       filter pass (radar blips) */
+    --halo-ring: 0 0 4px rgb(0 0 0 / 0.6);
 
     /* type */
     --font-ui: "Corbel", ui-rounded, "Segoe UI", system-ui, Roboto, sans-serif;
@@ -450,11 +462,7 @@
   .modal {
     /* stronger than --surface-gradient on purpose (owner feedback):
        a modal is read, not glanced past, so it gives up translucency */
-    background: linear-gradient(
-      160deg,
-      rgb(52 58 80 / 0.75),
-      rgb(20 24 36 / 0.75)
-    );
+    background: var(--surface-read-gradient);
     width: min(320px, 100%);
     display: flex;
     flex-direction: column;
@@ -755,7 +763,7 @@
     background: conic-gradient(
       from -28deg,
       transparent 0deg,
-      rgb(255 255 255 / 0.22) 8deg 48deg,
+      var(--cone) 8deg 48deg,
       transparent 56deg
     );
     -webkit-mask: radial-gradient(circle, #000 0 68%, transparent 98%);
@@ -796,9 +804,7 @@
     height: 6px;
     border-radius: 50%;
     background: var(--ink);
-    /* the halo idea in box-shadow form: blips are too small for
-       a filter pass */
-    box-shadow: 0 0 4px rgb(0 0 0 / 0.6);
+    box-shadow: var(--halo-ring);
   }
 
   /* --- switch ---
