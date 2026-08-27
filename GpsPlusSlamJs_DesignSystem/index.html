@@ -111,13 +111,12 @@
              superseding the same-day scrim): ONE decision in two forms -
              text-shadow for text, drop-shadow for vector marks. Tune the
              halo HERE, nowhere else. */
-          --halo-text:
-            0 1px 2px rgb(0 0 0 / 0.6),
-            0 0 8px rgb(0 0 0 / 0.35);
+          --halo-text: 0 1px 2px rgb(0 0 0 / 0.6), 0 0 8px rgb(0 0 0 / 0.35);
           --halo-drop: drop-shadow(0 1px 2px rgb(0 0 0 / 0.8));
 
           /* type */
-          --font-ui: "Corbel", ui-rounded, "Segoe UI", system-ui, Roboto, sans-serif;
+          --font-ui:
+            "Corbel", ui-rounded, "Segoe UI", system-ui, Roboto, sans-serif;
           /* unified with --font-ui per feedback (was monospace): ONE text
              voice everywhere, like the atom section labels */
           --font-num: var(--font-ui);
@@ -189,8 +188,8 @@
           box-shadow: var(--raise);
           /* extra right padding clears the accent strip + a breath */
           padding: var(--space-2)
-            calc(var(--space-3) + var(--strip) + var(--space-1))
-            var(--space-2) var(--space-3);
+            calc(var(--space-3) + var(--strip) + var(--space-1)) var(--space-2)
+            var(--space-3);
         }
         /* the signature: a full-height accent strip flush with the right
            edge; the plate's overflow:hidden crops it to the rounded corners */
@@ -1069,7 +1068,6 @@
         .phone[data-screen="placement"] .screen-placement {
           display: contents;
         }
-
       }
     </style>
   </head>
@@ -1096,8 +1094,10 @@
       </section>
 
       <section>
-        <h3>Button — text / icon · disabled / engaged (hover and pressed
-        are interactive)</h3>
+        <h3>
+          Button — text / icon · disabled / engaged (hover and pressed are
+          interactive)
+        </h3>
         <div class="row">
           <button class="btn">Place anchor</button>
           <button class="btn btn--icon">AR</button>
