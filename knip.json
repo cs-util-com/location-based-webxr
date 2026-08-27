@@ -228,6 +228,17 @@
       "project": [
         "src/**/*.ts"
       ]
+    },
+    "GpsPlusSlamJs_DesignSystem": {
+      "entry": [
+        "shoot.mjs"
+      ],
+      "project": [
+        "*.mjs"
+      ],
+      "ignoreDependencies": [
+        "prettier"
+      ]
     }
   }
 }
