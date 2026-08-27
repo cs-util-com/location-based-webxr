@@ -441,9 +441,15 @@
     letter-spacing: 0.02em;
   }
   /* degraded line: yellow/black, the classic warning pair */
+  /* one expanding danger-colored ring, then stillness: the calm
+     version of "this just went bad" (a brightness flash washed the
+     element and its text - owner feedback 2026-08-27) */
   @keyframes warn-onset {
     from {
-      filter: brightness(1.8);
+      box-shadow: 0 0 0 0 var(--state-warn);
+    }
+    to {
+      box-shadow: 0 0 0 10px transparent;
     }
   }
   .num[data-degraded="true"] {
@@ -641,8 +647,17 @@
     box-shadow: var(--carve);
     border-radius: var(--radius-small);
     padding: var(--space-2) var(--space-3);
-    max-height: 96px;
+    line-height: 1.5;
+    max-height: 114px;
     overflow-y: auto;
+    /* scrolled-out lines DISSOLVE at the edges instead of hard-clipping
+       mid-glyph (a chopped line reads as broken, not as scrollable) */
+    mask-image: linear-gradient(
+      transparent,
+      black 16px,
+      black calc(100% - 6px),
+      transparent
+    );
     display: flex;
     flex-direction: column;
     gap: 2px;

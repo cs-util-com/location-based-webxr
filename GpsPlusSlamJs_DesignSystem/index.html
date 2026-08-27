@@ -969,6 +969,11 @@
         }
       });
 
+      // the log tails: newest line visible, like the real panel
+      for (const log of document.querySelectorAll(".log")) {
+        log.scrollTop = log.scrollHeight;
+      }
+
       // KEEP-IN-SYNC, made executable: every [data-atom-copy] must carry
       // the same markup as its [data-atom] source in the atoms column.
       // Whitespace is normalised (the two sit at different indent
