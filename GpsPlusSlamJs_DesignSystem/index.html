@@ -164,7 +164,6 @@
         <!-- copy borrowed from the RecorderApp re-observe toast; OsmDemo has
              no equivalent string -->
         <div class="toast">Re-observed from here</div>
-        <button class="btn demo-animate" data-animate="toast">Animate</button>
       </section>
 
       <section>
@@ -186,7 +185,6 @@
             <button class="btn btn--accent">Stop recording</button>
           </div>
         </div>
-        <button class="btn demo-animate" data-animate="modal">Animate</button>
       </section>
 
       <section>
@@ -950,11 +948,9 @@
         const b = event.target.closest("[data-animate]");
         if (!b) return;
         const kind = b.dataset.animate;
-        if (kind === "toast") showToast("Re-observed from here");
-        else if (kind === "modal") {
-          veil.removeAttribute("data-leaving");
-          veil.hidden = false;
-        } else if (kind === "warn") {
+        // toast/modal need no trigger here: the TOAST/MODAL switcher
+        // buttons already animate them over the phone
+        if (kind === "warn") {
           for (const el of document.querySelectorAll(
             '.num[data-degraded="true"]',
           )) {
