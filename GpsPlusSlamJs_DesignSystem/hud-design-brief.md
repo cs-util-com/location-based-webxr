@@ -7,7 +7,10 @@ local model, or a Claude Code session). Before pasting, do two substitutions:
 1. Replace `{{DIRECTION}}` with one direction card from §A below.
 2. Replace `{{TRACK}}` with either `TRACK A` or `TRACK B` from §B below.
 
-Run it once per combination. Five directions times two tracks is ten mockups.
+Run it once per combination. Five exploratory directions times two tracks is
+ten divergent mockups. **D6 is different**: it is the settled house language,
+for generating NEW screens and components inside the established design rather
+than alternatives to it - the normal mode now that the language has stabilised.
 **Run each in a FRESH conversation.** If you ask one conversation for several
 mockups, each one is conditioned on the last and they converge on a house style,
 which defeats the point.
@@ -52,12 +55,39 @@ alignment, values right-aligned on a decimal, rows grouped by rules. Everything
 visible at once, nothing collapsed. The design should read as an aircraft
 multi-function display: intimidating on first look, fast once learned.
 
+**D6 - THE HOUSE LANGUAGE (settled, 2026-08-27).** Reproduce this language
+exactly; invent only what it does not pin down. Surfaces: dark desaturated
+translucent slate, a 160deg gradient from rgb(52 58 80 / 0.35) to
+rgb(20 24 36 / 0.35) - the low alpha and low saturation are the point, they
+keep the camera's own colour alive behind the panel. NO borders anywhere:
+edges are carried by a dual "raise" shadow (2px 2px 2px black at 0.46 plus
+-2px -2px 2px white at 0.3); the inset twin of that shadow is used only where
+carving is the honest shape (slider groove, pressed buttons). ONE accent,
+#f2971f, strictly rationed: a 5px full-height strip flush with each panel's
+right edge (cropped by the panel's rounded overflow), engaged/decisive states,
+warnings, and small marker dots which always wear a thin white outline.
+Rounded geometry: 14px panels, 10px buttons, 14px rounded-SQUARE icon buttons
+(44px, never circles), 999px pills. One text voice everywhere: uppercase,
+0.08em tracking, weight 500, Corbel-first system stack (its old-style figures
+are deliberate). Sliders are an 18px carved groove with a translucent-white
+pill thumb riding flush inside it. Toasts are translucent white
+(rgb 255 255 255 / 0.65), borderless, dark text. World-anchored annotations
+are plateless: white text with a subtle two-layer dark text-shadow halo, a
+diamond outline marker or a thin leader line to an accent dot. A modal is the
+one sanctioned world-dimming moment: a rgb(10 12 18 / 0.35) full-screen veil
+behind a normal panel, actions stacked full-width with the decisive action
+last and wearing the accent. The design should read as the same instrument
+family as the reference screenshots, extended.
+
 ---
 
 ## §B - The two tracks
 
 **TRACK A - unconstrained.** Delete the whole block titled "LEGIBILITY RULES"
-from the prompt before sending. Design purely for the look.
+from the prompt before sending. Design purely for the look. (With D6, TRACK A
+is the normal choice: the house language already embodies its own legibility
+decisions, and the rules block contradicts some of them on purpose - e.g. its
+70-percent plates versus the house 35-percent translucency.)
 
 **TRACK B - hardened.** Keep the "LEGIBILITY RULES" block. Everything else is
 identical.
