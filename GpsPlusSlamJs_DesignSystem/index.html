@@ -78,7 +78,6 @@
 
           /* the shadow language: soft separation, per the reference
              (iterations 1-2 used hard offset shadows) */
-          --shadow-rest: 0 2px 8px rgb(0 0 0 / 0.35);
           --shadow-raised: 0 4px 14px rgb(0 0 0 / 0.45);
           --shadow-pressed: 0 1px 3px rgb(0 0 0 / 0.4);
           /* neumorphic RAISED dual shadows, from the owner's sample
@@ -318,7 +317,7 @@
           background: rgb(255 255 255 / 0.4);
           border: none;
           border-radius: 999px;
-          box-shadow: var(--shadow-rest);
+          box-shadow: var(--raise-light);
         }
         .slider::-moz-range-track {
           height: 18px;
@@ -331,7 +330,7 @@
           height: 18px;
           background: rgb(255 255 255 / 0.4);
           border: none;
-          box-shadow: var(--shadow-rest);
+          box-shadow: var(--raise-light);
           border-radius: 999px;
         }
         .slider:focus-visible {
