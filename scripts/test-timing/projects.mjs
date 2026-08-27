@@ -302,7 +302,7 @@ export const PROJECTS = [
       {
         name: 'format',
         command:
-          'prettier --log-level warn --write --ignore-unknown index.html shoot.mjs shoot.mjs.md package.json README.md',
+          'prettier --log-level warn --write --ignore-unknown index.html styles.css shoot.mjs shoot.mjs.md serve.mjs serve.mjs.md hud-design-brief.md package.json README.md',
         counts: null,
       },
     ],
