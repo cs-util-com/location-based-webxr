@@ -333,8 +333,14 @@
     height: var(--tap);
     min-width: var(--tap);
     padding: 0;
-    font-size: 18px;
+    /* 22px glyphs / 24px vector icons: 18px read too small in a 44px
+       button (owner feedback 2026-08-27) */
+    font-size: 22px;
     border-radius: var(--radius);
+  }
+  .btn--icon svg {
+    width: 24px;
+    height: 24px;
   }
 
   /* --- toggle (expand/collapse), a square button --- */
