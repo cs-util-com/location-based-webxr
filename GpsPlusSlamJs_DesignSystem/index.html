@@ -1220,16 +1220,17 @@
 
       <section>
         <h3>World annotation — diamond marker / leader callout</h3>
-        <!-- KEEP IN SYNC with the .hud-anno instances in the screen -->
+        <!-- KEPT IN SYNC with the .hud-anno instances in the screen by
+             the data-atom assertion at the end of the page script -->
         <div class="col" style="gap: 24px">
-          <div class="anno anno--target">
+          <div class="anno anno--target" data-atom="anno-target">
             <div class="diamond"></div>
             <div class="anno-text">
               <span class="anno-title">Fountain (1878)</span>
               <span>POI · 32 m</span>
             </div>
           </div>
-          <div class="anno">
+          <div class="anno" data-atom="anno-callout">
             <div class="anno-text">
               <span class="anno-title">Town Hall</span>
               <span>building: civic</span>
@@ -1245,8 +1246,9 @@
 
       <section>
         <h3>Radar / minimap</h3>
-        <!-- KEEP IN SYNC with the .hud-radar instance in the screen -->
-        <div class="radar-wrap" aria-hidden="true">
+        <!-- KEPT IN SYNC with the .hud-radar instance in the screen by
+             the data-atom assertion at the end of the page script -->
+        <div class="radar-wrap" aria-hidden="true" data-atom="radar">
           <span class="radar-north">N</span>
           <div class="radar">
             <span class="radar-cone"></span>
@@ -1320,9 +1322,13 @@
             </button>
           </div>
 
-          <!-- radar, top right below the readout block.
-             KEEP IN SYNC with the atoms-column radar -->
-          <div class="radar-wrap hud-radar" aria-hidden="true">
+          <!-- radar, top right below the readout block. Kept in sync
+             with the atoms-column radar by the data-atom assertion -->
+          <div
+            class="radar-wrap hud-radar"
+            aria-hidden="true"
+            data-atom-copy="radar"
+          >
             <span class="radar-north">N</span>
             <div class="radar">
               <span class="radar-cone"></span>
@@ -1332,12 +1338,13 @@
           </div>
 
           <!-- world-anchored annotations (mock: fixed positions standing in
-             for projected world points).
-             KEEP IN SYNC with the atoms-column annotations -->
+             for projected world points). Kept in sync with the atoms
+             column by the data-atom assertion -->
           <div
             class="anno hud-anno"
             style="top: 190px; left: 24px"
             aria-hidden="true"
+            data-atom-copy="anno-callout"
           >
             <div class="anno-text">
               <span class="anno-title">Town Hall</span>
@@ -1353,6 +1360,7 @@
             class="anno anno--target hud-anno"
             style="top: 330px; left: 150px"
             aria-hidden="true"
+            data-atom-copy="anno-target"
           >
             <div class="diamond"></div>
             <div class="anno-text">
@@ -1666,6 +1674,28 @@
       document
         .getElementById("toast-demo")
         .addEventListener("click", () => showToast("Re-observed from here"));
+
+      // KEEP-IN-SYNC, made executable: every [data-atom-copy] must carry
+      // the same markup as its [data-atom] source in the atoms column.
+      // Whitespace is normalised (the two sit at different indent
+      // depths). Drift logs a console error - which fails pnpm run shoot
+      // - and outlines the stale copy in red in the browser.
+      for (const src of document.querySelectorAll("[data-atom]")) {
+        const key = src.dataset.atom;
+        const norm = (el) => el.innerHTML.replace(/\s+/g, " ").trim();
+        for (const copy of document.querySelectorAll(
+          '[data-atom-copy="' + key + '"]',
+        )) {
+          if (norm(copy) !== norm(src)) {
+            console.error(
+              "atom drift: " +
+                key +
+                " - the screen copy no longer matches the atoms column",
+            );
+            copy.style.outline = "2px solid red";
+          }
+        }
+      }
     </script>
   </body>
 </html>

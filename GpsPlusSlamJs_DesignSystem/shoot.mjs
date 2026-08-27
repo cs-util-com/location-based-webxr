@@ -17,7 +17,10 @@
  * they can be Read directly. PNGs are deliberately NOT committed and NOT
  * asserted against: headless-GPU output differs per machine, which is the
  * same reason shoot-chapters.mjs rejected golden-image CI (see its
- * header). This is an eyeball tool, not a gate.
+ * header). This is an eyeball tool, not a gate - with ONE exception:
+ * console errors and page errors (including the page's own
+ * keep-in-sync atom-drift assertion) fail the run, because they are
+ * deterministic where pixels are not.
  */
 import { chromium } from "@playwright/test";
 import { mkdirSync } from "node:fs";
@@ -53,6 +56,12 @@ const page = await browser.newPage({
   deviceScaleFactor: selector ? 3 : 2,
 });
 
+const errors = [];
+page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
+page.on("console", (msg) => {
+  if (msg.type() === "error") errors.push(`console.error: ${msg.text()}`);
+});
+
 const shots = [];
 for (const screen of screens) {
   await page.goto(`${pageUrl}#bg=${bg}&screen=${screen}`);
@@ -81,3 +90,7 @@ for (const screen of screens) {
 
 await browser.close();
 for (const s of shots) console.log(resolve(s));
+if (errors.length) {
+  for (const e of [...new Set(errors)]) console.error(e);
+  process.exit(1);
+}
