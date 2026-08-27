@@ -586,6 +586,7 @@
     .leader circle,
     .num[data-degraded="true"],
     .badge[data-tone="warn"],
+    .progress[data-tone="lost"] .progress-fill,
     [data-leaving][data-leaving] {
       animation: none;
     }
@@ -1071,6 +1072,15 @@
   .progress[data-tone="good"] .progress-fill {
     background: var(--ink);
   }
+  /* the stripes DRIFT slowly while lost: an allowed loop under the
+     transient-by-default policy, because lost is an
+     ongoing-and-unresolved state (same class as the locating pulse).
+     11.3px = one 8px stripe period projected horizontally at 135deg. */
+  @keyframes hatch-drift {
+    to {
+      background-position-x: 11.3px;
+    }
+  }
   .progress[data-tone="lost"] .progress-fill {
     /* hatched, not just red: shape carries "lost" alongside color */
     background: repeating-linear-gradient(
@@ -1079,6 +1089,7 @@
       var(--hatch) 5px 8px
     );
     background-color: var(--state-warn);
+    animation: hatch-drift 1.2s linear infinite;
   }
 }
 
