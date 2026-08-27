@@ -573,6 +573,10 @@
      shape for a recessed scroll area) of hint-size lines in the
      shipped `time [tag] message` format, newest at the bottom. */
   .log {
+    /* the OS scrollbar is alien here: thin, knob-colored thumb on a
+       transparent track - the carved well itself is the track */
+    scrollbar-width: thin;
+    scrollbar-color: var(--surface-knob) transparent;
     background: var(--surface);
     box-shadow: var(--carve);
     border-radius: var(--radius-small);
