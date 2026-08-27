@@ -37,8 +37,11 @@ const args = new Map(
     .slice(2)
     .filter((a) => a.startsWith("--"))
     .map((a) => {
-      const [k, v] = a.replace(/^--/, "").split("=");
-      return [k, v ?? "true"];
+      // split on the FIRST = only: attribute selectors like
+      // --sel='[data-state=located]' carry = inside the value
+      const body = a.replace(/^--/, "");
+      const eq = body.indexOf("=");
+      return eq < 0 ? [body, "true"] : [body.slice(0, eq), body.slice(eq + 1)];
     }),
 );
 
