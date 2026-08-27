@@ -76,6 +76,21 @@
     --accent: #f2971f;
     /* black ink for text ON the accent, and the radar's quiet ring */
     --ink-on-accent: #000;
+    /* SEMANTIC state colors (research round 2026-08-27). The accent
+       used to carry THREE meanings at once - signature strip, engaged
+       state, warning - and "engaged" and "failing" are opposites.
+       Signature + engaged stay on the orange; the FAILURE family moved
+       to the product's own brand red, which also survives the
+       blown-sky worst case better (3.76:1 vs 2.28:1 against white).
+       Red and orange are only 34deg of hue apart and collapse under
+       red-green deficiency, so COLOR NEVER SOLELY CARRIES the
+       distinction: every warn site also speaks through words or shape
+       (the STALE text, the corner dot, the hatch, the badge pill). */
+    --danger: #ef4444;
+    --ink-on-danger: #000;
+    --accent-signature: var(--accent);
+    --state-engaged: var(--accent);
+    --state-warn: var(--danger);
     --ring: #c9cdd8;
 
     /* line weights */
@@ -200,7 +215,7 @@
     bottom: 0;
     right: 0;
     width: var(--strip);
-    background: var(--accent);
+    background: var(--accent-signature);
   }
 
   /* --- button --- */
@@ -247,7 +262,7 @@
      (owner decision 2026-08-27: accent = "this one matters") */
   .btn[data-active="true"],
   .btn--accent {
-    background: var(--accent);
+    background: var(--state-engaged);
     color: var(--ink-on-accent);
   }
   /* small icon buttons (AR, gear) are ROUNDED SQUARES, not
@@ -349,8 +364,8 @@
   }
   /* degraded line: yellow/black, the classic warning pair */
   .num[data-degraded="true"] {
-    background: var(--accent);
-    color: var(--ink-on-accent);
+    background: var(--state-warn);
+    color: var(--ink-on-danger);
     padding: 0 var(--space-1);
     border-radius: 4px;
   }
@@ -462,7 +477,7 @@
     width: 9px;
     height: 9px;
     border-radius: 50%;
-    background: var(--accent);
+    background: var(--state-warn);
     border: var(--line) solid var(--ink);
   }
 
@@ -558,8 +573,8 @@
     width: max-content;
   }
   .badge[data-tone="warn"] {
-    background: var(--accent);
-    color: var(--ink-on-accent);
+    background: var(--state-warn);
+    color: var(--ink-on-danger);
   }
 
   /* --- world annotation: diamond marker & leader callout ---
@@ -771,7 +786,7 @@
     transition: transform var(--t-fast);
   }
   .switch input:checked + .switch-track {
-    background: var(--accent);
+    background: var(--state-engaged);
   }
   .switch input:checked + .switch-track::after {
     transform: translateX(20px);
@@ -869,7 +884,7 @@
     background: var(--ink);
   }
   .progress[data-tone="lost"] .progress-fill {
-    background: var(--accent);
+    background: var(--state-warn);
   }
 }
 
