@@ -11,7 +11,7 @@
  * QR short-link rewrite joins this dispatcher when it is built.
  */
 
-import { handleDriveProxy, type FetchLike } from "./drive-proxy";
+import { corsHeaders, handleDriveProxy, type FetchLike } from "./drive-proxy";
 
 export interface SiteWorkerEnv {
   /** The `[assets] binding = "ASSETS"` from wrangler.toml. Declared
@@ -30,13 +30,15 @@ export function routeRequest(
     return handleDriveProxy(request, { fetchImpl });
   }
   if (pathname.startsWith("/api/")) {
+    // Carries the dev-origin CORS headers: without them, a typo'd route
+    // fetched from an allowlisted dev origin surfaces as an opaque CORS
+    // failure instead of this readable JSON (PR #369 review).
+    const headers = corsHeaders(request);
+    headers.set("content-type", "application/json");
     return Promise.resolve(
       new Response(
         JSON.stringify({ error: `no such API route: ${pathname}` }),
-        {
-          status: 404,
-          headers: { "content-type": "application/json" },
-        },
+        { status: 404, headers },
       ),
     );
   }

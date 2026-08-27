@@ -280,6 +280,11 @@ function openRanged(
   let evicted = false;
   const runRecoveryDownload = async (): Promise<ByteSource> => {
     const res = await fetchImpl(url, {
+      // Bypass the browser HTTP cache: these bytes replace the byte source
+      // and can be re-persisted — a heuristically-fresh stored response
+      // would resurrect a revalidated-stale archive (PR #369 review; same
+      // reasoning as fetchRemoteValidators' HEAD).
+      cache: 'no-cache',
       signal: AbortSignal.any([
         controller.signal,
         AbortSignal.timeout(FULL_DOWNLOAD_TIMEOUT_MS),
@@ -399,6 +404,10 @@ async function warmToCache(
     // and a stalled connection must settle it (false) rather than leave a
     // consumer awaiting it forever (milestone review #6).
     const res = await fetchImpl(url, {
+      // Bypass the browser HTTP cache: the warm's blob is store.put under
+      // the FRESH validators, so stale bytes here would be pinned as
+      // current forever (PR #369 review).
+      cache: 'no-cache',
       signal: AbortSignal.any([
         signal,
         AbortSignal.timeout(FULL_DOWNLOAD_TIMEOUT_MS),
@@ -431,6 +440,9 @@ async function openFullDownload(
   options: OpenRemoteArchiveOptions
 ): Promise<OpenedArchive> {
   const res = await fetchImpl(url, {
+    // Bypass the browser HTTP cache — these bytes may be persisted as the
+    // archive's local copy (PR #369 review; see runWarm).
+    cache: 'no-cache',
     signal: AbortSignal.timeout(FULL_DOWNLOAD_TIMEOUT_MS),
   });
   if (!res.ok) {

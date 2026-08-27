@@ -122,14 +122,23 @@ export async function handleDriveProxy(
   // degrades every Drive tour to full-download (plan Rev 2, finding 3).
   // An error's HTML body is dropped too: the status carries the meaning,
   // and the page's markup is dead weight toward a zip parser.
-  const body = request.method === "HEAD" || isHtml ? null : upstream.body;
+  const isHeadRequest = request.method === "HEAD";
+  const body = isHeadRequest || isHtml ? null : upstream.body;
+  // When the HTML body is dropped on a GET, the upstream's content-length
+  // must not ride along — announcing ~1500 bytes and sending 0 is a
+  // malformed response the browser may surface as a network error, which
+  // downstream misclassifies as 'cors' instead of the 404 it is (PR #369
+  // review). HEAD keeps the length: body-less-with-length is its contract.
+  if (isHtml && !isHeadRequest) headers.set("content-length", "0");
   return new Response(body, { status: upstream.status, headers });
 }
 
 /** CORS response headers for this request: the echoed dev origin, or none.
  *  `Vary: Origin` always, so caches never serve one origin's answer to
- *  another. */
-function corsHeaders(request: Request): Headers {
+ *  another. Exported for the dispatcher's own JSON answers (the /api/* 404)
+ *  — without CORS a dev-origin caller sees an opaque CORS failure instead
+ *  of the readable error body (PR #369 review). */
+export function corsHeaders(request: Request): Headers {
   const headers = new Headers({ vary: "Origin" });
   const origin = request.headers.get("origin");
   if (origin !== null && DEV_ORIGIN.test(origin)) {

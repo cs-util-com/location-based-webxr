@@ -188,6 +188,30 @@ describe("handleDriveProxy — downstream response", () => {
     expect(response.body).toBeNull();
   });
 
+  it("does not announce the dropped HTML body's length (PR #369 review)", async () => {
+    // Drive's HTML 404 page carries its own content-length (~1500). The
+    // body is dropped but the copied header used to ride along — a response
+    // announcing 1500 bytes and sending 0 is malformed, and a browser
+    // surfacing it as a network error downstream misclassifies the 404 as
+    // 'cors'. The length must be zeroed with the body.
+    const { fetchImpl } = recordingFetch(
+      upstreamResponse(
+        404,
+        {
+          "content-type": "text/html; charset=utf-8",
+          "content-length": "1523",
+        },
+        "<html>Not found</html>",
+      ),
+    );
+    const response = await handleDriveProxy(request("?id=gone123"), {
+      fetchImpl,
+    });
+    expect(response.status).toBe(404);
+    expect(response.body).toBeNull();
+    expect(response.headers.get("content-length")).toBe("0");
+  });
+
   it("answers HEAD with a body-less response that still carries content-length", async () => {
     // The transport takes the archive size from the HEAD probe, and the
     // Workers runtime chunk-encodes STREAMED bodies (dropping the length) —

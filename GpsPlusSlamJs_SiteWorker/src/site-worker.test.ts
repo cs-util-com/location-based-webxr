@@ -73,4 +73,22 @@ describe("routeRequest", () => {
     expect(response.headers.get("content-type")).toMatch(/json/);
     expect(assetCalls.length).toBe(0);
   });
+
+  it("the API 404 carries CORS for an allowlisted dev origin (PR #369 review)", async () => {
+    // Without it, a typo'd route fetched from a dev server shows up as an
+    // opaque CORS failure — the readable JSON error was unreachable for
+    // exactly the caller class that cannot just curl the route.
+    const { env } = envSpy(new Response("asset"));
+    const response = await routeRequest(
+      new Request("https://gps.csutil.com/api/nope", {
+        headers: { Origin: "http://localhost:5187" },
+      }),
+      env,
+    );
+    expect(response.status).toBe(404);
+    expect(response.headers.get("access-control-allow-origin")).toBe(
+      "http://localhost:5187",
+    );
+    expect(response.headers.get("vary")).toBe("Origin");
+  });
 });

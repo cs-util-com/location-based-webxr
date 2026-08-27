@@ -189,6 +189,27 @@ describe('RemoteRangeByteSource', () => {
 });
 
 describe('probeRemote', () => {
+  // Why this test matters (PR #369 review): after a changed-ETag eviction,
+  // Chrome can satisfy a range request out of a heuristically-fresh stored
+  // full response — so a probe without `cache: 'no-cache'` can be answered
+  // by the OLD bytes, which the warm then re-persists under the NEW
+  // validators, pinning the stale archive permanently. The failure is
+  // invisible in Node (fetch has no HTTP cache), so the init member is the
+  // only thing a unit test can pin — for the HEAD and the probe GET both.
+  it('sends cache: no-cache on the HEAD and the probe GET', async () => {
+    const cacheModes: (RequestCache | undefined)[] = [];
+    const fetchImpl: typeof fetch = (_input, init) => {
+      cacheModes.push(init?.cache);
+      return Promise.resolve(
+        fakeResponse({ status: 206, body: new Uint8Array(1) })
+      );
+    };
+
+    await probeRemote('https://x/t.zip', fetchImpl);
+
+    expect(cacheModes).toEqual(['no-cache', 'no-cache']);
+  });
+
   // Why this test matters (D3): a failed HEAD (404/403 error page) still
   // carries a Content-Length — of the ERROR PAGE. Adopting it as the archive
   // size anchors every zip offset to garbage.

@@ -196,6 +196,14 @@ export async function probeRemote(
 
   const probe = await fetchImpl(url, {
     headers: { Range: 'bytes=0-0' },
+    // Same reason as the HEAD above (PR #369 review): Chrome can satisfy a
+    // range request out of a heuristically-fresh stored full response, so
+    // after a changed-ETag eviction this probe — and the reads it approves —
+    // could be answered by the OLD bytes, which the warm would then
+    // re-persist under the NEW validators, pinning the stale archive
+    // permanently. Invisible in Node (no HTTP cache), so only the init
+    // member is testable.
+    cache: 'no-cache',
     signal: AbortSignal.timeout(PROBE_GET_TIMEOUT_MS),
   });
   // Prefer HEAD validators; when HEAD failed, the probe GET's own headers

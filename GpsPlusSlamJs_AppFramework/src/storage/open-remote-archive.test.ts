@@ -202,6 +202,45 @@ describe('openRemoteArchive — ranged path', () => {
 });
 
 describe('openRemoteArchive — warm-to-cache', () => {
+  // Why this test matters (PR #369 review): the bytes and sizes that get
+  // PERSISTED must bypass the browser HTTP cache. After a changed-ETag
+  // eviction, Chrome can answer both range and full requests from a
+  // heuristically-fresh stored response — the warm would then store.put
+  // those STALE bytes under the FRESH validators, pinning the old archive
+  // as current forever (strictly worse than the pre-eviction bug: the
+  // eviction fires and is immediately undone). Node's fetch has no HTTP
+  // cache, so the init member is all a unit test can pin: the HEAD, the
+  // probe GET and the warm/full downloads must all send it; streaming
+  // range reads deliberately need not (hot path).
+  it('the size- and persistence-bearing fetches all send cache: no-cache', async () => {
+    const seen: { kind: string; cache: RequestCache | undefined }[] = [];
+    const { fetchImpl } = fakeServer({ etag: '"v1"' });
+    let rangeGets = 0;
+    const recording: FetchImpl = (input, init) => {
+      const method = init?.method ?? 'GET';
+      const isRange = new Headers(init?.headers).has('range');
+      const kind =
+        method === 'HEAD'
+          ? 'head'
+          : isRange
+            ? `range-${String((rangeGets += 1))}`
+            : 'full';
+      seen.push({ kind, cache: init?.cache });
+      return fetchImpl(input, init);
+    };
+    const store = new InMemoryLocalCacheStore();
+    const opened = await openRemoteArchive(URL_, {
+      fetchImpl: recording,
+      cacheStore: store,
+    });
+    await opened.warmed;
+
+    const byKind = new Map(seen.map((s) => [s.kind, s.cache]));
+    expect(byKind.get('head')).toBe('no-cache');
+    expect(byKind.get('range-1')).toBe('no-cache'); // the probe GET
+    expect(byKind.get('full')).toBe('no-cache'); // the warm download
+  });
+
   it('warms in the background, switches reads to the copy, and persists it', async () => {
     const { fetchImpl } = fakeServer({ etag: '"v1"' });
     const store = new InMemoryLocalCacheStore();

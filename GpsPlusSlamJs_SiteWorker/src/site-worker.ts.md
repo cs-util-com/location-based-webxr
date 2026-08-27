@@ -11,7 +11,9 @@ assets-only deployment it replaced.
 
 - `routeRequest(request, env, fetchImpl?)` — the dispatcher:
   `/api/drive-proxy` → `handleDriveProxy`; any other `/api/*` → JSON `404`
-  (never the site's HTML 404 — the prefix is reserved for worker routes);
+  (never the site's HTML 404 — the prefix is reserved for worker routes),
+  carrying the dev-origin CORS headers so the error body is readable from
+  a dev server instead of an opaque CORS failure (PR #369 review);
   everything else → `env.ASSETS.fetch(request)` verbatim.
 - `SiteWorkerEnv` — the minimal env shape (`ASSETS` binding); declared
   locally instead of pulling `@cloudflare/workers-types` for one method.

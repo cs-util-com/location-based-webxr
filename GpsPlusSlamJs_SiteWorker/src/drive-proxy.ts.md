@@ -24,7 +24,10 @@ Plan and decision record:
   (`304/404/416/…`) pass through with their status even when Drive bodies
   them with an HTML error page — a 404 must stay classifiable as `missing`
   downstream, or a deleted file is cache-served forever (milestone review,
-  finding 1); the HTML body itself is dropped.
+  finding 1); the HTML body itself is dropped, and with it the upstream
+  `content-length` is zeroed (announcing bytes that never come is a
+  malformed response a browser may surface as a network error → `'cors'`
+  misclassification; PR #369 review).
 - `FetchLike` — the injected fetch shape; the entry point passes the
   runtime's `fetch`, every test injects a recorder.
 

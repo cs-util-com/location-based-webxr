@@ -37,6 +37,12 @@ qr-level's tests to fake more than they consume.
 
 - Every fetch (HEAD, probe GET, range read) carries an `AbortSignal.timeout`
   so a hung connection becomes a rejection instead of stalling forever.
+- The HEAD **and the probe GET** send `cache: 'no-cache'` (PR #369 review):
+  after a changed-ETag eviction, the browser HTTP cache can answer a range
+  request from a heuristically-fresh stored full response, so a default-mode
+  probe could approve — and the warm then re-persist — the STALE bytes under
+  fresh validators. Streaming range reads deliberately keep the default
+  (hot path). Invisible in Node; the unit tests pin the init member.
 - A range read requires **exactly 206**. A 200 means the host ignored `Range`
   and streamed the whole archive — returning that as the slice would silently
   corrupt every downstream parse, so it throws the distinguishable
