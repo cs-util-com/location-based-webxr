@@ -75,8 +75,9 @@ pill thumb riding flush inside it. Toasts are translucent white
 are plateless: white text with a subtle two-layer dark text-shadow halo, a
 diamond outline marker or a thin leader line to an accent dot. A modal is the
 one sanctioned world-dimming moment: a rgb(10 12 18 / 0.35) full-screen veil
-behind a normal panel, actions stacked full-width with the decisive action
-last and wearing the accent. The design should read as the same instrument
+behind a panel that is DARKER than the ordinary surfaces (the same gradient
+hues at 0.75 alpha - a modal is read, not glanced past), actions stacked
+full-width with the decisive action last and wearing the accent. The design should read as the same instrument
 family as the reference screenshots, extended.
 
 ---
