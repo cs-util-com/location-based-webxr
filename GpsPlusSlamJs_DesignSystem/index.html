@@ -4,12 +4,13 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>HUD design system — one iterable file</title>
-    <!-- Font: system stack (D3, 2026-08-27). ui-rounded gives SF Rounded on
-         Apple platforms, which is genuinely close to Quicksand. Windows and
-         Android have NO rounded system font: Segoe UI / Roboto are the
-         nearest neighbours - same friendly weight, straight terminals. If
-         this looks too different, the fallback decision is bundling
-         Quicksand as woff2. -->
+    <!-- Font: Corbel-first system stack (owner pick 2026-08-27 after a
+         live bake-off of Candara, Bahnschrift, Trebuchet MS, Calibri;
+         supersedes D3's plain system stack). Corbel is a Windows/Office
+         humanist sans with OLD-STYLE FIGURES - the dancing digits are a
+         deliberate part of the voice, not a bug. Where Corbel is absent:
+         ui-rounded (SF Rounded on Apple), then Segoe UI / Roboto. On
+         Android devices this design therefore renders in Roboto. -->
     <style>
       /* ==========================================================
          The HUD design system, one iterable file. Current language
@@ -29,16 +30,19 @@
           margin: 0;
         }
         button,
-        input {
+        input,
+        select {
           font: inherit;
         }
       }
 
       @layer tokens {
         :root {
-          /* the only two colours that exist. "ink" is what draws (text,
-             lines, shadows), "paper" is the surface behind it — flipped in
-             iteration 2 to dark surfaces with white ink, per feedback. */
+          /* the two NEUTRAL poles. "ink" is what draws (text, lines,
+             shadows), "paper" is the ground behind it - flipped in
+             iteration 2 to dark surfaces with white ink, per feedback.
+             Everything else is derived: translucent surface alphas, ONE
+             accent, one quiet ring gray. */
           --ink: #fff;
           /* page ground: deep desaturated slate blue, from the dashboard
              reference (was neutral near-black) */
@@ -136,7 +140,7 @@
           color: var(--ink);
           background: var(--paper);
           /* the one text voice, taken from the atom section labels:
-             uppercase, airy tracking, weight 500, Quicksand */
+             uppercase, airy tracking, weight 500, the ui font */
           text-transform: uppercase;
           letter-spacing: 0.08em;
           padding: 32px;
@@ -264,7 +268,7 @@
           color: var(--ink-on-accent);
         }
         /* small icon buttons (AR, gear) are ROUNDED SQUARES, not
-           circles (owner pick from a neumorphic reference, 2026-08-28):
+           circles (owner pick from a neumorphic reference, 2026-08-27):
            14px on 44px reuses the panel radius family */
         .btn--icon {
           width: var(--tap);
@@ -397,8 +401,8 @@
           pointer-events: none;
           color: var(--ink);
         }
-        /* Subtle shadow-halo, NOT a scrim (owner decision 2026-08-28,
-           superseding the 2026-08-27 scrim decision): the dark backing
+        /* Subtle shadow-halo, NOT a scrim (owner decision 2026-08-27,
+           superseding the same-day scrim decision): the dark backing
            read as a box/panel, which the plateless world annotations
            exist to avoid. The research still ranks a plate above a halo
            for worst-case legibility - accepted trade for the airier
@@ -474,8 +478,6 @@
         .radar-wrap {
           position: relative;
           display: flex;
-          flex-direction: column;
-          gap: var(--space-1);
           width: max-content;
           pointer-events: none;
         }
@@ -632,6 +634,11 @@
           min-height: var(--tap);
           padding: 0 40px 0 var(--space-4);
           font-weight: var(--weight-strong);
+          /* select inherits NEITHER of these from body in Chromium (UA
+             stylesheet interference) - font comes via the reset's
+             font: inherit, but these two must be re-inherited by hand.
+             Verified by screenshot 2026-08-27: deleting them drops the
+             options to lowercase untracked. */
           text-transform: inherit;
           letter-spacing: inherit;
           cursor: pointer;
@@ -688,7 +695,7 @@
       }
 
       /* ==========================================================
-         EXAMPLE SCREEN — the OsmDemo AR HUD, steady state
+         SCREENS — composed HUD layouts (hud / experiments / placement)
          ========================================================== */
       @layer screen {
         .phone-wrap {
@@ -705,7 +712,6 @@
           min-width: 0;
           padding: 0 var(--space-2);
           font-size: var(--size-hint);
-          font-weight: var(--weight-body);
         }
 
         .phone {
@@ -926,9 +932,6 @@
           align-items: center;
         }
 
-        /* --- screens: one visible at a time inside the one phone ---
-           display:contents keeps the phone as the containing block for
-           every absolutely-positioned HUD element inside a screen. */
         /* screens are hidden by default; the phone's data-screen shows
            exactly one. One line per future screen. display:contents keeps
            the phone as the containing block for absolute children. */
@@ -1196,7 +1199,7 @@
 
     <!-- ================= SCREEN ================= -->
     <div class="phone-wrap">
-      <h2>Screen — OsmDemo AR HUD, steady state</h2>
+      <h2>Screens — switchable inside the one phone</h2>
       <div class="switcher">
         <button class="btn" data-bg="wall" aria-pressed="false">
           WHITE WALL

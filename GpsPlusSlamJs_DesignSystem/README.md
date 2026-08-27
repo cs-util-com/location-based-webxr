@@ -10,7 +10,7 @@ What the file contains:
 - **A token layer** (CSS custom properties): translucent dark slate
   surfaces, one orange accent, raised neumorphic dual shadows, a rounded
   system font stack, spacing/shape/motion tokens.
-- **An atoms column**: plate, button (incl. circular icon buttons),
+- **An atoms column**: plate, button (incl. rounded-square icon buttons),
   toggle, slider, switch, select, progress-with-tones, readout lines,
   toast, world annotations (diamond marker, leader-line callout), radar.
 - **Mock screens** inside one phone frame, switchable: the OsmDemo AR HUD
