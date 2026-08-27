@@ -91,6 +91,9 @@
     --accent-signature: var(--accent);
     --state-engaged: var(--accent);
     --state-warn: var(--danger);
+    /* dark stripes over a warn fill, so "lost" never speaks through
+       color alone (WCAG 1.4.1) */
+    --hatch: rgb(0 0 0 / 0.3);
     --ring: #c9cdd8;
 
     /* line weights */
@@ -125,7 +128,9 @@
        superseding the same-day scrim): ONE decision in two forms -
        text-shadow for text, drop-shadow for vector marks. Tune the
        halo HERE, nowhere else. */
-    --halo-text: 0 1px 2px rgb(0 0 0 / 0.6), 0 0 8px rgb(0 0 0 / 0.35);
+    --halo-text:
+      0 0 2px rgb(0 0 0 / 0.95), 0 0 5px rgb(0 0 0 / 0.85),
+      0 1px 14px rgb(0 0 0 / 0.65);
     --halo-drop: drop-shadow(0 1px 2px rgb(0 0 0 / 0.8));
 
     /* type */
@@ -164,6 +169,21 @@
 
     /* motion */
     --t-fast: 120ms;
+  }
+
+  /* Users who set "reduce transparency" / "increase contrast" in the
+     OS are saying they cannot read translucent UI over a busy
+     background - honor it by near-solidifying every surface. Doubles
+     as a worst-light preview via DevTools media emulation. */
+  @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+    :root {
+      --surface: rgb(36 42 58 / 0.92);
+      --surface-hi: rgb(52 58 80 / 0.92);
+      --surface-lo: rgb(20 24 36 / 0.92);
+      --surface-inverse: rgb(255 255 255 / 0.92);
+      --surface-knob: rgb(255 255 255 / 0.8);
+      --veil: rgb(10 12 18 / 0.6);
+    }
   }
 }
 
@@ -600,6 +620,16 @@
     text-shadow: var(--halo-text);
     width: max-content;
   }
+  /* increased contrast: the halo is the weaker treatment over video
+     (broadcast captioning settled this); these users get the plate */
+  @media (prefers-contrast: more) {
+    .anno-text {
+      background: var(--surface);
+      border-radius: 8px;
+      padding: var(--space-1) var(--space-2);
+      text-shadow: none;
+    }
+  }
   .anno-title {
     font-size: var(--size-body);
   }
@@ -884,7 +914,13 @@
     background: var(--ink);
   }
   .progress[data-tone="lost"] .progress-fill {
-    background: var(--state-warn);
+    /* hatched, not just red: shape carries "lost" alongside color */
+    background: repeating-linear-gradient(
+      135deg,
+      var(--state-warn) 0 5px,
+      var(--hatch) 5px 8px
+    );
+    background-color: var(--state-warn);
   }
 }
 
