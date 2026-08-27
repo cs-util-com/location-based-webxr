@@ -71,6 +71,11 @@
           /* the light floating knob/pill (slider thumb): dimmer than the
              toast so it reads as a control, not a message */
           --surface-knob: rgb(255 255 255 / 0.4);
+          /* the modal's full-screen pause veil - the ONE sanctioned
+             world-dimming moment (owner decision 2026-08-27): a modal
+             means "decide first", so blocking is honest here. Alpha
+             deliberately well under 0.5 so the camera stays present. */
+          --veil: rgb(10 12 18 / 0.35);
           /* the ONE accent — nudged from yellow toward amber/orange per the
              radar-HUD reference. Used only for: the plate strip, engaged
              state, warnings, anchor dots, the radar you-dot. */
@@ -242,8 +247,11 @@
           color: var(--ink);
           opacity: 0.45;
         }
-        /* engaged state wears the accent (was inversion in iterations 1-2) */
-        .btn[data-active="true"] {
+        /* engaged state wears the accent (was inversion in iterations
+           1-2); the modal's DECISIVE action wears the same clothing
+           (owner decision 2026-08-27: accent = "this one matters") */
+        .btn[data-active="true"],
+        .btn--accent {
           background: var(--accent);
           color: var(--ink-on-accent);
         }
@@ -370,6 +378,40 @@
           padding: var(--space-2) var(--space-4);
           font-weight: var(--weight-strong);
           width: max-content;
+        }
+
+        /* --- modal / confirm dialog ---
+           The dialog itself is a plate; what makes it a modal is the
+           veil behind it, which pauses the world. Cancel stays a plain
+           surface button; the decisive action wears .btn--accent. */
+        /* display:flex would override the hidden attribute's UA
+           display:none, so hidden must win explicitly */
+        .veil[hidden] {
+          display: none;
+        }
+        .veil {
+          position: absolute;
+          inset: 0;
+          background: var(--veil);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: var(--space-4);
+        }
+        .modal {
+          width: min(320px, 100%);
+          display: flex;
+          flex-direction: column;
+          gap: var(--space-3);
+        }
+        /* stacked full-width on purpose: the voice's tracking makes
+           two labels too wide for a 320px dialog side-by-side, and the
+           decisive action sits LAST - the thumb-friendly bottom spot */
+        .modal-actions {
+          display: flex;
+          flex-direction: column;
+          align-items: stretch;
+          gap: var(--space-2);
         }
 
         /* --- world annotation: diamond marker & leader callout ---
@@ -1219,6 +1261,27 @@
       </section>
 
       <section>
+        <h3>Modal — confirm dialog</h3>
+        <!-- real strings from the RecorderApp stop-recording confirm
+             (recording-session-handlers.ts). KEPT IN SYNC with the
+             in-phone copy by the data-atom assertion; the MODAL button
+             in the switcher row opens it over the live screen. -->
+        <div
+          class="plate modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Confirm"
+          data-atom="modal"
+        >
+          <span>Stop recording and go back?</span>
+          <div class="modal-actions">
+            <button class="btn">Keep recording</button>
+            <button class="btn btn--accent">Stop recording</button>
+          </div>
+        </div>
+      </section>
+
+      <section>
         <h3>World annotation — diamond marker / leader callout</h3>
         <!-- KEPT IN SYNC with the .hud-anno instances in the screen by
              the data-atom assertion at the end of the page script -->
@@ -1276,8 +1339,9 @@
           NIGHT STREET
         </button>
         <button class="btn" data-bg="live" aria-pressed="false">LIVE</button>
-        <!-- an action, not a background: deliberately outside the toggles -->
+        <!-- actions, not backgrounds: deliberately outside the toggles -->
         <button class="btn" id="toast-demo">TOAST</button>
+        <button class="btn" id="modal-demo">MODAL</button>
       </div>
       <div class="switcher">
         <button
@@ -1521,6 +1585,26 @@
         >
           Re-observed from here
         </div>
+
+        <!-- modal demo: opened by the MODAL switcher button over the
+             active screen. Content kept in sync with the atoms column
+             by the data-atom assertion (no ids inside on purpose -
+             the buttons are wired by delegation on the veil). -->
+        <div class="veil" id="demo-veil" hidden>
+          <div
+            class="plate modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Confirm"
+            data-atom-copy="modal"
+          >
+            <span>Stop recording and go back?</span>
+            <div class="modal-actions">
+              <button class="btn">Keep recording</button>
+              <button class="btn btn--accent">Stop recording</button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1674,6 +1758,23 @@
       document
         .getElementById("toast-demo")
         .addEventListener("click", () => showToast("Re-observed from here"));
+
+      // modal demo: both actions just close the mock; backdrop click
+      // and Escape cancel, like the RecorderApp confirm-dialog. Buttons
+      // are wired by delegation so the modal markup stays id-free and
+      // byte-identical to the atoms-column specimen.
+      const veil = document.getElementById("demo-veil");
+      document.getElementById("modal-demo").addEventListener("click", () => {
+        veil.hidden = false;
+      });
+      veil.addEventListener("click", (event) => {
+        if (event.target === veil || event.target.closest(".btn")) {
+          veil.hidden = true;
+        }
+      });
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") veil.hidden = true;
+      });
 
       // KEEP-IN-SYNC, made executable: every [data-atom-copy] must carry
       // the same markup as its [data-atom] source in the atoms column.
