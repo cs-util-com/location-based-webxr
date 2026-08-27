@@ -911,9 +911,11 @@
         toast.removeAttribute("data-leaving");
         toast.hidden = false;
         clearTimeout(toastTimer);
-        // 6000ms matches DEFAULT_TOAST_LINGER_MS in the real toast-core.ts —
-        // linger length is a taste judgement, so judge the shipped number.
-        toastTimer = setTimeout(() => leaveThenHide(toast), 6000);
+        // 4000ms per the snackbar convention for short confirmations.
+        // The shipped toast-core.ts still lingers 6000ms - the owner judged
+        // that too long here (2026-08-27); follow-up: bring the framework
+        // default down to match.
+        toastTimer = setTimeout(() => leaveThenHide(toast), 4000);
       }
       document
         .getElementById("toast-demo")
