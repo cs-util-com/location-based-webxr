@@ -165,7 +165,10 @@ honest against `styles.css`.
   away). Transient by default: a LOOP is allowed only while a state is
   ongoing-and-unresolved (locating); ambient loops cost frames on a
   phone already running camera + 3D. A warn state flashes ONCE on
-  onset (brightness settle), never repeatedly.
+  onset (brightness settle), never repeatedly. World annotations ARRIVE by
+  building up: marker/leader lines draw themselves on (stroke-dashoffset,
+  2x --t-enter), the accent dots pop once the lines exist, the text fades in
+  last.
 
 ---
 

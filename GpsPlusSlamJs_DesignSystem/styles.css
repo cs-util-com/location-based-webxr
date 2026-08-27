@@ -567,7 +567,11 @@
     .toast,
     .veil,
     .modal,
-    .anno,
+    .anno .anno-text,
+    .diamond rect,
+    .diamond circle,
+    .leader polyline,
+    .leader circle,
     .num[data-degraded="true"],
     .badge[data-tone="warn"],
     [data-leaving] {
@@ -710,8 +714,11 @@
      the screen-fixed HUD. Plateless, per the AR-film reference; a
      layered dark text-shadow stands in for the plate, and the anchor
      dot wears the accent. Decorative mock: pointer-events none. */
+  /* arrival is a BUILD-UP: the marker/leader lines draw themselves
+     over time, the accent dots pop once the lines exist, and the text
+     fades in last. Purely presentational sequencing - reduced motion
+     shows everything complete immediately. */
   .anno {
-    animation: enter-fade var(--t-enter) var(--ease-out);
     pointer-events: none;
     color: var(--ink);
   }
@@ -749,33 +756,54 @@
     align-items: center;
     gap: var(--space-3);
   }
+  @keyframes draw-line {
+    from {
+      stroke-dashoffset: 180;
+    }
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+  @keyframes dot-pop {
+    from {
+      opacity: 0;
+      transform: scale(0);
+    }
+  }
   .diamond {
-    position: relative;
     width: 64px;
     height: 64px;
     flex-shrink: 0;
+    overflow: visible;
     filter: var(--halo-drop);
   }
-  .diamond::before {
-    content: "";
-    position: absolute;
-    inset: 10px;
-    border: var(--line-strong) solid var(--ink);
-    border-radius: 4px;
-    transform: rotate(45deg);
+  .diamond rect {
+    fill: none;
+    stroke: var(--ink);
+    stroke-width: var(--line-strong);
   }
-  .diamond::after {
-    content: "";
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 9px;
-    height: 9px;
-    margin: -4.5px 0 0 -4.5px;
-    border-radius: 50%;
-    background: var(--accent);
-    /* white outline, matching the leader-line anchor dot */
-    border: var(--line) solid var(--ink);
+  /* both dasharray and the draw keyframes use 180: just over the
+     rect's ~173 perimeter and the leader's ~156 path length */
+  .diamond rect,
+  .leader polyline {
+    stroke-dasharray: 180;
+    animation: draw-line calc(var(--t-enter) * 2) var(--ease-out) both;
+  }
+  .diamond circle,
+  .leader circle {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: dot-pop var(--t-state) var(--ease-out) both;
+    animation-delay: calc(var(--t-enter) * 1.5);
+  }
+  .diamond circle {
+    fill: var(--accent);
+    stroke: var(--ink);
+    stroke-width: var(--line);
+  }
+  .anno .anno-text {
+    animation: enter-fade var(--t-enter) var(--ease-out) both;
+    animation-delay: var(--t-enter);
   }
   /* callout: thin leader line bending to an anchor dot */
   .leader {
@@ -1254,6 +1282,16 @@
   .switcher {
     display: flex;
     gap: var(--space-2);
+  }
+  /* the small ANIMATE triggers inside atom sections: demo chrome,
+     never part of an atom */
+  .demo-animate {
+    min-height: 32px;
+    min-width: 0;
+    padding: 0 var(--space-2);
+    font-size: var(--size-hint);
+    align-self: flex-start;
+    margin-top: var(--space-2);
   }
   .switcher .btn {
     min-height: 32px;

@@ -154,6 +154,9 @@
           <span class="num num--accent">compass 0.55</span>
           <span class="hint">~15–30 fixes to show</span>
         </div>
+        <button class="btn demo-animate" data-animate="warn">
+          Animate warn onset
+        </button>
       </section>
 
       <section>
@@ -161,6 +164,7 @@
         <!-- copy borrowed from the RecorderApp re-observe toast; OsmDemo has
              no equivalent string -->
         <div class="toast">Re-observed from here</div>
+        <button class="btn demo-animate" data-animate="toast">Animate</button>
       </section>
 
       <section>
@@ -182,6 +186,7 @@
             <button class="btn btn--accent">Stop recording</button>
           </div>
         </div>
+        <button class="btn demo-animate" data-animate="modal">Animate</button>
       </section>
 
       <section>
@@ -190,7 +195,17 @@
              the data-atom assertion at the end of the page script -->
         <div class="col" style="gap: 24px">
           <div class="anno anno--target" data-atom="anno-target">
-            <div class="diamond"></div>
+            <svg class="diamond" viewBox="0 0 64 64" aria-hidden="true">
+              <rect
+                x="10"
+                y="10"
+                width="44"
+                height="44"
+                rx="4"
+                transform="rotate(45 32 32)"
+              />
+              <circle cx="32" cy="32" r="4.5" />
+            </svg>
             <div class="anno-text">
               <span class="anno-title">Fountain (1878)</span>
               <span>POI · 32 m</span>
@@ -208,6 +223,9 @@
             </svg>
           </div>
         </div>
+        <button class="btn demo-animate" data-animate="anno">
+          Animate build-up
+        </button>
       </section>
 
       <section>
@@ -422,21 +440,6 @@
       </section>
 
       <section>
-        <h3>Motion — calm instrument, transient by default</h3>
-        <!-- motion exists to COMMUNICATE STATE: arrivals rise/settle at
-             --t-enter (ease-out), exits fade at --t-state (ease-in),
-             indirect state changes cross-fade at --t-state, direct
-             responses stay at --t-fast. Loops only for ongoing states
-             (locating). Replay buttons re-trigger the real atoms. -->
-        <div class="row">
-          <button class="btn" id="replay-toast">Toast</button>
-          <button class="btn" id="replay-modal">Modal</button>
-          <button class="btn" id="replay-warn">Warn onset</button>
-          <button class="btn" id="replay-anno">Annotation</button>
-        </div>
-      </section>
-
-      <section>
         <h3>Badge — normal / warning</h3>
         <!-- real strings from the RecorderApp tracking-quality badge -->
         <div class="row">
@@ -444,6 +447,7 @@
           <span class="badge" data-tone="warn">DEGRADED · 41%</span>
           <span class="badge" data-tone="warn">AR LOST</span>
         </div>
+        <button class="btn demo-animate" data-animate="badge">Animate</button>
       </section>
     </div>
 
@@ -544,7 +548,17 @@
             aria-hidden="true"
             data-atom-copy="anno-target"
           >
-            <div class="diamond"></div>
+            <svg class="diamond" viewBox="0 0 64 64" aria-hidden="true">
+              <rect
+                x="10"
+                y="10"
+                width="44"
+                height="44"
+                rx="4"
+                transform="rotate(45 32 32)"
+              />
+              <circle cx="32" cy="32" r="4.5" />
+            </svg>
             <div class="anno-text">
               <span class="anno-title">Fountain (1878)</span>
               <span>POI · 32 m</span>
@@ -683,7 +697,17 @@
             style="top: 400px; left: 120px"
             aria-hidden="true"
           >
-            <div class="diamond"></div>
+            <svg class="diamond" viewBox="0 0 64 64" aria-hidden="true">
+              <rect
+                x="10"
+                y="10"
+                width="44"
+                height="44"
+                rx="4"
+                transform="rotate(45 32 32)"
+              />
+              <circle cx="32" cy="32" r="4.5" />
+            </svg>
             <div class="anno-text">
               <span class="anno-title">Anchor</span>
               <span>4.2 m</span>
@@ -912,29 +936,41 @@
         if (event.key === "Escape" && !veil.hidden) leaveThenHide(veil);
       });
 
-      // Motion replays: re-trigger the real atoms. Restarting a CSS
-      // animation needs the remove/reflow/re-add dance.
-      const replay = (el) => {
-        el.style.animation = "none";
-        void el.offsetWidth;
-        el.style.animation = "";
+      // Motion replays live NEXT TO the atoms they animate (owner
+      // feedback: a separate motion section did not work). Restarting a
+      // CSS animation needs the remove/reflow/re-add dance, on the
+      // element AND its animated descendants.
+      const replay = (root) => {
+        const all = [root, ...root.querySelectorAll("*")];
+        for (const el of all) el.style.animation = "none";
+        void root.offsetWidth;
+        for (const el of all) el.style.animation = "";
       };
-      document
-        .getElementById("replay-toast")
-        .addEventListener("click", () => showToast("Re-observed from here"));
-      document.getElementById("replay-modal").addEventListener("click", () => {
-        veil.removeAttribute("data-leaving");
-        veil.hidden = false;
-      });
-      document.getElementById("replay-warn").addEventListener("click", () => {
-        for (const el of document.querySelectorAll(
-          '.num[data-degraded="true"], .badge[data-tone="warn"]',
-        )) {
-          replay(el);
+      document.addEventListener("click", (event) => {
+        const b = event.target.closest("[data-animate]");
+        if (!b) return;
+        const kind = b.dataset.animate;
+        if (kind === "toast") showToast("Re-observed from here");
+        else if (kind === "modal") {
+          veil.removeAttribute("data-leaving");
+          veil.hidden = false;
+        } else if (kind === "warn") {
+          for (const el of document.querySelectorAll(
+            '.num[data-degraded="true"]',
+          )) {
+            replay(el);
+          }
+        } else if (kind === "badge") {
+          for (const el of document.querySelectorAll(
+            '.badge[data-tone="warn"]',
+          )) {
+            replay(el);
+          }
+        } else if (kind === "anno") {
+          for (const el of document.querySelectorAll(".atoms .anno")) {
+            replay(el);
+          }
         }
-      });
-      document.getElementById("replay-anno").addEventListener("click", () => {
-        for (const el of document.querySelectorAll(".atoms .anno")) replay(el);
       });
 
       // KEEP-IN-SYNC, made executable: every [data-atom-copy] must carry
