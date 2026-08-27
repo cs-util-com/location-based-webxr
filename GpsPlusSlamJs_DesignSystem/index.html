@@ -223,6 +223,141 @@
           </div>
         </div>
       </section>
+
+      <section>
+        <h3>
+          Locate button — idle / locating / located / denied / timeout /
+          unavailable
+        </h3>
+        <!-- states and labels from OsmDemo locate-state.ts; wording
+             rides in title/aria-label per its three-channel model -->
+        <div class="row">
+          <button
+            class="btn btn--icon btn--locate"
+            data-state="idle"
+            title="my location"
+            aria-label="my location"
+          >
+            ⌖
+          </button>
+          <button
+            class="btn btn--icon btn--locate"
+            data-state="locating"
+            title="locating…"
+            aria-label="locating…"
+          >
+            ⌖
+          </button>
+          <button
+            class="btn btn--icon btn--locate"
+            data-state="located"
+            data-active="true"
+            title="my location"
+            aria-label="my location"
+          >
+            ⌖
+          </button>
+          <button
+            class="btn btn--icon btn--locate"
+            data-state="denied"
+            title="location permission denied"
+            aria-label="location permission denied"
+          >
+            ⌖
+          </button>
+          <button
+            class="btn btn--icon btn--locate"
+            data-state="timeout"
+            title="location timed out"
+            aria-label="location timed out"
+          >
+            ⌖
+          </button>
+          <button
+            class="btn btn--icon btn--locate"
+            data-state="unavailable"
+            title="location unavailable"
+            aria-label="location unavailable"
+          >
+            ⌖
+          </button>
+        </div>
+      </section>
+
+      <section>
+        <h3>Bottom sheet — drag handle</h3>
+        <!-- OsmDemo #sheet-handle; docked-to-bottom in a real screen,
+             shown free-standing here -->
+        <div class="plate sheet">
+          <div class="sheet-handle" aria-hidden="true"></div>
+          <span class="num">alt 105.3 m (+0.5) · world floor 0.42 m</span>
+          <span class="hint">drag to resize the map split</span>
+        </div>
+      </section>
+
+      <section>
+        <h3>Log panel</h3>
+        <!-- the line format is the shipped contract from the
+             RecorderApp log-panel.ts: time [tag] message -->
+        <div class="log" role="log">
+          <span>14:32:07 [gps] fix ±6.0 m</span>
+          <span>14:32:09 [anchor] re-observed from here</span>
+          <span>14:32:12 [tracking] warming up</span>
+          <span>14:32:15 [tracking] ok · 92%</span>
+          <span>14:32:21 [gps] fix ±4.1 m</span>
+          <span>14:32:26 [anchor] 40 m from anchor</span>
+        </div>
+      </section>
+
+      <section>
+        <h3>Legend — ramp strip / observed line</h3>
+        <!-- structure from OsmDemo legend-view.ts: category, ramp,
+             min/max ends, observed line (its real template) -->
+        <div class="legend plate">
+          <span class="hint">observations</span>
+          <div class="legend-scale">
+            <div class="legend-strip" aria-label="observation count ramp">
+              <span
+                class="legend-swatch"
+                style="background: rgb(255 255 255 / 0.15)"
+              ></span>
+              <span
+                class="legend-swatch"
+                style="background: rgb(255 255 255 / 0.3)"
+              ></span>
+              <span
+                class="legend-swatch"
+                style="background: rgb(255 255 255 / 0.5)"
+              ></span>
+              <span
+                class="legend-swatch"
+                style="background: rgb(255 255 255 / 0.7)"
+              ></span>
+              <span class="legend-swatch" style="background: #f7c477"></span>
+              <span class="legend-swatch" style="background: #f5ab47"></span>
+              <span
+                class="legend-swatch"
+                style="background: var(--accent)"
+              ></span>
+            </div>
+            <div class="legend-ends">
+              <span class="hint">0</span>
+              <span class="hint">12</span>
+            </div>
+          </div>
+          <span class="hint">max here 9 · 3 above</span>
+        </div>
+      </section>
+
+      <section>
+        <h3>Badge — normal / warning</h3>
+        <!-- real strings from the RecorderApp tracking-quality badge -->
+        <div class="row">
+          <span class="badge">OK · 92%</span>
+          <span class="badge" data-tone="warn">DEGRADED · 41%</span>
+          <span class="badge" data-tone="warn">AR LOST</span>
+        </div>
+      </section>
     </div>
 
     <!-- ================= SCREEN ================= -->
