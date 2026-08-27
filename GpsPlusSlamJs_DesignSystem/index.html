@@ -20,7 +20,7 @@
          stack 500 uppercase everywhere, rounded shapes, carved slider groove.
          Decision log: docs/2026-08-27-0614-design-system-extension-plan.md
          ========================================================== */
-      @layer reset, tokens, page, atoms, screen;
+      @layer reset, tokens, atoms, screen, demo;
 
       @layer reset {
         *,
@@ -80,9 +80,9 @@
           --line: 0.5px; /* hairline borders */
           --line-strong: 2px; /* emphasis borders */
 
-          /* the shadow language: soft separation, per the reference
-             (iterations 1-2 used hard offset shadows) */
-          --shadow-raised: 0 4px 14px rgb(0 0 0 / 0.45);
+          /* the drop half of the pressed button state, paired with
+             --carve-deep (the shadow LANGUAGE is the --raise/--carve
+             family below) */
           --shadow-pressed: 0 1px 3px rgb(0 0 0 / 0.4);
           /* neumorphic RAISED dual shadows, from the owner's sample
              (12px 12px 27px #aaa / -12px -12px 27px #fff): dark cast
@@ -117,6 +117,12 @@
           /* was 700; flattened so every text carries the same weight and
              emphasis comes from accent/inversion instead */
           --weight-strong: 500;
+          /* the one text voice: uppercase with airy tracking. Applied at
+             the atom boundary (first rule of the atoms layer), NOT on
+             body, so extracting the atoms carries the voice without
+             uppercasing a host app's page. */
+          --case-ui: uppercase;
+          --tracking-ui: 0.08em;
 
           /* space & shape */
           --space-1: 4px;
@@ -132,72 +138,29 @@
         }
       }
 
-      @layer page {
-        body {
-          font-family: var(--font-ui);
-          font-size: var(--size-body);
-          font-weight: var(--weight-body);
-          color: var(--ink);
-          background: var(--paper);
-          /* the one text voice, taken from the atom section labels:
-             uppercase, airy tracking, weight 500, the ui font */
-          text-transform: uppercase;
-          letter-spacing: 0.08em;
-          padding: 32px;
-          display: flex;
-          flex-wrap: wrap;
-          gap: 48px;
-          align-items: flex-start;
-        }
-        h1 {
-          flex-basis: 100%;
-          font-size: 20px;
-          font-weight: var(--weight-strong);
-        }
-        h1 small {
-          font-weight: var(--weight-body);
-          font-size: var(--size-body);
-          margin-left: 12px;
-        }
-        h2 {
-          font-size: var(--size-body);
-          font-weight: var(--weight-strong);
-          text-transform: uppercase;
-          letter-spacing: 0.08em;
-          margin-bottom: var(--space-4);
-          border-bottom: var(--line-strong) solid var(--ink);
-          padding-bottom: var(--space-2);
-        }
-        .atoms {
-          width: 420px;
-        }
-        .atoms section {
-          margin-bottom: 28px;
-        }
-        .atoms h3 {
-          font-size: var(--size-hint);
-          font-weight: var(--weight-body);
-          text-transform: uppercase;
-          letter-spacing: 0.08em;
-          margin-bottom: var(--space-2);
-        }
-        .row {
-          display: flex;
-          gap: var(--space-3);
-          align-items: center;
-          flex-wrap: wrap;
-        }
-        .col {
-          display: flex;
-          flex-direction: column;
-          gap: var(--space-3);
-        }
-      }
-
       /* ==========================================================
          ATOMS
          ========================================================== */
       @layer atoms {
+        /* THE ONE TEXT VOICE - every text-bearing atom opts in here, so
+           the atoms are self-sufficient when extracted without the demo
+           page (whose body applies the same tokens for the catalog). */
+        .plate,
+        .btn,
+        .select,
+        .toast,
+        .anno,
+        .radar-wrap,
+        .switch,
+        .num,
+        .hint {
+          font-family: var(--font-ui);
+          font-size: var(--size-body);
+          font-weight: var(--weight-body);
+          text-transform: var(--case-ui);
+          letter-spacing: var(--tracking-ui);
+        }
+
         /* --- plate: the base surface every readable thing sits on --- */
         .plate {
           position: relative;
@@ -634,13 +597,12 @@
           min-height: var(--tap);
           padding: 0 40px 0 var(--space-4);
           font-weight: var(--weight-strong);
-          /* select inherits NEITHER of these from body in Chromium (UA
-             stylesheet interference) - font comes via the reset's
-             font: inherit, but these two must be re-inherited by hand.
-             Verified by screenshot 2026-08-27: deleting them drops the
-             options to lowercase untracked. */
-          text-transform: inherit;
-          letter-spacing: inherit;
+          /* Chromium's UA stylesheet blocks select from inheriting
+             these (verified by screenshot 2026-08-27), and "inherit"
+             would defeat the atom-level voice when extracted without a
+             voiced body - so the tokens are set directly. */
+          text-transform: var(--case-ui);
+          letter-spacing: var(--tracking-ui);
           cursor: pointer;
         }
         /* Firefox paints the open list with the select's own background,
@@ -666,6 +628,16 @@
           border-bottom: var(--line-strong) solid var(--ink);
           transform: rotate(45deg);
           pointer-events: none;
+        }
+
+        .select--small {
+          min-height: 36px;
+          padding: 0 32px 0 var(--space-3);
+          font-size: var(--size-hint);
+          /* a select sizes itself to its LONGEST option ("25 (no dead
+             band)"), which overflowed the panel; cap the closed control
+             and let the native popup show the full option text */
+          max-width: 150px;
         }
 
         /* --- progress with tone states ---
@@ -698,6 +670,214 @@
          SCREENS — composed HUD layouts (hud / experiments / placement)
          ========================================================== */
       @layer screen {
+        /* --- top-left readout --- */
+        .hud-readout {
+          position: absolute;
+          top: 40px;
+          left: var(--space-3);
+          display: flex;
+          align-items: flex-start;
+          gap: var(--space-2);
+          max-width: 340px;
+        }
+        .hud-readout .lines {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+          /* shrinkable, so long lines WRAP instead of being clipped by the
+             plate: the real strings are budgeted for a 390px phone WITHOUT
+             uppercase+tracking, and clipping would hide exactly the cost
+             this mock exists to show */
+          min-width: 0;
+        }
+        .hud-readout .num {
+          white-space: normal;
+        }
+        .hud-readout .extra {
+          display: none;
+        }
+        .hud-readout[data-expanded="true"] .extra {
+          display: block;
+        }
+
+        /* --- bottom cluster --- */
+        .hud-bottom {
+          position: absolute;
+          left: 50%;
+          bottom: 34px;
+          transform: translateX(-50%);
+          width: 340px;
+          display: flex;
+          flex-direction: column;
+          gap: var(--space-3);
+          align-items: center;
+        }
+        .hud-elevation {
+          display: flex;
+          align-items: center;
+          gap: var(--space-2);
+        }
+        .hud-elevation .num {
+          min-width: 56px;
+          text-align: center;
+        }
+        .hud-compass {
+          width: 100%;
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: var(--space-1) var(--space-3);
+        }
+        .hud-compass .slider {
+          flex: 1;
+          min-width: 150px;
+        }
+        .hud-compass .hint {
+          flex-basis: 100%;
+          text-align: center;
+        }
+        .hud-actions {
+          width: 100%;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+
+        /* --- placement screen (AnchorStarter) --- */
+        .guidance-panel {
+          position: absolute;
+          top: 56px;
+          left: 50%;
+          transform: translateX(-50%);
+          width: 320px;
+          display: flex;
+          flex-direction: column;
+          gap: var(--space-2);
+        }
+        .guidance-head {
+          display: flex;
+          justify-content: space-between;
+          align-items: baseline;
+        }
+        .guidance-panel .progress {
+          width: 100%;
+        }
+        .place-cta {
+          position: absolute;
+          left: 50%;
+          bottom: 110px;
+          transform: translateX(-50%);
+          min-width: 200px;
+        }
+
+        /* --- experiments panel --- */
+        .exp-panel {
+          position: absolute;
+          right: var(--space-3);
+          bottom: 110px;
+          width: 300px;
+          display: flex;
+          flex-direction: column;
+          gap: var(--space-3);
+          padding-top: var(--space-3);
+          padding-bottom: var(--space-3);
+        }
+        .exp-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+        .exp-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: var(--space-3);
+          cursor: pointer;
+        }
+        /* --- world annotation placement (mock) --- */
+        .hud-anno {
+          position: absolute;
+        }
+
+        /* --- radar placement: top right, below the readout block --- */
+        .hud-radar {
+          position: absolute;
+          top: 150px;
+          right: var(--space-3);
+        }
+
+        /* --- toast placement --- */
+        .hud-toast {
+          position: absolute;
+          left: 50%;
+          top: 55%;
+          transform: translateX(-50%);
+        }
+      }
+
+      /* ==========================================================
+         DEMO — NOT PART OF THE DESIGN SYSTEM. Page chrome, the
+         atoms-column layout, the phone frame, the camera stand-in
+         backgrounds and the screen switcher exist only so this
+         catalog can be looked at. Never extract anything in this
+         layer.
+         ========================================================== */
+      @layer demo {
+        body {
+          font-family: var(--font-ui);
+          font-size: var(--size-body);
+          font-weight: var(--weight-body);
+          color: var(--ink);
+          background: var(--paper);
+          /* the catalog page speaks the same voice as the atoms */
+          text-transform: var(--case-ui);
+          letter-spacing: var(--tracking-ui);
+          padding: 32px;
+          display: flex;
+          flex-wrap: wrap;
+          gap: 48px;
+          align-items: flex-start;
+        }
+        h1 {
+          flex-basis: 100%;
+          font-size: 20px;
+          font-weight: var(--weight-strong);
+        }
+        h1 small {
+          font-weight: var(--weight-body);
+          font-size: var(--size-body);
+          margin-left: 12px;
+        }
+        h2 {
+          font-size: var(--size-body);
+          font-weight: var(--weight-strong);
+          margin-bottom: var(--space-4);
+          border-bottom: var(--line-strong) solid var(--ink);
+          padding-bottom: var(--space-2);
+        }
+        .atoms {
+          width: 420px;
+        }
+        .atoms section {
+          margin-bottom: 28px;
+        }
+        .atoms h3 {
+          font-size: var(--size-hint);
+          font-weight: var(--weight-body);
+          margin-bottom: var(--space-2);
+        }
+        .row {
+          display: flex;
+          gap: var(--space-3);
+          align-items: center;
+          flex-wrap: wrap;
+        }
+        .col {
+          display: flex;
+          flex-direction: column;
+          gap: var(--space-3);
+        }
+
         .phone-wrap {
           display: flex;
           flex-direction: column;
@@ -719,7 +899,8 @@
           height: 844px;
           border: var(--line-strong) solid var(--ink);
           border-radius: 24px;
-          box-shadow: var(--shadow-raised);
+          /* demo-only: was the --shadow-raised token, used nowhere else */
+          box-shadow: 0 4px 14px rgb(0 0 0 / 0.45);
           position: relative;
           overflow: hidden;
           /* camera stand-ins, switched via data-bg */
@@ -859,79 +1040,6 @@
             #0a0c12;
         }
 
-        /* --- top-left readout --- */
-        .hud-readout {
-          position: absolute;
-          top: 40px;
-          left: var(--space-3);
-          display: flex;
-          align-items: flex-start;
-          gap: var(--space-2);
-          max-width: 340px;
-        }
-        .hud-readout .lines {
-          display: flex;
-          flex-direction: column;
-          gap: 2px;
-          /* shrinkable, so long lines WRAP instead of being clipped by the
-             plate: the real strings are budgeted for a 390px phone WITHOUT
-             uppercase+tracking, and clipping would hide exactly the cost
-             this mock exists to show */
-          min-width: 0;
-        }
-        .hud-readout .num {
-          white-space: normal;
-        }
-        .hud-readout .extra {
-          display: none;
-        }
-        .hud-readout[data-expanded="true"] .extra {
-          display: block;
-        }
-
-        /* --- bottom cluster --- */
-        .hud-bottom {
-          position: absolute;
-          left: 50%;
-          bottom: 34px;
-          transform: translateX(-50%);
-          width: 340px;
-          display: flex;
-          flex-direction: column;
-          gap: var(--space-3);
-          align-items: center;
-        }
-        .hud-elevation {
-          display: flex;
-          align-items: center;
-          gap: var(--space-2);
-        }
-        .hud-elevation .num {
-          min-width: 56px;
-          text-align: center;
-        }
-        .hud-compass {
-          width: 100%;
-          display: flex;
-          flex-wrap: wrap;
-          align-items: center;
-          gap: var(--space-1) var(--space-3);
-        }
-        .hud-compass .slider {
-          flex: 1;
-          min-width: 150px;
-        }
-        .hud-compass .hint {
-          flex-basis: 100%;
-          text-align: center;
-        }
-        .hud-actions {
-          width: 100%;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        }
-
         /* screens are hidden by default; the phone's data-screen shows
            exactly one. One line per future screen. display:contents keeps
            the phone as the containing block for absolute children. */
@@ -944,86 +1052,6 @@
           display: contents;
         }
 
-        /* --- placement screen (AnchorStarter) --- */
-        .guidance-panel {
-          position: absolute;
-          top: 56px;
-          left: 50%;
-          transform: translateX(-50%);
-          width: 320px;
-          display: flex;
-          flex-direction: column;
-          gap: var(--space-2);
-        }
-        .guidance-head {
-          display: flex;
-          justify-content: space-between;
-          align-items: baseline;
-        }
-        .guidance-panel .progress {
-          width: 100%;
-        }
-        .place-cta {
-          position: absolute;
-          left: 50%;
-          bottom: 110px;
-          transform: translateX(-50%);
-          min-width: 200px;
-        }
-
-        /* --- experiments panel --- */
-        .exp-panel {
-          position: absolute;
-          right: var(--space-3);
-          bottom: 110px;
-          width: 300px;
-          display: flex;
-          flex-direction: column;
-          gap: var(--space-3);
-          padding-top: var(--space-3);
-          padding-bottom: var(--space-3);
-        }
-        .exp-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        }
-        .exp-row {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          gap: var(--space-3);
-          cursor: pointer;
-        }
-        .select--small {
-          min-height: 36px;
-          padding: 0 32px 0 var(--space-3);
-          font-size: var(--size-hint);
-          /* a select sizes itself to its LONGEST option ("25 (no dead
-             band)"), which overflowed the panel; cap the closed control
-             and let the native popup show the full option text */
-          max-width: 150px;
-        }
-
-        /* --- world annotation placement (mock) --- */
-        .hud-anno {
-          position: absolute;
-        }
-
-        /* --- radar placement: top right, below the readout block --- */
-        .hud-radar {
-          position: absolute;
-          top: 150px;
-          right: var(--space-3);
-        }
-
-        /* --- toast placement --- */
-        .hud-toast {
-          position: absolute;
-          left: 50%;
-          top: 55%;
-          transform: translateX(-50%);
-        }
       }
     </style>
   </head>
@@ -1040,8 +1068,20 @@
       <h2>Atoms</h2>
 
       <section>
-        <h3>Button — rest / hover / pressed / disabled / engaged</h3>
+        <h3>Plate — the base surface</h3>
+        <!-- the signature surface: translucent desaturated gradient,
+             raised dual shadow, rounded clip, full-height accent strip -->
+        <div class="plate col" style="gap: 2px">
+          <span class="num">Translucent gradient, raised, clipped</span>
+          <span class="hint">Accent strip owns the right edge</span>
+        </div>
+      </section>
+
+      <section>
+        <h3>Button — text / icon · disabled / engaged (hover and pressed
+        are interactive)</h3>
         <div class="row">
+          <button class="btn">Place anchor</button>
           <button class="btn btn--icon">AR</button>
           <button class="btn btn--icon" disabled>AR</button>
           <button class="btn btn--icon" data-active="true">AR</button>
@@ -1143,11 +1183,13 @@
       </section>
 
       <section>
-        <h3>Readout lines — normal / degraded</h3>
+        <h3>Readout lines — normal / degraded / accent · hint</h3>
         <div class="plate col" style="gap: 2px">
           <span class="num">gps ±6.0 m · 40 m from anchor</span>
           <span class="num">alt 105.3 m (+0.5) · world floor 0.42 m</span>
           <span class="num" data-degraded="true">gps age 42 s — STALE</span>
+          <span class="num num--accent">compass 0.55</span>
+          <span class="hint">~15–30 fixes to show</span>
         </div>
       </section>
 
