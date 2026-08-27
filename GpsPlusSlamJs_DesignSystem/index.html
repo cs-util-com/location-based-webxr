@@ -68,6 +68,9 @@
           );
           /* the inverted (light) surface, e.g. the toast — translucent too */
           --surface-inverse: rgb(255 255 255 / 0.65);
+          /* the light floating knob/pill (slider thumb): dimmer than the
+             toast so it reads as a control, not a message */
+          --surface-knob: rgb(255 255 255 / 0.4);
           /* the ONE accent — nudged from yellow toward amber/orange per the
              radar-HUD reference. Used only for: the plate strip, engaged
              state, warnings, anchor dots, the radar you-dot. */
@@ -104,6 +107,14 @@
           --carve-deep:
             inset 5px 5px 12px rgb(0 0 0 / 0.45),
             inset -5px -5px 12px rgb(255 255 255 / 0.12);
+          /* the plateless-legibility halo (owner decision 2026-08-27,
+             superseding the same-day scrim): ONE decision in two forms -
+             text-shadow for text, drop-shadow for vector marks. Tune the
+             halo HERE, nowhere else. */
+          --halo-text:
+            0 1px 2px rgb(0 0 0 / 0.6),
+            0 0 8px rgb(0 0 0 / 0.35);
+          --halo-drop: drop-shadow(0 1px 2px rgb(0 0 0 / 0.8));
 
           /* type */
           --font-ui: "Corbel", ui-rounded, "Segoe UI", system-ui, Roboto, sans-serif;
@@ -129,8 +140,14 @@
           --space-2: 8px;
           --space-3: 12px;
           --space-4: 16px;
-          --radius: 14px; /* panels & toast */
+          --radius: 14px; /* panels, toast & icon buttons */
           --radius-small: 10px; /* buttons */
+          --radius-pill: 999px; /* grooves, pills, the switch track */
+          /* the plate's signature right-edge accent strip */
+          --strip: 5px;
+          /* the carved-channel height: slider groove = slider thumb =
+             switch knob, so pills sit flush in their channels */
+          --groove: 18px;
           --tap: 44px; /* minimum touch target */
 
           /* motion */
@@ -170,9 +187,10 @@
           background: var(--surface-gradient);
           border-radius: var(--radius);
           box-shadow: var(--raise);
-          /* extra right padding clears the accent strip */
-          padding: var(--space-2) calc(var(--space-3) + 9px) var(--space-2)
-            var(--space-3);
+          /* extra right padding clears the accent strip + a breath */
+          padding: var(--space-2)
+            calc(var(--space-3) + var(--strip) + var(--space-1))
+            var(--space-2) var(--space-3);
         }
         /* the signature: a full-height accent strip flush with the right
            edge; the plate's overflow:hidden crops it to the rounded corners */
@@ -182,7 +200,7 @@
           top: 0;
           bottom: 0;
           right: 0;
-          width: 5px;
+          width: var(--strip);
           background: var(--accent);
         }
 
@@ -239,7 +257,7 @@
           min-width: var(--tap);
           padding: 0;
           font-size: 18px;
-          border-radius: 14px;
+          border-radius: var(--radius);
         }
 
         /* --- toggle (expand/collapse), a square button --- */
@@ -268,8 +286,8 @@
         /* the track is a carved groove (the sample's inset style is
            literally what a slider groove is) instead of a bare line */
         .slider::-webkit-slider-runnable-track {
-          height: 18px;
-          border-radius: 999px;
+          height: var(--groove);
+          border-radius: var(--radius-pill);
           background: var(--surface);
           box-shadow: var(--carve);
         }
@@ -279,26 +297,26 @@
         .slider::-webkit-slider-thumb {
           -webkit-appearance: none;
           width: 40px;
-          height: 18px;
+          height: var(--groove);
           margin-top: 0;
-          background: rgb(255 255 255 / 0.4);
+          background: var(--surface-knob);
           border: none;
-          border-radius: 999px;
+          border-radius: var(--radius-pill);
           box-shadow: var(--raise-light);
         }
         .slider::-moz-range-track {
-          height: 18px;
-          border-radius: 999px;
+          height: var(--groove);
+          border-radius: var(--radius-pill);
           background: var(--surface);
           box-shadow: var(--carve);
         }
         .slider::-moz-range-thumb {
           width: 40px;
-          height: 18px;
-          background: rgb(255 255 255 / 0.4);
+          height: var(--groove);
+          background: var(--surface-knob);
           border: none;
           box-shadow: var(--raise-light);
-          border-radius: 999px;
+          border-radius: var(--radius-pill);
         }
         .slider:focus-visible {
           outline: var(--line-strong) solid var(--ink);
@@ -375,9 +393,7 @@
           flex-direction: column;
           gap: 2px;
           font-size: var(--size-hint);
-          text-shadow:
-            0 1px 2px rgb(0 0 0 / 0.6),
-            0 0 8px rgb(0 0 0 / 0.35);
+          text-shadow: var(--halo-text);
           width: max-content;
         }
         .anno-title {
@@ -395,7 +411,7 @@
           width: 64px;
           height: 64px;
           flex-shrink: 0;
-          filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.8));
+          filter: var(--halo-drop);
         }
         .diamond::before {
           content: "";
@@ -422,7 +438,7 @@
         .leader {
           display: block;
           overflow: visible;
-          filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.8));
+          filter: var(--halo-drop);
         }
         .leader polyline {
           fill: none;
@@ -454,7 +470,7 @@
           background: var(--surface-gradient);
           /* deliberately quieter than the buttons: a hairline light-gray
              ring instead of the 2px white outline */
-          border: 0.5px solid var(--ring);
+          border: var(--line) solid var(--ring);
           box-shadow: var(--raise);
         }
         /* the you-dot */
@@ -504,7 +520,7 @@
           flex-direction: column;
           align-items: center;
           font-size: 10px;
-          text-shadow: 0 1px 2px rgb(0 0 0 / 0.9);
+          text-shadow: var(--halo-text);
         }
         /* tiny arrowhead BELOW the letter, sitting on the ring, still
            pointing outward (up-left, away from the circle) */
@@ -523,6 +539,8 @@
           height: 6px;
           border-radius: 50%;
           background: var(--ink);
+          /* the halo idea in box-shadow form: blips are too small for
+             a filter pass */
           box-shadow: 0 0 4px rgb(0 0 0 / 0.6);
         }
 
@@ -545,7 +563,7 @@
           position: relative;
           width: 44px;
           height: 24px;
-          border-radius: 999px;
+          border-radius: var(--radius-pill);
           background: var(--surface);
           box-shadow: var(--carve);
           transition: background var(--t-fast);
@@ -556,8 +574,8 @@
           position: absolute;
           top: 3px;
           left: 3px;
-          width: 18px;
-          height: 18px;
+          width: var(--groove);
+          height: var(--groove);
           border-radius: 50%;
           background: var(--ink);
           box-shadow: var(--raise);
@@ -646,7 +664,7 @@
         .progress {
           width: 220px;
           height: 10px;
-          border-radius: 999px;
+          border-radius: var(--radius-pill);
           background: var(--surface);
           box-shadow: var(--carve);
           overflow: hidden;
@@ -654,7 +672,7 @@
         .progress-fill {
           display: block;
           height: 100%;
-          border-radius: 999px;
+          border-radius: var(--radius-pill);
           background: var(--ink);
           transition: width var(--t-fast);
         }

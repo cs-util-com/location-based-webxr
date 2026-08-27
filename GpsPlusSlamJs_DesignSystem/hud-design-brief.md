@@ -238,6 +238,9 @@ message such as `Re-observed from here`.
   If you need a new value, add a token for it. This is the single most important
   structural requirement: it is what lets the result become a real design system
   rather than one pretty page.
+  (The canonical `index.html` interprets this pragmatically: repeated or
+  load-bearing values are tokens; a one-off piece of component-local geometry
+  may stay literal. Mirror that judgement rather than tokenising every number.)
 - Use `@layer reset, tokens, frame, component, state, utility` for cascade
   order.
 - No framework, no build step, no external requests of any kind: no CDN scripts,
