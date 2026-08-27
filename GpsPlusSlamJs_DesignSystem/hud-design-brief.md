@@ -11,6 +11,10 @@ Run it once per combination. Five exploratory directions times two tracks is
 ten divergent mockups. **D6 is different**: it is the settled house language,
 for generating NEW screens and components inside the established design rather
 than alternatives to it - the normal mode now that the language has stabilised.
+For a D6 round, paste **§C (the token reference)** into the chat along with the
+prompt: it is the token contract, including what each token must never be used
+for. (A source check in the package fails if §C names a token that no longer
+exists in `styles.css`.)
 **Run each in a FRESH conversation.** If you ask one conversation for several
 mockups, each one is conditioned on the last and they converge on a house style,
 which defeats the point.
@@ -62,23 +66,36 @@ rgb(20 24 36 / 0.35) - the low alpha and low saturation are the point, they
 keep the camera's own colour alive behind the panel. NO borders anywhere:
 edges are carried by a dual "raise" shadow (2px 2px 2px black at 0.46 plus
 -2px -2px 2px white at 0.3); the inset twin of that shadow is used only where
-carving is the honest shape (slider groove, pressed buttons). ONE accent,
-#f2971f, strictly rationed: a 5px full-height strip flush with each panel's
-right edge (cropped by the panel's rounded overflow), engaged/decisive states,
-warnings, and small marker dots which always wear a thin white outline.
+carving is the honest shape (slider groove, pressed buttons). TWO semantic colors on one ration: the orange accent #f2971f carries
+SIGNATURE and ENGAGED (a 5px full-height strip flush with each panel's right
+edge, cropped by the panel's rounded overflow; engaged/decisive states; small
+marker dots which always wear a thin white outline), and the brand red
+#ef4444 (--danger) carries the FAILURE family only (degraded readouts, warn
+badges, lost progress, failure dots). Red and orange are close in hue, so
+color never solely carries the distinction: every failure site also speaks
+through words or shape (STALE text, a hatch, a corner dot, a badge pill).
+Never use the red for engaged, decorative or brand purposes.
 Rounded geometry: 14px panels, 10px buttons, 14px rounded-SQUARE icon buttons
 (44px, never circles), 999px pills. One text voice everywhere: uppercase,
 0.08em tracking, weight 500, Corbel-first system stack (its old-style figures
 are deliberate). Sliders are an 18px carved groove with a translucent-white
 pill thumb riding flush inside it. Toasts are translucent white
 (rgb 255 255 255 / 0.65), borderless, dark text. World-anchored annotations
-are plateless: white text with a subtle two-layer dark text-shadow halo, a
-diamond outline marker or a thin leader line to an accent dot. A modal is the
+are plateless: white text with a THREE-layer black text-shadow halo
+(near-opaque 2px core, 5px mid ring, 14px soft pool), a diamond outline
+marker or a thin leader line to an accent dot; under prefers-contrast: more
+the halo is swapped for a surface plate. Plates carry a faint 160deg
+border-box edge gradient (bright top-left fading to near-nothing) - lighting
+reinforcement, not an outline; the raise shadow still owns the boundary. A modal is the
 one sanctioned world-dimming moment: a rgb(10 12 18 / 0.35) full-screen veil
 behind a panel that is DARKER than the ordinary surfaces (the same gradient
 hues at 0.75 alpha - a modal is read, not glanced past), actions stacked
-full-width with the decisive action last and wearing the accent. The design should read as the same instrument
-family as the reference screenshots, extended.
+full-width with the decisive action last and wearing the accent. State grammar: lifecycle states ride `data-state="..."` (kebab-case
+enumerations), semantic variants ride `data-tone="..."`, and pressed/expanded
+truth rides the ARIA attributes (`aria-pressed`, `aria-expanded`) which the
+CSS styles directly. Surfaces near-solidify under
+prefers-reduced-transparency / prefers-contrast. The design should read as
+the same instrument family as the reference screenshots, extended.
 
 ---
 
@@ -95,6 +112,51 @@ identical.
 
 The point of running both is to see what each rule actually costs, side by side,
 rather than arguing about it.
+
+---
+
+## §C - D6 token reference (the contract, with anti-uses)
+
+Every visual value in the system reaches CSS through one of these. When
+generating in-language (D6), use these names; never invent a value-named
+primitive (no `--orange-500`). A source check in the package keeps this list
+honest against `styles.css`.
+
+- **Neutral poles**: `--ink` #fff (draws everything) · `--paper` #232838
+  (page ground - demo only, a real HUD's ground is the camera).
+- **Surfaces** (glanced, translucent on purpose): `--surface`,
+  `--surface-hi` → `--surface-lo` via `--surface-gradient` (160deg, 0.35
+  alpha - never raise it for taste; read surfaces have their own token) ·
+  `--surface-read-gradient` (0.75, the modal - surfaces that are READ) ·
+  `--surface-inverse` (the toast's translucent white) · `--surface-knob`
+  (slider pill) · `--veil` (modal backdrop ONLY - the one sanctioned
+  world-dimming moment) · `--cone` (radar view cone) · `--edge-gradient`
+  (plate rim lighting - never a border color).
+- **Accent & state**: `--accent` #f2971f with `--ink-on-accent` ·
+  `--accent-signature` (the plate strip) · `--state-engaged` (on/active/
+  decisive) · `--danger` #ef4444 with `--ink-on-danger` · `--state-warn`
+  (the failure family - never decoration, never engaged) · `--hatch` (dark
+  stripes so lost never speaks through color alone) · `--ring` (quiet gray:
+  radar rim, located pin hole).
+- **Shadows** (the edge language - borders do not exist): `--raise`,
+  `--raise-big` (hover), `--raise-light` (light elements: toast, pill) ·
+  `--carve`, `--carve-deep` (ONLY where carving is honest: slider groove,
+  pressed buttons) · `--shadow-pressed` (pairs with `--carve-deep`) ·
+  `--halo-text`, `--halo-drop`, `--halo-ring` (plateless legibility - one
+  decision, three forms; tune here, nowhere else).
+- **Type & voice**: `--font-ui` (Corbel-first; old-style figures are
+  deliberate) · `--font-num` (= ui, one voice) · `--size-hint` 12 /
+  `--size-body` 14 / `--size-read` 16 · `--weight-body` = `--weight-strong`
+  = 500 (flattened on purpose; emphasis comes from accent, never weight) ·
+  `--case-ui` + `--tracking-ui` (the uppercase voice, applied at the atom
+  boundary - never put it on body).
+- **Geometry**: `--space-1..4` (4/8/12/16) · `--radius` 14 (panels, icon
+  buttons) · `--radius-small` 10 (buttons) · `--radius-pill` · `--strip`
+  (the signature strip width - plate's right edge only) · `--groove` 18
+  (slider channel = thumb = switch knob) · `--line` 0.5 / `--line-strong` 2 ·
+  `--tap` 44 (touch floor).
+- **Motion**: `--t-fast` 120ms (state response) · `--t-enter` 400ms
+  (arrivals over a moving camera are slow on purpose).
 
 ---
 
@@ -298,7 +360,11 @@ because platform guidance and the AR legibility literature agree on them:
 - **Anything that must be READ sits on a plate.** A solid or high-alpha dark
   backing, 70 percent black or more. The research result is blunt: a solid
   billboard behind text is the most legible treatment and the most immune to
-  background distraction.
+  background distraction. (The house language deliberately runs GLANCED
+  surfaces at 0.35 alpha and reserves the 0.75 backing for read surfaces like
+  the modal; it hedges the difference with the three-layer halo and a
+  prefers-reduced-transparency mode. That is a decided trade, not an
+  oversight - do not "fix" the house alphas to satisfy this rule.)
 - **Do not combine a plate and an outline on the same element.** Each works
   alone; together they are worse than either.
 - **A hairline may never be the sole carrier of a boundary or a state.** A white

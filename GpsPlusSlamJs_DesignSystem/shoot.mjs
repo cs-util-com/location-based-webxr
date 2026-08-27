@@ -67,7 +67,7 @@ mkdirSync(outDir, { recursive: true });
   }
   const brief = readFileSync(join(here, "hud-design-brief.md"), "utf8");
   // --token is the brief's generic placeholder in prose, not a name
-  const prose = new Set(["--token"]);
+  const prose = new Set(["--token", "--orange-500"]); // --orange-500 is the brief's forbidden EXAMPLE
   for (const name of new Set(brief.match(/--[a-z][a-z0-9-]+/g) ?? [])) {
     if (prose.has(name)) continue;
     if (!css.includes(`${name}:`) && !css.includes(`var(${name})`)) {
