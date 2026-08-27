@@ -264,14 +264,16 @@
           background: var(--accent);
           color: var(--ink-on-accent);
         }
-        /* small icon buttons (AR, gear) are full circles */
+        /* small icon buttons (AR, gear) are ROUNDED SQUARES, not
+           circles (owner pick from a neumorphic reference, 2026-08-28):
+           14px on 44px reuses the panel radius family */
         .btn--icon {
           width: var(--tap);
           height: var(--tap);
           min-width: var(--tap);
           padding: 0;
           font-size: 18px;
-          border-radius: 50%;
+          border-radius: 14px;
         }
 
         /* --- toggle (expand/collapse), a square button --- */
@@ -284,7 +286,7 @@
           font-family: var(--font-num);
           font-size: var(--size-read);
           line-height: 1;
-          border-radius: 50%;
+          border-radius: 9px;
         }
 
         /* --- slider --- */
@@ -305,14 +307,17 @@
           background: var(--surface);
           box-shadow: var(--carve);
         }
+        /* thumb: a wide raised PILL floating on the groove (owner pick
+           from the reference's credit-limit slider), borderless like
+           every other control - the dual shadow carries the edge */
         .slider::-webkit-slider-thumb {
           -webkit-appearance: none;
-          width: 20px;
-          height: 20px;
-          margin-top: -6px;
-          background: var(--surface);
-          border: var(--line-strong) solid var(--ink);
-          border-radius: 50%;
+          width: 40px;
+          height: 18px;
+          margin-top: -5px;
+          background: rgb(255 255 255 / 0.65);
+          border: none;
+          border-radius: 999px;
           box-shadow: var(--shadow-rest);
         }
         .slider::-moz-range-track {
@@ -322,12 +327,12 @@
           box-shadow: var(--carve);
         }
         .slider::-moz-range-thumb {
-          width: 20px;
-          height: 20px;
-          background: var(--surface);
-          border: var(--line-strong) solid var(--ink);
+          width: 40px;
+          height: 18px;
+          background: rgb(255 255 255 / 0.65);
+          border: none;
           box-shadow: var(--shadow-rest);
-          border-radius: 50%;
+          border-radius: 999px;
         }
         .slider:focus-visible {
           outline: var(--line-strong) solid var(--ink);
