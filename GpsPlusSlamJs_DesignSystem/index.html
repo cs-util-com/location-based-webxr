@@ -17,6 +17,7 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
+    <p class="demo-fontcheck" id="fontcheck">font: checking…</p>
     <h1>
       HUD design system
       <small
@@ -972,6 +973,34 @@
           }
         }
       });
+
+      // Report which family of --font-ui the device actually resolved.
+      // Canvas width comparison is the only reliable local-font probe:
+      // document.fonts.check() answers for loaded webfonts, not for
+      // system families.
+      {
+        const ctx = document.createElement("canvas").getContext("2d");
+        const probe = "MOTWigq0123 handgloves";
+        const widthIn = (family) => {
+          ctx.font = `500 40px ${family}`;
+          return ctx.measureText(probe).width;
+        };
+        // two dissimilar baselines: a family present nowhere resolves to
+        // the generic, so a candidate matching BOTH is absent
+        const mono = widthIn("monospace");
+        const serif = widthIn("serif");
+        const stack = getComputedStyle(document.body)
+          .fontFamily.split(",")
+          .map((f) => f.trim().replace(/^["']|["']$/g, ""));
+        const resolved = stack.find((family) => {
+          if (/^(system-ui|sans-serif|ui-rounded)$/.test(family)) return false;
+          const w = widthIn(`"${family}"`);
+          return w !== mono && w !== serif;
+        });
+        document.getElementById("fontcheck").textContent = resolved
+          ? `font resolved: ${resolved}`
+          : "font resolved: generic fallback (none of the named families)";
+      }
 
       // the log tails: newest line visible, like the real panel
       for (const log of document.querySelectorAll(".log")) {

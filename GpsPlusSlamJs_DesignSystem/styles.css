@@ -165,7 +165,17 @@
     --halo-ring: 0 0 4px rgb(0 0 0 / 0.6);
 
     /* type */
-    --font-ui: "Corbel", ui-rounded, "Segoe UI", system-ui, Roboto, sans-serif;
+    /* Corbel where it exists (Windows/Office), then the closest
+       ANDROID-RESIDENT humanist sans: Noto Sans shares Corbel open
+       apertures and a generous x-height, where Roboto is a neo-grotesque
+       that reads noticeably different. Roboto stays as the guaranteed
+       floor. Owner decision 2026-08-27, after finding the whole design
+       had been judged in Corbel, which no target device has. NOTE the
+       fallbacks have LINING figures: Corbel old-style dancing digits do
+       not survive off Windows. */
+    --font-ui:
+      "Corbel", "Noto Sans", ui-rounded, "Segoe UI", Roboto, system-ui,
+      sans-serif;
     /* unified with --font-ui per feedback (was monospace): ONE text
        voice everywhere, like the atom section labels */
     --font-num: var(--font-ui);
@@ -1282,6 +1292,16 @@
     margin-bottom: var(--space-4);
     border-bottom: var(--line-strong) solid var(--ink);
     padding-bottom: var(--space-2);
+  }
+  /* which family of --font-ui actually resolved. The design was judged
+     for weeks in Corbel, which no Android device has - this readout is
+     how a phone round reports the truth instead of us guessing. */
+  .demo-fontcheck {
+    flex-basis: 100%;
+    order: -1;
+    margin-bottom: -32px;
+    font-size: var(--size-hint);
+    opacity: 0.6;
   }
   .atoms {
     width: 420px;
