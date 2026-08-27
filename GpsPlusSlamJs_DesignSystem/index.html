@@ -898,14 +898,12 @@
           return;
         }
         el.setAttribute("data-leaving", "");
-        el.addEventListener(
-          "animationend",
-          () => {
-            el.hidden = true;
-            el.removeAttribute("data-leaving");
-          },
-          { once: true },
-        );
+        el.addEventListener("animationend", function done(event) {
+          if (event.animationName !== "leave-fade") return;
+          el.hidden = true;
+          el.removeAttribute("data-leaving");
+          el.removeEventListener("animationend", done);
+        });
       }
       let toastTimer;
       function showToast(message) {

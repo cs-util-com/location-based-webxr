@@ -490,7 +490,7 @@
       opacity: 0;
     }
   }
-  [data-leaving] {
+  [data-leaving][data-leaving] {
     animation: leave-fade var(--t-state) var(--ease-in) forwards;
   }
   .toast {
@@ -586,7 +586,7 @@
     .leader circle,
     .num[data-degraded="true"],
     .badge[data-tone="warn"],
-    [data-leaving] {
+    [data-leaving][data-leaving] {
       animation: none;
     }
     * {
