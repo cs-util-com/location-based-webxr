@@ -525,7 +525,7 @@
      pin-hole (#171b26) vanishes - give it a light hole in this state
      (owner feedback 2026-08-27) */
   .btn--locate[data-state="located"] svg circle {
-    fill: var(--ring);
+    fill: var(--ink);
   }
   /* failure trio: the accent dot (same dot as the world markers) sits
      on the button's corner as a quiet warning */
