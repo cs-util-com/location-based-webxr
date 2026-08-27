@@ -46,7 +46,10 @@ pnpm run shoot -- --page            # whole page including the atoms
 Headless Chromium screenshots land in `shots/` (gitignored), for humans
 in a hurry and for agents that would otherwise edit CSS blind. It is an
 eyeball tool, not a gate: golden-image assertions are deliberately
-rejected because headless-GPU output differs per machine.
+rejected because headless-GPU output differs per machine. One exception:
+console/page errors fail the run - including the page's own atom-drift
+assertion, which checks that the atoms column and the screens still
+show identical markup for the duplicated atoms (radar, annotations).
 
 ## Hard constraint carried from the real apps
 

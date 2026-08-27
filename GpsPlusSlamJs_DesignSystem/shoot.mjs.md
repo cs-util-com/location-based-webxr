@@ -18,7 +18,12 @@
     survive into the PNG.
   - PNGs are NEVER committed and NEVER asserted against: headless-GPU
     output differs per machine, the same reason shoot-chapters.mjs
-    rejected golden-image CI. Eyeball tool, not a gate.
+    rejected golden-image CI. Eyeball tool, not a gate - EXCEPT that
+    console errors and page errors fail the run (exit 1), because they
+    are deterministic where pixels are not. The page's keep-in-sync
+    atom-drift assertion (data-atom / data-atom-copy pairs) reports
+    through exactly this channel, so drift between the atoms column
+    and the screens is caught headlessly.
   - `--bg=live` renders the getUserMedia background, which headless
     Chromium will fail to open; the page surfaces that in its toast, and
     the shot shows the failure state — that is honest, not a bug.
