@@ -71,10 +71,6 @@
           /* black ink for text ON the accent, and the radar's quiet ring */
           --ink-on-accent: #000;
           --ring: #c9cdd8;
-          /* the minimal dark backing behind plateless-looking text (world
-             annotations): darker and less blue than --surface, no
-             gradient, so it reads as shade rather than as a panel */
-          --scrim: rgb(10 12 18 / 0.45);
 
           /* line weights */
           --line: 0.5px; /* hairline borders */
@@ -397,20 +393,20 @@
           pointer-events: none;
           color: var(--ink);
         }
-        /* SCRIM, not shadow-halo (owner decision 2026-08-27, from the
-           review's contrast finding): the outdoor-AR research ranks a
-           backing plate highest and the halo lowest, and it says not to
-           combine them - so the text-shadow the halo used is GONE and a
-           minimal dark scrim backs the text instead. The lines and
-           markers keep their drop-shadow, which is geometry, not text. */
+        /* Subtle shadow-halo, NOT a scrim (owner decision 2026-08-28,
+           superseding the 2026-08-27 scrim decision): the dark backing
+           read as a box/panel, which the plateless world annotations
+           exist to avoid. The research still ranks a plate above a halo
+           for worst-case legibility - accepted trade for the airier
+           look; revisit on-device if annotations wash out. */
         .anno-text {
           display: flex;
           flex-direction: column;
           gap: 2px;
           font-size: var(--size-hint);
-          background: var(--scrim);
-          border-radius: 8px;
-          padding: var(--space-1) var(--space-2);
+          text-shadow:
+            0 1px 2px rgb(0 0 0 / 0.6),
+            0 0 8px rgb(0 0 0 / 0.35);
           width: max-content;
         }
         .anno-title {
