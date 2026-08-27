@@ -47,7 +47,7 @@
           <button class="btn">Place anchor</button>
           <button class="btn btn--icon">AR</button>
           <button class="btn btn--icon" disabled>AR</button>
-          <button class="btn btn--icon" data-active="true">AR</button>
+          <button class="btn btn--icon" aria-pressed="true">AR</button>
           <button class="btn btn--icon" aria-label="Settings">⚙</button>
         </div>
       </section>
@@ -276,7 +276,6 @@
           <button
             class="btn btn--icon btn--locate"
             data-state="located"
-            data-active="true"
             title="my location"
             aria-label="my location"
           >
@@ -455,14 +454,7 @@
         <button class="btn" id="modal-demo">MODAL</button>
       </div>
       <div class="switcher">
-        <button
-          class="btn"
-          data-screen="hud"
-          data-active="true"
-          aria-pressed="true"
-        >
-          HUD
-        </button>
+        <button class="btn" data-screen="hud" aria-pressed="true">HUD</button>
         <button class="btn" data-screen="experiments" aria-pressed="false">
           EXPERIMENTS
         </button>
@@ -479,7 +471,7 @@
         <!-- ============ SCREEN: HUD (steady state) ============ -->
         <div class="screen screen-hud">
           <!-- top-left measurement readout -->
-          <div class="hud-readout plate" data-expanded="false" id="readout">
+          <div class="hud-readout plate" id="readout">
             <div class="lines" aria-hidden="true">
               <span class="num">42 draws / 812,345 tri · 30 fps</span>
               <span class="num">alt 105.3 m (+0.5) · world floor 0.42 m</span>
@@ -635,7 +627,7 @@
               <button class="btn btn--icon">AR</button>
               <button
                 class="btn btn--icon"
-                data-active="true"
+                aria-pressed="true"
                 aria-label="Settings"
               >
                 ⚙
@@ -759,8 +751,9 @@
         }
       };
       // Both switchers share one state model: the phone's data-bg /
-      // data-screen attributes, mirrored to the buttons (aria-pressed +
-      // data-active) and persisted in the URL hash so a refresh — the
+      // data-screen attributes, mirrored to the buttons as aria-pressed
+      // (which the CSS styles - ARIA is the single source of the
+      // engaged state) and persisted in the URL hash so a refresh — the
       // loop's main gesture — returns to what was being judged.
       function syncSwitchers() {
         const bg = phone.getAttribute("data-bg");
@@ -768,12 +761,10 @@
         for (const b of document.querySelectorAll("button[data-bg]")) {
           const active = String(b.dataset.bg === bg);
           b.setAttribute("aria-pressed", active);
-          b.setAttribute("data-active", active);
         }
         for (const b of document.querySelectorAll("button[data-screen]")) {
           const active = String(b.dataset.screen === screen);
           b.setAttribute("aria-pressed", active);
-          b.setAttribute("data-active", active);
         }
       }
       function saveState() {
@@ -819,8 +810,7 @@
       const readout = document.getElementById("readout");
       const toggle = document.getElementById("readout-toggle");
       toggle.addEventListener("click", () => {
-        const expanded = readout.getAttribute("data-expanded") === "true";
-        readout.setAttribute("data-expanded", String(!expanded));
+        const expanded = toggle.getAttribute("aria-expanded") === "true";
         toggle.textContent = expanded ? "+" : "−";
         toggle.setAttribute("aria-expanded", String(!expanded));
         toggle.setAttribute(

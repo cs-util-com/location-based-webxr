@@ -67,5 +67,8 @@ background works.
 `backdrop-filter` is banned in anything meant for the immersive path: in
 a real WebXR DOM overlay the HUD is composited as a separate surface in
 front of the camera and cannot read the pixels behind it, so frosted
-glass works on a desktop and silently does nothing on the device.
+glass works on a desktop and silently does nothing on the device. This
+is normative, not folklore - the WebXR DOM Overlays spec states that
+backdrop filter effects "do not modify the AR camera image":
+https://www.w3.org/TR/webxr-dom-overlays-1/
 Translucency here is plain alpha only.

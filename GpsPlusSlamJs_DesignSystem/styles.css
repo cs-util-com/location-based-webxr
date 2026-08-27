@@ -31,6 +31,14 @@
 }
 
 @layer tokens {
+  /* TWO TIERS, DTCG-style, deliberately flat: PRIMITIVES (raw scales -
+     space, radius, line, type, tap, motion) and SEMANTICS (intent-named
+     roles - surfaces, ink, accent/state colors, shadows, halos, strip,
+     groove). They interleave below in taste-iteration order; each
+     token's comment says what it is FOR, which is its tier. There is
+     deliberately NO component tier and NO value-named primitive
+     (--orange-500 must never appear): at 40-odd tokens, intent names
+     ARE the system. */
   :root {
     /* the two NEUTRAL poles. "ink" is what draws (text, lines,
        shadows), "paper" is the ground behind it - flipped in
@@ -168,7 +176,10 @@
     --tap: 44px; /* minimum touch target */
 
     /* motion */
-    --t-fast: 120ms;
+    --t-fast: 120ms; /* state RESPONSE (press, drag) */
+    /* appearance/disappearance: slow on purpose - XR guidance says
+       things arriving over a moving camera get lost in motion blur */
+    --t-enter: 400ms;
   }
 
   /* Users who set "reduce transparency" / "increase contrast" in the
@@ -280,8 +291,9 @@
   /* engaged state wears the accent (was inversion in iterations
      1-2); the modal's DECISIVE action wears the same clothing
      (owner decision 2026-08-27: accent = "this one matters") */
-  .btn[data-active="true"],
-  .btn--accent {
+  .btn[aria-pressed="true"],
+  .btn--accent,
+  .btn--locate[data-state="located"] {
     background: var(--state-engaged);
     color: var(--ink-on-accent);
   }
@@ -396,7 +408,13 @@
   }
 
   /* --- toast --- */
+  @keyframes enter-fade {
+    from {
+      opacity: 0;
+    }
+  }
   .toast {
+    animation: enter-fade var(--t-enter) ease;
     background: var(--surface-inverse);
     color: var(--paper);
     /* no outline, like the buttons: the raise shadow is the edge.
@@ -420,6 +438,7 @@
     display: none;
   }
   .veil {
+    animation: enter-fade var(--t-enter) ease;
     position: absolute;
     inset: 0;
     background: var(--veil);
@@ -472,6 +491,10 @@
     .btn--locate[data-state="locating"] {
       animation: none;
       opacity: 0.6;
+    }
+    .toast,
+    .veil {
+      animation: none;
     }
   }
   /* located: the pin is black-on-accent, so the shipped asset's dark
@@ -954,7 +977,7 @@
   .hud-readout .extra {
     display: none;
   }
-  .hud-readout[data-expanded="true"] .extra {
+  .hud-readout:has([aria-expanded="true"]) .extra {
     display: block;
   }
 
