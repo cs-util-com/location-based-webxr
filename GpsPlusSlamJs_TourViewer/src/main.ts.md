@@ -39,7 +39,7 @@ None (app entry point). Interesting seams for the e2e suite are the
   `#ar-root` so it stays visible while the AR session composites the DOM
   overlay. The printed size is captured once per AR entry (changing it =
   exit + re-enter); the mint gate follows the store (stability + alignment)
-  via `authorStatusLine`; the export offers copy + a `qr/<c>.json`
+  via `authorStatusLine`; the export offers copy + a `qr/<id>.json`
   download. The store carries the opt-in `qrDetected` reducer for both
   modes.
 - **Print a code (owner request 2026-08-26):** the author panel carries a
@@ -47,9 +47,9 @@ None (app entry point). Interesting seams for the e2e suite are the
   reuse the size/c inputs, and the measured launch URL renders as a QR at
   the TRUE physical size on paper (print CSS cm at 100% scale; the canvas
   carries the symbol only, the quiet zone is CSS padding). See
-  `qr-print.ts.md` for the size contract.
+  the framework's `qr-print-plan.ts.md` for the size contract.
 - **Viewer pipeline (M4):** the default mode relocalizes against the open
-  tour: the detected code's `qr/<c>.json` resolves live from
+  tour: the detected code's `qr/<id>.json` resolves live from
   `loadQrLevels()`, budgeted synthetic votes flow into `recordGpsEvent`,
   the glue marker rides detections in BOTH modes, and the first voted lock
   places the image ring (scene root, raw NUE) — all torn down with the AR

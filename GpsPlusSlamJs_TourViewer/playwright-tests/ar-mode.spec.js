@@ -2,6 +2,8 @@
 import { expect, test } from "@playwright/test";
 
 import { installTourViewerArFakes } from "./ar-fakes.js";
+import { E2E_QR_TEXT, E2E_QR_UNKNOWN_TEXT } from "./qr-fixture.mjs";
+import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 
 /**
  * Why these tests matter: they are the only place the M2 AR foundation is
@@ -161,11 +163,9 @@ test("author mode mints and exports a level that the parser round-trips", async 
     /point the camera/i,
   );
 
-  await page.evaluate(() => {
-    /** @type {any} */ (window).__tourViewerTest.armQrDetection(
-      "https://gps.csutil.com/tour/?qr=x&c=1",
-    );
-  });
+  await page.evaluate((text) => {
+    /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
+  }, E2E_QR_TEXT);
   // One frame per poll tick: detects are async and coalesced, so a burst
   // would collapse into one observation. Stability needs ≥5.
   await expect
@@ -327,11 +327,9 @@ test("a recording-carrying tour places photos at CAPTURE SPOTS, not the ring", a
     }
   });
 
-  await page.evaluate(() => {
-    /** @type {any} */ (window).__tourViewerTest.armQrDetection(
-      "https://gps.csutil.com/tour/?qr=x&c=1",
-    );
-  });
+  await page.evaluate((text) => {
+    /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
+  }, E2E_QR_TEXT);
   await expect
     .poll(
       async () => {
@@ -350,7 +348,7 @@ test("viewer mode relocalizes against the tour's level: budgeted votes, marker, 
   page,
 }) => {
   // Why this matters (QR-pose plan M4): the COMPOSED viewer loop — the
-  // zip-carried qr/1.json resolved for the DETECTED code, the REAL vote
+  // the zip-carried level resolved for the DETECTED code, the REAL vote
   // builder writing budgeted synthetic GPS events into the real store, and
   // the visible payoff (glue marker + the tour's images ringed around the
   // anchor). The budget is the guardrail: without it every locked frame
@@ -397,11 +395,9 @@ test("viewer mode relocalizes against the tour's level: budgeted votes, marker, 
     }
   });
 
-  await page.evaluate(() => {
-    /** @type {any} */ (window).__tourViewerTest.armQrDetection(
-      "https://gps.csutil.com/tour/?qr=x&c=1",
-    );
-  });
+  await page.evaluate((text) => {
+    /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
+  }, E2E_QR_TEXT);
   // Frames until the budget is SPENT — proves votes flowed and then stopped.
   await expect
     .poll(
@@ -452,11 +448,9 @@ test("a scanned code with no level reads as unknown instead of flapping", async 
   // resolves once and the visitor gets a plain answer.
   await page.goto("/");
   await enterAr(page);
-  await page.evaluate(() => {
-    /** @type {any} */ (window).__tourViewerTest.armQrDetection(
-      "https://gps.csutil.com/tour/?qr=x&c=9",
-    );
-  });
+  await page.evaluate((text) => {
+    /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
+  }, E2E_QR_UNKNOWN_TEXT);
   await expect
     .poll(
       async () => {
@@ -467,7 +461,15 @@ test("a scanned code with no level reads as unknown instead of flapping", async 
       },
       { timeout: 15000 },
     )
-    .toMatch(/code 9 has no level/i);
+    // The readout names the code by its OWN identity - the hash of the
+    // exact printed text - so an author can match the message to a poster
+    // and to the file name they need to add.
+    .toMatch(
+      new RegExp(
+        `code ${await qrCodeId(E2E_QR_UNKNOWN_TEXT)} has no level`,
+        "i",
+      ),
+    );
 });
 
 test("the print panel renders a scannable code at a declared true size", async ({

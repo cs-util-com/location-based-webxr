@@ -17,7 +17,6 @@ carrying the two review-ordered guardrails and the deferred negative cache.
   budget must NOT be charged while the store drops votes — before the
   first GPS fix), `resolveStablePose` (the same convergence gate minting
   uses; the controller skips unconverged votes with the budget untouched),
-  `pageCode` (the launch fallback for payloads without `&c=`),
   `recordDetection`, `onError`, and the optional `onStatus` /
   `onUnknownCode` / `onUnusableLevel` (a level with geo but no printed
   size) / `onVotedLock` UI hooks.
@@ -40,7 +39,10 @@ carrying the two review-ordered guardrails and the deferred negative cache.
   detection cadence; the placeholder is cached per decoded text by the
   controller and simply never solves or votes. `onUnknownCode` tells the
   visitor in plain words.
-- The DETECTED code's `&c=` wins over the page's launch param
+- A code's identity is `qrCodeId(decoded text)` — the hash of the exact
+  printed string. There is no page-level fallback and no visible code
+  number: distinct texts are distinct codes by construction, which is also
+  why the vote budget can key by text
   (`codeFromDetectedText`); votes only flow once the session has a zero
   reference (the store drops `recordGpsEvent` while `gpsData` is null —
   matching production, where the GPS watch starts with AR) — and the

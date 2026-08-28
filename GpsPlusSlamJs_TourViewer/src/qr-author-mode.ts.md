@@ -5,7 +5,7 @@
 Author mode's view-model (QR-pose plan M3): the tracking-controller
 configuration for authoring against a printed code, the mint gate readout,
 and the mint itself — raw-WebXR stable pose → GPS-world NUE →
-`QrGeoPose` → exportable `qr/<c>.json`.
+`QrGeoPose` → exportable `qr/<id>.json`.
 
 ## Public API
 
@@ -22,11 +22,6 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   what is missing, including the fix count.
 - `buildAuthorControllerConfig` wires `onError` too — a throwing detector
   must surface, not leave the panel saying "point the camera" forever.
-- `mintAuthorLevel({ stablePose, alignmentMatrix, zero, alignment, sizeM,
-nowIso })` → `{ ok: true, level, json } | { ok: false, error }` — enforces
-  the sample floor itself (defense in depth) and records the full
-  `mintQuality` block (`mintedAtIso`, `alignmentSampleCount`,
-  `gpsAccuracyM`) for M5's error attribution.
 
 ## Invariants & assumptions
 
@@ -58,13 +53,14 @@ const config = buildAuthorControllerConfig(0.2, {
   recordDetection: (e) => store.dispatch(recordQrDetection(e)),
 });
 // … detections accumulate; once selectQrPoseStability says 'stable':
-const result = mintAuthorLevel({
-  stablePose: selectStableQrPose(store.getState(), text)!,
-  alignmentMatrix: selectAlignmentMatrix(store.getState()),
-  zero: selectZeroReference(store.getState()),
-  sizeM: 0.2,
-  nowIso: new Date().toISOString(),
-});
+const result = mintQrLevel({
+  odomPose: stablePose,
+  alignmentMatrix,
+  zero,
+  alignment,
+  sizeM,
+  nowIso,
+}); // from the framework — see qr-mint-level.ts.md
 ```
 
 ## Tests

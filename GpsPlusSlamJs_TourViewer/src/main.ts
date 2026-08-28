@@ -43,20 +43,26 @@ import {
   startTourArRuntime,
 } from "./ar-mode.js";
 import {
-  AUTHOR_DEFAULT_SIZE_M,
   authorStatusLine,
   buildAuthorControllerConfig,
-  mintAuthorLevel,
-  type AuthorAlignmentInfo,
 } from "./qr-author-mode.js";
+import {
+  AUTHOR_DEFAULT_SIZE_M,
+  mintQrLevel,
+  type MintAlignmentInfo,
+} from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 import {
   buildViewerControllerConfig,
   imagePlaneRingNue,
   viewerStatusLine,
 } from "./qr-viewer-mode.js";
 import QRCode from "qrcode";
-import { homePrintWarning, planPrintCode, printedSideCss } from "./qr-print.js";
-import { codeFromDetectedText, codeFromSearch } from "./code-param.js";
+import {
+  homePrintWarning,
+  planPrintCode,
+  printedSideCss,
+} from "gps-plus-slam-app-framework/utils/qr-payload/qr-print-plan";
+import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 import {
   placeCapturedImagePlanes,
   placeImagePlanes,
@@ -74,7 +80,7 @@ import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import { calcRelativeCoordsInMeters } from "gps-plus-slam-app-framework/core";
 import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
 import { getSeams } from "./seams.js";
-import { resolveQrPayload } from "./qr-launch-dispatch.js";
+import { resolveQrPayload } from "gps-plus-slam-app-framework/utils/qr-payload/qr-launch-dispatch";
 import { toStatsView } from "./stats-view.js";
 import { openTourSession, type TourSession } from "./tour-session.js";
 
@@ -347,11 +353,14 @@ clearCacheButton.addEventListener("click", () => {
 // to the real framework device wiring in production and to the e2e fakes in
 // a DEV Playwright run.
 const authorMode = authorModeEnabledFromSearch(location.search);
-/** The page's own &c= launch code — the ONE fallback every code lookup
- *  shares (PR #361 review: three sites resolving with different fallbacks
- *  meant votes flowed under "7" while the marker and the image ring
- *  looked up "1" and never appeared). */
-const pageCode = codeFromSearch(location.search);
+/** Levels resolved per decoded text, filled by the viewer pipeline's async
+ *  . Deriving a code's identity is a hash and therefore async,
+ *  while the debug view and the image planes need the answer synchronously —
+ *  so the one place that can await it caches it here for both. */
+const levelByText = new Map<string, QrLevel | null>();
+
+/** The id of the most recently minted code — the download file name. */
+let mintedCodeId: string | null = null;
 const seams = getSeams();
 const arStore = createSlamAppStore({
   storageBackend: new NullStorageBackend(),
@@ -411,7 +420,7 @@ let qrDebugView: ReturnType<typeof seams.createQrDebugView> | null = null;
  *  origins (PR #360 review). Only fixes since the snapshot count. */
 let gpsSamplesAtSessionStart = 0;
 
-function authorAlignmentInfo(): AuthorAlignmentInfo {
+function authorAlignmentInfo(): MintAlignmentInfo {
   const state = arStore.getState();
   const accuracy = state.gpsData?.gpsEvents?.gpsAccuracyMedian;
   const sinceSessionStart = Math.max(
@@ -543,7 +552,6 @@ function startViewerPipeline(): boolean {
   }
   qrController = createQrTrackingController(
     buildViewerControllerConfig({
-      pageCode,
       frontEnd,
       solvePose: (input) => seams.solveQrPose(input),
       getCameraPose: () => seams.getCameraPose(),
@@ -563,10 +571,11 @@ function startViewerPipeline(): boolean {
         viewerUnusableCode = null;
         latestReprojectionPx = event.reprojectionErrorPx;
         arStore.dispatch(recordQrDetection(event));
-        const level = currentLevels?.get(
-          codeFromDetectedText(event.text, pageCode),
-        );
+        const level = levelByText.get(event.text) ?? null;
         qrDebugView?.update(event.qrPoseWorld, level?.qr.physicalSizeM ?? null);
+      },
+      onLevelResolved: (text, level) => {
+        levelByText.set(text, level);
       },
       onError: (message) => {
         errorBox.textContent = `QR tracking failed: ${message}`;
@@ -615,8 +624,7 @@ async function placeTourImagePlanes(lockedText: string): Promise<void> {
   const current = session;
   const scene = seams.getScene();
   const zero = selectZeroReference(arStore.getState());
-  const geo = currentLevels?.get(codeFromDetectedText(lockedText, pageCode))?.qr
-    .geo;
+  const geo = levelByText.get(lockedText)?.qr.geo;
   if (current === null || scene === null || zero === null || geo === undefined)
     return;
   const centerNue = calcRelativeCoordsInMeters(
@@ -875,8 +883,8 @@ printGenerateButton.addEventListener("click", () => {
 
 async function generatePrintCode(): Promise<void> {
   const sideCss = printedSideCss(Number(authorSizeInput.value)); // validates
-  const c = authorCInput.value.trim() === "" ? "1" : authorCInput.value.trim();
-  const plan = await planPrintCode(printUrlInput.value.trim(), c);
+  const codeIndex = readCodeIndex();
+  const plan = await planPrintCode(printUrlInput.value.trim(), { codeIndex });
   // margin 0: the canvas carries the SYMBOL only — the printed side equals
   // the size the author types when minting; the quiet zone is CSS padding.
   await QRCode.toCanvas(printCanvas, plan.url, {
@@ -892,10 +900,18 @@ async function generatePrintCode(): Promise<void> {
   // combination with an oversized symbol clips the code (PR #364 review).
   const warning = homePrintWarning(Number(authorSizeInput.value));
   printInfo.textContent =
-    `QR version ${String(plan.qrVersion)}, code ${c}, prints at ${sideCss} — ` +
-    `use 100% scale (no fit-to-page).` +
+    `QR version ${String(plan.qrVersion)}, code ${String(codeIndex)}, ` +
+    `prints at ${sideCss} — use 100% scale (no fit-to-page).` +
     (warning === null ? "" : ` ${warning}`);
   printUrlOut.textContent = plan.url;
+}
+
+/** Which code of a set the print panel is generating. Blank or nonsense
+ *  reads as the first code — a creator printing one poster should never
+ *  have to think about this field. */
+function readCodeIndex(): number {
+  const raw = Number(authorCInput.value.trim());
+  return Number.isInteger(raw) && raw >= 1 ? raw : 1;
 }
 
 printButton.addEventListener("click", () => {
@@ -907,8 +923,8 @@ mintButton.addEventListener("click", () => {
   const state = arStore.getState();
   const stablePose = selectStableQrPose(state, lastDetectedText);
   if (stablePose === null) return; // the gate lost stability since render
-  const result = mintAuthorLevel({
-    stablePose,
+  const result = mintQrLevel({
+    odomPose: stablePose,
     alignmentMatrix: selectAlignmentMatrix(state),
     zero: selectZeroReference(state),
     alignment: authorAlignmentInfo(),
@@ -926,6 +942,25 @@ mintButton.addEventListener("click", () => {
   authorCopyButton.hidden = false;
   authorDownloadButton.hidden = false;
   authorHint.hidden = false;
+  // The file name IS the code's identity, derived from the exact text this
+  // poster carries — so the author never has to match a number by hand.
+  const mintedText = lastDetectedText;
+  qrCodeId(mintedText).then(
+    (id) => {
+      mintedCodeId = id;
+      authorHint.textContent =
+        `Add the downloaded file to your tour zip as qr/${id}.json, then ` +
+        `re-upload the zip to the same URL — viewers pick the change up ` +
+        `automatically.`;
+    },
+    () => {
+      // A failed hash is not a failed mint: the JSON is already usable, and
+      // the author can still read the id off the download's file name.
+      authorHint.textContent =
+        "Add the downloaded file to your tour zip under qr/, then re-upload " +
+        "the zip to the same URL.";
+    },
+  );
 });
 
 authorCopyButton.addEventListener("click", () => {
@@ -945,14 +980,13 @@ authorCopyButton.addEventListener("click", () => {
 
 authorDownloadButton.addEventListener("click", () => {
   // Hidden-anchor download (the session-summary precedent). Browsers strip
-  // path separators from `download`, so the file arrives as `<c>.json`; the
+  // path separators from `download`, so the file arrives as `<id>.json`; the
   // panel's hint tells the author to place it under `qr/` in the zip.
-  const c = authorCInput.value.trim() === "" ? "1" : authorCInput.value.trim();
   const blob = new Blob([authorJsonBox.value], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = `${c}.json`;
+  anchor.download = `${mintedCodeId ?? "qr-level"}.json`;
   anchor.click();
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 });

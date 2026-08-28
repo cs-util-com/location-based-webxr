@@ -22,13 +22,11 @@
  * for minting, the converged solve is the honest frame.
  */
 
-import { Matrix4, Quaternion as ThreeQuaternion, Vector3 } from "three";
-import { WEBXR_TO_NUE } from "gps-plus-slam-app-framework/ar/webxr-nue-basis";
-import { mintQrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-geo-pose-minting";
 import {
-  serializeQrLevel,
-  type QrLevel,
-} from "gps-plus-slam-app-framework/ar/qr/qr-level";
+  MIN_ALIGNMENT_SAMPLES,
+  type MintAlignmentInfo,
+} from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
+import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import type {
   QrDetectionEvent,
   QrSolvePoseInput,
@@ -43,37 +41,7 @@ import type {
   QrFrontEnd,
   RgbaImage,
 } from "gps-plus-slam-app-framework/ar/qr/qr-frontend";
-import type {
-  LatLong,
-  Matrix4 as AlignmentMatrix,
-} from "gps-plus-slam-app-framework/core";
 import type { QrPoseStability } from "gps-plus-slam-app-framework/state";
-
-/** Default printed side length (m) prefilled in the author panel.
- *  0.16, not 0.2 (PR #364 review): with the 8% quiet zone each side the
- *  printed content is sizeM × 1.16, and 0.2 m → 23.2 cm exceeds the ~19 cm
- *  printable width of A4/Letter — at the mandated 100% scale the symbol's
- *  edge modules are CLIPPED and the code does not decode. 0.16 m → 18.6 cm
- *  fits; larger sizes are allowed but warned about in the print panel. */
-export const AUTHOR_DEFAULT_SIZE_M = 0.16;
-
-/**
- * The mint gate's alignment requirement (milestone review #1): a non-null
- * alignment matrix is VACUOUS — the store ships an IDENTITY matrix from the
- * very first GPS fix, and an identity-composed mint stamps a heading that is
- * wrong by the session's arbitrary WebXR yaw. Requiring several solved-in
- * GPS fixes is the cheap honest floor; M5's field numbers may raise it.
- */
-export const MIN_ALIGNMENT_SAMPLES = 3;
-
-/** What the mint gate knows about the session's GPS alignment. */
-export interface AuthorAlignmentInfo {
-  hasMatrix: boolean;
-  /** GPS fixes actually solved into the alignment (`selectGpsPositions`). */
-  sampleCount: number;
-  /** Median GPS accuracy (m) — recorded into `mintQuality`. */
-  gpsAccuracyM?: number;
-}
 
 /**
  * Geo-less until minted (QD-4): `syntheticAccuracyM` is required by the
@@ -151,7 +119,7 @@ export interface AuthorReadout {
 export function authorStatusLine(
   detectedText: string | null,
   stability: QrPoseStability | null,
-  alignment: AuthorAlignmentInfo,
+  alignment: MintAlignmentInfo,
 ): AuthorReadout {
   if (detectedText === null || stability === null) {
     return {
@@ -176,91 +144,4 @@ export function authorStatusLine(
     };
   }
   return { text: `Pose stable (${spread}) — ready to mint.`, canMint: true };
-}
-
-export interface MintAuthorLevelInput {
-  /** The STABLE aggregated pose, in RAW WebXR/odom space. */
-  stablePose: Pose;
-  /** `selectAlignmentMatrix` — column-major odom-NUE → GPS-world NUE. */
-  alignmentMatrix: AlignmentMatrix | null;
-  /** `selectZeroReference` — the session's GPS zero. */
-  zero: LatLong | null;
-  /** The mint gate's alignment info — enforced HERE too (defense in depth:
-   *  the matrix alone is vacuous, see {@link MIN_ALIGNMENT_SAMPLES}). */
-  alignment: AuthorAlignmentInfo;
-  sizeM: number;
-  /** Injected timestamp (ISO) — becomes `mintQuality.mintedAtIso`. */
-  nowIso: string;
-}
-
-export type MintAuthorLevelResult =
-  | { ok: true; level: QrLevel; json: string }
-  | { ok: false; error: string };
-
-/**
- * Compose the GPS-world NUE pose and mint the exportable level. Refuses in
- * plain words while the session has no GPS alignment or zero reference —
- * minting earlier would stamp a garbage anchor into the printed code.
- */
-export function mintAuthorLevel(
-  input: MintAuthorLevelInput,
-): MintAuthorLevelResult {
-  const { stablePose, alignmentMatrix, zero, alignment, sizeM, nowIso } = input;
-  if (
-    alignmentMatrix === null ||
-    zero === null ||
-    alignment.sampleCount < MIN_ALIGNMENT_SAMPLES
-  ) {
-    return {
-      ok: false,
-      error:
-        "No usable GPS alignment yet — walk a few metres with GPS reception, then mint once the pose is stable.",
-    };
-  }
-  try {
-    const poseMatrix = new Matrix4().compose(
-      new Vector3(...stablePose.position),
-      new ThreeQuaternion(...stablePose.rotation),
-      new Vector3(1, 1, 1),
-    );
-    const world = new Matrix4()
-      .fromArray(alignmentMatrix)
-      .multiply(WEBXR_TO_NUE)
-      .multiply(poseMatrix);
-    const position = new Vector3();
-    const rotation = new ThreeQuaternion();
-    world.decompose(position, rotation, new Vector3());
-    rotation.normalize();
-
-    const geo = mintQrGeoPose({
-      worldNuePosition: { x: position.x, y: position.y, z: position.z },
-      worldNueRotation: [rotation.x, rotation.y, rotation.z, rotation.w],
-      zero,
-    });
-    const level: QrLevel = {
-      version: 1,
-      qr: {
-        physicalSizeM: sizeM,
-        geo,
-        // The full quality block (milestone review #7): M5's error
-        // attribution needs to know what the alignment looked like at mint
-        // time, not just when the mint happened.
-        mintQuality: {
-          mintedAtIso: nowIso,
-          alignmentSampleCount: alignment.sampleCount,
-          ...(alignment.gpsAccuracyM !== undefined &&
-          Number.isFinite(alignment.gpsAccuracyM) &&
-          alignment.gpsAccuracyM > 0
-            ? { gpsAccuracyM: alignment.gpsAccuracyM }
-            : {}),
-        },
-      },
-    };
-    return { ok: true, level, json: serializeQrLevel(level) };
-  } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : String(err),
-    };
-  }
 }

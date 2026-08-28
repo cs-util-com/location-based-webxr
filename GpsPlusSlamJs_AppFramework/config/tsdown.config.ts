@@ -218,12 +218,22 @@ const entryFiles = [
   // these subpaths, so they must be built per-file.
   'src/utils/qr-payload/codec-dictionary.ts',
   'src/utils/qr-payload/qr-launch-url.ts',
+  // The rest of the printed-code contract, shared by every app that prints
+  // or scans one (recorder-authoring plan M-A): the decode half of the
+  // launch contract, the print planning, the code's identity, and the
+  // is-this-ours safety gate that must run before any of them.
+  'src/utils/qr-payload/qr-launch-dispatch.ts',
+  'src/utils/qr-payload/qr-print-plan.ts',
+  'src/utils/qr-payload/qr-code-id.ts',
+  'src/utils/qr-payload/qr-code-origin.ts',
   // QR anchor minting + level schema + tracking controller — deep-importable
   // via the `./ar/*` wildcard for the TourViewer's authoring mode (QR-pose
   // plan M1/M3; the /ar/qr barrel would eagerly pull the whole QR cluster
   // into node unit tests), so each must be built per-file.
   'src/ar/qr/qr-geo-pose-minting.ts',
   'src/ar/qr/qr-level.ts',
+  'src/ar/qr/qr-level-archive.ts',
+  'src/ar/qr/qr-mint-level.ts',
   'src/ar/qr/qr-gps-vote.ts',
   'src/ar/qr/qr-tracking-controller.ts',
 

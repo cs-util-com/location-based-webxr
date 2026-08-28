@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
+import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 import type { QrDetectionEvent } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 
@@ -45,7 +46,7 @@ function fakeDeps(
     solvePose: () => null,
     getCameraPose: () => null,
     getIntrinsics: () => null,
-    getLevels: () => new Map([["1", LEVEL]]),
+    getLevels: () => new Map([[TEXT_ID, LEVEL]]),
     dispatchVote: vi.fn(),
     canAcceptVotes: () => true,
     resolveStablePose: () => null,
@@ -53,11 +54,17 @@ function fakeDeps(
     onError: vi.fn(),
     onUnknownCode: vi.fn(),
     onUnusableLevel: vi.fn(),
+    onLevelResolved: vi.fn(),
     ...overrides,
   };
 }
 
-const TEXT = "https://gps.csutil.com/tour/?qr=x&c=1";
+const TEXT = "https://gps.csutil.com/tour/?qr=x";
+/** The code identity TEXT hashes to — what a tour zip names its level. */
+let TEXT_ID = "";
+beforeAll(async () => {
+  TEXT_ID = await qrCodeId(TEXT);
+});
 
 describe("buildViewerControllerConfig", () => {
   it("pins the wide-baseline cap at 2 m — only M5's measurements may raise it", () => {
@@ -80,11 +87,10 @@ describe("buildViewerControllerConfig", () => {
     // level is cached per text and simply never votes.
     const deps = fakeDeps();
     const config = buildViewerControllerConfig(deps);
-    const level = await config.fetchLevel(
-      "https://gps.csutil.com/tour/?qr=x&c=7",
-    );
+    const other = "https://gps.csutil.com/tour/?qr=other";
+    const level = await config.fetchLevel(other);
     expect(level).toEqual({ version: 1, qr: {} });
-    expect(deps.onUnknownCode).toHaveBeenCalledWith("7");
+    expect(deps.onUnknownCode).toHaveBeenCalledWith(await qrCodeId(other));
   });
 
   it("stops dispatching votes after the per-code budget", () => {
@@ -120,24 +126,28 @@ describe("buildViewerControllerConfig", () => {
     );
   });
 
-  it("shares ONE budget across payload variants of the same code (PR #361)", () => {
-    // An explicit ?c=1 payload and a c-less payload resolving via the page
-    // fallback are the SAME printed code — separate budgets would double
-    // what "per code" promises.
-    const deps = fakeDeps({ pageCode: "1" });
+  it("keys the budget by the decoded text, which IS the code's identity", () => {
+    // Why this matters: the budget used to key by the resolved &c= value,
+    // because two different payloads could name one code. Identity is now
+    // the hash of the exact decoded text, so distinct texts are distinct
+    // codes by construction and text is the equivalent key - the one
+    // available synchronously here, where deriving a hash is not.
+    const deps = fakeDeps();
     const config = buildViewerControllerConfig(deps);
     const votes = [{ v: 1 }] as never[];
-    for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) {
+    for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE + 3; i += 1) {
       config.onDetection?.({ text: TEXT, timestamp: i } as QrDetectionEvent);
       config.dispatchVotes(votes);
     }
-    // The same code, now via the fallback path — budget already spent.
+    // A payload one character apart is a different poster, with its own budget.
     config.onDetection?.({
-      text: "https://gps.csutil.com/tour/?qr=x",
+      text: TEXT + "&n=2",
       timestamp: 99,
     } as QrDetectionEvent);
     config.dispatchVotes(votes);
-    expect(deps.dispatchVote).toHaveBeenCalledTimes(MAX_VOTED_LOCKS_PER_CODE);
+    expect(deps.dispatchVote).toHaveBeenCalledTimes(
+      MAX_VOTED_LOCKS_PER_CODE + 1,
+    );
   });
 
   it("does not charge the budget while the store cannot accept votes", () => {
@@ -178,28 +188,31 @@ describe("buildViewerControllerConfig", () => {
     expect(config.resolveStablePose?.(TEXT)).toBe(stable);
   });
 
-  it("falls back to the PAGE's launch code for payloads without a discriminator", async () => {
-    // Why this matters (M4 milestone review #6): a printed payload that is
-    // not a URL, or a URL without &c=, must resolve to the code the visitor
-    // actually scanned to get here — not silently to "1".
-    const deps = fakeDeps({
-      pageCode: "2",
-      getLevels: () => new Map([["2", LEVEL]]),
-    });
+  it("reports the resolved level to the app's synchronous cache", async () => {
+    // Why this matters: deriving a code's identity is async, but the debug
+    // view and the image planes need the level synchronously. The one place
+    // that can await it hands the answer over here, so nothing re-derives it
+    // - and an unknown code reports null rather than the placeholder, which
+    // would otherwise read as a real level.
+    const deps = fakeDeps();
     const config = buildViewerControllerConfig(deps);
-    await expect(
-      config.fetchLevel("https://gps.csutil.com/tour/?qr=x"),
-    ).resolves.toBe(LEVEL);
+    await config.fetchLevel(TEXT);
+    expect(deps.onLevelResolved).toHaveBeenCalledWith(TEXT, LEVEL);
+    const other = "https://gps.csutil.com/tour/?qr=nope";
+    await config.fetchLevel(other);
+    expect(deps.onLevelResolved).toHaveBeenCalledWith(other, null);
   });
 
   it("reports a level that exists but cannot solve (no printed size)", async () => {
     const deps = fakeDeps({
       getLevels: () =>
-        new Map([["1", { version: 1, qr: { geo: LEVEL.qr.geo } } as QrLevel]]),
+        new Map([
+          [TEXT_ID, { version: 1, qr: { geo: LEVEL.qr.geo } } as QrLevel],
+        ]),
     });
     const config = buildViewerControllerConfig(deps);
     await config.fetchLevel(TEXT);
-    expect(deps.onUnusableLevel).toHaveBeenCalledWith("1");
+    expect(deps.onUnusableLevel).toHaveBeenCalledWith(TEXT_ID);
   });
 
   it("still records every detection while the budget is spent", () => {

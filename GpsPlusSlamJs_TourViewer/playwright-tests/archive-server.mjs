@@ -31,6 +31,8 @@ import {
   ZipWriter,
 } from "@zip.js/zip.js";
 
+import { e2eQrLevelEntryName } from "./qr-fixture.mjs";
+
 const port = Number(process.argv[2] ?? "5197");
 
 /** 1×1 red PNG — a real decodable image, 67 bytes. */
@@ -53,7 +55,7 @@ async function buildZip() {
   // An authored QR level (QR-pose plan M4): the viewer spec relocalizes
   // against it. Geo sits ~13 m from the spec's zero reference.
   await writer.add(
-    "qr/1.json",
+    await e2eQrLevelEntryName(),
     new TextReader(
       JSON.stringify({
         version: 1,
@@ -142,7 +144,7 @@ async function buildRecordingZip() {
     );
   }
   await writer.add(
-    "qr/1.json",
+    await e2eQrLevelEntryName(),
     new TextReader(
       JSON.stringify({
         version: 1,

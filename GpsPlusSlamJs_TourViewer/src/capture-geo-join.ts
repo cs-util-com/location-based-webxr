@@ -25,7 +25,7 @@ import { fusedGpsFromOdom } from "gps-plus-slam-app-framework/utils/fused-path";
 import { isIdentityMatrix4 } from "gps-plus-slam-app-framework/core";
 import { WEBXR_TO_NUE } from "gps-plus-slam-app-framework/ar/webxr-nue-basis";
 
-import { MIN_ALIGNMENT_SAMPLES } from "./qr-author-mode.js";
+import { MIN_ALIGNMENT_SAMPLES } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 
 type Vec3 = readonly [number, number, number];
 type Quat = readonly [number, number, number, number];

@@ -39,10 +39,7 @@ import type {
 } from "gps-plus-slam-app-framework/ar/qr/qr-frontend";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 
-import {
-  DEFAULT_CODE_DISCRIMINATOR,
-  codeFromDetectedText,
-} from "./code-param.js";
+import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 
 /** Synthetic per-vote GPS accuracy (m) — the vote weight's input; M5 tunes. */
 export const VIEWER_SYNTHETIC_ACCURACY_M = 5;
@@ -59,9 +56,6 @@ const NO_LEVEL_PLACEHOLDER: QrLevel = { version: 1, qr: {} };
 
 /** The device/store functions the viewer pipeline needs — seam-injected. */
 export interface ViewerPipelineDeps {
-  /** The PAGE's own `&c=` launch code — the fallback when a detected
-   *  payload carries none (QD-6: a printed URL must never dead-end). */
-  pageCode?: string;
   frontEnd: QrFrontEnd;
   solvePose(input: QrSolvePoseInput): QrPoseSolution | null;
   getCameraPose(): Pose | null;
@@ -92,6 +86,11 @@ export interface ViewerPipelineDeps {
   onUnusableLevel?(code: string): void;
   /** A locked frame's votes were dispatched (budget progress for the UI). */
   onVotedLock?(text: string, votedLocks: number): void;
+  /** The level this decoded text resolved to (`null` when the tour has
+   *  none). Resolving the id is ASYNC, so the app caches the answer here
+   *  and the synchronous callbacks — the debug view, the image planes —
+   *  read the cache instead of re-deriving it. */
+  onLevelResolved?(text: string, level: QrLevel | null): void;
 }
 
 export function buildViewerControllerConfig(
@@ -101,39 +100,37 @@ export function buildViewerControllerConfig(
    *  ordering contract fires `onDetection` synchronously before the same
    *  frame's vote dispatch, which is what lets the budget key by text. */
   let lastDetectedText: string | null = null;
-  /** Keyed by the RESOLVED code, not the raw text (PR #361 review): two
-   *  payloads mapping to the same `c` — one explicit, one via the page
-   *  fallback — must share ONE budget, as "per code" claims. */
-  const votedLocksByCode = new Map<string, number>();
+  /** Keyed by the decoded TEXT. Since a code's identity is now the hash of
+   *  that exact text, distinct texts always have distinct ids — so text and
+   *  id are equivalent budget keys, and text is the one available
+   *  synchronously here. (Under the old `&c=` scheme two different texts
+   *  could resolve to one code, which is why that version keyed by the
+   *  resolved code instead.) */
+  const votedLocksByText = new Map<string, number>();
   return {
     frontEnd: deps.frontEnd,
     solvePose: (input) => deps.solvePose(input),
-    fetchLevel: (text) => {
-      const code = codeFromDetectedText(
-        text,
-        deps.pageCode ?? DEFAULT_CODE_DISCRIMINATOR,
-      );
-      const level = deps.getLevels()?.get(code);
+    fetchLevel: async (text) => {
+      const id = await qrCodeId(text);
+      const level = deps.getLevels()?.get(id);
       if (level === undefined) {
-        deps.onUnknownCode?.(code);
-        return Promise.resolve(NO_LEVEL_PLACEHOLDER);
+        deps.onUnknownCode?.(id);
+        deps.onLevelResolved?.(text, null);
+        return NO_LEVEL_PLACEHOLDER;
       }
       if (level.qr.physicalSizeM === undefined) {
-        deps.onUnusableLevel?.(code);
+        deps.onUnusableLevel?.(id);
       }
-      return Promise.resolve(level);
+      deps.onLevelResolved?.(text, level);
+      return level;
     },
     dispatchVotes: (votes) => {
       const text = lastDetectedText;
       if (text === null) return;
       if (!deps.canAcceptVotes()) return; // budget untouched — see the dep
-      const code = codeFromDetectedText(
-        text,
-        deps.pageCode ?? DEFAULT_CODE_DISCRIMINATOR,
-      );
-      const votedLocks = votedLocksByCode.get(code) ?? 0;
+      const votedLocks = votedLocksByText.get(text) ?? 0;
       if (votedLocks >= MAX_VOTED_LOCKS_PER_CODE) return;
-      votedLocksByCode.set(code, votedLocks + 1);
+      votedLocksByText.set(text, votedLocks + 1);
       for (const vote of votes) deps.dispatchVote(vote);
       deps.onVotedLock?.(text, votedLocks + 1);
     },
