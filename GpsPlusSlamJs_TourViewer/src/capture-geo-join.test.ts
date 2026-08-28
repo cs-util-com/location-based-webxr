@@ -220,3 +220,46 @@ describe("computeCaptureGeoJoin", () => {
     );
   });
 });
+
+describe("computeCaptureGeoJoin — captures it must refuse to place", () => {
+  it("drops a capture whose fused position is not finite", () => {
+    // Why this test matters (PR #370 review): main.ts converts these back with
+    // calcRelativeCoordsInMeters(zero, {lat, lon}, altitude, 0), so NUE y IS
+    // absolute altitude. A capture that comes out of the solve non-finite -
+    // or, on the old `?? 0` fallback, with no altitude at all - was placed at
+    // sea level, which at any inland site is hundreds of metres under the
+    // visitor's feet. And the status line still said "N photos at capture
+    // spots", so the visitor was told the join SUCCEEDED while seeing
+    // nothing. Dropping it lets the caller fall back to the ring, which is
+    // the honest outcome.
+    const poses = computeCaptureGeoJoin(
+      baseState({
+        points: [
+          {
+            imageFile: "images/good.jpg",
+            position: [1, 0, 0],
+            rotation: [0, 0, 0, 1],
+          },
+          {
+            imageFile: "images/bad.jpg",
+            position: [Number.NaN, 0, 0],
+            rotation: [0, 0, 0, 1],
+          },
+        ] as never,
+      }),
+    );
+
+    expect(poses).toHaveLength(1);
+    expect(poses[0]?.imageFile).toBe("images/good.jpg");
+  });
+
+  it("keeps a capture whose altitude is legitimately zero", () => {
+    // Why this test matters: zero is a VALID absolute altitude - the zero
+    // reference sits at 0 in the fixture above - so the drop must key on
+    // "missing or non-finite", never on "falsy". Getting that wrong would
+    // silently discard every capture at a sea-level site.
+    const poses = computeCaptureGeoJoin(baseState());
+    expect(poses).toHaveLength(1);
+    expect(poses[0]?.geo.altitude).toBe(0);
+  });
+});

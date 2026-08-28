@@ -33,6 +33,15 @@ taken instead of ringing them around the QR code.
   the trailing basis factor is LOAD-BEARING because the state stores
   CONJUGATED quaternions (milestone review, finding 1; the directional
   tests pin it). D3: photos face as captured. Throws if called without a passing assessment.
+  - **Returns FEWER poses than captures when a capture cannot be placed**
+    (PR #370 review). A capture whose fused geo has a missing or non-finite
+    lat/lon/altitude is DROPPED. It used to default the altitude to 0, and
+    since the caller converts back with a zero altitude of 0 — so NUE y IS
+    absolute altitude — that put the photo at sea level, hundreds of metres
+    under an inland visitor, while the status line still claimed
+    "N photos at capture spots". Zero is a VALID altitude, so the drop keys
+    on missing-or-non-finite, never on falsy. When nothing survives, the
+    caller falls back to the photo ring.
 - `ReplayedJoinState` — structural slice of the replayed
   `CombinedRootState`, deliberately narrow so tests need no full store.
 

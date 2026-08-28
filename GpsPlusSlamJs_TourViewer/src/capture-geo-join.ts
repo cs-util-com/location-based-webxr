@@ -187,8 +187,25 @@ export function computeCaptureGeoJoin(
   const [ax, ay, az, aw] = gpsData.gpsEvents.alignmentRotation;
   const alignmentQuat = new ThreeQuaternion(ax, ay, az, aw);
   const basisQuat = new ThreeQuaternion().setFromRotationMatrix(WEBXR_TO_NUE);
-  return gpsData.odometryPath.points.map((point) => {
+  return gpsData.odometryPath.points.flatMap((point) => {
     const geo = fusedGpsFromOdom(matrix, [...point.position], zero);
+    // A capture the solve cannot place is DROPPED, never defaulted (PR #370
+    // review). `main.ts` converts these back with
+    // `calcRelativeCoordsInMeters(zero, {lat, lon}, altitude, 0)`, so NUE y
+    // IS absolute altitude - the old `altitude ?? 0` put every such photo at
+    // sea level, hundreds of metres below the visitor at any inland site,
+    // while the status line still reported "N photos at capture spots". The
+    // caller falls back to the photo ring when nothing survives, which is the
+    // honest answer. Note zero is a VALID altitude here (the fixture's own
+    // zero sits at 0), so this keys on missing-or-non-finite, never on falsy.
+    if (
+      !Number.isFinite(geo.lat) ||
+      !Number.isFinite(geo.lon) ||
+      geo.altitude === undefined ||
+      !Number.isFinite(geo.altitude)
+    ) {
+      return [];
+    }
     const [cx, cy, cz, cw] = point.rotation;
     // World orientation. The scene-root convention for a mesh carrying a
     // camera pose is `alignment × WEBXR_TO_NUE × R_webxr` (the same chain
@@ -203,9 +220,11 @@ export function computeCaptureGeoJoin(
       .clone()
       .multiply(new ThreeQuaternion(cx, cy, cz, cw))
       .multiply(basisQuat);
+    // The guard above narrowed altitude to a finite number, so this is a
+    // read rather than a default.
     return {
       imageFile: point.imageFile,
-      geo: { lat: geo.lat, lon: geo.lon, altitude: geo.altitude ?? 0 },
+      geo: { lat: geo.lat, lon: geo.lon, altitude: geo.altitude },
       rotationNue: [world.x, world.y, world.z, world.w],
       ...(point.width !== undefined ? { width: point.width } : {}),
       ...(point.height !== undefined ? { height: point.height } : {}),

@@ -253,6 +253,20 @@ export class RemoteRangeByteSource implements ByteSource {
     // below is information for the caller's own policy.
     const res = await this.#fetch(this.#url, {
       headers: { Range: `bytes=${offset}-${end}` },
+      // `no-cache` here too (PR #370 review). This used to be the ONE fetch in
+      // the transport on the default cache mode, which contradicted
+      // `probeRemote`'s own comment about "the reads it approves" and left the
+      // hazard open: after an author overwrites the archive at the same URL,
+      // the HEAD and the probe both revalidate and the session is built on the
+      // NEW size, but Chrome can still satisfy a Range from its
+      // heuristically-fresh stored FULL response of the old archive. Offsets
+      // anchored to the new size then read pre-eviction bytes, the zip fails
+      // to parse, and because the archive's origin is not 'cache' the
+      // poison-recovery retry is skipped - so the visitor is told a perfectly
+      // good file "cannot be opened as an archive" until the warm completes.
+      // The transport keeps its own Cache-API layer, so the browser HTTP cache
+      // is redundant on this path rather than a hot-path win worth that.
+      cache: 'no-cache',
       signal: AbortSignal.timeout(RANGE_READ_TIMEOUT_MS),
     });
     const failure = classifyRangeResponse(

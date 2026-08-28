@@ -41,8 +41,18 @@ qr-level's tests to fake more than they consume.
   after a changed-ETag eviction, the browser HTTP cache can answer a range
   request from a heuristically-fresh stored full response, so a default-mode
   probe could approve — and the warm then re-persist — the STALE bytes under
-  fresh validators. Streaming range reads deliberately keep the default
-  (hot path). Invisible in Node; the unit tests pin the init member.
+  fresh validators. **Streaming range reads send it too** (PR #370 review):
+  keeping the default there was the one gap left, and it contradicted the
+  probe comment's own claim about "the reads it approves". The concrete
+  failure was an author overwriting the archive at the same URL - HEAD and
+  probe revalidate, the session is built on the NEW size, and a read is then
+  answered from the stored FULL response of the OLD archive, so offsets
+  anchored to the new size read stale bytes. The zip fails to parse, the
+  poison-recovery retry is skipped because the origin is not 'cache', and the
+  visitor is told a good file cannot be opened. The transport keeps its own
+  Cache-API layer, so the browser HTTP cache was redundant here rather than a
+  hot-path win worth that. Invisible in Node; the unit tests pin the init
+  member.
 - A range read requires **exactly 206**. A 200 means the host ignored `Range`
   and streamed the whole archive — returning that as the slice would silently
   corrupt every downstream parse, so it throws the distinguishable

@@ -343,3 +343,35 @@ describe('probeRemote', () => {
     }
   );
 });
+
+describe('RemoteRangeByteSource.read — cache mode', () => {
+  it('sends cache: no-cache on the streaming range read too', async () => {
+    // Why this test matters (PR #370 review): this read was the ONE fetch in
+    // the transport left on the default cache mode, which contradicted the
+    // probe's own comment about "the reads it approves". After an author
+    // overwrites the archive at the same URL, the HEAD and probe revalidate
+    // and the session is built on the NEW size - but a default-mode range
+    // read can still be answered from the stored FULL response of the OLD
+    // archive, so offsets anchored to the new size read stale bytes. The zip
+    // then fails to parse, the poison-recovery retry is skipped because the
+    // origin is not 'cache', and the visitor is told a perfectly good file
+    // cannot be opened. Invisible in Node (fetch has no HTTP cache), so the
+    // init member is the only thing a unit test can pin.
+    const cacheModes: (RequestCache | undefined)[] = [];
+    const fetchImpl: typeof fetch = (_input, init) => {
+      cacheModes.push(init?.cache);
+      return Promise.resolve(
+        fakeResponse({
+          status: 206,
+          body: new Uint8Array([1, 2, 3, 4]),
+          headers: { 'content-range': 'bytes 0-3/4' },
+        })
+      );
+    };
+
+    const source = new RemoteRangeByteSource('https://x/t.zip', 4, fetchImpl);
+    await source.read(0, 4);
+
+    expect(cacheModes).toEqual(['no-cache']);
+  });
+});
