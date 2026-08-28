@@ -269,3 +269,69 @@ describe('createQrLevelSource — the payload names the fetch host', () => {
     expect(open).toHaveBeenCalledTimes(1);
   });
 });
+
+// The three mechanisms the M-B…M-G review found built-but-unproven. Each is
+// documented as protective, and a mechanism nobody exercises is worse than an
+// absent one: the docs then assert a guarantee nobody has.
+describe('createQrLevelSource — the mechanisms that bound a bad sticker', () => {
+  it('tells the controller to cache only a real level', async () => {
+    // The tracking controller has its own cache. If it caches the geo-less
+    // placeholder, the first failure sticks for the whole session and the
+    // retry backoff below is unreachable — which is exactly what happened
+    // before `shouldCacheLevel` was wired.
+    const source = createQrLevelSource({
+      allowedHosts: HOSTS,
+      assetPrefix: 'https://assets.test/',
+      openArchive: () => Promise.reject(new Error('offline')),
+    });
+
+    const placeholder = await source.fetchLevel(OURS);
+
+    expect(source.shouldCacheLevel(placeholder)).toBe(false);
+    expect(
+      source.shouldCacheLevel({
+        version: 1,
+        qr: { geo: { latitude: 1, longitude: 2, altitude: 3 } },
+      } as never)
+    ).toBe(true);
+  });
+
+  it('gives up on an archive that never answers', async () => {
+    // Without the deadline the detector awaits a hung request forever: no
+    // level, no vote, and no second attempt — a single stalled connection
+    // ends QR levels for the session with no visible symptom.
+    const source = createQrLevelSource({
+      allowedHosts: HOSTS,
+      assetPrefix: 'https://assets.test/',
+      timeoutMs: 5,
+      openArchive: () => new Promise(() => undefined),
+    });
+
+    const level = await source.fetchLevel(OURS);
+
+    expect(level).toEqual({ version: 1, qr: {} });
+    expect(source.stateFor(OURS)?.kind).toBe('failed');
+  });
+
+  it('stops waiting on everything in flight when the session ends', async () => {
+    // `dispose()` cannot cancel the requests themselves, so what it must
+    // guarantee is that nothing keeps awaiting them. A pending promise that
+    // never settles after teardown holds the whole session's closure alive.
+    const source = createQrLevelSource({
+      allowedHosts: HOSTS,
+      assetPrefix: 'https://assets.test/',
+      timeoutMs: 60_000,
+      openArchive: () => new Promise(() => undefined),
+    });
+
+    const pending = source.fetchLevel(OURS);
+    source.dispose();
+
+    await expect(pending).resolves.toEqual({ version: 1, qr: {} });
+    // And a lookup started after teardown never reaches the network at all.
+    await expect(source.fetchLevel(OURS)).resolves.toEqual({
+      version: 1,
+      qr: {},
+    });
+  });
+});

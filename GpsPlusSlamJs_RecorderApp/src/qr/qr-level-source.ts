@@ -223,6 +223,16 @@ export function createQrLevelSource(deps: QrLevelSourceDeps): QrLevelSource {
     // Only a real level is final. Everything else — absent, not ours, or a
     // transport failure — resolves to the same placeholder, and this source
     // decides when to ask again.
+    //
+    // The comparison is by IDENTITY, and that is only sound because the
+    // tracking controller passes back the very object it awaited from
+    // `fetchLevel` (`qr-tracking-controller.ts:242,247`). A caller that
+    // cloned, normalized or round-tripped the level before asking would get
+    // `true` for the placeholder and re-introduce the exact defect this
+    // exists to prevent — a single failed lookup cached for the session.
+    // A structural test (`qr.geo === undefined`) is deliberately NOT used:
+    // an archive may legitimately carry a level with no geo, and that answer
+    // is final too, so structurally it would be retried forever.
     shouldCacheLevel: (level) => level !== NO_LEVEL,
     dispose() {
       disposed = true;

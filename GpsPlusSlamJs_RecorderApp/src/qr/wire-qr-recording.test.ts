@@ -74,13 +74,21 @@ vi.mock('gps-plus-slam-app-framework/ar/qr/qr-tracking-controller', () => ({
   createQrTrackingController: mockCreateQrTrackingController,
 }));
 
-const { mockDebugController, mockCreateQrDebugController } = vi.hoisted(() => {
-  const mockDebugController = { update: vi.fn(), dispose: vi.fn() };
-  return {
-    mockDebugController,
-    mockCreateQrDebugController: vi.fn(() => mockDebugController),
-  };
-});
+const { mockDebugController, mockCreateQrDebugController, capturedDebugDeps } =
+  vi.hoisted(() => {
+    const mockDebugController = { update: vi.fn(), dispose: vi.fn() };
+    const capturedDebugDeps: { current: Record<string, unknown> | null } = {
+      current: null,
+    };
+    return {
+      mockDebugController,
+      capturedDebugDeps,
+      mockCreateQrDebugController: vi.fn((deps: Record<string, unknown>) => {
+        capturedDebugDeps.current = deps;
+        return mockDebugController;
+      }),
+    };
+  });
 
 vi.mock('gps-plus-slam-app-framework/ar/qr/qr-detection-controller', () => ({
   createQrDetectionController: mockCreateQrDetectionController,
@@ -626,5 +634,93 @@ describe('wireQrRecording — level mode seams', () => {
     dispose();
     expect(mockStopCapture).toHaveBeenCalledTimes(1);
     expect(setProducer).toHaveBeenLastCalledWith(null);
+  });
+});
+
+// Two seams the M-B…M-G review found built but not proven wired. Both are
+// one-line delegations, which is exactly why nothing noticed: the code reads
+// as obviously correct and does nothing until something calls it.
+describe('wireQrRecording — the delegations that make the level path work', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    capturedTrackingConfig.current = null;
+    capturedDebugDeps.current = null;
+  });
+
+  it('lets the level source, not the controller cache, decide what sticks', async () => {
+    // The tracking controller caches whatever `fetchLevel` returns. Left to
+    // itself it would cache the geo-less placeholder a failed lookup produces,
+    // and the source's retry backoff would never run again for that code - one
+    // hiccup at the start of a session, no QR levels for the rest of it.
+    //
+    // The level object is taken from `fetchLevel` rather than written out
+    // here on purpose: the controller passes the very object it awaited
+    // (qr-tracking-controller.ts:242,247), and the source's answer is
+    // identity-based, so a hand-built look-alike would test a contract that
+    // does not exist.
+    const { ref } = makeStoreRef(makeStore());
+    wireQrRecording({
+      storeRef: ref as never,
+      getArWorldGroup: () => null,
+      qr: { ...qr, useLevels: true },
+      setProducer: vi.fn(),
+      readAlignment: NO_ALIGNMENT,
+    });
+
+    const config = capturedTrackingConfig.current!;
+    const fetchLevel = config.fetchLevel as (t: string) => Promise<unknown>;
+    const shouldCache = config.shouldCacheLevel as (level: unknown) => boolean;
+
+    const placeholder = await fetchLevel('WIFI:S:CoffeeShop;T:WPA;P:hunter2;;');
+    expect(placeholder).toEqual({ version: 1, qr: {} });
+    expect(shouldCache(placeholder)).toBe(false);
+
+    // A level the archive really supplied is final and must stick.
+    expect(
+      shouldCache({
+        version: 1,
+        qr: { geo: { latitude: 1, longitude: 2, altitude: 3 } },
+      })
+    ).toBe(true);
+  });
+
+  it('feeds the derived placement into the session sighting fold', () => {
+    // One deriver, two consumers: the debug cube and the mint's sighting fold.
+    // If this callback is not wired, the recording still LOOKS right on screen
+    // and the zip mints nothing at all — the failure only surfaces at save
+    // time, on a walk that cannot be repeated.
+    let feeder: { accumulator: { codes: () => string[] } } | null = null;
+    const { ref } = makeStoreRef(makeStore());
+    wireQrRecording({
+      storeRef: ref as never,
+      getArWorldGroup: () => null,
+      qr,
+      setProducer: vi.fn(),
+      readAlignment: NO_ALIGNMENT,
+      setSightingFeeder: (f) => {
+        feeder = f as typeof feeder;
+      },
+    });
+
+    const onPlacement = capturedDebugDeps.current!.onPlacement as (
+      text: string,
+      placement: unknown,
+      timestampMs: number
+    ) => void;
+    onPlacement(
+      'https://gps.csutil.com/?qr=x',
+      {
+        pose: {
+          position: [1, 2, 3],
+          rotation: [0, 0, 0, 1],
+        },
+        sizeM: 0.21,
+      },
+      1000
+    );
+
+    expect(feeder!.accumulator.codes()).toEqual([
+      'https://gps.csutil.com/?qr=x',
+    ]);
   });
 });

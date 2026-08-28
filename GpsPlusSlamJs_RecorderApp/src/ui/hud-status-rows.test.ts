@@ -269,3 +269,82 @@ describe('AbsCompass status row', () => {
     expect(full).toContain('id="abs-compass-status"');
   });
 });
+
+describe('QR status row', () => {
+  function setupDOMWithQrStatus(): void {
+    document.body.innerHTML = `
+      <div id="qr-info" class="hidden">
+        <span id="qr-status">--</span>
+      </div>
+    `;
+  }
+
+  /**
+   * Why this test matters: the recorder used to show NOTHING for QR, so a
+   * field session where the detector never fired looked exactly like one
+   * where it did. The row existing is the whole point of it; a test that
+   * only checked the text would pass on a row that stays hidden.
+   */
+  it('reveals the row and writes the line', async () => {
+    setupDOMWithQrStatus();
+    const { setQrStatus } = await import('./hud-status-rows.js');
+
+    setQrStatus('2 codes · 0.21 m');
+
+    expect(
+      document.getElementById('qr-info')!.classList.contains('hidden')
+    ).toBe(false);
+    expect(document.getElementById('qr-status')!.textContent).toBe(
+      '2 codes · 0.21 m'
+    );
+  });
+
+  /**
+   * Why this test matters: null means "QR detection is off", which must hide
+   * the row rather than render an empty one — an empty row reads as "detection
+   * is on and finding nothing", the exact confusion this row exists to remove.
+   */
+  it('hides the row for a null line without clearing the last text', async () => {
+    setupDOMWithQrStatus();
+    const { setQrStatus } = await import('./hud-status-rows.js');
+
+    setQrStatus('1 code');
+    setQrStatus(null);
+
+    expect(
+      document.getElementById('qr-info')!.classList.contains('hidden')
+    ).toBe(true);
+  });
+
+  /**
+   * Why this test matters: these helpers run from HUD wiring that also runs on
+   * pages without the QR row (the replay view). Throwing there would take down
+   * the whole HUD update for an element that is legitimately absent.
+   */
+  it('is inert when the elements are absent', async () => {
+    document.body.innerHTML = '';
+    const { setQrStatus, hideQrStatus } = await import('./hud-status-rows.js');
+
+    expect(() => {
+      setQrStatus('anything');
+    }).not.toThrow();
+    expect(() => {
+      hideQrStatus();
+    }).not.toThrow();
+  });
+
+  it('hideQrStatus hides the row', async () => {
+    setupDOMWithQrStatus();
+    const { setQrStatus, hideQrStatus } = await import('./hud-status-rows.js');
+    setQrStatus('1 code');
+    hideQrStatus();
+    expect(
+      document.getElementById('qr-info')!.classList.contains('hidden')
+    ).toBe(true);
+  });
+
+  it('index.html ships the QR status element', () => {
+    const full = loadFullIndexHtml();
+    expect(full).toContain('id="qr-status"');
+  });
+});
