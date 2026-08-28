@@ -52,10 +52,17 @@ export function lowerMedian(values: readonly number[]): number {
  * Lower-median convention, matching {@link lowerMedian}: the result is always
  * an observed sample, and on an exact half-weight tie the LOWER of the two
  * straddling values wins. That convention is shared with the core library's
- * private weighted median inside the alignment solver; the two must agree, and
- * a cross-check against it belongs in `GpsPlusSlamJs_Investigation`, which may
- * reach the core's internals — this package may not (IP-protection audit §9),
- * which is why the convention is pinned here with golden values instead.
+ * private weighted median inside the alignment solver, and the two are now
+ * cross-checked against each other in
+ * `GpsPlusSlamJs_Investigation/src/regression/weighted-median-cross-check.test.ts`
+ * — the only package that may reach the core's internals; this one may not
+ * (IP-protection audit §9).
+ *
+ * They agree on every well-formed input and differ on four degenerate ones
+ * (empty input, a negative weight, a NaN weight, a NaN value), because this is
+ * a public utility with arbitrary callers while the core's is private behind a
+ * caller that clamps its weights first. The sidecar lists them; the
+ * cross-check pins them.
  *
  * Non-finite or non-positive weights are dropped: a weight of zero means "this
  * sample does not count", and a NaN weight is a bug upstream that must not
