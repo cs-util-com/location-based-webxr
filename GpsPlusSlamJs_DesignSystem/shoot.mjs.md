@@ -28,9 +28,14 @@
     (must be var(--token); comments and mask stencils exempt, demo
     layer exempt) and brief-vs-CSS token-name drift (every --name the
     brief mentions must exist in styles.css). Both negative-tested.
-  - `--bg=live` renders the getUserMedia background, which headless
-    Chromium will fail to open; the page surfaces that in its toast, and
-    the shot shows the failure state — that is honest, not a bug.
+  - `--bg=live` is **rejected with exit code 2**, deliberately (PR #371
+    review). It is not shootable: the page never restores `live` from the
+    hash (a camera needs a user gesture) and `startLive()` runs only from
+    the LIVE button's click handler, which headless has nobody to press.
+    The old claim here - that the shot "shows the failure state" - was
+    wrong: it rendered the plain `foliage` default and saved it as
+    `phone-<screen>-live.png`, a different background under a filename
+    claiming otherwise. Refusing is the only outcome that cannot mislead.
 - Examples: `pnpm run shoot -- --screen=experiments --bg=night` (one
   screen, one background); `pnpm run shoot -- --sel=".hud-compass"`
   (close-up).

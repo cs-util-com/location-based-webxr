@@ -6,14 +6,14 @@
  * dev server. The page's own URL-hash state (#bg=…&screen=…) addresses
  * backgrounds and screens directly.
  *
- * Usage (from GpsPlusSlamJs_Docs/):
+ * Usage (from GpsPlusSlamJs_DesignSystem/):
  *   pnpm run shoot                          # phone on every screen, foliage
  *   pnpm run shoot -- --bg=sky              # …over the blown-sky background
  *   pnpm run shoot -- --screen=hud          # one screen only
  *   pnpm run shoot -- --sel=".hud-readout"  # close-up of one element (3x)
  *   pnpm run shoot -- --page                # the whole page incl. atoms
  *
- * Output: design-system/shots/<name>.png (gitignored), paths printed so
+ * Output: GpsPlusSlamJs_DesignSystem/shots/<name>.png (gitignored), printed so
  * they can be Read directly. PNGs are deliberately NOT committed and NOT
  * asserted against: headless-GPU output differs per machine, which is the
  * same reason shoot-chapters.mjs rejected golden-image CI (see its
@@ -96,6 +96,22 @@ const args = new Map(
 const SCREENS = ["hud", "experiments", "placement"];
 const screens = args.has("screen") ? [args.get("screen")] : SCREENS;
 const bg = args.get("bg") ?? "foliage";
+// "live" is NOT shootable, and refusing is the honest answer (PR #371
+// review). The page deliberately never restores it from the hash (starting a
+// camera without a user gesture would be blocked, and rude), and startLive()
+// runs only from the LIVE button's click handler, which headless has nobody
+// to press. So --bg=live used to render the plain "foliage" default and write
+// it to phone-<screen>-live.png: a different background under a filename
+// claiming otherwise, which is worse than either honest outcome.
+if (bg === "live") {
+  console.error(
+    "shoot: --bg=live is not shootable headlessly. The camera background " +
+      "needs a user gesture, so the page would silently render the default " +
+      "and save it under a 'live' filename. Use --bg=foliage|sky|night, or " +
+      "press LIVE in a real browser.",
+  );
+  process.exit(2);
+}
 const selector = args.get("sel");
 const wholePage = args.has("page");
 

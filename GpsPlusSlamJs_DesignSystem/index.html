@@ -837,16 +837,30 @@
           saveState();
         });
       }
-      // Restore from the hash. 'live' is never restored: starting the
-      // camera without a user gesture would be blocked, and rude.
-      {
+      // Apply the hash, on load AND on every change. 'live' is never
+      // restored: starting the camera without a user gesture would be
+      // blocked, and rude.
+      //
+      // The hashchange listener is not a nicety (PR #371 review). Without it
+      // the state "persists in the URL hash" only for a fresh load, so
+      // pointing an already-open tab at a different screen silently did
+      // nothing - and `shoot.mjs` drives exactly that way. Its multi-screen
+      // run calls goto() three times with URLs differing only in the
+      // fragment, which is a same-document navigation that does not re-run
+      // this script, so every screen after the first was photographed showing
+      // the FIRST screen, under a filename claiming otherwise. The worst
+      // possible failure for a tool whose whole job is letting someone see
+      // what was rendered.
+      const applyHash = () => {
         const params = new URLSearchParams(location.hash.slice(1));
         const bg = params.get("bg");
         if (bg && bg !== "live") phone.setAttribute("data-bg", bg);
         const screen = params.get("screen");
         if (screen) phone.setAttribute("data-screen", screen);
         syncSwitchers();
-      }
+      };
+      applyHash();
+      window.addEventListener("hashchange", applyHash);
 
       // Readout expand/collapse
       const readout = document.getElementById("readout");
@@ -1012,13 +1026,27 @@
       // Whitespace is normalised (the two sit at different indent
       // depths). Drift logs a console error - which fails pnpm run shoot
       // - and outlines the stale copy in red in the browser.
+      // Checked in BOTH directions (PR #371 review). Walking only
+      // sources -> copies is vacuous exactly where drift comes from: rename
+      // data-atom="radar" to "minimap" and forget the copy, and the inner
+      // loop matches nothing for "minimap" while the orphaned
+      // data-atom-copy="radar" is never visited by anything. Green, with the
+      // KEEP-IN-SYNC claim enforcing nothing for that atom. Deleting a source
+      // outright behaves the same way.
+      const normAtom = (el) => el.innerHTML.replace(/\s+/g, " ").trim();
       for (const src of document.querySelectorAll("[data-atom]")) {
         const key = src.dataset.atom;
-        const norm = (el) => el.innerHTML.replace(/\s+/g, " ").trim();
-        for (const copy of document.querySelectorAll(
+        const copies = document.querySelectorAll(
           '[data-atom-copy="' + key + '"]',
-        )) {
-          if (norm(copy) !== norm(src)) {
+        );
+        if (!copies.length) {
+          console.error(
+            "atom drift: " + key + " - no screen copy carries this atom",
+          );
+          src.style.outline = "2px solid red";
+        }
+        for (const copy of copies) {
+          if (normAtom(copy) !== normAtom(src)) {
             console.error(
               "atom drift: " +
                 key +
@@ -1026,6 +1054,15 @@
             );
             copy.style.outline = "2px solid red";
           }
+        }
+      }
+      for (const copy of document.querySelectorAll("[data-atom-copy]")) {
+        const key = copy.dataset.atomCopy;
+        if (!document.querySelector('[data-atom="' + key + '"]')) {
+          console.error(
+            "atom drift: " + key + " - no atom source by that name",
+          );
+          copy.style.outline = "2px solid red";
         }
       }
     </script>
