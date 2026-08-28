@@ -51,6 +51,23 @@ export interface QrSolvePoseInput {
  * would close a cycle (`state/qr-detected-slice` already imports `ar/qr/qr-pose`).
  */
 export interface QrDetectionEvent {
+  /**
+   * The detector's four corners, the camera pose and the image size — the
+   * RAW facts behind the solve.
+   *
+   * They are here so an app that wants BOTH a solved pose and a raw record
+   * (the recorder, which must keep recording raw whatever else it does) gets
+   * them from ONE decode. Running the thin producer alongside this controller
+   * would decode every frame twice, on the AR frame path.
+   *
+   * The projection matrix is deliberately NOT here: this controller never
+   * sees one — it is given `getIntrinsics(image)` instead — and inventing a
+   * field it cannot fill would be worse than the caller supplying its own.
+   */
+  readonly corners: readonly Point2[];
+  readonly cameraPose: Pose;
+  readonly imageWidth: number;
+  readonly imageHeight: number;
   /** Decoded payload (text/URL) — the marker key. */
   text: string;
   qrPoseWorld: Pose;
@@ -164,7 +181,18 @@ export function createQrTrackingController(
   const levelCache = new Map<string, QrLevel>();
   // The level + payload + resolved size from the in-flight detection, read by
   // onLocked to emit the detection and (conditionally) build the vote.
-  let active: { level: QrLevel; text: string; sizeM: number } | null = null;
+  // Carries the RAW facts of the solve as well as the level, so `onLocked`
+  // can hand them to a consumer that needs a raw record alongside the pose
+  // — without a second decode of the same frame.
+  let active: {
+    level: QrLevel;
+    text: string;
+    sizeM: number;
+    corners: readonly Point2[];
+    cameraPose: Pose;
+    imageWidth: number;
+    imageHeight: number;
+  } | null = null;
 
   function setStatus(next: QrTrackingStatus): void {
     if (status === next) return;
@@ -233,7 +261,15 @@ export function createQrTrackingController(
       return null;
     }
 
-    active = { level, text: detection.text, sizeM };
+    active = {
+      level,
+      text: detection.text,
+      sizeM,
+      corners: detection.corners,
+      cameraPose,
+      imageWidth: image.width,
+      imageHeight: image.height,
+    };
     return solution;
   }
 
@@ -256,6 +292,10 @@ export function createQrTrackingController(
           qrPoseInCamera: solution.qrPoseInCamera,
           reprojectionErrorPx: solution.reprojectionErrorPx,
           timestamp: timestampNow(),
+          corners: current.corners,
+          cameraPose: current.cameraPose,
+          imageWidth: current.imageWidth,
+          imageHeight: current.imageHeight,
         });
 
         // The GPS vote is CONDITIONAL on geo: geo-less levels (debug/observe,

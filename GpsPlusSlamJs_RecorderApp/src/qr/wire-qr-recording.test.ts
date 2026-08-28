@@ -53,6 +53,27 @@ const { mockStartCapture, mockStopCapture, mockGetCurrentArPose } = vi.hoisted(
   })
 );
 
+const { mockCreateQrTrackingController, capturedTrackingConfig } = vi.hoisted(
+  () => {
+    const capturedTrackingConfig: {
+      current: Record<string, unknown> | null;
+    } = { current: null };
+    return {
+      capturedTrackingConfig,
+      mockCreateQrTrackingController: vi.fn(
+        (config: Record<string, unknown>) => {
+          capturedTrackingConfig.current = config;
+          return { offerFrame: vi.fn(), reset: vi.fn(), status: 'idle' };
+        }
+      ),
+    };
+  }
+);
+
+vi.mock('gps-plus-slam-app-framework/ar/qr/qr-tracking-controller', () => ({
+  createQrTrackingController: mockCreateQrTrackingController,
+}));
+
 const { mockDebugController, mockCreateQrDebugController } = vi.hoisted(() => {
   const mockDebugController = { update: vi.fn(), dispose: vi.fn() };
   return {
@@ -82,7 +103,13 @@ vi.mock('../state/recorder-store', () => ({
   })),
 }));
 
+import { createSlamAppStore } from 'gps-plus-slam-app-framework/state';
+import { NullStorageBackend } from 'gps-plus-slam-app-framework/storage';
 import { wireQrRecording } from './wire-qr-recording';
+
+// `recordGpsEvent` is licence-gated. Creating a store is the documented
+// activation path, and it is what production does at boot.
+createSlamAppStore({ storageBackend: new NullStorageBackend() });
 
 // --- A fake store + storeRef ------------------------------------------------
 
@@ -132,7 +159,14 @@ function makeStoreRef(store: FakeStore) {
   };
 }
 
-const qr = { enabled: true, intervalMs: 125, captureSize: 1024 };
+const qr = {
+  enabled: true,
+  intervalMs: 125,
+  captureSize: 1024,
+  // These wiring tests cover the RAW-recording mode; the level-consuming
+  // mode has its own suite around qr-level-source.
+  useLevels: false,
+};
 
 // Manual requestAnimationFrame so the F3 coalescing is deterministic in tests:
 // callbacks queue and only run when flushRaf() is called.
@@ -338,5 +372,259 @@ describe('wireQrRecording', () => {
     expect(fakeProducer.reset).toHaveBeenCalledTimes(1);
     expect(setProducer).toHaveBeenLastCalledWith(null);
     expect(mockDebugController.dispose).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Added with the level-consuming mode (plan M-E, DEC-7). These assert the
+// SWITCH, not the fetch — the level source has its own suite.
+describe('wireQrRecording — level-consuming mode', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    rafQueue = [];
+    vi.stubGlobal('requestAnimationFrame', (cb: () => void) => {
+      rafQueue.push(cb);
+      return rafQueue.length;
+    });
+    vi.stubGlobal('cancelAnimationFrame', () => {});
+  });
+
+  it('keeps the thin RAW producer when the switch is off', () => {
+    // The default, and what every corpus recording uses: detections recorded,
+    // nothing fetched, no synthetic GPS added to the session.
+    const { ref } = makeStoreRef(makeStore());
+    wireQrRecording({
+      storeRef: ref as never,
+      getArWorldGroup: () => null,
+      qr,
+      setProducer: vi.fn(),
+      readAlignment: NO_ALIGNMENT,
+    });
+    expect(mockCreateQrDetectionController).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT build the thin producer when the switch is on', () => {
+    // Why this test matters: running both would decode every camera frame
+    // TWICE on the AR frame path. The tracking controller's detection event
+    // carries the raw corners and camera pose precisely so one decode can
+    // feed both the vote path and the raw record.
+    const { ref } = makeStoreRef(makeStore());
+    wireQrRecording({
+      storeRef: ref as never,
+      getArWorldGroup: () => null,
+      qr: { ...qr, useLevels: true },
+      setProducer: vi.fn(),
+      readAlignment: NO_ALIGNMENT,
+    });
+    expect(mockCreateQrDetectionController).not.toHaveBeenCalled();
+  });
+
+  it('still starts exactly one camera-frame source in either mode', () => {
+    const { ref } = makeStoreRef(makeStore());
+    wireQrRecording({
+      storeRef: ref as never,
+      getArWorldGroup: () => null,
+      qr: { ...qr, useLevels: true },
+      setProducer: vi.fn(),
+      readAlignment: NO_ALIGNMENT,
+    });
+    expect(mockStartCapture).toHaveBeenCalledTimes(1);
+  });
+});
+
+// The level-consuming pipeline's own callbacks — built by the wiring and
+// invoked by the framework controller, so nothing else exercises them.
+describe('wireQrRecording — the level-consuming callbacks', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    capturedTrackingConfig.current = null;
+    rafQueue = [];
+    vi.stubGlobal('requestAnimationFrame', (cb: () => void) => {
+      rafQueue.push(cb);
+      return rafQueue.length;
+    });
+    vi.stubGlobal('cancelAnimationFrame', () => {});
+  });
+
+  function wireWithLevels(latestDepthSample: unknown) {
+    const store = makeStore(latestDepthSample);
+    const { ref } = makeStoreRef(store);
+    const dispose = wireQrRecording({
+      storeRef: ref as never,
+      getArWorldGroup: () => null,
+      qr: { ...qr, useLevels: true },
+      setProducer: vi.fn(),
+      readAlignment: NO_ALIGNMENT,
+    });
+    return { store, dispose, config: capturedTrackingConfig.current! };
+  }
+
+  const depthSample = {
+    projectionMatrix: [1.5, 0, 0, 0, 0, 2, 0, 0, 0, 0, -1, -1, 0, 0, -0.2, 0],
+  };
+
+  it('still writes the RAW observation for every detection', () => {
+    // Why this test matters: decision D-A says a recording stays
+    // algorithm-agnostic whatever else the session is doing. Level mode must
+    // not quietly stop recording what it saw - and it gets the raw facts from
+    // the SAME decode that produced the pose, not a second one.
+    const { store, config } = wireWithLevels(depthSample);
+    const onDetection = config.onDetection as (e: unknown) => void;
+    onDetection({
+      text: 'code',
+      timestamp: 1234,
+      corners: [
+        { x: 1, y: 1 },
+        { x: 2, y: 1 },
+        { x: 2, y: 2 },
+        { x: 1, y: 2 },
+      ],
+      cameraPose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+      imageWidth: 640,
+      imageHeight: 480,
+    });
+    expect(store.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'qrDetected/recordQrDetection' })
+    );
+  });
+
+  it('records nothing when there is no projection matrix to solve against', () => {
+    // A raw observation without one cannot be re-solved later, so writing a
+    // partial record would be worse than writing none.
+    const { store, config } = wireWithLevels(null);
+    const onDetection = config.onDetection as (e: unknown) => void;
+    onDetection({
+      text: 'code',
+      timestamp: 1,
+      corners: [],
+      cameraPose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+      imageWidth: 1,
+      imageHeight: 1,
+    });
+    expect(store.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('dispatches every vote of a batch into the current store', () => {
+    const { store, config } = wireWithLevels(depthSample);
+    const dispatchVotes = config.dispatchVotes as (v: unknown[]) => void;
+    dispatchVotes([{ a: 1 }, { a: 2 }, { a: 3 }]);
+    expect(store.dispatch).toHaveBeenCalledTimes(3);
+  });
+
+  it('derives intrinsics from the depth sample, and refuses without one', () => {
+    const withDepth = wireWithLevels(depthSample);
+    const getIntrinsics = withDepth.config.getIntrinsics as (
+      i: unknown
+    ) => unknown;
+    expect(getIntrinsics({ width: 640, height: 480 })).not.toBeNull();
+
+    const withoutDepth = wireWithLevels(null);
+    const none = withoutDepth.config.getIntrinsics as (i: unknown) => unknown;
+    expect(none({ width: 640, height: 480 })).toBeNull();
+  });
+
+  it('carries the vote shape the shipped viewer uses', () => {
+    const { config } = wireWithLevels(depthSample);
+    expect(config.syntheticAccuracyM).toBe(5);
+    expect(config.voteBaselineM).toBe(2);
+    expect(config.voteCount).toBe(4);
+    expect(config.minIntervalMs).toBe(0);
+  });
+});
+
+// The remaining level-mode seams: the pose solve, the level lookup, and the
+// teardown that must stop network work when a session ends.
+describe('wireQrRecording — level mode seams', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    capturedTrackingConfig.current = null;
+    rafQueue = [];
+    vi.stubGlobal('requestAnimationFrame', (cb: () => void) => {
+      rafQueue.push(cb);
+      return rafQueue.length;
+    });
+    vi.stubGlobal('cancelAnimationFrame', () => {});
+  });
+
+  it('solves a pose through the pure-JS PnP backend', () => {
+    const { ref } = makeStoreRef(makeStore());
+    wireQrRecording({
+      storeRef: ref as never,
+      getArWorldGroup: () => null,
+      qr: { ...qr, useLevels: true },
+      setProducer: vi.fn(),
+      readAlignment: NO_ALIGNMENT,
+    });
+    const config = capturedTrackingConfig.current!;
+    const solvePose = config.solvePose as (i: unknown) => unknown;
+    // A degenerate quad has no pose; what matters is that a solver is wired
+    // at all - without one the call throws rather than returning null.
+    expect(() =>
+      solvePose({
+        imagePoints: [
+          { x: 0, y: 0 },
+          { x: 0, y: 0 },
+          { x: 0, y: 0 },
+          { x: 0, y: 0 },
+        ],
+        sizeM: 0.16,
+        intrinsics: { fx: 500, fy: 500, cx: 320, cy: 240 },
+        cameraPose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+      })
+    ).not.toThrow();
+  });
+
+  it('routes level lookups through the guarded source', async () => {
+    const { ref } = makeStoreRef(makeStore());
+    wireQrRecording({
+      storeRef: ref as never,
+      getArWorldGroup: () => null,
+      qr: { ...qr, useLevels: true },
+      setProducer: vi.fn(),
+      readAlignment: NO_ALIGNMENT,
+    });
+    const config = capturedTrackingConfig.current!;
+    const fetchLevel = config.fetchLevel as (t: string) => Promise<unknown>;
+    // A foreign code must come back as the geo-less placeholder without any
+    // network attempt — the guard lives in the source, and this proves the
+    // wiring actually goes through it.
+    await expect(
+      fetchLevel('WIFI:S:CoffeeShop;T:WPA;P:hunter2;;')
+    ).resolves.toEqual({ version: 1, qr: {} });
+  });
+
+  it('reads the camera pose live, not once at wiring time', () => {
+    const { ref } = makeStoreRef(makeStore());
+    wireQrRecording({
+      storeRef: ref as never,
+      getArWorldGroup: () => null,
+      qr: { ...qr, useLevels: true },
+      setProducer: vi.fn(),
+      readAlignment: NO_ALIGNMENT,
+    });
+    const config = capturedTrackingConfig.current!;
+    const getCameraPose = config.getCameraPose as () => unknown;
+    expect(getCameraPose()).toEqual({
+      position: [7, 8, 9],
+      rotation: [0, 0, 0, 1],
+    });
+    mockGetCurrentArPose.mockReturnValueOnce(null);
+    expect(getCameraPose()).toBeNull();
+  });
+
+  it('stops the frame source and the level source on dispose', () => {
+    // The level source holds abortable network work; a session that ended
+    // must not leave it running into the next one.
+    const setProducer = vi.fn();
+    const { ref } = makeStoreRef(makeStore());
+    const dispose = wireQrRecording({
+      storeRef: ref as never,
+      getArWorldGroup: () => null,
+      qr: { ...qr, useLevels: true },
+      setProducer,
+      readAlignment: NO_ALIGNMENT,
+    });
+    dispose();
+    expect(mockStopCapture).toHaveBeenCalledTimes(1);
+    expect(setProducer).toHaveBeenLastCalledWith(null);
   });
 });

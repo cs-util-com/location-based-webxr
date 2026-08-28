@@ -1148,6 +1148,9 @@ describe('recording-options', () => {
         enabled: true,
         intervalMs: 250,
         captureSize: 512,
+        // Absent from the input, so it default-fills - the same
+        // pre-feature-persisted-options case the other groups test.
+        useLevels: false,
       });
     });
 
@@ -1883,5 +1886,23 @@ describe('recording-options', () => {
         expect.any(String)
       );
     });
+  });
+});
+
+// Added with the level-consuming mode (plan M-E, DEC-7).
+describe('validateQrOptions — useLevels', () => {
+  it('defaults OFF, separately from detection', () => {
+    // Why this matters: recording detections is safe for any corpus session;
+    // CONSUMING levels adds synthetic GPS readings to what the session
+    // records, and no investigation tooling filters those yet. A recording
+    // stays clean unless the operator deliberately asked for the comparison.
+    expect(validateQrOptions({ enabled: true }).useLevels).toBe(false);
+  });
+
+  it('is preserved when set, and rejects a non-boolean', () => {
+    expect(validateQrOptions({ useLevels: true }).useLevels).toBe(true);
+    expect(
+      validateQrOptions({ useLevels: 'yes' as unknown as boolean }).useLevels
+    ).toBe(false);
   });
 });

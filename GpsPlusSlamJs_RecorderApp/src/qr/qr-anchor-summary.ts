@@ -27,9 +27,13 @@ const METRES_PER_DEGREE = 111_000;
  * block is hidden rather than shown saying nothing.
  */
 export function qrAnchorSummaryLines(
-  outcomes: readonly QrAnchorOutcome[]
+  outcomes: readonly QrAnchorOutcome[] | undefined
 ): string | null {
-  if (outcomes.length === 0) return null;
+  // Tolerates a missing list, not just an empty one: this renders data that
+  // crosses a module boundary from callers older than the field (the e2e
+  // fixtures were, and threw). A summary screen must never fail to draw
+  // because one optional block has nothing to say.
+  if (outcomes === undefined || outcomes.length === 0) return null;
   return outcomes.map(describeOutcome).join('\n');
 }
 
@@ -43,16 +47,16 @@ function describeOutcome(outcome: QrAnchorOutcome): string {
     parts.push(`size ~${(outcome.sizeM * 100).toFixed(1)} cm`);
   }
   if (outcome.rotationSpreadDeg !== undefined) {
-    parts.push(`turned ${outcome.rotationSpreadDeg.toFixed(1)}° between visits`);
+    parts.push(
+      `turned ${outcome.rotationSpreadDeg.toFixed(1)}° between visits`
+    );
   }
   const drift = weightingDifferenceM(outcome);
   if (drift !== null && drift > NOTEWORTHY_DISAGREEMENT_M) {
     // The recency half-life is a guess until the field probe measures it.
     // Saying when it MOVED the answer is what makes that guess checkable on
     // the phone instead of on trust.
-    parts.push(
-      `newest-visit weighting moved it ${drift.toFixed(1)} m`
-    );
+    parts.push(`newest-visit weighting moved it ${drift.toFixed(1)} m`);
   }
   return `${parts.join(' · ')}.`;
 }

@@ -41,7 +41,8 @@ describe('qrAnchorSummaryLines', () => {
     const line = qrAnchorSummaryLines([
       outcome({
         written: false,
-        detail: 'This code turned by 31.2° between sightings, so it was probably moved.',
+        detail:
+          'This code turned by 31.2° between sightings, so it was probably moved.',
       }),
     ]);
     expect(line).toMatch(/✗/);
@@ -50,7 +51,11 @@ describe('qrAnchorSummaryLines', () => {
 
   it('names a foreign code as foreign rather than by an empty id', () => {
     const line = qrAnchorSummaryLines([
-      outcome({ id: '', written: false, detail: 'Not one of our printed codes.' }),
+      outcome({
+        id: '',
+        written: false,
+        detail: 'Not one of our printed codes.',
+      }),
     ]);
     expect(line).toMatch(/Foreign code/);
     expect(line).not.toMatch(/Code {2}/);
@@ -83,5 +88,13 @@ describe('qrAnchorSummaryLines', () => {
       },
     ]);
     expect(line).not.toMatch(/undefined|NaN/);
+  });
+});
+
+// Added after an e2e caught it: the panel is drawn from data that crosses a
+// module boundary, and a caller predating the field passed nothing at all.
+describe('qrAnchorSummaryLines — a missing list', () => {
+  it('is treated exactly like an empty one, not a crash', () => {
+    expect(qrAnchorSummaryLines(undefined)).toBeNull();
   });
 });

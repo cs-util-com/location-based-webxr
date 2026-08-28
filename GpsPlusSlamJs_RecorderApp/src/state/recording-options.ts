@@ -460,6 +460,18 @@ export interface QrCaptureOptions {
    * here; 512 only decoded small QRs at very close range).
    */
   captureSize: number;
+  /**
+   * Whether a detected code's LEVEL is downloaded and used during the
+   * recording — the synthetic GPS votes that make this session more accurate.
+   * Default: false, and deliberately separate from {@link enabled}.
+   *
+   * Recording detections is safe for any corpus session; CONSUMING levels
+   * changes what the session records. A recording made with this on contains
+   * synthetic GPS readings alongside the real ones — they are marked, but no
+   * investigation tooling filters them yet, so a corpus recording stays clean
+   * unless the operator deliberately wants the comparison.
+   */
+  useLevels: boolean;
 }
 
 /**
@@ -580,6 +592,7 @@ export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
     enabled: false,
     intervalMs: 125, // ~8 Hz — the QR demo's DETECT_INTERVAL_MS
     captureSize: 1024, // long-edge px — the on-device-verified default
+    useLevels: false,
   },
   compassDebug: {
     // Stage 0 (cold-start compass yaw override) ships ON by default — it is a
@@ -826,6 +839,7 @@ export function validateQrOptions(
     enabled: { kind: 'bool' },
     intervalMs: { kind: 'num', constraint: QR_CONSTRAINTS.intervalMs },
     captureSize: { kind: 'num', constraint: QR_CONSTRAINTS.captureSize },
+    useLevels: { kind: 'bool' },
   });
 }
 

@@ -13,6 +13,7 @@ import {
   createQrTrackingController,
   type QrTrackingStatus,
   type QrSolvePoseInput,
+  type QrDetectionEvent,
 } from './qr-tracking-controller';
 import { buildObjectPoints, type QrPoseSolution } from './qr-pose';
 import type { QrLevel } from './qr-level';
@@ -321,5 +322,66 @@ describe('createQrTrackingController', () => {
     await tick(controller);
     await tick(controller);
     expect(fetchLevel).toHaveBeenCalledTimes(2); // cache cleared → refetched
+  });
+});
+
+// Added for the recorder's level-consuming mode (plan M-E): an app that needs
+// BOTH a solved pose and a raw record must get them from ONE decode. Running
+// the thin producer alongside this controller would decode every frame twice,
+// on the AR frame path.
+describe('createQrTrackingController — the raw facts of the solve', () => {
+  it('reports corners, camera pose and image size with each locked detection', async () => {
+    const events: QrDetectionEvent[] = [];
+    const corners: QrDetection['corners'] = [
+      { x: 10, y: 10 },
+      { x: 90, y: 12 },
+      { x: 88, y: 88 },
+      { x: 12, y: 86 },
+    ];
+    const cameraPose = {
+      position: [1, 2, 3] as [number, number, number],
+      rotation: [0, 0, 0, 1] as [number, number, number, number],
+    };
+    const controller = createQrTrackingController({
+      frontEnd: {
+        kind: 'barcode-detector',
+        detect: () => Promise.resolve({ corners, text: 'code' }),
+      },
+      solvePose: () => ({
+        qrPoseWorld: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+        qrPoseInCamera: { position: [0, 0, 1], rotation: [0, 0, 0, 1] },
+        reprojectionErrorPx: 1,
+      }),
+      fetchLevel: () =>
+        Promise.resolve({ version: 1, qr: { physicalSizeM: 0.2 } }),
+      dispatchVotes: () => undefined,
+      onDetection: (event) => events.push(event),
+      getCameraPose: () => cameraPose,
+      getIntrinsics: () => ({ fx: 500, fy: 500, cx: 320, cy: 240 }),
+      syntheticAccuracyM: 5,
+      minIntervalMs: 0,
+      requiredLockCount: 1,
+    });
+
+    const frame = {
+      data: new Uint8ClampedArray(4),
+      width: 640,
+      height: 480,
+    };
+    // Two frames: the first resolves the level, the second locks.
+    controller.offerFrame(frame);
+    await flush();
+    controller.offerFrame(frame);
+    await flush();
+
+    // EVERY locked detection carries them, not just the first — the recorder
+    // records one raw observation per detection.
+    expect(events.length).toBeGreaterThan(0);
+    for (const event of events) {
+      expect(event.corners).toEqual(corners);
+      expect(event.cameraPose).toEqual(cameraPose);
+      expect(event.imageWidth).toBe(640);
+      expect(event.imageHeight).toBe(480);
+    }
   });
 });

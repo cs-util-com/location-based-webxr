@@ -234,7 +234,7 @@ describe('Session Summary Panel', () => {
         firstGps: null,
         lastGps: null,
         totalDistanceMeters: 0,
-      qrAnchors: [],
+        qrAnchors: [],
       };
 
       showSessionSummary(noGpsData);

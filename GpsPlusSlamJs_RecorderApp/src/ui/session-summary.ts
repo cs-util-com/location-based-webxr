@@ -183,7 +183,9 @@ function formatSummaryDistance(meters: number): string {
  * Format errors list for display.
  */
 /** Render the printed-code block, or hide it when nothing was seen. */
-function renderQrAnchors(outcomes: readonly QrAnchorOutcome[]): void {
+function renderQrAnchors(
+  outcomes: readonly QrAnchorOutcome[] | undefined
+): void {
   const block = document.getElementById('summary-qr-anchors-block');
   const body = document.getElementById('summary-qr-anchors');
   if (!block || !body) return;

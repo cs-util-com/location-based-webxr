@@ -204,6 +204,13 @@ export function createQrDemoController(
       qrPoseInCamera: solution.qrPoseInCamera,
       reprojectionErrorPx: solution.reprojectionErrorPx,
       timestamp: timestampNow(),
+      // The RAW facts behind the solve. Required rather than optional, so a
+      // consumer that needs a raw record alongside the pose gets it from the
+      // SAME decode — every producer of this event has them in hand here.
+      corners: detection.corners,
+      cameraPose: ctx.cameraPose,
+      imageWidth: image.width,
+      imageHeight: image.height,
     };
     return { event, pose: solution.qrPoseWorld, estimate };
   }
