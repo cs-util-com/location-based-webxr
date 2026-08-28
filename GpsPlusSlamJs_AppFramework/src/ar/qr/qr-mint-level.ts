@@ -106,6 +106,22 @@ export function qrWorldPoseFromOdom(
   };
 }
 
+/** Everything the level assembly needs once a world pose already exists. */
+export interface MintQrLevelFromWorldInput {
+  /** The code's pose in the GPS-world NUE frame. */
+  world: WorldNuePose;
+  /** The session's GPS zero reference; `null` before the first fix. */
+  zero: LatLong | null;
+  /** Defence in depth: see {@link MIN_ALIGNMENT_SAMPLES}. */
+  alignment: MintAlignmentInfo;
+  /** Printed side length (m) written into the level. */
+  sizeM: number;
+  /** Injected timestamp (ISO) — becomes `mintQuality.mintedAtIso`. */
+  nowIso: string;
+  /** Extra quality fields (a session mint adds sighting counts and spreads). */
+  quality?: Partial<QrMintQuality>;
+}
+
 export interface MintQrLevelInput {
   /** The solved (ideally stable/aggregated) pose, in RAW WebXR/odom space. */
   odomPose: Pose;
@@ -138,19 +154,39 @@ export type MintQrLevelResult =
  */
 export function mintQrLevel(input: MintQrLevelInput): MintQrLevelResult {
   const { odomPose, alignmentMatrix, zero, alignment, sizeM, nowIso } = input;
-  if (
-    alignmentMatrix === null ||
-    zero === null ||
-    alignment.sampleCount < MIN_ALIGNMENT_SAMPLES
-  ) {
-    return {
-      ok: false,
-      error:
-        'No usable GPS alignment yet — walk a few metres with GPS reception, then mint once the pose is stable.',
-    };
+  if (alignmentMatrix === null) return NO_ALIGNMENT_RESULT;
+  return mintQrLevelFromWorld({
+    world: qrWorldPoseFromOdom(odomPose, alignmentMatrix),
+    zero,
+    alignment,
+    sizeM,
+    nowIso,
+    ...(input.quality !== undefined ? { quality: input.quality } : {}),
+  });
+}
+
+/** The one refusal message both entry points share. */
+const NO_ALIGNMENT_RESULT: MintQrLevelResult = {
+  ok: false,
+  error:
+    'No usable GPS alignment yet — walk a few metres with GPS reception, then mint once the pose is stable.',
+};
+
+/**
+ * Assemble the level from a pose that is ALREADY in the GPS-world frame.
+ *
+ * Split out for the session mint, which combines many sightings into one
+ * world pose before it gets here — so the composition happens per sighting,
+ * not once at the end.
+ */
+export function mintQrLevelFromWorld(
+  input: MintQrLevelFromWorldInput
+): MintQrLevelResult {
+  const { world, zero, alignment, sizeM, nowIso } = input;
+  if (zero === null || alignment.sampleCount < MIN_ALIGNMENT_SAMPLES) {
+    return NO_ALIGNMENT_RESULT;
   }
   try {
-    const world = qrWorldPoseFromOdom(odomPose, alignmentMatrix);
     const geo = mintQrGeoPose({
       worldNuePosition: world.position,
       worldNueRotation: world.rotation,

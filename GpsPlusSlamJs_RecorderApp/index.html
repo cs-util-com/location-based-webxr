@@ -456,6 +456,22 @@
             </div>
           </div>
 
+          <!-- QR anchors: what this recording decided about each printed
+               code it saw. A DECLINED code has to be visible here, because
+               "absent" and "refused" look identical in the zip. -->
+          <div
+            id="summary-qr-anchors-block"
+            class="bg-gray-700/50 rounded-lg p-3 mb-4 hidden"
+          >
+            <h2 class="text-sm font-medium text-gray-300 mb-2">
+              🔳 Printed codes
+            </h2>
+            <pre
+              id="summary-qr-anchors"
+              class="text-xs text-gray-200 whitespace-pre-wrap max-h-32 overflow-y-auto"
+            ></pre>
+          </div>
+
           <!-- Error Log -->
           <div class="bg-gray-700/50 rounded-lg p-3 mb-4">
             <h2 class="text-sm font-medium text-gray-300 mb-2">

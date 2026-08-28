@@ -26,3 +26,25 @@ lowerMedian([1, 2, 3, 4]); // 2
 ## Tests
 
 `median.test.ts` — odd/even/single/empty cases for both variants, no-mutation pin, and fast-check properties (permutation invariance; lower median is always an element of the input; interpolating median lies within [min, max]).
+
+## weightedMedian (added 2026-08-28)
+
+- `weightedMedian(values, weights): number` — the value where half the
+  **weight** lies on either side.
+- **Lower-median convention, matching `lowerMedian`**: the result is always an
+  observed sample, and an exact half-weight tie takes the LOWER of the two
+  straddling values. That convention is shared with the core library's
+  private weighted median inside the alignment solver, and two implementations
+  that disagree here disagree by a whole sample — so it is pinned with golden
+  values.
+  - The cross-check against the core's own implementation belongs in
+    `GpsPlusSlamJs_Investigation`, which may reach the core internals. This
+    package may **not** (IP-protection audit §9), which is why the convention
+    is pinned rather than compared here.
+- **Zero, negative and non-finite weights are dropped**: a zero weight means
+  "this sample does not count", and a NaN weight is an upstream bug that must
+  not silently move the answer. Non-finite VALUES are dropped too.
+- **Falls back to the unweighted `lowerMedian` when no weight survives**, so a
+  caller with usable samples is never handed NaN because its weights were bad.
+- Added for the session anchor mint, where the owner chose recency weighting
+  (plan DEC-3 / M-C1).

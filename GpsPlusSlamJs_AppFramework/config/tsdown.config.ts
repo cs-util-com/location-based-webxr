@@ -235,6 +235,7 @@ const entryFiles = [
   'src/ar/qr/qr-level-archive.ts',
   'src/ar/qr/qr-mint-level.ts',
   'src/ar/qr/qr-sighting-accumulator.ts',
+  'src/ar/qr/qr-anchor-mint.ts',
   'src/ar/qr/qr-gps-vote.ts',
   'src/ar/qr/qr-tracking-controller.ts',
 

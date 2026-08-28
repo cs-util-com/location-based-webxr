@@ -1,3 +1,4 @@
+import type { QrAnchorOutcome } from '../qr/qr-level-zip-contributor';
 /**
  * Pure builder for the end-of-recording session summary.
  *
@@ -52,6 +53,7 @@ export interface SessionSummaryInputs {
   depthSampleCount: number;
   /** Collected tracker error/warning strings (passed through verbatim). */
   errors: string[];
+  qrAnchors: readonly QrAnchorOutcome[];
   /** `state.recording.failedWriteCount` at stop time. */
   failedWriteCount: number;
   /** Raw GPS points (`gpsEvents.gpsPositions`); empty when no GPS fix. */
@@ -98,6 +100,7 @@ export function buildSessionSummary(
     imageCount,
     depthSampleCount,
     errors,
+    qrAnchors,
     failedWriteCount,
     gpsPositions,
     odometryPositions,
@@ -123,6 +126,7 @@ export function buildSessionSummary(
     imageCount,
     depthSampleCount,
     errors,
+    qrAnchors,
     firstGps: firstGps ? toLatLng(firstGps) : null,
     lastGps: lastGps ? toLatLng(lastGps) : null,
     totalDistanceMeters: integrateOdometryDistanceMeters(odometryPositions),

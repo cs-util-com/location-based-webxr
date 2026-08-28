@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
-import { interpolatingMedian, lowerMedian } from './median.js';
+import { interpolatingMedian, lowerMedian, weightedMedian } from './median.js';
 
 // Why this suite matters: these helpers replaced six private copies with two
 // silently different semantics (quality-review A-2). The exact odd/even/empty
@@ -103,5 +103,62 @@ describe('lowerMedian', () => {
         }
       )
     );
+  });
+});
+
+// Added for the session mint (plan M-C1): the owner chose recency-weighted
+// combining, so a weighted median is needed. The core library has one, private
+// inside the alignment solver, and the open-source packages may not reach it
+// (IP-protection audit §9) — so the CONVENTION is pinned here with golden
+// values instead, and a cross-check against the core's belongs in the
+// Investigation package, which may.
+describe('weightedMedian', () => {
+  it('matches the unweighted lower median when all weights are equal', () => {
+    for (const values of [[1], [1, 2], [3, 1, 2], [4, 1, 3, 2]]) {
+      const weights = values.map(() => 1);
+      expect(weightedMedian(values, weights), String(values)).toBe(
+        lowerMedian(values)
+      );
+    }
+  });
+
+  it('moves the answer toward the heavier samples', () => {
+    // Why this test matters: this IS the feature. Later sightings weigh more,
+    // so an answer that ignored weights would silently discard the owner's
+    // decision while every other test still passed.
+    const values = [0, 10];
+    expect(weightedMedian(values, [1, 1])).toBe(0); // lower-median tie rule
+    expect(weightedMedian(values, [1, 9])).toBe(10);
+    expect(weightedMedian(values, [9, 1])).toBe(0);
+  });
+
+  it('takes the lower value on an exact half-weight tie', () => {
+    // The convention the core library uses. Stated as a test because two
+    // implementations that disagree here disagree by a whole sample.
+    expect(weightedMedian([1, 2, 3, 4], [1, 1, 1, 1])).toBe(2);
+    expect(weightedMedian([10, 20], [5, 5])).toBe(10);
+  });
+
+  it('always returns an OBSERVED sample, never an interpolation', () => {
+    expect(weightedMedian([0, 100], [1, 1.0001])).toBe(100);
+    expect([0, 100]).toContain(weightedMedian([0, 100], [1, 1]));
+  });
+
+  it('drops zero, negative and non-finite weights', () => {
+    // A zero weight means "does not count"; a NaN weight is an upstream bug
+    // that must not silently move the answer.
+    expect(weightedMedian([1, 999], [1, 0])).toBe(1);
+    expect(weightedMedian([1, 999], [1, -5])).toBe(1);
+    expect(weightedMedian([1, 999], [1, Number.NaN])).toBe(1);
+  });
+
+  it('falls back to the unweighted median when no weight survives', () => {
+    // A caller with usable samples must never be handed NaN because its
+    // weights were all unusable.
+    expect(weightedMedian([1, 2, 3], [0, 0, 0])).toBe(lowerMedian([1, 2, 3]));
+  });
+
+  it('ignores samples that are not finite', () => {
+    expect(weightedMedian([1, Number.NaN, 3], [1, 99, 1])).toBe(1);
   });
 });

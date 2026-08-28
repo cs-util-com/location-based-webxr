@@ -52,12 +52,25 @@ const WRITABLE_ID = /^[\w.-]+$/;
  *   writing somewhere unintended.
  */
 export function qrLevelEntryName(id: string): string {
+  return `${QR_LEVEL_FOLDER}/${qrLevelFileName(id)}`;
+}
+
+/**
+ * The file name ALONE, without the folder — what a zip contributor needs,
+ * because the framework prepends the subdir it owns. Sharing the id guard
+ * between the two is the point: a writer that built the name itself is how
+ * the two halves drift.
+ *
+ * @throws TypeError for an id that is not a string, is empty, or contains
+ *   anything that could escape the folder.
+ */
+export function qrLevelFileName(id: string): string {
   if (typeof id !== 'string' || !WRITABLE_ID.test(id) || id.includes('..')) {
     throw new TypeError(
-      `qrLevelEntryName: unsafe level id ${JSON.stringify(id)} — expected the short hex id from qrCodeId`
+      `qrLevelFileName: unsafe level id ${JSON.stringify(id)} — expected the short hex id from qrCodeId`
     );
   }
-  return `${QR_LEVEL_FOLDER}/${id}.json`;
+  return `${id}.json`;
 }
 
 /** The code id an archive entry names, or `null` if it is not a level file. */

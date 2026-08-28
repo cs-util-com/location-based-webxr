@@ -90,6 +90,12 @@ import {
   hideQrStatus,
 } from '../ui/hud';
 import { showSessionSummary } from '../ui/session-summary';
+import {
+  createQrLevelZipContributor,
+  type QrAnchorOutcome,
+} from '../qr/qr-level-zip-contributor';
+import type { QrSightingFeeder } from '../qr/qr-sighting-feeder';
+import { QR_LAUNCH_HOSTS } from '../qr/qr-launch-hosts';
 import { showConfirmDialog } from '../ui/confirm-dialog';
 import {
   enableBeforeUnloadWarning,
@@ -188,6 +194,8 @@ export interface RecordingSessionDeps {
   getRecordingOptions: () => RecordingOptions;
   /** Access the map overlay (may be null if AR not started). */
   getMapOverlay: () => LeafletMapOverlay | null;
+  /** The session QR sighting fold, or null when QR recording is off. */
+  getQrSightingFeeder: () => QrSightingFeeder | null;
   /** Read session notes from UI. */
   getSessionNotes: () => string;
   /** Wait for GPS zero reference (polling store, owned by main.ts). */
@@ -248,6 +256,9 @@ export function createRecordingSessionHandlers(
   let captureFailureTracker: FailureTracker | null = null;
   let currentSessionName = '';
   let syncManager: SyncManager | null = null;
+  /** What the last contributor run decided per code — shown on the summary
+   *  screen, so a declined anchor is visible rather than just absent. */
+  let latestQrAnchorOutcomes: readonly QrAnchorOutcome[] = [];
   let lastSyncResult: ZipExportResult | null = null;
   let backDuringRecordingInProgress = false;
   let stopInProgress = false;
@@ -305,6 +316,16 @@ export function createRecordingSessionHandlers(
         getCurrentScenarioHandle(),
         currentSessionName
       ),
+      createQrLevelZipContributor({
+        // Reads the maintained sighting fold, never a re-parse of `actions/`
+        // — this runs on every crash-safety sync, not only at save.
+        getFeeder: () => deps.getQrSightingFeeder(),
+        allowedHosts: QR_LAUNCH_HOSTS,
+        nowIso: () => new Date().toISOString(),
+        onOutcomes: (outcomes) => {
+          latestQrAnchorOutcomes = outcomes;
+        },
+      }),
       createColmapZipContributor({
         getFrames: () => selectFrameTilesInWebXR(deps.getStore().getState()),
         getProjectionMatrix: () =>
@@ -819,6 +840,9 @@ export function createRecordingSessionHandlers(
       imageCount,
       depthSampleCount,
       errors,
+      // Whatever the last contributor run decided per code — including the
+      // refusals, which are invisible in the zip itself.
+      qrAnchors: latestQrAnchorOutcomes,
       failedWriteCount: state.recording.failedWriteCount,
       gpsPositions,
       odometryPositions: gpsEvents?.odometryPositions ?? [],

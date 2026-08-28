@@ -44,3 +44,49 @@ export function lowerMedian(values: readonly number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
   return sorted[Math.floor((sorted.length - 1) / 2)]!;
 }
+
+/**
+ * Median of `values` under `weights` — the value where half the WEIGHT lies
+ * on either side.
+ *
+ * Lower-median convention, matching {@link lowerMedian}: the result is always
+ * an observed sample, and on an exact half-weight tie the LOWER of the two
+ * straddling values wins. That convention is shared with the core library's
+ * private weighted median inside the alignment solver; the two must agree, and
+ * a cross-check against it belongs in `GpsPlusSlamJs_Investigation`, which may
+ * reach the core's internals — this package may not (IP-protection audit §9),
+ * which is why the convention is pinned here with golden values instead.
+ *
+ * Non-finite or non-positive weights are dropped: a weight of zero means "this
+ * sample does not count", and a NaN weight is a bug upstream that must not
+ * silently move the answer. When nothing survives, falls back to the unweighted
+ * {@link lowerMedian} so a caller never gets NaN from a usable sample set.
+ */
+export function weightedMedian(
+  values: readonly number[],
+  weights: readonly number[]
+): number {
+  const pairs: { value: number; weight: number }[] = [];
+  let total = 0;
+  for (let i = 0; i < values.length; i += 1) {
+    const value = values[i];
+    const weight = weights[i];
+    if (value === undefined || !Number.isFinite(value)) continue;
+    if (weight === undefined || !Number.isFinite(weight) || weight <= 0) {
+      continue;
+    }
+    pairs.push({ value, weight });
+    total += weight;
+  }
+  if (pairs.length === 0) return lowerMedian(values);
+  pairs.sort((a, b) => a.value - b.value);
+
+  const half = total / 2;
+  let cumulative = 0;
+  for (const pair of pairs) {
+    cumulative += pair.weight;
+    if (cumulative >= half) return pair.value;
+  }
+  // Unreachable for finite positive weights; kept total rather than throwing.
+  return pairs[pairs.length - 1]?.value ?? lowerMedian(values);
+}

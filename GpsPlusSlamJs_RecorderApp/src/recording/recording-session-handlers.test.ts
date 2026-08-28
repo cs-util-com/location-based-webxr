@@ -442,6 +442,7 @@ function createMockDeps(
     createNewStore: vi.fn().mockReturnValue(createMockStore()),
     getRecordingOptions: () => defaultOptions,
     getMapOverlay: () => null,
+    getQrSightingFeeder: () => null,
     getSessionNotes: () => '',
     waitForZeroReference: vi.fn().mockResolvedValue(null),
     loadAndDisplayRefPoints: vi

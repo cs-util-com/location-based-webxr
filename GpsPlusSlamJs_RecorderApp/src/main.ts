@@ -307,6 +307,7 @@ const recordingSessionHandlers = createRecordingSessionHandlers({
   createNewStore,
   getRecordingOptions: () => recordingOptions,
   getMapOverlay: () => arSessionResources.mapOverlay,
+  getQrSightingFeeder: () => arSessionResources.qrSightingFeeder,
   getSessionNotes,
   waitForZeroReference,
   loadAndDisplayRefPoints: (handle) =>
