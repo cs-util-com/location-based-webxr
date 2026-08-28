@@ -22,8 +22,11 @@
 
 import type { QrLevelLookupState } from './qr-level-source';
 
-/** What the status line needs from this state, alongside the accumulator. */
-export interface QrHudSnapshot {
+/** What the status line needs from this state, alongside the accumulator.
+ *  NOT exported: callers reach it structurally through `snapshot()`'s return
+ *  type, and a named export nothing imports is what the dead-code check
+ *  flags. */
+interface QrHudSnapshot {
   latestText: string | null;
   latestId: string | null;
   levelState?: QrLevelLookupState;

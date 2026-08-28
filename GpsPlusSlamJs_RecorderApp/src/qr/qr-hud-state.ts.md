@@ -37,7 +37,9 @@ without standing up an AR session. Found by the PR #372 review.
   - `reset()` - forget everything. Called when an AR session starts.
   - `snapshot(): QrHudSnapshot` - `{ latestText, latestId, levelState? }`,
     exactly the inputs `qrStatusLine` needs besides the accumulator.
-- Types `QrHudState`, `QrHudSnapshot`, `QrHudStateDeps`.
+- Types `QrHudState` and `QrHudStateDeps`. `QrHudSnapshot` is deliberately NOT
+  exported - callers reach it structurally through `snapshot()`, and a named
+  export nothing imports is what the dead-code check flags.
 
 ## Invariants & assumptions
 
