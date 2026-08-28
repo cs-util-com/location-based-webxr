@@ -84,10 +84,22 @@ describe('createQrLevelSource — caching', () => {
     const { source } = sourceWith(open);
     const first = source.fetchLevel(OURS);
     const second = source.fetchLevel(OURS);
-    // Resolving the identity and the payload is async, so the open happens a
-    // few microtasks in; the point is that it happens ONCE for both frames.
-    await new Promise((r) => setTimeout(r, 0));
+
+    // Wait for the CONDITION, not for a fixed tick. This used to be a single
+    // `setTimeout(0)` on the reasoning that "the open happens a few microtasks
+    // in" - but `fetchLevel` awaits `qrCodeId`, which is a real Web Crypto
+    // digest, and one macrotask is not guaranteed to cover it on a loaded
+    // machine. The assertion then read 0 instead of 1 and the test failed
+    // having proved nothing about the behaviour it names. Measured at roughly
+    // one run in five locally, and it is what reddened CI on PR #374.
+    await vi.waitFor(() => {
+      expect(open).toHaveBeenCalled();
+    });
+    // The property is ONCE for two concurrent frames: having waited for the
+    // first open, a second would already have happened if the dedupe were
+    // broken, so this still discriminates.
     expect(open).toHaveBeenCalledTimes(1);
+
     pending.finish();
     await Promise.all([first, second]);
   });
