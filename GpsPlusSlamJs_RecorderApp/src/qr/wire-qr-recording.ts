@@ -123,10 +123,48 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
   const { storeRef, getArWorldGroup, qr, setProducer } = options;
   /** Set only in level-consuming mode. */
   let disposeLevelSource: (() => void) | null = null;
+  /**
+   * Whichever object is consuming camera frames this session - the tracking
+   * controller in level mode, the thin producer otherwise. Teardown must reset
+   * THIS, not the thin producer specifically: in level mode the thin producer
+   * is never built, so resetting it was a no-op and the tracking controller's
+   * `active` was never cleared. A detection already awaiting its level fetch
+   * then came back after the session ended and dispatched into whatever store
+   * was current by then.
+   */
+  let frameSink: { reset: () => void } | null = null;
   /** True once the tracking controller has taken over the frame stream. */
   let usingLevels = false;
+  /**
+   * How many synthetic QR votes THIS session has dispatched into the current
+   * store. Subtracted below, because the count the mint reads is meant to be
+   * evidence of independent GPS support and a QR vote is not that.
+   *
+   * Reset on a store swap: the new store restarts its GPS list from scratch,
+   * so votes dispatched into the previous one must stop being subtracted.
+   */
+  let syntheticVotes = 0;
+
   const sightings = createQrSightingFeeder({
-    readAlignment: options.readAlignment,
+    // The stored-GPS count includes this session's own synthetic votes -
+    // they go through the same `recordGpsEvent` the real fixes do. Left
+    // unsubtracted, one lock on a previously authored code dispatches four
+    // votes and clears `MIN_ALIGNMENT_SAMPLES` with zero real fixes, and the
+    // published `qr/<id>.json` then claims GPS support that is really a
+    // re-projection of an older code's anchor, error included.
+    //
+    // Subtracting a session counter from a per-store list can go past zero
+    // (the list empties on a swap), hence the clamp.
+    readAlignment: () => {
+      const alignment = options.readAlignment();
+      return {
+        ...alignment,
+        alignmentSampleCount: Math.max(
+          0,
+          alignment.alignmentSampleCount - syntheticVotes
+        ),
+      };
+    },
   });
   options.setSightingFeeder?.(sightings);
 
@@ -189,6 +227,7 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
       dispatchVotes: (votes) => {
         for (const vote of votes) {
           storeRef.get().dispatch(recordGpsEvent(vote));
+          syntheticVotes += 1;
         }
       },
       // The RAW record rides the validated DECODE, not the solved pose:
@@ -227,6 +266,7 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
       minIntervalMs: 0,
     });
     setProducer(tracking);
+    frameSink = tracking;
     startCameraFrameCapture({
       intervalMs: qr.intervalMs,
       captureSize: qr.captureSize,
@@ -257,6 +297,7 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
       });
   if (producer !== null) {
     setProducer(producer);
+    frameSink = producer;
     // Begin delivering frames at the configured cadence + capture resolution.
     startCameraFrameCapture({
       intervalMs: qr.intervalMs,
@@ -294,7 +335,22 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
   // synchronous `debug.update()` inside attach reflects pre-existing markers
   // immediately on the initial wiring AND on every store swap (Start
   // Recording / replay) — the two paths used to duplicate the call.
+  // The fold is DISCARDED on every store swap, and the first attach is not a
+  // swap. The accumulator lives for the whole AR session, but the recorded
+  // action stream only begins when Start Recording swaps the store: a sighting
+  // folded while the user was lining up is real evidence the phone saw, and it
+  // is not in the zip. Minting from it would write a position into
+  // qr/<id>.json that replaying actions/ cannot reproduce - the thing decision
+  // D-A exists to prevent - and would count visits the recording does not
+  // contain. The swap also crosses an alignment-solve boundary, so the two
+  // halves are not comparable evidence even in principle.
+  let attached = false;
   const stopFollowing = followStore(storeRef, (store: RecorderStore) => {
+    if (attached) {
+      sightings.accumulator.reset();
+      syntheticVotes = 0;
+    }
+    attached = true;
     const detach = store.subscribe(scheduleUpdate);
     debug.update();
     return detach;
@@ -303,7 +359,7 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
   return () => {
     stopCameraFrameCapture();
     disposeLevelSource?.();
-    producer?.reset();
+    frameSink?.reset();
     setProducer(null);
     options.setSightingFeeder?.(null);
     if (rafId !== null) {

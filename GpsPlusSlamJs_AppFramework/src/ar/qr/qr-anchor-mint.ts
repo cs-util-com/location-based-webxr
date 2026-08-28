@@ -79,8 +79,18 @@ export interface QrAnchorQuality {
   translationSpreadM: number;
   sizeM: number;
   sizeSpreadM: number;
-  /** The same mint without recency weighting — for comparison in the field. */
-  unweighted: { lat: number; lon: number; alt: number };
+  /**
+   * The same mint without recency weighting - for comparison in the field.
+   *
+   * OPTIONAL on purpose. It used to default to {0,0,0}, so an unweighted mint
+   * that failed left Null Island in place and the session summary reported
+   * something like "newest-visit weighting moved it 5500000.0 m" for a code
+   * that minted fine. The comparison exists so the half-life guess can be
+   * checked in the field, and a bogus number there is worse than none - so the
+   * field is absent when it was not computed, and the summary skips the
+   * sentence.
+   */
+  unweighted?: { lat: number; lon: number; alt: number };
 }
 
 export type QrAnchorMintResult =
@@ -273,7 +283,6 @@ function buildQuality(
         ? 0
         : (sortedSizes.at(-1) ?? 0) - (sortedSizes[0] ?? 0),
     sightingsSeen: sightings.length,
-    unweighted: { lat: 0, lon: 0, alt: 0 },
   };
 }
 

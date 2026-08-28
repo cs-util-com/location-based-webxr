@@ -255,3 +255,65 @@ describe('createQrSightingAccumulator — reading without closing', () => {
     expect(acc.sightingsIncludingOpen(TEXT)).toEqual(acc.sightings(TEXT));
   });
 });
+
+describe('createQrSightingAccumulator — out-of-order detections', () => {
+  it('never rewinds lastTimestamp', () => {
+    // Why this test matters: `lastTimestamp` is read as "the newest" by two
+    // consumers - the mint's recency weighting (`recencyWeights` takes the
+    // last sighting as the reference age) and the HUD's newest-code pick. A
+    // detection arriving late with an older stamp would set it backwards, and
+    // the recency weights would then floor several sightings at 1.0 instead of
+    // decaying them.
+    const acc = createQrSightingAccumulator();
+    acc.observe(obs(1000));
+    acc.observe(obs(1500));
+    acc.observe(obs(1200)); // late arrival, older stamp
+    acc.flush();
+
+    const sightings = acc.sightings(TEXT);
+    expect(sightings).toHaveLength(1);
+    expect(sightings[0]?.lastTimestamp).toBe(1500);
+    // The detection still counts - it is evidence of the same visit, it just
+    // does not move the clock.
+    expect(sightings[0]?.detectionCount).toBe(3);
+  });
+
+  it('does not let a rewind split one visit into two', () => {
+    // Why this test matters: a rewound `last` makes the NEXT in-order
+    // detection look like it arrived a gap later, closing the burst. That
+    // inflates the visit count the author uses to decide whether they have
+    // walked enough loops - a wrong number on the screen they act on.
+    // The numbers matter: the last detection is 400 ms after the true newest
+    // (same visit), but 4100 ms after the rewound value - past the 4000 ms
+    // gap. Without the guard this splits; with it, it does not.
+    const acc = createQrSightingAccumulator();
+    acc.observe(obs(0));
+    acc.observe(obs(DEFAULT_SIGHTING_GAP_MS - 100)); // 3900, the true newest
+    acc.observe(obs(200)); // late arrival; would rewind `last` to 200
+    acc.observe(obs(DEFAULT_SIGHTING_GAP_MS + 300)); // 4300
+    acc.flush();
+
+    expect(acc.sightings(TEXT)).toHaveLength(1);
+  });
+
+  it('counts the same sightings whatever order the detections arrive in', () => {
+    // Why this test matters: this is the property the two cases above are
+    // examples of. One burst of five detections is one visit however the
+    // stream is permuted, because they all fall inside the gap.
+    const stamps = [0, 200, 400, 600, 800];
+    const inOrder = createQrSightingAccumulator();
+    for (const t of stamps) inOrder.observe(obs(t));
+    inOrder.flush();
+
+    const shuffled = createQrSightingAccumulator();
+    for (const t of [600, 0, 800, 200, 400]) shuffled.observe(obs(t));
+    shuffled.flush();
+
+    expect(shuffled.sightings(TEXT)).toHaveLength(
+      inOrder.sightings(TEXT).length
+    );
+    expect(shuffled.sightings(TEXT)[0]?.lastTimestamp).toBe(
+      inOrder.sightings(TEXT)[0]?.lastTimestamp
+    );
+  });
+});

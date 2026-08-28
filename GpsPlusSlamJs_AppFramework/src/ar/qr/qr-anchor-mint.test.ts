@@ -233,7 +233,11 @@ describe('mintQrAnchorFromSightings — combining', () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok || !result.level.ok) return;
-    expect(result.quality.unweighted.lat).not.toBe(
+    // Optional on the type so a FAILED unweighted mint reports nothing rather
+    // than Null Island - but a successful mint always carries it, and
+    // asserting that is what keeps the comparison below meaningful.
+    expect(result.quality.unweighted).toBeDefined();
+    expect(result.quality.unweighted?.lat).not.toBe(
       result.level.level.qr.geo?.lat
     );
   });
@@ -297,7 +301,11 @@ describe('mintQrAnchorFromSightings — the unweighted comparison', () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok || !result.level.ok) return;
-    expect(result.quality.unweighted.lat).toBeCloseTo(
+    // Optional on the type so a FAILED unweighted mint reports nothing rather
+    // than Null Island - but a successful mint always carries it, and
+    // asserting that is what keeps the comparison below meaningful.
+    expect(result.quality.unweighted).toBeDefined();
+    expect(result.quality.unweighted?.lat).toBeCloseTo(
       result.level.level.qr.geo?.lat ?? 0,
       9
     );
@@ -316,7 +324,11 @@ describe('mintQrAnchorFromSightings — the unweighted comparison', () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok || !result.level.ok) return;
-    expect(result.quality.unweighted.lat).not.toBeCloseTo(
+    // Optional on the type so a FAILED unweighted mint reports nothing rather
+    // than Null Island - but a successful mint always carries it, and
+    // asserting that is what keeps the comparison below meaningful.
+    expect(result.quality.unweighted).toBeDefined();
+    expect(result.quality.unweighted?.lat).not.toBeCloseTo(
       result.level.level.qr.geo?.lat ?? 0,
       9
     );

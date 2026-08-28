@@ -53,22 +53,32 @@ const { mockStartCapture, mockStopCapture, mockGetCurrentArPose } = vi.hoisted(
   })
 );
 
-const { mockCreateQrTrackingController, capturedTrackingConfig } = vi.hoisted(
-  () => {
-    const capturedTrackingConfig: {
-      current: Record<string, unknown> | null;
-    } = { current: null };
-    return {
-      capturedTrackingConfig,
-      mockCreateQrTrackingController: vi.fn(
-        (config: Record<string, unknown>) => {
-          capturedTrackingConfig.current = config;
-          return { offerFrame: vi.fn(), reset: vi.fn(), status: 'idle' };
-        }
-      ),
-    };
-  }
-);
+const {
+  mockCreateQrTrackingController,
+  capturedTrackingConfig,
+  capturedTrackingInstance,
+} = vi.hoisted(() => {
+  const capturedTrackingConfig: {
+    current: Record<string, unknown> | null;
+  } = { current: null };
+  const capturedTrackingInstance: {
+    current: { reset: ReturnType<typeof vi.fn> } | null;
+  } = { current: null };
+  return {
+    capturedTrackingConfig,
+    capturedTrackingInstance,
+    mockCreateQrTrackingController: vi.fn((config: Record<string, unknown>) => {
+      capturedTrackingConfig.current = config;
+      const instance = {
+        offerFrame: vi.fn(),
+        reset: vi.fn(),
+        status: 'idle',
+      };
+      capturedTrackingInstance.current = instance;
+      return instance;
+    }),
+  };
+});
 
 vi.mock('gps-plus-slam-app-framework/ar/qr/qr-tracking-controller', () => ({
   createQrTrackingController: mockCreateQrTrackingController,
@@ -722,5 +732,246 @@ describe('wireQrRecording — the delegations that make the level path work', ()
     expect(feeder!.accumulator.codes()).toEqual([
       'https://gps.csutil.com/?qr=x',
     ]);
+  });
+});
+
+describe('wireQrRecording — teardown in level-consuming mode', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    capturedTrackingConfig.current = null;
+    capturedTrackingInstance.current = null;
+  });
+
+  it('resets the tracking controller, not just the thin producer', () => {
+    // Why this test matters: in level mode the thin producer is never built,
+    // so the teardown's `producer?.reset()` was a no-op and the tracking
+    // controller's own reset never ran. That reset is what clears `active`,
+    // and `active` is what makes a detection already awaiting its level fetch
+    // return early instead of dispatching into whatever store is current
+    // AFTER the AR session ended. stopCameraFrameCapture() stops new frames;
+    // it cannot recall one already in flight across a network round trip.
+    const { ref } = makeStoreRef(makeStore());
+    const dispose = wireQrRecording({
+      storeRef: ref as never,
+      getArWorldGroup: () => null,
+      qr: { ...qr, useLevels: true },
+      setProducer: vi.fn(),
+      readAlignment: NO_ALIGNMENT,
+    });
+
+    const tracking = capturedTrackingInstance.current!;
+    expect(tracking.reset).not.toHaveBeenCalled();
+
+    dispose();
+
+    expect(tracking.reset).toHaveBeenCalledTimes(1);
+  });
+
+  it('still resets the thin producer when levels are off', () => {
+    // Why this test matters: the fix must not trade one mode's teardown for
+    // the other's. Both modes own a frame sink; both must reset it.
+    const { ref } = makeStoreRef(makeStore());
+    const dispose = wireQrRecording({
+      storeRef: ref as never,
+      getArWorldGroup: () => null,
+      qr,
+      setProducer: vi.fn(),
+      readAlignment: NO_ALIGNMENT,
+    });
+
+    dispose();
+
+    expect(fakeProducer.reset).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('wireQrRecording — the sighting fold and the Start Recording swap', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    capturedDebugDeps.current = null;
+  });
+
+  function wireWithFeeder(store = makeStore()) {
+    let feeder: { accumulator: { codes: () => string[] } } | null = null;
+    const { ref } = makeStoreRef(store);
+    wireQrRecording({
+      storeRef: ref as never,
+      getArWorldGroup: () => null,
+      qr,
+      setProducer: vi.fn(),
+      readAlignment: NO_ALIGNMENT,
+      setSightingFeeder: (f) => {
+        feeder = f as typeof feeder;
+      },
+    });
+    const onPlacement = capturedDebugDeps.current!.onPlacement as (
+      text: string,
+      placement: unknown,
+      timestampMs: number
+    ) => void;
+    const fold = (text: string, at: number): void => {
+      onPlacement(
+        text,
+        { pose: { position: [1, 2, 3], rotation: [0, 0, 0, 1] }, sizeM: 0.21 },
+        at
+      );
+    };
+    return {
+      ref,
+      get feeder() {
+        return feeder!;
+      },
+      fold,
+    };
+  }
+
+  it('drops sightings folded before Start Recording', () => {
+    // Why this test matters: the accumulator lives for the whole AR session,
+    // but the recorded action stream only begins at the store swap. A sighting
+    // folded while the user was lining up is real evidence the phone saw - and
+    // it is NOT in the zip. Minting from it writes a position into
+    // qr/<id>.json that replaying actions/ cannot reproduce, which is exactly
+    // what decision D-A forbids, and the visit count on screen would claim
+    // walks the recording does not contain.
+    const w = wireWithFeeder();
+    w.fold('https://gps.csutil.com/?qr=x', 1000);
+    expect(w.feeder.accumulator.codes()).toHaveLength(1);
+
+    w.ref.set(makeStore()); // Start Recording
+
+    expect(w.feeder.accumulator.codes()).toHaveLength(0);
+  });
+
+  it('keeps sightings folded after the swap', () => {
+    // Why this test matters: the reset must fire on the swap, not on every
+    // attach. `followStore` calls its callback once immediately and again per
+    // swap, so a naive reset would wipe the fold continuously and no anchor
+    // would ever be minted.
+    const w = wireWithFeeder();
+    w.ref.set(makeStore());
+    w.fold('https://gps.csutil.com/?qr=x', 2000);
+
+    expect(w.feeder.accumulator.codes()).toEqual([
+      'https://gps.csutil.com/?qr=x',
+    ]);
+  });
+
+  it('does not reset on the initial attach', () => {
+    // Why this test matters: the same guard, from the other side - a sighting
+    // folded before any swap must survive until one happens.
+    const w = wireWithFeeder();
+    w.fold('https://gps.csutil.com/?qr=x', 500);
+
+    expect(w.feeder.accumulator.codes()).toHaveLength(1);
+  });
+});
+
+describe('wireQrRecording — synthetic votes must not count as GPS support', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    capturedTrackingConfig.current = null;
+    capturedDebugDeps.current = null;
+  });
+
+  /** An alignment read that reports a fixed number of stored GPS positions. */
+  const alignmentWith = (count: number) => () => ({
+    alignmentMatrix: null,
+    zero: null,
+    alignmentSampleCount: count,
+  });
+
+  function wireCounting(count: number) {
+    let feeder: {
+      accumulator: {
+        sightingsIncludingOpen: (
+          t: string
+        ) => { alignmentSampleCount: number }[];
+      };
+    } | null = null;
+    const { ref } = makeStoreRef(makeStore());
+    wireQrRecording({
+      storeRef: ref as never,
+      getArWorldGroup: () => null,
+      qr: { ...qr, useLevels: true },
+      setProducer: vi.fn(),
+      readAlignment: alignmentWith(count),
+      setSightingFeeder: (f) => {
+        feeder = f as typeof feeder;
+      },
+    });
+    const fold = (text: string, at: number): void => {
+      (
+        capturedDebugDeps.current!.onPlacement as (
+          t: string,
+          p: unknown,
+          ts: number
+        ) => void
+      )(
+        text,
+        { pose: { position: [1, 2, 3], rotation: [0, 0, 0, 1] }, sizeM: 0.21 },
+        at
+      );
+    };
+    return {
+      ref,
+      fold,
+      get feeder() {
+        return feeder!;
+      },
+      config: capturedTrackingConfig.current!,
+    };
+  }
+
+  const TEXT = 'https://gps.csutil.com/?qr=x';
+
+  it('subtracts this session\u2019s own votes from the alignment sample count', () => {
+    // Why this test matters: the count is the mint's honesty gate
+    // (MIN_ALIGNMENT_SAMPLES) AND it is written into qr/<id>.json as evidence
+    // of GPS support. In levels mode the session dispatches four synthetic
+    // votes per lock through the SAME recordGpsEvent the real fixes use, so
+    // one lock on a previously authored code would clear the gate with zero
+    // real fixes - and the published zip would claim GPS support that is
+    // really a re-projection of an older code's anchor, including its error.
+    const w = wireCounting(10);
+    const dispatchVotes = w.config.dispatchVotes as (v: unknown[]) => void;
+    dispatchVotes([{ a: 1 }, { a: 2 }, { a: 3 }, { a: 4 }]);
+
+    w.fold(TEXT, 1000);
+
+    expect(
+      w.feeder.accumulator.sightingsIncludingOpen(TEXT)[0]?.alignmentSampleCount
+    ).toBe(6);
+  });
+
+  it('never reports a negative count', () => {
+    // Why this test matters: the store's own list is emptied on a swap while
+    // a session-long counter is not, so the subtraction can legitimately go
+    // past zero. A negative sample count would sail through a `< MIN` gate as
+    // "not enough" but is nonsense to write into a file.
+    const w = wireCounting(1);
+    const dispatchVotes = w.config.dispatchVotes as (v: unknown[]) => void;
+    dispatchVotes([{ a: 1 }, { a: 2 }, { a: 3 }, { a: 4 }]);
+
+    w.fold(TEXT, 1000);
+
+    expect(
+      w.feeder.accumulator.sightingsIncludingOpen(TEXT)[0]?.alignmentSampleCount
+    ).toBe(0);
+  });
+
+  it('forgets the vote count when the store swaps', () => {
+    // Why this test matters: the new store restarts its GPS list from
+    // scratch, so votes dispatched into the previous one must stop being
+    // subtracted or every count after Start Recording reads too low.
+    const w = wireCounting(10);
+    const dispatchVotes = w.config.dispatchVotes as (v: unknown[]) => void;
+    dispatchVotes([{ a: 1 }, { a: 2 }, { a: 3 }, { a: 4 }]);
+
+    w.ref.set(makeStore());
+    w.fold(TEXT, 2000);
+
+    expect(
+      w.feeder.accumulator.sightingsIncludingOpen(TEXT)[0]?.alignmentSampleCount
+    ).toBe(10);
   });
 });

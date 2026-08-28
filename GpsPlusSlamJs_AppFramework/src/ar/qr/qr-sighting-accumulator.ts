@@ -218,7 +218,13 @@ export function createQrSightingAccumulator(
         });
         return;
       }
-      burst.last = observation.timestamp;
+      // NEVER rewind. `lastTimestamp` is read as "the newest" by the mint's
+      // recency weighting and by the HUD's newest-code pick, and a late
+      // detection carrying an older stamp would otherwise set it backwards -
+      // flooring several sightings at full weight, and making the NEXT
+      // in-order detection look a whole gap later, which splits one visit in
+      // two and inflates the visit count the author acts on.
+      burst.last = Math.max(burst.last, observation.timestamp);
       burst.detectionCount += 1;
       burst.tail = observation;
       // Keep the most RECENT poses: within one burst the later frames are

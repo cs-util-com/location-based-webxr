@@ -24,7 +24,7 @@ if (import.meta.env.PROD) {
 
 import { qrCodeId } from 'gps-plus-slam-app-framework/utils/qr-payload/qr-code-id';
 import { qrStatusLine } from './qr/qr-status-line';
-import type { QrLevelLookupState } from './qr/qr-level-source';
+import { createQrHudState } from './qr/qr-hud-state';
 import { setQrStatus } from './ui/hud-status-rows';
 
 import {
@@ -217,11 +217,13 @@ const arSessionScope = createArSessionScope();
 // is what lets the wiring below live outside this file.
 const arSessionResources = createArSessionResources();
 
-/** The code most recently detected this session, and its short identity. */
-let latestQrText: string | null = null;
-let latestQrId: string | null = null;
-/** What the last level lookup did, per code — shown on the QR HUD row. */
-const qrLevelStates = new Map<string, QrLevelLookupState>();
+/**
+ * The QR HUD row's per-session state. It lives in its own module because it
+ * MUST be cleared when an AR session starts: as three module-level values here
+ * nothing reset them, so a second session opened showing the previous one's
+ * code against a fresh accumulator.
+ */
+const qrHud = createQrHudState({ hashId: qrCodeId });
 
 /**
  * Wrap a store so a frame-moving action also tells the QR sighting fold.
@@ -269,29 +271,12 @@ function refreshQrStatus(): void {
       newest = text;
     }
   }
-  if (newest !== null && newest !== latestQrText) {
-    latestQrText = newest;
-    latestQrId = null;
-    // Async, and deliberately not awaited: the readout falls back to a
-    // neutral label until it resolves rather than blocking a frame callback.
-    void qrCodeId(newest).then(
-      (id) => {
-        if (latestQrText === newest) latestQrId = id;
-      },
-      () => {
-        /* a failed hash only costs the short label */
-      }
-    );
-  }
+  if (newest !== null) qrHud.noteNewest(newest);
   setQrStatus(
     qrStatusLine({
       enabled: true,
-      latestText: latestQrText,
-      latestId: latestQrId,
       accumulator: feeder.accumulator,
-      ...(latestQrText !== null && qrLevelStates.has(latestQrText)
-        ? { levelState: qrLevelStates.get(latestQrText) }
-        : {}),
+      ...qrHud.snapshot(),
     })
   );
 }
@@ -1082,6 +1067,10 @@ async function handleEnterAR(): Promise<void> {
     // Replaces the per-block dispose-first guards this function used to
     // repeat — see utils/ar-session-scope.ts.
     arSessionScope.dispose();
+    // The QR HUD row is per-session state and the accumulator behind it is
+    // rebuilt below, so a stale code here would be rendered against an empty
+    // fold - `visit 0` for a poster this session has not seen.
+    qrHud.reset();
 
     // Request orientation permission (required on iOS)
     // Field Test Readiness Issue #2: Check return value and warn user
@@ -1268,7 +1257,7 @@ async function handleEnterAR(): Promise<void> {
         storeRef,
         liveFrameBlobs,
         onQrLevelState: (text, state) => {
-          qrLevelStates.set(text, state);
+          qrHud.noteLevelState(text, state);
           refreshQrStatus();
         },
       });

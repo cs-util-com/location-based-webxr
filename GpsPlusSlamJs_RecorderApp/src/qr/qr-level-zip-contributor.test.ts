@@ -179,3 +179,49 @@ describe('createQrLevelZipContributor', () => {
     expect(outcome?.sizeM).toBeCloseTo(0.16, 6);
   });
 });
+
+describe('createQrLevelZipContributor — one bad code must not lose the recording', () => {
+  it('reports the failure and still writes the other codes', async () => {
+    // Why this test matters: `contribute` is documented in zip-export.ts as
+    // having to tolerate a bad source by RETURNING rather than throwing, and
+    // this module's header says the mint "never throws ... both want a verdict
+    // rather than an exception". But the per-code body can still throw -
+    // `addFile` can reject, `qrCodeId` throws without `crypto.subtle`, and
+    // `qrLevelFileName` throws on an unsafe id. An escaping rejection fails
+    // `exportSessionAsZip`, which takes down the crash-safety sync and the
+    // whole session save with it: the frames and the depth stream are lost
+    // because a QR anchor could not be named. The blast radius has to stop at
+    // the anchor.
+    const other = 'https://gps.csutil.com/?qr=tour&n=2';
+    const feeder = feederWith([
+      { text: OURS, visits: 3 },
+      { text: other, visits: 3 },
+    ]);
+    const badId = await qrCodeId(OURS);
+    const addFile = vi.fn((name: string) =>
+      name.startsWith(badId)
+        ? Promise.reject(new Error('disk full'))
+        : Promise.resolve()
+    );
+    const sink = outcomeSink();
+
+    const contributor = createQrLevelZipContributor({
+      getFeeder: () => feeder,
+      allowedHosts: HOSTS,
+      nowIso: () => NOW,
+      onOutcomes: sink.onOutcomes,
+    });
+
+    // It resolves rather than rejecting, and the healthy code is written.
+    await expect(contributor.contribute(addFile)).resolves.toBe(1);
+
+    const outcomes = sink.seen();
+    expect(outcomes).toHaveLength(2);
+    const failed = outcomes.find((o) => o.text === OURS);
+    expect(failed?.written).toBe(false);
+    // The author sees WHY on the summary screen, rather than the save simply
+    // vanishing.
+    expect(failed?.detail).toContain('disk full');
+    expect(outcomes.find((o) => o.text === other)?.written).toBe(true);
+  });
+});

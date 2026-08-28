@@ -91,64 +91,85 @@ export function createQrLevelZipContributor(
       const outcomes: QrAnchorOutcome[] = [];
       let written = 0;
       for (const text of feeder.accumulator.codes()) {
-        if (!qrCodeIsOurs(text, deps.allowedHosts)) {
-          outcomes.push({
-            text,
-            id: '',
-            written: false,
-            detail:
-              'Not one of our printed codes, so nothing was written for it.',
-            sightingCount:
-              feeder.accumulator.sightingsIncludingOpen(text).length,
+        // Per-code containment. `contribute` is contractually not allowed to
+        // throw (zip-export.ts), and three calls in this body can: `addFile`
+        // may reject, `qrCodeId` throws without `crypto.subtle`, and
+        // `qrLevelFileName` throws on an unsafe id. An escaping rejection
+        // fails `exportSessionAsZip`, so a QR anchor that cannot be named
+        // would take the crash-safety sync and the whole session save with
+        // it - losing the frames and the depth stream too. The failure
+        // belongs where the author can see it, on the summary screen, not in
+        // the blast radius of the recording.
+        let id = '';
+        try {
+          if (!qrCodeIsOurs(text, deps.allowedHosts)) {
+            outcomes.push({
+              text,
+              id: '',
+              written: false,
+              detail:
+                'Not one of our printed codes, so nothing was written for it.',
+              sightingCount:
+                feeder.accumulator.sightingsIncludingOpen(text).length,
+            });
+            continue;
+          }
+          id = await qrCodeId(text);
+          const result = mintQrAnchorFromSightings({
+            sightings: feeder.accumulator.sightingsIncludingOpen(text),
+            spansFrameChange: feeder.accumulator.spansFrameChange(text),
+            nowIso: deps.nowIso(),
           });
-          continue;
-        }
-        const id = await qrCodeId(text);
-        const result = mintQrAnchorFromSightings({
-          sightings: feeder.accumulator.sightingsIncludingOpen(text),
-          spansFrameChange: feeder.accumulator.spansFrameChange(text),
-          nowIso: deps.nowIso(),
-        });
-        if (!result.ok) {
+          if (!result.ok) {
+            outcomes.push({
+              text,
+              id,
+              written: false,
+              detail: result.detail,
+              sightingCount:
+                feeder.accumulator.sightingsIncludingOpen(text).length,
+            });
+            continue;
+          }
+          if (!result.level.ok) {
+            outcomes.push({
+              text,
+              id,
+              written: false,
+              detail: result.level.error,
+              sightingCount: result.quality.sightingCount,
+            });
+            continue;
+          }
+          await addFile(
+            qrLevelFileName(id),
+            new Blob([result.level.json], { type: 'application/json' })
+          );
+          written += 1;
           outcomes.push({
             text,
             id,
-            written: false,
-            detail: result.detail,
-            sightingCount:
-              feeder.accumulator.sightingsIncludingOpen(text).length,
-          });
-          continue;
-        }
-        if (!result.level.ok) {
-          outcomes.push({
-            text,
-            id,
-            written: false,
-            detail: result.level.error,
+            written: true,
+            detail: `Placed from ${String(result.quality.sightingCount)} visits.`,
             sightingCount: result.quality.sightingCount,
+            rotationSpreadDeg: result.quality.rotationSpreadDeg,
+            translationSpreadM: result.quality.translationSpreadM,
+            sizeM: result.quality.sizeM,
+            lat: result.level.level.qr.geo?.lat,
+            lon: result.level.level.qr.geo?.lon,
+            unweightedLat: result.quality.unweighted?.lat,
+            unweightedLon: result.quality.unweighted?.lon,
           });
-          continue;
+        } catch (err) {
+          outcomes.push({
+            text,
+            id,
+            written: false,
+            detail: err instanceof Error ? err.message : String(err),
+            sightingCount:
+              feeder.accumulator.sightingsIncludingOpen(text).length,
+          });
         }
-        await addFile(
-          qrLevelFileName(id),
-          new Blob([result.level.json], { type: 'application/json' })
-        );
-        written += 1;
-        outcomes.push({
-          text,
-          id,
-          written: true,
-          detail: `Placed from ${String(result.quality.sightingCount)} visits.`,
-          sightingCount: result.quality.sightingCount,
-          rotationSpreadDeg: result.quality.rotationSpreadDeg,
-          translationSpreadM: result.quality.translationSpreadM,
-          sizeM: result.quality.sizeM,
-          lat: result.level.level.qr.geo?.lat,
-          lon: result.level.level.qr.geo?.lon,
-          unweightedLat: result.quality.unweighted.lat,
-          unweightedLon: result.quality.unweighted.lon,
-        });
       }
       deps.onOutcomes?.(outcomes);
       return written;
