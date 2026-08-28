@@ -364,4 +364,68 @@ describe('parseQrLevel — mintQuality', () => {
       QrLevelValidationError
     );
   });
+
+  // Why these tests matter (cold review finding 6, 2026-08-28): serializeQrLevel
+  // re-validates through parseQrLevel BEFORE stringifying, so any field the
+  // schema does not know is silently dropped on the way out — and a
+  // round-trip test that only compares whole objects still passes green,
+  // because both sides lost it. The session-mint fields are therefore
+  // asserted BY NAME.
+  it('keeps every session-mint field through a serialize round-trip', () => {
+    const mintQuality = {
+      gpsAccuracyM: 3.4,
+      alignmentSampleCount: 120,
+      alignmentRmseM: 0.8,
+      mintedAtIso: '2026-08-28T06:36:00Z',
+      sightingCount: 7,
+      detectionCount: 213,
+      rotationSpreadDeg: 4.25,
+      translationSpreadM: 0.63,
+      physicalSizeSpreadM: 0.004,
+    };
+    const level = parseQrLevel({ ...base, qr: { mintQuality } });
+    const reparsed = parseQrLevel(JSON.parse(serializeQrLevel(level)));
+
+    for (const [key, value] of Object.entries(mintQuality)) {
+      expect(
+        reparsed.qr.mintQuality?.[key as keyof typeof mintQuality],
+        key
+      ).toBe(value);
+    }
+  });
+
+  it('accepts zero for the counts and spreads', () => {
+    // Why this test matters: a code seen in exactly one sighting has zero
+    // cross-sighting spread. Validating these as "positive" would reject the
+    // most confident case there is.
+    const level = parseQrLevel({
+      ...base,
+      qr: {
+        mintQuality: {
+          sightingCount: 0,
+          detectionCount: 0,
+          rotationSpreadDeg: 0,
+          translationSpreadM: 0,
+          physicalSizeSpreadM: 0,
+        },
+      },
+    });
+    expect(level.qr.mintQuality?.sightingCount).toBe(0);
+    expect(level.qr.mintQuality?.rotationSpreadDeg).toBe(0);
+  });
+
+  it.each([
+    [{ sightingCount: -1 }, 'negative sighting count'],
+    [{ sightingCount: 1.5 }, 'fractional sighting count'],
+    [{ detectionCount: -3 }, 'negative detection count'],
+    [{ detectionCount: 2.5 }, 'fractional detection count'],
+    [{ rotationSpreadDeg: -0.1 }, 'negative rotation spread'],
+    [{ rotationSpreadDeg: Number.POSITIVE_INFINITY }, 'infinite spread'],
+    [{ translationSpreadM: -1 }, 'negative translation spread'],
+    [{ physicalSizeSpreadM: -1 }, 'negative size spread'],
+  ] as [unknown, string][])('rejects mintQuality %j (%s)', (mintQuality) => {
+    expect(() => parseQrLevel({ ...base, qr: { mintQuality } })).toThrow(
+      QrLevelValidationError
+    );
+  });
 });

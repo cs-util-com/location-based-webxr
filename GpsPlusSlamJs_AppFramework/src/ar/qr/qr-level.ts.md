@@ -59,7 +59,22 @@ debug/observe or trigger-only level. `qr` itself is still required as an object.
   rotation-unaware consumer mis-places the code silently.
 - `qr.mintQuality` (optional, typed `QrMintQuality`): GPS accuracy,
   alignment sample count/RMSE and mint timestamp — validated when present
-  so M4 reads real fields, not a convention buried in opaque content.
+  so M4 reads real fields, not a convention buried in opaque content. Plus
+  the **session-mint** block, for a code minted from a whole recording
+  rather than from one live moment: `sightingCount`, `detectionCount`,
+  `rotationSpreadDeg`, `translationSpreadM`, `physicalSizeSpreadM`.
+  - **Zero is valid for every count and spread** — a code seen in exactly
+    one sighting has no cross-sighting disagreement, which is the most
+    confident case there is, not an invalid one. Only `gpsAccuracyM` is
+    validated as strictly positive.
+  - **Anything not in this list is DROPPED, silently**, because
+    `serializeQrLevel` re-validates through `parseQrLevel` before
+    stringifying. Adding a field to the writer without adding it here
+    produces a green round-trip test and an empty field in the file — the
+    trap a 2026-08-28 cold review caught. The round-trip test therefore
+    asserts each field **by name**.
+  - Validation is table-driven (`MINT_QUALITY_FIELDS`) rather than one
+    if-block per field; adding a field means adding one row.
 
 ## Tests
 

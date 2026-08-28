@@ -62,6 +62,22 @@ export interface QrMintQuality {
   alignmentRmseM?: number;
   /** ISO-8601 timestamp of the mint. Non-empty when present. */
   mintedAtIso?: string;
+
+  // Session-mint fields. A code minted from a whole recording is observed in
+  // several separate SIGHTINGS (bursts of detections, minutes apart), and how
+  // far those sightings disagree is the evidence that the code stayed put.
+  // Zero is meaningful and valid throughout: one sighting has no spread.
+
+  /** Separate sightings the mint combined. Non-negative integer. */
+  sightingCount?: number;
+  /** Individual detections across those sightings. Non-negative integer. */
+  detectionCount?: number;
+  /** Cross-sighting rotation disagreement (deg). Non-negative. */
+  rotationSpreadDeg?: number;
+  /** Cross-sighting position disagreement (m). Non-negative. */
+  translationSpreadM?: number;
+  /** Spread of the measured physical size (m). Non-negative. */
+  physicalSizeSpreadM?: number;
 }
 
 /** Thrown when a fetched level file fails validation. */
@@ -258,46 +274,75 @@ function parseMintQuality(value: unknown): QrMintQuality | undefined {
       '"qr.mintQuality" must be an object when present'
     );
   }
-  const { gpsAccuracyM, alignmentSampleCount, alignmentRmseM, mintedAtIso } =
-    value;
-  if (gpsAccuracyM !== undefined) {
-    if (!isFiniteNumber(gpsAccuracyM) || gpsAccuracyM <= 0) {
-      throw new QrLevelValidationError(
-        '"qr.mintQuality.gpsAccuracyM" must be a positive number when present'
-      );
-    }
+  // Field-by-field validation, driven by a table rather than by nine
+  // near-identical if-blocks: the block list grew with the session-mint
+  // fields, and copy-pasted validation is exactly how one of them ends up
+  // silently unchecked.
+  const quality: Record<string, number | string> = {};
+  for (const [key, kind] of Object.entries(MINT_QUALITY_FIELDS)) {
+    const raw = value[key];
+    if (raw === undefined) continue;
+    quality[key] = checkMintQualityField(key, raw, kind);
   }
-  if (alignmentSampleCount !== undefined) {
-    if (
-      !isFiniteNumber(alignmentSampleCount) ||
-      alignmentSampleCount < 0 ||
-      !Number.isInteger(alignmentSampleCount)
-    ) {
-      throw new QrLevelValidationError(
-        '"qr.mintQuality.alignmentSampleCount" must be a non-negative integer when present'
-      );
-    }
+  return quality;
+}
+
+/** How each `mintQuality` field is validated. */
+const MINT_QUALITY_FIELDS = {
+  gpsAccuracyM: 'positive',
+  alignmentSampleCount: 'count',
+  alignmentRmseM: 'non-negative',
+  mintedAtIso: 'text',
+  sightingCount: 'count',
+  detectionCount: 'count',
+  rotationSpreadDeg: 'non-negative',
+  translationSpreadM: 'non-negative',
+  physicalSizeSpreadM: 'non-negative',
+} as const;
+
+type MintQualityKind =
+  (typeof MINT_QUALITY_FIELDS)[keyof typeof MINT_QUALITY_FIELDS];
+
+/** Validate one present `mintQuality` field, or throw naming it. */
+function checkMintQualityField(
+  key: string,
+  raw: unknown,
+  kind: MintQualityKind
+): number | string {
+  return kind === 'text'
+    ? checkMintQualityText(key, raw)
+    : checkMintQualityNumber(key, raw, kind);
+}
+
+function mintQualityError(key: string, expected: string): never {
+  throw new QrLevelValidationError(
+    `"qr.mintQuality.${key}" must be ${expected} when present`
+  );
+}
+
+function checkMintQualityText(key: string, raw: unknown): string {
+  if (typeof raw !== 'string' || raw.trim() === '') {
+    mintQualityError(key, 'a non-empty string');
   }
-  if (alignmentRmseM !== undefined) {
-    if (!isFiniteNumber(alignmentRmseM) || alignmentRmseM < 0) {
-      throw new QrLevelValidationError(
-        '"qr.mintQuality.alignmentRmseM" must be a non-negative number when present'
-      );
-    }
+  return raw;
+}
+
+function checkMintQualityNumber(
+  key: string,
+  raw: unknown,
+  kind: Exclude<MintQualityKind, 'text'>
+): number {
+  if (!isFiniteNumber(raw)) mintQualityError(key, 'a finite number');
+  if (kind === 'positive' && raw <= 0) {
+    mintQualityError(key, 'a positive number');
   }
-  if (mintedAtIso !== undefined) {
-    if (typeof mintedAtIso !== 'string' || mintedAtIso.trim() === '') {
-      throw new QrLevelValidationError(
-        '"qr.mintQuality.mintedAtIso" must be a non-empty string when present'
-      );
-    }
+  if (kind === 'non-negative' && raw < 0) {
+    mintQualityError(key, 'a non-negative number');
   }
-  return {
-    ...(gpsAccuracyM !== undefined ? { gpsAccuracyM } : {}),
-    ...(alignmentSampleCount !== undefined ? { alignmentSampleCount } : {}),
-    ...(alignmentRmseM !== undefined ? { alignmentRmseM } : {}),
-    ...(mintedAtIso !== undefined ? { mintedAtIso } : {}),
-  };
+  if (kind === 'count' && (raw < 0 || !Number.isInteger(raw))) {
+    mintQualityError(key, 'a non-negative integer');
+  }
+  return raw;
 }
 
 /**
