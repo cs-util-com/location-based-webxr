@@ -68,7 +68,10 @@ export type QrAnchorDeclineReason =
   | 'no-alignment';
 
 export interface QrAnchorQuality {
+  /** Sightings the position was actually combined from. */
   sightingCount: number;
+  /** Sightings the fixedness gate looked at, placeable or not. */
+  sightingsSeen: number;
   detectionCount: number;
   /** Outlier-INCLUSIVE max pairwise rotation angle across sightings (deg). */
   rotationSpreadDeg: number;
@@ -228,16 +231,24 @@ function combinePlacements(
   const ys = worlds.map((w) => w.position.y);
   const zs = worlds.map((w) => w.position.z);
   const averaged = averageRotation(worlds.map((w) => w.rotation));
+  const flat = worlds.map(() => 1);
   return {
     weighted: {
       x: weightedMedian(xs, weights),
       y: weightedMedian(ys, weights),
       z: weightedMedian(zs, weights),
     },
+    // The SAME estimator with flat weights, deliberately — not
+    // `interpolatingMedian`. That one averages the two middles while the
+    // weighted median returns an observed sample, so for any even number of
+    // sightings the two differ even with the weighting disabled, and the
+    // "weighting moved it N m" readout would report a difference the
+    // weighting did not cause. This comparison exists to make an unearned
+    // half-life checkable in the field; confounding it defeats the point.
     unweighted: {
-      x: interpolatingMedian(xs),
-      y: interpolatingMedian(ys),
-      z: interpolatingMedian(zs),
+      x: weightedMedian(xs, flat),
+      y: weightedMedian(ys, flat),
+      z: weightedMedian(zs, flat),
     },
     rotation: averaged?.quat ?? worlds.at(-1)?.rotation ?? null,
   };
@@ -261,6 +272,7 @@ function buildQuality(
       sortedSizes.length === 0
         ? 0
         : (sortedSizes.at(-1) ?? 0) - (sortedSizes[0] ?? 0),
+    sightingsSeen: sightings.length,
     unweighted: { lat: 0, lon: 0, alt: 0 },
   };
 }
@@ -344,7 +356,17 @@ export function mintQrAnchorFromSightings(
   const sortedSizes = placeable
     .map((p) => p.sighting.sizeM)
     .sort((a, b) => a - b);
-  const quality = buildQuality(sightings, sortedSizes, rotationSpreadDeg);
+  // Counted over the sightings actually USED, not every sighting seen: a
+  // session whose early visits had no alignment would otherwise report
+  // "placed from 8 visits" when three were placed.
+  const quality = buildQuality(
+    placeable.map((p) => p.sighting),
+    sortedSizes,
+    rotationSpreadDeg
+  );
+  // The gate ran over ALL sightings, so the spread it refused on is the one
+  // reported, even when fewer were placeable.
+  quality.sightingsSeen = sightings.length;
   const tail = placeable.at(-1);
   const shared = {
     zero: tail?.zero ?? null,

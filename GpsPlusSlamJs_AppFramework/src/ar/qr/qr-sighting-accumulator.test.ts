@@ -221,3 +221,37 @@ describe('createQrSightingAccumulator — what a sighting carries', () => {
     expect(acc.sightings(TEXT)).toHaveLength(0);
   });
 });
+
+// Added after the M-B…M-G review (finding 7): the mint runs on every 60-second
+// crash-safety sync, and a destructive read there splits one visit in two.
+describe('createQrSightingAccumulator — reading without closing', () => {
+  it('includes the visit in progress, and reading twice does not split it', () => {
+    const acc = createQrSightingAccumulator();
+    for (let i = 0; i < 4; i += 1) acc.observe(obs(i * 125));
+
+    // Reading mid-visit sees it...
+    expect(acc.sightingsIncludingOpen(TEXT)).toHaveLength(1);
+    expect(acc.sightingsIncludingOpen(TEXT)[0]?.detectionCount).toBe(4);
+    // ...and does not end it, so more detections continue the SAME visit
+    // rather than starting a second one.
+    acc.observe(obs(4 * 125));
+    const after = acc.sightingsIncludingOpen(TEXT);
+    expect(after).toHaveLength(1);
+    expect(after[0]?.detectionCount).toBe(5);
+  });
+
+  it('is what flush would have produced, for a burst that is closed', () => {
+    const acc = createQrSightingAccumulator();
+    for (let i = 0; i < 4; i += 1) acc.observe(obs(i * 125));
+    const open = acc.sightingsIncludingOpen(TEXT);
+    acc.flush();
+    expect(acc.sightings(TEXT)).toEqual(open);
+  });
+
+  it('shows the same thing as sightings() when nothing is open', () => {
+    const acc = createQrSightingAccumulator();
+    acc.observe(obs(0));
+    acc.flush();
+    expect(acc.sightingsIncludingOpen(TEXT)).toEqual(acc.sightings(TEXT));
+  });
+});

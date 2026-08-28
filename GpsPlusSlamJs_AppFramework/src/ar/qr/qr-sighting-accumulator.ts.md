@@ -22,8 +22,14 @@ Decision record:
   - `observe(observation)` — fold one already-solved detection in.
   - `noteFrameChange()` — the odometry frame changed; close open bursts and
     start a new segment.
-  - `flush()` — close every open burst. **Idempotent**, and the mint must
-    call it first.
+  - `sightingsIncludingOpen(text)` — **what a mint should read**: every
+    sighting including the visit in progress, without ending it.
+  - `hasOpenBurst(text)` — is a visit in progress?
+  - `flush()` — close every open burst. **Idempotent.** Note that it
+    MUTATES: the mint runs on every 60-second crash-safety sync, and flushing
+    there would end the visit in progress, so the next detection starts a new
+    one and one visit is split into two — both then carrying near-maximum
+    recency weight, double-counting a single viewpoint.
   - `sightings(text)` — closed sightings for one code, oldest first.
   - `codes()` — every code seen.
   - `spansFrameChange(text)` — whether this code's sightings straddle a frame
@@ -45,10 +51,12 @@ Decision record:
   moved poster, or worse averages two frames into a plausible-looking anchor.
   `noteFrameChange()` closes the open burst and increments the segment, and
   `spansFrameChange()` lets the mint decline honestly.
-- **An open burst is never reported.** Under recency weighting the last
-  sighting counts most, and stopping a recording right after a final scan
-  leaves that burst open — hence the flush-first rule, and why `flush()` is
-  idempotent.
+- **`sightings()` never reports an open burst; `sightingsIncludingOpen()`
+  does, without closing it.** Under recency weighting the last sighting counts
+  most, and stopping a recording right after a final scan leaves that burst
+  open — so the mint must see it. Reading it non-destructively is what lets
+  the mint run repeatedly (every crash-safety sync) without changing the
+  answer.
 - **Per-burst state carries the burst's LAST alignment, zero, sample count and
   GPS accuracy**, because the mint uses each sighting's contemporaneous
   alignment and the end of a burst is the moment the session knew most.
@@ -86,11 +94,11 @@ acc.observe({
 // on odometryTrackingRestarted / arLoopClosureDetected
 acc.noteFrameChange();
 
-// at save time
-acc.flush();
+// at mint time — NON-destructively, because this also runs on every
+// crash-safety sync and flushing there would split the visit in progress
 for (const text of acc.codes()) {
   if (acc.spansFrameChange(text)) continue; // not comparable
-  mintFrom(acc.sightings(text));
+  mintFrom(acc.sightingsIncludingOpen(text));
 }
 ```
 
@@ -102,7 +110,9 @@ for (const text of acc.codes()) {
   change splits bursts 125 ms apart and bumps the segment; `spansFrameChange`;
   the robust aggregate sitting on the cluster rather than the outlier; the
   median size and the last alignment; the pose cap with the full detection
-  count preserved; non-finite input dropped; reset.
+  count preserved; non-finite input dropped; reset; and the non-destructive
+  read — it includes the visit in progress, reading it twice does not split
+  it, and it agrees with what `flush()` would have produced.
 - `qr-sighting-accumulator.property.test.ts` — over arbitrary timelines: the
   split count equals the number of gaps exceeding the threshold; every
   detection is accounted for exactly once; sightings stay ordered and

@@ -26,6 +26,10 @@ import { isIdentityMatrix4 } from "gps-plus-slam-app-framework/core";
 import { WEBXR_TO_NUE } from "gps-plus-slam-app-framework/ar/webxr-nue-basis";
 
 import { MIN_ALIGNMENT_SAMPLES } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
+// The list is shared (framework `state/segmenting-actions`): this consumer
+// DECLINES such a recording while the recorder's QR fold SEGMENTS it, and two
+// copies that drifted would let one accept what the other refuses.
+import { SEGMENTING_ACTION_TYPES } from "gps-plus-slam-app-framework/state/segmenting-actions";
 
 type Vec3 = readonly [number, number, number];
 type Quat = readonly [number, number, number, number];
@@ -81,16 +85,6 @@ export type JoinAssessment =
       quality: { pairCount: number; gpsAccuracyMedianM: number | null };
     }
   | { ok: false; reason: string };
-
-/** Action types whose PRESENCE in the recording invalidates the final
- *  alignment for earlier captures (plan Rev 2): a restart wipes and a loop
- *  closure DEFORMS the alignment's odometry history while
- *  `odometryPath.points` keeps every capture unchanged. V1 declines;
- *  per-segment joins are the filed follow-up. */
-const SEGMENTING_ACTION_TYPES = [
-  "gpsData/odometryTrackingRestarted",
-  "gpsData/arLoopClosureDetected",
-] as const;
 
 /**
  * The oldest recording era this viewer replays without migration. Eras 4

@@ -2,7 +2,9 @@ import { describe, it, expect, vi } from 'vitest';
 import { createQrLevelSource } from './qr-level-source';
 
 const HOSTS = ['gps.csutil.com'];
-const ARCHIVE = 'https://example.test/tour.zip';
+// On the configured asset-prefix host, because the resolved archive URL is
+// allowlisted too - see the payload-host test below.
+const ARCHIVE = 'https://assets.test/tour.zip';
 const OURS = `https://gps.csutil.com/?qr=${encodeURIComponent(ARCHIVE)}`;
 
 /**
@@ -225,5 +227,45 @@ describe('createQrLevelSource — reading a real archive', () => {
     await source.fetchLevel(OURS);
     expect(dispose).toHaveBeenCalledTimes(1);
     expect(source.stateFor(OURS)?.kind).toBe('failed');
+  });
+});
+
+// Added after the M-B…M-G review (blocker 5). `qrCodeIsOurs` says the LAUNCH
+// url is ours; it does not say the payload inside it is, and the decoder
+// returns a full-URL payload verbatim.
+describe('createQrLevelSource — the payload names the fetch host', () => {
+  it('refuses a payload pointing at someone else, on our own launch URL', async () => {
+    // A sticker reading `https://ours.example/?qr=https://evil.example/x.zip`
+    // passes the launch-URL check. Without a second check on the RESOLVED
+    // address, looking at it would fire a ranged GET from the AR frame path
+    // at an address a stranger chose — costing them nothing to print.
+    const open = vi.fn();
+    const source = createQrLevelSource({
+      allowedHosts: HOSTS,
+      assetPrefix: 'https://assets.test/',
+      openArchive: open as never,
+    });
+    const evil = `https://gps.csutil.com/?qr=${encodeURIComponent('https://evil.example/x.zip')}`;
+    const level = await source.fetchLevel(evil);
+    expect(level).toEqual({ version: 1, qr: {} });
+    expect(open).not.toHaveBeenCalled();
+    expect(source.stateFor(evil)?.kind).toBe('not-ours');
+  });
+
+  it('allows the hosts our own encoder can name', async () => {
+    // The GitHub-template form expands to raw.githubusercontent.com, so that
+    // host is allowed — the repo and path within it stay attacker-controlled,
+    // which is why this is a host allowlist and not a trust claim.
+    const open = vi.fn(() => Promise.resolve({ source: {}, dispose: vi.fn() }));
+    const source = createQrLevelSource({
+      allowedHosts: HOSTS,
+      assetPrefix: 'https://assets.test/',
+      openArchive: open,
+      readLevels: () => Promise.resolve(new Map()),
+    });
+    await source.fetchLevel(
+      'https://gps.csutil.com/?qr=user%2Frepo%2Ftour.zip'
+    );
+    expect(open).toHaveBeenCalledTimes(1);
   });
 });

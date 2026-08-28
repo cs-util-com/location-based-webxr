@@ -24,6 +24,7 @@ import type {
 import type { QrFrontEnd, RgbaImage } from './qr-frontend.js';
 import type { QrLevel } from './qr-level.js';
 import { buildQrGpsVotes } from './qr-gps-vote.js';
+import { validateQuad } from './qr-pose.js';
 import {
   createDetectionScheduler,
   type DetectionScheduler,
@@ -50,6 +51,16 @@ export interface QrSolvePoseInput {
  * import of the state slice) so the `ar` layer never depends on `state` — that
  * would close a cycle (`state/qr-detected-slice` already imports `ar/qr/qr-pose`).
  */
+/** A validated decode, before any level or size is involved. */
+export interface QrRawDetection {
+  readonly text: string;
+  readonly corners: readonly Point2[];
+  readonly cameraPose: Pose;
+  readonly imageWidth: number;
+  readonly imageHeight: number;
+  readonly timestamp: number;
+}
+
 export interface QrDetectionEvent {
   /**
    * The detector's four corners, the camera pose and the image size — the
@@ -92,6 +103,25 @@ export interface QrTrackingControllerConfig {
    * this emission is not.
    */
   onDetection?: (event: QrDetectionEvent) => void;
+  /**
+   * Every VALIDATED decode, before the level fetch and before the size gate.
+   *
+   * Separate from {@link onDetection} on purpose: that one fires on a LOCKED,
+   * solved pose, which needs a physical size, which needs a level. A consumer
+   * that records raw observations must capture every decode regardless —
+   * including a code whose level does not exist yet, which is exactly the
+   * state an authoring walk is in.
+   */
+  onRawDetection?: (detection: QrRawDetection) => void;
+  /**
+   * Whether a fetched level may be cached for the rest of the session.
+   *
+   * Defaults to caching everything, which is right for a static
+   * `fetchLevel`. A source that retries — because "could not reach it" is a
+   * different answer from "there is no level here" — returns `false` for the
+   * answers it intends to revisit, and owns the timing itself.
+   */
+  shouldCacheLevel?: (level: QrLevel) => boolean;
   /**
    * Resolve the physical size (m) when the level omits `physicalSizeM` — e.g. a
    * depth-measured running median (Note 4). Returns `null` while size is still
@@ -159,6 +189,8 @@ export function createQrTrackingController(
     fetchLevel,
     dispatchVotes,
     onDetection,
+    onRawDetection,
+    shouldCacheLevel,
     resolveSizeM,
     resolveStablePose,
     getCameraPose,
@@ -205,7 +237,13 @@ export function createQrTrackingController(
     if (cached) return cached;
     setStatus('loading-level');
     const level = await fetchLevel(url);
-    levelCache.set(url, level);
+    // A source that owns its own retry policy says so. Without this the
+    // controller caches the first answer forever, and a source's backoff -
+    // built precisely so one transient failure does not poison a code for the
+    // rest of a session - becomes unreachable: the retry is never asked for.
+    if (shouldCacheLevel === undefined || shouldCacheLevel(level)) {
+      levelCache.set(url, level);
+    }
     return level;
   }
 
@@ -216,6 +254,28 @@ export function createQrTrackingController(
     if (!detection) {
       active = null;
       return null;
+    }
+
+    // The RAW record is emitted HERE — on a validated decode, before the level
+    // is fetched and before the size gate. It must not depend on either: a
+    // consumer that records raw observations (decision D-A) has to capture
+    // every decode a session saw, including codes whose level is missing,
+    // unreachable, or not yet authored. Gating it on a solved pose, as an
+    // earlier draft did, meant the FIRST recording of an authoring walk -
+    // where no level exists yet, by definition - recorded nothing at all.
+    //
+    // `validateQuad` mirrors the thin producer: keep a mirrored or degenerate
+    // read out of the recording.
+    const rawCameraPose = getCameraPose();
+    if (onRawDetection && rawCameraPose && validateQuad(detection.corners).ok) {
+      onRawDetection({
+        text: detection.text,
+        corners: detection.corners,
+        cameraPose: rawCameraPose,
+        imageWidth: image.width,
+        imageHeight: image.height,
+        timestamp: timestampNow(),
+      });
     }
 
     const level = await ensureLevel(detection.text);

@@ -51,17 +51,42 @@ describe('qrStatusLine', () => {
     expect(line).toMatch(/no code seen/i);
   });
 
-  it('counts the visit in progress rather than reporting zero', () => {
-    // The burst being looked at right now is not closed yet, so it is not in
-    // the accumulator's list. Reporting "0 visits" while staring at a code
-    // would read as a failure.
-    const line = qrStatusLine({
-      enabled: true,
-      latestText: TEXT,
-      latestId: 'abcdef123456',
-      accumulator: createQrSightingAccumulator(),
+  it('counts the visit in progress, without ending it', () => {
+    // The burst being looked at right now is not closed yet. It must still be
+    // counted - "0 visits" while staring at a code reads as a failure - but
+    // counted by ASKING the accumulator, not by adding one and hoping. The
+    // earlier "+1" was one too high after every crash-safety sync and after
+    // every mint, which is the number an author uses to decide whether they
+    // have walked enough loops.
+    const acc = createQrSightingAccumulator();
+    acc.observe({
+      text: TEXT,
+      timestamp: 0,
+      odomPose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+      sizeM: 0.16,
+      alignmentMatrix: IDENTITY,
+      zero: { lat: 48, lon: 11 },
+      alignmentSampleCount: 5,
     });
-    expect(line).toMatch(/visit 1/);
+    expect(
+      qrStatusLine({
+        enabled: true,
+        latestText: TEXT,
+        latestId: 'abcdef123456',
+        accumulator: acc,
+      })
+    ).toMatch(/visit 1/);
+
+    // ...and after it closes, it is still ONE visit, not two.
+    acc.flush();
+    expect(
+      qrStatusLine({
+        enabled: true,
+        latestText: TEXT,
+        latestId: 'abcdef123456',
+        accumulator: acc,
+      })
+    ).toMatch(/visit 1/);
   });
 
   it('reports the size the author checks against a tape measure', () => {
@@ -72,7 +97,10 @@ describe('qrStatusLine', () => {
       accumulator: accumulatorWith(1, 0.163),
     });
     expect(line).toMatch(/16\.3 cm/);
-    expect(line).toMatch(/visit 2/); // one closed + the one in progress
+    expect(line).toMatch(/visit 1/); // one closed, none in progress
+    // M-B asks for the size WITH its spread — the tape-measure check needs to
+    // know how settled the estimate is, not just what it currently says.
+    expect(line).toMatch(/±/);
   });
 
   it('reports the turn between visits only once there are visits to compare', () => {
@@ -90,7 +118,10 @@ describe('qrStatusLine', () => {
       latestId: 'abcdef123456',
       accumulator: accumulatorWith(3),
     });
-    expect(several).toMatch(/turn/);
+    // "between visits" - the CROSS-sighting statistic the fixedness gate
+    // uses, not the last burst's own inlier-based spread, which would hide a
+    // re-hung poster while sitting next to the word "turn".
+    expect(several).toMatch(/turned .* between visits/);
   });
 
   it('warns in plain words when tracking restarted mid-session', () => {
@@ -130,5 +161,36 @@ describe('qrStatusLine', () => {
       accumulator: accumulatorWith(1),
     });
     expect(line).not.toMatch(/undefined|null/);
+  });
+});
+
+// Added after the M-B…M-G review (finding 9): the level-lookup state existed
+// but never reached the HUD, so a session using levels was silent for exactly
+// the codes it could not use — the failure this row was added to end.
+describe('qrStatusLine — what the level lookup did', () => {
+  it('says nothing extra when the session is not using levels', () => {
+    const line = qrStatusLine({
+      enabled: true,
+      latestText: TEXT,
+      latestId: 'abcdef123456',
+      accumulator: accumulatorWith(1),
+    });
+    expect(line).not.toMatch(/saved position|could not reach/);
+  });
+
+  it.each([
+    ['level', /using its saved position/],
+    ['absent', /no saved position/],
+    ['not-ours', /not one of your codes/],
+    ['failed', /could not reach/],
+  ] as const)('reports the %s state in plain words', (kind, pattern) => {
+    const line = qrStatusLine({
+      enabled: true,
+      latestText: TEXT,
+      latestId: 'abcdef123456',
+      accumulator: accumulatorWith(1),
+      levelState: { kind } as never,
+    });
+    expect(line).toMatch(pattern);
   });
 });

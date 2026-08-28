@@ -37,10 +37,11 @@ lowerMedian([1, 2, 3, 4]); // 2
   private weighted median inside the alignment solver, and two implementations
   that disagree here disagree by a whole sample — so it is pinned with golden
   values.
-  - The cross-check against the core's own implementation belongs in
-    `GpsPlusSlamJs_Investigation`, which may reach the core internals. This
-    package may **not** (IP-protection audit §9), which is why the convention
-    is pinned rather than compared here.
+  - An executable cross-check against the core's own implementation belongs
+    in `GpsPlusSlamJs_Investigation`, which may reach the core internals —
+    this package may **not** (IP-protection audit §9). **It is not written
+    yet**; the convention is pinned with golden values in the meantime, and
+    the gap is recorded rather than implied.
 - **Zero, negative and non-finite weights are dropped**: a zero weight means
   "this sample does not count", and a NaN weight is an upstream bug that must
   not silently move the answer. Non-finite VALUES are dropped too.

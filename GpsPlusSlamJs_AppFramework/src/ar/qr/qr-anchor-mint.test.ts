@@ -270,3 +270,55 @@ describe('mintQrAnchorFromSightings — combining', () => {
     expect(result.quality.sizeSpreadM).toBeCloseTo(0.04, 6);
   });
 });
+
+// Added after the M-B…M-G review (finding 6): the comparison must isolate the
+// WEIGHTING, not a change of estimator.
+describe('mintQrAnchorFromSightings — the unweighted comparison', () => {
+  it('matches the weighted answer when the half-life is long enough to be inert', () => {
+    // Why this test matters: the weighted and unweighted answers used
+    // different estimators, so for any EVEN number of sightings they differed
+    // even with the weighting disabled - and the summary screen reported
+    // "weighting moved it N m" for a difference the weighting did not cause.
+    // That readout exists to make an unearned half-life checkable in the
+    // field, which a confounded number cannot do.
+    // THREE sightings, deliberately. A median over an EVEN count sits
+    // between the two middle values, so any weight difference at all flips it
+    // from one to the other - which says nothing about whether the weighting
+    // is doing real work. An odd count has a stable middle.
+    const result = mintQrAnchorFromSightings({
+      sightings: [
+        sighting({ alignmentMatrix: shifted(0, 0), lastTimestamp: 0 }),
+        sighting({ alignmentMatrix: shifted(50, 0), lastTimestamp: 500 }),
+        sighting({ alignmentMatrix: shifted(100, 0), lastTimestamp: 1000 }),
+      ],
+      spansFrameChange: false,
+      nowIso: NOW,
+      recencyHalfLifeS: 1e9, // every sighting weighs effectively the same
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok || !result.level.ok) return;
+    expect(result.quality.unweighted.lat).toBeCloseTo(
+      result.level.level.qr.geo?.lat ?? 0,
+      9
+    );
+  });
+
+  it('still differs when the half-life is short enough to bite', () => {
+    const result = mintQrAnchorFromSightings({
+      sightings: [
+        sighting({ alignmentMatrix: shifted(0, 0), lastTimestamp: 0 }),
+        sighting({ alignmentMatrix: shifted(50, 0), lastTimestamp: 300_000 }),
+        sighting({ alignmentMatrix: shifted(100, 0), lastTimestamp: 600_000 }),
+      ],
+      spansFrameChange: false,
+      nowIso: NOW,
+      recencyHalfLifeS: 60,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok || !result.level.ok) return;
+    expect(result.quality.unweighted.lat).not.toBeCloseTo(
+      result.level.level.qr.geo?.lat ?? 0,
+      9
+    );
+  });
+});

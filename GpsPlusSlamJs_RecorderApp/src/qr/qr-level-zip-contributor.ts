@@ -40,6 +40,11 @@ export interface QrAnchorOutcome {
   detail: string;
   sightingCount: number;
   rotationSpreadDeg?: number;
+  /** How far the code's position disagreed between visits (m). DEC-4 does
+   *  NOT gate on this, which is exactly why it has to be visible: a poster
+   *  that was slid rather than turned is minted, and this is the only signal
+   *  the author gets. */
+  translationSpreadM?: number;
   sizeM?: number;
   /** The weighted position that was written, and the unweighted comparison. */
   lat?: number;
@@ -67,13 +72,21 @@ export function createQrLevelZipContributor(
     async contribute(addFile) {
       const feeder = deps.getFeeder();
       // A session with QR recording off contributes nothing — the contract
-      // says return 0 rather than throw.
-      if (feeder === null) return 0;
+      // says return 0 rather than throw. It still REPORTS, with an empty
+      // list: silence here would leave a previous recording's verdicts on
+      // screen as if they described this one.
+      if (feeder === null) {
+        deps.onOutcomes?.([]);
+        return 0;
+      }
 
-      // The burst in progress is not closed yet, and under recency weighting
-      // it is the one that counts MOST — stopping right after a final scan
-      // would otherwise discard the best evidence there is.
-      feeder.accumulator.flush();
+      // NOT `flush()`. This runs on every 60-second crash-safety sync, and
+      // flushing would end the visit in progress — so the next detection
+      // starts a new one and a sync landing mid-visit splits one visit into
+      // two, both carrying near-maximum recency weight. Reading the open
+      // burst without closing it keeps the count honest AND still includes
+      // the visit that counts most when a recording stops right after a
+      // final scan.
 
       const outcomes: QrAnchorOutcome[] = [];
       let written = 0;
@@ -85,13 +98,14 @@ export function createQrLevelZipContributor(
             written: false,
             detail:
               'Not one of our printed codes, so nothing was written for it.',
-            sightingCount: feeder.accumulator.sightings(text).length,
+            sightingCount:
+              feeder.accumulator.sightingsIncludingOpen(text).length,
           });
           continue;
         }
         const id = await qrCodeId(text);
         const result = mintQrAnchorFromSightings({
-          sightings: feeder.accumulator.sightings(text),
+          sightings: feeder.accumulator.sightingsIncludingOpen(text),
           spansFrameChange: feeder.accumulator.spansFrameChange(text),
           nowIso: deps.nowIso(),
         });
@@ -101,7 +115,8 @@ export function createQrLevelZipContributor(
             id,
             written: false,
             detail: result.detail,
-            sightingCount: feeder.accumulator.sightings(text).length,
+            sightingCount:
+              feeder.accumulator.sightingsIncludingOpen(text).length,
           });
           continue;
         }
@@ -127,6 +142,7 @@ export function createQrLevelZipContributor(
           detail: `Placed from ${String(result.quality.sightingCount)} visits.`,
           sightingCount: result.quality.sightingCount,
           rotationSpreadDeg: result.quality.rotationSpreadDeg,
+          translationSpreadM: result.quality.translationSpreadM,
           sizeM: result.quality.sizeM,
           lat: result.level.level.qr.geo?.lat,
           lon: result.level.level.qr.geo?.lon,

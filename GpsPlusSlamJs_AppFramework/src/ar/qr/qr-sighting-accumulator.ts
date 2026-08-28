@@ -99,7 +99,18 @@ export interface QrSightingAccumulator {
   observe(observation: QrSightingObservation): void;
   /** The odometry frame changed — close open bursts, start a new segment. */
   noteFrameChange(): void;
-  /** Close every open burst. Idempotent; the mint MUST call it first. */
+  /**
+   * Every sighting INCLUDING the visit in progress, without closing it.
+   *
+   * This is what a mint should read. `flush()` mutates: it ends the open
+   * burst, so the next detection starts a new one — and since the mint runs
+   * on every 60-second crash-safety sync, a sync landing mid-visit would
+   * split one visit into two. Under recency weighting both halves would then
+   * carry near-maximum weight, double-counting a single viewpoint.
+   */
+  sightingsIncludingOpen(text: string): readonly QrSighting[];
+  /** Close every open burst. Idempotent. Prefer
+   *  {@link QrSightingAccumulator.sightingsIncludingOpen} for reading. */
   flush(): void;
   /** Closed sightings for one code, oldest first. */
   sightings(text: string): readonly QrSighting[];
@@ -107,6 +118,8 @@ export interface QrSightingAccumulator {
   codes(): readonly string[];
   /** Whether this code's sightings straddle a frame change. */
   spansFrameChange(text: string): boolean;
+  /** Is a visit to this code in progress right now? */
+  hasOpenBurst(text: string): boolean;
   reset(): void;
 }
 
@@ -138,15 +151,12 @@ export function createQrSightingAccumulator(
   const closed = new Map<string, QrSighting[]>();
   let segment = 0;
 
-  function close(text: string): void {
-    const burst = open.get(text);
-    open.delete(text);
-    if (burst === undefined) return;
+  /** Build the closed sighting a burst would become, without ending it. */
+  function summarize(text: string, burst: OpenBurst): QrSighting | null {
     const aggregate = aggregateQrPose(burst.poses);
-    if (aggregate === null) return; // no usable pose in the burst
+    if (aggregate === null) return null;
     const sizes = [...burst.sizes].sort((a, b) => a - b);
-    const list = closed.get(text) ?? [];
-    list.push({
+    return {
       text,
       firstTimestamp: burst.first,
       lastTimestamp: burst.last,
@@ -165,7 +175,17 @@ export function createQrSightingAccumulator(
         ? { gpsAccuracyM: burst.tail.gpsAccuracyM }
         : {}),
       segment: burst.segment,
-    });
+    };
+  }
+
+  function close(text: string): void {
+    const burst = open.get(text);
+    open.delete(text);
+    if (burst === undefined) return;
+    const sighting = summarize(text, burst);
+    if (sighting === null) return; // no usable pose in the burst
+    const list = closed.get(text) ?? [];
+    list.push(sighting);
     closed.set(text, list);
   }
 
@@ -221,7 +241,17 @@ export function createQrSightingAccumulator(
 
     sightings: (text) => closed.get(text) ?? [],
 
+    sightingsIncludingOpen(text) {
+      const list = closed.get(text) ?? [];
+      const burst = open.get(text);
+      if (burst === undefined) return list;
+      const pending = summarize(text, burst);
+      return pending === null ? list : [...list, pending];
+    },
+
     codes: () => [...new Set([...closed.keys(), ...open.keys()])],
+
+    hasOpenBurst: (text) => open.has(text),
 
     spansFrameChange(text) {
       const list = closed.get(text) ?? [];

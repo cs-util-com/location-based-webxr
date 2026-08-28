@@ -135,6 +135,7 @@ const entryFiles = [
   // Deep-imported by the recorder's qr-debug-controller (selectDerivedQrPlacement)
   // — same barrel-avoidance rationale as the ar/qr-* entries above.
   'src/state/qr-detected-slice.ts',
+  'src/state/segmenting-actions.ts',
   'src/state/recording-replayer.ts',
   'src/state/replay-engine.ts',
   // Desktop-replay composer + its occupancy subscriber (2026-07-15 replay-harness

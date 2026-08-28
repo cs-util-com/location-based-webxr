@@ -42,9 +42,25 @@ Decision record:
 - **One request per code at a time.** The detector fires at ~8 Hz; without the
   in-flight map every frame would open another archive read while the first
   was still going.
-- **Everything is abortable, with a timeout.** The controller awaits this
-  INSIDE its detect step, so a hung request would stall detection itself, and
-  work that outlived a session would stall the next one.
+- **The WAIT is bounded — the request is not.** `openRemoteArchive` has no
+  abort seam (no `signal` option), so an underlying fetch cannot be cancelled
+  from here; an `AbortController` nothing listens to would have been a claim,
+  not a guarantee. What matters for correctness is that the tracking
+  controller awaits this **inside** its detect step: an unbounded wait stalls
+  QR detection for the rest of the session, and a session-end wait outlives
+  the session. Racing a deadline fixes both, and the orphaned request finishes
+  into nothing. A real abort needs a signal threaded through the storage
+  layer — **filed, not faked**.
+- **The retry only works because the controller is told not to cache.** The
+  tracking controller keeps its own per-text level cache; without
+  `shouldCacheLevel`, the first failure would be cached for the session and
+  the backoff here would never be asked for.
+- **The fetch guard is TWO checks, not one.** `qrCodeIsOurs` says the launch
+  URL is ours; it does **not** say the payload inside it is. A payload may be
+  a full URL, returned verbatim by the decoder, so
+  `https://ours.example/?qr=https://evil.example/x.zip` passes the first
+  check. The RESOLVED archive URL's host is therefore checked too, against the
+  asset prefix, the proxy, and the storage hosts our own encoder can name.
 
 ## Tests
 

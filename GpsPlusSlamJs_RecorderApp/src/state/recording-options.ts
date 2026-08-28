@@ -467,9 +467,12 @@ export interface QrCaptureOptions {
    *
    * Recording detections is safe for any corpus session; CONSUMING levels
    * changes what the session records. A recording made with this on contains
-   * synthetic GPS readings alongside the real ones — they are marked, but no
-   * investigation tooling filters them yet, so a corpus recording stays clean
-   * unless the operator deliberately wants the comparison.
+   * synthetic GPS readings alongside the real ones, and today they are NOT
+   * reliably distinguishable — the schema field that would mark them exists
+   * in the core library but the vote builder cannot set it until that
+   * release ships, so the only marker is an id-prefix convention nothing
+   * enforces. A corpus recording therefore stays clean unless the operator
+   * deliberately wants the comparison.
    */
   useLevels: boolean;
 }

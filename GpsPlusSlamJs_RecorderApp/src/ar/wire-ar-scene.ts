@@ -26,6 +26,7 @@ import {
   getDepthInfoFromFrame,
 } from 'gps-plus-slam-app-framework/ar/webxr-session';
 import { OccupancyGrid } from 'gps-plus-slam-app-framework/ar/occupancy-grid';
+import type { QrLevelLookupState } from '../qr/qr-level-source';
 import {
   selectAlignmentMatrix,
   selectGpsPositions,
@@ -77,6 +78,9 @@ export interface WireArSceneDeps {
   readonly storeRef: StoreRef<RecorderStore>;
   /** In-memory blobs of captured frames, for the live frame tiles. */
   readonly liveFrameBlobs: FrameBlobCache;
+  /** What a scanned code's level lookup did — routed to the HUD, so a code
+   *  the session cannot use says so instead of being silent. */
+  readonly onQrLevelState?: (text: string, state: QrLevelLookupState) => void;
 }
 
 export function wireArScene({
@@ -88,6 +92,7 @@ export function wireArScene({
   resources,
   storeRef,
   liveFrameBlobs,
+  onQrLevelState,
 }: WireArSceneDeps): void {
   // Issue 4: Create alignment lerper for smooth alignment transitions
   resources.alignmentLerper = createAlignmentLerper(arWorldGroup);
@@ -341,6 +346,13 @@ export function wireArScene({
           zero: selectZeroReference(state),
           alignmentSampleCount: selectGpsPositions(state).length,
         };
+      },
+      // A code whose level is missing, unreachable or not ours must SAY so
+      // on the HUD. Without this the level-consuming mode is silent for
+      // exactly the codes it cannot use, which is the failure the QR row was
+      // added to end.
+      onLevelState: (text, state) => {
+        onQrLevelState?.(text, state);
       },
       setSightingFeeder: (feeder) => {
         resources.qrSightingFeeder = feeder;

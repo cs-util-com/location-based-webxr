@@ -462,14 +462,14 @@ describe('wireQrRecording — the level-consuming callbacks', () => {
     projectionMatrix: [1.5, 0, 0, 0, 0, 2, 0, 0, 0, 0, -1, -1, 0, 0, -0.2, 0],
   };
 
-  it('still writes the RAW observation for every detection', () => {
+  it('still writes the RAW observation for every validated DECODE', () => {
     // Why this test matters: decision D-A says a recording stays
     // algorithm-agnostic whatever else the session is doing. Level mode must
     // not quietly stop recording what it saw - and it gets the raw facts from
     // the SAME decode that produced the pose, not a second one.
     const { store, config } = wireWithLevels(depthSample);
-    const onDetection = config.onDetection as (e: unknown) => void;
-    onDetection({
+    const onRawDetection = config.onRawDetection as (e: unknown) => void;
+    onRawDetection({
       text: 'code',
       timestamp: 1234,
       corners: [
@@ -491,8 +491,8 @@ describe('wireQrRecording — the level-consuming callbacks', () => {
     // A raw observation without one cannot be re-solved later, so writing a
     // partial record would be worse than writing none.
     const { store, config } = wireWithLevels(null);
-    const onDetection = config.onDetection as (e: unknown) => void;
-    onDetection({
+    const onRawDetection = config.onRawDetection as (e: unknown) => void;
+    onRawDetection({
       text: 'code',
       timestamp: 1,
       corners: [],

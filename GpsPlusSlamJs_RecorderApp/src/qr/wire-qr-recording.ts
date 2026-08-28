@@ -183,25 +183,30 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
       frontEnd,
       solvePose: (input) => solveQrPose({ ...input, solver: pnpSolver }),
       fetchLevel: (text) => levelSource.fetchLevel(text),
+      // The source owns the retry timing; without this the controller's own
+      // cache would keep the first failure for the whole session.
+      shouldCacheLevel: (level) => levelSource.shouldCacheLevel(level),
       dispatchVotes: (votes) => {
         for (const vote of votes) {
           storeRef.get().dispatch(recordGpsEvent(vote));
         }
       },
-      onDetection: (event) => {
-        // The RAW record, unchanged: decision D-A says a recording stays
-        // algorithm-agnostic whatever else the session is doing.
+      // The RAW record rides the validated DECODE, not the solved pose:
+      // decision D-A says a recording stays algorithm-agnostic whatever else
+      // the session is doing, and a code whose level does not exist yet -
+      // which is every code on an authoring walk - never reaches a lock.
+      onRawDetection: (raw) => {
         const projectionMatrix = getProjectionMatrix();
         if (projectionMatrix === null) return;
         storeRef.get().dispatch(
           recordQrDetection({
-            text: event.text,
-            timestamp: event.timestamp,
-            corners: event.corners,
-            cameraPose: event.cameraPose,
+            text: raw.text,
+            timestamp: raw.timestamp,
+            corners: raw.corners,
+            cameraPose: raw.cameraPose,
             projectionMatrix,
-            imageWidth: event.imageWidth,
-            imageHeight: event.imageHeight,
+            imageWidth: raw.imageWidth,
+            imageHeight: raw.imageHeight,
           })
         );
       },

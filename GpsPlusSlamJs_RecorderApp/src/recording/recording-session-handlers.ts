@@ -858,6 +858,10 @@ export function createRecordingSessionHandlers(
 
     // Clean up sync result reference
     lastSyncResult = null;
+    // Never carry a previous recording's verdicts into this one's summary:
+    // a session with QR off writes no outcomes, so a stale list would be
+    // shown as if it described the recording just finished.
+    latestQrAnchorOutcomes = [];
 
     log.info('Session summary:', summaryData);
 
@@ -930,6 +934,10 @@ export function createRecordingSessionHandlers(
       syncManager = null;
     }
     lastSyncResult = null;
+    // Never carry a previous recording's verdicts into this one's summary:
+    // a session with QR off writes no outcomes, so a stale list would be
+    // shown as if it described the recording just finished.
+    latestQrAnchorOutcomes = [];
 
     currentSessionName = '';
   }

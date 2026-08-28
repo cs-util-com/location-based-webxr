@@ -37,6 +37,14 @@ const NO_LEVEL: QrLevel = { version: 1, qr: {} };
 const RETRY_BASE_MS = 4000;
 const RETRY_MAX_MS = 60_000;
 
+/**
+ * Hosts our own encoder can name in a payload. `raw.githubusercontent.com`
+ * is here because the launch contract's GitHub-template form expands to it;
+ * the repo and path within it stay attacker-controlled, which is why this is
+ * a host allowlist and not a claim that the CONTENT is trusted.
+ */
+const ARCHIVE_HOSTS: readonly string[] = ['raw.githubusercontent.com'];
+
 /** How long one resolve may take before it is abandoned. */
 const DEFAULT_TIMEOUT_MS = 15_000;
 
@@ -80,6 +88,15 @@ export interface QrLevelSource {
   fetchLevel(text: string): Promise<QrLevel>;
   /** The last thing that happened for a code, for the status line. */
   stateFor(text: string): QrLevelLookupState | undefined;
+  /**
+   * Wire into the tracking controller's `shouldCacheLevel`.
+   *
+   * The controller keeps its own per-text level cache. Without this it caches
+   * the FIRST answer for the session, so the backoff below — built precisely
+   * so one transient failure does not poison a code for the rest of a walk —
+   * is never asked for again and is unreachable in production.
+   */
+  shouldCacheLevel(level: QrLevel): boolean;
   /** Abort in-flight work and stop retrying (session end). */
   dispose(): void;
 }
@@ -99,7 +116,7 @@ export function createQrLevelSource(deps: QrLevelSourceDeps): QrLevelSource {
       }));
   const readLevelsFrom = deps.readLevels ?? readLevels;
   const inFlight = new Map<string, Promise<QrLevel>>();
-  const controllers = new Set<AbortController>();
+  const deadlines = new Set<Deadline>();
   let disposed = false;
 
   function remember(text: string, state: QrLevelLookupState): QrLevel {
@@ -131,17 +148,35 @@ export function createQrLevelSource(deps: QrLevelSourceDeps): QrLevelSource {
     if (archiveUrl === null) {
       return remember(text, { kind: 'not-ours' });
     }
+    // The LAUNCH url being ours is not enough. Its `?qr=` payload may be a
+    // full URL, and the decoder returns it verbatim — so
+    // `https://ours.example/?qr=https://evil.example/x.zip` passes the first
+    // gate and would be fetched. A printed sticker costs an attacker nothing,
+    // and the result is a ranged GET from the AR frame path to an address of
+    // their choosing. The RESOLVED url is therefore checked too, against the
+    // hosts we actually serve archives from.
+    if (!isAllowedArchiveHost(archiveUrl, deps)) {
+      return remember(text, { kind: 'not-ours' });
+    }
 
     const id = await qrCodeId(text);
-    const controller = new AbortController();
-    controllers.add(controller);
-    const timer = setTimeout(() => {
-      controller.abort();
-    }, timeoutMs);
+    // What is bounded here is the WAIT, not the request.
+    //
+    // `openRemoteArchive` has no abort seam today — no `signal` option — so
+    // an underlying fetch cannot be cancelled from here, and pretending
+    // otherwise (an AbortController nothing listens to) was worse than saying
+    // so. What matters for correctness is that the tracking controller awaits
+    // this INSIDE its detect step: an unbounded wait stalls QR detection for
+    // the rest of the session, and a session-end wait outlives the session.
+    // Racing a deadline fixes both. The orphaned request finishes into
+    // nothing. A real abort needs a signal threaded through the storage
+    // layer — filed, not faked.
+    const deadline = new Deadline(timeoutMs, () => disposed);
+    deadlines.add(deadline);
     try {
-      const archive = await openArchive(archiveUrl);
+      const archive = await deadline.race(openArchive(archiveUrl));
       try {
-        const levels = await readLevelsFrom(archive);
+        const levels = await deadline.race(readLevelsFrom(archive));
         const level = levels.get(id);
         if (level === undefined) return remember(text, { kind: 'absent', id });
         return remember(text, { kind: 'level', level, id });
@@ -162,8 +197,8 @@ export function createQrLevelSource(deps: QrLevelSourceDeps): QrLevelSource {
         attempts,
       });
     } finally {
-      clearTimeout(timer);
-      controllers.delete(controller);
+      deadline.cancel();
+      deadlines.delete(deadline);
     }
   }
 
@@ -184,13 +219,50 @@ export function createQrLevelSource(deps: QrLevelSourceDeps): QrLevelSource {
       return run;
     },
     stateFor: (text) => states.get(text),
+
+    // Only a real level is final. Everything else — absent, not ours, or a
+    // transport failure — resolves to the same placeholder, and this source
+    // decides when to ask again.
+    shouldCacheLevel: (level) => level !== NO_LEVEL,
     dispose() {
       disposed = true;
-      for (const controller of controllers) controller.abort();
-      controllers.clear();
+      // Stop WAITING on everything in flight; the requests themselves cannot
+      // be cancelled (see the deadline note above) but nothing waits on them.
+      for (const deadline of deadlines) deadline.expire();
+      deadlines.clear();
       inFlight.clear();
     },
   };
+}
+
+/**
+ * Is this an address we actually serve archives from?
+ *
+ * The set is deliberately small and explicit: the configured asset prefix's
+ * host, the Drive proxy's host, and the storage hosts our own encoder can
+ * produce. Anything else is a stranger's address that happened to travel
+ * inside our launch URL.
+ */
+function isAllowedArchiveHost(
+  archiveUrl: string,
+  deps: QrLevelSourceDeps
+): boolean {
+  let host: string;
+  try {
+    host = new URL(archiveUrl).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  const allowed = new Set<string>(ARCHIVE_HOSTS);
+  for (const candidate of [deps.assetPrefix, deps.corsProxyBaseUrl]) {
+    if (candidate === undefined) continue;
+    try {
+      allowed.add(new URL(candidate).hostname.toLowerCase());
+    } catch {
+      // A malformed configured prefix simply contributes no host.
+    }
+  }
+  return allowed.has(host);
 }
 
 /** The `?qr=` value of one of OUR launch URLs — never the raw text. */
@@ -217,4 +289,44 @@ async function readLevels(
     if (entry === undefined) throw new Error(`missing entry: ${name}`);
     return (await entry.getData?.(new TextWriter())) ?? '';
   });
+}
+
+/**
+ * A bounded wait. Resolves whatever it is racing, or rejects once the deadline
+ * passes — so a caller inside a per-frame code path can never be held open by
+ * a slow or hung request.
+ */
+class Deadline {
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  private expired: (() => void) | null = null;
+  private readonly gate: Promise<never>;
+
+  constructor(
+    timeoutMs: number,
+    private readonly isDisposed: () => boolean
+  ) {
+    this.gate = new Promise<never>((_, reject) => {
+      const fail = (): void => {
+        reject(new Error('qr level lookup timed out'));
+      };
+      this.expired = fail;
+      this.timer = setTimeout(fail, timeoutMs);
+    });
+    // Nothing may observe an unhandled rejection if the race is won.
+    this.gate.catch(() => undefined);
+  }
+
+  race<T>(work: Promise<T>): Promise<T> {
+    if (this.isDisposed()) return Promise.reject(new Error('disposed'));
+    return Promise.race([work, this.gate]);
+  }
+
+  expire(): void {
+    this.expired?.();
+  }
+
+  cancel(): void {
+    if (this.timer !== null) clearTimeout(this.timer);
+    this.timer = null;
+  }
 }

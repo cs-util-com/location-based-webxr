@@ -24,6 +24,7 @@ if (import.meta.env.PROD) {
 
 import { qrCodeId } from 'gps-plus-slam-app-framework/utils/qr-payload/qr-code-id';
 import { qrStatusLine } from './qr/qr-status-line';
+import type { QrLevelLookupState } from './qr/qr-level-source';
 import { setQrStatus } from './ui/hud-status-rows';
 
 import {
@@ -103,7 +104,10 @@ import {
   replaceScreenState,
   getCurrentScreen,
 } from './ui/navigation';
-import { createRecorderStore } from './state/recorder-store';
+import {
+  createRecorderStore,
+  type RecorderStore,
+} from './state/recorder-store';
 import { add2dImage } from 'gps-plus-slam-app-framework/state';
 import { recordDepthSample } from 'gps-plus-slam-app-framework/state/recording-slice';
 import {
@@ -122,6 +126,7 @@ import {
   createLoopClosureHandler,
   odometryTrackingRestarted,
 } from 'gps-plus-slam-app-framework/core';
+import { isSegmentingActionType } from 'gps-plus-slam-app-framework/state/segmenting-actions';
 import { createStoreRef } from './state/store-ref';
 import { createArSessionScope } from './utils/ar-session-scope';
 import { createArSessionResources } from './ar/ar-session-resources';
@@ -215,6 +220,32 @@ const arSessionResources = createArSessionResources();
 /** The code most recently detected this session, and its short identity. */
 let latestQrText: string | null = null;
 let latestQrId: string | null = null;
+/** What the last level lookup did, per code — shown on the QR HUD row. */
+const qrLevelStates = new Map<string, QrLevelLookupState>();
+
+/**
+ * Wrap a store so a frame-moving action also tells the QR sighting fold.
+ *
+ * The loop-closure handler dispatches `arLoopClosureDetected` from inside
+ * itself and offers no callback, so the only place to notice it is the store
+ * it was handed. Without this the segmentation gate exists but can never fire
+ * for a loop closure, and the mint would average two odometry frames into a
+ * plausible-looking anchor.
+ */
+function segmentAwareStore(target: RecorderStore): RecorderStore {
+  return {
+    ...target,
+    dispatch: ((action: unknown) => {
+      const type = (action as { type?: unknown }).type;
+      if (typeof type === 'string' && isSegmentingActionType(type)) {
+        arSessionResources.qrSightingFeeder?.noteFrameChange();
+      }
+      return target.dispatch(
+        action as Parameters<RecorderStore['dispatch']>[0]
+      );
+    }) as RecorderStore['dispatch'],
+  };
+}
 
 /**
  * Refresh the HUD's QR row. Called from the camera-frame callback, which is
@@ -225,8 +256,19 @@ let latestQrId: string | null = null;
 function refreshQrStatus(): void {
   const feeder = arSessionResources.qrSightingFeeder;
   if (feeder === null) return;
-  const codes = feeder.accumulator.codes();
-  const newest = codes.at(-1) ?? null;
+  // The code with the most recent detection — NOT `codes().at(-1)`, which is
+  // Map insertion order and names the wrong poster whenever two are in view.
+  let newest: string | null = null;
+  let newestAt = -Infinity;
+  for (const text of feeder.accumulator.codes()) {
+    const at = feeder.accumulator
+      .sightingsIncludingOpen(text)
+      .at(-1)?.lastTimestamp;
+    if (at !== undefined && at > newestAt) {
+      newestAt = at;
+      newest = text;
+    }
+  }
   if (newest !== null && newest !== latestQrText) {
     latestQrText = newest;
     latestQrId = null;
@@ -247,6 +289,9 @@ function refreshQrStatus(): void {
       latestText: latestQrText,
       latestId: latestQrId,
       accumulator: feeder.accumulator,
+      ...(latestQrText !== null && qrLevelStates.has(latestQrText)
+        ? { levelState: qrLevelStates.get(latestQrText) }
+        : {}),
     })
   );
 }
@@ -486,7 +531,13 @@ function wireLoopClosureCapture(): () => void {
     // closures from the recording. A rebind starts with empty last-pose
     // memory — correct for a fresh session/frame.
     if (boundStore !== store) {
-      arSessionResources.loopClosureHandler = createLoopClosureHandler(store);
+      // The handler dispatches `arLoopClosureDetected` itself, which rewrites
+      // stored trajectory — another odometry-frame change that stored QR
+      // poses do not follow. There is no callback for it, so the segmentation
+      // gate is told through the store the handler is given.
+      arSessionResources.loopClosureHandler = createLoopClosureHandler(
+        segmentAwareStore(store)
+      );
       boundStore = store;
     }
     // `getCurrentArPose()` is nulled by the framework on tracking loss and
@@ -1112,6 +1163,11 @@ async function handleEnterAR(): Promise<void> {
         store,
         onRestarted: (payload) => {
           store.dispatch(odometryTrackingRestarted(payload));
+          // The odometry frame just moved under every stored QR pose, so
+          // sightings either side of this are not comparable. Without this
+          // call the segmentation gate exists but can never fire, and the
+          // mint would average two frames into a plausible-looking anchor.
+          arSessionResources.qrSightingFeeder?.noteFrameChange();
           // Origin reset: clear the loop-closure handler's last-pose memory
           // (deactivate ⇒ reset) before re-arming — the reference-space jump
           // is an origin correction, not a relocalization loop closure.
@@ -1211,6 +1267,10 @@ async function handleEnterAR(): Promise<void> {
         resources: arSessionResources,
         storeRef,
         liveFrameBlobs,
+        onQrLevelState: (text, state) => {
+          qrLevelStates.set(text, state);
+          refreshQrStatus();
+        },
       });
     }
 
