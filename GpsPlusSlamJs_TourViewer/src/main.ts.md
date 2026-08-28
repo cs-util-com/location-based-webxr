@@ -44,7 +44,7 @@ None (app entry point). Interesting seams for the e2e suite are the
   modes.
 - **Print a code (owner request 2026-08-26):** the author panel carries a
   print section — paste the hosting URL (prefilled from the open tour),
-  reuse the size/c inputs, and the measured launch URL renders as a QR at
+  reuse the size and code-number inputs, and the measured launch URL renders as a QR at
   the TRUE physical size on paper (print CSS cm at 100% scale; the canvas
   carries the symbol only, the quiet zone is CSS padding). See
   the framework's `qr-print-plan.ts.md` for the size contract.

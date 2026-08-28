@@ -43,8 +43,10 @@ import {
   startTourArRuntime,
 } from "./ar-mode.js";
 import {
+  authorLevelHint,
   authorStatusLine,
   buildAuthorControllerConfig,
+  codeIndexFromInput,
 } from "./qr-author-mode.js";
 import {
   AUTHOR_DEFAULT_SIZE_M,
@@ -354,7 +356,7 @@ clearCacheButton.addEventListener("click", () => {
 // a DEV Playwright run.
 const authorMode = authorModeEnabledFromSearch(location.search);
 /** Levels resolved per decoded text, filled by the viewer pipeline's async
- *  . Deriving a code's identity is a hash and therefore async,
+ *  `fetchLevel`. Deriving a code's identity is a hash and therefore async,
  *  while the debug view and the image planes need the answer synchronously —
  *  so the one place that can await it caches it here for both. */
 const levelByText = new Map<string, QrLevel | null>();
@@ -883,7 +885,7 @@ printGenerateButton.addEventListener("click", () => {
 
 async function generatePrintCode(): Promise<void> {
   const sideCss = printedSideCss(Number(authorSizeInput.value)); // validates
-  const codeIndex = readCodeIndex();
+  const { codeIndex, coerced } = codeIndexFromInput(authorCInput.value);
   const plan = await planPrintCode(printUrlInput.value.trim(), { codeIndex });
   // margin 0: the canvas carries the SYMBOL only — the printed side equals
   // the size the author types when minting; the quiet zone is CSS padding.
@@ -902,16 +904,11 @@ async function generatePrintCode(): Promise<void> {
   printInfo.textContent =
     `QR version ${String(plan.qrVersion)}, code ${String(codeIndex)}, ` +
     `prints at ${sideCss} — use 100% scale (no fit-to-page).` +
+    (coerced
+      ? " Note: the code number was not a whole number of 1 or more, so this printed as code 1."
+      : "") +
     (warning === null ? "" : ` ${warning}`);
   printUrlOut.textContent = plan.url;
-}
-
-/** Which code of a set the print panel is generating. Blank or nonsense
- *  reads as the first code — a creator printing one poster should never
- *  have to think about this field. */
-function readCodeIndex(): number {
-  const raw = Number(authorCInput.value.trim());
-  return Number.isInteger(raw) && raw >= 1 ? raw : 1;
 }
 
 printButton.addEventListener("click", () => {
@@ -945,20 +942,19 @@ mintButton.addEventListener("click", () => {
   // The file name IS the code's identity, derived from the exact text this
   // poster carries — so the author never has to match a number by hand.
   const mintedText = lastDetectedText;
+  // Cleared BEFORE the new hash starts: otherwise a second mint's download
+  // button carries the PREVIOUS code's file name until the microtask lands.
+  mintedCodeId = null;
+  authorHint.textContent = authorLevelHint(null);
   qrCodeId(mintedText).then(
     (id) => {
       mintedCodeId = id;
-      authorHint.textContent =
-        `Add the downloaded file to your tour zip as qr/${id}.json, then ` +
-        `re-upload the zip to the same URL — viewers pick the change up ` +
-        `automatically.`;
+      authorHint.textContent = authorLevelHint(id);
     },
     () => {
       // A failed hash is not a failed mint: the JSON is already usable, and
-      // the author can still read the id off the download's file name.
-      authorHint.textContent =
-        "Add the downloaded file to your tour zip under qr/, then re-upload " +
-        "the zip to the same URL.";
+      // the hint stays useful without an identity.
+      authorHint.textContent = authorLevelHint(null);
     },
   );
 });

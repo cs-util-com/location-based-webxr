@@ -43,7 +43,7 @@ carrying the two review-ordered guardrails and the deferred negative cache.
   printed string. There is no page-level fallback and no visible code
   number: distinct texts are distinct codes by construction, which is also
   why the vote budget can key by text
-  (`codeFromDetectedText`); votes only flow once the session has a zero
+  ; votes only flow once the session has a zero
   reference (the store drops `recordGpsEvent` while `gpsData` is null —
   matching production, where the GPS watch starts with AR) — and the
   budget is NOT charged while they would be dropped.

@@ -6,7 +6,9 @@ import type { QrDetectionEvent } from "gps-plus-slam-app-framework/ar/qr/qr-trac
 import { MIN_ALIGNMENT_SAMPLES } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 
 import {
+  authorLevelHint,
   authorStatusLine,
+  codeIndexFromInput,
   buildAuthorControllerConfig,
   syntheticAuthorLevel,
   type AuthorPipelineDeps,
@@ -137,5 +139,46 @@ describe("authorStatusLine", () => {
     const ready = authorStatusLine("text", stable, GOOD_ALIGNMENT_INFO);
     expect(ready.canMint).toBe(true);
     expect(ready.text).toMatch(/ready/i);
+  });
+});
+
+// Added after the M-A milestone review, which found the panel's one
+// user-facing promise ("tells you exactly which qr/<id>.json to add")
+// untested, and the code-number field silently swallowing the RangeError
+// planPrintCode raises for exactly that case.
+describe("authorLevelHint", () => {
+  it("names the exact file when the identity is known", () => {
+    expect(authorLevelHint("de9174304b82")).toMatch("qr/de9174304b82.json");
+  });
+
+  it("still tells the author what to do when hashing failed", () => {
+    // The async-UI rule wants BOTH branches. A failed hash does not fail the
+    // mint - the JSON is already usable - so the hint must stay useful.
+    const hint = authorLevelHint(null);
+    expect(hint).toMatch(/under qr\//);
+    expect(hint).not.toMatch(/undefined|null/);
+  });
+});
+
+describe("codeIndexFromInput", () => {
+  it("treats a blank field as the first code, silently", () => {
+    expect(codeIndexFromInput("")).toEqual({ codeIndex: 1, coerced: false });
+    expect(codeIndexFromInput("  ")).toEqual({ codeIndex: 1, coerced: false });
+  });
+
+  it("takes a usable code number literally", () => {
+    expect(codeIndexFromInput("3")).toEqual({ codeIndex: 3, coerced: false });
+  });
+
+  it("reports a coercion rather than swallowing it", () => {
+    // Why this matters: two posters both printed as "code 1" get ONE identity
+    // and ONE level file - a silent mis-placement, and the exact failure the
+    // per-code token exists to prevent.
+    for (const bad of ["0", "-1", "1.5", "abc"]) {
+      expect(codeIndexFromInput(bad), bad).toEqual({
+        codeIndex: 1,
+        coerced: true,
+      });
+    }
   });
 });

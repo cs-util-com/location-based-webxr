@@ -98,3 +98,42 @@ describe('qrCodeIsOurs', () => {
     expect(qrCodeIsOurs('', HOSTS)).toBe(false);
   });
 });
+
+// Added after the M-A milestone review, which probed the WHATWG parser
+// against every bypass in the brief and found none — but did find one
+// over-refusal and one contract the code did not hold.
+describe('qrCodeIsOurs — the review probe cases', () => {
+  it('accepts our host written with a trailing dot', () => {
+    // A resolver treats `gps.csutil.com.` as our host; the URL parser keeps
+    // the dot. Without stripping it we quietly decline a code that IS ours -
+    // fail-closed, but wrong, and invisible in the field.
+    expect(qrCodeIsOurs('https://gps.csutil.com./?qr=tour', HOSTS)).toBe(true);
+  });
+
+  it('refuses a payload of pure whitespace', () => {
+    expect(qrCodeIsOurs('https://gps.csutil.com/?qr=%20', HOSTS)).toBe(false);
+  });
+
+  it('does not throw on a malformed allowlist', () => {
+    // The sidecar promises "never throws" and this is called on the frame
+    // path, so the promise is checked rather than assumed.
+    expect(() =>
+      qrCodeIsOurs(
+        'https://gps.csutil.com/?qr=tour',
+        undefined as unknown as string[]
+      )
+    ).not.toThrow();
+    expect(
+      qrCodeIsOurs('https://gps.csutil.com/?qr=tour', [
+        null as unknown as string,
+      ])
+    ).toBe(false);
+  });
+
+  it('still refuses a homograph host', () => {
+    // Cyrillic "г" — punycoded by the parser, so exact matching refuses it.
+    expect(qrCodeIsOurs('https://\u0433ps.csutil.com/?qr=tour', HOSTS)).toBe(
+      false
+    );
+  });
+});

@@ -24,8 +24,9 @@ Decision record:
   - **Output:** `true` only when the text is an absolute `http:`/`https:` URL
     whose hostname exactly matches an allowed host and which carries a
     non-empty `qr` query parameter.
-  - **Never throws.** It runs on the frame path; a malformed input is a
-    `false`, not an exception.
+  - **Never throws** — and that is now checked rather than asserted: the
+    allowlist is validated as an array of strings, not just read. It runs on
+    the frame path, where a malformed input must be a `false`.
 
 ## Invariants & assumptions
 
@@ -45,6 +46,18 @@ Decision record:
   treated as a code.
 - Port is ignored: `localhost` in the allowlist matches `localhost:5173`. Dev
   origins therefore need one entry, not one per port.
+- **A trailing dot is stripped before comparing.** `https://ours.example./` is
+  the same host to a resolver but the URL parser keeps the dot; without this
+  the gate quietly declines a code that IS ours — fail-closed, but wrong, and
+  invisible in the field.
+- **The payload is trimmed before the emptiness test**, so `?qr=%20` is not a
+  code.
+- **Probed, not assumed** (M-A review): IDN homographs punycode and are
+  refused; percent-encoded hosts normalise and are accepted; `blob:`,
+  `filesystem:`, `javascript:`, `data:`, `file:` and `ftp:` are refused;
+  backslash forms and embedded credentials resolve to the real host. No bypass
+  was found; the defects were over-refusal and the unchecked allowlist, both
+  fixed above.
 - It answers "is this ours", **not** "is this safe to render". Callers still
   resolve the payload through the normal decoder afterwards.
 

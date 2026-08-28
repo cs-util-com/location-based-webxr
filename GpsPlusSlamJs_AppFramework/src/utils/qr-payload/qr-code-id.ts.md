@@ -43,7 +43,7 @@ author has to track. Decision record:
 
 ```ts
 const id = await qrCodeId('https://gps.csutil.com/?qr=tour&n=2');
-// → '9f2c1a0b4de7' (12 lowercase hex chars)
+// → 'de9174304b82' (12 lowercase hex chars)
 const entry = `qr/${id}.json`;
 ```
 
@@ -53,6 +53,8 @@ appends, and therefore get four different ids:
 ```ts
 await qrCodeId('https://gps.csutil.com/?qr=tour'); // code 1
 await qrCodeId('https://gps.csutil.com/?qr=tour&n=2'); // code 2 — different id
+// (the values above are real digests, checked against Node's SHA-256 —
+//  a hand-written one here would contradict this file's own Tests note)
 ```
 
 ## Tests
@@ -62,8 +64,11 @@ await qrCodeId('https://gps.csutil.com/?qr=tour&n=2'); // code 2 — different i
   never-write-a-spec-constant-from-memory rule): realistic launch URLs,
   non-ASCII and emoji text, determinism, the four-codes-one-zip distinctness
   case, the filename-safe format, and the non-string rejection.
-- `qr-code-id.property.test.ts` — the same oracle over arbitrary strings
-  (lone surrogates, control characters, long payloads), the format invariant,
-  and distinct-input-distinct-id.
+- `qr-code-id.property.test.ts` — the same oracle over arbitrary strings, the
+  format invariant, and distinct-input-distinct-id. Its generator is
+  deliberately NOT a bare `fc.string()`: that draws short ASCII only, so a
+  property claiming to cover surrogates, control characters and long payloads
+  over it would cover none of them. It unions ASCII, full-Unicode and binary
+  units.
 
 No fixtures or test data required.

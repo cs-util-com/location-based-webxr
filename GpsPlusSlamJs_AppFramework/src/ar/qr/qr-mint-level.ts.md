@@ -43,7 +43,16 @@ stack to get wrong. Decision record:
   Component assertions on a near-identity rotation are what let the original
   yaw bug through. Hand-computed: an identity-rotated code with an identity
   alignment faces **east** (bearing 90), because `WEBXR_TO_NUE` maps WebXR +X
-  to NUE +Z and NUE is North-Up-East. The wrong composition gives 180.
+  to NUE +Z and NUE is North-Up-East.
+  - **Which test catches which mistake** (corrected by the M-A review, which
+    computed all four candidate forms): at identity rotation — and for any
+    yaw-only rotation — the join's TRAILING form gives the same bearing as
+    the correct one, so the identity bearing cases do **not** tell those two
+    apart. What catches the trailing form is the **position** assertion
+    (correct `(-5,3,2)` vs join `(2,3,5)`) and the **tilted** case (correct
+    90, join 153.4). Bearing 180 belongs to a double-basis form nobody would
+    write. Do not delete the position or tilted tests believing the bearing
+    ones cover them.
 - **The alignment matrix is the solved TARGET**, never the lerped visual
   transform: for minting, the converged solve is the honest frame.
 - **A non-null alignment matrix is VACUOUS on its own.** The store ships an
@@ -78,11 +87,13 @@ const world = qrWorldPoseFromOdom(sighting.odomPose, sighting.alignmentMatrix);
 
 ## Tests
 
-`qr-mint-level.test.ts` — the three directional composition cases (identity →
-bearing 90, a +90° alignment yaw → bearing 0, and the position mapping through
-the basis); a mint that parses back; the three refusal cases (no matrix, no
-zero, too few fixes); the session-quality fields asserted by name after a
-round trip; the dropped-nonsense-accuracy case; and a non-finite pose reported
-as an error rather than thrown.
+`qr-mint-level.test.ts` — the composition cases (identity → bearing 90, a +90°
+alignment yaw → bearing 0, a TILTED code that the join form fails, the
+position mapping through the basis, and the alignment TRANSLATION column); a
+mint that parses back; a mint whose lat/lon decode back to the expected NUE
+offsets; the recorded timestamp; the three refusal cases (no matrix, no zero,
+too few fixes); the session-quality fields asserted by name after a round
+trip; the dropped-nonsense-accuracy case; and a non-finite pose reported as an
+error rather than thrown.
 
 No fixtures required.

@@ -121,3 +121,26 @@ describe('parseQrLevelEntries', () => {
     expect([...levels.keys()]).toEqual(['good']);
   });
 });
+
+// Added after the M-A milestone review (finding 2): the reader anchored on
+// `^qr/` while its two siblings in the tour session deliberately tolerate a
+// wrapping folder, so a re-zipped or cloud-downloaded archive lost ONLY its
+// QR levels — surfacing as "this code has no level", a failure that looks
+// like a pass.
+describe('parseQrLevelEntries — a wrapping folder', () => {
+  it('reads levels from an archive nested one folder deep', async () => {
+    const levels = await parseQrLevelEntries(
+      ['myrecording/qr/aaa.json', 'myrecording/actions/000001.json'],
+      (name) =>
+        name === 'myrecording/qr/aaa.json'
+          ? Promise.resolve(JSON.stringify({ version: 1, qr: {} }))
+          : Promise.reject(new Error('should not be read'))
+    );
+    expect([...levels.keys()]).toEqual(['aaa']);
+  });
+
+  it('still refuses a level nested INSIDE the qr folder', () => {
+    expect(qrLevelIdFromEntryName('qr/sub/abc.json')).toBeNull();
+    expect(qrLevelIdFromEntryName('wrap/qr/sub/abc.json')).toBeNull();
+  });
+});

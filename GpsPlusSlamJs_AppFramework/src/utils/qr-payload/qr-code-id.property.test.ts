@@ -3,6 +3,21 @@ import fc from 'fast-check';
 import { createHash } from 'node:crypto';
 import { QR_CODE_ID_LENGTH, qrCodeId } from './qr-code-id.js';
 
+/**
+ * A bare `fc.string()` draws short ASCII only — 200 samples yielded zero
+ * non-ASCII characters — so a property claiming to cover surrogates, control
+ * characters and long payloads over it was covering none of them (M-A review
+ * finding 8). Probed against fast-check 4.8: 'grapheme' and 'binary' each
+ * produce non-ASCII in ~85% of samples, and 'binary' is what reaches lone
+ * surrogates, which is where a hand-rolled UTF-8 encoder would diverge from
+ * a standard one.
+ */
+const arbText = fc.oneof(
+  fc.string({ maxLength: 4000 }),
+  fc.string({ unit: 'grapheme', maxLength: 200 }),
+  fc.string({ unit: 'binary', maxLength: 200 })
+);
+
 function oracleId(text: string): string {
   return createHash('sha256')
     .update(text, 'utf8')
@@ -17,7 +32,7 @@ describe('qrCodeId properties', () => {
     // lone surrogates, control characters, very long payloads - where a
     // hand-rolled UTF-8 encoding would diverge from a standard one.
     await fc.assert(
-      fc.asyncProperty(fc.string(), async (text) => {
+      fc.asyncProperty(arbText, async (text) => {
         expect(await qrCodeId(text)).toBe(oracleId(text));
       }),
       { numRuns: 200 }
@@ -30,7 +45,7 @@ describe('qrCodeId properties', () => {
     // the archive reader's pattern rejects, and the level would go missing
     // with no error raised anywhere.
     await fc.assert(
-      fc.asyncProperty(fc.string(), async (text) => {
+      fc.asyncProperty(arbText, async (text) => {
         expect(await qrCodeId(text)).toMatch(
           new RegExp(`^[0-9a-f]{${QR_CODE_ID_LENGTH}}$`)
         );
@@ -45,7 +60,7 @@ describe('qrCodeId properties', () => {
     // collision here is a ~1e-14 event, so a failure means the truncation or
     // the digest changed, not bad luck.
     await fc.assert(
-      fc.asyncProperty(fc.string(), fc.string(), async (a, b) => {
+      fc.asyncProperty(arbText, arbText, async (a, b) => {
         fc.pre(a !== b);
         expect(await qrCodeId(a)).not.toBe(await qrCodeId(b));
       }),

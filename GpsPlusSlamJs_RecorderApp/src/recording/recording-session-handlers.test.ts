@@ -320,6 +320,8 @@ vi.mock('../ui/hud', () => ({
   setNewRefPointButtonVisible: vi.fn(),
   setAbsCompassStatus: vi.fn(),
   hideAbsCompass: vi.fn(),
+  hideQrStatus: vi.fn(),
+  setQrStatus: vi.fn(),
 }));
 
 vi.mock('../ui/session-summary', () => ({

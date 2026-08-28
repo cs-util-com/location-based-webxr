@@ -58,6 +58,11 @@ import type { RecorderStore } from '../state/recorder-store';
 import type { StoreRef } from '../state/store-ref';
 import { followStore } from '../state/store-ref';
 import { createQrDebugController } from './qr-debug-controller';
+import {
+  createQrSightingFeeder,
+  type QrSightingFeeder,
+  type QrSightingFeederDeps,
+} from './qr-sighting-feeder';
 
 export interface WireQrRecordingOptions {
   /** The active-store ref (producer + viz follow store swaps through it). */
@@ -72,6 +77,15 @@ export interface WireQrRecordingOptions {
    * built) can forward frames to it. Called with `null` on dispose.
    */
   setProducer: (producer: QrDetectionController | null) => void;
+  /**
+   * Read the session's alignment as it stands NOW. Each sighting keeps the
+   * value from its last detection, because the mint uses the alignment as it
+   * was AT that moment and the store keeps no history (plan DEC-3).
+   */
+  readAlignment: QrSightingFeederDeps['readAlignment'];
+  /** Receives the sighting feeder so save-time minting and the HUD can read
+   *  it. Called with `null` on dispose. */
+  setSightingFeeder?: (feeder: QrSightingFeeder | null) => void;
 }
 
 /**
@@ -80,6 +94,10 @@ export interface WireQrRecordingOptions {
  */
 export function wireQrRecording(options: WireQrRecordingOptions): () => void {
   const { storeRef, getArWorldGroup, qr, setProducer } = options;
+  const sightings = createQrSightingFeeder({
+    readAlignment: options.readAlignment,
+  });
+  options.setSightingFeeder?.(sightings);
 
   // --- Producer (WS-2) ------------------------------------------------------
   const frontEnd = createBarcodeDetectorFrontEnd();
@@ -143,6 +161,12 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
   const debug = createQrDebugController({
     getState: () => storeRef.get().getState(),
     getArWorldGroup,
+    // One deriver, two consumers: the debug cube and the session's sighting
+    // fold. A second deriver would double the PnP work and could disagree
+    // with what is drawn.
+    onPlacement: (text, placement, timestampMs) => {
+      sightings.onPlacement(text, placement, timestampMs);
+    },
   });
 
   // Coalesce the per-action debug updates to at most one per animation frame
@@ -173,6 +197,7 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
     stopCameraFrameCapture();
     producer.reset();
     setProducer(null);
+    options.setSightingFeeder?.(null);
     if (rafId !== null) {
       cancelAnimationFrame(rafId);
       rafId = null;

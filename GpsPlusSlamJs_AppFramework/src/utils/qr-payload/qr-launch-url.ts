@@ -76,7 +76,7 @@ export interface QrLaunchOptions {
   allowPathForm?: boolean;
   /**
    * Extra query parameters printed into the launch URL alongside `?qr=`
-   * (e.g. the per-code discriminator `{ c: '2' }` of the QR-pose plan).
+   * (e.g. a per-code token, e.g. `{ n: '2' }` of the QR-pose plan).
    * Appended — percent-encoded — to every candidate BEFORE size estimation,
    * so the returned estimate and the fits-a-QR guarantee hold for the string
    * actually printed. The all-caps `/S/` path form cannot carry `&`/`=`/

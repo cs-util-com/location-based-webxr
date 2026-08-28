@@ -283,6 +283,8 @@ vi.mock('./ui/hud', () => ({
   hideTrackingQuality: vi.fn(),
   setAbsCompassStatus: vi.fn(),
   hideAbsCompass: vi.fn(),
+  hideQrStatus: vi.fn(),
+  setQrStatus: vi.fn(),
 }));
 
 // Mock recording-discovery for handleOpenFolder tests (Issue 1 — 2026-02-27 + 2026-03-01)

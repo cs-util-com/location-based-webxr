@@ -22,6 +22,10 @@ if (import.meta.env.PROD) {
   initSentry();
 }
 
+import { qrCodeId } from 'gps-plus-slam-app-framework/utils/qr-payload/qr-code-id';
+import { qrStatusLine } from './qr/qr-status-line';
+import { setQrStatus } from './ui/hud-status-rows';
+
 import {
   initUI,
   showError,
@@ -207,6 +211,45 @@ const arSessionScope = createArSessionScope();
 // contract is documented in ar/ar-session-resources.ts; holding them together
 // is what lets the wiring below live outside this file.
 const arSessionResources = createArSessionResources();
+
+/** The code most recently detected this session, and its short identity. */
+let latestQrText: string | null = null;
+let latestQrId: string | null = null;
+
+/**
+ * Refresh the HUD's QR row. Called from the camera-frame callback, which is
+ * the one place that ticks whether or not anything was detected — so the
+ * "scanning, nothing yet" state is reachable, which is the state the recorder
+ * used to show nothing at all for.
+ */
+function refreshQrStatus(): void {
+  const feeder = arSessionResources.qrSightingFeeder;
+  if (feeder === null) return;
+  const codes = feeder.accumulator.codes();
+  const newest = codes.at(-1) ?? null;
+  if (newest !== null && newest !== latestQrText) {
+    latestQrText = newest;
+    latestQrId = null;
+    // Async, and deliberately not awaited: the readout falls back to a
+    // neutral label until it resolves rather than blocking a frame callback.
+    void qrCodeId(newest).then(
+      (id) => {
+        if (latestQrText === newest) latestQrId = id;
+      },
+      () => {
+        /* a failed hash only costs the short label */
+      }
+    );
+  }
+  setQrStatus(
+    qrStatusLine({
+      enabled: true,
+      latestText: latestQrText,
+      latestId: latestQrId,
+      accumulator: feeder.accumulator,
+    })
+  );
+}
 
 // F3.5d — live frame-tile visualization. The recorder caches every captured
 // frame blob in memory keyed by its `frames/<filename>` path, so the
@@ -1050,8 +1093,10 @@ async function handleEnterAR(): Promise<void> {
       ...(recordingOptions.qr.enabled
         ? {
             cameraFrame: {
-              onFrame: (image) =>
-                arSessionResources.qrProducer?.offerFrame(image),
+              onFrame: (image) => {
+                arSessionResources.qrProducer?.offerFrame(image);
+                refreshQrStatus();
+              },
             },
           }
         : {}),

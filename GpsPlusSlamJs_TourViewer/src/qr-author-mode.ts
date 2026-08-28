@@ -145,3 +145,51 @@ export function authorStatusLine(
   }
   return { text: `Pose stable (${spread}) — ready to mint.`, canMint: true };
 }
+
+/**
+ * What the panel tells the author to do with the exported JSON.
+ *
+ * Split out of the DOM handler so BOTH branches are testable: deriving the
+ * code's identity is async, and the async-UI rule requires the failure path
+ * to be exercised, not just the happy one.
+ */
+export function authorLevelHint(codeId: string | null): string {
+  if (codeId === null) {
+    return (
+      "Add the downloaded file to your tour zip under qr/, then re-upload " +
+      "the zip to the same URL — viewers pick the change up automatically."
+    );
+  }
+  return (
+    `Add the downloaded file to your tour zip as qr/${codeId}.json, then ` +
+    "re-upload the zip to the same URL — viewers pick the change up " +
+    "automatically."
+  );
+}
+
+/** What the panel is about to print, and whether the author's input was
+ *  taken literally. */
+export interface PrintCodeSelection {
+  codeIndex: number;
+  /** True when the typed value was not a usable code number and 1 was used. */
+  coerced: boolean;
+}
+
+/**
+ * Read the "which code of the set" field.
+ *
+ * Blank means the first code — a creator printing one poster should not have
+ * to think about this. Anything else unusable is ALSO treated as the first
+ * code, but reported as coerced: two posters both printed as code 1 share one
+ * identity and one level file, which is a silent mis-placement and exactly
+ * what the per-code token exists to prevent. The panel says so rather than
+ * swallowing it.
+ */
+export function codeIndexFromInput(raw: string): PrintCodeSelection {
+  const trimmed = raw.trim();
+  if (trimmed === "") return { codeIndex: 1, coerced: false };
+  const value = Number(trimmed);
+  return Number.isInteger(value) && value >= 1
+    ? { codeIndex: value, coerced: false }
+    : { codeIndex: 1, coerced: true };
+}

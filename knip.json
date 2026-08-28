@@ -49,6 +49,8 @@
         "src/utils/escape-html.ts",
         "src/utils/format-distance.ts",
         "src/utils/toast-core.ts",
+        "src/ar/qr/qr-mint-level.ts",
+        "src/ar/qr/qr-sighting-accumulator.ts",
         "config/eslint.config.mjs"
       ],
       "project": [

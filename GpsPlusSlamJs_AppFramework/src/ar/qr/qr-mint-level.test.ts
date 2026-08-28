@@ -6,6 +6,7 @@ import {
   qrWorldPoseFromOdom,
 } from './qr-mint-level.js';
 import { parseQrLevel } from './qr-level.js';
+import { calcRelativeCoordsInMeters } from '../../core/index.js';
 import type { Pose } from './qr-pose.js';
 import type { Matrix4 as AlignmentMatrix } from '../../core/index.js';
 
@@ -62,6 +63,27 @@ describe('qrWorldPoseFromOdom — the basis factor is LEADING', () => {
     expect(bearingOf(rotated)).toBeCloseTo(0, 4);
   });
 
+  it('discriminates against the capture-join composition on a TILTED code', () => {
+    // Why this test matters, and why a tilted code specifically (M-A review
+    // finding 3): at identity rotation - and for any yaw-only rotation - the
+    // join's trailing-basis form yields the SAME bearing as the correct one,
+    // so the two identity cases above do not actually tell the two apart.
+    // They diverge once the code is not upright about the vertical axis.
+    // Hand-computed with the repo's own basis: correct = 90, join = 153.4.
+    const pitched: Pose = {
+      position: [0, 0, 0],
+      // 90 deg about WebXR +X.
+      rotation: [Math.SQRT1_2, 0, 0, Math.SQRT1_2],
+    };
+    const world = qrWorldPoseFromOdom(pitched, IDENTITY_ALIGNMENT);
+    const rotated = rotate(
+      { x: 1, y: 0, z: 0 },
+      new ThreeQuaternion(...world.rotation)
+    );
+    expect(bearingOf(rotated)).toBeCloseTo(90, 3);
+    expect(bearingOf(rotated)).not.toBeCloseTo(153.4, 1);
+  });
+
   it('carries the odometry position through the alignment', () => {
     const pose: Pose = { position: [2, 3, 5], rotation: [0, 0, 0, 1] };
     const world = qrWorldPoseFromOdom(pose, IDENTITY_ALIGNMENT);
@@ -69,6 +91,24 @@ describe('qrWorldPoseFromOdom — the basis factor is LEADING', () => {
     expect(world.position.x).toBeCloseTo(-5, 6);
     expect(world.position.y).toBeCloseTo(3, 6);
     expect(world.position.z).toBeCloseTo(2, 6);
+  });
+});
+
+describe('qrWorldPoseFromOdom — the alignment translation', () => {
+  it('applies the alignment translation, not just its rotation', () => {
+    // Why this test matters (M-A review finding 4): every alignment matrix in
+    // this suite used to have a ZERO translation column, so a mint that
+    // dropped or transposed that column passed the whole file. A real session
+    // alignment translates by the distance between the odometry origin and
+    // the GPS zero - tens of metres.
+    const shifted: AlignmentMatrix = [
+      1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 10, 0, 0, 1,
+    ];
+    const world = qrWorldPoseFromOdom(AT_ORIGIN, shifted);
+    // 10 along GPS-world NUE x = 10 m NORTH of the zero.
+    expect(world.position.x).toBeCloseTo(10, 6);
+    expect(world.position.y).toBeCloseTo(0, 6);
+    expect(world.position.z).toBeCloseTo(0, 6);
   });
 });
 
@@ -89,6 +129,39 @@ describe('mintQrLevel', () => {
     expect(result.level.qr.physicalSizeM).toBe(0.16);
     expect(result.level.qr.geo?.headingDeg).toBeCloseTo(90, 3);
     expect(() => parseQrLevel(JSON.parse(result.json))).not.toThrow();
+  });
+
+  it('mints coordinates that decode back to where the code actually is', () => {
+    // Why this test matters (M-A review finding 4): the suite asserted the
+    // intermediate world pose and that the level "parses back", but nothing
+    // checked the composition THROUGH the geo conversion. A sign flip or an
+    // axis swap inside mintQrGeoPose would pass both.
+    const shifted: AlignmentMatrix = [
+      1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 10, 0, 25, 1,
+    ];
+    const result = mintQrLevel({ ...base, alignmentMatrix: shifted });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const geo = result.level.qr.geo;
+    expect(geo).toBeDefined();
+    if (geo === undefined) return;
+
+    const back = calcRelativeCoordsInMeters(
+      ZERO,
+      { lat: geo.lat, lon: geo.lon },
+      geo.alt,
+      0
+    );
+    // NUE: [north, up, east] - 10 m north and 25 m east of the zero.
+    expect(back[0]).toBeCloseTo(10, 2);
+    expect(back[2]).toBeCloseTo(25, 2);
+  });
+
+  it('records the mint timestamp it was given', () => {
+    const result = mintQrLevel(base);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.level.qr.mintQuality?.mintedAtIso).toBe(base.nowIso);
   });
 
   it('refuses in plain words without an alignment, a zero, or enough fixes', () => {

@@ -23,14 +23,22 @@ import { parseQrLevel, type QrLevel } from './qr-level.js';
 const QR_LEVEL_FOLDER = 'qr';
 
 /**
- * `qr/<id>.json` → `<id>`.
+ * `…/qr/<id>.json` → `<id>`.
  *
- * Deliberately more permissive than {@link qrLevelEntryName} accepts: a
- * reader tolerates what older or hand-built archives contain, while the
- * writer only ever emits ids from `qrCodeId`. `[\w.-]+` excludes `/`, so a
- * nested `qr/sub/x.json` does not match.
+ * Deliberately more permissive than {@link qrLevelEntryName} accepts, in two
+ * ways, because a reader must tolerate what real archives contain while the
+ * writer only ever emits ids from `qrCodeId`:
+ *
+ * - the id charset is `[\w.-]+`, which excludes `/` — so a nested
+ *   `qr/sub/x.json` is still not a level;
+ * - a WRAPPING folder is allowed (`myrecording/qr/<id>.json`). Re-zipping a
+ *   folder, or downloading one from a cloud host, produces exactly that
+ *   shape, and the framework's own zip parser already tolerates it for
+ *   `actions/` and `session.json`. Anchoring here while the siblings do not
+ *   would lose only the QR levels from such an archive — surfacing as "this
+ *   code has no level", the failure that looks like a pass.
  */
-const QR_LEVEL_ENTRY = /^qr\/([\w.-]+)\.json$/;
+const QR_LEVEL_ENTRY = /(?:^|\/)qr\/([\w.-]+)\.json$/;
 
 /** Ids the writer will emit into an archive path. Hex ids always qualify. */
 const WRITABLE_ID = /^[\w.-]+$/;

@@ -287,6 +287,9 @@ function parseMintQuality(value: unknown): QrMintQuality | undefined {
   return quality;
 }
 
+/** The validation shapes a `mintQuality` field can take. */
+type MintQualityKind = 'positive' | 'non-negative' | 'count' | 'text';
+
 /** How each `mintQuality` field is validated. */
 const MINT_QUALITY_FIELDS = {
   gpsAccuracyM: 'positive',
@@ -298,10 +301,11 @@ const MINT_QUALITY_FIELDS = {
   rotationSpreadDeg: 'non-negative',
   translationSpreadM: 'non-negative',
   physicalSizeSpreadM: 'non-negative',
-} as const;
-
-type MintQualityKind =
-  (typeof MINT_QUALITY_FIELDS)[keyof typeof MINT_QUALITY_FIELDS];
+  // `satisfies` is load-bearing, not decoration: it is what makes "adding a
+  // field means adding a row" TRUE rather than a promise. Without it a field
+  // added to QrMintQuality with no row here is silently dropped by
+  // serializeQrLevel — the exact trap this table was written to close.
+} as const satisfies Record<keyof Required<QrMintQuality>, MintQualityKind>;
 
 /** Validate one present `mintQuality` field, or throw naming it. */
 function checkMintQualityField(

@@ -34,7 +34,9 @@ export function qrCodeIsOurs(
   allowedHosts: readonly string[]
 ): boolean {
   if (typeof text !== 'string' || text === '') return false;
-  if (allowedHosts.length === 0) return false;
+  // The allowlist is configuration, but "never throws" is a contract this
+  // function is called under on the frame path — so it is checked, not assumed.
+  if (!Array.isArray(allowedHosts) || allowedHosts.length === 0) return false;
 
   let url: URL;
   try {
@@ -49,11 +51,26 @@ export function qrCodeIsOurs(
   // Exact hostname match. `url.hostname` is already lowercased and, crucially,
   // excludes any `user@` prefix — so `https://ours.example@evil.example/`
   // resolves to `evil.example` here and is refused.
-  const host = url.hostname;
-  const owned = allowedHosts.some((allowed) => allowed.toLowerCase() === host);
+  //
+  // The trailing dot is stripped first: `https://ours.example./` is the same
+  // host to a resolver, and the URL parser keeps the dot — so without this a
+  // code that IS ours would be quietly declined (fail-closed, but wrong).
+  const host = stripTrailingDot(url.hostname);
+  const owned = allowedHosts.some(
+    (allowed) =>
+      typeof allowed === 'string' &&
+      stripTrailingDot(allowed.toLowerCase()) === host
+  );
   if (!owned) return false;
 
-  // Our own home page is not a code.
+  // Our own home page is not a code. Trimmed, because a payload of pure
+  // whitespace names nothing either and the decoder would reject it anyway.
   const payload = url.searchParams.get(PAYLOAD_PARAM);
-  return payload !== null && payload !== '';
+  return payload !== null && payload.trim() !== '';
+}
+
+/** `example.com.` → `example.com`. One dot only; the root label is optional
+ *  in a URL but never part of the name anyone configures. */
+function stripTrailingDot(host: string): string {
+  return host.endsWith('.') ? host.slice(0, -1) : host;
 }

@@ -26,6 +26,11 @@ import {
   getDepthInfoFromFrame,
 } from 'gps-plus-slam-app-framework/ar/webxr-session';
 import { OccupancyGrid } from 'gps-plus-slam-app-framework/ar/occupancy-grid';
+import {
+  selectAlignmentMatrix,
+  selectGpsPositions,
+  selectZeroReference,
+} from 'gps-plus-slam-app-framework/state/app-selectors';
 import { gpsEventVisualizer } from 'gps-plus-slam-app-framework/visualization/gps-event-markers';
 import { createCameraFollower } from 'gps-plus-slam-app-framework/visualization/camera-follower';
 import { createAlignmentLerper } from 'gps-plus-slam-app-framework/visualization/alignment-lerper';
@@ -326,10 +331,25 @@ export function wireArScene({
       setProducer: (producer) => {
         resources.qrProducer = producer;
       },
+      // Read live, never recorded: the mint wants the alignment as it was at
+      // each sighting, and an alignment matrix is a DERIVED value that must
+      // not enter the action stream (decision D-A).
+      readAlignment: () => {
+        const state = storeRef.get().getState();
+        return {
+          alignmentMatrix: selectAlignmentMatrix(state),
+          zero: selectZeroReference(state),
+          alignmentSampleCount: selectGpsPositions(state).length,
+        };
+      },
+      setSightingFeeder: (feeder) => {
+        resources.qrSightingFeeder = feeder;
+      },
     });
     return () => {
       unsubscribeQrRecording();
       resources.qrProducer = null;
+      resources.qrSightingFeeder = null;
     };
   });
 }

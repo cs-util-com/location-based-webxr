@@ -87,6 +87,7 @@ import {
   updateSyncStatus,
   setAbsCompassStatus,
   hideAbsCompass,
+  hideQrStatus,
 } from '../ui/hud';
 import { showSessionSummary } from '../ui/session-summary';
 import { showConfirmDialog } from '../ui/confirm-dialog';
@@ -650,6 +651,7 @@ export function createRecordingSessionHandlers(
     stopAbsCompassHudUpdates();
     stopAbsoluteOrientationWatch();
     hideAbsCompass();
+    hideQrStatus();
   }
 
   async function performStop(): Promise<void> {

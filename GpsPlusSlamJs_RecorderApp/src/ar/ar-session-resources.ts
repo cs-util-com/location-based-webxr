@@ -20,6 +20,7 @@
  */
 
 import type { LoopClosureHandler } from 'gps-plus-slam-app-framework/core';
+import type { QrSightingFeeder } from '../qr/qr-sighting-feeder';
 import type { LeafletMapOverlay } from 'gps-plus-slam-app-framework/visualization/leaflet-map-overlay';
 import type { CameraFollower } from 'gps-plus-slam-app-framework/visualization/camera-follower';
 import type { AlignmentLerper } from 'gps-plus-slam-app-framework/visualization/alignment-lerper';
@@ -47,6 +48,9 @@ export interface ArSessionResources {
   loopClosureHandler: LoopClosureHandler | null;
   /** Thin RAW QR producer fed by the framework's camera-frame callback. */
   qrProducer: QrDetectionController | null;
+  /** The session's QR sighting fold — read at save time by the level
+   *  contributor and live by the HUD readout. */
+  qrSightingFeeder: QrSightingFeeder | null;
   /** 3D ref-point spheres + live-map markers, following store swaps. */
   refPointViews: RefPointViewWiring | null;
 }
@@ -60,6 +64,7 @@ export function createArSessionResources(): ArSessionResources {
     statsOverlay: null,
     loopClosureHandler: null,
     qrProducer: null,
+    qrSightingFeeder: null,
     refPointViews: null,
   };
 }

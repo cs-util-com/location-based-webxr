@@ -143,6 +143,15 @@ function flushRaf(): void {
   for (const cb of q) cb();
 }
 
+/** No GPS alignment yet — the state a session is in before its first fix,
+ *  and the one these wiring tests care about (they assert plumbing, not
+ *  minting). */
+const NO_ALIGNMENT = () => ({
+  alignmentMatrix: null,
+  zero: null,
+  alignmentSampleCount: 0,
+});
+
 describe('wireQrRecording', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -167,6 +176,7 @@ describe('wireQrRecording', () => {
       getArWorldGroup: () => null,
       qr,
       setProducer: vi.fn(),
+      readAlignment: NO_ALIGNMENT,
     });
 
     const deps = capturedProducerDeps.current!;
@@ -191,6 +201,7 @@ describe('wireQrRecording', () => {
       getArWorldGroup: () => null,
       qr,
       setProducer: vi.fn(),
+      readAlignment: NO_ALIGNMENT,
     });
     expect(mockStartCapture).toHaveBeenCalledWith({
       intervalMs: 125,
@@ -206,6 +217,7 @@ describe('wireQrRecording', () => {
       getArWorldGroup: () => null,
       qr,
       setProducer,
+      readAlignment: NO_ALIGNMENT,
     });
     expect(setProducer).toHaveBeenCalledWith(fakeProducer);
   });
@@ -227,6 +239,7 @@ describe('wireQrRecording', () => {
       getArWorldGroup: () => null,
       qr,
       setProducer: vi.fn(),
+      readAlignment: NO_ALIGNMENT,
     });
     const deps = capturedProducerDeps.current!;
     // From getCurrentArPose() = {position:{7,8,9}, orientation:{0,0,0,1}}.
@@ -248,6 +261,7 @@ describe('wireQrRecording', () => {
       getArWorldGroup: () => null,
       qr,
       setProducer: vi.fn(),
+      readAlignment: NO_ALIGNMENT,
     });
     const deps = capturedProducerDeps.current!;
     expect((deps.getCameraPose as () => unknown)()).toBeNull();
@@ -261,6 +275,7 @@ describe('wireQrRecording', () => {
       getArWorldGroup: () => null,
       qr,
       setProducer: vi.fn(),
+      readAlignment: NO_ALIGNMENT,
     });
     const deps = capturedProducerDeps.current!;
     const observation = { text: 'x', timestamp: 1 };
@@ -279,6 +294,7 @@ describe('wireQrRecording', () => {
       getArWorldGroup: () => null,
       qr,
       setProducer: vi.fn(),
+      readAlignment: NO_ALIGNMENT,
     });
     // Initial update on wire is synchronous (reflect pre-existing markers).
     expect(mockDebugController.update).toHaveBeenCalledTimes(1);
@@ -314,6 +330,7 @@ describe('wireQrRecording', () => {
       getArWorldGroup: () => null,
       qr,
       setProducer,
+      readAlignment: NO_ALIGNMENT,
     });
 
     dispose();
