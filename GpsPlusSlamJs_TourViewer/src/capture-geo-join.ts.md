@@ -10,9 +10,15 @@ taken instead of ringing them around the QR code.
 
 ## Public API
 
-- `preflightCaptureJoin(meta, actionTypes)` — the BEFORE-replay half (era
-  `odomCoordVersion === 5` and the segmenting-action scan) so a declined
-  zip never pays the seconds-long replay.
+- `preflightCaptureJoin(meta, actionTypes)` — the BEFORE-replay half (the era
+  gate and the segmenting-action scan) so a declined zip never pays the
+  seconds-long replay.
+  - The era gate is `odomCoordVersion >= MIN_SUPPORTED_ODOM_COORD_VERSION`
+    (**4**), and the value must also be a **number** and an **integer** — a
+    hand-edited `session.json` carrying `null` or `"9"` would otherwise slip
+    past a bare comparison into a raw replay of an unknown era. This sidecar
+    said `=== 5` until the PR #368 review caught it, which had it declining
+    era-4 zips on paper while the code accepted them.
 - `assessReplayedJoin(state): JoinAssessment` — the AFTER-replay half; every
   `ok: false` carries a plain-words reason and means "keep the ring".
   - Preflight declines: wrong/unknown era, or a segmenting action present
