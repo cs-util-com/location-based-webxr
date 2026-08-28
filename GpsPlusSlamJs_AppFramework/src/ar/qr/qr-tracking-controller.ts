@@ -51,8 +51,11 @@ export interface QrSolvePoseInput {
  * import of the state slice) so the `ar` layer never depends on `state` — that
  * would close a cycle (`state/qr-detected-slice` already imports `ar/qr/qr-pose`).
  */
-/** A validated decode, before any level or size is involved. */
-export interface QrRawDetection {
+/** A validated decode, before any level or size is involved. Not exported:
+ *  it appears in an exported callback signature, so consumers get it by
+ *  inference, and a named export nothing imports is what the dead-code check
+ *  flags. */
+interface QrRawDetection {
   readonly text: string;
   readonly corners: readonly Point2[];
   readonly cameraPose: Pose;
