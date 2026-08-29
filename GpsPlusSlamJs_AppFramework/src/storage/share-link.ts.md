@@ -24,7 +24,14 @@ user might paste.
 ## Invariants & assumptions
 
 - Returns anything it does not positively recognize **byte-identical** —
-  direct URLs, proxy URLs, relative paths, non-URLs. Never throws. This
+  direct URLs, proxy URLs, relative paths, non-URLs. Never throws — and until
+  2026-08-29 that was not true: a RELATIVE `corsProxyBaseUrl` (the
+  `/api/drive-proxy` form the option's own JSDoc documents) hit
+  `new URL(relative)`, which throws, and the `TypeError` escaped this module
+  and `openRemoteArchive` with it (PR #375 review). The base is now parsed
+  against a reserved sentinel origin and stripped back to path+query, so a
+  relative base stays relative; an unparseable one falls through to the next
+  precedence tier rather than throwing. This
   includes OneDrive hosts: only positively recognized share shapes (`1drv.ms`
   short links, `onedrive.live.com` with `resid`/`id`/`cid` or `/redir`,
   `/embed`) are wrapped in the shares API; an about/marketing page passes

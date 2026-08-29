@@ -52,6 +52,22 @@ export interface NormalizeShareUrlOptions {
   corsProxyBaseUrl?: string | undefined;
 }
 
+/**
+ * Origin used only to parse a RELATIVE `corsProxyBaseUrl`, then stripped back
+ * off. `.invalid` is reserved by RFC 2606 and can never resolve, so it cannot
+ * be mistaken for a real destination if it ever leaked into an output.
+ */
+const RELATIVE_SENTINEL_ORIGIN = 'https://relative.invalid';
+
+/** `new URL(...)`, but `null` instead of a throw. */
+function tryParseUrl(value: string, base?: string): URL | null {
+  try {
+    return base === undefined ? new URL(value) : new URL(value, base);
+  } catch {
+    return null;
+  }
+}
+
 /** Rewrite a known share-page link to its raw download form; else return as-is. */
 export function normalizeShareUrl(
   rawUrl: string,
@@ -116,6 +132,39 @@ function normalizeGithub(url: URL): string | null {
   return `https://raw.githubusercontent.com/${m[1]}/${m[2]}/${m[3]}`;
 }
 
+/**
+ * `<proxyBase>?id=<fileId>`, or `null` when no proxy is configured or its base
+ * cannot be parsed.
+ *
+ * Built via URL/searchParams, never concatenation: a base already carrying a
+ * query (or a trailing `?`) must still yield one valid URL, and searchParams
+ * encodes the id so it stays one opaque value.
+ *
+ * Parsed against a SENTINEL ORIGIN because the documented form of this option
+ * is RELATIVE — its own JSDoc names `/api/drive-proxy` — and
+ * `new URL('/api/drive-proxy')` throws. That `TypeError` escaped this module
+ * and `openRemoteArchive` with it, against a sidecar promising "never throws"
+ * (PR #375 review). An absolute base ignores the sentinel; a relative one
+ * resolves against it and is stripped back to path+query, so the caller gets
+ * back the same shape it configured.
+ *
+ * Extracted rather than inlined: folding these branches into
+ * `normalizeGoogleDrive` took it to a complexity of 12 against a limit of 10,
+ * and the precedence chain there reads better as three one-line tiers.
+ */
+function proxiedDriveUrl(
+  corsProxyBaseUrl: string | undefined,
+  id: string
+): string | null {
+  if (corsProxyBaseUrl === undefined || corsProxyBaseUrl === '') return null;
+  const proxied = tryParseUrl(corsProxyBaseUrl, RELATIVE_SENTINEL_ORIGIN);
+  if (proxied === null) return null;
+  proxied.searchParams.set('id', id);
+  return proxied.origin === RELATIVE_SENTINEL_ORIGIN
+    ? `${proxied.pathname}${proxied.search}`
+    : proxied.toString();
+}
+
 function normalizeGoogleDrive(
   url: URL,
   opts: NormalizeShareUrlOptions
@@ -127,14 +176,11 @@ function normalizeGoogleDrive(
   // review finding 7 — a later-added key must not silently switch Drive off
   // the configured, observable proxy path).
   const { corsProxyBaseUrl, googleDriveApiKey: apiKey } = opts;
-  if (corsProxyBaseUrl !== undefined && corsProxyBaseUrl !== '') {
-    // Built via URL/searchParams, never concatenation: a base already
-    // carrying a query (or a trailing `?`) must still yield one valid URL,
-    // and searchParams encodes the id so it stays one opaque value.
-    const proxied = new URL(corsProxyBaseUrl);
-    proxied.searchParams.set('id', id);
-    return proxied.toString();
-  }
+  // Unparseable proxy base → `null` → fall through to the next tier rather
+  // than throw. A misconfigured proxy must not take share-link normalisation
+  // down with it.
+  const proxied = proxiedDriveUrl(corsProxyBaseUrl, id);
+  if (proxied !== null) return proxied;
   // `searchParams.get` returns the DECODED value — re-encode so an id (or
   // key) containing `&`/`=` stays one opaque value instead of smuggling
   // extra query parameters into the rewritten URL (PR #357 review).

@@ -105,6 +105,19 @@ interface PlaceableSighting {
 }
 
 export interface MintQrAnchorInput {
+  /**
+   * **MUST be in ascending `lastTimestamp` order.** Three separate things
+   * take "the latest sighting" as `placeable.at(-1)` — the recency weighting,
+   * the GPS `zero` the anchor is minted against, and the stamped
+   * `alignmentSampleCount` — so an unordered array does not merely weight
+   * oddly, it mints against the wrong reference position.
+   *
+   * The one production caller (`qr-sighting-accumulator`) appends in arrival
+   * order and therefore satisfies this for free, which is why nothing caught
+   * it: the contract was real but unstated (PR #375 review). A second caller
+   * assembling sightings from a map, a filter, or a persisted archive has no
+   * such guarantee, and would fail silently rather than loudly.
+   */
   sightings: readonly QrSighting[];
   /** From the accumulator: do these sightings straddle a frame change? */
   spansFrameChange: boolean;

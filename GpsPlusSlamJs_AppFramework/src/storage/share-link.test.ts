@@ -136,6 +136,39 @@ describe('normalizeShareUrl — Google Drive via the CORS proxy', () => {
     ).toBe('https://proxy.example/p?v=1&id=ID42');
   });
 
+  it('accepts a RELATIVE proxy base, the form its own JSDoc documents', () => {
+    // Why this test matters: `corsProxyBaseUrl`'s doc names `/api/drive-proxy`
+    // — a same-origin path — and `new URL('/api/drive-proxy')` THROWS. The
+    // TypeError escaped this module and `openRemoteArchive` with it, against
+    // a sidecar promising "never throws" (PR #375 review). The result must
+    // stay relative too: rewriting it to some absolute origin would send the
+    // fetch somewhere the caller never configured.
+    expect(
+      normalizeShareUrl('https://drive.google.com/file/d/ID42/view', {
+        corsProxyBaseUrl: '/api/drive-proxy',
+      })
+    ).toBe('/api/drive-proxy?id=ID42');
+  });
+
+  it('keeps a relative proxy base relative even when it carries a query', () => {
+    expect(
+      normalizeShareUrl('https://drive.google.com/file/d/ID42/view', {
+        corsProxyBaseUrl: '/api/drive-proxy?v=2',
+      })
+    ).toBe('/api/drive-proxy?v=2&id=ID42');
+  });
+
+  it('falls through instead of throwing when the proxy base is unparseable', () => {
+    // The documented contract is "never throws". A misconfigured proxy must
+    // degrade to the next precedence tier, not take share-link normalisation
+    // down with it.
+    expect(() =>
+      normalizeShareUrl('https://drive.google.com/file/d/ID42/view', {
+        corsProxyBaseUrl: 'http://',
+      })
+    ).not.toThrow();
+  });
+
   it('rewrites a directly-pasted usercontent link to the proxy', () => {
     // Review finding 8: this is the exact URL this app itself produced for
     // keyless Drive — and the one proven browser-blocked. Bookmarked or

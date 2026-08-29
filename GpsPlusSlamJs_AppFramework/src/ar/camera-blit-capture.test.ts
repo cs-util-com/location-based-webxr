@@ -743,6 +743,30 @@ describe('camera-blit-capture', () => {
 
       /**
        * Why this test matters:
+       * The guard was `newWidth <= 0 || newHeight <= 0`, which is FALSE for
+       * NaN — the exact form removed from `computeCaptureSize` in this same
+       * file, and missed here (PR #375 review). NaN or Infinity reached
+       * `renderTarget.setSize` and `new Uint8Array(w * h * 4)`, the latter
+       * throwing or allocating nothing useful. The existing tests pinned
+       * only `0`, which is the one invalid value the old guard did catch.
+       * This is a PUBLIC method, so hardened in-repo call sites do not
+       * cover it.
+       */
+      it('refuses NaN and Infinite dimensions, not just zero', () => {
+        blitCapture = new CameraBlitCapture({ width: 64, height: 64 });
+        for (const [w, h] of [
+          [Number.NaN, 64],
+          [64, Number.NaN],
+          [Number.POSITIVE_INFINITY, 64],
+          [64, Number.POSITIVE_INFINITY],
+          [0, 64],
+        ] as const) {
+          expect(blitCapture.resizeIfNeeded(w, h), `${w}x${h}`).toBe(false);
+        }
+      });
+
+      /**
+       * Why this test matters:
        * The JPEG blob from a resized (rectangular) target must still be
        * produced correctly through the full pipeline.
        */

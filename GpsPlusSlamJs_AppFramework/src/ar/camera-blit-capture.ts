@@ -482,7 +482,16 @@ export class CameraBlitCapture {
     if (this.disposed) {
       return false;
     }
-    if (newWidth <= 0 || newHeight <= 0) {
+    // Same guard shape as `computeCaptureSize` above, and for the same
+    // reason: `<= 0` is FALSE for NaN, so the old form let NaN and ±Infinity
+    // through to `setSize` and to `new Uint8Array(w * h * 4)`. This is a
+    // PUBLIC method, so hardened call sites elsewhere do not cover it.
+    if (
+      !(newWidth > 0) ||
+      !Number.isFinite(newWidth) ||
+      !(newHeight > 0) ||
+      !Number.isFinite(newHeight)
+    ) {
       return false;
     }
     if (newWidth === this.width && newHeight === this.height) {
