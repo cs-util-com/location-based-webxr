@@ -763,10 +763,22 @@ export interface CompassStoreOptions {
  * a rotation prior can consume it (experiment or Stage C on) — a Stage-0-only
  * session must not record a dead `setCompassVoteWeight` action into the
  * session (the slider is inert without a prior; see the 2026-07-20
- * settings-clarity follow-up §3.4). `undefined` input (boot before the
- * options load) yields `{}` — deliberately NO explicit keys, because spreading
- * explicit-`undefined` keys over a defaults object would clobber the framework
- * defaults; an empty object leaves them all in place.
+ * settings-clarity follow-up §3.4).
+ *
+ * `undefined` input (boot before the options load) yields `{}` — there is
+ * simply nothing to map yet.
+ *
+ * **An explicit `undefined` VALUE is safe here, and the whole chain is what
+ * makes it safe** — worth stating because the line above deliberately emits
+ * one (`compassVoteWeight: undefined` whenever no prior can consume it), and
+ * because this docstring previously claimed the opposite: that spreading
+ * explicit-`undefined` keys "would clobber the framework defaults". It does
+ * not, and it never did on this path. `createRecorderStore` forwards every
+ * option BY NAME rather than spreading over a defaults object, and
+ * `createSlamAppStore` then guards `if (compassVoteWeight !== undefined)`, so
+ * an explicit `undefined` and an absent key are indistinguishable at every
+ * layer. Audited 2026-08-29. If a future consumer ever merges these with
+ * `{ ...defaults, ...options }`, THAT is where the hazard would become real.
  */
 export function compassStoreOptions(
   compass: CompassDebugOptions | undefined
