@@ -26,7 +26,20 @@ to pick the sparsest launch-URL form by measurement.
   value order (`0–9`, `A–Z`, ` $%*+-./:`). Note `? = & # _` and all
   lowercase are absent — a conventional query string always drops at least
   partially to byte mode.
-- Types: `QrEcLevel`, `QrSizeEstimate`.
+- `EC_LEVELS` — **module-private**, deliberately: it is every error-correction
+  level and the source of truth for `QrEcLevel`, which is derived from it
+  (`(typeof EC_LEVELS)[number]`). Deriving a type from a const does NOT require
+  exporting the const, and exporting it here failed `check:deadcode` as an
+  unused export — nothing outside this module needs the values, only the type.
+  The
+  list is a runtime validator (`estimateQrSize` returns `null` for a level
+  absent from it); as a hand-written `readonly QrEcLevel[]` an incomplete list
+  still type-checked, so a level added to the union would have compiled and
+  then been rejected at runtime. Note the asymmetry that made this easy to
+  miss: `DATA_CODEWORDS` is a `Record<QrEcLevel, …>` and so was always
+  exhaustiveness-checked — the table could not drift, only the list guarding
+  the door could.
+- Types: `QrEcLevel` (derived, above), `QrSizeEstimate`.
 
 ## Invariants & assumptions
 
