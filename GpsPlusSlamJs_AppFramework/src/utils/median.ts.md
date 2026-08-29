@@ -8,6 +8,8 @@ The project's two median semantics as named helpers (2026-07-10 quality-review A
 
 - `interpolatingMedian(values: readonly number[]): number` — mean of the two middle values for even n; empty → `0`. For continuous measurements where an in-between value is meaningful.
 - `lowerMedian(values: readonly number[]): number` — lower of the two middle values for even n (always an actually-observed sample); empty → `NaN` (defensive, callers guarantee non-empty). For selecting a representative real observation.
+  - **"Callers guarantee non-empty" is a real precondition, and the one caller that could not guarantee it wrote its own copy instead.** `ar/elevation-offset-estimator.ts` needed an empty case and had a private `lowerMedian` returning `null` for a year; it now length-checks before calling. If a future caller wants that shape again, give this function an explicit empty-returning sibling rather than letting a seventh copy appear — the empty encoding is caller policy, the selection rule is the contract.
+  - **These three names are now guarded.** `tests/repo-config/duplicate-helpers.test.js` holds `lowerMedian`, `interpolatingMedian` and `weightedMedian` to this file as `shared`, and the unqualified `median` to one-per-package (for packages like `GpsPlusSlamJs_Osm` that cannot reach the framework). The 2026-07 consolidation was undone once before the guard learned these names.
 
 ## Invariants & assumptions
 

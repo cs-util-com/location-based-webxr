@@ -27,6 +27,13 @@
  * @see elevation-offset-estimator.ts.md for detailed documentation
  */
 
+// The one import, and it does not cost the purity stated above:
+// `utils/median.ts` imports nothing itself. Both selection rules used here
+// live there because they are contracts, not conveniences - which of the
+// two middles an even-length window returns is exactly the kind of silent
+// disagreement that consolidation was paid for.
+import { lowerMedian, weightedMedian } from '../utils/median.js';
+
 /** One baseline-free floor-vs-terrain delta hit at its own ENU position. */
 export interface ElevationOffsetSample {
   /** Baseline-free delta (AR floor height − terrain height), metres. */
@@ -360,14 +367,6 @@ function isFiniteTick(tick: ElevationOffsetTick): boolean {
 }
 
 /** Lower median of a plain number list; null when empty. */
-function lowerMedian(values: readonly number[]): number | null {
-  if (values.length === 0) {
-    return null;
-  }
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[(sorted.length - 1) >> 1] ?? null;
-}
-
 /**
  * Per-tick aggregate for the freeze detector: the CONFIDENCE-WEIGHTED
  * lower median of the tick's finite sample values, using the same floored
@@ -375,31 +374,24 @@ function lowerMedian(values: readonly number[]): number | null {
  * hits form the numeric majority still aggregates to the good hits' value
  * instead of handing the detector an outlier. A per-HIT detector would
  * accumulate N× too fast on intra-tick-correlated hits.
+ *
+ * `null` for a tick with no finite sample. That empty case is the only
+ * reason this wraps {@link weightedMedian} rather than being it: the
+ * shared helper returns NaN there, and every caller here branches on null.
  */
 function tickAggregate(
   samples: readonly ElevationOffsetSample[]
 ): number | null {
-  const entries = samples
-    .filter((s) => Number.isFinite(s.sampleM))
-    .map((s) => ({ v: s.sampleM, w: confidenceWeight(s.confidence) }))
-    .sort((a, b) => a.v - b.v);
-  if (entries.length === 0) {
+  const finite = samples.filter((s) => Number.isFinite(s.sampleM));
+  if (finite.length === 0) {
     return null;
   }
-  let totalWeight = 0;
-  for (const e of entries) {
-    totalWeight += e.w;
-  }
-  const half = totalWeight / 2;
-  let acc = 0;
-  for (const e of entries) {
-    acc += e.w;
-    if (acc >= half) {
-      return e.v;
-    }
-  }
-  // Weights are floored strictly above 0, so the loop always returns.
-  return entries[entries.length - 1]?.v ?? null;
+  // `confidenceWeight` floors strictly above 0 and is always finite, so
+  // `weightedMedian` drops nothing and never reaches its own fallback.
+  return weightedMedian(
+    finite.map((s) => s.sampleM),
+    finite.map((s) => confidenceWeight(s.confidence))
+  );
 }
 
 /** Mean of the tick's sample confidences (0 for a sample-less tick). */
@@ -572,10 +564,10 @@ class SlewLimitedFrozenMedianEstimator implements ElevationOffsetEstimator {
     if (aggregateM == null || this.outputM == null) {
       return false;
     }
-    const referenceM = lowerMedian(this.recentAggregates);
-    if (referenceM == null) {
+    if (this.recentAggregates.length === 0) {
       return false;
     }
+    const referenceM = lowerMedian(this.recentAggregates);
     const innovation = aggregateM - referenceM;
     const drift = this.opts.freeze.driftPerTickM;
     this.posSum = Math.max(0, this.posSum + innovation - drift);

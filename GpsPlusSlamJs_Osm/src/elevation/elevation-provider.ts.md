@@ -23,7 +23,10 @@ unanswered }`, counts of **positions** (not requests), accumulated over the
   served this session" — the seam itself deliberately carries no per-sample
   provenance, so without these counters a silent everything-fell-back session
   is indistinguishable from one the high-resolution primary served.
-- `median(values): number | undefined`
+- `median(values): number | undefined` — **no longer defined here.** It moved
+  to [`../utils/median.ts`](../utils/median.ts.md) when the package's second
+  copy (in `regions/region-builder.ts`) was folded in; this module imports it,
+  and the `elevation/` barrel still re-exports it so consumers see no change.
 
 ## Invariants & assumptions
 
@@ -80,9 +83,11 @@ const layered = fallbackProvider(
 
 ## Tests
 
-`elevation-provider.test.ts` — the null provider's `undefined`, median
-behaviour including order-independence and the empty case, consensus rejecting
-an outlier, surviving a failing provider, ignoring non-finite samples,
+`median` itself is pinned by [`../utils/median.test.ts`](../utils/median.ts.md),
+where the implementation lives.
+
+`elevation-provider.test.ts` — the null provider's `undefined`, consensus
+rejecting an outlier, surviving a failing provider, ignoring non-finite samples,
 deduplicated attribution, and `fallbackProvider`: primary answers all / none /
 some, the fallback receiving ONLY the gaps in one batched call, in-order
 merging, surviving a failing fallback, abort propagation from both stages,

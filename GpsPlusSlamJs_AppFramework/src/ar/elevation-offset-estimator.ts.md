@@ -46,6 +46,9 @@ Defined entirely in sample space: on a hillside the terrain model mirrors the cl
 - `confidence ∈ [0, 1]`; `offsetM === null` implies `confidence === 0` and `frozen === false`.
 - Non-finite tick fields skip the whole tick (previous state republished); non-finite `sampleM`/`posE`/`posN` drop that sample; non-finite confidence is floored. Arbitrary junk on a monotone-time stream never throws (property-tested).
 - The estimator is intended to be called at the ~1 Hz floor-estimate cadence; the slew limit is wall-clock-based (`tMs` deltas), so irregular cadences stay correctly rate-limited — and bounded by `MAX_SLEW_DT_S`, so a WITHHELD stretch of ticks cannot be cashed in as one large step.
+- **Its two median rules come from [`utils/median.ts`](../utils/median.ts.md), not from private copies.** The CUSUM reference is `lowerMedian` and the per-tick aggregate is `weightedMedian`; both return an OBSERVED sample rather than an average of two middles, which is what makes a step detector's reference a real elevation. The module had its own `lowerMedian` and an inlined weighted-median loop until 2026-08-29 — the named one is now held by `tests/repo-config/duplicate-helpers.test.js`, the inlined one is not holdable by any name-keyed guard.
+  - `utils/median.ts` imports nothing, so the module docblock's purity claim ("no clocks, no I/O, no THREE, no Redux") still holds with that one import.
+  - **`windowMedian()` deliberately keeps its own weighted-median loop.** It is fused with the per-tick mass accumulation over the same sorted pass, and splitting the two would add two array allocations per tick on the estimator's hot path to save no lines a reader would thank you for.
 
 ## Examples
 

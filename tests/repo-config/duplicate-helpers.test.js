@@ -94,6 +94,37 @@ const CANONICAL = [
     rule: 'perPackage',
     why: 'three character-identical copies three files apart in one package',
   },
+  // The median family. `utils/median.ts` was created by the 2026-07-10
+  // quality review to replace SIX private copies carrying two silently
+  // different even-length rules, which is the most expensive unification in
+  // this list — and it was the one name the guard never learned, so a
+  // seventh copy appeared in the same package. Named exports get the
+  // `shared` rule because picking the wrong rule is the whole failure mode;
+  // the generic `median` gets `perPackage` for packages that cannot reach
+  // the framework.
+  {
+    name: 'interpolatingMedian',
+    rule: 'shared',
+    home: 'GpsPlusSlamJs_AppFramework/src/utils/median.ts',
+    why: 'the even-length rule is a contract — averaging two middles fabricates a value that was never observed',
+  },
+  {
+    name: 'lowerMedian',
+    rule: 'shared',
+    home: 'GpsPlusSlamJs_AppFramework/src/utils/median.ts',
+    why: 'the counterpart rule, and the copy that came back: elevation-offset-estimator.ts had its own by 2026-08-29',
+  },
+  {
+    name: 'weightedMedian',
+    rule: 'shared',
+    home: 'GpsPlusSlamJs_AppFramework/src/utils/median.ts',
+    why: 'its tie-breaking matches the core library’s private solver median, cross-checked in Investigation; a second copy here would drift from a helper it cannot see',
+  },
+  {
+    name: 'median',
+    rule: 'perPackage',
+    why: 'the unqualified name says nothing about the even-length rule, so two of them in one package is two rules nobody chose between - which is what GpsPlusSlamJs_Osm had',
+  },
 ];
 
 /**
