@@ -211,6 +211,12 @@ const entryFiles = [
   // exports wildcard advertises this subpath, so it must be built per-file.
   'src/utils/slider-scroll-guard.ts',
   'src/utils/format-distance.ts',
+  // Bearing normalizer — deep-imported by the OSM demo (NOT via the `/utils`
+  // barrel, which would pull in the logger and friends). The `./utils/*`
+  // exports wildcard advertises this subpath, so it must be built per-file.
+  // Shared rather than copied because the early return is a CONTRACT: without
+  // it `360 − ε` snaps to 0, a full turn that never happened.
+  'src/utils/bearing-degrees.ts',
   'src/utils/toast-core.ts',
   // QR launch payload codec — deep-imported by the TourViewer app: the decode
   // side (codec-dictionary) implements the ?qr= launch-handler dispatch, and

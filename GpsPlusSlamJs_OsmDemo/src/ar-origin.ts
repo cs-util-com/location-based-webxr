@@ -24,6 +24,7 @@
  */
 
 import type { LatLng } from "gps-plus-slam-osm";
+import { normalizeBearingDeg } from "gps-plus-slam-app-framework/utils/bearing-degrees";
 
 /** The framework's coordinate shape. `lon`, where this demo says `lng`. */
 export interface FrameworkLatLong {
@@ -151,7 +152,7 @@ export function nueBearingDeg(north: number, east: number): number | undefined {
   // spin the readout while the user holds the phone still, pointed down.
   if (Math.hypot(north, east) < 1e-6) return undefined;
   const deg = (Math.atan2(east, north) * 180) / Math.PI;
-  return ((deg % 360) + 360) % 360;
+  return normalizeBearingDeg(deg);
 }
 
 /**

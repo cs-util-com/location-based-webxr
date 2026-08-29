@@ -50,6 +50,13 @@ pointed at the Leaflet map, so it is a new feature rather than reuse.
 - `bearingDegrees(from, to) -> number` — initial great-circle bearing, in
   `[0, 360)`.
 - `compassPoint(bearing) -> string` — one of the eight points.
+- Both get their `[0, 360)` wrap from the framework's
+  `utils/bearing-degrees`, deep-imported, rather than implementing it. This
+  file had two copies of `((x % 360) + 360) % 360` until 2026-08-29 (and
+  `ar-origin.ts` a third). The shared version adds an early return for
+  already-in-range input — a correctness contract, not a shortcut: without it
+  `360 − ε` snaps to `0`, and `compassPoint` would then label a bearing one
+  ulp short of north as due north via the wrong branch.
 - `formatEventDistance(metres) -> string` — `"640 m"` below a kilometre, else
   `"1.2 km"`.
   - A thin wrapper over the framework's `utils/format-distance`, holding **this

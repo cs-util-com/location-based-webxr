@@ -30,6 +30,7 @@
 
 import { formatDistance } from "gps-plus-slam-app-framework/utils/format-distance";
 import type { GeoEvent, LatLng } from "gps-plus-slam-osm";
+import { normalizeBearingDeg } from "gps-plus-slam-app-framework/utils/bearing-degrees";
 
 /** The eight compass points, in bearing order from north. */
 const COMPASS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"] as const;
@@ -85,12 +86,12 @@ export function bearingDegrees(from: LatLng, to: LatLng): number {
   const x =
     Math.cos(fromLat) * Math.sin(toLat) -
     Math.sin(fromLat) * Math.cos(toLat) * Math.cos(dLng);
-  return ((((Math.atan2(y, x) * 180) / Math.PI) % 360) + 360) % 360;
+  return normalizeBearingDeg((Math.atan2(y, x) * 180) / Math.PI);
 }
 
 /** The nearest of the eight compass points to a bearing. */
 export function compassPoint(bearing: number): string {
-  const normalised = ((bearing % 360) + 360) % 360;
+  const normalised = normalizeBearingDeg(bearing);
   // +0.5 then floor, so each point owns the 45 degrees CENTRED on it — a bare
   // floor would label due north "NE" for its entire eastern half.
   const index = Math.floor(normalised / 45 + 0.5) % COMPASS.length;

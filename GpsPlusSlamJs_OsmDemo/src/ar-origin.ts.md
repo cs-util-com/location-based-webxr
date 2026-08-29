@@ -110,6 +110,13 @@ Tests cover the four cardinals, a **clockwise**-from-north case at 45° (a
 swapped `atan2` passes N/S/E/W and fails only off-axis), the `[0, 360)` range,
 and the degenerate refusals.
 
+The `[0, 360)` wrap itself is **not implemented here** — it comes from the
+framework's `utils/bearing-degrees`, deep-imported. This file carried its own
+`((deg % 360) + 360) % 360` until 2026-08-29, as did `event-label.ts` twice
+over; the shared version adds an early return for already-in-range input, which
+is a correctness contract rather than a shortcut (without it `360 − ε` re-enters
+the double-mod and snaps to `0`, a full turn that never happened).
+
 ## `fieldMatchesArDatum` — is the held terrain AR's, or still the desktop's?
 
 A **type guard** (so the caller keeps its `Heightfield` methods after the check)
