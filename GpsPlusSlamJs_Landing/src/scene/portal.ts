@@ -12,6 +12,8 @@ import {
   type Vector3,
 } from "three";
 import { clayMesh, namedGroup, type ScenePalette } from "./palette";
+import { clamp01 } from "../clamp01.js";
+import { smoothstep } from "../smoothstep.js";
 
 /**
  * Forest portal monument (golden-hour rebuild 2026-07-19, replacing the
@@ -65,8 +67,7 @@ export function portalInteriorColorAt(
   elevation01: number,
   palette: ScenePalette,
 ): Color {
-  const t = Math.min(1, Math.max(0, elevation01));
-  const smooth = t * t * (3 - 2 * t);
+  const smooth = smoothstep(clamp01(elevation01));
   return new Color(palette.portalInterior.bottom).lerp(
     new Color(palette.portalInterior.top),
     smooth,
