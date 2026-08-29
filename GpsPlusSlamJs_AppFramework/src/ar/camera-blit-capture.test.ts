@@ -872,6 +872,49 @@ describe('camera-blit-capture', () => {
 
     /**
      * Why this test matters:
+     * `computeAspectFitSize`, directly below in the same file, guards NaN and
+     * Infinity explicitly and its comment names the consequence — "{NaN, NaN}
+     * ... would crash render-target alloc". This function, written earlier,
+     * never learned: `cameraWidth <= 0` is FALSE for NaN, so NaN flows through
+     * `Math.floor` and survives `Math.max(1, NaN)`, which returns NaN.
+     * Infinity likewise passes `<= 0` and yields an infinite edge.
+     *
+     * The zero case above passed throughout, because zero is the one invalid
+     * dimension the original guard actually catches.
+     */
+    it('returns fallback for NaN or Infinite camera dimensions', () => {
+      for (const [w, h] of [
+        [Number.NaN, Number.NaN],
+        [Number.NaN, 1080],
+        [Number.POSITIVE_INFINITY, 1080],
+        [1920, Number.POSITIVE_INFINITY],
+      ] as const) {
+        const result = computeCaptureSize(w, h, 1);
+        expect(Number.isFinite(result.width), `width for ${w}x${h}`).toBe(true);
+        expect(Number.isFinite(result.height), `height for ${w}x${h}`).toBe(
+          true
+        );
+        expect(result.width).toBeGreaterThan(0);
+        expect(result.height).toBeGreaterThan(0);
+      }
+    });
+
+    /**
+     * Why this test matters: a non-finite DIVISOR is the third way in. NaN
+     * fails `divisor >= 1` and so already falls back to 1, but Infinity
+     * passes it and drives both edges to `Math.floor(x / Infinity) = 0`,
+     * which `Math.max(1, ...)` then pins to a 1x1 render target — technically
+     * valid, silently useless. Pinned so the guard covers the whole input.
+     */
+    it('treats a non-finite divisor as full resolution', () => {
+      for (const divisor of [Number.NaN, Number.POSITIVE_INFINITY]) {
+        const result = computeCaptureSize(1920, 1080, divisor);
+        expect(result).toEqual({ width: 1920, height: 1080 });
+      }
+    });
+
+    /**
+     * Why this test matters:
      * A divisor <1 is nonsensical (would upscale). The function must
      * treat it as 1 (full resolution) to avoid generating textures
      * larger than the source.

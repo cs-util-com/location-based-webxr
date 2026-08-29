@@ -11,7 +11,11 @@
 
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
-import { CameraBlitCapture, computeAspectFitSize } from './camera-blit-capture';
+import {
+  CameraBlitCapture,
+  computeAspectFitSize,
+  computeCaptureSize,
+} from './camera-blit-capture';
 
 describe('camera-blit-capture property tests', () => {
   describe('CameraBlitCapture.isBlackFrame', () => {
@@ -85,6 +89,86 @@ describe('camera-blit-capture property tests', () => {
      */
     it('considers empty buffer as black', () => {
       expect(CameraBlitCapture.isBlackFrame(new Uint8Array(0))).toBe(true);
+    });
+  });
+
+  describe('computeCaptureSize', () => {
+    /**
+     * Property: whatever it is handed, the result is a usable render-target
+     * size — integer, ≥ 1, and FINITE on both axes.
+     *
+     * Why this test matters: this function had no property coverage at all
+     * while its neighbour `computeAspectFitSize` had two, and the gap is
+     * exactly where the bug lived — NaN and Infinity camera dimensions
+     * flowed through the old `<= 0` guard and out as non-finite sizes, which
+     * reach render-target allocation. The arbitrary here deliberately mixes
+     * the degenerate values in rather than sampling only sane cameras,
+     * because sane cameras were never the problem.
+     */
+    it('always yields a finite integer size ≥ 1', () => {
+      const dimension = fc.oneof(
+        fc.integer({ min: 1, max: 4000 }),
+        fc.constantFrom(
+          0,
+          -1,
+          Number.NaN,
+          Number.POSITIVE_INFINITY,
+          Number.NEGATIVE_INFINITY
+        )
+      );
+      const divisorArb = fc.oneof(
+        fc.integer({ min: 1, max: 64 }),
+        fc.constantFrom(0, 0.5, -2, Number.NaN, Number.POSITIVE_INFINITY)
+      );
+
+      fc.assert(
+        fc.property(
+          dimension,
+          dimension,
+          divisorArb,
+          (cameraWidth, cameraHeight, divisor) => {
+            const { width, height } = computeCaptureSize(
+              cameraWidth,
+              cameraHeight,
+              divisor
+            );
+
+            expect(Number.isFinite(width)).toBe(true);
+            expect(Number.isFinite(height)).toBe(true);
+            expect(Number.isInteger(width)).toBe(true);
+            expect(Number.isInteger(height)).toBe(true);
+            expect(width).toBeGreaterThanOrEqual(1);
+            expect(height).toBeGreaterThanOrEqual(1);
+          }
+        )
+      );
+    });
+
+    /**
+     * Property: a divisor never UPSCALES. Whatever the divisor, neither output
+     * edge exceeds the camera's own — that is the entire contract of a
+     * "divisor", and the `divisor >= 1 ? divisor : 1` clamp exists to keep it.
+     */
+    it('never returns an edge larger than the camera for valid input', () => {
+      fc.assert(
+        fc.property(
+          fc.integer({ min: 1, max: 4000 }),
+          fc.integer({ min: 1, max: 4000 }),
+          fc.oneof(
+            fc.integer({ min: 1, max: 64 }),
+            fc.constantFrom(0, 0.5, -2, Number.NaN)
+          ),
+          (cameraWidth, cameraHeight, divisor) => {
+            const { width, height } = computeCaptureSize(
+              cameraWidth,
+              cameraHeight,
+              divisor
+            );
+            expect(width).toBeLessThanOrEqual(cameraWidth);
+            expect(height).toBeLessThanOrEqual(cameraHeight);
+          }
+        )
+      );
     });
   });
 
