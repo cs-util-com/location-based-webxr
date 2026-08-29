@@ -11,6 +11,7 @@
 
 import type { ByteSource } from './byte-source.js';
 import {
+  isDefinitivelyGone,
   parseContentRangeTotal,
   type ArchiveValidators,
   type ProbeResult,
@@ -141,7 +142,7 @@ export async function fetchRemoteValidators(
       cache: 'no-cache',
       signal: AbortSignal.timeout(HEAD_TIMEOUT_MS),
     });
-    if (head.status === 404 || head.status === 410) {
+    if (isDefinitivelyGone(head.status)) {
       return { kind: 'missing' };
     }
     // Only a SUCCESSFUL HEAD may size the archive: a 403 also carries a

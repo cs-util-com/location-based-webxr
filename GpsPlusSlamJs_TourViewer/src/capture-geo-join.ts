@@ -158,6 +158,18 @@ export function assessReplayedJoin(state: ReplayedJoinState): JoinAssessment {
   if (isIdentityMatrix4(toAlignmentMatrix(gpsData.gpsEvents.alignmentMatrix))) {
     return { ok: false, reason: "the recording's GPS alignment never solved" };
   }
+  // The ROTATION from that same solve was read unguarded while the matrix
+  // beside it got two checks (PR #376 review). It is destructured straight
+  // into a `ThreeQuaternion`, so a short array yields `undefined` components
+  // and a non-finite one yields NaN — either way every capture gets a garbage
+  // ORIENTATION while the status line still reports "N photos at capture
+  // spots". That is the identical failure the position drop-guard below was
+  // added to stop, one axis over. Replayed recordings are untrusted disk
+  // data, so this is validated rather than assumed.
+  const rotation = gpsData.gpsEvents.alignmentRotation;
+  if (rotation.length !== 4 || !rotation.every((n) => Number.isFinite(n))) {
+    return { ok: false, reason: "the recording's alignment data is malformed" };
+  }
   if (gpsData.odometryPath.points.length === 0) {
     return { ok: false, reason: "the recording contains no captured photos" };
   }

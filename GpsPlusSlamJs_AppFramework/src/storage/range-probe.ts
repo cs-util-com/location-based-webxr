@@ -59,7 +59,27 @@ export type RangeProbeRejectCause =
   | 'unusable-link' // no size / opaque response — cannot range or read a body
   | 'cors' // cross-origin read blocked by the browser
   | 'corrupt' // truncated / garbage bytes / 416 on a non-empty archive
-  | 'missing'; // 404
+  | 'missing'; // 404 or 410 — see `isDefinitivelyGone`
+
+/**
+ * Is this status the host saying the resource is DELETED, as opposed to
+ * temporarily unreachable?
+ *
+ * Exists as one named predicate because the answer was given three different
+ * ways in one transport (PR #376 review): `remote-range-byte-source` tested
+ * `404 || 410`, this module and `open-remote-archive` tested only `404`, and
+ * the union above documented only `404`. The visible consequence: an archive
+ * deleted from a host that answers 410 reached the user as "That link cannot
+ * be opened as an archive" instead of "That file does not exist" — a wrong
+ * diagnosis of a correct server response.
+ *
+ * 410 Gone is a STRONGER statement than 404: the host asserts the resource
+ * existed and was removed. Anything that treats 404 as definitive must treat
+ * 410 as at least as definitive.
+ */
+export function isDefinitivelyGone(status: number): boolean {
+  return status === 404 || status === 410;
+}
 
 /** What the transport should do next. */
 export type FallbackDecision =
@@ -95,7 +115,7 @@ export function decideFallback(probe: ProbeResult): FallbackDecision {
     }
     return { mode: 'eager-local', body: probe.body };
   }
-  if (probe.status === 404) {
+  if (isDefinitivelyGone(probe.status)) {
     return { mode: 'reject', cause: 'missing' };
   }
   if (probe.status === 416) {

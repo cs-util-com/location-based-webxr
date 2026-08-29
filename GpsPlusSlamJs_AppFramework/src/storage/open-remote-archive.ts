@@ -27,6 +27,7 @@ import {
 } from './local-cache-byte-source.js';
 import {
   decideFallback,
+  isDefinitivelyGone,
   type ArchiveValidators,
   type RangeProbeRejectCause,
 } from './range-probe.js';
@@ -448,7 +449,7 @@ async function openFullDownload(
   if (!res.ok) {
     throw new OpenRemoteArchiveError(
       `full download of ${url} failed (${res.status})`,
-      res.status === 404 ? 'missing' : 'unusable-link'
+      isDefinitivelyGone(res.status) ? 'missing' : 'unusable-link'
     );
   }
   const blob = await res.blob();

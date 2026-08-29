@@ -226,7 +226,22 @@ export function createQrSightingAccumulator(
       // two and inflates the visit count the author acts on.
       burst.last = Math.max(burst.last, observation.timestamp);
       burst.detectionCount += 1;
-      burst.tail = observation;
+      // `tail` obeys the SAME no-rewind rule, and did not until now (PR #376
+      // review). It is where `summarize()` reads `alignmentMatrix`, `zero`
+      // and `alignmentSampleCount` — the fields `QrSighting` documents as
+      // "as of the burst's LAST detection", and the ones `qr-anchor-mint`
+      // mints its GPS reference from. Moving it unconditionally meant an
+      // out-of-order stamp could leave `lastTimestamp` correctly pinned to
+      // the newest detection while `tail` pointed at an OLDER one, so the
+      // documented contract was not the one the code held.
+      //
+      // Latent today: the feeder snapshots alignment at arrival, so the tail
+      // is freshest in practice. It stops being latent for exactly the
+      // second caller the `MintQrAnchorInput.sightings` ordering note was
+      // written for.
+      if (observation.timestamp >= burst.tail.timestamp) {
+        burst.tail = observation;
+      }
       // Keep the most RECENT poses: within one burst the later frames are
       // taken from more viewpoints, and the size estimate has converged
       // further by then.
