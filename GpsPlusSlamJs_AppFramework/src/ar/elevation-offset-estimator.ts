@@ -27,11 +27,12 @@
  * @see elevation-offset-estimator.ts.md for detailed documentation
  */
 
-// The one import, and it does not cost the purity stated above:
-// `utils/median.ts` imports nothing itself. Both selection rules used here
-// live there because they are contracts, not conveniences - which of the
-// two middles an even-length window returns is exactly the kind of silent
-// disagreement that consolidation was paid for.
+// Two imports, and neither costs the purity stated above: both modules import
+// nothing themselves. Each is here because it carries a CONTRACT, not because
+// it saves a line - which of the two middles an even-length window returns,
+// and whether a non-finite confidence reads as 0 or propagates, are exactly
+// the silent disagreements those consolidations were paid for.
+import { clamp01 } from '../utils/clamp01.js';
 import { lowerMedian, weightedMedian } from '../utils/median.js';
 
 /** One baseline-free floor-vs-terrain delta hit at its own ENU position. */
@@ -353,10 +354,6 @@ function confidenceWeight(confidence: number): number {
   return Math.min(1, Math.max(MIN_CONFIDENCE_WEIGHT, confidence));
 }
 
-function finiteConfidence(c: number): number {
-  return Number.isFinite(c) ? Math.min(1, Math.max(0, c)) : 0;
-}
-
 function isFiniteTick(tick: ElevationOffsetTick): boolean {
   return (
     Number.isFinite(tick.tMs) &&
@@ -400,8 +397,7 @@ function meanTickConfidence(samples: readonly ElevationOffsetSample[]): number {
     return 0;
   }
   return (
-    samples.reduce((a, s) => a + finiteConfidence(s.confidence), 0) /
-    samples.length
+    samples.reduce((a, s) => a + clamp01(s.confidence), 0) / samples.length
   );
 }
 
