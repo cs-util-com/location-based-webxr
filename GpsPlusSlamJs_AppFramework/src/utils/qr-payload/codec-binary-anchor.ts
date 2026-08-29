@@ -20,6 +20,7 @@
 
 import { decodeBase64Url, encodeBase64Url } from './base64url';
 import { utf8DecodeTotal, utf8Encode } from './utf8';
+import { normalizeBearingDeg } from '../bearing-degrees.js';
 
 const BINARY_VERSION = 0x01;
 const FLAG_NAME = 1;
@@ -211,7 +212,7 @@ function packAnchor(anchor: WireAnchor, out: number[]): void {
     pushInt16(out, Math.round(anchor.s * 100));
   }
   if (anchor.r !== undefined) {
-    const wrapped = ((anchor.r % 360) + 360) % 360;
+    const wrapped = normalizeBearingDeg(anchor.r);
     pushInt16(out, Math.round(wrapped * 10) % 3600);
   }
 }

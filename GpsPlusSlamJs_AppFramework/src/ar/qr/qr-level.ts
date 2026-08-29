@@ -15,6 +15,7 @@
  */
 
 import { bearingDeltaDeg, type Quaternion } from 'gps-plus-slam-js';
+import { normalizeBearingDeg } from '../../utils/bearing-degrees.js';
 import {
   deriveVerticalHeading,
   renormalizeUnitQuaternion,
@@ -161,7 +162,7 @@ function parseOrientation(
     );
   }
   const normalized = isFiniteNumber(headingDeg)
-    ? ((headingDeg % 360) + 360) % 360
+    ? normalizeBearingDeg(headingDeg)
     : undefined;
   if (rotation === undefined) {
     if (normalized === undefined) {

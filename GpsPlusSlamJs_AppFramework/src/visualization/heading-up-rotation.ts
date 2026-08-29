@@ -26,6 +26,7 @@
  */
 
 import { quat } from 'gl-matrix';
+import { normalizeBearingDeg } from '../utils/bearing-degrees.js';
 
 /** Baseline tilt: −π/2 about +X (lays the map flat, normal → world +Y). */
 const TILT_X_RAD = -Math.PI / 2;
@@ -96,5 +97,5 @@ export function viewAzimuthDeg(matrixWorldElements: ArrayLike<number>): number {
   const m8 = matrixWorldElements[8] ?? 0;
   const m10 = matrixWorldElements[10] ?? 0;
   const deg = Math.atan2(-m8, m10) * RAD_TO_DEG;
-  return ((deg % 360) + 360) % 360;
+  return normalizeBearingDeg(deg);
 }

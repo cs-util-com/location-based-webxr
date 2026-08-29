@@ -22,6 +22,7 @@ import type { LatLong, Quaternion } from 'gps-plus-slam-js';
 import { worldNueToGps } from '../../visualization/frame-conversions.js';
 import type { QrGeoPose } from './qr-gps-vote.js';
 import { rotateVectorByQuaternion } from './qr-pose.js';
+import { normalizeBearingDeg } from '../../utils/bearing-degrees.js';
 
 export interface MintQrGeoPoseInput {
   /** QR centre in GPS-world NUE metres (x=North, y=Up, z=East). NOTE the
@@ -143,5 +144,5 @@ export function deriveVerticalHeading(
   const localX = rotateVectorByQuaternion(rotation, [1, 0, 0]);
   // NUE: [0] = North, [2] = East; bearing clockwise from North.
   const bearing = (Math.atan2(localX[2], localX[0]) * 180) / Math.PI;
-  return ((bearing % 360) + 360) % 360;
+  return normalizeBearingDeg(bearing);
 }

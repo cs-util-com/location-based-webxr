@@ -38,6 +38,12 @@
 //  - **A class method or object-literal shorthand is not matched.**
 //    `class Util { clamp01(v) {} }` reads as a member, and matching that shape
 //    would collide with every ordinary method name.
+//  - **An UNTRACKED file is invisible.** `git ls-files` lists tracked paths
+//    only, so a canonical helper newly created and not yet `git add`ed is not
+//    found — which surfaces as the non-vacuity check below failing rather than
+//    as a missed duplicate, i.e. it fails loudly and in the safe direction.
+//    Staging the file fixes it; CI is unaffected because it only ever sees
+//    committed trees. Found on 2026-08-29 while adding `normalizeBearingDeg`.
 //
 // It is still worth having: every entry below is a unification that was paid
 // for once, and this is what stops it being undone by the next session that
@@ -119,6 +125,12 @@ const CANONICAL = [
     rule: 'shared',
     home: 'GpsPlusSlamJs_AppFramework/src/utils/median.ts',
     why: 'its tie-breaking matches the core library’s private solver median, cross-checked in Investigation; a second copy here would drift from a helper it cannot see',
+  },
+  {
+    name: 'normalizeBearingDeg',
+    rule: 'shared',
+    home: 'GpsPlusSlamJs_AppFramework/src/utils/bearing-degrees.ts',
+    why: 'six unnamed copies of `((deg % 360) + 360) % 360` in one package, and the early return that separates the correct form from them is a CONTRACT — without it `360 − ε` snaps to 0, a full turn that never happened (core-library fast-check counterexample −2.842e−14). A guard entry cannot see the unnamed form, but it can stop the seventh NAMED one',
   },
   {
     name: 'median',

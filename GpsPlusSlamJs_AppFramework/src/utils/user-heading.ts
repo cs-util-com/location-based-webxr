@@ -35,6 +35,7 @@
 
 import { vec3 } from 'gl-matrix';
 import type { Matrix4, Quaternion } from 'gps-plus-slam-js';
+import { normalizeBearingDeg } from './bearing-degrees.js';
 
 /** Camera-forward basis vector in the NUE-AR frame: `webxrToNUE([0,0,-1]) = [1,0,0]`. */
 const NUE_CAMERA_FORWARD: vec3 = [1, 0, 0];
@@ -124,5 +125,5 @@ export function computeUserHeadingDeg(input: UserHeadingInput): number | null {
   }
 
   const deg = Math.atan2(east, north) * RAD_TO_DEG;
-  return ((deg % 360) + 360) % 360;
+  return normalizeBearingDeg(deg);
 }
