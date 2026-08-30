@@ -54,7 +54,7 @@ imageHeight }`, emitted via `onDetection` on every lock. The last four are
 imageHeight }`, seven fields, not the three this line claimed until
   2026-08-30 (PR #378 review) — set during `detect` is the correct context
   read by `onLocked`.
-- **The solve pose is sampled WITH THE FRAME, not after the level fetch**
+- **The solve uses the DECODE-TIME pose sample, not a fresh one taken after the level fetch**
   (PR #379 review). `detection.corners` come from `image`, and
   `qrPoseWorld` is `cameraPose o qrPoseInCamera`, so the two must describe
   the same instant. The solve used to call `getCameraPose()` a SECOND time,
@@ -64,6 +64,14 @@ imageHeight }`, seven fields, not the three this line claimed until
   detection with two different poses. Both now use the single decode-time
   sample; a detection whose frame had no pose is dropped rather than solved
   against a later one.
+  - **It is not "the pose at the frame", and the wording matters** (PR #380
+    review, correcting this bullet). `rawCameraPose` is read AFTER
+    `await frontEnd.detect(image)`, so it still trails the frame the corners
+    came from by one decode latency - the same class of error as the one
+    removed, roughly three orders of magnitude smaller. `RgbaImage` carries
+    no timestamp or pose and `offerFrame` passes only the image, so closing
+    it is a seam change: see
+    [2026-08-30-0620-qr-pose-frame-pairing-followup.md](../../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-08-30-0620-qr-pose-frame-pairing-followup.md).
 - **Size lifecycle gate (Note 3):** the solve needs a size. Order: the level's
   authored `physicalSizeM`, else `resolveSizeM(text, level)` (e.g. a measured
   median). A `null`/absent size — OR a degenerate measured one (≤ 0, `NaN`,

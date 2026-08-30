@@ -67,11 +67,21 @@ taken instead of ringing them around the QR code.
       `Math.hypot` yields `NaN` and `Math.abs(NaN - 1) > 1e-3` is false, so
       a `NaN` quaternion comes back as a `NaN` quaternion rather than
       `undefined`.
-    - The capture path uses the RETURNED value, not the call as a predicate
-      (PR #379 review), so `rotationNue` is exactly unit rather than unit
-      only to within the 1e-3 tolerance. The ASSESSMENT path at
-      `assessReplayedJoin` still uses it as a predicate, correctly: it
-      returns a verdict, not a rotation.
+    - Both COMPOSED rotations use the RETURNED value, not the call as a
+      predicate, so `rotationNue` is exactly unit rather than unit only to
+      within the 1e-3 tolerance: the per-capture rotation since PR #379, and
+      the ALIGNMENT rotation since PR #380 - which matters more, because
+      `alignmentQuat` multiplies into every plane at once, `image-planes.ts`
+      copies it with no normalise, and Three composes the matrix as
+      `R * |q|^2`. An off-unit alignment therefore scaled the whole photo
+      constellation by up to ~0.2 %. Fixing one and not the other is the
+      same asymmetry this file has now been corrected for three times.
+    - The ASSESSMENT path at `assessReplayedJoin` still uses it as a
+      predicate, correctly: it returns a verdict, not a rotation.
+    - `computeCaptureGeoJoin` re-derives `toAlignmentMatrix` itself and
+      throws on a bad alignment rotation, so a caller that skips
+      `assessReplayedJoin` fails loudly instead of feeding NaN quaternions
+      into `ThreeQuaternion`.
 - `ReplayedJoinState` — structural slice of the replayed
   `CombinedRootState`, deliberately narrow so tests need no full store.
 

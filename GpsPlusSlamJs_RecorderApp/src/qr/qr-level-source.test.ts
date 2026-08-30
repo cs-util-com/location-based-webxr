@@ -264,6 +264,50 @@ describe('createQrLevelSource — the payload names the fetch host', () => {
     expect(source.stateFor(evil)?.kind).toBe('not-ours');
   });
 
+  it('allows a share-page host our own encoder can name, via normalisation', async () => {
+    // Why this test matters (PR #380 review): the gate ran on the payload AS
+    // PRINTED, but `openRemoteArchive` normalises before fetching - so a
+    // share PAGE link reached the network as a different host than the gate
+    // inspected. Our own token table has entries for `https://github.com/`
+    // and `https://drive.google.com/file/d/`, so every cloud-hosted tour was
+    // refused here while the TourViewer (no such gate) accepted the same
+    // printed code - and the refusal was cached `not-ours` for the session.
+    //
+    // A GitHub blob URL normalises to raw.githubusercontent.com, which the
+    // allowlist already names; nothing about the allowed SET changed, only
+    // which url is measured against it.
+    const open = vi.fn(() =>
+      Promise.resolve({ source: {}, dispose: () => undefined })
+    );
+    const source = createQrLevelSource({
+      allowedHosts: HOSTS,
+      assetPrefix: 'https://assets.test/',
+      openArchive: open,
+      readLevels: () => Promise.resolve(new Map()),
+    });
+    const blob = 'https://github.com/o/r/blob/main/tour.zip';
+    const text = `https://gps.csutil.com/?qr=${encodeURIComponent(blob)}`;
+    await source.fetchLevel(text);
+
+    expect(source.stateFor(text)?.kind).not.toBe('not-ours');
+    expect(open).toHaveBeenCalled();
+  });
+
+  it('still refuses a stranger that no normalisation rewrites', async () => {
+    // The widened READ must not widen the gate: an address our normaliser
+    // does not recognise passes through byte-identical and is still refused.
+    const open = vi.fn();
+    const source = createQrLevelSource({
+      allowedHosts: HOSTS,
+      assetPrefix: 'https://assets.test/',
+      openArchive: open as never,
+    });
+    const evil = `https://gps.csutil.com/?qr=${encodeURIComponent('https://evil.example/deep/x.zip')}`;
+    await source.fetchLevel(evil);
+    expect(source.stateFor(evil)?.kind).toBe('not-ours');
+    expect(open).not.toHaveBeenCalled();
+  });
+
   it('allows the hosts our own encoder can name', async () => {
     // The GitHub-template form expands to raw.githubusercontent.com, so that
     // host is allowed — the repo and path within it stay attacker-controlled,

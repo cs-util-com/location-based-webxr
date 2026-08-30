@@ -302,15 +302,24 @@ export function createQrTrackingController(
       return null;
     }
 
-    // The pose sampled WITH THE FRAME, not a fresh one. `detection.corners`
-    // come from `image`, and `qrPoseWorld` is `cameraPose o qrPoseInCamera`,
-    // so the two must describe the same instant. Re-sampling here paired the
-    // old frame's corners with a pose from AFTER `ensureLevel` - on a code's
+    // The DECODE-TIME sample: taken once, above, and used for BOTH the raw
+    // record and the solve - not re-sampled after the level fetch.
+    // `qrPoseWorld` is `cameraPose o qrPoseInCamera` and `qrPoseInCamera`
+    // derives from `image`'s corners, so re-sampling here paired the old
+    // frame's corners with a pose from AFTER `ensureLevel`; on a code's
     // first sighting that await is a real network round trip (the level
     // source opens a remote archive under a 15 s deadline), so the code got
     // anchored wherever the phone had moved to (PR #379 review). It also
     // made the raw record and the solved pose describe one detection with
     // two different poses.
+    //
+    // NOT "sampled with the frame", and the distinction is deliberate (PR
+    // #380 review): `rawCameraPose` is read after `await frontEnd.detect`,
+    // so it still trails the frame by one decode latency - the same class of
+    // error, three orders of magnitude smaller. Closing it needs a seam
+    // change (`RgbaImage` carries no timestamp or pose, and `offerFrame`
+    // passes only the image), filed rather than done here. See
+    // 2026-08-30-0620-qr-pose-frame-pairing-followup.md.
     const cameraPose = rawCameraPose;
     const intrinsics = getIntrinsics(image);
     if (!cameraPose || !intrinsics) {

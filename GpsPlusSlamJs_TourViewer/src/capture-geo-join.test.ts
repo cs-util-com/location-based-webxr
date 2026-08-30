@@ -39,6 +39,7 @@ function baseState(overrides?: {
       : never
     : never;
   pairCount?: number;
+  alignmentRotation?: readonly [number, number, number, number];
 }): ReplayedJoinState {
   return {
     gpsData: {
@@ -46,7 +47,7 @@ function baseState(overrides?: {
       gpsEvents: {
         gpsPositions: new Array<unknown>(overrides?.pairCount ?? 5).fill({}),
         alignmentMatrix: overrides?.matrix ?? translation(2, 0, 3),
-        alignmentRotation: [0, 0, 0, 1],
+        alignmentRotation: overrides?.alignmentRotation ?? [0, 0, 0, 1],
         gpsAccuracyMedian: 4.2,
       },
       odometryPath: {
@@ -314,6 +315,24 @@ describe("computeCaptureGeoJoin — captures it must refuse to place", () => {
           },
         ] as never,
       }),
+    );
+
+    expect(poses).toHaveLength(1);
+    const q = poses[0]!.rotationNue;
+    expect(Math.hypot(q[0], q[1], q[2], q[3])).toBeCloseTo(1, 9);
+  });
+
+  it("renormalizes the ALIGNMENT rotation, not just the per-capture one", () => {
+    // Why this test matters (PR #380 review): the previous round fixed the
+    // predicate-vs-value split for a capture's own rotation and left it in
+    // place for the alignment rotation - where it matters more, because
+    // `alignmentQuat` multiplies into EVERY plane. `image-planes.ts` does
+    // `mesh.quaternion.copy(...)` with no normalise, and Three composes the
+    // matrix as R*|q|^2, so an off-unit alignment scales the whole photo
+    // constellation by up to ~0.2 % at the 1e-3 tolerance.
+    const scale = 1 + 5e-4; // inside the tolerance, so it is ACCEPTED
+    const poses = computeCaptureGeoJoin(
+      baseState({ alignmentRotation: [0, 0, 0, scale] }),
     );
 
     expect(poses).toHaveLength(1);

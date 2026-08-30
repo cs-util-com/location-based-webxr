@@ -211,7 +211,24 @@ export function computeCaptureGeoJoin(
   }
   const zero = gpsData.zero;
   const matrix = toAlignmentMatrix(gpsData.gpsEvents.alignmentMatrix);
-  const [ax, ay, az, aw] = gpsData.gpsEvents.alignmentRotation;
+  // The RENORMALIZED value, not the raw one (PR #380 review). The previous
+  // round fixed this for the per-capture rotation and left it here, where it
+  // matters MORE: `alignmentQuat` multiplies into every plane at once, and
+  // `image-planes.ts` does `mesh.quaternion.copy(...)` with no normalise, so
+  // Three composes the matrix as R*|q|^2 - an off-unit alignment scales the
+  // whole photo constellation by up to ~0.2 % at the 1e-3 tolerance.
+  //
+  // This function is exported and re-derives `toAlignmentMatrix` itself, so
+  // it already declines to fully trust its input; trusting the rotation while
+  // checking the matrix beside it was the same asymmetry this file has now
+  // been corrected for three times.
+  const alignmentRotation = renormalizeUnitQuaternion(
+    gpsData.gpsEvents.alignmentRotation,
+  );
+  if (alignmentRotation === undefined) {
+    throw new Error("capture-geo-join: assess before computing");
+  }
+  const [ax, ay, az, aw] = alignmentRotation;
   const alignmentQuat = new ThreeQuaternion(ax, ay, az, aw);
   const basisQuat = new ThreeQuaternion().setFromRotationMatrix(WEBXR_TO_NUE);
   return gpsData.odometryPath.points.flatMap((point) => {

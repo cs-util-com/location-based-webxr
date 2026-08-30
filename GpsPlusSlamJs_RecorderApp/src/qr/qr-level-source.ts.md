@@ -61,6 +61,18 @@ Decision record:
   `https://ours.example/?qr=https://evil.example/x.zip` passes the first
   check. The RESOLVED archive URL's host is therefore checked too, against the
   asset prefix, the proxy, and the storage hosts our own encoder can name.
+  - **Measured against the NORMALIZED url**, not the payload as printed (PR
+    #380 review). `openRemoteArchive` normalizes before fetching, so a share
+    PAGE link reaches the network as a different host than a naive gate would
+    inspect. Our own token table names `https://github.com/` and
+    `https://drive.google.com/file/d/`, so every cloud-hosted tour was
+    refused here - and cached `not-ours` for the session - while the
+    TourViewer, which has no such gate, accepted the same printed code.
+  - This does NOT widen the gate: it points it at the request target, which
+    is strictly tighter than checking a string nothing fetches. No host was
+    added. A relative result carries no host, cannot leave our origin, and is
+    therefore ours by construction - that is the configured-proxy form whose
+    own JSDoc names `/api/drive-proxy`.
 
 ## Tests
 

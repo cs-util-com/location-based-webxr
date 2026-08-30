@@ -23,6 +23,10 @@
  */
 
 import { openRemoteArchive } from 'gps-plus-slam-app-framework/storage';
+// Deep-imported: the gate must ask the SAME module that rewrites the URL
+// on the way to the network, or the two drift and the gate inspects an
+// address nothing fetches.
+import { normalizeShareUrl } from 'gps-plus-slam-app-framework/storage/share-link';
 import { ByteSourceReader } from 'gps-plus-slam-app-framework/storage';
 import { parseQrLevelEntries } from 'gps-plus-slam-app-framework/ar/qr/qr-level-archive';
 import { qrCodeId } from 'gps-plus-slam-app-framework/utils/qr-payload/qr-code-id';
@@ -252,16 +256,36 @@ export function createQrLevelSource(deps: QrLevelSourceDeps): QrLevelSource {
  * host, the Drive proxy's host, and the storage hosts our own encoder can
  * produce. Anything else is a stranger's address that happened to travel
  * inside our launch URL.
+ *
+ * Gated on the NORMALIZED url - the address that will actually be fetched -
+ * not on the payload as printed (PR #380 review). `openRemoteArchive`
+ * normalizes internally, so a share PAGE link reaches the network as a
+ * different host than the one this saw: our own encoder's token table has
+ * entries for `https://github.com/` and `https://drive.google.com/file/d/`,
+ * and both were refused here while the TourViewer (which has no such gate)
+ * accepted the same printed code. Checking the pre-normalized string was
+ * therefore both too strict AND checking the wrong thing.
+ *
+ * This does not WIDEN the gate: it points it at the request target. A
+ * relative result carries no host and cannot leave our origin, so it is ours
+ * by construction - that is the configured-proxy form whose own JSDoc names
+ * `/api/drive-proxy`.
  */
 function isAllowedArchiveHost(
   archiveUrl: string,
   deps: QrLevelSourceDeps
 ): boolean {
+  const fetched = normalizeShareUrl(archiveUrl, {
+    ...(deps.corsProxyBaseUrl !== undefined
+      ? { corsProxyBaseUrl: deps.corsProxyBaseUrl }
+      : {}),
+  });
   let host: string;
   try {
-    host = new URL(archiveUrl).hostname.toLowerCase();
+    host = new URL(fetched).hostname.toLowerCase();
   } catch {
-    return false;
+    // Not absolute → same-origin → ours.
+    return true;
   }
   const allowed = new Set<string>(ARCHIVE_HOSTS);
   for (const candidate of [deps.assetPrefix, deps.corsProxyBaseUrl]) {
