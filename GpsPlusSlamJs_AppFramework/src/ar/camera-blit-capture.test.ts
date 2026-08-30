@@ -752,6 +752,36 @@ describe('camera-blit-capture', () => {
        * This is a PUBLIC method, so hardened in-repo call sites do not
        * cover it.
        */
+      /**
+       * Why this test matters (PR #379 review):
+       * the guard rejected non-finite but not non-INTEGER dimensions.
+       * `resizeIfNeeded` is documented to RETURN FALSE when its dimensions
+       * are invalid - the one contract a public setter has - but a
+       * fractional size was accepted, stored, and forwarded to
+       * `renderTarget.setSize` and `new Uint8Array(w * h * 4)`. Whether that
+       * allocation throws depends on whether the PRODUCT happens to be a
+       * whole number (512.5 x 384 x 4 is), which is precisely why the guard
+       * belongs on the dimensions and not on the product.
+       *
+       * Each case calls `resizeIfNeeded` ONCE: a second call with the same
+       * values returns false simply because nothing changed, which would
+       * make this pass against the very guard it is meant to pin.
+       */
+      it('refuses fractional dimensions', () => {
+        for (const [w, h] of [
+          [512.5, 384],
+          [512, 384.25],
+          [1.1, 1],
+        ] as const) {
+          blitCapture = new CameraBlitCapture({ width: 64, height: 64 });
+          let result: boolean | undefined;
+          expect(() => {
+            result = blitCapture.resizeIfNeeded(w, h);
+          }, `${w}x${h}`).not.toThrow();
+          expect(result, `${w}x${h}`).toBe(false);
+        }
+      });
+
       it('refuses NaN and Infinite dimensions, not just zero', () => {
         blitCapture = new CameraBlitCapture({ width: 64, height: 64 });
         for (const [w, h] of [

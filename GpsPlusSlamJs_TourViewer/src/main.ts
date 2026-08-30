@@ -694,12 +694,23 @@ async function placeJoinedCapturePlanes(
     return false;
   }
   const state = (await replayActions(actions, {
+    // Same bail contract as `decodeJoinedPoses` below. `onChunk` alone gave
+    // this run a place to NOTICE it had been superseded but no way to act:
+    // it could skip the status label while the replay kept dispatching into
+    // a store nobody would read - on device, during an XR session,
+    // competing with the frame loop (PR #379 review).
+    shouldContinue: () => generation === planesRunGeneration,
     onChunk: (done, total) => {
       if (generation !== planesRunGeneration) return;
       viewerPlanesInfo = `reading the walk ${String(done)}/${String(total)}…`;
       renderArStatus();
     },
   })) as unknown as ReplayedJoinState;
+  // An aborted replay returns a PARTIAL state by construction, so
+  // `assessReplayedJoin` would decline it and write a status naming the
+  // missing GPS data - a wrong reason, into a UI a newer run now owns.
+  // Bail silently instead.
+  if (generation !== planesRunGeneration) return false;
   const verdict = assessReplayedJoin(state);
   if (!verdict.ok) {
     viewerPlanesInfo = `photo ring (${verdict.reason})`;

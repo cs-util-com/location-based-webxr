@@ -302,7 +302,16 @@ export function createQrTrackingController(
       return null;
     }
 
-    const cameraPose = getCameraPose();
+    // The pose sampled WITH THE FRAME, not a fresh one. `detection.corners`
+    // come from `image`, and `qrPoseWorld` is `cameraPose o qrPoseInCamera`,
+    // so the two must describe the same instant. Re-sampling here paired the
+    // old frame's corners with a pose from AFTER `ensureLevel` - on a code's
+    // first sighting that await is a real network round trip (the level
+    // source opens a remote archive under a 15 s deadline), so the code got
+    // anchored wherever the phone had moved to (PR #379 review). It also
+    // made the raw record and the solved pose describe one detection with
+    // two different poses.
+    const cameraPose = rawCameraPose;
     const intrinsics = getIntrinsics(image);
     if (!cameraPose || !intrinsics) {
       active = null;

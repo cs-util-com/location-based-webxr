@@ -384,4 +384,51 @@ describe('createQrTrackingController — the raw facts of the solve', () => {
       expect(event.imageHeight).toBe(480);
     }
   });
+  it('solves with the pose sampled at DECODE time, not after the level fetch', async () => {
+    // Why this test matters (PR #379 review): `detection.corners` come from
+    // the decoded frame, and `qrPoseWorld` is `cameraPose o qrPoseInCamera`,
+    // so the pose must describe the SAME instant as the corners. The solve
+    // used to re-sample `getCameraPose()` after `await ensureLevel(...)`; on a
+    // first sighting that is a real network round trip, so the code was
+    // anchored wherever the phone had moved to. It also made the raw record
+    // and the solved pose disagree about one detection.
+    const decodeTimePose = {
+      position: [0, 0, 0] as const,
+      rotation: [0, 0, 0, 1] as const,
+    };
+    const afterFetchPose = {
+      position: [99, 99, 99] as const,
+      rotation: [0, 0, 0, 1] as const,
+    };
+    let sampled = 0;
+    // Typed with QrSolvePoseInput so `mock.calls` carries the argument type:
+    // an untyped `vi.fn()` infers a zero-arity signature, which vitest runs
+    // happily and `typecheck:tests` then rejects.
+    const solvePose = vi.fn((_input: QrSolvePoseInput) => solution);
+
+    const { controller } = setup({
+      solvePose,
+      getCameraPose: () => {
+        sampled += 1;
+        return sampled === 1 ? decodeTimePose : afterFetchPose;
+      },
+      // A level fetch that resolves on a later microtask, standing in for
+      // the remote archive read the first sighting really pays for.
+      fetchLevel: vi.fn(
+        () =>
+          new Promise<typeof level>((resolve) => {
+            setTimeout(() => {
+              resolve(level);
+            }, 0);
+          })
+      ),
+    });
+
+    controller.offerFrame(image);
+    await new Promise((r) => setTimeout(r, 5));
+    await flush();
+
+    expect(solvePose).toHaveBeenCalled();
+    expect(solvePose.mock.calls[0]?.[0]?.cameraPose).toEqual(decodeTimePose);
+  });
 });

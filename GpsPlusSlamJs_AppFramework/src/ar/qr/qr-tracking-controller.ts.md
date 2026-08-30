@@ -54,6 +54,16 @@ imageHeight }`, emitted via `onDetection` on every lock. The last four are
 imageHeight }`, seven fields, not the three this line claimed until
   2026-08-30 (PR #378 review) — set during `detect` is the correct context
   read by `onLocked`.
+- **The solve pose is sampled WITH THE FRAME, not after the level fetch**
+  (PR #379 review). `detection.corners` come from `image`, and
+  `qrPoseWorld` is `cameraPose o qrPoseInCamera`, so the two must describe
+  the same instant. The solve used to call `getCameraPose()` a SECOND time,
+  after `await ensureLevel(...)` - and on a code's first sighting that await
+  is a real network round trip, so the code was anchored wherever the phone
+  had moved to. It also let the raw record and the solved pose describe one
+  detection with two different poses. Both now use the single decode-time
+  sample; a detection whose frame had no pose is dropped rather than solved
+  against a later one.
 - **Size lifecycle gate (Note 3):** the solve needs a size. Order: the level's
   authored `physicalSizeM`, else `resolveSizeM(text, level)` (e.g. a measured
   median). A `null`/absent size — OR a degenerate measured one (≤ 0, `NaN`,

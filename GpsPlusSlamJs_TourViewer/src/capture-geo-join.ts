@@ -245,14 +245,25 @@ export function computeCaptureGeoJoin(
     // Unit norm too, for the same reason as the alignment rotation above:
     // `[0,0,0,0]` is finite and length-4 and composes to the IDENTITY, which
     // would place this capture facing East rather than dropping it.
+    // The finiteness check runs FIRST and is load-bearing:
+    // `renormalizeUnitQuaternion` does NOT reject non-finite input -
+    // `Math.hypot` yields NaN and `Math.abs(NaN - 1) > 1e-3` is false, so a
+    // NaN quaternion comes back as a NaN quaternion rather than `undefined`
+    // (PR #379 review raised the reverse; the code says otherwise).
     if (
       point.rotation.length !== 4 ||
-      !point.rotation.every((n) => Number.isFinite(n)) ||
-      renormalizeUnitQuaternion(point.rotation) === undefined
+      !point.rotation.every((n) => Number.isFinite(n))
     ) {
       return [];
     }
-    const [cx, cy, cz, cw] = point.rotation;
+    // Use the RETURNED value, not the call as a predicate: that is what
+    // `parseQrLevel` and `mintQrGeoPose` do, and it is what makes the
+    // writer/reader round-trip exact rather than merely within tolerance.
+    const rotation = renormalizeUnitQuaternion(point.rotation);
+    if (rotation === undefined) {
+      return [];
+    }
+    const [cx, cy, cz, cw] = rotation;
     // World orientation. The scene-root convention for a mesh carrying a
     // camera pose is `alignment × WEBXR_TO_NUE × R_webxr` (the same chain
     // qr-author-mode's mint uses). But the replayed STATE stores the

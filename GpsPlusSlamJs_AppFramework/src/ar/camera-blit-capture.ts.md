@@ -13,6 +13,17 @@ Background: `docs/2026-02-06-bug-camera-frames-black.md`; RGB path: `GpsPlusSlam
 - **`captureToPixels(renderer, cameraTexture): { pixels, width, height } | null`** — blit + readback only (steps A+B, shared with `captureToBlob`), returning the raw RGBA buffer for cheap per-point sampling (Iter 8). The returned `pixels` is the INTERNAL buffer — valid until the next capture or `resizeIfNeeded`; consume synchronously (e.g. `createRgbLookup`) or copy. Buffer is WebGL readback order (bottom-row-first). Null on failure/dispose, never throws.
 - **`captureToRgba(renderer, cameraTexture): { data: Uint8ClampedArray, width, height } | null`** — blit + readback + vertical flip, returning a FRESH, **top-left-origin** RGBA copy (safe to retain past the next capture). The efficient, lossless replacement for the QR demo's old JPEG→`OffscreenCanvas`→`getImageData` round-trip (B2). Use this to feed `BarcodeDetector`/OpenCV. Null on failure/dispose.
 - **`resizeIfNeeded(width, height): boolean`** — re-sizes target + buffer; no-op when unchanged/invalid/disposed. **"Invalid" means ≤ 0, NaN or ±Infinity** since 2026-08-29: the guard was `<= 0`, which is FALSE for NaN, so NaN and Infinity reached `setSize` and `new Uint8Array(w * h * 4)`. That is the same defect fixed in `computeCaptureSize` one commit earlier and MISSED here (PR #375 review) — one file, two entry points of the same kind, only one hardened, which is the third instance of that shape this branch has found. It matters despite both in-repo call sites now feeding hardened values, because this is a public method and the tests pinned only `0`.
+  - **Widened to "not a positive INTEGER" on 2026-08-30** (PR #379 review):
+    a fractional size was accepted, stored, and forwarded to
+    `new Uint8Array(w * h * 4)`, which throws `RangeError: Invalid typed
+array length` - an exception from a method whose contract is to RETURN
+    FALSE. Whether it throws depends on whether the PRODUCT happens to be a
+    whole number (512.5 x 384 x 4 is), which is exactly why the guard
+    belongs on the dimensions. `Number.isInteger` is false for NaN and
+    +-Infinity, so it subsumes the finiteness check above.
+  - `computeCaptureSize` and `computeAspectFitSize` need no integer check:
+    they floor/round their own results, so their outputs are integers by
+    construction. It is this public setter that takes arbitrary numbers.
 - **`getWidth(): number` / `getHeight(): number`** — current render-target dimensions. These equal the encoded JPEG's pixel size (the encode canvas is sized to the render target), so `webxr-session` reads them after `captureToBlob` to persist each captured frame's true width/height for aspect-correct frame-tile rendering (D1 of `2026-06-13-1311-frame-tile-rendering-bugs-user-feedback.md`) without decoding the blob.
 - **`CameraBlitCapture.isBlackFrame(pixels): boolean`** — sampled all-zero check (blit-failed detection vs. dark scene).
 - **`computeCaptureSize(cameraWidth, cameraHeight, divisor)`** — capture dimensions from native camera resolution and the user's resolution divisor. Integer, ≥ 1, **finite**, and never larger than the camera's own edges. Invalid camera dimensions (≤ 0 / NaN / ±Infinity) fall back to `DEFAULT_BLIT_CONFIG`; an invalid divisor (< 1 / NaN / Infinity) is treated as 1 (full resolution, no upscale).

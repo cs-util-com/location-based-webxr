@@ -486,11 +486,20 @@ export class CameraBlitCapture {
     // reason: `<= 0` is FALSE for NaN, so the old form let NaN and ±Infinity
     // through to `setSize` and to `new Uint8Array(w * h * 4)`. This is a
     // PUBLIC method, so hardened call sites elsewhere do not cover it.
+    // INTEGER, not merely finite (PR #379 review): `new Uint8Array(512.5 *
+    // 384 * 4)` throws `RangeError: Invalid typed array length`, so a
+    // fractional dimension escapes as an exception from a method documented
+    // to RETURN FALSE on invalid dimensions. `Number.isInteger` is false for
+    // NaN and +-Infinity, so it subsumes the finiteness check.
+    //
+    // `computeCaptureSize` and `computeAspectFitSize` need no such check:
+    // they floor/round their own results, so their outputs are integers by
+    // construction. It is this PUBLIC setter that takes arbitrary numbers.
     if (
-      !(newWidth > 0) ||
-      !Number.isFinite(newWidth) ||
-      !(newHeight > 0) ||
-      !Number.isFinite(newHeight)
+      !Number.isInteger(newWidth) ||
+      newWidth <= 0 ||
+      !Number.isInteger(newHeight) ||
+      newHeight <= 0
     ) {
       return false;
     }

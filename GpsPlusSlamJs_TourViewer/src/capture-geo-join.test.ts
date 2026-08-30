@@ -295,6 +295,32 @@ describe("computeCaptureGeoJoin — captures it must refuse to place", () => {
     expect(poses[0]?.imageFile).toBe("images/good.jpg");
   });
 
+  it("emits an exactly-unit rotation for a within-tolerance input", () => {
+    // Why this test matters (PR #379 review): the guard called
+    // `renormalizeUnitQuaternion` purely as a PREDICATE and then composed the
+    // raw value, so a quaternion that is unit only to within the 1e-3
+    // tolerance stayed slightly off-unit all the way to the mesh. The
+    // framework's other two callers of this contract (`parseQrLevel`,
+    // `mintQrGeoPose`) use the RETURNED value, which is what makes the
+    // writer/reader round-trip exact rather than merely close.
+    const scale = 1 + 5e-4; // inside the 1e-3 tolerance, so it is ACCEPTED
+    const poses = computeCaptureGeoJoin(
+      baseState({
+        points: [
+          {
+            imageFile: "images/slightly-off-unit.jpg",
+            position: [1, 0, 0],
+            rotation: [0, 0, 0, scale],
+          },
+        ] as never,
+      }),
+    );
+
+    expect(poses).toHaveLength(1);
+    const q = poses[0]!.rotationNue;
+    expect(Math.hypot(q[0], q[1], q[2], q[3])).toBeCloseTo(1, 9);
+  });
+
   it("keeps a capture whose altitude is legitimately zero", () => {
     // Why this test matters: zero is a VALID absolute altitude - the zero
     // reference sits at 0 in the fixture above - so the drop must key on
