@@ -218,6 +218,21 @@ export function computeCaptureGeoJoin(
     ) {
       return [];
     }
+    // The PER-CAPTURE rotation gets the same treatment as the solve's
+    // alignment rotation validated in `assessReplayedJoin` — it comes from
+    // the same untrusted replayed state, and the guard added there did not
+    // reach it (PR #377 review). A non-finite component survives the position
+    // check above, reaches `mesh.quaternion.copy(...)` in `image-planes.ts`,
+    // and the plane silently never renders — while `viewerPlanesInfo` still
+    // reports "N photos at capture spots", because `count` is
+    // `meshes.length`. That is the outcome the position drop-guard exists to
+    // prevent, one axis over. Drop the capture rather than place it wrongly.
+    if (
+      point.rotation.length !== 4 ||
+      !point.rotation.every((n) => Number.isFinite(n))
+    ) {
+      return [];
+    }
     const [cx, cy, cz, cw] = point.rotation;
     // World orientation. The scene-root convention for a mesh carrying a
     // camera pose is `alignment × WEBXR_TO_NUE × R_webxr` (the same chain

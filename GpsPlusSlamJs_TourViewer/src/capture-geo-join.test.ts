@@ -253,6 +253,40 @@ describe("computeCaptureGeoJoin — captures it must refuse to place", () => {
     expect(poses[0]?.imageFile).toBe("images/good.jpg");
   });
 
+  it("drops a capture whose ROTATION is not finite", () => {
+    // Why this test matters (PR #377 review): the sibling of the test above,
+    // and the axis its guard did not cover. A non-finite rotation component
+    // sails past the position check, reaches `mesh.quaternion.copy(...)` in
+    // `image-planes.ts`, and the plane silently never renders — while
+    // `viewerPlanesInfo` still reports "N photos at capture spots", because
+    // `count` is `meshes.length`. Identical visible outcome to the position
+    // case: the visitor is told the join succeeded and sees nothing.
+    const poses = computeCaptureGeoJoin(
+      baseState({
+        points: [
+          {
+            imageFile: "images/good.jpg",
+            position: [1, 0, 0],
+            rotation: [0, 0, 0, 1],
+          },
+          {
+            imageFile: "images/bad-rotation.jpg",
+            position: [1, 0, 0],
+            rotation: [0, Number.NaN, 0, 1],
+          },
+          {
+            imageFile: "images/short-rotation.jpg",
+            position: [1, 0, 0],
+            rotation: [0, 0, 1],
+          },
+        ] as never,
+      }),
+    );
+
+    expect(poses).toHaveLength(1);
+    expect(poses[0]?.imageFile).toBe("images/good.jpg");
+  });
+
   it("keeps a capture whose altitude is legitimately zero", () => {
     // Why this test matters: zero is a VALID absolute altitude - the zero
     // reference sits at 0 in the fixture above - so the drop must key on

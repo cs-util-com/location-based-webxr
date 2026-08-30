@@ -75,7 +75,11 @@ export interface QrAnchorQuality {
   detectionCount: number;
   /** Outlier-INCLUSIVE max pairwise rotation angle across sightings (deg). */
   rotationSpreadDeg: number;
-  /** Max pairwise distance between sightings' odometry positions (m). */
+  /**
+   * Outlier-INCLUSIVE max pairwise distance between sightings' odometry
+   * positions (m) — the same set as {@link rotationSpreadDeg}, which it was
+   * NOT until 2026-08-30 (it covered placeable sightings only).
+   */
   translationSpreadM: number;
   sizeM: number;
   sizeSpreadM: number;
@@ -281,15 +285,14 @@ function combinePlacements(
 function buildQuality(
   sightings: readonly QrSighting[],
   sortedSizes: readonly number[],
-  rotationSpreadDeg: number
+  rotationSpreadDeg: number,
+  translationSpreadM: number
 ): QrAnchorQuality {
   return {
     sightingCount: sightings.length,
     detectionCount: sightings.reduce((sum, s) => sum + s.detectionCount, 0),
     rotationSpreadDeg,
-    translationSpreadM: maxPairwiseDistanceM(
-      sightings.map((s) => s.odomPose.position)
-    ),
+    translationSpreadM,
     sizeM: interpolatingMedian(sortedSizes),
     sizeSpreadM:
       sortedSizes.length === 0
@@ -360,10 +363,24 @@ export function mintQrAnchorFromSightings(
   input: MintQrAnchorInput
 ): QrAnchorMintResult {
   const { sightings, nowIso } = input;
-  const rotationSpreadDeg =
-    sightings.length === 0
-      ? 0
-      : maxPairwiseRotationDeg(sightings.map((s) => s.odomPose.rotation));
+  // No empty-guard on either: both helpers start at `worst = 0` and their
+  // nested loops do not execute for an empty array, so the ternaries that
+  // used to sit here were provably dead branches — and removing them is what
+  // keeps this function under the complexity limit after the change below.
+  const rotationSpreadDeg = maxPairwiseRotationDeg(
+    sightings.map((s) => s.odomPose.rotation)
+  );
+  // Outlier-INCLUSIVE like the rotation spread beside it, and it was not
+  // (PR #377 review): it was computed inside buildQuality over PLACEABLE
+  // sightings only, so two numbers printed side by side covered different
+  // sets with nothing saying so. It is the only signal an author gets for a
+  // poster that was SLID rather than turned, and on an authoring walk the
+  // filtered-out sightings are exactly the early ones - precisely the visits
+  // a move would show up between. Not a gate input, so widening it changes a
+  // reported number and no decision.
+  const translationSpreadM = maxPairwiseDistanceM(
+    sightings.map((s) => s.odomPose.position)
+  );
 
   const refusal = refuseUnusable(input, rotationSpreadDeg);
   if (refusal !== null) return refusal;
@@ -384,7 +401,8 @@ export function mintQrAnchorFromSightings(
   const quality = buildQuality(
     placeable.map((p) => p.sighting),
     sortedSizes,
-    rotationSpreadDeg
+    rotationSpreadDeg,
+    translationSpreadM
   );
   // The gate ran over ALL sightings, so the spread it refused on is the one
   // reported, even when fewer were placeable.
