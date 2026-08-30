@@ -67,6 +67,10 @@ import {
   type QrLevelLookupState,
 } from './qr-level-source';
 import { QR_LAUNCH_HOSTS } from './qr-launch-hosts';
+// Shared with the TourViewer rather than re-decided here (DEC-H3): the
+// controller votes on every locked FRAME, so an unbudgeted code pins the
+// alignment centroid to the poster.
+import { createQrVoteBudget } from 'gps-plus-slam-app-framework/ar/qr/qr-vote-budget';
 import type { QrFrameSink } from '../ar/ar-session-resources';
 import {
   createQrSightingFeeder,
@@ -144,6 +148,25 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
    * so votes dispatched into the previous one must stop being subtracted.
    */
   let syntheticVotes = 0;
+
+  /**
+   * Per-code vote budget. Without it `dispatchVotes` fires on EVERY locked
+   * frame - roughly 8 Hz x 4 correspondences while a previously-authored
+   * code is in view - and those synthetic points pin the alignment centroid
+   * to the poster (PR #385 review). That matters more here than in the
+   * viewer: this alignment is what `qr-anchor-mint` mints every OTHER code
+   * in the session against, so the pinned centroid would propagate one
+   * code's error into every new `qr/<id>.json`.
+   */
+  // NOTE: unlike the TourViewer this wires no `resolveStablePose`, so these
+  // votes ride the RAW single-frame solve rather than the sliding-window
+  // filtered pose. Whether authoring should use the stable pose too is a
+  // design question with a real cost either way (the gate SKIPS votes while
+  // converging), filed with the measurement that would settle it:
+  // ../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-08-30-1520-recorder-vote-pose-stability-followup.md
+  const voteBudget = createQrVoteBudget();
+  /** The code the next vote batch belongs to; see `onDetection`. */
+  let lastVotedText: string | null = null;
 
   const sightings = createQrSightingFeeder({
     // The stored-GPS count includes this session's own synthetic votes -
@@ -225,6 +248,16 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
       // cache would keep the first failure for the whole session.
       shouldCacheLevel: (level) => levelSource.shouldCacheLevel(level),
       dispatchVotes: (votes) => {
+        const text = lastVotedText;
+        if (text === null) return;
+        // ACCEPTANCE first, budget second (the shared contract's order):
+        // `recordGpsEvent` silently no-ops until the session zero exists, so
+        // charging the budget for dropped votes would spend it on nothing -
+        // and `syntheticVotes` would over-report, permanently understating
+        // `alignmentSampleCount` and risking a false decline at the
+        // MIN_ALIGNMENT_SAMPLES gate (PR #385 review).
+        if (storeRef.get().getState().gpsData?.zero == null) return;
+        if (!voteBudget.tryConsume(text)) return;
         for (const vote of votes) {
           storeRef.get().dispatch(recordGpsEvent(vote));
           syntheticVotes += 1;
@@ -234,6 +267,12 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
       // decision D-A says a recording stays algorithm-agnostic whatever else
       // the session is doing, and a code whose level does not exist yet -
       // which is every code on an authoring walk - never reaches a lock.
+      onDetection: (event) => {
+        // The controller hands `dispatchVotes` no text, and `onDetection`
+        // runs BEFORE the vote for the same lock, so this is the code the
+        // next batch belongs to (same seam the TourViewer uses).
+        lastVotedText = event.text;
+      },
       onRawDetection: (raw) => {
         const projectionMatrix = getProjectionMatrix();
         if (projectionMatrix === null) return;
@@ -349,6 +388,9 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
     if (attached) {
       sightings.accumulator.reset();
       syntheticVotes = 0;
+      // The new store restarts its GPS list, so a code that spent its
+      // budget against the previous one must be allowed to vote again.
+      voteBudget.reset();
     }
     attached = true;
     const detach = store.subscribe(scheduleUpdate);

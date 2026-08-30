@@ -136,6 +136,28 @@ export function createQrLevelSource(deps: QrLevelSourceDeps): QrLevelSource {
     return state.kind === 'level' ? state.level : NO_LEVEL;
   }
 
+  /**
+   * Record a transport failure and advance its backoff ladder.
+   *
+   * Shared by the inner catch and the outer guard on `resolve` so a throw
+   * from ANY part of the lookup lands in the same `failed` state. Without
+   * the outer one, a throw from the awaits that precede the try left no
+   * state at all - `cached()` then returned `null` on the next frame and the
+   * whole path re-ran on every detection with no backoff whatsoever
+   * (PR #385 review).
+   */
+  function rememberFailure(text: string, err: unknown): QrLevel {
+    const previous = states.get(text);
+    const attempts = previous?.kind === 'failed' ? previous.attempts + 1 : 1;
+    const backoff = Math.min(RETRY_BASE_MS * 2 ** (attempts - 1), RETRY_MAX_MS);
+    return remember(text, {
+      kind: 'failed',
+      detail: err instanceof Error ? err.message : String(err),
+      retryAtMs: now() + backoff,
+      attempts,
+    });
+  }
+
   /** Is the cached answer still the answer, or may we ask again? */
   function cached(text: string): QrLevel | null {
     const state = states.get(text);
@@ -147,6 +169,25 @@ export function createQrLevelSource(deps: QrLevelSourceDeps): QrLevelSource {
     return NO_LEVEL;
   }
 
+  /**
+   * The whole lookup, including the two awaits that used to sit OUTSIDE the
+   * try (PR #385 review).
+   *
+   * `resolveQrPayload` and `qrCodeId` were awaited before it -
+   * `qrCodeId` documents `@throws Error when Web Crypto is unavailable` -
+   * so a throw there escaped the "never rejects" contract this module and
+   * `fetchLevel` both promise. Worse than a slow lookup: `remember()` is
+   * never reached, so no `failed` state is recorded, `cached()` returns
+   * `null` on the next frame, and the whole path re-runs on EVERY detection
+   * with no backoff - the precise failure the RETRY_BASE_MS ladder exists to
+   * prevent. `inFlight` does not help; its `.finally` clears on rejection
+   * too.
+   *
+   * The controller maps a rejected `fetchLevel` to `onError` ->
+   * `setStatus("error")`, and `detect()` flips back to `"scanning"` on the
+   * next frame, so a rejection also flaps the status at the detection
+   * cadence.
+   */
   async function resolve(text: string): Promise<QrLevel> {
     if (!qrCodeIsOurs(text, deps.allowedHosts)) {
       return remember(text, { kind: 'not-ours' });
@@ -220,18 +261,7 @@ export function createQrLevelSource(deps: QrLevelSourceDeps): QrLevelSource {
         archive.dispose();
       }
     } catch (err) {
-      const previous = states.get(text);
-      const attempts = previous?.kind === 'failed' ? previous.attempts + 1 : 1;
-      const backoff = Math.min(
-        RETRY_BASE_MS * 2 ** (attempts - 1),
-        RETRY_MAX_MS
-      );
-      return remember(text, {
-        kind: 'failed',
-        detail: err instanceof Error ? err.message : String(err),
-        retryAtMs: now() + backoff,
-        attempts,
-      });
+      return rememberFailure(text, err);
     } finally {
       // Whatever `pending` resolves to that the race never took ownership of
       // is an orphan. `archive === undefined` means the deadline won; an
@@ -257,9 +287,18 @@ export function createQrLevelSource(deps: QrLevelSourceDeps): QrLevelSource {
       // still in flight.
       const existing = inFlight.get(text);
       if (existing !== undefined) return existing;
-      const run = resolve(text).finally(() => {
-        inFlight.delete(text);
-      });
+      // `.catch` BEFORE `.finally`: `resolve` awaits `resolveQrPayload` and
+      // `qrCodeId` outside its own try, and `qrCodeId` throws when Web
+      // Crypto is unavailable. Without this the promise handed to the
+      // controller rejects - breaking the "never rejects" contract this
+      // interface states twice - and no `failed` state is recorded, so the
+      // backoff ladder never engages and every frame retries (PR #385
+      // review).
+      const run = resolve(text)
+        .catch((err: unknown) => rememberFailure(text, err))
+        .finally(() => {
+          inFlight.delete(text);
+        });
       inFlight.set(text, run);
       return run;
     },

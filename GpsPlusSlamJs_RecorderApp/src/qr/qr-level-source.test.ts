@@ -225,6 +225,45 @@ describe('createQrLevelSource — teardown', () => {
     expect(archiveDispose).toHaveBeenCalledTimes(1);
   });
 
+  it('never rejects even when the id hash throws, and records a backoff', async () => {
+    // Why this test matters (PR #385 review): the module header and
+    // `fetchLevel` both promise this never rejects, because the controller
+    // maps a rejection to `onError` -> status "error" and `detect()` flips
+    // back to "scanning" next frame - flapping the status at the detection
+    // cadence. But `resolveQrPayload` and `qrCodeId` were awaited OUTSIDE the
+    // try, and `qrCodeId` throws when Web Crypto is unavailable. Worse than
+    // the flap: `remember()` was never reached, so no `failed` state existed,
+    // `cached()` returned null next frame, and the path re-ran on EVERY
+    // detection with no backoff at all.
+    const subtle = globalThis.crypto?.subtle;
+    // Simulate the insecure-context case the docstring names.
+    Object.defineProperty(globalThis.crypto, 'subtle', {
+      configurable: true,
+      get: () => undefined,
+    });
+    try {
+      const open = vi.fn();
+      const source = createQrLevelSource({
+        allowedHosts: HOSTS,
+        assetPrefix: 'https://assets.test/',
+        openArchive: open as never,
+      });
+
+      await expect(source.fetchLevel(OURS)).resolves.toEqual({
+        version: 1,
+        qr: {},
+      });
+      // A `failed` state exists, so the backoff ladder engages instead of
+      // every frame re-running the whole lookup.
+      expect(source.stateFor(OURS)?.kind).toBe('failed');
+    } finally {
+      Object.defineProperty(globalThis.crypto, 'subtle', {
+        configurable: true,
+        value: subtle,
+      });
+    }
+  });
+
   it('stops ANSWERING after dispose, not just opening', async () => {
     // Why this test matters (PR #382 review): the sidecar's dispose()
     // contract is "abort in-flight work and stop answering", and the second

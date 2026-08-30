@@ -124,6 +124,7 @@ vi.mock('../state/recorder-store', () => ({
 import { createSlamAppStore } from 'gps-plus-slam-app-framework/state';
 import { NullStorageBackend } from 'gps-plus-slam-app-framework/storage';
 import { wireQrRecording } from './wire-qr-recording';
+import { MAX_VOTED_LOCKS_PER_CODE } from 'gps-plus-slam-app-framework/ar/qr/qr-vote-budget';
 
 // `recordGpsEvent` is licence-gated. Creating a store is the documented
 // activation path, and it is what production does at boot.
@@ -141,12 +142,16 @@ interface FakeStore {
   emit: () => void;
 }
 
-function makeStore(latestDepthSample: unknown = null): FakeStore {
+function makeStore(
+  latestDepthSample: unknown = null,
+  zero: { lat: number; lon: number } | null = null
+): FakeStore {
   const listeners = new Set<() => void>();
   return {
     getState: () => ({
       recording: { latestDepthSample },
       qrDetected: { maxHistory: 100, markers: {} },
+      gpsData: zero === null ? null : { zero },
     }),
     dispatch: vi.fn(),
     subscribe: (listener: () => void) => {
@@ -218,6 +223,62 @@ describe('wireQrRecording', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it('drops synthetic votes until the session zero exists', () => {
+    // Why this test matters (PR #385 review): `recordGpsEvent` silently
+    // no-ops until the session zero exists, so votes cast before the first
+    // real GPS fix - locking onto a previously-authored code indoors, at the
+    // start of an authoring walk - land nowhere. Counting them anyway
+    // permanently under-reported `alignmentSampleCount`, which can decline a
+    // session that really did have enough real fixes at the
+    // MIN_ALIGNMENT_SAMPLES gate. The budget must not be charged either.
+    const store = makeStore(null, null); // no zero yet
+    const { ref } = makeStoreRef(store);
+    wireQrRecording({
+      storeRef: ref as never,
+      getArWorldGroup: () => null,
+      qr: { ...qr, useLevels: true },
+      setProducer: vi.fn(),
+      readAlignment: NO_ALIGNMENT,
+    });
+
+    const config = capturedTrackingConfig.current!;
+    (config.onDetection as (e: { text: string }) => void)({ text: 'code-a' });
+    (config.dispatchVotes as (v: unknown[]) => void)([{}, {}, {}, {}]);
+
+    expect(store.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('caps synthetic votes per code instead of voting on every locked frame', () => {
+    // Why this test matters (PR #385 review): `onLocked` fires on every
+    // successful DETECTION once locked, not once per lock transition, so at
+    // the camera-frame cadence one previously-authored code in view injected
+    // four synthetic GPS points several times a second, unbounded. Those
+    // points pin the alignment centroid to the poster - and this alignment is
+    // what `qr-anchor-mint` mints every OTHER code against, so the pinned
+    // centroid propagates one code's error into every new `qr/<id>.json`.
+    // The TourViewer capped this in its own M4 review; the recorder wired the
+    // same controller with no cap at all.
+    const store = makeStore(null, { lat: 50.1, lon: 8.2 });
+    const { ref } = makeStoreRef(store);
+    wireQrRecording({
+      storeRef: ref as never,
+      getArWorldGroup: () => null,
+      qr: { ...qr, useLevels: true },
+      setProducer: vi.fn(),
+      readAlignment: NO_ALIGNMENT,
+    });
+
+    const config = capturedTrackingConfig.current!;
+    (config.onDetection as (e: { text: string }) => void)({ text: 'code-a' });
+    // Far more locked frames than the budget allows.
+    for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE + 25; i += 1) {
+      (config.dispatchVotes as (v: unknown[]) => void)([{}, {}, {}, {}]);
+    }
+
+    // Four correspondences per allowed batch, and not one more.
+    expect(store.dispatch).toHaveBeenCalledTimes(MAX_VOTED_LOCKS_PER_CODE * 4);
   });
 
   it('creates the producer with an EPOCH-ms clock matching the depth stream (the as-of join)', () => {
@@ -464,7 +525,9 @@ describe('wireQrRecording — the level-consuming callbacks', () => {
   });
 
   function wireWithLevels(latestDepthSample: unknown) {
-    const store = makeStore(latestDepthSample);
+    // A session zero, because `recordGpsEvent` no-ops without one and the
+    // vote gate refuses to spend the budget on dropped votes (PR #385).
+    const store = makeStore(latestDepthSample, { lat: 50.1, lon: 8.2 });
     const { ref } = makeStoreRef(store);
     const dispose = wireQrRecording({
       storeRef: ref as never,
@@ -473,7 +536,13 @@ describe('wireQrRecording — the level-consuming callbacks', () => {
       setProducer: vi.fn(),
       readAlignment: NO_ALIGNMENT,
     });
-    return { store, dispose, config: capturedTrackingConfig.current! };
+    const config = capturedTrackingConfig.current!;
+    // The budget is PER CODE, and the controller names the code through
+    // `onDetection` before the vote for the same lock.
+    (config.onDetection as (e: { text: string }) => void)({
+      text: 'https://gps.csutil.com/?qr=x',
+    });
+    return { store, dispose, config };
   }
 
   const depthSample = {
@@ -888,7 +957,7 @@ describe('wireQrRecording — synthetic votes must not count as GPS support', ()
         ) => { alignmentSampleCount: number }[];
       };
     } | null = null;
-    const { ref } = makeStoreRef(makeStore());
+    const { ref } = makeStoreRef(makeStore(null, { lat: 50.1, lon: 8.2 }));
     wireQrRecording({
       storeRef: ref as never,
       getArWorldGroup: () => null,
@@ -918,7 +987,11 @@ describe('wireQrRecording — synthetic votes must not count as GPS support', ()
       get feeder() {
         return feeder!;
       },
-      config: capturedTrackingConfig.current!,
+      config: (() => {
+        const config = capturedTrackingConfig.current!;
+        (config.onDetection as (e: { text: string }) => void)({ text: TEXT });
+        return config;
+      })(),
     };
   }
 

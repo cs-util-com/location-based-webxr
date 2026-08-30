@@ -244,6 +244,9 @@ const entryFiles = [
   'src/ar/qr/qr-sighting-accumulator.ts',
   'src/ar/qr/qr-anchor-mint.ts',
   'src/ar/qr/qr-gps-vote.ts',
+  // Shared per-code vote budget: both the TourViewer and the RecorderApp
+  // gate their dispatchVotes on it (DEC-H3), so it must be deep-importable.
+  'src/ar/qr/qr-vote-budget.ts',
   'src/ar/qr/qr-tracking-controller.ts',
 
   // visualization/

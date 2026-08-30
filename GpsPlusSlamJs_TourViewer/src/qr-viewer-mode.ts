@@ -40,6 +40,10 @@ import type {
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
+import {
+  createQrVoteBudget,
+  MAX_VOTED_LOCKS_PER_CODE,
+} from "gps-plus-slam-app-framework/ar/qr/qr-vote-budget";
 
 /** Synthetic per-vote GPS accuracy (m) — the vote weight's input; M5 tunes. */
 export const VIEWER_SYNTHETIC_ACCURACY_M = 5;
@@ -47,8 +51,15 @@ export const VIEWER_SYNTHETIC_ACCURACY_M = 5;
 export const VIEWER_VOTE_BASELINE_M = 2;
 /** Correspondences per vote batch (`buildQrGpsVotes` count). */
 export const VIEWER_VOTE_COUNT = 4;
-/** Locked frames per code that actually vote (review #6); M5 tunes. */
-export const MAX_VOTED_LOCKS_PER_CODE = 10;
+/**
+ * Locked frames per code that actually vote (review #6); M5 tunes.
+ *
+ * Re-exported from the framework rather than declared here since PR #385:
+ * the RecorderApp wired the same controller with the same vote count and NO
+ * budget, so this was shared behaviour living in one app (DEC-H3). The name
+ * stays because the status line and this module's tests read it.
+ */
+export { MAX_VOTED_LOCKS_PER_CODE };
 
 /** The negative-cache placeholder: geo-less, size-less — never solves,
  *  never votes, and the controller caches it per decoded text. */
@@ -106,7 +117,7 @@ export function buildViewerControllerConfig(
    *  synchronously here. (Under the old `&c=` scheme two different texts
    *  could resolve to one code, which is why that version keyed by the
    *  resolved code instead.) */
-  const votedLocksByText = new Map<string, number>();
+  const voteBudget = createQrVoteBudget(MAX_VOTED_LOCKS_PER_CODE);
   return {
     frontEnd: deps.frontEnd,
     solvePose: (input) => deps.solvePose(input),
@@ -128,11 +139,9 @@ export function buildViewerControllerConfig(
       const text = lastDetectedText;
       if (text === null) return;
       if (!deps.canAcceptVotes()) return; // budget untouched — see the dep
-      const votedLocks = votedLocksByText.get(text) ?? 0;
-      if (votedLocks >= MAX_VOTED_LOCKS_PER_CODE) return;
-      votedLocksByText.set(text, votedLocks + 1);
+      if (!voteBudget.tryConsume(text)) return;
       for (const vote of votes) deps.dispatchVote(vote);
-      deps.onVotedLock?.(text, votedLocks + 1);
+      deps.onVotedLock?.(text, voteBudget.spentFor(text));
     },
     onDetection: (event) => {
       lastDetectedText = event.text;

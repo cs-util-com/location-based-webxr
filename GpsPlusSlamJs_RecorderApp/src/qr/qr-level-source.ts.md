@@ -19,6 +19,14 @@ Decision record:
     the same name. Returns `false` for the placeholder, which is what makes
     the backoff below reachable at all: without it the controller's per-URL
     cache would keep one transient failure for the session.
+  - `fetchLevel(text)` **never rejects — for the WHOLE lookup**, since PR
+    #385. `resolveQrPayload` and `qrCodeId` used to be awaited outside the
+    internal try, and `qrCodeId` throws when Web Crypto is unavailable, so a
+    throw there escaped the contract this file states twice. Worse than the
+    status flap that causes: `remember()` was never reached, so no `failed`
+    state existed, `cached()` returned `null` on the next frame, and the
+    whole path re-ran on EVERY detection with no backoff at all — the
+    precise failure the `RETRY_BASE_MS` ladder exists to prevent.
   - `dispose()` — abort in-flight work and stop answering. **Both halves**:
     after dispose, `onState` is no longer called, so a lookup that was in
     flight at teardown cannot repaint a HUD the session already cleared
