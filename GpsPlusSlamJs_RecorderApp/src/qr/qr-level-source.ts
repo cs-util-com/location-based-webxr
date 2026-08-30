@@ -197,16 +197,20 @@ export function createQrLevelSource(deps: QrLevelSourceDeps): QrLevelSource {
     // attacker-reachable archive then outliving both the deadline and
     // `dispose()`, on device, during a session. One line here makes that
     // self-correcting rather than dependent on an option staying unset.
-    let raceSettled = false;
+    //
+    // Decided on IDENTITY in the outer `finally`, not on a flag (PR #384
+    // review). A flag set inside the `catch` is at least two microtasks
+    // after the gate rejects - gate rejection, `Promise.race` rejection, the
+    // `await` continuation - and the handler on `pending` is registered
+    // FIRST, so an open settling anywhere inside that window ran with the
+    // flag still false and was disposed by neither the handler nor the inner
+    // `finally`. That is the very leak this block closes, at a tighter
+    // interleaving than a test can drive. `archive === undefined` is settled
+    // state by the time the outer `finally` runs, so it cannot race.
     const pending = openArchive(archiveUrl);
-    pending.then(
-      (opened) => {
-        if (raceSettled) opened.dispose();
-      },
-      () => undefined // the race reports the rejection; nothing to clean up
-    );
+    let archive: Awaited<ReturnType<typeof openArchive>> | undefined;
     try {
-      const archive = await deadline.race(pending);
+      archive = await deadline.race(pending);
       try {
         const levels = await deadline.race(readLevelsFrom(archive));
         const level = levels.get(id);
@@ -216,9 +220,6 @@ export function createQrLevelSource(deps: QrLevelSourceDeps): QrLevelSource {
         archive.dispose();
       }
     } catch (err) {
-      // The deadline (or a rejection) won: anything `pending` still resolves
-      // to is now an orphan, and the handler above disposes it.
-      raceSettled = true;
       const previous = states.get(text);
       const attempts = previous?.kind === 'failed' ? previous.attempts + 1 : 1;
       const backoff = Math.min(
@@ -232,6 +233,15 @@ export function createQrLevelSource(deps: QrLevelSourceDeps): QrLevelSource {
         attempts,
       });
     } finally {
+      // Whatever `pending` resolves to that the race never took ownership of
+      // is an orphan. `archive === undefined` means the deadline won; an
+      // identity mismatch covers it without a second thing to get right.
+      void pending.then(
+        (opened) => {
+          if (opened !== archive) opened.dispose();
+        },
+        () => undefined // the race already reported the rejection
+      );
       deadline.cancel();
       deadlines.delete(deadline);
     }

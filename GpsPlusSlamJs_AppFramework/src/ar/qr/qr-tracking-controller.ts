@@ -319,7 +319,7 @@ export function createQrTrackingController(
     // error, three orders of magnitude smaller. Closing it needs a seam
     // change (`RgbaImage` carries no timestamp or pose, and `offerFrame`
     // passes only the image), filed rather than done here. See
-    // 2026-08-30-0620-qr-pose-frame-pairing-followup.md.
+    // ../../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-08-30-0620-qr-pose-frame-pairing-followup.md
     const cameraPose = rawCameraPose;
     const intrinsics = getIntrinsics(image);
     if (!cameraPose || !intrinsics) {

@@ -32,7 +32,9 @@ export interface ByteSource {
    * becomes the contract is an open decision - `open-remote-archive.ts`
    * reasons as though clamping were it, which is part of why this is worth
    * settling rather than picking here. See
-   * `2026-08-30-1120-byte-source-eof-contract-followup.md`.
+   * `../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-08-30-1120-byte-source-eof-contract-followup.md`
+   * (the two-root layout this repo is developed in; same convention as
+   * `detection-scheduler.ts`).
    */
   read(offset: number, length: number): Promise<Uint8Array>;
 }

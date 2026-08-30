@@ -221,12 +221,13 @@ export function computeCaptureGeoJoin(
   // it already declines to fully trust its input; trusting the rotation while
   // checking the matrix beside it was the same asymmetry this file has now
   // been corrected for three times.
-  // Length and finiteness FIRST, exactly as the per-capture path below does
-  // and for the same documented reason: `renormalizeUnitQuaternion` does not
-  // reject non-finite input, so `[NaN, 0, 0, 1]` comes back as itself and a
-  // short array yields `[x, y, z, NaN]`. Checking only the norm here while
-  // checking both there was the same asymmetry one more time (PR #381
-  // review), and it made the sidecar's "fails loudly" claim untrue.
+  // Validated by the same shared contract as every other rotation in this
+  // file: since PR #383 `renormalizeUnitQuaternion` rejects short and
+  // non-finite input itself, so the hand-written prelude that used to sit
+  // here (added by the PR #381 review) is gone rather than written a fourth
+  // time. This comment asserted the OPPOSITE for one round after the change
+  // that invalidated it - the two sibling sites were updated and this one
+  // was missed (PR #384 review).
   const alignmentRotation = renormalizeUnitQuaternion(
     gpsData.gpsEvents.alignmentRotation,
   );

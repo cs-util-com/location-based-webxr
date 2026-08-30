@@ -182,6 +182,49 @@ describe('createQrLevelSource — teardown', () => {
     expect(archiveDispose).toHaveBeenCalledTimes(1);
   });
 
+  it('disposes a late archive even when it settles right after the deadline', async () => {
+    // Why this test matters (PR #384 review): the first fix used a flag set
+    // inside the `catch`, which is at least two microtasks after the gate
+    // rejects. The disposal handler was registered FIRST, so an open
+    // settling inside that window ran with the flag still false and was
+    // disposed by nobody. The sibling test settles the open long afterwards,
+    // so it never reached that interleaving.
+    //
+    // Here the open resolves in the SAME turn the teardown rejects the race,
+    // which is the window the flag lost.
+    const archiveDispose = vi.fn();
+    let resolveOpen: (() => void) | undefined;
+    const source = createQrLevelSource({
+      allowedHosts: HOSTS,
+      assetPrefix: 'https://assets.test/',
+      openArchive: () =>
+        new Promise((resolve) => {
+          resolveOpen = () => {
+            resolve({ source: {}, dispose: archiveDispose });
+          };
+        }) as never,
+    });
+
+    const pending = source.fetchLevel(OURS);
+    // WAIT for the open to actually start. `fetchLevel` awaits `qrCodeId`
+    // first, so a single microtask leaves `resolveOpen` undefined and the
+    // interleaving below never happens - the first draft of this test
+    // passed vacuously for exactly that reason.
+    while (resolveOpen === undefined) {
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    // Tear down and settle the open back to back, with no turns in between:
+    // this is the window a flag set in the `catch` loses.
+    source.dispose();
+    resolveOpen();
+    await pending;
+    // Flush: the disposal handler is registered in the outer finally,
+    // several links down a promise chain.
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(archiveDispose).toHaveBeenCalledTimes(1);
+  });
+
   it('stops ANSWERING after dispose, not just opening', async () => {
     // Why this test matters (PR #382 review): the sidecar's dispose()
     // contract is "abort in-flight work and stop answering", and the second
