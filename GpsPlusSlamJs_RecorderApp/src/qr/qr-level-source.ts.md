@@ -15,7 +15,14 @@ Decision record:
   - `fetchLevel(text)` — wire into the tracking controller's `fetchLevel`.
     **Never rejects.**
   - `stateFor(text)` — the last thing that happened, for the status line.
-  - `dispose()` — abort in-flight work and stop answering.
+  - `shouldCacheLevel(level)` — wire into the tracking controller's option of
+    the same name. Returns `false` for the placeholder, which is what makes
+    the backoff below reachable at all: without it the controller's per-URL
+    cache would keep one transient failure for the session.
+  - `dispose()` — abort in-flight work and stop answering. **Both halves**:
+    after dispose, `onState` is no longer called, so a lookup that was in
+    flight at teardown cannot repaint a HUD the session already cleared
+    (PR #382 review - only the "abort" half was implemented).
 - `QrLevelLookupState` — `level | absent | not-ours | failed`.
 - Injectable `openArchive` / `readLevels` / `fetchImpl` / `now`, so every path
   here is testable without a network.
@@ -70,9 +77,22 @@ Decision record:
     TourViewer, which has no such gate, accepted the same printed code.
   - This does NOT widen the gate: it points it at the request target, which
     is strictly tighter than checking a string nothing fetches. No host was
-    added. A relative result carries no host, cannot leave our origin, and is
-    therefore ours by construction - that is the configured-proxy form whose
-    own JSDoc names `/api/drive-proxy`.
+    added.
+  - **Relative results are split by RESOLVING against a sentinel origin** (PR
+    #381 review). A PATH-relative url keeps the sentinel origin and is ours by
+    construction - that is the configured-proxy form whose own JSDoc names
+    `/api/drive-proxy`. A PROTOCOL-relative one (`//host/x.zip`, and its
+    backslash spellings) resolves to the attacker's origin and is measured
+    against the allowlist like any other absolute address.
+    - Treating an UNPARSEABLE url as same-origin, as the first cut did,
+      reopened the exact hole this gate exists to close:
+      `new URL("//evil.example/x.zip")` throws without a base, but `fetch()`
+      resolves it against the document base and leaves the origin. The
+      dictionary codec passes every byte >= 0x20 through as a literal, so
+      that payload costs a few base64url characters on a printed sticker.
+    - Decided on the sentinel rather than on `globalThis.location` so the
+      rule is deterministic and testable off-DOM; a path-relative url
+      resolves to the page origin by definition, so the answer is the same.
 
 ## Tests
 

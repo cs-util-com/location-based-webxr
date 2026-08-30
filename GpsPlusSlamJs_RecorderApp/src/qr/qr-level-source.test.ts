@@ -147,6 +147,40 @@ describe('createQrLevelSource — caching', () => {
 });
 
 describe('createQrLevelSource — teardown', () => {
+  it('stops ANSWERING after dispose, not just opening', async () => {
+    // Why this test matters (PR #382 review): the sidecar's dispose()
+    // contract is "abort in-flight work and stop answering", and the second
+    // half was not implemented. `dispose()` expires the deadlines, the
+    // pending race rejects, the rejection lands in the catch, and that calls
+    // `remember({kind: "failed"})` -> `deps.onState`. In the recorder that
+    // reaches `onLevelState` and paints a "failed" level line for a session
+    // that has already been torn down.
+    const onState = vi.fn();
+    let release: (() => void) | undefined;
+    const source = createQrLevelSource({
+      allowedHosts: HOSTS,
+      assetPrefix: 'https://assets.test/',
+      onState,
+      // Never settles on its own: the only way out is dispose().
+      openArchive: () =>
+        new Promise((_resolve, reject) => {
+          release = () => {
+            reject(new Error('torn down'));
+          };
+        }) as never,
+    });
+
+    const pending = source.fetchLevel(OURS);
+    await Promise.resolve();
+    source.dispose();
+    release?.();
+    await pending;
+
+    // The state is still RECORDED (harmless, and it keeps the map honest);
+    // what must not happen is reporting it to a HUD teardown just cleared.
+    expect(onState).not.toHaveBeenCalled();
+  });
+
   it('answers with the placeholder and opens nothing after dispose', async () => {
     // The controller awaits this inside its detect step, so work that
     // outlives the session would stall the next one.

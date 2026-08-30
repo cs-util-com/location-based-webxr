@@ -125,7 +125,14 @@ export function createQrLevelSource(deps: QrLevelSourceDeps): QrLevelSource {
 
   function remember(text: string, state: QrLevelLookupState): QrLevel {
     states.set(text, state);
-    deps.onState?.(text, state);
+    // After dispose the session is gone, and the sidecar's contract for it
+    // is "abort in-flight work and STOP ANSWERING" - only the first half was
+    // implemented (PR #382 review). `dispose()` expires the deadlines, the
+    // pending race rejects, and that rejection lands in the catch below,
+    // which reports a "failed" level to a HUD the teardown just cleared.
+    // Recording the state is harmless and keeps the map honest; REPORTING it
+    // is what outlives the session.
+    if (!disposed) deps.onState?.(text, state);
     return state.kind === 'level' ? state.level : NO_LEVEL;
   }
 
@@ -250,6 +257,21 @@ export function createQrLevelSource(deps: QrLevelSourceDeps): QrLevelSource {
 }
 
 /**
+ * An origin no real address can occupy, used only to tell a PATH-relative
+ * url apart from a protocol-relative one. Same device `share-link.ts` uses
+ * to parse its own relative proxy base.
+ */
+const RELATIVE_SENTINEL_ORIGIN = 'https://relative.invalid';
+
+/** `new URL`, but `null` instead of a throw. */
+function tryUrl(value: string, base: string): URL | null {
+  try {
+    return new URL(value, base);
+  } catch {
+    return null;
+  }
+}
+/**
  * Is this an address we actually serve archives from?
  *
  * The set is deliberately small and explicit: the configured asset prefix's
@@ -281,21 +303,6 @@ export function createQrLevelSource(deps: QrLevelSourceDeps): QrLevelSource {
  * ours by construction; a protocol-relative one is not, and is measured
  * against the allowlist like any other absolute address.
  */
-/**
- * An origin no real address can occupy, used only to tell a PATH-relative
- * url apart from a protocol-relative one. Same device `share-link.ts` uses
- * to parse its own relative proxy base.
- */
-const RELATIVE_SENTINEL_ORIGIN = 'https://relative.invalid';
-
-/** `new URL`, but `null` instead of a throw. */
-function tryUrl(value: string, base: string): URL | null {
-  try {
-    return new URL(value, base);
-  } catch {
-    return null;
-  }
-}
 
 function isAllowedArchiveHost(
   archiveUrl: string,
