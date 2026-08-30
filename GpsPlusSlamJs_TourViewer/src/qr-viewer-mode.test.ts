@@ -302,3 +302,35 @@ describe("imagePlaneRingNue", () => {
     expect(unique.size).toBe(3);
   });
 });
+
+describe("qr-viewer-mode - fetchLevel never rejects", () => {
+  /**
+   * Why this test matters (PR #386 review): `qrCodeId` documents that it
+   * throws when Web Crypto is unavailable, and it was awaited bare inside
+   * `fetchLevel`. The controller maps a rejection to `onError` ->
+   * `setStatus("error")` and `detect()` flips back to "scanning" on the next
+   * frame, so the status flaps at the detection cadence - exactly what the
+   * module header promises will not happen. Worse than in the recorder, which
+   * has a backoff ladder: nothing is cached here, so the throw would repeat on
+   * every single detection.
+   */
+  it("resolves the placeholder when the id hash throws", async () => {
+    const subtle = globalThis.crypto.subtle;
+    Object.defineProperty(globalThis.crypto, "subtle", {
+      configurable: true,
+      get: () => undefined,
+    });
+    try {
+      const config = buildViewerControllerConfig(fakeDeps());
+      const fetchLevel = config.fetchLevel as (t: string) => Promise<unknown>;
+      await expect(fetchLevel("https://gps.csutil.com/?qr=x")).resolves.toEqual(
+        { version: 1, qr: {} },
+      );
+    } finally {
+      Object.defineProperty(globalThis.crypto, "subtle", {
+        configurable: true,
+        value: subtle,
+      });
+    }
+  });
+});

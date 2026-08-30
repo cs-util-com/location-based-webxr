@@ -170,13 +170,17 @@ export function createQrLevelSource(deps: QrLevelSourceDeps): QrLevelSource {
   }
 
   /**
-   * The whole lookup, including the two awaits that used to sit OUTSIDE the
-   * try (PR #385 review).
+   * The lookup.
    *
-   * `resolveQrPayload` and `qrCodeId` were awaited before it -
-   * `qrCodeId` documents `@throws Error when Web Crypto is unavailable` -
-   * so a throw there escaped the "never rejects" contract this module and
-   * `fetchLevel` both promise. Worse than a slow lookup: `remember()` is
+   * NOTE: `resolveQrPayload` and `qrCodeId` are awaited BEFORE the `try`
+   * below, so THIS FUNCTION CAN STILL REJECT - `qrCodeId` documents
+   * `@throws Error when Web Crypto is unavailable`. The "never rejects"
+   * contract is held one level up, by the `.catch(rememberFailure)` in
+   * `fetchLevel`; do not remove it. An earlier version of this docstring
+   * claimed the awaits had been moved inside the try, which would have led a
+   * reader to drop that catch as redundant (PR #386 review).
+   *
+   * Why an unrecorded failure is worse than a slow lookup: `remember()` is
    * never reached, so no `failed` state is recorded, `cached()` returns
    * `null` on the next frame, and the whole path re-runs on EVERY detection
    * with no backoff - the precise failure the RETRY_BASE_MS ladder exists to

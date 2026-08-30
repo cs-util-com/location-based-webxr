@@ -122,7 +122,22 @@ export function buildViewerControllerConfig(
     frontEnd: deps.frontEnd,
     solvePose: (input) => deps.solvePose(input),
     fetchLevel: async (text) => {
-      const id = await qrCodeId(text);
+      // NEVER reject (PR #386 review). qrCodeId documents that it throws
+      // when Web Crypto is unavailable, and it was awaited here bare. The
+      // controller maps a rejection to onError -> setStatus("error") and
+      // detect() flips back to "scanning" on the next frame, so the status
+      // flaps at the detection cadence - which the module header above
+      // already promises will not happen. Worse than in the recorder, which
+      // has a backoff ladder: nothing is cached here, so the throw repeats
+      // on EVERY detection. Returning the placeholder lets the controller
+      // cache it per text and stop asking.
+      let id: string;
+      try {
+        id = await qrCodeId(text);
+      } catch {
+        deps.onLevelResolved?.(text, null);
+        return NO_LEVEL_PLACEHOLDER;
+      }
       const level = deps.getLevels()?.get(id);
       if (level === undefined) {
         deps.onUnknownCode?.(id);

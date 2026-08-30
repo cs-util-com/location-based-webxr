@@ -562,9 +562,19 @@ function startViewerPipeline(): boolean {
       dispatchVote: (payload) => {
         arStore.dispatch(recordGpsEvent(payload));
       },
-      // recordGpsEvent silently no-ops until the session zero exists — the
+      // recordGpsEvent silently no-ops until the session ZERO exists - the
       // budget must not be charged for dropped votes (M4 review #2).
-      canAcceptVotes: () => arStore.getState().gpsData !== null,
+      //
+      // Tests the zero, not merely the slice (PR #386 review). Those are two
+      // distinct reachable states - capture-geo-join treats them separately -
+      // and in the window between them every locked frame passed this gate,
+      // charged the budget and reported "Relocalizing - N of 10 vote batches"
+      // while recordGpsEvent wrote nothing. At the camera-frame cadence a
+      // second or two of looking at the poster before the first fix spent the
+      // whole budget, after which that code could never vote again. This is
+      // the same defect the recorder was fixed for, left in the app the fix
+      // was ported FROM.
+      canAcceptVotes: () => arStore.getState().gpsData?.zero != null,
       // The same convergence gate minting uses (M4 review #3): the
       // controller skips the vote — budget untouched — while null.
       resolveStablePose: (text) => selectStableQrPose(arStore.getState(), text),
