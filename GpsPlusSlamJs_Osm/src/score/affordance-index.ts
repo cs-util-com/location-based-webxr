@@ -470,10 +470,17 @@ export class AffordanceIndex {
    * them. Mutating in place would save the copy and hand that caller a TORN
    * view instead - a worse failure than the stale one the contract names.
    *
-   * Measured 2026-08-30 on devbox-win11: the 24th accept of a 2 259-feature
-   * tile falls 62.1 -> 14.6 ms (-76 %), and a 24-tile session 881 -> 210 ms.
+   * Measured 2026-08-30 on devbox-win11 (i7-1185G7, Node 24.14.1), median of 5,
+   * 24 tiles of 2 259 features each, AFTER the same-tile-repeat fix:
+   * session 821 -> 168 ms (-79.5 %), 24th accept 66.2 -> 12.4 ms (-81.3 %).
+   *
    * The old cost grew with the whole working set on every tile, so a walk
    * paid quadratically for tiles it had already merged.
+   *
+   * ONE run, quoted identically here and in the sidecar (PR #388 review).
+   * Three different figures for this benchmark were in the tree at once,
+   * and the pair in this docstring described the code as it was BEFORE the
+   * same-tile-repeat fix - which is the version that no longer exists.
    */
   private overlayNewTile(tile: OsmTileResult): void {
     const features = new Map(this.features);
