@@ -63,3 +63,37 @@ if (skipped.length > 0) {
   shapes; the "good elements either side of a bad one survive" case; clipped
   geometry with `null` entries both above and below the 2-position floor; tag
   coercion; and relation-member handling.
+
+## Performance
+
+Measured 2026-08-30 (perf loop, OSM iteration 12) on **devbox-win11** (Win 11
+Pro, 11th Gen Intel i7-1185G7 @ 3.00 GHz, 8 threads, Node 24.14.1).
+`overpass-parser.bench.ts` pins both scales.
+
+- **One fixture site (2 259 elements): ~2.5 ms.**
+- **Tile scale (54 216 elements): 67–101 ms**, i.e. ~1.2–1.9 µs per element.
+  The cost is linear; the only open question was ever the constant.
+
+**The perf-loop state doc predicted this would "dominate a real click". It does
+not, and that prediction is retracted.** Against a mesh build that extrapolates
+to ~1.5 s, the parse is a few per cent. It was never measured above fixture
+scale before, which is exactly how a linear cost with a small constant acquires
+a reputation it has not earned.
+
+**The parse is allocation-bound, not compute-bound.** CPU profile self-time at
+tile scale: `parseTags` 33.9 %, **garbage collection 24.9 %**, `parseGeometry`
+9.8 %, `parseElement` 7.9 %. That shape is what makes local tweaks unrewarding
+— the work is one `{lat, lng}` per position and one tags object per element,
+not the loops around them.
+
+- **Rejected, measured:** `Object.keys` in place of `Object.entries` in
+  `parseTags`. Paired interleaved full parses, 9 runs each: 67.4 → 56.3 ms,
+  **−16.5 %** — real, but under the loop's 20 % bar, and the spread
+  (55–128 ms against 43–180 ms) is too wide to call it tighter.
+  - Two traps this measurement walked into first, both worth knowing before
+    trusting any number here: the FIRST variant timed reads ~2.7× slow from
+    cold JIT unless every variant is warmed before any is measured, and an
+    ISOLATED microbench of the two put them within 0.01 ms of each other. The
+    end-to-end difference is GC pressure, not the iteration form — which is
+    also why `vitest bench` reported it as −33 % at ±22 % rme, a figure the
+    paired run does not support.
