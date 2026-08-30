@@ -266,11 +266,37 @@ export function createQrLevelSource(deps: QrLevelSourceDeps): QrLevelSource {
  * accepted the same printed code. Checking the pre-normalized string was
  * therefore both too strict AND checking the wrong thing.
  *
- * This does not WIDEN the gate: it points it at the request target. A
- * relative result carries no host and cannot leave our origin, so it is ours
- * by construction - that is the configured-proxy form whose own JSDoc names
- * `/api/drive-proxy`.
+ * The one RELATIVE address that is genuinely ours is the configured proxy
+ * form, whose own JSDoc names `/api/drive-proxy`. It is recognised by
+ * RESOLVING against the page origin and comparing origins - never by
+ * treating "unparseable" as "ours". That shortcut shipped for one round and
+ * reopened the exact hole this function exists to close (PR #381 review):
+ * `new URL("//evil.example/x.zip")` throws without a base, but `fetch()`
+ * resolves it against the document base and lands on
+ * `https://evil.example/x.zip`. The dictionary codec passes every byte
+ * >= 0x20 through as a literal, so that payload is fully attacker-controlled
+ * and costs a few base64url characters on a printed sticker.
+ *
+ * A path-relative address resolves to whatever origin the page has, so it is
+ * ours by construction; a protocol-relative one is not, and is measured
+ * against the allowlist like any other absolute address.
  */
+/**
+ * An origin no real address can occupy, used only to tell a PATH-relative
+ * url apart from a protocol-relative one. Same device `share-link.ts` uses
+ * to parse its own relative proxy base.
+ */
+const RELATIVE_SENTINEL_ORIGIN = 'https://relative.invalid';
+
+/** `new URL`, but `null` instead of a throw. */
+function tryUrl(value: string, base: string): URL | null {
+  try {
+    return new URL(value, base);
+  } catch {
+    return null;
+  }
+}
+
 function isAllowedArchiveHost(
   archiveUrl: string,
   deps: QrLevelSourceDeps
@@ -280,13 +306,19 @@ function isAllowedArchiveHost(
       ? { corsProxyBaseUrl: deps.corsProxyBaseUrl }
       : {}),
   });
-  let host: string;
-  try {
-    host = new URL(fetched).hostname.toLowerCase();
-  } catch {
-    // Not absolute → same-origin → ours.
-    return true;
-  }
+  // Resolved against a SENTINEL origin, which separates the two kinds of
+  // "relative" that `new URL(value)` alone lumps together as a throw:
+  //   `/api/drive-proxy?id=X`  -> origin is the sentinel  -> PATH-relative
+  //   `//evil.example/x.zip`   -> origin is evil.example  -> cross-origin
+  // Only the first can be reached without leaving our own origin, whatever
+  // that origin turns out to be at runtime. Deciding this on the sentinel
+  // rather than on `globalThis.location` keeps the rule deterministic and
+  // testable off-DOM - and the answer is the same either way, because a
+  // path-relative url resolves to the page origin by definition.
+  const parsed = tryUrl(fetched, RELATIVE_SENTINEL_ORIGIN);
+  if (parsed === null) return false;
+  if (parsed.origin === RELATIVE_SENTINEL_ORIGIN) return true;
+  const host = parsed.hostname.toLowerCase();
   const allowed = new Set<string>(ARCHIVE_HOSTS);
   for (const candidate of [deps.assetPrefix, deps.corsProxyBaseUrl]) {
     if (candidate === undefined) continue;

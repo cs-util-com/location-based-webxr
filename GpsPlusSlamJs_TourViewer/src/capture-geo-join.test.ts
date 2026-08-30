@@ -340,6 +340,25 @@ describe("computeCaptureGeoJoin — captures it must refuse to place", () => {
     expect(Math.hypot(q[0], q[1], q[2], q[3])).toBeCloseTo(1, 9);
   });
 
+  it("throws on a NON-FINITE alignment rotation rather than composing NaN", () => {
+    // Why this test matters (PR #381 review): the first cut of the alignment
+    // renormalisation checked only the NORM, and
+    // `renormalizeUnitQuaternion` does not reject non-finite input - it
+    // returns `[NaN, 0, 0, 1]` unchanged rather than `undefined`. So a NaN
+    // alignment produced a NaN quaternion for EVERY plane while the sidecar
+    // claimed the function failed loudly. This is defence-in-depth on an
+    // exported function: `main.ts` gates on `assessReplayedJoin` first, but
+    // nothing makes a caller do that.
+    for (const bad of [
+      [Number.NaN, 0, 0, 1],
+      [0, 0, 1], // short: `w` is undefined, so Math.hypot yields NaN
+    ] as const) {
+      expect(() =>
+        computeCaptureGeoJoin(baseState({ alignmentRotation: bad as never })),
+      ).toThrow(/assess before computing/);
+    }
+  });
+
   it("keeps a capture whose altitude is legitimately zero", () => {
     // Why this test matters: zero is a VALID absolute altitude - the zero
     // reference sits at 0 in the fixture above - so the drop must key on

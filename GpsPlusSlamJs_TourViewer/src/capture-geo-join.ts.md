@@ -78,10 +78,16 @@ taken instead of ringing them around the QR code.
       same asymmetry this file has now been corrected for three times.
     - The ASSESSMENT path at `assessReplayedJoin` still uses it as a
       predicate, correctly: it returns a verdict, not a rotation.
-    - `computeCaptureGeoJoin` re-derives `toAlignmentMatrix` itself and
-      throws on a bad alignment rotation, so a caller that skips
-      `assessReplayedJoin` fails loudly instead of feeding NaN quaternions
-      into `ThreeQuaternion`.
+    - `computeCaptureGeoJoin` checks the alignment rotation for length,
+      finiteness AND norm before composing it - the same three the
+      per-capture path uses, and for the same reason (PR #381 review). The
+      first cut checked only the norm, which does NOT reject `NaN`, so a bad
+      alignment would have produced a NaN quaternion for every plane while
+      this sidecar claimed it failed loudly.
+    - With that guard in place the claim holds: this function re-derives
+      `toAlignmentMatrix` itself and throws on a bad alignment rotation, so a
+      caller that skips `assessReplayedJoin` fails loudly rather than feeding
+      NaN quaternions into `ThreeQuaternion`.
 - `ReplayedJoinState` — structural slice of the replayed
   `CombinedRootState`, deliberately narrow so tests need no full store.
 

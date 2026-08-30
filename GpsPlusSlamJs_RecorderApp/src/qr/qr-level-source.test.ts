@@ -293,6 +293,67 @@ describe('createQrLevelSource — the payload names the fetch host', () => {
     expect(open).toHaveBeenCalled();
   });
 
+  it('refuses a PROTOCOL-RELATIVE payload, which resolves cross-origin', async () => {
+    // Why this test matters (PR #381 review): the previous round widened this
+    // gate to treat an unparseable url as same-origin, reasoning that a
+    // relative address cannot leave our origin. That reasoning is WRONG for
+    // the protocol-relative form: `new URL("//evil.example/x.zip")` throws
+    // without a base, but `fetch()` resolves it against the document base and
+    // lands on `https://evil.example/x.zip`. That reopened exactly the hole
+    // this function exists to close - a ranged GET from the AR frame path to
+    // an address a stranger printed on a sticker.
+    //
+    // Reachable end to end: the dictionary codec passes every byte >= 0x20
+    // through as a literal, so the payload is fully attacker-controlled and
+    // costs a few base64url characters. `\evil.example\x.zip` is the same
+    // hole, because the URL parser maps backslashes to slashes.
+    const { encodeDictionaryPayload } =
+      await import('gps-plus-slam-app-framework/utils/qr-payload/codec-dictionary');
+    const open = vi.fn();
+    const source = createQrLevelSource({
+      allowedHosts: HOSTS,
+      assetPrefix: 'https://assets.test/',
+      openArchive: open as never,
+    });
+
+    // Built from the char code so the literal survives every layer that
+    // rewrites backslashes between here and the file on disk.
+    const bs = String.fromCharCode(92);
+    for (const evil of [
+      '//evil.example/x.zip',
+      `${bs}${bs}evil.example${bs}x.zip`,
+    ]) {
+      const encoded = await encodeDictionaryPayload(evil);
+      const text = `https://gps.csutil.com/?qr=${encodeURIComponent(`~${encoded}`)}`;
+      await source.fetchLevel(text);
+      expect(source.stateFor(text)?.kind, evil).toBe('not-ours');
+    }
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it('still allows the configured RELATIVE proxy form', async () => {
+    // The one relative case that genuinely is ours: the proxy option whose
+    // own JSDoc names `/api/drive-proxy`. Distinguished by resolving against
+    // the page origin and comparing origins - not by treating "unparseable"
+    // as "ours".
+    const open = vi.fn(() =>
+      Promise.resolve({ source: {}, dispose: () => undefined })
+    );
+    const source = createQrLevelSource({
+      allowedHosts: HOSTS,
+      assetPrefix: 'https://assets.test/',
+      corsProxyBaseUrl: '/api/drive-proxy',
+      openArchive: open,
+      readLevels: () => Promise.resolve(new Map()),
+    });
+    const drive = 'https://drive.google.com/file/d/FILEID/view';
+    const text = `https://gps.csutil.com/?qr=${encodeURIComponent(drive)}`;
+    await source.fetchLevel(text);
+
+    expect(source.stateFor(text)?.kind).not.toBe('not-ours');
+    expect(open).toHaveBeenCalled();
+  });
+
   it('still refuses a stranger that no normalisation rewrites', async () => {
     // The widened READ must not widen the gate: an address our normaliser
     // does not recognise passes through byte-identical and is still refused.
