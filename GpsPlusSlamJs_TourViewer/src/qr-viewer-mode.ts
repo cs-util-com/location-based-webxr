@@ -131,6 +131,17 @@ export function buildViewerControllerConfig(
       // has a backoff ladder: nothing is cached here, so the throw repeats
       // on EVERY detection. Returning the placeholder lets the controller
       // cache it per text and stop asking.
+      //
+      // WHY SILENCE IS ACCEPTABLE HERE, and it is the load-bearing part
+      // (PR #387 review, which rightly asked for it in writing): this branch
+      // trades a flapping error for NO signal, and the visitor is told
+      // nothing while QR relocalization is dead. That would be the wrong
+      // trade if it were reachable in a working session - `onUnusableLevel`
+      // exists precisely because no feedback is worse than bad feedback
+      // (M4 review #5). It is not: missing Web Crypto means an INSECURE
+      // context, and WebXR itself requires a secure one, so a session that
+      // reached this code path has `crypto.subtle`. The guard is here for the
+      // contract, not for a case a visitor can hit.
       let id: string;
       try {
         id = await qrCodeId(text);

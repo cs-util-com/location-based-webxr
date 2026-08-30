@@ -687,6 +687,40 @@ describe("AffordanceIndex - incremental accept equals a full merge", () => {
     expect(surfaceOf(backwards)).toBe("higher");
   });
 
+  it("keeps the LAST copy when one tile repeats a key, as mergeTiles does", () => {
+    // Why this test matters (PR #387 review): the overlay compares the
+    // incoming tile against the provenance entry for each key - and after the
+    // first copy of a repeated key, that entry names THIS tile. The
+    // comparison then ties on fetchedAt and on tile id, so `outranks` is
+    // false and the second copy was SKIPPED, keeping the first.
+    //
+    // mergeTiles does the opposite: its inner loop sets unconditionally, so
+    // within one tile the LAST copy wins. Overpass union/recursion queries can
+    // return the same element twice and parseOverpassJson does not dedupe by
+    // featureKey, so this is reachable - and it made the same tile produce two
+    // different worlds depending on arrival history, since a later refetch
+    // takes the full-merge path and flips to the last copy.
+    //
+    // The earlier equivalence tests could not catch it: every contested key
+    // there came from DIFFERENT tiles.
+    const first = patch(31, A, { surface: "first" });
+    const last = patch(31, A, { surface: "last" });
+    const repeated = tile(A, [first, last], 1_000);
+
+    const index = new AffordanceIndex({ table: TABLE });
+    index.acceptTile(repeated);
+
+    const expected = mergeTiles([repeated]).features;
+    for (const [key, feature] of expected) {
+      expect(index.mergedFeatures().get(key)).toBe(feature);
+    }
+    expect(
+      [...index.mergedFeatures().values()].find((f) => f.id === 31)?.tags[
+        "surface"
+      ],
+    ).toBe("last");
+  });
+
   it("agrees with mergeTiles on a contested key, whatever the arrival order", () => {
     const tiles = [contested(A, 1_000, "a"), contested(B, 3_000, "b")];
     const expected = mergeTiles(tiles).features;

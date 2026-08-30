@@ -487,7 +487,23 @@ export class AffordanceIndex {
     for (const feature of tile.features) {
       const key = featureKey(feature);
       const owner = provenance.get(key);
-      if (owner !== undefined && !outranks(tile, owner)) continue;
+      // `owner.tile !== tile.tile` FIRST: within one tile the last write
+      // wins, because mergeTiles sets unconditionally in its inner loop. Once
+      // this loop has written a key, the provenance entry for it names THIS
+      // tile - so comparing against it ties on both fetchedAt and tile id,
+      // `outranks` is false, and a later copy from the same tile was skipped,
+      // keeping the FIRST (PR #387 review). Overpass union/recursion queries
+      // can return an element twice and the parser does not dedupe by
+      // featureKey, so the same tile then produced two different worlds
+      // depending on arrival history: first arrival kept copy #1, a later
+      // refetch took the full-merge path and flipped to copy #2.
+      if (
+        owner !== undefined &&
+        owner.tile !== tile.tile &&
+        !outranks(tile, owner)
+      ) {
+        continue;
+      }
       // Only a CHANGED record invalidates cached geometry - the same rule the
       // full path applies, and the reason this class exists at all.
       if (features.get(key) !== feature) {
