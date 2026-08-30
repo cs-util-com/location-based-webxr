@@ -30,6 +30,14 @@ taken instead of ringing them around the QR code.
   - State declines: null `gpsData`, missing zero, pairs <
     `MIN_ALIGNMENT_SAMPLES`, malformed or IDENTITY alignment (the
     degenerate solve's default), zero captures.
+    - "Malformed alignment" covers the ROTATION beside the matrix, not
+      only the matrix (PR #376/#378 review). `alignmentRotation` must be
+      length-4, finite, AND a UNIT quaternion - checked with the
+      framework's own `renormalizeUnitQuaternion`, the same contract
+      `parseQrLevel` and `mintQrGeoPose` use. Length + finiteness alone
+      admits `[0,0,0,0]`, which `Matrix4.compose` turns into the
+      IDENTITY, so every photo would face East while the status line
+      still reported success.
   - `ok: true` carries `{ pairCount, gpsAccuracyMedianM }` — the honest
     quality the viewer surfaces ("placed from N fixes, ±X m").
 - `computeCaptureGeoJoin(state): CaptureWorldPose[]` — per capture:
@@ -48,6 +56,12 @@ taken instead of ringing them around the QR code.
     "N photos at capture spots". Zero is a VALID altitude, so the drop keys
     on missing-or-non-finite, never on falsy. When nothing survives, the
     caller falls back to the photo ring.
+  - **A capture's own `rotation` is dropped on the same terms** (PR #378
+    review): length-4, finite, and unit-norm, via the same
+    `renormalizeUnitQuaternion`. A non-unit quaternion survives
+    `image-planes.ts`'s own check, reaches `mesh.quaternion.copy(...)`,
+    and the plane silently never renders - while `viewerPlanesInfo` still
+    counts it, because `count` is `meshes.length`.
 - `ReplayedJoinState` — structural slice of the replayed
   `CombinedRootState`, deliberately narrow so tests need no full store.
 

@@ -24,6 +24,10 @@ import { Quaternion as ThreeQuaternion } from "three";
 import { fusedGpsFromOdom } from "gps-plus-slam-app-framework/utils/fused-path";
 import { isIdentityMatrix4 } from "gps-plus-slam-app-framework/core";
 import { WEBXR_TO_NUE } from "gps-plus-slam-app-framework/ar/webxr-nue-basis";
+// The framework already owns the unit-quaternion contract for this exact data
+// class (it is what `parseQrLevel` and `mintQrGeoPose` validate with), so the
+// replayed-state boundary uses it rather than growing a fourth, looser check.
+import { renormalizeUnitQuaternion } from "gps-plus-slam-app-framework/ar/qr/qr-geo-pose-minting";
 
 import { MIN_ALIGNMENT_SAMPLES } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 // The list is shared (framework `state/segmenting-actions`): this consumer
@@ -166,8 +170,19 @@ export function assessReplayedJoin(state: ReplayedJoinState): JoinAssessment {
   // spots". That is the identical failure the position drop-guard below was
   // added to stop, one axis over. Replayed recordings are untrusted disk
   // data, so this is validated rather than assumed.
+  //
+  // UNIT NORM, not merely length + finiteness (PR #378 review). `[0,0,0,0]`
+  // passes both of those, and `Matrix4.compose` turns it into the IDENTITY —
+  // so every capture would be placed facing East instead of the direction it
+  // was taken, with the status line still reporting success. A non-unit norm
+  // shears the plane instead. `renormalizeUnitQuaternion` is the framework's
+  // existing contract for exactly this data class.
   const rotation = gpsData.gpsEvents.alignmentRotation;
-  if (rotation.length !== 4 || !rotation.every((n) => Number.isFinite(n))) {
+  if (
+    rotation.length !== 4 ||
+    !rotation.every((n) => Number.isFinite(n)) ||
+    renormalizeUnitQuaternion(rotation) === undefined
+  ) {
     return { ok: false, reason: "the recording's alignment data is malformed" };
   }
   if (gpsData.odometryPath.points.length === 0) {
@@ -227,9 +242,13 @@ export function computeCaptureGeoJoin(
     // reports "N photos at capture spots", because `count` is
     // `meshes.length`. That is the outcome the position drop-guard exists to
     // prevent, one axis over. Drop the capture rather than place it wrongly.
+    // Unit norm too, for the same reason as the alignment rotation above:
+    // `[0,0,0,0]` is finite and length-4 and composes to the IDENTITY, which
+    // would place this capture facing East rather than dropping it.
     if (
       point.rotation.length !== 4 ||
-      !point.rotation.every((n) => Number.isFinite(n))
+      !point.rotation.every((n) => Number.isFinite(n)) ||
+      renormalizeUnitQuaternion(point.rotation) === undefined
     ) {
       return [];
     }

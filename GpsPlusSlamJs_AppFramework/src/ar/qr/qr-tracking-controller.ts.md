@@ -18,20 +18,41 @@ coalesced cadence and exposes an async-status state machine for the UI.
   (sliding-window filtered pose for the vote — e.g. `selectStableQrPose`),
   `onStatus`/`onLocked`/`onError`, and scheduler tuning
   (`minIntervalMs`, `requiredLockCount`, `now`).
-- `QrDetectionEvent` — `{ text, qrPoseWorld, qrPoseInCamera, reprojectionErrorPx,
-timestamp }`, emitted via `onDetection` on every lock. Structural (no import
-  of the `qrDetected` state slice) so `ar` never depends on `state`; the app
-  maps it onto `recordQrDetection`.
+  - `onRawDetection` — fires on every DECODE, before and independently of the
+    solve, carrying the raw corners/pose/image-size. It exists so an app that
+    must record raw observations whatever else happens (the recorder) gets
+    them from ONE decode instead of running a second producer on the AR frame
+    path.
+  - `shouldCacheLevel(level)` — vetoes the per-URL level cache. See the status
+    machine below; it is what makes a source's own retry policy reachable.
+  - Both were undocumented here until 2026-08-30 (PR #378 review).
+- `QrDetectionEvent` — `{ text, qrPoseWorld, qrPoseInCamera,
+reprojectionErrorPx, timestamp, corners, cameraPose, imageWidth,
+imageHeight }`, emitted via `onDetection` on every lock. The last four are
+  the RAW facts behind the solve, carried so a consumer needing both a solved
+  pose and a raw record does not decode twice; the projection matrix is
+  deliberately absent, because this controller is given `getIntrinsics(image)`
+  and never sees one. Structural (no import of the `qrDetected` state slice)
+  so `ar` never depends on `state`; the app maps it onto
+  `recordQrDetection`.
 
 ## Invariants & assumptions
 
 - **Status machine:** `idle → scanning` on first frame; `loading-level` while a
-  new URL's level is fetched (once per URL — cached); `tracking` once the
+  new URL's level is fetched — cached per URL, but **CONDITIONALLY**: the
+  optional `shouldCacheLevel(level)` config decides, and a source that owns
+  its own retry policy returns `false` for its placeholder so a transient
+  failure is not cached for the session. Load-bearing, not a detail — the
+  recorder's `qr-level-source` backoff is unreachable unless this cache can
+  be declined (the sidecar said "once per URL — cached" unconditionally until
+  2026-08-30, PR #378 review); `tracking` once the
   scheduler locks (≥ `requiredLockCount` consecutive solves) and votes are
   dispatched; `error` on a level fetch / detect rejection; a miss while
   `tracking` drops back to `scanning`. `onStatus` fires only on change.
 - **One detection in flight** (the scheduler coalesces), so the closure
-  `active` (`{ level, text, sizeM }`) set during `detect` is the correct context
+  `active` — `{ level, text, sizeM, corners, cameraPose, imageWidth,
+imageHeight }`, seven fields, not the three this line claimed until
+  2026-08-30 (PR #378 review) — set during `detect` is the correct context
   read by `onLocked`.
 - **Size lifecycle gate (Note 3):** the solve needs a size. Order: the level's
   authored `physicalSizeM`, else `resolveSizeM(text, level)` (e.g. a measured

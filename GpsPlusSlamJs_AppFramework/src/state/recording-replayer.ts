@@ -43,6 +43,23 @@ export interface ReplayRecordingOptions {
    * TourViewer's geo join runs this in an XR session's detection path).
    */
   readonly onChunk?: (dispatched: number, total: number) => void;
+
+  /**
+   * Asked before each chunk; returning `false` stops the replay and returns
+   * the state built so far.
+   *
+   * Exists because `onChunk` gave a caller a place to NOTICE it no longer
+   * wants the result but no way to act on it (PR #378 review). The
+   * TourViewer already checks a generation token inside `onChunk` — and
+   * could only use it to skip a status label, so a replay whose AR session
+   * had ended kept dispatching to a store nobody would read. Same shape as
+   * the abort seam added to `decodeJoinedPoses`, whose own comment names it.
+   *
+   * The returned state is PARTIAL by construction; a caller that aborts is
+   * expected to discard it, which is why this is a separate hook rather than
+   * an error.
+   */
+  readonly shouldContinue?: () => boolean;
 }
 
 /**
@@ -108,6 +125,9 @@ export async function replayActions(
   // whole seconds (each GPS event can re-solve the alignment), and callers
   // replay inside live sessions. Yield between chunks so frames render.
   for (let i = 0; i < actions.length; i += REPLAY_CHUNK_SIZE) {
+    // Asked BEFORE dispatching, so an aborting caller pays at most the chunk
+    // already in flight rather than the rest of the recording.
+    if (options?.shouldContinue?.() === false) break;
     for (const action of actions.slice(i, i + REPLAY_CHUNK_SIZE)) {
       store.dispatch(action);
     }

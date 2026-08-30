@@ -279,6 +279,14 @@ describe("computeCaptureGeoJoin — captures it must refuse to place", () => {
             position: [1, 0, 0],
             rotation: [0, 0, 1],
           },
+          {
+            // Finite AND length-4, but norm 0 — `Matrix4.compose` turns this
+            // into the IDENTITY, so the capture would face East rather than
+            // the direction it was taken (PR #378 review).
+            imageFile: "images/zero-quat.jpg",
+            position: [1, 0, 0],
+            rotation: [0, 0, 0, 0],
+          },
         ] as never,
       }),
     );

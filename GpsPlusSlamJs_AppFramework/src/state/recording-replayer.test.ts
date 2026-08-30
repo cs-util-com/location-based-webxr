@@ -177,6 +177,36 @@ describe('replayRecording — ZipSource widening + chunked dispatch (geo-join M-
     // loop genuinely yielded rather than merely calling the hook inline.
     expect(seen.some(Boolean)).toBe(true);
   });
+
+  it('stops dispatching when shouldContinue returns false', async () => {
+    // Why this test matters (PR #378 review): `onChunk` gave a caller a place
+    // to NOTICE it no longer wants the result but no way to act on it. The
+    // TourViewer already checked a generation token in `onChunk` and could
+    // only use it to skip a status label, so a replay whose AR session had
+    // ended kept dispatching into a store nobody would read — on a device,
+    // during an XR session, competing with the frame loop.
+    const zip = await produceTestZip();
+
+    // The sample recording fits in one chunk, so "abort after chunk 1" would
+    // be indistinguishable from a full replay — assert the seam itself by
+    // refusing the FIRST chunk, where the difference is unambiguous.
+    const full = await replayRecording(zip.zipData);
+    expect(full.gpsData).not.toBeNull();
+
+    let asked = 0;
+    const aborted = await replayRecording(zip.zipData, {
+      shouldContinue: () => {
+        asked += 1;
+        return false;
+      },
+    });
+
+    expect(asked).toBe(1);
+    // Nothing was dispatched, so the store is still at its initial state —
+    // and it RETURNED that rather than throwing, which is the contract a
+    // caller that aborts on purpose needs.
+    expect(aborted.gpsData).toBeNull();
+  });
 });
 
 describe('replayActions — the pre-loaded half (geo-join M-B)', () => {
