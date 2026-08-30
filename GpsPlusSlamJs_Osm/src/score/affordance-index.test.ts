@@ -36,6 +36,7 @@ import { isBelowSurface } from "../model/below-surface.js";
 import type { OsmFeature } from "../model/osm-feature.js";
 import { parseRuleTable } from "../rules/rule-table.js";
 import type { OsmTileResult } from "../source/osm-data-source.js";
+import { mergeTiles } from "../spatial/merge-tiles.js";
 import { OVERPASS_SCHEMA_VERSION } from "../source/overpass-query.js";
 import {
   AFFORDANCE_RES,
@@ -609,6 +610,161 @@ describe("a chunk's score does not depend on what was scored alongside it", () =
       fed.map(() => [homeTile]),
     );
     expect(empty.map((scored) => scored.tiles)).toEqual(empty.map(() => []));
+  });
+});
+
+describe("AffordanceIndex - incremental accept equals a full merge", () => {
+  /**
+   * Why these tests matter (2026-08-30 perf loop, OSM iteration 13):
+   * `acceptTile` used to re-run `mergeTiles` over EVERY held tile on every
+   * call, so a walk paid for tiles it had already merged and the cost grew
+   * with the working set (24th accept 66.2 ms, a 24-tile session 821 ms).
+   * A tile never held before can only ADD or OUTRANK, never remove, so it is
+   * now overlaid onto the current merge instead.
+   *
+   * That is only sound while the overlay picks the SAME winner the full
+   * merge would. These pin exactly that, because nothing else does: the
+   * suite above asserts what a merge produces, not that two ways of reaching
+   * it agree.
+   */
+  const A = { lat: 51.5007, lng: -0.1246 };
+  /** Far enough to land in a DIFFERENT fetch cell than A. */
+  const B = { lat: 51.5007 + 0.06, lng: -0.1246 };
+
+  /**
+   * The same feature key from two DIFFERENT tiles.
+   *
+   * This is the shape that decides the overlay: tiles overlap, so one key can
+   * come from several of them, and the winner is whichever tile sorts last by
+   * (fetchedAt, tile id). Giving each tile its own ids instead - which the
+   * first draft of these tests did - makes every assertion here pass with the
+   * ordering check DELETED, which is no test at all.
+   */
+  const contested = (
+    at: { lat: number; lng: number },
+    fetchedAt: number,
+    surface: string,
+  ) => tile(at, [patch(7, at, { surface })], fetchedAt);
+
+  const surfaceOf = (index: AffordanceIndex) =>
+    [...index.mergedFeatures().values()].find((f) => f.id === 7)?.tags[
+      "surface"
+    ];
+
+  it("lets a newer tile outrank an older one holding the same key", () => {
+    const index = new AffordanceIndex({ table: TABLE });
+    index.acceptTile(contested(A, 1_000, "old"));
+    index.acceptTile(contested(B, 2_000, "new"));
+    expect(surfaceOf(index)).toBe("new");
+  });
+
+  it("does NOT let an older tile overwrite a newer one that arrived first", () => {
+    // ARRIVAL order is not MERGE order. A late-arriving older tile must lose,
+    // which is the one thing an overlay can get wrong and a full re-merge
+    // could not.
+    const index = new AffordanceIndex({ table: TABLE });
+    index.acceptTile(contested(B, 2_000, "new"));
+    index.acceptTile(contested(A, 1_000, "old"));
+    expect(surfaceOf(index)).toBe("new");
+  });
+
+  it("breaks a fetchedAt tie by tile id, in either arrival order", () => {
+    // `compareTiles` tie-breaks on the tile id so the order is TOTAL; the
+    // overlay has to reproduce that half too.
+    const cellA = latLngToCell(A.lat, A.lng, FETCH_RES);
+    const cellB = latLngToCell(B.lat, B.lng, FETCH_RES);
+    const higher = cellA > cellB ? A : B;
+    const lower = cellA > cellB ? B : A;
+
+    const forwards = new AffordanceIndex({ table: TABLE });
+    forwards.acceptTile(contested(lower, 1_000, "lower"));
+    forwards.acceptTile(contested(higher, 1_000, "higher"));
+    expect(surfaceOf(forwards)).toBe("higher");
+
+    const backwards = new AffordanceIndex({ table: TABLE });
+    backwards.acceptTile(contested(higher, 1_000, "higher"));
+    backwards.acceptTile(contested(lower, 1_000, "lower"));
+    expect(surfaceOf(backwards)).toBe("higher");
+  });
+
+  it("agrees with mergeTiles on a contested key, whatever the arrival order", () => {
+    const tiles = [contested(A, 1_000, "a"), contested(B, 3_000, "b")];
+    const expected = mergeTiles(tiles).features;
+
+    for (const order of [tiles, [...tiles].reverse()]) {
+      const index = new AffordanceIndex({ table: TABLE });
+      for (const t of order) index.acceptTile(t);
+      for (const [key, feature] of expected) {
+        expect(index.mergedFeatures().get(key)).toBe(feature);
+      }
+    }
+  });
+  it("agrees with mergeTiles over many DISTINCT tiles in either arrival order", () => {
+    // The property that matters: whatever order distinct tiles arrive in, the
+    // merged set must equal what a full merge of the same tiles produces.
+    const tiles = Array.from({ length: 6 }, (_, i) =>
+      tile(
+        { lat: A.lat + i * 0.02, lng: A.lng },
+        [
+          patch(
+            100 + i,
+            { lat: A.lat + i * 0.02, lng: A.lng },
+            { surface: `s${String(i)}` },
+          ),
+        ],
+        1_000 + ((i * 7) % 5) * 100,
+      ),
+    );
+
+    const forwards = new AffordanceIndex({ table: TABLE });
+    for (const t of tiles) forwards.acceptTile(t);
+    const backwards = new AffordanceIndex({ table: TABLE });
+    for (const t of [...tiles].reverse()) backwards.acceptTile(t);
+
+    const expected = mergeTiles(tiles).features;
+    expect([...forwards.mergedFeatures().keys()].sort()).toEqual(
+      [...expected.keys()].sort(),
+    );
+    expect([...backwards.mergedFeatures().keys()].sort()).toEqual(
+      [...expected.keys()].sort(),
+    );
+    for (const [key, feature] of expected) {
+      expect(forwards.mergedFeatures().get(key)).toBe(feature);
+      expect(backwards.mergedFeatures().get(key)).toBe(feature);
+    }
+  });
+
+  it("still REMOVES features when a refetch drops them", () => {
+    // The one case the overlay must not handle: absence within the bbox of a
+    // single tile means deletion, so a refetch falls back to the full merge.
+    const index = new AffordanceIndex({ table: TABLE });
+    index.acceptTile(
+      tile(
+        A,
+        [patch(11, A, { surface: "a" }), patch(12, A, { surface: "b" })],
+        1_000,
+      ),
+    );
+    index.acceptTile(tile(A, [patch(11, A, { surface: "a" })], 2_000));
+
+    const ids = [...index.mergedFeatures().values()].map((f) => f.id).sort();
+    expect(ids).toEqual([11]);
+  });
+
+  it("replaces the merged-features map rather than mutating it", () => {
+    // `mergedFeatures()` documents its result as a snapshot whose identity
+    // changes, so a holder keeps a coherent world instead of a torn one. The
+    // overlay copies for exactly that reason; this pins it.
+    const index = new AffordanceIndex({ table: TABLE });
+    index.acceptTile(tile(A, [patch(21, A, { surface: "a" })], 1_000));
+    const held = index.mergedFeatures();
+    const heldSize = held.size;
+
+    const B = { lat: A.lat + 0.02, lng: A.lng };
+    index.acceptTile(tile(B, [patch(22, B, { surface: "b" })], 2_000));
+
+    expect(index.mergedFeatures()).not.toBe(held);
+    expect(held.size).toBe(heldSize);
   });
 });
 

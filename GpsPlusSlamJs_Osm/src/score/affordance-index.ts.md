@@ -13,6 +13,28 @@ the package that remembers anything.
 - `acceptTile(tile: OsmTileResult): readonly string[]` — merges the tile, drops
   the scores it invalidates, notifies listeners, and returns the invalidated
   chunk ids.
+  - **Two paths, and which one runs depends on whether the tile is new.**
+    A tile never held before can only ADD or OUTRANK records, never remove
+    one, so it is OVERLAID onto the current merge. A REFETCH can remove them —
+    absence inside the bbox of one tile means deletion (`mergeTiles`) — so it
+    re-merges every held tile.
+  - **Why the overlay is equivalent.** `mergeTiles` sorts by `compareTiles`, a
+    TOTAL order on (`fetchedAt`, tile id), and lets the last write win, so the
+    owner of a key after a full merge is the greatest tile containing it.
+    Adding a tile leaves the relative order of the others untouched, so the
+    new owner is `max(current owner, incoming tile)` — one comparison against
+    the recorded provenance, rather than a rebuild that visits every key no
+    tile touched.
+  - **Measured 2026-08-30** (perf loop, OSM iteration 13; devbox-win11,
+    i7-1185G7, Node 24.14.1, median of 5). Accepting 24 tiles of 2 259
+    features each: **session 821 → 184 ms (−77.6 %)**, and the 24th accept
+    **66.2 → 13.1 ms (−80.2 %)**. Spreads do not overlap (742–897 vs 168–204).
+    The old cost grew with the whole working set on every accept, so a walk
+    paid quadratically for tiles it had already merged.
+  - **The merged map is still REPLACED, not mutated.** `mergedFeatures()`
+    promises a snapshot whose identity changes; mutating in place would save
+    the copy and hand a holder a TORN view instead of the stale one that
+    contract already names.
 - `update(position: LatLng): UpdateResult` — brings the 19-chunk working set up
   to date. Returns `{ workingSet, scored, reused }`.
 - `onChanged(listener): () => void` — subscribe; returns an unsubscribe.
