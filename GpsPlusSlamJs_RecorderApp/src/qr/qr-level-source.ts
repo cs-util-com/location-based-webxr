@@ -184,8 +184,29 @@ export function createQrLevelSource(deps: QrLevelSourceDeps): QrLevelSource {
     // layer — filed, not faked.
     const deadline = new Deadline(timeoutMs, () => disposed);
     deadlines.add(deadline);
+    // The LOSER of the race still resolves, and its `OpenedArchive` would
+    // otherwise never be disposed - only the winner reaches the `finally`
+    // below (PR #383 review). `dispose()` is precisely what aborts what the
+    // open started (the warm download's AbortController), so dropping it
+    // leaks exactly the work the deadline was meant to bound.
+    //
+    // Inert today: the default `openArchive` calls `openRemoteArchive`
+    // without a `cacheStore`, so there is no warm download to abort. It stops
+    // being inert the moment a `cacheStore` is threaded through
+    // `QrLevelSourceDeps` - a background full download of an
+    // attacker-reachable archive then outliving both the deadline and
+    // `dispose()`, on device, during a session. One line here makes that
+    // self-correcting rather than dependent on an option staying unset.
+    let raceSettled = false;
+    const pending = openArchive(archiveUrl);
+    pending.then(
+      (opened) => {
+        if (raceSettled) opened.dispose();
+      },
+      () => undefined // the race reports the rejection; nothing to clean up
+    );
     try {
-      const archive = await deadline.race(openArchive(archiveUrl));
+      const archive = await deadline.race(pending);
       try {
         const levels = await deadline.race(readLevelsFrom(archive));
         const level = levels.get(id);
@@ -195,6 +216,9 @@ export function createQrLevelSource(deps: QrLevelSourceDeps): QrLevelSource {
         archive.dispose();
       }
     } catch (err) {
+      // The deadline (or a rejection) won: anything `pending` still resolves
+      // to is now an orphan, and the handler above disposes it.
+      raceSettled = true;
       const previous = states.get(text);
       const attempts = previous?.kind === 'failed' ? previous.attempts + 1 : 1;
       const backoff = Math.min(
@@ -257,9 +281,13 @@ export function createQrLevelSource(deps: QrLevelSourceDeps): QrLevelSource {
 }
 
 /**
- * An origin no real address can occupy, used only to tell a PATH-relative
- * url apart from a protocol-relative one. Same device `share-link.ts` uses
- * to parse its own relative proxy base.
+ * An origin used only to tell a PATH-relative url apart from a
+ * protocol-relative one. Same device `share-link.ts` uses to parse its own
+ * relative proxy base.
+ *
+ * Only ever applied to a string that already FAILED to parse as an absolute
+ * url, so an attacker cannot reach this branch by naming the sentinel host
+ * in a payload (PR #383 review - they could, for one round).
  */
 const RELATIVE_SENTINEL_ORIGIN = 'https://relative.invalid';
 
@@ -313,19 +341,25 @@ function isAllowedArchiveHost(
       ? { corsProxyBaseUrl: deps.corsProxyBaseUrl }
       : {}),
   });
-  // Resolved against a SENTINEL origin, which separates the two kinds of
-  // "relative" that `new URL(value)` alone lumps together as a throw:
-  //   `/api/drive-proxy?id=X`  -> origin is the sentinel  -> PATH-relative
-  //   `//evil.example/x.zip`   -> origin is evil.example  -> cross-origin
-  // Only the first can be reached without leaving our own origin, whatever
-  // that origin turns out to be at runtime. Deciding this on the sentinel
-  // rather than on `globalThis.location` keeps the rule deterministic and
-  // testable off-DOM - and the answer is the same either way, because a
-  // path-relative url resolves to the page origin by definition.
-  const parsed = tryUrl(fetched, RELATIVE_SENTINEL_ORIGIN);
-  if (parsed === null) return false;
-  if (parsed.origin === RELATIVE_SENTINEL_ORIGIN) return true;
-  const host = parsed.hostname.toLowerCase();
+  // ABSOLUTE first, decided on the STRING (PR #383 review). The previous
+  // shape resolved everything against the sentinel and treated
+  // "origin === sentinel" as "path-relative, therefore ours" - but the
+  // sentinel is a hard-coded host name and the payload came off a printed
+  // sticker, so `https://relative.invalid/x.zip` resolved to the sentinel
+  // origin and was fetched. The sentinel is safe in `share-link.ts` because
+  // that only ever parses a CONFIGURED value; here it must never be
+  // something an attacker can NAME.
+  const absolute = tryUrl(fetched, fetched); // parses only if `fetched` is absolute
+  if (absolute === null) {
+    // Relative, and the sentinel now only ever sees a string that failed to
+    // parse on its own - so it separates the two kinds of "relative" without
+    // being reachable as a host:
+    //   `/api/drive-proxy?id=X` -> sentinel origin -> ours
+    //   `//evil.example/x.zip`  -> evil.example    -> not ours
+    const resolved = tryUrl(fetched, RELATIVE_SENTINEL_ORIGIN);
+    return resolved !== null && resolved.origin === RELATIVE_SENTINEL_ORIGIN;
+  }
+  const host = absolute.hostname.toLowerCase();
   const allowed = new Set<string>(ARCHIVE_HOSTS);
   for (const candidate of [deps.assetPrefix, deps.corsProxyBaseUrl]) {
     if (candidate === undefined) continue;

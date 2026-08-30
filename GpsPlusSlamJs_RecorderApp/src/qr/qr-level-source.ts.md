@@ -90,6 +90,12 @@ Decision record:
       resolves it against the document base and leaves the origin. The
       dictionary codec passes every byte >= 0x20 through as a literal, so
       that payload costs a few base64url characters on a printed sticker.
+    - **The sentinel is only ever applied to a string that already failed to
+      parse as an absolute url** (PR #383 review). It is a hard-coded host
+      name and the payload is attacker-controlled, so for one round a code
+      printed with `https://relative.invalid/x.zip` resolved to the sentinel
+      origin and was fetched. Absoluteness is now decided on the STRING
+      first; the sentinel never sees an address an attacker can name.
     - Decided on the sentinel rather than on `globalThis.location` so the
       rule is deterministic and testable off-DOM; a path-relative url
       resolves to the page origin by definition, so the answer is the same.
@@ -101,3 +107,13 @@ host, a bare `user/repo/path`, a raw-GitHub URL, or our own host without a
 payload; a placeholder rather than a rejection when the archive cannot open;
 one open for many concurrent frames; a transport failure retried only after
 its backoff; an absent level never re-asked; and nothing opened after dispose.
+
+- **The LOSER of the deadline race is disposed too** (PR #383 review). Only
+  the winner reaches the `finally` that disposes the archive, so an open
+  that resolved after the deadline was dropped on the floor - and
+  `OpenedArchive.dispose()` is precisely what aborts the warm download's
+  `AbortController`, i.e. the work the deadline exists to bound. Inert while
+  no `cacheStore` is wired, which is exactly why it carries a test: the day
+  one is threaded through `QrLevelSourceDeps`, nothing else would notice a
+  background download of an attacker-reachable archive outliving both the
+  deadline and `dispose()`.

@@ -176,13 +176,12 @@ export function assessReplayedJoin(state: ReplayedJoinState): JoinAssessment {
   // so every capture would be placed facing East instead of the direction it
   // was taken, with the status line still reporting success. A non-unit norm
   // shears the plane instead. `renormalizeUnitQuaternion` is the framework's
-  // existing contract for exactly this data class.
+  // existing contract for exactly this data class, and since PR #383 it
+  // enforces length and finiteness too — this file used to carry that
+  // prelude at three separate sites, one per review round, which was the
+  // signal the check belonged in the callee.
   const rotation = gpsData.gpsEvents.alignmentRotation;
-  if (
-    rotation.length !== 4 ||
-    !rotation.every((n) => Number.isFinite(n)) ||
-    renormalizeUnitQuaternion(rotation) === undefined
-  ) {
+  if (renormalizeUnitQuaternion(rotation) === undefined) {
     return { ok: false, reason: "the recording's alignment data is malformed" };
   }
   if (gpsData.odometryPath.points.length === 0) {
@@ -228,11 +227,9 @@ export function computeCaptureGeoJoin(
   // short array yields `[x, y, z, NaN]`. Checking only the norm here while
   // checking both there was the same asymmetry one more time (PR #381
   // review), and it made the sidecar's "fails loudly" claim untrue.
-  const rawAlignment = gpsData.gpsEvents.alignmentRotation;
-  const alignmentRotation =
-    rawAlignment.length === 4 && rawAlignment.every((n) => Number.isFinite(n))
-      ? renormalizeUnitQuaternion(rawAlignment)
-      : undefined;
+  const alignmentRotation = renormalizeUnitQuaternion(
+    gpsData.gpsEvents.alignmentRotation,
+  );
   if (alignmentRotation === undefined) {
     throw new Error("capture-geo-join: assess before computing");
   }
@@ -270,20 +267,10 @@ export function computeCaptureGeoJoin(
     // Unit norm too, for the same reason as the alignment rotation above:
     // `[0,0,0,0]` is finite and length-4 and composes to the IDENTITY, which
     // would place this capture facing East rather than dropping it.
-    // The finiteness check runs FIRST and is load-bearing:
-    // `renormalizeUnitQuaternion` does NOT reject non-finite input -
-    // `Math.hypot` yields NaN and `Math.abs(NaN - 1) > 1e-3` is false, so a
-    // NaN quaternion comes back as a NaN quaternion rather than `undefined`
-    // (PR #379 review raised the reverse; the code says otherwise).
-    if (
-      point.rotation.length !== 4 ||
-      !point.rotation.every((n) => Number.isFinite(n))
-    ) {
-      return [];
-    }
     // Use the RETURNED value, not the call as a predicate: that is what
     // `parseQrLevel` and `mintQrGeoPose` do, and it is what makes the
     // writer/reader round-trip exact rather than merely within tolerance.
+    // Length and finiteness are the callee's job since PR #383.
     const rotation = renormalizeUnitQuaternion(point.rotation);
     if (rotation === undefined) {
       return [];

@@ -62,11 +62,12 @@ taken instead of ringing them around the QR code.
     `image-planes.ts`'s own check, reaches `mesh.quaternion.copy(...)`,
     and the plane silently never renders - while `viewerPlanesInfo` still
     counts it, because `count` is `meshes.length`.
-    - The finiteness check runs FIRST and is load-bearing:
-      `renormalizeUnitQuaternion` does NOT reject non-finite input -
-      `Math.hypot` yields `NaN` and `Math.abs(NaN - 1) > 1e-3` is false, so
-      a `NaN` quaternion comes back as a `NaN` quaternion rather than
-      `undefined`.
+    - **The hand-written finiteness preludes are GONE** (PR #383 review).
+      They existed because `renormalizeUnitQuaternion` did not reject
+      non-finite or short input while its JSDoc said it did, so this file
+      grew the same `length === 4 && every(Number.isFinite)` guard at THREE
+      sites, one per review round (#377, #379, #381). Three copies of one
+      check is the signal it belonged in the callee, and it now lives there.
     - Both COMPOSED rotations use the RETURNED value, not the call as a
       predicate, so `rotationNue` is exactly unit rather than unit only to
       within the 1e-3 tolerance: the per-capture rotation since PR #379, and
@@ -78,12 +79,10 @@ taken instead of ringing them around the QR code.
       same asymmetry this file has now been corrected for three times.
     - The ASSESSMENT path at `assessReplayedJoin` still uses it as a
       predicate, correctly: it returns a verdict, not a rotation.
-    - `computeCaptureGeoJoin` checks the alignment rotation for length,
-      finiteness AND norm before composing it - the same three the
-      per-capture path uses, and for the same reason (PR #381 review). The
-      first cut checked only the norm, which does NOT reject `NaN`, so a bad
-      alignment would have produced a NaN quaternion for every plane while
-      this sidecar claimed it failed loudly.
+    - `computeCaptureGeoJoin` refuses an alignment rotation that is not
+      length-4, finite AND unit - all three now enforced by the one shared
+      contract rather than by a prelude here (PR #381 raised the gap, #383
+      moved the fix into the callee).
     - With that guard in place the claim holds: this function re-derives
       `toAlignmentMatrix` itself and throws on a bad alignment rotation, so a
       caller that skips `assessReplayedJoin` fails loudly rather than feeding

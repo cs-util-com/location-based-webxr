@@ -147,6 +147,41 @@ describe('createQrLevelSource — caching', () => {
 });
 
 describe('createQrLevelSource — teardown', () => {
+  it('disposes an archive that arrives after the race was lost', async () => {
+    // Why this test matters (PR #383 review): only the WINNER of the
+    // deadline race reaches the `finally` that disposes the archive, so an
+    // open that resolved late was dropped on the floor. `dispose()` is what
+    // aborts what the open started (the warm download's AbortController), so
+    // the leak is exactly the work the deadline exists to bound. Inert while
+    // no `cacheStore` is wired, which is precisely why it needs a test: the
+    // day one is threaded through, nothing else would notice.
+    const archiveDispose = vi.fn();
+    let settle: (() => void) | undefined;
+    const source = createQrLevelSource({
+      allowedHosts: HOSTS,
+      assetPrefix: 'https://assets.test/',
+      openArchive: () =>
+        new Promise((resolve) => {
+          settle = () => {
+            resolve({ source: {}, dispose: archiveDispose });
+          };
+        }) as never,
+    });
+
+    const pending = source.fetchLevel(OURS);
+    await Promise.resolve();
+    // Lose the race the only way the suite can drive it: tear down, which
+    // expires the deadline and rejects the pending open.
+    source.dispose();
+    await pending;
+    // ...and only THEN does the underlying open succeed.
+    settle?.();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(archiveDispose).toHaveBeenCalledTimes(1);
+  });
+
   it('stops ANSWERING after dispose, not just opening', async () => {
     // Why this test matters (PR #382 review): the sidecar's dispose()
     // contract is "abort in-flight work and stop answering", and the second
@@ -362,6 +397,33 @@ describe('createQrLevelSource — the payload names the fetch host', () => {
       await source.fetchLevel(text);
       expect(source.stateFor(text)?.kind, evil).toBe('not-ours');
     }
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it('refuses a payload that NAMES the sentinel origin', async () => {
+    // Why this test matters (PR #383 review): the sentinel is a hard-coded
+    // host name, and the payload is attacker-controlled. Resolving
+    // `https://relative.invalid/x.zip` against the sentinel base yields
+    // origin === the sentinel, so the "path-relative, therefore ours" branch
+    // fired for an ABSOLUTE stranger URL and the address was fetched.
+    //
+    // The sentinel was safe in `share-link.ts` because that only ever parses
+    // a CONFIGURED value. Here it is compared against a string that came off
+    // a printed sticker. `.invalid` is RFC 2606 reserved and cannot resolve
+    // in public DNS, so the practical reach is small - but "cannot resolve on
+    // the networks we thought about" is a weaker property than the one the
+    // gate claims, and a LAN wildcard resolver or captive portal resolves it.
+    const open = vi.fn();
+    const source = createQrLevelSource({
+      allowedHosts: HOSTS,
+      assetPrefix: 'https://assets.test/',
+      openArchive: open as never,
+    });
+    const evil = 'https://relative.invalid/x.zip';
+    const text = `https://gps.csutil.com/?qr=${encodeURIComponent(evil)}`;
+    await source.fetchLevel(text);
+
+    expect(source.stateFor(text)?.kind).toBe('not-ours');
     expect(open).not.toHaveBeenCalled();
   });
 

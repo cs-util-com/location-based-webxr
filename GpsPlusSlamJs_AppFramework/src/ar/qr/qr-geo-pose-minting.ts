@@ -107,7 +107,18 @@ function normalizeUnitQuaternion(q: Quaternion): Quaternion {
  * (reader), so the two halves of the level-file round-trip can never
  * disagree (DEC-H3: shared behaviour is unified). Accepts a norm within
  * 1e-3 of 1 (JSON round-trip loss), returns `undefined` for anything
- * further off (callers throw their own error type).
+ * further off (callers throw their own error type) — and for anything
+ * NON-FINITE or not four components long.
+ *
+ * That last part was missing until 2026-08-30 (PR #383 review) and the JSDoc
+ * claimed it anyway. `Math.hypot(NaN, 0, 0, 1)` is `NaN`, and
+ * `Math.abs(NaN - 1) > 1e-3` is FALSE, so the guard fell through, `scale`
+ * stayed 1 (`NaN > 1e-12` is false too) and a NaN quaternion came back as
+ * itself. A short array did the same: `Math.hypot(0, 0, 0, undefined)` is
+ * `NaN`, so `[0, 0, 0]` returned `[0, 0, 0, NaN]`. Every caller had grown its
+ * own `length === 4 && every(Number.isFinite)` prelude to compensate — three
+ * of them in `capture-geo-join.ts` alone, each added by a separate review
+ * round — which is the signal the check belonged in the callee.
  *
  * Renormalization is IDEMPOTENT: a norm already within 1e-12 of 1 passes
  * the components through bit-exact. Dividing by a 1-within-rounding norm
@@ -120,8 +131,12 @@ function normalizeUnitQuaternion(q: Quaternion): Quaternion {
 export function renormalizeUnitQuaternion(
   q: Quaternion
 ): Quaternion | undefined {
+  if (q.length !== 4) return undefined;
   const [x, y, z, w] = q;
   const norm = Math.hypot(x, y, z, w);
+  // Checked separately from the tolerance below, because every comparison
+  // against NaN is false — so a NaN norm would PASS a `> 1e-3` test.
+  if (!Number.isFinite(norm)) return undefined;
   if (Math.abs(norm - 1) > 1e-3) return undefined;
   const scale = Math.abs(norm - 1) > 1e-12 ? norm : 1;
   return [x / scale + 0, y / scale + 0, z / scale + 0, w / scale + 0];

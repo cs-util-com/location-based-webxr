@@ -18,7 +18,17 @@ into the `QrGeoPose` a level file carries.
   derivation, exported for `qr-level.ts`'s both-fields consistency check.
 - `renormalizeUnitQuaternion(q): Quaternion | undefined` — the ONE
   writer/reader renormalization contract (also used by `qr-level.ts`'s
-  rotation parsing): accepts norm drift ≤ 1e-3, `undefined` beyond it,
+  rotation parsing): accepts norm drift ≤ 1e-3, `undefined` beyond it —
+  **and `undefined` for anything non-finite or not four components long,
+  since PR #383**. It did not reject those until then while the JSDoc said
+  it did: every comparison against `NaN` is false, so `Math.abs(NaN - 1) >
+1e-3` fell through and a `NaN` quaternion came back as itself; a short
+  array returned `[x, y, z, NaN]`. Every caller had grown its own
+  `length === 4 && every(Number.isFinite)` prelude to compensate — three of
+  them in the TourViewer's `capture-geo-join.ts` alone, one per review round
+  (#377, #379, #381) — which is what identified the check as the callee's.
+  Those three preludes are gone; the property test pins the contract.
+  It also
   canonicalizes -0 → +0, and is IDEMPOTENT — a norm within 1e-12 of 1
   passes through bit-exact, so repeated parse/serialize cycles cannot
   drift the components by a last-bit step per pass (CI property seed,
