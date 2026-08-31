@@ -42,6 +42,7 @@ import {
   type TrackingPhase,
   type TrackingSliceState,
   type ResetTransformData,
+  type DeviceOrientation,
 } from '../state/tracking-slice';
 
 /**
@@ -1069,21 +1070,39 @@ export async function initAR(
 }
 
 /**
- * Snapshot the current `DeviceOrientation` (with documented fallback
- * defaults) for inclusion in `poseReceived` payloads.
+ * Snapshot the current device orientation for `poseReceived`, or `null` when
+ * the browser has given us no reading.
+ *
+ * **IT USED TO FABRICATE, AND THAT WAS A SILENT BUG.** Every absent axis was
+ * substituted with `0`, and `0` is a legal reading meaning "facing north, flat
+ * and level" — so nothing downstream could tell "no compass" from "pointing
+ * north". The value is not merely diagnostic: it reaches
+ * `calcRotationOffsetFromRestart` in the core library, the rotation correction
+ * applied to the world after a tracking restart.
+ *
+ * Two fabricated readings cancel each other there, so a device with no compass
+ * was never harmed. The damage was the MIXED case — availability changing
+ * between the last valid pose and the restart, so one snapshot carried a real
+ * heading and the other a fabricated zero, and the whole absolute heading was
+ * applied as though the device had turned by it. Returning `null` is what lets
+ * the library refuse that pair instead of trusting half of it.
+ *
+ * **Per-axis `null`s are preserved rather than zeroed** for the same reason: a
+ * phone with no magnetometer reports a null `alpha` beside real `beta`/`gamma`,
+ * and the library pairs the axes individually so that tilt still corrects while
+ * heading cancels.
+ *
+ * Full reasoning:
+ * `GpsPlusSlamJs_Docs/docs/2026-08-31-1620-compass-absence-representable-plan.md`
  */
-function snapshotDeviceOrientation(): {
-  alpha: number;
-  beta: number;
-  gamma: number;
-  absolute: boolean;
-} {
+function snapshotDeviceOrientation(): DeviceOrientation | null {
   const orientation = getLastDeviceOrientation();
+  if (orientation === null) return null;
   return {
-    alpha: orientation?.alpha ?? 0,
-    beta: orientation?.beta ?? 0,
-    gamma: orientation?.gamma ?? 0,
-    absolute: orientation?.absolute ?? false,
+    alpha: orientation.alpha,
+    beta: orientation.beta,
+    gamma: orientation.gamma,
+    absolute: orientation.absolute,
   };
 }
 

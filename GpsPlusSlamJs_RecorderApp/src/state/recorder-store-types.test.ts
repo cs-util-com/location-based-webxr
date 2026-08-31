@@ -11,16 +11,26 @@
  * removed once the boundary migration finished — consumers now import
  * from the `state` subpath directly.)
  *
- * The framework also exports a *different* `RawDeviceOrientation` from
- * its `sensors/gps.ts` (with nullable `alpha`/`beta`/`gamma` fields)
- * that is reachable via the framework's root barrel. If a consumer (or
- * the framework's `state` barrel itself) ever routes through the root
- * barrel instead of the `state` subpath, the recorder app's
- * `RawDeviceOrientation` would silently flip from non-nullable to
- * nullable, breaking every consumer that assigns a number directly to
- * those fields.
+ * ⚠️ **THE ORIGIN CHECK BELOW NO LONGER DISCRIMINATES, and pretending
+ * otherwise would be worse than saying so.** The framework exports a
+ * second `RawDeviceOrientation` from its `sensors/gps.ts`, reachable via
+ * the root barrel, and this file existed because the two had different
+ * shapes: the library's angles were non-nullable, the framework's were
+ * nullable. A consumer accidentally routed through the root barrel would
+ * flip from one to the other, and this test would catch it.
  *
- * These tests lock in the library shape.
+ * On 2026-08-31 the library's angles became `number | null` too, because
+ * substituting `0` for an absent reading was a silent bug — `0` is a legal
+ * heading meaning "facing north". The two types are now structurally
+ * identical, so `toEqualTypeOf` cannot tell them apart and the import-route
+ * guard is gone. What remains below is a shape assertion, which is still
+ * worth having and is no longer what the file's title claims.
+ *
+ * The durable fix is to stop having two: the framework's `sensors/gps.ts`
+ * type should alias the library's. Not done here — it is a public API
+ * change to the framework, unrelated to the defect this change set fixes.
+ * Recorded in
+ * `GpsPlusSlamJs_Docs/docs/2026-08-31-1620-compass-absence-representable-plan.md`.
  */
 
 import { describe, it, expectTypeOf } from 'vitest';
@@ -31,13 +41,21 @@ import type {
 } from 'gps-plus-slam-app-framework/state';
 
 describe('framework/state raw sensor library types', () => {
-  it('RawDeviceOrientation has non-nullable alpha/beta/gamma (library shape)', () => {
-    // The library's RawDeviceOrientation has `alpha: number` (non-nullable).
-    // The framework's sensors/gps.ts version has `alpha: number | null`.
-    // We must be re-exporting the library version.
-    expectTypeOf<RawDeviceOrientation['alpha']>().toEqualTypeOf<number>();
-    expectTypeOf<RawDeviceOrientation['beta']>().toEqualTypeOf<number>();
-    expectTypeOf<RawDeviceOrientation['gamma']>().toEqualTypeOf<number>();
+  it('RawDeviceOrientation carries absence per axis', () => {
+    // CHANGED 2026-08-31 from asserting non-nullable angles. That assertion
+    // was correct and its rationale is now obsolete: a producer with no
+    // reading had to substitute 0, and 0 means "facing north, flat and
+    // level", so the recording could not distinguish the two. The null is the
+    // fix, and this pins that it survives the re-export.
+    expectTypeOf<RawDeviceOrientation['alpha']>().toEqualTypeOf<
+      number | null
+    >();
+    expectTypeOf<RawDeviceOrientation['beta']>().toEqualTypeOf<number | null>();
+    expectTypeOf<RawDeviceOrientation['gamma']>().toEqualTypeOf<
+      number | null
+    >();
+    // `absolute` stays a plain boolean - "is alpha magnetic-north relative",
+    // which is a fact about the reading rather than a reading itself.
     expectTypeOf<RawDeviceOrientation['absolute']>().toEqualTypeOf<boolean>();
   });
 

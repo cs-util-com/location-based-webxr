@@ -9,9 +9,13 @@ Redux Toolkit slice for the AR tracking-loss / tracking-restart state machine. R
 - Types
   - `TrackingPhase` — `'initializing' | 'tracking' | 'lost'`. String-literal union (not a TS enum) so the value is structurally compatible with JSON / replay payloads.
   - `TrackingSliceState` — slice shape (`phase`, `lastValidPose`, `lastSensorOrientation`, `lostFrameCount`, `originResetDuringLoss`, `resetTransform`, `lastRestartedPayload`).
-  - `DeviceOrientation` — resolved, non-nullable counterpart of `RawDeviceOrientation` (sensors are required to have resolved for the AR math that consumes this snapshot).
+  - `DeviceOrientation` — a device-orientation snapshot with **per-axis nullable** angles.
+    - ⚠️ **It was the "resolved, non-nullable counterpart" of `RawDeviceOrientation` until 2026-08-31, and that resolution was a silent bug.** It substituted `0` for an absent axis, and `0` is a legal reading meaning "facing north, flat and level" — so nothing downstream could tell a missing compass from a device pointing north.
+    - The value is not diagnostic: it reaches the core library's `calcRotationOffsetFromRestart`, the rotation correction applied to the world after a tracking restart. Two fabricated readings cancel there, so a compass-less device was never harmed; the damage was the MIXED case, where availability changed between the last valid pose and the restart.
+    - Angles are nullable **individually** because a phone with no magnetometer reports a null `alpha` beside real `beta`/`gamma`, and the library pairs the axes so tilt still corrects while heading cancels.
+    - `absolute` stays a plain `boolean` — it describes the reading rather than being one.
   - `ResetTransformData` — serialized `XRReferenceSpaceEvent.transform` (position + orientation).
-  - `PoseReceivedPayload` — `{ pose, sensorOrientation }`.
+  - `PoseReceivedPayload` — `{ pose, sensorOrientation }`, where `sensorOrientation` is `DeviceOrientation | null` (`null` when the browser has reported nothing at all, as opposed to a reading with some axes missing).
 - Actions
   - `poseReceived({ pose, sensorOrientation })` — atomic pose + orientation snapshot. INITIALIZING|LOST → TRACKING. On LOST → TRACKING with `originResetDuringLoss === true && lastValidPose !== null`, populates `lastRestartedPayload`.
   - `poseLost()` — increments `lostFrameCount`; TRACKING → LOST on first call.
@@ -29,6 +33,10 @@ Redux Toolkit slice for the AR tracking-loss / tracking-restart state machine. R
 - `lastValidPose` is `null` until the first `poseReceived` (property test).
 - `lastRestartedPayload` is **transient**: the host must call `clearLastRestartedPayload` between cycles. A subsequent **Case 1** (seamless) recovery does NOT clobber an unread payload; a consecutive **Case 2** (relocalization) recovery overwrites it. Both behaviours are pinned by tests.
 - The `null lastValidPose` defensive branch on LOST → TRACKING-with-reset cannot be hit through the public API (because `lastValidPose` is set atomically alongside `lastSensorOrientation`), but is preserved as a defensive check and exercised via preloaded state.
+- **A missing orientation is OMITTED from `lastRestartedPayload`, never zeroed or back-filled** (2026-08-31). Two rules, both asserted rather than left to the type, because each was previously violated in a way that looked harmless:
+  - **No zero substitution.** Writing `{alpha: 0, …}` for an absent reading makes an incomplete pair look complete, and the library's `resolveSensorPair` would then trust it — reinstating the bug one layer down.
+  - **No `?? sensorOrientation` back-fill.** The reducer used to substitute the NEW reading for a missing prior one. Its effect was accidentally benign (equal sides cancel in `newSensor · inv(lastSensor)`), but it recorded a claim that the earlier snapshot held a value it never had. A recording that misreports a sensor is worse than one admitting it said nothing.
+  - The library decides what an incomplete pair means; this slice's only job is to let the incompleteness survive.
 - The slice carries **no side effects** — the host (`ar/webxr-session.ts`) translates phase transitions into `onTrackingLost` / `onTrackingRestarted` / `onTrackingRecovered` callbacks via `store.subscribe`.
 
 ## Examples
@@ -70,7 +78,10 @@ store.dispatch(
 );
 
 const payload = selectLastRestartedPayload(store.getState());
-// → OdometryTrackingRestartedPayload with both poses + both sensor orientations.
+// → OdometryTrackingRestartedPayload with both poses, and both sensor
+// orientations WHEN THE DEVICE SUPPLIED THEM. Either orientation field is
+// absent if no reading existed at that moment; the library then re-bases on
+// odometry alone rather than trusting half a pair.
 ```
 
 ## Tests

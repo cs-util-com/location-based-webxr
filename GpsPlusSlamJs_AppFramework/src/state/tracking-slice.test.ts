@@ -411,10 +411,21 @@ describe('trackingSlice — Case 2: relocalization', () => {
     expect(selectTrackingPhase(store.getState())).toBe('tracking');
   });
 
-  it('falls back to new sensorOrientation when no prior orientation was captured (defensive)', () => {
-    // Reachable only via preloaded state (the slice API always sets
-    // lastSensorOrientation alongside lastValidPose). The original manager
-    // had this branch and we keep it for parity.
+  it('omits the prior orientation rather than substituting the new one', () => {
+    // INVERTED 2026-08-31. This used to assert the opposite - that a missing
+    // prior orientation falls back to the NEW reading - kept "for parity" with
+    // an older manager and justified as "reachable only via preloaded state".
+    //
+    // Both halves of that justification have expired. `sensorOrientation` is
+    // now nullable, so a pose taken before the browser reports anything makes
+    // this branch reachable on a REAL path; and the substitution writes into
+    // the recording a claim that the earlier snapshot held a value it never
+    // had.
+    //
+    // The alignment result is unchanged either way - substituting made both
+    // sides equal, and equal sides cancel in `newSensor · inv(lastSensor)`,
+    // which is what omitting them also produces via the library's
+    // `resolveSensorPair`. What changes is that the recording stops lying.
     const newOrientation: DeviceOrientation = {
       alpha: 90,
       beta: 45,
@@ -439,7 +450,8 @@ describe('trackingSlice — Case 2: relocalization', () => {
       poseReceived({ pose: newPose, sensorOrientation: newOrientation })
     );
     const payload = selectLastRestartedPayload(store.getState())!;
-    expect(payload.lastSensorOrientation).toEqual(newOrientation);
+    // Absent, not back-filled - the library refuses the incomplete pair.
+    expect(payload.lastSensorOrientation).toBeUndefined();
     expect(payload.newSensorOrientation).toEqual(newOrientation);
   });
 
@@ -594,5 +606,93 @@ describe('trackingSlice — resetTracking', () => {
       poseReceived({ pose: newPose, sensorOrientation: defaultOrientation })
     );
     expect(selectLastRestartedPayload(store.getState())).toBeNull();
+  });
+});
+
+describe('trackingSlice — a restart with no sensor reading', () => {
+  /**
+   * Why these tests matter: the framework used to fabricate
+   * `alpha/beta/gamma = 0` whenever the browser had given it no reading, and
+   * `0` is a legal value meaning "facing north, flat and level". The payload
+   * built here feeds the core library's `calcRotationOffsetFromRestart`, so a
+   * fabricated half-pair applied a whole absolute heading as though the device
+   * had turned by it.
+   *
+   * The fix has two halves and this is the second: the reducer must OMIT what
+   * it does not have, so `resolveSensorPair` in the library can refuse the
+   * pair. Re-zeroing here would make an incomplete pair look complete and
+   * reinstate the bug one layer down, which is why it is asserted rather than
+   * left to the type.
+   */
+  it('omits both orientation fields when no reading exists at either end', () => {
+    const store = createStore();
+    store.dispatch(
+      poseReceived({ pose: initialPose, sensorOrientation: null })
+    );
+    store.dispatch(poseLost());
+    store.dispatch(originReset());
+    store.dispatch(poseReceived({ pose: newPose, sensorOrientation: null }));
+
+    const payload = selectLastRestartedPayload(store.getState());
+    expect(payload).not.toBeNull();
+    // Present and zeroed would be the bug; absent is the contract.
+    expect(payload!.lastSensorOrientation).toBeUndefined();
+    expect(payload!.newSensorOrientation).toBeUndefined();
+    // The odometry half must still be there - refusing the compass must not
+    // refuse the restart.
+    expect(payload!.lastValidOdomPos).toEqual([1, 2, 3]);
+    expect(payload!.newOdomRot).toEqual([0, 0.1, 0, 0.995]);
+  });
+
+  it('omits only the side that is missing, leaving the pair visibly incomplete', () => {
+    // THE DEFECT'S OWN SHAPE: the compass becomes available between the last
+    // valid pose and the restart. The reducer must not paper over that - the
+    // library decides what an incomplete pair means, and it can only do so if
+    // the incompleteness survives.
+    const store = createStore();
+    store.dispatch(
+      poseReceived({ pose: initialPose, sensorOrientation: null })
+    );
+    store.dispatch(poseLost());
+    store.dispatch(originReset());
+    store.dispatch(
+      poseReceived({
+        pose: newPose,
+        sensorOrientation: { alpha: 90, beta: 0, gamma: 0, absolute: true },
+      })
+    );
+
+    const payload = selectLastRestartedPayload(store.getState());
+    expect(payload!.lastSensorOrientation).toBeUndefined();
+    expect(payload!.newSensorOrientation).toEqual({
+      alpha: 90,
+      beta: 0,
+      gamma: 0,
+      absolute: true,
+    });
+  });
+
+  it('preserves a per-axis null rather than zeroing it', () => {
+    // A phone with no magnetometer: null alpha, real beta/gamma. Zeroing alpha
+    // here would look identical to a real "facing north" reading.
+    const noCompass: DeviceOrientation = {
+      alpha: null,
+      beta: 12,
+      gamma: -4,
+      absolute: false,
+    };
+    const store = createStore();
+    store.dispatch(
+      poseReceived({ pose: initialPose, sensorOrientation: noCompass })
+    );
+    store.dispatch(poseLost());
+    store.dispatch(originReset());
+    store.dispatch(
+      poseReceived({ pose: newPose, sensorOrientation: noCompass })
+    );
+
+    const payload = selectLastRestartedPayload(store.getState());
+    expect(payload!.lastSensorOrientation?.alpha).toBeNull();
+    expect(payload!.lastSensorOrientation?.beta).toBe(12);
   });
 });
