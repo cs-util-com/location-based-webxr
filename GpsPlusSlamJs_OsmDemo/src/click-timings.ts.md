@@ -14,7 +14,14 @@ the whole click across its rings.
 - `ClickTimingInput` — `{ radius, pipeline, worker, roundTripMs, drawMs }`.
 - `composeClickTimings(input): ClickTimings` — the stages, their shares, the
   residual, and whether it reconciles.
-- `describeClickTimings(t): string` — one console line per ring.
+- `describeClickTimings(t): string` — one console line per ring. Its
+  `served` prefix reads `<fetched>/<net>/<cache>[/<unmeasured>]/<held>/<features>`.
+  - **`featuresHeld` is printed even when zero** (added 2026-08-31), unlike the
+    zero-cost stages, which are filtered out. Absent and zero are different
+    facts everywhere else in this type, and a missing count on an empty pass
+    would read as "the instrument is not there" — the one misreading that would
+    waste a measurement session. Rationale for the field itself is in
+    [`demo-pipeline.ts.md`](./demo-pipeline.ts.md).
 - `ClickSummary` — `{ clickMs, rings, ringSumMs, pageResidualMs }`.
 - `composeClickSummary(clickMs, rings): ClickSummary` — the whole click against
   the sum of its rings.

@@ -36,6 +36,7 @@ export const ZERO_STAGE_TIMINGS: DemoStageTimings = {
   pipelineMs: 0,
   tilesFetched: 0,
   tilesHeld: 0,
+  featuresHeld: 0,
   tilesFromNetwork: 0,
   tilesFromCache: 0,
   tilesUnmeasured: 0,

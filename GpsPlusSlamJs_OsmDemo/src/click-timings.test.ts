@@ -498,3 +498,51 @@ describe("pipelineUnattributedMs — the second anchor", () => {
     expect(t.reconciles).toBe(false);
   });
 });
+
+describe("the feature count on the click line", () => {
+  /**
+   * Why these tests matter: this is the ONE measurement the perf ledger says
+   * would settle the unexplained 1.5 s / 9.5 s gap between what a build
+   * extrapolates to and what a slow click actually costs
+   * (`GpsPlusSlamJs_Docs/docs/perf-loop-state.md`). The recipe was written down
+   * on 2026-08-15 and never implemented: surface the merged-feature count beside
+   * `tilesHeld`, then click as `tilesHeld` climbs 1 -> 7 and record
+   * `(tilesHeld, featuresHeld, meshMs)`.
+   *
+   * Without it, `tilesHeld` alone cannot distinguish "seven small tiles" from
+   * "seven dense ones", which is exactly the ambiguity the two competing
+   * explanations turn on - a latent quadratic the branch merely exposed, versus
+   * code that genuinely got slower.
+   */
+  it("carries the merged-feature count through composition", () => {
+    const t = composeClickTimings({
+      ...INPUT,
+      pipeline: { ...INPUT.pipeline, tilesHeld: 7, featuresHeld: 84_000 },
+    });
+    expect(t.featuresHeld).toBe(84_000);
+  });
+
+  it("prints it beside the tiles held, where the reader is already looking", () => {
+    const line = describeClickTimings(
+      composeClickTimings({
+        ...INPUT,
+        pipeline: { ...INPUT.pipeline, tilesHeld: 7, featuresHeld: 84_000 },
+      }),
+    );
+    expect(line).toContain("7 held");
+    expect(line).toContain("84000 features");
+  });
+
+  it("prints a zero count rather than dropping it", () => {
+    // Absent and zero are different facts everywhere else in this type, and a
+    // dropped zero would read as "the instrument is not there" on exactly the
+    // empty-pass case where that is worth knowing.
+    const line = describeClickTimings(
+      composeClickTimings({
+        ...INPUT,
+        pipeline: { ...INPUT.pipeline, tilesHeld: 0, featuresHeld: 0 },
+      }),
+    );
+    expect(line).toContain("0 features");
+  });
+});

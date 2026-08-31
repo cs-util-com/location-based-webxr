@@ -287,6 +287,22 @@ export interface DemoStageTimings {
   readonly tilesFetched: number;
   /** Tiles held by the index — the denominator merge cost grows against. */
   readonly tilesHeld: number;
+  /**
+   * Merged features held by the index — `tilesHeld`'s missing denominator.
+   *
+   * **This is the number the perf ledger says would settle the unexplained
+   * 1.5 s / 9.5 s gap** between what a build extrapolates to and what a slow
+   * click costs (`GpsPlusSlamJs_Docs/docs/perf-loop-state.md`). Tile count
+   * alone cannot tell "seven small tiles" from "seven dense ones", and the two
+   * live explanations — a latent quadratic this branch merely exposed, versus
+   * code that genuinely got slower — differ precisely there.
+   *
+   * **Free to read**: `mergedFeatures()` returns the index's own `Map`
+   * uncopied, so this is a `.size` and not a walk. An instrument that cost a
+   * traversal of the thing it measures would not be worth having on the click
+   * path.
+   */
+  readonly featuresHeld: number;
   readonly tilesFromNetwork: number;
   readonly tilesFromCache: number;
   /**
@@ -710,6 +726,7 @@ export class DemoPipeline {
         deriveMs: Math.max(0, this.clock() - deriveStart),
         pipelineMs: Math.max(0, this.clock() - pipelineStart),
         tilesHeld: this.loaded.size,
+        featuresHeld: this.index.mergedFeatures().size,
       },
     };
   }
