@@ -174,12 +174,6 @@ function maxPairwiseDistanceM(
 }
 
 /**
- * Combine one code's sightings into an anchor, or decline with a reason.
- *
- * Never throws: the callers are a zip contributor and a summary panel, and
- * both want a verdict rather than an exception.
- */
-/**
  * Everything that can refuse before any composition happens: no evidence, a
  * frame change, or a code that turned too far between visits.
  */
@@ -230,6 +224,32 @@ function placeableSightings(
     placeable.push({ sighting, alignmentMatrix, zero });
   }
   return placeable;
+}
+
+/**
+ * The caller's half-life, or the default — rejecting values that would make
+ * {@link recencyWeights} produce weights `weightedMedian` silently drops
+ * (PR #390 review).
+ *
+ * `0` yields NaN for the newest sighting and 0 for every older one; a negative
+ * value can make the denominator exactly 0, yielding Infinity. In both cases
+ * `weightedMedian` discards the lot and falls back to the unweighted median,
+ * so the weighting does not run AND `quality.unweighted` matches the weighted
+ * answer — the readout that exists to show the weighting's effect reports
+ * "0 m moved" precisely when it never happened. Loud beats silent here.
+ *
+ * "No decay" is expressible as a large finite half-life; Infinity is rejected
+ * so the contract stays a single positive finite number.
+ */
+function resolveRecencyHalfLifeS(value: number | undefined): number {
+  const halfLifeS = value ?? DEFAULT_RECENCY_HALF_LIFE_S;
+  if (!Number.isFinite(halfLifeS) || halfLifeS <= 0) {
+    throw new RangeError(
+      'recencyHalfLifeS must be a positive, finite number of seconds; got ' +
+        String(halfLifeS)
+    );
+  }
+  return halfLifeS;
 }
 
 /** `1 / (1 + age / halfLife)`, age measured back from the last sighting. */
@@ -359,10 +379,32 @@ function placeOrRefuse(
   return { placeable, combined, rotation: combined.rotation };
 }
 
+/**
+ * Combine one code's sightings into an anchor, or decline with a reason.
+ *
+ * (This doc comment sat above `refuseUnusable` until 2026-08-31, orphaned by a
+ * refactor — it has always described THIS function.)
+ *
+ * **Never throws for a DATA condition.** The callers are a zip contributor and
+ * a summary panel, and both want a verdict rather than an exception, so "never
+ * seen", "tracking restarted" and "the poster moved" all come back as
+ * `{ ok: false, reason }`.
+ *
+ * **It does throw `RangeError` for a caller BUG** — today only a
+ * `recencyHalfLifeS` that is not a positive finite number. That is not a
+ * softening of the contract above but its complement: a bad half-life is not
+ * something the recording did, it is something the calling code did, and
+ * {@link resolveRecencyHalfLifeS} records why degrading silently is the worse
+ * option (the readout that would reveal it is the one it suppresses).
+ */
 export function mintQrAnchorFromSightings(
   input: MintQrAnchorInput
 ): QrAnchorMintResult {
   const { sightings, nowIso } = input;
+  // Validated BEFORE the refusal paths below: a bad half-life is a caller bug,
+  // and letting it hide behind "these sightings were unusable anyway" means it
+  // only ever surfaces on the sessions that would otherwise have succeeded.
+  const recencyHalfLifeS = resolveRecencyHalfLifeS(input.recencyHalfLifeS);
   // No empty-guard on either: both helpers start at `worst = 0` and their
   // nested loops do not execute for an empty array, so the ternaries that
   // used to sit here were provably dead branches — and removing them is what
@@ -385,10 +427,7 @@ export function mintQrAnchorFromSightings(
   const refusal = refuseUnusable(input, rotationSpreadDeg);
   if (refusal !== null) return refusal;
 
-  const placed = placeOrRefuse(
-    sightings,
-    input.recencyHalfLifeS ?? DEFAULT_RECENCY_HALF_LIFE_S
-  );
+  const placed = placeOrRefuse(sightings, recencyHalfLifeS);
   if ('refusal' in placed) return placed.refusal;
   const { placeable, combined, rotation } = placed;
 

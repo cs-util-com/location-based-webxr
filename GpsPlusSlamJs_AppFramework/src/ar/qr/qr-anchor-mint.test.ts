@@ -334,3 +334,78 @@ describe('mintQrAnchorFromSightings — the unweighted comparison', () => {
     );
   });
 });
+
+describe('mintQrAnchorFromSightings — recencyHalfLifeS validation', () => {
+  /**
+   * Why these tests matter: `recencyHalfLifeS` is caller-supplied public API,
+   * and `recencyWeights` divides by it unguarded (PR #390 review). The failure
+   * was SILENT rather than loud, which is what makes it worth a throw:
+   *
+   * - `0` gives the newest sighting `1 / (1 + 0/0)` = NaN and every older one
+   *   `1 / (1 + Infinity)` = 0. `weightedMedian` drops all of them and falls
+   *   back to `lowerMedian`, so the weighting simply does not run — and
+   *   `quality.unweighted` then equals the weighted answer, so the "weighting
+   *   moved it N m" readout on the summary screen reports 0 m for a mint whose
+   *   weighting never happened. The one signal that would reveal the bug is
+   *   the signal the bug suppresses.
+   * - a negative half-life can make `1 + ageS/halfLifeS` exactly 0, giving an
+   *   Infinity weight, or simply a negative one — both dropped the same way.
+   *
+   * A caller wanting "no decay" passes a large finite number, which is what
+   * the unweighted-comparison test above already does.
+   */
+  const twoSightings = [
+    sighting({ alignmentMatrix: shifted(0, 0), lastTimestamp: 0 }),
+    sighting({ alignmentMatrix: shifted(100, 0), lastTimestamp: 600_000 }),
+  ];
+
+  for (const bad of [0, -1, -60, Number.NaN, Infinity, -Infinity]) {
+    it(`rejects recencyHalfLifeS = ${String(bad)}`, () => {
+      expect(() =>
+        mintQrAnchorFromSightings({
+          sightings: twoSightings,
+          spansFrameChange: false,
+          nowIso: NOW,
+          recencyHalfLifeS: bad,
+        })
+      ).toThrow(RangeError);
+    });
+  }
+
+  it('still accepts a positive finite half-life', () => {
+    // Guards the guard: a validation that rejected everything would make every
+    // test above red, but a validation that rejected only the DEFAULT path
+    // would not, since these tests all pass an explicit value.
+    const result = mintQrAnchorFromSightings({
+      sightings: twoSightings,
+      spansFrameChange: false,
+      nowIso: NOW,
+      recencyHalfLifeS: 60,
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('accepts an omitted half-life, falling back to the default', () => {
+    const result = mintQrAnchorFromSightings({
+      sightings: twoSightings,
+      spansFrameChange: false,
+      nowIso: NOW,
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('rejects a bad half-life even when the sightings would be refused', () => {
+    // Why this test matters: it pins the ORDER. Validating inside the
+    // placement step would let a caller bug hide behind "these sightings were
+    // unusable anyway", so it would only ever surface on the sessions that
+    // would otherwise have succeeded — the worst possible sampling.
+    expect(() =>
+      mintQrAnchorFromSightings({
+        sightings: [],
+        spansFrameChange: false,
+        nowIso: NOW,
+        recencyHalfLifeS: 0,
+      })
+    ).toThrow(RangeError);
+  });
+});

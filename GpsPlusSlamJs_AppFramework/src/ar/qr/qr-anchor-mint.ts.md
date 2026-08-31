@@ -17,9 +17,25 @@ Decision record:
 - `maxPairwiseRotationDeg(rotations): number` — the outlier-inclusive
   cross-sighting rotation disagreement.
 - `mintQrAnchorFromSightings(input): QrAnchorMintResult` — `{ ok: true, level,
-quality }` or `{ ok: false, reason, detail }`. **Never throws.**
+quality }` or `{ ok: false, reason, detail }`. **Never throws for a DATA
+  condition**; the callers are a zip contributor and a summary panel, and both
+  want a verdict rather than an exception.
   - `reason` ∈ `no-sightings | frame-changed | moved | no-alignment`; `detail`
     is a plain-words sentence, because every decline reaches a person.
+  - **Throws `RangeError` for a caller BUG** — today only an
+    `input.recencyHalfLifeS` that is not a positive finite number. Validated
+    at the top of the function, BEFORE the refusal paths, so the bug cannot
+    hide behind "those sightings were unusable anyway" and surface only on the
+    sessions that would otherwise have succeeded.
+    - Why loud rather than a silent fallback (PR #390 review): `0` gives the
+      newest sighting a `NaN` weight and every older one `0`, and a negative
+      value can give `Infinity`. `weightedMedian` drops all of those and falls
+      back to the unweighted median — so the weighting silently does not run,
+      **and** `quality.unweighted` then equals the weighted answer, making the
+      summary screen report "weighting moved it 0 m". The one readout that
+      would reveal the bug is the readout the bug suppresses.
+    - "No decay" is expressible as a large finite half-life, so rejecting
+      `Infinity` costs no capability and keeps the contract one number.
 
 ## Invariants & assumptions
 
@@ -81,5 +97,12 @@ translation, decoded back through `calcRelativeCoordsInMeters`; the weighted
 combine leaning to the LATER sighting (a test that fails if the weights are
 ignored, where the others would not); the unweighted answer returned
 alongside; the quality block reaching the level; and the median printed size.
+
+`recencyHalfLifeS` validation is covered by its own describe block: each
+rejected value (`0`, negatives, `NaN`, `±Infinity`) throwing `RangeError`, two
+positive controls so a validation that rejected everything would be caught
+(a positive explicit value, and an omitted one falling back to the default),
+and one test pinning that the rejection happens BEFORE the refusal paths — the
+ordering is the part a later refactor could quietly lose.
 
 No fixtures required.
