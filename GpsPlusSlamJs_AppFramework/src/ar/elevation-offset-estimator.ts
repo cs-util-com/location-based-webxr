@@ -363,7 +363,6 @@ function isFiniteTick(tick: ElevationOffsetTick): boolean {
   );
 }
 
-/** Lower median of a plain number list; null when empty. */
 /**
  * Per-tick aggregate for the freeze detector: the CONFIDENCE-WEIGHTED
  * lower median of the tick's finite sample values, using the same floored

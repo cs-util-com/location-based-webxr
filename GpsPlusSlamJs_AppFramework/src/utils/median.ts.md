@@ -29,6 +29,16 @@ lowerMedian([1, 2, 3, 4]); // 2
 
 `median.test.ts` — odd/even/single/empty cases for both variants, no-mutation pin, and fast-check properties (permutation invariance; lower median is always an element of the input; interpolating median lies within [min, max]).
 
+`median.property.test.ts` — `weightedMedian`'s four invariants, added because
+two consumers now turn its output into real-world coordinates and examples
+cannot reach these (PR #391 review): membership (the result is an observed
+value, never a fabricated average); **flat weights agree with `lowerMedian`**,
+which is the one `combinePlacements` subtracts to report how far the weighting
+moved an anchor; order-independence, since the caller's sightings arrive in a
+contract-defined order a median must not care about; and at least half the
+weight sitting at or below the result. The second of those failed on its first
+run and is what surfaced the tie-slack defect above.
+
 ## weightedMedian (added 2026-08-28)
 
 - `weightedMedian(values, weights): number` — the value where half the
@@ -39,6 +49,23 @@ lowerMedian([1, 2, 3, 4]); // 2
   private weighted median inside the alignment solver, and two implementations
   that disagree here disagree by a whole sample — so it is pinned with golden
   values.
+  - ⚠️ **The tie convention needed a SLACK term to actually hold, and the
+    original code silently inverted it** (PR #391 review, found by
+    `median.property.test.ts` on its first run). `total` sums every weight
+    while `cumulative` sums a prefix, so the two accumulate rounding
+    differently and an exact tie can miss by a fraction of an ULP — handing
+    back the UPPER straddling value.
+    - Measured counterexample: six equal weights of `331.0968672709313`,
+      whose prefix sum of three lands **0.52 ULP** below `total / 2`.
+    - **Flat weights are not an exotic input**: `qr-anchor-mint`'s
+      `combinePlacements` uses them to build the unweighted comparison, so any
+      even number of sightings could hit it. The symptom would have been the
+      session summary reporting "recency weighting moved the anchor N m" for a
+      mint whose weighting changed nothing — a plausible-looking number that
+      nothing downstream could contradict.
+    - The slack is `|total| * Number.EPSILON * pairs.length`, scaled to where
+      the error actually comes from, and far too small to move a genuine
+      decision.
   - **The cross-check now exists** and lives where it had to —
     `GpsPlusSlamJs_Investigation/src/regression/weighted-median-cross-check.test.ts`,
     the only package that may reach the core's internals (this one may

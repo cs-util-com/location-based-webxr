@@ -89,10 +89,29 @@ export function weightedMedian(
   pairs.sort((a, b) => a.value - b.value);
 
   const half = total / 2;
+  // TIE SLACK, and it is load-bearing rather than cosmetic (PR #391 review,
+  // found by `median.property.test.ts` on its first run).
+  //
+  // `total` sums every weight; `cumulative` sums a prefix. The two accumulate
+  // rounding differently, so an EXACT half-weight tie — precisely the case the
+  // lower-median convention above exists to decide — can miss by well under an
+  // ULP and hand back the UPPER straddling value instead of the lower.
+  //
+  // Measured counterexample: six equal weights of 331.0968672709313. The
+  // prefix sum of three lands 0.52 ULP below `half`, so the scan walked past
+  // the tie. That is not exotic input: `qr-anchor-mint.combinePlacements`
+  // calls this with FLAT weights to build its unweighted comparison, so any
+  // even number of sightings could hit it — and the symptom is the session
+  // summary reporting "recency weighting moved the anchor N m" for a mint
+  // where the weighting changed nothing at all.
+  //
+  // Scaled to the accumulated magnitude and the term count, because that is
+  // where the error comes from; far too small to move a genuine decision.
+  const tieSlack = Math.abs(total) * Number.EPSILON * pairs.length;
   let cumulative = 0;
   for (const pair of pairs) {
     cumulative += pair.weight;
-    if (cumulative >= half) return pair.value;
+    if (cumulative + tieSlack >= half) return pair.value;
   }
   // Unreachable for finite positive weights; kept total rather than throwing.
   return pairs[pairs.length - 1]?.value ?? lowerMedian(values);
