@@ -57,10 +57,7 @@
       "project": [
         "src/**/*.ts"
       ],
-      "ignoreDependencies": [
-        "dpdm",
-        "redux"
-      ]
+      "ignoreDependencies": ["dpdm"]
     },
     "GpsPlusSlamJs_RecorderApp": {
       "entry": [
