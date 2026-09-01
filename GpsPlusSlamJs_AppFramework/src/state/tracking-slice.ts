@@ -32,9 +32,12 @@ export type TrackingPhase = 'initializing' | 'tracking' | 'lost';
 /**
  * Raw `DeviceOrientationEvent` snapshot captured alongside an AR pose.
  *
- * Identical shape to `RawDeviceOrientation` from `gps-plus-slam-js`, but
- * with non-nullable fields — sensors are required to have resolved for the
- * AR math that consumes this snapshot.
+ * **Structurally identical to `RawDeviceOrientation` from `gps-plus-slam-js`
+ * since 2026-08-31, and deliberately so.** It used to be that type's
+ * "resolved, non-nullable" counterpart, and the resolution was the bug: it
+ * substituted `0` for an absent axis, and `0` is a legal reading meaning
+ * "facing north, flat and level". See the per-field docs below and
+ * `tracking-slice.ts.md`.
  */
 export interface DeviceOrientation {
   /**
