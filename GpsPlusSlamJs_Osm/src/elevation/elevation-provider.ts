@@ -32,6 +32,7 @@
  */
 
 import type { LatLng } from "../model/osm-feature.js";
+import { median } from "../utils/median.js";
 
 export interface ElevationProvider {
   /** Attribution the consuming app MUST display. */
@@ -235,16 +236,4 @@ export function fallbackProvider(
       return merged;
     },
   };
-}
-
-/** Median of a sample list, `undefined` when empty. */
-export function median(values: readonly number[]): number | undefined {
-  if (values.length === 0) return undefined;
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = sorted.length >> 1;
-  if (sorted.length % 2 === 1) return sorted[mid];
-  const low = sorted[mid - 1];
-  const high = sorted[mid];
-  if (low === undefined || high === undefined) return undefined;
-  return (low + high) / 2;
 }

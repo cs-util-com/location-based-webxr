@@ -23,6 +23,7 @@
  *     physics/          ← PhysicsDemo, base=/physics/
  *     wayfinding/       ← WayfindingHudDemo, base=/wayfinding/
  *     osm/              ← OsmDemo, base=/osm/
+ *     tour/             ← TourViewer, base=/tour/
  *     blog/             ← rendered from the project WIKI repo (not a Vite app)
  *
  * `base` and `outDir` are passed as build-time CLI flags so the committed app
@@ -133,6 +134,7 @@ function assertLandingHtml(htmlPath) {
     '/physics/',
     '/wayfinding/',
     '/osm/',
+    '/tour/',
     // Not a demo, but required for the same reason: this footer link is the
     // only inbound path a crawler has to /blog/, and the canonical-copy
     // argument (the blog should outrank the GitHub wiki copy of the same
@@ -178,6 +180,7 @@ function assertSiteTree() {
     'physics/index.html',
     'wayfinding/index.html',
     'osm/index.html',
+    'tour/index.html',
     // The blog index exists even with nothing published (it renders "No posts
     // published yet"), so its absence means the blog step did not run at all.
     'blog/index.html',
@@ -260,6 +263,21 @@ run('pnpm', [
   '--emptyOutDir',
 ]);
 assertNoBareAbsoluteUrlsInDir(join(distSite, 'starter'), '/starter/');
+
+console.log('• Building TourViewer (base=/tour/)');
+run('pnpm', ['--filter', 'gps-plus-slam-tour-viewer', 'run', 'typecheck']);
+run('pnpm', [
+  '--filter',
+  'gps-plus-slam-tour-viewer',
+  'exec',
+  'vite',
+  'build',
+  '--base=/tour/',
+  '--outDir',
+  join(distSite, 'tour'),
+  '--emptyOutDir',
+]);
+assertNoBareAbsoluteUrlsInDir(join(distSite, 'tour'), '/tour/');
 
 console.log('• Building MinimalExample (base=/minimal/)');
 run('pnpm', ['--filter', 'gps-plus-slam-minimal-example', 'run', 'typecheck']);

@@ -312,6 +312,7 @@ export {
   updateSyncStatus,
   setAbsCompassStatus,
   hideAbsCompass,
+  hideQrStatus,
 } from './hud-status-rows';
 
 /**

@@ -29,6 +29,7 @@ function baseInputs(
     imageCount: 0,
     depthSampleCount: 0,
     errors: [],
+    qrAnchors: [],
     failedWriteCount: 0,
     gpsPositions: [],
     odometryPositions: [],

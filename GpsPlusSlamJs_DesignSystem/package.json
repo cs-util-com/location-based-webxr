@@ -1,0 +1,18 @@
+{
+  "name": "gps-plus-slam-design-system",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The HUD design system as one iterable vanilla-HTML file: tokens, atoms, and mock AR screens with real app strings, judged over switchable camera stand-in backgrounds. No build, no framework; open index.html in a browser and iterate. `pnpm run shoot` renders headless screenshots so an agent can see its own edits.",
+  "type": "module",
+  "scripts": {
+    "test": "node ../scripts/test-timing/run-gate.mjs",
+    "format": "node ../scripts/test-timing/timed-stage.mjs format",
+    "format:check": "prettier --check --ignore-unknown .",
+    "shoot": "node shoot.mjs",
+    "serve": "node serve.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0",
+    "prettier": "^3.3.3"
+  }
+}

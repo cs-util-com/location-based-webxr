@@ -44,3 +44,75 @@ export function lowerMedian(values: readonly number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
   return sorted[Math.floor((sorted.length - 1) / 2)]!;
 }
+
+/**
+ * Median of `values` under `weights` — the value where half the WEIGHT lies
+ * on either side.
+ *
+ * Lower-median convention, matching {@link lowerMedian}: the result is always
+ * an observed sample, and on an exact half-weight tie the LOWER of the two
+ * straddling values wins. That convention is shared with the core library's
+ * private weighted median inside the alignment solver, and the two are now
+ * cross-checked against each other in
+ * `GpsPlusSlamJs_Investigation/src/regression/weighted-median-cross-check.test.ts`
+ * — the only package that may reach the core's internals; this one may not
+ * (IP-protection audit §9).
+ *
+ * They agree on every well-formed input and differ on four degenerate ones
+ * (empty input, a negative weight, a NaN weight, a NaN value), because this is
+ * a public utility with arbitrary callers while the core's is private behind a
+ * caller that clamps its weights first. The sidecar lists them; the
+ * cross-check pins them.
+ *
+ * Non-finite or non-positive weights are dropped: a weight of zero means "this
+ * sample does not count", and a NaN weight is a bug upstream that must not
+ * silently move the answer. When nothing survives, falls back to the unweighted
+ * {@link lowerMedian} so a caller never gets NaN from a usable sample set.
+ */
+export function weightedMedian(
+  values: readonly number[],
+  weights: readonly number[]
+): number {
+  const pairs: { value: number; weight: number }[] = [];
+  let total = 0;
+  for (let i = 0; i < values.length; i += 1) {
+    const value = values[i];
+    const weight = weights[i];
+    if (value === undefined || !Number.isFinite(value)) continue;
+    if (weight === undefined || !Number.isFinite(weight) || weight <= 0) {
+      continue;
+    }
+    pairs.push({ value, weight });
+    total += weight;
+  }
+  if (pairs.length === 0) return lowerMedian(values);
+  pairs.sort((a, b) => a.value - b.value);
+
+  const half = total / 2;
+  // TIE SLACK, and it is load-bearing rather than cosmetic (PR #391 review,
+  // found by `median.property.test.ts` on its first run).
+  //
+  // `total` sums every weight; `cumulative` sums a prefix. The two accumulate
+  // rounding differently, so an EXACT half-weight tie — precisely the case the
+  // lower-median convention above exists to decide — can miss by well under an
+  // ULP and hand back the UPPER straddling value instead of the lower.
+  //
+  // Measured counterexample: six equal weights of 331.0968672709313. The
+  // prefix sum of three lands 0.52 ULP below `half`, so the scan walked past
+  // the tie. That is not exotic input: `qr-anchor-mint.combinePlacements`
+  // calls this with FLAT weights to build its unweighted comparison, so any
+  // even number of sightings could hit it — and the symptom is the session
+  // summary reporting "recency weighting moved the anchor N m" for a mint
+  // where the weighting changed nothing at all.
+  //
+  // Scaled to the accumulated magnitude and the term count, because that is
+  // where the error comes from; far too small to move a genuine decision.
+  const tieSlack = Math.abs(total) * Number.EPSILON * pairs.length;
+  let cumulative = 0;
+  for (const pair of pairs) {
+    cumulative += pair.weight;
+    if (cumulative + tieSlack >= half) return pair.value;
+  }
+  // Unreachable for finite positive weights; kept total rather than throwing.
+  return pairs[pairs.length - 1]?.value ?? lowerMedian(values);
+}

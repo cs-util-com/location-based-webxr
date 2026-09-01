@@ -37,16 +37,27 @@ import { validateOptionFields } from '../utils/validate-option-fields.js';
  * blurry vs rest", the energy ratio best at "sharp vs degraded") — see
  * GpsPlusSlamJs_Docs/docs/2026-07-12-0823-blur-metric-toggle-plan.md.
  */
-export type BlurMetricId =
-  | 'variance-of-laplacian'
-  | 'high-frequency-energy-ratio';
-
-/** All valid {@link BlurMetricId} values, the default (VoL) first — for
- *  consumer-side validation of persisted configs. */
-export const BLUR_METRIC_IDS: readonly BlurMetricId[] = [
+/**
+ * All valid blur-metric ids, the default (VoL) first — and **the source of
+ * truth for {@link BlurMetricId}**, which is derived from it.
+ *
+ * Const first, type derived, because this list is a RUNTIME validator in two
+ * places: `validateQualityFilterConfig` below, and the recorder's
+ * `settings-modal.ts`, both of which drop a persisted `blurMetric` that is not
+ * a member. While it was written as `readonly BlurMetricId[]`, an INCOMPLETE
+ * list still type-checked, so adding a third metric to the union would have
+ * compiled everywhere — and then been silently discarded from every user's
+ * saved settings, falling back to the default. Derived this way, adding a
+ * metric to the const is the only way to add one at all.
+ *
+ * Order is meaningful: the first entry is the default.
+ */
+export const BLUR_METRIC_IDS = [
   'variance-of-laplacian',
   'high-frequency-energy-ratio',
-];
+] as const;
+
+export type BlurMetricId = (typeof BLUR_METRIC_IDS)[number];
 
 /**
  * User-/consumer-facing configuration for the image-quality gate. Shared by both

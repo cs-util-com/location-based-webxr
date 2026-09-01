@@ -59,6 +59,20 @@ entirely after confirming they were only transitively pulled in.
   instead of bundling them into a private, non-`exports`-reachable
   chunk (TS2883 in `composite` consumers). Pinned by
   [tests/repo-config/framework-dts-portability.test.js](tests/repo-config/framework-dts-portability.test.js).
+  - ⚠️ **knip EMITS A HINT TELLING YOU TO REMOVE THIS ENTRY. The hint is
+    wrong — do not follow it.** It appeared when knip was bumped to 6.33.0
+    (2026-09-01) and reads `redux … Remove from ignoreDependencies`. It is
+    reasoning from `project: src/**/*.ts`, where nothing imports `redux`; it
+    cannot see that the package's own `exports`/`types` point at
+    `dist/*.d.ts`, which do.
+  - **Both ways of "obeying" it fail, and both were tried:**
+    - remove the ignore only → CI fails with `Unused dependencies (1): redux`;
+    - remove the ignore *and* the dependency → knip then reports `redux` as an
+      **unlisted** import in three `dist/*.d.ts` files, i.e. the emitted types
+      no longer resolve for a consumer.
+  - It also does not reproduce locally while the `link:` override is active,
+    so a green local `check:deadcode` is not evidence here. It surfaced only
+    on CI, which installs from the registry.
 - **GpsPlusSlamJs_RecorderApp** — main entry is auto-detected from
   `package.json` "main"/"module"; we explicitly list `src/global.d.ts`,
   `playwright-tests/**`, and the stylelint config. Non-source tooling

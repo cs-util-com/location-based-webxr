@@ -20,11 +20,18 @@
  */
 
 import type { LoopClosureHandler } from 'gps-plus-slam-app-framework/core';
+import type { QrSightingFeeder } from '../qr/qr-sighting-feeder';
+import type { RgbaImage } from 'gps-plus-slam-app-framework/ar/qr/qr-frontend';
+
+/** The frame-consuming surface both QR controllers share. */
+export interface QrFrameSink {
+  offerFrame(image: RgbaImage): void;
+  reset(): void;
+}
 import type { LeafletMapOverlay } from 'gps-plus-slam-app-framework/visualization/leaflet-map-overlay';
 import type { CameraFollower } from 'gps-plus-slam-app-framework/visualization/camera-follower';
 import type { AlignmentLerper } from 'gps-plus-slam-app-framework/visualization/alignment-lerper';
 import type { PerfStatsOverlayHandle } from 'gps-plus-slam-app-framework/visualization/perf-stats-overlay';
-import type { QrDetectionController } from 'gps-plus-slam-app-framework/ar';
 import type { RefPointViewWiring } from '../ui/ref-point-view-wiring';
 
 export interface ArSessionResources {
@@ -46,7 +53,16 @@ export interface ArSessionResources {
    */
   loopClosureHandler: LoopClosureHandler | null;
   /** Thin RAW QR producer fed by the framework's camera-frame callback. */
-  qrProducer: QrDetectionController | null;
+  /**
+   * Whatever consumes camera frames for QR this session — the thin RAW
+   * producer, or the level-consuming tracking controller. Typed by what the
+   * frame callback actually needs rather than by either controller, because
+   * the two differ only in a status union nothing here reads.
+   */
+  qrProducer: QrFrameSink | null;
+  /** The session's QR sighting fold — read at save time by the level
+   *  contributor and live by the HUD readout. */
+  qrSightingFeeder: QrSightingFeeder | null;
   /** 3D ref-point spheres + live-map markers, following store swaps. */
   refPointViews: RefPointViewWiring | null;
 }
@@ -60,6 +76,7 @@ export function createArSessionResources(): ArSessionResources {
     statsOverlay: null,
     loopClosureHandler: null,
     qrProducer: null,
+    qrSightingFeeder: null,
     refPointViews: null,
   };
 }

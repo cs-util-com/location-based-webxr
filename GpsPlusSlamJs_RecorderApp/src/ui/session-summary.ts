@@ -9,6 +9,8 @@
  */
 
 import { createSummaryMap, type SummaryMapInstance } from './summary-map';
+import { qrAnchorSummaryLines } from '../qr/qr-anchor-summary';
+import type { QrAnchorOutcome } from '../qr/qr-level-zip-contributor';
 import type { RefPointMarkerInput } from './draw-ref-point-markers';
 import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
 import { formatFileSize } from 'gps-plus-slam-app-framework/utils/format-file-size';
@@ -46,6 +48,15 @@ export interface SessionSummaryData {
   readonly depthSampleCount: number;
   /** List of errors/warnings from the session */
   readonly errors: string[];
+  /**
+   * What this recording decided about each printed QR code it saw.
+   *
+   * Empty is the normal case (QR recording off). A DECLINED code has to
+   * appear here, because in the zip "declined" and "never seen" look
+   * identical - no file - and the only feedback for "your poster moved"
+   * would otherwise be silence.
+   */
+  readonly qrAnchors: readonly QrAnchorOutcome[];
   /** First GPS coordinate (null if no GPS data) */
   readonly firstGps: GpsCoord | null;
   /** Last GPS coordinate (null if no GPS data) */
@@ -171,6 +182,22 @@ function formatSummaryDistance(meters: number): string {
 /**
  * Format errors list for display.
  */
+/** Render the printed-code block, or hide it when nothing was seen. */
+function renderQrAnchors(
+  outcomes: readonly QrAnchorOutcome[] | undefined
+): void {
+  const block = document.getElementById('summary-qr-anchors-block');
+  const body = document.getElementById('summary-qr-anchors');
+  if (!block || !body) return;
+  const lines = qrAnchorSummaryLines(outcomes);
+  if (lines === null) {
+    block.classList.add('hidden');
+    return;
+  }
+  block.classList.remove('hidden');
+  body.textContent = lines;
+}
+
 function formatErrors(errors: string[]): string {
   if (errors.length === 0) {
     return 'No errors';
@@ -353,6 +380,7 @@ export function showSessionSummary(data: SessionSummaryData): void {
   }
 
   cachedElements.errors.textContent = formatErrors(data.errors);
+  renderQrAnchors(data.qrAnchors);
   cachedElements.firstGps.textContent = formatGps(data.firstGps);
   cachedElements.lastGps.textContent = formatGps(data.lastGps);
   cachedElements.distance.textContent = formatSummaryDistance(

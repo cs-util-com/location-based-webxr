@@ -6,13 +6,30 @@ Convenience module for replaying a recorded session from a zip file into a fresh
 
 ## Public API
 
-### `replayRecording(zipData: Uint8Array, options?: ReplayRecordingOptions): Promise<CombinedRootState>`
+### `replayRecording(zipData: ZipSource, options?: ReplayRecordingOptions): Promise<CombinedRootState>`
 
 Loads all actions from a recording zip, creates a store with `NullStorageBackend` (no OPFS writes), optionally transforms actions via a caller-provided migration callback, dispatches every action in chronological order, and returns the final combined state.
 
 **Parameters:**
 
-- `zipData` — The zip file content as a `Uint8Array` (from `fs.readFileSync`, `fetch`, or `FileReader`).
+- `zipData` — `ZipSource` = `Uint8Array` OR any zip.js `Reader` (widened 2026-08-26 for the TourViewer geo join, the function's first production caller: a range-streaming consumer replays through `new ByteSourceReader(archive.source)` without holding the archive in memory).
+- `options.onChunk?(dispatched, total)` — progress hook, called AFTER each chunk's event-loop yield. The dispatch loop is CHUNKED (25 actions per yield): replaying a long recording costs whole seconds of alignment re-solves and callers replay inside live XR sessions.
+- `options.shouldContinue?()` — asked BEFORE each chunk; returning `false`
+  stops the replay and returns the state built so far, so an aborting caller
+  pays at most the chunk already in flight. The returned state is PARTIAL by
+  construction and the caller is expected to discard it - which is why this
+  is a separate hook rather than an error.
+  - It exists because `onChunk` gave a caller a place to NOTICE it no longer
+    wanted the result but no way to act on it. Its production caller is the
+    TourViewer's geo join (`main.ts`), which passes
+    `() => generation === planesRunGeneration`; without it a replay whose AR
+    session had ended kept dispatching into a store nobody would read, on
+    device, competing with the frame loop.
+  - **The option was added one round BEFORE that caller was wired** (PR #379
+    review). Nothing caught the gap: the option is optional so types were
+    satisfied, the framework tests use it so knip saw no dead export, and
+    `main.ts` has no unit tests. `replay-abort-wiring.test.ts` in the
+    TourViewer now pins the call site.
 - `options` — Optional `ReplayRecordingOptions`:
   - `migrateActions?: (actions: RecordedAction[]) => RecordedAction[]` — Transform actions before dispatch (e.g., era migration).
 

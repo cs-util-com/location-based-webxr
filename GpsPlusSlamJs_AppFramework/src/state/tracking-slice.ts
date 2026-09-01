@@ -37,12 +37,20 @@ export type TrackingPhase = 'initializing' | 'tracking' | 'lost';
  * AR math that consumes this snapshot.
  */
 export interface DeviceOrientation {
-  /** Compass heading (0–360). */
-  alpha: number;
-  /** Pitch (-180 to 180). */
-  beta: number;
-  /** Roll (-90 to 90). */
-  gamma: number;
+  /**
+   * Compass heading (0–360), or `null` when the device gave none.
+   *
+   * NULLABLE SINCE 2026-08-31, and the null is load-bearing. Substituting `0`
+   * here was a silent bug: `0` is a legal reading meaning "facing north", and
+   * the value reaches the core library's tracking-restart rotation
+   * correction. A phone with no magnetometer reports a null `alpha` beside
+   * real `beta`/`gamma`, so the axes are nullable individually.
+   */
+  alpha: number | null;
+  /** Pitch (-180 to 180), or `null` when the device gave none. */
+  beta: number | null;
+  /** Roll (-90 to 90), or `null` when the device gave none. */
+  gamma: number | null;
   /** Whether alpha is relative to magnetic north. */
   absolute: boolean;
 }
@@ -91,7 +99,8 @@ const initialState: TrackingSliceState = {
 
 export interface PoseReceivedPayload {
   pose: ARPose;
-  sensorOrientation: DeviceOrientation;
+  /** `null` when the browser has given no reading - see DeviceOrientation. */
+  sensorOrientation: DeviceOrientation | null;
 }
 
 const trackingSlice = createSlice({
@@ -113,8 +122,16 @@ const trackingSlice = createSlice({
         state.resetTransform = undefined;
 
         if (hadReset && state.lastValidPose !== null) {
-          const lastOrientation =
-            state.lastSensorOrientation ?? sensorOrientation;
+          // NO `?? sensorOrientation` FALLBACK. It used to substitute the NEW
+          // reading for a missing old one, which wrote into the recording a
+          // claim that the earlier snapshot held a value it never had.
+          //
+          // Its effect was accidentally benign — the substitution made both
+          // sides equal, and equal sides cancel in
+          // `newSensor · inv(lastSensor)` — but it recorded a fiction to get
+          // there, and a recording that misreports what a sensor said is worse
+          // than one that admits it said nothing.
+          const lastOrientation = state.lastSensorOrientation;
           state.lastRestartedPayload = {
             lastValidOdomPos: [
               state.lastValidPose.position.x,
@@ -127,24 +144,36 @@ const trackingSlice = createSlice({
               state.lastValidPose.orientation.z,
               state.lastValidPose.orientation.w,
             ],
-            lastSensorOrientation: {
-              alpha: lastOrientation.alpha,
-              beta: lastOrientation.beta,
-              gamma: lastOrientation.gamma,
-              absolute: lastOrientation.absolute,
-            },
+            // OMITTED, not zeroed, when there was no reading. The core
+            // library's `resolveSensorPair` refuses a pair where one side is
+            // absent and the other real; substituting zeros here would make
+            // that pair look complete and reinstate the bug one layer down.
+            ...(lastOrientation === null
+              ? {}
+              : {
+                  lastSensorOrientation: {
+                    alpha: lastOrientation.alpha,
+                    beta: lastOrientation.beta,
+                    gamma: lastOrientation.gamma,
+                    absolute: lastOrientation.absolute,
+                  },
+                }),
             newOdomRot: [
               pose.orientation.x,
               pose.orientation.y,
               pose.orientation.z,
               pose.orientation.w,
             ],
-            newSensorOrientation: {
-              alpha: sensorOrientation.alpha,
-              beta: sensorOrientation.beta,
-              gamma: sensorOrientation.gamma,
-              absolute: sensorOrientation.absolute,
-            },
+            ...(sensorOrientation === null
+              ? {}
+              : {
+                  newSensorOrientation: {
+                    alpha: sensorOrientation.alpha,
+                    beta: sensorOrientation.beta,
+                    gamma: sensorOrientation.gamma,
+                    absolute: sensorOrientation.absolute,
+                  },
+                }),
             newOdomPos: [pose.position.x, pose.position.y, pose.position.z],
             resetTransform: savedResetTransform,
           };

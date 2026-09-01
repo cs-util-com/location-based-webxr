@@ -12,6 +12,9 @@
  * like a normal landing page at the top.
  */
 
+import { clamp01 } from "./clamp01.js";
+import { smoothstep } from "./smoothstep.js";
+
 /** Scroll offset (in viewport heights) at which the veil has fully lifted. */
 export const VEIL_END_VIEWPORTS = 0.85;
 
@@ -25,9 +28,9 @@ export function heroVeilOpacity(scrolledViewports: number): number {
   if (!Number.isFinite(scrolledViewports)) {
     return 1;
   }
-  const t = Math.min(1, Math.max(0, scrolledViewports / VEIL_END_VIEWPORTS));
-  // Smoothstep: eases both the lift-off and the final fade (no hard edge
-  // at either end while scrubbing).
-  const eased = t * t * (3 - 2 * t);
+  // Smoothstep eases both the lift-off and the final fade (no hard edge at
+  // either end while scrubbing). The curve is shared with both scene
+  // gradients, so the page's fades move together by construction.
+  const eased = smoothstep(clamp01(scrolledViewports / VEIL_END_VIEWPORTS));
   return 1 - eased;
 }

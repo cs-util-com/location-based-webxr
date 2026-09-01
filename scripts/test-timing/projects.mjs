@@ -206,6 +206,13 @@ export const PROJECTS = [
       // library with no framework dependency, so a break here is never caused
       // by an app and should surface before the slow app gates run.
       packageGateStage('test:osm', 'gps-plus-slam-osm'),
+      // Pure server-side package (the Cloudflare site worker) with no
+      // workspace dependencies: like osm, a break here is never caused by an
+      // app, so it surfaces before the slow app gates run.
+      packageGateStage('test:site-worker', 'gps-plus-slam-site-worker'),
+      // Static design playground: format-only gate, seconds-cheap and
+      // dependency-free, so it surfaces before the slow app gates run.
+      packageGateStage('test:design-system', 'gps-plus-slam-design-system'),
       // ONE workspace-wide knip for the whole cascade, not one per package.
       // It used to sit in seven package stage lists running the IDENTICAL
       // analysis each time — ~26 s warm, plus a ~25 s cold pass in whichever
@@ -234,6 +241,7 @@ export const PROJECTS = [
       packageGateStage('test:landing', 'gps-plus-slam-landing'),
       packageGateStage('test:physics', 'gps-plus-slam-physics-demo'),
       packageGateStage('test:wayfinding', 'gps-plus-slam-wayfinding-hud-demo'),
+      packageGateStage('test:tour', 'gps-plus-slam-tour-viewer'),
     ],
   },
   {
@@ -278,6 +286,24 @@ export const PROJECTS = [
         // plan C.1): repo-wide coverage of a one-file run is meaningless
         // and expensive. Full-suite and CI runs keep `command`.
         filteredRunCommand: 'vitest run --config=config/vitest.config.ts',
+      },
+    ],
+  },
+  {
+    // Static, no-build design playground: one hand-iterated HTML file plus
+    // a Playwright screenshot harness (an eyeball tool, not a test - see
+    // shoot.mjs.md). The gate is format-only ON PURPOSE: this is a taste
+    // instrument, and its decision log lives in the private repo's
+    // GpsPlusSlamJs_Docs design-system extension plan.
+    name: 'GpsPlusSlamJs_DesignSystem',
+    dir: 'GpsPlusSlamJs_DesignSystem',
+    chainNames: [],
+    stages: [
+      {
+        name: 'format',
+        command:
+          'prettier --log-level warn --write --ignore-unknown index.html styles.css shoot.mjs shoot.mjs.md serve.mjs serve.mjs.md hud-design-brief.md package.json README.md',
+        counts: null,
       },
     ],
   },
@@ -393,11 +419,35 @@ export const PROJECTS = [
     ],
   },
   demoAppProject('GpsPlusSlamJs_AnchorStarter'),
+  demoAppProject('GpsPlusSlamJs_TourViewer'),
   {
     name: 'GpsPlusSlamJs_MinimalExample',
     dir: 'GpsPlusSlamJs_MinimalExample',
     chainNames: [],
     stages: [
+      {
+        name: 'typecheck',
+        command: 'tsc -p tsconfig.json --noEmit',
+        counts: null,
+      },
+      { name: 'test:unit', command: 'vitest run', counts: 'vitest' },
+    ],
+  },
+  {
+    // The Cloudflare site worker (drive-proxy plan, 2026-08-26). Wrangler
+    // bundles src/site-worker.ts at deploy; the gate here only has to prove
+    // the TypeScript and the handler behaviour, so the MinimalExample shape
+    // (format + typecheck + vitest, no build) is exactly enough.
+    name: 'GpsPlusSlamJs_SiteWorker',
+    dir: 'GpsPlusSlamJs_SiteWorker',
+    chainNames: [],
+    stages: [
+      {
+        name: 'format',
+        command:
+          'prettier --log-level warn --write --ignore-unknown --no-error-on-unmatched-pattern "src" package.json README.md',
+        counts: null,
+      },
       {
         name: 'typecheck',
         command: 'tsc -p tsconfig.json --noEmit',

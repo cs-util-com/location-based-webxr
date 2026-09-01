@@ -49,25 +49,41 @@ export const DEFAULT_BLIT_CONFIG: CameraBlitCaptureConfig = {
  * @param cameraWidth  - Native camera width in pixels (from XRCamera)
  * @param cameraHeight - Native camera height in pixels (from XRCamera)
  * @param divisor      - Resolution divisor: 1 = full, 2 = half, 4 = quarter, etc.
- *                        Values ≤ 0 are treated as 1. Fractional values < 1 are treated as 1.
- * @returns Integer pixel dimensions, clamped to at least 1×1.
- *          Falls back to DEFAULT_BLIT_CONFIG when inputs are invalid (≤ 0).
+ *                        Anything not ≥ 1 and finite is treated as 1 — that
+ *                        covers ≤ 0, fractions < 1, NaN, and Infinity (which
+ *                        would otherwise divide both edges to a 1×1 target).
+ * @returns Integer pixel dimensions, finite, at least 1×1, and never larger
+ *          than the camera's own edges. Falls back to DEFAULT_BLIT_CONFIG when
+ *          the camera dimensions are invalid — ≤ 0, NaN, or ±Infinity.
  */
 export function computeCaptureSize(
   cameraWidth: number,
   cameraHeight: number,
   divisor: number
 ): { width: number; height: number } {
-  // Guard: invalid camera dimensions → fallback
-  if (cameraWidth <= 0 || cameraHeight <= 0) {
+  // Guard: invalid camera dimensions → fallback. The negated `> 0` checks
+  // reject NaN too (`NaN <= 0` is false, so the original `<= 0` form let NaN
+  // straight through), and the explicit `Number.isFinite` rejects Infinity,
+  // which passes `> 0` yet makes `Math.floor(Infinity / d)` an infinite edge.
+  // Either one reaches render-target allocation as a non-finite size — the
+  // same failure `computeAspectFitSize` below documents and guards.
+  if (
+    !(cameraWidth > 0) ||
+    !Number.isFinite(cameraWidth) ||
+    !(cameraHeight > 0) ||
+    !Number.isFinite(cameraHeight)
+  ) {
     return {
       width: DEFAULT_BLIT_CONFIG.width,
       height: DEFAULT_BLIT_CONFIG.height,
     };
   }
 
-  // Guard: nonsensical divisor → treat as 1 (full resolution, no upscale)
-  const safeDivisor = divisor >= 1 ? divisor : 1;
+  // Guard: nonsensical divisor → treat as 1 (full resolution, no upscale).
+  // `Number.isFinite` additionally rejects Infinity, which passes `>= 1` yet
+  // divides both edges to 0 — pinned by `Math.max(1, …)` to a 1x1 render
+  // target, i.e. a capture that succeeds and is worthless.
+  const safeDivisor = divisor >= 1 && Number.isFinite(divisor) ? divisor : 1;
 
   return {
     width: Math.max(1, Math.floor(cameraWidth / safeDivisor)),
@@ -466,7 +482,25 @@ export class CameraBlitCapture {
     if (this.disposed) {
       return false;
     }
-    if (newWidth <= 0 || newHeight <= 0) {
+    // Same guard shape as `computeCaptureSize` above, and for the same
+    // reason: `<= 0` is FALSE for NaN, so the old form let NaN and ±Infinity
+    // through to `setSize` and to `new Uint8Array(w * h * 4)`. This is a
+    // PUBLIC method, so hardened call sites elsewhere do not cover it.
+    // INTEGER, not merely finite (PR #379 review): `new Uint8Array(512.5 *
+    // 384 * 4)` throws `RangeError: Invalid typed array length`, so a
+    // fractional dimension escapes as an exception from a method documented
+    // to RETURN FALSE on invalid dimensions. `Number.isInteger` is false for
+    // NaN and +-Infinity, so it subsumes the finiteness check.
+    //
+    // `computeCaptureSize` and `computeAspectFitSize` need no such check:
+    // they floor/round their own results, so their outputs are integers by
+    // construction. It is this PUBLIC setter that takes arbitrary numbers.
+    if (
+      !Number.isInteger(newWidth) ||
+      newWidth <= 0 ||
+      !Number.isInteger(newHeight) ||
+      newHeight <= 0
+    ) {
       return false;
     }
     if (newWidth === this.width && newHeight === this.height) {

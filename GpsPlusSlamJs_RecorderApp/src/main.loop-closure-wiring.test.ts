@@ -455,7 +455,25 @@ describe('loop-closure capture wiring (opt-in)', () => {
     lastFrameCallback()({});
 
     expect(mockCreateLoopClosureHandler).toHaveBeenCalledTimes(1);
-    expect(mockCreateLoopClosureHandler).toHaveBeenCalledWith(mockStore);
+    // The handler is given a store that FORWARDS to the session store rather
+    // than the store object itself: it dispatches `arLoopClosureDetected`
+    // internally, and that action moves the odometry frame — the QR sighting
+    // fold has to be told, and there is no callback for it. Asserting the
+    // forwarding is the property that matters; asserting object identity
+    // would forbid the interception without protecting anything.
+    const handed = (
+      mockCreateLoopClosureHandler.mock.calls as unknown as {
+        dispatch: (a: unknown) => unknown;
+        getState: unknown;
+      }[][]
+    )[0]?.[0];
+    expect(handed).toBeDefined();
+    if (handed === undefined) return;
+    expect(handed.getState).toBe(mockStore.getState);
+    handed.dispatch({ type: 'gpsData/arLoopClosureDetected' });
+    expect(mockStore.dispatch).toHaveBeenCalledWith({
+      type: 'gpsData/arLoopClosureDetected',
+    });
     expect(mockLoopClosureHandler.processPose).toHaveBeenCalledWith(
       [1, 2, 3],
       [0, 0, 0, 1]

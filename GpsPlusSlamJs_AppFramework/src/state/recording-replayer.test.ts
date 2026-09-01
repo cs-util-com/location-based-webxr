@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, beforeAll, vi } from 'vitest';
-import { replayRecording } from './recording-replayer';
+import { replayActions, replayRecording } from './recording-replayer';
 import type { CombinedRootState } from './combined-root-state';
 import type { RecordedAction } from '../storage/zip-reader';
 import { isIdentityMatrix4 } from 'gps-plus-slam-js';
@@ -137,6 +137,95 @@ describe('replayRecording', () => {
     const normalState = await replayRecording(testZip.zipData);
     expect(normalState.gpsData!.gpsEvents.gpsPositions.length).toBe(
       testZip.gpsEventCount
+    );
+  });
+});
+
+describe('replayRecording — ZipSource widening + chunked dispatch (geo-join M-A)', () => {
+  // Why these tests matter (geo-join plan Revision 2): the TourViewer holds
+  // only a range-reading ByteSource, never whole-zip bytes — the join needs
+  // replayRecording to accept the same ZipSource (Uint8Array | Reader) its
+  // own loadActionsFromZip already takes. And the dispatch loop runs inside
+  // a live XR session's detection path, so it must YIELD to the event loop
+  // instead of blocking for the whole recording.
+  it('accepts a zip.js Reader (the range-streaming path), not only bytes', async () => {
+    const { Uint8ArrayReader } = await import('@zip.js/zip.js');
+    const zip = await produceTestZip();
+    const state = await replayRecording(new Uint8ArrayReader(zip.zipData));
+    expect(state.gpsData).not.toBeNull();
+    expect(state.gpsData!.gpsEvents.gpsPositions.length).toBeGreaterThan(0);
+  });
+
+  it('yields to the event loop during dispatch (chunked replay)', async () => {
+    // A macrotask scheduled BEFORE the replay must run BEFORE the replay
+    // finishes — impossible if the dispatch loop is one synchronous burst
+    // after the zip read.
+    const zip = await produceTestZip();
+    let macrotaskRan = false;
+    const timer = setTimeout(() => {
+      macrotaskRan = true;
+    }, 0);
+    const seen: boolean[] = [];
+    const state = await replayRecording(zip.zipData, {
+      onChunk: () => {
+        seen.push(macrotaskRan);
+      },
+    });
+    clearTimeout(timer);
+    expect(state.gpsData).not.toBeNull();
+    // At least one chunk boundary observed the macrotask having run — the
+    // loop genuinely yielded rather than merely calling the hook inline.
+    expect(seen.some(Boolean)).toBe(true);
+  });
+
+  it('stops dispatching when shouldContinue returns false', async () => {
+    // Why this test matters (PR #378 review): `onChunk` gave a caller a place
+    // to NOTICE it no longer wants the result but no way to act on it. The
+    // TourViewer already checked a generation token in `onChunk` and could
+    // only use it to skip a status label, so a replay whose AR session had
+    // ended kept dispatching into a store nobody would read — on a device,
+    // during an XR session, competing with the frame loop.
+    const zip = await produceTestZip();
+
+    // The sample recording fits in one chunk, so "abort after chunk 1" would
+    // be indistinguishable from a full replay — assert the seam itself by
+    // refusing the FIRST chunk, where the difference is unambiguous.
+    const full = await replayRecording(zip.zipData);
+    expect(full.gpsData).not.toBeNull();
+
+    let asked = 0;
+    const aborted = await replayRecording(zip.zipData, {
+      shouldContinue: () => {
+        asked += 1;
+        return false;
+      },
+    });
+
+    expect(asked).toBe(1);
+    // Nothing was dispatched, so the store is still at its initial state —
+    // and it RETURNED that rather than throwing, which is the contract a
+    // caller that aborts on purpose needs.
+    expect(aborted.gpsData).toBeNull();
+  });
+});
+
+describe('replayActions — the pre-loaded half (geo-join M-B)', () => {
+  // Why this test matters: the TourViewer must scan the action stream
+  // (era/segment gates) BEFORE deciding to replay — loading the zip twice
+  // through a range-streaming source would double the transfer, so the
+  // load and the dispatch are separate entry points and replayRecording is
+  // their composition. The two paths must agree on the resulting state.
+  it('produces the same state as replayRecording over the same zip', async () => {
+    const zip = await produceTestZip();
+    const { loadActionsFromZip } = await import('../storage/zip-reader');
+    const entries = await loadActionsFromZip(zip.zipData);
+    const viaActions = await replayActions(entries.map((e) => e.action));
+    const viaZip = await replayRecording(zip.zipData);
+    expect(viaActions.gpsData?.gpsEvents.alignmentMatrix).toEqual(
+      viaZip.gpsData?.gpsEvents.alignmentMatrix
+    );
+    expect(viaActions.gpsData?.odometryPath.points.length).toBe(
+      viaZip.gpsData?.odometryPath.points.length
     );
   });
 });

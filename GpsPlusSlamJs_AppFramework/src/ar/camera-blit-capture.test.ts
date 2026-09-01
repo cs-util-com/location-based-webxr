@@ -743,6 +743,60 @@ describe('camera-blit-capture', () => {
 
       /**
        * Why this test matters:
+       * The guard was `newWidth <= 0 || newHeight <= 0`, which is FALSE for
+       * NaN — the exact form removed from `computeCaptureSize` in this same
+       * file, and missed here (PR #375 review). NaN or Infinity reached
+       * `renderTarget.setSize` and `new Uint8Array(w * h * 4)`, the latter
+       * throwing or allocating nothing useful. The existing tests pinned
+       * only `0`, which is the one invalid value the old guard did catch.
+       * This is a PUBLIC method, so hardened in-repo call sites do not
+       * cover it.
+       */
+      /**
+       * Why this test matters (PR #379 review):
+       * the guard rejected non-finite but not non-INTEGER dimensions.
+       * `resizeIfNeeded` is documented to RETURN FALSE when its dimensions
+       * are invalid - the one contract a public setter has - but a
+       * fractional size was accepted, stored, and forwarded to
+       * `renderTarget.setSize` and `new Uint8Array(w * h * 4)`. Whether that
+       * allocation throws depends on whether the PRODUCT happens to be a
+       * whole number (512.5 x 384 x 4 is), which is precisely why the guard
+       * belongs on the dimensions and not on the product.
+       *
+       * Each case calls `resizeIfNeeded` ONCE: a second call with the same
+       * values returns false simply because nothing changed, which would
+       * make this pass against the very guard it is meant to pin.
+       */
+      it('refuses fractional dimensions', () => {
+        for (const [w, h] of [
+          [512.5, 384],
+          [512, 384.25],
+          [1.1, 1],
+        ] as const) {
+          blitCapture = new CameraBlitCapture({ width: 64, height: 64 });
+          let result: boolean | undefined;
+          expect(() => {
+            result = blitCapture.resizeIfNeeded(w, h);
+          }, `${w}x${h}`).not.toThrow();
+          expect(result, `${w}x${h}`).toBe(false);
+        }
+      });
+
+      it('refuses NaN and Infinite dimensions, not just zero', () => {
+        blitCapture = new CameraBlitCapture({ width: 64, height: 64 });
+        for (const [w, h] of [
+          [Number.NaN, 64],
+          [64, Number.NaN],
+          [Number.POSITIVE_INFINITY, 64],
+          [64, Number.POSITIVE_INFINITY],
+          [0, 64],
+        ] as const) {
+          expect(blitCapture.resizeIfNeeded(w, h), `${w}x${h}`).toBe(false);
+        }
+      });
+
+      /**
+       * Why this test matters:
        * The JPEG blob from a resized (rectangular) target must still be
        * produced correctly through the full pipeline.
        */
@@ -868,6 +922,49 @@ describe('camera-blit-capture', () => {
       const result = computeCaptureSize(0, 0, 1);
       expect(result.width).toBeGreaterThan(0);
       expect(result.height).toBeGreaterThan(0);
+    });
+
+    /**
+     * Why this test matters:
+     * `computeAspectFitSize`, directly below in the same file, guards NaN and
+     * Infinity explicitly and its comment names the consequence — "{NaN, NaN}
+     * ... would crash render-target alloc". This function, written earlier,
+     * never learned: `cameraWidth <= 0` is FALSE for NaN, so NaN flows through
+     * `Math.floor` and survives `Math.max(1, NaN)`, which returns NaN.
+     * Infinity likewise passes `<= 0` and yields an infinite edge.
+     *
+     * The zero case above passed throughout, because zero is the one invalid
+     * dimension the original guard actually catches.
+     */
+    it('returns fallback for NaN or Infinite camera dimensions', () => {
+      for (const [w, h] of [
+        [Number.NaN, Number.NaN],
+        [Number.NaN, 1080],
+        [Number.POSITIVE_INFINITY, 1080],
+        [1920, Number.POSITIVE_INFINITY],
+      ] as const) {
+        const result = computeCaptureSize(w, h, 1);
+        expect(Number.isFinite(result.width), `width for ${w}x${h}`).toBe(true);
+        expect(Number.isFinite(result.height), `height for ${w}x${h}`).toBe(
+          true
+        );
+        expect(result.width).toBeGreaterThan(0);
+        expect(result.height).toBeGreaterThan(0);
+      }
+    });
+
+    /**
+     * Why this test matters: a non-finite DIVISOR is the third way in. NaN
+     * fails `divisor >= 1` and so already falls back to 1, but Infinity
+     * passes it and drives both edges to `Math.floor(x / Infinity) = 0`,
+     * which `Math.max(1, ...)` then pins to a 1x1 render target — technically
+     * valid, silently useless. Pinned so the guard covers the whole input.
+     */
+    it('treats a non-finite divisor as full resolution', () => {
+      for (const divisor of [Number.NaN, Number.POSITIVE_INFINITY]) {
+        const result = computeCaptureSize(1920, 1080, divisor);
+        expect(result).toEqual({ width: 1920, height: 1080 });
+      }
     });
 
     /**

@@ -52,3 +52,36 @@ the WS-5 **consumer** (debug axis+cube). `main.ts` calls it once in `handleEnter
 
 - [qr-debug-controller.ts.md](qr-debug-controller.ts.md), [qr-depth-resolver.ts.md](qr-depth-resolver.ts.md).
 - `gps-plus-slam-app-framework/ar/qr/qr-detection-controller` — the thin producer.
+
+## Two modes (added with M-E)
+
+`options.qr` is `{ enabled, intervalMs, captureSize, useLevels }`, and
+`useLevels` chooses which producer consumes the camera frames:
+
+- **off (default)** — the thin `createQrDetectionController`: decode, validate
+  the quad, dispatch a RAW observation. Nothing is fetched, and the session's
+  recorded GPS is entirely real.
+- **on** — `createQrTrackingController` instead: the same decode, plus a
+  level lookup through `qr-level-source` and synthetic GPS votes into the
+  store. **Only one producer runs.** Running both would decode every camera
+  frame twice on the AR frame path, which is why the framework's detection
+  event carries the raw corners and camera pose.
+
+The raw record rides `onRawDetection` — the validated DECODE — not
+`onDetection`, which fires on a locked, solved pose and therefore needs a
+level and a size. A code whose level does not exist yet (every code on an
+authoring walk, by definition) never locks, and gating the raw record on that
+would mean the first recording of the loop recorded nothing at all.
+
+## Other options this module takes
+
+- `readAlignment` — the session's alignment as it stands NOW, read per
+  detection and never recorded (see `qr-sighting-feeder.ts.md`).
+- `setSightingFeeder` — hands the sighting fold out, for the zip contributor
+  and the HUD.
+- `onLevelState` — what a code's level lookup did, routed to the HUD so a
+  code the session cannot use says so instead of being silent.
+
+(The module header's note about the producer clock is the authority: it is
+**epoch ms** via `Date.now()`, shared with the depth stream so the as-of size
+join can pair them.)

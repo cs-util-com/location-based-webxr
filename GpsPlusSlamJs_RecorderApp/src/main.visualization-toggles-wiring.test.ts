@@ -145,9 +145,12 @@ const { mockGetArWorldGroup, mockGetScene, mockGetCamera } = vi.hoisted(() => {
 vi.mock('./visualization/frame-tile-visualizer', () => ({
   FrameTileVisualizer: mockFrameTileVisualizerCtor,
 }));
-vi.mock('./visualization/frame-texture-decoder', () => ({
-  decodeFrameTexture: vi.fn(),
-}));
+vi.mock(
+  'gps-plus-slam-app-framework/visualization/frame-texture-decoder',
+  () => ({
+    decodeFrameTexture: vi.fn(),
+  })
+);
 vi.mock('./visualization/wire-frame-tile-subscribers', () => ({
   wireFrameTileSubscribers: mockWireFrameTileSubscribers,
 }));

@@ -13,6 +13,8 @@ import {
   type Object3D,
 } from "three";
 import { namedGroup, type ScenePalette } from "./palette";
+import { clamp01 } from "../clamp01.js";
+import { smoothstep } from "../smoothstep.js";
 
 /**
  * Per-palette sky (v3 F3): one vertex-colored gradient dome plus
@@ -74,8 +76,7 @@ export function domeGradientColorAt(
     rawFalloff <= 1
       ? rawFalloff
       : 1;
-  const t = Math.min(1, Math.max(0, elevation01 / falloff));
-  const smooth = t * t * (3 - 2 * t);
+  const smooth = smoothstep(clamp01(elevation01 / falloff));
   return new Color(palette.sky.horizon).lerp(
     new Color(palette.sky.zenith),
     smooth,

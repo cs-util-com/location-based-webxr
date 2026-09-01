@@ -1,6 +1,44 @@
 # Changelog
 
-## [Unreleased]
+## [1.20.0] — 2026-08-26
+
+Requires `gps-plus-slam-js` ≥ 1.20 (the `resetGpsSessionData` carrier).
+
+### Features
+
+- **Range-based zip streaming transport** (`storage` subpath) — open a
+  cloud-hosted archive without downloading it whole: `openRemoteArchive` runs
+  share-link normalization (Dropbox/GitHub/Google Drive/OneDrive →
+  raw-download URLs) → a revalidated cache lookup (ETag / Last-Modified /
+  size) → an HTTP range probe with a pure fallback policy (206 ranges, 200
+  eager-local, full-download degrade, typed rejections) → the right
+  `ByteSource`, plus a background warm-download that switches a live session
+  onto a local copy exactly once and persists it via the Cache API only when
+  the switch took (size-mismatch poison guard). Includes
+  `BoundedLocalCacheStore` (LRU cap + `clear()`), `ByteSourceReader` (zip.js
+  adapter with EOF clamping), a per-read instrumentation seam (`onRead`), and
+  `StructuralReadError`'s permanent-vs-transient failure split. Originates
+  from community PR #322 (thanks @superhellth), hardened with strict 206 +
+  body-length validation, safe-integer size parsing, UTF-8 share-link
+  tokens, and a measured request-budget test. The `utils/qr-payload`
+  launch-URL codec (`buildQrLaunchUrl`, `decodeDictionaryPayload`) is now
+  deep-importable for `?qr=` launch handlers.
+- **`teardownArSessionState` (`state/ar-session-teardown`)** — the shared
+  AR session-end STATE teardown (close the recording, drop the session's
+  odometry↔GPS pairs via the core's `resetGpsSessionData` while keeping
+  the zero, clear the coordinator cache). Unified from three identical
+  app sequences (DEC-H3); requires gps-plus-slam-js ≥ 1.20.
+- **`decodeFrameTexture` promoted from the recorder** —
+  `visualization/frame-texture-decoder` decodes an image Blob into an
+  UPRIGHT `THREE.Texture` (the ImageBitmap orientation contract: browsers
+  ignore three's `flipY` for bitmap uploads, so the decoder pre-flips),
+  with an optional downscale divisor. Shared so consumer apps don't copy
+  the orientation contract.
+- **QR-pose authoring surface deep-importable** — `ar/qr/qr-level`,
+  `ar/qr/qr-gps-vote` and `ar/qr/qr-tracking-controller` are now per-file
+  dist entries (alongside `ar/qr/qr-geo-pose-minting`), so a consumer app
+  can wire the QR tracking pipeline without pulling the whole `/ar/qr`
+  barrel into node unit tests.
 
 ## [1.3.0] — 2026-06-13
 

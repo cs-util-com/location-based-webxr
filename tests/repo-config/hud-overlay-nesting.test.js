@@ -76,6 +76,12 @@ const APP_OVERLAY_CONTRACTS = [
     containerId: 'app',
     overlayIds: ['overlay'],
   },
+  {
+    name: 'TourViewer',
+    htmlPath: 'GpsPlusSlamJs_TourViewer/index.html',
+    containerId: 'ar-root',
+    overlayIds: ['ar-status', 'enter-ar', 'author-panel'],
+  },
 ];
 
 /**
@@ -250,6 +256,9 @@ function srcImportsFramework(appDir) {
  * overlay.** It is kept tiny and explicit for that reason — the guard's whole
  * value is that a real AR app cannot be added without noticing.
  */
+// TourViewer left this list when M2 gave it a real initAR container — an app
+// must never sit in both registries, because this one permanently exempts it
+// from the coverage guard (PR #359 review).
 const NON_AR_APPS = new Set(['GpsPlusSlamJs_OsmDemo']);
 
 function discoverArAppHtmlPaths(root) {

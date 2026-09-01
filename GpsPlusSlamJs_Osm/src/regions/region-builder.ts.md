@@ -29,6 +29,13 @@ Turns components into regions with exact outlines and statistics.
 - **`medianScore`, not a mean.** Scores are unbounded and multiplicative, so one
   heavily-mapped cell can be orders of magnitude above its neighbours and would
   drag a mean with it. The median describes the region a user is standing in.
+  - It uses the package's shared [`utils/median.ts`](../utils/median.ts.md) —
+    the interpolating rule, so an even cell count averages the two middle
+    scores. This module used to carry its own copy of that function under the
+    same name; the two agreed, but nothing held them to it.
+  - The `?? 1` at the call site **narrows the type, it is not a reachable
+    default**: `scores` has one entry per cell and an empty component throws,
+    so the empty case cannot occur.
 - **A cell with no score is treated as the identity, not dropped.** A lookup miss
   must not silently shrink a region — the cell is in the component because
   something put it there.

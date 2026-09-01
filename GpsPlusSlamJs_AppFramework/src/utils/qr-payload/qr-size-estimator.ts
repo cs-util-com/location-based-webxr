@@ -15,7 +15,22 @@
  * Kanji mode and ECI are not modelled (the benchmark corpus is ASCII).
  */
 
-export type QrEcLevel = 'L' | 'M' | 'Q' | 'H';
+/**
+ * Every QR error-correction level, and **the source of truth for the type**.
+ *
+ * Const first, type derived: {@link EC_LEVELS} is a RUNTIME validator
+ * (`estimateQrModuleCount` rejects a level absent from it), and while it was
+ * written as `readonly QrEcLevel[]` an incomplete list still type-checked — so
+ * a level added to the union would have compiled everywhere and then been
+ * rejected at runtime. Derived this way that cannot happen.
+ *
+ * `DATA_CODEWORDS` below is `Record<QrEcLevel, …>`, which TypeScript already
+ * checks for exhaustiveness — so the table could not drift, but the list
+ * guarding the door could. That asymmetry is exactly what made it easy to miss.
+ */
+const EC_LEVELS = ['L', 'M', 'Q', 'H'] as const;
+
+export type QrEcLevel = (typeof EC_LEVELS)[number];
 
 export interface QrSizeEstimate {
   /** Bit-stream size of the optimally segmented payload. */
@@ -29,8 +44,6 @@ export interface QrSizeEstimate {
 /** The 45-character QR alphanumeric-mode charset, in spec value order. */
 export const QR_ALPHANUMERIC_CHARSET =
   '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:';
-
-const EC_LEVELS: readonly QrEcLevel[] = ['L', 'M', 'Q', 'H'];
 
 /**
  * Data codewords per version (index = version − 1) and EC level, versions

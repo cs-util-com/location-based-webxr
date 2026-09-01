@@ -1,0 +1,25 @@
+{
+  "name": "gps-plus-slam-site-worker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cloudflare Worker fronting the static multi-app site: routes /api/* (Drive CORS proxy) and delegates everything else to the static assets, byte-identical to the assets-only deployment it replaced.",
+  "type": "module",
+  "scripts": {
+    "test": "node ../scripts/test-timing/run-gate.mjs",
+    "format": "node ../scripts/test-timing/timed-stage.mjs format",
+    "format:check": "prettier --check --ignore-unknown src package.json README.md",
+    "typecheck": "node ../scripts/test-timing/timed-stage.mjs typecheck",
+    "test:unit": "node ../scripts/test-timing/timed-stage.mjs test:unit"
+  },
+  "engines": {
+    "node": ">=22.15.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.7.0",
+    "fast-check": "^4.8.0",
+    "prettier": "^3.8.4",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.6"
+  },
+  "license": "Apache-2.0"
+}

@@ -31,21 +31,44 @@ import type {
 } from 'gps-plus-slam-js';
 import type { Vector3 } from 'gps-plus-slam-js';
 import { calcGpsCoords } from 'gps-plus-slam-js';
-import { buildObjectPoints, transformPoint, type Pose } from './qr-pose.js';
+import {
+  buildObjectPoints,
+  rotateVectorByQuaternion,
+  transformPoint,
+  type Pose,
+} from './qr-pose.js';
+
+/**
+ * The orientation half of a {@link QrGeoPose} — a UNION so an in-repo
+ * construction carrying neither field fails at `tsc`, not at 8 Hz inside a
+ * vote loop (milestone review #8). `parseQrLevel` stays the runtime guard
+ * for external files; when both fields are present they must AGREE (it
+ * rejects contradictions) and `rotation` wins at read time.
+ *
+ * - `headingDeg`: compass bearing (degrees clockwise from true North) the
+ *   QR's local +X axis points toward. Vertical-poster convention: local +Y
+ *   = world up, local +X horizontal at this bearing — which puts the
+ *   printed face's NORMAL at `headingDeg + 90°`. Optional since the 6-DoF
+ *   extension: a floor/ceiling code has no honest heading.
+ * - `rotation`: full orientation as a unit quaternion `[x, y, z, w]` in the
+ *   **NUE GPS-world frame** (x = North, y = Up, z = East — the same y-up
+ *   frame every other quaternion in this stack uses; a mislabeled basis is
+ *   a 120° bug), rotating the QR local axes (+x right, +y up, +z out of
+ *   the printed face — `buildObjectPoints`'s convention) into NUE. A
+ *   vertical wall poster at heading `h` is the rotation of `−h` about Up.
+ */
+export type QrGeoOrientation =
+  | { headingDeg: number; rotation?: Quaternion }
+  | { headingDeg?: number; rotation: Quaternion };
 
 /** Absolute geo pose of the printed QR, from the level file. */
-export interface QrGeoPose {
+export type QrGeoPose = {
   lat: number;
   lon: number;
-  /** Altitude of the QR center, meters. */
+  /** Altitude of the QR center, meters — ABSOLUTE (GPS-world Up is absolute
+   *  altitude in this stack; see `mintQrGeoPose`). */
   alt: number;
-  /**
-   * Compass bearing (degrees clockwise from true North) that the QR's local +X
-   * axis points toward. The QR is assumed vertical (wall-mounted): local +Y =
-   * world up, local +X = horizontal along the wall at this bearing.
-   */
-  headingDeg: number;
-}
+} & QrGeoOrientation;
 
 export interface QrGpsVoteInput {
   /** Solved QR pose in raw-WebXR/odom space (`solveQrPose().qrPoseWorld`). */
@@ -139,6 +162,29 @@ export function localPlaneToEnu(
   };
 }
 
+/**
+ * Map a QR-local point (meters, `buildObjectPoints` axes) to an
+ * East/North/Up offset using whichever orientation the geo pose carries:
+ * the full `rotation` quaternion (6-DoF, wins when both are present) or the
+ * legacy vertical-poster `headingDeg`. A vertical-poster quaternion
+ * reproduces the heading path exactly (property-tested). Throws when the
+ * pose carries neither — that level should never have parsed.
+ */
+export function localPlaneOffset(local: Vector3, geo: QrGeoPose): Enu {
+  if (geo.rotation !== undefined) {
+    // Double-precision rotation (NOT the float32 `transformPoint`); with a
+    // NUE quaternion the result is a NUE offset.
+    const nue = rotateVectorByQuaternion(geo.rotation, local);
+    return { north: nue[0], up: nue[1], east: nue[2] };
+  }
+  if (geo.headingDeg === undefined) {
+    throw new RangeError(
+      'qr-gps-vote: QrGeoPose carries neither headingDeg nor rotation'
+    );
+  }
+  return localPlaneToEnu(local[0], local[1], geo.headingDeg);
+}
+
 /** Apply an ENU meter offset to a geo pose (equirectangular; exact enough for sub-meter QR corners). */
 export function offsetGeo(
   center: QrGeoPose,
@@ -214,10 +260,7 @@ export function buildQrGpsVotes(
 
   return localPoints.map((local, i) => {
     const odomPosition = transformPoint(local, qrPoseWorld);
-    const geo = offsetGeo(
-      qrGeo,
-      localPlaneToEnu(local[0], local[1], qrGeo.headingDeg)
-    );
+    const geo = offsetGeo(qrGeo, localPlaneOffset(local, qrGeo));
     const rawGpsPoint: RawGpsPoint = {
       id: `${idPrefix}-${timestamp}-${i}`,
       latitude: geo.latitude,

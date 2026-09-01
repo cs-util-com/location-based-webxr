@@ -50,6 +50,11 @@ const arbInput = (n: fc.Arbitrary<number>): fc.Arbitrary<ClickTimingInput> =>
       pipelineMs: n,
       tilesFetched: fc.integer({ min: 0, max: 3 }),
       tilesHeld: fc.integer({ min: 0, max: 20 }),
+      // A res-7 fetch tile is estimated at ~40,000-116,000 features, and a
+      // slow click holds several - so the range runs well past a single
+      // tile, exercising the rendered line at the width a real slow click
+      // produces rather than only at single digits.
+      featuresHeld: fc.integer({ min: 0, max: 800_000 }),
       tilesFromNetwork: fc.integer({ min: 0, max: 3 }),
       tilesFromCache: fc.integer({ min: 0, max: 3 }),
       tilesUnmeasured: fc.integer({ min: 0, max: 3 }),

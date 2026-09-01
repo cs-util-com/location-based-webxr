@@ -36,6 +36,17 @@ A QR does **not** rigidly re-anchor the scene; it votes (heavily) via the normal
 - `QrGeoPose`, `QrGpsVoteInput`, `Enu`. (The former `METERS_PER_DEG_LAT` export
   was removed with the delegation — no consumer existed in either workspace root.)
 
+## 6-DoF extension (QR-pose plan 2026-08-25)
+
+- `QrGeoPose` carries an optional `rotation` — a unit quaternion in the
+  NUE GPS-world frame over the QR's local axes — alongside the legacy
+  vertical-poster `headingDeg` (now optional; at least one must be
+  present, rotation wins when both are). `localPlaneOffset(local, geo)` is
+  the orientation-dispatching mapper `buildQrGpsVotes` uses; a
+  vertical-poster quaternion (−heading about Up) reproduces the heading
+  path exactly (property-tested — note local +x points TOWARD headingDeg,
+  so the printed face's normal sits at heading + 90°).
+
 ## Invariants & assumptions
 
 - **`weight = 1/accuracy^gpsAccuracyExponent`** is computed by the core library
@@ -46,9 +57,9 @@ A QR does **not** rigidly re-anchor the scene; it votes (heavily) via the normal
   well; the QR-normal (depth) DOF stays weakest — exactly what
   [qr-occupancy-check.ts.md](qr-occupancy-check.ts.md) guards. Do not treat the
   4 corners as a substitute for the size sanity check.
-- **Vertical-QR geo convention:** local +Y = world up (altitude), local +X =
-  horizontal at `headingDeg`. A flat-on-floor QR would need a different mapping;
-  the demonstrator assumes wall-mounted.
+- **Vertical-QR geo convention (legacy heading path):** local +Y = world up,
+  local +X = horizontal at `headingDeg`. A flat-on-floor or tilted QR is
+  carried by the 6-DoF `rotation` path (see the extension section above).
 - **Frame split:** `odomPosition` is raw-WebXR/odom (the reducer applies
   `webxrToNUE` on store); `rawGpsPoint` is absolute lat/lon/alt. The library
   computes the derived NUE coordinates + weight on dispatch.

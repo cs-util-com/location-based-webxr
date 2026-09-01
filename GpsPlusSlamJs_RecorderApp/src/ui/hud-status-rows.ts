@@ -152,3 +152,31 @@ export function setAbsCompassStatus(status: AbsCompassStatusDisplay): void {
 export function hideAbsCompass(): void {
   document.getElementById('abs-compass-info')?.classList.add('hidden');
 }
+
+/**
+ * Update the QR readout row, or hide it when QR detection is off.
+ *
+ * The recorder used to show NOTHING for QR — the detection producer was built
+ * without a status callback and no QR string reached the HUD — so a field
+ * session where the detector never fired looked exactly like one where it did,
+ * and the difference only surfaced at analysis time. The size it reports is
+ * also the number an author checks against a tape measure.
+ */
+export function setQrStatus(line: string | null): void {
+  const info = document.getElementById('qr-info');
+  const el = document.getElementById('qr-status');
+  if (!info || !el) {
+    return;
+  }
+  if (line === null) {
+    info.classList.add('hidden');
+    return;
+  }
+  info.classList.remove('hidden');
+  el.textContent = line;
+}
+
+/** Hide the QR readout row (recording stopped). */
+export function hideQrStatus(): void {
+  document.getElementById('qr-info')?.classList.add('hidden');
+}

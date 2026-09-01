@@ -144,6 +144,11 @@ export {
   createTextSprite,
 } from './text-sprite.js';
 
+// frame-texture-decoder is deliberately NOT re-exported here: every consumer
+// deep-imports `visualization/frame-texture-decoder` (this barrel feeds the
+// package-root `export *`, and DEC-H3's shared helpers stay off the root
+// export surface; the barrel is also unusable in node unit tests — leaflet).
+
 // --- wayfinding-hud (frustum-locked target indicators as camera children) ---
 export {
   type WayfindingHud,

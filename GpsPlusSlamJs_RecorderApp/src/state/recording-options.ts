@@ -460,6 +460,21 @@ export interface QrCaptureOptions {
    * here; 512 only decoded small QRs at very close range).
    */
   captureSize: number;
+  /**
+   * Whether a detected code's LEVEL is downloaded and used during the
+   * recording — the synthetic GPS votes that make this session more accurate.
+   * Default: false, and deliberately separate from {@link enabled}.
+   *
+   * Recording detections is safe for any corpus session; CONSUMING levels
+   * changes what the session records. A recording made with this on contains
+   * synthetic GPS readings alongside the real ones, and today they are NOT
+   * reliably distinguishable — the schema field that would mark them exists
+   * in the core library but the vote builder cannot set it until that
+   * release ships, so the only marker is an id-prefix convention nothing
+   * enforces. A corpus recording therefore stays clean unless the operator
+   * deliberately wants the comparison.
+   */
+  useLevels: boolean;
 }
 
 /**
@@ -580,6 +595,7 @@ export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
     enabled: false,
     intervalMs: 125, // ~8 Hz — the QR demo's DETECT_INTERVAL_MS
     captureSize: 1024, // long-edge px — the on-device-verified default
+    useLevels: false,
   },
   compassDebug: {
     // Stage 0 (cold-start compass yaw override) ships ON by default — it is a
@@ -747,10 +763,22 @@ export interface CompassStoreOptions {
  * a rotation prior can consume it (experiment or Stage C on) — a Stage-0-only
  * session must not record a dead `setCompassVoteWeight` action into the
  * session (the slider is inert without a prior; see the 2026-07-20
- * settings-clarity follow-up §3.4). `undefined` input (boot before the
- * options load) yields `{}` — deliberately NO explicit keys, because spreading
- * explicit-`undefined` keys over a defaults object would clobber the framework
- * defaults; an empty object leaves them all in place.
+ * settings-clarity follow-up §3.4).
+ *
+ * `undefined` input (boot before the options load) yields `{}` — there is
+ * simply nothing to map yet.
+ *
+ * **An explicit `undefined` VALUE is safe here, and the whole chain is what
+ * makes it safe** — worth stating because the line above deliberately emits
+ * one (`compassVoteWeight: undefined` whenever no prior can consume it), and
+ * because this docstring previously claimed the opposite: that spreading
+ * explicit-`undefined` keys "would clobber the framework defaults". It does
+ * not, and it never did on this path. `createRecorderStore` forwards every
+ * option BY NAME rather than spreading over a defaults object, and
+ * `createSlamAppStore` then guards `if (compassVoteWeight !== undefined)`, so
+ * an explicit `undefined` and an absent key are indistinguishable at every
+ * layer. Audited 2026-08-29. If a future consumer ever merges these with
+ * `{ ...defaults, ...options }`, THAT is where the hazard would become real.
  */
 export function compassStoreOptions(
   compass: CompassDebugOptions | undefined
@@ -826,6 +854,7 @@ export function validateQrOptions(
     enabled: { kind: 'bool' },
     intervalMs: { kind: 'num', constraint: QR_CONSTRAINTS.intervalMs },
     captureSize: { kind: 'num', constraint: QR_CONSTRAINTS.captureSize },
+    useLevels: { kind: 'bool' },
   });
 }
 

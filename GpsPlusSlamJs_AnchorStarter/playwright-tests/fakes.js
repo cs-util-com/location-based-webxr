@@ -157,6 +157,13 @@ export async function installAnchorStarterFakes(page, options = {}) {
         control.trackingStoreWired = Boolean(callbacks?.tracking?.store);
         control.trackingCallbacksWired =
           typeof callbacks?.tracking?.onRestarted === "function";
+        // The REAL session-end callback and the REAL store, captured so the
+        // teardown spec can end the session the way the system does and
+        // assert the store state — a wired-boolean alone cannot prove the
+        // callback tears anything down (PR #364 review: only the
+        // start-failure path did).
+        control.fireSessionEnd = callbacks?.onSessionEnd ?? null;
+        control.trackingStore = callbacks?.tracking?.store ?? null;
         return Promise.resolve();
       },
       endARSession: () => {

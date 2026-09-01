@@ -34,6 +34,8 @@ knowledge deflate lacks). Also exports the **A4+A2 chain** (dictionary →
 - Greedy longest-match substitution at each position (table sorted by
   length at module load; entry order in source is cosmetic).
 
+- The provider-host knowledge here overlaps storage/share-link.ts, which runs the INVERSE transform (share page -> direct URL). A provider changing its URL scheme needs both checked.
+
 ## Examples
 
 ```ts

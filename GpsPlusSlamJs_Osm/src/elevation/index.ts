@@ -12,8 +12,11 @@ export {
   NullElevationProvider,
   consensusProvider,
   fallbackProvider,
-  median,
 } from "./elevation-provider.js";
+// Re-exported from this barrel because that is where consumers have always
+// found it; the implementation moved to the package's `utils/` when the
+// second copy in `regions/` was folded in.
+export { median } from "../utils/median.js";
 
 export type {
   Heights,

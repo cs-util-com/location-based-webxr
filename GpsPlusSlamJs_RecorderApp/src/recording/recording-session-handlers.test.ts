@@ -320,6 +320,8 @@ vi.mock('../ui/hud', () => ({
   setNewRefPointButtonVisible: vi.fn(),
   setAbsCompassStatus: vi.fn(),
   hideAbsCompass: vi.fn(),
+  hideQrStatus: vi.fn(),
+  setQrStatus: vi.fn(),
 }));
 
 vi.mock('../ui/session-summary', () => ({
@@ -440,6 +442,7 @@ function createMockDeps(
     createNewStore: vi.fn().mockReturnValue(createMockStore()),
     getRecordingOptions: () => defaultOptions,
     getMapOverlay: () => null,
+    getQrSightingFeeder: () => null,
     getSessionNotes: () => '',
     waitForZeroReference: vi.fn().mockResolvedValue(null),
     loadAndDisplayRefPoints: vi

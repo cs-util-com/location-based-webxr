@@ -38,6 +38,12 @@
 //  - **A class method or object-literal shorthand is not matched.**
 //    `class Util { clamp01(v) {} }` reads as a member, and matching that shape
 //    would collide with every ordinary method name.
+//  - **An UNTRACKED file is invisible.** `git ls-files` lists tracked paths
+//    only, so a canonical helper newly created and not yet `git add`ed is not
+//    found — which surfaces as the non-vacuity check below failing rather than
+//    as a missed duplicate, i.e. it fails loudly and in the safe direction.
+//    Staging the file fixes it; CI is unaffected because it only ever sees
+//    committed trees. Found on 2026-08-29 while adding `normalizeBearingDeg`.
 //
 // It is still worth having: every entry below is a unification that was paid
 // for once, and this is what stops it being undone by the next session that
@@ -93,6 +99,43 @@ const CANONICAL = [
     name: 'smoothstep',
     rule: 'perPackage',
     why: 'three character-identical copies three files apart in one package',
+  },
+  // The median family. `utils/median.ts` was created by the 2026-07-10
+  // quality review to replace SIX private copies carrying two silently
+  // different even-length rules, which is the most expensive unification in
+  // this list — and it was the one name the guard never learned, so a
+  // seventh copy appeared in the same package. Named exports get the
+  // `shared` rule because picking the wrong rule is the whole failure mode;
+  // the generic `median` gets `perPackage` for packages that cannot reach
+  // the framework.
+  {
+    name: 'interpolatingMedian',
+    rule: 'shared',
+    home: 'GpsPlusSlamJs_AppFramework/src/utils/median.ts',
+    why: 'the even-length rule is a contract — averaging two middles fabricates a value that was never observed',
+  },
+  {
+    name: 'lowerMedian',
+    rule: 'shared',
+    home: 'GpsPlusSlamJs_AppFramework/src/utils/median.ts',
+    why: 'the counterpart rule, and the copy that came back: elevation-offset-estimator.ts had its own by 2026-08-29',
+  },
+  {
+    name: 'weightedMedian',
+    rule: 'shared',
+    home: 'GpsPlusSlamJs_AppFramework/src/utils/median.ts',
+    why: 'its tie-breaking matches the core library’s private solver median, cross-checked in Investigation; a second copy here would drift from a helper it cannot see',
+  },
+  {
+    name: 'normalizeBearingDeg',
+    rule: 'shared',
+    home: 'GpsPlusSlamJs_AppFramework/src/utils/bearing-degrees.ts',
+    why: 'six unnamed copies of `((deg % 360) + 360) % 360` in one package, and the early return that separates the correct form from them is a CONTRACT — without it `360 − ε` snaps to 0, a full turn that never happened (core-library fast-check counterexample −2.842e−14). A guard entry cannot see the unnamed form, but it can stop the seventh NAMED one',
+  },
+  {
+    name: 'median',
+    rule: 'perPackage',
+    why: 'the unqualified name says nothing about the even-length rule, so two of them in one package is two rules nobody chose between - which is what GpsPlusSlamJs_Osm had',
   },
 ];
 

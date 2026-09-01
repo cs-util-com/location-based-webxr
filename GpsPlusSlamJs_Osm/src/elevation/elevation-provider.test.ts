@@ -18,7 +18,6 @@ import {
   NullElevationProvider,
   consensusProvider,
   fallbackProvider,
-  median,
 } from "./elevation-provider.js";
 import type { ElevationProvider } from "./elevation-provider.js";
 import type { LatLng } from "../model/osm-feature.js";
@@ -60,23 +59,9 @@ describe("NullElevationProvider", () => {
   });
 });
 
-describe("median", () => {
-  it("is the middle of an odd sample", () => {
-    expect(median([3, 1, 2])).toBe(2);
-  });
-
-  it("averages the two middles of an even sample", () => {
-    expect(median([1, 2, 3, 4])).toBe(2.5);
-  });
-
-  it("is undefined for no samples, not 0", () => {
-    expect(median([])).toBeUndefined();
-  });
-
-  it("ignores input order", () => {
-    expect(median([5, 1, 9, 3, 7])).toBe(median([9, 7, 5, 3, 1]));
-  });
-});
+// `median` itself is pinned by `src/utils/median.test.ts`, where the
+// implementation now lives. What stays here is its USE: consensus across
+// disagreeing providers, below.
 
 describe("consensusProvider", () => {
   it("takes the median across providers, per position", async () => {

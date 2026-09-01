@@ -658,6 +658,15 @@ const OPTION_BINDINGS: readonly OptionBinding[] = [
     },
   },
   {
+    kind: 'checkbox',
+    id: 'qr-use-levels',
+    get: (o) => o.qr.useLevels,
+    set: (o, v) => {
+      o.qr.useLevels = v;
+    },
+    enabledWhen: qrOn,
+  },
+  {
     kind: 'slider',
     id: 'qr-interval',
     range: QR_CONSTRAINTS.intervalMs,

@@ -184,6 +184,8 @@ export interface ClickTimings {
   readonly tilesFromCache: number;
   readonly tilesUnmeasured: number;
   readonly tilesHeld: number;
+  /** Merged features held - see `DemoStageTimings.featuresHeld`. */
+  readonly featuresHeld: number;
 }
 
 /**
@@ -368,6 +370,7 @@ export function composeClickTimings(input: ClickTimingInput): ClickTimings {
     tilesFromCache: p.tilesFromCache,
     tilesUnmeasured: p.tilesUnmeasured,
     tilesHeld: p.tilesHeld,
+    featuresHeld: p.featuresHeld,
   };
 }
 
@@ -401,6 +404,11 @@ export function describeClickTimings(t: ClickTimings): string {
     `${t.tilesFromCache} cache`,
     ...(t.tilesUnmeasured > 0 ? [`${t.tilesUnmeasured} unmeasured`] : []),
     `${t.tilesHeld} held`,
+    // NEVER DROPPED WHEN ZERO, unlike the zero-cost stages below. Absent and
+    // zero are different facts everywhere else in this type, and a missing
+    // count on an empty pass would read as "the instrument is not there" —
+    // which is the one reading that would waste a measurement session.
+    `${t.featuresHeld} features`,
   ].join("/");
 
   const parts = t.stages

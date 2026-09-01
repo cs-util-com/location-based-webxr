@@ -39,6 +39,43 @@ debug/observe or trigger-only level. `qr` itself is still required as an object.
 - Injected `fetchImpl` keeps the loader unit-testable and lets callers add
   caching/headers; the controller (`qr-tracking-controller.ts`) caches by URL.
 
+## 6-DoF + writer (QR-pose plan 2026-08-25)
+
+- `qr.geo.rotation` (optional): unit quaternion [x,y,z,w], NUE GPS-world
+  frame; small norm drift (≤1e-3) renormalizes, worse rejects.
+  Renormalization is IDEMPOTENT: a norm already within 1e-12 of 1 passes
+  the values through bit-exact (dividing anyway shifts components by a
+  last-bit step per parse, which broke the exact serialize→parse
+  round-trip — CI property seed on r574).
+  `headingDeg` is optional when rotation is present — a floor/ceiling
+  code has no honest heading, and geo with NEITHER rejects loudly.
+- `serializeQrLevel(level)` — the writer half: re-validates through
+  `parseQrLevel` (fail loud, never a broken file) and emits the JSON the
+  parser reads. Round-trip property-tested over the whole capability
+  lattice (`qr-level.property.test.ts`).
+- When BOTH orientation fields are present they must AGREE (2 degrees
+  tolerance, and the rotation must be near-vertical for any heading to be
+  honest) — a contradictory pair rejects, because a wrong heading read by a
+  rotation-unaware consumer mis-places the code silently.
+- `qr.mintQuality` (optional, typed `QrMintQuality`): GPS accuracy,
+  alignment sample count/RMSE and mint timestamp — validated when present
+  so M4 reads real fields, not a convention buried in opaque content. Plus
+  the **session-mint** block, for a code minted from a whole recording
+  rather than from one live moment: `sightingCount`, `detectionCount`,
+  `rotationSpreadDeg`, `translationSpreadM`, `physicalSizeSpreadM`.
+  - **Zero is valid for every count and spread** — a code seen in exactly
+    one sighting has no cross-sighting disagreement, which is the most
+    confident case there is, not an invalid one. Only `gpsAccuracyM` is
+    validated as strictly positive.
+  - **Anything not in this list is DROPPED, silently**, because
+    `serializeQrLevel` re-validates through `parseQrLevel` before
+    stringifying. Adding a field to the writer without adding it here
+    produces a green round-trip test and an empty field in the file — the
+    trap a 2026-08-28 cold review caught. The round-trip test therefore
+    asserts each field **by name**.
+  - Validation is table-driven (`MINT_QUALITY_FIELDS`) rather than one
+    if-block per field; adding a field means adding one row.
+
 ## Tests
 
 - `qr-level.test.ts` — valid parse (content preserved, heading normalized),
@@ -51,3 +88,4 @@ debug/observe or trigger-only level. `qr` itself is still required as an object.
 
 - `qr.geo` → [qr-gps-vote.ts.md](qr-gps-vote.ts.md) (`QrGeoPose`).
 - Consumed by [qr-tracking-controller.ts.md](qr-tracking-controller.ts.md).
+- `FetchLike` is deliberately narrower than `storage/remote-range-byte-source.ts`'s `FetchImpl` (the full `typeof fetch`) - see that sidecar for why the two seams stay separate.

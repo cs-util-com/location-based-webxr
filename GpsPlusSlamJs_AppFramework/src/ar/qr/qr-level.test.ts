@@ -10,6 +10,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   parseQrLevel,
+  serializeQrLevel,
   fetchQrLevel,
   QrLevelValidationError,
   type FetchLike,
@@ -168,5 +169,263 @@ describe('fetchQrLevel', () => {
     await expect(
       fetchQrLevel('https://lvl/x', { fetchImpl: okFetch({ version: 1 }) })
     ).rejects.toThrow(QrLevelValidationError);
+  });
+});
+
+// Why these tests matter (QR-pose plan 2026-08-25, QD-5): the schema gains an
+// optional 6-DoF `rotation` quaternion (NUE GPS-world frame). The invariants
+// that keep old and new files honest: rotation-only files are valid (a
+// floor/ceiling code has no honest heading, and a filler heading read by a
+// rotation-unaware consumer would silently mis-place it), garbage rotations
+// reject loudly, and geo with NEITHER heading nor rotation rejects.
+describe('parseQrLevel — 6-DoF rotation', () => {
+  const base = {
+    version: 1,
+    qr: { physicalSizeM: 0.2 },
+  };
+  /** Identity quaternion — a valid unit rotation. */
+  const IDENTITY = [0, 0, 0, 1];
+
+  it('accepts geo with rotation only (no headingDeg)', () => {
+    const level = parseQrLevel({
+      ...base,
+      qr: {
+        ...base.qr,
+        geo: { lat: 47.5, lon: 8.7, alt: 400, rotation: IDENTITY },
+      },
+    });
+    expect(level.qr.geo?.rotation).toEqual(IDENTITY);
+    expect(level.qr.geo?.headingDeg).toBeUndefined();
+  });
+
+  it('accepts geo with both fields when they AGREE', () => {
+    // Identity quaternion = a vertical poster at bearing 0.
+    const level = parseQrLevel({
+      ...base,
+      qr: {
+        ...base.qr,
+        geo: {
+          lat: 47.5,
+          lon: 8.7,
+          alt: 400,
+          headingDeg: 0.5,
+          rotation: IDENTITY,
+        },
+      },
+    });
+    expect(level.qr.geo?.headingDeg).toBe(0.5);
+    expect(level.qr.geo?.rotation).toEqual(IDENTITY);
+  });
+
+  // Why this matters (M1 milestone review #5): the optional-heading change
+  // exists because a WRONG heading read by a rotation-unaware consumer
+  // mis-places the code silently — so a document whose two orientation
+  // fields disagree must reject, not validate.
+  it('rejects geo whose headingDeg contradicts its rotation', () => {
+    expect(() =>
+      parseQrLevel({
+        ...base,
+        qr: {
+          ...base.qr,
+          geo: {
+            lat: 47.5,
+            lon: 8.7,
+            alt: 400,
+            headingDeg: 30, // identity rotation implies bearing 0
+            rotation: IDENTITY,
+          },
+        },
+      })
+    ).toThrow(QrLevelValidationError);
+  });
+
+  it('rejects a headingDeg paired with a non-vertical rotation', () => {
+    // −90° about North: face-up table code — no heading is honest.
+    const half = (-90 * Math.PI) / 180 / 2;
+    const faceUp = [Math.sin(half), 0, 0, Math.cos(half)];
+    expect(() =>
+      parseQrLevel({
+        ...base,
+        qr: {
+          ...base.qr,
+          geo: {
+            lat: 47.5,
+            lon: 8.7,
+            alt: 400,
+            headingDeg: 30,
+            rotation: faceUp,
+          },
+        },
+      })
+    ).toThrow(QrLevelValidationError);
+  });
+
+  it('rejects geo with neither headingDeg nor rotation', () => {
+    expect(() =>
+      parseQrLevel({
+        ...base,
+        qr: { ...base.qr, geo: { lat: 47.5, lon: 8.7, alt: 400 } },
+      })
+    ).toThrow(QrLevelValidationError);
+  });
+
+  it.each([
+    [[0, 0, 0, 1, 0], 'wrong length'],
+    [[0, 0, 0, Number.NaN], 'NaN component'],
+    [[0, 0, 0, 0.5], 'non-unit norm'],
+    ['not-an-array', 'not an array'],
+  ] as [unknown, string][])('rejects rotation %j (%s)', (rotation) => {
+    expect(() =>
+      parseQrLevel({
+        ...base,
+        qr: { ...base.qr, geo: { lat: 47.5, lon: 8.7, alt: 400, rotation } },
+      })
+    ).toThrow(QrLevelValidationError);
+  });
+});
+
+// Why these tests matter: the writer did not exist before the QR-pose plan
+// (the schema was reader-only), and the authoring loop stands on the exported
+// JSON being re-readable byte-for-semantics by parseQrLevel.
+describe('serializeQrLevel', () => {
+  it('round-trips a rotation-carrying level through parseQrLevel', () => {
+    const level = parseQrLevel({
+      version: 1,
+      qr: {
+        physicalSizeM: 0.18,
+        geo: { lat: 47.5, lon: 8.7, alt: 401.5, rotation: [0, 0, 0, 1] },
+        mintQuality: { gpsAccuracyM: 3.4, alignmentSampleCount: 120 },
+      },
+      content: { note: 'opaque payload' },
+    });
+
+    const reparsed = parseQrLevel(JSON.parse(serializeQrLevel(level)));
+    expect(reparsed).toEqual(level);
+  });
+
+  // Why this test matters: CI's property run (seed -783670882, r574) caught
+  // parseRotation renormalizing on EVERY parse — and dividing by a norm that
+  // is already 1-within-rounding shifts components by one last-bit step, so
+  // parse → serialize(re-validates) → parse drifted the quaternion by 1 ULP
+  // and the round-trip property failed. Renormalization must be idempotent:
+  // a quaternion whose norm is already unit-within-tolerance passes through
+  // bit-exact. This pins the exact CI counterexample deterministically.
+  it('round-trips a near-unit rotation bit-exactly (renormalization is idempotent)', () => {
+    const rotation = [0, -0.0008920303016105935, 0, 0.9999996021408913];
+    const level = parseQrLevel({
+      version: 1,
+      qr: { geo: { lat: 0, lon: 0, alt: 0, rotation } },
+    });
+
+    const reparsed = parseQrLevel(JSON.parse(serializeQrLevel(level)));
+    expect(reparsed).toEqual(level);
+  });
+
+  it('refuses to serialize an invalid level (fail loud, not a broken file)', () => {
+    expect(() => serializeQrLevel({ version: Number.NaN, qr: {} })).toThrow(
+      QrLevelValidationError
+    );
+  });
+});
+
+// Why these tests matter (M1 milestone review #6): the mint-quality block
+// was an unpinned convention buried in opaque content — M4's placement
+// readout and M5's attributable error numbers read these exact fields, so
+// they need a schema and loud validation, not a guess.
+describe('parseQrLevel — mintQuality', () => {
+  const base = { version: 1, qr: {} };
+
+  it('accepts a full quality block and round-trips it', () => {
+    const level = parseQrLevel({
+      ...base,
+      qr: {
+        mintQuality: {
+          gpsAccuracyM: 3.4,
+          alignmentSampleCount: 120,
+          alignmentRmseM: 0.8,
+          mintedAtIso: '2026-08-25T12:00:00Z',
+        },
+      },
+    });
+    expect(level.qr.mintQuality?.alignmentSampleCount).toBe(120);
+    const reparsed = parseQrLevel(JSON.parse(serializeQrLevel(level)));
+    expect(reparsed).toEqual(level);
+  });
+
+  it.each([
+    [{ gpsAccuracyM: 0 }, 'zero accuracy'],
+    [{ gpsAccuracyM: Number.NaN }, 'NaN accuracy'],
+    [{ alignmentSampleCount: 2.5 }, 'fractional sample count'],
+    [{ alignmentRmseM: -1 }, 'negative RMSE'],
+    [{ mintedAtIso: '' }, 'empty timestamp'],
+    ['not-an-object', 'not an object'],
+  ] as [unknown, string][])('rejects mintQuality %j (%s)', (mintQuality) => {
+    expect(() => parseQrLevel({ ...base, qr: { mintQuality } })).toThrow(
+      QrLevelValidationError
+    );
+  });
+
+  // Why these tests matter (cold review finding 6, 2026-08-28): serializeQrLevel
+  // re-validates through parseQrLevel BEFORE stringifying, so any field the
+  // schema does not know is silently dropped on the way out — and a
+  // round-trip test that only compares whole objects still passes green,
+  // because both sides lost it. The session-mint fields are therefore
+  // asserted BY NAME.
+  it('keeps every session-mint field through a serialize round-trip', () => {
+    const mintQuality = {
+      gpsAccuracyM: 3.4,
+      alignmentSampleCount: 120,
+      alignmentRmseM: 0.8,
+      mintedAtIso: '2026-08-28T06:36:00Z',
+      sightingCount: 7,
+      detectionCount: 213,
+      rotationSpreadDeg: 4.25,
+      translationSpreadM: 0.63,
+      physicalSizeSpreadM: 0.004,
+    };
+    const level = parseQrLevel({ ...base, qr: { mintQuality } });
+    const reparsed = parseQrLevel(JSON.parse(serializeQrLevel(level)));
+
+    for (const [key, value] of Object.entries(mintQuality)) {
+      expect(
+        reparsed.qr.mintQuality?.[key as keyof typeof mintQuality],
+        key
+      ).toBe(value);
+    }
+  });
+
+  it('accepts zero for the counts and spreads', () => {
+    // Why this test matters: a code seen in exactly one sighting has zero
+    // cross-sighting spread. Validating these as "positive" would reject the
+    // most confident case there is.
+    const level = parseQrLevel({
+      ...base,
+      qr: {
+        mintQuality: {
+          sightingCount: 0,
+          detectionCount: 0,
+          rotationSpreadDeg: 0,
+          translationSpreadM: 0,
+          physicalSizeSpreadM: 0,
+        },
+      },
+    });
+    expect(level.qr.mintQuality?.sightingCount).toBe(0);
+    expect(level.qr.mintQuality?.rotationSpreadDeg).toBe(0);
+  });
+
+  it.each([
+    [{ sightingCount: -1 }, 'negative sighting count'],
+    [{ sightingCount: 1.5 }, 'fractional sighting count'],
+    [{ detectionCount: -3 }, 'negative detection count'],
+    [{ detectionCount: 2.5 }, 'fractional detection count'],
+    [{ rotationSpreadDeg: -0.1 }, 'negative rotation spread'],
+    [{ rotationSpreadDeg: Number.POSITIVE_INFINITY }, 'infinite spread'],
+    [{ translationSpreadM: -1 }, 'negative translation spread'],
+    [{ physicalSizeSpreadM: -1 }, 'negative size spread'],
+  ] as [unknown, string][])('rejects mintQuality %j (%s)', (mintQuality) => {
+    expect(() => parseQrLevel({ ...base, qr: { mintQuality } })).toThrow(
+      QrLevelValidationError
+    );
   });
 });

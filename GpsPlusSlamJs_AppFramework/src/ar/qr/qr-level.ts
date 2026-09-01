@@ -14,7 +14,13 @@
  * NOT interpreted here; only the fields the pose + vote need are validated.
  */
 
-import type { QrGeoPose } from './qr-gps-vote.js';
+import { bearingDeltaDeg, type Quaternion } from 'gps-plus-slam-js';
+import { normalizeBearingDeg } from '../../utils/bearing-degrees.js';
+import {
+  deriveVerticalHeading,
+  renormalizeUnitQuaternion,
+} from './qr-geo-pose-minting.js';
+import type { QrGeoOrientation, QrGeoPose } from './qr-gps-vote.js';
 
 /**
  * A validated QR level file.
@@ -36,9 +42,43 @@ export interface QrLevel {
     physicalSizeM?: number;
     /** Absolute geo pose of the QR center + heading. Optional — geo-less levels skip the vote. */
     geo?: QrGeoPose;
+    /** How trustworthy the minted `geo` is (QR-pose plan M1) — recorded at
+     *  authoring time so viewers and the field validation can attribute
+     *  error instead of guessing. Optional; validated when present. */
+    mintQuality?: QrMintQuality;
   };
   /** AR content to instantiate (format deferred — plan §12). Opaque here. */
   content?: unknown;
+}
+
+/** Measurement quality captured when a `QrGeoPose` was minted. All fields
+ *  optional (authoring surfaces differ in what they know); each is
+ *  validated when present so a broken value fails loud at the boundary. */
+export interface QrMintQuality {
+  /** Reported GPS accuracy (m) at mint time. Positive. */
+  gpsAccuracyM?: number;
+  /** Number of GPS observations in the alignment solve at mint time. */
+  alignmentSampleCount?: number;
+  /** Alignment residual RMSE (m) at mint time. Non-negative. */
+  alignmentRmseM?: number;
+  /** ISO-8601 timestamp of the mint. Non-empty when present. */
+  mintedAtIso?: string;
+
+  // Session-mint fields. A code minted from a whole recording is observed in
+  // several separate SIGHTINGS (bursts of detections, minutes apart), and how
+  // far those sightings disagree is the evidence that the code stayed put.
+  // Zero is meaningful and valid throughout: one sighting has no spread.
+
+  /** Separate sightings the mint combined. Non-negative integer. */
+  sightingCount?: number;
+  /** Individual detections across those sightings. Non-negative integer. */
+  detectionCount?: number;
+  /** Cross-sighting rotation disagreement (deg). Non-negative. */
+  rotationSpreadDeg?: number;
+  /** Cross-sighting position disagreement (m). Non-negative. */
+  translationSpreadM?: number;
+  /** Spread of the measured physical size (m). Non-negative. */
+  physicalSizeSpreadM?: number;
 }
 
 /** Thrown when a fetched level file fails validation. */
@@ -96,12 +136,106 @@ function parseGeo(value: unknown): QrGeoPose | undefined {
   if (!isFiniteNumber(alt)) {
     throw new QrLevelValidationError('"qr.geo.alt" must be a finite number');
   }
-  if (!isFiniteNumber(headingDeg)) {
+  return { lat, lon, alt, ...parseOrientation(headingDeg, value.rotation) };
+}
+
+/** Max tolerated disagreement between an authored `headingDeg` and the
+ *  bearing its `rotation` implies before the document rejects as
+ *  self-contradictory (milestone review #5). */
+const HEADING_CONSISTENCY_TOLERANCE_DEG = 2;
+
+/**
+ * The orientation half of `qr.geo` (6-DoF extension, QR-pose plan
+ * 2026-08-25): `headingDeg` is optional WHEN a rotation is present — a
+ * floor/ceiling code has no honest heading, and a filler read by a
+ * rotation-unaware consumer would silently mis-place it. A pose with
+ * NEITHER cannot orient anything and rejects loudly.
+ */
+function parseOrientation(
+  headingDeg: unknown,
+  rotationValue: unknown
+): QrGeoOrientation {
+  const rotation = parseRotation(rotationValue);
+  if (headingDeg !== undefined && !isFiniteNumber(headingDeg)) {
     throw new QrLevelValidationError(
-      '"qr.geo.headingDeg" must be a finite number'
+      '"qr.geo.headingDeg" must be a finite number when present'
     );
   }
-  return { lat, lon, alt, headingDeg: ((headingDeg % 360) + 360) % 360 };
+  const normalized = isFiniteNumber(headingDeg)
+    ? normalizeBearingDeg(headingDeg)
+    : undefined;
+  if (rotation === undefined) {
+    if (normalized === undefined) {
+      throw new QrLevelValidationError(
+        '"qr.geo" must carry "headingDeg" and/or "rotation"'
+      );
+    }
+    return { headingDeg: normalized };
+  }
+  if (normalized === undefined) return { rotation };
+  // Both present: they must AGREE. The whole point of the optional heading
+  // is that a wrong one read by a rotation-unaware consumer mis-places the
+  // code silently — accepting a contradictory pair would leave exactly that
+  // failure open for hand-authored or half-migrated files.
+  const derived = deriveVerticalHeading(rotation);
+  if (derived === undefined) {
+    throw new QrLevelValidationError(
+      '"qr.geo.headingDeg" contradicts "rotation": the rotation is not near-vertical, so no heading is honest'
+    );
+  }
+  if (
+    Math.abs(bearingDeltaDeg(derived, normalized)) >
+    HEADING_CONSISTENCY_TOLERANCE_DEG
+  ) {
+    throw new QrLevelValidationError(
+      `"qr.geo.headingDeg" (${normalized.toFixed(1)}°) contradicts "rotation" (bearing ${derived.toFixed(1)}°)`
+    );
+  }
+  return { headingDeg: normalized, rotation };
+}
+
+/**
+ * Validate an optional `qr.geo.rotation`: a unit quaternion `[x, y, z, w]`
+ * in the NUE GPS-world frame (see {@link QrGeoPose}). A small norm drift
+ * (≤ 1e-3, e.g. JSON round-trip loss) is renormalized; anything further off
+ * is a broken file, not a rotation.
+ */
+function parseRotation(value: unknown): Quaternion | undefined {
+  if (value === undefined) return undefined;
+  if (
+    !Array.isArray(value) ||
+    value.length !== 4 ||
+    !value.every(isFiniteNumber)
+  ) {
+    throw new QrLevelValidationError(
+      '"qr.geo.rotation" must be an array of 4 finite numbers when present'
+    );
+  }
+  // Checked element reads: the length===4 guard above makes these always
+  // defined, but `noUncheckedIndexedAccess` (tsc) and the every()-narrowing
+  // eslint sees disagree about destructuring — this form satisfies both.
+  const [x, y, z, w] = [value[0], value[1], value[2], value[3]];
+  if (
+    x === undefined ||
+    y === undefined ||
+    z === undefined ||
+    w === undefined
+  ) {
+    throw new QrLevelValidationError(
+      '"qr.geo.rotation" must be an array of 4 finite numbers when present'
+    );
+  }
+  // The tolerance, the idempotent renormalization (the exact-round-trip
+  // guarantee stands on it — CI property seed on r574) and the -0
+  // canonicalization all live in the shared writer/reader contract:
+  // `renormalizeUnitQuaternion` in qr-geo-pose-minting.ts.
+  const renormalized = renormalizeUnitQuaternion([x, y, z, w]);
+  if (renormalized === undefined) {
+    throw new QrLevelValidationError(
+      '"qr.geo.rotation" must be a unit quaternion'
+    );
+  }
+  return renormalized;
 }
 
 /**
@@ -120,15 +254,112 @@ export function parseQrLevel(data: unknown): QrLevel {
   }
   const physicalSizeM = parsePhysicalSize(data.qr.physicalSizeM);
   const geo = parseGeo(data.qr.geo);
+  const mintQuality = parseMintQuality(data.qr.mintQuality);
 
   return {
     version: data.version,
     qr: {
       ...(physicalSizeM !== undefined ? { physicalSizeM } : {}),
       ...(geo !== undefined ? { geo } : {}),
+      ...(mintQuality !== undefined ? { mintQuality } : {}),
     },
     content: 'content' in data ? data.content : undefined,
   };
+}
+
+/** Validate the optional `qr.mintQuality` (see {@link QrMintQuality}). */
+function parseMintQuality(value: unknown): QrMintQuality | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) {
+    throw new QrLevelValidationError(
+      '"qr.mintQuality" must be an object when present'
+    );
+  }
+  // Field-by-field validation, driven by a table rather than by nine
+  // near-identical if-blocks: the block list grew with the session-mint
+  // fields, and copy-pasted validation is exactly how one of them ends up
+  // silently unchecked.
+  const quality: Record<string, number | string> = {};
+  for (const [key, kind] of Object.entries(MINT_QUALITY_FIELDS)) {
+    const raw = value[key];
+    if (raw === undefined) continue;
+    quality[key] = checkMintQualityField(key, raw, kind);
+  }
+  return quality;
+}
+
+/** The validation shapes a `mintQuality` field can take. */
+type MintQualityKind = 'positive' | 'non-negative' | 'count' | 'text';
+
+/** How each `mintQuality` field is validated. */
+const MINT_QUALITY_FIELDS = {
+  gpsAccuracyM: 'positive',
+  alignmentSampleCount: 'count',
+  alignmentRmseM: 'non-negative',
+  mintedAtIso: 'text',
+  sightingCount: 'count',
+  detectionCount: 'count',
+  rotationSpreadDeg: 'non-negative',
+  translationSpreadM: 'non-negative',
+  physicalSizeSpreadM: 'non-negative',
+  // `satisfies` is load-bearing, not decoration: it is what makes "adding a
+  // field means adding a row" TRUE rather than a promise. Without it a field
+  // added to QrMintQuality with no row here is silently dropped by
+  // serializeQrLevel — the exact trap this table was written to close.
+} as const satisfies Record<keyof Required<QrMintQuality>, MintQualityKind>;
+
+/** Validate one present `mintQuality` field, or throw naming it. */
+function checkMintQualityField(
+  key: string,
+  raw: unknown,
+  kind: MintQualityKind
+): number | string {
+  return kind === 'text'
+    ? checkMintQualityText(key, raw)
+    : checkMintQualityNumber(key, raw, kind);
+}
+
+function mintQualityError(key: string, expected: string): never {
+  throw new QrLevelValidationError(
+    `"qr.mintQuality.${key}" must be ${expected} when present`
+  );
+}
+
+function checkMintQualityText(key: string, raw: unknown): string {
+  if (typeof raw !== 'string' || raw.trim() === '') {
+    mintQualityError(key, 'a non-empty string');
+  }
+  return raw;
+}
+
+function checkMintQualityNumber(
+  key: string,
+  raw: unknown,
+  kind: Exclude<MintQualityKind, 'text'>
+): number {
+  if (!isFiniteNumber(raw)) mintQualityError(key, 'a finite number');
+  if (kind === 'positive' && raw <= 0) {
+    mintQualityError(key, 'a positive number');
+  }
+  if (kind === 'non-negative' && raw < 0) {
+    mintQualityError(key, 'a non-negative number');
+  }
+  if (kind === 'count' && (raw < 0 || !Number.isInteger(raw))) {
+    mintQualityError(key, 'a non-negative integer');
+  }
+  return raw;
+}
+
+/**
+ * Serialize a {@link QrLevel} to the JSON document `parseQrLevel` reads —
+ * the writer half the schema never had (the authoring loop stands on the
+ * exported file being re-readable). The input is re-validated first so a
+ * programming error fails LOUD here instead of producing a broken file an
+ * author uploads and a visitor cannot open.
+ */
+export function serializeQrLevel(level: QrLevel): string {
+  const validated = parseQrLevel(level);
+  return JSON.stringify(validated, null, 2);
 }
 
 /** Minimal `fetch` slice used by {@link fetchQrLevel}. */

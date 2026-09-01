@@ -120,6 +120,9 @@ const entryFiles = [
 
   // state/
   'src/state/index.ts',
+  // Shared AR session-end STATE teardown (DEC-H3 unification, 2026-08-26)
+  // — deep-importable via the ./state/* wildcard → per-file entry.
+  'src/state/ar-session-teardown.ts',
   'src/state/app-selectors.ts',
   'src/state/combined-root-state.ts',
   'src/state/create-slam-app-store.ts',
@@ -132,6 +135,7 @@ const entryFiles = [
   // Deep-imported by the recorder's qr-debug-controller (selectDerivedQrPlacement)
   // — same barrel-avoidance rationale as the ar/qr-* entries above.
   'src/state/qr-detected-slice.ts',
+  'src/state/segmenting-actions.ts',
   'src/state/recording-replayer.ts',
   'src/state/replay-engine.ts',
   // Desktop-replay composer + its occupancy subscriber (2026-07-15 replay-harness
@@ -153,6 +157,19 @@ const entryFiles = [
   'src/storage/zip-export.ts',
   'src/storage/zip-reader.ts',
   'src/storage/zip-coverage-embed.ts',
+  // Range-based zip streaming transport — the `./storage/*` exports wildcard
+  // advertises every one of these subpaths, so each must be built per-file
+  // (same reasoning as the utils/qr-payload entries below; a missing entry
+  // breaks Vite resolution at runtime for deep imports).
+  'src/storage/byte-source.ts',
+  'src/storage/range-probe.ts',
+  'src/storage/remote-range-byte-source.ts',
+  'src/storage/local-cache-byte-source.ts',
+  'src/storage/bounded-local-cache-store.ts',
+  'src/storage/open-remote-archive.ts',
+  'src/storage/share-link.ts',
+  'src/storage/structural-read-error.ts',
+  'src/storage/zip-byte-source-reader.ts',
   // File System Access write-with-abort helper — deep-imported by three
   // recorder storage modules (ref-point-loader, scenario-zip-export,
   // coverage-backfill). The `./storage/*` exports wildcard advertises this
@@ -194,7 +211,43 @@ const entryFiles = [
   // exports wildcard advertises this subpath, so it must be built per-file.
   'src/utils/slider-scroll-guard.ts',
   'src/utils/format-distance.ts',
+  // Bearing normalizer — deep-imported by the OSM demo (NOT via the `/utils`
+  // barrel, which would pull in the logger and friends). The `./utils/*`
+  // exports wildcard advertises this subpath, so it must be built per-file.
+  // Shared rather than copied because the early return is a CONTRACT: without
+  // it `360 − ε` snaps to 0, a full turn that never happened.
+  'src/utils/bearing-degrees.ts',
   'src/utils/toast-core.ts',
+  // QR launch payload codec — deep-imported by the TourViewer app: the decode
+  // side (codec-dictionary) implements the ?qr= launch-handler dispatch, and
+  // the encode side (qr-launch-url) is the authoring counterpart that builds
+  // the printable launch URLs. The `./utils/*` exports wildcard advertises
+  // these subpaths, so they must be built per-file.
+  'src/utils/qr-payload/codec-dictionary.ts',
+  'src/utils/qr-payload/qr-launch-url.ts',
+  // The rest of the printed-code contract, shared by every app that prints
+  // or scans one (recorder-authoring plan M-A): the decode half of the
+  // launch contract, the print planning, the code's identity, and the
+  // is-this-ours safety gate that must run before any of them.
+  'src/utils/qr-payload/qr-launch-dispatch.ts',
+  'src/utils/qr-payload/qr-print-plan.ts',
+  'src/utils/qr-payload/qr-code-id.ts',
+  'src/utils/qr-payload/qr-code-origin.ts',
+  // QR anchor minting + level schema + tracking controller — deep-importable
+  // via the `./ar/*` wildcard for the TourViewer's authoring mode (QR-pose
+  // plan M1/M3; the /ar/qr barrel would eagerly pull the whole QR cluster
+  // into node unit tests), so each must be built per-file.
+  'src/ar/qr/qr-geo-pose-minting.ts',
+  'src/ar/qr/qr-level.ts',
+  'src/ar/qr/qr-level-archive.ts',
+  'src/ar/qr/qr-mint-level.ts',
+  'src/ar/qr/qr-sighting-accumulator.ts',
+  'src/ar/qr/qr-anchor-mint.ts',
+  'src/ar/qr/qr-gps-vote.ts',
+  // Shared per-code vote budget: both the TourViewer and the RecorderApp
+  // gate their dispatchVotes on it (DEC-H3), so it must be deep-importable.
+  'src/ar/qr/qr-vote-budget.ts',
+  'src/ar/qr/qr-tracking-controller.ts',
 
   // visualization/
   'src/visualization/index.ts',
@@ -204,6 +257,10 @@ const entryFiles = [
   'src/visualization/camera-follower.ts',
   'src/visualization/css3d-renderer-manager.ts',
   'src/visualization/frame-conversions.ts',
+  // Blob → upright THREE.Texture (promoted from the recorder, DEC-H3) —
+  // deep-imported by the recorder and the TourViewer via the
+  // `./visualization/*` wildcard, so it must be built per-file.
+  'src/visualization/frame-texture-decoder.ts',
   'src/visualization/frustum-visibility.ts',
   'src/visualization/gps-anchor.ts',
   'src/visualization/gps-compass-cubes.ts',

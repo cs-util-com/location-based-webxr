@@ -18,9 +18,17 @@
     ratio). Same defensive-0 contract as `sharpnessScore`. Ported 2026-07-12
     from the investigation benchmark where it won "sharp vs degraded"
     (AUC 0.838) — see the blur-metric-toggle plan below.
-  - `BlurMetricId` (`'variance-of-laplacian' | 'high-frequency-energy-ratio'`),
-    `BLUR_METRIC_IDS` (all ids, default first — for consumer validation), and
-    `blurMetricScorer(metric | undefined)` — resolves an id to its scoring
+  - `BLUR_METRIC_IDS` (all ids, default first — for consumer validation) and
+    `BlurMetricId`, which is **derived from it**
+    (`(typeof BLUR_METRIC_IDS)[number]`), not declared alongside it. That
+    ordering is load-bearing: the list is a runtime validator here
+    (`validateQualityFilterConfig`) and in the recorder's `settings-modal.ts`,
+    both of which DROP a persisted `blurMetric` that is not a member. While it
+    was a hand-written `readonly BlurMetricId[]`, an incomplete list still
+    type-checked, so a third metric would have compiled everywhere and then
+    been silently discarded from every saved setting. Adding a metric to the
+    const is now the only way to add one.
+  - `blurMetricScorer(metric | undefined)` — resolves an id to its scoring
     function; `undefined`/unknown ⇒ `sharpnessScore` (pre-toggle behavior).
     The recorder worker MUST resolve through this (never read
     `config.blurMetric` directly) so the mapping stays unit-tested.

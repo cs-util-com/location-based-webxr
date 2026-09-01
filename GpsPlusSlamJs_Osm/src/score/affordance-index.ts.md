@@ -13,6 +13,37 @@ the package that remembers anything.
 - `acceptTile(tile: OsmTileResult): readonly string[]` — merges the tile, drops
   the scores it invalidates, notifies listeners, and returns the invalidated
   chunk ids.
+  - **Two paths, and which one runs depends on whether the tile is new.**
+    A tile never held before can only ADD or OUTRANK records, never remove
+    one, so it is OVERLAID onto the current merge. A REFETCH can remove them —
+    absence inside the bbox of one tile means deletion (`mergeTiles`) — so it
+    re-merges every held tile.
+  - **Why the overlay is equivalent.** `mergeTiles` sorts by `compareTiles`, a
+    TOTAL order on (`fetchedAt`, tile id), and lets the last write win, so the
+    owner of a key after a full merge is the greatest tile containing it.
+    Adding a tile leaves the relative order of the others untouched, so the
+    new owner is `max(current owner, incoming tile)` — one comparison against
+    the recorded provenance, rather than a rebuild that visits every key no
+    tile touched.
+  - **Measured 2026-08-30** (perf loop, OSM iteration 13; devbox-win11,
+    i7-1185G7, Node 24.14.1, median of 5), AFTER the same-tile-repeat fix.
+    Accepting 24 tiles of 2 259 features each:
+    - **session 821 → 168 ms (−79.5 %)** — baseline runs 742/743/821/892/897,
+      optimized 149/165/168/172/203. The spreads do not overlap.
+    - **24th accept 66.2 → 12.4 ms (−81.3 %)** — optimized runs
+      10.2/11.9/12.4/19.8/25.1. This one is noisy at the top end; the session
+      total is the figure to trust.
+    - The old cost grew with the whole working set on every accept, so a walk
+      paid quadratically for tiles it had already merged.
+    - **This is ONE run, quoted identically in `affordance-index.ts`** (PR
+      #388 review). Three different figures for this benchmark were in the
+      tree simultaneously — this sidecar, the docstring, and a commit message
+      — and the first two described the pre-fix code. `retracted-osm-figures`
+      exists because this repo treats a stale number as a defect, not a typo.
+  - **The merged map is still REPLACED, not mutated.** `mergedFeatures()`
+    promises a snapshot whose identity changes; mutating in place would save
+    the copy and hand a holder a TORN view instead of the stale one that
+    contract already names.
 - `update(position: LatLng): UpdateResult` — brings the 19-chunk working set up
   to date. Returns `{ workingSet, scored, reused }`.
 - `onChanged(listener): () => void` — subscribe; returns an unsubscribe.

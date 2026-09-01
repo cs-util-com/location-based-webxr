@@ -116,6 +116,25 @@ export class MapView {
    */
   private readonly containerResize: ResizeObserver | undefined;
 
+  /**
+   * FORENSICS FOR THE GEO-EVENT SETTLE FLAKE, not a feature (docs:
+   * `2026-08-26-0105-osm-demo-geo-event-settle-flake-followup.md` — the
+   * owner-approved instrumentation step). Failing runs report the winner
+   * marker stuck at exactly HALF a recent `#map` height delta for a full
+   * 15 s poll, which the one-frame `invalidateSize` model cannot explain —
+   * it predicts the observer corrects it. This records whether the
+   * callback actually fired (count), what sizes it saw (bounded history),
+   * and when it last invalidated, so the NEXT failing run is attributable
+   * instead of guessed at — the spec's history holds two failed guesses
+   * already. Exposed to the e2e via `globalThis.__osmDemoMapDiagnostics`;
+   * remove both together once the flake is explained and fixed.
+   */
+  private readonly resizeDiagnostics: {
+    fires: number;
+    lastInvalidateAt: number | null;
+    history: { t: number; w: number; h: number }[];
+  } = { fires: 0, lastInvalidateAt: null, history: [] };
+
   constructor(options: MapViewOptions) {
     this.onCellClick = options.onCellClick;
     this.onRegionClick = options.onRegionClick;
@@ -140,10 +159,47 @@ export class MapView {
     this.containerResize =
       typeof ResizeObserver === "undefined"
         ? undefined
-        : new ResizeObserver(() => {
+        : new ResizeObserver((entries) => {
+            // Diagnostics BEFORE the correction, so a callback that throws
+            // still leaves its trace. See the docblock on `resizeDiagnostics`.
+            this.resizeDiagnostics.fires += 1;
+            const rect = entries[0]?.contentRect;
+            if (rect !== undefined) {
+              this.resizeDiagnostics.history.push({
+                t: Math.round(performance.now()),
+                w: rect.width,
+                h: rect.height,
+              });
+              if (this.resizeDiagnostics.history.length > 20) {
+                this.resizeDiagnostics.history.shift();
+              }
+            }
             this.map.invalidateSize();
+            this.resizeDiagnostics.lastInvalidateAt = Math.round(
+              performance.now(),
+            );
           });
     this.containerResize?.observe(options.container);
+    // The e2e reads this on a settle-poll timeout, and the e2e runs against
+    // the vite DEV server — so the global is DEV-gated and a production
+    // build statically drops it (the same prod-inert seam pattern the
+    // TourViewer uses; PR #365 review). The bounded per-instance recording
+    // above stays unconditional. Last-constructed MapView wins the global;
+    // the demo builds one.
+    if (import.meta.env.DEV)
+      (
+        globalThis as { __osmDemoMapDiagnostics?: unknown }
+      ).__osmDemoMapDiagnostics = {
+        resize: this.resizeDiagnostics,
+        leafletSize: () => {
+          const size = this.map.getSize();
+          return { w: size.x, h: size.y };
+        },
+        containerSize: () => {
+          const rect = options.container.getBoundingClientRect();
+          return { w: rect.width, h: rect.height };
+        },
+      };
 
     // ADDED FIRST OF THIS CORNER'S CONTROLS, and that is load-bearing rather
     // than incidental. Leaflet PREPENDS into a bottom corner
@@ -279,7 +335,9 @@ export class MapView {
    */
   centreOn(position: { lat: number; lng: number }): void {
     this.setPosition(position);
-    this.map.setView([position.lat, position.lng], this.map.getZoom());
+    this.map.setView([position.lat, position.lng], this.map.getZoom(), {
+      animate: false,
+    });
   }
 
   /**
@@ -295,7 +353,19 @@ export class MapView {
    * rather than the viewport takeover F56 declined.
    */
   panTo(position: { lat: number; lng: number }): void {
-    this.map.setView([position.lat, position.lng], this.map.getZoom());
+    // `animate: false` ON BOTH PROGRAMMATIC PANS, and it is a bug fix, not a
+    // taste choice (settle-flake forensics, 2026-08-26 — the followup doc in
+    // the primary repo holds the captures). At the same zoom Leaflet runs
+    // setView as an ANIMATED pan (~250 ms) whose end transform is
+    // precomputed. When the container resizes inside that window — the
+    // status line reflowing as a search completes does exactly that — the
+    // ResizeObserver's `invalidateSize` compensation is a raw pane shift
+    // that the animation's end state then OVERWRITES, leaving the target
+    // exactly half the resize delta off centre, permanently (measured
+    // 21.17 px, 11 of 30 soak runs). An instant pan has no window to lose.
+    this.map.setView([position.lat, position.lng], this.map.getZoom(), {
+      animate: false,
+    });
   }
 
   /**

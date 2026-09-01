@@ -51,6 +51,26 @@
         }
       })();
     </script>
+    <script>
+      // Printed QR codes carry the BARE host (gps.csutil.com/?qr=…) so the
+      // densest QR encodings stay available — a path in the printed base
+      // would forfeit them forever (owner decision ZD-9, zip-streaming
+      // transport plan 2026-08-25). The landing owns `/` and forwards the
+      // payload untouched to the TourViewer, which implements the ?qr=
+      // dispatch contract.
+      (function () {
+        // The pathname guard matters twice over: only `/` is the landing's
+        // address in production, and a dev server SPA-fallback re-serving
+        // this page under /tour/ must not re-fire the forward (infinite
+        // replace loop).
+        if (
+          location.pathname === "/" &&
+          new URLSearchParams(location.search).has("qr")
+        ) {
+          location.replace("/tour/" + location.search + location.hash);
+        }
+      })();
+    </script>
     <style>
       :root {
         --accent: #ef4444;
@@ -1381,6 +1401,32 @@ world.add(marker);               <span class="c">// marker: any three.js Object3
                   data into a 4 m hex grid — walkable, restable, buildable —
                   beside the same buildings extruded in 3D. Desktop only, no AR
                   needed.</small
+                >
+              </span>
+            </a>
+            <a class="demo-card" href="/tour/" target="_blank" rel="noopener">
+              <svg viewBox="0 0 34 34" aria-hidden="true">
+                <rect
+                  x="6"
+                  y="6"
+                  width="22"
+                  height="22"
+                  rx="3"
+                  fill="#8b8b95"
+                />
+                <rect x="9" y="9" width="7" height="7" fill="#b9b9c2" />
+                <rect x="18" y="9" width="7" height="7" fill="#4f8cff" />
+                <rect x="9" y="18" width="7" height="7" fill="#4f8cff" />
+                <circle cx="21.5" cy="21.5" r="3.5" fill="#9fdcff" />
+              </svg>
+              <span>
+                <strong>Tour Viewer</strong>
+                <small
+                  >Open a tour zip straight from Dropbox, GitHub or Google Drive
+                  — images stream in via HTTP range requests instead of
+                  downloading the whole archive, with live stats showing how
+                  little was fetched. The landing spot for printed QR
+                  codes.</small
                 >
               </span>
             </a>

@@ -100,6 +100,52 @@ test.describe("Anchor starter — Tier 1 placement flow", () => {
     expect(wiring.callbacks).toBe(true);
   });
 
+  test("a user-ended session fires the store teardown (recording closed)", async ({
+    page,
+  }) => {
+    // Why this test matters (PR #363/#364 reviews): THREE apps each shipped
+    // a different variant of the same missed DEC-H3 teardown wiring —
+    // AnchorStarter's was that only the start-FAILURE path tore down, so a
+    // session the user ends (back gesture, "Exit AR") left `isRecording`
+    // true and the dead session's odometry↔GPS pairs in the store, blending
+    // into the next entry's alignment solve. Reviewers caught all three by
+    // reading; this drives the REAL onSessionEnd callback the fake initAR
+    // captured, so a fourth variant fails a test instead of relying on luck.
+    // Division of proof, stated so nobody "strengthens" this into a trap:
+    // the framework's ar-session-teardown.test.ts proves the teardown drops
+    // the odometry↔GPS pairs against the real slices. No pair can land in
+    // THIS harness (`getCurrentArPose` is a direct framework import, not a
+    // seam, and there is no XR session), so this spec proves the app half —
+    // the callback is WIRED and actually fires the teardown — via the
+    // recording flag, which is the observable the wiring miss left stuck.
+    await bootAnchorStarter(page);
+
+    const before = await page.evaluate(
+      () =>
+        window.__anchorStarterTest.trackingStore?.getState().recording
+          .isRecording,
+    );
+    expect(before).toBe(true); // non-vacuous: a session is actually open
+
+    const after = await page.evaluate(() => {
+      const t = window.__anchorStarterTest;
+      t.fireSessionEnd?.({ reason: "user" });
+      return {
+        wired: typeof t.fireSessionEnd === "function",
+        isRecording: t.trackingStore?.getState().recording.isRecording,
+      };
+    });
+    expect(after.wired).toBe(true);
+    expect(after.isRecording).toBe(false);
+
+    // The DEVICE-and-DOM half (PR #366 review): the store-only teardown left
+    // the start screen hidden forever — a dead end with GPS polling still
+    // running. The rollback must restore the way back in.
+    await expect(page.getByTestId("start-screen")).toBeVisible();
+    await expect(page.getByTestId("start-button")).toBeEnabled();
+    await expect(page.getByTestId("placement")).toBeHidden();
+  });
+
   test("saves the anchor and surfaces the share/reload affordances", async ({
     page,
   }) => {

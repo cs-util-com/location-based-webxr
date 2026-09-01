@@ -99,7 +99,15 @@ export {
 // --- library re-exports (kept here for backwards-compat with existing
 //     `gps-plus-slam-app-framework/state` imports). ---
 export {
+  teardownArSessionState,
+  type ArTeardownStore,
+} from './ar-session-teardown.js';
+
+export {
   setZeroPos,
+  // Drops per-session odometry↔GPS pairs while keeping the zero — the AR
+  // session-end teardown action (core 1.20; the re-entry blend fix).
+  resetGpsSessionData,
   recordGpsEvent,
   add2dImage,
   calcRelativeCoordsInMeters,
@@ -175,7 +183,7 @@ export {
 //     (`OCCLUDER_DEBUG_STYLES` / `OccluderDebugStyle`). ---
 
 // --- recording-replayer ---
-export { replayRecording } from './recording-replayer.js';
+export { replayActions, replayRecording } from './recording-replayer.js';
 export type { ReplayRecordingOptions } from './recording-replayer.js';
 
 // --- persistence-middleware ---

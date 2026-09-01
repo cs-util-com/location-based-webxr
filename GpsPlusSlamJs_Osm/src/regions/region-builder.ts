@@ -17,6 +17,7 @@
 import { cellsToMultiPolygon, cellArea, UNITS } from "h3-js";
 import type { LatLng, OsmFeatureKey } from "../model/osm-feature.js";
 import type { CellScore } from "../score/affordance-scorer.js";
+import { median } from "../utils/median.js";
 
 /** A contiguous run of above-threshold cells, with its outline. */
 export interface Region {
@@ -87,7 +88,13 @@ export function buildRegion(
     cells,
     cellCount: cells.length,
     areaM2: cells.reduce((sum, cell) => sum + cellArea(cell, UNITS.m2), 0),
-    medianScore: median(scores),
+    // `?? 1` narrows the type; it is not a reachable default. `scores` has
+    // one entry per cell and an empty component threw above, so the empty
+    // case cannot occur — 1 is simply the same neutral affordance the
+    // per-cell lookup already falls back to. The private `median` this
+    // replaced buried that same 1 inside the arithmetic, where it read as a
+    // live default and would have been wrong for any other caller.
+    medianScore: median(scores) ?? 1,
     minScore: Math.min(...scores),
     maxScore: Math.max(...scores),
     osmSourceIds: [...sources].sort(),
@@ -136,14 +143,4 @@ function toOutline(cells: readonly string[]): LatLng[][][] {
   return cellsToMultiPolygon([...cells], true).map((polygon) =>
     polygon.map((ring) => ring.map(([lng, lat]) => ({ lat, lng }))),
   );
-}
-
-/** Median of a non-empty list. Average of the middle two when even. */
-function median(values: readonly number[]): number {
-  if (values.length === 0) return 1;
-  const sorted = [...values].sort((a, b) => a - b);
-  const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 1
-    ? sorted[middle]!
-    : (sorted[middle - 1]! + sorted[middle]!) / 2;
 }

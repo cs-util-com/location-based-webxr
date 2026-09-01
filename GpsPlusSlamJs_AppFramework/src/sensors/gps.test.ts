@@ -409,10 +409,19 @@ describe('GPS Module', () => {
     /**
      * Why this test matters:
      * Two types share the name "DeviceOrientation" but live in different
-     * modules. RawDeviceOrientation (gps.ts) has nullable fields matching
-     * the browser's DeviceOrientationEvent API, while DeviceOrientation
-     * (state/tracking-slice.ts) has resolved non-nullable values for AR math.
-     * This test guards against accidental re-merging of the two types.
+     * modules. Both are NULLABLE per axis, and that is the point.
+     *
+     * REWRITTEN 2026-08-31. These tests used to pin the opposite - that the
+     * tracking-slice type "resolved" the browser's nullable fields into
+     * non-nullable numbers "for AR math". That resolution was the bug: it
+     * substituted 0, which is a legal reading meaning "facing north, flat and
+     * level", so nothing downstream could tell a missing compass from a
+     * device pointing north - and the value feeds the core library's
+     * tracking-restart rotation correction.
+     *
+     * What must now hold is that NEITHER type fabricates. The old assertion
+     * that the two are structurally distinct is gone because the distinction
+     * itself was the defect.
      */
     it('RawDeviceOrientation has nullable fields and absolute flag', () => {
       const raw: RawDeviceOrientation = {
@@ -426,33 +435,39 @@ describe('GPS Module', () => {
       expect(raw).toHaveProperty('absolute');
     });
 
-    it('DeviceOrientation (tracking-slice) requires non-null numbers', () => {
+    it('DeviceOrientation (tracking-slice) accepts a real reading', () => {
       const resolved: DeviceOrientation = {
         alpha: 180,
         beta: 45,
         gamma: -30,
         absolute: true,
       };
-      // All fields are non-nullable numbers
       expect(typeof resolved.alpha).toBe('number');
-      expect(typeof resolved.beta).toBe('number');
-      expect(typeof resolved.gamma).toBe('number');
-      // 'absolute' field is a boolean
       expect(typeof resolved.absolute).toBe('boolean');
     });
 
-    it('types are structurally distinct', () => {
-      // RawDeviceOrientation is NOT assignable to DeviceOrientation
-      // (nullable fields can't satisfy non-nullable requirements)
-      expectTypeOf<RawDeviceOrientation>().not.toMatchTypeOf<DeviceOrientation>();
-      // Runtime proof: raw allows null where resolved requires number
-      const raw: RawDeviceOrientation = {
+    it('DeviceOrientation carries absence per axis rather than zeroing it', () => {
+      // THE INVARIANT THIS FILE NOW EXISTS FOR. A phone with no magnetometer
+      // reports a null alpha beside real beta/gamma, and that shape has to
+      // survive all the way to the library, which pairs the axes across a
+      // restart's two snapshots and refuses a pair it cannot trust on both
+      // sides.
+      const noCompass: DeviceOrientation = {
         alpha: null,
-        beta: null,
-        gamma: null,
+        beta: 45,
+        gamma: -30,
         absolute: false,
       };
-      expect(raw.alpha).toBeNull();
+      expect(noCompass.alpha).toBeNull();
+      expect(noCompass.beta).toBe(45);
+    });
+
+    it('the raw and resolved shapes are now compatible, deliberately', () => {
+      // They used to be pinned as structurally DISTINCT, on the reasoning that
+      // resolved values must be non-nullable. That reasoning produced the
+      // fabrication bug, so the assertion is inverted rather than deleted -
+      // a future refactor that re-splits them would reintroduce it.
+      expectTypeOf<RawDeviceOrientation>().toMatchTypeOf<DeviceOrientation>();
     });
   });
 

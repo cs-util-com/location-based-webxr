@@ -38,10 +38,7 @@ import type { Object3D } from 'three';
 // transitive deps (e.g. sensors/permission-checker), which breaks main.ts's
 // wiring tests that mock those partially. Same rationale as the demo's
 // qr-debug-view. We import only the few modules we actually use.
-import {
-  createQrDetectionController,
-  type QrDetectionController,
-} from 'gps-plus-slam-app-framework/ar/qr/qr-detection-controller';
+import { createQrDetectionController } from 'gps-plus-slam-app-framework/ar/qr/qr-detection-controller';
 import {
   createBarcodeDetectorFrontEnd,
   type RgbaImage,
@@ -57,7 +54,44 @@ import { recordQrDetection } from 'gps-plus-slam-app-framework/state';
 import type { RecorderStore } from '../state/recorder-store';
 import type { StoreRef } from '../state/store-ref';
 import { followStore } from '../state/store-ref';
+import { createQrTrackingController } from 'gps-plus-slam-app-framework/ar/qr/qr-tracking-controller';
+import {
+  intrinsicsFromProjection,
+  solveQrPose,
+} from 'gps-plus-slam-app-framework/ar/qr/qr-pose';
+import { PlanarPnpSquare } from 'gps-plus-slam-app-framework/ar/qr/planar-pnp';
+import { recordGpsEvent } from 'gps-plus-slam-app-framework/state';
 import { createQrDebugController } from './qr-debug-controller';
+import {
+  createQrLevelSource,
+  type QrLevelLookupState,
+} from './qr-level-source';
+import { QR_LAUNCH_HOSTS } from './qr-launch-hosts';
+// Shared with the TourViewer rather than re-decided here (DEC-H3): the
+// controller votes on every locked FRAME, so an unbudgeted code pins the
+// alignment centroid to the poster.
+import { createQrVoteBudget } from 'gps-plus-slam-app-framework/ar/qr/qr-vote-budget';
+import type { QrFrameSink } from '../ar/ar-session-resources';
+import {
+  createQrSightingFeeder,
+  type QrSightingFeeder,
+  type QrSightingFeederDeps,
+} from './qr-sighting-feeder';
+
+/** Bare-name `?qr=` payloads resolve under this prefix — the convention the
+ *  framework's launch builder documents. */
+const DEFAULT_ASSET_PREFIX =
+  'https://raw.githubusercontent.com/cs-util-com/GeoTales/refs/heads/main/';
+
+/** The site worker's Drive CORS proxy: keyless Drive links refuse a real
+ *  browser fetch, so they are rewritten through this route. */
+const DRIVE_PROXY_BASE_URL = 'https://gps.csutil.com/api/drive-proxy';
+
+/** Vote shape, carried over from the shipped viewer unchanged — the reasons
+ *  those numbers are what they are live in the QR-pose plan's M4. */
+const VOTE_ACCURACY_M = 5;
+const VOTE_BASELINE_M = 2;
+const VOTE_COUNT = 4;
 
 export interface WireQrRecordingOptions {
   /** The active-store ref (producer + viz follow store swaps through it). */
@@ -71,7 +105,18 @@ export interface WireQrRecordingOptions {
    * `initAR` (`callbacks.cameraFrame.onFrame`, wired before the source is
    * built) can forward frames to it. Called with `null` on dispose.
    */
-  setProducer: (producer: QrDetectionController | null) => void;
+  setProducer: (producer: QrFrameSink | null) => void;
+  /**
+   * Read the session's alignment as it stands NOW. Each sighting keeps the
+   * value from its last detection, because the mint uses the alignment as it
+   * was AT that moment and the store keeps no history (plan DEC-3).
+   */
+  readAlignment: QrSightingFeederDeps['readAlignment'];
+  /** Receives the sighting feeder so save-time minting and the HUD can read
+   *  it. Called with `null` on dispose. */
+  setSightingFeeder?: (feeder: QrSightingFeeder | null) => void;
+  /** What a scanned code's level lookup did, for the HUD. */
+  onLevelState?: (text: string, state: QrLevelLookupState) => void;
 }
 
 /**
@@ -80,6 +125,71 @@ export interface WireQrRecordingOptions {
  */
 export function wireQrRecording(options: WireQrRecordingOptions): () => void {
   const { storeRef, getArWorldGroup, qr, setProducer } = options;
+  /** Set only in level-consuming mode. */
+  let disposeLevelSource: (() => void) | null = null;
+  /**
+   * Whichever object is consuming camera frames this session - the tracking
+   * controller in level mode, the thin producer otherwise. Teardown must reset
+   * THIS, not the thin producer specifically: in level mode the thin producer
+   * is never built, so resetting it was a no-op and the tracking controller's
+   * `active` was never cleared. A detection already awaiting its level fetch
+   * then came back after the session ended and dispatched into whatever store
+   * was current by then.
+   */
+  let frameSink: { reset: () => void } | null = null;
+  /** True once the tracking controller has taken over the frame stream. */
+  let usingLevels = false;
+  /**
+   * How many synthetic QR votes THIS session has dispatched into the current
+   * store. Subtracted below, because the count the mint reads is meant to be
+   * evidence of independent GPS support and a QR vote is not that.
+   *
+   * Reset on a store swap: the new store restarts its GPS list from scratch,
+   * so votes dispatched into the previous one must stop being subtracted.
+   */
+  let syntheticVotes = 0;
+
+  /**
+   * Per-code vote budget. Without it `dispatchVotes` fires on EVERY locked
+   * frame - roughly 8 Hz x 4 correspondences while a previously-authored
+   * code is in view - and those synthetic points pin the alignment centroid
+   * to the poster (PR #385 review). That matters more here than in the
+   * viewer: this alignment is what `qr-anchor-mint` mints every OTHER code
+   * in the session against, so the pinned centroid would propagate one
+   * code's error into every new `qr/<id>.json`.
+   */
+  // NOTE: unlike the TourViewer this wires no `resolveStablePose`, so these
+  // votes ride the RAW single-frame solve rather than the sliding-window
+  // filtered pose. Whether authoring should use the stable pose too is a
+  // design question with a real cost either way (the gate SKIPS votes while
+  // converging), filed with the measurement that would settle it:
+  // ../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-08-30-1520-recorder-vote-pose-stability-followup.md
+  const voteBudget = createQrVoteBudget();
+  /** The code the next vote batch belongs to; see `onDetection`. */
+  let lastVotedText: string | null = null;
+
+  const sightings = createQrSightingFeeder({
+    // The stored-GPS count includes this session's own synthetic votes -
+    // they go through the same `recordGpsEvent` the real fixes do. Left
+    // unsubtracted, one lock on a previously authored code dispatches four
+    // votes and clears `MIN_ALIGNMENT_SAMPLES` with zero real fixes, and the
+    // published `qr/<id>.json` then claims GPS support that is really a
+    // re-projection of an older code's anchor, error included.
+    //
+    // Subtracting a session counter from a per-store list can go past zero
+    // (the list empties on a swap), hence the clamp.
+    readAlignment: () => {
+      const alignment = options.readAlignment();
+      return {
+        ...alignment,
+        alignmentSampleCount: Math.max(
+          0,
+          alignment.alignmentSampleCount - syntheticVotes
+        ),
+      };
+    },
+  });
+  options.setSightingFeeder?.(sightings);
 
   // --- Producer (WS-2) ------------------------------------------------------
   const frontEnd = createBarcodeDetectorFrontEnd();
@@ -115,34 +225,135 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
     storeRef.get().getState().recording.latestDepthSample?.projectionMatrix ??
     null;
 
-  const producer = createQrDetectionController({
-    detect,
-    getCameraPose,
-    getProjectionMatrix,
-    recordDetection: (observation) =>
-      storeRef.get().dispatch(recordQrDetection(observation)),
-    // MUST share the depth stream's clock: `DepthSample.timestamp` is EPOCH ms
-    // (`performance.timeOrigin + frameTs`, depth-sampler.ts), and the derive-on-
-    // read size as-of join keys QR detections by the SAME timestamp. Date.now()
-    // is epoch; `performance.now()` (relative) would never satisfy
-    // `depth.ts <= detection.ts`, so the size — and the debug cube — never
-    // resolve. (See open topic A; the original "epoch ms" intent was correct.)
-    now: () => Date.now(),
-    // The camera-frame source owns the cadence; detect every delivered frame.
-    minIntervalMs: 0,
-  });
-  setProducer(producer);
+  // Level-consuming mode (DEC-7): the SAME frames, but through the tracking
+  // controller, which fetches the code's level and votes. The raw record is
+  // still written — the widened detection event carries the corners and the
+  // camera pose, so ONE decode feeds both. Running the thin producer beside
+  // it would decode every frame twice on the AR frame path.
+  if (qr.useLevels && frontEnd) {
+    const pnpSolver = new PlanarPnpSquare();
+    const levelSource = createQrLevelSource({
+      allowedHosts: QR_LAUNCH_HOSTS,
+      assetPrefix: DEFAULT_ASSET_PREFIX,
+      corsProxyBaseUrl: DRIVE_PROXY_BASE_URL,
+      onState: (text, state) => {
+        options.onLevelState?.(text, state);
+      },
+    });
+    const tracking = createQrTrackingController({
+      frontEnd,
+      solvePose: (input) => solveQrPose({ ...input, solver: pnpSolver }),
+      fetchLevel: (text) => levelSource.fetchLevel(text),
+      // The source owns the retry timing; without this the controller's own
+      // cache would keep the first failure for the whole session.
+      shouldCacheLevel: (level) => levelSource.shouldCacheLevel(level),
+      dispatchVotes: (votes) => {
+        const text = lastVotedText;
+        if (text === null) return;
+        // ACCEPTANCE first, budget second (the shared contract's order):
+        // `recordGpsEvent` silently no-ops until the session zero exists, so
+        // charging the budget for dropped votes would spend it on nothing -
+        // and `syntheticVotes` would over-report, permanently understating
+        // `alignmentSampleCount` and risking a false decline at the
+        // MIN_ALIGNMENT_SAMPLES gate (PR #385 review).
+        if (storeRef.get().getState().gpsData?.zero == null) return;
+        if (!voteBudget.tryConsume(text)) return;
+        for (const vote of votes) {
+          storeRef.get().dispatch(recordGpsEvent(vote));
+          syntheticVotes += 1;
+        }
+      },
+      // The RAW record rides the validated DECODE, not the solved pose:
+      // decision D-A says a recording stays algorithm-agnostic whatever else
+      // the session is doing, and a code whose level does not exist yet -
+      // which is every code on an authoring walk - never reaches a lock.
+      onDetection: (event) => {
+        // The controller hands `dispatchVotes` no text, and `onDetection`
+        // runs BEFORE the vote for the same lock, so this is the code the
+        // next batch belongs to (same seam the TourViewer uses).
+        lastVotedText = event.text;
+      },
+      onRawDetection: (raw) => {
+        const projectionMatrix = getProjectionMatrix();
+        if (projectionMatrix === null) return;
+        storeRef.get().dispatch(
+          recordQrDetection({
+            text: raw.text,
+            timestamp: raw.timestamp,
+            corners: raw.corners,
+            cameraPose: raw.cameraPose,
+            projectionMatrix,
+            imageWidth: raw.imageWidth,
+            imageHeight: raw.imageHeight,
+          })
+        );
+      },
+      getCameraPose,
+      getIntrinsics: (image) => {
+        const projectionMatrix = getProjectionMatrix();
+        return projectionMatrix === null
+          ? null
+          : intrinsicsFromProjection(
+              projectionMatrix,
+              image.width,
+              image.height
+            );
+      },
+      syntheticAccuracyM: VOTE_ACCURACY_M,
+      voteBaselineM: VOTE_BASELINE_M,
+      voteCount: VOTE_COUNT,
+      minIntervalMs: 0,
+    });
+    setProducer(tracking);
+    frameSink = tracking;
+    startCameraFrameCapture({
+      intervalMs: qr.intervalMs,
+      captureSize: qr.captureSize,
+    });
+    disposeLevelSource = () => {
+      levelSource.dispose();
+    };
+    usingLevels = true;
+  }
 
-  // Begin delivering frames at the configured cadence + capture resolution.
-  startCameraFrameCapture({
-    intervalMs: qr.intervalMs,
-    captureSize: qr.captureSize,
-  });
+  const producer = usingLevels
+    ? null
+    : createQrDetectionController({
+        detect,
+        getCameraPose,
+        getProjectionMatrix,
+        recordDetection: (observation) =>
+          storeRef.get().dispatch(recordQrDetection(observation)),
+        // MUST share the depth stream's clock: `DepthSample.timestamp` is EPOCH ms
+        // (`performance.timeOrigin + frameTs`, depth-sampler.ts), and the derive-on-
+        // read size as-of join keys QR detections by the SAME timestamp. Date.now()
+        // is epoch; `performance.now()` (relative) would never satisfy
+        // `depth.ts <= detection.ts`, so the size — and the debug cube — never
+        // resolve. (See open topic A; the original "epoch ms" intent was correct.)
+        now: () => Date.now(),
+        // The camera-frame source owns the cadence; detect every delivered frame.
+        minIntervalMs: 0,
+      });
+  if (producer !== null) {
+    setProducer(producer);
+    frameSink = producer;
+    // Begin delivering frames at the configured cadence + capture resolution.
+    startCameraFrameCapture({
+      intervalMs: qr.intervalMs,
+      captureSize: qr.captureSize,
+    });
+  }
 
   // --- Consumer / debug viz (WS-5) -----------------------------------------
   const debug = createQrDebugController({
     getState: () => storeRef.get().getState(),
     getArWorldGroup,
+    // One deriver, two consumers: the debug cube and the session's sighting
+    // fold. A second deriver would double the PnP work and could disagree
+    // with what is drawn.
+    onPlacement: (text, placement, timestampMs) => {
+      sightings.onPlacement(text, placement, timestampMs);
+    },
   });
 
   // Coalesce the per-action debug updates to at most one per animation frame
@@ -163,7 +374,25 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
   // synchronous `debug.update()` inside attach reflects pre-existing markers
   // immediately on the initial wiring AND on every store swap (Start
   // Recording / replay) — the two paths used to duplicate the call.
+  // The fold is DISCARDED on every store swap, and the first attach is not a
+  // swap. The accumulator lives for the whole AR session, but the recorded
+  // action stream only begins when Start Recording swaps the store: a sighting
+  // folded while the user was lining up is real evidence the phone saw, and it
+  // is not in the zip. Minting from it would write a position into
+  // qr/<id>.json that replaying actions/ cannot reproduce - the thing decision
+  // D-A exists to prevent - and would count visits the recording does not
+  // contain. The swap also crosses an alignment-solve boundary, so the two
+  // halves are not comparable evidence even in principle.
+  let attached = false;
   const stopFollowing = followStore(storeRef, (store: RecorderStore) => {
+    if (attached) {
+      sightings.accumulator.reset();
+      syntheticVotes = 0;
+      // The new store restarts its GPS list, so a code that spent its
+      // budget against the previous one must be allowed to vote again.
+      voteBudget.reset();
+    }
+    attached = true;
     const detach = store.subscribe(scheduleUpdate);
     debug.update();
     return detach;
@@ -171,8 +400,10 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
 
   return () => {
     stopCameraFrameCapture();
-    producer.reset();
+    disposeLevelSource?.();
+    frameSink?.reset();
     setProducer(null);
+    options.setSightingFeeder?.(null);
     if (rafId !== null) {
       cancelAnimationFrame(rafId);
       rafId = null;

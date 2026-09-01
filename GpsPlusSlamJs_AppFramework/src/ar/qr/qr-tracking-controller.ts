@@ -24,6 +24,7 @@ import type {
 import type { QrFrontEnd, RgbaImage } from './qr-frontend.js';
 import type { QrLevel } from './qr-level.js';
 import { buildQrGpsVotes } from './qr-gps-vote.js';
+import { validateQuad } from './qr-pose.js';
 import {
   createDetectionScheduler,
   type DetectionScheduler,
@@ -50,7 +51,37 @@ export interface QrSolvePoseInput {
  * import of the state slice) so the `ar` layer never depends on `state` — that
  * would close a cycle (`state/qr-detected-slice` already imports `ar/qr/qr-pose`).
  */
+/** A validated decode, before any level or size is involved. Not exported:
+ *  it appears in an exported callback signature, so consumers get it by
+ *  inference, and a named export nothing imports is what the dead-code check
+ *  flags. */
+interface QrRawDetection {
+  readonly text: string;
+  readonly corners: readonly Point2[];
+  readonly cameraPose: Pose;
+  readonly imageWidth: number;
+  readonly imageHeight: number;
+  readonly timestamp: number;
+}
+
 export interface QrDetectionEvent {
+  /**
+   * The detector's four corners, the camera pose and the image size — the
+   * RAW facts behind the solve.
+   *
+   * They are here so an app that wants BOTH a solved pose and a raw record
+   * (the recorder, which must keep recording raw whatever else it does) gets
+   * them from ONE decode. Running the thin producer alongside this controller
+   * would decode every frame twice, on the AR frame path.
+   *
+   * The projection matrix is deliberately NOT here: this controller never
+   * sees one — it is given `getIntrinsics(image)` instead — and inventing a
+   * field it cannot fill would be worse than the caller supplying its own.
+   */
+  readonly corners: readonly Point2[];
+  readonly cameraPose: Pose;
+  readonly imageWidth: number;
+  readonly imageHeight: number;
   /** Decoded payload (text/URL) — the marker key. */
   text: string;
   qrPoseWorld: Pose;
@@ -75,6 +106,25 @@ export interface QrTrackingControllerConfig {
    * this emission is not.
    */
   onDetection?: (event: QrDetectionEvent) => void;
+  /**
+   * Every VALIDATED decode, before the level fetch and before the size gate.
+   *
+   * Separate from {@link onDetection} on purpose: that one fires on a LOCKED,
+   * solved pose, which needs a physical size, which needs a level. A consumer
+   * that records raw observations must capture every decode regardless —
+   * including a code whose level does not exist yet, which is exactly the
+   * state an authoring walk is in.
+   */
+  onRawDetection?: (detection: QrRawDetection) => void;
+  /**
+   * Whether a fetched level may be cached for the rest of the session.
+   *
+   * Defaults to caching everything, which is right for a static
+   * `fetchLevel`. A source that retries — because "could not reach it" is a
+   * different answer from "there is no level here" — returns `false` for the
+   * answers it intends to revisit, and owns the timing itself.
+   */
+  shouldCacheLevel?: (level: QrLevel) => boolean;
   /**
    * Resolve the physical size (m) when the level omits `physicalSizeM` — e.g. a
    * depth-measured running median (Note 4). Returns `null` while size is still
@@ -142,6 +192,8 @@ export function createQrTrackingController(
     fetchLevel,
     dispatchVotes,
     onDetection,
+    onRawDetection,
+    shouldCacheLevel,
     resolveSizeM,
     resolveStablePose,
     getCameraPose,
@@ -164,7 +216,18 @@ export function createQrTrackingController(
   const levelCache = new Map<string, QrLevel>();
   // The level + payload + resolved size from the in-flight detection, read by
   // onLocked to emit the detection and (conditionally) build the vote.
-  let active: { level: QrLevel; text: string; sizeM: number } | null = null;
+  // Carries the RAW facts of the solve as well as the level, so `onLocked`
+  // can hand them to a consumer that needs a raw record alongside the pose
+  // — without a second decode of the same frame.
+  let active: {
+    level: QrLevel;
+    text: string;
+    sizeM: number;
+    corners: readonly Point2[];
+    cameraPose: Pose;
+    imageWidth: number;
+    imageHeight: number;
+  } | null = null;
 
   function setStatus(next: QrTrackingStatus): void {
     if (status === next) return;
@@ -177,7 +240,13 @@ export function createQrTrackingController(
     if (cached) return cached;
     setStatus('loading-level');
     const level = await fetchLevel(url);
-    levelCache.set(url, level);
+    // A source that owns its own retry policy says so. Without this the
+    // controller caches the first answer forever, and a source's backoff -
+    // built precisely so one transient failure does not poison a code for the
+    // rest of a session - becomes unreachable: the retry is never asked for.
+    if (shouldCacheLevel === undefined || shouldCacheLevel(level)) {
+      levelCache.set(url, level);
+    }
     return level;
   }
 
@@ -188,6 +257,28 @@ export function createQrTrackingController(
     if (!detection) {
       active = null;
       return null;
+    }
+
+    // The RAW record is emitted HERE — on a validated decode, before the level
+    // is fetched and before the size gate. It must not depend on either: a
+    // consumer that records raw observations (decision D-A) has to capture
+    // every decode a session saw, including codes whose level is missing,
+    // unreachable, or not yet authored. Gating it on a solved pose, as an
+    // earlier draft did, meant the FIRST recording of an authoring walk -
+    // where no level exists yet, by definition - recorded nothing at all.
+    //
+    // `validateQuad` mirrors the thin producer: keep a mirrored or degenerate
+    // read out of the recording.
+    const rawCameraPose = getCameraPose();
+    if (onRawDetection && rawCameraPose && validateQuad(detection.corners).ok) {
+      onRawDetection({
+        text: detection.text,
+        corners: detection.corners,
+        cameraPose: rawCameraPose,
+        imageWidth: image.width,
+        imageHeight: image.height,
+        timestamp: timestampNow(),
+      });
     }
 
     const level = await ensureLevel(detection.text);
@@ -211,7 +302,25 @@ export function createQrTrackingController(
       return null;
     }
 
-    const cameraPose = getCameraPose();
+    // The DECODE-TIME sample: taken once, above, and used for BOTH the raw
+    // record and the solve - not re-sampled after the level fetch.
+    // `qrPoseWorld` is `cameraPose o qrPoseInCamera` and `qrPoseInCamera`
+    // derives from `image`'s corners, so re-sampling here paired the old
+    // frame's corners with a pose from AFTER `ensureLevel`; on a code's
+    // first sighting that await is a real network round trip (the level
+    // source opens a remote archive under a 15 s deadline), so the code got
+    // anchored wherever the phone had moved to (PR #379 review). It also
+    // made the raw record and the solved pose describe one detection with
+    // two different poses.
+    //
+    // NOT "sampled with the frame", and the distinction is deliberate (PR
+    // #380 review): `rawCameraPose` is read after `await frontEnd.detect`,
+    // so it still trails the frame by one decode latency - the same class of
+    // error, three orders of magnitude smaller. Closing it needs a seam
+    // change (`RgbaImage` carries no timestamp or pose, and `offerFrame`
+    // passes only the image), filed rather than done here. See
+    // ../../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-08-30-0620-qr-pose-frame-pairing-followup.md
+    const cameraPose = rawCameraPose;
     const intrinsics = getIntrinsics(image);
     if (!cameraPose || !intrinsics) {
       active = null;
@@ -233,7 +342,15 @@ export function createQrTrackingController(
       return null;
     }
 
-    active = { level, text: detection.text, sizeM };
+    active = {
+      level,
+      text: detection.text,
+      sizeM,
+      corners: detection.corners,
+      cameraPose,
+      imageWidth: image.width,
+      imageHeight: image.height,
+    };
     return solution;
   }
 
@@ -256,6 +373,10 @@ export function createQrTrackingController(
           qrPoseInCamera: solution.qrPoseInCamera,
           reprojectionErrorPx: solution.reprojectionErrorPx,
           timestamp: timestampNow(),
+          corners: current.corners,
+          cameraPose: current.cameraPose,
+          imageWidth: current.imageWidth,
+          imageHeight: current.imageHeight,
         });
 
         // The GPS vote is CONDITIONAL on geo: geo-less levels (debug/observe,

@@ -12,10 +12,19 @@
 - **5184** — `GpsPlusSlamJs_PhysicsDemo`
 - **5185** — `GpsPlusSlamJs_QrTrackingDemo`
 - **5186** — `GpsPlusSlamJs_OsmDemo`
+- **5187** — `GpsPlusSlamJs_TourViewer`
 
-Next free: **5187**.
+Next free: **5188**.
 
-Each port appears in three places for its package — `vite.config.ts` (`server.port`) and
+### Auxiliary e2e servers (not vite, invisible to `dev-server-ports.test.js`)
+
+- **5197** — `GpsPlusSlamJs_TourViewer` e2e archive server
+  (`playwright-tests/archive-server.mjs`, second `webServer` entry in that
+  package's playwright config). First aux port ever allocated; keep aux
+  ports in the 519x range and list them here — the guard test only scans
+  `vite.config.ts` files, so this table is the only place that knows them.
+
+Each VITE port above appears in three places for its package — `vite.config.ts` (`server.port`) and
 `playwright-tests/playwright.config.js` (`baseURL` and the `webServer` `command`/`url`).
 `tests/repo-config/dev-server-ports.test.js` asserts the set is unique.
 

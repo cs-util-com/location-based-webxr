@@ -219,6 +219,24 @@ missing four stages** — the plan's own failure mode, one level down.
   only a separately measured whole can say the parts are wrong.
 - **`tilesUnmeasured` is a count, not an absence.** A fixture-backed run must
   not read as a click whose network cost nothing.
+- **`featuresHeld` is `tilesHeld`'s missing denominator** (added 2026-08-31).
+  It is the one measurement the perf ledger says would settle the unexplained
+  1.5 s / 9.5 s gap between what a build extrapolates to and what a slow click
+  costs — the recipe was written down on 2026-08-15 and had never been
+  implemented.
+  - Tile count alone cannot distinguish **seven small tiles from seven dense
+    ones**, and the two live explanations differ precisely there: a latent
+    quadratic that a branch merely exposed, versus code that genuinely got
+    slower. `meshMs` rising as ≈T² against `tilesHeld` says the first;
+    `meshMs` already seconds at one tile says the second.
+  - **It costs nothing to read.** `AffordanceIndex.mergedFeatures()` returns
+    its own `Map` uncopied, so this is a `.size`, not a traversal. An
+    instrument that walked the thing it measures would not belong on the click
+    path.
+  - Surfaced by `click-timings.ts` beside `tilesHeld`, and **never dropped when
+    zero** — a missing count on an empty pass would read as "the instrument is
+    not there", which is the one reading that would waste a measurement
+    session.
 - Every duration is floored at zero, for the reason `elapsedMs` gives in the OSM
   package: a negative makes the reconciliation close by cancelling, so the gate
   that would catch a clock problem goes quiet exactly when it should shout.

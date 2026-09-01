@@ -20,7 +20,7 @@
  *    function of its inputs. Full rationale in the review doc
  *    (gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-31-worldtolocal-frame-helper-review.md).
  *  - **Positions only.** No pose/quaternion variant exists until a caller
- *    needs one (YAGNI). No caller currently sets a GPS-world rotation.
+ *    needs one (YAGNI). A GPS-world ROTATION consumer now exists: ar/qr/qr-geo-pose-minting.ts takes the world quaternion directly (see its input docs for the getWorldQuaternion recipe); a conversion helper here is still unneeded because the WEBXR_TO_NUE-parented object already carries the right frame.
  */
 import * as THREE from 'three';
 import { calcGpsCoords } from '../core/index.js';

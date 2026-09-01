@@ -12,7 +12,11 @@ import * as fc from 'fast-check';
 import type { Quaternion } from 'gps-plus-slam-js';
 import { calcRelativeCoordsInMeters } from 'gps-plus-slam-js';
 import { type Pose } from './qr-pose';
-import { buildQrGpsVotes, type QrGeoPose } from './qr-gps-vote';
+import {
+  buildQrGpsVotes,
+  localPlaneOffset,
+  type QrGeoPose,
+} from './qr-gps-vote';
 
 const IDENTITY: Quaternion = [0, 0, 0, 1];
 
@@ -164,6 +168,42 @@ describe('buildQrGpsVotes — wide-baseline geo ring is congruent to the odom ri
           for (const p of odom) {
             expect(Math.hypot(p.x, p.y, p.z)).toBeCloseTo(baselineM, 4);
           }
+        }
+      )
+    );
+  });
+});
+
+// Why this property matters (QR-pose plan 2026-08-25): the rotation path is
+// the NEW geometry and the headingDeg path is the contract every existing
+// level file was written against — for ANY heading and any local point the
+// two must agree, or a migrated file quietly moves its votes. The quaternion
+// under test is a rotation of −heading about the Up axis (local +x points
+// toward the heading; the face normal sits at heading + 90°).
+describe('localPlaneOffset — heading/rotation equivalence', () => {
+  it('a vertical-poster quaternion reproduces localPlaneToEnu for any heading', () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: 0, max: 360, noNaN: true }),
+        fc.double({ min: -10, max: 10, noNaN: true }),
+        fc.double({ min: -10, max: 10, noNaN: true }),
+        (headingDeg, localX, localY) => {
+          const half = (-headingDeg * Math.PI) / 180 / 2;
+          const rotation = [0, Math.sin(half), 0, Math.cos(half)] as const;
+          const geo = { lat: 47, lon: 8, alt: 400 };
+
+          const byHeading = localPlaneOffset([localX, localY, 0], {
+            ...geo,
+            headingDeg,
+          });
+          const byRotation = localPlaneOffset([localX, localY, 0], {
+            ...geo,
+            rotation,
+          });
+
+          expect(byRotation.north).toBeCloseTo(byHeading.north, 9);
+          expect(byRotation.east).toBeCloseTo(byHeading.east, 9);
+          expect(byRotation.up).toBeCloseTo(byHeading.up, 9);
         }
       )
     );

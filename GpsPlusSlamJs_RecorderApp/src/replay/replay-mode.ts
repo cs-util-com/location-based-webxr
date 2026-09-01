@@ -45,7 +45,7 @@ import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
 import { loadRecording } from '../storage/recording-loader.js';
 import { createStoreRef } from '../state/store-ref';
 import { FrameTileVisualizer } from '../visualization/frame-tile-visualizer';
-import { decodeFrameTexture } from '../visualization/frame-texture-decoder';
+import { decodeFrameTexture } from 'gps-plus-slam-app-framework/visualization/frame-texture-decoder';
 import { wireFrameTileSubscribers } from '../visualization/wire-frame-tile-subscribers';
 import { OccupancyGrid } from 'gps-plus-slam-app-framework/ar/occupancy-grid';
 import { loadRecordingOptions } from '../state/recording-options';
