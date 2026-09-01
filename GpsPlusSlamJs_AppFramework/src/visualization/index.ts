@@ -180,3 +180,21 @@ export {
 
 // --- vis-colors ---
 export { VIS_COLORS } from './vis-colors.js';
+
+// --- proximity-machine (pure zone state machine) ---
+export {
+  type ZoneState,
+  type ProximityObject,
+  type ZoneMap,
+  type ZoneTransition,
+  type StepResult,
+  type StepConfig,
+  step,
+} from './proximity-machine.js';
+
+// --- proximity-driver (impure per-frame driver of proximity-machine) ---
+export {
+  type ProximityDriverDeps,
+  type ProximityDriver,
+  createProximityDriver,
+} from './proximity-driver.js';
