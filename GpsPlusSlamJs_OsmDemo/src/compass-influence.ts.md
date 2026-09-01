@@ -2,19 +2,35 @@
 
 ## Purpose
 
-Maps a 0–1 "how much say does the compass have" influence onto the four library
-settings that actually produce it (DEC-E2). Pure: no store, no session, no DOM.
+Maps a 0–1 "how much say does the compass have" influence, plus the gear-panel
+experiment options, onto the eight library dispatches that actually produce it
+(DEC-E2, extended by the 2026-08-20 transition plan DEC-Y1d/Y1e). Pure: no
+store, no session, no DOM.
 
 ## Public API
 
 - `COMPASS_INFLUENCE_STEP` — `0.05`, matching the RecorderApp's existing
   `compass-vote-weight` slider so field notes from the two apps are comparable.
-- `COMPASS_INFLUENCE_DEFAULT` — `0.1`, the library's own
-  `compassSteadyStateMaxWeight` default.
-- `compassSettingsFor(influence) → CompassSettings` — `{ rotationPriorEnabled,
-coldStartOverrideEnabled, experimentEnabled, voteWeight }`.
+- `COMPASS_INFLUENCE_DEFAULT` — **`0.8`** (raised from 0.1 on 2026-08-20,
+  `87500e31`, as the demo's testbed stance). The **library's** own
+  `compassSteadyStateMaxWeight` default remains `0.1` — the demo deliberately
+  diverges, and whether 0.8 is error or correction is exactly what the corpus
+  cannot yet say (see the trust-gate census results doc §0/§5).
+- `COMPASS_EXPERIMENT_DEFAULTS` — `{ rotationPriorEnabled: true, trustGateMode:
+"ramp", pairSelectionEnabled: true, trustToleranceDeg: 15,
+webXRConsistencyEnabled: false }`.
+- `compassSettingsFor(influence, experiments) → CompassSettings` — the
+  eight-field dispatch set: `{ rotationPriorEnabled, coldStartOverrideEnabled,
+experimentEnabled, voteWeight, trustGateMode, pairSelectionEnabled,
+trustToleranceDeg, webXRConsistencyEnabled }`.
 - `describeCompassInfluence(influence) → string` — the label, with both ends
   named rather than only numbered.
+
+> **Doc-rot note (2026-09-01):** until today this sidecar still described the
+> original four-field shape and the 0.1 default, six weeks after both changed —
+> and its "no standalone tolerance setter" claim (also stale since 2026-08-20)
+> propagated into a planning session as fact. If the module's API moves again,
+> this file moves in the same commit.
 
 **Error modes:** none throw. Out-of-range values clamp; non-finite collapses to
 the fully-silent combination.
@@ -38,9 +54,12 @@ the fully-silent combination.
   term multiplies by `trustScalar`, which is `0` unless trust is exactly
   `trusted`. The §6a field corpus measured compass↔GPS offsets of −4.3…+18.8°
   against a default tolerance of **8°**, which "rarely activates trust on real
-  devices", and **there is no standalone runtime setter for the tolerance** —
-  `setCompassExperimentEnabled`'s combo pinning it to **15°** is the only route.
-  Without it the slider is identically inert at every position while walking.
+  devices". The combo pins the tolerance to **15°**; the standalone
+  `setCompassTrustAgreeToleranceDeg` setter has ALSO existed since 2026-08-20
+  and is dispatched explicitly — the combo stays because it gates the prior and
+  pair selection in the same breath, not because it is the only route. Without
+  the tolerance change the slider is identically inert at every position while
+  walking.
   - ⚠️ **This is a deliberate behaviour change bundled into the control**, not a
     neutral default. The combo also sets `useCompassPairSelection`.
   - **Verified, not assumed:** `gpsDataSlice` maps `compassVoteWeight` _after_
@@ -52,13 +71,17 @@ the fully-silent combination.
 ## Examples
 
 ```ts
-compassSettingsFor(0);
+compassSettingsFor(0, COMPASS_EXPERIMENT_DEFAULTS);
 // { rotationPriorEnabled: false, coldStartOverrideEnabled: false,
-//   experimentEnabled: false, voteWeight: 0 }   <- the only true silence
+//   experimentEnabled: false, voteWeight: 0, trustGateMode: "binary",
+//   pairSelectionEnabled: false, trustToleranceDeg: 15,
+//   webXRConsistencyEnabled: false }            <- the only true silence
 
-compassSettingsFor(0.35);
+compassSettingsFor(0.35, COMPASS_EXPERIMENT_DEFAULTS);
 // { rotationPriorEnabled: true, coldStartOverrideEnabled: false,
-//   experimentEnabled: true, voteWeight: 0.35 }
+//   experimentEnabled: true, voteWeight: 0.35, trustGateMode: "ramp",
+//   pairSelectionEnabled: true, trustToleranceDeg: 15,
+//   webXRConsistencyEnabled: false }
 
 describeCompassInfluence(0); // "compass 0.00 — GPS only"
 describeCompassInfluence(1); // "compass 1.00 — full"
@@ -69,11 +92,12 @@ describeCompassInfluence(1); // "compass 1.00 — full"
 `compass-influence.test.ts` — the three-setting zero, the override staying off
 at every position, the experiment combo above zero, weight pass-through,
 clamping (including that a clamped zero is a _real_ zero), non-finite input, the
-step/default matching the RecorderApp, and every label case.
+step matching the RecorderApp (the DEFAULTS deliberately diverge: demo 0.8,
+RecorderApp 0.1), and every label case.
 
 ## Related
 
 - `ar-compass-control.ts` — the slider that owns the value and calls this.
-- `ar-mode.ts` / `main.ts` — the four dispatches.
+- `ar-mode.ts` / `main.ts` — the eight dispatches, in their load-bearing order (combo before the standalone setters).
 - `GpsPlusSlamJs_Docs/docs/2026-08-16-1123-ar-elevation-and-compass-controls-plan.md`
   §3 — DEC-E2 and the analysis this module implements.

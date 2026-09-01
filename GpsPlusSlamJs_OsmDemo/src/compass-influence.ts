@@ -19,11 +19,18 @@
  * term is multiplied by `trustScalar`, which is `0` unless the trust state is
  * exactly `trusted`. The §6a field corpus measured per-session compass↔GPS
  * offsets of **−4.3…+18.8°** against a default `compassTrustAgreeToleranceDeg`
- * of **8**, which "rarely activates trust on real devices". There is no
- * standalone runtime setter for that tolerance — the only way to reach it is
- * `setCompassExperimentEnabled`, whose combo pins it to **15°**. Without it this
- * slider is identically inert at every position while walking, which is not a
- * control, it is a decoration.
+ * of **8**, which "rarely activates trust on real devices". The combo pins the
+ * tolerance to **15°**; since 2026-08-20 the standalone
+ * `setCompassTrustAgreeToleranceDeg` setter also exists (`gps-plus-slam-js`
+ * `9574b432b`) and this module dispatches it explicitly as well — the combo is
+ * kept because it also gates `useCompassRotationPrior` and pair selection in
+ * one dispatch, not because it is the only route to the tolerance any more.
+ * (An earlier version of this comment claimed no standalone setter existed;
+ * that claim went stale the day the setter shipped and was corrected on
+ * 2026-09-01 after it misled a planning session — see the rotation-stability
+ * programme plan's cold-review finding 1 in the private repo.) Without the
+ * tolerance change this slider is identically inert at every position while
+ * walking, which is not a control, it is a decoration.
  *
  * The combo maps `useCompassRotationPrior`, the tolerance and pair selection —
  * and **not** the vote weight, which `gpsDataSlice` maps afterwards and
