@@ -1,5 +1,113 @@
 # Changelog
 
+## [1.22.0] — 2026-09-01
+
+Requires `gps-plus-slam-js` ≥ 1.22.0.
+
+> ⚠️ **This MINOR carries breaking type changes.** It is numbered 1.22.0 rather
+> than 2.0.0 to keep one version number across both packages —
+> `gps-plus-slam-js@1.22.0` made the same call for the same change (owner
+> decision, 2026-09-01). The cost is stated plainly: a consumer on `^1.x` gets
+> these changes with no version-level warning. **Pin `1.20.0`** if you need the
+> old types. There is no 1.21.0; the framework goes 1.20.0 → 1.22.0 so the two
+> packages carry the same number.
+
+### ⚠️ Breaking changes
+
+- **Device orientation can now say "nothing was reported"** —
+  `DeviceOrientation.alpha` / `.beta` / `.gamma` are `number | null`, and
+  `PoseReceivedPayload.sensorOrientation` is `DeviceOrientation | null`.
+  Consumers that read these angles must handle `null`.
+  - **Why:** `snapshotDeviceOrientation` used to substitute `0` for every
+    absent axis, and `0` is a legal reading meaning "facing north, flat and
+    level" — so nothing downstream could tell "no compass" from "pointing
+    north". The value is not diagnostic: it reaches
+    `calcRotationOffsetFromRestart` in the core library, the rotation
+    correction applied to the world after a tracking restart.
+  - **What was actually damaged:** two fabricated readings cancel each other in
+    `newSensor · inv(lastSensor)`, so a device with no magnetometer was never
+    harmed. The MIXED case was — compass availability changing between the last
+    valid pose and the restart, so one snapshot carried a real heading and the
+    other a fabricated zero, and a whole absolute heading was applied as though
+    the device had turned by it.
+  - The tracking slice's restart payload now **omits** an absent orientation
+    instead of zeroing it, so the core's `resolveSensorPair` can refuse a
+    half-real pair rather than trusting it. The `?? sensorOrientation`
+    back-fill — which copied the new reading into the old slot — is gone: its
+    effect was benign (equal sides cancel) but it wrote a fiction into the
+    recording to get there.
+  - Per-axis nulls are preserved rather than collapsed to a single null: a
+    phone with no magnetometer reports a null `alpha` beside real
+    `beta`/`gamma`, and the library pairs the axes individually so tilt still
+    corrects while heading cancels.
+- **`replayRecording`'s first parameter widened** from `Uint8Array` to
+  `ZipSource`, and it takes an optional `ReplayRecordingOptions` second
+  argument (abort seam included). Passing a `Uint8Array` still works.
+- **`QrRawDetection` is no longer a named export.** It appears in an exported
+  callback signature, so consumers still reach it by inference; only the
+  `import type { QrRawDetection }` form breaks.
+
+### Features
+
+- **QR anchor authoring and tracking pipeline** — a printed code can now be
+  minted into a geo-anchor from a whole recording, and recognized at runtime.
+  All deep-importable under `ar/qr/*` and `utils/qr-payload/*`:
+  - `qr-code-id` / `qr-code-origin` — code identity and the "is this ours"
+    safety gate, plus the `qr/<id>.json` level convention.
+  - `qr-level` / `qr-level-archive` — level parsing and archive lookup, with
+    widened mint quality.
+  - `qr-sighting-accumulator` — folds per-frame detections into sightings.
+  - `qr-anchor-mint` / `qr-mint-level` — assemble a mint level from a recording.
+  - `qr-vote-budget` — bounds how much a single session may vote.
+  - `qr-launch-dispatch` / `qr-print-plan` — `?qr=` launch handling and print
+    layout planning.
+  - Every one of them is a **per-file dist entry**, deep-importable through the
+    `./ar/*` and `./utils/*` wildcards, so an app can wire the pipeline without
+    pulling the whole `/ar/qr` barrel into node unit tests.
+- **Capture-time geo join and replay** —
+  - `replayActions` is now exported from `state`: replay a pre-loaded action
+    list without going through a zip.
+  - `state/segmenting-actions` names the actions that segment a recording
+    (`SEGMENTING_ACTION_TYPES`, `isSegmentingActionType`).
+- **Google Drive tours through the CORS proxy** — share-link normalization,
+  range-probe and remote byte-source hardening, with `410 Gone` no longer
+  conflated with the two other conditions it had been folded into.
+- **Shared helpers unified (DEC-H3)** — `utils/median` (the weighted-median
+  family) and the new `utils/bearing-degrees` replace copies that had drifted
+  apart; see the fixes below for what the drift had cost.
+
+### Bug Fixes
+
+- **`weightedMedian` did not honour the tie convention it documented.** On an
+  exact half-weight tie the lower of the two straddling values should win;
+  `total` sums every weight while `cumulative` sums a prefix, so the two
+  accumulate rounding differently and an exact tie could miss by a ULP. Found
+  by property tests on their first run.
+- **`recencyHalfLifeS` was divided by unguarded.** It is caller-supplied public
+  API. Zero gives the newest sighting `1/(1 + 0/0)` = `NaN` and every older one
+  `0`; a negative value can give `Infinity` or a negative weight.
+  `weightedMedian` drops all of those and falls back to the *unweighted*
+  median — so the weighting silently did not run.
+- **`computeCaptureSize` handed `NaN` straight to render-target allocation.**
+  `cameraWidth <= 0` is false for `NaN`, so `NaN` flowed through `Math.floor`
+  and survived `Math.max(1, NaN)`; `(Infinity, 1080, 1)` produced an infinite
+  edge. Both reached `new THREE.WebGLRenderTarget(...)`.
+- **A disposal raced its own flag.** The deadline race's loser was disposed
+  using a flag set inside the `catch`, at least two microtasks after the gate
+  rejects, while the disposal handler is registered first — so an open settling
+  inside that window was disposed by neither path. That is the leak the block
+  was added to close.
+- **Two runtime validator lists only *looked* type-checked.** TypeScript accepts
+  an incomplete array literal for `readonly T[]`, so a list missing a union
+  member compiles cleanly — and both lists were runtime validators, meaning a
+  legitimate value was rejected in production. `BLUR_METRIC_IDS` is now the
+  source of truth and `BlurMetricId` is derived from it.
+- **Six unnamed bearing normalizers**, `((deg % 360) + 360) % 360` written out
+  in six files, one of which had received a fix the others never did. Now one
+  named `utils/bearing-degrees`.
+- Plus the accumulated fixes from PR reviews #369–#391 across the AR, storage,
+  replay and visualization modules.
+
 ## [1.20.0] — 2026-08-26
 
 Requires `gps-plus-slam-js` ≥ 1.20 (the `resetGpsSessionData` carrier).
