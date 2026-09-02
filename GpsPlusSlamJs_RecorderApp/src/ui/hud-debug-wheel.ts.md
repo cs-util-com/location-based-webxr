@@ -14,8 +14,8 @@ The in-recording settings wheel: a gear in the AR HUD, shown only with `?debug=1
 ## The controls, and what each reaches
 
 - **preset** → `setAlignmentOverrides` with the entry from [`alignment-presets.md`](../alignment-presets.md); `shipped` clears.
-- **compass** (0..1 slider) → the seven compass dispatches; 0 is "GPS only" (prior off, cold-start off, weight 0: three settings, see the mapping's sidecar), any other value turns the Stage-C prior on with that steady-state weight.
-- **trust gate** → `setCompassTrustGateMode`, every mode the library declares (`off | binary | ramp | latch`; the list is derived from the exported const).
+- **compass** (0..1 slider; the label follows the drag, the dispatch happens on RELEASE, because every dispatch is persisted into the recording and a drag would otherwise write eleven actions per notch) → the seven compass dispatches; 0 is "GPS only" (prior off, cold-start off, weight 0: three settings, see the mapping's sidecar), any other value turns the Stage-C prior on with that steady-state weight.
+- **trust gate** → `setCompassTrustGateMode`, every mode the library declares (`off | binary | ramp | latch`; the list is derived from the exported const). `latch` (trusted once, trusted for the session) ships for the field test with its corpus label attached: at the shipped thresholds 52 of the 88 compass-era recordings that ever reach trusted drop out of it again (59 %), so the corpus does NOT say the latch is safe - it says the field test is needed (private repo, `test-results/compass-trust-drop-census.txt`).
 - **pair selection** → `off` (`setCompassPairSelectionEnabled(false)`), `soft cut` / `hard cut` (enabled + `setCompassPairSelectionMode`).
 - **pairs need trust** → `setCompassPairSelectionRequireTrust`.
 - **heading penalty** → `setRobustSolverHeadingPenalty(0.25)` or `0`; inert unless a preset switched the robust solver on.

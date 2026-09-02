@@ -322,7 +322,16 @@ export function createDebugWheel(deps: DebugWheelDeps): DebugWheel {
   presetSelect.addEventListener('change', () =>
     change({ presetId: presetSelect.value })
   );
-  influence.addEventListener('input', () =>
+  // Drag shows the value; RELEASE dispatches. Unlike the OSM demo's slider,
+  // every dispatch here is persisted into the recording, so applying on every
+  // input step would write eleven actions per notch of a drag.
+  influence.addEventListener('input', () => {
+    influenceValue.textContent =
+      Number(influence.value) === 0
+        ? 'GPS only'
+        : Number(influence.value).toFixed(2);
+  });
+  influence.addEventListener('change', () =>
     change({ compassInfluence: Number(influence.value) })
   );
   gateSelect.addEventListener('change', () =>

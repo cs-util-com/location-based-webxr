@@ -253,6 +253,35 @@ describe('createDebugWheel', () => {
     );
   });
 
+  it('dispatches the compass slider on RELEASE, not on every drag step', () => {
+    // Every dispatch is persisted into the recording; a drag must not write
+    // eleven actions per notch. The label still follows the drag.
+    const store = fakeStore();
+    store.decide();
+    const wheel = createDebugWheel({
+      storeRef: createStoreRef(store),
+      controlsRoot: controls,
+      overlayRoot: overlay,
+    });
+    wheel.attach();
+    const slider = overlay.querySelector(
+      '#debug-wheel-compass'
+    ) as HTMLInputElement;
+    const label = overlay.querySelector(
+      '#debug-wheel-compass-value'
+    ) as HTMLElement;
+    slider.value = '0.5';
+    slider.dispatchEvent(new Event('input'));
+    slider.value = '0.8';
+    slider.dispatchEvent(new Event('input'));
+    expect(label.textContent).toBe('0.80');
+    expect(store.dispatched).toEqual([]);
+    expect(wheel.touched()).toBe(false);
+    slider.dispatchEvent(new Event('change'));
+    expect(wheel.values().compassInfluence).toBe(0.8);
+    expect(store.dispatched).toHaveLength(11);
+  });
+
   it('shows the readout when opened and keeps it live while open', () => {
     const store = fakeStore();
     const wheel = createDebugWheel({
