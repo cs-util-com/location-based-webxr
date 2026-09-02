@@ -88,6 +88,7 @@ const dom = {
   capabilityMessage: el("capability-message"),
   guidance: el("guidance"),
   guidanceTitle: el("guidance-title"),
+  guidanceBar: el("guidance-bar"),
   guidanceBarFill: el("guidance-bar-fill"),
   guidancePercent: el("guidance-percent"),
   guidanceHint: el("guidance-hint"),
@@ -177,7 +178,11 @@ function applyGuidance(
   const view = toGuidanceView(guidance);
   dom.guidanceTitle.textContent = view.title;
   dom.guidanceBarFill.style.width = `${view.barWidthPct}%`;
-  dom.guidanceBarFill.className = `tone-${view.tone}`;
+  // The tone is a data attribute on the bar, which the design system's
+  // .progress[data-tone] rules style (the pilot's own tone-* classes went
+  // with its stylesheet in the adoption plan's M2).
+  dom.guidanceBar.dataset.tone = view.tone;
+  dom.guidanceBar.setAttribute("aria-valuenow", String(view.barWidthPct));
   dom.guidancePercent.textContent = view.percentText;
   dom.guidanceHint.textContent = view.hint;
 }

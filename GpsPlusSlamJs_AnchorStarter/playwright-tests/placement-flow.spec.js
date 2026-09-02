@@ -55,7 +55,10 @@ test.describe("Anchor starter — Tier 1 placement flow", () => {
 
     await expect(page.locator("#guidance-title")).toHaveText("Ready");
     await expect(page.locator("#guidance-percent")).toHaveText("100%");
-    await expect(page.locator("#guidance-bar-fill")).toHaveClass("tone-good");
+    await expect(page.locator("#guidance-bar")).toHaveAttribute(
+      "data-tone",
+      "good",
+    );
   });
 
   test("renders a warming-up tracking report as a progress phase", async ({
@@ -73,8 +76,9 @@ test.describe("Anchor starter — Tier 1 placement flow", () => {
     await expect(page.locator("#guidance-title")).toHaveText("Move around");
     // warming-up percentReady = coverage * 0.6 → 60%.
     await expect(page.locator("#guidance-percent")).toHaveText("60%");
-    await expect(page.locator("#guidance-bar-fill")).toHaveClass(
-      "tone-progress",
+    await expect(page.locator("#guidance-bar")).toHaveAttribute(
+      "data-tone",
+      "progress",
     );
   });
 
