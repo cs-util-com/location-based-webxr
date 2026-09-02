@@ -322,6 +322,10 @@ let activeImageQualityAnalyzer: ImageQualityAnalyzerFn | null = null;
 // (Finding #7 decomposition: extracted from main.ts to replay/replay-handlers.ts)
 const replayHandlers = createReplayHandlers({
   setStore: (newStore) => {
+    // A replay store must not be driven by the debug wheel (a recording made
+    // without it would replay against the tester's live config); suspend
+    // BEFORE the swap so the wheel's store-follower sees a suspended wheel.
+    debugWheel?.suspend();
     store = newStore;
     storeRef.set(newStore);
   },
@@ -332,6 +336,8 @@ const replayHandlers = createReplayHandlers({
 const recordingSessionHandlers = createRecordingSessionHandlers({
   getStore: () => store,
   setStore: (newStore) => {
+    // A recording store: the wheel drives it again (see the replay swap above).
+    debugWheel?.resume();
     store = newStore;
     storeRef.set(newStore);
   },

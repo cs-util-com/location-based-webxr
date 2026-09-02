@@ -4,10 +4,11 @@
  * dispatch that landed in a dead store, or arrived before the store was
  * decided, would look exactly like "the setting does nothing" - the complaint
  * that motivated the whole feature. These pin the two traps the design routes
- * around (the store swap and the pre-`setZeroPos` no-op), the "untouched
- * wheel dispatches nothing" contract, the exact set of actions a settings
- * object implies (including a preset that turns the robust solver OFF), and
- * the readout's honesty before the first fix.
+ * around (the store swap and the pre-`setZeroPos` no-op), the per-CONTROL
+ * contract (a preset tap must not rewrite the operator's compass config - PR
+ * #405/#406 review), the seeding of untouched controls from the store, the
+ * replay suspension, the readout's honesty before the first fix, and the
+ * penalty box being disabled where it is provably inert.
  */
 
 import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
@@ -15,9 +16,10 @@ import {
   createDebugWheel,
   dispatchWheelSettings,
   formatWheelReadout,
+  seedWheelSettings,
   WHEEL_DEFAULTS,
   WHEEL_HEADING_PENALTY_DEFAULT,
-  type WheelSettings,
+  type WheelControl,
 } from './hud-debug-wheel';
 import { createStoreRef } from '../state/store-ref';
 import {
@@ -34,7 +36,7 @@ beforeAll(() => {
 
 interface FakeStore extends RecorderStore {
   readonly dispatched: unknown[];
-  decide(): void;
+  decide(extra?: Record<string, unknown>): void;
 }
 
 /** A store whose `gpsData` is null until `decide()`; records every dispatch. */
@@ -54,7 +56,7 @@ function fakeStore(): FakeStore {
       listeners.add(l);
       return () => listeners.delete(l);
     },
-    decide() {
+    decide(extra: Record<string, unknown> = {}) {
       gpsData = {
         gpsEvents: {
           alignmentRotationInDegree: [0, 47.25, 0],
@@ -62,6 +64,7 @@ function fakeStore(): FakeStore {
           compassAppliedWeight: 0.8,
           compassTrust: { state: 'trusted' },
         },
+        ...extra,
       };
       for (const l of listeners) l();
     },
@@ -74,67 +77,151 @@ function fakeStore(): FakeStore {
 
 const types = (store: FakeStore): string[] =>
   store.dispatched.map((a) => (a as { type: string }).type);
-
+const payloads = (store: FakeStore): unknown[] =>
+  store.dispatched.map((a) => (a as { payload: unknown }).payload);
 const flush = () => new Promise<void>((r) => queueMicrotask(r));
+const only = (...c: WheelControl[]) => new Set<WheelControl>(c);
 
-describe('dispatchWheelSettings', () => {
-  it('dispatches the preset, the seven compass settings and the three options - eleven actions', () => {
+const COMPASS_SEVEN = [
+  'gpsData/setCompassRotationPriorEnabled',
+  'gpsData/setColdStartOverrideEnabled',
+  'gpsData/setCompassVoteWeight',
+  'gpsData/setCompassTrustGateMode',
+  'gpsData/setCompassPairSelectionEnabled',
+  'gpsData/setCompassTrustAgreeToleranceDeg',
+  'gpsData/setCompassWebXRConsistencyEnabled',
+];
+
+describe('dispatchWheelSettings - one control, its own setting', () => {
+  it('the preset alone is ONE action', () => {
     const store = fakeStore();
-    dispatchWheelSettings(store, {
-      ...WHEEL_DEFAULTS,
-      presetId: 'f100',
-      compassInfluence: 0.5,
-      pairSelection: 'hard',
-      pairSelectionRequireTrust: false,
-      headingPenalty: 0.25,
-    });
-    expect(types(store)).toEqual([
-      'gpsData/setAlignmentOverrides',
-      'gpsData/setCompassRotationPriorEnabled',
-      'gpsData/setColdStartOverrideEnabled',
-      'gpsData/setCompassVoteWeight',
-      'gpsData/setCompassTrustGateMode',
-      'gpsData/setCompassPairSelectionEnabled',
-      'gpsData/setCompassTrustAgreeToleranceDeg',
-      'gpsData/setCompassWebXRConsistencyEnabled',
-      'gpsData/setCompassPairSelectionMode',
-      'gpsData/setCompassPairSelectionRequireTrust',
-      'gpsData/setRobustSolverHeadingPenalty',
-    ]);
-    const payloads = store.dispatched.map(
-      (a) => (a as { payload: unknown }).payload
+    dispatchWheelSettings(
+      store,
+      { ...WHEEL_DEFAULTS, presetId: 'f100' },
+      only('presetId')
     );
-    expect(payloads[0]).toEqual({ timeWeightFactor: 100 });
-    expect(payloads[1]).toBe(true); // prior on at influence > 0
-    expect(payloads[2]).toBe(false); // cold-start off while the prior drives
-    expect(payloads[3]).toBe(0.5);
-    expect(payloads[5]).toBe(true); // pair selection on ('hard')
-    expect(payloads[8]).toBe('hard');
-    expect(payloads[9]).toBe(false);
-    expect(payloads[10]).toBe(0.25);
+    expect(types(store)).toEqual(['gpsData/setAlignmentOverrides']);
+    expect(payloads(store)[0]).toEqual({ timeWeightFactor: 100 });
   });
 
-  it('at influence 0 silences the compass with three settings, and pair selection stays off', () => {
+  it('the compass slider is the seven compass settings, prior on at that weight', () => {
     const store = fakeStore();
-    dispatchWheelSettings(store, {
-      ...WHEEL_DEFAULTS,
-      compassInfluence: 0,
-      pairSelection: 'soft',
-    });
-    const p = store.dispatched.map((a) => (a as { payload: unknown }).payload);
-    expect(p[1]).toBe(false);
-    expect(p[2]).toBe(false);
-    expect(p[3]).toBe(0);
-    expect(p[5]).toBe(false);
+    dispatchWheelSettings(
+      store,
+      { ...WHEEL_DEFAULTS, compassInfluence: 0.5, pairSelection: 'hard' },
+      only('compassInfluence')
+    );
+    expect(types(store)).toEqual(COMPASS_SEVEN);
+    const p = payloads(store);
+    expect(p[0]).toBe(true); // prior on
+    expect(p[1]).toBe(false); // cold-start off while the prior drives
+    expect(p[2]).toBe(0.5);
+    expect(p[4]).toBe(true); // pair selection reflects the wheel ('hard')
   });
 
-  it('the shipped preset clears the overrides with null, and can turn the robust solver back off', () => {
-    // A preset that switched the robust solver on must be undoable within the
-    // session: the shipped entry clears the overrides (null), which the
-    // tri-state mapping turns into the library default.
+  it('at influence 0 the slider silences the compass with three settings', () => {
+    const store = fakeStore();
+    dispatchWheelSettings(
+      store,
+      { ...WHEEL_DEFAULTS, compassInfluence: 0, pairSelection: 'soft' },
+      only('compassInfluence')
+    );
+    const p = payloads(store);
+    expect(p[0]).toBe(false);
+    expect(p[1]).toBe(false);
+    expect(p[2]).toBe(0);
+    expect(p[4]).toBe(false);
+  });
+
+  it('the gate, the pair selection, the trust prerequisite and the penalty each send their own setter(s)', () => {
+    const gate = fakeStore();
+    dispatchWheelSettings(
+      gate,
+      { ...WHEEL_DEFAULTS, trustGateMode: 'latch' },
+      only('trustGateMode')
+    );
+    expect(types(gate)).toEqual(['gpsData/setCompassTrustGateMode']);
+    expect(payloads(gate)[0]).toBe('latch');
+
+    const pairs = fakeStore();
+    dispatchWheelSettings(
+      pairs,
+      { ...WHEEL_DEFAULTS, pairSelection: 'hard' },
+      only('pairSelection')
+    );
+    expect(types(pairs)).toEqual([
+      'gpsData/setCompassPairSelectionEnabled',
+      'gpsData/setCompassPairSelectionMode',
+    ]);
+    expect(payloads(pairs)).toEqual([true, 'hard']);
+
+    const trust = fakeStore();
+    dispatchWheelSettings(
+      trust,
+      { ...WHEEL_DEFAULTS, pairSelectionRequireTrust: false },
+      only('pairSelectionRequireTrust')
+    );
+    expect(types(trust)).toEqual([
+      'gpsData/setCompassPairSelectionRequireTrust',
+    ]);
+
+    const penalty = fakeStore();
+    dispatchWheelSettings(
+      penalty,
+      { ...WHEEL_DEFAULTS, headingPenalty: 0.25 },
+      only('headingPenalty')
+    );
+    expect(types(penalty)).toEqual(['gpsData/setRobustSolverHeadingPenalty']);
+  });
+
+  it('every control together is eleven actions, and the shipped preset clears with null', () => {
     const store = fakeStore();
     dispatchWheelSettings(store, { ...WHEEL_DEFAULTS, presetId: 'shipped' });
-    expect((store.dispatched[0] as { payload: unknown }).payload).toBeNull();
+    expect(types(store)).toHaveLength(11);
+    expect(payloads(store)[0]).toBeNull();
+  });
+});
+
+describe('seedWheelSettings - untouched controls show the session', () => {
+  it('reads the gate, pair selection, prerequisite, penalty and a matching preset from a decided store', () => {
+    const seeded = seedWheelSettings(WHEEL_DEFAULTS, new Set(), {
+      gpsData: {
+        alignmentOverrides: { timeWeightFactor: 100 },
+        compassTrustGateMode: 'latch',
+        compassPairSelectionEnabled: true,
+        compassPairSelectionMode: 'hard',
+        compassPairSelectionRequireTrust: false,
+        robustSolverHeadingPenalty: 0.25,
+      },
+    });
+    expect(seeded.presetId).toBe('f100');
+    expect(seeded.trustGateMode).toBe('latch');
+    expect(seeded.pairSelection).toBe('hard');
+    expect(seeded.pairSelectionRequireTrust).toBe(false);
+    expect(seeded.headingPenalty).toBe(0.25);
+  });
+
+  it('seeds the slider from the vote weight only while the Stage-C prior is on', () => {
+    const on = seedWheelSettings(WHEEL_DEFAULTS, new Set(), {
+      gpsData: { compassRotationPriorEnabled: true, compassVoteWeight: 0.8 },
+    });
+    expect(on.compassInfluence).toBe(0.8);
+    // A Stage-0 session (prior off) has no slider position: default kept.
+    const off = seedWheelSettings(WHEEL_DEFAULTS, new Set(), {
+      gpsData: { compassRotationPriorEnabled: false, compassVoteWeight: 0.8 },
+    });
+    expect(off.compassInfluence).toBe(WHEEL_DEFAULTS.compassInfluence);
+  });
+
+  it('never overwrites a control the tester touched, and leaves everything alone before the store is decided', () => {
+    const current = { ...WHEEL_DEFAULTS, trustGateMode: 'ramp' as const };
+    const seeded = seedWheelSettings(current, only('trustGateMode'), {
+      gpsData: { compassTrustGateMode: 'latch' },
+    });
+    expect(seeded.trustGateMode).toBe('ramp');
+    expect(seedWheelSettings(current, new Set(), { gpsData: null })).toBe(
+      current
+    );
   });
 });
 
@@ -146,14 +233,19 @@ describe('createDebugWheel', () => {
     controls = document.getElementById('controls')!;
     overlay = document.getElementById('app')!;
   });
-
-  it('mounts a gear in the controls and a hidden panel in the overlay root, and toggles it', () => {
+  const mount = (store: RecorderStore) => {
+    const ref = createStoreRef<RecorderStore>(store);
     const wheel = createDebugWheel({
-      storeRef: createStoreRef(fakeStore()),
+      storeRef: ref,
       controlsRoot: controls,
       overlayRoot: overlay,
     });
     wheel.attach();
+    return { wheel, ref };
+  };
+
+  it('mounts a gear in the controls and a hidden panel in the overlay root, and toggles it', () => {
+    const { wheel } = mount(fakeStore());
     const gear = controls.querySelector(
       '#btn-debug-wheel'
     ) as HTMLButtonElement;
@@ -172,26 +264,49 @@ describe('createDebugWheel', () => {
 
   it('dispatches NOTHING until the tester touches a control', async () => {
     const store = fakeStore();
-    const wheel = createDebugWheel({
-      storeRef: createStoreRef(store),
-      controlsRoot: controls,
-      overlayRoot: overlay,
-    });
-    wheel.attach();
+    const { wheel } = mount(store);
     store.decide();
     await flush();
     expect(store.dispatched).toEqual([]);
     expect(wheel.touched()).toBe(false);
   });
 
+  it('a preset-only tap dispatches ONE action and leaves the compass config untouched', () => {
+    // The headline use case: an A/B between presets must differ in the
+    // preset and nothing else.
+    const store = fakeStore();
+    store.decide({
+      compassRotationPriorEnabled: false,
+      compassVoteWeight: 0.8,
+    });
+    mount(store);
+    const preset = overlay.querySelector(
+      '#debug-wheel-preset'
+    ) as HTMLSelectElement;
+    preset.value = 'f100';
+    preset.dispatchEvent(new Event('change'));
+    expect(types(store)).toEqual(['gpsData/setAlignmentOverrides']);
+  });
+
+  it('shows the session: untouched controls are seeded from a decided store', () => {
+    const store = fakeStore();
+    store.decide({
+      compassTrustGateMode: 'latch',
+      compassPairSelectionEnabled: true,
+      compassPairSelectionMode: 'hard',
+    });
+    const { wheel } = mount(store);
+    expect(wheel.values().trustGateMode).toBe('latch');
+    expect(wheel.values().pairSelection).toBe('hard');
+    expect(
+      (overlay.querySelector('#debug-wheel-gate') as HTMLSelectElement).value
+    ).toBe('latch');
+    expect(store.dispatched).toEqual([]); // seeding is a read, never a write
+  });
+
   it('holds a change made before the first fix and flushes it once the store is decided, from a microtask', async () => {
     const store = fakeStore();
-    const wheel = createDebugWheel({
-      storeRef: createStoreRef(store),
-      controlsRoot: controls,
-      overlayRoot: overlay,
-    });
-    wheel.attach();
+    const { wheel } = mount(store);
     const preset = overlay.querySelector(
       '#debug-wheel-preset'
     ) as HTMLSelectElement;
@@ -202,68 +317,66 @@ describe('createDebugWheel', () => {
     store.decide();
     expect(store.dispatched).toEqual([]); // not inside the deciding dispatch
     await flush();
-    expect(types(store)[0]).toBe('gpsData/setAlignmentOverrides');
-    expect(store.dispatched).toHaveLength(11);
+    expect(types(store)).toEqual(['gpsData/setAlignmentOverrides']);
   });
 
-  it('re-applies the touched settings to a swapped-in store (Start Recording)', async () => {
+  it('re-applies every touched control to a swapped-in store (Start Recording), once per store', async () => {
     const first = fakeStore();
     first.decide();
-    const ref = createStoreRef<RecorderStore>(first);
-    const wheel = createDebugWheel({
-      storeRef: ref,
-      controlsRoot: controls,
-      overlayRoot: overlay,
-    });
-    wheel.attach();
+    const { wheel, ref } = mount(first);
     wheel.set({ compassInfluence: 0.8 });
-    expect(first.dispatched).toHaveLength(11);
+    wheel.set({ presetId: 'f100' });
+    expect(types(first)).toEqual([
+      ...COMPASS_SEVEN,
+      'gpsData/setAlignmentOverrides',
+    ]);
     const second = fakeStore();
-    ref.set(second); // the recorder swaps its store
+    ref.set(second);
     await flush();
     expect(second.dispatched).toEqual([]); // undecided: waits for its first fix
     second.decide();
     await flush();
-    expect(second.dispatched).toHaveLength(11);
-    expect((second.dispatched[3] as { payload: number }).payload).toBe(0.8);
-    // And only once per store.
+    // Both touched controls, in dispatch order preset-first.
+    expect(types(second)).toEqual([
+      'gpsData/setAlignmentOverrides',
+      ...COMPASS_SEVEN,
+    ]);
+    expect(payloads(second)[3]).toBe(0.8);
     second.dispatch({ type: 'noise' });
     await flush();
-    expect(second.dispatched).toHaveLength(12);
+    expect(second.dispatched).toHaveLength(9);
   });
 
-  it('applies every later change immediately to a decided store', () => {
-    const store = fakeStore();
-    store.decide();
-    const wheel = createDebugWheel({
-      storeRef: createStoreRef(store),
-      controlsRoot: controls,
-      overlayRoot: overlay,
-    });
-    wheel.attach();
-    const penalty = overlay.querySelector(
-      '#debug-wheel-heading-penalty'
-    ) as HTMLInputElement;
-    penalty.checked = true;
-    penalty.dispatchEvent(new Event('change'));
-    expect(wheel.values().headingPenalty).toBe(WHEEL_HEADING_PENALTY_DEFAULT);
-    expect(types(store)).toHaveLength(11);
-    expect((store.dispatched[10] as { payload: number }).payload).toBe(
-      WHEEL_HEADING_PENALTY_DEFAULT
-    );
+  it('does not drive a store while suspended (replay), and resumes onto the current store', async () => {
+    const recording = fakeStore();
+    recording.decide();
+    const { wheel, ref } = mount(recording);
+    wheel.set({ trustGateMode: 'latch' });
+    expect(types(recording)).toEqual(['gpsData/setCompassTrustGateMode']);
+    wheel.suspend();
+    const replay = fakeStore();
+    ref.set(replay);
+    replay.decide();
+    await flush();
+    expect(replay.dispatched).toEqual([]);
+    wheel.set({ presetId: 'f100' }); // held while suspended
+    expect(replay.dispatched).toEqual([]);
+    const next = fakeStore();
+    next.decide();
+    ref.set(next);
+    await flush();
+    expect(next.dispatched).toEqual([]); // still suspended
+    wheel.resume();
+    expect(types(next)).toEqual([
+      'gpsData/setAlignmentOverrides',
+      'gpsData/setCompassTrustGateMode',
+    ]);
   });
 
   it('dispatches the compass slider on RELEASE, not on every drag step', () => {
-    // Every dispatch is persisted into the recording; a drag must not write
-    // eleven actions per notch. The label still follows the drag.
     const store = fakeStore();
     store.decide();
-    const wheel = createDebugWheel({
-      storeRef: createStoreRef(store),
-      controlsRoot: controls,
-      overlayRoot: overlay,
-    });
-    wheel.attach();
+    const { wheel } = mount(store);
     const slider = overlay.querySelector(
       '#debug-wheel-compass'
     ) as HTMLInputElement;
@@ -279,17 +392,30 @@ describe('createDebugWheel', () => {
     expect(wheel.touched()).toBe(false);
     slider.dispatchEvent(new Event('change'));
     expect(wheel.values().compassInfluence).toBe(0.8);
-    expect(store.dispatched).toHaveLength(11);
+    expect(types(store)).toEqual(COMPASS_SEVEN);
+  });
+
+  it('disables the heading-penalty box unless the selected preset enables the robust solver', () => {
+    const store = fakeStore();
+    store.decide();
+    const { wheel } = mount(store);
+    const box = overlay.querySelector(
+      '#debug-wheel-heading-penalty'
+    ) as HTMLInputElement;
+    const hint = overlay.querySelector(
+      '#debug-wheel-heading-penalty-hint'
+    ) as HTMLElement;
+    expect(box.disabled).toBe(true);
+    expect(hint.textContent).toContain('robust');
+    // No shipped preset enables the robust solver today; the programmatic
+    // path still lets the e2e hook set the value.
+    wheel.set({ headingPenalty: WHEEL_HEADING_PENALTY_DEFAULT });
+    expect(wheel.values().headingPenalty).toBe(WHEEL_HEADING_PENALTY_DEFAULT);
   });
 
   it('shows the readout when opened and keeps it live while open', () => {
     const store = fakeStore();
-    const wheel = createDebugWheel({
-      storeRef: createStoreRef(store),
-      controlsRoot: controls,
-      overlayRoot: overlay,
-    });
-    wheel.attach();
+    mount(store);
     const gear = controls.querySelector(
       '#btn-debug-wheel'
     ) as HTMLButtonElement;
@@ -320,8 +446,6 @@ describe('formatWheelReadout', () => {
   });
 
   it('wraps a negative yaw into 0..360', () => {
-    const s: WheelSettings = WHEEL_DEFAULTS;
-    void s;
     expect(
       formatWheelReadout({
         gpsData: {

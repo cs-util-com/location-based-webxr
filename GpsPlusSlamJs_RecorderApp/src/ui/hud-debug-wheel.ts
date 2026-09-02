@@ -22,8 +22,17 @@
  *
  * RELATIONSHIP TO THE SETTINGS MODAL. The modal's compass block stays the
  * PRE-SESSION persisted default and seeds each new store. The wheel is the
- * LIVE surface: it persists nothing, and only what the tester TOUCHED is
- * dispatched, so an untouched wheel changes no session.
+ * LIVE surface: it persists nothing, and only the CONTROL the tester touched
+ * is dispatched (PR #405/#406 review: dispatching every control from the
+ * wheel's defaults turned a preset A/B into a compass-config change) - a
+ * preset tap sends one action, the compass slider the seven compass settings,
+ * every other control its own setter. Untouched controls show the store's
+ * values once it is decided.
+ *
+ * REPLAY. The recorder swaps a REPLAY store through the same `storeRef`; the
+ * wheel must not drive it, or a recording made without the wheel would replay
+ * against the tester's live config. `main.ts` suspends the wheel while replay
+ * owns the store and resumes it for recording stores.
  *
  * See `hud-debug-wheel.ts.md`.
  */
@@ -96,38 +105,150 @@ const WHEEL_TRUST_TOLERANCE_DEG = 15;
 export const WHEEL_HEADING_PENALTY_DEFAULT = 0.25;
 const COMPASS_INFLUENCE_STEP = 0.05;
 
-/** Every dispatch a settings object implies, in one place, for the tests. */
+export type WheelControl = keyof WheelSettings;
+
+/**
+ * The dispatches ONE control implies. A control changes only its own setting:
+ * the preset one action; the compass slider the seven compass settings (it
+ * is the compass configuration - moving it engages the Stage-C prior at that
+ * weight, 0 silences the compass); the gate, pair selection, trust
+ * prerequisite and penalty their own setters. `controls` = every control
+ * (the e2e hook's programmatic set, and the tests).
+ */
 export function dispatchWheelSettings(
   store: Pick<RecorderStore, 'dispatch'>,
-  s: WheelSettings
+  s: WheelSettings,
+  controls: ReadonlySet<WheelControl> = ALL_CONTROLS
 ): void {
-  const preset = findAlignmentPreset(s.presetId);
-  store.dispatch(setAlignmentOverrides(preset?.overrides ?? null));
-  const compass = compassSettingsFor(s.compassInfluence, {
-    rotationPriorEnabled: true,
-    trustGateMode: s.trustGateMode,
-    pairSelectionEnabled: s.pairSelection !== 'off',
-    trustToleranceDeg: WHEEL_TRUST_TOLERANCE_DEG,
-    webXRConsistencyEnabled: false,
-  });
-  store.dispatch(setCompassRotationPriorEnabled(compass.rotationPriorEnabled));
-  store.dispatch(setColdStartOverrideEnabled(compass.coldStartOverrideEnabled));
-  store.dispatch(setCompassVoteWeight(compass.voteWeight));
-  store.dispatch(setCompassTrustGateMode(compass.trustGateMode));
-  store.dispatch(setCompassPairSelectionEnabled(compass.pairSelectionEnabled));
-  store.dispatch(setCompassTrustAgreeToleranceDeg(compass.trustToleranceDeg));
-  store.dispatch(
-    setCompassWebXRConsistencyEnabled(compass.webXRConsistencyEnabled)
-  );
-  store.dispatch(
-    setCompassPairSelectionMode(
-      s.pairSelection === 'off' ? 'soft' : s.pairSelection
-    )
-  );
-  store.dispatch(
-    setCompassPairSelectionRequireTrust(s.pairSelectionRequireTrust)
-  );
-  store.dispatch(setRobustSolverHeadingPenalty(s.headingPenalty));
+  if (controls.has('presetId')) {
+    const preset = findAlignmentPreset(s.presetId);
+    store.dispatch(setAlignmentOverrides(preset?.overrides ?? null));
+  }
+  if (controls.has('compassInfluence')) {
+    const compass = compassSettingsFor(s.compassInfluence, {
+      rotationPriorEnabled: true,
+      trustGateMode: s.trustGateMode,
+      pairSelectionEnabled: s.pairSelection !== 'off',
+      trustToleranceDeg: WHEEL_TRUST_TOLERANCE_DEG,
+      webXRConsistencyEnabled: false,
+    });
+    store.dispatch(
+      setCompassRotationPriorEnabled(compass.rotationPriorEnabled)
+    );
+    store.dispatch(
+      setColdStartOverrideEnabled(compass.coldStartOverrideEnabled)
+    );
+    store.dispatch(setCompassVoteWeight(compass.voteWeight));
+    store.dispatch(setCompassTrustGateMode(compass.trustGateMode));
+    store.dispatch(
+      setCompassPairSelectionEnabled(compass.pairSelectionEnabled)
+    );
+    store.dispatch(setCompassTrustAgreeToleranceDeg(compass.trustToleranceDeg));
+    store.dispatch(
+      setCompassWebXRConsistencyEnabled(compass.webXRConsistencyEnabled)
+    );
+  }
+  if (controls.has('trustGateMode') && !controls.has('compassInfluence')) {
+    store.dispatch(setCompassTrustGateMode(s.trustGateMode));
+  }
+  if (controls.has('pairSelection')) {
+    if (!controls.has('compassInfluence')) {
+      store.dispatch(setCompassPairSelectionEnabled(s.pairSelection !== 'off'));
+    }
+    store.dispatch(
+      setCompassPairSelectionMode(
+        s.pairSelection === 'off' ? 'soft' : s.pairSelection
+      )
+    );
+  }
+  if (controls.has('pairSelectionRequireTrust')) {
+    store.dispatch(
+      setCompassPairSelectionRequireTrust(s.pairSelectionRequireTrust)
+    );
+  }
+  if (controls.has('headingPenalty')) {
+    store.dispatch(setRobustSolverHeadingPenalty(s.headingPenalty));
+  }
+}
+
+const ALL_CONTROLS: ReadonlySet<WheelControl> = new Set<WheelControl>([
+  'presetId',
+  'compassInfluence',
+  'trustGateMode',
+  'pairSelection',
+  'pairSelectionRequireTrust',
+  'headingPenalty',
+]);
+
+/** The store fields the wheel reads back to show the session's real config. */
+interface WheelSeedState {
+  readonly gpsData: {
+    readonly alignmentOverrides?: unknown;
+    readonly compassRotationPriorEnabled?: boolean | undefined;
+    readonly compassVoteWeight?: number | undefined;
+    readonly compassTrustGateMode?: CompassTrustGateMode | undefined;
+    readonly compassPairSelectionEnabled?: boolean | undefined;
+    readonly compassPairSelectionMode?: CompassPairSelectionMode | undefined;
+    readonly compassPairSelectionRequireTrust?: boolean | undefined;
+    readonly robustSolverHeadingPenalty?: number | undefined;
+  } | null;
+}
+
+/**
+ * Read the untouched controls' values from a decided store, so the panel shows
+ * the session rather than the wheel's defaults. The compass slider is seeded
+ * from the vote weight only while the Stage-C prior is on; a Stage-0 session
+ * has no slider position (the slider IS "prior on at this weight"), so it
+ * keeps its default and its label says what moving it does.
+ */
+export function seedWheelSettings(
+  current: WheelSettings,
+  touched: ReadonlySet<WheelControl>,
+  state: WheelSeedState
+): WheelSettings {
+  const g = state.gpsData;
+  if (!g) return current;
+  const next: { -readonly [K in keyof WheelSettings]: WheelSettings[K] } = {
+    ...current,
+  };
+  if (!touched.has('presetId')) {
+    const o = g.alignmentOverrides;
+    const match = ALIGNMENT_PRESETS.find(
+      (p) => JSON.stringify(p.overrides ?? null) === JSON.stringify(o ?? null)
+    );
+    if (match) next.presetId = match.id;
+  }
+  if (
+    !touched.has('compassInfluence') &&
+    g.compassRotationPriorEnabled === true &&
+    typeof g.compassVoteWeight === 'number'
+  ) {
+    next.compassInfluence = g.compassVoteWeight;
+  }
+  if (!touched.has('trustGateMode') && g.compassTrustGateMode !== undefined) {
+    next.trustGateMode = g.compassTrustGateMode;
+  }
+  if (
+    !touched.has('pairSelection') &&
+    g.compassPairSelectionEnabled !== undefined
+  ) {
+    next.pairSelection = g.compassPairSelectionEnabled
+      ? (g.compassPairSelectionMode ?? 'soft')
+      : 'off';
+  }
+  if (
+    !touched.has('pairSelectionRequireTrust') &&
+    g.compassPairSelectionRequireTrust !== undefined
+  ) {
+    next.pairSelectionRequireTrust = g.compassPairSelectionRequireTrust;
+  }
+  if (
+    !touched.has('headingPenalty') &&
+    typeof g.robustSolverHeadingPenalty === 'number'
+  ) {
+    next.headingPenalty = g.robustSolverHeadingPenalty;
+  }
+  return next;
 }
 
 /** The live readout line: solved yaw, applied compass weight + trust, fix count. */
@@ -172,13 +293,18 @@ export interface DebugWheel {
   values(): WheelSettings;
   /** Whether the tester changed anything, i.e. whether the wheel dispatches at all. */
   touched(): boolean;
-  /** Programmatic change, for the e2e hook; behaves like a tap. */
+  /** Programmatic change, for the e2e hook; behaves like a tap on each key. */
   set(patch: Partial<WheelSettings>): void;
+  /** Stop driving stores (replay owns the store); changes are held. */
+  suspend(): void;
+  /** Drive stores again; held changes reach the current store if decided. */
+  resume(): void;
 }
 
 export function createDebugWheel(deps: DebugWheelDeps): DebugWheel {
   let current: WheelSettings = WHEEL_DEFAULTS;
-  let touched = false;
+  const touched = new Set<WheelControl>();
+  let suspended = false;
   let attached = false;
   let open = false;
   let unfollow: (() => void) | null = null;
@@ -270,6 +396,12 @@ export function createDebugWheel(deps: DebugWheelDeps): DebugWheel {
   penalty.type = 'checkbox';
   penalty.id = 'debug-wheel-heading-penalty';
   penalty.checked = current.headingPenalty > 0;
+  const penaltyHint = document.createElement('span');
+  penaltyHint.id = 'debug-wheel-heading-penalty-hint';
+  penaltyHint.className = 'text-xs text-gray-400';
+  const presetEnablesRobust = (): boolean =>
+    findAlignmentPreset(current.presetId)?.overrides?.robustSolverEnabled ===
+    true;
 
   const influenceLabel = (): string =>
     current.compassInfluence === 0
@@ -284,6 +416,12 @@ export function createDebugWheel(deps: DebugWheelDeps): DebugWheel {
     pairSelect.value = current.pairSelection;
     requireTrust.checked = current.pairSelectionRequireTrust;
     penalty.checked = current.headingPenalty > 0;
+    // The penalty only acts inside the robust solver; a preset that does not
+    // switch it on makes the box provably inert, and the tester must be able
+    // to tell that from "no effect on this walk" (PR #406 review).
+    const robust = presetEnablesRobust();
+    penalty.disabled = !robust;
+    penaltyHint.textContent = robust ? '' : '(needs a robust-solver preset)';
   };
 
   const influenceRow = document.createElement('label');
@@ -301,12 +439,16 @@ export function createDebugWheel(deps: DebugWheelDeps): DebugWheel {
     row('pairs need trust', requireTrust),
     row('heading penalty', penalty)
   );
+  penalty.parentElement?.append(penaltyHint);
 
   // --- behaviour -----------------------------------------------------------
-  const applyTo = (store: RecorderStore): void => {
-    if (!touched) return;
+  const applyTo = (
+    store: RecorderStore,
+    controls?: ReadonlySet<WheelControl>
+  ): void => {
+    if (suspended || touched.size === 0) return;
     if (store.getState().gpsData === null) return; // not decided yet
-    dispatchWheelSettings(store, current);
+    dispatchWheelSettings(store, current, controls ?? touched);
     applied.add(store);
     log.info(`applied ${JSON.stringify(current)}`);
   };
@@ -314,9 +456,20 @@ export function createDebugWheel(deps: DebugWheelDeps): DebugWheel {
   /** Called from event handlers only - top-level dispatches, never nested. */
   const change = (patch: Partial<WheelSettings>): void => {
     current = { ...current, ...patch };
-    touched = true;
+    const now = new Set<WheelControl>();
+    for (const k of Object.keys(patch) as WheelControl[]) {
+      touched.add(k);
+      now.add(k);
+    }
     render();
-    applyTo(deps.storeRef.get());
+    // Only the control(s) just touched go out now; a later store swap
+    // re-applies everything ever touched.
+    applyTo(deps.storeRef.get(), now);
+  };
+
+  const seed = (store: RecorderStore): void => {
+    current = seedWheelSettings(current, touched, store.getState());
+    render();
   };
 
   presetSelect.addEventListener('change', () =>
@@ -365,12 +518,19 @@ export function createDebugWheel(deps: DebugWheelDeps): DebugWheel {
    */
   const attachStore = (store: RecorderStore): (() => void) => {
     let flushScheduled = false;
+    let seeded = false;
     const listener = (): void => {
       if (open) readout.textContent = formatWheelReadout(store.getState());
+      const decided = store.getState().gpsData !== null;
+      if (decided && !seeded) {
+        seeded = true;
+        seed(store);
+      }
       if (
-        touched &&
+        touched.size > 0 &&
+        !suspended &&
         !applied.has(store) &&
-        store.getState().gpsData !== null &&
+        decided &&
         !flushScheduled
       ) {
         flushScheduled = true;
@@ -381,8 +541,13 @@ export function createDebugWheel(deps: DebugWheelDeps): DebugWheel {
       }
     };
     const unsubscribe = store.subscribe(listener);
-    // A swapped-in store that is already decided gets the settings at once.
-    if (touched && store.getState().gpsData !== null) applyTo(store);
+    // A swapped-in store that is already decided: read it, then apply what was
+    // touched (nothing, for an untouched wheel).
+    if (store.getState().gpsData !== null) {
+      seeded = true;
+      seed(store);
+      applyTo(store);
+    }
     return unsubscribe;
   };
 
@@ -404,7 +569,15 @@ export function createDebugWheel(deps: DebugWheelDeps): DebugWheel {
       attached = false;
     },
     values: () => current,
-    touched: () => touched,
+    touched: () => touched.size > 0,
     set: (patch) => change(patch),
+    suspend() {
+      suspended = true;
+    },
+    resume() {
+      suspended = false;
+      const store = deps.storeRef.get();
+      if (!applied.has(store)) applyTo(store);
+    },
   };
 }
