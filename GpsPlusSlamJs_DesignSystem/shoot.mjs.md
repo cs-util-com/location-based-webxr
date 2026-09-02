@@ -14,6 +14,12 @@
   the full page including the atoms column. Output paths are printed one
   per line; files land in `shots/` (gitignored).
 - Invariants & assumptions:
+  - **Finite animations are finished before every shot** (Web Animations
+    `finish()` on each `document.getAnimations()` entry whose iteration
+    count is not infinite), so an atom that arrives with an entrance
+    animation - the annotation text fades in after a delay - is
+    photographed in its settled state, not as an empty spot. Infinite
+    animations keep running; their steady state is the shot.
   - `deviceScaleFactor` 2 (3 for `--sel`) so hairlines and 1px details
     survive into the PNG.
   - PNGs are NEVER committed and NEVER asserted against: headless-GPU

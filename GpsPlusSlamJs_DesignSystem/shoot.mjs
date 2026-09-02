@@ -93,6 +93,19 @@ for (const screen of screens) {
   await page.goto(`${pageUrl}#bg=${bg}&screen=${screen}`);
   // the hash is read at load; fonts settle with the load event
   await page.waitForLoadState("load");
+  // Entrance animations are jumped to their end state before the shot.
+  // Without this, a close-up of an atom that ARRIVES (the annotation text
+  // fades in after a delay with fill: both, so it does not exist for the
+  // first 800 ms) photographs an empty spot and the reader concludes the
+  // atom is broken - which happened during the voice change, 2026-09-03.
+  // Infinite animations (the radar sweep, the locating pulse) are left
+  // running: finish() would throw on them, and their steady state IS the
+  // thing to photograph.
+  await page.evaluate(() => {
+    for (const a of document.getAnimations()) {
+      if (a.effect?.getTiming().iterations !== Infinity) a.finish();
+    }
+  });
 
   if (selector) {
     const el = page.locator(selector).first();
