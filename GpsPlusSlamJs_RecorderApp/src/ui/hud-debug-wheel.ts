@@ -63,6 +63,11 @@ import {
 } from '../alignment-presets';
 import { followStore, type StoreRef } from '../state/store-ref';
 import type { RecorderStore } from '../state/recorder-store';
+import {
+  createYawChurnTracker,
+  type YawChurnSummary,
+  type YawChurnTracker,
+} from './yaw-churn';
 
 const log = createLogger('DebugWheel');
 
@@ -251,8 +256,8 @@ export function seedWheelSettings(
   return next;
 }
 
-/** The live readout line: solved yaw, applied compass weight + trust, fix count. */
-export function formatWheelReadout(state: {
+/** The slice of the store the readout and the churn tracker read. */
+interface WheelReadoutState {
   readonly gpsData: {
     readonly gpsEvents: {
       readonly alignmentRotationInDegree: readonly number[];
@@ -262,7 +267,18 @@ export function formatWheelReadout(state: {
       readonly compassTrust?: { readonly state: string } | undefined;
     };
   } | null;
-}): string {
+}
+
+/**
+ * The live readout line: solved yaw, yaw churn (median |Δyaw| per fix over
+ * the last 30 fixes - the number the search ranked on, so a preset switch
+ * reads as a number within a minute), applied compass weight + trust, fix
+ * count. `churn` is `null` (a dash) until the tracker has two samples.
+ */
+export function formatWheelReadout(
+  state: WheelReadoutState,
+  churn: YawChurnSummary | null = null
+): string {
   const ev = state.gpsData?.gpsEvents;
   if (!ev) return 'waiting for the first GPS fix';
   const yaw = ev.alignmentRotationInDegree[1];
@@ -270,12 +286,29 @@ export function formatWheelReadout(state: {
     typeof yaw === 'number' && Number.isFinite(yaw)
       ? `yaw ${(((yaw % 360) + 360) % 360).toFixed(1)}°`
       : 'yaw –';
+  const churnText =
+    churn !== null && churn.medianStepDeg !== null
+      ? `churn ${churn.medianStepDeg.toFixed(2)}°/fix (${churn.steps})`
+      : 'churn –';
   const w = ev.compassAppliedWeight;
   const weightText =
     typeof w === 'number' && Number.isFinite(w)
       ? `compass ${w.toFixed(2)} ${ev.compassTrust?.state ?? 'dormant'}`
       : 'compass –';
-  return `${yawText} · ${weightText} · ${ev.gpsPositions.length} fixes`;
+  return `${yawText} · ${churnText} · ${weightText} · ${ev.gpsPositions.length} fixes`;
+}
+
+/** Feed one store update to the tracker (it samples once per new fix). */
+export function observeYawChurn(
+  tracker: YawChurnTracker,
+  state: WheelReadoutState
+): void {
+  const ev = state.gpsData?.gpsEvents;
+  if (!ev) return;
+  tracker.observe(
+    ev.gpsPositions.length,
+    ev.alignmentRotationInDegree[1] ?? NaN
+  );
 }
 
 export interface DebugWheelDeps {
@@ -310,6 +343,8 @@ export function createDebugWheel(deps: DebugWheelDeps): DebugWheel {
   let unfollow: (() => void) | null = null;
   /** Stores this wheel already applied its settings to (re-applied per swap). */
   const applied = new WeakSet<object>();
+  /** Churn tracker of the store currently followed (one per store: the fix count restarts per store). */
+  let churn: YawChurnTracker | null = null;
 
   // --- DOM -----------------------------------------------------------------
   const gear = document.createElement('button');
@@ -507,20 +542,31 @@ export function createDebugWheel(deps: DebugWheelDeps): DebugWheel {
     panel.hidden = !next;
     gear.setAttribute('aria-expanded', String(next));
     if (next)
-      readout.textContent = formatWheelReadout(deps.storeRef.get().getState());
+      readout.textContent = formatWheelReadout(
+        deps.storeRef.get().getState(),
+        churn?.summary() ?? null
+      );
   };
   gear.addEventListener('click', () => setOpen(!open));
 
   /**
-   * Per store: refresh the readout on every change while the panel is open,
-   * and flush the touched settings once the store becomes decided - from a
-   * microtask, outside the dispatch that made it decided.
+   * Per store: feed the churn tracker on every change (it samples once per
+   * fix, so the number is ready when the panel opens), refresh the readout
+   * while the panel is open, and flush the touched settings once the store
+   * becomes decided - from a microtask, outside the dispatch that made it
+   * decided.
    */
   const attachStore = (store: RecorderStore): (() => void) => {
     let flushScheduled = false;
     let seeded = false;
+    const tracker = createYawChurnTracker();
+    churn = tracker;
+    observeYawChurn(tracker, store.getState());
     const listener = (): void => {
-      if (open) readout.textContent = formatWheelReadout(store.getState());
+      const state = store.getState();
+      observeYawChurn(tracker, state);
+      if (open)
+        readout.textContent = formatWheelReadout(state, tracker.summary());
       const decided = store.getState().gpsData !== null;
       if (decided && !seeded) {
         seeded = true;

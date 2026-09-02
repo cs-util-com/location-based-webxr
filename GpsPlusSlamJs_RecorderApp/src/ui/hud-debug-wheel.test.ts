@@ -407,10 +407,15 @@ describe('createDebugWheel', () => {
     ) as HTMLElement;
     expect(box.disabled).toBe(true);
     expect(hint.textContent).toContain('robust');
-    // No shipped preset enables the robust solver today; the programmatic
-    // path still lets the e2e hook set the value.
+    // The programmatic path still lets the e2e hook set the value.
     wheel.set({ headingPenalty: WHEEL_HEADING_PENALTY_DEFAULT });
     expect(wheel.values().headingPenalty).toBe(WHEEL_HEADING_PENALTY_DEFAULT);
+    // The one robust preset enables the box; leaving it disables it again.
+    wheel.set({ presetId: 'f50-robust-exp1' });
+    expect(box.disabled).toBe(false);
+    expect(hint.textContent).toBe('');
+    wheel.set({ presetId: 'shipped' });
+    expect(box.disabled).toBe(true);
   });
 
   it('shows the readout when opened and keeps it live while open', () => {
@@ -426,7 +431,61 @@ describe('createDebugWheel', () => {
     expect(readout.textContent).toBe('waiting for the first GPS fix');
     store.decide();
     expect(readout.textContent).toBe(
-      'yaw 47.3° · compass 0.80 trusted · 3 fixes'
+      'yaw 47.3° · churn – · compass 0.80 trusted · 3 fixes'
+    );
+  });
+
+  it('shows the yaw churn over the fixes it saw, sampled once per fix, even while closed', () => {
+    const store = fakeStore();
+    mount(store);
+    const ev = (yaw: number, fixes: number) => ({
+      gpsEvents: {
+        alignmentRotationInDegree: [0, yaw, 0],
+        gpsPositions: Array.from({ length: fixes }, (_, i) => i),
+        compassAppliedWeight: 0.8,
+        compassTrust: { state: 'trusted' },
+      },
+    });
+    store.decide(ev(47.25, 3));
+    store.decide(ev(47.75, 4)); // step 0.5
+    store.decide(ev(47.75, 4)); // same fix: no step
+    store.decide(ev(48.75, 5)); // step 1.0
+    const gear = controls.querySelector(
+      '#btn-debug-wheel'
+    ) as HTMLButtonElement;
+    const readout = overlay.querySelector(
+      '#debug-wheel-readout'
+    ) as HTMLElement;
+    gear.click();
+    expect(readout.textContent).toBe(
+      'yaw 48.8° · churn 0.75°/fix (2) · compass 0.80 trusted · 5 fixes'
+    );
+  });
+
+  it('starts a fresh churn window for a swapped-in store', () => {
+    const first = fakeStore();
+    const { ref } = mount(first);
+    first.decide();
+    first.decide({
+      gpsEvents: {
+        alignmentRotationInDegree: [0, 57.25, 0],
+        gpsPositions: [1, 2, 3, 4],
+        compassAppliedWeight: 0.8,
+        compassTrust: { state: 'trusted' },
+      },
+    });
+    const second = fakeStore();
+    ref.set(second);
+    second.decide();
+    const gear = controls.querySelector(
+      '#btn-debug-wheel'
+    ) as HTMLButtonElement;
+    const readout = overlay.querySelector(
+      '#debug-wheel-readout'
+    ) as HTMLElement;
+    gear.click();
+    expect(readout.textContent).toBe(
+      'yaw 47.3° · churn – · compass 0.80 trusted · 3 fixes'
     );
   });
 });
@@ -442,7 +501,7 @@ describe('formatWheelReadout', () => {
         },
       },
     });
-    expect(line).toBe('yaw – · compass – · 0 fixes');
+    expect(line).toBe('yaw – · churn – · compass – · 0 fixes');
   });
 
   it('wraps a negative yaw into 0..360', () => {
@@ -455,6 +514,22 @@ describe('formatWheelReadout', () => {
           },
         },
       })
-    ).toBe('yaw 270.0° · compass – · 1 fixes');
+    ).toBe('yaw 270.0° · churn – · compass – · 1 fixes');
+  });
+
+  it('prints the churn summary with its step count', () => {
+    expect(
+      formatWheelReadout(
+        {
+          gpsData: {
+            gpsEvents: {
+              alignmentRotationInDegree: [0, 10, 0],
+              gpsPositions: [1, 2],
+            },
+          },
+        },
+        { medianStepDeg: 0.4567, steps: 30 }
+      )
+    ).toBe('yaw 10.0° · churn 0.46°/fix (30) · compass – · 2 fixes');
   });
 });
