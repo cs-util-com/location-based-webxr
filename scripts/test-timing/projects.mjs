@@ -18,7 +18,7 @@
 // package.json-script analysis; affected devDependencies need
 // ignoreDependencies entries in the root knip.json.
 
-import path from 'node:path';
+import path from "node:path";
 
 /**
  * @typedef {Object} StageConfig
@@ -49,7 +49,7 @@ import path from 'node:path';
  */
 
 /** Name of the synthetic full-gate row; only run-gate.mjs writes it. */
-export const TOTAL_STAGE = 'total';
+export const TOTAL_STAGE = "total";
 
 /** Shared build:framework stage: skips the (identical) framework build when
  * dist/ is already fresh — the cascade otherwise rebuilds it once per
@@ -58,9 +58,9 @@ export const TOTAL_STAGE = 'total';
  * and Playwright webServer `pnpm run dev` spawns call it and must neither
  * record timing rows nor inherit the skip. */
 const BUILD_FRAMEWORK_STAGE = Object.freeze({
-  name: 'build:framework',
+  name: "build:framework",
   command:
-    'node ../scripts/build-workspace-package-if-stale.mjs gps-plus-slam-app-framework GpsPlusSlamJs_AppFramework',
+    "node ../scripts/build-workspace-package-if-stale.mjs gps-plus-slam-app-framework GpsPlusSlamJs_AppFramework",
   counts: /** @type {null} */ (null),
   wrapperScript: false,
 });
@@ -76,9 +76,9 @@ const BUILD_FRAMEWORK_STAGE = Object.freeze({
  * 'gps-plus-slam-osm'" while every local run passed against a stale dist left
  * behind by an earlier e2e run. */
 const BUILD_OSM_STAGE = Object.freeze({
-  name: 'build:osm',
+  name: "build:osm",
   command:
-    'node ../scripts/build-workspace-package-if-stale.mjs gps-plus-slam-osm GpsPlusSlamJs_Osm',
+    "node ../scripts/build-workspace-package-if-stale.mjs gps-plus-slam-osm GpsPlusSlamJs_Osm",
   counts: /** @type {null} */ (null),
   wrapperScript: false,
 });
@@ -109,51 +109,51 @@ const APP_FORMAT_COMMAND =
  * @returns {StageConfig[]}
  */
 function demoAppStages(extraCycleRoots = []) {
-  const cycleRoots = ['./src/main.ts', ...extraCycleRoots].join(' ');
+  const cycleRoots = ["./src/main.ts", ...extraCycleRoots].join(" ");
   return [
-    { name: 'format', command: APP_FORMAT_COMMAND, counts: null },
+    { name: "format", command: APP_FORMAT_COMMAND, counts: null },
     {
-      name: 'lint',
-      command: 'eslint . --config config/eslint.config.mjs',
+      name: "lint",
+      command: "eslint . --config config/eslint.config.mjs",
       counts: null,
     },
     {
-      name: 'lint:css',
+      name: "lint:css",
       command:
         'stylelint "**/*.html" --config config/stylelint.config.mjs --allow-empty-input',
       counts: null,
     },
     {
-      name: 'check:dup',
-      command: 'jscpd --config config/.jscpd.json src',
+      name: "check:dup",
+      command: "jscpd --config config/.jscpd.json src",
       counts: null,
     },
     {
-      name: 'check:cycles',
+      name: "check:cycles",
       command: `dpdm -T --exit-code circular:1 --no-warning --no-tree ${cycleRoots}`,
       counts: null,
     },
     {
-      name: 'check:boundaries',
-      command: 'depcruise -c config/.dependency-cruiser.cjs src',
+      name: "check:boundaries",
+      command: "depcruise -c config/.dependency-cruiser.cjs src",
       counts: null,
     },
     {
-      name: 'typecheck',
-      command: 'tsc -p tsconfig.app.json --noEmit',
+      name: "typecheck",
+      command: "tsc -p tsconfig.app.json --noEmit",
       counts: null,
     },
     {
-      name: 'typecheck:tests',
-      command: 'tsc -p tsconfig.vitest.json --noEmit',
+      name: "typecheck:tests",
+      command: "tsc -p tsconfig.vitest.json --noEmit",
       counts: null,
     },
-    { name: 'test:unit', command: 'vitest run', counts: 'vitest' },
+    { name: "test:unit", command: "vitest run", counts: "vitest" },
     BUILD_FRAMEWORK_STAGE,
     {
-      name: 'test:e2e',
-      command: 'playwright test --config playwright-tests/playwright.config.js',
-      counts: 'playwright',
+      name: "test:e2e",
+      command: "playwright test --config playwright-tests/playwright.config.js",
+      counts: "playwright",
     },
   ];
 }
@@ -166,7 +166,7 @@ function demoAppProject(dirName) {
   return {
     name: dirName,
     dir: dirName,
-    chainNames: ['test:core', 'check:all'],
+    chainNames: ["test:core", "check:all"],
     stages: demoAppStages(),
   };
 }
@@ -192,27 +192,27 @@ export const PROJECTS = [
     // root repo-config tests. Includes PhysicsDemo and WayfindingHudDemo —
     // previously missing from the root chain entirely (speedup plan §1.1,
     // decided 2026-07-21).
-    name: 'location-based-webxr',
-    dir: '.',
+    name: "location-based-webxr",
+    dir: ".",
     chainNames: [],
     stages: [
       {
-        name: 'test:repo-config',
-        command: 'vitest run --config vitest.config.js',
-        counts: 'vitest',
+        name: "test:repo-config",
+        command: "vitest run --config vitest.config.js",
+        counts: "vitest",
       },
-      packageGateStage('test:framework', 'gps-plus-slam-app-framework'),
+      packageGateStage("test:framework", "gps-plus-slam-app-framework"),
       // Placed right after the framework and before every app: it is a pure
       // library with no framework dependency, so a break here is never caused
       // by an app and should surface before the slow app gates run.
-      packageGateStage('test:osm', 'gps-plus-slam-osm'),
+      packageGateStage("test:osm", "gps-plus-slam-osm"),
       // Pure server-side package (the Cloudflare site worker) with no
       // workspace dependencies: like osm, a break here is never caused by an
       // app, so it surfaces before the slow app gates run.
-      packageGateStage('test:site-worker', 'gps-plus-slam-site-worker'),
+      packageGateStage("test:site-worker", "gps-plus-slam-site-worker"),
       // Static design playground: format-only gate, seconds-cheap and
       // dependency-free, so it surfaces before the slow app gates run.
-      packageGateStage('test:design-system', 'gps-plus-slam-design-system'),
+      packageGateStage("test:design-system", "gps-plus-slam-design-system"),
       // ONE workspace-wide knip for the whole cascade, not one per package.
       // It used to sit in seven package stage lists running the IDENTICAL
       // analysis each time — ~26 s warm, plus a ~25 s cold pass in whichever
@@ -229,80 +229,97 @@ export const PROJECTS = [
       // .github/workflows/ci.yml runs a dedicated root-level `deadcode` job that
       // the same doc calls the authoritative gate.
       {
-        name: 'check:deadcode',
-        command: 'knip',
+        name: "check:deadcode",
+        command: "knip",
         counts: null,
       },
-      packageGateStage('test:recorder', 'gps-plus-slam-recorder'),
-      packageGateStage('test:starter', 'gps-plus-slam-anchor-starter'),
-      packageGateStage('test:example', 'gps-plus-slam-minimal-example'),
-      packageGateStage('test:qr-demo', 'gps-plus-slam-qr-tracking-demo'),
-      packageGateStage('test:osm-demo', 'gps-plus-slam-osm-demo'),
-      packageGateStage('test:landing', 'gps-plus-slam-landing'),
-      packageGateStage('test:physics', 'gps-plus-slam-physics-demo'),
-      packageGateStage('test:wayfinding', 'gps-plus-slam-wayfinding-hud-demo'),
-      packageGateStage('test:tour', 'gps-plus-slam-tour-viewer'),
+      packageGateStage("test:recorder", "gps-plus-slam-recorder"),
+      packageGateStage("test:starter", "gps-plus-slam-anchor-starter"),
+      packageGateStage("test:example", "gps-plus-slam-minimal-example"),
+      packageGateStage("test:qr-demo", "gps-plus-slam-qr-tracking-demo"),
+      packageGateStage("test:osm-demo", "gps-plus-slam-osm-demo"),
+      packageGateStage("test:landing", "gps-plus-slam-landing"),
+      packageGateStage("test:physics", "gps-plus-slam-physics-demo"),
+      packageGateStage("test:wayfinding", "gps-plus-slam-wayfinding-hud-demo"),
+      packageGateStage("test:tour", "gps-plus-slam-tour-viewer"),
     ],
   },
   {
-    name: 'GpsPlusSlamJs_AppFramework',
-    dir: 'GpsPlusSlamJs_AppFramework',
-    chainNames: ['test:core'],
+    name: "GpsPlusSlamJs_AppFramework",
+    dir: "GpsPlusSlamJs_AppFramework",
+    chainNames: ["test:core"],
     stages: [
       {
-        name: 'format',
+        name: "format",
         command:
           'prettier --log-level warn --write --ignore-unknown --no-error-on-unmatched-pattern "src" "config" package.json README.md',
         counts: null,
       },
       {
-        name: 'lint',
-        command: 'eslint . --config config/eslint.config.mjs --max-warnings 37',
+        name: "lint",
+        command: "eslint . --config config/eslint.config.mjs --max-warnings 37",
         counts: null,
       },
       {
         // Previously a standalone script no gate ever ran (speedup summary
         // F6, owner decision 2026-07-21: gate it like every other package).
-        name: 'check:cycles',
+        name: "check:cycles",
         command:
-          'dpdm -T --exit-code circular:1 --no-warning --no-tree ./src/index.ts',
+          "dpdm -T --exit-code circular:1 --no-warning --no-tree ./src/index.ts",
         counts: null,
       },
       {
-        name: 'typecheck',
-        command: 'tsc -p tsconfig.app.json --noEmit',
+        name: "typecheck",
+        command: "tsc -p tsconfig.app.json --noEmit",
         counts: null,
       },
       {
-        name: 'typecheck:tests',
-        command: 'tsc -p tsconfig.vitest.json --noEmit',
+        name: "typecheck:tests",
+        command: "tsc -p tsconfig.vitest.json --noEmit",
         counts: null,
       },
       {
-        name: 'test:unit',
-        command: 'vitest run --coverage --config=config/vitest.config.ts',
-        counts: 'vitest',
+        name: "test:unit",
+        command: "vitest run --coverage --config=config/vitest.config.ts",
+        counts: "vitest",
         // Filtered single-file TDD runs skip coverage collection (speedup
         // plan C.1): repo-wide coverage of a one-file run is meaningless
         // and expensive. Full-suite and CI runs keep `command`.
-        filteredRunCommand: 'vitest run --config=config/vitest.config.ts',
+        filteredRunCommand: "vitest run --config=config/vitest.config.ts",
       },
     ],
   },
   {
     // Static, no-build design playground: one hand-iterated HTML file plus
     // a Playwright screenshot harness (an eyeball tool, not a test - see
-    // shoot.mjs.md). The gate is format-only ON PURPOSE: this is a taste
-    // instrument, and its decision log lives in the private repo's
-    // GpsPlusSlamJs_Docs design-system extension plan.
-    name: 'GpsPlusSlamJs_DesignSystem',
-    dir: 'GpsPlusSlamJs_DesignSystem',
+    // shoot.mjs.md). The gate is seconds-cheap ON PURPOSE - this is a taste
+    // instrument - but since design.css became the sheet the apps vendor
+    // (adoption plan M1, 2026-09-02) it is no longer format-only: stylelint
+    // over the two sheets, and the token-contract checks that used to run
+    // only when a human asked for screenshots. Its decision log lives in
+    // the private repo's GpsPlusSlamJs_Docs design-system plans.
+    name: "GpsPlusSlamJs_DesignSystem",
+    dir: "GpsPlusSlamJs_DesignSystem",
     chainNames: [],
     stages: [
       {
-        name: 'format',
+        name: "format",
+        // globs, not a file list: the list silently skipped every file
+        // added after it was written (the split's design.css/catalog.css
+        // would never have been formatted while the gate stayed green)
         command:
-          'prettier --log-level warn --write --ignore-unknown index.html styles.css shoot.mjs shoot.mjs.md serve.mjs serve.mjs.md hud-design-brief.md package.json README.md',
+          'prettier --log-level warn --write --ignore-unknown "*.css" "*.html" "*.mjs" "*.md" "config/*.mjs" package.json',
+        counts: null,
+      },
+      {
+        name: "lint:css",
+        command:
+          'stylelint "*.css" --config config/stylelint.config.mjs --allow-empty-input',
+        counts: null,
+      },
+      {
+        name: "check:tokens",
+        command: "node check-tokens.mjs",
         counts: null,
       },
     ],
@@ -311,99 +328,99 @@ export const PROJECTS = [
     // Pure-data library (OSM -> H3 affordance index). Modelled on the framework
     // entry rather than demoAppProject(): it has no vite build, no e2e, and no
     // build:framework stage because it does not depend on the framework at all.
-    name: 'GpsPlusSlamJs_Osm',
-    dir: 'GpsPlusSlamJs_Osm',
-    chainNames: ['test:core'],
+    name: "GpsPlusSlamJs_Osm",
+    dir: "GpsPlusSlamJs_Osm",
+    chainNames: ["test:core"],
     stages: [
       {
-        name: 'format',
+        name: "format",
         command:
           'prettier --log-level warn --write --ignore-unknown --no-error-on-unmatched-pattern "src" "config" "scripts" package.json README.md',
         counts: null,
       },
       {
-        name: 'lint',
-        command: 'eslint . --config config/eslint.config.mjs --max-warnings 0',
+        name: "lint",
+        command: "eslint . --config config/eslint.config.mjs --max-warnings 0",
         counts: null,
       },
       {
-        name: 'check:cycles',
+        name: "check:cycles",
         command:
-          'dpdm -T --exit-code circular:1 --no-warning --no-tree ./src/index.ts',
+          "dpdm -T --exit-code circular:1 --no-warning --no-tree ./src/index.ts",
         counts: null,
       },
       {
-        name: 'typecheck',
-        command: 'tsc -p tsconfig.app.json --noEmit',
+        name: "typecheck",
+        command: "tsc -p tsconfig.app.json --noEmit",
         counts: null,
       },
       {
-        name: 'typecheck:tests',
-        command: 'tsc -p tsconfig.vitest.json --noEmit',
+        name: "typecheck:tests",
+        command: "tsc -p tsconfig.vitest.json --noEmit",
         counts: null,
       },
       {
-        name: 'test:unit',
-        command: 'vitest run --coverage --config=config/vitest.config.ts',
-        counts: 'vitest',
+        name: "test:unit",
+        command: "vitest run --coverage --config=config/vitest.config.ts",
+        counts: "vitest",
         // Filtered single-file TDD runs skip coverage (speedup plan C.1).
-        filteredRunCommand: 'vitest run --config=config/vitest.config.ts',
+        filteredRunCommand: "vitest run --config=config/vitest.config.ts",
       },
     ],
   },
   {
-    name: 'GpsPlusSlamJs_RecorderApp',
-    dir: 'GpsPlusSlamJs_RecorderApp',
-    chainNames: ['test:core', 'check:all'],
+    name: "GpsPlusSlamJs_RecorderApp",
+    dir: "GpsPlusSlamJs_RecorderApp",
+    chainNames: ["test:core", "check:all"],
     stages: [
-      { name: 'format', command: APP_FORMAT_COMMAND, counts: null },
+      { name: "format", command: APP_FORMAT_COMMAND, counts: null },
       {
-        name: 'lint',
-        command: 'eslint . --config config/eslint.config.mjs --max-warnings 22',
+        name: "lint",
+        command: "eslint . --config config/eslint.config.mjs --max-warnings 22",
         counts: null,
       },
       {
-        name: 'lint:css',
+        name: "lint:css",
         command:
           'stylelint "src/**/*.css" "**/*.html" --config config/stylelint.config.mjs --allow-empty-input',
         counts: null,
       },
       {
-        name: 'check:dup',
-        command: 'jscpd --config config/.jscpd.json src',
+        name: "check:dup",
+        command: "jscpd --config config/.jscpd.json src",
         counts: null,
       },
       {
-        name: 'check:cycles',
+        name: "check:cycles",
         // Both module workers are cycle roots of their own: they are spawned
         // from URL strings, which dpdm cannot follow from `main.ts` (PR #241).
         command:
-          'dpdm -T --exit-code circular:1 --no-warning --no-tree ./src/main.ts ./src/recording/image-quality.worker.ts ./src/workers/occlusion-mesher.worker.ts',
+          "dpdm -T --exit-code circular:1 --no-warning --no-tree ./src/main.ts ./src/recording/image-quality.worker.ts ./src/workers/occlusion-mesher.worker.ts",
         counts: null,
       },
       {
-        name: 'check:boundaries',
-        command: 'depcruise -c config/.dependency-cruiser.cjs src',
+        name: "check:boundaries",
+        command: "depcruise -c config/.dependency-cruiser.cjs src",
         counts: null,
       },
       {
-        name: 'typecheck',
-        command: 'tsc -p tsconfig.app.json --noEmit',
+        name: "typecheck",
+        command: "tsc -p tsconfig.app.json --noEmit",
         counts: null,
       },
       {
-        name: 'typecheck:tests',
-        command: 'tsc -p tsconfig.vitest.json --noEmit',
+        name: "typecheck:tests",
+        command: "tsc -p tsconfig.vitest.json --noEmit",
         counts: null,
       },
       {
-        name: 'test:unit',
-        command: 'vitest run --coverage --config=config/vitest.config.ts',
-        counts: 'vitest',
+        name: "test:unit",
+        command: "vitest run --coverage --config=config/vitest.config.ts",
+        counts: "vitest",
         // Filtered single-file TDD runs skip coverage collection (speedup
         // plan C.1); dropping --coverage also drops the config's global
         // thresholds. Full-suite and CI runs keep `command`.
-        filteredRunCommand: 'vitest run --config=config/vitest.config.ts',
+        filteredRunCommand: "vitest run --config=config/vitest.config.ts",
       },
       BUILD_FRAMEWORK_STAGE,
       {
@@ -411,26 +428,26 @@ export const PROJECTS = [
         // removed from the timed path (speedup plan C.2): with the build
         // split into its own stage the probe was pure overhead, and a
         // missing browser still fails loudly inside playwright itself.
-        name: 'test:e2e',
+        name: "test:e2e",
         command:
-          'playwright test --config playwright-tests/playwright.config.js',
-        counts: 'playwright',
+          "playwright test --config playwright-tests/playwright.config.js",
+        counts: "playwright",
       },
     ],
   },
-  demoAppProject('GpsPlusSlamJs_AnchorStarter'),
-  demoAppProject('GpsPlusSlamJs_TourViewer'),
+  demoAppProject("GpsPlusSlamJs_AnchorStarter"),
+  demoAppProject("GpsPlusSlamJs_TourViewer"),
   {
-    name: 'GpsPlusSlamJs_MinimalExample',
-    dir: 'GpsPlusSlamJs_MinimalExample',
+    name: "GpsPlusSlamJs_MinimalExample",
+    dir: "GpsPlusSlamJs_MinimalExample",
     chainNames: [],
     stages: [
       {
-        name: 'typecheck',
-        command: 'tsc -p tsconfig.json --noEmit',
+        name: "typecheck",
+        command: "tsc -p tsconfig.json --noEmit",
         counts: null,
       },
-      { name: 'test:unit', command: 'vitest run', counts: 'vitest' },
+      { name: "test:unit", command: "vitest run", counts: "vitest" },
     ],
   },
   {
@@ -438,22 +455,22 @@ export const PROJECTS = [
     // bundles src/site-worker.ts at deploy; the gate here only has to prove
     // the TypeScript and the handler behaviour, so the MinimalExample shape
     // (format + typecheck + vitest, no build) is exactly enough.
-    name: 'GpsPlusSlamJs_SiteWorker',
-    dir: 'GpsPlusSlamJs_SiteWorker',
+    name: "GpsPlusSlamJs_SiteWorker",
+    dir: "GpsPlusSlamJs_SiteWorker",
     chainNames: [],
     stages: [
       {
-        name: 'format',
+        name: "format",
         command:
           'prettier --log-level warn --write --ignore-unknown --no-error-on-unmatched-pattern "src" package.json README.md',
         counts: null,
       },
       {
-        name: 'typecheck',
-        command: 'tsc -p tsconfig.json --noEmit',
+        name: "typecheck",
+        command: "tsc -p tsconfig.json --noEmit",
         counts: null,
       },
-      { name: 'test:unit', command: 'vitest run', counts: 'vitest' },
+      { name: "test:unit", command: "vitest run", counts: "vitest" },
     ],
   },
   {
@@ -492,9 +509,9 @@ export const PROJECTS = [
     // lint:css, check:dup, check:cycles, check:boundaries or
     // typecheck:tests — because the package was created without the demo-app
     // tooling (no config/ directory and none of the 14 tool devDependencies).
-    name: 'GpsPlusSlamJs_OsmDemo',
-    dir: 'GpsPlusSlamJs_OsmDemo',
-    chainNames: ['test:core', 'check:all'],
+    name: "GpsPlusSlamJs_OsmDemo",
+    dir: "GpsPlusSlamJs_OsmDemo",
+    chainNames: ["test:core", "check:all"],
     stages: [
       BUILD_OSM_STAGE,
       // FIRST, not in demoAppStages' post-typecheck slot — see reason 2 above.
@@ -503,8 +520,8 @@ export const PROJECTS = [
       // The worker entry is a second cycle root: `main.ts` reaches it only
       // through `new Worker(new URL(...))`, so `demo-worker.ts` and the three
       // modules it alone imports were outside the cycle gate until PR #241.
-      ...demoAppStages(['./src/worker/demo-worker.ts'])
-        .filter((stage) => stage.name !== 'build:framework')
+      ...demoAppStages(["./src/worker/demo-worker.ts"])
+        .filter((stage) => stage.name !== "build:framework")
         // THE ONE STAGE IN THIS REPO WITH A WALL-CLOCK CEILING, and it is the
         // one that has demonstrably regrown: `test:e2e` here went from ~200 s to
         // ~547 s serial in five days after PR #244 fused 66 tests to 45 to buy
@@ -569,21 +586,21 @@ export const PROJECTS = [
         // measured the runner and failed two all-green PRs. See the CI note in
         // `budget.mjs`.
         .map((stage) =>
-          stage.name === 'test:e2e' ? { ...stage, budgetSeconds: 1300 } : stage
+          stage.name === "test:e2e" ? { ...stage, budgetSeconds: 1300 } : stage,
         ),
     ],
   },
-  demoAppProject('GpsPlusSlamJs_QrTrackingDemo'),
+  demoAppProject("GpsPlusSlamJs_QrTrackingDemo"),
   {
     // Landing has no framework dependency: no build:framework stage, and its
     // e2e runs directly against the vite build.
-    name: 'GpsPlusSlamJs_Landing',
-    dir: 'GpsPlusSlamJs_Landing',
-    chainNames: ['test:core', 'check:all'],
-    stages: demoAppStages().filter((stage) => stage.name !== 'build:framework'),
+    name: "GpsPlusSlamJs_Landing",
+    dir: "GpsPlusSlamJs_Landing",
+    chainNames: ["test:core", "check:all"],
+    stages: demoAppStages().filter((stage) => stage.name !== "build:framework"),
   },
-  demoAppProject('GpsPlusSlamJs_PhysicsDemo'),
-  demoAppProject('GpsPlusSlamJs_WayfindingHudDemo'),
+  demoAppProject("GpsPlusSlamJs_PhysicsDemo"),
+  demoAppProject("GpsPlusSlamJs_WayfindingHudDemo"),
 ];
 
 /**
@@ -608,7 +625,7 @@ export function getProject(dirName) {
 export function resolveProject(cwd, workspaceRoot) {
   const normalizedCwd = path.resolve(cwd);
   if (normalizedCwd === path.resolve(workspaceRoot)) {
-    return getProject('.');
+    return getProject(".");
   }
   return getProject(path.basename(normalizedCwd));
 }
@@ -680,7 +697,7 @@ export function gateStages(project, { skipBrowser = false } = {}) {
 }
 
 /** Env var that puts a gate run in DEC-G2's dependent mode. */
-export const SKIP_BROWSER_ENV = 'GATE_SKIP_BROWSER_STAGES';
+export const SKIP_BROWSER_ENV = "GATE_SKIP_BROWSER_STAGES";
 
 /**
  * Resolve the gate mode from the environment.

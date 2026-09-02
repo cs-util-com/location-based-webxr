@@ -1,9 +1,21 @@
 # GpsPlusSlamJs_DesignSystem
 
-The HUD design system for the AR apps in this workspace, kept deliberately
-as **one vanilla HTML file** (`index.html`) so it can be iterated at
-conversation speed: open it in a browser, react, edit, refresh. No build,
-no framework, no dependencies at runtime.
+The HUD design system for the AR apps in this workspace, kept as vanilla
+HTML + CSS so it can be iterated at conversation speed: open
+`index.html` in a browser, react, edit, refresh. No build, no
+framework, no dependencies at runtime.
+
+Two stylesheets, split on purpose (adoption plan M1, 2026-09-02):
+
+- **`design.css`** - the design system: `@layer reset, tokens, base,
+atoms, screen`. This is what an app vendors, verbatim. It styles no
+  page ground and never uppercases `body` - the voice is applied at the
+  atom boundary, so a host page's own prose is untouched. A bare page
+  that loads only this file gets the type, the colour, the atoms and
+  the composed HUD layouts.
+- **`catalog.css`** - the catalog's own chrome: page layout, the phone
+  frame, the camera stand-ins, the switcher, and the fake-phone
+  placement of annotations/radar/toast. **Never vendor this.**
 
 What the file contains:
 
@@ -27,9 +39,14 @@ same screens, then feed the keepers back into this file.
 
 ## Iterating
 
-Edit `index.html`, refresh the browser. One change-set per reaction; the
-gate is prettier only (`pnpm test`), on purpose — this is a taste
-instrument, not production code. Design decisions and their history live
+Edit `design.css` (or `index.html`), refresh the browser. One
+change-set per reaction. The gate (`pnpm test`) is seconds-cheap on
+purpose - this is a taste instrument - but since `design.css` became
+the sheet the apps vendor it is no longer prettier-only: stylelint over
+both sheets (`config/stylelint.config.mjs`, with the language's own
+conventions - decimal alphas, BEM modifiers - written in as reasons),
+and `check-tokens.mjs`, which fails on a colour literal outside the
+tokens layer or a token the brief names that the CSS lost. Design decisions and their history live
 in the private docs repo (`GpsPlusSlamJs_Docs/docs/`, the design-system
 extension plan).
 

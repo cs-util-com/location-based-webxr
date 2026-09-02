@@ -14,7 +14,11 @@
          deliberate part of the voice, not a bug. Where Corbel is absent:
          ui-rounded (SF Rounded on Apple), then Segoe UI / Roboto. On
          Android devices this design therefore renders in Roboto. -->
-    <link rel="stylesheet" href="styles.css" />
+    <!-- design.css FIRST: its @layer statement fixes precedence by first
+         appearance. catalog.css is the catalog-only chrome an app must
+         never vendor. -->
+    <link rel="stylesheet" href="design.css" />
+    <link rel="stylesheet" href="catalog.css" />
   </head>
   <body>
     <p class="demo-fontcheck" id="fontcheck">font: checking…</p>
