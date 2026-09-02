@@ -76,8 +76,10 @@ color never solely carries the distinction: every failure site also speaks
 through words or shape (STALE text, a hatch, a corner dot, a badge pill).
 Never use the red for engaged, decorative or brand purposes.
 Rounded geometry: 14px panels, 10px buttons, 14px rounded-SQUARE icon buttons
-(44px, never circles), 999px pills. One text voice everywhere: uppercase,
-0.08em tracking, weight 500, Corbel-first system stack, falling back to Noto Sans on
+(44px, never circles), 999px pills. Two voices from one token pair: uppercase with
+0.08em tracking for short labels (buttons, badges, readout keys, section labels);
+sentence case with normal tracking for anything sentence-shaped (toast copy, modal
+body, hints, annotation descriptions). Weight 500, Corbel-first system stack, falling back to Noto Sans on
 Android (Corbel old-style figures are deliberate but Windows-only; the
 fallbacks render lining figures). Sliders are an 18px carved groove with a translucent-white
 pill thumb riding flush inside it. Toasts are translucent white
@@ -151,8 +153,11 @@ honest against `styles.css`.
   deliberate but do not survive off Windows) · `--font-num` (= ui, one voice) · `--size-hint` 12 /
   `--size-body` 14 / `--size-read` 16 · `--weight-body` = `--weight-strong`
   = 500 (flattened on purpose; emphasis comes from accent, never weight) ·
-  `--case-ui` + `--tracking-ui` (the uppercase voice, applied at the atom
-  boundary - never put it on body).
+  `--case-ui` + `--tracking-ui` (the label voice: uppercase, applied at the atom
+  boundary - never put it on body) · `--case-prose` + `--tracking-prose` (the
+  sentence voice for toast copy, modal body, hints and annotation descriptions;
+  an atom switches voice by choosing the pair, never with a bare
+  `text-transform: none`).
 - **Geometry**: `--space-1..4` (4/8/12/16) · `--radius` 14 (panels, icon
   buttons) · `--radius-small` 10 (buttons) · `--radius-pill` · `--strip`
   (the signature strip width - plate's right edge only) · `--groove` 18

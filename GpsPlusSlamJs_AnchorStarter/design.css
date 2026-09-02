@@ -198,12 +198,22 @@
     /* was 700; flattened so every text carries the same weight and
        emphasis comes from accent/inversion instead */
     --weight-strong: 500;
-    /* the one text voice: uppercase with airy tracking. Applied at
-       the atom boundary (first rule of the atoms layer), NOT on
-       body, so extracting the atoms carries the voice without
-       uppercasing a host app's page. */
+    /* Two voices from one token pair (adoption plan DEC-L2-2, V1).
+       The LABEL voice - uppercase with airy tracking - is for short
+       labels: buttons, badges, readout keys, section labels. The PROSE
+       voice keeps its case and normal tracking for anything
+       sentence-shaped: toast copy, modal body, hints, annotation
+       descriptions - uppercase is measurably slower to read (brief,
+       legibility rules). Both are applied at the atom boundary (first
+       rules of the atoms layer), NOT on body, so extracting the atoms
+       carries the voice without uppercasing a host app's page. An atom
+       switches voice by choosing a pair, never with a bare
+       `text-transform: none` - the pair is what keeps the brief's
+       token contract the one place to change it. */
     --case-ui: uppercase;
     --tracking-ui: 0.08em;
+    --case-prose: none;
+    --tracking-prose: normal;
 
     /* space & shape */
     --space-1: 4px;
@@ -288,7 +298,7 @@
    ATOMS
    ========================================================== */
 @layer atoms {
-  /* THE ONE TEXT VOICE - every text-bearing atom opts in here, so
+  /* THE LABEL VOICE - every text-bearing atom opts in here, so
      the atoms are self-sufficient when extracted without the demo
      page (whose body applies the same tokens for the catalog). */
   .plate,
@@ -308,6 +318,16 @@
     font-weight: var(--weight-body);
     text-transform: var(--case-ui);
     letter-spacing: var(--tracking-ui);
+  }
+  /* THE PROSE VOICE - the sentence-shaped atoms opt out of the uppercase
+     here, through the token pair (DEC-L2-2). Titles inside an
+     annotation are labels and opt back in below. */
+  .toast,
+  .hint,
+  .anno-text,
+  .modal-body {
+    text-transform: var(--case-prose);
+    letter-spacing: var(--tracking-prose);
   }
 
   /* --- plate: the base surface every readable thing sits on --- */
@@ -497,7 +517,6 @@
   }
   .hint {
     font-size: var(--size-hint);
-    letter-spacing: 0.02em;
     /* explicit, not inherited: a .hint on a host page whose body is not
        ink-coloured used to render black (adoption-plan review) */
     color: var(--ink);
@@ -735,6 +754,11 @@
     flex-direction: column;
     gap: var(--space-1);
   }
+  /* the legend's heading is a section LABEL (label voice, inherited from
+     .legend), hint-sized; it is not a .hint, which is prose (DEC-L2-2) */
+  .legend-title {
+    font-size: var(--size-hint);
+  }
   /* the scale column hugs the strip so min/max sit under its ENDS,
      not at the plate's far edges */
   .legend-scale {
@@ -822,6 +846,9 @@
   }
   .anno-title {
     font-size: var(--size-body);
+    /* the title is a label; the description lines under it are prose */
+    text-transform: var(--case-ui);
+    letter-spacing: var(--tracking-ui);
   }
   /* target: a diamond marker (rotated square outline) with a center
      dot, per the waypoint-marker reference screenshot */
