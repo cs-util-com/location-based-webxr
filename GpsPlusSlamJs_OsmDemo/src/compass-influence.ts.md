@@ -76,8 +76,9 @@ the fully-silent combination.
   against a default tolerance of **8°**, which "rarely activates trust on real
   devices". The combo pins the tolerance to **15°**; the standalone
   `setCompassTrustAgreeToleranceDeg` setter has ALSO existed since 2026-08-20
-  and is dispatched explicitly — the combo stays because it gates the prior and
-  pair selection in the same breath, not because it is the only route. Without
+  and is dispatched explicitly. What the combo still contributes is the
+  `useCompassRotationPrior` it forces — which is why `experimentEnabled`
+  follows the prior toggle rather than being unconditionally on. Without
   the tolerance change the slider is identically inert at every position while
   walking.
   - ⚠️ **This is a deliberate behaviour change bundled into the control**, not a
@@ -115,7 +116,8 @@ describeCompassInfluence(1); // "compass 1.00 — full"
 `compass-influence.test.ts` — the three-setting zero, the cold-start override
 following the rotation prior (off while the prior is on; the deliberate
 fall-through to Stage 0 when the prior is toggled off), the experiment combo
-above zero, weight pass-through, clamping (including that a clamped zero is a
+following the prior (on above zero with the prior on; OFF when the prior is
+off, so a combo cannot force the prior back on), weight pass-through, clamping (including that a clamped zero is a
 _real_ zero), non-finite input, the step matching the RecorderApp (the DEFAULTS
 deliberately diverge: demo 0.8, RecorderApp 0.1), every label case, and the
 DEC-Y12 live-diagnostics readout (target vs applied weight and trust phase).

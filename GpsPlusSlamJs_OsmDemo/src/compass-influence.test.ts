@@ -51,13 +51,14 @@ describe("compassSettingsFor", () => {
     }
   });
 
-  it("enables the experiment combo above zero, or the slider is provably inert", () => {
-    // The steady-state term is multiplied by `trustScalar`, which is 0 unless
-    // the trust state is exactly `trusted`. The field corpus measured
-    // compass-GPS offsets of -4.3…+18.8° against a default tolerance of 8°,
-    // which "rarely activates trust on real devices" — so without the combo's
-    // 15° tolerance the weight is identically 0 at EVERY slider position while
-    // walking, and the control does nothing at all.
+  it("enables the experiment combo above zero, because it follows the rotation prior", () => {
+    // The combo is on above zero for one reason: it MIRRORS
+    // `rotationPriorEnabled` (the "prior OFF" test below pins the other half).
+    // Its 15° trust tolerance is no longer why - the standalone
+    // `setCompassTrustAgreeToleranceDeg` setter has existed since 2026-08-20
+    // and `main.ts` dispatches it, so the slider is NOT inert without the
+    // combo. An earlier version of this comment claimed it was; that was the
+    // retracted claim the module docstring corrected on 2026-09-01.
     expect(compassSettingsFor(0.5).experimentEnabled).toBe(true);
     expect(compassSettingsFor(1).rotationPriorEnabled).toBe(true);
   });

@@ -27,9 +27,11 @@
  * pure and dispatches nothing). With the prior toggled OFF the combo must be
  * off as well: the library's derivation lets the combo force
  * `useCompassRotationPrior` back on (verified against gps-plus-slam-js
- * 1.22.0's `alignmentConfigFromState`, and pinned there by
- * `gpsDataSlice.test.ts`'s "combo + standalone prior OFF" case, which names
- * this consumer) — while the tolerance, gate mode and pair selection ride
+ * 1.22.0's `alignmentConfigFromState`; the library's own test of that
+ * precedence — `gpsDataSlice.test.ts`, "combo + standalone prior OFF",
+ * naming this consumer — is NOT in 1.22.0 and ships with the next library
+ * release, so until then this file's test is the only pin) — while the
+ * tolerance, gate mode and pair selection ride
  * the individually-decided tri-states the derivation applies after the
  * combo, so they survive without it.
  * (An earlier version of this comment claimed no standalone setter existed;
