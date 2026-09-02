@@ -135,7 +135,6 @@ describe("createArCompassControl", () => {
       expect.objectContaining({
         rotationPriorEnabled: false,
         coldStartOverrideEnabled: false,
-        experimentEnabled: false,
         voteWeight: 0,
       }),
     );
@@ -251,7 +250,6 @@ describe("createArCompassControl — the initial value reaches the store", () =>
       expect.objectContaining({
         rotationPriorEnabled: false,
         coldStartOverrideEnabled: false,
-        experimentEnabled: false,
         voteWeight: 0,
       }),
     );

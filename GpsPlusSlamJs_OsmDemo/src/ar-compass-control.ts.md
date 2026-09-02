@@ -111,21 +111,18 @@ for the 0–1 influence whose mapping lives in `compass-influence.ts`.
 const compass = createArCompassControl({
   root: arRootElement,
   onChange: (settings) => {
-    // EIGHT dispatches, mirroring main.ts `onCompassSettings` exactly.
+    // SEVEN dispatches, mirroring main.ts `onCompassSettings` exactly.
     // Dispatch order does not decide precedence: the library derives its
-    // config from the final state, applying the experiment combo before the
-    // individually-decided tri-states (tolerance, gate mode, pair
-    // selection), so those standalone setters win regardless of order. The
-    // rotation prior is the exception - the combo forces it on in the
-    // derived config - which is why `compassSettingsFor` ties
-    // `experimentEnabled` to the prior toggle.
+    // config from the final state. The experiment combo is deliberately not
+    // dispatched (since 2026-09-02): every key it writes is one of these
+    // standalone settings, so it was config-neutral with the prior on and
+    // forced the prior back on with it off - see `compass-influence.ts`.
     store.dispatch(
       setCompassRotationPriorEnabled(settings.rotationPriorEnabled),
     );
     store.dispatch(
       setColdStartOverrideEnabled(settings.coldStartOverrideEnabled),
     );
-    store.dispatch(setCompassExperimentEnabled(settings.experimentEnabled));
     store.dispatch(setCompassVoteWeight(settings.voteWeight));
     store.dispatch(setCompassTrustGateMode(settings.trustGateMode));
     store.dispatch(
@@ -171,7 +168,7 @@ A session that never touched the control was therefore measuring settings the UI
 did not describe, and its field notes would have looked like data.
 
 This also blunts a related gap the same review noted: `release()` does not
-restore the four settings on session end, so a slider left at 0.5 leaves
-`coldStartOverrideEnabled: false, experimentEnabled: true` behind. Harmless while
+restore the settings on session end, so a slider left at 0.5 leaves
+`coldStartOverrideEnabled: false` behind. Harmless while
 the fusion only runs during an AR walk, and the next session now re-dispatches
 its own starting value at entry rather than inheriting the last one silently.

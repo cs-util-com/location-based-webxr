@@ -3,7 +3,7 @@
 ## Purpose
 
 Maps a 0–1 "how much say does the compass have" influence, plus the gear-panel
-experiment options, onto the eight library dispatches that actually produce it
+experiment options, onto the seven library dispatches that actually produce it
 (DEC-E2, extended by the 2026-08-20 transition plan DEC-Y1d/Y1e). Pure: no
 store, no session, no DOM.
 
@@ -20,9 +20,9 @@ store, no session, no DOM.
 "ramp", pairSelectionEnabled: true, trustToleranceDeg: 15,
 webXRConsistencyEnabled: false }`.
 - `compassSettingsFor(influence, experiments) → CompassSettings` — the
-  eight-field dispatch set: `{ rotationPriorEnabled, coldStartOverrideEnabled,
-experimentEnabled, voteWeight, trustGateMode, pairSelectionEnabled,
-trustToleranceDeg, webXRConsistencyEnabled }`.
+  seven-field dispatch set: `{ rotationPriorEnabled, coldStartOverrideEnabled,
+voteWeight, trustGateMode, pairSelectionEnabled, trustToleranceDeg,
+webXRConsistencyEnabled }`.
 - `describeCompassInfluence(influence, live?: CompassLiveState) → string` —
   the label, with both ends named rather than only numbered. With `live`, the
   DEC-Y12 readout: target vs applied weight and the trust phase (e.g.
@@ -63,28 +63,28 @@ the fully-silent combination.
   (`compassSettingsFor`, pinned by the "turning the rotation prior OFF hands
   back to Stage 0" test). Left on WITH the prior, two mechanisms would drive
   yaw at once — which is why the pair is never both-on.
-- **The experiment combo is part of any non-zero influence WITH THE PRIOR ON —
-  and must be OFF when the prior is off** (PR #400 review; verified in the
-  library's `alignmentConfigFromState`): the combo forces
-  `useCompassRotationPrior: true` in the derived config after the standalone
-  prior flag's one-way mapping, so a combo left on silently overwrites "prior
-  off" at the solve. The tolerance and pair selection survive without the
-  combo — the library applies the individually-decided tri-state settings
-  after it. The steady-state
-  term multiplies by `trustScalar`, which is `0` unless trust is exactly
-  `trusted`. The §6a field corpus measured compass↔GPS offsets of −4.3…+18.8°
-  against a default tolerance of **8°**, which "rarely activates trust on real
-  devices". The combo pins the tolerance to **15°**; the standalone
-  `setCompassTrustAgreeToleranceDeg` setter has ALSO existed since 2026-08-20
-  and is dispatched explicitly. What the combo still contributes is the
-  `useCompassRotationPrior` it forces — which is why `experimentEnabled`
-  follows the prior toggle rather than being unconditionally on. Without
-  the tolerance change the slider is identically inert at every position while
-  walking.
-  - ⚠️ **This is a deliberate behaviour change bundled into the control**, not a
-    neutral default. The combo also sets `useCompassPairSelection`.
-  - **Verified, not assumed:** `gpsDataSlice` maps `compassVoteWeight` _after_
-    the combo block and unconditionally, so the slider's value survives it.
+- **The activating trust tolerance is part of any non-zero influence.** The
+  steady-state term multiplies by `trustScalar`, which is `0` unless trust is
+  exactly `trusted`. The §6a field corpus measured compass↔GPS offsets of
+  −4.3…+18.8° against a default tolerance of **8°**, which "rarely activates
+  trust on real devices"; `COMPASS_EXPERIMENT_DEFAULTS.trustToleranceDeg` is
+  **15°** and reaches the solve through the standalone
+  `setCompassTrustAgreeToleranceDeg` setter (2026-08-20). Without it the
+  slider is identically inert at every position while walking.
+- **The experiment combo (`setCompassExperimentEnabled`) is NOT dispatched**
+  (removed 2026-09-02, PR #403 review; it had been made to follow the prior
+  toggle after the PR #400 review found it forcing the prior back on). The
+  combo writes exactly three keys (`useCompassRotationPrior`, the 15°
+  tolerance, pair selection) and `main.ts` dispatches a standalone setter
+  for each; the tolerance and pair selection are tri-states the library
+  applies AFTER the combo (verified in gps-plus-slam-js 1.22.0's dist), so
+  with the prior on the combo was config-neutral, and with it off the only
+  thing it did was overwrite "prior off". Dropping it makes the derived
+  config identical in the ON arm and removes the OFF arm's dependence on a
+  library precedence this repo cannot pin. Pinned by the "carries no
+  experiment-combo field" test.
+  - **Verified, not assumed:** `gpsDataSlice` maps `compassVoteWeight`
+    unconditionally and after every flag, so the slider's value survives them.
 - **The applied bearing is smoothed at `coldStartSnapAlpha = 0.15` per GPS
   event**, so a change takes roughly 15–30 fixes to express. The control says so
   on screen; see `ar-compass-control.ts.md`.
@@ -97,15 +97,13 @@ the fully-silent combination.
 // "GPS only" is the control arm (pinned by test).
 compassSettingsFor(0, COMPASS_EXPERIMENT_DEFAULTS);
 // { rotationPriorEnabled: false, coldStartOverrideEnabled: false,
-//   experimentEnabled: false, voteWeight: 0, trustGateMode: "binary",
-//   pairSelectionEnabled: false, trustToleranceDeg: 15,
-//   webXRConsistencyEnabled: false }            <- the only true silence
+//   voteWeight: 0, trustGateMode: "binary", pairSelectionEnabled: false,
+//   trustToleranceDeg: 15, webXRConsistencyEnabled: false }   <- the only true silence
 
 compassSettingsFor(0.35, COMPASS_EXPERIMENT_DEFAULTS);
 // { rotationPriorEnabled: true, coldStartOverrideEnabled: false,
-//   experimentEnabled: true, voteWeight: 0.35, trustGateMode: "ramp",
-//   pairSelectionEnabled: true, trustToleranceDeg: 15,
-//   webXRConsistencyEnabled: false }
+//   voteWeight: 0.35, trustGateMode: "ramp", pairSelectionEnabled: true,
+//   trustToleranceDeg: 15, webXRConsistencyEnabled: false }
 
 describeCompassInfluence(0); // "compass 0.00 — GPS only"
 describeCompassInfluence(1); // "compass 1.00 — full"
@@ -115,9 +113,9 @@ describeCompassInfluence(1); // "compass 1.00 — full"
 
 `compass-influence.test.ts` — the three-setting zero, the cold-start override
 following the rotation prior (off while the prior is on; the deliberate
-fall-through to Stage 0 when the prior is toggled off), the experiment combo
-following the prior (on above zero with the prior on; OFF when the prior is
-off, so a combo cannot force the prior back on), weight pass-through, clamping (including that a clamped zero is a
+fall-through to Stage 0 when the prior is toggled off, with non-default
+tolerance and pair selection passing through unchanged), the absence of any
+experiment-combo field, weight pass-through, clamping (including that a clamped zero is a
 _real_ zero), non-finite input, the step matching the RecorderApp (the DEFAULTS
 deliberately diverge: demo 0.8, RecorderApp 0.1), every label case, and the
 DEC-Y12 live-diagnostics readout (target vs applied weight and trust phase).
@@ -126,10 +124,9 @@ DEC-Y12 live-diagnostics readout (target vs applied weight and trust phase).
 ## Related
 
 - `ar-compass-control.ts` — the slider that owns the value and calls this.
-- `main.ts` (`onCompassSettings`) — the eight dispatches; `ar-mode.ts` only
+- `main.ts` (`onCompassSettings`) - the seven dispatches; `ar-mode.ts` only
   forwards the callback. Dispatch order carries no precedence — the library
-  derives its config from final state, applying the individually-decided
-  tri-states after the combo (and the combo forces the prior, which is why
-  `experimentEnabled` follows the prior toggle).
+  derives its config from final state, and no combo is dispatched that could
+  overwrite a standalone setting.
 - `GpsPlusSlamJs_Docs/docs/2026-08-16-1123-ar-elevation-and-compass-controls-plan.md`
   §3 — DEC-E2 and the analysis this module implements.

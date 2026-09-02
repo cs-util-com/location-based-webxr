@@ -15,35 +15,36 @@
  * slider whose zero end still lets the compass drive — invisible from the UI,
  * and visible here.
  *
- * **WHY THE EXPERIMENT COMBO IS PART OF NON-ZERO INFLUENCE — WITH THE PRIOR
- * ON.** The steady-state term is multiplied by `trustScalar`, which is `0`
- * unless the trust state is exactly `trusted`. The §6a field corpus measured
- * per-session compass↔GPS offsets of **−4.3…+18.8°** against a default
+ * **WHY THE TRUST TOLERANCE IS PART OF NON-ZERO INFLUENCE.** The steady-state
+ * term is multiplied by `trustScalar`, which is `0` unless the trust state
+ * is exactly `trusted`. The §6a field corpus measured per-session
+ * compass↔GPS offsets of **−4.3…+18.8°** against a default
  * `compassTrustAgreeToleranceDeg` of **8**, which "rarely activates trust on
- * real devices". The combo pins the tolerance to **15°**; since 2026-08-20
- * the standalone `setCompassTrustAgreeToleranceDeg` setter also exists
- * (`gps-plus-slam-js` `9574b432b`) and the app dispatches it too (`main.ts`
- * `onCompassSettings`, where all eight dispatches live; this module stays
- * pure and dispatches nothing). With the prior toggled OFF the combo must be
- * off as well: the library's derivation lets the combo force
- * `useCompassRotationPrior` back on (verified against gps-plus-slam-js
- * 1.22.0's `alignmentConfigFromState`; the library's own test of that
- * precedence — `gpsDataSlice.test.ts`, "combo + standalone prior OFF",
- * naming this consumer — is NOT in 1.22.0 and ships with the next library
- * release, so until then this file's test is the only pin) — while the
- * tolerance, gate mode and pair selection ride
- * the individually-decided tri-states the derivation applies after the
- * combo, so they survive without it.
- * (An earlier version of this comment claimed no standalone setter existed;
- * that claim went stale the day the setter shipped and was corrected on
- * 2026-09-01 after it misled a planning session.) Without the
- * tolerance change this slider is identically inert at every position while
- * walking, which is not a control, it is a decoration.
+ * real devices". Without an activating tolerance this slider is identically
+ * inert at every position while walking, which is not a control, it is a
+ * decoration. The tolerance reaches the solve through the standalone
+ * `setCompassTrustAgreeToleranceDeg` setter (`gps-plus-slam-js` `9574b432b`,
+ * 2026-08-20), dispatched from `main.ts` `onCompassSettings` where all seven
+ * dispatches live; this module stays pure and dispatches nothing.
  *
- * The combo maps `useCompassRotationPrior`, the tolerance and pair selection —
- * and **not** the vote weight, which `gpsDataSlice` maps afterwards and
- * unconditionally. Verified rather than assumed: the slider's value survives the
- * combo.
+ * **THE EXPERIMENT COMBO IS NOT DISPATCHED ANY MORE** (removed 2026-09-02,
+ * PR #403 review). `setCompassExperimentEnabled` writes exactly three keys
+ * in the library's `alignmentConfigFromState` (`useCompassRotationPrior`,
+ * the tolerance (15°) and pair selection), and this app dispatches a
+ * standalone setter for every one of them: the prior is set by
+ * `setCompassRotationPriorEnabled`, and the tolerance and pair selection are
+ * individually-decided tri-states that the derivation applies AFTER the combo
+ * and therefore always won over it (verified in gps-plus-slam-js 1.22.0's
+ * dist). So with the prior on the combo changed nothing, and with the prior
+ * off it silently forced the prior back on (the PR #400 finding). Dropping it
+ * makes the derived config identical in the ON arm and removes the OFF arm's
+ * dependence on a library precedence this repo could not pin. History: the
+ * combo was dispatched from here while it was the only way to reach an
+ * activating tolerance; an earlier docstring even claimed no standalone
+ * setter existed, corrected 2026-09-01 after it misled a planning session.
+ *
+ * The vote weight is mapped by `gpsDataSlice` unconditionally and after every
+ * flag, so the slider's value is never overwritten by any of them.
  *
  * Pure on purpose, like `elevation-nudge.ts`: the mapping is the part worth
  * testing and it should be testable without a store, a session or a DOM.
@@ -144,17 +145,14 @@ export interface CompassSettings {
    * experiment against nothing rather than against the baseline.
    */
   readonly coldStartOverrideEnabled: boolean;
-  /** `setCompassExperimentEnabled` — the combo that makes trust reachable.
-   *  Follows the prior toggle: the combo forces the rotation prior in the
-   *  library's derived config, so it must be off when the prior is off. */
-  readonly experimentEnabled: boolean;
   /** `setCompassVoteWeight` — validated to `[0,1]` by the library. */
   readonly voteWeight: number;
   /** `setCompassTrustGateMode`. */
   readonly trustGateMode: CompassTrustGateMode;
-  /** `setCompassPairSelectionEnabled` — overrides the combo, which sets it on. */
+  /** `setCompassPairSelectionEnabled`. */
   readonly pairSelectionEnabled: boolean;
-  /** `setCompassTrustAgreeToleranceDeg` — overrides the combo's pinned 15°. */
+  /** `setCompassTrustAgreeToleranceDeg` - the activating tolerance; see the
+   *  module docstring for why the slider is inert without it. */
   readonly trustToleranceDeg: number;
   /** `setCompassWebXRConsistencyEnabled`. */
   readonly webXRConsistencyEnabled: boolean;
@@ -169,7 +167,6 @@ export interface CompassSettings {
 const SILENT: CompassSettings = {
   rotationPriorEnabled: false,
   coldStartOverrideEnabled: false,
-  experimentEnabled: false,
   voteWeight: 0,
   trustGateMode: "binary",
   pairSelectionEnabled: false,
@@ -204,16 +201,9 @@ export function compassSettingsFor(
     // without flipping it back, "prior off" would mean "no compass at all"
     // rather than "the validated baseline".
     coldStartOverrideEnabled: !experiments.rotationPriorEnabled,
-    // The combo FOLLOWS the prior toggle (PR #400 review found the old
-    // unconditional `true` here): the library's alignmentConfigFromState
-    // applies the combo AFTER the standalone prior flag's one-way enableIf
-    // and forces useCompassRotationPrior=true - so a combo left on would
-    // silently overwrite "prior off" at the solve and run BOTH yaw
-    // mechanisms at once. The tolerance/gate/pair-selection knobs do not
-    // need the combo: they are individually-decided tri-states, which the
-    // library applies after the combo, so the standalone dispatches below
-    // carry them either way.
-    experimentEnabled: experiments.rotationPriorEnabled,
+    // No experiment combo here (removed 2026-09-02): every key it wrote is
+    // dispatched standalone, so it was config-neutral with the prior on and
+    // force-re-enabled the prior with it off. See the module docstring.
     voteWeight: weight,
     trustGateMode: experiments.trustGateMode,
     pairSelectionEnabled: experiments.pairSelectionEnabled,

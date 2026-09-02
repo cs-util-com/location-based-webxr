@@ -69,7 +69,6 @@ import { nowEpochMs } from "./monotonic-clock.js";
 // not one setting, and why the last four exist at all.
 import {
   setColdStartOverrideEnabled,
-  setCompassExperimentEnabled,
   setCompassRotationPriorEnabled,
   setCompassVoteWeight,
   setCompassTrustGateMode,
@@ -1953,30 +1952,27 @@ async function main(): Promise<void> {
         };
       },
       onCompassSettings: (settings) => {
-        // EIGHT DISPATCHES, NOT ONE (DEC-E2, extended round four).
-        // `compass-influence.ts` holds why the first four cannot be collapsed:
+        // SEVEN DISPATCHES, NOT ONE (DEC-E2, extended round four).
+        // `compass-influence.ts` holds why the first three cannot be collapsed:
         // "influence 0" is not "vote weight 0" — at weight 0 the steady-state
         // formula is `1 − observability`, a FULL override exactly when yaw is
         // poorly observable, and switching the prior off falls through to the
         // cold-start override, whose curve is identical.
         //
         // DISPATCH ORDER DOES NOT DECIDE PRECEDENCE HERE (corrected after
-        // the PR #400 review): all eight actions write independent state
+        // the PR #400 review): all seven actions write independent state
         // fields, and the library derives the alignment config from the
-        // FINAL state (`alignmentConfigFromState`: enable-only flags, then
-        // the experiment combo, then the individually-decided tri-states -
-        // so tolerance/gate/pair-selection always win over the combo, in
-        // whatever order they were dispatched). The one key the combo DOES
-        // force is the rotation prior, which no later group overrides -
-        // which is why `compassSettingsFor` ties `experimentEnabled` to the
-        // prior toggle instead of relying on any ordering.
+        // FINAL state (`alignmentConfigFromState`). The experiment combo
+        // (`setCompassExperimentEnabled`) is deliberately NOT among them
+        // since 2026-09-02: every key it writes is dispatched standalone
+        // below, so it was config-neutral with the prior on and forced the
+        // prior back on with it off - see `compass-influence.ts`.
         store.dispatch(
           setCompassRotationPriorEnabled(settings.rotationPriorEnabled),
         );
         store.dispatch(
           setColdStartOverrideEnabled(settings.coldStartOverrideEnabled),
         );
-        store.dispatch(setCompassExperimentEnabled(settings.experimentEnabled));
         store.dispatch(setCompassVoteWeight(settings.voteWeight));
         store.dispatch(setCompassTrustGateMode(settings.trustGateMode));
         store.dispatch(

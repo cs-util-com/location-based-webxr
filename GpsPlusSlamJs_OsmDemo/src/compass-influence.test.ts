@@ -32,7 +32,6 @@ describe("compassSettingsFor", () => {
     const settings = compassSettingsFor(0);
     expect(settings.rotationPriorEnabled).toBe(false);
     expect(settings.coldStartOverrideEnabled).toBe(false);
-    expect(settings.experimentEnabled).toBe(false);
     expect(settings.voteWeight).toBe(0);
   });
 
@@ -51,16 +50,22 @@ describe("compassSettingsFor", () => {
     }
   });
 
-  it("enables the experiment combo above zero, because it follows the rotation prior", () => {
-    // The combo is on above zero for one reason: it MIRRORS
-    // `rotationPriorEnabled` (the "prior OFF" test below pins the other half).
-    // Its 15° trust tolerance is no longer why - the standalone
-    // `setCompassTrustAgreeToleranceDeg` setter has existed since 2026-08-20
-    // and `main.ts` dispatches it, so the slider is NOT inert without the
-    // combo. An earlier version of this comment claimed it was; that was the
-    // retracted claim the module docstring corrected on 2026-09-01.
-    expect(compassSettingsFor(0.5).experimentEnabled).toBe(true);
-    expect(compassSettingsFor(1).rotationPriorEnabled).toBe(true);
+  it("carries no experiment-combo field - every key the combo wrote is a standalone setting", () => {
+    // Why this test matters (PR #403 review, 2026-09-02): the combo used to be
+    // dispatched from here and was config-neutral with the prior on (all
+    // three keys it writes are dispatched standalone and the tri-states win)
+    // while forcing the prior back ON with it off. Reintroducing it as a
+    // field would reintroduce that dependence on library precedence; the
+    // three settings that DO carry the combo's content are pinned instead.
+    const settings = compassSettingsFor(0.5);
+    expect("experimentEnabled" in settings).toBe(false);
+    expect(settings.rotationPriorEnabled).toBe(true);
+    expect(settings.trustToleranceDeg).toBe(
+      COMPASS_EXPERIMENT_DEFAULTS.trustToleranceDeg,
+    );
+    expect(settings.pairSelectionEnabled).toBe(
+      COMPASS_EXPERIMENT_DEFAULTS.pairSelectionEnabled,
+    );
   });
 
   it("passes the influence straight through as the vote weight", () => {
@@ -86,7 +91,6 @@ describe("compassSettingsFor", () => {
     // the two halves cannot be described as one behaviour again.
     expect(compassSettingsFor(1.5)).toEqual(compassSettingsFor(1));
     expect(compassSettingsFor(1.5).rotationPriorEnabled).toBe(true);
-    expect(compassSettingsFor(1.5).experimentEnabled).toBe(true);
     expect(compassSettingsFor(1.5).voteWeight).toBe(1);
     // The negative half, stated beside it so the asymmetry is visible in one place:
     expect(compassSettingsFor(-0.5)).toEqual(compassSettingsFor(0));
@@ -179,21 +183,21 @@ describe("the experimental options (Q2 steps 5-7)", () => {
     // rather than returning to the mode the RecorderApp ships and the field
     // validated. The toggle would then be comparing "experiment" against
     // "nothing", not against the baseline.
+    // Non-default tolerance and pair selection (CodeRabbit, PR #403): the
+    // standalone tri-states must pass through UNCHANGED in the prior-off arm -
+    // the combo that used to override them with 15°/on is gone (PR #400 found
+    // it forcing the prior back on here), and nothing may quietly take its
+    // place.
     const settings = compassSettingsFor(0.5, {
       ...COMPASS_EXPERIMENT_DEFAULTS,
       rotationPriorEnabled: false,
+      pairSelectionEnabled: false,
+      trustToleranceDeg: 25,
     });
     expect(settings.rotationPriorEnabled).toBe(false);
     expect(settings.coldStartOverrideEnabled).toBe(true);
-    // AND the combo must be off (PR #400 review, verified in the library's
-    // alignmentConfigFromState): the combo FORCES useCompassRotationPrior=true
-    // in the derived config, after the standalone prior flag's one-way
-    // enableIf - so with the combo on, "prior off" never reaches the solve
-    // and BOTH yaw mechanisms run at once. The tolerance and pair selection
-    // survive without it: the library applies the individually-decided
-    // tri-state settings AFTER the combo, so the standalone setters carry
-    // them either way.
-    expect(settings.experimentEnabled).toBe(false);
+    expect(settings.pairSelectionEnabled).toBe(false);
+    expect(settings.trustToleranceDeg).toBe(25);
   });
 
   it("keeps the prior ON and the override OFF at every non-zero position", () => {
@@ -215,7 +219,6 @@ describe("the experimental options (Q2 steps 5-7)", () => {
     });
     expect(settings.rotationPriorEnabled).toBe(false);
     expect(settings.coldStartOverrideEnabled).toBe(false);
-    expect(settings.experimentEnabled).toBe(false);
     expect(settings.voteWeight).toBe(0);
   });
 });
