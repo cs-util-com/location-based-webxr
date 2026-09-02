@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.23.0] — 2026-09-02
+
+Requires `gps-plus-slam-js` ≥ 1.23.0. Additive only.
+
+### Added
+
+- **`utils/compass-influence-mapping`** (deep import) — the "influence 0..1 →
+  seven compass settings" contract, moved out of the OSM demo so any app with
+  a compass-influence slider shares one definition of "influence 0 is GPS
+  only" (three settings, not one). `experiments` is a required parameter and
+  no defaults are exported: the demo's `ramp` gate and 15° tolerance stay the
+  demo's decisions.
+- **State re-exports for core 1.23.0**: `setAlignmentOverrides`,
+  `setCompassPairSelectionMode`, `setCompassPairSelectionRequireTrust`,
+  `setRobustSolverHeadingPenalty`, the consts `ALIGNMENT_OVERRIDE_KEYS`,
+  `COMPASS_TRUST_GATE_MODES`, `COMPASS_PAIR_SELECTION_MODES`, and the types
+  `AlignmentOverrides`, `CompassPairSelectionMode`. Derive dropdown lists from
+  the consts rather than mirroring the unions — the fourth trust-gate mode,
+  `latch`, is the reason.
+
 ## [1.22.0] — 2026-09-01
 
 Requires `gps-plus-slam-js` ≥ 1.22.0.

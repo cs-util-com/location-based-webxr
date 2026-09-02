@@ -210,6 +210,10 @@ const entryFiles = [
   // barrel, which would pull in the logger and friends). The `./utils/*`
   // exports wildcard advertises this subpath, so it must be built per-file.
   'src/utils/slider-scroll-guard.ts',
+  // Compass-influence mapping - deep-imported by the OSM demo and the recorder's
+  // in-recording settings wheel (NOT via the `/utils` barrel). The `./utils/*`
+  // exports wildcard advertises this subpath, so it must be built per-file.
+  'src/utils/compass-influence-mapping.ts',
   'src/utils/format-distance.ts',
   // Bearing normalizer — deep-imported by the OSM demo (NOT via the `/utils`
   // barrel, which would pull in the logger and friends). The `./utils/*`
