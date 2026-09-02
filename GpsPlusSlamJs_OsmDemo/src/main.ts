@@ -1960,12 +1960,16 @@ async function main(): Promise<void> {
         // poorly observable, and switching the prior off falls through to the
         // cold-start override, whose curve is identical.
         //
-        // THE ORDER MATTERS FOR THE LAST THREE. `setCompassExperimentEnabled`
-        // maps a fixed published combo — rotation prior, tolerance 15, pair
-        // selection on — so the standalone setters must come AFTER it or the
-        // combo would overwrite the toggles the gear panel just changed. The
-        // library's own mapping applies groups in the same order and pins it
-        // with a test; this is the consumer-side half of that contract.
+        // DISPATCH ORDER DOES NOT DECIDE PRECEDENCE HERE (corrected after
+        // the PR #400 review): all eight actions write independent state
+        // fields, and the library derives the alignment config from the
+        // FINAL state (`alignmentConfigFromState`: enable-only flags, then
+        // the experiment combo, then the individually-decided tri-states -
+        // so tolerance/gate/pair-selection always win over the combo, in
+        // whatever order they were dispatched). The one key the combo DOES
+        // force is the rotation prior, which no later group overrides -
+        // which is why `compassSettingsFor` ties `experimentEnabled` to the
+        // prior toggle instead of relying on any ordering.
         store.dispatch(
           setCompassRotationPriorEnabled(settings.rotationPriorEnabled),
         );

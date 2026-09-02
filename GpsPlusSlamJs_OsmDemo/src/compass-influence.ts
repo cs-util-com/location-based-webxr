@@ -23,7 +23,7 @@
  * tolerance to **15°**; since 2026-08-20 the standalone
  * `setCompassTrustAgreeToleranceDeg` setter also exists (`gps-plus-slam-js`
  * `9574b432b`) and the app dispatches it explicitly after the combo
- * (`main.ts` `onCompassSettings`, where the ordering contract lives; this
+ * (`main.ts` `onCompassSettings`, where all eight dispatches live; this
  * module stays pure and dispatches nothing) — the combo is kept because it
  * also gates `useCompassRotationPrior` and pair selection in one dispatch,
  * not because it is the only route to the tolerance any more.
@@ -195,7 +195,16 @@ export function compassSettingsFor(
     // without flipping it back, "prior off" would mean "no compass at all"
     // rather than "the validated baseline".
     coldStartOverrideEnabled: !experiments.rotationPriorEnabled,
-    experimentEnabled: true,
+    // The combo FOLLOWS the prior toggle (PR #400 review found the old
+    // unconditional `true` here): the library's alignmentConfigFromState
+    // applies the combo AFTER the standalone prior flag's one-way enableIf
+    // and forces useCompassRotationPrior=true - so a combo left on would
+    // silently overwrite "prior off" at the solve and run BOTH yaw
+    // mechanisms at once. The tolerance/gate/pair-selection knobs do not
+    // need the combo: they are individually-decided tri-states, which the
+    // library applies after the combo, so the standalone dispatches below
+    // carry them either way.
+    experimentEnabled: experiments.rotationPriorEnabled,
     voteWeight: weight,
     trustGateMode: experiments.trustGateMode,
     pairSelectionEnabled: experiments.pairSelectionEnabled,

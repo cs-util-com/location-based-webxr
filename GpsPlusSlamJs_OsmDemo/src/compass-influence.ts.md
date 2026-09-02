@@ -31,7 +31,7 @@ trustToleranceDeg, webXRConsistencyEnabled }`.
 - `describeTrustGate(mode: CompassTrustGateMode) → string` — one-line label
   for the gate mode (consumed by `ar-mode.ts`).
 - Exported types: `CompassTrustGateMode` (`"off" | "binary" | "ramp"`),
-  `CompassExperiments`, `CompassLiveState`.
+  `CompassExperiments`, `CompassSettings`, `CompassLiveState`.
 
 > **Doc-rot note (2026-09-01):** until today this sidecar still described the
 > original four-field shape and the 0.1 default, six weeks after both changed —
@@ -55,14 +55,22 @@ the fully-silent combination.
   - So a genuine zero needs **three** settings together. A slider dispatching
     fewer has a zero end where the compass still drives — invisible from the UI.
 - **`coldStartOverrideEnabled` is `false` whenever the rotation prior is
-  on** — i.e. at zero, and at non-zero influence with the default experiments.
+  on** — i.e. at non-zero influence with the default experiments. (At zero
+  both are `false`: `SILENT` is the one place the pair does not mirror.)
   With the prior toggled OFF at non-zero influence it is deliberately `true`:
   the fall-through hands yaw back to the validated Stage 0 baseline, because
   "prior off" must mean "the validated baseline", not "no compass at all"
   (`compassSettingsFor`, pinned by the "turning the rotation prior OFF hands
   back to Stage 0" test). Left on WITH the prior, two mechanisms would drive
   yaw at once — which is why the pair is never both-on.
-- **The experiment combo is part of any non-zero influence.** The steady-state
+- **The experiment combo is part of any non-zero influence WITH THE PRIOR ON —
+  and must be OFF when the prior is off** (PR #400 review; verified in the
+  library's `alignmentConfigFromState`): the combo forces
+  `useCompassRotationPrior: true` in the derived config after the standalone
+  prior flag's one-way mapping, so a combo left on silently overwrites "prior
+  off" at the solve. The tolerance and pair selection survive without the
+  combo — the library applies the individually-decided tri-state settings
+  after it. The steady-state
   term multiplies by `trustScalar`, which is `0` unless trust is exactly
   `trusted`. The §6a field corpus measured compass↔GPS offsets of −4.3…+18.8°
   against a default tolerance of **8°**, which "rarely activates trust on real

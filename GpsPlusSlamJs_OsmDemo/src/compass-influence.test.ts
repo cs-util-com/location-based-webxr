@@ -184,6 +184,15 @@ describe("the experimental options (Q2 steps 5-7)", () => {
     });
     expect(settings.rotationPriorEnabled).toBe(false);
     expect(settings.coldStartOverrideEnabled).toBe(true);
+    // AND the combo must be off (PR #400 review, verified in the library's
+    // alignmentConfigFromState): the combo FORCES useCompassRotationPrior=true
+    // in the derived config, after the standalone prior flag's one-way
+    // enableIf - so with the combo on, "prior off" never reaches the solve
+    // and BOTH yaw mechanisms run at once. The tolerance and pair selection
+    // survive without it: the library applies the individually-decided
+    // tri-state settings AFTER the combo, so the standalone setters carry
+    // them either way.
+    expect(settings.experimentEnabled).toBe(false);
   });
 
   it("keeps the prior ON and the override OFF at every non-zero position", () => {

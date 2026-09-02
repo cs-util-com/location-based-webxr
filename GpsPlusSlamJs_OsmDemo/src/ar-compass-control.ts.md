@@ -111,11 +111,14 @@ for the 0–1 influence whose mapping lives in `compass-influence.ts`.
 const compass = createArCompassControl({
   root: arRootElement,
   onChange: (settings) => {
-    // EIGHT dispatches, mirroring main.ts `onCompassSettings` exactly — and
-    // the ORDER is load-bearing for the last three: the experiment combo maps
-    // a fixed published bundle (prior, tolerance 15, pair selection), so the
-    // standalone setters must come AFTER it or the combo overwrites what the
-    // gear panel just changed.
+    // EIGHT dispatches, mirroring main.ts `onCompassSettings` exactly.
+    // Dispatch order does not decide precedence: the library derives its
+    // config from the final state, applying the experiment combo before the
+    // individually-decided tri-states (tolerance, gate mode, pair
+    // selection), so those standalone setters win regardless of order. The
+    // rotation prior is the exception - the combo forces it on in the
+    // derived config - which is why `compassSettingsFor` ties
+    // `experimentEnabled` to the prior toggle.
     store.dispatch(
       setCompassRotationPriorEnabled(settings.rotationPriorEnabled),
     );
