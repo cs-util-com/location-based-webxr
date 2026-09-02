@@ -128,6 +128,8 @@ import {
 } from 'gps-plus-slam-app-framework/core';
 import { isSegmentingActionType } from 'gps-plus-slam-app-framework/state/segmenting-actions';
 import { createStoreRef } from './state/store-ref';
+import { debugUiEnabledFromSearch } from './debug-flag';
+import { createDebugWheel, type DebugWheel } from './ui/hud-debug-wheel';
 import { createArSessionScope } from './utils/ar-session-scope';
 import { createArSessionResources } from './ar/ar-session-resources';
 import { wireArScene } from './ar/wire-ar-scene';
@@ -203,6 +205,12 @@ let recordingOptions: RecordingOptions = loadRecordingOptions();
 
 let store = createNewStore();
 const storeRef = createStoreRef(store);
+
+// The in-recording settings wheel (2026-09-02, `?debug=1` only). Mounted once
+// at init; it follows `storeRef` itself, so every store swap re-applies what
+// the tester touched. `null` for every ordinary user - the flag is the only
+// surface change (see ui/hud-debug-wheel.ts.md).
+let debugWheel: DebugWheel | null = null;
 
 // Every AR-session-scoped resource registers its teardown here at its
 // creation site (see utils/ar-session-scope.ts and the 2026-07-11
@@ -909,6 +917,19 @@ async function main(): Promise<void> {
     onRequestPermissions: handleRequestPermissions,
   });
 
+  // The in-recording settings wheel (2026-09-02, `?debug=1` only): mounted
+  // here at init, not on AR entry, so it exists in every HUD state and in
+  // the e2e harness, which never enters a real AR session. It follows
+  // `storeRef` itself and dispatches nothing until touched.
+  if (debugUiEnabledFromSearch(window.location.search) && !debugWheel) {
+    const controlsRoot = document.getElementById('controls');
+    const overlayRoot = document.getElementById('app');
+    if (controlsRoot && overlayRoot) {
+      debugWheel = createDebugWheel({ storeRef, controlsRoot, overlayRoot });
+      debugWheel.attach();
+    }
+  }
+
   // Initialize session summary panel (shown after recording stops)
   initSessionSummary({
     onNewRecording: () => {
@@ -1573,7 +1594,10 @@ if (
   !import.meta.env.VITEST
 ) {
   void import('./test-utils/e2e-hooks').then(({ installE2eTestHooks }) =>
-    installE2eTestHooks({ ensureMapBrowserRoot })
+    installE2eTestHooks({
+      ensureMapBrowserRoot,
+      getDebugWheel: () => debugWheel,
+    })
   );
 }
 

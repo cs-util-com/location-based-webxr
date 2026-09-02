@@ -32,6 +32,10 @@ declare global {
      */
     testHooks?: {
       populateScenarios: (scenarios: string[]) => void;
+      /** The in-recording settings wheel's values + touched flag, or null without `?debug=1` (2026-09-02). */
+      getDebugWheelValues: () => Record<string, unknown> | null;
+      /** Hide the setup modal as Enter AR does, so HUD controls behind it are clickable (2026-09-02). */
+      hideSetupModal: () => void;
       validateEnterButton: () => void;
       showRecordingControls: () => void;
       hideRecordingControls: () => void;
