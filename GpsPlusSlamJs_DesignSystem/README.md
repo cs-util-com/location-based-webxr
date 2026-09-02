@@ -79,6 +79,34 @@ accepted cost that Android blocks `getUserMedia` without HTTPS - the
 live camera background shows its error toast there; every other
 background works.
 
+## Vendoring into an app
+
+Apps do not depend on this package; each adopting app holds a **verbatim
+copy** of `design.css` next to its `index.html` and links it before its
+own `<style>`:
+
+```bash
+pnpm run vendor                            # refresh every app that holds a copy
+pnpm run vendor -- GpsPlusSlamJs_SomeDemo  # add an app, then refresh all
+```
+
+A copy rather than a workspace dependency (adoption plan DEC-L2-3): a
+dependency would make every taste tweak here run every consuming app's
+gate - `test:changed` runs a package plus its dependents - while this
+package's gate is seconds-cheap on purpose. The copy pins each app to
+the revision it chose. `tests/repo-config/design-css-copies.test.js` is
+what makes it safe: byte-identical to this file, every linker holds a
+copy, every copy is linked, and the link precedes the app's `<style>` so
+the `@layer` order is fixed first. The app list is the filesystem - every
+`GpsPlusSlamJs_*/design.css` - so neither the script nor the guard
+hard-codes it.
+
+Linking the sheet is **not automatically invisible**: its `reset` and
+`base` layers land wherever an app left a browser default (measured on
+the pilot: `box-sizing`, body `font-weight`, `h1` weight). The
+mechanism step pins those in the app's own CSS; the restyle removes the
+pins as it adopts the atoms.
+
 ## Hard constraint carried from the real apps
 
 `backdrop-filter` is banned in anything meant for the immersive path: in

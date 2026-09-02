@@ -7,6 +7,15 @@
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
     />
     <title>gps-plus-slam — persistent anchor starter</title>
+    <!--
+      design.css is a VERBATIM copy of GpsPlusSlamJs_DesignSystem/design.css,
+      written by `pnpm run vendor` there and held byte-identical by
+      tests/repo-config/design-css-copies.test.js - never edit it here. It
+      is linked before the <style> block so its @layer order is fixed first;
+      the rules below are unlayered and therefore win every conflict (the
+      plan's L1 contract) - adopting an atom means deleting the rule here.
+    -->
+    <link rel="stylesheet" href="/design.css" />
     <style>
       :root {
         color-scheme: dark;
@@ -19,6 +28,10 @@
         background: #111;
         color: #eee;
         font-family: system-ui, sans-serif;
+        /* PIN until the restyle (DEC-L2-8): design.css's base layer sets
+           body weight 500 wherever an app leaves the browser default -
+           measured page-wide. */
+        font-weight: 400;
         overflow: hidden;
       }
       /* AR session mounts its canvas here. */
@@ -40,6 +53,10 @@
         pointer-events: auto;
       }
       .panel {
+        /* PIN until the restyle (adoption plan DEC-L2-8): design.css's reset
+           sets border-box on everything, which would pull this panel's
+           padding inside its max-width - measured 30px narrower. */
+        box-sizing: content-box;
         margin: 12px;
         padding: 12px 14px;
         background: rgb(0 0 0 / 60%);
@@ -56,6 +73,9 @@
         text-align: center;
       }
       #start-screen h1 {
+        /* PIN until the restyle (DEC-L2-8): design.css's base layer sets h1
+           weight 500; the browser default this heading relied on is bold. */
+        font-weight: bold;
         font-size: 18px;
         margin: 0 0 8px;
       }

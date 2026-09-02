@@ -11,7 +11,8 @@
     "lint:css": "node ../scripts/test-timing/timed-stage.mjs lint:css",
     "check:tokens": "node ../scripts/test-timing/timed-stage.mjs check:tokens",
     "shoot": "node shoot.mjs",
-    "serve": "node serve.mjs"
+    "serve": "node serve.mjs",
+    "vendor": "node vendor.mjs"
   },
   "devDependencies": {
     "@carlosjeurissen/stylelint-csstree-validator": "^3.3.1",
