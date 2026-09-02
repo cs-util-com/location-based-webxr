@@ -19,6 +19,7 @@ import {
   seedWheelSettings,
   WHEEL_DEFAULTS,
   WHEEL_HEADING_PENALTY_DEFAULT,
+  sameOverrides,
   type WheelControl,
 } from './hud-debug-wheel';
 import { createStoreRef } from '../state/store-ref';
@@ -182,7 +183,83 @@ describe('dispatchWheelSettings - one control, its own setting', () => {
   });
 });
 
+describe('dispatchWheelSettings - pair selection never re-arms a silenced compass (PR #407 review)', () => {
+  // Why this test matters: "GPS only" is the control arm of every A/B made
+  // with the slider. Two taps in either order must end in the same config,
+  // or the tester's control arm silently runs compass-guided pair selection.
+  it('slider to 0 then pairs on, and pairs on then slider to 0, both end with pair selection off', () => {
+    const a = fakeStore();
+    dispatchWheelSettings(
+      a,
+      { ...WHEEL_DEFAULTS, compassInfluence: 0 },
+      only('compassInfluence')
+    );
+    dispatchWheelSettings(
+      a,
+      { ...WHEEL_DEFAULTS, compassInfluence: 0, pairSelection: 'soft' },
+      only('pairSelection')
+    );
+    const b = fakeStore();
+    dispatchWheelSettings(
+      b,
+      { ...WHEEL_DEFAULTS, pairSelection: 'soft' },
+      only('pairSelection')
+    );
+    dispatchWheelSettings(
+      b,
+      { ...WHEEL_DEFAULTS, compassInfluence: 0, pairSelection: 'soft' },
+      only('compassInfluence')
+    );
+    const lastEnabled = (s: FakeStore) =>
+      s.dispatched
+        .filter(
+          (x) =>
+            (x as { type: string }).type ===
+            'gpsData/setCompassPairSelectionEnabled'
+        )
+        .at(-1) as { payload: boolean };
+    expect(lastEnabled(a).payload).toBe(false);
+    expect(lastEnabled(b).payload).toBe(false);
+    // With the compass on, the same tap enables it.
+    const c = fakeStore();
+    dispatchWheelSettings(
+      c,
+      { ...WHEEL_DEFAULTS, pairSelection: 'hard' },
+      only('pairSelection')
+    );
+    expect(lastEnabled(c).payload).toBe(true);
+  });
+});
+
+describe('sameOverrides', () => {
+  it('ignores key order, treats null and undefined as the shipped defaults, and rejects a different value', () => {
+    expect(
+      sameOverrides(
+        { timeWeightFactor: 100, gpsAccuracyExponent: 0.75 },
+        { gpsAccuracyExponent: 0.75, timeWeightFactor: 100 }
+      )
+    ).toBe(true);
+    expect(sameOverrides(null, undefined)).toBe(true);
+    expect(sameOverrides(null, { timeWeightFactor: 100 })).toBe(false);
+    expect(
+      sameOverrides({ timeWeightFactor: 100 }, { timeWeightFactor: 25 })
+    ).toBe(false);
+  });
+});
+
 describe('seedWheelSettings - untouched controls show the session', () => {
+  it('matches a preset whose overrides arrive in a different key order', () => {
+    const s = seedWheelSettings(WHEEL_DEFAULTS, new Set(), {
+      gpsData: {
+        alignmentOverrides: {
+          gpsAccuracyExponent: 0.75,
+          timeWeightFactor: 100,
+        },
+      },
+    });
+    expect(s.presetId).toBe('f100-exp075');
+  });
+
   it('reads the gate, pair selection, prerequisite, penalty and a matching preset from a decided store', () => {
     const seeded = seedWheelSettings(WHEEL_DEFAULTS, new Set(), {
       gpsData: {
@@ -347,6 +424,9 @@ describe('createDebugWheel', () => {
     expect(second.dispatched).toHaveLength(9);
   });
 
+  // Production order since PR #407 review: the recording handlers swap the
+  // store FIRST and call resume() after, so resume() lands on the new store
+  // and never on the outgoing replay one - the sequence below mirrors that.
   it('does not drive a store while suspended (replay), and resumes onto the current store', async () => {
     const recording = fakeStore();
     recording.decide();

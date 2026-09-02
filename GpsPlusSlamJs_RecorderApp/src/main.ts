@@ -336,10 +336,12 @@ const replayHandlers = createReplayHandlers({
 const recordingSessionHandlers = createRecordingSessionHandlers({
   getStore: () => store,
   setStore: (newStore) => {
-    // A recording store: the wheel drives it again (see the replay swap above).
-    debugWheel?.resume();
     store = newStore;
     storeRef.set(newStore);
+    // A recording store: the wheel drives it again (see the replay swap
+    // above). AFTER the swap, so `resume()` applies to the new store and
+    // never to the outgoing, possibly replay, one (PR #407 review).
+    debugWheel?.resume();
   },
   rebindTrackingStore,
   // The per-recording quality-gate Worker analyzer: stored in main's

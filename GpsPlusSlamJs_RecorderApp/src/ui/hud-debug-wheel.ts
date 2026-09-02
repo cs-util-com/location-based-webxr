@@ -157,8 +157,14 @@ export function dispatchWheelSettings(
     store.dispatch(setCompassTrustGateMode(s.trustGateMode));
   }
   if (controls.has('pairSelection')) {
+    // At influence 0 the compass is silenced by contract (the mapping's
+    // "no experiment toggle may reintroduce a switch at zero"): pair
+    // selection is compass-guided, so enabling it here would re-arm the
+    // control arm of every A/B, and the outcome would depend on which of
+    // the two controls was tapped last (PR #407 review).
+    const enabled = s.compassInfluence > 0 && s.pairSelection !== 'off';
     if (!controls.has('compassInfluence')) {
-      store.dispatch(setCompassPairSelectionEnabled(s.pairSelection !== 'off'));
+      store.dispatch(setCompassPairSelectionEnabled(enabled));
     }
     store.dispatch(
       setCompassPairSelectionMode(
@@ -218,9 +224,7 @@ export function seedWheelSettings(
   };
   if (!touched.has('presetId')) {
     const o = g.alignmentOverrides;
-    const match = ALIGNMENT_PRESETS.find(
-      (p) => JSON.stringify(p.overrides ?? null) === JSON.stringify(o ?? null)
-    );
+    const match = ALIGNMENT_PRESETS.find((p) => sameOverrides(p.overrides, o));
     if (match) next.presetId = match.id;
   }
   if (
@@ -254,6 +258,23 @@ export function seedWheelSettings(
     next.headingPenalty = g.robustSolverHeadingPenalty;
   }
   return next;
+}
+
+/**
+ * Key-order-independent equality of two override payloads (`null` = the
+ * shipped defaults). `JSON.stringify` equality was key-order sensitive, and
+ * a miss labelled the session "shipped" with no signal (PR #407 review).
+ */
+export function sameOverrides(a: unknown, b: unknown): boolean {
+  const norm = (v: unknown): string => {
+    if (v === null || v === undefined) return 'null';
+    if (typeof v !== 'object') return JSON.stringify(v);
+    const entries = Object.entries(v as Record<string, unknown>).sort(
+      ([x], [y]) => (x < y ? -1 : x > y ? 1 : 0)
+    );
+    return JSON.stringify(entries);
+  };
+  return norm(a) === norm(b);
 }
 
 /** The slice of the store the readout and the churn tracker read. */
@@ -434,6 +455,9 @@ export function createDebugWheel(deps: DebugWheelDeps): DebugWheel {
   const penaltyHint = document.createElement('span');
   penaltyHint.id = 'debug-wheel-heading-penalty-hint';
   penaltyHint.className = 'text-xs text-gray-400';
+  const pairHint = document.createElement('span');
+  pairHint.id = 'debug-wheel-pairs-hint';
+  pairHint.className = 'text-xs text-gray-400';
   const presetEnablesRobust = (): boolean =>
     findAlignmentPreset(current.presetId)?.overrides?.robustSolverEnabled ===
     true;
@@ -457,6 +481,11 @@ export function createDebugWheel(deps: DebugWheelDeps): DebugWheel {
     const robust = presetEnablesRobust();
     penalty.disabled = !robust;
     penaltyHint.textContent = robust ? '' : '(needs a robust-solver preset)';
+    // Pair selection is compass-guided: at influence 0 it is off by
+    // contract, and the dropdown says so rather than looking live.
+    const compassOn = current.compassInfluence > 0;
+    pairSelect.disabled = !compassOn;
+    pairHint.textContent = compassOn ? '' : '(compass is off)';
   };
 
   const influenceRow = document.createElement('label');
@@ -475,6 +504,7 @@ export function createDebugWheel(deps: DebugWheelDeps): DebugWheel {
     row('heading penalty', penalty)
   );
   penalty.parentElement?.append(penaltyHint);
+  pairSelect.parentElement?.append(pairHint);
 
   // --- behaviour -----------------------------------------------------------
   const applyTo = (
