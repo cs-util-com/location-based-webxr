@@ -15,18 +15,23 @@
  * slider whose zero end still lets the compass drive — invisible from the UI,
  * and visible here.
  *
- * **WHY THE EXPERIMENT COMBO IS PART OF NON-ZERO INFLUENCE.** The steady-state
- * term is multiplied by `trustScalar`, which is `0` unless the trust state is
- * exactly `trusted`. The §6a field corpus measured per-session compass↔GPS
- * offsets of **−4.3…+18.8°** against a default `compassTrustAgreeToleranceDeg`
- * of **8**, which "rarely activates trust on real devices". The combo pins the
- * tolerance to **15°**; since 2026-08-20 the standalone
- * `setCompassTrustAgreeToleranceDeg` setter also exists (`gps-plus-slam-js`
- * `9574b432b`) and the app dispatches it explicitly after the combo
- * (`main.ts` `onCompassSettings`, where all eight dispatches live; this
- * module stays pure and dispatches nothing) — the combo is kept because it
- * also gates `useCompassRotationPrior` and pair selection in one dispatch,
- * not because it is the only route to the tolerance any more.
+ * **WHY THE EXPERIMENT COMBO IS PART OF NON-ZERO INFLUENCE — WITH THE PRIOR
+ * ON.** The steady-state term is multiplied by `trustScalar`, which is `0`
+ * unless the trust state is exactly `trusted`. The §6a field corpus measured
+ * per-session compass↔GPS offsets of **−4.3…+18.8°** against a default
+ * `compassTrustAgreeToleranceDeg` of **8**, which "rarely activates trust on
+ * real devices". The combo pins the tolerance to **15°**; since 2026-08-20
+ * the standalone `setCompassTrustAgreeToleranceDeg` setter also exists
+ * (`gps-plus-slam-js` `9574b432b`) and the app dispatches it too (`main.ts`
+ * `onCompassSettings`, where all eight dispatches live; this module stays
+ * pure and dispatches nothing). With the prior toggled OFF the combo must be
+ * off as well: the library's derivation lets the combo force
+ * `useCompassRotationPrior` back on (verified against gps-plus-slam-js
+ * 1.22.0's `alignmentConfigFromState`, and pinned there by
+ * `gpsDataSlice.test.ts`'s "combo + standalone prior OFF" case, which names
+ * this consumer) — while the tolerance, gate mode and pair selection ride
+ * the individually-decided tri-states the derivation applies after the
+ * combo, so they survive without it.
  * (An earlier version of this comment claimed no standalone setter existed;
  * that claim went stale the day the setter shipped and was corrected on
  * 2026-09-01 after it misled a planning session.) Without the
@@ -137,7 +142,9 @@ export interface CompassSettings {
    * experiment against nothing rather than against the baseline.
    */
   readonly coldStartOverrideEnabled: boolean;
-  /** `setCompassExperimentEnabled` — the combo that makes trust reachable. */
+  /** `setCompassExperimentEnabled` — the combo that makes trust reachable.
+   *  Follows the prior toggle: the combo forces the rotation prior in the
+   *  library's derived config, so it must be off when the prior is off. */
   readonly experimentEnabled: boolean;
   /** `setCompassVoteWeight` — validated to `[0,1]` by the library. */
   readonly voteWeight: number;

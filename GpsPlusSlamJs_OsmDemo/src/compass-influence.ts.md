@@ -124,8 +124,10 @@ DEC-Y12 live-diagnostics readout (target vs applied weight and trust phase).
 ## Related
 
 - `ar-compass-control.ts` — the slider that owns the value and calls this.
-- `main.ts` (`onCompassSettings`) — the eight dispatches, in their load-bearing
-  order (combo before the standalone setters); `ar-mode.ts` only forwards the
-  callback.
+- `main.ts` (`onCompassSettings`) — the eight dispatches; `ar-mode.ts` only
+  forwards the callback. Dispatch order carries no precedence — the library
+  derives its config from final state, applying the individually-decided
+  tri-states after the combo (and the combo forces the prior, which is why
+  `experimentEnabled` follows the prior toggle).
 - `GpsPlusSlamJs_Docs/docs/2026-08-16-1123-ar-elevation-and-compass-controls-plan.md`
   §3 — DEC-E2 and the analysis this module implements.
