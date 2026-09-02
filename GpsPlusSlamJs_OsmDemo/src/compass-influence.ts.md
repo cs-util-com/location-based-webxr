@@ -130,3 +130,7 @@ DEC-Y12 live-diagnostics readout (target vs applied weight and trust phase).
   overwrite a standalone setting.
 - `GpsPlusSlamJs_Docs/docs/2026-08-16-1123-ar-elevation-and-compass-controls-plan.md`
   §3 — DEC-E2 and the analysis this module implements.
+
+## The mapping moved to the framework (2026-09-02)
+
+`compassSettingsFor`, `CompassSettings`, `CompassExperiments` and the silent rule now live in `gps-plus-slam-app-framework/utils/compass-influence-mapping` (deep import, not the barrel), shared with the recorder's in-recording settings wheel; this module re-exports the types and keeps a thin `compassSettingsFor(influence, experiments = COMPASS_EXPERIMENT_DEFAULTS)` wrapper so every importer and test is unchanged. What stayed here is POLICY: `COMPASS_EXPERIMENT_DEFAULTS` (the demo's `ramp` gate and 15° tolerance at its 0.8 default weight) and the readout text. The framework module exports no defaults on purpose - a cold review (rotation-first search plan, finding 14) pointed out that moving them would have made the demo's decisions every consumer's.

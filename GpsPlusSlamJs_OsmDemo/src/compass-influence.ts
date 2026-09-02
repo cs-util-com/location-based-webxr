@@ -79,32 +79,20 @@ export const COMPASS_INFLUENCE_STEP = 0.05;
  */
 export const COMPASS_INFLUENCE_DEFAULT = 0.8;
 
-/** The three-way trust gate, mirroring the library's own union. */
-export type CompassTrustGateMode = "off" | "binary" | "ramp";
+import {
+  compassSettingsFor as sharedCompassSettingsFor,
+  type CompassExperiments,
+  type CompassSettings,
+} from "gps-plus-slam-app-framework/utils/compass-influence-mapping";
+import type { CompassTrustGateMode } from "gps-plus-slam-app-framework/state";
 
-/**
- * The experimental compass options, exposed as controls so the trade is
- * measured on a street rather than argued in a document.
- *
- * Every one of these is a library setting that ships OFF or at a different
- * value, and two of them are documented there as not field-validated. They are
- * grouped here because they are only interpretable together.
- */
-export interface CompassExperiments {
-  /**
-   * The master switch. `true` = Stage C, the trust-gated continuum; `false` =
-   * fall back to the **validated** Stage 0 the RecorderApp ships.
-   */
-  readonly rotationPriorEnabled: boolean;
-  /** How the Stage-C vote is gated on trust. */
-  readonly trustGateMode: CompassTrustGateMode;
-  /** C-prime — re-solves the alignment on compass-weighted pairs once trusted. */
-  readonly pairSelectionEnabled: boolean;
-  /** How close compass and GPS yaw must agree before trust is granted. */
-  readonly trustToleranceDeg: number;
-  /** The compass-health gate, which down-weights a drifting compass. */
-  readonly webXRConsistencyEnabled: boolean;
-}
+// The mapping itself moved to the framework on 2026-09-02 (rotation-first
+// search plan M3, review finding 14): the recorder's field wheel needs the
+// same "influence → seven settings" contract, and shared behaviour with a
+// contract lives in one place. What stayed HERE is policy - the demo's
+// experiment defaults below and its readout text - because those are this
+// app's decisions at its 0.8 default weight, not every consumer's.
+export type { CompassExperiments, CompassSettings, CompassTrustGateMode };
 
 /**
  * What the demo ships.
@@ -129,87 +117,17 @@ export const COMPASS_EXPERIMENT_DEFAULTS: CompassExperiments = {
   webXRConsistencyEnabled: false,
 };
 
-/** The dispatches that together mean "the compass has this much say". */
-export interface CompassSettings {
-  /** `setCompassRotationPriorEnabled` — Stage C, the trust-gated continuum. */
-  readonly rotationPriorEnabled: boolean;
-  /**
-   * `setColdStartOverrideEnabled` — **false at every position while the prior is
-   * on**. Left on it would be inert anyway (the two stages are an `if/else` on
-   * the same weight, and the prior wins), but false is the honest statement of
-   * which stage is driving.
-   *
-   * **It flips back to `true` when the prior is switched OFF**, and that half is
-   * not optional: without it, "prior off" silences the compass entirely instead
-   * of returning to the validated Stage 0, so the toggle would compare the
-   * experiment against nothing rather than against the baseline.
-   */
-  readonly coldStartOverrideEnabled: boolean;
-  /** `setCompassVoteWeight` — validated to `[0,1]` by the library. */
-  readonly voteWeight: number;
-  /** `setCompassTrustGateMode`. */
-  readonly trustGateMode: CompassTrustGateMode;
-  /** `setCompassPairSelectionEnabled`. */
-  readonly pairSelectionEnabled: boolean;
-  /** `setCompassTrustAgreeToleranceDeg` - the activating tolerance; see the
-   *  module docstring for why the slider is inert without it. */
-  readonly trustToleranceDeg: number;
-  /** `setCompassWebXRConsistencyEnabled`. */
-  readonly webXRConsistencyEnabled: boolean;
-}
-
 /**
- * Everything off: the only combination that genuinely silences the compass.
- *
- * **No experimental toggle can reintroduce it**, because "GPS only" is the
- * control arm of every comparison made with this slider.
- */
-const SILENT: CompassSettings = {
-  rotationPriorEnabled: false,
-  coldStartOverrideEnabled: false,
-  voteWeight: 0,
-  trustGateMode: "binary",
-  pairSelectionEnabled: false,
-  trustToleranceDeg: COMPASS_EXPERIMENT_DEFAULTS.trustToleranceDeg,
-  webXRConsistencyEnabled: false,
-};
-
-/**
- * Map a 0–1 influence to the settings that produce it.
- *
- * Out-of-range inputs CLAMP into `[0,1]` and non-finite inputs collapse to
- * {@link SILENT}, rather than either being passed on: `setCompassVoteWeight`
- * validates to `[0,1]` and would reject them somewhere the UI cannot see, and
- * "the compass drives with a NaN weight" is the worst state available.
- *
- * **The clamp is ASYMMETRIC in effect.** A clamped `-0.5` reaches 0 and is
- * therefore genuinely silent, but a clamped `1.5` reaches 1 — FULL influence,
- * not silence. Said explicitly because this docstring claimed the opposite
- * until the PR #313 review, while the sidecar and the code were both right.
+ * Map a 0–1 influence to the settings that produce it, with THIS demo's
+ * experiment defaults applied when none are given. The clamp, the
+ * non-finite → silent rule and the three-setting zero are the framework's
+ * (`compass-influence-mapping.ts`); this wrapper only supplies the defaults.
  */
 export function compassSettingsFor(
   influence: number,
   experiments: CompassExperiments = COMPASS_EXPERIMENT_DEFAULTS,
 ): CompassSettings {
-  if (!Number.isFinite(influence)) return SILENT;
-  const weight = Math.min(1, Math.max(0, influence));
-  if (weight === 0) return SILENT;
-  return {
-    rotationPriorEnabled: experiments.rotationPriorEnabled,
-    // THE FALL-THROUGH, and it is the half that is easy to miss: with the prior
-    // off the solve uses Stage 0, whose flag this app otherwise pins false — so
-    // without flipping it back, "prior off" would mean "no compass at all"
-    // rather than "the validated baseline".
-    coldStartOverrideEnabled: !experiments.rotationPriorEnabled,
-    // No experiment combo here (removed 2026-09-02): every key it wrote is
-    // dispatched standalone, so it was config-neutral with the prior on and
-    // force-re-enabled the prior with it off. See the module docstring.
-    voteWeight: weight,
-    trustGateMode: experiments.trustGateMode,
-    pairSelectionEnabled: experiments.pairSelectionEnabled,
-    trustToleranceDeg: experiments.trustToleranceDeg,
-    webXRConsistencyEnabled: experiments.webXRConsistencyEnabled,
-  };
+  return sharedCompassSettingsFor(influence, experiments);
 }
 
 /**

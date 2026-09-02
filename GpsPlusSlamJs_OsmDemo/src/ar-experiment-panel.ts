@@ -23,9 +23,14 @@ import {
   type CompassExperiments,
   type CompassTrustGateMode,
 } from "./compass-influence.js";
+import { COMPASS_TRUST_GATE_MODES } from "gps-plus-slam-app-framework/state";
 
-/** The gate modes, in the order the panel offers them. */
-const GATE_MODES: readonly CompassTrustGateMode[] = ["off", "binary", "ramp"];
+/**
+ * The gate modes, in the library's own order. Derived from the exported const
+ * since 2026-09-02 rather than mirrored: a mirrored list is how a fourth mode
+ * (`latch`, core 1.23.0) would have compiled everywhere and appeared nowhere.
+ */
+const GATE_MODES: readonly CompassTrustGateMode[] = COMPASS_TRUST_GATE_MODES;
 
 /**
  * The tolerances the 2026-08-20 census actually swept.
