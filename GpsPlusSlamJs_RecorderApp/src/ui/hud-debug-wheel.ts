@@ -298,8 +298,8 @@ export function formatWheelReadout(
   return `${yawText} · ${churnText} · ${weightText} · ${ev.gpsPositions.length} fixes`;
 }
 
-/** Feed one store update to the tracker (it samples once per new fix). */
-export function observeYawChurn(
+/** Feed one store update to the tracker (it samples once per new fix). Module-private: knip. */
+function observeYawChurn(
   tracker: YawChurnTracker,
   state: WheelReadoutState
 ): void {
