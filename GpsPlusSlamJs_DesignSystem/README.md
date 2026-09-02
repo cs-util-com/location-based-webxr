@@ -26,8 +26,8 @@ What the file contains:
   toggle, slider, switch, select, progress-with-tones, readout lines,
   toast, world annotations (diamond marker, leader-line callout), radar.
 - **Mock screens** inside one phone frame, switchable: the OsmDemo AR HUD
-  steady state, its experiments panel, and the AnchorStarter placement
-  flow — all using **real strings from the shipped apps**, not lorem.
+  steady state, its experiments panel, the AnchorStarter placement
+  flow and its start card — all using **real strings from the shipped apps**, not lorem.
 - **Camera stand-in backgrounds** (foliage, white wall, blown sky, night
   street — all textured, plus a live `getUserMedia` mode), because the
   design's central problem is legibility over an arbitrary camera feed.

@@ -52,7 +52,7 @@ const args = new Map(
     }),
 );
 
-const SCREENS = ["hud", "experiments", "placement"];
+const SCREENS = ["hud", "experiments", "placement", "start"];
 const screens = args.has("screen") ? [args.get("screen")] : SCREENS;
 const bg = args.get("bg") ?? "foliage";
 // "live" is NOT shootable, and refusing is the honest answer (PR #371

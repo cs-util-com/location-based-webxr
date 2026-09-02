@@ -325,9 +325,26 @@
   .toast,
   .hint,
   .anno-text,
-  .modal-body {
+  .prose {
     text-transform: var(--case-prose);
     letter-spacing: var(--tracking-prose);
+  }
+  /* --- prose: sentence-shaped body text inside a plate - a modal's
+     question, a start card's explanation, a placement banner. Body
+     size, plate ink; the atom exists so a paragraph in a plate has a
+     name instead of a per-app text-transform override. --- */
+  .prose {
+    margin: 0;
+    line-height: 1.4;
+  }
+  /* prose that carries the FAILURE family - a capability message, a
+     placement error: red ground, black ink, like the degraded readout
+     and the warn badge, so the words and the colour carry it together */
+  .prose[data-tone="warn"] {
+    background: var(--state-warn);
+    color: var(--ink-on-danger);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-small);
   }
 
   /* --- plate: the base surface every readable thing sits on --- */
@@ -1286,11 +1303,43 @@
   .guidance-panel .progress {
     width: 100%;
   }
-  .place-cta {
+  /* the bottom panel: banner, error, the decisive action, the share
+     action and the reload hint - what AnchorStarter's placement section
+     holds, stacked full-width like .modal-actions and for the same
+     reason (the label voice makes two buttons too wide side by side) */
+  .placement-panel {
     position: absolute;
     left: 50%;
-    bottom: 110px;
+    bottom: 34px;
     transform: translateX(-50%);
+    width: 320px;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+    text-align: center;
+  }
+
+  /* --- start / capability screen (AnchorStarter) ---
+     Centred card with the app's one-paragraph pitch and its one action;
+     the capability message (a .prose[data-tone="warn"]) appears under
+     the button when the device cannot run the flow. Absolute + auto
+     margins centre it in any overlay, which is what the adoption plan
+     §7 said the migration would otherwise have to reinvent. */
+  .start-panel {
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    width: 340px;
+    max-width: calc(100% - 2 * var(--space-4));
+    height: max-content;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-3);
+    text-align: center;
+  }
+  .start-panel .btn {
     min-width: 200px;
   }
 

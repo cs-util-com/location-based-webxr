@@ -186,11 +186,28 @@
           aria-label="Confirm"
           data-atom="modal"
         >
-          <span class="modal-body">Stop recording and go back?</span>
+          <span class="prose">Stop recording and go back?</span>
           <div class="modal-actions">
             <button class="btn">Keep recording</button>
             <button class="btn btn--accent">Stop recording</button>
           </div>
+        </div>
+      </section>
+
+      <section>
+        <h3>Prose — sentence text inside a plate, and its failure tone</h3>
+        <!-- real strings: AnchorStarter's start card, and the framework's
+             capabilityMessage() for a device without WebXR -->
+        <div class="plate col">
+          <p class="prose">
+            Place a marker in the real world, save it, then reload the page — it
+            reappears at the exact same spot.
+          </p>
+          <p class="prose" data-tone="warn">
+            This demo needs WebXR augmented reality, which this device or
+            browser does not provide. Open it on an AR-capable phone (e.g.
+            Chrome on Android with ARCore), outdoors.
+          </p>
         </div>
       </section>
 
@@ -485,6 +502,9 @@
         <button class="btn" data-screen="placement" aria-pressed="false">
           PLACEMENT
         </button>
+        <button class="btn" data-screen="start" aria-pressed="false">
+          START
+        </button>
       </div>
 
       <div class="phone" data-bg="foliage" data-screen="hud" id="phone">
@@ -721,7 +741,28 @@
             </div>
           </div>
 
-          <button class="btn place-cta">Place anchor</button>
+          <!-- the bottom panel, real strings from placement-view.ts in the
+               "ready to place, tracking good" state -->
+          <div class="placement-panel plate">
+            <p class="prose">Tracking looks good — place your anchor.</p>
+            <button class="btn btn--accent">Place anchor</button>
+          </div>
+        </div>
+
+        <!-- ============ SCREEN: START (AnchorStarter's capability gate) ============ -->
+        <!-- real strings from AnchorStarter index.html; the gated state adds
+             a .prose[data-tone="warn"] under the (then disabled) button - see
+             the prose atom in the atoms column -->
+        <div class="screen screen-start">
+          <div class="start-panel plate">
+            <h1>Persistent GPS anchor</h1>
+            <p class="prose">
+              Place a marker in the real world, save it, then reload the page —
+              it reappears at the exact same spot. Go outside with a clear view
+              of the sky for the best GPS.
+            </p>
+            <button class="btn btn--accent">Start AR</button>
+          </div>
         </div>
 
         <!-- toast, shared by every screen -->
@@ -747,7 +788,7 @@
             aria-label="Confirm"
             data-atom-copy="modal"
           >
-            <span class="modal-body">Stop recording and go back?</span>
+            <span class="prose">Stop recording and go back?</span>
             <div class="modal-actions">
               <button class="btn">Keep recording</button>
               <button class="btn btn--accent">Stop recording</button>

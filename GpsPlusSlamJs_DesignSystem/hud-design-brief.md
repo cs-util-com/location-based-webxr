@@ -79,7 +79,7 @@ Rounded geometry: 14px panels, 10px buttons, 14px rounded-SQUARE icon buttons
 (44px, never circles), 999px pills. Two voices from one token pair: uppercase with
 0.08em tracking for short labels (buttons, badges, readout keys, section labels);
 sentence case with normal tracking for anything sentence-shaped (toast copy, modal
-body, hints, annotation descriptions). Weight 500, Corbel-first system stack, falling back to Noto Sans on
+body, hints, annotation descriptions - the `.prose` atom for a paragraph in a plate). Weight 500, Corbel-first system stack, falling back to Noto Sans on
 Android (Corbel old-style figures are deliberate but Windows-only; the
 fallbacks render lining figures). Sliders are an 18px carved groove with a translucent-white
 pill thumb riding flush inside it. Toasts are translucent white

@@ -212,7 +212,8 @@
   }
   .phone[data-screen="hud"] .screen-hud,
   .phone[data-screen="experiments"] .screen-experiments,
-  .phone[data-screen="placement"] .screen-placement {
+  .phone[data-screen="placement"] .screen-placement,
+  .phone[data-screen="start"] .screen-start {
     display: contents;
   }
 }
