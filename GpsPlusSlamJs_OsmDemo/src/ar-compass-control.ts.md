@@ -111,6 +111,11 @@ for the 0–1 influence whose mapping lives in `compass-influence.ts`.
 const compass = createArCompassControl({
   root: arRootElement,
   onChange: (settings) => {
+    // EIGHT dispatches, mirroring main.ts `onCompassSettings` exactly — and
+    // the ORDER is load-bearing for the last three: the experiment combo maps
+    // a fixed published bundle (prior, tolerance 15, pair selection), so the
+    // standalone setters must come AFTER it or the combo overwrites what the
+    // gear panel just changed.
     store.dispatch(
       setCompassRotationPriorEnabled(settings.rotationPriorEnabled),
     );
@@ -119,6 +124,16 @@ const compass = createArCompassControl({
     );
     store.dispatch(setCompassExperimentEnabled(settings.experimentEnabled));
     store.dispatch(setCompassVoteWeight(settings.voteWeight));
+    store.dispatch(setCompassTrustGateMode(settings.trustGateMode));
+    store.dispatch(
+      setCompassPairSelectionEnabled(settings.pairSelectionEnabled),
+    );
+    store.dispatch(
+      setCompassTrustAgreeToleranceDeg(settings.trustToleranceDeg),
+    );
+    store.dispatch(
+      setCompassWebXRConsistencyEnabled(settings.webXRConsistencyEnabled),
+    );
   },
 });
 compass.attach();

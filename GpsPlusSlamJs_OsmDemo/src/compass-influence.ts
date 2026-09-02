@@ -29,8 +29,7 @@
  * not because it is the only route to the tolerance any more.
  * (An earlier version of this comment claimed no standalone setter existed;
  * that claim went stale the day the setter shipped and was corrected on
- * 2026-09-01 after it misled a planning session — see the rotation-stability
- * programme plan's cold-review finding 1 in the private repo.) Without the
+ * 2026-09-01 after it misled a planning session.) Without the
  * tolerance change this slider is identically inert at every position while
  * walking, which is not a control, it is a decoration.
  *

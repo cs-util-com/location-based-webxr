@@ -104,15 +104,20 @@ describeCompassInfluence(1); // "compass 1.00 — full"
 
 ## Tests
 
-`compass-influence.test.ts` — the three-setting zero, the override staying off
-at every position, the experiment combo above zero, weight pass-through,
-clamping (including that a clamped zero is a _real_ zero), non-finite input, the
-step matching the RecorderApp (the DEFAULTS deliberately diverge: demo 0.8,
-RecorderApp 0.1), and every label case.
+`compass-influence.test.ts` — the three-setting zero, the cold-start override
+following the rotation prior (off while the prior is on; the deliberate
+fall-through to Stage 0 when the prior is toggled off), the experiment combo
+above zero, weight pass-through, clamping (including that a clamped zero is a
+_real_ zero), non-finite input, the step matching the RecorderApp (the DEFAULTS
+deliberately diverge: demo 0.8, RecorderApp 0.1), every label case, and the
+DEC-Y12 live-diagnostics readout (target vs applied weight and trust phase).
+`describeTrustGate`'s labels are covered in `ar-compass-control.test.ts`.
 
 ## Related
 
 - `ar-compass-control.ts` — the slider that owns the value and calls this.
-- `ar-mode.ts` / `main.ts` — the eight dispatches, in their load-bearing order (combo before the standalone setters).
+- `main.ts` (`onCompassSettings`) — the eight dispatches, in their load-bearing
+  order (combo before the standalone setters); `ar-mode.ts` only forwards the
+  callback.
 - `GpsPlusSlamJs_Docs/docs/2026-08-16-1123-ar-elevation-and-compass-controls-plan.md`
   §3 — DEC-E2 and the analysis this module implements.

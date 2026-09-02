@@ -1952,12 +1952,6 @@ async function main(): Promise<void> {
                 ),
         };
       },
-      // FOUR DISPATCHES, NOT ONE (DEC-E2). `compass-influence.ts` holds why:
-      // "influence 0" is not "vote weight 0" — at weight 0 the steady-state
-      // formula is `1 − observability`, a FULL override exactly when yaw is
-      // poorly observable, and switching the prior off falls through to the
-      // cold-start override, whose curve is identical and which is on by
-      // default. Silencing the compass takes all of these together.
       onCompassSettings: (settings) => {
         // EIGHT DISPATCHES, NOT ONE (DEC-E2, extended round four).
         // `compass-influence.ts` holds why the first four cannot be collapsed:
