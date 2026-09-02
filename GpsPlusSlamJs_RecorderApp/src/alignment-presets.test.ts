@@ -46,4 +46,31 @@ describe('ALIGNMENT_PRESETS', () => {
     });
     expect(findAlignmentPreset('nope')).toBeUndefined();
   });
+
+  it('carries the stage-2 field-judgement rows with their knobs, after the survivors', () => {
+    // The order is the order of the dropdown: the shipped default, the two
+    // stage-2 survivors, then the rows that failed the cross-session guardrail
+    // and say so in their label.
+    expect(ALIGNMENT_PRESETS.map((p) => p.id)).toEqual([
+      'shipped',
+      'f100',
+      'f100-exp075',
+      'f25-exp075',
+      'calm-ret04',
+      'f25-none-exp1',
+      'f25-thr7-ret04-exp1',
+    ]);
+    expect(findAlignmentPreset('calm-ret04')?.overrides).toEqual({
+      timeWeightEnabled: false,
+      outlierRetainRatio: 0.4,
+    });
+    for (const id of [
+      'f25-exp075',
+      'calm-ret04',
+      'f25-none-exp1',
+      'f25-thr7-ret04-exp1',
+    ]) {
+      expect(findAlignmentPreset(id)?.label, id).toMatch(/agreement −\d\.\d°/);
+    }
+  });
 });

@@ -8,7 +8,7 @@ The alignment presets the in-recording settings wheel switches between (2026-09-
 
 - `AlignmentPreset` — `{ id, label, overrides }`; `overrides: null` means the shipped defaults (clears any preset).
 - `SHIPPED_PRESET_ID` — `'shipped'`, always the first entry.
-- `ALIGNMENT_PRESETS` — shipped, then the three rotation-first scorecard candidates (memory 100; memory 100 + accuracy exponent 0.75; memory 25 + accuracy exponent 0.75), then the stage-2 winners of the full search once it has run (appended by plan M5 with their measured columns documented in the private repo).
+- `ALIGNMENT_PRESETS` — shipped, then the three rotation-first scorecard candidates (memory 100; memory 100 + accuracy exponent 0.75; memory 25 + accuracy exponent 0.75), then the FIELD-JUDGEMENT block from the full search's stage 2 (2026-09-02): the calmest row of the grid (no recency weighting, keep 40 %), and two short-memory rows. The search's only survivors were the first two scorecard candidates; every calmer row failed its cross-session guardrail, and those rows carry the cost in their label ("agreement −4.4°": two walks of the same street agree that much less than under shipped, one building). Numbers per row in the private repo's findings G3.
 - `findAlignmentPreset(id)` — lookup; `undefined` for an unknown id, never a silent default.
 
 ## Invariants & assumptions
