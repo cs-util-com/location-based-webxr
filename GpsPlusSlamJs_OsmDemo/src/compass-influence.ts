@@ -22,9 +22,11 @@
  * of **8**, which "rarely activates trust on real devices". The combo pins the
  * tolerance to **15°**; since 2026-08-20 the standalone
  * `setCompassTrustAgreeToleranceDeg` setter also exists (`gps-plus-slam-js`
- * `9574b432b`) and this module dispatches it explicitly as well — the combo is
- * kept because it also gates `useCompassRotationPrior` and pair selection in
- * one dispatch, not because it is the only route to the tolerance any more.
+ * `9574b432b`) and the app dispatches it explicitly after the combo
+ * (`main.ts` `onCompassSettings`, where the ordering contract lives; this
+ * module stays pure and dispatches nothing) — the combo is kept because it
+ * also gates `useCompassRotationPrior` and pair selection in one dispatch,
+ * not because it is the only route to the tolerance any more.
  * (An earlier version of this comment claimed no standalone setter existed;
  * that claim went stale the day the setter shipped and was corrected on
  * 2026-09-01 after it misled a planning session — see the rotation-stability

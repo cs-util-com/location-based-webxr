@@ -23,8 +23,15 @@ webXRConsistencyEnabled: false }`.
   eight-field dispatch set: `{ rotationPriorEnabled, coldStartOverrideEnabled,
 experimentEnabled, voteWeight, trustGateMode, pairSelectionEnabled,
 trustToleranceDeg, webXRConsistencyEnabled }`.
-- `describeCompassInfluence(influence) → string` — the label, with both ends
-  named rather than only numbered.
+- `describeCompassInfluence(influence, live?: CompassLiveState) → string` —
+  the label, with both ends named rather than only numbered. With `live`, the
+  DEC-Y12 readout: target vs applied weight and the trust phase (e.g.
+  `compass 0.80 target — now 0.42 untrusted`), so the on-screen label can show
+  what the solve is actually using, not only what was requested.
+- `describeTrustGate(mode: CompassTrustGateMode) → string` — one-line label
+  for the gate mode (consumed by `ar-mode.ts`).
+- Exported types: `CompassTrustGateMode` (`"off" | "binary" | "ramp"`),
+  `CompassExperiments`, `CompassLiveState`.
 
 > **Doc-rot note (2026-09-01):** until today this sidecar still described the
 > original four-field shape and the 0.1 default, six weeks after both changed —
@@ -47,9 +54,14 @@ the fully-silent combination.
     default **on** since 2026-07-25.
   - So a genuine zero needs **three** settings together. A slider dispatching
     fewer has a zero end where the compass still drives — invisible from the UI.
-- **`coldStartOverrideEnabled` is `false` at EVERY position**, not just zero.
-  Left on at non-zero influence, two mechanisms drive yaw at once and the slider
-  is no longer what is being measured.
+- **`coldStartOverrideEnabled` is `false` whenever the rotation prior is
+  on** — i.e. at zero, and at non-zero influence with the default experiments.
+  With the prior toggled OFF at non-zero influence it is deliberately `true`:
+  the fall-through hands yaw back to the validated Stage 0 baseline, because
+  "prior off" must mean "the validated baseline", not "no compass at all"
+  (`compassSettingsFor`, pinned by the "turning the rotation prior OFF hands
+  back to Stage 0" test). Left on WITH the prior, two mechanisms would drive
+  yaw at once — which is why the pair is never both-on.
 - **The experiment combo is part of any non-zero influence.** The steady-state
   term multiplies by `trustScalar`, which is `0` unless trust is exactly
   `trusted`. The §6a field corpus measured compass↔GPS offsets of −4.3…+18.8°
@@ -71,6 +83,9 @@ the fully-silent combination.
 ## Examples
 
 ```ts
+// At zero the `experiments` argument is IGNORED entirely — SILENT returns
+// before reading it, and no toggle may reintroduce the compass, because
+// "GPS only" is the control arm (pinned by test).
 compassSettingsFor(0, COMPASS_EXPERIMENT_DEFAULTS);
 // { rotationPriorEnabled: false, coldStartOverrideEnabled: false,
 //   experimentEnabled: false, voteWeight: 0, trustGateMode: "binary",
