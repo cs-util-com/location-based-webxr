@@ -44,11 +44,13 @@ test.describe("Physics Demo — desktop replay end-to-end", () => {
       timeout: 90_000,
     });
 
-    // Click the scene (below the top control panel) → a ball is shot from the
-    // camera; the count increments (spawn + the physics step loop are live).
-    await page.mouse.click(640, 600);
+    // Click the scene → a ball is shot from the camera; the count increments
+    // (spawn + the physics step loop are live). Upper-left of the viewport:
+    // the replay panel sits bottom-centre since the design-system restyle
+    // (adoption plan M4), so the old (640, 600) landed on the panel.
+    await page.mouse.click(320, 200);
     await expect(stats).toContainText(/balls 1 /, { timeout: 10_000 });
-    await page.mouse.click(660, 560);
+    await page.mouse.click(360, 240);
     await expect(stats).toContainText(/balls 2 /, { timeout: 10_000 });
 
     // The live mesh-mode + shader dropdowns must not crash (mode recreates the
@@ -60,7 +62,7 @@ test.describe("Physics Demo — desktop replay end-to-end", () => {
       .getByTestId("mesh-shader")
       .selectOption("depth-shaded-wireframe");
     // A ball still spawns after switching mesh mode (collider survived the swap).
-    await page.mouse.click(680, 620);
+    await page.mouse.click(340, 220);
     await expect(stats).toContainText(/balls 3 /, { timeout: 10_000 });
 
     // No uncaught exceptions across the whole flow.

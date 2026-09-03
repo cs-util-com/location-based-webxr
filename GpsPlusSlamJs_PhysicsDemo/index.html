@@ -7,18 +7,30 @@
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
     />
     <title>gps-plus-slam — physics demo</title>
+    <!--
+      design.css is a VERBATIM copy of GpsPlusSlamJs_DesignSystem/design.css,
+      written by `pnpm run vendor` there and held byte-identical by
+      tests/repo-config/design-css-copies.test.js - never edit it here. It
+      is linked before the <style> block so its @layer order is fixed first;
+      the rules below are unlayered and therefore win every conflict (the
+      adoption plan's L1 contract) - which is why there are so few of them.
+    -->
+    <link rel="stylesheet" href="/design.css" />
     <style>
       :root {
         color-scheme: dark;
       }
+      /* What stays app-owned: the page ground (the camera feed in AR, a
+         near-black stand-in before it), the AR / replay mount, the overlay's
+         stacking, and one behavioural rule on the sliders. Everything
+         visible is the design system's - the atoms and the start / bottom
+         compositions in design.css (adoption plan M4). A rule that styles
+         an element here would win over the system silently, so none is
+         added lightly. */
       html,
       body {
-        margin: 0;
-        padding: 0;
         height: 100%;
         background: #111;
-        color: #eee;
-        font-family: system-ui, sans-serif;
         overflow: hidden;
       }
       /* Range sliders in a panel that is swiped past on a phone: `pan-y` hands
@@ -39,107 +51,10 @@
         position: fixed;
         inset: 0;
         z-index: 1;
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
         pointer-events: none;
       }
       #overlay > * {
         pointer-events: auto;
-      }
-      .panel {
-        margin: 12px;
-        padding: 12px 14px;
-        background: rgb(0 0 0 / 60%);
-        border: 1px solid #333;
-        border-radius: 10px;
-        /* stylelint-disable-next-line csstree/validator -- min() is valid CSS; the bundled css-tree grammar rejects math functions (false positive). */
-        max-width: min(86vw, 460px);
-      }
-      #mode-screen {
-        align-self: center;
-        margin-top: auto;
-        margin-bottom: auto;
-        text-align: center;
-      }
-      #mode-screen h1 {
-        font-size: 18px;
-        margin: 0 0 8px;
-      }
-      #mode-screen p {
-        font-size: 14px;
-        line-height: 1.5;
-        margin: 0 0 14px;
-      }
-      button {
-        font: inherit;
-        font-size: 15px;
-        padding: 10px 18px;
-        border-radius: 8px;
-        border: 1px solid #4f8cff;
-        background: #234;
-        color: #eee;
-        cursor: pointer;
-      }
-      button:disabled {
-        opacity: 0.55;
-        cursor: default;
-      }
-      #capability-message {
-        font-size: 14px;
-        line-height: 1.5;
-        color: #ffd27f;
-        margin-top: 10px;
-      }
-      .file-row {
-        margin-top: 12px;
-        font-size: 14px;
-      }
-      [hidden] {
-        display: none !important;
-      }
-      /* Replay controls (bottom) */
-      #replay-panel {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-      }
-      #replay-status {
-        font-size: 14px;
-        line-height: 1.4;
-      }
-      #replay-controls {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-      }
-      #replay-speed-label {
-        font-size: 13px;
-        color: #cfcfcf;
-      }
-      #mesh-controls {
-        display: flex;
-        align-items: center;
-        gap: 14px;
-        font-size: 13px;
-      }
-      #mesh-controls select {
-        font: inherit;
-        font-size: 13px;
-        margin-left: 4px;
-      }
-      #physics-hint {
-        font-size: 13px;
-        color: #cfcfcf;
-      }
-      #stats {
-        font-size: 12px;
-        color: #9fdcff;
-        font-variant-numeric: tabular-nums;
-      }
-      #error {
-        color: #ff8a8a;
-        font-size: 13px;
       }
     </style>
   </head>
@@ -151,73 +66,107 @@
     -->
     <div id="app">
       <div id="overlay">
-        <!-- Mode entry / capability screen -->
-        <section id="mode-screen" class="panel" data-testid="mode-screen">
+        <!-- Mode entry / capability screen: the .start-panel composition.
+             The file input has no atom (adoption plan §7); it sits native
+             under a hint-voiced label. -->
+        <section
+          id="mode-screen"
+          class="start-panel plate"
+          data-testid="mode-screen"
+        >
           <h1>Physics demo</h1>
-          <p>
+          <p class="prose">
             Drop balls into the real world and watch them bounce off the
             reconstructed surfaces. On a phone this runs in AR; on the desktop,
             load a recorded walk and replay it — the developer harness.
           </p>
-          <button id="start-ar-button" data-testid="start-ar-button" hidden>
+          <button
+            id="start-ar-button"
+            class="btn btn--accent"
+            data-testid="start-ar-button"
+            hidden
+          >
             Start AR
           </button>
-          <div id="file-row" class="file-row" data-testid="file-row">
-            <label for="recording-input">Load a recording (.zip):</label>
+          <div id="file-row" class="col" data-testid="file-row">
+            <label class="hint" for="recording-input"
+              >Load a recording (.zip):</label
+            >
             <input
               id="recording-input"
+              class="prose"
               data-testid="recording-input"
               type="file"
               accept=".zip"
             />
           </div>
-          <div
+          <p
             id="capability-message"
+            class="prose"
+            data-tone="warn"
             data-testid="capability-message"
             hidden
-          ></div>
+          ></p>
         </section>
 
-        <!-- Replay controls -->
+        <!-- Replay controls: the .bottom-panel composition - status prose,
+             the transport row, the mesh selects, the tap hint, the stats
+             readout and a failure-toned error. -->
         <section
           id="replay-panel"
-          class="panel"
+          class="bottom-panel plate"
           data-testid="replay-panel"
           hidden
         >
-          <div id="replay-status" data-testid="replay-status"></div>
-          <div id="replay-controls">
-            <button id="play-pause-button" data-testid="play-pause-button">
+          <p id="replay-status" class="prose" data-testid="replay-status"></p>
+          <div id="replay-controls" class="row">
+            <button
+              id="play-pause-button"
+              class="btn"
+              data-testid="play-pause-button"
+            >
               Pause
             </button>
-            <label id="replay-speed-label" for="replay-speed">
-              Speed
-              <input
-                id="replay-speed"
-                data-testid="replay-speed"
-                type="range"
-                min="0.25"
-                max="4"
-                step="0.25"
-                value="1"
-              />
-            </label>
-            <span id="replay-speed-value" data-testid="replay-speed-value"
+            <label id="replay-speed-label" class="hint" for="replay-speed"
+              >Speed</label
+            >
+            <input
+              id="replay-speed"
+              class="slider"
+              data-testid="replay-speed"
+              type="range"
+              min="0.25"
+              max="4"
+              step="0.25"
+              value="1"
+            />
+            <span
+              id="replay-speed-value"
+              class="num"
+              data-testid="replay-speed-value"
               >1×</span
             >
           </div>
-          <div id="mesh-controls">
-            <label>
-              Mesh
-              <select id="mesh-style" data-testid="mesh-style">
+          <div id="mesh-controls" class="row">
+            <label class="hint" for="mesh-style">Mesh</label>
+            <span class="select-wrap">
+              <select
+                id="mesh-style"
+                class="select select--small"
+                data-testid="mesh-style"
+              >
                 <option value="smooth" selected>Surface nets</option>
                 <option value="greedy">Cubes (blocky)</option>
                 <option value="corner-fit">Corner-fit (smoothed)</option>
               </select>
-            </label>
-            <label>
-              Shader
-              <select id="mesh-shader" data-testid="mesh-shader">
+            </span>
+            <label class="hint" for="mesh-shader">Shader</label>
+            <span class="select-wrap">
+              <select
+                id="mesh-shader"
+                class="select select--small"
+                data-testid="mesh-shader"
+              >
                 <option value="depth-shaded-wireframe" selected>
                   Depth-shaded + wireframe
                 </option>
@@ -226,13 +175,19 @@
                 <option value="wireframe">Wireframe</option>
                 <option value="off">Off</option>
               </select>
-            </label>
+            </span>
           </div>
-          <div id="physics-hint">
+          <span id="physics-hint" class="hint">
             Click / tap to shoot a ball into the scene.
-          </div>
-          <div id="stats" data-testid="stats"></div>
-          <div id="error" data-testid="error" hidden></div>
+          </span>
+          <span id="stats" class="num" data-testid="stats"></span>
+          <p
+            id="error"
+            class="prose"
+            data-tone="warn"
+            data-testid="error"
+            hidden
+          ></p>
         </section>
       </div>
     </div>
