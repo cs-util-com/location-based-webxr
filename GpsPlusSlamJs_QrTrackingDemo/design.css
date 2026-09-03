@@ -1044,16 +1044,26 @@
      The track is a carved groove (like the slider), the knob a
      raised disc; checked wears the accent, the engaged colour. */
   .switch {
+    position: relative;
     display: flex;
     align-items: center;
     gap: var(--space-3);
     cursor: pointer;
     width: max-content;
   }
+  /* the real checkbox stays: invisible, but stretched over the whole
+     switch so IT is what a tap or a test's check() hits - focus, the
+     keyboard and the accessibility tree all keep working (an earlier
+     pointer-events: none made the label the hit target, which is what
+     Playwright refuses to click through) */
   .switch input {
     position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
     opacity: 0;
-    pointer-events: none;
+    cursor: pointer;
   }
   .switch-track {
     position: relative;
@@ -1207,6 +1217,15 @@
     align-items: center;
     flex-wrap: wrap;
   }
+  /* a slider in a row takes the room the labels leave, instead of its
+     own fixed width forcing the row onto three lines at phone width
+     (label / slider / value - measured on the wayfinding demo's
+     controls, M5) */
+  .row > .slider {
+    flex: 1 1 120px;
+    min-width: 120px;
+    width: auto;
+  }
   .col {
     display: flex;
     flex-direction: column;
@@ -1340,6 +1359,10 @@
     position: absolute;
     inset: 0;
     margin: auto;
+    /* above any HUD panel that is already up (the wayfinding demo's
+       desktop simulator starts under its mode card): the card is read
+       first, so it paints last */
+    z-index: 1;
     width: 340px;
     max-width: calc(100% - 2 * var(--space-4));
     height: max-content;
