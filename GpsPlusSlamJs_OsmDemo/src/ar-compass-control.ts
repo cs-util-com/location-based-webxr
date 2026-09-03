@@ -167,11 +167,10 @@ export function createArCompassControl(
       announcement ?? describeCompassInfluence(influence, live);
     // THE TWO STATES A USER WOULD OTHERWISE READ AS A BROKEN CONTROL: not
     // accepting input yet, and accepting it but taking half a minute to show.
-    // SHORTENED FOR THE ROW IT NOW SHARES (DEC-J8). "takes ~15–30 fixes to
-    // express" is 29 characters against ~208 px of cell beside a 9 rem slider —
-    // it fits by arithmetic with roughly 40 px to spare, which is thin enough
-    // that a wider font or a narrower phone would wrap it and put the box back
-    // to three rows, i.e. undo the change. At 20 characters the slack is ~90 px.
+    // The hint has a full-width line of its own since DEC-L2-13 (it used to
+    // share the slider's row, DEC-J8, which is why it was shortened to ~20
+    // characters); the short strings stay because the 390 px e2e still asserts
+    // the hint renders on ONE line box.
     hint.textContent = ready ? "~15–30 fixes to show" : "waiting for a GPS fix";
   };
 
@@ -206,16 +205,13 @@ export function createArCompassControl(
   });
 
   render();
-  // HINT BEFORE READOUT (J5, DEC-J8), so the box is two rows rather than three:
-  // the hint shares the slider's row and only the 40-character readout takes a
-  // line of its own (DEC-Y12 is untouched — it still cannot share).
+  // SLIDER, READOUT, HINT (DEC-L2-13, the catalog's arrangement, superseding
+  // DEC-J8's hint-beside-slider): the readout shares the slider's row and the
+  // hint has a line of its own below, both asserted by the 390 px e2e.
   //
-  // DOM ORDER RATHER THAN A CSS `order`. The hint explains the control it
-  // follows, so a screen reader should meet them in that sequence; reordering
-  // visually would leave the reading order as slider, readout, then an
-  // explanation of the slider.
-  // slider, readout, hint: the catalog's arrangement (DEC-L2-13, superseding
-  // DEC-J8's hint-beside-slider) - the reading order follows the visual one
+  // DOM ORDER RATHER THAN A CSS `order`, so a screen reader meets the control,
+  // its value and then the explanation - the same sequence a sighted user
+  // reads, and the unit test pins it.
   element.append(slider, readout, hint);
 
   return {
