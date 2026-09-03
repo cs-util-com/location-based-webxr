@@ -20,6 +20,8 @@
     before any interaction - hidden states (an opened panel) are not
     measured; shoot those through the app's e2e fakes.
   - Elements with a zero-size box are skipped (hidden sections).
+  - Waits for the load event plus 1.5 s, not for network idle: a page with
+    live fetches (map tiles) never goes idle.
 - Examples: on the QR demo before M3 it listed 29 differences
   (`h1 font-size 32px -> 20px`, `p margin-top 16px -> 0px`,
   `button#start-button font-family Arial -> system-ui`), which is what

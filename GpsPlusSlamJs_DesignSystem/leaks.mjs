@@ -53,7 +53,10 @@ const PROPS = [
 const b = await chromium.launch();
 const pg = await b.newPage({ viewport: { width: 390, height: 844 } });
 await pg.goto(url);
-await pg.waitForLoadState("networkidle");
+// load + a settle, not networkidle: a map page with live tile fetches never
+// goes idle (OsmDemo timed out on it, 2026-09-03)
+await pg.waitForLoadState("load");
+await pg.waitForTimeout(1500);
 const snap = () =>
   pg.evaluate((props) => {
     const out = {};
