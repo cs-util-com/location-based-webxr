@@ -76,13 +76,28 @@ const snap = () =>
     }
     return out;
   }, PROPS);
+// Two baselines, 2 s apart: a page still booting (a select filling with
+// options, a status line changing) would otherwise report its own progress
+// as the sheet's doing - OsmDemo reported 114 such lines. Anything that
+// differs between the two baselines is unstable and left out.
+const first = await snap();
+await pg.waitForTimeout(2000);
 const before = await snap();
+const unstable = new Set();
+for (const k of Object.keys(before)) {
+  for (const p of Object.keys(before[k])) {
+    if (JSON.stringify(first[k]?.[p]) !== JSON.stringify(before[k][p])) {
+      unstable.add(k + "|" + p);
+    }
+  }
+}
 await pg.addStyleTag({ content: css });
 await pg.waitForTimeout(100);
 const after = await snap();
 let n = 0;
 for (const k of Object.keys(before)) {
   for (const p of Object.keys(before[k])) {
+    if (unstable.has(k + "|" + p)) continue;
     const a = JSON.stringify(before[k][p]),
       z = JSON.stringify(after[k]?.[p]);
     if (a !== z) {
@@ -91,5 +106,8 @@ for (const k of Object.keys(before)) {
     }
   }
 }
-console.log(n ? `${n} differences` : "no differences");
+console.log(
+  n ? `${n} differences` : "no differences",
+  unstable.size ? `(${unstable.size} unstable properties ignored)` : "",
+);
 await b.close();
