@@ -24,7 +24,6 @@ export interface PlacementView {
   /** Sentence describing what the user should do / what just happened. */
   readonly banner: string;
   /** Whether to surface the "reload or share the link" call-to-action. */
-  readonly reloadPrompt: boolean;
   /**
    * Whether to surface the "copy link" share button. Shown once the anchor is
    * saved into the URL, so the user can hand the shareable link to another
@@ -85,7 +84,6 @@ export function toPlacementView(state: SetupState): PlacementView {
   return {
     button: buttonFor(state),
     banner: bannerFor(state),
-    reloadPrompt: state.phase === "saved",
     copyLink: { visible: state.phase === "saved" },
     error: state.errorMessage,
   };

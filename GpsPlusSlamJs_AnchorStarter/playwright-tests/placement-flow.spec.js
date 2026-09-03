@@ -43,7 +43,6 @@ test.describe("Anchor starter — Tier 1 placement flow", () => {
 
     // Nothing is saved yet, so the share/reload affordances stay hidden.
     await expect(page.getByTestId("copy-link-button")).toBeHidden();
-    await expect(page.getByTestId("reload-prompt")).toBeHidden();
     await expect(page.getByTestId("start-screen")).toBeHidden();
   });
 
@@ -166,7 +165,6 @@ test.describe("Anchor starter — Tier 1 placement flow", () => {
       "Saved into the page link",
     );
     await expect(page.getByTestId("copy-link-button")).toBeVisible();
-    await expect(page.getByTestId("reload-prompt")).toBeVisible();
   });
 
   test("writes the anchor into the ?show= URL param on place", async ({

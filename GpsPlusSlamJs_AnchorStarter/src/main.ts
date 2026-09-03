@@ -97,7 +97,6 @@ const dom = {
   error: el("error"),
   placeButton: el<HTMLButtonElement>("place-button"),
   copyLinkButton: el<HTMLButtonElement>("copy-link-button"),
-  reloadPrompt: el("reload-prompt"),
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -202,7 +201,6 @@ function renderPlacement(): void {
   dom.error.hidden = view.error === null;
   dom.error.textContent = view.error ?? "";
   dom.copyLinkButton.hidden = !view.copyLink.visible;
-  dom.reloadPrompt.hidden = !view.reloadPrompt;
 }
 
 function render(): void {
