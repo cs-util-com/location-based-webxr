@@ -52,11 +52,11 @@ async function buildArOverlayFixture(page) {
     const stack = document.createElement("div");
     stack.className = "ar-stack";
     const hud = document.createElement("div");
-    hud.className = "ar-hud";
+    hud.className = "ar-hud hud-readout plate";
     hud.textContent = "lat 50.9413\nlng 6.9580";
     // The collapse toggle is part of the readout's real box (DEC-H2).
     const toggle = document.createElement("button");
-    toggle.className = "ar-hud-toggle";
+    toggle.className = "ar-hud-toggle btn btn--icon btn--glyph";
     toggle.textContent = "more";
     hud.append(toggle);
     stack.append(hud);
@@ -67,27 +67,27 @@ async function buildArOverlayFixture(page) {
     // class names and the production content lengths, because the whole
     // question this test answers is whether the real CSS fits them.
     const bottom = document.createElement("div");
-    bottom.className = "ar-bottom";
+    bottom.className = "ar-bottom hud-bottom";
     const bottomRow = document.createElement("div");
-    bottomRow.className = "ar-bottom-row";
+    bottomRow.className = "ar-bottom-row row";
 
     const elevation = document.createElement("div");
-    elevation.className = "ar-elevation";
+    elevation.className = "ar-elevation hud-elevation plate";
     const down = document.createElement("button");
-    down.className = "ar-elevation-button";
+    down.className = "ar-elevation-button btn btn--icon btn--glyph";
     down.textContent = "−";
     const value = document.createElement("span");
-    value.className = "ar-elevation-value";
+    value.className = "ar-elevation-value num";
     value.textContent = "+0.0 m";
     const up = document.createElement("button");
-    up.className = "ar-elevation-button";
+    up.className = "ar-elevation-button btn btn--icon btn--glyph";
     up.textContent = "+";
     elevation.append(down, value, up);
 
     const gearWrap = document.createElement("div");
     gearWrap.className = "ar-gear-wrap";
     const gear = document.createElement("button");
-    gear.className = "ar-gear";
+    gear.className = "ar-gear btn btn--icon";
     gear.textContent = "⚙";
     gearWrap.append(gear);
 
@@ -2614,11 +2614,12 @@ test.describe("the AR entry point", () => {
       const wrap = document.createElement("div");
       wrap.className = "ar-gear-wrap";
       const body = document.createElement("div");
-      body.className = "ar-experiments";
+      // the builder adds the design system's classes beside the hook (M6b)
+      body.className = "ar-experiments exp-panel plate";
       // EXACTLY WHAT THE PRODUCTION CODE WRITES at mount and on close.
       body.hidden = true;
       const row = document.createElement("label");
-      row.className = "ar-experiments-row";
+      row.className = "ar-experiments-row exp-row";
       row.textContent = "rotation prior";
       body.append(row);
       wrap.append(body);

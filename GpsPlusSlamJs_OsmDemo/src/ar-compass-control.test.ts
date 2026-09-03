@@ -54,7 +54,7 @@ describe("createArCompassControl", () => {
     // keeps that test measuring the thing this module actually builds; without
     // it, renaming the class here would move the slider back into the middle of
     // the view with the whole suite green.
-    expect(root.children[0]?.className).toBe("ar-compass");
+    expect(root.children[0]?.classList.contains("ar-compass")).toBe(true);
   });
 
   it("removes itself on dispose, and both calls are idempotent", () => {
@@ -186,7 +186,10 @@ describe("createArCompassControl", () => {
     const { root, control } = harness();
     control.attach();
     const box = root.querySelector(".ar-compass");
-    const classes = [...(box?.children ?? [])].map((child) => child.className);
+    // the FIRST class is the hook; the design system's atoms follow it (M6b)
+    const classes = [...(box?.children ?? [])].map(
+      (child) => child.className.split(" ")[0],
+    );
     expect(classes).toEqual([
       "ar-compass-slider",
       "ar-compass-hint",

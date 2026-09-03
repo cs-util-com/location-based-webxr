@@ -56,7 +56,7 @@ export type ArToast = Toast;
  */
 export function createArToast(root: HTMLElement): ArToast {
   return createToast(root, {
-    className: "ar-toast",
+    className: "ar-toast toast",
     lingerMs: AR_TOAST_LINGER_MS,
   });
 }

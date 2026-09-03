@@ -927,12 +927,12 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     // phase, so two hard-coded offsets that must not collide is exactly how the
     // earlier toast/slider overlap happened (PR #311 review, finding 4).
     const arBottom = document.createElement("div");
-    arBottom.className = "ar-bottom";
+    arBottom.className = "ar-bottom hud-bottom";
     deps.container.append(arBottom);
     session.bottom = arBottom;
 
     const arBottomRow = document.createElement("div");
-    arBottomRow.className = "ar-bottom-row";
+    arBottomRow.className = "ar-bottom-row row";
     arBottom.append(arBottomRow);
 
     session.elevation = createArElevationControl({

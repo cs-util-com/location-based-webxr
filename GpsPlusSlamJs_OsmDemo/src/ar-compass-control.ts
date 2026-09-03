@@ -130,11 +130,11 @@ export function createArCompassControl(
   let live: CompassLiveState | undefined;
 
   const element = document.createElement("div");
-  element.className = "ar-compass";
+  element.className = "ar-compass hud-compass plate";
 
   const slider = document.createElement("input");
   slider.type = "range";
-  slider.className = "ar-compass-slider";
+  slider.className = "ar-compass-slider slider";
   slider.min = "0";
   slider.max = "1";
   slider.step = String(COMPASS_INFLUENCE_STEP);
@@ -145,12 +145,12 @@ export function createArCompassControl(
   slider.disabled = true;
 
   const readout = document.createElement("span");
-  readout.className = "ar-compass-value";
+  readout.className = "ar-compass-value num num--accent";
   // ANNOUNCED politely: this changes only when dragged, unlike the HUD.
   readout.setAttribute("aria-live", "polite");
 
   const hint = document.createElement("span");
-  hint.className = "ar-compass-hint";
+  hint.className = "ar-compass-hint hint";
 
   /**
    * A confirmation that temporarily replaces the influence readout.

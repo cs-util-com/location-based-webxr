@@ -43,7 +43,7 @@ export interface ArElevationControl {
 function button(label: string, title: string): HTMLButtonElement {
   const element = document.createElement("button");
   element.type = "button";
-  element.className = "ar-elevation-button";
+  element.className = "ar-elevation-button btn btn--icon btn--glyph";
   element.textContent = label;
   // A TITLE AND AN ACCESSIBLE NAME. The glyph alone is meaningless to a screen
   // reader, and `#ar-root` is no longer inert (r510 review), so its contents are
@@ -60,12 +60,12 @@ export function createArElevationControl(
   let attached = false;
 
   const element = document.createElement("div");
-  element.className = "ar-elevation";
+  element.className = "ar-elevation hud-elevation plate";
 
   const down = button("−", `Lower the map by ${NUDGE_STEP_M} m`);
   const up = button("+", `Raise the map by ${NUDGE_STEP_M} m`);
   const readout = document.createElement("span");
-  readout.className = "ar-elevation-value";
+  readout.className = "ar-elevation-value num";
   // ANNOUNCED, unlike the HUD. This one changes only when pressed, so a polite
   // live region reports the result of the user's own action rather than
   // narrating a number twice a second.

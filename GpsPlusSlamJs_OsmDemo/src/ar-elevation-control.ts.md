@@ -73,3 +73,5 @@ buttons have an accessible name.
   reasoning about it.
 - `GpsPlusSlamJs_Docs/docs/2026-08-16-1123-ar-elevation-and-compass-controls-plan.md`
   — the plan and DEC-E1.
+
+- Design system (adoption plan M6b): the control is the `.hud-elevation` plate with two glyph `.btn--icon`s and a `.num` value. The `ar-*` names stay as hooks for the tests and the e2e; the look comes from the vendored `design.css`, and `index.html` keeps only the behavioural rules (pointer-events, line breaks, placement).

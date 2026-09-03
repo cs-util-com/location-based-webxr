@@ -95,7 +95,7 @@ export function createArExperimentPanel(
 
   const gear = document.createElement("button");
   gear.type = "button";
-  gear.className = "ar-gear";
+  gear.className = "ar-gear btn btn--icon";
   // A GLYPH ANNOUNCES NOTHING. `#ar-root` is not inert (r510 review), so this
   // button is reachable by a screen reader, which would otherwise read it as
   // "button, gear".
@@ -104,7 +104,7 @@ export function createArExperimentPanel(
   gear.textContent = "⚙";
 
   const body = document.createElement("div");
-  body.className = "ar-experiments";
+  body.className = "ar-experiments exp-panel plate";
   panelSeq += 1;
   body.id = `ar-experiments-${String(panelSeq)}`;
   body.hidden = true;
@@ -139,7 +139,7 @@ export function createArExperimentPanel(
 
   const row = (labelText: string, input: HTMLElement): HTMLElement => {
     const label = document.createElement("label");
-    label.className = "ar-experiments-row";
+    label.className = "ar-experiments-row exp-row";
     const text = document.createElement("span");
     text.textContent = labelText;
     label.append(input, text);
@@ -164,7 +164,7 @@ export function createArExperimentPanel(
     input.id = id;
     // Carries its own class rather than being styled as a descendant, so the
     // rule cannot outrank the sheet's bare `select` by accident.
-    input.className = "ar-experiments-select";
+    input.className = "ar-experiments-select select select--small";
     for (const value of values) {
       const option = document.createElement("option");
       option.value = value;

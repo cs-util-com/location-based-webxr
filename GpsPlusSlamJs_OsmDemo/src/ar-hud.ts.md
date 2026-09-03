@@ -125,3 +125,5 @@ expanded is what you open just before taking a screenshot. Membership lives in
   CSS lives in `index.html` beside the other AR overlay classes.
   - Class names are **kebab-case, not BEM**: the gate's `lint:css` enforces
     `selector-class-pattern`, and `__` names fail it.
+
+- Design system (adoption plan M6b): the readout is the `.hud-readout` plate, its values a `.num`, its toggle a glyph `.btn--icon`. The `ar-*` names stay as hooks for the tests and the e2e; the look comes from the vendored `design.css`, and `index.html` keeps only the behavioural rules (pointer-events, line breaks, placement).

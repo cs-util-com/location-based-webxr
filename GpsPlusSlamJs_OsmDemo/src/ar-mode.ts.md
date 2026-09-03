@@ -345,3 +345,5 @@ assertion about an applied auto value would hold vacuously without the walk.
 spy pipeline to pin the lifecycle wiring itself — every captured sample reaches
 `fold`, `clear` runs in the same callback as the `odometryTrackingRestarted`
 dispatch, and no pipeline exists without the dep.
+
+- Design system (adoption plan M6b): the bottom stack is `.hud-bottom`, its control row a `.row`. The `ar-*` names stay as hooks for the tests and the e2e; the look comes from the vendored `design.css`, and `index.html` keeps only the behavioural rules (pointer-events, line breaks, placement).
