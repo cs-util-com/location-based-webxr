@@ -410,14 +410,16 @@
       <section>
         <h3>Log panel</h3>
         <!-- the line format is the shipped contract from the
-             RecorderApp log-panel.ts: time [tag] message -->
+             RecorderApp log-panel.ts: time [tag] message, tags as its
+             sidecar names them ("GPS", "Storage") - the case shows now that
+             the log is prose (DEC-L2-9) -->
         <div class="log" role="log">
-          <span>14:32:07 [gps] fix ±6.0 m</span>
-          <span>14:32:09 [anchor] re-observed from here</span>
-          <span>14:32:12 [tracking] warming up</span>
-          <span>14:32:15 [tracking] ok · 92%</span>
-          <span>14:32:21 [gps] fix ±4.1 m</span>
-          <span>14:32:26 [anchor] 40 m from anchor</span>
+          <span>14:32:07 [GPS] Fix ±6.0 m</span>
+          <span>14:32:09 [Anchor] Re-observed from here</span>
+          <span>14:32:12 [Tracking] Warming up</span>
+          <span>14:32:15 [Tracking] OK · 92%</span>
+          <span>14:32:21 [GPS] Fix ±4.1 m</span>
+          <span>14:32:26 [Anchor] 40 m from anchor</span>
         </div>
       </section>
 

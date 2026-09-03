@@ -203,7 +203,7 @@
        labels: buttons, badges, readout keys, section labels. The PROSE
        voice keeps its case and normal tracking for anything
        sentence-shaped: toast copy, modal body, hints, annotation
-       descriptions - uppercase is measurably slower to read (brief,
+       descriptions, log lines - uppercase is measurably slower to read (brief,
        legibility rules). Both are applied at the atom boundary (first
        rules of the atoms layer), NOT on body, so extracting the atoms
        carries the voice without uppercasing a host app's page. An atom
@@ -320,11 +320,13 @@
     letter-spacing: var(--tracking-ui);
   }
   /* THE PROSE VOICE - the sentence-shaped atoms opt out of the uppercase
-     here, through the token pair (DEC-L2-2). Titles inside an
+     here, through the token pair (DEC-L2-2; the log joined by DEC-L2-9,
+     because log lines are read, not glanced). Titles inside an
      annotation are labels and opt back in below. */
   .toast,
   .hint,
   .anno-text,
+  .log,
   .prose {
     text-transform: var(--case-prose);
     letter-spacing: var(--tracking-prose);
@@ -758,8 +760,6 @@
     gap: 2px;
     font-family: var(--font-ui);
     font-size: var(--size-hint);
-    text-transform: var(--case-ui);
-    letter-spacing: var(--tracking-ui);
   }
 
   /* --- legend ---
