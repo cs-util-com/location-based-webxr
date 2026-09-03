@@ -12,7 +12,9 @@
 - Public API (CLI): `pnpm run vendor` refreshes every app that already
   holds a copy; `pnpm run vendor -- <AppDir>` adds an app (its first copy)
   and then refreshes all. Exit 2 if a named directory has no `index.html`.
-  Prints one line per copy written.
+  Prints one line per copy written. Exit 2 if a destination is a
+  symbolic link: `copyFileSync` would write through it to wherever it
+  points, so a link is refused rather than followed.
 - Invariants & assumptions:
   - **The app list is the filesystem**: every `../GpsPlusSlamJs_*/design.css`
     is a holder. Neither this script nor the guard hard-codes the list,

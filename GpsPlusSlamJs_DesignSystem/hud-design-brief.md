@@ -14,7 +14,7 @@ than alternatives to it - the normal mode now that the language has stabilised.
 For a D6 round, paste **§C (the token reference)** into the chat along with the
 prompt: it is the token contract, including what each token must never be used
 for. (A source check in the package fails if §C names a token that no longer
-exists in `styles.css`.)
+exists in `design.css` or `catalog.css`.)
 **Run each in a FRESH conversation.** If you ask one conversation for several
 mockups, each one is conditioned on the last and they converge on a house style,
 which defeats the point.
@@ -125,7 +125,7 @@ rather than arguing about it.
 Every visual value in the system reaches CSS through one of these. When
 generating in-language (D6), use these names; never invent a value-named
 primitive (no `--orange-500`). A source check in the package keeps this list
-honest against `styles.css`.
+honest against `design.css` and `catalog.css`.
 
 - **Neutral poles**: `--ink` #fff (draws everything) · `--paper` #232838
   (page ground - demo only, a real HUD's ground is the camera).

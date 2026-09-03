@@ -64,7 +64,21 @@ const snap = () =>
       const r = el.getBoundingClientRect();
       if (r.width === 0 && r.height === 0) continue;
       const cs = getComputedStyle(el);
+      // keyed by DOM PATH, not by tag+classes: repeated elements (button.btn,
+      // div.row) would otherwise collapse into one record and the tool would
+      // sample one of them instead of all (PR #409 review). The descriptor is
+      // appended for the reader.
+      const pathOf = (node) => {
+        const parts = [];
+        for (let n = node; n && n !== document.body; n = n.parentElement) {
+          const i = [...n.parentElement.children].indexOf(n) + 1;
+          parts.unshift(n.tagName.toLowerCase() + ":nth-child(" + i + ")");
+        }
+        return parts.join(">");
+      };
       const key =
+        pathOf(el) +
+        " " +
         el.tagName.toLowerCase() +
         (el.id ? "#" + el.id : "") +
         (el.className && typeof el.className === "string"

@@ -23,7 +23,13 @@
  * the filesystem (every GpsPlusSlamJs_<app>/design.css), so there is one
  * source of truth - the copies themselves.
  */
-import { copyFileSync, existsSync, readdirSync, statSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  lstatSync,
+  readdirSync,
+  statSync,
+} from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -55,6 +61,15 @@ if (targets.length === 0) {
 }
 for (const app of targets) {
   const dest = join(root, app, "design.css");
+  // copyFileSync follows a symbolic-link destination and would overwrite its
+  // target - a planted link in a checkout could point outside the workspace
+  // (PR #409 review). A link is refused; a copy is always a plain file.
+  if (existsSync(dest) && lstatSync(dest).isSymbolicLink()) {
+    console.error(
+      `vendor: ${app}/design.css is a symbolic link - refusing to write through it`,
+    );
+    process.exit(2);
+  }
   copyFileSync(source, dest);
   console.log(`vendor: ${app}/design.css  (${statSync(dest).size} bytes)`);
 }

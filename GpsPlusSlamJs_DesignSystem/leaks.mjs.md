@@ -20,6 +20,9 @@
     before any interaction - hidden states (an opened panel) are not
     measured; shoot those through the app's e2e fakes.
   - Elements with a zero-size box are skipped (hidden sections).
+  - Records are keyed by DOM path (the nth-child chain), so repeated
+    elements are all measured; the printed line prefixes each key with that
+    path.
   - Waits for the load event plus 1.5 s, not for network idle: a page with
     live fetches (map tiles) never goes idle.
   - Takes two baselines 2 s apart and ignores every property that differs
