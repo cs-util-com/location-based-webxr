@@ -195,6 +195,27 @@
       </section>
 
       <section>
+        <h3>Key / value lines</h3>
+        <!-- real strings from QrTrackingDemo hud-view.ts: the measured-size
+             readout a developer checks against a tape measure -->
+        <div class="plate col">
+          <span class="num">Locked — axis + cube glued</span>
+          <div class="kv">
+            <span class="hint">size</span><span class="num">20.0 cm</span>
+          </div>
+          <div class="kv">
+            <span class="hint">samples</span><span class="num">12 samples</span>
+          </div>
+          <div class="kv">
+            <span class="hint">spread</span><span class="num">±2 mm</span>
+          </div>
+          <div class="kv">
+            <span class="hint">stage</span><span class="num">estimated</span>
+          </div>
+        </div>
+      </section>
+
+      <section>
         <h3>Prose — sentence text inside a plate, and its failure tone</h3>
         <!-- real strings: AnchorStarter's start card, and the framework's
              capabilityMessage() for a device without WebXR -->
@@ -745,7 +766,7 @@
 
           <!-- the bottom panel, real strings from placement-view.ts in the
                "ready to place, tracking good" state -->
-          <div class="placement-panel plate">
+          <div class="bottom-panel plate">
             <p class="prose">Tracking looks good — place your anchor.</p>
             <button class="btn btn--accent">Place anchor</button>
           </div>

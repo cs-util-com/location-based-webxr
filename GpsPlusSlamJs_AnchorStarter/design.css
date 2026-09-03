@@ -331,6 +331,15 @@
     text-transform: var(--case-prose);
     letter-spacing: var(--tracking-prose);
   }
+  /* --- key / value line: a hint-voiced key at the left, its readout at
+     the right, on one baseline - the QR demo's size / samples / spread /
+     stage rows. Put a .hint and a .num in it. --- */
+  .kv {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: var(--space-3);
+  }
   /* --- prose: sentence-shaped body text inside a plate - a modal's
      question, a start card's explanation, a placement banner. Body
      size, plate ink; the atom exists so a paragraph in a plate has a
@@ -1303,11 +1312,12 @@
   .guidance-panel .progress {
     width: 100%;
   }
-  /* the bottom panel: banner, error, the decisive action, the share
-     action and the reload hint - what AnchorStarter's placement section
-     holds, stacked full-width like .modal-actions and for the same
-     reason (the label voice makes two buttons too wide side by side) */
-  .placement-panel {
+  /* the bottom panel: a centred stack at the thumb end of the screen -
+     AnchorStarter's placement section (banner, error, the decisive
+     action, the share action), QrTrackingDemo's error line. Stacked
+     full-width like .modal-actions and for the same reason (the label
+     voice makes two buttons too wide side by side). */
+  .bottom-panel {
     position: absolute;
     left: 50%;
     bottom: 34px;
