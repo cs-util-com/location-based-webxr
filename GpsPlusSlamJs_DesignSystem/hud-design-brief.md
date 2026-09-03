@@ -79,7 +79,8 @@ Rounded geometry: 14px panels, 10px buttons, 14px rounded-SQUARE icon buttons
 (44px, never circles), 999px pills. Two voices from one token pair: uppercase with
 0.08em tracking for short labels (buttons, badges, readout keys, section labels);
 sentence case with normal tracking for anything sentence-shaped (toast copy, modal
-body, hints, annotation descriptions, log lines - the `.prose` atom for a paragraph in a plate). Weight 500, Corbel-first system stack, falling back to Noto Sans on
+body, hints, annotation descriptions, log lines - the `.prose` atom for a paragraph in a plate)
+and for readout VALUES, whose unit symbols are case-sensitive ("8 m", never "8 M"). Weight 500, Corbel-first system stack, falling back to Noto Sans on
 Android (Corbel old-style figures are deliberate but Windows-only; the
 fallbacks render lining figures). Sliders are an 18px carved groove with a translucent-white
 pill thumb riding flush inside it. Toasts are translucent white
@@ -155,7 +156,8 @@ honest against `styles.css`.
   = 500 (flattened on purpose; emphasis comes from accent, never weight) ·
   `--case-ui` + `--tracking-ui` (the label voice: uppercase, applied at the atom
   boundary - never put it on body) · `--case-prose` + `--tracking-prose` (the
-  sentence voice for toast copy, modal body, hints, annotation descriptions and log lines;
+  sentence voice for toast copy, modal body, hints, annotation descriptions, log lines
+  and readout values (`.num` - unit symbols are case-sensitive);
   an atom switches voice by choosing the pair, never with a bare
   `text-transform: none`).
 - **Geometry**: `--space-1..4` (4/8/12/16) · `--radius` 14 (panels, icon

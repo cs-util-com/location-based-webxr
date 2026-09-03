@@ -321,12 +321,15 @@
   }
   /* THE PROSE VOICE - the sentence-shaped atoms opt out of the uppercase
      here, through the token pair (DEC-L2-2; the log joined by DEC-L2-9,
-     because log lines are read, not glanced). Titles inside an
-     annotation are labels and opt back in below. */
+     because log lines are read, not glanced; readout values by
+     DEC-L2-11, because unit symbols are case-sensitive - "8 m" is
+     metres, "8 M" is not). Keys and labels stay uppercase; titles inside
+     an annotation are labels and opt back in below. */
   .toast,
   .hint,
   .anno-text,
   .log,
+  .num,
   .prose {
     text-transform: var(--case-prose);
     letter-spacing: var(--tracking-prose);
