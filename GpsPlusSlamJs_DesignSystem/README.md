@@ -81,6 +81,11 @@ background works.
 
 ## Vendoring into an app
 
+Before the first copy lands, measure what the sheet would change on the
+app as it is: `pnpm run leaks -- <app url>` (dev server up) prints every
+computed-style difference, element by element - the pins, or the decision
+not to pin, come from that list.
+
 Apps do not depend on this package; each adopting app holds a **verbatim
 copy** of `design.css` next to its `index.html` and links it before its
 own `<style>`:

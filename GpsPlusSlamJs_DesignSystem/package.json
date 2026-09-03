@@ -12,7 +12,8 @@
     "check:tokens": "node ../scripts/test-timing/timed-stage.mjs check:tokens",
     "shoot": "node shoot.mjs",
     "serve": "node serve.mjs",
-    "vendor": "node vendor.mjs"
+    "vendor": "node vendor.mjs",
+    "leaks": "node leaks.mjs"
   },
   "devDependencies": {
     "@carlosjeurissen/stylelint-csstree-validator": "^3.3.1",
