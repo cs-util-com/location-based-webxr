@@ -7,18 +7,32 @@
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
     />
     <title>gps-plus-slam — wayfinding HUD demo</title>
+    <!--
+      design.css is a VERBATIM copy of GpsPlusSlamJs_DesignSystem/design.css,
+      written by `pnpm run vendor` there and held byte-identical by
+      tests/repo-config/design-css-copies.test.js - never edit it here. It
+      is linked before the <style> block so its @layer order is fixed first;
+      the rules below are unlayered and therefore win every conflict (the
+      adoption plan's L1 contract) - which is why there are so few of them.
+    -->
+    <link rel="stylesheet" href="/design.css" />
     <style>
       :root {
         color-scheme: dark;
       }
+      /* What stays app-owned: the page ground (the camera feed in AR, a
+         near-black stand-in before it), the AR / simulator mount, the
+         overlay's stacking, and three behavioural rules: the sliders'
+         touch-action, the status text's line breaks (a formatting contract
+         of the status string) and the instruction list's indent (lists
+         have no atom - adoption plan §7). Everything visible is the design
+         system's - the atoms and the start / bottom compositions in
+         design.css (adoption plan M5). A rule that styles an element here
+         would win over the system silently, so none is added lightly. */
       html,
       body {
-        margin: 0;
-        padding: 0;
         height: 100%;
         background: #111;
-        color: #eee;
-        font-family: system-ui, sans-serif;
         overflow: hidden;
       }
       /* The simulator / AR scene mounts its canvas here. */
@@ -31,126 +45,28 @@
         position: fixed;
         inset: 0;
         z-index: 1;
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
         pointer-events: none;
       }
       #overlay > * {
         pointer-events: auto;
       }
-      .panel {
-        margin: 12px;
-        padding: 12px 14px;
-        background: rgb(0 0 0 / 60%);
-        border: 1px solid #333;
-        border-radius: 10px;
-        /* stylelint-disable-next-line csstree/validator -- min() is valid CSS; the bundled css-tree grammar rejects math functions (false positive). */
-        max-width: min(86vw, 460px);
-      }
-      #mode-screen {
-        align-self: center;
-        margin-top: auto;
-        margin-bottom: auto;
-        text-align: center;
-      }
-      #mode-screen h1 {
-        font-size: 18px;
-        margin: 0 0 8px;
-      }
-      #mode-screen p {
-        font-size: 14px;
-        line-height: 1.5;
-        margin: 0 0 14px;
-      }
-      button {
-        font: inherit;
-        font-size: 15px;
-        padding: 10px 18px;
-        border-radius: 8px;
-        border: 1px solid #4f8cff;
-        background: #234;
-        color: #eee;
-        cursor: pointer;
-      }
-      button:disabled {
-        opacity: 0.55;
-        cursor: default;
-      }
-      #capability-message {
-        font-size: 14px;
-        line-height: 1.5;
-        color: #ffd27f;
-        margin-top: 10px;
-      }
-      #sim-note {
-        font-size: 14px;
-        line-height: 1.5;
-        color: #9fdcff;
-      }
-      [hidden] {
-        display: none !important;
-      }
-      /* HUD panel (bottom) */
-      #hud-panel {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-      }
-      #hud-status {
-        font-size: 13px;
-        color: #9fdcff;
-        font-variant-numeric: tabular-nums;
-        margin: 0;
-        font-family: inherit;
-        white-space: pre-wrap;
-      }
-      #hud-controls {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px 16px;
-        font-size: 13px;
-      }
-      #hud-controls label {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-      }
       /* Range sliders in a panel that is swiped past on a phone: `pan-y` hands
          vertical panning back to the page so a downward swipe scrolls (and the
          browser cancels the slider gesture) instead of dragging the thumb. The
          value itself is protected by the framework's slider-scroll-guard —
-         CSS cannot undo Blink's jump-to-position write on pointer-down. Kept
-         ABOVE the #hud-controls rule below: stylelint's no-descending-specificity
-         wants the plain element selector first. */
+         CSS cannot undo Blink's jump-to-position write on pointer-down. */
       input[type="range"] {
         touch-action: pan-y;
       }
-      #hud-controls input[type="range"] {
-        width: 110px;
-      }
-      #hud-controls output {
-        min-width: 44px;
-        font-variant-numeric: tabular-nums;
-      }
-      #ar-instructions {
-        font-size: 13px;
-        color: #cfcfcf;
+      /* The status string carries its own line breaks. */
+      #hud-status {
+        white-space: pre-wrap;
       }
       #ar-instructions ol {
-        margin: 0;
         padding-left: 18px;
         display: flex;
         flex-direction: column;
         gap: 2px;
-      }
-      #ar-hint-flash {
-        font-size: 13px;
-        color: #ffd27f;
-      }
-      #error {
-        color: #ff8a8a;
-        font-size: 13px;
       }
     </style>
   </head>
@@ -162,37 +78,56 @@
     -->
     <div id="app">
       <div id="overlay">
-        <!-- Mode entry screen -->
-        <section id="mode-screen" class="panel" data-testid="mode-screen">
+        <!-- Mode entry screen: the .start-panel composition. -->
+        <section
+          id="mode-screen"
+          class="start-panel plate"
+          data-testid="mode-screen"
+        >
           <h1>Wayfinding HUD demo</h1>
-          <p>
+          <p class="prose">
             Edge arrows point at off-screen targets, rings mark on-screen ones,
             and everything hides when you arrive — with a hysteresis deadband so
             nothing flickers. On a phone this runs in AR with tap-to-place
             waypoints; on the desktop you walk a simulated scene.
           </p>
-          <button id="start-ar-button" data-testid="start-ar-button" hidden>
+          <button
+            id="start-ar-button"
+            class="btn btn--accent"
+            data-testid="start-ar-button"
+            hidden
+          >
             Start AR
           </button>
-          <div id="sim-note" data-testid="sim-note">
+          <p id="sim-note" class="hint" data-testid="sim-note">
             Desktop simulator: <strong>W/A/S/D</strong> or arrow keys to walk,
             <strong>drag</strong> to look around.
-          </div>
-          <div
+          </p>
+          <p
             id="capability-message"
+            class="prose"
+            data-tone="warn"
             data-testid="capability-message"
             hidden
-          ></div>
+          ></p>
         </section>
 
-        <!-- HUD status + live controls -->
-        <section id="hud-panel" class="panel" data-testid="hud-panel" hidden>
-          <pre id="hud-status" data-testid="hud-status"></pre>
-          <div id="hud-controls">
-            <label>
-              Hide below
+        <!-- HUD status + live controls: the .bottom-panel composition - the
+             status readout, three slider rows, the switch, the AR
+             instructions, the hint flash and a failure-toned error. -->
+        <section
+          id="hud-panel"
+          class="bottom-panel plate"
+          data-testid="hud-panel"
+          hidden
+        >
+          <pre id="hud-status" class="num" data-testid="hud-status"></pre>
+          <div id="hud-controls" class="col">
+            <label class="row">
+              <span class="hint">Hide below</span>
               <input
                 id="distance-min"
+                class="slider"
                 data-testid="distance-min"
                 type="range"
                 min="0"
@@ -201,13 +136,15 @@
               />
               <output
                 id="distance-min-value"
+                class="num"
                 data-testid="distance-min-value"
               ></output>
             </label>
-            <label>
-              Show beyond
+            <label class="row">
+              <span class="hint">Show beyond</span>
               <input
                 id="distance-max"
+                class="slider"
                 data-testid="distance-max"
                 type="range"
                 min="0"
@@ -216,13 +153,15 @@
               />
               <output
                 id="distance-max-value"
+                class="num"
                 data-testid="distance-max-value"
               ></output>
             </label>
-            <label>
-              Indicator size
+            <label class="row">
+              <span class="hint">Indicator size</span>
               <input
                 id="indicator-scale"
+                class="slider"
                 data-testid="indicator-scale"
                 type="range"
                 min="0.2"
@@ -231,19 +170,26 @@
               />
               <output
                 id="indicator-scale-value"
+                class="num"
                 data-testid="indicator-scale-value"
               ></output>
             </label>
-            <label>
+            <label class="switch">
               <input
                 id="image-indicators"
                 data-testid="image-indicators"
                 type="checkbox"
               />
+              <span class="switch-track"></span>
               Image indicators
             </label>
           </div>
-          <div id="ar-instructions" data-testid="ar-instructions" hidden>
+          <div
+            id="ar-instructions"
+            class="hint"
+            data-testid="ar-instructions"
+            hidden
+          >
             <ol>
               <li>
                 Three example targets appeared around you — the edge arrow
@@ -260,8 +206,19 @@
               </li>
             </ol>
           </div>
-          <div id="ar-hint-flash" data-testid="ar-hint-flash" hidden></div>
-          <div id="error" data-testid="error" hidden></div>
+          <p
+            id="ar-hint-flash"
+            class="hint"
+            data-testid="ar-hint-flash"
+            hidden
+          ></p>
+          <p
+            id="error"
+            class="prose"
+            data-tone="warn"
+            data-testid="error"
+            hidden
+          ></p>
         </section>
       </div>
     </div>
