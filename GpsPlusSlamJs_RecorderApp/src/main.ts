@@ -710,9 +710,13 @@ export async function resetForNewRecording(): Promise<void> {
   // Reset recording-level counters
   gpsEventVisualizer.clearAll();
 
-  // Fresh store for next session
+  // Fresh store for next session. The debug wheel follows storeRef; a wheel
+  // suspended by a replay swap must be resumed onto the new live store or it
+  // would silently hold every change (PR #409 review) - same order as the
+  // recording swap above: store first, resume after.
   store = createNewStore();
   storeRef.set(store);
+  debugWheel?.resume();
 
   // --- Reset storage (preserve OPFS root, clear session handles) ---
   resetForNewSession();
