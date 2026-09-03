@@ -40,9 +40,29 @@
       rel="stylesheet"
       href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
     />
+    <!--
+      design.css is a VERBATIM copy of GpsPlusSlamJs_DesignSystem/design.css,
+      written by `pnpm run vendor` there and held byte-identical by
+      tests/repo-config/design-css-copies.test.js - never edit it here. It
+      is linked before the <style> block so its @layer order is fixed first;
+      the rules below are unlayered and therefore win every conflict (the
+      adoption plan's L1 contract) - adopting an atom means deleting the rule
+      here. Adoption plan M6a: the copy lands with three pins (below) and
+      nothing visible moves; M6b restyles the AR HUD, M6c the 2D chrome.
+    -->
+    <link rel="stylesheet" href="/design.css" />
     <style>
       :root {
         color-scheme: dark;
+      }
+      /* PINS until the restyle (adoption plan M6a, DEC-L2-8's rule): the
+         three places design.css's reset and base layers landed where this
+         page left a browser default, measured with `pnpm run leaks` -
+         everything else on the list was font: inherit on checkboxes and
+         an icon-only button, with nothing visible. Each goes with the
+         restyle of the element it protects. */
+      input[type="range"] {
+        margin: 2px;
       }
       * {
         box-sizing: border-box;
@@ -116,6 +136,8 @@
       }
       h1 {
         font-size: 1rem;
+        /* PIN (M6a): the base layer's 500 where the browser's bold was */
+        font-weight: 700;
         margin: 0;
         cursor: pointer;
         display: flex;
@@ -1179,6 +1201,9 @@
         accent-color: #7cc4ff;
         margin: 0 0.15rem 0 0;
         vertical-align: -0.1em;
+        /* PIN (M6a): the reset's font: inherit gave the boxes a line-height
+           that made the header 2px taller */
+        line-height: normal;
       }
       select:focus-visible,
       input[type="checkbox"]:focus-visible {
