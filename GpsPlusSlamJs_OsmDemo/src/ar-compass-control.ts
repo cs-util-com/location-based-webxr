@@ -214,7 +214,9 @@ export function createArCompassControl(
   // follows, so a screen reader should meet them in that sequence; reordering
   // visually would leave the reading order as slider, readout, then an
   // explanation of the slider.
-  element.append(slider, hint, readout);
+  // slider, readout, hint: the catalog's arrangement (DEC-L2-13, superseding
+  // DEC-J8's hint-beside-slider) - the reading order follows the visual one
+  element.append(slider, readout, hint);
 
   return {
     attach() {

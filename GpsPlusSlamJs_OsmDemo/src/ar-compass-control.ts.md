@@ -174,3 +174,5 @@ the fusion only runs during an AR walk, and the next session now re-dispatches
 its own starting value at entry rather than inheriting the last one silently.
 
 - Design system (adoption plan M6b): the control is the `.hud-compass` plate: a `.slider`, an accent `.num` value, a `.hint`. The `ar-*` names stay as hooks for the tests and the e2e; the look comes from the vendored `design.css`, and `index.html` keeps only the behavioural rules (pointer-events, line breaks, placement).
+
+- DEC-L2-13 (2026-09-03): children are appended slider, readout, hint - the catalog's arrangement, superseding DEC-J8's hint-beside-slider; the 390 px e2e asserts the readout on the slider's row and the hint below.

@@ -171,7 +171,7 @@ describe("createArCompassControl", () => {
     expect(root.textContent).toMatch(/15–30 fixes/);
   });
 
-  it("puts the hint beside the slider, before the readout (J5, DEC-J8)", () => {
+  it("puts the readout beside the slider, the hint last (DEC-L2-13)", () => {
     // WHY THIS TEST MATTERS. "Den könnte man einfach rechts neben den Slider
     // packen, sodass das dann nur noch zwei Zeilen sind."
     //
@@ -192,8 +192,8 @@ describe("createArCompassControl", () => {
     );
     expect(classes).toEqual([
       "ar-compass-slider",
-      "ar-compass-hint",
       "ar-compass-value",
+      "ar-compass-hint",
     ]);
   });
 

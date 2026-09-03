@@ -2481,17 +2481,20 @@ test.describe("the AR entry point", () => {
     // `align-items: center` and a 0.72rem hint is shorter than a range input,
     // so their TOPS never line up — an assertion on `y` would fail against a
     // correct implementation. Cold review of the plan caught exactly that.
+    // DEC-L2-13 (2026-09-03): the READOUT shares the slider's row and the hint
+    // has its own line below - the catalog's arrangement; DEC-J8's was the
+    // reverse, and the comments above describe that earlier state.
     expect(
-      Math.abs(measured.hint.centre - measured.slider.centre),
-      "the compass hint is not on the slider's row",
+      Math.abs(measured.readout.centre - measured.slider.centre),
+      "the compass readout is not on the slider's row",
     ).toBeLessThanOrEqual(2);
     // AND TO THE RIGHT of it, so "beside" means beside rather than behind.
-    expect(measured.hint.x).toBeGreaterThanOrEqual(
+    expect(measured.readout.x).toBeGreaterThanOrEqual(
       measured.slider.x + measured.slider.width - 1,
     );
     // WHILE THE READOUT KEEPS ITS OWN LINE (DEC-Y12, untouched): ~40 characters
     // cannot share a row with a slider at any font size worth reading outdoors.
-    expect(measured.readout.centre).toBeGreaterThan(measured.slider.centre);
+    expect(measured.hint.centre).toBeGreaterThan(measured.slider.centre);
 
     // THE SLIDER DID NOT PAY FOR IT. `width: 9rem` is `flex: 0 1 auto`, so the
     // hint's `flex: 1 1 auto` could have been satisfied by shrinking the slider

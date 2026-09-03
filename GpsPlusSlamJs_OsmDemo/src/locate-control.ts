@@ -95,7 +95,8 @@ export class LocateControl {
 
     this.button = document.createElement("button");
     this.button.type = "button";
-    this.button.className = "locate-button";
+    // the design system's locate atom beside the hook (adoption plan M6c)
+    this.button.className = "locate-button btn btn--icon btn--locate";
     // A SQUARE ICON BUTTON (DEC-R2-3), not a text label. The old button's width
     // swung from "my location" to "location permission denied", which is both
     // unlike every maps UI and a control that changes size when it fails.

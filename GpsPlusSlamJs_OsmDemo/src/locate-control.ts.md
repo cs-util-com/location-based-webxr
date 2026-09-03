@@ -96,3 +96,5 @@ new LocateControl({
 ## Tests
 
 The labels and error mapping are unit-tested in `locate-state.test.ts`. The DOM and Leaflet wiring are covered end to end in `playwright-tests/boot-and-shell.spec.js`, both paths as the async-feedback rule requires: _"moves the user to a real fix, and says so while it is working"_ (with a granted permission and a set geolocation, asserting the button reaches a terminal state and the refresh ran) and _"reports a denied permission instead of hanging on 'locating…'"_ (asserting the error reaches the status line).
+
+- Design system (adoption plan M6c): the button is the `.btn--icon.btn--locate` atom beside its `locate-button` hook; `data-state` drives the atom's six states exactly as it drove the app's rules, which are gone.

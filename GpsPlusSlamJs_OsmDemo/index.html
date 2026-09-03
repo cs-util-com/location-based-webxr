@@ -507,22 +507,6 @@
         width: 96vw;
         max-width: 26rem;
       }
-      /* THE COMPASS ROW KEEPS DEC-J8 (J5): the hint sits BESIDE the slider
-         and the ~40-character readout takes its own line - the e2e asserts
-         both at 390 px. The catalog's HUD screen puts the value beside the
-         slider and the hint below; that divergence is a recorded question
-         for the owner (adoption plan §18), and until it is answered the
-         app's recorded decision wins over the composition's line break. */
-      .ar-compass-hint {
-        flex: 1 1 auto;
-        flex-basis: auto;
-        min-width: 0;
-        text-align: left;
-      }
-      .ar-compass-value {
-        flex-basis: 100%;
-        text-align: center;
-      }
       .ar-gear-wrap {
         position: relative;
       }
@@ -575,14 +559,6 @@
         left: 0.75rem;
         bottom: 0.75rem;
         max-width: 78vw;
-        padding: 0.55rem 0.85rem;
-        border-radius: 0.6rem;
-        background: rgb(17 19 26 / 92%);
-        color: #f2f4f8;
-        font-size: 0.9rem;
-        line-height: 1.35;
-        border: 1px solid rgb(242 244 248 / 22%);
-        box-shadow: 0 2px 12px rgb(0 0 0 / 45%);
         pointer-events: none;
       }
 
@@ -596,10 +572,6 @@
         max-width: 42vw;
         overflow-y: auto;
         z-index: 1000;
-        padding: 0.6rem 0.7rem;
-        background: #171b26f2;
-        border: 1px solid #2a2f3d;
-        border-radius: 6px;
         font-size: 0.78rem;
       }
       #details[hidden] {
@@ -613,10 +585,6 @@
         left: 0.5rem;
         bottom: 0.5rem;
         z-index: 1000;
-        padding: 0.5rem 0.7rem;
-        background: #171b26f2;
-        border: 1px solid #2a2f3d;
-        border-radius: 6px;
         font-size: 0.78rem;
         line-height: 1.5;
       }
@@ -665,10 +633,6 @@
            `min()` is not used because the gate's CSS validator rejects it. */
         width: 13rem;
         max-width: calc(100% - 4rem);
-        padding: 0.5rem 0.7rem;
-        background: #171b26f2;
-        border: 1px solid #2a2f3d;
-        border-radius: 6px;
         font-size: 0.78rem;
       }
       #geo-event-picker[hidden] {
@@ -984,11 +948,6 @@
         cursor: progress;
       }
 
-      .hint {
-        color: #6f7995;
-        font-size: 0.78rem;
-      }
-
       /* COLLAPSED (DEC-R2-4, redrawn by DEC-R6b-5): the title, the CATEGORY
          picker, the legend and the whole affordance block stay.
 
@@ -1043,33 +1002,9 @@
         margin-bottom: 0.35rem;
       }
 
-      .ar-button {
-        width: 2rem;
-        height: 2rem;
-        padding: 0;
-        border: 0;
-        background: #fff;
-        color: #1a1c22;
-        font-size: 0.78rem;
-        font-weight: 700;
-        line-height: 2rem;
-        text-align: center;
-        cursor: pointer;
-      }
-
-      .ar-button[disabled] {
-        /* VISIBLE BUT DIMMED, never hidden: "supported, no GPS fix yet" is
-           temporary and self-resolving, so the control has to be discoverable
-           BEFORE it becomes usable -- otherwise it appears without warning
-           under the user's thumb. That distinction is the reason
-           `arButtonState` separates hidden from disabled at all. */
-        opacity: 0.55;
-        cursor: default;
-      }
-
       .ar-button[data-ar-active="true"] {
-        background: #1a5cff;
-        color: #fff;
+        background: var(--accent);
+        color: var(--ink-on-accent);
       }
 
       /* The locate button (DEC-R2-3): a SQUARE icon, bottom-right, so it matches
@@ -1123,53 +1058,6 @@
       .geo-winner {
         background: none;
         border: none;
-      }
-      .locate-button {
-        width: 2rem;
-        height: 2rem;
-        display: grid;
-        place-items: center;
-        padding: 0;
-        border: none;
-        background: #171b26;
-        color: #e6e8ef;
-        cursor: pointer;
-        border-radius: 3px;
-      }
-      .locate-button:disabled {
-        cursor: progress;
-      }
-      /* THE IN-PROGRESS STATE, which is the one the icon-only button would
-         otherwise have lost — and the one CLAUDE.md's async-feedback rule
-         actually mandates. A GPS fix routinely takes seconds. */
-      .locate-button[data-state="locating"] {
-        color: #7cc4ff;
-        animation: locate-pulse 1s ease-in-out infinite;
-      }
-      /* Each failure gets its own colour as well as its own label, because the
-         three have three different remedies. */
-      .locate-button[data-state="denied"],
-      .locate-button[data-state="unavailable"] {
-        color: #ff8fa3;
-      }
-      .locate-button[data-state="timeout"] {
-        color: #ffd479;
-      }
-      .locate-button[data-state="located"] {
-        color: #7ce0a3;
-      }
-
-      @keyframes locate-pulse {
-        50% {
-          opacity: 0.35;
-        }
-      }
-      /* Respect a reduced-motion preference: the colour change still carries the
-         state, so dropping the animation loses nothing. */
-      @media (prefers-reduced-motion: reduce) {
-        .locate-button[data-state="locating"] {
-          animation: none;
-        }
       }
 
       /* The legend replaces the scale sentence: same claim, read at a glance. */
@@ -1299,14 +1187,7 @@
         gap: 0.6rem;
         align-items: center;
         max-width: 21rem;
-        padding: 0.5rem 0.75rem;
         transform: translateX(-50%);
-        border: 1px solid rgb(242 244 248 / 25%);
-        border-radius: 0.6rem;
-        background: rgb(17 19 26 / 94%);
-        box-shadow: 0 2px 12px rgb(0 0 0 / 45%);
-        color: #f2f4f8;
-        font-size: 0.9rem;
         /* THE BOX MUST NOT EAT A TAP MEANT FOR THE MAP (PR review of P3,
            finding 4). Bottom-centre of the VIEWPORT lands on the map's own
            bottom-right controls on a desktop split -- measured at 1280 px, the
@@ -1318,43 +1199,20 @@
         pointer-events: none;
       }
 
+      /* THE 2D CHROME'S LIGHT PASS (adoption plan M6c, DEC-L2-14): the
+         toast, the locate button, this offer card, the AR entry button and
+         the three hidden-toggled panels wear the atoms; their look comes
+         from design.css and only placement and behaviour stay here. The
+         header (DEC-L2-12), the layer toggles and the legend keep their own
+         rules on purpose. */
+      .ar-offer-button,
+      .ar-offer-dismiss {
+        /* the card is pointer-events: none so it cannot swallow a map tap;
+           the two controls opt back in */
+        pointer-events: auto;
+      }
       .ar-offer[hidden] {
         display: none;
-      }
-
-      .ar-offer-button {
-        /* OPTS BACK IN. `.ar-offer` above is `pointer-events: none` so it
-           cannot swallow a tap on the map underneath, and that inherits -- so
-           without this the button is inert in a real browser while every jsdom
-           test still passes, which is the trap `.ar-hud-toggle` documents. */
-        pointer-events: auto;
-        /* 2.75 rem tall, the same floor the header caret's tap target uses --
-           this is the control the whole interaction funnels into, so it is the
-           last place to be stingy about target size. */
-        min-height: 2.75rem;
-        padding: 0 0.9rem;
-        border: 0;
-        border-radius: 0.4rem;
-        background: #1a5cff;
-        color: #fff;
-        font: inherit;
-        font-weight: 700;
-        cursor: pointer;
-      }
-
-      .ar-offer-dismiss {
-        /* Opts back in, for the same reason as the button above. */
-        pointer-events: auto;
-        min-width: 2.75rem;
-        min-height: 2.75rem;
-        padding: 0;
-        border: 1px solid rgb(242 244 248 / 25%);
-        border-radius: 0.4rem;
-        background: none;
-        color: #cfd6e4;
-        font-size: 1.1rem;
-        line-height: 1;
-        cursor: pointer;
       }
 
       /* THE ATTRIBUTION LINE (G5, DEC-W1). One thin line by default: a short
@@ -1678,7 +1536,14 @@
            deleted -- that wording is the only thing distinguishing the four
            states `arButtonState` models, and on touch a `title` never
            shows, so the accessible name is what carries it. -->
-      <button type="button" id="enter-ar" class="ar-button" hidden>AR</button>
+      <button
+        type="button"
+        id="enter-ar"
+        class="ar-button btn btn--icon"
+        hidden
+      >
+        AR
+      </button>
       <!--
         THE GROUND MODE (W11, DEC-R3-3). NOT a layer — it does not add or remove
         anything from the scene, it chooses which surface is drawn as the ground:
@@ -1789,19 +1654,23 @@
            activation the press already used. See `ar-entry.ts`. -->
       <div
         id="ar-offer"
-        class="ar-offer"
+        class="ar-offer plate"
         role="status"
         aria-live="polite"
         hidden
       >
         <span class="ar-offer-text">Found you.</span>
-        <button type="button" id="ar-offer-enter" class="ar-offer-button">
+        <button
+          type="button"
+          id="ar-offer-enter"
+          class="ar-offer-button btn btn--accent"
+        >
           Enter AR now
         </button>
         <button
           type="button"
           id="ar-offer-dismiss"
-          class="ar-offer-dismiss"
+          class="ar-offer-dismiss btn btn--icon btn--glyph"
           aria-label="Dismiss the AR prompt"
         >
           ×
@@ -1816,13 +1685,13 @@
            two views to ~450 px each on a laptop, which is the width that made
            the 3D pane useless on a phone. -->
       <div id="sheet-handle" aria-hidden="true"></div>
-      <aside id="details" hidden></aside>
+      <aside id="details" class="plate prose" hidden></aside>
       <!-- The keyboard shortcuts, listed by the registry that owns them (§1).
            An undocumented hotkey is a feature only its author has, so "?"
            toggles this and it is populated from `hotkeys.bindings()` rather
            than hand-written — a list that can disagree with the bindings is
            worse than none. -->
-      <aside id="hotkey-help" hidden></aside>
+      <aside id="hotkey-help" class="plate prose" hidden></aside>
       <!-- The geo-event time picker (G1, DEC-G1). Empty here and filled by
            `geo-event-picker.ts`: the two inputs, the two buttons and the error
            line are one interaction, and splitting them between markup and
@@ -1832,7 +1701,7 @@
            above it. `showModal()` traps focus and dims the page, which is right
            for a decision that blocks and wrong for this one — the map
            underneath is what you consult while choosing a time. -->
-      <aside id="geo-event-picker" hidden></aside>
+      <aside id="geo-event-picker" class="plate" hidden></aside>
     </main>
     <script type="module" src="/src/main.ts"></script>
   </body>
