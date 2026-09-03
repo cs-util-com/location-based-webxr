@@ -23,7 +23,6 @@ export interface PlacementView {
   readonly button: PlaceButtonView;
   /** Sentence describing what the user should do / what just happened. */
   readonly banner: string;
-  /** Whether to surface the "reload or share the link" call-to-action. */
   /**
    * Whether to surface the "copy link" share button. Shown once the anchor is
    * saved into the URL, so the user can hand the shareable link to another

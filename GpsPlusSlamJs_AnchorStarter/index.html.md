@@ -11,7 +11,7 @@
     - `#start-screen` (centre) — intro + `#start-button` (user gesture to
       start AR) + `#capability-message` (E1 fallback).
     - `#placement` (bottom) — `#banner`, `#error`, `#place-button`,
-      `#reload-prompt`.
+      `#copy-link-button` (the reload hint went with DEC-L2-10).
 - **Invariants & assumptions:** every element `main.ts` reads is present by
   `id`; `main.ts` throws on a missing id. `data-testid` attributes mirror the
   ids for future e2e selectors. AR/guidance/placement panels start `hidden`
