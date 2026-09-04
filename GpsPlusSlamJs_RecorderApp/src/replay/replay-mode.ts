@@ -44,19 +44,13 @@ import {
 import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
 import { loadRecording } from '../storage/recording-loader.js';
 import { createStoreRef } from '../state/store-ref';
-import { FrameTileVisualizer } from '../visualization/frame-tile-visualizer';
-import { decodeFrameTexture } from 'gps-plus-slam-app-framework/visualization/frame-texture-decoder';
-import { wireFrameTileSubscribers } from '../visualization/wire-frame-tile-subscribers';
-import { OccupancyGrid } from 'gps-plus-slam-app-framework/ar/occupancy-grid';
 import { loadRecordingOptions } from '../state/recording-options';
-import { OccupancyCubesVisualizer } from 'gps-plus-slam-app-framework/visualization/occupancy-cubes-visualizer';
-import {
-  createOccluderSink,
-  type OccluderSink,
-  type OccluderSinkHandle,
-} from '../visualization/occluder-sink';
-import { wireOccupancyGridSubscribers } from '../visualization/wire-occupancy-grid-subscribers';
 import { createZipFrameBlobSource } from '../storage/zip-frame-blob-source';
+import { wireFrameTileStack } from '../visualization/frame-tile-stack';
+import {
+  wireOccupancyStack,
+  type OccupancyStackHandle,
+} from '../visualization/occupancy-stack';
 import {
   createPerfStatsOverlay,
   type PerfStatsOverlayHandle,
@@ -182,35 +176,20 @@ export async function startReplayMode(
   });
   refPointVisualizer.setSceneSource(() => replaySceneState.scene);
 
-  // F3.5 — wire frame-tile visualization for add2dImage actions so the
-  // 2D camera frames recorded during the original session reappear as
-  // textured planes in the replay scene. Failure here (e.g. zip lacks a
-  // frames/ subdir) must not crash replay, so the whole wire-up is
-  // best-effort.
-  let unsubscribeFrameTiles: (() => void) | null = null;
-  let frameTileVisualizer: FrameTileVisualizer | null = null;
+  // F3.5 — frame tiles for add2dImage actions, so the 2D camera frames
+  // recorded during the original session reappear as textured planes in the
+  // replay scene (visualization/frame-tile-stack.ts — the same stack as
+  // live). Failure here (e.g. zip lacks a frames/ subdir) must not crash
+  // replay, so the wire-up is best-effort. No tile cap in replay (full-path
+  // coverage, Step 4); the display divisor is re-read per replay so an old
+  // recording renders at the current setting (D7-resolution).
+  let disposeFrameTiles: (() => void) | null = null;
   try {
-    const blobSource = await createZipFrameBlobSource(zipData);
-    // Parent under arWorldGroup (NOT the scene root): frame tiles are
-    // raw-WebXR poses and must ride the alignment × WEBXR_TO_NUE chain,
-    // exactly like the occupancy cubes below. See the frame-check doc.
-    frameTileVisualizer = new FrameTileVisualizer(
-      replaySceneState.arWorldGroup
-    );
-    const storeRef = createStoreRef(store);
-    // D7-resolution: downscale the display texture by the CURRENT
-    // frameTileDisplay divisor (a display preference, not part of the
-    // recording — same pattern as occupancy.cellSizeM above, which also
-    // re-quantizes an old recording at the current setting).
-    const frameTileDivisor = loadRecordingOptions().frameTileDisplay.divisor;
-    unsubscribeFrameTiles = wireFrameTileSubscribers({
-      storeRef,
-      visualizer: frameTileVisualizer,
-      blobSource,
-      decodeTexture: (blob) => decodeFrameTexture(blob, frameTileDivisor),
-      onError: (err, imageFile) => {
-        log.warn(`Frame tile decode failed for "${imageFile}"`, err);
-      },
+    disposeFrameTiles = wireFrameTileStack({
+      arWorldGroup: replaySceneState.arWorldGroup,
+      storeRef: createStoreRef(store),
+      blobSource: await createZipFrameBlobSource(zipData),
+      divisor: loadRecordingOptions().frameTileDisplay.divisor,
     });
   } catch (err) {
     log.warn(
@@ -219,79 +198,27 @@ export async function startReplayMode(
     );
   }
 
-  // Occupancy-grid cubes — recordDepthSample actions re-dispatched during
-  // replay rebuild the voxel grid in the replay scene (port plan Iter 5).
-  // The cells are raw-WebXR coordinates, so the visualizer hangs off
-  // arWorldGroup (NOT the scene root) and rides the alignment like the
-  // recorded camera path (Iter 7 reparenting fix). Recordings made before
-  // intrinsics capture carry no projectionMatrix, so their samples are
-  // skipped and the grid simply stays empty; replay continues normally.
-  // Best-effort like the frame tiles above.
-  let unsubscribeOccupancyGrid: (() => void) | null = null;
-  let occupancyCubesVisualizer: OccupancyCubesVisualizer | null = null;
-  // Persistent occluder handle (occluder-sink.ts — the wiring shared with the
-  // live path); dispose() releases mesh + worker and no-ops the sink callbacks.
-  let occluderSinkHandle: OccluderSinkHandle | null = null;
+  // Occupancy stack — recordDepthSample actions re-dispatched during replay
+  // rebuild the voxel grid in the replay scene (port plan Iter 5), through
+  // the same stack as live (visualization/occupancy-stack.ts), at the user's
+  // CURRENT settings: re-quantizable per replay without re-capturing
+  // (2026-06-13 occupancy-grid-settings review, item 1; the depth cadence
+  // likewise, 2026-06-22 plan §2). Recordings made before intrinsics capture
+  // carry no projectionMatrix, so their samples are skipped and the grid
+  // simply stays empty. Live occlusion is live-AR-only (replay has no depth
+  // stream); the stack honours only the persistent flag. Best-effort like the
+  // frame tiles above — `loadRecordingOptions` is self-defending (validated
+  // default on any storage error).
+  let occupancyStack: OccupancyStackHandle | null = null;
   try {
-    // Re-derive the grid from the recorded depth points at the user's current
-    // voxel size (recording-options `occupancy.cellSizeM`, clamped 1–20 cm).
-    // Reading it here lets the same recording be re-quantized at a different
-    // resolution without re-capturing — 2026-06-13 occupancy-grid-settings
-    // review, item 1. `loadRecordingOptions` is self-defending (returns the
-    // validated default on any storage error), so this stays best-effort.
     const replayOptions = loadRecordingOptions();
-    const occupancyOptions = replayOptions.occupancy;
-    // Confidence-guarded carving at the same minConfidence floor as live
-    // (main.ts): a voxel solid enough to be rendered can no longer be erased
-    // by a single deeper reading (2026-07-16 synthetic-scene investigation).
-    const occupancyGrid = new OccupancyGrid({
-      cellSizeM: occupancyOptions.cellSizeM,
-      carveConfidenceThreshold: occupancyOptions.minConfidence,
-    });
-    // Same noise filter as live (main.ts): render only voxels seen ≥
-    // minConfidence times, re-quantizable per replay like cellSizeM.
-    occupancyCubesVisualizer = new OccupancyCubesVisualizer(
-      replaySceneState.arWorldGroup,
-      { minObservations: occupancyOptions.minConfidence }
-    );
-    // Persistent depth-only occluder (ON by default), re-quantizable per
-    // replay like the cubes — the shared factory (occluder-sink.ts, one wiring
-    // for live AND replay) reads the mesher/debug styles, radius and the same
-    // minConfidence floor from the options group. (Live occlusion is
-    // live-AR-only — replay has no live depth stream — so only the persistent
-    // flag is honoured here.)
-    let occluderSink: OccluderSink | undefined;
-    if (occupancyOptions.persistentOcclusion) {
-      occluderSinkHandle = createOccluderSink(
-        replaySceneState.arWorldGroup,
-        occupancyOptions
-      );
-      occluderSink = occluderSinkHandle.sink;
-    }
-    unsubscribeOccupancyGrid = wireOccupancyGridSubscribers({
+    occupancyStack = wireOccupancyStack({
+      arWorldGroup: replaySceneState.arWorldGroup,
       storeRef: createStoreRef(store),
-      grid: occupancyGrid,
-      visualizer: occupancyCubesVisualizer,
-      occluder: occluderSink,
-      // Coalesce the replay burst to the user's current `depth.intervalMs`
-      // rather than a fixed 1 s — re-quantization parity with cellSizeM /
-      // minConfidence above (the same global setting re-read per replay),
-      // NOT the recording's original capture cadence (2026-06-22 cube
-      // cadence/locality plan §2).
-      refreshIntervalMs: replayOptions.depth.intervalMs,
-      // Camera-relative windows (cubes always; occluder when radius > 0)
-      // must re-render a settled grid when the replayed camera moves — ε =
-      // one chunk edge (16 cells). Step 2 revision-guard fix, parity with
-      // main.ts.
-      refreshOnCameraMoveM: 16 * occupancyOptions.cellSizeM,
-      onError: (err) => {
-        log.warn('Occupancy grid update failed during replay', err);
-      },
-      // Cells-over-time telemetry (Step 0 of the 2026-07-03 long-session fps
-      // plan) — replay parity with the live wiring in main.ts.
-      onGridSize: (cells) => {
-        log.info(`[OccupancyGrid] ${cells} cells`);
-      },
+      occupancy: replayOptions.occupancy,
+      depthIntervalMs: replayOptions.depth.intervalMs,
+      showCubes: true,
+      logContext: 'during replay',
     });
   } catch (err) {
     log.warn(
@@ -456,12 +383,9 @@ export async function startReplayMode(
       unsubscribe();
       unsubscribeRefPoints();
       refPointMapMarkers.unsubscribe();
-      unsubscribeFrameTiles?.();
-      frameTileVisualizer?.dispose();
-      unsubscribeOccupancyGrid?.();
-      occupancyCubesVisualizer?.dispose();
-      occluderSinkHandle?.dispose();
-      occluderSinkHandle = null;
+      disposeFrameTiles?.();
+      occupancyStack?.dispose();
+      occupancyStack = null;
       if (statsRafId !== null) {
         cancelAnimationFrame(statsRafId);
         statsRafId = null;

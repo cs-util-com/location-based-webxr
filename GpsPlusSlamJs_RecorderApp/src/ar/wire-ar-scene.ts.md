@@ -41,14 +41,20 @@ camera follower) construct directly and will propagate a throw to
   never gated by these toggles.
 - **Ordering matters in two places.** The camera follower must be created
   before the compass cubes (they parent into its `object3D`), and inside the
-  occupancy teardown the subscriber is unsubscribed before the visualizer and
-  occluder it feeds are disposed, with `setOccupancyGrid(null)` last.
+  occupancy teardown the shared stack (`visualization/occupancy-stack.ts`)
+  unsubscribes the feed before the visualizer and occluder it feeds are
+  disposed, with `setOccupancyGrid(null)` last.
   `ArSessionScope` unwinds in reverse registration order, which preserves the
   first of these for free.
 - **The occupancy grid is always built** (`scope.wire('Occupancy grid', true,
 …)`); the `occupancyCubes` toggle gates only the rendered `InstancedMesh`.
   COLMAP export and other non-visualizer consumers read the grid through
   `getOccupancyGrid()`, so a no-op sink is wired when the cubes are off.
+  The stack itself — grid, cubes, occluder, feed — is built by
+  `visualization/occupancy-stack.ts`, the SAME function replay uses (since
+  2026-09-04; before that the two sites carried copies kept in parity by
+  comment). Likewise the frame tiles: `visualization/frame-tile-stack.ts`,
+  with the live-only `maxTiles` cap passed here and omitted by replay.
 - **Parenting rule:** anything whose coordinates are raw-WebXR must hang off
   `arWorldGroup`, not the scene root, so it rides the alignment matrix like
   the camera does. Only the camera follower is deliberately at scene root.
@@ -84,6 +90,8 @@ the wiring suites that already pin this behaviour:
 - `main.ar-follower-wiring.test.ts` — follower/lerper creation and parenting.
 - `main.occupancy-cubes-wiring.test.ts` — grid always built, cube gating,
   no-op sink, teardown order, `refreshOnCameraMoveM` / `refreshIntervalMs`.
+- `visualization/occupancy-stack.test.ts`, `visualization/frame-tile-stack.test.ts`
+  — the shared stacks' option mapping for both the live and the replay variant.
 - `main.visualization-toggles-wiring.test.ts` — each `visualization` toggle's
   effect and its read-once-at-Enter-AR semantics.
 - `main.qr-wiring.test.ts` — QR producer wiring and teardown.
