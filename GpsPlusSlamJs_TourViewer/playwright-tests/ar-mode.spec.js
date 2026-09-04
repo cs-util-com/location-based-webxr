@@ -26,6 +26,25 @@ async function enterAr(page) {
   await button.click();
 }
 
+test("the start screen names both ways in, and says what AR does without a tour", async ({
+  page,
+}) => {
+  // Why this test matters (owner taste round 2026-09-04): pressing the AR
+  // button with no link pasted starts the code scanner at once, which read as
+  // a bug. It is by design — the scanner places a visitor inside a tour opened
+  // before OR after entering AR — but nothing on the page said so, and the
+  // header only ever described the pasted link. Both entries and the hint
+  // must be on screen BEFORE any tour is open, i.e. on a bare boot.
+  await page.goto("/");
+  const header = page.locator("header p");
+  await expect(header).toContainText("printed tour code");
+  await expect(header).toContainText("paste a link");
+  const hint = page.getByTestId("ar-hint");
+  await expect(hint).toBeVisible();
+  await expect(hint).toContainText("AR works without a tour");
+  await expect(hint).toContainText("printed codes");
+});
+
 test("viewer mode boots to running: session started, alignment bound, capture at 8 Hz", async ({
   page,
 }) => {
