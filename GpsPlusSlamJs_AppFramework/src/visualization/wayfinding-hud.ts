@@ -28,9 +28,13 @@
 import * as THREE from 'three';
 import { registerFrameUpdate } from '../ar/frame-loop.js';
 import { registerSessionDisposer } from '../ar/session-disposers.js';
-import { createLogger } from '../utils/logger';
 import { clampedAlpha } from './lerp-utils.js';
 import { createTextSprite, type TextSprite } from './text-sprite.js';
+import {
+  createTargetResolver,
+  type ResolvedTarget,
+  type WayfindingTarget,
+} from './wayfinding-targets.js';
 import {
   computeTargetPlacement,
   type ArrowPlacement,
@@ -39,39 +43,7 @@ import {
   type TargetPlacementState,
 } from './wayfinding-placement.js';
 
-const log = createLogger('WayfindingHud');
-
-/**
- * One wayfinding target as returned by {@link WayfindingHudOptions.getTargets}
- * (2026-07-20 per-target config plan — clean break from the earlier
- * `Vector3[]` contract).
- */
-export interface WayfindingTarget {
-  /**
-   * Stable identity for per-target hysteresis state; must be unique within
-   * one `getTargets()` result. Omit to fall back to index keying (state then
-   * sticks to the array position, not the target — fine for static lists).
-   */
-  id?: string;
-  /** The target's world position. */
-  position: THREE.Vector3;
-  /** Distance (m) below which this target's indicator hides ("arrived").
-   * Defaults to the HUD-level `distanceMin`. */
-  distanceMin?: number;
-  /** Distance (m) this target must reach to reactivate once hidden.
-   * Defaults to the HUD-level `distanceMax`. */
-  distanceMax?: number;
-  /**
-   * Show the off-screen edge arrow for this target even while it is
-   * DEACTIVATED (below its `distanceMin`) — the pre-2026-07-18 "always
-   * guide me back" behavior, per target. On-screen it still shows nothing,
-   * and the distanceMax reactivation gate is unaffected. Default false.
-   */
-  showArrowWhenInactive?: boolean;
-  /** Show the distance label with the inactive arrow. Default true (old
-   * parity); only meaningful together with `showArrowWhenInactive`. */
-  showLabelWhenInactive?: boolean;
-}
+export type { WayfindingTarget } from './wayfinding-targets.js';
 
 export interface WayfindingHudOptions {
   /**
@@ -251,53 +223,6 @@ interface TargetState {
   smoothedCirclePos: THREE.Vector3;
 }
 
-/** A {@link WayfindingTarget} that passed the boundary validation, with every
- * per-target option resolved against the HUD-level defaults. */
-interface ResolvedTarget {
-  key: string | number;
-  position: THREE.Vector3;
-  distanceMin: number;
-  distanceMax: number;
-  showArrowWhenInactive: boolean;
-  showLabelWhenInactive: boolean;
-}
-
-function isVector3(value: unknown): value is THREE.Vector3 {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    (value as THREE.Vector3).isVector3 === true
-  );
-}
-
-/** Same `0 ≤ min ≤ max` (finite) rule the placement seam enforces per call. */
-function isValidDeadband(min: unknown, max: unknown): boolean {
-  return (
-    typeof min === 'number' &&
-    Number.isFinite(min) &&
-    min >= 0 &&
-    typeof max === 'number' &&
-    Number.isFinite(max) &&
-    max >= min
-  );
-}
-
-/** Shape triage for one raw getTargets() element; null = shape is fine. */
-function checkTargetShape(raw: WayfindingTarget): 'legacy' | 'invalid' | null {
-  if (isVector3(raw)) return 'legacy';
-  if (typeof raw !== 'object' || raw === null) return 'invalid';
-  if (!isVector3(raw.position)) return 'invalid';
-  if (raw.id !== undefined && typeof raw.id !== 'string') return 'invalid';
-  return null;
-}
-
-const SHAPE_ISSUE_MESSAGES = {
-  legacy:
-    'getTargets() returned a plain THREE.Vector3 at index %i — the API takes WayfindingTarget objects now; wrap it as { position: vector }. Hiding it.',
-  invalid:
-    'getTargets() element at index %i is not a WayfindingTarget ({ position: THREE.Vector3, id?: string, … }). Hiding it.',
-} as const;
-
 /**
  * Create the wayfinding HUD and start driving it via the frame loop.
  *
@@ -328,21 +253,10 @@ export function createWayfindingHud(
   // Per-target state keyed by `id ?? index` (2026-07-20 plan) — replaces the
   // earlier grow/shrink array, so state follows ids through reorders.
   const states = new Map<string | number, TargetState>();
-  let warnedBadTargets = false;
 
-  /**
-   * One-shot bookkeeping for consumer bugs surfaced at the readTargets
-   * boundary: `<reason>:<key>` → already logged. Entries are cleared when
-   * the offending target heals, so a later regression logs again instead of
-   * staying silent forever.
-   */
-  const loggedIssues = new Set<string>();
-
-  function logIssueOnce(issueKey: string, message: string): void {
-    if (loggedIssues.has(issueKey)) return;
-    loggedIssues.add(issueKey);
-    log.error(`createWayfindingHud: ${message}`);
-  }
+  // Boundary triage of getTargets() results: hide-and-log-once, never a
+  // per-frame throw. Pure, tested directly in wayfinding-targets.test.ts.
+  const targets = createTargetResolver({ distanceMin, distanceMax });
 
   function getHudMaterial(): THREE.MeshBasicMaterial {
     hudMaterial ??= new THREE.MeshBasicMaterial({
@@ -591,115 +505,8 @@ export function createWayfindingHud(
     showArrow(state, placement);
   }
 
-  /** Defensive boundary: a getter returning garbage counts as "no targets"
-   * (logged once) so the frame loop and scene state stay consistent. */
-  function readTargets(): WayfindingTarget[] {
-    const targets = getTargets();
-    if (Array.isArray(targets)) return targets;
-    if (!warnedBadTargets) {
-      warnedBadTargets = true;
-      log.error(
-        'getTargets() did not return an array; treating as empty target list',
-        targets
-      );
-    }
-    return [];
-  }
-
-  /** Validate the per-target deadband with the seam's `0 ≤ min ≤ max` rule.
-   * Returns null (target hidden, one log) instead of throwing — the getter
-   * is polled per frame, so a throw would spam the frame loop and kill
-   * manual-update hosts. */
-  function resolveDeadband(
-    target: WayfindingTarget,
-    key: string | number
-  ): { min: number; max: number } | null {
-    const min = target.distanceMin ?? distanceMin;
-    const max = target.distanceMax ?? distanceMax;
-    const issueKey = `deadband:${String(key)}`;
-    if (!isValidDeadband(min, max)) {
-      logIssueOnce(
-        issueKey,
-        `target "${String(key)}" must satisfy 0 ≤ distanceMin ≤ distanceMax (finite), got distanceMin=${String(min)}, distanceMax=${String(max)}. Hiding it.`
-      );
-      return null;
-    }
-    loggedIssues.delete(issueKey);
-    return { min, max };
-  }
-
-  /** Boundary triage for one raw element → ResolvedTarget, or null when the
-   * element must be hidden (shape/duplicate/deadband issue, logged once). */
-  function resolveTarget(
-    raw: WayfindingTarget,
-    index: number,
-    seenIds: Set<string>,
-    duplicateIds: Set<string>
-  ): ResolvedTarget | null {
-    const shapeIssue = checkTargetShape(raw);
-    if (shapeIssue) {
-      logIssueOnce(
-        `${shapeIssue}:${index}`,
-        SHAPE_ISSUE_MESSAGES[shapeIssue].replace('%i', String(index))
-      );
-      return null;
-    }
-    loggedIssues.delete(`legacy:${index}`);
-    loggedIssues.delete(`invalid:${index}`);
-
-    if (raw.id !== undefined) {
-      if (seenIds.has(raw.id)) {
-        duplicateIds.add(raw.id);
-        logIssueOnce(
-          `duplicate:${raw.id}`,
-          `duplicate target id "${raw.id}" in one getTargets() result — only the first occurrence is shown.`
-        );
-        return null;
-      }
-      seenIds.add(raw.id);
-    }
-
-    const key = raw.id ?? index;
-    const deadband = resolveDeadband(raw, key);
-    if (!deadband) return null;
-    return {
-      key,
-      position: raw.position,
-      distanceMin: deadband.min,
-      distanceMax: deadband.max,
-      showArrowWhenInactive: raw.showArrowWhenInactive ?? false,
-      showLabelWhenInactive: raw.showLabelWhenInactive ?? true,
-    };
-  }
-
-  /** A duplicate-id log entry is keyed by id, not index, so it is cleared
-   * only once the duplication actually disappears from the result (clearing
-   * it while the duplicate persists would re-log every frame). */
-  function clearHealedDuplicates(duplicateIds: Set<string>): void {
-    for (const issue of loggedIssues) {
-      if (
-        issue.startsWith('duplicate:') &&
-        !duplicateIds.has(issue.slice('duplicate:'.length))
-      ) {
-        loggedIssues.delete(issue);
-      }
-    }
-  }
-
-  function resolveTargets(raw: readonly WayfindingTarget[]): ResolvedTarget[] {
-    const seenIds = new Set<string>();
-    const duplicateIds = new Set<string>();
-    const resolved: ResolvedTarget[] = [];
-    raw.forEach((target, index) => {
-      const result = resolveTarget(target, index, seenIds, duplicateIds);
-      if (result) resolved.push(result);
-    });
-    clearHealedDuplicates(duplicateIds);
-    return resolved;
-  }
-
   function update(dt: number): void {
-    const resolved = resolveTargets(readTargets());
+    const resolved = targets.resolve(getTargets());
     syncTargetStates(resolved);
     for (const target of resolved) {
       updateTarget(target, states.get(target.key) as TargetState, dt);
