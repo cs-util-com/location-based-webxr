@@ -42,14 +42,18 @@ the copy.
   carries the GitHub mark icon (round-9 R9-4 merged the former separate
   "Open source on GitHub" badge into it — the badge duplicated the
   button and was removed; still deliberately NO live star-count fetch),
-  the demos hub (five `.demo-card`s with inline-SVG vignettes keeping
-  the proven one-line descriptions), and the external links row
+  the demos hub (eight `.demo-card`s with inline-SVG vignettes and a
+  two-to-four-sentence description each — the copy says what the demo
+  is FOR, never a feature it lacks: the OSM card's "Desktop only" survived
+  the demo gaining AR entry until the 2026-09-04 taste round, and its
+  replacement was drafted with a "nearest 20 × 20 m clearing" query the
+  demo does not have before a review caught it), and the external links row
   (`.links`, which carries the story's terminal bottom padding). ALL
   external (https) links — primary CTA, links row, FAQ license link —
   open a NEW TAB (`target="_blank" rel="noopener"`, round-9: the landing
   stays open in the background; this also removes the bfcache-return
   trigger of the firefly freeze, see R9-6). Since round-10 R10-1 the
-  five demo cards open new tabs as well (reversing the round-9 same-tab
+  demo cards open new tabs as well (reversing the round-9 same-tab
   call): EVERY outbound click keeps the landing alive. Its lead sentence
   starts with `#cta-device-claim` (round-8 Z6): the static text is the
   universally-true Android+Chrome claim; `src/ar-support.ts` upgrades it
