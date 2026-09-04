@@ -43,6 +43,19 @@ altitude, altitudeAccuracy, heading, speed, timestamp }`.
   and not an image (a network request for four path commands). Bottom-right is the
   maps convention the feedback named; Leaflet puts its attribution control in the
   same corner, so the button stacks ABOVE it and the ODbL credit stays visible.
+  - **The wrapper is NOT a `leaflet-bar`** (owner taste round 2026-09-04): that
+    class is Leaflet's default control look, drawn from an unlayered CDN
+    stylesheet that beats the layered design system, and under `leaflet-touch`
+    (every modern browser) it put a 2 px dark border at a 4 px radius around the
+    44 px atom with its own 14 px radius, the button anchored top-left in a
+    wider, taller box — "two rounded outlines, the pin too far left and up".
+    The wrapper carries only `locate-control` plus Leaflet's own
+    `leaflet-control` positioning.
+  - **The pin's viewBox is the path's bounds** (`5 2 14 20`), so the glyph fills
+    the 24 px the design system gives icon SVGs instead of 14 px of a 24-unit
+    box; the catalog's six copies carry the same viewBox. The atom's
+    `.btn--icon` centres it with flex (an inline SVG on the text baseline sat
+    ~2 px high). Pinned at 390 px by `boot-and-shell.spec.js` "the map buttons".
 - **The label is no longer the visible text, and that is the risky part.** It used
   to be `textContent`, so removing it would have left a button that says nothing
   to a screen reader and nothing on touch (where `title` never appears). The four

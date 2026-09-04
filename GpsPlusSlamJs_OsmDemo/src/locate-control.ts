@@ -74,8 +74,13 @@ const MESSAGE_LINGER_MS = 4_000;
  * Hand-written rather than downloaded, as the feedback asked. `currentColor` so
  * the button's own colour drives it and the state styling in `index.html` needs no
  * second selector; `aria-hidden` because the accessible name is on the button.
+ *
+ * The viewBox is the path's own bounds (x 5..19, y 2..22), not a 24-unit box:
+ * the design system renders icon SVGs at 24 px, and inside a 24-unit box the
+ * pin came out 14 px wide — "too small" in the owner's taste round of
+ * 2026-09-04. The catalog's six copies of this pin carry the same viewBox.
  */
-const MAP_PIN_SVG = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+const MAP_PIN_SVG = `<svg viewBox="5 2 14 20" width="18" height="18" aria-hidden="true" focusable="false">
   <path fill="currentColor" d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7Z"/>
   <circle cx="12" cy="9" r="2.6" fill="#171b26"/>
 </svg>`;
@@ -110,7 +115,14 @@ export class LocateControl {
 
     const Control = L.Control.extend({
       onAdd: (): HTMLElement => {
-        const wrapper = L.DomUtil.create("div", "leaflet-bar locate-control");
+        // NOT `leaflet-bar`. That class is Leaflet's default control look — a
+        // 2 px dark border at a 4 px radius under `leaflet-touch`, which Leaflet
+        // 1.9 adds wherever PointerEvent exists — drawn from a stylesheet
+        // loaded unlayered from the CDN, so it beats the layered design
+        // system every time. The button atom carries the whole surface now;
+        // the wrapper is only Leaflet's positioning (`leaflet-control`, added
+        // by `addTo`). Owner taste round 2026-09-04: "two rounded outlines".
+        const wrapper = L.DomUtil.create("div", "locate-control");
         wrapper.append(this.button);
         // Without this, a click on the button also reaches the map underneath
         // and is read as "the user clicked here to move", so pressing

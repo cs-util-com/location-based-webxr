@@ -754,6 +754,84 @@ test.describe("the location picker", () => {
   });
 });
 
+test.describe("the map buttons", () => {
+  test.use({ viewport: { width: 390, height: 780 } });
+
+  test("wear only the design system's chrome: no Leaflet bar around them, the glyph centred", async ({
+    page,
+  }) => {
+    // WHY THIS TEST MATTERS (owner taste round 2026-09-04, plan §3). Both
+    // buttons are design-system atoms, but their Leaflet control wrappers
+    // still carried `leaflet-bar`, whose stylesheet is loaded unlayered from
+    // the CDN and beats the layered atoms: under `leaflet-touch` (which
+    // Leaflet 1.9 adds wherever PointerEvent exists — every modern browser,
+    // headless Chromium included) that is a 2 px dark border at a 4 px
+    // radius around a 44 px button with its own 14 px radius, the button
+    // anchored top-left inside a wrapper that is wider and taller than it.
+    // The owner saw "two rounded outlines, the pin too far left and up, a
+    // thin dark line underneath". Each assertion below was red before the
+    // fix at THIS viewport; the AR button is only present with XR support
+    // stubbed, so the stub is what makes its half mean anything.
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "xr", {
+        configurable: true,
+        value: { isSessionSupported: () => Promise.resolve(true) },
+      });
+    });
+    await stubNetwork(page);
+    await page.goto("/");
+    await waitForRefresh(page);
+    await expect(page.locator("#enter-ar")).toBeVisible({ timeout: 10000 });
+
+    for (const [wrapper, button] of [
+      [".locate-control", ".locate-button"],
+      [".ar-control", "#enter-ar"],
+    ]) {
+      const chrome = await page.locator(wrapper).evaluate((el) => {
+        const s = getComputedStyle(el);
+        return { border: s.borderTopWidth, shadow: s.boxShadow };
+      });
+      expect(chrome, `${wrapper} draws chrome of its own`).toEqual({
+        border: "0px",
+        shadow: "none",
+      });
+      const outer = await page.locator(wrapper).boundingBox();
+      const inner = await page.locator(button).boundingBox();
+      if (outer === null || inner === null) throw new Error("no boxes");
+      // The wrapper IS the button's box: nothing of Leaflet's is drawn
+      // around it (Leaflet's own `leaflet-control` float/margin sit outside).
+      expect(
+        Math.abs(outer.width - inner.width),
+        `${wrapper} width`,
+      ).toBeLessThan(0.5);
+      expect(
+        Math.abs(outer.height - inner.height),
+        `${wrapper} height`,
+      ).toBeLessThan(0.5);
+      expect(inner.width, `${button} is the 44 px tap square`).toBeCloseTo(
+        44,
+        0,
+      );
+      expect(inner.height, `${button} is the 44 px tap square`).toBeCloseTo(
+        44,
+        0,
+      );
+    }
+
+    // The pin sits at the button's centre, not on its text baseline.
+    const button = await page.locator(".locate-button").boundingBox();
+    const pin = await page.locator(".locate-button svg").boundingBox();
+    if (button === null || pin === null) throw new Error("no boxes");
+    const dx = pin.x + pin.width / 2 - (button.x + button.width / 2);
+    const dy = pin.y + pin.height / 2 - (button.y + button.height / 2);
+    expect(Math.abs(dx), "pin x offset").toBeLessThan(1);
+    expect(Math.abs(dy), "pin y offset").toBeLessThan(1);
+    // And it fills the system's 24 px icon box in height (the path's own
+    // bounds are the viewBox now; before, 14 × 20 of a 24 × 24 box).
+    expect(pin.height, "pin height").toBeCloseTo(24, 0);
+  });
+});
+
 test.describe("the header", () => {
   test.use({ viewport: { width: 390, height: 780 } });
 

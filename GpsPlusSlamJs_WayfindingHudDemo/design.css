@@ -449,6 +449,12 @@
     height: var(--tap);
     min-width: var(--tap);
     padding: 0;
+    /* the glyph sits at the CENTRE, not on the text baseline: an inline
+       SVG in a plain button hangs on the baseline and lands ~2px high
+       under the font strut (OsmDemo's pin, owner taste round 2026-09-04) */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     /* text labels (AR) at 18px; symbol glyphs and vector icons are
        LARGER (22px/24px via .btn--glyph and the svg rule below) - a
        two-letter label at glyph size overpowered the button (owner

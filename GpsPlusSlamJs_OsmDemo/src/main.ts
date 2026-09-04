@@ -506,10 +506,10 @@ async function main(): Promise<void> {
   /**
    * The wrapper, held so it can be hidden with its button.
    *
-   * WHY THE WRAPPER AND NOT JUST THE BUTTON. `.leaflet-bar` carries a border,
-   * a corner radius and a drop shadow of its own, and `.ar-control` reserves
-   * margin below it — so hiding only the button leaves a small empty box
-   * floating above the locate control. That is the state EVERY desktop browser
+   * WHY THE WRAPPER AND NOT JUST THE BUTTON. `.ar-control` reserves margin
+   * below it (and, until 2026-09-04, the wrapper also wore `leaflet-bar`'s
+   * border, radius and shadow) — so hiding only the button leaves an empty
+   * gap floating above the locate control. That is the state EVERY desktop browser
    * and every iOS Safari is in, because `arButtonState` hides the button
    * outright where `immersive-ar` is unsupported. `LocateControl` never hits
    * this because its button is never hidden.
@@ -517,7 +517,9 @@ async function main(): Promise<void> {
   let arControlWrapper: HTMLElement | undefined;
   const ArControl = L.Control.extend({
     onAdd: (): HTMLElement => {
-      const wrapper = L.DomUtil.create("div", "leaflet-bar ar-control");
+      // NOT `leaflet-bar` — see LocateControl for why: the atom carries the
+      // surface, Leaflet's class drew a second outline around it.
+      const wrapper = L.DomUtil.create("div", "ar-control");
       wrapper.append(arButton);
       L.DomEvent.disableClickPropagation(wrapper);
       arControlWrapper = wrapper;
