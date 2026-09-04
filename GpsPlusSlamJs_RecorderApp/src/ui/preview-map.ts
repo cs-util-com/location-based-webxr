@@ -15,7 +15,7 @@ import L from 'leaflet';
 import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
 import { VIS_COLORS } from 'gps-plus-slam-app-framework/visualization/vis-colors';
 import type { GpsPathCoord } from 'gps-plus-slam-app-framework/storage/zip-reader';
-import { addAccuracyCircles } from './accuracy-circles';
+import { addAccuracyCircles } from 'gps-plus-slam-app-framework/visualization/accuracy-circles';
 import {
   addOsmTileLayer,
   PATH_POLYLINE_WEIGHT,
@@ -81,7 +81,8 @@ export function createPreviewMap(
     const latLngs = gpsPath.map((p) => [p.lat, p.lng] as L.LatLngTuple);
 
     // Per-event accuracy circles, drawn BEFORE the polyline so the line stays
-    // visually on top. Shared with `summary-map.ts` via `accuracy-circles.ts`.
+    // visually on top. The framework helper is shared with its map-overlay-draw
+    // module (the recorder re-export shim over it was deleted 2026-09-04).
     addAccuracyCircles(map, gpsPath, RAW_GPS_COLOR);
 
     L.polyline(latLngs, {
