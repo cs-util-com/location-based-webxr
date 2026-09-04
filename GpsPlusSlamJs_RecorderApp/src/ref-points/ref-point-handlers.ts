@@ -316,10 +316,11 @@ export function createRefPointHandlers(
           `Re-observation of ref point: ${refPointId} (${refPointName})`
         );
       } else {
-        // New ref point: show picker for optional display name only.
-        // No suggestion list — scenario IDs are H3 hex strings (meaningless to users)
-        // and imported names refer to distant locations (no nearby match).
-        const pickerResult = await showRefPointPicker([]);
+        // New ref point: prompt for a display name only. (The prompt's
+        // former suggestion list was removed 2026-09-04 — scenario IDs are H3
+        // hex strings, meaningless to users, and imported names refer to
+        // distant locations, so it had nothing to show.)
+        const pickerResult = await showRefPointPicker();
         if (!pickerResult) {
           log.info('Reference point marking cancelled');
           return;

@@ -174,9 +174,7 @@ declare global {
      * Allows Playwright tests to trigger the real picker modal behavior.
      */
     refPointPickerApi?: {
-      showRefPointPicker: (
-        existingIds: string[]
-      ) => Promise<RefPointPickerResult | null>;
+      showRefPointPicker: () => Promise<RefPointPickerResult | null>;
     };
   }
 }

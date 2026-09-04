@@ -1777,7 +1777,7 @@ describe('Imported Reference Points in Picker (Task 1e)', () => {
    * the picker should show with empty suggestions (since IDs are now H3 hex
    * strings that are meaningless to users).
    */
-  it('should show picker with empty suggestions when no ref points are imported', async () => {
+  it('should open the name prompt when no ref points are imported', async () => {
     const { getCurrentArPose } =
       await import('gps-plus-slam-app-framework/ar/webxr-session');
     const { getCurrentScenarioHandle } =
@@ -1830,9 +1830,8 @@ describe('Imported Reference Points in Picker (Task 1e)', () => {
 
     // EXPECTED: showRefPointPicker called with empty suggestions (H3 IDs, not user names)
     expect(mockShowRefPointPicker).toHaveBeenCalled();
-    const passedIds = mockShowRefPointPicker.mock.calls[0][0] as string[];
-
-    expect(passedIds).toEqual([]);
+    // The prompt takes no arguments: it asks for a name, nothing else.
+    expect(mockShowRefPointPicker).toHaveBeenCalledWith();
 
     resetMainState();
   });
