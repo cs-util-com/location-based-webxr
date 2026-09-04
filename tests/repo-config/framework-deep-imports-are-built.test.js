@@ -68,9 +68,22 @@ function deepImports(source) {
 describe('framework deep imports are built entrypoints', () => {
   const built = builtSubpaths();
 
-  it('finds the entry list (so the guard is not vacuous)', () => {
+  it('finds the entry list AND the consumer imports (so the guard is not vacuous)', () => {
     expect(built.has('index')).toBe(true);
     expect(built.has('utils/bearing-degrees')).toBe(true);
+    // The other half (PR #411 review): if the git pathspec ever stops
+    // matching, the offenders check below passes with nothing examined.
+    // Pin that the scan sees a real number of files and of deep imports.
+    const files = sourceFiles();
+    expect(files.length).toBeGreaterThan(100);
+    const imports = files.flatMap((f) => {
+      try {
+        return [...deepImports(readFileSync(resolve(repoRoot, f), 'utf8'))];
+      } catch {
+        return [];
+      }
+    });
+    expect(imports.length).toBeGreaterThan(50);
   });
 
   it('every consumer import of the framework names a built subpath', () => {

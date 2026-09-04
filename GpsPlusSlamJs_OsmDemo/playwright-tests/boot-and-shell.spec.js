@@ -2492,15 +2492,15 @@ test.describe("the AR entry point", () => {
     expect(measured.readout.x).toBeGreaterThanOrEqual(
       measured.slider.x + measured.slider.width - 1,
     );
-    // WHILE THE READOUT KEEPS ITS OWN LINE (DEC-Y12, untouched): ~40 characters
-    // cannot share a row with a slider at any font size worth reading outdoors.
+    // WHILE THE HINT KEEPS A LINE OF ITS OWN (DEC-L2-13): it explains the
+    // control, so it reads below the slider+readout row rather than beside it.
     expect(measured.hint.centre).toBeGreaterThan(measured.slider.centre);
 
     // THE SLIDER DID NOT PAY FOR IT. `width: 9rem` is `flex: 0 1 auto`, so the
-    // hint's `flex: 1 1 auto` could have been satisfied by shrinking the slider
-    // instead of using the free space — and every other assertion here passes
-    // with a 100 px slider. 9rem is 144 px, and it exists so 0-1 is draggable
-    // with a thumb outdoors.
+    // readout now sharing its row could have been fitted by shrinking the
+    // slider instead of using the free space — and every other assertion here
+    // passes with a 100 px slider. 9rem is 144 px, and it exists so 0-1 is
+    // draggable with a thumb outdoors.
     expect(
       measured.slider.width,
       `the compass slider shrank to ${Math.round(measured.slider.width)} px`,

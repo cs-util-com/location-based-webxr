@@ -1,6 +1,6 @@
 /**
  * Pure view-model for the placement controls (the "Place anchor" button,
- * the status banner, the reload call-to-action, and the error line).
+ * the status banner, the copy-link action, and the error line).
  *
  * Derives everything the placement UI shows from the tested `SetupState`
  * finite state machine. Keeping it pure lets us unit-test the async-UX

@@ -1,8 +1,10 @@
 # `placement-view.ts` — placement controls view-model
 
 - **Purpose:** Pure mapping from the tested `SetupState` FSM to the placement
-  UI: the "Place anchor" button, the status banner, the reload call-to-action,
-  and the error line. Keeps the async-UX contract testable without a DOM.
+  UI: the "Place anchor" button, the status banner, the copy-link action, and
+  the error line. Keeps the async-UX contract testable without a DOM. (The
+  reload call-to-action this line used to name was removed with
+  `reloadPrompt`; PR #411 review.)
 - **Public API:**
   - `PlacementView { button, banner, copyLink, error }`
   - `toPlacementView(state: SetupState): PlacementView` — total/pure.

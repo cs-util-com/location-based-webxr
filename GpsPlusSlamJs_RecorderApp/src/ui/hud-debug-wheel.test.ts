@@ -453,6 +453,29 @@ describe('createDebugWheel', () => {
     ]);
   });
 
+  // Why this test matters (PR #411 review): `applied` means "this store has
+  // everything the tester touched". A change held while suspended made that
+  // false for a store already marked applied, and resume() onto the SAME
+  // store would have skipped the held change. Unreachable from the UI today
+  // (every resume follows a fresh store), reachable through the e2e set() hook.
+  it('re-applies a change held while suspended even when resuming onto the same store', async () => {
+    const store = fakeStore();
+    store.decide();
+    const { wheel } = mount(store);
+    wheel.set({ trustGateMode: 'latch' });
+    expect(types(store)).toEqual(['gpsData/setCompassTrustGateMode']);
+    wheel.suspend();
+    wheel.set({ presetId: 'f100' }); // held: the store is suspended
+    expect(types(store)).toEqual(['gpsData/setCompassTrustGateMode']);
+    wheel.resume(); // same store, already marked applied before the hold
+    await flush();
+    expect(types(store)).toEqual([
+      'gpsData/setCompassTrustGateMode',
+      'gpsData/setAlignmentOverrides',
+      'gpsData/setCompassTrustGateMode',
+    ]);
+  });
+
   it('dispatches the compass slider on RELEASE, not on every drag step', () => {
     const store = fakeStore();
     store.decide();

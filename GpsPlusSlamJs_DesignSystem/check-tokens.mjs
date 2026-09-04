@@ -65,7 +65,11 @@ function findProblems({ css, brief }) {
   }
   for (const name of new Set(brief.match(/--[a-z][a-z0-9-]+/g) ?? [])) {
     if (PROSE_NAMES.has(name)) continue;
-    if (!css.includes(`${name}:`) && !css.includes(`var(${name})`)) {
+    // A DEFINITION (`--name:`), never a use: `var(--name)` surviving a deleted
+    // declaration is exactly the case this check exists for (PR #411 review).
+    // No brief-named token is reference-only today; if one ever must be,
+    // list it beside PROSE_NAMES rather than widening this rule.
+    if (!css.includes(`${name}:`)) {
       problems.push(`brief mentions ${name}, the CSS does not define it`);
     }
   }

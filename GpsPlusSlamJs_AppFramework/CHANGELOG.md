@@ -1,10 +1,39 @@
 # Changelog
 
-## [1.23.0] — 2026-09-02
+## [2.0.0] — unreleased (entry started 2026-09-02 as 1.23.0)
 
-Requires `gps-plus-slam-js` ≥ 1.23.0. Additive only.
+Requires `gps-plus-slam-js` ≥ 1.23.0. **A MAJOR**: the same unreleased
+entry removes published surface and changes one published behaviour (below),
+so it cannot ship as the 1.23.0 it was started as (PR #411 review). The
+version number is set at release time by `prep_new_releases --framework
+major`; `package.json` still reads 1.23.0 until then.
+
+### ⚠️ Breaking changes
+
+- **Removed from `/ar/qr`** (`createQrDetectionScheduler`,
+  `QrDetectionScheduler`, `QrDetectionSchedulerConfig`): the QR-specialised
+  aliases over `createDetectionScheduler<T>`. Nothing but their own tests used
+  them; instantiate the generic with `TResult = QrPoseSolution`.
+- **Removed from `GpsAnchorOptions`** (`floorY`, `angleThresholdInDegrees`,
+  `heightAboveGround`): accepted since the port, never read by the anchor.
+  Drop them from your options object; behaviour is unchanged because they
+  never had any.
+
+### Changed
+
+- **`lerpAngleDeg`** now returns `+180` where it returned `−180` for two
+  angles exactly 180° apart, because it is built on the shared
+  `bearingDeltaDeg` (`utils/bearing-degrees`). Both are shortest arcs; only the
+  turning direction at that single boundary changes.
 
 ### Added
+
+- **`utils/bearing-degrees`** gains `bearingDeltaDeg(a, b)` — the signed
+  shortest difference in `(−180, 180]`, replacing two unnamed copies.
+- **`utils/median`** is now a built deep-import entry.
+- **`visualization/wayfinding-targets`** (deep import) — `createTargetResolver`,
+  the wayfinding HUD's boundary validation as a pure, directly tested module;
+  `WayfindingTarget` is re-exported unchanged by `wayfinding-hud`.
 
 - **`utils/compass-influence-mapping`** (deep import) — the "influence 0..1 →
   seven compass settings" contract, moved out of the OSM demo so any app with
@@ -106,7 +135,7 @@ Requires `gps-plus-slam-js` ≥ 1.22.0.
 - **`recencyHalfLifeS` was divided by unguarded.** It is caller-supplied public
   API. Zero gives the newest sighting `1/(1 + 0/0)` = `NaN` and every older one
   `0`; a negative value can give `Infinity` or a negative weight.
-  `weightedMedian` drops all of those and falls back to the *unweighted*
+  `weightedMedian` drops all of those and falls back to the _unweighted_
   median — so the weighting silently did not run.
 - **`computeCaptureSize` handed `NaN` straight to render-target allocation.**
   `cameraWidth <= 0` is false for `NaN`, so `NaN` flowed through `Math.floor`
@@ -117,7 +146,7 @@ Requires `gps-plus-slam-js` ≥ 1.22.0.
   rejects, while the disposal handler is registered first — so an open settling
   inside that window was disposed by neither path. That is the leak the block
   was added to close.
-- **Two runtime validator lists only *looked* type-checked.** TypeScript accepts
+- **Two runtime validator lists only _looked_ type-checked.** TypeScript accepts
   an incomplete array literal for `readonly T[]`, so a list missing a union
   member compiles cleanly — and both lists were runtime validators, meaning a
   legitimate value was rejected in production. `BLUR_METRIC_IDS` is now the

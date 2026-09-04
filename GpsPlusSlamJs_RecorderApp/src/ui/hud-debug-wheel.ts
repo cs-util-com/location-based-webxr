@@ -530,7 +530,13 @@ export function createDebugWheel(deps: DebugWheelDeps): DebugWheel {
     render();
     // Only the control(s) just touched go out now; a later store swap
     // re-applies everything ever touched.
-    applyTo(deps.storeRef.get(), now);
+    const store = deps.storeRef.get();
+    // A change held while suspended makes "applied" false for the store the
+    // wheel will resume onto - forget the mark so resume() re-applies rather
+    // than skipping the held change (PR #411 review; unreachable from the UI
+    // today, reachable through the e2e set() hook).
+    if (suspended) applied.delete(store);
+    applyTo(store, now);
   };
 
   const seed = (store: RecorderStore): void => {

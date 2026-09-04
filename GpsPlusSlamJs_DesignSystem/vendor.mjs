@@ -64,7 +64,10 @@ for (const app of targets) {
   // copyFileSync follows a symbolic-link destination and would overwrite its
   // target - a planted link in a checkout could point outside the workspace
   // (PR #409 review). A link is refused; a copy is always a plain file.
-  if (existsSync(dest) && lstatSync(dest).isSymbolicLink()) {
+  // lstat, not existsSync: existsSync FOLLOWS the link, so a DANGLING link
+  // (target not there yet) read as "no file", skipped the check, and
+  // copyFileSync would have created the target through it (PR #411 review).
+  if (lstatSync(dest, { throwIfNoEntry: false })?.isSymbolicLink()) {
     console.error(
       `vendor: ${app}/design.css is a symbolic link - refusing to write through it`,
     );
