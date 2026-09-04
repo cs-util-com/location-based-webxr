@@ -171,7 +171,8 @@ export function createTargetResolver(
     raw: WayfindingTarget,
     index: number,
     seenIds: Set<string>,
-    duplicateIds: Set<string>
+    duplicateIds: Set<string>,
+    deadbandKeys: Set<string>
   ): ResolvedTarget | null {
     const shapeIssue = checkTargetShape(raw);
     if (shapeIssue) {
@@ -197,6 +198,9 @@ export function createTargetResolver(
     }
 
     const key = raw.id ?? index;
+    // Named this frame under this key: its deadband entry, if any, survives
+    // the sweep below only while the key keeps appearing.
+    deadbandKeys.add(String(key));
     const deadband = resolveDeadband(raw, key);
     if (!deadband) return null;
     return {
@@ -209,14 +213,36 @@ export function createTargetResolver(
     };
   }
 
-  /** A duplicate-id log entry is keyed by id, not index, so it is cleared
-   * only once the duplication actually disappears from the result (clearing
-   * it while the duplicate persists would re-log every frame). */
-  function clearHealedDuplicates(duplicateIds: Set<string>): void {
+  /**
+   * Per-frame sweep of the entries keyed by CONSUMER-CHOSEN keys, which is
+   * what keeps this set bounded from the frame loop:
+   *
+   * - A duplicate-id entry is keyed by id, not index, so it is cleared only
+   *   once the duplication actually disappears from the result (clearing it
+   *   while the duplicate persists would re-log every frame).
+   * - A deadband entry is keyed by the target's key and used to be released
+   *   only when THAT key resolved cleanly again. A consumer minting ids per
+   *   frame with a wrong deadband therefore added one permanent entry per
+   *   frame (PR #412 review). It is now dropped with the first frame that no
+   *   longer names its key, so a key that leaves and returns still wrong is
+   *   logged again, and the set never outgrows the largest result seen.
+   *
+   * Shape entries (`legacy:`/`invalid:`) are keyed by index and bounded by
+   * the longest list, so they need no sweep.
+   */
+  function sweepDepartedKeys(
+    duplicateIds: Set<string>,
+    deadbandKeys: Set<string>
+  ): void {
     for (const issue of loggedIssues) {
       if (
         issue.startsWith('duplicate:') &&
         !duplicateIds.has(issue.slice('duplicate:'.length))
+      ) {
+        loggedIssues.delete(issue);
+      } else if (
+        issue.startsWith('deadband:') &&
+        !deadbandKeys.has(issue.slice('deadband:'.length))
       ) {
         loggedIssues.delete(issue);
       }
@@ -227,12 +253,19 @@ export function createTargetResolver(
     resolve(raw: unknown): ResolvedTarget[] {
       const seenIds = new Set<string>();
       const duplicateIds = new Set<string>();
+      const deadbandKeys = new Set<string>();
       const resolved: ResolvedTarget[] = [];
       readTargets(raw).forEach((target, index) => {
-        const result = resolveTarget(target, index, seenIds, duplicateIds);
+        const result = resolveTarget(
+          target,
+          index,
+          seenIds,
+          duplicateIds,
+          deadbandKeys
+        );
         if (result) resolved.push(result);
       });
-      clearHealedDuplicates(duplicateIds);
+      sweepDepartedKeys(duplicateIds, deadbandKeys);
       return resolved;
     },
   };

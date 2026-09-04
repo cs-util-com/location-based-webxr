@@ -110,6 +110,27 @@ describe('createTargetResolver', () => {
     expect(mockError).toHaveBeenCalledTimes(2);
   });
 
+  it('forgets the deadband bookkeeping of a key that leaves the result, so per-frame ids cannot grow it', () => {
+    // Why this matters: resolve() runs from the frame loop, and the deadband
+    // entry was the one piece of bookkeeping released only when the SAME key
+    // resolved cleanly again. A consumer minting ids per frame with a wrong
+    // deadband therefore added one permanent entry per frame, forever (PR
+    // #412 review). Observable contract: an id that left the result and
+    // comes back with the same bad deadband is logged AGAIN, because its
+    // entry was dropped with the frame that no longer named it.
+    const r = createTargetResolver({ distanceMin: 2, distanceMax: 5 });
+    r.resolve([{ id: 'gone', position: v(), distanceMin: 6 }]);
+    for (let frame = 0; frame < 3; frame += 1) {
+      r.resolve([{ id: `fresh-${frame}`, position: v(), distanceMin: 6 }]);
+    }
+    expect(mockError).toHaveBeenCalledTimes(4);
+    r.resolve([{ id: 'gone', position: v(), distanceMin: 6 }]);
+    expect(mockError).toHaveBeenCalledTimes(5);
+    // And a key that stays in the result stays logged once, as before.
+    r.resolve([{ id: 'gone', position: v(), distanceMin: 6 }]);
+    expect(mockError).toHaveBeenCalledTimes(5);
+  });
+
   it('rejects a non-finite or negative deadband and a non-string id', () => {
     const r = createTargetResolver({ distanceMin: 2, distanceMax: 5 });
     expect(

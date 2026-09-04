@@ -18,6 +18,11 @@ major`; `package.json` still reads 1.23.0 until then.
   `heightAboveGround`): accepted since the port, never read by the anchor.
   Drop them from your options object; behaviour is unchanged because they
   never had any.
+- **`state/app-selectors`** (`selectAlignmentMatrix`, `selectGpsPositions`,
+  `selectOdometryPositions`, `selectOdometryRotations`, `selectZeroReference`)
+  are plain functions rather than `createSelector` outputs. Returned values
+  and reference stability are unchanged; the reselect surface (`.resultFunc`,
+  `.recomputations()`, `.clearCache()`, extra selector arguments) is gone.
 
 ### Changed
 

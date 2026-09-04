@@ -11,6 +11,7 @@ Builds the frame-tile stack — a `FrameTileVisualizer` under the alignment-ridi
   - `deps.storeRef`, `deps.blobSource` (live: the capture cache; replay: the ZIP), `deps.divisor` (`frameTileDisplay.divisor`, the display-texture downscale).
   - `deps.maxTiles` — LIVE-ONLY FIFO cap. When omitted the visualizer is constructed with no options object at all (the replay test pins the one-argument call), so the full recorded path stays visible for coverage auditing.
   - Returns the teardown: unsubscribe, then dispose the visualizer.
+  - Throws what `wireFrameTileSubscribers` throws, after disposing the visualizer it had already constructed: the call sites treat a wiring failure as best-effort (log and continue) and never receive the teardown, so the disposal has to happen here (PR #412 review).
 
 ## Invariants & assumptions
 
@@ -33,5 +34,5 @@ const dispose = wireFrameTileStack({
 
 ## Tests
 
-- `frame-tile-stack.test.ts` — the visualizer's parent and cap (one-argument construction when uncapped), the decode divisor, the error log, and the teardown order.
+- `frame-tile-stack.test.ts` — the visualizer's parent and cap (one-argument construction when uncapped), the decode divisor, the error log, the disposal on a wiring throw, and the teardown order.
 - The call sites are pinned by `main.visualization-toggles-wiring.test.ts` (live) and `replay/replay-mode.test.ts` (replay).

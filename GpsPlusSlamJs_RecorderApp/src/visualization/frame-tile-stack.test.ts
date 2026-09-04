@@ -107,6 +107,20 @@ describe('wireFrameTileStack', () => {
     );
   });
 
+  it('disposes the visualizer and rethrows when the subscriber wiring throws', () => {
+    // Why this matters: both call sites wrap the wiring in a best-effort
+    // try/catch that only logs. Before this, a throw from the wiring step left
+    // the already-constructed visualizer (and its GPU resources) unreachable,
+    // because the disposer is only returned on success (PR #412 review).
+    vi.mocked(wireFrameTileSubscribers).mockImplementationOnce(() => {
+      throw new Error('wiring failed');
+    });
+    expect(() =>
+      wireFrameTileStack({ arWorldGroup, storeRef, blobSource, divisor: 2 })
+    ).toThrow('wiring failed');
+    expect(calls).toEqual(['visualizer.dispose']);
+  });
+
   it('teardown unsubscribes before disposing the visualizer', () => {
     const dispose = wireFrameTileStack({
       arWorldGroup,

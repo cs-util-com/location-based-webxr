@@ -158,6 +158,14 @@ export {
   validateWayfindingHudOptions,
 } from './wayfinding-hud.js';
 
+// --- wayfinding-targets (the HUD's getTargets() boundary triage, pure) ---
+export {
+  type ResolvedTarget,
+  type TargetResolver,
+  type TargetResolverOptions,
+  createTargetResolver,
+} from './wayfinding-targets.js';
+
 // --- wayfinding-placement (pure seam of the wayfinding HUD) ---
 export {
   type TargetPlacement,

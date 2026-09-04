@@ -309,6 +309,11 @@ const entryFiles = [
   // resolution at runtime — see 2026-04-29-recorder-e2e-import-resolution-failure.md).
   'src/visualization/wayfinding-hud.ts',
   'src/visualization/wayfinding-placement.ts',
+  // Advertised as a deep import by the CHANGELOG and the `./visualization/*`
+  // wildcard; the repo-config guard reads the CHANGELOG's "(deep import)"
+  // markers, so an advertised module without an entry fails at the gate
+  // (PR #412 review: this one shipped without either).
+  'src/visualization/wayfinding-targets.ts',
 ];
 
 export default defineConfig({

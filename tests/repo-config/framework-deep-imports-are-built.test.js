@@ -86,6 +86,28 @@ describe('framework deep imports are built entrypoints', () => {
     expect(imports.length).toBeGreaterThan(50);
   });
 
+  it('every module the framework CHANGELOG advertises as a deep import is a built subpath', () => {
+    // The consumer scan above cannot see an advertised module that no in-repo
+    // app imports yet: `visualization/wayfinding-targets` shipped in the
+    // CHANGELOG's Added list with no tsdown entry and no consumer, so the
+    // guard was green while a consumer following the CHANGELOG would have
+    // hit a resolution failure (PR #412 review). The CHANGELOG marks such
+    // modules "(deep import)"; each must be an entry.
+    const changelog = readFileSync(
+      resolve(repoRoot, 'GpsPlusSlamJs_AppFramework/CHANGELOG.md'),
+      'utf8'
+    );
+    const advertised = [
+      ...changelog.matchAll(/\*\*`([a-z0-9/-]+)`\*\* \(deep import\)/g),
+    ].map(([, sub]) => sub);
+    expect(advertised.length).toBeGreaterThan(0);
+    const missing = advertised.filter((sub) => !built.has(sub));
+    expect(
+      missing,
+      `advertised as deep imports in CHANGELOG.md but not entries in ${CONFIG}: ${missing.join(', ')}`
+    ).toEqual([]);
+  });
+
   it('every consumer import of the framework names a built subpath', () => {
     const offenders = [];
     for (const file of sourceFiles()) {

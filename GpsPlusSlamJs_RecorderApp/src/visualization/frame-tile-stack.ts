@@ -53,15 +53,25 @@ export function wireFrameTileStack({
     maxTiles === undefined
       ? new FrameTileVisualizer(arWorldGroup)
       : new FrameTileVisualizer(arWorldGroup, { maxTiles });
-  const unsubscribe = wireFrameTileSubscribers({
-    storeRef,
-    visualizer,
-    blobSource,
-    decodeTexture: (blob) => decodeFrameTexture(blob, divisor),
-    onError: (err, imageFile) => {
-      log.warn(`Frame tile decode failed for "${imageFile}"`, err);
-    },
-  });
+  let unsubscribe: () => void;
+  try {
+    unsubscribe = wireFrameTileSubscribers({
+      storeRef,
+      visualizer,
+      blobSource,
+      decodeTexture: (blob) => decodeFrameTexture(blob, divisor),
+      onError: (err, imageFile) => {
+        log.warn(`Frame tile decode failed for "${imageFile}"`, err);
+      },
+    });
+  } catch (err) {
+    // Both call sites treat a wiring failure as best-effort (log and go on),
+    // and the disposer is only returned on success — so without this the
+    // already-constructed visualizer and its GPU resources were unreachable
+    // (PR #412 review).
+    visualizer.dispose();
+    throw err;
+  }
   return () => {
     unsubscribe();
     visualizer.dispose();
