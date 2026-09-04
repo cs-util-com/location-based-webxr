@@ -23,6 +23,12 @@ import {
   type WindowLike,
 } from "./desktop-sim";
 import { SIM_EYE_HEIGHT, SIM_WAYPOINTS } from "./sim-waypoints";
+// The accent token comes from the vendored design.css at runtime; jsdom has
+// no sheet, so the reader is mocked to exercise both outcomes.
+vi.mock("./design-token", () => ({
+  readCssToken: vi.fn((): string | undefined => undefined),
+}));
+import { readCssToken } from "./design-token";
 
 function makeHarness(configOverride?: {
   distanceMin?: number;
@@ -140,14 +146,33 @@ describe("startDesktopSim", () => {
     h.sim.dispose();
   });
 
+  // Why this test matters: same contract as ar-mode — the live accent token
+  // is the HUD tint, and an absent sheet OMITS the option rather than passing
+  // an empty string the framework would read as black.
+  it("passes the design system's accent token as the indicator tint, and omits it when the sheet has none", () => {
+    vi.mocked(readCssToken).mockReturnValueOnce("#123456");
+    const tinted = makeHarness();
+    expect(readCssToken).toHaveBeenCalledWith("--accent");
+    expect(tinted.createHudImpl.mock.calls[0]![0].indicatorColor).toBe(
+      "#123456",
+    );
+    tinted.sim.dispose();
+
+    const untinted = makeHarness();
+    expect("indicatorColor" in untinted.createHudImpl.mock.calls[0]![0]).toBe(
+      false,
+    );
+    untinted.sim.dispose();
+  });
+
   // Why this test matters: the desktop simulator is the e2e-observable host
   // of the image-indicator toggle — it must hand the fingerprintable asset
   // URLs to the HUD factory when (and only when) the config asks for them.
   it("passes the sprite asset URLs to the HUD when the config enables image indicators", () => {
     const h = makeHarness({ imageIndicators: true });
     const options = h.createHudImpl.mock.calls[0]![0];
-    expect(options.arrowSprite).toMatch(/wayfinding-arrow.*\.png$/);
-    expect(options.circleSprite).toMatch(/wayfinding-ring.*\.png$/);
+    expect(options.arrowSprite).toMatch(/wayfinding-arrow.*\.svg$/);
+    expect(options.circleSprite).toMatch(/wayfinding-diamond.*\.svg$/);
     h.sim.dispose();
   });
 

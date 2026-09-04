@@ -1,4 +1,5 @@
 import { test, expect } from "./e2e-test.js";
+import { countAccentPixels } from "./count-accent-pixels.js";
 
 /**
  * Pixel-level render proof for the desktop simulator's HUD indicators.
@@ -13,38 +14,14 @@ import { test, expect } from "./e2e-test.js";
  * line reported rings/arrows while the canvas showed none. This spec closes
  * the gap by asserting actual rendered pixels.
  *
- * Discriminator: the procedural indicators use the HUD tint 0xff3b30
- * (strong red, green/blue ≈ 50). Nothing else in the simulator view is
- * red-dominant — background #222, grid greys, waypoint markers green — so
- * counting red-dominant pixels in the screen centre (where the ahead
- * target's ring sits at boot) uniquely detects the rendered HUD.
+ * Discriminator: the procedural indicators wear the design system's accent
+ * `#f2971f` (242, 151, 31 — orange: red high, green mid, blue low). Nothing
+ * else in the simulator view is orange — background #222, grid greys,
+ * waypoint markers green, labels white — so counting accent-dominant pixels
+ * in the screen centre (where the ahead target's ring sits at boot) uniquely
+ * detects the rendered HUD (the band lives in count-accent-pixels.js, shared
+ * with the image-indicator spec, which counts the diamond sprite's dot).
  */
-
-/**
- * Count red-dominant (HUD tint) pixels in a PNG buffer by decoding it in
- * the page — keeps the check dependency-free (no node PNG library).
- */
-async function countHudTintPixels(page, pngBuffer) {
-  return page.evaluate(async (base64) => {
-    const image = new Image();
-    image.src = `data:image/png;base64,${base64}`;
-    await image.decode();
-    const canvas = document.createElement("canvas");
-    canvas.width = image.width;
-    canvas.height = image.height;
-    const context = canvas.getContext("2d");
-    context.drawImage(image, 0, 0);
-    const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
-    let count = 0;
-    for (let i = 0; i < data.length; i += 4) {
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
-      if (r > 150 && g < 120 && b < 120) count += 1;
-    }
-    return count;
-  }, pngBuffer.toString("base64"));
-}
 
 test.describe("Wayfinding HUD demo — rendered pixels", () => {
   test("the ahead target's ring is actually drawn, not just reported by the status line", async ({
@@ -76,8 +53,11 @@ test.describe("Wayfinding HUD demo — rendered pixels", () => {
       height: box.height * 0.5,
     };
     // The ring annulus alone covers several hundred pixels at any desktop
-    // viewport; a persistent ~0 means the indicator exists in the graph but
-    // is not rendered (the camera-not-in-scene class of bug). POLLED, not
+    // viewport — measured 839 accent-dominant pixels on 2026-09-04 after the
+    // ring thinned to a third of its width (the 2026-07 ring was ~3× that),
+    // so 100 keeps an ~8× margin; a persistent ~0 means the indicator exists
+    // in the graph but is not rendered (the camera-not-in-scene class of
+    // bug). POLLED, not
     // one-shot: the status line derives from the scene graph and updates
     // ahead of the first painted WebGL frame, so under full-cascade CPU
     // contention a single screenshot can race the paint and read 0 (flaked
@@ -87,7 +67,7 @@ test.describe("Wayfinding HUD demo — rendered pixels", () => {
       .poll(
         async () => {
           const screenshot = await page.screenshot({ clip });
-          return countHudTintPixels(page, screenshot);
+          return countAccentPixels(page, screenshot);
         },
         { timeout: 15_000 },
       )

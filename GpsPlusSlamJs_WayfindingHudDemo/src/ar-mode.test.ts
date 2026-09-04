@@ -53,6 +53,12 @@ vi.mock("gps-plus-slam-app-framework/ar/hit-test-reticle-driver", () => ({
 vi.mock("gps-plus-slam-app-framework/visualization/wayfinding-hud", () => ({
   createWayfindingHud: vi.fn(() => ({ update: vi.fn(), dispose: vi.fn() })),
 }));
+// The accent token comes from the vendored design.css at runtime; jsdom has
+// no sheet, so the reader is mocked to exercise both outcomes.
+vi.mock("./design-token", () => ({
+  readCssToken: vi.fn((): string | undefined => undefined),
+}));
+import { readCssToken } from "./design-token";
 
 import { startArMode, type ArModeDeps } from "./ar-mode";
 import { startHitTestReticle } from "gps-plus-slam-app-framework/ar/hit-test-reticle-driver";
@@ -149,9 +155,30 @@ describe("startArMode", () => {
   it("passes the self-made sprite asset URLs when the config enables image indicators", async () => {
     const mode = await startArMode(makeDeps({ imageIndicators: true }));
     const options = vi.mocked(createWayfindingHud).mock.calls[0]![0];
-    expect(options.arrowSprite).toMatch(/wayfinding-arrow.*\.png$/);
-    expect(options.circleSprite).toMatch(/wayfinding-ring.*\.png$/);
+    expect(options.arrowSprite).toMatch(/wayfinding-arrow.*\.svg$/);
+    expect(options.circleSprite).toMatch(/wayfinding-diamond.*\.svg$/);
     mode.dispose();
+  });
+
+  // Why this test matters: the design system's accent is the HUD's tint, and
+  // the demo must hand the LIVE token to the framework — with the option
+  // OMITTED (not empty) when the sheet is absent, so the framework default
+  // applies instead of THREE.Color reading '' as black.
+  it("passes the design system's accent token as the indicator tint, and omits it when the sheet has none", async () => {
+    vi.mocked(readCssToken).mockReturnValueOnce("#123456");
+    const tinted = await startArMode(makeDeps());
+    expect(readCssToken).toHaveBeenCalledWith("--accent");
+    expect(
+      vi.mocked(createWayfindingHud).mock.calls[0]![0].indicatorColor,
+    ).toBe("#123456");
+    tinted.dispose();
+
+    vi.mocked(createWayfindingHud).mockClear();
+    const untinted = await startArMode(makeDeps());
+    expect(
+      "indicatorColor" in vi.mocked(createWayfindingHud).mock.calls[0]![0],
+    ).toBe(false);
+    untinted.dispose();
   });
 
   it("re-creates the HUD on refreshHud (slider change)", async () => {

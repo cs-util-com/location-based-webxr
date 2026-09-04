@@ -1,0 +1,107 @@
+// Why this test matters: the design system forbids colour literals outside
+// its tokens layer, and `check-tokens.mjs` enforces that for design.css. The
+// accent nevertheless has to exist as a literal in places that cannot read a
+// CSS custom property: the framework's WebGL HUD default (`indicatorColor`
+// in wayfinding-hud.ts — a library that cannot assume any stylesheet) and
+// the HUD demo's SVG sprite assets (an SVG file cannot use `var()`). Those
+// are exactly the copies nobody looks at when the token is re-tuned, so
+// this guard holds every one of them to `--accent` (and the SVG strokes to
+// `--ink`) in the canonical design.css. Owner taste round 2026-09-04,
+// DEC-T2 / DEC-T4 of the UI taste round plan.
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it } from 'vitest';
+
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const read = (rel) => readFileSync(resolve(repoRoot, rel), 'utf8');
+
+/** `#fff` and `#ffffff` are one colour; compare on the six-digit form. */
+function normalizeHex(value) {
+  const hex = value.trim().toLowerCase();
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/.exec(hex);
+  if (!m) throw new Error(`not a hex colour: ${value}`);
+  const digits = m[1];
+  return `#${digits.length === 3 ? [...digits].map((d) => d + d).join('') : digits}`;
+}
+
+/** A token's value: a normalised hex colour, or (`px: true`) a px length as a bare number string. */
+function token(css, name, px = false) {
+  const m = new RegExp(`${name}:\\s*(${px ? '[0-9.]+' : '#[0-9a-fA-F]{3,6}'})${px ? 'px' : ''}\\s*;`).exec(css);
+  if (!m) throw new Error(`design.css defines no ${px ? 'px' : 'hex'} ${name}`);
+  return px ? m[1] : normalizeHex(m[1]);
+}
+
+describe('every literal copy of the design accent equals the token', () => {
+  const css = read('GpsPlusSlamJs_DesignSystem/design.css');
+  const accent = token(css, '--accent');
+  const ink = token(css, '--ink');
+
+  it("the framework's default HUD tint is the accent", () => {
+    const source = read(
+      'GpsPlusSlamJs_AppFramework/src/visualization/wayfinding-hud.ts'
+    );
+    const m = /indicatorColor:\s*'(#[0-9a-fA-F]{3,6})'/.exec(source);
+    expect(m, 'DEFAULT_WAYFINDING_HUD must carry a hex indicatorColor').not
+      .toBeNull();
+    expect(normalizeHex(m[1])).toBe(accent);
+  });
+
+  const SVGS = [
+    'GpsPlusSlamJs_WayfindingHudDemo/src/assets/wayfinding-diamond.svg',
+    'GpsPlusSlamJs_WayfindingHudDemo/src/assets/wayfinding-arrow.svg',
+  ];
+
+  it("the HUD demo's SVG sprites use only the accent, the ink, and the halo black", () => {
+    for (const file of SVGS) {
+      const svg = read(file);
+      const literals = [
+        ...svg.matchAll(/(?:stroke|fill|flood-color)="(#[0-9a-fA-F]{3,6})"/g),
+      ].map(([, hex]) => normalizeHex(hex));
+      expect(literals.length, `${file} carries no colour literals`).toBeGreaterThan(0);
+      for (const hex of literals) {
+        expect([accent, ink, '#000000'], `${file} uses ${hex}`).toContain(hex);
+      }
+    }
+    // The dot is the accent, the strokes are the ink — not the other way round.
+    expect(read(SVGS[0])).toMatch(new RegExp(`<circle[^>]*fill="${accent}"`));
+  });
+
+  it("the diamond sprite's geometry is the catalog's .diamond, attribute for attribute", () => {
+    // The catalog holds the diamond inline three times; the sprite is the
+    // fourth copy, in a file the catalog cannot include. Compare against the
+    // first catalog instance so a re-proportioned marker moves the sprite too.
+    const catalog = read('GpsPlusSlamJs_DesignSystem/index.html');
+    const first = catalog.indexOf('class="diamond"');
+    expect(first).toBeGreaterThan(-1);
+    const block = catalog.slice(first, catalog.indexOf('</svg>', first));
+    const attrs = (markup, tag) => {
+      const m = new RegExp(`<${tag}\\b([^>]*)/?>`).exec(markup);
+      if (!m) throw new Error(`no <${tag}> in ${markup.slice(0, 80)}`);
+      return Object.fromEntries(
+        [...m[1].matchAll(/([a-z-]+)="([^"]*)"/g)].map(([, k, v]) => [k, v])
+      );
+    };
+    const sprite = read(SVGS[0]);
+    const rect = attrs(sprite, 'rect');
+    const catalogRect = attrs(block, 'rect');
+    for (const key of ['x', 'y', 'width', 'height', 'rx', 'transform']) {
+      expect(rect[key], `rect ${key}`).toBe(catalogRect[key]);
+    }
+    const circle = attrs(sprite, 'circle');
+    const catalogCircle = attrs(block, 'circle');
+    for (const key of ['cx', 'cy', 'r']) {
+      expect(circle[key], `circle ${key}`).toBe(catalogCircle[key]);
+    }
+    // Stroke weights are the system's line tokens: 2px strong, 0.5px hairline.
+    expect(token(css, '--line-strong', true)).toBe(rect['stroke-width']);
+    expect(token(css, '--line', true)).toBe(circle['stroke-width']);
+  });
+
+  it('sanity: the tokens are the colours the brief names', () => {
+    // If these move, every consumer above moves with them — that is the point
+    // — but a typo in the regexes would pass vacuously, so pin the values too.
+    expect(accent).toBe('#f2971f');
+    expect(ink).toBe('#ffffff');
+  });
+});

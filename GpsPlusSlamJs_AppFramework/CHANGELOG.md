@@ -26,6 +26,13 @@ major`; `package.json` still reads 1.23.0 until then.
 
 ### Changed
 
+- **The wayfinding HUD's procedural cone and ring wear the design system's
+  accent** (`#f2971f`) instead of the prototype's red `0xff3b30`, and the ring
+  is a third as wide (0.0133 at `indicatorScale` 1, outer radius unchanged at
+  0.12). Pass `indicatorColor` to keep another tint.
+- **URL-loaded `arrowSprite` / `circleSprite` textures are tagged
+  `SRGBColorSpace`.** They were sampled as linear and rendered lighter than
+  the image file; a caller-passed `THREE.Texture` keeps its own colour space.
 - **`lerpAngleDeg`** now returns `+180` where it returned `−180` for two
   angles exactly 180° apart, because it is built on the shared
   `bearingDeltaDeg` (`utils/bearing-degrees`). Both are shortest arcs; only the
@@ -33,6 +40,9 @@ major`; `package.json` still reads 1.23.0 until then.
 
 ### Added
 
+- **`createWayfindingHud({ indicatorColor })`** — tint of the procedural
+  indicators (`THREE.ColorRepresentation`; validated, `null` rejected), also
+  exposed as `DEFAULT_WAYFINDING_HUD.indicatorColor`. Inert in image mode.
 - **`utils/bearing-degrees`** gains `bearingDeltaDeg(a, b)` — the signed
   shortest difference in `(−180, 180]`, replacing two unnamed copies.
 - **`utils/median`** is now a built deep-import entry.

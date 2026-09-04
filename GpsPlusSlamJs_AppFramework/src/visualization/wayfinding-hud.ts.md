@@ -7,8 +7,8 @@ Presenter of the wayfinding HUD: per-target frustum-locked indicators (edge arro
 ## Public API
 
 - `createWayfindingHud(options: WayfindingHudOptions): WayfindingHud` — validates the options, attaches per-target indicators to `options.camera`, registers a frame tick (`registerFrameUpdate`) and a session disposer (`registerSessionDisposer`), returns `{ dispose() }`.
-- `validateWayfindingHudOptions(options)` — throws `TypeError`/`RangeError` on malformed options (missing camera/getTargets, missing or inverted `distanceMin`/`distanceMax`, non-positive `hudDistance`/`indicatorScale`/`labelScale`).
-- `DEFAULT_WAYFINDING_HUD` — `{ hudDistance: 2.5, indicatorScale: 1.0, labelScale: 1.0 }`.
+- `validateWayfindingHudOptions(options)` — throws `TypeError`/`RangeError` on malformed options (missing camera/getTargets, missing or inverted `distanceMin`/`distanceMax`, non-positive `hudDistance`/`indicatorScale`/`labelScale`, an `indicatorColor` that is not a hex number, CSS colour string or `THREE.Color` — including `null`, which is rejected rather than defaulted).
+- `DEFAULT_WAYFINDING_HUD` — `{ hudDistance: 2.5, indicatorScale: 1.0, labelScale: 1.0, indicatorColor: '#f2971f' }`. The colour is the design system's `--accent`; a library cannot read a consumer's stylesheet, so it is a literal, held to the token by the webxr root's `tests/repo-config/design-accent-copies.test.js` (owner taste round 2026-09-04, replacing the prototype's red `0xff3b30`).
 - `WayfindingTarget` (2026-07-20 per-target config plan, clean break from the earlier `Vector3[]` contract):
   - `position: THREE.Vector3` (required) — world position.
   - `id?: string` — stable identity for per-target hysteresis state; must be unique within one `getTargets()` result. Omit → index keying (today's semantics for static lists).
@@ -20,7 +20,9 @@ Presenter of the wayfinding HUD: per-target frustum-locked indicators (edge arro
   - `getTargets: () => WayfindingTarget[]` (required) — polled once per frame; the single way to feed targets.
   - `distanceMin` / `distanceMax` (required) — the arrival/reactivation hysteresis deadband (meters); per-target values override them.
   - `hudDistance?`, `indicatorScale?`, `labelScale?` — see defaults.
-  - `arrowSprite?` / `circleSprite?` — `THREE.Texture | string` (URL). Procedural cone/ring fallbacks when omitted. Arrow assets must point **upward** and be centered.
+  - `indicatorColor?` — tint of the PROCEDURAL cone and ring (one shared material, so both wear it). Inert in image mode: sprites are tinted white so the texture's own colours show. Apps that vendor the design system pass the live `--accent` (the HUD demo reads it with `design-token.ts`); everyone else gets the default.
+  - The procedural ring is `RING_OUTER_RADIUS` 0.12 with `RING_WIDTH` 0.04/3 (inner 0.1067), times `indicatorScale`: a third of the prototype's 0.04 (owner taste round 2026-09-04). The outer radius is what placement and the demo's pixel e2e were sized against and did not move.
+  - `arrowSprite?` / `circleSprite?` — `THREE.Texture | string` (URL). Procedural cone/ring fallbacks when omitted. Arrow assets must point **upward** and be centered. A URL-loaded texture is tagged `SRGBColorSpace` (image files hold sRGB pixels; untagged they render lighter than authored); a caller-passed texture keeps its own colour space. SVG URLs work through the same `<img>` path when the file carries an intrinsic `width`/`height`.
   - `autoRegisterFrameUpdate?` (default `true`) — set `false` for hosts that own their render loop (desktop simulators, replay scenes; nothing ticks the framework frame loop outside a WebXR session) and call `hud.update(dt)` per frame instead. Either/or — never combine auto-registration with manual `update` calls (double-tick). `update` is a no-op after `dispose()` (it would otherwise re-create per-target state from `getTargets()`).
 
 ## Invariants & assumptions
@@ -65,6 +67,6 @@ const exit: WayfindingTarget = {
 
 ## Tests
 
-- `wayfinding-hud.test.ts` — option validation (parity with the prototype's strict constructor), per-frame placement (circle/arrow/hidden, snap-then-damp circle smoothing, label positioning), target-count sync (state disposal on shrink, fresh hidden state on grow, shared procedural resources survive shrink, non-array getter tolerated), per-target configuration (id keying through reorders, deadband overrides, one-shot boundary errors for legacy/duplicate/invalid targets, inactive-arrow rendering incl. the no-bypass and label flags), lifecycle (dispose detaches + unregisters, idempotent dispose, session-teardown auto-dispose, label resource release).
+- `wayfinding-hud.test.ts` — option validation (parity with the prototype's strict constructor; `indicatorColor` shapes), the procedural look (default accent on the shared material, `indicatorColor` override, ring radii), per-frame placement (circle/arrow/hidden, snap-then-damp circle smoothing, label positioning), target-count sync (state disposal on shrink, fresh hidden state on grow, shared procedural resources survive shrink, non-array getter tolerated), per-target configuration (id keying through reorders, deadband overrides, one-shot boundary errors for legacy/duplicate/invalid targets, inactive-arrow rendering incl. the no-bypass and label flags), lifecycle (dispose detaches + unregisters, idempotent dispose, session-teardown auto-dispose, label resource release).
 - `wayfinding-hud.property.test.ts` — fast-check contract: with stable ids, visible indicators are invariant under arbitrary per-frame reordering of the getTargets() result.
 - The placement math itself is covered by `wayfinding-placement.test.ts` / `wayfinding-placement.property.test.ts`.

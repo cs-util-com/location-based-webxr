@@ -9,7 +9,8 @@
     "**/coverage/**",
     "**/*.test.ts",
     "**/*.spec.ts",
-    "**/*.d.ts"
+    "**/*.d.ts",
+    "**/assets/**"
   ],
   "gitignore": true
 }

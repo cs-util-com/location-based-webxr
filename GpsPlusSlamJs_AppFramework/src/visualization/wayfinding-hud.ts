@@ -81,6 +81,16 @@ export interface WayfindingHudOptions {
   /** Uniform scale multiplier for distance labels. Default 1.0. */
   labelScale?: number;
   /**
+   * Tint of the PROCEDURAL cone and ring. Default: the design system's accent
+   * (`--accent` in design.css, `#f2971f`); an app that vendors the sheet can
+   * pass the live token so the WebGL indicators follow a re-tuned accent.
+   * Inert in image mode: sprites are tinted white so the texture's own
+   * colours show. Any `THREE.ColorRepresentation` (hex number, CSS string,
+   * `THREE.Color`); validated at construction because `THREE.Color` reads an
+   * object or a boolean as black without a word.
+   */
+  indicatorColor?: THREE.ColorRepresentation;
+  /**
    * Optional custom texture (or URL) for the directional arrow indicator;
    * a procedural cone is used when omitted. The asset must point UPWARD
    * (12 o'clock) and be centered — the rotation logic assumes it.
@@ -108,6 +118,13 @@ export const DEFAULT_WAYFINDING_HUD = {
   hudDistance: 2.5,
   indicatorScale: 1.0,
   labelScale: 1.0,
+  /**
+   * The design system's `--accent`. A literal because a library cannot read a
+   * consumer's stylesheet; `tests/repo-config/design-accent-copies.test.js`
+   * holds it to the token (owner taste round 2026-09-04, replacing the
+   * prototype's red 0xff3b30).
+   */
+  indicatorColor: '#f2971f',
 } as const;
 
 export interface WayfindingHud {
@@ -121,8 +138,14 @@ export interface WayfindingHud {
   dispose(): void;
 }
 
-/** Indicator tint used by the procedural cone/ring fallbacks. */
-const HUD_COLOR = 0xff3b30;
+/**
+ * The procedural ring, in HUD-plane units before `indicatorScale`. The outer
+ * radius is what the placement and the demo's pixel e2e were sized against
+ * and stays; the width is a third of the prototype's 0.04 (owner taste round
+ * 2026-09-04: "a thinner ring, a third as thick, in the accent").
+ */
+const RING_OUTER_RADIUS = 0.12;
+const RING_WIDTH = 0.04 / 3;
 /**
  * Damping rate for the circle's snap-then-damp smoothing, consumed as
  * `clampedAlpha(CIRCLE_DAMPING_RATE, dt)` (lerp-utils idiom) so the damping
@@ -175,6 +198,25 @@ function validateHudDeadband(distanceMin: number, distanceMax: number): void {
 }
 
 /**
+ * `THREE.Color` accepts a hex number, a CSS colour string or a Color; anything
+ * else it silently reads as black, which over dark ground is a HUD nobody
+ * can see and no error anywhere.
+ */
+function validateIndicatorColor(value: unknown): void {
+  const ok =
+    (typeof value === 'number' && Number.isFinite(value)) ||
+    typeof value === 'string' ||
+    (typeof value === 'object' &&
+      value !== null &&
+      (value as Partial<THREE.Color>).isColor === true);
+  if (!ok) {
+    throw new TypeError(
+      `createWayfindingHud: indicatorColor must be a hex number, a CSS colour string or a THREE.Color, got ${String(value)}`
+    );
+  }
+}
+
+/**
  * Validate a {@link WayfindingHudOptions} object. Throws `TypeError` /
  * `RangeError` on malformed input.
  */
@@ -183,6 +225,12 @@ export function validateWayfindingHudOptions(
 ): void {
   validateHudRefs(options);
   validateHudDeadband(options.distanceMin, options.distanceMax);
+  // `=== undefined`, not `??`: an explicit null must be rejected, not defaulted.
+  validateIndicatorColor(
+    options.indicatorColor === undefined
+      ? DEFAULT_WAYFINDING_HUD.indicatorColor
+      : options.indicatorColor
+  );
   assertPositiveFiniteOption(
     'hudDistance',
     options.hudDistance ?? DEFAULT_WAYFINDING_HUD.hudDistance
@@ -208,7 +256,13 @@ function resolveTexture(
 ): ResolvedTexture | null {
   if (source === undefined) return null;
   if (typeof source === 'string') {
-    return { texture: new THREE.TextureLoader().load(source), owned: true };
+    const texture = new THREE.TextureLoader().load(source);
+    // An image file's pixels are sRGB. Untagged, three.js treats them as
+    // linear and renders them lighter than authored — noticeable once the
+    // sprite carries the design accent rather than a single flat colour.
+    // A caller-passed Texture keeps whatever colour space the caller chose.
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return { texture, owned: true };
   }
   return { texture: source, owned: false };
 }
@@ -240,6 +294,8 @@ export function createWayfindingHud(
   const indicatorScale =
     options.indicatorScale ?? DEFAULT_WAYFINDING_HUD.indicatorScale;
   const labelScale = options.labelScale ?? DEFAULT_WAYFINDING_HUD.labelScale;
+  const indicatorColor =
+    options.indicatorColor ?? DEFAULT_WAYFINDING_HUD.indicatorColor;
 
   const arrowTexture = resolveTexture(options.arrowSprite);
   const circleTexture = resolveTexture(options.circleSprite);
@@ -260,7 +316,7 @@ export function createWayfindingHud(
 
   function getHudMaterial(): THREE.MeshBasicMaterial {
     hudMaterial ??= new THREE.MeshBasicMaterial({
-      color: HUD_COLOR,
+      color: indicatorColor,
       depthTest: false,
       depthWrite: false,
       transparent: true,
@@ -302,8 +358,8 @@ export function createWayfindingHud(
   function makeCircle(): THREE.Mesh | THREE.Sprite {
     if (circleTexture) return makeIndicatorSprite(circleTexture.texture);
     circleGeometry ??= new THREE.RingGeometry(
-      0.08 * indicatorScale,
-      0.12 * indicatorScale,
+      (RING_OUTER_RADIUS - RING_WIDTH) * indicatorScale,
+      RING_OUTER_RADIUS * indicatorScale,
       32
     );
     const mesh = new THREE.Mesh(circleGeometry, getHudMaterial());
