@@ -3,19 +3,17 @@
  *
  * Indexes full RefPointDefinition objects from the recording ZIPs in a
  * folder, grouped per scenario (from each ZIP's session.json) with
- * observations merged/deduplicated per ref-point id. Unlike
- * ref-point-importer.ts (which returns simplified ImportedRefPoint with only
- * lat/lon), this module preserves complete observation data (AR poses, GPS,
- * timestamps) needed for 3D display and OPFS restoration after browser data
- * loss.
+ * observations merged/deduplicated per ref-point id. It preserves complete
+ * observation data (AR poses, GPS, timestamps) needed for 3D display and
+ * OPFS restoration after browser data loss. (A lat/lon-only sibling,
+ * ref-point-importer.ts, was deleted 2026-09-04 - nothing called it.)
  *
  * Used by both folder-import flows in folder-manager.ts (2026-07-05 plan):
  * the eager full-folder pass at folder-pick time (D1) and the lazy
  * scenario-change recovery safety net — both persist via the same strict
  * per-scenario gap-fill (D4a/D4b).
  *
- * Uses @zip.js/zip.js for ZIP reading (same library as zip-export.ts
- * and ref-point-importer.ts).
+ * Uses @zip.js/zip.js for ZIP reading (same library as zip-export.ts).
  */
 
 import type { RefPointDefinition } from './ref-point-loader';

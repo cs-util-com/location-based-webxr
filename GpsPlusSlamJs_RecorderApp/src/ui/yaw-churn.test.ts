@@ -8,21 +8,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import {
-  bearingDeltaDeg,
-  createYawChurnTracker,
-  YAW_CHURN_WINDOW,
-} from './yaw-churn';
-
-describe('bearingDeltaDeg', () => {
-  it('takes the short way round and keeps the sign of a − b', () => {
-    expect(bearingDeltaDeg(1, 359)).toBe(2);
-    expect(bearingDeltaDeg(359, 1)).toBe(-2);
-    expect(bearingDeltaDeg(180, 0)).toBe(180);
-    expect(bearingDeltaDeg(-90, 90)).toBe(180);
-    expect(bearingDeltaDeg(10, 10)).toBe(0);
-  });
-});
+import { createYawChurnTracker, YAW_CHURN_WINDOW } from './yaw-churn';
 
 describe('createYawChurnTracker', () => {
   it('is null before two samples and records one step per fix', () => {

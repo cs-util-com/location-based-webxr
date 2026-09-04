@@ -172,9 +172,6 @@ vi.mock('./storage/ref-point-loader', () => ({
   flattenRefPointsToMarks: vi.fn(),
   listRefPointIds: vi.fn(),
 }));
-vi.mock('./storage/ref-point-importer', () => ({
-  importRefPointsFromFolder: vi.fn(),
-}));
 vi.mock('gps-plus-slam-app-framework/storage/file-system-utils', () => ({
   formatTimestamp: vi.fn(),
   SESSION_IMAGES_DIR: 'images',
@@ -214,9 +211,6 @@ vi.mock('gps-plus-slam-app-framework/state/gps-event-coordinator', () => ({
   resetCoordinatorState: vi.fn(),
   extractOdomPosition: vi.fn(),
   extractOdomRotation: vi.fn(),
-}));
-vi.mock('gps-plus-slam-app-framework/visualization/reference-points', () => ({
-  refPointVisualizer: {},
 }));
 vi.mock('gps-plus-slam-app-framework/visualization/gps-event-markers', () => ({
   gpsEventVisualizer: {},

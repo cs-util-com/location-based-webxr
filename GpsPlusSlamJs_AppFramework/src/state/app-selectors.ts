@@ -1,10 +1,12 @@
 /**
- * App-level memoized selectors for CombinedRootState.
+ * App-level selectors for CombinedRootState.
  *
- * Wraps library getter functions with createSelector (RTK/reselect) for
- * standard memoization. The library getters already return stable references
- * via immutable state, but createSelector adds:
- * - Explicit memoization contract (input comparison → cached output)
+ * The plain property-read selectors return whatever reference the immutable
+ * state holds (or a module-level empty constant), so they are reference-stable
+ * by construction and need no memo. `createSelector` is used only where a
+ * selector MAPS (`selectFrameTilesInWebXR`) and would otherwise allocate on
+ * every call. Until 2026-09-04 all of them were wrapped, which read as a
+ * memoization contract the wrappers did not add anything to (simplify loop).
  * - Consistent select* naming convention matching selectCachedKnownRefPoints
  * - Composition-ready building blocks for derived selectors
  *
@@ -35,12 +37,6 @@ const EMPTY_ODOM_POSITIONS: readonly Vector3[] = [];
 const EMPTY_ODOM_ROTATIONS: readonly Quaternion[] = [];
 const EMPTY_FRAME_TILES: readonly ArImageCapture[] = [];
 
-// ---------------------------------------------------------------------------
-// Input selector — shared across all selectors for gpsData-derived values.
-// createSelector compares this by reference; if gpsData hasn't changed,
-// the output selector is skipped and the cached result is returned.
-// ---------------------------------------------------------------------------
-
 /**
  * Minimal root these selectors read (quality-review G-2). Typed as a Pick of
  * the `gpsData` slice ONLY, so ANY consumer store that mounts the library's
@@ -52,44 +48,35 @@ const EMPTY_FRAME_TILES: readonly ArImageCapture[] = [];
  */
 type RootWithGpsData = Pick<CombinedRootState, 'gpsData'>;
 
-const selectGpsData = (state: RootWithGpsData) => state.gpsData;
-
 // ---------------------------------------------------------------------------
-// Memoized selectors
+// Property-read selectors (reference-stable without a memo)
 // ---------------------------------------------------------------------------
 
 /** Alignment matrix (4×4), or null if not yet computed. */
-export const selectAlignmentMatrix = createSelector(
-  [selectGpsData],
-  (gpsData): Matrix4 | null => gpsData?.gpsEvents?.alignmentMatrix ?? null
-);
+export const selectAlignmentMatrix = (state: RootWithGpsData): Matrix4 | null =>
+  state.gpsData?.gpsEvents?.alignmentMatrix ?? null;
 
 /** Recorded GPS positions with metadata. */
-export const selectGpsPositions = createSelector(
-  [selectGpsData],
-  (gpsData): readonly GpsPoint[] =>
-    gpsData?.gpsEvents?.gpsPositions ?? EMPTY_GPS_POSITIONS
-);
+export const selectGpsPositions = (
+  state: RootWithGpsData
+): readonly GpsPoint[] =>
+  state.gpsData?.gpsEvents?.gpsPositions ?? EMPTY_GPS_POSITIONS;
 
 /** Recorded odometry positions (AR-local space). */
-export const selectOdometryPositions = createSelector(
-  [selectGpsData],
-  (gpsData): readonly Vector3[] =>
-    gpsData?.gpsEvents?.odometryPositions ?? EMPTY_ODOM_POSITIONS
-);
+export const selectOdometryPositions = (
+  state: RootWithGpsData
+): readonly Vector3[] =>
+  state.gpsData?.gpsEvents?.odometryPositions ?? EMPTY_ODOM_POSITIONS;
 
 /** Recorded odometry rotations (AR-local space). */
-export const selectOdometryRotations = createSelector(
-  [selectGpsData],
-  (gpsData): readonly Quaternion[] =>
-    gpsData?.gpsEvents?.odometryRotations ?? EMPTY_ODOM_ROTATIONS
-);
+export const selectOdometryRotations = (
+  state: RootWithGpsData
+): readonly Quaternion[] =>
+  state.gpsData?.gpsEvents?.odometryRotations ?? EMPTY_ODOM_ROTATIONS;
 
 /** GPS zero reference (origin for coordinate conversion), or null. */
-export const selectZeroReference = createSelector(
-  [selectGpsData],
-  (gpsData): LatLong | null => gpsData?.zero ?? null
-);
+export const selectZeroReference = (state: RootWithGpsData): LatLong | null =>
+  state.gpsData?.zero ?? null;
 
 /** User-defined reference points for ground truth validation. */
 // `selectReferencePoints` removed in 5.7a-3 (Option C); see

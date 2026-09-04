@@ -55,8 +55,8 @@ const tiles = clusterCellsByZoom(cells, 9); // res-9 parents for a zoomed-out ma
 
 ## Tests
 
-- `h3-ref-point.test.ts` — 25 tests covering h3-js integration, gpsToH3, findNearbyGeoAnchor (including closest-match ranking), h3CellsMatch, isH3Index
-- `h3-ref-point.property.test.ts` — 5 property-based tests for distance helper metrics and closest-match array-order independence
+- `h3-proximity.test.ts` — h3-js integration, gpsToH3, findNearbyGeoAnchor (including closest-match ranking), h3CellsMatch, isH3Index
+- `h3-proximity.property.test.ts` — property-based tests for distance helper metrics and closest-match array-order independence
 - `h3-coverage.test.ts` — 13 unit tests for `gpsPathToCoverageCells` (dedup, first-seen order, defensive non-finite skip) and `clusterCellsByZoom` (the **D1 `cellToParent`-not-truncation regression guard**, `targetRes` clamping, sibling-merge, invalid-cell skipping)
 - `h3-coverage.property.test.ts` — 6 property-based tests asserting validity/uniqueness/order-stability of coverage cells and validity/monotonicity/parent-membership of zoom-clustering
 - `h3-retroactive.test.ts` (in investigation/) — 4 tests validating H3 consistency on real rec3-rec5 recordings

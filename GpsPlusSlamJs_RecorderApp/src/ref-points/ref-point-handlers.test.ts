@@ -19,7 +19,6 @@ import type {
 import type { ARPose } from 'gps-plus-slam-app-framework/types/ar-types';
 import type * as StoreModule from '../state/recorder-store';
 import type { RecorderStore } from '../state/recorder-store';
-import type { ImportedRefPoint } from '../storage/ref-point-importer';
 import type {
   RefPointObservation,
   RefPointMark,
@@ -35,7 +34,6 @@ const {
   mockSaveRefPointObservation,
   mockExtractOdomPosition,
   mockExtractOdomRotation,
-  mockRefPointVisualizer,
   mockShowError,
   mockUpdateStatus,
   mockShowToast,
@@ -65,7 +63,6 @@ const {
   mockExtractOdomRotation: vi
     .fn<(pose: ARPose) => Quaternion>()
     .mockReturnValue([0, 0, 0, 1] as Quaternion),
-  mockRefPointVisualizer: {},
   mockShowError: vi.fn(),
   mockUpdateStatus: vi.fn(),
   mockShowToast: vi.fn(),
@@ -125,10 +122,6 @@ vi.mock('../ui/toast', () => ({
   TOAST_DURATION_ERROR: 8000,
 }));
 
-vi.mock('gps-plus-slam-app-framework/visualization/reference-points', () => ({
-  refPointVisualizer: mockRefPointVisualizer,
-}));
-
 vi.mock('gps-plus-slam-app-framework/utils/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
@@ -175,6 +168,20 @@ function seedImportedRefPoints(refPoints: ImportedRefPoint[]): void {
   }
   const entries = refPoints.map((rp) => importedToEntry(rp, Date.now()));
   lastTestStore.dispatch(setImportedRefPointEntries(entries));
+}
+
+/**
+ * The seed shape the removed `storage/ref-point-importer.ts` used to produce
+ * (deleted 2026-09-04: zero production callers). Kept local to the tests that
+ * still seed the V2 slice with it.
+ */
+interface ImportedRefPoint {
+  readonly id: string;
+  readonly name: string;
+  readonly lat: number;
+  readonly lon: number;
+  readonly alt?: number;
+  readonly sourceZipName: string;
 }
 
 function importedToEntry(rp: ImportedRefPoint, ts: number): RefPointEntry {

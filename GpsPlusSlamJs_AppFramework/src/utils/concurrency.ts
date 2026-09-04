@@ -13,72 +13,27 @@
  * invocations run simultaneously. Results are returned in the same order
  * as the input items.
  *
+ * Built on {@link forEachWithConcurrencyLimit}: the same pool, the same
+ * fail-fast and settle-before-rethrow guarantees, plus an ordered result
+ * array. Until 2026-09-04 it carried a second copy of the pool (simplify
+ * loop) — two implementations of one contract that could only drift.
+ *
  * @param items - Array of items to process
  * @param limit - Maximum number of concurrent mapper invocations
  * @param mapper - Async function to apply to each item
  * @returns Array of results in the same order as input items
+ * @throws RangeError if `limit < 1`
  * @throws Re-throws the first error from any mapper invocation (fail-fast)
  */
 export async function mapWithConcurrencyLimit<T, R>(
-  items: T[],
+  items: readonly T[],
   limit: number,
   mapper: (item: T, index: number) => Promise<R>
 ): Promise<R[]> {
-  if (limit < 1) {
-    throw new RangeError(`Concurrency limit must be >= 1, got ${limit}`);
-  }
-
   const results: R[] = new Array<R>(items.length);
-
-  if (items.length === 0) {
-    return results;
-  }
-
-  // Use a pool of workers that pull from a shared index counter
-  let nextIndex = 0;
-  // Shared fail-fast state: once any worker throws, the surviving workers stop
-  // pulling new items. Each worker *resolves* (it records the error and returns
-  // rather than rejecting) so `Promise.all` waits for every in-flight invocation
-  // to settle before we re-throw. This keeps the rejection from racing ahead of
-  // still-running background work — the caller's `await` returns only once no
-  // worker is active. The first error wins, preserving fail-fast semantics.
-  let failed = false;
-  let firstError: unknown;
-
-  const worker = async (): Promise<void> => {
-    while (nextIndex < items.length) {
-      if (failed) {
-        return;
-      }
-      // Safe: read + increment is synchronous (no yield between while-check and capture),
-      // so no two workers can grab the same index.
-      const currentIndex = nextIndex++;
-      try {
-        results[currentIndex] = await mapper(
-          items[currentIndex]!,
-          currentIndex
-        );
-      } catch (err) {
-        if (!failed) {
-          failed = true;
-          firstError = err;
-        }
-        return;
-      }
-    }
-  };
-
-  // Start `limit` workers (or fewer if items.length < limit)
-  const workerCount = Math.min(limit, items.length);
-  const workers: Promise<void>[] = [];
-  for (let i = 0; i < workerCount; i++) {
-    workers.push(worker());
-  }
-
-  await Promise.all(workers);
-  if (failed) {
-    throw firstError;
-  }
+  await forEachWithConcurrencyLimit(items, limit, async (item, index) => {
+    results[index] = await mapper(item, index);
+  });
   return results;
 }
 

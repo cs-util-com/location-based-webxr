@@ -48,10 +48,6 @@ vi.mock('./recording-discovery', () => ({
   discoverScenariosFromZipMetadata: vi.fn(),
 }));
 
-vi.mock('../storage/ref-point-importer', () => ({
-  importRefPointsFromFolder: vi.fn(),
-}));
-
 vi.mock('./scenario-storage', () => ({
   setCurrentScenario: vi.fn(),
   ensureScenarioDirectory: vi.fn(),
@@ -87,10 +83,6 @@ vi.mock('gps-plus-slam-app-framework/geo/h3-proximity', () => ({
   // tests override h3CellsMatch to simulate gridDisk neighbor overlap.
   isH3Index: vi.fn(() => true),
   h3CellsMatch: vi.fn((a: string, b: string) => a === b),
-}));
-
-vi.mock('gps-plus-slam-app-framework/visualization/reference-points', () => ({
-  refPointVisualizer: {},
 }));
 
 vi.mock('gps-plus-slam-app-framework/utils/logger', () => ({
@@ -348,17 +340,6 @@ describe('createFolderManager', () => {
       );
     });
 
-    it('should NOT call importRefPointsFromFolder (ref point import is scenario-scoped)', async () => {
-      // Why: Cross-scenario ZIP scan was removed; ref points are loaded per-scenario in loadAndDisplayRefPoints
-      const { importRefPointsFromFolder } =
-        await import('../storage/ref-point-importer');
-      const { manager } = createFolderManagerWithDefaults();
-
-      await manager.handleOpenFolder();
-
-      expect(importRefPointsFromFolder).not.toHaveBeenCalled();
-    });
-
     it('should call listScenariosFromFolder with the folder handle', async () => {
       // Why: Must scan for scenario subdirectories
       const { manager } = createFolderManagerWithDefaults();
@@ -576,19 +557,6 @@ describe('createFolderManager', () => {
       expect(deps.updateFolderStatus).toHaveBeenCalledWith(
         '❌ Failed to read scenarios'
       );
-    });
-
-    it('should NOT import ref points in replay mode', async () => {
-      // Why: Replay mode only needs scenario discovery, not ref point import
-      const { importRefPointsFromFolder } =
-        await import('../storage/ref-point-importer');
-      const { manager } = createFolderManagerWithDefaults({
-        getIsReplayMode: vi.fn(() => true),
-      });
-
-      await manager.handleOpenFolder();
-
-      expect(importRefPointsFromFolder).not.toHaveBeenCalled();
     });
   });
 

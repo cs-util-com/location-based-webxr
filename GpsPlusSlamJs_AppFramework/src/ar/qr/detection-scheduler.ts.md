@@ -15,8 +15,11 @@ so a future object detector (YOLO) reuses it unchanged. It gates nothing on QR.
 - `DetectionSchedulerConfig<TResult, TImage>` — `detect(image) => Promise<TResult|null>`
   (the injected detect→solve step), `minIntervalMs`, `requiredLockCount` (3),
   `now` (injectable clock), `onLocked(result)`, `onMiss`, `onError`.
-- **QR specialization (back-compat):** `createQrDetectionScheduler`,
-  `QrDetectionScheduler`, `QrDetectionSchedulerConfig` — `TResult = QrPoseSolution`.
+- **The QR path instantiates the generic directly** with `TResult = QrPoseSolution`
+  (`qr-detection-controller.ts`, `qr-tracking-controller.ts`). The former
+  `createQrDetectionScheduler` / `QrDetectionScheduler` / `QrDetectionSchedulerConfig`
+  aliases were removed 2026-09-04 (simplify loop): nothing but their own tests used
+  them. **Semver: MAJOR** for the framework (they were on the `/ar/qr` barrel).
 
 ## Invariants & assumptions
 

@@ -146,5 +146,8 @@ function fmtInt(n: number): string {
 
 /** Round + clamp a color channel to an integer 0–255. */
 function clampByte(n: number): number {
+  // Math.round(NaN) is NaN and min/max propagate it, so a non-finite channel
+  // used to reach the file as the text "NaN" (simplify loop, 2026-09-04).
+  if (!Number.isFinite(n)) return n > 0 ? 255 : 0;
   return Math.min(255, Math.max(0, Math.round(n)));
 }

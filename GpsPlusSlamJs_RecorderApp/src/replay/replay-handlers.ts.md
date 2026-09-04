@@ -69,4 +69,4 @@ initReplayUI({
 
 ## Tests
 
-- Unit tests: `replay-handlers.test.ts` — 37 tests covering all handlers, state management, error paths, the `setStore` callback contract, `handleReplayMapToggle` (lazy creation, toggle, guard paths, setMapOverlay wiring), and `handleReplaySessionSelect` (GPS path loading, preview map creation/destruction, empty/out-of-range guards).
+- Unit tests: `replay-handlers.test.ts` — covering all handlers, state management, error paths, the `setStore` callback contract, `handleReplayMapToggle` (lazy creation, toggle, guard paths, setMapOverlay wiring), and `handleReplaySessionSelect` (GPS path loading, preview map creation/destruction, empty/out-of-range guards).

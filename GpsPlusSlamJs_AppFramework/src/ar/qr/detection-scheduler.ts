@@ -23,10 +23,10 @@
  * default {@link RgbaImage}). The detect→solve work is injected as one async
  * `detect`, so this is a pure, device-free, clock-injectable unit, transport-
  * agnostic (worker-hosted or main-thread). The QR path uses
- * `TResult = QrPoseSolution` (see {@link createQrDetectionScheduler}).
+ * `TResult = QrPoseSolution` (`qr-detection-controller.ts` and
+ * `qr-tracking-controller.ts` instantiate the generic directly).
  */
 
-import type { QrPoseSolution } from './qr-pose.js';
 import type { RgbaImage } from './qr-frontend.js';
 import { createLogger } from '../../utils/logger.js';
 
@@ -155,19 +155,4 @@ export function createDetectionScheduler<TResult, TImage = RgbaImage>(
   };
 
   return scheduler;
-}
-
-// --- QR specialization (back-compat) -----------------------------------
-
-/** {@link DetectionSchedulerConfig} specialized to the QR pose solution. */
-export type QrDetectionSchedulerConfig =
-  DetectionSchedulerConfig<QrPoseSolution>;
-/** {@link DetectionScheduler} specialized to the QR (RGBA) frame. */
-export type QrDetectionScheduler = DetectionScheduler<RgbaImage>;
-
-/** The QR path: a detection scheduler whose result is a {@link QrPoseSolution}. */
-export function createQrDetectionScheduler(
-  config: QrDetectionSchedulerConfig
-): QrDetectionScheduler {
-  return createDetectionScheduler<QrPoseSolution>(config);
 }

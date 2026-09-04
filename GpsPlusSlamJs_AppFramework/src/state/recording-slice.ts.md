@@ -56,7 +56,7 @@ console.log(store.getState().recorder.failedWriteCount); // 1
 
 - `recording-slice.test.ts` — `latestDepthSample` behavior (initial null, stores by reference, replaced per dispatch, cleared by `startSession`, action type stays `recording/recordDepthSample`).
 - `store.test.ts` — covers all recorder actions as part of the integrated store (state transitions, startSession/endSession, failedWriteCount tracking).
-- `persistence-middleware.test.ts` — 13 tests verify that `recordWriteFailure` is excluded from persistence and dispatched on errors.
+- `persistence-middleware.test.ts` — verifies that `recordWriteFailure` is excluded from persistence and dispatched on errors.
 
 ## Related
 

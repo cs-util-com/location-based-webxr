@@ -340,9 +340,6 @@ vi.mock('./storage/ref-point-loader', () => ({
   flattenRefPointsToMarks: vi.fn(),
   listRefPointIds: vi.fn(),
 }));
-vi.mock('./storage/ref-point-importer', () => ({
-  importRefPointsFromFolder: vi.fn(),
-}));
 vi.mock('gps-plus-slam-app-framework/storage/file-system-utils', () => ({
   formatTimestamp: vi.fn(),
   SESSION_IMAGES_DIR: 'images',
@@ -409,9 +406,6 @@ vi.mock('gps-plus-slam-app-framework/sensors/permission-checker', () => ({
     fileSystem: { granted: false, supported: true },
   }),
   subscribePermissionChanges: vi.fn().mockReturnValue({ unsubscribe: vi.fn() }),
-}));
-vi.mock('gps-plus-slam-app-framework/visualization/reference-points', () => ({
-  refPointVisualizer: {},
 }));
 vi.mock(
   'gps-plus-slam-app-framework/visualization/leaflet-map-overlay',

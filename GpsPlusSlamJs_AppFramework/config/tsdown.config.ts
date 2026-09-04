@@ -221,6 +221,12 @@ const entryFiles = [
   // Shared rather than copied because the early return is a CONTRACT: without
   // it `360 − ε` snaps to 0, a full turn that never happened.
   'src/utils/bearing-degrees.ts',
+  // Median family — deep-imported by the recorder (yaw-churn.ts) since
+  // 2026-09-04. Built per-file for the same reason as bearing-degrees: the
+  // './utils/*' wildcard advertises the subpath, and without an entry here
+  // tsc and vitest resolve it while Vite in the browser does not (found by
+  // the recorder e2e stage, 26 minutes into a cascade).
+  'src/utils/median.ts',
   'src/utils/toast-core.ts',
   // QR launch payload codec — deep-imported by the TourViewer app: the decode
   // side (codec-dictionary) implements the ?qr= launch-handler dispatch, and

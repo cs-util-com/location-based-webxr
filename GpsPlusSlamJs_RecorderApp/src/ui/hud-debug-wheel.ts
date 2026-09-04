@@ -55,6 +55,7 @@ import {
   type CompassTrustGateMode,
 } from 'gps-plus-slam-app-framework/state';
 import { compassSettingsFor } from 'gps-plus-slam-app-framework/utils/compass-influence-mapping';
+import { normalizeBearingDeg } from 'gps-plus-slam-app-framework/utils/bearing-degrees';
 import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
 import {
   ALIGNMENT_PRESETS,
@@ -305,7 +306,7 @@ export function formatWheelReadout(
   const yaw = ev.alignmentRotationInDegree[1];
   const yawText =
     typeof yaw === 'number' && Number.isFinite(yaw)
-      ? `yaw ${(((yaw % 360) + 360) % 360).toFixed(1)}°`
+      ? `yaw ${normalizeBearingDeg(yaw).toFixed(1)}°`
       : 'yaw –';
   const churnText =
     churn !== null && churn.medianStepDeg !== null

@@ -81,4 +81,4 @@ folderManager.getCurrentScenarioName(); // → 'MyScenario'
 
 ## Tests
 
-- `storage/folder-manager.test.ts` — 62 tests covering recording-mode folder open, replay-mode folder open, save location selection, scenario change, ref point loading with averaged GPS and map overlay forwarding, state accessors, reset, and the eager indexing pass (immediate start after Enter AR validation, per-scenario persistence, H3 gap-fill incl. neighbor skip and newest-wins, current-scenario refresh, single-flight abort, failure/abort outcomes, lazy-recovery no-op while active, strict-routing lazy recovery).
+- `storage/folder-manager.test.ts` — covering recording-mode folder open, replay-mode folder open, save location selection, scenario change, ref point loading with averaged GPS and map overlay forwarding, state accessors, reset, and the eager indexing pass (immediate start after Enter AR validation, per-scenario persistence, H3 gap-fill incl. neighbor skip and newest-wins, current-scenario refresh, single-flight abort, failure/abort outcomes, lazy-recovery no-op while active, strict-routing lazy recovery).

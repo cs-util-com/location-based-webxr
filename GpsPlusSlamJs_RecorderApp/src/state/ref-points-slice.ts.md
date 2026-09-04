@@ -46,7 +46,7 @@ collapses the two.
 - [ref-points-slice.test.ts](ref-points-slice.test.ts) — reducer
   cases (`addRefPointEntry`, `setImportedRefPointEntries`,
   `resetRefPoints`) and action-type namespace assertions.
-- [ref-points-v2-selectors.test.ts](ref-points-v2-selectors.test.ts) —
+- [ref-points-selectors.test.ts](ref-points-selectors.test.ts) —
   `selectRefPointEntries` (incl. stable empty sentinel),
   `selectKnownAnchorsByCell` (grouping, first-non-null name, lat/lon
   surface, memoisation), `selectImportedKnownAnchors` (timestamp-0

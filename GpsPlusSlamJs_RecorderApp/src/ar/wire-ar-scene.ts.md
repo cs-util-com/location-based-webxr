@@ -71,6 +71,7 @@ if (arWorldGroup && arScene) {
     resources: arSessionResources,
     storeRef,
     liveFrameBlobs,
+    onQrLevelState: (text, state) => qrHud.noteLevelState(text, state),
   });
 }
 ```

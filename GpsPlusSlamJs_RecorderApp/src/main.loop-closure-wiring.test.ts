@@ -258,9 +258,6 @@ vi.mock('./storage/ref-point-loader', () => ({
   flattenRefPointsToMarks: vi.fn(),
   listRefPointIds: vi.fn(),
 }));
-vi.mock('./storage/ref-point-importer', () => ({
-  importRefPointsFromFolder: vi.fn(),
-}));
 vi.mock('gps-plus-slam-app-framework/storage/file-system-utils', () => ({
   formatTimestamp: vi.fn(),
   SESSION_IMAGES_DIR: 'images',
@@ -322,9 +319,6 @@ vi.mock('gps-plus-slam-app-framework/sensors/permission-checker', () => ({
     fileSystem: { granted: false, supported: true },
   }),
   subscribePermissionChanges: vi.fn().mockReturnValue({ unsubscribe: vi.fn() }),
-}));
-vi.mock('gps-plus-slam-app-framework/visualization/reference-points', () => ({
-  refPointVisualizer: {},
 }));
 vi.mock('gps-plus-slam-app-framework/visualization/gps-event-markers', () => ({
   gpsEventVisualizer: { setVisible: vi.fn(), clearAll: vi.fn() },
@@ -558,5 +552,25 @@ describe('loop-closure capture wiring (opt-in)', () => {
 
     resetMainState();
     expect(xrFrameUnregisterSpies[1]).toHaveBeenCalledTimes(1);
+  });
+
+  it('tears down the per-frame registration when a later Enter-AR step throws', async () => {
+    // Why this test matters: the catch in handleEnterAR ends the XR session,
+    // but the resources registered BEFORE the throw (here the loop-closure
+    // frame feed) live in arSessionScope, which endARSession knows nothing
+    // about. Left registered, the feed keeps running against a dead session
+    // until the NEXT Enter AR disposes it - the "broken half-initialized
+    // state" the catch's own comment says it prevents.
+    mockRecordingOptions.loopClosureDebug.detectorEnabled = true;
+    const { subscribeHudToTrackingQuality } =
+      await import('./ui/hud-tracking-quality-subscriber');
+    vi.mocked(subscribeHudToTrackingQuality).mockImplementationOnce(() => {
+      throw new Error('post-init failure');
+    });
+
+    await handleEnterARForTesting();
+
+    expect(xrFrameUnregisterSpies).toHaveLength(1);
+    expect(xrFrameUnregisterSpies[0]).toHaveBeenCalledTimes(1);
   });
 });

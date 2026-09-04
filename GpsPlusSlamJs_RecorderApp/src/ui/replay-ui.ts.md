@@ -61,4 +61,4 @@ Pure DOM manipulation module for the replay mode UI. Bridges the HTML elements i
 
 ## Tests
 
-- Unit tests: [replay-ui.test.ts](replay-ui.test.ts) — 37 tests covering mode switching, dropdown/list population, event wiring, progress updates, button states, speed handling, map toggle wiring, and color legend visibility/content (6 legend tests).
+- Unit tests: [replay-ui.test.ts](replay-ui.test.ts) — covering mode switching, dropdown/list population, event wiring, progress updates, button states, speed handling, map toggle wiring, and color legend visibility/content (6 legend tests).

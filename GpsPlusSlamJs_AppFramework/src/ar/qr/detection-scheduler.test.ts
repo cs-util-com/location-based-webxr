@@ -12,8 +12,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   createDetectionScheduler,
-  createQrDetectionScheduler,
-  type QrDetectionScheduler,
+  type DetectionScheduler,
 } from './detection-scheduler';
 import type { QrPoseSolution } from './qr-pose';
 import type { RgbaImage } from './qr-frontend';
@@ -58,11 +57,11 @@ function controllableDetect() {
   return { detect, settle, reject };
 }
 
-describe('createQrDetectionScheduler', () => {
+describe('createDetectionScheduler<QrPoseSolution> (the QR path)', () => {
   it('throttles detection starts to one per minIntervalMs', async () => {
     let t = 0;
     const { detect, settle } = controllableDetect();
-    const s = createQrDetectionScheduler({
+    const s = createDetectionScheduler<QrPoseSolution>({
       detect,
       minIntervalMs: 100,
       now: () => t,
@@ -84,7 +83,7 @@ describe('createQrDetectionScheduler', () => {
   it('coalesces: never starts a second detection while one is in flight', async () => {
     const t = 0;
     const { detect, settle } = controllableDetect();
-    const s = createQrDetectionScheduler({
+    const s = createDetectionScheduler<QrPoseSolution>({
       detect,
       minIntervalMs: 0,
       now: () => t,
@@ -107,14 +106,15 @@ describe('createQrDetectionScheduler', () => {
     const onLocked = vi.fn();
     const onMiss = vi.fn();
     const { detect, settle } = controllableDetect();
-    const s: QrDetectionScheduler = createQrDetectionScheduler({
-      detect,
-      minIntervalMs: 0,
-      requiredLockCount: 3,
-      now: () => t,
-      onLocked,
-      onMiss,
-    });
+    const s: DetectionScheduler<RgbaImage> =
+      createDetectionScheduler<QrPoseSolution>({
+        detect,
+        minIntervalMs: 0,
+        requiredLockCount: 3,
+        now: () => t,
+        onLocked,
+        onMiss,
+      });
 
     const tick = async (value: QrPoseSolution | null) => {
       t += 1;
@@ -159,7 +159,7 @@ describe('createQrDetectionScheduler', () => {
       }
       return Promise.resolve<QrPoseSolution | null>(solution);
     });
-    const s = createQrDetectionScheduler({
+    const s = createDetectionScheduler<QrPoseSolution>({
       detect,
       minIntervalMs: 0,
       requiredLockCount: 1,
@@ -188,7 +188,7 @@ describe('createQrDetectionScheduler', () => {
     let t = 0;
     const onError = vi.fn();
     const { detect, settle, reject } = controllableDetect();
-    const s = createQrDetectionScheduler({
+    const s = createDetectionScheduler<QrPoseSolution>({
       detect,
       minIntervalMs: 0,
       requiredLockCount: 2,
@@ -222,7 +222,7 @@ describe('createQrDetectionScheduler', () => {
       throw new Error('onLocked blew up');
     });
     const { detect, settle } = controllableDetect();
-    const s = createQrDetectionScheduler({
+    const s = createDetectionScheduler<QrPoseSolution>({
       detect,
       minIntervalMs: 0,
       requiredLockCount: 1,
@@ -249,7 +249,7 @@ describe('createQrDetectionScheduler', () => {
       throw new Error('onMiss blew up');
     });
     const { detect, settle } = controllableDetect();
-    const s = createQrDetectionScheduler({
+    const s = createDetectionScheduler<QrPoseSolution>({
       detect,
       minIntervalMs: 0,
       requiredLockCount: 2,

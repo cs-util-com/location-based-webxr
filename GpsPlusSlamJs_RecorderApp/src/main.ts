@@ -1321,7 +1321,12 @@ async function handleEnterAR(): Promise<void> {
     showError(userMessage);
     // Issue #10: If initAR succeeded but a later step threw, the XR session
     // is left running with incomplete wiring. Tear it down to free GPU
-    // resources and avoid a broken half-initialized state.
+    // resources and avoid a broken half-initialized state. The scope goes
+    // first: every resource registered before the throw (frame feeds,
+    // visualizers, store subscriptions) lives there, and endARSession knows
+    // nothing about it - without this line they kept running against the
+    // dead session until the next Enter AR (simplify loop, 2026-09-04).
+    arSessionScope.dispose();
     try {
       await endARSession();
     } catch (cleanupErr) {

@@ -5,7 +5,10 @@
  * rate constant and clamped-alpha formula. Centralised here (R3) to
  * keep the two modules in sync.
  */
-import { normalizeBearingDeg } from '../utils/bearing-degrees.js';
+import {
+  bearingDeltaDeg,
+  normalizeBearingDeg,
+} from '../utils/bearing-degrees.js';
 
 /** Default speed multiplier — ~90 % convergence in ~0.3 s at 60 fps. */
 export const DEFAULT_LERP_RATE = 8;
@@ -47,8 +50,9 @@ export function lerpAngleDeg(
   target: number,
   alpha: number
 ): number {
-  // Shortest signed delta in (−180, 180].
-  const delta = ((((target - current) % 360) + 540) % 360) - 180;
+  // Shortest signed delta in (−180, 180]; either direction is a shortest
+  // arc at exactly 180°, and the shared helper picks +180.
+  const delta = bearingDeltaDeg(target, current);
   const result = current + delta * alpha;
   return normalizeBearingDeg(result);
 }

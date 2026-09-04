@@ -7,10 +7,13 @@
  *   import { initAR } from 'gps-plus-slam-app-framework/ar';
  *   import { createSlamAppStore } from 'gps-plus-slam-app-framework/state';
  *
- * This root barrel re-exports conflict-free names for convenience.
- * Names that collide across submodules (StorageBackend, SessionMetadata,
- * RefPointMark, DepthPoint, DepthSample) should be imported from their
- * specific subpath.
+ * This root barrel re-exports conflict-free names for convenience. The one
+ * name deliberately left OFF it is `SessionMetadata`, which `state/`
+ * (recording-slice.ts) and `storage/` (opfs-storage.ts) both declare with
+ * different shapes - import it from the subpath you mean. `StorageBackend`,
+ * `DepthPoint`, `DepthSample` and `RefPointMarker` ARE exported here; an
+ * older version of this comment said otherwise, and named a `RefPointMark`
+ * type that never existed.
  */
 
 // Modules with no cross-barrel naming conflicts

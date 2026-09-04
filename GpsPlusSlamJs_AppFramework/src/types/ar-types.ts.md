@@ -83,7 +83,7 @@ const sample: DepthSample = {
 
 ## Tests
 
-`ar-types.test.ts` — 40 tests: the readonly type-level guards above, and a
+`ar-types.test.ts` — the readonly type-level guards above, and a
 **single-source-of-truth** block verifying that `image-capture.ts`'s
 `ImageCaptureCallbacks.getCurrentPose` uses the canonical `ARPose` from this file
 rather than a structural look-alike.

@@ -15,6 +15,9 @@
  * See `yaw-churn.ts.md`.
  */
 
+import { bearingDeltaDeg } from 'gps-plus-slam-app-framework/utils/bearing-degrees';
+import { interpolatingMedian } from 'gps-plus-slam-app-framework/utils/median';
+
 export interface YawChurnSummary {
   /** Median |Δyaw| per fix over the window, degrees; `null` until two samples. */
   readonly medianStepDeg: number | null;
@@ -30,18 +33,6 @@ export interface YawChurnTracker {
 
 /** The offline steady-state window is ordinals 35..90; 30 steps is a minute of 2 s fixes. */
 export const YAW_CHURN_WINDOW = 30;
-
-/** Signed shortest bearing difference `a − b`, in (−180, 180]. */
-export function bearingDeltaDeg(a: number, b: number): number {
-  const d = (((a - b) % 360) + 360) % 360;
-  return d > 180 ? d - 360 : d;
-}
-
-function median(sorted: readonly number[]): number {
-  const n = sorted.length;
-  const mid = n >> 1;
-  return n % 2 === 1 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
-}
 
 export function createYawChurnTracker(
   window: number = YAW_CHURN_WINDOW
@@ -67,8 +58,7 @@ export function createYawChurnTracker(
     },
     summary() {
       if (steps.length === 0) return { medianStepDeg: null, steps: 0 };
-      const sorted = [...steps].sort((x, y) => x - y);
-      return { medianStepDeg: median(sorted), steps: steps.length };
+      return { medianStepDeg: interpolatingMedian(steps), steps: steps.length };
     },
   };
 }

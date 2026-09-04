@@ -1,13 +1,12 @@
 /**
  * Shared helpers for parsing reference-point JSON files out of session ZIPs.
  *
- * Used by:
- * - `ref-point-importer.ts` (produces simplified `ImportedRefPoint` for the
- *   "suggest nearby ref points" UI)
- * - `ref-point-recovery.ts` (produces full `RefPointDefinition`s to rebuild
- *   OPFS state after a browser data clear)
+ * Used by `ref-point-recovery.ts` (produces full `RefPointDefinition`s to
+ * rebuild OPFS state after a browser data clear) and `ref-point-loader.ts`.
+ * A second caller, `ref-point-importer.ts`, was deleted 2026-09-04 (no
+ * production callers); the helper stays because two callers remain.
  *
- * Both flows previously open-coded the same `entries.forEach` /
+ * The flows previously open-coded the same `entries.forEach` /
  * parse / validate / try-catch loop. Centralising it here keeps the error-
  * reporting format and zip-reader lifecycle consistent across callers.
  */

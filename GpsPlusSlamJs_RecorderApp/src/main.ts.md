@@ -152,7 +152,7 @@ import './main';
 
 ## Tests
 
-- Unit tests in `main.test.ts` — 32 tests covering:
+- Unit tests in `main.test.ts` — covering:
   - Store creation, AR flow, recording lifecycle
   - Session summary data collection
   - Progress tracking (frame/action counters)

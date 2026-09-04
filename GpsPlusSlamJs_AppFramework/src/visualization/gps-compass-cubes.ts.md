@@ -47,5 +47,5 @@ Returns a `GpsCompassCubes` object:
 
 ## Tests
 
-- Unit tests: `gps-compass-cubes.test.ts` (18 tests)
+- Unit tests: `gps-compass-cubes.test.ts`
   - Hierarchy, positions per NUE, colors, size/distance constants, text labels, no label on Up, dispose.

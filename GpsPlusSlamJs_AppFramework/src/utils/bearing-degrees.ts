@@ -42,3 +42,19 @@ export function normalizeBearingDeg(deg: number): number {
   if (deg >= 0 && deg < 360) return deg;
   return ((deg % 360) + 360) % 360;
 }
+
+/**
+ * Signed shortest difference `a − b` between two bearings, in `(−180, 180]`.
+ *
+ * Built on {@link normalizeBearingDeg}, so it inherits the full-turn contract
+ * above. Exactly opposite bearings return `+180`, never `−180`, so the sign
+ * is well defined at the boundary. Non-finite input propagates.
+ *
+ * Replaced two unnamed copies (2026-09-04, simplify loop): the recorder's
+ * `ui/yaw-churn.ts` and the `+ 540` form in `visualization/lerp-utils.ts`,
+ * which gave `−180` at the boundary — two conventions for one quantity.
+ */
+export function bearingDeltaDeg(a: number, b: number): number {
+  const d = normalizeBearingDeg(a - b);
+  return d > 180 ? d - 360 : d;
+}

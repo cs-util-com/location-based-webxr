@@ -140,14 +140,11 @@ export {
   PlanarPnpSquare,
 } from './planar-pnp.js';
 
-// --- detection-scheduler (generic; QR aliases kept for back-compat) ---
+// --- detection-scheduler (generic) ---
 export {
   type DetectionSchedulerConfig,
   type DetectionScheduler,
-  type QrDetectionSchedulerConfig,
-  type QrDetectionScheduler,
   createDetectionScheduler,
-  createQrDetectionScheduler,
 } from './detection-scheduler.js';
 
 // --- qr-gps-vote ---

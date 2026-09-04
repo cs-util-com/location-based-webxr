@@ -1,0 +1,94 @@
+// Why this test matters: the framework's package.json advertises wildcard
+// subpaths (`./utils/*` → `./dist/utils/*.js`), but tsdown builds only the
+// files listed as entries in `config/tsdown.config.ts`. A deep import of a
+// module that is not an entry therefore resolves under `tsc` and `vitest`
+// (both read the TypeScript source through the workspace link) and FAILS in
+// the browser, where Vite looks for the dist file. That split is invisible to
+// every cheap stage of the gate: on 2026-09-04 the recorder's new import of
+// `gps-plus-slam-app-framework/utils/median` passed typecheck, lint and 2 131
+// unit tests, and broke every recorder e2e 26 minutes into the cascade. This
+// guard fails in seconds instead.
+//
+// Scope: every `*/src/**.ts` tracked by git (tests included — a test that
+// deep-imports a non-entry passes today and misleads the next reader into
+// copying the import into production). The import must be an entry, OR the
+// barrel of a directory whose `index.ts` is an entry.
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it } from 'vitest';
+
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const PACKAGE = 'gps-plus-slam-app-framework';
+const CONFIG = 'GpsPlusSlamJs_AppFramework/config/tsdown.config.ts';
+
+/** Subpaths the build produces: `src/utils/median.ts` → `utils/median`, `src/ar/index.ts` → `ar`. */
+function builtSubpaths() {
+  const config = readFileSync(resolve(repoRoot, CONFIG), 'utf8')
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('//'))
+    .join('\n');
+  const out = new Set();
+  for (const [, entry] of config.matchAll(/'src\/([^']+)\.ts'/g)) {
+    out.add(entry.replace(/\/index$/, ''));
+  }
+  return out;
+}
+
+function sourceFiles() {
+  return execFileSync('git', ['ls-files', '*/src/**.ts'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+  })
+    .split('\n')
+    .filter(Boolean)
+    .filter((file) => !file.startsWith('GpsPlusSlamJs_AppFramework/'));
+}
+
+/**
+ * Every `from '<pkg>/<subpath>'` / `import('<pkg>/<subpath>')` /
+ * `vi.mock('<pkg>/<subpath>')` in `source`, comments stripped — a comment
+ * naming a retired path is history, not an import (one test file records the
+ * stale mock this guard would otherwise flag it for).
+ */
+function deepImports(source) {
+  const code = source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:'"])\/\/[^\n]*/g, '$1');
+  const re = new RegExp(`['"]${PACKAGE}(?:/([^'"]+))?['"]`, 'g');
+  const out = new Set();
+  for (const [, sub] of code.matchAll(re)) {
+    out.add(sub ?? 'index');
+  }
+  return out;
+}
+
+describe('framework deep imports are built entrypoints', () => {
+  const built = builtSubpaths();
+
+  it('finds the entry list (so the guard is not vacuous)', () => {
+    expect(built.has('index')).toBe(true);
+    expect(built.has('utils/bearing-degrees')).toBe(true);
+  });
+
+  it('every consumer import of the framework names a built subpath', () => {
+    const offenders = [];
+    for (const file of sourceFiles()) {
+      let source;
+      try {
+        source = readFileSync(resolve(repoRoot, file), 'utf8');
+      } catch {
+        continue; // deleted but not yet staged — defines no imports
+      }
+      for (const sub of deepImports(source)) {
+        if (!built.has(sub)) offenders.push(`${file} → ${PACKAGE}/${sub}`);
+      }
+    }
+    expect(
+      offenders,
+      `these imports resolve under tsc/vitest but NOT in the browser — add the module to ${CONFIG}:\n  ${offenders.join('\n  ')}`
+    ).toEqual([]);
+  });
+});
