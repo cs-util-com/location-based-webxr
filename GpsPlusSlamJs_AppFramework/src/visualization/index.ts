@@ -36,6 +36,15 @@ export {
   computeDiamondEntrance,
 } from './diamond-entrance.js';
 
+// --- diamond-marker-texture ---
+export {
+  DEFAULT_DIAMOND_HALO,
+  DIAMOND_GEOMETRY,
+  type DiamondMarkerTexture,
+  type DiamondMarkerTextureOptions,
+  createDiamondMarkerTexture,
+} from './diamond-marker-texture.js';
+
 // --- gps-compass-cubes ---
 export {
   COMPASS_CUBE_SIZE,

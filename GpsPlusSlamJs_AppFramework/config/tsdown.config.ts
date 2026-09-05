@@ -272,6 +272,7 @@ const entryFiles = [
   'src/visualization/camera-follower.ts',
   'src/visualization/css3d-renderer-manager.ts',
   'src/visualization/diamond-entrance.ts',
+  'src/visualization/diamond-marker-texture.ts',
   'src/visualization/frame-conversions.ts',
   // Blob → upright THREE.Texture (promoted from the recorder, DEC-H3) —
   // deep-imported by the recorder and the TourViewer via the
