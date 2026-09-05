@@ -131,10 +131,12 @@ export interface CompassDebugOptions {
    */
   experiment: boolean;
   /**
-   * Alternative robust-solver comparison arm (`setRobustSolverComparisonEnabled`) for on-device
+   * Alternative robust-solver comparison arm (`setConsensusSolverComparisonEnabled`) for on-device
    * A/B against the experiment — NOT a compass mechanism. Default OFF.
+   * Persisted as `robustSolverComparison` before 1.24.0; the validator reads
+   * that key as an alias (see {@link LEGACY_CONSENSUS_SOLVER_COMPARISON_KEY}).
    */
-  robustSolverComparison: boolean;
+  consensusSolverComparison: boolean;
   /**
    * Steady-state compass vote weight ∈ [0,1] (`setCompassVoteWeight`) — how
    * strongly a trusted compass pulls the rotation once GPS yaw is observable.
@@ -613,7 +615,7 @@ export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
     // operators with a persisted 0.3 keep it — persisted settings win over
     // this default.
     experiment: false,
-    robustSolverComparison: false,
+    consensusSolverComparison: false,
     voteWeight: 0.1,
   },
   loopClosureDebug: {
@@ -722,9 +724,36 @@ export const COMPASS_DEBUG_CONSTRAINTS = {
 } as const;
 
 /**
+ * The name `consensusSolverComparison` was persisted under before the
+ * consensus-solver rename (framework 1.24.0, 2026-09-05). It is still what
+ * localStorage and the `RecordingOptions` embedded in older recorded zips
+ * carry, so the validator reads it as an alias; nothing writes it any more,
+ * and the validated output never contains it.
+ */
+const LEGACY_CONSENSUS_SOLVER_COMPARISON_KEY = 'robustSolverComparison';
+
+/**
+ * The new key wins when both are present; the legacy key counts only as a
+ * real boolean, like every other persisted flag; otherwise the default.
+ */
+function resolveConsensusSolverComparison(
+  options: Partial<CompassDebugOptions>,
+  fallback: boolean
+): boolean {
+  if (typeof options.consensusSolverComparison === 'boolean') {
+    return options.consensusSolverComparison;
+  }
+  const legacy = (options as Record<string, unknown>)[
+    LEGACY_CONSENSUS_SOLVER_COMPARISON_KEY
+  ];
+  return typeof legacy === 'boolean' ? legacy : fallback;
+}
+
+/**
  * Validate and normalize the compass alignment debug toggles. Boolean-or-default
  * per field; a missing/corrupted/pre-feature value falls back to the OFF default
  * so a bad persisted value can never silently turn an alignment override ON.
+ * `consensusSolverComparison` additionally accepts its pre-1.24.0 name.
  */
 export function validateCompassDebugOptions(
   options: Partial<CompassDebugOptions>
@@ -734,7 +763,10 @@ export function validateCompassDebugOptions(
     rotationPrior: { kind: 'bool' },
     webXRConsistency: { kind: 'bool' },
     experiment: { kind: 'bool' },
-    robustSolverComparison: { kind: 'bool' },
+    consensusSolverComparison: {
+      kind: 'custom',
+      resolve: resolveConsensusSolverComparison,
+    },
     voteWeight: {
       kind: 'num',
       constraint: COMPASS_DEBUG_CONSTRAINTS.voteWeight,
@@ -753,7 +785,7 @@ export interface CompassStoreOptions {
   enableCompassRotationPrior?: boolean;
   enableCompassWebXRConsistency?: boolean;
   enableCompassExperiment?: boolean;
-  enableRobustSolverComparison?: boolean;
+  enableConsensusSolverComparison?: boolean;
   compassVoteWeight?: number;
 }
 
@@ -790,7 +822,7 @@ export function compassStoreOptions(
     enableCompassRotationPrior: compass.rotationPrior,
     enableCompassWebXRConsistency: compass.webXRConsistency,
     enableCompassExperiment: compass.experiment,
-    enableRobustSolverComparison: compass.robustSolverComparison,
+    enableConsensusSolverComparison: compass.consensusSolverComparison,
     compassVoteWeight: priorActive ? compass.voteWeight : undefined,
   };
 }

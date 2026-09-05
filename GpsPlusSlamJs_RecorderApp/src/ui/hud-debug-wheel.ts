@@ -48,7 +48,7 @@ import {
   setCompassTrustGateMode,
   setCompassVoteWeight,
   setCompassWebXRConsistencyEnabled,
-  setRobustSolverHeadingPenalty,
+  setConsensusSolverHeadingPenalty,
   COMPASS_TRUST_GATE_MODES,
   COMPASS_PAIR_SELECTION_MODES,
   type CompassPairSelectionMode,
@@ -179,7 +179,7 @@ export function dispatchWheelSettings(
     );
   }
   if (controls.has('headingPenalty')) {
-    store.dispatch(setRobustSolverHeadingPenalty(s.headingPenalty));
+    store.dispatch(setConsensusSolverHeadingPenalty(s.headingPenalty));
   }
 }
 
@@ -202,7 +202,7 @@ interface WheelSeedState {
     readonly compassPairSelectionEnabled?: boolean | undefined;
     readonly compassPairSelectionMode?: CompassPairSelectionMode | undefined;
     readonly compassPairSelectionRequireTrust?: boolean | undefined;
-    readonly robustSolverHeadingPenalty?: number | undefined;
+    readonly consensusSolverHeadingPenalty?: number | undefined;
   } | null;
 }
 
@@ -254,9 +254,9 @@ export function seedWheelSettings(
   }
   if (
     !touched.has('headingPenalty') &&
-    typeof g.robustSolverHeadingPenalty === 'number'
+    typeof g.consensusSolverHeadingPenalty === 'number'
   ) {
-    next.headingPenalty = g.robustSolverHeadingPenalty;
+    next.headingPenalty = g.consensusSolverHeadingPenalty;
   }
   return next;
 }
@@ -460,7 +460,7 @@ export function createDebugWheel(deps: DebugWheelDeps): DebugWheel {
   pairHint.id = 'debug-wheel-pairs-hint';
   pairHint.className = 'text-xs text-gray-400';
   const presetEnablesRobust = (): boolean =>
-    findAlignmentPreset(current.presetId)?.overrides?.robustSolverEnabled ===
+    findAlignmentPreset(current.presetId)?.overrides?.consensusSolverEnabled ===
     true;
 
   const influenceLabel = (): string =>

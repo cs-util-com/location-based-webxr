@@ -1,14 +1,24 @@
 # Changelog
 
-## [2.0.0] — unreleased (entry started 2026-09-02 as 1.23.0)
+## [1.24.0] — unreleased (entry started 2026-09-02 as 1.23.0)
 
-Requires `gps-plus-slam-js` ≥ 1.23.0. **A MAJOR**: the same unreleased
-entry removes published surface and changes one published behaviour (below),
-so it cannot ship as the 1.23.0 it was started as (PR #411 review). The
-version number is set at release time by `prep_new_releases --framework
-major`; `package.json` still reads 1.23.0 until then.
+Requires `gps-plus-slam-js` ≥ 1.24.0.
 
 ### ⚠️ Breaking changes
+
+- **The solver's option family is named `consensusSolver*` everywhere**,
+  aligned with `gps-plus-slam-js` 1.24.0: `createSlamAppStore({
+  enableConsensusSolverComparison })`, the re-exported actions
+  `setConsensusSolverComparisonEnabled` and
+  `setConsensusSolverHeadingPenalty`, the `gpsData` state field
+  `consensusSolverComparisonEnabled`, and the `AlignmentOverrides` key
+  `consensusSolverEnabled`. The previous names are gone rather than aliased;
+  TypeScript consumers get a compile error, a JavaScript consumer passing the
+  old override key gets `setAlignmentOverrides`' thrown `unknown key`.
+  **Recordings are not migrated:** the two store actions are persisted by
+  type string, so a recording made before this release with the comparison
+  arm or the heading penalty set replays those actions as ignored and runs
+  the default solver configuration.
 
 - **Removed from `/ar/qr`** (`createQrDetectionScheduler`,
   `QrDetectionScheduler`, `QrDetectionSchedulerConfig`): the QR-specialised
@@ -59,7 +69,7 @@ major`; `package.json` still reads 1.23.0 until then.
   demo's decisions.
 - **State re-exports for core 1.23.0**: `setAlignmentOverrides`,
   `setCompassPairSelectionMode`, `setCompassPairSelectionRequireTrust`,
-  `setRobustSolverHeadingPenalty`, the consts `ALIGNMENT_OVERRIDE_KEYS`,
+  `setConsensusSolverHeadingPenalty`, the consts `ALIGNMENT_OVERRIDE_KEYS`,
   `COMPASS_TRUST_GATE_MODES`, `COMPASS_PAIR_SELECTION_MODES`, and the types
   `AlignmentOverrides`, `CompassPairSelectionMode`. Derive dropdown lists from
   the consts rather than mirroring the unions — the fourth trust-gate mode,

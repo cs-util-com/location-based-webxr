@@ -172,7 +172,9 @@ describe('dispatchWheelSettings - one control, its own setting', () => {
       { ...WHEEL_DEFAULTS, headingPenalty: 0.25 },
       only('headingPenalty')
     );
-    expect(types(penalty)).toEqual(['gpsData/setRobustSolverHeadingPenalty']);
+    expect(types(penalty)).toEqual([
+      'gpsData/setConsensusSolverHeadingPenalty',
+    ]);
   });
 
   it('every control together is eleven actions, and the shipped preset clears with null', () => {
@@ -268,7 +270,7 @@ describe('seedWheelSettings - untouched controls show the session', () => {
         compassPairSelectionEnabled: true,
         compassPairSelectionMode: 'hard',
         compassPairSelectionRequireTrust: false,
-        robustSolverHeadingPenalty: 0.25,
+        consensusSolverHeadingPenalty: 0.25,
       },
     });
     expect(seeded.presetId).toBe('f100');

@@ -87,7 +87,7 @@ describe('ALIGNMENT_PRESETS', () => {
 
   it('exactly one preset enables the robust solver, so the heading-penalty box has a home', () => {
     const robust = ALIGNMENT_PRESETS.filter(
-      (p) => p.overrides?.robustSolverEnabled === true
+      (p) => p.overrides?.consensusSolverEnabled === true
     );
     expect(robust.map((p) => p.id)).toEqual(['f50-robust-exp1']);
   });

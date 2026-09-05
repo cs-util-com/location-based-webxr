@@ -148,7 +148,7 @@ export {
   setAlignmentOverrides,
   setCompassPairSelectionMode,
   setCompassPairSelectionRequireTrust,
-  setRobustSolverHeadingPenalty,
+  setConsensusSolverHeadingPenalty,
   ALIGNMENT_OVERRIDE_KEYS,
   COMPASS_TRUST_GATE_MODES,
   COMPASS_PAIR_SELECTION_MODES,

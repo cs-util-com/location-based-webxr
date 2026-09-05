@@ -20,7 +20,7 @@ The in-recording settings wheel: a gear in the AR HUD, shown only with `?debug=1
 - **trust gate** → `setCompassTrustGateMode`, every mode the library declares (`off | binary | ramp | latch`; the list is derived from the exported const). `latch` (trusted once, trusted for the session) ships for the field test with its corpus label attached: at the shipped thresholds 52 of the 88 compass-era recordings that ever reach trusted drop out of it again (59 %), so the corpus does NOT say the latch is safe - it says the field test is needed (private repo, `test-results/compass-trust-drop-census.txt`).
 - **pair selection** → `off` (`setCompassPairSelectionEnabled(false)`), `soft cut` / `hard cut` (enabled + `setCompassPairSelectionMode`). At compass influence 0 it is never enabled (the mapping's zero rule: "GPS only" is the control arm of every A/B, and no toggle may re-arm it) and the dropdown is disabled with a hint; the two tap orders end in the same config (PR #407 review).
 - **pairs need trust** → `setCompassPairSelectionRequireTrust`.
-- **heading penalty** → `setRobustSolverHeadingPenalty(0.25)` or `0`; inert unless a preset switched the robust solver on.
+- **heading penalty** → `setConsensusSolverHeadingPenalty(0.25)` or `0`; inert unless a preset switched the robust solver on.
 
 ## Invariants & assumptions
 

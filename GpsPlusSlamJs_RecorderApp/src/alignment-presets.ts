@@ -126,7 +126,7 @@ export const ALIGNMENT_PRESETS: readonly AlignmentPreset[] = [
     label: 'recency 50, robust solver, accuracy 1 (enables heading penalty)',
     overrides: {
       timeWeightFactor: 50,
-      robustSolverEnabled: true,
+      consensusSolverEnabled: true,
       gpsAccuracyExponent: 1,
     },
   },
