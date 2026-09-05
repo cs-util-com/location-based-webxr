@@ -27,6 +27,15 @@ export {
   createCss3dRendererManager,
 } from './css3d-renderer-manager.js';
 
+// --- diamond-entrance ---
+export {
+  DIAMOND_ENTRANCE,
+  DIAMOND_ENTRANCE_SETTLED,
+  type DiamondEntranceOptions,
+  type DiamondEntranceState,
+  computeDiamondEntrance,
+} from './diamond-entrance.js';
+
 // --- gps-compass-cubes ---
 export {
   COMPASS_CUBE_SIZE,

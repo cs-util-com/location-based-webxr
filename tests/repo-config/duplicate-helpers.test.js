@@ -127,6 +127,12 @@ const CANONICAL = [
     why: 'its tie-breaking matches the core library’s private solver median, cross-checked in Investigation; a second copy here would drift from a helper it cannot see',
   },
   {
+    name: 'cubicBezierEasing',
+    rule: 'shared',
+    home: 'GpsPlusSlamJs_AppFramework/src/utils/cubic-bezier-easing.ts',
+    why: 'the wayfinding HUD mirrors a CSS animation whose easing is the token `--ease-out`; a second evaluator (or a look-alike `easeOutCubic`, of which Landing already has one) would drift from the sheet in every frame between the endpoints',
+  },
+  {
     name: 'normalizeBearingDeg',
     rule: 'shared',
     home: 'GpsPlusSlamJs_AppFramework/src/utils/bearing-degrees.ts',
