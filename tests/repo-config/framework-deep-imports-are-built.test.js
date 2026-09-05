@@ -100,11 +100,13 @@ describe('framework deep imports are built entrypoints', () => {
     const advertised = [
       ...changelog.matchAll(/\*\*`([A-Za-z0-9_./-]+)`\*\* \(deep import/g),
     ].map(([, sub]) => sub);
-    // Every "(deep import" in the file must have been captured, or a marker
-    // the pattern does not recognise (a differently formatted entry) would
-    // silently leave its module unguarded while the other entries keep this
-    // green (milestone review, 2026-09-05).
-    const mentioned = changelog.match(/\(deep import/g) ?? [];
+    // Every mention of a deep import in the file must have been captured, or
+    // an entry written in other words ("is now a built deep-import entry",
+    // PR #417 review) would silently leave its module unguarded while the
+    // marker-form entries keep this green (milestone review, 2026-09-05).
+    // "deep-importable" is the prose word for a whole family, not an entry,
+    // hence the lookahead.
+    const mentioned = changelog.match(/deep[ -]import(?!able)/gi) ?? [];
     expect(advertised.length).toBe(mentioned.length);
     expect(advertised.length).toBeGreaterThan(0);
     const missing = advertised.filter((sub) => !built.has(sub));

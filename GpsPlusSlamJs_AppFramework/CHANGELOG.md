@@ -56,7 +56,7 @@ Requires `gps-plus-slam-js` ≥ 1.24.0.
   exposed as `DEFAULT_WAYFINDING_HUD.indicatorColor`. Inert in image mode.
 - **`utils/bearing-degrees`** gains `bearingDeltaDeg(a, b)` — the signed
   shortest difference in `(−180, 180]`, replacing two unnamed copies.
-- **`utils/median`** is now a built deep-import entry.
+- **`utils/median`** (deep import) — now a built entry.
 - **`visualization/wayfinding-targets`** (deep import) — `createTargetResolver`,
   the wayfinding HUD's boundary validation as a pure, directly tested module;
   `WayfindingTarget` is re-exported unchanged by `wayfinding-hud`.

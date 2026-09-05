@@ -1030,11 +1030,11 @@ export class DemoPipeline {
       tiles.push(neighbour);
       for (const cell of cells) reach.add(cell);
     }
-    const admitMs = nowMs() - admitStart;
-    deriveMs += admitMs;
     // The bbox objects are freshly built here, so identity is a safe key back to
     // the tile CELL — which `EventTile` does not carry and the exhaustive scan
-    // needs in order to enumerate the tile's cells.
+    // needs in order to enumerate the tile's cells. Built inside the admit
+    // span: it is derivation, and billing it to `ensure` would blur the
+    // partition below (PR #417 review).
     const cellOfBox = new Map<object, string>();
     const boxes = tiles.map((each) => {
       const [s, w, n, e] = boundsOfCell(each);
@@ -1042,6 +1042,8 @@ export class DemoPipeline {
       cellOfBox.set(box, each);
       return box;
     });
+    const admitMs = nowMs() - admitStart;
+    deriveMs += admitMs;
     // Scores the admitted neighbours' cells too; fetches nothing, because every
     // cell of an admitted reach sits in a loaded tile by construction.
     this.index.ensureScored(reach);

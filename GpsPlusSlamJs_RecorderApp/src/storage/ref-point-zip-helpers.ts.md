@@ -3,9 +3,9 @@
 ## Purpose
 
 Shared helpers for reading reference-point JSON entries out of session
-ZIPs. Centralises the parse / validate / error-collection loop that
-`ref-point-importer.ts` and `ref-point-recovery.ts` previously each
-open-coded.
+ZIPs. Centralises the parse / validate / error-collection loop for its two
+callers, `ref-point-recovery.ts` and `ref-point-loader.ts`. (A third,
+`ref-point-importer.ts`, was deleted 2026-09-04 - no production caller.)
 
 ## Public API
 
@@ -40,6 +40,7 @@ const { items, errors } = await extractRefPointEntriesFromZip(
 
 ## Tests
 
-- `ref-point-importer.test.ts` and `ref-point-recovery.test.ts` exercise
-  this module end-to-end (round-trip ZIP → parse → validate → transform,
-  plus malformed-JSON / invalid-schema / IO-error paths).
+- No direct test; `ref-point-recovery.test.ts`,
+  `ref-point-recovery.property.test.ts` and `ref-point-loader.test.ts`
+  exercise it through its callers (round-trip ZIP → parse → validate →
+  transform, plus malformed-JSON / invalid-schema / IO-error paths).

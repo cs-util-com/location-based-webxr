@@ -11,9 +11,9 @@ the **eager** full-folder pass at folder-pick time (D1) and the **lazy**
 scenario-change recovery safety net — both persisted by folder-manager's
 strict per-scenario gap-fill (D4a/D4b).
 
-Unlike `ref-point-importer.ts` (dormant; returns simplified `ImportedRefPoint`
-with only lat/lon), this module preserves complete observation data (AR poses,
-GPS, timestamps) needed for 3D display and OPFS restoration.
+This module preserves complete observation data (AR poses, GPS, timestamps)
+needed for 3D display and OPFS restoration. A lat/lon-only sibling,
+`ref-point-importer.ts`, was deleted 2026-09-04 - nothing called it.
 
 ## Public API
 
