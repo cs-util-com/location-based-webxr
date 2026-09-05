@@ -30,6 +30,17 @@ the derived fetch-coverage function the movement trigger uses.
   first, user-visible ring wait on a tile only the outer rings need.
 - `fetchWorkingSet(fetchTile)` → 7 res-7 cells. Fixed-radius; for the explicit
   "download this area" prefetch API only.
+- `MIN_PICK_SEPARATION_STEPS = 4` — how close, in res-13 steps, two quest picks
+  must be to count as ONE spot (~28 m: 4 × 7.09 m centre-to-centre, a
+  `gridDisk` reaching 27.65 m). Owner report 2026-09-04: two adjacent event
+  tiles climbed onto one plateau from two sides and reported it twice, a few
+  metres apart. To a player that is one place; a genuine second quest in a
+  ~1 km tile is far outside it.
+- `isSameQuestSpot(a, b)` → `boolean`. `b` lies within
+  `MIN_PICK_SEPARATION_STEPS` of `a` (`a === b` included). `gridDisk`
+  membership rather than `gridDistance`, which throws across pentagons and at
+  range; an invalid cell reads as "not the same spot". The demo passes this to
+  `newGeoEventFor` as its `sameSpot`.
 - `cellPaddingDegrees(resolution, worstLatitudeDeg)` → `{ lat, lng }` (converts via `metresToDegrees` in `clip.ts`, so the arithmetic has one home). How far,
   in degrees, a cell at `resolution` can reach beyond its own centre — the
   amount by which a bbox built from cell CENTRES must grow to contain the cells
@@ -117,7 +128,9 @@ const tiles = fetchTilesForScoreWorkingSet(chunk); // 1-3 res-7 tiles to fetch
   resolution change; pins the border-band arithmetic (~20 % at res 7 vs ~48 % at
   res 8); asserts working-set sizes; covers the "already coarser" throw; and
   covers `fetchTilesForScoreWorkingSet` for the interior, coverage and
-  straddling cases.
+  straddling cases; pins the quest-spot separation under 30 m and
+  `isSameQuestSpot` on every cell of ring 4 (same) and ring 5 (not), and
+  that it never throws.
 - `resolutions.property.test.ts` — over random world coordinates: coarsening is
   idempotent and lands at the target resolution, the ladder round-trips, the
   **non-nesting** property is documented with its one-grid-step bound, and the

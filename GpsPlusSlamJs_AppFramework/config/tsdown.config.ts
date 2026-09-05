@@ -210,6 +210,10 @@ const entryFiles = [
   // barrel, which would pull in the logger and friends). The `./utils/*`
   // exports wildcard advertises this subpath, so it must be built per-file.
   'src/utils/slider-scroll-guard.ts',
+  // Compass-influence mapping - deep-imported by the OSM demo and the recorder's
+  // in-recording settings wheel (NOT via the `/utils` barrel). The `./utils/*`
+  // exports wildcard advertises this subpath, so it must be built per-file.
+  'src/utils/compass-influence-mapping.ts',
   'src/utils/format-distance.ts',
   // Bearing normalizer — deep-imported by the OSM demo (NOT via the `/utils`
   // barrel, which would pull in the logger and friends). The `./utils/*`
@@ -217,6 +221,12 @@ const entryFiles = [
   // Shared rather than copied because the early return is a CONTRACT: without
   // it `360 − ε` snaps to 0, a full turn that never happened.
   'src/utils/bearing-degrees.ts',
+  // Median family — deep-imported by the recorder (yaw-churn.ts) since
+  // 2026-09-04. Built per-file for the same reason as bearing-degrees: the
+  // './utils/*' wildcard advertises the subpath, and without an entry here
+  // tsc and vitest resolve it while Vite in the browser does not (found by
+  // the recorder e2e stage, 26 minutes into a cascade).
+  'src/utils/median.ts',
   'src/utils/toast-core.ts',
   // QR launch payload codec — deep-imported by the TourViewer app: the decode
   // side (codec-dictionary) implements the ?qr= launch-handler dispatch, and
@@ -299,6 +309,11 @@ const entryFiles = [
   // resolution at runtime — see 2026-04-29-recorder-e2e-import-resolution-failure.md).
   'src/visualization/wayfinding-hud.ts',
   'src/visualization/wayfinding-placement.ts',
+  // Advertised as a deep import by the CHANGELOG and the `./visualization/*`
+  // wildcard; the repo-config guard reads the CHANGELOG's "(deep import)"
+  // markers, so an advertised module without an entry fails at the gate
+  // (PR #412 review: this one shipped without either).
+  'src/visualization/wayfinding-targets.ts',
 ];
 
 export default defineConfig({

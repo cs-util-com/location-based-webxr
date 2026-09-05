@@ -134,6 +134,9 @@ export async function setStorageReady(page, { validate = true } = {}) {
  */
 export const REQUIRED_TEST_HOOKS = [
   'populateScenarios',
+  // In-recording settings wheel (2026-09-02)
+  'getDebugWheelValues',
+  'hideSetupModal',
   'showRecordingControls',
   'hideRecordingControls',
   'showSessionSummary',

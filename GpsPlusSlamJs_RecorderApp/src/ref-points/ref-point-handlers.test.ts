@@ -19,7 +19,6 @@ import type {
 import type { ARPose } from 'gps-plus-slam-app-framework/types/ar-types';
 import type * as StoreModule from '../state/recorder-store';
 import type { RecorderStore } from '../state/recorder-store';
-import type { ImportedRefPoint } from '../storage/ref-point-importer';
 import type {
   RefPointObservation,
   RefPointMark,
@@ -35,7 +34,6 @@ const {
   mockSaveRefPointObservation,
   mockExtractOdomPosition,
   mockExtractOdomRotation,
-  mockRefPointVisualizer,
   mockShowError,
   mockUpdateStatus,
   mockShowToast,
@@ -65,7 +63,6 @@ const {
   mockExtractOdomRotation: vi
     .fn<(pose: ARPose) => Quaternion>()
     .mockReturnValue([0, 0, 0, 1] as Quaternion),
-  mockRefPointVisualizer: {},
   mockShowError: vi.fn(),
   mockUpdateStatus: vi.fn(),
   mockShowToast: vi.fn(),
@@ -125,10 +122,6 @@ vi.mock('../ui/toast', () => ({
   TOAST_DURATION_ERROR: 8000,
 }));
 
-vi.mock('gps-plus-slam-app-framework/visualization/reference-points', () => ({
-  refPointVisualizer: mockRefPointVisualizer,
-}));
-
 vi.mock('gps-plus-slam-app-framework/utils/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
@@ -175,6 +168,20 @@ function seedImportedRefPoints(refPoints: ImportedRefPoint[]): void {
   }
   const entries = refPoints.map((rp) => importedToEntry(rp, Date.now()));
   lastTestStore.dispatch(setImportedRefPointEntries(entries));
+}
+
+/**
+ * The seed shape the removed `storage/ref-point-importer.ts` used to produce
+ * (deleted 2026-09-04: zero production callers). Kept local to the tests that
+ * still seed the V2 slice with it.
+ */
+interface ImportedRefPoint {
+  readonly id: string;
+  readonly name: string;
+  readonly lat: number;
+  readonly lon: number;
+  readonly alt?: number;
+  readonly sourceZipName: string;
 }
 
 function importedToEntry(rp: ImportedRefPoint, ts: number): RefPointEntry {
@@ -534,7 +541,7 @@ describe('handleMarkRefPoint — picker integration', () => {
 
   // Why: When imported refs are far from GPS (no nearby match), the picker
   // should show with empty suggestions (IDs are now H3 hex, meaningless to users).
-  it('should show picker with empty suggestions when no nearby match', async () => {
+  it('should open the name prompt when no nearby match', async () => {
     const handle = createMockScenarioHandle();
     mockGetCurrentScenarioHandle.mockReturnValue(handle);
     mockListRefPointIds.mockResolvedValue(['scenarioPoint']);
@@ -561,13 +568,12 @@ describe('handleMarkRefPoint — picker integration', () => {
     await handlers.handleMarkRefPoint();
 
     expect(mockShowRefPointPicker).toHaveBeenCalled();
-    const passedIds = mockShowRefPointPicker.mock.calls[0][0];
-    // No suggestions — scenario IDs are H3 hex, imported names are for distant locations
-    expect(passedIds).toEqual([]);
+    // The prompt takes no arguments: it asks for a name, nothing else.
+    expect(mockShowRefPointPicker).toHaveBeenCalledWith();
   });
 
   // Why: Even with no scenario handle, picker gets empty suggestions for new refs.
-  it('should show picker with empty suggestions when no scenario handle and no nearby match', async () => {
+  it('should open the name prompt when no scenario handle and no nearby match', async () => {
     mockGetCurrentScenarioHandle.mockReturnValue(null);
     mockShowRefPointPicker.mockResolvedValue({ id: 'NewRef', isNew: true });
     seedImportedRefPoints([
@@ -583,8 +589,7 @@ describe('handleMarkRefPoint — picker integration', () => {
     await handlers.handleMarkRefPoint();
 
     expect(mockShowRefPointPicker).toHaveBeenCalled();
-    const passedIds = mockShowRefPointPicker.mock.calls[0][0];
-    expect(passedIds).toEqual([]);
+    expect(mockShowRefPointPicker).toHaveBeenCalledWith();
   });
 
   // Why: When an imported ref point is near the current GPS position, the
@@ -675,7 +680,7 @@ describe('handleMarkRefPoint — picker integration', () => {
   // Why: For new ref points (no nearby match), the picker should receive
   // an empty suggestion list since scenario IDs are now H3 hex strings
   // that are meaningless to users. The picker becomes a simple name input.
-  it('should pass empty suggestions to picker for new ref points', async () => {
+  it('should open the name prompt for new ref points', async () => {
     const handle = createMockScenarioHandle();
     mockGetCurrentScenarioHandle.mockReturnValue(handle);
     mockListRefPointIds.mockResolvedValue(['8b1f1a5c2e3d4f1']);
@@ -695,8 +700,7 @@ describe('handleMarkRefPoint — picker integration', () => {
     await handlers.handleMarkRefPoint();
 
     expect(mockShowRefPointPicker).toHaveBeenCalled();
-    const passedIds = mockShowRefPointPicker.mock.calls[0][0];
-    expect(passedIds).toEqual([]);
+    expect(mockShowRefPointPicker).toHaveBeenCalledWith();
   });
 });
 

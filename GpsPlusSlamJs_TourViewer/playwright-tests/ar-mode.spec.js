@@ -26,13 +26,36 @@ async function enterAr(page) {
   await button.click();
 }
 
+test("the start screen names both ways in, and says what AR does without a tour", async ({
+  page,
+}) => {
+  // Why this test matters (owner taste round 2026-09-04): pressing the AR
+  // button with no link pasted starts the code scanner at once, which read as
+  // a bug. It is by design — the scanner places a visitor inside a tour opened
+  // before OR after entering AR — but nothing on the page said so, and the
+  // header only ever described the pasted link. Both entries and the hint
+  // must be on screen BEFORE any tour is open, i.e. on a bare boot.
+  await page.goto("/");
+  const header = page.locator("header p");
+  await expect(header).toContainText("printed tour code");
+  await expect(header).toContainText("paste a link");
+  const hint = page.getByTestId("ar-hint");
+  await expect(hint).toBeVisible();
+  await expect(hint).toContainText("AR works without a tour");
+  await expect(hint).toContainText("printed codes");
+});
+
 test("viewer mode boots to running: session started, alignment bound, capture at 8 Hz", async ({
   page,
 }) => {
   await page.goto("/");
   await expect(page.getByTestId("enter-ar")).toHaveText("Start AR view");
+  await expect(page.getByTestId("ar-hint")).toBeVisible();
   await enterAr(page);
   await expect(page.getByTestId("enter-ar")).toHaveText("AR running");
+  // `#ar-root` is the DOM overlay: the start-screen hint must not sit over
+  // the camera feed for the whole session (milestone review, 2026-09-05).
+  await expect(page.getByTestId("ar-hint")).toBeHidden();
 
   const wiring = await page.evaluate(() => {
     const t = /** @type {any} */ (window).__tourViewerTest;

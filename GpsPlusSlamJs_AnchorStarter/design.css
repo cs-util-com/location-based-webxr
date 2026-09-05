@@ -1,20 +1,24 @@
 /*
- * The design system's single stylesheet (split out of index.html
- * 2026-08-27 when the file crossed the ~1800-line trigger; owner
- * decision: one stylesheet, not per-screen pages). Load order matters:
- * the @layer statement below fixes layer precedence by FIRST
- * APPEARANCE, so this sheet must stay the first (and only) stylesheet
- * the page loads.
+ * design.css - the SHIPPABLE design system: the layers an app vendors.
+ * (Split out of styles.css 2026-09-02, adoption plan M1.) The @layer
+ * statement fixes precedence by FIRST APPEARANCE, so this must be the
+ * first stylesheet a page loads; catalog.css restates the same order
+ * plus its own demo layer. Everything here speaks in var(--token):
+ * check-tokens.mjs fails the gate on a colour literal in base, atoms or
+ * screen. Nothing here styles a page ground or applies the uppercase
+ * voice to body - both are the atoms' or the host page's business.
  */
 /* ==========================================================
-   The HUD design system, one iterable file. Current language
-   (2026-08-27): dark desaturated translucent surfaces, no borders
-   (raised 2px/3px dual shadows carry the edges), orange accent
-   #f2971f rationed to strip/engaged/warnings/dots, rounded-ish system
-   stack 500 uppercase everywhere, rounded shapes, carved slider groove.
-   Decision log: docs/2026-08-27-0614-design-system-extension-plan.md
+   The HUD design system. Current language (2026-08-27): dark
+   desaturated translucent surfaces, no borders (raised 2px dual
+   shadows carry the edges), orange accent #f2971f rationed to strip/
+   engaged, brand red for the failure family, Corbel-then-Noto-Sans
+   stack 500 uppercase at the atom boundary, rounded shapes, carved
+   slider groove. Decision log: the private repo's
+   docs/2026-08-27-0614-design-system-extension-plan.md and
+   docs/2026-08-27-1914-design-system-adoption-plan.md.
    ========================================================== */
-@layer reset, tokens, atoms, screen, demo;
+@layer reset, tokens, base, atoms, screen;
 
 @layer reset {
   *,
@@ -27,6 +31,14 @@
   input,
   select {
     font: inherit;
+  }
+  /* The hidden attribute must beat every atom that sets display: 19 of
+     them do, and a bare display on an element type overrides the user
+     agent's [hidden]. OsmDemo shipped that exact bug once (its DEC-U9
+     went inert). The !important is deliberate and is the only one in
+     the system. */
+  [hidden] {
+    display: none !important;
   }
 }
 
@@ -174,7 +186,7 @@
        fallbacks have LINING figures: Corbel old-style dancing digits do
        not survive off Windows. */
     --font-ui:
-      "Corbel", "Noto Sans", ui-rounded, "Segoe UI", Roboto, system-ui,
+      "Corbel", "Noto Sans", ui-rounded, "Segoe UI", "Roboto", system-ui,
       sans-serif;
     /* unified with --font-ui per feedback (was monospace): ONE text
        voice everywhere, like the atom section labels */
@@ -186,12 +198,22 @@
     /* was 700; flattened so every text carries the same weight and
        emphasis comes from accent/inversion instead */
     --weight-strong: 500;
-    /* the one text voice: uppercase with airy tracking. Applied at
-       the atom boundary (first rule of the atoms layer), NOT on
-       body, so extracting the atoms carries the voice without
-       uppercasing a host app's page. */
+    /* Two voices from one token pair (adoption plan DEC-L2-2, V1).
+       The LABEL voice - uppercase with airy tracking - is for short
+       labels: buttons, badges, readout keys, section labels. The PROSE
+       voice keeps its case and normal tracking for anything
+       sentence-shaped: toast copy, modal body, hints, annotation
+       descriptions, log lines - uppercase is measurably slower to read (brief,
+       legibility rules). Both are applied at the atom boundary (first
+       rules of the atoms layer), NOT on body, so extracting the atoms
+       carries the voice without uppercasing a host app's page. An atom
+       switches voice by choosing a pair, never with a bare
+       `text-transform: none` - the pair is what keeps the brief's
+       token contract the one place to change it. */
     --case-ui: uppercase;
     --tracking-ui: 0.08em;
+    --case-prose: none;
+    --tracking-prose: normal;
 
     /* space & shape */
     --space-1: 4px;
@@ -242,10 +264,41 @@
 }
 
 /* ==========================================================
+   BASE - what a page inherits by loading the sheet
+   ========================================================== */
+@layer base {
+  /* Page-level type and colour an app inherits by loading this sheet -
+     lifted out of the catalog's demo layer when the split showed that
+     without it a bare <p> rendered in the UA serif and .hint in black on
+     the dark ground (adoption-plan review, 2026-08-27). Deliberately NOT
+     here: any background (an AR app's ground is the camera), any layout,
+     and the uppercase voice (applied at the atom boundary, so a host
+     page's own prose is never uppercased). */
+  body {
+    font-family: var(--font-ui);
+    font-size: var(--size-body);
+    font-weight: var(--weight-body);
+    color: var(--ink);
+  }
+  h1 {
+    font-size: 20px;
+    font-weight: var(--weight-strong);
+  }
+  h2 {
+    font-size: var(--size-body);
+    font-weight: var(--weight-strong);
+  }
+  h3 {
+    font-size: var(--size-hint);
+    font-weight: var(--weight-body);
+  }
+}
+
+/* ==========================================================
    ATOMS
    ========================================================== */
 @layer atoms {
-  /* THE ONE TEXT VOICE - every text-bearing atom opts in here, so
+  /* THE LABEL VOICE - every text-bearing atom opts in here, so
      the atoms are self-sufficient when extracted without the demo
      page (whose body applies the same tokens for the catalog). */
   .plate,
@@ -265,6 +318,47 @@
     font-weight: var(--weight-body);
     text-transform: var(--case-ui);
     letter-spacing: var(--tracking-ui);
+  }
+  /* THE PROSE VOICE - the sentence-shaped atoms opt out of the uppercase
+     here, through the token pair (DEC-L2-2; the log joined by DEC-L2-9,
+     because log lines are read, not glanced; readout values by
+     DEC-L2-11, because unit symbols are case-sensitive - "8 m" is
+     metres, "8 M" is not). Keys and labels stay uppercase; titles inside
+     an annotation are labels and opt back in below. */
+  .toast,
+  .hint,
+  .anno-text,
+  .log,
+  .num,
+  .prose {
+    text-transform: var(--case-prose);
+    letter-spacing: var(--tracking-prose);
+  }
+  /* --- key / value line: a hint-voiced key at the left, its readout at
+     the right, on one baseline - the QR demo's size / samples / spread /
+     stage rows. Put a .hint and a .num in it. --- */
+  .kv {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: var(--space-3);
+  }
+  /* --- prose: sentence-shaped body text inside a plate - a modal's
+     question, a start card's explanation, a placement banner. Body
+     size, plate ink; the atom exists so a paragraph in a plate has a
+     name instead of a per-app text-transform override. --- */
+  .prose {
+    margin: 0;
+    line-height: 1.4;
+  }
+  /* prose that carries the FAILURE family - a capability message, a
+     placement error: red ground, black ink, like the degraded readout
+     and the warn badge, so the words and the colour carry it together */
+  .prose[data-tone="warn"] {
+    background: var(--state-warn);
+    color: var(--ink-on-danger);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-small);
   }
 
   /* --- plate: the base surface every readable thing sits on --- */
@@ -355,6 +449,12 @@
     height: var(--tap);
     min-width: var(--tap);
     padding: 0;
+    /* the glyph sits at the CENTRE, not on the text baseline: an inline
+       SVG in a plain button hangs on the baseline and lands ~2px high
+       under the font strut (OsmDemo's pin, owner taste round 2026-09-04) */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     /* text labels (AR) at 18px; symbol glyphs and vector icons are
        LARGER (22px/24px via .btn--glyph and the svg rule below) - a
        two-letter label at glyph size overpowered the button (owner
@@ -454,7 +554,9 @@
   }
   .hint {
     font-size: var(--size-hint);
-    letter-spacing: 0.02em;
+    /* explicit, not inherited: a .hint on a host page whose body is not
+       ink-coloured used to render black (adoption-plan review) */
+    color: var(--ink);
   }
   /* degraded line: yellow/black, the classic warning pair */
   /* one expanding danger-colored ring, then stillness: the calm
@@ -522,11 +624,6 @@
      The dialog itself is a plate; what makes it a modal is the
      veil behind it, which pauses the world. Cancel stays a plain
      surface button; the decisive action wears .btn--accent. */
-  /* display:flex would override the hidden attribute's UA
-     display:none, so hidden must win explicitly */
-  .veil[hidden] {
-    display: none;
-  }
   .veil {
     animation: enter-fade var(--t-enter) var(--ease-out);
     position: absolute;
@@ -549,6 +646,7 @@
     /* stronger than --surface-gradient on purpose (owner feedback):
        a modal is read, not glanced past, so it gives up translucency */
     background: var(--surface-read-gradient);
+    /* stylelint-disable-next-line csstree/validator -- csstree does not know min() */
     width: min(320px, 100%);
     display: flex;
     flex-direction: column;
@@ -680,8 +778,6 @@
     gap: 2px;
     font-family: var(--font-ui);
     font-size: var(--size-hint);
-    text-transform: var(--case-ui);
-    letter-spacing: var(--tracking-ui);
   }
 
   /* --- legend ---
@@ -692,6 +788,11 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
+  }
+  /* the legend's heading is a section LABEL (label voice, inherited from
+     .legend), hint-sized; it is not a .hint, which is prose (DEC-L2-2) */
+  .legend-title {
+    font-size: var(--size-hint);
   }
   /* the scale column hugs the strip so min/max sit under its ENDS,
      not at the plate's far edges */
@@ -780,6 +881,9 @@
   }
   .anno-title {
     font-size: var(--size-body);
+    /* the title is a label; the description lines under it are prose */
+    text-transform: var(--case-ui);
+    letter-spacing: var(--tracking-ui);
   }
   /* target: a diamond marker (rotated square outline) with a center
      dot, per the waypoint-marker reference screenshot */
@@ -949,16 +1053,26 @@
      The track is a carved groove (like the slider), the knob a
      raised disc; checked wears the accent, the engaged colour. */
   .switch {
+    position: relative;
     display: flex;
     align-items: center;
     gap: var(--space-3);
     cursor: pointer;
     width: max-content;
   }
+  /* the real checkbox stays: invisible, but stretched over the whole
+     switch so IT is what a tap or a test's check() hits - focus, the
+     keyboard and the accessibility tree all keep working (an earlier
+     pointer-events: none made the label the hit target, which is what
+     Playwright refuses to click through) */
   .switch input {
     position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
     opacity: 0;
-    pointer-events: none;
+    cursor: pointer;
   }
   .switch-track {
     position: relative;
@@ -1101,10 +1215,36 @@
     background-color: var(--state-warn);
     animation: hatch-drift 1.2s linear infinite;
   }
+
+  /* --- layout helpers ---
+     Used by atom markup (a plate's stacked lines are a .col), so they
+     ship with the atoms; they lived in the demo layer until the split
+     showed an app copying catalog markup would silently lose them. */
+  .row {
+    display: flex;
+    gap: var(--space-3);
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  /* a slider in a row takes the room the labels leave, instead of its
+     own fixed width forcing the row onto three lines at phone width
+     (label / slider / value - measured on the wayfinding demo's
+     controls, M5) */
+  .row > .slider {
+    flex: 1 1 120px;
+    min-width: 120px;
+    width: auto;
+  }
+  .col {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
 }
 
 /* ==========================================================
-   SCREENS — composed HUD layouts (hud / experiments / placement)
+   SCREEN - composed HUD layouts an app may reuse (readout, bottom
+   cluster, guidance panel, experiments panel)
    ========================================================== */
 @layer screen {
   /* --- top-left readout --- */
@@ -1200,11 +1340,48 @@
   .guidance-panel .progress {
     width: 100%;
   }
-  .place-cta {
+  /* the bottom panel: a centred stack at the thumb end of the screen -
+     AnchorStarter's placement section (banner, error, the decisive
+     action, the share action), QrTrackingDemo's error line. Stacked
+     full-width like .modal-actions and for the same reason (the label
+     voice makes two buttons too wide side by side). */
+  .bottom-panel {
     position: absolute;
     left: 50%;
-    bottom: 110px;
+    bottom: 34px;
     transform: translateX(-50%);
+    width: 320px;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+    text-align: center;
+  }
+
+  /* --- start / capability screen (AnchorStarter) ---
+     Centred card with the app's one-paragraph pitch and its one action;
+     the capability message (a .prose[data-tone="warn"]) appears under
+     the button when the device cannot run the flow. Absolute + auto
+     margins centre it in any overlay, which is what the adoption plan
+     §7 said the migration would otherwise have to reinvent. */
+  .start-panel {
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    /* above any HUD panel that is already up (the wayfinding demo's
+       desktop simulator starts under its mode card): the card is read
+       first, so it paints last */
+    z-index: 1;
+    width: 340px;
+    max-width: calc(100% - 2 * var(--space-4));
+    height: max-content;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-3);
+    text-align: center;
+  }
+  .start-panel .btn {
     min-width: 200px;
   }
 
@@ -1231,230 +1408,5 @@
     align-items: center;
     gap: var(--space-3);
     cursor: pointer;
-  }
-  /* --- world annotation placement (mock) --- */
-  .hud-anno {
-    position: absolute;
-  }
-
-  /* --- radar placement: top right, below the readout block --- */
-  .hud-radar {
-    position: absolute;
-    top: 150px;
-    right: var(--space-3);
-  }
-
-  /* --- toast placement --- */
-  .hud-toast {
-    position: absolute;
-    left: 50%;
-    top: 55%;
-    transform: translateX(-50%);
-  }
-}
-
-/* ==========================================================
-   DEMO — NOT PART OF THE DESIGN SYSTEM. Page chrome, the
-   atoms-column layout, the phone frame, the camera stand-in
-   backgrounds and the screen switcher exist only so this
-   catalog can be looked at. Never extract anything in this
-   layer.
-   ========================================================== */
-@layer demo {
-  body {
-    font-family: var(--font-ui);
-    font-size: var(--size-body);
-    font-weight: var(--weight-body);
-    color: var(--ink);
-    background: var(--paper);
-    /* the catalog page speaks the same voice as the atoms */
-    text-transform: var(--case-ui);
-    letter-spacing: var(--tracking-ui);
-    padding: 32px;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 48px;
-    align-items: flex-start;
-  }
-  h1 {
-    flex-basis: 100%;
-    font-size: 20px;
-    font-weight: var(--weight-strong);
-  }
-  h1 small {
-    font-weight: var(--weight-body);
-    font-size: var(--size-body);
-    margin-left: 12px;
-  }
-  h2 {
-    font-size: var(--size-body);
-    font-weight: var(--weight-strong);
-    margin-bottom: var(--space-4);
-    border-bottom: var(--line-strong) solid var(--ink);
-    padding-bottom: var(--space-2);
-  }
-  /* which family of --font-ui actually resolved. The design was judged
-     for weeks in Corbel, which no Android device has - this readout is
-     how a phone round reports the truth instead of us guessing. */
-  .demo-fontcheck {
-    flex-basis: 100%;
-    order: -1;
-    margin-bottom: -32px;
-    font-size: var(--size-hint);
-    opacity: 0.6;
-  }
-  .atoms {
-    width: 420px;
-  }
-  .atoms section {
-    margin-bottom: 28px;
-  }
-  .atoms h3 {
-    font-size: var(--size-hint);
-    font-weight: var(--weight-body);
-    margin-bottom: var(--space-2);
-  }
-  .row {
-    display: flex;
-    gap: var(--space-3);
-    align-items: center;
-    flex-wrap: wrap;
-  }
-  .col {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-  }
-
-  .phone-wrap {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-  }
-  .switcher {
-    display: flex;
-    gap: var(--space-2);
-  }
-  /* the small ANIMATE triggers inside atom sections: demo chrome,
-     never part of an atom */
-  .demo-animate {
-    min-height: 32px;
-    min-width: 0;
-    padding: 0 var(--space-2);
-    font-size: var(--size-hint);
-    align-self: flex-start;
-    margin-top: var(--space-2);
-  }
-  .switcher .btn {
-    min-height: 32px;
-    min-width: 0;
-    padding: 0 var(--space-2);
-    font-size: var(--size-hint);
-  }
-
-  .phone {
-    width: 390px;
-    height: 844px;
-    border: var(--line-strong) solid var(--ink);
-    border-radius: 24px;
-    /* demo-only: was the --shadow-raised token, used nowhere else */
-    box-shadow: 0 4px 14px rgb(0 0 0 / 0.45);
-    position: relative;
-    overflow: hidden;
-    /* camera stand-ins, switched via data-bg */
-    background: #f2f0ec;
-  }
-  /* Sky: overexposed white-blue with cloud wisps and a rooftop
-     silhouette along the bottom - the hard bright/dark boundary a
-     real camera frame has. */
-  .phone[data-bg="sky"] {
-    background:
-      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='390' height='150'%3E%3Cpath fill='%23262e3c' d='M0,150 L0,84 h42 v-20 h26 v20 h24 l12,-30 l12,30 h38 v-36 h34 v36 h30 v-14 h28 v14 h44 v-46 h32 v46 h38 v-18 h30 v84 z'/%3E%3C/svg%3E")
-        left bottom / 100% auto no-repeat,
-      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='420'%3E%3Cfilter id='c'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.008 0.02' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='640' height='420' filter='url(%23c)' opacity='0.2'/%3E%3C/svg%3E"),
-      linear-gradient(#ffffff 0 40%, #e3edf6 70%, #c8dcec 100%),
-      #ffffff;
-  }
-  /* Wall: plaster grain (fine turbulence) + blotchy shading
-     (coarse turbulence) + a lighting falloff and floor shadow.
-     Still the deliberately BRIGHT worst case. */
-  .phone[data-bg="wall"] {
-    background:
-      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23g)' opacity='0.14'/%3E%3C/svg%3E"),
-      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='520' height='520'%3E%3Cfilter id='b'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.02' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='520' height='520' filter='url(%23b)' opacity='0.1'/%3E%3C/svg%3E"),
-      linear-gradient(transparent 82%, rgb(60 55 48 / 0.18)),
-      radial-gradient(130% 90% at 28% 18%, #fbf9f5 0 35%, transparent 75%),
-      linear-gradient(160deg, #f6f4f0, #e9e5de), #f2f0ec;
-  }
-  /* Foliage — the default. Two SVG turbulence layers (fine leaf
-     speckle + coarse light clumps) over dappled gradient blobs, so
-     translucent UI surfaces have real texture showing through. */
-  .phone[data-bg="foliage"] {
-    background:
-      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23f)' opacity='0.45'/%3E%3C/svg%3E"),
-      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='420' height='420'%3E%3Cfilter id='c'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.045' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='420' height='420' filter='url(%23c)' opacity='0.35'/%3E%3C/svg%3E"),
-      radial-gradient(46px 30px at 26% 12%, #7fae5a 0 40%, transparent 60%),
-      radial-gradient(30px 22px at 70% 18%, #8fbc63 0 45%, transparent 65%),
-      radial-gradient(60px 45px at 18% 22%, #1e3a1e 0 55%, transparent 60%),
-      radial-gradient(90px 70px at 62% 35%, #2f5a2f 0 50%, transparent 60%),
-      radial-gradient(70px 55px at 40% 60%, #172c17 0 55%, transparent 62%),
-      radial-gradient(24px 18px at 52% 48%, #6f9e55 0 45%, transparent 70%),
-      radial-gradient(110px 80px at 82% 70%, #3c6b34 0 45%, transparent 60%),
-      radial-gradient(36px 28px at 88% 40%, #0f1f0f 0 50%, transparent 65%),
-      radial-gradient(80px 60px at 12% 78%, #244524 0 50%, transparent 60%),
-      radial-gradient(50px 40px at 45% 88%, #5c8a4a 0 40%, transparent 62%),
-      radial-gradient(64px 48px at 72% 92%, #142a14 0 50%, transparent 62%),
-      #2a4d28;
-  }
-  /* live camera background: the video fills the phone and sits under
-     every HUD element; only visible while data-bg='live' */
-  .phone video {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: none;
-  }
-  .phone[data-bg="live"] {
-    background: #000;
-  }
-  .phone[data-bg="live"] video {
-    display: block;
-  }
-  /* Night street: building faces with lit-window grids at the
-     sides, warm lamp glow pools, a faintly lit pavement band and
-     coarse noise. The dark worst case, but a REAL one: small hot
-     highlights next to deep shadow. */
-  .phone[data-bg="night"] {
-    background:
-      radial-gradient(8px 8px at 51% 55.5%, #fff3d8 0 40%, transparent 100%),
-      radial-gradient(
-        90px 60px at 51% 56%,
-        rgb(255 200 130 / 0.3),
-        transparent 70%
-      ),
-      radial-gradient(
-        200px 130px at 50% 86%,
-        rgb(255 190 120 / 0.16),
-        transparent 70%
-      ),
-      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='390' height='844'%3E%3Cdefs%3E%3Cpattern id='w' width='30' height='40' patternUnits='userSpaceOnUse'%3E%3Crect x='8' y='11' width='8' height='12' fill='%23ffd9a0' opacity='0.3'/%3E%3C/pattern%3E%3C/defs%3E%3Crect x='0' y='140' width='118' height='570' fill='%23151923'/%3E%3Crect x='0' y='140' width='118' height='570' fill='url(%23w)'/%3E%3Crect x='296' y='90' width='94' height='620' fill='%23171b26'/%3E%3Crect x='296' y='90' width='94' height='620' fill='url(%23w)' opacity='0.75'/%3E%3C/svg%3E")
-        left top / 100% 100% no-repeat,
-      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='420' height='420'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.05' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='420' height='420' filter='url(%23n)' opacity='0.12'/%3E%3C/svg%3E"),
-      linear-gradient(#090b11 0 62%, #14161c 84%, #1c1d22 100%),
-      #0a0c12;
-  }
-
-  /* screens are hidden by default; the phone's data-screen shows
-     exactly one. One line per future screen. display:contents keeps
-     the phone as the containing block for absolute children. */
-  .screen {
-    display: none;
-  }
-  .phone[data-screen="hud"] .screen-hud,
-  .phone[data-screen="experiments"] .screen-experiments,
-  .phone[data-screen="placement"] .screen-placement {
-    display: contents;
   }
 }

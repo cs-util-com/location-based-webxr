@@ -128,10 +128,10 @@ export interface RecorderStoreOptions {
    * 2026-07-19 field-test opt-ins (enablement plan): the compass experiment
    * combo (rotation prior + trust tolerance 15° + C′ pair selection) and the
    * alternative robust-solver comparison arm. Sourced from
-   * `RecordingOptions.compassDebug.{experiment,robustSolverComparison}`; default OFF.
+   * `RecordingOptions.compassDebug.{experiment,consensusSolverComparison}`; default OFF.
    */
   enableCompassExperiment?: boolean;
-  enableRobustSolverComparison?: boolean;
+  enableConsensusSolverComparison?: boolean;
   /**
    * Steady-state compass vote weight ∈ [0,1] (the settings slider). Absent ⇒
    * library default. Only consulted while the experiment / rotation prior is
@@ -159,7 +159,7 @@ export function createRecorderStore(
     enableCompassRotationPrior: options.enableCompassRotationPrior,
     enableCompassWebXRConsistency: options.enableCompassWebXRConsistency,
     enableCompassExperiment: options.enableCompassExperiment,
-    enableRobustSolverComparison: options.enableRobustSolverComparison,
+    enableConsensusSolverComparison: options.enableConsensusSolverComparison,
     compassVoteWeight: options.compassVoteWeight,
     // Persist the recorder-owned refPoints slice and the framework qrDetected
     // slice. Derived from each slice's own action type (never a literal) so a

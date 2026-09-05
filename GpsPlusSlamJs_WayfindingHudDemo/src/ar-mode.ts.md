@@ -12,6 +12,6 @@
   - The app keeps its own `registerXrFrameUpdate` callback for the first-frame example spawn and the per-frame status line only — the hit-test plumbing lives in the driver.
   - The HUD runs in its DEFAULT self-registering mode — inside a session the framework frame loop ticks it; session teardown auto-disposes it via the session-disposer registry.
   - Per XR frame the status line is emitted from the HUD's actual scene output (`hud-status.ts`).
-  - `config.imageIndicators` maps to the framework's `arrowSprite`/`circleSprite` URL options ([indicator-assets.ts](indicator-assets.ts.md)); URL-loaded textures are HUD-owned, so refreshHud re-creation leaks nothing.
+  - The config-derived HUD options (deadband, scale, the live `--accent` as `indicatorColor`, and `config.imageIndicators` → the `arrowSprite`/`circleSprite` URLs) come from [hud-options.ts](hud-options.ts.md), shared with the desktop simulator; URL-loaded textures are HUD-owned, so refreshHud re-creation leaks nothing.
   - `initAR`'s `onSessionEnd` (fires on the system back gesture AND the app-initiated end) triggers full cleanup + `onEnded`; a `bootCompleted` flag keeps it inert if the session dies during a failed boot (half-built state).
 - **Tests:** `ar-mode.test.ts` (deep-subpath mocks): initAR isolation/feature/tracking/`onSessionEnd` wiring, driver `onSelect` hint-vs-place mapping, driver disposal on `dispose()`, default-mode HUD creation from the current config, refreshHud re-creation, initAR-failure path. Everything else is device-verified.

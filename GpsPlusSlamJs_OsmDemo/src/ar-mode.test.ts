@@ -1533,13 +1533,12 @@ describe("the compass slider reaches the store", () => {
     slider.value = "0";
     slider.dispatchEvent(new Event("input"));
 
-    // ALL FOUR, and the zero end especially: one setter would leave the
+    // ALL THREE, and the zero end especially: one setter would leave the
     // cold-start override driving yaw while the label reads "GPS only".
     expect(onCompassSettings).toHaveBeenLastCalledWith(
       expect.objectContaining({
         rotationPriorEnabled: false,
         coldStartOverrideEnabled: false,
-        experimentEnabled: false,
         voteWeight: 0,
       }),
     );

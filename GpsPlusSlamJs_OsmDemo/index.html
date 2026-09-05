@@ -40,9 +40,29 @@
       rel="stylesheet"
       href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
     />
+    <!--
+      design.css is a VERBATIM copy of GpsPlusSlamJs_DesignSystem/design.css,
+      written by `pnpm run vendor` there and held byte-identical by
+      tests/repo-config/design-css-copies.test.js - never edit it here. It
+      is linked before the <style> block so its @layer order is fixed first;
+      the rules below are unlayered and therefore win every conflict (the
+      adoption plan's L1 contract) - adopting an atom means deleting the rule
+      here. Adoption plan M6a: the copy lands with three pins (below) and
+      nothing visible moves; M6b restyles the AR HUD, M6c the 2D chrome.
+    -->
+    <link rel="stylesheet" href="/design.css" />
     <style>
       :root {
         color-scheme: dark;
+      }
+      /* PINS until the restyle (adoption plan M6a, DEC-L2-8's rule): the
+         three places design.css's reset and base layers landed where this
+         page left a browser default, measured with `pnpm run leaks` -
+         everything else on the list was font: inherit on checkboxes and
+         an icon-only button, with nothing visible. Each goes with the
+         restyle of the element it protects. */
+      input[type="range"] {
+        margin: 2px;
       }
       * {
         box-sizing: border-box;
@@ -116,6 +136,8 @@
       }
       h1 {
         font-size: 1rem;
+        /* PIN (M6a): the base layer's 500 where the browser's bold was */
+        font-weight: 700;
         margin: 0;
         cursor: pointer;
         display: flex;
@@ -449,37 +471,58 @@
         pointer-events: none;
       }
 
-      /*
-        The only message surface an immersed user can see (AR milestone 3).
-        WebXR composites ONLY the dom-overlay root's subtree over the camera
-        feed, and the header's status line is outside it — so a warning written
-        there is invisible for exactly as long as it is relevant.
-
-        `pointer-events: none` because it must never eat a tap: `#ar-root` is a
-        full-viewport fixed layer, and a message sitting in it that swallowed
-        input would be the same regression the `:empty` rule above exists for.
-      */
+      /* THE AR HUD WEARS THE DESIGN SYSTEM (adoption plan M6b). Its visual
+         rules are gone: ar-hud.ts, ar-mode.ts, ar-elevation-control.ts,
+         ar-experiment-panel.ts, ar-compass-control.ts and ar-toast.ts put
+         the atoms and the hud-* compositions from design.css beside their
+         ar-* hooks (the hooks stay: the jsdom tests and the e2e name them).
+         What is left here is behaviour and placement, not look:
+         - pointer-events: the readout and the toast may never eat a tap
+           (a pure CSS change once moved ten specs); the toggle opts back in;
+         - the readout's line breaks: the values are one newline-joined string;
+         - the bottom stack's width: 96vw capped at 26rem, the arithmetic of
+           DEC-Y10/Y12 that keeps the 40-character compass readout on one
+           line at 390 px (asserted by the e2e) - the catalog's 340 px is a
+           phone-frame number;
+         - the experiments panel opens ABOVE the gear inside its wrapper,
+           where the catalog's .exp-panel sits at a phone-frame offset, and
+           its [hidden] companion stays until the last author display that
+           could beat hidden is gone (DEC-Y16's hazard);
+         - the AR toast's placement: the catalog's .hud-toast placement is
+           catalog chrome, never vendored (PR #311's band). */
+      .ar-hud {
+        /* IN THE COLUMN (G9, DEC-W5): the stack places the readout, so the
+           composition's own absolute offset - a phone-frame number in the
+           catalog - is switched off here. */
+        position: static;
+        pointer-events: none;
+      }
+      .ar-hud-values {
+        white-space: pre-line;
+      }
+      .ar-hud-toggle {
+        pointer-events: auto;
+      }
+      .ar-bottom {
+        width: 96vw;
+        max-width: 26rem;
+      }
+      .ar-gear-wrap {
+        position: relative;
+      }
+      .ar-experiments {
+        right: 0;
+        bottom: 3rem;
+      }
+      .ar-experiments[hidden] {
+        display: none;
+      }
       .ar-toast {
         position: absolute;
         left: 50%;
         bottom: 12vh;
         transform: translateX(-50%);
-        /* Viewport-relative only. A `min(34rem, 88vw)` cap is what this wants,
-           but the CSS validator in the gate rejects `min()` here — and the rem
-           half only ever binds on a wide desktop viewport, where AR does not
-           run. */
         max-width: 88vw;
-        padding: 0.6rem 0.9rem;
-        border-radius: 0.6rem;
-        background: rgb(17 19 26 / 88%);
-        color: #f2f4f8;
-        font-size: 0.95rem;
-        line-height: 1.35;
-        text-align: center;
-        /* Against a camera feed of unknown brightness, the panel needs an edge
-           of its own or it dissolves into a light-coloured scene. */
-        border: 1px solid rgb(242 244 248 / 25%);
-        box-shadow: 0 2px 12px rgb(0 0 0 / 45%);
         pointer-events: none;
       }
 
@@ -516,378 +559,7 @@
         left: 0.75rem;
         bottom: 0.75rem;
         max-width: 78vw;
-        padding: 0.55rem 0.85rem;
-        border-radius: 0.6rem;
-        background: rgb(17 19 26 / 92%);
-        color: #f2f4f8;
-        font-size: 0.9rem;
-        line-height: 1.35;
-        border: 1px solid rgb(242 244 248 / 22%);
-        box-shadow: 0 2px 12px rgb(0 0 0 / 45%);
         pointer-events: none;
-      }
-
-      /*
-        The measurement readout (AR milestone 4). Top-left, monospace, one
-        number per line: read at arm's length while walking, where a run-on
-        sentence is unreadable and a glance is looking for one figure.
-
-        `pointer-events: none` for the same reason as the toast — `#ar-root` is
-        a full-viewport fixed layer and nothing in it may eat a tap.
-      */
-      .ar-hud {
-        /* IN THE COLUMN, not absolutely positioned (G9, DEC-W5). Its old
-           `top: 2.5rem; left: 0.75rem` moved to `.ar-stack`'s own offsets --
-           NOT to `#ar-root`'s padding, as this comment claimed until a PR
-           review caught it: `#ar-root` is only `position: fixed; inset: 0` and
-           has no padding at all. The inset is still stated once for everything
-           in the stack rather than per-control; it is just stated on the stack.
-
-           The note that used to live here still applies to that padding: it is
-           a plain offset, not `max(0.75rem, env(safe-area-inset-top))`, because
-           the gate's CSS validator rejects `max()` in this file the same way it
-           rejects `min()` on the toast's width. Under a notch it can sit high;
-           that is M5's UI polish, recorded rather than silently accepted. */
-        order: 0;
-        padding: 0.4rem 0.6rem;
-        border-radius: 0.4rem;
-        background: rgb(17 19 26 / 72%);
-        color: #cfe3ff;
-        font-family: ui-monospace, "SF Mono", "Cascadia Mono", monospace;
-        /* ONE STEP DOWN FROM 0.78rem (H7). The readout gained lines faster than
-           the screen gained room, and the session asked for it denser. The SPACE
-           this buys is asserted where it is actually contested -- the 390 px
-           bottom-stack test in Q4 -- rather than by pinning this number, which
-           no mutation could make meaningfully wrong. */
-        font-size: 0.7rem;
-        line-height: 1.45;
-        /* The lines are joined with "\n"; without this they collapse. */
-        white-space: pre-line;
-        pointer-events: none;
-      }
-
-      /*
-        The expand/collapse toggle (DEC-H2), which must OPT BACK IN to input.
-
-        `.ar-hud` above sets `pointer-events: none` so the readout can never eat
-        a tap, and that inherits — so without this rule the button is inert in a
-        real browser while every jsdom test still passes, because jsdom does no
-        hit-testing. A control that is unclickable only on the device it exists
-        for is exactly the failure the co-located CSS is here to prevent.
-      */
-      .ar-hud-toggle {
-        display: block;
-        margin-top: 0.3rem;
-        padding: 0.15rem 0.5rem;
-        border: 1px solid rgb(207 227 255 / 40%);
-        border-radius: 0.3rem;
-        background: rgb(17 19 26 / 72%);
-        color: #cfe3ff;
-        font-family: inherit;
-        font-size: 0.85rem;
-        line-height: 1.2;
-        cursor: pointer;
-        pointer-events: auto;
-      }
-
-      /*
-        The manual elevation nudge (DEC-E1). Bottom-centre, above the toast's
-        band, so it is reachable with a thumb while the phone is held up.
-
-        NOT `pointer-events: none`, unlike the readout and the toast: this one
-        exists to be pressed. It is a direct child of `#ar-root`, which sets no
-        pointer-events of its own, so it needs no opt-in the way the HUD's
-        toggle does.
-      */
-      /*
-        THE BOTTOM STACK (H6, DEC-Y10/Y12). Two rows, and the second is forced
-        by arithmetic rather than chosen.
-
-        Measured at 390 px with the round-four tap targets: elevation is
-        2 x 2rem + 3rem + gaps + padding + border = ~149 px, the gear adds
-        ~40 px, leaving ~180 px for the slider. The live readout is ~40
-        characters and cannot share a row with any of it -- so it gets its own
-        line beneath. Two earlier versions of this row discovered that in CSS
-        instead of in arithmetic, and overflowed.
-
-        ONE CONTAINER, not three absolutely-positioned controls: the compass box
-        changes height at runtime and the readout's text changes length with the
-        phase, and two hard-coded offsets that must not collide is exactly how
-        the earlier toast/slider overlap happened (PR #311 review, finding 4).
-      */
-      .ar-bottom {
-        position: absolute;
-        bottom: 4vh;
-        left: 50%;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 0.35rem;
-        /* A WIDTH, NOT ONLY A CAP -- and this is the r541 field report's
-           "nutzt etwa die halbe Breite ... bricht auf vier Zeilen um".
-           `max-width` alone leaves this column shrink-to-fit, so it sized to
-           its widest child (the ~189 px control row) and the compass box
-           beneath inherited that width. The 40-character readout then wrapped
-           to THREE lines inside ~195 px on a 390 px phone while every
-           assertion passed: the layout test checked that nothing OVERFLOWED,
-           which a box that is too NARROW satisfies for free.
-
-           Capped at 26rem so a desktop split does not get a 1200 px bar. Below
-           ~360 px of viewport the readout wraps again, which is stated rather
-           than fixed -- the target device is 390 px, and a font-size rule for
-           the last 30 px would be tuning against a phone nobody has reported
-           from. */
-        width: 96vw;
-        /* `width` + `max-width` rather than `min(96vw, 26rem)`: the stylesheet
-           linter's csstree validator rejects `min()` here, as it rejected
-           `color-mix()` in this file before. The pair means exactly the same
-           thing and is valid everywhere. */
-        max-width: 26rem;
-        transform: translateX(-50%);
-      }
-
-      .ar-bottom-row {
-        display: flex;
-        align-items: center;
-        gap: 0.4rem;
-      }
-
-      /*
-        The experiment gear (DEC-Y10). Square, at the elevation buttons' size so
-        the row reads as one control strip rather than three.
-      */
-      .ar-gear-wrap {
-        position: relative;
-      }
-
-      .ar-gear {
-        width: 2rem;
-        height: 2rem;
-        border: 1px solid rgb(242 244 248 / 35%);
-        border-radius: 0.4rem;
-        background: rgb(36 40 52 / 92%);
-        color: #f2f4f8;
-        font-size: 1.05rem;
-        line-height: 1;
-        cursor: pointer;
-      }
-
-      /*
-        The panel itself: ABOVE the gear, not below it, because the gear sits at
-        the bottom of the screen and a panel opening downward would be off it.
-        Absolutely positioned so opening it cannot reflow the row underneath --
-        a row that changed height on open would move the slider out from under
-        the thumb that just pressed the gear.
-      */
-      .ar-experiments {
-        position: absolute;
-        right: 0;
-        bottom: 2.4rem;
-        display: flex;
-        flex-direction: column;
-        gap: 0.3rem;
-        min-width: 12rem;
-        padding: 0.5rem 0.6rem;
-        border: 1px solid rgb(242 244 248 / 25%);
-        border-radius: 0.6rem;
-        background: rgb(17 19 26 / 96%);
-        box-shadow: 0 2px 12px rgb(0 0 0 / 45%);
-      }
-
-      /*
-        THE PANEL ACTUALLY CLOSES (r541 + r543 field reports, DEC-Y16).
-
-        `ar-experiment-panel.ts` opens and closes by writing `body.hidden`,
-        which works through the USER-AGENT stylesheet rule `[hidden] { display:
-        none }`. The `display: flex` above is an AUTHOR rule, and author rules
-        beat user-agent rules whatever their specificity -- so `hidden` did
-        nothing at all. The panel was permanently visible and the gear toggled
-        a flag with no visual effect, which is precisely what a dead button
-        looks like from the outside. Reported twice, two branches apart, and
-        diagnosed twice as an input problem before anyone looked at the
-        cascade.
-
-        THIS IS THE GENERAL HAZARD, not a quirk of this panel: any author
-        `display` on an element that also uses the `hidden` attribute silently
-        disables `hidden`. Setting `display` and using `hidden` on the same
-        element always needs this companion rule.
-      */
-      .ar-experiments[hidden] {
-        display: none;
-      }
-
-      .ar-experiments-row {
-        display: flex;
-        align-items: center;
-        gap: 0.45rem;
-        color: #e6e8ef;
-        font-size: 0.78rem;
-        white-space: nowrap;
-      }
-
-      /* A CLASS, not `.ar-experiments-row select`. The descendant form outranks
-         the bare `select` rule further down this file, which stylelint's
-         `no-descending-specificity` rejects — and rightly: whichever of the two
-         wins would depend on source order rather than on intent. */
-      .ar-experiments-select {
-        font: inherit;
-        color: #f2f4f8;
-        background: rgb(36 40 52 / 92%);
-        border: 1px solid rgb(242 244 248 / 35%);
-        border-radius: 0.25rem;
-      }
-
-      .ar-elevation {
-        /* IN THE ROW NOW, not absolutely positioned (H6). Its old
-           `bottom: 4vh; left: 50%; translateX(-50%)` moved to `.ar-bottom`, so
-           the offset is stated once for the whole stack rather than per
-           control -- and the slider beside it can no longer overlap it, which
-           two hard-coded offsets would eventually have done. */
-        display: flex;
-        gap: 0.4rem;
-        align-items: center;
-        padding: 0.35rem 0.5rem;
-        border: 1px solid rgb(242 244 248 / 25%);
-        border-radius: 0.6rem;
-        background: rgb(17 19 26 / 88%);
-        box-shadow: 0 2px 12px rgb(0 0 0 / 45%);
-      }
-
-      .ar-elevation-button {
-        /* 2rem, DOWN FROM 2.5rem, and this deliberately overturns a recorded
-           floor (DEC-Y7, owner decision 2026-08-20). The old comment called
-           2.5rem "the smallest reliable touch target ... against a camera feed
-           of unknown brightness", and that judgement was not wrong -- it was
-           made before the compass slider had to share the row.
-
-           The arithmetic that forced it: at 390 px, 2 x 2.5rem + 4.5rem value +
-           gaps + padding is ~189 px, and the compass box alone already exceeds
-           its own max-width. Something had to give, and the VALUE BOX kept its
-           size (3rem) because a readout that cannot be read at arm's length is
-           worse than a button that needs a second try. 32 px still clears
-           WCAG 2.2 SC 2.5.8's 24 px floor with room. */
-        width: 2rem;
-        height: 2rem;
-        border: 1px solid rgb(242 244 248 / 35%);
-        border-radius: 0.4rem;
-        background: rgb(36 40 52 / 92%);
-        color: #f2f4f8;
-        font-size: 1.35rem;
-        line-height: 1;
-        cursor: pointer;
-      }
-
-      /*
-        The compass-influence slider (DEC-E2). Above the elevation nudge so the
-        two stack rather than overlap, and wide enough that 0-1 is draggable
-        with a thumb rather than being a 20-pixel target.
-      */
-      .ar-compass {
-        /* AT THE BOTTOM SINCE H6, beside the elevation control -- "diesen
-           Kompass-Slider würde ich eigentlich gerne nach unten packen neben die
-           Plus-Minus-UI". That partially reverses DEC-W5, which put it in the
-           TOP stack; G9's complaint was that it sat in the MIDDLE of the view,
-           and the bottom satisfies that as well as the top did. The readout it
-           carries now wraps onto its own line -- see `.ar-compass-value`.
-
-           The previous note, kept because its reasoning still constrains this:
-           it was `bottom: 20vh`,
-           centred and up to 88vw wide, i.e. a bar across the near content --
-           "currently it's in the middle of the screen and occludes basically
-           the AR 3D content".
-
-           THE OLD REASON FOR 20vh IS RETIRED, NOT IGNORED: that number avoided
-           `.ar-toast`'s 12vh band, because the far-travel toast fires at 2 km,
-           during exactly the long walk this slider is measured on (PR #311
-           review, finding 4). Leaving the bottom of the screen entirely means
-           there is nothing left to collide with down there -- and the column
-           above means it cannot collide with the readout either. */
-        display: flex;
-        /* FULL WIDTH OF THE COLUMN, not shrink-to-fit. `.ar-bottom` centres its
-           children, which is right for the control row and wrong for this box.
-
-           NOT WHAT FIXES THE WRAPPING -- the width on `.ar-bottom` does that on
-           its own, and a mutation run confirmed this rule can be deleted with
-           the wrap assertion still passing. What it fixes is a SECOND thing:
-           shrink-to-fit sizes this box to its text, and the readout text
-           changes length as the fusion phase changes, so the bar would visibly
-           grow and shrink under a stationary slider. Stretch pins it to the
-           column.
-
-           MEASURED BOTH WAYS: deleting this rule collapses the box from 374 px
-           to 280 px once the readout is short, and leaves it unchanged while
-           the readout is long -- which is why the test measures the SHORT
-           string too. */
-        align-self: stretch;
-        gap: 0.4rem;
-        flex-wrap: wrap;
-        justify-content: center;
-        align-items: center;
-        padding: 0.35rem 0.5rem;
-        border: 1px solid rgb(242 244 248 / 25%);
-        border-radius: 0.6rem;
-        background: rgb(17 19 26 / 88%);
-        box-shadow: 0 2px 12px rgb(0 0 0 / 45%);
-      }
-
-      .ar-compass-slider {
-        /* FIXED, not 55vw. In the bottom row the slider shares its line with the
-           elevation control (~149 px) and the gear (~40 px); a viewport-relative
-           width would overflow a 390 px phone by ~60 px, which is how the two
-           previous versions of this row broke. */
-        width: 9rem;
-        /* AND IT MAY NOT SHRINK (DEC-J8). `width` on a flex item is `flex: 0 1
-           auto`, so once the hint became `flex: 1 1 auto` beside it, an
-           over-wide row would resolve by shrinking BOTH — and a slider narrower
-           than 9 rem is exactly what DEC-J8 rejected, because 0–1 has to be
-           draggable with a thumb outdoors rather than a fingernail.
-
-           Caught in cold review of the plan: all three assertions originally
-           proposed for this row are satisfied by a 100 px slider, so nothing
-           would have reported it. The e2e now pins the rendered width too. */
-        flex-shrink: 0;
-      }
-
-      .ar-compass-value {
-        /* FULL WIDTH ON ITS OWN LINE (DEC-Y12). The readout now reads
-           `compass 0.80 target — now 1.00 cold start`, ~40 characters, which
-           cannot share a row with a slider at any font size worth reading
-           outdoors. `flex-basis: 100%` makes `.ar-compass`'s wrap put it on the
-           second line rather than squeezing the slider. */
-        flex-basis: 100%;
-        text-align: center;
-        color: #f2f4f8;
-        font-family: ui-monospace, "SF Mono", "Cascadia Mono", monospace;
-        font-size: 0.9rem;
-      }
-
-      /* The two states a user would otherwise read as a broken control: not
-         accepting input yet, and taking ~15-30 fixes to express a change.
-
-         BESIDE THE SLIDER SINCE J5 (DEC-J8), not on a line of its own: "den
-         könnte man einfach rechts neben den Slider packen, sodass das dann nur
-         noch zwei Zeilen sind". It was `width: 100%`, which forced a third row.
-
-         `flex: 1 1 auto; min-width: 0` takes the rest of the slider's row and
-         lets the text shrink rather than push the row wider. The slider carries
-         `flex-shrink: 0` so this cannot buy its width — see that rule. */
-      .ar-compass-hint {
-        flex: 1 1 auto;
-        min-width: 0;
-        color: #9aa3b8;
-        font-size: 0.72rem;
-        text-align: left;
-      }
-
-      .ar-elevation-value {
-        /* 3rem, down from 4.5 (DEC-Y7). The narrowest that still fits a signed
-           metre value with one decimal at this font size -- the readout is the
-           part of this control that must stay legible outdoors. */
-        min-width: 3rem;
-        color: #f2f4f8;
-        font-family: ui-monospace, "SF Mono", "Cascadia Mono", monospace;
-        font-size: 0.95rem;
-        text-align: center;
       }
 
       /* Floats over the split rather than taking a column (DEC-17). */
@@ -900,10 +572,6 @@
         max-width: 42vw;
         overflow-y: auto;
         z-index: 1000;
-        padding: 0.6rem 0.7rem;
-        background: #171b26f2;
-        border: 1px solid #2a2f3d;
-        border-radius: 6px;
         font-size: 0.78rem;
       }
       #details[hidden] {
@@ -917,10 +585,6 @@
         left: 0.5rem;
         bottom: 0.5rem;
         z-index: 1000;
-        padding: 0.5rem 0.7rem;
-        background: #171b26f2;
-        border: 1px solid #2a2f3d;
-        border-radius: 6px;
         font-size: 0.78rem;
         line-height: 1.5;
       }
@@ -969,10 +633,6 @@
            `min()` is not used because the gate's CSS validator rejects it. */
         width: 13rem;
         max-width: calc(100% - 4rem);
-        padding: 0.5rem 0.7rem;
-        background: #171b26f2;
-        border: 1px solid #2a2f3d;
-        border-radius: 6px;
         font-size: 0.78rem;
       }
       #geo-event-picker[hidden] {
@@ -1179,6 +839,9 @@
         accent-color: #7cc4ff;
         margin: 0 0.15rem 0 0;
         vertical-align: -0.1em;
+        /* PIN (M6a): the reset's font: inherit gave the boxes a line-height
+           that made the header 2px taller */
+        line-height: normal;
       }
       select:focus-visible,
       input[type="checkbox"]:focus-visible {
@@ -1285,11 +948,6 @@
         cursor: progress;
       }
 
-      .hint {
-        color: #6f7995;
-        font-size: 0.78rem;
-      }
-
       /* COLLAPSED (DEC-R2-4, redrawn by DEC-R6b-5): the title, the CATEGORY
          picker, the legend and the whole affordance block stay.
 
@@ -1344,33 +1002,9 @@
         margin-bottom: 0.35rem;
       }
 
-      .ar-button {
-        width: 2rem;
-        height: 2rem;
-        padding: 0;
-        border: 0;
-        background: #fff;
-        color: #1a1c22;
-        font-size: 0.78rem;
-        font-weight: 700;
-        line-height: 2rem;
-        text-align: center;
-        cursor: pointer;
-      }
-
-      .ar-button[disabled] {
-        /* VISIBLE BUT DIMMED, never hidden: "supported, no GPS fix yet" is
-           temporary and self-resolving, so the control has to be discoverable
-           BEFORE it becomes usable -- otherwise it appears without warning
-           under the user's thumb. That distinction is the reason
-           `arButtonState` separates hidden from disabled at all. */
-        opacity: 0.55;
-        cursor: default;
-      }
-
       .ar-button[data-ar-active="true"] {
-        background: #1a5cff;
-        color: #fff;
+        background: var(--accent);
+        color: var(--ink-on-accent);
       }
 
       /* The locate button (DEC-R2-3): a SQUARE icon, bottom-right, so it matches
@@ -1424,53 +1058,6 @@
       .geo-winner {
         background: none;
         border: none;
-      }
-      .locate-button {
-        width: 2rem;
-        height: 2rem;
-        display: grid;
-        place-items: center;
-        padding: 0;
-        border: none;
-        background: #171b26;
-        color: #e6e8ef;
-        cursor: pointer;
-        border-radius: 3px;
-      }
-      .locate-button:disabled {
-        cursor: progress;
-      }
-      /* THE IN-PROGRESS STATE, which is the one the icon-only button would
-         otherwise have lost — and the one CLAUDE.md's async-feedback rule
-         actually mandates. A GPS fix routinely takes seconds. */
-      .locate-button[data-state="locating"] {
-        color: #7cc4ff;
-        animation: locate-pulse 1s ease-in-out infinite;
-      }
-      /* Each failure gets its own colour as well as its own label, because the
-         three have three different remedies. */
-      .locate-button[data-state="denied"],
-      .locate-button[data-state="unavailable"] {
-        color: #ff8fa3;
-      }
-      .locate-button[data-state="timeout"] {
-        color: #ffd479;
-      }
-      .locate-button[data-state="located"] {
-        color: #7ce0a3;
-      }
-
-      @keyframes locate-pulse {
-        50% {
-          opacity: 0.35;
-        }
-      }
-      /* Respect a reduced-motion preference: the colour change still carries the
-         state, so dropping the animation loses nothing. */
-      @media (prefers-reduced-motion: reduce) {
-        .locate-button[data-state="locating"] {
-          animation: none;
-        }
       }
 
       /* The legend replaces the scale sentence: same claim, read at a glance. */
@@ -1600,14 +1187,7 @@
         gap: 0.6rem;
         align-items: center;
         max-width: 21rem;
-        padding: 0.5rem 0.75rem;
         transform: translateX(-50%);
-        border: 1px solid rgb(242 244 248 / 25%);
-        border-radius: 0.6rem;
-        background: rgb(17 19 26 / 94%);
-        box-shadow: 0 2px 12px rgb(0 0 0 / 45%);
-        color: #f2f4f8;
-        font-size: 0.9rem;
         /* THE BOX MUST NOT EAT A TAP MEANT FOR THE MAP (PR review of P3,
            finding 4). Bottom-centre of the VIEWPORT lands on the map's own
            bottom-right controls on a desktop split -- measured at 1280 px, the
@@ -1619,43 +1199,20 @@
         pointer-events: none;
       }
 
+      /* THE 2D CHROME'S LIGHT PASS (adoption plan M6c, DEC-L2-14): the
+         toast, the locate button, this offer card, the AR entry button and
+         the three hidden-toggled panels wear the atoms; their look comes
+         from design.css and only placement and behaviour stay here. The
+         header (DEC-L2-12), the layer toggles and the legend keep their own
+         rules on purpose. */
+      .ar-offer-button,
+      .ar-offer-dismiss {
+        /* the card is pointer-events: none so it cannot swallow a map tap;
+           the two controls opt back in */
+        pointer-events: auto;
+      }
       .ar-offer[hidden] {
         display: none;
-      }
-
-      .ar-offer-button {
-        /* OPTS BACK IN. `.ar-offer` above is `pointer-events: none` so it
-           cannot swallow a tap on the map underneath, and that inherits -- so
-           without this the button is inert in a real browser while every jsdom
-           test still passes, which is the trap `.ar-hud-toggle` documents. */
-        pointer-events: auto;
-        /* 2.75 rem tall, the same floor the header caret's tap target uses --
-           this is the control the whole interaction funnels into, so it is the
-           last place to be stingy about target size. */
-        min-height: 2.75rem;
-        padding: 0 0.9rem;
-        border: 0;
-        border-radius: 0.4rem;
-        background: #1a5cff;
-        color: #fff;
-        font: inherit;
-        font-weight: 700;
-        cursor: pointer;
-      }
-
-      .ar-offer-dismiss {
-        /* Opts back in, for the same reason as the button above. */
-        pointer-events: auto;
-        min-width: 2.75rem;
-        min-height: 2.75rem;
-        padding: 0;
-        border: 1px solid rgb(242 244 248 / 25%);
-        border-radius: 0.4rem;
-        background: none;
-        color: #cfd6e4;
-        font-size: 1.1rem;
-        line-height: 1;
-        cursor: pointer;
       }
 
       /* THE ATTRIBUTION LINE (G5, DEC-W1). One thin line by default: a short
@@ -1979,7 +1536,14 @@
            deleted -- that wording is the only thing distinguishing the four
            states `arButtonState` models, and on touch a `title` never
            shows, so the accessible name is what carries it. -->
-      <button type="button" id="enter-ar" class="ar-button" hidden>AR</button>
+      <button
+        type="button"
+        id="enter-ar"
+        class="ar-button btn btn--icon"
+        hidden
+      >
+        AR
+      </button>
       <!--
         THE GROUND MODE (W11, DEC-R3-3). NOT a layer — it does not add or remove
         anything from the scene, it chooses which surface is drawn as the ground:
@@ -2090,19 +1654,23 @@
            activation the press already used. See `ar-entry.ts`. -->
       <div
         id="ar-offer"
-        class="ar-offer"
+        class="ar-offer plate"
         role="status"
         aria-live="polite"
         hidden
       >
         <span class="ar-offer-text">Found you.</span>
-        <button type="button" id="ar-offer-enter" class="ar-offer-button">
+        <button
+          type="button"
+          id="ar-offer-enter"
+          class="ar-offer-button btn btn--accent"
+        >
           Enter AR now
         </button>
         <button
           type="button"
           id="ar-offer-dismiss"
-          class="ar-offer-dismiss"
+          class="ar-offer-dismiss btn btn--icon btn--glyph"
           aria-label="Dismiss the AR prompt"
         >
           ×
@@ -2117,13 +1685,13 @@
            two views to ~450 px each on a laptop, which is the width that made
            the 3D pane useless on a phone. -->
       <div id="sheet-handle" aria-hidden="true"></div>
-      <aside id="details" hidden></aside>
+      <aside id="details" class="plate prose" hidden></aside>
       <!-- The keyboard shortcuts, listed by the registry that owns them (§1).
            An undocumented hotkey is a feature only its author has, so "?"
            toggles this and it is populated from `hotkeys.bindings()` rather
            than hand-written — a list that can disagree with the bindings is
            worse than none. -->
-      <aside id="hotkey-help" hidden></aside>
+      <aside id="hotkey-help" class="plate prose" hidden></aside>
       <!-- The geo-event time picker (G1, DEC-G1). Empty here and filled by
            `geo-event-picker.ts`: the two inputs, the two buttons and the error
            line are one interaction, and splitting them between markup and
@@ -2133,7 +1701,7 @@
            above it. `showModal()` traps focus and dims the page, which is right
            for a decision that blocks and wrong for this one — the map
            underneath is what you consult while choosing a time. -->
-      <aside id="geo-event-picker" hidden></aside>
+      <aside id="geo-event-picker" class="plate" hidden></aside>
     </main>
     <script type="module" src="/src/main.ts"></script>
   </body>

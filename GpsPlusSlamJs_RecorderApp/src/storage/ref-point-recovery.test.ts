@@ -4,8 +4,7 @@
  * Indexing module: extracts full RefPointDefinition objects from recording
  * ZIPs, grouped per scenario with observations merged by H3 cell ID
  * (`indexRefPointDefinitionsFromFolder` — 2026-07-05 folder-import plan).
- * Unlike ref-point-importer (which returns simplified ImportedRefPoint for
- * display), this module preserves complete observation data (AR poses, GPS,
+ * This module preserves complete observation data (AR poses, GPS,
  * timestamps) needed for 3D display and OPFS restoration after browser data
  * loss.
  *

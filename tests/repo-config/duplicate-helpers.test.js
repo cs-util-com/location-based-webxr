@@ -54,7 +54,7 @@
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -133,6 +133,12 @@ const CANONICAL = [
     why: 'six unnamed copies of `((deg % 360) + 360) % 360` in one package, and the early return that separates the correct form from them is a CONTRACT — without it `360 − ε` snaps to 0, a full turn that never happened (core-library fast-check counterexample −2.842e−14). A guard entry cannot see the unnamed form, but it can stop the seventh NAMED one',
   },
   {
+    name: 'bearingDeltaDeg',
+    rule: 'shared',
+    home: 'GpsPlusSlamJs_AppFramework/src/utils/bearing-degrees.ts',
+    why: 'the recorder and the framework each had an unnamed signed-delta expression, and they disagreed at exactly 180° - two conventions for one quantity, one of them on the bare double-mod the sibling normalizer exists to replace',
+  },
+  {
     name: 'median',
     rule: 'perPackage',
     why: 'the unqualified name says nothing about the even-length rule, so two of them in one package is two rules nobody chose between - which is what GpsPlusSlamJs_Osm had',
@@ -179,7 +185,13 @@ function sourceFiles() {
     .split('\n')
     .filter(Boolean)
     .filter((file) => !file.endsWith('.d.ts'))
-    .filter((file) => !/\.(test|spec)\.ts$/.test(file));
+    .filter((file) => !/\.(test|spec)\.ts$/.test(file))
+    // The mirror of "an untracked file is invisible": a tracked file DELETED
+    // but not yet staged is still listed, and reading it threw ENOENT, so the
+    // gate crashed on every deletion until the deletion was staged (found
+    // 2026-09-04 deleting `ref-point-importer.ts`). A missing file defines
+    // nothing; skip it. CI is unaffected — it only sees committed trees.
+    .filter((file) => existsSync(resolve(repoRoot, file)));
 }
 
 /**

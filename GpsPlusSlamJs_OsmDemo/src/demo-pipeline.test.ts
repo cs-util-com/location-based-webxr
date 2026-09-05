@@ -13,11 +13,20 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { cellToBoundary, cellToParent, gridDisk, latLngToCell } from "h3-js";
+import {
+  cellToBoundary,
+  cellToLatLng,
+  cellToParent,
+  cellsToMultiPolygon,
+  gridDisk,
+  gridDistance,
+  latLngToCell,
+} from "h3-js";
 import {
   AFFORDANCE_RES,
   CANDIDATES_PER_BATCH,
   EVENT_TILE_RES,
+  MIN_PICK_SEPARATION_STEPS,
   SCORE_CHUNK_RES,
   SCORE_DISK_MAX_RADIUS,
   SCORE_DISK_RADIUS,
@@ -574,30 +583,223 @@ describe("DemoPipeline.geoEvent", () => {
     expect(stats.tilesFetched).toBe(0);
   });
 
-  it("does not creep outward when the button is pressed repeatedly", async () => {
-    // The hypothesis this test was written to check, and it is worth keeping
-    // even though it turned out NOT to be the shape of the defect. Under the
-    // old centre-only gate, each search downloaded the ground that would admit
-    // the next ring of neighbours, which would in turn reach past themselves —
-    // so "press Find twice and it downloads twice, further each time" was a
-    // plausible reading of the reported slowness. It converged after one round
-    // instead, so the cost recurred per LOCATION rather than per press.
+  /** The demo's opening position (`PICKER_PLACES[0]`), where the centre tile's
+   * own reach overhangs into fetch tiles the refresh did not load — so the
+   * first search downloads, which is the case Cologne never exercises. */
+  const MANHATTAN = { lat: 40.7677, lng: -73.9807 };
+
+  it.each([
+    ["Cologne, where the refresh already loaded everything", AT],
+    ["Manhattan, where the first search itself downloads", MANHATTAN],
+  ])(
+    "does not creep outward when the button is pressed repeatedly — %s",
+    async (_name, at) => {
+      // The hypothesis this test was written to check, and it is worth keeping
+      // even though it turned out NOT to be the shape of the defect. Under the
+      // old centre-only gate, each search downloaded the ground that would admit
+      // the next ring of neighbours, which would in turn reach past themselves —
+      // so "press Find twice and it downloads twice, further each time" was a
+      // plausible reading of the reported slowness. It converged after one round
+      // instead, so the cost recurred per LOCATION rather than per press.
+      //
+      // Kept as a guard because the reach gate is what makes it true by
+      // construction now: a neighbour is admitted only when its whole reach is
+      // already held, so admitting one can never require a download, and a second
+      // search from the same place in the same quarter-hour has nothing to learn.
+      //
+      // THE SECOND POSITION IS WHAT MAKES THE GUARD ABLE TO FAIL (plan review,
+      // 2026-09-04). At Cologne the refresh loads the one fetch tile everything
+      // sits in, so no search ever downloads and both presses search one tile.
+      // At Manhattan the centre's reach overhangs into an unloaded fetch tile:
+      // the first press downloads it, and — until DEC-T13 — the neighbour gate
+      // had already been evaluated BEFORE that download, so the second press
+      // found the neighbours' reach complete and searched 4 tiles where the
+      // first searched 2. That is the "second press shows more quests" the
+      // owner reported as non-determinism; the fix admits neighbours after the
+      // centre's download, so both presses see the same tiles.
+      const pipeline = new DemoPipeline({ source: wideSource(), table: TABLE });
+      await pipeline.update(at, "walkable", undefined, SCORE_DISK_MAX_RADIUS);
+
+      const first = await pipeline.geoEvent(at, "walkable", 1_700_000_000_000);
+      const second = await pipeline.geoEvent(at, "walkable", 1_700_000_000_000);
+
+      expect(second.stats.tilesFetched).toBe(0);
+      // And the second search is not quietly poorer for it: the same tiles are
+      // searched both times, which is what "converged" has to mean.
+      expect(second.event.tilesSearched).toBe(first.event.tilesSearched);
+    },
+  );
+
+  it("reports one pick for a plateau two tiles climb onto from two sides (owner report 2026-09-04)", async () => {
+    // THE FIELD REPORT, REBUILT. "Show Quests" showed one marker; a second
+    // press showed a second marker a few metres from it, both at heat 116.
+    // Markers are replaced wholesale on every press, so that is one result
+    // with two picks: candidates are seeded in each tile's BOUNDING BOX
+    // (which overlaps the neighbours), two tiles' climbs entered one warm
+    // plateau from two sides, and `climbToLocalMaximum` stops on flat ground
+    // wherever it entered — adjacent cells, same neighbourhood heat, and
+    // `newGeoEventFor` appended both.
     //
-    // Kept as a guard because the reach gate is what makes it true by
-    // construction now: a neighbour is admitted only when its whole reach is
-    // already held, so admitting one can never require a download, and a second
-    // search from the same place in the same quarter-hour has nothing to learn.
-    const pipeline = new DemoPipeline({ source: wideSource(), table: TABLE });
+    // The fixture is DESIGNED from the seed, not hoped for: the seeded
+    // candidates are a pure function of (tile bbox, seed, quarter-hour), so
+    // the closest cross-tile pair among the seven tiles' batch-0 candidates
+    // is computed here (55 m apart at Cologne, 9 res-13 steps — a warm patch
+    // of radius ~3 cells at their midpoint is within both climbs' reach), a
+    // hotter polygon is laid over that midpoint, and the neighbours' fetch
+    // tiles are loaded beforehand so both tiles are searched. The
+    // precondition is asserted, so a changed seed or time fails loudly
+    // instead of passing vacuously.
+    const centre = latLngToCell(AT.lat, AT.lng, EVENT_TILE_RES);
+    const tiles = gridDisk(centre, 1);
+    const eventTime = nextEventTime(1_700_000_000_000);
+    const candidatesOf = (tile: string) => {
+      const [south, west, north, east] = boundsOf(tile);
+      return [
+        ...eventCandidates({
+          bbox: { south, west, north, east },
+          globalSeed: GEO_EVENT_SEED,
+          eventTime,
+          count: CANDIDATES_PER_BATCH,
+        }),
+      ].map((c) => ({ ...c, tile }));
+    };
+    const all = tiles.flatMap(candidatesOf);
+    let closest:
+      | { a: (typeof all)[number]; b: (typeof all)[number]; steps: number }
+      | undefined;
+    for (const a of all) {
+      for (const b of all) {
+        if (a.tile >= b.tile) continue;
+        const steps = gridDistance(
+          latLngToCell(a.lat, a.lng, AFFORDANCE_RES),
+          latLngToCell(b.lat, b.lng, AFFORDANCE_RES),
+        );
+        if (closest === undefined || steps < closest.steps) {
+          closest = { a, b, steps };
+        }
+      }
+    }
+    if (closest === undefined) throw new Error("no candidate pair");
+    // Both climbs must reach the patch: 5 steps each, so at most 10 apart.
+    expect(
+      closest.steps,
+      "precondition: a cross-tile pair within reach",
+    ).toBeLessThanOrEqual(2 * CLIMB_STEPS);
+    const midCell = latLngToCell(
+      (closest.a.lat + closest.b.lat) / 2,
+      (closest.a.lng + closest.b.lng) / 2,
+      AFFORDANCE_RES,
+    );
+    // Both climbs must be able to REACH the patch: a cell within `CLIMB_STEPS`
+    // of its rim has a rising neighbourhood sum to follow (the patch below
+    // is rings 0..3, so ring 4 already sees hot neighbours). Asserted, so a
+    // changed seed cannot turn this into a test of two far-apart picks.
+    for (const candidate of [closest.a, closest.b]) {
+      const start = latLngToCell(candidate.lat, candidate.lng, AFFORDANCE_RES);
+      expect(
+        gridDistance(midCell, start),
+        "precondition: within the climb's reach",
+      ).toBeLessThanOrEqual(CLIMB_STEPS);
+    }
+    // The hot patch is the union polygon of rings 0..2 of the midpoint cell
+    // (19 hexagons). The scorer also counts the ring-3 cells the polygon
+    // touches, so the hot ground is rings 0..3 and the plateau every climb
+    // settles on — the cells whose whole neighbourhood is hot — is rings
+    // 0..2: two picks on it are at most 4 steps apart. (A square drawn in
+    // metres, and the union of rings 0..3, both covered more than intended
+    // and put the picks 6 apart.)
+    const [outer] = cellsToMultiPolygon(gridDisk(midCell, 2), false)[0]!;
+    const patchSource = (): OsmDataSource => ({
+      ...wideSource(),
+      fetchTile: async (tile, signal) => {
+        const result = await wideSource().fetchTile(tile, signal);
+        return {
+          ...result,
+          features: [
+            ...result.features,
+            {
+              type: "way" as const,
+              id: 2,
+              geometry: [...outer!, outer![0]!].map(([lat, lng]) => ({
+                lat,
+                lng,
+              })),
+              tags: { leisure: "playground" },
+            },
+          ],
+        };
+      },
+    });
+    const table = parseRuleTable(
+      [
+        "id,Key,Value,walkable",
+        "leisure_park,leisure,park,3",
+        "leisure_playground,leisure,playground,6",
+      ].join("\n"),
+      { source: "test", fetchedAt: 0 },
+    );
+    const pipeline = new DemoPipeline({ source: patchSource(), table });
+    // Load the FETCH tiles around (a res-7 ring, ~2.8 km each), so every
+    // neighbour's whole reach is held and the reach gate admits it rather
+    // than skipping it as unloaded. One cheap update per fetch tile: the
+    // working-set radius only decides how much gets SCORED here.
+    for (const fetchTile of gridDisk(toFetchTile(centre), 1)) {
+      const [lat, lng] = cellToLatLng(fetchTile);
+      await pipeline.update(
+        { lat, lng },
+        "walkable",
+        undefined,
+        SCORE_DISK_RADIUS,
+      );
+    }
     await pipeline.update(AT, "walkable", undefined, SCORE_DISK_MAX_RADIUS);
 
-    const first = await pipeline.geoEvent(AT, "walkable", 1_700_000_000_000);
-    const second = await pipeline.geoEvent(AT, "walkable", 1_700_000_000_000);
+    const { event } = await pipeline.geoEvent(
+      AT,
+      "walkable",
+      1_700_000_000_000,
+    );
 
-    expect(second.stats.tilesFetched).toBe(0);
-    // And the second search is not quietly poorer for it: the same tiles are
-    // searched both times, which is what "converged" has to mean.
-    expect(second.event.tilesSearched).toBe(first.event.tilesSearched);
-  });
+    // The plateau was found, and found ONCE. Its neighbourhood heat beats
+    // the park's 3 × 7 = 21 everywhere else; before the fix this held TWO
+    // picks on the patch — the owner's second marker — and the pair below
+    // named them.
+    // Every tile around was searched — the two candidates' tiles among them.
+    // Without this the test could pass with one tile searched, the dedup
+    // dead in production, and nothing red (milestone review, 2026-09-05:
+    // the lesson about guards whose fixture cannot fire, applied to the new
+    // guard).
+    expect(event.tilesSearched).toBe(tiles.length);
+    const onPatch = event.picks.filter((pick) => pick.heat > 21);
+    const spread = onPatch.map((pick) => [
+      pick.cell,
+      pick.heat,
+      gridDistance(midCell, pick.cell),
+    ]);
+    expect(
+      onPatch,
+      `on the patch (cell, heat, ring from the centre): ${JSON.stringify(spread)}`,
+    ).toHaveLength(1);
+    // And the survivor sits on the plateau proper (rings 0..2), i.e. a climb
+    // that entered the patch settled there rather than a candidate that was
+    // seeded on it by chance.
+    expect(gridDistance(midCell, onPatch[0]!.cell)).toBeLessThanOrEqual(2);
+    // No two picks within the separation the demo calls one spot.
+    const same: string[] = [];
+    for (const a of event.picks) {
+      for (const b of event.picks) {
+        if (
+          a.cell < b.cell &&
+          gridDistance(a.cell, b.cell) <= MIN_PICK_SEPARATION_STEPS
+        ) {
+          same.push(
+            `${a.cell} ~ ${b.cell} (${gridDistance(a.cell, b.cell)} steps)`,
+          );
+        }
+      }
+    }
+    expect(same).toEqual([]);
+  }, 60_000);
 
   it("downloads ONLY for the tile the user is standing in", async () => {
     // WHY THIS TEST MATTERS, and it is the rule the code already claims.
@@ -674,10 +876,28 @@ describe("DemoPipeline.geoEvent", () => {
     // search's number for the small one.
     //
     // Big: enough ground loaded that several neighbours qualify — five tiles,
-    // ~290 chunks. Small: a position 150 km away with nothing loaded around it,
-    // so no neighbour qualifies and only the centre's reach is pinned — one
-    // tile, ~127 chunks. Still far enough apart that this cannot pass by accident.
-    const pipeline = new DemoPipeline({ source: wideSource(), table: TABLE });
+    // ~290 chunks. Small: a position 150 km away whose tiles the source
+    // REFUSES, so nothing loads there, no neighbour qualifies and only the
+    // centre's reach is pinned — one tile, ~127 chunks. Still far enough
+    // apart that this cannot pass by accident.
+    //
+    // The refusal is what keeps "small" small since DEC-T13 (2026-09-05):
+    // neighbours are admitted AFTER the centre's own download, and with a
+    // source that serves every tile the centre's fetch alone completes the
+    // neighbours' reach — the far search then admits four neighbours on its
+    // first press, exactly as designed, and the fixture's "nothing loaded
+    // around it" stops being true the moment the search runs.
+    const nearOnly: OsmDataSource = {
+      ...wideSource(),
+      fetchTile: (tile, signal) => {
+        const [lat, lng] = cellToLatLng(tile);
+        if (Math.abs(lat - AT.lat) > 0.5 || Math.abs(lng - AT.lng) > 0.5) {
+          return Promise.reject(new Error(`fixture: no data for ${tile}`));
+        }
+        return wideSource().fetchTile(tile, signal);
+      },
+    };
+    const pipeline = new DemoPipeline({ source: nearOnly, table: TABLE });
     for (const offset of [0, 0.01, -0.01, 0.02, -0.02]) {
       await pipeline.update(
         { lat: AT.lat + offset, lng: AT.lng + offset },

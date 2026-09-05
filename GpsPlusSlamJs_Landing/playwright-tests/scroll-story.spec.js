@@ -172,7 +172,24 @@ test("all eight demo apps stay launchable from the demos hub", async ({
     // outbound click keeps the landing alive in the background.
     await expect(card).toHaveAttribute("target", "_blank");
     await expect(card).toHaveAttribute("rel", /noopener/);
+    // Every card carries a title and a description, and no description
+    // makes the retired claim: "Desktop only, no AR needed" survived on the
+    // OSM card for weeks after that demo gained AR entry (owner taste
+    // round 2026-09-04) — the deploy guard and this loop only ever checked
+    // the hrefs, so a stale sentence had nothing to fail.
+    await expect(card.locator("strong")).not.toHaveText("");
+    await expect(card.locator("small")).not.toHaveText("");
+    await expect(card).not.toContainText("Desktop only");
   }
+  // The two cards the taste round renamed: the OSM demo is named for the
+  // data it scores, not for a term ("affordance") a visitor has to look up;
+  // the tour viewer is a demo of the entry story, not a template to fork.
+  await expect(page.locator('a.demo-card[href="/osm/"] strong')).toHaveText(
+    "OpenStreetMap Demo",
+  );
+  await expect(page.locator('a.demo-card[href="/tour/"] strong')).toHaveText(
+    "Tour Viewer Demo",
+  );
   // Round-9 R9-4: ONE primary CTA carrying the GitHub mark (the separate
   // "Open source on GitHub" badge duplicated it and was removed), and
   // every external link opens a NEW TAB — the landing must stay open.

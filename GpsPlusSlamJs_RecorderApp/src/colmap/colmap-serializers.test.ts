@@ -116,6 +116,18 @@ describe('serializePoints3DTxt', () => {
     expect(body).toBe('1 0 0 0 255 0 128 1');
   });
 
+  it('writes 0 for a non-finite colour channel instead of the literal NaN', () => {
+    // Why this test matters: Math.round(NaN) is NaN and Math.min/Math.max
+    // propagate it, so a NaN channel used to reach points3D.txt as the text
+    // "NaN" - which no COLMAP reader parses as a byte, corrupting the file
+    // for every downstream tool. The header promises an integer 0-255.
+    const txt = serializePoints3DTxt([
+      { pointId: 1, xyz: [0, 0, 0], rgb: [NaN, Infinity, -Infinity], error: 1 },
+    ]);
+    const body = txt.split('\n').find((l) => l.startsWith('1 '))!;
+    expect(body).toBe('1 0 0 0 0 255 0 1');
+  });
+
   it('reports point count and mean track length 0', () => {
     const txt = serializePoints3DTxt([
       { pointId: 1, xyz: [0, 0, 0], rgb: [1, 2, 3], error: 1 },

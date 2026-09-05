@@ -1,97 +1,40 @@
-# Reference Point Picker Module
+# ref-point-picker.ts
 
-**Purpose:** Provides a modal UI for selecting or creating reference point names, enabling consistent naming across recording sessions and multiple observations of the same physical point.
+**Purpose:** the name prompt shown when a NEW reference point is marked. It asks for a display name and nothing else. Since the H3 migration the ref-point ID is the cell the user stands in, and a nearby re-observation never opens the prompt (`ref-point-handlers.ts` resolves it by proximity in one tap). Until 2026-09-04 this module also carried a suggestion list — search filter, unused/used partition, click to select — that its only caller bypassed with an empty list, so none of it could ever show; collapsed by owner decision (simplify loop, 2026-09-04 interview).
 
 ## Public API
 
-### Types
+- `showRefPointPicker(): Promise<RefPointPickerResult | null>` — shows the prompt; resolves with `{ id }` (the trimmed name) on confirm, `null` on cancel or an outside cancel. No parameters.
+- `cancelRefPointPicker(): void` — cancel from outside (the browser back button, via `navigation.ts`); resolves the pending prompt with `null`.
+- `isRefPointPickerVisible(): boolean` — the caller's single-instance guard.
+- `createRefPointPickerHtml(): string` — the modal's content, injected once into `#ref-point-picker-modal` at startup (`main.ts`).
+- `RefPointPickerResult` — `{ id: string }`. The former `isNew` flag is gone: every result is a new point's name.
 
-```typescript
-interface RefPointPickerResult {
-  id: string; // The selected or entered reference point ID
-  isNew: boolean; // True if new name, false if selecting existing
-}
-```
+## Invariants & assumptions
 
-### Functions
+- **Single pending prompt.** A second `showRefPointPicker()` while one is pending resolves the earlier promise with `null` first (logged), so no promise is orphaned.
+- **Confirm is disabled once resolved** (confirm, cancel or outside cancel) and re-enabled on the next show — a stale tap does nothing.
+- **Empty names are rejected**: confirm with an empty or whitespace-only input keeps the prompt open. Input is trimmed.
+- **Fresh state per prompt:** the input is cleared on show and the controls are cloned to drop the previous prompt's listeners.
+- **Navigation integration:** show pushes a history entry (`pushModalState`); every resolution pops it (`popModalState`, a no-op if the back button already did).
+- **DOM requirement:** `#ref-point-picker-modal` must exist (`index.html`); when it does not, the prompt logs and resolves `null`.
 
-| Function                   | Signature                                                                                              | Description                                                          |
-| -------------------------- | ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------- |
-| `showRefPointPicker`       | `(existingIds: string[], sessionUsage?: Map<string, number>) => Promise<RefPointPickerResult \| null>` | Shows the picker modal. Returns selection or null if cancelled.      |
-| `hideRefPointPicker`       | `() => void`                                                                                           | Hides the picker modal (called automatically on selection/cancel).   |
-| `isRefPointPickerVisible`  | `() => boolean`                                                                                        | Returns true if picker is currently visible.                         |
-| `createRefPointPickerHtml` | `() => string`                                                                                         | Returns the HTML content for the picker modal.                       |
-| `cancelRefPointPicker`     | `() => void`                                                                                           | Cancel from outside (e.g., browser back button). Resolves with null. |
+## Example
 
-## Invariants & Assumptions
-
-- **Single instance:** Only one picker can be shown at a time. The caller (`handleMarkRefPoint`) guards with `isRefPointPickerVisible()` to prevent duplicate invocations.
-- **Confirm button disabling:** After the first confirm/cancel/suggestion click, the confirm button is disabled to prevent double-submit. It is re-enabled on the next `showRefPointPicker()` call.
-- **Empty validation:** Empty names are not allowed; confirm button has no effect if input is empty.
-- **Whitespace trimming:** User input is trimmed before use.
-- **Case-sensitive matching:** Existing ID matching is case-sensitive.
-- **DOM requirement:** Expects `#ref-point-picker-modal` element to exist in the DOM.
-- **Usage partitioning:** When a `sessionUsage` map is provided, suggestions are partitioned: unused ref points first, then used ref points (grayed out with `opacity-50` and a "(used Nx)" badge). Both remain selectable.
-- **Navigation integration:** Opening the picker pushes a `history.pushState` entry so the browser back button closes the modal. Closing (confirm/cancel/suggestion) calls `popModalState()` to clean up. External cancel via `cancelRefPointPicker()` resolves with null.
-
-## User Flow
-
-1. User taps "Mark Reference Point" button (📍)
-2. Picker modal appears with:
-   - Text input for entering/searching
-   - List of existing ref point names (from current scenario)
-3. User can:
-   - Type a new name → Click "Confirm" → Creates new ref point
-   - Click existing name → Auto-confirms as re-observation
-   - Type to filter existing list → Click matching item
-   - Click "Cancel" → No action taken
-4. Modal closes and ref point is saved
-
-## Example Usage
-
-```typescript
-import {
-  showRefPointPicker,
-  createRefPointPickerHtml,
-} from './ui/ref-point-picker';
-
-// Initialize picker HTML (once, on app startup)
-document.getElementById('ref-point-picker-modal').innerHTML =
-  createRefPointPickerHtml();
-
-// Later, when user wants to mark a ref point:
-const existingIds = ['Bench Corner', 'Fountain', 'Tree A'];
-const sessionUsage = new Map([['Fountain', 2]]); // already used 2 times
-const result = await showRefPointPicker(existingIds, sessionUsage);
-
+```ts
+const result = await showRefPointPicker();
 if (result) {
-  if (result.isNew) {
-    console.log(`Creating new ref point: ${result.id}`);
-  } else {
-    console.log(`Re-observing existing ref point: ${result.id}`);
-  }
-} else {
-  console.log('User cancelled');
+  markNewRefPoint(currentH3, result.id); // the name is display metadata only
 }
 ```
 
 ## Tests
 
-Unit tests in `ref-point-picker.test.ts` cover:
+- `ref-point-picker.test.ts` — HTML structure, visibility, confirm/cancel resolution, empty-name rejection and trimming, the confirm-button disable/re-enable rules, the stale-resolver guard, the history push/pop and back-button cancel, and the 2026-03-08 no-leak-between-prompts cases.
+- `playwright-tests/ref-point-picker.spec.js` — the real modal through `window.refPointPickerApi.showRefPointPicker()`.
 
-- HTML generation with required element IDs
-- Visibility state management
-- Promise resolution on confirm/cancel
-- Suggestion list population and filtering
-- Input validation (empty name rejection, whitespace trimming)
-- Click-to-select behavior for existing ref points
-- **Issue 5:** Confirm button disabling after first click, re-enabling on next show, double-click prevention
-- **Issue 6:** Usage map acceptance, "(used Nx)" badge rendering, list partitioning (unused first), backward compatibility without usage map, correct count display, filtering with partitioned lists
-- **Issue 7:** History state push on show, pop on confirm/cancel/suggestion, popstate cancels picker (simulated back button)
+## Related files
 
-## Related Files
-
-- [main.ts](../main.ts) - Wires up the picker to the ref point marking flow
-- [navigation.ts](./navigation.ts) - History-based back-button handling for modal
-- [ref-point-loader.ts](../storage/ref-point-loader.ts) - Provides `listRefPointIds()` for suggestions
-- [index.html](../../index.html) - Contains the modal container element
+- [main.ts](../main.ts) — injects the HTML, wires the back-button cancel, exposes the window API for e2e.
+- [navigation.ts](./navigation.ts) — the history-based back-button handling.
+- [ref-point-handlers.ts](../ref-points/ref-point-handlers.ts) — the only caller.

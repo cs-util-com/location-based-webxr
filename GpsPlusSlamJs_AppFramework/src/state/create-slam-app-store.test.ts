@@ -275,11 +275,11 @@ describe('createSlamAppStore', () => {
   // library's `compassExperimentEnabled` flag (which threads the decided
   // combo: rotation prior + trust tolerance 15° + C′ pair selection — the
   // combo itself is pinned in the LIBRARY's gpsDataSlice tests, not here);
-  // `enableRobustSolverComparison` sets `robustSolverComparisonEnabled` (the
+  // `enableConsensusSolverComparison` sets `consensusSolverComparisonEnabled` (the
   // alternative robust-solver A/B arm). Both follow the recorded-action
   // opt-in pattern: dispatched only once gpsData exists, default OFF ⇒
   // byte-identical.
-  describe('enableCompassExperiment + enableRobustSolverComparison (field-test opt-ins)', () => {
+  describe('enableCompassExperiment + enableConsensusSolverComparison (field-test opt-ins)', () => {
     it('enables the compass experiment once gpsData exists (after the first setZeroPos)', async () => {
       const store = createSlamAppStore({
         storageBackend: backend,
@@ -294,11 +294,11 @@ describe('createSlamAppStore', () => {
     it('enables the Robust-solver comparison once gpsData exists', async () => {
       const store = createSlamAppStore({
         storageBackend: backend,
-        enableRobustSolverComparison: true,
+        enableConsensusSolverComparison: true,
       });
       store.dispatch(setZeroPos({ lat: 0, lon: 0 }));
       await Promise.resolve();
-      expect(store.getState().gpsData?.robustSolverComparisonEnabled).toBe(
+      expect(store.getState().gpsData?.consensusSolverComparisonEnabled).toBe(
         true
       );
     });
@@ -309,7 +309,7 @@ describe('createSlamAppStore', () => {
       await Promise.resolve();
       const s = store.getState().gpsData;
       expect(s?.compassExperimentEnabled).toBeFalsy();
-      expect(s?.robustSolverComparisonEnabled).toBeFalsy();
+      expect(s?.consensusSolverComparisonEnabled).toBeFalsy();
     });
 
     // Why: the vote-weight slider (2026-07-19 weight-curve follow-up) rides
@@ -343,14 +343,14 @@ describe('createSlamAppStore', () => {
       const store = createSlamAppStore({
         storageBackend: backend,
         enableCompassExperiment: true,
-        enableRobustSolverComparison: true,
+        enableConsensusSolverComparison: true,
       });
       store.dispatch(setZeroPos({ lat: 0, lon: 0 }));
       await Promise.resolve();
       const s = store.getState().gpsData;
       expect(s?.coldStartOverrideEnabled).toBe(true); // default-on Stage 0
       expect(s?.compassExperimentEnabled).toBe(true);
-      expect(s?.robustSolverComparisonEnabled).toBe(true);
+      expect(s?.consensusSolverComparisonEnabled).toBe(true);
     });
   });
 

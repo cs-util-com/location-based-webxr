@@ -86,7 +86,7 @@ The six adopters keep their own suites, which served as the characterization
 tests for this extraction:
 
 - `ar/frame-loop.ts`, `ar/xr-frame-loop.ts`, `ar/session-disposers.ts` — the
-  three registries the shape was extracted from (21 tests).
+  three registries the shape was extracted from.
 - `utils/logger.ts` — the log-subscriber list, and the reason `onError` is
   required rather than defaulted.
 - `ar/enable-gps-ar.ts` — the controller's state listeners.

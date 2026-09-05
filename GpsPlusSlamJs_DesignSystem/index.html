@@ -14,7 +14,11 @@
          deliberate part of the voice, not a bug. Where Corbel is absent:
          ui-rounded (SF Rounded on Apple), then Segoe UI / Roboto. On
          Android devices this design therefore renders in Roboto. -->
-    <link rel="stylesheet" href="styles.css" />
+    <!-- design.css FIRST: its @layer statement fixes precedence by first
+         appearance. catalog.css is the catalog-only chrome an app must
+         never vendor. -->
+    <link rel="stylesheet" href="design.css" />
+    <link rel="stylesheet" href="catalog.css" />
   </head>
   <body>
     <p class="demo-fontcheck" id="fontcheck">font: checking…</p>
@@ -182,11 +186,49 @@
           aria-label="Confirm"
           data-atom="modal"
         >
-          <span>Stop recording and go back?</span>
+          <span class="prose">Stop recording and go back?</span>
           <div class="modal-actions">
             <button class="btn">Keep recording</button>
             <button class="btn btn--accent">Stop recording</button>
           </div>
+        </div>
+      </section>
+
+      <section>
+        <h3>Key / value lines</h3>
+        <!-- real strings from QrTrackingDemo hud-view.ts: the measured-size
+             readout a developer checks against a tape measure -->
+        <div class="plate col">
+          <span class="num">Locked — axis + cube glued</span>
+          <div class="kv">
+            <span class="hint">size</span><span class="num">20.0 cm</span>
+          </div>
+          <div class="kv">
+            <span class="hint">samples</span><span class="num">12 samples</span>
+          </div>
+          <div class="kv">
+            <span class="hint">spread</span><span class="num">±2 mm</span>
+          </div>
+          <div class="kv">
+            <span class="hint">stage</span><span class="num">estimated</span>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h3>Prose — sentence text inside a plate, and its failure tone</h3>
+        <!-- real strings: AnchorStarter's start card, and the framework's
+             capabilityMessage() for a device without WebXR -->
+        <div class="plate col">
+          <p class="prose">
+            Place a marker in the real world, save it, then reload the page — it
+            reappears at the exact same spot.
+          </p>
+          <p class="prose" data-tone="warn">
+            This demo needs WebXR augmented reality, which this device or
+            browser does not provide. Open it on an AR-capable phone (e.g.
+            Chrome on Android with ARCore), outdoors.
+          </p>
         </div>
       </section>
 
@@ -259,7 +301,7 @@
             aria-label="my location"
           >
             <svg
-              viewBox="0 0 24 24"
+              viewBox="5 2 14 20"
               width="18"
               height="18"
               aria-hidden="true"
@@ -279,7 +321,7 @@
             aria-label="locating…"
           >
             <svg
-              viewBox="0 0 24 24"
+              viewBox="5 2 14 20"
               width="18"
               height="18"
               aria-hidden="true"
@@ -299,7 +341,7 @@
             aria-label="my location"
           >
             <svg
-              viewBox="0 0 24 24"
+              viewBox="5 2 14 20"
               width="18"
               height="18"
               aria-hidden="true"
@@ -319,7 +361,7 @@
             aria-label="location permission denied"
           >
             <svg
-              viewBox="0 0 24 24"
+              viewBox="5 2 14 20"
               width="18"
               height="18"
               aria-hidden="true"
@@ -339,7 +381,7 @@
             aria-label="location timed out"
           >
             <svg
-              viewBox="0 0 24 24"
+              viewBox="5 2 14 20"
               width="18"
               height="18"
               aria-hidden="true"
@@ -359,7 +401,7 @@
             aria-label="location unavailable"
           >
             <svg
-              viewBox="0 0 24 24"
+              viewBox="5 2 14 20"
               width="18"
               height="18"
               aria-hidden="true"
@@ -389,14 +431,16 @@
       <section>
         <h3>Log panel</h3>
         <!-- the line format is the shipped contract from the
-             RecorderApp log-panel.ts: time [tag] message -->
+             RecorderApp log-panel.ts: time [tag] message, tags as its
+             sidecar names them ("GPS", "Storage") - the case shows now that
+             the log is prose (DEC-L2-9) -->
         <div class="log" role="log">
-          <span>14:32:07 [gps] fix ±6.0 m</span>
-          <span>14:32:09 [anchor] re-observed from here</span>
-          <span>14:32:12 [tracking] warming up</span>
-          <span>14:32:15 [tracking] ok · 92%</span>
-          <span>14:32:21 [gps] fix ±4.1 m</span>
-          <span>14:32:26 [anchor] 40 m from anchor</span>
+          <span>14:32:07 [GPS] Fix ±6.0 m</span>
+          <span>14:32:09 [Anchor] Re-observed from here</span>
+          <span>14:32:12 [Tracking] Warming up</span>
+          <span>14:32:15 [Tracking] OK · 92%</span>
+          <span>14:32:21 [GPS] Fix ±4.1 m</span>
+          <span>14:32:26 [Anchor] 40 m from anchor</span>
         </div>
       </section>
 
@@ -405,7 +449,7 @@
         <!-- structure from OsmDemo legend-view.ts: category, ramp,
              min/max ends, observed line (its real template) -->
         <div class="legend plate">
-          <span class="hint">observations</span>
+          <span class="legend-title">observations</span>
           <div class="legend-scale">
             <div class="legend-strip" aria-label="observation count ramp">
               <span
@@ -480,6 +524,9 @@
         </button>
         <button class="btn" data-screen="placement" aria-pressed="false">
           PLACEMENT
+        </button>
+        <button class="btn" data-screen="start" aria-pressed="false">
+          START
         </button>
       </div>
 
@@ -717,7 +764,28 @@
             </div>
           </div>
 
-          <button class="btn place-cta">Place anchor</button>
+          <!-- the bottom panel, real strings from placement-view.ts in the
+               "ready to place, tracking good" state -->
+          <div class="bottom-panel plate">
+            <p class="prose">Tracking looks good — place your anchor.</p>
+            <button class="btn btn--accent">Place anchor</button>
+          </div>
+        </div>
+
+        <!-- ============ SCREEN: START (AnchorStarter's capability gate) ============ -->
+        <!-- real strings from AnchorStarter index.html; the gated state adds
+             a .prose[data-tone="warn"] under the (then disabled) button - see
+             the prose atom in the atoms column -->
+        <div class="screen screen-start">
+          <div class="start-panel plate">
+            <h1>Persistent GPS anchor</h1>
+            <p class="prose">
+              Place a marker in the real world, save it, then reload the page —
+              it reappears at the exact same spot. Go outside with a clear view
+              of the sky for the best GPS.
+            </p>
+            <button class="btn btn--accent">Start AR</button>
+          </div>
         </div>
 
         <!-- toast, shared by every screen -->
@@ -743,7 +811,7 @@
             aria-label="Confirm"
             data-atom-copy="modal"
           >
-            <span>Stop recording and go back?</span>
+            <span class="prose">Stop recording and go back?</span>
             <div class="modal-actions">
               <button class="btn">Keep recording</button>
               <button class="btn btn--accent">Stop recording</button>

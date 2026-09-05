@@ -52,11 +52,11 @@ async function buildArOverlayFixture(page) {
     const stack = document.createElement("div");
     stack.className = "ar-stack";
     const hud = document.createElement("div");
-    hud.className = "ar-hud";
+    hud.className = "ar-hud hud-readout plate";
     hud.textContent = "lat 50.9413\nlng 6.9580";
     // The collapse toggle is part of the readout's real box (DEC-H2).
     const toggle = document.createElement("button");
-    toggle.className = "ar-hud-toggle";
+    toggle.className = "ar-hud-toggle btn btn--icon btn--glyph";
     toggle.textContent = "more";
     hud.append(toggle);
     stack.append(hud);
@@ -67,27 +67,27 @@ async function buildArOverlayFixture(page) {
     // class names and the production content lengths, because the whole
     // question this test answers is whether the real CSS fits them.
     const bottom = document.createElement("div");
-    bottom.className = "ar-bottom";
+    bottom.className = "ar-bottom hud-bottom";
     const bottomRow = document.createElement("div");
-    bottomRow.className = "ar-bottom-row";
+    bottomRow.className = "ar-bottom-row row";
 
     const elevation = document.createElement("div");
-    elevation.className = "ar-elevation";
+    elevation.className = "ar-elevation hud-elevation plate";
     const down = document.createElement("button");
-    down.className = "ar-elevation-button";
+    down.className = "ar-elevation-button btn btn--icon btn--glyph";
     down.textContent = "−";
     const value = document.createElement("span");
-    value.className = "ar-elevation-value";
+    value.className = "ar-elevation-value num";
     value.textContent = "+0.0 m";
     const up = document.createElement("button");
-    up.className = "ar-elevation-button";
+    up.className = "ar-elevation-button btn btn--icon btn--glyph";
     up.textContent = "+";
     elevation.append(down, value, up);
 
     const gearWrap = document.createElement("div");
     gearWrap.className = "ar-gear-wrap";
     const gear = document.createElement("button");
-    gear.className = "ar-gear";
+    gear.className = "ar-gear btn btn--icon";
     gear.textContent = "⚙";
     gearWrap.append(gear);
 
@@ -751,6 +751,97 @@ test.describe("the location picker", () => {
     // outright if the target was snapped to the map centre.
     expect(Math.abs(Number(after.get("clat")) - clat)).toBeLessThan(0.0005);
     expect(Math.abs(Number(after.get("clng")) - clng)).toBeLessThan(0.0005);
+  });
+});
+
+test.describe("the map buttons", () => {
+  test.use({ viewport: { width: 390, height: 780 } });
+
+  test("wear only the design system's chrome: no Leaflet bar around them, the glyph centred", async ({
+    page,
+  }) => {
+    // WHY THIS TEST MATTERS (owner taste round 2026-09-04, plan §3). Both
+    // buttons are design-system atoms, but their Leaflet control wrappers
+    // still carried `leaflet-bar`, whose stylesheet is loaded unlayered from
+    // the CDN and beats the layered atoms: under `leaflet-touch` (which
+    // Leaflet 1.9 adds wherever PointerEvent exists — every modern browser,
+    // headless Chromium included) that is a 2 px dark border at a 4 px
+    // radius around a 44 px button with its own 14 px radius, the button
+    // anchored top-left inside a wrapper that is wider and taller than it.
+    // The owner saw "two rounded outlines, the pin too far left and up, a
+    // thin dark line underneath". Red before the fix at THIS viewport: the
+    // wrapper's border, the wrapper-vs-button box, the glyph's centre and
+    // the glyph's rendered width; the wrapper's box-shadow was already
+    // `none` under `leaflet-touch` and is asserted so nothing brings it
+    // back. The AR button is only present with XR support stubbed, so the
+    // stub is what makes its half mean anything.
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "xr", {
+        configurable: true,
+        value: { isSessionSupported: () => Promise.resolve(true) },
+      });
+    });
+    await stubNetwork(page);
+    await page.goto("/");
+    await waitForRefresh(page);
+    await expect(page.locator("#enter-ar")).toBeVisible({ timeout: 10000 });
+
+    for (const [wrapper, button] of [
+      [".locate-control", ".locate-button"],
+      [".ar-control", "#enter-ar"],
+    ]) {
+      const chrome = await page.locator(wrapper).evaluate((el) => {
+        const s = getComputedStyle(el);
+        return { border: s.borderTopWidth, shadow: s.boxShadow };
+      });
+      expect(chrome, `${wrapper} draws chrome of its own`).toEqual({
+        border: "0px",
+        shadow: "none",
+      });
+      const outer = await page.locator(wrapper).boundingBox();
+      const inner = await page.locator(button).boundingBox();
+      if (outer === null || inner === null) throw new Error("no boxes");
+      // The wrapper IS the button's box: nothing of Leaflet's is drawn
+      // around it (Leaflet's own `leaflet-control` float/margin sit outside).
+      expect(
+        Math.abs(outer.width - inner.width),
+        `${wrapper} width`,
+      ).toBeLessThan(0.5);
+      expect(
+        Math.abs(outer.height - inner.height),
+        `${wrapper} height`,
+      ).toBeLessThan(0.5);
+      expect(inner.width, `${button} is the 44 px tap square`).toBeCloseTo(
+        44,
+        0,
+      );
+      expect(inner.height, `${button} is the 44 px tap square`).toBeCloseTo(
+        44,
+        0,
+      );
+    }
+
+    // The pin sits at the button's centre, not on its text baseline.
+    const button = await page.locator(".locate-button").boundingBox();
+    const pin = await page.locator(".locate-button svg").boundingBox();
+    if (button === null || pin === null) throw new Error("no boxes");
+    const dx = pin.x + pin.width / 2 - (button.x + button.width / 2);
+    const dy = pin.y + pin.height / 2 - (button.y + button.height / 2);
+    expect(Math.abs(dx), "pin x offset").toBeLessThan(1);
+    expect(Math.abs(dy), "pin y offset").toBeLessThan(1);
+    // And the GLYPH fills the system's 24 px icon box: the path's own bounds
+    // are the viewBox now (5 2 14 20 → 16.8 × 24 px under `meet`); before,
+    // the path drew 14 × 20 inside a 24 × 24 box. Measured on the <path>,
+    // not the <svg> — the element was 24 × 24 all along, so an assertion on
+    // it could not fail (milestone review, 2026-09-05).
+    const glyph = await page
+      .locator(".locate-button svg path")
+      .evaluate((path) => {
+        const r = path.getBoundingClientRect();
+        return { width: r.width, height: r.height };
+      });
+    expect(glyph.height, "glyph height").toBeCloseTo(24, 0);
+    expect(glyph.width, "glyph width").toBeGreaterThan(16);
   });
 });
 
@@ -2481,23 +2572,26 @@ test.describe("the AR entry point", () => {
     // `align-items: center` and a 0.72rem hint is shorter than a range input,
     // so their TOPS never line up — an assertion on `y` would fail against a
     // correct implementation. Cold review of the plan caught exactly that.
+    // DEC-L2-13 (2026-09-03): the READOUT shares the slider's row and the hint
+    // has its own line below - the catalog's arrangement; DEC-J8's was the
+    // reverse, and the comments above describe that earlier state.
     expect(
-      Math.abs(measured.hint.centre - measured.slider.centre),
-      "the compass hint is not on the slider's row",
+      Math.abs(measured.readout.centre - measured.slider.centre),
+      "the compass readout is not on the slider's row",
     ).toBeLessThanOrEqual(2);
     // AND TO THE RIGHT of it, so "beside" means beside rather than behind.
-    expect(measured.hint.x).toBeGreaterThanOrEqual(
+    expect(measured.readout.x).toBeGreaterThanOrEqual(
       measured.slider.x + measured.slider.width - 1,
     );
-    // WHILE THE READOUT KEEPS ITS OWN LINE (DEC-Y12, untouched): ~40 characters
-    // cannot share a row with a slider at any font size worth reading outdoors.
-    expect(measured.readout.centre).toBeGreaterThan(measured.slider.centre);
+    // WHILE THE HINT KEEPS A LINE OF ITS OWN (DEC-L2-13): it explains the
+    // control, so it reads below the slider+readout row rather than beside it.
+    expect(measured.hint.centre).toBeGreaterThan(measured.slider.centre);
 
     // THE SLIDER DID NOT PAY FOR IT. `width: 9rem` is `flex: 0 1 auto`, so the
-    // hint's `flex: 1 1 auto` could have been satisfied by shrinking the slider
-    // instead of using the free space — and every other assertion here passes
-    // with a 100 px slider. 9rem is 144 px, and it exists so 0-1 is draggable
-    // with a thumb outdoors.
+    // readout now sharing its row could have been fitted by shrinking the
+    // slider instead of using the free space — and every other assertion here
+    // passes with a 100 px slider. 9rem is 144 px, and it exists so 0-1 is
+    // draggable with a thumb outdoors.
     expect(
       measured.slider.width,
       `the compass slider shrank to ${Math.round(measured.slider.width)} px`,
@@ -2614,11 +2708,12 @@ test.describe("the AR entry point", () => {
       const wrap = document.createElement("div");
       wrap.className = "ar-gear-wrap";
       const body = document.createElement("div");
-      body.className = "ar-experiments";
+      // the builder adds the design system's classes beside the hook (M6b)
+      body.className = "ar-experiments exp-panel plate";
       // EXACTLY WHAT THE PRODUCTION CODE WRITES at mount and on close.
       body.hidden = true;
       const row = document.createElement("label");
-      row.className = "ar-experiments-row";
+      row.className = "ar-experiments-row exp-row";
       row.textContent = "rotation prior";
       body.append(row);
       wrap.append(body);

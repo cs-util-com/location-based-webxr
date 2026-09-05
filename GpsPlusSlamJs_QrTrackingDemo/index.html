@@ -7,18 +7,30 @@
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
     />
     <title>gps-plus-slam — QR-tracking demo</title>
+    <!--
+      design.css is a VERBATIM copy of GpsPlusSlamJs_DesignSystem/design.css,
+      written by `pnpm run vendor` there and held byte-identical by
+      tests/repo-config/design-css-copies.test.js - never edit it here. It
+      is linked before the <style> block so its @layer order is fixed first;
+      the rules below are unlayered and therefore win every conflict (the
+      adoption plan's L1 contract) - which is why there are so few of them.
+    -->
+    <link rel="stylesheet" href="/design.css" />
     <style>
       :root {
         color-scheme: dark;
       }
+      /* What stays app-owned: the page ground (the camera feed in AR, a
+         near-black stand-in before it), the AR mount, the overlay's
+         stacking, and one behavioural rule (the empty debug log takes no
+         room). Everything visible is the design system's - the atoms and
+         the start / readout / bottom compositions in design.css (adoption
+         plan M3). A rule that styles an element here would win over the
+         system silently, so none is added lightly. */
       html,
       body {
-        margin: 0;
-        padding: 0;
         height: 100%;
         background: #111;
-        color: #eee;
-        font-family: system-ui, sans-serif;
         overflow: hidden;
       }
       /* AR session mounts its canvas here. */
@@ -31,85 +43,13 @@
         position: fixed;
         inset: 0;
         z-index: 1;
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
         pointer-events: none;
-        padding: 16px;
-        box-sizing: border-box;
       }
       #overlay > * {
         pointer-events: auto;
       }
-      #start-screen {
-        margin: auto;
-        max-width: 28rem;
-        text-align: center;
-        display: flex;
-        flex-direction: column;
-        gap: 16px;
-      }
-      #start-button {
-        font-size: 1.25rem;
-        padding: 14px 28px;
-        border: 0;
-        border-radius: 12px;
-        background: #3df;
-        color: #062b33;
-        font-weight: 700;
-      }
-      #start-button:disabled {
-        opacity: 0.6;
-      }
-      #capability-message {
-        color: #ffcf66;
-        font-size: 0.95rem;
-      }
-      #hud {
-        align-self: flex-start;
-        background: rgb(0 0 0 / 55%);
-        border-radius: 12px;
-        padding: 12px 16px;
-        font-variant-numeric: tabular-nums;
-        line-height: 1.5;
-      }
-      #hud-status {
-        font-weight: 700;
-        color: #3df;
-      }
-      .hud-row {
-        display: flex;
-        gap: 8px;
-        justify-content: space-between;
-      }
-      .hud-label {
-        color: #9aa;
-      }
-      #hud-size {
-        font-size: 1.3rem;
-        font-weight: 700;
-      }
-      #debug-log {
-        margin: 8px 0 0;
-        max-height: 9.5rem;
-        max-width: 70vw;
-        overflow: auto;
-        font-family: ui-monospace, monospace;
-        font-size: 0.7rem;
-        line-height: 1.35;
-        color: #9ad;
-        white-space: pre-wrap;
-        word-break: break-all;
-      }
       #debug-log:empty {
         display: none;
-      }
-      #error {
-        color: #ff8080;
-        align-self: center;
-      }
-      [hidden] {
-        display: none !important;
       }
     </style>
   </head>
@@ -120,43 +60,77 @@
          Guarded by tests/repo-config/hud-overlay-nesting.test.js. -->
     <div id="app">
       <div id="overlay">
-        <section id="hud" data-testid="hud" hidden>
-          <div id="hud-status" data-testid="hud-status">Point at a QR code</div>
-          <div class="hud-row">
-            <span class="hud-label">size</span>
-            <span id="hud-size" data-testid="hud-size">—</span>
+        <!-- The measured-size readout (hud-view.ts): the design system's
+             top-left .hud-readout composition, a status line over .kv rows,
+             with the per-lock debug lines in a .log below. -->
+        <section id="hud" class="hud-readout plate" data-testid="hud" hidden>
+          <div class="lines">
+            <span id="hud-status" class="num" data-testid="hud-status"
+              >Point at a QR code</span
+            >
+            <div class="kv">
+              <span class="hint">size</span>
+              <span id="hud-size" class="num" data-testid="hud-size">—</span>
+            </div>
+            <div class="kv">
+              <span class="hint">samples</span>
+              <span id="hud-samples" class="num" data-testid="hud-samples"
+                >0 samples</span
+              >
+            </div>
+            <div class="kv">
+              <span class="hint">spread</span>
+              <span id="hud-spread" class="num" data-testid="hud-spread"
+                >±0 mm</span
+              >
+            </div>
+            <div class="kv">
+              <span class="hint">stage</span>
+              <span id="hud-lifecycle" class="num" data-testid="hud-lifecycle"
+                >unknown</span
+              >
+            </div>
+            <pre id="debug-log" class="log" data-testid="debug-log"></pre>
           </div>
-          <div class="hud-row">
-            <span class="hud-label">samples</span>
-            <span id="hud-samples" data-testid="hud-samples">0 samples</span>
-          </div>
-          <div class="hud-row">
-            <span class="hud-label">spread</span>
-            <span id="hud-spread" data-testid="hud-spread">±0 mm</span>
-          </div>
-          <div class="hud-row">
-            <span class="hud-label">stage</span>
-            <span id="hud-lifecycle" data-testid="hud-lifecycle">unknown</span>
-          </div>
-          <pre id="debug-log" data-testid="debug-log"></pre>
         </section>
 
-        <div id="start-screen" data-testid="start-screen">
+        <!-- Start / capability-gated screen: the .start-panel composition.
+             The capability message is failure-toned prose under the button. -->
+        <div
+          id="start-screen"
+          class="start-panel plate"
+          data-testid="start-screen"
+        >
           <h1>QR-tracking demo</h1>
-          <p>
+          <p class="prose">
             Point your phone at any printed QR code. The demo measures its size
             from the depth map and glues a 3D axis + a translucent cube to the
             printed code — walk around to check they stay locked.
           </p>
-          <button id="start-button" data-testid="start-button">Start AR</button>
+          <button
+            id="start-button"
+            class="btn btn--accent"
+            data-testid="start-button"
+          >
+            Start AR
+          </button>
           <p
             id="capability-message"
+            class="prose"
+            data-tone="warn"
             data-testid="capability-message"
             hidden
           ></p>
         </div>
 
-        <p id="error" data-testid="error" hidden></p>
+        <!-- Errors: failure-toned prose at the thumb end of the screen. -->
+        <p
+          id="error"
+          class="bottom-panel prose"
+          data-tone="warn"
+          data-testid="error"
+          hidden
+        ></p>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>

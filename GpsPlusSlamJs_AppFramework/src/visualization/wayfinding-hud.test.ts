@@ -137,6 +137,99 @@ describe('validateWayfindingHudOptions', () => {
     expect(DEFAULT_WAYFINDING_HUD.hudDistance).toBe(2.5);
     expect(DEFAULT_WAYFINDING_HUD.indicatorScale).toBe(1.0);
     expect(DEFAULT_WAYFINDING_HUD.labelScale).toBe(1.0);
+    // The design system's accent (`--accent` in design.css); the repo-config
+    // guard `design-accent-copies.test.js` holds this literal to the token.
+    expect(DEFAULT_WAYFINDING_HUD.indicatorColor).toBe('#f2971f');
+  });
+
+  it('rejects an indicatorColor that is not a colour representation', () => {
+    // Why this matters: the tint reaches `new THREE.Color(value)`, which
+    // silently yields black for an object or a boolean — a HUD nobody can see
+    // over dark ground, with no error anywhere. Fail at construction instead.
+    for (const bad of [{}, true, Number.NaN, null]) {
+      expect(() =>
+        validateWayfindingHudOptions({
+          ...valid,
+          indicatorColor: bad as unknown as string,
+        })
+      ).toThrow(TypeError);
+    }
+    expect(() =>
+      validateWayfindingHudOptions({ ...valid, indicatorColor: 0x00ff00 })
+    ).not.toThrow();
+    expect(() =>
+      validateWayfindingHudOptions({
+        ...valid,
+        indicatorColor: new THREE.Color('#00ff00'),
+      })
+    ).not.toThrow();
+  });
+});
+
+describe('createWayfindingHud — procedural indicator look (owner taste round 2026-09-04)', () => {
+  function circleMesh(camera: THREE.Camera): THREE.Mesh {
+    const [mesh] = visible(childrenByName(camera, 'wayfinding-circle'));
+    if (!(mesh as THREE.Mesh | undefined)?.isObject3D) {
+      throw new Error('no visible circle');
+    }
+    return mesh as THREE.Mesh;
+  }
+
+  it('tints the procedural ring and cone with the accent by default, and indicatorColor overrides it', () => {
+    const { hud, camera } = makeHud([
+      new THREE.Vector3(0, 0, -5),
+      new THREE.Vector3(10, 0, -5),
+    ]);
+    tick();
+    const ring = circleMesh(camera).material as THREE.MeshBasicMaterial;
+    expect(ring.color.getHexString()).toBe('f2971f');
+    const [cone] = visible(childrenByName(camera, 'wayfinding-arrow'));
+    // One shared material: the cone wears the same tint by construction.
+    expect((cone as THREE.Mesh).material).toBe(ring);
+    hud.dispose();
+
+    const custom = makeHud([new THREE.Vector3(0, 0, -5)], {
+      indicatorColor: '#00ff00',
+    });
+    tick();
+    const material = circleMesh(custom.camera)
+      .material as THREE.MeshBasicMaterial;
+    expect(material.color.getHexString()).toBe('00ff00');
+    custom.hud.dispose();
+  });
+
+  it('tags URL-loaded sprite textures as sRGB and leaves a caller-passed texture alone', () => {
+    // Why this matters: image files hold sRGB pixels; untagged, three.js
+    // samples them as linear and the accent dot in the demo's diamond sprite
+    // renders visibly lighter than the CSS it was copied from.
+    const { hud, camera } = makeHud([new THREE.Vector3(0, 0, -5)], {
+      circleSprite: 'wayfinding-diamond.svg',
+    });
+    tick();
+    const [sprite] = visible(childrenByName(camera, 'wayfinding-circle'));
+    const material = (sprite as THREE.Sprite).material;
+    expect(material.map?.colorSpace).toBe(THREE.SRGBColorSpace);
+    hud.dispose();
+
+    const own = new THREE.Texture();
+    const passed = makeHud([new THREE.Vector3(0, 0, -5)], {
+      circleSprite: own,
+    });
+    tick();
+    expect(own.colorSpace).toBe(THREE.NoColorSpace);
+    passed.hud.dispose();
+  });
+
+  it('draws the ring a third as wide as before, keeping its outer radius', () => {
+    // The 2026-07 ring was 0.08..0.12 (0.04 wide) in HUD tint; the owner
+    // asked for "a third of the thickness" in the accent. Outer radius is what
+    // the placement and the pixel e2e were sized against, so it stays.
+    const { hud, camera } = makeHud([new THREE.Vector3(0, 0, -5)]);
+    tick();
+    const geometry = circleMesh(camera).geometry as THREE.RingGeometry;
+    expect(geometry.parameters.outerRadius).toBeCloseTo(0.12, 6);
+    expect(geometry.parameters.innerRadius).toBeCloseTo(0.12 - 0.04 / 3, 6);
+    hud.dispose();
   });
 });
 

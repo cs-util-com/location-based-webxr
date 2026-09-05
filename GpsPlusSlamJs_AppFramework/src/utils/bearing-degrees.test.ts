@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 
-import { normalizeBearingDeg } from './bearing-degrees';
+import { bearingDeltaDeg, normalizeBearingDeg } from './bearing-degrees';
 
 /** The bare form the six copies used, kept as the differential oracle. */
 const bareDoubleMod = (deg: number): number => ((deg % 360) + 360) % 360;
@@ -57,5 +57,43 @@ describe('normalizeBearingDeg', () => {
 
   it('propagates NaN rather than inventing a bearing', () => {
     expect(normalizeBearingDeg(Number.NaN)).toBeNaN();
+  });
+});
+
+describe('bearingDeltaDeg', () => {
+  // Why this test matters: two unnamed copies disagreed at the one point
+  // where a signed delta is ambiguous (exactly 180° apart), and the
+  // recorder's copy carried the bare double-mod whose full-turn snap the
+  // sibling helper exists to prevent. These pin the convention and the
+  // property every consumer relies on: the delta is the shortest arc and
+  // adding it to b lands on a.
+  it('takes the short way round and keeps the sign of a − b', () => {
+    expect(bearingDeltaDeg(1, 359)).toBe(2);
+    expect(bearingDeltaDeg(359, 1)).toBe(-2);
+    expect(bearingDeltaDeg(10, 10)).toBe(0);
+  });
+
+  it('returns +180 (never −180) for exactly opposite bearings', () => {
+    expect(bearingDeltaDeg(180, 0)).toBe(180);
+    expect(bearingDeltaDeg(0, 180)).toBe(180);
+    expect(bearingDeltaDeg(-90, 90)).toBe(180);
+  });
+
+  it('is the shortest arc, and b + delta lands on a (mod 360)', () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: -1e6, max: 1e6, noNaN: true }),
+        fc.double({ min: -1e6, max: 1e6, noNaN: true }),
+        (a, b) => {
+          const d = bearingDeltaDeg(a, b);
+          expect(d).toBeGreaterThan(-180);
+          expect(d).toBeLessThanOrEqual(180);
+          const back = normalizeBearingDeg(b + d);
+          const target = normalizeBearingDeg(a);
+          const err = Math.abs(normalizeBearingDeg(back - target + 180) - 180);
+          expect(err).toBeLessThan(1e-6);
+        }
+      )
+    );
   });
 });

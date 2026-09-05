@@ -66,14 +66,11 @@ export interface GpsAnchorOptions {
    */
   readonly onBootstrapComplete?: (gpsPoint: LatLong | LatLongAlt) => void;
   readonly mode?: GpsAnchorMode;
-  readonly floorY?: () => number | null;
   readonly distanceThreshold?: number;
-  readonly angleThresholdInDegrees?: number;
   /** Number of 1 Hz samples collected during bootstrap. Default 7. */
   readonly secondsToAccumulateGpsPose?: number;
   /** Wait window (seconds) at phase entry during which no samples are taken. Default 0. */
   readonly settlingSeconds?: number;
-  readonly heightAboveGround?: number | null;
 }
 
 /**
@@ -212,10 +209,6 @@ export function createGpsAnchor(options: GpsAnchorOptions): GpsAnchor {
   }
   const settlingSeconds = options.settlingSeconds ?? 0;
   const distanceThreshold = options.distanceThreshold ?? 2;
-  // Reserved for sub-step 4 (rotation-delta gate). Kept here so the
-  // option is honoured the moment that code lands without re-touching
-  // the constructor.
-  void (options.angleThresholdInDegrees ?? 15);
   const mode: GpsAnchorMode = options.mode ?? 'snap-when-offscreen';
 
   // Scratch vectors — reused across ticks to avoid per-frame allocs.

@@ -14,7 +14,8 @@
         max-width: 60rem;
         padding: 1rem;
       }
-      header p {
+      header p,
+      #ar-hint {
         color: #8889;
         margin-top: 0.25rem;
       }
@@ -147,11 +148,17 @@
   <body>
     <header>
       <h1>Tour Viewer</h1>
+      <!-- Two ways in, and the copy names BOTH (owner taste round 2026-09-04):
+           a printed tour code scanned with the phone camera opens this page
+           with the tour already chosen (`?qr=`), or a pasted link to a hosted
+           zip. The in-AR code scanner is neither: it only places a visitor
+           inside a tour that is already open — see the hint by the AR button. -->
       <p>
-        Paste a link to a hosted tour/recording zip (Dropbox, GitHub and
-        OneDrive share links work; Google Drive needs an API key or CORS proxy)
-        — entries stream in via HTTP range requests instead of downloading the
-        whole archive first.
+        Scan a printed tour code with your phone's camera and the link opens
+        this viewer with that tour. Or paste a link to a hosted tour zip below
+        (Dropbox, GitHub and OneDrive share links work; Google Drive needs an
+        API key or CORS proxy) — entries stream in as needed instead of
+        downloading the whole archive first.
       </p>
     </header>
     <main>
@@ -181,6 +188,14 @@
         by tests/repo-config/hud-overlay-nesting.test.js).
       -->
       <section id="ar-root">
+        <!-- Pressing the AR button with no tour open is a plain AR view, and the
+             viewer pipeline scans for codes from the first frame so a tour
+             opened later still resolves — which reads as "it is already
+             looking for a QR code" unless the page says what a code does. -->
+        <p id="ar-hint" data-testid="ar-hint">
+          AR works without a tour too; once a tour is open, the camera locates
+          you at its printed codes.
+        </p>
         <div id="ar-status" data-testid="ar-status"></div>
         <button type="button" id="enter-ar" data-testid="enter-ar" disabled>
           Checking AR support…

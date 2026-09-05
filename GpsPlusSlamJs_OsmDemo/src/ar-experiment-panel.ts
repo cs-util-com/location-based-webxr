@@ -23,9 +23,14 @@ import {
   type CompassExperiments,
   type CompassTrustGateMode,
 } from "./compass-influence.js";
+import { COMPASS_TRUST_GATE_MODES } from "gps-plus-slam-app-framework/state";
 
-/** The gate modes, in the order the panel offers them. */
-const GATE_MODES: readonly CompassTrustGateMode[] = ["off", "binary", "ramp"];
+/**
+ * The gate modes, in the library's own order. Derived from the exported const
+ * since 2026-09-02 rather than mirrored: a mirrored list is how a fourth mode
+ * (`latch`, core 1.23.0) would have compiled everywhere and appeared nowhere.
+ */
+const GATE_MODES: readonly CompassTrustGateMode[] = COMPASS_TRUST_GATE_MODES;
 
 /**
  * The tolerances the 2026-08-20 census actually swept.
@@ -90,7 +95,7 @@ export function createArExperimentPanel(
 
   const gear = document.createElement("button");
   gear.type = "button";
-  gear.className = "ar-gear";
+  gear.className = "ar-gear btn btn--icon";
   // A GLYPH ANNOUNCES NOTHING. `#ar-root` is not inert (r510 review), so this
   // button is reachable by a screen reader, which would otherwise read it as
   // "button, gear".
@@ -99,7 +104,7 @@ export function createArExperimentPanel(
   gear.textContent = "⚙";
 
   const body = document.createElement("div");
-  body.className = "ar-experiments";
+  body.className = "ar-experiments exp-panel plate";
   panelSeq += 1;
   body.id = `ar-experiments-${String(panelSeq)}`;
   body.hidden = true;
@@ -134,7 +139,7 @@ export function createArExperimentPanel(
 
   const row = (labelText: string, input: HTMLElement): HTMLElement => {
     const label = document.createElement("label");
-    label.className = "ar-experiments-row";
+    label.className = "ar-experiments-row exp-row";
     const text = document.createElement("span");
     text.textContent = labelText;
     label.append(input, text);
@@ -159,7 +164,7 @@ export function createArExperimentPanel(
     input.id = id;
     // Carries its own class rather than being styled as a descendant, so the
     // rule cannot outrank the sheet's bare `select` by accident.
-    input.className = "ar-experiments-select";
+    input.className = "ar-experiments-select select select--small";
     for (const value of values) {
       const option = document.createElement("option");
       option.value = value;

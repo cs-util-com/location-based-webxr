@@ -19,6 +19,7 @@ import {
   type ArExperimentPanel,
 } from "./ar-experiment-panel.js";
 import { COMPASS_EXPERIMENT_DEFAULTS } from "./compass-influence.js";
+import { COMPASS_TRUST_GATE_MODES } from "gps-plus-slam-app-framework/state";
 
 let root: HTMLElement;
 
@@ -123,11 +124,15 @@ describe("createArExperimentPanel", () => {
     });
   });
 
-  it("offers all three gate modes, because two would not be an experiment", () => {
+  it("offers EVERY gate mode the library declares, because a subset would not be an experiment", () => {
+    // Derived from the library const since 2026-09-02 (the fourth mode,
+    // `latch`, arrived with core 1.23.0); a literal list here is how it would
+    // have gone untested.
     build();
     const gate = control("ar-exp-gate") as HTMLSelectElement;
     const values = [...gate.options].map((option) => option.value);
-    expect(values).toEqual(["off", "binary", "ramp"]);
+    expect(values).toEqual([...COMPASS_TRUST_GATE_MODES]);
+    expect(values.length).toBeGreaterThanOrEqual(4);
     // Starts where the demo ships, not at the library default.
     expect(gate.value).toBe("ramp");
   });

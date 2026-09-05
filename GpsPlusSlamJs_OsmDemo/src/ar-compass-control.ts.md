@@ -111,14 +111,29 @@ for the 0–1 influence whose mapping lives in `compass-influence.ts`.
 const compass = createArCompassControl({
   root: arRootElement,
   onChange: (settings) => {
+    // SEVEN dispatches, mirroring main.ts `onCompassSettings` exactly.
+    // Dispatch order does not decide precedence: the library derives its
+    // config from the final state. The experiment combo is deliberately not
+    // dispatched (since 2026-09-02): every key it writes is one of these
+    // standalone settings, so it was config-neutral with the prior on and
+    // forced the prior back on with it off - see `compass-influence.ts`.
     store.dispatch(
       setCompassRotationPriorEnabled(settings.rotationPriorEnabled),
     );
     store.dispatch(
       setColdStartOverrideEnabled(settings.coldStartOverrideEnabled),
     );
-    store.dispatch(setCompassExperimentEnabled(settings.experimentEnabled));
     store.dispatch(setCompassVoteWeight(settings.voteWeight));
+    store.dispatch(setCompassTrustGateMode(settings.trustGateMode));
+    store.dispatch(
+      setCompassPairSelectionEnabled(settings.pairSelectionEnabled),
+    );
+    store.dispatch(
+      setCompassTrustAgreeToleranceDeg(settings.trustToleranceDeg),
+    );
+    store.dispatch(
+      setCompassWebXRConsistencyEnabled(settings.webXRConsistencyEnabled),
+    );
   },
 });
 compass.attach();
@@ -153,7 +168,11 @@ A session that never touched the control was therefore measuring settings the UI
 did not describe, and its field notes would have looked like data.
 
 This also blunts a related gap the same review noted: `release()` does not
-restore the four settings on session end, so a slider left at 0.5 leaves
-`coldStartOverrideEnabled: false, experimentEnabled: true` behind. Harmless while
+restore the settings on session end, so a slider left at 0.5 leaves
+`coldStartOverrideEnabled: false` behind. Harmless while
 the fusion only runs during an AR walk, and the next session now re-dispatches
 its own starting value at entry rather than inheriting the last one silently.
+
+- Design system (adoption plan M6b): the control is the `.hud-compass` plate: a `.slider`, an accent `.num` value, a `.hint`. The `ar-*` names stay as hooks for the tests and the e2e; the look comes from the vendored `design.css`, and `index.html` keeps only the behavioural rules (pointer-events, line breaks, placement).
+
+- DEC-L2-13 (2026-09-03): children are appended slider, readout, hint - the catalog's arrangement, superseding DEC-J8's hint-beside-slider; the 390 px e2e asserts the readout on the slider's row and the hint below.

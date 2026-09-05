@@ -128,6 +128,8 @@ import {
 } from 'gps-plus-slam-app-framework/core';
 import { isSegmentingActionType } from 'gps-plus-slam-app-framework/state/segmenting-actions';
 import { createStoreRef } from './state/store-ref';
+import { debugUiEnabledFromSearch } from './debug-flag';
+import { createDebugWheel, type DebugWheel } from './ui/hud-debug-wheel';
 import { createArSessionScope } from './utils/ar-session-scope';
 import { createArSessionResources } from './ar/ar-session-resources';
 import { wireArScene } from './ar/wire-ar-scene';
@@ -203,6 +205,12 @@ let recordingOptions: RecordingOptions = loadRecordingOptions();
 
 let store = createNewStore();
 const storeRef = createStoreRef(store);
+
+// The in-recording settings wheel (2026-09-02, `?debug=1` only). Mounted once
+// at init; it follows `storeRef` itself, so every store swap re-applies what
+// the tester touched. `null` for every ordinary user - the flag is the only
+// surface change (see ui/hud-debug-wheel.ts.md).
+let debugWheel: DebugWheel | null = null;
 
 // Every AR-session-scoped resource registers its teardown here at its
 // creation site (see utils/ar-session-scope.ts and the 2026-07-11
@@ -314,6 +322,10 @@ let activeImageQualityAnalyzer: ImageQualityAnalyzerFn | null = null;
 // (Finding #7 decomposition: extracted from main.ts to replay/replay-handlers.ts)
 const replayHandlers = createReplayHandlers({
   setStore: (newStore) => {
+    // A replay store must not be driven by the debug wheel (a recording made
+    // without it would replay against the tester's live config); suspend
+    // BEFORE the swap so the wheel's store-follower sees a suspended wheel.
+    debugWheel?.suspend();
     store = newStore;
     storeRef.set(newStore);
   },
@@ -326,6 +338,10 @@ const recordingSessionHandlers = createRecordingSessionHandlers({
   setStore: (newStore) => {
     store = newStore;
     storeRef.set(newStore);
+    // A recording store: the wheel drives it again (see the replay swap
+    // above). AFTER the swap, so `resume()` applies to the new store and
+    // never to the outgoing, possibly replay, one (PR #407 review).
+    debugWheel?.resume();
   },
   rebindTrackingStore,
   // The per-recording quality-gate Worker analyzer: stored in main's
@@ -694,9 +710,13 @@ export async function resetForNewRecording(): Promise<void> {
   // Reset recording-level counters
   gpsEventVisualizer.clearAll();
 
-  // Fresh store for next session
+  // Fresh store for next session. The debug wheel follows storeRef; a wheel
+  // suspended by a replay swap must be resumed onto the new live store or it
+  // would silently hold every change (PR #409 review) - same order as the
+  // recording swap above: store first, resume after.
   store = createNewStore();
   storeRef.set(store);
+  debugWheel?.resume();
 
   // --- Reset storage (preserve OPFS root, clear session handles) ---
   resetForNewSession();
@@ -908,6 +928,19 @@ async function main(): Promise<void> {
       void folderManager.handleScenarioChange(name),
     onRequestPermissions: handleRequestPermissions,
   });
+
+  // The in-recording settings wheel (2026-09-02, `?debug=1` only): mounted
+  // here at init, not on AR entry, so it exists in every HUD state and in
+  // the e2e harness, which never enters a real AR session. It follows
+  // `storeRef` itself and dispatches nothing until touched.
+  if (debugUiEnabledFromSearch(window.location.search) && !debugWheel) {
+    const controlsRoot = document.getElementById('controls');
+    const overlayRoot = document.getElementById('app');
+    if (controlsRoot && overlayRoot) {
+      debugWheel = createDebugWheel({ storeRef, controlsRoot, overlayRoot });
+      debugWheel.attach();
+    }
+  }
 
   // Initialize session summary panel (shown after recording stops)
   initSessionSummary({
@@ -1288,7 +1321,12 @@ async function handleEnterAR(): Promise<void> {
     showError(userMessage);
     // Issue #10: If initAR succeeded but a later step threw, the XR session
     // is left running with incomplete wiring. Tear it down to free GPU
-    // resources and avoid a broken half-initialized state.
+    // resources and avoid a broken half-initialized state. The scope goes
+    // first: every resource registered before the throw (frame feeds,
+    // visualizers, store subscriptions) lives there, and endARSession knows
+    // nothing about it - without this line they kept running against the
+    // dead session until the next Enter AR (simplify loop, 2026-09-04).
+    arSessionScope.dispose();
     try {
       await endARSession();
     } catch (cleanupErr) {
@@ -1573,7 +1611,10 @@ if (
   !import.meta.env.VITEST
 ) {
   void import('./test-utils/e2e-hooks').then(({ installE2eTestHooks }) =>
-    installE2eTestHooks({ ensureMapBrowserRoot })
+    installE2eTestHooks({
+      ensureMapBrowserRoot,
+      getDebugWheel: () => debugWheel,
+    })
   );
 }
 

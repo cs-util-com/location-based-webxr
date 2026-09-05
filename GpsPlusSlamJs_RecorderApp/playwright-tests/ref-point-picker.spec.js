@@ -34,7 +34,7 @@ test.describe('Reference Point Picker Modal', () => {
     await page.evaluate(() => {
       const api = window.refPointPickerApi;
       if (api?.showRefPointPicker) {
-        api.showRefPointPicker([]);
+        api.showRefPointPicker();
       }
     });
 
@@ -45,7 +45,6 @@ test.describe('Reference Point Picker Modal', () => {
     await expect(page.locator('#ref-point-picker-input')).toBeVisible();
     await expect(page.locator('#ref-point-picker-cancel')).toBeVisible();
     await expect(page.locator('#ref-point-picker-confirm')).toBeVisible();
-    await expect(page.locator('#ref-point-picker-list')).toBeVisible();
   });
 
   test('cancel button hides the modal', async ({ page }) => {
@@ -62,7 +61,7 @@ test.describe('Reference Point Picker Modal', () => {
       const api = window.refPointPickerApi;
       if (api?.showRefPointPicker) {
         // Start the picker (don't await - we'll interact with it)
-        api.showRefPointPicker([]);
+        api.showRefPointPicker();
       }
     });
 
@@ -81,7 +80,7 @@ test.describe('Reference Point Picker Modal', () => {
     await page.evaluate(() => {
       const api = window.refPointPickerApi;
       if (api?.showRefPointPicker) {
-        api.showRefPointPicker([]);
+        api.showRefPointPicker();
       }
     });
 
@@ -103,7 +102,7 @@ test.describe('Reference Point Picker Modal', () => {
     await page.evaluate(() => {
       const api = window.refPointPickerApi;
       if (api?.showRefPointPicker) {
-        api.showRefPointPicker([]);
+        api.showRefPointPicker();
       }
     });
 
@@ -132,7 +131,7 @@ test.describe('Reference Point Picker Modal', () => {
     await page.evaluate(() => {
       const api = window.refPointPickerApi;
       if (api?.showRefPointPicker) {
-        api.showRefPointPicker([]);
+        api.showRefPointPicker();
       }
     });
 
@@ -154,7 +153,7 @@ test.describe('Reference Point Picker Modal', () => {
     await page.evaluate(() => {
       const api = window.refPointPickerApi;
       if (api?.showRefPointPicker) {
-        api.showRefPointPicker([]);
+        api.showRefPointPicker();
       }
     });
 
@@ -163,108 +162,17 @@ test.describe('Reference Point Picker Modal', () => {
     ).toBeVisible();
   });
 
-  test('suggestions list shows "no existing" message when empty', async ({
-    page,
-  }) => {
-    // Use the application's real showRefPointPicker function with empty array
-    // to test the "no existing reference points" message
-    await page.evaluate(() => {
-      const api = window.refPointPickerApi;
-      if (api?.showRefPointPicker) {
-        api.showRefPointPicker([]);
-      }
-    });
-
-    const list = page.locator('#ref-point-picker-list');
-    await expect(list).toContainText('No existing reference points');
-  });
-
   test('input placeholder gives usage hint', async ({ page }) => {
     // Use the application's real showRefPointPicker function
     await page.evaluate(() => {
       const api = window.refPointPickerApi;
       if (api?.showRefPointPicker) {
-        api.showRefPointPicker([]);
+        api.showRefPointPicker();
       }
     });
 
     const input = page.locator('#ref-point-picker-input');
     const placeholder = await input.getAttribute('placeholder');
     expect(placeholder).toContain('Bench');
-  });
-
-  test('suggestions list displays existing ref point IDs', async ({ page }) => {
-    // Show the picker with existing ref point IDs
-    await page.evaluate(() => {
-      const api = window.refPointPickerApi;
-      if (api?.showRefPointPicker) {
-        api.showRefPointPicker(['Bench Corner', 'Fountain', 'Tree Stump']);
-      }
-    });
-
-    const list = page.locator('#ref-point-picker-list');
-
-    // Should show the existing ref points as clickable buttons
-    await expect(list.locator('button')).toHaveCount(3);
-    await expect(list).toContainText('Bench Corner');
-    await expect(list).toContainText('Fountain');
-    await expect(list).toContainText('Tree Stump');
-  });
-
-  test('clicking a suggestion selects it and closes modal', async ({
-    page,
-  }) => {
-    // Hide setup modal so it doesn't block clicks
-    await page.evaluate(() => {
-      const setupModal = document.getElementById('setup-modal');
-      setupModal?.classList.add('hidden');
-    });
-
-    // Show the picker with existing ref point IDs
-    await page.evaluate(() => {
-      const api = window.refPointPickerApi;
-      if (api?.showRefPointPicker) {
-        api.showRefPointPicker(['Bench Corner', 'Fountain']);
-      }
-    });
-
-    const modal = page.locator('#ref-point-picker-modal');
-    await expect(modal).not.toHaveClass(/hidden/);
-
-    // Click on the first suggestion - the real handler should close the modal
-    const list = page.locator('#ref-point-picker-list');
-    await list.locator('button').first().click();
-
-    // Modal should be hidden after selecting a suggestion
-    await expect(modal).toHaveClass(/hidden/);
-  });
-
-  test('typing in input filters suggestions list', async ({ page }) => {
-    // Show the picker with existing ref point IDs
-    await page.evaluate(() => {
-      const api = window.refPointPickerApi;
-      if (api?.showRefPointPicker) {
-        api.showRefPointPicker([
-          'Bench Corner',
-          'Bench North',
-          'Fountain',
-          'Tree Stump',
-        ]);
-      }
-    });
-
-    const input = page.locator('#ref-point-picker-input');
-    const list = page.locator('#ref-point-picker-list');
-
-    // Initially should show all 4 suggestions
-    await expect(list.locator('button')).toHaveCount(4);
-
-    // Type 'Bench' to filter - real input handler should filter the list
-    await input.fill('Bench');
-
-    // Should now only show the 2 "Bench" entries
-    await expect(list.locator('button')).toHaveCount(2);
-    await expect(list).toContainText('Bench Corner');
-    await expect(list).toContainText('Bench North');
   });
 });

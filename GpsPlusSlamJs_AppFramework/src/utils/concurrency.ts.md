@@ -34,6 +34,7 @@ Runs an async, side-effecting worker over each item with a concurrency cap, invo
 - At most `limit` invocations are active at any time (both helpers).
 - If `limit >= items.length`, behavior is identical to `Promise.all`.
 - Worker pool pattern: `min(limit, items.length)` workers pull from a shared index counter.
+- **One pool implementation.** `mapWithConcurrencyLimit` is `forEachWithConcurrencyLimit` writing into a pre-sized result array, so the fail-fast and settle-before-rethrow guarantees cannot drift between the two (they were two copies until 2026-09-04).
 
 ## Examples
 

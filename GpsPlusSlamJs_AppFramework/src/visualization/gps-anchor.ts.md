@@ -31,10 +31,12 @@ This file currently implements **sub-steps 2 (bootstrap phase),
 3 (steady-state `'snap-every-tick'` + distance-scaled threshold gate),
 4 (`'snap-when-offscreen'` mode gate, with a one-time initial-placement
 exemption for `skipBootstrap` anchors), and 5 (re-bootstrap on external
-move)** of the port plan. Floor-Y correction (sub-step 6) is deferred
-until the depth raycaster (Item 6 in the C# survey) lands; the
-`floorY?: () => number | null` constructor seam is reserved but not yet
-consulted.
+move)** of the port plan. Floor-Y correction (sub-step 6) is not
+implemented. The `floorY`, `angleThresholdInDegrees` and
+`heightAboveGround` options that used to be accepted for it were never read
+and were removed 2026-09-04 (simplify loop; a MAJOR by semver, shipped in 1.24.0 - a MINOR by
+owner decision, in lock-step with `gps-plus-slam-js` 1.24.0): an accepted-but-ignored option is a promise the code does not
+keep, and no consumer passed any of the three.
 
 ## Public API
 
@@ -45,11 +47,10 @@ consulted.
 - `interface GpsAnchorOptions` — required: `object3D`, `arWorldGroup`,
   `camera`, `gpsPoint`, `getAlignmentMatrix`, `getGpsZeroRef`,
   `getCurrentGpsPoint`. Optional: `skipBootstrap`, `onBootstrapComplete`,
-  `mode`, `floorY`,
-  `distanceThreshold` (default 2 m), `angleThresholdInDegrees`
-  (default 15°),
+  `mode`,
+  `distanceThreshold` (default 2 m),
   `secondsToAccumulateGpsPose` (default 7 samples at 1 Hz),
-  `settlingSeconds` (default 0), `heightAboveGround`.
+  `settlingSeconds` (default 0).
   (The declared-but-never-wired `targetPosRefreshRateInSec` option was
   removed 2026-07-10, quality-review E-3 — the steady-state target is now
   cached on the `(zeroRef, alignmentMatrix, gpsPoint)` reference identities,

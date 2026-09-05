@@ -1,9 +1,21 @@
 # GpsPlusSlamJs_DesignSystem
 
-The HUD design system for the AR apps in this workspace, kept deliberately
-as **one vanilla HTML file** (`index.html`) so it can be iterated at
-conversation speed: open it in a browser, react, edit, refresh. No build,
-no framework, no dependencies at runtime.
+The HUD design system for the AR apps in this workspace, kept as vanilla
+HTML + CSS so it can be iterated at conversation speed: open
+`index.html` in a browser, react, edit, refresh. No build, no
+framework, no dependencies at runtime.
+
+Two stylesheets, split on purpose (adoption plan M1, 2026-09-02):
+
+- **`design.css`** - the design system: `@layer reset, tokens, base,
+atoms, screen`. This is what an app vendors, verbatim. It styles no
+  page ground and never uppercases `body` - the voice is applied at the
+  atom boundary, so a host page's own prose is untouched. A bare page
+  that loads only this file gets the type, the colour, the atoms and
+  the composed HUD layouts.
+- **`catalog.css`** - the catalog's own chrome: page layout, the phone
+  frame, the camera stand-ins, the switcher, and the fake-phone
+  placement of annotations/radar/toast. **Never vendor this.**
 
 What the file contains:
 
@@ -14,8 +26,8 @@ What the file contains:
   toggle, slider, switch, select, progress-with-tones, readout lines,
   toast, world annotations (diamond marker, leader-line callout), radar.
 - **Mock screens** inside one phone frame, switchable: the OsmDemo AR HUD
-  steady state, its experiments panel, and the AnchorStarter placement
-  flow — all using **real strings from the shipped apps**, not lorem.
+  steady state, its experiments panel, the AnchorStarter placement
+  flow and its start card — all using **real strings from the shipped apps**, not lorem.
 - **Camera stand-in backgrounds** (foliage, white wall, blown sky, night
   street — all textured, plus a live `getUserMedia` mode), because the
   design's central problem is legibility over an arbitrary camera feed.
@@ -27,9 +39,14 @@ same screens, then feed the keepers back into this file.
 
 ## Iterating
 
-Edit `index.html`, refresh the browser. One change-set per reaction; the
-gate is prettier only (`pnpm test`), on purpose — this is a taste
-instrument, not production code. Design decisions and their history live
+Edit `design.css` (or `index.html`), refresh the browser. One
+change-set per reaction. The gate (`pnpm test`) is seconds-cheap on
+purpose - this is a taste instrument - but since `design.css` became
+the sheet the apps vendor it is no longer prettier-only: stylelint over
+both sheets (`config/stylelint.config.mjs`, with the language's own
+conventions - decimal alphas, BEM modifiers - written in as reasons),
+and `check-tokens.mjs`, which fails on a colour literal outside the
+tokens layer or a token the brief names that the CSS lost. Design decisions and their history live
 in the private docs repo (`GpsPlusSlamJs_Docs/docs/`, the design-system
 extension plan).
 
@@ -61,6 +78,39 @@ Plain HTTP on the LAN: refresh-speed iteration on a real device, at the
 accepted cost that Android blocks `getUserMedia` without HTTPS - the
 live camera background shows its error toast there; every other
 background works.
+
+## Vendoring into an app
+
+Before the first copy lands, measure what the sheet would change on the
+app as it is: `pnpm run leaks -- <app url>` (dev server up) prints every
+computed-style difference, element by element - the pins, or the decision
+not to pin, come from that list.
+
+Apps do not depend on this package; each adopting app holds a **verbatim
+copy** of `design.css` next to its `index.html` and links it before its
+own `<style>`:
+
+```bash
+pnpm run vendor                            # refresh every app that holds a copy
+pnpm run vendor -- GpsPlusSlamJs_SomeDemo  # add an app, then refresh all
+```
+
+A copy rather than a workspace dependency (adoption plan DEC-L2-3): a
+dependency would make every taste tweak here run every consuming app's
+gate - `test:changed` runs a package plus its dependents - while this
+package's gate is seconds-cheap on purpose. The copy pins each app to
+the revision it chose. `tests/repo-config/design-css-copies.test.js` is
+what makes it safe: byte-identical to this file, every linker holds a
+copy, every copy is linked, and the link precedes the app's `<style>` so
+the `@layer` order is fixed first. The app list is the filesystem - every
+`GpsPlusSlamJs_*/design.css` - so neither the script nor the guard
+hard-codes it.
+
+Linking the sheet is **not automatically invisible**: its `reset` and
+`base` layers land wherever an app left a browser default (measured on
+the pilot: `box-sizing`, body `font-weight`, `h1` weight). The
+mechanism step pins those in the app's own CSS; the restyle removes the
+pins as it adopts the atoms.
 
 ## Hard constraint carried from the real apps
 

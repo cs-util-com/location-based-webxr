@@ -25,7 +25,6 @@ import {
   getArWorldGroup,
   getDepthInfoFromFrame,
 } from 'gps-plus-slam-app-framework/ar/webxr-session';
-import { OccupancyGrid } from 'gps-plus-slam-app-framework/ar/occupancy-grid';
 import type { QrLevelLookupState } from '../qr/qr-level-source';
 import {
   selectAlignmentMatrix,
@@ -37,8 +36,6 @@ import { createCameraFollower } from 'gps-plus-slam-app-framework/visualization/
 import { createAlignmentLerper } from 'gps-plus-slam-app-framework/visualization/alignment-lerper';
 import { createGpsCompassCubes } from 'gps-plus-slam-app-framework/visualization/gps-compass-cubes';
 import { createPerfStatsOverlay } from 'gps-plus-slam-app-framework/visualization/perf-stats-overlay';
-import { OccupancyCubesVisualizer } from 'gps-plus-slam-app-framework/visualization/occupancy-cubes-visualizer';
-import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
 
 import type { ArSessionScope } from '../utils/ar-session-scope';
 import type { ArSessionResources } from './ar-session-resources';
@@ -47,20 +44,11 @@ import type { RecorderStore } from '../state/recorder-store';
 import type { RecordingOptions } from '../state/recording-options';
 import { wireRefPointViews } from '../ui/ref-point-view-wiring';
 import { refPointVisualizer } from '../visualization/ref-point-visualizer';
-import { FrameTileVisualizer } from '../visualization/frame-tile-visualizer';
-import { decodeFrameTexture } from 'gps-plus-slam-app-framework/visualization/frame-texture-decoder';
-import { wireFrameTileSubscribers } from '../visualization/wire-frame-tile-subscribers';
 import type { FrameBlobCache } from '../visualization/frame-blob-cache';
-import {
-  createOccluderSink,
-  type OccluderSink,
-  type OccluderSinkHandle,
-} from '../visualization/occluder-sink';
-import { wireOccupancyGridSubscribers } from '../visualization/wire-occupancy-grid-subscribers';
+import { wireFrameTileStack } from '../visualization/frame-tile-stack';
+import { wireOccupancyStack } from '../visualization/occupancy-stack';
 import { setOccupancyGrid } from '../state/occupancy-grid-provider';
 import { wireQrRecording } from '../qr/wire-qr-recording';
-
-const log = createLogger('Recorder');
 
 export interface WireArSceneDeps {
   /** Alignment-following group; raw-WebXR content parents here. */
@@ -156,146 +144,44 @@ export function wireArScene({
     resources.refPointViews = null;
   });
 
-  // F3.5d — wire the frame-tile visualizer into the live AR scene so
-  // captured frames appear as textured planes during recording, using
-  // the same listener+visualizer stack as replay. The live frame-blob
-  // cache is populated in handleImageCaptured, independent of this
-  // wiring, so skipping it never affects capture.
-  scope.wire('Frame tile visualizer', viz.frameTiles, () => {
-    // Parent under arWorldGroup (NOT the scene root): the selector
-    // emits raw-WebXR poses, so tiles must ride the camera's
-    // alignment × WEBXR_TO_NUE chain. See the followup frame-check doc.
-    // maxTiles: LIVE-ONLY FIFO cap (Step 4, 2026-07-03 fps plan) — the
-    // replay wiring deliberately omits it so coverage auditing sees the
-    // full recorded path.
-    const frameTileVisualizer = new FrameTileVisualizer(arWorldGroup, {
-      maxTiles: options.frameTileDisplay.maxTiles,
-    });
-    // D7-resolution: downscale the live display texture by the
-    // configured frameTileDisplay divisor (default ÷2) to cut per-tile
-    // GPU memory. Read once here at Enter-AR alongside the other viz
-    // settings; capture quality (images.resolutionDivisor) is untouched.
-    const frameTileDivisor = options.frameTileDisplay.divisor;
-    const unsubscribeFrameTiles = wireFrameTileSubscribers({
+  // F3.5d — frame tiles in the live AR scene, the same stack as replay
+  // (visualization/frame-tile-stack.ts). The live frame-blob cache is
+  // populated in handleImageCaptured, independent of this wiring, so
+  // skipping it never affects capture. maxTiles is the LIVE-ONLY FIFO cap
+  // (Step 4, 2026-07-03 fps plan); the divisor is read once at Enter-AR
+  // with the other viz settings (D7-resolution).
+  scope.wire('Frame tile visualizer', viz.frameTiles, () =>
+    wireFrameTileStack({
+      arWorldGroup,
       storeRef,
-      visualizer: frameTileVisualizer,
       blobSource: (imageFile) =>
         Promise.resolve(liveFrameBlobs.get(imageFile) ?? null),
-      decodeTexture: (blob) => decodeFrameTexture(blob, frameTileDivisor),
-      onError: (err, imageFile) => {
-        log.warn(`Frame tile decode failed for "${imageFile}"`, err);
-      },
-    });
-    return () => {
-      unsubscribeFrameTiles();
-      frameTileVisualizer.dispose();
-    };
-  });
+      divisor: options.frameTileDisplay.divisor,
+      maxTiles: options.frameTileDisplay.maxTiles,
+    })
+  );
 
-  // Occupancy-grid cubes — voxelized depth geometry in the live AR
-  // scene (port plan Iter 5). The cells are raw-WebXR coordinates, so
-  // the visualizer hangs off arWorldGroup (NOT the scene root) and
-  // rides the alignment like the camera does (Iter 7 reparenting fix).
-  // Always wired (enabled: true): the occupancyCubes toggle gates only
-  // the rendered debug cubes — the grid itself is always built and fed,
-  // because COLMAP export and other non-visualizer consumers read it via
-  // getOccupancyGrid().
+  // Occupancy stack (visualization/occupancy-stack.ts — the same stack as
+  // replay). Always wired: the occupancyCubes toggle gates only the rendered
+  // debug cubes; the grid itself is always built and fed, because COLMAP
+  // export and other non-visualizer consumers read it via getOccupancyGrid().
+  // Settings are read at construction so a changed value applies on the next
+  // Enter-AR (same source main.ts uses for arCrashIsolation).
   scope.wire('Occupancy grid', true, () => {
-    // Voxel size is a user setting (recording-options `occupancy.cellSizeM`,
-    // clamped 1–20 cm); read it at construction so a changed value applies
-    // on the next Enter-AR. Same source main.ts uses for arCrashIsolation.
-    // Confidence-guarded carving is tied to the SAME noise floor the
-    // renderers use (occupancy.minConfidence, clamped 1–10): any voxel
-    // solid enough to be shown can no longer be erased by one deeper
-    // reading (2026-07-16 synthetic-scene investigation — eliminates
-    // silhouette churn and occluded-background destruction).
-    const occupancyGrid = new OccupancyGrid({
-      cellSizeM: options.occupancy.cellSizeM,
-      carveConfidenceThreshold: options.occupancy.minConfidence,
+    const stack = wireOccupancyStack({
+      arWorldGroup,
+      storeRef,
+      occupancy: options.occupancy,
+      depthIntervalMs: options.depth.intervalMs,
+      showCubes: viz.occupancyCubes,
     });
     // Publish the single live grid so non-visualizer consumers (the COLMAP
     // ZIP contributor, future floor/nav-mesh builders) can read it without a
     // one-off reference — the provider is the ONLY cross-module handle to
-    // the grid; the teardown below clears it back to null (COLMAP export
-    // plan Q2).
-    setOccupancyGrid(occupancyGrid);
-
-    // The occupancyCubes toggle gates ONLY the rendered debug cubes — the
-    // grid itself is always built and fed, because COLMAP export and other
-    // non-visualizer consumers read it via getOccupancyGrid(). When the
-    // overlay is off we wire a no-op sink so the grid still folds in every
-    // depth sample without allocating the cube InstancedMesh.
-    let occupancyVisualizerSink: {
-      refresh(grid: OccupancyGrid): void;
-      clear(): void;
-    };
-    let occupancyCubesVisualizer: OccupancyCubesVisualizer | null = null;
-    if (viz.occupancyCubes) {
-      occupancyCubesVisualizer = new OccupancyCubesVisualizer(
-        arWorldGroup,
-        // Noise filter: only render voxels seen ≥ minConfidence times
-        // (recording-options `occupancy.minConfidence`, default 3). Read
-        // here so a changed value applies on the next Enter-AR, same as
-        // cellSizeM above.
-        { minObservations: options.occupancy.minConfidence }
-      );
-      occupancyVisualizerSink = occupancyCubesVisualizer;
-    } else {
-      occupancyVisualizerSink = { refresh: () => {}, clear: () => {} };
-    }
-
-    // Persistent depth-only occluder (ON by default). When on, it
-    // re-meshes the grid on the same throttle as the cubes and writes depth
-    // (no color) under arWorldGroup so real geometry hides virtual content
-    // placed behind it. The shared factory (occluder-sink.ts — one wiring
-    // for live AND replay) snapshots the SAME minConfidence floor the
-    // cubes/COLMAP use, so the three consumers can't silently diverge; its
-    // handle owns mesh + worker teardown (endARSession disposes it).
-    let occluderSinkHandle: OccluderSinkHandle | null = null;
-    let occluderSink: OccluderSink | undefined;
-    if (options.occupancy.persistentOcclusion) {
-      occluderSinkHandle = createOccluderSink(arWorldGroup, options.occupancy);
-      occluderSink = occluderSinkHandle.sink;
-    }
-    // With any camera-relative window active (the cubes window by
-    // default; the occluder when occluderRadiusM > 0), a settled grid
-    // must still re-render when the camera moves — ε = one chunk edge
-    // (16 cells; 2.4 m at the 0.15 m default). See the wirer's
-    // revision-guard docs (Step 2 correctness detail).
-    const anyWindowedConsumer =
-      viz.occupancyCubes ||
-      (options.occupancy.persistentOcclusion &&
-        options.occupancy.occluderRadiusM > 0);
-    const unsubscribeOccupancyGrid = wireOccupancyGridSubscribers({
-      storeRef,
-      grid: occupancyGrid,
-      visualizer: occupancyVisualizerSink,
-      occluder: occluderSink,
-      refreshOnCameraMoveM: anyWindowedConsumer
-        ? 16 * options.occupancy.cellSizeM
-        : undefined,
-      // Tie the cube-refresh throttle to the depth-sample cadence so a
-      // faster `depth.intervalMs` (e.g. 500 ms) isn't capped at the old
-      // hardcoded 1 Hz. At the default 1000 ms this equals the previous
-      // DEFAULT_REFRESH_INTERVAL_MS, so default recordings are unchanged
-      // (2026-06-22 cube cadence/locality plan §2).
-      refreshIntervalMs: options.depth.intervalMs,
-      onError: (err) => {
-        log.warn('Occupancy grid update failed', err);
-      },
-      // Cells-over-time telemetry (Step 0 of the 2026-07-03 long-session
-      // fps plan): one line per ~30 s so a log export correlates grid
-      // growth with the stats overlay's fps trend.
-      onGridSize: (cells) => {
-        log.info(`[OccupancyGrid] ${cells} cells`);
-      },
-    });
+    // the grid; the teardown clears it back to null LAST (COLMAP plan Q2).
+    setOccupancyGrid(stack.grid);
     return () => {
-      // Stop feeding the grid before releasing the visualizer/occluder it
-      // feeds; clear the published grid reference last (COLMAP plan Q2).
-      unsubscribeOccupancyGrid();
-      occupancyCubesVisualizer?.dispose();
-      occluderSinkHandle?.dispose();
+      stack.dispose();
       setOccupancyGrid(null);
     };
   });

@@ -10,6 +10,12 @@ The framework's **one** bearing normalizer.
   `[0, 360)`. **Exactly idempotent**: input already in range is returned
   unchanged. `NaN` propagates.
 
+- `bearingDeltaDeg(a: number, b: number): number` — signed shortest difference
+  `a − b` in `(−180, 180]`; exactly opposite bearings give `+180`. Built on
+  `normalizeBearingDeg`, so it inherits the contract below. Added 2026-09-04
+  in place of two unnamed copies (the recorder's `yaw-churn.ts`, the
+  framework's `lerp-utils.ts`) that disagreed at the boundary.
+
 ## Invariants & assumptions
 
 - **The early return is a correctness contract, not an optimisation.** Without

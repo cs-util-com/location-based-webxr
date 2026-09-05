@@ -130,7 +130,7 @@ expect(store.getState().recorder.gpsEventCount).toBe(1);
 
 ## Tests
 
-- `gps-event-coordinator.test.ts` - 31 tests covering:
+- `gps-event-coordinator.test.ts` - covering:
   - Pose conversion (object to array format)
   - Payload building (with and without orientation)
   - GPS handler dispatching (recording mode checks)

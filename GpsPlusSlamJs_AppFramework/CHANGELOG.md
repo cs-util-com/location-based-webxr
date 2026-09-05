@@ -1,5 +1,80 @@
 # Changelog
 
+## [1.24.0] — 2026-09-05
+
+Requires `gps-plus-slam-js` ≥ 1.24.0.
+
+### ⚠️ Breaking changes
+
+- **The solver's option family is named `consensusSolver*` everywhere**,
+  aligned with `gps-plus-slam-js` 1.24.0: `createSlamAppStore({
+  enableConsensusSolverComparison })`, the re-exported actions
+  `setConsensusSolverComparisonEnabled` and
+  `setConsensusSolverHeadingPenalty`, the `gpsData` state field
+  `consensusSolverComparisonEnabled`, and the `AlignmentOverrides` key
+  `consensusSolverEnabled`. The previous names are gone rather than aliased;
+  TypeScript consumers get a compile error, a JavaScript consumer passing the
+  old override key gets `setAlignmentOverrides`' thrown `unknown key`.
+  **Recordings are not migrated:** the two store actions are persisted by
+  type string, so a recording made before this release with the comparison
+  arm or the heading penalty set replays those actions as ignored and runs
+  the default solver configuration.
+
+- **Removed from `/ar/qr`** (`createQrDetectionScheduler`,
+  `QrDetectionScheduler`, `QrDetectionSchedulerConfig`): the QR-specialised
+  aliases over `createDetectionScheduler<T>`. Nothing but their own tests used
+  them; instantiate the generic with `TResult = QrPoseSolution`.
+- **Removed from `GpsAnchorOptions`** (`floorY`, `angleThresholdInDegrees`,
+  `heightAboveGround`): accepted since the port, never read by the anchor.
+  Drop them from your options object; behaviour is unchanged because they
+  never had any.
+- **`state/app-selectors`** (`selectAlignmentMatrix`, `selectGpsPositions`,
+  `selectOdometryPositions`, `selectOdometryRotations`, `selectZeroReference`)
+  are plain functions rather than `createSelector` outputs. Returned values
+  and reference stability are unchanged; the reselect surface (`.resultFunc`,
+  `.recomputations()`, `.clearCache()`, extra selector arguments) is gone.
+
+### Changed
+
+- **The wayfinding HUD's procedural cone and ring wear the design system's
+  accent** (`#f2971f`) instead of the prototype's red `0xff3b30`, and the ring
+  is a third as wide (0.0133 at `indicatorScale` 1, outer radius unchanged at
+  0.12). Pass `indicatorColor` to keep another tint.
+- **URL-loaded `arrowSprite` / `circleSprite` textures are tagged
+  `SRGBColorSpace`.** They were sampled as linear and rendered lighter than
+  the image file; a caller-passed `THREE.Texture` keeps its own colour space.
+- **`lerpAngleDeg`** now returns `+180` where it returned `−180` for two
+  angles exactly 180° apart, because it is built on the shared
+  `bearingDeltaDeg` (`utils/bearing-degrees`). Both are shortest arcs; only the
+  turning direction at that single boundary changes.
+
+### Added
+
+- **`createWayfindingHud({ indicatorColor })`** — tint of the procedural
+  indicators (`THREE.ColorRepresentation`; the shape is validated and `null`
+  rejected, a string's content is passed to `THREE.Color` unchecked), also
+  exposed as `DEFAULT_WAYFINDING_HUD.indicatorColor`. Inert in image mode.
+- **`utils/bearing-degrees`** gains `bearingDeltaDeg(a, b)` — the signed
+  shortest difference in `(−180, 180]`, replacing two unnamed copies.
+- **`utils/median`** (deep import) — now a built entry.
+- **`visualization/wayfinding-targets`** (deep import) — `createTargetResolver`,
+  the wayfinding HUD's boundary validation as a pure, directly tested module;
+  `WayfindingTarget` is re-exported unchanged by `wayfinding-hud`.
+
+- **`utils/compass-influence-mapping`** (deep import) — the "influence 0..1 →
+  seven compass settings" contract, moved out of the OSM demo so any app with
+  a compass-influence slider shares one definition of "influence 0 is GPS
+  only" (three settings, not one). `experiments` is a required parameter and
+  no defaults are exported: the demo's `ramp` gate and 15° tolerance stay the
+  demo's decisions.
+- **State re-exports for core 1.23.0**: `setAlignmentOverrides`,
+  `setCompassPairSelectionMode`, `setCompassPairSelectionRequireTrust`,
+  `setConsensusSolverHeadingPenalty`, the consts `ALIGNMENT_OVERRIDE_KEYS`,
+  `COMPASS_TRUST_GATE_MODES`, `COMPASS_PAIR_SELECTION_MODES`, and the types
+  `AlignmentOverrides`, `CompassPairSelectionMode`. Derive dropdown lists from
+  the consts rather than mirroring the unions — the fourth trust-gate mode,
+  `latch`, is the reason.
+
 ## [1.22.0] — 2026-09-01
 
 Requires `gps-plus-slam-js` ≥ 1.22.0.
@@ -86,7 +161,7 @@ Requires `gps-plus-slam-js` ≥ 1.22.0.
 - **`recencyHalfLifeS` was divided by unguarded.** It is caller-supplied public
   API. Zero gives the newest sighting `1/(1 + 0/0)` = `NaN` and every older one
   `0`; a negative value can give `Infinity` or a negative weight.
-  `weightedMedian` drops all of those and falls back to the *unweighted*
+  `weightedMedian` drops all of those and falls back to the _unweighted_
   median — so the weighting silently did not run.
 - **`computeCaptureSize` handed `NaN` straight to render-target allocation.**
   `cameraWidth <= 0` is false for `NaN`, so `NaN` flowed through `Math.floor`
@@ -97,7 +172,7 @@ Requires `gps-plus-slam-js` ≥ 1.22.0.
   rejects, while the disposal handler is registered first — so an open settling
   inside that window was disposed by neither path. That is the leak the block
   was added to close.
-- **Two runtime validator lists only *looked* type-checked.** TypeScript accepts
+- **Two runtime validator lists only _looked_ type-checked.** TypeScript accepts
   an incomplete array literal for `readonly T[]`, so a list missing a union
   member compiles cleanly — and both lists were runtime validators, meaning a
   legitimate value was rejected in production. `BLUR_METRIC_IDS` is now the

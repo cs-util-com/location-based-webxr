@@ -126,6 +126,33 @@ and below the identity — so the quality of the spawn choice depends on the hea
 map having broad gradients, which is worth checking on real data before relying
 on it.
 
+**And it can report one plateau twice** (owner report 2026-09-04). Candidates
+are seeded in a tile's bounding box, which overlaps its neighbours; two tiles'
+climbs can enter one plateau from two sides and each stops on the cell it
+entered from — adjacent cells, the same neighbourhood heat, two markers "a few
+metres apart". `sameSpot` (below) merges those; a plateau wider than the
+caller's separation can still be reported from both ends, because the climb
+still cannot cross it.
+
+## One pick per spot — `sameSpot`
+
+`newGeoEventFor({ sameSpot })` merges picks the predicate relates: ranked by
+heat, then by cell id for an exact tie, and kept only when no already-kept
+pick is the same spot. Nothing about the user enters the rule, so the
+survivor of a merged pair is the same on every device that searched both
+tiles — a nearest-wins tie-break would have moved the marker with a ten-metre
+walk, which is the report this answers. The predicate is injected, like
+`neighbours`, because this half does not know about H3; the demo passes
+`isSameQuestSpot` from `spatial/resolutions.ts` (`gridDisk` membership within
+`MIN_PICK_SEPARATION_STEPS`, no throw path). Absent, nothing is merged.
+
+**What the merge costs the per-tile invariant.** Each tile's pick is still a
+pure function of (tile, time). Coverage decides which tiles a device
+searches, so a device that has not loaded the neighbour sees that tile's
+pick alone and may show the other cell of a shared plateau: a disagreement
+bounded by the separation, about a spot that is the same place. `GeoEvent`'s
+docstring says so.
+
 ## Which tiles the caller offers
 
 `newGeoEventFor` takes the tile list rather than deriving it, and that is a
@@ -183,6 +210,20 @@ tests use a position-PRESERVING `toCell`/`toLatLng` pair: an earlier
 `toCell: () => "0,0"` collapsed every tile onto one cell, which was invisible
 while the sort key was `candidate` and made the sort a no-op the moment it
 became `position`. A constant `toCell` cannot test ordering at all.
+
+The `sameSpot` merge has its own describe: no predicate keeps both picks,
+the higher heat survives, an exact tie goes to the smaller cell id with the
+user standing next to the other one, and an always-false predicate merges
+nothing. Its fixture puts the two tiles' cells OUTSIDE each other's
+neighbourhood ("0,0" and "3,0"): adjacent cells share most of their
+neighbourhood sums, so a heat difference between them is not a difference
+in what the climb compares.
+
+`geo-event.property.test.ts` — the two statements the owner made, as
+properties: the SET of pick cells is the same for every user position (only
+the order changes), and with a predicate no result holds two picks it
+relates, every dropped pick loses to a kept one by the rule, and the kept
+list is still nearest-first.
 
 ## `rankedPeaks` — the exhaustive alternative to climbing (DEC-A5)
 

@@ -89,3 +89,9 @@ a weight nobody chose.
 Layout is covered by the 390 px AR-overlay e2e in `boot-and-shell.spec.js`,
 which builds the real class names against the real CSS and asserts the two-row
 stack fits and clears the toast band.
+
+## The gate-mode list is derived, not mirrored (2026-09-02)
+
+`GATE_MODES` is `COMPASS_TRUST_GATE_MODES` from the framework's state re-exports (core 1.23.0), so the fourth mode, `latch` (trusted once, trusted for the session), appeared in the dropdown the moment the library declared it. The test derives its expectation from the same const. A hand-written list is how a new mode would have compiled everywhere and appeared nowhere.
+
+- Design system (adoption plan M6b): the gear is a `.btn--icon`, the panel an `.exp-panel` plate of `.exp-row`s with `.select--small`s. The `ar-*` names stay as hooks for the tests and the e2e; the look comes from the vendored `design.css`, and `index.html` keeps only the behavioural rules (pointer-events, line breaks, placement).

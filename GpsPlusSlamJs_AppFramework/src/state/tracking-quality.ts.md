@@ -167,7 +167,7 @@ store.subscribe(() => {
 ## Tests
 
 - Co-located unit tests: [tracking-quality.test.ts](tracking-quality.test.ts) —
-  53 tests covering pure helpers, slice reducers, the aggregator
+  covering pure helpers, slice reducers, the aggregator
   state-machine, anti-validation cases from plan §6, the listener
   middleware contract, corpus-derived defaults regression (§11 (d)), and
   §4.8 hysteresis (§11 (f)).

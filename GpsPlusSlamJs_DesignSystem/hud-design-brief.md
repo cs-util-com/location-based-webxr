@@ -14,7 +14,7 @@ than alternatives to it - the normal mode now that the language has stabilised.
 For a D6 round, paste **§C (the token reference)** into the chat along with the
 prompt: it is the token contract, including what each token must never be used
 for. (A source check in the package fails if §C names a token that no longer
-exists in `styles.css`.)
+exists in `design.css` or `catalog.css`.)
 **Run each in a FRESH conversation.** If you ask one conversation for several
 mockups, each one is conditioned on the last and they converge on a house style,
 which defeats the point.
@@ -76,8 +76,11 @@ color never solely carries the distinction: every failure site also speaks
 through words or shape (STALE text, a hatch, a corner dot, a badge pill).
 Never use the red for engaged, decorative or brand purposes.
 Rounded geometry: 14px panels, 10px buttons, 14px rounded-SQUARE icon buttons
-(44px, never circles), 999px pills. One text voice everywhere: uppercase,
-0.08em tracking, weight 500, Corbel-first system stack, falling back to Noto Sans on
+(44px, never circles), 999px pills. Two voices from one token pair: uppercase with
+0.08em tracking for short labels (buttons, badges, readout keys, section labels);
+sentence case with normal tracking for anything sentence-shaped (toast copy, modal
+body, hints, annotation descriptions, log lines - the `.prose` atom for a paragraph in a plate)
+and for readout VALUES, whose unit symbols are case-sensitive ("8 m", never "8 M"). Weight 500, Corbel-first system stack, falling back to Noto Sans on
 Android (Corbel old-style figures are deliberate but Windows-only; the
 fallbacks render lining figures). Sliders are an 18px carved groove with a translucent-white
 pill thumb riding flush inside it. Toasts are translucent white
@@ -122,7 +125,7 @@ rather than arguing about it.
 Every visual value in the system reaches CSS through one of these. When
 generating in-language (D6), use these names; never invent a value-named
 primitive (no `--orange-500`). A source check in the package keeps this list
-honest against `styles.css`.
+honest against `design.css` and `catalog.css`.
 
 - **Neutral poles**: `--ink` #fff (draws everything) · `--paper` #232838
   (page ground - demo only, a real HUD's ground is the camera).
@@ -151,8 +154,12 @@ honest against `styles.css`.
   deliberate but do not survive off Windows) · `--font-num` (= ui, one voice) · `--size-hint` 12 /
   `--size-body` 14 / `--size-read` 16 · `--weight-body` = `--weight-strong`
   = 500 (flattened on purpose; emphasis comes from accent, never weight) ·
-  `--case-ui` + `--tracking-ui` (the uppercase voice, applied at the atom
-  boundary - never put it on body).
+  `--case-ui` + `--tracking-ui` (the label voice: uppercase, applied at the atom
+  boundary - never put it on body) · `--case-prose` + `--tracking-prose` (the
+  sentence voice for toast copy, modal body, hints, annotation descriptions, log lines
+  and readout values (`.num` - unit symbols are case-sensitive);
+  an atom switches voice by choosing the pair, never with a bare
+  `text-transform: none`).
 - **Geometry**: `--space-1..4` (4/8/12/16) · `--radius` 14 (panels, icon
   buttons) · `--radius-small` 10 (buttons) · `--radius-pill` · `--strip`
   (the signature strip width - plate's right edge only) · `--groove` 18

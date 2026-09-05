@@ -1,0 +1,219 @@
+/*
+ * catalog.css - the CATALOG-ONLY layers. NEVER vendor this into an app:
+ * it styles body, headings and the page layout of the catalog, and it
+ * holds the phone frame, camera stand-ins, switcher and the fake-phone
+ * placement of the world annotations, radar and toast. Loaded AFTER
+ * design.css; the @layer statement below restates design.css's order
+ * (a restatement must agree as a prefix) and appends demo.
+ */
+@layer reset, tokens, base, atoms, screen, demo;
+
+/* placement of atoms inside the 390x844 fake phone - catalog chrome,
+   not composition an app would copy */
+@layer screen {
+  /* --- world annotation placement (mock) --- */
+  .hud-anno {
+    position: absolute;
+  }
+  /* --- radar placement: top right, below the readout block --- */
+  .hud-radar {
+    position: absolute;
+    top: 150px;
+    right: var(--space-3);
+  }
+  /* --- toast placement --- */
+  .hud-toast {
+    position: absolute;
+    left: 50%;
+    top: 55%;
+    transform: translateX(-50%);
+  }
+}
+
+/* ==========================================================
+   DEMO - NOT PART OF THE DESIGN SYSTEM. Page chrome, the
+   atoms-column layout, the phone frame, the camera stand-in
+   backgrounds and the screen switcher exist only so this
+   catalog can be looked at. Never extract anything in this
+   layer.
+   ========================================================== */
+@layer demo {
+  /* type and colour now come from @layer base (design.css); the
+     catalog adds its own ground, voice and page layout */
+  body {
+    background: var(--paper);
+    /* the catalog page speaks the same voice as the atoms */
+    text-transform: var(--case-ui);
+    letter-spacing: var(--tracking-ui);
+    padding: 32px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 48px;
+    align-items: flex-start;
+  }
+  h1 {
+    flex-basis: 100%;
+  }
+  h1 small {
+    font-weight: var(--weight-body);
+    font-size: var(--size-body);
+    margin-left: 12px;
+  }
+  h2 {
+    margin-bottom: var(--space-4);
+    border-bottom: var(--line-strong) solid var(--ink);
+    padding-bottom: var(--space-2);
+  }
+  /* which family of --font-ui actually resolved. The design was judged
+     for weeks in Corbel, which no Android device has - this readout is
+     how a phone round reports the truth instead of us guessing. */
+  .demo-fontcheck {
+    flex-basis: 100%;
+    order: -1;
+    margin-bottom: -32px;
+    font-size: var(--size-hint);
+    opacity: 0.6;
+  }
+  .atoms {
+    width: 420px;
+  }
+  .atoms section {
+    margin-bottom: 28px;
+  }
+  .atoms h3 {
+    margin-bottom: var(--space-2);
+  }
+
+  .phone-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  .switcher {
+    display: flex;
+    gap: var(--space-2);
+  }
+  /* the small ANIMATE triggers inside atom sections: demo chrome,
+     never part of an atom */
+  .demo-animate {
+    min-height: 32px;
+    min-width: 0;
+    padding: 0 var(--space-2);
+    font-size: var(--size-hint);
+    align-self: flex-start;
+    margin-top: var(--space-2);
+  }
+  .switcher .btn {
+    min-height: 32px;
+    min-width: 0;
+    padding: 0 var(--space-2);
+    font-size: var(--size-hint);
+  }
+
+  .phone {
+    width: 390px;
+    height: 844px;
+    border: var(--line-strong) solid var(--ink);
+    border-radius: 24px;
+    /* demo-only: was the --shadow-raised token, used nowhere else */
+    box-shadow: 0 4px 14px rgb(0 0 0 / 0.45);
+    position: relative;
+    overflow: hidden;
+    /* camera stand-ins, switched via data-bg */
+    background: #f2f0ec;
+  }
+  /* Sky: overexposed white-blue with cloud wisps and a rooftop
+     silhouette along the bottom - the hard bright/dark boundary a
+     real camera frame has. */
+  .phone[data-bg="sky"] {
+    background:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='390' height='150'%3E%3Cpath fill='%23262e3c' d='M0,150 L0,84 h42 v-20 h26 v20 h24 l12,-30 l12,30 h38 v-36 h34 v36 h30 v-14 h28 v14 h44 v-46 h32 v46 h38 v-18 h30 v84 z'/%3E%3C/svg%3E")
+        left bottom / 100% auto no-repeat,
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='420'%3E%3Cfilter id='c'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.008 0.02' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='640' height='420' filter='url(%23c)' opacity='0.2'/%3E%3C/svg%3E"),
+      linear-gradient(#fff 0 40%, #e3edf6 70%, #c8dcec 100%),
+      #fff;
+  }
+  /* Wall: plaster grain (fine turbulence) + blotchy shading
+     (coarse turbulence) + a lighting falloff and floor shadow.
+     Still the deliberately BRIGHT worst case. */
+  .phone[data-bg="wall"] {
+    background:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23g)' opacity='0.14'/%3E%3C/svg%3E"),
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='520' height='520'%3E%3Cfilter id='b'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.02' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='520' height='520' filter='url(%23b)' opacity='0.1'/%3E%3C/svg%3E"),
+      linear-gradient(transparent 82%, rgb(60 55 48 / 0.18)),
+      radial-gradient(130% 90% at 28% 18%, #fbf9f5 0 35%, transparent 75%),
+      linear-gradient(160deg, #f6f4f0, #e9e5de), #f2f0ec;
+  }
+  /* Foliage — the default. Two SVG turbulence layers (fine leaf
+     speckle + coarse light clumps) over dappled gradient blobs, so
+     translucent UI surfaces have real texture showing through. */
+  .phone[data-bg="foliage"] {
+    background:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23f)' opacity='0.45'/%3E%3C/svg%3E"),
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='420' height='420'%3E%3Cfilter id='c'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.045' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='420' height='420' filter='url(%23c)' opacity='0.35'/%3E%3C/svg%3E"),
+      radial-gradient(46px 30px at 26% 12%, #7fae5a 0 40%, transparent 60%),
+      radial-gradient(30px 22px at 70% 18%, #8fbc63 0 45%, transparent 65%),
+      radial-gradient(60px 45px at 18% 22%, #1e3a1e 0 55%, transparent 60%),
+      radial-gradient(90px 70px at 62% 35%, #2f5a2f 0 50%, transparent 60%),
+      radial-gradient(70px 55px at 40% 60%, #172c17 0 55%, transparent 62%),
+      radial-gradient(24px 18px at 52% 48%, #6f9e55 0 45%, transparent 70%),
+      radial-gradient(110px 80px at 82% 70%, #3c6b34 0 45%, transparent 60%),
+      radial-gradient(36px 28px at 88% 40%, #0f1f0f 0 50%, transparent 65%),
+      radial-gradient(80px 60px at 12% 78%, #244524 0 50%, transparent 60%),
+      radial-gradient(50px 40px at 45% 88%, #5c8a4a 0 40%, transparent 62%),
+      radial-gradient(64px 48px at 72% 92%, #142a14 0 50%, transparent 62%),
+      #2a4d28;
+  }
+  /* live camera background: the video fills the phone and sits under
+     every HUD element; only visible while data-bg='live' */
+  .phone video {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: none;
+  }
+  .phone[data-bg="live"] {
+    background: #000;
+  }
+  .phone[data-bg="live"] video {
+    display: block;
+  }
+  /* Night street: building faces with lit-window grids at the
+     sides, warm lamp glow pools, a faintly lit pavement band and
+     coarse noise. The dark worst case, but a REAL one: small hot
+     highlights next to deep shadow. */
+  .phone[data-bg="night"] {
+    background:
+      radial-gradient(8px 8px at 51% 55.5%, #fff3d8 0 40%, transparent 100%),
+      radial-gradient(
+        90px 60px at 51% 56%,
+        rgb(255 200 130 / 0.3),
+        transparent 70%
+      ),
+      radial-gradient(
+        200px 130px at 50% 86%,
+        rgb(255 190 120 / 0.16),
+        transparent 70%
+      ),
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='390' height='844'%3E%3Cdefs%3E%3Cpattern id='w' width='30' height='40' patternUnits='userSpaceOnUse'%3E%3Crect x='8' y='11' width='8' height='12' fill='%23ffd9a0' opacity='0.3'/%3E%3C/pattern%3E%3C/defs%3E%3Crect x='0' y='140' width='118' height='570' fill='%23151923'/%3E%3Crect x='0' y='140' width='118' height='570' fill='url(%23w)'/%3E%3Crect x='296' y='90' width='94' height='620' fill='%23171b26'/%3E%3Crect x='296' y='90' width='94' height='620' fill='url(%23w)' opacity='0.75'/%3E%3C/svg%3E")
+        left top / 100% 100% no-repeat,
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='420' height='420'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.05' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='420' height='420' filter='url(%23n)' opacity='0.12'/%3E%3C/svg%3E"),
+      linear-gradient(#090b11 0 62%, #14161c 84%, #1c1d22 100%),
+      #0a0c12;
+  }
+
+  /* screens are hidden by default; the phone's data-screen shows
+     exactly one. One line per future screen. display:contents keeps
+     the phone as the containing block for absolute children. */
+  .screen {
+    display: none;
+  }
+  .phone[data-screen="hud"] .screen-hud,
+  .phone[data-screen="experiments"] .screen-experiments,
+  .phone[data-screen="placement"] .screen-placement,
+  .phone[data-screen="start"] .screen-start {
+    display: contents;
+  }
+}

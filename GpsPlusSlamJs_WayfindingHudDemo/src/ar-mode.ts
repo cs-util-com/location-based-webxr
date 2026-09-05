@@ -34,7 +34,7 @@ import {
 
 import { buildExampleWaypoints } from "./ar-waypoints";
 import type { HudDemoConfig } from "./hud-config";
-import { ARROW_SPRITE_URL, CIRCLE_SPRITE_URL } from "./indicator-assets";
+import { hudLookOptions } from "./hud-options";
 import { formatHudStatus, summarizeHudScene } from "./hud-status";
 import { createWaypointMarker } from "./sim-waypoints";
 
@@ -138,18 +138,12 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     }));
 
   function createHud(): WayfindingHud {
-    const config = deps.getConfig();
+    // Deadband, scale, accent tint and sprites: one derivation shared with
+    // the desktop simulator (hud-options.ts).
     return createWayfindingHud({
       camera: camera as THREE.PerspectiveCamera,
       getTargets,
-      distanceMin: config.distanceMin,
-      distanceMax: config.distanceMax,
-      indicatorScale: config.indicatorScale,
-      // Image toggle: URL-loaded textures are owned (and disposed) by the
-      // HUD, so re-creation on toggle/slider changes leaks nothing.
-      ...(config.imageIndicators
-        ? { arrowSprite: ARROW_SPRITE_URL, circleSprite: CIRCLE_SPRITE_URL }
-        : {}),
+      ...hudLookOptions(deps.getConfig()),
     });
   }
   let hud = createHud();

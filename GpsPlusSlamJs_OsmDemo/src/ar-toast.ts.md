@@ -129,3 +129,5 @@ scrollback to recover it from.
 
 `ar-toast.test.ts` is unchanged and still passes, which is the evidence that
 the extraction preserved the behaviour.
+
+- Design system (adoption plan M6b): the far-travel toast is the `.toast` atom, placed by the app. The `ar-*` names stay as hooks for the tests and the e2e; the look comes from the vendored `design.css`, and `index.html` keeps only the behavioural rules (pointer-events, line breaks, placement).

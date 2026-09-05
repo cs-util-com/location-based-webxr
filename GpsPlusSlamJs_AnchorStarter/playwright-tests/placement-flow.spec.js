@@ -43,7 +43,6 @@ test.describe("Anchor starter — Tier 1 placement flow", () => {
 
     // Nothing is saved yet, so the share/reload affordances stay hidden.
     await expect(page.getByTestId("copy-link-button")).toBeHidden();
-    await expect(page.getByTestId("reload-prompt")).toBeHidden();
     await expect(page.getByTestId("start-screen")).toBeHidden();
   });
 
@@ -55,7 +54,10 @@ test.describe("Anchor starter — Tier 1 placement flow", () => {
 
     await expect(page.locator("#guidance-title")).toHaveText("Ready");
     await expect(page.locator("#guidance-percent")).toHaveText("100%");
-    await expect(page.locator("#guidance-bar-fill")).toHaveClass("tone-good");
+    await expect(page.locator("#guidance-bar")).toHaveAttribute(
+      "data-tone",
+      "good",
+    );
   });
 
   test("renders a warming-up tracking report as a progress phase", async ({
@@ -73,8 +75,9 @@ test.describe("Anchor starter — Tier 1 placement flow", () => {
     await expect(page.locator("#guidance-title")).toHaveText("Move around");
     // warming-up percentReady = coverage * 0.6 → 60%.
     await expect(page.locator("#guidance-percent")).toHaveText("60%");
-    await expect(page.locator("#guidance-bar-fill")).toHaveClass(
-      "tone-progress",
+    await expect(page.locator("#guidance-bar")).toHaveAttribute(
+      "data-tone",
+      "progress",
     );
   });
 
@@ -162,7 +165,6 @@ test.describe("Anchor starter — Tier 1 placement flow", () => {
       "Saved into the page link",
     );
     await expect(page.getByTestId("copy-link-button")).toBeVisible();
-    await expect(page.getByTestId("reload-prompt")).toBeVisible();
   });
 
   test("writes the anchor into the ?show= URL param on place", async ({

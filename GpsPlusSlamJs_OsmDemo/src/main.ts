@@ -69,7 +69,6 @@ import { nowEpochMs } from "./monotonic-clock.js";
 // not one setting, and why the last four exist at all.
 import {
   setColdStartOverrideEnabled,
-  setCompassExperimentEnabled,
   setCompassRotationPriorEnabled,
   setCompassVoteWeight,
   setCompassTrustGateMode,
@@ -507,10 +506,10 @@ async function main(): Promise<void> {
   /**
    * The wrapper, held so it can be hidden with its button.
    *
-   * WHY THE WRAPPER AND NOT JUST THE BUTTON. `.leaflet-bar` carries a border,
-   * a corner radius and a drop shadow of its own, and `.ar-control` reserves
-   * margin below it — so hiding only the button leaves a small empty box
-   * floating above the locate control. That is the state EVERY desktop browser
+   * WHY THE WRAPPER AND NOT JUST THE BUTTON. `.ar-control` reserves margin
+   * below it (and, until 2026-09-04, the wrapper also wore `leaflet-bar`'s
+   * border, radius and shadow) — so hiding only the button leaves an empty
+   * gap floating above the locate control. That is the state EVERY desktop browser
    * and every iOS Safari is in, because `arButtonState` hides the button
    * outright where `immersive-ar` is unsupported. `LocateControl` never hits
    * this because its button is never hidden.
@@ -518,7 +517,9 @@ async function main(): Promise<void> {
   let arControlWrapper: HTMLElement | undefined;
   const ArControl = L.Control.extend({
     onAdd: (): HTMLElement => {
-      const wrapper = L.DomUtil.create("div", "leaflet-bar ar-control");
+      // NOT `leaflet-bar` — see LocateControl for why: the atom carries the
+      // surface, Leaflet's class drew a second outline around it.
+      const wrapper = L.DomUtil.create("div", "ar-control");
       wrapper.append(arButton);
       L.DomEvent.disableClickPropagation(wrapper);
       arControlWrapper = wrapper;
@@ -1952,33 +1953,28 @@ async function main(): Promise<void> {
                 ),
         };
       },
-      // FOUR DISPATCHES, NOT ONE (DEC-E2). `compass-influence.ts` holds why:
-      // "influence 0" is not "vote weight 0" — at weight 0 the steady-state
-      // formula is `1 − observability`, a FULL override exactly when yaw is
-      // poorly observable, and switching the prior off falls through to the
-      // cold-start override, whose curve is identical and which is on by
-      // default. Silencing the compass takes all of these together.
       onCompassSettings: (settings) => {
-        // EIGHT DISPATCHES, NOT ONE (DEC-E2, extended round four).
-        // `compass-influence.ts` holds why the first four cannot be collapsed:
+        // SEVEN DISPATCHES, NOT ONE (DEC-E2, extended round four).
+        // `compass-influence.ts` holds why the first three cannot be collapsed:
         // "influence 0" is not "vote weight 0" — at weight 0 the steady-state
         // formula is `1 − observability`, a FULL override exactly when yaw is
         // poorly observable, and switching the prior off falls through to the
         // cold-start override, whose curve is identical.
         //
-        // THE ORDER MATTERS FOR THE LAST THREE. `setCompassExperimentEnabled`
-        // maps a fixed published combo — rotation prior, tolerance 15, pair
-        // selection on — so the standalone setters must come AFTER it or the
-        // combo would overwrite the toggles the gear panel just changed. The
-        // library's own mapping applies groups in the same order and pins it
-        // with a test; this is the consumer-side half of that contract.
+        // DISPATCH ORDER DOES NOT DECIDE PRECEDENCE HERE (corrected after
+        // the PR #400 review): all seven actions write independent state
+        // fields, and the library derives the alignment config from the
+        // FINAL state (`alignmentConfigFromState`). The experiment combo
+        // (`setCompassExperimentEnabled`) is deliberately NOT among them
+        // since 2026-09-02: every key it writes is dispatched standalone
+        // below, so it was config-neutral with the prior on and forced the
+        // prior back on with it off - see `compass-influence.ts`.
         store.dispatch(
           setCompassRotationPriorEnabled(settings.rotationPriorEnabled),
         );
         store.dispatch(
           setColdStartOverrideEnabled(settings.coldStartOverrideEnabled),
         );
-        store.dispatch(setCompassExperimentEnabled(settings.experimentEnabled));
         store.dispatch(setCompassVoteWeight(settings.voteWeight));
         store.dispatch(setCompassTrustGateMode(settings.trustGateMode));
         store.dispatch(

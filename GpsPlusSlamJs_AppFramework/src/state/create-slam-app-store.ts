@@ -35,7 +35,7 @@ import {
   setCompassRotationPriorEnabled,
   setCompassWebXRConsistencyEnabled,
   setCompassExperimentEnabled,
-  setRobustSolverComparisonEnabled,
+  setConsensusSolverComparisonEnabled,
   setCompassVoteWeight,
   type RootState as LibraryRootState,
 } from 'gps-plus-slam-js';
@@ -328,11 +328,11 @@ export interface SlamAppStoreOptions<
    * comparison arm (NOT a compass mechanism — a generic outlier-tolerant
    * position fit, rejected as a default on the evaluation corpus but exposed
    * for on-device A/B against the compass experiment; adds run-to-run
-   * variance by nature). Dispatches `setRobustSolverComparisonEnabled(true)`
+   * variance by nature). Dispatches `setConsensusSolverComparisonEnabled(true)`
    * once `gpsData` exists. Default `false` ⇒ byte-identical. The action
    * persists into recordings.
    */
-  enableRobustSolverComparison?: boolean;
+  enableConsensusSolverComparison?: boolean;
 
   /**
    * **Field-test knob** — steady-state compass vote weight ∈ [0,1] for the
@@ -407,7 +407,7 @@ export function createSlamAppStore<
     enableCompassWebXRConsistency = false,
     // Field-test opt-ins (2026-07-19 enablement plan) — default OFF.
     enableCompassExperiment = false,
-    enableRobustSolverComparison = false,
+    enableConsensusSolverComparison = false,
     compassVoteWeight,
     serializableIgnoredActions,
     serializableIgnoredPaths,
@@ -523,9 +523,9 @@ export function createSlamAppStore<
       setFlag: setCompassExperimentEnabled,
     },
     {
-      enabled: enableRobustSolverComparison,
-      flag: 'robustSolverComparisonEnabled',
-      setFlag: setRobustSolverComparisonEnabled,
+      enabled: enableConsensusSolverComparison,
+      flag: 'consensusSolverComparisonEnabled',
+      setFlag: setConsensusSolverComparisonEnabled,
     },
   ];
   // A row is dispatched when it is enabled OR when it must be recorded even at

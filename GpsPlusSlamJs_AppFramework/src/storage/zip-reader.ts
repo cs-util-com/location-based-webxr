@@ -122,11 +122,14 @@ function extractActionIndex(filename: string): number {
  * Load all recorded Redux actions from a zip file.
  *
  * Filters for JSON files in the actions/ directory, parses them, and returns
- * them sorted by their filename index (chronological order for replay).
+ * them sorted by filename. That is chronological order for replay because
+ * `formatActionFilename` zero-pads the index to six digits, so lexicographic
+ * and numeric order agree; the numeric index is extracted only to warn about
+ * a name that does not fit the scheme.
  *
  * @param data - The zip content as a Uint8Array, or a zip.js Reader for lazy access
  * @param maxFileSize - Maximum allowed uncompressed size per entry (defaults to MAX_ACTION_FILE_SIZE)
- * @returns Array of action entries sorted by index
+ * @returns Array of action entries sorted by filename
  */
 export async function loadActionsFromZip(
   data: ZipSource,

@@ -54,7 +54,7 @@ describe("createArCompassControl", () => {
     // keeps that test measuring the thing this module actually builds; without
     // it, renaming the class here would move the slider back into the middle of
     // the view with the whole suite green.
-    expect(root.children[0]?.className).toBe("ar-compass");
+    expect(root.children[0]?.classList.contains("ar-compass")).toBe(true);
   });
 
   it("removes itself on dispose, and both calls are idempotent", () => {
@@ -135,7 +135,6 @@ describe("createArCompassControl", () => {
       expect.objectContaining({
         rotationPriorEnabled: false,
         coldStartOverrideEnabled: false,
-        experimentEnabled: false,
         voteWeight: 0,
       }),
     );
@@ -172,7 +171,7 @@ describe("createArCompassControl", () => {
     expect(root.textContent).toMatch(/15–30 fixes/);
   });
 
-  it("puts the hint beside the slider, before the readout (J5, DEC-J8)", () => {
+  it("puts the readout beside the slider, the hint last (DEC-L2-13)", () => {
     // WHY THIS TEST MATTERS. "Den könnte man einfach rechts neben den Slider
     // packen, sodass das dann nur noch zwei Zeilen sind."
     //
@@ -187,11 +186,14 @@ describe("createArCompassControl", () => {
     const { root, control } = harness();
     control.attach();
     const box = root.querySelector(".ar-compass");
-    const classes = [...(box?.children ?? [])].map((child) => child.className);
+    // the FIRST class is the hook; the design system's atoms follow it (M6b)
+    const classes = [...(box?.children ?? [])].map(
+      (child) => child.className.split(" ")[0],
+    );
     expect(classes).toEqual([
       "ar-compass-slider",
-      "ar-compass-hint",
       "ar-compass-value",
+      "ar-compass-hint",
     ]);
   });
 
@@ -251,7 +253,6 @@ describe("createArCompassControl — the initial value reaches the store", () =>
       expect.objectContaining({
         rotationPriorEnabled: false,
         coldStartOverrideEnabled: false,
-        experimentEnabled: false,
         voteWeight: 0,
       }),
     );

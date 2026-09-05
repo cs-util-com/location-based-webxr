@@ -38,7 +38,6 @@ import {
   type RefPointsState,
   type RefPointEntry,
 } from '../state/ref-points-slice';
-import type { ImportedRefPoint } from '../storage/ref-point-importer';
 import {
   gpsToH3,
   findNearbyGeoAnchor,
@@ -47,6 +46,20 @@ import {
 } from 'gps-plus-slam-app-framework/geo/h3-proximity';
 import { averageGpsPerRefPoint } from '../storage/ref-point-loader';
 import type { RefPointDefinition } from '../storage/ref-point-loader';
+
+/**
+ * The seed shape the removed `storage/ref-point-importer.ts` used to produce
+ * (deleted 2026-09-04: zero production callers). Kept local to the tests that
+ * still seed the V2 slice with it.
+ */
+interface ImportedRefPoint {
+  readonly id: string;
+  readonly name: string;
+  readonly lat: number;
+  readonly lon: number;
+  readonly alt?: number;
+  readonly sourceZipName: string;
+}
 
 // ---------------------------------------------------------------------------
 // Helpers

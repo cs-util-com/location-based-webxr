@@ -23,6 +23,7 @@ import {
   validateFrameTileDisplayOptions,
   validateVisualizationOptions,
   validateCompassDebugOptions,
+  type CompassDebugOptions,
   compassStoreOptions,
   validateLoopClosureDebugOptions,
   validateQrOptions,
@@ -837,7 +838,7 @@ describe('recording-options', () => {
         rotationPrior: false,
         webXRConsistency: false,
         experiment: false,
-        robustSolverComparison: false,
+        consensusSolverComparison: false,
         // 0.1 = the census-optimal weight (2026-07-19 sweep; developer
         // decision 2026-07-20, settings-clarity follow-up §4.6 — mirrors the
         // library default).
@@ -852,7 +853,7 @@ describe('recording-options', () => {
           rotationPrior: true,
           webXRConsistency: true,
           experiment: true,
-          robustSolverComparison: true,
+          consensusSolverComparison: true,
           voteWeight: 0.1,
         })
       ).toEqual({
@@ -860,7 +861,7 @@ describe('recording-options', () => {
         rotationPrior: true,
         webXRConsistency: true,
         experiment: true,
-        robustSolverComparison: true,
+        consensusSolverComparison: true,
         voteWeight: 0.1,
       });
     });
@@ -885,9 +886,43 @@ describe('recording-options', () => {
       ).toBe(false);
       expect(
         validateCompassDebugOptions({
-          robustSolverComparison: 1 as unknown as boolean,
-        }).robustSolverComparison
+          consensusSolverComparison: 1 as unknown as boolean,
+        }).consensusSolverComparison
       ).toBe(false);
+    });
+
+    it('reads the pre-1.24.0 key `robustSolverComparison` as `consensusSolverComparison`', () => {
+      // Why: the option is persisted under its OLD name in localStorage and in
+      // the `RecordingOptions` embedded in every recorded zip made before the
+      // consensus-solver rename (2026-09-05). Without the read-side alias a
+      // recorder that had the comparison arm ON would silently come back OFF
+      // after the update, and a replayed zip would lose the arm's setting.
+      const legacyOn = {
+        robustSolverComparison: true,
+      } as unknown as Partial<CompassDebugOptions>;
+      expect(
+        validateCompassDebugOptions(legacyOn).consensusSolverComparison
+      ).toBe(true);
+      // The new key wins when both are present (a settings object saved by
+      // 1.24.0 that still carries the stale old key).
+      const both = {
+        robustSolverComparison: true,
+        consensusSolverComparison: false,
+      } as unknown as Partial<CompassDebugOptions>;
+      expect(validateCompassDebugOptions(both).consensusSolverComparison).toBe(
+        false
+      );
+      // A non-boolean legacy value is garbage like any other and falls back OFF.
+      const garbage = {
+        robustSolverComparison: 1,
+      } as unknown as Partial<CompassDebugOptions>;
+      expect(
+        validateCompassDebugOptions(garbage).consensusSolverComparison
+      ).toBe(false);
+      // The old key never survives into the validated output.
+      expect(validateCompassDebugOptions(legacyOn)).not.toHaveProperty(
+        'robustSolverComparison'
+      );
     });
 
     it('voteWeight clamps to [0,1] and falls back to 0.1 for non-finite values', () => {
@@ -927,7 +962,7 @@ describe('recording-options', () => {
             rotationPrior: true,
             webXRConsistency: true,
             experiment: true,
-            robustSolverComparison: true,
+            consensusSolverComparison: true,
             voteWeight: 0.25,
           })
         ).toEqual({
@@ -935,7 +970,7 @@ describe('recording-options', () => {
           enableCompassRotationPrior: true,
           enableCompassWebXRConsistency: true,
           enableCompassExperiment: true,
-          enableRobustSolverComparison: true,
+          enableConsensusSolverComparison: true,
           compassVoteWeight: 0.25,
         });
       });
@@ -980,7 +1015,7 @@ describe('recording-options', () => {
         rotationPrior: false,
         webXRConsistency: false,
         experiment: false,
-        robustSolverComparison: false,
+        consensusSolverComparison: false,
         voteWeight: 0.1,
       });
       // Never aliases the module defaults — see "defaults are never handed out

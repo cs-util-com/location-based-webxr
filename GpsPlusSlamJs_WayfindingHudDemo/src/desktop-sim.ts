@@ -28,7 +28,7 @@ import { disposeObject3D } from "gps-plus-slam-app-framework/visualization/three
 
 import type { HudDemoConfig } from "./hud-config";
 import { formatHudStatus, summarizeHudScene } from "./hud-status";
-import { ARROW_SPRITE_URL, CIRCLE_SPRITE_URL } from "./indicator-assets";
+import { hudLookOptions } from "./hud-options";
 import {
   SIM_EYE_HEIGHT,
   SIM_WAYPOINTS,
@@ -175,18 +175,12 @@ export function startDesktopSim(deps: DesktopSimDeps): DesktopSim {
   let hud: WayfindingHud = createHud();
 
   function createHud(): WayfindingHud {
-    const config = getConfig();
+    // Deadband, scale, accent tint and sprites: one derivation shared with
+    // the live AR mode (hud-options.ts).
     return createHudImpl({
       camera,
       getTargets: () => targets,
-      distanceMin: config.distanceMin,
-      distanceMax: config.distanceMax,
-      indicatorScale: config.indicatorScale,
-      // Image toggle: URL-loaded textures are owned (and disposed) by the
-      // HUD, so re-creation on toggle/slider changes leaks nothing.
-      ...(config.imageIndicators
-        ? { arrowSprite: ARROW_SPRITE_URL, circleSprite: CIRCLE_SPRITE_URL }
-        : {}),
+      ...hudLookOptions(getConfig()),
       autoRegisterFrameUpdate: false,
     });
   }

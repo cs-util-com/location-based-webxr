@@ -107,7 +107,7 @@ function storeExpanded(expanded: boolean): void {
  */
 export function createArHud(root: HTMLElement): ArHud {
   const element = document.createElement("div");
-  element.className = "ar-hud";
+  element.className = "ar-hud hud-readout plate";
 
   // THE NUMBERS ARE HIDDEN FROM ASSISTIVE TECHNOLOGY, THE TOGGLE IS NOT.
   // They change twice a second forever; announcing that would make the page
@@ -121,7 +121,7 @@ export function createArHud(root: HTMLElement): ArHud {
   // `aria-hidden` subtree containing a focusable button is the worst of both —
   // still reachable by keyboard, invisible to the screen reader describing it.
   const values = document.createElement("span");
-  values.className = "ar-hud-values";
+  values.className = "ar-hud-values num";
   values.setAttribute("aria-hidden", "true");
 
   // THE WHOLE READOUT IS THE TAP TARGET's neighbour rather than the target
@@ -130,7 +130,7 @@ export function createArHud(root: HTMLElement): ArHud {
   // elevation control.
   const toggle = document.createElement("button");
   toggle.type = "button";
-  toggle.className = "ar-hud-toggle";
+  toggle.className = "ar-hud-toggle btn btn--icon btn--glyph";
 
   let expanded = readExpanded();
   let lastWriteMs = Number.NEGATIVE_INFINITY;
