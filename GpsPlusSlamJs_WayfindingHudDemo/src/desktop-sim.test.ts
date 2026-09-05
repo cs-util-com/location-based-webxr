@@ -89,7 +89,11 @@ function makeHarness(configOverride?: {
     dispose: ReturnType<typeof vi.fn>;
   }> = [];
   const createHudImpl = vi.fn((_options: WayfindingHudOptions) => {
-    const hud = { update: vi.fn(), dispose: vi.fn() };
+    const hud = {
+      update: vi.fn(),
+      entranceStats: vi.fn(() => ({ redraws: 0, drawMs: 0, animating: 0 })),
+      dispose: vi.fn(),
+    };
     hudInstances.push(hud);
     return hud;
   });

@@ -172,6 +172,9 @@ export {
   type WayfindingHud,
   type WayfindingHudOptions,
   DEFAULT_WAYFINDING_HUD,
+  DEFAULT_CIRCLE_ENTRANCE,
+  type CircleEntranceOptions,
+  type EntranceStats,
   createWayfindingHud,
   validateWayfindingHudOptions,
 } from './wayfinding-hud.js';

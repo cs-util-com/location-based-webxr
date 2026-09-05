@@ -51,7 +51,11 @@ vi.mock("gps-plus-slam-app-framework/ar/hit-test-reticle-driver", () => ({
   ),
 }));
 vi.mock("gps-plus-slam-app-framework/visualization/wayfinding-hud", () => ({
-  createWayfindingHud: vi.fn(() => ({ update: vi.fn(), dispose: vi.fn() })),
+  createWayfindingHud: vi.fn(() => ({
+    update: vi.fn(),
+    entranceStats: vi.fn(() => ({ redraws: 0, drawMs: 0, animating: 0 })),
+    dispose: vi.fn(),
+  })),
 }));
 // The accent token comes from the vendored design.css at runtime; jsdom has
 // no sheet, so the reader is mocked to exercise both outcomes.
