@@ -18,10 +18,11 @@
     does not know. Comments are stripped first. `mask` lines are exempt
     (a `#000` in a mask is an alpha stencil, not a colour). `reset` and
     `demo` are exempt - the camera stand-ins are hex by nature.
-  - **Check 2 - every `--token` the brief names exists in the CSS**, as
-    a definition or a `var()` use. `--token` (the brief's generic
-    placeholder) and `--orange-500` (its forbidden example) are
-    whitelisted as prose.
+  - **Check 2 - every `--token` the brief names is DEFINED in the CSS**
+    (`--name:`), never merely referenced: a `var(--name)` surviving a
+    deleted declaration is the drift this check exists for (PR #411
+    review). `--token` (the brief's generic placeholder) and
+    `--orange-500` (its forbidden example) are whitelisted as prose.
   - Both checks read BOTH sheets concatenated: after the split, a check
     reading one file would pass vacuously (no tokened layers) or
     false-positive on every token.

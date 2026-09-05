@@ -19,7 +19,7 @@ so a future object detector (YOLO) reuses it unchanged. It gates nothing on QR.
   (`qr-detection-controller.ts`, `qr-tracking-controller.ts`). The former
   `createQrDetectionScheduler` / `QrDetectionScheduler` / `QrDetectionSchedulerConfig`
   aliases were removed 2026-09-04 (simplify loop): nothing but their own tests used
-  them. **Semver: MAJOR** for the framework (they were on the `/ar/qr` barrel).
+  them. A MAJOR by semver (they were on the `/ar/qr` barrel), shipped in 1.24.0 - a MINOR by owner decision, in lock-step with `gps-plus-slam-js` 1.24.0; the changelog's Breaking section carries it.
 
 ## Invariants & assumptions
 

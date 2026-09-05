@@ -34,8 +34,8 @@ exemption for `skipBootstrap` anchors), and 5 (re-bootstrap on external
 move)** of the port plan. Floor-Y correction (sub-step 6) is not
 implemented. The `floorY`, `angleThresholdInDegrees` and
 `heightAboveGround` options that used to be accepted for it were never read
-and were removed 2026-09-04 (simplify loop; **semver MAJOR** for the
-framework): an accepted-but-ignored option is a promise the code does not
+and were removed 2026-09-04 (simplify loop; a MAJOR by semver, shipped in 1.24.0 - a MINOR by
+owner decision, in lock-step with `gps-plus-slam-js` 1.24.0): an accepted-but-ignored option is a promise the code does not
 keep, and no consumer passed any of the three.
 
 ## Public API
