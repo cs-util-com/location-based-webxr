@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.24.0] — unreleased (entry started 2026-09-02 as 1.23.0)
+## [1.24.0] — 2026-09-05
 
 Requires `gps-plus-slam-js` ≥ 1.24.0.
 
