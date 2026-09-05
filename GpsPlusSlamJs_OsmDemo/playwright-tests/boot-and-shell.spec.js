@@ -769,9 +769,12 @@ test.describe("the map buttons", () => {
     // radius around a 44 px button with its own 14 px radius, the button
     // anchored top-left inside a wrapper that is wider and taller than it.
     // The owner saw "two rounded outlines, the pin too far left and up, a
-    // thin dark line underneath". Each assertion below was red before the
-    // fix at THIS viewport; the AR button is only present with XR support
-    // stubbed, so the stub is what makes its half mean anything.
+    // thin dark line underneath". Red before the fix at THIS viewport: the
+    // wrapper's border, the wrapper-vs-button box, the glyph's centre and
+    // the glyph's rendered width; the wrapper's box-shadow was already
+    // `none` under `leaflet-touch` and is asserted so nothing brings it
+    // back. The AR button is only present with XR support stubbed, so the
+    // stub is what makes its half mean anything.
     await page.addInitScript(() => {
       Object.defineProperty(navigator, "xr", {
         configurable: true,
@@ -826,9 +829,19 @@ test.describe("the map buttons", () => {
     const dy = pin.y + pin.height / 2 - (button.y + button.height / 2);
     expect(Math.abs(dx), "pin x offset").toBeLessThan(1);
     expect(Math.abs(dy), "pin y offset").toBeLessThan(1);
-    // And it fills the system's 24 px icon box in height (the path's own
-    // bounds are the viewBox now; before, 14 × 20 of a 24 × 24 box).
-    expect(pin.height, "pin height").toBeCloseTo(24, 0);
+    // And the GLYPH fills the system's 24 px icon box: the path's own bounds
+    // are the viewBox now (5 2 14 20 → 16.8 × 24 px under `meet`); before,
+    // the path drew 14 × 20 inside a 24 × 24 box. Measured on the <path>,
+    // not the <svg> — the element was 24 × 24 all along, so an assertion on
+    // it could not fail (milestone review, 2026-09-05).
+    const glyph = await page
+      .locator(".locate-button svg path")
+      .evaluate((path) => {
+        const r = path.getBoundingClientRect();
+        return { width: r.width, height: r.height };
+      });
+    expect(glyph.height, "glyph height").toBeCloseTo(24, 0);
+    expect(glyph.width, "glyph width").toBeGreaterThan(16);
   });
 });
 

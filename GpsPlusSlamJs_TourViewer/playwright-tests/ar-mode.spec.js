@@ -50,8 +50,12 @@ test("viewer mode boots to running: session started, alignment bound, capture at
 }) => {
   await page.goto("/");
   await expect(page.getByTestId("enter-ar")).toHaveText("Start AR view");
+  await expect(page.getByTestId("ar-hint")).toBeVisible();
   await enterAr(page);
   await expect(page.getByTestId("enter-ar")).toHaveText("AR running");
+  // `#ar-root` is the DOM overlay: the start-screen hint must not sit over
+  // the camera feed for the whole session (milestone review, 2026-09-05).
+  await expect(page.getByTestId("ar-hint")).toBeHidden();
 
   const wiring = await page.evaluate(() => {
     const t = /** @type {any} */ (window).__tourViewerTest;

@@ -41,7 +41,8 @@ major`; `package.json` still reads 1.23.0 until then.
 ### Added
 
 - **`createWayfindingHud({ indicatorColor })`** — tint of the procedural
-  indicators (`THREE.ColorRepresentation`; validated, `null` rejected), also
+  indicators (`THREE.ColorRepresentation`; the shape is validated and `null`
+  rejected, a string's content is passed to `THREE.Color` unchecked), also
   exposed as `DEFAULT_WAYFINDING_HUD.indicatorColor`. Inert in image mode.
 - **`utils/bearing-degrees`** gains `bearingDeltaDeg(a, b)` — the signed
   shortest difference in `(−180, 180]`, replacing two unnamed copies.

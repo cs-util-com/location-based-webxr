@@ -86,8 +86,10 @@ export interface WayfindingHudOptions {
    * pass the live token so the WebGL indicators follow a re-tuned accent.
    * Inert in image mode: sprites are tinted white so the texture's own
    * colours show. Any `THREE.ColorRepresentation` (hex number, CSS string,
-   * `THREE.Color`); validated at construction because `THREE.Color` reads an
-   * object or a boolean as black without a word.
+   * `THREE.Color`); the SHAPE is validated at construction because
+   * `THREE.Color` reads an object, a boolean or `null` as black without a
+   * word. A string's content is not: a malformed CSS colour reaches
+   * `THREE.Color`, which warns on the console and keeps its default.
    */
   indicatorColor?: THREE.ColorRepresentation;
   /**

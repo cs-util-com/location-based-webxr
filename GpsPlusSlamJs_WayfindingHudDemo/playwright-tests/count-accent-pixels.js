@@ -32,3 +32,29 @@ export async function countAccentPixels(page, pngBuffer) {
     return count;
   }, pngBuffer.toString("base64"));
 }
+
+/**
+ * Counts light pixels (r, g, b all > 200 — the chevron is a two-unit stroke minified to ~2 px, so few of its pixels reach pure white): the ink of the label pills
+ * AND of the chevron sprite. On its own the count cannot tell the two apart,
+ * which is why the image-indicator spec measures the same edge band before
+ * and after the toggle — the labels are identical in both modes, so the
+ * difference is the chevron.
+ */
+export async function countInkPixels(page, pngBuffer) {
+  return page.evaluate(async (base64) => {
+    const image = new Image();
+    image.src = `data:image/png;base64,${base64}`;
+    await image.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = image.width;
+    canvas.height = image.height;
+    const context = canvas.getContext("2d");
+    context.drawImage(image, 0, 0);
+    const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
+    let count = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i] > 200 && data[i + 1] > 200 && data[i + 2] > 200) count += 1;
+    }
+    return count;
+  }, pngBuffer.toString("base64"));
+}

@@ -98,8 +98,14 @@ describe('framework deep imports are built entrypoints', () => {
       'utf8'
     );
     const advertised = [
-      ...changelog.matchAll(/\*\*`([a-z0-9/-]+)`\*\* \(deep import\)/g),
+      ...changelog.matchAll(/\*\*`([A-Za-z0-9_./-]+)`\*\* \(deep import/g),
     ].map(([, sub]) => sub);
+    // Every "(deep import" in the file must have been captured, or a marker
+    // the pattern does not recognise (a differently formatted entry) would
+    // silently leave its module unguarded while the other entries keep this
+    // green (milestone review, 2026-09-05).
+    const mentioned = changelog.match(/\(deep import/g) ?? [];
+    expect(advertised.length).toBe(mentioned.length);
     expect(advertised.length).toBeGreaterThan(0);
     const missing = advertised.filter((sub) => !built.has(sub));
     expect(

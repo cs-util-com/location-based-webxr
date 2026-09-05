@@ -110,6 +110,7 @@ const errorBox = element<HTMLDivElement>("error");
 const gallery = element<HTMLUListElement>("gallery");
 const arRoot = element<HTMLElement>("ar-root");
 const arStatus = element<HTMLDivElement>("ar-status");
+const arHint = element<HTMLParagraphElement>("ar-hint");
 const enterArButton = element<HTMLButtonElement>("enter-ar");
 
 /** The site worker's Drive CORS proxy (drive-proxy plan, 2026-08-26):
@@ -1037,6 +1038,11 @@ function renderArState(state: EnableGpsArState): void {
     state.status === "running" ||
     state.status === "stopping";
   authorSizeInput.disabled = sessionActive;
+  // `#ar-root` IS the DOM overlay, so anything left visible in it sits over
+  // the camera feed for the whole session. The hint explains the button
+  // before a press; during a session it would be a start-screen instruction
+  // pinned over live video (milestone review, 2026-09-05).
+  arHint.hidden = sessionActive;
   renderArStatus();
 }
 

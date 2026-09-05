@@ -10,7 +10,7 @@
     "**/*.test.ts",
     "**/*.spec.ts",
     "**/*.d.ts",
-    "**/assets/**"
+    "**/assets/*.svg"
   ],
   "gitignore": true
 }
