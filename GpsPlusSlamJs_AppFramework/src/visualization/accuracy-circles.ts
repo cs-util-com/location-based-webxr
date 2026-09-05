@@ -5,7 +5,7 @@
  * gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-31-unified-trajectory-map-phase3-plan.md)
  * so BOTH the framework's shared map-overlay-draw module AND the recorder
  * app's preview/summary maps can reuse it. The recorder imports it directly
- * (its `ui/accuracy-circles.ts` re-export shim was deleted on 2026-09-03).
+ * (its `ui/accuracy-circles.ts` re-export shim was deleted on 2026-09-04).
  *
  * Future style changes only need to happen in one place.
  */
