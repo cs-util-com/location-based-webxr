@@ -264,6 +264,41 @@ export function toEventTile(cell: string): string {
   return coarsenTo(cell, EVENT_TILE_RES);
 }
 
+/**
+ * How close, in res-13 grid steps, two quest picks have to be to count as ONE
+ * spot (owner report 2026-09-04).
+ *
+ * Two adjacent event tiles seed their candidates in overlapping bounding
+ * boxes and can climb onto one heat plateau from two sides; the climb stops
+ * on flat ground wherever it entered, so both report the plateau, on
+ * neighbouring cells with the same heat. To a player two quests 28 m apart
+ * are the same place, and an event tile is ~1 km across, so a genuine second
+ * quest is far outside this. Four steps is 4 × 7.09 m centre-to-centre, a
+ * `gridDisk` reaching 27.65 m. A plateau wider than that can still be
+ * reported from both ends — this narrows the double report to "the same
+ * place", it does not abolish the climb's flat-ground limit
+ * (`geo-event.ts.md`, "Known limit").
+ */
+export const MIN_PICK_SEPARATION_STEPS = 4;
+
+/**
+ * Whether two res-13 cells are the same quest spot: `b` lies within
+ * {@link MIN_PICK_SEPARATION_STEPS} of `a`.
+ *
+ * `gridDisk` membership rather than `gridDistance`, which throws for cells on
+ * opposite sides of a pentagon or very far apart (h3-js README); a predicate
+ * consulted on every pair of picks must not have a throw path. An invalid
+ * cell reads as "not the same spot" for the same reason.
+ */
+export function isSameQuestSpot(a: string, b: string): boolean {
+  if (a === b) return true;
+  try {
+    return gridDisk(a, MIN_PICK_SEPARATION_STEPS).includes(b);
+  } catch {
+    return false;
+  }
+}
+
 /** Coarsens a cell to the score-chunk level. See {@link toFetchTile}. */
 export function toScoreChunk(cell: string): string {
   return coarsenTo(cell, SCORE_CHUNK_RES);

@@ -6,9 +6,9 @@
  * already cached" — no early stop, climbs wandering too far, no parallelism —
  * and they predict DIFFERENT profiles, so one measurement picks the lever and
  * two of the three cost nothing to reject. One of them is already disproved on
- * the code alone: `newGeoEventFor` produces exactly one pick per tile and
- * `bestPickForTile` returns at the first passing batch, so there is no
- * post-sixth probing to remove.
+ * the code alone: `newGeoEventFor` produces at most one pick per tile (minus
+ * the same-spot merges since 2026-09-05) and `bestPickForTile` returns at
+ * the first passing batch, so there is no post-sixth probing to remove.
  *
  * THE PREDICTION THIS EXISTS TO TEST, stated up front so a null result is still
  * a result. `affordance-index.ts` sizes one candidate batch at ~190 chunks and

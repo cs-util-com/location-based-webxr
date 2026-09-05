@@ -273,6 +273,25 @@ export function climbToLocalMaximum({
 export const CANDIDATES_PER_BATCH = 10;
 const MAX_BATCHES = 10;
 
+/**
+ * Hotter first, then the smaller cell id — a TOTAL order with no user in it.
+ *
+ * Returns 0 for the same cell rather than 1 for both orderings: an
+ * inconsistent comparator hands the permutation to the engine, and the
+ * engine's tie falls back on input order, which is the caller's tile order —
+ * the user's tile first. The survivor's `cell`, `position` and `heat` would
+ * be identical either way; `candidate` and `evaluated` would not (milestone
+ * review, 2026-09-05).
+ */
+function byHeatThenCell(
+  a: { heat: number; cell: string },
+  b: { heat: number; cell: string },
+): number {
+  if (a.heat !== b.heat) return b.heat - a.heat;
+  if (a.cell === b.cell) return 0;
+  return a.cell < b.cell ? -1 : 1;
+}
+
 /** The chosen candidate, plus what it beat. */
 export interface BestPick {
   /**
@@ -450,7 +469,11 @@ export interface EventTile {
 export interface GeoEvent {
   /** When it starts, epoch ms. */
   readonly eventTime: number;
-  /** One pick per tile that had a valid position, NEAREST TO THE USER FIRST. */
+  /**
+   * One pick per tile that had a valid position, NEAREST TO THE USER FIRST —
+   * minus any pick the caller's `sameSpot` merged into another (two tiles
+   * that climbed onto one plateau from two sides report it once).
+   */
   readonly picks: readonly BestPick[];
   /**
    * How many tiles were SEARCHED, which is not how many yielded a pick (F57).
@@ -460,10 +483,14 @@ export interface GeoEvent {
    * different NUMBER of events. Each individual event is identical for both --
    * the divergence is coverage, never disagreement -- but without this the UI
    * cannot say which it is, and a missing event reads as "broken" rather than as
-   * "not loaded yet".
+   * "not loaded yet". (One bounded exception since the `sameSpot` merge: a
+   * device that searched only one of two tiles sharing a plateau can show the
+   * other cell of that plateau — within the caller's separation, the same
+   * place.)
    *
    * `picks.length` cannot stand in: a tile that is all water is searched and
-   * yields nothing, which is a different fact from not having looked.
+   * yields nothing, which is a different fact from not having looked — and
+   * two tiles may have reported one spot.
    */
   readonly tilesSearched: number;
 }
@@ -501,6 +528,7 @@ export function newGeoEventFor({
   steps,
   threshold,
   cellsOfTile,
+  sameSpot,
 }: {
   user: LatLng;
   tiles: readonly EventTile[];
@@ -526,6 +554,22 @@ export function newGeoEventFor({
    * becoming a fallback nobody exercises.
    */
   cellsOfTile?: (tile: EventTile) => Iterable<string>;
+  /**
+   * Supply this to report a spot ONCE when two tiles both settle on it.
+   *
+   * Candidates are seeded in each tile's bounding box, which overlaps the
+   * neighbours, and the climb stops on flat ground wherever it entered — so
+   * two tiles can climb onto one plateau from two sides and report adjacent
+   * cells with the same heat (the owner's second marker "a few metres from
+   * the first", 2026-09-04). Picks the predicate relates are merged: the
+   * higher heat survives, an exact tie the smaller cell id. Nothing about the
+   * user enters the rule, so the surviving cell is the same on every device
+   * that searched both tiles. Injected, like `neighbours`, because this half
+   * does not know about H3; the caller decides what "the same spot" means.
+   *
+   * Absent means no merging — every tile's pick is reported, as before.
+   */
+  sameSpot?: (a: string, b: string) => boolean;
 }): GeoEvent {
   const picks: BestPick[] = [];
   for (const tile of tiles) {
@@ -554,6 +598,27 @@ export function newGeoEventFor({
     if (pick !== undefined) picks.push(pick);
   }
 
+  // ONE PICK PER SPOT, by a rule with no user in it. Ranked by heat, then by
+  // cell id for an exact tie, and kept only when no already-kept pick is the
+  // same spot — so the survivor of a merged pair is decided by the picks
+  // alone, never by where the user stood (a nearest-wins tie-break would have
+  // moved the marker with a ten-metre walk, which is the report this answers).
+  // Coverage still decides WHICH tiles were searched: a device that has not
+  // loaded the neighbour sees that tile's pick alone, and may therefore show
+  // the other cell of a shared plateau — a disagreement bounded by the
+  // caller's separation, about a spot that is the same place. See `GeoEvent`.
+  const kept: BestPick[] = [];
+  if (sameSpot === undefined) {
+    kept.push(...picks);
+  } else {
+    const ranked = [...picks].sort(byHeatThenCell);
+    for (const pick of ranked) {
+      if (!kept.some((winner) => sameSpot(winner.cell, pick.cell))) {
+        kept.push(pick);
+      }
+    }
+  }
+
   // PLANAR, not great-circle. These are candidates inside adjacent tiles a
   // kilometre or so apart, so the only thing the distance decides is their
   // ORDER — and any monotonic function of true distance gives the same order at
@@ -571,8 +636,8 @@ export function newGeoEventFor({
   // `ToLatLong(x.ExactGeoHash)` (`GeoEvent.cs:107`) — where the climb ended.
   // Ordering by `candidate` ranks tiles by a point the event is not at, so a
   // caller's "nearest event" would quote a distance to nothing.
-  picks.sort((a, b) => distanceTo(a.position) - distanceTo(b.position));
-  return { eventTime, picks, tilesSearched: tiles.length };
+  kept.sort((a, b) => distanceTo(a.position) - distanceTo(b.position));
+  return { eventTime, picks: kept, tilesSearched: tiles.length };
 }
 
 /** One peak found by an exhaustive scan, with the heat that ranked it. */
@@ -638,7 +703,7 @@ export function rankedPeaks({
   // Ties broken by cell id so the order is total and reproducible. Two chunks of
   // identical heat are common in sparse ground, and a result that depended on
   // Map iteration order would differ between clients that must agree.
-  scored.sort((a, b) => b.heat - a.heat || (a.cell < b.cell ? -1 : 1));
+  scored.sort(byHeatThenCell);
 
   const picked: RankedPeak[] = [];
   const excluded = new Set<string>();

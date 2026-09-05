@@ -20,12 +20,15 @@ import {
   getHexagonAreaAvg,
   cellToChildren,
   getResolution,
+  gridDisk,
   latLngToCell,
   UNITS,
 } from "h3-js";
 import {
   EVENT_TILE_RES,
   FETCH_RES,
+  MIN_PICK_SEPARATION_STEPS,
+  isSameQuestSpot,
   SCORE_CHUNK_RES,
   AFFORDANCE_RES,
   FETCH_DISK_RADIUS,
@@ -337,5 +340,42 @@ describe("EVENT_TILE_RES — the geo-event tile", () => {
     // string-truncating an H3 id yields an invalid cell rather than a parent.
     const tile = latLngToCell(50.9413, 6.9583, FETCH_RES);
     expect(() => toEventTile(tile)).toThrow(/only coarsens/);
+  });
+});
+
+describe("the quest-spot separation (owner report 2026-09-04)", () => {
+  // Why this matters: two res-8 tiles can climb onto one heat plateau from
+  // two sides and settle on adjacent res-13 cells — the same place to a
+  // player, reported twice. The demo merges picks the predicate calls one
+  // spot; the predicate is `gridDisk` membership rather than `gridDistance`,
+  // which throws across pentagons and at range (h3-js README).
+  const cologne = latLngToCell(50.9413, 6.9583, AFFORDANCE_RES);
+
+  it("is four res-13 steps — under 30 m, well inside a ~1 km tile", () => {
+    expect(MIN_PICK_SEPARATION_STEPS).toBe(4);
+    const step =
+      getHexagonEdgeLengthAvg(AFFORDANCE_RES, UNITS.m) * Math.sqrt(3);
+    expect(MIN_PICK_SEPARATION_STEPS * step).toBeLessThan(30);
+  });
+
+  it("calls a cell and any cell within the separation one spot, and one step further not", () => {
+    expect(isSameQuestSpot(cologne, cologne)).toBe(true);
+    const ring = (k: number) =>
+      gridDisk(cologne, k).filter((c) => !gridDisk(cologne, k - 1).includes(c));
+    for (const cell of ring(MIN_PICK_SEPARATION_STEPS)) {
+      expect(isSameQuestSpot(cologne, cell)).toBe(true);
+      expect(isSameQuestSpot(cell, cologne)).toBe(true);
+    }
+    for (const cell of ring(MIN_PICK_SEPARATION_STEPS + 1)) {
+      expect(isSameQuestSpot(cologne, cell)).toBe(false);
+    }
+  });
+
+  it("never throws, whatever the pair", () => {
+    // `gridDistance` would throw for these; the predicate must not.
+    expect(
+      isSameQuestSpot(cologne, latLngToCell(40.7677, -73.9807, AFFORDANCE_RES)),
+    ).toBe(false);
+    expect(isSameQuestSpot(cologne, "not a cell")).toBe(false);
   });
 });

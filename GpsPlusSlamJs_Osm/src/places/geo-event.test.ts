@@ -534,6 +534,75 @@ describe("newGeoEventFor — picking across tiles, nearest first", () => {
     expect(distances).toEqual([...distances].sort((a, b) => a - b));
   });
 
+  describe("deduplicating picks the caller calls the same spot (owner report 2026-09-04)", () => {
+    // Two tiles whose candidates all settle on one plateau: tile A's climbs
+    // start (and, on flat heat, stop) on cell "0,0", tile B's on "3,0" — the
+    // shape of the field report, where a neighbour tile's climb entered the
+    // same plateau from the other side and both reported heat 116 a few
+    // metres apart. Tiles are 0.01° wide at lng 0 and 1, so every candidate of
+    // each maps to one cell. "3,0" is NOT a grid neighbour of "0,0", so the
+    // two neighbourhood sums are independent and a heat difference is a real
+    // difference (adjacent cells share most of their neighbourhoods).
+    const tiles = [tileAt(0, 0), tileAt(0, 1)];
+    const toOneCellPerTile = (position: { lat: number; lng: number }) =>
+      position.lng < 0.5 ? "0,0" : "3,0";
+    const adjacent = (a: string, b: string) =>
+      (a === "0,0" && b === "3,0") || (a === "3,0" && b === "0,0");
+    const field = (heat0: number, heat1: number) => {
+      const values: Record<string, number> = {};
+      for (let x = -2; x <= 5; x += 1) {
+        for (let y = -2; y <= 2; y += 1) values[`${x},${y}`] = 2;
+      }
+      values["0,0"] = heat0;
+      values["3,0"] = heat1;
+      return fieldFrom(values);
+    };
+    const pick = (
+      heatAt: (cell: string) => number | undefined,
+      sameSpot?: (a: string, b: string) => boolean,
+    ) =>
+      newGeoEventFor({
+        user: { lat: 0, lng: 0.9 }, // nearer to "3,0": the rule must ignore it
+        tiles,
+        globalSeed: 1,
+        eventTime: 0,
+        toCell: toOneCellPerTile,
+        toLatLng: gridToLatLng,
+        heatAt,
+        neighbours: gridNeighbours,
+        steps: 3,
+        ...(sameSpot === undefined ? {} : { sameSpot }),
+      });
+
+    it("keeps both without a predicate — today's behaviour, the caller opts in", () => {
+      const event = pick(field(2, 2));
+      expect(event.picks.map((p) => p.cell).sort()).toEqual(["0,0", "3,0"]);
+      expect(event.tilesSearched).toBe(2);
+    });
+
+    it("merges two same-spot picks to one, keeping the higher heat", () => {
+      // "3,0" is hotter, so it survives although "0,0" sorts first by id.
+      const event = pick(field(2, 5), adjacent);
+      expect(event.picks.map((p) => p.cell)).toEqual(["3,0"]);
+      // The tile count is still what was SEARCHED (its docstring): two
+      // tiles looked, one spot came back.
+      expect(event.tilesSearched).toBe(2);
+    });
+
+    it("breaks an exact tie by the smaller cell id, never by the user's position", () => {
+      // The user stands at lng 0.9, next to "3,0"; a nearest-wins tie-break
+      // would make the surviving cell a function of where the user stood,
+      // which is the non-determinism the report was about (plan DEC-T10).
+      const event = pick(field(2, 2), adjacent);
+      expect(event.picks.map((p) => p.cell)).toEqual(["0,0"]);
+    });
+
+    it("only merges what the predicate names; distinct spots stay", () => {
+      const event = pick(field(2, 2), () => false);
+      expect(event.picks).toHaveLength(2);
+    });
+  });
+
   it("weights longitude by latitude, so east-west is not over-counted", () => {
     // AT THE EQUATOR THIS LINE IS A NO-OP, which is why the test above cannot
     // see it -- cos(0) is 1. At Cologne's 51 degrees a longitude degree is only

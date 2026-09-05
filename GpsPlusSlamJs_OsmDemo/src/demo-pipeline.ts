@@ -37,6 +37,7 @@ import {
   eventCandidates,
   fetchTilesForScoreWorkingSet,
   fetchWorkingSet,
+  isSameQuestSpot,
   newGeoEventFor,
   nextEventTime,
   toFetchTile,
@@ -975,27 +976,13 @@ export class DemoPipeline {
     // it is derived without the `requireLoaded` abort and can never be
     // `undefined`.
     const reach = new Set<string>(reachOf(tile) ?? []);
-    for (const neighbour of gridDisk(tile, 1)) {
-      if (neighbour === tile) continue;
-      const cells = reachOf(neighbour, true);
-      if (cells === undefined) continue;
-      tiles.push(neighbour);
-      for (const cell of cells) reach.add(cell);
-    }
-    // The bbox objects are freshly built here, so identity is a safe key back to
-    // the tile CELL — which `EventTile` does not carry and the exhaustive scan
-    // needs in order to enumerate the tile's cells.
-    const cellOfBox = new Map<object, string>();
-    const boxes = tiles.map((each) => {
-      const [s, w, n, e] = boundsOfCell(each);
-      const box = { south: s, west: w, north: n, east: e };
-      cellOfBox.set(box, each);
-      return box;
-    });
-    const deriveMs = nowMs() - deriveStart;
+    let deriveMs = nowMs() - deriveStart;
 
     // STEP 2 — ensure, fetching what is missing. Only this first batch may
     // fetch (DEC-R9-12): ten sequential fetch rounds would be minutes.
+    //
+    // THE CENTRE ALONE IS ENSURED HERE. The neighbours join in step 2b, AFTER
+    // this download — see there for why the order is the whole point.
     const ensureStart = nowMs();
     let tilesFetched = 0;
     const { missingTiles } = this.index.ensureScored(reach);
@@ -1016,8 +1003,52 @@ export class DemoPipeline {
         // deliberate: one unreachable tile must not fail the whole event.
       }
     }
+    // STEP 2b — admit the neighbours whose whole reach is loaded NOW, i.e.
+    // after the centre's own download (DEC-T13, owner report 2026-09-04).
+    //
+    // The gate used to run before step 2. The centre's reach overhangs into
+    // fetch tiles the refresh never loaded (the demo's Manhattan default
+    // fetches one on the first press), and that download is often exactly
+    // what completes a neighbour's reach — so the FIRST press searched the
+    // centre alone and the SECOND press, from the same spot in the same
+    // quarter-hour, found the neighbours admissible and searched four tiles.
+    // Read from the map that was "press again and a second quest appears a
+    // few metres away": the incidental thing deciding the tile set was the
+    // order of two steps, not the user's position. Admitting after the
+    // download makes both presses see the same tiles. It downloads nothing
+    // extra — a neighbour is still admitted only when no download would be
+    // needed for it — but the neighbours' scoring and climbing MOVE from the
+    // second press to the first: a fresh location's first press now does
+    // what its second press used to. Unmeasured on a phone (milestone
+    // review, 2026-09-05); W7's stats still partition the search, so the
+    // number is one benchmark away.
+    const admitStart = nowMs();
+    for (const neighbour of gridDisk(tile, 1)) {
+      if (neighbour === tile) continue;
+      const cells = reachOf(neighbour, true);
+      if (cells === undefined) continue;
+      tiles.push(neighbour);
+      for (const cell of cells) reach.add(cell);
+    }
+    const admitMs = nowMs() - admitStart;
+    deriveMs += admitMs;
+    // The bbox objects are freshly built here, so identity is a safe key back to
+    // the tile CELL — which `EventTile` does not carry and the exhaustive scan
+    // needs in order to enumerate the tile's cells.
+    const cellOfBox = new Map<object, string>();
+    const boxes = tiles.map((each) => {
+      const [s, w, n, e] = boundsOfCell(each);
+      const box = { south: s, west: w, north: n, east: e };
+      cellOfBox.set(box, each);
+      return box;
+    });
+    // Scores the admitted neighbours' cells too; fetches nothing, because every
+    // cell of an admitted reach sits in a loaded tile by construction.
     this.index.ensureScored(reach);
-    const ensureMs = nowMs() - ensureStart;
+    // The admit block sits inside this span and is derivation, not ensuring:
+    // take it out so derive · ensure · climb still partition the wall clock
+    // (`geo-event-stats.ts` prints them as a breakdown).
+    const ensureMs = nowMs() - ensureStart - admitMs;
 
     // STEP 3 — pin, then climb. Nothing awaits inside this callback.
     const climbStart = nowMs();
@@ -1052,6 +1083,12 @@ export class DemoPipeline {
         },
         neighbours: (cell) => gridDisk(cell, 1),
         steps: CLIMB_STEPS,
+        // ONE PICK PER SPOT (owner report 2026-09-04): two tiles that climbed
+        // onto one plateau from two sides report it once. The rule (higher
+        // heat, then the smaller cell id) is inside `newGeoEventFor`; what
+        // "the same spot" means — within `MIN_PICK_SEPARATION_STEPS` — is the
+        // package's, next to the resolution ladder it is measured in.
+        sameSpot: isSameQuestSpot,
         // THE SAME CONSTANT THE MAP DRAWS WITH. `thresholdFor` is what decides
         // whether a cell counts as usable ground and becomes part of a region,
         // so an event should not be placed where the map itself says it is not.

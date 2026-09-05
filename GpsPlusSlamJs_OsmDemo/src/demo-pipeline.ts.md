@@ -37,6 +37,23 @@ path, with no DOM in it.
     of seven neighbours admitted and three tiles downloaded;
     `geo-event-reach.test.ts` has the geometry and
     `demo-pipeline.test.ts` the end-to-end rule.
+    - **And it is admitted AFTER the centre's own download** (DEC-T13,
+      2026-09-05). The gate used to run before step 2; the centre's reach
+      overhangs into fetch tiles the refresh never loaded, that download often
+      completes a neighbour's reach, so the first press searched the centre
+      alone and the second press, from the same spot, searched four tiles —
+      the "press again and a second quest appears" the owner reported as
+      non-determinism. Now both presses see the same tiles, at no extra
+      download (the gate still requires the neighbour's whole reach loaded).
+      `demo-pipeline.test.ts` "does not creep outward" runs at Manhattan,
+      where the first press downloads, for exactly this.
+  - **One pick per spot.** `newGeoEventFor` is given `isSameQuestSpot`
+    (`MIN_PICK_SEPARATION_STEPS`, `resolutions.ts`): two tiles that climbed
+    onto one plateau from two sides — candidates are seeded in overlapping
+    bounding boxes — report it once, the higher heat surviving, an exact tie
+    going to the smaller cell id. `demo-pipeline.test.ts` rebuilds the owner's
+    report from the seed: the closest cross-tile candidate pair at Cologne, a
+    hot patch at their midpoint, both climbs on its plateau, one pick.
     - **The centre tile stays exempt**: the user is standing in it, so it is
       searched whatever it costs. Its own reach can overhang what a refresh
       loaded (one tile at Manhattan), which is a separate open question.
