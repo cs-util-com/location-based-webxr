@@ -35,9 +35,10 @@ mkdirSync(outDir, { recursive: true });
 
 // The two source-drift checks (colour literals outside the tokens layer,
 // brief<->CSS token names) live in check-tokens.mjs, which is ALSO a gate
-// stage; importing it here keeps shoot failing fast on the same problems
+// stage; calling it here keeps shoot failing fast on the same problems
 // with one implementation. It exits 1 on a finding before any browser work.
-import "./check-tokens.mjs";
+import { runCheckTokens } from "./check-tokens.mjs";
+runCheckTokens();
 
 const args = new Map(
   process.argv

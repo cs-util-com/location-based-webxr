@@ -3,12 +3,15 @@
 - Purpose: fail the package gate when the design system's source drifts
   from its own token contract. Two checks, one implementation, two entry
   points: `pnpm run check:tokens` (a stage of `pnpm test`) and a
-  side-effect `import` at the top of `shoot.mjs`, so screenshots still
+  `runCheckTokens()` call at the top of `shoot.mjs`, so screenshots still
   fail fast on the same problems. They used to live inside `shoot.mjs`
   alone, which made them run only when a human asked for screenshots -
   i.e. never in a gate (adoption-plan review, 2026-08-27).
-- Public API: none - it is a script, nothing imports a symbol from it
-  (knip would flag an unused export, and did). It reads
+- Public API: `findProblems({ css, brief })` → the problem lines (pure;
+  the root repo-config test `design-token-check-comments.test.js` reads
+  it) and `runCheckTokens()` (the CLI body, called by `shoot.mjs`); the
+  script runs `runCheckTokens` only when it is the entry file, so an
+  import never exits the importer. It reads
   `design.css` + `catalog.css` + `hud-design-brief.md` and exits 1 on
   any problem.
 - Invariants & assumptions:
