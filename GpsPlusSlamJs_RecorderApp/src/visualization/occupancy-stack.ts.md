@@ -38,5 +38,5 @@ setOccupancyGrid(null);
 
 ## Tests
 
-- `occupancy-stack.test.ts` — the option mapping for both variants (cubes on/off, occluder on/off with and without a window), the no-op sink when cubes are off, the log context, and the dispose order (feed, cubes, occluder).
+- `occupancy-stack.test.ts` — the option mapping for both variants (cubes on/off, occluder on/off with and without a window), the no-op sink when cubes are off, the log context, the dispose order (feed, cubes, occluder), and the disposal of the cubes and the occluder when the subscriber wiring throws (both call sites swallow that throw and never receive the handle; the pre-extraction replay code disposed them from outer scope — PR #413 review).
 - The call sites are pinned by `main.occupancy-cubes-wiring.test.ts` (live) and `replay/replay-mode.test.ts` (replay), which mock the same framework classes and local wirers this module imports.

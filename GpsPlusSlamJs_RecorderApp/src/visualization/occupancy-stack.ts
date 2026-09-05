@@ -106,37 +106,51 @@ export function wireOccupancyStack({
   // factory snapshots the SAME minConfidence floor the cubes use.
   let occluderHandle: OccluderSinkHandle | null = null;
   let occluder: OccluderSink | undefined;
-  if (occupancy.persistentOcclusion) {
-    occluderHandle = createOccluderSink(arWorldGroup, occupancy);
-    occluder = occluderHandle.sink;
-  }
 
   const anyWindowedConsumer =
     showCubes ||
     (occupancy.persistentOcclusion && occupancy.occluderRadiusM > 0);
   const suffix = logContext ? ` ${logContext}` : '';
-  const unsubscribe = wireOccupancyGridSubscribers({
-    storeRef,
-    grid,
-    visualizer: cubes ?? NO_CUBES,
-    occluder,
-    refreshOnCameraMoveM: anyWindowedConsumer
-      ? CAMERA_MOVE_EPSILON_CELLS * occupancy.cellSizeM
-      : undefined,
-    // Tie the cube-refresh throttle to the depth-sample cadence so a faster
-    // `depth.intervalMs` is not capped at a hardcoded 1 Hz (2026-06-22 cube
-    // cadence/locality plan §2).
-    refreshIntervalMs: depthIntervalMs,
-    onError: (err) => {
-      log.warn(`Occupancy grid update failed${suffix}`, err);
-    },
-    // Cells-over-time telemetry (Step 0 of the 2026-07-03 long-session fps
-    // plan): one line per ~30 s so a log export correlates grid growth with
-    // the stats overlay's fps trend.
-    onGridSize: (cells) => {
-      log.info(`[OccupancyGrid] ${cells} cells`);
-    },
-  });
+  let unsubscribe: () => void;
+  // Both call sites treat a throw from here as best-effort (log and go on)
+  // and never receive the handle — so whatever was constructed before the
+  // throw must be released HERE, or the cubes already attached to
+  // `arWorldGroup` and the occluder's mesh + Web Worker leak per attempt.
+  // The pre-extraction replay code held them in outer-scope variables its
+  // teardown still reached; the extraction dropped that (PR #413 review).
+  // Same guard as `wireFrameTileStack`.
+  try {
+    if (occupancy.persistentOcclusion) {
+      occluderHandle = createOccluderSink(arWorldGroup, occupancy);
+      occluder = occluderHandle.sink;
+    }
+    unsubscribe = wireOccupancyGridSubscribers({
+      storeRef,
+      grid,
+      visualizer: cubes ?? NO_CUBES,
+      occluder,
+      refreshOnCameraMoveM: anyWindowedConsumer
+        ? CAMERA_MOVE_EPSILON_CELLS * occupancy.cellSizeM
+        : undefined,
+      // Tie the cube-refresh throttle to the depth-sample cadence so a
+      // faster `depth.intervalMs` is not capped at a hardcoded 1 Hz
+      // (2026-06-22 cube cadence/locality plan §2).
+      refreshIntervalMs: depthIntervalMs,
+      onError: (err) => {
+        log.warn(`Occupancy grid update failed${suffix}`, err);
+      },
+      // Cells-over-time telemetry (Step 0 of the 2026-07-03 long-session fps
+      // plan): one line per ~30 s so a log export correlates grid growth
+      // with the stats overlay's fps trend.
+      onGridSize: (cells) => {
+        log.info(`[OccupancyGrid] ${cells} cells`);
+      },
+    });
+  } catch (err) {
+    cubes?.dispose();
+    occluderHandle?.dispose();
+    throw err;
+  }
 
   return {
     grid,

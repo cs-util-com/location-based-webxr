@@ -101,6 +101,27 @@ beforeEach(() => {
 });
 
 describe('wireOccupancyStack', () => {
+  it('disposes the cubes and the occluder when the subscriber wiring throws, then rethrows', () => {
+    // Why this matters: both call sites treat a throw as best-effort (log,
+    // continue) and never get the handle, so the cubes already attached to
+    // arWorldGroup and the occluder's mesh + Web Worker would leak per
+    // Enter-AR attempt. The pre-extraction replay code disposed them from
+    // outer-scope variables; the extraction dropped that (PR #413 review).
+    vi.mocked(wireOccupancyGridSubscribers).mockImplementationOnce(() => {
+      throw new Error('wiring failed');
+    });
+    expect(() =>
+      wireOccupancyStack({
+        arWorldGroup,
+        storeRef,
+        occupancy: occupancy({ persistentOcclusion: true }),
+        depthIntervalMs: 500,
+        showCubes: true,
+      })
+    ).toThrow('wiring failed');
+    expect(calls.sort()).toEqual(['cubes.dispose', 'occluder.dispose']);
+  });
+
   it('builds the grid at the carve floor and the cubes on arWorldGroup at the same noise floor', () => {
     const stack = wireOccupancyStack({
       arWorldGroup,
