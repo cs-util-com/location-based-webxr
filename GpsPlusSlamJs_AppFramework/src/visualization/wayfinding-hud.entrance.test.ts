@@ -88,6 +88,9 @@ function injectContexts(): RecordingContext[] {
 
 const scratchOf = (contexts: RecordingContext[], target: number) =>
   contexts[target * 3 + 1] as RecordingContext;
+/** The texture canvas: the ONE `drawImage` per redraw (the composite) lands here. */
+const textureOf = (contexts: RecordingContext[], target: number) =>
+  contexts[target * 3] as RecordingContext;
 
 function makeCamera(): THREE.PerspectiveCamera {
   const camera = new THREE.PerspectiveCamera(60, 2, 0.1, 100);
@@ -220,10 +223,61 @@ describe('circleEntrance — the entrance runs on appearance and on hidden → c
     expect(scratch.lineDashOffset).toBe(0);
     expect(scratch.arc).toHaveBeenCalled();
     expect(hud.entranceStats().animating).toBe(0);
-    const drawsAtSettle = scratch.drawImage.mock.calls.length;
+    // The composite is the one drawImage per redraw, on the TEXTURE canvas.
+    const texture = textureOf(contexts, 0);
+    const drawsAtSettle = texture.drawImage.mock.calls.length;
+    expect(drawsAtSettle).toBeGreaterThan(1);
     for (let i = 0; i < 30; i += 1) hud.update(1 / 90);
     expect(hud.entranceStats().redraws).toBe(0);
-    expect(scratch.drawImage.mock.calls.length).toBe(drawsAtSettle);
+    expect(texture.drawImage.mock.calls.length).toBe(drawsAtSettle);
+    hud.dispose();
+  });
+
+  it('a target whose FIRST placement is an edge arrow gets its entrance when it first becomes a circle', () => {
+    // Why (milestone review, 2026-09-06): the start condition was
+    // `previous === null || previous === 'hidden'`, and `null` is only the
+    // very first frame. A target spawned in range but off-screen reaches its
+    // first circle with `previous === 'arrow'`; without the `started` flag
+    // its marker was never drawn at all — a transparent canvas for life.
+    const contexts = injectContexts();
+    // Off to the side and behind the camera's gaze: in range, off-screen.
+    const target: WayfindingTarget = {
+      id: 'side',
+      position: new THREE.Vector3(6, 0, 0),
+    };
+    const { hud, camera } = makeHud([target]);
+    hud.update(1 / 90); // first frame: an edge arrow, no entrance yet
+    expect(hud.entranceStats().animating).toBe(0);
+    expect(textureOf(contexts, 0).drawImage).not.toHaveBeenCalled();
+    // Turn to face it: arrow → circle, the target's first circle ever.
+    camera.lookAt(6, 0, 0);
+    camera.updateMatrixWorld(true);
+    hud.update(1 / 90);
+    expect(hud.entranceStats().animating).toBe(1);
+    expect(scratchOf(contexts, 0).lineDashOffset).toBe(
+      DIAMOND_ENTRANCE.dashLength
+    );
+    hud.dispose();
+  });
+
+  it('a non-finite dt does not throw inside the frame loop; the entrance waits for a real frame', () => {
+    // The pure seam rejects a non-finite time with a RangeError; the HUD's
+    // documented boundary is "never a per-frame throw", so it skips the
+    // advance instead (milestone review, 2026-09-06).
+    const contexts = injectContexts();
+    const { hud } = makeHud([onScreenFar()]);
+    hud.update(1 / 90);
+    expect(() => hud.update(Number.NaN)).not.toThrow();
+    expect(() => hud.update(Number.POSITIVE_INFINITY)).not.toThrow();
+    expect(scratchOf(contexts, 0).lineDashOffset).toBe(
+      DIAMOND_ENTRANCE.dashLength
+    );
+    hud.update(1 / 90);
+    hud.update(1 / 90);
+    hud.update(1 / 90);
+    expect(scratchOf(contexts, 0).lineDashOffset).toBeLessThan(
+      DIAMOND_ENTRANCE.dashLength
+    );
     hud.dispose();
   });
 

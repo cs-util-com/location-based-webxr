@@ -174,7 +174,10 @@ function drawShapes(
     ctx.fillStyle = accent;
     ctx.fill();
     ctx.strokeStyle = ink;
-    ctx.lineWidth = g.dotStrokeWidth;
+    // The CSS pops the dot with `transform: scale`, which scales its stroke
+    // along with its radius; a fixed hairline would read 2× heavier through
+    // the pop (milestone review, 2026-09-06).
+    ctx.lineWidth = g.dotStrokeWidth * state.dot;
     ctx.stroke();
   }
   ctx.restore();
@@ -239,12 +242,14 @@ export function createDiamondMarkerTexture(
 
   function apply(state: DiamondEntranceState): boolean {
     if (last !== null && sameState(last, state)) return false;
-    last = { outline: state.outline, dot: state.dot, settled: state.settled };
     if (!ctx || !scratchCtx || disposed) return false;
     const t0 = now();
     drawShapes(scratchCtx, size, state, ink, accent);
     composite(ctx, scratch, size, halo);
     lastDrawMs = now() - t0;
+    // Recorded only once the pixels exist: the freeze must never claim a
+    // state is on the canvas when nothing was drawn (milestone review).
+    last = { outline: state.outline, dot: state.dot, settled: state.settled };
     texture.needsUpdate = true;
     return true;
   }
@@ -259,6 +264,13 @@ export function createDiamondMarkerTexture(
       if (disposed) return;
       disposed = true;
       texture.dispose();
+      // Zero the canvases: their backing stores (2 × size² × 4 bytes) are
+      // released now rather than at the next GC — the headset's memory,
+      // not the desktop's, is the one that notices.
+      canvas.width = 0;
+      canvas.height = 0;
+      scratch.width = 0;
+      scratch.height = 0;
     },
   };
 }

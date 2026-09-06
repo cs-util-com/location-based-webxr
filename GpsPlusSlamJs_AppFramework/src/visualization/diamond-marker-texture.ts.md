@@ -16,13 +16,13 @@ DiamondMarkerTexture` - `size` a positive integer (default 256, the
   - `DiamondMarkerTexture.texture` - sRGB-tagged `CanvasTexture`, nothing
     drawn until the first `apply`.
   - `apply(state): boolean` - redraws ONLY when `state` differs from the
-    last state drawn (compared field by field), sets `needsUpdate` only
+    last state DRAWN (compared field by field; recorded after the pixels exist, never for a call that could not draw), sets `needsUpdate` only
     then, returns whether it redrew. `false` without a 2D context and after
     `dispose`.
   - `lastDrawMs` - wall-clock milliseconds of the last redraw (0 before
     the first or where `performance` is absent); the demo's on-device
     readout reads it.
-  - `dispose()` - releases the texture; idempotent.
+  - `dispose()` - releases the texture and zeroes both canvases so their backing stores go at once rather than at the next GC; idempotent.
   - `DIAMOND_GEOMETRY` - the SVG's numbers (viewBox 72 from −4, rect 10/44/
     rx 4 rotated 45° about 32, dot r 4.5, strokes 2 and 0.5, halo blur 2 /
     offset 1); `DEFAULT_DIAMOND_HALO`.
@@ -35,7 +35,7 @@ DiamondMarkerTexture` - `size` a positive integer (default 256, the
     −4, and a bare scale lands the marker 14 px up-left at 256.
   - The dash is `[180, 180]` with offset `180 · (1 − outline)` - the
     seam's contract; the dot is skipped entirely while `dot` is 0 and is
-    scaled AND faded by `dot` otherwise.
+    scaled AND faded by `dot` otherwise, its hairline stroke scaled with it (the CSS pops the dot with `transform: scale`, which scales the stroke too).
   - `roundRect` is used where present and replaced by an `arcTo` path
     elsewhere (Chrome 99 / Safari 16 have it; the Quest Browser does).
   - A null 2D context (jsdom) is tolerated: the texture exists, `apply`

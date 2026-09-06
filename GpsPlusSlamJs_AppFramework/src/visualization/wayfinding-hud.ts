@@ -44,7 +44,6 @@ import {
 } from './wayfinding-placement.js';
 
 import {
-  DIAMOND_ENTRANCE_SETTLED,
   computeDiamondEntrance,
   type DiamondEntranceState,
 } from './diamond-entrance.js';
@@ -74,8 +73,9 @@ export interface CircleEntranceOptions {
   /** The halo colour; defaults to the SVG's black at 0.8. */
   halo?: string;
   /**
-   * Redraw cap while animating, in redraws per second. Default 30: 26
-   * redraws over the 850 ms entrance instead of one per frame at 90 Hz.
+   * Redraw cap while animating, in redraws per second. Default 30: 27
+   * redraws over the 850 ms entrance (the t = 0 frame, 25 capped ones and
+   * the settling frame) instead of one per frame at 90 Hz.
    */
   redrawHz?: number;
   /**
@@ -400,6 +400,14 @@ interface EntranceState {
   animating: boolean;
   /** Started in this update: the t = 0 frame is drawn, not advanced. */
   fresh: boolean;
+  /**
+   * Whether this target's entrance has EVER run. A target whose first
+   * placement is an edge arrow (in range, off-screen) reaches its first
+   * circle with `previous === 'arrow'`; without this flag that first showing
+   * would never start the entrance, and nothing else draws the marker
+   * (milestone review, 2026-09-06).
+   */
+  started: boolean;
 }
 
 interface TargetState {
@@ -552,6 +560,7 @@ export function createWayfindingHud(
       lastRedrawMs: Number.NEGATIVE_INFINITY,
       animating: false,
       fresh: false,
+      started: false,
     };
   }
 
@@ -669,7 +678,13 @@ export function createWayfindingHud(
     // a return through the distance gate ('hidden' → circle) — never on a
     // head turn ('arrow' → circle, the viewport hysteresis), which would
     // rebuild the marker every time the wearer looks away and back.
-    if (state.entrance && (previous === null || previous === 'hidden')) {
+    // The FIRST circle a target ever shows is an appearance too, whatever
+    // preceded it: a target spawned in range but off-screen arrives here with
+    // `previous === 'arrow'` and would otherwise never get its marker drawn.
+    if (
+      state.entrance &&
+      (previous === null || previous === 'hidden' || !state.entrance.started)
+    ) {
       startEntrance(state.entrance);
     }
 
@@ -785,13 +800,16 @@ export function createWayfindingHud(
     entrance.lastRedrawMs = entrance.elapsedMs;
     entrance.animating = true;
     entrance.fresh = true;
+    entrance.started = true;
     redraw(entrance, entranceState(entrance));
   }
 
   function entranceState(entrance: EntranceState): DiamondEntranceState {
-    return entranceOptions?.reducedMotion
-      ? DIAMOND_ENTRANCE_SETTLED
-      : computeDiamondEntrance(entrance.elapsedMs);
+    // One decision, taken by the seam: reduced motion is its option, not a
+    // second branch here (milestone review, 2026-09-06).
+    return computeDiamondEntrance(entrance.elapsedMs, {
+      reducedMotion: entranceOptions?.reducedMotion === true,
+    });
   }
 
   function redraw(entrance: EntranceState, state: DiamondEntranceState): void {
@@ -810,7 +828,10 @@ export function createWayfindingHud(
    * fresh entrance drew its t = 0 frame in this update and is not advanced.
    */
   function advanceEntrances(dt: number): void {
-    if (!entranceOptions) return;
+    // A non-finite dt (a host's broken clock) must not become a per-frame
+    // throw: the pure seam rejects a non-finite time, so the HUD skips the
+    // advance and the entrance simply waits for a real frame.
+    if (!entranceOptions || !Number.isFinite(dt)) return;
     const tolerance = 1e-6; // 3 × (1/90 s) is 33.333… ms against a 33.333… ms interval
     for (const state of states.values()) {
       const entrance = state.entrance;

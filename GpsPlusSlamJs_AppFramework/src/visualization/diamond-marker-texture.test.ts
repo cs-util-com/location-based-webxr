@@ -141,11 +141,14 @@ describe('createDiamondMarkerTexture — drawing', () => {
     expect(scratch.setLineDash).toHaveBeenLastCalledWith([]);
   });
 
-  it('a half-popped dot is scaled and faded by the same factor', () => {
+  it('a half-popped dot is scaled and faded by the same factor, its stroke included', () => {
+    // The CSS pops the dot with `transform: scale`, which scales the stroke
+    // with the radius; a fixed hairline would read 2× heavier mid-pop.
     const { marker, scratch } = create(colours);
     marker.apply({ outline: 1, dot: 0.5, settled: false });
     expect(scratch.arc).toHaveBeenCalledWith(32, 32, 2.25, 0, Math.PI * 2);
     expect(scratch.globalAlpha).toBe(0.5);
+    expect(scratch.lineWidth).toBe(0.25);
   });
 
   it('composites the scratch canvas ONCE onto the texture canvas with the group shadow; the scratch canvas has none', () => {
@@ -220,12 +223,17 @@ describe('createDiamondMarkerTexture — uploads and lifecycle', () => {
     expect(() => marker.dispose()).not.toThrow();
   });
 
-  it('dispose releases the texture once and stops drawing', () => {
+  it('dispose releases the texture once, zeroes both canvases, and stops drawing', () => {
     const { marker, main } = create(colours);
+    const canvas: HTMLCanvasElement = marker.texture.image;
+    expect(canvas.width).toBe(256);
     const disposeSpy = vi.spyOn(marker.texture, 'dispose');
     marker.dispose();
     marker.dispose();
     expect(disposeSpy).toHaveBeenCalledTimes(1);
+    // The backing stores go now, not at the next GC.
+    expect(canvas.width).toBe(0);
+    expect(canvas.height).toBe(0);
     expect(marker.apply(DIAMOND_ENTRANCE_SETTLED)).toBe(false);
     expect(main.drawImage).not.toHaveBeenCalled();
   });

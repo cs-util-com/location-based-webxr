@@ -48,7 +48,7 @@ function makeRecordingContext() {
 }
 type RecordingContext = ReturnType<typeof makeRecordingContext>;
 
-/** Per-canvas recorders in creation order: label, texture canvas, scratch canvas. */
+/** Per-canvas recorders in creation order: texture canvas, scratch canvas, label. */
 function injectContexts(): RecordingContext[] {
   const contexts: RecordingContext[] = [];
   const original = document.createElement.bind(document);
@@ -102,15 +102,22 @@ describe('circleEntrance (properties)', () => {
           for (const dt of dts) {
             hud.update(dt);
             // Canvases per target (created on the first update): texture
-            // canvas, scratch canvas, label. Only a REDRAW changes the
-            // recorder; sample on those frames.
+            // canvas, scratch canvas, label. A REDRAW is the one `drawImage`
+            // of the composite on the TEXTURE canvas (the scratch canvas
+            // never receives one — a first draft gated on it and asserted
+            // nothing, milestone review 2026-09-06); the dash offset it
+            // composited sits on the scratch recorder.
+            const texture = contexts[0] as RecordingContext;
             const scratch = contexts[1] as RecordingContext;
-            const draws = scratch.drawImage.mock.calls.length;
+            const draws = texture.drawImage.mock.calls.length;
             if (draws !== previousDraws) {
               offsets.push(scratch.lineDashOffset);
               previousDraws = draws;
             }
           }
+          // The t = 0 frame is always drawn, so a property that sampled
+          // nothing is a broken harness, not a passing one.
+          expect(offsets.length).toBeGreaterThanOrEqual(1);
           const rises = offsets.filter(
             (offset, i) => i > 0 && offset > (offsets[i - 1] as number) + 1e-9
           );
