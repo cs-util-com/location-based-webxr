@@ -179,8 +179,12 @@ test.describe("Wayfinding HUD demo — the diamond's entrance animation", () => 
     expect(settled.accent).toBeGreaterThan(baseline.accent * 0.85);
     expect(settled.accent).toBeLessThan(baseline.accent * 1.15);
 
-    // The readout goes quiet once nothing animates.
-    await expect(off.status).not.toContainText("entrance");
+    // The per-frame readout goes quiet once nothing animates. (The
+    // accumulated "last entrance" figure stays on the line on a real clock,
+    // but `page.clock.install()` fakes `performance.now()` too, so every
+    // draw measures 0.00 here and the figure is unassertable by
+    // construction — only the counts are.)
+    await expect(off.status).not.toContainText("animating");
     expect(errors).toEqual([]);
   });
 

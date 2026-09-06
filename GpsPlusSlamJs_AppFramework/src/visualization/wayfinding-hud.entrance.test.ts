@@ -179,6 +179,14 @@ describe('circleEntrance — validation', () => {
         circleEntrance: { ...entrance, staggerMs: -1 },
       })
     ).toThrow(RangeError);
+    // The stagger is an offset: 0 ("all spawns start together") is legal,
+    // unlike a 0 cap (PR #423 review).
+    expect(() =>
+      validateWayfindingHudOptions({
+        ...base,
+        circleEntrance: { ...entrance, staggerMs: 0 },
+      })
+    ).not.toThrow();
     expect(() =>
       validateWayfindingHudOptions({
         ...base,
@@ -268,6 +276,9 @@ describe('circleEntrance — the entrance runs on appearance and on hidden → c
     const { hud } = makeHud([onScreenFar()]);
     hud.update(1 / 90);
     expect(() => hud.update(Number.NaN)).not.toThrow();
+    // The readout still says "animating" on such a frame: a broken clock
+    // must never read as a quiet one (PR #423 review).
+    expect(hud.entranceStats().animating).toBe(1);
     expect(() => hud.update(Number.POSITIVE_INFINITY)).not.toThrow();
     // A NEGATIVE dt neither throws nor rewinds: a clock stepping back would
     // otherwise keep an entrance animating forever (PR #422 CodeRabbit).

@@ -120,18 +120,24 @@ export function summarizeHudScene(
  * the headset's 11.1 ms budget at 90 Hz.
  */
 function formatEntrance(entrance: EntranceStats | null): string {
-  if (!entrance || (entrance.animating === 0 && entrance.redraws === 0)) {
-    return "";
-  }
-  // Per frame AND accumulated: a single frame's draw sits under the browser
+  if (!entrance) return "";
+  // Per frame while it runs, and the ACCUMULATED figures for as long as an
+  // entrance has ever run: a single frame's draw sits under the browser
   // clock's 100 µs floor on a desktop, the entrance's total (~27 redraws)
-  // and its peak frame do not (owner decision, 2026-09-06).
-  return (
-    ` · entrance ${entrance.animating} animating · ` +
-    `${entrance.redraws} redraws · ${entrance.drawMs.toFixed(2)} ms` +
-    ` · total ${entrance.entranceMs.toFixed(2)} ms` +
-    ` · peak ${entrance.peakDrawMs.toFixed(2)} ms`
-  );
+  // and its peak frame do not (owner decision, 2026-09-06) — and the total
+  // is the number the owner reads on the headset AFTER the entrance, so it
+  // must not vanish the frame after settling (PR #423 review).
+  const live =
+    entrance.animating === 0 && entrance.redraws === 0
+      ? ""
+      : ` · entrance ${entrance.animating} animating · ` +
+        `${entrance.redraws} redraws · ${entrance.drawMs.toFixed(2)} ms`;
+  const accumulated =
+    entrance.entranceMs === 0 && entrance.peakDrawMs === 0
+      ? ""
+      : ` · last entrance ${entrance.entranceMs.toFixed(2)} ms` +
+        ` · peak ${entrance.peakDrawMs.toFixed(2)} ms`;
+  return live + accumulated;
 }
 
 /** Format a summary as the status line, e.g.

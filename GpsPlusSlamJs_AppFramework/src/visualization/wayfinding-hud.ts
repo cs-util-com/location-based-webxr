@@ -346,10 +346,19 @@ function validateCircleEntrance(
     'circleEntrance.redrawHz',
     entrance.redrawHz ?? DEFAULT_CIRCLE_ENTRANCE.redrawHz
   );
-  assertPositiveFiniteOption(
-    'circleEntrance.staggerMs',
-    entrance.staggerMs ?? DEFAULT_CIRCLE_ENTRANCE.staggerMs
-  );
+  // The stagger is an OFFSET: 0 ("all spawns start together") is its
+  // natural setting for a single target or a deterministic replay scene,
+  // so unlike the cap it is non-negative rather than positive (PR #423).
+  const staggerMs = entrance.staggerMs ?? DEFAULT_CIRCLE_ENTRANCE.staggerMs;
+  if (
+    typeof staggerMs !== 'number' ||
+    !Number.isFinite(staggerMs) ||
+    staggerMs < 0
+  ) {
+    throw new RangeError(
+      `createWayfindingHud: circleEntrance.staggerMs must be a non-negative finite number, got ${staggerMs}`
+    );
+  }
   if (
     entrance.reducedMotion !== undefined &&
     typeof entrance.reducedMotion !== 'boolean'
@@ -864,17 +873,20 @@ export function createWayfindingHud(
    * fresh entrance drew its t = 0 frame in this update and is not advanced.
    */
   function advanceEntrances(dt: number): void {
+    if (!entranceOptions) return;
     // A non-finite dt (a host's broken clock) must not become a per-frame
-    // throw: the pure seam rejects a non-finite time, so the HUD skips the
-    // advance and the entrance simply waits for a real frame.
-    if (!entranceOptions || !Number.isFinite(dt)) return;
+    // throw: the pure seam rejects a non-finite time, so the ADVANCE is
+    // skipped and the entrance waits for a real frame — while the readout
+    // still reports it as animating, so a broken clock never reads as a
+    // quiet one (PR #423 review). A negative dt (a clock stepping back)
+    // must not rewind the timeline either: an entrance that kept being
+    // rewound would animate forever (PR #422 CodeRabbit review); it counts
+    // as a frame of zero length.
+    const dtMs = Number.isFinite(dt) ? Math.max(0, dt) * 1000 : null;
     for (const state of states.values()) {
       const entrance = state.entrance;
       if (!entrance) continue;
-      // A negative dt (a host's clock stepping back) must not rewind the
-      // timeline: an entrance that kept being rewound would animate forever
-      // (PR #422 CodeRabbit review). It counts as a frame of zero length.
-      if (entrance.animating) advanceOne(entrance, Math.max(0, dt) * 1000);
+      if (entrance.animating && dtMs !== null) advanceOne(entrance, dtMs);
       if (entrance.animating) stats.animating += 1;
       recordCostliest(entrance);
     }

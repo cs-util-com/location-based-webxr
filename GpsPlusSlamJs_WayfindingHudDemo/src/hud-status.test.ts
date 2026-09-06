@@ -180,8 +180,10 @@ describe("the entrance readout", () => {
     });
     expect(formatHudStatus(summary)).toBe(
       "targets 1 · arrows 0 · rings 1 · hidden 0 · nearest 5.0 m · image indicators" +
-        " · entrance 1 animating · 2 redraws · 0.04 ms · total 0.61 ms · peak 0.09 ms",
+        " · entrance 1 animating · 2 redraws · 0.04 ms · last entrance 0.61 ms · peak 0.09 ms",
     );
+    // Settled: the per-frame trio goes quiet, the accumulated pair STAYS —
+    // it is the number read on the headset after the entrance (PR #423).
     const settled = summarizeHudScene(children, at, targets, {
       redraws: 0,
       drawMs: 0,
@@ -189,7 +191,19 @@ describe("the entrance readout", () => {
       entranceMs: 0.61,
       peakDrawMs: 0.09,
     });
-    expect(formatHudStatus(settled)).not.toContain("entrance");
+    expect(formatHudStatus(settled)).not.toContain("animating");
+    expect(formatHudStatus(settled)).toContain(
+      " · last entrance 0.61 ms · peak 0.09 ms",
+    );
+    // Never ran: nothing at all.
+    const never = summarizeHudScene(children, at, targets, {
+      redraws: 0,
+      drawMs: 0,
+      animating: 0,
+      entranceMs: 0,
+      peakDrawMs: 0,
+    });
+    expect(formatHudStatus(never)).not.toContain("entrance");
     // The settling frame itself: one last redraw, nothing animating any more.
     const last = summarizeHudScene(children, at, targets, {
       redraws: 1,
@@ -199,7 +213,7 @@ describe("the entrance readout", () => {
       peakDrawMs: 0.09,
     });
     expect(formatHudStatus(last)).toContain(
-      "entrance 0 animating · 1 redraws · 0.03 ms · total 0.64 ms",
+      "entrance 0 animating · 1 redraws · 0.03 ms · last entrance 0.64 ms",
     );
   });
 });
