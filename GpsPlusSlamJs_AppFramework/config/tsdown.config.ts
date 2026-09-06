@@ -221,6 +221,11 @@ const entryFiles = [
   // Shared rather than copied because the early return is a CONTRACT: without
   // it `360 − ε` snaps to 0, a full turn that never happened.
   'src/utils/bearing-degrees.ts',
+  // CSS cubic-bezier timing functions — deep-imported by the wayfinding
+  // HUD's diamond entrance (NOT via the `/utils` barrel, which would pull in
+  // the logger and friends). The `./utils/*` exports wildcard advertises
+  // this subpath, so it must be built per-file.
+  'src/utils/cubic-bezier-easing.ts',
   // Median family — deep-imported by the recorder (yaw-churn.ts) since
   // 2026-09-04. Built per-file for the same reason as bearing-degrees: the
   // './utils/*' wildcard advertises the subpath, and without an entry here
@@ -266,6 +271,8 @@ const entryFiles = [
   'src/visualization/ar-world-group-alignment.ts',
   'src/visualization/camera-follower.ts',
   'src/visualization/css3d-renderer-manager.ts',
+  'src/visualization/diamond-entrance.ts',
+  'src/visualization/diamond-marker-texture.ts',
   'src/visualization/frame-conversions.ts',
   // Blob → upright THREE.Texture (promoted from the recorder, DEC-H3) —
   // deep-imported by the recorder and the TourViewer via the

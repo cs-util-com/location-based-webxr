@@ -27,6 +27,24 @@ export {
   createCss3dRendererManager,
 } from './css3d-renderer-manager.js';
 
+// --- diamond-entrance ---
+export {
+  DIAMOND_ENTRANCE,
+  DIAMOND_ENTRANCE_SETTLED,
+  type DiamondEntranceOptions,
+  type DiamondEntranceState,
+  computeDiamondEntrance,
+} from './diamond-entrance.js';
+
+// --- diamond-marker-texture ---
+export {
+  DEFAULT_DIAMOND_HALO,
+  DIAMOND_GEOMETRY,
+  type DiamondMarkerTexture,
+  type DiamondMarkerTextureOptions,
+  createDiamondMarkerTexture,
+} from './diamond-marker-texture.js';
+
 // --- gps-compass-cubes ---
 export {
   COMPASS_CUBE_SIZE,
@@ -154,6 +172,9 @@ export {
   type WayfindingHud,
   type WayfindingHudOptions,
   DEFAULT_WAYFINDING_HUD,
+  DEFAULT_CIRCLE_ENTRANCE,
+  type CircleEntranceOptions,
+  type EntranceStats,
   createWayfindingHud,
   validateWayfindingHudOptions,
 } from './wayfinding-hud.js';

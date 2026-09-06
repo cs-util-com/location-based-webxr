@@ -11,3 +11,4 @@
   - Status line: per-frame text from the modes, written to the DOM only when it changed.
 - **Invariants:** exactly one mode is active; `activeMode` is the single refresh target; element lookups fail loudly (`requireEl`).
 - **Tests:** e2e (`smoke.spec.js`, `walk-flow.spec.js`) — the desktop path drives the REAL HUD; the AR path is device-verified.
+- **Entrance toggle ([HUD diamond entrance plan](../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-09-05-2138-hud-diamond-entrance-animation-plan.md), M4):** the `entrance-animation` switch (default checked) is read into `HudDemoConfig.entrance` and re-creates the HUD on change, like the image-indicator switch; the e2e `entrance.spec.js` drives the desktop path under Playwright's fake clock.
