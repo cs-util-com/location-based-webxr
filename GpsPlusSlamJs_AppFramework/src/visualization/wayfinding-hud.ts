@@ -101,7 +101,13 @@ export const DEFAULT_CIRCLE_ENTRANCE = {
 export interface EntranceStats {
   /** Marker redraws (canvas draws + texture uploads) in the last update. */
   redraws: number;
-  /** Wall-clock milliseconds those redraws took (0 where `performance` is absent). */
+  /**
+   * Wall-clock milliseconds those redraws took (0 where `performance` is
+   * absent). `performance.now()` is clamped to 100 µs in a page that is not
+   * cross-origin isolated, and a desktop redraw costs ~0.04 ms, so this
+   * reads 0.00 or 0.10 on a desktop — the number is meaningful on a headset
+   * (0.3-1.0 ms estimated), which is what it exists for.
+   */
   drawMs: number;
   /** Targets whose entrance was still animating after the last update. */
   animating: number;

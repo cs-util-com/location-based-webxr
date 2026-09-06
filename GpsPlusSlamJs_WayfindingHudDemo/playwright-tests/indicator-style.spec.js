@@ -44,8 +44,6 @@ test.describe("Wayfinding HUD demo — image-indicator toggle", () => {
     // moves the HUD panel mid-click (the click would then miss the box).
     await page.keyboard.press("q"); // any key; not a movement key
     await expect(page.getByTestId("mode-screen")).toBeHidden();
-    // The static SVG path, not the entrance's canvas (see the header).
-    await page.getByTestId("entrance-animation").uncheck();
 
     // Enable: the presenter must now hold sprite indicators. (The spec used
     // to await the arrow PNG's network response as proof of the loader path;
@@ -74,6 +72,10 @@ test.describe("Wayfinding HUD demo — image-indicator toggle", () => {
     );
 
     await page.getByTestId("image-indicators").check();
+    // The static SVG path, not the entrance's canvas (see the header). The
+    // entrance switch is disabled until image indicators are on, hence the
+    // order; the uncheck re-creates the HUD with the sprite.
+    await page.getByTestId("entrance-animation").uncheck();
     await expect(status).toContainText("image indicators");
 
     await expect

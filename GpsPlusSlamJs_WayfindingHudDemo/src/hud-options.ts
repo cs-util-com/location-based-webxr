@@ -43,24 +43,22 @@ export type HudLookOptions = Pick<
  *   entrance off, the static SVG sprite is what it was: the owner's on-device
  *   A/B, and the entrance spec's baseline. The tokens are required rather
  *   than defaulted so a missing sheet cannot paint the marker in a colour the
- *   design system does not know.
+ *   design system does not know. ONE boolean decides both halves of the
+ *   exclusion — never a string key re-derived from an object (M4 milestone
+ *   review, 2026-09-06).
  */
 export function hudLookOptions(config: HudDemoConfig): HudLookOptions {
   const accent = readCssToken("--accent");
   const ink = readCssToken("--ink");
-  const entrance =
+  const useEntrance =
     config.imageIndicators &&
     config.entrance &&
     accent !== undefined &&
-    ink !== undefined
-      ? { circleEntrance: { ink, accent } }
-      : {};
+    ink !== undefined;
   const sprites = config.imageIndicators
     ? {
         arrowSprite: ARROW_SPRITE_URL,
-        ...("circleEntrance" in entrance
-          ? {}
-          : { circleSprite: CIRCLE_SPRITE_URL }),
+        ...(useEntrance ? {} : { circleSprite: CIRCLE_SPRITE_URL }),
       }
     : {};
   return {
@@ -69,6 +67,6 @@ export function hudLookOptions(config: HudDemoConfig): HudLookOptions {
     indicatorScale: config.indicatorScale,
     ...(accent === undefined ? {} : { indicatorColor: accent }),
     ...sprites,
-    ...entrance,
+    ...(useEntrance ? { circleEntrance: { ink, accent } } : {}),
   };
 }

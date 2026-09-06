@@ -16,14 +16,18 @@ import { countAccentPixels, countInkPixels } from "./count-accent-pixels.js";
  * reachable from a page); it is installed BEFORE `goto`, as is the
  * reduced-motion emulation, because the HUD reads both once at creation; it
  * is PAUSED after boot, because an installed clock otherwise keeps running in
- * real time (measured: one screenshot cost ~180 ms of timeline).
+ * real time (measured: one screenshot cost ~180 ms of timeline). Every HUD
+ * whose timeline is measured is created AFTER the pause, so no real time
+ * leaks into it.
  *
- * The simulator clamps a frame's `dt` to 100 ms (a background-tab resume must
- * not teleport the walker), so the clock is advanced in ≤ 100 ms slices — one
- * `runFor(100)` per 100 ms of timeline — never in one jump.
+ * Playwright's faked `requestAnimationFrame` fires on a 16 ms grid whatever
+ * the size of a `runFor`, so every frame's `dt` is 16 ms and the simulator's
+ * 100 ms clamp (`MAX_FRAME_DT_S`) is never reached. The ≤ 100 ms slices in
+ * `advance()` are defence in depth against a future non-faked path, not a
+ * requirement (M4 milestone review, 2026-09-06).
  */
 
-/** Advance the fake clock `ms` in ≤ 100 ms slices, so no frame's dt clamps. */
+/** Advance the fake clock `ms`, in ≤ 100 ms slices (see the header). */
 async function advance(page, ms) {
   for (let left = ms; left > 0; left -= 100) {
     await page.clock.runFor(Math.min(100, left));
@@ -39,20 +43,39 @@ async function countMarker(page, clip) {
   };
 }
 
-/** The clip around the ahead target's circle at the screen centre — sized
- * to EXCLUDE the distance label below it, whose changing text would
- * otherwise leak into the ink count. */
+/**
+ * The clip around the ahead target's circle, at the screen centre. At the
+ * simulator's fov 70 and hudDistance 2.5 the 0.3 m sprite is ~8.6 % of the
+ * viewport height; its diamond spans about 0.46 H .. 0.54 H. The distance
+ * label sits below it (centre at 0.557 H, its text ink from ~0.55 H), so the
+ * clip stops at 0.545 H: the WHOLE diamond, none of the label's changing
+ * text (M4 milestone review, 2026-09-06).
+ */
 function markerClip(canvasBox) {
   return {
     x: canvasBox.x + canvasBox.width * 0.4,
-    y: canvasBox.y + canvasBox.height * 0.3,
+    y: canvasBox.y + canvasBox.height * 0.44,
     width: canvasBox.width * 0.2,
-    height: canvasBox.height * 0.22,
+    height: canvasBox.height * 0.105,
   };
 }
 
+/** Collect page errors AND console errors: a failed texture load is a console error. */
+function collectErrors(page) {
+  const errors = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") errors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    errors.push(String(error));
+  });
+  return errors;
+}
+
 /** Boot the page under the fake clock, image indicators on, and wait for the
- * HUD to report the sprite path; returns the canvas box and the clip. */
+ * HUD to report the sprite path; returns the status locator and the clip.
+ * The clock is PAUSED on return; the HUD created here has run under real
+ * time and is not the one to measure — re-create it under the paused clock. */
 async function bootWithImageIndicators(page, { entrance }) {
   await page.clock.install();
   await page.goto("/");
@@ -62,10 +85,12 @@ async function bootWithImageIndicators(page, { entrance }) {
   await expect(status).toContainText("procedural indicators");
   await page.keyboard.press("q"); // dismiss the mode screen without moving
   await expect(page.getByTestId("mode-screen")).toBeHidden();
+  // Image indicators first: the entrance switch is DISABLED without them
+  // (the procedural ring has no build-up), so it can only be set afterwards.
+  await page.getByTestId("image-indicators").check();
   const entranceToggle = page.getByTestId("entrance-animation");
   if (entrance) await entranceToggle.check();
   else await entranceToggle.uncheck();
-  await page.getByTestId("image-indicators").check();
   await advance(page, 100); // the re-created HUD's first frames
   await expect(status).toContainText("image indicators");
   // PAUSE the clock: installed, it still runs in real time (measured: a
@@ -78,14 +103,24 @@ async function bootWithImageIndicators(page, { entrance }) {
   return { status, clip: markerClip(canvasBox) };
 }
 
+/** Re-create the HUD under the paused clock by cycling the entrance switch
+ * to `entrance`; the HUD's first frame then runs on the next `advance`. */
+async function recreateHud(page, { entrance }) {
+  const toggle = page.getByTestId("entrance-animation");
+  if (entrance) {
+    await toggle.uncheck();
+    await toggle.check();
+  } else {
+    await toggle.check();
+    await toggle.uncheck();
+  }
+}
+
 test.describe("Wayfinding HUD demo — the diamond's entrance animation", () => {
   test("the outline grows monotonically, the dot pops last, and the settled frame is the static sprite", async ({
     page,
   }) => {
-    const errors = [];
-    page.on("pageerror", (error) => {
-      errors.push(String(error));
-    });
+    const errors = collectErrors(page);
 
     // Baseline FIRST: the static SVG sprite with the entrance off.
     const off = await bootWithImageIndicators(page, { entrance: false });
@@ -93,18 +128,22 @@ test.describe("Wayfinding HUD demo — the diamond's entrance animation", () => 
     const baseline = await countMarker(page, off.clip);
     expect(baseline.accent).toBeGreaterThan(20);
 
-    // Now the entrance: re-check the toggle (re-creates the HUD, t = 0).
-    await page.getByTestId("entrance-animation").check();
-    await advance(page, 20); // one or two frames: the t≈0 marker is drawn
+    // Now the entrance, on a HUD created under the PAUSED clock (t = 0).
+    await recreateHud(page, { entrance: true });
+    await advance(page, 20); // one frame: the t = 0 marker is drawn
     await expect(off.status).toContainText("entrance 1 animating");
 
     const samples = [];
     let elapsed = 20;
-    for (const t of [0, 200, 400, 600, 850]) {
+    for (const t of [0, 200, 400, 600, 1000]) {
       await advance(page, Math.max(0, t - elapsed));
       elapsed = Math.max(elapsed, t);
       samples.push({ t, ...(await countMarker(page, off.clip)) });
     }
+    // The last sample is taken SETTLED, asserted rather than assumed: the
+    // first frame starts the entrance without advancing it, so 850 ms of
+    // clock is ~834 ms of timeline; 1000 ms leaves no doubt.
+    await expect(off.status).not.toContainText("animating");
 
     // Structure, not pixels: ink never shrinks along the timeline …
     for (let i = 1; i < samples.length; i += 1) {
@@ -126,7 +165,6 @@ test.describe("Wayfinding HUD demo — the diamond's entrance animation", () => 
     expect(settled.accent).toBeLessThan(baseline.accent * 1.15);
 
     // The readout goes quiet once nothing animates.
-    await advance(page, 200);
     await expect(off.status).not.toContainText("entrance");
     expect(errors).toEqual([]);
   });
@@ -134,12 +172,19 @@ test.describe("Wayfinding HUD demo — the diamond's entrance animation", () => 
   test("reduced motion shows the complete marker on the first frame", async ({
     page,
   }) => {
+    const errors = collectErrors(page);
     await page.emulateMedia({ reducedMotion: "reduce" });
     const on = await bootWithImageIndicators(page, { entrance: true });
-    // Only the re-creation's first frames have run: under reduced motion the
-    // accent dot is already there.
+    // A HUD created under the PAUSED clock, given exactly one frame: with
+    // reduced motion the accent dot is already there and nothing animates.
+    // (Measured before the pause, real time could have finished the
+    // entrance on its own and passed this vacuously — M4 milestone review.)
+    await recreateHud(page, { entrance: true });
+    await advance(page, 16);
     const first = await countMarker(page, on.clip);
     expect(first.accent).toBeGreaterThan(20);
-    await expect(on.status).not.toContainText("animating");
+    // The one frame drew the SETTLED marker: one redraw, nothing animating.
+    await expect(on.status).toContainText("entrance 0 animating · 1 redraws");
+    expect(errors).toEqual([]);
   });
 });

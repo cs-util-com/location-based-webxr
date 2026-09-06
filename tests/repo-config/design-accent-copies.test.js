@@ -8,6 +8,12 @@
 // this guard holds every one of them to `--accent` (and the SVG strokes to
 // `--ink`) in the canonical design.css. Owner taste round 2026-09-04,
 // DEC-T2 / DEC-T4 of the UI taste round plan.
+//
+// Since 2026-09-06 the same file guards two more copies that a stylesheet
+// cannot reach: the framework's diamond ENTRANCE timeline and easing (TS
+// constants mirroring the sheet's `--t-enter`, `--t-state`, `--ease-out` and
+// the `.diamond` animation multipliers) and the canvas drawer's geometry
+// (mirroring the SVG asset). Two edges: asset ↔ catalog, TS ↔ CSS/asset.
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -32,7 +38,7 @@ function token(css, name, px = false) {
   return px ? m[1] : normalizeHex(m[1]);
 }
 
-describe('every literal copy of the design accent equals the token', () => {
+describe('every literal copy of a design-system value equals its source', () => {
   const css = read('GpsPlusSlamJs_DesignSystem/design.css');
   const accent = token(css, '--accent');
   const ink = token(css, '--ink');
@@ -121,10 +127,26 @@ describe('every literal copy of the design accent equals the token', () => {
       if (!m) throw new Error(`diamond-entrance.ts defines no ${name}`);
       return Number(m[1]);
     };
-    expect(constant('outlineMs')).toBe(tEnter * 2);
-    expect(constant('dotDelayMs')).toBe(tEnter * 1.5);
+    // The multipliers are READ from the sheet, not assumed: `calc(var(--t-enter)
+    // * 2)` on the outline's animation, `* 1.5` on the dot's delay, and the
+    // dot's duration is the bare `--t-state` token (M4 milestone review).
+    const outlineMultiplier =
+      /\.diamond rect,[\s\S]*?animation:\s*draw-line\s+calc\(var\(--t-enter\)\s*\*\s*([0-9.]+)\)/.exec(
+        css
+      );
+    expect(outlineMultiplier, 'design.css animates the outline as a multiple of --t-enter').not.toBeNull();
+    const dotDelayMultiplier =
+      /\.diamond circle,[\s\S]*?animation-delay:\s*calc\(var\(--t-enter\)\s*\*\s*([0-9.]+)\)/.exec(
+        css
+      );
+    expect(dotDelayMultiplier, 'design.css delays the dot as a multiple of --t-enter').not.toBeNull();
+    expect(css).toMatch(/\.diamond circle,[\s\S]*?animation:\s*dot-pop\s+var\(--t-state\)/);
+    const outlineFactor = Number(outlineMultiplier[1]);
+    const dotDelayFactor = Number(dotDelayMultiplier[1]);
+    expect(constant('outlineMs')).toBe(tEnter * outlineFactor);
+    expect(constant('dotDelayMs')).toBe(tEnter * dotDelayFactor);
     expect(constant('dotMs')).toBe(tState);
-    expect(constant('totalMs')).toBe(tEnter * 1.5 + tState);
+    expect(constant('totalMs')).toBe(tEnter * dotDelayFactor + tState);
     const dash = /\.diamond rect,\s*\.leader polyline \{\s*stroke-dasharray:\s*([0-9]+);/.exec(
       css
     );

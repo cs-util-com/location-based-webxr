@@ -83,6 +83,7 @@ function main(): void {
     sliders.indicatorScale.value = String(config.indicatorScale);
     imageIndicators.checked = config.imageIndicators;
     entranceAnimation.checked = config.entrance;
+    syncEntranceSwitch();
     refreshOutputs();
   };
 
@@ -98,7 +99,14 @@ function main(): void {
       activeMode?.refreshHud();
     });
   }
+  // The entrance is inert without image indicators (the procedural ring has
+  // no build-up), so its switch is disabled until they are on — a live switch
+  // that rebuilds the HUD for no visible effect misleads (M4 milestone review).
+  const syncEntranceSwitch = (): void => {
+    entranceAnimation.disabled = !imageIndicators.checked;
+  };
   imageIndicators.addEventListener("change", () => {
+    syncEntranceSwitch();
     activeMode?.refreshHud();
   });
   entranceAnimation.addEventListener("change", () => {

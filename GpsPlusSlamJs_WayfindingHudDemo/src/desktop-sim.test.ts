@@ -86,12 +86,16 @@ function makeHarness(configOverride?: {
 
   const hudInstances: Array<{
     update: ReturnType<typeof vi.fn>;
+    entranceStats: ReturnType<typeof vi.fn>;
     dispose: ReturnType<typeof vi.fn>;
   }> = [];
   const createHudImpl = vi.fn((_options: WayfindingHudOptions) => {
     const hud = {
       update: vi.fn(),
-      entranceStats: vi.fn(() => ({ redraws: 0, drawMs: 0, animating: 0 })),
+      // Non-zero on purpose: the status line prints the readout only while
+      // something animates, so a zero fake could not tell a dropped argument
+      // from a quiet frame (M4 milestone review, 2026-09-06).
+      entranceStats: vi.fn(() => ({ redraws: 2, drawMs: 0.04, animating: 1 })),
       dispose: vi.fn(),
     };
     hudInstances.push(hud);
@@ -208,6 +212,10 @@ describe("startDesktopSim", () => {
     expect(hud.update).toHaveBeenCalledTimes(2);
     expect(hud.update).toHaveBeenLastCalledWith(expect.closeTo(0.016, 3));
     expect(h.statuses.at(-1)).toContain(`targets ${SIM_WAYPOINTS.length}`);
+    // The HUD's entrance readout reaches the status line through the fourth
+    // summarizeHudScene input — the one number the owner reads on device.
+    expect(hud.entranceStats).toHaveBeenCalled();
+    expect(h.statuses.at(-1)).toContain("entrance 1 animating · 2 redraws");
     expect(h.renderer.render).toHaveBeenCalledTimes(2);
     h.sim.dispose();
   });
