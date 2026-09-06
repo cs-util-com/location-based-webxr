@@ -40,6 +40,7 @@ describe("summarizeHudScene", () => {
       hidden: 0,
       nearest: 3,
       indicatorStyle: "procedural",
+      entrance: null,
     });
   });
 
@@ -110,6 +111,7 @@ describe("formatHudStatus", () => {
         hidden: 0,
         nearest: 19.234,
         indicatorStyle: "procedural",
+        entrance: null,
       }),
     ).toBe(
       "targets 4 · arrows 3 · rings 1 · hidden 0 · nearest 19.2 m · " +
@@ -123,6 +125,7 @@ describe("formatHudStatus", () => {
         hidden: 0,
         nearest: 19.234,
         indicatorStyle: "image",
+        entrance: null,
       }),
     ).toContain("image indicators");
   });
@@ -135,8 +138,52 @@ describe("formatHudStatus", () => {
       hidden: 0,
       nearest: null,
       indicatorStyle: null,
+      entrance: null,
     });
     expect(line).toContain("nearest –");
     expect(line).not.toContain("indicators");
+  });
+});
+
+describe("the entrance readout", () => {
+  // Why these tests matter: the readout is the owner's on-device cost
+  // number (the HUD diamond entrance plan, M4) — the one place a Quest
+  // frame's redraw cost becomes visible. It must appear only while an
+  // entrance runs (a settled HUD says nothing) and carry the stats verbatim.
+  const children = [indicator("wayfinding-circle", true, true)];
+  const at = new THREE.Vector3(0, 0, 0);
+  const targets = [new THREE.Vector3(0, 0, -5)];
+
+  it("carries the presenter's stats through the summary, null when not passed", () => {
+    const stats = { redraws: 2, drawMs: 0.0412, animating: 1 };
+    expect(summarizeHudScene(children, at, targets, stats).entrance).toBe(
+      stats,
+    );
+    expect(summarizeHudScene(children, at, targets).entrance).toBeNull();
+  });
+
+  it("prints the readout while an entrance animates or redrew, and nothing once settled", () => {
+    const summary = summarizeHudScene(children, at, targets, {
+      redraws: 2,
+      drawMs: 0.0412,
+      animating: 1,
+    });
+    expect(formatHudStatus(summary)).toBe(
+      "targets 1 · arrows 0 · rings 1 · hidden 0 · nearest 5.0 m · image indicators" +
+        " · entrance 1 animating · 2 redraws · 0.04 ms",
+    );
+    const settled = summarizeHudScene(children, at, targets, {
+      redraws: 0,
+      drawMs: 0,
+      animating: 0,
+    });
+    expect(formatHudStatus(settled)).not.toContain("entrance");
+    // The settling frame itself: one last redraw, nothing animating any more.
+    const last = summarizeHudScene(children, at, targets, {
+      redraws: 1,
+      drawMs: 0.03,
+      animating: 0,
+    });
+    expect(formatHudStatus(last)).toContain("entrance 0 animating · 1 redraws");
   });
 });

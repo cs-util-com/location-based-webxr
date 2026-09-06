@@ -20,6 +20,7 @@ const CONFIG = {
   distanceMax: 3,
   indicatorScale: 2,
   imageIndicators: false,
+  entrance: true,
 };
 
 describe("hudLookOptions", () => {
@@ -45,5 +46,52 @@ describe("hudLookOptions", () => {
     const options = hudLookOptions({ ...CONFIG, imageIndicators: true });
     expect(options.arrowSprite).toMatch(/wayfinding-arrow.*\.svg$/);
     expect(options.circleSprite).toMatch(/wayfinding-diamond.*\.svg$/);
+  });
+});
+
+describe("hudLookOptions — the entrance", () => {
+  // Why these tests matter: the framework rejects `circleEntrance` next to
+  // `circleSprite`, and it needs BOTH tokens; a derivation that passed the
+  // sprite alongside, or the entrance with a missing token, would throw in
+  // both hosts at once (HUD diamond entrance plan, M4).
+  it("passes circleEntrance with the two tokens and OMITS circleSprite when image indicators and the entrance are on", () => {
+    vi.mocked(readCssToken).mockImplementation((name) =>
+      name === "--accent" ? "#f2971f" : name === "--ink" ? "#fff" : undefined,
+    );
+    const options = hudLookOptions({
+      ...CONFIG,
+      imageIndicators: true,
+      entrance: true,
+    });
+    expect(options.circleEntrance).toEqual({ ink: "#fff", accent: "#f2971f" });
+    expect("circleSprite" in options).toBe(false);
+    expect(options.arrowSprite).toMatch(/wayfinding-arrow.*.svg$/);
+    vi.mocked(readCssToken).mockReset();
+    vi.mocked(readCssToken).mockReturnValue(undefined);
+  });
+
+  it("falls back to the static sprite when the entrance is off, or a token is missing, or image indicators are off", () => {
+    vi.mocked(readCssToken).mockImplementation((name) =>
+      name === "--accent" ? "#f2971f" : name === "--ink" ? "#fff" : undefined,
+    );
+    const off = hudLookOptions({
+      ...CONFIG,
+      imageIndicators: true,
+      entrance: false,
+    });
+    expect("circleEntrance" in off).toBe(false);
+    expect(off.circleSprite).toMatch(/wayfinding-diamond.*.svg$/);
+    vi.mocked(readCssToken).mockReset();
+    vi.mocked(readCssToken).mockReturnValue(undefined);
+    const noTokens = hudLookOptions({
+      ...CONFIG,
+      imageIndicators: true,
+      entrance: true,
+    });
+    expect("circleEntrance" in noTokens).toBe(false);
+    expect(noTokens.circleSprite).toMatch(/wayfinding-diamond.*.svg$/);
+    const procedural = hudLookOptions({ ...CONFIG, entrance: true });
+    expect("circleEntrance" in procedural).toBe(false);
+    expect("circleSprite" in procedural).toBe(false);
   });
 });

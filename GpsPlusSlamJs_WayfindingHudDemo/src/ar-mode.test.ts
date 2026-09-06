@@ -78,6 +78,7 @@ function makeDeps(configOverride?: { imageIndicators?: boolean }) {
       distanceMax: 3,
       indicatorScale: 1,
       imageIndicators: configOverride?.imageIndicators ?? false,
+      entrance: true,
     }),
     onStatus: vi.fn((_text: string) => undefined),
     onHint: vi.fn((_message: string) => undefined),

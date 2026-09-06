@@ -7,9 +7,16 @@
  * visibility) instead of re-running the placement math: the status line is
  * then evidence of what the HUD actually shows, which is what the Playwright
  * walk-flow spec asserts hysteresis transitions against.
+ *
+ * The entrance readout is the one exception to "scene output only": redraw
+ * counts and their cost are not in the scene graph, so the presenter's
+ * `entranceStats()` is passed in as a fourth input (HUD diamond entrance
+ * plan, M4) — it is the number the owner reads on the headset to judge the
+ * animation's cost against the 11 ms frame budget.
  */
 
 import type * as THREE from "three";
+import type { EntranceStats } from "gps-plus-slam-app-framework/visualization/wayfinding-hud";
 
 /** The structural slice of a camera child the summary reads.
  * `isSprite` is three.js's Sprite marker — absent (undefined) on meshes. */
@@ -20,7 +27,9 @@ export interface HudIndicatorLike {
 }
 
 /** How the HUD renders its indicators — sprites (image toggle) vs meshes
- * (procedural cone/ring). "mixed" is defensive; the presenter never mixes.
+ * (procedural cone/ring). "mixed" is a Sprite circle next to a Mesh arrow:
+ * the framework's `circleEntrance` without `arrowSprite` produces it, the
+ * demo's own derivation never does (image indicators gate the entrance).
  * (Module-private: consumers read it via `HudSceneSummary["indicatorStyle"]`.) */
 type IndicatorStyle = "procedural" | "image" | "mixed";
 
@@ -36,6 +45,8 @@ export interface HudSceneSummary {
   nearest: number | null;
   /** Indicator render style, or null while no indicators exist. */
   indicatorStyle: IndicatorStyle | null;
+  /** The presenter's entrance readout for the last frame, or null when not passed. */
+  entrance: EntranceStats | null;
 }
 
 function countVisible(
@@ -75,12 +86,14 @@ function deriveIndicatorStyle(
 /**
  * Summarize the HUD's current scene output for a target list.
  * `cameraChildren` is the presenter's camera `.children` array (extra
- * non-HUD children are ignored by name).
+ * non-HUD children are ignored by name). `entrance` is the presenter's
+ * `entranceStats()` for the frame, when the host has it.
  */
 export function summarizeHudScene(
   cameraChildren: readonly HudIndicatorLike[],
   cameraPosition: THREE.Vector3,
   targets: readonly THREE.Vector3[],
+  entrance: EntranceStats | null = null,
 ): HudSceneSummary {
   const arrows = countVisible(cameraChildren, "wayfinding-arrow");
   const rings = countVisible(cameraChildren, "wayfinding-circle");
@@ -96,12 +109,31 @@ export function summarizeHudScene(
     hidden: Math.max(0, targets.length - arrows - rings),
     nearest,
     indicatorStyle: deriveIndicatorStyle(cameraChildren),
+    entrance,
   };
+}
+
+/**
+ * The entrance readout, present only while an entrance animates or redrew
+ * in this frame — a settled HUD costs nothing and says nothing. The
+ * millisecond figure is the frame's redraw cost, the number to hold against
+ * the headset's 11.1 ms budget at 90 Hz.
+ */
+function formatEntrance(entrance: EntranceStats | null): string {
+  if (!entrance || (entrance.animating === 0 && entrance.redraws === 0)) {
+    return "";
+  }
+  return (
+    ` · entrance ${entrance.animating} animating · ` +
+    `${entrance.redraws} redraws · ${entrance.drawMs.toFixed(2)} ms`
+  );
 }
 
 /** Format a summary as the status line, e.g.
  * `targets 4 · arrows 3 · rings 1 · hidden 0 · nearest 19.2 m ·
- * procedural indicators` (the style suffix drops out while unknown). */
+ * procedural indicators` (the style suffix drops out while unknown; the
+ * entrance suffix — `· entrance 1 animating · 1 redraws · 0.04 ms` — only
+ * while an entrance is running). */
 export function formatHudStatus(summary: HudSceneSummary): string {
   const nearest =
     summary.nearest === null ? "–" : `${summary.nearest.toFixed(1)} m`;
@@ -112,6 +144,7 @@ export function formatHudStatus(summary: HudSceneSummary): string {
   return (
     `targets ${summary.targets} · arrows ${summary.arrows} · ` +
     `rings ${summary.rings} · hidden ${summary.hidden} · nearest ${nearest}` +
-    style
+    style +
+    formatEntrance(summary.entrance)
   );
 }

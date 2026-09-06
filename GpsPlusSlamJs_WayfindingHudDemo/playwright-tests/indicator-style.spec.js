@@ -16,6 +16,11 @@ import { countAccentPixels, countInkPixels } from "./count-accent-pixels.js";
  * intrinsic size, a broken filter) would still report "image indicators"
  * while the canvas showed nothing, so the diamond's accent dot is counted in
  * pixels at the screen centre, where the ahead target's sprite sits at boot.
+ *
+ * Since the entrance animation (2026-09-05) the circle is a CANVAS texture
+ * whenever the entrance toggle is on, so this spec switches the entrance OFF
+ * first — it proves the `circleSprite` URL path, and `entrance.spec.js`
+ * proves the build-up.
  */
 
 test.describe("Wayfinding HUD demo — image-indicator toggle", () => {
@@ -39,6 +44,8 @@ test.describe("Wayfinding HUD demo — image-indicator toggle", () => {
     // moves the HUD panel mid-click (the click would then miss the box).
     await page.keyboard.press("q"); // any key; not a movement key
     await expect(page.getByTestId("mode-screen")).toBeHidden();
+    // The static SVG path, not the entrance's canvas (see the header).
+    await page.getByTestId("entrance-animation").uncheck();
 
     // Enable: the presenter must now hold sprite indicators. (The spec used
     // to await the arrow PNG's network response as proof of the loader path;

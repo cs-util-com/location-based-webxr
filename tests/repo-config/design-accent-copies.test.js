@@ -98,6 +98,91 @@ describe('every literal copy of the design accent equals the token', () => {
     expect(token(css, '--line', true)).toBe(circle['stroke-width']);
   });
 
+  it("the framework's entrance timeline and easing are the sheet's tokens, and its drawing geometry is the asset's", () => {
+    // Why: the HUD's diamond entrance (2026-09-05 plan) mirrors the CSS
+    // build-up in TypeScript constants a stylesheet cannot reach —
+    // `DIAMOND_ENTRANCE` (800 = --t-enter × 2, 600 = --t-enter × 1.5,
+    // 250 = --t-state, dash 180) and `EASE_OUT` (--ease-out's control
+    // points) — and draws the asset's geometry from `DIAMOND_GEOMETRY`. Each
+    // is a copy nobody re-reads when a token or the asset is re-tuned; the
+    // asset ↔ catalog half is asserted above, this is the TS ↔ CSS/asset edge.
+    const ms = (name) => {
+      const m = new RegExp(`${name}:\\s*([0-9.]+)ms\\s*;`).exec(css);
+      if (!m) throw new Error(`design.css defines no ms ${name}`);
+      return Number(m[1]);
+    };
+    const tEnter = ms('--t-enter');
+    const tState = ms('--t-state');
+    const entrance = read(
+      'GpsPlusSlamJs_AppFramework/src/visualization/diamond-entrance.ts'
+    );
+    const constant = (name) => {
+      const m = new RegExp(`${name}:\\s*([0-9.]+),`).exec(entrance);
+      if (!m) throw new Error(`diamond-entrance.ts defines no ${name}`);
+      return Number(m[1]);
+    };
+    expect(constant('outlineMs')).toBe(tEnter * 2);
+    expect(constant('dotDelayMs')).toBe(tEnter * 1.5);
+    expect(constant('dotMs')).toBe(tState);
+    expect(constant('totalMs')).toBe(tEnter * 1.5 + tState);
+    const dash = /\.diamond rect,\s*\.leader polyline \{\s*stroke-dasharray:\s*([0-9]+);/.exec(
+      css
+    );
+    expect(dash, 'design.css sets the diamond dasharray').not.toBeNull();
+    expect(constant('dashLength')).toBe(Number(dash[1]));
+
+    const easeOut = /--ease-out:\s*cubic-bezier\(([^)]*)\)/.exec(css);
+    expect(easeOut, 'design.css defines --ease-out').not.toBeNull();
+    const controlPoints = easeOut[1].split(',').map((s) => Number(s.trim()));
+    const easing = read(
+      'GpsPlusSlamJs_AppFramework/src/utils/cubic-bezier-easing.ts'
+    );
+    const fromTs = /EASE_OUT[^=]*=\s*cubicBezierEasing\(([^)]*)\)/.exec(easing);
+    expect(fromTs, 'EASE_OUT is built from literal control points').not.toBeNull();
+    expect(fromTs[1].split(',').map((s) => Number(s.trim()))).toEqual(
+      controlPoints
+    );
+
+    // The drawer's geometry is the asset's numbers, attribute for attribute.
+    const sprite = read(SVGS[0]);
+    const attr = (tag, name) => {
+      const m = new RegExp(`<${tag}\\b[^>]*\\s${name}="([^"]*)"`).exec(sprite);
+      if (!m) throw new Error(`${SVGS[0]}: no ${tag} ${name}`);
+      return m[1];
+    };
+    const texture = read(
+      'GpsPlusSlamJs_AppFramework/src/visualization/diamond-marker-texture.ts'
+    );
+    const geometry = (name) => {
+      const m = new RegExp(`${name}:\\s*(-?[0-9.]+),`).exec(texture);
+      if (!m) throw new Error(`diamond-marker-texture.ts defines no ${name}`);
+      return Number(m[1]);
+    };
+    const viewBox = attr('svg', 'viewBox').split(/\s+/).map(Number);
+    expect(geometry('viewBoxOrigin')).toBe(viewBox[0]);
+    expect(geometry('viewBoxSize')).toBe(viewBox[2]);
+    expect(geometry('rectOffset')).toBe(Number(attr('rect', 'x')));
+    expect(geometry('rectSide')).toBe(Number(attr('rect', 'width')));
+    expect(geometry('rectRadius')).toBe(Number(attr('rect', 'rx')));
+    const rotate = /rotate\(([0-9.]+)\s+([0-9.]+)\s+([0-9.]+)\)/.exec(
+      attr('rect', 'transform')
+    );
+    expect(geometry('rotationDeg')).toBe(Number(rotate[1]));
+    expect(geometry('centre')).toBe(Number(rotate[2]));
+    expect(geometry('dotRadius')).toBe(Number(attr('circle', 'r')));
+    expect(geometry('outlineStrokeWidth')).toBe(
+      Number(attr('rect', 'stroke-width'))
+    );
+    expect(geometry('dotStrokeWidth')).toBe(
+      Number(attr('circle', 'stroke-width'))
+    );
+    expect(geometry('haloOffsetY')).toBe(Number(attr('feDropShadow', 'dy')));
+    // The canvas's shadowBlur is 2σ, the SVG's stdDeviation is σ.
+    expect(geometry('haloBlur')).toBe(
+      2 * Number(attr('feDropShadow', 'stdDeviation'))
+    );
+  });
+
   it('sanity: the tokens are the colours the brief names', () => {
     // If these move, every consumer above moves with them — that is the point
     // — but a typo in the regexes would pass vacuously, so pin the values too.

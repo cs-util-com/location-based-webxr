@@ -46,6 +46,7 @@ function main(): void {
     indicatorScale: requireEl<HTMLInputElement>("indicator-scale"),
   };
   const imageIndicators = requireEl<HTMLInputElement>("image-indicators");
+  const entranceAnimation = requireEl<HTMLInputElement>("entrance-animation");
   const outputs = {
     distanceMin: requireEl<HTMLOutputElement>("distance-min-value"),
     distanceMax: requireEl<HTMLOutputElement>("distance-max-value"),
@@ -71,6 +72,7 @@ function main(): void {
         distanceMax: Number.parseFloat(sliders.distanceMax.value),
         indicatorScale: Number.parseFloat(sliders.indicatorScale.value),
         imageIndicators: imageIndicators.checked,
+        entrance: entranceAnimation.checked,
       },
       configFallback,
     );
@@ -80,6 +82,7 @@ function main(): void {
     sliders.distanceMax.value = String(config.distanceMax);
     sliders.indicatorScale.value = String(config.indicatorScale);
     imageIndicators.checked = config.imageIndicators;
+    entranceAnimation.checked = config.entrance;
     refreshOutputs();
   };
 
@@ -96,6 +99,9 @@ function main(): void {
     });
   }
   imageIndicators.addEventListener("change", () => {
+    activeMode?.refreshHud();
+  });
+  entranceAnimation.addEventListener("change", () => {
     activeMode?.refreshHud();
   });
 

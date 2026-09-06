@@ -103,6 +103,7 @@ function makeHarness(configOverride?: {
     distanceMax: 12,
     indicatorScale: 1,
     imageIndicators: configOverride?.imageIndicators ?? false,
+    entrance: true,
   };
   const statuses: string[] = [];
 
@@ -234,6 +235,7 @@ describe("startDesktopSim", () => {
       distanceMax: 4,
       indicatorScale: 0.5,
       imageIndicators: false,
+      entrance: true,
     });
     h.sim.refreshHud();
     expect(h.hudInstances[0]!.dispose).toHaveBeenCalledTimes(1);
