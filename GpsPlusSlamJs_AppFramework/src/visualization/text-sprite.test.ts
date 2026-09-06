@@ -15,43 +15,10 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as THREE from 'three';
 
 import { createTextSprite, type TextSprite } from './text-sprite.js';
-
-/**
- * A minimal recording stub of CanvasRenderingContext2D — jsdom has no real
- * canvas backend (getContext returns null), so drawing-path assertions need
- * an injected context that records calls.
- */
-function makeRecordingContext(overrides: Record<string, unknown> = {}) {
-  return {
-    clearRect: vi.fn(),
-    beginPath: vi.fn(),
-    roundRect: vi.fn(),
-    rect: vi.fn(),
-    fill: vi.fn(),
-    fillText: vi.fn(),
-    fillStyle: '',
-    font: '',
-    textAlign: '',
-    textBaseline: '',
-    ...overrides,
-  };
-}
-
-/** Patch document.createElement so canvas elements expose the given context. */
-function injectContext(ctx: ReturnType<typeof makeRecordingContext> | null) {
-  const original = document.createElement.bind(document);
-  vi.spyOn(document, 'createElement').mockImplementation(
-    (tagName: string): HTMLElement => {
-      const el = original(tagName);
-      if (tagName === 'canvas') {
-        (el as HTMLCanvasElement).getContext = vi.fn(
-          () => ctx
-        ) as unknown as HTMLCanvasElement['getContext'];
-      }
-      return el;
-    }
-  );
-}
+import {
+  injectContext,
+  makeRecordingContext,
+} from './recording-canvas.test-utils.js';
 
 afterEach(() => {
   vi.restoreAllMocks();

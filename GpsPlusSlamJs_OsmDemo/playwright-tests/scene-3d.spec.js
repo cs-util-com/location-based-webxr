@@ -1855,9 +1855,23 @@ test.describe("the NPC agent", () => {
       // position is the start of the new route, so one frame into the walk it
       // is still within a stride of where it stopped.
       const [stoodX, stoodZ] = String(stoodAt).split(",").map(Number);
-      const [nowX, nowZ] = String(await scene.getAttribute("data-agent"))
-        .split(",")
-        .map(Number);
+      // POLLED: a new route first DELETES `data-agent` (the scene's teardown)
+      // and rewrites it on the first walked frame, so a read in that gap is
+      // `null` → `NaN` — which is what a slow CI runner produced on 2026-09-06
+      // (the r648 cascade). Wait for two finite numbers, then compare.
+      let agentNow = null;
+      await expect
+        .poll(async () => {
+          const parts = String(await scene.getAttribute("data-agent"))
+            .split(",")
+            .map(Number);
+          if (parts.length === 2 && parts.every(Number.isFinite)) {
+            agentNow = parts;
+          }
+          return agentNow;
+        }, REPAINT)
+        .not.toBeNull();
+      const [nowX, nowZ] = agentNow;
       // Generous: one frame of walking at AGENT_SPEED_MPS is metres, while the
       // teleport this catches is the whole distance of the first route.
       expect(Math.hypot(nowX - stoodX, nowZ - stoodZ)).toBeLessThan(20);
