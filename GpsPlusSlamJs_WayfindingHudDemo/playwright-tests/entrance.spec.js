@@ -34,9 +34,23 @@ async function advance(page, ms) {
   }
 }
 
-/** Count the ink and accent pixels in the circle indicator's clip. */
+/**
+ * Count the ink and accent pixels in the circle indicator's clip, with the
+ * bottom panel HIDDEN for the shot: `page.screenshot` sees the DOM too, and
+ * the panel's status line grows with the entrance readout, wrapped on the
+ * CI runner's fonts and rose into the clip (603 "ink" pixels at 600 ms on
+ * CI, 128 once the readout went quiet). Hidden only for the shot, so the
+ * toggles stay clickable and the status locator readable in between.
+ */
 async function countMarker(page, clip) {
+  const panel = page.locator("#hud-panel");
+  await panel.evaluate((el) => {
+    el.style.visibility = "hidden";
+  });
   const shot = await page.screenshot({ clip });
+  await panel.evaluate((el) => {
+    el.style.visibility = "";
+  });
   return {
     ink: await countInkPixels(page, shot),
     accent: await countAccentPixels(page, shot),
@@ -104,7 +118,8 @@ async function bootWithImageIndicators(page, { entrance }) {
 }
 
 /** Re-create the HUD under the paused clock by cycling the entrance switch
- * to `entrance`; the HUD's first frame then runs on the next `advance`. */
+ * to `entrance`; the HUD's first frame then runs on the next `advance`.
+ */
 async function recreateHud(page, { entrance }) {
   const toggle = page.getByTestId("entrance-animation");
   if (entrance) {

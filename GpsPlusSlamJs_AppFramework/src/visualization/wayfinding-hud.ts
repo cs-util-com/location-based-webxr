@@ -871,7 +871,10 @@ export function createWayfindingHud(
     for (const state of states.values()) {
       const entrance = state.entrance;
       if (!entrance) continue;
-      if (entrance.animating) advanceOne(entrance, dt * 1000);
+      // A negative dt (a host's clock stepping back) must not rewind the
+      // timeline: an entrance that kept being rewound would animate forever
+      // (PR #422 CodeRabbit review). It counts as a frame of zero length.
+      if (entrance.animating) advanceOne(entrance, Math.max(0, dt) * 1000);
       if (entrance.animating) stats.animating += 1;
       recordCostliest(entrance);
     }

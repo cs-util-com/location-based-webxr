@@ -269,6 +269,9 @@ describe('circleEntrance — the entrance runs on appearance and on hidden → c
     hud.update(1 / 90);
     expect(() => hud.update(Number.NaN)).not.toThrow();
     expect(() => hud.update(Number.POSITIVE_INFINITY)).not.toThrow();
+    // A NEGATIVE dt neither throws nor rewinds: a clock stepping back would
+    // otherwise keep an entrance animating forever (PR #422 CodeRabbit).
+    expect(() => hud.update(-1)).not.toThrow();
     expect(scratchOf(contexts, 0).lineDashOffset).toBe(
       DIAMOND_ENTRANCE.dashLength
     );
