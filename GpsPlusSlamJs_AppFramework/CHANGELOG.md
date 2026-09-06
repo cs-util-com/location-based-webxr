@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **`WayfindingHud` gained a REQUIRED member, `entranceStats()`.** Code
+  that builds a `WayfindingHud`-typed object by hand — test doubles, mostly
+  — must add `entranceStats: () => ({ redraws: 0, drawMs: 0, animating: 0 })`
+  to compile; a consumer that only calls the handle is unaffected.
+
+### Added
+
+- **`circleEntrance` on `createWayfindingHud`** (opt-in): the circle indicator is the design system's diamond building itself up — the outline drawn over 800 ms, the accent dot popping at 600–850 ms, the sheet's `--ease-out` — each time a target appears or comes back through the distance gate (a head turn does not restart it). Drawn per target into a canvas texture with a 30 Hz redraw cap and a 60 ms stagger for simultaneous spawns; reduced motion (the OS setting, or `reducedMotion: true`) shows the finished marker at once. Mutually exclusive with `circleSprite`; meant alongside `arrowSprite`. `WayfindingHud.entranceStats()` reports the last frame's redraws, their wall-clock cost and how many entrances still animate — the on-device cost readout. The building blocks are public on `/visualization` (`computeDiamondEntrance`, `DIAMOND_ENTRANCE`, `createDiamondMarkerTexture`, `DIAMOND_GEOMETRY`) and **`utils/cubic-bezier-easing`** (deep import) — evaluates CSS `cubic-bezier()` timing functions exactly.
+
 ## [1.24.0] — 2026-09-05
 
 Requires `gps-plus-slam-js` ≥ 1.24.0.
