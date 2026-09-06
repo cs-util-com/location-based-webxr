@@ -17,6 +17,12 @@ export interface HudDemoConfig {
   indicatorScale: number;
   /** Use the self-made image sprites instead of the procedural cone/ring. */
   imageIndicators: boolean;
+  /**
+   * With image indicators: the diamond builds itself up on arrival (the
+   * framework's `circleEntrance`). Off, the static SVG sprite — the on-device
+   * A/B, and the entrance spec's baseline. Inert without image indicators.
+   */
+  entrance: boolean;
 }
 
 /** Real-world walking distances — the AR tap-to-place mode. */
@@ -25,6 +31,7 @@ export const AR_HUD_CONFIG: HudDemoConfig = {
   distanceMax: 3.0,
   indicatorScale: 1.0,
   imageIndicators: false,
+  entrance: true,
 };
 
 /**
@@ -37,6 +44,7 @@ export const SIM_HUD_CONFIG: HudDemoConfig = {
   distanceMax: 12,
   indicatorScale: 1.0,
   imageIndicators: false,
+  entrance: true,
 };
 
 const INDICATOR_SCALE_MIN = 0.1;
@@ -76,5 +84,13 @@ export function sanitizeHudDemoConfig(
     typeof raw.imageIndicators === "boolean"
       ? raw.imageIndicators
       : fallback.imageIndicators;
-  return { distanceMin, distanceMax, indicatorScale, imageIndicators };
+  const entrance =
+    typeof raw.entrance === "boolean" ? raw.entrance : fallback.entrance;
+  return {
+    distanceMin,
+    distanceMax,
+    indicatorScale,
+    imageIndicators,
+    entrance,
+  };
 }

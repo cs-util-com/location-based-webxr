@@ -21,6 +21,7 @@ describe("sanitizeHudDemoConfig", () => {
       distanceMax: 5,
       indicatorScale: 0.8,
       imageIndicators: true,
+      entrance: true,
     };
     expect(sanitizeHudDemoConfig(config, AR_HUD_CONFIG)).toEqual(config);
   });
@@ -32,6 +33,7 @@ describe("sanitizeHudDemoConfig", () => {
         distanceMax: 2,
         indicatorScale: 1,
         imageIndicators: false,
+        entrance: true,
       },
       AR_HUD_CONFIG,
     );
@@ -46,6 +48,7 @@ describe("sanitizeHudDemoConfig", () => {
         distanceMax: 2,
         indicatorScale: 1,
         imageIndicators: false,
+        entrance: true,
       },
       AR_HUD_CONFIG,
     );
@@ -60,6 +63,7 @@ describe("sanitizeHudDemoConfig", () => {
         distanceMax: Number.POSITIVE_INFINITY,
         indicatorScale: Number.NaN,
         imageIndicators: false,
+        entrance: true,
       },
       SIM_HUD_CONFIG,
     );
@@ -73,6 +77,7 @@ describe("sanitizeHudDemoConfig", () => {
         distanceMax: 2,
         indicatorScale: 0,
         imageIndicators: false,
+        entrance: true,
       },
       AR_HUD_CONFIG,
     );
@@ -83,6 +88,7 @@ describe("sanitizeHudDemoConfig", () => {
         distanceMax: 2,
         indicatorScale: 99,
         imageIndicators: false,
+        entrance: true,
       },
       AR_HUD_CONFIG,
     );
@@ -100,6 +106,7 @@ describe("sanitizeHudDemoConfig", () => {
         distanceMax: 2,
         indicatorScale: 1,
         imageIndicators: true,
+        entrance: true,
       },
       AR_HUD_CONFIG,
     );
@@ -110,6 +117,7 @@ describe("sanitizeHudDemoConfig", () => {
         distanceMax: 2,
         indicatorScale: 1,
         imageIndicators: undefined as unknown as boolean,
+        entrance: true,
       },
       { ...AR_HUD_CONFIG, imageIndicators: true },
     );
@@ -130,5 +138,31 @@ describe("sanitizeHudDemoConfig", () => {
     expect(sanitizeHudDemoConfig(SIM_HUD_CONFIG, SIM_HUD_CONFIG)).toEqual(
       SIM_HUD_CONFIG,
     );
+  });
+});
+
+describe("sanitizeHudDemoConfig — the entrance toggle", () => {
+  // Why: the same boolean rule as image indicators — a checkbox read gone
+  // wrong degrades to the mode fallback, never to truthiness (M4 of the HUD
+  // diamond entrance plan). Both mode defaults ship with the entrance ON.
+  it("keeps a boolean, falls back on garbage, and defaults ON in both modes", () => {
+    const base = {
+      distanceMin: 1,
+      distanceMax: 2,
+      indicatorScale: 1,
+      imageIndicators: true,
+    };
+    expect(
+      sanitizeHudDemoConfig({ ...base, entrance: false }, AR_HUD_CONFIG)
+        .entrance,
+    ).toBe(false);
+    expect(
+      sanitizeHudDemoConfig(
+        { ...base, entrance: "yes" as unknown as boolean },
+        AR_HUD_CONFIG,
+      ).entrance,
+    ).toBe(true);
+    expect(AR_HUD_CONFIG.entrance).toBe(true);
+    expect(SIM_HUD_CONFIG.entrance).toBe(true);
   });
 });
