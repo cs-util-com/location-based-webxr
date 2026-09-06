@@ -219,6 +219,7 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
           camera.children,
           camera.position,
           getTargets().map((target) => target.position),
+          hud.entranceStats(),
         ),
       ),
     );

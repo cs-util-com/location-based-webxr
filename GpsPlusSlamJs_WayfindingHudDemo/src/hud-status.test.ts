@@ -40,6 +40,7 @@ describe("summarizeHudScene", () => {
       hidden: 0,
       nearest: 3,
       indicatorStyle: "procedural",
+      entrance: null,
     });
   });
 
@@ -110,6 +111,7 @@ describe("formatHudStatus", () => {
         hidden: 0,
         nearest: 19.234,
         indicatorStyle: "procedural",
+        entrance: null,
       }),
     ).toBe(
       "targets 4 · arrows 3 · rings 1 · hidden 0 · nearest 19.2 m · " +
@@ -123,6 +125,7 @@ describe("formatHudStatus", () => {
         hidden: 0,
         nearest: 19.234,
         indicatorStyle: "image",
+        entrance: null,
       }),
     ).toContain("image indicators");
   });
@@ -135,8 +138,83 @@ describe("formatHudStatus", () => {
       hidden: 0,
       nearest: null,
       indicatorStyle: null,
+      entrance: null,
     });
     expect(line).toContain("nearest –");
     expect(line).not.toContain("indicators");
+  });
+});
+
+describe("the entrance readout", () => {
+  // Why these tests matter: the readout is the owner's on-device cost
+  // number (the HUD diamond entrance plan, M4) — the one place a Quest
+  // frame's redraw cost becomes visible. The per-frame trio appears only
+  // while an entrance runs; the accumulated pair STAYS once one has run (it
+  // is read after the entrance); both carry the stats verbatim.
+  const children = [indicator("wayfinding-circle", true, true)];
+  const at = new THREE.Vector3(0, 0, 0);
+  const targets = [new THREE.Vector3(0, 0, -5)];
+
+  it("carries the presenter's stats through the summary, null when not passed", () => {
+    const stats = {
+      redraws: 2,
+      drawMs: 0.0412,
+      animating: 1,
+      entranceMs: 0.61,
+      peakDrawMs: 0.09,
+    };
+    expect(summarizeHudScene(children, at, targets, stats).entrance).toBe(
+      stats,
+    );
+    expect(summarizeHudScene(children, at, targets).entrance).toBeNull();
+  });
+
+  it("prints the per-frame trio while an entrance animates or redrew, keeps the accumulated pair once settled, and nothing if none ever ran", () => {
+    // The accumulated total and the peak are what clear the browser clock's
+    // 100 µs floor on a desktop (owner decision, 2026-09-06).
+    const summary = summarizeHudScene(children, at, targets, {
+      redraws: 2,
+      drawMs: 0.0412,
+      animating: 1,
+      entranceMs: 0.61,
+      peakDrawMs: 0.09,
+    });
+    expect(formatHudStatus(summary)).toBe(
+      "targets 1 · arrows 0 · rings 1 · hidden 0 · nearest 5.0 m · image indicators" +
+        " · entrance 1 animating · 2 redraws · 0.04 ms · last entrance 0.61 ms · peak 0.09 ms",
+    );
+    // Settled: the per-frame trio goes quiet, the accumulated pair STAYS —
+    // it is the number read on the headset after the entrance (PR #423).
+    const settled = summarizeHudScene(children, at, targets, {
+      redraws: 0,
+      drawMs: 0,
+      animating: 0,
+      entranceMs: 0.61,
+      peakDrawMs: 0.09,
+    });
+    expect(formatHudStatus(settled)).not.toContain("animating");
+    expect(formatHudStatus(settled)).toContain(
+      " · last entrance 0.61 ms · peak 0.09 ms",
+    );
+    // Never ran: nothing at all.
+    const never = summarizeHudScene(children, at, targets, {
+      redraws: 0,
+      drawMs: 0,
+      animating: 0,
+      entranceMs: 0,
+      peakDrawMs: 0,
+    });
+    expect(formatHudStatus(never)).not.toContain("entrance");
+    // The settling frame itself: one last redraw, nothing animating any more.
+    const last = summarizeHudScene(children, at, targets, {
+      redraws: 1,
+      drawMs: 0.03,
+      animating: 0,
+      entranceMs: 0.64,
+      peakDrawMs: 0.09,
+    });
+    expect(formatHudStatus(last)).toContain(
+      "entrance 0 animating · 1 redraws · 0.03 ms · last entrance 0.64 ms",
+    );
   });
 });

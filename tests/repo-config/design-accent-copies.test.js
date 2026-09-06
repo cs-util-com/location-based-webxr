@@ -8,6 +8,12 @@
 // this guard holds every one of them to `--accent` (and the SVG strokes to
 // `--ink`) in the canonical design.css. Owner taste round 2026-09-04,
 // DEC-T2 / DEC-T4 of the UI taste round plan.
+//
+// Since 2026-09-06 the same file guards two more copies that a stylesheet
+// cannot reach: the framework's diamond ENTRANCE timeline and easing (TS
+// constants mirroring the sheet's `--t-enter`, `--t-state`, `--ease-out` and
+// the `.diamond` animation multipliers) and the canvas drawer's geometry
+// (mirroring the SVG asset). Two edges: asset ↔ catalog, TS ↔ CSS/asset.
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -32,7 +38,7 @@ function token(css, name, px = false) {
   return px ? m[1] : normalizeHex(m[1]);
 }
 
-describe('every literal copy of the design accent equals the token', () => {
+describe('every literal copy of a design-system value equals its source', () => {
   const css = read('GpsPlusSlamJs_DesignSystem/design.css');
   const accent = token(css, '--accent');
   const ink = token(css, '--ink');
@@ -96,6 +102,111 @@ describe('every literal copy of the design accent equals the token', () => {
     // Stroke weights are the system's line tokens: 2px strong, 0.5px hairline.
     expect(token(css, '--line-strong', true)).toBe(rect['stroke-width']);
     expect(token(css, '--line', true)).toBe(circle['stroke-width']);
+  });
+
+  it("the framework's entrance timeline and easing are the sheet's tokens, and its drawing geometry is the asset's", () => {
+    // Why: the HUD's diamond entrance (2026-09-05 plan) mirrors the CSS
+    // build-up in TypeScript constants a stylesheet cannot reach —
+    // `DIAMOND_ENTRANCE` (800 = --t-enter × 2, 600 = --t-enter × 1.5,
+    // 250 = --t-state, dash 180) and `EASE_OUT` (--ease-out's control
+    // points) — and draws the asset's geometry from `DIAMOND_GEOMETRY`. Each
+    // is a copy nobody re-reads when a token or the asset is re-tuned; the
+    // asset ↔ catalog half is asserted above, this is the TS ↔ CSS/asset edge.
+    const ms = (name) => {
+      const m = new RegExp(`${name}:\\s*([0-9.]+)ms\\s*;`).exec(css);
+      if (!m) throw new Error(`design.css defines no ms ${name}`);
+      return Number(m[1]);
+    };
+    const tEnter = ms('--t-enter');
+    const tState = ms('--t-state');
+    const entrance = read(
+      'GpsPlusSlamJs_AppFramework/src/visualization/diamond-entrance.ts'
+    );
+    const constant = (name) => {
+      const m = new RegExp(`${name}:\\s*([0-9.]+),`).exec(entrance);
+      if (!m) throw new Error(`diamond-entrance.ts defines no ${name}`);
+      return Number(m[1]);
+    };
+    // The multipliers are READ from the sheet, not assumed: `calc(var(--t-enter)
+    // * 2)` on the outline's animation, `* 1.5` on the dot's delay, and the
+    // dot's duration is the bare `--t-state` token (M4 milestone review).
+    const outlineMultiplier =
+      /\.diamond rect,[\s\S]*?animation:\s*draw-line\s+calc\(var\(--t-enter\)\s*\*\s*([0-9.]+)\)/.exec(
+        css
+      );
+    expect(outlineMultiplier, 'design.css animates the outline as a multiple of --t-enter').not.toBeNull();
+    const dotDelayMultiplier =
+      /\.diamond circle,[\s\S]*?animation-delay:\s*calc\(var\(--t-enter\)\s*\*\s*([0-9.]+)\)/.exec(
+        css
+      );
+    expect(dotDelayMultiplier, 'design.css delays the dot as a multiple of --t-enter').not.toBeNull();
+    expect(css).toMatch(/\.diamond circle,[\s\S]*?animation:\s*dot-pop\s+var\(--t-state\)/);
+    const outlineFactor = Number(outlineMultiplier[1]);
+    const dotDelayFactor = Number(dotDelayMultiplier[1]);
+    expect(constant('outlineMs')).toBe(tEnter * outlineFactor);
+    expect(constant('dotDelayMs')).toBe(tEnter * dotDelayFactor);
+    expect(constant('dotMs')).toBe(tState);
+    // The entrance is over when BOTH tracks are — the later of the outline
+    // and the dot — not when the dot alone is (PR #422 review).
+    expect(constant('totalMs')).toBe(
+      Math.max(tEnter * outlineFactor, tEnter * dotDelayFactor + tState)
+    );
+    const dash = /\.diamond rect,\s*\.leader polyline \{\s*stroke-dasharray:\s*([0-9]+);/.exec(
+      css
+    );
+    expect(dash, 'design.css sets the diamond dasharray').not.toBeNull();
+    expect(constant('dashLength')).toBe(Number(dash[1]));
+
+    const easeOut = /--ease-out:\s*cubic-bezier\(([^)]*)\)/.exec(css);
+    expect(easeOut, 'design.css defines --ease-out').not.toBeNull();
+    const controlPoints = easeOut[1].split(',').map((s) => Number(s.trim()));
+    const easing = read(
+      'GpsPlusSlamJs_AppFramework/src/utils/cubic-bezier-easing.ts'
+    );
+    const fromTs = /EASE_OUT[^=]*=\s*cubicBezierEasing\(([^)]*)\)/.exec(easing);
+    expect(fromTs, 'EASE_OUT is built from literal control points').not.toBeNull();
+    expect(fromTs[1].split(',').map((s) => Number(s.trim()))).toEqual(
+      controlPoints
+    );
+
+    // The drawer's geometry is the asset's numbers, attribute for attribute.
+    const sprite = read(SVGS[0]);
+    const attr = (tag, name) => {
+      const m = new RegExp(`<${tag}\\b[^>]*\\s${name}="([^"]*)"`).exec(sprite);
+      if (!m) throw new Error(`${SVGS[0]}: no ${tag} ${name}`);
+      return m[1];
+    };
+    const texture = read(
+      'GpsPlusSlamJs_AppFramework/src/visualization/diamond-marker-texture.ts'
+    );
+    const geometry = (name) => {
+      const m = new RegExp(`${name}:\\s*(-?[0-9.]+),`).exec(texture);
+      if (!m) throw new Error(`diamond-marker-texture.ts defines no ${name}`);
+      return Number(m[1]);
+    };
+    const viewBox = attr('svg', 'viewBox').split(/\s+/).map(Number);
+    expect(geometry('viewBoxOrigin')).toBe(viewBox[0]);
+    expect(geometry('viewBoxSize')).toBe(viewBox[2]);
+    expect(geometry('rectOffset')).toBe(Number(attr('rect', 'x')));
+    expect(geometry('rectSide')).toBe(Number(attr('rect', 'width')));
+    expect(geometry('rectRadius')).toBe(Number(attr('rect', 'rx')));
+    const rotate = /rotate\(([0-9.]+)\s+([0-9.]+)\s+([0-9.]+)\)/.exec(
+      attr('rect', 'transform')
+    );
+    expect(geometry('rotationDeg')).toBe(Number(rotate[1]));
+    expect(geometry('centre')).toBe(Number(rotate[2]));
+    expect(geometry('dotRadius')).toBe(Number(attr('circle', 'r')));
+    expect(geometry('outlineStrokeWidth')).toBe(
+      Number(attr('rect', 'stroke-width'))
+    );
+    expect(geometry('dotStrokeWidth')).toBe(
+      Number(attr('circle', 'stroke-width'))
+    );
+    expect(geometry('haloOffsetY')).toBe(Number(attr('feDropShadow', 'dy')));
+    // The canvas's shadowBlur is 2σ, the SVG's stdDeviation is σ.
+    expect(geometry('haloBlur')).toBe(
+      2 * Number(attr('feDropShadow', 'stdDeviation'))
+    );
   });
 
   it('sanity: the tokens are the colours the brief names', () => {
