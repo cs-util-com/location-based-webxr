@@ -111,7 +111,26 @@ export interface EntranceStats {
   drawMs: number;
   /** Targets whose entrance was still animating after the last update. */
   animating: number;
+  /**
+   * The costliest entrance's ACCUMULATED draw milliseconds since it began —
+   * the sum of ~27 redraws, so it clears the browser clock's 100 µs floor
+   * where a single frame's `drawMs` does not (owner decision, 2026-09-06).
+   * Reset when that target's entrance restarts; holds its last value once
+   * settled.
+   */
+  entranceMs: number;
+  /** The costliest single redraw of that entrance, in milliseconds. */
+  peakDrawMs: number;
 }
+
+/** The all-zero readout: without the option, before the first update, after dispose. */
+const NO_ENTRANCE_STATS: EntranceStats = Object.freeze({
+  redraws: 0,
+  drawMs: 0,
+  animating: 0,
+  entranceMs: 0,
+  peakDrawMs: 0,
+});
 
 export interface WayfindingHudOptions {
   /**
@@ -414,6 +433,10 @@ interface EntranceState {
    * (milestone review, 2026-09-06).
    */
   started: boolean;
+  /** Draw milliseconds accumulated since this entrance began. */
+  drawMsTotal: number;
+  /** The costliest single redraw since this entrance began. */
+  peakDrawMs: number;
 }
 
 interface TargetState {
@@ -549,7 +572,7 @@ export function createWayfindingHud(
   const entranceOptions = resolveEntranceOptions(options.circleEntrance);
   /** Spawns started in the current update — the stagger multiplier. */
   let spawnsThisUpdate = 0;
-  let stats: EntranceStats = { redraws: 0, drawMs: 0, animating: 0 };
+  let stats: EntranceStats = { ...NO_ENTRANCE_STATS };
 
   function makeEntrance(): EntranceState | null {
     if (!entranceOptions) return null;
@@ -567,6 +590,8 @@ export function createWayfindingHud(
       animating: false,
       fresh: false,
       started: false,
+      drawMsTotal: 0,
+      peakDrawMs: 0,
     };
   }
 
@@ -807,6 +832,8 @@ export function createWayfindingHud(
     entrance.animating = true;
     entrance.fresh = true;
     entrance.started = true;
+    entrance.drawMsTotal = 0;
+    entrance.peakDrawMs = 0;
     redraw(entrance, entranceState(entrance));
   }
 
@@ -820,8 +847,11 @@ export function createWayfindingHud(
 
   function redraw(entrance: EntranceState, state: DiamondEntranceState): void {
     if (entrance.marker.apply(state)) {
+      const drawMs = entrance.marker.lastDrawMs;
       stats.redraws += 1;
-      stats.drawMs += entrance.marker.lastDrawMs;
+      stats.drawMs += drawMs;
+      entrance.drawMsTotal += drawMs;
+      if (drawMs > entrance.peakDrawMs) entrance.peakDrawMs = drawMs;
     }
     entrance.lastRedrawMs = entrance.elapsedMs;
     if (state.settled) entrance.animating = false;
@@ -838,27 +868,44 @@ export function createWayfindingHud(
     // throw: the pure seam rejects a non-finite time, so the HUD skips the
     // advance and the entrance simply waits for a real frame.
     if (!entranceOptions || !Number.isFinite(dt)) return;
-    const tolerance = 1e-6; // 3 × (1/90 s) is 33.333… ms against a 33.333… ms interval
     for (const state of states.values()) {
       const entrance = state.entrance;
-      if (!entrance || !entrance.animating) continue;
-      if (entrance.fresh) {
-        entrance.fresh = false;
-      } else {
-        entrance.elapsedMs += dt * 1000;
-        const next = entranceState(entrance);
-        const due =
-          entrance.elapsedMs - entrance.lastRedrawMs >=
-          entranceOptions.redrawIntervalMs - tolerance;
-        if (due || next.settled) redraw(entrance, next);
-      }
+      if (!entrance) continue;
+      if (entrance.animating) advanceOne(entrance, dt * 1000);
       if (entrance.animating) stats.animating += 1;
+      recordCostliest(entrance);
     }
+  }
+
+  /** One animating entrance's tick: the fresh frame is drawn, not advanced. */
+  function advanceOne(entrance: EntranceState, dtMs: number): void {
+    if (entrance.fresh) {
+      entrance.fresh = false;
+      return;
+    }
+    const tolerance = 1e-6; // 3 × (1/90 s) is 33.333… ms against a 33.333… ms interval
+    entrance.elapsedMs += dtMs;
+    const next = entranceState(entrance);
+    const due =
+      entrance.elapsedMs - entrance.lastRedrawMs >=
+      (entranceOptions?.redrawIntervalMs ?? Number.POSITIVE_INFINITY) -
+        tolerance;
+    if (due || next.settled) redraw(entrance, next);
+  }
+
+  /**
+   * The costliest entrance's totals, animating or settled: what the owner
+   * reads on the headset after walking one target back in.
+   */
+  function recordCostliest(entrance: EntranceState): void {
+    if (!entrance.started || entrance.drawMsTotal <= stats.entranceMs) return;
+    stats.entranceMs = entrance.drawMsTotal;
+    stats.peakDrawMs = entrance.peakDrawMs;
   }
 
   function update(dt: number): void {
     spawnsThisUpdate = 0;
-    stats = { redraws: 0, drawMs: 0, animating: 0 };
+    stats = { ...NO_ENTRANCE_STATS };
     const resolved = targets.resolve(getTargets());
     syncTargetStates(resolved);
     for (const target of resolved) {
@@ -895,7 +942,7 @@ export function createWayfindingHud(
     dispose(): void {
       if (disposed) return;
       disposed = true;
-      stats = { redraws: 0, drawMs: 0, animating: 0 };
+      stats = { ...NO_ENTRANCE_STATS };
       unregister?.();
       for (const state of states.values()) {
         disposeState(state);

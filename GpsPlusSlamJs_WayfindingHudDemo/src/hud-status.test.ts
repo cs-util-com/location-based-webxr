@@ -155,27 +155,39 @@ describe("the entrance readout", () => {
   const targets = [new THREE.Vector3(0, 0, -5)];
 
   it("carries the presenter's stats through the summary, null when not passed", () => {
-    const stats = { redraws: 2, drawMs: 0.0412, animating: 1 };
+    const stats = {
+      redraws: 2,
+      drawMs: 0.0412,
+      animating: 1,
+      entranceMs: 0.61,
+      peakDrawMs: 0.09,
+    };
     expect(summarizeHudScene(children, at, targets, stats).entrance).toBe(
       stats,
     );
     expect(summarizeHudScene(children, at, targets).entrance).toBeNull();
   });
 
-  it("prints the readout while an entrance animates or redrew, and nothing once settled", () => {
+  it("prints the per-frame AND the accumulated readout while an entrance animates or redrew, and nothing once settled", () => {
+    // The accumulated total and the peak are what clear the browser clock's
+    // 100 µs floor on a desktop (owner decision, 2026-09-06).
     const summary = summarizeHudScene(children, at, targets, {
       redraws: 2,
       drawMs: 0.0412,
       animating: 1,
+      entranceMs: 0.61,
+      peakDrawMs: 0.09,
     });
     expect(formatHudStatus(summary)).toBe(
       "targets 1 · arrows 0 · rings 1 · hidden 0 · nearest 5.0 m · image indicators" +
-        " · entrance 1 animating · 2 redraws · 0.04 ms",
+        " · entrance 1 animating · 2 redraws · 0.04 ms · total 0.61 ms · peak 0.09 ms",
     );
     const settled = summarizeHudScene(children, at, targets, {
       redraws: 0,
       drawMs: 0,
       animating: 0,
+      entranceMs: 0.61,
+      peakDrawMs: 0.09,
     });
     expect(formatHudStatus(settled)).not.toContain("entrance");
     // The settling frame itself: one last redraw, nothing animating any more.
@@ -183,7 +195,11 @@ describe("the entrance readout", () => {
       redraws: 1,
       drawMs: 0.03,
       animating: 0,
+      entranceMs: 0.64,
+      peakDrawMs: 0.09,
     });
-    expect(formatHudStatus(last)).toContain("entrance 0 animating · 1 redraws");
+    expect(formatHudStatus(last)).toContain(
+      "entrance 0 animating · 1 redraws · 0.03 ms · total 0.64 ms",
+    );
   });
 });

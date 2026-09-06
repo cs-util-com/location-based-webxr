@@ -123,9 +123,14 @@ function formatEntrance(entrance: EntranceStats | null): string {
   if (!entrance || (entrance.animating === 0 && entrance.redraws === 0)) {
     return "";
   }
+  // Per frame AND accumulated: a single frame's draw sits under the browser
+  // clock's 100 µs floor on a desktop, the entrance's total (~27 redraws)
+  // and its peak frame do not (owner decision, 2026-09-06).
   return (
     ` · entrance ${entrance.animating} animating · ` +
-    `${entrance.redraws} redraws · ${entrance.drawMs.toFixed(2)} ms`
+    `${entrance.redraws} redraws · ${entrance.drawMs.toFixed(2)} ms` +
+    ` · total ${entrance.entranceMs.toFixed(2)} ms` +
+    ` · peak ${entrance.peakDrawMs.toFixed(2)} ms`
   );
 }
 

@@ -95,7 +95,13 @@ function makeHarness(configOverride?: {
       // Non-zero on purpose: the status line prints the readout only while
       // something animates, so a zero fake could not tell a dropped argument
       // from a quiet frame (M4 milestone review, 2026-09-06).
-      entranceStats: vi.fn(() => ({ redraws: 2, drawMs: 0.04, animating: 1 })),
+      entranceStats: vi.fn(() => ({
+        redraws: 2,
+        drawMs: 0.04,
+        animating: 1,
+        entranceMs: 0.5,
+        peakDrawMs: 0.08,
+      })),
       dispose: vi.fn(),
     };
     hudInstances.push(hud);

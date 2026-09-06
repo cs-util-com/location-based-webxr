@@ -55,7 +55,13 @@ vi.mock("gps-plus-slam-app-framework/visualization/wayfinding-hud", () => ({
     update: vi.fn(),
     // Non-zero on purpose: the readout prints only while something animates,
     // so a zero fake could not tell a dropped argument from a quiet frame.
-    entranceStats: vi.fn(() => ({ redraws: 2, drawMs: 0.04, animating: 1 })),
+    entranceStats: vi.fn(() => ({
+      redraws: 2,
+      drawMs: 0.04,
+      animating: 1,
+      entranceMs: 0.5,
+      peakDrawMs: 0.08,
+    })),
     dispose: vi.fn(),
   })),
 }));

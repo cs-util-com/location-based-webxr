@@ -371,6 +371,46 @@ describe('circleEntrance — cost bounds', () => {
     hud.dispose();
   });
 
+  it('accumulates the costliest entrance: entranceMs sums its redraws, peakDrawMs is the largest, both reset on a restart', () => {
+    // Why (owner decision, 2026-09-06): a single frame's draw sits under the
+    // browser clock's 100 µs floor on a desktop and reads 0.00; the sum of
+    // an entrance's ~27 redraws and its peak frame are the numbers the
+    // headset reading needs. jsdom has no `performance.now()` resolution to
+    // rely on, so the marker's draw time is stubbed through the recorder:
+    // every `drawImage` costs a fixed 0.5 ms by advancing a fake clock.
+    let fakeNow = 0;
+    vi.spyOn(performance, 'now').mockImplementation(() => fakeNow);
+    const contexts = injectContexts();
+    const { hud, camera } = makeHud([onScreenFar()]);
+    // Each composite advances the fake clock by 0.5 ms while it "draws".
+    const textureCanvas = () => textureOf(contexts, 0);
+    hud.update(1 / 90);
+    textureCanvas().drawImage.mockImplementation(() => {
+      fakeNow += 0.5;
+    });
+    for (let i = 0; i < 90; i += 1) hud.update(1 / 90);
+    const settled = hud.entranceStats();
+    expect(settled.animating).toBe(0);
+    // The t = 0 draw happened before the stub (0 ms); every later redraw
+    // cost 0.5 ms: ~26 of them.
+    expect(settled.entranceMs).toBeGreaterThanOrEqual(12);
+    expect(settled.entranceMs).toBeLessThanOrEqual(14.5);
+    expect(settled.peakDrawMs).toBeCloseTo(0.5, 6);
+    // Holds its value once settled …
+    hud.update(1 / 90);
+    expect(hud.entranceStats().entranceMs).toBe(settled.entranceMs);
+    // … and resets when the entrance restarts through the distance gate.
+    camera.position.set(0, 0, -4.5);
+    camera.updateMatrixWorld(true);
+    hud.update(1 / 90);
+    camera.position.set(0, 0, 0);
+    camera.updateMatrixWorld(true);
+    hud.update(1 / 90);
+    expect(hud.entranceStats().animating).toBe(1);
+    expect(hud.entranceStats().entranceMs).toBeLessThan(1);
+    hud.dispose();
+  });
+
   it('entranceStats reports the last update: redraws, their wall-clock cost, and how many are animating', () => {
     injectContexts();
     const { hud } = makeHud([onScreenFar()]);
@@ -384,6 +424,8 @@ describe('circleEntrance — cost bounds', () => {
       redraws: 0,
       drawMs: 0,
       animating: 0,
+      entranceMs: 0,
+      peakDrawMs: 0,
     });
   });
 });
@@ -433,6 +475,8 @@ describe('circleEntrance — reduced motion and lifecycle', () => {
       redraws: 0,
       drawMs: 0,
       animating: 0,
+      entranceMs: 0,
+      peakDrawMs: 0,
     });
     hud.dispose();
   });
