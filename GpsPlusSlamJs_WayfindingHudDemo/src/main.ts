@@ -94,8 +94,15 @@ function main(): void {
     // listeners fire in registration order, which is what lets the guard shield
     // this one.
     guardSliderAgainstScroll(slider);
+    // `input` keeps the number under the thumb live; the HUD is re-created on
+    // `change` (the drag's release), not per pixel of the drag — with the
+    // entrance on, each re-creation allocated four 256² canvases and their
+    // textures and restarted every entrance, dozens of times per drag
+    // (2026-09-06 follow-up). Playwright's `fill()` fires both events.
     slider.addEventListener("input", () => {
       refreshOutputs();
+    });
+    slider.addEventListener("change", () => {
       activeMode?.refreshHud();
     });
   }

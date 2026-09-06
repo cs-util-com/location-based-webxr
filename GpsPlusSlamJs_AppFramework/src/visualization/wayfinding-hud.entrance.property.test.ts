@@ -15,58 +15,10 @@ import * as THREE from 'three';
 import { createWayfindingHud } from './wayfinding-hud.js';
 import { clearFrameUpdates } from '../ar/frame-loop.js';
 import { clearSessionDisposers } from '../ar/session-disposers.js';
-
-function makeRecordingContext() {
-  return {
-    clearRect: vi.fn(),
-    save: vi.fn(),
-    restore: vi.fn(),
-    translate: vi.fn(),
-    scale: vi.fn(),
-    rotate: vi.fn(),
-    beginPath: vi.fn(),
-    roundRect: vi.fn(),
-    setLineDash: vi.fn(),
-    stroke: vi.fn(),
-    arc: vi.fn(),
-    fill: vi.fn(),
-    drawImage: vi.fn(),
-    fillText: vi.fn(),
-    lineDashOffset: 0,
-    lineWidth: 0,
-    strokeStyle: '',
-    fillStyle: '',
-    globalAlpha: 1,
-    shadowColor: '',
-    shadowBlur: 0,
-    shadowOffsetX: 0,
-    shadowOffsetY: 0,
-    font: '',
-    textAlign: '',
-    textBaseline: '',
-  };
-}
-type RecordingContext = ReturnType<typeof makeRecordingContext>;
-
-/** Per-canvas recorders in creation order: texture canvas, scratch canvas, label. */
-function injectContexts(): RecordingContext[] {
-  const contexts: RecordingContext[] = [];
-  const original = document.createElement.bind(document);
-  vi.spyOn(document, 'createElement').mockImplementation(
-    (tagName: string): HTMLElement => {
-      const el = original(tagName);
-      if (tagName === 'canvas') {
-        const ctx = makeRecordingContext();
-        contexts.push(ctx);
-        (el as HTMLCanvasElement).getContext = vi.fn(
-          () => ctx
-        ) as unknown as HTMLCanvasElement['getContext'];
-      }
-      return el;
-    }
-  );
-  return contexts;
-}
+import {
+  injectContexts,
+  type RecordingContext,
+} from './recording-canvas.test-utils.js';
 
 afterEach(() => {
   vi.restoreAllMocks();

@@ -27,65 +27,12 @@ import {
 import { DIAMOND_ENTRANCE } from './diamond-entrance.js';
 import { clearFrameUpdates } from '../ar/frame-loop.js';
 import { clearSessionDisposers } from '../ar/session-disposers.js';
+import {
+  injectContexts,
+  type RecordingContext,
+} from './recording-canvas.test-utils.js';
 
 /** A recording 2D context: the dash offset is the one number the HUD's clock becomes. */
-function makeRecordingContext() {
-  return {
-    clearRect: vi.fn(),
-    save: vi.fn(),
-    restore: vi.fn(),
-    translate: vi.fn(),
-    scale: vi.fn(),
-    rotate: vi.fn(),
-    beginPath: vi.fn(),
-    roundRect: vi.fn(),
-    setLineDash: vi.fn(),
-    stroke: vi.fn(),
-    arc: vi.fn(),
-    fill: vi.fn(),
-    drawImage: vi.fn(),
-    fillText: vi.fn(),
-    lineDashOffset: 0,
-    lineWidth: 0,
-    strokeStyle: '',
-    fillStyle: '',
-    globalAlpha: 1,
-    shadowColor: '',
-    shadowBlur: 0,
-    shadowOffsetX: 0,
-    shadowOffsetY: 0,
-    font: '',
-    textAlign: '',
-    textBaseline: '',
-  };
-}
-type RecordingContext = ReturnType<typeof makeRecordingContext>;
-
-/**
- * Every canvas the HUD creates gets its own recorder, in creation order.
- * Per target the order is: the marker's texture canvas, its scratch canvas,
- * then the label (text sprite) — so the scratch recorder, where the dash
- * offset lands, is the SECOND of each triple.
- */
-function injectContexts(): RecordingContext[] {
-  const contexts: RecordingContext[] = [];
-  const original = document.createElement.bind(document);
-  vi.spyOn(document, 'createElement').mockImplementation(
-    (tagName: string): HTMLElement => {
-      const el = original(tagName);
-      if (tagName === 'canvas') {
-        const ctx = makeRecordingContext();
-        contexts.push(ctx);
-        (el as HTMLCanvasElement).getContext = vi.fn(
-          () => ctx
-        ) as unknown as HTMLCanvasElement['getContext'];
-      }
-      return el;
-    }
-  );
-  return contexts;
-}
-
 const scratchOf = (contexts: RecordingContext[], target: number) =>
   contexts[target * 3 + 1] as RecordingContext;
 /** The texture canvas: the ONE `drawImage` per redraw (the composite) lands here. */

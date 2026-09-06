@@ -24,67 +24,13 @@ import {
   createDiamondMarkerTexture,
   type DiamondMarkerTextureOptions,
 } from './diamond-marker-texture.js';
+import {
+  injectContexts,
+  makeRecordingContext,
+  type RecordingContext,
+} from './recording-canvas.test-utils.js';
 
 /** A recording stub of the 2D context: every call a spy, every property a plain field. */
-function makeRecordingContext(overrides: Record<string, unknown> = {}) {
-  return {
-    clearRect: vi.fn(),
-    save: vi.fn(),
-    restore: vi.fn(),
-    translate: vi.fn(),
-    scale: vi.fn(),
-    rotate: vi.fn(),
-    beginPath: vi.fn(),
-    roundRect: vi.fn(),
-    moveTo: vi.fn(),
-    arcTo: vi.fn(),
-    closePath: vi.fn(),
-    setLineDash: vi.fn(),
-    stroke: vi.fn(),
-    arc: vi.fn(),
-    fill: vi.fn(),
-    drawImage: vi.fn(),
-    lineDashOffset: 0,
-    lineWidth: 0,
-    strokeStyle: '',
-    fillStyle: '',
-    globalAlpha: 1,
-    shadowColor: '',
-    shadowBlur: 0,
-    shadowOffsetX: 0,
-    shadowOffsetY: 0,
-    ...overrides,
-  };
-}
-
-type RecordingContext = ReturnType<typeof makeRecordingContext>;
-
-/**
- * Patch document.createElement so EACH canvas gets its own recorder, in
- * creation order. The two must be told apart — the shadow belongs on the
- * texture canvas and not on the scratch one.
- */
-function injectContexts(
-  make: () => RecordingContext | null
-): RecordingContext[] {
-  const contexts: RecordingContext[] = [];
-  const original = document.createElement.bind(document);
-  vi.spyOn(document, 'createElement').mockImplementation(
-    (tagName: string): HTMLElement => {
-      const el = original(tagName);
-      if (tagName === 'canvas') {
-        const ctx = make();
-        if (ctx) contexts.push(ctx);
-        (el as HTMLCanvasElement).getContext = vi.fn(
-          () => ctx
-        ) as unknown as HTMLCanvasElement['getContext'];
-      }
-      return el;
-    }
-  );
-  return contexts;
-}
-
 /** Inject, create, and hand back the recorders: texture canvas first, scratch second. */
 function create(
   options: DiamondMarkerTextureOptions,
