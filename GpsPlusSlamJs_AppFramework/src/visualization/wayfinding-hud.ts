@@ -886,7 +886,13 @@ export function createWayfindingHud(
     for (const state of states.values()) {
       const entrance = state.entrance;
       if (!entrance) continue;
-      if (entrance.animating && dtMs !== null) advanceOne(entrance, dtMs);
+      // PAUSED while the circle is not shown: a frame drawn then is never
+      // presented — the marker comes back either as the same sprite (arrow →
+      // circle, no restart) or through the distance gate, which restarts
+      // from t = 0 (PR #424 review). The entrance still counts as animating.
+      if (entrance.animating && dtMs !== null && state.circle.visible) {
+        advanceOne(entrance, dtMs);
+      }
       if (entrance.animating) stats.animating += 1;
       recordCostliest(entrance);
     }

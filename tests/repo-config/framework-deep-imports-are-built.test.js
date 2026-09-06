@@ -104,15 +104,17 @@ describe('framework deep imports are built entrypoints', () => {
     // an entry written in other words ("is now a built deep-import entry",
     // PR #417 review) would silently leave its module unguarded while the
     // marker-form entries keep this green (milestone review, 2026-09-05).
-    // "deep-importable" / "deep-imported" are prose about a family or a
-    // consumer, not an entry, hence the lookahead (PR #420 review). A
-    // mismatch names every mention with its context, so the offending line
-    // is in the failure rather than a bare "expected 3 to be 4".
-    const mentioned = [
-      ...changelog.matchAll(/deep[ -]import(?!able|ed)/gi),
-    ].map((m) =>
+    // Anchored on a word boundary: "deep-importable", "deep-imported",
+    // "deep-imports", "deep-importing" are prose about a family or a
+    // consumer, not an entry, and an exclusion list that grew one suffix per
+    // review round (#420, #421) could never be complete. A mismatch names
+    // every mention with its context (60 characters each side: the longest
+    // marker-form path is 40, and a window of exactly 40 cut off the
+    // leading `**` — PR #421 review), so the offending line is in the
+    // failure rather than a bare "expected 3 to be 4".
+    const mentioned = [...changelog.matchAll(/deep[ -]import\b/gi)].map((m) =>
       changelog
-        .slice(Math.max(0, m.index - 40), m.index + 40)
+        .slice(Math.max(0, m.index - 60), m.index + 60)
         .replace(/\s+/g, ' ')
     );
     expect(

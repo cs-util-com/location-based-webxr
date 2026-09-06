@@ -13,7 +13,7 @@
 - Public API:
   - `DIAMOND_ENTRANCE` - frozen `{ outlineMs: 800, dotDelayMs: 600, dotMs:
 250, totalMs: 850, dashLength: 180 }`, the CSS tokens `--t-enter × 2`,
-    `--t-enter × 1.5`, `--t-state`, their sum, and `stroke-dasharray`.
+    `--t-enter × 1.5`, `--t-state`, the LATER of the two tracks (`max(outlineMs, dotDelayMs + dotMs)` - the dot's end today; the guard holds the literal to that), and `stroke-dasharray`.
   - `computeDiamondEntrance(elapsedMs, { reducedMotion? }) →
 DiamondEntranceState` - `outline` and `dot` in [0, 1] on the
     `--ease-out` curve (`utils/cubic-bezier-easing`), `settled` once t ≥ 850

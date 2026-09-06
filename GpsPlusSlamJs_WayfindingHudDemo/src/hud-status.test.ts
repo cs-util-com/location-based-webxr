@@ -148,8 +148,9 @@ describe("formatHudStatus", () => {
 describe("the entrance readout", () => {
   // Why these tests matter: the readout is the owner's on-device cost
   // number (the HUD diamond entrance plan, M4) — the one place a Quest
-  // frame's redraw cost becomes visible. It must appear only while an
-  // entrance runs (a settled HUD says nothing) and carry the stats verbatim.
+  // frame's redraw cost becomes visible. The per-frame trio appears only
+  // while an entrance runs; the accumulated pair STAYS once one has run (it
+  // is read after the entrance); both carry the stats verbatim.
   const children = [indicator("wayfinding-circle", true, true)];
   const at = new THREE.Vector3(0, 0, 0);
   const targets = [new THREE.Vector3(0, 0, -5)];
@@ -168,7 +169,7 @@ describe("the entrance readout", () => {
     expect(summarizeHudScene(children, at, targets).entrance).toBeNull();
   });
 
-  it("prints the per-frame AND the accumulated readout while an entrance animates or redrew, and nothing once settled", () => {
+  it("prints the per-frame trio while an entrance animates or redrew, keeps the accumulated pair once settled, and nothing if none ever ran", () => {
     // The accumulated total and the peak are what clear the browser clock's
     // 100 µs floor on a desktop (owner decision, 2026-09-06).
     const summary = summarizeHudScene(children, at, targets, {

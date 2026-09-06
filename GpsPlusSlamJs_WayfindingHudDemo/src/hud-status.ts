@@ -114,10 +114,11 @@ export function summarizeHudScene(
 }
 
 /**
- * The entrance readout, present only while an entrance animates or redrew
- * in this frame — a settled HUD costs nothing and says nothing. The
- * millisecond figure is the frame's redraw cost, the number to hold against
- * the headset's 11.1 ms budget at 90 Hz.
+ * The entrance readout in two parts: the per-frame trio (animating count,
+ * redraws, their milliseconds) only while an entrance animates or redrew in
+ * this frame, and the accumulated pair ("last entrance", "peak") for as
+ * long as any entrance has cost anything — the latter is the number held
+ * against the headset's 11.1 ms budget at 90 Hz, read AFTER the entrance.
  */
 function formatEntrance(entrance: EntranceStats | null): string {
   if (!entrance) return "";

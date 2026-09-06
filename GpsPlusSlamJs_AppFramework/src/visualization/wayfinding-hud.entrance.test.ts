@@ -241,6 +241,39 @@ describe('circleEntrance — the entrance runs on appearance and on hidden → c
     hud.dispose();
   });
 
+  it('pauses while the circle is not shown: no redraw is spent on frames nobody presents', () => {
+    // Why (PR #424 review): a frame drawn while the target shows the arrow
+    // or is hidden is never seen — the marker returns either as the same
+    // sprite (arrow → circle, no restart) or through the distance gate,
+    // which restarts from t = 0. The clock pauses; the entrance still
+    // counts as animating.
+    const contexts = injectContexts();
+    const target = onScreenFar();
+    const { hud, camera } = makeHud([target]);
+    for (let i = 0; i < 10; i += 1) hud.update(1 / 90); // ~100 ms in
+    const scratch = scratchOf(contexts, 0);
+    const offsetBefore = scratch.lineDashOffset;
+    expect(offsetBefore).toBeLessThan(DIAMOND_ENTRANCE.dashLength);
+    // Look away: arrow. Thirty frames pass with the circle hidden.
+    camera.lookAt(10, 0, 0);
+    camera.updateMatrixWorld(true);
+    let redrawsWhileHidden = 0;
+    for (let i = 0; i < 30; i += 1) {
+      hud.update(1 / 90);
+      redrawsWhileHidden += hud.entranceStats().redraws;
+    }
+    expect(redrawsWhileHidden).toBe(0);
+    expect(hud.entranceStats().animating).toBe(1);
+    expect(scratch.lineDashOffset).toBe(offsetBefore);
+    // Look back: the build-up resumes where it paused, no restart.
+    camera.lookAt(0, 0, -1);
+    camera.updateMatrixWorld(true);
+    for (let i = 0; i < 6; i += 1) hud.update(1 / 90);
+    expect(scratch.lineDashOffset).toBeLessThan(offsetBefore);
+    expect(scratch.lineDashOffset).toBeGreaterThan(0);
+    hud.dispose();
+  });
+
   it('a target whose FIRST placement is an edge arrow gets its entrance when it first becomes a circle', () => {
     // Why (milestone review, 2026-09-06): the start condition was
     // `previous === null || previous === 'hidden'`, and `null` is only the
