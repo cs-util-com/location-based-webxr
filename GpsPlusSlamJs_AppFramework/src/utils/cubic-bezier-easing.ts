@@ -79,7 +79,7 @@ export function cubicBezierEasing(
     if (x === 1) return 1;
     let lo = 0;
     let hi = 1;
-    let u = x;
+    let u = 0.5; // overwritten by the first halving; a bisection has no seed
     for (let i = 0; i < MAX_ITERATIONS; i += 1) {
       u = (lo + hi) / 2;
       const residual = forward(x1, x2, u) - x;

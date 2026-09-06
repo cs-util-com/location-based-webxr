@@ -146,7 +146,11 @@ describe('every literal copy of a design-system value equals its source', () => 
     expect(constant('outlineMs')).toBe(tEnter * outlineFactor);
     expect(constant('dotDelayMs')).toBe(tEnter * dotDelayFactor);
     expect(constant('dotMs')).toBe(tState);
-    expect(constant('totalMs')).toBe(tEnter * dotDelayFactor + tState);
+    // The entrance is over when BOTH tracks are — the later of the outline
+    // and the dot — not when the dot alone is (PR #422 review).
+    expect(constant('totalMs')).toBe(
+      Math.max(tEnter * outlineFactor, tEnter * dotDelayFactor + tState)
+    );
     const dash = /\.diamond rect,\s*\.leader polyline \{\s*stroke-dasharray:\s*([0-9]+);/.exec(
       css
     );

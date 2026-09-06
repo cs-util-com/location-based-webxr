@@ -35,7 +35,12 @@ export const DIAMOND_ENTRANCE = Object.freeze({
   dotDelayMs: 600,
   /** `dot-pop` runs `var(--t-state)`. */
   dotMs: 250,
-  /** delay + dot: nothing changes after this. */
+  /**
+   * When BOTH tracks are over: `max(outlineMs, dotDelayMs + dotMs)`. Today
+   * the dot's end (850) is the later one; a sheet with `--t-enter > 2 ×
+   * --t-state` would make the outline the later track, and the repo-config
+   * guard holds this literal to the max of the two (PR #422 review).
+   */
   totalMs: 850,
   /** `stroke-dasharray: 180`; the offset animates from 180 to 0. */
   dashLength: 180,
