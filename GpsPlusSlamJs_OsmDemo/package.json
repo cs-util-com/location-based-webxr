@@ -36,7 +36,7 @@
     "gps-plus-slam-osm": "workspace:*",
     "h3-js": "^4.5.0",
     "leaflet": "^1.9.4",
-    "three": "^0.184.0"
+    "three": "^0.185.1"
   },
   "devDependencies": {
     "@carlosjeurissen/stylelint-csstree-validator": "^3.3.1",
@@ -44,7 +44,7 @@
     "@playwright/test": "^1.63.0",
     "@types/leaflet": "^1.9.22",
     "@types/node": "^25.9.5",
-    "@types/three": "^0.184.1",
+    "@types/three": "^0.185.4",
     "@vitest/eslint-plugin": "^1.6.27",
     "dependency-cruiser": "^17.4.3",
     "dpdm": "^4.3.0",
