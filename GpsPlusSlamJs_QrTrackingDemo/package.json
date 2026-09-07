@@ -36,7 +36,7 @@
   "devDependencies": {
     "@carlosjeurissen/stylelint-csstree-validator": "^3.3.1",
     "@eslint/js": "^10.0.1",
-    "@playwright/test": "^1.60.0",
+    "@playwright/test": "^1.63.0",
     "@types/node": "^25.9.5",
     "@types/three": "^0.184.1",
     "@vitest/eslint-plugin": "^1.6.27",
