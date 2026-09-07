@@ -202,8 +202,18 @@ test.describe("Wayfinding HUD demo — the diamond's entrance animation", () => 
     await advance(page, 16);
     const first = await countMarker(page, on.clip);
     expect(first.accent).toBeGreaterThan(20);
-    // The one frame drew the SETTLED marker: one redraw, nothing animating.
-    await expect(on.status).toContainText("entrance 0 animating · 1 redraws");
+    // Conditions, not a frame count (PR #426 review): the exact per-frame
+    // trio ("0 animating · 1 redraws") exists for ONE frame — `stats` reset
+    // per update, and the faked clock measures every draw at 0.00 so the
+    // whole suffix vanishes on the next — and where the pause lands on the
+    // 16 ms rAF grid is not a contract. What is: nothing ever animates, and
+    // a hundred frames later the marker is the same pixels.
+    await expect(on.status).not.toContainText("1 animating");
+    await advance(page, 1600);
+    const later = await countMarker(page, on.clip);
+    expect(Math.abs(later.ink - first.ink)).toBeLessThanOrEqual(2);
+    expect(Math.abs(later.accent - first.accent)).toBeLessThanOrEqual(2);
+    await expect(on.status).not.toContainText("1 animating");
     expect(errors).toEqual([]);
   });
 });
