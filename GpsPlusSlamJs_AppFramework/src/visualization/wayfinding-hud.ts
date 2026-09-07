@@ -425,7 +425,15 @@ function resolveTexture(
 
 /** The per-target entrance clock, present only with `circleEntrance`. */
 interface EntranceState {
-  marker: DiamondMarkerTexture;
+  /**
+   * Created on the FIRST entrance, not with the target: a marker is two
+   * 256 px canvases (~512 KB) and `createWayfindingHud` documents no
+   * target-count bound, so a consumer with 50 waypoints would otherwise pay
+   * ~25 MB of headset canvas for markers mostly never drawn (PR #425
+   * review). Null until then; the circle sprite's material gets the texture
+   * at the same moment, before the sprite is first presented.
+   */
+  marker: DiamondMarkerTexture | null;
   /** Milliseconds since the entrance began; negative while staggered. */
   elapsedMs: number;
   /** `elapsedMs` at the last redraw — the cap compares against it. */
@@ -554,7 +562,7 @@ export function createWayfindingHud(
     return hudMaterial;
   }
 
-  function makeIndicatorSprite(texture: THREE.Texture): THREE.Sprite {
+  function makeIndicatorSprite(texture: THREE.Texture | null): THREE.Sprite {
     const material = new THREE.SpriteMaterial({
       map: texture,
       color: 0xffffff,
@@ -594,15 +602,8 @@ export function createWayfindingHud(
 
   function makeEntrance(): EntranceState | null {
     if (!entranceOptions) return null;
-    const marker = createDiamondMarkerTexture({
-      ink: entranceOptions.ink,
-      accent: entranceOptions.accent,
-      ...(entranceOptions.halo !== undefined
-        ? { halo: entranceOptions.halo }
-        : {}),
-    });
     return {
-      marker,
+      marker: null,
       elapsedMs: 0,
       lastRedrawMs: Number.NEGATIVE_INFINITY,
       animating: false,
@@ -617,7 +618,10 @@ export function createWayfindingHud(
   function makeCircle(
     entrance: EntranceState | null
   ): THREE.Mesh | THREE.Sprite {
-    if (entrance) return makeIndicatorSprite(entrance.marker.texture);
+    // The entrance sprite starts without a map: its marker texture is
+    // attached by the first `startEntrance`, in the same update that first
+    // makes it visible (see `EntranceState.marker`).
+    if (entrance) return makeIndicatorSprite(null);
     if (circleTexture) return makeIndicatorSprite(circleTexture.texture);
     circleGeometry ??= new THREE.RingGeometry(
       (RING_OUTER_RADIUS - RING_WIDTH) * indicatorScale,
@@ -686,7 +690,7 @@ export function createWayfindingHud(
     disposeIndicator(state.circle);
     // The marker texture is per target (the sprite material above only
     // releases itself); the shared procedural resources stay.
-    state.entrance?.marker.dispose();
+    state.entrance?.marker?.dispose();
     camera.remove(state.label.sprite);
     state.label.dispose();
   }
@@ -740,7 +744,7 @@ export function createWayfindingHud(
         state.entrance.replayPending ||
         !state.entrance.started)
     ) {
-      startEntrance(state.entrance);
+      startEntrance(state, state.entrance);
     }
 
     // Snap to the placement on the frame the circle becomes visible;
@@ -861,8 +865,31 @@ export function createWayfindingHud(
     entrance.animating = false;
   }
 
+  /**
+   * The per-target marker, made on demand: the texture is created and
+   * attached to the circle sprite's material the first time this target's
+   * entrance starts (see `EntranceState.marker`).
+   */
+  function attachMarker(
+    state: TargetState,
+    opts: ResolvedEntranceOptions
+  ): DiamondMarkerTexture {
+    const marker = createDiamondMarkerTexture({
+      ink: opts.ink,
+      accent: opts.accent,
+      ...(opts.halo !== undefined ? { halo: opts.halo } : {}),
+    });
+    const material = (state.circle as THREE.Sprite).material;
+    material.map = marker.texture;
+    material.needsUpdate = true;
+    return marker;
+  }
+
   /** Begin (or restart) a target's entrance: the t = 0 frame is drawn now. */
-  function startEntrance(entrance: EntranceState): void {
+  function startEntrance(state: TargetState, entrance: EntranceState): void {
+    if (!entrance.marker && entranceOptions) {
+      entrance.marker = attachMarker(state, entranceOptions);
+    }
     const stagger = (entranceOptions?.staggerMs ?? 0) * spawnsThisUpdate;
     spawnsThisUpdate += 1;
     entrance.elapsedMs = -stagger;
@@ -885,6 +912,9 @@ export function createWayfindingHud(
   }
 
   function redraw(entrance: EntranceState, state: DiamondEntranceState): void {
+    // Only ever reached after `startEntrance`, which attaches the marker;
+    // the guard keeps a future caller from drawing into nothing.
+    if (!entrance.marker) return;
     if (entrance.marker.apply(state)) {
       const drawMs = entrance.marker.lastDrawMs;
       stats.redraws += 1;

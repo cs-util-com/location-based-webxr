@@ -53,14 +53,20 @@ describe('circleEntrance (properties)', () => {
           let previousDraws = 0;
           for (const dt of dts) {
             hud.update(dt);
-            // Canvases per target (created on the first update): texture
-            // canvas, scratch canvas, label. A REDRAW is the one `drawImage`
-            // of the composite on the TEXTURE canvas (the scratch canvas
-            // never receives one — a first draft gated on it and asserted
+            // The recorders by ROLE (the marker's canvases are created on
+            // its first entrance, after the label's, so creation order is
+            // not a contract): a REDRAW is the one `drawImage` of the
+            // composite on the TEXTURE canvas (the scratch canvas never
+            // receives one — a first draft gated on it and asserted
             // nothing, milestone review 2026-09-06); the dash offset it
-            // composited sits on the scratch recorder.
-            const texture = contexts[0] as RecordingContext;
-            const scratch = contexts[1] as RecordingContext;
+            // composited sits on the SCRATCH recorder, the one that
+            // received `setLineDash`.
+            const texture = contexts.find(
+              (c) => c.drawImage.mock.calls.length > 0
+            ) as RecordingContext;
+            const scratch = contexts.find(
+              (c) => c.setLineDash.mock.calls.length > 0
+            ) as RecordingContext;
             const draws = texture.drawImage.mock.calls.length;
             if (draws !== previousDraws) {
               offsets.push(scratch.lineDashOffset);

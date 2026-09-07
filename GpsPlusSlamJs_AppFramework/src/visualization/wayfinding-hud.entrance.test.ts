@@ -32,12 +32,24 @@ import {
   type RecordingContext,
 } from '../test-utils/recording-canvas.js';
 
-/** A recording 2D context: the dash offset is the one number the HUD's clock becomes. */
+/**
+ * The recorders are looked up by ROLE, not by creation index: a marker's
+ * two canvases are created on its first entrance (after the label's), so
+ * the order depends on which targets have started. The scratch canvas is
+ * the one that received `setLineDash` — its dash offset is the one number
+ * the HUD's clock becomes; the texture canvas the one that received the
+ * ONE `drawImage` per redraw (the composite). The n-th of each, in start
+ * order. Positional indexing is what produced the copied wrong index the
+ * first review round fixed.
+ */
 const scratchOf = (contexts: RecordingContext[], target: number) =>
-  contexts[target * 3 + 1] as RecordingContext;
-/** The texture canvas: the ONE `drawImage` per redraw (the composite) lands here. */
+  contexts.filter((c) => c.setLineDash.mock.calls.length > 0)[
+    target
+  ] as RecordingContext;
 const textureOf = (contexts: RecordingContext[], target: number) =>
-  contexts[target * 3] as RecordingContext;
+  contexts.filter((c) => c.drawImage.mock.calls.length > 0)[
+    target
+  ] as RecordingContext;
 
 function makeCamera(): THREE.PerspectiveCamera {
   const camera = new THREE.PerspectiveCamera(60, 2, 0.1, 100);
@@ -236,7 +248,9 @@ describe('circleEntrance — the entrance runs on appearance and on a return thr
     const { hud, camera } = makeHud([target]);
     hud.update(1 / 90); // first frame: an edge arrow, no entrance yet
     expect(hud.entranceStats().animating).toBe(0);
-    expect(textureOf(contexts, 0).drawImage).not.toHaveBeenCalled();
+    // No marker exists yet: only the label's canvas (allocation is lazy).
+    expect(contexts).toHaveLength(1);
+    expect(contexts[0]?.drawImage).not.toHaveBeenCalled();
     // Turn to face it: arrow → circle, the target's first circle ever.
     camera.lookAt(6, 0, 0);
     camera.updateMatrixWorld(true);
@@ -490,6 +504,34 @@ describe('circleEntrance — reduced motion and lifecycle', () => {
     expect(scratch.lineDashOffset).toBe(0);
     expect(scratch.arc).toHaveBeenCalled();
     expect(hud.entranceStats().animating).toBe(0);
+    hud.dispose();
+  });
+
+  it('the marker canvases are allocated on the first entrance, not per target up front', () => {
+    // Why (PR #425 review): a marker is two 256 px canvases (~512 KB) and
+    // the HUD documents no target-count bound — 50 waypoints would be
+    // ~25 MB of headset canvas for markers mostly never drawn. A target
+    // hidden from the start owns only its label's canvas until it first
+    // shows a circle.
+    const contexts = injectContexts();
+    const { hud, camera } = makeHud([onScreenFar()]);
+    camera.position.set(0, 0, -4.5); // arrived: hidden from the first frame
+    camera.updateMatrixWorld(true);
+    hud.update(1 / 90);
+    hud.update(1 / 90);
+    expect(contexts).toHaveLength(1); // the label
+    const circle = camera.children.find(
+      (c) => c.name === 'wayfinding-circle'
+    ) as THREE.Sprite;
+    expect(circle.material.map).toBeNull();
+    camera.position.set(0, 0, 0); // out through the gate: the first circle
+    camera.updateMatrixWorld(true);
+    hud.update(1 / 90);
+    expect(contexts).toHaveLength(3); // + texture and scratch
+    expect(circle.material.map).not.toBeNull();
+    expect(scratchOf(contexts, 0).lineDashOffset).toBe(
+      DIAMOND_ENTRANCE.dashLength
+    );
     hud.dispose();
   });
 
