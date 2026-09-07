@@ -41,11 +41,7 @@ import { compressBytes } from './compression';
 
 /** Not exported on purpose (knip): surfaces via `QrLaunchPlan.strategy`. */
 type QrLaunchStrategy =
-  | 'name'
-  | 'template'
-  | 'raw'
-  | 'dictionary'
-  | 'path-base32';
+  'name' | 'template' | 'raw' | 'dictionary' | 'path-base32';
 
 /** Not exported on purpose (knip): reachable via `QrLaunchPlan.candidates`. */
 interface QrLaunchCandidate {

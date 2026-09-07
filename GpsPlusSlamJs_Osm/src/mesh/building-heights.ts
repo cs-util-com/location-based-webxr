@@ -50,12 +50,7 @@ export interface BuildingHeights {
  * and where it stops.
  */
 export type RoofShape =
-  | "flat"
-  | "pyramidal"
-  | "skillion"
-  | "gabled"
-  | "hipped"
-  | "dome";
+  "flat" | "pyramidal" | "skillion" | "gabled" | "hipped" | "dome";
 
 const KNOWN_SHAPES = new Set<RoofShape>([
   "flat",

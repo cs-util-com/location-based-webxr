@@ -26,8 +26,7 @@ import { endSession } from './recording-slice.js';
 export interface ArTeardownStore {
   dispatch(
     action:
-      | ReturnType<typeof endSession>
-      | ReturnType<typeof resetGpsSessionData>
+      ReturnType<typeof endSession> | ReturnType<typeof resetGpsSessionData>
   ): unknown;
 }
 

@@ -224,8 +224,7 @@ function inferSessionId(
   for (const { action } of actions) {
     if (action.type === 'recording/startSession') {
       const p = action.payload as
-        | { sessionName?: unknown; scenarioName?: unknown }
-        | undefined;
+        { sessionName?: unknown; scenarioName?: unknown } | undefined;
       if (typeof p?.sessionName === 'string' && p.sessionName.length > 0) {
         return p.sessionName;
       }

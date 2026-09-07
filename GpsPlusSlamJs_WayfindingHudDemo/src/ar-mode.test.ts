@@ -34,8 +34,7 @@ vi.mock("gps-plus-slam-app-framework/storage/null-storage-backend", () => ({
 // is covered by the framework's hit-test-reticle-driver tests).
 const driverMock = vi.hoisted(() => ({
   capturedOnSelect: null as
-    | ((worldPosition: THREE.Vector3 | null) => void)
-    | null,
+    ((worldPosition: THREE.Vector3 | null) => void) | null,
   disposeSpy: vi.fn(),
 }));
 vi.mock("gps-plus-slam-app-framework/ar/hit-test-reticle-driver", () => ({

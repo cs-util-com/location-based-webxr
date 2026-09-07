@@ -153,8 +153,7 @@ describe('validateOptionFields', () => {
   // version) must not survive into the validated object.
   it('drops keys the spec does not declare', () => {
     const withLegacy = { enabled: false, legacyFlag: true } as unknown as
-      | Partial<SampleGroup>
-      | undefined;
+      Partial<SampleGroup> | undefined;
     expect(validate(withLegacy)).not.toHaveProperty('legacyFlag');
   });
 

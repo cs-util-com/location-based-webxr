@@ -26,14 +26,12 @@ const wayArb = fc
     id: fc.integer({ min: 1, max: 6 }),
     variant: fc.integer({ min: 0, max: 9 }),
   })
-  .map(
-    ({ id, variant }): OsmFeature => ({
-      type: "way",
-      id,
-      geometry: [{ lat: 50 + variant / 100, lng: 6.9 }],
-      tags: { variant: String(variant) },
-    }),
-  );
+  .map(({ id, variant }): OsmFeature => ({
+    type: "way",
+    id,
+    geometry: [{ lat: 50 + variant / 100, lng: 6.9 }],
+    tags: { variant: String(variant) },
+  }));
 
 const tileArb = fc
   .record({
@@ -41,16 +39,14 @@ const tileArb = fc
     features: fc.array(wayArb, { maxLength: 6 }),
     fetchedAt: fc.integer({ min: 1_000, max: 1_010 }), // deliberately collision-prone
   })
-  .map(
-    ({ tile, features, fetchedAt }): OsmTileResult => ({
-      tile,
-      features,
-      fetchedAt,
-      sourceId: "test",
-      schemaVersion: 2,
-      skipped: [],
-    }),
-  );
+  .map(({ tile, features, fetchedAt }): OsmTileResult => ({
+    tile,
+    features,
+    fetchedAt,
+    sourceId: "test",
+    schemaVersion: 2,
+    skipped: [],
+  }));
 
 const snapshot = (tiles: readonly OsmTileResult[]) =>
   JSON.stringify([...mergeTiles(tiles).features.entries()].sort());

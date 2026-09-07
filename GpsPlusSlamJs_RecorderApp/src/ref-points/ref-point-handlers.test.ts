@@ -358,11 +358,9 @@ function getDispatchedCurrentMark(store: RecorderStore): RefPointMark {
     );
   }
   const position = mockExtractOdomPosition.mock.results.at(-1)?.value as
-    | Vector3
-    | undefined;
+    Vector3 | undefined;
   const rotation = mockExtractOdomRotation.mock.results.at(-1)?.value as
-    | Quaternion
-    | undefined;
+    Quaternion | undefined;
   const fused = payload.gpsPoint ?? payload.rawGpsPoint;
   return {
     id: payload.id,

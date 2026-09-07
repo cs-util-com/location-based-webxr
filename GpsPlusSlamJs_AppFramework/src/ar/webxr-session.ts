@@ -346,8 +346,7 @@ interface ArSessionHandle {
      * path. Per-session: the host re-passes it with each initAR.
      */
     qualityAnalyzer:
-      | ((frame: CapturedFrame) => Promise<FrameQualityVerdict>)
-      | null;
+      ((frame: CapturedFrame) => Promise<FrameQualityVerdict>) | null;
   };
   /**
    * Depth sampling (Stage 1). `sampler` is created by `initAR` when the

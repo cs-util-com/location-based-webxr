@@ -46,9 +46,7 @@ const middleware = createPersistenceMiddleware({
 
 // Used in configureStore:
 configureStore({
-  reducer: {
-    /* ... */
-  },
+  reducer: {/* ... */},
   middleware: (getDefault) => getDefault().concat(middleware),
 });
 ```

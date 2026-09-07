@@ -137,19 +137,17 @@ export const selectFrameTilesInWebXR = createSelector(
   [selectOdometryPathPoints],
   (points): readonly ArImageCapture[] => {
     if (!points || points.length === 0) return EMPTY_FRAME_TILES;
-    return points.map(
-      (p): ArImageCapture => ({
-        imageFile: p.imageFile,
-        position: nueToWebXR(p.position),
-        rotation: nueQuaternionToWebXR(p.rotation),
-        screenRotation: p.screenRotation,
-        capturedAt: p.capturedAt,
-        // Pose-invariant pixel dimensions pass straight through (no coordinate
-        // conversion) so the frame-tile visualizer can size tiles to the true
-        // image aspect ratio (D1 of the 2026-06-13 frame-tile feedback).
-        width: p.width,
-        height: p.height,
-      })
-    );
+    return points.map((p): ArImageCapture => ({
+      imageFile: p.imageFile,
+      position: nueToWebXR(p.position),
+      rotation: nueQuaternionToWebXR(p.rotation),
+      screenRotation: p.screenRotation,
+      capturedAt: p.capturedAt,
+      // Pose-invariant pixel dimensions pass straight through (no coordinate
+      // conversion) so the frame-tile visualizer can size tiles to the true
+      // image aspect ratio (D1 of the 2026-06-13 frame-tile feedback).
+      width: p.width,
+      height: p.height,
+    }));
   }
 );

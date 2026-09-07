@@ -102,8 +102,7 @@ const _euler = new THREE.Euler(0, 0, 0, 'YXZ');
 
 /** Saved tabindex state before FPS mode mutated the container. */
 type SavedTabindex =
-  | { state: 'none' }
-  | { state: 'saved'; value: string | undefined };
+  { state: 'none' } | { state: 'saved'; value: string | undefined };
 let savedTabindex: SavedTabindex = { state: 'none' };
 
 // ---------------------------------------------------------------------------

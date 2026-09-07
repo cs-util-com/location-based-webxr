@@ -62,10 +62,7 @@ export const DEFAULT_MAX_FIXED_ROTATION_SPREAD_DEG = 15;
 export const DEFAULT_RECENCY_HALF_LIFE_S = 60;
 
 export type QrAnchorDeclineReason =
-  | 'no-sightings'
-  | 'frame-changed'
-  | 'moved'
-  | 'no-alignment';
+  'no-sightings' | 'frame-changed' | 'moved' | 'no-alignment';
 
 export interface QrAnchorQuality {
   /** Sightings the position was actually combined from. */

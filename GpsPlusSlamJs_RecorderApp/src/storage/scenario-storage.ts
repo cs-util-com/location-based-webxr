@@ -384,9 +384,7 @@ export interface ClearRefPointsCacheResult {
 
 /** Outcome of clearing one scenario's `refPoints/` cache. */
 type ClearScenarioOutcome =
-  | { kind: 'cleared' }
-  | { kind: 'skipped' }
-  | { kind: 'error'; reason: string };
+  { kind: 'cleared' } | { kind: 'skipped' } | { kind: 'error'; reason: string };
 
 /**
  * Remove one scenario's `refPoints/` cache. A missing cache (`NotFoundError`)

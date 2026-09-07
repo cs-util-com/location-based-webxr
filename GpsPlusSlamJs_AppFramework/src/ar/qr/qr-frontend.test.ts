@@ -33,15 +33,14 @@ describe('BarcodeDetectorFrontEnd', () => {
 
   it('returns the first decoded QR with its 4 corners and text', async () => {
     const detector = {
-      detect: vi.fn(
-        (): Promise<DetectedBarcodeLike[]> =>
-          Promise.resolve([
-            {
-              rawValue: 'https://lvl/1',
-              cornerPoints: fourCorners,
-              format: 'qr_code',
-            },
-          ])
+      detect: vi.fn((): Promise<DetectedBarcodeLike[]> =>
+        Promise.resolve([
+          {
+            rawValue: 'https://lvl/1',
+            cornerPoints: fourCorners,
+            format: 'qr_code',
+          },
+        ])
       ),
     };
     const fe = new BarcodeDetectorFrontEnd(detector, passthrough);

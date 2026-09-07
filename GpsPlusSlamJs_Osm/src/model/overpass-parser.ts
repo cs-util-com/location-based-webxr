@@ -84,8 +84,7 @@ export function parseOverpassJson(payload: unknown): ParseResult {
 }
 
 type ElementOutcome =
-  | { readonly feature: OsmFeature }
-  | { readonly skip: SkippedElement };
+  { readonly feature: OsmFeature } | { readonly skip: SkippedElement };
 
 function parseElement(raw: unknown, index: number): ElementOutcome {
   if (!isRecord(raw)) {

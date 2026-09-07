@@ -27,8 +27,7 @@ import {
 
 function findMesh(parent: THREE.Object3D): THREE.Mesh | undefined {
   return parent.children.find((c) => c instanceof THREE.Mesh) as
-    | THREE.Mesh
-    | undefined;
+    THREE.Mesh | undefined;
 }
 
 function meshes(parent: THREE.Object3D): THREE.Mesh[] {

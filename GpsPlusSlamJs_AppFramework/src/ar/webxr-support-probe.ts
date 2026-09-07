@@ -36,10 +36,7 @@ export const WEBXR_SUPPORT_PROBE_TIMEOUT_MS = 3000;
  * "install ARCore" one; boolean callers use {@link probeImmersiveArSupport}.
  */
 export type ImmersiveArProbeOutcome =
-  | 'supported'
-  | 'unsupported'
-  | 'error'
-  | 'timeout';
+  'supported' | 'unsupported' | 'error' | 'timeout';
 
 /**
  * Ask the browser about immersive-ar support — never hangs, never throws.
@@ -68,9 +65,8 @@ export async function probeImmersiveArSupportOutcome(
     return await Promise.race([
       xr
         .isSessionSupported('immersive-ar')
-        .then(
-          (supported): ImmersiveArProbeOutcome =>
-            supported ? 'supported' : 'unsupported'
+        .then((supported): ImmersiveArProbeOutcome =>
+          supported ? 'supported' : 'unsupported'
         ),
       new Promise<ImmersiveArProbeOutcome>((resolve) => {
         timer = setTimeout(() => {

@@ -75,8 +75,7 @@ describe("buildUseCaseVignettes", () => {
     const ghosts: MeshStandardMaterial[] = [];
     group.getObjectByName(VIGNETTE_NODE.ghost)?.traverse((obj) => {
       const material = (obj as Mesh).material as
-        | MeshStandardMaterial
-        | undefined;
+        MeshStandardMaterial | undefined;
       if (material && (obj as Mesh).isMesh) {
         ghosts.push(material);
       }

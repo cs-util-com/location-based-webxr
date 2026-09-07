@@ -31,11 +31,7 @@ import {
 } from './detection-scheduler.js';
 
 export type QrTrackingStatus =
-  | 'idle'
-  | 'scanning'
-  | 'loading-level'
-  | 'tracking'
-  | 'error';
+  'idle' | 'scanning' | 'loading-level' | 'tracking' | 'error';
 
 /** Inputs to the injected pose solve (so the controller doesn't import OpenCV). */
 export interface QrSolvePoseInput {

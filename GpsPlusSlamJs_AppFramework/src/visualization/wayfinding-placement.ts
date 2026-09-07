@@ -123,9 +123,7 @@ export interface ArrowPlacement extends TargetPlacementBase {
 }
 
 export type TargetPlacement =
-  | HiddenPlacement
-  | CirclePlacement
-  | ArrowPlacement;
+  HiddenPlacement | CirclePlacement | ArrowPlacement;
 
 const DEFAULT_VIEWPORT_INNER = 0.95;
 const DEFAULT_VIEWPORT_OUTER = 1.0;
