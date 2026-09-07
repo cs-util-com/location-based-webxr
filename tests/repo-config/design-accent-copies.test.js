@@ -200,6 +200,10 @@ describe('every literal copy of a design-system value equals its source', () => 
     expect(rotate, 'the asset rotates the rect about a centre').not.toBeNull();
     expect(geometry('rotationDeg')).toBe(Number(rotate[1]));
     expect(geometry('centre')).toBe(Number(rotate[2]));
+    // The drawer uses ONE `centre` for both axes (`translate(c, c)`, the
+    // dot at `(c, c)`); an asset rotating about `(32, 40)` would keep the
+    // guard green while the canvas drew the diamond elsewhere (PR #430).
+    expect(Number(rotate[3])).toBe(Number(rotate[2]));
     expect(geometry('dotRadius')).toBe(Number(attr('circle', 'r')));
     expect(geometry('outlineStrokeWidth')).toBe(
       Number(attr('rect', 'stroke-width'))

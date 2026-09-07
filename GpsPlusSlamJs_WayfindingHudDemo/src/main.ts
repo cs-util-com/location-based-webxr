@@ -109,6 +109,8 @@ function main(): void {
   // The entrance is inert without image indicators (the procedural ring has
   // no build-up), so its switch is disabled until they are on — a live switch
   // that rebuilds the HUD for no visible effect misleads (M4 milestone review).
+  // The markup starts it DISABLED too, so the window between first paint and
+  // the XR probe resolving has no live switch either (PR #430 review).
   const syncEntranceSwitch = (): void => {
     entranceAnimation.disabled = !imageIndicators.checked;
   };

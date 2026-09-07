@@ -204,8 +204,10 @@ describe('circleEntrance — the entrance runs on appearance and on a return thr
     // Why (PR #424 review): a frame drawn while the target shows the arrow
     // or is hidden is never seen — the marker returns either as the same
     // sprite (arrow → circle, no restart) or through the distance gate,
-    // which restarts from t = 0. The clock pauses; the entrance still
-    // counts as animating.
+    // which restarts from t = 0. The clock pauses, and the readout does not
+    // count the paused entrance: it counts entrances that can redraw next
+    // frame, the work the on-device number exists to measure (owner
+    // decision 2026-09-07, PR #430 review).
     const contexts = injectContexts();
     const target = onScreenFar();
     const { hud, camera } = makeHud([target]);
@@ -222,12 +224,14 @@ describe('circleEntrance — the entrance runs on appearance and on a return thr
       redrawsWhileHidden += hud.entranceStats().redraws;
     }
     expect(redrawsWhileHidden).toBe(0);
-    expect(hud.entranceStats().animating).toBe(1);
+    expect(hud.entranceStats().animating).toBe(0);
     expect(scratch.lineDashOffset).toBe(offsetBefore);
-    // Look back: the build-up resumes where it paused, no restart.
+    // Look back: the build-up resumes where it paused, no restart, and it
+    // counts again.
     camera.lookAt(0, 0, -1);
     camera.updateMatrixWorld(true);
     for (let i = 0; i < 6; i += 1) hud.update(1 / 90);
+    expect(hud.entranceStats().animating).toBe(1);
     expect(scratch.lineDashOffset).toBeLessThan(offsetBefore);
     expect(scratch.lineDashOffset).toBeGreaterThan(0);
     hud.dispose();

@@ -949,11 +949,14 @@ export function createWayfindingHud(
       // PAUSED while the circle is not shown: a frame drawn then is never
       // presented — the marker comes back either as the same sprite (arrow →
       // circle, no restart) or through the distance gate, which restarts
-      // from t = 0 (PR #424 review). The entrance still counts as animating.
+      // from t = 0 (PR #424 review). The readout counts only entrances that
+      // can redraw NEXT frame: a paused one is not doing the work the number
+      // exists to measure on the headset (owner decision 2026-09-07, PR #430
+      // review) — its accumulated total and peak stay readable meanwhile.
       if (entrance.animating && dtMs !== null && state.circle.visible) {
         advanceOne(entrance, dtMs);
       }
-      if (entrance.animating) stats.animating += 1;
+      if (entrance.animating && state.circle.visible) stats.animating += 1;
       recordCostliest(entrance);
     }
   }
