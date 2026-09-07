@@ -28,7 +28,7 @@
     "check:all": "pnpm run check:dup && pnpm run check:cycles && pnpm run check:boundaries"
   },
   "engines": {
-    "node": ">=22.15.0"
+    "node": ">=26.0.0"
   },
   "dependencies": {
     "@zip.js/zip.js": "^2.11.2",

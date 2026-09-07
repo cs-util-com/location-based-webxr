@@ -36,7 +36,7 @@
         "deploy:site": "wrangler versions upload"
     },
     "engines": {
-        "node": ">=22.15.0"
+        "node": ">=26.0.0"
     },
     "license": "Apache-2.0",
     "devDependencies": {

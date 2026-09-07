@@ -22,7 +22,7 @@ jobs:
           # Node >=22 is required since the AppFramework's engines bump (QR
           # payload benchmark, decision D3): CompressionStream('deflate-raw')
           # only exists from Node 21.2. 24 matches publish.yml and local dev.
-          node-version: "24"
+          node-version: "26"
           cache: "pnpm"
 
       - name: Install dependencies
@@ -48,7 +48,7 @@ jobs:
           # Node >=22 is required since the AppFramework's engines bump (QR
           # payload benchmark, decision D3): CompressionStream('deflate-raw')
           # only exists from Node 21.2. 24 matches publish.yml and local dev.
-          node-version: "24"
+          node-version: "26"
           cache: "pnpm"
 
       - name: Install dependencies

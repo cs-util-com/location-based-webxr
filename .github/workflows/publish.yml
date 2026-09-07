@@ -47,7 +47,7 @@ jobs:
           # Node 24 is the current Active LTS, matching local dev and the
           # pnpm 11 floor (Node ≥22.14). See the matching note in the
           # private repo's publish.yml.
-          node-version: "24"
+          node-version: "26"
           cache: "pnpm"
           # Even with Trusted Publishing (no token), the registry-url line
           # in .npmrc is still required so pnpm targets the public registry.
