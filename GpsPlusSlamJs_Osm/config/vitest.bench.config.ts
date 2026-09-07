@@ -11,5 +11,11 @@ export default defineConfig({
     globals: true,
     environment: "node",
     include: ["src/**/*.bench.ts"],
+    // Vitest 5 runs each benchmark inside a test, so the test timeout bounds
+    // it - Vitest 4's bare bench() had no such bound. plates.bench.ts pins
+    // tinybench 2's ten-iteration budget and still spends ~45 s on each of
+    // its two ~2.9 s cases on a quiet machine; the 60 s default fails them
+    // under load, so this restores the old unbounded behaviour in effect.
+    testTimeout: 600_000,
   },
 });

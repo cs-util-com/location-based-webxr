@@ -1,4 +1,4 @@
-import { bench, describe } from 'vitest';
+import { describe, test } from 'vitest';
 import type { RawGpsPoint } from 'gps-plus-slam-app-framework/state';
 import {
   selectKnownAnchorsByCell,
@@ -51,11 +51,15 @@ describe('selectKnownAnchorsByCell (H3 grouping for proximity matching)', () => 
   const entries100 = buildEntries(100);
   const entries2k = buildEntries(2_000);
 
-  bench('100 entries (typical session)', () => {
-    selectKnownAnchorsByCell.resultFunc(entries100);
+  test('100 entries (typical session)', async ({ bench }) => {
+    await bench('100 entries (typical session)', () => {
+      selectKnownAnchorsByCell.resultFunc(entries100);
+    }).run();
   });
 
-  bench('2k entries (large imported landmark list)', () => {
-    selectKnownAnchorsByCell.resultFunc(entries2k);
+  test('2k entries (large imported landmark list)', async ({ bench }) => {
+    await bench('2k entries (large imported landmark list)', () => {
+      selectKnownAnchorsByCell.resultFunc(entries2k);
+    }).run();
   });
 });

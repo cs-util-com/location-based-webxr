@@ -24,6 +24,16 @@ measurement instruments, not correctness gates:
   projects never overlap.
 - `src/**/*.bench.ts` is excluded from coverage in `vitest.config.ts` and from
   `tsconfig.app.json`, so benchmark code is never mistaken for production code.
+- `testTimeout` is 600 s. Vitest 5 runs every benchmark inside a test, so
+  the test timeout bounds it, where Vitest 4's bare `bench()` had no bound at
+  all; the two ~2.9 s cases in `plates.bench.ts` spend ~45 s each under
+  tinybench 2's ten-iteration budget and failed the 60 s default under load.
+- A bench's measurement budget (`time`, `iterations`, the warm-up pair) goes
+  to `.run(options)` under Vitest 5 - the second argument of `bench()` takes
+  only tinybench's per-function hooks and silently ignores those keys.
+  Vitest 5 bundles tinybench 6, whose defaults are 64 iterations after 16
+  warm-ups (tinybench 2: 10 after 5); a bench whose medians were recorded
+  under the old budget pins it, as `plates.bench.ts` does.
 
 ## Usage
 

@@ -8,7 +8,5 @@ export default defineConfig({
     // which is a confusing way to learn that two runners share a filename
     // convention. The e2e suite has its own runner and its own gate stage.
     include: ['src/**/*.test.ts'],
-    // The Node 26 storage shim for the jsdom files (see src/test-setup.ts).
-    setupFiles: ['src/test-setup.ts'],
   },
 });

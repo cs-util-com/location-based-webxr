@@ -30,7 +30,7 @@
  *
  * Run with: `pnpm run bench`
  */
-import { bench, describe } from "vitest";
+import { describe, test } from "vitest";
 import {
   SCORE_DISK_RADIUS,
   parseRuleTable,
@@ -129,15 +129,26 @@ describe(`cell payload at cap scale (${String(atCap.length)} cells)`, () => {
   // is O(1) regardless of size, so `pack + unpack` is the entire replacement
   // cost for `structuredClone` — and reading the two pack arms separately is
   // what shows why unpacking must stay off the render path.
-  bench("structuredClone (what packing replaces)", () => {
-    void structuredClone(atCap);
+  test("structuredClone (what packing replaces)", async ({ bench }) => {
+    await bench("structuredClone (what packing replaces)", () => {
+      void structuredClone(atCap);
+    }).run();
   });
 
-  bench("packCells (worker side)", () => {
-    void packCells(atCap);
+  test("packCells (worker side)", async ({ bench }) => {
+    await bench("packCells (worker side)", () => {
+      void packCells(atCap);
+    }).run();
   });
 
-  bench("unpackCells (main-thread side — NOT on the render path)", () => {
-    void unpackCells(packed);
+  test("unpackCells (main-thread side — NOT on the render path)", async ({
+    bench,
+  }) => {
+    await bench(
+      "unpackCells (main-thread side — NOT on the render path)",
+      () => {
+        void unpackCells(packed);
+      },
+    ).run();
   });
 });

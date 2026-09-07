@@ -12,7 +12,9 @@ export default defineConfig({
     ],
     benchmark: {
       include: ['src/**/*.bench.ts'],
-      outputJson: 'docs/perf-baselines/bench-results.json',
+      // Vitest 5 dropped benchmark.outputJson (and the CLI flags); a bench
+      // persists a result with its own writeResult option when a comparison
+      // needs one. Nothing read the old JSON (harness-majors plan M1b).
     },
   },
 });

@@ -19,7 +19,6 @@
     "node_modules",
     "src/**/*.test.ts",
     "src/**/*.spec.ts",
-    "src/**/*.property.test.ts",
-    "src/test-setup.ts"
+    "src/**/*.property.test.ts"
   ]
 }

@@ -1,7 +1,6 @@
 /**
  * Global vitest setup for the recorder.
  *
- *
  * jsdom's `Blob` has `arrayBuffer()` and `text()` but no `stream()`, and
  * `@zip.js/zip.js` 2.9+ reads a `BlobReader`'s source through
  * `blob.stream()` (2.8 sliced and called `arrayBuffer()`). Every browser
@@ -18,50 +17,10 @@
  * either, and `recording-discovery.test.ts` spies on a file's
  * `arrayBuffer` to prove the scanner never loads a recording whole.
  */
-/**
- * Node 26 made the global `localStorage` accessor THROW a `DOMException`
- * when no `--localstorage-file` is given (before 25 it was absent, in 25 an
- * empty object). Under vitest 4's jsdom environment that leaves the global
- * `localStorage` as a plain `undefined` value - and `window` IS the global
- * there, so there is no jsdom storage left to borrow. The six help-section
- * persistence tests in `src/ui/hud.test.ts` failed on `localStorage.clear`
- * the first time CI ran under 26 (PR #431), and a portable Node 26.8.1
- * reproduced it. The shim builds the storages from a fresh JSDOM at the
- * environment's URL and installs its `Storage` class as the global one as
- * well, so the tests' spies on `Storage.prototype` intercept the very
- * objects in use. Reading the global is itself what throws on a bare Node
- * 26, hence the try; the node environment has no `window` and is untouched.
- */
-// A module (so top-level await is legal) that imports jsdom ONLY on the
-// branch that needs it: a static import would load jsdom for every one of
-// the package's node-environment files too (measured: the OSM demo's unit
-// stage went from 25 s to 52 s with the static form).
+// A module, not a script: `isolatedModules` rejects a global script file.
+// (A Node 26 storage shim lived here between r657 and r659; Vitest 5's jsdom
+// environment restores the storage globals itself - harness-majors plan M1.)
 export {};
-
-function usableGlobalStorage(): boolean {
-  try {
-    return (
-      typeof (globalThis as { localStorage?: Storage }).localStorage?.clear ===
-      'function'
-    );
-  } catch {
-    return false;
-  }
-}
-if (typeof window !== 'undefined' && !usableGlobalStorage()) {
-  const { JSDOM } = await import('jsdom');
-  const dom = new JSDOM('', { url: location.href });
-  const define = (name: string, value: unknown): void => {
-    Object.defineProperty(globalThis, name, {
-      configurable: true,
-      writable: true,
-      value,
-    });
-  };
-  define('Storage', dom.window.Storage);
-  define('localStorage', dom.window.localStorage);
-  define('sessionStorage', dom.window.sessionStorage);
-}
 
 if (
   typeof Blob !== 'undefined' &&

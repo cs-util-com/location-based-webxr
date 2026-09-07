@@ -1,4 +1,4 @@
-import { bench, describe } from 'vitest';
+import { describe, test } from 'vitest';
 import type { Matrix4, Vector3 } from 'gps-plus-slam-js';
 import { computeFusedPath, type FusedPathInput } from './fused-path';
 
@@ -67,11 +67,15 @@ describe('computeFusedPath (summary-map trajectory fusion)', () => {
   const input1k = buildInput(1_000);
   const input10k = buildInput(10_000);
 
-  bench('1k odometry positions (~1.5 min recording)', () => {
-    computeFusedPath(input1k);
+  test('1k odometry positions (~1.5 min recording)', async ({ bench }) => {
+    await bench('1k odometry positions (~1.5 min recording)', () => {
+      computeFusedPath(input1k);
+    }).run();
   });
 
-  bench('10k odometry positions (~15 min recording)', () => {
-    computeFusedPath(input10k);
+  test('10k odometry positions (~15 min recording)', async ({ bench }) => {
+    await bench('10k odometry positions (~15 min recording)', () => {
+      computeFusedPath(input10k);
+    }).run();
   });
 });

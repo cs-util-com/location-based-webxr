@@ -1,4 +1,4 @@
-import { bench, describe } from "vitest";
+import { describe, test } from "vitest";
 import { annotatePoiHosts } from "./poi-hosts.js";
 import { buildBuildings } from "./buildings.js";
 import { buildAreaPlates } from "./plates.js";
@@ -146,11 +146,15 @@ describe("annotatePoiHosts — the quadratic, at two scales", () => {
   for (const k of [2, 4]) {
     const { markers, candidates } = subject(k);
     const pairs = markers.length * candidates.length;
-    bench(
-      `k=${k} — ${markers.length} markers x ${candidates.length} candidates (${pairs} pairs)`,
-      () => {
-        annotatePoiHosts(markers, candidates);
-      },
-    );
+    test(`k=${k} — ${markers.length} markers x ${candidates.length} candidates (${pairs} pairs)`, async ({
+      bench,
+    }) => {
+      await bench(
+        `k=${k} — ${markers.length} markers x ${candidates.length} candidates (${pairs} pairs)`,
+        () => {
+          annotatePoiHosts(markers, candidates);
+        },
+      ).run();
+    });
   }
 });
