@@ -10,7 +10,7 @@
  * those is pinned here through the seams the HUD exposes: the per-canvas
  * drawing calls (jsdom has no canvas backend, so a recording context stands
  * in), `entranceStats()` and the handle's lifecycle. DEC-E3 of the plan
- * (replay ONLY on `hidden → circle`) is the one a reviewer would otherwise
+ * (replay ONLY on a return through the distance gate) is the one a reviewer would otherwise
  * have to take on faith.
  *
  * @vitest-environment jsdom
@@ -156,7 +156,7 @@ describe('circleEntrance — validation', () => {
   });
 });
 
-describe('circleEntrance — the entrance runs on appearance and on hidden → circle only', () => {
+describe('circleEntrance — the entrance runs on appearance and on a return through the distance gate only', () => {
   it('draws the empty marker on the first visible frame and the dash offset falls as time passes', () => {
     const contexts = injectContexts();
     const { hud } = makeHud([onScreenFar()]);
@@ -310,6 +310,61 @@ describe('circleEntrance — the entrance runs on appearance and on hidden → c
     hud.update(1 / 90);
     const scratch = scratchOf(contexts, 0);
     expect(scratch.lineDashOffset).toBe(DIAMOND_ENTRANCE.dashLength);
+    expect(hud.entranceStats().animating).toBe(1);
+    hud.dispose();
+  });
+
+  it('DOES replay when the return through the distance gate lands on the arrow first (hidden → arrow → circle)', () => {
+    // Why (PR #425 review): the restart was keyed on the IMMEDIATE previous
+    // state. The gate runs before the on/off-screen split, so a target
+    // coming back while not in the wearer's gaze reactivates as an ARROW,
+    // and the later turn to it arrives with `previous === 'arrow'` — the
+    // ordinary walk-up, and DEC-E3's own case, never replayed: the settled
+    // diamond popped in with no build-up.
+    const contexts = injectContexts();
+    const target = onScreenFar();
+    const { hud, camera } = makeHud([target]);
+    for (let i = 0; i < 90; i += 1) hud.update(1 / 90); // settled
+    // Walk into the target: hidden.
+    camera.position.set(0, 0, -4.5);
+    camera.updateMatrixWorld(true);
+    hud.update(1 / 90);
+    // Walk back out past distanceMax while looking elsewhere: arrow.
+    camera.position.set(0, 0, 0);
+    camera.lookAt(10, 0, 0);
+    camera.updateMatrixWorld(true);
+    hud.update(1 / 90);
+    expect(scratchOf(contexts, 0).lineDashOffset).toBe(0); // untouched so far
+    // Now turn to it: arrow → circle, and the entrance replays from t = 0.
+    camera.lookAt(0, 0, -1);
+    camera.updateMatrixWorld(true);
+    hud.update(1 / 90);
+    expect(scratchOf(contexts, 0).lineDashOffset).toBe(
+      DIAMOND_ENTRANCE.dashLength
+    );
+    expect(hud.entranceStats().animating).toBe(1);
+    hud.dispose();
+  });
+
+  it('going hidden mid-entrance abandons it: not animating until the target comes back', () => {
+    // Why (PR #425 / #426 reviews): an abandoned entrance never resumes —
+    // the gate restarts it — so counting it as animating pinned
+    // "1 animating" to the demo's readout for as long as the wearer stood at
+    // the target. The arrow pause is different (it resumes) and stays
+    // counted, see the pause test above.
+    injectContexts();
+    const target = onScreenFar();
+    const { hud, camera } = makeHud([target]);
+    for (let i = 0; i < 10; i += 1) hud.update(1 / 90); // ~100 ms in
+    expect(hud.entranceStats().animating).toBe(1);
+    camera.position.set(0, 0, -4.5); // arrived: hidden
+    camera.updateMatrixWorld(true);
+    hud.update(1 / 90);
+    hud.update(1 / 90);
+    expect(hud.entranceStats().animating).toBe(0);
+    camera.position.set(0, 0, 0); // back out through the gate
+    camera.updateMatrixWorld(true);
+    hud.update(1 / 90);
     expect(hud.entranceStats().animating).toBe(1);
     hud.dispose();
   });

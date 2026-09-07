@@ -442,6 +442,15 @@ interface EntranceState {
    * (milestone review, 2026-09-06).
    */
   started: boolean;
+  /**
+   * Set when the target goes hidden (out through the distance gate, or
+   * arrived): the entrance is abandoned and replays from t = 0 on the next
+   * circle, whichever placement the return lands on first. The previous
+   * state alone cannot see that: a target coming back while off-screen goes
+   * hidden → arrow → circle — the ordinary walk-up — and at that circle
+   * frame `previous === 'arrow'` (PR #425 review).
+   */
+  replayPending: boolean;
   /** Draw milliseconds accumulated since this entrance began. */
   drawMsTotal: number;
   /** The costliest single redraw since this entrance began. */
@@ -599,6 +608,7 @@ export function createWayfindingHud(
       animating: false,
       fresh: false,
       started: false,
+      replayPending: false,
       drawMsTotal: 0,
       peakDrawMs: 0,
     };
@@ -715,15 +725,20 @@ export function createWayfindingHud(
     state.circle.visible = true;
 
     // DEC-E3: the entrance starts on APPEARANCE (no previous state) and on
-    // a return through the distance gate ('hidden' → circle) — never on a
-    // head turn ('arrow' → circle, the viewport hysteresis), which would
-    // rebuild the marker every time the wearer looks away and back.
+    // a return through the distance gate — whichever placement the return
+    // lands on first: hidden → circle, or hidden → arrow → circle when the
+    // target comes back off-screen, the ordinary walk-up (the `replayPending`
+    // flag, set when the target went hidden; PR #425 review) — never on a
+    // head turn alone ('arrow' → circle, the viewport hysteresis), which
+    // would rebuild the marker every time the wearer looks away and back.
     // The FIRST circle a target ever shows is an appearance too, whatever
     // preceded it: a target spawned in range but off-screen arrives here with
     // `previous === 'arrow'` and would otherwise never get its marker drawn.
     if (
       state.entrance &&
-      (previous === null || previous === 'hidden' || !state.entrance.started)
+      (previous === null ||
+        state.entrance.replayPending ||
+        !state.entrance.started)
     ) {
       startEntrance(state.entrance);
     }
@@ -808,6 +823,7 @@ export function createWayfindingHud(
     state.currentState = placement.state;
 
     if (placement.state === 'hidden') {
+      if (state.entrance) abandonEntrance(state.entrance);
       if (placement.inactiveArrow) {
         showInactiveArrow(
           state,
@@ -832,6 +848,19 @@ export function createWayfindingHud(
     showArrow(state, placement);
   }
 
+  /**
+   * Hidden ABANDONS the entrance: it never resumes from where it stopped —
+   * the distance gate restarts it from t = 0 — so it is not animating
+   * meanwhile. A readout that kept counting it pinned "1 animating" to the
+   * demo's status line for as long as the wearer stood at the target (PR
+   * #425 / #426 reviews). The arrow pause is different: it resumes, and
+   * stays counted.
+   */
+  function abandonEntrance(entrance: EntranceState): void {
+    entrance.replayPending = true;
+    entrance.animating = false;
+  }
+
   /** Begin (or restart) a target's entrance: the t = 0 frame is drawn now. */
   function startEntrance(entrance: EntranceState): void {
     const stagger = (entranceOptions?.staggerMs ?? 0) * spawnsThisUpdate;
@@ -841,6 +870,7 @@ export function createWayfindingHud(
     entrance.animating = true;
     entrance.fresh = true;
     entrance.started = true;
+    entrance.replayPending = false;
     entrance.drawMsTotal = 0;
     entrance.peakDrawMs = 0;
     redraw(entrance, entranceState(entrance));
