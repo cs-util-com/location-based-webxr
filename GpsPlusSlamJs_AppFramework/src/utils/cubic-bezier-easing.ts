@@ -25,7 +25,10 @@ export type EasingFunction = (x: number) => number;
 /**
  * The x → u inverse is a bisection on the (monotone, because the control
  * x are in [0, 1]) forward polynomial. 52 halvings reach double precision;
- * the loop stops early when the residual is below `TOLERANCE`.
+ * the loop stops early once the PARAMETER interval is below `TOLERANCE`.
+ * It must not stop on the x residual: where the curve is flat in x (both
+ * control x at 0, x(u) = u³) a residual under 1e-12 still leaves u — and
+ * so y(u) — ~30 % off near the start (PR #425 CodeRabbit review).
  */
 const MAX_ITERATIONS = 52;
 const TOLERANCE = 1e-12;
@@ -82,10 +85,9 @@ export function cubicBezierEasing(
     let u = 0.5; // overwritten by the first halving; a bisection has no seed
     for (let i = 0; i < MAX_ITERATIONS; i += 1) {
       u = (lo + hi) / 2;
-      const residual = forward(x1, x2, u) - x;
-      if (Math.abs(residual) < TOLERANCE) break;
-      if (residual < 0) lo = u;
+      if (forward(x1, x2, u) < x) lo = u;
       else hi = u;
+      if (hi - lo < TOLERANCE) break;
     }
     return forward(y1, y2, u);
   };

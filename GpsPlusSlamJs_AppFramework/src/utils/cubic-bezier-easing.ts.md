@@ -20,8 +20,10 @@
   - `EASE_OUT` - the design system's `--ease-out`, `cubicBezierEasing(0, 0,
 0.2, 1)`.
 - Invariants & assumptions:
-  - The inverse x → u is a bisection (≤ 52 halvings, stop at a 1e-12
-    residual); monotone because the control x are in [0, 1]. Pinned value:
+  - The inverse x → u is a bisection (≤ 52 halvings, stopping once the
+    parameter interval is under 1e-12 — never on the x residual, which is
+    ~30 % off where the curve is flat in x; PR #425 CodeRabbit review);
+    monotone because the control x are in [0, 1]. Pinned value:
     `EASE_OUT(0.5) = 0.839245` (u = 0.746017), from the plan's spike.
   - Deep import only (`gps-plus-slam-app-framework/utils/cubic-bezier-easing`),
     not on the `/utils` barrel - one curve must not drag the logger in. A

@@ -40,6 +40,20 @@ describe('cubicBezierEasing', () => {
     expect(EASE_OUT(x) / x).toBeLessThan(5);
   });
 
+  it('converges on u, not on the x residual: a curve flat in x near the start stays exact', () => {
+    // Why (PR #425 CodeRabbit review): with both control x at 0 the curve
+    // is x(u) = u³, so at x = 1e-13 an x residual under 1e-12 is met by any
+    // u below ~1e-4 while the true u is 4.6e-5 — and y ≈ 3u there, so the
+    // easing came back ~30 % high. Stopping on the parameter interval
+    // instead makes the answer match the closed form.
+    const ease = cubicBezierEasing(0, 1, 0, 1);
+    const x = 1e-13;
+    const u = Math.cbrt(x);
+    const v = 1 - u;
+    const expected = 3 * v * v * u + 3 * v * u * u + u * u * u;
+    expect(ease(x)).toBeCloseTo(expected, 9);
+  });
+
   it('clamps the input: below 0 reads as 0, above 1 as 1, non-finite as 0', () => {
     // The seam feeds it `clamp01`-ed values already; this is the belt to
     // that brace so a caller without clamp01 cannot extrapolate the curve.
