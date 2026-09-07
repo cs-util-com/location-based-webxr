@@ -399,6 +399,9 @@ importers:
       '@playwright/test':
         specifier: ^1.63.0
         version: 1.63.0
+      '@types/jsdom':
+        specifier: ^28.0.3
+        version: 28.0.3
       '@types/leaflet':
         specifier: ^1.9.22
         version: 1.9.22

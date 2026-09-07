@@ -19,9 +19,12 @@ jobs:
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
-          # Node >=22 is required since the AppFramework's engines bump (QR
-          # payload benchmark, decision D3): CompressionStream('deflate-raw')
-          # only exists from Node 21.2. 24 matches publish.yml and local dev.
+          # Node 26 is the DEVELOPMENT line (harness-majors plan M0, owner
+          # decision 2026-09-07: jsdom 30 needs >=24.15 or 26, and 26 is LTS
+          # from October 2026); every unpublished manifest says engines >=26
+          # and the published framework says devEngines >=26. The framework's
+          # CONSUMER floor stays engines >=22.15 - a toolchain line is not a
+          # consumer contract. Matches publish.yml and .nvmrc.
           node-version: "26"
           cache: "pnpm"
 

@@ -3,9 +3,12 @@
 ## Purpose
 
 Process-wide vitest setup file for the recorder, loaded through
-`config/vitest.config.ts#test.setupFiles` and run for its side effect only:
-a guarded `Blob.prototype.stream()` polyfill for the jsdom-annotated test
-files. `@zip.js/zip.js` 2.9+ reads a `BlobReader`'s source through
+`config/vitest.config.ts#test.setupFiles` and run for its side effects only:
+two guarded shims for the jsdom-annotated test files - jsdom's
+`window.localStorage` put on the global where Node 26's own accessor throws
+(without `--localstorage-file` it throws a `DOMException` from 26.0.0; the
+help-section persistence tests in `src/ui/hud.test.ts` were the first CI red
+under 26, PR #431), and a `Blob.prototype.stream()` polyfill. `@zip.js/zip.js` 2.9+ reads a `BlobReader`'s source through
 `blob.stream()` (2.8 sliced and called `arrayBuffer()`); every browser has
 `Blob.prototype.stream`, jsdom's `Blob` does not — so the day zip.js moved to
 2.11 (dependency sweep 2026-09-07) the jsdom tests that push a Blob through
@@ -28,6 +31,10 @@ None.
   `arrayBuffer` on a File INSTANCE to prove the scenario scanner never loads
   a recording whole — a polyfill that called `this.arrayBuffer()` would trip
   that spy and invert the test's meaning.
+- **The storage shim reads the global inside a try:** on Node 26 the READ is
+  what throws. It installs jsdom's real `Storage` (so spies on
+  `Storage.prototype` keep working) only when `window` exists and the global
+  is unusable; the node environment is untouched.
 - **Test-only:** excluded from `tsconfig.app.json` and from coverage; never
   imported by production code (browsers need no polyfill).
 - **When it can go:** the moment jsdom ships `Blob.prototype.stream`, or the

@@ -4,6 +4,11 @@
 
 ### Changed
 
+- **The package is now developed and built on Node 26** (`devEngines`,
+  the workflows, `.nvmrc`). The CONSUMER floor is unchanged: `engines.node`
+  stays `>=22.15.0`, so installing on the Node 22 and 24 LTS lines keeps
+  working - the runtime is the browser and the Node line is a toolchain
+  requirement, not a contract (PR #431 review).
 - **Opening a remote archive on `@zip.js/zip.js` 2.9 or newer costs one
   read of up to 64 KB** (the library now fetches its whole
   end-of-central-directory search window at once instead of a 22-byte
