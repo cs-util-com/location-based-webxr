@@ -13,6 +13,21 @@ packages:
   - GpsPlusSlamJs_SiteWorker
   - GpsPlusSlamJs_DesignSystem
 
+# `osmtogeojson@3.0.0-beta.5` (a devDependency of GpsPlusSlamJs_Osm - its
+# polygon table is benchmarked against, never shipped; deprecated upstream)
+# pins `@xmldom/xmldom` 0.8.3 EXACTLY, the one advisory a plain in-range
+# `pnpm update` cannot move: one critical and five highs that drowned the
+# audit's signal (dependency sweeps 2026-08-31 and 2026-09-07). 0.8.13 is
+# the patched line; the 0.9 line changes the API and is not needed.
+overrides:
+  "@xmldom/xmldom": "^0.8.13"
+  # `@zip.js/zip.js` 2.11.2 makes the streaming reader fetch 74 625 bytes of
+  # an 85 922-byte archive for metadata + 3 entries, where 2.8.26 stays
+  # under the guard's quarter (`zip-streaming-request-budget.test.ts`,
+  # measured 2026-09-07 in the dependency sweep). Held at 2.8.26 until the
+  # 2.9-2.11 read strategy is understood; see the sweep's follow-up.
+  "@zip.js/zip.js": "2.8.26"
+
 # pnpm 11: only these packages may run install/postinstall build scripts
 # (strictDepBuilds is on by default in v11, so anything else errors loudly
 # instead of silently skipping). Mirrors the private repo's allowlist:
