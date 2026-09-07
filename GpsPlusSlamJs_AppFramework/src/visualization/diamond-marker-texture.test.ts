@@ -30,7 +30,6 @@ import {
   type RecordingContext,
 } from '../test-utils/recording-canvas.js';
 
-/** A recording stub of the 2D context: every call a spy, every property a plain field. */
 /** Inject, create, and hand back the recorders: texture canvas first, scratch second. */
 function create(
   options: DiamondMarkerTextureOptions,

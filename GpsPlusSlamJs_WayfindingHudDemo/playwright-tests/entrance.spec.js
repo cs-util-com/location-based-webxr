@@ -207,12 +207,17 @@ test.describe("Wayfinding HUD demo — the diamond's entrance animation", () => 
     // per update, and the faked clock measures every draw at 0.00 so the
     // whole suffix vanishes on the next — and where the pause lands on the
     // 16 ms rAF grid is not a contract. What is: nothing ever animates, and
-    // a hundred frames later the marker is the same pixels.
+    // a hundred frames later the marker is still the settled one — within
+    // the bands the main test uses (±15 % ink, the dot present), not to the
+    // pixel: an exact count tripped on the CI runner once (PR #427's
+    // cascade), where the simulator's walk and the runner's fonts move a
+    // few edge pixels of the clip between two shots.
     await expect(on.status).not.toContainText("1 animating");
     await advance(page, 1600);
     const later = await countMarker(page, on.clip);
-    expect(Math.abs(later.ink - first.ink)).toBeLessThanOrEqual(2);
-    expect(Math.abs(later.accent - first.accent)).toBeLessThanOrEqual(2);
+    expect(later.accent).toBeGreaterThan(20);
+    expect(later.ink).toBeGreaterThan(first.ink * 0.85);
+    expect(later.ink).toBeLessThan(first.ink * 1.15);
     await expect(on.status).not.toContainText("1 animating");
     expect(errors).toEqual([]);
   });
