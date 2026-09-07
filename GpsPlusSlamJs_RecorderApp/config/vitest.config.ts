@@ -12,6 +12,8 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    // The jsdom Blob.stream() polyfill zip.js 2.9+ needs (see the file).
+    setupFiles: ['src/test-setup.ts'],
     include: ['src/**/*.test.ts', 'src/**/*.spec.ts'],
     // Suppress console.log/error output from tests to reduce noise.
     // Failing tests still show the assertion error and source context.
@@ -25,6 +27,7 @@ export default defineConfig({
       exclude: [
         'src/**/*.test.ts',
         'src/**/*.spec.ts',
+        'src/test-setup.ts',
         'src/main.ts',
         // Benchmarks are measurement instruments, not code under test.
         'src/**/*.bench.ts',

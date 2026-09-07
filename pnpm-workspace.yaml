@@ -21,12 +21,6 @@ packages:
 # the patched line; the 0.9 line changes the API and is not needed.
 overrides:
   "@xmldom/xmldom": "^0.8.13"
-  # `@zip.js/zip.js` 2.11.2 makes the streaming reader fetch 74 625 bytes of
-  # an 85 922-byte archive for metadata + 3 entries, where 2.8.26 stays
-  # under the guard's quarter (`zip-streaming-request-budget.test.ts`,
-  # measured 2026-09-07 in the dependency sweep). Held at 2.8.26 until the
-  # 2.9-2.11 read strategy is understood; see the sweep's follow-up.
-  "@zip.js/zip.js": "2.8.26"
 
 # pnpm 11: only these packages may run install/postinstall build scripts
 # (strictDepBuilds is on by default in v11, so anything else errors loudly

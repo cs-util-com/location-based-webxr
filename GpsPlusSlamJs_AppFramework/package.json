@@ -85,7 +85,7 @@
     "@types/three": "^0.184.1",
     "@vitest/coverage-v8": "^4.1.11",
     "@vitest/eslint-plugin": "^1.6.27",
-    "@zip.js/zip.js": "^2.8.26",
+    "@zip.js/zip.js": "^2.11.2",
     "dpdm": "^4.3.0",
     "eslint": "^10.10.0",
     "eslint-config-prettier": "^10.1.8",

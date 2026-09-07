@@ -844,7 +844,18 @@ describe('discoverScenariosFromZipMetadata', () => {
     // excessive memory consumption when scanning many zips. The fix uses
     // BlobReader which reads only the central directory + session.json entry,
     // avoiding full-file buffering. This test proves arrayBuffer is not called.
-    const testZip = await produceTestZip({ scenarioName: 'MemTest' });
+    //
+    // The zip must be LARGER than zip.js's end-of-central-directory search
+    // window (65 557 bytes): since 2.9 the library reads that whole window in
+    // one go, and a read that covers the entire blob is served through
+    // `blob.arrayBuffer()` on the file itself — which is exactly what a
+    // 100 MB recording never triggers, and what a 12 KB test zip did
+    // (dependency sweep 2026-09-07). 600 fourteen-byte frames make ~100 KB.
+    const testZip = await produceTestZip({
+      scenarioName: 'MemTest',
+      frameCount: 600,
+    });
+    expect(testZip.zipData.length).toBeGreaterThan(65_557);
     const root = new MockFSDirectoryHandle('Root');
     root.addFile('recording.zip', testZip.zipData);
 

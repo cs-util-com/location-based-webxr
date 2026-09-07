@@ -42,7 +42,7 @@
     "@reduxjs/toolkit": "^2.12.0",
     "@sentry/browser": "^10.73.0",
     "@types/leaflet": "^1.9.22",
-    "@zip.js/zip.js": "^2.8.26",
+    "@zip.js/zip.js": "^2.11.2",
     "gps-plus-slam-app-framework": "workspace:*",
     "h3-js": "^4.5.0",
     "leaflet": "^1.9.4",

@@ -31,7 +31,7 @@
     "node": ">=22.15.0"
   },
   "dependencies": {
-    "@zip.js/zip.js": "^2.8.26",
+    "@zip.js/zip.js": "^2.11.2",
     "gps-plus-slam-app-framework": "workspace:*",
     "qrcode": "^1.5.4",
     "three": "^0.184.0"

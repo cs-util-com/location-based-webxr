@@ -4,10 +4,21 @@
 
 ### Changed
 
+- **Opening a remote archive on `@zip.js/zip.js` 2.9 or newer costs one
+  read of up to 64 KB** (the library now fetches its whole
+  end-of-central-directory search window at once instead of a 22-byte
+  probe; measured 2026-09-07 against 2.11.2). Entry reads are unchanged
+  (three range requests per entry). The framework's peer range (`>=2.7.0`)
+  is unchanged; the request-budget test now sizes its archive so this
+  fixed cost is the small fraction it is on a real recording. One more
+  consequence for CONSUMERS' TESTS: zip.js 2.9+ reads a `BlobReader`'s
+  source through `blob.stream()`, which jsdom's `Blob` lacks — a jsdom test
+  that pushes a Blob through the zip export needs a `Blob.prototype.stream`
+  polyfill in its setup (the recorder's `src/test-setup.ts` is one).
 - **`WayfindingHud` gained a REQUIRED member, `entranceStats()`.** Code
   that builds a `WayfindingHud`-typed object by hand — test doubles, mostly
   — must add `entranceStats: () => ({ redraws: 0, drawMs: 0, animating: 0,
-  entranceMs: 0, peakDrawMs: 0 })` to compile; a consumer that only calls
+entranceMs: 0, peakDrawMs: 0 })` to compile; a consumer that only calls
   the handle is unaffected.
 
 ### Added
@@ -22,7 +33,7 @@ Requires `gps-plus-slam-js` ≥ 1.24.0.
 
 - **The solver's option family is named `consensusSolver*` everywhere**,
   aligned with `gps-plus-slam-js` 1.24.0: `createSlamAppStore({
-  enableConsensusSolverComparison })`, the re-exported actions
+enableConsensusSolverComparison })`, the re-exported actions
   `setConsensusSolverComparisonEnabled` and
   `setConsensusSolverHeadingPenalty`, the `gpsData` state field
   `consensusSolverComparisonEnabled`, and the `AlignmentOverrides` key

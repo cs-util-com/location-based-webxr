@@ -6,7 +6,6 @@ settings:
 
 overrides:
   '@xmldom/xmldom': ^0.8.13
-  '@zip.js/zip.js': 2.8.26
 
 pnpmfileChecksum: sha256-QB/agqJsEaZdRVjrmsw7NmPinLhfZdj71hbw5fKsmgQ=
 
@@ -140,8 +139,8 @@ importers:
         specifier: ^1.6.27
         version: 1.6.27(@typescript-eslint/eslint-plugin@8.69.0(@typescript-eslint/parser@8.69.0(eslint@10.10.0(jiti@2.7.0))(typescript@6.0.3))(eslint@10.10.0(jiti@2.7.0))(typescript@6.0.3))(eslint@10.10.0(jiti@2.7.0))(typescript@6.0.3)(vitest@4.1.11)
       '@zip.js/zip.js':
-        specifier: 2.8.26
-        version: 2.8.26
+        specifier: ^2.11.2
+        version: 2.11.2
       dpdm:
         specifier: ^4.3.0
         version: 4.3.0
@@ -613,8 +612,8 @@ importers:
         specifier: ^1.9.22
         version: 1.9.22
       '@zip.js/zip.js':
-        specifier: 2.8.26
-        version: 2.8.26
+        specifier: ^2.11.2
+        version: 2.11.2
       gps-plus-slam-app-framework:
         specifier: workspace:*
         version: link:../GpsPlusSlamJs_AppFramework
@@ -734,8 +733,8 @@ importers:
   GpsPlusSlamJs_TourViewer:
     dependencies:
       '@zip.js/zip.js':
-        specifier: 2.8.26
-        version: 2.8.26
+        specifier: ^2.11.2
+        version: 2.11.2
       gps-plus-slam-app-framework:
         specifier: workspace:*
         version: link:../GpsPlusSlamJs_AppFramework
@@ -2577,8 +2576,8 @@ packages:
     resolution: {integrity: sha512-/5NV/vDALVFDXgLmfsy9TRCBlKwO2LNBFzpzvb9iIj+jR+eSc6DLYYvVOdivT/jm7MtU6TebYuRmzEOI7w40UA==}
     engines: {node: '>=10.0.0'}
 
-  '@zip.js/zip.js@2.8.26':
-    resolution: {integrity: sha512-RQ4h9F6DOiHxpdocUDrOl6xBM+yOtz+LkUol47AVWcfebGBDpZ7w7Xvz9PS24JgXvLGiXXzSAfdCdVy1tPlaFA==}
+  '@zip.js/zip.js@2.11.2':
+    resolution: {integrity: sha512-gvlhhtTzqoGcl3bpFpMieJgFiVGnEgD777JgERXhbU89cCnYc2Srl5gs+kcCoy31hfx+xD4UCDO1MB2+UtqcZA==}
     engines: {bun: '>=0.7.0', deno: '>=1.0.0', node: '>=18.0.0'}
 
   JSONStream@0.8.0:
@@ -6226,7 +6225,7 @@ snapshots:
 
   '@xmldom/xmldom@0.8.15': {}
 
-  '@zip.js/zip.js@2.8.26': {}
+  '@zip.js/zip.js@2.11.2': {}
 
   JSONStream@0.8.0:
     dependencies:

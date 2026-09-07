@@ -190,9 +190,14 @@ describe('every literal copy of a design-system value equals its source', () => 
     expect(geometry('rectOffset')).toBe(Number(attr('rect', 'x')));
     expect(geometry('rectSide')).toBe(Number(attr('rect', 'width')));
     expect(geometry('rectRadius')).toBe(Number(attr('rect', 'rx')));
-    const rotate = /rotate\(([0-9.]+)\s+([0-9.]+)\s+([0-9.]+)\)/.exec(
-      attr('rect', 'transform')
-    );
+    // Space- or comma-separated, both valid SVG (an editor may emit either);
+    // asserted non-null so a reshaped transform fails as drift, not as a
+    // TypeError on `rotate[1]` (PR #427 review).
+    const rotate =
+      /rotate\(\s*(-?[0-9.]+)[\s,]+(-?[0-9.]+)[\s,]+(-?[0-9.]+)\s*\)/.exec(
+        attr('rect', 'transform')
+      );
+    expect(rotate, 'the asset rotates the rect about a centre').not.toBeNull();
     expect(geometry('rotationDeg')).toBe(Number(rotate[1]));
     expect(geometry('centre')).toBe(Number(rotate[2]));
     expect(geometry('dotRadius')).toBe(Number(attr('circle', 'r')));
