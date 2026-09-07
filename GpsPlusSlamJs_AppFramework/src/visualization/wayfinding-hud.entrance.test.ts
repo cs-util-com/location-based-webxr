@@ -30,7 +30,7 @@ import { clearSessionDisposers } from '../ar/session-disposers.js';
 import {
   injectContexts,
   type RecordingContext,
-} from './recording-canvas.test-utils.js';
+} from '../test-utils/recording-canvas.js';
 
 /** A recording 2D context: the dash offset is the one number the HUD's clock becomes. */
 const scratchOf = (contexts: RecordingContext[], target: number) =>

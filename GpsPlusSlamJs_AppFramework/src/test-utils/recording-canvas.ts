@@ -4,14 +4,19 @@
  * creates under jsdom (which has no canvas backend — `getContext` returns
  * null there).
  *
- * ONE copy for the four canvas-drawing test files of this directory
+ * ONE copy for the four canvas-drawing test files of `src/visualization/`
  * (`text-sprite`, `diamond-marker-texture`, the two `wayfinding-hud.entrance`
  * files). They each carried their own until 2026-09-06; a wrong canvas index
  * copied between two of them made a property test vacuous, which is the
  * failure a shared helper removes (follow-up
  * `2026-09-06-0215-recording-canvas-test-helper-copies-followup.md`).
- * Imported only by tests, so it carries no sidecar (test-only files are
- * exempt) and knip counts the test imports as its use.
+ * Lives in `src/test-utils/` like every other shared helper: that path is
+ * excluded from the production type-check and named in knip's entries,
+ * where a `*.test-utils.ts` name next to the tests was neither (PR #426
+ * review). NOT a tsdown entry — the `./test-utils/*` wildcard export only
+ * reaches files that are built — and never imported by production code.
+ *
+ * @see recording-canvas.ts.md
  */
 import { vi, type Mock } from 'vitest';
 

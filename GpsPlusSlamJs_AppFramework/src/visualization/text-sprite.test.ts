@@ -18,7 +18,7 @@ import { createTextSprite, type TextSprite } from './text-sprite.js';
 import {
   injectContext,
   makeRecordingContext,
-} from './recording-canvas.test-utils.js';
+} from '../test-utils/recording-canvas.js';
 
 afterEach(() => {
   vi.restoreAllMocks();

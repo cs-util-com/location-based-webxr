@@ -18,7 +18,7 @@ import { clearSessionDisposers } from '../ar/session-disposers.js';
 import {
   injectContexts,
   type RecordingContext,
-} from './recording-canvas.test-utils.js';
+} from '../test-utils/recording-canvas.js';
 
 afterEach(() => {
   vi.restoreAllMocks();
