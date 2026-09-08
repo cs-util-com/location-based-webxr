@@ -75,7 +75,7 @@ export function wizardStepKey(url: string): string {
 }
 
 /** The storage key for the last url a creator opened. */
-export const WIZARD_LAST_URL_KEY = "tour-viewer.wizard.last-url";
+const WIZARD_LAST_URL_KEY = "tour-viewer.wizard.last-url";
 
 /**
  * The browser's step store, or undefined where reaching for it throws.

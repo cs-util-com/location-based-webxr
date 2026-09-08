@@ -29,8 +29,8 @@ visitor" launch link (step 2, the tester's way into the visitor path).
   query, or null for a URL without `qr`.
 - `STARTER_LABELS` - the starter button's idle/busy/done/cancelled/failed
   labels (async-UI rule).
-- `wizardStepKey(url)`, `WIZARD_LAST_URL_KEY`, `parseWizardStep(value)` -
-  the persistence keys and the tolerant parser; `WizardStepStore` is the
+- `wizardStepKey(url)`, `parseWizardStep(value)` - the step key and the
+  tolerant parser (the last-url key is module-private); `WizardStepStore` is the
   `getItem`/`setItem` slice of `localStorage`; `Wizard.rememberedTourUrl()`.
 
 ## Invariants & assumptions
@@ -45,7 +45,7 @@ visitor" launch link (step 2, the tester's way into the visitor path).
   failed), and reverts after 3 s; a re-click cancels a pending revert.
 - The reached step is remembered per hosted url in the injected
   `stepStore` (`localStorage`; key `tour-viewer.wizard.<url>`) and the
-  last opened url under `WIZARD_LAST_URL_KEY`; `presentTour` lands on the
+  last opened url under a module-private key; `presentTour` lands on the
   remembered step (a remembered step 5 resumes at step 4: the rebuilt zip
   does not survive a reload), `rememberedTourUrl()` is what `main.ts`
   prefills the link input with (M6). Every store access is guarded:
