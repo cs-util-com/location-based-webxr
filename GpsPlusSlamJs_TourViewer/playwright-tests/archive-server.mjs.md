@@ -22,7 +22,10 @@ already-queued requests, so call ordering cannot deadlock.
 `node archive-server.mjs <port>` (default 5197 — registered in
 `../../docs/dev-server-ports.md` under auxiliary e2e servers). Routes:
 `/health` (readiness for the playwright `webServer` gate), the four archive
-routes, `/flip`, `/warm-gate`, and a CORS preflight handler.
+routes, `/ranges-ok/recording-tour.zip` (a recording: era-5 session.json +
+an action stream, for the capture-spots placement), `/ranges-ok/plain-tour.zip`
+(images only - no level, no recording: the "nothing to place" case, flows
+plan M4), `/flip`, `/warm-gate`, and a CORS preflight handler.
 
 ## Invariants & assumptions
 

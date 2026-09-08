@@ -13,6 +13,7 @@ import {
 } from "gps-plus-slam-app-framework/ar";
 import {
   clearAllQrMarkers,
+  computeOnboardingGuidance,
   createGpsPositionHandler,
   createSlamAppStore,
   qrDetectedReducer,
@@ -23,6 +24,7 @@ import {
   selectGpsPositions,
   selectQrPoseStability,
   selectStableQrPose,
+  selectTrackingQuality,
   selectZeroReference,
   updateDeviceOrientation,
 } from "gps-plus-slam-app-framework/state";
@@ -86,6 +88,7 @@ import { toStatsView } from "./stats-view.js";
 import {
   arStatusLine,
   clearCacheLabel,
+  isPlacementReady,
   type PlacementState,
 } from "./tour-flow.js";
 import { openTourSession, type TourSession } from "./tour-session.js";
@@ -200,6 +203,9 @@ async function teardownSession(): Promise<void> {
   // imagePlanesLoading blocks every later placement in the session.
   imagePlanesLoading = false;
   planesRunGeneration += 1; // invalidate any in-flight placement run
+  placementAttempted = false;
+  joinDeclined = false;
+  placement = { kind: "idle" };
   if (session !== null) {
     const closing = session;
     session = null;
@@ -280,6 +286,10 @@ async function openUrl(url: string): Promise<void> {
     session = opened;
     renderStats();
     void fillGallery(opened);
+    // A tour opened AFTER entering AR places itself from the open path (flows
+    // plan M4, review #8) - not from the levels continuation below, whose
+    // rejection would otherwise silently cancel a GPS-only feature.
+    tryPlaceTour();
     // The open tour's hosting URL is what a creator prints — prefill the
     // panel without clobbering something they typed, and open it: the print
     // step is the creator's next move (flows plan M3, DEC-F2). Both modes,
@@ -290,19 +300,29 @@ async function openUrl(url: string): Promise<void> {
     printPanel.open = true;
     // The authored levels ride the same zip; a newer open's guard keeps a
     // slow load from installing a closed tour's levels.
-    void opened.loadQrLevels().then((levels) => {
-      if (session !== opened) return;
-      currentLevels = levels;
-      // The controller caches a level (or the negative-cache placeholder)
-      // per decoded text; levels arriving AFTER a scan would otherwise be
-      // invisible until AR re-entry (M4 milestone review #1).
-      qrController?.reset();
-      viewerUnknownCode = null;
-      viewerUnusableCode = null;
-      viewerPlanesError = null;
-      placement = { kind: "idle" };
-      renderArStatus();
-    });
+    void opened
+      .loadQrLevels()
+      .then((levels) => {
+        if (session !== opened) return;
+        currentLevels = levels;
+        // The controller caches a level (or the negative-cache placeholder)
+        // per decoded text; levels arriving AFTER a scan would otherwise be
+        // invisible until AR re-entry (M4 milestone review #1).
+        qrController?.reset();
+        viewerUnknownCode = null;
+        viewerUnusableCode = null;
+        viewerPlanesError = null;
+        renderArStatus();
+      })
+      .catch((err: unknown) => {
+        // Never had a catch (flows plan review #8): a rejecting level parse
+        // died as an unhandled rejection. The tour still works without
+        // levels; say what failed and keep the placement path alive.
+        if (session !== opened) return;
+        errorBox.textContent = `Reading the tour's printed-code levels failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`;
+      });
   } catch (err) {
     if (generation === openGeneration) {
       errorBox.textContent = describeOpenError(err, url);
@@ -553,6 +573,13 @@ let imagePlanes: PlacedImagePlanes | null = null;
  *  session outlived frees its textures instead of planting planes into a
  *  dead scene (milestone review, finding 6). */
 let planesRunGeneration = 0;
+/** Placement trigger state (flows plan M4): the store subscription while a
+ *  viewer session runs, whether this session+tour already attempted the
+ *  ready-triggered placement, and whether the join declined - so a later
+ *  lock goes straight to the ring instead of replaying the walk again. */
+let placementUnsubscribe: (() => void) | null = null;
+let placementAttempted = false;
+let joinDeclined = false;
 
 /** Levels are only useful with an open tour; the viewer pipeline reads them
  *  live so a tour opened AFTER entering AR still resolves. */
@@ -643,43 +670,53 @@ function startViewerPipeline(): boolean {
  *  Rev 2): photos at their CAPTURE positions when the recording supports
  *  it, the ring around the code otherwise. Either way at the SCENE ROOT
  *  in raw GPS-world NUE. */
-async function placeTourImagePlanes(lockedText: string): Promise<void> {
+async function placeTourImagePlanes(lockedText: string | null): Promise<void> {
   const current = session;
   const scene = seams.getScene();
   const zero = selectZeroReference(arStore.getState());
-  const geo = levelByText.get(lockedText)?.qr.geo;
-  if (current === null || scene === null || zero === null || geo === undefined)
-    return;
-  const centerNue = calcRelativeCoordsInMeters(
-    zero,
-    { lat: geo.lat, lon: geo.lon },
-    geo.alt,
-    0,
-  );
-  const centerTuple: [number, number, number] = [
-    centerNue[0],
-    centerNue[1],
-    centerNue[2],
-  ];
+  if (current === null || scene === null || zero === null) return;
+  // The ring needs the locked code's geo; the capture join does not (flows
+  // plan M4: the code refines a placement, it no longer gates one).
+  const geo =
+    lockedText === null ? undefined : levelByText.get(lockedText)?.qr.geo;
   imagePlanesLoading = true;
   const generation = planesRunGeneration;
   try {
     // A join failure is a taxonomy entry, not a dead end (milestone review,
     // finding 2): whatever the replay/compute throws, the visitor still
-    // gets the ring, with the failure visible in the status line.
+    // gets the ring once a code locks, with the failure visible in the
+    // status line. A join that already declined is not replayed per lock.
     let joined = false;
-    try {
-      joined = await placeJoinedCapturePlanes(current, scene, zero, generation);
-    } catch (err) {
-      placement = {
-        kind: "declined",
-        reason: `reading the recording failed: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      };
+    if (!joinDeclined) {
+      try {
+        joined = await placeJoinedCapturePlanes(
+          current,
+          scene,
+          zero,
+          generation,
+        );
+      } catch (err) {
+        placement = {
+          kind: "declined",
+          reason: `reading the recording failed: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        };
+      }
+      if (!joined && generation === planesRunGeneration) joinDeclined = true;
     }
-    if (!joined && generation === planesRunGeneration) {
-      await placeDecodedPlanes(current, scene, centerTuple);
+    if (!joined && geo !== undefined && generation === planesRunGeneration) {
+      const centerNue = calcRelativeCoordsInMeters(
+        zero,
+        { lat: geo.lat, lon: geo.lon },
+        geo.alt,
+        0,
+      );
+      await placeDecodedPlanes(current, scene, [
+        centerNue[0],
+        centerNue[1],
+        centerNue[2],
+      ]);
     }
   } finally {
     // Only the run that still owns the latch may clear it — a stale run's
@@ -750,12 +787,15 @@ async function placeJoinedCapturePlanes(
   // (M4 milestone review #4) plus the GENERATION token (finding 6): every
   // loser frees its textures, and a run the session outlived must not
   // plant planes into a dead scene.
+  // Session liveness is the controller STATUS, not the QR controller (flows
+  // plan review #2): with no BarcodeDetector the QR controller is null for
+  // the whole session, and the old guard threw every decoded photo away.
   if (
     paired.length === 0 ||
     generation !== planesRunGeneration ||
     imagePlanes !== null ||
     session !== current ||
-    qrController === null
+    arController.getState().status !== "running"
   ) {
     for (const entry of paired) entry.texture.dispose();
     if (paired.length === 0 && generation === planesRunGeneration) {
@@ -865,7 +905,7 @@ async function placeDecodedPlanes(
     textures.length === 0 ||
     imagePlanes !== null ||
     session !== current ||
-    qrController === null
+    arController.getState().status !== "running"
   ) {
     for (const texture of textures) texture.dispose();
     return;
@@ -1054,6 +1094,12 @@ function renderArStatus(): void {
       lockedText: viewerLockedText,
       reprojectionErrorPx: viewerReprojectionPx,
     },
+    // The onboarding mapping of the tracking-quality report - `null` before
+    // the slice reports maps to the `initializing` hint, which is the right
+    // copy while waiting. Author mode never reads readiness.
+    readiness: authorMode
+      ? null
+      : computeOnboardingGuidance(selectTrackingQuality(arStore.getState())),
     placement,
     planesError: viewerPlanesError,
   });
@@ -1092,6 +1138,7 @@ async function enterAr(): Promise<void> {
   const result = await arController.enable(
     buildArEnableConfig({
       container: arRoot,
+      trackingStore: arStore,
       onFrame: (image) => {
         cameraFrameCount += 1;
         qrController?.offerFrame(image);
@@ -1120,6 +1167,13 @@ async function enterAr(): Promise<void> {
         placement = { kind: "idle" };
         viewerPlanesError = null;
         imagePlanesLoading = false;
+        // The placement trigger is session state: unsubscribe, and let the
+        // next entry attempt again once ITS tracking reports ready
+        // (flows plan M4, review #12 - per-entry re-placement by design).
+        placementUnsubscribe?.();
+        placementUnsubscribe = null;
+        placementAttempted = false;
+        joinDeclined = false;
         // Invalidate any join still awaiting: it cannot be cancelled, but
         // every post-await guard checks this token, so a stale run frees
         // its textures instead of planting planes into a dead scene and
@@ -1171,7 +1225,54 @@ async function enterAr(): Promise<void> {
   if (worldGroup !== null) {
     qrDebugView = seams.createQrDebugView(worldGroup);
   }
-  if (authorMode) renderAuthorReadout();
+  if (authorMode) {
+    renderAuthorReadout();
+    return;
+  }
+  // The ready-triggered placement (flows plan M4, DEC-F3): attempt on every
+  // dispatch while the session lives - `tryPlaceTour` is a few predicate
+  // reads until the tracking-quality phase is `ready`, then runs once.
+  placementAttempted = false;
+  joinDeclined = false;
+  placementUnsubscribe = arStore.subscribe(() => {
+    tryPlaceTour();
+  });
+  tryPlaceTour();
+  renderArStatus();
+}
+
+/**
+ * The placement trigger: with a tour open and a viewer session running, the
+ * capture join runs ONCE per session+tour as soon as the tracking-quality
+ * phase reports ready. A later voted lock refines the alignment under the
+ * placed planes, or places the ring when the join declined. Author mode
+ * never places.
+ */
+function tryPlaceTour(): void {
+  if (authorMode || placementUnsubscribe === null) return;
+  const current = session;
+  if (current === null) {
+    placement = { kind: "idle" };
+    return;
+  }
+  if (placementAttempted || imagePlanes !== null || imagePlanesLoading) return;
+  if (!isPlacementReady(selectTrackingQuality(arStore.getState()))) {
+    placement = { kind: "waiting-ready" };
+    return;
+  }
+  placementAttempted = true;
+  if (!current.hasRecording) {
+    // No walk to place; the ring (if the tour has codes) waits for a lock.
+    joinDeclined = true;
+    placement = { kind: "declined", reason: "no recording in this tour" };
+    renderArStatus();
+    return;
+  }
+  void placeTourImagePlanes(null).catch((err: unknown) => {
+    viewerPlanesError = describeOpenError(err, current.archive.url);
+    renderArStatus();
+  });
+  renderArStatus();
 }
 
 arController.subscribe(renderArState);

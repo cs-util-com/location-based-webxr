@@ -43,7 +43,10 @@ const TINY_PNG = Uint8Array.from(
   (c) => c.codePointAt(0),
 );
 
-async function buildZip() {
+/** The default tour: images, an authored level, padding. `withLevel: false`
+ *  is the PLAIN tour (flows plan M4) - images only, no recording and no
+ *  printed code: the "nothing to place" case the status line must name. */
+async function buildZip({ withLevel = true } = {}) {
   const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
   await writer.add("session.json", new TextReader('{"kind":"e2e-tour"}'));
   for (let i = 0; i < 8; i += 1) {
@@ -54,18 +57,25 @@ async function buildZip() {
   }
   // An authored QR level (QR-pose plan M4): the viewer spec relocalizes
   // against it. Geo sits ~13 m from the spec's zero reference.
-  await writer.add(
-    await e2eQrLevelEntryName(),
-    new TextReader(
-      JSON.stringify({
-        version: 1,
-        qr: {
-          physicalSizeM: 0.2,
-          geo: { lat: 47.5001, lon: 8.7001, alt: 400, rotation: [0, 0, 0, 1] },
-        },
-      }),
-    ),
-  );
+  if (withLevel) {
+    await writer.add(
+      await e2eQrLevelEntryName(),
+      new TextReader(
+        JSON.stringify({
+          version: 1,
+          qr: {
+            physicalSizeM: 0.2,
+            geo: {
+              lat: 47.5001,
+              lon: 8.7001,
+              alt: 400,
+              rotation: [0, 0, 0, 1],
+            },
+          },
+        }),
+      ),
+    );
+  }
   // Padding entry so the archive is comfortably larger than what a
   // metadata+images session needs — the partial-fetch assertion depends on
   // the gap being wide.
@@ -159,6 +169,7 @@ async function buildRecordingZip() {
 }
 
 const zipBytes = await buildZip();
+const plainZipBytes = await buildZip({ withLevel: false });
 const recordingZipBytes = await buildRecordingZip();
 const ETAG = '"e2e-tour-v1"';
 
@@ -283,6 +294,10 @@ createServer((req, res) => {
   }
   if (url.pathname === "/ranges-ok/recording-tour.zip") {
     handleArchive(req, res, "ranges-ok", recordingZipBytes, '"e2e-rec-v1"');
+    return;
+  }
+  if (url.pathname === "/ranges-ok/plain-tour.zip") {
+    handleArchive(req, res, "ranges-ok", plainZipBytes, '"e2e-plain-v1"');
     return;
   }
   const match = /^\/(ranges-ok|no-ranges|flippable|slow-warm)\/tour\.zip$/.exec(

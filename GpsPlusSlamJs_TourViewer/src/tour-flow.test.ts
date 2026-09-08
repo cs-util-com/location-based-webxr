@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   arStatusLine,
   clearCacheLabel,
+  isPlacementReady,
   placementSegment,
   qrSegment,
   type ArStatusInput,
@@ -32,6 +33,7 @@ const RUNNING_BASE: ArStatusInput = {
     lockedText: null,
     reprojectionErrorPx: null,
   },
+  readiness: null,
   placement: { kind: "idle" },
   planesError: null,
 };
@@ -145,6 +147,87 @@ describe("placementSegment - what the photo placement did", () => {
 
   it.each(cases)("renders %j", (placement, expected) => {
     expect(placementSegment(placement)).toBe(expected);
+  });
+});
+
+describe("readiness - the placement trigger and its waiting copy (F3, flows plan M4)", () => {
+  // Why this matters: at the first GPS fix the alignment is the identity
+  // (no heading), so placing then can start the scene up to 180° wrong.
+  // The trigger is the tracking-quality `ready` phase, and while waiting
+  // the visitor reads the framework's coaching line - never silence and
+  // never "Scanning for the printed code…".
+  it("isPlacementReady is true only for a report in the ok state", () => {
+    expect(isPlacementReady(null)).toBe(false);
+    expect(
+      isPlacementReady({
+        state: "warming-up",
+        confidence: 0.2,
+        subScores: {
+          convergence: 0,
+          residualConsensus: 0,
+          gpsAccuracy: 0,
+          coverage: 0.2,
+        },
+      } as never),
+    ).toBe(false);
+    expect(
+      isPlacementReady({
+        state: "ok",
+        confidence: 0.9,
+        subScores: {
+          convergence: 1,
+          residualConsensus: 1,
+          gpsAccuracy: 1,
+          coverage: 1,
+        },
+      } as never),
+    ).toBe(true);
+  });
+
+  it("waiting-ready renders the phase's coaching hint, or a generic wait without one", () => {
+    expect(
+      placementSegment(
+        { kind: "waiting-ready" },
+        {
+          phase: "move-around",
+          percentReady: 0.3,
+          hint: "Walk around a few steps so tracking can warm up.",
+        },
+      ),
+    ).toBe("Walk around a few steps so tracking can warm up.");
+    expect(placementSegment({ kind: "waiting-ready" }, null)).toBe(
+      "Waiting for tracking to warm up…",
+    );
+  });
+
+  it("nothing-to-place names why, and the composed line carries it", () => {
+    const input: ArStatusInput = {
+      ...RUNNING_BASE,
+      tour: { kind: "open", levelCount: 0, hasRecording: false },
+      placement: { kind: "nothing-to-place" },
+    };
+    expect(arStatusLine(input)).toBe(
+      "Viewer mode — AR running · 3 camera frames · nothing to place: this tour has no recording and no printed codes",
+    );
+  });
+
+  it("derives nothing-to-place from a declined join on a tour with no recording and no codes", () => {
+    // The levels can arrive AFTER the decline; the line must follow the
+    // tour's facts at render time, not the order events happened in.
+    const declined: ArStatusInput = {
+      ...RUNNING_BASE,
+      tour: { kind: "open", levelCount: 0, hasRecording: false },
+      placement: { kind: "declined", reason: "no recording in this tour" },
+    };
+    expect(arStatusLine(declined)).toContain("nothing to place");
+    expect(arStatusLine(declined)).not.toContain("photo ring");
+    // With codes the ring is still coming: the decline stands as written.
+    expect(
+      arStatusLine({
+        ...declined,
+        tour: { kind: "open", levelCount: 2, hasRecording: false },
+      }),
+    ).toContain("photo ring (no recording in this tour)");
   });
 });
 

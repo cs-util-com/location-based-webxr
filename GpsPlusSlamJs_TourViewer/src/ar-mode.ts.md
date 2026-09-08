@@ -16,7 +16,12 @@ identical here — they diverge in M3/M4.
 - `arButtonView(state, authorMode): { label; disabled }` — pure mapping of
   `EnableGpsArState` to the entry button (author mode only changes labels).
 - `buildArEnableConfig(hooks: ArEnableHooks): EnableGpsArConfig` — hooks:
-  `{ container, onFrame, onSessionEnd, onGpsPosition, onOrientation }`.
+  `{ container, trackingStore, onFrame, onSessionEnd, onGpsPosition, onOrientation }`.
+  `trackingStore` rides in as `callbacks.tracking.store` (flows plan M4):
+  `initAR` dispatches `tracking/poseReceived` ONLY into the store handed in
+  here, and the tracking-quality phase the placement trigger reads is
+  derived from those dispatches. The viewer had mounted that slice since its
+  creation and never fed it (the recorder's 2026-05-23 lesson, re-learned).
 - `startTourArRuntime(store, deps): { ok: true } | { ok: false; error }` —
   deps: `{ getArWorldGroup, enableArWorldGroupAlignment,
 startCameraFrameCapture, now }` (seam-injected).

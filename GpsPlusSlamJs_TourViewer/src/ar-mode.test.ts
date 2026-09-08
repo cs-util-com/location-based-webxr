@@ -39,6 +39,7 @@ import {
 function fakeHooks(): ArEnableHooks {
   return {
     container: {} as HTMLElement,
+    trackingStore: { dispatch: vi.fn(), getState: vi.fn() } as never,
     onFrame: vi.fn(),
     onSessionEnd: vi.fn(),
     onGpsPosition: vi.fn(),
@@ -72,6 +73,21 @@ describe("buildArEnableConfig", () => {
     };
     config.callbacks?.cameraFrame?.onFrame(image);
     expect(hooks.onFrame).toHaveBeenCalledWith(image);
+  });
+
+  it("carries the tracking store so initAR feeds the tracking slice (flows plan M4)", () => {
+    // Why this matters: the tracking-quality phase the placement trigger
+    // reads is derived from `tracking/poseReceived`, which the framework's
+    // initAR dispatches ONLY into the store handed to it here. The viewer
+    // had mounted the slice since its creation and never fed it - the
+    // phase sat at `initializing` and quality at `ar-lost` for every
+    // session (the recorder's 2026-05-23 lesson, re-learned).
+    const trackingStore = { dispatch: vi.fn(), getState: vi.fn() };
+    const config = buildArEnableConfig({
+      ...fakeHooks(),
+      trackingStore: trackingStore as never,
+    });
+    expect(config.callbacks?.tracking?.store).toBe(trackingStore);
   });
 
   it("passes through session-end, GPS and orientation hooks", () => {

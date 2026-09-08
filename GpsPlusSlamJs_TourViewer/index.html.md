@@ -30,7 +30,11 @@ prefilled when a tour opens), `stats`, `error`, `gallery`, `ar-hint`,
 `ar-status`, `enter-ar`, `author-panel`. Renaming one is an e2e-breaking
 change. `#ar-status` and `#enter-ar` must stay children of `#ar-root`
 (WebXR DOM overlay composites only that subtree; enforced by
-`tests/repo-config/hud-overlay-nesting.test.js`).
+`tests/repo-config/hud-overlay-nesting.test.js`). The `#ar-hint` copy (flows
+plan M4, DEC-F3) says what a tour shows - photos where they were taken once
+tracking has warmed up - and that a printed code SHARPENS the placement; it
+no longer promises location at codes a tour may not carry, and it keeps
+"AR works without a tour" (the 2026-09-04 verdict).
 
 ## Invariants & assumptions
 

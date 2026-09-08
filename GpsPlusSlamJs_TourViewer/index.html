@@ -229,9 +229,13 @@
              viewer pipeline scans for codes from the first frame so a tour
              opened later still resolves — which reads as "it is already
              looking for a QR code" unless the page says what a code does. -->
+        <!-- Rewritten for the flows plan M4 (DEC-F3): the earlier line promised
+             location at printed codes, which read as "waiting for a code" on
+             a tour that cannot carry one (feedback F3). -->
         <p id="ar-hint" data-testid="ar-hint">
-          AR works without a tour too; once a tour is open, the camera locates
-          you at its printed codes.
+          AR shows the tour's photos where they were taken once your phone's
+          tracking has warmed up - a few steps. A printed tour code, where one
+          hangs, sharpens the placement. AR works without a tour too.
         </p>
         <div id="ar-status" data-testid="ar-status"></div>
         <button type="button" id="enter-ar" data-testid="enter-ar" disabled>

@@ -26,6 +26,40 @@ async function enterAr(page) {
   await button.click();
 }
 
+/** The session zero plus three consistent fixes - the alignment a placement
+ *  is expressed against (and that the votes refine). */
+async function seedAlignment(page) {
+  await page.evaluate(() => {
+    const store = /** @type {any} */ (window).__tourViewerTest.alignmentStore;
+    store.dispatch({
+      type: "gpsData/setZeroPos",
+      payload: { lat: 47.5, lon: 8.7 },
+    });
+    const pairs = [
+      { odom: [0, 0, 0], lat: 47.5, lon: 8.7 },
+      { odom: [0, 0, -15], lat: 47.500135, lon: 8.7 },
+      { odom: [15, 0, 0], lat: 47.5, lon: 8.7002 },
+    ];
+    for (const [i, p] of pairs.entries()) {
+      store.dispatch({
+        type: "gpsData/recordGpsEvent",
+        payload: {
+          odomPosition: p.odom,
+          odomRotation: [0, 0, 0, 1],
+          rawGpsPoint: {
+            id: `seed-${String(i)}`,
+            latitude: p.lat,
+            longitude: p.lon,
+            altitude: 400,
+            latLongAccuracy: 5,
+            timestamp: 1756150000000 + i * 1000,
+          },
+        },
+      });
+    }
+  });
+}
+
 test("the start screen names both ways in, and says what AR does without a tour", async ({
   page,
 }) => {
@@ -42,7 +76,11 @@ test("the start screen names both ways in, and says what AR does without a tour"
   const hint = page.getByTestId("ar-hint");
   await expect(hint).toBeVisible();
   await expect(hint).toContainText("AR works without a tour");
-  await expect(hint).toContainText("printed codes");
+  // Flows plan M4 (DEC-F3): the hint says what a tour shows (photos once
+  // tracking warmed up) and that a code SHARPENS - it no longer promises
+  // location at codes a tour may not carry.
+  await expect(hint).toContainText("printed tour code");
+  await expect(hint).toContainText("tracking has warmed up");
 });
 
 test("viewer mode boots to running: session started, alignment bound, capture at 8 Hz", async ({
@@ -350,6 +388,41 @@ test("a recording-carrying tour places photos at CAPTURE SPOTS, not the ring", a
     }
   });
 
+  // Flows plan M4 (DEC-F3): NO code is detected. The placement is triggered
+  // by the tracking-quality phase reporting ready; until then the status
+  // carries the framework's coaching line, never "Scanning…".
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+  });
+  // The fake initAR dispatches no poses, so after the seeded GPS events the
+  // slice reports `ar-lost`; whichever phase it is, its coaching hint is
+  // what the visitor reads while waiting - and nothing is placed yet.
+  await expect(page.getByTestId("ar-status")).toContainText(
+    /slowly look around|hold steady/,
+  );
+  await expect(page.getByTestId("ar-status")).not.toContainText(
+    "capture spots",
+  );
+  await forceTrackingReady(page);
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return page.getByTestId("ar-status").textContent();
+      },
+      { timeout: 20000 },
+    )
+    .toMatch(/photos at capture spots \(4 fixes/);
+  await expect(page.getByTestId("ar-status")).not.toContainText("photo ring");
+
+  // A code locking AFTER the placement refines the alignment under the
+  // planes - it does not place a second time (review #4/#5).
+  const planesBefore = await page.evaluate(
+    () =>
+      /** @type {any} */ (window).__tourViewerTest.fakeScene.children.length,
+  );
   await page.evaluate((text) => {
     /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
   }, E2E_QR_TEXT);
@@ -363,8 +436,143 @@ test("a recording-carrying tour places photos at CAPTURE SPOTS, not the ring", a
       },
       { timeout: 20000 },
     )
-    .toMatch(/photos at capture spots \(4 fixes/);
-  await expect(page.getByTestId("ar-status")).not.toContainText("photo ring");
+    .toMatch(/Relocaliz/);
+  await expect(page.getByTestId("ar-status")).toContainText("capture spots");
+  const planesAfter = await page.evaluate(
+    () =>
+      /** @type {any} */ (window).__tourViewerTest.fakeScene.children.length,
+  );
+  expect(planesAfter).toBe(planesBefore);
+});
+
+/** Force the tracking-quality slice to `ok` (→ onboarding `ready`). The
+ *  fake initAR never dispatches poses, and `reportUpdated` is the slice's
+ *  own action (not a middleware input), so it is not recomputed away. */
+async function forceTrackingReady(page) {
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.alignmentStore.dispatch({
+      type: "trackingQuality/reportUpdated",
+      payload: {
+        state: "ok",
+        confidence: 0.9,
+        subScores: {
+          convergence: 1,
+          residualConsensus: 1,
+          gpsAccuracy: 1,
+          coverage: 1,
+        },
+        diagnostics: {},
+      },
+    });
+  });
+}
+
+test("a tour with no recording and no printed codes says so, instead of scanning", async ({
+  page,
+}) => {
+  // Why this matters (feedback F3): the reporter's zip could not carry a
+  // code, and the old line promised one forever.
+  const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/plain-tour.zip";
+  await page.goto("/");
+  await page.getByTestId("link-input").fill(ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  await enterAr(page);
+  await forceTrackingReady(page);
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return page.getByTestId("ar-status").textContent();
+      },
+      { timeout: 20000 },
+    )
+    .toMatch(/nothing to place/);
+  await expect(page.getByTestId("ar-status")).toContainText(
+    "This tour has no printed codes",
+  );
+  await expect(page.getByTestId("ar-status")).not.toContainText("Scanning");
+});
+
+test("without a QR detector the photos still land at capture spots (review #2)", async ({
+  page,
+}) => {
+  // The join's old liveness guard was `qrController === null`, which is the
+  // permanent state on a browser without BarcodeDetector - every decoded
+  // photo was thrown away. Liveness is the controller status now.
+  await page.addInitScript(() => {
+    const seams = /** @type {any} */ (window).__tourViewerSeams;
+    seams.createQrFrontEnd = () => null;
+  });
+  const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/recording-tour.zip";
+  await page.goto("/");
+  await page.getByTestId("link-input").fill(ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(2, {
+    timeout: 15000,
+  });
+  await enterAr(page);
+  await seedAlignment(page);
+  await forceTrackingReady(page);
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return page.getByTestId("ar-status").textContent();
+      },
+      { timeout: 20000 },
+    )
+    .toMatch(/photos at capture spots/);
+});
+
+test("a re-entered session places the tour again once ITS tracking is ready (review #12)", async ({
+  page,
+}) => {
+  const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/recording-tour.zip";
+  await page.goto("/");
+  await page.getByTestId("link-input").fill(ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(2, {
+    timeout: 15000,
+  });
+  for (const entry of [1, 2]) {
+    await enterAr(page);
+    await expect(page.getByTestId("enter-ar")).toHaveText("AR running");
+    await seedAlignment(page);
+    await forceTrackingReady(page);
+    await expect
+      .poll(
+        async () => {
+          await page.evaluate(() => {
+            /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+          });
+          return page.getByTestId("ar-status").textContent();
+        },
+        { timeout: 20000 },
+      )
+      .toMatch(/photos at capture spots/);
+    const planes = await page.evaluate(
+      () =>
+        /** @type {any} */ (window).__tourViewerTest.fakeScene.children.length,
+    );
+    expect(planes, `entry ${String(entry)}`).toBeGreaterThan(0);
+    await page.evaluate(() => {
+      /** @type {any} */ (window).__tourViewerTest.endXrSession();
+    });
+    await expect(page.getByTestId("enter-ar")).toHaveText("Start AR view");
+    // The session end disposes the planes; the next entry places anew.
+    const afterEnd = await page.evaluate(
+      () =>
+        /** @type {any} */ (window).__tourViewerTest.fakeScene.children.length,
+    );
+    expect(afterEnd).toBe(0);
+  }
 });
 
 test("viewer mode relocalizes against the tour's level: budgeted votes, marker, image ring", async ({

@@ -20,7 +20,21 @@ number | null; hasRecording: boolean }`. `levelCount` is null while the
   fallback and the reason stays visible while it stands).
 - `interface ArStatusInput` - mode, controller status, camera-frame count,
   the tour, the viewer pipeline's QR inputs (the `viewerStatusLine` shape),
-  the placement, and a placement error string.
+  the `readiness` (the framework's `OnboardingGuidance` for the current
+  tracking-quality report; null in author mode), the placement, and a
+  placement error string.
+- `isPlacementReady(report): boolean` - the placement trigger (flows plan
+  M4, DEC-F3): true when `computeOnboardingGuidance(report).phase ===
+"ready"`, i.e. the tracking-quality `ok` state. At the first GPS fix the
+  alignment is the identity (no heading), so an earlier trigger could start
+  the scene up to 180° wrong.
+- `PlacementState` also carries `waiting-ready` (renders the readiness
+  hint, or "Waiting for tracking to warm up…" without one) and
+  `nothing-to-place` (a tour with neither a recording nor printed codes).
+  `arStatusLine` DERIVES `nothing-to-place` from a `declined` placement on
+  an open tour with `hasRecording === false` and `levelCount === 0`, so the
+  line follows the tour's facts at render time whatever order the decline
+  and the levels arrived in.
 - `qrSegment(input): string` - the printed-code line. Empty in author mode
   or before the pipeline reports a status.
 - `placementSegment(placement): string` - the placement copy; `""` for idle.

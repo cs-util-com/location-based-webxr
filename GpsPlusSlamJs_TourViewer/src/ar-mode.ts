@@ -18,6 +18,7 @@ import type {
   EnableGpsArConfig,
   EnableGpsArState,
   RgbaImage,
+  TrackingSubscribableStore,
 } from "gps-plus-slam-app-framework/ar";
 import type {
   GpsPosition,
@@ -88,6 +89,11 @@ export function arButtonView(
 /** The app-side hooks the enable configuration forwards into. */
 export interface ArEnableHooks {
   container: HTMLElement;
+  /** The store `initAR` dispatches `tracking/poseReceived` into - the
+   *  tracking-quality phase the placement trigger reads is derived from
+   *  those dispatches (flows plan M4). Without it the slice is mounted but
+   *  never fed, and the phase sits at `initializing` for the whole session. */
+  trackingStore: TrackingSubscribableStore;
   /** Every throttled camera frame (top-left RGBA) — the future QR feed. */
   onFrame(image: RgbaImage): void;
   onSessionEnd(): void;
@@ -108,6 +114,10 @@ export function buildArEnableConfig(hooks: ArEnableHooks): EnableGpsArConfig {
         hooks.onFrame(image);
       },
     },
+    // The framework's own poseReceived/poseLost dispatch path (the recorder
+    // learned on 2026-05-23 that a store not handed in here never leaves
+    // `initializing`; the viewer re-learned it in the flows plan review).
+    tracking: { store: hooks.trackingStore },
     onSessionEnd: () => {
       hooks.onSessionEnd();
     },

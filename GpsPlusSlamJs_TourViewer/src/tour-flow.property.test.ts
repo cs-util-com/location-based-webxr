@@ -66,6 +66,7 @@ const base = (
   cameraFrames: 1,
   tour,
   qr: QR_QUIET,
+  readiness: null,
   placement,
   planesError: null,
 });

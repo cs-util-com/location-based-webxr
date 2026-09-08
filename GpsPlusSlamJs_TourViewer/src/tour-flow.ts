@@ -16,6 +16,11 @@
 
 import type { EnableGpsArState } from "gps-plus-slam-app-framework/ar";
 import type { QrTrackingStatus } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
+import {
+  computeOnboardingGuidance,
+  type OnboardingGuidance,
+  type TrackingQualityReport,
+} from "gps-plus-slam-app-framework/state";
 
 import { viewerStatusLine } from "./qr-viewer-mode.js";
 
@@ -34,6 +39,17 @@ export type TourFlowTour =
  *  {@link placementSegment} - callers never compose copy. */
 export type PlacementState =
   | { kind: "idle" }
+  | {
+      /** AR running with a tour open, the tracking-quality phase not yet
+       *  `ready` (flows plan M4, DEC-F3) - the segment shows the phase's
+       *  coaching hint. */
+      kind: "waiting-ready";
+    }
+  | {
+      /** The tour has neither a recording (capture spots) nor printed
+       *  codes (the ring) - said plainly instead of "Scanning…". */
+      kind: "nothing-to-place";
+    }
   | {
       kind: "placing";
       phase: "reading-walk" | "loading-photos";
@@ -67,9 +83,23 @@ export interface ArStatusInput {
     lockedText: string | null;
     reprojectionErrorPx: number | null;
   };
+  /** The tracking-quality onboarding phase while running; null before the
+   *  slice produced a report (or in author mode, which never reads it). */
+  readiness: OnboardingGuidance | null;
   placement: PlacementState;
   /** A failed image-plane placement (the Drive-aware open error text). */
   planesError: string | null;
+}
+
+/** The placement trigger (DEC-F3): the tracking-quality `ok` state, read
+ *  through the framework's onboarding mapping so the threshold and the
+ *  coaching copy stay one contract (DEC-H3). At the first GPS fix the
+ *  alignment is the identity - no heading - so an earlier trigger would
+ *  start the scene up to 180° wrong. */
+export function isPlacementReady(
+  report: TrackingQualityReport | null,
+): boolean {
+  return computeOnboardingGuidance(report).phase === "ready";
 }
 
 /** The printed-code line: the viewer pipeline's status, with the no-codes
@@ -92,10 +122,21 @@ export function qrSegment(input: ArStatusInput): string {
   return viewerStatusLine(qr);
 }
 
-export function placementSegment(placement: PlacementState): string {
+export function placementSegment(
+  placement: PlacementState,
+  readiness: OnboardingGuidance | null = null,
+): string {
   switch (placement.kind) {
     case "idle":
       return "";
+    case "waiting-ready":
+      // The framework's coaching line for the phase (DEC-H3: shared copy),
+      // or a generic wait before the slice has reported at all.
+      return readiness === null
+        ? "Waiting for tracking to warm up…"
+        : readiness.hint;
+    case "nothing-to-place":
+      return "nothing to place: this tour has no recording and no printed codes";
     case "placing":
       return placement.phase === "reading-walk"
         ? `reading the walk ${String(placement.done)}/${String(placement.total)}…`
@@ -130,10 +171,20 @@ export function arStatusLine(input: ArStatusInput): string {
   if (input.arStatus !== "running") {
     return `${mode} — ${input.arStatus}`;
   }
+  // A declined join on a tour that also has no printed codes is the
+  // "nothing to place" case - derived here so `main.ts` never has to
+  // re-evaluate it when the levels arrive after the decline.
+  const placement: PlacementState =
+    input.placement.kind === "declined" &&
+    input.tour.kind === "open" &&
+    !input.tour.hasRecording &&
+    input.tour.levelCount === 0
+      ? { kind: "nothing-to-place" }
+      : input.placement;
   const segments = [
     `${mode} — AR running · ${String(input.cameraFrames)} camera frames`,
     qrSegment(input),
-    placementSegment(input.placement),
+    placementSegment(placement, input.readiness),
     input.planesError === null ? "" : `images failed: ${input.planesError}`,
   ];
   return segments.filter((segment) => segment !== "").join(" · ");

@@ -62,12 +62,30 @@ None (app entry point). Interesting seams for the e2e suite are the
   print button opens the details first, because a collapsed one prints a
   blank page. See the framework's `qr-print-plan.ts.md` for the size
   contract.
-- **Viewer pipeline (M4):** the default mode relocalizes against the open
-  tour: the detected code's `qr/<id>.json` resolves live from
+- **Viewer pipeline (QR-pose M4):** the default mode relocalizes against
+  the open tour: the detected code's `qr/<id>.json` resolves live from
   `loadQrLevels()`, budgeted synthetic votes flow into `recordGpsEvent`,
-  the glue marker rides detections in BOTH modes, and the first voted lock
-  places the image ring (scene root, raw NUE) — all torn down with the AR
-  session and on tour close.
+  and the glue marker rides detections in BOTH modes — all torn down with
+  the AR session and on tour close.
+- **Placement is triggered by tracking readiness, and a code refines it
+  (flows plan M4, DEC-F3, 2026-09-08):** `enterAr` (viewer mode) subscribes
+  `tryPlaceTour` to the store; it is a few predicate reads per dispatch
+  until `isPlacementReady(selectTrackingQuality(state))` — the
+  tracking-quality `ok` state, fed by `poseReceived` through the
+  `trackingStore` hook — then runs the capture join ONCE per session+tour
+  (`placementAttempted`). A join decline is remembered (`joinDeclined`) so a
+  later voted lock goes straight to the ring (which still needs the code's
+  geo) instead of replaying the walk; a lock after a successful placement
+  refines the alignment under the planes and places nothing. The status
+  line shows the phase's coaching hint while waiting (`waiting-ready`),
+  "nothing to place" for a tour with neither a recording nor codes, and the
+  join's decline reason otherwise. Liveness inside the async placement runs
+  is the controller status (`running`) plus `planesRunGeneration` — NOT
+  `qrController`, which is null for a whole session without a
+  BarcodeDetector (review #2). A tour opened after AR entry calls
+  `tryPlaceTour` from the open path, and the levels continuation has a
+  `.catch` (review #8). Session end unsubscribes and resets, so a re-entry
+  places again once ITS tracking reports ready (review #12, by design).
 - **The AR status line is composed by `tour-flow.ts`** (flows plan M1,
   2026-09-07): `renderArStatus` only assembles the input - mode, controller
   status, camera frames, the open tour (`hasRecording`, level count), the
