@@ -3,8 +3,10 @@ import fc from "fast-check";
 
 import {
   launchHrefFromPrintedUrl,
+  parseWizardStep,
   STARTER_LABELS,
   visitorLaunchHref,
+  wizardStepKey,
   WIZARD_STEPS,
   wireWizard,
   type WizardDom,
@@ -205,6 +207,77 @@ describe("wireWizard", () => {
         () => Promise.resolve(true),
       ),
     ).resolves.toBe(STARTER_LABELS.failed);
+  });
+});
+
+describe("the remembered step (M6)", () => {
+  it("lands on the step the creator reached with this tour, and step 2 for a new one; a broken store is harmless", () => {
+    // Why this matters (plan §2.7): the AR session and the print dialog
+    // both leave the page; a creator coming back to step 1 every time
+    // would redo the setup from the top.
+    const store = new Map<string, string>();
+    const stepStore = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        store.set(k, v);
+      },
+    };
+    const first = fakeDom();
+    const wizard = wireWizard({
+      mode: "creator",
+      dom: first.dom,
+      packStarter: () => Promise.resolve(new Blob()),
+      download: () => Promise.resolve(true),
+      stepStore,
+    });
+    wizard.presentTour("https://h/t.zip");
+    expect(first.dom.steps.print?.open).toBe(true);
+    wizard.openStep("replace");
+    expect(store.get(wizardStepKey("https://h/t.zip"))).toBe("replace");
+
+    // A reload: the same tour opens at the remembered step.
+    const second = fakeDom();
+    wireWizard({
+      mode: "creator",
+      dom: second.dom,
+      packStarter: () => Promise.resolve(new Blob()),
+      download: () => Promise.resolve(true),
+      stepStore,
+    }).presentTour("https://h/t.zip");
+    expect(second.dom.steps.replace?.open).toBe(true);
+
+    // A throwing store (private window) leaves the flow intact.
+    const third = fakeDom();
+    wireWizard({
+      mode: "creator",
+      dom: third.dom,
+      packStarter: () => Promise.resolve(new Blob()),
+      download: () => Promise.resolve(true),
+      stepStore: {
+        getItem: () => {
+          throw new Error("blocked");
+        },
+        setItem: () => {
+          throw new Error("blocked");
+        },
+      },
+    }).presentTour("https://h/t.zip");
+    expect(third.dom.steps.print?.open).toBe(true);
+  });
+
+  it("parses only known steps (property)", () => {
+    fc.assert(
+      fc.property(
+        fc.oneof(fc.string(), fc.constantFrom(...WIZARD_STEPS)),
+        (v) => {
+          const parsed = parseWizardStep(v);
+          expect(parsed === null || WIZARD_STEPS.includes(parsed)).toBe(true);
+          expect(parsed).toBe(
+            WIZARD_STEPS.includes(v as WizardStep) ? v : null,
+          );
+        },
+      ),
+    );
   });
 });
 

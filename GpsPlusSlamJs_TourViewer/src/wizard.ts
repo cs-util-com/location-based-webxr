@@ -7,6 +7,12 @@
  * without a recording, and the "open as a visitor" link that is the
  * tester's way into the visitor path (DEC-N1, plan review #13).
  *
+ * The reached step is remembered per hosted url (M6, plan §2.7): a reload
+ * after the AR session, or a return from the print dialog, lands on the
+ * step the creator reached instead of step 1. The store is injected
+ * (`localStorage` in production) and every access is guarded - a private
+ * window or blocked site data must not break the setup.
+ *
  * The DOM surface is structural so the unit tests pass plain objects (this
  * package's unit tests run in node, no jsdom); the e2e suite drives the
  * real page.
@@ -55,8 +61,26 @@ type ButtonNode = ClickableNode &
   Pick<HTMLButtonElement, "disabled" | "textContent">;
 type LinkNode = Pick<HTMLAnchorElement, "href" | "hidden">;
 
+/** Where the reached step is remembered (per hosted url). */
+export interface WizardStepStore {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+}
+
+/** The storage key for a hosted url's reached step. */
+export function wizardStepKey(url: string): string {
+  return `tour-viewer.wizard.${url}`;
+}
+
+/** A remembered step, or null for anything unreadable. */
+export function parseWizardStep(value: string | null): WizardStep | null {
+  return (WIZARD_STEPS as readonly string[]).includes(value ?? "")
+    ? (value as WizardStep)
+    : null;
+}
+
 export interface Wizard {
-  /** Open one step, collapse the others. */
+  /** Open one step, collapse the others; remembered for the open tour. */
   openStep(step: WizardStep): void;
   /** A tour opened: the launch link becomes usable and the print step opens. */
   presentTour(url: string): void;
@@ -104,8 +128,30 @@ export function wireWizard(deps: {
   /** Label-revert timer, injectable for tests. */
   setTimeout?: (fn: () => void, ms: number) => unknown;
   clearTimeout?: (handle: unknown) => void;
+  /** The step store (`localStorage`); undefined = no persistence. */
+  stepStore?: WizardStepStore;
 }): Wizard {
-  const { mode, dom, packStarter, download } = deps;
+  const { mode, dom, packStarter, download, stepStore } = deps;
+  /** The hosted url the remembered step belongs to (set by presentTour). */
+  let tourUrl: string | null = null;
+
+  function remember(step: WizardStep): void {
+    if (tourUrl === null || stepStore === undefined) return;
+    try {
+      stepStore.setItem(wizardStepKey(tourUrl), step);
+    } catch {
+      // A private window or blocked site data: the setup still works.
+    }
+  }
+
+  function remembered(url: string): WizardStep | null {
+    if (stepStore === undefined) return null;
+    try {
+      return parseWizardStep(stepStore.getItem(wizardStepKey(url)));
+    } catch {
+      return null;
+    }
+  }
   const schedule = deps.setTimeout ?? setTimeout;
   const cancel =
     deps.clearTimeout ??
@@ -118,6 +164,7 @@ export function wireWizard(deps: {
       const node = dom.steps[name];
       if (node !== undefined) node.open = name === step;
     }
+    remember(step);
     if (step === "measure") {
       // Nothing opens for step 4 (the AR section is always rendered), so
       // the page would only get shorter - bring the section into view.
@@ -175,7 +222,10 @@ export function wireWizard(deps: {
     presentTour: (url) => {
       dom.visitorLink.href = visitorLaunchHref(url);
       dom.visitorLink.hidden = false;
-      if (mode === "creator") openStep("print");
+      tourUrl = url;
+      // Land where the creator got to with this tour (a reload after the
+      // AR session, a return from the print dialog); step 2 for a new one.
+      if (mode === "creator") openStep(remembered(url) ?? "print");
     },
     presentLaunchUrl: (launchUrl) => {
       const href = launchHrefFromPrintedUrl(launchUrl);

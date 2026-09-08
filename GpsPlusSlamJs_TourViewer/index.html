@@ -58,6 +58,8 @@
         border-radius: 0.5rem;
         padding: 0.5rem 0.75rem;
       }
+      /* Each step's title is a real heading (screen readers navigate
+         them) inside the summary; the icon rides the same line. */
       .step > summary,
       .step > h2 {
         cursor: pointer;
@@ -67,6 +69,18 @@
       }
       .step > h2 {
         cursor: default;
+      }
+      .step > summary > h2 {
+        display: inline;
+        font-size: inherit;
+        font-weight: inherit;
+        margin: 0;
+      }
+      .step-icon {
+        width: 1.25em;
+        height: 1.25em;
+        vertical-align: -0.25em;
+        margin-right: 0.4em;
       }
       .step-body {
         display: grid;
@@ -236,7 +250,19 @@
       <ol id="wizard" class="creator-only" data-testid="wizard" hidden>
         <li>
           <details id="step-host" class="step" data-testid="step-host">
-            <summary>1 · Host your tour</summary>
+            <summary>
+              <svg class="step-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M12 16V4m0 0-4 4m4-4 4 4M4 14v5a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              <h2>1 · Host your tour</h2>
+            </summary>
             <p class="step-copy">
               Upload a zip to Google Drive, Dropbox, GitHub or OneDrive - a
               recording from the Recorder app, or the empty starter zip below if
@@ -271,7 +297,18 @@
                CSS cm units, so the paper matches the size the setup later
                measures with - the AR setup reads the size from HERE. -->
           <details id="print-panel" class="step" data-testid="print-panel">
-            <summary>2 · Print the code</summary>
+            <summary>
+              <svg class="step-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M7 8V3h10v5M7 17H4v-6h16v6h-3M7 13h10v8H7z"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              <h2>2 · Print the code</h2>
+            </summary>
             <p class="step-copy">
               The code carries the link from step 1. Print it at 100% scale (no
               fit-to-page), and enter the printed side length so the AR setup
@@ -337,7 +374,25 @@
         </li>
         <li>
           <details id="step-hang" class="step" data-testid="step-hang">
-            <summary>3 · Hang the code</summary>
+            <summary>
+              <svg class="step-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M3 21V9l9-6 9 6v12M8 21v-8h8v8"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linejoin="round"
+                />
+                <rect
+                  x="10"
+                  y="14.5"
+                  width="4"
+                  height="4"
+                  fill="currentColor"
+                />
+              </svg>
+              <h2>3 · Hang the code</h2>
+            </summary>
             <p class="step-copy">
               Fix the printed code where the tour starts: flat on a wall or a
               post, at about chest height, in a spot a phone can film squarely
@@ -360,8 +415,26 @@
            (enforced by tests/repo-config/hud-overlay-nesting.test.js). The
            step heading sits outside it: it is pre-session copy. -->
       <section id="step-measure" class="step" data-testid="step-measure">
-        <h2 class="creator-only" hidden>
-          4 · Measure the code and place content
+        <h2 class="creator-only step-heading" hidden>
+          <svg class="step-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <rect
+              x="7"
+              y="2"
+              width="10"
+              height="20"
+              rx="2"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+            />
+            <rect x="9.5" y="8" width="5" height="5" fill="currentColor" />
+            <path
+              d="M9.5 18h5"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+            /></svg
+          >4 · Measure the code and place content
         </h2>
         <p class="step-copy creator-only" hidden>
           Stand at the hung code and start the AR setup. Hold the phone on the
@@ -454,7 +527,19 @@
       <ol id="wizard-tail" class="creator-only" start="5" hidden>
         <li>
           <details id="step-finish" class="step" data-testid="step-finish">
-            <summary>5 · Download the rebuilt zip</summary>
+            <summary>
+              <svg class="step-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M12 4v12m0 0-4-4m4 4 4-4M4 14v5a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              <h2>5 · Download the rebuilt zip</h2>
+            </summary>
             <p class="step-copy">
               After Finish in AR, the zip with the measured code and your
               content is ready here. Download it to this phone; the next step
@@ -475,7 +560,19 @@
         </li>
         <li>
           <details id="step-replace" class="step" data-testid="step-replace">
-            <summary>6 · Replace the hosted zip</summary>
+            <summary>
+              <svg class="step-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M4 12a8 8 0 0 1 13.7-5.7L20 8.5M20 4v4.5h-4.5M20 12a8 8 0 0 1-13.7 5.7L4 15.5M4 20v-4.5h4.5"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              <h2>6 · Replace the hosted zip</h2>
+            </summary>
             <p class="step-copy">
               Upload the downloaded zip over the one from step 1 so the link,
               and with it the printed code, stays the same. Google Drive: on

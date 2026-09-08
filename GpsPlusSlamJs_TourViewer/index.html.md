@@ -8,7 +8,9 @@ screen. Everything marked `.creator-only` is hidden for a visitor
 (`visitor-screen.ts`); `#visitor-screen` is hidden for a creator.
 
 - The setup (`#wizard`, `wizard.ts`): collapsible steps, one open at a
-  time. 1 Host (`#step-host`: the starter zip button, the paste-a-link
+  time, each with a real `<h2>` inside its summary (heading navigation)
+  and an inline SVG icon; the reached step is remembered per hosted url
+  (M6). 1 Host (`#step-host`: the starter zip button, the paste-a-link
   form), 2 Print (`#print-panel`, the print section
   of the flows plan M3, plus the "open as a visitor" link), 3 Hang
   (`#step-hang`, the "It hangs - continue" button), 4 Measure and place

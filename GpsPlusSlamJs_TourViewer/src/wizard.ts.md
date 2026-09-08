@@ -29,6 +29,9 @@ visitor" launch link (step 2, the tester's way into the visitor path).
   query, or null for a URL without `qr`.
 - `STARTER_LABELS` - the starter button's idle/busy/done/cancelled/failed
   labels (async-UI rule).
+- `wizardStepKey(url)`, `parseWizardStep(value)` - the persistence key and
+  its tolerant parser; `WizardStepStore` is the `getItem`/`setItem` slice
+  of `localStorage`.
 
 ## Invariants & assumptions
 
@@ -40,7 +43,10 @@ visitor" launch link (step 2, the tester's way into the visitor path).
 - The starter button is disabled while packing and downloading, shows the
   outcome (downloaded / not saved when the save picker was dismissed /
   failed), and reverts after 3 s; a re-click cancels a pending revert.
-- Step persistence across reloads is M6 of the plan (not here yet).
+- The reached step is remembered per hosted url in the injected
+  `stepStore` (`localStorage`; key `tour-viewer.wizard.<url>`) and
+  `presentTour` lands on it (M6). Every store access is guarded: a private
+  window or blocked site data falls back to step 2.
 
 ## Examples
 

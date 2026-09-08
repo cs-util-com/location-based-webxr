@@ -1198,3 +1198,27 @@ test("without fakes the button reports AR unsupported instead of breaking the pa
   await expect(page.getByTestId("open-button")).toBeEnabled();
   await context.close();
 });
+
+test("the setup remembers the step the creator reached, per hosted link (M6)", async ({
+  page,
+}) => {
+  // Why this matters (guided-setup plan §2.7): a reload after the AR
+  // session, or a return from the print dialog, used to land on step 1
+  // with the link gone. The reached step is keyed by the hosted url, so a
+  // different tour starts at step 2 as before.
+  const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/tour.zip";
+  await page.goto("/");
+  await page.getByTestId("link-input").fill(ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("print-panel")).toHaveAttribute("open", "");
+  await page.getByTestId("step-hang").locator("summary").click();
+  await expect(page.getByTestId("step-hang")).toHaveAttribute("open", "");
+  await expect(page.getByTestId("print-panel")).not.toHaveAttribute("open", "");
+
+  await page.reload();
+  await expect(page.getByTestId("step-host")).toHaveAttribute("open", "");
+  await page.getByTestId("link-input").fill(ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("step-hang")).toHaveAttribute("open", "");
+  await expect(page.getByTestId("print-panel")).not.toHaveAttribute("open", "");
+});

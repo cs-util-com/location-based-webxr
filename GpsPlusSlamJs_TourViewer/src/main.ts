@@ -135,6 +135,8 @@ const wizard = wireWizard({
   // Through the seam like the finish step's download, so the e2e fake
   // captures it (M3 review #10).
   download: (blob, filename) => seams.downloadZip(blob, filename),
+  // The reached step per hosted url (M6); absent where storage is blocked.
+  ...(typeof localStorage === "undefined" ? {} : { stepStore: localStorage }),
 });
 hooks.presentTourForPrint = (url) => {
   print.presentTour(url);
