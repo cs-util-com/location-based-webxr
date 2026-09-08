@@ -65,7 +65,9 @@ export function wireArchiveOpen(deps: {
     // closing tour — a newly opened tour must not relocalize against them.
     ctx.currentLevels = null;
     ctx.tourManifest = null;
+    ctx.tourManifestStatus = "settled";
     ctx.rebuiltZip = null;
+    hooks.resetFinishStep();
     // Same cache: the closed tour's levels must stop voting (M4 review #1),
     // and the per-text level cache belongs to the closed tour too (M6
     // review #8).
@@ -171,17 +173,23 @@ export function wireArchiveOpen(deps: {
       // it back, so a re-measure never drops what an earlier session placed.
       // A broken manifest is an error the creator must see (the framework's
       // rule for this file), not a silently empty tour.
+      ctx.tourManifestStatus = "pending";
       void opened.loadTourManifest().then(
         (manifest) => {
           if (ctx.session !== opened) return;
           ctx.tourManifest = manifest;
+          ctx.tourManifestStatus = "settled";
           hooks.renderAuthorReadout();
         },
         (err: unknown) => {
           if (ctx.session !== opened) return;
+          // The finish step refuses on "broken" (M3 review #5): it must not
+          // overwrite a placement it could not read.
+          ctx.tourManifestStatus = "broken";
           dom.errorBox.textContent = `Reading the tour's content list (tour.json) failed: ${
             err instanceof Error ? err.message : String(err)
           }`;
+          hooks.renderAuthorReadout();
         },
       );
       // The authored levels ride the same zip; a newer open's guard keeps a

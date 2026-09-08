@@ -63,6 +63,8 @@ export interface TourViewerHooks {
   startViewerPipeline(): boolean;
   /** Present the open tour's link in the print panel (M3's prefill). */
   presentTourForPrint(url: string): void;
+  /** A tour closed: the finish step's page-side state is stale. */
+  resetFinishStep(): void;
 }
 
 export function createUnwiredHooks(): TourViewerHooks {
@@ -74,6 +76,7 @@ export function createUnwiredHooks(): TourViewerHooks {
     startAuthorPipeline: () => false,
     startViewerPipeline: () => false,
     presentTourForPrint: () => undefined,
+    resetFinishStep: () => undefined,
   };
 }
 
@@ -86,6 +89,10 @@ export interface TourViewerSession {
    *  finish step writes it back, so content already in the zip survives a
    *  re-measure. */
   tourManifest: TourManifest | null;
+  /** Whether the manifest load settled: the finish step refuses while it
+   *  is pending or broken, or it would overwrite the creator's placement
+   *  with an empty list (M3 review #5). */
+  tourManifestStatus: "pending" | "settled" | "broken";
   /** Bumped per open; a slower open that finishes after a newer one started
    *  must close itself instead of clobbering the newer session. */
   openGeneration: number;
@@ -123,10 +130,19 @@ export interface TourViewerSession {
   /** Bumped per mint so a stale identity hash cannot install an older
    *  level over a newer one. */
   mintGeneration: number;
-  /** The finish step is running (one at a time). */
+  /** The finish step is running (one at a time); the panel shows its
+   *  progress with priority over the measuring readout. */
   finishing: boolean;
+  /** The finish step's live progress copy while `finishing`. */
+  finishProgress: string;
+  /** The last finish failure, shown with priority until the next tap
+   *  (the readout used to erase it on the next store dispatch, M3 review #1). */
+  finishError: string | null;
   /** The rebuilt zip awaiting download in step 5. */
-  rebuiltZip: { blob: Blob; filename: string; entryCount: number } | null;
+  rebuiltZip: { blob: Blob; filename: string } | null;
+  /** Bumped on every AR session end: an async continuation captures it
+   *  and must not act on a session it did not start in (M3 review #2). */
+  arSessionGeneration: number;
 
   // --- viewer QR line (viewer-placement.ts) -------------------------------
   viewerQrStatus: QrTrackingStatus | null;
@@ -169,6 +185,7 @@ export function createTourViewerSession(): TourViewerSession {
     session: null,
     currentLevels: null,
     tourManifest: null,
+    tourManifestStatus: "settled",
     openGeneration: 0,
     qrController: null,
     qrDebugView: null,
@@ -181,7 +198,10 @@ export function createTourViewerSession(): TourViewerSession {
     mintedLevel: null,
     mintGeneration: 0,
     finishing: false,
+    finishProgress: "",
+    finishError: null,
     rebuiltZip: null,
+    arSessionGeneration: 0,
     viewerQrStatus: null,
     viewerUnknownCode: null,
     viewerUnusableCode: null,

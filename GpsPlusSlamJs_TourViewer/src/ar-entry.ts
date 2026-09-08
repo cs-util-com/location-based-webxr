@@ -136,6 +136,7 @@ export function wireArEntry(deps: {
   }
 
   function onSessionEnd(): void {
+    ctx.arSessionGeneration += 1;
     // Full teardown, not just capture stop: the AR entry is re-enterable,
     // and an open recording would blend the dead session's odom frame into
     // the next alignment (PR #359 review). The QR window and its tracked

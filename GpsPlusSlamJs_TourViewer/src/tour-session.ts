@@ -115,6 +115,35 @@ export interface TourSession {
   close(): Promise<void>;
 }
 
+/** One range read is budgeted for a slice (a 20 s timeout in the
+ *  transport), not a whole archive: the full read goes in slices of this
+ *  size, each its own request with its own budget, gathered into one Blob
+ *  without a second copy (M3 review #4). */
+const FULL_READ_SLICE_BYTES = 4 * 1024 * 1024;
+
+/** Exported for its unit test (a fake source with a small slice); the
+ *  session always reads with the default slice. */
+export async function readArchiveInSlices(
+  archive: Pick<OpenedArchive, "size" | "source">,
+  sliceBytes: number = FULL_READ_SLICE_BYTES,
+): Promise<Blob> {
+  const parts: BlobPart[] = [];
+  for (let offset = 0; offset < archive.size; offset += sliceBytes) {
+    const length = Math.min(sliceBytes, archive.size - offset);
+    const bytes = await archive.source.read(offset, length);
+    // A view over the same buffer, not a copy; the typing only needs to know
+    // it is not a SharedArrayBuffer.
+    parts.push(
+      new Uint8Array(
+        bytes.buffer as ArrayBuffer,
+        bytes.byteOffset,
+        bytes.byteLength,
+      ),
+    );
+  }
+  return new Blob(parts, { type: "application/zip" });
+}
+
 /** The hosted file's name, so the replace step is a same-name upload:
  *  the last path segment when it ends in `.zip` (decoded), else
  *  `tour.zip` (a Drive id or a proxy route says nothing useful). */
@@ -123,7 +152,7 @@ export function archiveFileName(url: string): string {
     const last = decodeURIComponent(
       new URL(url).pathname.split("/").filter(Boolean).at(-1) ?? "",
     );
-    return /\.zip$/i.test(last) && !last.includes("/") ? last : "tour.zip";
+    return /\.zip$/i.test(last) && !/[/\\]/.test(last) ? last : "tour.zip";
   } catch {
     return "tour.zip";
   }
@@ -314,10 +343,12 @@ async function buildSession(
       // range read below is then the honest path, not an error.
       await archive.warmed.catch(() => undefined);
       const cached = await cacheStore?.get(archive.url);
-      if (cached !== undefined) return cached.blob;
-      const bytes = await archive.source.read(0, archive.size);
-      // A fresh copy: a Uint8Array over a SharedArrayBuffer is not a BlobPart.
-      return new Blob([new Uint8Array(bytes)]);
+      // A copy of the wrong size is not this archive (the same check every
+      // other consumer of a downloaded copy makes, M3 review #4).
+      if (cached !== undefined && cached.blob.size === archive.size) {
+        return cached.blob;
+      }
+      return readArchiveInSlices(archive);
     },
     close: async () => {
       archive.dispose();

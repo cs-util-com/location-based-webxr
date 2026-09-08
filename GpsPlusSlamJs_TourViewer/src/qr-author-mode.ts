@@ -170,15 +170,50 @@ export function setupHint(state: {
 export function finishReadiness(state: {
   measured: boolean;
   tourOpen: boolean;
-}): "ready" | "not-measured" | "no-tour" {
+  manifest: "pending" | "settled" | "broken";
+}):
+  | "ready"
+  | "not-measured"
+  | "no-tour"
+  | "manifest-pending"
+  | "manifest-broken" {
   if (!state.measured) return "not-measured";
   if (!state.tourOpen) return "no-tour";
+  if (state.manifest === "pending") return "manifest-pending";
+  if (state.manifest === "broken") return "manifest-broken";
   return "ready";
+}
+
+/** Why the finish button is off, in the creator's words (empty when ready). */
+export function finishBlockedHint(
+  readiness: ReturnType<typeof finishReadiness>,
+): string {
+  switch (readiness) {
+    case "manifest-pending":
+      return "Finish unlocks once the tour's content list has loaded.";
+    case "manifest-broken":
+      return "The hosted zip's tour.json is broken; repair it before finishing, or the placement it holds would be lost.";
+    default:
+      return "";
+  }
+}
+
+/** Above this the rebuild is a long whole-file pass on a phone; the copy
+ *  says so before the creator taps. */
+export const LARGE_ARCHIVE_BYTES = 200_000_000;
+
+/** What the finish button's surroundings say about the archive's size. */
+export function archiveSizeNote(bytes: number): string {
+  const mb = (bytes / 1_000_000).toFixed(0);
+  return bytes >= LARGE_ARCHIVE_BYTES
+    ? `The hosted zip is ${mb} MB: rebuilding it copies every entry on this phone and can take a while and a lot of memory.`
+    : `The hosted zip is ${mb} MB.`;
 }
 
 /** The finish step's labels through its async cycle (async-UI rule). */
 export const FINISH_LABELS = {
-  reading: "Finishing - reading the hosted zip…",
+  reading: (bytes: number) =>
+    `Finishing - reading the hosted zip (${(bytes / 1_000_000).toFixed(1)} MB)…`,
   rebuilding: (done: number, total: number) =>
     `Finishing - rebuilding ${String(done)} of ${String(total)} entries…`,
   ready: (bytes: number) =>

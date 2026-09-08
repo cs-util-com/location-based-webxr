@@ -34,8 +34,18 @@ tap.
   `qrCodeId` of the exact printed text, guarded by `ctx.mintGeneration` so
   a stale hash cannot install an older level. Until it lands the finish
   button stays off.
-- **Finish** (`finishReadiness`): needs a measured level AND an open tour;
-  runs once at a time (`ctx.finishing`). Entries: the level at
+- **Finish** (`finishReadiness`): needs a measured level, an open tour AND
+  a settled manifest load (pending or broken refuses, with the reason:
+  finishing would overwrite a placement it could not read, M3 review #5);
+  runs once at a time (`ctx.finishing`). While it runs the panel shows
+  its progress with priority over the measuring readout, and a failure
+  stays on the line until the next tap (`ctx.finishProgress`,
+  `ctx.finishError`; store dispatches used to erase both). The
+  continuation re-checks `ctx.session` after every await and ends the AR
+  session only if it is still the one it started in
+  (`ctx.arSessionGeneration`). An existing level for the same id (also in
+  the tolerated wrapped shape) is replaced in place, never duplicated.
+  The size note next to the button says what the rebuild will copy. Entries: the level at
   `qrLevelEntryName(id)` and `tour.json` from `ctx.tourManifest` (what the
   zip already carried, so a re-measure never drops placed content) or an
   empty manifest. The input is `session.readWholeArchive()` (the warmed
@@ -45,7 +55,9 @@ tap.
   reason stays in the panel and the button re-enables.
 - **Download:** `seams.downloadZip` (the framework's picker-or-anchor);
   `true` opens step 6, `false` (a dismissed picker) keeps the button live
-  and says "not saved". Async-UI rule on both branches.
+  and says "not saved". Async-UI rule on both branches. `resetFinishStep`
+  (a hook, called when a tour closes) disables the button and clears the
+  status, so a re-opened tour does not show a stale step 5.
 - The measured level survives a session end on purpose (finishing ends
   the session); a new measurement replaces it.
 - Owns the session fields `lastDetectedText`, `activeSizeM`,

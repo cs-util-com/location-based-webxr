@@ -10,7 +10,11 @@ import {
   createEmptyTourManifest,
   serializeTourManifest,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { archiveFileName, openTourSession } from "./tour-session.js";
+import {
+  archiveFileName,
+  openTourSession,
+  readArchiveInSlices,
+} from "./tour-session.js";
 
 /**
  * Why these tests matter: this module is the viewer's whole data path — if
@@ -348,6 +352,8 @@ describe("archiveFileName (guided-setup plan M3)", () => {
       "tour.zip",
     );
     expect(archiveFileName("not a url")).toBe("tour.zip");
+    // A backslash is a path separator to the save dialog on Windows.
+    expect(archiveFileName("https://h/a/..%5Cb.zip")).toBe("tour.zip");
   });
 });
 
@@ -404,29 +410,78 @@ describe("loadTourManifest / readWholeArchive (guided-setup plan M3)", () => {
     await session.close();
   });
 
-  it("reads the whole archive from the warmed cache copy, keyed by the normalised url", async () => {
+  it("reads the whole archive from the warmed cache copy under the NORMALISED url, with no further network read", async () => {
+    // A Dropbox share link: the archive's url is the rewritten content
+    // host, and that is the cache key (plan review #5); the raw link would
+    // miss. After the warm, the cache serves the bytes - the counter
+    // proves no range read happened.
+    const bytes = await buildZip();
+    const cacheStore = new InMemoryLocalCacheStore();
+    let reads = 0;
+    const counting: FetchImpl = (input, init) => {
+      if ((init?.method ?? "GET") === "GET") reads += 1;
+      return rangeServer(bytes)(input, init);
+    };
+    const session = await openTourSession(
+      "https://www.dropbox.com/s/abc/tour.zip?dl=0",
+      { fetchImpl: counting, cacheStore },
+    );
+    expect(session.archive.url).not.toContain("www.dropbox.com/s/");
+    await session.archive.warmed;
+    expect(await cacheStore.get(session.archive.url)).toBeDefined();
+    const before = reads;
+    const whole = await session.readWholeArchive();
+    expect(reads).toBe(before);
+    expect(new Uint8Array(await whole.arrayBuffer())).toEqual(bytes);
+    await session.close();
+  });
+
+  it("falls back to range reads when the cached copy has the wrong size", async () => {
     const bytes = await buildZip();
     const cacheStore = new InMemoryLocalCacheStore();
     const session = await openTourSession("https://x/tour.zip", {
       fetchImpl: rangeServer(bytes),
       cacheStore,
     });
+    await session.archive.warmed;
+    await cacheStore.put(session.archive.url, {
+      blob: new Blob([new Uint8Array(3)]),
+    });
     const whole = await session.readWholeArchive();
     expect(new Uint8Array(await whole.arrayBuffer())).toEqual(bytes);
-    // The cache, not a second network pass: the store holds it under the
-    // archive's own url.
-    expect(await cacheStore.get(session.archive.url)).toBeDefined();
     await session.close();
   });
 
-  it("reads the whole archive through one full range read when there is no cache", async () => {
-    const bytes = await buildZip();
-    const session = await openTourSession("https://x/tour.zip", {
-      fetchImpl: rangeServer(bytes),
-    });
-    const whole = await session.readWholeArchive();
-    expect(whole.size).toBe(bytes.length);
+  it("reads the whole archive in SLICES when there is no cache (each request keeps the slice budget), byte-identical across slice boundaries", async () => {
+    // The slicer over a fake source: 2 500 bytes in 1 000-byte slices is
+    // three requests, and the gathered Blob is the source, byte for byte.
+    const bytes = new Uint8Array(2500).map((_, i) => (i * 13) % 256);
+    const requests: [number, number][] = [];
+    const whole = await readArchiveInSlices(
+      {
+        size: bytes.length,
+        source: {
+          size: bytes.length,
+          read: (offset, length) => {
+            requests.push([offset, length]);
+            return Promise.resolve(bytes.slice(offset, offset + length));
+          },
+        },
+      },
+      1000,
+    );
+    expect(requests).toEqual([
+      [0, 1000],
+      [1000, 1000],
+      [2000, 500],
+    ]);
     expect(new Uint8Array(await whole.arrayBuffer())).toEqual(bytes);
+    // The session's fallback goes through the same slicer.
+    const session = await openTourSession("https://x/tour.zip", {
+      fetchImpl: rangeServer(await buildZip()),
+    });
+    const viaSession = await session.readWholeArchive();
+    expect(viaSession.size).toBe(session.archive.size);
     await session.close();
   });
 });

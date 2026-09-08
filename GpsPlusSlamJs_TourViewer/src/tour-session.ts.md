@@ -38,8 +38,10 @@ loading with MIME types, and the poisoned-cache recovery loop.
   - null without `tour.json`; a broken manifest REJECTS (the framework's
     rule for this file: it is the whole placement, not one bad level).
 - `readWholeArchive(): Promise<Blob>` - the rebuild's input: the warmed
-  cache copy under the archive's NORMALISED url when the store has it,
-  else one range read of the full size (`?nocache=1`, no Cache API).
+  cache copy under the archive's NORMALISED url when the store has it AND
+  its size matches, else the archive in 4 MiB range slices gathered into
+  one Blob (each request keeps the transport's per-slice timeout; the
+  slices are views, not copies).
 - `archiveFileName(url): string` (pure) - the hosted file's name for the
   same-name re-upload: the last path segment when it ends in `.zip`
   (decoded), else `tour.zip`.

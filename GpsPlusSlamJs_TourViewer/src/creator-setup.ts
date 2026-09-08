@@ -15,7 +15,10 @@
  */
 
 import { createQrTrackingController } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
-import { qrLevelEntryName } from "gps-plus-slam-app-framework/ar/qr/qr-level-archive";
+import {
+  qrLevelEntryName,
+  qrLevelIdFromEntryName,
+} from "gps-plus-slam-app-framework/ar/qr/qr-level-archive";
 import {
   AUTHOR_DEFAULT_SIZE_M,
   mintQrLevel,
@@ -39,9 +42,11 @@ import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-i
 
 import type { ViewerMode } from "./mode.js";
 import {
+  archiveSizeNote,
   authorStatusLine,
   buildAuthorControllerConfig,
   FINISH_LABELS,
+  finishBlockedHint,
   finishReadiness,
   setupHint,
 } from "./qr-author-mode.js";
@@ -75,6 +80,8 @@ export interface CreatorSetup {
   /** Creates the author tracking controller for THIS AR entry; false (with
    *  the reason in the panel) keeps AR unstarted. */
   startAuthorPipeline: () => boolean;
+  /** A tour closed: step 5's download and status are stale (M3 review #6). */
+  resetFinishStep: () => void;
 }
 
 export function wireCreatorSetup(deps: {
@@ -120,6 +127,21 @@ export function wireCreatorSetup(deps: {
       dom.mintButton.disabled = true;
       return;
     }
+    // The finish step owns the line while it runs and after it failed
+    // (M3 review #1/#3): store dispatches keep arriving during the rebuild
+    // (GPS fixes, detections) and used to overwrite both.
+    if (ctx.finishing) {
+      dom.status.textContent = ctx.finishProgress;
+      dom.mintButton.disabled = true;
+      dom.finishButton.disabled = true;
+      return;
+    }
+    if (ctx.finishError !== null) {
+      dom.status.textContent = ctx.finishError;
+      dom.mintButton.disabled = true;
+      dom.finishButton.disabled = false;
+      return;
+    }
     const state = arStore.getState();
     const stability =
       ctx.lastDetectedText === null
@@ -141,12 +163,17 @@ export function wireCreatorSetup(deps: {
     dom.status.textContent =
       hint === "" ? readout.text : `${readout.text} · ${hint}`;
     dom.mintButton.disabled = !readout.canMint;
-    dom.finishButton.disabled =
-      !ctx.finishing &&
-      finishReadiness({
-        measured: ctx.mintedLevel !== null,
-        tourOpen: ctx.session !== null,
-      }) !== "ready";
+    const readiness = finishReadiness({
+      measured: ctx.mintedLevel !== null,
+      tourOpen: ctx.session !== null,
+      manifest: ctx.tourManifestStatus,
+    });
+    dom.finishButton.disabled = readiness !== "ready";
+    const blocked = finishBlockedHint(readiness);
+    if (blocked !== "") dom.status.textContent += ` · ${blocked}`;
+    if (readiness === "ready" && ctx.session !== null) {
+      dom.status.textContent += ` · ${archiveSizeNote(ctx.session.archive.size)}`;
+    }
   }
 
   function startAuthorPipeline(): boolean {
@@ -213,6 +240,7 @@ export function wireCreatorSetup(deps: {
       dom.status.textContent = result.error;
       return;
     }
+    ctx.finishError = null; // a new measurement supersedes a failed finish
     // The file name IS the code's identity, derived from the exact text this
     // poster carries - so the creator never matches a number by hand. The
     // hash is async; until it lands the finish button stays off (the level
@@ -240,12 +268,34 @@ export function wireCreatorSetup(deps: {
   dom.finishButton.addEventListener("click", () => {
     const current = ctx.session;
     const minted = ctx.mintedLevel;
-    if (current === null || minted === null || ctx.finishing) return;
+    if (
+      current === null ||
+      minted === null ||
+      ctx.finishing ||
+      ctx.tourManifestStatus !== "settled"
+    ) {
+      return;
+    }
+    // Both guards for the continuation: the tour may be re-opened and the
+    // AR session may end (and a new one start) while the rebuild runs; the
+    // result must not land in a session or a tour it was not made for
+    // (M3 review #2).
+    const sessionGeneration = ctx.arSessionGeneration;
     ctx.finishing = true;
-    dom.finishButton.disabled = true;
-    dom.status.textContent = FINISH_LABELS.reading;
+    ctx.finishError = null;
+    ctx.finishProgress = FINISH_LABELS.reading(current.archive.size);
+    renderAuthorReadout();
+    // A zip in the tolerated wrapped shape (`mytour/qr/<id>.json`) keeps
+    // its level where it is; adding a second file at the root would leave
+    // a stale duplicate on every finish.
+    const existingLevelPath = current.entries
+      .map((e) => e.filename)
+      .find((name) => qrLevelIdFromEntryName(name) === minted.id);
     const entries = [
-      { path: qrLevelEntryName(minted.id), data: minted.json },
+      {
+        path: existingLevelPath ?? qrLevelEntryName(minted.id),
+        data: minted.json,
+      },
       {
         path: TOUR_MANIFEST_ENTRY,
         data: serializeTourManifest(
@@ -256,29 +306,37 @@ export function wireCreatorSetup(deps: {
     void (async () => {
       try {
         const input = await current.readWholeArchive();
+        if (ctx.session !== current) return; // re-opened meanwhile
         const blob = await rebuildZipWithEntries(input, entries, {
           onProgress: (done, total) => {
-            dom.status.textContent = FINISH_LABELS.rebuilding(done, total);
+            ctx.finishProgress = FINISH_LABELS.rebuilding(done, total);
+            renderAuthorReadout();
           },
         });
+        if (ctx.session !== current) return;
         ctx.rebuiltZip = {
           blob,
           filename: archiveFileName(current.archive.url),
-          entryCount: entries.length,
         };
         dom.finishStatus.textContent = FINISH_LABELS.ready(blob.size);
         dom.downloadButton.disabled = false;
         // The session ends so the creator lands on the page, where the
         // download button is a fresh tap (a download needs its own user
-        // gesture, plan §2.4).
-        await arController.disable();
+        // gesture, plan §2.4) - unless it already ended and another one
+        // started, which is then not ours to end.
+        if (sessionGeneration === ctx.arSessionGeneration) {
+          await arController.disable();
+        }
         wizard.openStep("finish");
       } catch (err) {
-        dom.status.textContent = FINISH_LABELS.failed(
-          err instanceof Error ? err.message : String(err),
-        );
+        if (ctx.session === current) {
+          ctx.finishError = FINISH_LABELS.failed(
+            err instanceof Error ? err.message : String(err),
+          );
+        }
       } finally {
         ctx.finishing = false;
+        ctx.finishProgress = "";
         renderAuthorReadout();
       }
     })();
@@ -310,5 +368,12 @@ export function wireCreatorSetup(deps: {
     );
   });
 
-  return { renderAuthorReadout, startAuthorPipeline };
+  return {
+    renderAuthorReadout,
+    startAuthorPipeline,
+    resetFinishStep: () => {
+      dom.downloadButton.disabled = true;
+      dom.finishStatus.textContent = "";
+    },
+  };
 }

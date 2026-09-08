@@ -6,7 +6,9 @@ import type { QrDetectionEvent } from "gps-plus-slam-app-framework/ar/qr/qr-trac
 import { MIN_ALIGNMENT_SAMPLES } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 
 import {
+  archiveSizeNote,
   authorStatusLine,
+  finishBlockedHint,
   finishReadiness,
   setupHint,
   codeIndexFromInput,
@@ -160,13 +162,28 @@ describe("setupHint / finishReadiness", () => {
     expect(
       setupHint({ measured: true, tourOpen: true, hadLevel: false }),
     ).toMatch(/Finish/);
-    expect(finishReadiness({ measured: false, tourOpen: true })).toBe(
-      "not-measured",
-    );
-    expect(finishReadiness({ measured: true, tourOpen: false })).toBe(
-      "no-tour",
-    );
-    expect(finishReadiness({ measured: true, tourOpen: true })).toBe("ready");
+    const settled = "settled" as const;
+    expect(
+      finishReadiness({ measured: false, tourOpen: true, manifest: settled }),
+    ).toBe("not-measured");
+    expect(
+      finishReadiness({ measured: true, tourOpen: false, manifest: settled }),
+    ).toBe("no-tour");
+    // The manifest must have settled (M3 review #5): finishing while it
+    // loads, or when it is broken, would overwrite the creator's placement.
+    expect(
+      finishReadiness({ measured: true, tourOpen: true, manifest: "pending" }),
+    ).toBe("manifest-pending");
+    expect(
+      finishReadiness({ measured: true, tourOpen: true, manifest: "broken" }),
+    ).toBe("manifest-broken");
+    expect(finishBlockedHint("manifest-broken")).toMatch(/tour\.json/);
+    expect(finishBlockedHint("ready")).toBe("");
+    expect(
+      finishReadiness({ measured: true, tourOpen: true, manifest: settled }),
+    ).toBe("ready");
+    expect(archiveSizeNote(250_000_000)).toMatch(/250 MB.*a while/);
+    expect(archiveSizeNote(12_000_000)).toBe("The hosted zip is 12 MB.");
   });
 });
 

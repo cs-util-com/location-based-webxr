@@ -21,7 +21,6 @@ import { createGpsPositionHandler } from "gps-plus-slam-app-framework/state";
 import {
   BoundedLocalCacheStore,
   CacheApiStore,
-  downloadZip,
   packFilesAsZip,
 } from "gps-plus-slam-app-framework/storage";
 
@@ -133,7 +132,9 @@ const wizard = wireWizard({
         data: serializeTourManifest(createEmptyTourManifest()),
       },
     ]),
-  download: downloadZip,
+  // Through the seam like the finish step's download, so the e2e fake
+  // captures it (M3 review #10).
+  download: (blob, filename) => seams.downloadZip(blob, filename),
 });
 hooks.presentTourForPrint = (url) => {
   print.presentTour(url);
@@ -176,6 +177,7 @@ const setup = wireCreatorSetup({
 });
 hooks.renderAuthorReadout = setup.renderAuthorReadout;
 hooks.startAuthorPipeline = setup.startAuthorPipeline;
+hooks.resetFinishStep = setup.resetFinishStep;
 
 const viewer = createViewerPlacement({
   ctx,

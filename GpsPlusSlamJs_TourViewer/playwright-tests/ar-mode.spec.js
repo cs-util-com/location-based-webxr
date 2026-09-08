@@ -13,8 +13,21 @@ import {
   ZipReader,
 } from "@zip.js/zip.js";
 
-/** The entries of a zip the page handed to the download fake, read back
- *  in node: names, text where it is text, byte lengths otherwise. */
+/** Every file entry of a zip: text for JSON, the raw bytes otherwise. */
+async function zipEntries(bytes) {
+  const reader = new ZipReader(new BlobReader(new Blob([bytes])));
+  const entries = {};
+  for (const entry of await reader.getEntries()) {
+    if (entry.directory) continue;
+    entries[entry.filename] = entry.filename.endsWith(".json")
+      ? await entry.getData(new TextWriter())
+      : await entry.getData(new Uint8ArrayWriter());
+  }
+  await reader.close();
+  return entries;
+}
+
+/** The zip the page handed to the download fake, read back in node. */
 async function readDownloadedZip(page, index = 0) {
   const bytes = await page.evaluate(async (i) => {
     const d = /** @type {any} */ (window).__tourViewerTest.downloads[i];
@@ -23,18 +36,10 @@ async function readDownloadedZip(page, index = 0) {
       data: Array.from(new Uint8Array(await d.blob.arrayBuffer())),
     };
   }, index);
-  const reader = new ZipReader(
-    new BlobReader(new Blob([new Uint8Array(bytes.data)])),
-  );
-  const entries = {};
-  for (const entry of await reader.getEntries()) {
-    if (entry.directory) continue;
-    entries[entry.filename] = entry.filename.endsWith(".json")
-      ? await entry.getData(new TextWriter())
-      : (await entry.getData(new Uint8ArrayWriter())).length;
-  }
-  await reader.close();
-  return { filename: bytes.filename, entries };
+  return {
+    filename: bytes.filename,
+    entries: await zipEntries(new Uint8Array(bytes.data)),
+  };
 }
 
 /**
@@ -314,6 +319,7 @@ test("a system session end tears the runtime down, and a re-entry starts a clean
 
 test("the creator measures the code, finishes, and downloads a rebuilt zip that carries the level and tour.json", async ({
   page,
+  request,
 }) => {
   // Why this matters (QR-pose plan M3): this drives the COMPOSED author
   // pipeline — scripted device detect/solve, but the REAL tracking
@@ -434,11 +440,21 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   const rebuilt = await readDownloadedZip(page, 1);
   expect(rebuilt.filename).toBe("tour.zip");
   const names = Object.keys(rebuilt.entries).sort();
-  // The 8 images + session.json carried over byte-for-byte in count, ONE
-  // level (the fixture's, replaced), and tour.json added.
-  expect(names.filter((n) => n.startsWith("images/"))).toHaveLength(8);
-  expect(names).toContain("session.json");
+  // Every carried entry is BYTE-IDENTICAL to the hosted fixture (the plan's
+  // M3 verification clause): images, session.json, padding.bin.
+  const hosted = await zipEntries(
+    new Uint8Array(await (await request.get(RANGES_ARCHIVE)).body()),
+  );
+  const carried = Object.keys(hosted).filter(
+    (n) => !n.startsWith("qr/") && n !== "tour.json",
+  );
+  expect(carried.length).toBeGreaterThanOrEqual(10); // 8 images + 2
+  for (const name of carried) {
+    expect(rebuilt.entries[name], name).toEqual(hosted[name]);
+  }
   expect(names).toContain("tour.json");
+  // ONE level (the fixture's, REPLACED - its physicalSizeM was 0.2 and it
+  // carried no mintQuality; the minted one is 0.16 with the quality block).
   const levelNames = names.filter((n) => n.startsWith("qr/"));
   expect(levelNames).toEqual([`qr/${await qrCodeId(E2E_QR_TEXT)}.json`]);
   const level = parseQrLevel(JSON.parse(rebuilt.entries[levelNames[0]]));
@@ -450,10 +466,10 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   // (milestone review #7) — M5's error attribution reads these.
   expect(level.qr.mintQuality?.alignmentSampleCount).toBe(3);
   expect(level.qr.mintQuality?.gpsAccuracyM).toBe(5);
-  expect(parseTourManifest(JSON.parse(rebuilt.entries["tour.json"]))).toEqual({
-    version: 1,
-    objects: [],
-  });
+  // The pin the hosted zip already carried SURVIVES the rebuild - the
+  // whole reason the manifest is loaded at open (M3 review #5/#7).
+  const manifest = parseTourManifest(JSON.parse(rebuilt.entries["tour.json"]));
+  expect(manifest.objects.map((o) => o.id)).toEqual(["fixturepin01"]);
   // The glue check received the detections (milestone review #8). The fake
   // world group is null until initAR ran, so this also pins the creation
   // ORDER — a view created before the session exists is dead code in
@@ -482,6 +498,71 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
     )
     .toMatch(/0 of 3 fixes/i);
   await expect(page.getByTestId("setup-mint")).toBeDisabled();
+});
+
+test("a failed finish says so with priority and can be retried; the panel shows the rebuild's progress meanwhile", async ({
+  page,
+}) => {
+  // Why this matters (M3 review #1/#3): the measuring readout re-renders on
+  // every store dispatch; it used to erase the failure reason on the very
+  // next one, and the Finish button's busy flag was inverted.
+  await page.goto("/?nocache=1");
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  await enterAr(page);
+  await page.evaluate((text) => {
+    /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
+  }, E2E_QR_TEXT);
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return page.getByTestId("setup-status").textContent();
+      },
+      { timeout: 15000 },
+    )
+    .toMatch(/waiting for GPS alignment/i);
+  await seedAlignment(page);
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /save the position/i,
+    { timeout: 10000 },
+  );
+  await page.getByTestId("setup-mint").click();
+  await expect(page.getByTestId("setup-finish")).toBeEnabled();
+  // The size note tells the creator what the rebuild will copy.
+  await expect(page.getByTestId("setup-status")).toContainText(/MB/);
+
+  // Every archive read fails from now on: the finish must fail loudly.
+  await page.route("http://127.0.0.1:5197/**", (route) => route.abort());
+  await page.getByTestId("setup-finish").click();
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /finishing failed/i,
+    { timeout: 30000 },
+  );
+  // A store dispatch (a frame, a fix) must NOT erase the reason.
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.emitFrames(2);
+  });
+  await seedAlignment(page);
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /finishing failed/i,
+  );
+  await expect(page.getByTestId("setup-finish")).toBeEnabled();
+  await expect(page.getByTestId("enter-ar")).toHaveText("Setting up in AR"); // the session survived
+
+  // Retry with the network back: progress, then step 5.
+  await page.unroute("http://127.0.0.1:5197/**");
+  await page.getByTestId("setup-finish").click();
+  await expect(page.getByTestId("setup-finish")).toBeDisabled();
+  await expect(page.getByTestId("step-finish")).toHaveAttribute("open", "", {
+    timeout: 30000,
+  });
+  await expect(page.getByTestId("finish-download")).toBeEnabled();
 });
 
 test("a recording-carrying tour places photos at CAPTURE SPOTS, not the ring", async ({

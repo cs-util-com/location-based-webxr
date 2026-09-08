@@ -76,6 +76,27 @@ async function buildZip({ withLevel = true } = {}) {
       ),
     );
   }
+  // A placed pin (guided-setup plan M3/M4): the creator's finish must write
+  // it back, and a visitor (M5) places it.
+  if (withLevel) {
+    await writer.add(
+      "tour.json",
+      new TextReader(
+        JSON.stringify({
+          version: 1,
+          objects: [
+            {
+              id: "fixturepin01",
+              kind: "pin",
+              geo: { lat: 47.50009, lon: 8.7, alt: 400, headingDeg: 0 },
+              createdAtIso: "2026-09-08T12:00:00.000Z",
+              label: "Fixture pin",
+            },
+          ],
+        }),
+      ),
+    );
+  }
   // Padding entry so the archive is comfortably larger than what a
   // metadata+images session needs — the partial-fetch assertion depends on
   // the gap being wide.
