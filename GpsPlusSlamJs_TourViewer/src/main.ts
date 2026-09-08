@@ -4,7 +4,7 @@
  * once, creates the store, the AR controller and the seams, creates the ONE
  * explicit session object (DEC-T6) and the late-bound hooks, and wires the
  * concerns in dependency order: print panel → wizard → visitor screen →
- * author mode → viewer placement → AR entry → archive open. No behaviour
+ * creator setup → viewer placement → AR entry → archive open. No behaviour
  * lives here; the e2e suite drives the composed page.
  */
 
@@ -27,7 +27,7 @@ import {
 
 import { wireArchiveOpen } from "./archive-open.js";
 import { wireArEntry } from "./ar-entry.js";
-import { wireAuthorMode } from "./author-mode.js";
+import { wireCreatorSetup } from "./creator-setup.js";
 import { viewerModeFromSearch } from "./mode.js";
 import { describeOpenError } from "./open-errors.js";
 import { wirePrintPanel } from "./print-panel.js";
@@ -146,25 +146,26 @@ const visitor = wireVisitorScreen({
   },
 });
 
-const author = wireAuthorMode({
+const setup = wireCreatorSetup({
   ctx,
   mode,
   arStore,
+  arController,
   seams,
+  wizard,
   dom: {
-    panel: element("author-panel"),
+    panel: element("setup-panel"),
     sizeInput,
     printPanel,
-    status: element("author-status"),
-    mintButton: element("mint-export"),
-    jsonBox: element("author-json"),
-    copyButton: element("author-copy"),
-    downloadButton: element("author-download"),
-    hint: element("author-hint"),
+    status: element("setup-status"),
+    mintButton: element("setup-mint"),
+    finishButton: element("setup-finish"),
+    finishStatus: element("finish-status"),
+    downloadButton: element("finish-download"),
   },
 });
-hooks.renderAuthorReadout = author.renderAuthorReadout;
-hooks.startAuthorPipeline = author.startAuthorPipeline;
+hooks.renderAuthorReadout = setup.renderAuthorReadout;
+hooks.startAuthorPipeline = setup.startAuthorPipeline;
 
 const viewer = createViewerPlacement({
   ctx,

@@ -64,6 +64,8 @@ export function wireArchiveOpen(deps: {
     // The viewer pipeline's level source and the placed planes belong to the
     // closing tour — a newly opened tour must not relocalize against them.
     ctx.currentLevels = null;
+    ctx.tourManifest = null;
+    ctx.rebuiltZip = null;
     // Same cache: the closed tour's levels must stop voting (M4 review #1),
     // and the per-text level cache belongs to the closed tour too (M6
     // review #8).
@@ -165,6 +167,23 @@ export function wireArchiveOpen(deps: {
       // feature.
       hooks.tryPlaceTour();
       hooks.presentTourForPrint(url);
+      // The placed content (guided-setup plan M3): the finish step writes
+      // it back, so a re-measure never drops what an earlier session placed.
+      // A broken manifest is an error the creator must see (the framework's
+      // rule for this file), not a silently empty tour.
+      void opened.loadTourManifest().then(
+        (manifest) => {
+          if (ctx.session !== opened) return;
+          ctx.tourManifest = manifest;
+          hooks.renderAuthorReadout();
+        },
+        (err: unknown) => {
+          if (ctx.session !== opened) return;
+          dom.errorBox.textContent = `Reading the tour's content list (tour.json) failed: ${
+            err instanceof Error ? err.message : String(err)
+          }`;
+        },
+      );
       // The authored levels ride the same zip; a newer open's guard keeps a
       // slow load from installing a closed tour's levels.
       void opened
@@ -172,6 +191,7 @@ export function wireArchiveOpen(deps: {
         .then((levels) => {
           if (ctx.session !== opened) return;
           ctx.currentLevels = levels;
+          hooks.renderAuthorReadout();
           // The controller caches a level (or the negative-cache
           // placeholder) per decoded text; levels arriving AFTER a scan
           // would otherwise be invisible until AR re-entry (M4 milestone

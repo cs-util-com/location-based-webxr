@@ -19,7 +19,8 @@ listed in `index.html.md`. The concerns and their modules:
   the "open as a visitor" link (`wireWizard`).
 - `visitor-screen.ts` - the visitor's consent screen and the location
   gate (`wireVisitorScreen`).
-- `author-mode.ts` - the creator's AR setup panel, minting (`wireAuthorMode`).
+- `creator-setup.ts` - the creator's AR setup panel: measuring, finish
+  (the zip rebuild), the download (`wireCreatorSetup`).
 - `viewer-placement.ts` - the viewer pipeline and the photo placement
   (`createViewerPlacement`).
 - `ar-entry.ts` - the AR entry, the runtime start/end, the status line

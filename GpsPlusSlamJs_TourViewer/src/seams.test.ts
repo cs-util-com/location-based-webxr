@@ -31,5 +31,6 @@ describe("getSeams", () => {
     expect(typeof realSeams.getScene).toBe("function");
     expect(typeof realSeams.queryGeolocationPermission).toBe("function");
     expect(typeof realSeams.requestLocationOnce).toBe("function");
+    expect(typeof realSeams.downloadZip).toBe("function");
   });
 });

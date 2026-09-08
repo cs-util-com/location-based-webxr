@@ -80,7 +80,7 @@ const APP_OVERLAY_CONTRACTS = [
     name: 'TourViewer',
     htmlPath: 'GpsPlusSlamJs_TourViewer/index.html',
     containerId: 'ar-root',
-    overlayIds: ['ar-status', 'enter-ar', 'author-panel', 'ar-hint'],
+    overlayIds: ['ar-status', 'enter-ar', 'setup-panel', 'ar-hint'],
   },
 ];
 

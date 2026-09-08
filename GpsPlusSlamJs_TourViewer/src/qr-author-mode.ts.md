@@ -19,7 +19,17 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   fix), so the gate counts solved-in fixes (milestone review #1).
 - `authorStatusLine(detectedText, stability, alignment: AuthorAlignmentInfo)`
   → `{ text; canMint }` — the mint gate's only UI; each blocked state names
-  what is missing, including the fix count.
+  what is missing, including the fix count. The copy is the creator
+  setup's guidance since the guided-setup plan M3 ("Hold the phone on the
+  printed code…", "Measured and stable - save the position.").
+- `setupHint({ measured, tourOpen, hadLevel })` - what the panel says once
+  measured: open the tour (step 1) when none is open, that the measurement
+  replaces a code the tour already carried, else place content or finish.
+- `finishReadiness({ measured, tourOpen })` → `"ready" | "not-measured" |
+"no-tour"` - the finish button's gate.
+- `FINISH_LABELS` - the finish step's copy through its async cycle
+  (reading, rebuilding N of M, ready, failed, download, saving, saved as,
+  not saved).
 - `buildAuthorControllerConfig` wires `onError` too — a throwing detector
   must surface, not leave the panel saying "point the camera" forever.
 

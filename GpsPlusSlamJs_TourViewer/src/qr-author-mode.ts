@@ -123,7 +123,7 @@ export function authorStatusLine(
 ): AuthorReadout {
   if (detectedText === null || stability === null) {
     return {
-      text: "Point the camera at the printed code…",
+      text: "Hold the phone on the printed code so it fills the screen…",
       canMint: false,
     };
   }
@@ -143,29 +143,53 @@ export function authorStatusLine(
       canMint: false,
     };
   }
-  return { text: `Pose stable (${spread}) — ready to mint.`, canMint: true };
+  return {
+    text: `Measured and stable (${spread}) — save the position.`,
+    canMint: true,
+  };
 }
 
-/**
- * What the panel tells the author to do with the exported JSON.
- *
- * Split out of the DOM handler so BOTH branches are testable: deriving the
- * code's identity is async, and the async-UI rule requires the failure path
- * to be exercised, not just the happy one.
- */
-export function authorLevelHint(codeId: string | null): string {
-  if (codeId === null) {
-    return (
-      "Add the downloaded file to your tour zip under qr/, then re-upload " +
-      "the zip to the same URL — viewers pick the change up automatically."
-    );
+/** What the setup panel says once the code is measured: the next move. */
+export function setupHint(state: {
+  measured: boolean;
+  tourOpen: boolean;
+  hadLevel: boolean;
+}): string {
+  if (!state.measured) return "";
+  if (!state.tourOpen) {
+    return "Position saved. Open your tour in step 1 to finish - the measured code is written into that zip.";
   }
   return (
-    `Add the downloaded file to your tour zip as qr/${codeId}.json, then ` +
-    "re-upload the zip to the same URL — viewers pick the change up " +
-    "automatically."
+    (state.hadLevel
+      ? "Position saved - it replaces the code this tour already carried. "
+      : "Position saved. ") + "Place content, or tap Finish to rebuild the zip."
   );
 }
+
+/** Whether the finish button may run, and if not, why. */
+export function finishReadiness(state: {
+  measured: boolean;
+  tourOpen: boolean;
+}): "ready" | "not-measured" | "no-tour" {
+  if (!state.measured) return "not-measured";
+  if (!state.tourOpen) return "no-tour";
+  return "ready";
+}
+
+/** The finish step's labels through its async cycle (async-UI rule). */
+export const FINISH_LABELS = {
+  reading: "Finishing - reading the hosted zip…",
+  rebuilding: (done: number, total: number) =>
+    `Finishing - rebuilding ${String(done)} of ${String(total)} entries…`,
+  ready: (bytes: number) =>
+    `The rebuilt zip is ready (${(bytes / 1_000_000).toFixed(1)} MB). Download it, then replace the hosted file in step 6.`,
+  failed: (reason: string) => `Finishing failed: ${reason}`,
+  download: "Download the rebuilt zip",
+  saving: "Saving…",
+  saved: (filename: string) =>
+    `Saved as ${filename}. Now replace the hosted zip (step 6) - the link and the printed code stay the same.`,
+  notSaved: "Not saved - tap the button again.",
+} as const;
 
 /** What the panel is about to print, and whether the author's input was
  *  taken literally. */

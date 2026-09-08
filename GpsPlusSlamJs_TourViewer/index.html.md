@@ -20,7 +20,9 @@ screen. Everything marked `.creator-only` is hidden for a visitor
 - Below the steps, creator-only: the Storage section (`#storage-panel`, a
   transport-demo control; inside a collapsed step it would be hidden).
 - Shared: `#error`, `#ar-root` (the DOM-overlay root: hint, status line,
-  button, the setup panel `#author-panel`), `#stats`, `#gallery`.
+  button, the setup panel `#setup-panel` with `setup-status`, `setup-mint`
+  and `setup-finish`), `#stats`, `#gallery`. Step 5 holds `finish-status`
+  and `finish-download`.
 
 Behaviour lives in the wiring modules composed by `src/main.ts` (see
 `main.ts.md`); the page carries only structure and its inline CSS
@@ -34,9 +36,11 @@ The `data-testid` contract the e2e suite drives: `wizard`, `step-host`,
 `print-generate`, `print-info`, `print-canvas`, `print-button`,
 `print-url-out`, `visitor-link`), `step-hang`, `hang-done`,
 `step-measure`, `step-finish`, `step-replace`, `visitor-screen`, `stats`,
-`error`, `gallery`, `ar-hint`, `ar-status`, `enter-ar`, `author-panel`.
+`error`, `gallery`, `ar-hint`, `ar-status`, `enter-ar`, `setup-panel`,
+`setup-status`, `setup-mint`, `setup-finish`, `finish-status`,
+`finish-download`.
 Renaming one is an e2e-breaking change. `#ar-hint`, `#ar-status`,
-`#enter-ar` and `#author-panel` must stay children of `#ar-root` (WebXR
+`#enter-ar` and `#setup-panel` must stay children of `#ar-root` (WebXR
 DOM overlay composites only that subtree; enforced by
 `tests/repo-config/hud-overlay-nesting.test.js`). The `#ar-hint` copy is
 the creator's; `visitor-screen.ts` re-words it for a visitor.

@@ -143,6 +143,9 @@ export function wireArEntry(deps: {
     ctx.qrDebugView = null;
     ctx.lastDetectedText = null;
     ctx.authorErrorText = null;
+    // The measured level SURVIVES the session end on purpose: finishing
+    // ends the session itself (the download is a page-side tap). A new
+    // measurement replaces it (mintGeneration).
     ctx.imagePlanes?.dispose();
     ctx.imagePlanes = null;
     ctx.viewerQrStatus = null;

@@ -6,8 +6,9 @@ import type { QrDetectionEvent } from "gps-plus-slam-app-framework/ar/qr/qr-trac
 import { MIN_ALIGNMENT_SAMPLES } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 
 import {
-  authorLevelHint,
   authorStatusLine,
+  finishReadiness,
+  setupHint,
   codeIndexFromInput,
   buildAuthorControllerConfig,
   syntheticAuthorLevel,
@@ -138,25 +139,34 @@ describe("authorStatusLine", () => {
     );
     const ready = authorStatusLine("text", stable, GOOD_ALIGNMENT_INFO);
     expect(ready.canMint).toBe(true);
-    expect(ready.text).toMatch(/ready/i);
+    expect(ready.text).toMatch(/save the position/i);
   });
 });
 
-// Added after the M-A milestone review, which found the panel's one
-// user-facing promise ("tells you exactly which qr/<id>.json to add")
-// untested, and the code-number field silently swallowing the RangeError
-// planPrintCode raises for exactly that case.
-describe("authorLevelHint", () => {
-  it("names the exact file when the identity is known", () => {
-    expect(authorLevelHint("de9174304b82")).toMatch("qr/de9174304b82.json");
-  });
-
-  it("still tells the author what to do when hashing failed", () => {
-    // The async-UI rule wants BOTH branches. A failed hash does not fail the
-    // mint - the JSON is already usable - so the hint must stay useful.
-    const hint = authorLevelHint(null);
-    expect(hint).toMatch(/under qr\//);
-    expect(hint).not.toMatch(/undefined|null/);
+describe("setupHint / finishReadiness", () => {
+  it("names the next move once measured, and refuses to finish without a tour open", () => {
+    // Why this matters: the measured position is only useful inside the
+    // hosted zip. A creator who measured before opening the tour must be
+    // told to open it, not left with a disabled button and no reason.
+    expect(
+      setupHint({ measured: false, tourOpen: true, hadLevel: false }),
+    ).toBe("");
+    expect(
+      setupHint({ measured: true, tourOpen: false, hadLevel: false }),
+    ).toMatch(/step 1/);
+    expect(
+      setupHint({ measured: true, tourOpen: true, hadLevel: true }),
+    ).toMatch(/replaces/);
+    expect(
+      setupHint({ measured: true, tourOpen: true, hadLevel: false }),
+    ).toMatch(/Finish/);
+    expect(finishReadiness({ measured: false, tourOpen: true })).toBe(
+      "not-measured",
+    );
+    expect(finishReadiness({ measured: true, tourOpen: false })).toBe(
+      "no-tour",
+    );
+    expect(finishReadiness({ measured: true, tourOpen: true })).toBe("ready");
   });
 });
 

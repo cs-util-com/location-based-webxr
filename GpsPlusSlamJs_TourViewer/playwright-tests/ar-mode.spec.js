@@ -4,6 +4,38 @@ import { expect, test } from "@playwright/test";
 import { installTourViewerArFakes } from "./ar-fakes.js";
 import { E2E_QR_TEXT, E2E_QR_UNKNOWN_TEXT } from "./qr-fixture.mjs";
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
+import { parseQrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
+import { parseTourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import {
+  BlobReader,
+  TextWriter,
+  Uint8ArrayWriter,
+  ZipReader,
+} from "@zip.js/zip.js";
+
+/** The entries of a zip the page handed to the download fake, read back
+ *  in node: names, text where it is text, byte lengths otherwise. */
+async function readDownloadedZip(page, index = 0) {
+  const bytes = await page.evaluate(async (i) => {
+    const d = /** @type {any} */ (window).__tourViewerTest.downloads[i];
+    return {
+      filename: d.filename,
+      data: Array.from(new Uint8Array(await d.blob.arrayBuffer())),
+    };
+  }, index);
+  const reader = new ZipReader(
+    new BlobReader(new Blob([new Uint8Array(bytes.data)])),
+  );
+  const entries = {};
+  for (const entry of await reader.getEntries()) {
+    if (entry.directory) continue;
+    entries[entry.filename] = entry.filename.endsWith(".json")
+      ? await entry.getData(new TextWriter())
+      : (await entry.getData(new Uint8ArrayWriter())).length;
+  }
+  await reader.close();
+  return { filename: bytes.filename, entries };
+}
 
 /**
  * Why these tests matter: they are the only place the M2 AR foundation is
@@ -244,7 +276,7 @@ test("a system session end tears the runtime down, and a re-entry starts a clean
   expect(afterReenter.isRecording).toBe(true);
 });
 
-test("author mode mints and exports a level that the parser round-trips", async ({
+test("the creator measures the code, finishes, and downloads a rebuilt zip that carries the level and tour.json", async ({
   page,
 }) => {
   // Why this matters (QR-pose plan M3): this drives the COMPOSED author
@@ -255,11 +287,17 @@ test("author mode mints and exports a level that the parser round-trips", async 
   // with a geo pose. Frame-exactness is pinned by the unit tests; this
   // proves the pieces are actually wired to each other.
   await page.goto("/");
-  await expect(page.getByTestId("author-panel")).toBeVisible();
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  await expect(page.getByTestId("setup-panel")).toBeVisible();
+  await expect(page.getByTestId("setup-finish")).toBeDisabled(); // not measured
   await enterAr(page);
   await expect(page.getByTestId("enter-ar")).toHaveText("Setting up in AR");
-  await expect(page.getByTestId("author-status")).toHaveText(
-    /point the camera/i,
+  await expect(page.getByTestId("setup-status")).toHaveText(
+    /hold the phone on the printed code/i,
   );
 
   await page.evaluate((text) => {
@@ -273,12 +311,12 @@ test("author mode mints and exports a level that the parser round-trips", async 
         await page.evaluate(() => {
           /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
         });
-        return page.getByTestId("author-status").textContent();
+        return page.getByTestId("setup-status").textContent();
       },
       { timeout: 15000 },
     )
     .toMatch(/waiting for GPS alignment/i);
-  await expect(page.getByTestId("mint-export")).toBeDisabled();
+  await expect(page.getByTestId("setup-mint")).toBeDisabled();
   // The size input is locked while the session runs — the solves used the
   // captured value (milestone review #3).
   await expect(page.getByTestId("author-size")).toBeDisabled();
@@ -291,8 +329,8 @@ test("author mode mints and exports a level that the parser round-trips", async 
       payload: { lat: 47.5, lon: 8.7 },
     });
   });
-  await expect(page.getByTestId("author-status")).toHaveText(/0 of 3 fixes/i);
-  await expect(page.getByTestId("mint-export")).toBeDisabled();
+  await expect(page.getByTestId("setup-status")).toHaveText(/0 of 3 fixes/i);
+  await expect(page.getByTestId("setup-mint")).toBeDisabled();
 
   // Feed the REAL alignment solve: three odom↔GPS pairs, ~15 m apart, in a
   // consistent identity-ish mapping around the zero reference.
@@ -321,26 +359,65 @@ test("author mode mints and exports a level that the parser round-trips", async 
       });
     }
   });
-  await expect(page.getByTestId("author-status")).toHaveText(/ready to mint/i, {
-    timeout: 10000,
-  });
+  await expect(page.getByTestId("setup-status")).toHaveText(
+    /save the position/i,
+    { timeout: 10000 },
+  );
 
-  await page.getByTestId("mint-export").click();
-  const json = await page.getByTestId("author-json").inputValue();
-  const level = JSON.parse(json);
-  expect(level.version).toBe(1);
+  await page.getByTestId("setup-mint").click();
+  // The measured level replaces the fixture's authored one (same printed
+  // text) - the panel says so and the finish button unlocks.
+  await expect(page.getByTestId("setup-status")).toContainText(/replaces/i);
+  await expect(page.getByTestId("setup-finish")).toBeEnabled();
+
+  // FINISH (guided-setup plan M3, DEC-N6): the zip is rebuilt in the
+  // browser from the session's bytes, the AR session ends, step 5 opens
+  // with the download; the download is a fresh tap (its own gesture).
+  await page.getByTestId("setup-finish").click();
+  await expect(page.getByTestId("enter-ar")).toHaveText("Start AR setup", {
+    timeout: 15000,
+  });
+  await expect(page.getByTestId("step-finish")).toHaveAttribute("open", "");
+  await expect(page.getByTestId("finish-status")).toContainText(/ready/i);
+  const download = page.getByTestId("finish-download");
+  await expect(download).toBeEnabled();
+  // The dismissed-picker path first (async-UI rule: the failure branch).
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.saveOutcome = false;
+  });
+  await download.click();
+  await expect(page.getByTestId("finish-status")).toContainText(/not saved/i);
+  await expect(download).toBeEnabled();
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.saveOutcome = true;
+  });
+  await download.click();
+  await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
+  await expect(page.getByTestId("step-replace")).toHaveAttribute("open", "");
+
+  const rebuilt = await readDownloadedZip(page, 1);
+  expect(rebuilt.filename).toBe("tour.zip");
+  const names = Object.keys(rebuilt.entries).sort();
+  // The 8 images + session.json carried over byte-for-byte in count, ONE
+  // level (the fixture's, replaced), and tour.json added.
+  expect(names.filter((n) => n.startsWith("images/"))).toHaveLength(8);
+  expect(names).toContain("session.json");
+  expect(names).toContain("tour.json");
+  const levelNames = names.filter((n) => n.startsWith("qr/"));
+  expect(levelNames).toEqual([`qr/${await qrCodeId(E2E_QR_TEXT)}.json`]);
+  const level = parseQrLevel(JSON.parse(rebuilt.entries[levelNames[0]]));
   // 0.16 — the page-fitting default (PR #364 review; see the print spec).
   expect(level.qr.physicalSizeM).toBeCloseTo(0.16, 9);
-  expect(level.qr.geo.lat).toEqual(expect.any(Number));
-  expect(level.qr.geo.lon).toEqual(expect.any(Number));
-  expect(level.qr.geo.rotation).toHaveLength(4);
-  expect(level.qr.mintQuality.mintedAtIso).toEqual(expect.any(String));
+  expect(level.qr.geo?.lat).toEqual(expect.any(Number));
+  expect(level.qr.geo?.rotation).toHaveLength(4);
   // The quality block records what the alignment looked like at MINT time
   // (milestone review #7) — M5's error attribution reads these.
-  expect(level.qr.mintQuality.alignmentSampleCount).toBe(3);
-  expect(level.qr.mintQuality.gpsAccuracyM).toBe(5);
-  await expect(page.getByTestId("author-download")).toBeVisible();
-  await expect(page.getByTestId("author-copy")).toBeVisible();
+  expect(level.qr.mintQuality?.alignmentSampleCount).toBe(3);
+  expect(level.qr.mintQuality?.gpsAccuracyM).toBe(5);
+  expect(parseTourManifest(JSON.parse(rebuilt.entries["tour.json"]))).toEqual({
+    version: 1,
+    objects: [],
+  });
   // The glue check received the detections (milestone review #8). The fake
   // world group is null until initAR ran, so this also pins the creation
   // ORDER — a view created before the session exists is dead code in
@@ -353,11 +430,8 @@ test("author mode mints and exports a level that the parser round-trips", async 
   // Re-entry must NOT inherit the dead session's evidence (PR #360 review):
   // the gpsData slice keeps its lifetime GPS pairs, so a fresh session's
   // gate would open at frame 0 on an alignment blended across two odom
-  // origins. The snapshot makes the count session-relative.
-  await page.evaluate(() => {
-    /** @type {any} */ (window).__tourViewerTest.endXrSession();
-  });
-  await expect(page.getByTestId("enter-ar")).toHaveText("Start AR setup");
+  // origins. The snapshot makes the count session-relative. (The finish
+  // above already ended the session.)
   await enterAr(page);
   await expect(page.getByTestId("enter-ar")).toHaveText("Setting up in AR");
   await expect
@@ -366,12 +440,12 @@ test("author mode mints and exports a level that the parser round-trips", async 
         await page.evaluate(() => {
           /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
         });
-        return page.getByTestId("author-status").textContent();
+        return page.getByTestId("setup-status").textContent();
       },
       { timeout: 15000 },
     )
     .toMatch(/0 of 3 fixes/i);
-  await expect(page.getByTestId("mint-export")).toBeDisabled();
+  await expect(page.getByTestId("setup-mint")).toBeDisabled();
 });
 
 test("a recording-carrying tour places photos at CAPTURE SPOTS, not the ring", async ({

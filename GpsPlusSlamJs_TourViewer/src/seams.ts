@@ -2,7 +2,7 @@
  * Device seam (DEV-overridable) for the TourViewer's AR modes.
  *
  * `main.ts` stays glue-only: it composes the tested modules (`ar-mode`,
- * `author-mode-flag`, the tour session) with the device-specific framework
+ * `mode`, the tour session) with the device-specific framework
  * functions resolved here. In a desktop Playwright browser there is no
  * WebXR / camera, so the e2e suite swaps fakes in via
  * `window.__tourViewerSeams` (installed with `addInitScript` before page
@@ -46,6 +46,7 @@ import {
 // map modules, which crash in a windowless (node) unit-test environment.
 import { enableArWorldGroupAlignment } from "gps-plus-slam-app-framework/visualization/ar-world-group-alignment";
 import type { SubscribableStore } from "gps-plus-slam-app-framework/state";
+import { downloadZip } from "gps-plus-slam-app-framework/storage";
 import type { Object3D } from "three";
 
 import type { LocationPermission } from "./visitor-screen.js";
@@ -90,6 +91,10 @@ export interface TourViewerSeams {
   /** One position request on its own tap (the gate's first step); true
    *  when a position arrived. */
   requestLocationOnce(): Promise<boolean>;
+  /** Offer a zip for download (the framework's picker-or-anchor); false
+   *  when the user dismissed a save picker. The e2e fake captures the
+   *  blob instead. */
+  downloadZip(blob: Blob, filename: string): Promise<boolean>;
 }
 
 declare global {
@@ -141,6 +146,7 @@ export const realSeams: TourViewerSeams = {
   },
   createQrDebugView,
   getScene,
+  downloadZip,
   queryGeolocationPermission: async () => {
     try {
       const status = await navigator.permissions.query({

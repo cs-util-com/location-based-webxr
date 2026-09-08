@@ -34,6 +34,16 @@ loading with MIME types, and the poisoned-cache recovery loop.
   swap serves reads locally (the archive's own `origin` field is only the
   initial state).
 
+- `loadTourManifest(): Promise<TourManifest | null>` (guided-setup plan M3)
+  - null without `tour.json`; a broken manifest REJECTS (the framework's
+    rule for this file: it is the whole placement, not one bad level).
+- `readWholeArchive(): Promise<Blob>` - the rebuild's input: the warmed
+  cache copy under the archive's NORMALISED url when the store has it,
+  else one range read of the full size (`?nocache=1`, no Cache API).
+- `archiveFileName(url): string` (pure) - the hosted file's name for the
+  same-name re-upload: the last path segment when it ends in `.zip`
+  (decoded), else `tour.zip`.
+
 ## Invariants & assumptions
 
 - **Poison recovery:** a parse failure on a CACHE-served archive evicts the

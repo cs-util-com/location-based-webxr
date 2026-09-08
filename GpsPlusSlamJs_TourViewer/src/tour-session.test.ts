@@ -5,7 +5,7 @@ import {
   InMemoryLocalCacheStore,
   type FetchImpl,
 } from "gps-plus-slam-app-framework/storage";
-import { openTourSession } from "./tour-session.js";
+import { archiveFileName, openTourSession } from "./tour-session.js";
 
 /**
  * Why these tests matter: this module is the viewer's whole data path — if
@@ -320,6 +320,85 @@ describe("corsProxyBaseUrl plumbing", () => {
     for (const url of urls) {
       expect(url).toBe("https://proxy.example/api/drive-proxy?id=ID42");
     }
+    await session.close();
+  });
+});
+
+describe("archiveFileName (guided-setup plan M3)", () => {
+  // Why this matters: the replace step is a SAME-NAME upload, so the
+  // download must carry the hosted file's name - and a Drive id or a proxy
+  // route carries no name worth guessing at.
+  it("takes the last path segment when it is a .zip, decoded", () => {
+    expect(archiveFileName("http://h/ranges-ok/tour.zip")).toBe("tour.zip");
+    expect(archiveFileName("https://h/a/My%20Tour.ZIP?x=1")).toBe(
+      "My Tour.ZIP",
+    );
+  });
+
+  it("falls back to tour.zip for anything else", () => {
+    expect(archiveFileName("https://drive.google.com/uc?id=abc")).toBe(
+      "tour.zip",
+    );
+    expect(archiveFileName("https://gps.csutil.com/api/drive-proxy/abc")).toBe(
+      "tour.zip",
+    );
+    expect(archiveFileName("not a url")).toBe("tour.zip");
+  });
+});
+
+describe("loadTourManifest / readWholeArchive (guided-setup plan M3)", () => {
+  // Why these matter: the finish step rebuilds the hosted zip from
+  // `readWholeArchive` and writes `tour.json` back from `loadTourManifest`.
+  // A wrong input (a stale cached copy, or a truncated range read) or a
+  // dropped manifest would silently lose the creator's work.
+  it("returns null for a zip without tour.json, the parsed manifest with one, and REJECTS a broken one", async () => {
+    const none = await openTourSession("https://x/tour.zip", {
+      fetchImpl: rangeServer(await buildZip()),
+    });
+    await expect(none.loadTourManifest()).resolves.toBeNull();
+    await none.close();
+
+    const withManifest = await openTourSession("https://x/tour.zip", {
+      fetchImpl: rangeServer(
+        await buildZip({ "tour.json": '{"version":1,"objects":[]}' }),
+      ),
+    });
+    await expect(withManifest.loadTourManifest()).resolves.toEqual({
+      version: 1,
+      objects: [],
+    });
+    await withManifest.close();
+
+    const broken = await openTourSession("https://x/tour.zip", {
+      fetchImpl: rangeServer(await buildZip({ "tour.json": '{"version":9}' })),
+    });
+    await expect(broken.loadTourManifest()).rejects.toThrow(/version/);
+    await broken.close();
+  });
+
+  it("reads the whole archive from the warmed cache copy, keyed by the normalised url", async () => {
+    const bytes = await buildZip();
+    const cacheStore = new InMemoryLocalCacheStore();
+    const session = await openTourSession("https://x/tour.zip", {
+      fetchImpl: rangeServer(bytes),
+      cacheStore,
+    });
+    const whole = await session.readWholeArchive();
+    expect(new Uint8Array(await whole.arrayBuffer())).toEqual(bytes);
+    // The cache, not a second network pass: the store holds it under the
+    // archive's own url.
+    expect(await cacheStore.get(session.archive.url)).toBeDefined();
+    await session.close();
+  });
+
+  it("reads the whole archive through one full range read when there is no cache", async () => {
+    const bytes = await buildZip();
+    const session = await openTourSession("https://x/tour.zip", {
+      fetchImpl: rangeServer(bytes),
+    });
+    const whole = await session.readWholeArchive();
+    expect(whole.size).toBe(bytes.length);
+    expect(new Uint8Array(await whole.arrayBuffer())).toEqual(bytes);
     await session.close();
   });
 });

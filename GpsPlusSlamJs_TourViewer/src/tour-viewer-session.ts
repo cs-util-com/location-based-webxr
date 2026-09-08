@@ -13,6 +13,7 @@ import type {
   QrTrackingStatus,
 } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
+import type { TourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { AUTHOR_DEFAULT_SIZE_M } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 import {
   createSlamAppStore,
@@ -81,6 +82,10 @@ export interface TourViewerSession {
   session: TourSession | null;
   /** The open tour's authored QR levels — the viewer pipeline's level source. */
   currentLevels: ReadonlyMap<string, QrLevel> | null;
+  /** The open tour's `tour.json` (null: none, or not loaded yet). The
+   *  finish step writes it back, so content already in the zip survives a
+   *  re-measure. */
+  tourManifest: TourManifest | null;
   /** Bumped per open; a slower open that finishes after a newer one started
    *  must close itself instead of clobbering the newer session. */
   openGeneration: number;
@@ -98,7 +103,7 @@ export interface TourViewerSession {
    *  so the one place that can await it caches it here for both. */
   levelByText: Map<string, QrLevel | null>;
 
-  // --- author mode (author-mode.ts) ---------------------------------------
+  // --- the creator setup (creator-setup.ts) --------------------------------
   /** The most recently detected code — the one the stability gate tracks. */
   lastDetectedText: string | null;
   /** The printed size CAPTURED at AR entry — the size the solves actually
@@ -112,8 +117,16 @@ export interface TourViewerSession {
    *  gate instantly on a re-entry over an alignment blended across two odom
    *  origins (PR #360 review). Only fixes since the snapshot count. */
   gpsSamplesAtSessionStart: number;
-  /** The id of the most recently minted code — the download file name. */
-  mintedCodeId: string | null;
+  /** The measured code, ready to be written as `qr/<id>.json`; null until
+   *  the mint's async identity hash landed. */
+  mintedLevel: { id: string; json: string } | null;
+  /** Bumped per mint so a stale identity hash cannot install an older
+   *  level over a newer one. */
+  mintGeneration: number;
+  /** The finish step is running (one at a time). */
+  finishing: boolean;
+  /** The rebuilt zip awaiting download in step 5. */
+  rebuiltZip: { blob: Blob; filename: string; entryCount: number } | null;
 
   // --- viewer QR line (viewer-placement.ts) -------------------------------
   viewerQrStatus: QrTrackingStatus | null;
@@ -155,6 +168,7 @@ export function createTourViewerSession(): TourViewerSession {
   return {
     session: null,
     currentLevels: null,
+    tourManifest: null,
     openGeneration: 0,
     qrController: null,
     qrDebugView: null,
@@ -164,7 +178,10 @@ export function createTourViewerSession(): TourViewerSession {
     activeSizeM: AUTHOR_DEFAULT_SIZE_M,
     authorErrorText: null,
     gpsSamplesAtSessionStart: 0,
-    mintedCodeId: null,
+    mintedLevel: null,
+    mintGeneration: 0,
+    finishing: false,
+    rebuiltZip: null,
     viewerQrStatus: null,
     viewerUnknownCode: null,
     viewerUnusableCode: null,

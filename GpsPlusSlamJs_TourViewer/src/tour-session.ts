@@ -30,6 +30,11 @@ import {
 } from "gps-plus-slam-app-framework/storage";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import { parseQrLevelEntries } from "gps-plus-slam-app-framework/ar/qr/qr-level-archive";
+import { readTourManifestFromEntries } from "gps-plus-slam-app-framework/ar/tour-archive";
+import {
+  parseTourManifest,
+  type TourManifest,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 /** One archive entry as the gallery sees it (reached via `TourSession.entries`
  *  — not separately exported; knip counts a standalone export as dead). */
@@ -93,7 +98,35 @@ export interface TourSession {
    * zip): the join declines, the tour still works.
    */
   loadSessionMeta(): Promise<{ odomCoordVersion?: unknown } | null>;
+  /**
+   * `tour.json`, parsed (guided-setup plan M3) - the creator's placed
+   * content. NULL when the archive has none (every recorder zip); a
+   * manifest that exists but is broken REJECTS, the framework's rule for
+   * this file (unlike a single bad level, it is the whole placement).
+   */
+  loadTourManifest(): Promise<TourManifest | null>;
+  /**
+   * The WHOLE archive as one Blob - the rebuild's input (DEC-N6). The
+   * warmed local copy when the cache has it (keyed by the NORMALISED url
+   * the archive actually used, plan review #5), else one range read of
+   * the full size through the session (`?nocache=1`, no Cache API).
+   */
+  readWholeArchive(): Promise<Blob>;
   close(): Promise<void>;
+}
+
+/** The hosted file's name, so the replace step is a same-name upload:
+ *  the last path segment when it ends in `.zip` (decoded), else
+ *  `tour.zip` (a Drive id or a proxy route says nothing useful). */
+export function archiveFileName(url: string): string {
+  try {
+    const last = decodeURIComponent(
+      new URL(url).pathname.split("/").filter(Boolean).at(-1) ?? "",
+    );
+    return /\.zip$/i.test(last) && !last.includes("/") ? last : "tour.zip";
+  } catch {
+    return "tour.zip";
+  }
 }
 
 const IMAGE_EXTENSION = /\.(jpe?g|png|webp|gif|avif)$/i;
@@ -132,7 +165,7 @@ export async function openTourSession(
 
   const first = await openArchive(url, options, onRead, false);
   try {
-    return await buildSession(first, stats);
+    return await buildSession(first, stats, options.cacheStore);
   } catch (err) {
     // Whatever failed to parse must not stay cached and must not keep
     // downloading: dispose (aborts the session's downloads), then evict —
@@ -146,7 +179,7 @@ export async function openTourSession(
     if (first.origin !== "cache") throw err;
     const second = await openArchive(url, options, onRead, true);
     try {
-      return await buildSession(second, stats);
+      return await buildSession(second, stats, options.cacheStore);
     } catch (retryErr) {
       second.dispose();
       await second.evict();
@@ -182,6 +215,7 @@ function openArchive(
 async function buildSession(
   archive: OpenedArchive,
   stats: StreamStats,
+  cacheStore: LocalCacheStore | undefined,
 ): Promise<TourSession> {
   const reader = new ZipReader(new ByteSourceReader(archive.source));
   const zipEntries = await reader.getEntries();
@@ -264,6 +298,26 @@ async function buildSession(
       } catch {
         return null;
       }
+    },
+    loadTourManifest: () =>
+      readTourManifestFromEntries(
+        [...byName.keys()],
+        async (name) => {
+          const entry = byName.get(name);
+          if (entry === undefined) throw new Error(`missing entry: ${name}`);
+          return entry.getData(new TextWriter());
+        },
+        parseTourManifest,
+      ),
+    readWholeArchive: async () => {
+      // `warmed` resolves false without a store or after an abort; the
+      // range read below is then the honest path, not an error.
+      await archive.warmed.catch(() => undefined);
+      const cached = await cacheStore?.get(archive.url);
+      if (cached !== undefined) return cached.blob;
+      const bytes = await archive.source.read(0, archive.size);
+      // A fresh copy: a Uint8Array over a SharedArrayBuffer is not a BlobPart.
+      return new Blob([new Uint8Array(bytes)]);
     },
     close: async () => {
       archive.dispose();

@@ -64,6 +64,11 @@ export async function installTourViewerArFakes(page) {
        *  query answers, and how many location-only taps were made. */
       locationPermission: "granted",
       locationRequests: 0,
+      /** The zips the finish step offered for download (M3): the fake
+       *  captures them instead of saving; `saveOutcome` is what the fake
+       *  reports (false = the picker was dismissed). */
+      downloads: /** @type {{ filename: string, blob: Blob }[]} */ ([]),
+      saveOutcome: true,
       /** Simulate a SYSTEM session end (the Android back gesture). */
       endXrSession() {
         test.sessionEndCallback?.({ requestedByApp: false });
@@ -108,6 +113,10 @@ export async function installTourViewerArFakes(page) {
         },
         endARSession: () => {
           test.endARSessionCalls += 1;
+          // The real XR session fires its 'end' event on an app-requested
+          // end too, which reaches the app's onSessionEnd through the
+          // controller's wrapper - the finish step relies on that teardown.
+          test.sessionEndCallback?.({ requestedByApp: true });
           return Promise.resolve();
         },
       },
@@ -150,6 +159,10 @@ export async function installTourViewerArFakes(page) {
         test.locationRequests += 1;
         test.locationPermission = "granted";
         return Promise.resolve(true);
+      },
+      downloadZip: (blob, filename) => {
+        test.downloads.push({ filename, blob });
+        return Promise.resolve(test.saveOutcome);
       },
       stopCameraFrameCapture: () => {
         test.stopCaptureCalls += 1;

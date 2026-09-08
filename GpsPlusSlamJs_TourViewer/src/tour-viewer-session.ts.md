@@ -18,8 +18,10 @@ lives here.
     `cameraFrameCount`; `levelByText` is grouped here but OWNED by
     `viewer-placement.ts` (its only reader/writer) and cleared on tour
     teardown by `archive-open.ts`;
-  - author mode (`author-mode.ts`): `lastDetectedText`, `activeSizeM`,
-    `authorErrorText`, `gpsSamplesAtSessionStart`, `mintedCodeId`;
+  - the creator setup (`creator-setup.ts`): `lastDetectedText`,
+    `activeSizeM`, `authorErrorText`, `gpsSamplesAtSessionStart`,
+    `mintedLevel`, `mintGeneration`, `finishing`, `rebuiltZip`; the open
+    tour's `tourManifest` (archive-open.ts);
   - the viewer QR line and the placement (`viewer-placement.ts`): the six
     `viewer*` line inputs, `latestReprojectionPx`, `placement`,
     `viewerPlanesError`, `imagePlanes`, `imagePlanesLoading`,
