@@ -46,11 +46,35 @@ pnpm run test:unit
 pnpm run test:e2e
 ```
 
-## Where this is heading
+## The flows (creator, visitor, tester)
 
-This app is the seed of the printed-QR user story: scan a code on the street,
-land here, and (in a later iteration) jump straight into the AR scene — the
-zip will then carry a metadata JSON with the QR code's measured pose so the
-viewer can place the visitor in GPS space instantly. See
+Written down in the flows plan
+(`gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-09-07-2259-tour-viewer-creator-and-visitor-flows-plan.md`,
+§1) after the first on-phone session, and shipped as its M1-M4:
+
+- **Creator** — upload the recorder zip to Drive/Dropbox/GitHub/OneDrive,
+  paste the share link, press **Open**, then **print the QR code** from the
+  "Print a QR code for this tour" section (on the page for everyone,
+  prefilled with the open link; usable before any upload for the "print
+  first, hang, then author" loop). Scanning that code opens the tour - no
+  authored level needed. Optionally hang it and **author** it under
+  `?author=1` (measure the poster's pose in AR, mint `qr/<id>.json`,
+  re-upload) so the code also places visitors at the poster.
+- **Visitor** — scan the printed code with the phone camera; the viewer
+  opens with the tour. Press **Start AR view**: while the phone's tracking
+  warms up the status line carries the framework's coaching hint, and once
+  the tracking-quality phase reports **ready** the tour's photos appear at
+  their capture spots (the capture-time geo join, from the zip's own
+  recording). A printed code, where one hangs and is authored, sharpens the
+  placement afterwards; it is a refinement, not a gate. A tour with neither
+  a recording nor codes says "nothing to place".
+- **Tester** — paste a link, Open, Start AR view: the visitor path minus
+  the poster.
+
+The "Storage" section (collapsed) explains the local copies the viewer
+keeps (up to five opened tours, revalidated automatically) and holds the
+clear-cache control, which no longer waits for a background download.
+
+Origin of the printed-QR story:
 `gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-08-25-0544-zip-streaming-transport-production-plan.md`
-(§6) for the recorded plan.
+(§6).
