@@ -25,7 +25,10 @@ cannot drift on the heading/rotation consistency rule.
 - The rotation is a unit quaternion in the **NUE GPS-world frame** over the
   QR local axes (see `QrGeoPose` in `qr-gps-vote.ts`); a mislabeled basis is
   a 120° bug, which is why the type and the parser are one.
-- Pure; throws only through `fail`, never its own error class.
+- Pure; throws only through `fail`, never its own error class. The
+  level's "when present" wording for a non-object geo is the level's own
+  check, made before delegating; this parser's messages are never
+  rewritten.
 
 ## Examples
 

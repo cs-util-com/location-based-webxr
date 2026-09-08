@@ -245,8 +245,11 @@ export async function exportSessionHandleAsZip(
       // files inside the ZIP. These used to be three inline checks that the
       // validator absorbed from community PR #321 was LAXER than (its
       // review, 2026-08-26); one module now serves every writer (DEC-H3).
+      // The COMPOSED path is what reaches the archive, so that is what is
+      // validated (M1 review #4: validating the relative half alone let a
+      // drive-lettered or backslashed subdir through).
       try {
-        assertSafeZipEntryPaths([relativePath]);
+        assertSafeZipEntryPaths([`${subdir}/${relativePath}`]);
       } catch (err) {
         throw new Error(
           `ZipExportContributor relative path is unsafe: ${err instanceof Error ? err.message : String(err)}`,

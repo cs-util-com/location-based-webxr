@@ -12,6 +12,7 @@
 
 import { bearingDeltaDeg, type Quaternion } from 'gps-plus-slam-js';
 import { normalizeBearingDeg } from '../../utils/bearing-degrees.js';
+import { isFiniteNumber, isRecord } from '../../utils/json-guards.js';
 import {
   deriveVerticalHeading,
   renormalizeUnitQuaternion,
@@ -29,14 +30,6 @@ export interface ParseGeoPoseOptions {
   path: string;
   /** Builds the error the caller's document type throws. */
   fail: (message: string) => never;
-}
-
-function isFiniteNumber(v: unknown): v is number {
-  return typeof v === 'number' && Number.isFinite(v);
-}
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null;
 }
 
 /**

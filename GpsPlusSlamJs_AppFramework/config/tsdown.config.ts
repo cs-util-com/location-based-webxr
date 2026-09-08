@@ -265,6 +265,9 @@ const entryFiles = [
   'src/ar/qr/qr-geo-pose-minting.ts',
   // The level/manifest-shared geo-pose validator (guided-setup plan M1).
   'src/ar/qr/geo-pose.ts',
+  // The JSON type guards those parsers share (one copy per package,
+  // DEC-H3) - under the `./utils/*` wildcard, so per-file.
+  'src/utils/json-guards.ts',
   'src/ar/qr/qr-level.ts',
   'src/ar/qr/qr-level-archive.ts',
   'src/ar/qr/qr-mint-level.ts',

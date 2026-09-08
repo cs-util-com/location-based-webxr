@@ -248,6 +248,8 @@ export {
   TOUR_MANIFEST_VERSION,
   type TourManifest,
   type TourObject,
+  type TourPin,
+  type TourPhoto,
   type TourObjectKind,
   TourManifestValidationError,
   createEmptyTourManifest,

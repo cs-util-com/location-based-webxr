@@ -53,21 +53,31 @@ entranceMs: 0, peakDrawMs: 0 })` to compile; a consumer that only calls
   entries, { onProgress? })`** re-emits an existing archive with entries
   added or replaced by path, keeping every other entry byte-identical, and
   THROWS (`ZipPackagingError`) rather than returning the input on failure;
-  **`assertSafeZipEntryPaths(paths, reserved?)`** is the one path rule set
-  every writer applies (empty, absolute, drive-lettered, backslash, `.`,
-  `..`, empty segment, trailing slash, reserved collision, duplicate - the
-  reserved names are validated too). Absorbed from community PR #321 and
-  hardened per its review; `exportSessionHandleAsZip`'s contributor paths
-  now go through the same validator (a trailing slash or an empty segment
-  is rejected where it was silently accepted), and
-  `embedCoverageInSessionJson` is a wrapper over the rebuild.
+  **`assertSafeZipEntryPaths(paths)`** is the one path rule set every
+  writer applies (empty, absolute, drive-lettered, backslash, `.`, `..`,
+  empty segment, trailing slash, duplicate). Absorbed from community PR
+  #321 and hardened per its review; `exportSessionHandleAsZip`'s composed
+  contributor paths (`subdir/relativePath`) now go through the same
+  validator (a trailing slash, an empty segment, a drive-lettered or
+  backslashed subdir is rejected where it was silently accepted), and
+  `embedCoverageInSessionJson` is a wrapper over the rebuild. The rebuild
+  re-emits an opened archive's existing entries AS THEY ARE (a duplicate
+  name collapses to its last occurrence) and reads them as Blobs, so a
+  phone-sized recorder zip is not copied onto the JS heap; only the new
+  entries are validated. Also on `/storage`: `writeStoreZip(entries,
+  caller)` (the writer without validation, for callers that validated)
+  and `assertWritableZipEntries(entries, caller)`.
 - **`tour.json` - the tour manifest** (`/ar`; **`ar/tour-manifest`** (deep import) and **`ar/tour-archive`** (deep import)): `parseTourManifest`,
   `serializeTourManifest`, `createEmptyTourManifest`; objects are text
   `pin`s and captured `photo`s, each with an exact geo pose (lat, lon,
   absolute altitude, rotation against north) minted like a printed code's;
-  `TOUR_MANIFEST_ENTRY`, `tourContentEntryName(id, ext)`
-  (`content/<id>.<ext>`), `readTourManifestFromEntries` (null for no
-  manifest; a broken manifest REJECTS). The geo-pose validator moved from
+  `TOUR_MANIFEST_ENTRY`, `TOUR_CONTENT_FOLDER`, `TOUR_MANIFEST_VERSION`,
+  `tourContentEntryName(id, ext)` (`content/<id>.<ext>`; a photo's
+  `image` must be that name for its own id), `tourManifestEntryOf`,
+  `readTourManifestFromEntries(names, readText, parse)` (null for no
+  manifest; a broken manifest REJECTS), `TourManifestValidationError`;
+  `TourObject` is the union `TourPin | TourPhoto`. The geo-pose validator
+  (`HEADING_CONSISTENCY_TOLERANCE_DEG` now public) moved from
   `qr-level.ts` into **`ar/qr/geo-pose`** (deep import) - `parseGeoPose(value, { path,
   fail })` - so the level and the manifest share one rule set;
   level messages are unchanged.

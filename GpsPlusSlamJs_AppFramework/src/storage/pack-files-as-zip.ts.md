@@ -21,14 +21,22 @@ its private review (2026-08-26).
     (the partial archive is abandoned, never returned).
 - `interface ZipEntryInput { path: string; data: Blob | Uint8Array | string }`
 - `class ZipPackagingError extends Error` - `cause` carries the original.
+- `assertWritableZipEntries(entries, caller)` - the pre-write checks
+  (paths through `assertSafeZipEntryPaths`, every payload a string,
+  `Uint8Array` or `Blob` - an `undefined` from `JSON.stringify` of an
+  unserialisable value is caught here, before any write).
+- `writeStoreZip(entries, caller)` - the writer WITHOUT validation, for a
+  caller that validated its own inputs (`zip-rebuild.ts` validates only
+  its new entries).
 
 ## Invariants & assumptions
 
 - Built on `@zip.js/zip.js` (`ZipWriter` + `BlobWriter`), the library
   every other zip module here uses.
 - Path safety is delegated entirely to `assertSafeZipEntryPaths`; this
-  module adds no rules of its own and no reserved names (a manifest is an
-  ordinary entry, which is what lets the rebuild replace it by path).
+  module adds only the payload-type check. There are no reserved names (a
+  manifest is an ordinary entry, which is what lets the rebuild replace it
+  by path).
 - Entries are written in list order; the central directory preserves it.
 - No compression ever: a range reader depends on `compressedSize ===
 uncompressedSize` per entry.
@@ -47,5 +55,5 @@ const starter = await packFilesAsZip([
 zip read; STORE mode verified from the bytes by the hand-rolled
 central-directory reader in `test-utils/zip-central-directory.ts`
 (independent of zip.js); the empty list; unsafe and duplicate paths
-rejected before writing; a mid-write failure surfaced as
-`ZipPackagingError`.
+rejected before writing, and so is an `undefined` payload; a mid-write
+failure surfaced as `ZipPackagingError`.

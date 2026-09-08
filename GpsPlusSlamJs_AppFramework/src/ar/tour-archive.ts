@@ -8,10 +8,12 @@
  * error raised anywhere.
  *
  * Archive-agnostic like its sibling: entry NAMES in, a read-by-name
- * function in, so the zip library stays on the caller's side.
+ * function in, so the zip library stays on the caller's side. Imported by
+ * `tour-manifest.ts` (a photo's `image` must be the name this module
+ * derives), so this module must not import the manifest's parser.
  */
 
-import { parseTourManifest, type TourManifest } from './tour-manifest.js';
+import type { TourManifest } from './tour-manifest.js';
 
 /** The manifest's entry name at the archive root. */
 export const TOUR_MANIFEST_ENTRY = 'tour.json';
@@ -26,10 +28,11 @@ const CONTENT_EXTENSION = /^[a-z0-9]{1,5}$/;
 const CONTENT_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 /**
- * `…/tour.json` → true. Tolerates ONE wrapping folder (`mytour/tour.json`)
- * for the reason the level reader does: re-zipping a folder, or a cloud
- * host's "download folder", produces that shape, and the framework's own
- * parsers already tolerate it for `actions/` and `session.json`.
+ * `…/tour.json` → true. A WRAPPING folder is allowed (`mytour/tour.json`,
+ * at any depth) for the reason the level reader allows one: re-zipping a
+ * folder, or a cloud host's "download folder", produces that shape, and
+ * the framework's own parsers already tolerate it for `actions/` and
+ * `session.json`.
  */
 const MANIFEST_ENTRY = /(?:^|\/)tour\.json$/;
 
@@ -55,14 +58,20 @@ export function tourContentEntryName(id: string, extension: string): string {
 }
 
 /** The manifest entry among `entryNames`, or `null` when the archive has
- *  none. The shallowest match wins when a wrapped and a root copy coexist. */
+ *  none. The one with the FEWEST path segments wins when a wrapped and a
+ *  root copy coexist (the root one, when there is one). */
 export function tourManifestEntryOf(
   entryNames: Iterable<string>
 ): string | null {
   let found: string | null = null;
+  let foundDepth = Number.POSITIVE_INFINITY;
   for (const name of entryNames) {
     if (typeof name !== 'string' || !MANIFEST_ENTRY.test(name)) continue;
-    if (found === null || name.length < found.length) found = name;
+    const depth = name.split('/').length;
+    if (depth < foundDepth) {
+      found = name;
+      foundDepth = depth;
+    }
   }
   return found;
 }
@@ -76,12 +85,16 @@ export function tourManifestEntryOf(
  *
  * @param entryNames every entry name in the archive
  * @param readText reads one entry's text by name; may reject
+ * @param parse the manifest parser (`parseTourManifest`), injected because
+ *   this module is imported by the parser's own module (the content name
+ *   is derived here) and a cycle would fail `check:cycles`.
  */
 export async function readTourManifestFromEntries(
   entryNames: Iterable<string>,
-  readText: (name: string) => Promise<string>
+  readText: (name: string) => Promise<string>,
+  parse: (data: unknown) => TourManifest
 ): Promise<TourManifest | null> {
   const name = tourManifestEntryOf(entryNames);
   if (name === null) return null;
-  return parseTourManifest(JSON.parse(await readText(name)));
+  return parse(JSON.parse(await readText(name)));
 }

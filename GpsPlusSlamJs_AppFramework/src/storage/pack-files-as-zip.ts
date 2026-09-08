@@ -11,12 +11,14 @@
  * nothing from compression.
  *
  * Absorbed from community PR #321 and hardened per its review: every path
- * is validated through `zip-entry-path.ts` before a byte is written (so a
- * rejected call never leaves a partial archive), a string that serialises
- * to nothing is rejected, and a failure of the underlying writer surfaces
- * as {@link ZipPackagingError} instead of a raw library error. The manifest
- * is not special here (the PR had a separate `manifest` parameter): it is
- * an entry like any other, which is what lets the rebuild replace it.
+ * is validated through `zip-entry-path.ts` and every payload's type is
+ * checked before a byte is written (so a rejected call never leaves a
+ * partial archive - and `JSON.stringify` returning `undefined` for an
+ * unserialisable value is caught here, not as a mid-write library error),
+ * and a failure of the underlying writer surfaces as
+ * {@link ZipPackagingError}. The manifest is not special here (the PR had a
+ * separate `manifest` parameter): it is an entry like any other, which is
+ * what lets the rebuild replace it.
  */
 
 import {
@@ -52,25 +54,63 @@ function readerFor(data: ZipEntryInput['data']) {
   return new BlobReader(data);
 }
 
-/**
- * Write `entries` into an uncompressed zip Blob (`application/zip`). An
- * empty list yields a valid, empty archive.
- *
- * @throws {ZipPackagingError} when any path is unsafe, colliding or
- *   duplicated (checked before any bytes are written), or when the writer
- *   fails mid-way (the half-built archive is abandoned).
- */
-export async function packFilesAsZip(
-  entries: readonly ZipEntryInput[]
-): Promise<Blob> {
+function isWritableData(data: unknown): data is ZipEntryInput['data'] {
+  return (
+    typeof data === 'string' ||
+    data instanceof Uint8Array ||
+    data instanceof Blob
+  );
+}
+
+/** The pre-write checks shared by the packer and the rebuild's new entries:
+ *  throws {@link ZipPackagingError} naming the caller. */
+export function assertWritableZipEntries(
+  entries: readonly ZipEntryInput[],
+  caller: string
+): void {
   try {
     assertSafeZipEntryPaths(entries.map((e) => e.path));
   } catch (err) {
     throw new ZipPackagingError(
-      `packFilesAsZip: ${err instanceof Error ? err.message : String(err)}`,
+      `${caller}: ${err instanceof Error ? err.message : String(err)}`,
       { cause: err }
     );
   }
+  for (const entry of entries) {
+    if (!isWritableData(entry.data)) {
+      throw new ZipPackagingError(
+        `${caller}: entry '${entry.path}' has no writable data (got ${typeof entry.data}) - a JSON.stringify of an unserialisable value?`
+      );
+    }
+  }
+}
+
+/**
+ * Write `entries` into an uncompressed zip Blob (`application/zip`). An
+ * empty list yields a valid, empty archive.
+ *
+ * @throws {ZipPackagingError} when any path is unsafe or duplicated or any
+ *   payload is not writable (checked before any bytes are written), or when
+ *   the writer fails mid-way (the half-built archive is abandoned).
+ */
+export async function packFilesAsZip(
+  entries: readonly ZipEntryInput[]
+): Promise<Blob> {
+  assertWritableZipEntries(entries, 'packFilesAsZip');
+  return writeStoreZip(entries, 'packFilesAsZip');
+}
+
+/**
+ * The writer alone - NO validation. For callers that validated their own
+ * inputs (the rebuild validates only its NEW entries: an archive that
+ * opened is re-emitted as it is, whatever its entry names, M1 review #2).
+ *
+ * @throws {ZipPackagingError} when the writer fails.
+ */
+export async function writeStoreZip(
+  entries: readonly ZipEntryInput[],
+  caller: string
+): Promise<Blob> {
   const writer = new ZipWriter(new BlobWriter('application/zip'), {
     level: STORE_LEVEL,
   });
@@ -81,7 +121,7 @@ export async function packFilesAsZip(
     return await writer.close();
   } catch (err) {
     throw new ZipPackagingError(
-      `packFilesAsZip: writing the archive failed: ${
+      `${caller}: writing the archive failed: ${
         err instanceof Error ? err.message : String(err)
       }`,
       { cause: err }

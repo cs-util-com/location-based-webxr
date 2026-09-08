@@ -6,11 +6,12 @@
  * Absorbed from community PR #321 (`assertSafeZipEntryPaths`) and hardened
  * per its review (`GpsPlusSlamJs_Docs/docs/2026-08-26-1215-pr-321-zip-qr-
  * packaging-review.md`): the PR's validator was laxer than the checks
- * `zip-export.ts` already applied inline (`.` segments), skipped empty
- * segments and trailing slashes, and never validated the reserved names it
- * compared against. This module carries the union of both rule sets and
- * `zip-export.ts` calls it, so a writer cannot drift from the validator it
- * claims to share (DEC-H3).
+ * `zip-export.ts` already applied inline (`.` segments), and skipped empty
+ * segments and trailing slashes. This module carries the union of both rule
+ * sets and `zip-export.ts` calls it, so a writer cannot drift from the
+ * validator it claims to share (DEC-H3). The PR's `reserved` parameter is
+ * gone: a manifest is an ordinary entry (DEC-N12), and nothing in
+ * production ever passed a reserved name (M1 review #13).
  */
 
 /** Why `path` cannot be used as a ZIP entry path, or `null` if it can. */
@@ -29,32 +30,19 @@ function unsafeZipEntryPathReason(path: string): string | null {
 }
 
 /**
- * Throw if any `path` cannot safely be used as a ZIP entry path.
+ * Throw if any `path` cannot safely be used as a ZIP entry path, or if two
+ * are the same.
  *
- * @param paths - the entry paths a writer is about to emit.
- * @param reserved - paths this archive already writes for another purpose
- *   (e.g. a manifest at the archive root) that a declared entry must not
- *   shadow. Validated with the same rules: a reserved name that is itself
- *   unsafe is a caller bug and fails loud too.
  * @throws {Error} listing EVERY problem found, not just the first - a caller
  *   building an archive from many declared paths fixes them in one pass.
  */
-export function assertSafeZipEntryPaths(
-  paths: readonly string[],
-  reserved: readonly string[] = []
-): void {
+export function assertSafeZipEntryPaths(paths: readonly string[]): void {
   const problems: string[] = [];
-  for (const name of reserved) {
-    const reason = unsafeZipEntryPathReason(name);
-    if (reason !== null) problems.push(`reserved name '${name}' ${reason}`);
-  }
   const seen = new Set<string>();
   for (const path of paths) {
     const reason = unsafeZipEntryPathReason(path);
     if (reason !== null) {
       problems.push(`'${path}' ${reason}`);
-    } else if (reserved.includes(path)) {
-      problems.push(`'${path}' collides with reserved name '${path}'`);
     } else if (seen.has(path)) {
       problems.push(`'${path}' is a duplicate entry path`);
     }

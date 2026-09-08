@@ -170,7 +170,7 @@ describe('zip-export — ZipExportContributor seam', () => {
       exportSessionAsZip(sessionName, {
         contributors: [contributor],
       })
-    ).rejects.toThrow(/is unsafe.*absolute/);
+    ).rejects.toThrow(/is unsafe/);
   });
 
   it('rejects a contributor that tries to escape its subdir via traversal segments', async () => {

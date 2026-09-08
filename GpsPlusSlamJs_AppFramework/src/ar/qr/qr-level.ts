@@ -14,6 +14,7 @@
  * NOT interpreted here; only the fields the pose + vote need are validated.
  */
 
+import { isFiniteNumber, isRecord } from '../../utils/json-guards.js';
 import { parseGeoPose } from './geo-pose.js';
 import type { QrGeoPose } from './qr-gps-vote.js';
 
@@ -84,14 +85,6 @@ export class QrLevelValidationError extends Error {
   }
 }
 
-function isFiniteNumber(v: unknown): v is number {
-  return typeof v === 'number' && Number.isFinite(v);
-}
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null;
-}
-
 /**
  * Validate the optional `qr.physicalSizeM`. When present it MUST be a positive
  * number (a `0`/negative authored size is a bug, not a "measure it instead"
@@ -116,16 +109,15 @@ function parsePhysicalSize(value: unknown): number | undefined {
  */
 function parseGeo(value: unknown): QrGeoPose | undefined {
   if (value === undefined) return undefined;
+  // The "when present" wording is the level's own (its optionality is not
+  // the shared parser's concern), so the shape check stays here.
+  if (!isRecord(value)) {
+    throw new QrLevelValidationError('"qr.geo" must be an object when present');
+  }
   return parseGeoPose(value, {
     path: 'qr.geo',
     fail: (message) => {
-      // The level's historical wording for a non-object geo is kept: the
-      // tests and the docs both quote it.
-      throw new QrLevelValidationError(
-        message === '"qr.geo" must be an object'
-          ? '"qr.geo" must be an object when present'
-          : message
-      );
+      throw new QrLevelValidationError(message);
     },
   });
 }

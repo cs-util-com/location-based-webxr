@@ -84,7 +84,9 @@ export { assertSafeZipEntryPaths } from './zip-entry-path.js';
 export {
   type ZipEntryInput,
   ZipPackagingError,
+  assertWritableZipEntries,
   packFilesAsZip,
+  writeStoreZip,
 } from './pack-files-as-zip.js';
 
 // --- zip-rebuild (existing zip + entries added/replaced by path) ---

@@ -44,9 +44,13 @@ describe('parseTourManifest', () => {
       ],
     });
     expect(manifest.objects).toHaveLength(2);
-    expect(manifest.objects[0]?.label).toBe('The old gate');
-    expect(manifest.objects[1]?.image).toBe('content/f1.jpg');
-    expect(manifest.objects[1]?.geo.rotation).toEqual([0, 0, 0, 1]);
+    const [first, second] = manifest.objects;
+    expect(first?.kind).toBe('pin');
+    expect(first?.kind === 'pin' ? first.label : null).toBe('The old gate');
+    expect(second?.kind === 'photo' ? second.image : null).toBe(
+      'content/f1.jpg'
+    );
+    expect(second?.geo.rotation).toEqual([0, 0, 0, 1]);
   });
 
   it('an empty manifest is valid and is what the starter zip carries', () => {
@@ -71,6 +75,11 @@ describe('parseTourManifest', () => {
       /objects\[0\]\.id/,
     ],
     [
+      'a timestamp that is not a date',
+      { version: 1, objects: [{ ...pin, createdAtIso: 'yesterday' }] },
+      /objects\[0\]\.createdAtIso/,
+    ],
+    [
       'a pin without a label',
       { version: 1, objects: [{ ...pin, label: '  ' }] },
       /objects\[0\]\.label/,
@@ -78,6 +87,16 @@ describe('parseTourManifest', () => {
     [
       'a photo without an image',
       { version: 1, objects: [{ ...photo, image: undefined }] },
+      /objects\[0\]\.image/,
+    ],
+    [
+      'a photo whose image is not its own content entry (M1 review #5)',
+      { version: 1, objects: [{ ...photo, image: '../../session.json' }] },
+      /objects\[0\]\.image" must be content\/f1\.<ext>/,
+    ],
+    [
+      "a photo whose image names another object's stem",
+      { version: 1, objects: [{ ...photo, image: 'content/other.jpg' }] },
       /objects\[0\]\.image/,
     ],
     [
@@ -100,7 +119,10 @@ describe('parseTourManifest', () => {
     ],
     [
       'a duplicate id',
-      { version: 1, objects: [pin, { ...photo, id: 'p1' }] },
+      {
+        version: 1,
+        objects: [pin, { ...photo, id: 'p1', image: 'content/p1.jpg' }],
+      },
       /duplicate object id "p1"/,
     ],
   ])('rejects %s', (_label, data, message) => {

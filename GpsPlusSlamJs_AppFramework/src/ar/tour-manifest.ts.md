@@ -16,7 +16,9 @@ printed code's pose is. Guided-setup plan DEC-N7/N8/N9
   reader, then pretty-prints.
 - `createEmptyTourManifest(): TourManifest` - `{ version: 1, objects: [] }`,
   the starter zip's content.
-- Types `TourManifest`, `TourObject`, `TourObjectKind` (`'pin' | 'photo'`);
+- Types `TourManifest` (`version: 1` as a literal), `TourObject =
+TourPin | TourPhoto` (a discriminated union on `kind`, so a renderer
+  never asserts a field the parser guaranteed), `TourObjectKind`;
   `TourManifestValidationError`.
 
 ## Invariants & assumptions
@@ -26,9 +28,11 @@ printed code's pose is. Guided-setup plan DEC-N7/N8/N9
   rotation must agree.
 - `id` is one path-safe segment (`[A-Za-z0-9_-]{1,64}`), unique in the
   manifest, and the content file's stem (`tour-archive.ts`).
-- A `pin` needs a non-empty `label`; a `photo` needs `image` (its archive
-  entry) and positive integer `imageWidth`/`imageHeight` (the plane's
-  aspect without decoding), and may carry a label.
+- A `pin` needs a non-empty `label`; a `photo` needs `image` equal to
+  `tourContentEntryName(id, ext)` for ITS OWN id (`content/<id>.<ext>`;
+  any other string rejects) and positive integer `imageWidth`/
+  `imageHeight` (the plane's aspect without decoding), and may carry a
+  label. `createdAtIso` must parse as a date.
 - `version` must equal `TOUR_MANIFEST_VERSION`: a later reader keys a
   migration on it; this one rejects anything else.
 - Defensive at the boundary like `qr-level.ts`: hand-editable data, every

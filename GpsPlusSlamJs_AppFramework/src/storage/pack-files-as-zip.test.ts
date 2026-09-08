@@ -7,8 +7,8 @@
  * `@zip.js/zip.js` (a shared misreading of the format would cancel out), a
  * discipline kept from community PR #321's test. The error paths are the
  * PR review's confirmed gaps: an unsafe path anywhere, an `undefined`
- * serialisation, and a writer failure that must not surface as a raw
- * library error.
+ * payload (what `JSON.stringify` returns for an unserialisable value), and
+ * a writer failure that must not surface as a raw library error.
  */
 
 import {
@@ -92,6 +92,13 @@ describe('packFilesAsZip', () => {
         { path: 'assets/same.bin', data: 'b' },
       ])
     ).rejects.toThrow(/assets\/same\.bin/);
+  });
+
+  it('rejects an undefined payload BEFORE writing - what JSON.stringify returns for an unserialisable value', async () => {
+    const data = JSON.stringify(undefined); // typed string, undefined at runtime
+    await expect(packFilesAsZip([{ path: 'tour.json', data }])).rejects.toThrow(
+      /tour\.json.*no writable data/
+    );
   });
 
   it('wraps a failure of the underlying writer in a ZipPackagingError', async () => {

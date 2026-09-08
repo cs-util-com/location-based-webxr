@@ -13,8 +13,12 @@ content cannot become invisible through a drifted entry name.
   throws `TypeError` for an id or extension that is not one path-safe
   segment (both reach a zip path).
 - `tourManifestEntryOf(entryNames): string | null` - the manifest entry,
-  tolerating ONE wrapping folder (`mytour/tour.json`), shallowest wins.
-- `readTourManifestFromEntries(entryNames, readText): Promise<TourManifest | null>`
+  tolerating a wrapping folder (`mytour/tour.json`, any depth, like the
+  level reader); the entry with the fewest path segments wins.
+- `readTourManifestFromEntries(entryNames, readText, parse): Promise<TourManifest | null>`
+  - `parse` is `parseTourManifest`, injected: `tour-manifest.ts` imports
+    this module (a photo's `image` is the name derived here), and a cycle
+    would fail `check:cycles`.
   - `null` when the archive has no manifest (a recorder zip is normal).
   - REJECTS when a manifest exists but is broken: unlike a single bad level
     file, an unreadable manifest means the whole placement is lost, and
@@ -30,7 +34,11 @@ content cannot become invisible through a drifted entry name.
 ## Examples
 
 ```ts
-const manifest = await readTourManifestFromEntries(names, readText);
+const manifest = await readTourManifestFromEntries(
+  names,
+  readText,
+  parseTourManifest
+);
 const photoPath = tourContentEntryName(object.id, 'jpg');
 ```
 

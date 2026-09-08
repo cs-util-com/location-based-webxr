@@ -14,39 +14,54 @@
  * writer re-validates through the reader so a programming error fails
  * loud here instead of producing a file a visitor cannot open.
  *
- * Content kinds in v1 (DEC-N9): a text `pin` and a captured `photo`. A
- * reader that meets an unknown kind rejects the document; the version
- * field is what a later reader keys a migration on.
+ * Content kinds in v1 (DEC-N9): a text `pin` and a captured `photo`, as a
+ * discriminated union so a renderer never has to assert a field the parser
+ * already guaranteed (M1 review #6). A reader that meets an unknown kind
+ * rejects the document; the version field is what a later reader keys a
+ * migration on.
  */
 
+import { isFiniteNumber, isRecord } from '../utils/json-guards.js';
 import { parseGeoPose } from './qr/geo-pose.js';
 import type { QrGeoPose } from './qr/qr-gps-vote.js';
+import { tourContentEntryName } from './tour-archive.js';
 
 /** The manifest's schema version this module reads and writes. */
 export const TOUR_MANIFEST_VERSION = 1;
 
-export type TourObjectKind = 'pin' | 'photo';
-
-/** One placed object. `image*` fields exist on photos only. */
-export interface TourObject {
+interface TourObjectBase {
   /** Short id, unique in the manifest; also the content file's stem. */
   id: string;
-  kind: TourObjectKind;
   /** Exact pose: lat/lon, absolute altitude, rotation against north. */
   geo: QrGeoPose;
-  /** ISO-8601 timestamp of the placement. */
+  /** ISO-8601 timestamp of the placement (must parse as a date). */
   createdAtIso: string;
-  /** The pin's text. Pins only; non-empty. */
-  label?: string;
-  /** Archive path of the photo (`content/<id>.jpg`). Photos only. */
-  image?: string;
-  /** Pixel size of the encoded photo, for an aspect-correct plane. */
-  imageWidth?: number;
-  imageHeight?: number;
 }
 
+/** A text pin. */
+export interface TourPin extends TourObjectBase {
+  kind: 'pin';
+  /** The pin's text; non-empty. */
+  label: string;
+}
+
+/** A captured photo, placed as a plane. */
+export interface TourPhoto extends TourObjectBase {
+  kind: 'photo';
+  /** Archive path of the photo: `content/<id>.<ext>` for THIS object's id. */
+  image: string;
+  /** Pixel size of the encoded photo, for an aspect-correct plane. */
+  imageWidth: number;
+  imageHeight: number;
+  /** An optional caption. */
+  label?: string;
+}
+
+export type TourObject = TourPin | TourPhoto;
+export type TourObjectKind = TourObject['kind'];
+
 export interface TourManifest {
-  version: number;
+  version: typeof TOUR_MANIFEST_VERSION;
   objects: TourObject[];
 }
 
@@ -61,16 +76,15 @@ export class TourManifestValidationError extends Error {
 /** Ids: short, path-safe, one segment (they become file stems). */
 const OBJECT_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
+/** The content path's extension, after `content/<id>.`. */
+const IMAGE_ENTRY = /^content\/[A-Za-z0-9_-]+\.([a-z0-9]{1,5})$/;
+
 function fail(message: string): never {
   throw new TourManifestValidationError(message);
 }
 
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null;
-}
-
 function isPositiveInteger(v: unknown): v is number {
-  return typeof v === 'number' && Number.isInteger(v) && v > 0;
+  return isFiniteNumber(v) && Number.isInteger(v) && v > 0;
 }
 
 /** An empty manifest at the current version - the starter zip's content. */
@@ -78,62 +92,72 @@ export function createEmptyTourManifest(): TourManifest {
   return { version: TOUR_MANIFEST_VERSION, objects: [] };
 }
 
-function parseObject(value: unknown, index: number): TourObject {
-  const at = `objects[${String(index)}]`;
-  if (!isRecord(value)) fail(`"${at}" must be an object`);
-  const { id, kind, createdAtIso } = value;
-  if (typeof id !== 'string' || !OBJECT_ID.test(id)) {
-    fail(`"${at}.id" must be a short path-safe id`);
-  }
-  if (kind !== 'pin' && kind !== 'photo') {
-    fail(`"${at}.kind" must be "pin" or "photo"`);
-  }
-  const geo = parseGeoPose(value.geo, { path: `${at}.geo`, fail });
-  if (typeof createdAtIso !== 'string' || createdAtIso.trim() === '') {
-    fail(`"${at}.createdAtIso" must be a non-empty string`);
-  }
-  const object: TourObject = { id, kind, geo, createdAtIso };
-  return kind === 'pin'
-    ? withPinFields(object, value, at)
-    : withPhotoFields(object, value, at);
-}
-
 function nonEmptyLabel(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() !== '' ? value : undefined;
 }
 
-function withPinFields(
-  object: TourObject,
-  value: Record<string, unknown>,
-  at: string
-): TourObject {
+function parseBase(value: Record<string, unknown>, at: string): TourObjectBase {
+  const { id, createdAtIso } = value;
+  if (typeof id !== 'string' || !OBJECT_ID.test(id)) {
+    fail(`"${at}.id" must be a short path-safe id`);
+  }
+  const geo = parseGeoPose(value.geo, { path: `${at}.geo`, fail });
+  if (
+    typeof createdAtIso !== 'string' ||
+    !Number.isFinite(Date.parse(createdAtIso))
+  ) {
+    fail(`"${at}.createdAtIso" must be an ISO-8601 timestamp`);
+  }
+  return { id, geo, createdAtIso };
+}
+
+function parsePin(value: Record<string, unknown>, at: string): TourPin {
   const label = nonEmptyLabel(value.label);
   if (label === undefined) {
     fail(`"${at}.label" must be a non-empty string for a pin`);
   }
-  return { ...object, label };
+  return { ...parseBase(value, at), kind: 'pin', label };
 }
 
-function withPhotoFields(
-  object: TourObject,
-  value: Record<string, unknown>,
-  at: string
-): TourObject {
+function parsePhoto(value: Record<string, unknown>, at: string): TourPhoto {
+  const base = parseBase(value, at);
   const { image, imageWidth, imageHeight } = value;
-  if (typeof image !== 'string' || image === '') {
-    fail(`"${at}.image" must name the photo's archive entry`);
+  // The image entry is derived from the id, not free text (M1 review #5):
+  // the writer names it `content/<id>.<ext>`, and a reader that accepted
+  // any string would look up an entry the writer never produced.
+  const extension =
+    typeof image === 'string' ? IMAGE_ENTRY.exec(image)?.[1] : undefined;
+  if (
+    extension === undefined ||
+    image !== tourContentEntryName(base.id, extension)
+  ) {
+    fail(`"${at}.image" must be content/${base.id}.<ext>`);
   }
   if (!isPositiveInteger(imageWidth) || !isPositiveInteger(imageHeight)) {
     fail(`"${at}.imageWidth"/"imageHeight" must be positive integers`);
   }
   const label = nonEmptyLabel(value.label);
   return {
-    ...object,
+    ...base,
+    kind: 'photo',
     image,
     imageWidth,
     imageHeight,
     ...(label === undefined ? {} : { label }),
   };
+}
+
+function parseObject(value: unknown, index: number): TourObject {
+  const at = `objects[${String(index)}]`;
+  if (!isRecord(value)) fail(`"${at}" must be an object`);
+  switch (value.kind) {
+    case 'pin':
+      return parsePin(value, at);
+    case 'photo':
+      return parsePhoto(value, at);
+    default:
+      return fail(`"${at}.kind" must be "pin" or "photo"`);
+  }
 }
 
 /**

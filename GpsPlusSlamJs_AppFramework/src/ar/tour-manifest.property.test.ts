@@ -51,15 +51,17 @@ const pin = fc.record({
   createdAtIso: iso,
   label: fc.stringMatching(/^[A-Za-z ]{1,30}$/).filter((s) => s.trim() !== ''),
 });
-const photo = fc.record({
-  id,
-  kind: fc.constant('photo' as const),
-  geo,
-  createdAtIso: iso,
-  image: id.map((stem) => `content/${stem}.jpg`),
-  imageWidth: fc.integer({ min: 1, max: 4096 }),
-  imageHeight: fc.integer({ min: 1, max: 4096 }),
-});
+const photo = fc
+  .record({
+    id,
+    kind: fc.constant('photo' as const),
+    geo,
+    createdAtIso: iso,
+    imageWidth: fc.integer({ min: 1, max: 4096 }),
+    imageHeight: fc.integer({ min: 1, max: 4096 }),
+  })
+  // The image entry is derived from the object's own id (M1 review #5).
+  .map((p) => ({ ...p, image: `content/${p.id}.jpg` }));
 
 const manifest = fc
   .uniqueArray(fc.oneof(pin, photo), {
