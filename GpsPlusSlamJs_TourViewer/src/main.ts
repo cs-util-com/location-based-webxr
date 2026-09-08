@@ -173,6 +173,10 @@ const setup = wireCreatorSetup({
     finishButton: element("setup-finish"),
     finishStatus: element("finish-status"),
     downloadButton: element("finish-download"),
+    pinButton: element("setup-pin"),
+    pinLabel: element("pin-label"),
+    pinSave: element("pin-save"),
+    photoButton: element("setup-photo"),
   },
 });
 hooks.renderAuthorReadout = setup.renderAuthorReadout;

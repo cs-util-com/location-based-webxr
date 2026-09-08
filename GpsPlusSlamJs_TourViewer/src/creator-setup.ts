@@ -39,6 +39,15 @@ import {
 } from "gps-plus-slam-app-framework/state";
 import { rebuildZipWithEntries } from "gps-plus-slam-app-framework/storage";
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
+import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
+import { Vector3 } from "three";
+
+import {
+  mintPhoto,
+  mintPin,
+  newObjectId,
+  renderTourObjects,
+} from "./content-placement.js";
 
 import type { ViewerMode } from "./mode.js";
 import {
@@ -72,6 +81,12 @@ export interface CreatorSetupDom {
   /** Step 5 on the page (outside the overlay): where the download lands. */
   finishStatus: HTMLElement;
   downloadButton: HTMLButtonElement;
+  /** The placement controls (inside the overlay): a pin at the reticle
+   *  with a label, a photo of the current camera frame. */
+  pinButton: HTMLButtonElement;
+  pinLabel: HTMLInputElement;
+  pinSave: HTMLButtonElement;
+  photoButton: HTMLButtonElement;
 }
 
 /** Properties, not methods: they are handed to the hooks object unbound. */
@@ -160,8 +175,12 @@ export function wireCreatorSetup(deps: {
       tourOpen: ctx.session !== null,
       hadLevel: (ctx.currentLevels?.size ?? 0) > 0,
     });
+    const count =
+      ctx.placedObjects.length > 0
+        ? ` · ${placed(ctx.placedObjects.length)}`
+        : "";
     dom.status.textContent =
-      hint === "" ? readout.text : `${readout.text} · ${hint}`;
+      (hint === "" ? readout.text : `${readout.text} · ${hint}`) + count;
     dom.mintButton.disabled = !readout.canMint;
     const readiness = finishReadiness({
       measured: ctx.mintedLevel !== null,
@@ -174,7 +193,131 @@ export function wireCreatorSetup(deps: {
     if (readiness === "ready" && ctx.session !== null) {
       dom.status.textContent += ` · ${archiveSizeNote(ctx.session.archive.size)}`;
     }
+    // Placement needs the measured code (its alignment is the frame every
+    // record is minted in) and a live session; the pin also needs a
+    // surface under the reticle, checked at the tap.
+    const canPlace =
+      ctx.mintedLevel !== null &&
+      arController.getState().status === "running" &&
+      !ctx.finishing;
+    dom.pinButton.disabled = !canPlace;
+    dom.photoButton.disabled = !canPlace || ctx.latestFrame === null;
   }
+
+  /** Redraw the live preview of everything placed this session. */
+  async function refreshPreview(): Promise<void> {
+    ctx.placedPreview?.dispose();
+    ctx.placedPreview = null;
+    const scene = seams.getScene();
+    const zero = selectZeroReference(arStore.getState());
+    if (scene === null || zero === null) return;
+    const blobs = new Map(
+      ctx.placedObjects
+        .filter((p) => p.blob !== undefined)
+        .map((p) => [p.object.id, p.blob as Blob]),
+    );
+    ctx.placedPreview = await renderTourObjects(
+      ctx.placedObjects.map((p) => p.object),
+      {
+        scene,
+        zero,
+        makeLabel: (text) => seams.createLabel(text),
+        loadPhotoTexture: async (entryName) => {
+          const id = entryName.slice("content/".length, -".jpg".length);
+          const blob = blobs.get(id);
+          return blob === undefined ? null : decodeFrameTexture(blob, 2);
+        },
+      },
+    );
+  }
+
+  function placed(count: number): string {
+    return count === 1 ? "1 object placed" : `${String(count)} objects placed`;
+  }
+
+  dom.pinButton.addEventListener("click", () => {
+    const reticle = ctx.reticle;
+    if (reticle === null || !reticle.isVisible()) {
+      dom.status.textContent =
+        "Point the phone at a surface until the ring appears, then tap again.";
+      return;
+    }
+    // The label input: an overlay input, not window.prompt (unavailable in
+    // an XR session). The position is read at SAVE, not now - the creator
+    // may still move the phone while typing.
+    dom.pinLabel.hidden = false;
+    dom.pinSave.hidden = false;
+    dom.pinLabel.focus();
+  });
+
+  dom.pinSave.addEventListener("click", () => {
+    const label = dom.pinLabel.value.trim();
+    const reticle = ctx.reticle;
+    if (label === "") {
+      dom.status.textContent = "Type the pin's text first.";
+      return;
+    }
+    if (reticle === null || !reticle.isVisible()) {
+      dom.status.textContent =
+        "No surface under the ring - point the phone at the spot and tap Save again.";
+      return;
+    }
+    const position = reticle.getWorldPosition(new Vector3());
+    const pin = mintPin({
+      id: newObjectId(),
+      label,
+      worldNuePosition: { x: position.x, y: position.y, z: position.z },
+      zero: selectZeroReference(arStore.getState()),
+      nowIso: new Date().toISOString(),
+    });
+    if (pin === null) {
+      dom.status.textContent = "No GPS fix yet - the pin cannot be placed.";
+      return;
+    }
+    ctx.placedObjects.push({ object: pin });
+    dom.pinLabel.value = "";
+    dom.pinLabel.hidden = true;
+    dom.pinSave.hidden = true;
+    dom.status.textContent = `Pin "${label}" placed · ${placed(ctx.placedObjects.length)}.`;
+    void refreshPreview();
+  });
+
+  dom.photoButton.addEventListener("click", () => {
+    const frame = ctx.latestFrame;
+    const cameraPose = seams.getCameraPose();
+    if (frame === null || cameraPose === null) {
+      dom.status.textContent = "No camera frame yet - try again in a moment.";
+      return;
+    }
+    dom.photoButton.disabled = true;
+    dom.status.textContent = "Capturing…";
+    seams.encodeFrameJpeg(frame).then(
+      (jpeg) => {
+        const photo = mintPhoto({
+          id: newObjectId(),
+          cameraPose,
+          alignmentMatrix: selectAlignmentMatrix(arStore.getState()),
+          zero: selectZeroReference(arStore.getState()),
+          imageWidth: jpeg.width,
+          imageHeight: jpeg.height,
+          nowIso: new Date().toISOString(),
+        });
+        if (photo === null) {
+          dom.status.textContent =
+            "No usable GPS alignment yet - the photo cannot be placed.";
+        } else {
+          ctx.placedObjects.push({ object: photo, blob: jpeg.blob });
+          dom.status.textContent = `Photo placed · ${placed(ctx.placedObjects.length)}.`;
+          void refreshPreview();
+        }
+        renderAuthorReadout();
+      },
+      (err: unknown) => {
+        dom.status.textContent = `Capturing failed: ${err instanceof Error ? err.message : String(err)}`;
+        renderAuthorReadout();
+      },
+    );
+  });
 
   function startAuthorPipeline(): boolean {
     ctx.authorErrorText = null;
@@ -291,6 +434,9 @@ export function wireCreatorSetup(deps: {
     const existingLevelPath = current.entries
       .map((e) => e.filename)
       .find((name) => qrLevelIdFromEntryName(name) === minted.id);
+    // The manifest: what the zip carried plus what this session placed;
+    // the photos' bytes become content entries next to it.
+    const manifest = ctx.tourManifest ?? createEmptyTourManifest();
     const entries = [
       {
         path: existingLevelPath ?? qrLevelEntryName(minted.id),
@@ -298,10 +444,19 @@ export function wireCreatorSetup(deps: {
       },
       {
         path: TOUR_MANIFEST_ENTRY,
-        data: serializeTourManifest(
-          ctx.tourManifest ?? createEmptyTourManifest(),
-        ),
+        data: serializeTourManifest({
+          ...manifest,
+          objects: [
+            ...manifest.objects,
+            ...ctx.placedObjects.map((p) => p.object),
+          ],
+        }),
       },
+      ...ctx.placedObjects.flatMap((p) =>
+        p.object.kind === "photo" && p.blob !== undefined
+          ? [{ path: p.object.image, data: p.blob }]
+          : [],
+      ),
     ];
     void (async () => {
       try {

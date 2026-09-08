@@ -21,6 +21,11 @@ import {
 } from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 
+import type { HitTestReticleHandle } from "gps-plus-slam-app-framework/ar";
+import type { RgbaImage } from "gps-plus-slam-app-framework/ar/qr/qr-frontend";
+import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
+
+import type { RenderedTourObjects } from "./content-placement.js";
 import type { PlacedImagePlanes } from "./image-planes.js";
 import type { TourViewerSeams } from "./seams.js";
 import type { PlacementState } from "./tour-flow.js";
@@ -140,6 +145,16 @@ export interface TourViewerSession {
   finishError: string | null;
   /** The rebuilt zip awaiting download in step 5. */
   rebuiltZip: { blob: Blob; filename: string } | null;
+  /** Content placed in THIS setup session (M4): the records the finish
+   *  step appends to `tour.json`, with the photo bytes that become
+   *  `content/<id>.jpg`. Survives a session end like the level does. */
+  placedObjects: { object: TourObject; blob?: Blob }[];
+  /** The creator's hit-test reticle for the running session. */
+  reticle: HitTestReticleHandle | null;
+  /** The most recent camera frame - what "Capture a photo" encodes. */
+  latestFrame: RgbaImage | null;
+  /** The live preview of the placed objects (rebuilt after each placement). */
+  placedPreview: RenderedTourObjects | null;
   /** Bumped on every AR session end: an async continuation captures it
    *  and must not act on a session it did not start in (M3 review #2). */
   arSessionGeneration: number;
@@ -202,6 +217,10 @@ export function createTourViewerSession(): TourViewerSession {
     finishError: null,
     rebuiltZip: null,
     arSessionGeneration: 0,
+    placedObjects: [],
+    reticle: null,
+    latestFrame: null,
+    placedPreview: null,
     viewerQrStatus: null,
     viewerUnknownCode: null,
     viewerUnusableCode: null,

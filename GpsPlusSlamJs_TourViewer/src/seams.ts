@@ -21,9 +21,12 @@ import {
   getCurrentArPose,
   getScene,
   startCameraFrameCapture,
+  startHitTestReticle,
   stopCameraFrameCapture,
   type EnableGpsArDeps,
+  type HitTestReticleHandle,
 } from "gps-plus-slam-app-framework/ar";
+import { createTextSprite } from "gps-plus-slam-app-framework/visualization/text-sprite";
 import {
   createBarcodeDetectorFrontEnd,
   type QrFrontEnd,
@@ -101,6 +104,25 @@ export interface TourViewerSeams {
    *  when the user dismissed a save picker. The e2e fake captures the
    *  blob instead. */
   downloadZip(blob: Blob, filename: string): Promise<boolean>;
+  /** The screen-centre hit-test reticle under the world group (its world
+   *  position is GPS-world NUE once the group carries the alignment) -
+   *  the pin's position (guided-setup plan M4). Needs the session feature
+   *  (`requestHitTest`). */
+  startHitTestReticle(arWorldGroup: Object3D): HitTestReticleHandle;
+  /** Encode a camera frame (top-left RGBA) as a JPEG for a placed photo.
+   *  Rejects when the frame is not opaque: the canvas would composite it
+   *  over its ground and the JPEG would come out dark (plan review #15). */
+  encodeFrameJpeg(image: RgbaImage): Promise<CapturedJpeg>;
+  /** A pin's label: the framework's text sprite (a canvas, so a seam - node
+   *  has none). */
+  createLabel(text: string): { object: Object3D; dispose(): void };
+}
+
+/** A captured photo, encoded. */
+export interface CapturedJpeg {
+  blob: Blob;
+  width: number;
+  height: number;
 }
 
 declare global {
@@ -153,6 +175,16 @@ export const realSeams: TourViewerSeams = {
   createQrDebugView,
   getScene,
   downloadZip,
+  startHitTestReticle: (arWorldGroup) => startHitTestReticle({ arWorldGroup }),
+  encodeFrameJpeg: (image) => encodeRgbaAsJpeg(image),
+  createLabel: (text) => {
+    const sprite = createTextSprite({
+      text,
+      background: "pill",
+      scale: { x: 0.8, y: 0.2, z: 1 },
+    });
+    return { object: sprite.sprite, dispose: () => sprite.dispose() };
+  },
   queryGeolocationPermission: async () => {
     try {
       const status = await navigator.permissions.query({
@@ -183,6 +215,54 @@ export const realSeams: TourViewerSeams = {
       );
     }),
 };
+
+/** JPEG quality for a placed photo: the recorder's capture default. */
+const PHOTO_JPEG_QUALITY = 0.85;
+
+/**
+ * The detector frame (1024 px long edge, top-left origin RGBA) as a JPEG.
+ * The alpha channel is sampled first: a frame that is not opaque would be
+ * composited over the canvas ground by `toBlob` and come out dark, which
+ * is the one failure a creator cannot see until the visitor does.
+ */
+function encodeRgbaAsJpeg(image: RgbaImage): Promise<CapturedJpeg> {
+  const { data, width, height } = image;
+  if (width <= 0 || height <= 0 || data.length < width * height * 4) {
+    return Promise.reject(new Error("camera frame is empty"));
+  }
+  for (let i = 3; i < data.length; i += Math.max(4, (data.length >> 4) & ~3)) {
+    if (data[i] !== 255) {
+      return Promise.reject(
+        new Error(
+          "camera frame is not opaque; refusing to encode a dark photo",
+        ),
+      );
+    }
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  if (context === null) {
+    return Promise.reject(new Error("no 2D canvas for the photo encoder"));
+  }
+  // A fresh clamped copy: ImageData wants a plain ArrayBuffer-backed array.
+  context.putImageData(
+    new ImageData(new Uint8ClampedArray(data), width, height),
+    0,
+    0,
+  );
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (blob === null) reject(new Error("JPEG encoding failed"));
+        else resolve({ blob, width, height });
+      },
+      "image/jpeg",
+      PHOTO_JPEG_QUALITY,
+    );
+  });
+}
 
 /**
  * Resolve the active device seams — the real framework wiring unless a

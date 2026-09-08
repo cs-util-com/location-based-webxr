@@ -39,6 +39,7 @@ import {
 function fakeHooks(): ArEnableHooks {
   return {
     container: {} as HTMLElement,
+    requestHitTest: true,
     trackingStore: { dispatch: vi.fn(), getState: vi.fn() } as never,
     onFrame: vi.fn(),
     onSessionEnd: vi.fn(),
@@ -58,8 +59,14 @@ describe("buildArEnableConfig", () => {
     });
     // Depth stays off end-to-end: no depth permission probe either.
     expect(config.requestDepth).toBeUndefined();
-    // The QR flows anchor to detected codes / GPS, never to hit-test planes.
-    expect(config.requestHitTest).toBeUndefined();
+    // The hit-test feature follows the hook: a creator's session needs it
+    // for the placement reticle (guided-setup plan M4), a visitor's never
+    // does - the QR flows anchor to detected codes / GPS, not hit-test planes.
+    expect(config.requestHitTest).toBe(true);
+    expect(
+      buildArEnableConfig({ ...fakeHooks(), requestHitTest: false })
+        .requestHitTest,
+    ).toBe(false);
   });
 
   it("wires the camera-frame callback into the initAR callbacks", () => {

@@ -106,6 +106,10 @@ export function arButtonView(
 /** The app-side hooks the enable configuration forwards into. */
 export interface ArEnableHooks {
   container: HTMLElement;
+  /** Request the WebXR `hit-test` feature (the creator's reticle; a
+   *  visitor places nothing). Without it the reticle never shows (plan
+   *  review #4). */
+  requestHitTest: boolean;
   /** The store `initAR` dispatches `tracking/poseReceived` into - the
    *  tracking-quality phase the placement trigger reads is derived from
    *  those dispatches (flows plan M4). Without it the slice is mounted but
@@ -141,6 +145,7 @@ export function buildArEnableConfig(hooks: ArEnableHooks): EnableGpsArConfig {
   };
   return {
     container: hooks.container,
+    requestHitTest: hooks.requestHitTest,
     // Camera ON (access + texture acquisition), depth OFF — in BOTH modes.
     // These are the opposite of MinimalExample/AnchorStarter, which turn the
     // camera path off to dodge its Chromium crash surface; a CV app needs it

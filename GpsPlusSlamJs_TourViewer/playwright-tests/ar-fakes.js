@@ -71,6 +71,13 @@ export async function installTourViewerArFakes(page) {
        *  reports (false = the picker was dismissed). */
       downloads: /** @type {{ filename: string, blob: Blob }[]} */ ([]),
       saveOutcome: true,
+      /** The creator's reticle (M4): whether a surface is under it and
+       *  where, in GPS-world NUE. */
+      reticleVisible: true,
+      reticlePosition: [3, 400.5, -2],
+      reticleDisposals: 0,
+      /** Photos "encoded" by the fake (a 3-byte stand-in per capture). */
+      encodedFrames: 0,
       /** Simulate a SYSTEM session end (the Android back gesture). */
       endXrSession() {
         test.sessionEndCallback?.({ requestedByApp: false });
@@ -78,7 +85,16 @@ export async function installTourViewerArFakes(page) {
     };
     /** @type {any} */ (window).__tourViewerTest = test;
 
-    const worldGroup = { name: "fake-world-group" };
+    const worldGroup = {
+      name: "fake-world-group",
+      children: /** @type {unknown[]} */ ([]),
+      add(object) {
+        this.children.push(object);
+      },
+      remove(object) {
+        this.children = this.children.filter((c) => c !== object);
+      },
+    };
     /** Scene-root stub for the image planes (real three meshes land here). */
     const fakeScene = {
       name: "fake-scene",
@@ -167,6 +183,32 @@ export async function installTourViewerArFakes(page) {
       downloadZip: (blob, filename) => {
         test.downloads.push({ filename, blob });
         return Promise.resolve(test.saveOutcome);
+      },
+      startHitTestReticle: () => ({
+        isVisible: () => test.reticleVisible,
+        getWorldPosition: (out) => {
+          const [x, y, z] = test.reticlePosition;
+          out.set(x, y, z);
+          return out;
+        },
+        dispose: () => {
+          test.reticleDisposals += 1;
+        },
+      }),
+      encodeFrameJpeg: (image) => {
+        test.encodedFrames += 1;
+        return Promise.resolve({
+          blob: new Blob([new Uint8Array([0xff, 0xd8, 0xff])], {
+            type: "image/jpeg",
+          }),
+          width: image.width,
+          height: image.height,
+        });
+      },
+      createLabel: (text) => {
+        // A bare three Object3D stands in for the canvas-backed sprite.
+        const object = { name: `label:${text}`, position: { set() {} } };
+        return { object, dispose() {} };
       },
       stopCameraFrameCapture: () => {
         test.stopCaptureCalls += 1;

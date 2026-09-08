@@ -381,6 +381,36 @@
             >
               Save the measured position
             </button>
+            <!-- Placement (M4): a pin at the reticle with a typed label (the
+                 input is an overlay control: window.prompt is unavailable in
+                 an XR session), a photo of the current camera frame. -->
+            <button
+              type="button"
+              id="setup-pin"
+              data-testid="setup-pin"
+              disabled
+            >
+              Place a pin here
+            </button>
+            <input
+              id="pin-label"
+              data-testid="pin-label"
+              type="text"
+              autocomplete="off"
+              placeholder="The pin's text"
+              hidden
+            />
+            <button type="button" id="pin-save" data-testid="pin-save" hidden>
+              Save the pin
+            </button>
+            <button
+              type="button"
+              id="setup-photo"
+              data-testid="setup-photo"
+              disabled
+            >
+              Capture a photo here
+            </button>
             <button
               type="button"
               id="setup-finish"

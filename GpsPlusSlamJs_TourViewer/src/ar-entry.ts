@@ -152,6 +152,11 @@ export function wireArEntry(deps: {
     // measurement replaces it (mintGeneration).
     ctx.imagePlanes?.dispose();
     ctx.imagePlanes = null;
+    ctx.reticle?.dispose();
+    ctx.reticle = null;
+    ctx.latestFrame = null;
+    ctx.placedPreview?.dispose();
+    ctx.placedPreview = null;
     ctx.viewerQrStatus = null;
     ctx.viewerUnknownCode = null;
     ctx.viewerUnusableCode = null;
@@ -202,9 +207,13 @@ export function wireArEntry(deps: {
     const result = await arController.enable(
       buildArEnableConfig({
         container: dom.arRoot,
+        requestHitTest: mode === "creator",
         trackingStore: arStore,
         onFrame: (image) => {
           ctx.cameraFrameCount += 1;
+          // The most recent frame is what "Capture a photo" encodes (M4);
+          // the source reuses its buffer, so a reference is enough.
+          ctx.latestFrame = image;
           ctx.qrController?.offerFrame(image);
           renderArStatus();
         },
@@ -245,6 +254,9 @@ export function wireArEntry(deps: {
     const worldGroup = seams.getArWorldGroup();
     if (worldGroup !== null) {
       ctx.qrDebugView = seams.createQrDebugView(worldGroup);
+      // The creator's reticle (M4): under the world group, so its world
+      // position is GPS-world NUE once the alignment lands.
+      if (authorMode) ctx.reticle = seams.startHitTestReticle(worldGroup);
     }
     if (authorMode) {
       hooks.renderAuthorReadout();
