@@ -223,6 +223,21 @@ describe("buildViewerControllerConfig", () => {
   });
 });
 
+describe("buildViewerControllerConfig - the lock adapter (M5)", () => {
+  // Why this matters (M5 review #4): the scan gate keys on this callback.
+  // The adapter used to guard on the last detected text and could drop a
+  // real lock without a diagnostic; now it forwards the level, always, and
+  // stays absent when the app did not ask for it (the controller treats an
+  // absent callback as "no lock reporting").
+  it("forwards every lock's level, and is absent when the app does not listen", () => {
+    const onLocked = vi.fn();
+    const config = buildViewerControllerConfig(fakeDeps({ onLocked }));
+    config.onLocked?.({} as never, LEVEL);
+    expect(onLocked).toHaveBeenCalledWith(LEVEL);
+    expect(buildViewerControllerConfig(fakeDeps()).onLocked).toBeUndefined();
+  });
+});
+
 describe("viewerStatusLine", () => {
   it("covers the visitor-facing states in plain words", () => {
     expect(

@@ -78,6 +78,10 @@ export function wireArchiveOpen(deps: {
     ctx.contentRendered?.dispose();
     ctx.contentRendered = null;
     ctx.contentAttempted = false;
+    ctx.contentError = null;
+    // The gate belongs to the closing tour too (M5 review #8): a gate
+    // waived for a code-less tour must not carry into one with a code.
+    hooks.resetScanGate();
     // The creator's placed objects belong to the closing tour (M4 review
     // #1): carried into another tour they would be written into ITS zip,
     // and into the same tour re-opened after a finish they would duplicate
@@ -204,6 +208,9 @@ export function wireArchiveOpen(deps: {
           hooks.renderAuthorReadout();
         },
       );
+      // A tour opened INTO a running session gets its own gate (M5 review
+      // #8); on the plain page this is idle until the session starts.
+      hooks.startScanGate();
       // The authored levels ride the same zip; a newer open's guard keeps a
       // slow load from installing a closed tour's levels.
       void opened
@@ -212,7 +219,7 @@ export function wireArchiveOpen(deps: {
           if (ctx.session !== opened) return;
           ctx.currentLevels = levels;
           hooks.renderAuthorReadout();
-          hooks.reconsiderScanGate();
+          hooks.reconsiderScanGate(levels);
           // The controller caches a level (or the negative-cache
           // placeholder) per decoded text; levels arriving AFTER a scan
           // would otherwise be invisible until AR re-entry (M4 milestone
@@ -232,6 +239,9 @@ export function wireArchiveOpen(deps: {
           dom.errorBox.textContent = `Reading the tour's printed-code levels failed: ${
             err instanceof Error ? err.message : String(err)
           }`;
+          // The gate cannot wait for levels that never come (M5 review #1);
+          // its own line names the failure inside the overlay.
+          hooks.reconsiderScanGate("unavailable");
         });
     } catch (err) {
       if (generation === ctx.openGeneration) {

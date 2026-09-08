@@ -37,6 +37,7 @@ const RUNNING_BASE: ArStatusInput = {
   readiness: null,
   placement: { kind: "idle" },
   planesError: null,
+  contentError: null,
   gate: { kind: "idle" },
   content: { kind: "none" },
 };
@@ -75,6 +76,26 @@ describe("the scan gate and the content in the composed line (M5)", () => {
     expect(contentSegment({ kind: "placed", count: 1, skipped: 0 })).toBe(
       "1 placed object",
     );
+  });
+
+  it("a code-less tour says so once, through the gate's line (M5 review #12)", () => {
+    const line = arStatusLine({
+      ...RUNNING_BASE,
+      tour: { kind: "open", levelCount: 0 },
+      gate: { kind: "not-required", reason: "no-lockable-level" },
+    });
+    expect(line).toContain("no measured code - placing by GPS");
+    expect(line).not.toContain("no printed codes.");
+  });
+
+  it("a failed content render has its own segment, next to a failed image placement (M5 review #5)", () => {
+    const line = arStatusLine({
+      ...RUNNING_BASE,
+      planesError: "ring",
+      contentError: "labels",
+    });
+    expect(line).toContain("images failed: ring");
+    expect(line).toContain("placed content failed: labels");
   });
 });
 

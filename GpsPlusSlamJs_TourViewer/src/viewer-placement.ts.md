@@ -13,17 +13,26 @@ recording. Its own module since the flows plan M6.
 
 - `createViewerPlacement({ ctx, mode, arStore, arController, seams, errorBox, escapeButton, hooks }): ViewerPlacement` - places only in visitor mode
   - `ViewerPlacement.startScanGate()` (called when the session reaches
-    running) derives the scan gate (`scan-gate.ts`) and arms the escape
-    clock (`seams.schedule`, 45 s) while it scans; `reconsiderScanGate()`
-    (the levels arrived) waives a scanning gate that cannot lock. The
+    running, and again when a tour opens into a running session) derives
+    the scan gate (`scan-gate.ts`) and arms the escape clock
+    (`seams.schedule`, 45 s) while it scans; idle when no session runs.
+    `resetScanGate()` (a tour closed) returns it to idle with the clock
+    cancelled - a gate waived for one tour never carries into the next.
+    `reconsiderScanGate(levels | "unavailable")` (the levels arrived, or
+    could not be read) waives a scanning gate that cannot lock. The
     controller's `onLocked` with a lockable level passes the gate; the
-    escape button passes it as "skipped". Nothing is placed until the gate
-    allows it (DEC-N3): the capture-spot join AND the tour's content.
+    escape button passes it as "skipped"; both place first and render the
+    line after. Nothing is placed until the gate allows it (DEC-N3): the
+    capture-spot join, the tour's content, AND the ring placed on a voted
+    lock (the framework dispatches a frame's votes before it reports the
+    lock, so the first `onVotedLock` arrives while the gate still scans).
   - The tour's content (`tour.json`, M5) is rendered once per session as
     soon as the gate allows it and the GPS zero exists
     (`renderTourObjects`; labels through `seams.createLabel`, photos
-    decoded from the streaming session at divisor 2); a failed read names
-    the object in the status line.
+    decoded from the streaming session at the capture planes' divisor); a
+    failed read names the object in the status line, a failed render goes
+    to `ctx.contentError` (its own segment; the attempt stays latched,
+    because the only throws there are deterministic constructors).
   - `startViewerPipeline(): boolean` - creates the viewer tracking
     controller into `ctx.qrController` for THIS AR entry; false without a
     detector (plain AR, still placing photos).

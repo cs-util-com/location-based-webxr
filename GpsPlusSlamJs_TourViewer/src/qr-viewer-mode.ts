@@ -97,10 +97,11 @@ export interface ViewerPipelineDeps {
   onUnusableLevel?(code: string): void;
   /** A locked frame's votes were dispatched (budget progress for the UI). */
   onVotedLock?(text: string, votedLocks: number): void;
-  /** The controller locked a code against its level - BEFORE any vote
-   *  (a vote needs the zero and the budget). The scan gate keys on this
-   *  (M5, plan review #1). */
-  onLocked?(text: string, level: QrLevel): void;
+  /** The controller locked a code against its level. The framework
+   *  dispatches the frame's votes first and reports the lock after them
+   *  (`qr-tracking-controller.ts`), so `onVotedLock` may precede this on
+   *  the first lock. The scan gate keys on this (M5, plan review #1). */
+  onLocked?(level: QrLevel): void;
   /** The level this decoded text resolved to (`null` when the tour has
    *  none). Resolving the id is ASYNC, so the app caches the answer here
    *  and the synchronous callbacks — the debug view, the image planes —
@@ -180,8 +181,7 @@ export function buildViewerControllerConfig(
     ...(deps.onLocked !== undefined
       ? {
           onLocked: (_solution: unknown, level: QrLevel) => {
-            if (lastDetectedText !== null)
-              deps.onLocked?.(lastDetectedText, level);
+            deps.onLocked?.(level);
           },
         }
       : {}),

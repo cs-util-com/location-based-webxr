@@ -154,6 +154,29 @@ describe("gateAllowsPlacement / gateSegment", () => {
       gateSegment({ kind: "not-required", reason: "no-lockable-level" }),
     ).toMatch(/no measured code/);
     expect(gateSegment({ kind: "not-required", reason: "creator" })).toBe("");
+    expect(
+      gateSegment({ kind: "not-required", reason: "levels-unavailable" }),
+    ).toMatch(/could not be read/);
     expect(SCAN_GATE_ESCAPE_MS).toBe(45_000);
+  });
+});
+
+describe("reconsiderScanGate - the levels could not be read (M5 review #1)", () => {
+  // Why this matters: a level file that fails to parse (or a host that
+  // never answers) used to leave `currentLevels` null forever, and a null
+  // never waives - the visitor stood at an unpassable gate for 45 s with
+  // the reason written to a box outside the overlay. Unreadable levels
+  // waive the gate with their own copy; a passed or waived gate stands.
+  it("waives a scanning gate, and leaves every other state alone", () => {
+    expect(
+      reconsiderScanGate(
+        { kind: "scanning", escapeOffered: true },
+        "unavailable",
+      ),
+    ).toEqual({ kind: "not-required", reason: "levels-unavailable" });
+    const passed: ScanGate = { kind: "passed", via: "code" };
+    expect(reconsiderScanGate(passed, "unavailable")).toBe(passed);
+    const idle: ScanGate = { kind: "idle" };
+    expect(reconsiderScanGate(idle, "unavailable")).toBe(idle);
   });
 });

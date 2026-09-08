@@ -25,7 +25,9 @@ lives here.
     `placedObjects`, `placedPreviews`, `placementNote`, `reticle`,
     `latestFrame`;
   - the scan gate and the placed content (viewer-placement.ts, M5):
-    `scanGate`, `cancelEscapeClock`, `contentRendered`, `contentAttempted`;
+    `scanGate`, `cancelEscapeClock`, `contentRendered`, `contentAttempted`,
+    `contentError`; the hooks `startScanGate` / `resetScanGate` /
+    `reconsiderScanGate(levels | "unavailable")`;
   - the viewer QR line and the placement (`viewer-placement.ts`): the six
     `viewer*` line inputs, `latestReprojectionPx`, `placement`,
     `viewerPlanesError`, `imagePlanes`, `imagePlanesLoading`,

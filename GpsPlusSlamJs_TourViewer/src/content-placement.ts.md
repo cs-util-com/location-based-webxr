@@ -23,10 +23,14 @@ imageHeight, nowIso }): TourPhoto | null` - the camera's RAW odometry pose
   its facing through `rotationFromHeading` (the framework's -heading about
   Up convention) instead of facing East.
 - `rotationFromHeading(headingDeg)` - that quaternion.
-- `renderTourObjects(objects, { scene, zero, makeLabel, loadPhotoTexture }):
-Promise<RenderedTourObjects>` - pins as label objects, photos as capture
-  planes (`placeCapturedImagePlanes`), all at the scene root; a photo whose
-  texture fails is skipped and named in `skipped`; `dispose()` removes and
+- `renderTourObjects(objects, { scene, zero, makeLabel, loadPhotoTexture })`
+  builds ONE `Group` and adds it to the scene only after the last photo
+  decoded (photos decode one at a time - memory), so a session ending
+  mid-run owns no stray labels; `dispose` removes the group.
+  Details:
+  Promise<RenderedTourObjects>` - pins as label objects, photos as capture
+planes (`placeCapturedImagePlanes`), all at the scene root; a photo whose
+texture fails is skipped and named in `skipped`; `dispose()` removes and
   frees everything.
 
 ## Invariants & assumptions

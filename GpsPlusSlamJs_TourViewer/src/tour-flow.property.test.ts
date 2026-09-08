@@ -69,9 +69,29 @@ const base = (
   readiness: null,
   placement,
   planesError: null,
+  contentError: null,
   gate: { kind: "idle" },
   content: { kind: "none" },
 });
+
+/** Every gate state (M5 review #15: the properties used to pin `idle`). */
+const gateArb: fc.Arbitrary<ArStatusInput["gate"]> = fc.oneof(
+  fc.constant<ArStatusInput["gate"]>({ kind: "idle" }),
+  fc
+    .constantFrom(
+      "creator" as const,
+      "no-detector" as const,
+      "no-lockable-level" as const,
+      "levels-unavailable" as const,
+    )
+    .map((reason) => ({ kind: "not-required" as const, reason })),
+  fc
+    .boolean()
+    .map((escapeOffered) => ({ kind: "scanning" as const, escapeOffered })),
+  fc
+    .constantFrom("code" as const, "skipped" as const)
+    .map((via) => ({ kind: "passed" as const, via })),
+);
 
 describe("tour-flow - copy rules", () => {
   it("an open tour with zero levels never says 'Scanning', for any frame count", () => {
@@ -121,6 +141,35 @@ describe("tour-flow - copy rules", () => {
         expect(placementSegment({ kind: "declined", reason })).toContain(
           reason,
         );
+      }),
+    );
+  });
+});
+
+describe("tour-flow - the gate in the composed line (M5)", () => {
+  it("a scanning gate never shows the coaching hint or 'Scanning'; a waived one never says 'no printed codes' twice", () => {
+    // Why this matters: "walk around" beside "stay at the code" and a
+    // doubled "no code" line were both shipped once; the rules hold for
+    // every gate state and frame count, not only the two examples.
+    fc.assert(
+      fc.property(gateArb, fc.nat({ max: 1000 }), (gate, cameraFrames) => {
+        const line = arStatusLine({
+          ...base({ kind: "open", levelCount: 0 }, { kind: "waiting-ready" }),
+          cameraFrames,
+          gate,
+          readiness: {
+            phase: "move-around",
+            hint: "Walk around a few steps.",
+            percentReady: 40,
+          },
+        });
+        const scanning = gate.kind === "scanning";
+        const coaching =
+          line.includes("Walk around") || line.includes("Scanning");
+        expect(scanning && coaching).toBe(false);
+        const mentions = line.split("no printed codes").length - 1;
+        const gateSays = line.includes("no measured code");
+        expect(mentions + (gateSays ? 1 : 0)).toBeLessThanOrEqual(1);
       }),
     );
   });

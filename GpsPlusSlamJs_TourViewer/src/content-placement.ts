@@ -37,7 +37,7 @@ import type {
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { calcRelativeCoordsInMeters } from "gps-plus-slam-app-framework/core";
 import type { LatLong, Matrix4 } from "gps-plus-slam-app-framework/core";
-import type { Object3D, Texture } from "three";
+import { Group, type Object3D, type Texture } from "three";
 
 import { placeCapturedImagePlanes } from "./image-planes.js";
 
@@ -192,12 +192,18 @@ export async function renderTourObjects(
   const photoPoses: ReturnType<typeof objectPoseNue>[] = [];
   const textures: Texture[] = [];
   const skipped: string[] = [];
+  // One group, added to the scene only once everything decoded (M5 review
+  // #6): pins used to land one by one while photos trickled in, and a
+  // session ending mid-run left them in the scene with no owner. Photos
+  // decode one at a time on purpose - a long tour's textures are a
+  // GPU-memory hazard, and decoding them all at once doubles the peak.
+  const group = new Group();
   for (const object of objects) {
     const pose = objectPoseNue(object.geo, deps.zero);
     if (object.kind === "pin") {
       const label = deps.makeLabel(object.label);
       label.object.position.set(...pose.positionNue);
-      deps.scene.add(label.object);
+      group.add(label.object);
       labels.push(label);
       continue;
     }
@@ -212,18 +218,17 @@ export async function renderTourObjects(
     textures.push(texture);
   }
   const planes = placeCapturedImagePlanes({
-    scene: deps.scene,
+    scene: group,
     poses: photoPoses,
     textures,
   });
+  deps.scene.add(group);
   return {
     count: labels.length + planes.count,
     skipped,
     dispose: () => {
-      for (const label of labels) {
-        deps.scene.remove(label.object);
-        label.dispose();
-      }
+      deps.scene.remove(group);
+      for (const label of labels) label.dispose();
       planes.dispose();
     },
   };

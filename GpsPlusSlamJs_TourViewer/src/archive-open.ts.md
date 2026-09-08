@@ -26,7 +26,11 @@ DOM glue, its own module since the flows plan M6.
 ## Invariants & assumptions
 
 - Session-state fields it owns: `session`, `currentLevels`,
-  `openGeneration`; `teardownSession` also resets the placement fields the
+  `openGeneration`; a successful open re-derives the scan gate for a
+  running session (`hooks.startScanGate`) and its level load's outcome
+  reaches the gate either way (`hooks.reconsiderScanGate(levels)` or
+  `"unavailable"` on a failed read, M5 review #1);
+  `teardownSession` resets the gate (`hooks.resetScanGate`) and the placement fields the
   closing tour owned (`imagePlanes`, `imagePlanesLoading`,
   `planesRunGeneration` bump, `placementAttempted`, `joinDeclined`,
   `placement`) and the QR controller's level cache.

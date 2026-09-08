@@ -198,6 +198,7 @@ const viewer = createViewerPlacement({
 hooks.startViewerPipeline = viewer.startViewerPipeline;
 hooks.tryPlaceTour = viewer.tryPlaceTour;
 hooks.startScanGate = viewer.startScanGate;
+hooks.resetScanGate = viewer.resetScanGate;
 hooks.reconsiderScanGate = viewer.reconsiderScanGate;
 
 const arEntry = wireArEntry({

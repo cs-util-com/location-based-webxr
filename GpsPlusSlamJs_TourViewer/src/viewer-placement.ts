@@ -19,6 +19,7 @@ import {
   selectZeroReference,
 } from "gps-plus-slam-app-framework/state";
 import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
+import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import type { Texture } from "three";
 
 import {
@@ -27,11 +28,10 @@ import {
   preflightCaptureJoin,
   type ReplayedJoinState,
 } from "./capture-geo-join.js";
-import { decodeFrameTexture as decodeContentTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
-
 import { renderTourObjects } from "./content-placement.js";
 import { placeCapturedImagePlanes, placeImagePlanes } from "./image-planes.js";
 import type { ViewerMode } from "./mode.js";
+import { describeOpenError } from "./open-errors.js";
 import {
   gateAllowsPlacement,
   isLockableLevel,
@@ -39,7 +39,6 @@ import {
   SCAN_GATE_ESCAPE_MS,
   scanGateAtSessionStart,
 } from "./scan-gate.js";
-import { describeOpenError } from "./open-errors.js";
 import {
   buildViewerControllerConfig,
   imagePlaneRingNue,
@@ -70,11 +69,18 @@ export interface ViewerPlacement {
   startViewerPipeline: () => boolean;
   /** The ready-triggered placement; cheap enough to run on every dispatch. */
   tryPlaceTour: () => void;
-  /** The session reached running: derive the scan gate (M5) and arm its
-   *  escape clock while it scans. */
+  /** The session reached running, or a tour opened into a running
+   *  session: derive the scan gate (M5) and arm its escape clock while it
+   *  scans. Idle when no session runs. */
   startScanGate: () => void;
-  /** The tour's levels arrived: waive a scanning gate that cannot lock. */
-  reconsiderScanGate: () => void;
+  /** A tour closed: the gate belonged to it (M5 review #8 - a waived gate
+   *  used to survive into the next tour, which may carry a code). */
+  resetScanGate: () => void;
+  /** The tour's levels arrived (or could not be read): waive a scanning
+   *  gate that cannot lock. */
+  reconsiderScanGate: (
+    levels: ReadonlyMap<string, QrLevel> | "unavailable",
+  ) => void;
 }
 
 export function createViewerPlacement(deps: {
@@ -108,11 +114,27 @@ export function createViewerPlacement(deps: {
     ctx.cancelEscapeClock = null;
     escapeButton.hidden = true;
     ctx.scanGate = { kind: "passed", via };
-    hooks.renderArStatus();
+    // Place first, render after: the line describes the placement state
+    // the pass produced, not the one before it (M5 review #7).
     tryPlaceTour();
+    hooks.renderArStatus();
+  }
+
+  function resetScanGate(): void {
+    ctx.cancelEscapeClock?.();
+    ctx.cancelEscapeClock = null;
+    escapeButton.hidden = true;
+    ctx.scanGate = { kind: "idle" };
+    hooks.renderArStatus();
   }
 
   function startScanGate(): void {
+    // Only a running session has a gate: a tour opened on the plain page
+    // waits for its session, whose start derives the gate again.
+    if (arController.getState().status !== "running") {
+      resetScanGate();
+      return;
+    }
     ctx.cancelEscapeClock?.();
     ctx.cancelEscapeClock = null;
     ctx.scanGate = scanGateAtSessionStart({
@@ -134,16 +156,17 @@ export function createViewerPlacement(deps: {
     hooks.renderArStatus();
   }
 
-  function reconsiderScanGate(): void {
-    if (ctx.currentLevels === null) return;
-    const next = reconsiderGate(ctx.scanGate, ctx.currentLevels);
+  function reconsiderScanGate(
+    levels: ReadonlyMap<string, QrLevel> | "unavailable",
+  ): void {
+    const next = reconsiderGate(ctx.scanGate, levels);
     if (next === ctx.scanGate) return;
     ctx.cancelEscapeClock?.();
     ctx.cancelEscapeClock = null;
     escapeButton.hidden = true;
     ctx.scanGate = next;
-    hooks.renderArStatus();
     tryPlaceTour();
+    hooks.renderArStatus();
   }
 
   escapeButton.addEventListener("click", () => {
@@ -201,7 +224,7 @@ export function createViewerPlacement(deps: {
         onLevelResolved: (text, level) => {
           ctx.levelByText.set(text, level);
         },
-        onLocked: (_text, level) => {
+        onLocked: (level) => {
           // The gate passes on the LOCK against a lockable level, not on a
           // vote (M5; plan review #1).
           if (isLockableLevel(level)) passGate("code");
@@ -231,7 +254,16 @@ export function createViewerPlacement(deps: {
           // (flows plan review #4). The fire-and-forget carries a .catch
           // (PR #366 review): a throw below the loader's try/finally used
           // to reject unhandled inside an ~8 Hz detection callback.
-          if (ctx.imagePlanes === null && !ctx.imagePlanesLoading) {
+          // The gate is checked HERE too (M5 review #3): the framework
+          // dispatches a frame's votes BEFORE it reports the lock, so the
+          // first voted lock arrives while the gate still scans; the ring
+          // waits for the next budgeted vote instead of relying on that
+          // ordering.
+          if (
+            gateAllowsPlacement(ctx.scanGate) &&
+            ctx.imagePlanes === null &&
+            !ctx.imagePlanesLoading
+          ) {
             void placeTourImagePlanes(text).catch((err: unknown) => {
               // The archive URL is known here — a Drive failure during
               // plane loading deserves the Drive-specific message too
@@ -310,6 +342,10 @@ export function createViewerPlacement(deps: {
     const zero = selectZeroReference(arStore.getState());
     const scene = seams.getScene();
     if (zero === null || scene === null) return;
+    // Latched before the await on purpose (M5 review #5 weighed the
+    // give-back): the only failures below are a label or plane constructor
+    // throw, which is deterministic - giving the attempt back would retry
+    // it on every dispatch at the frame cadence.
     ctx.contentAttempted = true;
     const generation = ctx.planesRunGeneration;
     void renderTourObjects(manifest.objects, {
@@ -317,7 +353,10 @@ export function createViewerPlacement(deps: {
       zero,
       makeLabel: (text) => seams.createLabel(text),
       loadPhotoTexture: async (entryName) =>
-        decodeContentTexture(await current.loadEntry(entryName), 2),
+        decodeFrameTexture(
+          await current.loadEntry(entryName),
+          CAPTURE_PLANE_DECODE_DIVISOR,
+        ),
     }).then(
       (rendered) => {
         // A run the session outlived must not plant into a dead scene.
@@ -329,7 +368,7 @@ export function createViewerPlacement(deps: {
         hooks.renderArStatus();
       },
       (err: unknown) => {
-        ctx.viewerPlanesError = describeOpenError(err, current.archive.url);
+        ctx.contentError = describeOpenError(err, current.archive.url);
         hooks.renderArStatus();
       },
     );
@@ -650,6 +689,7 @@ export function createViewerPlacement(deps: {
     startViewerPipeline,
     tryPlaceTour,
     startScanGate,
+    resetScanGate,
     reconsiderScanGate,
   };
 }

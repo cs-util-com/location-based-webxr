@@ -808,14 +808,15 @@ test("a tour with no recording and no printed codes says so, instead of scanning
       { timeout: 20000 },
     )
     .toMatch(/nothing to place/);
-  await expect(page.getByTestId("ar-status")).toContainText(
-    "This tour has no printed codes",
-  );
   await expect(page.getByTestId("ar-status")).not.toContainText("Scanning");
   // No measured code: the gate is waived and placing is by GPS - the
-  // escape never appears, even after the clock (M5, DEC-N4).
+  // escape never appears, even after the clock (M5, DEC-N4). The gate's
+  // line is the ONE "no code" line (M5 review #12).
   await expect(page.getByTestId("ar-status")).toContainText(
     "no measured code - placing by GPS",
+  );
+  await expect(page.getByTestId("ar-status")).not.toContainText(
+    "no printed codes.",
   );
   await page.evaluate(() => {
     /** @type {any} */ (window).__tourViewerTest.fireTimers();

@@ -11,8 +11,11 @@ clock, the escape button).
 ## Public API
 
 - `type ScanGate` - `idle` | `not-required` (`creator` | `no-detector` |
-  `no-lockable-level`) | `scanning` (`escapeOffered`) | `passed` (`code` |
-  `skipped`).
+  `no-lockable-level` | `levels-unavailable`) | `scanning`
+  (`escapeOffered`) | `passed` (`code` | `skipped`). `no-detector` is
+  DEC-N13: a browser without `BarcodeDetector` can never pass, so the gate
+  is waived with its own copy instead of holding the visitor 45 s for the
+  same outcome.
 - `SCAN_GATE_ESCAPE_MS = 45_000` - after this long in `scanning` the escape
   is offered (DEC-N3).
 - `isLockableLevel(level)` - a printed size AND a geo pose: a size-less
@@ -21,8 +24,9 @@ clock, the escape button).
   no-detector are not required; levels still loading (`null`) start
   scanning (the gate cannot be waived on unknown levels); no lockable level
   is not required.
-- `reconsiderScanGate(gate, levels)` - waives a scanning gate when the
-  arrived levels cannot lock; every other state stands.
+- `reconsiderScanGate(gate, levels | "unavailable")` - waives a scanning
+  gate when the arrived levels cannot lock, or could not be read at all
+  (`levels-unavailable`, its own copy); every other state stands.
 - `gateAllowsPlacement(gate)` - passed or not required.
 - `gateSegment(gate)` - the status line's segment.
 

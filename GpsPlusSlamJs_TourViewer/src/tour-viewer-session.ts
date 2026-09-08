@@ -71,10 +71,16 @@ export interface TourViewerHooks {
   presentTourForPrint(url: string): void;
   /** A tour closed: the finish step's page-side state is stale. */
   resetFinishStep(): void;
-  /** The visitor session reached running: derive the scan gate. */
+  /** A session reached running, or a tour opened into a running session:
+   *  derive the scan gate (idle when no session runs). */
   startScanGate(): void;
-  /** The tour's levels arrived: a scanning gate may be waived. */
-  reconsiderScanGate(): void;
+  /** A tour closed: the gate belongs to it (idle, clock cancelled). */
+  resetScanGate(): void;
+  /** The tour's levels arrived (or could not be read): a scanning gate may
+   *  be waived. */
+  reconsiderScanGate(
+    levels: ReadonlyMap<string, QrLevel> | "unavailable",
+  ): void;
 }
 
 export function createUnwiredHooks(): TourViewerHooks {
@@ -88,6 +94,7 @@ export function createUnwiredHooks(): TourViewerHooks {
     presentTourForPrint: () => undefined,
     resetFinishStep: () => undefined,
     startScanGate: () => undefined,
+    resetScanGate: () => undefined,
     reconsiderScanGate: () => undefined,
   };
 }
@@ -189,6 +196,10 @@ export interface TourViewerSession {
    *  `#error` is a sibling of `#ar-root` and invisible during the session
    *  (the milestone-review-#4 trap; PR #366 review). */
   viewerPlanesError: string | null;
+  /** A failed `tour.json` content render, on its own channel: the
+   *  capture-plane paths write `viewerPlanesError`, and whichever failed
+   *  second used to erase the other's message (M5 review #5). */
+  contentError: string | null;
   imagePlanes: PlacedImagePlanes | null;
   /** In-flight guard: without it every voted lock during the decode window
    *  started ANOTHER placement run (M4 milestone review #4). */
@@ -253,6 +264,7 @@ export function createTourViewerSession(): TourViewerSession {
     latestReprojectionPx: null,
     placement: { kind: "idle" },
     viewerPlanesError: null,
+    contentError: null,
     imagePlanes: null,
     imagePlanesLoading: false,
     planesRunGeneration: 0,

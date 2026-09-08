@@ -109,6 +109,7 @@ export function wireArEntry(deps: {
         : computeOnboardingGuidance(selectTrackingQuality(arStore.getState())),
       placement: ctx.placement,
       planesError: ctx.viewerPlanesError,
+      contentError: ctx.contentError,
       gate: ctx.scanGate,
       content:
         ctx.contentRendered === null
@@ -175,6 +176,7 @@ export function wireArEntry(deps: {
     ctx.contentRendered?.dispose();
     ctx.contentRendered = null;
     ctx.contentAttempted = false;
+    ctx.contentError = null;
     dom.escapeButton.hidden = true;
     ctx.viewerQrStatus = null;
     ctx.viewerUnknownCode = null;
@@ -278,6 +280,11 @@ export function wireArEntry(deps: {
       // position is GPS-world NUE once the alignment lands.
       if (authorMode) ctx.reticle = seams.startHitTestReticle(worldGroup);
     }
+    // The scan gate first (M5): a creator's is `not-required/creator` (a
+    // real state, M5 review #11), a visitor's holds placement back until
+    // the code locks; the subscription below re-attempts on every dispatch
+    // once it passes.
+    hooks.startScanGate();
     if (authorMode) {
       hooks.renderAuthorReadout();
       return;
@@ -288,9 +295,6 @@ export function wireArEntry(deps: {
     // runs once.
     ctx.placementAttempted = false;
     ctx.joinDeclined = false;
-    // The scan gate first (M5): placement waits for it; the subscription
-    // re-attempts on every dispatch once it passes.
-    hooks.startScanGate();
     ctx.placementUnsubscribe = arStore.subscribe(() => {
       hooks.tryPlaceTour();
     });

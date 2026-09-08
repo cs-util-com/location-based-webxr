@@ -28,7 +28,8 @@ export type ScanGate =
    *  detector, or a tour whose codes cannot lock. */
   | {
       kind: "not-required";
-      reason: "creator" | "no-detector" | "no-lockable-level";
+      reason:
+        "creator" | "no-detector" | "no-lockable-level" | "levels-unavailable";
     }
   /** Waiting for the lock; `escapeOffered` once the clock elapsed. */
   | { kind: "scanning"; escapeOffered: boolean }
@@ -63,13 +64,20 @@ export function scanGateAtSessionStart(input: {
   return { kind: "scanning", escapeOffered: false };
 }
 
-/** The gate once the tour's levels are known: a scanning gate is waived
- *  when none of them can lock; every other state stands. */
+/**
+ * The gate once the tour's levels are known: a scanning gate is waived
+ * when none of them can lock, and when the levels could not be read at all
+ * (M5 review #1: a corrupt or unreachable level file used to hold the
+ * visitor at an unpassable gate for the full 45 s, with the failure written
+ * to a box outside the overlay). Every other state stands.
+ */
 export function reconsiderScanGate(
   gate: ScanGate,
-  levels: ReadonlyMap<string, QrLevel>,
+  levels: ReadonlyMap<string, QrLevel> | "unavailable",
 ): ScanGate {
   if (gate.kind !== "scanning") return gate;
+  if (levels === "unavailable")
+    return { kind: "not-required", reason: "levels-unavailable" };
   return [...levels.values()].some(isLockableLevel)
     ? gate
     : { kind: "not-required", reason: "no-lockable-level" };
@@ -93,6 +101,8 @@ export function gateSegment(gate: ScanGate): string {
           return "No code scanner in this browser - placing by GPS.";
         case "no-lockable-level":
           return "This tour has no measured code - placing by GPS.";
+        case "levels-unavailable":
+          return "The tour's printed-code file could not be read - placing by GPS.";
       }
       break;
     case "scanning":

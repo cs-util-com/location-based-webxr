@@ -98,7 +98,9 @@ export interface ArStatusInput {
   placement: PlacementState;
   /** A failed image-plane placement (the Drive-aware open error text). */
   planesError: string | null;
-  /** The visitor's scan gate (M5); `idle` outside a visitor session. */
+  /** A failed `tour.json` content render (its own channel, M5 review #5). */
+  contentError: string | null;
+  /** The visitor's scan gate (M5); `idle` outside a session. */
   gate: ScanGate;
   /** The tour's placed content (`tour.json`), once rendered. */
   content:
@@ -127,6 +129,8 @@ export function isPlacementReady(
 
 /** The printed-code line: the viewer pipeline's status, with the no-codes
  *  rule applied for an open tour. Empty in author mode. */
+const NO_PRINTED_CODES = "This tour has no printed codes.";
+
 export function qrSegment(input: ArStatusInput): string {
   if (input.mode === "creator") return "";
   const { qr, tour } = input;
@@ -140,7 +144,7 @@ export function qrSegment(input: ArStatusInput): string {
     nothingDetected &&
     qr.status !== null
   ) {
-    return "This tour has no printed codes.";
+    return NO_PRINTED_CODES;
   }
   return viewerStatusLine(qr);
 }
@@ -214,15 +218,26 @@ export function arStatusLine(input: ArStatusInput): string {
   // would contradict "stay at the code": the gate's line stands alone.
   const gateScanning = input.gate.kind === "scanning";
   const qr = qrSegment(input);
+  // The gate waived for a code-less tour already says "no measured code";
+  // the pipeline's "no printed codes" would say it twice (M5 review #12).
+  const gateSaysNoCode =
+    input.gate.kind === "not-required" &&
+    input.gate.reason === "no-lockable-level";
   const segments = [
     `${mode} — AR running · ${String(input.cameraFrames)} camera frames`,
     // The gate's own "point the phone at the code" replaces the pipeline's
     // generic scanning line; a detected-but-unknown code still shows.
-    gateScanning && qr === "Scanning for the printed code…" ? "" : qr,
+    (gateScanning && qr === "Scanning for the printed code…") ||
+    (gateSaysNoCode && qr === NO_PRINTED_CODES)
+      ? ""
+      : qr,
     gateSegment(input.gate),
     gateScanning ? "" : placementSegment(placement, input.readiness),
     contentSegment(input.content),
     input.planesError === null ? "" : `images failed: ${input.planesError}`,
+    input.contentError === null
+      ? ""
+      : `placed content failed: ${input.contentError}`,
   ];
   return segments.filter((segment) => segment !== "").join(" · ");
 }

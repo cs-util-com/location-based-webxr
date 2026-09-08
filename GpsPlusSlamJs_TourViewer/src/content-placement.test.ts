@@ -186,6 +186,41 @@ describe("renderTourObjects", () => {
     };
   }
 
+  it("adds nothing to the scene before the last photo decoded (M5 review #6)", async () => {
+    const { scene, children } = fakeScene();
+    const pin = mintPin({
+      id: "p",
+      label: "Gate",
+      worldNuePosition: { x: 5, y: 400, z: 0 },
+      zero: ZERO,
+      nowIso: NOW,
+    })!;
+    const photo = mintPhoto({
+      id: "g",
+      cameraPose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+      alignmentMatrix: IDENTITY,
+      zero: ZERO,
+      imageWidth: 4,
+      imageHeight: 3,
+      nowIso: NOW,
+    })!;
+    let release: (t: Texture) => void = () => undefined;
+    const pending = renderTourObjects([pin, photo], {
+      scene,
+      zero: ZERO,
+      makeLabel: () => ({ object: new Object3D(), dispose: () => undefined }),
+      loadPhotoTexture: () =>
+        new Promise<Texture>((resolve) => {
+          release = resolve;
+        }),
+    });
+    await Promise.resolve();
+    expect(children).toHaveLength(0);
+    release(new Texture());
+    await pending;
+    expect(children).toHaveLength(1);
+  });
+
   it("places pins as labels and photos as planes at their NUE poses, skips a photo whose texture failed, and disposes everything", async () => {
     const { scene, children } = fakeScene();
     const disposed: string[] = [];
@@ -224,8 +259,12 @@ describe("renderTourObjects", () => {
     });
     expect(rendered.count).toBe(2);
     expect(rendered.skipped).toEqual(["b"]);
-    expect(children).toHaveLength(2);
-    const label = children.find((c) => c.name === "label:Gate");
+    // ONE group at the root (M5 review #6): nothing is in the scene until
+    // every photo decoded, so a session ending mid-run owns no strays.
+    expect(children).toHaveLength(1);
+    const group = children[0];
+    expect(group?.children).toHaveLength(2);
+    const label = group?.children.find((c) => c.name === "label:Gate");
     expect(label?.position.x).toBeCloseTo(5, 2);
     expect(label?.position.y).toBeCloseTo(400, 4);
     rendered.dispose();

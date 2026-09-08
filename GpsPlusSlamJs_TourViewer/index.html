@@ -104,10 +104,21 @@
       #ar-root {
         margin: 1rem 0;
       }
+      /* Composited over the camera during the session: a white halo keeps
+         the dark text legible over video and vanishes on the white page. */
       #ar-status {
-        color: #8889;
-        font-size: 0.9rem;
+        color: #333;
+        font-size: 0.95rem;
         margin-bottom: 0.5rem;
+        text-shadow:
+          0 0 4px #fff,
+          0 0 8px #fff;
+      }
+      /* The gate's escape: the secondary, quality-degrading choice. */
+      #scan-escape {
+        margin-left: 0.5rem;
+        border: 1px dashed currentcolor;
+        background: transparent;
       }
       #setup-panel {
         display: grid;
@@ -363,7 +374,7 @@
             says it is measured; walking a few metres with GPS reception lets
             the phone align to the map.
           </p>
-          <div id="ar-status" data-testid="ar-status"></div>
+          <div id="ar-status" data-testid="ar-status" aria-live="polite"></div>
           <button type="button" id="enter-ar" data-testid="enter-ar" disabled>
             Checking AR support…
           </button>
