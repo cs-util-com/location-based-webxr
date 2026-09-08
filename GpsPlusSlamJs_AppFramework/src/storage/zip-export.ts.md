@@ -64,7 +64,8 @@ const { blob, fileCount } = await exportSessionHandleAsZip(sessionHandle, {
 import { downloadZip } from './zip-export';
 
 // Trigger browser download
-await downloadZip(zipBlob, 'recording-2026-01-26.zip');
+const saved = await downloadZip(zipBlob, 'recording-2026-01-26.zip');
+// false: the user dismissed the save picker and nothing was written
 ```
 
 ### Sync to External File Handle
@@ -115,10 +116,11 @@ never needs to know about them.
 
 ## Error Modes
 
-| Error               | Cause                      | Recovery                  |
-| ------------------- | -------------------------- | ------------------------- |
-| "Session not found" | Invalid session name       | Check session exists      |
-| AbortError          | User cancelled save dialog | Normal - no action needed |
+| Error                     | Cause                                                                                          | Recovery                                            |
+| ------------------------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| "Session not found"       | Invalid session name                                                                           | Check session exists                                |
+| AbortError                | User cancelled save dialog                                                                     | `downloadZip` resolves `false`; nothing was written |
+| "relative path is unsafe" | A contributor path fails `assertSafeZipEntryPaths` ([zip-entry-path.ts](zip-entry-path.ts.md)) | Fix the contributor; no partial archive is kept     |
 
 ## Dependencies
 

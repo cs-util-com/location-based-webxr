@@ -242,6 +242,26 @@ export {
   type XrSystemLike,
 } from './webxr-support-probe.js';
 
+// --- tour-manifest / tour-archive (`tour.json`: placed content with exact
+// geo poses, and where it lives in a tour archive) ---
+export {
+  TOUR_MANIFEST_VERSION,
+  type TourManifest,
+  type TourObject,
+  type TourObjectKind,
+  TourManifestValidationError,
+  createEmptyTourManifest,
+  parseTourManifest,
+  serializeTourManifest,
+} from './tour-manifest.js';
+export {
+  TOUR_MANIFEST_ENTRY,
+  TOUR_CONTENT_FOLDER,
+  tourContentEntryName,
+  tourManifestEntryOf,
+  readTourManifestFromEntries,
+} from './tour-archive.js';
+
 // --- webxr-nue-basis ---
 export { WEBXR_TO_NUE } from './webxr-nue-basis.js';
 

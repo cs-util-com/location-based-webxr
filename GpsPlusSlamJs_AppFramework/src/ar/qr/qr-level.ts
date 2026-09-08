@@ -14,13 +14,8 @@
  * NOT interpreted here; only the fields the pose + vote need are validated.
  */
 
-import { bearingDeltaDeg, type Quaternion } from 'gps-plus-slam-js';
-import { normalizeBearingDeg } from '../../utils/bearing-degrees.js';
-import {
-  deriveVerticalHeading,
-  renormalizeUnitQuaternion,
-} from './qr-geo-pose-minting.js';
-import type { QrGeoOrientation, QrGeoPose } from './qr-gps-vote.js';
+import { parseGeoPose } from './geo-pose.js';
+import type { QrGeoPose } from './qr-gps-vote.js';
 
 /**
  * A validated QR level file.
@@ -115,127 +110,24 @@ function parsePhysicalSize(value: unknown): number | undefined {
 /**
  * Validate the optional `qr.geo`. When present every field is validated (a
  * partial geo is a bug — it would silently place the vote wrong). Returns
- * `undefined` when omitted; heading is normalized into `[0, 360)`.
+ * `undefined` when omitted. The rules live in `geo-pose.ts`, shared with
+ * the tour manifest; this wrapper only supplies the document path and the
+ * level's error type.
  */
 function parseGeo(value: unknown): QrGeoPose | undefined {
   if (value === undefined) return undefined;
-  if (!isRecord(value)) {
-    throw new QrLevelValidationError('"qr.geo" must be an object when present');
-  }
-  const { lat, lon, alt, headingDeg } = value;
-  if (!isFiniteNumber(lat) || lat < -90 || lat > 90) {
-    throw new QrLevelValidationError(
-      '"qr.geo.lat" must be a number in [-90, 90]'
-    );
-  }
-  if (!isFiniteNumber(lon) || lon < -180 || lon > 180) {
-    throw new QrLevelValidationError(
-      '"qr.geo.lon" must be a number in [-180, 180]'
-    );
-  }
-  if (!isFiniteNumber(alt)) {
-    throw new QrLevelValidationError('"qr.geo.alt" must be a finite number');
-  }
-  return { lat, lon, alt, ...parseOrientation(headingDeg, value.rotation) };
-}
-
-/** Max tolerated disagreement between an authored `headingDeg` and the
- *  bearing its `rotation` implies before the document rejects as
- *  self-contradictory (milestone review #5). */
-const HEADING_CONSISTENCY_TOLERANCE_DEG = 2;
-
-/**
- * The orientation half of `qr.geo` (6-DoF extension, QR-pose plan
- * 2026-08-25): `headingDeg` is optional WHEN a rotation is present — a
- * floor/ceiling code has no honest heading, and a filler read by a
- * rotation-unaware consumer would silently mis-place it. A pose with
- * NEITHER cannot orient anything and rejects loudly.
- */
-function parseOrientation(
-  headingDeg: unknown,
-  rotationValue: unknown
-): QrGeoOrientation {
-  const rotation = parseRotation(rotationValue);
-  if (headingDeg !== undefined && !isFiniteNumber(headingDeg)) {
-    throw new QrLevelValidationError(
-      '"qr.geo.headingDeg" must be a finite number when present'
-    );
-  }
-  const normalized = isFiniteNumber(headingDeg)
-    ? normalizeBearingDeg(headingDeg)
-    : undefined;
-  if (rotation === undefined) {
-    if (normalized === undefined) {
+  return parseGeoPose(value, {
+    path: 'qr.geo',
+    fail: (message) => {
+      // The level's historical wording for a non-object geo is kept: the
+      // tests and the docs both quote it.
       throw new QrLevelValidationError(
-        '"qr.geo" must carry "headingDeg" and/or "rotation"'
+        message === '"qr.geo" must be an object'
+          ? '"qr.geo" must be an object when present'
+          : message
       );
-    }
-    return { headingDeg: normalized };
-  }
-  if (normalized === undefined) return { rotation };
-  // Both present: they must AGREE. The whole point of the optional heading
-  // is that a wrong one read by a rotation-unaware consumer mis-places the
-  // code silently — accepting a contradictory pair would leave exactly that
-  // failure open for hand-authored or half-migrated files.
-  const derived = deriveVerticalHeading(rotation);
-  if (derived === undefined) {
-    throw new QrLevelValidationError(
-      '"qr.geo.headingDeg" contradicts "rotation": the rotation is not near-vertical, so no heading is honest'
-    );
-  }
-  if (
-    Math.abs(bearingDeltaDeg(derived, normalized)) >
-    HEADING_CONSISTENCY_TOLERANCE_DEG
-  ) {
-    throw new QrLevelValidationError(
-      `"qr.geo.headingDeg" (${normalized.toFixed(1)}°) contradicts "rotation" (bearing ${derived.toFixed(1)}°)`
-    );
-  }
-  return { headingDeg: normalized, rotation };
-}
-
-/**
- * Validate an optional `qr.geo.rotation`: a unit quaternion `[x, y, z, w]`
- * in the NUE GPS-world frame (see {@link QrGeoPose}). A small norm drift
- * (≤ 1e-3, e.g. JSON round-trip loss) is renormalized; anything further off
- * is a broken file, not a rotation.
- */
-function parseRotation(value: unknown): Quaternion | undefined {
-  if (value === undefined) return undefined;
-  if (
-    !Array.isArray(value) ||
-    value.length !== 4 ||
-    !value.every(isFiniteNumber)
-  ) {
-    throw new QrLevelValidationError(
-      '"qr.geo.rotation" must be an array of 4 finite numbers when present'
-    );
-  }
-  // Checked element reads: the length===4 guard above makes these always
-  // defined, but `noUncheckedIndexedAccess` (tsc) and the every()-narrowing
-  // eslint sees disagree about destructuring — this form satisfies both.
-  const [x, y, z, w] = [value[0], value[1], value[2], value[3]];
-  if (
-    x === undefined ||
-    y === undefined ||
-    z === undefined ||
-    w === undefined
-  ) {
-    throw new QrLevelValidationError(
-      '"qr.geo.rotation" must be an array of 4 finite numbers when present'
-    );
-  }
-  // The tolerance, the idempotent renormalization (the exact-round-trip
-  // guarantee stands on it — CI property seed on r574) and the -0
-  // canonicalization all live in the shared writer/reader contract:
-  // `renormalizeUnitQuaternion` in qr-geo-pose-minting.ts.
-  const renormalized = renormalizeUnitQuaternion([x, y, z, w]);
-  if (renormalized === undefined) {
-    throw new QrLevelValidationError(
-      '"qr.geo.rotation" must be a unit quaternion'
-    );
-  }
-  return renormalized;
+    },
+  });
 }
 
 /**

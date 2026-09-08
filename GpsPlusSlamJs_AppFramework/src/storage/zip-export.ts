@@ -19,6 +19,7 @@
 import { BlobWriter, ZipWriter, BlobReader } from '@zip.js/zip.js';
 import { createLogger } from '../utils/logger';
 import { getSessionsRootHandle } from './opfs-storage';
+import { assertSafeZipEntryPaths } from './zip-entry-path.js';
 
 const log = createLogger('ZipExport');
 
@@ -237,24 +238,19 @@ export async function exportSessionHandleAsZip(
     seenSubdirs.add(subdir);
 
     const addFile: ZipContributorAddFile = async (relativePath, blob) => {
-      if (relativePath.startsWith('/')) {
+      // The shared rule set (zip-entry-path.ts): absolute paths, backslashes,
+      // '.'/'..' segments, empty segments and trailing slashes are all
+      // rejected. Without this, a contributor could escape its declared
+      // subdir (e.g. `../actions/000001.json`) and overwrite framework-owned
+      // files inside the ZIP. These used to be three inline checks that the
+      // validator absorbed from community PR #321 was LAXER than (its
+      // review, 2026-08-26); one module now serves every writer (DEC-H3).
+      try {
+        assertSafeZipEntryPaths([relativePath]);
+      } catch (err) {
         throw new Error(
-          `ZipExportContributor relative path must not start with '/' (got ${relativePath})`
-        );
-      }
-      // Defensive: reject backslashes (Windows-style separators) and any path
-      // traversal segments. Without this, a contributor could escape its
-      // declared subdir (e.g. `../actions/000001.json`) and overwrite
-      // framework-owned files inside the ZIP.
-      if (relativePath.includes('\\')) {
-        throw new Error(
-          `ZipExportContributor relative path must not contain '\\' (got ${relativePath})`
-        );
-      }
-      const segments = relativePath.split('/');
-      if (segments.some((s) => s === '..' || s === '.')) {
-        throw new Error(
-          `ZipExportContributor relative path must not contain '.' or '..' segments (got ${relativePath})`
+          `ZipExportContributor relative path is unsafe: ${err instanceof Error ? err.message : String(err)}`,
+          { cause: err }
         );
       }
       await zipWriter.add(`${subdir}/${relativePath}`, new BlobReader(blob));
@@ -313,8 +309,16 @@ export async function syncToExternalZip(
  *
  * @param blob - The blob to download
  * @param filename - Suggested filename
+ * @returns `true` when a download or save was started; `false` when the
+ *   user dismissed the save picker, in which case nothing was written. A
+ *   caller whose next step assumes the file exists (the Tour Viewer's
+ *   finish step) keeps its download control live on `false`; before this
+ *   result the cancelled path was silent.
  */
-export async function downloadZip(blob: Blob, filename: string): Promise<void> {
+export async function downloadZip(
+  blob: Blob,
+  filename: string
+): Promise<boolean> {
   // Try File System Access API first (better UX on desktop)
   if ('showSaveFilePicker' in window && window.showSaveFilePicker) {
     try {
@@ -331,13 +335,13 @@ export async function downloadZip(blob: Blob, filename: string): Promise<void> {
       await writable.write(blob);
       await writable.close();
       log.info(`Saved via File System Access API: ${filename}`);
-      return;
+      return true;
     } catch (err) {
       const error = err as Error;
       if (error.name === 'AbortError') {
         // User cancelled - don't fall through
         log.info('User cancelled save dialog');
-        return;
+        return false;
       }
       // Fall through to <a download> fallback
       log.warn('showSaveFilePicker failed, using fallback:', error.message);
@@ -358,4 +362,5 @@ export async function downloadZip(blob: Blob, filename: string): Promise<void> {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 
   log.info(`Download triggered via <a download>: ${filename}`);
+  return true;
 }

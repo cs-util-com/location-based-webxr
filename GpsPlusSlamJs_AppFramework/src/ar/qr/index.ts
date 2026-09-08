@@ -93,6 +93,13 @@ export {
   evaluateQrPoseStability,
 } from './qr-pose-aggregation.js';
 
+// --- geo-pose (the level/manifest-shared pose validator) ---
+export {
+  HEADING_CONSISTENCY_TOLERANCE_DEG,
+  type ParseGeoPoseOptions,
+  parseGeoPose,
+} from './geo-pose.js';
+
 // --- qr-level ---
 export {
   type QrLevel,

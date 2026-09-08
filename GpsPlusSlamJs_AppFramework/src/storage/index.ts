@@ -77,6 +77,22 @@ export {
 // --- zip-coverage-embed ---
 export { embedCoverageInSessionJson } from './zip-coverage-embed.js';
 
+// --- zip-entry-path (the one path rule set every zip writer applies) ---
+export { assertSafeZipEntryPaths } from './zip-entry-path.js';
+
+// --- pack-files-as-zip (store-mode writer from in-memory entries) ---
+export {
+  type ZipEntryInput,
+  ZipPackagingError,
+  packFilesAsZip,
+} from './pack-files-as-zip.js';
+
+// --- zip-rebuild (existing zip + entries added/replaced by path) ---
+export {
+  type RebuildZipOptions,
+  rebuildZipWithEntries,
+} from './zip-rebuild.js';
+
 // --- byte-source ---
 export { type ByteSource, SwitchableByteSource } from './byte-source.js';
 

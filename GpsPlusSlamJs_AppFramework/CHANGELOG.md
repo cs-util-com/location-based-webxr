@@ -4,6 +4,10 @@
 
 ### Changed
 
+- **`downloadZip` resolves a boolean**: `true` when a download or save was
+  started, `false` when the user dismissed the save picker (nothing was
+  written; that path used to resolve silently). Callers awaiting `void`
+  are unaffected.
 - **`OpenedArchive.evict()` no longer waits for an in-flight warm
   download - it aborts it.** The session keeps streaming remotely, a
   recovery download is still awaited (it serves a live read), and the
@@ -41,6 +45,32 @@ entranceMs: 0, peakDrawMs: 0 })` to compile; a consumer that only calls
 
 ### Added
 
+- **Store-mode zip writing from in-memory entries, and rebuilding an
+  existing zip** (`/storage`; the modules are **`storage/pack-files-as-zip`** (deep import), **`storage/zip-rebuild`** (deep import) and **`storage/zip-entry-path`** (deep import)):
+  **`packFilesAsZip(entries)`** writes `{ path, data: Blob | Uint8Array |
+  string }` entries uncompressed so a range reader can slice them out
+  (an empty list is a valid empty archive); **`rebuildZipWithEntries(zip,
+  entries, { onProgress? })`** re-emits an existing archive with entries
+  added or replaced by path, keeping every other entry byte-identical, and
+  THROWS (`ZipPackagingError`) rather than returning the input on failure;
+  **`assertSafeZipEntryPaths(paths, reserved?)`** is the one path rule set
+  every writer applies (empty, absolute, drive-lettered, backslash, `.`,
+  `..`, empty segment, trailing slash, reserved collision, duplicate - the
+  reserved names are validated too). Absorbed from community PR #321 and
+  hardened per its review; `exportSessionHandleAsZip`'s contributor paths
+  now go through the same validator (a trailing slash or an empty segment
+  is rejected where it was silently accepted), and
+  `embedCoverageInSessionJson` is a wrapper over the rebuild.
+- **`tour.json` - the tour manifest** (`/ar`; **`ar/tour-manifest`** (deep import) and **`ar/tour-archive`** (deep import)): `parseTourManifest`,
+  `serializeTourManifest`, `createEmptyTourManifest`; objects are text
+  `pin`s and captured `photo`s, each with an exact geo pose (lat, lon,
+  absolute altitude, rotation against north) minted like a printed code's;
+  `TOUR_MANIFEST_ENTRY`, `tourContentEntryName(id, ext)`
+  (`content/<id>.<ext>`), `readTourManifestFromEntries` (null for no
+  manifest; a broken manifest REJECTS). The geo-pose validator moved from
+  `qr-level.ts` into **`ar/qr/geo-pose`** (deep import) - `parseGeoPose(value, { path,
+  fail })` - so the level and the manifest share one rule set;
+  level messages are unchanged.
 - **`circleEntrance` on `createWayfindingHud`** (opt-in): the circle indicator is the design system's diamond building itself up — the outline drawn over 800 ms, the accent dot popping at 600–850 ms, the sheet's `--ease-out` — each time a target appears or comes back through the distance gate (a head turn does not restart it). Drawn per target into a canvas texture with a 30 Hz redraw cap and a 60 ms stagger for simultaneous spawns; reduced motion (the OS setting, or `reducedMotion: true`) shows the finished marker at once. Mutually exclusive with `circleSprite`; meant alongside `arrowSprite`. `WayfindingHud.entranceStats()` reports the last frame's redraws, their wall-clock cost, how many entrances still animate, and the costliest entrance's accumulated and peak draw milliseconds — the on-device cost readout (the accumulated figure clears the browser clock's 100 µs floor where a single frame does not). The building blocks are public on `/visualization` (`computeDiamondEntrance`, `DIAMOND_ENTRANCE`, `createDiamondMarkerTexture`, `DIAMOND_GEOMETRY`) and **`utils/cubic-bezier-easing`** (deep import) — evaluates CSS `cubic-bezier()` timing functions exactly.
 
 ## [1.24.0] — 2026-09-05
