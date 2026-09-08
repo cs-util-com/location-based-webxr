@@ -25,8 +25,10 @@ import type { TourViewerSeams } from "./seams.js";
 import type { PlacementState } from "./tour-flow.js";
 import type { TourSession } from "./tour-session.js";
 
-export type QrController = ReturnType<typeof createQrTrackingController>;
-export type QrDebugView = ReturnType<TourViewerSeams["createQrDebugView"]>;
+// Reached through the session object's fields; standalone exports count as
+// dead (knip).
+type QrController = ReturnType<typeof createQrTrackingController>;
+type QrDebugView = ReturnType<TourViewerSeams["createQrDebugView"]>;
 
 /** The page's store: the framework store with the opt-in `qrDetected` slice
  *  both modes need (author: stability gate for minting; viewer: the

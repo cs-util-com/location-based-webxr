@@ -23,8 +23,15 @@ through one file. No behaviour lives here.
     `planesRunGeneration`, `placementUnsubscribe`, `placementAttempted`,
     `joinDeclined`.
 - `createTourViewerSession(): TourViewerSession` - the initial values.
-- `type QrController`, `type QrDebugView` - the two framework-derived
-  handle types the fields carry.
+- `createTourViewerStore()` / `type TourViewerStore` / `type ArController` -
+  the store factory both modes share (with the opt-in `qrDetected` slice)
+  and the two handle types the wiring modules take.
+- `interface TourViewerHooks` / `createUnwiredHooks()` - the late-bound
+  cross-module calls (`renderArStatus`, `renderAuthorReadout`,
+  `tryPlaceTour`, `startAuthorPipeline`, `startViewerPipeline`,
+  `presentTourForPrint`), no-ops until their owner module is wired.
+  (`QrController` and `QrDebugView` are module-private: reached through
+  the fields, a standalone export counts as dead.)
 
 ## Invariants & assumptions
 

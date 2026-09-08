@@ -24,8 +24,9 @@ import {
 
 import { viewerStatusLine } from "./qr-viewer-mode.js";
 
-/** What the page knows about the open tour, for copy decisions. */
-export type TourFlowTour =
+/** What the page knows about the open tour, for copy decisions (reached
+ *  through `ArStatusInput["tour"]`; a standalone export counts as dead). */
+type TourFlowTour =
   | { kind: "none" }
   | {
       kind: "open";

@@ -10,9 +10,9 @@ DOM-free and string-exact under test, instead of inline in `main.ts`.
 
 ## Public API
 
-- `type TourFlowTour` - `{ kind: "none" } | { kind: "open"; levelCount:
-number | null; hasRecording: boolean }`. `levelCount` is null while the
-  tour's `qr/<id>.json` levels still load.
+- `ArStatusInput["tour"]` (the module-private `TourFlowTour`) -
+  `{ kind: "none" } | { kind: "open"; levelCount: number | null; hasRecording: boolean }`.
+  `levelCount` is null while the tour's `qr/<id>.json` levels still load.
 - `type PlacementState` - what the photo placement did: `idle` ·
   `placing { phase: "reading-walk" | "loading-photos"; done; total }` ·
   `placed { placedKind: "capture-spots"; count; fixes; gpsAccuracyMedianM }`
