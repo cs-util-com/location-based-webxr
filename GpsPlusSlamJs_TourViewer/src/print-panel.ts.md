@@ -22,6 +22,13 @@ since M6.
 
 ## Invariants & assumptions
 
+- **`presentTour` replaces its OWN prefill, never the creator's typing**
+  (PR #434 review). It remembers the last url it wrote; a second opened
+  tour overwrites that, while text typed into the field is left alone.
+  The panel opens either way, so the link on screen always belongs to the
+  tour that was just opened - printing a code for the previous tour was
+  the failure this closed.
+
 - Async-UI rule: "Generating…" (disabled) → generated / an error in
   `#print-info` (the button restores either way).
 - The page-fit warning rides IN `#print-info` with the "100% scale"

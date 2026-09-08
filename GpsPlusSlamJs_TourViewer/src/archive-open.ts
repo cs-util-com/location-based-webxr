@@ -97,6 +97,19 @@ export function wireArchiveOpen(deps: {
     ctx.planesRunGeneration += 1; // invalidate any in-flight placement run
     ctx.placementAttempted = false;
     ctx.joinDeclined = false;
+    // The QR line describes the CLOSING tour's codes (PR #434 review): a
+    // lock, a vote count, an unknown or unusable code and a failed image
+    // placement all belong to levels that just went away. Without this a
+    // tour switch kept rendering "Relocalized - vote budget spent" for a
+    // code the new tour does not contain, and suppressed its own
+    // "no printed codes" line, which needs `lockedText === null`.
+    ctx.viewerQrStatus = null;
+    ctx.viewerLockedText = null;
+    ctx.viewerVotedLocks = 0;
+    ctx.viewerReprojectionPx = null;
+    ctx.viewerUnknownCode = null;
+    ctx.viewerUnusableCode = null;
+    ctx.viewerPlanesError = null;
     ctx.placement = { kind: "idle" };
     if (ctx.session !== null) {
       const closing = ctx.session;

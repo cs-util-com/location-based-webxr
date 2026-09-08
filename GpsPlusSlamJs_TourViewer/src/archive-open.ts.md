@@ -30,7 +30,10 @@ DOM glue, its own module since the flows plan M6.
   running session (`hooks.startScanGate`) and its level load's outcome
   reaches the gate either way (`hooks.reconsiderScanGate(levels)` or
   `"unavailable"` on a failed read, M5 review #1);
-  `teardownSession` resets the gate (`hooks.resetScanGate`) and the placement fields the
+  `teardownSession` resets the gate (`hooks.resetScanGate`), the seven
+  viewer QR/line fields (a lock, its vote count, an unknown or unusable
+  code and a failed image placement describe the CLOSING tour - PR #434
+  review) and the placement fields the
   closing tour owned (`imagePlanes`, `imagePlanesLoading`,
   `planesRunGeneration` bump, `placementAttempted`, `joinDeclined`,
   `placement`) and the QR controller's level cache.

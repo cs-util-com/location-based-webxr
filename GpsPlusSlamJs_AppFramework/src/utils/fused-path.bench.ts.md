@@ -13,7 +13,13 @@ Tinybench smoke benchmark for [`computeFusedPath`](fused-path.ts) — the first 
 
 - `computeFusedPath` is pure — inputs are reused across iterations without a `setup` callback (unlike the library's `addGpsObservation` bench, which must clone state per iteration).
 - Inputs are deterministic; no PRNG needed.
-- Wall-clock numbers are machine-dependent — this is a measurement instrument, never an assertion gate. Results land in `docs/perf-baselines/bench-results.json` (versioned, ride-along churn policy).
+- Wall-clock numbers are machine-dependent — this is a measurement instrument, never an assertion gate. The versioned `docs/perf-baselines/bench-results.json` is a **frozen
+  pre-Vitest-5 artefact**: Vitest 5 dropped `benchmark.outputJson`, so
+  nothing writes it any more and its numbers are a 2026-07 snapshot, not
+  current. It is kept as historical evidence (it is what settles arguments
+  about what a bench measured BEFORE the upgrade), not as a baseline to
+  compare against. A bench that needs a comparison persists its own result
+  through `writeResult`.
 
 ## Usage
 

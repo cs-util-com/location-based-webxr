@@ -208,27 +208,37 @@ export function arStatusLine(input: ArStatusInput): string {
   // recording (a walk without GPS, an era mismatch): the ring needs a code,
   // and with zero codes "photo ring (reason)" would promise one forever -
   // the exact shape of feedback F3 (milestone review #1).
-  const placement: PlacementState =
-    input.placement.kind === "declined" &&
+  // A tour whose level file could not be read has no usable codes either,
+  // and its `levelCount` stays null forever (PR #434 review): without this
+  // the ring kept promising a code that can never arrive.
+  const noUsableCodes =
     input.tour.kind === "open" &&
-    input.tour.levelCount === 0
+    (input.tour.levelCount === 0 ||
+      (input.gate.kind === "not-required" &&
+        input.gate.reason === "levels-unavailable"));
+  const placement: PlacementState =
+    input.placement.kind === "declined" && noUsableCodes
       ? { kind: "nothing-to-place" }
       : input.placement;
   // While the gate scans, the placement's coaching hint ("walk around")
   // would contradict "stay at the code": the gate's line stands alone.
   const gateScanning = input.gate.kind === "scanning";
   const qr = qrSegment(input);
-  // The gate waived for a code-less tour already says "no measured code";
-  // the pipeline's "no printed codes" would say it twice (M5 review #12).
+  // The gate already names the code situation ("no measured code", or
+  // "could not be read"); the pipeline's own line would say it twice, or
+  // contradict it by scanning for a code that will never resolve (M5
+  // review #12, PR #434 review).
   const gateSaysNoCode =
     input.gate.kind === "not-required" &&
-    input.gate.reason === "no-lockable-level";
+    (input.gate.reason === "no-lockable-level" ||
+      input.gate.reason === "levels-unavailable");
   const segments = [
     `${mode} — AR running · ${String(input.cameraFrames)} camera frames`,
     // The gate's own "point the phone at the code" replaces the pipeline's
     // generic scanning line; a detected-but-unknown code still shows.
     (gateScanning && qr === "Scanning for the printed code…") ||
-    (gateSaysNoCode && qr === NO_PRINTED_CODES)
+    (gateSaysNoCode &&
+      (qr === NO_PRINTED_CODES || qr === "Scanning for the printed code…"))
       ? ""
       : qr,
     gateSegment(input.gate),

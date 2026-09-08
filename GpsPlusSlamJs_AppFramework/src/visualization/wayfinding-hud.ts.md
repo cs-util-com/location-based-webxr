@@ -29,6 +29,16 @@ Presenter of the wayfinding HUD: per-target frustum-locked indicators (edge arro
 
 ## Invariants & assumptions
 
+- **An explicit `null` is rejected, never defaulted** (PR #432 review).
+  Every option is validated against what the CALLER passed
+  (`=== undefined ? default : value`), so a JS host that builds its option
+  object dynamically and lands a null in `hudDistance`, `indicatorScale`,
+  `labelScale`, `circleEntrance.redrawHz` or `circleEntrance.staggerMs`
+  gets the same `RangeError` a null colour has always produced, instead of
+  silently getting the default. TypeScript consumers cannot express the
+  case at all; the demo's dynamically built `hudLookOptions` is the host
+  that can.
+
 - **Never reparents the camera** (the prototype's `scene.add(camera)` would destroy the `arWorldGroup → basisChangeNode → arpose → camera` alignment chain). Indicators are added _to_ the camera.
 - **No renderer handle.** Placement always reads the projection matrix (`isXrSession: true` path) — exact for any symmetric-frustum perspective camera and the only truthful source in-session.
 - **Per-target state is keyed by `id ?? index`** in a `Map` (2026-07-20 revision of the index-only keying): states whose key vanishes from the validated result are disposed; new keys get fresh SPAWN states (`currentState: null` — the seam's spawn rule makes them visible immediately at `≥ distanceMin`, 2026-07-18 revision). With ids, state follows the target through reorders and fresh-literal rebuilds; without ids, an identity change at a constant index is still not detected (unchanged limitation, opt out by providing ids).

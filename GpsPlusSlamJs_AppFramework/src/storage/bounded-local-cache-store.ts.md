@@ -16,7 +16,9 @@ An LRU bound around any `LocalCacheStore`, so persist()-pinned archives
     snapshot, not a bound in either direction (an entry whose blob is
     already gone still counts; a warm download completing after the call
     adds one the caller did not see).
-  - `clear(): Promise<number>` — evicts every archive this bound knows
+  - `clear(): Promise<number>` — the count is what the call itself
+    removed, so a UI reporting "cleared N" while a session holds an entry
+    open reads `size()` first and ignores this (PR #434 review); evicts every archive this bound knows
     about; resolves how many index entries it removed. A caller that reports
     "cleared N" around an open session must read `size()` BEFORE the
     session's `evict()`, which drops that copy from the index (Tour Viewer

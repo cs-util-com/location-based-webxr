@@ -72,6 +72,10 @@ export function wirePrintPanel(
     window.print();
   });
 
+  /** What `presentTour` last wrote into the input, so a second open can
+   *  replace it without touching text the creator typed. */
+  let lastPresented: string | null = null;
+
   // The browser's own print (menu, Ctrl+P) bypasses the button: open the
   // panel before the print layout is computed, or a generated code prints
   // as a blank page (owner decision 2026-09-08, closing interview). Only
@@ -82,8 +86,15 @@ export function wirePrintPanel(
 
   return {
     presentTour: (url) => {
-      if (dom.urlInput.value.trim() === "") {
+      const current = dom.urlInput.value.trim();
+      // Replace what THIS function last prefilled, and only that (PR #434
+      // review): the "don't clobber typed text" guard could not tell the
+      // creator's typing from a previous prefill, so opening tour B popped
+      // the panel open showing tour A's link - and "Generate QR" then
+      // printed a code that launches A.
+      if (current === "" || current === lastPresented) {
         dom.urlInput.value = url;
+        lastPresented = url;
       }
       dom.panel.open = true;
     },

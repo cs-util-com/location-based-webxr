@@ -1226,6 +1226,32 @@ test("opening a tour opens the print panel prefilled with the tour's link", asyn
   const printed = await page.getByTestId("print-url-out").textContent();
   const href = await link.getAttribute("href");
   expect(href).toBe(new URL(printed ?? "").search);
+  // A SECOND tour replaces the prefill (PR #434 review): the panel used
+  // to re-open showing the previous tour's link, so "Generate QR" printed
+  // a code that launched the wrong tour.
+  const SECOND = "http://127.0.0.1:5197/ranges-ok/plain-tour.zip";
+  await page.getByTestId("step-host").locator("summary").click();
+  await page.getByTestId("link-input").fill(SECOND);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("print-url")).toHaveValue(SECOND, {
+    timeout: 15000,
+  });
+  // Text the creator typed is still not clobbered.
+  await page.getByTestId("print-url").fill("https://typed.example/x.zip");
+  await page.getByTestId("step-host").locator("summary").click();
+  await page.getByTestId("link-input").fill(ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  await expect(page.getByTestId("print-url")).toHaveValue(
+    "https://typed.example/x.zip",
+  );
+  // The wizard reopened the step this tour was last left on (M6), so the
+  // print step is collapsed; the rest of this spec needs it open.
+  await page.getByTestId("print-panel").locator("summary").click();
+  await page.getByTestId("print-url").fill(ARCHIVE);
+
   // The size field is a creator's print input: NOT frozen by a viewer
   // session (review #17) - it is only captured in author mode.
   await expect(page.getByTestId("author-size")).toBeEnabled();

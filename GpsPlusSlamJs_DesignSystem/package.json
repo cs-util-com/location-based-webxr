@@ -15,6 +15,9 @@
     "vendor": "node vendor.mjs",
     "leaks": "node leaks.mjs"
   },
+  "engines": {
+    "node": ">=26.0.0"
+  },
   "devDependencies": {
     "@carlosjeurissen/stylelint-csstree-validator": "^3.3.1",
     "@playwright/test": "^1.63.0",

@@ -342,14 +342,24 @@ function validateCircleEntrance(
   assertColourOption('ink', entrance.ink);
   assertColourOption('accent', entrance.accent);
   if (entrance.halo !== undefined) assertColourOption('halo', entrance.halo);
+  // `=== undefined`, not `??`, at every OPTION site (PR #432 review): with
+  // `??` an explicit null was replaced by the default before validation saw
+  // it, so a JS host passing null got the default for the five numeric
+  // options while a null colour threw. The resolve sites below keep `??` -
+  // they run only after this function passed, where null is impossible.
   assertPositiveFiniteOption(
     'circleEntrance.redrawHz',
-    entrance.redrawHz ?? DEFAULT_CIRCLE_ENTRANCE.redrawHz
+    entrance.redrawHz === undefined
+      ? DEFAULT_CIRCLE_ENTRANCE.redrawHz
+      : entrance.redrawHz
   );
   // The stagger is an OFFSET: 0 ("all spawns start together") is its
   // natural setting for a single target or a deterministic replay scene,
   // so unlike the cap it is non-negative rather than positive (PR #423).
-  const staggerMs = entrance.staggerMs ?? DEFAULT_CIRCLE_ENTRANCE.staggerMs;
+  const staggerMs =
+    entrance.staggerMs === undefined
+      ? DEFAULT_CIRCLE_ENTRANCE.staggerMs
+      : entrance.staggerMs;
   if (
     typeof staggerMs !== 'number' ||
     !Number.isFinite(staggerMs) ||
@@ -389,15 +399,21 @@ export function validateWayfindingHudOptions(
   );
   assertPositiveFiniteOption(
     'hudDistance',
-    options.hudDistance ?? DEFAULT_WAYFINDING_HUD.hudDistance
+    options.hudDistance === undefined
+      ? DEFAULT_WAYFINDING_HUD.hudDistance
+      : options.hudDistance
   );
   assertPositiveFiniteOption(
     'indicatorScale',
-    options.indicatorScale ?? DEFAULT_WAYFINDING_HUD.indicatorScale
+    options.indicatorScale === undefined
+      ? DEFAULT_WAYFINDING_HUD.indicatorScale
+      : options.indicatorScale
   );
   assertPositiveFiniteOption(
     'labelScale',
-    options.labelScale ?? DEFAULT_WAYFINDING_HUD.labelScale
+    options.labelScale === undefined
+      ? DEFAULT_WAYFINDING_HUD.labelScale
+      : options.labelScale
   );
 }
 

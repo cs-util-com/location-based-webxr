@@ -88,6 +88,24 @@ describe("the scan gate and the content in the composed line (M5)", () => {
     expect(line).not.toContain("no printed codes.");
   });
 
+  it("a tour whose levels could not be read says so once, and stops promising a ring (PR #434 review)", () => {
+    // Why this matters: a rejected level load leaves `levelCount` null
+    // forever, so neither "no printed codes" nor the nothing-to-place
+    // derivation could ever fire. The line read "Scanning for the printed
+    // code… · The tour's printed-code file could not be read · photo ring
+    // (no recording in this tour)" - three claims, two of them wrong.
+    const line = arStatusLine({
+      ...RUNNING_BASE,
+      tour: { kind: "open", levelCount: null },
+      gate: { kind: "not-required", reason: "levels-unavailable" },
+      placement: { kind: "declined", reason: "no recording in this tour" },
+    });
+    expect(line).toContain("could not be read");
+    expect(line).not.toContain("Scanning");
+    expect(line).not.toContain("photo ring");
+    expect(line).toContain("nothing to place");
+  });
+
   it("a failed content render has its own segment, next to a failed image placement (M5 review #5)", () => {
     const line = arStatusLine({
       ...RUNNING_BASE,

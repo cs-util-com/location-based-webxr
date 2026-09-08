@@ -157,6 +157,48 @@ describe('circleEntrance — validation', () => {
     ).toThrow(TypeError);
   });
 
+  it('rejects an explicit null for every numeric option instead of defaulting it (PR #432 review)', () => {
+    // Why this matters: a JS host building its options dynamically can land
+    // a null where TypeScript cannot express one. `??` turned that into the
+    // default for the five numeric options while a null colour threw - two
+    // rules in one validator, and the silent half was the one that changes
+    // behaviour.
+    for (const key of ['redrawHz', 'staggerMs'] as const) {
+      expect(() =>
+        validateWayfindingHudOptions({
+          ...base,
+          circleEntrance: { ...entrance, [key]: null },
+        })
+      ).toThrow(RangeError);
+    }
+    for (const key of [
+      'hudDistance',
+      'indicatorScale',
+      'labelScale',
+    ] as const) {
+      expect(() =>
+        validateWayfindingHudOptions({
+          ...base,
+          [key]: null,
+        })
+      ).toThrow(RangeError);
+    }
+    // undefined still means "use the default", for all five.
+    expect(() =>
+      validateWayfindingHudOptions({
+        ...base,
+        circleEntrance: {
+          ...entrance,
+          redrawHz: undefined,
+          staggerMs: undefined,
+        },
+        hudDistance: undefined,
+        indicatorScale: undefined,
+        labelScale: undefined,
+      })
+    ).not.toThrow();
+  });
+
   it('is mutually exclusive with circleSprite', () => {
     expect(() =>
       validateWayfindingHudOptions({
