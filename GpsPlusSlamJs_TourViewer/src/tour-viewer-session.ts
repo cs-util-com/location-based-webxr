@@ -1,7 +1,7 @@
 /**
  * The page's mutable session state as ONE explicit object (flows plan M6,
  * DEC-T6 of the simplification plan): every wiring module receives it and
- * mutates the fields it owns, instead of `main.ts` carrying 24 module-scope
+ * mutates the fields it owns, instead of `main.ts` carrying 28 module-scope
  * variables that four concerns wrote to. No behaviour lives here - the
  * fields' invariants are documented where they are used (see each module's
  * sidecar) and summarised in `tour-viewer-session.ts.md`.

@@ -32,8 +32,6 @@ type TourFlowTour =
       kind: "open";
       /** Authored `qr/<id>.json` count; null while the levels still load. */
       levelCount: number | null;
-      /** True when the zip carries an action stream the geo join can read. */
-      hasRecording: boolean;
     };
 
 /** What the photo placement did or is doing. The strings are rendered by
@@ -186,10 +184,10 @@ export function arStatusLine(input: ArStatusInput): string {
   // A declined join on a tour that also has no printed codes is the
   // "nothing to place" case - derived here so the caller never has to
   // re-evaluate it when the levels arrive after the decline. A decline
-  // already means the recording path is out, whatever `hasRecording` says
-  // (a walk without GPS, an era mismatch): the ring needs a code, and with
-  // zero codes "photo ring (reason)" would promise one forever - the exact
-  // shape of feedback F3 (milestone review #1).
+  // already means the recording path is out, whether or not the zip had a
+  // recording (a walk without GPS, an era mismatch): the ring needs a code,
+  // and with zero codes "photo ring (reason)" would promise one forever -
+  // the exact shape of feedback F3 (milestone review #1).
   const placement: PlacementState =
     input.placement.kind === "declined" &&
     input.tour.kind === "open" &&

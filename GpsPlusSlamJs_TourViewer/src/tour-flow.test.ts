@@ -68,7 +68,7 @@ describe("qrSegment - the printed-code line", () => {
     expect(
       qrSegment({
         ...RUNNING_BASE,
-        tour: { kind: "open", levelCount: 0, hasRecording: true },
+        tour: { kind: "open", levelCount: 0 },
         qr: scanning,
       }),
     ).toBe("This tour has no printed codes.");
@@ -78,7 +78,7 @@ describe("qrSegment - the printed-code line", () => {
     expect(
       qrSegment({
         ...RUNNING_BASE,
-        tour: { kind: "open", levelCount: null, hasRecording: true },
+        tour: { kind: "open", levelCount: null },
         qr: scanning,
       }),
     ).toBe("Scanning for the printed code…");
@@ -94,7 +94,7 @@ describe("qrSegment - the printed-code line", () => {
     expect(
       qrSegment({
         ...RUNNING_BASE,
-        tour: { kind: "open", levelCount: 0, hasRecording: true },
+        tour: { kind: "open", levelCount: 0 },
         qr: { ...scanning, unknownCode: "abc" },
       }),
     ).toBe("Code abc has no level in this tour.");
@@ -203,7 +203,7 @@ describe("readiness - the placement trigger and its waiting copy (F3, flows plan
   it("nothing-to-place names why, and the composed line carries it", () => {
     const input: ArStatusInput = {
       ...RUNNING_BASE,
-      tour: { kind: "open", levelCount: 0, hasRecording: false },
+      tour: { kind: "open", levelCount: 0 },
       placement: { kind: "nothing-to-place" },
     };
     expect(arStatusLine(input)).toBe(
@@ -216,7 +216,7 @@ describe("readiness - the placement trigger and its waiting copy (F3, flows plan
     // tour's facts at render time, not the order events happened in.
     const declined: ArStatusInput = {
       ...RUNNING_BASE,
-      tour: { kind: "open", levelCount: 0, hasRecording: false },
+      tour: { kind: "open", levelCount: 0 },
       placement: { kind: "declined", reason: "no recording in this tour" },
     };
     expect(arStatusLine(declined)).toContain("nothing to place");
@@ -227,7 +227,7 @@ describe("readiness - the placement trigger and its waiting copy (F3, flows plan
     expect(
       arStatusLine({
         ...declined,
-        tour: { kind: "open", levelCount: 0, hasRecording: true },
+        tour: { kind: "open", levelCount: 0 },
         placement: { kind: "declined", reason: "no GPS fixes in the walk" },
       }),
     ).toContain("nothing to place");
@@ -235,7 +235,7 @@ describe("readiness - the placement trigger and its waiting copy (F3, flows plan
     expect(
       arStatusLine({
         ...declined,
-        tour: { kind: "open", levelCount: 2, hasRecording: false },
+        tour: { kind: "open", levelCount: 2 },
       }),
     ).toContain("photo ring (no recording in this tour)");
   });
@@ -263,7 +263,7 @@ describe("arStatusLine - composition", () => {
     expect(
       arStatusLine({
         ...RUNNING_BASE,
-        tour: { kind: "open", levelCount: 1, hasRecording: true },
+        tour: { kind: "open", levelCount: 1 },
         qr: {
           ...RUNNING_BASE.qr,
           status: { state: "scanning" } as unknown as NonNullable<

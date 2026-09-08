@@ -81,7 +81,6 @@ export function wireArEntry(deps: {
           : {
               kind: "open",
               levelCount: ctx.currentLevels?.size ?? null,
-              hasRecording: ctx.session.hasRecording,
             },
       qr: {
         status: ctx.viewerQrStatus,

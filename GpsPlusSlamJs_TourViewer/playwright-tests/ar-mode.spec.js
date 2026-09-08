@@ -739,6 +739,17 @@ test("the print panel renders a scannable code at a declared true size", async (
     "https://gps.csutil.com/?qr=",
   );
 
+  // The browser's own print (menu, Ctrl+P) with the panel collapsed used to
+  // print a blank page: `beforeprint` opens the panel when a code exists
+  // (closing interview 2026-09-08). The event is dispatched by hand because
+  // no spec can observe window.print() itself.
+  await page.evaluate(() => {
+    const details = document.querySelector("details#print-panel");
+    if (details instanceof HTMLDetailsElement) details.open = false;
+    window.dispatchEvent(new Event("beforeprint"));
+  });
+  await expect(page.getByTestId("print-canvas")).toBeVisible();
+
   // An oversized size warns in the same info line the scale instruction
   // lives in — a clipped code does not decode, so silence is the bug.
   await page.getByTestId("author-size").fill("0.3");

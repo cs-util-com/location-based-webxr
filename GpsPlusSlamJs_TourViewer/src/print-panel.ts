@@ -64,6 +64,14 @@ export function wirePrintPanel(dom: PrintPanelDom): PrintPanel {
     window.print();
   });
 
+  // The browser's own print (menu, Ctrl+P) bypasses the button: open the
+  // panel before the print layout is computed, or a generated code prints
+  // as a blank page (owner decision 2026-09-08, closing interview). Only
+  // when a code exists - otherwise there is nothing to print anyway.
+  window.addEventListener("beforeprint", () => {
+    if (!dom.area.hidden) dom.panel.open = true;
+  });
+
   return {
     presentTour: (url) => {
       if (dom.urlInput.value.trim() === "") {

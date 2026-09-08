@@ -27,7 +27,10 @@ since M6.
 - The page-fit warning rides IN `#print-info` with the "100% scale"
   instruction (PR #364 review) - a clipped code does not decode.
 - The print button opens the `<details>` first: a collapsed one renders
-  nothing and would print a blank page (flows plan review #13).
+  nothing and would print a blank page (flows plan review #13). The
+  browser's own print (menu, Ctrl+P) is covered by a `beforeprint` listener
+  that opens the panel when a code has been generated (owner decision,
+  closing interview 2026-09-08); the e2e dispatches the event.
 - Size and print plan contracts: the framework's `qr-print-plan.ts.md`.
 
 ## Examples

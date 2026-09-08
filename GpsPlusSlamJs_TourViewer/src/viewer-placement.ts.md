@@ -50,7 +50,15 @@ recording. Its own module since the flows plan M6.
   them, which is why a later lock needs no re-placement.
 - The join's gates, failure taxonomy and decline wording are the geo-join
   plan's, unchanged: every decline is a `declined { reason }` placement
-  state rendered as "photo ring (reason)" by `tour-flow`.
+  state, rendered as "photo ring (reason)" by `tour-flow` - EXCEPT on an
+  open tour with zero levels, where `arStatusLine` derives it to "nothing
+  to place" (a ring needs a code; M1-M4 review #1). This module never
+  produces `nothing-to-place` itself.
+- `levelByText` is owned here (the only reader/writer:
+  `onLevelResolved`, the detection glue and the ring's geo lookup); it is
+  cleared on tour teardown (`archive-open.ts`), not on session end - the
+  same tour's codes stay valid across AR re-entries, and the QR
+  controller's `reset()` re-resolves any text that locks again.
 - Capture planes decode at divisor 2 (the framework decoder's OOM
   mitigation; geo-join review finding 4).
 

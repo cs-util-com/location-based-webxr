@@ -5,8 +5,9 @@
 The page's mutable session state as ONE explicit object (flows plan M6,
 executing the simplification plan's M-1 with DEC-T6 = an explicit session
 object created in `main.ts` and passed to each wiring module). It replaces
-the 24 module-scope variables `main.ts` carried, which four concerns wrote to
-through one file. No behaviour lives here.
+the 28 module-scope `let`s (plus one mutable `Map`) that `main.ts` carried
+at the split, which four concerns wrote to through one file. No behaviour
+lives here.
 
 ## Public API
 
@@ -14,7 +15,9 @@ through one file. No behaviour lives here.
   - the open tour (`archive-open.ts`): `session`, `currentLevels`,
     `openGeneration`;
   - shared AR session state (`ar-entry.ts`): `qrController`, `qrDebugView`,
-    `cameraFrameCount`, `levelByText`;
+    `cameraFrameCount`; `levelByText` is grouped here but OWNED by
+    `viewer-placement.ts` (its only reader/writer) and cleared on tour
+    teardown by `archive-open.ts`;
   - author mode (`author-mode.ts`): `lastDetectedText`, `activeSizeM`,
     `authorErrorText`, `gpsSamplesAtSessionStart`, `mintedCodeId`;
   - the viewer QR line and the placement (`viewer-placement.ts`): the six

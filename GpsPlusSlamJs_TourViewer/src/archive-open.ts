@@ -37,11 +37,13 @@ export interface ArchiveOpenDom {
   clearCacheButton: HTMLButtonElement;
 }
 
+/** The one entry point the composition root needs; the interactive open
+ *  is reached through the form listener (M6 review #6: an `openUrl` handle
+ *  was returned and never called). */
 export interface ArchiveOpen {
-  openUrl(url: string): Promise<void>;
   /** The `?qr=` launch: resolve the payload and open. Rejections reach the
    *  error box - a printed code is the one flow with no retry. */
-  boot(): Promise<void>;
+  boot: () => Promise<void>;
 }
 
 export function wireArchiveOpen(deps: {
@@ -62,8 +64,11 @@ export function wireArchiveOpen(deps: {
     // The viewer pipeline's level source and the placed planes belong to the
     // closing tour — a newly opened tour must not relocalize against them.
     ctx.currentLevels = null;
-    // Same cache: the closed tour's levels must stop voting (M4 review #1).
+    // Same cache: the closed tour's levels must stop voting (M4 review #1),
+    // and the per-text level cache belongs to the closed tour too (M6
+    // review #8).
     ctx.qrController?.reset();
+    ctx.levelByText.clear();
     ctx.imagePlanes?.dispose();
     ctx.imagePlanes = null;
     // Clear the latch HERE too (PR #367 review): the stale run's finally is
@@ -211,7 +216,6 @@ export function wireArchiveOpen(deps: {
   wireClearCache(ctx, dom, cacheStore);
 
   return {
-    openUrl,
     boot: async () => {
       const payload = new URLSearchParams(location.search).get("qr");
       if (payload === null) return;

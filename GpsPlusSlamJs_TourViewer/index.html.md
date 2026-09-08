@@ -5,9 +5,13 @@
 The tour viewer's single page: the paste-a-link form, the live streaming
 stats panel, the error banner, the progressive image gallery, and the AR
 entry (`#ar-root`: a hint, the status line, the AR button, and the
-`?author=1` author panel). All behavior lives in `src/main.ts`; the page
-carries only structure and its ~70 lines of inline CSS (grid gallery,
-alpha-hex borders — the stylelint csstree validator predates `color-mix()`).
+`?author=1` author panel), plus the collapsed Storage and Print sections
+between the stats panel and the error banner (flows plan M2/M3; the print
+panel sits BELOW Storage since the M1-M4 review fix #5, so "in the Print
+section above" is true from the AR section). Behaviour lives in the five
+wiring modules composed by `src/main.ts` (see `main.ts.md`); the page
+carries only structure and its inline CSS (grid gallery, alpha-hex borders
+— the stylelint csstree validator predates `color-mix()`).
 
 The header copy names BOTH ways in (owner taste round 2026-09-04): a printed
 tour code scanned with the phone camera (the `?qr=` launch that `boot()`

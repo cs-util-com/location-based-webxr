@@ -11,8 +11,10 @@ DOM-free and string-exact under test, instead of inline in `main.ts`.
 ## Public API
 
 - `ArStatusInput["tour"]` (the module-private `TourFlowTour`) -
-  `{ kind: "none" } | { kind: "open"; levelCount: number | null; hasRecording: boolean }`.
+  `{ kind: "none" } | { kind: "open"; levelCount: number | null }`.
   `levelCount` is null while the tour's `qr/<id>.json` levels still load.
+  (Whether the zip has a recording is NOT an input: a decline already says
+  the recording path is out - M6 review #1.)
 - `type PlacementState` - what the photo placement did: `idle` ·
   `placing { phase: "reading-walk" | "loading-photos"; done; total }` ·
   `placed { placedKind: "capture-spots"; count; fixes; gpsAccuracyMedianM }`
@@ -63,8 +65,8 @@ frames"` is asserted literally by `playwright-tests/ar-mode.spec.js`.
 - The placement strings are the geo-join results doc's wording; the e2e
   specs match them by regex (`photos at capture spots (4 fixes`, `photo
 ring`, `reading the walk`).
-- Pure: no DOM, no store; `main.ts` builds the input from its module state
-  and writes the result into `#ar-status`.
+- Pure: no DOM, no store; `ar-entry.ts` builds the input from the session
+  object and writes the result into `#ar-status`.
 
 ## Examples
 
@@ -73,7 +75,7 @@ arStatusLine({
   authorMode: false,
   arStatus: "running",
   cameraFrames: 3,
-  tour: { kind: "open", levelCount: 0, hasRecording: true },
+  tour: { kind: "open", levelCount: 0 },
   qr: {
     status: scanning,
     unknownCode: null,

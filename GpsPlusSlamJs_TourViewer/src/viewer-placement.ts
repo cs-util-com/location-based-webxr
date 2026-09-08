@@ -221,10 +221,22 @@ export function createViewerPlacement(deps: {
     const scene = seams.getScene();
     const zero = selectZeroReference(arStore.getState());
     if (current === null) return;
-    if (scene === null || zero === null) {
-      // Never silent (milestone review #3): the trigger has already spent
-      // its one attempt, so a bare return would strand the line on the
-      // coaching hint for the rest of the session.
+    if (zero === null) {
+      // Unreachable in practice (`ready` needs GPS data, which sets the
+      // zero) but never silent and never final (M6 review #9): give the
+      // attempt back so the trigger retries on the next dispatch.
+      ctx.placementAttempted = false;
+      ctx.placement = {
+        kind: "declined",
+        reason: "waiting for the first GPS fix",
+      };
+      hooks.renderArStatus();
+      return;
+    }
+    if (scene === null) {
+      // Cannot fire once the runtime started (the world group exists), but
+      // a bare return would strand the line on the coaching hint for the
+      // rest of the session (milestone review #3).
       ctx.placement = { kind: "declined", reason: "the AR scene is not ready" };
       hooks.renderArStatus();
       return;
@@ -480,11 +492,12 @@ export function createViewerPlacement(deps: {
       centerNue,
     });
     // Confirm the ring (milestone review #2): the async-UI rule wants the
-    // durable end state, and the decline copy alone read as "pending".
+    // durable end state, and the decline copy alone read as "pending". The
+    // count is the SCENE's (M6 review #7), not the texture list's.
     ctx.placement = {
       kind: "placed",
       placedKind: "ring",
-      count: textures.length,
+      count: ctx.imagePlanes.count,
     };
     hooks.renderArStatus();
   }

@@ -14,12 +14,14 @@ DOM glue, its own module since the flows plan M6.
   - `ArchiveOpenDom { form; linkInput; openButton; statsPanel; statsHeadline; statsDetail; errorBox; gallery; storagePanel; clearCacheButton }`
   - `cacheStore: BoundedLocalCacheStore | undefined` - undefined = no local
     copies (`?nocache=1`, no Cache API); the Storage section then hides.
-  - `ArchiveOpen.openUrl(url)` - tear down the previous session, open,
-    render stats, stream the gallery, call `hooks.tryPlaceTour()` and
-    `hooks.presentTourForPrint(url)`, load the levels (with a `.catch`).
   - `ArchiveOpen.boot()` - the `?qr=` launch (bare-name payloads resolve
     under the GeoTales raw-GitHub prefix); the caller catches into the
-    error box.
+    error box. The only returned entry point (M6 review #6): the
+    interactive open is the form listener, and both run the module-private
+    `openUrl` - tear down the previous session (which also clears
+    `levelByText`), open, render stats, stream the gallery, call
+    `hooks.tryPlaceTour()` and `hooks.presentTourForPrint(url)`, load the
+    levels (with a `.catch`).
 
 ## Invariants & assumptions
 

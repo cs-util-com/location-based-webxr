@@ -22,15 +22,15 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-const mainSource = readFileSync(
+const placementSource = readFileSync(
   fileURLToPath(new URL("./viewer-placement.ts", import.meta.url)),
   "utf8",
 );
 
 describe("the tour replay honours the abort seam", () => {
   it("passes shouldContinue to replayActions", () => {
-    const call = mainSource.slice(
-      mainSource.indexOf("await replayActions(actions, {"),
+    const call = placementSource.slice(
+      placementSource.indexOf("await replayActions(actions, {"),
     );
     expect(call).not.toBe("");
     // Scoped to the option object of that one call, so an unrelated
@@ -44,8 +44,8 @@ describe("the tour replay honours the abort seam", () => {
     // An aborted replay returns a PARTIAL state, which `assessReplayedJoin`
     // declines for a reason that names missing GPS data — a wrong label
     // written into a UI a newer run already owns.
-    const afterReplay = mainSource.slice(
-      mainSource.indexOf("})) as unknown as ReplayedJoinState;"),
+    const afterReplay = placementSource.slice(
+      placementSource.indexOf("})) as unknown as ReplayedJoinState;"),
     );
     const beforeVerdict = afterReplay.slice(
       0,

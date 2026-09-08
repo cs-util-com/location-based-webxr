@@ -72,13 +72,13 @@ const base = (
 });
 
 describe("tour-flow - copy rules", () => {
-  it("an open tour with zero levels never says 'Scanning', whatever the recording flag", () => {
+  it("an open tour with zero levels never says 'Scanning', for any frame count", () => {
     fc.assert(
-      fc.property(fc.boolean(), (hasRecording) => {
-        const open = base(
-          { kind: "open", levelCount: 0, hasRecording },
-          { kind: "idle" },
-        );
+      fc.property(fc.nat({ max: 100_000 }), (cameraFrames) => {
+        const open = {
+          ...base({ kind: "open", levelCount: 0 }, { kind: "idle" }),
+          cameraFrames,
+        };
         expect(qrSegment(open)).not.toContain("Scanning");
         expect(arStatusLine(open)).not.toContain("Scanning");
       }),
@@ -106,7 +106,7 @@ describe("tour-flow - copy rules", () => {
         const segment = placementSegment(placement);
         expect(segment.length).toBeGreaterThan(0);
         const line = arStatusLine(
-          base({ kind: "open", levelCount: 1, hasRecording: true }, placement),
+          base({ kind: "open", levelCount: 1 }, placement),
         );
         expect(line.endsWith(` · ${segment}`)).toBe(true);
       }),
