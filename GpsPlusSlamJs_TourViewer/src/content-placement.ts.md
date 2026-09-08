@@ -19,7 +19,10 @@ imageHeight, nowIso }): TourPhoto | null` - the camera's RAW odometry pose
   then minted; `image` is `content/<id>.jpg`. Null without an alignment or a
   zero.
 - `objectPoseNue(geo, zero)` - an object's position and rotation in a
-  session's NUE frame.
+  session's NUE frame; a heading-only pose (hand-edited `tour.json`) keeps
+  its facing through `rotationFromHeading` (the framework's -heading about
+  Up convention) instead of facing East.
+- `rotationFromHeading(headingDeg)` - that quaternion.
 - `renderTourObjects(objects, { scene, zero, makeLabel, loadPhotoTexture }):
 Promise<RenderedTourObjects>` - pins as label objects, photos as capture
   planes (`placeCapturedImagePlanes`), all at the scene root; a photo whose

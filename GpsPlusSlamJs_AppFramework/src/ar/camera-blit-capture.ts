@@ -380,21 +380,14 @@ export class CameraBlitCapture {
   }
 
   /**
-   * Convert the internal pixel buffer to a JPEG Blob using OffscreenCanvas
-   * (or fallback to regular Canvas).
+   * Convert the internal pixel buffer to a JPEG Blob - the shared encoder
+   * over a top-left-origin copy (`rgbaImageToJpegBlob`).
    */
-  private async pixelsToJpegBlob(quality: number): Promise<Blob | null> {
-    // Prefer OffscreenCanvas (available in modern browsers, non-blocking)
-    if (typeof OffscreenCanvas !== 'undefined') {
-      return this.pixelsToJpegViaOffscreenCanvas(quality);
-    }
-    // Fallback: use regular canvas
-    return this.pixelsToJpegViaCanvas(quality);
-  }
-
-  private getFlippedImageData(): ImageData {
-    // flippedPixelCopy() already returns an owned, top-left-origin copy.
-    return new ImageData(this.flippedPixelCopy(), this.width, this.height);
+  private pixelsToJpegBlob(quality: number): Promise<Blob | null> {
+    return rgbaImageToJpegBlob(
+      { data: this.flippedPixelCopy(), width: this.width, height: this.height },
+      quality
+    );
   }
 
   /**
@@ -410,39 +403,6 @@ export class CameraBlitCapture {
     copy.set(this.pixelBuffer);
     this.flipRowsVertically(copy, this.width, this.height);
     return copy;
-  }
-
-  private async pixelsToJpegViaOffscreenCanvas(
-    quality: number
-  ): Promise<Blob | null> {
-    const offscreen = new OffscreenCanvas(this.width, this.height);
-    const ctx = offscreen.getContext('2d');
-    if (!ctx) {
-      return null;
-    }
-
-    const imageData = this.getFlippedImageData();
-    ctx.putImageData(imageData, 0, 0);
-
-    return offscreen.convertToBlob({ type: 'image/jpeg', quality });
-  }
-
-  private pixelsToJpegViaCanvas(quality: number): Promise<Blob | null> {
-    return new Promise((resolve) => {
-      const canvas = document.createElement('canvas');
-      canvas.width = this.width;
-      canvas.height = this.height;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        resolve(null);
-        return;
-      }
-
-      const imageData = this.getFlippedImageData();
-      ctx.putImageData(imageData, 0, 0);
-
-      canvas.toBlob((blob) => resolve(blob), 'image/jpeg', quality);
-    });
   }
 
   /**
@@ -545,4 +505,61 @@ export class CameraBlitCapture {
     disposeObject3D(this.quad);
     log.info('CameraBlitCapture disposed');
   }
+}
+
+/** A top-left-origin RGBA frame the encoder accepts (the `RgbaImage` shape
+ *  the camera-frame source emits and `captureToRgba` returns). */
+export interface RgbaFrame {
+  readonly data: Uint8ClampedArray;
+  readonly width: number;
+  readonly height: number;
+}
+
+/**
+ * Encode a top-left-origin RGBA frame as a JPEG Blob - OffscreenCanvas
+ * where the browser has it (off the main-thread canvas path), a DOM canvas
+ * otherwise. The ONE encoder behind the blit capture and the Tour Viewer's
+ * placed photos (DEC-H3; the viewer used to carry a copy).
+ *
+ * The data must be exactly `width * height * 4` bytes; `ImageData` throws
+ * on anything else, and that is reported as a rejection, never a
+ * synchronous throw. Resolves null when no 2D context is available or the
+ * encoder produced nothing.
+ */
+export async function rgbaImageToJpegBlob(
+  frame: RgbaFrame,
+  quality: number
+): Promise<Blob | null> {
+  const { data, width, height } = frame;
+  if (data.length !== width * height * 4) {
+    throw new RangeError(
+      `rgbaImageToJpegBlob: expected ${String(width * height * 4)} bytes for ${String(width)}×${String(height)}, got ${String(data.length)}`
+    );
+  }
+  // A plain-ArrayBuffer-backed copy only when the input is not one already
+  // (ImageData refuses a SharedArrayBuffer view).
+  const pixels =
+    data.buffer instanceof ArrayBuffer
+      ? (data as Uint8ClampedArray<ArrayBuffer>)
+      : new Uint8ClampedArray(data);
+  const imageData = new ImageData(pixels, width, height);
+  if (typeof OffscreenCanvas !== 'undefined') {
+    const offscreen = new OffscreenCanvas(width, height);
+    const ctx = offscreen.getContext('2d');
+    if (!ctx) return null;
+    ctx.putImageData(imageData, 0, 0);
+    return offscreen.convertToBlob({ type: 'image/jpeg', quality });
+  }
+  return new Promise((resolve) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      resolve(null);
+      return;
+    }
+    ctx.putImageData(imageData, 0, 0);
+    canvas.toBlob((blob) => resolve(blob), 'image/jpeg', quality);
+  });
 }

@@ -166,8 +166,8 @@ export function wireArEntry(deps: {
     ctx.reticle?.dispose();
     ctx.reticle = null;
     ctx.latestFrame = null;
-    ctx.placedPreview?.dispose();
-    ctx.placedPreview = null;
+    for (const preview of ctx.placedPreviews) preview.dispose();
+    ctx.placedPreviews = [];
     // The gate and the placed content are session state (M5).
     ctx.cancelEscapeClock?.();
     ctx.cancelEscapeClock = null;
@@ -230,8 +230,9 @@ export function wireArEntry(deps: {
         trackingStore: arStore,
         onFrame: (image) => {
           ctx.cameraFrameCount += 1;
-          // The most recent frame is what "Capture a photo" encodes (M4);
-          // the source reuses its buffer, so a reference is enough.
+          // The most recent frame is what "Capture a photo" encodes (M4).
+          // The source hands out a fresh copy per frame (camera-blit-capture
+          // `flippedPixelCopy`), so keeping the reference is safe.
           ctx.latestFrame = image;
           ctx.qrController?.offerFrame(image);
           renderArStatus();

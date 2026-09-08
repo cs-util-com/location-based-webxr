@@ -45,6 +45,12 @@ entranceMs: 0, peakDrawMs: 0 })` to compile; a consumer that only calls
 
 ### Added
 
+- **`rgbaImageToJpegBlob(frame, quality)`** on `/ar` (and
+  **`ar/camera-blit-capture`** (deep import)): the RGBA (top-left origin)
+  → JPEG encoder `CameraBlitCapture` always used, exported so an app can
+  encode a camera frame it already holds (the Tour Viewer's placed
+  photos) without a second copy of the canvas dance; OffscreenCanvas where
+  available. A data length that is not `width * height * 4` rejects.
 - **Store-mode zip writing from in-memory entries, and rebuilding an
   existing zip** (`/storage`; the modules are **`storage/pack-files-as-zip`** (deep import), **`storage/zip-rebuild`** (deep import) and **`storage/zip-entry-path`** (deep import)):
   **`packFilesAsZip(entries)`** writes `{ path, data: Blob | Uint8Array |

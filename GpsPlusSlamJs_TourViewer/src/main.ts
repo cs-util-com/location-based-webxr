@@ -176,6 +176,7 @@ const setup = wireCreatorSetup({
     pinButton: element("setup-pin"),
     pinLabel: element("pin-label"),
     pinSave: element("pin-save"),
+    pinCancel: element("pin-cancel"),
     photoButton: element("setup-photo"),
   },
 });

@@ -20,6 +20,7 @@ import {
   getCamera,
   getCurrentArPose,
   getScene,
+  rgbaImageToJpegBlob,
   startCameraFrameCapture,
   startHitTestReticle,
   stopCameraFrameCapture,
@@ -122,7 +123,7 @@ export interface TourViewerSeams {
 }
 
 /** A captured photo, encoded. */
-export interface CapturedJpeg {
+interface CapturedJpeg {
   blob: Blob;
   width: number;
   height: number;
@@ -187,10 +188,20 @@ export const realSeams: TourViewerSeams = {
   },
   encodeFrameJpeg: (image) => encodeRgbaAsJpeg(image),
   createLabel: (text) => {
+    // A canvas wide enough for a short label at a readable size, the sprite
+    // scaled to the same 2:1 aspect (the wayfinding HUD's recipe); the
+    // defaults (a 64 px square, a 48 px glyph) are for single characters
+    // and clipped every word (M4 review #5). Transparent, no depth write:
+    // the pill's surround must not paint a black square over the camera.
     const sprite = createTextSprite({
       text,
       background: "pill",
-      scale: { x: 0.8, y: 0.2, z: 1 },
+      canvasWidth: 512,
+      canvasHeight: 256,
+      font: "bold 56px sans-serif",
+      transparent: true,
+      depthWrite: false,
+      scale: { x: 0.6, y: 0.3, z: 1 },
     });
     return { object: sprite.sprite, dispose: () => sprite.dispose() };
   },
@@ -225,52 +236,35 @@ export const realSeams: TourViewerSeams = {
     }),
 };
 
-/** JPEG quality for a placed photo: the recorder's capture default. */
+/** JPEG quality for a placed photo. The framework's capture default is
+ *  0.7 and the recorder configures 0.8; a placed photo is a hero image
+ *  seen up close, so it sits above both. */
 const PHOTO_JPEG_QUALITY = 0.85;
 
 /**
- * The detector frame (1024 px long edge, top-left origin RGBA) as a JPEG.
- * The alpha channel is sampled first: a frame that is not opaque would be
- * composited over the canvas ground by `toBlob` and come out dark, which
- * is the one failure a creator cannot see until the visitor does.
+ * The detector frame (1024 px long edge, top-left origin RGBA) as a JPEG,
+ * through the framework's encoder (`rgbaImageToJpegBlob`, the one behind
+ * the blit capture - DEC-H3, M4 review #14). The alpha channel is sampled
+ * first: a frame that is not opaque would be composited over the canvas
+ * ground and come out dark, which is the one failure a creator cannot see
+ * until the visitor does. Async throughout: nothing here throws
+ * synchronously into a click handler (M4 review #11).
  */
-function encodeRgbaAsJpeg(image: RgbaImage): Promise<CapturedJpeg> {
+async function encodeRgbaAsJpeg(image: RgbaImage): Promise<CapturedJpeg> {
   const { data, width, height } = image;
-  if (width <= 0 || height <= 0 || data.length < width * height * 4) {
-    return Promise.reject(new Error("camera frame is empty"));
+  if (width <= 0 || height <= 0 || data.length !== width * height * 4) {
+    throw new Error("camera frame is empty or malformed");
   }
   for (let i = 3; i < data.length; i += Math.max(4, (data.length >> 4) & ~3)) {
     if (data[i] !== 255) {
-      return Promise.reject(
-        new Error(
-          "camera frame is not opaque; refusing to encode a dark photo",
-        ),
+      throw new Error(
+        "camera frame is not opaque; refusing to encode a dark photo",
       );
     }
   }
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const context = canvas.getContext("2d");
-  if (context === null) {
-    return Promise.reject(new Error("no 2D canvas for the photo encoder"));
-  }
-  // A fresh clamped copy: ImageData wants a plain ArrayBuffer-backed array.
-  context.putImageData(
-    new ImageData(new Uint8ClampedArray(data), width, height),
-    0,
-    0,
-  );
-  return new Promise((resolve, reject) => {
-    canvas.toBlob(
-      (blob) => {
-        if (blob === null) reject(new Error("JPEG encoding failed"));
-        else resolve({ blob, width, height });
-      },
-      "image/jpeg",
-      PHOTO_JPEG_QUALITY,
-    );
-  });
+  const blob = await rgbaImageToJpegBlob(image, PHOTO_JPEG_QUALITY);
+  if (blob === null) throw new Error("JPEG encoding failed");
+  return { blob, width, height };
 }
 
 /**

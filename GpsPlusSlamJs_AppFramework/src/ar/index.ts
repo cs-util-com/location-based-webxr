@@ -17,6 +17,8 @@ export {
   computeCaptureSize,
   computeAspectFitSize,
   CameraBlitCapture,
+  type RgbaFrame,
+  rgbaImageToJpegBlob,
 } from './camera-blit-capture.js';
 
 // --- capability-checker ---

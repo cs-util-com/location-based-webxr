@@ -21,10 +21,14 @@ import {
 } from "gps-plus-slam-app-framework/ar/qr/qr-level-archive";
 import {
   AUTHOR_DEFAULT_SIZE_M,
+  MIN_ALIGNMENT_SAMPLES,
   mintQrLevel,
   type MintAlignmentInfo,
 } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
-import { TOUR_MANIFEST_ENTRY } from "gps-plus-slam-app-framework/ar/tour-archive";
+import {
+  TOUR_MANIFEST_ENTRY,
+  tourManifestEntryOf,
+} from "gps-plus-slam-app-framework/ar/tour-archive";
 import {
   createEmptyTourManifest,
   serializeTourManifest,
@@ -86,6 +90,7 @@ export interface CreatorSetupDom {
   pinButton: HTMLButtonElement;
   pinLabel: HTMLInputElement;
   pinSave: HTMLButtonElement;
+  pinCancel: HTMLButtonElement;
   photoButton: HTMLButtonElement;
 }
 
@@ -135,8 +140,39 @@ export function wireCreatorSetup(deps: {
     };
   }
 
+  /**
+   * Placement needs the alignment the mint gate needs (a measured code,
+   * and this session's fixes solved in - the matrix alone is the identity
+   * from the first fix, M4 review #2), a live session, and no rebuild in
+   * flight. Re-checked at every tap, not only at render.
+   */
+  function placementAllowed(): boolean {
+    const alignment = authorAlignmentInfo();
+    return (
+      ctx.mintedLevel !== null &&
+      alignment.hasMatrix &&
+      alignment.sampleCount >= MIN_ALIGNMENT_SAMPLES &&
+      arController.getState().status === "running" &&
+      !ctx.finishing
+    );
+  }
+
+  function renderPlacementButtons(): void {
+    const allowed = placementAllowed();
+    dom.pinButton.disabled = !allowed;
+    dom.photoButton.disabled = !allowed || ctx.latestFrame === null;
+    if (!allowed) hideLabelInput();
+  }
+
+  function hideLabelInput(): void {
+    dom.pinLabel.hidden = true;
+    dom.pinSave.hidden = true;
+    dom.pinCancel.hidden = true;
+  }
+
   function renderAuthorReadout(): void {
     if (!creator) return;
+    renderPlacementButtons();
     if (ctx.authorErrorText !== null) {
       dom.status.textContent = ctx.authorErrorText;
       dom.mintButton.disabled = true;
@@ -155,6 +191,18 @@ export function wireCreatorSetup(deps: {
       dom.status.textContent = ctx.finishError;
       dom.mintButton.disabled = true;
       dom.finishButton.disabled = false;
+      return;
+    }
+    // A placement's outcome stands until the next tap (M4 review #3).
+    if (ctx.placementNote !== null) {
+      dom.status.textContent = ctx.placementNote;
+      dom.mintButton.disabled = true;
+      dom.finishButton.disabled =
+        finishReadiness({
+          measured: ctx.mintedLevel !== null,
+          tourOpen: ctx.session !== null,
+          manifest: ctx.tourManifestStatus,
+        }) !== "ready";
       return;
     }
     const state = arStore.getState();
@@ -193,53 +241,55 @@ export function wireCreatorSetup(deps: {
     if (readiness === "ready" && ctx.session !== null) {
       dom.status.textContent += ` · ${archiveSizeNote(ctx.session.archive.size)}`;
     }
-    // Placement needs the measured code (its alignment is the frame every
-    // record is minted in) and a live session; the pin also needs a
-    // surface under the reticle, checked at the tap.
-    const canPlace =
-      ctx.mintedLevel !== null &&
-      arController.getState().status === "running" &&
-      !ctx.finishing;
-    dom.pinButton.disabled = !canPlace;
-    dom.photoButton.disabled = !canPlace || ctx.latestFrame === null;
   }
 
-  /** Redraw the live preview of everything placed this session. */
-  async function refreshPreview(): Promise<void> {
-    ctx.placedPreview?.dispose();
-    ctx.placedPreview = null;
+  /** Render ONE newly placed object into the live preview (incremental:
+   *  each placement decodes only its own photo, and two placements cannot
+   *  race each other's disposal - M4 review #7). */
+  function previewObject(placedIndex: number): void {
+    const entry = ctx.placedObjects[placedIndex];
     const scene = seams.getScene();
     const zero = selectZeroReference(arStore.getState());
-    if (scene === null || zero === null) return;
-    const blobs = new Map(
-      ctx.placedObjects
-        .filter((p) => p.blob !== undefined)
-        .map((p) => [p.object.id, p.blob as Blob]),
-    );
-    ctx.placedPreview = await renderTourObjects(
-      ctx.placedObjects.map((p) => p.object),
-      {
-        scene,
-        zero,
-        makeLabel: (text) => seams.createLabel(text),
-        loadPhotoTexture: async (entryName) => {
-          const id = entryName.slice("content/".length, -".jpg".length);
-          const blob = blobs.get(id);
-          return blob === undefined ? null : decodeFrameTexture(blob, 2);
-        },
-      },
-    );
+    if (entry === undefined || scene === null || zero === null) return;
+    const generation = ctx.arSessionGeneration;
+    void renderTourObjects([entry.object], {
+      scene,
+      zero,
+      makeLabel: (text) => seams.createLabel(text),
+      loadPhotoTexture: () =>
+        entry.blob === undefined
+          ? Promise.resolve(null)
+          : decodeFrameTexture(entry.blob, 2),
+    }).then((rendered) => {
+      // The session may have ended while the photo decoded.
+      if (generation !== ctx.arSessionGeneration) {
+        rendered.dispose();
+        return;
+      }
+      ctx.placedPreviews.push(rendered);
+    });
   }
 
   function placed(count: number): string {
     return count === 1 ? "1 object placed" : `${String(count)} objects placed`;
   }
 
+  function note(text: string): void {
+    ctx.placementNote = text;
+    renderAuthorReadout();
+  }
+
   dom.pinButton.addEventListener("click", () => {
+    ctx.placementNote = null;
+    if (!placementAllowed()) {
+      renderAuthorReadout();
+      return;
+    }
     const reticle = ctx.reticle;
     if (reticle === null || !reticle.isVisible()) {
-      dom.status.textContent =
-        "Point the phone at a surface until the ring appears, then tap again.";
+      note(
+        "Point the phone at a surface until the ring appears, then tap again.",
+      );
       return;
     }
     // The label input: an overlay input, not window.prompt (unavailable in
@@ -247,19 +297,34 @@ export function wireCreatorSetup(deps: {
     // may still move the phone while typing.
     dom.pinLabel.hidden = false;
     dom.pinSave.hidden = false;
+    dom.pinCancel.hidden = false;
     dom.pinLabel.focus();
+    renderAuthorReadout();
+  });
+
+  dom.pinCancel.addEventListener("click", () => {
+    dom.pinLabel.value = "";
+    hideLabelInput();
+    ctx.placementNote = null;
+    renderAuthorReadout();
   });
 
   dom.pinSave.addEventListener("click", () => {
     const label = dom.pinLabel.value.trim();
     const reticle = ctx.reticle;
+    if (!placementAllowed()) {
+      hideLabelInput();
+      renderAuthorReadout();
+      return;
+    }
     if (label === "") {
-      dom.status.textContent = "Type the pin's text first.";
+      note("Type the pin's text first.");
       return;
     }
     if (reticle === null || !reticle.isVisible()) {
-      dom.status.textContent =
-        "No surface under the ring - point the phone at the spot and tap Save again.";
+      note(
+        "No surface under the ring - point the phone at the spot and tap Save again.",
+      );
       return;
     }
     const position = reticle.getWorldPosition(new Vector3());
@@ -271,26 +336,26 @@ export function wireCreatorSetup(deps: {
       nowIso: new Date().toISOString(),
     });
     if (pin === null) {
-      dom.status.textContent = "No GPS fix yet - the pin cannot be placed.";
+      note("No GPS fix yet - the pin cannot be placed.");
       return;
     }
     ctx.placedObjects.push({ object: pin });
     dom.pinLabel.value = "";
-    dom.pinLabel.hidden = true;
-    dom.pinSave.hidden = true;
-    dom.status.textContent = `Pin "${label}" placed · ${placed(ctx.placedObjects.length)}.`;
-    void refreshPreview();
+    hideLabelInput();
+    previewObject(ctx.placedObjects.length - 1);
+    note(`Pin "${label}" placed · ${placed(ctx.placedObjects.length)}.`);
   });
 
   dom.photoButton.addEventListener("click", () => {
+    ctx.placementNote = null;
     const frame = ctx.latestFrame;
     const cameraPose = seams.getCameraPose();
-    if (frame === null || cameraPose === null) {
-      dom.status.textContent = "No camera frame yet - try again in a moment.";
+    if (!placementAllowed() || frame === null || cameraPose === null) {
+      note("No camera frame yet - try again in a moment.");
       return;
     }
     dom.photoButton.disabled = true;
-    dom.status.textContent = "Capturing…";
+    note("Capturing…");
     seams.encodeFrameJpeg(frame).then(
       (jpeg) => {
         const photo = mintPhoto({
@@ -303,18 +368,21 @@ export function wireCreatorSetup(deps: {
           nowIso: new Date().toISOString(),
         });
         if (photo === null) {
-          dom.status.textContent =
-            "No usable GPS alignment yet - the photo cannot be placed.";
-        } else {
-          ctx.placedObjects.push({ object: photo, blob: jpeg.blob });
-          dom.status.textContent = `Photo placed · ${placed(ctx.placedObjects.length)}.`;
-          void refreshPreview();
+          note("No usable GPS alignment yet - the photo cannot be placed.");
+          return;
         }
-        renderAuthorReadout();
+        ctx.placedObjects.push({ object: photo, blob: jpeg.blob });
+        previewObject(ctx.placedObjects.length - 1);
+        // The plane sits at the capture spot, facing back at it: the
+        // creator is standing on it and sees it once they step back.
+        note(
+          `Photo placed - step back a metre to see it · ${placed(ctx.placedObjects.length)}.`,
+        );
       },
       (err: unknown) => {
-        dom.status.textContent = `Capturing failed: ${err instanceof Error ? err.message : String(err)}`;
-        renderAuthorReadout();
+        note(
+          `Capturing failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
       },
     );
   });
@@ -384,6 +452,7 @@ export function wireCreatorSetup(deps: {
       return;
     }
     ctx.finishError = null; // a new measurement supersedes a failed finish
+    ctx.placementNote = null;
     // The file name IS the code's identity, derived from the exact text this
     // poster carries - so the creator never matches a number by hand. The
     // hash is async; until it lands the finish button stays off (the level
@@ -426,40 +495,49 @@ export function wireCreatorSetup(deps: {
     const sessionGeneration = ctx.arSessionGeneration;
     ctx.finishing = true;
     ctx.finishError = null;
+    ctx.placementNote = null;
     ctx.finishProgress = FINISH_LABELS.reading(current.archive.size);
     renderAuthorReadout();
-    // A zip in the tolerated wrapped shape (`mytour/qr/<id>.json`) keeps
-    // its level where it is; adding a second file at the root would leave
-    // a stale duplicate on every finish.
-    const existingLevelPath = current.entries
-      .map((e) => e.filename)
-      .find((name) => qrLevelIdFromEntryName(name) === minted.id);
-    // The manifest: what the zip carried plus what this session placed;
-    // the photos' bytes become content entries next to it.
-    const manifest = ctx.tourManifest ?? createEmptyTourManifest();
-    const entries = [
-      {
-        path: existingLevelPath ?? qrLevelEntryName(minted.id),
-        data: minted.json,
-      },
-      {
-        path: TOUR_MANIFEST_ENTRY,
-        data: serializeTourManifest({
-          ...manifest,
-          objects: [
-            ...manifest.objects,
-            ...ctx.placedObjects.map((p) => p.object),
-          ],
-        }),
-      },
-      ...ctx.placedObjects.flatMap((p) =>
-        p.object.kind === "photo" && p.blob !== undefined
-          ? [{ path: p.object.image, data: p.blob }]
-          : [],
-      ),
-    ];
     void (async () => {
       try {
+        // Assembled INSIDE the try (M4 review #1): a manifest the reader
+        // rejects (a duplicate id) must fail the finish visibly, not throw
+        // past `finishing = true` and freeze the panel.
+        const entryNames = current.entries.map((e) => e.filename);
+        // A zip in the tolerated wrapped shape (`mytour/qr/<id>.json`,
+        // `mytour/tour.json`) keeps its files where they are; adding a
+        // second copy at the root would leave a stale duplicate on every
+        // finish.
+        const existingLevelPath = entryNames.find(
+          (name) => qrLevelIdFromEntryName(name) === minted.id,
+        );
+        const manifestPath =
+          tourManifestEntryOf(entryNames) ?? TOUR_MANIFEST_ENTRY;
+        const wrap = manifestPath.slice(0, -TOUR_MANIFEST_ENTRY.length);
+        // The manifest: what the zip carried plus what this session placed;
+        // the photos' bytes become content entries next to it.
+        const manifest = ctx.tourManifest ?? createEmptyTourManifest();
+        const entries = [
+          {
+            path: existingLevelPath ?? qrLevelEntryName(minted.id),
+            data: minted.json,
+          },
+          {
+            path: manifestPath,
+            data: serializeTourManifest({
+              ...manifest,
+              objects: [
+                ...manifest.objects,
+                ...ctx.placedObjects.map((p) => p.object),
+              ],
+            }),
+          },
+          ...ctx.placedObjects.flatMap((p) =>
+            p.object.kind === "photo" && p.blob !== undefined
+              ? [{ path: `${wrap}${p.object.image}`, data: p.blob }]
+              : [],
+          ),
+        ];
         const input = await current.readWholeArchive();
         if (ctx.session !== current) return; // re-opened meanwhile
         const blob = await rebuildZipWithEntries(input, entries, {
@@ -475,6 +553,9 @@ export function wireCreatorSetup(deps: {
         };
         dom.finishStatus.textContent = FINISH_LABELS.ready(blob.size);
         dom.downloadButton.disabled = false;
+        // The placed objects are in the zip now; the next finish (a
+        // re-measure, a re-opened tour) must not append them again.
+        ctx.placedObjects = [];
         // The session ends so the creator lands on the page, where the
         // download button is a fresh tap (a download needs its own user
         // gesture, plan §2.4) - unless it already ended and another one

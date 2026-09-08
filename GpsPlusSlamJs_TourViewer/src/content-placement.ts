@@ -56,6 +56,19 @@ export function newObjectId(random: () => number = Math.random): string {
 const NO_ROTATION: readonly [number, number, number, number] = [0, 0, 0, 1];
 
 /**
+ * The NUE rotation of a vertical poster at compass heading `h`: the
+ * rotation of -h about Up (the framework's `QrGeoOrientation` convention,
+ * `qr-gps-vote.ts`). A hand-edited heading-only photo keeps its facing
+ * instead of silently facing East (M4 review #9).
+ */
+export function rotationFromHeading(
+  headingDeg: number,
+): readonly [number, number, number, number] {
+  const half = (-headingDeg * Math.PI) / 360;
+  return [0, Math.sin(half), 0, Math.cos(half)];
+}
+
+/**
  * A pin record from the reticle's GPS-world NUE position.
  *
  * @returns null when the zero is missing (no GPS fix yet) or the pose
@@ -140,7 +153,11 @@ export function objectPoseNue(
   );
   return {
     positionNue: [nue[0], nue[1], nue[2]],
-    rotationNue: geo.rotation ?? NO_ROTATION,
+    rotationNue:
+      geo.rotation ??
+      (geo.headingDeg === undefined
+        ? NO_ROTATION
+        : rotationFromHeading(geo.headingDeg)),
   };
 }
 

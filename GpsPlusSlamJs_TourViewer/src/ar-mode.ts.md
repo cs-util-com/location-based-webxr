@@ -60,7 +60,8 @@ startCameraFrameCapture, now }` (seam-injected).
 - GPS fixes arriving between watch start and the `startSession` dispatch
   (a sub-second window during `enable()`) are dropped, as in MinimalExample;
   fixes are continuous, so the loss is immaterial.
-- No hit-test, no depth permission: the QR flows anchor to detected codes
+- Hit-test only for a creator (`requestHitTest`, the placement reticle
+  since M4); no depth permission: the QR flows anchor to detected codes
   and GPS positions, never to hit-test planes.
 
 ## Examples

@@ -6,12 +6,15 @@ import { calcRelativeCoordsInMeters } from "gps-plus-slam-app-framework/core";
 import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 
+import { deriveVerticalHeading } from "gps-plus-slam-app-framework/ar/qr/qr-geo-pose-minting";
+
 import {
   mintPhoto,
   mintPin,
   newObjectId,
   objectPoseNue,
   renderTourObjects,
+  rotationFromHeading,
 } from "./content-placement";
 
 /**
@@ -124,6 +127,26 @@ describe("mintPhoto", () => {
     expect(
       mintPhoto({ ...base, alignmentMatrix: IDENTITY, zero: null }),
     ).toBeNull();
+  });
+});
+
+describe("rotationFromHeading", () => {
+  it("round-trips through the framework's heading derivation (property)", () => {
+    // Why this matters (M4 review #9): a heading-only pose in a hand-edited
+    // tour.json used to render facing East. The framework owns the
+    // convention; its derivation is the oracle.
+    fc.assert(
+      fc.property(fc.double({ min: 0, max: 359.9, noNaN: true }), (h) => {
+        const derived = deriveVerticalHeading([...rotationFromHeading(h)]);
+        expect(derived).toBeDefined();
+        const delta = Math.abs((((derived ?? 0) - h + 540) % 360) - 180);
+        expect(delta).toBeLessThan(1e-6);
+      }),
+    );
+    expect(
+      objectPoseNue({ lat: 47.5, lon: 8.7, alt: 1, headingDeg: 90 }, ZERO)
+        .rotationNue,
+    ).toEqual(rotationFromHeading(90));
   });
 });
 

@@ -15,8 +15,10 @@ stopCameraFrameCapture; createQrFrontEnd; solveQrPose; getCameraPose;
 getIntrinsics; createQrDebugView; getScene; queryGeolocationPermission;
 requestLocationOnce; downloadZip; startHitTestReticle; encodeFrameJpeg;
 createLabel; schedule }` - the placement layer (M4: the framework's hit-test
-  reticle under the world group, the camera frame → JPEG encoder that refuses
-  a non-opaque frame, the framework text sprite for a pin's label) and the
+  reticle under the world group; the camera frame → JPEG encoder, which is
+  the framework's `rgbaImageToJpegBlob` behind an opacity guard, async
+  throughout; the framework text sprite for a pin's label at a 2:1
+  canvas/scale with a transparent pill) and the
   one-shot clock behind the scan gate's escape (M5; the e2e fires it instead
   of waiting) - `controllerDeps` is a
   `Partial<EnableGpsArDeps>` injected into `createEnableGpsArController`

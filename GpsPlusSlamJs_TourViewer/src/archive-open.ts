@@ -78,6 +78,14 @@ export function wireArchiveOpen(deps: {
     ctx.contentRendered?.dispose();
     ctx.contentRendered = null;
     ctx.contentAttempted = false;
+    // The creator's placed objects belong to the closing tour (M4 review
+    // #1): carried into another tour they would be written into ITS zip,
+    // and into the same tour re-opened after a finish they would duplicate
+    // their own ids and break every later finish.
+    ctx.placedObjects = [];
+    for (const preview of ctx.placedPreviews) preview.dispose();
+    ctx.placedPreviews = [];
+    ctx.placementNote = null;
     // Clear the latch HERE too (PR #367 review): the stale run's finally is
     // generation-guarded and cannot clear it any more, and a latched
     // imagePlanesLoading blocks every later placement in the session.

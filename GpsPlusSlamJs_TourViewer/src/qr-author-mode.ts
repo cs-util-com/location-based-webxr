@@ -200,7 +200,7 @@ export function finishBlockedHint(
 
 /** Above this the rebuild is a long whole-file pass on a phone; the copy
  *  says so before the creator taps. */
-export const LARGE_ARCHIVE_BYTES = 200_000_000;
+const LARGE_ARCHIVE_BYTES = 200_000_000;
 
 /** What the finish button's surroundings say about the archive's size. */
 export function archiveSizeNote(bytes: number): string {

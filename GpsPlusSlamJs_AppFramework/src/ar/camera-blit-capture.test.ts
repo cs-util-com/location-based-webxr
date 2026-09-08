@@ -15,6 +15,7 @@ import {
   computeCaptureSize,
   computeAspectFitSize,
   type CameraBlitCaptureConfig,
+  rgbaImageToJpegBlob,
 } from './camera-blit-capture';
 
 let originalOffscreenCanvas: typeof globalThis.OffscreenCanvas | undefined;
@@ -1162,5 +1163,55 @@ describe('camera-blit-capture', () => {
       expect(Number.isInteger(r.width)).toBe(true);
       expect(Number.isInteger(r.height)).toBe(true);
     });
+  });
+});
+
+describe('rgbaImageToJpegBlob (the shared encoder)', () => {
+  // Why this matters: the Tour Viewer encodes a placed photo through this
+  // function instead of its own canvas dance (DEC-H3). The contract that
+  // matters to it: a length mismatch REJECTS (never throws synchronously
+  // into a click handler), and a well-formed frame yields a JPEG Blob
+  // through OffscreenCanvas when the browser has one.
+  it('rejects a data length that does not match the dimensions', async () => {
+    await expect(
+      rgbaImageToJpegBlob(
+        { data: new Uint8ClampedArray(15), width: 2, height: 2 },
+        0.8
+      )
+    ).rejects.toThrow(/expected 16 bytes/);
+  });
+
+  it('encodes a well-formed frame to a JPEG blob via OffscreenCanvas', async () => {
+    const original = globalThis.OffscreenCanvas;
+    const originalImageData = (globalThis as Record<string, unknown>).ImageData;
+    (globalThis as Record<string, unknown>).ImageData = class {
+      constructor(
+        public data: Uint8ClampedArray,
+        public width: number,
+        public height: number
+      ) {}
+    };
+    globalThis.OffscreenCanvas = class {
+      constructor(
+        public width: number,
+        public height: number
+      ) {}
+      getContext() {
+        return { putImageData: vi.fn() };
+      }
+      convertToBlob() {
+        return Promise.resolve(new Blob(['jpeg'], { type: 'image/jpeg' }));
+      }
+    } as unknown as typeof OffscreenCanvas;
+    try {
+      const blob = await rgbaImageToJpegBlob(
+        { data: new Uint8ClampedArray(16).fill(255), width: 2, height: 2 },
+        0.8
+      );
+      expect(blob?.type).toBe('image/jpeg');
+    } finally {
+      globalThis.OffscreenCanvas = original;
+      (globalThis as Record<string, unknown>).ImageData = originalImageData;
+    }
   });
 });

@@ -58,22 +58,36 @@ tap.
   and says "not saved". Async-UI rule on both branches. `resetFinishStep`
   (a hook, called when a tour closes) disables the button and clears the
   status, so a re-opened tour does not show a stale step 5.
-- **Placement (M4, DEC-N9):** after the measurement, "Place a pin here"
-  reads the hit-test reticle (a surface must be under it, else the panel
-  says so), opens the overlay label input, and Save mints a `pin` record
-  from the reticle's GPS-world position (`content-placement.ts`);
+- **Placement (M4, DEC-N9):** allowed only under the mint gate's own
+  alignment floor for THIS session (a measured code, a matrix and at least
+  `MIN_ALIGNMENT_SAMPLES` fixes since the session started - a level that
+  survived a session end does not open it, M4 review #2), a running
+  session and no rebuild in flight; re-checked at every tap. "Place a pin
+  here" reads the hit-test reticle (a surface must be under it, else the
+  panel says so), opens the overlay label input (with a Cancel), and Save
+  mints a `pin` record from the reticle's GPS-world position
+  (`content-placement.ts`; the reticle rides the lerped visual alignment,
+  which converges within ~0.3 s of a correction - the one frame difference
+  to the photo's target-matrix mint, accepted);
   "Capture a photo here" encodes the latest camera frame through
   `seams.encodeFrameJpeg` and mints a `photo` record from the camera's
   raw pose through the session alignment, keeping the JPEG for the
-  rebuild. Every placement redraws the live preview
-  (`renderTourObjects` at the scene root; `ctx.placedPreview`). Placed
-  objects survive a session end like the level; the finish step appends
-  them to the manifest and writes the photos as `content/<id>.jpg`.
+  rebuild. Each placement renders its own preview (`renderTourObjects`
+  at the scene root; `ctx.placedPreviews`, one handle per object, so two
+  placements cannot race each other's disposal and a photo is decoded
+  once). The outcome of a placement is `ctx.placementNote`, shown with
+  priority until the next tap. Placed objects survive a session end like
+  the level; the finish step appends them to the manifest (at the wrapped
+  path when the zip is wrapped) and writes the photos as
+  `content/<id>.jpg`, then clears them - a re-opened tour or a re-measure
+  must not append them again (M4 review #1). The entry assembly runs
+  inside the finish's try, so a manifest the reader rejects fails the
+  finish visibly instead of freezing the panel.
 - The measured level survives a session end on purpose (finishing ends
   the session); a new measurement replaces it.
 - Owns the session fields `lastDetectedText`, `activeSizeM`,
   `authorErrorText`, `mintedLevel`, `mintGeneration`, `finishing`,
-  `rebuiltZip`, `placedObjects`, `placedPreview`; reads
+  `rebuiltZip`, `placedObjects`, `placedPreviews`, `placementNote`; reads
   `gpsSamplesAtSessionStart`, `reticle`, `latestFrame` (written by
   `ar-entry.ts`), `session`, `currentLevels`, `tourManifest`.
 

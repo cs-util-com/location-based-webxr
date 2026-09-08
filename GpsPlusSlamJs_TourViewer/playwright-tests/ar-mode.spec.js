@@ -442,11 +442,25 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   // yields a 3-byte "JPEG". Both records land in tour.json, the photo's
   // bytes as content/<id>.jpg.
   await expect(page.getByTestId("setup-pin")).toBeEnabled();
+  // A cancelled pin leaves nothing behind (M4 review, minor).
+  await page.getByTestId("setup-pin").click();
+  await expect(page.getByTestId("pin-label")).toBeVisible();
+  await page.getByTestId("pin-cancel").click();
+  await expect(page.getByTestId("pin-label")).toBeHidden();
   await page.getByTestId("setup-pin").click();
   await page.getByTestId("pin-label").fill("The old gate");
   await page.getByTestId("pin-save").click();
   await expect(page.getByTestId("setup-status")).toContainText(
     /1 object placed/,
+  );
+  // The outcome survives the store's dispatches (M4 review #3): frames and
+  // a fix re-render the readout, and used to erase it within a frame.
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.emitFrames(3);
+  });
+  await seedAlignment(page);
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /Pin "The old gate" placed/,
   );
   // A frame must have flowed for the photo button; the poll above emitted
   // several.
@@ -574,6 +588,10 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
     )
     .toMatch(/0 of 3 fixes/i);
   await expect(page.getByTestId("setup-mint")).toBeDisabled();
+  // Placement waits for THIS session's alignment too (M4 review #2): the
+  // level survived the session end, the fixes did not.
+  await expect(page.getByTestId("setup-pin")).toBeDisabled();
+  await expect(page.getByTestId("setup-photo")).toBeDisabled();
 });
 
 test("a failed finish says so with priority and can be retried; the panel shows the rebuild's progress meanwhile", async ({

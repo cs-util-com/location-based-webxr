@@ -160,8 +160,14 @@ export interface TourViewerSession {
   reticle: HitTestReticleHandle | null;
   /** The most recent camera frame - what "Capture a photo" encodes. */
   latestFrame: RgbaImage | null;
-  /** The live preview of the placed objects (rebuilt after each placement). */
-  placedPreview: RenderedTourObjects | null;
+  /** The live previews, one per placed object (rendered as each lands;
+   *  re-rendering everything per placement raced itself and re-decoded
+   *  every photo, M4 review #7). */
+  placedPreviews: RenderedTourObjects[];
+  /** The last placement's outcome, shown with priority in the panel until
+   *  the next tap (store dispatches re-render the readout at the frame
+   *  cadence and erased it within a frame, M4 review #3). */
+  placementNote: string | null;
   /** Bumped on every AR session end: an async continuation captures it
    *  and must not act on a session it did not start in (M3 review #2). */
   arSessionGeneration: number;
@@ -236,7 +242,8 @@ export function createTourViewerSession(): TourViewerSession {
     placedObjects: [],
     reticle: null,
     latestFrame: null,
-    placedPreview: null,
+    placedPreviews: [],
+    placementNote: null,
     viewerQrStatus: null,
     viewerUnknownCode: null,
     viewerUnusableCode: null,
