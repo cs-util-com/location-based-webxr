@@ -7,11 +7,13 @@
  * without a recording, and the "open as a visitor" link that is the
  * tester's way into the visitor path (DEC-N1, plan review #13).
  *
- * The reached step is remembered per hosted url (M6, plan §2.7): a reload
- * after the AR session, or a return from the print dialog, lands on the
- * step the creator reached instead of step 1. The store is injected
- * (`localStorage` in production) and every access is guarded - a private
- * window or blocked site data must not break the setup.
+ * The reached step is remembered per hosted url, and the last opened url
+ * itself (M6, plan §2.7): after a reload (the AR session, the print
+ * dialog) the link is prefilled and Open returns to the step the creator
+ * reached instead of step 1. The store is injected (`localStorage` in
+ * production) and every access is guarded - blocked site data or a
+ * sandboxed context must not break the setup (a private window has a
+ * working, session-scoped store and needs no guard).
  *
  * The DOM surface is structural so the unit tests pass plain objects (this
  * package's unit tests run in node, no jsdom); the e2e suite drives the
@@ -72,6 +74,26 @@ export function wizardStepKey(url: string): string {
   return `tour-viewer.wizard.${url}`;
 }
 
+/** The storage key for the last url a creator opened. */
+export const WIZARD_LAST_URL_KEY = "tour-viewer.wizard.last-url";
+
+/**
+ * The browser's step store, or undefined where reaching for it throws.
+ * `localStorage` is a GETTER, and `typeof` still runs it: with site data
+ * blocked, in a sandboxed frame or a WebView with DOM storage off the get
+ * throws, and at module top level that blanked the whole page for a
+ * visitor who had just scanned a code (M6 review #1).
+ */
+export function stepStoreOrUndefined(
+  read: () => WizardStepStore | undefined = () => globalThis.localStorage,
+): WizardStepStore | undefined {
+  try {
+    return read() ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** A remembered step, or null for anything unreadable. */
 export function parseWizardStep(value: string | null): WizardStep | null {
   return (WIZARD_STEPS as readonly string[]).includes(value ?? "")
@@ -82,6 +104,8 @@ export function parseWizardStep(value: string | null): WizardStep | null {
 export interface Wizard {
   /** Open one step, collapse the others; remembered for the open tour. */
   openStep(step: WizardStep): void;
+  /** The last url a creator opened on this device, for the link input. */
+  rememberedTourUrl(): string | null;
   /** A tour opened: the launch link becomes usable and the print step opens. */
   presentTour(url: string): void;
   /** A code was generated: the link carries the PRINTED payload (the
@@ -136,18 +160,44 @@ export function wireWizard(deps: {
   let tourUrl: string | null = null;
 
   function remember(step: WizardStep): void {
-    if (tourUrl === null || stepStore === undefined) return;
+    // A visitor never writes a creator's key (M6 review #11), whatever
+    // calls openStep on the visitor page later.
+    if (mode !== "creator" || tourUrl === null || stepStore === undefined)
+      return;
     try {
       stepStore.setItem(wizardStepKey(tourUrl), step);
     } catch {
-      // A private window or blocked site data: the setup still works.
+      // Blocked site data: the setup still works, nothing is remembered.
+    }
+  }
+
+  function rememberUrl(url: string): void {
+    if (stepStore === undefined) return;
+    try {
+      stepStore.setItem(WIZARD_LAST_URL_KEY, url);
+    } catch {
+      // As above.
     }
   }
 
   function remembered(url: string): WizardStep | null {
     if (stepStore === undefined) return null;
     try {
-      return parseWizardStep(stepStore.getItem(wizardStepKey(url)));
+      const step = parseWizardStep(stepStore.getItem(wizardStepKey(url)));
+      // Step 5 exists for the rebuilt zip, which lives only in the page
+      // that finished: after a reload it is gone, and landing there would
+      // show an empty step with a dead download button (M6 review #3).
+      // Measuring again is the honest place to resume.
+      return step === "finish" ? "measure" : step;
+    } catch {
+      return null;
+    }
+  }
+
+  function rememberedTourUrl(): string | null {
+    if (stepStore === undefined) return null;
+    try {
+      return stepStore.getItem(WIZARD_LAST_URL_KEY);
     } catch {
       return null;
     }
@@ -219,13 +269,16 @@ export function wireWizard(deps: {
 
   return {
     openStep,
+    rememberedTourUrl,
     presentTour: (url) => {
       dom.visitorLink.href = visitorLaunchHref(url);
       dom.visitorLink.hidden = false;
+      if (mode !== "creator") return;
       tourUrl = url;
+      rememberUrl(url);
       // Land where the creator got to with this tour (a reload after the
       // AR session, a return from the print dialog); step 2 for a new one.
-      if (mode === "creator") openStep(remembered(url) ?? "print");
+      openStep(remembered(url) ?? "print");
     },
     presentLaunchUrl: (launchUrl) => {
       const href = launchHrefFromPrintedUrl(launchUrl);

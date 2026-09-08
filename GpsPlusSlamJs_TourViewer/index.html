@@ -58,8 +58,10 @@
         border-radius: 0.5rem;
         padding: 0.5rem 0.75rem;
       }
-      /* Each step's title is a real heading (screen readers navigate
-         them) inside the summary; the icon rides the same line. */
+      /* Each step's title is a real heading in the markup, inside the
+         summary (valid: summary admits heading content); whether a given
+         screen reader exposes it through the disclosure's role is a
+         field-test item, not a claim. The icon rides the same line. */
       .step > summary,
       .step > h2 {
         cursor: pointer;
@@ -415,7 +417,7 @@
            (enforced by tests/repo-config/hud-overlay-nesting.test.js). The
            step heading sits outside it: it is pre-session copy. -->
       <section id="step-measure" class="step" data-testid="step-measure">
-        <h2 class="creator-only step-heading" hidden>
+        <h2 class="creator-only" hidden>
           <svg class="step-icon" viewBox="0 0 24 24" aria-hidden="true">
             <rect
               x="7"

@@ -1217,7 +1217,8 @@ test("the setup remembers the step the creator reached, per hosted link (M6)", a
 
   await page.reload();
   await expect(page.getByTestId("step-host")).toHaveAttribute("open", "");
-  await page.getByTestId("link-input").fill(ARCHIVE);
+  // The last opened link is prefilled (M6 review #2): one tap, not a paste.
+  await expect(page.getByTestId("link-input")).toHaveValue(ARCHIVE);
   await page.getByTestId("open-button").click();
   await expect(page.getByTestId("step-hang")).toHaveAttribute("open", "");
   await expect(page.getByTestId("print-panel")).not.toHaveAttribute("open", "");

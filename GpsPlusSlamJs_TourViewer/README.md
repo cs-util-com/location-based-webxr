@@ -11,11 +11,12 @@ downloading the whole file first.
 - **The plain page is the creator's guided setup.** Six steps, one open
   at a time: host a zip and paste its link, print the code, hang it,
   measure it in AR and place content, download the rebuilt zip, replace
-  the hosted file. The reached step is remembered per hosted link, so a
-  reload after the AR session lands where the creator got to.
+  the hosted file. The link last opened and the step reached with it are
+  remembered on the device: after a reload (the AR session, the print
+  dialog) the link is prefilled and Open returns to that step.
 - **A `?qr=` launch is the visitor's screen.** Scanning the printed code
-  opens the tour with one consent tap ("Allow location" where the browser
-  has not decided yet, then "Start the tour"), enters AR, and places
+  opens the tour behind a consent tap ("Start the tour"; a browser that
+  has not decided on the location asks for it first), enters AR, and places
   nothing until the phone has recognised the hung code. After 45 s
   without a lock the page offers "Continue with GPS only (less accurate)".
 
@@ -31,7 +32,8 @@ author flag.
 2. **Print the code** - the print panel is prefilled with the link;
    generate, print at true size (the declared size is what the AR
    measurement solves against).
-3. **Hang the code** - flat, at eye height, where the tour starts.
+3. **Hang the code** - flat, at about chest height, where the tour
+   starts.
 4. **Measure the code and place content** - "Start AR setup" opens the
    camera; keep the code in view until the panel says it is measured
    (walking a few metres with GPS reception lets the phone align to the
@@ -53,8 +55,9 @@ clear-cache control.
 
 ## The visitor's screen
 
-The tour's gallery streams in while the consent screen shows. Inside AR
-the status line asks for the printed code; once it locks, the tour's
+The tour's archive streams in while the consent screen shows (a visitor
+gets no thumbnails; the tour appears in AR). Inside AR the status line
+asks for the printed code; once it locks, the tour's
 `tour.json` content appears (pins as labels, photos as planes at their
 capture spots), and a tour that carries a recording also places its
 photos at the spots they were taken. A tour whose zip carries no measured

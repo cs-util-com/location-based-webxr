@@ -38,7 +38,7 @@ import {
 } from "./tour-viewer-session.js";
 import { createViewerPlacement } from "./viewer-placement.js";
 import { wireVisitorScreen } from "./visitor-screen.js";
-import { wireWizard } from "./wizard.js";
+import { stepStoreOrUndefined, wireWizard } from "./wizard.js";
 
 /** Keep at most this many archives cached (LRU) — see BoundedLocalCacheStore. */
 const MAX_CACHED_ARCHIVES = 5;
@@ -108,6 +108,7 @@ const print = wirePrintPanel(
   },
 );
 
+const stepStore = stepStoreOrUndefined();
 const wizard = wireWizard({
   mode,
   dom: {
@@ -135,9 +136,18 @@ const wizard = wireWizard({
   // Through the seam like the finish step's download, so the e2e fake
   // captures it (M3 review #10).
   download: (blob, filename) => seams.downloadZip(blob, filename),
-  // The reached step per hosted url (M6); absent where storage is blocked.
-  ...(typeof localStorage === "undefined" ? {} : { stepStore: localStorage }),
+  // The reached step per hosted url (M6); absent where reaching for the
+  // store throws (blocked site data), so the page still boots.
+  ...(stepStore === undefined ? {} : { stepStore }),
 });
+// The link a creator last opened, prefilled so a reload is one tap from
+// the remembered step (M6 review #2); never over a link already typed.
+{
+  const linkInput = element<HTMLInputElement>("link");
+  const last = wizard.rememberedTourUrl();
+  if (mode === "creator" && last !== null && linkInput.value === "")
+    linkInput.value = last;
+}
 hooks.presentTourForPrint = (url) => {
   print.presentTour(url);
   wizard.presentTour(url);

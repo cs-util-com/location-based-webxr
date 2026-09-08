@@ -32,6 +32,14 @@ listed in `index.html.md`. The concerns and their modules:
 
 ## Invariants & assumptions
 
+- **The page must boot without `localStorage`.** The wizard's step store is
+  read through `stepStoreOrUndefined()` (a try/catch around the getter):
+  with site data blocked the getter throws, and a throw at this top level
+  would blank the page for a visitor who had just scanned a code. Without
+  a store there is no step persistence and nothing else changes. The last
+  opened link is prefilled into `#link` for a creator when the input is
+  empty.
+
 - **Wiring order is dependency order:** print → wizard → visitor screen →
   author → viewer → AR entry → archive open. Each module hands its
   cross-module entry points to the `hooks` object (`renderArStatus`,

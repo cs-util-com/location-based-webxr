@@ -8,6 +8,7 @@ import {
   visitorLaunchHref,
   wizardStepKey,
   WIZARD_STEPS,
+  stepStoreOrUndefined,
   wireWizard,
   type WizardDom,
   type WizardStep,
@@ -246,7 +247,7 @@ describe("the remembered step (M6)", () => {
     }).presentTour("https://h/t.zip");
     expect(second.dom.steps.replace?.open).toBe(true);
 
-    // A throwing store (private window) leaves the flow intact.
+    // A throwing store (blocked site data) leaves the flow intact.
     const third = fakeDom();
     wireWizard({
       mode: "creator",
@@ -265,19 +266,116 @@ describe("the remembered step (M6)", () => {
     expect(third.dom.steps.print?.open).toBe(true);
   });
 
-  it("parses only known steps (property)", () => {
+  it("parses only known steps (property), and the real inputs: null, case, whitespace, a prototype name", () => {
+    // Why this matters (M6 review #9): the store hands back null for an
+    // unknown key and any string a device once wrote; the parser is the
+    // only thing between that and `openStep`. The property pins "never an
+    // unknown step"; the table pins the inputs a mirror of the
+    // implementation would not.
     fc.assert(
       fc.property(
         fc.oneof(fc.string(), fc.constantFrom(...WIZARD_STEPS)),
         (v) => {
           const parsed = parseWizardStep(v);
           expect(parsed === null || WIZARD_STEPS.includes(parsed)).toBe(true);
-          expect(parsed).toBe(
-            WIZARD_STEPS.includes(v as WizardStep) ? v : null,
-          );
         },
       ),
     );
+    expect(parseWizardStep(null)).toBeNull();
+    for (const bad of ["Print", " print", "", "__proto__", "constructor"])
+      expect(parseWizardStep(bad)).toBeNull();
+    expect(parseWizardStep("hang")).toBe("hang");
+  });
+
+  it("keys the step by the hosted url: another tour starts at step 2 (M6 review #10)", () => {
+    // Why this matters: one shared key would land tour B on tour A's step.
+    const store = new Map<string, string>();
+    const stepStore = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        store.set(k, v);
+      },
+    };
+    const a = fakeDom();
+    const wizardA = wireWizard({
+      mode: "creator",
+      dom: a.dom,
+      packStarter: () => Promise.resolve(new Blob()),
+      download: () => Promise.resolve(true),
+      stepStore,
+    });
+    wizardA.presentTour("https://h/a.zip");
+    wizardA.openStep("replace");
+    const b = fakeDom();
+    const wizardB = wireWizard({
+      mode: "creator",
+      dom: b.dom,
+      packStarter: () => Promise.resolve(new Blob()),
+      download: () => Promise.resolve(true),
+      stepStore,
+    });
+    wizardB.presentTour("https://h/b.zip");
+    expect(b.dom.steps.print?.open).toBe(true);
+    expect(b.dom.steps.replace?.open).toBe(false);
+    // The last opened url is what the link input is prefilled with.
+    expect(wizardB.rememberedTourUrl()).toBe("https://h/b.zip");
+  });
+
+  it("a remembered step 5 resumes at step 4: the rebuilt zip did not survive the reload (M6 review #3)", () => {
+    const store = new Map<string, string>([
+      [wizardStepKey("https://h/t.zip"), "finish"],
+    ]);
+    const { dom } = fakeDom();
+    wireWizard({
+      mode: "creator",
+      dom,
+      packStarter: () => Promise.resolve(new Blob()),
+      download: () => Promise.resolve(true),
+      stepStore: {
+        getItem: (k: string) => store.get(k) ?? null,
+        setItem: (k: string, v: string) => {
+          store.set(k, v);
+        },
+      },
+    }).presentTour("https://h/t.zip");
+    expect(dom.steps.finish?.open).toBe(false);
+    expect(dom.steps.host?.open).toBe(false);
+    expect(dom.steps.print?.open).toBe(false);
+  });
+
+  it("a visitor page never writes a creator's key, and never reads one (M6 review #11)", () => {
+    const writes: string[] = [];
+    const { dom } = fakeDom();
+    const wizard = wireWizard({
+      mode: "visitor",
+      dom,
+      packStarter: () => Promise.resolve(new Blob()),
+      download: () => Promise.resolve(true),
+      stepStore: {
+        getItem: () => "replace",
+        setItem: (k: string) => {
+          writes.push(k);
+        },
+      },
+    });
+    wizard.presentTour("https://h/t.zip");
+    wizard.openStep("hang");
+    expect(writes).toEqual([]);
+    expect(dom.steps.replace?.open).toBe(false);
+  });
+
+  it("stepStoreOrUndefined survives a throwing localStorage getter (M6 review #1)", () => {
+    // Why this matters: `typeof localStorage` still runs the getter, and
+    // with site data blocked the throw at module top level blanked the
+    // page for a visitor who had just scanned a printed code.
+    expect(
+      stepStoreOrUndefined(() => {
+        throw new Error("SecurityError: access denied");
+      }),
+    ).toBeUndefined();
+    expect(stepStoreOrUndefined(() => undefined)).toBeUndefined();
+    const store = { getItem: () => null, setItem: () => undefined };
+    expect(stepStoreOrUndefined(() => store)).toBe(store);
   });
 });
 
