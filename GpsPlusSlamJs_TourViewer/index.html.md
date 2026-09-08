@@ -22,7 +22,11 @@ code" to the owner.
 The `data-testid` contract the e2e suite drives: `link-input`,
 `open-button`, `storage-panel` (the collapsed `<details>` that holds the
 clear-cache button and its one-sentence explanation - flows plan M2, hidden
-entirely without a cache store), `clear-cache`, `stats`, `error`, `gallery`, `ar-hint`,
+entirely without a cache store), `clear-cache`, `print-panel` (the
+`<details>` holding the print section, OUTSIDE `#ar-root` since flows plan
+M3 - it owns `print-url`, `author-size`, `author-c`, `print-generate`,
+`print-info`, `print-canvas`, `print-button`, `print-url-out`; opened and
+prefilled when a tour opens), `stats`, `error`, `gallery`, `ar-hint`,
 `ar-status`, `enter-ar`, `author-panel`. Renaming one is an e2e-breaking
 change. `#ar-status` and `#enter-ar` must stay children of `#ar-root`
 (WebXR DOM overlay composites only that subtree; enforced by

@@ -281,10 +281,13 @@ async function openUrl(url: string): Promise<void> {
     renderStats();
     void fillGallery(opened);
     // The open tour's hosting URL is what a creator prints — prefill the
-    // panel without clobbering something they typed.
-    if (authorMode && printUrlInput.value.trim() === "") {
+    // panel without clobbering something they typed, and open it: the print
+    // step is the creator's next move (flows plan M3, DEC-F2). Both modes,
+    // and the ?qr= boot lands here too.
+    if (printUrlInput.value.trim() === "") {
       printUrlInput.value = url;
     }
+    printPanel.open = true;
     // The authored levels ride the same zip; a newer open's guard keeps a
     // slow load from installing a closed tour's levels.
     void opened.loadQrLevels().then((levels) => {
@@ -482,8 +485,11 @@ function startAuthorPipeline(): boolean {
   // not looking at (PR #360 review).
   const parsedSize = Number(authorSizeInput.value);
   if (!Number.isFinite(parsedSize) || parsedSize <= 0) {
+    // The input lives in the print section since the flows plan M3 - name
+    // it and open it, or the message points at a collapsed panel.
     authorErrorText =
-      "Enter the printed code's side length in metres (e.g. 0.2) before starting.";
+      "Enter the printed code's side length in metres (e.g. 0.2) in the Print section above before starting.";
+    printPanel.open = true;
     renderAuthorReadout();
     return false;
   }
@@ -892,7 +898,9 @@ async function decodeTourTextures(current: TourSession): Promise<Texture[]> {
   return textures;
 }
 
-// --- Print a code (creator step zero, owner-requested 2026-08-26) ---------
+// --- Print a code (creator step zero, owner-requested 2026-08-26; on the
+// page for everyone since the flows plan M3) -------------------------------
+const printPanel = element<HTMLDetailsElement>("print-panel");
 const printUrlInput = element<HTMLInputElement>("print-url");
 const printGenerateButton = element<HTMLButtonElement>("print-generate");
 const printInfo = element<HTMLDivElement>("print-info");
@@ -946,6 +954,10 @@ async function generatePrintCode(): Promise<void> {
 }
 
 printButton.addEventListener("click", () => {
+  // A collapsed <details> renders nothing, and the print CSS shows only
+  // #print-area - printing from a collapsed panel would print a blank page
+  // (flows plan review #13).
+  printPanel.open = true;
   window.print();
 });
 
@@ -1058,7 +1070,9 @@ function renderArState(state: EnableGpsArState): void {
     state.status === "starting" ||
     state.status === "running" ||
     state.status === "stopping";
-  authorSizeInput.disabled = sessionActive;
+  // Author mode only: a viewer session does not consume the size, and the
+  // input is a creator's print field now (flows plan M3, DEC-F2).
+  authorSizeInput.disabled = authorMode && sessionActive;
   // `#ar-root` IS the DOM overlay, so anything left visible in it sits over
   // the camera feed for the whole session. The hint explains the button
   // before a press; during a session it would be a start-screen instruction

@@ -503,7 +503,12 @@ test("the print panel renders a scannable code at a declared true size", async (
   // URL builder and the real QR renderer in a browser: a code appears, the
   // info line carries the version + the physical size + the 100%-scale
   // instruction, and the full launch URL is shown for copying.
-  await page.goto("/?author=1");
+  // Since the flows plan M3 (DEC-F2) the panel is on the page for EVERYONE
+  // - no ?author=1 - and usable BEFORE any tour is open (the "print first,
+  // hang, then author" loop), collapsed until expanded.
+  await page.goto("/");
+  await expect(page.getByTestId("print-url")).toBeHidden();
+  await page.getByTestId("print-panel").locator("summary").click();
   await page
     .getByTestId("print-url")
     .fill("https://www.dropbox.com/scl/fi/abc/tour.zip?rlkey=k&dl=0");
@@ -545,6 +550,28 @@ test("the print panel renders a scannable code at a declared true size", async (
   await page.getByTestId("print-generate").click();
   await expect(page.getByTestId("print-info")).toContainText(/http/i);
   await expect(page.getByTestId("print-generate")).toBeEnabled();
+});
+
+test("opening a tour opens the print panel prefilled with the tour's link", async ({
+  page,
+}) => {
+  // Why this matters (feedback F2, flows plan M3): after Open, the creator's
+  // next step is printing the code - the first on-phone session could not
+  // find it because it sat behind ?author=1. The panel must present itself
+  // with the opened link, without clobbering a link the creator typed.
+  const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/tour.zip";
+  await page.goto("/");
+  await expect(page.getByTestId("print-url")).toBeHidden();
+  await page.getByTestId("link-input").fill(ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  await expect(page.getByTestId("print-url")).toBeVisible();
+  await expect(page.getByTestId("print-url")).toHaveValue(ARCHIVE);
+  // The size field is a creator's print input: NOT frozen by a viewer
+  // session (review #17) - it is only captured in author mode.
+  await expect(page.getByTestId("author-size")).toBeEnabled();
 });
 
 test("without fakes the button reports AR unsupported instead of breaking the page", async ({

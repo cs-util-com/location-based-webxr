@@ -50,12 +50,18 @@ None (app entry point). Interesting seams for the e2e suite are the
   via `authorStatusLine`; the export offers copy + a `qr/<id>.json`
   download. The store carries the opt-in `qrDetected` reducer for both
   modes.
-- **Print a code (owner request 2026-08-26):** the author panel carries a
-  print section — paste the hosting URL (prefilled from the open tour),
-  reuse the size and code-number inputs, and the measured launch URL renders as a QR at
-  the TRUE physical size on paper (print CSS cm at 100% scale; the canvas
-  carries the symbol only, the quiet zone is CSS padding). See
-  the framework's `qr-print-plan.ts.md` for the size contract.
+- **Print a code (owner request 2026-08-26; on the page for everyone since
+  the flows plan M3, DEC-F2):** `#print-panel` is a `<details>` OUTSIDE
+  `#ar-root`, collapsed with an empty tour and opened + prefilled by
+  `openUrl` in both modes (the `?qr=` boot included) without clobbering a
+  typed link. It owns the printed-size and code-number inputs; author mode
+  reads the size from there (one input, two consumers) and disables it
+  during a session ONLY in author mode. The measured launch URL renders as
+  a QR at the TRUE physical size on paper (print CSS cm at 100% scale; the
+  canvas carries the symbol only, the quiet zone is CSS padding); the
+  print button opens the details first, because a collapsed one prints a
+  blank page. See the framework's `qr-print-plan.ts.md` for the size
+  contract.
 - **Viewer pipeline (M4):** the default mode relocalizes against the open
   tour: the detected code's `qr/<id>.json` resolves live from
   `loadQrLevels()`, budgeted synthetic votes flow into `recordGpsEvent`,
