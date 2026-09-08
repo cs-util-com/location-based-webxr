@@ -265,6 +265,11 @@ function openRanged(
     options
   );
   const controller = new AbortController();
+  // The warm download has its OWN abort handle: evict() cancels it (the
+  // Tour Viewer flows plan M2, 2026-09-07 - a "Clear cache" that waited for
+  // a tens-of-MB warm to finish read as "nothing happens" on a phone) while
+  // the session and any recovery download keep running.
+  const warmController = new AbortController();
   // Mid-session range-ignore recovery: a host that 206'd the probe can start
   // answering range reads with 200 full bodies (CDN node variance, a backend
   // flip). That surfaces as RangeIgnoredError; instead of failing the
@@ -351,7 +356,7 @@ function openRanged(
           store,
           switchable,
           options,
-          controller.signal,
+          AbortSignal.any([controller.signal, warmController.signal]),
           () => evicted
         )
       : Promise.resolve(false);
@@ -366,13 +371,16 @@ function openRanged(
       // In-flight WARM and RECOVERY downloads both persist on completion;
       // deleting before they settle would let a late write re-poison the
       // cache the eviction just cleared (PR #357 review; PR #358 review #2
-      // added the warm half so a bare `evict()` is self-sufficient — the
-      // dispose → await warmed → evict incantation is belt-and-braces, not
-      // a requirement). Await both — success or failure — then delete. The
+      // made a bare `evict()` self-sufficient). The warm is ABORTED rather
+      // than awaited (flows plan M2): the latch below already disarms its
+      // persist step, so waiting bought nothing but the download's
+      // duration. The recovery download is still awaited - it serves a
+      // live read, and aborting it would fail that read. Then delete. The
       // latch additionally disarms writers that START after this call
       // (PR #359 review): the live session may keep recovering reads, but
       // never repersists.
       evicted = true;
+      warmController.abort();
       await warmed.catch(() => undefined);
       await recoveryDownload?.catch(() => undefined);
       await store?.delete(url);

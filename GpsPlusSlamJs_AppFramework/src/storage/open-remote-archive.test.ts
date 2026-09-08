@@ -91,12 +91,7 @@ function fullBodyResponse(
     return Promise.resolve(respond(500, new Uint8Array(0), baseHeaders));
   }
   if (opts.deferredFullBody !== undefined) {
-    const box = opts.deferredFullBody;
-    return new Promise((resolve) => {
-      box.resolve = () => {
-        resolve(respond(200, ARCHIVE, baseHeaders));
-      };
-    });
+    return deferredResponse(opts.deferredFullBody, init?.signal, baseHeaders);
   }
   if (opts.fullBody === 'hang') {
     // Real fetch rejects immediately on an already-aborted signal — the
@@ -112,6 +107,25 @@ function fullBodyResponse(
   }
   const body = opts.fullBody === 'wrong-size' ? ARCHIVE.slice(0, 3) : ARCHIVE;
   return Promise.resolve(respond(200, body, baseHeaders));
+}
+
+/** A full-body response held until `box.resolve()` - or rejected when its
+ *  signal aborts, like the real fetch (flows plan M2: evict() aborts the
+ *  warm and must settle even though the body is never released). */
+function deferredResponse(
+  box: { resolve?: () => void },
+  signal: AbortSignal | null | undefined,
+  baseHeaders: Parameters<typeof respond>[2]
+): Promise<Response> {
+  if (signal?.aborted) {
+    return Promise.reject(new Error('aborted'));
+  }
+  return new Promise((resolve, reject) => {
+    signal?.addEventListener('abort', () => reject(new Error('aborted')));
+    box.resolve = () => {
+      resolve(respond(200, ARCHIVE, baseHeaders));
+    };
+  });
 }
 
 function urlOf(input: Parameters<FetchImpl>[0]): string {
@@ -289,7 +303,14 @@ describe('openRemoteArchive — warm-to-cache', () => {
   // clear the store and have the still-running warm re-poison it moments
   // later. Self-sufficiency means NO dispose-first incantation: a bare
   // evict() lets the in-flight warm write land, then deletes it.
-  it('a bare evict() waits for the in-flight warm write instead of racing past it', async () => {
+  // Rewritten for the Tour Viewer flows plan M2 (2026-09-07): the wait was
+  // the right guarantee with the wrong cost. On a phone with a tens-of-MB
+  // recorder zip the "Clear cache" button sat at "Clearing…" until the
+  // whole background download finished - minutes - which the owner read as
+  // "nothing happens". The `evicted` latch already disarms the warm's
+  // persist step, so evict() now ABORTS the warm and settles at once; the
+  // store stays durably empty either way.
+  it('a bare evict() aborts the in-flight warm download and settles without waiting for it', async () => {
     const deferredFullBody: { resolve?: () => void } = {};
     const { fetchImpl } = fakeServer({ etag: '"v1"', deferredFullBody });
     const store = new InMemoryLocalCacheStore();
@@ -298,12 +319,34 @@ describe('openRemoteArchive — warm-to-cache', () => {
       cacheStore: store,
     });
 
-    const evicting = opened.evict(); // deliberately no dispose() first
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    deferredFullBody.resolve?.(); // the late warm write lands
-    await expect(opened.warmed).resolves.toBe(true);
-    await evicting;
+    // The warm body is NEVER released: an evict that waited would hang.
+    const outcome = await Promise.race([
+      opened.evict().then(() => 'evicted' as const), // no dispose() first
+      new Promise<'timed out'>((resolve) =>
+        setTimeout(() => resolve('timed out'), 500)
+      ),
+    ]);
+    expect(outcome).toBe('evicted');
+    await expect(opened.warmed).resolves.toBe(false);
+    await expect(store.get(URL_)).resolves.toBeUndefined();
+    // The session keeps streaming remotely after the eviction.
+    await expect(opened.source.read(0, 2)).resolves.toEqual(
+      new Uint8Array([1, 2])
+    );
+  });
 
+  it('a warm write that lands AFTER evict() never repersists (the latch, unchanged)', async () => {
+    const deferredFullBody: { resolve?: () => void } = {};
+    const { fetchImpl } = fakeServer({ etag: '"v1"', deferredFullBody });
+    const store = new InMemoryLocalCacheStore();
+    const opened = await openRemoteArchive(URL_, {
+      fetchImpl,
+      cacheStore: store,
+    });
+
+    await opened.evict();
+    deferredFullBody.resolve?.(); // a late body, if the abort were ignored
+    await new Promise((resolve) => setTimeout(resolve, 10));
     await expect(store.get(URL_)).resolves.toBeUndefined();
   });
 

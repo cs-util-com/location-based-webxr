@@ -70,6 +70,23 @@ describe('BoundedLocalCacheStore', () => {
     await expect(inner.get('b')).resolves.toBeUndefined();
   });
 
+  // Why this test matters (Tour Viewer flows plan M2): the viewer's
+  // "Clear cache" confirmation names how many stored tours went, and the
+  // handler must read that BEFORE it evicts the open session's copy (which
+  // drops it from the index) - so `size()` is the count the copy uses, and
+  // `clear()` reports what it actually removed.
+  it('size() counts the index, and clear() resolves the number of entries it removed', async () => {
+    const store = new BoundedLocalCacheStore(new InMemoryLocalCacheStore(), 3);
+    await expect(store.size()).resolves.toBe(0);
+    await expect(store.clear()).resolves.toBe(0);
+
+    await store.put('a', entryOf('A'));
+    await store.put('b', entryOf('B'));
+    await expect(store.size()).resolves.toBe(2);
+    await expect(store.clear()).resolves.toBe(2);
+    await expect(store.size()).resolves.toBe(0);
+  });
+
   it('serializes interleaved puts so no index update is lost', async () => {
     const store = new BoundedLocalCacheStore(new InMemoryLocalCacheStore(), 5);
 

@@ -115,6 +115,15 @@ export function placementSegment(placement: PlacementState): string {
   }
 }
 
+/** The "Clear cache" button's confirmation (flows plan M2). `removed` is the
+ *  store's index length read BEFORE the open session's eviction - an upper
+ *  bound on stored copies, hence "stored tours" rather than a claim about
+ *  bytes. */
+export function clearCacheLabel(removed: number): string {
+  if (removed <= 0) return "Cache cleared - nothing was stored";
+  return `Cache cleared - ${String(removed)} stored ${removed === 1 ? "tour" : "tours"} removed`;
+}
+
 /** The whole `#ar-status` text for a state. */
 export function arStatusLine(input: ArStatusInput): string {
   const mode = input.authorMode ? "Author mode" : "Viewer mode";

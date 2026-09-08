@@ -41,6 +41,19 @@
       #stats[hidden] {
         display: none;
       }
+      #storage-panel {
+        margin: 1rem 0;
+        color: #8889;
+      }
+      #storage-panel summary {
+        cursor: pointer;
+      }
+      #storage-panel p {
+        margin: 0.5rem 0;
+      }
+      #storage-panel[hidden] {
+        display: none;
+      }
       #error {
         color: #c0392b;
         margin: 1rem 0;
@@ -172,14 +185,27 @@
           data-testid="link-input"
         />
         <button type="submit" id="open" data-testid="open-button">Open</button>
-        <button type="button" id="clear-cache" data-testid="clear-cache">
-          Clear cache
-        </button>
       </form>
       <div id="stats" hidden data-testid="stats">
         <div id="stats-headline"></div>
         <div id="stats-detail"></div>
       </div>
+      <!-- Storage (flows plan M2, DEC-F1): the clear-cache control used to sit
+           next to Open, where the first on-phone session found it unexplained
+           and apparently inert. It is a transport-demo control, so it lives
+           collapsed here with the one sentence that says what the cache is.
+           Hidden entirely without a cache store (?nocache=1, no Cache API). -->
+      <details id="storage-panel" data-testid="storage-panel">
+        <summary>Storage</summary>
+        <p>
+          Opened tours are kept on this device (up to five, oldest dropped) so a
+          revisit opens instantly and works offline. A changed file on the host
+          is picked up automatically; clearing is only needed to free space.
+        </p>
+        <button type="button" id="clear-cache" data-testid="clear-cache">
+          Clear cache
+        </button>
+      </details>
       <div id="error" role="alert" data-testid="error"></div>
       <!--
         AR entry (QR-pose plan M2). Under WebXR DOM Overlay only the subtree

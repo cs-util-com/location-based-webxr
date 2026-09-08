@@ -4,6 +4,19 @@
 
 ### Changed
 
+- **`OpenedArchive.evict()` no longer waits for an in-flight warm
+  download - it aborts it.** The session keeps streaming remotely, a
+  recovery download is still awaited (it serves a live read), and the
+  evicted latch still guarantees nothing repersists after the call. Before,
+  a caller clearing the cache while a tens-of-MB warm was running waited
+  for the whole download (the Tour Viewer's "Clear cache" sat at
+  "Clearing…" for minutes on a phone). Callers that did
+  `dispose(); await warmed; await evict()` can drop the middle step.
+- **`BoundedLocalCacheStore.clear()` resolves the number of index entries
+  it removed** (was `void`; awaiting callers are unaffected), and a new
+  **`size()`** reports the index length - read it BEFORE evicting an open
+  session's copy when the number feeds a "cleared N" message, because
+  `delete`/`evict` drop that entry from the index first.
 - **The package is now developed and built on Node 26** (`devEngines`,
   the workflows, `.nvmrc`). The CONSUMER floor is unchanged: `engines.node`
   stays `>=22.15.0`, so installing on the Node 22 and 24 LTS lines keeps

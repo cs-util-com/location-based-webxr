@@ -135,11 +135,11 @@ export async function openTourSession(
     return await buildSession(first, stats);
   } catch (err) {
     // Whatever failed to parse must not stay cached and must not keep
-    // downloading. Order matters: dispose (aborts an in-flight warm), await
-    // the warm settling (it may already be past the abort and about to
-    // persist), THEN evict — evicting first would race a late warm put.
+    // downloading: dispose (aborts the session's downloads), then evict —
+    // which aborts the warm itself, awaits a recovery write and latches the
+    // session so nothing repersists (flows plan M2 dropped the old
+    // `await warmed` middle step, redundant since then).
     first.dispose();
-    await first.warmed;
     await first.evict();
     // Only a cache-served archive earns the retry: a remote parse failure
     // means the hosted file itself is broken.
@@ -149,7 +149,6 @@ export async function openTourSession(
       return await buildSession(second, stats);
     } catch (retryErr) {
       second.dispose();
-      await second.warmed;
       await second.evict();
       throw retryErr;
     }

@@ -66,13 +66,24 @@ export class BoundedLocalCacheStore implements LocalCacheStore {
     });
   }
 
-  /** Evict every archive this bound knows about (the demo's "clear cache"). */
-  clear(): Promise<void> {
+  /** How many archives the index holds - an upper bound on stored copies
+   *  (an index entry whose blob is already gone still counts). Read it
+   *  BEFORE evicting an open session's copy when the number is for a
+   *  "cleared N tours" message: `delete` drops the entry from the index. */
+  size(): Promise<number> {
+    return this.#enqueue(async () => (await this.#readIndex()).length);
+  }
+
+  /** Evict every archive this bound knows about (the viewer's "clear
+   *  cache"); resolves the number of index entries it removed. */
+  clear(): Promise<number> {
     return this.#enqueue(async () => {
-      for (const url of await this.#readIndex()) {
+      const index = await this.#readIndex();
+      for (const url of index) {
         await this.#inner.delete(url);
       }
       await this.#inner.delete(INDEX_KEY);
+      return index.length;
     });
   }
 

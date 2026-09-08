@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   arStatusLine,
+  clearCacheLabel,
   placementSegment,
   qrSegment,
   type ArStatusInput,
@@ -144,6 +145,17 @@ describe("placementSegment - what the photo placement did", () => {
 
   it.each(cases)("renders %j", (placement, expected) => {
     expect(placementSegment(placement)).toBe(expected);
+  });
+});
+
+describe("clearCacheLabel - the Clear-cache confirmation (F1)", () => {
+  // Why this matters: the old label read "Cache cleared" whatever happened,
+  // and a count read AFTER the open session's eviction would say 0 for the
+  // single-tour case - the exact "nothing happened" the report was about.
+  it("names the count, singular and plural, and the empty case", () => {
+    expect(clearCacheLabel(0)).toBe("Cache cleared - nothing was stored");
+    expect(clearCacheLabel(1)).toBe("Cache cleared - 1 stored tour removed");
+    expect(clearCacheLabel(3)).toBe("Cache cleared - 3 stored tours removed");
   });
 });
 

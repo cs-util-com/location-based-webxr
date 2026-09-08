@@ -83,7 +83,11 @@ import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/fr
 import { getSeams } from "./seams.js";
 import { resolveQrPayload } from "gps-plus-slam-app-framework/utils/qr-payload/qr-launch-dispatch";
 import { toStatsView } from "./stats-view.js";
-import { arStatusLine, type PlacementState } from "./tour-flow.js";
+import {
+  arStatusLine,
+  clearCacheLabel,
+  type PlacementState,
+} from "./tour-flow.js";
 import { openTourSession, type TourSession } from "./tour-session.js";
 
 /** Bare-name `?qr=` payloads resolve under this prefix — the convention the
@@ -103,6 +107,7 @@ function element<T extends HTMLElement>(id: string): T {
 const linkInput = element<HTMLInputElement>("link");
 const openButton = element<HTMLButtonElement>("open");
 const clearCacheButton = element<HTMLButtonElement>("clear-cache");
+const storagePanel = element<HTMLDetailsElement>("storage-panel");
 const statsPanel = element<HTMLDivElement>("stats");
 const statsHeadline = element<HTMLDivElement>("stats-headline");
 const statsDetail = element<HTMLDivElement>("stats-detail");
@@ -316,29 +321,40 @@ element<HTMLFormElement>("open-form").addEventListener("submit", (event) => {
   if (url !== "") void openUrl(url);
 });
 
-// Without a cache there is nothing to clear — a dead button would just
-// confuse; hide it (e.g. ?nocache=1, or a browser without the Cache API).
+// Without a cache there is nothing to clear and nothing to explain — hide
+// the whole Storage section (?nocache=1, or a browser without the Cache API).
 if (!(cacheStore instanceof BoundedLocalCacheStore)) {
-  clearCacheButton.hidden = true;
+  storagePanel.hidden = true;
 }
+/** The confirmation's revert timer; cleared on the next click so a click
+ *  during the transient cannot capture it as the idle label. */
+let clearCacheRevertTimer: ReturnType<typeof setTimeout> | null = null;
 clearCacheButton.addEventListener("click", () => {
   if (!(cacheStore instanceof BoundedLocalCacheStore)) return;
+  if (clearCacheRevertTimer !== null) clearTimeout(clearCacheRevertTimer);
+  clearCacheRevertTimer = null;
   clearCacheButton.disabled = true;
   clearCacheButton.textContent = "Clearing…";
-  // The open session's warm (or range-ignore recovery) download persists on
-  // completion, so clearing around it would report "Cache cleared" and then
-  // watch the store silently repopulate in the background (PR #358 review
-  // #1). `evict()` is self-sufficient — it awaits both in-flight writers
-  // before deleting — so evict-then-clear settles only once the store is
-  // durably empty.
-  const settleSessionWriters =
-    session !== null ? session.archive.evict() : Promise.resolve();
-  void settleSessionWriters
-    .then(() => cacheStore.clear())
+  // Count BEFORE the open session's eviction drops its copy from the index
+  // (flows plan M2, review #3), then evict-then-clear: `evict()` aborts the
+  // session's warm download and disarms every later writer, so the store is
+  // durably empty when "Cache cleared" appears (PR #358 review #1) and the
+  // button no longer waits for a tens-of-MB download to finish.
+  void cacheStore
+    .size()
+    .then(async (stored) => {
+      if (session !== null) await session.archive.evict();
+      await cacheStore.clear();
+      return stored;
+    })
     .then(
-      () => {
+      (stored) => {
         clearCacheButton.disabled = false;
-        clearCacheButton.textContent = "Cache cleared";
+        clearCacheButton.textContent = clearCacheLabel(stored);
+        clearCacheRevertTimer = setTimeout(() => {
+          clearCacheRevertTimer = null;
+          clearCacheButton.textContent = "Clear cache";
+        }, 2000);
       },
       (err: unknown) => {
         // Async-UI rule: a failure must surface and the in-progress state must

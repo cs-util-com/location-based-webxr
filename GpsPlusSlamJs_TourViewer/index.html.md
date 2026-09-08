@@ -20,7 +20,9 @@ code" to the owner.
 ## Public API
 
 The `data-testid` contract the e2e suite drives: `link-input`,
-`open-button`, `clear-cache`, `stats`, `error`, `gallery`, `ar-hint`,
+`open-button`, `storage-panel` (the collapsed `<details>` that holds the
+clear-cache button and its one-sentence explanation - flows plan M2, hidden
+entirely without a cache store), `clear-cache`, `stats`, `error`, `gallery`, `ar-hint`,
 `ar-status`, `enter-ar`, `author-panel`. Renaming one is an e2e-breaking
 change. `#ar-status` and `#enter-ar` must stay children of `#ar-root`
 (WebXR DOM overlay composites only that subtree; enforced by

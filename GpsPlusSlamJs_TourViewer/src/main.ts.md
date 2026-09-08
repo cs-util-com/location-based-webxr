@@ -27,12 +27,20 @@ None (app entry point). Interesting seams for the e2e suite are the
   teardown.
 - The cache is `BoundedLocalCacheStore(CacheApiStore, 5)` where the Cache API
   exists, else no cache (the app still works, purely remote).
-- **Clear-cache settles only once the store is durably empty:** the open
-  session's warm (or recovery) download persists on completion, so the
-  handler runs the session's self-sufficient `archive.evict()` — which
-  awaits both in-flight writers — before `clear()`. "Cache cleared" therefore
-  never precedes a background write that would silently repopulate the store
-  (PR #358 review #1).
+- **Clear-cache settles once the store is durably empty, without waiting
+  for the warm download** (flows plan M2, 2026-09-07): the handler reads
+  `cacheStore.size()` FIRST (the open session's eviction drops its own copy
+  from the index, so a count taken later reads 0 for the single-tour case -
+  review #3), then runs the session's `archive.evict()` - which now ABORTS
+  the warm and awaits only a recovery write - then `clear()`. The label goes
+  "Clearing…" → `clearCacheLabel(count)` ("Cache cleared - N stored tours
+  removed") → "Clear cache" after 2 s; a click during the transient clears
+  the revert timer so it cannot capture the confirmation as the idle label.
+  "Cache cleared" never precedes a background write that would repopulate
+  the store (PR #358 review #1) - the evicted latch, not the wait,
+  guarantees it. The button lives in the collapsed `#storage-panel`
+  `<details>` with the sentence that explains the cache; the whole section
+  hides without a cache store.
 - Bare-name `?qr=` payloads resolve under `DEFAULT_ASSET_PREFIX`
   (the GeoTales raw-GitHub prefix the QR builder's docs use as the example).
 - **Author panel (M3):** exists only under `?author=1`, and lives INSIDE

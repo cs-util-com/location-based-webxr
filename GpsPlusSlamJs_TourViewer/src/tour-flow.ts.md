@@ -25,6 +25,10 @@ number | null; hasRecording: boolean }`. `levelCount` is null while the
   or before the pipeline reports a status.
 - `placementSegment(placement): string` - the placement copy; `""` for idle.
 - `arStatusLine(input): string` - the whole `#ar-status` text.
+- `clearCacheLabel(removed): string` - the Clear-cache confirmation
+  ("Cache cleared - N stored tours removed", singular for 1, "nothing was
+  stored" for 0). `removed` is the store's index length read BEFORE the
+  open session's eviction (flows plan M2).
 
 ## Invariants & assumptions
 
