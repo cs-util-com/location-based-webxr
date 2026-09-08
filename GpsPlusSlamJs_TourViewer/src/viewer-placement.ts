@@ -184,7 +184,15 @@ export function createViewerPlacement(deps: {
     if (ctx.placementAttempted || ctx.imagePlanes !== null) return;
     if (ctx.imagePlanesLoading) return;
     if (!isPlacementReady(selectTrackingQuality(arStore.getState()))) {
-      ctx.placement = { kind: "waiting-ready" };
+      // Only over idle/waiting: a pre-ready lock whose ring failed leaves a
+      // decline reason that the next dispatch must not overwrite
+      // (milestone review, residual hardening).
+      if (
+        ctx.placement.kind === "idle" ||
+        ctx.placement.kind === "waiting-ready"
+      ) {
+        ctx.placement = { kind: "waiting-ready" };
+      }
       return;
     }
     ctx.placementAttempted = true;
@@ -212,7 +220,15 @@ export function createViewerPlacement(deps: {
     const current = ctx.session;
     const scene = seams.getScene();
     const zero = selectZeroReference(arStore.getState());
-    if (current === null || scene === null || zero === null) return;
+    if (current === null) return;
+    if (scene === null || zero === null) {
+      // Never silent (milestone review #3): the trigger has already spent
+      // its one attempt, so a bare return would strand the line on the
+      // coaching hint for the rest of the session.
+      ctx.placement = { kind: "declined", reason: "the AR scene is not ready" };
+      hooks.renderArStatus();
+      return;
+    }
     // The ring needs the locked code's geo; the capture join does not
     // (flows plan M4: the code refines a placement, it no longer gates one).
     const geo =
@@ -463,6 +479,13 @@ export function createViewerPlacement(deps: {
       textures,
       centerNue,
     });
+    // Confirm the ring (milestone review #2): the async-UI rule wants the
+    // durable end state, and the decline copy alone read as "pending".
+    ctx.placement = {
+      kind: "placed",
+      placedKind: "ring",
+      count: textures.length,
+    };
     hooks.renderArStatus();
   }
 

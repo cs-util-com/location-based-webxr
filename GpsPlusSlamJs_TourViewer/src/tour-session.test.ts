@@ -246,6 +246,31 @@ describe("loadRecordingActions / loadSessionMeta", () => {
     });
   });
 
+  // Why this test matters (flows plan M1, milestone review #6): `hasRecording`
+  // drives user-facing copy ("nothing to place" vs the decline reason) and
+  // must apply the same pre-check as `loadRecordingActions` - a wrapping
+  // folder tolerated (milestone review finding 10), images-only false.
+  it("hasRecording mirrors the actions/ pre-check, wrapping folder included", async () => {
+    const plain = await openTourSession("https://x/plain.zip", {
+      fetchImpl: rangeServer(
+        await buildExactZip({ "images/a.png": "not really a png" }),
+      ),
+    });
+    expect(plain.hasRecording).toBe(false);
+    const flat = await openTourSession("https://x/flat.zip", {
+      fetchImpl: rangeServer(
+        await buildExactZip({ "actions/000001.json": "{}" }),
+      ),
+    });
+    expect(flat.hasRecording).toBe(true);
+    const wrapped = await openTourSession("https://x/wrapped.zip", {
+      fetchImpl: rangeServer(
+        await buildExactZip({ "walk-1/actions/000001.json": "{}" }),
+      ),
+    });
+    expect(wrapped.hasRecording).toBe(true);
+  });
+
   it("returns null for a hand-built zip without a recording — the ring path, not an error", async () => {
     const fetchImpl = rangeServer(
       await buildExactZip({ "qr/1.json": LEVEL_JSON }),

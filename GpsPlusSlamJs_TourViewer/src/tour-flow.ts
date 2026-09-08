@@ -64,6 +64,14 @@ export type PlacementState =
       gpsAccuracyMedianM: number | null;
     }
   | {
+      /** The ring around a locked code - the fallback for a tour without
+       *  a recording (milestone review #2: a placed ring used to keep the
+       *  decline copy, indistinguishable from "a ring is pending"). */
+      kind: "placed";
+      placedKind: "ring";
+      count: number;
+    }
+  | {
       /** The join declined (taxonomy reason) - the ring is the fallback and
        *  the reason stays visible while it stands. */
       kind: "declined";
@@ -142,6 +150,9 @@ export function placementSegment(
         ? `reading the walk ${String(placement.done)}/${String(placement.total)}…`
         : `loading photos ${String(placement.done)}/${String(placement.total)}…`;
     case "placed": {
+      if (placement.placedKind === "ring") {
+        return `${String(placement.count)} photos in a ring around the code`;
+      }
       // HONEST label (geo-join review, finding 5): fixes and their median
       // GPS accuracy are what the numbers are - never a claimed placement
       // error.
@@ -172,12 +183,15 @@ export function arStatusLine(input: ArStatusInput): string {
     return `${mode} — ${input.arStatus}`;
   }
   // A declined join on a tour that also has no printed codes is the
-  // "nothing to place" case - derived here so `main.ts` never has to
-  // re-evaluate it when the levels arrive after the decline.
+  // "nothing to place" case - derived here so the caller never has to
+  // re-evaluate it when the levels arrive after the decline. A decline
+  // already means the recording path is out, whatever `hasRecording` says
+  // (a walk without GPS, an era mismatch): the ring needs a code, and with
+  // zero codes "photo ring (reason)" would promise one forever - the exact
+  // shape of feedback F3 (milestone review #1).
   const placement: PlacementState =
     input.placement.kind === "declined" &&
     input.tour.kind === "open" &&
-    !input.tour.hasRecording &&
     input.tour.levelCount === 0
       ? { kind: "nothing-to-place" }
       : input.placement;

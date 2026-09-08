@@ -596,35 +596,29 @@ test("viewer mode relocalizes against the tour's level: budgeted votes, marker, 
   await expect(page.getByTestId("enter-ar")).toHaveText("AR running");
 
   // The session zero + a few real fixes (the alignment the votes refine).
-  await page.evaluate(() => {
-    const store = /** @type {any} */ (window).__tourViewerTest.alignmentStore;
-    store.dispatch({
-      type: "gpsData/setZeroPos",
-      payload: { lat: 47.5, lon: 8.7 },
-    });
-    const pairs = [
-      { odom: [0, 0, 0], lat: 47.5, lon: 8.7 },
-      { odom: [0, 0, -15], lat: 47.500135, lon: 8.7 },
-      { odom: [15, 0, 0], lat: 47.5, lon: 8.7002 },
-    ];
-    for (const [i, p] of pairs.entries()) {
-      store.dispatch({
-        type: "gpsData/recordGpsEvent",
-        payload: {
-          odomPosition: p.odom,
-          odomRotation: [0, 0, 0, 1],
-          rawGpsPoint: {
-            id: `seed-${String(i)}`,
-            latitude: p.lat,
-            longitude: p.lon,
-            altitude: 400,
-            latLongAccuracy: 5,
-            timestamp: 1756150000000 + i * 1000,
-          },
-        },
-      });
-    }
-  });
+  await seedAlignment(page);
+  // Re-derived for the flows plan M4 (milestone review #4): tracking reports
+  // ready BEFORE any code locks, and this tour has no recording - so the
+  // trigger declines at once (no walk to place) and places NOTHING; the ring
+  // still needs the code's geo and waits for the lock below.
+  await forceTrackingReady(page);
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return page.getByTestId("ar-status").textContent();
+      },
+      { timeout: 20000 },
+    )
+    .toMatch(/photo ring \(no recording in this tour\)/);
+  expect(
+    await page.evaluate(
+      () =>
+        /** @type {any} */ (window).__tourViewerTest.fakeScene.children.length,
+    ),
+  ).toBe(0);
 
   await page.evaluate((text) => {
     /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);

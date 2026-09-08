@@ -66,10 +66,12 @@ export class BoundedLocalCacheStore implements LocalCacheStore {
     });
   }
 
-  /** How many archives the index holds - an upper bound on stored copies
-   *  (an index entry whose blob is already gone still counts). Read it
-   *  BEFORE evicting an open session's copy when the number is for a
-   *  "cleared N tours" message: `delete` drops the entry from the index. */
+  /** How many archives the index holds AT THE TIME OF THE CALL - a
+   *  snapshot, not a bound in either direction: an index entry whose blob
+   *  is already gone still counts, and a warm download completing after
+   *  the call adds one the caller did not see. Read it BEFORE evicting an
+   *  open session's copy when the number is for a "cleared N tours"
+   *  message: `delete` drops the entry from the index. */
   size(): Promise<number> {
     return this.#enqueue(async () => (await this.#readIndex()).length);
   }

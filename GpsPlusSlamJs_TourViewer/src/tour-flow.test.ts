@@ -221,6 +221,16 @@ describe("readiness - the placement trigger and its waiting copy (F3, flows plan
     };
     expect(arStatusLine(declined)).toContain("nothing to place");
     expect(arStatusLine(declined)).not.toContain("photo ring");
+    // A RECORDING whose join declined (no GPS in the walk) on a code-less
+    // tour is the same case: a decline means the recording path is out,
+    // and with zero codes a ring can never come (milestone review #1).
+    expect(
+      arStatusLine({
+        ...declined,
+        tour: { kind: "open", levelCount: 0, hasRecording: true },
+        placement: { kind: "declined", reason: "no GPS fixes in the walk" },
+      }),
+    ).toContain("nothing to place");
     // With codes the ring is still coming: the decline stands as written.
     expect(
       arStatusLine({
@@ -228,6 +238,12 @@ describe("readiness - the placement trigger and its waiting copy (F3, flows plan
         tour: { kind: "open", levelCount: 2, hasRecording: false },
       }),
     ).toContain("photo ring (no recording in this tour)");
+  });
+
+  it("a placed ring is confirmed, not left on the decline copy (milestone review #2)", () => {
+    expect(
+      placementSegment({ kind: "placed", placedKind: "ring", count: 3 }),
+    ).toBe("3 photos in a ring around the code");
   });
 });
 

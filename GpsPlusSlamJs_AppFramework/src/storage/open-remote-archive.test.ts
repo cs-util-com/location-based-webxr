@@ -560,9 +560,10 @@ describe('openRemoteArchive — mid-session range-ignore recovery', () => {
   });
 
   // Why this test matters (PR #357 review): the recovery's cache write was
-  // not awaited by evict(), so the documented dispose → await warmed → evict
-  // cleanup could run BEFORE a late recovery write landed — re-poisoning the
-  // cache the eviction had just cleared.
+  // not awaited by evict(), so a dispose-then-evict cleanup could run BEFORE
+  // a late recovery write landed — re-poisoning the cache the eviction had
+  // just cleared. (The warm half is now ABORTED by evict(); the recovery
+  // half is still awaited because it serves a live read.)
   it('evict waits for an in-flight recovery write instead of racing past it', async () => {
     const deferredFullBody: { resolve?: () => void } = {};
     const { fetchImpl } = fakeServer({

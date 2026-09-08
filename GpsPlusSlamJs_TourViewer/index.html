@@ -217,6 +217,69 @@
           Clear cache
         </button>
       </details>
+      <!-- Print a code (creator step zero; on the page for EVERYONE since the
+           flows plan M3, DEC-F2 - it sat inside the ?author=1 panel, where no
+           creator could find it). Outside #ar-root on purpose: it is not
+           overlay content. Collapsed with an empty tour, opened and prefilled
+           when a tour opens; usable before any upload for the "print first,
+           hang, then author" loop. The QR renders at the TRUE physical size
+           via print CSS cm units, so the paper matches the size the author
+           later mints with - author mode reads the size from HERE. -->
+      <details id="print-panel" data-testid="print-panel">
+        <summary>Print a QR code for this tour</summary>
+        <div class="print-panel-body">
+          <input
+            id="print-url"
+            data-testid="print-url"
+            type="text"
+            autocomplete="off"
+            placeholder="https://… link to the tour .zip"
+          />
+          <label
+            >Printed side length (m)
+            <input
+              id="author-size"
+              data-testid="author-size"
+              type="number"
+              step="0.01"
+              min="0.01"
+            />
+          </label>
+          <label
+            >Code number (1 for the first poster)
+            <input
+              id="author-c"
+              data-testid="author-c"
+              type="number"
+              step="1"
+              min="1"
+              value="1"
+            />
+          </label>
+          <button
+            type="button"
+            id="print-generate"
+            data-testid="print-generate"
+          >
+            Generate QR
+          </button>
+          <div id="print-info" data-testid="print-info"></div>
+          <div id="print-area" hidden>
+            <div id="print-quiet">
+              <canvas id="print-canvas" data-testid="print-canvas"></canvas>
+            </div>
+          </div>
+          <button
+            type="button"
+            id="print-button"
+            data-testid="print-button"
+            hidden
+          >
+            Print at true size
+          </button>
+          <div id="print-url-out" data-testid="print-url-out"></div>
+        </div>
+      </details>
       <div id="error" role="alert" data-testid="error"></div>
       <!--
         AR entry (QR-pose plan M2). Under WebXR DOM Overlay only the subtree
@@ -283,69 +346,6 @@
           </p>
         </div>
       </section>
-      <!-- Print a code (creator step zero; on the page for EVERYONE since the
-           flows plan M3, DEC-F2 - it sat inside the ?author=1 panel, where no
-           creator could find it). Outside #ar-root on purpose: it is not
-           overlay content. Collapsed with an empty tour, opened and prefilled
-           when a tour opens; usable before any upload for the "print first,
-           hang, then author" loop. The QR renders at the TRUE physical size
-           via print CSS cm units, so the paper matches the size the author
-           later mints with - author mode reads the size from HERE. -->
-      <details id="print-panel" data-testid="print-panel">
-        <summary>Print a QR code for this tour</summary>
-        <div class="print-panel-body">
-          <input
-            id="print-url"
-            data-testid="print-url"
-            type="text"
-            autocomplete="off"
-            placeholder="https://… link to the tour .zip"
-          />
-          <label
-            >Printed side length (m)
-            <input
-              id="author-size"
-              data-testid="author-size"
-              type="number"
-              step="0.01"
-              min="0.01"
-            />
-          </label>
-          <label
-            >Code number (1 for the first poster)
-            <input
-              id="author-c"
-              data-testid="author-c"
-              type="number"
-              step="1"
-              min="1"
-              value="1"
-            />
-          </label>
-          <button
-            type="button"
-            id="print-generate"
-            data-testid="print-generate"
-          >
-            Generate QR
-          </button>
-          <div id="print-info" data-testid="print-info"></div>
-          <div id="print-area" hidden>
-            <div id="print-quiet">
-              <canvas id="print-canvas" data-testid="print-canvas"></canvas>
-            </div>
-          </div>
-          <button
-            type="button"
-            id="print-button"
-            data-testid="print-button"
-            hidden
-          >
-            Print at true size
-          </button>
-          <div id="print-url-out" data-testid="print-url-out"></div>
-        </div>
-      </details>
       <ul id="gallery" data-testid="gallery"></ul>
     </main>
     <script type="module" src="/src/main.ts"></script>

@@ -32,12 +32,16 @@ number | null; hasRecording: boolean }`. `levelCount` is null while the
   hint, or "Waiting for tracking to warm up…" without one) and
   `nothing-to-place` (a tour with neither a recording nor printed codes).
   `arStatusLine` DERIVES `nothing-to-place` from a `declined` placement on
-  an open tour with `hasRecording === false` and `levelCount === 0`, so the
-  line follows the tour's facts at render time whatever order the decline
-  and the levels arrived in.
+  an open tour with `levelCount === 0` - whatever `hasRecording` says, since
+  a decline already means the recording path is out and the ring needs a
+  code (milestone review #1) - so the line follows the tour's facts at
+  render time whatever order the decline and the levels arrived in.
 - `qrSegment(input): string` - the printed-code line. Empty in author mode
   or before the pipeline reports a status.
-- `placementSegment(placement): string` - the placement copy; `""` for idle.
+- `placementSegment(placement, readiness = null): string` - the placement
+  copy; `""` for idle; `waiting-ready` renders `readiness.hint` (or the
+  generic wait); a placed ring renders "N photos in a ring around the code"
+  (milestone review #2).
 - `arStatusLine(input): string` - the whole `#ar-status` text.
 - `clearCacheLabel(removed): string` - the Clear-cache confirmation
   ("Cache cleared - N stored tours removed", singular for 1, "nothing was
@@ -78,10 +82,13 @@ arStatusLine({
     lockedText: null,
     reprojectionErrorPx: null,
   },
+  readiness: null,
   placement: { kind: "declined", reason: "no recording in this tour" },
   planesError: null,
 });
-// "Viewer mode — AR running · 3 camera frames · This tour has no printed codes. · photo ring (no recording in this tour)"
+// "Viewer mode — AR running · 3 camera frames · This tour has no printed codes. · nothing to place: this tour has no recording and no printed codes"
+// (the decline on a code-less tour is DERIVED to nothing-to-place: a ring
+// needs a code, so "photo ring (…)" would promise one forever - review #1)
 ```
 
 ## Tests
