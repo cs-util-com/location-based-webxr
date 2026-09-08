@@ -13,7 +13,12 @@ Keeps `main.ts` glue-only.
 enableArWorldGroupAlignment; startCameraFrameCapture;
 stopCameraFrameCapture; createQrFrontEnd; solveQrPose; getCameraPose;
 getIntrinsics; createQrDebugView; getScene; queryGeolocationPermission;
-requestLocationOnce; downloadZip }` — `controllerDeps` is a
+requestLocationOnce; downloadZip; startHitTestReticle; encodeFrameJpeg;
+createLabel; schedule }` - the placement layer (M4: the framework's hit-test
+  reticle under the world group, the camera frame → JPEG encoder that refuses
+  a non-opaque frame, the framework text sprite for a pin's label) and the
+  one-shot clock behind the scan gate's escape (M5; the e2e fires it instead
+  of waiting) - `controllerDeps` is a
   `Partial<EnableGpsArDeps>` injected into `createEnableGpsArController`
   (empty in production; the e2e fake supplies the full dep set there). The
   `queryGeolocationPermission` / `requestLocationOnce` are the visitor

@@ -11,7 +11,19 @@ recording. Its own module since the flows plan M6.
 
 ## Public API
 
-- `createViewerPlacement({ ctx, mode, arStore, arController, seams, errorBox, hooks }): ViewerPlacement` - places only in visitor mode
+- `createViewerPlacement({ ctx, mode, arStore, arController, seams, errorBox, escapeButton, hooks }): ViewerPlacement` - places only in visitor mode
+  - `ViewerPlacement.startScanGate()` (called when the session reaches
+    running) derives the scan gate (`scan-gate.ts`) and arms the escape
+    clock (`seams.schedule`, 45 s) while it scans; `reconsiderScanGate()`
+    (the levels arrived) waives a scanning gate that cannot lock. The
+    controller's `onLocked` with a lockable level passes the gate; the
+    escape button passes it as "skipped". Nothing is placed until the gate
+    allows it (DEC-N3): the capture-spot join AND the tour's content.
+  - The tour's content (`tour.json`, M5) is rendered once per session as
+    soon as the gate allows it and the GPS zero exists
+    (`renderTourObjects`; labels through `seams.createLabel`, photos
+    decoded from the streaming session at divisor 2); a failed read names
+    the object in the status line.
   - `startViewerPipeline(): boolean` - creates the viewer tracking
     controller into `ctx.qrController` for THIS AR entry; false without a
     detector (plain AR, still placing photos).

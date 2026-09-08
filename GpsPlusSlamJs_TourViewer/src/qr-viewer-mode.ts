@@ -97,6 +97,10 @@ export interface ViewerPipelineDeps {
   onUnusableLevel?(code: string): void;
   /** A locked frame's votes were dispatched (budget progress for the UI). */
   onVotedLock?(text: string, votedLocks: number): void;
+  /** The controller locked a code against its level - BEFORE any vote
+   *  (a vote needs the zero and the budget). The scan gate keys on this
+   *  (M5, plan review #1). */
+  onLocked?(text: string, level: QrLevel): void;
   /** The level this decoded text resolved to (`null` when the tour has
    *  none). Resolving the id is ASYNC, so the app caches the answer here
    *  and the synchronous callbacks — the debug view, the image planes —
@@ -173,6 +177,14 @@ export function buildViewerControllerConfig(
       lastDetectedText = event.text;
       deps.recordDetection(event);
     },
+    ...(deps.onLocked !== undefined
+      ? {
+          onLocked: (_solution: unknown, level: QrLevel) => {
+            if (lastDetectedText !== null)
+              deps.onLocked?.(lastDetectedText, level);
+          },
+        }
+      : {}),
     getCameraPose: () => deps.getCameraPose(),
     getIntrinsics: (image) => deps.getIntrinsics(image),
     resolveStablePose: (text) => deps.resolveStablePose(text),

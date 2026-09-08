@@ -24,6 +24,7 @@ import {
 
 import type { ViewerMode } from "./mode.js";
 import { viewerStatusLine } from "./qr-viewer-mode.js";
+import { gateSegment, type ScanGate } from "./scan-gate.js";
 
 /** What the page knows about the open tour, for copy decisions (reached
  *  through `ArStatusInput["tour"]`; a standalone export counts as dead). */
@@ -97,6 +98,20 @@ export interface ArStatusInput {
   placement: PlacementState;
   /** A failed image-plane placement (the Drive-aware open error text). */
   planesError: string | null;
+  /** The visitor's scan gate (M5); `idle` outside a visitor session. */
+  gate: ScanGate;
+  /** The tour's placed content (`tour.json`), once rendered. */
+  content:
+    { kind: "none" } | { kind: "placed"; count: number; skipped: number };
+}
+
+/** The content segment: how many of the tour's objects stand. */
+export function contentSegment(content: ArStatusInput["content"]): string {
+  if (content.kind === "none") return "";
+  const noun = content.count === 1 ? "placed object" : "placed objects";
+  const skipped =
+    content.skipped > 0 ? ` (${String(content.skipped)} could not load)` : "";
+  return `${String(content.count)} ${noun}${skipped}`;
 }
 
 /** The placement trigger (DEC-F3): the tracking-quality `ok` state, read
@@ -195,10 +210,18 @@ export function arStatusLine(input: ArStatusInput): string {
     input.tour.levelCount === 0
       ? { kind: "nothing-to-place" }
       : input.placement;
+  // While the gate scans, the placement's coaching hint ("walk around")
+  // would contradict "stay at the code": the gate's line stands alone.
+  const gateScanning = input.gate.kind === "scanning";
+  const qr = qrSegment(input);
   const segments = [
     `${mode} — AR running · ${String(input.cameraFrames)} camera frames`,
-    qrSegment(input),
-    placementSegment(placement, input.readiness),
+    // The gate's own "point the phone at the code" replaces the pipeline's
+    // generic scanning line; a detected-but-unknown code still shows.
+    gateScanning && qr === "Scanning for the printed code…" ? "" : qr,
+    gateSegment(input.gate),
+    gateScanning ? "" : placementSegment(placement, input.readiness),
+    contentSegment(input.content),
     input.planesError === null ? "" : `images failed: ${input.planesError}`,
   ];
   return segments.filter((segment) => segment !== "").join(" · ");

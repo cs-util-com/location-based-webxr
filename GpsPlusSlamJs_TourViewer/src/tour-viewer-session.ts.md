@@ -21,7 +21,10 @@ lives here.
   - the creator setup (`creator-setup.ts`): `lastDetectedText`,
     `activeSizeM`, `authorErrorText`, `gpsSamplesAtSessionStart`,
     `mintedLevel`, `mintGeneration`, `finishing`, `rebuiltZip`; the open
-    tour's `tourManifest` (archive-open.ts);
+    tour's `tourManifest` (archive-open.ts); the placement layer (M4):
+    `placedObjects`, `placedPreview`, `reticle`, `latestFrame`;
+  - the scan gate and the placed content (viewer-placement.ts, M5):
+    `scanGate`, `cancelEscapeClock`, `contentRendered`, `contentAttempted`;
   - the viewer QR line and the placement (`viewer-placement.ts`): the six
     `viewer*` line inputs, `latestReprojectionPx`, `placement`,
     `viewerPlanesError`, `imagePlanes`, `imagePlanesLoading`,

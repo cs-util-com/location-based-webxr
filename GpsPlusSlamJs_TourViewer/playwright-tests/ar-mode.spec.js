@@ -69,6 +69,25 @@ async function openAsVisitor(page, url, imageCount = 8) {
   );
 }
 
+/** Lock the fixture's code: arm the detection and feed frames until the
+ *  gate reports the lock (M5 - nothing is placed before it). */
+async function lockTheCode(page) {
+  await page.evaluate((text) => {
+    /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
+  }, E2E_QR_TEXT);
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return page.getByTestId("ar-status").textContent();
+      },
+      { timeout: 20000 },
+    )
+    .toMatch(/Code recognised/);
+}
+
 async function enterAr(page) {
   const button = page.getByTestId("enter-ar");
   await expect(button).toBeEnabled({ timeout: 10000 }); // support probe done
@@ -216,10 +235,12 @@ test("visitor mode boots to running: session started, alignment bound, capture a
     };
   });
   // Camera frames must be wired AT initAR time (the source is built there),
-  // with the M2 isolation flags: camera + texture ON, depth OFF.
+  // with the M2 isolation flags: camera + texture ON, depth OFF. A VISITOR
+  // does not request hit-test (only the creator's reticle needs it).
   expect(wiring.initAR).toEqual([
     {
       hasCameraFrame: true,
+      requestHitTest: false,
       isolationOptions: {
         enableCameraAccess: true,
         enableDepthSensingFeature: false,
@@ -267,6 +288,7 @@ test("creator mode (the plain page) boots the same foundation under its own labe
     const t = /** @type {any} */ (window).__tourViewerTest;
     return {
       initARCount: t.initARCalls.length,
+      requestHitTest: t.initARCalls[0]?.requestHitTest,
       capture: t.captureCalls,
       isRecording: t.alignmentStore?.getState().recording.isRecording,
     };
@@ -274,6 +296,8 @@ test("creator mode (the plain page) boots the same foundation under its own labe
   // QD-5/delta #7: the foundation is IDENTICAL — same capture cadence, same
   // live recording slice; only labels differ until M3/M4 diverge.
   expect(wiring.initARCount).toBe(1);
+  // The creator's session requests hit-test: the reticle needs the feature.
+  expect(wiring.requestHitTest).toBe(true);
   expect(wiring.capture).toEqual([{ intervalMs: 125 }]);
   expect(wiring.isRecording).toBe(true);
 });
@@ -412,6 +436,34 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   await expect(page.getByTestId("setup-status")).toContainText(/replaces/i);
   await expect(page.getByTestId("setup-finish")).toBeEnabled();
 
+  // PLACE CONTENT (guided-setup plan M4, DEC-N9): a pin at the reticle
+  // with a typed label, then a photo of the current frame. The reticle
+  // fake sits on a surface at a known NUE position; the encoder fake
+  // yields a 3-byte "JPEG". Both records land in tour.json, the photo's
+  // bytes as content/<id>.jpg.
+  await expect(page.getByTestId("setup-pin")).toBeEnabled();
+  await page.getByTestId("setup-pin").click();
+  await page.getByTestId("pin-label").fill("The old gate");
+  await page.getByTestId("pin-save").click();
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /1 object placed/,
+  );
+  // A frame must have flowed for the photo button; the poll above emitted
+  // several.
+  await expect(page.getByTestId("setup-photo")).toBeEnabled();
+  await page.getByTestId("setup-photo").click();
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /2 objects placed/,
+  );
+  // No surface under the reticle: the pin is refused with a reason.
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.reticleVisible = false;
+  });
+  await page.getByTestId("setup-pin").click();
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /point the phone at a surface/i,
+  );
+
   // FINISH (guided-setup plan M3, DEC-N6): the zip is rebuilt in the
   // browser from the session's bytes, the AR session ends, step 5 opens
   // with the download; the download is a fresh tap (its own gesture).
@@ -469,7 +521,31 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   // The pin the hosted zip already carried SURVIVES the rebuild - the
   // whole reason the manifest is loaded at open (M3 review #5/#7).
   const manifest = parseTourManifest(JSON.parse(rebuilt.entries["tour.json"]));
-  expect(manifest.objects.map((o) => o.id)).toEqual(["fixturepin01"]);
+  // The fixture's own pin SURVIVES the rebuild (M3 review #5/#7), and the
+  // two objects placed above are appended after it.
+  expect(manifest.objects).toHaveLength(3);
+  expect(manifest.objects[0]?.id).toBe("fixturepin01");
+  const [, pin, photo] = manifest.objects;
+  expect(pin?.kind).toBe("pin");
+  expect(pin?.kind === "pin" ? pin.label : null).toBe("The old gate");
+  // The pin sits where the reticle was: 3 m north, 2 m west of the zero,
+  // at the reticle's absolute altitude (GPS-world y IS altitude).
+  expect(pin?.geo.alt).toBeCloseTo(400.5, 6);
+  expect(pin?.geo.lat).toBeGreaterThan(47.5);
+  expect(pin?.geo.lon).toBeLessThan(8.7);
+  expect(photo?.kind).toBe("photo");
+  if (photo?.kind === "photo") {
+    expect(photo.image).toBe(`content/${photo.id}.jpg`);
+    expect(photo.imageWidth).toBe(2); // the fakes' 2×2 frames
+    // The encoder fake's bytes rode through the rebuild untouched.
+    expect(Array.from(rebuilt.entries[photo.image])).toEqual([255, 216, 255]);
+  }
+  // The reticle was torn down with the session.
+  expect(
+    await page.evaluate(
+      () => /** @type {any} */ (window).__tourViewerTest.reticleDisposals,
+    ),
+  ).toBeGreaterThan(0);
   // The glue check received the detections (milestone review #8). The fake
   // world group is null until initAR ran, so this also pins the creation
   // ORDER — a view created before the session exists is dead code in
@@ -612,22 +688,28 @@ test("a recording-carrying tour places photos at CAPTURE SPOTS, not the ring", a
     }
   });
 
-  // Flows plan M4 (DEC-F3): NO code is detected. The placement is triggered
-  // by the tracking-quality phase reporting ready; until then the status
-  // carries the framework's coaching line, never "Scanning…".
+  // Guided-setup plan M5 (DEC-N3): the tour carries a measured code, so
+  // NOTHING is placed until it locks - not even with tracking ready. The
+  // gate's line stands alone (no coaching hint: "walk around" would
+  // contradict "stay at the code").
+  await forceTrackingReady(page);
   await page.evaluate(() => {
-    /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+    /** @type {any} */ (window).__tourViewerTest.emitFrames(2);
   });
-  // The fake initAR dispatches no poses, so after the seeded GPS events the
-  // slice reports `ar-lost`; whichever phase it is, its coaching hint is
-  // what the visitor reads while waiting - and nothing is placed yet.
   await expect(page.getByTestId("ar-status")).toContainText(
-    /slowly look around|hold steady/,
+    "Point the phone at the printed code",
   );
   await expect(page.getByTestId("ar-status")).not.toContainText(
-    "capture spots",
+    /capture spots|slowly look around|hold steady/,
   );
-  await forceTrackingReady(page);
+  expect(
+    await page.evaluate(
+      () =>
+        /** @type {any} */ (window).__tourViewerTest.fakeScene.children.length,
+    ),
+  ).toBe(0);
+  await lockTheCode(page);
+  // Once locked, the ready trigger places the photos at their capture spots.
   await expect
     .poll(
       async () => {
@@ -641,15 +723,12 @@ test("a recording-carrying tour places photos at CAPTURE SPOTS, not the ring", a
     .toMatch(/photos at capture spots \(4 fixes/);
   await expect(page.getByTestId("ar-status")).not.toContainText("photo ring");
 
-  // A code locking AFTER the placement refines the alignment under the
-  // planes - it does not place a second time (review #4/#5).
+  // Further locks AFTER the placement refine the alignment under the
+  // planes - they do not place a second time (review #4/#5).
   const planesBefore = await page.evaluate(
     () =>
       /** @type {any} */ (window).__tourViewerTest.fakeScene.children.length,
   );
-  await page.evaluate((text) => {
-    /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
-  }, E2E_QR_TEXT);
   await expect
     .poll(
       async () => {
@@ -715,6 +794,84 @@ test("a tour with no recording and no printed codes says so, instead of scanning
     "This tour has no printed codes",
   );
   await expect(page.getByTestId("ar-status")).not.toContainText("Scanning");
+  // No measured code: the gate is waived and placing is by GPS - the
+  // escape never appears, even after the clock (M5, DEC-N4).
+  await expect(page.getByTestId("ar-status")).toContainText(
+    "no measured code - placing by GPS",
+  );
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.fireTimers();
+  });
+  await expect(page.getByTestId("scan-escape")).toBeHidden();
+});
+
+test("the visitor's content and ring wait for the lock; the escape after 45 s places by GPS instead (M5, DEC-N3)", async ({
+  page,
+}) => {
+  // Why this matters: the mandatory scan is the demo's claim. Before the
+  // lock nothing stands in the scene; after it the tour.json pin is placed
+  // and the ring follows the vote. A second visitor never locks: the clock
+  // (fired by the fake, no frames needed) offers the escape, which places
+  // by GPS and says so.
+  await openAsVisitor(page, RANGES_ARCHIVE);
+  await enterAr(page);
+  await seedAlignment(page);
+  await forceTrackingReady(page);
+  await expect(page.getByTestId("ar-status")).toContainText(
+    "Point the phone at the printed code",
+  );
+  await expect(page.getByTestId("scan-escape")).toBeHidden();
+  expect(
+    await page.evaluate(
+      () =>
+        /** @type {any} */ (window).__tourViewerTest.fakeScene.children.length,
+    ),
+  ).toBe(0);
+  await lockTheCode(page);
+  await expect(page.getByTestId("ar-status")).toContainText("1 placed object");
+  // The ring follows the VOTE (a few more frames past the lock).
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return page.getByTestId("ar-status").textContent();
+      },
+      { timeout: 20000 },
+    )
+    .toMatch(/photos in a ring/);
+  expect(
+    await page.evaluate(
+      () =>
+        /** @type {any} */ (window).__tourViewerTest.fakeScene.children.length,
+    ),
+  ).toBeGreaterThan(1);
+  // The escape clock was cancelled by the lock: firing it changes nothing.
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.fireTimers();
+  });
+  await expect(page.getByTestId("scan-escape")).toBeHidden();
+
+  // A fresh session that never locks: the clock offers the escape.
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.endXrSession();
+  });
+  await expect(page.getByTestId("enter-ar")).toHaveText("Start the tour");
+  await enterAr(page);
+  await seedAlignment(page);
+  await expect(page.getByTestId("scan-escape")).toBeHidden();
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.fireTimers();
+  });
+  await expect(page.getByTestId("scan-escape")).toBeVisible();
+  await expect(page.getByTestId("ar-status")).toContainText("GPS only");
+  await page.getByTestId("scan-escape").click();
+  await expect(page.getByTestId("scan-escape")).toBeHidden();
+  await expect(page.getByTestId("ar-status")).toContainText(
+    "Placing by GPS (less accurate)",
+  );
+  await expect(page.getByTestId("ar-status")).toContainText("1 placed object");
 });
 
 test("without a QR detector the photos still land at capture spots (review #2)", async ({
@@ -754,6 +911,8 @@ test("a re-entered session places the tour again once ITS tracking is ready (rev
     await enterAr(page);
     await expect(page.getByTestId("enter-ar")).toHaveText("Tour running");
     await seedAlignment(page);
+    // Each session has its own gate: the code locks anew (M5).
+    await lockTheCode(page);
     await forceTrackingReady(page);
     await expect
       .poll(
@@ -801,22 +960,15 @@ test("viewer mode relocalizes against the tour's level: budgeted votes, marker, 
 
   // The session zero + a few real fixes (the alignment the votes refine).
   await seedAlignment(page);
-  // Re-derived for the flows plan M4 (milestone review #4): tracking reports
-  // ready BEFORE any code locks, and this tour has no recording - so the
-  // trigger declines at once (no walk to place) and places NOTHING; the ring
-  // still needs the code's geo and waits for the lock below.
+  // Tracking reports ready BEFORE any code locks - and the gate (M5) holds
+  // everything back: the line asks for the code, nothing is placed.
   await forceTrackingReady(page);
-  await expect
-    .poll(
-      async () => {
-        await page.evaluate(() => {
-          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
-        });
-        return page.getByTestId("ar-status").textContent();
-      },
-      { timeout: 20000 },
-    )
-    .toMatch(/photo ring \(no recording in this tour\)/);
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.emitFrames(2);
+  });
+  await expect(page.getByTestId("ar-status")).toContainText(
+    "Point the phone at the printed code",
+  );
   expect(
     await page.evaluate(
       () =>
@@ -852,7 +1004,9 @@ test("viewer mode relocalizes against the tour's level: budgeted votes, marker, 
   // 3 seeded fixes + 10 vote batches × 4 correspondences = 43.
   expect(afterBudget.gpsCount).toBe(43);
   expect(afterBudget.markerUpdates).toBeGreaterThan(0);
-  expect(afterBudget.planes).toBe(3); // the image ring, placed once
+  // The image ring (3 planes), placed once, plus the fixture pin's label
+  // that the tour.json content placed after the lock (M5).
+  expect(afterBudget.planes).toBe(4);
 
   // Budget holds: more locked frames add NOTHING.
   await page.evaluate(() => {

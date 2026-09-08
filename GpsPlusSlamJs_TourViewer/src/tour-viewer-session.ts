@@ -26,6 +26,7 @@ import type { RgbaImage } from "gps-plus-slam-app-framework/ar/qr/qr-frontend";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import type { RenderedTourObjects } from "./content-placement.js";
+import type { ScanGate } from "./scan-gate.js";
 import type { PlacedImagePlanes } from "./image-planes.js";
 import type { TourViewerSeams } from "./seams.js";
 import type { PlacementState } from "./tour-flow.js";
@@ -70,6 +71,10 @@ export interface TourViewerHooks {
   presentTourForPrint(url: string): void;
   /** A tour closed: the finish step's page-side state is stale. */
   resetFinishStep(): void;
+  /** The visitor session reached running: derive the scan gate. */
+  startScanGate(): void;
+  /** The tour's levels arrived: a scanning gate may be waived. */
+  reconsiderScanGate(): void;
 }
 
 export function createUnwiredHooks(): TourViewerHooks {
@@ -82,6 +87,8 @@ export function createUnwiredHooks(): TourViewerHooks {
     startViewerPipeline: () => false,
     presentTourForPrint: () => undefined,
     resetFinishStep: () => undefined,
+    startScanGate: () => undefined,
+    reconsiderScanGate: () => undefined,
   };
 }
 
@@ -193,6 +200,15 @@ export interface TourViewerSession {
   /** Whether the join declined - a later lock goes straight to the ring
    *  instead of replaying the walk again. */
   joinDeclined: boolean;
+
+  // --- the scan gate and the placed content (viewer-placement.ts, M5) ------
+  scanGate: ScanGate;
+  /** Cancels the escape clock while the gate scans. */
+  cancelEscapeClock: (() => void) | null;
+  /** The tour's `tour.json` objects, rendered after the gate. */
+  contentRendered: RenderedTourObjects | null;
+  /** Whether this session already attempted the content placement. */
+  contentAttempted: boolean;
 }
 
 export function createTourViewerSession(): TourViewerSession {
@@ -236,5 +252,9 @@ export function createTourViewerSession(): TourViewerSession {
     placementUnsubscribe: null,
     placementAttempted: false,
     joinDeclined: false,
+    scanGate: { kind: "idle" },
+    cancelEscapeClock: null,
+    contentRendered: null,
+    contentAttempted: false,
   };
 }

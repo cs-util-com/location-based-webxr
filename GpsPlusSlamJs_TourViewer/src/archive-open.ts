@@ -75,6 +75,9 @@ export function wireArchiveOpen(deps: {
     ctx.levelByText.clear();
     ctx.imagePlanes?.dispose();
     ctx.imagePlanes = null;
+    ctx.contentRendered?.dispose();
+    ctx.contentRendered = null;
+    ctx.contentAttempted = false;
     // Clear the latch HERE too (PR #367 review): the stale run's finally is
     // generation-guarded and cannot clear it any more, and a latched
     // imagePlanesLoading blocks every later placement in the session.
@@ -180,6 +183,7 @@ export function wireArchiveOpen(deps: {
           ctx.tourManifest = manifest;
           ctx.tourManifestStatus = "settled";
           hooks.renderAuthorReadout();
+          hooks.tryPlaceTour(); // a visitor's content may now be placeable
         },
         (err: unknown) => {
           if (ctx.session !== opened) return;
@@ -200,6 +204,7 @@ export function wireArchiveOpen(deps: {
           if (ctx.session !== opened) return;
           ctx.currentLevels = levels;
           hooks.renderAuthorReadout();
+          hooks.reconsiderScanGate();
           // The controller caches a level (or the negative-cache
           // placeholder) per decoded text; levels arriving AFTER a scan
           // would otherwise be invisible until AR re-entry (M4 milestone

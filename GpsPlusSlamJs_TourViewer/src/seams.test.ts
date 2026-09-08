@@ -35,5 +35,6 @@ describe("getSeams", () => {
     expect(typeof realSeams.startHitTestReticle).toBe("function");
     expect(typeof realSeams.encodeFrameJpeg).toBe("function");
     expect(typeof realSeams.createLabel).toBe("function");
+    expect(typeof realSeams.schedule).toBe("function");
   });
 });

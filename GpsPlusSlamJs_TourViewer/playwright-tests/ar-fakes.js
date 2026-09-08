@@ -78,6 +78,14 @@ export async function installTourViewerArFakes(page) {
       reticleDisposals: 0,
       /** Photos "encoded" by the fake (a 3-byte stand-in per capture). */
       encodedFrames: 0,
+      /** The scan gate's escape clock (M5): armed timers the spec fires. */
+      timers:
+        /** @type {{ fn: () => void, ms: number, cancelled: boolean }[]} */ ([]),
+      fireTimers() {
+        for (const t of test.timers.splice(0)) {
+          if (!t.cancelled) t.fn();
+        }
+      },
       /** Simulate a SYSTEM session end (the Android back gesture). */
       endXrSession() {
         test.sessionEndCallback?.({ requestedByApp: false });
@@ -118,9 +126,10 @@ export async function installTourViewerArFakes(page) {
         startOrientationWatch: () => {},
         stopGpsWatch: () => {},
         stopOrientationWatch: () => {},
-        initAR: (_container, isolationOptions, _features, callbacks) => {
+        initAR: (_container, isolationOptions, features, callbacks) => {
           test.initARCalls.push({
             hasCameraFrame: Boolean(callbacks?.cameraFrame),
+            requestHitTest: Boolean(features?.requestHitTest),
             isolationOptions,
           });
           test.cameraFrameCallback = callbacks?.cameraFrame?.onFrame ?? null;
@@ -204,6 +213,13 @@ export async function installTourViewerArFakes(page) {
           width: image.width,
           height: image.height,
         });
+      },
+      schedule: (fn, ms) => {
+        const timer = { fn, ms, cancelled: false };
+        test.timers.push(timer);
+        return () => {
+          timer.cancelled = true;
+        };
       },
       createLabel: (text) => {
         // A bare three Object3D stands in for the canvas-backed sprite.

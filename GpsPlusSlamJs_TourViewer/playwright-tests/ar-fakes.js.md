@@ -32,6 +32,12 @@ camera, so `installTourViewerArFakes(page)` installs
   `endARSession` fires `sessionEndCallback({ requestedByApp: true })`
   like the real XR session's end event does, so an app-requested end runs
   the app's teardown in the specs too (the finish step relies on it).
+  `reticleVisible` / `reticlePosition` / `reticleDisposals` and
+  `encodedFrames` script the creator's placement layer (the hit-test
+  reticle and the JPEG encoder fakes; `createLabel` returns a bare object
+  in place of the canvas sprite); `timers` + `fireTimers()` are the scan
+  gate's escape clock (the `schedule` seam), so a spec fires the 45 s
+  without waiting.
 
 ## Invariants & assumptions
 

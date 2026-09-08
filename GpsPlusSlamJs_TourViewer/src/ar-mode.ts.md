@@ -19,7 +19,9 @@ identical here — they diverge in M3/M4.
   while the location gate is pending, DEC-N2), "Getting your location…"
   disabled (visitor while the request runs); running: "Setting up in AR"
   / "Tour running".
-- `buildArEnableConfig(hooks: ArEnableHooks): EnableGpsArConfig` — hooks:
+- `buildArEnableConfig(hooks: ArEnableHooks): EnableGpsArConfig` -
+  `hooks.requestHitTest` asks for the WebXR `hit-test` feature (the
+  creator's reticle; without it the reticle never shows) - hooks:
   `{ container, trackingStore, onFrame, onSessionEnd, onGpsPosition, onOrientation }`.
   `trackingStore` rides in as `callbacks.tracking.store` (flows plan M4):
   `initAR` dispatches `tracking/poseReceived` ONLY into the store handed in

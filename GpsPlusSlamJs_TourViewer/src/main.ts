@@ -183,6 +183,7 @@ hooks.renderAuthorReadout = setup.renderAuthorReadout;
 hooks.startAuthorPipeline = setup.startAuthorPipeline;
 hooks.resetFinishStep = setup.resetFinishStep;
 
+const escapeButton = element<HTMLButtonElement>("scan-escape");
 const viewer = createViewerPlacement({
   ctx,
   mode,
@@ -190,10 +191,13 @@ const viewer = createViewerPlacement({
   arController,
   seams,
   errorBox,
+  escapeButton,
   hooks,
 });
 hooks.startViewerPipeline = viewer.startViewerPipeline;
 hooks.tryPlaceTour = viewer.tryPlaceTour;
+hooks.startScanGate = viewer.startScanGate;
+hooks.reconsiderScanGate = viewer.reconsiderScanGate;
 
 const arEntry = wireArEntry({
   ctx,
@@ -210,6 +214,7 @@ const arEntry = wireArEntry({
     enterArButton: element("enter-ar"),
     sizeInput,
     errorBox,
+    escapeButton,
   },
   hooks,
 });

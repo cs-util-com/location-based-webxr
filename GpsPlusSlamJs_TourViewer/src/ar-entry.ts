@@ -46,6 +46,8 @@ export interface ArEntryDom {
   /** The printed-size input (print panel) - frozen during an AUTHOR session. */
   sizeInput: HTMLInputElement;
   errorBox: HTMLElement;
+  /** The scan gate's escape (inside the overlay); hidden until offered. */
+  escapeButton: HTMLButtonElement;
 }
 
 /** Properties, not methods: they are handed to the hooks object unbound. */
@@ -107,6 +109,15 @@ export function wireArEntry(deps: {
         : computeOnboardingGuidance(selectTrackingQuality(arStore.getState())),
       placement: ctx.placement,
       planesError: ctx.viewerPlanesError,
+      gate: ctx.scanGate,
+      content:
+        ctx.contentRendered === null
+          ? { kind: "none" }
+          : {
+              kind: "placed",
+              count: ctx.contentRendered.count,
+              skipped: ctx.contentRendered.skipped.length,
+            },
     });
   }
 
@@ -157,6 +168,14 @@ export function wireArEntry(deps: {
     ctx.latestFrame = null;
     ctx.placedPreview?.dispose();
     ctx.placedPreview = null;
+    // The gate and the placed content are session state (M5).
+    ctx.cancelEscapeClock?.();
+    ctx.cancelEscapeClock = null;
+    ctx.scanGate = { kind: "idle" };
+    ctx.contentRendered?.dispose();
+    ctx.contentRendered = null;
+    ctx.contentAttempted = false;
+    dom.escapeButton.hidden = true;
     ctx.viewerQrStatus = null;
     ctx.viewerUnknownCode = null;
     ctx.viewerUnusableCode = null;
@@ -268,6 +287,9 @@ export function wireArEntry(deps: {
     // runs once.
     ctx.placementAttempted = false;
     ctx.joinDeclined = false;
+    // The scan gate first (M5): placement waits for it; the subscription
+    // re-attempts on every dispatch once it passes.
+    hooks.startScanGate();
     ctx.placementUnsubscribe = arStore.subscribe(() => {
       hooks.tryPlaceTour();
     });

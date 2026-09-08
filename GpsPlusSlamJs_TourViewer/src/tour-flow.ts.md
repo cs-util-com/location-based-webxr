@@ -38,6 +38,12 @@ DOM-free and string-exact under test, instead of inline in `main.ts`.
   a decline already means the recording path is out and the ring needs a
   code (milestone review #1) - so the line follows the tour's facts at
   render time whatever order the decline and the levels arrived in.
+- `contentSegment(content)` - "N placed objects (K could not load)" once
+  the tour's `tour.json` content is rendered (M5).
+- The composed line carries the scan gate's segment (`gateSegment`, from
+  `scan-gate.ts`); while the gate scans, the placement segment (with its
+  coaching hint) and the pipeline's generic scanning line are suppressed -
+  "walk around" would contradict "stay at the code".
 - `qrSegment(input): string` - the printed-code line. Empty in creator mode
   or before the pipeline reports a status.
 - `placementSegment(placement, readiness = null): string` - the placement

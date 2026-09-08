@@ -27,8 +27,18 @@ import {
   preflightCaptureJoin,
   type ReplayedJoinState,
 } from "./capture-geo-join.js";
+import { decodeFrameTexture as decodeContentTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
+
+import { renderTourObjects } from "./content-placement.js";
 import { placeCapturedImagePlanes, placeImagePlanes } from "./image-planes.js";
 import type { ViewerMode } from "./mode.js";
+import {
+  gateAllowsPlacement,
+  isLockableLevel,
+  reconsiderScanGate as reconsiderGate,
+  SCAN_GATE_ESCAPE_MS,
+  scanGateAtSessionStart,
+} from "./scan-gate.js";
 import { describeOpenError } from "./open-errors.js";
 import {
   buildViewerControllerConfig,
@@ -60,6 +70,11 @@ export interface ViewerPlacement {
   startViewerPipeline: () => boolean;
   /** The ready-triggered placement; cheap enough to run on every dispatch. */
   tryPlaceTour: () => void;
+  /** The session reached running: derive the scan gate (M5) and arm its
+   *  escape clock while it scans. */
+  startScanGate: () => void;
+  /** The tour's levels arrived: waive a scanning gate that cannot lock. */
+  reconsiderScanGate: () => void;
 }
 
 export function createViewerPlacement(deps: {
@@ -69,15 +84,77 @@ export function createViewerPlacement(deps: {
   arController: ArController;
   seams: TourViewerSeams;
   errorBox: HTMLElement;
+  /** The gate's escape button (inside the overlay). */
+  escapeButton: HTMLButtonElement;
   hooks: TourViewerHooks;
 }): ViewerPlacement {
-  const { ctx, mode, arStore, arController, seams, errorBox, hooks } = deps;
+  const {
+    ctx,
+    mode,
+    arStore,
+    arController,
+    seams,
+    errorBox,
+    escapeButton,
+    hooks,
+  } = deps;
   const authorMode = mode === "creator";
+  /** Whether this session has a detector (set by startViewerPipeline). */
+  let hasDetector = false;
+
+  function passGate(via: "code" | "skipped"): void {
+    if (ctx.scanGate.kind !== "scanning") return;
+    ctx.cancelEscapeClock?.();
+    ctx.cancelEscapeClock = null;
+    escapeButton.hidden = true;
+    ctx.scanGate = { kind: "passed", via };
+    hooks.renderArStatus();
+    tryPlaceTour();
+  }
+
+  function startScanGate(): void {
+    ctx.cancelEscapeClock?.();
+    ctx.cancelEscapeClock = null;
+    ctx.scanGate = scanGateAtSessionStart({
+      mode,
+      hasDetector,
+      levels: ctx.currentLevels,
+    });
+    if (ctx.scanGate.kind === "scanning") {
+      // Its own clock (plan review #11): a device without frames must still
+      // get the escape.
+      ctx.cancelEscapeClock = seams.schedule(() => {
+        ctx.cancelEscapeClock = null;
+        if (ctx.scanGate.kind !== "scanning") return;
+        ctx.scanGate = { kind: "scanning", escapeOffered: true };
+        escapeButton.hidden = false;
+        hooks.renderArStatus();
+      }, SCAN_GATE_ESCAPE_MS);
+    }
+    hooks.renderArStatus();
+  }
+
+  function reconsiderScanGate(): void {
+    if (ctx.currentLevels === null) return;
+    const next = reconsiderGate(ctx.scanGate, ctx.currentLevels);
+    if (next === ctx.scanGate) return;
+    ctx.cancelEscapeClock?.();
+    ctx.cancelEscapeClock = null;
+    escapeButton.hidden = true;
+    ctx.scanGate = next;
+    hooks.renderArStatus();
+    tryPlaceTour();
+  }
+
+  escapeButton.addEventListener("click", () => {
+    passGate("skipped");
+  });
 
   /** Levels are only useful with an open tour; the viewer pipeline reads
    *  them live so a tour opened AFTER entering AR still resolves. */
   function startViewerPipeline(): boolean {
     const frontEnd = seams.createQrFrontEnd();
+    hasDetector = frontEnd !== null;
     if (frontEnd === null) {
       // Viewing without a detector still works as plain AR — no error
       // state, the QR line just never appears.
@@ -123,6 +200,11 @@ export function createViewerPlacement(deps: {
         },
         onLevelResolved: (text, level) => {
           ctx.levelByText.set(text, level);
+        },
+        onLocked: (_text, level) => {
+          // The gate passes on the LOCK against a lockable level, not on a
+          // vote (M5; plan review #1).
+          if (isLockableLevel(level)) passGate("code");
         },
         onError: (message) => {
           errorBox.textContent = `QR tracking failed: ${message}`;
@@ -182,6 +264,10 @@ export function createViewerPlacement(deps: {
       ctx.placement = { kind: "idle" };
       return;
     }
+    // Nothing is placed until the gate allows it (DEC-N3): the capture-spot
+    // join below, the content here.
+    if (!gateAllowsPlacement(ctx.scanGate)) return;
+    tryPlaceContent(current);
     if (ctx.placementAttempted || ctx.imagePlanes !== null) return;
     if (ctx.imagePlanesLoading) return;
     if (!isPlacementReady(selectTrackingQuality(arStore.getState()))) {
@@ -209,6 +295,44 @@ export function createViewerPlacement(deps: {
       hooks.renderArStatus();
     });
     hooks.renderArStatus();
+  }
+
+  /**
+   * The tour's placed content (`tour.json`, M5): rendered once per session
+   * as soon as the gate allows it and the GPS zero exists - its geo → NUE
+   * conversion needs only the zero, and after a lock with votes the
+   * alignment under it is corrected within a dispatch (plan §2.2).
+   */
+  function tryPlaceContent(current: TourSession): void {
+    if (ctx.contentAttempted || ctx.tourManifestStatus !== "settled") return;
+    const manifest = ctx.tourManifest;
+    if (manifest === null || manifest.objects.length === 0) return;
+    const zero = selectZeroReference(arStore.getState());
+    const scene = seams.getScene();
+    if (zero === null || scene === null) return;
+    ctx.contentAttempted = true;
+    const generation = ctx.planesRunGeneration;
+    void renderTourObjects(manifest.objects, {
+      scene,
+      zero,
+      makeLabel: (text) => seams.createLabel(text),
+      loadPhotoTexture: async (entryName) =>
+        decodeContentTexture(await current.loadEntry(entryName), 2),
+    }).then(
+      (rendered) => {
+        // A run the session outlived must not plant into a dead scene.
+        if (generation !== ctx.planesRunGeneration || ctx.session !== current) {
+          rendered.dispose();
+          return;
+        }
+        ctx.contentRendered = rendered;
+        hooks.renderArStatus();
+      },
+      (err: unknown) => {
+        ctx.viewerPlanesError = describeOpenError(err, current.archive.url);
+        hooks.renderArStatus();
+      },
+    );
   }
 
   /** QD-3's payoff, once per session — capture-first (geo-join plan Rev 2):
@@ -522,5 +646,10 @@ export function createViewerPlacement(deps: {
     return textures;
   }
 
-  return { startViewerPipeline, tryPlaceTour };
+  return {
+    startViewerPipeline,
+    tryPlaceTour,
+    startScanGate,
+    reconsiderScanGate,
+  };
 }

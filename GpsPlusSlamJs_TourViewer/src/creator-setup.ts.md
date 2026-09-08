@@ -14,7 +14,7 @@ tap.
 ## Public API
 
 - `wireCreatorSetup({ ctx, mode, arStore, arController, seams, wizard, dom }): CreatorSetup`
-  - `CreatorSetupDom { panel; sizeInput; printPanel; status; mintButton; finishButton; finishStatus; downloadButton }`
+  - `CreatorSetupDom { panel; sizeInput; printPanel; status; mintButton; finishButton; finishStatus; downloadButton; pinButton; pinLabel; pinSave; photoButton }`
     - `panel`, `status`, `mintButton`, `finishButton` live inside `#ar-root`
       (the DOM overlay); `finishStatus` and `downloadButton` are step 5 on
       the page.
@@ -58,11 +58,23 @@ tap.
   and says "not saved". Async-UI rule on both branches. `resetFinishStep`
   (a hook, called when a tour closes) disables the button and clears the
   status, so a re-opened tour does not show a stale step 5.
+- **Placement (M4, DEC-N9):** after the measurement, "Place a pin here"
+  reads the hit-test reticle (a surface must be under it, else the panel
+  says so), opens the overlay label input, and Save mints a `pin` record
+  from the reticle's GPS-world position (`content-placement.ts`);
+  "Capture a photo here" encodes the latest camera frame through
+  `seams.encodeFrameJpeg` and mints a `photo` record from the camera's
+  raw pose through the session alignment, keeping the JPEG for the
+  rebuild. Every placement redraws the live preview
+  (`renderTourObjects` at the scene root; `ctx.placedPreview`). Placed
+  objects survive a session end like the level; the finish step appends
+  them to the manifest and writes the photos as `content/<id>.jpg`.
 - The measured level survives a session end on purpose (finishing ends
   the session); a new measurement replaces it.
 - Owns the session fields `lastDetectedText`, `activeSizeM`,
   `authorErrorText`, `mintedLevel`, `mintGeneration`, `finishing`,
-  `rebuiltZip`; reads `gpsSamplesAtSessionStart` (written by
+  `rebuiltZip`, `placedObjects`, `placedPreview`; reads
+  `gpsSamplesAtSessionStart`, `reticle`, `latestFrame` (written by
   `ar-entry.ts`), `session`, `currentLevels`, `tourManifest`.
 
 ## Examples
@@ -87,8 +99,10 @@ hooks.startAuthorPipeline = setup.startAuthorPipeline;
 finishes, and downloads a rebuilt zip that carries the level and
 tour.json" drives the composed flow under the fakes (the real controller,
 slice, alignment solve, mint, rebuild; the download captured by the fake)
-and reads the produced zip back in node, including the dismissed-picker
-branch and the identity-hole re-entry. The pure pieces are unit-tested in
+and reads the produced zip back in node, including a placed pin and a
+captured photo (their records and the photo's bytes), the refused pin
+without a surface, the dismissed-picker branch and the identity-hole
+re-entry. The pure pieces are unit-tested in
 `qr-author-mode.test.ts` (`authorStatusLine`, `setupHint`,
 `finishReadiness`) and `tour-session.test.ts` (`archiveFileName`,
 `readWholeArchive`, `loadTourManifest`).

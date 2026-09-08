@@ -19,6 +19,17 @@ since the flows plan M6.
     the button reads "Allow location" through `arButtonView`.
   - `ArEntry.renderArEntry()` re-renders the button from the controller
     state and the gate (the gate resolves asynchronously at boot).
+  - A creator's session requests the WebXR `hit-test` feature and starts
+    the reticle under the world group once the runtime is up
+    (`ctx.reticle`, disposed on session end); every camera frame is kept
+    as `ctx.latestFrame` for the photo capture (M4).
+  - A visitor's session starts the scan gate (`hooks.startScanGate`)
+    before the placement subscription; the session end cancels the escape
+    clock, hides the escape button and disposes the placed content (M5).
+  - A creator's session requests the WebXR `hit-test` feature and starts
+    the reticle under the world group once the runtime is up
+    (`ctx.reticle`, disposed on session end); every camera frame is kept
+    as `ctx.latestFrame` for the photo capture (M4).
   - `ArEntryDom { arRoot; arStatus; arHint; enterArButton; sizeInput; errorBox }`
   - `ArEntry.renderArStatus()` - composes `#ar-status` from the session
     object; assigned to `hooks.renderArStatus` by `main.ts` so the other

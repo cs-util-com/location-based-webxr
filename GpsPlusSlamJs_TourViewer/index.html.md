@@ -21,7 +21,9 @@ screen. Everything marked `.creator-only` is hidden for a visitor
   transport-demo control; inside a collapsed step it would be hidden).
 - Shared: `#error`, `#ar-root` (the DOM-overlay root: hint, status line,
   button, the setup panel `#setup-panel` with `setup-status`, `setup-mint`
-  and `setup-finish`), `#stats`, `#gallery`. Step 5 holds `finish-status`
+  the placement controls `setup-pin` / `pin-label` / `pin-save` /
+  `setup-photo`, and `setup-finish`; the visitor's `scan-escape`),
+  `#stats`, `#gallery`. Step 5 holds `finish-status`
   and `finish-download`.
 
 Behaviour lives in the wiring modules composed by `src/main.ts` (see
@@ -37,7 +39,8 @@ The `data-testid` contract the e2e suite drives: `wizard`, `step-host`,
 `print-url-out`, `visitor-link`), `step-hang`, `hang-done`,
 `step-measure`, `step-finish`, `step-replace`, `visitor-screen`, `stats`,
 `error`, `gallery`, `ar-hint`, `ar-status`, `enter-ar`, `setup-panel`,
-`setup-status`, `setup-mint`, `setup-finish`, `finish-status`,
+`setup-status`, `setup-mint`, `setup-pin`, `pin-label`, `pin-save`,
+`setup-photo`, `setup-finish`, `scan-escape`, `finish-status`,
 `finish-download`.
 Renaming one is an e2e-breaking change. `#ar-hint`, `#ar-status`,
 `#enter-ar` and `#setup-panel` must stay children of `#ar-root` (WebXR

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   arStatusLine,
+  contentSegment,
   clearCacheLabel,
   isPlacementReady,
   placementSegment,
@@ -36,7 +37,46 @@ const RUNNING_BASE: ArStatusInput = {
   readiness: null,
   placement: { kind: "idle" },
   planesError: null,
+  gate: { kind: "idle" },
+  content: { kind: "none" },
 };
+
+describe("the scan gate and the content in the composed line (M5)", () => {
+  it("a scanning gate shows its line and suppresses the placement's coaching hint", () => {
+    const line = arStatusLine({
+      ...RUNNING_BASE,
+      gate: { kind: "scanning", escapeOffered: false },
+      placement: { kind: "waiting-ready" },
+      readiness: {
+        phase: "move-around",
+        hint: "Walk around a few steps.",
+        percentReady: 40,
+      },
+    });
+    expect(line).toContain("Point the phone at the printed code");
+    expect(line).not.toContain("Walk around");
+  });
+
+  it("a passed gate lets the placement segment back in, and names the placed content", () => {
+    const line = arStatusLine({
+      ...RUNNING_BASE,
+      gate: { kind: "passed", via: "code" },
+      placement: { kind: "waiting-ready" },
+      readiness: {
+        phase: "move-around",
+        hint: "Walk around a few steps.",
+        percentReady: 40,
+      },
+      content: { kind: "placed", count: 2, skipped: 1 },
+    });
+    expect(line).toContain("Code recognised");
+    expect(line).toContain("Walk around");
+    expect(line).toContain("2 placed objects (1 could not load)");
+    expect(contentSegment({ kind: "placed", count: 1, skipped: 0 })).toBe(
+      "1 placed object",
+    );
+  });
+});
 
 describe("arStatusLine - the fixed prefix", () => {
   it("renders mode and status while the session is not running", () => {

@@ -116,6 +116,9 @@ export interface TourViewerSeams {
   /** A pin's label: the framework's text sprite (a canvas, so a seam - node
    *  has none). */
   createLabel(text: string): { object: Object3D; dispose(): void };
+  /** A one-shot clock (the scan gate's escape, DEC-N3): returns the
+   *  cancel. A seam so the e2e fires it instead of waiting 45 s. */
+  schedule(fn: () => void, ms: number): () => void;
 }
 
 /** A captured photo, encoded. */
@@ -176,6 +179,12 @@ export const realSeams: TourViewerSeams = {
   getScene,
   downloadZip,
   startHitTestReticle: (arWorldGroup) => startHitTestReticle({ arWorldGroup }),
+  schedule: (fn, ms) => {
+    const handle = setTimeout(fn, ms);
+    return () => {
+      clearTimeout(handle);
+    };
+  },
   encodeFrameJpeg: (image) => encodeRgbaAsJpeg(image),
   createLabel: (text) => {
     const sprite = createTextSprite({

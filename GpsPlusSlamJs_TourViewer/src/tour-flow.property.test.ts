@@ -69,6 +69,8 @@ const base = (
   readiness: null,
   placement,
   planesError: null,
+  gate: { kind: "idle" },
+  content: { kind: "none" },
 });
 
 describe("tour-flow - copy rules", () => {
