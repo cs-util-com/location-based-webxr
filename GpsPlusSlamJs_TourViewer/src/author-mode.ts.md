@@ -2,15 +2,19 @@
 
 ## Purpose
 
-Author mode (QR-pose plan M3): the `?author=1` panel - the mint readout
-(stability + alignment gates via `authorStatusLine`), the per-entry author
-tracking controller, minting a `qr/<id>.json` level from the stable QR pose
-and the session alignment, and the copy/download of that JSON. Its own
-module since the flows plan M6.
+The creator's AR setup panel (QR-pose plan M3 "author mode"; shown in
+CREATOR mode since the guided-setup plan M2, the `?author=1` flag is gone)
+
+- the mint readout
+  (stability + alignment gates via `authorStatusLine`), the per-entry author
+  tracking controller, minting a `qr/<id>.json` level from the stable QR pose
+  and the session alignment, and the copy/download of that JSON. Its own
+  module since the flows plan M6.
 
 ## Public API
 
-- `wireAuthorMode({ ctx, authorMode, arStore, seams, dom }): AuthorMode`
+- `wireAuthorMode({ ctx, mode, arStore, seams, dom }): AuthorMode` - active
+  when `mode === "creator"`
   - `AuthorModeDom { panel; sizeInput; printPanel; status; mintButton; jsonBox; copyButton; downloadButton; hint }`
     - `sizeInput` lives in the PRINT panel (DEC-F2: one input, two
       consumers); `printPanel` is opened when the size error points at it.
@@ -38,14 +42,14 @@ module since the flows plan M6.
 ## Examples
 
 ```ts
-const author = wireAuthorMode({ ctx, authorMode, arStore, seams, dom });
+const author = wireAuthorMode({ ctx, mode, arStore, seams, dom });
 hooks.startAuthorPipeline = author.startAuthorPipeline;
 ```
 
 ## Tests
 
-`playwright-tests/ar-mode.spec.js` - "author mode (?author=1) boots the
-same foundation under its own labels" and "author mode mints and exports a
+`playwright-tests/ar-mode.spec.js` - "creator mode (the plain page) boots
+the same foundation under its own labels" and "author mode mints and exports a
 level that the parser round-trips" (the identity-matrix hole, the captured
 size, the export). The pure pieces are unit-tested in `qr-author-mode.test.ts`
 and the framework's `qr-mint-level` tests.

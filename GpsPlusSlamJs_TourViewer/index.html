@@ -15,7 +15,8 @@
         padding: 1rem;
       }
       header p,
-      #ar-hint {
+      #ar-hint,
+      .step-copy {
         color: #8889;
         margin-top: 0.25rem;
       }
@@ -41,6 +42,38 @@
       #stats[hidden] {
         display: none;
       }
+      /* The guided setup: an ordered list of collapsible steps, one open at
+         a time (wizard.ts). The measure step is a plain section because it
+         wraps #ar-root, the DOM-overlay root, which stays rendered in both
+         modes. */
+      #wizard,
+      #wizard-tail {
+        list-style: none;
+        padding: 0;
+        margin: 1rem 0 0;
+      }
+      .step {
+        margin: 0.5rem 0;
+        border: 1px solid #8886;
+        border-radius: 0.5rem;
+        padding: 0.5rem 0.75rem;
+      }
+      .step > summary,
+      .step > h2 {
+        cursor: pointer;
+        font-size: 1.05rem;
+        font-weight: 600;
+        margin: 0.25rem 0;
+      }
+      .step > h2 {
+        cursor: default;
+      }
+      .step-body {
+        display: grid;
+        gap: 0.5rem;
+        max-width: 26rem;
+        margin-top: 0.5rem;
+      }
       #storage-panel {
         margin: 1rem 0;
         color: #8889;
@@ -58,6 +91,10 @@
         color: #c0392b;
         margin: 1rem 0;
         white-space: pre-wrap;
+      }
+      .creator-only[hidden],
+      #visitor-screen[hidden] {
+        display: none;
       }
       #ar-root {
         margin: 1rem 0;
@@ -79,23 +116,6 @@
       #author-json {
         font-family: monospace;
         font-size: 0.75rem;
-      }
-      #print-panel {
-        margin: 1rem 0;
-      }
-      #print-panel summary {
-        cursor: pointer;
-      }
-      /* The grid lives on an inner wrapper: a <details> element's own
-         display is what the open/closed toggle drives. */
-      .print-panel-body {
-        display: grid;
-        gap: 0.5rem;
-        max-width: 26rem;
-        margin-top: 0.5rem;
-        border: 1px solid #8886;
-        border-radius: 0.5rem;
-        padding: 0.75rem;
       }
       #print-url-out {
         font-family: monospace;
@@ -171,41 +191,244 @@
   <body>
     <header>
       <h1>Tour Viewer</h1>
-      <!-- Two ways in, and the copy names BOTH (owner taste round 2026-09-04):
-           a printed tour code scanned with the phone camera opens this page
-           with the tour already chosen (`?qr=`), or a pasted link to a hosted
-           zip. The in-AR code scanner is neither: it only places a visitor
-           inside a tour that is already open — see the hint by the AR button. -->
-      <p>
-        Scan a printed tour code with your phone's camera and the link opens
-        this viewer with that tour. Or paste a link to a hosted tour zip below
-        (Dropbox, GitHub and OneDrive share links work; Google Drive needs an
-        API key or CORS proxy) — entries stream in as needed instead of
-        downloading the whole archive first. To make your own tour reachable,
-        open its link and print the code below.
+      <!-- Two pages in one (guided-setup plan DEC-N1): the plain page is the
+           creator's guided setup; a ?qr= launch (a scanned printed code, or
+           the setup's "open as a visitor" link) is the visitor's screen.
+           Everything marked .creator-only is hidden for a visitor. -->
+      <p class="creator-only">
+        Set up a tour that people open by scanning a printed code: host a zip,
+        print the code, hang it, measure it in AR and place content, then
+        replace the hosted zip. Six steps, one at a time.
       </p>
     </header>
     <main>
-      <form id="open-form">
-        <input
-          id="link"
-          name="link"
-          type="text"
-          placeholder="https://… link to a .zip"
-          autocomplete="off"
-          data-testid="link-input"
-        />
-        <button type="submit" id="open" data-testid="open-button">Open</button>
-      </form>
-      <div id="stats" hidden data-testid="stats">
-        <div id="stats-headline"></div>
-        <div id="stats-detail"></div>
-      </div>
-      <!-- Storage (flows plan M2, DEC-F1): the clear-cache control used to sit
-           next to Open, where the first on-phone session found it unexplained
-           and apparently inert. It is a transport-demo control, so it lives
-           collapsed here with the one sentence that says what the cache is.
-           Hidden entirely without a cache store (?nocache=1, no Cache API). -->
+      <!-- The visitor's one screen (DEC-N2): what the tour needs and the
+           Start button (#enter-ar, below in #ar-root). -->
+      <section id="visitor-screen" hidden data-testid="visitor-screen">
+        <h2>Start the tour</h2>
+        <p>
+          This tour runs in augmented reality on your phone. It needs the
+          camera, to show the tour over what you see, and your location, to
+          place it. Nothing is uploaded. Tap the button below; if the browser
+          asks, allow both.
+        </p>
+      </section>
+      <ol id="wizard" class="creator-only" data-testid="wizard">
+        <li>
+          <details id="step-host" class="step" data-testid="step-host">
+            <summary>1 · Host your tour</summary>
+            <p class="step-copy">
+              Upload a zip to Google Drive, Dropbox, GitHub or OneDrive - a
+              recording from the Recorder app, or the empty starter zip below if
+              you have no recording - then paste its share link here. The
+              printed code will point at this link, so keep the file where it
+              is.
+            </p>
+            <div class="step-body">
+              <button type="button" id="starter-zip" data-testid="starter-zip">
+                Download an empty starter zip
+              </button>
+            </div>
+            <form id="open-form">
+              <input
+                id="link"
+                name="link"
+                type="text"
+                placeholder="https://… link to the .zip"
+                autocomplete="off"
+                data-testid="link-input"
+              />
+              <button type="submit" id="open" data-testid="open-button">
+                Open
+              </button>
+            </form>
+          </details>
+        </li>
+        <li>
+          <!-- Print the code (flows plan M3, DEC-F2; step 2 of the setup).
+               Opened and prefilled when a tour opens; usable before any
+               upload. The QR renders at the TRUE physical size via print
+               CSS cm units, so the paper matches the size the setup later
+               measures with - the AR setup reads the size from HERE. -->
+          <details id="print-panel" class="step" data-testid="print-panel">
+            <summary>2 · Print the code</summary>
+            <p class="step-copy">
+              The code carries the link from step 1. Print it at 100% scale (no
+              fit-to-page), and enter the printed side length so the AR setup
+              can measure it. To try the tour as a visitor on this phone, use
+              the link under the code.
+            </p>
+            <div class="step-body">
+              <input
+                id="print-url"
+                data-testid="print-url"
+                type="text"
+                autocomplete="off"
+                placeholder="https://… link to the tour .zip"
+              />
+              <label
+                >Printed side length (m)
+                <input
+                  id="author-size"
+                  data-testid="author-size"
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                />
+              </label>
+              <label
+                >Code number (1 for the first poster)
+                <input
+                  id="author-c"
+                  data-testid="author-c"
+                  type="number"
+                  step="1"
+                  min="1"
+                  value="1"
+                />
+              </label>
+              <button
+                type="button"
+                id="print-generate"
+                data-testid="print-generate"
+              >
+                Generate QR
+              </button>
+              <div id="print-info" data-testid="print-info"></div>
+              <div id="print-area" hidden>
+                <div id="print-quiet">
+                  <canvas id="print-canvas" data-testid="print-canvas"></canvas>
+                </div>
+              </div>
+              <button
+                type="button"
+                id="print-button"
+                data-testid="print-button"
+                hidden
+              >
+                Print at true size
+              </button>
+              <div id="print-url-out" data-testid="print-url-out"></div>
+              <a id="visitor-link" data-testid="visitor-link" href="#" hidden
+                >Open this tour as a visitor</a
+              >
+            </div>
+          </details>
+        </li>
+        <li>
+          <details id="step-hang" class="step" data-testid="step-hang">
+            <summary>3 · Hang the code</summary>
+            <p class="step-copy">
+              Fix the printed code where the tour starts: flat on a wall or a
+              post, at about chest height, in a spot a phone can film squarely
+              from a metre away. It stays there; visitors scan it to open the
+              tour and again in AR to be placed exactly.
+            </p>
+            <div class="step-body">
+              <button type="button" id="hang-done" data-testid="hang-done">
+                It hangs - continue
+              </button>
+            </div>
+          </details>
+        </li>
+      </ol>
+      <div id="error" role="alert" data-testid="error"></div>
+      <!-- Step 4 wraps the AR section. Under WebXR DOM Overlay only the
+           subtree of the element passed to initAR composites over the camera
+           feed, so everything a person needs DURING a session (the status
+           line, the button, the setup panel) MUST stay inside #ar-root
+           (enforced by tests/repo-config/hud-overlay-nesting.test.js). The
+           step heading sits outside it: it is pre-session copy. -->
+      <section id="step-measure" class="step" data-testid="step-measure">
+        <h2 class="creator-only">4 · Measure the code and place content</h2>
+        <p class="step-copy creator-only">
+          Stand at the hung code and start the AR setup. Hold the phone on the
+          code until it is measured, then place text pins and photos where the
+          tour should show them. Finish inside AR when you are done.
+        </p>
+        <section id="ar-root">
+          <p id="ar-hint" data-testid="ar-hint">
+            AR opens the camera. Keep the printed code in view until the page
+            says it is measured; walking a few metres with GPS reception lets
+            the phone align to the map.
+          </p>
+          <div id="ar-status" data-testid="ar-status"></div>
+          <button type="button" id="enter-ar" data-testid="enter-ar" disabled>
+            Checking AR support…
+          </button>
+          <!-- The setup panel. Inside #ar-root on purpose: it must stay
+               visible while the AR session composites the DOM overlay. -->
+          <div id="author-panel" hidden data-testid="author-panel">
+            <div id="author-status" data-testid="author-status"></div>
+            <button
+              type="button"
+              id="mint-export"
+              data-testid="mint-export"
+              disabled
+            >
+              Mint GPS anchor
+            </button>
+            <textarea
+              id="author-json"
+              data-testid="author-json"
+              hidden
+              rows="8"
+              readonly
+            ></textarea>
+            <button
+              type="button"
+              id="author-copy"
+              data-testid="author-copy"
+              hidden
+            >
+              Copy JSON
+            </button>
+            <button
+              type="button"
+              id="author-download"
+              data-testid="author-download"
+              hidden
+            >
+              Download the level JSON
+            </button>
+            <p id="author-hint" hidden>
+              Add the downloaded file to your tour zip under <code>qr/</code>,
+              then re-upload the zip to the same URL — viewers pick the change
+              up automatically.
+            </p>
+          </div>
+        </section>
+      </section>
+      <ol id="wizard-tail" class="creator-only" start="5">
+        <li>
+          <details id="step-finish" class="step" data-testid="step-finish">
+            <summary>5 · Download the rebuilt zip</summary>
+            <p class="step-copy">
+              Next: after finishing in AR, the zip with the measured code and
+              your content is offered for download here.
+            </p>
+          </details>
+        </li>
+        <li>
+          <details id="step-replace" class="step" data-testid="step-replace">
+            <summary>6 · Replace the hosted zip</summary>
+            <p class="step-copy">
+              Upload the downloaded zip over the one from step 1 so the link,
+              and with it the printed code, stays the same. Google Drive: on
+              drive.google.com in a browser, right-click the file, "Manage
+              versions", "Upload new version" (the Drive phone app cannot do
+              this). Dropbox: upload the file with the same name into the same
+              folder. GitHub: commit it over the same path. OneDrive: upload
+              with the same name and choose "Replace".
+            </p>
+          </details>
+        </li>
+      </ol>
+      <!-- Storage (flows plan M2, DEC-F1): a transport-demo control, below
+           the steps rather than inside one (a collapsed step would hide it),
+           collapsed with the one sentence that says what the cache is.
+           Hidden entirely without a cache store (?nocache=1, no Cache
+           API). -->
       <details id="storage-panel" data-testid="storage-panel">
         <summary>Storage</summary>
         <p>
@@ -217,135 +440,10 @@
           Clear cache
         </button>
       </details>
-      <!-- Print a code (creator step zero; on the page for EVERYONE since the
-           flows plan M3, DEC-F2 - it sat inside the ?author=1 panel, where no
-           creator could find it). Outside #ar-root on purpose: it is not
-           overlay content. Collapsed with an empty tour, opened and prefilled
-           when a tour opens; usable before any upload for the "print first,
-           hang, then author" loop. The QR renders at the TRUE physical size
-           via print CSS cm units, so the paper matches the size the author
-           later mints with - author mode reads the size from HERE. -->
-      <details id="print-panel" data-testid="print-panel">
-        <summary>Print a QR code for this tour</summary>
-        <div class="print-panel-body">
-          <input
-            id="print-url"
-            data-testid="print-url"
-            type="text"
-            autocomplete="off"
-            placeholder="https://… link to the tour .zip"
-          />
-          <label
-            >Printed side length (m)
-            <input
-              id="author-size"
-              data-testid="author-size"
-              type="number"
-              step="0.01"
-              min="0.01"
-            />
-          </label>
-          <label
-            >Code number (1 for the first poster)
-            <input
-              id="author-c"
-              data-testid="author-c"
-              type="number"
-              step="1"
-              min="1"
-              value="1"
-            />
-          </label>
-          <button
-            type="button"
-            id="print-generate"
-            data-testid="print-generate"
-          >
-            Generate QR
-          </button>
-          <div id="print-info" data-testid="print-info"></div>
-          <div id="print-area" hidden>
-            <div id="print-quiet">
-              <canvas id="print-canvas" data-testid="print-canvas"></canvas>
-            </div>
-          </div>
-          <button
-            type="button"
-            id="print-button"
-            data-testid="print-button"
-            hidden
-          >
-            Print at true size
-          </button>
-          <div id="print-url-out" data-testid="print-url-out"></div>
-        </div>
-      </details>
-      <div id="error" role="alert" data-testid="error"></div>
-      <!--
-        AR entry (QR-pose plan M2). Under WebXR DOM Overlay only the subtree
-        of the element passed to initAR composites over the camera feed, so
-        the status line and button MUST stay children of #ar-root (enforced
-        by tests/repo-config/hud-overlay-nesting.test.js).
-      -->
-      <section id="ar-root">
-        <!-- Pressing the AR button with no tour open is a plain AR view, and the
-             viewer pipeline scans for codes from the first frame so a tour
-             opened later still resolves — which reads as "it is already
-             looking for a QR code" unless the page says what a code does. -->
-        <!-- Rewritten for the flows plan M4 (DEC-F3): the earlier line promised
-             location at printed codes, which read as "waiting for a code" on
-             a tour that cannot carry one (feedback F3). -->
-        <p id="ar-hint" data-testid="ar-hint">
-          AR shows the tour's photos where they were taken once your phone's
-          tracking has warmed up - a few steps. A printed tour code, where one
-          hangs, sharpens the placement. AR works without a tour too.
-        </p>
-        <div id="ar-status" data-testid="ar-status"></div>
-        <button type="button" id="enter-ar" data-testid="enter-ar" disabled>
-          Checking AR support…
-        </button>
-        <!-- Author panel (?author=1). Inside #ar-root on purpose: it must
-             stay visible while the AR session composites the DOM overlay. -->
-        <div id="author-panel" hidden data-testid="author-panel">
-          <div id="author-status" data-testid="author-status"></div>
-          <button
-            type="button"
-            id="mint-export"
-            data-testid="mint-export"
-            disabled
-          >
-            Mint GPS anchor
-          </button>
-          <textarea
-            id="author-json"
-            data-testid="author-json"
-            hidden
-            rows="8"
-            readonly
-          ></textarea>
-          <button
-            type="button"
-            id="author-copy"
-            data-testid="author-copy"
-            hidden
-          >
-            Copy JSON
-          </button>
-          <button
-            type="button"
-            id="author-download"
-            data-testid="author-download"
-            hidden
-          >
-            Download the level JSON
-          </button>
-          <p id="author-hint" hidden>
-            Add the downloaded file to your tour zip under <code>qr/</code>,
-            then re-upload the zip to the same URL — viewers pick the change up
-            automatically.
-          </p>
-        </div>
-      </section>
+      <div id="stats" hidden data-testid="stats">
+        <div id="stats-headline"></div>
+        <div id="stats-detail"></div>
+      </div>
       <ul id="gallery" data-testid="gallery"></ul>
     </main>
     <script type="module" src="/src/main.ts"></script>

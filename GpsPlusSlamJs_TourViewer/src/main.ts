@@ -1,26 +1,34 @@
 /**
  * Composition root (flows plan M6, executing the simplification plan's
- * M-1): looks the DOM up once, creates the store, the AR controller and the
- * seams, creates the ONE explicit session object (DEC-T6) and the late-bound
- * hooks, and wires the five concerns in dependency order:
- * print panel → author mode → viewer placement → AR entry → archive open.
- * No behaviour lives here; the e2e suite drives the composed page.
+ * M-1; the guided-setup plan M2 added the mode split): looks the DOM up
+ * once, creates the store, the AR controller and the seams, creates the ONE
+ * explicit session object (DEC-T6) and the late-bound hooks, and wires the
+ * concerns in dependency order: print panel → wizard → visitor screen →
+ * author mode → viewer placement → AR entry → archive open. No behaviour
+ * lives here; the e2e suite drives the composed page.
  */
 
 import {
   createEnableGpsArController,
   getCurrentArPose,
 } from "gps-plus-slam-app-framework/ar";
+import {
+  createEmptyTourManifest,
+  serializeTourManifest,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { TOUR_MANIFEST_ENTRY } from "gps-plus-slam-app-framework/ar/tour-archive";
 import { createGpsPositionHandler } from "gps-plus-slam-app-framework/state";
 import {
   BoundedLocalCacheStore,
   CacheApiStore,
+  downloadZip,
+  packFilesAsZip,
 } from "gps-plus-slam-app-framework/storage";
 
 import { wireArchiveOpen } from "./archive-open.js";
 import { wireArEntry } from "./ar-entry.js";
 import { wireAuthorMode } from "./author-mode.js";
-import { authorModeEnabledFromSearch } from "./author-mode-flag.js";
+import { viewerModeFromSearch } from "./mode.js";
 import { describeOpenError } from "./open-errors.js";
 import { wirePrintPanel } from "./print-panel.js";
 import { getSeams } from "./seams.js";
@@ -30,6 +38,8 @@ import {
   createUnwiredHooks,
 } from "./tour-viewer-session.js";
 import { createViewerPlacement } from "./viewer-placement.js";
+import { wireVisitorScreen } from "./visitor-screen.js";
+import { wireWizard } from "./wizard.js";
 
 /** Keep at most this many archives cached (LRU) — see BoundedLocalCacheStore. */
 const MAX_CACHED_ARCHIVES = 5;
@@ -59,11 +69,11 @@ const cacheStore =
     ? undefined
     : new BoundedLocalCacheStore(new CacheApiStore(), MAX_CACHED_ARCHIVES);
 
-// Author mode (`?author=1`) is read once at boot; switching is a page reload
-// (the controller refuses enable() while a session runs). The seams resolve
-// to the real framework device wiring in production and to the e2e fakes in
-// a DEV Playwright run.
-const authorMode = authorModeEnabledFromSearch(location.search);
+// The mode (DEC-N1) is read once at boot; switching is a page reload (the
+// controller refuses enable() while a session runs). The seams resolve to
+// the real framework device wiring in production and to the e2e fakes in a
+// DEV Playwright run.
+const mode = viewerModeFromSearch(location.search);
 const seams = getSeams();
 const arStore = createTourViewerStore();
 const gpsHandler = createGpsPositionHandler({
@@ -89,11 +99,56 @@ const print = wirePrintPanel({
   printButton: element("print-button"),
   urlOut: element("print-url-out"),
 });
-hooks.presentTourForPrint = print.presentTour;
+
+const wizard = wireWizard({
+  mode,
+  dom: {
+    steps: {
+      host: element<HTMLDetailsElement>("step-host"),
+      print: printPanel,
+      hang: element<HTMLDetailsElement>("step-hang"),
+      finish: element<HTMLDetailsElement>("step-finish"),
+      replace: element<HTMLDetailsElement>("step-replace"),
+    },
+    hangDone: element<HTMLButtonElement>("hang-done"),
+    starterButton: element<HTMLButtonElement>("starter-zip"),
+    visitorLink: element<HTMLAnchorElement>("visitor-link"),
+  },
+  // The starter zip (DEC-N5): an empty manifest, so a creator without a
+  // recording has something to host before printing the code.
+  packStarter: () =>
+    packFilesAsZip([
+      {
+        path: TOUR_MANIFEST_ENTRY,
+        data: serializeTourManifest(createEmptyTourManifest()),
+      },
+    ]),
+  download: downloadZip,
+});
+hooks.presentTourForPrint = (url) => {
+  print.presentTour(url);
+  wizard.presentTour(url);
+};
+
+const visitor = wireVisitorScreen({
+  mode,
+  seams,
+  dom: {
+    screen: element("visitor-screen"),
+    creatorOnly: Array.from(
+      document.querySelectorAll<HTMLElement>(".creator-only"),
+    ),
+    arHint: element("ar-hint"),
+    errorBox,
+  },
+  renderArEntry: () => {
+    hooks.renderArEntry();
+  },
+});
 
 const author = wireAuthorMode({
   ctx,
-  authorMode,
+  mode,
   arStore,
   seams,
   dom: {
@@ -113,7 +168,7 @@ hooks.startAuthorPipeline = author.startAuthorPipeline;
 
 const viewer = createViewerPlacement({
   ctx,
-  authorMode,
+  mode,
   arStore,
   arController,
   seams,
@@ -125,11 +180,12 @@ hooks.tryPlaceTour = viewer.tryPlaceTour;
 
 const arEntry = wireArEntry({
   ctx,
-  authorMode,
+  mode,
   arStore,
   arController,
   gpsHandler,
   seams,
+  locationGate: visitor.locationGate,
   dom: {
     arRoot: element("ar-root"),
     arStatus: element("ar-status"),
@@ -141,6 +197,7 @@ const arEntry = wireArEntry({
   hooks,
 });
 hooks.renderArStatus = arEntry.renderArStatus;
+hooks.renderArEntry = arEntry.renderArEntry;
 
 const archive = wireArchiveOpen({
   ctx,

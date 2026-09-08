@@ -15,6 +15,9 @@ stopCameraFrameCapture; createQrFrontEnd; solveQrPose; getCameraPose;
 getIntrinsics; getScene }` — `controllerDeps` is a
   `Partial<EnableGpsArDeps>` injected into `createEnableGpsArController`
   (empty in production; the e2e fake supplies the full dep set there). The
+  `queryGeolocationPermission` / `requestLocationOnce` are the visitor
+  screen's location gate (guided-setup plan DEC-N2): the Permissions API
+  state, and one `getCurrentPosition` on its own tap. The
   QR quartet (M3) is the author pipeline's device layer: BarcodeDetector
   front end (or `null` — desktop has no fallback by design), the pure-JS
   planar-PnP solver, the current XR-frame pose as tuples (raw WebXR/odom),

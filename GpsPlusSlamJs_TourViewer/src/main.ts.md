@@ -14,7 +14,12 @@ None (app entry point). The `data-testid` contract the e2e suite drives is
 listed in `index.html.md`. The concerns and their modules:
 
 - `print-panel.ts` - the print section (`wirePrintPanel`).
-- `author-mode.ts` - the `?author=1` panel, minting (`wireAuthorMode`).
+- `mode.ts` - the mode from the launch URL (`viewerModeFromSearch`).
+- `wizard.ts` - the creator's guided setup: the steps, the starter zip,
+  the "open as a visitor" link (`wireWizard`).
+- `visitor-screen.ts` - the visitor's consent screen and the location
+  gate (`wireVisitorScreen`).
+- `author-mode.ts` - the creator's AR setup panel, minting (`wireAuthorMode`).
 - `viewer-placement.ts` - the viewer pipeline and the photo placement
   (`createViewerPlacement`).
 - `ar-entry.ts` - the AR entry, the runtime start/end, the status line
@@ -26,15 +31,17 @@ listed in `index.html.md`. The concerns and their modules:
 
 ## Invariants & assumptions
 
-- **Wiring order is dependency order:** print → author → viewer → AR entry
-  → archive open. Each module hands its cross-module entry points to the
-  `hooks` object (`renderArStatus`, `renderAuthorReadout`,
+- **Wiring order is dependency order:** print → wizard → visitor screen →
+  author → viewer → AR entry → archive open. Each module hands its
+  cross-module entry points to the `hooks` object (`renderArStatus`,
+  `renderArEntry`, `renderAuthorReadout`,
   `tryPlaceTour`, `startAuthorPipeline`, `startViewerPipeline`,
   `presentTourForPrint`), and callers read the hooks at call time - which
   is what keeps the modules free of import cycles (`check:cycles` is in
   the gate). A hook read before its owner is wired is the no-op from
   `createUnwiredHooks()`, never a throw.
-- `?author=1` is read once at boot (switching = reload); `?nocache=1` or a
+- The mode (`?qr=` present = visitor, else creator; DEC-N1) is read once
+  at boot (switching = reload); `?nocache=1` or a
   browser without the Cache API means no cache store (the Storage section
   hides).
 - The cache is `BoundedLocalCacheStore(CacheApiStore, 5)`; Drive links go

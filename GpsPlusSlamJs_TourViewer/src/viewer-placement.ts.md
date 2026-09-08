@@ -11,7 +11,7 @@ recording. Its own module since the flows plan M6.
 
 ## Public API
 
-- `createViewerPlacement({ ctx, authorMode, arStore, arController, seams, errorBox, hooks }): ViewerPlacement`
+- `createViewerPlacement({ ctx, mode, arStore, arController, seams, errorBox, hooks }): ViewerPlacement` - places only in visitor mode
   - `startViewerPipeline(): boolean` - creates the viewer tracking
     controller into `ctx.qrController` for THIS AR entry; false without a
     detector (plain AR, still placing photos).
@@ -67,7 +67,7 @@ recording. Its own module since the flows plan M6.
 ```ts
 const viewer = createViewerPlacement({
   ctx,
-  authorMode,
+  mode,
   arStore,
   arController,
   seams,

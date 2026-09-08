@@ -28,6 +28,7 @@ import {
   type ReplayedJoinState,
 } from "./capture-geo-join.js";
 import { placeCapturedImagePlanes, placeImagePlanes } from "./image-planes.js";
+import type { ViewerMode } from "./mode.js";
 import { describeOpenError } from "./open-errors.js";
 import {
   buildViewerControllerConfig,
@@ -63,15 +64,15 @@ export interface ViewerPlacement {
 
 export function createViewerPlacement(deps: {
   ctx: TourViewerSession;
-  authorMode: boolean;
+  mode: ViewerMode;
   arStore: TourViewerStore;
   arController: ArController;
   seams: TourViewerSeams;
   errorBox: HTMLElement;
   hooks: TourViewerHooks;
 }): ViewerPlacement {
-  const { ctx, authorMode, arStore, arController, seams, errorBox, hooks } =
-    deps;
+  const { ctx, mode, arStore, arController, seams, errorBox, hooks } = deps;
+  const authorMode = mode === "creator";
 
   /** Levels are only useful with an open tour; the viewer pipeline reads
    *  them live so a tour opened AFTER entering AR still resolves. */

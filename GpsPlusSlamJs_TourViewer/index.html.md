@@ -2,43 +2,44 @@
 
 ## Purpose
 
-The tour viewer's single page: the paste-a-link form, the live streaming
-stats panel, the error banner, the progressive image gallery, and the AR
-entry (`#ar-root`: a hint, the status line, the AR button, and the
-`?author=1` author panel), plus the collapsed Storage and Print sections
-between the stats panel and the error banner (flows plan M2/M3; the print
-panel sits BELOW Storage since the M1-M4 review fix #5, so "in the Print
-section above" is true from the AR section). Behaviour lives in the five
-wiring modules composed by `src/main.ts` (see `main.ts.md`); the page
-carries only structure and its inline CSS (grid gallery, alpha-hex borders
-— the stylelint csstree validator predates `color-mix()`).
+Two pages in one file (guided-setup plan DEC-N1, 2026-09-08): the plain
+page is the CREATOR'S guided setup, a `?qr=` launch is the VISITOR'S
+screen. Everything marked `.creator-only` is hidden for a visitor
+(`visitor-screen.ts`); `#visitor-screen` is hidden for a creator.
 
-The header copy names BOTH ways in (owner taste round 2026-09-04): a printed
-tour code scanned with the phone camera (the `?qr=` launch that `boot()`
-resolves into an open tour) and a pasted link. The hint above the AR button
-says what pressing it without a tour does — a plain AR view whose code
-scanner only places the visitor once a tour is open — because the viewer
-pipeline scans from the first frame and read as "already searching for a
-code" to the owner.
+- The setup (`#wizard`, `wizard.ts`): collapsible steps, one open at a
+  time. 1 Host (`#step-host`: the starter zip button, the paste-a-link
+  form), 2 Print (`#print-panel`, the print section
+  of the flows plan M3, plus the "open as a visitor" link), 3 Hang
+  (`#step-hang`, the "It hangs - continue" button), 4 Measure and place
+  (`#step-measure`, a plain section wrapping `#ar-root`), 5 Download the
+  rebuilt zip (`#step-finish`, live in M3), 6 Replace the hosted zip
+  (`#step-replace`, provider copy).
+- The visitor screen (`#visitor-screen`): the consent copy above the AR
+  section; the Start button is `#enter-ar`.
+- Below the steps, creator-only: the Storage section (`#storage-panel`, a
+  transport-demo control; inside a collapsed step it would be hidden).
+- Shared: `#error`, `#ar-root` (the DOM-overlay root: hint, status line,
+  button, the setup panel `#author-panel`), `#stats`, `#gallery`.
+
+Behaviour lives in the wiring modules composed by `src/main.ts` (see
+`main.ts.md`); the page carries only structure and its inline CSS
+(alpha-hex borders - the stylelint csstree validator predates `color-mix()`).
 
 ## Public API
 
-The `data-testid` contract the e2e suite drives: `link-input`,
-`open-button`, `storage-panel` (the collapsed `<details>` that holds the
-clear-cache button and its one-sentence explanation - flows plan M2, hidden
-entirely without a cache store), `clear-cache`, `print-panel` (the
-`<details>` holding the print section, OUTSIDE `#ar-root` since flows plan
-M3 - it owns `print-url`, `author-size`, `author-c`, `print-generate`,
-`print-info`, `print-canvas`, `print-button`, `print-url-out`; opened and
-prefilled when a tour opens), `stats`, `error`, `gallery`, `ar-hint`,
-`ar-status`, `enter-ar`, `author-panel`. Renaming one is an e2e-breaking
-change. `#ar-status` and `#enter-ar` must stay children of `#ar-root`
-(WebXR DOM overlay composites only that subtree; enforced by
-`tests/repo-config/hud-overlay-nesting.test.js`). The `#ar-hint` copy (flows
-plan M4, DEC-F3) says what a tour shows - photos where they were taken once
-tracking has warmed up - and that a printed code SHARPENS the placement; it
-no longer promises location at codes a tour may not carry, and it keeps
-"AR works without a tour" (the 2026-09-04 verdict).
+The `data-testid` contract the e2e suite drives: `wizard`, `step-host`,
+`starter-zip`, `link-input`, `open-button`, `storage-panel`,
+`clear-cache`, `print-panel` (owns `print-url`, `author-size`, `author-c`,
+`print-generate`, `print-info`, `print-canvas`, `print-button`,
+`print-url-out`, `visitor-link`), `step-hang`, `hang-done`,
+`step-measure`, `step-finish`, `step-replace`, `visitor-screen`, `stats`,
+`error`, `gallery`, `ar-hint`, `ar-status`, `enter-ar`, `author-panel`.
+Renaming one is an e2e-breaking change. `#ar-hint`, `#ar-status`,
+`#enter-ar` and `#author-panel` must stay children of `#ar-root` (WebXR
+DOM overlay composites only that subtree; enforced by
+`tests/repo-config/hud-overlay-nesting.test.js`). The `#ar-hint` copy is
+the creator's; `visitor-screen.ts` re-words it for a visitor.
 
 ## Invariants & assumptions
 

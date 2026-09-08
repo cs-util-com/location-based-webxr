@@ -2,9 +2,11 @@
  * The AR entry (QR-pose plan M2): the one `enable()` both modes share, the
  * on-running runtime start, the session-end teardown, and the two renderers
  * of the entry's DOM (`#enter-ar`, `#ar-hint`, `#ar-status`). Its own module
- * since the flows plan M6. Author mode (`?author=1`) is read once at boot;
- * switching is a page reload (the controller refuses enable() while a
- * session runs).
+ * since the flows plan M6. The mode (creator setup or visitor, DEC-N1) is
+ * read once at boot; switching is a page reload (the controller refuses
+ * enable() while a session runs). A visitor's tap consults the location
+ * gate first (DEC-N2): while the geolocation permission is not known to be
+ * granted, the tap requests the position and the NEXT tap starts AR.
  */
 
 import type { EnableGpsArState } from "gps-plus-slam-app-framework/ar";
@@ -23,9 +25,11 @@ import {
   endTourArRuntime,
   startTourArRuntime,
 } from "./ar-mode.js";
+import type { ViewerMode } from "./mode.js";
 import { describeOpenError } from "./open-errors.js";
 import type { TourViewerSeams } from "./seams.js";
 import { arStatusLine } from "./tour-flow.js";
+import type { LocationGate } from "./visitor-screen.js";
 import type {
   ArController,
   TourViewerHooks,
@@ -44,35 +48,40 @@ export interface ArEntryDom {
   errorBox: HTMLElement;
 }
 
-/** A property, not a method: it is handed to the hooks object unbound. */
+/** Properties, not methods: they are handed to the hooks object unbound. */
 export interface ArEntry {
   renderArStatus: () => void;
+  /** Re-render the button from the controller state and the location gate. */
+  renderArEntry: () => void;
 }
 
 export function wireArEntry(deps: {
   ctx: TourViewerSession;
-  authorMode: boolean;
+  mode: ViewerMode;
   arStore: TourViewerStore;
   arController: ArController;
   gpsHandler: (position: GpsPosition) => void;
   seams: TourViewerSeams;
+  locationGate: LocationGate;
   dom: ArEntryDom;
   hooks: TourViewerHooks;
 }): ArEntry {
   const {
     ctx,
-    authorMode,
+    mode,
     arStore,
     arController,
     gpsHandler,
     seams,
+    locationGate,
     dom,
     hooks,
   } = deps;
+  const authorMode = mode === "creator";
 
   function renderArStatus(): void {
     dom.arStatus.textContent = arStatusLine({
-      authorMode,
+      mode,
       arStatus: arController.getState().status,
       cameraFrames: ctx.cameraFrameCount,
       tour:
@@ -102,7 +111,7 @@ export function wireArEntry(deps: {
   }
 
   function renderArState(state: EnableGpsArState): void {
-    const view = arButtonView(state, authorMode);
+    const view = arButtonView(state, mode, locationGate.pending());
     dom.enterArButton.disabled = view.disabled;
     dom.enterArButton.textContent = view.label;
     // The printed size is CAPTURED at AR entry (the solves use it) — editing
@@ -170,6 +179,12 @@ export function wireArEntry(deps: {
   }
 
   async function enterAr(): Promise<void> {
+    // The visitor's location-only tap (DEC-N2): request, re-label, and let
+    // the next tap start the session inside its own user activation.
+    if (locationGate.pending()) {
+      await locationGate.request();
+      return;
+    }
     ctx.cameraFrameCount = 0;
     // A refused AUTHOR pipeline (bad size, no detector) keeps AR unstarted —
     // the message is already in the author panel, where the author is
@@ -253,5 +268,10 @@ export function wireArEntry(deps: {
     });
   });
 
-  return { renderArStatus };
+  return {
+    renderArStatus,
+    renderArEntry: () => {
+      renderArState(arController.getState());
+    },
+  };
 }

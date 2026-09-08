@@ -23,7 +23,7 @@ DOM-free and string-exact under test, instead of inline in `main.ts`.
 - `interface ArStatusInput` - mode, controller status, camera-frame count,
   the tour, the viewer pipeline's QR inputs (the `viewerStatusLine` shape),
   the `readiness` (the framework's `OnboardingGuidance` for the current
-  tracking-quality report; null in author mode), the placement, and a
+  tracking-quality report; null in creator mode), the placement, and a
   placement error string.
 - `isPlacementReady(report): boolean` - the placement trigger (flows plan
   M4, DEC-F3): true when `computeOnboardingGuidance(report).phase ===
@@ -38,7 +38,7 @@ DOM-free and string-exact under test, instead of inline in `main.ts`.
   a decline already means the recording path is out and the ring needs a
   code (milestone review #1) - so the line follows the tour's facts at
   render time whatever order the decline and the levels arrived in.
-- `qrSegment(input): string` - the printed-code line. Empty in author mode
+- `qrSegment(input): string` - the printed-code line. Empty in creator mode
   or before the pipeline reports a status.
 - `placementSegment(placement, readiness = null): string` - the placement
   copy; `""` for idle; `waiting-ready` renders `readiness.hint` (or the
@@ -72,7 +72,7 @@ ring`, `reading the walk`).
 
 ```ts
 arStatusLine({
-  authorMode: false,
+  mode: "visitor",
   arStatus: "running",
   cameraFrames: 3,
   tour: { kind: "open", levelCount: 0 },
@@ -88,7 +88,7 @@ arStatusLine({
   placement: { kind: "declined", reason: "no recording in this tour" },
   planesError: null,
 });
-// "Viewer mode — AR running · 3 camera frames · This tour has no printed codes. · nothing to place: this tour has no recording and no printed codes"
+// "Visitor mode — AR running · 3 camera frames · This tour has no printed codes. · nothing to place: this tour has no recording and no printed codes"
 // (the decline on a code-less tour is DERIVED to nothing-to-place: a ring
 // needs a code, so "photo ring (…)" would promise one forever - review #1)
 ```

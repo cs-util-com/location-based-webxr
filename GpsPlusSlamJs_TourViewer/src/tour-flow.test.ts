@@ -21,7 +21,7 @@ import {
  */
 
 const RUNNING_BASE: ArStatusInput = {
-  authorMode: false,
+  mode: "visitor",
   arStatus: "running",
   cameraFrames: 3,
   tour: { kind: "none" },
@@ -41,17 +41,17 @@ const RUNNING_BASE: ArStatusInput = {
 describe("arStatusLine - the fixed prefix", () => {
   it("renders mode and status while the session is not running", () => {
     expect(arStatusLine({ ...RUNNING_BASE, arStatus: "ready" })).toBe(
-      "Viewer mode — ready",
+      "Visitor mode — ready",
     );
     expect(
-      arStatusLine({ ...RUNNING_BASE, authorMode: true, arStatus: "starting" }),
-    ).toBe("Author mode — starting");
+      arStatusLine({ ...RUNNING_BASE, mode: "creator", arStatus: "starting" }),
+    ).toBe("Creator mode — starting");
   });
 
   it("keeps the e2e-pinned running prefix exactly", () => {
     // ar-mode.spec.js asserts this literal text; the prefix is a contract.
     expect(arStatusLine(RUNNING_BASE)).toBe(
-      "Viewer mode — AR running · 3 camera frames",
+      "Visitor mode — AR running · 3 camera frames",
     );
   });
 });
@@ -101,7 +101,7 @@ describe("qrSegment - the printed-code line", () => {
   });
 
   it("is empty in author mode and before the pipeline reports", () => {
-    expect(qrSegment({ ...RUNNING_BASE, authorMode: true, qr: scanning })).toBe(
+    expect(qrSegment({ ...RUNNING_BASE, mode: "creator", qr: scanning })).toBe(
       "",
     );
     expect(qrSegment(RUNNING_BASE)).toBe("");
@@ -207,7 +207,7 @@ describe("readiness - the placement trigger and its waiting copy (F3, flows plan
       placement: { kind: "nothing-to-place" },
     };
     expect(arStatusLine(input)).toBe(
-      "Viewer mode — AR running · 3 camera frames · nothing to place: this tour has no recording and no printed codes",
+      "Visitor mode — AR running · 3 camera frames · nothing to place: this tour has no recording and no printed codes",
     );
   });
 
@@ -274,7 +274,7 @@ describe("arStatusLine - composition", () => {
         planesError: "That file does not exist.",
       }),
     ).toBe(
-      "Viewer mode — AR running · 3 camera frames · Scanning for the printed code… · photo ring (no recording in this tour) · images failed: That file does not exist.",
+      "Visitor mode — AR running · 3 camera frames · Scanning for the printed code… · photo ring (no recording in this tour) · images failed: That file does not exist.",
     );
   });
 
@@ -289,6 +289,6 @@ describe("arStatusLine - composition", () => {
           total: 2,
         },
       }),
-    ).toBe("Viewer mode — AR running · 3 camera frames · loading photos 1/2…");
+    ).toBe("Visitor mode — AR running · 3 camera frames · loading photos 1/2…");
   });
 });

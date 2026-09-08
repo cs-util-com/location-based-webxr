@@ -61,7 +61,7 @@ const base = (
   tour: ArStatusInput["tour"],
   placement: PlacementState,
 ): ArStatusInput => ({
-  authorMode: false,
+  mode: "visitor",
   arStatus: "running",
   cameraFrames: 1,
   tour,

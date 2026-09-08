@@ -48,6 +48,8 @@ import { enableArWorldGroupAlignment } from "gps-plus-slam-app-framework/visuali
 import type { SubscribableStore } from "gps-plus-slam-app-framework/state";
 import type { Object3D } from "three";
 
+import type { LocationPermission } from "./visitor-screen.js";
+
 /** The device functions a Playwright e2e fake may override. */
 export interface TourViewerSeams {
   /**
@@ -82,6 +84,12 @@ export interface TourViewerSeams {
    *  (the framework's parenting rule; `arWorldGroup` children would need
    *  alignment-inverse coordinates instead). */
   getScene(): Object3D | null;
+  /** The geolocation permission state, "unknown" without the Permissions
+   *  API - the visitor screen's location gate reads it once at boot. */
+  queryGeolocationPermission(): Promise<LocationPermission>;
+  /** One position request on its own tap (the gate's first step); true
+   *  when a position arrived. */
+  requestLocationOnce(): Promise<boolean>;
 }
 
 declare global {
@@ -133,6 +141,34 @@ export const realSeams: TourViewerSeams = {
   },
   createQrDebugView,
   getScene,
+  queryGeolocationPermission: async () => {
+    try {
+      const status = await navigator.permissions.query({
+        name: "geolocation",
+      });
+      return status.state;
+    } catch {
+      return "unknown";
+    }
+  },
+  requestLocationOnce: () =>
+    new Promise<boolean>((resolve) => {
+      if (!("geolocation" in navigator)) {
+        resolve(false);
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        () => {
+          resolve(true);
+        },
+        () => {
+          resolve(false);
+        },
+        // A cached fix is fine: the tap only needs the PERMISSION settled
+        // before the session's own watch starts.
+        { timeout: 15_000, maximumAge: 60_000 },
+      );
+    }),
 };
 
 /**

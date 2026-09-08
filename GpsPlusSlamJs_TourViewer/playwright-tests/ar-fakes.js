@@ -60,6 +60,10 @@ export async function installTourViewerArFakes(page) {
         };
       },
       sessionEndCallback: /** @type {any} */ (null),
+      /** The visitor screen's location gate (DEC-N2): what the permission
+       *  query answers, and how many location-only taps were made. */
+      locationPermission: "granted",
+      locationRequests: 0,
       /** Simulate a SYSTEM session end (the Android back gesture). */
       endXrSession() {
         test.sessionEndCallback?.({ requestedByApp: false });
@@ -139,6 +143,13 @@ export async function installTourViewerArFakes(page) {
       },
       startCameraFrameCapture: (config) => {
         test.captureCalls.push(config ?? {});
+      },
+      queryGeolocationPermission: () =>
+        Promise.resolve(test.locationPermission),
+      requestLocationOnce: () => {
+        test.locationRequests += 1;
+        test.locationPermission = "granted";
+        return Promise.resolve(true);
       },
       stopCameraFrameCapture: () => {
         test.stopCaptureCalls += 1;

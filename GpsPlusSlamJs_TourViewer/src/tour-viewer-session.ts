@@ -53,6 +53,9 @@ export type ArController = ReturnType<typeof createEnableGpsArController>;
  */
 export interface TourViewerHooks {
   renderArStatus(): void;
+  /** Re-render the AR button (its label depends on the visitor screen's
+   *  location gate, which resolves asynchronously). */
+  renderArEntry(): void;
   renderAuthorReadout(): void;
   tryPlaceTour(): void;
   startAuthorPipeline(): boolean;
@@ -64,6 +67,7 @@ export interface TourViewerHooks {
 export function createUnwiredHooks(): TourViewerHooks {
   return {
     renderArStatus: () => undefined,
+    renderArEntry: () => undefined,
     renderAuthorReadout: () => undefined,
     tryPlaceTour: () => undefined,
     startAuthorPipeline: () => false,

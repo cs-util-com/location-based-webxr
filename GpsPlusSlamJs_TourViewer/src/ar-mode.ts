@@ -35,6 +35,8 @@ import type {
 } from "gps-plus-slam-app-framework/state";
 import type { Object3D } from "three";
 
+import type { ViewerMode } from "./mode.js";
+
 /**
  * Camera-frame cadence (~8 Hz, the detection cadence the QR plan budgets
  * for). The frame source is the SINGLE cadence owner (Option A): the QR
@@ -49,7 +51,7 @@ export interface ArButtonView {
   disabled: boolean;
 }
 
-/** The mode-independent states (author mode only relabels ready/running). */
+/** The mode-independent states (the mode only relabels ready/running). */
 const STATIC_BUTTON_VIEWS: Record<
   "checking" | "unsupported" | "starting" | "stopping",
   ArButtonView
@@ -60,20 +62,28 @@ const STATIC_BUTTON_VIEWS: Record<
   stopping: { label: "Stopping…", disabled: true },
 };
 
-/** Pure state → button mapping (MinimalExample's `buttonView` pattern). */
+/** Pure state → button mapping (MinimalExample's `buttonView` pattern).
+ *  `locationPending` is the visitor screen's location gate (DEC-N2): while
+ *  it holds, a ready button asks for the location first. */
 export function arButtonView(
   state: EnableGpsArState,
-  authorMode: boolean,
+  mode: ViewerMode,
+  locationPending = false,
 ): ArButtonView {
   switch (state.status) {
     case "ready":
       return {
-        label: authorMode ? "Start AR authoring" : "Start AR view",
+        label:
+          mode === "creator"
+            ? "Start AR setup"
+            : locationPending
+              ? "Allow location"
+              : "Start the tour",
         disabled: false,
       };
     case "running":
       return {
-        label: authorMode ? "Authoring in AR" : "AR running",
+        label: mode === "creator" ? "Setting up in AR" : "Tour running",
         disabled: true,
       };
     case "error":

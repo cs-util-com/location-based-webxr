@@ -11,7 +11,14 @@ since the flows plan M6.
 
 ## Public API
 
-- `wireArEntry({ ctx, authorMode, arStore, arController, gpsHandler, seams, dom, hooks }): ArEntry`
+- `wireArEntry({ ctx, mode, arStore, arController, gpsHandler, seams, locationGate, dom, hooks }): ArEntry`
+  - `mode` (`"creator" | "visitor"`, guided-setup plan DEC-N1) replaces the
+    flows plan's `authorMode`; creator mode runs the author pipeline.
+  - `locationGate` (from `visitor-screen.ts`, DEC-N2): while `pending()`,
+    a tap requests the location and returns without starting a session;
+    the button reads "Allow location" through `arButtonView`.
+  - `ArEntry.renderArEntry()` re-renders the button from the controller
+    state and the gate (the gate resolves asynchronously at boot).
   - `ArEntryDom { arRoot; arStatus; arHint; enterArButton; sizeInput; errorBox }`
   - `ArEntry.renderArStatus()` - composes `#ar-status` from the session
     object; assigned to `hooks.renderArStatus` by `main.ts` so the other
@@ -46,7 +53,8 @@ since the flows plan M6.
 ```ts
 const arEntry = wireArEntry({
   ctx,
-  authorMode,
+  mode,
+  locationGate: visitor.locationGate,
   arStore,
   arController,
   gpsHandler,

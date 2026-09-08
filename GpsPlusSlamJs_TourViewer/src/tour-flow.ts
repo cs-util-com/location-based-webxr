@@ -22,6 +22,7 @@ import {
   type TrackingQualityReport,
 } from "gps-plus-slam-app-framework/state";
 
+import type { ViewerMode } from "./mode.js";
 import { viewerStatusLine } from "./qr-viewer-mode.js";
 
 /** What the page knows about the open tour, for copy decisions (reached
@@ -78,7 +79,7 @@ export type PlacementState =
     };
 
 export interface ArStatusInput {
-  authorMode: boolean;
+  mode: ViewerMode;
   arStatus: EnableGpsArState["status"];
   cameraFrames: number;
   tour: TourFlowTour;
@@ -112,7 +113,7 @@ export function isPlacementReady(
 /** The printed-code line: the viewer pipeline's status, with the no-codes
  *  rule applied for an open tour. Empty in author mode. */
 export function qrSegment(input: ArStatusInput): string {
-  if (input.authorMode) return "";
+  if (input.mode === "creator") return "";
   const { qr, tour } = input;
   const nothingDetected =
     qr.unknownCode === null &&
@@ -177,7 +178,7 @@ export function clearCacheLabel(removed: number): string {
 
 /** The whole `#ar-status` text for a state. */
 export function arStatusLine(input: ArStatusInput): string {
-  const mode = input.authorMode ? "Author mode" : "Viewer mode";
+  const mode = input.mode === "creator" ? "Creator mode" : "Visitor mode";
   if (input.arStatus !== "running") {
     return `${mode} — ${input.arStatus}`;
   }

@@ -29,6 +29,7 @@ import {
   authorStatusLine,
   buildAuthorControllerConfig,
 } from "./qr-author-mode.js";
+import type { ViewerMode } from "./mode.js";
 import type { TourViewerSeams } from "./seams.js";
 import type {
   TourViewerSession,
@@ -59,12 +60,13 @@ export interface AuthorMode {
 
 export function wireAuthorMode(deps: {
   ctx: TourViewerSession;
-  authorMode: boolean;
+  mode: ViewerMode;
   arStore: TourViewerStore;
   seams: TourViewerSeams;
   dom: AuthorModeDom;
 }): AuthorMode {
-  const { ctx, authorMode, arStore, seams, dom } = deps;
+  const { ctx, mode, arStore, seams, dom } = deps;
+  const authorMode = mode === "creator";
 
   dom.panel.hidden = !authorMode;
   dom.sizeInput.value = String(AUTHOR_DEFAULT_SIZE_M);

@@ -20,6 +20,18 @@ test.beforeEach(async ({ page }) => {
   await installTourViewerArFakes(page);
 });
 
+const RANGES_ARCHIVE = "http://127.0.0.1:5197/ranges-ok/tour.zip";
+
+/** The visitor's way in (DEC-N1): a `?qr=` launch, which opens the tour on
+ *  boot and shows the visitor screen instead of the setup. */
+async function openAsVisitor(page, url, imageCount = 8) {
+  await page.goto(`/?qr=${encodeURIComponent(url)}`);
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(
+    imageCount,
+    { timeout: 15000 },
+  );
+}
+
 async function enterAr(page) {
   const button = page.getByTestId("enter-ar");
   await expect(button).toBeEnabled({ timeout: 10000 }); // support probe done
@@ -60,37 +72,63 @@ async function seedAlignment(page) {
   });
 }
 
-test("the start screen names both ways in, and says what AR does without a tour", async ({
+test("the plain page is the creator's setup; a ?qr= launch is the visitor's screen", async ({
   page,
 }) => {
-  // Why this test matters (owner taste round 2026-09-04): pressing the AR
-  // button with no link pasted starts the code scanner at once, which read as
-  // a bug. It is by design — the scanner places a visitor inside a tour opened
-  // before OR after entering AR — but nothing on the page said so, and the
-  // header only ever described the pasted link. Both entries and the hint
-  // must be on screen BEFORE any tour is open, i.e. on a bare boot.
+  // Why this test matters (guided-setup plan DEC-N1): the two pages share
+  // one HTML file, and a visitor scanning a printed code must never see the
+  // setup, nor a creator the consent screen. The mode is the launch
+  // parameter's presence and nothing else.
   await page.goto("/");
-  const header = page.locator("header p");
-  await expect(header).toContainText("printed tour code");
-  await expect(header).toContainText("paste a link");
-  const hint = page.getByTestId("ar-hint");
-  await expect(hint).toBeVisible();
-  await expect(hint).toContainText("AR works without a tour");
-  // Flows plan M4 (DEC-F3): the hint says what a tour shows (photos once
-  // tracking warmed up) and that a code SHARPENS - it no longer promises
-  // location at codes a tour may not carry.
-  await expect(hint).toContainText("printed tour code");
-  await expect(hint).toContainText("tracking has warmed up");
+  await expect(page.getByTestId("wizard")).toBeVisible();
+  await expect(page.getByTestId("step-host")).toHaveAttribute("open", "");
+  await expect(page.getByTestId("print-url")).toBeHidden(); // step 2 collapsed
+  await expect(page.getByTestId("visitor-screen")).toBeHidden();
+  await expect(page.getByTestId("enter-ar")).toHaveText("Start AR setup");
+
+  await openAsVisitor(page, RANGES_ARCHIVE);
+  await expect(page.getByTestId("visitor-screen")).toBeVisible();
+  await expect(page.getByTestId("visitor-screen")).toContainText("camera");
+  await expect(page.getByTestId("wizard")).toBeHidden();
+  await expect(page.getByTestId("link-input")).toBeHidden();
+  await expect(page.getByTestId("ar-hint")).toContainText("printed code");
+  await expect(page.getByTestId("enter-ar")).toHaveText("Start the tour");
 });
 
-test("viewer mode boots to running: session started, alignment bound, capture at 8 Hz", async ({
+test("a first-time visitor is asked for the location on its own tap, then starts the tour on the next (DEC-N2)", async ({
   page,
 }) => {
-  await page.goto("/");
-  await expect(page.getByTestId("enter-ar")).toHaveText("Start AR view");
+  // Why this test matters (plan review #12): a WebXR session needs a user
+  // activation and the framework awaits the geolocation prompt before
+  // initAR, so a visitor answering the prompt would spend the activation.
+  // The gate makes the first tap a location-only request.
+  await page.addInitScript(() => {
+    // Runs after the fakes' init script: the permission reads "prompt".
+    const t = /** @type {any} */ (window).__tourViewerTest;
+    if (t) t.locationPermission = "prompt";
+  });
+  await openAsVisitor(page, RANGES_ARCHIVE);
+  const button = page.getByTestId("enter-ar");
+  await expect(button).toHaveText("Allow location", { timeout: 10000 });
+  await button.click();
+  await expect(button).toHaveText("Start the tour");
+  const state = await page.evaluate(() => {
+    const t = /** @type {any} */ (window).__tourViewerTest;
+    return { requests: t.locationRequests, initAR: t.initARCalls.length };
+  });
+  expect(state).toEqual({ requests: 1, initAR: 0 }); // no session yet
+  await button.click();
+  await expect(button).toHaveText("Tour running");
+});
+
+test("visitor mode boots to running: session started, alignment bound, capture at 8 Hz", async ({
+  page,
+}) => {
+  await openAsVisitor(page, RANGES_ARCHIVE);
+  await expect(page.getByTestId("enter-ar")).toHaveText("Start the tour");
   await expect(page.getByTestId("ar-hint")).toBeVisible();
   await enterAr(page);
-  await expect(page.getByTestId("enter-ar")).toHaveText("AR running");
+  await expect(page.getByTestId("enter-ar")).toHaveText("Tour running");
   // `#ar-root` is the DOM overlay: the start-screen hint must not sit over
   // the camera feed for the whole session (milestone review, 2026-09-05).
   await expect(page.getByTestId("ar-hint")).toBeHidden();
@@ -129,9 +167,9 @@ test("viewer mode boots to running: session started, alignment bound, capture at
 test("camera frames flow through the foundation and surface in the status line", async ({
   page,
 }) => {
-  await page.goto("/");
+  await openAsVisitor(page, RANGES_ARCHIVE);
   await enterAr(page);
-  await expect(page.getByTestId("enter-ar")).toHaveText("AR running");
+  await expect(page.getByTestId("enter-ar")).toHaveText("Tour running");
 
   await page.evaluate(() => {
     /** @type {any} */ (window).__tourViewerTest.emitFrames(3);
@@ -139,18 +177,18 @@ test("camera frames flow through the foundation and surface in the status line",
   // containText, not exact: the viewer QR pipeline appends its own status
   // segment to the same line once frames start flowing (M4).
   await expect(page.getByTestId("ar-status")).toContainText(
-    "Viewer mode — AR running · 3 camera frames",
+    "Visitor mode — AR running · 3 camera frames",
   );
 });
 
-test("author mode (?author=1) boots the same foundation under its own labels", async ({
+test("creator mode (the plain page) boots the same foundation under its own labels", async ({
   page,
 }) => {
-  await page.goto("/?author=1");
-  await expect(page.getByTestId("enter-ar")).toHaveText("Start AR authoring");
+  await page.goto("/");
+  await expect(page.getByTestId("enter-ar")).toHaveText("Start AR setup");
   await enterAr(page);
-  await expect(page.getByTestId("enter-ar")).toHaveText("Authoring in AR");
-  await expect(page.getByTestId("ar-status")).toContainText("Author mode");
+  await expect(page.getByTestId("enter-ar")).toHaveText("Setting up in AR");
+  await expect(page.getByTestId("ar-status")).toContainText("Creator mode");
 
   const wiring = await page.evaluate(() => {
     const t = /** @type {any} */ (window).__tourViewerTest;
@@ -177,12 +215,12 @@ test("a system session end tears the runtime down, and a re-entry starts a clean
   // alignment solve.
   await page.goto("/");
   await enterAr(page);
-  await expect(page.getByTestId("enter-ar")).toHaveText("AR running");
+  await expect(page.getByTestId("enter-ar")).toHaveText("Setting up in AR");
 
   await page.evaluate(() => {
     /** @type {any} */ (window).__tourViewerTest.endXrSession();
   });
-  await expect(page.getByTestId("enter-ar")).toHaveText("Start AR view");
+  await expect(page.getByTestId("enter-ar")).toHaveText("Start AR setup");
   const afterEnd = await page.evaluate(() => {
     const t = /** @type {any} */ (window).__tourViewerTest;
     return {
@@ -194,7 +232,7 @@ test("a system session end tears the runtime down, and a re-entry starts a clean
   expect(afterEnd.isRecording).toBe(false);
 
   await enterAr(page);
-  await expect(page.getByTestId("enter-ar")).toHaveText("AR running");
+  await expect(page.getByTestId("enter-ar")).toHaveText("Setting up in AR");
   const afterReenter = await page.evaluate(() => {
     const t = /** @type {any} */ (window).__tourViewerTest;
     return {
@@ -216,10 +254,10 @@ test("author mode mints and exports a level that the parser round-trips", async 
   // real serializer — and asserts the exported JSON is a parseable level
   // with a geo pose. Frame-exactness is pinned by the unit tests; this
   // proves the pieces are actually wired to each other.
-  await page.goto("/?author=1");
+  await page.goto("/");
   await expect(page.getByTestId("author-panel")).toBeVisible();
   await enterAr(page);
-  await expect(page.getByTestId("enter-ar")).toHaveText("Authoring in AR");
+  await expect(page.getByTestId("enter-ar")).toHaveText("Setting up in AR");
   await expect(page.getByTestId("author-status")).toHaveText(
     /point the camera/i,
   );
@@ -319,9 +357,9 @@ test("author mode mints and exports a level that the parser round-trips", async 
   await page.evaluate(() => {
     /** @type {any} */ (window).__tourViewerTest.endXrSession();
   });
-  await expect(page.getByTestId("enter-ar")).toHaveText("Start AR authoring");
+  await expect(page.getByTestId("enter-ar")).toHaveText("Start AR setup");
   await enterAr(page);
-  await expect(page.getByTestId("enter-ar")).toHaveText("Authoring in AR");
+  await expect(page.getByTestId("enter-ar")).toHaveText("Setting up in AR");
   await expect
     .poll(
       async () => {
@@ -348,15 +386,10 @@ test("a recording-carrying tour places photos at CAPTURE SPOTS, not the ring", a
   // silent decline that still shows a ring is exactly the failure the
   // taxonomy exists to make visible.
   const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/recording-tour.zip";
-  await page.goto("/");
-  await page.getByTestId("link-input").fill(ARCHIVE);
-  await page.getByTestId("open-button").click();
-  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(2, {
-    timeout: 15000,
-  });
+  await openAsVisitor(page, ARCHIVE, 2);
 
   await enterAr(page);
-  await expect(page.getByTestId("enter-ar")).toHaveText("AR running");
+  await expect(page.getByTestId("enter-ar")).toHaveText("Tour running");
 
   await page.evaluate(() => {
     const store = /** @type {any} */ (window).__tourViewerTest.alignmentStore;
@@ -473,12 +506,7 @@ test("a tour with no recording and no printed codes says so, instead of scanning
   // Why this matters (feedback F3): the reporter's zip could not carry a
   // code, and the old line promised one forever.
   const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/plain-tour.zip";
-  await page.goto("/");
-  await page.getByTestId("link-input").fill(ARCHIVE);
-  await page.getByTestId("open-button").click();
-  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
-    timeout: 15000,
-  });
+  await openAsVisitor(page, ARCHIVE, 8);
   await enterAr(page);
   await forceTrackingReady(page);
   await expect
@@ -509,12 +537,7 @@ test("without a QR detector the photos still land at capture spots (review #2)",
     seams.createQrFrontEnd = () => null;
   });
   const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/recording-tour.zip";
-  await page.goto("/");
-  await page.getByTestId("link-input").fill(ARCHIVE);
-  await page.getByTestId("open-button").click();
-  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(2, {
-    timeout: 15000,
-  });
+  await openAsVisitor(page, ARCHIVE, 2);
   await enterAr(page);
   await seedAlignment(page);
   await forceTrackingReady(page);
@@ -535,15 +558,10 @@ test("a re-entered session places the tour again once ITS tracking is ready (rev
   page,
 }) => {
   const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/recording-tour.zip";
-  await page.goto("/");
-  await page.getByTestId("link-input").fill(ARCHIVE);
-  await page.getByTestId("open-button").click();
-  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(2, {
-    timeout: 15000,
-  });
+  await openAsVisitor(page, ARCHIVE, 2);
   for (const entry of [1, 2]) {
     await enterAr(page);
-    await expect(page.getByTestId("enter-ar")).toHaveText("AR running");
+    await expect(page.getByTestId("enter-ar")).toHaveText("Tour running");
     await seedAlignment(page);
     await forceTrackingReady(page);
     await expect
@@ -565,7 +583,7 @@ test("a re-entered session places the tour again once ITS tracking is ready (rev
     await page.evaluate(() => {
       /** @type {any} */ (window).__tourViewerTest.endXrSession();
     });
-    await expect(page.getByTestId("enter-ar")).toHaveText("Start AR view");
+    await expect(page.getByTestId("enter-ar")).toHaveText("Start the tour");
     // The session end disposes the planes; the next entry places anew.
     const afterEnd = await page.evaluate(
       () =>
@@ -585,15 +603,10 @@ test("viewer mode relocalizes against the tour's level: budgeted votes, marker, 
   // anchor). The budget is the guardrail: without it every locked frame
   // votes and a lingering visitor pins the alignment centroid.
   const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/tour.zip";
-  await page.goto("/");
-  await page.getByTestId("link-input").fill(ARCHIVE);
-  await page.getByTestId("open-button").click();
-  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
-    timeout: 15000,
-  });
+  await openAsVisitor(page, ARCHIVE, 8);
 
   await enterAr(page);
-  await expect(page.getByTestId("enter-ar")).toHaveText("AR running");
+  await expect(page.getByTestId("enter-ar")).toHaveText("Tour running");
 
   // The session zero + a few real fixes (the alignment the votes refine).
   await seedAlignment(page);
@@ -670,8 +683,13 @@ test("a scanned code with no level reads as unknown instead of flapping", async 
 }) => {
   // The deferred negative cache (delta #8): a rejecting fetch would flap
   // the controller error↔scanning at the detection cadence; the placeholder
-  // resolves once and the visitor gets a plain answer.
-  await page.goto("/");
+  // resolves once and the visitor gets a plain answer. A launch whose
+  // archive is gone still boots VISITOR mode (the mode is the parameter's
+  // presence), which is the "no tour open" visitor state.
+  await page.goto("/?qr=http%3A%2F%2F127.0.0.1%3A5197%2Fnope%2Fgone.zip");
+  await expect(page.getByTestId("error")).toContainText("does not exist", {
+    timeout: 15000,
+  });
   await enterAr(page);
   await page.evaluate((text) => {
     /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
@@ -782,6 +800,12 @@ test("opening a tour opens the print panel prefilled with the tour's link", asyn
   });
   await expect(page.getByTestId("print-url")).toBeVisible();
   await expect(page.getByTestId("print-url")).toHaveValue(ARCHIVE);
+  // Step 1 collapsed, step 2 open (wizard.ts): one step at a time.
+  await expect(page.getByTestId("step-host")).not.toHaveAttribute("open", "");
+  // The tester's way into the visitor path (DEC-N1, plan review #13).
+  const link = page.getByTestId("visitor-link");
+  await expect(link).toBeVisible();
+  await expect(link).toHaveAttribute("href", /\?qr=http/);
   // The size field is a creator's print input: NOT frozen by a viewer
   // session (review #17) - it is only captured in author mode.
   await expect(page.getByTestId("author-size")).toBeEnabled();

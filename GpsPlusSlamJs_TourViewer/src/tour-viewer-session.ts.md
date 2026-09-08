@@ -30,7 +30,7 @@ lives here.
   the store factory both modes share (with the opt-in `qrDetected` slice)
   and the two handle types the wiring modules take.
 - `interface TourViewerHooks` / `createUnwiredHooks()` - the late-bound
-  cross-module calls (`renderArStatus`, `renderAuthorReadout`,
+  cross-module calls (`renderArStatus`, `renderArEntry`, `renderAuthorReadout`,
   `tryPlaceTour`, `startAuthorPipeline`, `startViewerPipeline`,
   `presentTourForPrint`), no-ops until their owner module is wired.
   (`QrController` and `QrDebugView` are module-private: reached through
