@@ -54,6 +54,14 @@ None (app entry point). Interesting seams for the e2e suite are the
   the glue marker rides detections in BOTH modes, and the first voted lock
   places the image ring (scene root, raw NUE) — all torn down with the AR
   session and on tour close.
+- **The AR status line is composed by `tour-flow.ts`** (flows plan M1,
+  2026-09-07): `renderArStatus` only assembles the input - mode, controller
+  status, camera frames, the open tour (`hasRecording`, level count), the
+  viewer pipeline's QR inputs, the `PlacementState` and the placement error
+  - and writes `arStatusLine(...)` into `#ar-status`. Every placement
+    outcome is a tagged state (`placing`/`placed`/`declined`), never a
+    free-form string composed here; the copy and its rules (the no-codes
+    line for an open tour with zero levels) are pinned by `tour-flow.test.ts`.
 - **AR entry (M2):** `?author=1` is read once at boot (switching = reload);
   `#ar-status` and `#enter-ar` must stay DOM children of `#ar-root` — the
   `initAR` container is the WebXR DOM-Overlay root, so only its subtree is

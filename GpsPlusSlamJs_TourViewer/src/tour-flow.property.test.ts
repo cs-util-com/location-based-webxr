@@ -1,0 +1,124 @@
+import { describe, expect, it } from "vitest";
+import fc from "fast-check";
+
+import {
+  arStatusLine,
+  placementSegment,
+  qrSegment,
+  type ArStatusInput,
+  type PlacementState,
+} from "./tour-flow.js";
+
+/**
+ * Why these properties matter (flows plan M1, review finding #7/#16): the
+ * unit tests pin examples; these pin the RULES the copy must obey for every
+ * state the page can be in - the no-codes rule is scoped to an OPEN tour
+ * (scanning with no tour open is by design, DEC-T9), a decline reason is
+ * never paraphrased away, and no non-idle placement renders as silence.
+ */
+
+const SCANNING = { state: "scanning" } as unknown as NonNullable<
+  ArStatusInput["qr"]["status"]
+>;
+
+const QR_QUIET: ArStatusInput["qr"] = {
+  status: SCANNING,
+  unknownCode: null,
+  unusableCode: null,
+  votedLocks: 0,
+  lockedText: null,
+  reprojectionErrorPx: null,
+};
+
+const arbNonIdlePlacement = (): fc.Arbitrary<PlacementState> =>
+  fc.oneof(
+    fc.record({
+      kind: fc.constant("placing" as const),
+      phase: fc.constantFrom(
+        "reading-walk" as const,
+        "loading-photos" as const,
+      ),
+      done: fc.nat({ max: 500 }),
+      total: fc.nat({ max: 500 }),
+    }),
+    fc.record({
+      kind: fc.constant("placed" as const),
+      placedKind: fc.constant("capture-spots" as const),
+      count: fc.nat({ max: 500 }),
+      fixes: fc.nat({ max: 500 }),
+      gpsAccuracyMedianM: fc.option(
+        fc.double({ min: 0, max: 100, noNaN: true }),
+        { nil: null },
+      ),
+    }),
+    fc.record({
+      kind: fc.constant("declined" as const),
+      reason: fc.string({ minLength: 1, maxLength: 40 }),
+    }),
+  );
+
+const base = (
+  tour: ArStatusInput["tour"],
+  placement: PlacementState,
+): ArStatusInput => ({
+  authorMode: false,
+  arStatus: "running",
+  cameraFrames: 1,
+  tour,
+  qr: QR_QUIET,
+  placement,
+  planesError: null,
+});
+
+describe("tour-flow - copy rules", () => {
+  it("an open tour with zero levels never says 'Scanning', whatever the recording flag", () => {
+    fc.assert(
+      fc.property(fc.boolean(), (hasRecording) => {
+        const open = base(
+          { kind: "open", levelCount: 0, hasRecording },
+          { kind: "idle" },
+        );
+        expect(qrSegment(open)).not.toContain("Scanning");
+        expect(arStatusLine(open)).not.toContain("Scanning");
+      }),
+    );
+  });
+
+  it("with no tour open the DEC-T9 scanning line stays, for any frame count", () => {
+    fc.assert(
+      fc.property(fc.nat({ max: 100_000 }), (cameraFrames) => {
+        const closed = {
+          ...base({ kind: "none" }, { kind: "idle" }),
+          cameraFrames,
+        };
+        expect(qrSegment(closed)).toBe("Scanning for the printed code…");
+        expect(arStatusLine(closed)).toContain(
+          "Scanning for the printed code…",
+        );
+      }),
+    );
+  });
+
+  it("every non-idle placement renders text, and the composed line carries it unchanged", () => {
+    fc.assert(
+      fc.property(arbNonIdlePlacement(), (placement) => {
+        const segment = placementSegment(placement);
+        expect(segment.length).toBeGreaterThan(0);
+        const line = arStatusLine(
+          base({ kind: "open", levelCount: 1, hasRecording: true }, placement),
+        );
+        expect(line.endsWith(` · ${segment}`)).toBe(true);
+      }),
+    );
+  });
+
+  it("a decline reason appears verbatim", () => {
+    fc.assert(
+      fc.property(fc.string({ minLength: 1, maxLength: 40 }), (reason) => {
+        expect(placementSegment({ kind: "declined", reason })).toContain(
+          reason,
+        );
+      }),
+    );
+  });
+});

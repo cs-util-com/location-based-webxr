@@ -24,7 +24,10 @@ loading with MIME types, and the poisoned-cache recovery loop.
 
 - `openTourSession(url, options?): Promise<TourSession>` with
   `OpenTourOptions { fetchImpl?; cacheStore?; googleDriveApiKey?; corsProxyBaseUrl?; onStats? }`
-- `TourSession { entries; archive; stats(); loadEntry(filename); close() }`
+- `TourSession { entries; archive; hasRecording; stats(); loadEntry(filename); close() }`
+  — `hasRecording` is the synchronous `actions/` pre-check
+  `loadRecordingActions()` applies (a wrapping folder tolerated), exposed
+  for the page's flow copy (`tour-flow.ts`, flows plan M1).
 - `TourEntry { filename; size; isImage }` (reached via `TourSession.entries`, not separately exported),
   `StreamStats { networkRequests; networkBytes; cacheReads; cacheBytes; origin }`
   — `origin` tracks the LATEST read, flipping to `'cache'` once the warm

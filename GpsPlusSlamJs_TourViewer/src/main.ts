@@ -56,7 +56,6 @@ import {
 import {
   buildViewerControllerConfig,
   imagePlaneRingNue,
-  viewerStatusLine,
 } from "./qr-viewer-mode.js";
 import QRCode from "qrcode";
 import {
@@ -84,6 +83,7 @@ import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/fr
 import { getSeams } from "./seams.js";
 import { resolveQrPayload } from "gps-plus-slam-app-framework/utils/qr-payload/qr-launch-dispatch";
 import { toStatsView } from "./stats-view.js";
+import { arStatusLine, type PlacementState } from "./tour-flow.js";
 import { openTourSession, type TourSession } from "./tour-session.js";
 
 /** Bare-name `?qr=` payloads resolve under this prefix — the convention the
@@ -292,7 +292,7 @@ async function openUrl(url: string): Promise<void> {
       viewerUnknownCode = null;
       viewerUnusableCode = null;
       viewerPlanesError = null;
-      viewerPlanesInfo = null;
+      placement = { kind: "idle" };
       renderArStatus();
     });
   } catch (err) {
@@ -518,8 +518,8 @@ let viewerReprojectionPx: number | null = null;
 let viewerPlanesError: string | null = null;
 /** What the photo placement actually did — capture spots with quality, or
  *  the ring with the join's plain-words decline reason. A silent decline
- *  is the failure mode; this line is its visibility. */
-let viewerPlanesInfo: string | null = null;
+ *  is the failure mode; the status line (tour-flow) is its visibility. */
+let placement: PlacementState = { kind: "idle" };
 /** Last detection's RMS reprojection error — the on-device quality number. */
 let latestReprojectionPx: number | null = null;
 /** In-flight guard: without it every voted lock during the decode window
@@ -531,18 +531,6 @@ let imagePlanes: PlacedImagePlanes | null = null;
  *  session outlived frees its textures instead of planting planes into a
  *  dead scene (milestone review, finding 6). */
 let planesRunGeneration = 0;
-
-function viewerQrLine(): string {
-  if (authorMode) return "";
-  return viewerStatusLine({
-    status: viewerQrStatus,
-    unknownCode: viewerUnknownCode,
-    unusableCode: viewerUnusableCode,
-    votedLocks: viewerVotedLocks,
-    lockedText: viewerLockedText,
-    reprojectionErrorPx: viewerReprojectionPx,
-  });
-}
 
 /** Levels are only useful with an open tour; the viewer pipeline reads them
  *  live so a tour opened AFTER entering AR still resolves. */
@@ -661,9 +649,12 @@ async function placeTourImagePlanes(lockedText: string): Promise<void> {
     try {
       joined = await placeJoinedCapturePlanes(current, scene, zero, generation);
     } catch (err) {
-      viewerPlanesInfo = `photo ring (reading the recording failed: ${
-        err instanceof Error ? err.message : String(err)
-      })`;
+      placement = {
+        kind: "declined",
+        reason: `reading the recording failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      };
     }
     if (!joined && generation === planesRunGeneration) {
       await placeDecodedPlanes(current, scene, centerTuple);
@@ -693,7 +684,7 @@ async function placeJoinedCapturePlanes(
     current.loadRecordingActions(),
   ]);
   if (actions === null) {
-    viewerPlanesInfo = "photo ring (no recording in this tour)";
+    placement = { kind: "declined", reason: "no recording in this tour" };
     return false;
   }
   const pre = preflightCaptureJoin(
@@ -701,7 +692,7 @@ async function placeJoinedCapturePlanes(
     actions.map((a) => a.type),
   );
   if (!pre.ok) {
-    viewerPlanesInfo = `photo ring (${pre.reason})`;
+    placement = { kind: "declined", reason: pre.reason };
     return false;
   }
   const state = (await replayActions(actions, {
@@ -713,7 +704,7 @@ async function placeJoinedCapturePlanes(
     shouldContinue: () => generation === planesRunGeneration,
     onChunk: (done, total) => {
       if (generation !== planesRunGeneration) return;
-      viewerPlanesInfo = `reading the walk ${String(done)}/${String(total)}…`;
+      placement = { kind: "placing", phase: "reading-walk", done, total };
       renderArStatus();
     },
   })) as unknown as ReplayedJoinState;
@@ -724,7 +715,7 @@ async function placeJoinedCapturePlanes(
   if (generation !== planesRunGeneration) return false;
   const verdict = assessReplayedJoin(state);
   if (!verdict.ok) {
-    viewerPlanesInfo = `photo ring (${verdict.reason})`;
+    placement = { kind: "declined", reason: verdict.reason };
     return false;
   }
   const paired = await decodeJoinedPoses(
@@ -746,7 +737,7 @@ async function placeJoinedCapturePlanes(
   ) {
     for (const entry of paired) entry.texture.dispose();
     if (paired.length === 0 && generation === planesRunGeneration) {
-      viewerPlanesInfo = "photo ring (no readable capture photos)";
+      placement = { kind: "declined", reason: "no readable capture photos" };
     }
     return paired.length === 0 ? false : true;
   }
@@ -758,14 +749,14 @@ async function placeJoinedCapturePlanes(
   // HONEST label (finding 5): the replayed state exposes no solve-error
   // metric (meanAlignmentError is model-internal), so the line reports
   // what the numbers actually are — fixes and their median GPS accuracy —
-  // never a claimed placement error.
-  const accuracy =
-    verdict.quality.gpsAccuracyMedianM === null
-      ? ""
-      : `, median GPS ±${verdict.quality.gpsAccuracyMedianM.toFixed(1)}m`;
-  viewerPlanesInfo =
-    `${String(imagePlanes.count)} photos at capture spots ` +
-    `(${String(verdict.quality.pairCount)} fixes${accuracy})`;
+  // never a claimed placement error (the copy lives in tour-flow).
+  placement = {
+    kind: "placed",
+    placedKind: "capture-spots",
+    count: imagePlanes.count,
+    fixes: verdict.quality.pairCount,
+    gpsAccuracyMedianM: verdict.quality.gpsAccuracyMedianM,
+  };
   renderArStatus();
   return true;
 }
@@ -807,7 +798,12 @@ async function decodeJoinedPoses(
     // only for the status text kept burning tens of seconds of decode +
     // GPU uploads the caller would immediately dispose).
     if (generation !== planesRunGeneration) break;
-    viewerPlanesInfo = `loading photos ${String(index)}/${String(poses.length)}…`;
+    placement = {
+      kind: "placing",
+      phase: "loading-photos",
+      done: index,
+      total: poses.length,
+    };
     renderArStatus();
     try {
       const nue = calcRelativeCoordsInMeters(
@@ -1010,20 +1006,29 @@ authorDownloadButton.addEventListener("click", () => {
 });
 
 function renderArStatus(): void {
-  const mode = authorMode ? "Author mode" : "Viewer mode";
-  const status = arController.getState().status;
-  if (status !== "running") {
-    arStatus.textContent = `${mode} — ${status}`;
-    return;
-  }
-  const qrLine = viewerQrLine();
-  arStatus.textContent =
-    `${mode} — AR running · ${String(cameraFrameCount)} camera frames` +
-    (qrLine === "" ? "" : ` · ${qrLine}`) +
-    (viewerPlanesInfo === null ? "" : ` · ${viewerPlanesInfo}`) +
-    (viewerPlanesError === null
-      ? ""
-      : ` · images failed: ${viewerPlanesError}`);
+  arStatus.textContent = arStatusLine({
+    authorMode,
+    arStatus: arController.getState().status,
+    cameraFrames: cameraFrameCount,
+    tour:
+      session === null
+        ? { kind: "none" }
+        : {
+            kind: "open",
+            levelCount: currentLevels?.size ?? null,
+            hasRecording: session.hasRecording,
+          },
+    qr: {
+      status: viewerQrStatus,
+      unknownCode: viewerUnknownCode,
+      unusableCode: viewerUnusableCode,
+      votedLocks: viewerVotedLocks,
+      lockedText: viewerLockedText,
+      reprojectionErrorPx: viewerReprojectionPx,
+    },
+    placement,
+    planesError: viewerPlanesError,
+  });
 }
 
 function renderArState(state: EnableGpsArState): void {
@@ -1082,7 +1087,7 @@ async function enterAr(): Promise<void> {
         viewerVotedLocks = 0;
         viewerLockedText = null;
         viewerReprojectionPx = null;
-        viewerPlanesInfo = null;
+        placement = { kind: "idle" };
         viewerPlanesError = null;
         imagePlanesLoading = false;
         // Invalidate any join still awaiting: it cannot be cancelled, but

@@ -65,6 +65,11 @@ export interface OpenTourOptions {
 export interface TourSession {
   readonly entries: readonly TourEntry[];
   readonly archive: OpenedArchive;
+  /** True when the zip carries an action stream (`actions/` entries) the
+   *  capture-geo join can try to read - the same pre-check
+   *  `loadRecordingActions` applies, exposed synchronously for the page's
+   *  flow copy (tour-flow). */
+  readonly hasRecording: boolean;
   stats(): Readonly<StreamStats>;
   /** Decompress one entry to a Blob (images get their MIME type). */
   loadEntry(filename: string): Promise<Blob>;
@@ -192,9 +197,16 @@ async function buildSession(
       isImage: IMAGE_EXTENSION.test(entry.filename),
     });
   }
+  // `includes`, not `startsWith`: the framework's parser tolerates a
+  // wrapping folder (`<name>/actions/…`) and this pre-check must not be
+  // stricter than the parser it guards (milestone review, finding 10).
+  const hasRecording = [...byName.keys()].some((name) =>
+    name.includes("actions/"),
+  );
   return {
     entries,
     archive,
+    hasRecording,
     stats: () => ({ ...stats }),
     loadEntry: (filename) => {
       const entry = byName.get(filename);
@@ -220,10 +232,7 @@ async function buildSession(
         return entry.getData(new TextWriter());
       }),
     loadRecordingActions: async () => {
-      // `includes`, not `startsWith`: the framework's own parser tolerates a
-      // wrapping folder (`<name>/actions/…`), and this pre-check must not be
-      // stricter than the parser it guards (milestone review, finding 10).
-      if (![...byName.keys()].some((name) => name.includes("actions/"))) {
+      if (!hasRecording) {
         return null; // a hand-built tour zip is normal, not an error
       }
       try {
