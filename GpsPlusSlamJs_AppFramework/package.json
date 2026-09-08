@@ -53,14 +53,7 @@
     "setup": "bash ./scripts/setup.sh"
   },
   "engines": {
-    "node": ">=22.15.0"
-  },
-  "devEngines": {
-    "runtime": {
-      "name": "node",
-      "version": ">=26.0.0",
-      "onFail": "warn"
-    }
+    "node": ">=26.0.0"
   },
   "dependencies": {
     "@reduxjs/toolkit": "^2.12.0",

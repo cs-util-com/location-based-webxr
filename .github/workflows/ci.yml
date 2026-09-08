@@ -19,12 +19,16 @@ jobs:
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
-          # Node 26 is the DEVELOPMENT line (harness-majors plan M0, owner
-          # decision 2026-09-07: jsdom 30 needs >=24.15 or 26, and 26 is LTS
-          # from October 2026); every unpublished manifest says engines >=26
-          # and the published framework says devEngines >=26. The framework's
-          # CONSUMER floor stays engines >=22.15 - a toolchain line is not a
-          # consumer contract. Matches publish.yml and .nvmrc.
+          # Node 26 (harness-majors plan M0, owner decision 2026-09-07:
+          # jsdom 30 needs >=24.15 or 26, and 26 is LTS from October 2026).
+          # Since 2026-09-08 EVERY manifest here says engines >=26, the
+          # published framework included: the consumer floor was split off
+          # for a day and the split was reversed, because nothing ever ran
+          # the framework at the lower floor and an unrun floor is an
+          # untested promise. This pin is therefore load-bearing for
+          # consumers too - moving it means moving the published floor
+          # (asserted by published-engines-floor.test.ts in the private
+          # repo's GpsPlusSlamJs_Investigation). Matches publish.yml/.nvmrc.
           node-version: "26"
           cache: "pnpm"
 
@@ -48,11 +52,11 @@ jobs:
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
-          # Node 26 is the DEVELOPMENT line (harness-majors plan M0, owner
-          # decision 2026-09-07) and matches publish.yml, .nvmrc and the
-          # deadcode job above. The framework's CONSUMER floor is separate
-          # and lower (engines >=22.15.0 + devEngines >=26), so this pin
-          # says nothing about what consumers may run.
+          # Node 26 (harness-majors plan M0, owner decision 2026-09-07),
+          # matching publish.yml, .nvmrc and the deadcode job above. Since
+          # 2026-09-08 the framework's CONSUMER floor is this same number
+          # (engines >=26.0.0, devEngines dropped), so unlike before, this
+          # pin DOES say what consumers may run.
           node-version: "26"
           cache: "pnpm"
 
