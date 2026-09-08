@@ -26,9 +26,12 @@ export const WIZARD_STEPS = [
 ] as const;
 export type WizardStep = (typeof WIZARD_STEPS)[number];
 
-/** A collapsible step (`<details>`), structurally. */
+/** A collapsible step (`<details>`), structurally. The optional listener
+ *  is the real element's; a creator opening a second step by hand closes
+ *  the others through it (M2 review #12). */
 interface StepNode {
   open: boolean;
+  addEventListener?(type: "toggle", listener: () => void): void;
 }
 
 export interface WizardDom {
@@ -40,6 +43,9 @@ export interface WizardDom {
   starterButton: ButtonNode;
   /** The `?qr=` launch link in step 2. */
   visitorLink: LinkNode;
+  /** The AR section, scrolled into view when step 4 opens (it has no
+   *  collapsible node of its own). */
+  measureSection?: { scrollIntoView(options?: { block: "start" }): void };
 }
 
 interface ClickableNode {
@@ -54,12 +60,29 @@ export interface Wizard {
   openStep(step: WizardStep): void;
   /** A tour opened: the launch link becomes usable and the print step opens. */
   presentTour(url: string): void;
+  /** A code was generated: the link carries the PRINTED payload (the
+   *  measured shortest form and the code-number token), so the tester's
+   *  way in decodes what a real scan decodes (M2 review #10). */
+  presentLaunchUrl(launchUrl: string): void;
 }
 
 /** The launch link for `url`, relative to the page (the landing's `?qr=`
  *  forward is not needed when the viewer itself is the origin). */
 export function visitorLaunchHref(url: string): string {
   return `?qr=${encodeURIComponent(url)}`;
+}
+
+/** The printed launch URL's query, re-homed on the viewer's own origin:
+ *  `https://gps.csutil.com/?qr=~blob&n=2` → `?qr=~blob&n=2`. A URL without
+ *  a `qr` parameter is not a launch link and yields null. */
+export function launchHrefFromPrintedUrl(launchUrl: string): string | null {
+  try {
+    const parsed = new URL(launchUrl);
+    if (!parsed.searchParams.has("qr")) return null;
+    return parsed.search;
+  } catch {
+    return null;
+  }
 }
 
 /** The starter button's labels through its async cycle (async-UI rule). */
@@ -80,25 +103,50 @@ export function wireWizard(deps: {
   download: (blob: Blob, filename: string) => Promise<boolean>;
   /** Label-revert timer, injectable for tests. */
   setTimeout?: (fn: () => void, ms: number) => unknown;
+  clearTimeout?: (handle: unknown) => void;
 }): Wizard {
   const { mode, dom, packStarter, download } = deps;
   const schedule = deps.setTimeout ?? setTimeout;
+  const cancel =
+    deps.clearTimeout ??
+    ((handle: unknown) => {
+      clearTimeout(handle as ReturnType<typeof setTimeout>);
+    });
 
   function openStep(step: WizardStep): void {
     for (const name of WIZARD_STEPS) {
       const node = dom.steps[name];
       if (node !== undefined) node.open = name === step;
     }
+    if (step === "measure") {
+      // Nothing opens for step 4 (the AR section is always rendered), so
+      // the page would only get shorter - bring the section into view.
+      dom.measureSection?.scrollIntoView({ block: "start" });
+    }
   }
 
   if (mode === "creator") openStep("host");
   dom.visitorLink.hidden = true;
 
+  // One step open at a time also when the creator opens one BY HAND: a
+  // second summary tap closes the others.
+  for (const name of WIZARD_STEPS) {
+    const node = dom.steps[name];
+    node?.addEventListener?.("toggle", () => {
+      if (node.open) openStep(name);
+    });
+  }
+
   dom.hangDone.addEventListener("click", () => {
     openStep("measure");
   });
 
+  /** The starter label's revert timer; cleared on a re-click so the first
+   *  run's revert cannot overwrite a second run's label. */
+  let starterRevert: unknown = null;
   dom.starterButton.addEventListener("click", () => {
+    if (starterRevert !== null) cancel(starterRevert);
+    starterRevert = null;
     dom.starterButton.disabled = true;
     dom.starterButton.textContent = STARTER_LABELS.busy;
     packStarter()
@@ -115,7 +163,8 @@ export function wireWizard(deps: {
       )
       .finally(() => {
         dom.starterButton.disabled = false;
-        schedule(() => {
+        starterRevert = schedule(() => {
+          starterRevert = null;
           dom.starterButton.textContent = STARTER_LABELS.idle;
         }, 3000);
       });
@@ -127,6 +176,12 @@ export function wireWizard(deps: {
       dom.visitorLink.href = visitorLaunchHref(url);
       dom.visitorLink.hidden = false;
       if (mode === "creator") openStep("print");
+    },
+    presentLaunchUrl: (launchUrl) => {
+      const href = launchHrefFromPrintedUrl(launchUrl);
+      if (href === null) return;
+      dom.visitorLink.href = href;
+      dom.visitorLink.hidden = false;
     },
   };
 }

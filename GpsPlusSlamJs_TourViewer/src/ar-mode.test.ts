@@ -277,12 +277,20 @@ describe("arButtonView", () => {
   });
 
   it("a ready visitor button asks for the location first while the gate is pending (DEC-N2)", () => {
-    expect(arButtonView({ status: "ready" }, "visitor", true)).toEqual({
+    const pending = { pending: true, busy: false };
+    expect(arButtonView({ status: "ready" }, "visitor", pending)).toEqual({
       label: "Allow location",
       disabled: false,
     });
+    // While the request runs the button says so and is disabled (async-UI).
+    expect(
+      arButtonView({ status: "ready" }, "visitor", {
+        pending: true,
+        busy: true,
+      }),
+    ).toEqual({ label: "Getting your location…", disabled: true });
     // A creator never has a pending gate; the flag is ignored for them.
-    expect(arButtonView({ status: "ready" }, "creator", true).label).toBe(
+    expect(arButtonView({ status: "ready" }, "creator", pending).label).toBe(
       "Start AR setup",
     );
   });

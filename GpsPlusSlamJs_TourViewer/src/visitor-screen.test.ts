@@ -3,9 +3,12 @@ import fc from "fast-check";
 
 import { realSeams, type TourViewerSeams } from "./seams";
 import {
+  gateAfterRequest,
+  locationRequestMessage,
   locationTapNeeded,
   wireVisitorScreen,
   type LocationPermission,
+  type LocationRequestOutcome,
   type VisitorScreenDom,
 } from "./visitor-screen";
 
@@ -89,13 +92,13 @@ describe("wireVisitorScreen", () => {
     expect(screen.locationGate.pending()).toBe(false);
   });
 
-  it("keeps the gate pending on 'prompt', clears it after a granted request, and reports a refusal", async () => {
+  it("keeps the gate pending on 'prompt', keeps it on a DENIAL with the settings copy, clears it on a grant", async () => {
     const d = dom();
     const renderArEntry = vi.fn();
     const requestLocationOnce = vi
-      .fn<() => Promise<boolean>>()
-      .mockResolvedValueOnce(false)
-      .mockResolvedValueOnce(true);
+      .fn<() => Promise<LocationRequestOutcome>>()
+      .mockResolvedValueOnce("denied")
+      .mockResolvedValueOnce("granted");
     const screen = wireVisitorScreen({
       mode: "visitor",
       seams: seamsWith({
@@ -108,13 +111,60 @@ describe("wireVisitorScreen", () => {
     await vi.waitFor(() => expect(renderArEntry).toHaveBeenCalled());
     expect(screen.locationGate.pending()).toBe(true);
 
-    await expect(screen.locationGate.request()).resolves.toBe(false);
+    await expect(screen.locationGate.request()).resolves.toBe("denied");
     expect(screen.locationGate.pending()).toBe(true);
     expect(d.errorBox.textContent).toMatch(/allow location/i);
 
-    await expect(screen.locationGate.request()).resolves.toBe(true);
+    await expect(screen.locationGate.request()).resolves.toBe("granted");
     expect(screen.locationGate.pending()).toBe(false);
     expect(d.errorBox.textContent).toBe("");
-    expect(renderArEntry).toHaveBeenCalledTimes(3);
+  });
+
+  it("clears the gate when the permission is fine but no fix came (M2 review #1), and shows busy while a request runs", async () => {
+    // Why this matters: a visitor indoors or in a courtyard is NOT refusing
+    // anything; the session's own GPS watch copes with a slow fix, and a
+    // gate that locked them out with "allow location in your settings" would
+    // be the worse failure.
+    const d = dom();
+    const renderArEntry = vi.fn();
+    let settle: (o: LocationRequestOutcome) => void = () => undefined;
+    const screen = wireVisitorScreen({
+      mode: "visitor",
+      seams: seamsWith({
+        queryGeolocationPermission: () => Promise.resolve("prompt"),
+        requestLocationOnce: () =>
+          new Promise((resolve) => {
+            settle = resolve;
+          }),
+      }),
+      dom: d,
+      renderArEntry,
+    });
+    await vi.waitFor(() => expect(renderArEntry).toHaveBeenCalled());
+    const request = screen.locationGate.request();
+    expect(screen.locationGate.busy()).toBe(true);
+    settle("unavailable");
+    await expect(request).resolves.toBe("unavailable");
+    expect(screen.locationGate.busy()).toBe(false);
+    expect(screen.locationGate.pending()).toBe(false);
+    expect(d.errorBox.textContent).toMatch(/no gps fix yet/i);
+  });
+
+  it("the pure rules: only a denial keeps the gate; every outcome but a grant has a message (property)", () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom<LocationRequestOutcome>(
+          "granted",
+          "denied",
+          "unavailable",
+        ),
+        (outcome) => {
+          expect(gateAfterRequest(outcome)).toBe(outcome === "denied");
+          expect(locationRequestMessage(outcome) === "").toBe(
+            outcome === "granted",
+          );
+        },
+      ),
+    );
   });
 });

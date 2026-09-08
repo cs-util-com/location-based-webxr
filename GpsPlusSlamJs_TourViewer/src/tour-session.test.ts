@@ -3,8 +3,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   InMemoryLocalCacheStore,
+  packFilesAsZip,
   type FetchImpl,
 } from "gps-plus-slam-app-framework/storage";
+import {
+  createEmptyTourManifest,
+  serializeTourManifest,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { archiveFileName, openTourSession } from "./tour-session.js";
 
 /**
@@ -374,6 +379,29 @@ describe("loadTourManifest / readWholeArchive (guided-setup plan M3)", () => {
     });
     await expect(broken.loadTourManifest()).rejects.toThrow(/version/);
     await broken.close();
+  });
+
+  it("opens the STARTER zip the setup hands out and reads its empty manifest (the step-1 loop)", async () => {
+    // Why this matters (M2 review #11): the wizard sells "download the
+    // starter, host it, paste the link, Open" - nothing else proved the
+    // packed starter is an archive this session can open.
+    const starter = await packFilesAsZip([
+      {
+        path: "tour.json",
+        data: serializeTourManifest(createEmptyTourManifest()),
+      },
+    ]);
+    const session = await openTourSession("https://x/tour.zip", {
+      fetchImpl: rangeServer(new Uint8Array(await starter.arrayBuffer())),
+    });
+    expect(session.entries.map((e) => e.filename)).toEqual(["tour.json"]);
+    expect(session.hasRecording).toBe(false);
+    await expect(session.loadTourManifest()).resolves.toEqual({
+      version: 1,
+      objects: [],
+    });
+    await expect(session.loadQrLevels()).resolves.toEqual(new Map());
+    await session.close();
   });
 
   it("reads the whole archive from the warmed cache copy, keyed by the normalised url", async () => {

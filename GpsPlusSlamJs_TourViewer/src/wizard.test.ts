@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import fc from "fast-check";
 
 import {
+  launchHrefFromPrintedUrl,
   STARTER_LABELS,
   visitorLaunchHref,
   WIZARD_STEPS,
@@ -26,13 +27,27 @@ function fakeDom() {
       (listeners[key] ??= []).push(fn);
     },
   });
+  /** A step whose `toggle` the test can fire, as a real <details> would
+   *  after a summary tap. */
+  const step = (key: string) => ({
+    open: false,
+    addEventListener: (_type: "toggle", fn: () => void) => {
+      (listeners[`toggle:${key}`] ??= []).push(fn);
+    },
+  });
+  const scrolls: unknown[] = [];
   const dom: WizardDom = {
     steps: {
-      host: { open: false },
-      print: { open: false },
-      hang: { open: false },
-      finish: { open: false },
-      replace: { open: false },
+      host: step("host"),
+      print: step("print"),
+      hang: step("hang"),
+      finish: step("finish"),
+      replace: step("replace"),
+    },
+    measureSection: {
+      scrollIntoView: (options) => {
+        scrolls.push(options);
+      },
     },
     hangDone: clickable("hang"),
     starterButton: {
@@ -45,7 +60,7 @@ function fakeDom() {
   const click = (key: string) => {
     for (const fn of listeners[key] ?? []) fn();
   };
-  return { dom, click };
+  return { dom, click, scrolls };
 }
 
 describe("wireWizard", () => {
@@ -116,6 +131,44 @@ describe("wireWizard", () => {
     expect(Object.values(dom.steps).some((s) => s.open)).toBe(false);
   });
 
+  it("scrolls the AR section into view when step 4 opens, and a step opened BY HAND closes the others", () => {
+    // Why this matters (M2 review #12): step 4 has nothing to open, so the
+    // page only got shorter after "It hangs - continue"; and a second
+    // summary tap used to leave two steps open, against the one-open rule.
+    const { dom, click, scrolls } = fakeDom();
+    wireWizard({
+      mode: "creator",
+      dom,
+      packStarter: () => Promise.resolve(new Blob()),
+      download: () => Promise.resolve(true),
+    });
+    click("hang");
+    expect(scrolls).toEqual([{ block: "start" }]);
+    // The creator taps step 3's summary: the element opens itself, then
+    // fires toggle - the wizard closes the rest.
+    dom.steps.host!.open = true;
+    dom.steps.hang!.open = true;
+    click("toggle:hang");
+    expect(dom.steps.host?.open).toBe(false);
+    expect(dom.steps.hang?.open).toBe(true);
+  });
+
+  it("re-points the launch link at the PRINTED payload once a code is generated", () => {
+    const { dom } = fakeDom();
+    const wizard = wireWizard({
+      mode: "creator",
+      dom,
+      packStarter: () => Promise.resolve(new Blob()),
+      download: () => Promise.resolve(true),
+    });
+    wizard.presentTour("https://example.com/t.zip");
+    wizard.presentLaunchUrl("https://gps.csutil.com/?qr=~ABC&n=2");
+    expect(dom.visitorLink.href).toBe("?qr=~ABC&n=2");
+    // Not a launch link: ignored, the previous href stands.
+    wizard.presentLaunchUrl("https://gps.csutil.com/");
+    expect(dom.visitorLink.href).toBe("?qr=~ABC&n=2");
+  });
+
   it("the starter button: busy while packing, then downloaded / not saved / failed, then idle again", async () => {
     const timers: (() => void)[] = [];
     const run = async (
@@ -155,12 +208,56 @@ describe("wireWizard", () => {
   });
 });
 
-describe("visitorLaunchHref", () => {
+describe("the starter button's revert timer", () => {
+  it("is cancelled by a re-click so the first run's revert cannot overwrite the second run's label (M2 review #13)", async () => {
+    const timers: { fn: () => void; cleared: boolean }[] = [];
+    const { dom, click } = fakeDom();
+    const scheduled = (fn: () => void) => {
+      const t = { fn, cleared: false };
+      timers.push(t);
+      return t;
+    };
+    wireWizard({
+      mode: "creator",
+      dom,
+      packStarter: () => Promise.resolve(new Blob(["z"])),
+      download: () => Promise.resolve(true),
+      setTimeout: scheduled,
+      clearTimeout: (handle) => {
+        (handle as { cleared: boolean }).cleared = true;
+      },
+    });
+    click("starter");
+    await vi.waitFor(() => expect(dom.starterButton.disabled).toBe(false));
+    expect(timers).toHaveLength(1);
+    click("starter"); // the revert of run 1 is still pending
+    expect(timers[0]?.cleared).toBe(true);
+    expect(dom.starterButton.textContent).toBe(STARTER_LABELS.busy);
+    await vi.waitFor(() => expect(dom.starterButton.disabled).toBe(false));
+    expect(timers).toHaveLength(2);
+  });
+});
+
+describe("visitorLaunchHref / launchHrefFromPrintedUrl", () => {
   it("round-trips any URL through the qr parameter (property)", () => {
     fc.assert(
       fc.property(fc.webUrl(), (url) => {
         const href = visitorLaunchHref(url);
         expect(new URLSearchParams(href).get("qr")).toBe(url);
+      }),
+    );
+  });
+
+  it("keeps the printed URL's whole query, and yields null without a qr parameter (property)", () => {
+    fc.assert(
+      fc.property(fc.webUrl(), fc.string({ minLength: 1 }), (base, payload) => {
+        const printed = new URL(base);
+        printed.search = "";
+        printed.searchParams.set("qr", payload);
+        const href = launchHrefFromPrintedUrl(printed.toString());
+        expect(href).not.toBeNull();
+        expect(new URLSearchParams(href ?? "").get("qr")).toBe(payload);
+        expect(launchHrefFromPrintedUrl(base.split("?")[0] ?? base)).toBeNull();
       }),
     );
   });

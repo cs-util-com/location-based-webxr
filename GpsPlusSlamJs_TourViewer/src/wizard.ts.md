@@ -12,13 +12,21 @@ visitor" launch link (step 2, the tester's way into the visitor path).
 
 - `wireWizard({ mode, dom, packStarter, download, setTimeout? }): Wizard`
   - `Wizard.openStep(step)` opens one step and collapses the others.
-  - `Wizard.presentTour(url)` sets and shows the launch link and, for a
-    creator, opens the print step.
+  - `Wizard.presentTour(url)` sets and shows the launch link (raw form)
+    and, for a creator, opens the print step.
+  - `Wizard.presentLaunchUrl(launchUrl)` re-points the link at the PRINTED
+    payload once a code is generated (`launchHrefFromPrintedUrl`: the
+    printed URL's query on the viewer's origin), so the tester decodes
+    what a scan decodes (M2 review #10).
+  - Opening `measure` scrolls `dom.measureSection` into view; a step
+    opened by hand (`toggle`) closes the others.
   - `dom` is structural: `steps` (collapsible nodes by name; `measure` has
     none because it wraps `#ar-root`), `hangDone`, `starterButton`,
     `visitorLink`.
 - `WIZARD_STEPS`, `type WizardStep`.
-- `visitorLaunchHref(url)` → `?qr=<encoded url>`.
+- `visitorLaunchHref(url)` → `?qr=<encoded url>`;
+  `launchHrefFromPrintedUrl(launchUrl)` → the printed URL's `?qr=…&n=…`
+  query, or null for a URL without `qr`.
 - `STARTER_LABELS` - the starter button's idle/busy/done/cancelled/failed
   labels (async-UI rule).
 
@@ -31,7 +39,7 @@ visitor" launch link (step 2, the tester's way into the visitor path).
   `visitor-screen.ts`), but `presentTour` still sets the link.
 - The starter button is disabled while packing and downloading, shows the
   outcome (downloaded / not saved when the save picker was dismissed /
-  failed), and reverts after 3 s.
+  failed), and reverts after 3 s; a re-click cancels a pending revert.
 - Step persistence across reloads is M6 of the plan (not here yet).
 
 ## Examples

@@ -28,13 +28,38 @@ export function locationTapNeeded(permission: LocationPermission): boolean {
   return permission !== "granted";
 }
 
+/** What one position request came back with. */
+export type LocationRequestOutcome = "granted" | "denied" | "unavailable";
+
 /** What the AR entry asks before starting a session. */
 export interface LocationGate {
   /** True while a tap should request the location instead of starting AR. */
   pending(): boolean;
-  /** The location-only tap: resolves true when the position was obtained
-   *  (the gate then clears), false when it was refused or failed. */
-  request(): Promise<boolean>;
+  /** True while a request is in flight (the button shows it, async-UI rule). */
+  busy(): boolean;
+  /** The location-only tap. The gate clears on "granted" AND on
+   *  "unavailable" (the permission is settled; the session's watch tolerates
+   *  a slow fix); only a denial keeps it pending, with the reason shown. */
+  request(): Promise<LocationRequestOutcome>;
+}
+
+/** The gate after one request outcome: still pending only on a denial. */
+export function gateAfterRequest(outcome: LocationRequestOutcome): boolean {
+  return outcome === "denied";
+}
+
+/** What the visitor reads after a request that did not obtain a position. */
+export function locationRequestMessage(
+  outcome: LocationRequestOutcome,
+): string {
+  switch (outcome) {
+    case "denied":
+      return "Location is needed to place the tour. Allow location for this site in your browser settings, then tap again.";
+    case "unavailable":
+      return "No GPS fix yet - that is fine outdoors, the tour keeps trying once it starts.";
+    case "granted":
+      return "";
+  }
 }
 
 /** The DOM surface this module touches, STRUCTURAL so the unit tests pass
@@ -75,6 +100,7 @@ export function wireVisitorScreen(deps: {
   // Pessimistic until the query answers: a tap that arrives first requests
   // the location, which is the harmless direction to be wrong in.
   let pending = visitor;
+  let busy = false;
   if (visitor) {
     void seams.queryGeolocationPermission().then((permission) => {
       pending = locationTapNeeded(permission);
@@ -85,17 +111,22 @@ export function wireVisitorScreen(deps: {
   return {
     locationGate: {
       pending: () => pending,
+      busy: () => busy,
       request: async () => {
+        if (busy) return "unavailable"; // one request at a time; the button is disabled anyway
+        busy = true;
         dom.errorBox.textContent = "";
-        const granted = await seams.requestLocationOnce();
-        if (granted) {
-          pending = false;
-        } else {
-          dom.errorBox.textContent =
-            "Location is needed to place the tour. Allow location for this site in your browser settings, then tap again.";
-        }
         renderArEntry();
-        return granted;
+        let outcome: LocationRequestOutcome;
+        try {
+          outcome = await seams.requestLocationOnce();
+        } finally {
+          busy = false;
+        }
+        pending = gateAfterRequest(outcome);
+        dom.errorBox.textContent = locationRequestMessage(outcome);
+        renderArEntry();
+        return outcome;
       },
     },
   };

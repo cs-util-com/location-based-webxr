@@ -39,12 +39,20 @@ export interface PrintPanel {
   presentTour: (url: string) => void;
 }
 
-export function wirePrintPanel(dom: PrintPanelDom): PrintPanel {
+export function wirePrintPanel(
+  dom: PrintPanelDom,
+  /** Told the printed launch URL after each generated code (the setup's
+   *  "open as a visitor" link carries the same payload a scan decodes). */
+  onLaunchUrl: (launchUrl: string) => void = () => undefined,
+): PrintPanel {
   dom.generateButton.addEventListener("click", () => {
     // Async-UI rule: in-progress before the awaits, durable end state after.
     dom.generateButton.disabled = true;
     dom.generateButton.textContent = "Generating…";
     generatePrintCode(dom)
+      .then((launchUrl) => {
+        onLaunchUrl(launchUrl);
+      })
       .catch((err: unknown) => {
         dom.info.textContent = err instanceof Error ? err.message : String(err);
         dom.area.hidden = true;
@@ -82,7 +90,7 @@ export function wirePrintPanel(dom: PrintPanelDom): PrintPanel {
   };
 }
 
-async function generatePrintCode(dom: PrintPanelDom): Promise<void> {
+async function generatePrintCode(dom: PrintPanelDom): Promise<string> {
   const sideCss = printedSideCss(Number(dom.sizeInput.value)); // validates
   const { codeIndex, coerced } = codeIndexFromInput(dom.codeInput.value);
   const plan = await planPrintCode(dom.urlInput.value.trim(), { codeIndex });
@@ -108,4 +116,5 @@ async function generatePrintCode(dom: PrintPanelDom): Promise<void> {
       : "") +
     (warning === null ? "" : ` ${warning}`);
   dom.urlOut.textContent = plan.url;
+  return plan.url;
 }

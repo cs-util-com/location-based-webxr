@@ -63,20 +63,27 @@ const STATIC_BUTTON_VIEWS: Record<
 };
 
 /** Pure state → button mapping (MinimalExample's `buttonView` pattern).
- *  `locationPending` is the visitor screen's location gate (DEC-N2): while
- *  it holds, a ready button asks for the location first. */
+ *  `location` is the visitor screen's gate (DEC-N2): while pending, a ready
+ *  button asks for the location first; while busy, it says so and is
+ *  disabled (async-UI rule, M2 review #4). */
 export function arButtonView(
   state: EnableGpsArState,
   mode: ViewerMode,
-  locationPending = false,
+  location: { pending: boolean; busy: boolean } = {
+    pending: false,
+    busy: false,
+  },
 ): ArButtonView {
   switch (state.status) {
     case "ready":
+      if (mode === "visitor" && location.busy) {
+        return { label: "Getting your location…", disabled: true };
+      }
       return {
         label:
           mode === "creator"
             ? "Start AR setup"
-            : locationPending
+            : location.pending
               ? "Allow location"
               : "Start the tour",
         disabled: false,

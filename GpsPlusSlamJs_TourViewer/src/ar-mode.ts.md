@@ -13,10 +13,11 @@ identical here — they diverge in M3/M4.
 - `CAMERA_FRAME_INTERVAL_MS = 125` — the ~8 Hz detection cadence. The frame
   source is the SINGLE cadence owner (Option A): the QR controller consuming
   these frames must run `minIntervalMs: 0`.
-- `arButtonView(state, mode, locationPending?): { label; disabled }` — pure
+- `arButtonView(state, mode, location?): { label; disabled }` - pure
   mapping of `EnableGpsArState` to the entry button. Ready: "Start AR
   setup" (creator), "Start the tour" (visitor), "Allow location" (visitor
-  while the location gate is pending, DEC-N2); running: "Setting up in AR"
+  while the location gate is pending, DEC-N2), "Getting your location…"
+  disabled (visitor while the request runs); running: "Setting up in AR"
   / "Tour running".
 - `buildArEnableConfig(hooks: ArEnableHooks): EnableGpsArConfig` — hooks:
   `{ container, trackingStore, onFrame, onSessionEnd, onGpsPosition, onOrientation }`.

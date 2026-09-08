@@ -87,18 +87,27 @@ const hooks = createUnwiredHooks();
 const printPanel = element<HTMLDetailsElement>("print-panel");
 const sizeInput = element<HTMLInputElement>("author-size");
 
-const print = wirePrintPanel({
-  panel: printPanel,
-  urlInput: element("print-url"),
-  sizeInput,
-  codeInput: element("author-c"),
-  generateButton: element("print-generate"),
-  info: element("print-info"),
-  area: element("print-area"),
-  canvas: element("print-canvas"),
-  printButton: element("print-button"),
-  urlOut: element("print-url-out"),
-});
+// The mode on the body: the page's CSS reads it (the visitor's AR section
+// loses the step card's frame).
+document.body.dataset["mode"] = mode;
+
+const print = wirePrintPanel(
+  {
+    panel: printPanel,
+    urlInput: element("print-url"),
+    sizeInput,
+    codeInput: element("author-c"),
+    generateButton: element("print-generate"),
+    info: element("print-info"),
+    area: element("print-area"),
+    canvas: element("print-canvas"),
+    printButton: element("print-button"),
+    urlOut: element("print-url-out"),
+  },
+  (launchUrl) => {
+    wizard.presentLaunchUrl(launchUrl);
+  },
+);
 
 const wizard = wireWizard({
   mode,
@@ -113,6 +122,7 @@ const wizard = wireWizard({
     hangDone: element<HTMLButtonElement>("hang-done"),
     starterButton: element<HTMLButtonElement>("starter-zip"),
     visitorLink: element<HTMLAnchorElement>("visitor-link"),
+    measureSection: element("step-measure"),
   },
   // The starter zip (DEC-N5): an empty manifest, so a creator without a
   // recording has something to host before printing the code.

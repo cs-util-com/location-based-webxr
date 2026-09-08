@@ -111,7 +111,10 @@ export function wireArEntry(deps: {
   }
 
   function renderArState(state: EnableGpsArState): void {
-    const view = arButtonView(state, mode, locationGate.pending());
+    const view = arButtonView(state, mode, {
+      pending: locationGate.pending(),
+      busy: locationGate.busy(),
+    });
     dom.enterArButton.disabled = view.disabled;
     dom.enterArButton.textContent = view.label;
     // The printed size is CAPTURED at AR entry (the solves use it) — editing

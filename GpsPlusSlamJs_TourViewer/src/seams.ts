@@ -49,7 +49,10 @@ import type { SubscribableStore } from "gps-plus-slam-app-framework/state";
 import { downloadZip } from "gps-plus-slam-app-framework/storage";
 import type { Object3D } from "three";
 
-import type { LocationPermission } from "./visitor-screen.js";
+import type {
+  LocationPermission,
+  LocationRequestOutcome,
+} from "./visitor-screen.js";
 
 /** The device functions a Playwright e2e fake may override. */
 export interface TourViewerSeams {
@@ -88,9 +91,12 @@ export interface TourViewerSeams {
   /** The geolocation permission state, "unknown" without the Permissions
    *  API - the visitor screen's location gate reads it once at boot. */
   queryGeolocationPermission(): Promise<LocationPermission>;
-  /** One position request on its own tap (the gate's first step); true
-   *  when a position arrived. */
-  requestLocationOnce(): Promise<boolean>;
+  /** One position request on its own tap (the gate's first step):
+   *  "granted" when a position arrived, "denied" when the permission was
+   *  refused, "unavailable" when the permission is fine but no fix came
+   *  (indoors, a courtyard, a timeout) - the session's own watch copes
+   *  with that, so it must not lock the visitor out (M2 review #1). */
+  requestLocationOnce(): Promise<LocationRequestOutcome>;
   /** Offer a zip for download (the framework's picker-or-anchor); false
    *  when the user dismissed a save picker. The e2e fake captures the
    *  blob instead. */
@@ -158,17 +164,18 @@ export const realSeams: TourViewerSeams = {
     }
   },
   requestLocationOnce: () =>
-    new Promise<boolean>((resolve) => {
+    new Promise<LocationRequestOutcome>((resolve) => {
       if (!("geolocation" in navigator)) {
-        resolve(false);
+        resolve("unavailable");
         return;
       }
       navigator.geolocation.getCurrentPosition(
         () => {
-          resolve(true);
+          resolve("granted");
         },
-        () => {
-          resolve(false);
+        (err) => {
+          // PERMISSION_DENIED is 1; anything else is a position problem.
+          resolve(err.code === 1 ? "denied" : "unavailable");
         },
         // A cached fix is fine: the tap only needs the PERMISSION settled
         // before the session's own watch starts.

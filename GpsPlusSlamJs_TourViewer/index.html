@@ -96,6 +96,11 @@
       #visitor-screen[hidden] {
         display: none;
       }
+      /* A visitor's AR section is the screen itself, not a step card. */
+      body[data-mode="visitor"] #step-measure {
+        border: 0;
+        padding: 0;
+      }
       #ar-root {
         margin: 1rem 0;
       }
@@ -163,6 +168,11 @@
         list-style: none;
         padding: 0;
       }
+      /* The id rule above outranks .creator-only[hidden]: keep the attribute
+         authoritative (a visitor never sees the thumbnails). */
+      #gallery[hidden] {
+        display: none;
+      }
       #gallery li {
         border: 1px solid #8884;
         border-radius: 0.5rem;
@@ -191,7 +201,10 @@
            creator's guided setup; a ?qr= launch (a scanned printed code, or
            the setup's "open as a visitor" link) is the visitor's screen.
            Everything marked .creator-only is hidden for a visitor. -->
-      <p class="creator-only">
+      <!-- Creator-only sections are authored HIDDEN and revealed for a
+           creator by visitor-screen.ts: a visitor must never see the setup
+           flash before the script runs (M2 review #5). -->
+      <p class="creator-only" hidden>
         Set up a tour that people open by scanning a printed code: host a zip,
         print the code, hang it, measure it in AR and place content, then
         replace the hosted zip. Six steps, one at a time.
@@ -209,7 +222,7 @@
           asks, allow both.
         </p>
       </section>
-      <ol id="wizard" class="creator-only" data-testid="wizard">
+      <ol id="wizard" class="creator-only" data-testid="wizard" hidden>
         <li>
           <details id="step-host" class="step" data-testid="step-host">
             <summary>1 · Host your tour</summary>
@@ -336,8 +349,10 @@
            (enforced by tests/repo-config/hud-overlay-nesting.test.js). The
            step heading sits outside it: it is pre-session copy. -->
       <section id="step-measure" class="step" data-testid="step-measure">
-        <h2 class="creator-only">4 · Measure the code and place content</h2>
-        <p class="step-copy creator-only">
+        <h2 class="creator-only" hidden>
+          4 · Measure the code and place content
+        </h2>
+        <p class="step-copy creator-only" hidden>
           Stand at the hung code and start the AR setup. Hold the phone on the
           code until it is measured, then place text pins and photos where the
           tour should show them. Finish inside AR when you are done.
@@ -377,7 +392,7 @@
           </div>
         </section>
       </section>
-      <ol id="wizard-tail" class="creator-only" start="5">
+      <ol id="wizard-tail" class="creator-only" start="5" hidden>
         <li>
           <details id="step-finish" class="step" data-testid="step-finish">
             <summary>5 · Download the rebuilt zip</summary>
@@ -419,7 +434,12 @@
            collapsed with the one sentence that says what the cache is.
            Hidden entirely without a cache store (?nocache=1, no Cache
            API). -->
-      <details id="storage-panel" data-testid="storage-panel">
+      <details
+        id="storage-panel"
+        class="creator-only"
+        data-testid="storage-panel"
+        hidden
+      >
         <summary>Storage</summary>
         <p>
           Opened tours are kept on this device (up to five, oldest dropped) so a
@@ -434,7 +454,9 @@
         <div id="stats-headline"></div>
         <div id="stats-detail"></div>
       </div>
-      <ul id="gallery" data-testid="gallery"></ul>
+      <!-- The gallery is the creator's proof that the tour opened; a visitor's
+           tour appears in AR, not as thumbnails (M2 review #2). -->
+      <ul id="gallery" class="creator-only" data-testid="gallery" hidden></ul>
     </main>
     <script type="module" src="/src/main.ts"></script>
   </body>

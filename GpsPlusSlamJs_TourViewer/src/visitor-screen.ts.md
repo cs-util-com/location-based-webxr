@@ -15,8 +15,15 @@ start a session.
   - `renderArEntry` is called whenever the gate's state changes so the AR
     button re-labels ("Allow location" / "Start the tour").
 - `LocationGate`: `pending()` (a tap should request the location rather
-  than start AR) and `request()` (the location-only tap; resolves true when
-  a position was obtained).
+  than start AR), `busy()` (a request is in flight; the button says so),
+  and `request()` (the location-only tap; resolves the outcome).
+- `gateAfterRequest(outcome)` - pending stays only on `"denied"`: a
+  granted permission without a fix ("unavailable": indoors, a timeout)
+  clears the gate, because the session's own watch tolerates a slow fix
+  and locking the visitor out would be the worse failure (M2 review #1).
+- `locationRequestMessage(outcome)` - the copy for a denial (browser
+  settings) and for "no fix yet" (fine outdoors, the tour keeps trying).
+- `type LocationRequestOutcome = "granted" | "denied" | "unavailable"`.
 - `locationTapNeeded(permission): boolean` - pure: true for anything but
   `"granted"`.
 - `type LocationPermission = "granted" | "prompt" | "denied" | "unknown"`.
@@ -30,8 +37,9 @@ start a session.
   a prompt.
 - Pessimistic until `seams.queryGeolocationPermission()` answers: a tap
   that arrives first requests the location (harmless), never starts AR.
-- A refused or failed request keeps the gate pending and writes the
-  reason to `errorBox` (visible pre-AR; it is outside the DOM overlay).
+- Only a DENIED request keeps the gate pending; the reason goes to
+  `errorBox` (visible pre-AR; it is outside the DOM overlay). One request
+  runs at a time (`busy`).
 - In creator mode the gate is never pending and nothing is hidden.
 
 ## Examples

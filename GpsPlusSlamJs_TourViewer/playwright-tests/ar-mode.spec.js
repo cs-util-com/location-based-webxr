@@ -123,8 +123,41 @@ test("the plain page is the creator's setup; a ?qr= launch is the visitor's scre
   await expect(page.getByTestId("visitor-screen")).toContainText("camera");
   await expect(page.getByTestId("wizard")).toBeHidden();
   await expect(page.getByTestId("link-input")).toBeHidden();
+  // The transport-demo surfaces are the creator's (M2 review #2): a visitor
+  // gets the consent copy, the Start button and one stats line.
+  await expect(page.getByTestId("storage-panel")).toBeHidden();
+  await expect(page.getByTestId("gallery")).toBeHidden();
+  await expect(page.getByTestId("stats")).toBeVisible();
   await expect(page.getByTestId("ar-hint")).toContainText("printed code");
   await expect(page.getByTestId("enter-ar")).toHaveText("Start the tour");
+});
+
+test("a visitor who refuses the location stays on 'Allow location' with the settings hint; a granted-but-no-fix visitor may start (M2 review #1)", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const t = /** @type {any} */ (window).__tourViewerTest;
+    if (t) {
+      t.locationPermission = "prompt";
+      t.locationOutcome = "denied";
+    }
+  });
+  await openAsVisitor(page, RANGES_ARCHIVE);
+  const button = page.getByTestId("enter-ar");
+  await expect(button).toHaveText("Allow location", { timeout: 10000 });
+  await button.click();
+  await expect(button).toHaveText("Allow location");
+  await expect(page.getByTestId("error")).toContainText(/browser settings/i);
+  // The same phone, now indoors: the permission is fine, the fix is not.
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.locationOutcome =
+      "unavailable";
+  });
+  await button.click();
+  await expect(button).toHaveText("Start the tour");
+  await expect(page.getByTestId("error")).toContainText(/no gps fix yet/i);
+  await button.click();
+  await expect(button).toHaveText("Tour running");
 });
 
 test("a first-time visitor is asked for the location on its own tap, then starts the tour on the next (DEC-N2)", async ({
@@ -142,6 +175,9 @@ test("a first-time visitor is asked for the location on its own tap, then starts
   await openAsVisitor(page, RANGES_ARCHIVE);
   const button = page.getByTestId("enter-ar");
   await expect(button).toHaveText("Allow location", { timeout: 10000 });
+  // The request is answered on the next microtask, so the in-progress
+  // label is observable only through its trace in the button's history:
+  // the fake resolves at once. Assert the settled state and the count.
   await button.click();
   await expect(button).toHaveText("Start the tour");
   const state = await page.evaluate(() => {
@@ -876,10 +912,16 @@ test("opening a tour opens the print panel prefilled with the tour's link", asyn
   await expect(page.getByTestId("print-url")).toHaveValue(ARCHIVE);
   // Step 1 collapsed, step 2 open (wizard.ts): one step at a time.
   await expect(page.getByTestId("step-host")).not.toHaveAttribute("open", "");
-  // The tester's way into the visitor path (DEC-N1, plan review #13).
+  // The tester's way into the visitor path (DEC-N1, plan review #13): the
+  // raw link until a code exists, then the PRINTED payload (M2 review #10).
   const link = page.getByTestId("visitor-link");
   await expect(link).toBeVisible();
   await expect(link).toHaveAttribute("href", /\?qr=http/);
+  await page.getByTestId("print-generate").click();
+  await expect(page.getByTestId("print-canvas")).toBeVisible();
+  const printed = await page.getByTestId("print-url-out").textContent();
+  const href = await link.getAttribute("href");
+  expect(href).toBe(new URL(printed ?? "").search);
   // The size field is a creator's print input: NOT frozen by a viewer
   // session (review #17) - it is only captured in author mode.
   await expect(page.getByTestId("author-size")).toBeEnabled();

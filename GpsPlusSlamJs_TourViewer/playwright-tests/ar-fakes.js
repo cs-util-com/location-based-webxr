@@ -64,6 +64,8 @@ export async function installTourViewerArFakes(page) {
        *  query answers, and how many location-only taps were made. */
       locationPermission: "granted",
       locationRequests: 0,
+      /** What the next location-only tap comes back with. */
+      locationOutcome: "granted",
       /** The zips the finish step offered for download (M3): the fake
        *  captures them instead of saving; `saveOutcome` is what the fake
        *  reports (false = the picker was dismissed). */
@@ -157,8 +159,10 @@ export async function installTourViewerArFakes(page) {
         Promise.resolve(test.locationPermission),
       requestLocationOnce: () => {
         test.locationRequests += 1;
-        test.locationPermission = "granted";
-        return Promise.resolve(true);
+        if (test.locationOutcome === "granted") {
+          test.locationPermission = "granted";
+        }
+        return Promise.resolve(test.locationOutcome);
       },
       downloadZip: (blob, filename) => {
         test.downloads.push({ filename, blob });
