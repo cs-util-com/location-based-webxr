@@ -25,13 +25,11 @@ import {
   mintQrLevel,
   type MintAlignmentInfo,
 } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
-import {
-  TOUR_MANIFEST_ENTRY,
-  tourManifestEntryOf,
-} from "gps-plus-slam-app-framework/ar/tour-archive";
+import { TOUR_MANIFEST_ENTRY } from "gps-plus-slam-app-framework/ar/tour-archive";
 import {
   createEmptyTourManifest,
   serializeTourManifest,
+  type TourManifest,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   recordQrDetection,
@@ -511,34 +509,42 @@ export function wireCreatorSetup(deps: {
         const existingLevelPath = entryNames.find(
           (name) => qrLevelIdFromEntryName(name) === minted.id,
         );
-        const manifestPath =
-          tourManifestEntryOf(entryNames) ?? TOUR_MANIFEST_ENTRY;
-        const wrap = manifestPath.slice(0, -TOUR_MANIFEST_ENTRY.length);
+        // The session derived this prefix when it opened the zip; deriving
+        // it a second time here is how the writer and the reader drifted
+        // apart in the first place (PR #435 review).
+        const wrap = current.manifestWrap;
+        const manifestPath = `${wrap}${TOUR_MANIFEST_ENTRY}`;
         // The manifest: what the zip carried plus what this session placed;
         // the photos' bytes become content entries next to it.
         const manifest = ctx.tourManifest ?? createEmptyTourManifest();
+        const written: TourManifest = {
+          ...manifest,
+          objects: [
+            ...manifest.objects,
+            ...ctx.placedObjects.map((p) => p.object),
+          ],
+        };
         const entries = [
           {
             path: existingLevelPath ?? qrLevelEntryName(minted.id),
             data: minted.json,
           },
-          {
-            path: manifestPath,
-            data: serializeTourManifest({
-              ...manifest,
-              objects: [
-                ...manifest.objects,
-                ...ctx.placedObjects.map((p) => p.object),
-              ],
-            }),
-          },
+          { path: manifestPath, data: serializeTourManifest(written) },
           ...ctx.placedObjects.flatMap((p) =>
             p.object.kind === "photo" && p.blob !== undefined
               ? [{ path: `${wrap}${p.object.image}`, data: p.blob }]
               : [],
           ),
         ];
-        const input = await current.readWholeArchive();
+        // The input is the NEWEST bytes for this tour: a previous finish's
+        // rebuild when there is one, because it already carries that
+        // batch's content entries - rebuilding from the hosted zip again
+        // would write a manifest referencing photos the archive does not
+        // contain (PR #435 review, the second half of the second-finish
+        // bug). A tour close clears the rebuilt zip, so a re-opened tour
+        // starts from what is actually hosted.
+        const input =
+          ctx.rebuiltZip?.blob ?? (await current.readWholeArchive());
         if (ctx.session !== current) return; // re-opened meanwhile
         const blob = await rebuildZipWithEntries(input, entries, {
           onProgress: (done, total) => {
@@ -554,7 +560,12 @@ export function wireCreatorSetup(deps: {
         dom.finishStatus.textContent = FINISH_LABELS.ready(blob.size);
         dom.downloadButton.disabled = false;
         // The placed objects are in the zip now; the next finish (a
-        // re-measure, a re-opened tour) must not append them again.
+        // re-measure, a re-opened tour) must not append them again - and
+        // the in-memory manifest has to ADVANCE to what was just written,
+        // or a second finish in the same open tour would rebuild from the
+        // pre-finish manifest and silently drop this batch (PR #435
+        // review). `tourManifest` is otherwise only written at tour open.
+        ctx.tourManifest = written;
         ctx.placedObjects = [];
         // The session ends so the creator lands on the page, where the
         // download button is a fresh tap (a download needs its own user

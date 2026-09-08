@@ -30,7 +30,11 @@ import {
 } from "gps-plus-slam-app-framework/storage";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import { parseQrLevelEntries } from "gps-plus-slam-app-framework/ar/qr/qr-level-archive";
-import { readTourManifestFromEntries } from "gps-plus-slam-app-framework/ar/tour-archive";
+import {
+  readTourManifestFromEntries,
+  TOUR_MANIFEST_ENTRY,
+  tourManifestEntryOf,
+} from "gps-plus-slam-app-framework/ar/tour-archive";
 import {
   parseTourManifest,
   type TourManifest,
@@ -75,9 +79,23 @@ export interface TourSession {
    *  `loadRecordingActions` applies, exposed synchronously for the page's
    *  flow copy (tour-flow). */
   readonly hasRecording: boolean;
+  /**
+   * The folder the tour's `tour.json` sits under, with its trailing slash
+   * (`""` for a flat zip, `"mytour/"` for one produced by re-zipping a
+   * folder - the shape `tour-archive.ts` tolerates). The ONE place that
+   * prefix is derived: the finish step writes content entries under it and
+   * `loadContentEntry` reads them back through it (PR #435 review).
+   */
+  readonly manifestWrap: string;
   stats(): Readonly<StreamStats>;
   /** Decompress one entry to a Blob (images get their MIME type). */
   loadEntry(filename: string): Promise<Blob>;
+  /**
+   * One `content/<id>.<ext>` entry named the way the MANIFEST names it.
+   * The manifest can only carry the unwrapped name (the parser pins that
+   * shape), so this joins `manifestWrap` before the exact-name lookup.
+   */
+  loadContentEntry(image: string): Promise<Blob>;
   /**
    * The tour's authored QR levels: every `qr/<id>.json`, keyed by `<id>` —
    * the hash of the printed code's decoded text (`qrCodeId`). NULL-TOLERANT
@@ -265,10 +283,17 @@ async function buildSession(
   const hasRecording = [...byName.keys()].some((name) =>
     name.includes("actions/"),
   );
-  return {
+  // Where `tour.json` was found, minus the file name: the prefix every
+  // content entry of THIS archive shares (PR #435 review). Empty when the
+  // zip is flat or carries no manifest yet.
+  const manifestWrap = (
+    tourManifestEntryOf([...byName.keys()]) ?? TOUR_MANIFEST_ENTRY
+  ).slice(0, -TOUR_MANIFEST_ENTRY.length);
+  const session: TourSession = {
     entries,
     archive,
     hasRecording,
+    manifestWrap,
     stats: () => ({ ...stats }),
     loadEntry: (filename) => {
       const entry = byName.get(filename);
@@ -328,6 +353,7 @@ async function buildSession(
         return null;
       }
     },
+    loadContentEntry: (image) => session.loadEntry(`${manifestWrap}${image}`),
     loadTourManifest: () =>
       readTourManifestFromEntries(
         [...byName.keys()],
@@ -355,4 +381,5 @@ async function buildSession(
       await reader.close();
     },
   };
+  return session;
 }

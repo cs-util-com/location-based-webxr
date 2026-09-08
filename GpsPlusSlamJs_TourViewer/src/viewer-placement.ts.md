@@ -29,7 +29,10 @@ recording. Its own module since the flows plan M6.
   - The tour's content (`tour.json`, M5) is rendered once per session as
     soon as the gate allows it and the GPS zero exists
     (`renderTourObjects`; labels through `seams.createLabel`, photos
-    decoded from the streaming session at the capture planes' divisor); a
+    decoded through `session.loadContentEntry`, which joins the archive's
+    manifest prefix - a re-zipped tour keeps its photos under
+    `mytour/content/…` while the record names `content/…` (PR #435
+    review) - at the capture planes' divisor); a
     failed read names the object in the status line, a failed render goes
     to `ctx.contentError` (its own segment; the attempt stays latched,
     because the only throws there are deterministic constructors).

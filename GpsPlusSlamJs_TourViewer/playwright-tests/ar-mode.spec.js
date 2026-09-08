@@ -592,6 +592,56 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   // level survived the session end, the fixes did not.
   await expect(page.getByTestId("setup-pin")).toBeDisabled();
   await expect(page.getByTestId("setup-photo")).toBeDisabled();
+
+  // A SECOND finish in the same open tour keeps the first one's objects
+  // (PR #435 review): finishing ends the AR session but does not close the
+  // tour, and the in-memory manifest used to stay at its pre-finish value,
+  // so batch two rebuilt from it and batch one vanished from tour.json
+  // along with its photo bytes.
+  await seedAlignment(page);
+  await expect(page.getByTestId("setup-mint")).toBeEnabled();
+  await page.getByTestId("setup-mint").click();
+  // The surface came back (the no-surface case above turned it off).
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.reticleVisible = true;
+  });
+  await expect(page.getByTestId("setup-pin")).toBeEnabled();
+  await page.getByTestId("setup-pin").click();
+  await page.getByTestId("pin-label").fill("The second visit");
+  await page.getByTestId("pin-save").click();
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /1 object placed/,
+  );
+  await page.getByTestId("setup-finish").click();
+  await expect(page.getByTestId("enter-ar")).toHaveText("Start AR setup", {
+    timeout: 15000,
+  });
+  await expect(page.getByTestId("finish-status")).toContainText(/ready/i);
+  await page.getByTestId("finish-download").click();
+  await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
+
+  const second = await readDownloadedZip(page, 2);
+  const secondManifest = parseTourManifest(
+    JSON.parse(second.entries["tour.json"]),
+  );
+  // The fixture's pin, batch one's pin and photo, batch two's pin.
+  expect(secondManifest.objects.map((o) => o.kind)).toEqual([
+    "pin",
+    "pin",
+    "photo",
+    "pin",
+  ]);
+  const labels = secondManifest.objects.flatMap((o) =>
+    o.kind === "pin" ? [o.label] : [],
+  );
+  expect(labels).toEqual(["Fixture pin", "The old gate", "The second visit"]);
+  // Batch one's photo bytes are still in the archive, not just its record.
+  const keptPhoto = secondManifest.objects.find((o) => o.kind === "photo");
+  expect(
+    Array.from(
+      second.entries[keptPhoto?.kind === "photo" ? keptPhoto.image : ""],
+    ),
+  ).toEqual([255, 216, 255]);
 });
 
 test("a failed finish says so with priority and can be retried; the panel shows the rebuild's progress meanwhile", async ({

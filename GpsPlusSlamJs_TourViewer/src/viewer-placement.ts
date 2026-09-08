@@ -352,9 +352,13 @@ export function createViewerPlacement(deps: {
       scene,
       zero,
       makeLabel: (text) => seams.createLabel(text),
+      // Through the session, which knows the folder the manifest sits
+      // under: in a re-zipped (wrapped) archive the bytes are at
+      // `mytour/content/…` while the manifest names `content/…`
+      // (PR #435 review).
       loadPhotoTexture: async (entryName) =>
         decodeFrameTexture(
-          await current.loadEntry(entryName),
+          await current.loadContentEntry(entryName),
           CAPTURE_PLANE_DECODE_DIVISOR,
         ),
     }).then(

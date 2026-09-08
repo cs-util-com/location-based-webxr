@@ -48,11 +48,23 @@ tap.
   The size note next to the button says what the rebuild will copy. Entries: the level at
   `qrLevelEntryName(id)` and `tour.json` from `ctx.tourManifest` (what the
   zip already carried, so a re-measure never drops placed content) or an
-  empty manifest. The input is `session.readWholeArchive()` (the warmed
-  copy, else one range read). On success `ctx.rebuiltZip` is set, the AR
-  session is ended through the controller (the framework's session-end
-  path runs the app teardown) and the wizard opens step 5; on failure the
-  reason stays in the panel and the button re-enables.
+  empty manifest, plus each placed photo's bytes under
+  `session.manifestWrap` (the session's own prefix, never re-derived).
+  The input is the **newest bytes for this tour**: `ctx.rebuiltZip` when a
+  previous finish produced one, else `session.readWholeArchive()` (the
+  warmed copy, else range slices). On success `ctx.rebuiltZip` is set,
+  `ctx.tourManifest` **advances to what was just written** and
+  `ctx.placedObjects` is cleared, the AR session is ended through the
+  controller (the framework's session-end path runs the app teardown) and
+  the wizard opens step 5; on failure the reason stays in the panel and
+  the button re-enables.
+  - **Why the chaining and the advance go together** (PR #435 review):
+    finishing ends the AR session but does NOT close the tour, so a
+    creator can measure again, place more and finish again. Leaving the
+    manifest at its pre-finish value silently dropped the first batch;
+    advancing it while still rebuilding from the hosted zip would write a
+    manifest naming photos the archive does not contain. Both halves are
+    needed, and the e2e finishes twice in one open tour to hold them.
 - **Download:** `seams.downloadZip` (the framework's picker-or-anchor);
   `true` opens step 6, `false` (a dismissed picker) keeps the button live
   and says "not saved". Async-UI rule on both branches. `resetFinishStep`

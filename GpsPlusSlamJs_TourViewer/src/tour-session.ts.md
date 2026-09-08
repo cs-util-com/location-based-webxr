@@ -24,7 +24,7 @@ loading with MIME types, and the poisoned-cache recovery loop.
 
 - `openTourSession(url, options?): Promise<TourSession>` with
   `OpenTourOptions { fetchImpl?; cacheStore?; googleDriveApiKey?; corsProxyBaseUrl?; onStats? }`
-- `TourSession { entries; archive; hasRecording; stats(); loadEntry(filename); close() }`
+- `TourSession { entries; archive; hasRecording; manifestWrap; stats(); loadEntry(filename); loadContentEntry(image); close() }`
   — `hasRecording` is the synchronous `actions/` pre-check
   `loadRecordingActions()` applies (a wrapping folder tolerated), exposed
   for the page's flow copy (`tour-flow.ts`, flows plan M1).
@@ -37,6 +37,16 @@ loading with MIME types, and the poisoned-cache recovery loop.
 - `loadTourManifest(): Promise<TourManifest | null>` (guided-setup plan M3)
   - null without `tour.json`; a broken manifest REJECTS (the framework's
     rule for this file: it is the whole placement, not one bad level).
+- `manifestWrap: string` and `loadContentEntry(image)` (PR #435 review) -
+  the folder `tour.json` was found under, with its trailing slash (`""`
+  for a flat zip, `"mytour/"` for one made by re-zipping a folder), and
+  the entry reader that joins it. **The one place that prefix is
+  derived:** the manifest can only ever carry the unwrapped
+  `content/<id>.<ext>` (the framework's parser pins that shape), so a
+  wrapped archive's photo bytes live at `mytour/content/…` while the
+  record says `content/…`. The finish step writes through the same
+  value. Deriving it twice is exactly how the writer and the reader
+  drifted apart.
 - `readWholeArchive(): Promise<Blob>` - the rebuild's input: the warmed
   cache copy under the archive's NORMALISED url when the store has it AND
   its size matches, else the archive in 4 MiB range slices gathered into

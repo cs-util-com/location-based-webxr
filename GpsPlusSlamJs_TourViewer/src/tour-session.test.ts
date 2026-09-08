@@ -387,6 +387,75 @@ describe("loadTourManifest / readWholeArchive (guided-setup plan M3)", () => {
     await broken.close();
   });
 
+  it("resolves a WRAPPED tour's content entries through the manifest's own prefix (PR #435 review)", async () => {
+    // Why this matters: a creator who unzips the rebuilt archive and
+    // re-zips the FOLDER gets `mytour/tour.json` + `mytour/content/x.jpg`,
+    // a shape the archive convention explicitly tolerates. The manifest
+    // can only ever carry the unwrapped `content/<id>.jpg` (the parser
+    // pins that shape), so a reader that passes the name straight to the
+    // exact-name `loadEntry` finds nothing and every placed photo
+    // disappears into "could not load" - pins still render, so the tour
+    // looks half-placed rather than broken.
+    const photo = {
+      id: "ab12ab12ab12ab12",
+      kind: "photo",
+      image: "content/ab12ab12ab12ab12.jpg",
+      geo: { lat: 47.5, lon: 8.7, alt: 400, rotation: [0, 0, 0, 1] },
+      createdAtIso: "2026-09-08T12:00:00.000Z",
+      imageWidth: 1024,
+      imageHeight: 768,
+    };
+    const wrapped = await openTourSession("https://x/wrapped.zip", {
+      fetchImpl: rangeServer(
+        await buildExactZip({
+          "mytour/tour.json": JSON.stringify({ version: 1, objects: [photo] }),
+          "mytour/content/ab12ab12ab12ab12.jpg": "jpeg-bytes",
+        }),
+      ),
+    });
+    expect(wrapped.manifestWrap).toBe("mytour/");
+    const manifest = await wrapped.loadTourManifest();
+    expect(manifest?.objects[0]?.id).toBe(photo.id);
+    // The reader asks with the name the MANIFEST carries; the session joins
+    // the prefix it found the manifest under.
+    await expect(
+      wrapped
+        .loadContentEntry("content/ab12ab12ab12ab12.jpg")
+        .then((b) => b.text()),
+    ).resolves.toBe("jpeg-bytes");
+    await wrapped.close();
+
+    // A flat zip is the same call with an empty prefix.
+    const flat = await openTourSession("https://x/flat.zip", {
+      fetchImpl: rangeServer(
+        await buildExactZip({
+          "tour.json": JSON.stringify({ version: 1, objects: [photo] }),
+          "content/ab12ab12ab12ab12.jpg": "flat-bytes",
+        }),
+      ),
+    });
+    expect(flat.manifestWrap).toBe("");
+    await expect(
+      flat
+        .loadContentEntry("content/ab12ab12ab12ab12.jpg")
+        .then((b) => b.text()),
+    ).resolves.toBe("flat-bytes");
+    await flat.close();
+
+    // No manifest at all: the prefix is empty, and the call still reads a
+    // root-level entry (the creator writes there on the first finish).
+    const none = await openTourSession("https://x/none.zip", {
+      fetchImpl: rangeServer(
+        await buildExactZip({ "content/x.jpg": "root-bytes" }),
+      ),
+    });
+    expect(none.manifestWrap).toBe("");
+    await expect(
+      none.loadContentEntry("content/x.jpg").then((b) => b.text()),
+    ).resolves.toBe("root-bytes");
+    await none.close();
+  });
+
   it("opens the STARTER zip the setup hands out and reads its empty manifest (the step-1 loop)", async () => {
     // Why this matters (M2 review #11): the wizard sells "download the
     // starter, host it, paste the link, Open" - nothing else proved the
