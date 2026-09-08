@@ -5,14 +5,17 @@
  * option was added WITH a docstring naming this exact call site as its
  * motivation, and then not wired here. Nothing caught that — the option is
  * optional, so types are satisfied; it is used by the framework's own unit
- * tests, so knip sees no dead export; and `main.ts` is the DOM-heavy app
- * entry with no unit tests of its own. The defect the seam was written to
- * remove therefore stayed live while its documentation said otherwise.
+ * tests, so knip sees no dead export; and the call site lived in the
+ * DOM-heavy app entry with no unit tests of its own (now
+ * `viewer-placement.ts`, since the flows plan M6 split). The defect the
+ * seam was written to remove therefore stayed live while its documentation
+ * said otherwise.
  *
  * A source-level assertion is the honest guard for this: the invariant is
  * "the production call site passes the option", which no type check and no
  * behavioural test of either module can see. If the call is ever refactored
- * out of `main.ts`, this fails loudly rather than silently losing the abort.
+ * out of `viewer-placement.ts`, this fails loudly rather than silently
+ * losing the abort.
  */
 
 import { readFileSync } from "node:fs";
@@ -20,7 +23,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const mainSource = readFileSync(
-  fileURLToPath(new URL("./main.ts", import.meta.url)),
+  fileURLToPath(new URL("./viewer-placement.ts", import.meta.url)),
   "utf8",
 );
 
@@ -49,7 +52,7 @@ describe("the tour replay honours the abort seam", () => {
       afterReplay.indexOf("const verdict = assessReplayedJoin(state);"),
     );
     expect(beforeVerdict).toContain(
-      "if (generation !== planesRunGeneration) return false;",
+      "if (generation !== ctx.planesRunGeneration) return false;",
     );
   });
 });
