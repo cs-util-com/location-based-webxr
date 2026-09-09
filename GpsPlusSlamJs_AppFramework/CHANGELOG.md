@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### ⚠️ Breaking changes
+
+- **`engines.node` raised from `>=22.15.0` to `>=26.0.0`**
+  (owner decision 2026-09-08). Installing on the Node 22 and 24 LTS lines
+  is no longer a supported configuration.
+  - **Why.** The consumer floor and the development line were split on
+    2026-09-07 so a toolchain pin would not push consumers off an LTS
+    line (PR #431 review). But nothing then ran the package at the lower
+    floor: everything that builds, tests and publishes it runs Node 26. That made `>=22.15.0`
+    an untested assertion whose failure mode is a syntax form or built-in
+    reaching `dist/` and breaking only in a consumer's install.
+  - **In practice** `engines` is a warning, not an error, for npm and pnpm
+    at default settings; an out-of-range install still succeeds unless the
+    consumer sets `engine-strict`.
+  - **Worth knowing:** Node 26 does not itself reach LTS until October 2026.
+  - `devEngines` is removed as redundant.
+
 ### Changed
 
 - **`downloadZip` resolves a boolean**: `true` when a download or save was
@@ -21,20 +38,6 @@
   **`size()`** reports the index length - read it BEFORE evicting an open
   session's copy when the number feeds a "cleared N" message, because
   `delete`/`evict` drop that entry from the index first.
-- ⚠️ **BREAKING: `engines.node` raised from `>=22.15.0` to `>=26.0.0`**
-  (owner decision 2026-09-08). Installing on the Node 22 and 24 LTS lines
-  is no longer a supported configuration.
-  - **Why.** The consumer floor and the development line were split on
-    2026-09-07 so a toolchain pin would not push consumers off an LTS
-    line (PR #431 review). But nothing then ran the package at the lower
-    floor: the workflows and `.nvmrc` are all on 26. That made `>=22.15.0`
-    an untested assertion whose failure mode is a syntax form or built-in
-    reaching `dist/` and breaking only in a consumer's install.
-  - **In practice** `engines` is a warning, not an error, for npm and pnpm
-    at default settings; an out-of-range install still succeeds unless the
-    consumer sets `engine-strict`.
-  - **Worth knowing:** Node 26 does not itself reach LTS until October 2026.
-  - `devEngines` is removed as redundant.
 - **Opening a remote archive on `@zip.js/zip.js` 2.9 or newer costs one
   read of up to 64 KB** (the library now fetches its whole
   end-of-central-directory search window at once instead of a 22-byte
