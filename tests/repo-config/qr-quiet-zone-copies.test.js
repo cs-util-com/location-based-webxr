@@ -47,6 +47,12 @@ function quietZoneFraction() {
  * A hardcoded list is a comment claiming to be a mechanism: the next app
  * with a print stylesheet would be silently uncovered, which is the exact
  * failure this file exists to prevent (M1/M3 review #7).
+ *
+ * The discovery is one level deep - `<package>/index.html` - which covers
+ * every app in this repo's layout and would NOT see print markup at a
+ * nested path. Stated rather than widened: a glob over every HTML file in
+ * the tree would read node_modules and build output, and the layout is a
+ * repo convention with its own guards (PR #439 review).
  */
 function printMarkupFiles() {
   return readdirSync(repoRoot, { withFileTypes: true })

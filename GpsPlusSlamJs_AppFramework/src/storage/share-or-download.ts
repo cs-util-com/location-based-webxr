@@ -166,6 +166,31 @@ export function canShareFilesOfType(
 }
 
 /**
+ * `canShare` with a real file, answering FALSE rather than throwing.
+ *
+ * Guarded like the wire-time probe is, and for the same reason: a
+ * `canShare` that throws must mean "no share here", not "this module
+ * rejects". Without it the module's own contract - it never rejects for a
+ * share problem, only for a failing download - was false on one line
+ * (PR #439 review #2).
+ */
+function canShareFile(
+  canShare: (data: { files: File[] }) => boolean,
+  file: File,
+  filename: string
+): boolean {
+  try {
+    return canShare({ files: [file] });
+  } catch (err) {
+    log.warn(
+      `canShare threw for ${filename}, falling back to download:`,
+      err instanceof Error ? err.message : String(err)
+    );
+    return false;
+  }
+}
+
+/**
  * The share attempt, split out so the public function stays one decision
  * deep: a `ShareOrDownloadResult` when the share route SETTLED the
  * question (handed over, or aborted), or `null` meaning "not shareable
@@ -191,7 +216,8 @@ async function tryShare(
   // Re-asked with the REAL file: the wire-time probe used a one-byte dummy,
   // and some platforms refuse a specific file (its size, its type) even
   // when the type in general is shareable.
-  if (!canShare({ files: [file] })) return null;
+  //
+  if (!canShareFile(canShare, file, filename)) return null;
   try {
     await share({ files: [file] });
     log.info(`Shared ${filename} via the Web Share API`);

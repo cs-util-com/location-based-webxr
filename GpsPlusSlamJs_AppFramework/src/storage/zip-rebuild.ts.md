@@ -36,6 +36,12 @@ DEC-H3).
   The output Blob is still whole; a large recorder zip is a whole-file pass
   on a phone - callers show the progress (`done` = entries read so far,
   `total` = the output's entry count).
+- **The archive's convention decides where a file lands.** In a zip whose
+  entries carry a leading `./`, a new entry naming that file either way -
+  with the prefix or without - replaces it IN PLACE, at the archive's own
+  name. Asking that question three different ways is what let `./x` and `x`
+  both be written into one archive, which every reader resolves to one file
+  and none agree which (PR #439 review).
 - Only the names this call INVENTS are name-checked. An entry whose path
   the input archive already carries is re-emitted verbatim
   (`assertSafeNewZipPaths` is given the others only), because refusing a

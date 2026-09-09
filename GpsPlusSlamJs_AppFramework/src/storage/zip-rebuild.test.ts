@@ -213,6 +213,35 @@ describe('rebuildZipWithEntries', () => {
     expect(after.get('./content/new.jpg')).toEqual(PHOTO);
   });
 
+  it('REPLACES a ./ entry when the caller names it without the prefix', async () => {
+    // Why this test matters: the tolerance was applied to the duplicate
+    // check but not to the archive lookup, so a caller naming the file the
+    // other way round got BOTH entries written - `./session.json` carried
+    // through untouched and `session.json` added beside it. Every reader,
+    // including this package's own suffix-based finders, treats those as
+    // one file, so the archive would silently carry two versions of it and
+    // which one wins is the extractor's choice.
+    //
+    // The rule is that the archive's convention decides: a file the archive
+    // already holds is replaced IN PLACE, at the archive's own name,
+    // whichever way the caller spells it.
+    const writer = new ZipWriter(new BlobWriter('application/zip'), {
+      level: 0,
+    });
+    await writer.add('./session.json', new TextReader('{"a":1}'));
+    await writer.add('./keep.txt', new TextReader('keep'));
+    const input = await writer.close();
+
+    const out = await rebuildZipWithEntries(input, [
+      { path: 'session.json', data: '{"a":2}' },
+    ]);
+    const after = await entryBytes(out);
+    expect([...after.keys()].sort()).toEqual(['./keep.txt', './session.json']);
+    expect(new TextDecoder().decode(after.get('./session.json'))).toBe(
+      '{"a":2}'
+    );
+  });
+
   it('does NOT extend that tolerance to a FLAT archive', async () => {
     // Why: the tolerance is for following the archive's convention, not a
     // hole in the path rules. A zip whose entries are flat gives a caller

@@ -54,11 +54,8 @@ import {
 const DOT_SLASH = './';
 
 /** Does this archive write its entries with a leading `./`? */
-function archiveUsesDotSlash(archiveNames: ReadonlySet<string>): boolean {
-  for (const name of archiveNames) {
-    if (name.startsWith(DOT_SLASH)) return true;
-  }
-  return false;
+function archiveUsesDotSlash(archiveNames: readonly string[]): boolean {
+  return archiveNames.some((name) => name.startsWith(DOT_SLASH));
 }
 
 /**
@@ -116,7 +113,6 @@ export async function rebuildZipWithEntries(
 ): Promise<Blob> {
   const reader = new ZipReader(new BlobReader(zip));
   try {
-    const replaced = new Set(entries.map((e) => e.path));
     const all = lastOccurrences(
       (await reader.getEntries()).filter((e): e is FileEntry => !e.directory)
     );
@@ -129,12 +125,30 @@ export async function rebuildZipWithEntries(
     // recording was skipped with a log line and no other trace (PR #438
     // review). Re-emitting a name the input already carried is no new
     // hazard; inventing one is, and that is still refused.
-    const archiveNames = new Set(all.map((e) => e.filename));
-    const dotSlash = archiveUsesDotSlash(archiveNames);
+    const dotSlash = archiveUsesDotSlash(all.map((e) => e.filename));
+    // Which archive entry each name REFERS to, keyed on the normalised
+    // form. One map rather than a bare name set, because every downstream
+    // question is the same question - "does the archive already hold this
+    // file?" - and asking it three different ways is what let `./x` and
+    // `x` both be written (PR #439 review #1).
+    const archiveByName = new Map(
+      all.map((e) => [underArchiveConvention(e.filename, dotSlash), e.filename])
+    );
+    // A new entry lands at the archive's OWN name for that file when the
+    // archive already holds it, so a caller that names it either way
+    // replaces rather than duplicates - and the output keeps the archive's
+    // convention, which is this module's standing rule.
+    const targeted = entries.map((e) => ({
+      ...e,
+      path:
+        archiveByName.get(underArchiveConvention(e.path, dotSlash)) ?? e.path,
+    }));
     assertSafeNewZipPaths(
-      entries
-        .filter((e) => !archiveNames.has(e.path))
-        // ...and under the archive's own convention, because the Tour
+      targeted
+        .filter(
+          (e) => !archiveByName.has(underArchiveConvention(e.path, dotSlash))
+        )
+        // ...checked under the archive's own convention, because the Tour
         // Viewer's finish builds each new photo's path from the prefix it
         // found the manifest at. In a `./`-written zip that prefix is
         // `./`, so `./content/<id>.jpg` is a path this call INVENTS, is
@@ -153,8 +167,9 @@ export async function rebuildZipWithEntries(
     // happens to carry says nothing about the bytes behind it.
     assertNoDuplicateNewPaths(entries, dotSlash);
     assertWritableZipData(entries, 'rebuildZipWithEntries');
+    const replaced = new Set(targeted.map((e) => e.path));
     const existing = all.filter((e) => !replaced.has(e.filename));
-    const total = existing.length + entries.length;
+    const total = existing.length + targeted.length;
     const carried: ZipEntryInput[] = [];
     for (const entry of existing) {
       carried.push({
@@ -164,7 +179,7 @@ export async function rebuildZipWithEntries(
       options.onProgress?.(carried.length, total);
     }
     const out = await writeStoreZip(
-      [...carried, ...entries],
+      [...carried, ...targeted],
       'rebuildZipWithEntries'
     );
     options.onProgress?.(total, total);
