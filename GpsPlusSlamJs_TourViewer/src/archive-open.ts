@@ -24,10 +24,30 @@ import type {
 const DEFAULT_ASSET_PREFIX =
   "https://raw.githubusercontent.com/cs-util-com/GeoTales/refs/heads/main/";
 
+/** The label on every button that opens a tour. "Open" until the second
+ *  testing session (F6): nobody wants to open the zip, they want to know
+ *  the link works - and a link that opens here is one the printed code can
+ *  carry. */
+export const OPEN_BUTTON_LABEL = "Test link";
+
+/** Step 4's own open button. A different label on purpose: by then the
+ *  creator is not testing a link, they are getting the tour onto the
+ *  device they are holding. */
+export const MISSING_OPEN_LABEL = "Open the tour here";
+
 export interface ArchiveOpenDom {
   form: HTMLFormElement;
   linkInput: HTMLInputElement;
   openButton: HTMLButtonElement;
+  /** Step 4's "this device does not have the tour" form (F12) - the SAME
+   *  control over the SAME state, surfaced where the link is missing. Its
+   *  input mirrors into `linkInput` before the open, so the page keeps one
+   *  link of record and one open path. */
+  missingForm: HTMLFormElement;
+  missingInput: HTMLInputElement;
+  missingButton: HTMLButtonElement;
+  /** The block holding that form; hidden once a tour is actually open. */
+  missingBlock: HTMLElement;
   statsPanel: HTMLDivElement;
   statsHeadline: HTMLDivElement;
   statsDetail: HTMLDivElement;
@@ -161,14 +181,30 @@ export function wireArchiveOpen(deps: {
     }
   }
 
-  async function openUrl(url: string): Promise<void> {
+  /** Every button that can start an open. Both must show the in-progress
+   *  state: a live, unlabelled second button through a whole open is the
+   *  async-UI rule broken in the file that documents it most carefully
+   *  (M3 review #11). */
+  const openButtons = (): { button: HTMLButtonElement; idle: string }[] => [
+    { button: dom.openButton, idle: OPEN_BUTTON_LABEL },
+    { button: dom.missingButton, idle: MISSING_OPEN_LABEL },
+  ];
+
+  async function openUrl(
+    url: string,
+    /** Where the creator submitted from - step 4's form asks the wizard to
+     *  stay there rather than jump to step 2 (M3 review #1). */
+    origin: "host-step" | "measure-step" = "host-step",
+  ): Promise<void> {
     const generation = ++ctx.openGeneration;
     dom.errorBox.textContent = "";
     // Async-UI rule: the in-progress state engages BEFORE the first await —
     // teardown of a previous session is async, and a second submission
     // landing in that window used to race the button state (PR #357 review).
-    dom.openButton.disabled = true;
-    dom.openButton.textContent = "Opening…";
+    for (const { button } of openButtons()) {
+      button.disabled = true;
+      button.textContent = "Opening…";
+    }
     try {
       // INSIDE the try (PR #365 review): a throw from the previous session's
       // teardown (controller reset, three.js disposals) otherwise rejected
@@ -196,7 +232,12 @@ export function wireArchiveOpen(deps: {
       // below, whose rejection would otherwise silently cancel a GPS-only
       // feature.
       hooks.tryPlaceTour();
-      hooks.presentTourForPrint(url);
+      // Step 4's "this device has no tour" block has served its purpose -
+      // and only NOW, on a successful open (M3 review #13). A pasted link
+      // fails often on a phone, and a block that hid on submit would take
+      // the retry away at the moment it is needed.
+      dom.missingBlock.hidden = true;
+      hooks.presentTourForPrint(url, origin);
       // The placed content (guided-setup plan M3): the finish step writes
       // it back, so a re-measure never drops what an earlier session placed.
       // A broken manifest is an error the creator must see (the framework's
@@ -265,8 +306,10 @@ export function wireArchiveOpen(deps: {
       // open's finally must not undo the newer open's in-progress state
       // (PR #357 review).
       if (generation === ctx.openGeneration) {
-        dom.openButton.disabled = false;
-        dom.openButton.textContent = "Open";
+        for (const { button, idle } of openButtons()) {
+          button.disabled = false;
+          button.textContent = idle;
+        }
       }
     }
   }
@@ -275,6 +318,16 @@ export function wireArchiveOpen(deps: {
     event.preventDefault();
     const url = dom.linkInput.value.trim();
     if (url !== "") void openUrl(url);
+  });
+
+  // Step 4's form (F12). It writes into the ONE link of record first, so
+  // there is never a second value that could disagree with step 1's.
+  dom.missingForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const url = dom.missingInput.value.trim();
+    if (url === "") return;
+    dom.linkInput.value = url;
+    void openUrl(url, "measure-step");
   });
 
   wireClearCache(ctx, dom, cacheStore);

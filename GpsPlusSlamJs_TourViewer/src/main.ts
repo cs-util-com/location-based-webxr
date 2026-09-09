@@ -26,7 +26,7 @@ import {
 
 import { wireArchiveOpen } from "./archive-open.js";
 import { wireArEntry } from "./ar-entry.js";
-import { wireCreatorSetup } from "./creator-setup.js";
+import { arSessionLive, wireCreatorSetup } from "./creator-setup.js";
 import { viewerModeFromSearch } from "./mode.js";
 import { describeOpenError } from "./open-errors.js";
 import { wirePrintPanel } from "./print-panel.js";
@@ -87,6 +87,10 @@ const hooks = createUnwiredHooks();
 
 const printPanel = element<HTMLDetailsElement>("print-panel");
 const sizeInput = element<HTMLInputElement>("author-size");
+// Step 4. A <details> since the flow rework (F4), and the one whose body
+// is the WebXR DOM-overlay root - three modules need it, so it is looked
+// up once here.
+const measureStep = element<HTMLDetailsElement>("step-measure");
 
 // The mode on the body: the page's CSS reads it (the visitor's AR section
 // loses the step card's frame).
@@ -96,6 +100,8 @@ const print = wirePrintPanel(
   {
     panel: printPanel,
     urlInput: element("print-url"),
+    urlAsk: element("print-url-ask"),
+    urlShown: element("print-url-shown"),
     sizeInput,
     codeInput: element("author-c"),
     generateButton: element("print-generate"),
@@ -118,13 +124,12 @@ const wizard = wireWizard({
       host: element<HTMLDetailsElement>("step-host"),
       print: printPanel,
       hang: element<HTMLDetailsElement>("step-hang"),
-      finish: element<HTMLDetailsElement>("step-finish"),
-      replace: element<HTMLDetailsElement>("step-replace"),
+      measure: measureStep,
     },
     hangDone: element<HTMLButtonElement>("hang-done"),
     starterButton: element<HTMLButtonElement>("starter-zip"),
     visitorLink: element<HTMLAnchorElement>("visitor-link"),
-    measureSection: element("step-measure"),
+    measureSection: measureStep,
   },
   // The starter zip (DEC-N5): an empty manifest, so a creator without a
   // recording has something to host before printing the code.
@@ -138,6 +143,10 @@ const wizard = wireWizard({
   // Through the seam like the finish step's download, so the e2e fake
   // captures it (M3 review #10).
   download: (blob, filename) => seams.downloadZip(blob, filename),
+  // Step 4 holds the overlay root, so the wizard must never collapse it
+  // while a session is live (M3 review #2). The controller is the only
+  // thing that knows, so it is asked rather than mirrored.
+  arSessionActive: () => arSessionLive(arController.getState().status),
   // The reached step per hosted url (M6); absent where reaching for the
   // store throws (blocked site data), so the page still boots.
   ...(stepStore === undefined ? {} : { stepStore }),
@@ -150,9 +159,14 @@ const wizard = wireWizard({
   if (mode === "creator" && last !== null && linkInput.value === "")
     linkInput.value = last;
 }
-hooks.presentTourForPrint = (url) => {
+hooks.presentTourForPrint = (url, origin) => {
   print.presentTour(url);
-  wizard.presentTour(url);
+  // An open started from step 4 keeps the creator there (M3 review #1):
+  // the default would collapse step 4, whose content is the AR overlay.
+  wizard.presentTour(
+    url,
+    origin === "measure-step" ? { prefer: "measure" } : {},
+  );
 };
 
 const visitor = wireVisitorScreen({
@@ -160,6 +174,7 @@ const visitor = wireVisitorScreen({
   seams,
   dom: {
     screen: element("visitor-screen"),
+    measureStep,
     creatorOnly: Array.from(
       document.querySelectorAll<HTMLElement>(".creator-only"),
     ),
@@ -180,6 +195,9 @@ const setup = wireCreatorSetup({
   wizard,
   dom: {
     panel: element("setup-panel"),
+    controls: element("setup-controls"),
+    finishBlock: element("finish-block"),
+    replaceHelp: element("replace-help"),
     sizeInput,
     printPanel,
     status: element("setup-status"),
@@ -243,6 +261,10 @@ const archive = wireArchiveOpen({
     form: element("open-form"),
     linkInput: element("link"),
     openButton: element("open"),
+    missingForm: element("tour-missing"),
+    missingInput: element("tour-missing-link"),
+    missingButton: element("tour-missing-open"),
+    missingBlock: element("tour-missing"),
     statsPanel: element("stats"),
     statsHeadline: element("stats-headline"),
     statsDetail: element("stats-detail"),

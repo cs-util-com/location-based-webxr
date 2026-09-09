@@ -13,7 +13,7 @@
  * specs, which is where the click and `beforeprint` paths are asserted.
  */
 import { describe, expect, it } from "vitest";
-import { printedSideToApply } from "./print-panel.js";
+import { printedSideToApply, printUrlDisplay } from "./print-panel.js";
 
 describe("printedSideToApply", () => {
   it("gives the size that is in the box, so a changed size prints changed", () => {
@@ -47,5 +47,47 @@ describe("printedSideToApply", () => {
     // rounds to 0.1 mm, so an off-step hand-typed size prints at a
     // predictable length rather than a rounded-to-the-millimetre one.
     expect(printedSideToApply("0.1634", true)).toBe("16.34cm");
+  });
+});
+
+describe("printUrlDisplay (second testing session, F7)", () => {
+  it("asks for the link only while no tour is open", () => {
+    // Why this matters: F7 is the owner reporting that step 2 asked again
+    // for the link they had just given in step 1. Once a tour is open the
+    // code carries THAT link, so the field is replaced by the link as
+    // text - there is nothing left to decide.
+    expect(printUrlDisplay("https://h/t.zip")).toEqual({
+      askVisible: false,
+      shownVisible: true,
+      shownText: "https://h/t.zip",
+    });
+  });
+
+  it("keeps the field when no tour is open, so a code can be printed first", () => {
+    // The other half, and the reason the field was not simply deleted:
+    // printing the code before the zip is hosted is a flow the owner kept
+    // on purpose (flows plan DEC-F2), and with no tour open this field is
+    // the only place the link can come from.
+    expect(printUrlDisplay(null)).toEqual({
+      askVisible: true,
+      shownVisible: false,
+      shownText: "",
+    });
+    // An empty string is "no tour", not "a tour with no link": the other
+    // reading leaves a creator with nowhere to type and nothing to read.
+    expect(printUrlDisplay("")).toEqual({
+      askVisible: true,
+      shownVisible: false,
+      shownText: "",
+    });
+  });
+
+  it("never shows both spellings at once (property)", () => {
+    // The invariant that stops the two from disagreeing about which link
+    // the printed code carries.
+    for (const url of [null, "", "https://h/a.zip", "not a url"]) {
+      const view = printUrlDisplay(url);
+      expect(view.askVisible && view.shownVisible, String(url)).toBe(false);
+    }
   });
 });

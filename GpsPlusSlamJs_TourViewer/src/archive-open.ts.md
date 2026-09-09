@@ -11,7 +11,16 @@ DOM glue, its own module since the flows plan M6.
 ## Public API
 
 - `wireArchiveOpen({ ctx, dom, cacheStore, corsProxyBaseUrl, hooks }): ArchiveOpen`
-  - `ArchiveOpenDom { form; linkInput; openButton; statsPanel; statsHeadline; statsDetail; errorBox; gallery; storagePanel; clearCacheButton }`
+  - `ArchiveOpenDom { form; linkInput; openButton; missingForm; missingInput; missingButton; missingBlock; statsPanel; statsHeadline; statsDetail; errorBox; gallery; storagePanel; clearCacheButton }`
+    - `missing*` is step 4's "this device does not have the tour" form
+      (second testing session, F12). It is the SAME control over the SAME
+      state as step 1's: its input mirrors into `linkInput` before the
+      open, so the page keeps one link of record and one open path. It
+      hides on a SUCCESSFUL open only - a pasted link fails often on a
+      phone, and hiding on submit would take the retry away exactly when
+      it is needed.
+    - BOTH buttons carry the in-progress state, each restoring its own
+      idle label (`OPEN_BUTTON_LABEL` / `MISSING_OPEN_LABEL`).
   - `cacheStore: BoundedLocalCacheStore | undefined` - undefined = no local
     copies (`?nocache=1`, no Cache API); the Storage section then hides.
   - `ArchiveOpen.boot()` - the `?qr=` launch (bare-name payloads resolve
@@ -20,7 +29,9 @@ DOM glue, its own module since the flows plan M6.
     interactive open is the form listener, and both run the module-private
     `openUrl` - tear down the previous session (which also clears
     `levelByText`), open, render stats, stream the gallery, call
-    `hooks.tryPlaceTour()` and `hooks.presentTourForPrint(url)`, load the
+    `hooks.tryPlaceTour()` and `hooks.presentTourForPrint(url, origin)` -
+    the origin says which form submitted, so an open started in step 4
+    does not answer by collapsing step 4 - load the
     levels (with a `.catch`).
 
 ## Invariants & assumptions

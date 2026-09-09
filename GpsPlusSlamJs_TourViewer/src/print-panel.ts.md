@@ -29,20 +29,29 @@ since M6.
 
 - `wirePrintPanel(dom: PrintPanelDom): PrintPanel` - binds the generate and
   print buttons.
-  - `PrintPanelDom { panel; urlInput; sizeInput; codeInput; generateButton; info; area; canvas; printButton; urlOut }`
+  - `PrintPanelDom { panel; urlInput; urlAsk; urlShown; sizeInput; codeInput; generateButton; info; area; canvas; printButton; urlOut }`
     - `sizeInput` is SHARED with author mode's mint (one input, two
       consumers): the size a code is printed at is the size it is minted
       with.
-  - `PrintPanel.presentTour(url)` - prefill the URL without clobbering typed
-    text and open the panel; `archive-open.ts` calls it on every open
+  - `PrintPanel.presentTour(url)` - take the open tour's link, swap the
+    field for that link as TEXT, open the panel and render the code;
+    `archive-open.ts` calls it on every open
+  - `printUrlDisplay(tourUrl)` - the pure rule behind that swap:
+    `{ askVisible, shownVisible, shownText }`. Exactly one of the two is
+    ever live, which is what stops them disagreeing about which link the
+    printed code carries.
     (both modes; the `?qr=` boot too).
 
 ## Invariants & assumptions
 
-- **`presentTour` replaces its OWN prefill, never the creator's typing**
-  (PR #434 review). It remembers the last url it wrote; a second opened
-  tour overwrites that, while text typed into the field is left alone.
-  The panel opens either way, so the link on screen always belongs to the
+- **The OPEN TOUR'S link always wins.** `presentTour` assigns it
+  unconditionally. It used to preserve text the creator had typed (PR #434
+  review), which was right while the field was visible; since F7 the field
+  is REPLACED by the link as text whenever a tour is open, so a hidden
+  field holding something else would make the code carry one URL while the
+  panel displays another. Typed text is only for the no-tour case, and an
+  open supersedes it. The panel opens either way, so the link on screen
+  always belongs to the
   tour that was just opened - printing a code for the previous tour was
   the failure this closed.
 

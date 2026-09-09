@@ -48,9 +48,38 @@ export function printedSideToApply(
   }
 }
 
+/**
+ * Which of the two spellings of the tour link step 2 shows.
+ *
+ * The rule (second testing session, F7): a creator who has already given
+ * the link in step 1 must not be asked for it again - so once a tour is
+ * open the field is replaced by the link as read-only text. The field
+ * stays for the case where no tour is open, because printing the code
+ * BEFORE hosting the zip is a flow the owner kept deliberately (flows plan
+ * DEC-F2). The two are never both live, which is what stops them from
+ * disagreeing about which link the code carries.
+ */
+export function printUrlDisplay(tourUrl: string | null): {
+  askVisible: boolean;
+  shownVisible: boolean;
+  shownText: string;
+} {
+  // An empty string is "no tour", not "a tour with no link": showing an
+  // empty read-only line in the field's place would leave a creator with
+  // nowhere to type and nothing to read.
+  const url = tourUrl?.trim() ?? "";
+  return url === ""
+    ? { askVisible: true, shownVisible: false, shownText: "" }
+    : { askVisible: false, shownVisible: true, shownText: url };
+}
+
 export interface PrintPanelDom {
   panel: HTMLDetailsElement;
   urlInput: HTMLInputElement;
+  /** The label wrapping `urlInput`; hidden once a tour is open. */
+  urlAsk: HTMLElement;
+  /** The open tour's link as text, in the field's place. */
+  urlShown: HTMLElement;
   /** The printed side length (m) - shared with author mode's mint. */
   sizeInput: HTMLInputElement;
   codeInput: HTMLInputElement;
@@ -76,8 +105,10 @@ export function wirePrintPanel(
    *  "open as a visitor" link carries the same payload a scan decodes). */
   onLaunchUrl: (launchUrl: string) => void = () => undefined,
 ): PrintPanel {
-  dom.generateButton.addEventListener("click", () => {
-    // Async-UI rule: in-progress before the awaits, durable end state after.
+  /** One render of the code, with the async-UI cycle around it: in-progress
+   *  before the awaits, a durable end state after, and a failure that says
+   *  so in the panel instead of leaving a stale code on screen. */
+  function regenerate(): void {
     dom.generateButton.disabled = true;
     dom.generateButton.textContent = "Generating…";
     generatePrintCode(dom)
@@ -93,7 +124,9 @@ export function wirePrintPanel(
         dom.generateButton.disabled = false;
         dom.generateButton.textContent = "Generate QR";
       });
-  });
+  }
+
+  dom.generateButton.addEventListener("click", regenerate);
 
   /** Write the size that is in the box, if there is a code to print. */
   const applyPrintedSide = (): void => {
@@ -112,10 +145,6 @@ export function wirePrintPanel(
     window.print();
   });
 
-  /** What `presentTour` last wrote into the input, so a second open can
-   *  replace it without touching text the creator typed. */
-  let lastPresented: string | null = null;
-
   // The browser's own print (menu, Ctrl+P) bypasses the button: open the
   // panel before the print layout is computed, or a generated code prints
   // as a blank page (owner decision 2026-09-08, closing interview). Only
@@ -127,19 +156,41 @@ export function wirePrintPanel(
     applyPrintedSide();
   });
 
+  // A changed size or code number makes the code on screen stale: it is
+  // still the old number of squares, and the info line still claims the old
+  // physical size. Re-render rather than leave a lie on screen. `change`,
+  // not `input`: a half-typed "0.2" must not repaint at "0.", and `change`
+  // is what fires on blur and on the spinner (M3 review #8 keeps the
+  // Generate button as well, for the paths no event covers).
+  for (const input of [dom.sizeInput, dom.codeInput]) {
+    input.addEventListener("change", () => {
+      if (dom.area.hidden) return; // nothing generated yet: nothing to restate
+      regenerate();
+    });
+  }
+
   return {
     presentTour: (url) => {
-      const current = dom.urlInput.value.trim();
-      // Replace what THIS function last prefilled, and only that (PR #434
-      // review): the "don't clobber typed text" guard could not tell the
-      // creator's typing from a previous prefill, so opening tour B popped
-      // the panel open showing tour A's link - and "Generate QR" then
-      // printed a code that launches A.
-      if (current === "" || current === lastPresented) {
-        dom.urlInput.value = url;
-        lastPresented = url;
-      }
+      // The OPEN TOUR'S link wins, always. It used to be kept only when the
+      // field was empty or still held a previous prefill, so as not to
+      // clobber text the creator had typed (PR #434 review). Since F7 the
+      // field is REPLACED by the link as text while a tour is open, and a
+      // hidden field holding something else would make the code carry one
+      // URL while the panel displays another - the exact disagreement the
+      // one-link rule exists to prevent. Typed text is only for the case
+      // where no tour is open, and an open supersedes it.
+      dom.urlInput.value = url;
+      // The link is settled now, so step 2 shows it rather than asking for
+      // it (F7).
+      const display = printUrlDisplay(url);
+      dom.urlAsk.hidden = !display.askVisible;
+      dom.urlShown.hidden = !display.shownVisible;
+      dom.urlShown.textContent = display.shownText;
       dom.panel.open = true;
+      // "Show the code immediately" (F7): the creator asked for the code,
+      // not for a button that makes one. The Generate button stays for the
+      // print-before-hosting path and as the retry after a failure.
+      regenerate();
     },
   };
 }

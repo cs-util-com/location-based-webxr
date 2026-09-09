@@ -4,6 +4,7 @@ import fc from "fast-check";
 import {
   launchHrefFromPrintedUrl,
   parseWizardStep,
+  remapLegacyStep,
   STARTER_LABELS,
   visitorLaunchHref,
   wizardStepKey,
@@ -44,8 +45,7 @@ function fakeDom() {
       host: step("host"),
       print: step("print"),
       hang: step("hang"),
-      finish: step("finish"),
-      replace: step("replace"),
+      measure: step("measure"),
     },
     measureSection: {
       scrollIntoView: (options) => {
@@ -108,8 +108,7 @@ describe("wireWizard", () => {
           const openNames = Object.entries(dom.steps)
             .filter(([, node]) => node.open)
             .map(([name]) => name);
-          // `measure` has no collapsible node: opening it collapses all.
-          expect(openNames).toEqual(last === "measure" ? [] : [last]);
+          expect(openNames).toEqual([last]);
         },
       ),
     );
@@ -131,13 +130,15 @@ describe("wireWizard", () => {
       visitorLaunchHref("https://example.com/t.zip?x=1"),
     );
     click("hang");
-    expect(Object.values(dom.steps).some((s) => s.open)).toBe(false);
+    expect(dom.steps.measure?.open).toBe(true);
+    expect(dom.steps.hang?.open).toBe(false);
   });
 
   it("scrolls the AR section into view when step 4 opens, and a step opened BY HAND closes the others", () => {
-    // Why this matters (M2 review #12): step 4 has nothing to open, so the
-    // page only got shorter after "It hangs - continue"; and a second
-    // summary tap used to leave two steps open, against the one-open rule.
+    // Why this matters (M2 review #12): opening step 4 from the bottom of
+    // step 3 would otherwise leave the creator looking at a summary row;
+    // and a second summary tap used to leave two steps open, against the
+    // one-open rule.
     const { dom, click, scrolls } = fakeDom();
     wireWizard({
       mode: "creator",
@@ -211,6 +212,112 @@ describe("wireWizard", () => {
   });
 });
 
+describe("step 4 during an AR session (M3 review #2)", () => {
+  it("stays open whatever anyone asks for, because it holds the overlay root (property)", () => {
+    // Why this matters, and why it is a property rather than one case:
+    // step 4's body contains `#ar-root`, the element WebXR composites over
+    // the camera. A collapsed <details> renders nothing, so closing step 4
+    // mid-session blanks the overlay - the creator is left looking at a
+    // camera feed with no controls, and nothing in CI can see it.
+    //
+    // Hiding the summary stops a tap and the keyboard. It does NOT stop
+    // the several places that assign `open` directly: the print panel does
+    // it on `beforeprint`, so pressing Ctrl+P was enough to reach
+    // `openStep("print")` through the wizard's own toggle listener. The
+    // rule therefore lives here, and the property is "no sequence of
+    // openStep calls can close it".
+    fc.assert(
+      fc.property(
+        fc.array(fc.constantFrom<WizardStep>(...WIZARD_STEPS), {
+          minLength: 1,
+          maxLength: 10,
+        }),
+        (sequence) => {
+          const { dom } = fakeDom();
+          let sessionActive = false;
+          const wizard = wireWizard({
+            mode: "creator",
+            dom,
+            packStarter: () => Promise.resolve(new Blob()),
+            download: () => Promise.resolve(true),
+            arSessionActive: () => sessionActive,
+          });
+          wizard.openStep("measure");
+          sessionActive = true;
+          for (const step of sequence) wizard.openStep(step);
+          expect(dom.steps.measure?.open).toBe(true);
+        },
+      ),
+    );
+  });
+
+  it("is forced open even if the session started with another step open", () => {
+    // The honest starting state for the rule: a creator can enter AR from
+    // step 4, but the size-error path opens step 2 (creator-setup.ts), so
+    // a session can begin with step 4 collapsed.
+    const { dom } = fakeDom();
+    let sessionActive = false;
+    const wizard = wireWizard({
+      mode: "creator",
+      dom,
+      packStarter: () => Promise.resolve(new Blob()),
+      download: () => Promise.resolve(true),
+      arSessionActive: () => sessionActive,
+    });
+    wizard.openStep("print");
+    sessionActive = true;
+    wizard.openStep("print");
+    expect(dom.steps.measure?.open).toBe(true);
+    // Nothing else was disturbed: the page under the overlay is not the
+    // creator's concern while a session runs.
+    expect(dom.steps.print?.open).toBe(true);
+  });
+});
+
+describe("opening a tour from step 4 (M3 review #1)", () => {
+  it("stays on step 4 instead of jumping the creator back to step 2", () => {
+    // Why this matters: step 4 asks for the tour link when the device does
+    // not have one (a creator who walked to the poster with their phone).
+    // The open runs the same path as step 1's, which ends in presentTour -
+    // and presentTour's default is "a tour just opened, go to step 2".
+    // Without the preference the form would answer the creator by
+    // collapsing the very step they are standing in.
+    const { dom } = fakeDom();
+    const wizard = wireWizard({
+      mode: "creator",
+      dom,
+      packStarter: () => Promise.resolve(new Blob()),
+      download: () => Promise.resolve(true),
+    });
+    wizard.presentTour("https://h/t.zip", { prefer: "measure" });
+    expect(dom.steps.measure?.open).toBe(true);
+    expect(dom.steps.print?.open).toBe(false);
+  });
+
+  it("still yields to a step this creator actually reached with this tour", () => {
+    // The preference says where the creator is standing; a remembered step
+    // says where they got to. The second is the stronger evidence.
+    const store = new Map<string, string>([
+      [wizardStepKey("https://h/t.zip"), "hang"],
+    ]);
+    const { dom } = fakeDom();
+    wireWizard({
+      mode: "creator",
+      dom,
+      packStarter: () => Promise.resolve(new Blob()),
+      download: () => Promise.resolve(true),
+      stepStore: {
+        getItem: (k: string) => store.get(k) ?? null,
+        setItem: (k: string, v: string) => {
+          store.set(k, v);
+        },
+      },
+    }).presentTour("https://h/t.zip", { prefer: "measure" });
+    expect(dom.steps.hang?.open).toBe(true);
+    expect(dom.steps.measure?.open).toBe(false);
+  });
+});
+
 describe("the remembered step (M6)", () => {
   it("lands on the step the creator reached with this tour, and step 2 for a new one; a broken store is harmless", () => {
     // Why this matters (plan §2.7): the AR session and the print dialog
@@ -233,8 +340,8 @@ describe("the remembered step (M6)", () => {
     });
     wizard.presentTour("https://h/t.zip");
     expect(first.dom.steps.print?.open).toBe(true);
-    wizard.openStep("replace");
-    expect(store.get(wizardStepKey("https://h/t.zip"))).toBe("replace");
+    wizard.openStep("hang");
+    expect(store.get(wizardStepKey("https://h/t.zip"))).toBe("hang");
 
     // A reload: the same tour opens at the remembered step.
     const second = fakeDom();
@@ -245,7 +352,7 @@ describe("the remembered step (M6)", () => {
       download: () => Promise.resolve(true),
       stepStore,
     }).presentTour("https://h/t.zip");
-    expect(second.dom.steps.replace?.open).toBe(true);
+    expect(second.dom.steps.hang?.open).toBe(true);
 
     // A throwing store (blocked site data) leaves the flow intact.
     const third = fakeDom();
@@ -305,7 +412,7 @@ describe("the remembered step (M6)", () => {
       stepStore,
     });
     wizardA.presentTour("https://h/a.zip");
-    wizardA.openStep("replace");
+    wizardA.openStep("hang");
     const b = fakeDom();
     const wizardB = wireWizard({
       mode: "creator",
@@ -316,31 +423,56 @@ describe("the remembered step (M6)", () => {
     });
     wizardB.presentTour("https://h/b.zip");
     expect(b.dom.steps.print?.open).toBe(true);
-    expect(b.dom.steps.replace?.open).toBe(false);
+    expect(b.dom.steps.hang?.open).toBe(false);
     // The last opened url is what the link input is prefilled with.
     expect(wizardB.rememberedTourUrl()).toBe("https://h/b.zip");
   });
 
-  it("a remembered step 5 resumes at step 4: the rebuilt zip did not survive the reload (M6 review #3)", () => {
-    const store = new Map<string, string>([
-      [wizardStepKey("https://h/t.zip"), "finish"],
-    ]);
-    const { dom } = fakeDom();
-    wireWizard({
-      mode: "creator",
-      dom,
-      packStarter: () => Promise.resolve(new Blob()),
-      download: () => Promise.resolve(true),
-      stepStore: {
-        getItem: (k: string) => store.get(k) ?? null,
-        setItem: (k: string, v: string) => {
-          store.set(k, v);
+  it("a step 5 or 6 stored by an older version resumes at step 4, not at step 2 (M3 review #3)", () => {
+    // Why this matters twice over. The rebuilt zip lives only in the page
+    // that made it, so after a reload there is nothing to download and
+    // measuring again is the honest place to resume (M6 review #3). And
+    // since the flow rework those two steps no longer EXIST, so a creator
+    // who had reached them carries a name this version cannot parse - the
+    // remap has to run before the parse, or they silently restart at
+    // step 2 with the setup apparently undone.
+    for (const stored of ["finish", "replace"]) {
+      const store = new Map<string, string>([
+        [wizardStepKey("https://h/t.zip"), stored],
+      ]);
+      const { dom } = fakeDom();
+      wireWizard({
+        mode: "creator",
+        dom,
+        packStarter: () => Promise.resolve(new Blob()),
+        download: () => Promise.resolve(true),
+        stepStore: {
+          getItem: (k: string) => store.get(k) ?? null,
+          setItem: (k: string, v: string) => {
+            store.set(k, v);
+          },
         },
-      },
-    }).presentTour("https://h/t.zip");
-    expect(dom.steps.finish?.open).toBe(false);
-    expect(dom.steps.host?.open).toBe(false);
-    expect(dom.steps.print?.open).toBe(false);
+      }).presentTour("https://h/t.zip");
+      expect(dom.steps.measure?.open, stored).toBe(true);
+      expect(dom.steps.print?.open, stored).toBe(false);
+      expect(dom.steps.host?.open, stored).toBe(false);
+    }
+  });
+
+  it("remapLegacyStep leaves every live step alone and moves only the retired two (property)", () => {
+    // The remap must be a no-op on anything the parser would accept, or a
+    // future step name could be silently rewritten to `measure`.
+    fc.assert(
+      fc.property(fc.constantFrom<WizardStep>(...WIZARD_STEPS), (step) => {
+        expect(remapLegacyStep(step)).toBe(step);
+      }),
+    );
+    expect(remapLegacyStep("finish")).toBe("measure");
+    expect(remapLegacyStep("replace")).toBe("measure");
+    expect(remapLegacyStep(null)).toBeNull();
+    // A name nobody ever stored passes through and is rejected by the
+    // parser, which is where unknown values belong.
+    expect(parseWizardStep(remapLegacyStep("nonsense"))).toBeNull();
   });
 
   it("a visitor page never writes a creator's key, and never reads one (M6 review #11)", () => {
@@ -352,16 +484,38 @@ describe("the remembered step (M6)", () => {
       packStarter: () => Promise.resolve(new Blob()),
       download: () => Promise.resolve(true),
       stepStore: {
-        getItem: () => "replace",
+        getItem: () => "hang",
         setItem: (k: string) => {
           writes.push(k);
         },
       },
     });
+    // The store would hand back "hang" for any key. A visitor's
+    // presentTour must ignore it: the setup steps are not their page.
     wizard.presentTour("https://h/t.zip");
-    wizard.openStep("hang");
+    expect(dom.steps.hang?.open).toBe(false);
+    // And nothing a visitor does writes a creator's key.
+    wizard.openStep("print");
     expect(writes).toEqual([]);
-    expect(dom.steps.replace?.open).toBe(false);
+  });
+
+  it("a visitor page registers no toggle listeners, so opening step 4 does not scroll the consent copy away (M3 review #10)", () => {
+    // Why this matters: `visitor-screen.ts` opens step 4 to make the AR
+    // section the screen. With a listener attached that toggle becomes
+    // `openStep("measure")`, whose scroll pulls #step-measure to the top -
+    // taking the "it needs the camera, and your location, nothing is
+    // uploaded" screen, the one thing a visitor must read, off the page
+    // before they have seen it.
+    const { dom, click, scrolls } = fakeDom();
+    wireWizard({
+      mode: "visitor",
+      dom,
+      packStarter: () => Promise.resolve(new Blob()),
+      download: () => Promise.resolve(true),
+    });
+    dom.steps.measure!.open = true;
+    click("toggle:measure");
+    expect(scrolls).toEqual([]);
   });
 
   it("stepStoreOrUndefined survives a throwing localStorage getter (M6 review #1)", () => {

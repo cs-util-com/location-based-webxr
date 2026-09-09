@@ -88,7 +88,28 @@ async function lockTheCode(page) {
     .toMatch(/Code recognised/);
 }
 
+/**
+ * Open step 4 on the creator's page.
+ *
+ * Since the flow rework (F4) step 4 is a real disclosure like its siblings,
+ * so the AR button lives inside a collapsed <details> until the creator
+ * gets there - which is the point: the setup is one step at a time. A
+ * VISITOR needs none of this (`visitor-screen.ts` opens step 4 for them,
+ * because their summary is creator-only and could never be tapped).
+ */
+async function openMeasureStep(page) {
+  const step = page.getByTestId("step-measure");
+  // `el.open`, not getAttribute: an open <details> carries `open=""`, which
+  // is FALSY - the attribute form silently clicks an already-open step and
+  // closes it.
+  if (await step.evaluate((el) => /** @type {HTMLDetailsElement} */ (el).open))
+    return;
+  await step.locator("summary").click();
+  await expect(step).toHaveAttribute("open", "");
+}
+
 async function enterAr(page) {
+  await openMeasureStep(page);
   const button = page.getByTestId("enter-ar");
   await expect(button).toBeEnabled({ timeout: 10000 }); // support probe done
   await button.click();
@@ -358,9 +379,19 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
     timeout: 15000,
   });
-  await expect(page.getByTestId("setup-panel")).toBeVisible();
-  await expect(page.getByTestId("setup-finish")).toBeDisabled(); // not measured
+  // F11: the AR controls belong to the AR session. With step 4 open but no
+  // session running they must NOT be on the page - on a desktop they were a
+  // row of greyed-out buttons under "AR not supported". The status line is
+  // the part that stays, because a refused entry explains itself there.
+  await openMeasureStep(page);
+  await expect(page.getByTestId("setup-controls")).toBeHidden();
+  await expect(page.getByTestId("setup-finish")).toBeHidden();
+  // And the readout says nothing rather than telling someone at a desk to
+  // "hold the phone on the printed code so it fills the screen".
+  await expect(page.getByTestId("setup-status")).toHaveText("");
   await enterAr(page);
+  await expect(page.getByTestId("setup-controls")).toBeVisible();
+  await expect(page.getByTestId("setup-finish")).toBeDisabled(); // not measured
   await expect(page.getByTestId("enter-ar")).toHaveText("Setting up in AR");
   await expect(page.getByTestId("setup-status")).toHaveText(
     /hold the phone on the printed code/i,
@@ -479,13 +510,18 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   );
 
   // FINISH (guided-setup plan M3, DEC-N6): the zip is rebuilt in the
-  // browser from the session's bytes, the AR session ends, step 5 opens
-  // with the download; the download is a fresh tap (its own gesture).
+  // browser from the session's bytes, the AR session ends, and the
+  // download appears at the END of step 4 - it was step 5 until the flow
+  // rework (F10), which is not a setup step but the end of this one. The
+  // download is a fresh tap (its own gesture).
   await page.getByTestId("setup-finish").click();
   await expect(page.getByTestId("enter-ar")).toHaveText("Start AR setup", {
     timeout: 15000,
   });
-  await expect(page.getByTestId("step-finish")).toHaveAttribute("open", "");
+  await expect(page.getByTestId("step-measure")).toHaveAttribute("open", "");
+  await expect(page.getByTestId("finish-block")).toBeVisible();
+  // The replace instructions wait for a file to actually exist.
+  await expect(page.getByTestId("replace-help")).toBeHidden();
   await expect(page.getByTestId("finish-status")).toContainText(/ready/i);
   const download = page.getByTestId("finish-download");
   await expect(download).toBeEnabled();
@@ -501,7 +537,7 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   });
   await download.click();
   await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
-  await expect(page.getByTestId("step-replace")).toHaveAttribute("open", "");
+  await expect(page.getByTestId("replace-help")).toBeVisible();
 
   const rebuilt = await readDownloadedZip(page, 1);
   expect(rebuilt.filename).toBe("tour.zip");
@@ -703,7 +739,7 @@ test("a failed finish says so with priority and can be retried; the panel shows 
   await page.unroute("http://127.0.0.1:5197/**");
   await page.getByTestId("setup-finish").click();
   await expect(page.getByTestId("setup-finish")).toBeDisabled();
-  await expect(page.getByTestId("step-finish")).toHaveAttribute("open", "", {
+  await expect(page.getByTestId("finish-block")).toBeVisible({
     timeout: 30000,
   });
   await expect(page.getByTestId("finish-download")).toBeEnabled();
@@ -1197,13 +1233,15 @@ test("the print panel renders a scannable code at a declared true size", async (
   await expect(page.getByTestId("print-generate")).toBeEnabled();
 });
 
-test("opening a tour opens the print panel prefilled with the tour's link", async ({
+test("opening a tour shows the code and the link it carries, without asking again", async ({
   page,
 }) => {
-  // Why this matters (feedback F2, flows plan M3): after Open, the creator's
-  // next step is printing the code - the first on-phone session could not
-  // find it because it sat behind ?author=1. The panel must present itself
-  // with the opened link, without clobbering a link the creator typed.
+  // Why this matters (feedback F2, flows plan M3; reshaped by the second
+  // testing session's F7): after Open, the creator's next step is printing
+  // the code. The panel presents itself with the opened link - and since F7
+  // it does NOT present a second field asking for that link again: the
+  // field is replaced by the link as text, and the code renders without
+  // anyone pressing a button.
   const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/tour.zip";
   await page.goto("/");
   await expect(page.getByTestId("print-url")).toBeHidden();
@@ -1212,45 +1250,44 @@ test("opening a tour opens the print panel prefilled with the tour's link", asyn
   await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
     timeout: 15000,
   });
-  await expect(page.getByTestId("print-url")).toBeVisible();
-  await expect(page.getByTestId("print-url")).toHaveValue(ARCHIVE);
+  // F7: shown, not asked for.
+  await expect(page.getByTestId("print-url-shown")).toHaveText(ARCHIVE);
+  await expect(page.getByTestId("print-url-ask")).toBeHidden();
   // Step 1 collapsed, step 2 open (wizard.ts): one step at a time.
   await expect(page.getByTestId("step-host")).not.toHaveAttribute("open", "");
+  // "Show the code immediately" (F7): no Generate click here.
+  await expect(page.getByTestId("print-canvas")).toBeVisible();
+  await expect(page.getByTestId("print-button")).toBeVisible();
   // The tester's way into the visitor path (DEC-N1, plan review #13): the
-  // raw link until a code exists, then the PRINTED payload (M2 review #10).
+  // link carries the PRINTED payload once a code exists (M2 review #10).
   const link = page.getByTestId("visitor-link");
   await expect(link).toBeVisible();
-  await expect(link).toHaveAttribute("href", /\?qr=http/);
-  await page.getByTestId("print-generate").click();
-  await expect(page.getByTestId("print-canvas")).toBeVisible();
   const printed = await page.getByTestId("print-url-out").textContent();
-  const href = await link.getAttribute("href");
-  expect(href).toBe(new URL(printed ?? "").search);
-  // A SECOND tour replaces the prefill (PR #434 review): the panel used
-  // to re-open showing the previous tour's link, so "Generate QR" printed
-  // a code that launched the wrong tour.
+  expect(await link.getAttribute("href")).toBe(new URL(printed ?? "").search);
+
+  // A SECOND tour replaces what the code carries (PR #434 review): the
+  // panel used to re-open showing the previous tour's link, so the printed
+  // code launched the wrong tour. The displayed link and the encoded
+  // payload must move together.
   const SECOND = "http://127.0.0.1:5197/ranges-ok/plain-tour.zip";
   await page.getByTestId("step-host").locator("summary").click();
   await page.getByTestId("link-input").fill(SECOND);
   await page.getByTestId("open-button").click();
-  await expect(page.getByTestId("print-url")).toHaveValue(SECOND, {
+  await expect(page.getByTestId("print-url-shown")).toHaveText(SECOND, {
     timeout: 15000,
   });
-  // Text the creator typed is still not clobbered.
-  await page.getByTestId("print-url").fill("https://typed.example/x.zip");
-  await page.getByTestId("step-host").locator("summary").click();
-  await page.getByTestId("link-input").fill(ARCHIVE);
-  await page.getByTestId("open-button").click();
-  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
-    timeout: 15000,
-  });
-  await expect(page.getByTestId("print-url")).toHaveValue(
-    "https://typed.example/x.zip",
-  );
-  // The wizard reopened the step this tour was last left on (M6), so the
-  // print step is collapsed; the rest of this spec needs it open.
-  await page.getByTestId("print-panel").locator("summary").click();
-  await page.getByTestId("print-url").fill(ARCHIVE);
+  await expect
+    .poll(async () => page.getByTestId("print-url-out").textContent())
+    .toContain("plain-tour");
+
+  // Changing the code number re-renders rather than leaving a stale code
+  // on screen claiming to be the new one (M3 review #8).
+  const beforeNumber = await page.getByTestId("print-url-out").textContent();
+  await page.getByTestId("author-c").fill("2");
+  await page.getByTestId("author-c").blur();
+  await expect
+    .poll(async () => page.getByTestId("print-url-out").textContent())
+    .not.toBe(beforeNumber);
 
   // The size field is a creator's print input: NOT frozen by a viewer
   // session (review #17) - it is only captured in author mode.
@@ -1298,4 +1335,84 @@ test("the setup remembers the step the creator reached, per hosted link (M6)", a
   await page.getByTestId("open-button").click();
   await expect(page.getByTestId("step-hang")).toHaveAttribute("open", "");
   await expect(page.getByTestId("print-panel")).not.toHaveAttribute("open", "");
+});
+
+test("a refused AR entry explains itself on the page, with no session to explain it in", async ({
+  page,
+}) => {
+  // Why this matters (M3 review #4): the printed size is validated BEFORE
+  // the session starts, so a refusal means no session ever exists. The
+  // session-gating that removes the AR controls from the setup page (F11)
+  // must therefore not take the status line with it - or the creator gets a
+  // Start button that does nothing and no explanation anywhere on the page.
+  await page.goto("/");
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  // Clearing the size is the real way in: the field ships with a default,
+  // and `min` never fires outside a form submit.
+  await page.getByTestId("author-size").fill("");
+  await enterAr(page);
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /side length in metres/i,
+  );
+  // Still no session, so still no AR controls.
+  await expect(page.getByTestId("setup-controls")).toBeHidden();
+  await expect(page.getByTestId("enter-ar")).toHaveText("Start AR setup");
+});
+
+test("step 4 asks for the tour link when this device does not have it, and stays on step 4", async ({
+  page,
+}) => {
+  // Why this matters (F12): the reached step is remembered per device, so a
+  // creator who walks to the poster with their phone opens the viewer at
+  // step 1 with an empty field - there is no way to hand a tour from one
+  // device to another. Step 4 asking for what it lacks serves that, and a
+  // creator returning days later, and a cleared browser.
+  //
+  // The trap this pins (M3 review #1): the open runs the same path as step
+  // 1's, whose default is "a tour opened, go to step 2". Without the
+  // preference the page would answer by collapsing the step the creator is
+  // standing in - and step 4's content is the AR overlay root.
+  await page.goto("/");
+  await openMeasureStep(page);
+  await expect(page.getByTestId("tour-missing")).toBeVisible();
+  await page.getByTestId("tour-missing-link").fill(RANGES_ARCHIVE);
+  await page.getByTestId("tour-missing-open").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  // Still on step 4, and the block that asked has done its job.
+  await expect(page.getByTestId("step-measure")).toHaveAttribute("open", "");
+  await expect(page.getByTestId("tour-missing")).toBeHidden();
+  await expect(page.getByTestId("print-panel")).not.toHaveAttribute("open", "");
+  // One link of record: step 1's input carries what step 4 was given, and
+  // step 2's code is built from the same value.
+  await expect(page.getByTestId("link-input")).toHaveValue(RANGES_ARCHIVE);
+  await expect(page.getByTestId("print-url-shown")).toHaveText(RANGES_ARCHIVE);
+});
+
+test("a link that fails from step 4 keeps the form and says why", async ({
+  page,
+}) => {
+  // Why this matters (M3 review #13): a pasted link fails often on a phone
+  // - a truncated paste, a share link that needs a login. A block that hid
+  // itself on submit would take the retry away at the moment it is needed.
+  // The async-UI rule applies to BOTH open buttons (M3 review #11).
+  await page.goto("/");
+  await openMeasureStep(page);
+  await page
+    .getByTestId("tour-missing-link")
+    .fill("http://127.0.0.1:5197/ranges-ok/does-not-exist.zip");
+  await page.getByTestId("tour-missing-open").click();
+  await expect(page.getByTestId("error")).not.toHaveText("");
+  await expect(page.getByTestId("tour-missing")).toBeVisible();
+  await expect(page.getByTestId("tour-missing-open")).toBeEnabled();
+  await expect(page.getByTestId("tour-missing-open")).toHaveText(
+    "Open the tour here",
+  );
+  // The other open button restored too, with its own label.
+  await expect(page.getByTestId("open-button")).toHaveText("Test link");
 });

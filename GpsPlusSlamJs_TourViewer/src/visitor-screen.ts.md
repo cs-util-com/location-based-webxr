@@ -10,7 +10,10 @@ start a session.
 ## Public API
 
 - `wireVisitorScreen({ mode, seams, dom, renderArEntry }): { locationGate }`
-  - `dom`: `screen` (hidden for a creator), `creatorOnly` (hidden for a
+  - `dom`: `screen` (hidden for a creator), `measureStep` (step 4, opened
+    for a visitor - it is a `<details>` since the flow rework and its
+    summary is creator-only, so nothing else could ever open it, and its
+    content is the visitor's Start button), `creatorOnly` (hidden for a
     visitor), `arHint` (re-worded for a visitor), `errorBox`.
   - `renderArEntry` is called whenever the gate's state changes so the AR
     button re-labels ("Allow location" / "Start the tour").

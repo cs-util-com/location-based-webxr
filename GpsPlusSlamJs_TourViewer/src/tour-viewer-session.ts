@@ -67,8 +67,11 @@ export interface TourViewerHooks {
   tryPlaceTour(): void;
   startAuthorPipeline(): boolean;
   startViewerPipeline(): boolean;
-  /** Present the open tour's link in the print panel (M3's prefill). */
-  presentTourForPrint(url: string): void;
+  /** Present the open tour's link in the print panel (M3's prefill), and
+   *  advance the wizard. `origin` says which form the creator submitted
+   *  from: an open started in step 4 must not answer by jumping to step 2
+   *  and collapsing step 4, whose content is the AR overlay root. */
+  presentTourForPrint(url: string, origin?: "host-step" | "measure-step"): void;
   /** A tour closed: the finish step's page-side state is stale. */
   resetFinishStep(): void;
   /** A session reached running, or a tour opened into a running session:

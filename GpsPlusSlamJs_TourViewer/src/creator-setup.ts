@@ -71,9 +71,32 @@ import type {
 } from "./tour-viewer-session.js";
 import type { Wizard } from "./wizard.js";
 
+/**
+ * Whether an AR session is live, from the controller's status.
+ *
+ * `starting` counts: the camera is coming up and the creator is already
+ * looking through the overlay. `stopping` counts for the mirror-image
+ * reason - the session is still composited while it tears down.
+ */
+export function arSessionLive(status: string): boolean {
+  return status === "starting" || status === "running" || status === "stopping";
+}
+
 export interface CreatorSetupDom {
-  /** The setup panel inside `#ar-root` (DOM overlay). */
+  /** The setup panel inside `#ar-root` (DOM overlay). Shown for a creator
+   *  on the whole page, because `status` is where a REFUSED AR entry says
+   *  why - and a refused entry never starts a session. */
   panel: HTMLElement;
+  /** The AR-only buttons inside the panel. Hidden unless a session is
+   *  live: on a desktop they sat greyed out under an "AR not supported"
+   *  button, misaligned and meaningless (second testing session, F11). */
+  controls: HTMLElement;
+  /** Step 4's tail: the rebuilt zip's status and download (F10). Outside
+   *  `#ar-root` - the download is tapped after the session ends. */
+  finishBlock: HTMLElement;
+  /** The "put it back where the old one is" copy, revealed once the zip
+   *  has actually been saved. Was step 6 until the flow rework. */
+  replaceHelp: HTMLElement;
   /** The printed side length - lives in the print step (DEC-F2). */
   sizeInput: HTMLInputElement;
   /** The print step, opened when the size error points at it. */
@@ -117,6 +140,13 @@ export function wireCreatorSetup(deps: {
 
   dom.panel.hidden = !creator;
   dom.sizeInput.value = String(AUTHOR_DEFAULT_SIZE_M);
+
+  /** True while the AR session is up: what gates the controls and the live
+   *  measuring readout. Read from the controller rather than tracked, so
+   *  it cannot drift out of step with the session it describes. */
+  function sessionLive(): boolean {
+    return arSessionLive(arController.getState().status);
+  }
   if (creator) {
     // Alignment arrives via GPS dispatches, not via controller state - the
     // readout must follow the store, or "waiting for GPS alignment" sticks.
@@ -172,6 +202,12 @@ export function wireCreatorSetup(deps: {
   function renderAuthorReadout(): void {
     if (!creator) return;
     renderPlacementButtons();
+    // F11: the AR controls belong to the AR session. On the setup page they
+    // were a row of greyed-out buttons under "AR not supported", which is
+    // what the owner reported. The STATUS line stays either way - it is
+    // where a refused entry explains itself, and a refusal means no session
+    // ever starts (M3 review #4).
+    dom.controls.hidden = !sessionLive();
     if (ctx.authorErrorText !== null) {
       dom.status.textContent = ctx.authorErrorText;
       dom.mintButton.disabled = true;
@@ -202,6 +238,17 @@ export function wireCreatorSetup(deps: {
           tourOpen: ctx.session !== null,
           manifest: ctx.tourManifestStatus,
         }) !== "ready";
+      return;
+    }
+    // Everything above this line is a message about something that
+    // happened - an error, a rebuild, a placement - and is shown whenever
+    // it is true. Below is the LIVE measuring readout, which describes a
+    // camera: "hold the phone on the printed code so it fills the screen"
+    // on a desktop page with no session running is an instruction for a
+    // situation the creator is not in.
+    if (!sessionLive()) {
+      dom.status.textContent = "";
+      dom.mintButton.disabled = true;
       return;
     }
     const state = arStore.getState();
@@ -574,7 +621,13 @@ export function wireCreatorSetup(deps: {
         if (sessionGeneration === ctx.arSessionGeneration) {
           await arController.disable();
         }
-        wizard.openStep("finish");
+        // The download used to be step 5. It is the END of step 4 (F10):
+        // the creator finished in AR, the session is closing, and what they
+        // need next is one tap in the step they are already in. The reveal
+        // happens AFTER the disable above, so the block cannot appear over
+        // a session that is still compositing.
+        wizard.openStep("measure");
+        dom.finishBlock.hidden = false;
       } catch (err) {
         if (ctx.session === current) {
           ctx.finishError = FINISH_LABELS.failed(
@@ -603,7 +656,10 @@ export function wireCreatorSetup(deps: {
         dom.finishStatus.textContent = saved
           ? FINISH_LABELS.saved(rebuilt.filename)
           : FINISH_LABELS.notSaved;
-        if (saved) wizard.openStep("replace");
+        // The replace instructions were step 6; they are the last thing to
+        // do and only once there is a file to do it with, so they appear
+        // when the zip is actually on the device (F10).
+        if (saved) dom.replaceHelp.hidden = false;
       },
       (err: unknown) => {
         dom.downloadButton.disabled = false;
@@ -621,6 +677,11 @@ export function wireCreatorSetup(deps: {
     resetFinishStep: () => {
       dom.downloadButton.disabled = true;
       dom.finishStatus.textContent = "";
+      // The rebuilt zip belonged to the tour that just closed, so the block
+      // offering it goes away with it (M3 review #6) - otherwise a newly
+      // opened tour shows a dead download button from the previous one.
+      dom.finishBlock.hidden = true;
+      dom.replaceHelp.hidden = true;
     },
   };
 }

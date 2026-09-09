@@ -139,6 +139,16 @@ export function wireArEntry(deps: {
     // Author mode only: a viewer session does not consume the size, and the
     // input is a creator's print field now (flows plan M3, DEC-F2).
     dom.sizeInput.disabled = authorMode && sessionActive;
+    // The page's one flag for "a session is up". Step 4 is a <details>
+    // since F4, and its content is `#ar-root` - so the CSS keyed on this
+    // takes the summary away while a session runs, because a collapsed
+    // step 4 renders no overlay at all. `wizard.ts` holds the other half
+    // (nothing may assign `open = false` on it meanwhile).
+    document.body.dataset["arActive"] = String(sessionActive);
+    // The setup panel's controls and its readout follow the same boolean,
+    // and they are rendered from here so they cannot lag the state they
+    // describe (the controller is the only thing that knows).
+    hooks.renderAuthorReadout();
     // `#ar-root` IS the DOM overlay, so anything left visible in it sits
     // over the camera feed for the whole session. The hint explains the
     // button before a press; during a session it would be a start-screen
