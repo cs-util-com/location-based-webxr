@@ -80,6 +80,11 @@ export interface TourViewerHooks {
    *  and step 4 stops offering to open a tour at all - for the rest of the
    *  page's life (M3 milestone review #3). */
   presentNoTour(): void;
+  /** A tour opened AND its manifest settled: offer any unsaved work this
+   *  device still holds for it, or delete a draft the hosted zip has
+   *  already absorbed. It waits for the manifest because "spent" is
+   *  defined against it. */
+  presentDraftForTour(tourUrl: string): void;
   /** A session reached running, or a tour opened into a running session:
    *  derive the scan gate (idle when no session runs). */
   startScanGate(): void;
@@ -103,6 +108,7 @@ export function createUnwiredHooks(): TourViewerHooks {
     presentTourForPrint: () => undefined,
     resetFinishStep: () => undefined,
     presentNoTour: () => undefined,
+    presentDraftForTour: () => undefined,
     startScanGate: () => undefined,
     resetScanGate: () => undefined,
     reconsiderScanGate: () => undefined,

@@ -138,6 +138,7 @@
       #setup-panel,
       #setup-controls,
       #tour-missing,
+      #draft-offer,
       #finish-block {
         display: grid;
         gap: var(--space-2);
@@ -145,6 +146,7 @@
       }
       #setup-panel,
       #tour-missing,
+      #draft-offer,
       #finish-block {
         margin-top: var(--space-3);
       }
@@ -774,6 +776,46 @@
             </button>
           </div>
         </section>
+        <!-- Unsaved work found on this device (F13). OFFERED, never applied
+             silently: a draft can be days old and can be one the creator
+             believes they discarded, and restoring it quietly would append
+             content they did not ask for into a zip they are about to
+             publish - the first they would hear of it is a visitor standing
+             in front of a pin nobody placed. Three choices, because
+             "declining" and "deleting" are different intentions and the
+             milestone review was right that two buttons force them
+             together. -->
+        <div id="draft-offer" data-testid="draft-offer" hidden>
+          <p
+            id="draft-offer-text"
+            class="step-copy hint--dim"
+            data-testid="draft-offer-text"
+          ></p>
+          <button
+            type="button"
+            class="btn btn--prose"
+            id="draft-restore"
+            data-testid="draft-restore"
+          >
+            Add it back
+          </button>
+          <button
+            type="button"
+            class="btn btn--prose"
+            id="draft-dismiss"
+            data-testid="draft-dismiss"
+          >
+            Not now
+          </button>
+          <button
+            type="button"
+            class="btn btn--prose"
+            id="draft-discard"
+            data-testid="draft-discard"
+          >
+            Delete it
+          </button>
+        </div>
         <!-- The end of step 4, on the page rather than in the overlay (F10;
              steps 5 and 6 used to be separate setup steps, which they never
              were - they describe what happens when this step finishes). The

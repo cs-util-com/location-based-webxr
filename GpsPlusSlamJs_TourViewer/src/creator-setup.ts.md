@@ -27,6 +27,41 @@ does nothing and no explanation anywhere. With no session live the live
 measuring readout is blank instead: "hold the phone on the printed code"
 is an instruction for a situation a desktop creator is not in.
 
+## Crash-safe authoring (second testing session, F13)
+
+Everything measured and placed lives in page memory until Finish, and an AR
+session on a phone can be killed by the OS at any moment. So each mint and
+each placement is also written to an OPFS draft, keyed by the tour's url
+(`authoring-draft.ts` holds the rules, `draft-persistence.ts` the on-disk
+shape, and the framework's `opfs-draft-store.ts` the mechanics).
+
+- **NOT the File System Access API.** F13 asked for write access to the
+  hosted zip; the pickers do not exist on Chrome for Android, which is the
+  only device the creator's AR session runs on. See the plan's §10.1.
+- **The write is fire-and-forget.** The placement already happened in
+  memory; a storage problem must never fail the tap that made it. A failed
+  write says so ONCE, in the panel - a creator mid-walk cannot act on it
+  more often than that.
+- **A draft is OFFERED, never applied.** It can be days old and can be one
+  the creator believes they discarded; restoring it silently would append
+  content they did not ask for into a zip they are about to publish. Three
+  answers: add it back, not now (kept), delete it (gone). "Not now" keeps
+  it because a mis-tap must not become the loss this exists to prevent;
+  "delete it" exists because a draft with no way out is offered forever.
+- **Restoring brings the LEVEL and the SIZE back too**, not just the
+  objects. The level is what makes Finish reachable without walking to the
+  poster again; the size is rewritten from the framework default on every
+  load, so without it a re-entry would solve against 16 cm for a poster
+  printed at 20. A live measurement wins over a drafted one - it is newer.
+- **A draft is deleted only on PROOF**: a re-opened tour whose `tour.json`
+  already carries its ids. Not on the download tap - on Android that
+  resolves true the moment a download starts, and the creator still has to
+  upload the file by hand afterwards.
+- The finish's append is **id-deduplicating**, because the serializer
+  rejects duplicates: one already-hosted object would otherwise make every
+  finish throw for as long as the draft was restored, with no escape inside
+  the app.
+
 ## Public API
 
 - `wireCreatorSetup({ ctx, mode, arStore, arController, seams, wizard, dom }): CreatorSetup`

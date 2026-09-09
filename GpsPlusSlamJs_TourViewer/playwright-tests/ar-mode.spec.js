@@ -1595,3 +1595,143 @@ test("the PDF button shows it is working, says when nothing was saved, and conti
   expect(text).toContain("(Code 5 - 16cm - print at 100%)");
   expect(text).not.toContain("(Code 1 - ");
 });
+
+/** Measure the hung code and unlock placement - the state every authoring
+ *  test needs before it can place anything. */
+async function measureTheCode(page) {
+  await enterAr(page);
+  await page.evaluate((text) => {
+    /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
+  }, E2E_QR_TEXT);
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return page.getByTestId("setup-status").textContent();
+      },
+      { timeout: 15000 },
+    )
+    .toMatch(/waiting for GPS alignment/i);
+  await seedAlignment(page);
+  await expect(page.getByTestId("setup-mint")).toBeEnabled({ timeout: 10000 });
+  await page.getByTestId("setup-mint").click();
+  await expect(page.getByTestId("setup-pin")).toBeEnabled();
+}
+
+test("a crash does not lose the walk: placed content survives a reload and lands in the zip", async ({
+  page,
+}) => {
+  // THE promise of crash-safe authoring (F13), driven end to end through
+  // the composed page and real OPFS.
+  //
+  // Why it matters: an AR session on a phone can be killed by the OS at any
+  // moment - a call, a memory reclaim, an accidental back gesture - and
+  // until now everything measured and placed since the last Finish lived in
+  // page memory alone. A creator who walked a site for twenty minutes had
+  // twenty minutes to lose.
+  //
+  // The reload here IS the crash: nothing is finished, nothing downloaded,
+  // the page simply goes away mid-walk.
+  await page.goto("/?nocache=1");
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  await measureTheCode(page);
+  await page.getByTestId("setup-pin").click();
+  await page.getByTestId("pin-label").fill("The old gate");
+  await page.getByTestId("pin-save").click();
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /1 object placed/,
+  );
+
+  // The crash.
+  await page.reload();
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+
+  // OFFERED, not applied: a draft can be days old and can be one the
+  // creator believes they discarded. Silent restoration would append
+  // content they did not ask for into a zip they are about to publish.
+  await openMeasureStep(page);
+  await expect(page.getByTestId("draft-offer")).toBeVisible({ timeout: 15000 });
+  await expect(page.getByTestId("draft-offer-text")).toContainText("1 thing");
+  await page.getByTestId("draft-restore").click();
+  await expect(page.getByTestId("draft-offer")).toBeHidden();
+
+  // The restored pin is in the same list a live placement fills, so the
+  // finish needs no second path - and the measured level came back with it,
+  // which is what makes Finish reachable without re-measuring.
+  await expect(page.getByTestId("setup-finish")).toBeEnabled({
+    timeout: 10000,
+  });
+  await page.getByTestId("setup-finish").click();
+  await expect(page.getByTestId("finish-block")).toBeVisible({
+    timeout: 30000,
+  });
+  await page.getByTestId("finish-download").click();
+  await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
+
+  const rebuilt = await readDownloadedZip(page, 0);
+  const manifest = parseTourManifest(JSON.parse(rebuilt.entries["tour.json"]));
+  const labels = manifest.objects.flatMap((o) =>
+    o.kind === "pin" ? [o.label] : [],
+  );
+  // The fixture's own pin, plus the one placed BEFORE the reload.
+  expect(labels).toContain("The old gate");
+});
+
+test("a draft is offered again after Not now, and gone after Delete it", async ({
+  page,
+}) => {
+  // Why three buttons and not two (M5 review #4). Declining is not
+  // deleting: a mis-tap on "no" must not become the loss this whole feature
+  // exists to prevent. And a draft with no way to discard it is one that is
+  // offered forever - the app's only escape would be clearing the site's
+  // storage.
+  await page.goto("/?nocache=1");
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  await measureTheCode(page);
+  await page.getByTestId("setup-pin").click();
+  await page.getByTestId("pin-label").fill("A pin to abandon");
+  await page.getByTestId("pin-save").click();
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /1 object placed/,
+  );
+
+  const reopen = async () => {
+    await page.reload();
+    await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+    await page.getByTestId("open-button").click();
+    await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+      timeout: 15000,
+    });
+    await openMeasureStep(page);
+  };
+
+  await reopen();
+  await expect(page.getByTestId("draft-offer")).toBeVisible({ timeout: 15000 });
+  await page.getByTestId("draft-dismiss").click();
+  await expect(page.getByTestId("draft-offer")).toBeHidden();
+
+  // Still there: "not now" kept it.
+  await reopen();
+  await expect(page.getByTestId("draft-offer")).toBeVisible({ timeout: 15000 });
+  await page.getByTestId("draft-discard").click();
+  await expect(page.getByTestId("draft-offer")).toBeHidden();
+
+  // Gone for good.
+  await reopen();
+  await page.waitForTimeout(1000);
+  await expect(page.getByTestId("draft-offer")).toBeHidden();
+});

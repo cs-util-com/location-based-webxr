@@ -31,7 +31,9 @@ screen. Everything marked `.creator-only` is hidden for a visitor
      download) and `#replace-help` inside it - because those describe the
      END of this step rather than steps of their own (F10). And
      `#tour-missing`, the form that asks for the tour link on a device
-     that does not have it (F12).
+     that does not have it (F12), and `#draft-offer` - unsaved work this
+     device still holds for this tour, offered with three answers rather
+     than applied (F13).
 - The visitor screen (`#visitor-screen`): the consent copy above the AR
   section; the Start button is `#enter-ar`.
 - Below the steps, creator-only: the Storage section (`#storage-panel`,
@@ -55,7 +57,9 @@ The `data-testid` contract the e2e suite drives: `wizard`, `step-host`,
 `print-url-shown`, `author-size`, `author-c`, `print-generate`,
 `print-info`, `print-canvas`, `print-button`, `print-url-out`,
 `print-count`, `print-paper`, `print-pdf`, `visitor-link`), `step-hang`, `hang-done`, `step-measure` (owns
-`tour-missing`, `tour-missing-link`, `tour-missing-open`, `finish-block`,
+`tour-missing`, `tour-missing-link`, `tour-missing-open`, `draft-offer`,
+`draft-offer-text`, `draft-restore`, `draft-dismiss`, `draft-discard`,
+`finish-block`,
 `finish-status`, `finish-download`, `replace-help`), `visitor-screen`,
 `stats`, `error`, `gallery`, `ar-hint`, `ar-status`, `enter-ar`,
 `setup-panel`, `setup-status`, `setup-controls`, `setup-mint`,

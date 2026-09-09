@@ -30,6 +30,7 @@ import {
   createEmptyTourManifest,
   serializeTourManifest,
   type TourManifest,
+  type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   recordQrDetection,
@@ -51,6 +52,20 @@ import {
   renderTourObjects,
 } from "./content-placement.js";
 
+import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
+
+import {
+  appendWithoutDuplicateIds,
+  draftKeyForTour,
+  draftObjectsNotYetHosted,
+  restoredText,
+  restoreOfferText,
+} from "./authoring-draft.js";
+import {
+  readDraft,
+  writeDraftMeta,
+  writeDraftObject,
+} from "./draft-persistence.js";
 import type { ViewerMode } from "./mode.js";
 import {
   archiveSizeNote,
@@ -114,6 +129,12 @@ export interface CreatorSetupDom {
   pinSave: HTMLButtonElement;
   pinCancel: HTMLButtonElement;
   photoButton: HTMLButtonElement;
+  /** The "unsaved work is still on this device" offer (F13). */
+  draftOffer: HTMLElement;
+  draftOfferText: HTMLElement;
+  draftRestore: HTMLButtonElement;
+  draftDismiss: HTMLButtonElement;
+  draftDiscard: HTMLButtonElement;
 }
 
 /** Properties, not methods: they are handed to the hooks object unbound. */
@@ -124,6 +145,9 @@ export interface CreatorSetup {
   startAuthorPipeline: () => boolean;
   /** A tour closed: step 5's download and status are stale (M3 review #6). */
   resetFinishStep: () => void;
+  /** A tour opened and its manifest settled: load any draft for it, and
+   *  either offer what is not already hosted or delete a spent one. */
+  presentDraftForTour: (tourUrl: string) => void;
 }
 
 export function wireCreatorSetup(deps: {
@@ -134,9 +158,56 @@ export function wireCreatorSetup(deps: {
   seams: TourViewerSeams;
   wizard: Wizard;
   dom: CreatorSetupDom;
+  /** Opens this tour's draft namespace, or resolves undefined where there
+   *  is no persistence (no OPFS, blocked site data, a quota wall). */
+  openDraftStore?: (key: string) => Promise<DraftFileStore | undefined>;
 }): CreatorSetup {
   const { ctx, mode, arStore, arController, seams, wizard, dom } = deps;
   const creator = mode === "creator";
+  const openDraftStore =
+    deps.openDraftStore ?? (() => Promise.resolve(undefined));
+
+  /** This tour's draft store, once a tour is open. */
+  let draftStore: DraftFileStore | undefined;
+  /** What a draft is offering, until the creator answers. */
+  let offered: {
+    objects: readonly TourObject[];
+    photos: ReadonlyMap<string, Blob>;
+    /** The measured level and the size it was measured at - the other
+     *  half of a lost walk, and what makes Finish reachable again. */
+    level: { id: string; json: string } | null;
+    sizeM: number;
+  } | null = null;
+  /** Said once, not per placement: a creator mid-walk cannot act on it. */
+  let warnedAboutPersistence = false;
+
+  /**
+   * Record something placed. Fire-and-forget on purpose: the placement
+   * already happened in memory, and the draft is a safety net - a storage
+   * problem must never fail the tap that made it.
+   */
+  function recordPlacement(object: TourObject, blob?: Blob): void {
+    const store = draftStore;
+    if (store === undefined) return;
+    void writeDraftObject(store, object, blob).then((ok) => {
+      if (ok || warnedAboutPersistence) return;
+      warnedAboutPersistence = true;
+      ctx.placementNote =
+        "Placed. (This device is not saving a backup copy - finish and download before closing the page.)";
+      renderAuthorReadout();
+    });
+  }
+
+  /** Record the measured code and the size it was measured at. */
+  function recordMeta(): void {
+    const store = draftStore;
+    if (store === undefined || ctx.session === null) return;
+    void writeDraftMeta(store, {
+      tourUrl: ctx.session.archive.url,
+      sizeM: ctx.activeSizeM,
+      level: ctx.mintedLevel,
+    });
+  }
 
   dom.panel.hidden = !creator;
   dom.sizeInput.value = String(AUTHOR_DEFAULT_SIZE_M);
@@ -340,6 +411,54 @@ export function wireCreatorSetup(deps: {
     renderAuthorReadout();
   }
 
+  dom.draftRestore.addEventListener("click", () => {
+    const waiting = offered;
+    dom.draftOffer.hidden = true;
+    offered = null;
+    if (waiting === null) return;
+    // Into the SAME list a live placement fills, so the finish needs no
+    // second path: it appends these to the manifest exactly as it appends
+    // anything else, and writes the photo bytes as content entries.
+    for (const object of waiting.objects) {
+      const blob = waiting.photos.get(object.id);
+      ctx.placedObjects.push(
+        blob === undefined ? { object } : { object, blob },
+      );
+    }
+    // The measured level comes back too, and it is what unlocks Finish
+    // without walking to the poster again. Only when the session has not
+    // already measured one: a live measurement is newer than a draft.
+    if (ctx.mintedLevel === null && waiting.level !== null) {
+      ctx.mintedLevel = waiting.level;
+    }
+    // And the printed size, which the page rewrites from the framework
+    // default on every load - so without this a re-entry would solve
+    // against 16 cm for a poster printed at 20.
+    if (Number.isFinite(waiting.sizeM) && waiting.sizeM > 0) {
+      dom.sizeInput.value = String(waiting.sizeM);
+      ctx.activeSizeM = waiting.sizeM;
+    }
+    ctx.placementNote = restoredText(waiting.objects.length);
+    renderAuthorReadout();
+  });
+
+  dom.draftDismiss.addEventListener("click", () => {
+    // Declining is NOT deleting: a mis-tap must not become the loss this
+    // whole feature exists to prevent. It is offered again next time.
+    dom.draftOffer.hidden = true;
+    offered = null;
+  });
+
+  dom.draftDiscard.addEventListener("click", () => {
+    dom.draftOffer.hidden = true;
+    offered = null;
+    const store = draftStore;
+    if (store === undefined) return;
+    // The one way a creator can throw a draft away deliberately - and the
+    // escape hatch for a draft that would otherwise be offered forever.
+    void store.clear();
+  });
+
   dom.pinButton.addEventListener("click", () => {
     ctx.placementNote = null;
     if (!placementAllowed()) {
@@ -401,6 +520,7 @@ export function wireCreatorSetup(deps: {
       return;
     }
     ctx.placedObjects.push({ object: pin });
+    recordPlacement(pin);
     dom.pinLabel.value = "";
     hideLabelInput();
     previewObject(ctx.placedObjects.length - 1);
@@ -433,6 +553,7 @@ export function wireCreatorSetup(deps: {
           return;
         }
         ctx.placedObjects.push({ object: photo, blob: jpeg.blob });
+        recordPlacement(photo, jpeg.blob);
         previewObject(ctx.placedObjects.length - 1);
         // The plane sits at the capture spot, facing back at it: the
         // creator is standing on it and sees it once they step back.
@@ -532,6 +653,7 @@ export function wireCreatorSetup(deps: {
       (id) => {
         if (mintGeneration !== ctx.mintGeneration) return;
         ctx.mintedLevel = { id, json: result.json };
+        recordMeta();
         renderAuthorReadout();
       },
       () => {
@@ -586,10 +708,14 @@ export function wireCreatorSetup(deps: {
         const manifest = ctx.tourManifest ?? createEmptyTourManifest();
         const written: TourManifest = {
           ...manifest,
-          objects: [
-            ...manifest.objects,
-            ...ctx.placedObjects.map((p) => p.object),
-          ],
+          // De-duplicating by id, and not for tidiness: the serializer
+          // REJECTS duplicates, so one restored object that is already in
+          // the manifest would make every finish throw - for as long as the
+          // draft is restored, with no escape inside the app (M5 review #4).
+          objects: appendWithoutDuplicateIds(
+            manifest.objects,
+            ctx.placedObjects.map((p) => p.object),
+          ),
         };
         const entries = [
           {
@@ -634,6 +760,11 @@ export function wireCreatorSetup(deps: {
         // review). `tourManifest` is otherwise only written at tour open.
         ctx.tourManifest = written;
         ctx.placedObjects = [];
+        // NOT cleared here, and not on the download tap either: the zip is
+        // only in the creator's hands, not yet in the file the world sees.
+        // It is cleared when a re-opened tour turns out to carry these ids
+        // (see presentDraftForTour) - the one signal that is proof.
+        recordMeta();
         // The session ends so the creator lands on the page, where the
         // download button is a fresh tap (a download needs its own user
         // gesture, plan §2.4) - unless it already ended and another one
@@ -702,6 +833,47 @@ export function wireCreatorSetup(deps: {
       // opened tour shows a dead download button from the previous one.
       dom.finishBlock.hidden = true;
       dom.replaceHelp.hidden = true;
+      // The offer belonged to the tour that just closed.
+      dom.draftOffer.hidden = true;
+      offered = null;
+      draftStore = undefined;
+    },
+    presentDraftForTour: (tourUrl) => {
+      if (!creator) return; // a visitor authors nothing
+      void (async () => {
+        const store = await openDraftStore(draftKeyForTour(tourUrl));
+        draftStore = store;
+        if (store === undefined) return;
+        const stored = await readDraft(store);
+        if (stored === undefined) {
+          // No draft yet, but there will be: record what is already known,
+          // so a crash before the first placement still leaves the tour and
+          // the printed size behind.
+          recordMeta();
+          return;
+        }
+        const waiting = draftObjectsNotYetHosted(
+          stored.draft,
+          ctx.tourManifest,
+        );
+        if (waiting.length === 0) {
+          // SPENT: the hosted zip already carries everything this draft
+          // held. That is the only proof the content reached the file the
+          // world sees, and the only thing that deletes a draft.
+          await store.clear();
+          draftStore = await openDraftStore(draftKeyForTour(tourUrl));
+          recordMeta();
+          return;
+        }
+        offered = {
+          objects: waiting,
+          photos: stored.photos,
+          level: stored.draft.level,
+          sizeM: stored.draft.sizeM,
+        };
+        dom.draftOfferText.textContent = restoreOfferText(waiting.length);
+        dom.draftOffer.hidden = false;
+      })();
     },
   };
 }

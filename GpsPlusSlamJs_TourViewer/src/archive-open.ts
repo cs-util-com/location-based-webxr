@@ -252,6 +252,9 @@ export function wireArchiveOpen(deps: {
           if (ctx.session !== opened) return;
           ctx.tourManifest = manifest;
           ctx.tourManifestStatus = "settled";
+          // Only now can a draft be judged: "already hosted" is a question
+          // about this manifest.
+          hooks.presentDraftForTour(url);
           hooks.renderAuthorReadout();
           hooks.tryPlaceTour(); // a visitor's content may now be placeable
         },

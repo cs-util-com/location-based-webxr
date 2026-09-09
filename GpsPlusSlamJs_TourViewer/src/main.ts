@@ -24,6 +24,8 @@ import {
   packFilesAsZip,
 } from "gps-plus-slam-app-framework/storage";
 
+import { openDraftNamespace } from "gps-plus-slam-app-framework/storage";
+
 import { wireArchiveOpen } from "./archive-open.js";
 import { wireArEntry } from "./ar-entry.js";
 import { arSessionLive, wireCreatorSetup } from "./creator-setup.js";
@@ -217,6 +219,18 @@ const setup = wireCreatorSetup({
     pinSave: element("pin-save"),
     pinCancel: element("pin-cancel"),
     photoButton: element("setup-photo"),
+    draftOffer: element("draft-offer"),
+    draftOfferText: element("draft-offer-text"),
+    draftRestore: element("draft-restore"),
+    draftDismiss: element("draft-dismiss"),
+    draftDiscard: element("draft-discard"),
+  },
+  // Crash-safe authoring (F13). OPFS, not a file handle: the File System
+  // Access pickers do not exist on Chrome for Android, which is the only
+  // device the creator's AR session runs on.
+  openDraftStore: async (key) => {
+    const root = await navigator.storage?.getDirectory?.();
+    return root === undefined ? undefined : openDraftNamespace(root, key);
   },
 });
 hooks.renderAuthorReadout = setup.renderAuthorReadout;
@@ -225,6 +239,7 @@ hooks.resetFinishStep = setup.resetFinishStep;
 hooks.presentNoTour = () => {
   print.presentNoTour();
 };
+hooks.presentDraftForTour = setup.presentDraftForTour;
 
 const escapeButton = element<HTMLButtonElement>("scan-escape");
 const viewer = createViewerPlacement({
