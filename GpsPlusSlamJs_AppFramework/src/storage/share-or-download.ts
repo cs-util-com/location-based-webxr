@@ -84,8 +84,11 @@ function navigatorShare(): ((data: { files: File[] }) => Promise<void>) | null {
  * Is a share sheet the RIGHT hand-off here, not merely a possible one?
  *
  * This is the question every caller actually has, and it is not the same as
- * `canShareFilesOfType`. Windows Chrome and macOS Safari implement Web
- * Share with files, so the capability alone says yes on a desktop - where
+ * `canShareFilesOfType`. Desktop Chrome (Windows, macOS) and macOS Safari
+ * implement Web Share, files included - checked against MDN and caniuse
+ * rather than assumed, because a behaviour change rests on it; Firefox and
+ * Linux Chrome are the exceptions. So the capability alone says yes on a
+ * desktop - where
  * the share sheet offers Mail and Nearby Share and NO "save to disk", and
  * the file the user is about to be told to upload somewhere never lands on
  * their disk at all. The save picker is the better hand-off there, and it
