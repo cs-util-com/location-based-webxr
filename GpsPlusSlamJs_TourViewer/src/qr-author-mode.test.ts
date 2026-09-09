@@ -332,6 +332,33 @@ describe("the help blocks are EARNED, and a later failure does not take them bac
   });
 });
 
+describe("the share note follows the LAST delivered route", () => {
+  // Why this test matters: `replaceHelp` is true of any delivered hand-off
+  // and is earned once. `shareNote` is a claim about WHICH hand-off
+  // happened, and making it earned-and-kept let it outlive its truth: a
+  // share followed by a save on the retry left "you shared it rather than
+  // saving it, so it is now wherever that app put it" on screen beside a
+  // file that is on disk, sending the creator to hunt for it in an app.
+  //
+  // The caller reveals `replaceHelp` one-way and sets `shareNote` from the
+  // last DELIVERED outcome, so this function has to answer for the route,
+  // not for the panel.
+  it("claims a share only for a delivered share", () => {
+    expect(
+      finishHelpVisibility({ route: "share", delivered: true }).shareNote,
+    ).toBe(true);
+    expect(
+      finishHelpVisibility({ route: "download", delivered: true }).shareNote,
+    ).toBe(false);
+    // A hand-off that delivered nothing changed nothing, so it must not
+    // move the note in either direction - the caller checks `delivered`
+    // before applying it, and this is the value it would apply.
+    expect(
+      finishHelpVisibility({ route: "share", delivered: false }).shareNote,
+    ).toBe(false);
+  });
+});
+
 describe("the ready line names the action the button will take", () => {
   // Why: this is the sentence a creator reads immediately before pressing
   // the button. It said "Download it" on every device, including one whose

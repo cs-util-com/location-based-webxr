@@ -242,6 +242,28 @@ describe('rebuildZipWithEntries', () => {
     );
   });
 
+  it("puts a genuinely NEW entry under the archive's prefix too, not beside it", async () => {
+    // Why this test matters: applying the convention only to files the
+    // archive already holds leaves a flat name sitting in an archive whose
+    // every other entry carries `./` - the mixed archive this module's own
+    // suffix-based finders exist to cope with, created by the very code
+    // that was meant to stop producing one. The rule is either applied to
+    // every path or it is not a rule (PR #440 review).
+    const writer = new ZipWriter(new BlobWriter('application/zip'), {
+      level: 0,
+    });
+    await writer.add('./tour.json', new TextReader('{}'));
+    const input = await writer.close();
+
+    const out = await rebuildZipWithEntries(input, [
+      { path: 'content/a.jpg', data: PHOTO },
+    ]);
+    expect([...(await entryBytes(out)).keys()].sort()).toEqual([
+      './content/a.jpg',
+      './tour.json',
+    ]);
+  });
+
   it('does NOT extend that tolerance to a FLAT archive', async () => {
     // Why: the tolerance is for following the archive's convention, not a
     // hole in the path rules. A zip whose entries are flat gives a caller
