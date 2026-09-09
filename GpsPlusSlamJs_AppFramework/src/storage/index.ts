@@ -68,8 +68,18 @@ export {
   downloadBlob,
   downloadZip,
   PDF_FILE_TYPE,
+  ZIP_FILE_TYPE,
   type DownloadFileType,
 } from './zip-export.js';
+
+// --- share-or-download (the ONE share-sheet-or-save path) ---
+export {
+  type ShareOrDownloadResult,
+  type ShareOrDownloadDeps,
+  canShareFilesOfType,
+  prefersFileShare,
+  shareOrDownloadBlob,
+} from './share-or-download.js';
 
 // --- zip-reader ---
 export {

@@ -14,6 +14,11 @@ import {
   codeIndexFromInput,
   buildAuthorControllerConfig,
   syntheticAuthorLevel,
+  FINISH_LABELS,
+  finishHandoffStatus,
+  finishHelpVisibility,
+  finishIdleLabel,
+  finishBusyLabel,
   type AuthorPipelineDeps,
 } from "./qr-author-mode";
 
@@ -207,5 +212,116 @@ describe("codeIndexFromInput", () => {
         coerced: true,
       });
     }
+  });
+});
+
+describe("the finish step's hand-off copy", () => {
+  /**
+   * Why these tests matter: the finish button now takes one of two routes
+   * and each can fail, and THREE of those four outcomes are unreachable in
+   * an e2e run - a headless browser has no share sheet. The copy is also
+   * the half that was wrong: \`saved\` states as fact that the link and the
+   * printed code are unchanged, which is true when the creator overwrites
+   * the hosted file and FALSE when they share, because sharing hands the
+   * zip to another app that normally stores it as a new file with a new
+   * id. A creator who reads "the link stays the same" after a share walks
+   * away believing a poster works when it points at the old file.
+   */
+  it("promises an unchanged link ONLY on the save route", () => {
+    const saved = finishHandoffStatus(
+      { route: "download", delivered: true },
+      "tour.zip",
+    );
+    expect(saved).toContain("stay the same");
+
+    const shared = finishHandoffStatus(
+      { route: "share", delivered: true },
+      "tour.zip",
+    );
+    expect(shared).not.toContain("stay the same");
+    expect(shared).not.toContain("stays the same");
+    // And it must say what still has to happen. Not "make sure it
+    // replaced": sharing to a cloud app CREATES a file, so framing a
+    // near-certainty as a coin flip lets a creator walk away believing the
+    // poster is probably fine (M2 review #6).
+    expect(shared).toMatch(/replace it/i);
+    expect(shared).toMatch(/NEW file/);
+    expect(shared).toContain("tour.zip");
+  });
+
+  it("says nothing happened, without blaming the user, when nothing was delivered", () => {
+    // The Web Share API reports a cancelled sheet and a failed share as
+    // the same AbortError, so copy that said "you cancelled" would be a
+    // guess presented as a fact.
+    const notShared = finishHandoffStatus(
+      { route: "share", delivered: false },
+      "tour.zip",
+    );
+    expect(notShared).toMatch(/nothing was shared/i);
+    expect(notShared.toLowerCase()).not.toContain("cancel");
+
+    expect(
+      finishHandoffStatus({ route: "download", delivered: false }, "tour.zip"),
+    ).toMatch(/not saved/i);
+  });
+
+  it("labels the button with the action it will actually take", () => {
+    expect(finishIdleLabel(true).toLowerCase()).toContain("share");
+    expect(finishIdleLabel(true).toLowerCase()).not.toContain("download");
+    expect(finishIdleLabel(false).toLowerCase()).toContain("download");
+    expect(finishIdleLabel(false).toLowerCase()).not.toContain("share");
+    expect(finishBusyLabel(true)).not.toBe(finishBusyLabel(false));
+  });
+
+  it("covers all four outcomes with distinct copy", () => {
+    const all = [
+      { route: "share" as const, delivered: true },
+      { route: "share" as const, delivered: false },
+      { route: "download" as const, delivered: true },
+      { route: "download" as const, delivered: false },
+    ].map((outcome) => finishHandoffStatus(outcome, "tour.zip"));
+    expect(new Set(all).size).toBe(4);
+  });
+});
+
+describe("which help the finish step reveals", () => {
+  /**
+   * Why this test matters: the replace instructions are what keeps a
+   * printed code working, and they used to appear exactly when a file had
+   * been written to the device. On the share route no file lands here at
+   * all - it is inside whichever app the creator picked - so the same
+   * block now needs one extra sentence saying where to find it. That
+   * branch is otherwise reachable only by walking a full AR setup on a
+   * phone with a share sheet, which is to say by nothing that runs in CI.
+   */
+  it("shows nothing until something has actually gone somewhere", () => {
+    for (const route of ["share", "download"] as const) {
+      expect(finishHelpVisibility({ route, delivered: false })).toEqual({
+        replaceHelp: false,
+        shareNote: false,
+      });
+    }
+  });
+
+  it("always shows the replace instructions once delivered, and the share note only on the share route", () => {
+    expect(
+      finishHelpVisibility({ route: "download", delivered: true }),
+    ).toEqual({ replaceHelp: true, shareNote: false });
+    expect(finishHelpVisibility({ route: "share", delivered: true })).toEqual({
+      replaceHelp: true,
+      shareNote: true,
+    });
+  });
+});
+
+describe("the ready line names the action the button will take", () => {
+  // Why: this is the sentence a creator reads immediately before pressing
+  // the button. It said "Download it" on every device, including one whose
+  // button says "Share the rebuilt zip" (M2 review #3).
+  it("says share where the button says share, and download where it says download", () => {
+    expect(FINISH_LABELS.ready(1_000_000, true)).toContain("Share it");
+    expect(FINISH_LABELS.ready(1_000_000, true)).not.toContain("Download it");
+    expect(FINISH_LABELS.ready(1_000_000, false)).toContain("Download it");
+    expect(FINISH_LABELS.ready(1_000_000, false)).not.toContain("Share it");
   });
 });

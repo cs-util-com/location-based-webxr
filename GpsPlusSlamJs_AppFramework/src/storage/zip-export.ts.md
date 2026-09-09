@@ -78,8 +78,15 @@ It was generalised when a second kind of file needed the same save path
 was the only zip-specific thing in it, and a second copy of the
 picker-then-anchor dance is exactly the duplication this repo keeps
 finding. `DownloadFileType` is `{ description, mimeType, extension }`;
-`PDF_FILE_TYPE` is exported, the zip one stays private because
-`downloadZip` is its only caller.
+`PDF_FILE_TYPE` and `ZIP_FILE_TYPE` are both exported: the zip one was
+private while `downloadZip` was its only caller, and stopped being so when
+`share-or-download.ts` and the recorder needed to name the type without
+going through `downloadZip`.
+
+**`downloadZip` has no production callers left** (the Tour Viewer moved to
+`shareOrDownloadZip`, the recorder to `shareOrDownloadBlob`). It stays
+because it is part of the published package's surface, not because
+anything here uses it.
 
 ### Sync to External File Handle
 

@@ -10,9 +10,14 @@
 
 /**
  * @param {import('@playwright/test').Page} page
+ * @param {{ shareRoute?: boolean }} [options] `shareRoute` must be set HERE
+ *   rather than through `__tourViewerTest` afterwards: the app reads the
+ *   share capability once, while wiring its buttons, so a spec that flipped
+ *   it after load would get the share copy under a "download" label.
  */
-export async function installTourViewerArFakes(page) {
-  await page.addInitScript(() => {
+export async function installTourViewerArFakes(page, options = {}) {
+  const shareRoute = options.shareRoute === true;
+  await page.addInitScript((shareRoute) => {
     const test = {
       /** @type {{ hasCameraFrame: boolean, isolationOptions: unknown }[]} */
       initARCalls: [],
@@ -71,6 +76,10 @@ export async function installTourViewerArFakes(page) {
        *  reports (false = the picker was dismissed). */
       downloads: /** @type {{ filename: string, blob: Blob }[]} */ ([]),
       saveOutcome: true,
+      /** Which route the zip hand-off should take. False (the default)
+       *  keeps every existing test on the save path; true makes the app
+       *  label its buttons "share" and report the share copy. */
+      shareRoute,
       /** Hold downloadPdf open so a test can observe the busy state. */
       holdPdfSave: false,
       releasePdfSave: () => undefined,
@@ -192,10 +201,19 @@ export async function installTourViewerArFakes(page) {
         }
         return Promise.resolve(test.locationOutcome);
       },
-      downloadZip: (blob, filename) => {
+      shareOrDownloadZip: (blob, filename) => {
         test.downloads.push({ filename, blob });
-        return Promise.resolve(test.saveOutcome);
+        // A test drives BOTH routes through one fake: `shareRoute` picks
+        // which mechanism the app should believe ran, `saveOutcome`
+        // whether anything left the page. The real share sheet cannot be
+        // opened headlessly, so this seam is the only way the share copy
+        // is ever exercised end to end.
+        return Promise.resolve({
+          route: test.shareRoute === true ? "share" : "download",
+          delivered: test.saveOutcome,
+        });
       },
+      canShareZip: () => test.shareRoute === true,
       downloadPdf: (blob, filename) => {
         test.downloads.push({ filename, blob });
         // A test can HOLD the save open, which is the only deterministic
@@ -244,5 +262,5 @@ export async function installTourViewerArFakes(page) {
         test.stopCaptureCalls += 1;
       },
     };
-  });
+  }, shareRoute);
 }

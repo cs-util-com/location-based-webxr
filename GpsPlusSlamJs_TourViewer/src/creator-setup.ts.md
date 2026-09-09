@@ -68,7 +68,7 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   - `openDraftStore(key)` resolves this tour's draft namespace, or
     `undefined` where there is no persistence. Injected so the unit tests
     and the e2e can supply one without OPFS.
-  - `CreatorSetupDom { panel; controls; finishBlock; replaceHelp; sizeInput; printPanel; status; mintButton; finishButton; finishStatus; downloadButton; pinButton; pinLabel; pinSave; pinCancel; photoButton; draftOffer; draftOfferText; draftRestore; draftDismiss; draftDiscard }`
+  - `CreatorSetupDom { panel; controls; finishBlock; replaceHelp; replaceHelpShare; sizeInput; printPanel; status; mintButton; finishButton; finishStatus; downloadButton; pinButton; pinLabel; pinSave; pinCancel; photoButton; draftOffer; draftOfferText; draftRestore; draftDismiss; draftDiscard }`
   - `arSessionLive(status)` - whether the controller's status means a
     session is up (`starting` / `running` / `stopping`). Exported because
     `main.ts` hands the same predicate to the wizard, which must not
@@ -130,13 +130,28 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
     advancing it while still rebuilding from the hosted zip would write a
     manifest naming photos the archive does not contain. Both halves are
     needed, and the e2e finishes twice in one open tour to hold them.
-- **Download:** `seams.downloadZip` (the framework's picker-or-anchor);
-  `true` reveals the replace instructions (the last thing to do, and only
-  once there is a file to do it with), `false` (a dismissed picker) keeps
-  the button live and says "not saved". Async-UI rule on both branches.
-  `resetFinishStep` (a hook, called when a tour closes) disables the
-  button, clears the status and hides both blocks, so a re-opened tour
-  never shows the previous one's dead download button.
+- **Hand-off:** `seams.shareOrDownloadZip` - the device share sheet where
+  the browser can share FILES, else the framework's picker-or-anchor. The
+  button's LABEL comes from `seams.canShareZip()`, read once at wire time,
+  because a button reading "Download" on a phone that will open a share
+  sheet names the wrong action before it is pressed. Two independent
+  facts come back:
+  - `delivered` reveals the replace instructions (the last thing to do,
+    and only once there is a file to do it with); false - a dismissed
+    picker, or a share sheet that handed nothing over - keeps the button
+    live. Async-UI rule on both branches.
+  - `route` picks the copy, and this is the half that matters: "the link
+    and the printed code stay the same" is TRUE after a save over the
+    hosted file and FALSE after a share, which normally creates a new file
+    with a new id while the printed code still points at the old one. The
+    share route therefore also reveals `#replace-help-share`, one extra
+    sentence saying so. The four outcomes are pure functions
+    (`finishHandoffStatus`, `finishIdleLabel`, `finishBusyLabel` in
+    `qr-author-mode.ts`), tested there, because three of them cannot be
+    reached in a headless browser.
+    `resetFinishStep` (a hook, called when a tour closes) disables the
+    button, clears the status and hides both blocks, so a re-opened tour
+    never shows the previous one's dead download button.
 - **Placement (M4, DEC-N9):** allowed only under the mint gate's own
   alignment floor for THIS session (a measured code, a matrix and at least
   `MIN_ALIGNMENT_SAMPLES` fixes since the session started - a level that

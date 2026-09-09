@@ -40,7 +40,23 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   `AUTHOR_DEFAULT_SIZE_M`, so the two cannot drift.
 - `FINISH_LABELS` - the finish step's copy through its async cycle
   (reading, rebuilding N of M, ready, failed, download, saving, saved as,
-  not saved).
+  not saved) AND the share route's own (share, sharing, shared, nothing
+  was shared).
+- `finishIdleLabel(canShare)`, `finishBusyLabel(canShare)`,
+  `finishHandoffStatus({ route, delivered }, filename)` - the button's words
+  and the status line, as pure functions.
+  - They are pure, and here rather than inline in the click handler,
+    because THREE of the four outcomes cannot be reached in an e2e run: a
+    headless browser has no share sheet, so this is the only place the
+    share copy is ever checked.
+  - The rule they encode: `saved` promises that the link and the printed
+    code stay the same, which is true when the creator overwrites the
+    hosted file and false when they share - sharing normally creates a new
+    file with a new id while the printed code still points at the old one.
+    `shared` therefore promises nothing and asks them to check.
+  - And `notShared` does not say "you cancelled": the Web Share API reports
+    a cancelled sheet and a failed share as the same error, so any such
+    copy would be a guess stated as a fact.
 - `buildAuthorControllerConfig` wires `onError` too — a throwing detector
   must surface, not leave the panel saying "point the camera" forever.
 

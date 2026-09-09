@@ -13,7 +13,8 @@ Keeps `main.ts` glue-only.
 enableArWorldGroupAlignment; startCameraFrameCapture;
 stopCameraFrameCapture; createQrFrontEnd; solveQrPose; getCameraPose;
 getIntrinsics; createQrDebugView; getScene; queryGeolocationPermission;
-requestLocationOnce; downloadZip; downloadPdf; startHitTestReticle; encodeFrameJpeg;
+requestLocationOnce; shareOrDownloadZip; canShareZip; downloadPdf;
+startHitTestReticle; encodeFrameJpeg;
 createLabel; schedule }` - the placement layer (M4: the framework's hit-test
   reticle under the world group; the camera frame → JPEG encoder, which is
   the framework's `rgbaImageToJpegBlob` behind an opacity guard, async
@@ -31,8 +32,13 @@ createLabel; schedule }` - the placement layer (M4: the framework's hit-test
   instead of a zip one (the printable sheet of numbered codes); it is its
   own seam so the picker offers the right file type and so the e2e
   captures the bytes rather than the browser writing a file.
-  `downloadZip` is the framework's picker-or-anchor download (the e2e fake
-  captures the blob). The
+  `shareOrDownloadZip` is the framework's `shareOrDownloadBlob`: the
+  device share sheet where the browser can share FILES, else the
+  picker-or-anchor download (the e2e fake captures the blob). It answers
+  two things - which route ran, and whether anything left the page - and
+  the app needs both, because the copy after a share cannot promise the
+  hosted link is unchanged. `canShareZip` is the same capability asked
+  WITHOUT a file, for labelling the button at wire time. The
   QR quartet (M3) is the author pipeline's device layer: BarcodeDetector
   front end (or `null` — desktop has no fallback by design), the pure-JS
   planar-PnP solver, the current XR-frame pose as tuples (raw WebXR/odom),

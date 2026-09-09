@@ -184,6 +184,17 @@ export const STARTER_LABELS = {
   done: "Starter zip downloaded",
   cancelled: "Not saved - tap to try again",
   failed: "Could not build the starter zip",
+  /** The share route. The starter zip is the file the creator has to get
+   *  INTO their cloud folder to finish this step, so on a phone handing it
+   *  straight to that app is the whole point - and "downloaded" would then
+   *  be the wrong word for what happened. There is no separate BUSY label:
+   *  the button is packing the zip at that point, which is the same work
+   *  on both routes. */
+  idleShare: "Optional: share an empty starter zip",
+  doneShare: "Starter zip shared",
+  /** Not "you cancelled": a cancelled share sheet and a failed one are the
+   *  same error in the Web Share API. */
+  notShared: "Not shared - tap to try again",
 } as const;
 
 export function wireWizard(deps: {
@@ -191,8 +202,14 @@ export function wireWizard(deps: {
   dom: WizardDom;
   /** Builds the starter archive (an empty manifest). */
   packStarter: () => Promise<Blob>;
-  /** Offers the blob; resolves false when the user dismissed a save picker. */
-  download: (blob: Blob, filename: string) => Promise<boolean>;
+  /** Offers the blob through the share sheet or the save path; `delivered`
+   *  is false when the user dismissed either. */
+  download: (
+    blob: Blob,
+    filename: string,
+  ) => Promise<{ route: "share" | "download"; delivered: boolean }>;
+  /** Whether the share route is what `download` will take, for the label. */
+  canShare?: () => boolean;
   /** Label-revert timer, injectable for tests. */
   setTimeout?: (fn: () => void, ms: number) => unknown;
   clearTimeout?: (handle: unknown) => void;
@@ -290,7 +307,8 @@ export function wireWizard(deps: {
   // The idle label lives in the constant, not only in the markup: it used
   // to be applied ONLY by the revert timer, so renaming it left the old
   // words on screen until after the creator's first click (M3 review #12).
-  dom.starterButton.textContent = STARTER_LABELS.idle;
+  // Which of the two idle labels it is depends on the hand-off route, so
+  // the assignment lives with the button's own wiring below.
 
   // One step open at a time also when the creator opens one BY HAND: a
   // second summary tap closes the others. CREATOR ONLY (M3 review #10):
@@ -323,18 +341,38 @@ export function wireWizard(deps: {
   /** The starter label's revert timer; cleared on a re-click so the first
    *  run's revert cannot overwrite a second run's label. */
   let starterRevert: unknown = null;
+  // Asked once, like the finish step's: the label has to name the action
+  // the button will actually take.
+  const starterShares = deps.canShare?.() ?? false;
+  const starterIdle = starterShares
+    ? STARTER_LABELS.idleShare
+    : STARTER_LABELS.idle;
+  dom.starterButton.textContent = starterIdle;
   dom.starterButton.addEventListener("click", () => {
     if (starterRevert !== null) cancel(starterRevert);
     starterRevert = null;
     dom.starterButton.disabled = true;
+    // One busy word for both routes: the button is packing the zip at this
+    // point, which is the same work either way.
     dom.starterButton.textContent = STARTER_LABELS.busy;
     packStarter()
+      // The share happens after this await, so the click's transient user
+      // activation could in principle have lapsed (the window is a few
+      // seconds; packing an empty zip is milliseconds). If it ever does,
+      // the share rejects with NotAllowedError - NOT AbortError - so the
+      // hand-off falls through to a download and reports `route:
+      // "download"`. The label then says "downloaded", which is what
+      // actually happened. Degrades honestly; no guard needed.
       .then((blob) => download(blob, "tour.zip"))
       .then(
-        (saved) => {
-          dom.starterButton.textContent = saved
-            ? STARTER_LABELS.done
-            : STARTER_LABELS.cancelled;
+        ({ route, delivered }) => {
+          dom.starterButton.textContent = delivered
+            ? route === "share"
+              ? STARTER_LABELS.doneShare
+              : STARTER_LABELS.done
+            : route === "share"
+              ? STARTER_LABELS.notShared
+              : STARTER_LABELS.cancelled;
         },
         () => {
           dom.starterButton.textContent = STARTER_LABELS.failed;
@@ -344,7 +382,11 @@ export function wireWizard(deps: {
         dom.starterButton.disabled = false;
         starterRevert = schedule(() => {
           starterRevert = null;
-          dom.starterButton.textContent = STARTER_LABELS.idle;
+          // `starterIdle`, not `STARTER_LABELS.idle`: the revert used the
+          // download wording unconditionally, so three seconds after a
+          // successful share the button re-labelled itself "download" -
+          // under a button that opens a share sheet (M2 review #2).
+          dom.starterButton.textContent = starterIdle;
         }, 3000);
       });
   });
