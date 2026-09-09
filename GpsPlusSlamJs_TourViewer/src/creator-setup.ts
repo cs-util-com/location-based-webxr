@@ -59,6 +59,7 @@ import {
   FINISH_LABELS,
   finishBlockedHint,
   finishReadiness,
+  MISSING_SIZE_MESSAGE,
   setupHint,
 } from "./qr-author-mode.js";
 import type { TourViewerSeams } from "./seams.js";
@@ -393,8 +394,7 @@ export function wireCreatorSetup(deps: {
     // not looking at (PR #360 review).
     const parsedSize = Number(dom.sizeInput.value);
     if (!Number.isFinite(parsedSize) || parsedSize <= 0) {
-      ctx.authorErrorText =
-        "Enter the printed code's side length in metres (e.g. 0.2) in step 2 before starting.";
+      ctx.authorErrorText = MISSING_SIZE_MESSAGE;
       dom.printPanel.open = true;
       renderAuthorReadout();
       return false;
