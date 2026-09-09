@@ -4,130 +4,126 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Tour Viewer</title>
+    <!--
+      design.css is a VERBATIM copy of GpsPlusSlamJs_DesignSystem/design.css,
+      written by `pnpm run vendor` there and held byte-identical by
+      tests/repo-config/design-css-copies.test.js - never edit it here. It
+      is linked before the <style> block so its @layer order is fixed first;
+      the rules below are unlayered and therefore win every conflict (the
+      adoption plan's L1 contract) - which is why there are so few of them.
+
+      This is the sheet's first DOCUMENT adopter: every app before it is an
+      AR overlay whose ground is the camera, which is why the sheet paints
+      no background and why <body> opts into one with .page.
+    -->
+    <link rel="stylesheet" href="/design.css" />
     <style>
       :root {
-        color-scheme: light dark;
-        font-family: system-ui, sans-serif;
+        /* dark only, like the sheet (owner decision 2026-09-09). It said
+           "light dark" while painting neither, which was a lie the UA
+           acted on. */
+        color-scheme: dark;
       }
-      body {
-        margin: 0 auto;
-        max-width: 60rem;
-        padding: 1rem;
-      }
-      header p,
-      #ar-hint,
-      .step-copy {
-        color: #8889;
-        margin-top: 0.25rem;
-      }
+
+      /* Everything below is layout the shared sheet has no atom for, or a
+         contract that belongs to this page. Anything an atom covers was
+         DELETED rather than left to win under L1. */
+
       form {
         display: flex;
-        gap: 0.5rem;
+        gap: var(--space-2);
         flex-wrap: wrap;
       }
-      input#link {
+      #link,
+      #tour-missing-link,
+      #print-url {
         flex: 1 1 20rem;
-        padding: 0.5rem;
       }
-      button {
-        padding: 0.5rem 1rem;
-      }
-      #stats {
-        margin: 1rem 0;
-        padding: 0.75rem;
-        border: 1px solid #8886;
-        border-radius: 0.5rem;
-        font-variant-numeric: tabular-nums;
-      }
-      #stats[hidden] {
-        display: none;
-      }
-      /* The guided setup: an ordered list of collapsible steps, one open at
-         a time (wizard.ts). Step 4 sits outside this list because a visitor
-         needs its AR section while the rest of the setup is hidden. */
+      /* The steps are numbered in their own headings, so the list that
+         holds them must not number them a SECOND time. (Deleting the app's
+         old rule wholesale put "1." "2." "3." back beside the cards - found
+         by looking at the page, which is the only place it shows.) */
       #wizard {
         list-style: none;
         padding: 0;
-        margin: 1rem 0 0;
+        margin: var(--space-4) 0 0;
+      }
+      /* A step's body is a stacked column of controls. The .step-body atom
+         carries the VOICE and the top margin; the column and the measure
+         are this page's, and a label stacks its text over its own field -
+         without this the two number fields and their captions interleave
+         into unreadable soup on a phone. */
+      .step-body {
+        display: grid;
+        gap: var(--space-2);
+        max-width: 26rem;
+      }
+      .step-body label {
+        display: grid;
+        gap: var(--space-1);
       }
       /* Step 1's numbered sub-steps (F6): get a zip, host it, test the
          link. Numbered, unlike the steps themselves, whose numbers are in
          their headings. */
       .substeps {
-        margin: 0.5rem 0 0;
+        margin: var(--space-2) 0 0;
         padding-left: 1.5rem;
       }
       .substeps > li {
-        margin-bottom: 0.75rem;
+        margin-bottom: var(--space-3);
       }
-      .step {
-        margin: 0.5rem 0;
-        border: 1px solid #8886;
-        border-radius: 0.5rem;
-        padding: 0.5rem 0.75rem;
+      .step-copy {
+        margin-block-start: var(--space-1);
       }
-      /* Each step's title is a real heading in the markup, inside the
-         summary (valid: summary admits heading content); whether a given
-         screen reader exposes it through the disclosure's role is a
-         field-test item, not a claim. The icon rides the same line. */
-      .step > summary {
-        cursor: pointer;
-        font-size: 1.05rem;
-        font-weight: 600;
-        margin: 0.25rem 0;
-      }
-      .step > summary > h2 {
-        display: inline;
-        font-size: inherit;
-        font-weight: inherit;
-        margin: 0;
-      }
-      .step-icon {
-        width: 1.25em;
-        height: 1.25em;
-        vertical-align: -0.25em;
-        margin-right: 0.4em;
-      }
-      .step-body {
-        display: grid;
-        gap: 0.5rem;
-        max-width: 26rem;
-        margin-top: 0.5rem;
+      #stats {
+        margin: var(--space-4) 0;
+        padding: var(--space-3);
+        font-variant-numeric: tabular-nums;
       }
       #storage-panel {
-        margin: 1rem 0;
-        color: #8889;
+        margin: var(--space-4) 0;
       }
       #storage-panel summary {
         cursor: pointer;
       }
       #storage-panel p {
-        margin: 0.5rem 0;
+        margin: var(--space-2) 0;
       }
-      #storage-panel[hidden] {
-        display: none;
-      }
+      /* The error line wears the sheet's failure family, but the STATE is
+         derived from the content rather than mirrored into a data
+         attribute: .prose[data-tone="warn"] would have to be toggled at
+         eight write sites across four modules, and any one of them
+         forgetting leaves a red bar with no message or a message with no
+         colour. `:empty` cannot drift - it IS the text. The element is
+         authored with no whitespace inside for exactly this reason
+         (pinned by src/page-contracts.test.ts).
+         white-space stays app-local: that is behaviour, not decoration. */
       #error {
-        color: #c0392b;
-        margin: 1rem 0;
+        margin: var(--space-4) 0;
         white-space: pre-wrap;
       }
-      .creator-only[hidden],
-      #visitor-screen[hidden] {
-        display: none;
+      #error:not(:empty) {
+        background: var(--state-warn);
+        color: var(--ink-on-danger);
+        padding: var(--space-2) var(--space-3);
+        border-radius: var(--radius-small);
       }
       /* Step 4's content IS the WebXR DOM-overlay root. Nothing may clip it
-         (the shared .step atom is `overflow: hidden`, and whether the
-         overlay's top-layer promotion escapes that clip is not something
-         any test here can see - so do not find out on a phone). Declared
-         before the visitor override below, which is more specific and must
-         come second (no-descending-specificity). */
+         (the .step atom is `overflow: hidden`, and whether the overlay's
+         top-layer promotion escapes that clip is not something any test
+         here can see - so do not find out on a phone). Declared before the
+         visitor override below, which is more specific and must come
+         second (no-descending-specificity). */
       #step-measure {
         overflow: visible;
       }
-      /* A visitor's AR section is the screen itself, not a step card. */
+      /* A visitor's AR section is the screen itself, not a step card. The
+         atom expresses the card as surface + raise, never an outline (the
+         brief: "shadows … borders do not exist"), so this undresses those
+         rather than zeroing a border. */
       body[data-mode="visitor"] #step-measure {
-        border: 0;
+        background: none;
+        box-shadow: none;
         padding: 0;
       }
       /* No way to collapse step 4 while a session runs: a collapsed
@@ -139,62 +135,43 @@
       body[data-ar-active="true"] #step-measure > summary {
         display: none;
       }
-      /* Step 4's own controls, laid out like a step body. */
+      #setup-panel,
+      #setup-controls,
       #tour-missing,
       #finish-block {
         display: grid;
-        gap: 0.5rem;
+        gap: var(--space-2);
         max-width: 26rem;
-        margin-top: 0.75rem;
       }
-      #tour-missing[hidden],
-      #finish-block[hidden],
-      #setup-controls[hidden],
-      #replace-help[hidden],
-      #print-url-ask[hidden],
-      #print-url-shown[hidden] {
-        display: none;
-      }
-      #setup-controls {
-        display: grid;
-        gap: 0.5rem;
-      }
-      #print-url-shown {
-        font-family: monospace;
-        font-size: 0.75rem;
-        overflow-wrap: anywhere;
+      #setup-panel,
+      #tour-missing,
+      #finish-block {
+        margin-top: var(--space-3);
       }
       #ar-root {
-        margin: 1rem 0;
+        margin: var(--space-4) 0;
       }
-      /* Composited over the camera during the session: a white halo keeps
-         the dark text legible over video and vanishes on the white page. */
+      /* Composited over the camera during the session, so it wears the
+         sheet's plateless-legibility halo. It used to be #333 with a WHITE
+         halo, which measures 1.16:1 on the page's own ground - invisible,
+         and independently reported as "a weird white shadow" (F14). */
       #ar-status {
-        color: #333;
-        font-size: 0.95rem;
-        margin-bottom: 0.5rem;
-        text-shadow:
-          0 0 4px #fff,
-          0 0 8px #fff;
+        font-size: var(--size-hint);
+        margin-bottom: var(--space-2);
+        text-shadow: var(--halo-text);
       }
-      /* The gate's escape: the secondary, quality-degrading choice. */
       #scan-escape {
-        margin-left: 0.5rem;
-        border: 1px dashed currentcolor;
-        background: transparent;
+        margin-left: var(--space-2);
       }
-      #setup-panel {
-        display: grid;
-        gap: 0.5rem;
-        margin-top: 0.75rem;
-        max-width: 26rem;
+      /* The one link on the page. The UA default is a blue that belongs to
+         no palette here and reads as an artefact on the dark ground. */
+      #visitor-link {
+        color: var(--accent);
       }
-      #setup-panel[hidden] {
-        display: none;
-      }
+      #print-url-shown,
       #print-url-out {
         font-family: monospace;
-        font-size: 0.7rem;
+        font-size: var(--size-hint);
         overflow-wrap: anywhere;
       }
       /* On screen the code previews at a fixed size; on paper it takes the
@@ -208,6 +185,9 @@
         height: 12rem;
         image-rendering: pixelated;
       }
+      /* A literal white, not a token: this is the QR's quiet zone, which
+         is a SCANNING requirement and must stay white on any ground the
+         design system ever grows. */
       #print-quiet {
         background: #fff;
         padding: 1rem;
@@ -235,6 +215,13 @@
              staleness that makes color-mix() unusable in this file. */
           margin: 0;
         }
+        /* `body *` hides body's CHILDREN, never body's own background - so
+           a browser printing with background graphics on would lay the
+           sheet's dark ground under the code. Ink, not a scan failure, but
+           a lot of it. */
+        .page {
+          background: #fff;
+        }
         body * {
           visibility: hidden;
         }
@@ -258,22 +245,18 @@
       #gallery {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
-        gap: 0.5rem;
+        gap: var(--space-2);
         list-style: none;
         padding: 0;
       }
-      /* The id rule above outranks .creator-only[hidden]: keep the attribute
-         authoritative (a visitor never sees the thumbnails). */
-      #gallery[hidden] {
-        display: none;
-      }
       #gallery li {
-        border: 1px solid #8884;
-        border-radius: 0.5rem;
+        border-radius: var(--radius-small);
         overflow: hidden;
         min-height: 6rem;
         display: grid;
         align-content: end;
+        background: var(--surface-gradient);
+        box-shadow: var(--raise);
       }
       #gallery img {
         width: 100%;
@@ -282,13 +265,13 @@
         display: block;
       }
       #gallery figcaption {
-        font-size: 0.7rem;
-        padding: 0.25rem 0.4rem;
+        font-size: var(--size-hint);
+        padding: var(--space-1) var(--space-2);
         overflow-wrap: anywhere;
       }
     </style>
   </head>
-  <body>
+  <body class="page">
     <header>
       <h1>Tour Viewer</h1>
       <!-- Two pages in one (guided-setup plan DEC-N1): the plain page is the
@@ -298,7 +281,7 @@
       <!-- Creator-only sections are authored HIDDEN and revealed for a
            creator by visitor-screen.ts: a visitor must never see the setup
            flash before the script runs (M2 review #5). -->
-      <p class="creator-only" hidden>
+      <p class="creator-only hint--dim" hidden>
         Set up a tour that people open by scanning a printed code: host a zip,
         print the code, hang it, then measure it in AR and place content. Four
         steps, one at a time.
@@ -334,7 +317,7 @@
             </summary>
             <ol class="substeps">
               <li>
-                <p class="step-copy">
+                <p class="step-copy hint--dim">
                   Get a tour zip: a recording from the Recorder app, or an empty
                   one to start from.
                 </p>
@@ -342,6 +325,7 @@
                   <button
                     type="button"
                     id="starter-zip"
+                    class="btn btn--prose"
                     data-testid="starter-zip"
                   >
                     Optional: download an empty starter zip
@@ -349,14 +333,14 @@
                 </div>
               </li>
               <li>
-                <p class="step-copy">
+                <p class="step-copy hint--dim">
                   Upload it to Google Drive, Dropbox, GitHub or OneDrive and
                   copy its share link. The printed code will point at this link,
                   so keep the file where it is.
                 </p>
               </li>
               <li>
-                <p class="step-copy">
+                <p class="step-copy hint--dim">
                   Paste the link here and test it. A link that opens here is a
                   link the printed code can carry.
                 </p>
@@ -364,12 +348,18 @@
                   <input
                     id="link"
                     name="link"
+                    class="input"
                     type="text"
                     placeholder="https://… link to the .zip"
                     autocomplete="off"
                     data-testid="link-input"
                   />
-                  <button type="submit" id="open" data-testid="open-button">
+                  <button
+                    type="submit"
+                    class="btn"
+                    id="open"
+                    data-testid="open-button"
+                  >
                     Test link
                   </button>
                 </form>
@@ -396,7 +386,7 @@
               </svg>
               <h2>2 · Print the code</h2>
             </summary>
-            <p class="step-copy">
+            <p class="step-copy hint--dim">
               The code carries the link from step 1 - you are not asked for it
               again. Print it at 100% scale (no fit-to-page), and enter the
               printed side length so the AR setup can measure it.
@@ -414,6 +404,7 @@
                 The link the code will carry
                 <input
                   id="print-url"
+                  class="input"
                   data-testid="print-url"
                   type="text"
                   autocomplete="off"
@@ -429,6 +420,7 @@
                 >Printed side length (m)
                 <input
                   id="author-size"
+                  class="input"
                   data-testid="author-size"
                   type="number"
                   step="0.01"
@@ -440,6 +432,7 @@
                 >Code number (1 for the first poster)
                 <input
                   id="author-c"
+                  class="input"
                   data-testid="author-c"
                   type="number"
                   step="1"
@@ -450,6 +443,7 @@
               <button
                 type="button"
                 id="print-generate"
+                class="btn"
                 data-testid="print-generate"
               >
                 Generate QR
@@ -463,13 +457,14 @@
               <button
                 type="button"
                 id="print-button"
+                class="btn"
                 data-testid="print-button"
                 hidden
               >
                 Print at true size
               </button>
               <div id="print-url-out" data-testid="print-url-out"></div>
-              <p class="step-copy">
+              <p class="step-copy hint--dim">
                 That is the address the code encodes: this page, carrying your
                 tour link inside it. A long tour link means more squares in the
                 code and smaller ones, which is harder for a phone to read. If
@@ -505,21 +500,26 @@
               </svg>
               <h2>3 · Hang the code</h2>
             </summary>
-            <p class="step-copy">
+            <p class="step-copy hint--dim">
               Fix the printed code where the tour starts: flat on a wall or a
               post, at about chest height, in a spot a phone can film squarely
               from a metre away. It stays there; visitors scan it to open the
               tour and again in AR to be placed exactly.
             </p>
             <div class="step-body">
-              <button type="button" id="hang-done" data-testid="hang-done">
+              <button
+                type="button"
+                class="btn btn--prose"
+                id="hang-done"
+                data-testid="hang-done"
+              >
                 It hangs - continue
               </button>
             </div>
           </details>
         </li>
       </ol>
-      <div id="error" role="alert" data-testid="error"></div>
+      <div id="error" class="prose" role="alert" data-testid="error"></div>
       <!-- Step 4 wraps the AR section. Under WebXR DOM Overlay only the
            subtree of the element passed to initAR composites over the camera
            feed, so everything a person needs DURING a session (the status
@@ -557,7 +557,7 @@
           </svg>
           <h2>4 · Measure the code and place content</h2>
         </summary>
-        <p class="step-copy creator-only" hidden>
+        <p class="step-copy hint--dim creator-only" hidden>
           Stand at the hung code and start the AR setup. Hold the phone on the
           code until it is measured, then place text pins and photos where the
           tour should show them. Finish inside AR when you are done - the
@@ -576,13 +576,14 @@
           data-testid="tour-missing"
           hidden
         >
-          <p class="step-copy">
+          <p class="step-copy hint--dim">
             This device does not have the tour open yet. Paste the link from
             step 1 - on your phone, that usually means sending it to yourself.
           </p>
           <input
             id="tour-missing-link"
             name="tour-missing-link"
+            class="input"
             type="text"
             placeholder="https://… link to the .zip"
             autocomplete="off"
@@ -591,19 +592,26 @@
           <button
             type="submit"
             id="tour-missing-open"
+            class="btn btn--prose"
             data-testid="tour-missing-open"
           >
             Open the tour here
           </button>
         </form>
         <section id="ar-root">
-          <p id="ar-hint" data-testid="ar-hint">
+          <p id="ar-hint" class="hint--dim" data-testid="ar-hint">
             AR opens the camera. Keep the printed code in view until the page
             says it is measured; walking a few metres with GPS reception lets
             the phone align to the map.
           </p>
           <div id="ar-status" data-testid="ar-status" aria-live="polite"></div>
-          <button type="button" id="enter-ar" data-testid="enter-ar" disabled>
+          <button
+            type="button"
+            class="btn"
+            id="enter-ar"
+            data-testid="enter-ar"
+            disabled
+          >
             Checking AR support…
           </button>
           <!-- The scan gate's escape (M5, DEC-N3): offered after 45 s without
@@ -611,6 +619,7 @@
           <button
             type="button"
             id="scan-escape"
+            class="btn btn--prose"
             data-testid="scan-escape"
             hidden
           >
@@ -634,6 +643,7 @@
               <button
                 type="button"
                 id="setup-mint"
+                class="btn btn--prose"
                 data-testid="setup-mint"
                 disabled
               >
@@ -646,6 +656,7 @@
               <button
                 type="button"
                 id="setup-pin"
+                class="btn btn--prose"
                 data-testid="setup-pin"
                 disabled
               >
@@ -653,18 +664,26 @@
               </button>
               <input
                 id="pin-label"
+                class="input"
                 data-testid="pin-label"
                 type="text"
                 autocomplete="off"
                 placeholder="The pin's text"
                 hidden
               />
-              <button type="button" id="pin-save" data-testid="pin-save" hidden>
+              <button
+                type="button"
+                class="btn btn--prose"
+                id="pin-save"
+                data-testid="pin-save"
+                hidden
+              >
                 Save the pin
               </button>
               <button
                 type="button"
                 id="pin-cancel"
+                class="btn"
                 data-testid="pin-cancel"
                 hidden
               >
@@ -673,6 +692,7 @@
               <button
                 type="button"
                 id="setup-photo"
+                class="btn btn--prose"
                 data-testid="setup-photo"
                 disabled
               >
@@ -681,6 +701,7 @@
               <button
                 type="button"
                 id="setup-finish"
+                class="btn btn--prose"
                 data-testid="setup-finish"
                 disabled
               >
@@ -701,13 +722,14 @@
           <button
             type="button"
             id="finish-download"
+            class="btn btn--prose"
             data-testid="finish-download"
             disabled
           >
             Download the rebuilt zip
           </button>
           <div id="replace-help" data-testid="replace-help" hidden>
-            <p class="step-copy">
+            <p class="step-copy hint--dim">
               Last thing: upload this zip over the one from step 1, so the link
               - and with it the printed code - stays the same. Google Drive: on
               drive.google.com in a browser, right-click the file, "Manage
@@ -726,7 +748,7 @@
            API). -->
       <details
         id="storage-panel"
-        class="creator-only"
+        class="creator-only hint--dim"
         data-testid="storage-panel"
         hidden
       >
@@ -736,13 +758,18 @@
           revisit opens instantly and works offline. A changed file on the host
           is picked up automatically; clearing is only needed to free space.
         </p>
-        <button type="button" id="clear-cache" data-testid="clear-cache">
+        <button
+          type="button"
+          class="btn"
+          id="clear-cache"
+          data-testid="clear-cache"
+        >
           Clear cache
         </button>
       </details>
-      <div id="stats" hidden data-testid="stats">
-        <div id="stats-headline"></div>
-        <div id="stats-detail"></div>
+      <div id="stats" class="plate" hidden data-testid="stats">
+        <div id="stats-headline" class="prose"></div>
+        <div id="stats-detail" class="prose"></div>
       </div>
       <!-- The gallery is the creator's proof that the tour opened; a visitor's
            tour appears in AR, not as thumbnails (M2 review #2). -->

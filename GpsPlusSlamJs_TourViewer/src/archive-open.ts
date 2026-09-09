@@ -28,12 +28,12 @@ const DEFAULT_ASSET_PREFIX =
  *  testing session (F6): nobody wants to open the zip, they want to know
  *  the link works - and a link that opens here is one the printed code can
  *  carry. */
-export const OPEN_BUTTON_LABEL = "Test link";
+const OPEN_BUTTON_LABEL = "Test link";
 
 /** Step 4's own open button. A different label on purpose: by then the
  *  creator is not testing a link, they are getting the tour onto the
  *  device they are holding. */
-export const MISSING_OPEN_LABEL = "Open the tour here";
+const MISSING_OPEN_LABEL = "Open the tour here";
 
 export interface ArchiveOpenDom {
   form: HTMLFormElement;
