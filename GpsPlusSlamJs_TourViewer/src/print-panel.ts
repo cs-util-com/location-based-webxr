@@ -17,6 +17,37 @@ import {
 
 import { codeIndexFromInput } from "./qr-author-mode.js";
 
+/**
+ * The CSS side length to write into `--print-side` right now, or null to
+ * leave the property alone.
+ *
+ * Split out and exported so the decision is unit-testable without a DOM
+ * (this package's units are pure; the wiring is covered by the e2e). It
+ * exists because the property used to be written ONLY when a code was
+ * generated, so changing the size and pressing Print reprinted at the old
+ * size - silently, since nothing about a wrong physical size throws
+ * (second testing session, F1).
+ *
+ * @param rawSize the size input's current value, in metres.
+ * @param hasCode whether a generated code is on screen; with none, the
+ *   print stylesheet shows nothing and a size would be a claim about a
+ *   code that does not exist.
+ */
+export function printedSideToApply(
+  rawSize: string,
+  hasCode: boolean,
+): string | null {
+  if (!hasCode) return null;
+  try {
+    // printedSideCss throws a RangeError on non-positive / non-finite; at
+    // print time that must not escape into a click handler, so a size the
+    // printer could not use leaves the previous value in place.
+    return printedSideCss(Number(rawSize));
+  } catch {
+    return null;
+  }
+}
+
 export interface PrintPanelDom {
   panel: HTMLDetailsElement;
   urlInput: HTMLInputElement;
@@ -64,11 +95,20 @@ export function wirePrintPanel(
       });
   });
 
+  /** Write the size that is in the box, if there is a code to print. */
+  const applyPrintedSide = (): void => {
+    const side = printedSideToApply(dom.sizeInput.value, !dom.area.hidden);
+    if (side !== null) {
+      document.documentElement.style.setProperty("--print-side", side);
+    }
+  };
+
   dom.printButton.addEventListener("click", () => {
     // A collapsed <details> renders nothing, and the print CSS shows only
     // #print-area - printing from a collapsed panel would print a blank page
     // (flows plan review #13).
     dom.panel.open = true;
+    applyPrintedSide();
     window.print();
   });
 
@@ -82,6 +122,9 @@ export function wirePrintPanel(
   // when a code exists - otherwise there is nothing to print anyway.
   window.addEventListener("beforeprint", () => {
     if (!dom.area.hidden) dom.panel.open = true;
+    // The size has to be current by this moment for the browser's own print
+    // too (menu, Ctrl+P), which never reaches the button's handler.
+    applyPrintedSide();
   });
 
   return {

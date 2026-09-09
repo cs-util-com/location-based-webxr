@@ -8,6 +8,23 @@ scale; the canvas carries the symbol only, the quiet zone is CSS padding).
 On the page for everyone since the flows plan M3 (DEC-F2); its own module
 since M6.
 
+## The printed size follows the input, at print time
+
+- `printedSideToApply(rawSize, hasCode) -> string | null` is the decision,
+  exported so it can be unit-tested without a DOM (this package keeps its
+  units pure and covers wiring in the Playwright specs). `null` means
+  "leave `--print-side` alone": either no code is on screen, or the size
+  is one `printedSideCss` refuses.
+- It is called from BOTH print paths - the panel button and the window
+  `beforeprint` listener - because the browser menu and Ctrl+P never reach
+  the button.
+- **Why it exists.** `--print-side` used to be written only inside
+  `generatePrintCode`, so changing the size and pressing Print reprinted at
+  the size the last _generate_ left behind. Nothing errors when this is
+  wrong; the poster is simply the wrong physical size, and the pose solve
+  then assumes a length the paper does not have (second testing session,
+  2026-09-09, F1).
+
 ## Public API
 
 - `wirePrintPanel(dom: PrintPanelDom): PrintPanel` - binds the generate and

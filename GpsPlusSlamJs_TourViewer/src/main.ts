@@ -38,6 +38,7 @@ import {
 } from "./tour-viewer-session.js";
 import { createViewerPlacement } from "./viewer-placement.js";
 import { wireVisitorScreen } from "./visitor-screen.js";
+import { driveProxyBaseUrl } from "./drive-proxy-url.js";
 import { stepStoreOrUndefined, wireWizard } from "./wizard.js";
 
 /** Keep at most this many archives cached (LRU) — see BoundedLocalCacheStore. */
@@ -45,10 +46,11 @@ const MAX_CACHED_ARCHIVES = 5;
 
 /** The site worker's Drive CORS proxy (drive-proxy plan, 2026-08-26):
  *  keyless Drive links 403 real browser fetches, so they rewrite to this
- *  route. Absolute on purpose — production is same-origin with it, and dev
- *  servers (localhost, LAN, ngrok) are on the worker's CORS allowlist, so
- *  one value serves both. */
-const DRIVE_PROXY_BASE_URL = "https://gps.csutil.com/api/drive-proxy";
+ *  route. Resolved per host rather than hard-coded: a branch preview is
+ *  neither production nor a dev server, so the old single absolute URL
+ *  made every preview call production cross-origin and be refused (F3,
+ *  second testing session). See drive-proxy-url.ts. */
+const DRIVE_PROXY_BASE_URL = driveProxyBaseUrl(location.hostname);
 
 function element<T extends HTMLElement>(id: string): T {
   const found = document.getElementById(id);

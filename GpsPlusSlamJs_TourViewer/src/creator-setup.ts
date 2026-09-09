@@ -394,7 +394,7 @@ export function wireCreatorSetup(deps: {
     const parsedSize = Number(dom.sizeInput.value);
     if (!Number.isFinite(parsedSize) || parsedSize <= 0) {
       ctx.authorErrorText =
-        "Enter the printed code's side length in metres (e.g. 0.16) in step 2 before starting.";
+        "Enter the printed code's side length in metres (e.g. 0.2) in step 2 before starting.";
       dom.printPanel.open = true;
       renderAuthorReadout();
       return false;

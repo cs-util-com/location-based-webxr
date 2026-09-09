@@ -168,6 +168,21 @@
       }
 
       @media print {
+        /* No page margin: a 20 cm code needs 20 cm of PRINTABLE width, and
+           the default margin takes roughly 2 cm of A4's 21 cm before the
+           browser has drawn anything - which is most of the "lots of air"
+           an author sees around a code that claims to be 16 cm. The paper
+           SIZE is deliberately not set: forcing A4 would be wrong for
+           anyone on Letter, and it is the margin that costs width. The
+           dialog's own "fit to page" can still rescale, which is why the
+           info line asks for 100% scale. */
+        @page {
+          /* stylelint-disable-next-line csstree/validator -- `margin` IS a
+             valid @page descriptor (CSS Paged Media 3); the csstree
+             validator bundled here is old enough not to know it, the same
+             staleness that makes color-mix() unusable in this file. */
+          margin: 0;
+        }
         body * {
           visibility: hidden;
         }
@@ -333,6 +348,7 @@
                   type="number"
                   step="0.01"
                   min="0.01"
+                  value="0.2"
                 />
               </label>
               <label
