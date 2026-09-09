@@ -47,6 +47,16 @@ export {
 //     boundary migration. Recorder consumers import locally now. ---
 
 // --- zip-export ---
+// The authoring draft's file store (Tour Viewer M5), and the key escaping
+// it shares with the OSM tile store.
+export {
+  type DraftFileStore,
+  DRAFT_STORE_DIR,
+  createDraftFileStore,
+  openDraftNamespace,
+} from './opfs-draft-store.js';
+export { fileNameFor, keyForFileName } from './opfs-file-names.js';
+
 export {
   type ZipExportResult,
   type ZipExportContributor,

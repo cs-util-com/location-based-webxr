@@ -55,6 +55,17 @@ const DEFAULT_CAPTION_MM = 8;
 /** Gap between two codes sharing a page. */
 const DEFAULT_GAP_MM = 6;
 
+/**
+ * How far each row of modules bleeds into the one below, as a fraction of
+ * a module.
+ *
+ * An exact seam between rows can render as a white hairline on some
+ * rasterisers, and a hairline through a finder pattern is a scan failure.
+ * It is deliberately far below half a module: anything larger starts to
+ * thicken the symbol's own features rather than close a seam.
+ */
+const ROW_OVERLAP = 0.02;
+
 export interface PrintPdfOptions {
   paper?: PaperSize;
   /** The SYMBOL side in metres - the number the pose solve reads. */
@@ -67,7 +78,7 @@ export interface PrintPdfOptions {
 
 /** Where one code's QUIET-ZONE box sits, in mm from the page's bottom-left
  *  (PDF's own origin, so the writer does no flipping). */
-export interface PdfPlacement {
+interface PdfPlacement {
   xMm: number;
   yMm: number;
 }
@@ -206,6 +217,33 @@ function refuseIfTooBig(box: {
   );
 }
 
+/**
+ * The largest symbol side, in metres, this writer can place on `paper`.
+ *
+ * Exported because the Tour Viewer's panel shows `homePrintWarning`, which
+ * is about printing the PAGE from a browser dialog and is roughly 7 mm
+ * stricter - the dialog's own margins are not ours. Without this the panel
+ * tells an author their 17 cm code "will not scan" in the same breath as a
+ * PDF that prints it correctly.
+ */
+export function maxPrintablePdfSideM(
+  paper: PaperSize = 'a4',
+  options: Pick<
+    PrintPdfOptions,
+    'marginMm' | 'quietFraction' | 'captionMm'
+  > = {}
+): number {
+  const margin = options.marginMm ?? DEFAULT_MARGIN_MM;
+  const quiet = options.quietFraction ?? DEFAULT_QUIET_FRACTION;
+  const caption = options.captionMm ?? DEFAULT_CAPTION_MM;
+  const size = PAPER_SIZES_MM[paper];
+  const width = (size.width - 2 * margin) / (1 + 2 * quiet);
+  const height = (size.height - 2 * margin - caption) / (1 + 2 * quiet);
+  // Floored to a whole millimetre for the same reason the refusal message
+  // is: a ceiling that is itself refused is worse than none.
+  return Math.floor(Math.min(width, height)) / 1000;
+}
+
 /** A code to draw: its module matrix and the line printed under it. */
 export interface PrintablePdfCode {
   /** Modules per side. */
@@ -310,23 +348,33 @@ function darkRuns(
 ): string[] {
   const out: string[] = [];
   const step = sideMm / code.size;
+  const overlap = step * ROW_OVERLAP;
   for (let row = 0; row < code.size; row += 1) {
     // PDF's y grows UPWARD and the matrix's first row is the TOP one.
     const yMm = originYMm + (code.size - 1 - row) * step;
+    // The hair of overlap goes DOWNWARD, and never below the symbol's own
+    // bottom edge. Extending upward instead made the drawn symbol taller
+    // than the side it declares - 160.15 mm for a declared 160 - which
+    // contradicts this file's one hard invariant, put ink into the quiet
+    // zone, and was free to fix.
+    const bottomMm = Math.max(originYMm, yMm - overlap);
     let runStart = -1;
     for (let col = 0; col <= code.size; col += 1) {
-      const dark = col < code.size && code.modules[row * code.size + col] !== 0;
+      // `> 0` rather than `!== 0`: the parameter type is the permissive
+      // ArrayLike<number>, and `!== 0` reads a hole (undefined) and the
+      // string '0' as DARK - a holey array of the right length renders a
+      // solid black square, which is a code that cannot be scanned and
+      // looks deliberate.
+      const dark =
+        col < code.size && Number(code.modules[row * code.size + col]) > 0;
       if (dark && runStart < 0) runStart = col;
       if (!dark && runStart >= 0) {
         out.push(
           rect(
             originXMm + runStart * step,
-            yMm,
+            bottomMm,
             (col - runStart) * step,
-            // A hair of overlap between rows: at these sizes an exact
-            // seam can render as a white hairline on some rasterisers,
-            // and a hairline through a finder pattern is a scan failure.
-            step * 1.02
+            yMm + step - bottomMm
           )
         );
         runStart = -1;

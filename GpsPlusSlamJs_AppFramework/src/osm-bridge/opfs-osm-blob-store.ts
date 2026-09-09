@@ -33,6 +33,7 @@
 
 import { createLogger } from '../utils/logger';
 import { writeFileOrAbort } from '../storage/write-file-or-abort';
+import { fileNameFor, keyForFileName } from '../storage/opfs-file-names.js';
 
 const log = createLogger('OsmBlobStore');
 
@@ -147,27 +148,17 @@ export class OpfsOsmBlobStore implements OsmBlobStore {
 }
 
 /**
- * Escapes a store key into a flat filename.
+ * The key escaping, re-exported.
  *
- * `encodeURIComponent` escapes `/`, `.` runs are harmless once slashes are gone,
- * and the result is reversible — which `keys()` depends on, because the OSM
- * package's `listCachedTiles()` filters the keys it gets back by prefix.
+ * It MOVED to `storage/opfs-file-names.ts` when a second OPFS store (the Tour
+ * Viewer's authoring draft) needed the same contract: traversal-proof AND
+ * reversible. `keys()` here depends on the reversibility, because the OSM
+ * package's `listCachedTiles()` filters the keys it gets back by prefix - so
+ * two copies of the rule is how one of them quietly stops round-tripping.
+ * Re-exported rather than relocated in the barrel so this module's public
+ * surface is unchanged.
  */
-export function fileNameFor(key: string): string {
-  return `${encodeURIComponent(key)}.blob`;
-}
-
-/** Inverse of {@link fileNameFor}; `undefined` for anything we did not write. */
-export function keyForFileName(name: string): string | undefined {
-  if (!name.endsWith('.blob')) return undefined;
-  try {
-    return decodeURIComponent(name.slice(0, -'.blob'.length));
-  } catch {
-    // A malformed percent-escape means the file was not written by us. Ignoring
-    // it is safer than surfacing a key that no `get` could ever resolve.
-    return undefined;
-  }
-}
+export { fileNameFor, keyForFileName } from '../storage/opfs-file-names.js';
 
 /**
  * Opens (creating if needed) the OSM subdirectory of an OPFS root.

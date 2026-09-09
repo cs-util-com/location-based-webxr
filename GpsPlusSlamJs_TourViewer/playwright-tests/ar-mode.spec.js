@@ -1451,13 +1451,13 @@ test("the print step builds a real PDF of numbered codes", async ({ page }) => {
   await expect(page.getByTestId("print-info")).toContainText(/saved/i, {
     timeout: 15000,
   });
-  await expect(page.getByTestId("print-info")).toContainText("3 numbered");
+  await expect(page.getByTestId("print-info")).toContainText("codes 1 to 3");
 
   const saved = await page.evaluate(() => {
     const d = /** @type {any} */ (window).__tourViewerTest.downloads;
     return d[d.length - 1].filename;
   });
-  expect(saved).toBe("tour-codes-3x-16cm.pdf");
+  expect(saved).toBe("tour-codes-1-to-3-16cm.pdf");
 
   const pdf = await page.evaluate(async () => {
     const d = /** @type {any} */ (window).__tourViewerTest.downloads;
@@ -1469,7 +1469,7 @@ test("the print step builds a real PDF of numbered codes", async ({ page }) => {
   expect(text).toContain("/Count 3");
   expect(text).toContain("/MediaBox [0 0 595.28 841.89]");
   for (const n of [1, 2, 3]) {
-    expect(text).toContain(`(Code ${String(n)} of 3 - 16cm - print at 100%)`);
+    expect(text).toContain(`(Code ${String(n)} - 16cm - print at 100%)`);
   }
   // Every page actually carries ink.
   expect((text.match(/ re f/g) ?? []).length).toBeGreaterThan(100);
@@ -1522,4 +1522,76 @@ test("a failed open puts the page back to having no tour, not to showing the old
   // ...and so does step 4.
   await openMeasureStep(page);
   await expect(page.getByTestId("tour-missing")).toBeVisible();
+});
+
+test("the PDF button shows it is working, says when nothing was saved, and continues the numbering", async ({
+  page,
+}) => {
+  // Why this matters. The repo's async-UI rule asks for the transitional
+  // state to be ASSERTED, on both outcomes, and the PDF build is the
+  // slowest thing the panel does - fifty QR encodes on one thread.
+  //
+  // The numbering half is the sharper point (M4 milestone review #1): the
+  // PDF used to number 1..N and ignore the code-number field, so an author
+  // who printed code 2 from the page and also downloaded a 3-poster PDF
+  // ended up with two sheets carrying byte-identical text. Two posters
+  // with the same printed text are ONE code to the level lookup, and
+  // hanging them in two places gives one of the two positions at random.
+  await page.goto("/");
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+
+  // The dismissed-picker path first (the async-UI rule's failure branch).
+  // The save is HELD open rather than raced: eight QR encodes finish in a
+  // few milliseconds, and a test that races them is flaky - which for an
+  // async-UI guard is worse than not having one.
+  await page.evaluate(() => {
+    const t = /** @type {any} */ (window).__tourViewerTest;
+    t.saveOutcome = false;
+    t.holdPdfSave = true;
+  });
+  await page.getByTestId("print-count").fill("8");
+  await page.getByTestId("print-pdf").click();
+  await expect(page.getByTestId("print-pdf")).toHaveText("Building the PDF…");
+  await expect(page.getByTestId("print-pdf")).toBeDisabled();
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.releasePdfSave();
+  });
+  await expect(page.getByTestId("print-info")).toContainText(/was not saved/i, {
+    timeout: 15000,
+  });
+  await expect(page.getByTestId("print-pdf")).toBeEnabled();
+  await expect(page.getByTestId("print-pdf")).toHaveText(
+    "Download PDF to print",
+  );
+
+  // Now the numbering: a second batch starts where the code number says.
+  await page.evaluate(() => {
+    const t = /** @type {any} */ (window).__tourViewerTest;
+    t.saveOutcome = true;
+    t.holdPdfSave = false;
+  });
+  await page.getByTestId("author-c").fill("4");
+  await page.getByTestId("print-count").fill("2");
+  await page.getByTestId("print-pdf").click();
+  await expect(page.getByTestId("print-info")).toContainText("codes 4 to 5", {
+    timeout: 15000,
+  });
+  const saved = await page.evaluate(() => {
+    const d = /** @type {any} */ (window).__tourViewerTest.downloads;
+    return d[d.length - 1].filename;
+  });
+  expect(saved).toBe("tour-codes-4-to-5-16cm.pdf");
+  const text = await page.evaluate(async () => {
+    const d = /** @type {any} */ (window).__tourViewerTest.downloads;
+    return new TextDecoder("latin1").decode(
+      new Uint8Array(await d[d.length - 1].blob.arrayBuffer()),
+    );
+  });
+  expect(text).toContain("(Code 4 - 16cm - print at 100%)");
+  expect(text).toContain("(Code 5 - 16cm - print at 100%)");
+  expect(text).not.toContain("(Code 1 - ");
 });

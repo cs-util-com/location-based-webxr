@@ -16,6 +16,7 @@ import {
 } from "gps-plus-slam-app-framework/utils/qr-payload/qr-print-plan";
 import {
   buildQrPrintPdf,
+  maxPrintablePdfSideM,
   type PaperSize,
   type PrintablePdfCode,
 } from "gps-plus-slam-app-framework/utils/qr-payload/qr-print-pdf";
@@ -88,6 +89,12 @@ export function printUrlDisplay(tourUrl: string | null): {
  */
 export const MAX_PRINTED_CODES = 50;
 
+/** The PDF button's labels through its async cycle (async-UI rule). */
+const PDF_LABELS = {
+  idle: "Download PDF to print",
+  busy: "Building the PDF…",
+} as const;
+
 /** How many posters to build, from what the author typed. */
 export function printCountFromInput(raw: string): {
   count: number;
@@ -104,20 +111,32 @@ export function printCountFromInput(raw: string): {
     : { count: codeIndex, coerced, clamped: false };
 }
 
-/** The downloaded file's name. Says what it holds, because a creator
- *  prints several rounds and a downloads folder full of `codes.pdf` is
- *  a folder of files nobody can tell apart. */
-export function printPdfFilename(count: number, sideM: number): string {
-  return `tour-codes-${String(count)}x-${printedSideCss(sideM).replace(".", "-")}.pdf`;
-}
-
-/** The line printed under one code. ASCII only - see `qr-print-pdf.ts`. */
-export function printedCodeCaption(
-  index: number,
+/** The downloaded file's name. Names the RANGE of code numbers it holds,
+ *  because a creator prints several rounds and a downloads folder full of
+ *  `codes.pdf` is a folder of files nobody can tell apart. */
+export function printPdfFilename(
+  startIndex: number,
   count: number,
   sideM: number,
 ): string {
-  return `Code ${String(index)} of ${String(count)} - ${printedSideCss(sideM)} - print at 100%`;
+  const size = printedSideCss(sideM).replace(".", "-");
+  return count === 1
+    ? `tour-code-${String(startIndex)}-${size}.pdf`
+    : `tour-codes-${String(startIndex)}-to-${String(startIndex + count - 1)}-${size}.pdf`;
+}
+
+/**
+ * The line printed under one code. ASCII only - see `qr-print-pdf.ts`.
+ *
+ * It names the code's own NUMBER and not "n of m": the PDF starts at
+ * whatever the code-number field says, so a second download can continue
+ * the numbering rather than minting duplicates of codes 1..n. Two posters
+ * carrying the same printed text are one code as far as the level lookup
+ * is concerned, and an author who hung them in two places would get one of
+ * the two positions at random.
+ */
+export function printedCodeCaption(index: number, sideM: number): string {
+  return `Code ${String(index)} - ${printedSideCss(sideM)} - print at 100%`;
 }
 
 export interface PrintPanelDom {
@@ -187,18 +206,36 @@ export function wirePrintPanel(deps: {
    *  by the newest run. */
   let renderGeneration = 0;
 
+  /**
+   * Bumped by EVERY path that writes `#print-info`, not just the render.
+   * The code render and the PDF build share that one line, and a 50-poster
+   * build settling after a size change would otherwise overwrite the
+   * current "prints at 20cm" with a stale "at 16cm" - a wrong physical
+   * size claim, which is exactly the class of bug F1 was.
+   */
+  let infoGeneration = 0;
+
+  /** Write the info line if nothing newer has claimed it. */
+  function claimInfo(): (text: string) => void {
+    const generation = ++infoGeneration;
+    return (text: string) => {
+      if (generation === infoGeneration) dom.info.textContent = text;
+    };
+  }
+
   function regenerate(): void {
     const generation = ++renderGeneration;
+    const writeInfo = claimInfo();
     dom.generateButton.disabled = true;
     dom.generateButton.textContent = "Generating…";
-    generatePrintCode(dom)
+    generatePrintCode(dom, writeInfo)
       .then((launchUrl) => {
         if (generation !== renderGeneration) return;
         onLaunchUrl(launchUrl);
       })
       .catch((err: unknown) => {
         if (generation !== renderGeneration) return;
-        dom.info.textContent = err instanceof Error ? err.message : String(err);
+        writeInfo(err instanceof Error ? err.message : String(err));
         dom.area.hidden = true;
         dom.printButton.hidden = true;
       })
@@ -224,18 +261,17 @@ export function wirePrintPanel(deps: {
    *  line the on-page print instructions use, so an author reads one
    *  place. */
   dom.pdfButton.addEventListener("click", () => {
+    const writeInfo = claimInfo();
     dom.pdfButton.disabled = true;
-    dom.pdfButton.textContent = "Building the PDF…";
+    dom.pdfButton.textContent = PDF_LABELS.busy;
     buildPrintPdf(dom, downloadPdf)
-      .then((message) => {
-        dom.info.textContent = message;
-      })
+      .then(writeInfo)
       .catch((err: unknown) => {
-        dom.info.textContent = err instanceof Error ? err.message : String(err);
+        writeInfo(err instanceof Error ? err.message : String(err));
       })
       .finally(() => {
         dom.pdfButton.disabled = false;
-        dom.pdfButton.textContent = "Download PDF to print";
+        dom.pdfButton.textContent = PDF_LABELS.idle;
       });
   });
 
@@ -315,7 +351,10 @@ export function wirePrintPanel(deps: {
   };
 }
 
-async function generatePrintCode(dom: PrintPanelDom): Promise<string> {
+async function generatePrintCode(
+  dom: PrintPanelDom,
+  writeInfo: (text: string) => void,
+): Promise<string> {
   const sideCss = printedSideCss(Number(dom.sizeInput.value)); // validates
   const { codeIndex, coerced } = codeIndexFromInput(dom.codeInput.value);
   const plan = await planPrintCode(dom.urlInput.value.trim(), { codeIndex });
@@ -332,14 +371,27 @@ async function generatePrintCode(dom: PrintPanelDom): Promise<string> {
   // The page-fit warning rides IN #print-info, not a separate channel: it
   // must be read in the same glance as the "100% scale" instruction whose
   // combination with an oversized symbol clips the code (PR #364 review).
-  const warning = homePrintWarning(Number(dom.sizeInput.value));
-  dom.info.textContent =
+  const sizeM = Number(dom.sizeInput.value);
+  const warning = homePrintWarning(sizeM);
+  // The warning is about printing THIS PAGE from the browser's dialog,
+  // whose margins are not ours. The PDF below draws its own page and fits
+  // roughly 7 mm more, so a size in that band is warned about here and
+  // printed correctly there - which reads as a contradiction unless the
+  // line says which is which.
+  const pdfCeiling = maxPrintablePdfSideM(paperFrom(dom));
+  const pdfNote =
+    warning !== null && sizeM <= pdfCeiling
+      ? ` The PDF below prints up to ${printedSideCss(pdfCeiling)} and is not affected.`
+      : "";
+  writeInfo(
     `QR version ${String(plan.qrVersion)}, code ${String(codeIndex)}, ` +
-    `prints at ${sideCss} — use 100% scale (no fit-to-page).` +
-    (coerced
-      ? " Note: the code number was not a whole number of 1 or more, so this printed as code 1."
-      : "") +
-    (warning === null ? "" : ` ${warning}`);
+      `prints at ${sideCss} — use 100% scale (no fit-to-page).` +
+      (coerced
+        ? " Note: the code number was not a whole number of 1 or more, so this printed as code 1."
+        : "") +
+      (warning === null ? "" : ` ${warning}`) +
+      pdfNote,
+  );
   dom.urlOut.textContent = plan.url;
   return plan.url;
 }
@@ -362,9 +414,14 @@ async function buildPrintPdf(
   const sideM = Number(dom.sizeInput.value);
   const url = dom.urlInput.value.trim();
   const { count, coerced, clamped } = printCountFromInput(dom.countInput.value);
-  const paper: PaperSize = dom.paperSelect.value === "letter" ? "letter" : "a4";
+  // The numbering starts where the code-number field says, so a second
+  // download continues the series instead of minting another code 1. Two
+  // posters carrying the same printed text are ONE code to the level
+  // lookup, and the author would get one of the two positions at random.
+  const { codeIndex: startIndex } = codeIndexFromInput(dom.codeInput.value);
+  const paper = paperFrom(dom);
   const codes: PrintablePdfCode[] = [];
-  for (let index = 1; index <= count; index += 1) {
+  for (let index = startIndex; index < startIndex + count; index += 1) {
     // Sequential on purpose: the payload builder measures QR versions, and
     // fifty of those at once buys nothing on a phone's single thread.
     // eslint-disable-next-line no-await-in-loop
@@ -373,14 +430,14 @@ async function buildPrintPdf(
     codes.push({
       size: matrix.modules.size,
       modules: matrix.modules.data,
-      caption: printedCodeCaption(index, count, sideM),
+      caption: printedCodeCaption(index, sideM),
     });
   }
   // Throws with the size that WOULD fit when the paper cannot hold this
   // one; that message is the useful half of the failure.
   const bytes = buildQrPrintPdf(codes, { sideM, paper });
   const blob = new Blob([bytes], { type: "application/pdf" });
-  const filename = printPdfFilename(count, sideM);
+  const filename = printPdfFilename(startIndex, count, sideM);
   const saved = await downloadPdf(blob, filename);
   const notes =
     (coerced
@@ -389,7 +446,16 @@ async function buildPrintPdf(
     (clamped
       ? ` At most ${String(MAX_PRINTED_CODES)} posters fit in one file.`
       : "");
+  const range =
+    count === 1
+      ? `code ${String(startIndex)}`
+      : `codes ${String(startIndex)} to ${String(startIndex + count - 1)}`;
   return saved
-    ? `Saved ${filename} - ${String(count)} numbered code${count === 1 ? "" : "s"} at ${printedSideCss(sideM)}. Print it at 100% scale (no fit-to-page).${notes}`
+    ? `Saved ${filename} - ${range} at ${printedSideCss(sideM)}. Print it at 100% scale (no fit-to-page).${notes}`
     : `The PDF was not saved.${notes}`;
+}
+
+/** The paper the author chose; anything unrecognised is A4. */
+function paperFrom(dom: PrintPanelDom): PaperSize {
+  return dom.paperSelect.value === "letter" ? "letter" : "a4";
 }

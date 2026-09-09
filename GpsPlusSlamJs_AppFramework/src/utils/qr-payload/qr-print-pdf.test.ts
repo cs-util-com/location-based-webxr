@@ -18,6 +18,7 @@ import fc from 'fast-check';
 
 import {
   buildQrPrintPdf,
+  maxPrintablePdfSideM,
   PAPER_SIZES_MM,
   planPrintPdf,
   type PrintablePdfCode,
@@ -287,16 +288,53 @@ describe('the drawn page round-trips back to the matrix it was given', () => {
     const originX = (placement.xMm + quietMm) * ptPerMm;
     const originY = (placement.yMm + quietMm) * ptPerMm;
     const step = (plan.sideMm * ptPerMm) / code.size;
+    // Bucket the rectangles by the module row they sit in. A linear scan
+    // per sample is O(modules x rects), which at version 25 is a quarter of
+    // a billion comparisons and times the property out; each rectangle
+    // belongs to exactly one row, so three buckets are enough to cover a
+    // sample and its neighbours.
+    const byRow = new Map<number, typeof rects>();
+    for (const r of rects) {
+      const band = Math.round((r.y + r.h - originY) / step) - 1;
+      const bucket = byRow.get(band) ?? [];
+      bucket.push(r);
+      byRow.set(band, bucket);
+    }
+    const covers = (x: number, y: number): boolean => {
+      const band = Math.floor((y - originY) / step);
+      for (const near of [band - 1, band, band + 1]) {
+        for (const r of byRow.get(near) ?? []) {
+          if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
+            return true;
+          }
+        }
+      }
+      return false;
+    };
     const out = new Uint8Array(code.size * code.size);
     for (let row = 0; row < code.size; row += 1) {
       for (let col = 0; col < code.size; col += 1) {
         const cx = originX + (col + 0.5) * step;
         // The matrix's row 0 is the TOP one; PDF y grows upward.
         const cy = originY + (code.size - 1 - row + 0.5) * step;
-        const covered = rects.some(
-          (r) => cx >= r.x && cx <= r.x + r.w && cy >= r.y && cy <= r.y + r.h
-        );
-        out[row * code.size + col] = covered ? 1 : 0;
+        // FIVE points, not one. A centre-only sample is blind to any
+        // extent error under half a module - the band that produces a code
+        // which scans badly rather than not at all. Measured by mutating
+        // the writer: with one point, a row overlap of 1.40 and runs drawn
+        // 0.45 module too wide both SURVIVE; at 0.45 of a module from the
+        // centre they do not, while the real 0.02 overlap still passes.
+        const edge = 0.45 * step;
+        const dark = [
+          covers(cx, cy),
+          covers(cx - edge, cy),
+          covers(cx + edge, cy),
+          covers(cx, cy - edge),
+          covers(cx, cy + edge),
+        ].filter(Boolean).length;
+        // Disagreement means ink is spilling across a module boundary;
+        // encode it as neither 0 nor 1 so the comparison fails loudly
+        // instead of rounding to whatever was expected.
+        out[row * code.size + col] = dark === 5 ? 1 : dark === 0 ? 0 : 2;
       }
     }
     return out;
@@ -305,7 +343,9 @@ describe('the drawn page round-trips back to the matrix it was given', () => {
   it('reproduces a real QR matrix module for module (property over sizes)', () => {
     fc.assert(
       fc.property(
-        fc.integer({ min: 21, max: 77 }).map((n) => n - ((n - 21) % 4)),
+        // Up to 117 modules: version 25, which is what the run-merge
+        // rationale and 'a step that drifts across 117 modules' both name.
+        fc.integer({ min: 21, max: 117 }).map((n) => n - ((n - 21) % 4)),
         fc.integer({ min: 0, max: 2 ** 30 }),
         (size, seed) => {
           // A pseudo-random matrix of the right shape: the drawing does not
@@ -328,6 +368,88 @@ describe('the drawn page round-trips back to the matrix it was given', () => {
         }
       ),
       { numRuns: 15 }
+    );
+  });
+});
+
+describe('the parts nothing else watches', () => {
+  it('puts two small codes on one page and the odd one alone (byte path)', () => {
+    // The two-per-page packing had no BYTE-level coverage at all: every
+    // other case in this file is one code per page, so the second slot's
+    // drawing and the odd-last-page geometry were unexercised - and §4 of
+    // the plan named that packing as the open "is it worth the complexity"
+    // question.
+    const codes = [1, 2, 3].map((n) => checkerboard(21, `Code ${String(n)}`));
+    const text = new TextDecoder('latin1').decode(
+      buildQrPrintPdf(codes, { sideM: 0.05 })
+    );
+    expect(text).toContain('/Count 2');
+    const streams = [...text.matchAll(/stream\n([\s\S]*?)\nendstream/g)].map(
+      (m) => m[1] ?? ''
+    );
+    expect(streams).toHaveLength(2);
+    expect((streams[0]?.match(/ Tj/g) ?? []).length).toBe(2);
+    expect((streams[1]?.match(/ Tj/g) ?? []).length).toBe(1);
+    // Both slots carry ink, and one sits above the other.
+    const ys = [
+      ...(streams[0] ?? '').matchAll(/^[\d.]+ ([\d.]+) [\d.]+ [\d.]+ re f$/gm),
+    ].map((m) => Number(m[1]));
+    expect(Math.max(...ys)).toBeGreaterThan(Math.min(...ys));
+  });
+
+  it('draws a symbol exactly as tall as it is wide', () => {
+    // The overlap that closes the seam between rows must not make the
+    // symbol taller than the side it declares - this file's one hard
+    // invariant is that a ruler across the dark modules reads the number
+    // the author typed. It used to measure 160.15 mm for a declared 160,
+    // and put 0.15 mm of ink into the quiet zone.
+    const plan = planPrintPdf(1, { sideM: 0.16 });
+    const text = new TextDecoder('latin1').decode(
+      buildQrPrintPdf([checkerboard(21)], { sideM: 0.16 })
+    );
+    const rects = [
+      ...text.matchAll(/^([\d.]+) ([\d.]+) ([\d.]+) ([\d.]+) re f$/gm),
+    ]
+      .map((m) => ({ y: Number(m[2]), h: Number(m[4]) }))
+      .slice(1); // the first is the white quiet-zone box
+    const ptPerMm = 72 / 25.4;
+    const quietMm = (plan.blockMm - plan.sideMm) / 2;
+    const bottom = ((plan.pages[0]?.[0]?.yMm ?? 0) + quietMm) * ptPerMm;
+    const top = bottom + plan.sideMm * ptPerMm;
+    expect(Math.min(...rects.map((r) => r.y))).toBeGreaterThanOrEqual(
+      bottom - 0.02
+    );
+    expect(Math.max(...rects.map((r) => r.y + r.h))).toBeLessThanOrEqual(
+      top + 0.02
+    );
+  });
+
+  it('treats a hole or a stringy module as LIGHT, not dark', () => {
+    // `!== 0` read `undefined` and the string '0' as dark, so a holey array
+    // of the right length rendered a solid black square - a code that
+    // cannot be scanned and looks deliberate.
+    const holey = {
+      size: 4,
+      modules: new Array<number>(16),
+      caption: 'holes',
+    };
+    const text = new TextDecoder('latin1').decode(
+      buildQrPrintPdf([holey], { sideM: 0.05 })
+    );
+    // Only the white quiet-zone box is drawn.
+    expect((text.match(/ re f/g) ?? []).length).toBe(1);
+  });
+
+  it('names a PDF ceiling larger than the browser-print one, and prints at it', () => {
+    // The panel shows homePrintWarning, which is about the browser's own
+    // dialog and is ~7 mm stricter. Without a separate number the panel
+    // tells an author their 17 cm code "will not scan" in the same breath
+    // as a PDF that prints it correctly.
+    const ceiling = maxPrintablePdfSideM('a4');
+    expect(ceiling).toBeGreaterThan(0.164); // MAX_HOME_PRINTABLE_SIDE_M
+    expect(() => planPrintPdf(1, { sideM: ceiling })).not.toThrow();
+    expect(() => planPrintPdf(1, { sideM: ceiling + 0.001 })).toThrow(
+      RangeError
     );
   });
 });
