@@ -46,13 +46,40 @@ export const DEFAULT_QR_LAUNCH_BASE_URL = 'https://gps.csutil.com/';
 const CODE_TOKEN_PARAM = 'n';
 
 /**
- * Printable-width budget (m) for a home printer: ~19 cm of printable width on
- * A4/Letter with default margins, divided by 1.16 (the 8% quiet zone on each
- * side). At the mandated 100% scale a larger symbol is CLIPPED — and a
- * clipped QR does not decode at all. Larger prints stay allowed (print shops,
- * tiling) but callers should warn in plain words.
+ * The quiet zone, as a fraction of the symbol side, on EACH edge.
+ *
+ * THE one statement of this number. It was previously restated in three
+ * places that nothing held together — this constant, `qr-print-pdf.ts`'s
+ * own `DEFAULT_QUIET_FRACTION`, and the Tour Viewer's `#print-quiet`
+ * padding — while `qr-print-pdf.ts`'s comment warned that two printing
+ * paths disagreeing about the quiet zone produce two different physical
+ * artefacts from one declared size. The stylesheet cannot import, so a
+ * repo-config test holds it to this value instead.
+ *
+ * **Do not "correct" it to the specification's four modules.** Four modules
+ * is a fraction OF THE SYMBOL, so it grows as the symbol shrinks, and every
+ * hosting shape this product recommends prints at version 5 to 8 — where
+ * four modules is 8.2 % to 10.8 %, i.e. at or above this. It would make
+ * every real printed code smaller. Measured and pinned in
+ * `qr-print-plan.test.ts`.
  */
-export const MAX_HOME_PRINTABLE_SIDE_M = 0.19 / 1.16;
+export const QR_QUIET_ZONE_FRACTION = 0.08;
+
+/**
+ * Printable width (m) a home printer can be relied on for: about 19 cm on
+ * A4/Letter with default margins.
+ */
+export const HOME_PRINTABLE_WIDTH_M = 0.19;
+
+/**
+ * Printable-width budget (m) for a home printer: the width above, divided by
+ * the footprint factor `1 + 2 * QR_QUIET_ZONE_FRACTION` — the symbol plus
+ * its quiet zone on both edges. At the mandated 100% scale a larger symbol is
+ * CLIPPED — and a clipped QR does not decode at all. Larger prints stay
+ * allowed (print shops, tiling) but callers should warn in plain words.
+ */
+export const MAX_HOME_PRINTABLE_SIDE_M =
+  HOME_PRINTABLE_WIDTH_M / (1 + 2 * QR_QUIET_ZONE_FRACTION);
 
 /** A plain-words warning when `sizeM` will not fit a home printer's page, or
  *  `null` when it fits. */

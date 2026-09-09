@@ -23,6 +23,7 @@ import {
   planPrintPdf,
   type PrintablePdfCode,
 } from './qr-print-pdf.js';
+import { MAX_HOME_PRINTABLE_SIDE_M } from './qr-print-plan.js';
 
 /** A checkerboard of `size` modules - dense enough to exercise the run
  *  merging, and every row differs from the next. */
@@ -103,7 +104,8 @@ describe('planPrintPdf', () => {
   it('refuses a size the paper cannot hold, and says which size would work', () => {
     // Why this matters: the alternative is a silently clipped code. The
     // message names the number the author should type, because the
-    // arithmetic (page minus margins, divided by 1.16) is not something to
+    // arithmetic (page minus margins, over the quiet-zone footprint factor)
+    // is not something to
     // do standing at a printer.
     expect(() => planPrintPdf(1, { sideM: 0.25 })).toThrow(/does not fit A4/i);
     expect(() => planPrintPdf(1, { sideM: 0.25 })).toThrow(/use .* or less/i);
@@ -446,7 +448,10 @@ describe('the parts nothing else watches', () => {
     // tells an author their 17 cm code "will not scan" in the same breath
     // as a PDF that prints it correctly.
     const ceiling = maxPrintablePdfSideM('a4');
-    expect(ceiling).toBeGreaterThan(0.164); // MAX_HOME_PRINTABLE_SIDE_M
+    // Compared against the imported ceiling, not a copied 0.164: the browser
+    // number moves if the quiet zone ever does, and a literal here would
+    // keep passing while the claim it encodes stopped being true.
+    expect(ceiling).toBeGreaterThan(MAX_HOME_PRINTABLE_SIDE_M);
     expect(() => planPrintPdf(1, { sideM: ceiling })).not.toThrow();
     expect(() => planPrintPdf(1, { sideM: ceiling + 0.001 })).toThrow(
       RangeError
