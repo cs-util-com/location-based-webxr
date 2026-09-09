@@ -40,6 +40,21 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
 - `MISSING_SIZE_MESSAGE` - what a creator reads when the printed-size
   field is empty at AR entry. The example inside it is interpolated from
   `AUTHOR_DEFAULT_SIZE_M`, so the two cannot drift.
+- `reprintOrphanWarning(plannedCodeId, measuredCodeIds)` - the warning
+  shown before printing a code whose identity differs from every
+  measurement the open tour already holds, or `null` when nothing would be
+  lost.
+  - **The failure it makes visible is silent and expensive.** A printed
+    code's identity is a hash of its text, and the measured pose is filed
+    under that identity in the hosted zip. Change the text - move the file,
+    swap in a short link, add a tracking parameter - and the code asks for
+    an id the archive does not hold. The visitor's app reads that as "this
+    code has no level", says nothing, and waits out the scan gate into a
+    location-only experience. The creator's walk is gone with no signal
+    anywhere.
+  - **It warns rather than refuses**, because re-printing under a new link
+    is legitimate and only the creator knows whether the measurement was
+    worth keeping. What they must not have is silence.
 - `FINISH_LABELS` - the finish step's copy through its async cycle
   (reading, rebuilding N of M, ready, failed, download, saving, saved as,
   not saved) AND the share route's own (share, sharing, shared, nothing

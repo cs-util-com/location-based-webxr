@@ -312,6 +312,46 @@ export function finishHandoffStatus(
     : FINISH_LABELS.saved(filename);
 }
 
+/**
+ * The warning a creator must see before printing a code whose identity
+ * differs from every measurement their tour already holds - or `null` when
+ * there is nothing to lose.
+ *
+ * **Why this exists, and why it is not a shortener feature.** A printed
+ * code's identity is a hash of the text it carries, and the measured pose
+ * is filed under that identity inside the hosted zip. Change the text -
+ * move the file, swap in a short link, add a tracking parameter - and the
+ * printed code asks for an id the archive does not hold. The visitor's app
+ * reads that as "this code has no level", never says anything is wrong,
+ * and simply waits out the scan gate into a location-only experience. The
+ * creator's walk is gone and nothing tells them.
+ *
+ * That is reachable today with no new feature, which is why it is fixed
+ * here rather than waiting on the shortener decision it also blocks.
+ *
+ * It WARNS rather than refuses. Re-printing under a new link is a
+ * legitimate thing to do - it is the whole point of the shortener - and
+ * the creator is the only one who knows whether the measurement was worth
+ * keeping. What they must not have is silence.
+ */
+export function reprintOrphanWarning(
+  plannedCodeId: string,
+  measuredCodeIds: readonly string[],
+): string | null {
+  // No measurement means nothing to orphan. This is the common case: every
+  // tour before its first walk, and every tour of a creator who never
+  // measures.
+  if (measuredCodeIds.length === 0) return null;
+  if (measuredCodeIds.includes(plannedCodeId)) return null;
+  return (
+    "Warning: this tour already holds a measurement, and it belongs to a " +
+    "DIFFERENT printed code than the one above - the link must have changed " +
+    "since it was measured. Printing and hanging this code means walking " +
+    "step 4 again; the old measurement will not be found. To keep it, put " +
+    "the original link back in step 1."
+  );
+}
+
 /** What the panel is about to print, and whether the author's input was
  *  taken literally. */
 export interface PrintCodeSelection {

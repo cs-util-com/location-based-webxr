@@ -14,6 +14,7 @@ import {
   codeIndexFromInput,
   buildAuthorControllerConfig,
   syntheticAuthorLevel,
+  reprintOrphanWarning,
   FINISH_LABELS,
   finishHandoffStatus,
   finishHelpVisibility,
@@ -329,6 +330,53 @@ describe("the help blocks are EARNED, and a later failure does not take them bac
       expect(earned.replaceHelp).toBe(false);
       expect(earned.shareNote).toBe(false);
     }
+  });
+});
+
+describe("printing a code that would strand an existing measurement", () => {
+  /**
+   * Why this test matters: a printed code's identity is a hash of the text
+   * it carries, and the measured pose is filed under that identity inside
+   * the hosted zip. Change the text - move the file, swap in a short link,
+   * add a tracking parameter - and the printed code asks for an id the
+   * archive does not hold.
+   *
+   * The failure is SILENT and it is the expensive kind. The visitor's app
+   * reads a missing level as "this code has no level", says nothing is
+   * wrong, and waits out the scan gate into a location-only experience.
+   * The creator's walk is gone; nothing anywhere tells them, and the app
+   * behaves exactly as it does for a code nobody ever measured.
+   *
+   * It is reachable today with no new feature, by a creator who simply
+   * moves their hosted file - which is why this exists before the
+   * shortener decision that also depends on it.
+   */
+  it("says nothing when there is nothing to lose", () => {
+    // The common case, and the one that must never nag: every tour before
+    // its first walk, and every creator who never measures.
+    expect(reprintOrphanWarning("abc123", [])).toBeNull();
+  });
+
+  it("says nothing when the code about to be printed IS the measured one", () => {
+    // Re-printing the same poster is routine - a torn sheet, a second
+    // copy - and warning there would train the creator to ignore the line.
+    expect(reprintOrphanWarning("abc123", ["abc123"])).toBeNull();
+    expect(reprintOrphanWarning("abc123", ["zzz999", "abc123"])).toBeNull();
+  });
+
+  it("warns, names the cost, and says how to keep the measurement", () => {
+    const warning = reprintOrphanWarning("newid", ["oldid"]);
+    expect(warning).not.toBeNull();
+    // The three things a creator needs: that something is wrong, what it
+    // will cost, and the way out. A warning without the last one leaves
+    // them stuck at the point of no return.
+    expect(warning).toMatch(/step 4 again/i);
+    expect(warning).toMatch(/original link/i);
+    expect(warning).toMatch(/will not be found/i);
+  });
+
+  it("warns when NONE of several measurements match", () => {
+    expect(reprintOrphanWarning("newid", ["a", "b", "c"])).not.toBeNull();
   });
 });
 
