@@ -89,13 +89,39 @@ export function draftObjectsNotYetHosted(
   return draft.objects.filter((o) => !hosted.has(o.id));
 }
 
-/** A draft whose every object is already in the hosted zip has done its
- *  job and should be deleted rather than offered. */
+/**
+ * A draft has done its job and may be DELETED.
+ *
+ * Two conditions, and the second is the whole reason this is not just "no
+ * objects left". A creator's most expensive act is measuring: walking to
+ * the poster, holding the phone until the pose is stable and GPS has
+ * aligned. If they mint and the tab dies before the first pin, the draft
+ * holds a level and no objects - and judging that by objects alone would
+ * delete the measurement and send them back to the wall. Not offering and
+ * DELETING are different actions, and only the second is destructive.
+ *
+ * @param hostedLevelJson what the hosted zip currently stores for this
+ *   draft's level id, or null when it stores nothing for it. It is the
+ *   CONTENT and not the id, because a level's id is a hash of the printed
+ *   TEXT: re-measuring the same poster produces a new measurement under
+ *   the same id, so "the zip has a level with this id" is not evidence
+ *   that it has THIS measurement.
+ */
 export function draftIsSpent(
   draft: AuthoringDraft,
   manifest: TourManifest | null,
+  hostedLevelJson: string | null = null,
 ): boolean {
-  return draftObjectsNotYetHosted(draft, manifest).length === 0;
+  if (draftObjectsNotYetHosted(draft, manifest).length > 0) return false;
+  return !draftHasUnhostedLevel(draft, hostedLevelJson);
+}
+
+/** Whether a draft holds a measurement the hosted zip does not have. */
+export function draftHasUnhostedLevel(
+  draft: AuthoringDraft,
+  hostedLevelJson: string | null,
+): boolean {
+  return draft.level !== null && draft.level.json !== hostedLevelJson;
 }
 
 /**
@@ -121,17 +147,33 @@ export function appendWithoutDuplicateIds(
   return out;
 }
 
-/** What the setup panel says when a draft is found. Plain words: the
- *  creator is being asked to decide about work they may not remember. */
-export function restoreOfferText(count: number): string {
+/**
+ * What the setup panel says when a draft is found. Plain words: the
+ * creator is being asked to decide about work they may not remember.
+ *
+ * `hasLevel` matters because a measurement alone is a real offer - the
+ * expensive part of the walk - and "0 things you placed" would read as an
+ * offer of nothing.
+ */
+export function restoreOfferText(count: number, hasLevel = false): string {
+  const measured = hasLevel ? " and the code's measured position" : "";
+  if (count === 0) {
+    return "Unsaved work from this tour is still on this device: the code's measured position. Add it back?";
+  }
   return count === 1
-    ? "Unsaved work from this tour is still on this device: 1 thing you placed. Add it back?"
-    : `Unsaved work from this tour is still on this device: ${String(count)} things you placed. Add them back?`;
+    ? `Unsaved work from this tour is still on this device: 1 thing you placed${measured}. Add it back?`
+    : `Unsaved work from this tour is still on this device: ${String(count)} things you placed${measured}. Add them back?`;
 }
 
 /** What it says once the creator has taken it back. */
-export function restoredText(count: number): string {
+export function restoredText(count: number, hasLevel = false): string {
+  const measured = hasLevel
+    ? " The code's measured position came back too, so Finish is ready without walking to the poster again."
+    : "";
+  if (count === 0) {
+    return `The code's measured position was restored - Finish is ready without walking to the poster again.`;
+  }
   return count === 1
-    ? "1 placed object restored - it goes into the zip on the next Finish."
-    : `${String(count)} placed objects restored - they go into the zip on the next Finish.`;
+    ? `1 placed object restored - it goes into the zip on the next Finish.${measured}`
+    : `${String(count)} placed objects restored - they go into the zip on the next Finish.${measured}`;
 }

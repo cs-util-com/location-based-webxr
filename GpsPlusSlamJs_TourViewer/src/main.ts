@@ -229,8 +229,19 @@ const setup = wireCreatorSetup({
   // Access pickers do not exist on Chrome for Android, which is the only
   // device the creator's AR session runs on.
   openDraftStore: async (key) => {
-    const root = await navigator.storage?.getDirectory?.();
-    return root === undefined ? undefined : openDraftNamespace(root, key);
+    try {
+      // `getDirectory()` can REJECT rather than simply be absent - a
+      // private window, an embedded WebView, a non-secure origin.
+      // `openDraftNamespace` carries its own try/catch precisely so a
+      // caller never sees a throw, but this call sits outside it, and the
+      // rejection landed in a `void`-ed continuation with no handler.
+      const root = await navigator.storage?.getDirectory?.();
+      return root === undefined
+        ? undefined
+        : await openDraftNamespace(root, key);
+    } catch {
+      return undefined;
+    }
   },
 });
 hooks.renderAuthorReadout = setup.renderAuthorReadout;

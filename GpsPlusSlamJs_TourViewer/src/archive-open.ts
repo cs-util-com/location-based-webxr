@@ -85,6 +85,14 @@ export function wireArchiveOpen(deps: {
     ctx.tourManifest = null;
     ctx.tourManifestStatus = "settled";
     ctx.rebuiltZip = null;
+    // The measured level belongs to the CLOSING tour. It survives a SESSION
+    // end on purpose (finishing ends the session), but it must not survive
+    // the TOUR: M5 persists it into a draft, so carrying it over would
+    // write one poster's measurement into another tour's draft and then
+    // into its zip (M5 review #9). The generation bump makes any mint hash
+    // still in flight land on nothing.
+    ctx.mintedLevel = null;
+    ctx.mintGeneration += 1;
     hooks.resetFinishStep();
     // From here until an open SUCCEEDS there is no tour, and the page has
     // to say so: the print step goes back to asking for a link and step 4

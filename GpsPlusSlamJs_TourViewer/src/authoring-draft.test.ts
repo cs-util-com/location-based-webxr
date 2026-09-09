@@ -25,6 +25,7 @@ import type {
 
 import {
   appendWithoutDuplicateIds,
+  draftHasUnhostedLevel,
   draftIsSpent,
   draftKeyForTour,
   draftObjectsNotYetHosted,
@@ -111,13 +112,47 @@ describe("draftIsSpent", () => {
     // download starts, before any file is known to exist - and the
     // creator still has to upload it by hand afterwards.
     const draft = draftOf([pin("a"), pin("b")]);
-    expect(draftIsSpent(draft, manifestOf([pin("a")]))).toBe(false);
-    expect(draftIsSpent(draft, manifestOf([pin("a"), pin("b")]))).toBe(true);
-    expect(draftIsSpent(draft, null)).toBe(false);
+    const hosted = "{}"; // the draft's level, already in the zip
+    expect(draftIsSpent(draft, manifestOf([pin("a")]), hosted)).toBe(false);
+    expect(draftIsSpent(draft, manifestOf([pin("a"), pin("b")]), hosted)).toBe(
+      true,
+    );
+    expect(draftIsSpent(draft, null, hosted)).toBe(false);
+    // ...and NOT spent while the measurement is still only on this device,
+    // however many of its objects the zip already has.
+    expect(draftIsSpent(draft, manifestOf([pin("a"), pin("b")]), null)).toBe(
+      false,
+    );
   });
 
-  it("an empty draft is spent, so it cannot be offered as nothing", () => {
-    expect(draftIsSpent(draftOf([]), null)).toBe(true);
+  it("an object-less draft is NOT spent while it still holds a measurement", () => {
+    // The blocker this rule was written wrong for. Measuring is the most
+    // expensive thing a creator does - walking to the poster, holding the
+    // phone until the pose is stable and GPS has aligned. Mint, then have
+    // the tab killed before the first pin, and a draft holds a level and
+    // no objects. Judging that by objects alone DELETED the measurement
+    // and sent them back to the wall.
+    //
+    // The earlier version of this test asserted the opposite and was the
+    // reason the bug looked correct: not offering and DELETING are
+    // different actions, and only the second is destructive.
+    const withLevel = draftOf([]);
+    expect(draftIsSpent(withLevel, null, null)).toBe(false);
+    // ...and it IS spent once the hosted zip carries that same level.
+    expect(draftIsSpent(withLevel, null, "{}")).toBe(true);
+  });
+
+  it("a draft with neither objects nor a measurement is spent", () => {
+    const empty = { ...draftOf([]), level: null };
+    expect(draftIsSpent(empty, null)).toBe(true);
+  });
+
+  it("draftHasUnhostedLevel says when a measurement is worth offering", () => {
+    expect(draftHasUnhostedLevel(draftOf([]), null)).toBe(true);
+    expect(draftHasUnhostedLevel(draftOf([]), "{}")).toBe(false);
+    expect(draftHasUnhostedLevel({ ...draftOf([]), level: null }, null)).toBe(
+      false,
+    );
   });
 });
 

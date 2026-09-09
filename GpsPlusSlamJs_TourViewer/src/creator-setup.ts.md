@@ -64,8 +64,11 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
 
 ## Public API
 
-- `wireCreatorSetup({ ctx, mode, arStore, arController, seams, wizard, dom }): CreatorSetup`
-  - `CreatorSetupDom { panel; controls; finishBlock; replaceHelp; sizeInput; printPanel; status; mintButton; finishButton; finishStatus; downloadButton; pinButton; pinLabel; pinSave; photoButton }`
+- `wireCreatorSetup({ ctx, mode, arStore, arController, seams, wizard, dom, openDraftStore? }): CreatorSetup`
+  - `openDraftStore(key)` resolves this tour's draft namespace, or
+    `undefined` where there is no persistence. Injected so the unit tests
+    and the e2e can supply one without OPFS.
+  - `CreatorSetupDom { panel; controls; finishBlock; replaceHelp; sizeInput; printPanel; status; mintButton; finishButton; finishStatus; downloadButton; pinButton; pinLabel; pinSave; pinCancel; photoButton; draftOffer; draftOfferText; draftRestore; draftDismiss; draftDiscard }`
   - `arSessionLive(status)` - whether the controller's status means a
     session is up (`starting` / `running` / `stopping`). Exported because
     `main.ts` hands the same predicate to the wizard, which must not
@@ -75,6 +78,10 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
       `downloadButton` and `replaceHelp` sit at the end of step 4 but
       OUTSIDE `#ar-root` - the download is tapped after the session ends,
       so putting it over the camera would promise otherwise.
+  - `CreatorSetup` members: `renderAuthorReadout`, `startAuthorPipeline`,
+    `resetFinishStep` (a tour closed) and `presentDraftForTour` (a tour
+    opened AND its manifest settled - "spent" is a question about that
+    manifest, so it cannot be asked earlier).
   - `CreatorSetup.renderAuthorReadout()` - the measuring readout
     (`authorStatusLine`) joined with the setup hint once measured
     (`setupHint`); a persistent pipeline error (`ctx.authorErrorText`) has

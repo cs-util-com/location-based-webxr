@@ -1730,8 +1730,183 @@ test("a draft is offered again after Not now, and gone after Delete it", async (
   await page.getByTestId("draft-discard").click();
   await expect(page.getByTestId("draft-offer")).toBeHidden();
 
-  // Gone for good.
+  // Gone for good. Waited on a POSITIVE signal rather than a sleep: the
+  // repo forbids waitForTimeout, and beyond the rule, hidden-after-a-sleep
+  // passes for any reason the offer failed to appear - a store that never
+  // opened, a rejection, a slow OPFS. The finish block is revealed by the
+  // same manifest-settled path the draft offer rides on, so seeing the
+  // panel settle proves the draft path RAN and found nothing.
   await reopen();
-  await page.waitForTimeout(1000);
+  await expect(page.getByTestId("setup-panel")).toBeAttached();
+  await expect
+    .poll(async () => page.getByTestId("tour-missing").isHidden(), {
+      timeout: 15000,
+    })
+    .toBe(true);
   await expect(page.getByTestId("draft-offer")).toBeHidden();
+});
+
+test("a draft accumulates ACROSS finishes: both batches land in the zip", async ({
+  page,
+}) => {
+  // The rule the whole design turns on, and until now the only one with no
+  // regression test (M5 review #5, verdict 11).
+  //
+  // Finishing is not terminal. It merges the placed objects into the
+  // in-memory manifest, empties the list, and leaves that batch alive only
+  // inside `ctx.rebuiltZip` - a Blob that dies with the page. So a draft
+  // reset by each finish would hold only what came AFTER the last download,
+  // while the finish itself rebuilds from the HOSTED zip, which never had
+  // the earlier batch. The creator would end up with two downloads, each
+  // missing the other's content, and nothing on screen saying so.
+  //
+  // The sequence below is the ordinary continuation of the flow: finish,
+  // download, keep working (the upload to the host is a separate manual
+  // step that has not happened yet), then crash.
+  await page.goto("/?nocache=1");
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  await measureTheCode(page);
+
+  // Batch one.
+  await page.getByTestId("setup-pin").click();
+  await page.getByTestId("pin-label").fill("Batch one");
+  await page.getByTestId("pin-save").click();
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /1 object placed/,
+  );
+  await page.getByTestId("setup-finish").click();
+  await expect(page.getByTestId("finish-block")).toBeVisible({
+    timeout: 30000,
+  });
+  await page.getByTestId("finish-download").click();
+  await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
+
+  // Batch two, without ever uploading batch one to the host.
+  await measureTheCode(page);
+  await page.getByTestId("setup-pin").click();
+  await page.getByTestId("pin-label").fill("Batch two");
+  await page.getByTestId("pin-save").click();
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /1 object placed/,
+  );
+
+  // The crash.
+  await page.reload();
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  await expect(page.getByTestId("draft-offer")).toBeVisible({ timeout: 15000 });
+  // BOTH batches are still on offer - the hosted zip has neither.
+  await expect(page.getByTestId("draft-offer-text")).toContainText("2 things");
+  await page.getByTestId("draft-restore").click();
+
+  await expect(page.getByTestId("setup-finish")).toBeEnabled({
+    timeout: 10000,
+  });
+  await page.getByTestId("setup-finish").click();
+  await expect(page.getByTestId("finish-block")).toBeVisible({
+    timeout: 30000,
+  });
+  await page.getByTestId("finish-download").click();
+  await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
+
+  // Index 0, not 1: the reload reset the page, and with it the fake's
+  // record of downloads. The draft survived it because OPFS is not page
+  // state - which is the whole point.
+  const rebuilt = await readDownloadedZip(page, 0);
+  const manifest = parseTourManifest(JSON.parse(rebuilt.entries["tour.json"]));
+  const labels = manifest.objects.flatMap((o) =>
+    o.kind === "pin" ? [o.label] : [],
+  );
+  expect(labels).toContain("Batch one");
+  expect(labels).toContain("Batch two");
+  // ...and neither is duplicated: the finish appends by id.
+  expect(labels.filter((l) => l === "Batch one")).toHaveLength(1);
+});
+
+test("a measurement alone survives a crash - the draft is not deleted for having no pins", async ({
+  page,
+}) => {
+  // M5 review, blocker 2. Measuring is the most expensive thing a creator
+  // does: walk to the poster, hold the phone until the pose is stable and
+  // GPS has aligned. Mint, then have the tab killed before the first pin,
+  // and the draft holds a level and no objects - which the first version
+  // judged "spent" and DELETED, sending the creator back to the wall.
+  await page.goto("/?nocache=1");
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  await measureTheCode(page);
+  // Nothing placed. The crash.
+  await page.reload();
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+
+  await expect(page.getByTestId("draft-offer")).toBeVisible({ timeout: 15000 });
+  await expect(page.getByTestId("draft-offer-text")).toContainText(
+    /measured position/i,
+  );
+  await page.getByTestId("draft-restore").click();
+  // The measurement is what makes Finish reachable without walking back.
+  await expect(page.getByTestId("setup-finish")).toBeEnabled({
+    timeout: 10000,
+  });
+});
+
+test("the draft offer reveals step 4 rather than hiding inside it", async ({
+  page,
+}) => {
+  // M5 review #8. `#draft-offer` lives inside step 4, and a tour open lands
+  // the wizard on the REMEMBERED step - which for a creator who last left
+  // off at step 2 is step 2. Un-hiding an element inside a closed
+  // disclosure is zero pixels and no signal that unsaved work exists.
+  //
+  // The other two draft specs open step 4 by hand before asserting, so
+  // they would pass whether or not a creator ever saw the offer. This one
+  // deliberately does not.
+  await page.goto("/?nocache=1");
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  await measureTheCode(page);
+  await page.getByTestId("setup-pin").click();
+  await page.getByTestId("pin-label").fill("Somewhere");
+  await page.getByTestId("pin-save").click();
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /1 object placed/,
+  );
+
+  await page.reload();
+  // Forget the reached step, so the wizard lands on step 2 the way it does
+  // for a creator who has not been here before - or on any device that has
+  // not stored one. The DRAFT survives this: it lives in OPFS, not in the
+  // step memory, and that separation is exactly what makes this the real
+  // case rather than a contrived one.
+  await expect(page.getByTestId("step-host")).toHaveAttribute("open", "");
+  await page.evaluate(() => {
+    localStorage.clear();
+  });
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  // The wizard put the creator on step 2, so step 4 is closed...
+  await expect(page.getByTestId("print-panel")).toHaveAttribute("open", "");
+  // ...and the offer is visible anyway, without any help from the test.
+  await expect(page.getByTestId("draft-offer")).toBeVisible({ timeout: 15000 });
+  await expect(page.getByTestId("step-measure")).toHaveAttribute("open", "");
 });

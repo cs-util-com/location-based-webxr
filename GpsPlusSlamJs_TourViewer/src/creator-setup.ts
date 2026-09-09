@@ -56,6 +56,8 @@ import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 
 import {
   appendWithoutDuplicateIds,
+  draftHasUnhostedLevel,
+  draftIsSpent,
   draftKeyForTour,
   draftObjectsNotYetHosted,
   restoredText,
@@ -169,6 +171,8 @@ export function wireCreatorSetup(deps: {
 
   /** This tour's draft store, once a tour is open. */
   let draftStore: DraftFileStore | undefined;
+  /** The creator-facing url of the open tour, for later draft writes. */
+  let draftTourUrl: string | null = null;
   /** What a draft is offering, until the creator answers. */
   let offered: {
     objects: readonly TourObject[];
@@ -186,25 +190,73 @@ export function wireCreatorSetup(deps: {
    * already happened in memory, and the draft is a safety net - a storage
    * problem must never fail the tap that made it.
    */
+  /** Say once that the walk is not being backed up. A creator mid-session
+   *  cannot act on it more often than that, and repeating it would push
+   *  the measuring readout off the line. */
+  function noteNoPersistence(): void {
+    if (warnedAboutPersistence) return;
+    warnedAboutPersistence = true;
+    ctx.placementNote =
+      "This device is not saving a backup copy - finish and download before closing the page.";
+    renderAuthorReadout();
+  }
+
   function recordPlacement(object: TourObject, blob?: Blob): void {
     const store = draftStore;
-    if (store === undefined) return;
+    if (store === undefined) {
+      noteNoPersistence();
+      return;
+    }
     void writeDraftObject(store, object, blob).then((ok) => {
-      if (ok || warnedAboutPersistence) return;
-      warnedAboutPersistence = true;
-      ctx.placementNote =
-        "Placed. (This device is not saving a backup copy - finish and download before closing the page.)";
-      renderAuthorReadout();
+      if (!ok) noteNoPersistence();
     });
   }
 
-  /** Record the measured code and the size it was measured at. */
-  function recordMeta(): void {
+  /**
+   * What the HOSTED zip currently stores for `levelId`, or null.
+   *
+   * The CONTENT, not just the presence of the id: a level's id is a hash of
+   * the printed TEXT, so re-measuring the same poster writes a new
+   * measurement under the same id. "The zip has a level with this id" is
+   * therefore not evidence that it has THIS measurement, and deleting a
+   * draft on that basis would throw away a re-measure - the most expensive
+   * thing a creator does.
+   */
+  async function hostedLevelJson(levelId: string): Promise<string | null> {
+    const session = ctx.session;
+    if (session === null) return null;
+    const entry = session.entries.find(
+      (e) => qrLevelIdFromEntryName(e.filename) === levelId,
+    );
+    if (entry === undefined) return null;
+    try {
+      return await (await session.loadEntry(entry.filename)).text();
+    } catch {
+      // Unreadable is not proof of anything, and the safe direction is to
+      // KEEP the draft.
+      return null;
+    }
+  }
+
+  /**
+   * Record the tour, the printed size and the measured level.
+   *
+   * @param tourUrl the CREATOR-FACING url, which is what the store is keyed
+   *   by. `ctx.session.archive.url` is normalised - for a Drive tour it is
+   *   the proxy route - so writing that here would make the field disagree
+   *   with the key and with its own documentation.
+   */
+  function recordMeta(tourUrl: string): void {
     const store = draftStore;
-    if (store === undefined || ctx.session === null) return;
+    if (store === undefined) return;
+    // The size comes from the FIELD, not from `ctx.activeSizeM`: that is
+    // only assigned at AR entry, so before the first session it still holds
+    // the previous tour's value.
+    const sizeM = Number(dom.sizeInput.value);
     void writeDraftMeta(store, {
-      tourUrl: ctx.session.archive.url,
-      sizeM: ctx.activeSizeM,
+      tourUrl,
+      sizeM:
+        Number.isFinite(sizeM) && sizeM > 0 ? sizeM : AUTHOR_DEFAULT_SIZE_M,
       level: ctx.mintedLevel,
     });
   }
@@ -438,7 +490,21 @@ export function wireCreatorSetup(deps: {
       dom.sizeInput.value = String(waiting.sizeM);
       ctx.activeSizeM = waiting.sizeM;
     }
-    ctx.placementNote = restoredText(waiting.objects.length);
+    // Render them, or the readout says "5 objects placed" over an empty
+    // scene and the creator places them again - new ids, real duplicates
+    // at the same spot in the published zip. previewObject already guards
+    // against a dead scene, so this is safe outside a session too.
+    for (
+      let i = ctx.placedObjects.length - waiting.objects.length;
+      i < ctx.placedObjects.length;
+      i += 1
+    ) {
+      previewObject(i);
+    }
+    ctx.placementNote = restoredText(
+      waiting.objects.length,
+      waiting.level !== null,
+    );
     renderAuthorReadout();
   });
 
@@ -653,7 +719,7 @@ export function wireCreatorSetup(deps: {
       (id) => {
         if (mintGeneration !== ctx.mintGeneration) return;
         ctx.mintedLevel = { id, json: result.json };
-        recordMeta();
+        if (draftTourUrl !== null) recordMeta(draftTourUrl);
         renderAuthorReadout();
       },
       () => {
@@ -764,7 +830,7 @@ export function wireCreatorSetup(deps: {
         // only in the creator's hands, not yet in the file the world sees.
         // It is cleared when a re-opened tour turns out to carry these ids
         // (see presentDraftForTour) - the one signal that is proof.
-        recordMeta();
+        if (draftTourUrl !== null) recordMeta(draftTourUrl);
         // The session ends so the creator lands on the page, where the
         // download button is a fresh tap (a download needs its own user
         // gesture, plan §2.4) - unless it already ended and another one
@@ -837,42 +903,85 @@ export function wireCreatorSetup(deps: {
       dom.draftOffer.hidden = true;
       offered = null;
       draftStore = undefined;
+      draftTourUrl = null;
     },
     presentDraftForTour: (tourUrl) => {
       if (!creator) return; // a visitor authors nothing
+      // EVERY continuation below re-checks this. Without it, tour A's draft
+      // resumes after the creator has opened tour B and then: writes B's
+      // placements into A's namespace, offers A's objects for B's zip, and
+      // deletes whichever namespace `draftStore` happens to point at. All
+      // three are the data loss this milestone exists to prevent, and the
+      // open path already guards every other continuation this way.
+      const generation = ctx.openGeneration;
+      const stale = (): boolean => generation !== ctx.openGeneration;
       void (async () => {
         const store = await openDraftStore(draftKeyForTour(tourUrl));
+        if (stale()) return;
         draftStore = store;
-        if (store === undefined) return;
+        draftTourUrl = tourUrl;
+        if (store === undefined) {
+          // No persistence at all - a browser without OPFS, blocked site
+          // data, a quota wall. The creator must hear it ONCE, here: this
+          // is the path where they are least protected and least likely to
+          // notice, because no write ever fails to tell them so.
+          noteNoPersistence();
+          return;
+        }
         const stored = await readDraft(store);
+        if (stale()) return;
         if (stored === undefined) {
           // No draft yet, but there will be: record what is already known,
           // so a crash before the first placement still leaves the tour and
           // the printed size behind.
-          recordMeta();
+          recordMeta(tourUrl);
           return;
         }
         const waiting = draftObjectsNotYetHosted(
           stored.draft,
           ctx.tourManifest,
         );
-        if (waiting.length === 0) {
-          // SPENT: the hosted zip already carries everything this draft
-          // held. That is the only proof the content reached the file the
-          // world sees, and the only thing that deletes a draft.
+        const hostedLevel =
+          stored.draft.level === null
+            ? null
+            : await hostedLevelJson(stored.draft.level.id);
+        if (stale()) return;
+        if (draftIsSpent(stored.draft, ctx.tourManifest, hostedLevel)) {
+          // SPENT: the hosted zip carries every object AND the measurement.
+          // That is the only proof the content reached the file the world
+          // sees, and the only thing that deletes a draft.
           await store.clear();
-          draftStore = await openDraftStore(draftKeyForTour(tourUrl));
-          recordMeta();
+          if (stale()) return;
+          const reopened = await openDraftStore(draftKeyForTour(tourUrl));
+          if (stale()) return;
+          draftStore = reopened;
+          recordMeta(tourUrl);
           return;
         }
+        const hasLevel = draftHasUnhostedLevel(stored.draft, hostedLevel);
         offered = {
           objects: waiting,
           photos: stored.photos,
+          // ALWAYS handed back when the draft has one, even if the hosted
+          // zip already stores the same measurement: the finish refuses to
+          // run without `mintedLevel`, so withholding it would leave a
+          // creator with restorable objects and no way to publish them.
+          // `hasLevel` only decides the WORDS and whether the draft counts
+          // as spent.
           level: stored.draft.level,
           sizeM: stored.draft.sizeM,
         };
-        dom.draftOfferText.textContent = restoreOfferText(waiting.length);
+        dom.draftOfferText.textContent = restoreOfferText(
+          waiting.length,
+          hasLevel,
+        );
         dom.draftOffer.hidden = false;
+        // The offer lives inside step 4, which is usually COLLAPSED when a
+        // tour opens (the wizard lands on the remembered step, or step 2).
+        // Un-hiding an element inside a closed disclosure is zero pixels
+        // and no signal, so the step is revealed - without collapsing
+        // whatever the creator was reading.
+        wizard.revealStep("measure");
       })();
     },
   };
