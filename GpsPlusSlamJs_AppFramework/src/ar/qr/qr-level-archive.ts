@@ -64,8 +64,22 @@ export function qrLevelEntryName(id: string): string {
  * @throws TypeError for an id that is not a string, is empty, or contains
  *   anything that could escape the folder.
  */
+/**
+ * Can `id` be written into an archive path at all? The PREDICATE behind
+ * `qrLevelFileName`'s throw, exported so a caller that must DECIDE - rather
+ * than fail - asks the same question the writer will (DEC-H3).
+ *
+ * The live caller is the Tour Viewer's draft reader: a draft file carrying
+ * an unwritable id has to come back as "no draft", because the alternative
+ * is an opaque finish failure at the moment the creator has finished
+ * walking (PR #438 review, second pass).
+ */
+export function isWritableQrLevelId(id: unknown): id is string {
+  return typeof id === 'string' && WRITABLE_ID.test(id) && !id.includes('..');
+}
+
 export function qrLevelFileName(id: string): string {
-  if (typeof id !== 'string' || !WRITABLE_ID.test(id) || id.includes('..')) {
+  if (!isWritableQrLevelId(id)) {
     throw new TypeError(
       `qrLevelFileName: unsafe level id ${JSON.stringify(id)} — expected the short hex id from qrCodeId`
     );

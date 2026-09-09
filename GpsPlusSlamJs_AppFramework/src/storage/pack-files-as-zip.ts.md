@@ -21,10 +21,19 @@ its private review (2026-08-26).
     (the partial archive is abandoned, never returned).
 - `interface ZipEntryInput { path: string; data: Blob | Uint8Array | string }`
 - `class ZipPackagingError extends Error` - `cause` carries the original.
-- `assertWritableZipEntries(entries, caller)` - the pre-write checks
-  (paths through `assertSafeZipEntryPaths`, every payload a string,
-  `Uint8Array` or `Blob` - an `undefined` from `JSON.stringify` of an
-  unserialisable value is caught here, before any write).
+- `assertWritableZipEntries(entries, caller)` - the pre-write checks, and
+  a composition of the two below. Use it unless a caller needs only one
+  half.
+- `assertSafeNewZipPaths(entries, caller)` - the NAME half: paths through
+  `assertSafeZipEntryPaths`, i.e. shape, traversal and duplication.
+- `assertWritableZipData(entries, caller)` - the PAYLOAD half: every
+  payload a string, `Uint8Array` or `Blob` - an `undefined` from
+  `JSON.stringify` of an unserialisable value is caught here, before any
+  write.
+- The split exists because `zip-rebuild.ts` must relax the name rules for
+  a name it read out of the input archive, while keeping every payload
+  rule. Filtering those entries out of the composed assertion skipped both
+  halves, which is the hole this shape removes (PR #438 review).
 - `writeStoreZip(entries, caller)` - the writer WITHOUT validation, for a
   caller that validated its own inputs (`zip-rebuild.ts` validates only
   its new entries).

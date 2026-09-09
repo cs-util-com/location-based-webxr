@@ -36,9 +36,26 @@ DEC-H3).
   The output Blob is still whole; a large recorder zip is a whole-file pass
   on a phone - callers show the progress (`done` = entries read so far,
   `total` = the output's entry count).
-- Only the NEW entries are validated (`assertWritableZipEntries`: path
-  rules from `zip-entry-path.ts` plus a writable payload). Existing entry
-  names are written as they are: an archive that opened is accepted.
+- Only the names this call INVENTS are name-checked. An entry whose path
+  the input archive already carries is re-emitted verbatim
+  (`assertSafeNewZipPaths` is given the others only), because refusing a
+  name that was just read back out of the archive applies the module's own
+  rule backwards - the live case was the coverage backfill silently
+  skipping a recording whose entry is `./session.json` (PR #438 review).
+- Every new entry is still checked for a **writable payload**
+  (`assertWritableZipData`) and for **duplication among the new entries**
+  (a local check, since the shared path checker no longer sees them all).
+  A name the archive happens to carry says nothing about the bytes behind
+  it.
+- Existing entry names are written as they are: an archive that opened is
+  accepted.
+- **Validation now happens AFTER the archive is opened**, because the
+  exemption above is keyed on the archive's own entry names and they are
+  not known before the read. The error contract changed with it: an
+  unwritable payload handed in together with an unopenable input surfaces
+  as `reading the archive failed`, not as the packaging error it would have
+  been when the checks ran first. Both are `ZipPackagingError`; only the
+  message differs.
 
 ## Examples
 

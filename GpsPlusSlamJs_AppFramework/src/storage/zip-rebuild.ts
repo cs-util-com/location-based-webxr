@@ -33,11 +33,27 @@ import {
 } from '@zip.js/zip.js';
 
 import {
-  assertWritableZipEntries,
+  assertSafeNewZipPaths,
+  assertWritableZipData,
   writeStoreZip,
   ZipPackagingError,
   type ZipEntryInput,
 } from './pack-files-as-zip.js';
+
+/** Two new entries at the same path would be written twice. The shared
+ *  path checker cannot see this once archive-derived names are filtered out
+ *  of it, so the rebuild states the rule for itself. */
+function assertNoDuplicateNewPaths(entries: readonly ZipEntryInput[]): void {
+  const seen = new Set<string>();
+  for (const entry of entries) {
+    if (seen.has(entry.path)) {
+      throw new ZipPackagingError(
+        `rebuildZipWithEntries: entry '${entry.path}' is a duplicate entry path`
+      );
+    }
+    seen.add(entry.path);
+  }
+}
 
 export interface RebuildZipOptions {
   /** Called after each carried-over entry is read (`done` = entries read
@@ -60,13 +76,33 @@ export async function rebuildZipWithEntries(
   entries: readonly ZipEntryInput[],
   options: RebuildZipOptions = {}
 ): Promise<Blob> {
-  assertWritableZipEntries(entries, 'rebuildZipWithEntries');
   const reader = new ZipReader(new BlobReader(zip));
   try {
     const replaced = new Set(entries.map((e) => e.path));
-    const existing = lastOccurrences(
+    const all = lastOccurrences(
       (await reader.getEntries()).filter((e): e is FileEntry => !e.directory)
-    ).filter((e) => !replaced.has(e.filename));
+    );
+    // Validate only the names this call INVENTS. A caller replacing an
+    // existing entry has to name it, and the only name that works is the
+    // archive's own - so validating that name applied the module's own rule
+    // backwards and refused to write back a name it had just read. The live
+    // case was the coverage backfill: it finds `session.json` by suffix, so
+    // it tolerates `./session.json`, and then could not re-emit it - the
+    // recording was skipped with a log line and no other trace (PR #438
+    // review). Re-emitting a name the input already carried is no new
+    // hazard; inventing one is, and that is still refused.
+    const archiveNames = new Set(all.map((e) => e.filename));
+    assertSafeNewZipPaths(
+      entries.filter((e) => !archiveNames.has(e.path)),
+      'rebuildZipWithEntries'
+    );
+    // The relaxation above is about the SHAPE of a name and nothing else.
+    // Duplicates among the new entries, and payloads that cannot be
+    // written, still apply to every one of them - a name the archive
+    // happens to carry says nothing about the bytes behind it.
+    assertNoDuplicateNewPaths(entries);
+    assertWritableZipData(entries, 'rebuildZipWithEntries');
+    const existing = all.filter((e) => !replaced.has(e.filename));
     const total = existing.length + entries.length;
     const carried: ZipEntryInput[] = [];
     for (const entry of existing) {

@@ -124,3 +124,32 @@ describe('embedCoverageInSessionJson', () => {
     expect(out).toBe(zip);
   });
 });
+
+describe('a session.json the author-path rules would refuse', () => {
+  it('backfills a `./session.json` instead of silently skipping the recording', async () => {
+    // The live half of the PR #438 review finding. This function finds the
+    // entry by SUFFIX, so it deliberately tolerates `./session.json` - a
+    // shape some zip tools and re-zipped folders produce. It then handed
+    // that same name to the rebuild as a NEW entry, where the author-path
+    // rules refused it; the `catch` turned that into "leave the zip
+    // untouched" and the recording was skipped with only a log line.
+    //
+    // Nothing the framework's own writer emits looks like this, so it only
+    // ever bit archives from elsewhere - which is exactly the population a
+    // backfill exists for.
+    const zip = await makeZip([
+      { name: './session.json', text: JSON.stringify({ odomCoordVersion: 5 }) },
+      { name: 'keep.txt', text: 'keep' },
+    ]);
+    const out = await embedCoverageInSessionJson(zip, CELLS, 11);
+    expect(out).not.toBe(zip);
+    const after = await readEntryBytes(out);
+    // Written back at the name the archive used - not moved to the root.
+    const session = JSON.parse(
+      new TextDecoder().decode(after.get('./session.json'))
+    ) as Record<string, unknown>;
+    expect(session['h3Cells']).toEqual(CELLS);
+    expect(session['h3Resolution']).toBe(11);
+    expect(after.has('keep.txt')).toBe(true);
+  });
+});

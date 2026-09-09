@@ -148,6 +148,69 @@ describe('rebuildZipWithEntries', () => {
     expect(central.filter((e) => e.name === 'twice.txt')).toHaveLength(1);
   });
 
+  it('REPLACES an archive-derived name the author rules would refuse (PR #438 review)', async () => {
+    // The rule this module already states - "an archive that opened is
+    // re-emitted as it is, whatever its entry names" - was applied to
+    // CARRIED entries only. A caller that replaces an existing entry has to
+    // name it, and the name it must use is the archive's own; that name
+    // then went through the NEW-entry validation and was refused.
+    //
+    // The live case: the coverage backfill finds session.json by suffix, so
+    // it deliberately tolerates an entry named `./session.json` - and then
+    // could not write it back, because a leading `.` segment is exactly
+    // what the new-path rules reject. The recording was silently skipped
+    // with a log line.
+    const writer = new ZipWriter(new BlobWriter('application/zip'), {
+      level: 0,
+    });
+    await writer.add('./session.json', new TextReader('{"a":1}'));
+    await writer.add('keep.txt', new TextReader('keep'));
+    const input = await writer.close();
+
+    const out = await rebuildZipWithEntries(input, [
+      { path: './session.json', data: '{"a":2}' },
+    ]);
+    const after = await entryBytes(out);
+    // Replaced in place, at the name the archive used - not moved.
+    expect(new TextDecoder().decode(after.get('./session.json'))).toBe(
+      '{"a":2}'
+    );
+    expect(after.has('keep.txt')).toBe(true);
+  });
+
+  it('still THROWS on an unsafe name the archive does NOT already carry', async () => {
+    // The other half, and the reason the validation exists: re-emitting a
+    // name the input already had is no new hazard, but INVENTING one is.
+    const writer = new ZipWriter(new BlobWriter('application/zip'), {
+      level: 0,
+    });
+    await writer.add('keep.txt', new TextReader('keep'));
+    const input = await writer.close();
+    await expect(
+      rebuildZipWithEntries(input, [{ path: '../escape.json', data: '{}' }])
+    ).rejects.toThrow(/unsafe zip entry path/);
+  });
+  it('still refuses a duplicate or an unwritable payload among archive-derived names', async () => {
+    // The relaxation is about the SHAPE of a name and nothing else. Both
+    // of these were briefly let through when the filter that skips the
+    // path rules skipped the other two checks with them.
+    const writer = new ZipWriter(new BlobWriter('application/zip'), {
+      level: 0,
+    });
+    await writer.add('./session.json', new TextReader('{}'));
+    const input = await writer.close();
+    await expect(
+      rebuildZipWithEntries(input, [
+        { path: './session.json', data: '{}' },
+        { path: './session.json', data: '{}' },
+      ])
+    ).rejects.toThrow(/duplicate entry path/);
+    await expect(
+      rebuildZipWithEntries(input, [
+        { path: './session.json', data: undefined as unknown as string },
+      ])
+    ).rejects.toThrow(/no writable data/);
+  });
   it('reports progress as entries READ over the count the output will have (a replacement is not counted twice)', async () => {
     const seen: [number, number][] = [];
     await rebuildZipWithEntries(

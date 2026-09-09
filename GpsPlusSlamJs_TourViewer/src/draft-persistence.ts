@@ -22,6 +22,7 @@ import {
   TOUR_MANIFEST_VERSION,
   type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { isWritableQrLevelId } from "gps-plus-slam-app-framework/ar/qr/qr-level-archive";
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 
 import type { AuthoringDraft } from "./authoring-draft.js";
@@ -164,6 +165,33 @@ function isMeta(value: unknown): value is DraftMeta {
     typeof record["tourUrl"] === "string" &&
     typeof record["sizeM"] === "number" &&
     Number.isFinite(record["sizeM"]) &&
-    (record["level"] === null || typeof record["level"] === "object")
+    isLevel(record["level"])
+  );
+}
+
+/**
+ * The measured level, or null - checked field by field for the same reason
+ * an object is (PR #438 review).
+ *
+ * `typeof x === "object"` accepted `{}`, `[]` and `{ id: 5 }`, which were
+ * then used as `{ id: string; json: string }`. This field travels further
+ * than any other: it reaches `hostedLevelJson(level.id)`, then
+ * `ctx.mintedLevel`, then `qrLevelEntryName(minted.id)`, which throws on an
+ * id that is not a safe string. The creator would get an opaque finish
+ * failure and no way forward but to re-measure or discard the draft - the
+ * failure this feature exists to prevent. A record this cannot read must
+ * come back as "no draft", never as a level the finish cannot name.
+ */
+function isLevel(value: unknown): value is DraftMeta["level"] {
+  if (value === null) return true;
+  if (typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  // The framework's OWN id rule, not `typeof === "string"`: the throw this
+  // guard exists to prevent is `qrLevelFileName`'s, and that rejects a
+  // string carrying a path separator or a `..` segment. A weaker check here
+  // reads as closed while the failure path stays open (PR #438 review,
+  // second pass).
+  return (
+    isWritableQrLevelId(record["id"]) && typeof record["json"] === "string"
   );
 }

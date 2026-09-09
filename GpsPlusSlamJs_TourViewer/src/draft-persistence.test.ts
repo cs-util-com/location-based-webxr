@@ -193,3 +193,57 @@ describe("writeDraftObject", () => {
     );
   });
 });
+
+describe("the meta's own validation", () => {
+  it("refuses a level that is not a level, rather than casting one into being", async () => {
+    // Why this matters (PR #438 review). The module's rule one screen up is
+    // that a draft record is validated by the manifest's OWN parser, so a
+    // file written by an older version of this app cannot reach the finish.
+    // The meta half never got that treatment, and `level` travels furthest
+    // of any field: it reaches `hostedLevelJson(level.id)`, then
+    // `ctx.mintedLevel`, then `qrLevelEntryName(minted.id)` - which throws
+    // on an id that is not a safe string. The creator would see an opaque
+    // finish failure with no way forward but to re-measure or discard,
+    // which is the failure this whole feature exists to prevent.
+    //
+    // Not reachable from today's writer; this is the forward-compatibility
+    // gap, and it is six lines to close.
+    // The last three are ids that ARE strings and still cannot be written:
+    // `qrLevelFileName` rejects a separator and a `..` segment, so a check
+    // of `typeof === "string"` would report this guard closed while the
+    // opaque finish failure stayed reachable (PR #438 review, second pass).
+    for (const level of [
+      {},
+      [],
+      { id: 5 },
+      { id: "a" },
+      { json: "{}" },
+      7,
+      { id: "../escape", json: "{}" },
+      { id: "a/b", json: "{}" },
+      { id: "", json: "{}" },
+    ]) {
+      const store = memoryStore();
+      await store.put("meta", JSON.stringify({ ...META, level }));
+      await expect(
+        readDraft(store),
+        JSON.stringify(level),
+      ).resolves.toBeUndefined();
+    }
+  });
+
+  it("accepts the two shapes a level really has", async () => {
+    const withLevel = memoryStore();
+    await writeDraftMeta(withLevel, {
+      ...META,
+      level: { id: "abc", json: "{}" },
+    });
+    expect((await readDraft(withLevel))?.draft.level).toEqual({
+      id: "abc",
+      json: "{}",
+    });
+    const withoutLevel = memoryStore();
+    await writeDraftMeta(withoutLevel, META);
+    expect((await readDraft(withoutLevel))?.draft.level).toBeNull();
+  });
+});

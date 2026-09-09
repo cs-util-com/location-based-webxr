@@ -68,6 +68,23 @@ export function assertWritableZipEntries(
   entries: readonly ZipEntryInput[],
   caller: string
 ): void {
+  assertSafeNewZipPaths(entries, caller);
+  assertWritableZipData(entries, caller);
+}
+
+/**
+ * The PATH rules alone: shape and no duplicates.
+ *
+ * Split out because `rebuildZipWithEntries` needs to relax exactly this
+ * half - and only for a name the input archive already carries, which it
+ * has to repeat verbatim in order to replace that entry. Everything else
+ * still applies to every entry, and separating them is what keeps the
+ * relaxation from quietly widening (PR #438 review).
+ */
+export function assertSafeNewZipPaths(
+  entries: readonly ZipEntryInput[],
+  caller: string
+): void {
   try {
     assertSafeZipEntryPaths(entries.map((e) => e.path));
   } catch (err) {
@@ -76,6 +93,15 @@ export function assertWritableZipEntries(
       { cause: err }
     );
   }
+}
+
+/** The PAYLOAD rule alone: every entry must carry something writable. It
+ *  applies to an archive-derived name exactly as to an invented one - the
+ *  name says nothing about the bytes. */
+export function assertWritableZipData(
+  entries: readonly ZipEntryInput[],
+  caller: string
+): void {
   for (const entry of entries) {
     if (!isWritableData(entry.data)) {
       throw new ZipPackagingError(
