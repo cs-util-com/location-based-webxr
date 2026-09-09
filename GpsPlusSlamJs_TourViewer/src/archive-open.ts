@@ -43,11 +43,9 @@ export interface ArchiveOpenDom {
    *  control over the SAME state, surfaced where the link is missing. Its
    *  input mirrors into `linkInput` before the open, so the page keeps one
    *  link of record and one open path. */
-  missingForm: HTMLFormElement;
+  missingForm: HTMLFormElement & { hidden: boolean };
   missingInput: HTMLInputElement;
   missingButton: HTMLButtonElement;
-  /** The block holding that form; hidden once a tour is actually open. */
-  missingBlock: HTMLElement;
   statsPanel: HTMLDivElement;
   statsHeadline: HTMLDivElement;
   statsDetail: HTMLDivElement;
@@ -88,6 +86,12 @@ export function wireArchiveOpen(deps: {
     ctx.tourManifestStatus = "settled";
     ctx.rebuiltZip = null;
     hooks.resetFinishStep();
+    // From here until an open SUCCEEDS there is no tour, and the page has
+    // to say so: the print step goes back to asking for a link and step 4
+    // offers to open one again. Both are hidden again below on success, so
+    // the visible effect is only on the paths that end without a tour.
+    hooks.presentNoTour();
+    dom.missingForm.hidden = false;
     // Same cache: the closed tour's levels must stop voting (M4 review #1),
     // and the per-text level cache belongs to the closed tour too (M6
     // review #8).
@@ -236,7 +240,7 @@ export function wireArchiveOpen(deps: {
       // and only NOW, on a successful open (M3 review #13). A pasted link
       // fails often on a phone, and a block that hid on submit would take
       // the retry away at the moment it is needed.
-      dom.missingBlock.hidden = true;
+      dom.missingForm.hidden = true;
       hooks.presentTourForPrint(url, origin);
       // The placed content (guided-setup plan M3): the finish step writes
       // it back, so a re-measure never drops what an earlier session placed.

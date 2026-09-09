@@ -208,6 +208,21 @@ export function wireCreatorSetup(deps: {
     // where a refused entry explains itself, and a refusal means no session
     // ever starts (M3 review #4).
     dom.controls.hidden = !sessionLive();
+    // Finish is NOT a camera control. It is reachable whenever there is
+    // something to finish: a creator who measured, placed content and then
+    // left AR could tap it on the page before this milestone, and F11 asked
+    // for the greyed-out AR buttons to go, not for the finish to become
+    // session-only (M3 milestone review #4). A failed finish keeps it too,
+    // or its own "try again" would have nothing to try.
+    dom.finishButton.hidden = !(
+      sessionLive() ||
+      ctx.finishError !== null ||
+      finishReadiness({
+        measured: ctx.mintedLevel !== null,
+        tourOpen: ctx.session !== null,
+        manifest: ctx.tourManifestStatus,
+      }) === "ready"
+    );
     if (ctx.authorErrorText !== null) {
       dom.status.textContent = ctx.authorErrorText;
       dom.mintButton.disabled = true;
@@ -442,7 +457,12 @@ export function wireCreatorSetup(deps: {
     const parsedSize = Number(dom.sizeInput.value);
     if (!Number.isFinite(parsedSize) || parsedSize <= 0) {
       ctx.authorErrorText = MISSING_SIZE_MESSAGE;
-      dom.printPanel.open = true;
+      // REVEAL, not open (M3 milestone review #2): the message lands in
+      // step 4's status line, and openStep would collapse step 4 a task
+      // later - taking the explanation with it and leaving a Start button
+      // that does nothing. Both steps stay open: the reason in one, the
+      // field that fixes it in the other.
+      wizard.revealStep("print");
       renderAuthorReadout();
       return false;
     }

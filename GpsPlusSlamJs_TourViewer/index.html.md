@@ -16,7 +16,10 @@ screen. Everything marked `.creator-only` is hidden for a visitor
   1. **Host** (`#step-host`): three numbered sub-steps - get a zip (the
      optional starter-zip button), upload it, then paste and **test** the
      link (`#open-form`, whose button reads "Test link", F6).
-  2. **Print** (`#print-panel`): the printed code. The link is SHOWN
+  2. **Print** (`#print-panel`): the printed code, on the page and as a
+     PDF of N numbered posters (`#print-count`, `#print-paper`,
+     `#print-pdf`) - the print dialog's "fit to page" silently rescales,
+     and a rescaled code measures the world wrong. The link is SHOWN
      (`#print-url-shown`), not asked for, whenever a tour is open, and the
      code renders without a button press; `#print-url-ask` returns only
      when nothing is open, which is what keeps printing before hosting
@@ -51,7 +54,7 @@ The `data-testid` contract the e2e suite drives: `wizard`, `step-host`,
 `clear-cache`, `print-panel` (owns `print-url-ask`, `print-url`,
 `print-url-shown`, `author-size`, `author-c`, `print-generate`,
 `print-info`, `print-canvas`, `print-button`, `print-url-out`,
-`visitor-link`), `step-hang`, `hang-done`, `step-measure` (owns
+`print-count`, `print-paper`, `print-pdf`, `visitor-link`), `step-hang`, `hang-done`, `step-measure` (owns
 `tour-missing`, `tour-missing-link`, `tour-missing-open`, `finish-block`,
 `finish-status`, `finish-download`, `replace-help`), `visitor-screen`,
 `stats`, `error`, `gallery`, `ar-hint`, `ar-status`, `enter-ar`,

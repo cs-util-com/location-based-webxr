@@ -36,11 +36,41 @@ since M6.
   - `PrintPanel.presentTour(url)` - take the open tour's link, swap the
     field for that link as TEXT, open the panel and render the code;
     `archive-open.ts` calls it on every open
+  - `printCountFromInput(raw)` - how many posters the PDF carries:
+    `{ count, coerced, clamped }`. Delegates to the code number's own
+    coercion rather than repeating it, and caps at `MAX_PRINTED_CODES`
+    (50) - each poster is its own QR build and its own page of vector
+    rectangles, all on the main thread.
+  - `printPdfFilename(count, sideM)`, `printedCodeCaption(index, count,
+sideM)` - what the file is called and what is printed under each code.
+    The caption is read while hanging posters, so it names WHICH poster;
+    it is plain ASCII because a PDF base-14 font is single-byte.
+  - `MAX_PRINTED_CODES`.
   - `printUrlDisplay(tourUrl)` - the pure rule behind that swap:
     `{ askVisible, shownVisible, shownText }`. Exactly one of the two is
     ever live, which is what stops them disagreeing about which link the
     printed code carries.
     (both modes; the `?qr=` boot too).
+
+## The printable PDF (second testing session, M4)
+
+"Download PDF to print" builds N numbered posters in one file, through
+`gps-plus-slam-app-framework/utils/qr-payload/qr-print-pdf` (which is
+where the geometry and the byte writing live, with their own sidecar).
+
+- **Why a PDF at all**, when the page can already print itself: the print
+  dialog owns the paper and a "fit to page" toggle that silently rescales,
+  and a rescaled code measures the world wrong without ever failing.
+- **Each poster gets its OWN payload** - `planPrintCode` with that code's
+  index. Two posters carrying the same printed text are ONE code as far as
+  the level lookup is concerned, so an author who hung them in two places
+  would get one of the two positions at random.
+- The builds run **sequentially**: the payload builder measures QR
+  versions, and fifty of those at once buys nothing on one thread.
+- The outcome lands in `#print-info`, the same line the on-page print
+  instructions use, so an author reads one place. A size no paper can hold
+  arrives there as the framework's message, which names the size that
+  would fit.
 
 ## Invariants & assumptions
 

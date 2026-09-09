@@ -13,7 +13,7 @@ Keeps `main.ts` glue-only.
 enableArWorldGroupAlignment; startCameraFrameCapture;
 stopCameraFrameCapture; createQrFrontEnd; solveQrPose; getCameraPose;
 getIntrinsics; createQrDebugView; getScene; queryGeolocationPermission;
-requestLocationOnce; downloadZip; startHitTestReticle; encodeFrameJpeg;
+requestLocationOnce; downloadZip; downloadPdf; startHitTestReticle; encodeFrameJpeg;
 createLabel; schedule }` - the placement layer (M4: the framework's hit-test
   reticle under the world group; the camera frame → JPEG encoder, which is
   the framework's `rgbaImageToJpegBlob` behind an opacity guard, async
@@ -27,6 +27,10 @@ createLabel; schedule }` - the placement layer (M4: the framework's hit-test
   screen's location gate (guided-setup plan DEC-N2): the Permissions API
   state, and one `getCurrentPosition` on its own tap resolving
   "granted" | "denied" (error code 1) | "unavailable" (any other failure).
+  `downloadPdf` is the same picker-or-anchor path with a PDF filter
+  instead of a zip one (the printable sheet of numbered codes); it is its
+  own seam so the picker offers the right file type and so the e2e
+  captures the bytes rather than the browser writing a file.
   `downloadZip` is the framework's picker-or-anchor download (the e2e fake
   captures the blob). The
   QR quartet (M3) is the author pipeline's device layer: BarcodeDetector

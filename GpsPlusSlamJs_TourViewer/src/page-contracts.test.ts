@@ -38,6 +38,20 @@ describe("the AR overlay root is not clipped", () => {
     expect(html).toMatch(/#step-measure\s*\{[^}]*overflow:\s*visible/);
   });
 
+  it("stops the step card from clipping or moving the printed code", () => {
+    // The nastiest thing the design-system adoption nearly shipped. The
+    // print stylesheet positions #print-area absolutely so the symbol lands
+    // at the paper's corner, and that resolves against the nearest
+    // POSITIONED ancestor. The shared `.step` atom is
+    // `position: relative; overflow: hidden`, so dressing step 2 in it
+    // silently made step 2 both the containing block AND the clip: the code
+    // printed offset down the sheet with its bottom cut off. Nothing in CI
+    // renders a print layout, so the rule is asserted as markup.
+    expect(html).toMatch(
+      /#print-panel\s*\{[^}]*position:\s*static[^}]*overflow:\s*visible/,
+    );
+  });
+
   it("keeps the summary out of the page while a session runs", () => {
     // Half of the no-collapse guarantee (wizard.ts holds the other half):
     // `display: none` on the summary takes it out of the tab order and the

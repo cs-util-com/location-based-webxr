@@ -193,6 +193,10 @@ export async function installTourViewerArFakes(page) {
         test.downloads.push({ filename, blob });
         return Promise.resolve(test.saveOutcome);
       },
+      downloadPdf: (blob, filename) => {
+        test.downloads.push({ filename, blob });
+        return Promise.resolve(test.saveOutcome);
+      },
       startHitTestReticle: () => ({
         isVisible: () => test.reticleVisible,
         getWorldPosition: (out) => {

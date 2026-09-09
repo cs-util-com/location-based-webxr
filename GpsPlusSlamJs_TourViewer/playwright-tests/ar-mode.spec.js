@@ -1355,9 +1355,20 @@ test("a refused AR entry explains itself on the page, with no session to explain
   // and `min` never fires outside a form submit.
   await page.getByTestId("author-size").fill("");
   await enterAr(page);
+  // toBeVisible FIRST, and this is the point of the test: toHaveText and
+  // toContainText read textContent and pass happily for an element inside a
+  // collapsed <details>. The first version of this spec did exactly that
+  // and would have passed while the message was invisible - the message
+  // this whole rule exists to keep on screen (M3 milestone review #2).
+  await expect(page.getByTestId("setup-status")).toBeVisible();
   await expect(page.getByTestId("setup-status")).toContainText(
     /side length in metres/i,
   );
+  // Step 4 is still open - the message lives in it - and step 2, which
+  // holds the field to fix, was opened alongside rather than instead.
+  await expect(page.getByTestId("step-measure")).toHaveAttribute("open", "");
+  await expect(page.getByTestId("print-panel")).toHaveAttribute("open", "");
+  await expect(page.getByTestId("author-size")).toBeVisible();
   // Still no session, so still no AR controls.
   await expect(page.getByTestId("setup-controls")).toBeHidden();
   await expect(page.getByTestId("enter-ar")).toHaveText("Start AR setup");
@@ -1415,4 +1426,100 @@ test("a link that fails from step 4 keeps the form and says why", async ({
   );
   // The other open button restored too, with its own label.
   await expect(page.getByTestId("open-button")).toHaveText("Test link");
+});
+
+test("the print step builds a real PDF of numbered codes", async ({ page }) => {
+  // Why this matters (second testing session, §4). The browser's print
+  // dialog owns the paper and a "fit to page" toggle that silently
+  // rescales, and a rescaled code measures the world wrong without ever
+  // failing. This drives the WHOLE path in a browser - the real payload
+  // builder once per poster, the real QR encoder, the hand-written PDF
+  // writer - and reads the produced bytes back in node.
+  //
+  // Each poster must carry its OWN payload: two posters with the same
+  // printed text are one code as far as the level lookup is concerned, so
+  // an author who hung them in two places would get one of the two
+  // positions at random.
+  await page.goto("/");
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  await page.getByTestId("print-count").fill("3");
+  await page.getByTestId("print-pdf").click();
+  await expect(page.getByTestId("print-info")).toContainText(/saved/i, {
+    timeout: 15000,
+  });
+  await expect(page.getByTestId("print-info")).toContainText("3 numbered");
+
+  const saved = await page.evaluate(() => {
+    const d = /** @type {any} */ (window).__tourViewerTest.downloads;
+    return d[d.length - 1].filename;
+  });
+  expect(saved).toBe("tour-codes-3x-16cm.pdf");
+
+  const pdf = await page.evaluate(async () => {
+    const d = /** @type {any} */ (window).__tourViewerTest.downloads;
+    return Array.from(new Uint8Array(await d[d.length - 1].blob.arrayBuffer()));
+  });
+  const text = new TextDecoder("latin1").decode(new Uint8Array(pdf));
+  expect(text.startsWith("%PDF-1.4")).toBe(true);
+  // Three codes at 16 cm: one per page, because two would need 37 cm.
+  expect(text).toContain("/Count 3");
+  expect(text).toContain("/MediaBox [0 0 595.28 841.89]");
+  for (const n of [1, 2, 3]) {
+    expect(text).toContain(`(Code ${String(n)} of 3 - 16cm - print at 100%)`);
+  }
+  // Every page actually carries ink.
+  expect((text.match(/ re f/g) ?? []).length).toBeGreaterThan(100);
+
+  // The failure path (async-UI rule): a size no paper can hold says which
+  // size would work, and the button comes back.
+  await page.getByTestId("author-size").fill("0.4");
+  await page.getByTestId("print-pdf").click();
+  await expect(page.getByTestId("print-info")).toContainText(
+    /does not fit A4/i,
+  );
+  await expect(page.getByTestId("print-info")).toContainText(/or less/i);
+  await expect(page.getByTestId("print-pdf")).toBeEnabled();
+  await expect(page.getByTestId("print-pdf")).toHaveText(
+    "Download PDF to print",
+  );
+});
+
+test("a failed open puts the page back to having no tour, not to showing the old one", async ({
+  page,
+}) => {
+  // Why this matters (M3 milestone review #3). Step 2 shows the tour link
+  // instead of asking for it, and step 4 stops offering to open a tour -
+  // both correct WHILE a tour is open. Nothing used to put either back, so
+  // after one successful open the page claimed a tour link for a tour it no
+  // longer had, for the rest of its life: printing before hosting became a
+  // one-shot per page load, and a creator whose second link failed had no
+  // field to correct it in without reloading.
+  await page.goto("/");
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  await expect(page.getByTestId("print-url-shown")).toHaveText(RANGES_ARCHIVE);
+  await expect(page.getByTestId("print-url-ask")).toBeHidden();
+
+  // A second link that does not resolve: the tour closes and none opens.
+  await page.getByTestId("step-host").locator("summary").click();
+  await page
+    .getByTestId("link-input")
+    .fill("http://127.0.0.1:5197/ranges-ok/nope.zip");
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("error")).not.toHaveText("");
+
+  // The page asks again rather than asserting a link it does not have.
+  await page.getByTestId("print-panel").locator("summary").click();
+  await expect(page.getByTestId("print-url-ask")).toBeVisible();
+  await expect(page.getByTestId("print-url-shown")).toBeHidden();
+  // ...and so does step 4.
+  await openMeasureStep(page);
+  await expect(page.getByTestId("tour-missing")).toBeVisible();
 });

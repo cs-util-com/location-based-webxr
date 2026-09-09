@@ -251,10 +251,12 @@ describe("step 4 during an AR session (M3 review #2)", () => {
     );
   });
 
-  it("is forced open even if the session started with another step open", () => {
-    // The honest starting state for the rule: a creator can enter AR from
-    // step 4, but the size-error path opens step 2 (creator-setup.ts), so
-    // a session can begin with step 4 collapsed.
+  it("is forced open even if another step is open when the session starts", () => {
+    // The rule has to hold whatever the page looked like a moment earlier,
+    // because `open` is assigned from several places that know nothing
+    // about sessions (the print panel's `beforeprint`, its print button,
+    // its presentTour). This pins the recovery rather than trusting that
+    // step 4 always happens to be open already.
     const { dom } = fakeDom();
     let sessionActive = false;
     const wizard = wireWizard({
@@ -585,5 +587,49 @@ describe("visitorLaunchHref / launchHrefFromPrintedUrl", () => {
         expect(launchHrefFromPrintedUrl(base.split("?")[0] ?? base)).toBeNull();
       }),
     );
+  });
+});
+
+describe("revealStep (M3 milestone review #2)", () => {
+  it("opens a step without closing the one the creator is reading", () => {
+    // Why this exists at all: AR refuses to start when the printed size is
+    // empty. The reason appears in step 4's status line, and the field that
+    // fixes it is in step 2 - so step 2 has to open WITHOUT step 4 closing,
+    // or the explanation disappears at the moment it is needed and the
+    // creator is left with a Start button that does nothing.
+    const { dom } = fakeDom();
+    const wizard = wireWizard({
+      mode: "creator",
+      dom,
+      packStarter: () => Promise.resolve(new Blob()),
+      download: () => Promise.resolve(true),
+    });
+    wizard.openStep("measure");
+    wizard.revealStep("print");
+    expect(dom.steps.measure?.open).toBe(true);
+    expect(dom.steps.print?.open).toBe(true);
+  });
+
+  it("does not remember the step it revealed", () => {
+    // The creator did not go there, they were sent. Remembering it would
+    // land the next reload on step 2 with the setup apparently undone.
+    const store = new Map<string, string>();
+    const { dom } = fakeDom();
+    const wizard = wireWizard({
+      mode: "creator",
+      dom,
+      packStarter: () => Promise.resolve(new Blob()),
+      download: () => Promise.resolve(true),
+      stepStore: {
+        getItem: (k: string) => store.get(k) ?? null,
+        setItem: (k: string, v: string) => {
+          store.set(k, v);
+        },
+      },
+    });
+    wizard.presentTour("https://h/t.zip", { prefer: "measure" });
+    store.clear();
+    wizard.revealStep("print");
+    expect([...store.keys()]).toEqual([]);
   });
 });

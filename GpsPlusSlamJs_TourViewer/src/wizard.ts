@@ -74,7 +74,8 @@ interface StepNode {
 }
 
 export interface WizardDom {
-  /** Every collapsible step by name (`measure` has none). */
+  /** Every collapsible step by name. `measure` is among them since the
+   *  flow rework (F4) - and is the one the AR-session rule protects. */
   steps: Partial<Record<WizardStep, StepNode>>;
   /** "I hung it - continue" in step 3. */
   hangDone: ClickableNode;
@@ -137,6 +138,13 @@ export function parseWizardStep(value: string | null): WizardStep | null {
 export interface Wizard {
   /** Open one step, collapse the others; remembered for the open tour. */
   openStep(step: WizardStep): void;
+  /** Open one step WITHOUT collapsing the others, and without remembering
+   *  it. For the one case where a step must be reachable while the
+   *  creator's attention belongs somewhere else: AR refuses to start
+   *  because the printed size is empty, the message says so in step 4, and
+   *  the field to fix it is in step 2. Collapsing step 4 there would take
+   *  the message away with it (M3 milestone review #2). */
+  revealStep(step: WizardStep): void;
   /** The last url a creator opened on this device, for the link input. */
   rememberedTourUrl(): string | null;
   /** A tour opened: the launch link becomes usable and a step opens. Which
@@ -198,6 +206,8 @@ export function wireWizard(deps: {
   const arSessionActive = deps.arSessionActive ?? (() => false);
   /** The hosted url the remembered step belongs to (set by presentTour). */
   let tourUrl: string | null = null;
+  /** A step opened by `revealStep`, awaiting its own queued `toggle`. */
+  let revealed: WizardStep | null = null;
 
   function remember(step: WizardStep): void {
     // A visitor never writes a creator's key (M6 review #11), whatever
@@ -292,7 +302,16 @@ export function wireWizard(deps: {
     for (const name of WIZARD_STEPS) {
       const node = dom.steps[name];
       node?.addEventListener?.("toggle", () => {
-        if (node.open) openStep(name);
+        if (!node.open) return;
+        // A step this module revealed on purpose (see `revealStep`) must
+        // not be treated as a creator's tap - the collapse that follows is
+        // the whole thing it was avoiding. `toggle` is queued, so the flag
+        // is cleared here rather than at the assignment.
+        if (revealed === name) {
+          revealed = null;
+          return;
+        }
+        openStep(name);
       });
     }
   }
@@ -332,6 +351,17 @@ export function wireWizard(deps: {
 
   return {
     openStep,
+    revealStep: (step) => {
+      const node = dom.steps[step];
+      if (node === undefined || node.open) return;
+      // Assigning `open` fires `toggle`, and this module's own listener
+      // turns any toggle into `openStep` - which collapses everything else,
+      // i.e. exactly what this function exists not to do. So the step is
+      // marked as opened BY US, and the listener lets that one through.
+      // No `remember` either: the creator did not go here, they were sent.
+      revealed = step;
+      node.open = true;
+    },
     rememberedTourUrl,
     presentTour: (url, options) => {
       dom.visitorLink.href = visitorLaunchHref(url);

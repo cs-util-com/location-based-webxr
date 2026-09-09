@@ -160,8 +160,17 @@
         margin-bottom: var(--space-2);
         text-shadow: var(--halo-text);
       }
+      /* The gate's escape: the secondary, quality-degrading choice. The
+         old dashed outline said so; the sheet has no quiet button variant
+         (only .btn--accent, which is louder), and the brief forbids
+         borders. A button with no raise is what this system already uses
+         for "not the main action" - it is the disabled state's own signal -
+         so the escape is flat while the Start button is raised. A
+         .btn--quiet atom is filed as a follow-up. */
       #scan-escape {
         margin-left: var(--space-2);
+        background: none;
+        box-shadow: none;
       }
       /* The one link on the page. The UA default is a blue that belongs to
          no palette here and reads as an artefact on the dark ground. */
@@ -221,6 +230,19 @@
            a lot of it. */
         .page {
           background: #fff;
+        }
+        /* THE PRINTED CODE MUST NOT BE CLIPPED OR MOVED. #print-area is
+           positioned absolutely so the symbol lands at the paper's corner,
+           and that resolves against the nearest POSITIONED ancestor. The
+           shared .step atom is `position: relative; overflow: hidden`, so
+           adopting it silently made step 2 the containing block AND the
+           clip - the code printed offset down the sheet with its bottom cut
+           off. Nothing in CI renders a print layout, so this is held by a
+           markup assertion instead (page-contracts.test.ts) and by printing
+           one code and measuring the paper, on the field-test list. */
+        #print-panel {
+          position: static;
+          overflow: visible;
         }
         body * {
           visibility: hidden;
@@ -463,6 +485,43 @@
               >
                 Print at true size
               </button>
+              <!-- The PDF path (second testing session, §4). The browser's
+                   print dialog owns the paper and a "fit to page" toggle
+                   that silently rescales, and a rescaled code is one whose
+                   printed side no longer matches what the AR setup
+                   measures with. A PDF declares its own page, and can
+                   carry several numbered codes at once. -->
+              <label>
+                Posters to print (each gets its own number)
+                <input
+                  id="print-count"
+                  class="input"
+                  data-testid="print-count"
+                  type="number"
+                  step="1"
+                  min="1"
+                  value="1"
+                />
+              </label>
+              <label>
+                Paper
+                <select
+                  id="print-paper"
+                  class="select"
+                  data-testid="print-paper"
+                >
+                  <option value="a4">A4</option>
+                  <option value="letter">Letter</option>
+                </select>
+              </label>
+              <button
+                type="button"
+                id="print-pdf"
+                class="btn btn--prose"
+                data-testid="print-pdf"
+              >
+                Download PDF to print
+              </button>
               <div id="print-url-out" data-testid="print-url-out"></div>
               <p class="step-copy hint--dim">
                 That is the address the code encodes: this page, carrying your
@@ -698,16 +757,21 @@
               >
                 Capture a photo here
               </button>
-              <button
-                type="button"
-                id="setup-finish"
-                class="btn btn--prose"
-                data-testid="setup-finish"
-                disabled
-              >
-                Finish - rebuild the zip
-              </button>
             </div>
+            <!-- OUTSIDE #setup-controls on purpose: the controls are the
+                 camera's (mint, pin, photo) and go with the session, but a
+                 creator who measured and left AR must still be able to
+                 finish. Its own visibility rule lives in creator-setup.ts. -->
+            <button
+              type="button"
+              id="setup-finish"
+              class="btn btn--prose"
+              data-testid="setup-finish"
+              disabled
+              hidden
+            >
+              Finish - rebuild the zip
+            </button>
           </div>
         </section>
         <!-- The end of step 4, on the page rather than in the overlay (F10;

@@ -58,15 +58,28 @@ const { blob, fileCount } = await exportSessionHandleAsZip(sessionHandle, {
 });
 ```
 
-### Download ZIP
+### Download a file
 
 ```typescript
-import { downloadZip } from './zip-export';
+import { downloadZip, downloadBlob, PDF_FILE_TYPE } from './zip-export';
 
 // Trigger browser download
 const saved = await downloadZip(zipBlob, 'recording-2026-01-26.zip');
 // false: the user dismissed the save picker and nothing was written
+
+// Anything else: same picker-then-anchor path, a different filter
+await downloadBlob(pdfBlob, 'tour-codes-3x-16cm.pdf', PDF_FILE_TYPE);
 ```
+
+`downloadBlob(blob, filename, fileType)` is the general form;
+`downloadZip` is the zip-shaped call its existing callers already make.
+It was generalised when a second kind of file needed the same save path
+(the Tour Viewer's printable sheet of QR codes): the picker's type filter
+was the only zip-specific thing in it, and a second copy of the
+picker-then-anchor dance is exactly the duplication this repo keeps
+finding. `DownloadFileType` is `{ description, mimeType, extension }`;
+`PDF_FILE_TYPE` is exported, the zip one stays private because
+`downloadZip` is its only caller.
 
 ### Sync to External File Handle
 

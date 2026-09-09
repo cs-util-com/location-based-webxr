@@ -96,8 +96,9 @@ const measureStep = element<HTMLDetailsElement>("step-measure");
 // loses the step card's frame).
 document.body.dataset["mode"] = mode;
 
-const print = wirePrintPanel(
-  {
+const print = wirePrintPanel({
+  mode,
+  dom: {
     panel: printPanel,
     urlInput: element("print-url"),
     urlAsk: element("print-url-ask"),
@@ -110,11 +111,17 @@ const print = wirePrintPanel(
     canvas: element("print-canvas"),
     printButton: element("print-button"),
     urlOut: element("print-url-out"),
+    countInput: element("print-count"),
+    paperSelect: element("print-paper"),
+    pdfButton: element("print-pdf"),
   },
-  (launchUrl) => {
+  onLaunchUrl: (launchUrl) => {
     wizard.presentLaunchUrl(launchUrl);
   },
-);
+  // Through the seam like every other download, so the e2e fake captures
+  // the bytes instead of the browser writing a file.
+  downloadPdf: (blob, filename) => seams.downloadPdf(blob, filename),
+});
 
 const stepStore = stepStoreOrUndefined();
 const wizard = wireWizard({
@@ -215,6 +222,9 @@ const setup = wireCreatorSetup({
 hooks.renderAuthorReadout = setup.renderAuthorReadout;
 hooks.startAuthorPipeline = setup.startAuthorPipeline;
 hooks.resetFinishStep = setup.resetFinishStep;
+hooks.presentNoTour = () => {
+  print.presentNoTour();
+};
 
 const escapeButton = element<HTMLButtonElement>("scan-escape");
 const viewer = createViewerPlacement({
@@ -264,7 +274,6 @@ const archive = wireArchiveOpen({
     missingForm: element("tour-missing"),
     missingInput: element("tour-missing-link"),
     missingButton: element("tour-missing-open"),
-    missingBlock: element("tour-missing"),
     statsPanel: element("stats"),
     statsHeadline: element("stats-headline"),
     statsDetail: element("stats-detail"),

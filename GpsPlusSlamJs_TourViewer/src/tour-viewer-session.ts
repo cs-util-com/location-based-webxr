@@ -74,6 +74,12 @@ export interface TourViewerHooks {
   presentTourForPrint(url: string, origin?: "host-step" | "measure-step"): void;
   /** A tour closed: the finish step's page-side state is stale. */
   resetFinishStep(): void;
+  /** No tour is open any more (one closed, or an open failed): the panels
+   *  that show a tour's link go back to ASKING for one. Without this, the
+   *  print step keeps showing the previous tour's link as immutable text
+   *  and step 4 stops offering to open a tour at all - for the rest of the
+   *  page's life (M3 milestone review #3). */
+  presentNoTour(): void;
   /** A session reached running, or a tour opened into a running session:
    *  derive the scan gate (idle when no session runs). */
   startScanGate(): void;
@@ -96,6 +102,7 @@ export function createUnwiredHooks(): TourViewerHooks {
     startViewerPipeline: () => false,
     presentTourForPrint: () => undefined,
     resetFinishStep: () => undefined,
+    presentNoTour: () => undefined,
     startScanGate: () => undefined,
     resetScanGate: () => undefined,
     reconsiderScanGate: () => undefined,

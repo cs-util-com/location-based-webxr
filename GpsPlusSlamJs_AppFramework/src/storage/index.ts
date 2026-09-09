@@ -55,7 +55,10 @@ export {
   exportSessionAsZip,
   exportSessionHandleAsZip,
   syncToExternalZip,
+  downloadBlob,
   downloadZip,
+  PDF_FILE_TYPE,
+  type DownloadFileType,
 } from './zip-export.js';
 
 // --- zip-reader ---

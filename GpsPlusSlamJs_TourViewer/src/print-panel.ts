@@ -14,7 +14,13 @@ import {
   planPrintCode,
   printedSideCss,
 } from "gps-plus-slam-app-framework/utils/qr-payload/qr-print-plan";
+import {
+  buildQrPrintPdf,
+  type PaperSize,
+  type PrintablePdfCode,
+} from "gps-plus-slam-app-framework/utils/qr-payload/qr-print-pdf";
 
+import type { ViewerMode } from "./mode.js";
 import { codeIndexFromInput } from "./qr-author-mode.js";
 
 /**
@@ -73,6 +79,47 @@ export function printUrlDisplay(tourUrl: string | null): {
     : { askVisible: false, shownVisible: true, shownText: url };
 }
 
+/**
+ * The most posters one download may carry.
+ *
+ * Not a taste limit: each code is a separate QR build and a separate page
+ * of vector rectangles, all on the main thread, so an unbounded count is a
+ * frozen phone. Fifty is far past any real tour and still under a second.
+ */
+export const MAX_PRINTED_CODES = 50;
+
+/** How many posters to build, from what the author typed. */
+export function printCountFromInput(raw: string): {
+  count: number;
+  /** The typed value was not a usable count and was replaced. */
+  coerced: boolean;
+  /** The typed value was usable but above the cap. */
+  clamped: boolean;
+} {
+  // The same "a whole number of 1 or more, else 1" rule the code number
+  // uses - one coercion, not two that can disagree.
+  const { codeIndex, coerced } = codeIndexFromInput(raw);
+  return codeIndex > MAX_PRINTED_CODES
+    ? { count: MAX_PRINTED_CODES, coerced, clamped: true }
+    : { count: codeIndex, coerced, clamped: false };
+}
+
+/** The downloaded file's name. Says what it holds, because a creator
+ *  prints several rounds and a downloads folder full of `codes.pdf` is
+ *  a folder of files nobody can tell apart. */
+export function printPdfFilename(count: number, sideM: number): string {
+  return `tour-codes-${String(count)}x-${printedSideCss(sideM).replace(".", "-")}.pdf`;
+}
+
+/** The line printed under one code. ASCII only - see `qr-print-pdf.ts`. */
+export function printedCodeCaption(
+  index: number,
+  count: number,
+  sideM: number,
+): string {
+  return `Code ${String(index)} of ${String(count)} - ${printedSideCss(sideM)} - print at 100%`;
+}
+
 export interface PrintPanelDom {
   panel: HTMLDetailsElement;
   urlInput: HTMLInputElement;
@@ -89,44 +136,108 @@ export interface PrintPanelDom {
   canvas: HTMLCanvasElement;
   printButton: HTMLButtonElement;
   urlOut: HTMLDivElement;
+  /** How many numbered posters the PDF carries. */
+  countInput: HTMLInputElement;
+  /** The paper the PDF declares - it draws at absolute coordinates, so
+   *  this is the one thing that has to be told. */
+  paperSelect: HTMLSelectElement;
+  pdfButton: HTMLButtonElement;
 }
 
 export interface PrintPanel {
-  /** The open tour's hosting URL is what a creator prints: prefill without
-   *  clobbering typed text, and open the panel - the print step is the
-   *  creator's next move (DEC-F2). Both modes; the `?qr=` boot lands here.
+  /** The open tour's hosting URL is what a creator prints: take it, show it
+   *  in the field's place, open the panel and render the code (DEC-F2).
    *  A property, not a method: it is handed to the hooks object unbound. */
   presentTour: (url: string) => void;
+  /** No tour is open any more - a tour closed, or an open failed. The panel
+   *  goes back to ASKING for the link, which is what keeps printing before
+   *  hosting available for more than one page load (M3 milestone review
+   *  #3). */
+  presentNoTour: () => void;
 }
 
-export function wirePrintPanel(
-  dom: PrintPanelDom,
+export function wirePrintPanel(deps: {
+  dom: PrintPanelDom;
+  /** A visitor never sees this panel; without this the `?qr=` boot would
+   *  run a payload build and a full QR encode, on a phone, on the first
+   *  paint, for output that is `display: none` (M3 milestone review #6). */
+  mode: ViewerMode;
   /** Told the printed launch URL after each generated code (the setup's
    *  "open as a visitor" link carries the same payload a scan decodes). */
-  onLaunchUrl: (launchUrl: string) => void = () => undefined,
-): PrintPanel {
+  onLaunchUrl?: (launchUrl: string) => void;
+  /** Offers the built PDF; resolves false when a save picker was
+   *  dismissed. Injected so the e2e fake captures it like the zip
+   *  downloads. */
+  downloadPdf?: (blob: Blob, filename: string) => Promise<boolean>;
+}): PrintPanel {
+  const { dom, mode } = deps;
+  const onLaunchUrl = deps.onLaunchUrl ?? (() => undefined);
+  const downloadPdf = deps.downloadPdf ?? (() => Promise.resolve(false));
+  const creator = mode === "creator";
   /** One render of the code, with the async-UI cycle around it: in-progress
    *  before the awaits, a durable end state after, and a failure that says
    *  so in the panel instead of leaving a stale code on screen. */
+  /** Bumped per render; every continuation checks it before touching the
+   *  DOM. Two overlapping runs - two opens in a row, or an open racing a
+   *  `change` on the size - otherwise settle in arbitrary order, and the
+   *  loser could paint its canvas over the winner's while the panel says
+   *  the winner's link. That is exactly the "the code carries one URL and
+   *  the panel shows another" failure F7 is about (M3 milestone review
+   *  #5). The same guard is why the button's idle state is restored only
+   *  by the newest run. */
+  let renderGeneration = 0;
+
   function regenerate(): void {
+    const generation = ++renderGeneration;
     dom.generateButton.disabled = true;
     dom.generateButton.textContent = "Generating…";
     generatePrintCode(dom)
       .then((launchUrl) => {
+        if (generation !== renderGeneration) return;
         onLaunchUrl(launchUrl);
       })
       .catch((err: unknown) => {
+        if (generation !== renderGeneration) return;
         dom.info.textContent = err instanceof Error ? err.message : String(err);
         dom.area.hidden = true;
         dom.printButton.hidden = true;
       })
       .finally(() => {
+        if (generation !== renderGeneration) return;
         dom.generateButton.disabled = false;
         dom.generateButton.textContent = "Generate QR";
       });
   }
 
+  /** Show one of the two spellings of the tour link (F7). */
+  function showLink(tourUrl: string | null): void {
+    const display = printUrlDisplay(tourUrl);
+    dom.urlAsk.hidden = !display.askVisible;
+    dom.urlShown.hidden = !display.shownVisible;
+    dom.urlShown.textContent = display.shownText;
+  }
+
   dom.generateButton.addEventListener("click", regenerate);
+
+  /** Build and offer the PDF. Async-UI rule: the in-progress state engages
+   *  before the first await and the durable outcome lands in the same info
+   *  line the on-page print instructions use, so an author reads one
+   *  place. */
+  dom.pdfButton.addEventListener("click", () => {
+    dom.pdfButton.disabled = true;
+    dom.pdfButton.textContent = "Building the PDF…";
+    buildPrintPdf(dom, downloadPdf)
+      .then((message) => {
+        dom.info.textContent = message;
+      })
+      .catch((err: unknown) => {
+        dom.info.textContent = err instanceof Error ? err.message : String(err);
+      })
+      .finally(() => {
+        dom.pdfButton.disabled = false;
+        dom.pdfButton.textContent = "Download PDF to print";
+      });
+  });
 
   /** Write the size that is in the box, if there is a code to print. */
   const applyPrintedSide = (): void => {
@@ -170,6 +281,15 @@ export function wirePrintPanel(
   }
 
   return {
+    presentNoTour: () => {
+      // The code on screen belonged to the tour that just went away.
+      showLink(null);
+      dom.area.hidden = true;
+      dom.printButton.hidden = true;
+      dom.urlOut.textContent = "";
+      // A render still in flight must not paint over the cleared panel.
+      renderGeneration += 1;
+    },
     presentTour: (url) => {
       // The OPEN TOUR'S link wins, always. It used to be kept only when the
       // field was empty or still held a previous prefill, so as not to
@@ -182,10 +302,10 @@ export function wirePrintPanel(
       dom.urlInput.value = url;
       // The link is settled now, so step 2 shows it rather than asking for
       // it (F7).
-      const display = printUrlDisplay(url);
-      dom.urlAsk.hidden = !display.askVisible;
-      dom.urlShown.hidden = !display.shownVisible;
-      dom.urlShown.textContent = display.shownText;
+      showLink(url);
+      // A visitor's page has no print step at all: opening and rendering it
+      // is work nobody can see, on their first paint.
+      if (!creator) return;
       dom.panel.open = true;
       // "Show the code immediately" (F7): the creator asked for the code,
       // not for a button that makes one. The Generate button stays for the
@@ -222,4 +342,54 @@ async function generatePrintCode(dom: PrintPanelDom): Promise<string> {
     (warning === null ? "" : ` ${warning}`);
   dom.urlOut.textContent = plan.url;
   return plan.url;
+}
+
+/**
+ * Build the printable PDF and hand it to the browser.
+ *
+ * Each poster gets its OWN payload (`planPrintCode` with its code index),
+ * because the printed text is the code's identity: two posters carrying
+ * the same string are one code as far as the level lookup is concerned,
+ * and an author who hung them in two places would get one of the two
+ * positions at random.
+ *
+ * @returns the line to show the author.
+ */
+async function buildPrintPdf(
+  dom: PrintPanelDom,
+  downloadPdf: (blob: Blob, filename: string) => Promise<boolean>,
+): Promise<string> {
+  const sideM = Number(dom.sizeInput.value);
+  const url = dom.urlInput.value.trim();
+  const { count, coerced, clamped } = printCountFromInput(dom.countInput.value);
+  const paper: PaperSize = dom.paperSelect.value === "letter" ? "letter" : "a4";
+  const codes: PrintablePdfCode[] = [];
+  for (let index = 1; index <= count; index += 1) {
+    // Sequential on purpose: the payload builder measures QR versions, and
+    // fifty of those at once buys nothing on a phone's single thread.
+    // eslint-disable-next-line no-await-in-loop
+    const plan = await planPrintCode(url, { codeIndex: index });
+    const matrix = QRCode.create(plan.url, { errorCorrectionLevel: "Q" });
+    codes.push({
+      size: matrix.modules.size,
+      modules: matrix.modules.data,
+      caption: printedCodeCaption(index, count, sideM),
+    });
+  }
+  // Throws with the size that WOULD fit when the paper cannot hold this
+  // one; that message is the useful half of the failure.
+  const bytes = buildQrPrintPdf(codes, { sideM, paper });
+  const blob = new Blob([bytes], { type: "application/pdf" });
+  const filename = printPdfFilename(count, sideM);
+  const saved = await downloadPdf(blob, filename);
+  const notes =
+    (coerced
+      ? " The number of posters was not a whole number of 1 or more, so one was built."
+      : "") +
+    (clamped
+      ? ` At most ${String(MAX_PRINTED_CODES)} posters fit in one file.`
+      : "");
+  return saved
+    ? `Saved ${filename} - ${String(count)} numbered code${count === 1 ? "" : "s"} at ${printedSideCss(sideM)}. Print it at 100% scale (no fit-to-page).${notes}`
+    : `The PDF was not saved.${notes}`;
 }
