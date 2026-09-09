@@ -12,8 +12,10 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
 - `AUTHOR_DEFAULT_SIZE_M` (re-exported from the framework, **0.16 m**) —
   what `creator-setup.ts` writes into the printed-size input at wiring
   time, on every load. It is essentially the A4 ceiling, not a taste
-  choice: the footprint is the side x 1.16 (the 8 % quiet zone on both
-  edges), so anything much larger is clipped and does not scan. The
+  choice: the footprint is the side times `QR_PRINT_FOOTPRINT_FACTOR` (the
+  quiet zone on both edges, stated once in the framework's
+  `qr-quiet-zone.ts`), so anything much larger is clipped and does not
+  scan. The
   `value` attribute in `index.html` must carry the SAME number - it is
   overwritten by the assignment above, so a differing one is dead text
   that reads like a decision (`printed-size-default.test.ts`). See

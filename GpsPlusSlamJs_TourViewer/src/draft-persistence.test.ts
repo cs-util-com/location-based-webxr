@@ -195,22 +195,22 @@ describe("writeDraftObject", () => {
 });
 
 describe("the meta's own validation", () => {
-  it("refuses a level that is not a level, rather than casting one into being", async () => {
-    // Why this matters (PR #438 review). The module's rule one screen up is
-    // that a draft record is validated by the manifest's OWN parser, so a
-    // file written by an older version of this app cannot reach the finish.
-    // The meta half never got that treatment, and `level` travels furthest
-    // of any field: it reaches `hostedLevelJson(level.id)`, then
-    // `ctx.mintedLevel`, then `qrLevelEntryName(minted.id)` - which throws
-    // on an id that is not a safe string. The creator would see an opaque
-    // finish failure with no way forward but to re-measure or discard,
-    // which is the failure this whole feature exists to prevent.
+  it("keeps the walk when the level does not read, and drops only the measurement", async () => {
+    // Why this test matters: `level` is the field that travels furthest -
+    // it reaches the archive path builder, which throws on an id it cannot
+    // write, leaving the creator an opaque finish failure at the moment
+    // they have finished walking. So an unreadable one must never reach
+    // the finish.
     //
-    // Not reachable from today's writer; this is the forward-compatibility
-    // gap, and it is six lines to close.
+    // But it must not take the DRAFT with it either. Every placement the
+    // creator made is in the same directory, and the module's own rule two
+    // screens up is that a record which does not read costs itself and
+    // nothing else. A level that does not read means "no measurement yet",
+    // which is a shape the whole flow already supports (M1/M3 review #10).
+    //
     // The last three are ids that ARE strings and still cannot be written:
-    // `qrLevelFileName` rejects a separator and a `..` segment, so a check
-    // of `typeof === "string"` would report this guard closed while the
+    // the framework rejects a separator and a `..` segment, so a check of
+    // `typeof === "string"` would report this guard closed while the
     // opaque finish failure stayed reachable (PR #438 review, second pass).
     for (const level of [
       {},
@@ -224,11 +224,12 @@ describe("the meta's own validation", () => {
       { id: "", json: "{}" },
     ]) {
       const store = memoryStore();
-      await store.put("meta", JSON.stringify({ ...META, level }));
-      await expect(
-        readDraft(store),
-        JSON.stringify(level),
-      ).resolves.toBeUndefined();
+      store.files.set("meta", JSON.stringify({ ...META, level }));
+      await writeDraftObject(store, pin("a"));
+      const read = await readDraft(store);
+      expect(read, JSON.stringify(level)).toBeDefined();
+      expect(read?.draft.level, JSON.stringify(level)).toBeNull();
+      expect(read?.draft.objects, JSON.stringify(level)).toHaveLength(1);
     }
   });
 

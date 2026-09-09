@@ -128,8 +128,10 @@ export async function packFilesAsZip(
 
 /**
  * The writer alone - NO validation. For callers that validated their own
- * inputs (the rebuild validates only its NEW entries: an archive that
- * opened is re-emitted as it is, whatever its entry names, M1 review #2).
+ * inputs. The rebuild validates every new entry's PAYLOAD and checks them
+ * for duplicates, but name-checks only the names it INVENTS, and those
+ * under the archive's own convention: an archive that opened is re-emitted
+ * as it is, whatever its entry names (M1 review #2, PR #438 review).
  *
  * @throws {ZipPackagingError} when the writer fails.
  */

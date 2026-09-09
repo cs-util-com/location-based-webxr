@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_QR_LAUNCH_BASE_URL,
   MAX_HOME_PRINTABLE_SIDE_M,
-  HOME_PRINTABLE_WIDTH_M,
-  QR_QUIET_ZONE_FRACTION,
   homePrintWarning,
   planPrintCode,
   printedSideCss,
 } from './qr-print-plan.js';
+import {
+  HOME_PRINTABLE_WIDTH_M,
+  QR_QUIET_ZONE_FRACTION,
+} from './qr-quiet-zone.js';
 import { resolveQrPayload } from './qr-launch-dispatch.js';
 import { qrCodeId } from './qr-code-id.js';
 import { qrCodeIsOurs } from './qr-code-origin.js';
@@ -155,32 +157,39 @@ describe('the printed symbol size real hosting shapes reach', () => {
    * GitHub template alone takes a raw link from version 9 to version 5),
    * and nothing else in the repo asserts it.
    */
+  // Objects, not tuples, so the test TITLE can name the version it pins.
+  // `%#` is vitest's case INDEX and consumes no argument, so the tuple form
+  // reported "prints at version 0/1/2/3" - the wrong number, in a test
+  // whose whole purpose is making the right one readable (review #5).
   const CASES = [
-    ['a shortened link', 'https://bit.ly/3xK9mQz', 5],
-    [
-      'a GitHub raw link (the template strategy shrinks it)',
-      'https://raw.githubusercontent.com/cs-util-com/GeoTales/refs/heads/main/MyMap123.zip',
-      5,
-    ],
-    [
-      'a Dropbox share link',
-      'https://www.dropbox.com/s/abc123def456/tour.zip?dl=1',
-      7,
-    ],
-    [
-      'a Google Drive link',
-      'https://drive.google.com/uc?export=download&id=1AbCdEfGhIjKlMnOpQrStUvWxYz01234',
-      8,
-    ],
+    { label: 'a shortened link', url: 'https://bit.ly/3xK9mQz', version: 5 },
+    {
+      label: 'a GitHub raw link (the template strategy shrinks it)',
+      url: 'https://raw.githubusercontent.com/cs-util-com/GeoTales/refs/heads/main/MyMap123.zip',
+      version: 5,
+    },
+    {
+      label: 'a Dropbox share link',
+      url: 'https://www.dropbox.com/s/abc123def456/tour.zip?dl=1',
+      version: 7,
+    },
+    {
+      label: 'a Google Drive link',
+      url: 'https://drive.google.com/uc?export=download&id=1AbCdEfGhIjKlMnOpQrStUvWxYz01234',
+      version: 8,
+    },
   ] as const;
 
-  it.each(CASES)('%s prints at version %#', async (_label, url, version) => {
-    const plan = await planPrintCode(url);
-    expect(plan.qrVersion).toBe(version);
-  });
+  it.each(CASES)(
+    '$label prints at version $version',
+    async ({ url, version }) => {
+      const plan = await planPrintCode(url);
+      expect(plan.qrVersion).toBe(version);
+    }
+  );
 
   it('leaves four modules WORSE than the 8 % in use, for every one of them', async () => {
-    for (const [label, url] of CASES) {
+    for (const { label, url } of CASES) {
       const { qrVersion } = await planPrintCode(url);
       const modules = 4 * qrVersion + 17; // the QR size rule
       const fourModuleFraction = 4 / modules;

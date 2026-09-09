@@ -16,7 +16,11 @@ resolves to nothing. Decision record:
 ## Public API
 
 - `DEFAULT_QR_LAUNCH_BASE_URL: string` — where a scan lands by default.
-- `MAX_HOME_PRINTABLE_SIDE_M: number` — the A4/Letter width budget.
+- `MAX_HOME_PRINTABLE_SIDE_M: number` — the A4/Letter width budget, derived
+  from `qr-quiet-zone.ts`'s `HOME_PRINTABLE_WIDTH_M` and
+  `QR_PRINT_FOOTPRINT_FACTOR` rather than a baked `0.19 / 1.16`. The quiet
+  zone is stated there, in a module with no imports, so the PDF writer can
+  read the same number without pulling this file's dependency graph in.
 - `homePrintWarning(sizeM: number): string | null` — plain-words warning, or
   `null` when the size fits a home printer.
 - `printedSideCss(sizeM: number): string` — metres → exact CSS centimetres.

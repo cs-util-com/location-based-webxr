@@ -24,9 +24,9 @@
  * number the author typed.
  */
 
-/** PDF user space is points: 1 pt = 1/72 inch. */
-import { QR_QUIET_ZONE_FRACTION } from './qr-print-plan.js';
+import { QR_QUIET_ZONE_FRACTION } from './qr-quiet-zone.js';
 
+/** PDF user space is points: 1 pt = 1/72 inch. */
 const PT_PER_MM = 72 / 25.4;
 
 /** The paper this can lay out, in mm. */
@@ -48,7 +48,9 @@ const DEFAULT_MARGIN_MM = 6;
  * rather than restated, because two printing paths that disagree about the
  * quiet zone would produce two different physical artefacts from one
  * declared size — and until r665 the only thing preventing that was that
- * nobody had edited one of the two copies.
+ * nobody had edited one of the two copies. It comes from
+ * `qr-quiet-zone.ts`, which imports nothing, so this writer stays the
+ * self-contained leaf its own header claims to be.
  */
 const DEFAULT_QUIET_FRACTION = QR_QUIET_ZONE_FRACTION;
 

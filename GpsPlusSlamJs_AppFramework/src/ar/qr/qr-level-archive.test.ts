@@ -60,7 +60,10 @@ describe('isWritableQrLevelId', () => {
     // two ever disagree, the decision path reports "safe" and the write
     // path throws - which is the opaque finish failure the draft guard was
     // added to prevent.
-    for (const bad of ['', '../evil', 'a/b', 'a\b', 'a b', 'a?b']) {
+    // `'a\\b'`, not `'a\b'`: in a JS string literal the latter is a
+    // BACKSPACE character, so the backslash the rule and the sidecar both
+    // name explicitly was never actually tested (M1/M3 review #6).
+    for (const bad of ['', '../evil', 'a/b', 'a\\b', 'a b', 'a?b']) {
       expect(isWritableQrLevelId(bad), bad).toBe(false);
       expect(() => qrLevelEntryName(bad), bad).toThrow(TypeError);
     }

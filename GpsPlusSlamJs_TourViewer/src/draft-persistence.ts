@@ -113,7 +113,15 @@ export async function readDraft(
   try {
     const parsed: unknown = JSON.parse(metaText);
     if (!isMeta(parsed)) return undefined;
-    meta = parsed;
+    // An unreadable LEVEL costs the measurement, not the walk. The two
+    // other meta fields say which tour a draft belongs to and how big the
+    // printed code is - without them the draft cannot be used at all - but
+    // a level that does not read is "this draft has no measurement yet",
+    // which is a shape the whole flow already supports. Discarding the
+    // draft instead would throw away every placement the creator made,
+    // which is the opposite of the rule two screens up: a record that does
+    // not read costs itself and nothing else (M1/M3 review #10).
+    meta = isLevel(parsed.level) ? parsed : { ...parsed, level: null };
   } catch {
     return undefined;
   }
@@ -164,8 +172,7 @@ function isMeta(value: unknown): value is DraftMeta {
   return (
     typeof record["tourUrl"] === "string" &&
     typeof record["sizeM"] === "number" &&
-    Number.isFinite(record["sizeM"]) &&
-    isLevel(record["level"])
+    Number.isFinite(record["sizeM"])
   );
 }
 
