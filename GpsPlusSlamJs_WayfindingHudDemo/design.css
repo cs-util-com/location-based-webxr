@@ -58,6 +58,16 @@
        Everything else is derived: translucent surface alphas, ONE
        accent, one quiet ring gray. */
     --ink: #fff;
+    /* the dim step below --ink, for secondary copy in a READ-THROUGH
+       document: a scrolling page needs a hierarchy an AR overlay does
+       not, and .hint differs from body text only in size. Measured
+       4.53:1 on --paper, so it clears AA; a literal because color-mix()
+       is unavailable here (the stylelint csstree validator predates it).
+       ANTI-USE: this is valid over --paper ONLY. Over the camera it is
+       near-invisible against an overexposed sky, and the brief requires
+       contrast against the WORST of the four backgrounds - a HUD reaches
+       for --ink, never this. */
+    --ink-dim: #8f8f8f;
     /* page ground: deep desaturated slate blue, from the dashboard
        reference (was neutral near-black) */
     --paper: #232838;
@@ -220,6 +230,9 @@
     --space-2: 8px;
     --space-3: 12px;
     --space-4: 16px;
+    /* the readable column for a document page (see .page). Not used by
+       any HUD: an overlay is positioned, not measured. */
+    --measure: 60rem;
     --radius: 14px; /* panels, toast & icon buttons */
     --radius-small: 10px; /* buttons */
     --radius-pill: 999px; /* grooves, pills, the switch track */
@@ -1239,6 +1252,125 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
+  }
+
+  /* ---- document atoms -------------------------------------------------
+     Added 2026-09-09 for the first adopter that is a scrolling DOCUMENT
+     rather than a HUD (the Tour Viewer's creator setup). Everything here
+     is class-scoped on purpose: vendor.mjs refreshes every adopter's
+     copy, so a bare `details`/`summary`/`input` rule would restyle apps
+     that never asked - OsmDemo builds .panel-feature summaries at
+     runtime. tests/repo-config/design-atoms-are-class-scoped.test.js
+     holds that line. */
+
+  /* The document ground. The base layer deliberately paints no
+     background ("an AR app's ground is the camera"), so a page that is
+     not an overlay opts in here and gets ground, centred measure and
+     gutter together - a background-only version would leave the page
+     full-bleed edge to edge on a desktop. */
+  .page {
+    background: var(--paper);
+    max-width: var(--measure);
+    margin: 0 auto;
+    padding: var(--space-4);
+  }
+
+  /* A disclosure card. Hosted by <details> OR any block element - a step
+     that is always open is a <section> - so nothing here selects
+     `details`. Edge language is the system's: surface + raise, never an
+     outline (the brief: "shadows … borders do not exist"). */
+  .step {
+    display: block;
+    position: relative;
+    overflow: hidden;
+    /* two paint layers, as .plate: surface fills the padding box, the
+       edge gradient paints the transparent 1px ring */
+    border: 1px solid transparent;
+    background:
+      var(--surface-gradient) padding-box,
+      var(--edge-gradient) border-box;
+    border-radius: var(--radius);
+    box-shadow: var(--raise);
+    padding: var(--space-3);
+    margin-block: var(--space-3);
+  }
+
+  /* The row you click. A summary label is short and SCANNED, so it takes
+     the UI voice; the body below is read, and stays prose. */
+  .step > summary {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-weight: var(--weight-strong);
+    text-transform: var(--case-ui);
+    letter-spacing: var(--tracking-ui);
+    cursor: pointer;
+  }
+
+  /* A heading inside the summary must not become a block, or the
+     disclosure row breaks into two lines. */
+  .step > summary > h1,
+  .step > summary > h2,
+  .step > summary > h3 {
+    display: inline;
+    font-size: inherit;
+    font-weight: inherit;
+    letter-spacing: inherit;
+  }
+
+  .step-icon {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--space-4);
+    height: var(--space-4);
+    color: var(--accent);
+  }
+
+  .step-body {
+    text-transform: var(--case-prose);
+    letter-spacing: var(--tracking-prose);
+    margin-block-start: var(--space-2);
+  }
+
+  /* The text/number sibling of .select: same surface, radius, raise and
+     tap height. NOT its case - .select dresses app-authored option text,
+     .input carries what the user TYPED, and uppercasing a pasted share
+     link is not a style choice. */
+  .input {
+    background: var(--surface-gradient);
+    color: var(--ink);
+    border: none;
+    border-radius: var(--radius-small);
+    box-shadow: var(--raise);
+    min-height: var(--tap);
+    padding: 0 var(--space-3);
+    font-family: inherit;
+    font-size: var(--size-body);
+    text-transform: var(--case-prose);
+    letter-spacing: var(--tracking-prose);
+  }
+
+  .input::placeholder {
+    color: var(--ink-dim);
+  }
+
+  /* Secondary copy in a document. Chooses the prose voice pair rather
+     than overriding text-transform, per DEC-L2-2. */
+  .hint--dim {
+    color: var(--ink-dim);
+  }
+
+  /* A button whose label is a SENTENCE, not a label. The brief:
+     "sentence case … for anything that is read rather than scanned.
+     Uppercase is measurably slower to read." A document's buttons say
+     "Continue with GPS only (less accurate)", which is read. Chooses the
+     prose token pair - never a bare text-transform (DEC-L2-2). */
+  .btn--prose {
+    text-transform: var(--case-prose);
+    letter-spacing: var(--tracking-prose);
+    font-weight: var(--weight-body);
   }
 }
 
