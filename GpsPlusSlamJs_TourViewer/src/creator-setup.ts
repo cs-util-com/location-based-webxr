@@ -189,6 +189,11 @@ export function wireCreatorSetup(deps: {
    * files), reset when the tour closes, and never shared between tours.
    */
   let draftRejected: readonly string[] = [];
+  /** The last meta write, so the next one queues behind it. Every write
+   *  targets the same key and the mint and finish ones are unawaited, so
+   *  an earlier one landing later would overwrite a newer one - including
+   *  a rejection (PR #456 review). */
+  let metaWrite: Promise<boolean> = Promise.resolve(true);
   /** The creator-facing url of the open tour, for later draft writes. */
   let draftTourUrl: string | null = null;
   /** What a draft is offering, until the creator answers. */
@@ -278,7 +283,7 @@ export function wireCreatorSetup(deps: {
     // only assigned at AR entry, so before the first session it still holds
     // the previous tour's value.
     const sizeM = Number(dom.sizeInput.value);
-    return writeDraftMeta(store, {
+    const meta = {
       tourUrl,
       sizeM:
         Number.isFinite(sizeM) && sizeM > 0 ? sizeM : AUTHOR_DEFAULT_SIZE_M,
@@ -289,7 +294,13 @@ export function wireCreatorSetup(deps: {
       // read. (NOT on each placement - `recordPlacement` writes the object
       // file only and never reaches here; PR #456 review.)
       rejected: draftRejected,
-    });
+    };
+    // Values captured NOW, write ordered by call. `catch` keeps one refused
+    // write from breaking the chain for the rest of the session.
+    metaWrite = metaWrite
+      .catch(() => false)
+      .then(() => writeDraftMeta(store, meta));
+    return metaWrite;
   }
 
   dom.panel.hidden = !creator;
@@ -592,12 +603,23 @@ export function wireCreatorSetup(deps: {
     // right branch: with no meta write there is no commit point, and
     // deleting without one is the shape that lost work four times.
     if (tourUrl === null) return;
+    // Assigned BEFORE the call, not after: a mint or finish issued in the
+    // same tick must carry the rejection too, or its write would drop it.
+    const wasRejected = draftRejected;
     draftRejected = rejectedIds;
     // Dispatched SYNCHRONOUSLY, before any await, so no reload can land
     // between the tap and the write.
     const committed = recordMeta(tourUrl);
     void (async () => {
       if (!(await committed)) {
+        // Not on disk, so it must not stay in memory: a later mint or
+        // finish would write it and commit a discard this branch is about
+        // to report as failed. Only when this tour is still the open one -
+        // a tour change has already reset the list from its own read
+        // (PR #456 review).
+        if (draftStore === store && draftTourUrl === tourUrl) {
+          draftRejected = wasRejected;
+        }
         // ITS OWN NOTE, AND UNGATED. The first version of this branch
         // called `noteNoPersistence`, which is wrong twice over
         // (PR #456 review):

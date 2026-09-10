@@ -98,17 +98,34 @@ function fakeDom(): Record<(typeof DOM_KEYS)[number], FakeEl> {
  *  settles - which is the property these tests exist to hold. */
 function memoryStore(
   seed: Record<string, string> = {},
-  options: { removeNeverSettles?: boolean; putFails?: boolean } = {},
+  options: {
+    removeNeverSettles?: boolean;
+    putFails?: boolean;
+    holdFirstPut?: boolean;
+  } = {},
 ): {
   store: DraftFileStore;
   files: Map<string, unknown>;
+  releaseHeldPut: () => void;
 } {
   const files = new Map<string, unknown>(Object.entries(seed));
+  let held: (() => void) | null = null;
+  let released = false;
   const store: DraftFileStore = {
     put: (key: string, data: unknown) => {
       // A store that REFUSES, as the real one does on a quota wall or a
       // revoked directory handle: `put` reports false rather than throwing.
       if (options.putFails === true) return Promise.resolve(false);
+      // A store that is SLOW on its first write, so a test can decide when
+      // that write lands relative to later ones.
+      if (options.holdFirstPut === true && held === null && !released) {
+        return new Promise<boolean>((resolve) => {
+          held = () => {
+            files.set(key, data);
+            resolve(true);
+          };
+        });
+      }
       files.set(key, data);
       return Promise.resolve(true);
     },
@@ -134,7 +151,15 @@ function memoryStore(
       return Promise.resolve();
     },
   };
-  return { store, files };
+  return {
+    store,
+    files,
+    releaseHeldPut: () => {
+      released = true;
+      held?.();
+      held = null;
+    },
+  };
 }
 
 function pin(id: string): TourObject {
@@ -414,6 +439,54 @@ describe("the rejection is committed by the meta write", () => {
     await settle();
 
     expect(ctx.placementNote).toContain("Could not delete the saved draft");
+  });
+
+  it("lets the newer meta write win, even when an older one is still in flight", async () => {
+    // Why this test matters: every meta write targets ONE key, and the
+    // mint, finish and tour-open writes are never awaited. An older write
+    // landing later overwrites a newer one - and when the newer one is the
+    // discard, the draft the creator just rejected comes back
+    // (PR #456 review, CodeRabbit).
+    const { store, files, releaseHeldPut } = memoryStore(
+      {},
+      { holdFirstPut: true },
+    );
+    const { dom, setup } = wire(store);
+
+    // Open one: no draft yet, so the open records the meta - and that write
+    // is HELD, still in flight, carrying an empty rejection list.
+    setup.presentDraftForTour(TOUR);
+    await settle();
+
+    // The draft open two finds, as a previous session would have left it.
+    files.set(
+      META_KEY,
+      JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+    );
+    files.set(objectKey("old-pin"), JSON.stringify(pin("old-pin")));
+
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    dom.draftDiscard.click();
+    await settle();
+
+    // The held write lands LAST. Unqueued, it would overwrite the rejection
+    // with the empty list it captured back at open one.
+    releaseHeldPut();
+    await settle();
+
+    // Asserted on the META, not on what `readDraft` returns. The first
+    // version of this test read the draft back and passed with the chain
+    // REMOVED: the discard had already deleted the object file, so the
+    // resurrected meta had nothing left to point at. What the ordering
+    // decides is this list, so this list is what the test reads.
+    const written = JSON.parse(String(files.get(META_KEY))) as {
+      rejected?: readonly string[];
+    };
+    expect(
+      written.rejected,
+      "a stale write must not overwrite the committed rejection",
+    ).toEqual(["old-pin"]);
   });
 
   it("sweeps a rejection whose deletes never finished, on the next open", async () => {
