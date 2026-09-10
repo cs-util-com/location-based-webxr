@@ -211,4 +211,14 @@ describe("the poster range a print covers", () => {
     // poster is 5.
     expect(highestPoster(3, 3)).toBeGreaterThan(Math.max(3, 3));
   });
+
+  it("covers every set this app can print", () => {
+    // The scan budget was an arbitrary 24 and the poster cap is 50, so a
+    // legal set - 50 posters, a measurement on poster 30 - fell outside
+    // the range that was checked and the warning fired at a creator who
+    // had changed nothing. The budget is the cap now, so no set the app
+    // will produce can land outside it (PR #444 review).
+    expect(highestPoster(1, MAX_PRINTED_CODES)).toBe(MAX_PRINTED_CODES);
+    expect(highestPoster(1, MAX_PRINTED_CODES)).toBeGreaterThan(24);
+  });
 });

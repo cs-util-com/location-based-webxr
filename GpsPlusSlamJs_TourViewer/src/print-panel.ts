@@ -90,6 +90,19 @@ export function printUrlDisplay(tourUrl: string | null): {
  */
 export const MAX_PRINTED_CODES = 50;
 
+/**
+ * How many code numbers the orphaning check will hash before giving up.
+ *
+ * It matches the poster cap, so every set this app can actually print is
+ * fully covered. Past it the check STAYS SILENT rather than guessing: a
+ * half-scanned range can only produce a FALSE warning, and telling a
+ * creator to undo a change they never made is worse than saying nothing.
+ * An arbitrary cap of 24 did exactly that inside the app's own limits -
+ * 50 posters is a legal set, and a measurement on poster 30 read as
+ * unreachable (PR #444 review).
+ */
+const MAX_ORPHAN_SCAN_CODES = MAX_PRINTED_CODES;
+
 /** The PDF button's labels through its async cycle (async-UI rule). */
 const PDF_LABELS = {
   idle: "Download PDF to print",
@@ -386,9 +399,6 @@ async function orphanWarningFor(
   if (measured.length === 0) return null;
   const { codeIndex } = codeIndexFromInput(dom.codeInput.value);
   const url = dom.urlInput.value.trim();
-  // Bounded: a creator with more posters than this and a measurement on
-  // none of the first few gets a warning they can ignore, which is a far
-  // better failure than hashing an unbounded list on a phone.
   // The posters this creator prints are `codeIndex .. codeIndex + count - 1`
   // (that is what the PDF numbers), so the highest one ADDS rather than
   // maxes: with a start of 3 and a count of 3 the posters are 3, 4, 5, and
@@ -396,13 +406,22 @@ async function orphanWarningFor(
   // unreachable and the warning fired on a creator who had changed nothing
   // (PR #443 review).
   const { count } = printCountFromInput(dom.countInput.value);
-  const highest = Math.min(codeIndex + count - 1, 24);
+  const highest = codeIndex + count - 1;
   try {
-    const linkCodeIds = await Promise.all(
-      Array.from({ length: highest }, (_, i) =>
-        planPrintCode(url, { codeIndex: i + 1 }).then((p) => qrCodeId(p.url)),
-      ),
-    );
+    // One at a time, stopping at the FIRST match. A tour with one code
+    // costs one hash, which is the common case; the whole walk happens
+    // only when nothing matches - that is, only when the warning is about
+    // to fire anyway.
+    const linkCodeIds: string[] = [];
+    for (let index = 1; index <= highest; index += 1) {
+      if (index > MAX_ORPHAN_SCAN_CODES) return null;
+      // Sequential on purpose, and the early exit is the point: the
+      // common tour has one code, so this awaits once.
+      const plan = await planPrintCode(url, { codeIndex: index });
+      const id = await qrCodeId(plan.url);
+      if (measured.includes(id)) return null;
+      linkCodeIds.push(id);
+    }
     return reprintOrphanWarning(linkCodeIds, measured);
   } catch {
     // No Web Crypto, or a payload that will not plan. Either way this

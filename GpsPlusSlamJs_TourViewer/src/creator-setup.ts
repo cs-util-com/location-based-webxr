@@ -536,7 +536,22 @@ export function wireCreatorSetup(deps: {
     // reload mid-clear must find NO draft rather than the one they just
     // discarded. That race was live and intermittent - about one run in
     // six of the e2e that discards and reopens (PR #443 review round).
-    void store.clear(META_KEY);
+    void store.clear(META_KEY).then(() => {
+      // The gate file is REWRITTEN, as the spent-draft path does. Without
+      // it the store stays set and every later placement writes an object
+      // file into a namespace with no meta - and `readDraft` treats a
+      // missing meta as "no draft", so everything placed after the tap is
+      // unrecoverable. Nothing would have said so either: the
+      // no-persistence notice fires when a write FAILS, and these writes
+      // succeed (PR #444 review).
+      //
+      // Discarding means "throw away what I placed so far", never "stop
+      // saving what I place next".
+      // `draftTourUrl` is the CREATOR-FACING url the store is keyed by,
+      // and it is nulled when a tour closes - so a discard whose clear
+      // settles after the creator has moved on writes nothing.
+      if (draftTourUrl !== null) recordMeta(draftTourUrl);
+    });
   });
 
   dom.pinButton.addEventListener("click", () => {
