@@ -59,7 +59,7 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   creator is told, in its OWN words and every time, because a discard that
   silently did not happen is met again on the next open with no
   explanation. Deliberately NOT the shared "not saving a backup copy"
-  notice: that one fires once per wiring, so a earlier refused write would
+  notice: that one fires once per wiring, so an earlier refused write would
   have left this branch mute, and its wording says nothing about the draft
   the creator just tapped Delete on. So an interrupted or failing sweep cannot
   bring the draft back, and a reload before the

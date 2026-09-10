@@ -489,6 +489,39 @@ describe("the rejection is committed by the meta write", () => {
     ).toEqual(["old-pin"]);
   });
 
+  it("does not let a stalled tour block the next one's discard", async () => {
+    // Why this test matters: the write chain that fixes the ordering also
+    // makes every later meta write wait on the earliest. A `put` that never
+    // SETTLES is not caught by `catch`, so without a reset at tour close a
+    // single stalled write would block every discard for the life of the
+    // page - neither deleting nor reporting, which is worse than the race
+    // the chain was added to close (PR #457 review).
+    const { store, files } = memoryStore({}, { holdFirstPut: true });
+    const { dom, setup } = wire(store);
+
+    // Tour one: no draft, so the open records the meta - and that write is
+    // held forever. It is never released in this test.
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    setup.resetFinishStep();
+
+    // Tour two, with a draft to reject.
+    files.set(
+      META_KEY,
+      JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+    );
+    files.set(objectKey("old-pin"), JSON.stringify(pin("old-pin")));
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    dom.draftDiscard.click();
+    await settle();
+
+    expect(
+      files.has(objectKey("old-pin")),
+      "the discard must not be waiting on the previous tour's stalled write",
+    ).toBe(false);
+  });
+
   it("sweeps a rejection whose deletes never finished, on the next open", async () => {
     // The files of an interrupted sweep have no other collector: the offer
     // never shows them again, and `clear` lost its last caller. Without
