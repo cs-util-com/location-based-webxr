@@ -194,6 +194,10 @@ export function wireCreatorSetup(deps: {
    *  an earlier one landing later would overwrite a newer one - including
    *  a rejection (PR #456 review). */
   let metaWrite: Promise<boolean> = Promise.resolve(true);
+  /** The tour `metaWrite` is ordering. The chain belongs to the NAMESPACE,
+   *  not to the session, so it is reset when the tour changes and kept
+   *  across a close-and-reopen of the same one (PR #458 review). */
+  let metaWriteTour: string | null = null;
   /** The creator-facing url of the open tour, for later draft writes. */
   let draftTourUrl: string | null = null;
   /** What a draft is offering, until the creator answers. */
@@ -1079,11 +1083,6 @@ export function wireCreatorSetup(deps: {
       draftStore = undefined;
       draftTourUrl = null;
       draftRejected = [];
-      // The chain goes with the tour. A `put` that never settles would
-      // otherwise block every later meta write for the life of the page -
-      // including a discard's, which would then neither delete nor report
-      // (PR #457 review).
-      metaWrite = Promise.resolve(true);
     },
     presentDraftForTour: (tourUrl) => {
       if (!creator) return; // a visitor authors nothing
@@ -1100,6 +1099,19 @@ export function wireCreatorSetup(deps: {
         if (stale()) return;
         draftStore = store;
         draftTourUrl = tourUrl;
+        // A DIFFERENT tour is a different directory, so nothing it writes
+        // is ordered against this one - and a `put` that never settles
+        // must not block it for the life of the page (PR #457 review).
+        // The SAME tour keeps the chain: closing and reopening one link is
+        // a real path, and a slow write from before the close still
+        // targets this directory. Dropping the chain there let it land
+        // after a later mint and clobber the measurement with the null it
+        // captured - the creator's walk to the poster, lost (PR #458
+        // review).
+        if (metaWriteTour !== tourUrl) {
+          metaWrite = Promise.resolve(true);
+          metaWriteTour = tourUrl;
+        }
         if (store === undefined) {
           // No persistence at all - a browser without OPFS, blocked site
           // data, a quota wall. The creator must hear it ONCE, here: this

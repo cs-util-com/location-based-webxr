@@ -53,9 +53,13 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   poster again; the size is rewritten from the framework default on every
   load, so without it a re-entry would solve against 16 cm for a poster
   printed at 20. A live measurement wins over a drafted one - it is newer.
-- **"Delete it" is committed by ONE meta write.** The handler records the
-  rejected ids in the meta file and only then removes their object files,
-  and it does not remove anything if that write failed - in which case the
+- **"Delete it" is committed by ONE meta write, and undone by a second if
+  that one fails.** The handler records the rejected ids in the meta file
+  and only then removes their object files. If the write does not land, the
+  in-memory rejection is restored AND re-written behind any snapshot a mint
+  or finish already took - best-effort, since the store that refused may
+  refuse again - so a queued write cannot commit a discard the creator was
+  told had failed. It removes nothing in that case - and the
   creator is told, in its OWN words and every time, because a discard that
   silently did not happen is met again on the next open with no
   explanation. Deliberately NOT the shared "not saving a backup copy"

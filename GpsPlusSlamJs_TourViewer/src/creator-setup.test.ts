@@ -107,15 +107,18 @@ function memoryStore(
   store: DraftFileStore;
   files: Map<string, unknown>;
   putKeys: string[];
+  metaPuts: string[];
   releaseHeldPut: () => void;
 } {
   const files = new Map<string, unknown>(Object.entries(seed));
   const putKeys: string[] = [];
+  const metaPuts: string[] = [];
   let held: (() => void) | null = null;
   let released = false;
   const store: DraftFileStore = {
     put: (key: string, data: unknown) => {
       putKeys.push(key);
+      if (key === META_KEY && typeof data === "string") metaPuts.push(data);
       // A store that REFUSES, as the real one does on a quota wall or a
       // revoked directory handle: `put` reports false rather than throwing.
       if (options.putFails === true) return Promise.resolve(false);
@@ -158,6 +161,7 @@ function memoryStore(
     store,
     files,
     putKeys,
+    metaPuts,
     releaseHeldPut: () => {
       released = true;
       held?.();
@@ -214,6 +218,15 @@ async function settle(): Promise<void> {
 }
 
 const TOUR = "https://example.test/tour.zip";
+const OTHER_TOUR = "https://example.test/other-tour.zip";
+
+/** The `rejected` list of a written meta payload. */
+function rejectedOf(json: string | undefined): readonly string[] {
+  return (
+    (JSON.parse(String(json)) as { rejected?: readonly string[] }).rejected ??
+    []
+  );
+}
 
 describe("rejecting a draft deletes what was rejected, and nothing else", () => {
   it("deletes the draft's objects and leaves one placed after it was read", async () => {
@@ -423,7 +436,7 @@ describe("the rejection is committed by the meta write", () => {
     // mint mid-discard needs a stable QR pose, an alignment matrix and a
     // zero reference, which is far more scaffolding than the one line it
     // would guard.
-    const { store, putKeys } = memoryStore(
+    const { store, metaPuts } = memoryStore(
       {
         [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
         [objectKey("old-pin")]: JSON.stringify(pin("old-pin")),
@@ -434,15 +447,21 @@ describe("the rejection is committed by the meta write", () => {
 
     setup.presentDraftForTour(TOUR);
     await settle();
-    const before = putKeys.filter((k) => k === META_KEY).length;
-
     dom.draftDiscard.click();
     await settle();
 
+    // The CONTENT, not the count. Written as a count first, this test passed
+    // with the restore itself deleted - two writes still happened, the
+    // second one re-committing the very rejection the branch reports as
+    // failed. The extra write is only the delivery; the restored list is
+    // the fix (PR #458 review).
+    expect(rejectedOf(metaPuts.at(-2)), "the attempt that failed").toEqual([
+      "old-pin",
+    ]);
     expect(
-      putKeys.filter((k) => k === META_KEY).length - before,
-      "the discard's own write, and the compensating one behind it",
-    ).toBe(2);
+      rejectedOf(metaPuts.at(-1)),
+      "and the one behind it, carrying the list back",
+    ).toEqual([]);
   });
 
   it("still speaks when the shared persistence notice has been used up", async () => {
@@ -528,7 +547,7 @@ describe("the rejection is committed by the meta write", () => {
     ).toEqual(["old-pin"]);
   });
 
-  it("does not let a stalled tour block the next one's discard", async () => {
+  it("does not let a stalled tour block a DIFFERENT tour's discard", async () => {
     // Why this test matters: the write chain that fixes the ordering also
     // makes every later meta write wait on the earliest. A `put` that never
     // SETTLES is not caught by `catch`, so without a reset at tour close a
@@ -540,11 +559,12 @@ describe("the rejection is committed by the meta write", () => {
 
     // Tour one: no draft, so the open records the meta - and that write is
     // held forever. It is never released in this test.
-    setup.presentDraftForTour(TOUR);
+    setup.presentDraftForTour(OTHER_TOUR);
     await settle();
     setup.resetFinishStep();
 
-    // Tour two, with a draft to reject.
+    // A DIFFERENT tour, with a draft to reject. Different tour, different
+    // OPFS namespace, so nothing it writes is ordered against tour one's.
     files.set(
       META_KEY,
       JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
@@ -559,6 +579,48 @@ describe("the rejection is committed by the meta write", () => {
       files.has(objectKey("old-pin")),
       "the discard must not be waiting on the previous tour's stalled write",
     ).toBe(false);
+  });
+
+  it("keeps the ordering across a close and reopen of the SAME tour", async () => {
+    // Why this test matters: the reset that stops a stalled tour blocking
+    // the next one must not be applied to the same tour reopened. That is
+    // the same OPFS directory, and reopening one link after a finish is a
+    // real path - so a slow write from before the close still targets it.
+    // On a fresh chain it lands after the reopened tour's writes and
+    // clobbers them with the values it captured before (PR #458 review).
+    const { store, files, releaseHeldPut } = memoryStore(
+      {},
+      { holdFirstPut: true },
+    );
+    const { dom, setup } = wire(store);
+
+    // Open: no draft, so the meta is recorded - and that write is held.
+    setup.presentDraftForTour(TOUR);
+    await settle();
+
+    // Closed, then the SAME link reopened, now with a draft on disk.
+    setup.resetFinishStep();
+    files.set(
+      META_KEY,
+      JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+    );
+    files.set(objectKey("old-pin"), JSON.stringify(pin("old-pin")));
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    dom.draftDiscard.click();
+    await settle();
+
+    releaseHeldPut();
+    await settle();
+
+    // Read what is ON DISK, not the order the writes were ISSUED.
+    // Written against `metaPuts` first, this passed with the scoping
+    // removed: the issue order never changes, only the landing order does,
+    // and the held write only reaches `files` when released.
+    expect(
+      rejectedOf(String(files.get(META_KEY))),
+      "the write from before the close must not land last",
+    ).toEqual(["old-pin"]);
   });
 
   it("sweeps a rejection whose deletes never finished, on the next open", async () => {
