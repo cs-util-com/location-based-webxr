@@ -189,3 +189,26 @@ describe("the printable PDF's inputs (second testing session, M4)", () => {
     );
   });
 });
+
+describe("the poster range a print covers", () => {
+  // Why this test matters: the orphaning warning asks whether any
+  // measurement is still reachable from the current link, and to ask that
+  // it has to know which code NUMBERS this creator prints. The PDF numbers
+  // them `startIndex .. startIndex + count - 1`, so the highest is a SUM.
+  // Taking the max instead covered 1..3 for a creator starting at 3 with
+  // three posters - whose posters are 3, 4 and 5 - so a measurement on
+  // code 5 looked unreachable and the warning fired at someone who had
+  // changed nothing (PR #443 review).
+  const highestPoster = (startIndex: number, count: number): number =>
+    startIndex + count - 1;
+
+  it("ends at start + count - 1, not at whichever input is larger", () => {
+    expect(highestPoster(3, 3)).toBe(5);
+    expect(highestPoster(1, 1)).toBe(1);
+    expect(highestPoster(1, 6)).toBe(6);
+    expect(highestPoster(7, 2)).toBe(8);
+    // The shape that was wrong: max(3, 3) is 3, and the creator's last
+    // poster is 5.
+    expect(highestPoster(3, 3)).toBeGreaterThan(Math.max(3, 3));
+  });
+});

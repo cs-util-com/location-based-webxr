@@ -64,6 +64,7 @@ import {
   restoreOfferText,
 } from "./authoring-draft.js";
 import {
+  META_KEY,
   readDraft,
   writeDraftMeta,
   writeDraftObject,
@@ -529,7 +530,13 @@ export function wireCreatorSetup(deps: {
     if (store === undefined) return;
     // The one way a creator can throw a draft away deliberately - and the
     // escape hatch for a draft that would otherwise be offered forever.
-    void store.clear();
+    //
+    // The META file goes first (`clear`'s own argument), because this is
+    // fire-and-forget and the creator may reload before it finishes: a
+    // reload mid-clear must find NO draft rather than the one they just
+    // discarded. That race was live and intermittent - about one run in
+    // six of the e2e that discards and reopens (PR #443 review round).
+    void store.clear(META_KEY);
   });
 
   dom.pinButton.addEventListener("click", () => {
@@ -1004,11 +1011,15 @@ export function wireCreatorSetup(deps: {
           // SPENT: the hosted zip carries every object AND the measurement.
           // That is the only proof the content reached the file the world
           // sees, and the only thing that deletes a draft.
-          await store.clear();
+          // No re-open. It existed only because `clear` used to remove the
+          // namespace directory and invalidate this handle; the store now
+          // empties in place and stays usable. Re-opening would carry the
+          // same failure forward: `openDraftStore` returns undefined on any
+          // transient refusal, and assigning that over a WORKING store turns
+          // persistence off for the rest of the tour, silently (PR #443
+          // review).
+          await store.clear(META_KEY);
           if (stale()) return;
-          const reopened = await openDraftStore(draftKeyForTour(tourUrl));
-          if (stale()) return;
-          draftStore = reopened;
           recordMeta(tourUrl);
           return;
         }

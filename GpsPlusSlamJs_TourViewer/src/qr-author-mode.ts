@@ -326,8 +326,12 @@ export function finishHandoffStatus(
  * and simply waits out the scan gate into a location-only experience. The
  * creator's walk is gone and nothing tells them.
  *
- * That is reachable today with no new feature, which is why it is fixed
- * here rather than waiting on the shortener decision it also blocks.
+ * Reachable today with no new feature, which is why it is fixed here
+ * rather than waiting on the shortener decision it also blocks. The
+ * trigger, precisely: moving the hosted file breaks the LINK, which is a
+ * LOUD failure - a visitor gets a dead URL. What strands a measurement
+ * quietly is changing the link and then RE-PRINTING, because only then
+ * does the printed text, and with it the identity, change.
  *
  * It WARNS rather than refuses. Re-printing under a new link is a
  * legitimate thing to do - it is the whole point of the shortener - and

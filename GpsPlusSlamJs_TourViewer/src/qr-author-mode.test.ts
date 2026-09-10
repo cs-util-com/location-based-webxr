@@ -347,9 +347,10 @@ describe("printing a code that would strand an existing measurement", () => {
    * The creator's walk is gone; nothing anywhere tells them, and the app
    * behaves exactly as it does for a code nobody ever measured.
    *
-   * It is reachable today with no new feature, by a creator who simply
-   * moves their hosted file - which is why this exists before the
-   * shortener decision that also depends on it.
+   * It is reachable today with no new feature, by any creator who changes
+   * their link and re-prints - which is why this exists before the
+   * shortener decision that also depends on it. Moving the hosted file
+   * alone is NOT this bug: that breaks the link, and a dead URL is loud.
    */
   it("says nothing when there is nothing to lose", () => {
     // The common case, and the one that must never nag: every tour before

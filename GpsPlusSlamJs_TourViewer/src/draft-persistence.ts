@@ -29,7 +29,10 @@ import type { AuthoringDraft } from "./authoring-draft.js";
 
 /** The draft's one non-object file: the tour it belongs to, the printed
  *  size, and the measured level. */
-const META_KEY = "meta";
+/** The file that decides whether a draft EXISTS: no meta, no draft. Also
+ *  what `clearDraft` deletes first, so a reload racing a discard cannot
+ *  find the draft that was just thrown away. */
+export const META_KEY = "meta";
 const OBJECT_PREFIX = "object:";
 const PHOTO_PREFIX = "photo:";
 

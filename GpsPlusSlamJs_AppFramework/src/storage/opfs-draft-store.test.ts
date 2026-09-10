@@ -72,7 +72,18 @@ function fakeDirectory(
     // eslint-disable-next-line @typescript-eslint/require-await
     async *keys() {
       if (options.failList === true) throw new Error('listing broke');
-      for (const name of files.keys()) yield name;
+      // Index-based over the LIVE list, which is how a real directory
+      // enumerator behaves: remove the entry just yielded and the next one
+      // shifts into its place and is SKIPPED. A Map iterator tolerates
+      // deletion and keeps going, so the friendlier version of this fake
+      // could not show that emptying a directory while iterating it leaves
+      // entries behind - a discarded draft kept its meta file and was
+      // offered again. Only the e2e caught that; now this can.
+      for (let i = 0; i < files.size; i++) {
+        const name = [...files.keys()][i];
+        if (name === undefined) return;
+        yield name;
+      }
     },
     removeEntry(name: string) {
       removed.push(name);
@@ -146,6 +157,20 @@ describe('the draft file store', () => {
     expect(await createDraftFileStore(dir).keys()).toEqual(['mine']);
   });
 
+  it('empties EVERY entry, not every other one', async () => {
+    // Why this test matters: `clear` walked the directory and removed as it
+    // went, which mutates the collection the enumerator is walking - so
+    // roughly half the entries survived, including the meta file that
+    // decides whether a draft is offered. A creator who tapped Discard was
+    // offered the same draft again on the next open.
+    const dir = fakeDirectory();
+    const store = createDraftFileStore(dir);
+    for (const key of ['a', 'b', 'c', 'd', 'e']) await store.put(key, 'x');
+    await store.clear();
+    expect(await store.keys()).toEqual([]);
+    expect(dir.files.size).toBe(0);
+  });
+
   it('empties its directory rather than removing it, so the store still works after', async () => {
     // Why this test matters: removing the namespace directory invalidates
     // the handle the store closed over, and it was doing exactly that.
@@ -167,15 +192,6 @@ describe('the draft file store', () => {
     // ...and the store is still usable, which is the whole point.
     expect(await store.put('c', 'z')).toBe(true);
     expect(await store.keys()).toEqual(['c']);
-  });
-
-  it('clears file by file when it does not own the directory', async () => {
-    const dir = fakeDirectory();
-    const store = createDraftFileStore(dir);
-    await store.put('a', 'x');
-    await store.put('b', 'y');
-    await store.clear();
-    expect(dir.files.size).toBe(0);
   });
 
   it('reports no store at all when OPFS refuses, instead of throwing', async () => {
