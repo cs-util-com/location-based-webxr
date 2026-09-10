@@ -600,6 +600,19 @@ export function wireCreatorSetup(deps: {
       // deleted by the clear after reporting success. Re-writing every
       // live placement AFTER the clear settles covers that too, because
       // the re-write is what lands last.
+      //
+      // RESIDUAL, on the record rather than reading as fully closed (PR
+      // #448 review): between the clear resolving and these `put`s
+      // landing, this session's pins exist only in `ctx.placedObjects`. A
+      // reload in that window finds no meta (it is deleted first, by
+      // design) and no object files, so those pins are lost - the same
+      // loss, narrowed from "until the next crash" to a few hundred
+      // milliseconds. Closing it properly means deleting only the rejected
+      // draft's ids instead of emptying the namespace, which needs a
+      // per-key delete `DraftFileStore` does not have, and a decision
+      // about the hosted-but-still-on-disk objects that `clear` currently
+      // collects. Designed in
+      // `2026-09-10-1050-per-key-draft-delete-plan.md`.
       for (const stillLive of ctx.placedObjects) {
         recordPlacement(stillLive.object, stillLive.blob);
       }
@@ -1088,23 +1101,28 @@ export function wireCreatorSetup(deps: {
           await store.clear(META_KEY);
           if (stale()) return;
           recordMeta(tourUrl);
-          // NO re-write of live placements here, unlike the discard
-          // handler, and the reason is an invariant rather than a
-          // difference in what `clear` does - it empties the WHOLE
-          // namespace in both places.
+          // The same re-write as the discard handler, for the same reason:
+          // `clear` empties the WHOLE namespace and cannot tell the spent
+          // draft's files from ones written seconds ago.
           //
-          // This runs at tour OPEN. `archive-open` resets both
-          // `placedObjects` and `mintedLevel`, and placement is gated on a
-          // minted level, so nothing can have been placed before the awaits
-          // above settle. The list is provably empty, and a loop over it
-          // would be code no test could ever exercise.
+          // This runs at tour OPEN, so the list is USUALLY empty - but not
+          // provably, and an earlier version of this comment claimed it was
+          // (PR #448 review). `draftStore` is assigned BEFORE the
+          // `readDraft` and `hostedLevelJson` awaits above, and
+          // `hostedLevelJson` reads a zip entry - a network round trip for a
+          // remote archive, not a microsecond. Neither the mint button nor
+          // `placementAllowed()` is gated on that chain settling, so a
+          // creator with an AR session already up and the poster already
+          // framed can mint and place inside that window, and those object
+          // files are here when the clear runs.
           //
-          // WHAT WOULD BREAK IT: making this path reachable later in a
-          // session, or allowing placement without a mint. Either one turns
-          // this into the bug the discard handler shipped for three rounds -
-          // files deleted while their objects stay on screen, with nothing
-          // to say so. If you change either, copy the re-write from the
-          // discard handler down here.
+          // The guard was temporal - humans are slower than OPFS - and a
+          // temporal guard written down as a structural one is how the
+          // discard handler shipped this same loss for three rounds. The
+          // loop costs nothing when the list really is empty.
+          for (const stillLive of ctx.placedObjects) {
+            recordPlacement(stillLive.object, stillLive.blob);
+          }
           return;
         }
         const hasLevel = draftHasUnhostedLevel(stored.draft, hostedLevel);
