@@ -66,15 +66,21 @@ const frameworkDir = resolve(repoRoot, 'GpsPlusSlamJs_AppFramework');
  */
 export function hasVersionHeading(changelog, version) {
   const escaped = version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  // `[ \t]` rather than `\s`, which matches NEWLINES: with `\s*` a bare
-  // `##` line followed by a line beginning with the version passes with no
-  // heading present at all. And a NEGATIVE LOOKAHEAD rather than "whitespace
-  // follows", so the separator really is free-form - `## [1.24.0]-2026-09-05`
-  // counts - while a longer version that merely starts with this one still
-  // does not (PR #461 review).
-  return new RegExp(`^##[ \\t]*\\[?${escaped}\\]?(?![\\d.])`, 'm').test(
-    changelog
-  );
+  // Three things this pattern has to get right, each learned from a review:
+  //
+  // - `[ \t]` rather than `\s`, which matches NEWLINES. With `\s*` a bare
+  //   `##` line followed by a line beginning with the version passed with no
+  //   heading present at all (PR #461).
+  // - The brackets are an ALTERNATION, not two independent optionals.
+  //   `\[?…\]?` accepted the malformed `## 1.24.0]` (PR #461, second pass).
+  // - A negative lookahead rather than "whitespace follows", so the
+  //   separator really is free-form - `## [1.24.0]-2026-09-05` counts -
+  //   while `## 1.2.50` is still not an entry for 1.2.5, and a stray `]`
+  //   after a bare version is still refused.
+  return new RegExp(
+    `^##[ \\t]*(?:\\[${escaped}\\]|${escaped})(?![\\d.\\]])`,
+    'm'
+  ).test(changelog);
 }
 
 describe('AppFramework CHANGELOG covers the released version', () => {
@@ -103,6 +109,9 @@ describe('AppFramework CHANGELOG covers the released version', () => {
     );
     // A separator with no space before it is still a heading.
     expect(hasVersionHeading('## [1.24.0]-2026-09-05\n', '1.24.0')).toBe(true);
+    // A version with one bracket is malformed, not a heading.
+    expect(hasVersionHeading('## 1.24.0]\n', '1.24.0')).toBe(false);
+    expect(hasVersionHeading('## [1.24.0\n', '1.24.0')).toBe(false);
   });
 
   it('has an entry for the version currently in package.json', () => {
