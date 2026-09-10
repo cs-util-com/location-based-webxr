@@ -1904,11 +1904,29 @@ test("a pin placed BEFORE Delete it survives too: the discard rejects the old dr
           );
           const names = [];
           for await (const name of dir.keys()) names.push(name);
-          return names.length;
+          return names.sort().join(",");
         }, RANGES_ARCHIVE),
       { timeout: 10000 },
     )
-    .toBeGreaterThanOrEqual(2); // the meta and the pin, back after the clear
+    // The meta plus EXACTLY ONE object, which is the post-re-write state
+    // and no other. A COUNT threshold was the first attempt and it waited
+    // for nothing: before the tap this namespace already holds three files
+    // (the meta the second session's mint rewrote, plus both pins), so
+    // `>= 2` passed whether or not the clear had even started - the same
+    // slack the comment above argues against, wearing a poll (PR #450
+    // review, found independently by both reviewers).
+    //
+    // This shape is reachable only at the end: `clear` deletes the meta
+    // FIRST and `recordMeta` puts it back only after the clear settles, so
+    // every intermediate state either has two object files or no meta.
+    //
+    // Note for anyone copying this: `expect.poll` retries assertion
+    // failures but propagates other throws, so a `NotFoundError` from a
+    // directory that does not exist yet would fail rather than retry. Safe
+    // here because session one has already written the draft;
+    // `expect(async () => {}).toPass()` is the form that retries through
+    // throws.
+    .toMatch(/^meta\.blob,object%3A[^,]+\.blob$/);
   await page.reload();
   await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
   await page.getByTestId("open-button").click();

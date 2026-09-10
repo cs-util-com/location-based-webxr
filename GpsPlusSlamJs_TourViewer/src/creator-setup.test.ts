@@ -208,7 +208,7 @@ describe("the spent-draft path re-writes what this session placed", () => {
     // The ordinary case, and the reason the loop is cheap: an empty list
     // costs one iteration of nothing. Pinned so a future "optimisation"
     // that skips the rewrite entirely is visible as a behaviour change.
-    const { store, files, releaseClear } = deferredStore({
+    const { store, files, releaseClear, clearCalled } = deferredStore({
       [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
     });
     // no placements at all
@@ -218,6 +218,14 @@ describe("the spent-draft path re-writes what this session placed", () => {
     releaseClear();
     await settle();
 
+    // Guarded like its sibling, because the seed makes the assertion below
+    // true BOTH after clear-then-recordMeta and if the chain never reached
+    // the spent branch at all - and `releaseClear` is a no-op when `clear`
+    // was never called, so nothing would have failed. `settle` is a fixed
+    // microtask count while `readDraft` awaits once per key, so a bigger
+    // seed or one more `await` ahead of the clear would silently turn this
+    // into a test of nothing (PR #450 review).
+    expect(clearCalled(), "the spent branch should have been taken").toBe(true);
     expect([...files.keys()]).toEqual([META_KEY]);
   });
 });
