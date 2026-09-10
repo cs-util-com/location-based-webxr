@@ -1088,6 +1088,23 @@ export function wireCreatorSetup(deps: {
           await store.clear(META_KEY);
           if (stale()) return;
           recordMeta(tourUrl);
+          // NO re-write of live placements here, unlike the discard
+          // handler, and the reason is an invariant rather than a
+          // difference in what `clear` does - it empties the WHOLE
+          // namespace in both places.
+          //
+          // This runs at tour OPEN. `archive-open` resets both
+          // `placedObjects` and `mintedLevel`, and placement is gated on a
+          // minted level, so nothing can have been placed before the awaits
+          // above settle. The list is provably empty, and a loop over it
+          // would be code no test could ever exercise.
+          //
+          // WHAT WOULD BREAK IT: making this path reachable later in a
+          // session, or allowing placement without a mint. Either one turns
+          // this into the bug the discard handler shipped for three rounds -
+          // files deleted while their objects stay on screen, with nothing
+          // to say so. If you change either, copy the re-write from the
+          // discard handler down here.
           return;
         }
         const hasLevel = draftHasUnhostedLevel(stored.draft, hostedLevel);
