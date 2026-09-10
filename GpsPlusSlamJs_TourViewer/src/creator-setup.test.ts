@@ -671,6 +671,46 @@ describe("the rejection is committed by the meta write", () => {
     ).toEqual(["old-pin"]);
   });
 
+  it("treats two urls that differ only in whitespace as ONE namespace", async () => {
+    // Why this test matters: the OPFS directory and the meta key come from
+    // `draftKeyForTour`, which trims. Keying the write chain on the RAW url
+    // gave those two urls independent chains over one directory - the same
+    // clobber as an unordered write, through another door. Reachable: the
+    // paste paths trim before opening, but the `?qr=` boot passes the
+    // decoded payload through untouched, and that payload is external data
+    // (PR #460 review).
+    const { store, files, releaseHeldPut } = memoryStore(
+      {},
+      { holdFirstPut: true },
+    );
+    const { dom, setup } = wire(store);
+
+    // Launched from a QR payload carrying stray whitespace: no draft yet, so
+    // the open records the meta - and that write is held.
+    setup.presentDraftForTour(` ${TOUR} `);
+    await settle();
+    setup.resetFinishStep();
+
+    // The same tour, pasted this time, so already trimmed.
+    files.set(
+      META_KEY,
+      JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+    );
+    files.set(objectKey("old-pin"), JSON.stringify(pin("old-pin")));
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    dom.draftDiscard.click();
+    await settle();
+
+    releaseHeldPut();
+    await settle();
+
+    expect(
+      rejectedOf(String(files.get(META_KEY))),
+      "one directory must mean one chain, however the url was spelled",
+    ).toEqual(["old-pin"]);
+  });
+
   it("sweeps a rejection whose deletes never finished, on the next open", async () => {
     // The files of an interrupted sweep have no other collector: the offer
     // never shows them again, and `clear` lost its last caller. Without
