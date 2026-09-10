@@ -215,17 +215,22 @@ describe("the spent-draft path re-writes what this session placed", () => {
     const { setup } = wire(store);
     setup.presentDraftForTour(TOUR);
     await settle();
+    // BEFORE the release, which is the whole point and where the first
+    // attempt at this guard got it wrong (PR #451 review). `releaseClear`
+    // is a no-op while `clear` has not been called, so a guard placed
+    // AFTER it passes in exactly the scenario it was added to rule out:
+    // the release does nothing, `clear` is then called during the next
+    // settle, `clearCalled()` is true, `recordMeta` never runs, and the
+    // seed is what we read back. Asserting here proves the deferred was
+    // already armed, so releasing it is effective.
+    //
+    // The drift this catches: `settle` is a fixed microtask count while
+    // `readDraft` awaits once per key, so a bigger seed or one more
+    // `await` ahead of the clear moves the chain past it.
+    expect(clearCalled(), "the spent branch should have been taken").toBe(true);
     releaseClear();
     await settle();
 
-    // Guarded like its sibling, because the seed makes the assertion below
-    // true BOTH after clear-then-recordMeta and if the chain never reached
-    // the spent branch at all - and `releaseClear` is a no-op when `clear`
-    // was never called, so nothing would have failed. `settle` is a fixed
-    // microtask count while `readDraft` awaits once per key, so a bigger
-    // seed or one more `await` ahead of the clear would silently turn this
-    // into a test of nothing (PR #450 review).
-    expect(clearCalled(), "the spent branch should have been taken").toBe(true);
     expect([...files.keys()]).toEqual([META_KEY]);
   });
 });

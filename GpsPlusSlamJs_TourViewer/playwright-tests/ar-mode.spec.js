@@ -1481,8 +1481,24 @@ test("the print step builds a real PDF of numbered codes", async ({ page }) => {
   // size would work, and the button comes back.
   await page.getByTestId("author-size").fill("0.4");
   await page.getByTestId("print-pdf").click();
+  // An EXPLICIT budget, because the default five seconds is not enough for
+  // this step under load and the failure it produced pointed somewhere
+  // else entirely. Measured with a mutation observer on this element:
+  //
+  //   unthrottled   click -> readout +36ms -> refusal +5ms
+  //   20x throttled click -> readout +2727ms -> refusal +29ms
+  //
+  // `fill()` does not raise `change`; the blur that THIS click causes does,
+  // so the size readout is triggered by the click and runs on the same
+  // main thread as the PDF build. Both messages always land and the newest
+  // claim always wins - the order is fixed by the event sequence, not by
+  // timing - so the only thing load changes is how long the pair takes.
+  // When that exceeded the default budget, the assertion timed out while
+  // the element showed the READOUT, which reads as the wrong message
+  // winning rather than as a slow one arriving.
   await expect(page.getByTestId("print-info")).toContainText(
     /does not fit A4/i,
+    { timeout: 20000 },
   );
   await expect(page.getByTestId("print-info")).toContainText(/or less/i);
   await expect(page.getByTestId("print-pdf")).toBeEnabled();
@@ -1903,7 +1919,18 @@ test("a pin placed BEFORE Delete it survives too: the discard rejects the old dr
             encodeURIComponent(url.trim()),
           );
           const names = [];
-          for await (const name of dir.keys()) names.push(name);
+          // Only the files this app wrote, which is what the store's own
+          // `keys()` returns: `keyForFileName` drops anything not ending
+          // in `.blob`. Chromium leaves a `<name>.blob.crswap` sibling in
+          // the directory while a write is in flight, and this poll races
+          // exactly those writes - so a raw listing can hold a name
+          // production would never report. Mid-write that only costs a
+          // retry; a swap file left behind by an aborted write would make
+          // this time out at ten seconds pointing at durability instead of
+          // at the leftover (PR #451 review).
+          for await (const name of dir.keys()) {
+            if (name.endsWith(".blob")) names.push(name);
+          }
           return names.sort().join(",");
         }, RANGES_ARCHIVE),
       { timeout: 10000 },
