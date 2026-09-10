@@ -1,4 +1,4 @@
-import { bench, describe } from "vitest";
+import { describe, test } from "vitest";
 import { parseOverpassJson } from "./overpass-parser.js";
 import { loadSite } from "../test-utils/load-fixtures.js";
 
@@ -77,11 +77,15 @@ const oneSite = payloadOf(1);
 const tileScale = payloadOf(24);
 
 describe("parseOverpassJson", () => {
-  bench("one fixture site (2 259 elements)", () => {
-    parseOverpassJson(oneSite);
+  test("one fixture site (2 259 elements)", async ({ bench }) => {
+    await bench("one fixture site (2 259 elements)", () => {
+      parseOverpassJson(oneSite);
+    }).run();
   });
 
-  bench("tile scale (54 216 elements)", () => {
-    parseOverpassJson(tileScale);
+  test("tile scale (54 216 elements)", async ({ bench }) => {
+    await bench("tile scale (54 216 elements)", () => {
+      parseOverpassJson(tileScale);
+    }).run();
   });
 });

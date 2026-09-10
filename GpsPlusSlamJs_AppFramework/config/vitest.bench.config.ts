@@ -10,9 +10,18 @@ export default defineConfig({
     setupFiles: [
       fileURLToPath(new URL('../src/test-setup.ts', import.meta.url)),
     ],
+    // Vitest 5 runs each benchmark inside a test, so the TEST timeout bounds
+    // it - Vitest 4's bare bench() had no such bound, and tinybench 6 raised
+    // the default time budget (1 s per task, 64 iterations minimum) on top.
+    // A ceiling, not a measurement: it restores the old effectively
+    // unbounded behaviour rather than asserting how long a bench may take
+    // (the Osm config sized it first; PR #433 review).
+    testTimeout: 600_000,
     benchmark: {
       include: ['src/**/*.bench.ts'],
-      outputJson: 'docs/perf-baselines/bench-results.json',
+      // Vitest 5 dropped benchmark.outputJson (and the CLI flags); a bench
+      // persists a result with its own writeResult option when a comparison
+      // needs one. Nothing read the old JSON (harness-majors plan M1b).
     },
   },
 });

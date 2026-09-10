@@ -13,6 +13,15 @@ packages:
   - GpsPlusSlamJs_SiteWorker
   - GpsPlusSlamJs_DesignSystem
 
+# `osmtogeojson@3.0.0-beta.5` (a devDependency of GpsPlusSlamJs_Osm - its
+# polygon table is benchmarked against, never shipped; deprecated upstream)
+# pins `@xmldom/xmldom` 0.8.3 EXACTLY, the one advisory a plain in-range
+# `pnpm update` cannot move: one critical and five highs that drowned the
+# audit's signal (dependency sweeps 2026-08-31 and 2026-09-07). 0.8.13 is
+# the patched line; the 0.9 line changes the API and is not needed.
+overrides:
+  "@xmldom/xmldom": "^0.8.13"
+
 # pnpm 11: only these packages may run install/postinstall build scripts
 # (strictDepBuilds is on by default in v11, so anything else errors loudly
 # instead of silently skipping). Mirrors the private repo's allowlist:

@@ -29,5 +29,12 @@ describe("getSeams", () => {
     expect(typeof realSeams.getIntrinsics).toBe("function");
     expect(typeof realSeams.createQrDebugView).toBe("function");
     expect(typeof realSeams.getScene).toBe("function");
+    expect(typeof realSeams.queryGeolocationPermission).toBe("function");
+    expect(typeof realSeams.requestLocationOnce).toBe("function");
+    expect(typeof realSeams.downloadZip).toBe("function");
+    expect(typeof realSeams.startHitTestReticle).toBe("function");
+    expect(typeof realSeams.encodeFrameJpeg).toBe("function");
+    expect(typeof realSeams.createLabel).toBe("function");
+    expect(typeof realSeams.schedule).toBe("function");
   });
 });

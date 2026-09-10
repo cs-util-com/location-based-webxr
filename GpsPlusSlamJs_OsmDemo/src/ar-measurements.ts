@@ -241,8 +241,7 @@ export interface ArMeasurements {
    * readout stays unverifiable while this one is missing.
    */
   readonly position?:
-    | { readonly lat: number; readonly lng: number }
-    | undefined;
+    { readonly lat: number; readonly lng: number } | undefined;
   /**
    * Where the ALIGNMENT thinks the user is — the camera's world position in the
    * scene root's NUE frame, converted back to lat/lng (J7, DEC-J9).
@@ -264,8 +263,7 @@ export interface ArMeasurements {
    * coordinate that means "nothing has been aligned yet".
    */
   readonly fusedPosition?:
-    | { readonly lat: number; readonly lng: number }
-    | undefined;
+    { readonly lat: number; readonly lng: number } | undefined;
   /**
    * How long ago the last fix arrived, milliseconds.
    *

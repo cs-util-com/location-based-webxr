@@ -31,11 +31,7 @@ declare global {
   }
 
   type XRReferenceSpaceType =
-    | 'local'
-    | 'local-floor'
-    | 'bounded-floor'
-    | 'unbounded'
-    | 'viewer';
+    'local' | 'local-floor' | 'bounded-floor' | 'unbounded' | 'viewer';
 
   interface XRReferenceSpace extends EventTarget {
     getOffsetReferenceSpace(originOffset: XRRigidTransform): XRReferenceSpace;

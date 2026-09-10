@@ -66,13 +66,36 @@ export class BoundedLocalCacheStore implements LocalCacheStore {
     });
   }
 
-  /** Evict every archive this bound knows about (the demo's "clear cache"). */
-  clear(): Promise<void> {
+  /** How many archives the index holds AT THE TIME OF THE CALL - a
+   *  snapshot, not a bound in either direction: an index entry whose blob
+   *  is already gone still counts, and a warm download completing after
+   *  the call adds one the caller did not see. Read it BEFORE evicting an
+   *  open session's copy when the number is for a "cleared N tours"
+   *  message: `delete` drops the entry from the index. */
+  size(): Promise<number> {
+    return this.#enqueue(async () => (await this.#readIndex()).length);
+  }
+
+  /**
+   * Evict every archive this bound knows about (the viewer's "clear
+   * cache"); resolves the number of index entries it removed.
+   *
+   * The count is what THIS call deleted. A caller that wants to report
+   * "cleared N tours" to a user while a session still holds one of them
+   * open must read `size()` FIRST instead: the open session's `evict()`
+   * drops its entry from the index before the clear runs, so this number
+   * would be one short (the Tour Viewer's "clear cache" does exactly that,
+   * and the asymmetry looked like a redundant API until it was written
+   * down - PR #434 review).
+   */
+  clear(): Promise<number> {
     return this.#enqueue(async () => {
-      for (const url of await this.#readIndex()) {
+      const index = await this.#readIndex();
+      for (const url of index) {
         await this.#inner.delete(url);
       }
       await this.#inner.delete(INDEX_KEY);
+      return index.length;
     });
   }
 

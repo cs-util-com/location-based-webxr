@@ -27,11 +27,7 @@ import {
  * the basis for the monotonic {@link OnboardingGuidance.percentReady}.
  */
 export type OnboardingPhase =
-  | 'initializing'
-  | 'ar-lost'
-  | 'move-around'
-  | 'almost-ready'
-  | 'ready';
+  'initializing' | 'ar-lost' | 'move-around' | 'almost-ready' | 'ready';
 
 export interface OnboardingGuidance {
   /** Coaching phase — maps 1:1 onto the tracking-quality state (+ null). */

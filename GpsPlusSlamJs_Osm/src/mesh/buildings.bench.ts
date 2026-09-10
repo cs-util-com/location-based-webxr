@@ -1,4 +1,4 @@
-import { bench, describe } from "vitest";
+import { describe, test } from "vitest";
 import { buildBuildings, solidBuildingFootprints } from "./buildings.js";
 import { enuFrameAt } from "./enu.js";
 import { parseOverpassJson } from "../model/overpass-parser.js";
@@ -94,8 +94,10 @@ const frame = enuFrameAt(site.centre);
 describe("buildBuildings — the mesh build's top line", () => {
   for (const k of [2, 4]) {
     const features = replicate(base, k);
-    bench(`k=${k} — ${features.length} features`, () => {
-      buildBuildings(features, { frame });
+    test(`k=${k} — ${features.length} features`, async ({ bench }) => {
+      await bench(`k=${k} — ${features.length} features`, () => {
+        buildBuildings(features, { frame });
+      }).run();
     });
   }
 });
@@ -105,7 +107,9 @@ describe("solidBuildingFootprints — the same assignment rule, for nav", () => 
   // so the growth question is already answered there. What this adds is that the
   // nav path is not forgotten when that function changes.
   const features = replicate(base, 4);
-  bench(`k=4 — ${features.length} features`, () => {
-    solidBuildingFootprints(features);
+  test(`k=4 — ${features.length} features`, async ({ bench }) => {
+    await bench(`k=4 — ${features.length} features`, () => {
+      solidBuildingFootprints(features);
+    }).run();
   });
 });

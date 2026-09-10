@@ -17,7 +17,7 @@ This is the **B3** primitive of the in-zip backfill (O3 — in-zip rewrite): it 
 ## Invariants & assumptions
 
 - **Pure transform, no I/O side effects.** It does not touch the filesystem — the caller (RecorderApp backfill, B4) owns the safe write-then-verify-then-overwrite protocol around it.
-- **Byte-preserving.** Built on `@zip.js/zip.js` in store mode (`level: 0`), matching the exporter; every non-`session.json` entry is re-emitted with byte-identical uncompressed content. Directory entries are dropped (paths stay implied by file names, as the exporter already does).
+- **Byte-preserving.** A wrapper over `rebuildZipWithEntries` (see [zip-rebuild.ts](zip-rebuild.ts.md)) since 2026-09-08 - the package's ONE re-emit loop (DEC-H3); store mode, every non-`session.json` entry byte-identical, directory entries dropped. The rebuild throws on failure; this wrapper turns that into its own skip-and-return-input contract, because a backfill over many recordings wants "left untouched", not an exception per file.
 - **Idempotent.** A zip already carrying `h3Cells` is returned unchanged, so re-running the upgrade is a no-op and new recordings (which already have the field) are skipped. It does **not** overwrite existing cells.
 - **Defensive.** Missing/malformed `session.json` returns the input untouched rather than writing over a broken recording.
 

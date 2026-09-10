@@ -3,9 +3,18 @@ import { describe, expect, it } from "vitest";
 
 import {
   InMemoryLocalCacheStore,
+  packFilesAsZip,
   type FetchImpl,
 } from "gps-plus-slam-app-framework/storage";
-import { openTourSession } from "./tour-session.js";
+import {
+  createEmptyTourManifest,
+  serializeTourManifest,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
+import {
+  archiveFileName,
+  openTourSession,
+  readArchiveInSlices,
+} from "./tour-session.js";
 
 /**
  * Why these tests matter: this module is the viewer's whole data path — if
@@ -246,6 +255,31 @@ describe("loadRecordingActions / loadSessionMeta", () => {
     });
   });
 
+  // Why this test matters (flows plan M1, milestone review #6): `hasRecording`
+  // drives user-facing copy ("nothing to place" vs the decline reason) and
+  // must apply the same pre-check as `loadRecordingActions` - a wrapping
+  // folder tolerated (milestone review finding 10), images-only false.
+  it("hasRecording mirrors the actions/ pre-check, wrapping folder included", async () => {
+    const plain = await openTourSession("https://x/plain.zip", {
+      fetchImpl: rangeServer(
+        await buildExactZip({ "images/a.png": "not really a png" }),
+      ),
+    });
+    expect(plain.hasRecording).toBe(false);
+    const flat = await openTourSession("https://x/flat.zip", {
+      fetchImpl: rangeServer(
+        await buildExactZip({ "actions/000001.json": "{}" }),
+      ),
+    });
+    expect(flat.hasRecording).toBe(true);
+    const wrapped = await openTourSession("https://x/wrapped.zip", {
+      fetchImpl: rangeServer(
+        await buildExactZip({ "walk-1/actions/000001.json": "{}" }),
+      ),
+    });
+    expect(wrapped.hasRecording).toBe(true);
+  });
+
   it("returns null for a hand-built zip without a recording — the ring path, not an error", async () => {
     const fetchImpl = rangeServer(
       await buildExactZip({ "qr/1.json": LEVEL_JSON }),
@@ -295,6 +329,228 @@ describe("corsProxyBaseUrl plumbing", () => {
     for (const url of urls) {
       expect(url).toBe("https://proxy.example/api/drive-proxy?id=ID42");
     }
+    await session.close();
+  });
+});
+
+describe("archiveFileName (guided-setup plan M3)", () => {
+  // Why this matters: the replace step is a SAME-NAME upload, so the
+  // download must carry the hosted file's name - and a Drive id or a proxy
+  // route carries no name worth guessing at.
+  it("takes the last path segment when it is a .zip, decoded", () => {
+    expect(archiveFileName("http://h/ranges-ok/tour.zip")).toBe("tour.zip");
+    expect(archiveFileName("https://h/a/My%20Tour.ZIP?x=1")).toBe(
+      "My Tour.ZIP",
+    );
+  });
+
+  it("falls back to tour.zip for anything else", () => {
+    expect(archiveFileName("https://drive.google.com/uc?id=abc")).toBe(
+      "tour.zip",
+    );
+    expect(archiveFileName("https://gps.csutil.com/api/drive-proxy/abc")).toBe(
+      "tour.zip",
+    );
+    expect(archiveFileName("not a url")).toBe("tour.zip");
+    // A backslash is a path separator to the save dialog on Windows.
+    expect(archiveFileName("https://h/a/..%5Cb.zip")).toBe("tour.zip");
+  });
+});
+
+describe("loadTourManifest / readWholeArchive (guided-setup plan M3)", () => {
+  // Why these matter: the finish step rebuilds the hosted zip from
+  // `readWholeArchive` and writes `tour.json` back from `loadTourManifest`.
+  // A wrong input (a stale cached copy, or a truncated range read) or a
+  // dropped manifest would silently lose the creator's work.
+  it("returns null for a zip without tour.json, the parsed manifest with one, and REJECTS a broken one", async () => {
+    const none = await openTourSession("https://x/tour.zip", {
+      fetchImpl: rangeServer(await buildZip()),
+    });
+    await expect(none.loadTourManifest()).resolves.toBeNull();
+    await none.close();
+
+    const withManifest = await openTourSession("https://x/tour.zip", {
+      fetchImpl: rangeServer(
+        await buildZip({ "tour.json": '{"version":1,"objects":[]}' }),
+      ),
+    });
+    await expect(withManifest.loadTourManifest()).resolves.toEqual({
+      version: 1,
+      objects: [],
+    });
+    await withManifest.close();
+
+    const broken = await openTourSession("https://x/tour.zip", {
+      fetchImpl: rangeServer(await buildZip({ "tour.json": '{"version":9}' })),
+    });
+    await expect(broken.loadTourManifest()).rejects.toThrow(/version/);
+    await broken.close();
+  });
+
+  it("resolves a WRAPPED tour's content entries through the manifest's own prefix (PR #435 review)", async () => {
+    // Why this matters: a creator who unzips the rebuilt archive and
+    // re-zips the FOLDER gets `mytour/tour.json` + `mytour/content/x.jpg`,
+    // a shape the archive convention explicitly tolerates. The manifest
+    // can only ever carry the unwrapped `content/<id>.jpg` (the parser
+    // pins that shape), so a reader that passes the name straight to the
+    // exact-name `loadEntry` finds nothing and every placed photo
+    // disappears into "could not load" - pins still render, so the tour
+    // looks half-placed rather than broken.
+    const photo = {
+      id: "ab12ab12ab12ab12",
+      kind: "photo",
+      image: "content/ab12ab12ab12ab12.jpg",
+      geo: { lat: 47.5, lon: 8.7, alt: 400, rotation: [0, 0, 0, 1] },
+      createdAtIso: "2026-09-08T12:00:00.000Z",
+      imageWidth: 1024,
+      imageHeight: 768,
+    };
+    const wrapped = await openTourSession("https://x/wrapped.zip", {
+      fetchImpl: rangeServer(
+        await buildExactZip({
+          "mytour/tour.json": JSON.stringify({ version: 1, objects: [photo] }),
+          "mytour/content/ab12ab12ab12ab12.jpg": "jpeg-bytes",
+        }),
+      ),
+    });
+    expect(wrapped.manifestWrap).toBe("mytour/");
+    const manifest = await wrapped.loadTourManifest();
+    expect(manifest?.objects[0]?.id).toBe(photo.id);
+    // The reader asks with the name the MANIFEST carries; the session joins
+    // the prefix it found the manifest under.
+    await expect(
+      wrapped
+        .loadContentEntry("content/ab12ab12ab12ab12.jpg")
+        .then((b) => b.text()),
+    ).resolves.toBe("jpeg-bytes");
+    await wrapped.close();
+
+    // A flat zip is the same call with an empty prefix.
+    const flat = await openTourSession("https://x/flat.zip", {
+      fetchImpl: rangeServer(
+        await buildExactZip({
+          "tour.json": JSON.stringify({ version: 1, objects: [photo] }),
+          "content/ab12ab12ab12ab12.jpg": "flat-bytes",
+        }),
+      ),
+    });
+    expect(flat.manifestWrap).toBe("");
+    await expect(
+      flat
+        .loadContentEntry("content/ab12ab12ab12ab12.jpg")
+        .then((b) => b.text()),
+    ).resolves.toBe("flat-bytes");
+    await flat.close();
+
+    // No manifest at all: the prefix is empty, and the call still reads a
+    // root-level entry (the creator writes there on the first finish).
+    const none = await openTourSession("https://x/none.zip", {
+      fetchImpl: rangeServer(
+        await buildExactZip({ "content/x.jpg": "root-bytes" }),
+      ),
+    });
+    expect(none.manifestWrap).toBe("");
+    await expect(
+      none.loadContentEntry("content/x.jpg").then((b) => b.text()),
+    ).resolves.toBe("root-bytes");
+    await none.close();
+  });
+
+  it("opens the STARTER zip the setup hands out and reads its empty manifest (the step-1 loop)", async () => {
+    // Why this matters (M2 review #11): the wizard sells "download the
+    // starter, host it, paste the link, Open" - nothing else proved the
+    // packed starter is an archive this session can open.
+    const starter = await packFilesAsZip([
+      {
+        path: "tour.json",
+        data: serializeTourManifest(createEmptyTourManifest()),
+      },
+    ]);
+    const session = await openTourSession("https://x/tour.zip", {
+      fetchImpl: rangeServer(new Uint8Array(await starter.arrayBuffer())),
+    });
+    expect(session.entries.map((e) => e.filename)).toEqual(["tour.json"]);
+    expect(session.hasRecording).toBe(false);
+    await expect(session.loadTourManifest()).resolves.toEqual({
+      version: 1,
+      objects: [],
+    });
+    await expect(session.loadQrLevels()).resolves.toEqual(new Map());
+    await session.close();
+  });
+
+  it("reads the whole archive from the warmed cache copy under the NORMALISED url, with no further network read", async () => {
+    // A Dropbox share link: the archive's url is the rewritten content
+    // host, and that is the cache key (plan review #5); the raw link would
+    // miss. After the warm, the cache serves the bytes - the counter
+    // proves no range read happened.
+    const bytes = await buildZip();
+    const cacheStore = new InMemoryLocalCacheStore();
+    let reads = 0;
+    const counting: FetchImpl = (input, init) => {
+      if ((init?.method ?? "GET") === "GET") reads += 1;
+      return rangeServer(bytes)(input, init);
+    };
+    const session = await openTourSession(
+      "https://www.dropbox.com/s/abc/tour.zip?dl=0",
+      { fetchImpl: counting, cacheStore },
+    );
+    expect(session.archive.url).not.toContain("www.dropbox.com/s/");
+    await session.archive.warmed;
+    expect(await cacheStore.get(session.archive.url)).toBeDefined();
+    const before = reads;
+    const whole = await session.readWholeArchive();
+    expect(reads).toBe(before);
+    expect(new Uint8Array(await whole.arrayBuffer())).toEqual(bytes);
+    await session.close();
+  });
+
+  it("falls back to range reads when the cached copy has the wrong size", async () => {
+    const bytes = await buildZip();
+    const cacheStore = new InMemoryLocalCacheStore();
+    const session = await openTourSession("https://x/tour.zip", {
+      fetchImpl: rangeServer(bytes),
+      cacheStore,
+    });
+    await session.archive.warmed;
+    await cacheStore.put(session.archive.url, {
+      blob: new Blob([new Uint8Array(3)]),
+    });
+    const whole = await session.readWholeArchive();
+    expect(new Uint8Array(await whole.arrayBuffer())).toEqual(bytes);
+    await session.close();
+  });
+
+  it("reads the whole archive in SLICES when there is no cache (each request keeps the slice budget), byte-identical across slice boundaries", async () => {
+    // The slicer over a fake source: 2 500 bytes in 1 000-byte slices is
+    // three requests, and the gathered Blob is the source, byte for byte.
+    const bytes = new Uint8Array(2500).map((_, i) => (i * 13) % 256);
+    const requests: [number, number][] = [];
+    const whole = await readArchiveInSlices(
+      {
+        size: bytes.length,
+        source: {
+          size: bytes.length,
+          read: (offset, length) => {
+            requests.push([offset, length]);
+            return Promise.resolve(bytes.slice(offset, offset + length));
+          },
+        },
+      },
+      1000,
+    );
+    expect(requests).toEqual([
+      [0, 1000],
+      [1000, 1000],
+      [2000, 500],
+    ]);
+    expect(new Uint8Array(await whole.arrayBuffer())).toEqual(bytes);
+    // The session's fallback goes through the same slicer.
+    const session = await openTourSession("https://x/tour.zip", {
+      fetchImpl: rangeServer(await buildZip()),
+    });
+    const viaSession = await session.readWholeArchive();
+    expect(viaSession.size).toBe(session.archive.size);
     await session.close();
   });
 });

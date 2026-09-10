@@ -37,8 +37,12 @@
 outline-color: #ff0000;`, exit 1. Append `` `--phantom-token` `` to the
   brief → `brief mentions --phantom-token, the CSS does not define it`,
   exit 1.
-- Tests: no unit test file - the checks are negative-tested by hand on
-  every round that touches them (both directions verified 2026-09-02,
-  M1 of the adoption plan). A package whose gate is seconds-cheap on
-  purpose does not carry a vitest install for two regexes; if a third
-  check arrives, that is the moment to add one.
+- Tests: the root repo-config test
+  `tests/repo-config/design-token-check-comments.test.js` imports
+  `findProblems` and pins the comment handling in both directions (a `}`
+  in a comment no longer hides the literals after it, a `{` no longer runs
+  the body into an exempt layer) plus the comment-only token definition
+  (PR #419 review). This package carries no vitest of its own - its gate is
+  seconds-cheap on purpose - so the test lives at the root, where vitest
+  already runs; the two checks are still negative-tested by hand on every
+  round that touches them.

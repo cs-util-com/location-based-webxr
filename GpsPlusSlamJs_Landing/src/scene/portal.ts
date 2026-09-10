@@ -272,8 +272,7 @@ export function updatePortalSpin(portal: Object3D, timeMs: number): void {
       child.scale.setScalar(1 + Math.sin(t * 0.9) * 0.028);
     }
     const drift = child.userData.drift as
-      | { baseX: number; amp: number; speed: number; phase: number }
-      | undefined;
+      { baseX: number; amp: number; speed: number; phase: number } | undefined;
     if (drift) {
       child.position.x =
         drift.baseX + Math.sin(t * drift.speed + drift.phase) * drift.amp;

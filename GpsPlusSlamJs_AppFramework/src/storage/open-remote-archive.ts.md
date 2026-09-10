@@ -46,12 +46,16 @@ archive-format-agnostic; zip.js enters only where a caller wraps
   failed read from there. Single-flight applies to SUCCESS only: a failed
   recovery download resets the slot so the next read retries instead of
   replaying a memoised transient failure forever.
-- **`evict()` is self-sufficient AND permanent**: it awaits any in-flight
-  WARM and RECOVERY download (success or failure) before deleting — a bare
-  `evict()` is safe; dispose-first merely makes it faster (PR #358 review
-  #2) — and it latches the session as evicted, so a writer that STARTS
-  later (a post-evict range-ignore recovery on the still-live session)
-  still serves its read but never repersists the archive (PR #359 review).
+- **`evict()` is self-sufficient, permanent AND fast**: it ABORTS an
+  in-flight WARM download (its own abort handle; the session keeps
+  streaming remotely), awaits any in-flight RECOVERY download (it serves a
+  live read), then deletes — a bare `evict()` is safe and settles without
+  waiting for a download it has already disarmed (Tour Viewer flows plan
+  M2, 2026-09-07; before that it awaited the warm, which on a phone with a
+  tens-of-MB archive held a "Clear cache" button at "Clearing…" for minutes).
+  It latches the session as evicted, so a writer that STARTS later (a
+  post-evict range-ignore recovery on the still-live session) still serves
+  its read but never repersists the archive (PR #359 review).
 - **A definitive 404/410 on the revalidation HEAD evicts** — deletion is an
   author action the viewer honors; only genuine unreachability (network
   failure, HEAD-refusing host) serves the cache.
@@ -83,7 +87,7 @@ try {
   const entries = await reader.getEntries();
 } catch (err) {
   if (opened.origin === 'cache') {
-    await opened.evict(); // self-sufficient: awaits in-flight downloads
+    await opened.evict(); // self-sufficient: aborts the warm, awaits a recovery
     // …reopen with { skipCache: true }
   }
 }

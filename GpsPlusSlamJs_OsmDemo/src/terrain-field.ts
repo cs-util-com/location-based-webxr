@@ -250,8 +250,7 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
   const pendingUpgrade = new Map<string, number>();
   /** The window the last `ensureAround` covered, for the all-or-nothing rule. */
   let lastWindow:
-    | { origin: { x: number; y: number }; reach: number }
-    | undefined;
+    { origin: { x: number; y: number }; reach: number } | undefined;
   /** Whether ANY post has ever arrived. Distinguishes "flat" from "no DEM". */
   let anyData = false;
 

@@ -899,8 +899,7 @@ describe('settings-modal', () => {
         unknown
       >;
       const flags = saved.arCrashIsolation as
-        | Record<string, unknown>
-        | undefined;
+        Record<string, unknown> | undefined;
       expect(flags?.enableCss3dRenderer).toBe(false);
     });
   });
@@ -1581,8 +1580,7 @@ describe('settings-modal', () => {
 
       const working = getWorkingOptions() as Record<string, unknown> | null;
       const flags = working?.arCrashIsolation as
-        | Record<string, unknown>
-        | undefined;
+        Record<string, unknown> | undefined;
 
       expect(working?.images).toEqual(
         expect.objectContaining({ enabled: false })
@@ -1624,8 +1622,7 @@ describe('settings-modal', () => {
         unknown
       >;
       const flags = saved.arCrashIsolation as
-        | Record<string, unknown>
-        | undefined;
+        Record<string, unknown> | undefined;
       expect(flags?.applyChromiumProjectionLayerWorkaround).toBe(false);
     });
 

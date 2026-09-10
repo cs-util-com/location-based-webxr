@@ -25,8 +25,16 @@ import { ByteSourceReader } from './zip-byte-source-reader.js';
  * needed at this scale).
  */
 
-const ENTRY_COUNT = 40;
+// 400 × 2 KB ≈ 850 KB: large enough that zip.js's FIXED tail read at open
+// (2.9+ fetches one ≤ 65 557-byte end-of-central-directory window instead
+// of a 22-byte probe, measured 2026-09-07 in the dependency sweep) is the
+// small fraction it is on a real recording, not most of a toy archive —
+// at 40 entries the same window was 76 % of the file and the ratio ceiling
+// below tripped on a change that costs a headset nothing.
+const ENTRY_COUNT = 400;
 const ENTRY_SIZE = 2_000;
+/** zip.js's end-of-central-directory search window (max comment + record). */
+const EOCD_WINDOW = 65_557;
 
 async function buildZip(): Promise<Uint8Array> {
   const writer = new ZipWriter(new Uint8ArrayWriter(), {
@@ -101,6 +109,9 @@ describe('zip streaming request budget', () => {
 
     // Measured 2026-08-25 (zip.js 2.8.x, 40 entries × 2 KB stored): listing =
     // 3 requests, each entry read = 3, bytes served = 10 638 of 88 642 (12%).
+    // Re-measured 2026-09-07 (zip.js 2.11.2, 400 entries): listing = 2
+    // requests reading the ≤ 65 557-byte tail window plus the central
+    // directory; each entry read still = 3 requests of 30 + 9 + 2 000 bytes.
     // Ceilings carry one request of headroom for zip.js internals changing
     // slightly, but a linear blow-up (per-entry listing reads) must fail
     // here. At 3 requests per entry a read-ahead buffer was judged
@@ -108,6 +119,11 @@ describe('zip streaming request budget', () => {
     // session.
     expect(afterListing.requests).toBeLessThanOrEqual(4);
     expect(stats.requests).toBeLessThanOrEqual(4 + 3 * 3);
+    // The listing is bounded ABSOLUTELY: the tail window plus the central
+    // directory (≤ ~120 bytes per entry here), never a re-read of the body.
+    expect(afterListing.bytesServed).toBeLessThanOrEqual(
+      EOCD_WINDOW + ENTRY_COUNT * 120
+    );
     // The whole point: a fraction of the archive, not the archive.
     expect(stats.bytesServed).toBeLessThan(zipBytes.length / 4);
   });

@@ -87,9 +87,8 @@ describe('ImageCaptureManager — image-quality gate', () => {
     currentPose = { position: { x: 0, y: 0, z: 0 }, orientation: yQuat(0) };
     verdicts = [];
     let vIdx = 0;
-    analyze = vi.fn(
-      (): Promise<FrameQualityVerdict> =>
-        Promise.resolve({ accept: verdicts[vIdx++] ?? true })
+    analyze = vi.fn((): Promise<FrameQualityVerdict> =>
+      Promise.resolve({ accept: verdicts[vIdx++] ?? true })
     );
     mockCallbacks = {
       getCurrentPose: vi.fn(() => currentPose),

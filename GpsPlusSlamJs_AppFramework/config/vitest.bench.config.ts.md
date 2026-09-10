@@ -7,13 +7,12 @@ Dedicated Vitest configuration for running benchmarks (`*.bench.ts` files) via `
 ## Public API (config exports)
 
 - `test.benchmark.include` — globs for benchmark files (`src/**/*.bench.ts`). Note this does NOT match the pre-existing env-gated `*.bench.test.ts` wall-clock tests — those are plain vitest tests run via `test:unit` with `BENCH=1` and are unrelated to this harness.
-- `test.benchmark.outputJson` — writes machine-readable results to `docs/perf-baselines/bench-results.json` (versioned; churn rides along with the next commit).
+- No results file: Vitest 5 dropped `benchmark.outputJson`; a bench that needs a persisted result passes `writeResult` itself, and nothing read the old JSON (harness-majors plan M1b, 2026-09-07).
 
 ## Invariants & assumptions
 
 - Benchmarks are **not** part of the standard test suite. They run on-demand via `pnpm bench` and never gate CI.
 - Coverage is intentionally omitted — benchmarks measure throughput, not code paths. The main test config excludes `src/**/*.bench.ts` from coverage.
-- The `outputJson` path is relative to the project root (`GpsPlusSlamJs_AppFramework/`).
 
 ## Usage
 

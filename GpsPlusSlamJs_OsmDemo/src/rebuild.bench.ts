@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { bench, describe } from "vitest";
+import { describe, test } from "vitest";
 import {
   AffordanceIndex,
   enuFrameAt,
@@ -113,14 +113,16 @@ describe("buildCellMesh — the affordance overlay, in the worker", () => {
     // same scale the app does, or it measures a ramp nothing draws.
     const scale = fixedScale(1);
 
-    bench(`${slug} (${cells.length} cells)`, () => {
-      buildCellMesh(cells, {
-        frame,
-        category: DEFAULT_CATEGORY,
-        threshold: 1,
-        scale,
-        showBelowThreshold: true,
-      });
+    test(`${slug} (${cells.length} cells)`, async ({ bench }) => {
+      await bench(`${slug} (${cells.length} cells)`, () => {
+        buildCellMesh(cells, {
+          frame,
+          category: DEFAULT_CATEGORY,
+          threshold: 1,
+          scale,
+          showBelowThreshold: true,
+        });
+      }).run();
     });
   }
 });
@@ -178,8 +180,12 @@ describe("drawMeshLayers — typed arrays to three.js objects, main thread", () 
   ] as const) {
     const mesh = sizedMesh(chunks, triangles);
 
-    bench(`${chunks} chunks x ${triangles} triangles per layer`, () => {
-      drawMeshLayers(mesh);
+    test(`${chunks} chunks x ${triangles} triangles per layer`, async ({
+      bench,
+    }) => {
+      await bench(`${chunks} chunks x ${triangles} triangles per layer`, () => {
+        drawMeshLayers(mesh);
+      }).run();
     });
   }
 });

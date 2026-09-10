@@ -1,4 +1,4 @@
-import { bench, describe } from 'vitest';
+import { describe, test } from 'vitest';
 import type { Matrix4, Quaternion, Vector3 } from 'gps-plus-slam-js';
 import { OccupancyGrid, DEFAULT_OCCUPANCY_CELL_SIZE_M } from './occupancy-grid';
 import type { DepthSample, DepthPoint } from '../types/ar-types';
@@ -133,11 +133,25 @@ function foldAll(samples: readonly DepthSample[]): OccupancyGrid {
 }
 
 describe('occupancy fold (addSample, carving on, production config)', () => {
-  bench('50 samples × 576 pts (gridSize 24, 10 s @ 200 ms cadence)', () => {
-    foldAll(SAMPLES);
+  test('50 samples × 576 pts (gridSize 24, 10 s @ 200 ms cadence)', async ({
+    bench,
+  }) => {
+    await bench(
+      '50 samples × 576 pts (gridSize 24, 10 s @ 200 ms cadence)',
+      () => {
+        foldAll(SAMPLES);
+      }
+    ).run();
   });
 
-  bench('10 samples × 4096 pts (gridSize 64 validation density)', () => {
-    foldAll(DENSE_SAMPLES);
+  test('10 samples × 4096 pts (gridSize 64 validation density)', async ({
+    bench,
+  }) => {
+    await bench(
+      '10 samples × 4096 pts (gridSize 64 validation density)',
+      () => {
+        foldAll(DENSE_SAMPLES);
+      }
+    ).run();
   });
 });

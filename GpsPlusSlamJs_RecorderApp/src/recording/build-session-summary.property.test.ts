@@ -78,9 +78,11 @@ describe('buildSessionSummary — distance integration properties', () => {
   it('is translation-invariant (depends only on segment deltas)', () => {
     fc.assert(
       fc.property(pathArb, vector3Arb, (path, offset) => {
-        const shifted = path.map(
-          (p): Vector3 => [p[0] + offset[0], p[1] + offset[1], p[2] + offset[2]]
-        );
+        const shifted = path.map((p): Vector3 => [
+          p[0] + offset[0],
+          p[1] + offset[1],
+          p[2] + offset[2],
+        ]);
         expect(distanceOf(shifted)).toBeCloseTo(distanceOf(path), 6);
       })
     );

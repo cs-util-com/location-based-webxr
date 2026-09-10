@@ -146,11 +146,11 @@ describe('size ↔ distance linearity (the §7 self-check premise)', () => {
           rotation: [0, 0, 0, 1],
         };
 
-        const near = buildObjectPoints(sizeM).map(
-          (o) => projectViewPoint(transformPoint(o, poseNear), intr)!
+        const near = buildObjectPoints(sizeM).map((o) =>
+          projectViewPoint(transformPoint(o, poseNear), intr)!
         );
-        const far = buildObjectPoints(sizeM * k).map(
-          (o) => projectViewPoint(transformPoint(o, poseFar), intr)!
+        const far = buildObjectPoints(sizeM * k).map((o) =>
+          projectViewPoint(transformPoint(o, poseFar), intr)!
         );
         for (let i = 0; i < 4; i++) {
           expect(Math.abs(near[i].x - far[i].x)).toBeLessThan(1e-3);

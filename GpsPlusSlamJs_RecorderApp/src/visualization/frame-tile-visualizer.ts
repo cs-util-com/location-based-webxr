@@ -261,9 +261,7 @@ function bitmapDim(
   axis: 'width' | 'height'
 ): number | undefined {
   const image = texture.image as
-    | { width?: unknown; height?: unknown }
-    | null
-    | undefined;
+    { width?: unknown; height?: unknown } | null | undefined;
   if (!image) return undefined;
   const value = image[axis];
   return typeof value === 'number' && Number.isFinite(value) && value > 0

@@ -1,4 +1,4 @@
-import { bench, describe } from "vitest";
+import { describe, test } from "vitest";
 import { buildAreaPlates } from "./plates.js";
 import { enuFrameAt, ringToEnu } from "./enu.js";
 import { triangulate } from "./triangulate.js";
@@ -38,6 +38,16 @@ import type { EnuPoint } from "./enu.js";
  * second's curve exactly as it is, and that distinction is the whole point.
  */
 
+/**
+ * tinybench 2's measurement budget, which the medians above were taken under.
+ * Vitest 5 bundles tinybench 6, whose defaults are 64 iterations after 16
+ * warm-ups (4× and 3× the old 10 and 5) - on a ~2.9 s case that is four
+ * minutes per bench instead of forty-five seconds, and the medians would no
+ * longer be comparable with the ones recorded here. Pinned explicitly so the
+ * file's cost and its numbers stay what the header describes.
+ */
+const BUDGET = { iterations: 10, warmupIterations: 5 } as const;
+
 /** Every feature of a fixture, with the fixture's own centre. */
 function fixture(slug: string): {
   features: OsmFeature[];
@@ -55,8 +65,10 @@ describe("buildAreaPlates — the production entry point", () => {
     const { features, centre } = fixture(slug);
     const options = { frame: enuFrameAt(centre) };
 
-    bench(`${slug} (${features.length} features)`, () => {
-      buildAreaPlates(features, options);
+    test(`${slug} (${features.length} features)`, async ({ bench }) => {
+      await bench(`${slug} (${features.length} features)`, () => {
+        buildAreaPlates(features, options);
+      }).run(BUDGET);
     });
   }
 });
@@ -93,8 +105,10 @@ describe("triangulate — the quadratic underneath", () => {
     if (rings === undefined) continue;
     const points = rings.reduce((sum, ring) => sum + ring.length, 0);
 
-    bench(`${slug}'s largest polygon (${points} points)`, () => {
-      triangulate(rings);
+    test(`${slug}'s largest polygon (${points} points)`, async ({ bench }) => {
+      await bench(`${slug}'s largest polygon (${points} points)`, () => {
+        triangulate(rings);
+      }).run(BUDGET);
     });
   }
 });

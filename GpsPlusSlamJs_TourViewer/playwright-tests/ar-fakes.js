@@ -60,6 +60,32 @@ export async function installTourViewerArFakes(page) {
         };
       },
       sessionEndCallback: /** @type {any} */ (null),
+      /** The visitor screen's location gate (DEC-N2): what the permission
+       *  query answers, and how many location-only taps were made. */
+      locationPermission: "granted",
+      locationRequests: 0,
+      /** What the next location-only tap comes back with. */
+      locationOutcome: "granted",
+      /** The zips the finish step offered for download (M3): the fake
+       *  captures them instead of saving; `saveOutcome` is what the fake
+       *  reports (false = the picker was dismissed). */
+      downloads: /** @type {{ filename: string, blob: Blob }[]} */ ([]),
+      saveOutcome: true,
+      /** The creator's reticle (M4): whether a surface is under it and
+       *  where, in GPS-world NUE. */
+      reticleVisible: true,
+      reticlePosition: [3, 400.5, -2],
+      reticleDisposals: 0,
+      /** Photos "encoded" by the fake (a 3-byte stand-in per capture). */
+      encodedFrames: 0,
+      /** The scan gate's escape clock (M5): armed timers the spec fires. */
+      timers:
+        /** @type {{ fn: () => void, ms: number, cancelled: boolean }[]} */ ([]),
+      fireTimers() {
+        for (const t of test.timers.splice(0)) {
+          if (!t.cancelled) t.fn();
+        }
+      },
       /** Simulate a SYSTEM session end (the Android back gesture). */
       endXrSession() {
         test.sessionEndCallback?.({ requestedByApp: false });
@@ -67,7 +93,16 @@ export async function installTourViewerArFakes(page) {
     };
     /** @type {any} */ (window).__tourViewerTest = test;
 
-    const worldGroup = { name: "fake-world-group" };
+    const worldGroup = {
+      name: "fake-world-group",
+      children: /** @type {unknown[]} */ ([]),
+      add(object) {
+        this.children.push(object);
+      },
+      remove(object) {
+        this.children = this.children.filter((c) => c !== object);
+      },
+    };
     /** Scene-root stub for the image planes (real three meshes land here). */
     const fakeScene = {
       name: "fake-scene",
@@ -91,9 +126,10 @@ export async function installTourViewerArFakes(page) {
         startOrientationWatch: () => {},
         stopGpsWatch: () => {},
         stopOrientationWatch: () => {},
-        initAR: (_container, isolationOptions, _features, callbacks) => {
+        initAR: (_container, isolationOptions, features, callbacks) => {
           test.initARCalls.push({
             hasCameraFrame: Boolean(callbacks?.cameraFrame),
+            requestHitTest: Boolean(features?.requestHitTest),
             isolationOptions,
           });
           test.cameraFrameCallback = callbacks?.cameraFrame?.onFrame ?? null;
@@ -104,6 +140,10 @@ export async function installTourViewerArFakes(page) {
         },
         endARSession: () => {
           test.endARSessionCalls += 1;
+          // The real XR session fires its 'end' event on an app-requested
+          // end too, which reaches the app's onSessionEnd through the
+          // controller's wrapper - the finish step relies on that teardown.
+          test.sessionEndCallback?.({ requestedByApp: true });
           return Promise.resolve();
         },
       },
@@ -139,6 +179,52 @@ export async function installTourViewerArFakes(page) {
       },
       startCameraFrameCapture: (config) => {
         test.captureCalls.push(config ?? {});
+      },
+      queryGeolocationPermission: () =>
+        Promise.resolve(test.locationPermission),
+      requestLocationOnce: () => {
+        test.locationRequests += 1;
+        if (test.locationOutcome === "granted") {
+          test.locationPermission = "granted";
+        }
+        return Promise.resolve(test.locationOutcome);
+      },
+      downloadZip: (blob, filename) => {
+        test.downloads.push({ filename, blob });
+        return Promise.resolve(test.saveOutcome);
+      },
+      startHitTestReticle: () => ({
+        isVisible: () => test.reticleVisible,
+        getWorldPosition: (out) => {
+          const [x, y, z] = test.reticlePosition;
+          out.set(x, y, z);
+          return out;
+        },
+        dispose: () => {
+          test.reticleDisposals += 1;
+        },
+      }),
+      encodeFrameJpeg: (image) => {
+        test.encodedFrames += 1;
+        return Promise.resolve({
+          blob: new Blob([new Uint8Array([0xff, 0xd8, 0xff])], {
+            type: "image/jpeg",
+          }),
+          width: image.width,
+          height: image.height,
+        });
+      },
+      schedule: (fn, ms) => {
+        const timer = { fn, ms, cancelled: false };
+        test.timers.push(timer);
+        return () => {
+          timer.cancelled = true;
+        };
+      },
+      createLabel: (text) => {
+        // A bare three Object3D stands in for the canvas-backed sprite.
+        const object = { name: `label:${text}`, position: { set() {} } };
+        return { object, dispose() {} };
       },
       stopCameraFrameCapture: () => {
         test.stopCaptureCalls += 1;

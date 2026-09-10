@@ -385,8 +385,7 @@ export class BuildingView {
   private frames = 0;
   /** The planned route's polyline, replaced wholesale like the cell grid. */
   private routeLine:
-    | THREE.Line<THREE.BufferGeometry, THREE.Material>
-    | undefined;
+    THREE.Line<THREE.BufferGeometry, THREE.Material> | undefined;
   /** The agent itself — one marker, created on the first route (DEC-R11-15). */
   private agent: THREE.Mesh<THREE.BufferGeometry, THREE.Material> | undefined;
   /**
@@ -417,12 +416,10 @@ export class BuildingView {
   private cellMesh: THREE.Mesh | undefined;
   /** The outline-treated cells' boundaries (W13). Lifecycle follows the grid. */
   private cellOutlines:
-    | THREE.LineSegments<THREE.BufferGeometry, THREE.Material>
-    | undefined;
+    THREE.LineSegments<THREE.BufferGeometry, THREE.Material> | undefined;
   /** The below-surface outlines, replaced wholesale like the cell grid. */
   private undergroundLines:
-    | THREE.LineSegments<THREE.BufferGeometry, THREE.Material>
-    | undefined;
+    THREE.LineSegments<THREE.BufferGeometry, THREE.Material> | undefined;
   /** Triangle index → cell id for the current grid. */
   private cellForTriangle: readonly string[] = [];
   private readonly raycaster = new THREE.Raycaster();
@@ -906,8 +903,7 @@ export class BuildingView {
      * contradictory pair.
      */
     centreEnu:
-      | { readonly x: number; readonly y: number }
-      | undefined = field?.centreEnu,
+      { readonly x: number; readonly y: number } | undefined = field?.centreEnu,
   ): void {
     const started = performance.now();
     this.terrain = field;
@@ -2149,8 +2145,7 @@ export class BuildingView {
       const geometry = object.geometry as THREE.BufferGeometry;
       if (geometry.getAttribute("aHeight01") === undefined) return;
       const original = object.userData["desktopMaterial"] as
-        | THREE.Material
-        | undefined;
+        THREE.Material | undefined;
       if (material === undefined) {
         // RESTORE ONLY IF WE SWAPPED IT. A mesh built after the swap already
         // carries the desktop material, and overwriting it with `undefined`

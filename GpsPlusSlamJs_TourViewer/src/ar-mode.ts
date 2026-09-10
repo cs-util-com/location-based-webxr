@@ -18,6 +18,7 @@ import type {
   EnableGpsArConfig,
   EnableGpsArState,
   RgbaImage,
+  TrackingSubscribableStore,
 } from "gps-plus-slam-app-framework/ar";
 import type {
   GpsPosition,
@@ -34,6 +35,8 @@ import type {
 } from "gps-plus-slam-app-framework/state";
 import type { Object3D } from "three";
 
+import type { ViewerMode } from "./mode.js";
+
 /**
  * Camera-frame cadence (~8 Hz, the detection cadence the QR plan budgets
  * for). The frame source is the SINGLE cadence owner (Option A): the QR
@@ -48,7 +51,7 @@ export interface ArButtonView {
   disabled: boolean;
 }
 
-/** The mode-independent states (author mode only relabels ready/running). */
+/** The mode-independent states (the mode only relabels ready/running). */
 const STATIC_BUTTON_VIEWS: Record<
   "checking" | "unsupported" | "starting" | "stopping",
   ArButtonView
@@ -59,20 +62,35 @@ const STATIC_BUTTON_VIEWS: Record<
   stopping: { label: "Stopping…", disabled: true },
 };
 
-/** Pure state → button mapping (MinimalExample's `buttonView` pattern). */
+/** Pure state → button mapping (MinimalExample's `buttonView` pattern).
+ *  `location` is the visitor screen's gate (DEC-N2): while pending, a ready
+ *  button asks for the location first; while busy, it says so and is
+ *  disabled (async-UI rule, M2 review #4). */
 export function arButtonView(
   state: EnableGpsArState,
-  authorMode: boolean,
+  mode: ViewerMode,
+  location: { pending: boolean; busy: boolean } = {
+    pending: false,
+    busy: false,
+  },
 ): ArButtonView {
   switch (state.status) {
     case "ready":
+      if (mode === "visitor" && location.busy) {
+        return { label: "Getting your location…", disabled: true };
+      }
       return {
-        label: authorMode ? "Start AR authoring" : "Start AR view",
+        label:
+          mode === "creator"
+            ? "Start AR setup"
+            : location.pending
+              ? "Allow location"
+              : "Start the tour",
         disabled: false,
       };
     case "running":
       return {
-        label: authorMode ? "Authoring in AR" : "AR running",
+        label: mode === "creator" ? "Setting up in AR" : "Tour running",
         disabled: true,
       };
     case "error":
@@ -88,6 +106,15 @@ export function arButtonView(
 /** The app-side hooks the enable configuration forwards into. */
 export interface ArEnableHooks {
   container: HTMLElement;
+  /** Request the WebXR `hit-test` feature (the creator's reticle; a
+   *  visitor places nothing). Without it the reticle never shows (plan
+   *  review #4). */
+  requestHitTest: boolean;
+  /** The store `initAR` dispatches `tracking/poseReceived` into - the
+   *  tracking-quality phase the placement trigger reads is derived from
+   *  those dispatches (flows plan M4). Without it the slice is mounted but
+   *  never fed, and the phase sits at `initializing` for the whole session. */
+  trackingStore: TrackingSubscribableStore;
   /** Every throttled camera frame (top-left RGBA) — the future QR feed. */
   onFrame(image: RgbaImage): void;
   onSessionEnd(): void;
@@ -108,12 +135,17 @@ export function buildArEnableConfig(hooks: ArEnableHooks): EnableGpsArConfig {
         hooks.onFrame(image);
       },
     },
+    // The framework's own poseReceived/poseLost dispatch path (the recorder
+    // learned on 2026-05-23 that a store not handed in here never leaves
+    // `initializing`; the viewer re-learned it in the flows plan review).
+    tracking: { store: hooks.trackingStore },
     onSessionEnd: () => {
       hooks.onSessionEnd();
     },
   };
   return {
     container: hooks.container,
+    requestHitTest: hooks.requestHitTest,
     // Camera ON (access + texture acquisition), depth OFF — in BOTH modes.
     // These are the opposite of MinimalExample/AnchorStarter, which turn the
     // camera path off to dodge its Chromium crash surface; a CV app needs it

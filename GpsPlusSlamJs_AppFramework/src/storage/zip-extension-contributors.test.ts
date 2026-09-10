@@ -170,7 +170,7 @@ describe('zip-export — ZipExportContributor seam', () => {
       exportSessionAsZip(sessionName, {
         contributors: [contributor],
       })
-    ).rejects.toThrow(/must not start with/);
+    ).rejects.toThrow(/is unsafe/);
   });
 
   it('rejects a contributor that tries to escape its subdir via traversal segments', async () => {
@@ -197,7 +197,7 @@ describe('zip-export — ZipExportContributor seam', () => {
         exportSessionAsZip(sessionName, {
           contributors: [makeContributor(badPath)],
         })
-      ).rejects.toThrow(/must not contain/);
+      ).rejects.toThrow(/is unsafe.*(backslash|segment)/);
     }
   });
 });

@@ -1,4 +1,4 @@
-import { bench, describe } from "vitest";
+import { describe, test } from "vitest";
 import { latLngToCell } from "h3-js";
 import { AffordanceIndex } from "./affordance-index.js";
 import { scoreCells } from "./affordance-scorer.js";
@@ -66,10 +66,12 @@ describe("AffordanceIndex.update — cold working set", () => {
     // all 19 chunks of the working set scored) is the one the user waits on.
     // Re-using a warm index would measure the `chunksReused` short-circuit,
     // which is already free.
-    bench(`${slug} (${tile.features.length} features)`, () => {
-      const index = new AffordanceIndex({ table });
-      index.acceptTile(tile);
-      index.update(centre);
+    test(`${slug} (${tile.features.length} features)`, async ({ bench }) => {
+      await bench(`${slug} (${tile.features.length} features)`, () => {
+        const index = new AffordanceIndex({ table });
+        index.acceptTile(tile);
+        index.update(centre);
+      }).run();
     });
   }
 });
@@ -86,8 +88,10 @@ describe("reference: one batched pass over the same cells", () => {
     // Same 931 cells, same features, same scoring — but the coverage work is
     // done once instead of once per chunk. The gap to the case above is the
     // headroom.
-    bench(`${slug} (${cells.length} cells)`, () => {
-      scoreCells(buildFeatureIndex(features, { restrictTo: cells }), table);
+    test(`${slug} (${cells.length} cells)`, async ({ bench }) => {
+      await bench(`${slug} (${cells.length} cells)`, () => {
+        scoreCells(buildFeatureIndex(features, { restrictTo: cells }), table);
+      }).run();
     });
   }
 });

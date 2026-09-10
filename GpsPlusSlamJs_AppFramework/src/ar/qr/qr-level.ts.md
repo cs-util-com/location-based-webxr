@@ -86,6 +86,6 @@ debug/observe or trigger-only level. `qr` itself is still required as an object.
 
 ## Related
 
-- `qr.geo` → [qr-gps-vote.ts.md](qr-gps-vote.ts.md) (`QrGeoPose`).
+- `qr.geo` → [qr-gps-vote.ts.md](qr-gps-vote.ts.md) (`QrGeoPose`); its validation rules live in [geo-pose.ts.md](geo-pose.ts.md) since 2026-09-08 (shared with the tour manifest); this file only supplies the `qr.geo` path and its error type, so the messages are unchanged.
 - Consumed by [qr-tracking-controller.ts.md](qr-tracking-controller.ts.md).
 - `FetchLike` is deliberately narrower than `storage/remote-range-byte-source.ts`'s `FetchImpl` (the full `typeof fetch`) - see that sidecar for why the two seams stay separate.

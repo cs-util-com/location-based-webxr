@@ -162,8 +162,8 @@ describe('qrInCameraFromOpenCv', () => {
 
     // WebXR path: convert pose, transform, project with the WebXR pinhole.
     const qrInCam = qrInCameraFromOpenCv({ rvec, tvec });
-    const webxrPixels = objectPoints.map(
-      (obj) => projectViewPoint(transformPoint(obj, qrInCam), intr)!
+    const webxrPixels = objectPoints.map((obj) =>
+      projectViewPoint(transformPoint(obj, qrInCam), intr)!
     );
 
     for (let i = 0; i < 4; i++) {
@@ -295,8 +295,8 @@ describe('solveQrPose (orchestration round-trip)', () => {
   const cameraPose: Pose = { position: [3, 1, -2], rotation: yawQuat(1.1) };
 
   function projectedCorners(): Point2[] {
-    return buildObjectPoints(sizeM).map(
-      (obj) => projectViewPoint(transformPoint(obj, qrPoseInCamera), intr)!
+    return buildObjectPoints(sizeM).map((obj) =>
+      projectViewPoint(transformPoint(obj, qrPoseInCamera), intr)!
     );
   }
 
@@ -373,8 +373,8 @@ describe('reprojectionErrorPx', () => {
     const intr = { fx: 500, fy: 500, cx: 100, cy: 100 };
     const pose: Pose = { position: [0, 0, -1], rotation: IDENTITY };
     const obj = buildObjectPoints(0.1);
-    const img = obj.map(
-      (o) => projectViewPoint(transformPoint(o, pose), intr)!
+    const img = obj.map((o) =>
+      projectViewPoint(transformPoint(o, pose), intr)!
     );
     expect(reprojectionErrorPx(obj, img, pose, intr)).toBeLessThan(1e-3);
   });

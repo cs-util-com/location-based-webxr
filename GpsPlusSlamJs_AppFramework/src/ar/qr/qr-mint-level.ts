@@ -141,8 +141,7 @@ export interface MintQrLevelInput {
 }
 
 export type MintQrLevelResult =
-  | { ok: true; level: QrLevel; json: string }
-  | { ok: false; error: string };
+  { ok: true; level: QrLevel; json: string } | { ok: false; error: string };
 
 /**
  * Compose the GPS-world pose and assemble the exportable level.

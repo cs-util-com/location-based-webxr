@@ -1,4 +1,4 @@
-import { bench, describe } from 'vitest';
+import { describe, test } from 'vitest';
 import { OccupancyGrid } from './occupancy-grid';
 import { packMeshRequest, runMeshRequest } from './occlusion-mesh-worker';
 import type { Matrix4, Vector3, Quaternion } from 'gps-plus-slam-js';
@@ -78,11 +78,15 @@ describe('occluder re-mesh (runMeshRequest, smooth, production path)', () => {
   const grid100k = buildSlabGrid(320); // 102,400 cells — long-walk regime
   const grid25k = buildSlabGrid(160); // 25,600 cells — mid-session regime
 
-  bench('100k cells (long-walk corpus regime)', () => {
-    remesh(grid100k);
+  test('100k cells (long-walk corpus regime)', async ({ bench }) => {
+    await bench('100k cells (long-walk corpus regime)', () => {
+      remesh(grid100k);
+    }).run();
   });
 
-  bench('25k cells (mid-session regime)', () => {
-    remesh(grid25k);
+  test('25k cells (mid-session regime)', async ({ bench }) => {
+    await bench('25k cells (mid-session regime)', () => {
+      remesh(grid25k);
+    }).run();
   });
 });

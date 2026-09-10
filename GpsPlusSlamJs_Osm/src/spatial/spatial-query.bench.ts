@@ -1,4 +1,4 @@
-import { afterAll, bench, describe } from "vitest";
+import { afterAll, describe, test } from "vitest";
 import Flatbush from "flatbush";
 
 import { parseOverpassJson } from "../model/overpass-parser.js";
@@ -217,8 +217,10 @@ function broadPhase(query: PlanarPoint[]): number[] {
 }
 
 describe("flatbush — build, over the corpus's areal features", () => {
-  bench(`build (${FEATURES.length} features)`, () => {
-    buildIndex(FEATURES);
+  test(`build (${FEATURES.length} features)`, async ({ bench }) => {
+    await bench(`build (${FEATURES.length} features)`, () => {
+      buildIndex(FEATURES);
+    }).run();
   });
 });
 
@@ -233,8 +235,10 @@ const QUERIES = [
 describe("broad phase — the tree's own bbox search", () => {
   for (const [label, query] of QUERIES) {
     const candidates = assertHits(label, broadPhase(query));
-    bench(`${label} (${candidates.length} candidates)`, () => {
-      broadPhase(query);
+    test(`${label} (${candidates.length} candidates)`, async ({ bench }) => {
+      await bench(`${label} (${candidates.length} candidates)`, () => {
+        broadPhase(query);
+      }).run();
     });
   }
 });
@@ -251,21 +255,25 @@ describe("narrow phase — polygonsOverlap over the broad phase's survivors", ()
       return item !== undefined && polygonsOverlap(item.rings, queryPolygon);
     }).length;
 
-    bench(
-      `${label} query (${candidates.length} candidates, ${overlapping} overlap)`,
-      () => {
-        let hits = 0;
-        for (const i of candidates) {
-          const item = FEATURES[i];
-          if (item === undefined) continue;
-          if (polygonsOverlap(item.rings, queryPolygon)) hits++;
-        }
-        // Parked in a module-scope sink rather than returned: `bench` bodies must
-        // be `void`, and without SOME escape the whole loop is dead code the
-        // optimiser may delete — which would measure an empty function.
-        sink += hits;
-      },
-    );
+    test(`${label} query (${candidates.length} candidates, ${overlapping} overlap)`, async ({
+      bench,
+    }) => {
+      await bench(
+        `${label} query (${candidates.length} candidates, ${overlapping} overlap)`,
+        () => {
+          let hits = 0;
+          for (const i of candidates) {
+            const item = FEATURES[i];
+            if (item === undefined) continue;
+            if (polygonsOverlap(item.rings, queryPolygon)) hits++;
+          }
+          // Parked in a module-scope sink rather than returned: `bench` bodies must
+          // be `void`, and without SOME escape the whole loop is dead code the
+          // optimiser may delete — which would measure an empty function.
+          sink += hits;
+        },
+      ).run();
+    });
   }
 });
 
@@ -303,14 +311,16 @@ describe("narrow phase — the cost of a YES against the cost of a NO", () => {
     ["overlapping (YES)", positives],
     ["rejected (NO)", negatives],
   ] as const) {
-    bench(`${label} — ${subset.length} candidates`, () => {
-      let hits = 0;
-      for (const i of subset) {
-        const item = FEATURES[i];
-        if (item === undefined) continue;
-        if (polygonsOverlap(item.rings, queryPolygon)) hits++;
-      }
-      sink += hits;
+    test(`${label} — ${subset.length} candidates`, async ({ bench }) => {
+      await bench(`${label} — ${subset.length} candidates`, () => {
+        let hits = 0;
+        for (const i of subset) {
+          const item = FEATURES[i];
+          if (item === undefined) continue;
+          if (polygonsOverlap(item.rings, queryPolygon)) hits++;
+        }
+        sink += hits;
+      }).run();
     });
   }
 });
@@ -412,14 +422,21 @@ describe("narrow phase by KIND — the two thirds never priced", () => {
       );
     }).length;
 
-    bench(`${label} (${candidates.length} cand → ${hits} overlap)`, () => {
-      let n = 0;
-      for (const i of candidates) {
-        const item = ALL[i];
-        if (item === undefined) continue;
-        if (geometryOverlaps(item.geometry, queryPolygon)) n++;
-      }
-      sink += n;
+    test(`${label} (${candidates.length} cand → ${hits} overlap)`, async ({
+      bench,
+    }) => {
+      await bench(
+        `${label} (${candidates.length} cand → ${hits} overlap)`,
+        () => {
+          let n = 0;
+          for (const i of candidates) {
+            const item = ALL[i];
+            if (item === undefined) continue;
+            if (geometryOverlaps(item.geometry, queryPolygon)) n++;
+          }
+          sink += n;
+        },
+      ).run();
     });
   }
 });
@@ -468,28 +485,32 @@ describe("the bbox guard — does rejecting early actually pay?", () => {
       ),
     );
 
-    bench(
-      `${label} GUARDED (${guarded.length} of ${unguarded.length} survive)`,
-      () => {
-        let hits = 0;
-        for (const i of INDEX.search(
-          minX,
-          minY,
-          maxX,
-          maxY,
-          (_j, x0, y0, x1, y1) =>
-            bboxOverlapsPolygon(
-              { west: x0, south: y0, east: x1, north: y1 },
-              queryPolygon,
-            ),
-        )) {
-          const item = FEATURES[i];
-          if (item === undefined) continue;
-          if (polygonsOverlap(item.rings, queryPolygon)) hits++;
-        }
-        sink += hits;
-      },
-    );
+    test(`${label} GUARDED (${guarded.length} of ${unguarded.length} survive)`, async ({
+      bench,
+    }) => {
+      await bench(
+        `${label} GUARDED (${guarded.length} of ${unguarded.length} survive)`,
+        () => {
+          let hits = 0;
+          for (const i of INDEX.search(
+            minX,
+            minY,
+            maxX,
+            maxY,
+            (_j, x0, y0, x1, y1) =>
+              bboxOverlapsPolygon(
+                { west: x0, south: y0, east: x1, north: y1 },
+                queryPolygon,
+              ),
+          )) {
+            const item = FEATURES[i];
+            if (item === undefined) continue;
+            if (polygonsOverlap(item.rings, queryPolygon)) hits++;
+          }
+          sink += hits;
+        },
+      ).run();
+    });
   }
 });
 
@@ -517,14 +538,16 @@ describe("narrow phase by kind — YES against NO, for lines", () => {
     ["lines rejected (NO)", negatives],
   ] as const) {
     if (subset.length === 0) continue;
-    bench(`${label} — ${subset.length} candidates`, () => {
-      let n = 0;
-      for (const i of subset) {
-        const item = ALL[i];
-        if (item === undefined) continue;
-        if (geometryOverlaps(item.geometry, queryPolygon)) n++;
-      }
-      sink += n;
+    test(`${label} — ${subset.length} candidates`, async ({ bench }) => {
+      await bench(`${label} — ${subset.length} candidates`, () => {
+        let n = 0;
+        for (const i of subset) {
+          const item = ALL[i];
+          if (item === undefined) continue;
+          if (geometryOverlaps(item.geometry, queryPolygon)) n++;
+        }
+        sink += n;
+      }).run();
     });
   }
 });

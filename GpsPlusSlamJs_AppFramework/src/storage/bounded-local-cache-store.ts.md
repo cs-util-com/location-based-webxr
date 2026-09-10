@@ -12,7 +12,17 @@ An LRU bound around any `LocalCacheStore`, so persist()-pinned archives
   - `constructor(inner: LocalCacheStore, maxEntries: number)` — throws
     `TypeError` unless `maxEntries` is a positive integer.
   - `get/put/delete` — the `LocalCacheStore` contract, recency-tracked.
-  - `clear(): Promise<void>` — evicts every archive this bound knows about.
+  - `size(): Promise<number>` — the index length at the time of the call: a
+    snapshot, not a bound in either direction (an entry whose blob is
+    already gone still counts; a warm download completing after the call
+    adds one the caller did not see).
+  - `clear(): Promise<number>` — the count is what the call itself
+    removed, so a UI reporting "cleared N" while a session holds an entry
+    open reads `size()` first and ignores this (PR #434 review); evicts every archive this bound knows
+    about; resolves how many index entries it removed. A caller that reports
+    "cleared N" around an open session must read `size()` BEFORE the
+    session's `evict()`, which drops that copy from the index (Tour Viewer
+    flows plan M2).
 
 ## Invariants & assumptions
 

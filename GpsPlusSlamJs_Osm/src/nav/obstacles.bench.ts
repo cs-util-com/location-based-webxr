@@ -1,4 +1,4 @@
-import { bench, describe } from "vitest";
+import { describe, test } from "vitest";
 import { buildObstacleIndex, crossesObstacle } from "./obstacles.js";
 import { gridDisk } from "h3-js";
 import { parseOverpassJson } from "../model/overpass-parser.js";
@@ -70,8 +70,10 @@ describe("buildObstacleIndex — the production entry point", () => {
   ]) {
     const all = features(siteId);
 
-    bench(`${siteId} (${all.length} features)`, () => {
-      buildObstacleIndex(all);
+    test(`${siteId} (${all.length} features)`, async ({ bench }) => {
+      await bench(`${siteId} (${all.length} features)`, () => {
+        buildObstacleIndex(all);
+      }).run();
     });
   }
 });
@@ -171,20 +173,28 @@ describe("crossesObstacle — the per-step cost A* actually pays", () => {
       empty.push([far, neighbour]);
     }
 
-    bench(`${siteId} — ${busy.length} steps ON indexed cells`, () => {
-      let blocked = 0;
-      for (const [from, to] of busy) {
-        if (crossesObstacle(index, from, to)) blocked++;
-      }
-      if (blocked < 0) throw new Error("unreachable");
+    test(`${siteId} — ${busy.length} steps ON indexed cells`, async ({
+      bench,
+    }) => {
+      await bench(`${siteId} — ${busy.length} steps ON indexed cells`, () => {
+        let blocked = 0;
+        for (const [from, to] of busy) {
+          if (crossesObstacle(index, from, to)) blocked++;
+        }
+        if (blocked < 0) throw new Error("unreachable");
+      }).run();
     });
 
-    bench(`${siteId} — ${empty.length} VERIFIED-clear steps`, () => {
-      let blocked = 0;
-      for (const [from, to] of empty) {
-        if (crossesObstacle(index, from, to)) blocked++;
-      }
-      if (blocked < 0) throw new Error("unreachable");
+    test(`${siteId} — ${empty.length} VERIFIED-clear steps`, async ({
+      bench,
+    }) => {
+      await bench(`${siteId} — ${empty.length} VERIFIED-clear steps`, () => {
+        let blocked = 0;
+        for (const [from, to] of empty) {
+          if (crossesObstacle(index, from, to)) blocked++;
+        }
+        if (blocked < 0) throw new Error("unreachable");
+      }).run();
     });
   }
 });

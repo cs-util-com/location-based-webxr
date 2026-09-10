@@ -109,7 +109,7 @@ export function planEndpointOrder(
   // Draining until every queue is empty cannot spin: each pass either moves at
   // least one item or ends the loop.
   const order: string[] = [];
-  for (let moved = true; moved; ) {
+  for (let moved = true; moved;) {
     moved = false;
     for (const queue of queues) {
       const next = queue.shift();

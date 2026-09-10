@@ -193,8 +193,7 @@ let terrain: HeightfieldData | undefined;
  * position?", not "is there relief?". A DEM outage resolves the question.
  */
 let terrainCentre:
-  | { lat: number; lng: number; undulationM: number | undefined }
-  | undefined;
+  { lat: number; lng: number; undulationM: number | undefined } | undefined;
 
 /**
  * Releases a mesh build that is waiting for its own position's terrain (W3).

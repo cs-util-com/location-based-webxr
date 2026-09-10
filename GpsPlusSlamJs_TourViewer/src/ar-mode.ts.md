@@ -13,10 +13,21 @@ identical here — they diverge in M3/M4.
 - `CAMERA_FRAME_INTERVAL_MS = 125` — the ~8 Hz detection cadence. The frame
   source is the SINGLE cadence owner (Option A): the QR controller consuming
   these frames must run `minIntervalMs: 0`.
-- `arButtonView(state, authorMode): { label; disabled }` — pure mapping of
-  `EnableGpsArState` to the entry button (author mode only changes labels).
-- `buildArEnableConfig(hooks: ArEnableHooks): EnableGpsArConfig` — hooks:
-  `{ container, onFrame, onSessionEnd, onGpsPosition, onOrientation }`.
+- `arButtonView(state, mode, location?): { label; disabled }` - pure
+  mapping of `EnableGpsArState` to the entry button. Ready: "Start AR
+  setup" (creator), "Start the tour" (visitor), "Allow location" (visitor
+  while the location gate is pending, DEC-N2), "Getting your location…"
+  disabled (visitor while the request runs); running: "Setting up in AR"
+  / "Tour running".
+- `buildArEnableConfig(hooks: ArEnableHooks): EnableGpsArConfig` -
+  `hooks.requestHitTest` asks for the WebXR `hit-test` feature (the
+  creator's reticle; without it the reticle never shows) - hooks:
+  `{ container, trackingStore, onFrame, onSessionEnd, onGpsPosition, onOrientation }`.
+  `trackingStore` rides in as `callbacks.tracking.store` (flows plan M4):
+  `initAR` dispatches `tracking/poseReceived` ONLY into the store handed in
+  here, and the tracking-quality phase the placement trigger reads is
+  derived from those dispatches. The viewer had mounted that slice since its
+  creation and never fed it (the recorder's 2026-05-23 lesson, re-learned).
 - `startTourArRuntime(store, deps): { ok: true } | { ok: false; error }` —
   deps: `{ getArWorldGroup, enableArWorldGroupAlignment,
 startCameraFrameCapture, now }` (seam-injected).
@@ -49,7 +60,8 @@ startCameraFrameCapture, now }` (seam-injected).
 - GPS fixes arriving between watch start and the `startSession` dispatch
   (a sub-second window during `enable()`) are dropped, as in MinimalExample;
   fixes are continuous, so the loss is immaterial.
-- No hit-test, no depth permission: the QR flows anchor to detected codes
+- Hit-test only for a creator (`requestHitTest`, the placement reticle
+  since M4); no depth permission: the QR flows anchor to detected codes
   and GPS positions, never to hit-test planes.
 
 ## Examples

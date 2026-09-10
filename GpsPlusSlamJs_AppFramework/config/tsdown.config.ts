@@ -58,6 +58,10 @@ const entryFiles = [
   // recorder's worker shell deep-imports it, so it must be a dist entry.
   'src/ar/occlusion-mesh-worker.ts',
   'src/ar/enable-gps-ar.ts',
+  // `tour.json` schema + archive convention (guided-setup plan M1) - deep-
+  // imported by the Tour Viewer via the `./ar/*` wildcard, so per-file.
+  'src/ar/tour-manifest.ts',
+  'src/ar/tour-archive.ts',
   'src/ar/frame-loop.ts',
   // Shared hit-test reticle driver (2026-07-18 promotion of the three
   // app-local copies) — deep-imported by consumer apps via the `./ar/*`
@@ -157,6 +161,12 @@ const entryFiles = [
   'src/storage/zip-export.ts',
   'src/storage/zip-reader.ts',
   'src/storage/zip-coverage-embed.ts',
+  // The store-mode writer trio behind the Tour Viewer's zip rebuild
+  // (guided-setup plan M1, absorbed from community PR #321): deep-imported
+  // via the `./storage/*` wildcard, so each must be built per-file.
+  'src/storage/zip-entry-path.ts',
+  'src/storage/pack-files-as-zip.ts',
+  'src/storage/zip-rebuild.ts',
   // Range-based zip streaming transport — the `./storage/*` exports wildcard
   // advertises every one of these subpaths, so each must be built per-file
   // (same reasoning as the utils/qr-payload entries below; a missing entry
@@ -221,6 +231,11 @@ const entryFiles = [
   // Shared rather than copied because the early return is a CONTRACT: without
   // it `360 − ε` snaps to 0, a full turn that never happened.
   'src/utils/bearing-degrees.ts',
+  // CSS cubic-bezier timing functions — deep-imported by the wayfinding
+  // HUD's diamond entrance (NOT via the `/utils` barrel, which would pull in
+  // the logger and friends). The `./utils/*` exports wildcard advertises
+  // this subpath, so it must be built per-file.
+  'src/utils/cubic-bezier-easing.ts',
   // Median family — deep-imported by the recorder (yaw-churn.ts) since
   // 2026-09-04. Built per-file for the same reason as bearing-degrees: the
   // './utils/*' wildcard advertises the subpath, and without an entry here
@@ -248,6 +263,11 @@ const entryFiles = [
   // plan M1/M3; the /ar/qr barrel would eagerly pull the whole QR cluster
   // into node unit tests), so each must be built per-file.
   'src/ar/qr/qr-geo-pose-minting.ts',
+  // The level/manifest-shared geo-pose validator (guided-setup plan M1).
+  'src/ar/qr/geo-pose.ts',
+  // The JSON type guards those parsers share (one copy per package,
+  // DEC-H3) - under the `./utils/*` wildcard, so per-file.
+  'src/utils/json-guards.ts',
   'src/ar/qr/qr-level.ts',
   'src/ar/qr/qr-level-archive.ts',
   'src/ar/qr/qr-mint-level.ts',
@@ -266,6 +286,8 @@ const entryFiles = [
   'src/visualization/ar-world-group-alignment.ts',
   'src/visualization/camera-follower.ts',
   'src/visualization/css3d-renderer-manager.ts',
+  'src/visualization/diamond-entrance.ts',
+  'src/visualization/diamond-marker-texture.ts',
   'src/visualization/frame-conversions.ts',
   // Blob → upright THREE.Texture (promoted from the recorder, DEC-H3) —
   // deep-imported by the recorder and the TourViewer via the

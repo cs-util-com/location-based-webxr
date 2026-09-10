@@ -23,7 +23,21 @@ camera, so `installTourViewerArFakes(page)` installs
   pipeline; the REAL controller, slice, stability gate and mint run over
   them — plus `fakeScene` (a scene-root stub the image planes land in);
   `getArWorldGroup`/`getScene` return null until initAR ran, pinning the
-  production ordering.
+  production ordering; `locationPermission` / `locationOutcome` /
+  `locationRequests` (the visitor screen's gate: what the permission
+  query answers, what a location-only tap comes back with, how many taps
+  were made); `downloads` + `saveOutcome` (the zips the setup offered
+  for download - the fake `downloadZip` captures the blob instead of
+  saving, and reports `saveOutcome`, false meaning a dismissed picker).
+  `endARSession` fires `sessionEndCallback({ requestedByApp: true })`
+  like the real XR session's end event does, so an app-requested end runs
+  the app's teardown in the specs too (the finish step relies on it).
+  `reticleVisible` / `reticlePosition` / `reticleDisposals` and
+  `encodedFrames` script the creator's placement layer (the hit-test
+  reticle and the JPEG encoder fakes; `createLabel` returns a bare object
+  in place of the canvas sprite); `timers` + `fireTimers()` are the scan
+  gate's escape clock (the `schedule` seam), so a spec fires the 45 s
+  without waiting.
 
 ## Invariants & assumptions
 

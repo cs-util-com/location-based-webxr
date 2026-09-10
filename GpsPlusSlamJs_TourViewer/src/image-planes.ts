@@ -45,9 +45,7 @@ export function placeImagePlanes(options: {
     const position = positionsNue[i];
     if (texture === undefined || position === undefined) continue;
     const image = texture.image as
-      | { width?: number; height?: number }
-      | null
-      | undefined;
+      { width?: number; height?: number } | null | undefined;
     // `!= null` on purpose: a bare `new Texture()` carries `image: null`
     // (found by the facing test — the undefined-only guard crashed).
     const aspect =
@@ -102,9 +100,7 @@ export function placeCapturedImagePlanes(options: {
     const pose = poses[i];
     if (texture === undefined || pose === undefined) continue;
     const image = texture.image as
-      | { width?: number; height?: number }
-      | null
-      | undefined;
+      { width?: number; height?: number } | null | undefined;
     const aspect =
       image != null &&
       typeof image.width === "number" &&

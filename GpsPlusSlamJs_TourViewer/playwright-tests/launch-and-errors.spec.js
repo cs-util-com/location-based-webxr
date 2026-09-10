@@ -21,6 +21,9 @@ test("a ?qr= launch opens the archive with no interaction", async ({
   });
   // The resolved URL lands in the input so the visitor can see/share it.
   await expect(page.getByTestId("link-input")).toHaveValue(RANGES_URL);
+  // ...and in the print panel, which a QR-launched open presents like any
+  // other (flows plan M3: the boot reaches the prefill through openUrl).
+  await expect(page.getByTestId("print-url")).toHaveValue(RANGES_URL);
 });
 
 test("opening shows the in-progress state, then restores it (success path)", async ({

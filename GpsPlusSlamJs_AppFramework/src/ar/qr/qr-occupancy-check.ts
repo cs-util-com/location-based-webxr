@@ -32,10 +32,7 @@ export interface OccupancySurface {
 }
 
 export type QrPlausibilityVerdict =
-  | 'plausible'
-  | 'floating'
-  | 'behind-surface'
-  | 'no-grid';
+  'plausible' | 'floating' | 'behind-surface' | 'no-grid';
 
 export interface QrPlausibility {
   verdict: QrPlausibilityVerdict;

@@ -34,8 +34,7 @@ vi.mock("gps-plus-slam-app-framework/storage/null-storage-backend", () => ({
 // is covered by the framework's hit-test-reticle-driver tests).
 const driverMock = vi.hoisted(() => ({
   capturedOnSelect: null as
-    | ((worldPosition: THREE.Vector3 | null) => void)
-    | null,
+    ((worldPosition: THREE.Vector3 | null) => void) | null,
   disposeSpy: vi.fn(),
 }));
 vi.mock("gps-plus-slam-app-framework/ar/hit-test-reticle-driver", () => ({
@@ -51,7 +50,19 @@ vi.mock("gps-plus-slam-app-framework/ar/hit-test-reticle-driver", () => ({
   ),
 }));
 vi.mock("gps-plus-slam-app-framework/visualization/wayfinding-hud", () => ({
-  createWayfindingHud: vi.fn(() => ({ update: vi.fn(), dispose: vi.fn() })),
+  createWayfindingHud: vi.fn(() => ({
+    update: vi.fn(),
+    // Non-zero on purpose: the readout prints only while something animates,
+    // so a zero fake could not tell a dropped argument from a quiet frame.
+    entranceStats: vi.fn(() => ({
+      redraws: 2,
+      drawMs: 0.04,
+      animating: 1,
+      entranceMs: 0.5,
+      peakDrawMs: 0.08,
+    })),
+    dispose: vi.fn(),
+  })),
 }));
 // The accent token comes from the vendored design.css at runtime; jsdom has
 // no sheet, so the reader is mocked to exercise both outcomes.
@@ -74,6 +85,7 @@ function makeDeps(configOverride?: { imageIndicators?: boolean }) {
       distanceMax: 3,
       indicatorScale: 1,
       imageIndicators: configOverride?.imageIndicators ?? false,
+      entrance: true,
     }),
     onStatus: vi.fn((_text: string) => undefined),
     onHint: vi.fn((_message: string) => undefined),
@@ -240,5 +252,18 @@ describe("startArMode", () => {
       mode.refreshHud();
       mode.dispose();
     }).not.toThrow();
+  });
+
+  it("passes the HUD's entrance readout into the per-frame status line", async () => {
+    // Why: this is the line the owner reads on the headset to judge the
+    // entrance's cost, and nothing else exercises the AR host's wiring of
+    // the fourth summarizeHudScene input (M4 milestone review, 2026-09-06).
+    const deps = makeDeps();
+    const mode = await startArMode(deps);
+    runXrFrame(makeFrameContext());
+    expect(vi.mocked(deps.onStatus)).toHaveBeenLastCalledWith(
+      expect.stringContaining("entrance 1 animating · 2 redraws"),
+    );
+    mode.dispose();
   });
 });

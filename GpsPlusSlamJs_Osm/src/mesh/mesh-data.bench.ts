@@ -1,4 +1,4 @@
-import { bench, describe } from "vitest";
+import { describe, test } from "vitest";
 import { MeshBuilder } from "./mesh-data.js";
 import { mergeMeshes } from "./extrude.js";
 import { buildBuildings } from "./buildings.js";
@@ -59,8 +59,15 @@ const meshes = buildingMeshes();
 const vertices = meshes.reduce((sum, m) => sum + m.positions.length / 3, 0);
 
 describe("MeshBuilder — the merge path", () => {
-  bench(`mergeMeshes (${meshes.length} meshes, ${vertices} vertices)`, () => {
-    mergeMeshes(meshes);
+  test(`mergeMeshes (${meshes.length} meshes, ${vertices} vertices)`, async ({
+    bench,
+  }) => {
+    await bench(
+      `mergeMeshes (${meshes.length} meshes, ${vertices} vertices)`,
+      () => {
+        mergeMeshes(meshes);
+      },
+    ).run();
   });
 });
 
@@ -70,32 +77,36 @@ describe("MeshBuilder — the emitter path", () => {
   // behaviour of the accumulator is exercised rather than only its steady state.
   const QUADS = 50_000;
 
-  bench(`vertex + triangle (${QUADS * 4} vertices)`, () => {
-    const builder = new MeshBuilder();
-    for (let i = 0; i < QUADS; i++) {
-      const a = builder.vertex(i, 0, 0, 0, 1, 0);
-      const b = builder.vertex(i + 1, 0, 0, 0, 1, 0);
-      const c = builder.vertex(i + 1, 1, 0, 0, 1, 0);
-      const d = builder.vertex(i, 1, 0, 0, 1, 0);
-      builder.triangle(a, b, c);
-      builder.triangle(a, c, d);
-    }
-    builder.build();
+  test(`vertex + triangle (${QUADS * 4} vertices)`, async ({ bench }) => {
+    await bench(`vertex + triangle (${QUADS * 4} vertices)`, () => {
+      const builder = new MeshBuilder();
+      for (let i = 0; i < QUADS; i++) {
+        const a = builder.vertex(i, 0, 0, 0, 1, 0);
+        const b = builder.vertex(i + 1, 0, 0, 0, 1, 0);
+        const c = builder.vertex(i + 1, 1, 0, 0, 1, 0);
+        const d = builder.vertex(i, 1, 0, 0, 1, 0);
+        builder.triangle(a, b, c);
+        builder.triangle(a, c, d);
+      }
+      builder.build();
+    }).run();
   });
 
   // The painted variant, because `paint` turns on a THIRD parallel array and the
   // POI models — 52 builders' worth — all take that path.
-  bench(`vertex + paint (${QUADS * 4} vertices)`, () => {
-    const builder = new MeshBuilder();
-    for (let i = 0; i < QUADS; i++) {
-      builder.paint(0x8899aa);
-      const a = builder.vertex(i, 0, 0, 0, 1, 0);
-      const b = builder.vertex(i + 1, 0, 0, 0, 1, 0);
-      const c = builder.vertex(i + 1, 1, 0, 0, 1, 0);
-      const d = builder.vertex(i, 1, 0, 0, 1, 0);
-      builder.triangle(a, b, c);
-      builder.triangle(a, c, d);
-    }
-    builder.build();
+  test(`vertex + paint (${QUADS * 4} vertices)`, async ({ bench }) => {
+    await bench(`vertex + paint (${QUADS * 4} vertices)`, () => {
+      const builder = new MeshBuilder();
+      for (let i = 0; i < QUADS; i++) {
+        builder.paint(0x8899aa);
+        const a = builder.vertex(i, 0, 0, 0, 1, 0);
+        const b = builder.vertex(i + 1, 0, 0, 0, 1, 0);
+        const c = builder.vertex(i + 1, 1, 0, 0, 1, 0);
+        const d = builder.vertex(i, 1, 0, 0, 1, 0);
+        builder.triangle(a, b, c);
+        builder.triangle(a, c, d);
+      }
+      builder.build();
+    }).run();
   });
 });

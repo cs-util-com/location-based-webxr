@@ -1,4 +1,4 @@
-import { bench, describe } from "vitest";
+import { describe, test } from "vitest";
 import { stitchRings } from "./multipolygon-builder.js";
 import { toGeometry } from "./osm-geometry.js";
 import { parseOverpassJson } from "./overpass-parser.js";
@@ -66,8 +66,15 @@ describe("stitchRings — the real relations the fixtures contain", () => {
     const segments = segmentsOf(relation);
     const points = segments.reduce((sum, s) => sum + s.length, 0);
 
-    bench(`${slug} (${segments.length} segments, ${points} points)`, () => {
-      stitchRings(segments);
+    test(`${slug} (${segments.length} segments, ${points} points)`, async ({
+      bench,
+    }) => {
+      await bench(
+        `${slug} (${segments.length} segments, ${points} points)`,
+        () => {
+          stitchRings(segments);
+        },
+      ).run();
     });
   }
 });
@@ -80,8 +87,10 @@ describe("toGeometry — stitching in its production caller", () => {
     // The caller `buildFeatureIndex` actually uses. Kept alongside the bare
     // `stitchRings` case so a win there can be checked to survive the work
     // around it (hole grouping, area comparison) rather than being swallowed.
-    bench(`${slug}`, () => {
-      toGeometry(relation);
+    test(`${slug}`, async ({ bench }) => {
+      await bench(`${slug}`, () => {
+        toGeometry(relation);
+      }).run();
     });
   }
 });
@@ -119,8 +128,10 @@ function splitRing(n: number, k = 64): LatLng[][] {
 describe("stitchRings — synthetic scaling, 64 points per segment", () => {
   for (const n of [50, 200, 800]) {
     const segments = splitRing(n);
-    bench(`${n} segments`, () => {
-      stitchRings(segments);
+    test(`${n} segments`, async ({ bench }) => {
+      await bench(`${n} segments`, () => {
+        stitchRings(segments);
+      }).run();
     });
   }
 });

@@ -143,11 +143,7 @@ await initAR(document.getElementById('app')!);
 // 3. Wire GPS into the store.
 startGpsWatch(
   (pos) => {
-    store.dispatch(
-      recordGpsEvent({
-        /* build the payload from `pos` */
-      })
-    );
+    store.dispatch(recordGpsEvent({/* build the payload from `pos` */}));
   },
   (err) => {
     console.error('GPS error', err);

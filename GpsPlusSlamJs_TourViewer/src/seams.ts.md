@@ -12,9 +12,23 @@ Keeps `main.ts` glue-only.
 - `interface TourViewerSeams { controllerDeps; getArWorldGroup;
 enableArWorldGroupAlignment; startCameraFrameCapture;
 stopCameraFrameCapture; createQrFrontEnd; solveQrPose; getCameraPose;
-getIntrinsics; getScene }` — `controllerDeps` is a
+getIntrinsics; createQrDebugView; getScene; queryGeolocationPermission;
+requestLocationOnce; downloadZip; startHitTestReticle; encodeFrameJpeg;
+createLabel; schedule }` - the placement layer (M4: the framework's hit-test
+  reticle under the world group; the camera frame → JPEG encoder, which is
+  the framework's `rgbaImageToJpegBlob` behind an opacity guard, async
+  throughout; the framework text sprite for a pin's label at a 2:1
+  canvas/scale with a transparent pill) and the
+  one-shot clock behind the scan gate's escape (M5; the e2e fires it instead
+  of waiting) - `controllerDeps` is a
   `Partial<EnableGpsArDeps>` injected into `createEnableGpsArController`
   (empty in production; the e2e fake supplies the full dep set there). The
+  `queryGeolocationPermission` / `requestLocationOnce` are the visitor
+  screen's location gate (guided-setup plan DEC-N2): the Permissions API
+  state, and one `getCurrentPosition` on its own tap resolving
+  "granted" | "denied" (error code 1) | "unavailable" (any other failure).
+  `downloadZip` is the framework's picker-or-anchor download (the e2e fake
+  captures the blob). The
   QR quartet (M3) is the author pipeline's device layer: BarcodeDetector
   front end (or `null` — desktop has no fallback by design), the pure-JS
   planar-PnP solver, the current XR-frame pose as tuples (raw WebXR/odom),

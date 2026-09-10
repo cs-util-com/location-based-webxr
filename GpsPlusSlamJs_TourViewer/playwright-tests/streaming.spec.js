@@ -180,8 +180,18 @@ test("clear cache empties the store and the next open goes to the network again"
   await openArchive(page, RANGES_URL);
   await expectGalleryStreamedIn(page);
 
+  // The button lives in the collapsed Storage section (flows plan M2): a
+  // click through Playwright needs it visible, so expand the summary first.
+  await page.getByTestId("storage-panel").locator("summary").click();
   await page.getByTestId("clear-cache").click();
-  await expect(page.getByTestId("clear-cache")).toHaveText("Cache cleared");
+  // The confirmation names what went (the count is read before the open
+  // session's own copy is evicted - one tour was stored), then reverts.
+  await expect(page.getByTestId("clear-cache")).toHaveText(
+    "Cache cleared - 1 stored tour removed",
+  );
+  await expect(page.getByTestId("clear-cache")).toHaveText("Clear cache", {
+    timeout: 5000,
+  });
 
   await page.goto("/");
   const tally = trackArchiveTraffic(page, RANGES_URL);
@@ -190,16 +200,31 @@ test("clear cache empties the store and the next open goes to the network again"
   expect(tally.gets).toBeGreaterThan(0);
 });
 
-test("clear cache during an in-flight warm download settles only once the store is durably empty", async ({
+test("without a cache store the Storage section is hidden, not just its button", async ({
+  page,
+}) => {
+  // Why this matters (flows plan review #14): the section's sentence
+  // explains a cache; under ?nocache=1 that sentence would describe a
+  // feature that is off.
+  await page.goto("/?nocache=1");
+  await expect(page.getByTestId("storage-panel")).toBeHidden();
+  await page.goto("/");
+  await expect(page.getByTestId("storage-panel")).toBeVisible();
+});
+
+test("clear cache during an in-flight warm download settles at once, and the store stays durably empty", async ({
   page,
   request,
 }) => {
-  // Why this matters (PR #358 review): the warm download persists on
-  // completion, so a clear that ignored it reported "Cache cleared" and then
-  // watched the background write silently repopulate the store — the next
-  // visit served from cache after the user was told there was none. The
-  // server's warm gate holds the warm GET open, giving a deterministic
-  // in-flight window instead of racing a real download.
+  // Why this matters (PR #358 review, rewritten for flows plan M2): the warm
+  // download persists on completion, so a clear that ignored it reported
+  // "Cache cleared" and then watched the background write silently
+  // repopulate the store. The first fix WAITED for the warm - which on a
+  // phone with a tens-of-MB zip held the button at "Clearing…" for minutes
+  // (feedback F1). Now evict() aborts the warm: the confirmation must appear
+  // while the gate is still HELD, and after the release the store must
+  // still be empty. The server's warm gate gives the deterministic in-flight
+  // window instead of racing a real download.
   const SLOW_WARM_URL = `${ARCHIVE_HOST}/slow-warm/tour.zip`;
   await request.get(`${ARCHIVE_HOST}/warm-gate?state=hold`);
   try {
@@ -207,26 +232,19 @@ test("clear cache during an in-flight warm download settles only once the store 
     await openArchive(page, SLOW_WARM_URL);
     await expectGalleryStreamedIn(page); // ranges flow; the warm GET is held
 
-    // Arm the completion watcher BEFORE releasing the gate so the ordering
-    // of "Cache cleared" relative to the release is observable.
+    await page.getByTestId("storage-panel").locator("summary").click();
     await page.getByTestId("clear-cache").click();
-    const clearedAt = page
-      .waitForFunction(
-        () =>
-          document.querySelector('[data-testid="clear-cache"]')?.textContent ===
-          "Cache cleared",
-        undefined,
-        { timeout: 15000, polling: 25 },
-      )
-      .then(() => Date.now());
-    // The buggy handler settled within a few event-loop turns; this margin
-    // is orders of magnitude above that. (Node-side sleep — the page itself
-    // waits on real conditions.)
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    const releasedAt = Date.now();
+    // The gate is still HELD: a clear that waited for the warm could not
+    // confirm here (the old assertion was the opposite - it required the
+    // confirmation to come AFTER the release).
+    await expect(page.getByTestId("clear-cache")).toHaveText(/^Cache cleared/, {
+      timeout: 5000,
+    });
     await request.get(`${ARCHIVE_HOST}/warm-gate?state=release`);
-    // The clear must have WAITED on the held warm write, not raced past it.
-    expect(await clearedAt).toBeGreaterThanOrEqual(releasedAt);
+    // Give a warm that ignored the abort every chance to land its write
+    // before the durable-empty check (Node-side sleep; the page waits on
+    // real conditions).
+    await new Promise((resolve) => setTimeout(resolve, 500));
 
     // Durably empty: the next visit must hit the network again — a
     // repopulated store would serve it with zero GETs.

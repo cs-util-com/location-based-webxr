@@ -18,12 +18,7 @@
  */
 
 export type LocateState =
-  | "idle"
-  | "locating"
-  | "located"
-  | "denied"
-  | "timeout"
-  | "unavailable";
+  "idle" | "locating" | "located" | "denied" | "timeout" | "unavailable";
 
 /**
  * The button's accessible label for a state.

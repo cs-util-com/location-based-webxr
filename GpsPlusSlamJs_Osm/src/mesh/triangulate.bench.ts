@@ -1,4 +1,4 @@
-import { bench, describe } from "vitest";
+import { describe, test } from "vitest";
 import { triangulate } from "./triangulate.js";
 import { enuFrameAt, ringToEnu } from "./enu.js";
 import { toGeometry } from "../model/osm-geometry.js";
@@ -82,8 +82,10 @@ describe("triangulate — hole bridging", () => {
     const { rings, points, holes } = mostHoledPolygon(siteId);
     if (holes <= 0) continue;
 
-    bench(`${siteId} (${points} points, ${holes} holes)`, () => {
-      triangulate(rings);
+    test(`${siteId} (${points} points, ${holes} holes)`, async ({ bench }) => {
+      await bench(`${siteId} (${points} points, ${holes} holes)`, () => {
+        triangulate(rings);
+      }).run();
     });
   }
 });

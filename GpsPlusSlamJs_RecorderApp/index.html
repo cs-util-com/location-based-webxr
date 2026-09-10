@@ -481,8 +481,7 @@
               id="summary-errors"
               class="text-xs text-red-300 whitespace-pre-wrap max-h-24 overflow-y-auto"
             >
-No errors</pre
-            >
+No errors</pre>
           </div>
 
           <!-- Actions -->
@@ -1222,22 +1221,6 @@ No errors</pre
                 />
                 <span class="text-sm text-gray-200">Sample depth points</span>
               </label>
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  id="qr-use-levels"
-                  class="w-4 h-4 accent-blue-500"
-                />
-                <span class="text-sm text-gray-200"
-                  >Use codes to improve this recording</span
-                >
-              </label>
-              <p class="text-xs text-gray-400 pl-6">
-                Downloads what a printed code knows about where it is, and feeds
-                it into this session's positioning. Leave this off for
-                recordings you want to analyse later — it adds computed GPS
-                readings alongside the real ones.
-              </p>
               <div class="space-y-1">
                 <div class="flex justify-between text-xs text-gray-400">
                   <span>Interval</span>
@@ -1447,6 +1430,25 @@ No errors</pre
                   >Detect &amp; record QR codes (RAW)</span
                 >
               </label>
+              <!-- Moved here from Depth Sampling (2026-09-08): the one control
+                   that CONSUMES printed codes belongs with the detection
+                   controls it depends on (Tour Viewer feedback F4). -->
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  id="qr-use-levels"
+                  class="w-4 h-4 accent-blue-500"
+                />
+                <span class="text-sm text-gray-200"
+                  >Use codes to improve this recording</span
+                >
+              </label>
+              <p class="text-xs text-gray-400 pl-6">
+                Downloads what a printed code knows about where it is, and feeds
+                it into this session's positioning. Leave this off for
+                recordings you want to analyse later — it adds computed GPS
+                readings alongside the real ones.
+              </p>
               <div class="space-y-1">
                 <div class="flex justify-between text-xs text-gray-400">
                   <span>Detection Interval</span>

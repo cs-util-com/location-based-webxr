@@ -1284,8 +1284,7 @@ describe('recording-options', () => {
         unknown
       >;
       const flags = result.arCrashIsolation as
-        | Record<string, unknown>
-        | undefined;
+        Record<string, unknown> | undefined;
 
       expect(flags).toEqual({
         enableDomOverlay: true,
@@ -1389,8 +1388,7 @@ describe('recording-options', () => {
         unknown
       >;
       const flags = result.arCrashIsolation as
-        | Record<string, unknown>
-        | undefined;
+        Record<string, unknown> | undefined;
 
       expect(flags).toEqual({
         enableDomOverlay: true,

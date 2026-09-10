@@ -123,7 +123,7 @@ export function authorStatusLine(
 ): AuthorReadout {
   if (detectedText === null || stability === null) {
     return {
-      text: "Point the camera at the printed code…",
+      text: "Hold the phone on the printed code so it fills the screen…",
       canMint: false,
     };
   }
@@ -143,29 +143,88 @@ export function authorStatusLine(
       canMint: false,
     };
   }
-  return { text: `Pose stable (${spread}) — ready to mint.`, canMint: true };
+  return {
+    text: `Measured and stable (${spread}) — save the position.`,
+    canMint: true,
+  };
 }
 
-/**
- * What the panel tells the author to do with the exported JSON.
- *
- * Split out of the DOM handler so BOTH branches are testable: deriving the
- * code's identity is async, and the async-UI rule requires the failure path
- * to be exercised, not just the happy one.
- */
-export function authorLevelHint(codeId: string | null): string {
-  if (codeId === null) {
-    return (
-      "Add the downloaded file to your tour zip under qr/, then re-upload " +
-      "the zip to the same URL — viewers pick the change up automatically."
-    );
+/** What the setup panel says once the code is measured: the next move. */
+export function setupHint(state: {
+  measured: boolean;
+  tourOpen: boolean;
+  hadLevel: boolean;
+}): string {
+  if (!state.measured) return "";
+  if (!state.tourOpen) {
+    return "Position saved. Open your tour in step 1 to finish - the measured code is written into that zip.";
   }
   return (
-    `Add the downloaded file to your tour zip as qr/${codeId}.json, then ` +
-    "re-upload the zip to the same URL — viewers pick the change up " +
-    "automatically."
+    (state.hadLevel
+      ? "Position saved - it replaces the code this tour already carried. "
+      : "Position saved. ") + "Place content, or tap Finish to rebuild the zip."
   );
 }
+
+/** Whether the finish button may run, and if not, why. */
+export function finishReadiness(state: {
+  measured: boolean;
+  tourOpen: boolean;
+  manifest: "pending" | "settled" | "broken";
+}):
+  | "ready"
+  | "not-measured"
+  | "no-tour"
+  | "manifest-pending"
+  | "manifest-broken" {
+  if (!state.measured) return "not-measured";
+  if (!state.tourOpen) return "no-tour";
+  if (state.manifest === "pending") return "manifest-pending";
+  if (state.manifest === "broken") return "manifest-broken";
+  return "ready";
+}
+
+/** Why the finish button is off, in the creator's words (empty when ready). */
+export function finishBlockedHint(
+  readiness: ReturnType<typeof finishReadiness>,
+): string {
+  switch (readiness) {
+    case "manifest-pending":
+      return "Finish unlocks once the tour's content list has loaded.";
+    case "manifest-broken":
+      return "The hosted zip's tour.json is broken; repair it before finishing, or the placement it holds would be lost.";
+    default:
+      return "";
+  }
+}
+
+/** Above this the rebuild is a long whole-file pass on a phone; the copy
+ *  says so before the creator taps. */
+const LARGE_ARCHIVE_BYTES = 200_000_000;
+
+/** What the finish button's surroundings say about the archive's size. */
+export function archiveSizeNote(bytes: number): string {
+  const mb = (bytes / 1_000_000).toFixed(0);
+  return bytes >= LARGE_ARCHIVE_BYTES
+    ? `The hosted zip is ${mb} MB: rebuilding it copies every entry on this phone and can take a while and a lot of memory.`
+    : `The hosted zip is ${mb} MB.`;
+}
+
+/** The finish step's labels through its async cycle (async-UI rule). */
+export const FINISH_LABELS = {
+  reading: (bytes: number) =>
+    `Finishing - reading the hosted zip (${(bytes / 1_000_000).toFixed(1)} MB)…`,
+  rebuilding: (done: number, total: number) =>
+    `Finishing - rebuilding ${String(done)} of ${String(total)} entries…`,
+  ready: (bytes: number) =>
+    `The rebuilt zip is ready (${(bytes / 1_000_000).toFixed(1)} MB). Download it, then replace the hosted file in step 6.`,
+  failed: (reason: string) => `Finishing failed: ${reason}`,
+  download: "Download the rebuilt zip",
+  saving: "Saving…",
+  saved: (filename: string) =>
+    `Saved as ${filename}. Now replace the hosted zip (step 6) - the link and the printed code stay the same.`,
+  notSaved: "Not saved - tap the button again.",
+} as const;
 
 /** What the panel is about to print, and whether the author's input was
  *  taken literally. */

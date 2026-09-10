@@ -14,7 +14,13 @@ Tinybench smoke benchmark for [`ref-points-slice.ts`](ref-points-slice.ts)'s `se
 - The transform is pure (fresh `Map` + output array per call) — inputs are reused across iterations without a `setup` callback.
 - Fixtures are deterministic; no PRNG. Synthetic H3-shaped ids are fine — the grouping never parses them.
 - No gps-plus-slam-js license activation needed (app-level pure transform only).
-- Wall-clock numbers are machine-dependent — a measurement instrument, never an assertion gate. Results land in `docs/perf-baselines/bench-results.json` (versioned, ride-along churn policy).
+- Wall-clock numbers are machine-dependent — a measurement instrument, never an assertion gate. The versioned `docs/perf-baselines/bench-results.json` is a **frozen
+  pre-Vitest-5 artefact**: Vitest 5 dropped `benchmark.outputJson`, so
+  nothing writes it any more and its numbers are a 2026-07 snapshot, not
+  current. It is kept as historical evidence (it is what settles arguments
+  about what a bench measured BEFORE the upgrade), not as a baseline to
+  compare against. A bench that needs a comparison persists its own result
+  through `writeResult`.
 
 ## Usage
 

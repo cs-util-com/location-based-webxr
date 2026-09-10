@@ -75,8 +75,7 @@ export function extractActionTimestamp(action: ReplayAction): number | null {
     case 'gpsData/recordGpsEvent': {
       // payload.rawGpsPoint.timestamp (new format) or payload.gpsPoint.timestamp (old recordings)
       const rawGpsPoint = payload.rawGpsPoint as
-        | Record<string, unknown>
-        | undefined;
+        Record<string, unknown> | undefined;
       if (rawGpsPoint && typeof rawGpsPoint.timestamp === 'number') {
         return rawGpsPoint.timestamp;
       }
@@ -102,8 +101,7 @@ export function extractActionTimestamp(action: ReplayAction): number | null {
       }
       // Fallback: try rawGpsPoint.timestamp (new format) then gpsPoint.timestamp (old recordings)
       const rawGpsPoint = payload.rawGpsPoint as
-        | Record<string, unknown>
-        | undefined;
+        Record<string, unknown> | undefined;
       if (rawGpsPoint && typeof rawGpsPoint.timestamp === 'number') {
         return rawGpsPoint.timestamp;
       }

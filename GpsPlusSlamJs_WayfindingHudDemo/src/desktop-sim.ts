@@ -246,6 +246,7 @@ export function startDesktopSim(deps: DesktopSimDeps): DesktopSim {
           camera.children,
           camera.position,
           targets.map((target) => target.position),
+          hud.entranceStats(),
         ),
       ),
     );

@@ -41,7 +41,7 @@ export default defineConfig({
   // not — an earlier version of this comment was pasted verbatim into three
   // configs and claimed "all seven specs" in each, which is true of none of
   // them. Found in review of PR #336.
-  // Measured on THIS suite (5 spec files, 7 tests).
+  // Measured on THIS suite (6 spec files, 9 tests since entrance.spec.js, 2026-09-06).
   // workers therefore buy latency and flakes, not throughput. The sibling
   // Landing and OsmDemo suites reached the same setting from their own
   // measurements — see their configs for the numbers.

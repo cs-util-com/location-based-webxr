@@ -161,8 +161,7 @@ export function createRefPointHandlers(
     gpsPoint: GpsPoint,
     timestamp: number,
     fusedGpsPoint:
-      | { latitude: number; longitude: number; altitude?: number }
-      | undefined
+      { latitude: number; longitude: number; altitude?: number } | undefined
   ): void {
     // Extract raw sensor fields from state-side GpsPoint for the action payload.
     // Derived fields (coordinates, weight, zeroRef) are recomputed by the
@@ -339,8 +338,7 @@ export function createRefPointHandlers(
 
       // Compute fused GPS if alignment matrix is available
       let fusedGpsPoint:
-        | { latitude: number; longitude: number; altitude?: number }
-        | undefined;
+        { latitude: number; longitude: number; altitude?: number } | undefined;
       const state = deps.getStore().getState();
       const alignmentMatrix = state.gpsData?.gpsEvents?.alignmentMatrix;
       const zeroRef = state.gpsData?.zero;

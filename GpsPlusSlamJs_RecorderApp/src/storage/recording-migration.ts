@@ -145,8 +145,7 @@ function injectRefPointsActions(actions: RecordedAction[]): RecordedAction[] {
 
     const id = payload['id'];
     const rawGpsPoint = payload['rawGpsPoint'] as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     if (
       typeof id !== 'string' ||
       !rawGpsPoint ||

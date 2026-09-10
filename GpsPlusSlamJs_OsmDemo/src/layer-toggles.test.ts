@@ -140,8 +140,7 @@ describe("the side-effect note on a layer that does more than its name says", ()
     const noteFor = (layer: string): string =>
       (
         container.querySelector(`#layer-${layer}`)?.parentElement as
-          | HTMLElement
-          | undefined
+          HTMLElement | undefined
       )?.title ?? "";
     expect(noteFor("plates")).toMatch(/pool, pitch and parking/);
     for (const layer of ["buildings", "trees", "roads", "poi", "cells"]) {

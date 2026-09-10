@@ -1,4 +1,4 @@
-import { bench, describe } from "vitest";
+import { describe, test } from "vitest";
 import { polygonToCellsExperimental, POLYGON_TO_CELLS_FLAGS } from "h3-js";
 
 import { parseOverpassJson } from "../model/overpass-parser.js";
@@ -154,17 +154,23 @@ const DECLINED = RINGS.filter(
 const DECLINE_PCT = ((DECLINED / RINGS.length) * 100).toFixed(1);
 
 describe("hole-free ring cover — fast path against r497's always-h3", () => {
-  bench(
-    `coverCells, fast path (${RINGS.length} rings, ${DECLINED} decline = ${DECLINE_PCT} %)`,
-    () => {
-      for (const ring of RINGS) {
-        coverCells({ kind: "polygon", rings: [ring] }, AFFORDANCE_RES);
-      }
-    },
-  );
+  test(`coverCells, fast path (${RINGS.length} rings, ${DECLINED} decline = ${DECLINE_PCT} %)`, async ({
+    bench,
+  }) => {
+    await bench(
+      `coverCells, fast path (${RINGS.length} rings, ${DECLINED} decline = ${DECLINE_PCT} %)`,
+      () => {
+        for (const ring of RINGS) {
+          coverCells({ kind: "polygon", rings: [ring] }, AFFORDANCE_RES);
+        }
+      },
+    ).run();
+  });
 
-  bench(`alwaysH3, i.e. r497 (${RINGS.length} rings)`, () => {
-    for (const ring of RINGS) alwaysH3(ring, AFFORDANCE_RES);
+  test(`alwaysH3, i.e. r497 (${RINGS.length} rings)`, async ({ bench }) => {
+    await bench(`alwaysH3, i.e. r497 (${RINGS.length} rings)`, () => {
+      for (const ring of RINGS) alwaysH3(ring, AFFORDANCE_RES);
+    }).run();
   });
 });
 
@@ -187,14 +193,22 @@ const DECLINING = RINGS.filter(
 
 if (DECLINING.length > 0) {
   describe("the declining rings only — do they pay twice?", () => {
-    bench(`coverCells on decliners (${DECLINING.length} rings)`, () => {
-      for (const ring of DECLINING) {
-        coverCells({ kind: "polygon", rings: [ring] }, AFFORDANCE_RES);
-      }
+    test(`coverCells on decliners (${DECLINING.length} rings)`, async ({
+      bench,
+    }) => {
+      await bench(`coverCells on decliners (${DECLINING.length} rings)`, () => {
+        for (const ring of DECLINING) {
+          coverCells({ kind: "polygon", rings: [ring] }, AFFORDANCE_RES);
+        }
+      }).run();
     });
 
-    bench(`alwaysH3 on the same rings (${DECLINING.length})`, () => {
-      for (const ring of DECLINING) alwaysH3(ring, AFFORDANCE_RES);
+    test(`alwaysH3 on the same rings (${DECLINING.length})`, async ({
+      bench,
+    }) => {
+      await bench(`alwaysH3 on the same rings (${DECLINING.length})`, () => {
+        for (const ring of DECLINING) alwaysH3(ring, AFFORDANCE_RES);
+      }).run();
     });
   });
 }

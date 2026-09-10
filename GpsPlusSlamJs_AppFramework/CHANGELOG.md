@@ -1,5 +1,106 @@
 # Changelog
 
+## Unreleased
+
+### ⚠️ Breaking changes
+
+- **`engines.node` raised from `>=22.15.0` to `>=26.0.0`**
+  (owner decision 2026-09-08). Installing on the Node 22 and 24 LTS lines
+  is no longer a supported configuration.
+  - **Why.** The consumer floor and the development line were split on
+    2026-09-07 so a toolchain pin would not push consumers off an LTS
+    line (PR #431 review). But nothing then ran the package at the lower
+    floor: everything that builds, tests and publishes it runs Node 26. That made `>=22.15.0`
+    an untested assertion whose failure mode is a syntax form or built-in
+    reaching `dist/` and breaking only in a consumer's install.
+  - **In practice** `engines` is a warning, not an error, for npm and pnpm
+    at default settings; an out-of-range install still succeeds unless the
+    consumer sets `engine-strict`.
+  - **Worth knowing:** Node 26 does not itself reach LTS until October 2026.
+  - `devEngines` is removed as redundant.
+
+### Changed
+
+- **`downloadZip` resolves a boolean**: `true` when a download or save was
+  started, `false` when the user dismissed the save picker (nothing was
+  written; that path used to resolve silently). Callers awaiting `void`
+  are unaffected.
+- **`OpenedArchive.evict()` no longer waits for an in-flight warm
+  download - it aborts it.** The session keeps streaming remotely, a
+  recovery download is still awaited (it serves a live read), and the
+  evicted latch still guarantees nothing repersists after the call. Before,
+  a caller clearing the cache while a tens-of-MB warm was running waited
+  for the whole download (the Tour Viewer's "Clear cache" sat at
+  "Clearing…" for minutes on a phone). Callers that did
+  `dispose(); await warmed; await evict()` can drop the middle step.
+- **`BoundedLocalCacheStore.clear()` resolves the number of index entries
+  it removed** (was `void`; awaiting callers are unaffected), and a new
+  **`size()`** reports the index length - read it BEFORE evicting an open
+  session's copy when the number feeds a "cleared N" message, because
+  `delete`/`evict` drop that entry from the index first.
+- **Opening a remote archive on `@zip.js/zip.js` 2.9 or newer costs one
+  read of up to 64 KB** (the library now fetches its whole
+  end-of-central-directory search window at once instead of a 22-byte
+  probe; measured 2026-09-07 against 2.11.2). Entry reads are unchanged
+  (three range requests per entry). The framework's peer range (`>=2.7.0`)
+  is unchanged; the request-budget test now sizes its archive so this
+  fixed cost is the small fraction it is on a real recording. One more
+  consequence for CONSUMERS' TESTS: zip.js 2.9+ reads a `BlobReader`'s
+  source through `blob.stream()`, which jsdom's `Blob` lacks — a jsdom test
+  that pushes a Blob through the zip export needs a `Blob.prototype.stream`
+  polyfill in its setup (the recorder's `src/test-setup.ts` is one).
+- **`WayfindingHud` gained a REQUIRED member, `entranceStats()`.** Code
+  that builds a `WayfindingHud`-typed object by hand — test doubles, mostly
+  — must add `entranceStats: () => ({ redraws: 0, drawMs: 0, animating: 0,
+entranceMs: 0, peakDrawMs: 0 })` to compile; a consumer that only calls
+  the handle is unaffected.
+
+### Added
+
+- **`rgbaImageToJpegBlob(frame, quality)`** on `/ar` (and
+  **`ar/camera-blit-capture`** (deep import)): the RGBA (top-left origin)
+  → JPEG encoder `CameraBlitCapture` always used, exported so an app can
+  encode a camera frame it already holds (the Tour Viewer's placed
+  photos) without a second copy of the canvas dance; OffscreenCanvas where
+  available. A data length that is not `width * height * 4` rejects.
+- **Store-mode zip writing from in-memory entries, and rebuilding an
+  existing zip** (`/storage`; the modules are **`storage/pack-files-as-zip`** (deep import), **`storage/zip-rebuild`** (deep import) and **`storage/zip-entry-path`** (deep import)):
+  **`packFilesAsZip(entries)`** writes `{ path, data: Blob | Uint8Array |
+  string }` entries uncompressed so a range reader can slice them out
+  (an empty list is a valid empty archive); **`rebuildZipWithEntries(zip,
+  entries, { onProgress? })`** re-emits an existing archive with entries
+  added or replaced by path, keeping every other entry byte-identical, and
+  THROWS (`ZipPackagingError`) rather than returning the input on failure;
+  **`assertSafeZipEntryPaths(paths)`** is the one path rule set every
+  writer applies (empty, absolute, drive-lettered, backslash, `.`, `..`,
+  empty segment, trailing slash, duplicate). Absorbed from community PR
+  #321 and hardened per its review; `exportSessionHandleAsZip`'s composed
+  contributor paths (`subdir/relativePath`) now go through the same
+  validator (a trailing slash, an empty segment, a drive-lettered or
+  backslashed subdir is rejected where it was silently accepted), and
+  `embedCoverageInSessionJson` is a wrapper over the rebuild. The rebuild
+  re-emits an opened archive's existing entries AS THEY ARE (a duplicate
+  name collapses to its last occurrence) and reads them as Blobs, so a
+  phone-sized recorder zip is not copied onto the JS heap; only the new
+  entries are validated. Also on `/storage`: `writeStoreZip(entries,
+  caller)` (the writer without validation, for callers that validated)
+  and `assertWritableZipEntries(entries, caller)`.
+- **`tour.json` - the tour manifest** (`/ar`; **`ar/tour-manifest`** (deep import) and **`ar/tour-archive`** (deep import)): `parseTourManifest`,
+  `serializeTourManifest`, `createEmptyTourManifest`; objects are text
+  `pin`s and captured `photo`s, each with an exact geo pose (lat, lon,
+  absolute altitude, rotation against north) minted like a printed code's;
+  `TOUR_MANIFEST_ENTRY`, `TOUR_CONTENT_FOLDER`, `TOUR_MANIFEST_VERSION`,
+  `tourContentEntryName(id, ext)` (`content/<id>.<ext>`; a photo's
+  `image` must be that name for its own id), `tourManifestEntryOf`,
+  `readTourManifestFromEntries(names, readText, parse)` (null for no
+  manifest; a broken manifest REJECTS), `TourManifestValidationError`;
+  `TourObject` is the union `TourPin | TourPhoto`. The geo-pose validator
+  (`HEADING_CONSISTENCY_TOLERANCE_DEG` now public) moved from
+  `qr-level.ts` into **`ar/qr/geo-pose`** (deep import) - `parseGeoPose(value, { path,
+  fail })` - so the level and the manifest share one rule set;
+  level messages are unchanged.
+- **`circleEntrance` on `createWayfindingHud`** (opt-in): the circle indicator is the design system's diamond building itself up — the outline drawn over 800 ms, the accent dot popping at 600–850 ms, the sheet's `--ease-out` — each time a target appears or comes back through the distance gate (a head turn does not restart it). Drawn per target into a canvas texture with a 30 Hz redraw cap and a 60 ms stagger for simultaneous spawns; reduced motion (the OS setting, or `reducedMotion: true`) shows the finished marker at once. Mutually exclusive with `circleSprite`; meant alongside `arrowSprite`. `WayfindingHud.entranceStats()` reports the last frame's redraws, their wall-clock cost, how many entrances still animate, and the costliest entrance's accumulated and peak draw milliseconds — the on-device cost readout (the accumulated figure clears the browser clock's 100 µs floor where a single frame does not). The building blocks are public on `/visualization` (`computeDiamondEntrance`, `DIAMOND_ENTRANCE`, `createDiamondMarkerTexture`, `DIAMOND_GEOMETRY`) and **`utils/cubic-bezier-easing`** (deep import) — evaluates CSS `cubic-bezier()` timing functions exactly.
+
 ## [1.24.0] — 2026-09-05
 
 Requires `gps-plus-slam-js` ≥ 1.24.0.
@@ -8,7 +109,7 @@ Requires `gps-plus-slam-js` ≥ 1.24.0.
 
 - **The solver's option family is named `consensusSolver*` everywhere**,
   aligned with `gps-plus-slam-js` 1.24.0: `createSlamAppStore({
-  enableConsensusSolverComparison })`, the re-exported actions
+enableConsensusSolverComparison })`, the re-exported actions
   `setConsensusSolverComparisonEnabled` and
   `setConsensusSolverHeadingPenalty`, the `gpsData` state field
   `consensusSolverComparisonEnabled`, and the `AlignmentOverrides` key

@@ -39,6 +39,8 @@ import {
 function fakeHooks(): ArEnableHooks {
   return {
     container: {} as HTMLElement,
+    requestHitTest: true,
+    trackingStore: { dispatch: vi.fn(), getState: vi.fn() } as never,
     onFrame: vi.fn(),
     onSessionEnd: vi.fn(),
     onGpsPosition: vi.fn(),
@@ -57,8 +59,14 @@ describe("buildArEnableConfig", () => {
     });
     // Depth stays off end-to-end: no depth permission probe either.
     expect(config.requestDepth).toBeUndefined();
-    // The QR flows anchor to detected codes / GPS, never to hit-test planes.
-    expect(config.requestHitTest).toBeUndefined();
+    // The hit-test feature follows the hook: a creator's session needs it
+    // for the placement reticle (guided-setup plan M4), a visitor's never
+    // does - the QR flows anchor to detected codes / GPS, not hit-test planes.
+    expect(config.requestHitTest).toBe(true);
+    expect(
+      buildArEnableConfig({ ...fakeHooks(), requestHitTest: false })
+        .requestHitTest,
+    ).toBe(false);
   });
 
   it("wires the camera-frame callback into the initAR callbacks", () => {
@@ -72,6 +80,21 @@ describe("buildArEnableConfig", () => {
     };
     config.callbacks?.cameraFrame?.onFrame(image);
     expect(hooks.onFrame).toHaveBeenCalledWith(image);
+  });
+
+  it("carries the tracking store so initAR feeds the tracking slice (flows plan M4)", () => {
+    // Why this matters: the tracking-quality phase the placement trigger
+    // reads is derived from `tracking/poseReceived`, which the framework's
+    // initAR dispatches ONLY into the store handed to it here. The viewer
+    // had mounted the slice since its creation and never fed it - the
+    // phase sat at `initializing` and quality at `ar-lost` for every
+    // session (the recorder's 2026-05-23 lesson, re-learned).
+    const trackingStore = { dispatch: vi.fn(), getState: vi.fn() };
+    const config = buildArEnableConfig({
+      ...fakeHooks(),
+      trackingStore: trackingStore as never,
+    });
+    expect(config.callbacks?.tracking?.store).toBe(trackingStore);
   });
 
   it("passes through session-end, GPS and orientation hooks", () => {
@@ -245,28 +268,44 @@ function fakeDepsFor(): { deps: TourArRuntimeDeps } {
 
 describe("arButtonView", () => {
   it.each([
-    ["checking", false, "Checking AR support…", true],
-    ["unsupported", false, "AR not supported on this device", true],
-    ["ready", false, "Start AR view", false],
-    ["ready", true, "Start AR authoring", false],
-    ["starting", false, "Starting…", true],
-    ["running", false, "AR running", true],
-    ["running", true, "Authoring in AR", true],
-    ["stopping", false, "Stopping…", true],
-  ] as const)(
-    "%s (author=%s) → %j / disabled=%s",
-    (status, authorMode, label, disabled) => {
-      expect(arButtonView({ status }, authorMode)).toEqual({
-        label,
-        disabled,
-      });
-    },
-  );
+    ["checking", "visitor", "Checking AR support…", true],
+    ["unsupported", "visitor", "AR not supported on this device", true],
+    ["ready", "visitor", "Start the tour", false],
+    ["ready", "creator", "Start AR setup", false],
+    ["starting", "visitor", "Starting…", true],
+    ["running", "visitor", "Tour running", true],
+    ["running", "creator", "Setting up in AR", true],
+    ["stopping", "visitor", "Stopping…", true],
+  ] as const)("%s (%s) → %j / disabled=%s", (status, mode, label, disabled) => {
+    expect(arButtonView({ status }, mode)).toEqual({
+      label,
+      disabled,
+    });
+  });
+
+  it("a ready visitor button asks for the location first while the gate is pending (DEC-N2)", () => {
+    const pending = { pending: true, busy: false };
+    expect(arButtonView({ status: "ready" }, "visitor", pending)).toEqual({
+      label: "Allow location",
+      disabled: false,
+    });
+    // While the request runs the button says so and is disabled (async-UI).
+    expect(
+      arButtonView({ status: "ready" }, "visitor", {
+        pending: true,
+        busy: true,
+      }),
+    ).toEqual({ label: "Getting your location…", disabled: true });
+    // A creator never has a pending gate; the flag is ignored for them.
+    expect(arButtonView({ status: "ready" }, "creator", pending).label).toBe(
+      "Start AR setup",
+    );
+  });
 
   it("error state offers a retry carrying the reason", () => {
     const view = arButtonView(
       { status: "error", error: "camera denied" },
-      false,
+      "visitor",
     );
     expect(view.disabled).toBe(false);
     expect(view.label).toContain("camera denied");

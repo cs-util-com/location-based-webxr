@@ -8,3 +8,4 @@
 - **Invariants:** output always satisfies the framework's `validateWayfindingHudOptions`; mode defaults are fixed points of the sanitiser.
 - **Example:** `sanitizeHudDemoConfig({ distanceMin: NaN, distanceMax: 2, indicatorScale: 1 }, SIM_HUD_CONFIG)`.
 - **Tests:** `hud-config.test.ts` (pass-through, inverted deadband, negatives, non-finite, scale clamps, defaults-are-valid).
+- **Entrance toggle ([HUD diamond entrance plan](../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-09-05-2138-hud-diamond-entrance-animation-plan.md), M4):** `entrance: boolean` — with image indicators, the diamond builds itself up on arrival (the framework's `circleEntrance`); off, the static SVG sprite (the owner's on-device A/B and the entrance spec's baseline). Same boolean rule as `imageIndicators` in the sanitiser; both mode defaults ship ON. Inert without image indicators. Tests: `hud-config.test.ts` ("the entrance toggle").
