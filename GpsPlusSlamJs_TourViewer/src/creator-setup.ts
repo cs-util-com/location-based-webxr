@@ -189,15 +189,27 @@ export function wireCreatorSetup(deps: {
    * files), reset when the tour closes, and never shared between tours.
    */
   let draftRejected: readonly string[] = [];
-  /** The last meta write, so the next one queues behind it. Every write
-   *  targets the same key and the mint and finish ones are unawaited, so
-   *  an earlier one landing later would overwrite a newer one - including
-   *  a rejection (PR #456 review). */
-  let metaWrite: Promise<boolean> = Promise.resolve(true);
-  /** The tour `metaWrite` is ordering. The chain belongs to the NAMESPACE,
-   *  not to the session, so it is reset when the tour changes and kept
-   *  across a close-and-reopen of the same one (PR #458 review). */
-  let metaWriteTour: string | null = null;
+  /**
+   * The last meta write per tour, so the next one for that tour queues
+   * behind it.
+   *
+   * Every write for a tour targets one key in one directory, and the mint
+   * and finish ones are unawaited - so an earlier write landing later would
+   * overwrite a newer one, including a rejection or a measured level
+   * (PR #456 review).
+   *
+   * KEYED BY TOUR, because the chain belongs to the namespace. That makes
+   * both properties structural rather than remembered: a tour that stalls
+   * blocks only itself, and the ordering survives any interleaving of
+   * opens. Two earlier shapes each held only half of that - one chain per
+   * session blocked every tour behind a stall, and one chain plus "the
+   * last tour seen" lost the ordering for A after B was opened in between
+   * (PR #457 and #459 reviews).
+   *
+   * One entry per tour opened in this page's life: a handful of short-lived
+   * promises, dropped with the page.
+   */
+  const metaWrites = new Map<string, Promise<boolean>>();
   /** The creator-facing url of the open tour, for later draft writes. */
   let draftTourUrl: string | null = null;
   /** What a draft is offering, until the creator answers. */
@@ -299,12 +311,13 @@ export function wireCreatorSetup(deps: {
       // file only and never reaches here; PR #456 review.)
       rejected: draftRejected,
     };
-    // Values captured NOW, write ordered by call. `catch` keeps one refused
-    // write from breaking the chain for the rest of the session.
-    metaWrite = metaWrite
+    // Values captured NOW, write ordered by call within this tour.
+    // `catch` keeps one refused write from breaking the chain behind it.
+    const next = (metaWrites.get(tourUrl) ?? Promise.resolve(true))
       .catch(() => false)
       .then(() => writeDraftMeta(store, meta));
-    return metaWrite;
+    metaWrites.set(tourUrl, next);
+    return next;
   }
 
   dom.panel.hidden = !creator;
@@ -1099,19 +1112,6 @@ export function wireCreatorSetup(deps: {
         if (stale()) return;
         draftStore = store;
         draftTourUrl = tourUrl;
-        // A DIFFERENT tour is a different directory, so nothing it writes
-        // is ordered against this one - and a `put` that never settles
-        // must not block it for the life of the page (PR #457 review).
-        // The SAME tour keeps the chain: closing and reopening one link is
-        // a real path, and a slow write from before the close still
-        // targets this directory. Dropping the chain there let it land
-        // after a later mint and clobber the measurement with the null it
-        // captured - the creator's walk to the poster, lost (PR #458
-        // review).
-        if (metaWriteTour !== tourUrl) {
-          metaWrite = Promise.resolve(true);
-          metaWriteTour = tourUrl;
-        }
         if (store === undefined) {
           // No persistence at all - a browser without OPFS, blocked site
           // data, a quota wall. The creator must hear it ONCE, here: this

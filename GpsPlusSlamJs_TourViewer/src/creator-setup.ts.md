@@ -72,6 +72,13 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   returned, so a placement made while the offer sat on screen is never in
   the list. The rejection is re-stated on every later meta write, and the
   leftovers of a sweep that did not finish are swept on the next open.
+- **Meta writes are ORDERED PER TOUR.** They all target one key in one
+  directory, and the mint and finish ones are never awaited, so an earlier
+  write landing later would overwrite a newer one - a rejection, or a
+  measured level replaced by the null it captured. Each write queues behind
+  the last for its own tour, which makes both properties structural: a tour
+  whose write stalls blocks only itself, and the ordering survives any
+  interleaving of opens.
 - **A draft is deleted only on PROOF**: a re-opened tour whose `tour.json`
   already carries its ids. Not on the download tap - on Android that
   resolves true the moment a download starts, and the creator still has to

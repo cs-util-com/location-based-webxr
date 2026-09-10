@@ -623,6 +623,54 @@ describe("the rejection is committed by the meta write", () => {
     ).toEqual(["old-pin"]);
   });
 
+  it("keeps a tour's ordering across ANOTHER tour opened in between", async () => {
+    // Why this test matters: keying the chain to "the last tour seen" held
+    // for A -> close -> A but not for A -> B -> A. Opening B reset the
+    // chain, and reopening A reset it again, so A's stalled first write was
+    // left off every chain and landed after A's reopened writes - the same
+    // clobber, one intermediate tour later. A chain PER TOUR holds for any
+    // interleaving (PR #459 review, found by both reviewers).
+    //
+    // The fake hands the same store to every tour, where production gives
+    // each its own directory. That does not weaken the test: what is under
+    // test is which CHAIN a write joins, and the seeding below puts A's
+    // draft in place before A is reopened.
+    const { store, files, releaseHeldPut } = memoryStore(
+      {},
+      { holdFirstPut: true },
+    );
+    const { dom, setup } = wire(store);
+
+    // A: no draft, so the open records the meta - and that write is held.
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    setup.resetFinishStep();
+
+    // B, opened and closed in between.
+    setup.presentDraftForTour(OTHER_TOUR);
+    await settle();
+    setup.resetFinishStep();
+
+    // A again, now with a draft to reject.
+    files.set(
+      META_KEY,
+      JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+    );
+    files.set(objectKey("old-pin"), JSON.stringify(pin("old-pin")));
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    dom.draftDiscard.click();
+    await settle();
+
+    releaseHeldPut();
+    await settle();
+
+    expect(
+      rejectedOf(String(files.get(META_KEY))),
+      "A's stalled first write must still land BEFORE A's reopened ones",
+    ).toEqual(["old-pin"]);
+  });
+
   it("sweeps a rejection whose deletes never finished, on the next open", async () => {
     // The files of an interrupted sweep have no other collector: the offer
     // never shows them again, and `clear` lost its last caller. Without
