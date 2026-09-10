@@ -86,6 +86,14 @@ function fakeDirectory(
       }
     },
     removeEntry(name: string) {
+      // REJECTS for a name that is not there, as OPFS does. Resolving
+      // instead meant `remove`'s NotFoundError suppression was never
+      // reached by any test (PR #454 review).
+      if (!files.has(name)) {
+        return Promise.reject(
+          Object.assign(new Error('not found'), { name: 'NotFoundError' })
+        );
+      }
       removed.push(name);
       files.delete(name);
       return Promise.resolve();

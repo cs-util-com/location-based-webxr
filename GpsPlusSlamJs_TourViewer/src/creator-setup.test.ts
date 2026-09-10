@@ -111,7 +111,12 @@ function memoryStore(seed: Record<string, string> = {}): {
       files.delete(key);
       return Promise.resolve();
     },
-    clear: () => Promise.resolve(),
+    clear: () => {
+      // Empties, like the real one. A no-op here would let a test pass
+      // against production code that still called `clear` (PR #454 review).
+      files.clear();
+      return Promise.resolve();
+    },
   };
   return { store, files };
 }
@@ -189,6 +194,41 @@ describe("rejecting a draft deletes what was rejected, and nothing else", () => 
       "a placement made after the read must never be touched",
     ).toBe(true);
     expect(files.has(META_KEY), "the gate file must survive").toBe(true);
+  });
+
+  it("reclaims files the read could not parse, which nothing else collects", async () => {
+    // `draft.objects` is what PARSED. A record from an older version of the
+    // app, or a photo whose bytes never landed - `writeDraftObject` returns
+    // false when the photo write hits a quota wall and the record it already
+    // wrote stays - are skipped by `readDraft` and leave their files behind.
+    // `clear` used to sweep them on both paths; with its last caller gone,
+    // deleting only the parsed ids would leak them for the life of the
+    // origin, in a namespace keyed by tour url (PR #454 review, found
+    // independently by both reviewers).
+    const { store, files } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+      [objectKey("good")]: JSON.stringify(pin("good")),
+      // Not JSON the parser accepts.
+      [objectKey("older-shape")]: JSON.stringify({ id: "older-shape" }),
+      // Bytes with no record at all.
+      [photoKey("orphan-bytes")]: "bytes",
+    });
+    const { dom, setup } = wire(store);
+
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    dom.draftDiscard.click();
+    await settle();
+
+    expect(files.has(objectKey("good"))).toBe(false);
+    expect(
+      files.has(objectKey("older-shape")),
+      "a record the read refused is still a file",
+    ).toBe(false);
+    expect(
+      files.has(photoKey("orphan-bytes")),
+      "bytes whose record never landed have no object id to find them by",
+    ).toBe(false);
   });
 
   it("deletes a photo's bytes along with its record", async () => {

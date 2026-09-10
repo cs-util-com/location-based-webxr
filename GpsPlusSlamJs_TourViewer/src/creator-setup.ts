@@ -184,10 +184,12 @@ export function wireCreatorSetup(deps: {
   /** What a draft is offering, until the creator answers. */
   let offered: {
     objects: readonly TourObject[];
-    /** EVERY id the draft on disk holds, not just the unhosted ones the
-     *  offer shows. Rejecting a draft deletes what `readDraft` returned -
-     *  including objects the hosted zip already carries, which the offer
-     *  filters out but which are still files taking up the namespace. */
+    /** EVERY id the READ saw on disk - not just the unhosted ones the
+     *  offer shows, and not just the ones that parsed. Rejecting a draft
+     *  deletes what was there: objects the hosted zip already carries
+     *  (filtered out of the offer but still files), and records `readDraft`
+     *  refused - an older version's shape, or a photo whose bytes never
+     *  landed. `clear` used to sweep those and nothing else does now. */
     storedIds: readonly string[];
     photos: ReadonlyMap<string, Blob>;
     /** The measured level and the size it was measured at - the other
@@ -1056,15 +1058,16 @@ export function wireCreatorSetup(deps: {
           // trip for a remote archive, while neither the mint button nor
           // `placementAllowed()` waits for the chain to settle.
           recordMeta(tourUrl);
-          for (const object of stored.draft.objects) {
-            void removeDraftObject(store, object.id);
-          }
+          // `storedIds`, not `draft.objects`: the latter is what parsed,
+          // and a record this read refused still has files. Nothing
+          // reclaims those since `clear` lost its last caller.
+          for (const id of stored.storedIds) void removeDraftObject(store, id);
           return;
         }
         const hasLevel = draftHasUnhostedLevel(stored.draft, hostedLevel);
         offered = {
           objects: waiting,
-          storedIds: stored.draft.objects.map((object) => object.id),
+          storedIds: stored.storedIds,
           photos: stored.photos,
           // ALWAYS handed back when the draft has one, even if the hosted
           // zip already stores the same measurement: the finish refuses to

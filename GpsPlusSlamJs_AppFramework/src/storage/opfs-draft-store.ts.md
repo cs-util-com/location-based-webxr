@@ -24,6 +24,15 @@ so the recorder can use it when it grows authoring of its own.
     window in which the survivors live only in memory. That shape produced
     four silent data-loss defects in the Tour Viewer's authoring before it
     was replaced. Removing a key that is not there is not a failure.
+  - **It reports NOTHING, including on a real failure**, unlike `put` which
+    returns false and reaches the caller's "persistence is off" notice. A
+    delete refused for a reason that is not "already gone" - a writable
+    still open on the file, a quota or IO refusal - is logged and
+    swallowed, so the consequence is that **the rejected draft is offered
+    again on the next open with nothing said**. That is an annoyance rather
+    than a loss, which is why the contract is shaped this way; if it ever
+    needs to be actionable, returning a boolean as `put` does is the
+    change.
   - **`clear()` has NO production caller since 2026-09-10.** Both former
     callers delete the ids they read instead. It is kept as working, tested
     API - its tests encode a real OPFS hazard - but nothing depends on its

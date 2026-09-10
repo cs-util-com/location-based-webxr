@@ -29,9 +29,26 @@ import type { AuthoringDraft } from "./authoring-draft.js";
 
 /** The draft's one non-object file: the tour it belongs to, the printed
  *  size, and the measured level. */
-/** The file that decides whether a draft EXISTS: no meta, no draft. Also
- *  what `clearDraft` deletes first, so a reload racing a discard cannot
- *  find the draft that was just thrown away. */
+/**
+ * The file that decides whether a draft EXISTS: no meta, no draft.
+ *
+ * It used to be deleted FIRST when a draft was thrown away, so a reload
+ * racing a discard found nothing rather than the draft just rejected -
+ * a race that was live at about one run in six (PR #443). **That
+ * guarantee is gone as of 2026-09-10** and the sentence describing it has
+ * been removed rather than left to be believed: the discard now REWRITES
+ * this file (dropping the rejected level, keeping this session's) and
+ * deletes the rejected objects afterwards. A reload inside that window
+ * finds a valid meta and some un-deleted objects, so the discarded draft
+ * can be offered once more.
+ *
+ * That is the deliberate side of the trade - the alternative deleted work
+ * the creator had NOT discarded - but it is a real inversion of what this
+ * comment used to promise. Closing it properly means recording the
+ * rejection IN this file so the meta write is the commit point; see
+ * `docs/2026-09-10-1345-draft-rejection-commit-point-plan.md` in the docs
+ * repo.
+ */
 export const META_KEY = "meta";
 const OBJECT_PREFIX = "object:";
 const PHOTO_PREFIX = "photo:";
@@ -113,6 +130,22 @@ export async function writeDraftObject(
 export interface StoredDraft {
   draft: AuthoringDraft;
   photos: ReadonlyMap<string, Blob>;
+  /**
+   * EVERY object id this read saw on disk, including the ones it refused.
+   *
+   * `draft.objects` is what could be PARSED: a record written by an older
+   * version, or a photo record whose bytes are missing, is skipped - and
+   * both leave their files behind. `clear` used to sweep those, and with
+   * its last caller gone nothing reclaims them, so they would survive for
+   * the life of the origin in a namespace keyed by tour url. The
+   * half-written photo is not hypothetical: `writeDraftObject` returns
+   * false when the photo write hits a quota wall, and the record it
+   * already wrote stays.
+   *
+   * Captured at READ time, exactly like `draft.objects`, so nothing this
+   * session writes afterwards can be in the list.
+   */
+  storedIds: readonly string[];
 }
 
 /**
@@ -147,6 +180,18 @@ export async function readDraft(
   const keys = await store.keys();
   const objects: TourObject[] = [];
   const photos = new Map<string, Blob>();
+  // One snapshot, both prefixes: a photo file whose record never landed has
+  // no `object:` key at all, so listing only those would miss it.
+  const storedIds = [
+    ...new Set(
+      keys
+        .filter(
+          (key) =>
+            key.startsWith(OBJECT_PREFIX) || key.startsWith(PHOTO_PREFIX),
+        )
+        .map((key) => key.slice(key.indexOf(":") + 1)),
+    ),
+  ];
   for (const key of keys) {
     if (!key.startsWith(OBJECT_PREFIX)) continue;
     const text = await store.getText(key);
@@ -181,6 +226,7 @@ export async function readDraft(
       objects,
     },
     photos,
+    storedIds,
   };
 }
 

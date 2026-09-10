@@ -17,6 +17,18 @@ are the framework's.
   because an object is two files and a caller rejecting a list of ids
   should not have to know which of them ever reached disk. Neither half
   missing is a failure: a pin has no photo.
+- `StoredDraft.storedIds` - EVERY object id the read saw on disk, not
+  just the ones that parsed.
+  - **It exists because cleanup must cover what the reader refused.** A
+    record written by an older version, or a photo whose bytes never landed
+    (`writeDraftObject` returns false when the photo write hits a quota
+    wall, and the record it already wrote stays), is skipped by `readDraft`
+    and leaves files behind. `clear` used to sweep those; since its last
+    caller went, deleting only the parsed ids would leak them for the life
+    of the origin.
+  - Captured at READ time, like the objects, so nothing written afterwards
+    can be in the list - which is what keeps a rejection from touching this
+    session's work.
 - `readDraft(store) -> Promise<StoredDraft | undefined>` -
   `{ draft, photos }`, or `undefined` when there is no meta file.
 - `parseDraftObject(text)`, `objectKey(id)`, `photoKey(id)`.

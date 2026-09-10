@@ -1779,6 +1779,35 @@ test("a draft is offered again after Not now, and gone after Delete it", async (
   await page.getByTestId("draft-discard").click();
   await expect(page.getByTestId("draft-offer")).toBeHidden();
 
+  // Wait for the DELETES, not for the button. The discard rewrites the meta
+  // and then removes the rejected objects without awaiting them, so a
+  // reload landing inside that window finds a valid meta plus files that
+  // are still there - and the draft is offered again. The old ordering
+  // (delete the meta FIRST) made that impossible, and this test reloads
+  // immediately afterwards, so it is exactly where the inversion shows
+  // (PR #454 review).
+  //
+  // The end state is "the meta and nothing else", which no earlier state
+  // satisfies: before the tap the namespace also holds the object file.
+  await expect
+    .poll(
+      () =>
+        page.evaluate(async (url) => {
+          const root = await navigator.storage.getDirectory();
+          const drafts = await root.getDirectoryHandle("drafts");
+          const dir = await drafts.getDirectoryHandle(
+            encodeURIComponent(url.trim()),
+          );
+          const names = [];
+          for await (const name of dir.keys()) {
+            if (name.endsWith(".blob")) names.push(name);
+          }
+          return names.sort().join(",");
+        }, RANGES_ARCHIVE),
+      { timeout: 10000 },
+    )
+    .toBe("meta.blob");
+
   // Gone for good. Waited on a POSITIVE signal rather than a sleep: the
   // repo forbids waitForTimeout, and beyond the rule, hidden-after-a-sleep
   // passes for any reason the offer failed to appear - a store that never
