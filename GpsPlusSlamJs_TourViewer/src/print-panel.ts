@@ -358,6 +358,54 @@ export function wirePrintPanel(deps: {
   };
 }
 
+/**
+ * The measurement-orphaning warning for what the panel is about to print,
+ * or `null`.
+ *
+ * Separate from the render, and OFF its critical path, for two reasons a
+ * review found the hard way (PR #442):
+ *
+ * - It is only ever needed when the tour holds a measurement, which is the
+ *   uncommon case. Hashing on every render bought nothing the rest of the
+ *   time.
+ * - `qrCodeId` THROWS where `crypto.subtle` is absent - a plain-http
+ *   origin that is not localhost, which is exactly how the creator page is
+ *   opened for a LAN preview. Letting that reject out of the render hid
+ *   the code it had just drawn and made steps 1 to 3 unusable, none of
+ *   which need crypto at all. A panel that cannot compute an identity
+ *   simply does not warn.
+ *
+ * The ids are computed for every code number up to the one being printed,
+ * because the question is whether the LINK still produces any measurement
+ * the tour holds - not whether this particular poster does.
+ */
+async function orphanWarningFor(
+  dom: PrintPanelDom,
+  measured: readonly string[],
+): Promise<string | null> {
+  if (measured.length === 0) return null;
+  const { codeIndex } = codeIndexFromInput(dom.codeInput.value);
+  const url = dom.urlInput.value.trim();
+  // Bounded: a creator with more posters than this and a measurement on
+  // none of the first few gets a warning they can ignore, which is a far
+  // better failure than hashing an unbounded list on a phone.
+  const { count } = printCountFromInput(dom.countInput.value);
+  const highest = Math.min(Math.max(codeIndex, count), 12);
+  try {
+    const linkCodeIds = await Promise.all(
+      Array.from({ length: highest }, (_, i) =>
+        planPrintCode(url, { codeIndex: i + 1 }).then((p) => qrCodeId(p.url)),
+      ),
+    );
+    return reprintOrphanWarning(linkCodeIds, measured);
+  } catch {
+    // No Web Crypto, or a payload that will not plan. Either way this
+    // panel has nothing trustworthy to say about identity, and saying
+    // nothing is the only honest option - the render must not fail for it.
+    return null;
+  }
+}
+
 async function generatePrintCode(
   dom: PrintPanelDom,
   writeInfo: (text: string) => void,
@@ -394,10 +442,7 @@ async function generatePrintCode(
   // The orphaning warning rides the same line for the same reason the
   // page-fit one does: it is about the artifact the creator is one tap
   // from producing, and a second channel is a second thing to not read.
-  const orphan = reprintOrphanWarning(
-    await qrCodeId(plan.url),
-    measuredCodeIds(),
-  );
+  const orphan = await orphanWarningFor(dom, measuredCodeIds());
   writeInfo(
     `QR version ${String(plan.qrVersion)}, code ${String(codeIndex)}, ` +
       `prints at ${sideCss} — use 100% scale (no fit-to-page).` +

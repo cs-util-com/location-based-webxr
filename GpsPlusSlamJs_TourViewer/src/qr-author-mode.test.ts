@@ -354,18 +354,33 @@ describe("printing a code that would strand an existing measurement", () => {
   it("says nothing when there is nothing to lose", () => {
     // The common case, and the one that must never nag: every tour before
     // its first walk, and every creator who never measures.
-    expect(reprintOrphanWarning("abc123", [])).toBeNull();
+    expect(reprintOrphanWarning(["abc123"], [])).toBeNull();
   });
 
   it("says nothing when the code about to be printed IS the measured one", () => {
     // Re-printing the same poster is routine - a torn sheet, a second
     // copy - and warning there would train the creator to ignore the line.
-    expect(reprintOrphanWarning("abc123", ["abc123"])).toBeNull();
-    expect(reprintOrphanWarning("abc123", ["zzz999", "abc123"])).toBeNull();
+    expect(reprintOrphanWarning(["abc123"], ["abc123"])).toBeNull();
+    expect(reprintOrphanWarning(["abc123"], ["zzz999", "abc123"])).toBeNull();
+  });
+
+  it("says nothing when ANOTHER poster of the same tour holds the measurement", () => {
+    // The multi-poster flow is a first-class feature: one tour can carry
+    // several codes, each with its own identity, which is what the code
+    // number and the multi-code PDF are for. A creator who measured code 2
+    // and comes back to re-print code 1 has changed nothing - and the
+    // first version of this told them their link had changed and offered
+    // to put it back, which is advice to undo something they never did
+    // (PR #442 review).
+    //
+    // The question is about the LINK: if any measurement is still
+    // reachable from it, at any of its code numbers, nothing is stranded.
+    const linkIds = ["id-code-1", "id-code-2", "id-code-3"];
+    expect(reprintOrphanWarning(linkIds, ["id-code-2"])).toBeNull();
   });
 
   it("warns, names the cost, and says how to keep the measurement", () => {
-    const warning = reprintOrphanWarning("newid", ["oldid"]);
+    const warning = reprintOrphanWarning(["newid"], ["oldid"]);
     expect(warning).not.toBeNull();
     // The three things a creator needs: that something is wrong, what it
     // will cost, and the way out. A warning without the last one leaves
@@ -375,8 +390,12 @@ describe("printing a code that would strand an existing measurement", () => {
     expect(warning).toMatch(/will not be found/i);
   });
 
-  it("warns when NONE of several measurements match", () => {
-    expect(reprintOrphanWarning("newid", ["a", "b", "c"])).not.toBeNull();
+  it("warns when NO code number of the current link reaches any measurement", () => {
+    // The genuine case: the link changed, so every id it can produce is
+    // new and every measurement the tour holds belongs to the old one.
+    expect(
+      reprintOrphanWarning(["new1", "new2", "new3"], ["a", "b", "c"]),
+    ).not.toBeNull();
   });
 });
 

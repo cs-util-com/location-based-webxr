@@ -146,15 +146,27 @@ describe('the draft file store', () => {
     expect(await createDraftFileStore(dir).keys()).toEqual(['mine']);
   });
 
-  it('clears the whole namespace in one call when it owns a directory', async () => {
-    // A spent draft is deleted wholesale; removing the directory is one
-    // call rather than one per placed object.
-    const parent = fakeDirectory();
+  it('empties its directory rather than removing it, so the store still works after', async () => {
+    // Why this test matters: removing the namespace directory invalidates
+    // the handle the store closed over, and it was doing exactly that.
+    // Every later `put` then threw NotFoundError, was swallowed by the
+    // store's own catch, and returned false - so a creator who tapped
+    // Discard and kept walking had NOTHING saved for the rest of that
+    // tour, and was never told, because the "no persistence" notice fires
+    // only at open time. That is the precise loss the draft feature exists
+    // to prevent, caused by the feature (PR #442 review).
+    //
+    // The cost of emptying in place is an empty directory left behind,
+    // which the next open for that tour reuses.
     const dir = fakeDirectory();
-    const store = createDraftFileStore(dir, parent, 'ns');
+    const store = createDraftFileStore(dir);
     await store.put('a', 'x');
+    await store.put('b', 'y');
     await store.clear();
-    expect(parent.removed).toEqual(['ns']);
+    expect(dir.files.size).toBe(0);
+    // ...and the store is still usable, which is the whole point.
+    expect(await store.put('c', 'z')).toBe(true);
+    expect(await store.keys()).toEqual(['c']);
   });
 
   it('clears file by file when it does not own the directory', async () => {

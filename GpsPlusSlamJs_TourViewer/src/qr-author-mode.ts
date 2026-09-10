@@ -335,14 +335,25 @@ export function finishHandoffStatus(
  * keeping. What they must not have is silence.
  */
 export function reprintOrphanWarning(
-  plannedCodeId: string,
+  linkCodeIds: readonly string[],
   measuredCodeIds: readonly string[],
 ): string | null {
   // No measurement means nothing to orphan. This is the common case: every
   // tour before its first walk, and every tour of a creator who never
   // measures.
   if (measuredCodeIds.length === 0) return null;
-  if (measuredCodeIds.includes(plannedCodeId)) return null;
+  // The question is about the LINK, not about this poster. One tour can
+  // carry several codes - that is what the code number and the multi-code
+  // PDF are for - and each gets a different identity, so a creator who
+  // measured code 2 and is re-printing code 1 has changed nothing. Asking
+  // only about the code in front of them told that creator their link had
+  // changed and offered to put it back, which is advice to undo something
+  // they never did (PR #442 review).
+  //
+  // So: if ANY measurement can still be produced by the current link, at
+  // any of its code numbers, the link is intact and there is nothing to
+  // warn about.
+  if (measuredCodeIds.some((id) => linkCodeIds.includes(id))) return null;
   return (
     "Warning: this tour already holds a measurement, and it belongs to a " +
     "DIFFERENT printed code than the one above - the link must have changed " +
