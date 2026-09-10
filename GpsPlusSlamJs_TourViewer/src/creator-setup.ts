@@ -882,8 +882,17 @@ export function wireCreatorSetup(deps: {
     // share sheet) keeps the button live.
     dom.downloadButton.disabled = true;
     dom.downloadButton.textContent = busyLabel;
+    // The share sheet can stay up for as long as the creator wants, and a
+    // tour can be closed underneath it. Every other post-await path in this
+    // module re-checks its generation; this one resolved straight into the
+    // DOM, so a hand-off that settled after a close revealed the step-6
+    // instructions on the CLOSED tour's panel - invisible at the time,
+    // because the block that holds them is hidden, and then already on
+    // screen the moment the next tour reached its finish (PR #440 review).
+    const openGeneration = ctx.openGeneration;
     seams.shareOrDownloadZip(rebuilt.blob, rebuilt.filename).then(
       ({ route, delivered }) => {
+        if (openGeneration !== ctx.openGeneration) return;
         dom.downloadButton.disabled = false;
         dom.downloadButton.textContent = idleLabel;
         dom.finishStatus.textContent = finishHandoffStatus(
@@ -907,9 +916,16 @@ export function wireCreatorSetup(deps: {
         // `resetFinishStep`, on a tour close, hides them again.
         const help = finishHelpVisibility({ route, delivered });
         if (help.replaceHelp) dom.replaceHelp.hidden = false;
-        if (help.shareNote) dom.replaceHelpShare.hidden = false;
+        // `shareNote` is a claim about WHICH hand-off happened, so unlike
+        // `replaceHelp` it is not earned-and-kept: a share followed by a
+        // save would otherwise leave "you shared it rather than saving it"
+        // on screen beside a file that is now on disk, sending the creator
+        // to look for it in an app. Only a hand-off that DELIVERED gets to
+        // change it - a dismissed picker changed nothing (PR #440 review).
+        if (delivered) dom.replaceHelpShare.hidden = !help.shareNote;
       },
       (err: unknown) => {
+        if (openGeneration !== ctx.openGeneration) return;
         dom.downloadButton.disabled = false;
         dom.downloadButton.textContent = idleLabel;
         dom.finishStatus.textContent = FINISH_LABELS.failed(

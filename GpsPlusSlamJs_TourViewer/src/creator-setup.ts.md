@@ -140,6 +140,14 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
     and only once there is a file to do it with); false - a dismissed
     picker, or a share sheet that handed nothing over - keeps the button
     live. Async-UI rule on both branches.
+  - The reveal is ONE-WAY for `replaceHelp` and follows the last DELIVERED
+    hand-off for `replaceHelpShare`. A creator who saved, tapped again and
+    dismissed the picker keeps the step-6 instructions they earned; one who
+    shared and then saved stops being told to go looking in another app.
+    And the whole continuation is guarded on `ctx.openGeneration`, because
+    a share sheet can stay up across a tour close - the reveal would
+    otherwise land on the closed tour's panel and still be on screen when
+    the next tour reached its finish (PR #440 review).
   - `route` picks the copy, and this is the half that matters: "the link
     and the printed code stay the same" is TRUE after a save over the
     hosted file and FALSE after a share, which normally creates a new file

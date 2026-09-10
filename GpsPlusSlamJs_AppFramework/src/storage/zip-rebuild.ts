@@ -53,9 +53,22 @@ import {
  */
 const DOT_SLASH = './';
 
-/** Does this archive write its entries with a leading `./`? */
+/** Does this archive write ANY entry with a leading `./`? Enough to accept
+ *  a new path that carries one: the caller derived that prefix from the
+ *  archive rather than inventing it. */
 function archiveUsesDotSlash(archiveNames: readonly string[]): boolean {
   return archiveNames.some((name) => name.startsWith(DOT_SLASH));
+}
+
+/** Does EVERY entry carry it? A stricter question, and the one that decides
+ *  whether an unprefixed NEW name is moved under the prefix. A mixed
+ *  archive has no convention to follow, so nothing is guessed there: the
+ *  name is written as the caller spelled it. */
+function archiveIsAllDotSlash(archiveNames: readonly string[]): boolean {
+  return (
+    archiveNames.length > 0 &&
+    archiveNames.every((name) => name.startsWith(DOT_SLASH))
+  );
 }
 
 /**
@@ -125,7 +138,9 @@ export async function rebuildZipWithEntries(
     // recording was skipped with a log line and no other trace (PR #438
     // review). Re-emitting a name the input already carried is no new
     // hazard; inventing one is, and that is still refused.
-    const dotSlash = archiveUsesDotSlash(all.map((e) => e.filename));
+    const archiveNameList = all.map((e) => e.filename);
+    const dotSlash = archiveUsesDotSlash(archiveNameList);
+    const allDotSlash = archiveIsAllDotSlash(archiveNameList);
     // Which archive entry each name REFERS to, keyed on the normalised
     // form. One map rather than a bare name set, because every downstream
     // question is the same question - "does the archive already hold this
@@ -134,15 +149,26 @@ export async function rebuildZipWithEntries(
     const archiveByName = new Map(
       all.map((e) => [underArchiveConvention(e.filename, dotSlash), e.filename])
     );
-    // A new entry lands at the archive's OWN name for that file when the
-    // archive already holds it, so a caller that names it either way
-    // replaces rather than duplicates - and the output keeps the archive's
-    // convention, which is this module's standing rule.
-    const targeted = entries.map((e) => ({
-      ...e,
-      path:
-        archiveByName.get(underArchiveConvention(e.path, dotSlash)) ?? e.path,
-    }));
+    // Every new entry lands under the archive's convention, and the rule is
+    // applied to ALL of them rather than only to the ones the archive
+    // already holds (PR #440 review): a caller that names an existing file
+    // either way replaces rather than duplicates, and a genuinely new file
+    // goes in prefixed like its neighbours instead of leaving a flat name
+    // in an otherwise `./`-written archive - the mixed archive this
+    // module's own suffix-based finders exist to cope with.
+    //
+    // Moving a new name requires EVERY existing entry to carry the prefix,
+    // not merely one of them. An archive that is already mixed has no
+    // convention to follow, so nothing is guessed there and the name is
+    // written as the caller spelled it. An existing test of exactly that
+    // shape is what caught the wider rule.
+    const targeted = entries.map((e) => {
+      const key = underArchiveConvention(e.path, dotSlash);
+      return {
+        ...e,
+        path: archiveByName.get(key) ?? (allDotSlash ? DOT_SLASH + key : key),
+      };
+    });
     assertSafeNewZipPaths(
       targeted
         .filter(
