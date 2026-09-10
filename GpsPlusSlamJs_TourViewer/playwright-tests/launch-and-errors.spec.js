@@ -75,3 +75,53 @@ test("the page boots without console errors", async ({ page }) => {
   ).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+/**
+ * Why these tests matter: the setup page is a DOCUMENT, and its ground is a
+ * page rather than the camera - which is why it opts into `.page` while the
+ * five AR apps do not. Light mode rides that same opt-in (owner decision
+ * 2026-09-10), so what has to hold is a pair: a device asking for light gets
+ * a light ground, and one asking for dark - the default - is unchanged.
+ *
+ * A screenshot would show this too, but only to someone looking. These
+ * assert it, and they assert the DARK half as well, because a light block
+ * written with the wrong scope repaints everything and a test that only ever
+ * checks light would call that a success.
+ */
+test.describe("the setup page follows the device's colour scheme", () => {
+  test.use({ colorScheme: "light" });
+
+  test("a light device gets the light ground", async ({ page }) => {
+    await page.goto("/?nocache=1");
+    const body = page.locator("body.page");
+    await expect(body).toHaveCount(1);
+    // The token, resolved on the element that declares it.
+    await expect
+      .poll(() =>
+        body.evaluate((el) =>
+          getComputedStyle(el).getPropertyValue("--paper").trim(),
+        ),
+      )
+      .toBe("#f2f1ed");
+    // And the UA is told, so form controls and scrollbars follow.
+    await expect
+      .poll(() => body.evaluate((el) => getComputedStyle(el).colorScheme))
+      .toContain("light");
+  });
+});
+
+test.describe("a dark device keeps the default ground", () => {
+  test.use({ colorScheme: "dark" });
+
+  test("nothing about the dark page moves", async ({ page }) => {
+    await page.goto("/?nocache=1");
+    const body = page.locator("body.page");
+    await expect
+      .poll(() =>
+        body.evaluate((el) =>
+          getComputedStyle(el).getPropertyValue("--paper").trim(),
+        ),
+      )
+      .toBe("#232838");
+  });
+});
