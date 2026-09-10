@@ -34,6 +34,10 @@ function memoryStore(): DraftFileStore & { files: Map<string, Blob | string> } {
       files.set(key, data as Blob | string);
       return Promise.resolve(true);
     },
+    remove: (key) => {
+      files.delete(key);
+      return Promise.resolve();
+    },
     getText: async (key) => {
       const value = files.get(key);
       if (value === undefined) return undefined;
@@ -186,6 +190,7 @@ describe("writeDraftObject", () => {
       getText: () => Promise.resolve(undefined),
       getBlob: () => Promise.resolve(undefined),
       keys: () => Promise.resolve([]),
+      remove: () => Promise.resolve(),
       clear: () => Promise.resolve(),
     };
     expect(await writeDraftObject(failing, photo("p"), new Blob(["x"]))).toBe(
