@@ -198,7 +198,13 @@ export function wireCreatorSetup(deps: {
    * overwrite a newer one, including a rejection or a measured level
    * (PR #456 review).
    *
-   * KEYED BY TOUR, because the chain belongs to the namespace. That makes
+   * KEYED BY THE NAMESPACE KEY, not by the raw url - `draftKeyForTour`
+   * trims, so two urls differing only in surrounding whitespace share one
+   * directory and one meta key. Keyed by the raw url they would get two
+   * independent chains, which is the same clobber through another door,
+   * and it is reachable: the paste paths trim before opening, but the
+   * `?qr=` boot passes the decoded payload through untouched, and that is
+   * external data (PR #460 review). That makes
    * both properties structural rather than remembered: a tour that stalls
    * blocks only itself, and the ordering survives any interleaving of
    * opens. Two earlier shapes each held only half of that - one chain per
@@ -313,10 +319,11 @@ export function wireCreatorSetup(deps: {
     };
     // Values captured NOW, write ordered by call within this tour.
     // `catch` keeps one refused write from breaking the chain behind it.
-    const next = (metaWrites.get(tourUrl) ?? Promise.resolve(true))
+    const namespace = draftKeyForTour(tourUrl);
+    const next = (metaWrites.get(namespace) ?? Promise.resolve(true))
       .catch(() => false)
       .then(() => writeDraftMeta(store, meta));
-    metaWrites.set(tourUrl, next);
+    metaWrites.set(namespace, next);
     return next;
   }
 
