@@ -66,23 +66,25 @@ export async function openDraftNamespace(
       encodeURIComponent(namespace),
       { create: true }
     );
-    return createDraftFileStore(
-      directory,
-      drafts,
-      encodeURIComponent(namespace)
-    );
+    return createDraftFileStore(directory);
   } catch (err) {
     log.warn('draft storage unavailable:', err);
     return undefined;
   }
 }
 
-/** The store over an already-resolved directory. Exported so the tests can
- *  pass a fake handle and stay in node, as the OSM store's do. */
+/**
+ * The store over an already-resolved directory. Exported so the tests can
+ * pass a fake handle and stay in node, as the OSM store's do.
+ *
+ * It took a `parent` and its own name until r669, so `clear` could remove
+ * the whole directory in one call. That is why it no longer does: removing
+ * the directory invalidates this handle, and every later write then failed
+ * silently. The parameters went with the capability rather than lingering
+ * as a signature nobody could safely use.
+ */
 export function createDraftFileStore(
-  directory: FileSystemDirectoryHandle,
-  parent?: FileSystemDirectoryHandle,
-  ownName?: string
+  directory: FileSystemDirectoryHandle
 ): DraftFileStore {
   return {
     async put(key, data) {
@@ -122,13 +124,21 @@ export function createDraftFileStore(
       return out;
     },
     async clear() {
+      // EMPTIED IN PLACE, never removed. Deleting the namespace directory
+      // invalidates the handle this store closed over, so every later
+      // `put` throws `NotFoundError`, is swallowed, and returns false - and
+      // the creator is never told, because the "no persistence" notice
+      // fires only at open time. A creator who tapped Discard and kept
+      // walking would have had nothing saved for the rest of that tour,
+      // which is precisely the loss this feature exists to prevent
+      // (PR #442 review).
+      //
+      // The cost is an empty directory left behind, which the next
+      // `openDraftNamespace` for that tour reuses. That is cheaper than a
+      // contract where every caller must remember to re-open.
       try {
-        if (parent !== undefined && ownName !== undefined) {
-          await parent.removeEntry(ownName, { recursive: true });
-          return;
-        }
         for await (const name of directory.keys()) {
-          await directory.removeEntry(name);
+          await directory.removeEntry(name, { recursive: true });
         }
       } catch (err) {
         // A draft that will not delete is a draft that gets offered again;
