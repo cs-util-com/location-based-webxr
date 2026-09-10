@@ -189,6 +189,11 @@ export function wireCreatorSetup(deps: {
    * files), reset when the tour closes, and never shared between tours.
    */
   let draftRejected: readonly string[] = [];
+  /** The last meta write, so the next one queues behind it. Every write
+   *  targets the same key and the mint and finish ones are unawaited, so
+   *  an earlier one landing later would overwrite a newer one - including
+   *  a rejection (PR #456 review). */
+  let metaWrite: Promise<boolean> = Promise.resolve(true);
   /** The creator-facing url of the open tour, for later draft writes. */
   let draftTourUrl: string | null = null;
   /** What a draft is offering, until the creator answers. */
@@ -278,16 +283,24 @@ export function wireCreatorSetup(deps: {
     // only assigned at AR entry, so before the first session it still holds
     // the previous tour's value.
     const sizeM = Number(dom.sizeInput.value);
-    return writeDraftMeta(store, {
+    const meta = {
       tourUrl,
       sizeM:
         Number.isFinite(sizeM) && sizeM > 0 ? sizeM : AUTHOR_DEFAULT_SIZE_M,
       level: ctx.mintedLevel,
       // Re-stated on every write, not only on the discard's: this file is
-      // rewritten on each placement and each mint, and one that omitted
-      // the list would hand a rejected draft back on the next read.
+      // rewritten on each mint, each finish and each tour open, and one
+      // that omitted the list would hand a rejected draft back on the next
+      // read. (NOT on each placement - `recordPlacement` writes the object
+      // file only and never reaches here; PR #456 review.)
       rejected: draftRejected,
-    });
+    };
+    // Values captured NOW, write ordered by call. `catch` keeps one refused
+    // write from breaking the chain for the rest of the session.
+    metaWrite = metaWrite
+      .catch(() => false)
+      .then(() => writeDraftMeta(store, meta));
+    return metaWrite;
   }
 
   dom.panel.hidden = !creator;
@@ -590,20 +603,40 @@ export function wireCreatorSetup(deps: {
     // right branch: with no meta write there is no commit point, and
     // deleting without one is the shape that lost work four times.
     if (tourUrl === null) return;
+    // Assigned BEFORE the call, not after: a mint or finish issued in the
+    // same tick must carry the rejection too, or its write would drop it.
+    const wasRejected = draftRejected;
     draftRejected = rejectedIds;
     // Dispatched SYNCHRONOUSLY, before any await, so no reload can land
     // between the tap and the write.
     const committed = recordMeta(tourUrl);
     void (async () => {
       if (!(await committed)) {
-        // The rejection did not commit, so the files stay and the draft
-        // will be offered again on the next open. Say so through the one
-        // channel this module has for a refused write - the same one
-        // `recordPlacement` uses, and for the same underlying condition:
-        // the store just refused a `put`. Silence here would leave a
-        // creator believing they had deleted something they had not
-        // (PR #455 review, CodeRabbit).
-        noteNoPersistence();
+        // Not on disk, so it must not stay in memory: a later mint or
+        // finish would write it and commit a discard this branch is about
+        // to report as failed. Only when this tour is still the open one -
+        // a tour change has already reset the list from its own read
+        // (PR #456 review).
+        if (draftStore === store && draftTourUrl === tourUrl) {
+          draftRejected = wasRejected;
+        }
+        // ITS OWN NOTE, AND UNGATED. The first version of this branch
+        // called `noteNoPersistence`, which is wrong twice over
+        // (PR #456 review):
+        //
+        // - it fires ONCE per wiring. A quota wall is rarely a one-off, so
+        //   an earlier failed placement burns the flag, the next pin tap
+        //   clears the note from screen, and this branch then says
+        //   NOTHING - which is exactly the silence it was added to close.
+        // - its wording is about backups, not about the thing the creator
+        //   just asked for. "Not saving a backup copy" does not tell them
+        //   the draft they tapped Delete on is still there.
+        //
+        // A tap the creator made deserves an answer about that tap, every
+        // time it fails.
+        ctx.placementNote =
+          "Could not delete the saved draft - it is still there, and will be offered again next time.";
+        renderAuthorReadout();
         return;
       }
       for (const id of rejectedIds) void removeDraftObject(store, id);

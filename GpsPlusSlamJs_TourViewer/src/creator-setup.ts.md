@@ -56,9 +56,12 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
 - **"Delete it" is committed by ONE meta write.** The handler records the
   rejected ids in the meta file and only then removes their object files,
   and it does not remove anything if that write failed - in which case the
-  creator is TOLD, through the same refused-write notice a failed placement
-  uses, because a discard that silently did not happen is met again on the
-  next open with no explanation. So an interrupted or failing sweep cannot
+  creator is told, in its OWN words and every time, because a discard that
+  silently did not happen is met again on the next open with no
+  explanation. Deliberately NOT the shared "not saving a backup copy"
+  notice: that one fires once per wiring, so a earlier refused write would
+  have left this branch mute, and its wording says nothing about the draft
+  the creator just tapped Delete on. So an interrupted or failing sweep cannot
   bring the draft back, and a reload before the
   write lands sees the draft exactly as it was - safe in both directions,
   which neither earlier shape was. The ids come from what `readDraft`

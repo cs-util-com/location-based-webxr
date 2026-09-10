@@ -102,7 +102,9 @@ are the framework's.
   - **Every meta write re-states the list.** One that omitted it would
     un-reject a draft whose files are still there, which is the same
     failure one step later. `creator-setup` holds the current list per
-    tour for exactly this reason.
+    tour for exactly this reason, and rewrites this file on each mint,
+    each finish and each tour open - not on each placement, which writes
+    only the object file.
 - **A photo record without its bytes is dropped with them.** It would name
   a `content/<id>.jpg` the rebuilt zip does not contain - the shape of the
   PR #435 bug, and worse here because the safety net would be introducing
