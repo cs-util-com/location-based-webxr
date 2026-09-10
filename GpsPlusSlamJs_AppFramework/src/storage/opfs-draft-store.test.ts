@@ -192,6 +192,25 @@ describe('the draft file store', () => {
     await expect(store.remove('never-written')).resolves.toBeUndefined();
   });
 
+  it('swallows a delete refused for a reason that is NOT "already gone"', async () => {
+    // Why this test matters: the not-found half of this catch is covered
+    // by the test above, but the other half - a removal refused because a
+    // writable is still open on the file, or by a quota or IO error - had
+    // nothing, so a regression to a rethrow would pass. That is not
+    // cosmetic: `removeDraftObject` awaits the two deletes in sequence, so
+    // a throwing record delete would skip the photo delete AND reject the
+    // promise the discard handler deliberately leaves un-awaited
+    // (PR #455 review).
+    const dir = fakeDirectory();
+    dir.removeEntry = () =>
+      Promise.reject(
+        Object.assign(new Error('busy'), { name: 'InvalidStateError' })
+      );
+    await expect(
+      createDraftFileStore(dir).remove('k')
+    ).resolves.toBeUndefined();
+  });
+
   it('empties EVERY entry, not every other one', async () => {
     // Why this test matters: `clear` walked the directory and removed as it
     // went, which mutates the collection the enumerator is walking - so

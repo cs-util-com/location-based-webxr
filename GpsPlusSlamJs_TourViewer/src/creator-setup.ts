@@ -179,6 +179,16 @@ export function wireCreatorSetup(deps: {
 
   /** This tour's draft store, once a tour is open. */
   let draftStore: DraftFileStore | undefined;
+  /**
+   * The ids this tour's meta records as rejected, carried so that EVERY
+   * meta write re-states them.
+   *
+   * A write that dropped the list would un-reject a draft whose files are
+   * still on disk, which is the resurrection this design exists to
+   * prevent. Set from the read (already pruned to ids that still have
+   * files), reset when the tour closes, and never shared between tours.
+   */
+  let draftRejected: readonly string[] = [];
   /** The creator-facing url of the open tour, for later draft writes. */
   let draftTourUrl: string | null = null;
   /** What a draft is offering, until the creator answers. */
@@ -261,18 +271,22 @@ export function wireCreatorSetup(deps: {
    *   the proxy route - so writing that here would make the field disagree
    *   with the key and with its own documentation.
    */
-  function recordMeta(tourUrl: string): void {
+  function recordMeta(tourUrl: string): Promise<boolean> {
     const store = draftStore;
-    if (store === undefined) return;
+    if (store === undefined) return Promise.resolve(false);
     // The size comes from the FIELD, not from `ctx.activeSizeM`: that is
     // only assigned at AR entry, so before the first session it still holds
     // the previous tour's value.
     const sizeM = Number(dom.sizeInput.value);
-    void writeDraftMeta(store, {
+    return writeDraftMeta(store, {
       tourUrl,
       sizeM:
         Number.isFinite(sizeM) && sizeM > 0 ? sizeM : AUTHOR_DEFAULT_SIZE_M,
       level: ctx.mintedLevel,
+      // Re-stated on every write, not only on the discard's: this file is
+      // rewritten on each placement and each mint, and one that omitted
+      // the list would hand a rejected draft back on the next read.
+      rejected: draftRejected,
     });
   }
 
@@ -563,10 +577,37 @@ export function wireCreatorSetup(deps: {
     // afterwards - and it converges, because a later discard runs with no
     // minted level and writes a spent meta.
     //
-    // Both happen synchronously in the handler, so the generation guard
-    // that used to sit here is gone with the await that needed it.
-    if (draftTourUrl !== null) recordMeta(draftTourUrl);
-    for (const id of rejectedIds) void removeDraftObject(store, id);
+    // THAT WRITE IS THE COMMIT POINT. It now carries the rejected ids, so
+    // the next read refuses them whether or not their files are still
+    // there, and the deletes below are housekeeping: they may fail, be
+    // interrupted by the tab closing, or never run, and the draft stays
+    // gone. Nothing is removed BEFORE the write lands, so the wait costs
+    // nothing in the other direction either - a reload during it sees the
+    // draft exactly as it was.
+    const tourUrl = draftTourUrl;
+    // Assigned together with `draftStore` and cleared with it, so this is
+    // unreachable in practice. Returning rather than deleting is still the
+    // right branch: with no meta write there is no commit point, and
+    // deleting without one is the shape that lost work four times.
+    if (tourUrl === null) return;
+    draftRejected = rejectedIds;
+    // Dispatched SYNCHRONOUSLY, before any await, so no reload can land
+    // between the tap and the write.
+    const committed = recordMeta(tourUrl);
+    void (async () => {
+      if (!(await committed)) {
+        // The rejection did not commit, so the files stay and the draft
+        // will be offered again on the next open. Say so through the one
+        // channel this module has for a refused write - the same one
+        // `recordPlacement` uses, and for the same underlying condition:
+        // the store just refused a `put`. Silence here would leave a
+        // creator believing they had deleted something they had not
+        // (PR #455 review, CodeRabbit).
+        noteNoPersistence();
+        return;
+      }
+      for (const id of rejectedIds) void removeDraftObject(store, id);
+    })();
   });
 
   dom.pinButton.addEventListener("click", () => {
@@ -763,7 +804,7 @@ export function wireCreatorSetup(deps: {
       (id) => {
         if (mintGeneration !== ctx.mintGeneration) return;
         ctx.mintedLevel = { id, json: result.json };
-        if (draftTourUrl !== null) recordMeta(draftTourUrl);
+        if (draftTourUrl !== null) void recordMeta(draftTourUrl);
         renderAuthorReadout();
       },
       () => {
@@ -874,7 +915,7 @@ export function wireCreatorSetup(deps: {
         // only in the creator's hands, not yet in the file the world sees.
         // It is cleared when a re-opened tour turns out to carry these ids
         // (see presentDraftForTour) - the one signal that is proof.
-        if (draftTourUrl !== null) recordMeta(draftTourUrl);
+        if (draftTourUrl !== null) void recordMeta(draftTourUrl);
         // The session ends so the creator lands on the page, where the
         // download button is a fresh tap (a download needs its own user
         // gesture, plan §2.4) - unless it already ended and another one
@@ -995,6 +1036,7 @@ export function wireCreatorSetup(deps: {
       offered = null;
       draftStore = undefined;
       draftTourUrl = null;
+      draftRejected = [];
     },
     presentDraftForTour: (tourUrl) => {
       if (!creator) return; // a visitor authors nothing
@@ -1021,11 +1063,19 @@ export function wireCreatorSetup(deps: {
         }
         const stored = await readDraft(store);
         if (stale()) return;
+        // Per-tour state: never carry the previous tour's rejections into
+        // this one's meta.
+        draftRejected = stored?.rejectedIds ?? [];
+        // Deletes that did not finish last time. `rejectedIds` is exactly
+        // the ids the meta rejects whose files are still on disk, so this
+        // is the only thing that reclaims them - and it is safe to repeat,
+        // because removing a key that is not there is not a failure.
+        for (const id of draftRejected) void removeDraftObject(store, id);
         if (stored === undefined) {
           // No draft yet, but there will be: record what is already known,
           // so a crash before the first placement still leaves the tour and
           // the printed size behind.
-          recordMeta(tourUrl);
+          void recordMeta(tourUrl);
           return;
         }
         const waiting = draftObjectsNotYetHosted(
@@ -1057,10 +1107,18 @@ export function wireCreatorSetup(deps: {
           // `hostedLevelJson` reads a zip entry, which is a network round
           // trip for a remote archive, while neither the mint button nor
           // `placementAllowed()` waits for the chain to settle.
-          recordMeta(tourUrl);
           // `storedIds`, not `draft.objects`: the latter is what parsed,
           // and a record this read refused still has files. Nothing
           // reclaims those since `clear` lost its last caller.
+          draftRejected = stored.storedIds;
+          // Same commit point as the discard, for the same reason: an
+          // interrupted sweep must not bring a spent draft back - and the
+          // same notice when it does not land.
+          if (!(await recordMeta(tourUrl))) {
+            noteNoPersistence();
+            return;
+          }
+          if (stale()) return;
           for (const id of stored.storedIds) void removeDraftObject(store, id);
           return;
         }
