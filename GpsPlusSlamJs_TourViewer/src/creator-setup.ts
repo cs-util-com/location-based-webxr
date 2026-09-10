@@ -595,7 +595,17 @@ export function wireCreatorSetup(deps: {
     // between the tap and the write.
     const committed = recordMeta(tourUrl);
     void (async () => {
-      if (!(await committed)) return;
+      if (!(await committed)) {
+        // The rejection did not commit, so the files stay and the draft
+        // will be offered again on the next open. Say so through the one
+        // channel this module has for a refused write - the same one
+        // `recordPlacement` uses, and for the same underlying condition:
+        // the store just refused a `put`. Silence here would leave a
+        // creator believing they had deleted something they had not
+        // (PR #455 review, CodeRabbit).
+        noteNoPersistence();
+        return;
+      }
       for (const id of rejectedIds) void removeDraftObject(store, id);
     })();
   });
@@ -1102,8 +1112,12 @@ export function wireCreatorSetup(deps: {
           // reclaims those since `clear` lost its last caller.
           draftRejected = stored.storedIds;
           // Same commit point as the discard, for the same reason: an
-          // interrupted sweep must not bring a spent draft back.
-          if (!(await recordMeta(tourUrl))) return;
+          // interrupted sweep must not bring a spent draft back - and the
+          // same notice when it does not land.
+          if (!(await recordMeta(tourUrl))) {
+            noteNoPersistence();
+            return;
+          }
           if (stale()) return;
           for (const id of stored.storedIds) void removeDraftObject(store, id);
           return;

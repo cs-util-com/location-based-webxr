@@ -98,7 +98,7 @@ function fakeDom(): Record<(typeof DOM_KEYS)[number], FakeEl> {
  *  settles - which is the property these tests exist to hold. */
 function memoryStore(
   seed: Record<string, string> = {},
-  options: { removeNeverSettles?: boolean } = {},
+  options: { removeNeverSettles?: boolean; putFails?: boolean } = {},
 ): {
   store: DraftFileStore;
   files: Map<string, unknown>;
@@ -106,6 +106,9 @@ function memoryStore(
   const files = new Map<string, unknown>(Object.entries(seed));
   const store: DraftFileStore = {
     put: (key: string, data: unknown) => {
+      // A store that REFUSES, as the real one does on a quota wall or a
+      // revoked directory handle: `put` reports false rather than throwing.
+      if (options.putFails === true) return Promise.resolve(false);
       files.set(key, data);
       return Promise.resolve(true);
     },
@@ -326,6 +329,40 @@ describe("the rejection is committed by the meta write", () => {
 
     const reread = await readDraft(store);
     expect(reread?.draft.objects).toEqual([]);
+  });
+
+  it("says so when the rejection could not be committed, and deletes nothing", async () => {
+    // Why this test matters: the creator tapped "Delete it" and nothing was
+    // deleted. Without a word on screen they carry on believing the draft
+    // is gone, and meet it again on the next open with no explanation.
+    // This module has exactly one channel for a refused write and
+    // `recordPlacement` already uses it for the same underlying condition -
+    // the store refused a `put`. A discard that fails silently is that
+    // condition reported nowhere (PR #455 review, CodeRabbit).
+    const { store, files } = memoryStore(
+      {
+        [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+        [objectKey("old-pin")]: JSON.stringify(pin("old-pin")),
+      },
+      { putFails: true },
+    );
+    const { dom, ctx, setup } = wire(store);
+
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    expect(
+      ctx.placementNote,
+      "nothing has failed yet - the note must be caused by the tap",
+    ).toBeNull();
+
+    dom.draftDiscard.click();
+    await settle();
+
+    expect(
+      files.has(objectKey("old-pin")),
+      "an uncommitted rejection must delete nothing - the meta still points at it",
+    ).toBe(true);
+    expect(ctx.placementNote).toContain("not saving");
   });
 
   it("sweeps a rejection whose deletes never finished, on the next open", async () => {

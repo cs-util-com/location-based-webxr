@@ -55,8 +55,11 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   printed at 20. A live measurement wins over a drafted one - it is newer.
 - **"Delete it" is committed by ONE meta write.** The handler records the
   rejected ids in the meta file and only then removes their object files,
-  and it does not remove anything if that write failed. So an interrupted
-  or failing sweep cannot bring the draft back, and a reload before the
+  and it does not remove anything if that write failed - in which case the
+  creator is TOLD, through the same refused-write notice a failed placement
+  uses, because a discard that silently did not happen is met again on the
+  next open with no explanation. So an interrupted or failing sweep cannot
+  bring the draft back, and a reload before the
   write lands sees the draft exactly as it was - safe in both directions,
   which neither earlier shape was. The ids come from what `readDraft`
   returned, so a placement made while the offer sat on screen is never in
