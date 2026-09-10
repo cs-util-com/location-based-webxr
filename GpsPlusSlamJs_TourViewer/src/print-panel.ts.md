@@ -45,7 +45,25 @@ since M6.
 sideM)` - what the file is called and what is printed under each code.
     The caption is read while hanging posters, so it names WHICH poster;
     it is plain ASCII because a PDF base-14 font is single-byte.
-  - `MAX_PRINTED_CODES`.
+  - `MAX_PRINTED_CODES`. The orphan scan's own budget is NOT exported -
+    it is an alias of that constant, and two exported names for one value
+    are a duplicate export that fails the dead-code check. Ask
+    `orphanScanCovers` instead, which is the question anyway.
+  - `highestPrintedCode(codeIndex, count)` - the last poster a run
+    produces, `codeIndex + count - 1`. A SUM, not the larger of the two:
+    taking the max covered 1..3 for a creator starting at 3 with three
+    posters, whose posters are 3, 4 and 5 (PR #443 review).
+  - `orphanScanCovers(codeIndex, count)` - whether the orphaning check
+    reaches every poster in a run.
+    - **Exported because it is the CLAIM, and a claim that lives only in a
+      comment is one no test can hold.** The comment used to say every set
+      the app can print is covered; that is false, because
+      `MAX_PRINTED_CODES` caps the COUNT while the start index is
+      uncapped - so a creator printing code 60 never gets the warning at
+      all (PR #445 review).
+    - When it is false the check says NOTHING. A half-scanned range can
+      only produce a false warning, and telling a creator to undo a change
+      they never made is worse than silence.
   - `printUrlDisplay(tourUrl)` - the pure rule behind that swap:
     `{ askVisible, shownVisible, shownText }`. Exactly one of the two is
     ever live, which is what stops them disagreeing about which link the

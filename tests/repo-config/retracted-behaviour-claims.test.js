@@ -61,6 +61,39 @@ const REMOVED_BEHAVIOURS = [
     ],
   },
   {
+    // A retracted CAPABILITY claim. Chrome for Android exposes neither
+    // `showDirectoryPicker` nor `showSaveFilePicker` (they are desktop-only
+    // File System Access pickers), so the recorder's external-sync path is
+    // inert on a phone — and two files said the opposite, in the voice of a
+    // measured finding. It cost a Tour Viewer design a wrong turn before a
+    // cold review caught it, which is the same "a wrong sentence is the input
+    // to everything downstream" failure this file was created for.
+    //
+    // CONTEXT REQUIRED: "reliable on Android" is a sentence someone might write
+    // truthfully about something else in this tree. What makes a match mean
+    // "someone is claiming the pickers work there" is the picker name, the
+    // API's own name, or the picker's distinctive argument.
+    //
+    // THE NARROWING IS PER-LINE, and that assumption is what this entry got
+    // wrong on its first writing: `selectReadFolder`'s docstring said "Uses
+    // mode: 'read' which is reliable on Android Chrome" with the picker call
+    // NINE LINES below it, so the pattern matched, the context rejected, and
+    // the guard reported clean while the claim shipped (PR #446 review).
+    // `mode: 'read'` is as specific as the picker name and appears on the
+    // offending line, so it joins the alternation - and the sentence joins
+    // the witnesses, which is what forces the pair to be able to see it.
+    pattern: /\breliabl[ey]\b[^.]{0,120}?\bandroid\b/i,
+    context:
+      /(?:\b(?:showDirectoryPicker|showSaveFilePicker|File System Access)\b|mode:\s*'read')/i,
+    label:
+      'the File System Access pickers described as reliable on Android Chrome (retracted 2026-09-10 — Chrome for Android exposes neither, so isExternalStorageSupported() is false there; see external-file-storage.ts.md)',
+    witnesses: [
+      'The File System Access API works reliably on Android Chrome when:',
+      "Uses `showDirectoryPicker({ mode: 'read' })` and `showSaveFilePicker()` which are reliable on Android Chrome, unlike `createWritable()` on directory handles.",
+      " * Uses mode: 'read' which is reliable on Android Chrome.",
+    ],
+  },
+  {
     // NOT a behaviour removal — a retracted MEASUREMENT, kept here rather than
     // in the figures guard because it is a claim about how the system behaves
     // over time, and because it reached three READMEs and four articles from a
@@ -143,7 +176,11 @@ function scanTree() {
     // trigger words, and skipping their line split is what keeps this under a
     // second. Every entry's context words must appear here, or that entry
     // silently stops being enforced on files the filter drops.
-    if (!/alignment|walk|drift|converg/i.test(text)) {
+    // `android` is here for the picker-capability entry, and the paragraph
+    // above is why: that entry's pattern REQUIRES the word, so leaving it out
+    // of this filter would drop every file the entry exists to scan and the
+    // entry would pass forever having read nothing.
+    if (!/alignment|walk|drift|converg|android/i.test(text)) {
       continue;
     }
     text.split('\n').forEach((line, index) => {

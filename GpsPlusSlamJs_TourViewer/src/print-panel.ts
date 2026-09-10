@@ -93,15 +93,53 @@ export const MAX_PRINTED_CODES = 50;
 /**
  * How many code numbers the orphaning check will hash before giving up.
  *
- * It matches the poster cap, so every set this app can actually print is
- * fully covered. Past it the check STAYS SILENT rather than guessing: a
- * half-scanned range can only produce a FALSE warning, and telling a
- * creator to undo a change they never made is worse than saying nothing.
- * An arbitrary cap of 24 did exactly that inside the app's own limits -
- * 50 posters is a legal set, and a measurement on poster 30 read as
- * unreachable (PR #444 review).
+ * Past it the check STAYS SILENT rather than guessing: a half-scanned
+ * range can only produce a FALSE warning, and telling a creator to undo a
+ * change they never made is worse than saying nothing. An arbitrary cap of
+ * 24 did exactly that inside the app's own limits - 50 posters is a legal
+ * set, and a measurement on poster 30 read as unreachable (PR #444
+ * review).
+ *
+ * **It does NOT cover every run the app can produce, and the previous
+ * wording claiming so was wrong** (PR #445 review). `MAX_PRINTED_CODES`
+ * caps the COUNT; the start index is not capped at all - `codeIndexFromInput`
+ * takes any whole number and the field carries no `max` - so a creator
+ * printing code 60 is past the budget and the warning can never fire for
+ * them. That is the safe direction and it is deliberate, but it is a
+ * limitation rather than the closed case the comment described.
+ * `orphanScanCovers` states the real rule, and is tested.
+ *
+ * NOT exported, deliberately. It is an alias of `MAX_PRINTED_CODES`, and
+ * two exported names for one value are a duplicate export - knip fails the
+ * build on it, which is how this was found. Nothing outside needs the
+ * number anyway: `orphanScanCovers` is the question callers and tests
+ * actually ask, and the budget is pinned from BOTH sides through it.
  */
 const MAX_ORPHAN_SCAN_CODES = MAX_PRINTED_CODES;
+
+/**
+ * The highest code NUMBER a print run produces.
+ *
+ * The PDF numbers its posters `codeIndex .. codeIndex + count - 1`, so the
+ * last one is a SUM. Taking the larger of the two inputs instead covered
+ * 1..3 for a creator starting at 3 with three posters - whose posters are
+ * 3, 4 and 5 - so a measurement on code 5 looked unreachable and the
+ * warning fired at someone who had changed nothing (PR #443 review).
+ */
+export function highestPrintedCode(codeIndex: number, count: number): number {
+  return codeIndex + count - 1;
+}
+
+/**
+ * Whether the orphaning scan reaches every poster in a print run.
+ *
+ * Exported because it is the CLAIM the budget makes, and a claim that
+ * lives only in a comment is one no test can hold. When this is false the
+ * check says nothing at all.
+ */
+export function orphanScanCovers(codeIndex: number, count: number): boolean {
+  return highestPrintedCode(codeIndex, count) <= MAX_ORPHAN_SCAN_CODES;
+}
 
 /** The PDF button's labels through its async cycle (async-UI rule). */
 const PDF_LABELS = {
@@ -399,14 +437,12 @@ async function orphanWarningFor(
   if (measured.length === 0) return null;
   const { codeIndex } = codeIndexFromInput(dom.codeInput.value);
   const url = dom.urlInput.value.trim();
-  // The posters this creator prints are `codeIndex .. codeIndex + count - 1`
-  // (that is what the PDF numbers), so the highest one ADDS rather than
-  // maxes: with a start of 3 and a count of 3 the posters are 3, 4, 5, and
-  // `max` covered only 1 to 3 - so a measurement on code 5 looked
-  // unreachable and the warning fired on a creator who had changed nothing
-  // (PR #443 review).
   const { count } = printCountFromInput(dom.countInput.value);
-  const highest = codeIndex + count - 1;
+  // A run the budget cannot cover is answered with silence, before any
+  // hashing rather than after 50 rounds of it. Same outcome as the old
+  // in-loop bail, minus the work.
+  if (!orphanScanCovers(codeIndex, count)) return null;
+  const highest = highestPrintedCode(codeIndex, count);
   try {
     // One at a time, stopping at the FIRST match. A tour with one code
     // costs one hash, which is the common case; the whole walk happens
@@ -414,7 +450,6 @@ async function orphanWarningFor(
     // to fire anyway.
     const linkCodeIds: string[] = [];
     for (let index = 1; index <= highest; index += 1) {
-      if (index > MAX_ORPHAN_SCAN_CODES) return null;
       // Sequential on purpose, and the early exit is the point: the
       // common tour has one code, so this awaits once.
       const plan = await planPrintCode(url, { codeIndex: index });

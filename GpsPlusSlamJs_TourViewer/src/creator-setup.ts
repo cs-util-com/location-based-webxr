@@ -536,6 +536,10 @@ export function wireCreatorSetup(deps: {
     // reload mid-clear must find NO draft rather than the one they just
     // discarded. That race was live and intermittent - about one run in
     // six of the e2e that discards and reopens (PR #443 review round).
+    // Captured at the TAP, because `presentDraftForTour` re-points
+    // `draftStore` and `draftTourUrl` at the next tour and bumps this
+    // counter when it does.
+    const generation = ctx.openGeneration;
     void store.clear(META_KEY).then(() => {
       // The gate file is REWRITTEN, as the spent-draft path does. Without
       // it the store stays set and every later placement writes an object
@@ -547,10 +551,39 @@ export function wireCreatorSetup(deps: {
       //
       // Discarding means "throw away what I placed so far", never "stop
       // saving what I place next".
-      // `draftTourUrl` is the CREATOR-FACING url the store is keyed by,
-      // and it is nulled when a tour closes - so a discard whose clear
-      // settles after the creator has moved on writes nothing.
-      if (draftTourUrl !== null) recordMeta(draftTourUrl);
+      // Generation-guarded like EVERY other continuation here, and the
+      // reason is the one stated at `presentDraftForTour`: `recordMeta`
+      // writes to the CURRENT `draftStore`, not the `store` captured
+      // above. The previous guard was `draftTourUrl !== null` alone,
+      // reasoning that closing a tour nulls it - true, but opening the
+      // NEXT one sets it again. So a clear settling across a close-then-
+      // open wrote tour B's meta from this session's state, and for a B
+      // whose draft is offered-but-not-yet-restored `ctx.mintedLevel` is
+      // null: the level on disk is overwritten and a reload before
+      // accepting loses the measurement (PR #445 review, found
+      // independently by both reviewers).
+      //
+      // The null check stays alongside it: a close nulls these without
+      // bumping the generation, so an unchanged generation still permits
+      // no url.
+      if (generation !== ctx.openGeneration || draftTourUrl === null) return;
+      // INTENDED, and asked about in review: the meta carries
+      // `ctx.mintedLevel`, so a creator who measured BEFORE tapping Delete
+      // it is offered that measurement back on the next open even if they
+      // placed nothing after the tap.
+      //
+      // Writing `level: null` here would remove the re-offer, and it is the
+      // worse trade: the discard would then also throw away a measurement
+      // the creator did NOT discard - the one they took in THIS session,
+      // after the draft they were rejecting - and a crash before placing
+      // would cost them the walk to the poster again. What "Delete it"
+      // rejects is the OLD draft; work done afterwards in the live session
+      // is protected exactly as it would be if no draft had ever existed,
+      // because that is the same `recordMeta` the mint path runs.
+      //
+      // It converges: the second discard runs with `mintedLevel === null`,
+      // so the meta it writes is spent and the next open is silent.
+      recordMeta(draftTourUrl);
     });
   });
 

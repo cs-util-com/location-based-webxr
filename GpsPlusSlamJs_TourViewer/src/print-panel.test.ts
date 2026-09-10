@@ -16,6 +16,8 @@ import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import {
   MAX_PRINTED_CODES,
+  highestPrintedCode,
+  orphanScanCovers,
   printCountFromInput,
   printedCodeCaption,
   printedSideToApply,
@@ -199,26 +201,68 @@ describe("the poster range a print covers", () => {
   // three posters - whose posters are 3, 4 and 5 - so a measurement on
   // code 5 looked unreachable and the warning fired at someone who had
   // changed nothing (PR #443 review).
-  const highestPoster = (startIndex: number, count: number): number =>
-    startIndex + count - 1;
+  // These used to call a two-line COPY of the rule declared in this file,
+  // and so reduced to `1 + 50 - 1 === 50` and `50 > 24`: both hold for any
+  // budget, so reverting the cap to 24 left the suite green. They call the
+  // production functions now (PR #445 review).
 
   it("ends at start + count - 1, not at whichever input is larger", () => {
-    expect(highestPoster(3, 3)).toBe(5);
-    expect(highestPoster(1, 1)).toBe(1);
-    expect(highestPoster(1, 6)).toBe(6);
-    expect(highestPoster(7, 2)).toBe(8);
+    expect(highestPrintedCode(3, 3)).toBe(5);
+    expect(highestPrintedCode(1, 1)).toBe(1);
+    expect(highestPrintedCode(1, 6)).toBe(6);
+    expect(highestPrintedCode(7, 2)).toBe(8);
     // The shape that was wrong: max(3, 3) is 3, and the creator's last
     // poster is 5.
-    expect(highestPoster(3, 3)).toBeGreaterThan(Math.max(3, 3));
+    expect(highestPrintedCode(3, 3)).toBeGreaterThan(Math.max(3, 3));
   });
 
-  it("covers every set this app can print", () => {
-    // The scan budget was an arbitrary 24 and the poster cap is 50, so a
-    // legal set - 50 posters, a measurement on poster 30 - fell outside
-    // the range that was checked and the warning fired at a creator who
-    // had changed nothing. The budget is the cap now, so no set the app
-    // will produce can land outside it (PR #444 review).
-    expect(highestPoster(1, MAX_PRINTED_CODES)).toBe(MAX_PRINTED_CODES);
-    expect(highestPoster(1, MAX_PRINTED_CODES)).toBeGreaterThan(24);
+  it("covers the largest run the count cap allows", () => {
+    // The budget was an arbitrary 24 while the count cap is 50, so a legal
+    // set - 50 posters, a measurement on poster 30 - fell outside the range
+    // checked and the warning fired at a creator who had changed nothing
+    // (PR #444 review). THIS is the assertion that dies if the budget goes
+    // back to 24.
+    // Pinned from BOTH sides, which fixes the budget exactly at the count
+    // cap without exporting the constant: a run of 50 starting at 1 is
+    // covered (this fails if the budget drops back to 24), and the same run
+    // starting at 2 is not (this fails if the budget is ever raised past
+    // the cap, which would make the check hash numbers no poster carries).
+    expect(orphanScanCovers(1, MAX_PRINTED_CODES)).toBe(true);
+    expect(orphanScanCovers(2, MAX_PRINTED_CODES)).toBe(false);
+  });
+
+  it("goes silent for a run it cannot cover, rather than guessing", () => {
+    // The limitation the previous comment denied: the COUNT is capped, the
+    // START is not, so a creator printing code 60 is past the budget. The
+    // check must then say nothing - a half-scanned range can only produce a
+    // false warning (PR #445 review).
+    expect(orphanScanCovers(60, 1)).toBe(false);
+    expect(orphanScanCovers(MAX_PRINTED_CODES, 2)).toBe(false);
+    // The boundary itself is covered, which is the off-by-one this whole
+    // area has now produced twice.
+    expect(orphanScanCovers(MAX_PRINTED_CODES, 1)).toBe(true);
+  });
+
+  it("only ever loses coverage as the run grows", () => {
+    // A property rather than a restatement of the formula: coverage is
+    // monotone in both inputs. If it holds for a run, it holds for every
+    // shorter run and every earlier start - so no input can be covered
+    // while a smaller one is not, which is the shape both off-by-ones took.
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 2, max: 200 }),
+        fc.integer({ min: 2, max: MAX_PRINTED_CODES }),
+        (codeIndex, count) => {
+          const covered = orphanScanCovers(codeIndex, count);
+          // The implication is written as a disjunction rather than an
+          // early return, so the assertion runs on EVERY generated case
+          // including the uncovered ones. An `if` here would skip exactly
+          // the inputs the property is about (vitest/no-conditional-expect,
+          // and the reason this file states elsewhere).
+          expect(!covered || orphanScanCovers(codeIndex, count - 1)).toBe(true);
+          expect(!covered || orphanScanCovers(codeIndex - 1, count)).toBe(true);
+        },
+      ),
+    );
   });
 });
