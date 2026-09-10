@@ -284,8 +284,10 @@ export function wireCreatorSetup(deps: {
         Number.isFinite(sizeM) && sizeM > 0 ? sizeM : AUTHOR_DEFAULT_SIZE_M,
       level: ctx.mintedLevel,
       // Re-stated on every write, not only on the discard's: this file is
-      // rewritten on each placement and each mint, and one that omitted
-      // the list would hand a rejected draft back on the next read.
+      // rewritten on each mint, each finish and each tour open, and one
+      // that omitted the list would hand a rejected draft back on the next
+      // read. (NOT on each placement - `recordPlacement` writes the object
+      // file only and never reaches here; PR #456 review.)
       rejected: draftRejected,
     });
   }
@@ -596,14 +598,23 @@ export function wireCreatorSetup(deps: {
     const committed = recordMeta(tourUrl);
     void (async () => {
       if (!(await committed)) {
-        // The rejection did not commit, so the files stay and the draft
-        // will be offered again on the next open. Say so through the one
-        // channel this module has for a refused write - the same one
-        // `recordPlacement` uses, and for the same underlying condition:
-        // the store just refused a `put`. Silence here would leave a
-        // creator believing they had deleted something they had not
-        // (PR #455 review, CodeRabbit).
-        noteNoPersistence();
+        // ITS OWN NOTE, AND UNGATED. The first version of this branch
+        // called `noteNoPersistence`, which is wrong twice over
+        // (PR #456 review):
+        //
+        // - it fires ONCE per wiring. A quota wall is rarely a one-off, so
+        //   an earlier failed placement burns the flag, the next pin tap
+        //   clears the note from screen, and this branch then says
+        //   NOTHING - which is exactly the silence it was added to close.
+        // - its wording is about backups, not about the thing the creator
+        //   just asked for. "Not saving a backup copy" does not tell them
+        //   the draft they tapped Delete on is still there.
+        //
+        // A tap the creator made deserves an answer about that tap, every
+        // time it fails.
+        ctx.placementNote =
+          "Could not delete the saved draft - it is still there, and will be offered again next time.";
+        renderAuthorReadout();
         return;
       }
       for (const id of rejectedIds) void removeDraftObject(store, id);
