@@ -607,18 +607,27 @@ export function wireCreatorSetup(deps: {
     // same tick must carry the rejection too, or its write would drop it.
     const wasRejected = draftRejected;
     draftRejected = rejectedIds;
-    // Dispatched SYNCHRONOUSLY, before any await, so no reload can land
-    // between the tap and the write.
+    // ENQUEUED synchronously, with the values captured at the tap. The
+    // chain guarantees ordering, not immediacy: the `put` itself is issued
+    // from a `then`, so it is a microtask away at best (PR #457 review).
     const committed = recordMeta(tourUrl);
     void (async () => {
       if (!(await committed)) {
-        // Not on disk, so it must not stay in memory: a later mint or
-        // finish would write it and commit a discard this branch is about
-        // to report as failed. Only when this tour is still the open one -
-        // a tour change has already reset the list from its own read
-        // (PR #456 review).
+        // The rejection is not on disk, so it must not stay in memory: a
+        // later mint or finish would write it and commit a discard this
+        // branch is about to report as failed. Guarded on the tour still
+        // being open, since a tour change has already reset the list from
+        // its own read (PR #456 review).
+        //
+        // The second write is what covers a payload ALREADY queued behind
+        // this one: that copied the list at its own call, so restoring the
+        // variable cannot unbake it. Queued last, it lands last and puts
+        // the old list back. Best-effort by nature - the store that just
+        // refused may refuse this too - which is why the note below is not
+        // conditional on it (PR #457 review).
         if (draftStore === store && draftTourUrl === tourUrl) {
           draftRejected = wasRejected;
+          void recordMeta(tourUrl);
         }
         // ITS OWN NOTE, AND UNGATED. The first version of this branch
         // called `noteNoPersistence`, which is wrong twice over
@@ -1070,6 +1079,11 @@ export function wireCreatorSetup(deps: {
       draftStore = undefined;
       draftTourUrl = null;
       draftRejected = [];
+      // The chain goes with the tour. A `put` that never settles would
+      // otherwise block every later meta write for the life of the page -
+      // including a discard's, which would then neither delete nor report
+      // (PR #457 review).
+      metaWrite = Promise.resolve(true);
     },
     presentDraftForTour: (tourUrl) => {
       if (!creator) return; // a visitor authors nothing
