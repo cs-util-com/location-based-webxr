@@ -50,6 +50,16 @@ import type { AuthoringDraft } from "./authoring-draft.js";
  * next resurrected a rejection, and a single authoritative write does
  * neither.
  *
+ * The r680 window had a THIRD state, not just "kept" and "discarded", and
+ * it is worth naming because the commit point is what removes it: the
+ * rewritten meta dropped the rejected level (`recordMeta` writes
+ * `ctx.mintedLevel`, which is null right after a fresh open), so a tab
+ * closing between that write and the deletes left a draft with its objects
+ * and NO measurement - offered, restorable, and with Finish still refused
+ * until the creator walked back to the poster. Now that same interruption
+ * leaves the objects rejected, so nothing is offered at all (PR #455
+ * review).
+ *
  * Design and costs:
  * `docs/2026-09-10-1345-draft-rejection-commit-point-plan.md` (docs repo).
  */
@@ -226,14 +236,21 @@ export async function readDraft(
   const photos = new Map<string, Blob>();
   // One snapshot, both prefixes: a photo file whose record never landed has
   // no `object:` key at all, so listing only those would miss it.
+  // Sliced by the prefix that MATCHED, not by the first colon. The colon
+  // version was coupled to "every prefix contains exactly one colon"
+  // rather than to the constants: rename `PHOTO_PREFIX` to `photo-` and
+  // `indexOf` returns -1, `slice(0)` hands back the whole key, and the
+  // deletes become two no-ops - a silent leak no current test could catch,
+  // because every one of them builds its keys with `objectKey`/`photoKey`
+  // on both sides (PR #455 review).
   const storedIds = [
     ...new Set(
-      keys
-        .filter(
-          (key) =>
-            key.startsWith(OBJECT_PREFIX) || key.startsWith(PHOTO_PREFIX),
-        )
-        .map((key) => key.slice(key.indexOf(":") + 1)),
+      keys.flatMap((key) => {
+        for (const prefix of [OBJECT_PREFIX, PHOTO_PREFIX]) {
+          if (key.startsWith(prefix)) return [key.slice(prefix.length)];
+        }
+        return [];
+      }),
     ),
   ];
   for (const key of keys) {

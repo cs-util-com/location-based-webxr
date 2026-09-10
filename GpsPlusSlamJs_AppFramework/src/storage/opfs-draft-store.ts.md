@@ -64,11 +64,14 @@ so the recorder can use it when it grows authoring of its own.
   - The names are collected BEFORE any removal: deleting while iterating
     the directory mutates what the enumerator is walking, and entries
     survive it.
-  - `firstKey` is deleted first and on its own, for a caller whose clear is
-    fire-and-forget: deleting the file that decides whether a draft EXISTS
-    before anything else means a reload racing the clear finds no draft
-    rather than the one just discarded. Ordering rather than
-    synchronisation, because a reload takes any in-memory guard with it.
+  - **`firstKey` IS HISTORY, not a live protection** - the same qualifier
+    the interface carries, because this list is where a reader checks what
+    still holds. It deleted the file that decides whether a draft EXISTS
+    first and on its own, so a reload racing a fire-and-forget clear found
+    no draft rather than the one just discarded. **There has been no such
+    caller since 2026-09-10**, and the Tour Viewer now commits a rejection
+    by writing its meta rather than by deleting anything, so the ordering
+    protects nothing today.
 
 ## Why not `opfs-storage.ts`
 
@@ -94,3 +97,10 @@ bytes, the traversal case, a missing key, a listing that throws, foreign
 files, and `clear()`: that it empties EVERY entry (the fake's enumerator
 models a real directory's, where removing during iteration skips the next
 name), and that the store still works afterwards.
+
+`remove` has three: it takes ONE key and leaves its neighbours, a key that
+was never written resolves rather than throwing, and a removal refused for
+any OTHER reason is swallowed too. The fake's `removeEntry` REJECTS with
+`NotFoundError` for a name it does not hold, as OPFS does - resolving
+instead is what left the suppression unreachable by any test until
+PR #454.

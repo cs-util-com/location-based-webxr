@@ -32,6 +32,19 @@ are the framework's.
   - Captured at READ time, like the objects, so nothing written afterwards
     can be in the list - which is what keeps a rejection from touching this
     session's work.
+  - **Cleanup is now PREFIX-SCOPED, where `clear` was not.** `clear` removed
+    every file in the namespace whatever its name; this list covers only
+    `object:` and `photo:`. Any other key that ever lands in a draft
+    namespace - a future file kind, a stray write - therefore has no
+    collector at all. There is no such key today, which is why this is a
+    note rather than a fix (PR #455 review); a new kind of draft file must
+    either use one of these prefixes or extend this list.
+  - The id is sliced by the prefix that MATCHED, not by the first colon.
+    The colon version was coupled to "every prefix contains exactly one
+    colon" rather than to the constants, so renaming `PHOTO_PREFIX` to
+    something colon-free would have turned every delete into a no-op and
+    leaked silently - no test could have caught it, because they all build
+    their keys with `objectKey`/`photoKey` on both sides.
 - `StoredDraft.rejectedIds` - the ids the meta rejects that STILL have
   files. Two jobs, both needing exactly this set:
   - **the prune** - it is what the next meta write stores, so an id whose
@@ -116,3 +129,12 @@ if (store !== undefined) {
 contract. The ones that carry it: a corrupt record costing only itself, a
 photo record dropped with its missing bytes, no meta yielding nothing, and
 a property that the order is stable and is the order things were placed in.
+Plus the rejection set: an object the meta rejects is refused though its
+file is on disk, its photo bytes with it, the list is pruned to ids that
+still have files, and a missing or malformed `rejected` reads as no
+rejection.
+
+`removeDraftObject` and `storedIds` are exercised from
+`creator-setup.test.ts`, not from here - the contract they carry is
+"cleanup covers what the reader refused", which only has meaning at the
+call site that does the rejecting.
