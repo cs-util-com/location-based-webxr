@@ -66,9 +66,15 @@ const frameworkDir = resolve(repoRoot, 'GpsPlusSlamJs_AppFramework');
  */
 export function hasVersionHeading(changelog, version) {
   const escaped = version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  // The separator and date after the version are free-form, so a change of
-  // dash style cannot silently disarm this.
-  return new RegExp(`^##\\s*\\[?${escaped}\\]?(\\s|$)`, 'm').test(changelog);
+  // `[ \t]` rather than `\s`, which matches NEWLINES: with `\s*` a bare
+  // `##` line followed by a line beginning with the version passes with no
+  // heading present at all. And a NEGATIVE LOOKAHEAD rather than "whitespace
+  // follows", so the separator really is free-form - `## [1.24.0]-2026-09-05`
+  // counts - while a longer version that merely starts with this one still
+  // does not (PR #461 review).
+  return new RegExp(`^##[ \\t]*\\[?${escaped}\\]?(?![\\d.])`, 'm').test(
+    changelog
+  );
 }
 
 describe('AppFramework CHANGELOG covers the released version', () => {
@@ -91,6 +97,12 @@ describe('AppFramework CHANGELOG covers the released version', () => {
     expect(hasVersionHeading('## 1.2.50\n', '1.2.5')).toBe(false);
     // An "Unreleased" section is not an entry for anything.
     expect(hasVersionHeading('## Unreleased\n', '1.25.0')).toBe(false);
+    // A bare `##` must not reach across a line break to a version below it.
+    expect(hasVersionHeading('## \n\n1.24.0 needs Node 26\n', '1.24.0')).toBe(
+      false
+    );
+    // A separator with no space before it is still a heading.
+    expect(hasVersionHeading('## [1.24.0]-2026-09-05\n', '1.24.0')).toBe(true);
   });
 
   it('has an entry for the version currently in package.json', () => {
