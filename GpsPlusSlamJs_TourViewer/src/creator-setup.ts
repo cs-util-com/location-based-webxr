@@ -584,6 +584,25 @@ export function wireCreatorSetup(deps: {
       // It converges: the second discard runs with `mintedLevel === null`,
       // so the meta it writes is spent and the next open is silent.
       recordMeta(draftTourUrl);
+      // And the OBJECTS this session placed are written back, for the same
+      // reason the level is. `clear` empties the whole namespace, and it
+      // cannot tell the rejected draft's files from the ones written
+      // minutes ago by a creator who left the offer on screen and carried
+      // on working - the offer is not modal and placement is not gated on
+      // it. Without this, those pins vanish from disk while staying in
+      // `ctx.placedObjects`, on the readout and in the finished zip, so
+      // NOTHING on screen changes and a crash before finishing loses them
+      // silently. Third time this feature has been the way work is lost
+      // (PR #447 review).
+      //
+      // It also closes the narrower race the same reviewer named: a
+      // `writeDraftObject` still in flight when the tap lands could be
+      // deleted by the clear after reporting success. Re-writing every
+      // live placement AFTER the clear settles covers that too, because
+      // the re-write is what lands last.
+      for (const stillLive of ctx.placedObjects) {
+        recordPlacement(stillLive.object, stillLive.blob);
+      }
     });
   });
 

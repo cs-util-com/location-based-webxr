@@ -1823,6 +1823,77 @@ test("placing after Delete it is still saved: a discard ends the draft, not the 
   );
 });
 
+test("a pin placed BEFORE Delete it survives too: the discard rejects the old draft, not this session's work", async ({
+  page,
+}) => {
+  // Why this test matters (PR #447 review). The sibling above covers
+  // placements made AFTER the tap. This is the same data loss one tap
+  // earlier, and it is worse because nothing on screen changes at all.
+  //
+  // The draft offer is not modal and placement is not gated on it, so a
+  // creator can measure and place while it sits there. `store.clear()`
+  // then empties the WHOLE namespace - including the `object:` files just
+  // written for this session's pins, which were never part of the draft
+  // being rejected - and only the meta is written back. The pins stay in
+  // `ctx.placedObjects`, stay on the readout and still reach the finished
+  // zip, so the creator sees nothing wrong. A crash before finishing loses
+  // them, silently, because the write SUCCEEDED and the no-persistence
+  // notice only fires on failure.
+  //
+  // Third time this feature has been the way work is lost. The assertion
+  // that matters is the offer's TEXT: visibility alone is satisfied by the
+  // re-recorded measurement.
+  await page.goto("/?nocache=1");
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  await measureTheCode(page);
+  await page.getByTestId("setup-pin").click();
+  await page.getByTestId("pin-label").fill("From the first session");
+  await page.getByTestId("pin-save").click();
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /1 object placed/,
+  );
+
+  // Second session: leave the offer up, measure, and place BEFORE tapping.
+  await page.reload();
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  await openMeasureStep(page);
+  await expect(page.getByTestId("draft-offer")).toBeVisible({ timeout: 15000 });
+  await measureTheCode(page);
+  await page.getByTestId("setup-pin").click();
+  await page.getByTestId("pin-label").fill("Placed before the discard");
+  await page.getByTestId("pin-save").click();
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /1 object placed/,
+  );
+
+  await page.getByTestId("draft-discard").click();
+  await expect(page.getByTestId("draft-offer")).toBeHidden();
+
+  // The pin is still on screen, and it has to still be on disk.
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /1 object placed/,
+  );
+  await page.reload();
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  await openMeasureStep(page);
+  await expect(page.getByTestId("draft-offer")).toBeVisible({ timeout: 15000 });
+  await expect(page.getByTestId("draft-offer-text")).toContainText(
+    /1 thing you placed/,
+  );
+});
+
 test("a draft accumulates ACROSS finishes: both batches land in the zip", async ({
   page,
 }) => {

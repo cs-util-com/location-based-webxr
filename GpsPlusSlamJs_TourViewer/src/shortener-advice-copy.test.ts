@@ -67,6 +67,10 @@ describe("the shortener advice carries its warning", () => {
     // posted on X, so a creator cannot put a tour through it. Proven and
     // usable are different questions, and this test exists because the
     // first draft of this change nearly conflated them.
-    expect(printStepCopy()).not.toMatch(/t\.co/i);
+    // Word-bounded: unanchored, `t.co` also matches inside "print.com",
+    // "visit.co.uk" and any word ending in t followed by .co - and this is
+    // a guard on prose that will be edited, so its failure would point at
+    // the wrong thing entirely (PR #447 review).
+    expect(printStepCopy()).not.toMatch(/\bt\.co\b/i);
   });
 });
