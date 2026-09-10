@@ -106,13 +106,16 @@ function memoryStore(
 ): {
   store: DraftFileStore;
   files: Map<string, unknown>;
+  putKeys: string[];
   releaseHeldPut: () => void;
 } {
   const files = new Map<string, unknown>(Object.entries(seed));
+  const putKeys: string[] = [];
   let held: (() => void) | null = null;
   let released = false;
   const store: DraftFileStore = {
     put: (key: string, data: unknown) => {
+      putKeys.push(key);
       // A store that REFUSES, as the real one does on a quota wall or a
       // revoked directory handle: `put` reports false rather than throwing.
       if (options.putFails === true) return Promise.resolve(false);
@@ -154,6 +157,7 @@ function memoryStore(
   return {
     store,
     files,
+    putKeys,
     releaseHeldPut: () => {
       released = true;
       held?.();
@@ -404,6 +408,41 @@ describe("the rejection is committed by the meta write", () => {
       "an uncommitted rejection must delete nothing - the meta still points at it",
     ).toBe(true);
     expect(ctx.placementNote).toContain("Could not delete the saved draft");
+  });
+
+  it("queues a second meta write after a failed one, to overwrite a stale snapshot", async () => {
+    // Why this test matters: a mint or finish queued between the discard's
+    // dispatch and its failure has ALREADY copied the rejected ids into its
+    // own payload, so restoring the in-memory list cannot unbake it - that
+    // write would land later and commit a discard the creator was just told
+    // had failed. A second write, queued last, lands last and puts the old
+    // list back (PR #457 review, CodeRabbit).
+    //
+    // SCOPE, stated because it matters: this covers the MECHANISM - that a
+    // compensating write is issued - not the full scenario. Queuing a real
+    // mint mid-discard needs a stable QR pose, an alignment matrix and a
+    // zero reference, which is far more scaffolding than the one line it
+    // would guard.
+    const { store, putKeys } = memoryStore(
+      {
+        [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+        [objectKey("old-pin")]: JSON.stringify(pin("old-pin")),
+      },
+      { putFails: true },
+    );
+    const { dom, setup } = wire(store);
+
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    const before = putKeys.filter((k) => k === META_KEY).length;
+
+    dom.draftDiscard.click();
+    await settle();
+
+    expect(
+      putKeys.filter((k) => k === META_KEY).length - before,
+      "the discard's own write, and the compensating one behind it",
+    ).toBe(2);
   });
 
   it("still speaks when the shared persistence notice has been used up", async () => {

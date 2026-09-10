@@ -613,18 +613,21 @@ export function wireCreatorSetup(deps: {
     const committed = recordMeta(tourUrl);
     void (async () => {
       if (!(await committed)) {
-        // Not on disk, so it must not stay in memory: a later mint or
-        // finish would write it and commit a discard this branch is about
-        // to report as failed. Only when this tour is still the open one -
-        // a tour change has already reset the list from its own read
-        // (PR #456 review).
-        // Covers writes issued AFTER this failure, which is the rest of
-        // the session. It cannot unbake one already queued behind this
-        // one: that payload copied the list at its own call (PR #457
-        // review). Guarded on the tour still being open - a tour change
-        // has already reset the list from its own read.
+        // The rejection is not on disk, so it must not stay in memory: a
+        // later mint or finish would write it and commit a discard this
+        // branch is about to report as failed. Guarded on the tour still
+        // being open, since a tour change has already reset the list from
+        // its own read (PR #456 review).
+        //
+        // The second write is what covers a payload ALREADY queued behind
+        // this one: that copied the list at its own call, so restoring the
+        // variable cannot unbake it. Queued last, it lands last and puts
+        // the old list back. Best-effort by nature - the store that just
+        // refused may refuse this too - which is why the note below is not
+        // conditional on it (PR #457 review).
         if (draftStore === store && draftTourUrl === tourUrl) {
           draftRejected = wasRejected;
+          void recordMeta(tourUrl);
         }
         // ITS OWN NOTE, AND UNGATED. The first version of this branch
         // called `noteNoPersistence`, which is wrong twice over
