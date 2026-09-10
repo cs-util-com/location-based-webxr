@@ -52,10 +52,12 @@ is the property that matters for something a camera has to measure.
   area WITHOUT the quiet zone, exactly as `qr-print-plan.ts` defines it.
   The quiet zone is drawn around it as white space, so what a ruler
   measures across the dark modules is the number the author typed.
-- **The quiet zone is 8 % of the side on each edge**, the same fraction the
-  Tour Viewer's on-page print stylesheet uses. Two printing paths that
-  disagreed about the quiet zone would turn one declared size into two
-  different physical artefacts.
+- **The quiet zone is `QR_QUIET_ZONE_FRACTION` of the side on each edge**,
+  IMPORTED from `qr-quiet-zone.ts` rather than restated, and the same value
+  a repo-config test holds the Tour Viewer's on-page print stylesheet to.
+  Two printing paths that disagreed about the quiet zone would turn one
+  declared size into two different physical artefacts - which was the state
+  of the code until r665, prevented only by nobody having edited one copy.
 - **The margin is 6 mm and deliberately not zero.** Most consumer printers
   have an unprintable border of 3-5 mm, and content inside it is silently
   clipped - which for a QR code means it does not decode at all.

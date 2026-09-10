@@ -335,7 +335,8 @@ export interface DownloadFileType {
   extension: string;
 }
 
-const ZIP_FILE_TYPE: DownloadFileType = {
+/** A recording or tour archive - the type both apps' zips are saved as. */
+export const ZIP_FILE_TYPE: DownloadFileType = {
   description: 'ZIP Archive',
   mimeType: 'application/zip',
   extension: '.zip',
@@ -405,8 +406,13 @@ export async function downloadBlob(
   link.click();
   document.body.removeChild(link);
 
-  // Clean up object URL after a short delay
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  // Clean up the object URL after a delay. TEN seconds, not one: the
+  // recorder's own copy of this fallback carried that value with a reason -
+  // on slower Android browsers the click event can propagate
+  // asynchronously, and revoking too early cancels the download. When the
+  // two copies were merged (r665) the longer, reasoned value won; nothing
+  // depends on the URL being released sooner.
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
 
   log.info(`Download triggered via <a download>: ${filename}`);
   return true;

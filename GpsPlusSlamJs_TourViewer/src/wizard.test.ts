@@ -15,6 +15,12 @@ import {
   type WizardStep,
 } from "./wizard";
 
+/** The default hand-off for tests that are not about it: the save route,
+ *  file delivered. Named rather than inlined so the shape lives in ONE
+ *  place - it grew a route field when the finish gained a share sheet. */
+const savedDownload = () =>
+  Promise.resolve({ route: "download" as const, delivered: true });
+
 /**
  * Why these tests matter: the setup is the creator's only guidance, and a
  * wizard that opens two steps at once or none reads as broken on a phone.
@@ -73,7 +79,7 @@ describe("wireWizard", () => {
       mode: "creator",
       dom: creator.dom,
       packStarter: () => Promise.resolve(new Blob()),
-      download: () => Promise.resolve(true),
+      download: savedDownload,
     });
     expect(creator.dom.steps.host?.open).toBe(true);
     expect(creator.dom.visitorLink.hidden).toBe(true);
@@ -83,7 +89,7 @@ describe("wireWizard", () => {
       mode: "visitor",
       dom: visitor.dom,
       packStarter: () => Promise.resolve(new Blob()),
-      download: () => Promise.resolve(true),
+      download: savedDownload,
     });
     expect(Object.values(visitor.dom.steps).some((s) => s.open)).toBe(false);
   });
@@ -101,7 +107,7 @@ describe("wireWizard", () => {
             mode: "creator",
             dom,
             packStarter: () => Promise.resolve(new Blob()),
-            download: () => Promise.resolve(true),
+            download: savedDownload,
           });
           for (const step of sequence) wizard.openStep(step);
           const last = sequence.at(-1);
@@ -120,7 +126,7 @@ describe("wireWizard", () => {
       mode: "creator",
       dom,
       packStarter: () => Promise.resolve(new Blob()),
-      download: () => Promise.resolve(true),
+      download: savedDownload,
     });
     wizard.presentTour("https://example.com/t.zip?x=1");
     expect(dom.steps.print?.open).toBe(true);
@@ -144,7 +150,7 @@ describe("wireWizard", () => {
       mode: "creator",
       dom,
       packStarter: () => Promise.resolve(new Blob()),
-      download: () => Promise.resolve(true),
+      download: savedDownload,
     });
     click("hang");
     expect(scrolls).toEqual([{ block: "start" }]);
@@ -163,7 +169,7 @@ describe("wireWizard", () => {
       mode: "creator",
       dom,
       packStarter: () => Promise.resolve(new Blob()),
-      download: () => Promise.resolve(true),
+      download: savedDownload,
     });
     wizard.presentTour("https://example.com/t.zip");
     wizard.presentLaunchUrl("https://gps.csutil.com/?qr=~ABC&n=2");
@@ -177,7 +183,11 @@ describe("wireWizard", () => {
     const timers: (() => void)[] = [];
     const run = async (
       packStarter: () => Promise<Blob>,
-      download: () => Promise<boolean>,
+      download: () => Promise<{
+        route: "share" | "download";
+        delivered: boolean;
+      }>,
+      canShare = false,
     ) => {
       const { dom, click } = fakeDom();
       wireWizard({
@@ -185,30 +195,76 @@ describe("wireWizard", () => {
         dom,
         packStarter,
         download,
+        canShare: () => canShare,
         setTimeout: (fn) => timers.push(fn),
       });
+      const idle = canShare ? STARTER_LABELS.idleShare : STARTER_LABELS.idle;
+      expect(dom.starterButton.textContent).toBe(idle);
       click("starter");
       expect(dom.starterButton.disabled).toBe(true);
+      // One busy word on both routes: the button is packing the zip here.
       expect(dom.starterButton.textContent).toBe(STARTER_LABELS.busy);
       await vi.waitFor(() => expect(dom.starterButton.disabled).toBe(false));
       const settled = dom.starterButton.textContent;
       for (const t of timers.splice(0)) t();
-      expect(dom.starterButton.textContent).toBe(STARTER_LABELS.idle);
+      expect(dom.starterButton.textContent).toBe(idle);
       return settled;
     };
     const blob = () => Promise.resolve(new Blob(["z"]));
-    await expect(run(blob, () => Promise.resolve(true))).resolves.toBe(
+    const saved = { route: "download" as const, delivered: true };
+    const dismissed = { route: "download" as const, delivered: false };
+    await expect(run(blob, () => Promise.resolve(saved))).resolves.toBe(
       STARTER_LABELS.done,
     );
-    await expect(run(blob, () => Promise.resolve(false))).resolves.toBe(
+    await expect(run(blob, () => Promise.resolve(dismissed))).resolves.toBe(
       STARTER_LABELS.cancelled,
     );
     await expect(
       run(
         () => Promise.reject(new Error("boom")),
-        () => Promise.resolve(true),
+        () => Promise.resolve(saved),
       ),
     ).resolves.toBe(STARTER_LABELS.failed);
+  });
+
+  it("labels and reports the SHARE route with words that are true of it", async () => {
+    // Why this test matters: the starter zip is the file a creator has to
+    // get INTO their cloud folder to finish step 1, so on a phone the
+    // button hands it straight to that app. "Downloaded" would then be
+    // simply false - nothing went to Downloads - and a button reading
+    // "download" would describe the wrong action before it is even
+    // pressed. Both halves are asserted, because the label is decided at
+    // WIRE time from the capability and the copy at settle time from the
+    // route actually taken.
+    const timers: (() => void)[] = [];
+    const run = async (delivered: boolean) => {
+      const { dom, click } = fakeDom();
+      wireWizard({
+        mode: "creator",
+        dom,
+        packStarter: () => Promise.resolve(new Blob(["z"])),
+        download: () => Promise.resolve({ route: "share" as const, delivered }),
+        canShare: () => true,
+        setTimeout: (fn) => timers.push(fn),
+      });
+      expect(dom.starterButton.textContent).toBe(STARTER_LABELS.idleShare);
+      click("starter");
+      await vi.waitFor(() => expect(dom.starterButton.disabled).toBe(false));
+      const settled = dom.starterButton.textContent;
+      for (const t of timers.splice(0)) t();
+      // The REVERT, which is where this went wrong: it re-labelled the
+      // button with the download wording three seconds after a successful
+      // share, under a button that opens a share sheet. The settle text was
+      // asserted and the revert was not, so the one line that was wrong ran
+      // in every test and was checked by none (M2 review #2).
+      expect(dom.starterButton.textContent).toBe(STARTER_LABELS.idleShare);
+      return settled;
+    };
+    expect(await run(true)).toBe(STARTER_LABELS.doneShare);
+    // Not "cancelled": a dismissed share sheet and a failed share are the
+    // same error in the Web Share API, so the copy must not say which.
+    expect(await run(false)).toBe(STARTER_LABELS.notShared);
+    expect(STARTER_LABELS.notShared).not.toContain("cancel");
   });
 });
 
@@ -239,7 +295,7 @@ describe("step 4 during an AR session (M3 review #2)", () => {
             mode: "creator",
             dom,
             packStarter: () => Promise.resolve(new Blob()),
-            download: () => Promise.resolve(true),
+            download: savedDownload,
             arSessionActive: () => sessionActive,
           });
           wizard.openStep("measure");
@@ -263,7 +319,7 @@ describe("step 4 during an AR session (M3 review #2)", () => {
       mode: "creator",
       dom,
       packStarter: () => Promise.resolve(new Blob()),
-      download: () => Promise.resolve(true),
+      download: savedDownload,
       arSessionActive: () => sessionActive,
     });
     wizard.openStep("print");
@@ -289,7 +345,7 @@ describe("opening a tour from step 4 (M3 review #1)", () => {
       mode: "creator",
       dom,
       packStarter: () => Promise.resolve(new Blob()),
-      download: () => Promise.resolve(true),
+      download: savedDownload,
     });
     wizard.presentTour("https://h/t.zip", { prefer: "measure" });
     expect(dom.steps.measure?.open).toBe(true);
@@ -307,7 +363,7 @@ describe("opening a tour from step 4 (M3 review #1)", () => {
       mode: "creator",
       dom,
       packStarter: () => Promise.resolve(new Blob()),
-      download: () => Promise.resolve(true),
+      download: savedDownload,
       stepStore: {
         getItem: (k: string) => store.get(k) ?? null,
         setItem: (k: string, v: string) => {
@@ -337,7 +393,7 @@ describe("the remembered step (M6)", () => {
       mode: "creator",
       dom: first.dom,
       packStarter: () => Promise.resolve(new Blob()),
-      download: () => Promise.resolve(true),
+      download: savedDownload,
       stepStore,
     });
     wizard.presentTour("https://h/t.zip");
@@ -351,7 +407,7 @@ describe("the remembered step (M6)", () => {
       mode: "creator",
       dom: second.dom,
       packStarter: () => Promise.resolve(new Blob()),
-      download: () => Promise.resolve(true),
+      download: savedDownload,
       stepStore,
     }).presentTour("https://h/t.zip");
     expect(second.dom.steps.hang?.open).toBe(true);
@@ -362,7 +418,7 @@ describe("the remembered step (M6)", () => {
       mode: "creator",
       dom: third.dom,
       packStarter: () => Promise.resolve(new Blob()),
-      download: () => Promise.resolve(true),
+      download: savedDownload,
       stepStore: {
         getItem: () => {
           throw new Error("blocked");
@@ -410,7 +466,7 @@ describe("the remembered step (M6)", () => {
       mode: "creator",
       dom: a.dom,
       packStarter: () => Promise.resolve(new Blob()),
-      download: () => Promise.resolve(true),
+      download: savedDownload,
       stepStore,
     });
     wizardA.presentTour("https://h/a.zip");
@@ -420,7 +476,7 @@ describe("the remembered step (M6)", () => {
       mode: "creator",
       dom: b.dom,
       packStarter: () => Promise.resolve(new Blob()),
-      download: () => Promise.resolve(true),
+      download: savedDownload,
       stepStore,
     });
     wizardB.presentTour("https://h/b.zip");
@@ -447,7 +503,7 @@ describe("the remembered step (M6)", () => {
         mode: "creator",
         dom,
         packStarter: () => Promise.resolve(new Blob()),
-        download: () => Promise.resolve(true),
+        download: savedDownload,
         stepStore: {
           getItem: (k: string) => store.get(k) ?? null,
           setItem: (k: string, v: string) => {
@@ -484,7 +540,7 @@ describe("the remembered step (M6)", () => {
       mode: "visitor",
       dom,
       packStarter: () => Promise.resolve(new Blob()),
-      download: () => Promise.resolve(true),
+      download: savedDownload,
       stepStore: {
         getItem: () => "hang",
         setItem: (k: string) => {
@@ -513,7 +569,7 @@ describe("the remembered step (M6)", () => {
       mode: "visitor",
       dom,
       packStarter: () => Promise.resolve(new Blob()),
-      download: () => Promise.resolve(true),
+      download: savedDownload,
     });
     dom.steps.measure!.open = true;
     click("toggle:measure");
@@ -548,7 +604,7 @@ describe("the starter button's revert timer", () => {
       mode: "creator",
       dom,
       packStarter: () => Promise.resolve(new Blob(["z"])),
-      download: () => Promise.resolve(true),
+      download: savedDownload,
       setTimeout: scheduled,
       clearTimeout: (handle) => {
         (handle as { cleared: boolean }).cleared = true;
@@ -602,7 +658,7 @@ describe("revealStep (M3 milestone review #2)", () => {
       mode: "creator",
       dom,
       packStarter: () => Promise.resolve(new Blob()),
-      download: () => Promise.resolve(true),
+      download: savedDownload,
     });
     wizard.openStep("measure");
     wizard.revealStep("print");
@@ -619,7 +675,7 @@ describe("revealStep (M3 milestone review #2)", () => {
       mode: "creator",
       dom,
       packStarter: () => Promise.resolve(new Blob()),
-      download: () => Promise.resolve(true),
+      download: savedDownload,
       stepStore: {
         getItem: (k: string) => store.get(k) ?? null,
         setItem: (k: string, v: string) => {

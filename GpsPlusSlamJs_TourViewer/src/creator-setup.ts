@@ -74,6 +74,10 @@ import {
   authorStatusLine,
   buildAuthorControllerConfig,
   FINISH_LABELS,
+  finishBusyLabel,
+  finishHandoffStatus,
+  finishHelpVisibility,
+  finishIdleLabel,
   finishBlockedHint,
   finishReadiness,
   MISSING_SIZE_MESSAGE,
@@ -114,6 +118,9 @@ export interface CreatorSetupDom {
   /** The "put it back where the old one is" copy, revealed once the zip
    *  has actually been saved. Was step 6 until the flow rework. */
   replaceHelp: HTMLElement;
+  /** The share route's extra sentence inside the replace instructions -
+   *  hidden on the download route, where it would be noise. */
+  replaceHelpShare: HTMLElement;
   /** The printed side length - lives in the print step (DEC-F2). */
   sizeInput: HTMLInputElement;
   /** The print step, opened when the size error points at it. */
@@ -816,7 +823,7 @@ export function wireCreatorSetup(deps: {
           blob,
           filename: archiveFileName(current.archive.url),
         };
-        dom.finishStatus.textContent = FINISH_LABELS.ready(blob.size);
+        dom.finishStatus.textContent = FINISH_LABELS.ready(blob.size, canShare);
         dom.downloadButton.disabled = false;
         // The placed objects are in the zip now; the next finish (a
         // re-measure, a re-opened tour) must not append them again - and
@@ -859,28 +866,45 @@ export function wireCreatorSetup(deps: {
     })();
   });
 
+  // The capability, asked ONCE at wire time. A button that says "Share"
+  // where nothing can be shared is a lie, and one that says "Download" on
+  // a phone that can share describes the wrong action - and the answer
+  // cannot change between wiring and the click.
+  const canShare = seams.canShareZip();
+  const idleLabel = finishIdleLabel(canShare);
+  const busyLabel = finishBusyLabel(canShare);
+  dom.downloadButton.textContent = idleLabel;
   dom.downloadButton.addEventListener("click", () => {
     const rebuilt = ctx.rebuiltZip;
     if (rebuilt === null) return;
     // Async-UI rule: in-progress before the await, the durable end state
-    // after; a dismissed save picker (`false`) keeps the button live.
+    // after; nothing delivered (a dismissed save picker, an abandoned
+    // share sheet) keeps the button live.
     dom.downloadButton.disabled = true;
-    dom.downloadButton.textContent = FINISH_LABELS.saving;
-    seams.downloadZip(rebuilt.blob, rebuilt.filename).then(
-      (saved) => {
+    dom.downloadButton.textContent = busyLabel;
+    seams.shareOrDownloadZip(rebuilt.blob, rebuilt.filename).then(
+      ({ route, delivered }) => {
         dom.downloadButton.disabled = false;
-        dom.downloadButton.textContent = FINISH_LABELS.download;
-        dom.finishStatus.textContent = saved
-          ? FINISH_LABELS.saved(rebuilt.filename)
-          : FINISH_LABELS.notSaved;
+        dom.downloadButton.textContent = idleLabel;
+        dom.finishStatus.textContent = finishHandoffStatus(
+          { route, delivered },
+          rebuilt.filename,
+        );
         // The replace instructions were step 6; they are the last thing to
-        // do and only once there is a file to do it with, so they appear
-        // when the zip is actually on the device (F10).
-        if (saved) dom.replaceHelp.hidden = false;
+        // do and only once the file exists, so they appear once the zip has
+        // actually gone somewhere (F10). The share route reveals one extra
+        // sentence, because on that route the file is inside another app
+        // rather than on this device, and the instruction above assumes it
+        // can be found. The branch itself is `finishHelpVisibility`, a pure
+        // function, because this one is otherwise reachable only by walking
+        // an AR setup on a phone (M2 review #4).
+        const help = finishHelpVisibility({ route, delivered });
+        dom.replaceHelp.hidden = !help.replaceHelp;
+        dom.replaceHelpShare.hidden = !help.shareNote;
       },
       (err: unknown) => {
         dom.downloadButton.disabled = false;
-        dom.downloadButton.textContent = FINISH_LABELS.download;
+        dom.downloadButton.textContent = idleLabel;
         dom.finishStatus.textContent = FINISH_LABELS.failed(
           err instanceof Error ? err.message : String(err),
         );
@@ -899,6 +923,7 @@ export function wireCreatorSetup(deps: {
       // opened tour shows a dead download button from the previous one.
       dom.finishBlock.hidden = true;
       dom.replaceHelp.hidden = true;
+      dom.replaceHelpShare.hidden = true;
       // The offer belonged to the tour that just closed.
       dom.draftOffer.hidden = true;
       offered = null;

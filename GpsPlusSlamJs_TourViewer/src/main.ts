@@ -151,7 +151,8 @@ const wizard = wireWizard({
     ]),
   // Through the seam like the finish step's download, so the e2e fake
   // captures it (M3 review #10).
-  download: (blob, filename) => seams.downloadZip(blob, filename),
+  download: (blob, filename) => seams.shareOrDownloadZip(blob, filename),
+  canShare: () => seams.canShareZip(),
   // Step 4 holds the overlay root, so the wizard must never collapse it
   // while a session is live (M3 review #2). The controller is the only
   // thing that knows, so it is asked rather than mirrored.
@@ -214,6 +215,7 @@ const setup = wireCreatorSetup({
     finishButton: element("setup-finish"),
     finishStatus: element("finish-status"),
     downloadButton: element("finish-download"),
+    replaceHelpShare: element("replace-help-share"),
     pinButton: element("setup-pin"),
     pinLabel: element("pin-label"),
     pinSave: element("pin-save"),

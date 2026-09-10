@@ -6,6 +6,10 @@ import {
   planPrintCode,
   printedSideCss,
 } from './qr-print-plan.js';
+import {
+  HOME_PRINTABLE_WIDTH_M,
+  QR_QUIET_ZONE_FRACTION,
+} from './qr-quiet-zone.js';
 import { resolveQrPayload } from './qr-launch-dispatch.js';
 import { qrCodeId } from './qr-code-id.js';
 import { qrCodeIsOurs } from './qr-code-origin.js';
@@ -134,4 +138,77 @@ describe('printedSideCss', () => {
       expect(() => printedSideCss(sizeM)).toThrow(RangeError);
     }
   );
+});
+
+describe('the printed symbol size real hosting shapes reach', () => {
+  /**
+   * Why this test matters: on 2026-09-09 an owner decision (spend a round
+   * measuring whether the quiet zone could shrink to the specification's
+   * four modules) was made on an UNMEASURED claim that printed payloads sit
+   * near version 25, where four modules is a small fraction of the symbol.
+   * They do not. Every hosting shape the app's own step 1 recommends lands
+   * between version 5 and 8, where four modules is 8.2 % to 10.8 % - at or
+   * ABOVE the 8 % shipping today, so the "compliant" quiet zone would make
+   * every real printed code SMALLER. The experiment was cancelled on this
+   * arithmetic.
+   *
+   * The number therefore has to be pinned, not remembered: it is the input
+   * to a decision, it moves whenever the launch-URL strategies change (the
+   * GitHub template alone takes a raw link from version 9 to version 5),
+   * and nothing else in the repo asserts it.
+   */
+  // Objects, not tuples, so the test TITLE can name the version it pins.
+  // `%#` is vitest's case INDEX and consumes no argument, so the tuple form
+  // reported "prints at version 0/1/2/3" - the wrong number, in a test
+  // whose whole purpose is making the right one readable (review #5).
+  const CASES = [
+    { label: 'a shortened link', url: 'https://bit.ly/3xK9mQz', version: 5 },
+    {
+      label: 'a GitHub raw link (the template strategy shrinks it)',
+      url: 'https://raw.githubusercontent.com/cs-util-com/GeoTales/refs/heads/main/MyMap123.zip',
+      version: 5,
+    },
+    {
+      label: 'a Dropbox share link',
+      url: 'https://www.dropbox.com/s/abc123def456/tour.zip?dl=1',
+      version: 7,
+    },
+    {
+      label: 'a Google Drive link',
+      url: 'https://drive.google.com/uc?export=download&id=1AbCdEfGhIjKlMnOpQrStUvWxYz01234',
+      version: 8,
+    },
+  ] as const;
+
+  it.each(CASES)(
+    '$label prints at version $version',
+    async ({ url, version }) => {
+      const plan = await planPrintCode(url);
+      expect(plan.qrVersion).toBe(version);
+    }
+  );
+
+  it('leaves four modules WORSE than the 8 % in use, for every one of them', async () => {
+    for (const { label, url } of CASES) {
+      const { qrVersion } = await planPrintCode(url);
+      const modules = 4 * qrVersion + 17; // the QR size rule
+      const fourModuleFraction = 4 / modules;
+      expect(fourModuleFraction, label).toBeGreaterThan(QR_QUIET_ZONE_FRACTION);
+      // ...and therefore a SMALLER printable side, not a larger one.
+      expect(
+        HOME_PRINTABLE_WIDTH_M / (1 + 2 * fourModuleFraction),
+        label
+      ).toBeLessThan(MAX_HOME_PRINTABLE_SIDE_M);
+    }
+  });
+
+  it('can push a later code in a multi-code set a version higher', async () => {
+    // `codeIndex > 1` appends `&n=<i>` BEFORE size estimation, so the sheet's
+    // second code can be denser than its first - the case the printed-size
+    // ceiling matters most for, and one no other test covers.
+    const url =
+      'https://raw.githubusercontent.com/cs-util-com/GeoTales/refs/heads/main/MyMap123.zip';
+    expect((await planPrintCode(url, { codeIndex: 1 })).qrVersion).toBe(5);
+    expect((await planPrintCode(url, { codeIndex: 2 })).qrVersion).toBe(6);
+  });
 });

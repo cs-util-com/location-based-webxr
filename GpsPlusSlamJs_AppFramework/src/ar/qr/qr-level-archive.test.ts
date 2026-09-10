@@ -3,6 +3,7 @@ import {
   qrLevelEntryName,
   qrLevelIdFromEntryName,
   parseQrLevelEntries,
+  isWritableQrLevelId,
 } from './qr-level-archive.js';
 
 const MINIMAL = JSON.stringify({ version: 1, qr: {} });
@@ -48,6 +49,31 @@ describe('qrLevelEntryName', () => {
     expect(() => qrLevelEntryName(undefined as unknown as string)).toThrow(
       TypeError
     );
+  });
+});
+
+describe('isWritableQrLevelId', () => {
+  it('answers for every id the writer would throw on', () => {
+    // Why this test matters: this predicate exists so a caller that must
+    // DECIDE (the Tour Viewer's draft reader, which has to return "no
+    // draft") asks exactly the question the writer will later ask. If the
+    // two ever disagree, the decision path reports "safe" and the write
+    // path throws - which is the opaque finish failure the draft guard was
+    // added to prevent.
+    // `'a\\b'`, not `'a\b'`: in a JS string literal the latter is a
+    // BACKSPACE character, so the backslash the rule and the sidecar both
+    // name explicitly was never actually tested (M1/M3 review #6).
+    for (const bad of ['', '../evil', 'a/b', 'a\\b', 'a b', 'a?b']) {
+      expect(isWritableQrLevelId(bad), bad).toBe(false);
+      expect(() => qrLevelEntryName(bad), bad).toThrow(TypeError);
+    }
+    for (const notAString of [undefined, null, 5, {}, []]) {
+      expect(isWritableQrLevelId(notAString)).toBe(false);
+    }
+    for (const good of ['9f2c1a0b4de7', 'a', 'a-b_c.d']) {
+      expect(isWritableQrLevelId(good), good).toBe(true);
+      expect(() => qrLevelEntryName(good), good).not.toThrow();
+    }
   });
 });
 

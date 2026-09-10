@@ -24,6 +24,10 @@
  */
 
 import { buildQrLaunchUrl } from './qr-launch-url.js';
+import {
+  HOME_PRINTABLE_WIDTH_M,
+  QR_PRINT_FOOTPRINT_FACTOR,
+} from './qr-quiet-zone.js';
 
 /**
  * Where a scanned code lands by default: the BARE host, never a path.
@@ -46,13 +50,15 @@ export const DEFAULT_QR_LAUNCH_BASE_URL = 'https://gps.csutil.com/';
 const CODE_TOKEN_PARAM = 'n';
 
 /**
- * Printable-width budget (m) for a home printer: ~19 cm of printable width on
- * A4/Letter with default margins, divided by 1.16 (the 8% quiet zone on each
- * side). At the mandated 100% scale a larger symbol is CLIPPED — and a
- * clipped QR does not decode at all. Larger prints stay allowed (print shops,
- * tiling) but callers should warn in plain words.
+ * Printable-width budget (m) for a home printer: the paper budget divided by
+ * the footprint factor — the symbol plus its quiet zone on both edges. Both
+ * come from `qr-quiet-zone.ts`, which is where the numbers are stated and
+ * why they are what they are. At the mandated 100% scale a larger symbol is
+ * CLIPPED — and a clipped QR does not decode at all. Larger prints stay
+ * allowed (print shops, tiling) but callers should warn in plain words.
  */
-export const MAX_HOME_PRINTABLE_SIDE_M = 0.19 / 1.16;
+export const MAX_HOME_PRINTABLE_SIDE_M =
+  HOME_PRINTABLE_WIDTH_M / QR_PRINT_FOOTPRINT_FACTOR;
 
 /** A plain-words warning when `sizeM` will not fit a home printer's page, or
  *  `null` when it fits. */

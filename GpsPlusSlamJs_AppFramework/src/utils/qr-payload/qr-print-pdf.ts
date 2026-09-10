@@ -24,6 +24,8 @@
  * number the author typed.
  */
 
+import { QR_QUIET_ZONE_FRACTION } from './qr-quiet-zone.js';
+
 /** PDF user space is points: 1 pt = 1/72 inch. */
 const PT_PER_MM = 72 / 25.4;
 
@@ -42,12 +44,15 @@ export type PaperSize = keyof typeof PAPER_SIZES_MM;
 const DEFAULT_MARGIN_MM = 6;
 
 /**
- * The quiet zone, as a fraction of the symbol side on each edge. The same
- * 8 % the on-page print stylesheet uses, kept identical on purpose: two
- * printing paths that disagree about the quiet zone would produce two
- * different physical artefacts from one declared size.
+ * The quiet zone, as a fraction of the symbol side on each edge. IMPORTED
+ * rather than restated, because two printing paths that disagree about the
+ * quiet zone would produce two different physical artefacts from one
+ * declared size — and until r665 the only thing preventing that was that
+ * nobody had edited one of the two copies. It comes from
+ * `qr-quiet-zone.ts`, which imports nothing, so this writer stays the
+ * self-contained leaf its own header claims to be.
  */
-const DEFAULT_QUIET_FRACTION = 0.08;
+const DEFAULT_QUIET_FRACTION = QR_QUIET_ZONE_FRACTION;
 
 /** Room under each code for its caption line. */
 const DEFAULT_CAPTION_MM = 8;
@@ -188,8 +193,8 @@ function resolveLayout(options: PrintPdfOptions) {
  * Throw when the block does not fit, naming the size that would.
  *
  * "Too big" on its own leaves the author guessing, and the answer is one
- * division (page minus margins, over 1.16) nobody should do standing at a
- * printer.
+ * division (page minus margins, over the footprint factor
+ * `1 + 2 * QR_QUIET_ZONE_FRACTION`) nobody should do standing at a printer.
  */
 function refuseIfTooBig(box: {
   sideMm: number;

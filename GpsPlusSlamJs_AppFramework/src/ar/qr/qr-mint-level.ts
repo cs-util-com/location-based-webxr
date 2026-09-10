@@ -43,10 +43,12 @@ import type { LatLong, Matrix4 as AlignmentMatrix } from '../../core/index.js';
 /**
  * Default printed side length (m) to prefill in an authoring panel.
  *
- * 0.16, not 0.2: with the 8 % quiet zone on each side the printed content is
- * `sizeM × 1.16`, and 0.2 m → 23.2 cm exceeds the ~19 cm printable width of
- * A4/Letter — at the mandated 100 % scale the symbol's edge modules are
- * CLIPPED and the code does not decode. 0.16 m → 18.6 cm fits.
+ * 0.16, not 0.2: with the quiet zone on each side the printed content is
+ * `sizeM × (1 + 2 * QR_QUIET_ZONE_FRACTION)`, and 0.2 m → 23.2 cm exceeds
+ * the ~19 cm printable width of A4/Letter — at the mandated 100 % scale the
+ * symbol's edge modules are CLIPPED and the code does not decode. 0.16 m →
+ * 18.6 cm fits. The ceiling itself is `MAX_HOME_PRINTABLE_SIDE_M`; this
+ * default is deliberately just under it.
  */
 export const AUTHOR_DEFAULT_SIZE_M = 0.16;
 

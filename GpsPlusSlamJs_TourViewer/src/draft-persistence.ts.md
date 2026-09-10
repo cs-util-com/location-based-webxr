@@ -30,6 +30,13 @@ are the framework's.
   finish serialises through, so a draft can never hold something the finish
   would later reject. A second validator here is how the two would come to
   disagree about what a tour object is.
+- **The META half validates its own fields**, since no parser owns them.
+  `level` in particular must be `null` or carry a string `id` AND a string
+  `json`: it is the field that travels furthest, reaching
+  `qrLevelEntryName(id)`, which throws on an unsafe id and leaves the
+  creator an opaque finish failure with no way forward but to re-measure.
+  A meta file written by an older version of the app is the case this
+  closes (PR #438 review); the current writer cannot produce one.
 - **No meta file means no draft.** A directory of objects cannot say which
   tour it belongs to, and guessing is how a draft is appended to the wrong
   zip.

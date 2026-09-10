@@ -127,7 +127,12 @@ Unit tests are in `session-summary.test.ts` and cover:
 - **Visibility**: Panel shown/hidden correctly
 - **Failed writes**: Count display, warning highlighting (Issue #1 Part B)
 - **ZIP stats**: Human-readable size, file count, placeholder for missing data (Issue #3)
-- **Share session**: Button visibility, Web Share API with file, download fallback (Issue #2)
+- **Share session**: Button visibility, and the hand-off itself. The
+  Web-Share-then-download dance is NOT implemented here any more - it is the
+  framework's `shareOrDownloadBlob` (`storage/share-or-download.ts`), which
+  also owns the `<a download>` fallback this file used to carry a second
+  copy of. Its four outcomes are tested there; this file is only the button
+  wiring (Issue #2).
 - **Map cleanup**: Map destroyed immediately on hide, not deferred (Bug 11 regression)
 - **formatFileSize**: Re-exported utility sanity tests
 

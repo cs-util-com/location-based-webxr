@@ -52,7 +52,10 @@ import { enableArWorldGroupAlignment } from "gps-plus-slam-app-framework/visuali
 import type { SubscribableStore } from "gps-plus-slam-app-framework/state";
 import {
   downloadBlob,
-  downloadZip,
+  shareOrDownloadBlob,
+  prefersFileShare,
+  ZIP_FILE_TYPE,
+  type ShareOrDownloadResult,
   PDF_FILE_TYPE,
 } from "gps-plus-slam-app-framework/storage";
 import type { Object3D } from "three";
@@ -105,10 +108,24 @@ export interface TourViewerSeams {
    *  (indoors, a courtyard, a timeout) - the session's own watch copes
    *  with that, so it must not lock the visitor out (M2 review #1). */
   requestLocationOnce(): Promise<LocationRequestOutcome>;
-  /** Offer a zip for download (the framework's picker-or-anchor); false
-   *  when the user dismissed a save picker. The e2e fake captures the
-   *  blob instead. */
-  downloadZip(blob: Blob, filename: string): Promise<boolean>;
+  /**
+   * Offer a zip: the device share sheet where the browser can share FILES,
+   * else the framework's save-picker-or-anchor. `route` decides the copy -
+   * a share creates a NEW file (new id, new link) while a save replaces
+   * one - and `delivered` says whether anything left the page at all. The
+   * e2e fake captures the blob instead.
+   */
+  shareOrDownloadZip(
+    blob: Blob,
+    filename: string,
+  ): Promise<ShareOrDownloadResult>;
+  /** Should this device get the share sheet rather than the save path?
+   *  Read once at wire time to label the button, because "Share" where
+   *  nothing can be shared is a lie and "Download" on a phone that will
+   *  open a share sheet describes the wrong action. NOT the raw
+   *  capability: a desktop can share files and should still get the save
+   *  picker, because the creator's next step needs the file on disk. */
+  canShareZip(): boolean;
   /** The printable sheet of numbered codes. Its own seam so the save
    *  picker offers a PDF filter rather than a zip one, and so the e2e
    *  captures the bytes instead of writing a file. */
@@ -186,7 +203,9 @@ export const realSeams: TourViewerSeams = {
   },
   createQrDebugView,
   getScene,
-  downloadZip,
+  shareOrDownloadZip: (blob, filename) =>
+    shareOrDownloadBlob(blob, filename, ZIP_FILE_TYPE),
+  canShareZip: () => prefersFileShare(ZIP_FILE_TYPE),
   downloadPdf: (blob, filename) => downloadBlob(blob, filename, PDF_FILE_TYPE),
   startHitTestReticle: (arWorldGroup) => startHitTestReticle({ arWorldGroup }),
   schedule: (fn, ms) => {

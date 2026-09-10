@@ -148,6 +148,134 @@ describe('rebuildZipWithEntries', () => {
     expect(central.filter((e) => e.name === 'twice.txt')).toHaveLength(1);
   });
 
+  it('REPLACES an archive-derived name the author rules would refuse (PR #438 review)', async () => {
+    // The rule this module already states - "an archive that opened is
+    // re-emitted as it is, whatever its entry names" - was applied to
+    // CARRIED entries only. A caller that replaces an existing entry has to
+    // name it, and the name it must use is the archive's own; that name
+    // then went through the NEW-entry validation and was refused.
+    //
+    // The live case: the coverage backfill finds session.json by suffix, so
+    // it deliberately tolerates an entry named `./session.json` - and then
+    // could not write it back, because a leading `.` segment is exactly
+    // what the new-path rules reject. The recording was silently skipped
+    // with a log line.
+    const writer = new ZipWriter(new BlobWriter('application/zip'), {
+      level: 0,
+    });
+    await writer.add('./session.json', new TextReader('{"a":1}'));
+    await writer.add('keep.txt', new TextReader('keep'));
+    const input = await writer.close();
+
+    const out = await rebuildZipWithEntries(input, [
+      { path: './session.json', data: '{"a":2}' },
+    ]);
+    const after = await entryBytes(out);
+    // Replaced in place, at the name the archive used - not moved.
+    expect(new TextDecoder().decode(after.get('./session.json'))).toBe(
+      '{"a":2}'
+    );
+    expect(after.has('keep.txt')).toBe(true);
+  });
+
+  it("ADDS a new entry under the archive's own ./ convention (the finish's photos)", async () => {
+    // Why this test matters: replacing an entry by the name the archive
+    // already carries was the first half of this fix. This is the other,
+    // and it is the one that dead-ends a creator. The Tour Viewer's finish
+    // builds each captured photo's path from the prefix it found the
+    // manifest at, so in a `./`-written zip it invents
+    // `./content/<id>.jpg` - a path no archive entry carries yet, refused
+    // for its `.` segment, throwing at the exact moment the creator has
+    // finished walking their tour. A new path that follows the archive's
+    // own convention is not a traversal attempt.
+    const writer = new ZipWriter(new BlobWriter('application/zip'), {
+      level: 0,
+    });
+    await writer.add('./tour.json', new TextReader('{"version":1}'));
+    await writer.add('./content/old.jpg', new TextReader('old'));
+    const input = await writer.close();
+
+    const out = await rebuildZipWithEntries(input, [
+      { path: './tour.json', data: '{"version":2}' },
+      { path: './content/new.jpg', data: PHOTO },
+      { path: './qr/abc123.json', data: '{"version":1}' },
+    ]);
+    const after = await entryBytes(out);
+    expect([...after.keys()].sort()).toEqual([
+      './content/new.jpg',
+      './content/old.jpg',
+      './qr/abc123.json',
+      './tour.json',
+    ]);
+    expect(new TextDecoder().decode(after.get('./tour.json'))).toBe(
+      '{"version":2}'
+    );
+    expect(after.get('./content/new.jpg')).toEqual(PHOTO);
+  });
+
+  it('does NOT extend that tolerance to a FLAT archive', async () => {
+    // Why: the tolerance is for following the archive's convention, not a
+    // hole in the path rules. A zip whose entries are flat gives a caller
+    // no reason to write `./anything`, and the `.` segment is refused
+    // exactly as before.
+    const input = await packFilesAsZip([{ path: 'tour.json', data: '{}' }]);
+    await expect(
+      rebuildZipWithEntries(input, [{ path: './content/a.jpg', data: PHOTO }])
+    ).rejects.toThrow(ZipPackagingError);
+  });
+
+  it('refuses ./x and x together, which are one file to every reader', async () => {
+    // Why this test matters: the two are different STRINGS, so a duplicate
+    // check on the raw path lets both through - and the output then carries
+    // two entries that every extractor, and this package's own suffix-based
+    // finders, treat as one file. The check compares the normalised form.
+    const writer = new ZipWriter(new BlobWriter('application/zip'), {
+      level: 0,
+    });
+    await writer.add('./session.json', new TextReader('{"a":1}'));
+    const input = await writer.close();
+
+    await expect(
+      rebuildZipWithEntries(input, [
+        { path: './session.json', data: '{"a":2}' },
+        { path: 'session.json', data: '{"a":3}' },
+      ])
+    ).rejects.toThrow(/duplicate entry path/);
+  });
+
+  it('still THROWS on an unsafe name the archive does NOT already carry', async () => {
+    // The other half, and the reason the validation exists: re-emitting a
+    // name the input already had is no new hazard, but INVENTING one is.
+    const writer = new ZipWriter(new BlobWriter('application/zip'), {
+      level: 0,
+    });
+    await writer.add('keep.txt', new TextReader('keep'));
+    const input = await writer.close();
+    await expect(
+      rebuildZipWithEntries(input, [{ path: '../escape.json', data: '{}' }])
+    ).rejects.toThrow(/unsafe zip entry path/);
+  });
+  it('still refuses a duplicate or an unwritable payload among archive-derived names', async () => {
+    // The relaxation is about the SHAPE of a name and nothing else. Both
+    // of these were briefly let through when the filter that skips the
+    // path rules skipped the other two checks with them.
+    const writer = new ZipWriter(new BlobWriter('application/zip'), {
+      level: 0,
+    });
+    await writer.add('./session.json', new TextReader('{}'));
+    const input = await writer.close();
+    await expect(
+      rebuildZipWithEntries(input, [
+        { path: './session.json', data: '{}' },
+        { path: './session.json', data: '{}' },
+      ])
+    ).rejects.toThrow(/duplicate entry path/);
+    await expect(
+      rebuildZipWithEntries(input, [
+        { path: './session.json', data: undefined as unknown as string },
+      ])
+    ).rejects.toThrow(/no writable data/);
+  });
   it('reports progress as entries READ over the count the output will have (a replacement is not counted twice)', async () => {
     const seen: [number, number][] = [];
     await rebuildZipWithEntries(

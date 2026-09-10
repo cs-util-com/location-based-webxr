@@ -538,6 +538,9 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   await download.click();
   await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
   await expect(page.getByTestId("replace-help")).toBeVisible();
+  // The share route's extra paragraph is noise on the save route: this
+  // creator overwrote the hosted file, so their link IS unchanged.
+  await expect(page.getByTestId("replace-help-share")).toBeHidden();
 
   const rebuilt = await readDownloadedZip(page, 1);
   expect(rebuilt.filename).toBe("tour.zip");
@@ -1909,4 +1912,55 @@ test("the draft offer reveals step 4 rather than hiding inside it", async ({
   // ...and the offer is visible anyway, without any help from the test.
   await expect(page.getByTestId("draft-offer")).toBeVisible({ timeout: 15000 });
   await expect(page.getByTestId("step-measure")).toHaveAttribute("open", "");
+});
+
+test("on a device that can share files, the starter button says share and reports sharing", async ({
+  page,
+}) => {
+  // Why this test matters: the label is decided ONCE, while the button is
+  // wired, from a capability probe - and a probe that answered wrongly, or
+  // a label read from the markup instead of the capability, produces a
+  // button whose word describes the opposite of what it does. That is
+  // invisible to every other test, because the default headless browser
+  // cannot share files and so always takes the download route. This is
+  // also the only end-to-end exercise of the share COPY: a real share
+  // sheet cannot be opened in CI.
+  //
+  // The starter zip is the right place for it. It is the file a creator
+  // has to get INTO their cloud folder to finish step 1, so on a phone the
+  // whole point is handing it to that app rather than dropping it in
+  // Downloads - and it needs no AR session to reach.
+  await installTourViewerArFakes(page, { shareRoute: true });
+  await page.goto("/?nocache=1");
+  const starter = page.getByTestId("starter-zip");
+  await expect(starter).toHaveText(/share an empty starter zip/i);
+  await expect(starter).not.toHaveText(/download/i);
+  await starter.click();
+  await expect(starter).toHaveText(/starter zip shared/i);
+  // ...and after the 3 s revert it goes back to the SHARE wording, not the
+  // download one. That line was wrong when this was written: the revert
+  // used the download label unconditionally, so the button re-labelled
+  // itself "download" under a sheet it would open (M2 review #2).
+  await expect(starter).toHaveText(/share an empty starter zip/i, {
+    timeout: 6000,
+  });
+});
+
+test("a share that hands nothing over says so, without blaming the creator", async ({
+  page,
+}) => {
+  // The Web Share API reports a cancelled sheet and a failed share as the
+  // same error, so the copy cannot claim the creator cancelled - it can
+  // only say nothing was shared. Asserted end to end because this is the
+  // branch a creator hits by pressing back, which is common and must not
+  // look like a bug.
+  await installTourViewerArFakes(page, { shareRoute: true });
+  await page.goto("/?nocache=1");
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.saveOutcome = false;
+  });
+  const starter = page.getByTestId("starter-zip");
+  await starter.click();
+  await expect(starter).toHaveText(/not shared/i);
+  await expect(starter).not.toHaveText(/cancel/i);
 });

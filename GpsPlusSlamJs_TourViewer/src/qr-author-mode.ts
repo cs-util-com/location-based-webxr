@@ -227,15 +227,90 @@ export const FINISH_LABELS = {
     `Finishing - reading the hosted zip (${(bytes / 1_000_000).toFixed(1)} MB)…`,
   rebuilding: (done: number, total: number) =>
     `Finishing - rebuilding ${String(done)} of ${String(total)} entries…`,
-  ready: (bytes: number) =>
-    `The rebuilt zip is ready (${(bytes / 1_000_000).toFixed(1)} MB). Download it, then replace the hosted file in step 6.`,
+  /** The line the creator reads immediately BEFORE pressing the button, so
+   *  it has to name the same action the button does (M2 review #3). */
+  ready: (bytes: number, canShare = false) =>
+    `The rebuilt zip is ready (${(bytes / 1_000_000).toFixed(1)} MB). ${
+      canShare ? "Share it" : "Download it"
+    }, then replace the hosted file in step 6.`,
   failed: (reason: string) => `Finishing failed: ${reason}`,
   download: "Download the rebuilt zip",
   saving: "Saving…",
   saved: (filename: string) =>
     `Saved as ${filename}. Now replace the hosted zip (step 6) - the link and the printed code stay the same.`,
   notSaved: "Not saved - tap the button again.",
+  /** The share route's label and copy. Separate from the download route's
+   *  because the two do different things to the hosted file, and `saved`
+   *  states as fact something that is FALSE after a share: sharing hands
+   *  the zip to another app, which normally stores it as a NEW file with a
+   *  new id and a new link, while the printed code still points at the
+   *  old one. */
+  share: "Share the rebuilt zip",
+  sharing: "Sharing…",
+  shared: (filename: string) =>
+    `Sent ${filename} to the app you chose. It has almost certainly saved a NEW file - so the printed code still points at the old one until you replace it (step 6).`,
+  /** Deliberately not "you cancelled": the Web Share API reports a
+   *  cancelled sheet and a failed share as the same error. */
+  notShared: "Nothing was shared - tap the button again.",
 } as const;
+
+/** What the hand-off did: which mechanism ran, and whether the file left
+ *  the page. Mirrors the framework's `ShareOrDownloadResult` without
+ *  importing it, so this module stays free of storage types. */
+export interface HandoffOutcome {
+  route: "share" | "download";
+  delivered: boolean;
+}
+
+/**
+ * The finish step's button labels and status line, as pure functions of the
+ * capability and the outcome.
+ *
+ * They are pure, and separate from the click handler, because three of the
+ * four outcomes cannot be reached in an e2e run: a headless browser has no
+ * share sheet, so the only way the SHARE copy is ever checked is here. The
+ * copy is also the part that was wrong - `saved` states as fact that the
+ * link and printed code are unchanged, which is true after a save and false
+ * after a share, since sharing normally creates a new file with a new id.
+ */
+export function finishIdleLabel(canShare: boolean): string {
+  return canShare ? FINISH_LABELS.share : FINISH_LABELS.download;
+}
+
+export function finishBusyLabel(canShare: boolean): string {
+  return canShare ? FINISH_LABELS.sharing : FINISH_LABELS.saving;
+}
+
+/**
+ * Which of the finish step's two help blocks to reveal.
+ *
+ * A pure function because the alternative is a branch reachable only by
+ * completing an AR walkthrough on a device with a share sheet - i.e. by
+ * nothing that runs in CI. `replaceHelp` is the instruction that keeps the
+ * printed code working and belongs on both routes; `shareNote` is the
+ * sentence that only makes sense when the zip went to another app.
+ */
+export function finishHelpVisibility(outcome: HandoffOutcome): {
+  replaceHelp: boolean;
+  shareNote: boolean;
+} {
+  if (!outcome.delivered) return { replaceHelp: false, shareNote: false };
+  return { replaceHelp: true, shareNote: outcome.route === "share" };
+}
+
+export function finishHandoffStatus(
+  outcome: HandoffOutcome,
+  filename: string,
+): string {
+  if (!outcome.delivered) {
+    return outcome.route === "share"
+      ? FINISH_LABELS.notShared
+      : FINISH_LABELS.notSaved;
+  }
+  return outcome.route === "share"
+    ? FINISH_LABELS.shared(filename)
+    : FINISH_LABELS.saved(filename);
+}
 
 /** What the panel is about to print, and whether the author's input was
  *  taken literally. */

@@ -22,8 +22,18 @@ invisible. Decision record:
     contains anything that could escape the folder (`/`, `\`, `..`,
     whitespace, query characters). The id reaches a zip path, so an
     unexpected value fails loud rather than writing somewhere unintended.
+- `qrLevelFileName(id: string): string` — the name alone, without the
+  folder, for a zip contributor whose framework prepends the subdir. Throws
+  for exactly the ids the predicate below rejects.
+- `isWritableQrLevelId(id: unknown): id is string` — that throw as a
+  PREDICATE, for a caller that must DECIDE rather than fail. The live one is
+  the Tour Viewer's draft reader: sharing the rule is the point, because a
+  decision path and a write path asking different questions is how one
+  reports "safe" while the other throws.
 - `qrLevelIdFromEntryName(name: string): string | null` — the inverse; `null`
-  when the entry is not a level file.
+  when the entry is not a level file. Deliberately MORE permissive than the
+  writer (no `..` check), so an archive whose level file the writer would
+  refuse to create is still readable.
 - `parseQrLevelEntries(entryNames, readText): Promise<Map<string, QrLevel>>`
   - **Input:** every entry name in the archive, and a function reading one
     entry's text by name.

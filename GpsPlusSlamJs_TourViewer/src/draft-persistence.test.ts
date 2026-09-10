@@ -193,3 +193,58 @@ describe("writeDraftObject", () => {
     );
   });
 });
+
+describe("the meta's own validation", () => {
+  it("keeps the walk when the level does not read, and drops only the measurement", async () => {
+    // Why this test matters: `level` is the field that travels furthest -
+    // it reaches the archive path builder, which throws on an id it cannot
+    // write, leaving the creator an opaque finish failure at the moment
+    // they have finished walking. So an unreadable one must never reach
+    // the finish.
+    //
+    // But it must not take the DRAFT with it either. Every placement the
+    // creator made is in the same directory, and the module's own rule two
+    // screens up is that a record which does not read costs itself and
+    // nothing else. A level that does not read means "no measurement yet",
+    // which is a shape the whole flow already supports (M1/M3 review #10).
+    //
+    // The last three are ids that ARE strings and still cannot be written:
+    // the framework rejects a separator and a `..` segment, so a check of
+    // `typeof === "string"` would report this guard closed while the
+    // opaque finish failure stayed reachable (PR #438 review, second pass).
+    for (const level of [
+      {},
+      [],
+      { id: 5 },
+      { id: "a" },
+      { json: "{}" },
+      7,
+      { id: "../escape", json: "{}" },
+      { id: "a/b", json: "{}" },
+      { id: "", json: "{}" },
+    ]) {
+      const store = memoryStore();
+      store.files.set("meta", JSON.stringify({ ...META, level }));
+      await writeDraftObject(store, pin("a"));
+      const read = await readDraft(store);
+      expect(read, JSON.stringify(level)).toBeDefined();
+      expect(read?.draft.level, JSON.stringify(level)).toBeNull();
+      expect(read?.draft.objects, JSON.stringify(level)).toHaveLength(1);
+    }
+  });
+
+  it("accepts the two shapes a level really has", async () => {
+    const withLevel = memoryStore();
+    await writeDraftMeta(withLevel, {
+      ...META,
+      level: { id: "abc", json: "{}" },
+    });
+    expect((await readDraft(withLevel))?.draft.level).toEqual({
+      id: "abc",
+      json: "{}",
+    });
+    const withoutLevel = memoryStore();
+    await writeDraftMeta(withoutLevel, META);
+    expect((await readDraft(withoutLevel))?.draft.level).toBeNull();
+  });
+});

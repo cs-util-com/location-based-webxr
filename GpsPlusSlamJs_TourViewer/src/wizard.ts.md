@@ -44,7 +44,11 @@ so they live inside it now and `creator-setup.ts` reveals them.
   `launchHrefFromPrintedUrl(launchUrl)` → the printed URL's `?qr=…&n=…`
   query, or null for a URL without `qr`.
 - `STARTER_LABELS` - the starter button's idle/busy/done/cancelled/failed
-  labels (async-UI rule).
+  labels, and the SHARE route's own four (`idleShare`, `busyShare`,
+  `doneShare`, `notShared`). Two sets rather than one, because "downloaded"
+  is simply false of a file handed to a share sheet, and `notShared` must
+  not say the creator cancelled - the Web Share API reports a cancelled
+  sheet and a failed share as the same error (async-UI rule).
 - `wizardStepKey(url)`, `parseWizardStep(value)` - the step key and the
   tolerant parser (the last-url key is module-private); `WizardStepStore`
   is the `getItem`/`setItem` slice of `localStorage`;
@@ -67,9 +71,9 @@ so they live inside it now and `creator-setup.ts` reveals them.
   listener would turn that into `openStep("measure")`, whose scroll takes
   the consent copy off the top before the visitor has read it.
   `presentTour` still sets the link.
-- The starter button is disabled while packing and downloading, shows the
-  outcome (downloaded / not saved when the save picker was dismissed /
-  failed), and reverts after 3 s; a re-click cancels a pending revert. Its
+- The starter button is disabled while packing and handing the file off,
+  shows the outcome (downloaded or shared / not saved or not shared when
+  nothing left the page / failed), and reverts after 3 s; a re-click cancels a pending revert. Its
   idle label is applied when the wizard is wired, not only by the revert
   timer - renaming the constant alone used to leave the old words on screen
   until after the creator's first click.
@@ -96,7 +100,8 @@ const wizard = wireWizard({
   mode,
   dom,
   packStarter: buildStarterZip,
-  download: downloadZip,
+  download: shareOrDownloadZip,
+  canShare: canShareZip,
   arSessionActive: () => arSessionLive(arController.getState().status),
   ...(stepStore === undefined ? {} : { stepStore }),
 });
@@ -114,7 +119,7 @@ hooks.presentTourForPrint = (url, origin) => {
 
 `wizard.test.ts` - creator/visitor boot state, the one-open-step property
 over random step sequences, the two advances, the starter button's three
-outcomes with an injected timer, the launch link round trip (property), the
+outcomes with an injected timer plus both share outcomes, the launch link round trip (property), the
 AR-session rule (a property that no `openStep` sequence closes step 4, plus
 a session that begins with another step open), the step-4 open preference
 and a remembered step still beating it, and the remembered step (M6):

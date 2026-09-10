@@ -27,8 +27,12 @@ camera, so `installTourViewerArFakes(page)` installs
   `locationRequests` (the visitor screen's gate: what the permission
   query answers, what a location-only tap comes back with, how many taps
   were made); `downloads` + `saveOutcome` (the zips the setup offered
-  for download - the fake `downloadZip` captures the blob instead of
-  saving, and reports `saveOutcome`, false meaning a dismissed picker).
+  for download - the fake `shareOrDownloadZip` captures the blob instead
+  of saving, and reports `saveOutcome`, false meaning nothing left the
+  page). The ROUTE is chosen by the installer's `{ shareRoute }` option
+  rather than through `__tourViewerTest`, and deliberately so: the app
+  reads the share capability once while wiring its buttons, so a spec
+  flipping it after load would get the share copy under a download label.
   `endARSession` fires `sessionEndCallback({ requestedByApp: true })`
   like the real XR session's end event does, so an app-requested end runs
   the app's teardown in the specs too (the finish step relies on it).
