@@ -1749,6 +1749,72 @@ test("a draft is offered again after Not now, and gone after Delete it", async (
   await expect(page.getByTestId("draft-offer")).toBeHidden();
 });
 
+test("placing after Delete it is still saved: a discard ends the draft, not the saving", async ({
+  page,
+}) => {
+  // Why this test matters (PR #445 review). Discarding cleared the gate file
+  // and never rewrote it, so the store stayed set while `readDraft` - which
+  // reads a missing meta as "no draft" - could no longer see anything. Every
+  // placement after the tap was unrecoverable, and NOTHING said so, because
+  // those writes SUCCEED: the no-persistence notice only fires when a write
+  // FAILS. Twice in three rounds the crash-safety feature has been the way
+  // work is lost, both times through a fix that looked right.
+  //
+  // THE ORDER HERE IS THE TEST. A first attempt discarded and then measured
+  // again before placing - and passed against the bug, because the mint path
+  // writes the meta itself and put the gate file back. What reaches the
+  // defect is minting BEFORE the discard: the offer is not modal, so a
+  // creator can measure and place while it sits there, and after the tap
+  // `ctx.mintedLevel` is still set - which is the one state where placement
+  // is allowed with no meta on disk.
+  await page.goto("/?nocache=1");
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  await measureTheCode(page);
+  await page.getByTestId("setup-pin").click();
+  await page.getByTestId("pin-label").fill("From the first session");
+  await page.getByTestId("pin-save").click();
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /1 object placed/,
+  );
+
+  // Second session: the draft is offered, and it is left ON SCREEN while the
+  // creator measures and places. That is what keeps the level set across the
+  // discard.
+  await page.reload();
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  await openMeasureStep(page);
+  await expect(page.getByTestId("draft-offer")).toBeVisible({ timeout: 15000 });
+  await measureTheCode(page);
+
+  await page.getByTestId("draft-discard").click();
+  await expect(page.getByTestId("draft-offer")).toBeHidden();
+
+  await page.getByTestId("setup-pin").click();
+  await page.getByTestId("pin-label").fill("Placed after the discard");
+  await page.getByTestId("pin-save").click();
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /1 object placed/,
+  );
+
+  // The assertion the bug fails: that pin has to survive a crash.
+  await page.reload();
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  await openMeasureStep(page);
+  await expect(page.getByTestId("draft-offer")).toBeVisible({ timeout: 15000 });
+});
+
 test("a draft accumulates ACROSS finishes: both batches land in the zip", async ({
   page,
 }) => {
