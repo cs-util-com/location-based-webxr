@@ -1432,6 +1432,18 @@ test("a link that fails from step 4 keeps the form and says why", async ({
 });
 
 test("the print step builds a real PDF of numbered codes", async ({ page }) => {
+  // The test's OWN budget, raised so the per-assertion one below can
+  // actually be spent. `playwright.config.js` sets no `timeout` (its two
+  // are webServer start-up), so this test runs on the 30 s default - and by
+  // the time control reaches the last assertion it has already spent a
+  // `goto`, a gallery load, a three-code PDF build and two `evaluate` round
+  // trips that pull the PDF bytes back. The real ceiling there was
+  // `30 s - elapsed`, which SHRINKS under exactly the load the budget is
+  // for. Without this the slow case dies as "Test timeout of 30000ms
+  // exceeded" with a screenshot, instead of the expect-level failure that
+  // names the missing text - which is the legibility this change is about
+  // (PR #452 review).
+  test.setTimeout(60_000);
   // Why this matters (second testing session, §4). The browser's print
   // dialog owns the paper and a "fit to page" toggle that silently
   // rescales, and a rescaled code measures the world wrong without ever
@@ -1481,12 +1493,21 @@ test("the print step builds a real PDF of numbered codes", async ({ page }) => {
   // size would work, and the button comes back.
   await page.getByTestId("author-size").fill("0.4");
   await page.getByTestId("print-pdf").click();
-  // An EXPLICIT budget, because the default five seconds is not enough for
-  // this step under load and the failure it produced pointed somewhere
-  // else entirely. Measured with a mutation observer on this element:
+  // An EXPLICIT budget, because the failure this produced pointed
+  // somewhere else entirely. Measured with a mutation observer on this
+  // element:
   //
   //   unthrottled   click -> readout +36ms -> refusal +5ms
   //   20x throttled click -> readout +2727ms -> refusal +29ms
+  //
+  // WHAT THAT DOES AND DOES NOT SHOW (PR #452 review). It establishes the
+  // MECHANISM: both messages land, in an order the event sequence fixes,
+  // newest wins, and the only thing load changes is how long the pair
+  // takes. It does NOT establish that five seconds is too little - 2.8 s at
+  // 20x sits inside the default with room to spare, so the gate run that
+  // failed was slower than 20x throttling, by how much is unmeasured. The
+  // budget below is therefore a MARGIN chosen against an unmeasured worst
+  // case, not a number read off the data.
   //
   // `fill()` does not raise `change`; the blur that THIS click causes does,
   // so the size readout is triggered by the click and runs on the same
