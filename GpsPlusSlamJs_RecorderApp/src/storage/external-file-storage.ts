@@ -8,9 +8,18 @@
  * This replaces the broken "Select folder..." button after the OPFS migration
  * (Issue 1a from 2026-01-27 user feedback).
  *
- * The File System Access API works reliably on Android Chrome when:
- * - Directory picker is used with mode: 'read' only
- * - Save file picker is used for write access to a single file
+ * DESKTOP ONLY - this whole path is inert on a phone. Chrome for Android
+ * exposes neither `showDirectoryPicker` nor `showSaveFilePicker`, so
+ * `isExternalStorageSupported()` is false there and no external sync ever
+ * runs. On a phone the session is protected by OPFS (`opfs-storage.ts`),
+ * which is the whole reason that module exists.
+ *
+ * An earlier version of this comment asserted the opposite, and the damage
+ * was not to this module - the code is gated and degrades correctly. It was
+ * to the next reader: the sentence looked like a measured finding that had
+ * superseded the OPFS workaround, and it sent a later design down a path
+ * built on a handle that never exists on the device it targeted. The claim
+ * is removed, and `retracted-behaviour-claims.test.js` now holds it out.
  *
  * This module does NOT perform actual syncing - that's handled by sync-manager.ts
  * and zip-export.ts using the file handle obtained here.
@@ -188,7 +197,10 @@ export async function selectReadFolder(): Promise<ReadFolderResult> {
 /**
  * Open a save file picker to get a writable handle for the session ZIP.
  *
- * Uses showSaveFilePicker which is reliable for writing on Android Chrome.
+ * Uses `showSaveFilePicker`, which Chrome for Android does not expose - so
+ * on a phone this function is never reached, because the caller is gated on
+ * `isExternalStorageSupported()`. The claim that it writes reliably there is
+ * removed as wrong.
  * The file handle is stored for use by the SyncManager during recording.
  *
  * @param scenarioName - Name of the scenario (used in suggested filename)
