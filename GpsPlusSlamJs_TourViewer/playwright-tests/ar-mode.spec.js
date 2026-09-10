@@ -1443,7 +1443,16 @@ test("the print step builds a real PDF of numbered codes", async ({ page }) => {
   // exceeded" with a screenshot, instead of the expect-level failure that
   // names the missing text - which is the legibility this change is about
   // (PR #452 review).
-  test.setTimeout(60_000);
+  // `slow()` rather than a literal: x3 of the 30 s default is 90 s, which
+  // clears the sum of the retrying budgets on the path below - 15 + 15 + 5
+  // + 20 + 5 + 5 + 5 = 70 s of nominal ceiling, before `goto`, the
+  // three-code build, and the two `evaluate` round trips that pull the PDF
+  // bytes back. A literal 60 s did NOT clear that sum, so the enclosing
+  // timeout would still have bound first and produced exactly the bare
+  // screenshot failure this exists to avoid. `slow()` also re-derives
+  // itself when a budget on the path changes, and says "known slow" in one
+  // word (PR #453 review).
+  test.slow();
   // Why this matters (second testing session, §4). The browser's print
   // dialog owns the paper and a "fit to page" toggle that silently
   // rescales, and a rescaled code measures the world wrong without ever

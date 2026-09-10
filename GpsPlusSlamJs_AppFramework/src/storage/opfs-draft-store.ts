@@ -41,7 +41,32 @@ export interface DraftFileStore {
   /** Every key this store holds, in no particular order. */
   keys(): Promise<readonly string[]>;
   /**
-   * Empty the namespace. Used when a draft is spent or discarded.
+   * Delete ONE key, if it is there.
+   *
+   * Exists so a caller can throw away exactly what it is rejecting.
+   * `clear` empties the namespace, which forces "delete everything, then
+   * write back what should have stayed" - and the gap between those two
+   * is a window in which the surviving work exists only in memory. A
+   * targeted delete has no such window.
+   *
+   * Never throws and never reports: a key that was not there is already in
+   * the state the caller wanted, and a caller deleting a list of ids should
+   * not have to know which of them ever reached disk.
+   */
+  remove(key: string): Promise<void>;
+
+  /**
+   * Empty the namespace.
+   *
+   * **NO PRODUCTION CALLER as of 2026-09-10.** It was how a spent or
+   * discarded draft was thrown away, and both callers now delete the ids
+   * they are rejecting instead - because "empty everything, then write back
+   * what should have stayed" left a window in which the survivors existed
+   * only in memory, which is the shape that produced four silent data-loss
+   * defects in the Tour Viewer's authoring. Kept because it is working,
+   * tested API and its tests encode a real OPFS hazard (deleting while
+   * iterating a directory skips entries), but READ THE ORDERING NOTE BELOW
+   * AS HISTORY: with no caller, nothing is currently protected by it.
    *
    * `firstKey`, when given, is deleted BEFORE anything else and its
    * deletion is awaited on its own. That exists because clearing is not
@@ -132,6 +157,15 @@ export function createDraftFileStore(
         log.warn('draft listing failed:', err);
       }
       return out;
+    },
+    async remove(key) {
+      // `removeEntry` rejects with NotFoundError for a key that is not
+      // there, which is not a failure for this contract.
+      await directory.removeEntry(fileNameFor(key)).catch((err: unknown) => {
+        if ((err as { name?: string } | undefined)?.name !== 'NotFoundError') {
+          log.warn('draft remove failed:', err);
+        }
+      });
     },
     async clear(firstKey?: string) {
       // EMPTIED IN PLACE, never removed. Deleting the namespace directory

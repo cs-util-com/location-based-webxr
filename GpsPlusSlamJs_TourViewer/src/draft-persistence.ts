@@ -47,6 +47,21 @@ export function photoKey(id: string): string {
   return `${PHOTO_PREFIX}${id}`;
 }
 
+/**
+ * Delete one placed object and its photo.
+ *
+ * Callers reject a LIST of ids, and an object is two files - the record and
+ * the bytes. Neither is a failure when it is not there: a pin has no photo,
+ * and a caller should not have to know which half ever reached disk.
+ */
+export async function removeDraftObject(
+  store: DraftFileStore,
+  id: string,
+): Promise<void> {
+  await store.remove(objectKey(id));
+  await store.remove(photoKey(id));
+}
+
 /** What the meta file holds. */
 interface DraftMeta {
   tourUrl: string;

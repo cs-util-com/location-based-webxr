@@ -64,8 +64,8 @@ import {
   restoreOfferText,
 } from "./authoring-draft.js";
 import {
-  META_KEY,
   readDraft,
+  removeDraftObject,
   writeDraftMeta,
   writeDraftObject,
 } from "./draft-persistence.js";
@@ -184,6 +184,11 @@ export function wireCreatorSetup(deps: {
   /** What a draft is offering, until the creator answers. */
   let offered: {
     objects: readonly TourObject[];
+    /** EVERY id the draft on disk holds, not just the unhosted ones the
+     *  offer shows. Rejecting a draft deletes what `readDraft` returned -
+     *  including objects the hosted zip already carries, which the offer
+     *  filters out but which are still files taking up the namespace. */
+    storedIds: readonly string[];
     photos: ReadonlyMap<string, Blob>;
     /** The measured level and the size it was measured at - the other
      *  half of a lost walk, and what makes Finish reachable again. */
@@ -525,97 +530,41 @@ export function wireCreatorSetup(deps: {
 
   dom.draftDiscard.addEventListener("click", () => {
     dom.draftOffer.hidden = true;
+    // Captured BEFORE the offer is dropped: this is the list of what the
+    // creator is rejecting, and it is the only thing that gets deleted.
+    const rejectedIds = offered?.storedIds ?? [];
     offered = null;
     const store = draftStore;
     if (store === undefined) return;
     // The one way a creator can throw a draft away deliberately - and the
     // escape hatch for a draft that would otherwise be offered forever.
     //
-    // The META file goes first (`clear`'s own argument), because this is
-    // fire-and-forget and the creator may reload before it finishes: a
-    // reload mid-clear must find NO draft rather than the one they just
-    // discarded. That race was live and intermittent - about one run in
-    // six of the e2e that discards and reopens (PR #443 review round).
-    // Captured at the TAP, because `presentDraftForTour` re-points
-    // `draftStore` and `draftTourUrl` at the next tour and bumps this
-    // counter when it does.
-    const generation = ctx.openGeneration;
-    void store.clear(META_KEY).then(() => {
-      // The gate file is REWRITTEN, as the spent-draft path does. Without
-      // it the store stays set and every later placement writes an object
-      // file into a namespace with no meta - and `readDraft` treats a
-      // missing meta as "no draft", so everything placed after the tap is
-      // unrecoverable. Nothing would have said so either: the
-      // no-persistence notice fires when a write FAILS, and these writes
-      // succeed (PR #444 review).
-      //
-      // Discarding means "throw away what I placed so far", never "stop
-      // saving what I place next".
-      // Generation-guarded like EVERY other continuation here, and the
-      // reason is the one stated at `presentDraftForTour`: `recordMeta`
-      // writes to the CURRENT `draftStore`, not the `store` captured
-      // above. The previous guard was `draftTourUrl !== null` alone,
-      // reasoning that closing a tour nulls it - true, but opening the
-      // NEXT one sets it again. So a clear settling across a close-then-
-      // open wrote tour B's meta from this session's state, and for a B
-      // whose draft is offered-but-not-yet-restored `ctx.mintedLevel` is
-      // null: the level on disk is overwritten and a reload before
-      // accepting loses the measurement (PR #445 review, found
-      // independently by both reviewers).
-      //
-      // The null check stays alongside it: a close nulls these without
-      // bumping the generation, so an unchanged generation still permits
-      // no url.
-      if (generation !== ctx.openGeneration || draftTourUrl === null) return;
-      // INTENDED, and asked about in review: the meta carries
-      // `ctx.mintedLevel`, so a creator who measured BEFORE tapping Delete
-      // it is offered that measurement back on the next open even if they
-      // placed nothing after the tap.
-      //
-      // Writing `level: null` here would remove the re-offer, and it is the
-      // worse trade: the discard would then also throw away a measurement
-      // the creator did NOT discard - the one they took in THIS session,
-      // after the draft they were rejecting - and a crash before placing
-      // would cost them the walk to the poster again. What "Delete it"
-      // rejects is the OLD draft; work done afterwards in the live session
-      // is protected exactly as it would be if no draft had ever existed,
-      // because that is the same `recordMeta` the mint path runs.
-      //
-      // It converges: the second discard runs with `mintedLevel === null`,
-      // so the meta it writes is spent and the next open is silent.
-      recordMeta(draftTourUrl);
-      // And the OBJECTS this session placed are written back, for the same
-      // reason the level is. `clear` empties the whole namespace, and it
-      // cannot tell the rejected draft's files from the ones written
-      // minutes ago by a creator who left the offer on screen and carried
-      // on working - the offer is not modal and placement is not gated on
-      // it. Without this, those pins vanish from disk while staying in
-      // `ctx.placedObjects`, on the readout and in the finished zip, so
-      // NOTHING on screen changes and a crash before finishing loses them
-      // silently. Third time this feature has been the way work is lost
-      // (PR #447 review).
-      //
-      // It also closes the narrower race the same reviewer named: a
-      // `writeDraftObject` still in flight when the tap lands could be
-      // deleted by the clear after reporting success. Re-writing every
-      // live placement AFTER the clear settles covers that too, because
-      // the re-write is what lands last.
-      //
-      // RESIDUAL, on the record rather than reading as fully closed (PR
-      // #448 review): between the clear resolving and these `put`s
-      // landing, this session's pins exist only in `ctx.placedObjects`. A
-      // reload in that window finds no meta (it is deleted first, by
-      // design) and no object files, so those pins are lost - the same
-      // loss, narrowed from "until the next crash" to a few hundred
-      // milliseconds. Closing it properly means deleting only the rejected
-      // draft's ids instead of emptying the namespace, which needs a
-      // per-key delete `DraftFileStore` does not have, and a decision
-      // about the hosted-but-still-on-disk objects that `clear` currently
-      // collects - which is why it is not done here.
-      for (const stillLive of ctx.placedObjects) {
-        recordPlacement(stillLive.object, stillLive.blob);
-      }
-    });
+    // DELETE WHAT WAS REJECTED, and nothing else.
+    //
+    // This used to empty the whole namespace and then write back the meta
+    // and every placement still live. That shape - delete everything, then
+    // restore what should have stayed - is what produced FOUR silent
+    // data-loss defects in this feature, because `clear` cannot tell the
+    // rejected draft's files from ones written seconds earlier by a
+    // creator who left the offer on screen and carried on working. Each
+    // fix restored a little more, and each left a window in which the
+    // survivors existed only in memory: a reload there lost them.
+    //
+    // There is no window now. The ids come from the offer, which is what
+    // `readDraft` returned, so nothing this session wrote is ever a
+    // candidate for deletion and nothing has to be put back.
+    //
+    // The meta is REWRITTEN rather than deleted, which also drops the
+    // rejected level: `recordMeta` writes `ctx.mintedLevel`, so a creator
+    // who measured before tapping keeps THIS session's measurement. That
+    // is deliberate - "Delete it" rejects the OLD draft, not work done
+    // afterwards - and it converges, because a later discard runs with no
+    // minted level and writes a spent meta.
+    //
+    // Both happen synchronously in the handler, so the generation guard
+    // that used to sit here is gone with the await that needed it.
+    if (draftTourUrl !== null) recordMeta(draftTourUrl);
+    for (const id of rejectedIds) void removeDraftObject(store, id);
   });
 
   dom.pinButton.addEventListener("click", () => {
@@ -1097,36 +1046,25 @@ export function wireCreatorSetup(deps: {
           // transient refusal, and assigning that over a WORKING store turns
           // persistence off for the rest of the tour, silently (PR #443
           // review).
-          await store.clear(META_KEY);
-          if (stale()) return;
+          // Same rule as the discard: delete exactly what `readDraft`
+          // returned. A spent draft is one the hosted zip already carries
+          // in full, so every id here is safe to drop - and anything this
+          // session placed during the awaits above is not in that list and
+          // is therefore never touched. That reachability is not
+          // hypothetical: `draftStore` is assigned BEFORE those awaits and
+          // `hostedLevelJson` reads a zip entry, which is a network round
+          // trip for a remote archive, while neither the mint button nor
+          // `placementAllowed()` waits for the chain to settle.
           recordMeta(tourUrl);
-          // The same re-write as the discard handler, for the same reason:
-          // `clear` empties the WHOLE namespace and cannot tell the spent
-          // draft's files from ones written seconds ago.
-          //
-          // This runs at tour OPEN, so the list is USUALLY empty - but not
-          // provably, and an earlier version of this comment claimed it was
-          // (PR #448 review). `draftStore` is assigned BEFORE the
-          // `readDraft` and `hostedLevelJson` awaits above, and
-          // `hostedLevelJson` reads a zip entry - a network round trip for a
-          // remote archive, not a microsecond. Neither the mint button nor
-          // `placementAllowed()` is gated on that chain settling, so a
-          // creator with an AR session already up and the poster already
-          // framed can mint and place inside that window, and those object
-          // files are here when the clear runs.
-          //
-          // The guard was temporal - humans are slower than OPFS - and a
-          // temporal guard written down as a structural one is how the
-          // discard handler shipped this same loss for three rounds. The
-          // loop costs nothing when the list really is empty.
-          for (const stillLive of ctx.placedObjects) {
-            recordPlacement(stillLive.object, stillLive.blob);
+          for (const object of stored.draft.objects) {
+            void removeDraftObject(store, object.id);
           }
           return;
         }
         const hasLevel = draftHasUnhostedLevel(stored.draft, hostedLevel);
         offered = {
           objects: waiting,
+          storedIds: stored.draft.objects.map((object) => object.id),
           photos: stored.photos,
           // ALWAYS handed back when the draft has one, even if the hosted
           // zip already stores the same measurement: the finish refuses to

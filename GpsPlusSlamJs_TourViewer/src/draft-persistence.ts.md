@@ -13,6 +13,10 @@ are the framework's.
 - `writeDraftObject(store, object, blob?)` - one placement. Returns false
   if either file failed, so a half-written photo is reported rather than
   believed.
+- `removeDraftObject(store, id)` - deletes one placement AND its photo,
+  because an object is two files and a caller rejecting a list of ids
+  should not have to know which of them ever reached disk. Neither half
+  missing is a failure: a pin has no photo.
 - `readDraft(store) -> Promise<StoredDraft | undefined>` -
   `{ draft, photos }`, or `undefined` when there is no meta file.
 - `parseDraftObject(text)`, `objectKey(id)`, `photoKey(id)`.

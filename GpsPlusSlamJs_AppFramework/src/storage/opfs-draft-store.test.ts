@@ -157,6 +157,33 @@ describe('the draft file store', () => {
     expect(await createDraftFileStore(dir).keys()).toEqual(['mine']);
   });
 
+  it('removes ONE key and leaves its neighbours', async () => {
+    // Why this test matters: "discard the draft" and "empty the folder"
+    // were the same operation, and they are not the same thing. Emptying
+    // and then writing back what should not have gone leaves a window in
+    // which the work exists only in memory - the failure this whole
+    // feature keeps producing. A per-key delete lets a caller remove
+    // exactly what was rejected and never touch anything else.
+    const dir = fakeDirectory();
+    const store = createDraftFileStore(dir);
+    await store.put('keep', 'k');
+    await store.put('drop', 'd');
+    await store.remove('drop');
+    expect(await store.getText('drop')).toBeUndefined();
+    expect(await store.getText('keep')).toBe('k');
+    expect(await store.keys()).toEqual(['keep']);
+  });
+
+  it('treats removing a key that is not there as done, not as an error', async () => {
+    // Nothing in this module throws into its caller - a draft is a safety
+    // net, and a net that throws turns "your work is saved too" into "your
+    // tap failed". A caller deleting a list of ids must not have to know
+    // which of them ever reached disk.
+    const dir = fakeDirectory();
+    const store = createDraftFileStore(dir);
+    await expect(store.remove('never-written')).resolves.toBeUndefined();
+  });
+
   it('empties EVERY entry, not every other one', async () => {
     // Why this test matters: `clear` walked the directory and removed as it
     // went, which mutates the collection the enumerator is walking - so
