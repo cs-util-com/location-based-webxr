@@ -1903,7 +1903,18 @@ test("a pin placed BEFORE Delete it survives too: the discard rejects the old dr
             encodeURIComponent(url.trim()),
           );
           const names = [];
-          for await (const name of dir.keys()) names.push(name);
+          // Only the files this app wrote, which is what the store's own
+          // `keys()` returns: `keyForFileName` drops anything not ending
+          // in `.blob`. Chromium leaves a `<name>.blob.crswap` sibling in
+          // the directory while a write is in flight, and this poll races
+          // exactly those writes - so a raw listing can hold a name
+          // production would never report. Mid-write that only costs a
+          // retry; a swap file left behind by an aborted write would make
+          // this time out at ten seconds pointing at durability instead of
+          // at the leftover (PR #451 review).
+          for await (const name of dir.keys()) {
+            if (name.endsWith(".blob")) names.push(name);
+          }
           return names.sort().join(",");
         }, RANGES_ARCHIVE),
       { timeout: 10000 },
