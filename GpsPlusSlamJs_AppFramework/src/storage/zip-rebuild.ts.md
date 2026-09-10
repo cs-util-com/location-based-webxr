@@ -36,12 +36,21 @@ DEC-H3).
   The output Blob is still whole; a large recorder zip is a whole-file pass
   on a phone - callers show the progress (`done` = entries read so far,
   `total` = the output's entry count).
-- **The archive's convention decides where a file lands.** In a zip whose
-  entries carry a leading `./`, a new entry naming that file either way -
-  with the prefix or without - replaces it IN PLACE, at the archive's own
-  name. Asking that question three different ways is what let `./x` and `x`
-  both be written into one archive, which every reader resolves to one file
-  and none agree which (PR #439 review).
+- **The archive's convention decides where a file lands**, and it decides
+  for NEW names as well as replacements:
+  - A file the archive already holds is replaced IN PLACE, at the archive's
+    own name, whether the caller spells it with the prefix or without.
+    Asking that question three different ways is what let `./x` and `x`
+    both be written into one archive, which every reader resolves to one
+    file and none agree which (PR #439 review).
+  - A genuinely NEW name joins its neighbours - but only when EVERY
+    existing entry carries the prefix. An already-mixed archive has no
+    convention to follow, so nothing is guessed there and the name is
+    written exactly as the caller spelled it. Writing the normalised key
+    instead silently un-prefixed a path the caller had supplied, which is
+    live: the Tour Viewer builds each photo's path from the prefix it found
+    the manifest at, and the reader looks content up by EXACT name
+    (PR #440 and #441 reviews).
 - Only the names this call INVENTS are name-checked. An entry whose path
   the input archive already carries is re-emitted verbatim
   (`assertSafeNewZipPaths` is given the others only), because refusing a
@@ -74,6 +83,13 @@ const rebuilt = await rebuildZipWithEntries(hostedZip, [
 ```
 
 ## Tests
+
+The `./` cases, which are most of this module's surface area: an archive
+re-emitted with names the author rules would refuse; a replacement named
+the archive's way and named the other way; a NEW entry taking the prefix in
+a uniformly prefixed archive and KEEPING the caller's spelling in a mixed
+one; the same path refused in a flat archive; and `./x` plus `x` in one
+call refused as the duplicate they are.
 
 `zip-rebuild.test.ts` - adds entries and keeps existing ones byte-identical
 (including a multi-chunk entry); replaces an existing path exactly once;

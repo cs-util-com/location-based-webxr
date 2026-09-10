@@ -28,6 +28,10 @@
  *   it is checked with the prefix removed. Everything else about the name
  *   is checked as usual, and duplicates are compared on the normalised
  *   form so `./x` and `x` cannot both be written.
+ * - That convention also decides WHERE a new name lands: it joins its
+ *   neighbours under the prefix when every existing entry carries one, and
+ *   is otherwise written exactly as the caller spelled it. A mixed archive
+ *   has no convention to guess at.
  */
 
 import {
@@ -164,9 +168,19 @@ export async function rebuildZipWithEntries(
     // shape is what caught the wider rule.
     const targeted = entries.map((e) => {
       const key = underArchiveConvention(e.path, dotSlash);
+      const existing = archiveByName.get(key);
+      if (existing !== undefined) return { ...e, path: existing };
+      // A genuinely new name. Under a uniformly `./`-written archive it
+      // joins its neighbours; anywhere else it is written EXACTLY as the
+      // caller spelled it - `e.path`, not `key`, which is the caller's
+      // path with the prefix already stripped off by the lookup above.
+      // Writing `key` in a mixed archive silently un-prefixed a path the
+      // caller had supplied, and that is a live route: the Tour Viewer
+      // builds each photo's path from the prefix it found the manifest at,
+      // and the reader looks it up by exact name (PR #441 review).
       return {
         ...e,
-        path: archiveByName.get(key) ?? (allDotSlash ? DOT_SLASH + key : key),
+        path: allDotSlash ? DOT_SLASH + key : e.path,
       };
     });
     assertSafeNewZipPaths(
