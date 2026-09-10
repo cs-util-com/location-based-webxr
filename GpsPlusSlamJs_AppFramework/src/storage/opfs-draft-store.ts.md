@@ -17,7 +17,17 @@ so the recorder can use it when it grows authoring of its own.
   the store over an already-resolved handle. Exported so tests pass a fake
   and stay in node, as the OSM tile store's do.
 - `DraftFileStore`: `put(key, data) -> Promise<boolean>`, `getText(key)`,
-  `getBlob(key)`, `keys()`, `clear()`.
+  `getBlob(key)`, `keys()`, `remove(key)`, `clear()`.
+  - **`remove(key)` is how a caller throws away exactly what it is
+    rejecting.** It exists because `clear` forces "delete everything, then
+    write back what should have stayed", and the gap between those two is a
+    window in which the survivors live only in memory. That shape produced
+    four silent data-loss defects in the Tour Viewer's authoring before it
+    was replaced. Removing a key that is not there is not a failure.
+  - **`clear()` has NO production caller since 2026-09-10.** Both former
+    callers delete the ids they read instead. It is kept as working, tested
+    API - its tests encode a real OPFS hazard - but nothing depends on its
+    ordering guarantee today.
 - `DRAFT_STORE_DIR`.
 
 ## Invariants & assumptions
