@@ -108,8 +108,14 @@ export const MAX_PRINTED_CODES = 50;
  * them. That is the safe direction and it is deliberate, but it is a
  * limitation rather than the closed case the comment described.
  * `orphanScanCovers` states the real rule, and is tested.
+ *
+ * NOT exported, deliberately. It is an alias of `MAX_PRINTED_CODES`, and
+ * two exported names for one value are a duplicate export - knip fails the
+ * build on it, which is how this was found. Nothing outside needs the
+ * number anyway: `orphanScanCovers` is the question callers and tests
+ * actually ask, and the budget is pinned from BOTH sides through it.
  */
-export const MAX_ORPHAN_SCAN_CODES = MAX_PRINTED_CODES;
+const MAX_ORPHAN_SCAN_CODES = MAX_PRINTED_CODES;
 
 /**
  * The highest code NUMBER a print run produces.

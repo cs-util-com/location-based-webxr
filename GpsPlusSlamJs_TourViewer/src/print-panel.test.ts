@@ -15,7 +15,6 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import {
-  MAX_ORPHAN_SCAN_CODES,
   MAX_PRINTED_CODES,
   highestPrintedCode,
   orphanScanCovers,
@@ -223,8 +222,13 @@ describe("the poster range a print covers", () => {
     // checked and the warning fired at a creator who had changed nothing
     // (PR #444 review). THIS is the assertion that dies if the budget goes
     // back to 24.
+    // Pinned from BOTH sides, which fixes the budget exactly at the count
+    // cap without exporting the constant: a run of 50 starting at 1 is
+    // covered (this fails if the budget drops back to 24), and the same run
+    // starting at 2 is not (this fails if the budget is ever raised past
+    // the cap, which would make the check hash numbers no poster carries).
     expect(orphanScanCovers(1, MAX_PRINTED_CODES)).toBe(true);
-    expect(MAX_ORPHAN_SCAN_CODES).toBeGreaterThanOrEqual(MAX_PRINTED_CODES);
+    expect(orphanScanCovers(2, MAX_PRINTED_CODES)).toBe(false);
   });
 
   it("goes silent for a run it cannot cover, rather than guessing", () => {
@@ -233,10 +237,10 @@ describe("the poster range a print covers", () => {
     // check must then say nothing - a half-scanned range can only produce a
     // false warning (PR #445 review).
     expect(orphanScanCovers(60, 1)).toBe(false);
-    expect(orphanScanCovers(MAX_ORPHAN_SCAN_CODES, 2)).toBe(false);
+    expect(orphanScanCovers(MAX_PRINTED_CODES, 2)).toBe(false);
     // The boundary itself is covered, which is the off-by-one this whole
     // area has now produced twice.
-    expect(orphanScanCovers(MAX_ORPHAN_SCAN_CODES, 1)).toBe(true);
+    expect(orphanScanCovers(MAX_PRINTED_CODES, 1)).toBe(true);
   });
 
   it("only ever loses coverage as the run grows", () => {

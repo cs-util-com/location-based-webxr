@@ -1813,6 +1813,14 @@ test("placing after Delete it is still saved: a discard ends the draft, not the 
   });
   await openMeasureStep(page);
   await expect(page.getByTestId("draft-offer")).toBeVisible({ timeout: 15000 });
+  // The visibility alone does NOT isolate the pin: `draftIsSpent` is false
+  // if EITHER an unhosted object or an unhosted level is present, and the
+  // discard's own `recordMeta` writes the level this session minted - so
+  // deleting the object write entirely would still show the offer. The TEXT
+  // is what proves the placement survived (PR #446 review).
+  await expect(page.getByTestId("draft-offer-text")).toContainText(
+    /1 thing you placed/,
+  );
 });
 
 test("a draft accumulates ACROSS finishes: both batches land in the zip", async ({

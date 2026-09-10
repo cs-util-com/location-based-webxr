@@ -138,7 +138,11 @@ export function generateSessionFilename(date: Date = new Date()): string {
 /**
  * Open a directory picker for read access to previous session ZIPs.
  *
- * Uses mode: 'read' which is reliable on Android Chrome.
+ * Chrome for Android does not expose `showDirectoryPicker` at all, so this
+ * function is unreachable on a phone - callers are gated on
+ * `isExternalStorageSupported()`. The claim that `mode: 'read'` is reliable
+ * there is removed as wrong; it was the read half of the same retraction
+ * that took the write half out of the header (PR #446 review).
  * The folder handle is stored for later use (e.g., extracting ref points).
  *
  * @returns Result indicating success/failure and folder name

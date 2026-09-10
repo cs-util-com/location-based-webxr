@@ -71,16 +71,26 @@ const REMOVED_BEHAVIOURS = [
     //
     // CONTEXT REQUIRED: "reliable on Android" is a sentence someone might write
     // truthfully about something else in this tree. What makes a match mean
-    // "someone is claiming the pickers work there" is the picker name, or the
-    // API's own name, on the same line.
+    // "someone is claiming the pickers work there" is the picker name, the
+    // API's own name, or the picker's distinctive argument.
+    //
+    // THE NARROWING IS PER-LINE, and that assumption is what this entry got
+    // wrong on its first writing: `selectReadFolder`'s docstring said "Uses
+    // mode: 'read' which is reliable on Android Chrome" with the picker call
+    // NINE LINES below it, so the pattern matched, the context rejected, and
+    // the guard reported clean while the claim shipped (PR #446 review).
+    // `mode: 'read'` is as specific as the picker name and appears on the
+    // offending line, so it joins the alternation - and the sentence joins
+    // the witnesses, which is what forces the pair to be able to see it.
     pattern: /\breliabl[ey]\b[^.]{0,120}?\bandroid\b/i,
     context:
-      /\b(?:showDirectoryPicker|showSaveFilePicker|File System Access)\b/i,
+      /(?:\b(?:showDirectoryPicker|showSaveFilePicker|File System Access)\b|mode:\s*'read')/i,
     label:
       'the File System Access pickers described as reliable on Android Chrome (retracted 2026-09-10 — Chrome for Android exposes neither, so isExternalStorageSupported() is false there; see external-file-storage.ts.md)',
     witnesses: [
       'The File System Access API works reliably on Android Chrome when:',
       "Uses `showDirectoryPicker({ mode: 'read' })` and `showSaveFilePicker()` which are reliable on Android Chrome, unlike `createWritable()` on directory handles.",
+      " * Uses mode: 'read' which is reliable on Android Chrome.",
     ],
   },
   {

@@ -567,6 +567,22 @@ export function wireCreatorSetup(deps: {
       // bumping the generation, so an unchanged generation still permits
       // no url.
       if (generation !== ctx.openGeneration || draftTourUrl === null) return;
+      // INTENDED, and asked about in review: the meta carries
+      // `ctx.mintedLevel`, so a creator who measured BEFORE tapping Delete
+      // it is offered that measurement back on the next open even if they
+      // placed nothing after the tap.
+      //
+      // Writing `level: null` here would remove the re-offer, and it is the
+      // worse trade: the discard would then also throw away a measurement
+      // the creator did NOT discard - the one they took in THIS session,
+      // after the draft they were rejecting - and a crash before placing
+      // would cost them the walk to the poster again. What "Delete it"
+      // rejects is the OLD draft; work done afterwards in the live session
+      // is protected exactly as it would be if no draft had ever existed,
+      // because that is the same `recordMeta` the mint path runs.
+      //
+      // It converges: the second discard runs with `mintedLevel === null`,
+      // so the meta it writes is spent and the next open is silent.
       recordMeta(draftTourUrl);
     });
   });

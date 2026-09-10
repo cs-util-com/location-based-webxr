@@ -11,7 +11,7 @@ This is the **B3** primitive of the in-zip backfill (O3 — in-zip rewrite): it 
 - `embedCoverageInSessionJson(zip: Blob, h3Cells: string[], h3Resolution: number): Promise<Blob>`
   - **Input:** a recording zip blob + the coverage cells/resolution to embed.
   - **Output:** a **new** zip blob with `session.json` merged to include `h3Cells` + `h3Resolution`; or the **input blob unchanged (same reference)** when it skips.
-  - **Skips (returns input by reference):** no `session.json`; unparseable `session.json`; `session.json` already has `h3Cells` (idempotent); or any unexpected read/write failure. Callers detect a skip via `result === zip`.
+  - **Skips (returns input by reference):** no `session.json`; unparseable `session.json`; `session.json` that PARSES to a non-object, including an array or a bare number/string; `session.json` already has `h3Cells` (idempotent); or any unexpected read/write failure. Callers detect a skip via `result === zip`.
   - **Never throws** for zip-content reasons and **never emits a partial** zip — on a mid-write failure it abandons the half-built zip and returns the original.
 
 ## Invariants & assumptions
@@ -19,7 +19,7 @@ This is the **B3** primitive of the in-zip backfill (O3 — in-zip rewrite): it 
 - **Pure transform, no I/O side effects.** It does not touch the filesystem — the caller (RecorderApp backfill, B4) owns the safe write-then-verify-then-overwrite protocol around it.
 - **Byte-preserving.** A wrapper over `rebuildZipWithEntries` (see [zip-rebuild.ts](zip-rebuild.ts.md)) since 2026-09-08 - the package's ONE re-emit loop (DEC-H3); store mode, every non-`session.json` entry byte-identical, directory entries dropped. The rebuild throws on failure; this wrapper turns that into its own skip-and-return-input contract, because a backfill over many recordings wants "left untouched", not an exception per file.
 - **Idempotent.** A zip already carrying `h3Cells` is returned unchanged, so re-running the upgrade is a no-op and new recordings (which already have the field) are skipped. It does **not** overwrite existing cells.
-- **Defensive.** Missing/malformed `session.json` returns the input untouched rather than writing over a broken recording.
+- **Defensive.** Missing, malformed, or non-object `session.json` returns the input untouched rather than writing over a broken recording. The non-object case is separate on purpose: `JSON.parse` SUCCEEDS on `3`, `"text"`, `null` and `[1,2]`, so those are neither missing nor unparseable - and merging into one would spread it into a fresh object and overwrite whatever the file actually held.
 
 ## Examples
 

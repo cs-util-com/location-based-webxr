@@ -45,7 +45,10 @@ since M6.
 sideM)` - what the file is called and what is printed under each code.
     The caption is read while hanging posters, so it names WHICH poster;
     it is plain ASCII because a PDF base-14 font is single-byte.
-  - `MAX_PRINTED_CODES`, `MAX_ORPHAN_SCAN_CODES`.
+  - `MAX_PRINTED_CODES`. The orphan scan's own budget is NOT exported -
+    it is an alias of that constant, and two exported names for one value
+    are a duplicate export that fails the dead-code check. Ask
+    `orphanScanCovers` instead, which is the question anyway.
   - `highestPrintedCode(codeIndex, count)` - the last poster a run
     produces, `codeIndex + count - 1`. A SUM, not the larger of the two:
     taking the max covered 1..3 for a creator starting at 3 with three
