@@ -1779,13 +1779,14 @@ test("a draft is offered again after Not now, and gone after Delete it", async (
   await page.getByTestId("draft-discard").click();
   await expect(page.getByTestId("draft-offer")).toBeHidden();
 
-  // Wait for the DELETES, not for the button. The discard rewrites the meta
-  // and then removes the rejected objects without awaiting them, so a
-  // reload landing inside that window finds a valid meta plus files that
-  // are still there - and the draft is offered again. The old ordering
-  // (delete the meta FIRST) made that impossible, and this test reloads
-  // immediately afterwards, so it is exactly where the inversion shows
-  // (PR #454 review).
+  // Wait for the HOUSEKEEPING to finish, not for the button.
+  //
+  // This poll no longer guards the reload below: the rejection is committed
+  // by the meta write now, so the draft is gone from the next read whether
+  // or not these deletes ever ran. What it still covers is that they DO run -
+  // the files are reclaimed rather than left in the tour namespace for the
+  // life of the origin, which is the half no unit test can observe against a
+  // real OPFS directory.
   //
   // The end state is "the meta and nothing else", which no earlier state
   // satisfies: before the tap the namespace also holds the object file.

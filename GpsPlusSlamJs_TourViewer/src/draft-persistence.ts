@@ -32,22 +32,26 @@ import type { AuthoringDraft } from "./authoring-draft.js";
 /**
  * The file that decides whether a draft EXISTS: no meta, no draft.
  *
- * It used to be deleted FIRST when a draft was thrown away, so a reload
- * racing a discard found nothing rather than the draft just rejected -
- * a race that was live at about one run in six (PR #443). **That
- * guarantee is gone as of 2026-09-10** and the sentence describing it has
- * been removed rather than left to be believed: the discard now REWRITES
- * this file (dropping the rejected level, keeping this session's) and
- * deletes the rejected objects afterwards. A reload inside that window
- * finds a valid meta and some un-deleted objects, so the discarded draft
- * can be offered once more.
+ * IT IS ALSO THE COMMIT POINT FOR A REJECTION. Writing this file with an
+ * id in `rejected` is the single moment the discard becomes true; the
+ * object deletes that follow are housekeeping and may fail, be
+ * interrupted, or never run at all without changing what the next read
+ * sees. Nothing is deleted before this write lands, so the window costs
+ * nothing in either direction.
  *
- * That is the deliberate side of the trade - the alternative deleted work
- * the creator had NOT discarded - but it is a real inversion of what this
- * comment used to promise. Closing it properly means recording the
- * rejection IN this file so the meta write is the commit point; see
- * `docs/2026-09-10-1345-draft-rejection-commit-point-plan.md` in the docs
- * repo.
+ * The ordering it replaces, and why: this file used to be deleted FIRST,
+ * so a reload racing a discard found no draft at all - a race live at
+ * about one run in six (PR #443). Deleting it first meant emptying the
+ * whole namespace, which is what made a discard delete pins placed
+ * seconds earlier; removing that shape (r680) inverted the guarantee,
+ * because the discard then rewrote this file and deleted afterwards, and
+ * a reload in between was offered the draft it had just rejected. Neither
+ * shape was safe in both directions. This one is: the old lost work, the
+ * next resurrected a rejection, and a single authoritative write does
+ * neither.
+ *
+ * Design and costs:
+ * `docs/2026-09-10-1345-draft-rejection-commit-point-plan.md` (docs repo).
  */
 export const META_KEY = "meta";
 const OBJECT_PREFIX = "object:";
@@ -84,6 +88,31 @@ interface DraftMeta {
   tourUrl: string;
   sizeM: number;
   level: { id: string; json: string } | null;
+  /**
+   * Object ids the creator has thrown away, which `readDraft` refuses
+   * whether or not their files are still on disk.
+   *
+   * OPTIONAL, and absent from every meta file already on a device. It is
+   * PRUNED rather than accumulated: `readDraft` hands back only the ids
+   * that still have files, and the next meta write stores that shorter
+   * list, so it cannot grow for the life of a tour.
+   */
+  rejected?: readonly string[];
+}
+
+/**
+ * The rejected ids in a meta value, ignoring anything that is not a
+ * string.
+ *
+ * WHICH WAY THIS FAILS IS THE DECISION. A list that does not read is
+ * treated as NO rejection, never as a total one: hiding objects the
+ * creator never discarded is silent data loss, the failure this feature
+ * has produced four times, while offering a discarded draft a second time
+ * costs a prompt with a "Delete it" button on it.
+ */
+function rejectedIdsOf(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((id): id is string => typeof id === "string");
 }
 
 /** Validate one object by the manifest's own rules. Returns null for
@@ -131,7 +160,18 @@ export interface StoredDraft {
   draft: AuthoringDraft;
   photos: ReadonlyMap<string, Blob>;
   /**
-   * EVERY object id this read saw on disk, including the ones it refused.
+   * Ids the meta lists as rejected that STILL HAVE FILES.
+   *
+   * Two jobs in one list, both of which need exactly this set:
+   * - **the prune** - it is what the next meta write stores, so an id
+   *   whose files are gone drops out and the list stays bounded;
+   * - **the sweep** - those are deletes that did not finish, and since
+   *   `clear` lost its last caller nothing else would ever reclaim them.
+   */
+  rejectedIds: readonly string[];
+  /**
+   * EVERY object id this read saw on disk, including the ones it refused
+   * and the ones the meta rejects.
    *
    * `draft.objects` is what could be PARSED: a record written by an older
    * version, or a photo record whose bytes are missing, is skipped - and
@@ -178,6 +218,10 @@ export async function readDraft(
   }
 
   const keys = await store.keys();
+  // The committed rejections. Read from the raw parsed value, not through
+  // the interface: `isMeta` does not validate this field, deliberately -
+  // see `rejectedIdsOf`.
+  const rejected = new Set(rejectedIdsOf(meta.rejected));
   const objects: TourObject[] = [];
   const photos = new Map<string, Blob>();
   // One snapshot, both prefixes: a photo file whose record never landed has
@@ -194,6 +238,10 @@ export async function readDraft(
   ];
   for (const key of keys) {
     if (!key.startsWith(OBJECT_PREFIX)) continue;
+    // A committed rejection outranks the file. Skipping here also skips
+    // the photo read below, so a rejected photo's bytes never reach the
+    // finish either.
+    if (rejected.has(key.slice(OBJECT_PREFIX.length))) continue;
     const text = await store.getText(key);
     if (text === undefined) continue;
     const object = parseDraftObject(text);
@@ -218,6 +266,7 @@ export async function readDraft(
     (a, b) =>
       a.createdAtIso.localeCompare(b.createdAtIso) || a.id.localeCompare(b.id),
   );
+  const onDisk = new Set(storedIds);
   return {
     draft: {
       tourUrl: meta.tourUrl,
@@ -226,6 +275,7 @@ export async function readDraft(
       objects,
     },
     photos,
+    rejectedIds: [...rejected].filter((id) => onDisk.has(id)),
     storedIds,
   };
 }

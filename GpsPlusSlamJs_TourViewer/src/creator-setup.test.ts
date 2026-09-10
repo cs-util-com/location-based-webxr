@@ -27,7 +27,12 @@ import {
   createTourViewerSession,
   createTourViewerStore,
 } from "./tour-viewer-session.js";
-import { META_KEY, objectKey, photoKey } from "./draft-persistence.js";
+import {
+  META_KEY,
+  objectKey,
+  photoKey,
+  readDraft,
+} from "./draft-persistence.js";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 /** One fake element: the properties this module writes, and a click it can
@@ -91,7 +96,10 @@ function fakeDom(): Record<(typeof DOM_KEYS)[number], FakeEl> {
 /** A plain in-memory store. No deferred `clear` any more: the deletes are
  *  targeted, so which id is deleted no longer depends on when anything
  *  settles - which is the property these tests exist to hold. */
-function memoryStore(seed: Record<string, string> = {}): {
+function memoryStore(
+  seed: Record<string, string> = {},
+  options: { removeNeverSettles?: boolean } = {},
+): {
   store: DraftFileStore;
   files: Map<string, unknown>;
 } {
@@ -108,6 +116,11 @@ function memoryStore(seed: Record<string, string> = {}): {
     getBlob: () => Promise.resolve(undefined),
     keys: () => Promise.resolve([...files.keys()]),
     remove: (key: string) => {
+      // A delete that never settles models the tab being closed mid-sweep,
+      // and a store that refuses the removal outright. Both leave the file
+      // on disk, which is what the meta has to outrank.
+      if (options.removeNeverSettles === true)
+        return new Promise<void>(() => {});
       files.delete(key);
       return Promise.resolve();
     },
@@ -249,6 +262,131 @@ describe("rejecting a draft deletes what was rejected, and nothing else", () => 
 
     expect(files.has(objectKey("shot"))).toBe(false);
     expect(files.has(photoKey("shot"))).toBe(false);
+  });
+});
+
+describe("the rejection is committed by the meta write", () => {
+  it("holds even when the deletes never run at all", async () => {
+    // THE test this change exists for; it fails against the previous
+    // shape. A discard used to rewrite the meta and THEN remove the object
+    // files without awaiting them, so the moment a rejection became true
+    // was spread over several writes. A reload landing between them - or a
+    // delete that simply failed - found a valid meta plus the rejected
+    // objects still on disk, and offered the creator the draft they had
+    // just thrown away. Here the deletes never settle, so the rejection
+    // has to hold on the meta alone.
+    const { store, files } = memoryStore(
+      {
+        [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+        [objectKey("old-pin")]: JSON.stringify(pin("old-pin")),
+        [photoKey("old-pin")]: "bytes",
+      },
+      { removeNeverSettles: true },
+    );
+    const { dom, setup } = wire(store);
+
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    dom.draftDiscard.click();
+    await settle();
+
+    expect(
+      files.has(objectKey("old-pin")),
+      "the delete deliberately never ran - that is the point",
+    ).toBe(true);
+    const reread = await readDraft(store);
+    expect(
+      reread?.draft.objects,
+      "the meta write alone has to be enough",
+    ).toEqual([]);
+  });
+
+  it("re-states the rejection on the next meta write, so a placement cannot un-reject it", async () => {
+    // The meta is rewritten on every placement and every mint. A write
+    // that dropped the list would resurrect a draft whose files are still
+    // there, which is the same failure one step later.
+    const { store } = memoryStore(
+      {
+        [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+        [objectKey("old-pin")]: JSON.stringify(pin("old-pin")),
+      },
+      { removeNeverSettles: true },
+    );
+    const { dom, setup } = wire(store);
+
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    dom.draftDiscard.click();
+    await settle();
+
+    // A later meta write, as a placement or a size change would make.
+    dom.sizeInput.value = "0.25";
+    setup.presentDraftForTour(TOUR);
+    await settle();
+
+    const reread = await readDraft(store);
+    expect(reread?.draft.objects).toEqual([]);
+  });
+
+  it("sweeps a rejection whose deletes never finished, on the next open", async () => {
+    // The files of an interrupted sweep have no other collector: the offer
+    // never shows them again, and `clear` lost its last caller. Without
+    // this they would sit in the tour's namespace for the life of the
+    // origin.
+    //
+    // The LIVE object is what makes this test about the sweep. Written
+    // without it, the draft's only object was the rejected one, so the
+    // read came back empty, the draft counted as SPENT, and the spent
+    // path's own deletes cleaned up - the test passed with the sweep loop
+    // deleted. Verified by deleting it.
+    const { store, files } = memoryStore({
+      [META_KEY]: JSON.stringify({
+        tourUrl: TOUR,
+        sizeM: 0.16,
+        level: null,
+        rejected: ["left-behind"],
+      }),
+      [objectKey("left-behind")]: JSON.stringify(pin("left-behind")),
+      [photoKey("left-behind")]: "bytes",
+      [objectKey("alive")]: JSON.stringify(pin("alive")),
+    });
+    const { dom, setup } = wire(store);
+
+    setup.presentDraftForTour(TOUR);
+    await settle();
+
+    expect(
+      dom.draftOffer.hidden,
+      "the draft must still be OFFERED - a spent draft would delete these anyway",
+    ).toBe(false);
+    expect(files.has(objectKey("left-behind"))).toBe(false);
+    expect(files.has(photoKey("left-behind"))).toBe(false);
+    expect(
+      files.has(objectKey("alive")),
+      "the sweep takes the rejected ids and nothing else",
+    ).toBe(true);
+  });
+
+  it("does not reject a placement made after the tap", async () => {
+    // The list is the READ's snapshot, so work done while the offer sat on
+    // screen is not in it. Committing the rejection must not widen it.
+    const { store } = memoryStore(
+      {
+        [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+        [objectKey("old-pin")]: JSON.stringify(pin("old-pin")),
+      },
+      { removeNeverSettles: true },
+    );
+    const { dom, setup } = wire(store);
+
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    await store.put(objectKey("mine"), JSON.stringify(pin("mine")));
+    dom.draftDiscard.click();
+    await settle();
+
+    const reread = await readDraft(store);
+    expect(reread?.draft.objects.map((o) => o.id)).toEqual(["mine"]);
   });
 });
 

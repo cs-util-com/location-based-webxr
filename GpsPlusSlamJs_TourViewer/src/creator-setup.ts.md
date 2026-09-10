@@ -53,6 +53,15 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   poster again; the size is rewritten from the framework default on every
   load, so without it a re-entry would solve against 16 cm for a poster
   printed at 20. A live measurement wins over a drafted one - it is newer.
+- **"Delete it" is committed by ONE meta write.** The handler records the
+  rejected ids in the meta file and only then removes their object files,
+  and it does not remove anything if that write failed. So an interrupted
+  or failing sweep cannot bring the draft back, and a reload before the
+  write lands sees the draft exactly as it was - safe in both directions,
+  which neither earlier shape was. The ids come from what `readDraft`
+  returned, so a placement made while the offer sat on screen is never in
+  the list. The rejection is re-stated on every later meta write, and the
+  leftovers of a sweep that did not finish are swept on the next open.
 - **A draft is deleted only on PROOF**: a re-opened tour whose `tour.json`
   already carries its ids. Not on the download tap - on Android that
   resolves true the moment a download starts, and the creator still has to

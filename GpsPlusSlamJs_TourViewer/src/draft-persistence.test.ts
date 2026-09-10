@@ -253,3 +253,107 @@ describe("the meta's own validation", () => {
     expect((await readDraft(withoutLevel))?.draft.level).toBeNull();
   });
 });
+
+describe("a rejection recorded in the meta is the commit point", () => {
+  /**
+   * Why these tests matter. Until now a discard rewrote the meta and then
+   * deleted the rejected object files WITHOUT awaiting them, so the moment
+   * a rejection became true was spread across several writes. A reload
+   * landing between them - or a delete that simply failed - found a valid
+   * meta plus files that were still there, and the draft the creator had
+   * just thrown away was offered a second time. Recording the rejection in
+   * the meta makes ONE write the commit point, and these are the tests
+   * that fail if the read stops honouring it.
+   */
+
+  it("hides an object the meta lists as rejected, though its file is still on disk", async () => {
+    const store = memoryStore();
+    await writeDraftMeta(store, { ...META, rejected: ["gone"] });
+    await writeDraftObject(store, pin("gone"));
+    await writeDraftObject(store, pin("kept"));
+
+    const read = await readDraft(store);
+    expect(read?.draft.objects.map((o) => o.id)).toEqual(["kept"]);
+    expect(
+      store.files.has(objectKey("gone")),
+      "the file is deliberately still there - that is the whole point",
+    ).toBe(true);
+  });
+
+  it("hides a rejected photo's BYTES as well as its record", async () => {
+    // The photos map is what the finish writes as zip content. A rejected
+    // photo whose bytes came back would name an entry the creator threw
+    // away, which is the PR #435 failure from the other direction.
+    const store = memoryStore();
+    await writeDraftMeta(store, { ...META, rejected: ["shot"] });
+    await writeDraftObject(
+      store,
+      photo("shot"),
+      new Blob([new Uint8Array([1])]),
+    );
+
+    const read = await readDraft(store);
+    expect(read?.draft.objects).toEqual([]);
+    expect(read?.photos.get("shot")).toBeUndefined();
+  });
+
+  it("carries a rejection forward only while its files remain", async () => {
+    // The list is rewritten on every meta write, so unpruned it would grow
+    // for the life of the tour. The ids that still have files are both the
+    // prune (everything else drops out) and the sweep list - those are the
+    // deletes that did not finish, and nothing else would ever reclaim
+    // them now that `clear` has no caller.
+    const store = memoryStore();
+    await writeDraftMeta(store, {
+      ...META,
+      rejected: ["already-swept", "still-there"],
+    });
+    await writeDraftObject(store, pin("still-there"));
+
+    const read = await readDraft(store);
+    expect(read?.rejectedIds).toEqual(["still-there"]);
+  });
+
+  it("treats a meta with no rejected list as no rejection", async () => {
+    // Every meta file already on a real device is this shape. A
+    // compatibility break here would hide a draft nobody rejected.
+    const store = memoryStore();
+    await writeDraftMeta(store, META);
+    await writeDraftObject(store, pin("a"));
+
+    const read = await readDraft(store);
+    expect(read?.draft.objects.map((o) => o.id)).toEqual(["a"]);
+    expect(read?.rejectedIds).toEqual([]);
+  });
+
+  it("treats a malformed rejected list as no rejection, never as a total one", async () => {
+    // Which way this fails is a real decision. Reading a corrupt list as
+    // "everything is rejected" would hide work the creator never threw
+    // away - silent data loss, the exact failure this feature has produced
+    // four times. Reading it as "nothing is rejected" costs at worst a
+    // prompt shown twice. So it fails towards offering.
+    const store = memoryStore();
+    await store.put(
+      "meta",
+      JSON.stringify({ ...META, rejected: "not-an-array" }),
+    );
+    await writeDraftObject(store, pin("a"));
+
+    const read = await readDraft(store);
+    expect(read?.draft.objects.map((o) => o.id)).toEqual(["a"]);
+    expect(read?.rejectedIds).toEqual([]);
+  });
+
+  it("ignores a non-string entry without discarding the rest of the list", async () => {
+    const store = memoryStore();
+    await store.put(
+      "meta",
+      JSON.stringify({ ...META, rejected: ["gone", 7, null] }),
+    );
+    await writeDraftObject(store, pin("gone"));
+    await writeDraftObject(store, pin("kept"));
+
+    const read = await readDraft(store);
+    expect(read?.draft.objects.map((o) => o.id)).toEqual(["kept"]);
+  });
+});
