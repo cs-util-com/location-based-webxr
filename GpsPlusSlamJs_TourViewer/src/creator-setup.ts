@@ -898,9 +898,16 @@ export function wireCreatorSetup(deps: {
         // can be found. The branch itself is `finishHelpVisibility`, a pure
         // function, because this one is otherwise reachable only by walking
         // an AR setup on a phone (M2 review #4).
+        // REVEAL-ONLY. `finishHelpVisibility` says what this outcome
+        // EARNS, not what the panel should look like: a creator who saved
+        // the zip and then tapped again and dismissed the picker has still
+        // saved it, and hiding the step-6 instructions they had already
+        // earned would take the flow's last instruction off the screen at
+        // the moment they most need it (PR #439 review #3). Only
+        // `resetFinishStep`, on a tour close, hides them again.
         const help = finishHelpVisibility({ route, delivered });
-        dom.replaceHelp.hidden = !help.replaceHelp;
-        dom.replaceHelpShare.hidden = !help.shareNote;
+        if (help.replaceHelp) dom.replaceHelp.hidden = false;
+        if (help.shareNote) dom.replaceHelpShare.hidden = false;
       },
       (err: unknown) => {
         dom.downloadButton.disabled = false;

@@ -84,8 +84,11 @@ function navigatorShare(): ((data: { files: File[] }) => Promise<void>) | null {
  * Is a share sheet the RIGHT hand-off here, not merely a possible one?
  *
  * This is the question every caller actually has, and it is not the same as
- * `canShareFilesOfType`. Windows Chrome and macOS Safari implement Web
- * Share with files, so the capability alone says yes on a desktop - where
+ * `canShareFilesOfType`. Desktop Chrome (Windows, macOS) and macOS Safari
+ * implement Web Share, files included - checked against MDN and caniuse
+ * rather than assumed, because a behaviour change rests on it; Firefox and
+ * Linux Chrome are the exceptions. So the capability alone says yes on a
+ * desktop - where
  * the share sheet offers Mail and Nearby Share and NO "save to disk", and
  * the file the user is about to be told to upload somewhere never lands on
  * their disk at all. The save picker is the better hand-off there, and it
@@ -163,6 +166,31 @@ export function canShareFilesOfType(
 }
 
 /**
+ * `canShare` with a real file, answering FALSE rather than throwing.
+ *
+ * Guarded like the wire-time probe is, and for the same reason: a
+ * `canShare` that throws must mean "no share here", not "this module
+ * rejects". Without it the module's own contract - it never rejects for a
+ * share problem, only for a failing download - was false on one line
+ * (PR #439 review #2).
+ */
+function canShareFile(
+  canShare: (data: { files: File[] }) => boolean,
+  file: File,
+  filename: string
+): boolean {
+  try {
+    return canShare({ files: [file] });
+  } catch (err) {
+    log.warn(
+      `canShare threw for ${filename}, falling back to download:`,
+      err instanceof Error ? err.message : String(err)
+    );
+    return false;
+  }
+}
+
+/**
  * The share attempt, split out so the public function stays one decision
  * deep: a `ShareOrDownloadResult` when the share route SETTLED the
  * question (handed over, or aborted), or `null` meaning "not shareable
@@ -188,7 +216,8 @@ async function tryShare(
   // Re-asked with the REAL file: the wire-time probe used a one-byte dummy,
   // and some platforms refuse a specific file (its size, its type) even
   // when the type in general is shareable.
-  if (!canShare({ files: [file] })) return null;
+  //
+  if (!canShareFile(canShare, file, filename)) return null;
   try {
     await share({ files: [file] });
     log.info(`Shared ${filename} via the Web Share API`);

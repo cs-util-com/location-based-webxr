@@ -123,6 +123,27 @@ describe('shareOrDownloadBlob', () => {
     expect(result.route).toBe('download');
   });
 
+  it('falls back to download when canShare THROWS on the real file', async () => {
+    // Why this test matters: the wire-time probe already guarded this, and
+    // the re-ask with the real file did not - so on a browser whose
+    // canShare throws for a specific file, the module rejected instead of
+    // downloading. Its own contract says it never rejects for a share
+    // problem, only for a failing download, and that sentence was false on
+    // exactly one line.
+    const download = vi.fn(() => Promise.resolve(true));
+    const result = await shareOrDownloadBlob(BLOB, 'tour.zip', ZIP, {
+      coarsePointer: () => true,
+      canShare: (data) => {
+        if (data.files[0].size > 0) throw new TypeError('nope');
+        return true;
+      },
+      share: () => Promise.resolve(),
+      download,
+    });
+    expect(result).toEqual({ route: 'download', delivered: true });
+    expect(download).toHaveBeenCalledOnce();
+  });
+
   it('rejects when the DOWNLOAD fails, keeping downloadBlob’s contract', async () => {
     await expect(
       shareOrDownloadBlob(BLOB, 'tour.zip', ZIP, {

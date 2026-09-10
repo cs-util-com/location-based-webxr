@@ -314,6 +314,24 @@ describe("which help the finish step reveals", () => {
   });
 });
 
+describe("the help blocks are EARNED, and a later failure does not take them back", () => {
+  // Why this test matters: the reveal used to be a one-way assignment and
+  // briefly became a two-way one. A creator who saved the zip, then tapped
+  // again and dismissed the picker, would have had the step-6 replace
+  // instructions disappear - the flow's last instruction, removed at the
+  // moment they most need it, by an action that changed nothing.
+  //
+  // The function answers "what does THIS outcome earn", and the caller only
+  // ever reveals. Only closing the tour hides them again.
+  it("earns nothing when nothing was delivered, so a retry cannot un-earn", () => {
+    for (const route of ["share", "download"] as const) {
+      const earned = finishHelpVisibility({ route, delivered: false });
+      expect(earned.replaceHelp).toBe(false);
+      expect(earned.shareNote).toBe(false);
+    }
+  });
+});
+
 describe("the ready line names the action the button will take", () => {
   // Why: this is the sentence a creator reads immediately before pressing
   // the button. It said "Download it" on every device, including one whose
