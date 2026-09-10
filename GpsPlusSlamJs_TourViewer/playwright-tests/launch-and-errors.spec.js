@@ -23,7 +23,10 @@ test("a ?qr= launch opens the archive with no interaction", async ({
   await expect(page.getByTestId("link-input")).toHaveValue(RANGES_URL);
   // ...and in the print panel, which a QR-launched open presents like any
   // other (flows plan M3: the boot reaches the prefill through openUrl).
-  await expect(page.getByTestId("print-url")).toHaveValue(RANGES_URL);
+  await expect(page.getByTestId("print-url-shown")).toHaveText(RANGES_URL);
+  // ...and it is TEXT, not a field: a creator who already gave the link in
+  // step 1 is not asked for it again (second testing session, F7).
+  await expect(page.getByTestId("print-url")).toBeHidden();
 });
 
 test("opening shows the in-progress state, then restores it (success path)", async ({
@@ -40,7 +43,7 @@ test("opening shows the in-progress state, then restores it (success path)", asy
 
   await expect(page.getByTestId("open-button")).toHaveText("Opening…");
   await expect(page.getByTestId("open-button")).toBeDisabled();
-  await expect(page.getByTestId("open-button")).toHaveText("Open", {
+  await expect(page.getByTestId("open-button")).toHaveText("Test link", {
     timeout: 20000,
   });
   await expect(page.getByTestId("open-button")).toBeEnabled();
@@ -56,7 +59,7 @@ test("a missing archive reports a clear error and restores the button (failure p
   await expect(page.getByTestId("error")).toContainText("does not exist", {
     timeout: 15000,
   });
-  await expect(page.getByTestId("open-button")).toHaveText("Open");
+  await expect(page.getByTestId("open-button")).toHaveText("Test link");
   await expect(page.getByTestId("open-button")).toBeEnabled();
 });
 

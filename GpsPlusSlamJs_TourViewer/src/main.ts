@@ -24,9 +24,11 @@ import {
   packFilesAsZip,
 } from "gps-plus-slam-app-framework/storage";
 
+import { openDraftNamespace } from "gps-plus-slam-app-framework/storage";
+
 import { wireArchiveOpen } from "./archive-open.js";
 import { wireArEntry } from "./ar-entry.js";
-import { wireCreatorSetup } from "./creator-setup.js";
+import { arSessionLive, wireCreatorSetup } from "./creator-setup.js";
 import { viewerModeFromSearch } from "./mode.js";
 import { describeOpenError } from "./open-errors.js";
 import { wirePrintPanel } from "./print-panel.js";
@@ -38,6 +40,7 @@ import {
 } from "./tour-viewer-session.js";
 import { createViewerPlacement } from "./viewer-placement.js";
 import { wireVisitorScreen } from "./visitor-screen.js";
+import { driveProxyBaseUrl } from "./drive-proxy-url.js";
 import { stepStoreOrUndefined, wireWizard } from "./wizard.js";
 
 /** Keep at most this many archives cached (LRU) — see BoundedLocalCacheStore. */
@@ -45,10 +48,11 @@ const MAX_CACHED_ARCHIVES = 5;
 
 /** The site worker's Drive CORS proxy (drive-proxy plan, 2026-08-26):
  *  keyless Drive links 403 real browser fetches, so they rewrite to this
- *  route. Absolute on purpose — production is same-origin with it, and dev
- *  servers (localhost, LAN, ngrok) are on the worker's CORS allowlist, so
- *  one value serves both. */
-const DRIVE_PROXY_BASE_URL = "https://gps.csutil.com/api/drive-proxy";
+ *  route. Resolved per host rather than hard-coded: a branch preview is
+ *  neither production nor a dev server, so the old single absolute URL
+ *  made every preview call production cross-origin and be refused (F3,
+ *  second testing session). See drive-proxy-url.ts. */
+const DRIVE_PROXY_BASE_URL = driveProxyBaseUrl(location.hostname);
 
 function element<T extends HTMLElement>(id: string): T {
   const found = document.getElementById(id);
@@ -85,15 +89,22 @@ const hooks = createUnwiredHooks();
 
 const printPanel = element<HTMLDetailsElement>("print-panel");
 const sizeInput = element<HTMLInputElement>("author-size");
+// Step 4. A <details> since the flow rework (F4), and the one whose body
+// is the WebXR DOM-overlay root - three modules need it, so it is looked
+// up once here.
+const measureStep = element<HTMLDetailsElement>("step-measure");
 
 // The mode on the body: the page's CSS reads it (the visitor's AR section
 // loses the step card's frame).
 document.body.dataset["mode"] = mode;
 
-const print = wirePrintPanel(
-  {
+const print = wirePrintPanel({
+  mode,
+  dom: {
     panel: printPanel,
     urlInput: element("print-url"),
+    urlAsk: element("print-url-ask"),
+    urlShown: element("print-url-shown"),
     sizeInput,
     codeInput: element("author-c"),
     generateButton: element("print-generate"),
@@ -102,11 +113,17 @@ const print = wirePrintPanel(
     canvas: element("print-canvas"),
     printButton: element("print-button"),
     urlOut: element("print-url-out"),
+    countInput: element("print-count"),
+    paperSelect: element("print-paper"),
+    pdfButton: element("print-pdf"),
   },
-  (launchUrl) => {
+  onLaunchUrl: (launchUrl) => {
     wizard.presentLaunchUrl(launchUrl);
   },
-);
+  // Through the seam like every other download, so the e2e fake captures
+  // the bytes instead of the browser writing a file.
+  downloadPdf: (blob, filename) => seams.downloadPdf(blob, filename),
+});
 
 const stepStore = stepStoreOrUndefined();
 const wizard = wireWizard({
@@ -116,13 +133,12 @@ const wizard = wireWizard({
       host: element<HTMLDetailsElement>("step-host"),
       print: printPanel,
       hang: element<HTMLDetailsElement>("step-hang"),
-      finish: element<HTMLDetailsElement>("step-finish"),
-      replace: element<HTMLDetailsElement>("step-replace"),
+      measure: measureStep,
     },
     hangDone: element<HTMLButtonElement>("hang-done"),
     starterButton: element<HTMLButtonElement>("starter-zip"),
     visitorLink: element<HTMLAnchorElement>("visitor-link"),
-    measureSection: element("step-measure"),
+    measureSection: measureStep,
   },
   // The starter zip (DEC-N5): an empty manifest, so a creator without a
   // recording has something to host before printing the code.
@@ -136,6 +152,10 @@ const wizard = wireWizard({
   // Through the seam like the finish step's download, so the e2e fake
   // captures it (M3 review #10).
   download: (blob, filename) => seams.downloadZip(blob, filename),
+  // Step 4 holds the overlay root, so the wizard must never collapse it
+  // while a session is live (M3 review #2). The controller is the only
+  // thing that knows, so it is asked rather than mirrored.
+  arSessionActive: () => arSessionLive(arController.getState().status),
   // The reached step per hosted url (M6); absent where reaching for the
   // store throws (blocked site data), so the page still boots.
   ...(stepStore === undefined ? {} : { stepStore }),
@@ -148,9 +168,14 @@ const wizard = wireWizard({
   if (mode === "creator" && last !== null && linkInput.value === "")
     linkInput.value = last;
 }
-hooks.presentTourForPrint = (url) => {
+hooks.presentTourForPrint = (url, origin) => {
   print.presentTour(url);
-  wizard.presentTour(url);
+  // An open started from step 4 keeps the creator there (M3 review #1):
+  // the default would collapse step 4, whose content is the AR overlay.
+  wizard.presentTour(
+    url,
+    origin === "measure-step" ? { prefer: "measure" } : {},
+  );
 };
 
 const visitor = wireVisitorScreen({
@@ -158,6 +183,7 @@ const visitor = wireVisitorScreen({
   seams,
   dom: {
     screen: element("visitor-screen"),
+    measureStep,
     creatorOnly: Array.from(
       document.querySelectorAll<HTMLElement>(".creator-only"),
     ),
@@ -178,6 +204,9 @@ const setup = wireCreatorSetup({
   wizard,
   dom: {
     panel: element("setup-panel"),
+    controls: element("setup-controls"),
+    finishBlock: element("finish-block"),
+    replaceHelp: element("replace-help"),
     sizeInput,
     printPanel,
     status: element("setup-status"),
@@ -190,11 +219,38 @@ const setup = wireCreatorSetup({
     pinSave: element("pin-save"),
     pinCancel: element("pin-cancel"),
     photoButton: element("setup-photo"),
+    draftOffer: element("draft-offer"),
+    draftOfferText: element("draft-offer-text"),
+    draftRestore: element("draft-restore"),
+    draftDismiss: element("draft-dismiss"),
+    draftDiscard: element("draft-discard"),
+  },
+  // Crash-safe authoring (F13). OPFS, not a file handle: the File System
+  // Access pickers do not exist on Chrome for Android, which is the only
+  // device the creator's AR session runs on.
+  openDraftStore: async (key) => {
+    try {
+      // `getDirectory()` can REJECT rather than simply be absent - a
+      // private window, an embedded WebView, a non-secure origin.
+      // `openDraftNamespace` carries its own try/catch precisely so a
+      // caller never sees a throw, but this call sits outside it, and the
+      // rejection landed in a `void`-ed continuation with no handler.
+      const root = await navigator.storage?.getDirectory?.();
+      return root === undefined
+        ? undefined
+        : await openDraftNamespace(root, key);
+    } catch {
+      return undefined;
+    }
   },
 });
 hooks.renderAuthorReadout = setup.renderAuthorReadout;
 hooks.startAuthorPipeline = setup.startAuthorPipeline;
 hooks.resetFinishStep = setup.resetFinishStep;
+hooks.presentNoTour = () => {
+  print.presentNoTour();
+};
+hooks.presentDraftForTour = setup.presentDraftForTour;
 
 const escapeButton = element<HTMLButtonElement>("scan-escape");
 const viewer = createViewerPlacement({
@@ -241,6 +297,9 @@ const archive = wireArchiveOpen({
     form: element("open-form"),
     linkInput: element("link"),
     openButton: element("open"),
+    missingForm: element("tour-missing"),
+    missingInput: element("tour-missing-link"),
+    missingButton: element("tour-missing-open"),
     statsPanel: element("stats"),
     statsHeadline: element("stats-headline"),
     statsDetail: element("stats-detail"),

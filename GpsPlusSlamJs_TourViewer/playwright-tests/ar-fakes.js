@@ -71,6 +71,9 @@ export async function installTourViewerArFakes(page) {
        *  reports (false = the picker was dismissed). */
       downloads: /** @type {{ filename: string, blob: Blob }[]} */ ([]),
       saveOutcome: true,
+      /** Hold downloadPdf open so a test can observe the busy state. */
+      holdPdfSave: false,
+      releasePdfSave: () => undefined,
       /** The creator's reticle (M4): whether a surface is under it and
        *  where, in GPS-world NUE. */
       reticleVisible: true,
@@ -192,6 +195,17 @@ export async function installTourViewerArFakes(page) {
       downloadZip: (blob, filename) => {
         test.downloads.push({ filename, blob });
         return Promise.resolve(test.saveOutcome);
+      },
+      downloadPdf: (blob, filename) => {
+        test.downloads.push({ filename, blob });
+        // A test can HOLD the save open, which is the only deterministic
+        // way to observe the button's in-progress state: the build itself
+        // is fast enough that racing it is a flaky test, and a flaky test
+        // for an async-UI rule is worse than none.
+        if (!test.holdPdfSave) return Promise.resolve(test.saveOutcome);
+        return new Promise((resolve) => {
+          test.releasePdfSave = () => resolve(test.saveOutcome);
+        });
       },
       startHitTestReticle: () => ({
         isVisible: () => test.reticleVisible,

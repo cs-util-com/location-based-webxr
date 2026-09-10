@@ -128,7 +128,19 @@ primitive (no `--orange-500`). A source check in the package keeps this list
 honest against `design.css` and `catalog.css`.
 
 - **Neutral poles**: `--ink` #fff (draws everything) · `--paper` #232838
-  (page ground - demo only, a real HUD's ground is the camera).
+  (the page ground. A real HUD's ground is the CAMERA and this token is
+  not for it; since 2026-09-09 it is also the shipped ground of a
+  scrolling document page via `.page`, so it is no longer demo-only).
+- **Dim ink**: `--ink-dim` #8f8f8f - the step below `--ink` for secondary
+  copy in a read-through DOCUMENT, where a hierarchy is needed that a HUD
+  does not have (`.hint` differs from body text only in size). 4.53:1 on
+  `--paper`, so it clears AA. **ANTI-USE: over `--paper` only.** Over the
+  camera it is near-invisible against an overexposed sky, and contrast
+  here is measured against the WORST of the four backgrounds - a HUD
+  reaches for `--ink`, never this.
+- **Measure**: `--measure` 60rem - the readable column of a document page
+  (`.page`). **ANTI-USE:** an overlay is positioned, not measured; no HUD
+  composition uses it.
 - **Surfaces** (glanced, translucent on purpose): `--surface`,
   `--surface-hi` → `--surface-lo` via `--surface-gradient` (160deg, 0.35
   alpha - never raise it for taste; read surfaces have their own token) ·
@@ -364,6 +376,36 @@ message such as `Re-observed from here`.
   `:focus-visible`), not screenshots of states.
 - Every control must be keyboard reachable with a visible focus indicator, and
   must have an accessible name.
+
+## Document atoms (added 2026-09-09)
+
+The system began as a HUD language: every atom before this assumed a
+camera behind it. These three are for a page that SCROLLS and is READ.
+
+- **`.page`** - the document ground: `--paper`, the `--measure` column,
+  a gutter. The `base` layer paints no background on purpose (an AR app's
+  ground is the camera), so a document opts in here.
+- **`.step`** - a disclosure card (summary row + body). Hosted by
+  `<details>` OR any block element, because a step that is always open is
+  a `<section>`. Its edge is the system's - surface + `--raise`, never an
+  outline. The summary takes the UI voice (short, scanned); the body
+  keeps prose.
+- **`.input`** - the text/number sibling of `.select`: same surface,
+  radius, raise and tap height, but the PROSE voice. `.select` dresses
+  app-authored option text; `.input` carries what the user typed, and
+  uppercasing a pasted link is not a style choice.
+- Two voice variants that pick the prose token pair rather than
+  overriding `text-transform`: the DIM variant of `.hint` (secondary
+  copy) and the PROSE variant of `.btn` (a button whose label is a
+  sentence, not a label - see the sentence-case rule below). They are
+  named here in words rather than as class literals on purpose: this
+  brief is scanned for `--token` names, and a BEM modifier is
+  indistinguishable from a token to that scanner, so writing the class
+  out would invent two phantom tokens and fail the contract check.
+
+**Every one of them is class-scoped, and that is load-bearing**: the
+sheet is vendored into each app as a copy, so a bare `details`, `summary`
+or `input` rule would restyle apps that never adopted these atoms.
 
 ## LEGIBILITY RULES
 

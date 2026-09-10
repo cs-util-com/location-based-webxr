@@ -30,6 +30,7 @@ function seamsWith(overrides: Partial<TourViewerSeams>): TourViewerSeams {
 function dom(): VisitorScreenDom {
   return {
     screen: { hidden: false },
+    measureStep: { open: false },
     creatorOnly: [{ hidden: false }, { hidden: false }],
     arHint: { textContent: "creator hint" },
     errorBox: { textContent: "" },
@@ -68,6 +69,9 @@ describe("wireVisitorScreen", () => {
     });
     expect(d.screen.hidden).toBe(true);
     expect(d.creatorOnly.every((e) => !e.hidden)).toBe(true);
+    // A creator opens step 4 by walking the setup; forcing it open here
+    // would break the one-step-at-a-time rule on their very first load.
+    expect(d.measureStep.open).toBe(false);
     expect(d.arHint.textContent).toBe("creator hint");
     expect(screen.locationGate.pending()).toBe(false);
   });
@@ -85,6 +89,10 @@ describe("wireVisitorScreen", () => {
     });
     expect(d.screen.hidden).toBe(false);
     expect(d.creatorOnly.every((e) => e.hidden)).toBe(true);
+    // Step 4 is a <details> whose summary is creator-only, so nothing on a
+    // visitor page could ever open it - and its content is their Start
+    // button (M3, F4).
+    expect(d.measureStep.open).toBe(true);
     expect(d.arHint.textContent).toContain("printed code");
     // Pessimistic before the query answers.
     expect(screen.locationGate.pending()).toBe(true);

@@ -216,6 +216,40 @@
       </section>
 
       <section>
+        <h3>Document atoms — step, input, dim hint, prose button</h3>
+        <!-- real strings: the Tour Viewer's creator setup, the first
+             adopter that is a scrolling document rather than a HUD.
+             The step host is a <details> here and a <section> there;
+             nothing in the atom selects either. -->
+        <details class="step" open>
+          <summary><span class="step-icon">▸</span> 1 · Host your tour</summary>
+          <div class="step-body">
+            <p class="hint hint--dim">
+              Upload the recording zip somewhere it can be linked, then paste
+              the link here.
+            </p>
+            <input
+              class="input"
+              type="text"
+              placeholder="https://… link to the .zip"
+              aria-label="Tour link"
+            />
+            <button class="btn btn--prose" type="button">
+              Download an empty starter zip
+            </button>
+          </div>
+        </details>
+        <details class="step">
+          <summary>
+            <span class="step-icon">▸</span> 2 · Measure the code
+          </summary>
+          <div class="step-body">
+            <p class="hint hint--dim">A closed step, for the collapsed row.</p>
+          </div>
+        </details>
+      </section>
+
+      <section>
         <h3>Prose — sentence text inside a plate, and its failure tone</h3>
         <!-- real strings: AnchorStarter's start card, and the framework's
              capabilityMessage() for a device without WebXR -->

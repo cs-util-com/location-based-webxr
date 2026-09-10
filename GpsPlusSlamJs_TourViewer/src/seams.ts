@@ -50,7 +50,11 @@ import {
 // map modules, which crash in a windowless (node) unit-test environment.
 import { enableArWorldGroupAlignment } from "gps-plus-slam-app-framework/visualization/ar-world-group-alignment";
 import type { SubscribableStore } from "gps-plus-slam-app-framework/state";
-import { downloadZip } from "gps-plus-slam-app-framework/storage";
+import {
+  downloadBlob,
+  downloadZip,
+  PDF_FILE_TYPE,
+} from "gps-plus-slam-app-framework/storage";
 import type { Object3D } from "three";
 
 import type {
@@ -105,6 +109,10 @@ export interface TourViewerSeams {
    *  when the user dismissed a save picker. The e2e fake captures the
    *  blob instead. */
   downloadZip(blob: Blob, filename: string): Promise<boolean>;
+  /** The printable sheet of numbered codes. Its own seam so the save
+   *  picker offers a PDF filter rather than a zip one, and so the e2e
+   *  captures the bytes instead of writing a file. */
+  downloadPdf(blob: Blob, filename: string): Promise<boolean>;
   /** The screen-centre hit-test reticle under the world group (its world
    *  position is GPS-world NUE once the group carries the alignment) -
    *  the pin's position (guided-setup plan M4). Needs the session feature
@@ -179,6 +187,7 @@ export const realSeams: TourViewerSeams = {
   createQrDebugView,
   getScene,
   downloadZip,
+  downloadPdf: (blob, filename) => downloadBlob(blob, filename, PDF_FILE_TYPE),
   startHitTestReticle: (arWorldGroup) => startHitTestReticle({ arWorldGroup }),
   schedule: (fn, ms) => {
     const handle = setTimeout(fn, ms);

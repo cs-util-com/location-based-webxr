@@ -23,6 +23,7 @@
  */
 
 import {
+  AUTHOR_DEFAULT_SIZE_M,
   MIN_ALIGNMENT_SAMPLES,
   type MintAlignmentInfo,
 } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
@@ -209,6 +210,16 @@ export function archiveSizeNote(bytes: number): string {
     ? `The hosted zip is ${mb} MB: rebuilding it copies every entry on this phone and can take a while and a lot of memory.`
     : `The hosted zip is ${mb} MB.`;
 }
+
+/**
+ * What a creator reads when the printed-size field is empty at AR entry.
+ *
+ * The example is DERIVED from the default the field is prefilled with, not
+ * written out: the two drifted apart once already, and an example that is
+ * not the default sends a creator looking for a number the page would have
+ * supplied anyway (second testing session, F2).
+ */
+export const MISSING_SIZE_MESSAGE = `Enter the printed code's side length in metres (e.g. ${String(AUTHOR_DEFAULT_SIZE_M)}) in step 2 before starting.`;
 
 /** The finish step's labels through its async cycle (async-UI rule). */
 export const FINISH_LABELS = {

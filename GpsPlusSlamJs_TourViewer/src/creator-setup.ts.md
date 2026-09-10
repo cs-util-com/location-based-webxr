@@ -8,16 +8,80 @@ measuring the hung code (the mint gate: a stable pose AND a GPS alignment
 with at least `MIN_ALIGNMENT_SAMPLES` fixes since this session started),
 keeps the measured level in the session, and on Finish rebuilds the hosted
 zip in the browser (DEC-N6) with `qr/<id>.json` and `tour.json`, ends the
-AR session and lands the creator on step 5, where the download is its own
-tap.
+AR session and reveals the download at the END of step 4, where it is its
+own tap (a download needs its own user gesture).
+
+That download was step 5, and the "put it back where the old one is" copy
+was step 6, until the flow rework (second testing session, F10): neither
+is a setup step, they are what happens when step 4 finishes. This module
+reveals `finishBlock` after a successful rebuild and `replaceHelp` once
+the zip is actually saved, and `resetFinishStep` hides both again when the
+tour they belong to closes.
+
+The panel is a creator's for the whole page, but its CONTROLS are the AR
+session's: on a desktop they were a row of greyed-out buttons under an "AR
+not supported" button (F11). The status line is deliberately NOT gated -
+it is where an entry REFUSED before any session starts (an empty printed
+size) explains itself, and a gated one would leave a Start button that
+does nothing and no explanation anywhere. With no session live the live
+measuring readout is blank instead: "hold the phone on the printed code"
+is an instruction for a situation a desktop creator is not in.
+
+## Crash-safe authoring (second testing session, F13)
+
+Everything measured and placed lives in page memory until Finish, and an AR
+session on a phone can be killed by the OS at any moment. So each mint and
+each placement is also written to an OPFS draft, keyed by the tour's url
+(`authoring-draft.ts` holds the rules, `draft-persistence.ts` the on-disk
+shape, and the framework's `opfs-draft-store.ts` the mechanics).
+
+- **NOT the File System Access API.** F13 asked for write access to the
+  hosted zip; the pickers do not exist on Chrome for Android, which is the
+  only device the creator's AR session runs on. See the plan's §10.1.
+- **The write is fire-and-forget.** The placement already happened in
+  memory; a storage problem must never fail the tap that made it. A failed
+  write says so ONCE, in the panel - a creator mid-walk cannot act on it
+  more often than that.
+- **A draft is OFFERED, never applied.** It can be days old and can be one
+  the creator believes they discarded; restoring it silently would append
+  content they did not ask for into a zip they are about to publish. Three
+  answers: add it back, not now (kept), delete it (gone). "Not now" keeps
+  it because a mis-tap must not become the loss this exists to prevent;
+  "delete it" exists because a draft with no way out is offered forever.
+- **Restoring brings the LEVEL and the SIZE back too**, not just the
+  objects. The level is what makes Finish reachable without walking to the
+  poster again; the size is rewritten from the framework default on every
+  load, so without it a re-entry would solve against 16 cm for a poster
+  printed at 20. A live measurement wins over a drafted one - it is newer.
+- **A draft is deleted only on PROOF**: a re-opened tour whose `tour.json`
+  already carries its ids. Not on the download tap - on Android that
+  resolves true the moment a download starts, and the creator still has to
+  upload the file by hand afterwards.
+- The finish's append is **id-deduplicating**, because the serializer
+  rejects duplicates: one already-hosted object would otherwise make every
+  finish throw for as long as the draft was restored, with no escape inside
+  the app.
 
 ## Public API
 
-- `wireCreatorSetup({ ctx, mode, arStore, arController, seams, wizard, dom }): CreatorSetup`
-  - `CreatorSetupDom { panel; sizeInput; printPanel; status; mintButton; finishButton; finishStatus; downloadButton; pinButton; pinLabel; pinSave; photoButton }`
-    - `panel`, `status`, `mintButton`, `finishButton` live inside `#ar-root`
-      (the DOM overlay); `finishStatus` and `downloadButton` are step 5 on
-      the page.
+- `wireCreatorSetup({ ctx, mode, arStore, arController, seams, wizard, dom, openDraftStore? }): CreatorSetup`
+  - `openDraftStore(key)` resolves this tour's draft namespace, or
+    `undefined` where there is no persistence. Injected so the unit tests
+    and the e2e can supply one without OPFS.
+  - `CreatorSetupDom { panel; controls; finishBlock; replaceHelp; sizeInput; printPanel; status; mintButton; finishButton; finishStatus; downloadButton; pinButton; pinLabel; pinSave; pinCancel; photoButton; draftOffer; draftOfferText; draftRestore; draftDismiss; draftDiscard }`
+  - `arSessionLive(status)` - whether the controller's status means a
+    session is up (`starting` / `running` / `stopping`). Exported because
+    `main.ts` hands the same predicate to the wizard, which must not
+    collapse step 4 while it is true.
+    - `panel`, `status`, `controls`, `mintButton`, `finishButton` live
+      inside `#ar-root` (the DOM overlay); `finishBlock`, `finishStatus`,
+      `downloadButton` and `replaceHelp` sit at the end of step 4 but
+      OUTSIDE `#ar-root` - the download is tapped after the session ends,
+      so putting it over the camera would promise otherwise.
+  - `CreatorSetup` members: `renderAuthorReadout`, `startAuthorPipeline`,
+    `resetFinishStep` (a tour closed) and `presentDraftForTour` (a tour
+    opened AND its manifest settled - "spent" is a question about that
+    manifest, so it cannot be asked earlier).
   - `CreatorSetup.renderAuthorReadout()` - the measuring readout
     (`authorStatusLine`) joined with the setup hint once measured
     (`setupHint`); a persistent pipeline error (`ctx.authorErrorText`) has
@@ -56,8 +120,9 @@ tap.
   `ctx.tourManifest` **advances to what was just written** and
   `ctx.placedObjects` is cleared, the AR session is ended through the
   controller (the framework's session-end path runs the app teardown) and
-  the wizard opens step 5; on failure the reason stays in the panel and
-  the button re-enables.
+  step 4's finish block is revealed - AFTER the `disable()`, so it cannot
+  appear over a session that is still compositing; on failure the reason
+  stays in the panel and the button re-enables.
   - **Why the chaining and the advance go together** (PR #435 review):
     finishing ends the AR session but does NOT close the tour, so a
     creator can measure again, place more and finish again. Leaving the
@@ -66,10 +131,12 @@ tap.
     manifest naming photos the archive does not contain. Both halves are
     needed, and the e2e finishes twice in one open tour to hold them.
 - **Download:** `seams.downloadZip` (the framework's picker-or-anchor);
-  `true` opens step 6, `false` (a dismissed picker) keeps the button live
-  and says "not saved". Async-UI rule on both branches. `resetFinishStep`
-  (a hook, called when a tour closes) disables the button and clears the
-  status, so a re-opened tour does not show a stale step 5.
+  `true` reveals the replace instructions (the last thing to do, and only
+  once there is a file to do it with), `false` (a dismissed picker) keeps
+  the button live and says "not saved". Async-UI rule on both branches.
+  `resetFinishStep` (a hook, called when a tour closes) disables the
+  button, clears the status and hides both blocks, so a re-opened tour
+  never shows the previous one's dead download button.
 - **Placement (M4, DEC-N9):** allowed only under the mint gate's own
   alignment floor for THIS session (a measured code, a matrix and at least
   `MIN_ALIGNMENT_SAMPLES` fixes since the session started - a level that

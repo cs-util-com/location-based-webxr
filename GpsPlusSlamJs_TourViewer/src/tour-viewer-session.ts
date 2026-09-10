@@ -67,10 +67,24 @@ export interface TourViewerHooks {
   tryPlaceTour(): void;
   startAuthorPipeline(): boolean;
   startViewerPipeline(): boolean;
-  /** Present the open tour's link in the print panel (M3's prefill). */
-  presentTourForPrint(url: string): void;
+  /** Present the open tour's link in the print panel (M3's prefill), and
+   *  advance the wizard. `origin` says which form the creator submitted
+   *  from: an open started in step 4 must not answer by jumping to step 2
+   *  and collapsing step 4, whose content is the AR overlay root. */
+  presentTourForPrint(url: string, origin?: "host-step" | "measure-step"): void;
   /** A tour closed: the finish step's page-side state is stale. */
   resetFinishStep(): void;
+  /** No tour is open any more (one closed, or an open failed): the panels
+   *  that show a tour's link go back to ASKING for one. Without this, the
+   *  print step keeps showing the previous tour's link as immutable text
+   *  and step 4 stops offering to open a tour at all - for the rest of the
+   *  page's life (M3 milestone review #3). */
+  presentNoTour(): void;
+  /** A tour opened AND its manifest settled: offer any unsaved work this
+   *  device still holds for it, or delete a draft the hosted zip has
+   *  already absorbed. It waits for the manifest because "spent" is
+   *  defined against it. */
+  presentDraftForTour(tourUrl: string): void;
   /** A session reached running, or a tour opened into a running session:
    *  derive the scan gate (idle when no session runs). */
   startScanGate(): void;
@@ -93,6 +107,8 @@ export function createUnwiredHooks(): TourViewerHooks {
     startViewerPipeline: () => false,
     presentTourForPrint: () => undefined,
     resetFinishStep: () => undefined,
+    presentNoTour: () => undefined,
+    presentDraftForTour: () => undefined,
     startScanGate: () => undefined,
     resetScanGate: () => undefined,
     reconsiderScanGate: () => undefined,

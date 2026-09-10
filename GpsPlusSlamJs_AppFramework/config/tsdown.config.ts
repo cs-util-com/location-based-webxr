@@ -256,6 +256,10 @@ const entryFiles = [
   // is-this-ours safety gate that must run before any of them.
   'src/utils/qr-payload/qr-launch-dispatch.ts',
   'src/utils/qr-payload/qr-print-plan.ts',
+  // The printable multi-code PDF (second testing session, M4): deep-imported
+  // by the Tour Viewer's print panel, and shaped so the recorder can print
+  // the same sheet without a second implementation.
+  'src/utils/qr-payload/qr-print-pdf.ts',
   'src/utils/qr-payload/qr-code-id.ts',
   'src/utils/qr-payload/qr-code-origin.ts',
   // QR anchor minting + level schema + tracking controller — deep-importable

@@ -70,6 +70,10 @@ type TextNode = Pick<HTMLElement, "textContent">;
 export interface VisitorScreenDom {
   /** The visitor's heading + consent copy; hidden for a creator. */
   screen: HidableNode;
+  /** Step 4, a `<details>` since the flow rework. A visitor gets no
+   *  summary (it is `.creator-only`), so nothing would ever open it - and
+   *  its content is the AR section, which IS the visitor's screen. */
+  measureStep: { open: boolean };
   /** Everything a visitor must not see (the setup's steps and copy). */
   creatorOnly: readonly HidableNode[];
   /** The hint above the AR button, re-worded for a visitor. */
@@ -95,7 +99,12 @@ export function wireVisitorScreen(deps: {
   const visitor = mode === "visitor";
   dom.screen.hidden = !visitor;
   for (const element of dom.creatorOnly) element.hidden = visitor;
-  if (visitor) dom.arHint.textContent = VISITOR_HINT;
+  if (visitor) {
+    dom.arHint.textContent = VISITOR_HINT;
+    // Without this the visitor's page has a collapsed step 4 with an
+    // invisible summary - i.e. no Start button and no way to reach one.
+    dom.measureStep.open = true;
+  }
 
   // Pessimistic until the query answers: a tap that arrives first requests
   // the location, which is the harmless direction to be wrong in.

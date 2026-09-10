@@ -8,24 +8,80 @@ scale; the canvas carries the symbol only, the quiet zone is CSS padding).
 On the page for everyone since the flows plan M3 (DEC-F2); its own module
 since M6.
 
+## The printed size follows the input, at print time
+
+- `printedSideToApply(rawSize, hasCode) -> string | null` is the decision,
+  exported so it can be unit-tested without a DOM (this package keeps its
+  units pure and covers wiring in the Playwright specs). `null` means
+  "leave `--print-side` alone": either no code is on screen, or the size
+  is one `printedSideCss` refuses.
+- It is called from BOTH print paths - the panel button and the window
+  `beforeprint` listener - because the browser menu and Ctrl+P never reach
+  the button.
+- **Why it exists.** `--print-side` used to be written only inside
+  `generatePrintCode`, so changing the size and pressing Print reprinted at
+  the size the last _generate_ left behind. Nothing errors when this is
+  wrong; the poster is simply the wrong physical size, and the pose solve
+  then assumes a length the paper does not have (second testing session,
+  2026-09-09, F1).
+
 ## Public API
 
 - `wirePrintPanel(dom: PrintPanelDom): PrintPanel` - binds the generate and
   print buttons.
-  - `PrintPanelDom { panel; urlInput; sizeInput; codeInput; generateButton; info; area; canvas; printButton; urlOut }`
+  - `PrintPanelDom { panel; urlInput; urlAsk; urlShown; sizeInput; codeInput; generateButton; info; area; canvas; printButton; urlOut }`
     - `sizeInput` is SHARED with author mode's mint (one input, two
       consumers): the size a code is printed at is the size it is minted
       with.
-  - `PrintPanel.presentTour(url)` - prefill the URL without clobbering typed
-    text and open the panel; `archive-open.ts` calls it on every open
+  - `PrintPanel.presentTour(url)` - take the open tour's link, swap the
+    field for that link as TEXT, open the panel and render the code;
+    `archive-open.ts` calls it on every open
+  - `printCountFromInput(raw)` - how many posters the PDF carries:
+    `{ count, coerced, clamped }`. Delegates to the code number's own
+    coercion rather than repeating it, and caps at `MAX_PRINTED_CODES`
+    (50) - each poster is its own QR build and its own page of vector
+    rectangles, all on the main thread.
+  - `printPdfFilename(count, sideM)`, `printedCodeCaption(index, count,
+sideM)` - what the file is called and what is printed under each code.
+    The caption is read while hanging posters, so it names WHICH poster;
+    it is plain ASCII because a PDF base-14 font is single-byte.
+  - `MAX_PRINTED_CODES`.
+  - `printUrlDisplay(tourUrl)` - the pure rule behind that swap:
+    `{ askVisible, shownVisible, shownText }`. Exactly one of the two is
+    ever live, which is what stops them disagreeing about which link the
+    printed code carries.
     (both modes; the `?qr=` boot too).
+
+## The printable PDF (second testing session, M4)
+
+"Download PDF to print" builds N numbered posters in one file, through
+`gps-plus-slam-app-framework/utils/qr-payload/qr-print-pdf` (which is
+where the geometry and the byte writing live, with their own sidecar).
+
+- **Why a PDF at all**, when the page can already print itself: the print
+  dialog owns the paper and a "fit to page" toggle that silently rescales,
+  and a rescaled code measures the world wrong without ever failing.
+- **Each poster gets its OWN payload** - `planPrintCode` with that code's
+  index. Two posters carrying the same printed text are ONE code as far as
+  the level lookup is concerned, so an author who hung them in two places
+  would get one of the two positions at random.
+- The builds run **sequentially**: the payload builder measures QR
+  versions, and fifty of those at once buys nothing on one thread.
+- The outcome lands in `#print-info`, the same line the on-page print
+  instructions use, so an author reads one place. A size no paper can hold
+  arrives there as the framework's message, which names the size that
+  would fit.
 
 ## Invariants & assumptions
 
-- **`presentTour` replaces its OWN prefill, never the creator's typing**
-  (PR #434 review). It remembers the last url it wrote; a second opened
-  tour overwrites that, while text typed into the field is left alone.
-  The panel opens either way, so the link on screen always belongs to the
+- **The OPEN TOUR'S link always wins.** `presentTour` assigns it
+  unconditionally. It used to preserve text the creator had typed (PR #434
+  review), which was right while the field was visible; since F7 the field
+  is REPLACED by the link as text whenever a tour is open, so a hidden
+  field holding something else would make the code carry one URL while the
+  panel displays another. Typed text is only for the no-tour case, and an
+  open supersedes it. The panel opens either way, so the link on screen
+  always belongs to the
   tour that was just opened - printing a code for the previous tour was
   the failure this closed.
 

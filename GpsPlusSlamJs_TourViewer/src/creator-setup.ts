@@ -30,6 +30,7 @@ import {
   createEmptyTourManifest,
   serializeTourManifest,
   type TourManifest,
+  type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   recordQrDetection,
@@ -51,6 +52,22 @@ import {
   renderTourObjects,
 } from "./content-placement.js";
 
+import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
+
+import {
+  appendWithoutDuplicateIds,
+  draftHasUnhostedLevel,
+  draftIsSpent,
+  draftKeyForTour,
+  draftObjectsNotYetHosted,
+  restoredText,
+  restoreOfferText,
+} from "./authoring-draft.js";
+import {
+  readDraft,
+  writeDraftMeta,
+  writeDraftObject,
+} from "./draft-persistence.js";
 import type { ViewerMode } from "./mode.js";
 import {
   archiveSizeNote,
@@ -59,6 +76,7 @@ import {
   FINISH_LABELS,
   finishBlockedHint,
   finishReadiness,
+  MISSING_SIZE_MESSAGE,
   setupHint,
 } from "./qr-author-mode.js";
 import type { TourViewerSeams } from "./seams.js";
@@ -70,9 +88,32 @@ import type {
 } from "./tour-viewer-session.js";
 import type { Wizard } from "./wizard.js";
 
+/**
+ * Whether an AR session is live, from the controller's status.
+ *
+ * `starting` counts: the camera is coming up and the creator is already
+ * looking through the overlay. `stopping` counts for the mirror-image
+ * reason - the session is still composited while it tears down.
+ */
+export function arSessionLive(status: string): boolean {
+  return status === "starting" || status === "running" || status === "stopping";
+}
+
 export interface CreatorSetupDom {
-  /** The setup panel inside `#ar-root` (DOM overlay). */
+  /** The setup panel inside `#ar-root` (DOM overlay). Shown for a creator
+   *  on the whole page, because `status` is where a REFUSED AR entry says
+   *  why - and a refused entry never starts a session. */
   panel: HTMLElement;
+  /** The AR-only buttons inside the panel. Hidden unless a session is
+   *  live: on a desktop they sat greyed out under an "AR not supported"
+   *  button, misaligned and meaningless (second testing session, F11). */
+  controls: HTMLElement;
+  /** Step 4's tail: the rebuilt zip's status and download (F10). Outside
+   *  `#ar-root` - the download is tapped after the session ends. */
+  finishBlock: HTMLElement;
+  /** The "put it back where the old one is" copy, revealed once the zip
+   *  has actually been saved. Was step 6 until the flow rework. */
+  replaceHelp: HTMLElement;
   /** The printed side length - lives in the print step (DEC-F2). */
   sizeInput: HTMLInputElement;
   /** The print step, opened when the size error points at it. */
@@ -90,6 +131,12 @@ export interface CreatorSetupDom {
   pinSave: HTMLButtonElement;
   pinCancel: HTMLButtonElement;
   photoButton: HTMLButtonElement;
+  /** The "unsaved work is still on this device" offer (F13). */
+  draftOffer: HTMLElement;
+  draftOfferText: HTMLElement;
+  draftRestore: HTMLButtonElement;
+  draftDismiss: HTMLButtonElement;
+  draftDiscard: HTMLButtonElement;
 }
 
 /** Properties, not methods: they are handed to the hooks object unbound. */
@@ -100,6 +147,9 @@ export interface CreatorSetup {
   startAuthorPipeline: () => boolean;
   /** A tour closed: step 5's download and status are stale (M3 review #6). */
   resetFinishStep: () => void;
+  /** A tour opened and its manifest settled: load any draft for it, and
+   *  either offer what is not already hosted or delete a spent one. */
+  presentDraftForTour: (tourUrl: string) => void;
 }
 
 export function wireCreatorSetup(deps: {
@@ -110,12 +160,116 @@ export function wireCreatorSetup(deps: {
   seams: TourViewerSeams;
   wizard: Wizard;
   dom: CreatorSetupDom;
+  /** Opens this tour's draft namespace, or resolves undefined where there
+   *  is no persistence (no OPFS, blocked site data, a quota wall). */
+  openDraftStore?: (key: string) => Promise<DraftFileStore | undefined>;
 }): CreatorSetup {
   const { ctx, mode, arStore, arController, seams, wizard, dom } = deps;
   const creator = mode === "creator";
+  const openDraftStore =
+    deps.openDraftStore ?? (() => Promise.resolve(undefined));
+
+  /** This tour's draft store, once a tour is open. */
+  let draftStore: DraftFileStore | undefined;
+  /** The creator-facing url of the open tour, for later draft writes. */
+  let draftTourUrl: string | null = null;
+  /** What a draft is offering, until the creator answers. */
+  let offered: {
+    objects: readonly TourObject[];
+    photos: ReadonlyMap<string, Blob>;
+    /** The measured level and the size it was measured at - the other
+     *  half of a lost walk, and what makes Finish reachable again. */
+    level: { id: string; json: string } | null;
+    sizeM: number;
+  } | null = null;
+  /** Said once, not per placement: a creator mid-walk cannot act on it. */
+  let warnedAboutPersistence = false;
+
+  /**
+   * Record something placed. Fire-and-forget on purpose: the placement
+   * already happened in memory, and the draft is a safety net - a storage
+   * problem must never fail the tap that made it.
+   */
+  /** Say once that the walk is not being backed up. A creator mid-session
+   *  cannot act on it more often than that, and repeating it would push
+   *  the measuring readout off the line. */
+  function noteNoPersistence(): void {
+    if (warnedAboutPersistence) return;
+    warnedAboutPersistence = true;
+    ctx.placementNote =
+      "This device is not saving a backup copy - finish and download before closing the page.";
+    renderAuthorReadout();
+  }
+
+  function recordPlacement(object: TourObject, blob?: Blob): void {
+    const store = draftStore;
+    if (store === undefined) {
+      noteNoPersistence();
+      return;
+    }
+    void writeDraftObject(store, object, blob).then((ok) => {
+      if (!ok) noteNoPersistence();
+    });
+  }
+
+  /**
+   * What the HOSTED zip currently stores for `levelId`, or null.
+   *
+   * The CONTENT, not just the presence of the id: a level's id is a hash of
+   * the printed TEXT, so re-measuring the same poster writes a new
+   * measurement under the same id. "The zip has a level with this id" is
+   * therefore not evidence that it has THIS measurement, and deleting a
+   * draft on that basis would throw away a re-measure - the most expensive
+   * thing a creator does.
+   */
+  async function hostedLevelJson(levelId: string): Promise<string | null> {
+    const session = ctx.session;
+    if (session === null) return null;
+    const entry = session.entries.find(
+      (e) => qrLevelIdFromEntryName(e.filename) === levelId,
+    );
+    if (entry === undefined) return null;
+    try {
+      return await (await session.loadEntry(entry.filename)).text();
+    } catch {
+      // Unreadable is not proof of anything, and the safe direction is to
+      // KEEP the draft.
+      return null;
+    }
+  }
+
+  /**
+   * Record the tour, the printed size and the measured level.
+   *
+   * @param tourUrl the CREATOR-FACING url, which is what the store is keyed
+   *   by. `ctx.session.archive.url` is normalised - for a Drive tour it is
+   *   the proxy route - so writing that here would make the field disagree
+   *   with the key and with its own documentation.
+   */
+  function recordMeta(tourUrl: string): void {
+    const store = draftStore;
+    if (store === undefined) return;
+    // The size comes from the FIELD, not from `ctx.activeSizeM`: that is
+    // only assigned at AR entry, so before the first session it still holds
+    // the previous tour's value.
+    const sizeM = Number(dom.sizeInput.value);
+    void writeDraftMeta(store, {
+      tourUrl,
+      sizeM:
+        Number.isFinite(sizeM) && sizeM > 0 ? sizeM : AUTHOR_DEFAULT_SIZE_M,
+      level: ctx.mintedLevel,
+    });
+  }
 
   dom.panel.hidden = !creator;
   dom.sizeInput.value = String(AUTHOR_DEFAULT_SIZE_M);
+
+  /** True while the AR session is up: what gates the controls and the live
+   *  measuring readout. Read from the controller rather than tracked, so
+   *  it cannot drift out of step with the session it describes. */
+  function sessionLive(): boolean {
+    return arSessionLive(arController.getState().status);
+  }
   if (creator) {
     // Alignment arrives via GPS dispatches, not via controller state - the
     // readout must follow the store, or "waiting for GPS alignment" sticks.
@@ -171,6 +325,27 @@ export function wireCreatorSetup(deps: {
   function renderAuthorReadout(): void {
     if (!creator) return;
     renderPlacementButtons();
+    // F11: the AR controls belong to the AR session. On the setup page they
+    // were a row of greyed-out buttons under "AR not supported", which is
+    // what the owner reported. The STATUS line stays either way - it is
+    // where a refused entry explains itself, and a refusal means no session
+    // ever starts (M3 review #4).
+    dom.controls.hidden = !sessionLive();
+    // Finish is NOT a camera control. It is reachable whenever there is
+    // something to finish: a creator who measured, placed content and then
+    // left AR could tap it on the page before this milestone, and F11 asked
+    // for the greyed-out AR buttons to go, not for the finish to become
+    // session-only (M3 milestone review #4). A failed finish keeps it too,
+    // or its own "try again" would have nothing to try.
+    dom.finishButton.hidden = !(
+      sessionLive() ||
+      ctx.finishError !== null ||
+      finishReadiness({
+        measured: ctx.mintedLevel !== null,
+        tourOpen: ctx.session !== null,
+        manifest: ctx.tourManifestStatus,
+      }) === "ready"
+    );
     if (ctx.authorErrorText !== null) {
       dom.status.textContent = ctx.authorErrorText;
       dom.mintButton.disabled = true;
@@ -201,6 +376,17 @@ export function wireCreatorSetup(deps: {
           tourOpen: ctx.session !== null,
           manifest: ctx.tourManifestStatus,
         }) !== "ready";
+      return;
+    }
+    // Everything above this line is a message about something that
+    // happened - an error, a rebuild, a placement - and is shown whenever
+    // it is true. Below is the LIVE measuring readout, which describes a
+    // camera: "hold the phone on the printed code so it fills the screen"
+    // on a desktop page with no session running is an instruction for a
+    // situation the creator is not in.
+    if (!sessionLive()) {
+      dom.status.textContent = "";
+      dom.mintButton.disabled = true;
       return;
     }
     const state = arStore.getState();
@@ -277,6 +463,68 @@ export function wireCreatorSetup(deps: {
     renderAuthorReadout();
   }
 
+  dom.draftRestore.addEventListener("click", () => {
+    const waiting = offered;
+    dom.draftOffer.hidden = true;
+    offered = null;
+    if (waiting === null) return;
+    // Into the SAME list a live placement fills, so the finish needs no
+    // second path: it appends these to the manifest exactly as it appends
+    // anything else, and writes the photo bytes as content entries.
+    for (const object of waiting.objects) {
+      const blob = waiting.photos.get(object.id);
+      ctx.placedObjects.push(
+        blob === undefined ? { object } : { object, blob },
+      );
+    }
+    // The measured level comes back too, and it is what unlocks Finish
+    // without walking to the poster again. Only when the session has not
+    // already measured one: a live measurement is newer than a draft.
+    if (ctx.mintedLevel === null && waiting.level !== null) {
+      ctx.mintedLevel = waiting.level;
+    }
+    // And the printed size, which the page rewrites from the framework
+    // default on every load - so without this a re-entry would solve
+    // against 16 cm for a poster printed at 20.
+    if (Number.isFinite(waiting.sizeM) && waiting.sizeM > 0) {
+      dom.sizeInput.value = String(waiting.sizeM);
+      ctx.activeSizeM = waiting.sizeM;
+    }
+    // Render them, or the readout says "5 objects placed" over an empty
+    // scene and the creator places them again - new ids, real duplicates
+    // at the same spot in the published zip. previewObject already guards
+    // against a dead scene, so this is safe outside a session too.
+    for (
+      let i = ctx.placedObjects.length - waiting.objects.length;
+      i < ctx.placedObjects.length;
+      i += 1
+    ) {
+      previewObject(i);
+    }
+    ctx.placementNote = restoredText(
+      waiting.objects.length,
+      waiting.level !== null,
+    );
+    renderAuthorReadout();
+  });
+
+  dom.draftDismiss.addEventListener("click", () => {
+    // Declining is NOT deleting: a mis-tap must not become the loss this
+    // whole feature exists to prevent. It is offered again next time.
+    dom.draftOffer.hidden = true;
+    offered = null;
+  });
+
+  dom.draftDiscard.addEventListener("click", () => {
+    dom.draftOffer.hidden = true;
+    offered = null;
+    const store = draftStore;
+    if (store === undefined) return;
+    // The one way a creator can throw a draft away deliberately - and the
+    // escape hatch for a draft that would otherwise be offered forever.
+    void store.clear();
+  });
+
   dom.pinButton.addEventListener("click", () => {
     ctx.placementNote = null;
     if (!placementAllowed()) {
@@ -338,6 +586,7 @@ export function wireCreatorSetup(deps: {
       return;
     }
     ctx.placedObjects.push({ object: pin });
+    recordPlacement(pin);
     dom.pinLabel.value = "";
     hideLabelInput();
     previewObject(ctx.placedObjects.length - 1);
@@ -370,6 +619,7 @@ export function wireCreatorSetup(deps: {
           return;
         }
         ctx.placedObjects.push({ object: photo, blob: jpeg.blob });
+        recordPlacement(photo, jpeg.blob);
         previewObject(ctx.placedObjects.length - 1);
         // The plane sits at the capture spot, facing back at it: the
         // creator is standing on it and sees it once they step back.
@@ -393,9 +643,13 @@ export function wireCreatorSetup(deps: {
     // not looking at (PR #360 review).
     const parsedSize = Number(dom.sizeInput.value);
     if (!Number.isFinite(parsedSize) || parsedSize <= 0) {
-      ctx.authorErrorText =
-        "Enter the printed code's side length in metres (e.g. 0.16) in step 2 before starting.";
-      dom.printPanel.open = true;
+      ctx.authorErrorText = MISSING_SIZE_MESSAGE;
+      // REVEAL, not open (M3 milestone review #2): the message lands in
+      // step 4's status line, and openStep would collapse step 4 a task
+      // later - taking the explanation with it and leaving a Start button
+      // that does nothing. Both steps stay open: the reason in one, the
+      // field that fixes it in the other.
+      wizard.revealStep("print");
       renderAuthorReadout();
       return false;
     }
@@ -465,6 +719,7 @@ export function wireCreatorSetup(deps: {
       (id) => {
         if (mintGeneration !== ctx.mintGeneration) return;
         ctx.mintedLevel = { id, json: result.json };
+        if (draftTourUrl !== null) recordMeta(draftTourUrl);
         renderAuthorReadout();
       },
       () => {
@@ -519,10 +774,14 @@ export function wireCreatorSetup(deps: {
         const manifest = ctx.tourManifest ?? createEmptyTourManifest();
         const written: TourManifest = {
           ...manifest,
-          objects: [
-            ...manifest.objects,
-            ...ctx.placedObjects.map((p) => p.object),
-          ],
+          // De-duplicating by id, and not for tidiness: the serializer
+          // REJECTS duplicates, so one restored object that is already in
+          // the manifest would make every finish throw - for as long as the
+          // draft is restored, with no escape inside the app (M5 review #4).
+          objects: appendWithoutDuplicateIds(
+            manifest.objects,
+            ctx.placedObjects.map((p) => p.object),
+          ),
         };
         const entries = [
           {
@@ -567,6 +826,11 @@ export function wireCreatorSetup(deps: {
         // review). `tourManifest` is otherwise only written at tour open.
         ctx.tourManifest = written;
         ctx.placedObjects = [];
+        // NOT cleared here, and not on the download tap either: the zip is
+        // only in the creator's hands, not yet in the file the world sees.
+        // It is cleared when a re-opened tour turns out to carry these ids
+        // (see presentDraftForTour) - the one signal that is proof.
+        if (draftTourUrl !== null) recordMeta(draftTourUrl);
         // The session ends so the creator lands on the page, where the
         // download button is a fresh tap (a download needs its own user
         // gesture, plan §2.4) - unless it already ended and another one
@@ -574,7 +838,13 @@ export function wireCreatorSetup(deps: {
         if (sessionGeneration === ctx.arSessionGeneration) {
           await arController.disable();
         }
-        wizard.openStep("finish");
+        // The download used to be step 5. It is the END of step 4 (F10):
+        // the creator finished in AR, the session is closing, and what they
+        // need next is one tap in the step they are already in. The reveal
+        // happens AFTER the disable above, so the block cannot appear over
+        // a session that is still compositing.
+        wizard.openStep("measure");
+        dom.finishBlock.hidden = false;
       } catch (err) {
         if (ctx.session === current) {
           ctx.finishError = FINISH_LABELS.failed(
@@ -603,7 +873,10 @@ export function wireCreatorSetup(deps: {
         dom.finishStatus.textContent = saved
           ? FINISH_LABELS.saved(rebuilt.filename)
           : FINISH_LABELS.notSaved;
-        if (saved) wizard.openStep("replace");
+        // The replace instructions were step 6; they are the last thing to
+        // do and only once there is a file to do it with, so they appear
+        // when the zip is actually on the device (F10).
+        if (saved) dom.replaceHelp.hidden = false;
       },
       (err: unknown) => {
         dom.downloadButton.disabled = false;
@@ -621,6 +894,95 @@ export function wireCreatorSetup(deps: {
     resetFinishStep: () => {
       dom.downloadButton.disabled = true;
       dom.finishStatus.textContent = "";
+      // The rebuilt zip belonged to the tour that just closed, so the block
+      // offering it goes away with it (M3 review #6) - otherwise a newly
+      // opened tour shows a dead download button from the previous one.
+      dom.finishBlock.hidden = true;
+      dom.replaceHelp.hidden = true;
+      // The offer belonged to the tour that just closed.
+      dom.draftOffer.hidden = true;
+      offered = null;
+      draftStore = undefined;
+      draftTourUrl = null;
+    },
+    presentDraftForTour: (tourUrl) => {
+      if (!creator) return; // a visitor authors nothing
+      // EVERY continuation below re-checks this. Without it, tour A's draft
+      // resumes after the creator has opened tour B and then: writes B's
+      // placements into A's namespace, offers A's objects for B's zip, and
+      // deletes whichever namespace `draftStore` happens to point at. All
+      // three are the data loss this milestone exists to prevent, and the
+      // open path already guards every other continuation this way.
+      const generation = ctx.openGeneration;
+      const stale = (): boolean => generation !== ctx.openGeneration;
+      void (async () => {
+        const store = await openDraftStore(draftKeyForTour(tourUrl));
+        if (stale()) return;
+        draftStore = store;
+        draftTourUrl = tourUrl;
+        if (store === undefined) {
+          // No persistence at all - a browser without OPFS, blocked site
+          // data, a quota wall. The creator must hear it ONCE, here: this
+          // is the path where they are least protected and least likely to
+          // notice, because no write ever fails to tell them so.
+          noteNoPersistence();
+          return;
+        }
+        const stored = await readDraft(store);
+        if (stale()) return;
+        if (stored === undefined) {
+          // No draft yet, but there will be: record what is already known,
+          // so a crash before the first placement still leaves the tour and
+          // the printed size behind.
+          recordMeta(tourUrl);
+          return;
+        }
+        const waiting = draftObjectsNotYetHosted(
+          stored.draft,
+          ctx.tourManifest,
+        );
+        const hostedLevel =
+          stored.draft.level === null
+            ? null
+            : await hostedLevelJson(stored.draft.level.id);
+        if (stale()) return;
+        if (draftIsSpent(stored.draft, ctx.tourManifest, hostedLevel)) {
+          // SPENT: the hosted zip carries every object AND the measurement.
+          // That is the only proof the content reached the file the world
+          // sees, and the only thing that deletes a draft.
+          await store.clear();
+          if (stale()) return;
+          const reopened = await openDraftStore(draftKeyForTour(tourUrl));
+          if (stale()) return;
+          draftStore = reopened;
+          recordMeta(tourUrl);
+          return;
+        }
+        const hasLevel = draftHasUnhostedLevel(stored.draft, hostedLevel);
+        offered = {
+          objects: waiting,
+          photos: stored.photos,
+          // ALWAYS handed back when the draft has one, even if the hosted
+          // zip already stores the same measurement: the finish refuses to
+          // run without `mintedLevel`, so withholding it would leave a
+          // creator with restorable objects and no way to publish them.
+          // `hasLevel` only decides the WORDS and whether the draft counts
+          // as spent.
+          level: stored.draft.level,
+          sizeM: stored.draft.sizeM,
+        };
+        dom.draftOfferText.textContent = restoreOfferText(
+          waiting.length,
+          hasLevel,
+        );
+        dom.draftOffer.hidden = false;
+        // The offer lives inside step 4, which is usually COLLAPSED when a
+        // tour opens (the wizard lands on the remembered step, or step 2).
+        // Un-hiding an element inside a closed disclosure is zero pixels
+        // and no signal, so the step is revealed - without collapsing
+        // whatever the creator was reading.
+        wizard.revealStep("measure");
+      })();
     },
   };
 }

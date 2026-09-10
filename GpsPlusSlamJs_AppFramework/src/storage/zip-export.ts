@@ -322,6 +322,50 @@ export async function downloadZip(
   blob: Blob,
   filename: string
 ): Promise<boolean> {
+  return downloadBlob(blob, filename, ZIP_FILE_TYPE);
+}
+
+/** What the save picker offers to filter by. */
+export interface DownloadFileType {
+  /** Shown in the picker's filter row, e.g. "ZIP Archive". */
+  description: string;
+  /** The MIME type, e.g. `application/pdf`. */
+  mimeType: string;
+  /** The extension WITH its dot, e.g. `.pdf`. */
+  extension: string;
+}
+
+const ZIP_FILE_TYPE: DownloadFileType = {
+  description: 'ZIP Archive',
+  mimeType: 'application/zip',
+  extension: '.zip',
+};
+
+/** A printable document - the Tour Viewer's sheet of numbered codes. */
+export const PDF_FILE_TYPE: DownloadFileType = {
+  description: 'PDF Document',
+  mimeType: 'application/pdf',
+  extension: '.pdf',
+};
+
+/**
+ * Trigger a file download, with the picker filtered to `fileType`.
+ *
+ * Generalised from `downloadZip` when a second kind of file needed the same
+ * save path (the printable PDF of QR codes): the picker's type filter was
+ * the only zip-specific thing in it, and a second copy of the
+ * picker-then-anchor dance is exactly the duplication this repo keeps
+ * finding. `downloadZip` stays as the zip-shaped call its callers already
+ * make.
+ *
+ * @returns `true` when a download or save was started; `false` when the
+ *   user dismissed the save picker, in which case nothing was written.
+ */
+export async function downloadBlob(
+  blob: Blob,
+  filename: string,
+  fileType: DownloadFileType
+): Promise<boolean> {
   // Try File System Access API first (better UX on desktop)
   if ('showSaveFilePicker' in window && window.showSaveFilePicker) {
     try {
@@ -329,8 +373,8 @@ export async function downloadZip(
         suggestedName: filename,
         types: [
           {
-            description: 'ZIP Archive',
-            accept: { 'application/zip': ['.zip'] },
+            description: fileType.description,
+            accept: { [fileType.mimeType]: [fileType.extension] },
           },
         ],
       });

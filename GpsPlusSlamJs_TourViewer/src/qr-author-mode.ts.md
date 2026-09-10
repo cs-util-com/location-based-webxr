@@ -9,7 +9,15 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
 
 ## Public API
 
-- `AUTHOR_DEFAULT_SIZE_M = 0.2` — prefill for the printed-size input.
+- `AUTHOR_DEFAULT_SIZE_M` (re-exported from the framework, **0.16 m**) —
+  what `creator-setup.ts` writes into the printed-size input at wiring
+  time, on every load. It is essentially the A4 ceiling, not a taste
+  choice: the footprint is the side x 1.16 (the 8 % quiet zone on both
+  edges), so anything much larger is clipped and does not scan. The
+  `value` attribute in `index.html` must carry the SAME number - it is
+  overwritten by the assignment above, so a differing one is dead text
+  that reads like a decision (`printed-size-default.test.ts`). See
+  `GpsPlusSlamJs_Docs/docs/2026-09-08-tour-viewer-improvements/2026-09-09-0740-printed-code-size-ceiling-followup.md`.
 - `syntheticAuthorLevel(sizeM): QrLevel` — `{version:1, qr:{physicalSizeM}}`;
   throws on a non-positive/non-finite size.
 - `buildAuthorControllerConfig(sizeM, deps: AuthorPipelineDeps)` — deps:
@@ -27,6 +35,9 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   replaces a code the tour already carried, else place content or finish.
 - `finishReadiness({ measured, tourOpen })` → `"ready" | "not-measured" |
 "no-tour"` - the finish button's gate.
+- `MISSING_SIZE_MESSAGE` - what a creator reads when the printed-size
+  field is empty at AR entry. The example inside it is interpolated from
+  `AUTHOR_DEFAULT_SIZE_M`, so the two cannot drift.
 - `FINISH_LABELS` - the finish step's copy through its async cycle
   (reading, rebuilding N of M, ready, failed, download, saving, saved as,
   not saved).

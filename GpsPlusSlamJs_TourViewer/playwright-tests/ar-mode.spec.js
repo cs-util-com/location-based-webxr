@@ -88,7 +88,28 @@ async function lockTheCode(page) {
     .toMatch(/Code recognised/);
 }
 
+/**
+ * Open step 4 on the creator's page.
+ *
+ * Since the flow rework (F4) step 4 is a real disclosure like its siblings,
+ * so the AR button lives inside a collapsed <details> until the creator
+ * gets there - which is the point: the setup is one step at a time. A
+ * VISITOR needs none of this (`visitor-screen.ts` opens step 4 for them,
+ * because their summary is creator-only and could never be tapped).
+ */
+async function openMeasureStep(page) {
+  const step = page.getByTestId("step-measure");
+  // `el.open`, not getAttribute: an open <details> carries `open=""`, which
+  // is FALSY - the attribute form silently clicks an already-open step and
+  // closes it.
+  if (await step.evaluate((el) => /** @type {HTMLDetailsElement} */ (el).open))
+    return;
+  await step.locator("summary").click();
+  await expect(step).toHaveAttribute("open", "");
+}
+
 async function enterAr(page) {
+  await openMeasureStep(page);
   const button = page.getByTestId("enter-ar");
   await expect(button).toBeEnabled({ timeout: 10000 }); // support probe done
   await button.click();
@@ -358,9 +379,19 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
     timeout: 15000,
   });
-  await expect(page.getByTestId("setup-panel")).toBeVisible();
-  await expect(page.getByTestId("setup-finish")).toBeDisabled(); // not measured
+  // F11: the AR controls belong to the AR session. With step 4 open but no
+  // session running they must NOT be on the page - on a desktop they were a
+  // row of greyed-out buttons under "AR not supported". The status line is
+  // the part that stays, because a refused entry explains itself there.
+  await openMeasureStep(page);
+  await expect(page.getByTestId("setup-controls")).toBeHidden();
+  await expect(page.getByTestId("setup-finish")).toBeHidden();
+  // And the readout says nothing rather than telling someone at a desk to
+  // "hold the phone on the printed code so it fills the screen".
+  await expect(page.getByTestId("setup-status")).toHaveText("");
   await enterAr(page);
+  await expect(page.getByTestId("setup-controls")).toBeVisible();
+  await expect(page.getByTestId("setup-finish")).toBeDisabled(); // not measured
   await expect(page.getByTestId("enter-ar")).toHaveText("Setting up in AR");
   await expect(page.getByTestId("setup-status")).toHaveText(
     /hold the phone on the printed code/i,
@@ -479,13 +510,18 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   );
 
   // FINISH (guided-setup plan M3, DEC-N6): the zip is rebuilt in the
-  // browser from the session's bytes, the AR session ends, step 5 opens
-  // with the download; the download is a fresh tap (its own gesture).
+  // browser from the session's bytes, the AR session ends, and the
+  // download appears at the END of step 4 - it was step 5 until the flow
+  // rework (F10), which is not a setup step but the end of this one. The
+  // download is a fresh tap (its own gesture).
   await page.getByTestId("setup-finish").click();
   await expect(page.getByTestId("enter-ar")).toHaveText("Start AR setup", {
     timeout: 15000,
   });
-  await expect(page.getByTestId("step-finish")).toHaveAttribute("open", "");
+  await expect(page.getByTestId("step-measure")).toHaveAttribute("open", "");
+  await expect(page.getByTestId("finish-block")).toBeVisible();
+  // The replace instructions wait for a file to actually exist.
+  await expect(page.getByTestId("replace-help")).toBeHidden();
   await expect(page.getByTestId("finish-status")).toContainText(/ready/i);
   const download = page.getByTestId("finish-download");
   await expect(download).toBeEnabled();
@@ -501,7 +537,7 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   });
   await download.click();
   await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
-  await expect(page.getByTestId("step-replace")).toHaveAttribute("open", "");
+  await expect(page.getByTestId("replace-help")).toBeVisible();
 
   const rebuilt = await readDownloadedZip(page, 1);
   expect(rebuilt.filename).toBe("tour.zip");
@@ -703,7 +739,7 @@ test("a failed finish says so with priority and can be retried; the panel shows 
   await page.unroute("http://127.0.0.1:5197/**");
   await page.getByTestId("setup-finish").click();
   await expect(page.getByTestId("setup-finish")).toBeDisabled();
-  await expect(page.getByTestId("step-finish")).toHaveAttribute("open", "", {
+  await expect(page.getByTestId("finish-block")).toBeVisible({
     timeout: 30000,
   });
   await expect(page.getByTestId("finish-download")).toBeEnabled();
@@ -1197,13 +1233,15 @@ test("the print panel renders a scannable code at a declared true size", async (
   await expect(page.getByTestId("print-generate")).toBeEnabled();
 });
 
-test("opening a tour opens the print panel prefilled with the tour's link", async ({
+test("opening a tour shows the code and the link it carries, without asking again", async ({
   page,
 }) => {
-  // Why this matters (feedback F2, flows plan M3): after Open, the creator's
-  // next step is printing the code - the first on-phone session could not
-  // find it because it sat behind ?author=1. The panel must present itself
-  // with the opened link, without clobbering a link the creator typed.
+  // Why this matters (feedback F2, flows plan M3; reshaped by the second
+  // testing session's F7): after Open, the creator's next step is printing
+  // the code. The panel presents itself with the opened link - and since F7
+  // it does NOT present a second field asking for that link again: the
+  // field is replaced by the link as text, and the code renders without
+  // anyone pressing a button.
   const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/tour.zip";
   await page.goto("/");
   await expect(page.getByTestId("print-url")).toBeHidden();
@@ -1212,45 +1250,44 @@ test("opening a tour opens the print panel prefilled with the tour's link", asyn
   await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
     timeout: 15000,
   });
-  await expect(page.getByTestId("print-url")).toBeVisible();
-  await expect(page.getByTestId("print-url")).toHaveValue(ARCHIVE);
+  // F7: shown, not asked for.
+  await expect(page.getByTestId("print-url-shown")).toHaveText(ARCHIVE);
+  await expect(page.getByTestId("print-url-ask")).toBeHidden();
   // Step 1 collapsed, step 2 open (wizard.ts): one step at a time.
   await expect(page.getByTestId("step-host")).not.toHaveAttribute("open", "");
+  // "Show the code immediately" (F7): no Generate click here.
+  await expect(page.getByTestId("print-canvas")).toBeVisible();
+  await expect(page.getByTestId("print-button")).toBeVisible();
   // The tester's way into the visitor path (DEC-N1, plan review #13): the
-  // raw link until a code exists, then the PRINTED payload (M2 review #10).
+  // link carries the PRINTED payload once a code exists (M2 review #10).
   const link = page.getByTestId("visitor-link");
   await expect(link).toBeVisible();
-  await expect(link).toHaveAttribute("href", /\?qr=http/);
-  await page.getByTestId("print-generate").click();
-  await expect(page.getByTestId("print-canvas")).toBeVisible();
   const printed = await page.getByTestId("print-url-out").textContent();
-  const href = await link.getAttribute("href");
-  expect(href).toBe(new URL(printed ?? "").search);
-  // A SECOND tour replaces the prefill (PR #434 review): the panel used
-  // to re-open showing the previous tour's link, so "Generate QR" printed
-  // a code that launched the wrong tour.
+  expect(await link.getAttribute("href")).toBe(new URL(printed ?? "").search);
+
+  // A SECOND tour replaces what the code carries (PR #434 review): the
+  // panel used to re-open showing the previous tour's link, so the printed
+  // code launched the wrong tour. The displayed link and the encoded
+  // payload must move together.
   const SECOND = "http://127.0.0.1:5197/ranges-ok/plain-tour.zip";
   await page.getByTestId("step-host").locator("summary").click();
   await page.getByTestId("link-input").fill(SECOND);
   await page.getByTestId("open-button").click();
-  await expect(page.getByTestId("print-url")).toHaveValue(SECOND, {
+  await expect(page.getByTestId("print-url-shown")).toHaveText(SECOND, {
     timeout: 15000,
   });
-  // Text the creator typed is still not clobbered.
-  await page.getByTestId("print-url").fill("https://typed.example/x.zip");
-  await page.getByTestId("step-host").locator("summary").click();
-  await page.getByTestId("link-input").fill(ARCHIVE);
-  await page.getByTestId("open-button").click();
-  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
-    timeout: 15000,
-  });
-  await expect(page.getByTestId("print-url")).toHaveValue(
-    "https://typed.example/x.zip",
-  );
-  // The wizard reopened the step this tour was last left on (M6), so the
-  // print step is collapsed; the rest of this spec needs it open.
-  await page.getByTestId("print-panel").locator("summary").click();
-  await page.getByTestId("print-url").fill(ARCHIVE);
+  await expect
+    .poll(async () => page.getByTestId("print-url-out").textContent())
+    .toContain("plain-tour");
+
+  // Changing the code number re-renders rather than leaving a stale code
+  // on screen claiming to be the new one (M3 review #8).
+  const beforeNumber = await page.getByTestId("print-url-out").textContent();
+  await page.getByTestId("author-c").fill("2");
+  await page.getByTestId("author-c").blur();
+  await expect
+    .poll(async () => page.getByTestId("print-url-out").textContent())
+    .not.toBe(beforeNumber);
 
   // The size field is a creator's print input: NOT frozen by a viewer
   // session (review #17) - it is only captured in author mode.
@@ -1298,4 +1335,578 @@ test("the setup remembers the step the creator reached, per hosted link (M6)", a
   await page.getByTestId("open-button").click();
   await expect(page.getByTestId("step-hang")).toHaveAttribute("open", "");
   await expect(page.getByTestId("print-panel")).not.toHaveAttribute("open", "");
+});
+
+test("a refused AR entry explains itself on the page, with no session to explain it in", async ({
+  page,
+}) => {
+  // Why this matters (M3 review #4): the printed size is validated BEFORE
+  // the session starts, so a refusal means no session ever exists. The
+  // session-gating that removes the AR controls from the setup page (F11)
+  // must therefore not take the status line with it - or the creator gets a
+  // Start button that does nothing and no explanation anywhere on the page.
+  await page.goto("/");
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  // Clearing the size is the real way in: the field ships with a default,
+  // and `min` never fires outside a form submit.
+  await page.getByTestId("author-size").fill("");
+  await enterAr(page);
+  // toBeVisible FIRST, and this is the point of the test: toHaveText and
+  // toContainText read textContent and pass happily for an element inside a
+  // collapsed <details>. The first version of this spec did exactly that
+  // and would have passed while the message was invisible - the message
+  // this whole rule exists to keep on screen (M3 milestone review #2).
+  await expect(page.getByTestId("setup-status")).toBeVisible();
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /side length in metres/i,
+  );
+  // Step 4 is still open - the message lives in it - and step 2, which
+  // holds the field to fix, was opened alongside rather than instead.
+  await expect(page.getByTestId("step-measure")).toHaveAttribute("open", "");
+  await expect(page.getByTestId("print-panel")).toHaveAttribute("open", "");
+  await expect(page.getByTestId("author-size")).toBeVisible();
+  // Still no session, so still no AR controls.
+  await expect(page.getByTestId("setup-controls")).toBeHidden();
+  await expect(page.getByTestId("enter-ar")).toHaveText("Start AR setup");
+});
+
+test("step 4 asks for the tour link when this device does not have it, and stays on step 4", async ({
+  page,
+}) => {
+  // Why this matters (F12): the reached step is remembered per device, so a
+  // creator who walks to the poster with their phone opens the viewer at
+  // step 1 with an empty field - there is no way to hand a tour from one
+  // device to another. Step 4 asking for what it lacks serves that, and a
+  // creator returning days later, and a cleared browser.
+  //
+  // The trap this pins (M3 review #1): the open runs the same path as step
+  // 1's, whose default is "a tour opened, go to step 2". Without the
+  // preference the page would answer by collapsing the step the creator is
+  // standing in - and step 4's content is the AR overlay root.
+  await page.goto("/");
+  await openMeasureStep(page);
+  await expect(page.getByTestId("tour-missing")).toBeVisible();
+  await page.getByTestId("tour-missing-link").fill(RANGES_ARCHIVE);
+  await page.getByTestId("tour-missing-open").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  // Still on step 4, and the block that asked has done its job.
+  await expect(page.getByTestId("step-measure")).toHaveAttribute("open", "");
+  await expect(page.getByTestId("tour-missing")).toBeHidden();
+  await expect(page.getByTestId("print-panel")).not.toHaveAttribute("open", "");
+  // One link of record: step 1's input carries what step 4 was given, and
+  // step 2's code is built from the same value.
+  await expect(page.getByTestId("link-input")).toHaveValue(RANGES_ARCHIVE);
+  await expect(page.getByTestId("print-url-shown")).toHaveText(RANGES_ARCHIVE);
+});
+
+test("a link that fails from step 4 keeps the form and says why", async ({
+  page,
+}) => {
+  // Why this matters (M3 review #13): a pasted link fails often on a phone
+  // - a truncated paste, a share link that needs a login. A block that hid
+  // itself on submit would take the retry away at the moment it is needed.
+  // The async-UI rule applies to BOTH open buttons (M3 review #11).
+  await page.goto("/");
+  await openMeasureStep(page);
+  await page
+    .getByTestId("tour-missing-link")
+    .fill("http://127.0.0.1:5197/ranges-ok/does-not-exist.zip");
+  await page.getByTestId("tour-missing-open").click();
+  await expect(page.getByTestId("error")).not.toHaveText("");
+  await expect(page.getByTestId("tour-missing")).toBeVisible();
+  await expect(page.getByTestId("tour-missing-open")).toBeEnabled();
+  await expect(page.getByTestId("tour-missing-open")).toHaveText(
+    "Open the tour here",
+  );
+  // The other open button restored too, with its own label.
+  await expect(page.getByTestId("open-button")).toHaveText("Test link");
+});
+
+test("the print step builds a real PDF of numbered codes", async ({ page }) => {
+  // Why this matters (second testing session, §4). The browser's print
+  // dialog owns the paper and a "fit to page" toggle that silently
+  // rescales, and a rescaled code measures the world wrong without ever
+  // failing. This drives the WHOLE path in a browser - the real payload
+  // builder once per poster, the real QR encoder, the hand-written PDF
+  // writer - and reads the produced bytes back in node.
+  //
+  // Each poster must carry its OWN payload: two posters with the same
+  // printed text are one code as far as the level lookup is concerned, so
+  // an author who hung them in two places would get one of the two
+  // positions at random.
+  await page.goto("/");
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  await page.getByTestId("print-count").fill("3");
+  await page.getByTestId("print-pdf").click();
+  await expect(page.getByTestId("print-info")).toContainText(/saved/i, {
+    timeout: 15000,
+  });
+  await expect(page.getByTestId("print-info")).toContainText("codes 1 to 3");
+
+  const saved = await page.evaluate(() => {
+    const d = /** @type {any} */ (window).__tourViewerTest.downloads;
+    return d[d.length - 1].filename;
+  });
+  expect(saved).toBe("tour-codes-1-to-3-16cm.pdf");
+
+  const pdf = await page.evaluate(async () => {
+    const d = /** @type {any} */ (window).__tourViewerTest.downloads;
+    return Array.from(new Uint8Array(await d[d.length - 1].blob.arrayBuffer()));
+  });
+  const text = new TextDecoder("latin1").decode(new Uint8Array(pdf));
+  expect(text.startsWith("%PDF-1.4")).toBe(true);
+  // Three codes at 16 cm: one per page, because two would need 37 cm.
+  expect(text).toContain("/Count 3");
+  expect(text).toContain("/MediaBox [0 0 595.28 841.89]");
+  for (const n of [1, 2, 3]) {
+    expect(text).toContain(`(Code ${String(n)} - 16cm - print at 100%)`);
+  }
+  // Every page actually carries ink.
+  expect((text.match(/ re f/g) ?? []).length).toBeGreaterThan(100);
+
+  // The failure path (async-UI rule): a size no paper can hold says which
+  // size would work, and the button comes back.
+  await page.getByTestId("author-size").fill("0.4");
+  await page.getByTestId("print-pdf").click();
+  await expect(page.getByTestId("print-info")).toContainText(
+    /does not fit A4/i,
+  );
+  await expect(page.getByTestId("print-info")).toContainText(/or less/i);
+  await expect(page.getByTestId("print-pdf")).toBeEnabled();
+  await expect(page.getByTestId("print-pdf")).toHaveText(
+    "Download PDF to print",
+  );
+});
+
+test("a failed open puts the page back to having no tour, not to showing the old one", async ({
+  page,
+}) => {
+  // Why this matters (M3 milestone review #3). Step 2 shows the tour link
+  // instead of asking for it, and step 4 stops offering to open a tour -
+  // both correct WHILE a tour is open. Nothing used to put either back, so
+  // after one successful open the page claimed a tour link for a tour it no
+  // longer had, for the rest of its life: printing before hosting became a
+  // one-shot per page load, and a creator whose second link failed had no
+  // field to correct it in without reloading.
+  await page.goto("/");
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  await expect(page.getByTestId("print-url-shown")).toHaveText(RANGES_ARCHIVE);
+  await expect(page.getByTestId("print-url-ask")).toBeHidden();
+
+  // A second link that does not resolve: the tour closes and none opens.
+  await page.getByTestId("step-host").locator("summary").click();
+  await page
+    .getByTestId("link-input")
+    .fill("http://127.0.0.1:5197/ranges-ok/nope.zip");
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("error")).not.toHaveText("");
+
+  // The page asks again rather than asserting a link it does not have.
+  await page.getByTestId("print-panel").locator("summary").click();
+  await expect(page.getByTestId("print-url-ask")).toBeVisible();
+  await expect(page.getByTestId("print-url-shown")).toBeHidden();
+  // ...and so does step 4.
+  await openMeasureStep(page);
+  await expect(page.getByTestId("tour-missing")).toBeVisible();
+});
+
+test("the PDF button shows it is working, says when nothing was saved, and continues the numbering", async ({
+  page,
+}) => {
+  // Why this matters. The repo's async-UI rule asks for the transitional
+  // state to be ASSERTED, on both outcomes, and the PDF build is the
+  // slowest thing the panel does - fifty QR encodes on one thread.
+  //
+  // The numbering half is the sharper point (M4 milestone review #1): the
+  // PDF used to number 1..N and ignore the code-number field, so an author
+  // who printed code 2 from the page and also downloaded a 3-poster PDF
+  // ended up with two sheets carrying byte-identical text. Two posters
+  // with the same printed text are ONE code to the level lookup, and
+  // hanging them in two places gives one of the two positions at random.
+  await page.goto("/");
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+
+  // The dismissed-picker path first (the async-UI rule's failure branch).
+  // The save is HELD open rather than raced: eight QR encodes finish in a
+  // few milliseconds, and a test that races them is flaky - which for an
+  // async-UI guard is worse than not having one.
+  await page.evaluate(() => {
+    const t = /** @type {any} */ (window).__tourViewerTest;
+    t.saveOutcome = false;
+    t.holdPdfSave = true;
+  });
+  await page.getByTestId("print-count").fill("8");
+  await page.getByTestId("print-pdf").click();
+  await expect(page.getByTestId("print-pdf")).toHaveText("Building the PDF…");
+  await expect(page.getByTestId("print-pdf")).toBeDisabled();
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.releasePdfSave();
+  });
+  await expect(page.getByTestId("print-info")).toContainText(/was not saved/i, {
+    timeout: 15000,
+  });
+  await expect(page.getByTestId("print-pdf")).toBeEnabled();
+  await expect(page.getByTestId("print-pdf")).toHaveText(
+    "Download PDF to print",
+  );
+
+  // Now the numbering: a second batch starts where the code number says.
+  await page.evaluate(() => {
+    const t = /** @type {any} */ (window).__tourViewerTest;
+    t.saveOutcome = true;
+    t.holdPdfSave = false;
+  });
+  await page.getByTestId("author-c").fill("4");
+  await page.getByTestId("print-count").fill("2");
+  await page.getByTestId("print-pdf").click();
+  await expect(page.getByTestId("print-info")).toContainText("codes 4 to 5", {
+    timeout: 15000,
+  });
+  const saved = await page.evaluate(() => {
+    const d = /** @type {any} */ (window).__tourViewerTest.downloads;
+    return d[d.length - 1].filename;
+  });
+  expect(saved).toBe("tour-codes-4-to-5-16cm.pdf");
+  const text = await page.evaluate(async () => {
+    const d = /** @type {any} */ (window).__tourViewerTest.downloads;
+    return new TextDecoder("latin1").decode(
+      new Uint8Array(await d[d.length - 1].blob.arrayBuffer()),
+    );
+  });
+  expect(text).toContain("(Code 4 - 16cm - print at 100%)");
+  expect(text).toContain("(Code 5 - 16cm - print at 100%)");
+  expect(text).not.toContain("(Code 1 - ");
+});
+
+/** Measure the hung code and unlock placement - the state every authoring
+ *  test needs before it can place anything. */
+async function measureTheCode(page) {
+  await enterAr(page);
+  await page.evaluate((text) => {
+    /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
+  }, E2E_QR_TEXT);
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return page.getByTestId("setup-status").textContent();
+      },
+      { timeout: 15000 },
+    )
+    .toMatch(/waiting for GPS alignment/i);
+  await seedAlignment(page);
+  await expect(page.getByTestId("setup-mint")).toBeEnabled({ timeout: 10000 });
+  await page.getByTestId("setup-mint").click();
+  await expect(page.getByTestId("setup-pin")).toBeEnabled();
+}
+
+test("a crash does not lose the walk: placed content survives a reload and lands in the zip", async ({
+  page,
+}) => {
+  // THE promise of crash-safe authoring (F13), driven end to end through
+  // the composed page and real OPFS.
+  //
+  // Why it matters: an AR session on a phone can be killed by the OS at any
+  // moment - a call, a memory reclaim, an accidental back gesture - and
+  // until now everything measured and placed since the last Finish lived in
+  // page memory alone. A creator who walked a site for twenty minutes had
+  // twenty minutes to lose.
+  //
+  // The reload here IS the crash: nothing is finished, nothing downloaded,
+  // the page simply goes away mid-walk.
+  await page.goto("/?nocache=1");
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  await measureTheCode(page);
+  await page.getByTestId("setup-pin").click();
+  await page.getByTestId("pin-label").fill("The old gate");
+  await page.getByTestId("pin-save").click();
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /1 object placed/,
+  );
+
+  // The crash.
+  await page.reload();
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+
+  // OFFERED, not applied: a draft can be days old and can be one the
+  // creator believes they discarded. Silent restoration would append
+  // content they did not ask for into a zip they are about to publish.
+  await openMeasureStep(page);
+  await expect(page.getByTestId("draft-offer")).toBeVisible({ timeout: 15000 });
+  await expect(page.getByTestId("draft-offer-text")).toContainText("1 thing");
+  await page.getByTestId("draft-restore").click();
+  await expect(page.getByTestId("draft-offer")).toBeHidden();
+
+  // The restored pin is in the same list a live placement fills, so the
+  // finish needs no second path - and the measured level came back with it,
+  // which is what makes Finish reachable without re-measuring.
+  await expect(page.getByTestId("setup-finish")).toBeEnabled({
+    timeout: 10000,
+  });
+  await page.getByTestId("setup-finish").click();
+  await expect(page.getByTestId("finish-block")).toBeVisible({
+    timeout: 30000,
+  });
+  await page.getByTestId("finish-download").click();
+  await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
+
+  const rebuilt = await readDownloadedZip(page, 0);
+  const manifest = parseTourManifest(JSON.parse(rebuilt.entries["tour.json"]));
+  const labels = manifest.objects.flatMap((o) =>
+    o.kind === "pin" ? [o.label] : [],
+  );
+  // The fixture's own pin, plus the one placed BEFORE the reload.
+  expect(labels).toContain("The old gate");
+});
+
+test("a draft is offered again after Not now, and gone after Delete it", async ({
+  page,
+}) => {
+  // Why three buttons and not two (M5 review #4). Declining is not
+  // deleting: a mis-tap on "no" must not become the loss this whole feature
+  // exists to prevent. And a draft with no way to discard it is one that is
+  // offered forever - the app's only escape would be clearing the site's
+  // storage.
+  await page.goto("/?nocache=1");
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  await measureTheCode(page);
+  await page.getByTestId("setup-pin").click();
+  await page.getByTestId("pin-label").fill("A pin to abandon");
+  await page.getByTestId("pin-save").click();
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /1 object placed/,
+  );
+
+  const reopen = async () => {
+    await page.reload();
+    await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+    await page.getByTestId("open-button").click();
+    await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+      timeout: 15000,
+    });
+    await openMeasureStep(page);
+  };
+
+  await reopen();
+  await expect(page.getByTestId("draft-offer")).toBeVisible({ timeout: 15000 });
+  await page.getByTestId("draft-dismiss").click();
+  await expect(page.getByTestId("draft-offer")).toBeHidden();
+
+  // Still there: "not now" kept it.
+  await reopen();
+  await expect(page.getByTestId("draft-offer")).toBeVisible({ timeout: 15000 });
+  await page.getByTestId("draft-discard").click();
+  await expect(page.getByTestId("draft-offer")).toBeHidden();
+
+  // Gone for good. Waited on a POSITIVE signal rather than a sleep: the
+  // repo forbids waitForTimeout, and beyond the rule, hidden-after-a-sleep
+  // passes for any reason the offer failed to appear - a store that never
+  // opened, a rejection, a slow OPFS. The finish block is revealed by the
+  // same manifest-settled path the draft offer rides on, so seeing the
+  // panel settle proves the draft path RAN and found nothing.
+  await reopen();
+  await expect(page.getByTestId("setup-panel")).toBeAttached();
+  await expect
+    .poll(async () => page.getByTestId("tour-missing").isHidden(), {
+      timeout: 15000,
+    })
+    .toBe(true);
+  await expect(page.getByTestId("draft-offer")).toBeHidden();
+});
+
+test("a draft accumulates ACROSS finishes: both batches land in the zip", async ({
+  page,
+}) => {
+  // The rule the whole design turns on, and until now the only one with no
+  // regression test (M5 review #5, verdict 11).
+  //
+  // Finishing is not terminal. It merges the placed objects into the
+  // in-memory manifest, empties the list, and leaves that batch alive only
+  // inside `ctx.rebuiltZip` - a Blob that dies with the page. So a draft
+  // reset by each finish would hold only what came AFTER the last download,
+  // while the finish itself rebuilds from the HOSTED zip, which never had
+  // the earlier batch. The creator would end up with two downloads, each
+  // missing the other's content, and nothing on screen saying so.
+  //
+  // The sequence below is the ordinary continuation of the flow: finish,
+  // download, keep working (the upload to the host is a separate manual
+  // step that has not happened yet), then crash.
+  await page.goto("/?nocache=1");
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  await measureTheCode(page);
+
+  // Batch one.
+  await page.getByTestId("setup-pin").click();
+  await page.getByTestId("pin-label").fill("Batch one");
+  await page.getByTestId("pin-save").click();
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /1 object placed/,
+  );
+  await page.getByTestId("setup-finish").click();
+  await expect(page.getByTestId("finish-block")).toBeVisible({
+    timeout: 30000,
+  });
+  await page.getByTestId("finish-download").click();
+  await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
+
+  // Batch two, without ever uploading batch one to the host.
+  await measureTheCode(page);
+  await page.getByTestId("setup-pin").click();
+  await page.getByTestId("pin-label").fill("Batch two");
+  await page.getByTestId("pin-save").click();
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /1 object placed/,
+  );
+
+  // The crash.
+  await page.reload();
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  await expect(page.getByTestId("draft-offer")).toBeVisible({ timeout: 15000 });
+  // BOTH batches are still on offer - the hosted zip has neither.
+  await expect(page.getByTestId("draft-offer-text")).toContainText("2 things");
+  await page.getByTestId("draft-restore").click();
+
+  await expect(page.getByTestId("setup-finish")).toBeEnabled({
+    timeout: 10000,
+  });
+  await page.getByTestId("setup-finish").click();
+  await expect(page.getByTestId("finish-block")).toBeVisible({
+    timeout: 30000,
+  });
+  await page.getByTestId("finish-download").click();
+  await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
+
+  // Index 0, not 1: the reload reset the page, and with it the fake's
+  // record of downloads. The draft survived it because OPFS is not page
+  // state - which is the whole point.
+  const rebuilt = await readDownloadedZip(page, 0);
+  const manifest = parseTourManifest(JSON.parse(rebuilt.entries["tour.json"]));
+  const labels = manifest.objects.flatMap((o) =>
+    o.kind === "pin" ? [o.label] : [],
+  );
+  expect(labels).toContain("Batch one");
+  expect(labels).toContain("Batch two");
+  // ...and neither is duplicated: the finish appends by id.
+  expect(labels.filter((l) => l === "Batch one")).toHaveLength(1);
+});
+
+test("a measurement alone survives a crash - the draft is not deleted for having no pins", async ({
+  page,
+}) => {
+  // M5 review, blocker 2. Measuring is the most expensive thing a creator
+  // does: walk to the poster, hold the phone until the pose is stable and
+  // GPS has aligned. Mint, then have the tab killed before the first pin,
+  // and the draft holds a level and no objects - which the first version
+  // judged "spent" and DELETED, sending the creator back to the wall.
+  await page.goto("/?nocache=1");
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  await measureTheCode(page);
+  // Nothing placed. The crash.
+  await page.reload();
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+
+  await expect(page.getByTestId("draft-offer")).toBeVisible({ timeout: 15000 });
+  await expect(page.getByTestId("draft-offer-text")).toContainText(
+    /measured position/i,
+  );
+  await page.getByTestId("draft-restore").click();
+  // The measurement is what makes Finish reachable without walking back.
+  await expect(page.getByTestId("setup-finish")).toBeEnabled({
+    timeout: 10000,
+  });
+});
+
+test("the draft offer reveals step 4 rather than hiding inside it", async ({
+  page,
+}) => {
+  // M5 review #8. `#draft-offer` lives inside step 4, and a tour open lands
+  // the wizard on the REMEMBERED step - which for a creator who last left
+  // off at step 2 is step 2. Un-hiding an element inside a closed
+  // disclosure is zero pixels and no signal that unsaved work exists.
+  //
+  // The other two draft specs open step 4 by hand before asserting, so
+  // they would pass whether or not a creator ever saw the offer. This one
+  // deliberately does not.
+  await page.goto("/?nocache=1");
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  await measureTheCode(page);
+  await page.getByTestId("setup-pin").click();
+  await page.getByTestId("pin-label").fill("Somewhere");
+  await page.getByTestId("pin-save").click();
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /1 object placed/,
+  );
+
+  await page.reload();
+  // Forget the reached step, so the wizard lands on step 2 the way it does
+  // for a creator who has not been here before - or on any device that has
+  // not stored one. The DRAFT survives this: it lives in OPFS, not in the
+  // step memory, and that separation is exactly what makes this the real
+  // case rather than a contrived one.
+  await expect(page.getByTestId("step-host")).toHaveAttribute("open", "");
+  await page.evaluate(() => {
+    localStorage.clear();
+  });
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  // The wizard put the creator on step 2, so step 4 is closed...
+  await expect(page.getByTestId("print-panel")).toHaveAttribute("open", "");
+  // ...and the offer is visible anyway, without any help from the test.
+  await expect(page.getByTestId("draft-offer")).toBeVisible({ timeout: 15000 });
+  await expect(page.getByTestId("step-measure")).toHaveAttribute("open", "");
 });
