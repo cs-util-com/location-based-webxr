@@ -584,6 +584,25 @@ export function wireCreatorSetup(deps: {
       // It converges: the second discard runs with `mintedLevel === null`,
       // so the meta it writes is spent and the next open is silent.
       recordMeta(draftTourUrl);
+      // And the OBJECTS this session placed are written back, for the same
+      // reason the level is. `clear` empties the whole namespace, and it
+      // cannot tell the rejected draft's files from the ones written
+      // minutes ago by a creator who left the offer on screen and carried
+      // on working - the offer is not modal and placement is not gated on
+      // it. Without this, those pins vanish from disk while staying in
+      // `ctx.placedObjects`, on the readout and in the finished zip, so
+      // NOTHING on screen changes and a crash before finishing loses them
+      // silently. Third time this feature has been the way work is lost
+      // (PR #447 review).
+      //
+      // It also closes the narrower race the same reviewer named: a
+      // `writeDraftObject` still in flight when the tap lands could be
+      // deleted by the clear after reporting success. Re-writing every
+      // live placement AFTER the clear settles covers that too, because
+      // the re-write is what lands last.
+      for (const stillLive of ctx.placedObjects) {
+        recordPlacement(stillLive.object, stillLive.blob);
+      }
     });
   });
 
@@ -1069,6 +1088,23 @@ export function wireCreatorSetup(deps: {
           await store.clear(META_KEY);
           if (stale()) return;
           recordMeta(tourUrl);
+          // NO re-write of live placements here, unlike the discard
+          // handler, and the reason is an invariant rather than a
+          // difference in what `clear` does - it empties the WHOLE
+          // namespace in both places.
+          //
+          // This runs at tour OPEN. `archive-open` resets both
+          // `placedObjects` and `mintedLevel`, and placement is gated on a
+          // minted level, so nothing can have been placed before the awaits
+          // above settle. The list is provably empty, and a loop over it
+          // would be code no test could ever exercise.
+          //
+          // WHAT WOULD BREAK IT: making this path reachable later in a
+          // session, or allowing placement without a mint. Either one turns
+          // this into the bug the discard handler shipped for three rounds -
+          // files deleted while their objects stay on screen, with nothing
+          // to say so. If you change either, copy the re-write from the
+          // discard handler down here.
           return;
         }
         const hasLevel = draftHasUnhostedLevel(stored.draft, hostedLevel);
