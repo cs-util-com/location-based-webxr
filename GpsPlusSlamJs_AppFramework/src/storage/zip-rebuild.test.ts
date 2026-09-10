@@ -275,6 +275,32 @@ describe('rebuildZipWithEntries', () => {
     ).rejects.toThrow(ZipPackagingError);
   });
 
+  it("keeps the caller's prefix on a new name in a MIXED archive", async () => {
+    // Why this test matters: it is the regression the narrowing introduced.
+    // Restricting the relocation to a uniformly `./` archive was right, and
+    // the fallback then wrote the NORMALISED key rather than the path the
+    // caller gave - silently stripping a prefix the caller had supplied.
+    //
+    // That is live, not theoretical. The Tour Viewer builds each captured
+    // photo's path from the prefix it found the manifest at, so in an
+    // archive holding `./tour.json` it asks for `./content/<id>.jpg`; the
+    // reader then looks content up by EXACT name. Dropping it a level would
+    // hide every photo of that session from the tour that contains them.
+    const writer = new ZipWriter(new BlobWriter('application/zip'), {
+      level: 0,
+    });
+    await writer.add('./tour.json', new TextReader('{}'));
+    await writer.add('session.json', new TextReader('{}')); // mixed
+    const input = await writer.close();
+
+    const out = await rebuildZipWithEntries(input, [
+      { path: './content/a.jpg', data: PHOTO },
+    ]);
+    const after = await entryBytes(out);
+    expect(after.has('./content/a.jpg')).toBe(true);
+    expect(after.has('content/a.jpg')).toBe(false);
+  });
+
   it('refuses ./x and x together, which are one file to every reader', async () => {
     // Why this test matters: the two are different STRINGS, so a duplicate
     // check on the raw path lets both through - and the output then carries

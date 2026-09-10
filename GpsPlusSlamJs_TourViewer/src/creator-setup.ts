@@ -940,6 +940,12 @@ export function wireCreatorSetup(deps: {
     startAuthorPipeline,
     resetFinishStep: () => {
       dom.downloadButton.disabled = true;
+      // The LABEL too, because the hand-off continuation is generation-
+      // guarded and returns without restoring it for a tour that closed
+      // underneath an open share sheet. Without this the next tour's
+      // finish enables a button that still reads "Sharing…" (PR #441
+      // review) - the guard moved the leak here rather than removing it.
+      dom.downloadButton.textContent = idleLabel;
       dom.finishStatus.textContent = "";
       // The rebuilt zip belonged to the tour that just closed, so the block
       // offering it goes away with it (M3 review #6) - otherwise a newly

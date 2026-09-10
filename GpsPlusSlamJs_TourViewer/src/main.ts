@@ -123,6 +123,11 @@ const print = wirePrintPanel({
   // Through the seam like every other download, so the e2e fake captures
   // the bytes instead of the browser writing a file.
   downloadPdf: (blob, filename) => seams.downloadPdf(blob, filename),
+  // The open tour's measured codes, so the panel can say when printing
+  // this one would strand them. Read at print time rather than captured:
+  // the levels arrive asynchronously after an open, and a tour can be
+  // swapped without the panel being rewired.
+  measuredCodeIds: () => [...(ctx.currentLevels?.keys() ?? [])],
 });
 
 const stepStore = stepStoreOrUndefined();

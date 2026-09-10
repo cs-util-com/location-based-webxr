@@ -74,6 +74,16 @@ where the geometry and the byte writing live, with their own sidecar).
 
 ## Invariants & assumptions
 
+- **The info line carries every warning about the artifact.** The page-fit
+  warning, the PDF's wider ceiling, and the measurement-orphaning warning
+  all ride `#print-info` rather than separate channels: they are about the
+  thing the creator is one tap from producing, and a second channel is a
+  second thing not to read.
+- **`measuredCodeIds` is read at PRINT time, not captured at wiring.** The
+  open tour's levels arrive asynchronously after an open, and a tour can be
+  swapped without the panel being rewired. It defaults to none, so a panel
+  wired without it never warns rather than warning wrongly.
+
 - **The OPEN TOUR'S link always wins.** `presentTour` assigns it
   unconditionally. It used to preserve text the creator had typed (PR #434
   review), which was right while the field was visible; since F7 the field

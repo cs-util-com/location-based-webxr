@@ -22,7 +22,8 @@ import {
 } from "gps-plus-slam-app-framework/utils/qr-payload/qr-print-pdf";
 
 import type { ViewerMode } from "./mode.js";
-import { codeIndexFromInput } from "./qr-author-mode.js";
+import { codeIndexFromInput, reprintOrphanWarning } from "./qr-author-mode.js";
+import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 
 /**
  * The CSS side length to write into `--print-side` right now, or null to
@@ -188,10 +189,16 @@ export function wirePrintPanel(deps: {
    *  dismissed. Injected so the e2e fake captures it like the zip
    *  downloads. */
   downloadPdf?: (blob: Blob, filename: string) => Promise<boolean>;
+  /** The code ids the OPEN tour already holds measurements for. Used only
+   *  to warn that printing this code would orphan them. Defaults to none,
+   *  so a panel wired without it simply never warns rather than warning
+   *  wrongly. */
+  measuredCodeIds?: () => readonly string[];
 }): PrintPanel {
   const { dom, mode } = deps;
   const onLaunchUrl = deps.onLaunchUrl ?? (() => undefined);
   const downloadPdf = deps.downloadPdf ?? (() => Promise.resolve(false));
+  const measuredCodeIds = deps.measuredCodeIds ?? ((): readonly string[] => []);
   const creator = mode === "creator";
   /** One render of the code, with the async-UI cycle around it: in-progress
    *  before the awaits, a durable end state after, and a failure that says
@@ -228,7 +235,7 @@ export function wirePrintPanel(deps: {
     const writeInfo = claimInfo();
     dom.generateButton.disabled = true;
     dom.generateButton.textContent = "Generating…";
-    generatePrintCode(dom, writeInfo)
+    generatePrintCode(dom, writeInfo, measuredCodeIds)
       .then((launchUrl) => {
         if (generation !== renderGeneration) return;
         onLaunchUrl(launchUrl);
@@ -354,6 +361,7 @@ export function wirePrintPanel(deps: {
 async function generatePrintCode(
   dom: PrintPanelDom,
   writeInfo: (text: string) => void,
+  measuredCodeIds: () => readonly string[],
 ): Promise<string> {
   const sideCss = printedSideCss(Number(dom.sizeInput.value)); // validates
   const { codeIndex, coerced } = codeIndexFromInput(dom.codeInput.value);
@@ -383,6 +391,13 @@ async function generatePrintCode(
     warning !== null && sizeM <= pdfCeiling
       ? ` The PDF below prints up to ${printedSideCss(pdfCeiling)} and is not affected.`
       : "";
+  // The orphaning warning rides the same line for the same reason the
+  // page-fit one does: it is about the artifact the creator is one tap
+  // from producing, and a second channel is a second thing to not read.
+  const orphan = reprintOrphanWarning(
+    await qrCodeId(plan.url),
+    measuredCodeIds(),
+  );
   writeInfo(
     `QR version ${String(plan.qrVersion)}, code ${String(codeIndex)}, ` +
       `prints at ${sideCss} — use 100% scale (no fit-to-page).` +
@@ -390,7 +405,8 @@ async function generatePrintCode(
         ? " Note: the code number was not a whole number of 1 or more, so this printed as code 1."
         : "") +
       (warning === null ? "" : ` ${warning}`) +
-      pdfNote,
+      pdfNote +
+      (orphan === null ? "" : ` ${orphan}`),
   );
   dom.urlOut.textContent = plan.url;
   return plan.url;
