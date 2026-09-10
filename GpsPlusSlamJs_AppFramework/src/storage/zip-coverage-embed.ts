@@ -68,9 +68,33 @@ export async function embedCoverageInSessionJson(
     }
     sessionName = sessionEntry.filename;
     try {
-      session = JSON.parse(
+      const parsed: unknown = JSON.parse(
         await sessionEntry.getData(new TextWriter())
-      ) as Record<string, unknown>;
+      );
+      // `JSON.parse` succeeds on `null`, `3` and `"text"`, and this
+      // function promises to return the input untouched on ANY unexpected
+      // read - a backfill over many recordings wants that rather than an
+      // exception per file. Reading `.h3Cells` off a non-object threw
+      // from outside every `try` here, so one odd recording aborted the
+      // whole backfill (PR #444 review).
+      //
+      // Merging into a non-object would also be destructive: the spread
+      // would produce a fresh object and overwrite whatever the file
+      // actually held.
+      if (
+        typeof parsed !== 'object' ||
+        parsed === null ||
+        Array.isArray(parsed)
+      ) {
+        // Arrays included, and a test of this caught that they were not:
+        // `typeof [] === 'object'`, so an array passed the first check and
+        // then `{ ...[1, 2], h3Cells }` produced `{ 0: 1, 1: 2, ... }` -
+        // a rewritten file, which is the destructive half of this bug
+        // rather than the throwing half.
+        log.warn('session.json is not an object; leaving zip untouched');
+        return zip;
+      }
+      session = parsed as Record<string, unknown>;
     } catch (err) {
       log.warn('session.json unparseable; leaving zip untouched', err);
       return zip;

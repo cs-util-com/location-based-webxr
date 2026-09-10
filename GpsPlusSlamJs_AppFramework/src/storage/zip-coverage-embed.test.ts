@@ -153,3 +153,24 @@ describe('a session.json the author-path rules would refuse', () => {
     expect(after.has('keep.txt')).toBe(true);
   });
 });
+
+describe('a session.json that parses to a non-object', () => {
+  it('returns the input untouched instead of throwing out of the function', async () => {
+    // Why this test matters: `JSON.parse` succeeds on `null`, `3` and
+    // `"text"`, and this function promises to hand the input back on ANY
+    // unexpected read - a backfill over many recordings wants that rather
+    // than an exception per file. Reading a property off a non-object
+    // threw from outside every try, so one odd recording aborted the whole
+    // backfill. Merging into one would have been destructive too: the
+    // spread produces a fresh object and overwrites what the file held.
+    for (const body of ['null', '3', '"text"', '[1,2]']) {
+      const writer = new ZipWriter(new BlobWriter('application/zip'), {
+        level: 0,
+      });
+      await writer.add('session.json', new TextReader(body));
+      const zip = await writer.close();
+      const out = await embedCoverageInSessionJson(zip, CELLS, 11);
+      expect(out, body).toBe(zip);
+    }
+  });
+});
