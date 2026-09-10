@@ -389,8 +389,14 @@ async function orphanWarningFor(
   // Bounded: a creator with more posters than this and a measurement on
   // none of the first few gets a warning they can ignore, which is a far
   // better failure than hashing an unbounded list on a phone.
+  // The posters this creator prints are `codeIndex .. codeIndex + count - 1`
+  // (that is what the PDF numbers), so the highest one ADDS rather than
+  // maxes: with a start of 3 and a count of 3 the posters are 3, 4, 5, and
+  // `max` covered only 1 to 3 - so a measurement on code 5 looked
+  // unreachable and the warning fired on a creator who had changed nothing
+  // (PR #443 review).
   const { count } = printCountFromInput(dom.countInput.value);
-  const highest = Math.min(Math.max(codeIndex, count), 12);
+  const highest = Math.min(codeIndex + count - 1, 24);
   try {
     const linkCodeIds = await Promise.all(
       Array.from({ length: highest }, (_, i) =>

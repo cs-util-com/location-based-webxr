@@ -13,7 +13,7 @@ so the recorder can use it when it grows authoring of its own.
   - **`undefined` means "no persistence"**, never an error: a browser
     without OPFS, blocked site data, a quota wall. The caller carries on
     with the work in memory.
-- `createDraftFileStore(directory, parent?, ownName?) -> DraftFileStore` -
+- `createDraftFileStore(directory) -> DraftFileStore` -
   the store over an already-resolved handle. Exported so tests pass a fake
   and stay in node, as the OSM tile store's do.
 - `DraftFileStore`: `put(key, data) -> Promise<boolean>`, `getText(key)`,
@@ -37,8 +37,19 @@ so the recorder can use it when it grows authoring of its own.
 - **Foreign files are ignored.** `keys()` returns only names that
   round-trip through the escaping, so a directory shared with anything else
   yields no keys that a `get` could not resolve.
-- `clear()` removes the whole directory when the store owns one, and falls
-  back to file-by-file otherwise - one call rather than one per placement.
+- **`clear(firstKey?)` EMPTIES the directory in place, never removes it.**
+  Removing it invalidates the handle the store closed over, so every later
+  `put` throws, is swallowed and returns `false` - persistence silently off
+  for the rest of the session. The cost is an empty directory left behind,
+  which the next `openDraftNamespace` for that namespace reuses.
+  - The names are collected BEFORE any removal: deleting while iterating
+    the directory mutates what the enumerator is walking, and entries
+    survive it.
+  - `firstKey` is deleted first and on its own, for a caller whose clear is
+    fire-and-forget: deleting the file that decides whether a draft EXISTS
+    before anything else means a reload racing the clear finds no draft
+    rather than the one just discarded. Ordering rather than
+    synchronisation, because a reload takes any in-memory guard with it.
 
 ## Why not `opfs-storage.ts`
 
@@ -61,4 +72,6 @@ carry the module are the failure ones: a write that fails reports `false`
 and leaves the earlier value readable, and a refused `getDirectoryHandle`
 yields no store rather than an exception. Plus the round trip for text and
 bytes, the traversal case, a missing key, a listing that throws, foreign
-files, and both `clear()` paths.
+files, and `clear()`: that it empties EVERY entry (the fake's enumerator
+models a real directory's, where removing during iteration skips the next
+name), and that the store still works afterwards.

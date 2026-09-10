@@ -40,13 +40,19 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
 - `MISSING_SIZE_MESSAGE` - what a creator reads when the printed-size
   field is empty at AR entry. The example inside it is interpolated from
   `AUTHOR_DEFAULT_SIZE_M`, so the two cannot drift.
-- `reprintOrphanWarning(plannedCodeId, measuredCodeIds)` - the warning
-  shown before printing a code whose identity differs from every
-  measurement the open tour already holds, or `null` when nothing would be
-  lost.
+- `reprintOrphanWarning(linkCodeIds, measuredCodeIds)` - the warning shown
+  before printing when NO code number the current link can produce reaches
+  any measurement the open tour already holds, or `null` when nothing would
+  be lost.
+  - **The question is about the LINK, not the poster.** One tour can carry
+    several codes and each has its own identity, so asking only about the
+    code in front of the creator told anyone re-printing poster 1 of a tour
+    measured on poster 2 that their link had changed - advice to undo
+    something they never did.
   - **The failure it makes visible is silent and expensive.** A printed
     code's identity is a hash of its text, and the measured pose is filed
-    under that identity in the hosted zip. Change the text - move the file,
+    under that identity in the hosted zip. Change the text - re-print after
+    moving the file,
     swap in a short link, add a tracking parameter - and the code asks for
     an id the archive does not hold. The visitor's app reads that as "this
     code has no level", says nothing, and waits out the scan gate into a

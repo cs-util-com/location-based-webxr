@@ -40,8 +40,18 @@ export interface DraftFileStore {
   getBlob(key: string): Promise<Blob | undefined>;
   /** Every key this store holds, in no particular order. */
   keys(): Promise<readonly string[]>;
-  /** Drop the whole namespace. Used when a draft is spent. */
-  clear(): Promise<void>;
+  /**
+   * Empty the namespace. Used when a draft is spent or discarded.
+   *
+   * `firstKey`, when given, is deleted BEFORE anything else and its
+   * deletion is awaited on its own. That exists because clearing is not
+   * atomic and a caller may be discarded-then-reloaded before it finishes:
+   * deleting the one file that decides whether a draft EXISTS first means a
+   * reload mid-clear finds no draft rather than the one just thrown away.
+   * Ordering rather than synchronisation, because a page reload takes any
+   * in-memory guard with it.
+   */
+  clear(firstKey?: string): Promise<void>;
 }
 
 /**
@@ -123,7 +133,7 @@ export function createDraftFileStore(
       }
       return out;
     },
-    async clear() {
+    async clear(firstKey?: string) {
       // EMPTIED IN PLACE, never removed. Deleting the namespace directory
       // invalidates the handle this store closed over, so every later
       // `put` throws `NotFoundError`, is swallowed, and returns false - and
@@ -137,7 +147,22 @@ export function createDraftFileStore(
       // `openDraftNamespace` for that tour reuses. That is cheaper than a
       // contract where every caller must remember to re-open.
       try {
-        for await (const name of directory.keys()) {
+        // The gate file first, on its own, so a reload racing this clear
+        // finds no draft rather than the one just discarded.
+        if (firstKey !== undefined) {
+          await directory
+            .removeEntry(fileNameFor(firstKey))
+            .catch(() => undefined);
+        }
+        // The names are COLLECTED before anything is removed. Deleting
+        // while iterating `keys()` mutates the directory the iterator is
+        // walking, and entries survive it - which left the meta file in
+        // place, so a discarded draft was offered again on the next open.
+        // The in-memory fake used by the unit tests snapshots its keys and
+        // could not show this; the e2e that discards a real draft did.
+        const names: string[] = [];
+        for await (const name of directory.keys()) names.push(name);
+        for (const name of names) {
           await directory.removeEntry(name, { recursive: true });
         }
       } catch (err) {
