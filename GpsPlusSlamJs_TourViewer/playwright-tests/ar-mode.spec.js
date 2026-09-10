@@ -1881,6 +1881,34 @@ test("a pin placed BEFORE Delete it survives too: the discard rejects the old dr
   await expect(page.getByTestId("setup-status")).toContainText(
     /1 object placed/,
   );
+  // Wait for the FILES, not for round trips. The re-write after the clear is
+  // fire-and-forget and the meta is deleted first, so a reload that beats
+  // the chain finds no draft at all - and the failure would surface as
+  // `draft-offer` never appearing, a timeout pointing at the offer rather
+  // than at the race. The two assertions above are already true when first
+  // evaluated, so they are not slack; the sibling test only looks stable
+  // because four interactions sit in the same place, which is slack rather
+  // than synchronisation. This spot has produced exactly this flake before,
+  // at about one run in six (PR #443 round, and PR #449 review).
+  //
+  // Polling the store also makes this assert the durability claim directly
+  // instead of inferring it from what the next open happens to show.
+  await expect
+    .poll(
+      () =>
+        page.evaluate(async (url) => {
+          const root = await navigator.storage.getDirectory();
+          const drafts = await root.getDirectoryHandle("drafts");
+          const dir = await drafts.getDirectoryHandle(
+            encodeURIComponent(url.trim()),
+          );
+          const names = [];
+          for await (const name of dir.keys()) names.push(name);
+          return names.length;
+        }, RANGES_ARCHIVE),
+      { timeout: 10000 },
+    )
+    .toBeGreaterThanOrEqual(2); // the meta and the pin, back after the clear
   await page.reload();
   await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
   await page.getByTestId("open-button").click();

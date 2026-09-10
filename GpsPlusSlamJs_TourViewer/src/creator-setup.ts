@@ -611,8 +611,7 @@ export function wireCreatorSetup(deps: {
       // draft's ids instead of emptying the namespace, which needs a
       // per-key delete `DraftFileStore` does not have, and a decision
       // about the hosted-but-still-on-disk objects that `clear` currently
-      // collects. Designed in
-      // `2026-09-10-1050-per-key-draft-delete-plan.md`.
+      // collects - which is why it is not done here.
       for (const stillLive of ctx.placedObjects) {
         recordPlacement(stillLive.object, stillLive.blob);
       }
