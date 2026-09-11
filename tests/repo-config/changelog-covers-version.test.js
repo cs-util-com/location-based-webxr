@@ -82,7 +82,7 @@ export function hasVersionHeading(changelog, version) {
   //   separator; directly after a bare version it starts a PRERELEASE, and
   //   `## 1.24.0-rc.1` is not an entry for 1.24.0 (PR #462 review).
   return new RegExp(
-    `^##[ \\t]*(?:\\[${escaped}\\](?![\\d.\\]])|${escaped}(?![\\d.\\]-]))`,
+    `^##[ \\t]+(?:\\[${escaped}\\](?![\\d.\\]])|${escaped}(?![\\d.\\]-]))`,
     'm'
   ).test(changelog);
 }
@@ -119,6 +119,9 @@ describe('AppFramework CHANGELOG covers the released version', () => {
     // A DOUBLED closing bracket is malformed too - the bracketed branch
     // checked only for digits and dots after its `]` (PR #463 review).
     expect(hasVersionHeading('## [1.24.0]]\n', '1.24.0')).toBe(false);
+    // `##1.24.0` is not a heading at all - an ATX marker needs
+    // whitespace after it, and `*` allowed none (PR #465 review).
+    expect(hasVersionHeading('##1.24.0\n', '1.24.0')).toBe(false);
     // A PRERELEASE is not an entry for the release it precedes.
     expect(hasVersionHeading('## 1.24.0-rc.1\n', '1.24.0')).toBe(false);
     // But a date separator after the bracketed form still is one - the
