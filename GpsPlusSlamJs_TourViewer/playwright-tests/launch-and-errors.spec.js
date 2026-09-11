@@ -113,21 +113,40 @@ test.describe("the setup page follows the device's colour scheme", () => {
         ),
       )
       .toBe("#f2f1ed");
-    // And the UA is told, so form controls and scrollbars follow.
+    // And the UA is told, so form controls and scrollbars follow - the
+    // scrollbar only because the PAGE branches its own unlayered `:root`
+    // declaration; a body-level `color-scheme` reaches controls but never
+    // the viewport (PR #463 review).
     await expect
       .poll(() => body.evaluate((el) => getComputedStyle(el).colorScheme))
       .toContain("light");
-    // The paint itself. `.plate` fills from `--surface-gradient`, which is
+    // The paint itself. `.step` fills from `--surface-gradient`, which is
     // COMPOSED on :root from --surface-hi/--surface-lo - the one token that
-    // cannot follow an override placed on a descendant.
+    // cannot follow an override placed on a descendant. `.step` and not
+    // `.plate`: the page's only plate is the AR stats HUD, which is
+    // `display: none` here, so asserting on it would prove the paint on a
+    // surface no viewer ever sees (PR #463 review).
     await expect
       .poll(() =>
         page
-          .locator(".plate")
+          .locator(".step")
           .first()
           .evaluate((el) => getComputedStyle(el).backgroundImage),
       )
       .toContain("rgba(255, 255, 255, 0.78)");
+    // And the ACCENT as ink. The bright accent measures 2.0:1 on this
+    // ground - a WCAG 1.4.3 AA failure on the page's only link, which the
+    // first light block shipped (PR #463 review). Asserted as a resolved
+    // colour rather than a ratio: the ratio is arithmetic on two values
+    // the sheet already fixes, and a test that recomputed it would pass
+    // whatever the sheet said.
+    await expect
+      .poll(() =>
+        body.evaluate((el) =>
+          getComputedStyle(el).getPropertyValue("--accent-ink").trim(),
+        ),
+      )
+      .toBe("#8a4b00");
   });
 });
 
@@ -149,7 +168,7 @@ test.describe("a dark device keeps the default ground", () => {
     await expect
       .poll(() =>
         page
-          .locator(".plate")
+          .locator(".step")
           .first()
           .evaluate((el) => getComputedStyle(el).backgroundImage),
       )

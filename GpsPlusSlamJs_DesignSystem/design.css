@@ -104,6 +104,12 @@
        radar-HUD reference. Used only for: the plate strip, engaged
        state, warnings, anchor dots, the radar you-dot. */
     --accent: #f2971f;
+    /* The accent as FOREGROUND, for the places it paints text or a glyph
+       ON the ground rather than filling a shape. Identical on dark, where
+       it measures 6.5:1 on --paper; the light block darkens it, because
+       "readable on the ground" is a function of the ground and the fill
+       uses (which pair with --ink-on-accent) are not (PR #463 review). */
+    --accent-ink: var(--accent);
     /* black ink for text ON the accent, and the radar's quiet ring */
     --ink-on-accent: #000;
     /* SEMANTIC state colors (research round 2026-08-27). The accent
@@ -297,22 +303,14 @@
 
      Owner decision 2026-09-10; the plan's §8a-2. */
   @media (prefers-color-scheme: light) {
-    /* Tells the UA to paint form controls, scrollbars and the canvas
-       light. The sheet never set this either way before.
-
-       ON `.page` AND NOT ON `:root`, which is the opposite of the tokens
-       below, so the split needs a reason: a page carries its own
-       `:root { color-scheme: dark }` in an inline `<style>`, and UNLAYERED
-       declarations beat layered ones whatever the specificity - so a
-       `:root` rule from this sheet could never win it. `color-scheme` is
-       inherited and composed from nothing, so setting it on the body
-       element the page's own rule does not target is both sufficient and
-       the smaller change. The tokens cannot do the same, because one of
-       them is composed on `:root` (see above). */
-    .page {
-      color-scheme: light;
-    }
-
+    /* `color-scheme` is NOT set here, and that is a correction rather
+       than an omission. It was on `.page`, which reaches form controls by
+       inheritance but NOT the viewport scrollbar - per CSS Color Adjust
+       the viewport takes its used value from the ROOT element, and a page
+       carries its own unlayered `:root { color-scheme: dark }` that no
+       layered rule here can outrank. So the claim was two-thirds true and
+       the remedy belongs where the blocker is: the app branches its own
+       `:root` declaration (PR #463 review). */
     :root:has(.page) {
       /* The two poles, and the dim step between. Values are
          GpsPlusSlamJs_Landing's proven light palette (index.html:104-125)
@@ -320,6 +318,13 @@
       --ink: #1b1b20;
       --ink-dim: #5a5a63;
       --paper: #f2f1ed;
+
+      /* The brand hue, dark enough to be READ on paper: 6.0:1 against
+         --paper where the undarkened accent measures 2.0:1, which is a
+         WCAG 1.4.3 AA failure for real text and was one on this page's
+         only link. The FILL uses keep the bright accent - they pair with
+         --ink-on-accent, which works on either ground. */
+      --accent-ink: #8a4b00;
 
       /* Surfaces invert: translucent WHITE over a light ground, with the
          low surface becoming a faint darkening rather than a lightening.
@@ -349,7 +354,14 @@
         rgb(0 0 0 / 0.04) 55%
       );
       --ring: #8a8f9c;
-      --hatch: rgb(0 0 0 / 0.18);
+      /* NOT --hatch. It is the one token here that never touches the
+         ground: its only consumer alternates it with --state-warn inside
+         a progress bar, and that fill is deliberately unchanged by this
+         block - so lightening the stripe weakens it against a colour that
+         did not move, from ~1.80:1 to ~1.41:1, and that stripe is the
+         SHAPE half of "never colour alone" (PR #463 review). --cone is
+         the opposite case and does change: it paints on the radar plate,
+         which follows the ground. */
       --cone: rgb(0 0 0 / 0.12);
 
       /* The neumorphic family needs no invention: the file already says
@@ -1450,7 +1462,7 @@
     justify-content: center;
     width: var(--space-4);
     height: var(--space-4);
-    color: var(--accent);
+    color: var(--accent-ink);
   }
 
   .step-body {
