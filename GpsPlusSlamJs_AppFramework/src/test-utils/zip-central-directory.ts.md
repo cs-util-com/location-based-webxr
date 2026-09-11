@@ -17,14 +17,29 @@ community PR #321's packer test.
 - `interface StoredCentralEntry { name; stored; compressedSize; uncompressedSize }`
   - `stored` is true only when BOTH the central and the local header say
     method 0.
+- `readStoredEntryBytes(bytes: Uint8Array, name: string): Uint8Array | undefined`
+  - one entry's CONTENT by name, or `undefined` when the archive has no
+    such entry. STORE MODE ONLY: it throws on a deflated entry rather
+    than returning compressed bytes that a test would then assert
+    against. Validates the local header's signature before reading
+    anything at that offset, so a ZIP64 archive (whose central record
+    holds `0xFFFFFFFF` there) gets a sentence rather than a bounds error.
+  - Added so a test can assert what an archive CARRIES rather than what
+    was handed to the writer.
 
 ## Invariants & assumptions
 
 - Little-endian offsets per the ZIP specification (APPNOTE 4.3.7 and
   4.3.12); no ZIP64, no encryption, no data descriptors beyond what
   zip.js emits in store mode - it reads what this package writes.
-- Test-only: not exported from any barrel and not a tsdown entry.
+- Test-only: not exported from any barrel. It IS a tsdown entry, per
+  file, because the `./test-utils/*` wildcard export only resolves what
+  the build emits - this file was advertised and unbuilt until
+  2026-09-11, so no sibling package could import it.
 
 ## Tests
 
-Used by `storage/pack-files-as-zip.test.ts` and `storage/zip-rebuild.test.ts`.
+Used by `storage/pack-files-as-zip.test.ts` and `storage/zip-rebuild.test.ts`
+in this package, and across the workspace by the Tour Viewer's
+`creator-finish.test.ts`, which asserts the entry PATHS and the manifest
+CONTENT of a rebuilt tour archive.
