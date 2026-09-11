@@ -274,6 +274,131 @@
       --veil: rgb(10 12 18 / 0.6);
     }
   }
+
+  /* LIGHT, and only for a DOCUMENT. Gated on `.page` - the atom an app
+     sets when its ground is a page rather than the camera - so the five
+     camera apps are inert here by construction rather than by discipline.
+     Dark stays the default everywhere (owner answer 1); this is what a
+     device ASKS for, nothing more, which is why there is no switcher and
+     no `data-theme` attribute: neither was requested, and each would be
+     a second copy of this block to keep in step.
+
+     ON `:root`, GATED BY `:has(.page)` - not on `.page` itself, which
+     is what the first version did and what broke it (PR #462 review).
+     A `var()` inside a custom property is substituted at computed-value
+     time ON THE ELEMENT THAT DECLARES IT. `--surface-gradient` is
+     declared on `:root` from `--surface-hi`/`--surface-lo`, so
+     overriding those two on a DESCENDANT cannot reach back into it: the
+     page inherited a gradient with the dark values already baked in, and
+     every plate, button and badge painted dark over light paper. Setting
+     the same tokens on `:root` puts them on the element that composes
+     them, and the composite follows for free - which is also why this
+     needs no list of derived tokens to keep in step.
+
+     Owner decision 2026-09-10; the plan's §8a-2. */
+  @media (prefers-color-scheme: light) {
+    /* Tells the UA to paint form controls, scrollbars and the canvas
+       light. The sheet never set this either way before.
+
+       ON `.page` AND NOT ON `:root`, which is the opposite of the tokens
+       below, so the split needs a reason: a page carries its own
+       `:root { color-scheme: dark }` in an inline `<style>`, and UNLAYERED
+       declarations beat layered ones whatever the specificity - so a
+       `:root` rule from this sheet could never win it. `color-scheme` is
+       inherited and composed from nothing, so setting it on the body
+       element the page's own rule does not target is both sufficient and
+       the smaller change. The tokens cannot do the same, because one of
+       them is composed on `:root` (see above). */
+    .page {
+      color-scheme: light;
+    }
+
+    :root:has(.page) {
+      /* The two poles, and the dim step between. Values are
+         GpsPlusSlamJs_Landing's proven light palette (index.html:104-125)
+         rather than newly invented ones. */
+      --ink: #1b1b20;
+      --ink-dim: #5a5a63;
+      --paper: #f2f1ed;
+
+      /* Surfaces invert: translucent WHITE over a light ground, with the
+         low surface becoming a faint darkening rather than a lightening.
+         --surface-gradient derives from -hi and -lo, so it follows. */
+      --surface: rgb(255 255 255 / 0.55);
+      --surface-hi: rgb(255 255 255 / 0.78);
+      --surface-lo: rgb(0 0 0 / 0.05);
+      /* "inverse" means "opposite of the ground", so on light it is dark */
+      --surface-inverse: rgb(27 27 32 / 0.72);
+      --surface-knob: rgb(27 27 32 / 0.32);
+      --veil: rgb(242 241 237 / 0.6);
+      --surface-read-gradient: linear-gradient(
+        160deg,
+        rgb(255 255 255 / 0.9),
+        rgb(255 255 255 / 0.72)
+      );
+
+      /* The accent and the danger colour keep their hue - they are the
+         brand, not a function of the ground - and black stays the ink on
+         both, which is what they were chosen against. */
+
+      /* A white edge highlight is invisible on light paper, so the edge
+         becomes a dark hairline, same 160deg light direction. */
+      --edge-gradient: linear-gradient(
+        160deg,
+        rgb(0 0 0 / 0.16),
+        rgb(0 0 0 / 0.04) 55%
+      );
+      --ring: #8a8f9c;
+      --hatch: rgb(0 0 0 / 0.18);
+      --cone: rgb(0 0 0 / 0.12);
+
+      /* The neumorphic family needs no invention: the file already says
+         --raise-light carries the owner's original sample values, which
+         were drawn FOR a light ground. The raised pair adopts them and
+         the big one keeps its extra weight. */
+      --raise:
+        2px 2px 2px rgb(0 0 0 / 0.16), -2px -2px 2px rgb(255 255 255 / 0.9);
+      --raise-big:
+        3px 3px 4px rgb(0 0 0 / 0.2), -3px -3px 4px rgb(255 255 255 / 0.95);
+      --raise-light:
+        2px 2px 2px rgb(0 0 0 / 0.12), -2px -2px 2px rgb(255 255 255 / 0.95);
+      --shadow-pressed: 0 1px 3px rgb(0 0 0 / 0.18);
+      --carve:
+        inset 3px 3px 9px rgb(0 0 0 / 0.12),
+        inset -3px -3px 9px rgb(255 255 255 / 0.85);
+      --carve-deep:
+        inset 5px 5px 12px rgb(0 0 0 / 0.18),
+        inset -5px -5px 12px rgb(255 255 255 / 0.9);
+
+      /* A halo separates a mark from its ground, so on a light ground it
+         is a LIGHT halo. Unused by a document today - halos exist for
+         plateless legibility over a camera - but wrong is wrong, and a
+         token left dark here would be a trap for the first light app
+         that needs one. */
+      --halo-text:
+        0 0 2px rgb(255 255 255 / 0.95), 0 0 5px rgb(255 255 255 / 0.85),
+        0 1px 14px rgb(255 255 255 / 0.65);
+      --halo-drop: drop-shadow(0 1px 2px rgb(255 255 255 / 0.8));
+      --halo-ring: 0 0 4px rgb(255 255 255 / 0.6);
+    }
+
+    /* The same preference as the block above, answered for a light
+       ground. It has to be repeated INSIDE here: `:root:has(.page)`
+       outranks that block's plain `:root`, so a light page would
+       otherwise keep translucent surfaces for a reader who asked for
+       solid ones - the accessibility setting silently losing to a colour
+       scheme (PR #462 review). */
+    @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+      :root:has(.page) {
+        --surface: rgb(255 255 255 / 0.94);
+        --surface-hi: rgb(255 255 255 / 0.97);
+        --surface-lo: rgb(0 0 0 / 0.1);
+        --surface-inverse: rgb(27 27 32 / 0.94);
+        --surface-knob: rgb(27 27 32 / 0.7);
+        --veil: rgb(242 241 237 / 0.85);
+      }
+    }
+  }
 }
 
 /* ==========================================================

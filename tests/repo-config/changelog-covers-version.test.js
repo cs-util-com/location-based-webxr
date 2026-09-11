@@ -66,9 +66,25 @@ const frameworkDir = resolve(repoRoot, 'GpsPlusSlamJs_AppFramework');
  */
 export function hasVersionHeading(changelog, version) {
   const escaped = version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  // The separator and date after the version are free-form, so a change of
-  // dash style cannot silently disarm this.
-  return new RegExp(`^##\\s*\\[?${escaped}\\]?(\\s|$)`, 'm').test(changelog);
+  // Three things this pattern has to get right, each learned from a review:
+  //
+  // - `[ \t]` rather than `\s`, which matches NEWLINES. With `\s*` a bare
+  //   `##` line followed by a line beginning with the version passed with no
+  //   heading present at all (PR #461).
+  // - The brackets are an ALTERNATION, not two independent optionals.
+  //   `\[?…\]?` accepted the malformed `## 1.24.0]` (PR #461, second pass).
+  // - A negative lookahead rather than "whitespace follows", so the
+  //   separator really is free-form - `## [1.24.0]-2026-09-05` counts -
+  //   while `## 1.2.50` is still not an entry for 1.2.5, and a stray `]`
+  //   after a bare version is still refused.
+  // - The two branches carry DIFFERENT lookaheads, because `-` means
+  //   different things on each side. After a closing bracket it is a
+  //   separator; directly after a bare version it starts a PRERELEASE, and
+  //   `## 1.24.0-rc.1` is not an entry for 1.24.0 (PR #462 review).
+  return new RegExp(
+    `^##[ \\t]*(?:\\[${escaped}\\](?![\\d.])|${escaped}(?![\\d.\\]-]))`,
+    'm'
+  ).test(changelog);
 }
 
 describe('AppFramework CHANGELOG covers the released version', () => {
@@ -91,6 +107,22 @@ describe('AppFramework CHANGELOG covers the released version', () => {
     expect(hasVersionHeading('## 1.2.50\n', '1.2.5')).toBe(false);
     // An "Unreleased" section is not an entry for anything.
     expect(hasVersionHeading('## Unreleased\n', '1.25.0')).toBe(false);
+    // A bare `##` must not reach across a line break to a version below it.
+    expect(hasVersionHeading('## \n\n1.24.0 needs Node 26\n', '1.24.0')).toBe(
+      false
+    );
+    // A separator with no space before it is still a heading.
+    expect(hasVersionHeading('## [1.24.0]-2026-09-05\n', '1.24.0')).toBe(true);
+    // A version with one bracket is malformed, not a heading.
+    expect(hasVersionHeading('## 1.24.0]\n', '1.24.0')).toBe(false);
+    expect(hasVersionHeading('## [1.24.0\n', '1.24.0')).toBe(false);
+    // A PRERELEASE is not an entry for the release it precedes.
+    expect(hasVersionHeading('## 1.24.0-rc.1\n', '1.24.0')).toBe(false);
+    // But a date separator after the bracketed form still is one - the
+    // reason the two branches cannot share a lookahead.
+    expect(hasVersionHeading('## [1.24.0] - 2026-09-05\n', '1.24.0')).toBe(
+      true
+    );
   });
 
   it('has an entry for the version currently in package.json', () => {
