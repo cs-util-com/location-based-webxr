@@ -728,9 +728,13 @@
     border-radius: 4px;
   }
   /* accent text, for the one highlighted value (reference: the
-     yellow "Paris, France" / date lines) */
+     yellow "Paris, France" / date lines). --accent-INK, because this is
+     accent as TEXT: the bright accent measures 2.0:1 on light paper. Not
+     reachable today (no .page document uses this atom), fixed on the same
+     "wrong is wrong" reasoning as the halo family - a token left bright
+     here is a trap for the first light app that needs it. */
   .num--accent {
-    color: var(--accent);
+    color: var(--accent-ink);
   }
 
   /* --- toast --- */
