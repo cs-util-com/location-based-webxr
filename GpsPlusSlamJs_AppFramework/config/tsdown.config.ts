@@ -195,6 +195,13 @@ const entryFiles = [
   // floor-estimate → offset chain against a demo-owned grid. Advertised by the
   // `./test-utils/*` wildcard, so it must be built per-file like the rest.
   'src/test-utils/synthetic-depth-samples.ts',
+  // The STORE-mode central-directory reader - it reads an archive back
+  // with a parser independent of the library that wrote it, so a shared
+  // misreading of the zip format cannot cancel itself out. Consumed by
+  // the Tour Viewer's finish tests, which assert the PATHS a published
+  // archive actually carries. Advertised by the wildcard export and
+  // documented, but never built, so no sibling could import it.
+  'src/test-utils/zip-central-directory.ts',
 
   // types/
   'src/types/index.ts',
