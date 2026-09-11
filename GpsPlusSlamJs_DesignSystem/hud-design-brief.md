@@ -150,6 +150,10 @@ honest against `design.css` and `catalog.css`.
   world-dimming moment) · `--cone` (radar view cone) · `--edge-gradient`
   (plate rim lighting - never a border color).
 - **Accent & state**: `--accent` #f2971f with `--ink-on-accent` ·
+  `--accent-ink` (the SAME accent when it paints TEXT or a glyph on the
+  ground rather than filling a shape - identical on dark, darkened on
+  light, because readable-on-the-ground is a function of the ground; a
+  fill keeps `--accent` and pairs with `--ink-on-accent`) ·
   `--accent-signature` (the plate strip) · `--state-engaged` (on/active/
   decisive) · `--danger` #ef4444 with `--ink-on-danger` · `--state-warn`
   (the failure family - never decoration, never engaged) · `--hatch` (dark

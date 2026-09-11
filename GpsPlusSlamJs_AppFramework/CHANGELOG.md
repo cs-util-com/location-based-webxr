@@ -324,6 +324,186 @@ Requires `gps-plus-slam-js` ≥ 1.20 (the `resetGpsSessionData` carrier).
   can wire the QR tracking pipeline without pulling the whole `/ar/qr`
   barrel into node unit tests.
 
+> **The ten entries below were RECONSTRUCTED on 2026-09-11**, from the
+> commits between each version's bump, and they read differently from the
+> entries around them on purpose. The ones written at release time say what
+> a release was FOR; these say what changed, because that is all the record
+> still holds. Where a release's externally visible surface is genuinely
+> unclear from its commits, the entry says so rather than inventing a
+> summary.
+>
+> **Which versions exist here is not a judgement call**: the list comes from
+> the registry, so every version below was really published and every
+> version absent from this file was never published. That closes the gap
+> between 1.3.0 and 1.20.0 - ten releases, roughly two months, documented
+> for the first time.
+
+## [1.19.0] — 2026-08-24
+
+The largest of the backfilled releases: 82 framework commits over nine
+weeks, and the one where several helpers stopped existing three times over.
+
+### Features
+
+- **Production elevation-offset estimator** — a slew-limited median with a
+  freeze layer, alongside a corpus-validated floor estimator with a plane
+  fit and a confidence model.
+- **A log-only diagnostics action**, so a measurement survives the session
+  that took it.
+
+### Changed
+
+- **One implementation each for helpers that had several.** `escapeHtml`
+  became the workspace's single escaper; `clamp01` became one per package
+  and `smoothstep` one in the OSM demo; the distance formatter became one
+  formatter with three call-site rules. A consumer that imported any of
+  these from a second location will have to move to the surviving one.
+- **The toast mechanism moved out of the OSM demo** and into the framework.
+- **The occlusion mesh takes one `mode` field**, replacing a boolean and a
+  mode that could disagree.
+
+## [1.14.0] — 2026-07-19
+
+### Features
+
+- **`compassVoteWeight` store option** — the carrier for a vote-weight
+  control. Dispatched once `gpsData` exists; absent means the library
+  default, so existing consumers are unaffected.
+- **`enableCompassExperiment` and `enableRansacComparison` store opt-ins.**
+
+## [1.13.0] — 2026-07-18
+
+### Features
+
+- **`startHitTestReticle`** — a shared hit-test reticle driver, so an app
+  placing content on surfaces no longer writes its own.
+- **The wayfinding HUD** — `createWayfindingHud` plus the placement seam
+  ported from the HUD prototype, with an explicit-tick mode for callers
+  that drive their own frame loop, and frame-rate-independent damping of
+  the circle.
+- **The Stats.js performance overlay** was promoted into the framework.
+
+### Performance
+
+- **The occluder re-mesh worker gained a fast path** (about 69 % off the
+  smooth re-mesh), and the carve walk was fused into the occupancy grid
+  (fold time down about 31 %).
+
+## [1.11.0] — 2026-07-12
+
+**This release removes exports.** It is the one version in the backfilled
+range where an upgrade can fail to compile, and the commits are marked
+breaking in the history.
+
+### Removed / Changed
+
+- **The webxr-session callback injectors folded into `initAR` options**,
+  and the session injection exports were deleted - replay owns its scene.
+- **The recorder settings catalog moved into the recorder app**, out of the
+  framework.
+- **The dead legacy single-tile `MapOverlay` was deleted**, along with
+  zero-consumer `webxr-session` exports.
+- **The QR cluster split into `ar/qr/`**, the first step of the `ar/`
+  restructure - import paths for QR modules changed.
+
+### Features
+
+- **`flushPendingWrites`** — a drain hook the stop flow awaits before
+  actions and readers run, so a recording's writes are on disk before
+  anything reads them.
+- **An FFT high-frequency-energy metric** for image quality, with a
+  blur-metric selector.
+
+## [1.10.0] — 2026-07-11
+
+### Features
+
+- **A built-in object-pose bootstrap source for `createGpsAnchor`.**
+- **`initAR` applies the Chromium tab-crash workaround by default.**
+
+### Changed
+
+- Internal tightening from a quality review: depth acquisition became lazy
+  behind the sample-interval gate, the live-map snapshot rebuild is
+  memoized on input references, `app-selectors` is typed against the
+  `gpsData` slice only, and zip export consumes the OPFS layout owner's
+  sessions handle.
+
+## [1.9.1] — 2026-07-10
+
+A packaging-only release: pnpm 11 configuration, `engines.node >= 22.14.0`,
+and a 24-hour minimum release age. No source changes.
+
+## [1.9.0] — 2026-07-09
+
+### Features
+
+- **QR launch-URL payload codecs** — candidates A2-A5 with total decoders,
+  then pruned to the measured-best, with `buildQrLaunchUrl` as the helper a
+  consumer calls.
+- **`loopClosureDebug` recording option**, and a core re-export of
+  `createLoopClosureHandler`.
+- **`ZipSource` supports lazy loading** through a Reader integration.
+- **The live map follows the fused pose**, not the raw GPS fix, and
+  auto-centres on the blue dot.
+
+## [1.8.0] — 2026-07-04
+
+### Features
+
+- **A session-end hook plus full teardown** when the system ends an
+  `XRSession` - the case an app cannot observe on its own.
+- **The AR far plane rises to 200 m**, via exported `AR_CAMERA_*` frustum
+  constants a consumer can read rather than guess.
+
+### Fixed
+
+- The CSS3D minimap plane was re-fitted so it clears the viewer plane at
+  map-viewing pitches for every yaw.
+- Packed-cell keys were consolidated into one implementation, and every
+  key-touching path guarded against aliasing outside the ±65535 envelope.
+- `createSlamAppStore` now rejects `extraReducers` keys that collide with
+  framework-reserved slices, rather than letting one silently win.
+
+## [1.7.0] — 2026-06-28
+
+### Features
+
+- **The Phase-4 Stage-0 cold-start compass override is on by default.**
+
+### Removed
+
+- **The inert `computeCompassAgreement` and its first-agreement subsystem.**
+- **The dead legacy `rawDeviceOrientation` / `compassAbsolute` fields** are
+  no longer written on GPS events.
+
+### Fixed
+
+- A corrupt alignment matrix scores as a failure rather than as perfectly
+  stable, and a non-finite `matrixDelta` can no longer make the score NaN.
+
+## [1.4.0] — 2026-06-21
+
+### Changed
+
+- **Scenario layout became recorder-owned.** Scenario logic was deleted from
+  framework storage and the scenario-aware zip export moved to the recorder,
+  leaving a generic primitive behind. A consumer relying on the framework's
+  scenario handling has to move to the recorder's.
+- **`SessionMetadata.scenarioName` was renamed to `contextTag`**, with a
+  replay fallback so existing recordings still load.
+
+### Features
+
+- **A frame-tile display-resolution slider** in settings, and a setup order
+  that asks for permissions first and GPS last.
+
+### Fixed
+
+- Several error paths were isolated so one throwing step cannot strand a
+  session or corrupt a lock state machine, and the QR-derived-pose fold
+  cursor advances only past observations that were actually folded.
+
 ## [1.3.0] — 2026-06-13
 
 ### Features
