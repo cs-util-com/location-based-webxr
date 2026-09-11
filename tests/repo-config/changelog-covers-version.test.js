@@ -77,8 +77,12 @@ export function hasVersionHeading(changelog, version) {
   //   separator really is free-form - `## [1.24.0]-2026-09-05` counts -
   //   while `## 1.2.50` is still not an entry for 1.2.5, and a stray `]`
   //   after a bare version is still refused.
+  // - The two branches carry DIFFERENT lookaheads, because `-` means
+  //   different things on each side. After a closing bracket it is a
+  //   separator; directly after a bare version it starts a PRERELEASE, and
+  //   `## 1.24.0-rc.1` is not an entry for 1.24.0 (PR #462 review).
   return new RegExp(
-    `^##[ \\t]*(?:\\[${escaped}\\]|${escaped})(?![\\d.\\]])`,
+    `^##[ \\t]*(?:\\[${escaped}\\](?![\\d.])|${escaped}(?![\\d.\\]-]))`,
     'm'
   ).test(changelog);
 }
@@ -112,6 +116,13 @@ describe('AppFramework CHANGELOG covers the released version', () => {
     // A version with one bracket is malformed, not a heading.
     expect(hasVersionHeading('## 1.24.0]\n', '1.24.0')).toBe(false);
     expect(hasVersionHeading('## [1.24.0\n', '1.24.0')).toBe(false);
+    // A PRERELEASE is not an entry for the release it precedes.
+    expect(hasVersionHeading('## 1.24.0-rc.1\n', '1.24.0')).toBe(false);
+    // But a date separator after the bracketed form still is one - the
+    // reason the two branches cannot share a lookahead.
+    expect(hasVersionHeading('## [1.24.0] - 2026-09-05\n', '1.24.0')).toBe(
+      true
+    );
   });
 
   it('has an entry for the version currently in package.json', () => {
