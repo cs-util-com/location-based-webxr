@@ -134,19 +134,25 @@ test.describe("the setup page follows the device's colour scheme", () => {
           .evaluate((el) => getComputedStyle(el).backgroundImage),
       )
       .toContain("rgba(255, 255, 255, 0.78)");
-    // And the ACCENT as ink. The bright accent measures 2.0:1 on this
-    // ground - a WCAG 1.4.3 AA failure on the page's only link, which the
-    // first light block shipped (PR #463 review). Asserted as a resolved
-    // colour rather than a ratio: the ratio is arithmetic on two values
-    // the sheet already fixes, and a test that recomputed it would pass
-    // whatever the sheet said.
+    // And the ACCENT as ink, asserted ON THE LINK rather than as a token.
+    // The bright accent measures 2.0:1 on this ground - a WCAG 1.4.3 AA
+    // failure on the page's only link, which the first light block
+    // shipped (PR #463 review).
+    //
+    // Reading `--accent-ink` back off the body was the first attempt and
+    // guarded NOTHING: the light block declares that token, so the
+    // assertion could only confirm the block matched. The defect was
+    // never the token's value - it was which token the link referenced,
+    // and pointing it back at `--accent` left every test here green with
+    // the 2.0:1 link restored (PR #466 review). This is the assertion
+    // that fails for that revert.
     await expect
       .poll(() =>
-        body.evaluate((el) =>
-          getComputedStyle(el).getPropertyValue("--accent-ink").trim(),
-        ),
+        page
+          .locator("#visitor-link")
+          .evaluate((el) => getComputedStyle(el).color.trim()),
       )
-      .toBe("#8a4b00");
+      .toBe("rgb(138, 75, 0)");
   });
 });
 
@@ -173,5 +179,15 @@ test.describe("a dark device keeps the default ground", () => {
           .evaluate((el) => getComputedStyle(el).backgroundImage),
       )
       .toContain("rgba(52, 58, 80, 0.35)");
+    // The accent as ink on the dark ground, for the same reason the light
+    // half asserts it: without this, a light `--accent-ink` escaping its
+    // gate would dim the link to 3.2:1 here and nothing would notice.
+    await expect
+      .poll(() =>
+        page
+          .locator("#visitor-link")
+          .evaluate((el) => getComputedStyle(el).color.trim()),
+      )
+      .toBe("rgb(242, 151, 31)");
   });
 });

@@ -105,6 +105,17 @@ export function readStoredEntryBytes(
       bytes.subarray(at + 46, at + 46 + nameLength)
     );
     if (entryName === name) {
+      // The sibling validates this signature before trusting anything at
+      // localOffset, and this path did not (PR #466 review). A ZIP64
+      // archive stores 0xFFFFFFFF in the central relative-offset field
+      // with the real offset in the extra field, so without the check the
+      // next read is a bare out-of-bounds error rather than a sentence
+      // saying which archives this reader handles.
+      if (view.getUint32(localOffset, true) !== LOCAL_HEADER_SIGNATURE) {
+        throw new Error(
+          `no local header at ${String(localOffset)} for ${name} - ZIP64 or an unsupported layout`
+        );
+      }
       if (view.getUint16(localOffset + 8, true) !== METHOD_STORED) {
         throw new Error(`entry is not stored: ${name}`);
       }
