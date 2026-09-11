@@ -275,7 +275,7 @@
     }
   }
 
-  /* LIGHT, and only for a DOCUMENT. Scoped to `.page` - the atom an app
+  /* LIGHT, and only for a DOCUMENT. Gated on `.page` - the atom an app
      sets when its ground is a page rather than the camera - so the five
      camera apps are inert here by construction rather than by discipline.
      Dark stays the default everywhere (owner answer 1); this is what a
@@ -283,17 +283,37 @@
      no `data-theme` attribute: neither was requested, and each would be
      a second copy of this block to keep in step.
 
-     Custom properties set on `.page` beat the `:root` values by being
-     declared ON the element rather than inherited into it, so no
-     specificity or layer trick is needed.
+     ON `:root`, GATED BY `:has(.page)` - not on `.page` itself, which
+     is what the first version did and what broke it (PR #462 review).
+     A `var()` inside a custom property is substituted at computed-value
+     time ON THE ELEMENT THAT DECLARES IT. `--surface-gradient` is
+     declared on `:root` from `--surface-hi`/`--surface-lo`, so
+     overriding those two on a DESCENDANT cannot reach back into it: the
+     page inherited a gradient with the dark values already baked in, and
+     every plate, button and badge painted dark over light paper. Setting
+     the same tokens on `:root` puts them on the element that composes
+     them, and the composite follows for free - which is also why this
+     needs no list of derived tokens to keep in step.
 
      Owner decision 2026-09-10; the plan's §8a-2. */
   @media (prefers-color-scheme: light) {
-    .page {
-      /* Tells the UA to paint form controls, scrollbars and the canvas
-         light. The sheet never set this either way before. */
-      color-scheme: light;
+    /* Tells the UA to paint form controls, scrollbars and the canvas
+       light. The sheet never set this either way before.
 
+       ON `.page` AND NOT ON `:root`, which is the opposite of the tokens
+       below, so the split needs a reason: a page carries its own
+       `:root { color-scheme: dark }` in an inline `<style>`, and UNLAYERED
+       declarations beat layered ones whatever the specificity - so a
+       `:root` rule from this sheet could never win it. `color-scheme` is
+       inherited and composed from nothing, so setting it on the body
+       element the page's own rule does not target is both sufficient and
+       the smaller change. The tokens cannot do the same, because one of
+       them is composed on `:root` (see above). */
+    .page {
+      color-scheme: light;
+    }
+
+    :root:has(.page) {
       /* The two poles, and the dim step between. Values are
          GpsPlusSlamJs_Landing's proven light palette (index.html:104-125)
          rather than newly invented ones. */
@@ -360,6 +380,23 @@
         0 1px 14px rgb(255 255 255 / 0.65);
       --halo-drop: drop-shadow(0 1px 2px rgb(255 255 255 / 0.8));
       --halo-ring: 0 0 4px rgb(255 255 255 / 0.6);
+    }
+
+    /* The same preference as the block above, answered for a light
+       ground. It has to be repeated INSIDE here: `:root:has(.page)`
+       outranks that block's plain `:root`, so a light page would
+       otherwise keep translucent surfaces for a reader who asked for
+       solid ones - the accessibility setting silently losing to a colour
+       scheme (PR #462 review). */
+    @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+      :root:has(.page) {
+        --surface: rgb(255 255 255 / 0.94);
+        --surface-hi: rgb(255 255 255 / 0.97);
+        --surface-lo: rgb(0 0 0 / 0.1);
+        --surface-inverse: rgb(27 27 32 / 0.94);
+        --surface-knob: rgb(27 27 32 / 0.7);
+        --veil: rgb(242 241 237 / 0.85);
+      }
     }
   }
 }

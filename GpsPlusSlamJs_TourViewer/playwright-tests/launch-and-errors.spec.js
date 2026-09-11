@@ -87,6 +87,16 @@ test("the page boots without console errors", async ({ page }) => {
  * assert it, and they assert the DARK half as well, because a light block
  * written with the wrong scope repaints everything and a test that only ever
  * checks light would call that a success.
+ *
+ * EACH HALF ASSERTS A RESOLVED PAINT, not only the tokens the sheet sets.
+ * The first version checked `--paper` and `color-scheme` alone - both
+ * declared directly by the light block - so it could only ever confirm that
+ * the block MATCHED. It passed while every plate, button and badge on the
+ * page still painted the dark surface, because `--surface-gradient` is
+ * composed on `:root` and the block was setting its inputs on a descendant
+ * (PR #462 review). A token a rule declares is an input; what a viewer sees
+ * is the output, and only the output can catch a composite that fails to
+ * follow.
  */
 test.describe("the setup page follows the device's colour scheme", () => {
   test.use({ colorScheme: "light" });
@@ -107,6 +117,17 @@ test.describe("the setup page follows the device's colour scheme", () => {
     await expect
       .poll(() => body.evaluate((el) => getComputedStyle(el).colorScheme))
       .toContain("light");
+    // The paint itself. `.plate` fills from `--surface-gradient`, which is
+    // COMPOSED on :root from --surface-hi/--surface-lo - the one token that
+    // cannot follow an override placed on a descendant.
+    await expect
+      .poll(() =>
+        page
+          .locator(".plate")
+          .first()
+          .evaluate((el) => getComputedStyle(el).backgroundImage),
+      )
+      .toContain("rgba(255, 255, 255, 0.78)");
   });
 });
 
@@ -123,5 +144,15 @@ test.describe("a dark device keeps the default ground", () => {
         ),
       )
       .toBe("#232838");
+    // The dark paint, for the same reason as the light one: this is the
+    // assertion that fails if a light block ever escapes its gate.
+    await expect
+      .poll(() =>
+        page
+          .locator(".plate")
+          .first()
+          .evaluate((el) => getComputedStyle(el).backgroundImage),
+      )
+      .toContain("rgba(52, 58, 80, 0.35)");
   });
 });
