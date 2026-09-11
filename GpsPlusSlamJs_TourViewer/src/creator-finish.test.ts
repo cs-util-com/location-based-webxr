@@ -31,9 +31,13 @@
 import { describe, expect, it } from "vitest";
 import { Matrix4 } from "three";
 import { packFilesAsZip } from "gps-plus-slam-app-framework/storage";
-import { readStoredCentralDirectory } from "gps-plus-slam-app-framework/test-utils/zip-central-directory";
+import {
+  readStoredCentralDirectory,
+  readStoredEntryBytes,
+} from "gps-plus-slam-app-framework/test-utils/zip-central-directory";
 import {
   createEmptyTourManifest,
+  parseTourManifest,
   serializeTourManifest,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
@@ -194,10 +198,23 @@ async function wireFinishable(options: {
   return { dom, ctx };
 }
 
-/** Wait for the finish's unawaited async body to settle. */
-async function settle(): Promise<void> {
-  for (let i = 0; i < 200; i += 1) {
-    await new Promise((r) => setTimeout(r, 0));
+/**
+ * Wait for the finish's unawaited async body to reach an END STATE.
+ *
+ * A fixed count of turns would be a timing wait: this one has to outlast
+ * a real zip rebuild - blob reads plus assembly - so "200 turns is
+ * enough" is an assumption about machine speed, and its failure mode is
+ * a false red on a loaded box that reports `no zip` rather than
+ * `too slow` (PR #465 review). Polling the end state keeps an upper
+ * bound while returning the moment the finish lands.
+ */
+async function settle(ctx: {
+  rebuiltZip: unknown;
+  finishError: unknown;
+}): Promise<void> {
+  for (let i = 0; i < 600; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    if (ctx.rebuiltZip !== null || ctx.finishError !== null) return;
   }
 }
 
@@ -221,7 +238,7 @@ describe("what the finish actually writes into the published zip", () => {
     });
 
     dom.finishButton.click();
-    await settle();
+    await settle(ctx);
 
     const rebuilt = ctx.rebuiltZip?.blob;
     expect(rebuilt, "the finish should have produced a zip").toBeDefined();
@@ -257,7 +274,7 @@ describe("what the finish actually writes into the published zip", () => {
     });
 
     dom.finishButton.click();
-    await settle();
+    await settle(ctx);
 
     expect(
       ctx.finishError,
@@ -269,12 +286,25 @@ describe("what the finish actually writes into the published zip", () => {
     const names = await entryNamesOf(rebuilt!);
     expect(names).toContain(`${WRAP}tour.json`);
 
-    // And the manifest inside it carries each id exactly once.
-    const ids = ctx.tourManifest?.objects.map((o) => o.id) ?? [];
+    // And the manifest the ARCHIVE CARRIES lists each id exactly once.
+    // Read from the bytes, not from `ctx.tourManifest`: the in-memory
+    // copy is the object the writer built, which this file's header
+    // rejects as proof. A finish that de-duplicated its own state while
+    // serializing a different list would pass the weaker assertion and
+    // ship a zip full of duplicates (PR #465 review).
+    const bytes = readStoredEntryBytes(
+      new Uint8Array(await rebuilt!.arrayBuffer()),
+      `${WRAP}tour.json`,
+    );
+    expect(bytes, "the archive must carry a manifest").toBeDefined();
+    const written = parseTourManifest(
+      JSON.parse(new TextDecoder().decode(bytes)),
+    );
+    const ids = written.objects.map((o) => o.id);
     expect(ids).toEqual(["already-there", "genuinely-new"]);
     expect(
       new Set(ids).size,
-      "every id appears exactly once in the written manifest",
+      "every id appears exactly once in the PUBLISHED manifest",
     ).toBe(ids.length);
   });
 });
