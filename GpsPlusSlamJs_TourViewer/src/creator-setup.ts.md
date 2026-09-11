@@ -32,7 +32,7 @@ is an instruction for a situation a desktop creator is not in.
 Everything measured and placed lives in page memory until Finish, and an AR
 session on a phone can be killed by the OS at any moment. So each mint and
 each placement is also written to an OPFS draft, keyed by the tour's url
-TRIMMED (`draftKeyForTour`), which is the namespace name
+after trimming (`draftKeyForTour`), which is the namespace name
 (`authoring-draft.ts` holds the rules, `draft-persistence.ts` the on-disk
 shape, and the framework's `opfs-draft-store.ts` the mechanics).
 
@@ -73,7 +73,7 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   returned, so a placement made while the offer sat on screen is never in
   the list. The rejection is re-stated on every later meta write, and the
   leftovers of a sweep that did not finish are swept on the next open.
-- **Meta writes are ORDERED PER TOUR.** They all target one key in one
+- **Meta writes are ORDERED PER NAMESPACE.** They all target one key in one
   directory, and the mint and finish ones are never awaited, so an earlier
   write landing later would overwrite a newer one - a rejection, or a
   measured level replaced by the null it captured. Each write queues behind
