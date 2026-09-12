@@ -154,6 +154,39 @@ test.describe("the setup page follows the device's colour scheme", () => {
       )
       .toBe("rgb(138, 75, 0)");
   });
+
+  // Why this test matters: the pair above only ever looks at the RESTING
+  // page, and this app has a second ground. The light block is gated on
+  // `:root:has(.page)`, which is per-DOCUMENT, not per-ground - and the
+  // Tour Viewer is the one app that is both light-eligible and an AR host,
+  // with `#ar-status` inside `#ar-root`, the subtree WebXR DOM Overlay
+  // composites over the CAMERA feed. So the light palette reaches the
+  // camera, which this block's own comment used to deny (PR #468 review).
+  //
+  // Nothing here decides whether it SHOULD reach it. Each pairing
+  // contrasts with its own halo (about 17:1 light, 21:1 dark), so both are
+  // legible over arbitrary video and only a device can settle the look.
+  // This pins what the overlay resolves TODAY, so that changing it is a
+  // visible decision rather than a discovery in the field.
+  test("the AR overlay follows the light ground while a session runs", async ({
+    page,
+  }) => {
+    await page.goto("/?nocache=1");
+    // The attribute production itself sets when a session starts, so this
+    // drives the real state rather than a test-only class (ar-entry.ts).
+    await page.locator("body.page").evaluate((el) => {
+      el.dataset["arActive"] = "true";
+    });
+    const status = page.locator("#ar-status");
+    await expect(status).toHaveCount(1);
+    // Near-black ink over the camera feed, behind a WHITE halo.
+    await expect
+      .poll(() => status.evaluate((el) => getComputedStyle(el).color.trim()))
+      .toBe("rgb(27, 27, 32)");
+    await expect
+      .poll(() => status.evaluate((el) => getComputedStyle(el).textShadow))
+      .toContain("rgba(255, 255, 255, 0.95)");
+  });
 });
 
 test.describe("a dark device keeps the default ground", () => {
@@ -189,5 +222,27 @@ test.describe("a dark device keeps the default ground", () => {
           .evaluate((el) => getComputedStyle(el).color.trim()),
       )
       .toBe("rgb(242, 151, 31)");
+  });
+
+  // The dark half of the over-camera pin above. This is the one that
+  // fails if a light block ever escapes its gate INTO an AR session -
+  // the resting-page assertions cannot see that state at all.
+  test("the AR overlay keeps the dark treatment while a session runs", async ({
+    page,
+  }) => {
+    await page.goto("/?nocache=1");
+    await page.locator("body.page").evaluate((el) => {
+      el.dataset["arActive"] = "true";
+    });
+    const status = page.locator("#ar-status");
+    await expect(status).toHaveCount(1);
+    // White ink behind a BLACK halo - the treatment the halo tokens were
+    // designed for, and the one an over-camera HUD has always used here.
+    await expect
+      .poll(() => status.evaluate((el) => getComputedStyle(el).color.trim()))
+      .toBe("rgb(255, 255, 255)");
+    await expect
+      .poll(() => status.evaluate((el) => getComputedStyle(el).textShadow))
+      .toContain("rgba(0, 0, 0, 0.95)");
   });
 });

@@ -11,6 +11,8 @@ const EOCD_SIGNATURE = 0x06054b50;
 const CENTRAL_HEADER_SIGNATURE = 0x02014b50;
 const LOCAL_HEADER_SIGNATURE = 0x04034b50;
 const EOCD_MIN_SIZE = 22;
+/** Signature through extra-field length; the names follow it. */
+const LOCAL_HEADER_FIXED_SIZE = 30;
 const METHOD_STORED = 0;
 
 export interface StoredCentralEntry {
@@ -27,6 +29,26 @@ function viewOf(bytes: Uint8Array): DataView {
     bytes.byteOffset,
     bytes.byteLength
   );
+}
+
+/**
+ * Whether a local file header really starts at `localOffset`.
+ *
+ * THE RANGE IS CHECKED FIRST, and that is the whole point of the helper
+ * rather than an inlined signature comparison. A ZIP64 archive parks
+ * `0xFFFFFFFF` in the central relative-offset field and carries the real
+ * offset in an extra field, so reading a signature at that offset throws
+ * `RangeError: Offset is outside the bounds of the DataView` before any
+ * comparison can run - which is exactly the bare bounds error both callers
+ * claim to replace with a sentence about supported layouts. Their guards
+ * could not fire for the case their own comments named (PR #468 review).
+ *
+ * `+ LOCAL_HEADER_FIXED_SIZE` rather than `+ 4`: a caller that gets `true`
+ * goes on to read the fixed local header without re-checking.
+ */
+function hasLocalHeaderAt(view: DataView, localOffset: number): boolean {
+  if (localOffset + LOCAL_HEADER_FIXED_SIZE > view.byteLength) return false;
+  return view.getUint32(localOffset, true) === LOCAL_HEADER_SIGNATURE;
 }
 
 function findEocd(view: DataView): number {
@@ -53,8 +75,10 @@ export function readStoredCentralDirectory(
     const extraLength = view.getUint16(at + 30, true);
     const commentLength = view.getUint16(at + 32, true);
     const localOffset = view.getUint32(at + 42, true);
-    if (view.getUint32(localOffset, true) !== LOCAL_HEADER_SIGNATURE) {
-      throw new Error(`no local header at ${localOffset}`);
+    if (!hasLocalHeaderAt(view, localOffset)) {
+      throw new Error(
+        `no local header at ${localOffset} - ZIP64 or an unsupported layout`
+      );
     }
     entries.push({
       name: new TextDecoder().decode(
@@ -106,12 +130,8 @@ export function readStoredEntryBytes(
     );
     if (entryName === name) {
       // The sibling validates this signature before trusting anything at
-      // localOffset, and this path did not (PR #466 review). A ZIP64
-      // archive stores 0xFFFFFFFF in the central relative-offset field
-      // with the real offset in the extra field, so without the check the
-      // next read is a bare out-of-bounds error rather than a sentence
-      // saying which archives this reader handles.
-      if (view.getUint32(localOffset, true) !== LOCAL_HEADER_SIGNATURE) {
+      // localOffset, and this path did not (PR #466 review).
+      if (!hasLocalHeaderAt(view, localOffset)) {
         throw new Error(
           `no local header at ${String(localOffset)} for ${name} - ZIP64 or an unsupported layout`
         );

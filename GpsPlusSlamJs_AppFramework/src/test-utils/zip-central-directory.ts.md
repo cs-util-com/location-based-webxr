@@ -21,9 +21,13 @@ community PR #321's packer test.
   - one entry's CONTENT by name, or `undefined` when the archive has no
     such entry. STORE MODE ONLY: it throws on a deflated entry rather
     than returning compressed bytes that a test would then assert
-    against. Validates the local header's signature before reading
-    anything at that offset, so a ZIP64 archive (whose central record
-    holds `0xFFFFFFFF` there) gets a sentence rather than a bounds error.
+    against. Checks the local header's RANGE and then its signature
+    before reading anything at that offset, so a ZIP64 archive (whose
+    central record holds `0xFFFFFFFF` there) gets a sentence rather than
+    a bounds error. Range first is load-bearing and not belt-and-braces:
+    a signature read at `0xFFFFFFFF` throws `RangeError` before it can be
+    compared, so until 2026-09-12 this guard could not fire for the one
+    case it names. Both readers share the check.
   - Added so a test can assert what an archive CARRIES rather than what
     was handed to the writer.
 
@@ -38,6 +42,11 @@ community PR #321's packer test.
   2026-09-11, so no sibling package could import it.
 
 ## Tests
+
+`zip-central-directory.test.ts` covers the offset guards directly: a
+central record carrying the ZIP64 sentinel must report the layout rather
+than a `RangeError`, and an in-range offset that is simply not a local
+header must still report itself.
 
 Used by `storage/pack-files-as-zip.test.ts` and `storage/zip-rebuild.test.ts`
 in this package, and across the workspace by the Tour Viewer's

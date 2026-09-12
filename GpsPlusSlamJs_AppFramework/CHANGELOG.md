@@ -19,6 +19,18 @@
   - **Worth knowing:** Node 26 does not itself reach LTS until October 2026.
   - `devEngines` is removed as redundant.
 
+### Added
+
+- **`test-utils/zip-central-directory` resolves for the first time.** The
+  `./test-utils/*` export only serves what the build emits, so this
+  subpath was advertised but broken - importing it failed. It is now
+  built, which also makes `readStoredEntryBytes(bytes, name)` available
+  alongside `readStoredCentralDirectory(bytes)`: it returns one stored
+  entry's bytes by name, or `undefined` when the archive has no such
+  entry, and throws on a deflated entry rather than handing back
+  compressed bytes. Test-only; it reads an archive back with a parser
+  independent of the library that wrote it.
+
 ### Changed
 
 - **`downloadZip` resolves a boolean**: `true` when a download or save was

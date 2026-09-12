@@ -383,10 +383,19 @@
         inset -5px -5px 12px rgb(255 255 255 / 0.9);
 
       /* A halo separates a mark from its ground, so on a light ground it
-         is a LIGHT halo. Unused by a document today - halos exist for
-         plateless legibility over a camera - but wrong is wrong, and a
-         token left dark here would be a trap for the first light app
-         that needs one. */
+         is a LIGHT halo. It IS reached by a document, and the first
+         version of this comment said it was not (PR #468 review): the
+         Tour Viewer is the one app that is both light-eligible
+         (`body.page`) and an AR host, and its `#ar-status` wears this
+         halo INSIDE `#ar-root` - the subtree that composites over the
+         camera. That is survivable rather than broken: each pairing
+         contrasts with its OWN halo (white glyph on black, near-black
+         glyph on white - about 21:1 and 17:1), which is what legibility
+         over arbitrary video actually depends on. Whether the HUD should
+         follow the page's scheme at all is an open design question that
+         needs a device, so the e2e pair pins what it does today in both
+         schemes rather than deciding it here. The radar's `--cone` above
+         reaches the camera by the same route. */
       --halo-text:
         0 0 2px rgb(255 255 255 / 0.95), 0 0 5px rgb(255 255 255 / 0.85),
         0 1px 14px rgb(255 255 255 / 0.65);
