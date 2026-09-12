@@ -20,7 +20,10 @@
  * convention.
  */
 import { describe, expect, it } from "vitest";
+import { Matrix4 } from "three";
+import type { Vector3 } from "three";
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
+import { MIN_ALIGNMENT_SAMPLES } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 import { wireCreatorSetup } from "./creator-setup.js";
 import type { CreatorSetupDom } from "./creator-setup.js";
 import {
@@ -180,22 +183,71 @@ function pin(id: string): TourObject {
   };
 }
 
+/**
+ * A store state aligned enough for a placement to be allowed.
+ *
+ * Only the three selectors `placementAllowed` and `mintPin` reach for -
+ * the alignment matrix, this session's GPS fixes, and the zero reference -
+ * so this is deliberately the SHAPE those selectors read rather than a
+ * real store driven by real actions. A real one would need the whole
+ * alignment pipeline to run for a test about a file being written.
+ */
+function alignedArStore(): unknown {
+  const state = {
+    gpsData: {
+      zero: { lat: 47.5, lon: 8.7 },
+      gpsEvents: {
+        alignmentMatrix: new Matrix4(),
+        // `sampleCount` counts fixes SINCE the session started, and
+        // `ctx.gpsSamplesAtSessionStart` is 0 in a fresh session, so the
+        // length is the count.
+        gpsPositions: Array.from({ length: MIN_ALIGNMENT_SAMPLES }, () => ({
+          lat: 47.5,
+          lon: 8.7,
+        })),
+      },
+    },
+  };
+  return { getState: () => state, subscribe: () => () => undefined };
+}
+
+/** A reticle that always has a surface under it, at the origin. */
+function fakeReticle(): unknown {
+  return {
+    isVisible: () => true,
+    getWorldPosition: (v: Vector3) => v.set(1, 0, -2),
+  };
+}
+
 function wire(
   store: DraftFileStore,
-  options: { firstOpenFails?: boolean } = {},
+  options: { firstOpenFails?: boolean; placeable?: boolean } = {},
 ) {
   let opens = 0;
   const dom = fakeDom();
   const ctx = createTourViewerSession();
+  // Everything a placement needs beyond the store: a measured level, a
+  // live session, a reticle with a surface, and an aligned AR state.
+  if (options.placeable === true) {
+    ctx.mintedLevel = { id: "lvl", json: "{}" };
+    ctx.reticle = fakeReticle() as never;
+  }
   const setup = wireCreatorSetup({
     ctx,
     mode: "creator",
-    arStore: createTourViewerStore(),
+    arStore: (options.placeable === true
+      ? alignedArStore()
+      : createTourViewerStore()) as never,
     arController: {
-      getState: () => ({ status: "idle" }),
+      getState: () => ({
+        status: options.placeable === true ? "running" : "idle",
+      }),
       disable: () => undefined,
     } as never,
-    seams: { canShareZip: () => false } as never,
+    // `getScene` yields null, so `previewObject` returns before touching
+    // three.js: these tests are about what reaches DISK, and a placement
+    // must be provable without a renderer.
+    seams: { canShareZip: () => false, getScene: () => null } as never,
     wizard: { openStep: () => undefined, revealStep: () => undefined } as never,
     dom: dom as unknown as CreatorSetupDom,
     openDraftStore: () => {
@@ -802,5 +854,148 @@ describe("the spent-draft path", () => {
       true,
     );
     expect(dom.draftOffer.hidden, "a spent draft is never offered").toBe(true);
+  });
+
+  it("marks it rejected BEFORE deleting, so an interrupted sweep cannot undo it", async () => {
+    // Why this test matters: the discard has had this commit point tested
+    // since PR #456, and the spent path - which empties the same folder -
+    // had nothing. A mutation sweep over every write path found it: the
+    // whole `draftRejected = stored.storedIds` line could be deleted and
+    // the entire unit suite stayed green.
+    //
+    // `removeNeverSettles` is the interrupted sweep: the deletes are
+    // issued and never land, exactly as a tab closed mid-sweep leaves
+    // them. What must survive is the META, because that is the only
+    // record that says these files no longer count.
+    const { store, files } = memoryStore(
+      {
+        [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+        [objectKey("hosted")]: JSON.stringify(pin("hosted")),
+      },
+      { removeNeverSettles: true },
+    );
+    const { ctx, setup } = wire(store);
+    ctx.tourManifest = { objects: [pin("hosted")] } as never;
+
+    setup.presentDraftForTour(TOUR);
+    await settle();
+
+    expect(
+      rejectedOf(files.get(META_KEY) as string),
+      "the meta must reject the ids whose deletes are still in flight",
+    ).toContain("hosted");
+  });
+
+  it("deletes nothing when the rejection could not be committed", async () => {
+    // The other half of the same commit point, and the direction that
+    // loses data rather than merely leaking it: if the meta write fails
+    // and the deletes run anyway, the files are gone while the only record
+    // of that decision never reached disk. The next open then re-offers a
+    // draft whose objects no longer exist.
+    const { store, files } = memoryStore(
+      {
+        [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+        [objectKey("hosted")]: JSON.stringify(pin("hosted")),
+      },
+      { putFails: true },
+    );
+    const { ctx, setup } = wire(store);
+    ctx.tourManifest = { objects: [pin("hosted")] } as never;
+
+    setup.presentDraftForTour(TOUR);
+    await settle();
+
+    expect(
+      files.has(objectKey("hosted")),
+      "a refused commit must leave the files alone",
+    ).toBe(true);
+    expect(
+      ctx.placementNote,
+      "and the creator has to hear that nothing is being saved",
+    ).toContain("not saving a backup copy");
+  });
+});
+
+describe("a placement reaches the draft", () => {
+  it("writes the object file, not just the in-memory list", async () => {
+    // Why this test matters: this is THE write the whole feature exists
+    // for - the one that survives the OS killing the tab mid-walk - and
+    // until the mutation sweep of 2026-09-11 the entire body of
+    // `recordPlacement` could be deleted with every unit test still
+    // green. Sixteen tests covered what happens to a draft AFTERWARDS and
+    // none covered it being made.
+    const { store, files } = memoryStore();
+    const { ctx, dom, setup } = wire(store, { placeable: true });
+    setup.presentDraftForTour(TOUR);
+    await settle();
+
+    dom.pinLabel.value = "Gate";
+    dom.pinSave.click();
+    await settle();
+
+    const placed = ctx.placedObjects[0]?.object;
+    expect(placed, "the tap should have placed a pin").toBeDefined();
+    expect(
+      files.has(objectKey(String(placed?.id))),
+      "the placed pin must be on disk, not only in ctx.placedObjects",
+    ).toBe(true);
+  });
+
+  it("tells the creator when the store refuses the write", async () => {
+    // The failure half. A refused write is silent by design - the tap
+    // already worked in memory and must not fail - so the ONLY signal a
+    // creator gets that their walk is not being backed up is this note.
+    // It too was uncovered: the whole `if (!ok)` branch could go.
+    const { store } = memoryStore({}, { putFails: true });
+    const { ctx, dom, setup } = wire(store, { placeable: true });
+    setup.presentDraftForTour(TOUR);
+    await settle();
+
+    dom.pinLabel.value = "Gate";
+    dom.pinSave.click();
+    await settle();
+
+    expect(ctx.placedObjects.length, "the tap still places the pin").toBe(1);
+    expect(
+      ctx.placementNote,
+      "and the creator is told the walk is not being saved",
+    ).toContain("not saving a backup copy");
+  });
+
+  it("cannot land in the namespace of a tour that has closed", async () => {
+    // Why this test matters: closing a tour drops the store handle, and
+    // that one line is the only thing standing between "the creator placed
+    // a pin with no tour open" and that pin being written into the PREVIOUS
+    // tour's folder - where the next open would offer it as that tour's
+    // draft. It is the cross-tour shape that has already produced three
+    // separate defects here, and the sweep found the line untested.
+    const { store, files } = memoryStore();
+    const { ctx, dom, setup } = wire(store, { placeable: true });
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    const before = files.size;
+
+    // The tour closes. Everything about it is dropped, including the
+    // handle its writes were going through.
+    setup.resetFinishStep();
+
+    dom.pinLabel.value = "Gate";
+    dom.pinSave.click();
+    await settle();
+
+    expect(ctx.placedObjects.length, "the tap still places in memory").toBe(1);
+    expect(
+      files.size,
+      "but nothing may be written to the closed tour's folder",
+    ).toBe(before);
+    // Deliberately NOT asserted: that the creator is warned. In this branch
+    // `recordPlacement` sets the note synchronously and the pin handler's
+    // own "Pin placed" note overwrites it two lines later, so the warning
+    // never reaches the screen - and the once-per-session flag is burnt on
+    // the way past. It is not reachable in the app today (the same close
+    // that drops the store also clears the measured level, and placement
+    // needs one), which is why this test does not demand a fix; the
+    // asserted half is the one that matters, and the rest is written up in
+    // the sweep's findings.
   });
 });

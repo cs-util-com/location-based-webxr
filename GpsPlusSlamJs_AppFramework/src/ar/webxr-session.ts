@@ -691,7 +691,7 @@ export interface SessionFeatureOptions {
    * code can drive a reticle via `registerXrFrameUpdate`. Default `false` —
    * existing recorder/anchor sessions are unaffected.
    */
-  requestHitTest?: boolean;
+  requestHitTest?: boolean | undefined;
   /**
    * Request `depth-sensing` (cpu-optimized) for the **live depth occluder**
    * even when crash-isolation's `enableDepthSensingFeature` is off. Consumer

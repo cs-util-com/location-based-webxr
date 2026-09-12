@@ -112,7 +112,7 @@ export interface PersistenceMiddlewareOptions {
    * Callback invoked when a write operation fails during persistence.
    * User Feedback Issue #1 Part B: Used to show toast notifications.
    */
-  onWriteFailure?: (error: Error) => void;
+  onWriteFailure?: ((error: Error) => void) | undefined;
 }
 
 /**

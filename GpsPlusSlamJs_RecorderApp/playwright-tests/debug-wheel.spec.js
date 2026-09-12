@@ -60,11 +60,11 @@ test.describe('debug wheel', () => {
     );
     expect(before).toMatchObject({ presetId: 'shipped', touched: false });
 
-    await panel.locator('#debug-wheel-preset').selectOption('f100');
+    await panel.locator('#debug-wheel-preset').selectOption('w90');
     const after = await page.evaluate(() =>
       window.testHooks.getDebugWheelValues()
     );
-    expect(after).toMatchObject({ presetId: 'f100', touched: true });
+    expect(after).toMatchObject({ presetId: 'w90', touched: true });
 
     // The gear is a real toggle, not a one-way open.
     await gear.click();

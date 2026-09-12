@@ -25,6 +25,18 @@
         color-scheme: dark;
       }
 
+      /* And light when the device asks, which has to be declared HERE
+         rather than in the sheet: the viewport scrollbar takes its used
+         value from the ROOT element, and this unlayered rule outranks
+         any layered one the sheet could write, whatever its specificity.
+         The sheet answers the same query for the tokens (PR #463
+         review). */
+      @media (prefers-color-scheme: light) {
+        :root {
+          color-scheme: light;
+        }
+      }
+
       /* Everything below is layout the shared sheet has no atom for, or a
          contract that belongs to this page. Anything an atom covers was
          DELETED rather than left to win under L1. */
@@ -177,7 +189,12 @@
       /* The one link on the page. The UA default is a blue that belongs to
          no palette here and reads as an artefact on the dark ground. */
       #visitor-link {
-        color: var(--accent);
+        /* --accent-ink, not --accent: this is TEXT on the ground, and the
+           bright accent measures 2.0:1 on the light paper - a WCAG AA
+           failure this page introduced with light mode (PR #463
+           review). The ink role is the accent hue darkened to 6.0:1 on
+           light and unchanged on dark. */
+        color: var(--accent-ink);
       }
       #print-url-shown,
       #print-url-out {

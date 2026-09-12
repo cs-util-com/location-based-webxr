@@ -40,7 +40,7 @@ export interface DetectionSchedulerConfig<TResult, TImage = RgbaImage> {
   /** Consecutive successes required before a lock is reported. Default 3. */
   requiredLockCount?: number;
   /** Injectable clock (ms). Defaults to `performance.now()`/`Date.now()`. */
-  now?: () => number;
+  now?: (() => number) | undefined;
   /** Called on each success once locked (consecutiveLocks ≥ requiredLockCount). */
   onLocked?: (result: TResult) => void;
   /** Called when a detection completes with no usable result. */

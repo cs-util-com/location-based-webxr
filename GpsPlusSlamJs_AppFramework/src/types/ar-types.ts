@@ -104,7 +104,7 @@ export interface DepthPoint {
    * carry no color; consumers must fall back (e.g. height-based cube
    * coloring).
    */
-  readonly rgb?: RgbTuple;
+  readonly rgb?: RgbTuple | undefined;
 }
 
 /**

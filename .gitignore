@@ -18,3 +18,6 @@ dist-site/
 # A gate interrupted mid-write leaves it behind; it must never be committed
 # (2026-07-26: one slipped into a commit this way).
 *.md.tmp
+
+# Local-only agent instructions (imports the closed-source rule set)
+CLAUDE.local.md

@@ -102,11 +102,17 @@ export function buildRawGpsPoint(
     id: `gps-${++gpsEventCounter}`,
     latitude: gpsPosition.lat,
     longitude: gpsPosition.lon,
-    altitude: gpsPosition.altitude ?? undefined,
+    // OMITTED, not set to `undefined`, when the fix lacked the field.
+    // `RawGpsPoint` marks these optional, and under exactOptionalPropertyTypes
+    // an absent key and a present `undefined` are different types - only the
+    // former survives a JSON round-trip into a recording.
+    ...(gpsPosition.altitude == null ? {} : { altitude: gpsPosition.altitude }),
     latLongAccuracy: gpsPosition.accuracy,
-    altitudeAccuracy: gpsPosition.altitudeAccuracy ?? undefined,
-    heading: gpsPosition.heading ?? undefined,
-    speed: gpsPosition.speed ?? undefined,
+    ...(gpsPosition.altitudeAccuracy == null
+      ? {}
+      : { altitudeAccuracy: gpsPosition.altitudeAccuracy }),
+    ...(gpsPosition.heading == null ? {} : { heading: gpsPosition.heading }),
+    ...(gpsPosition.speed == null ? {} : { speed: gpsPosition.speed }),
     timestamp: gpsPosition.timestamp,
   };
 }
@@ -155,11 +161,14 @@ export function buildRecordGpsEventPayload(
   // The live odometry-restart orientation snapshot reads the cached
   // orientation via getLastDeviceOrientation instead (§5b dead-code
   // removal, 2026-06-28).
+  const rawAbsoluteOrientation = toRawAbsoluteOrientation(absoluteOrientation);
   return {
     odomPosition: extractOdomPosition(arPose),
     odomRotation: extractOdomRotation(arPose),
     rawGpsPoint: buildRawGpsPoint(gpsPosition, deviceOrientation),
-    rawAbsoluteOrientation: toRawAbsoluteOrientation(absoluteOrientation),
+    // OMITTED when there was no reading, for the same reason as the fields in
+    // `buildRawGpsPoint` above.
+    ...(rawAbsoluteOrientation === undefined ? {} : { rawAbsoluteOrientation }),
   };
 }
 

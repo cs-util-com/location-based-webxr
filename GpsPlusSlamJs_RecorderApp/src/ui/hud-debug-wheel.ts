@@ -38,6 +38,7 @@
  */
 
 import {
+  recordDiagnostic,
   setAlignmentOverrides,
   setColdStartOverrideEnabled,
   setCompassPairSelectionEnabled,
@@ -129,6 +130,21 @@ export function dispatchWheelSettings(
   if (controls.has('presetId')) {
     const preset = findAlignmentPreset(s.presetId);
     store.dispatch(setAlignmentOverrides(preset?.overrides ?? null));
+    // WHY a note as well as the setting. The override PAYLOAD reaches the
+    // recording, but nothing in it says which preset the tester tapped, and a
+    // preset removed later cannot be reverse-matched from its payload at all.
+    // `diagnostics/note` has no reducer and changes nothing; it exists to be
+    // recorded. It is dispatched HERE rather than captured at session start
+    // because the wheel's whole purpose is switching mid-walk, and a
+    // start-of-session snapshot would confidently assert a preset that was
+    // active for the first thirty seconds.
+    store.dispatch(
+      recordDiagnostic({
+        kind: 'alignment-preset',
+        atMs: Date.now(),
+        detail: { presetId: s.presetId, known: preset !== undefined },
+      })
+    );
   }
   if (controls.has('compassInfluence')) {
     const compass = compassSettingsFor(s.compassInfluence, {

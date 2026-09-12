@@ -61,7 +61,7 @@ export interface ReplayOccupancySubscriberOptions {
    */
   readonly onRefresh: (viewerPose?: ViewerPose) => void;
   /** Minimum delay between two refreshes (ms). Defaults to 250. */
-  readonly refreshIntervalMs?: number;
+  readonly refreshIntervalMs?: number | undefined;
   /** Best-effort error sink for a throwing `addSample`/`onRefresh`. */
   readonly onError?: (err: unknown) => void;
 }

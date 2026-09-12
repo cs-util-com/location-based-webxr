@@ -249,7 +249,7 @@ export function serializeQrLevel(level: QrLevel): string {
 /** Minimal `fetch` slice used by {@link fetchQrLevel}. */
 export type FetchLike = (
   url: string,
-  init?: { signal?: AbortSignal }
+  init?: { signal?: AbortSignal | undefined }
 ) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
 
 export interface FetchQrLevelOptions {

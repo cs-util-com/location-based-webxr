@@ -51,70 +51,55 @@ export const ALIGNMENT_PRESETS: readonly AlignmentPreset[] = [
     label: 'shipped (recency 250, threshold 5)',
     overrides: null,
   },
-  // Scorecard candidate 1 / stage-2 survivor: one knob, ≥ shipped everywhere
-  // measured. rotSS 0.204 (shipped 0.217), bgPeak 7.21, agreement +0.4°.
+  // ---- THE MEMORY LADDER (2026-09-12). One variable: how far back the solver
+  // is allowed to look. Every rung sets timeWeightEnabled:false, because with
+  // recency decay left running the oldest fix INSIDE a 90 s window is still
+  // weighted 251x lighter than the newest - so the window would not be the
+  // variable. That exact confound wasted an arm in the offline probe; on the
+  // phone it would waste a walk.
+  //
+  // WHAT THE OFFLINE EVIDENCE ACTUALLY SAYS, after adversary review on
+  // 2026-09-12 - and it is the opposite of what the first version of these
+  // labels claimed. The motion metric that ranked "no window" best SCORES LESS
+  // MOTION AS BETTER, and an alignment that has stopped responding to GPS also
+  // moves less: its ranking correlates with "which arm moved least" at Spearman
+  // +0.943. On the in-sample GPS residual, every rung from w90 outward is worse
+  // than shipped on 159 of 159 recordings, and there is not one recording where
+  // wall beats shipped on both instruments.
+  //
+  // The ladder is therefore a QUESTION, not a recommendation, and the question
+  // it asks the tester is NOT "which feels steadiest". A frozen alignment feels
+  // beautifully steady. It is "after a long walk, does the content still sit on
+  // the right spot" - because that is the axis where these rungs are predicted
+  // to fail, and the only instrument that can settle it is a human looking at a
+  // real place.
   {
-    id: 'f100',
-    label: 'recency 100 (longer memory)',
-    overrides: { timeWeightFactor: 100 },
+    id: 'w45',
+    label: 'no recency, last 45 s',
+    overrides: { timeWeightEnabled: false, recentWindowSeconds: 45 },
   },
-  // Candidate 2 / stage-2 rank 1: plus a 1.8° cut in the bad-GPS yaw swing.
-  // rotSS 0.197, bgPeak 6.22, agreement +0.9°.
   {
-    id: 'f100-exp075',
-    label: 'recency 100, accuracy 0.75 (longer memory)',
-    overrides: { timeWeightFactor: 100, gpsAccuracyExponent: 0.75 },
+    id: 'w90',
+    label: 'no recency, last 90 s',
+    overrides: { timeWeightEnabled: false, recentWindowSeconds: 90 },
   },
-  // Candidate 3: calm-but-consistent, paying +0.36 m of position. Stage 2:
-  // rotSS 0.180, bgPeak 4.97, agreement −2.1° (fails the guardrail).
   {
-    id: 'f25-exp075',
-    label: 'recency 25, accuracy 0.75 (long memory; agreement −2.1°)',
-    overrides: { timeWeightFactor: 25, gpsAccuracyExponent: 0.75 },
+    id: 'w180',
+    label: 'no recency, last 180 s',
+    overrides: { timeWeightEnabled: false, recentWindowSeconds: 180 },
   },
-  // ---- Field-judgement block (stage 2, findings G3). Labels carry the cost.
-  // Calmest row in the search: rotSS 0.147 (shipped 0.217), bgPeak 3.96
-  // (shipped 8.03), markP90 6.87 (+0.7 m), agreement −4.4°.
   {
-    id: 'calm-ret04',
-    label: 'no recency, keep 40 % (calmest; agreement −4.4°)',
-    overrides: { timeWeightEnabled: false, outlierRetainRatio: 0.4 },
+    id: 'w300',
+    label: 'no recency, last 300 s',
+    overrides: { timeWeightEnabled: false, recentWindowSeconds: 300 },
   },
-  // Longest memory without any rejection: rotSS 0.158, bgPeak 3.54, markP90
-  // 7.29 (+1.1 m, over the +1.0 m allowance), agreement −2.8°. Added at the
-  // owner's request (22:15) so the no-rejection end of the grid is on the
-  // phone too.
+  // No window key at all, deliberately: there is no public override that sets
+  // useOnlyRecentData back to false, so this rung relies on the shipped default
+  // plus setAlignmentOverrides REPLACING rather than merging. A test pins that.
   {
-    id: 'calm-none-exp075',
-    label: 'no recency, no rejection, accuracy 0.75 (agreement −2.8°, +1.1 m)',
-    overrides: {
-      timeWeightEnabled: false,
-      outlierRejectionEnabled: false,
-      gpsAccuracyExponent: 0.75,
-    },
-  },
-  // Long memory without rejection: rotSS 0.171, bgPeak 4.49, markP90 6.80,
-  // agreement −2.3°.
-  {
-    id: 'f25-none-exp1',
-    label: 'recency 25, no rejection, accuracy 1 (agreement −2.3°)',
-    overrides: {
-      timeWeightFactor: 25,
-      outlierRejectionEnabled: false,
-      gpsAccuracyExponent: 1,
-    },
-  },
-  // Long memory with a wide threshold: rotSS 0.173, bgPeak 4.68, markP90
-  // 6.59, agreement −4.4°.
-  {
-    id: 'f25-thr7-ret04-exp1',
-    label: 'recency 25, threshold 7, keep 40 %, accuracy 1 (agreement −4.4°)',
-    overrides: {
-      timeWeightFactor: 25,
-      outlierThresholdMeters: 7,
-      outlierRetainRatio: 0.4,
-      gpsAccuracyExponent: 1,
-    },
+    id: 'wall',
+    label: 'no recency, whole recording',
+    overrides: { timeWeightEnabled: false },
   },
   // The robust-solver arm: its calmest stage-1 cell (rotSS 0.205 against
   // shipped 0.197 on the 91-recording subset, inside noise; never among the

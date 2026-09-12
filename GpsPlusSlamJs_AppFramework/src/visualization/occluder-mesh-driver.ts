@@ -105,7 +105,7 @@ interface Job {
   readonly cells: readonly GridCell[] | Int32Array;
   readonly cellSizeM: number;
   readonly mode: MeshMode;
-  readonly getCellPoint?: (cell: GridCell) => Vector3 | null;
+  readonly getCellPoint?: ((cell: GridCell) => Vector3 | null) | undefined;
   readonly onMesh: OnMesh;
 }
 
@@ -116,9 +116,10 @@ function cellCountOf(cells: readonly GridCell[] | Int32Array): number {
 
 export class OccluderMeshDriver {
   private readonly poster: MeshWorkerPoster | null;
-  private readonly onWorkerUnusable?: () => void;
-  private readonly onError?: (error: unknown) => void;
-  private readonly onMeshStats?: (stats: OccluderMeshStats) => void;
+  private readonly onWorkerUnusable?: (() => void) | undefined;
+  private readonly onError?: ((error: unknown) => void) | undefined;
+  private readonly onMeshStats?:
+    ((stats: OccluderMeshStats) => void) | undefined;
   private readonly now: () => number;
   private nextId = 1;
   private inFlightId: number | null = null;

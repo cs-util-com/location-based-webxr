@@ -2,6 +2,11 @@
   "extends": "./tsconfig.app.json",
   "compilerOptions": {
     "noUncheckedIndexedAccess": false,
+    // Tests deliberately construct present-but-undefined values to exercise the
+    // absent-value fallbacks. Production types correctly forbid that shape, so
+    // the flag stays ON for the app config and OFF here - the same split
+    // already applied to noUncheckedIndexedAccess above.
+    "exactOptionalPropertyTypes": false,
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.vitest.tsbuildinfo",
     "checkJs": true,
     "types": ["vitest/globals", "node"]
