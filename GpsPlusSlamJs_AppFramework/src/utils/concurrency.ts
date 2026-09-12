@@ -66,7 +66,7 @@ export async function forEachWithConcurrencyLimit<T>(
   items: readonly T[],
   limit: number,
   worker: (item: T, index: number) => Promise<void>,
-  signal?: AbortSignal | undefined
+  signal?: AbortSignal
 ): Promise<void> {
   if (limit < 1) {
     throw new RangeError(`Concurrency limit must be >= 1, got ${limit}`);
