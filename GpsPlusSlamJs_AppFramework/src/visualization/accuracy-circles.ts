@@ -50,7 +50,7 @@ export const ACCURACY_CIRCLE_WEIGHT = 1;
 export interface AccuracyCircleSample {
   readonly lat: number;
   readonly lng: number;
-  readonly accuracy?: number;
+  readonly accuracy?: number | undefined;
 }
 
 // ============================================================================

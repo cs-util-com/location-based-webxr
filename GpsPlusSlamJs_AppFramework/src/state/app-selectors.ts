@@ -142,12 +142,16 @@ export const selectFrameTilesInWebXR = createSelector(
       position: nueToWebXR(p.position),
       rotation: nueQuaternionToWebXR(p.rotation),
       screenRotation: p.screenRotation,
-      capturedAt: p.capturedAt,
+      // OMITTED, not set to `undefined`, when absent: `ArImageCapture` marks
+      // these optional for legacy recordings, and under
+      // exactOptionalPropertyTypes "absent" and "present but undefined" are
+      // different types. Omitting also matches what a JSON round-trip produces.
+      ...(p.capturedAt === undefined ? {} : { capturedAt: p.capturedAt }),
       // Pose-invariant pixel dimensions pass straight through (no coordinate
       // conversion) so the frame-tile visualizer can size tiles to the true
       // image aspect ratio (D1 of the 2026-06-13 frame-tile feedback).
-      width: p.width,
-      height: p.height,
+      ...(p.width === undefined ? {} : { width: p.width }),
+      ...(p.height === undefined ? {} : { height: p.height }),
     }));
   }
 );

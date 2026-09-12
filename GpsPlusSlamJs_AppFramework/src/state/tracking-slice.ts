@@ -178,7 +178,12 @@ const trackingSlice = createSlice({
                   },
                 }),
             newOdomPos: [pose.position.x, pose.position.y, pose.position.z],
-            resetTransform: savedResetTransform,
+            // OMITTED when absent, matching the sensor-orientation fields
+            // above: the payload type distinguishes an absent key from a
+            // present `undefined`.
+            ...(savedResetTransform === undefined
+              ? {}
+              : { resetTransform: savedResetTransform }),
           };
         }
         // Else: Case 1 (seamless recovery) — host distinguishes via the

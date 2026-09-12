@@ -115,7 +115,7 @@ export interface MeshOccupiedCellsOptions {
    * (PR #161 review), so implementations must read the coordinates and must NOT
    * retain the tuple (no caching it as a key, no async use). Copy it if needed.
    */
-  readonly getCellPoint?: (cell: GridCell) => Vector3 | null;
+  readonly getCellPoint?: ((cell: GridCell) => Vector3 | null) | undefined;
   /**
    * Pre-packed per-cell centroids for `'smooth'`, aligned with the **input
    * `cells` order** (3 numbers per input cell; a non-finite triple — the
@@ -128,7 +128,7 @@ export interface MeshOccupiedCellsOptions {
    * `getCellPoint`; other modes ignore `centroids` entirely (`'corner-fit'`
    * still needs the callback).
    */
-  readonly centroids?: Float64Array | null;
+  readonly centroids?: Float64Array | null | undefined;
   /**
    * Set `false` to skip building the per-cell AABB list (`result.aabbs` is
    * then empty). The occlusion-mesh worker path consumes only

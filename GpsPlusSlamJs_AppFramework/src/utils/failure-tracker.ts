@@ -25,7 +25,7 @@ export interface FailureTrackerConfig {
   onWarning: (message: string) => void;
 
   /** Optional override for the failure threshold. */
-  failureThreshold?: number;
+  failureThreshold?: number | undefined;
 
   /** Log level for each failure: 'warn' (default) or 'error'. */
   logLevel?: 'warn' | 'error';

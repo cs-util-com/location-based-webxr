@@ -147,7 +147,7 @@ export class LeafletMapOverlay {
   private readonly heightOffset: number;
   private readonly mapSizePx: number;
   private readonly tileServerUrl: string;
-  private readonly onTileError?: (error: unknown) => void;
+  private readonly onTileError?: ((error: unknown) => void) | undefined;
   private readonly offscreenRoot: HTMLElement;
 
   private zoomLevel: number;

@@ -285,8 +285,11 @@ export class OccupancyGrid {
     // at most once per contradicting ray per sample, not once per duplicate
     // depth pixel.
     const carvedEndpointKeys = new Set<number>();
-    const endpoints: Array<{ cell: GridCell; world: Vector3; rgb?: RgbTuple }> =
-      [];
+    const endpoints: Array<{
+      cell: GridCell;
+      world: Vector3;
+      rgb?: RgbTuple | undefined;
+    }> = [];
     for (const point of sample.points) {
       const world = unprojector.unproject(point);
       if (!world) {
