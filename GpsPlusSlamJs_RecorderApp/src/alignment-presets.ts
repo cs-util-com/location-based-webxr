@@ -58,14 +58,24 @@ export const ALIGNMENT_PRESETS: readonly AlignmentPreset[] = [
   // variable. That exact confound wasted an arm in the offline probe; on the
   // phone it would waste a walk.
   //
-  // Offline evidence these rungs exist to check by hand (159 recordings,
-  // reference-free, scored from observation 160): w45 is worse than shipped on
-  // 156 of them, w90 on 91, w180 on 28, w300 on 11, and wall on 5 - better on
-  // 154. w45 is on the phone DESPITE being the worst, because a ladder with no
-  // bad rung cannot calibrate the eye against the numbers.
+  // WHAT THE OFFLINE EVIDENCE ACTUALLY SAYS, after adversary review on
+  // 2026-09-12 - and it is the opposite of what the first version of these
+  // labels claimed. The motion metric that ranked "no window" best SCORES LESS
+  // MOTION AS BETTER, and an alignment that has stopped responding to GPS also
+  // moves less: its ranking correlates with "which arm moved least" at Spearman
+  // +0.943. On the in-sample GPS residual, every rung from w90 outward is worse
+  // than shipped on 159 of 159 recordings, and there is not one recording where
+  // wall beats shipped on both instruments.
+  //
+  // The ladder is therefore a QUESTION, not a recommendation, and the question
+  // it asks the tester is NOT "which feels steadiest". A frozen alignment feels
+  // beautifully steady. It is "after a long walk, does the content still sit on
+  // the right spot" - because that is the axis where these rungs are predicted
+  // to fail, and the only instrument that can settle it is a human looking at a
+  // real place.
   {
     id: 'w45',
-    label: 'no recency, last 45 s (worst offline: 156 of 159)',
+    label: 'no recency, last 45 s',
     overrides: { timeWeightEnabled: false, recentWindowSeconds: 45 },
   },
   {
@@ -88,7 +98,7 @@ export const ALIGNMENT_PRESETS: readonly AlignmentPreset[] = [
   // plus setAlignmentOverrides REPLACING rather than merging. A test pins that.
   {
     id: 'wall',
-    label: 'no recency, whole recording (best offline: 154 of 159)',
+    label: 'no recency, whole recording',
     overrides: { timeWeightEnabled: false },
   },
   // The robust-solver arm: its calmest stage-1 cell (rotSS 0.205 against
