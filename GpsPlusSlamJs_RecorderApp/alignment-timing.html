@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, user-scalable=no"
+    />
+    <title>Alignment Timing</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: system-ui, sans-serif;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: #000;
+        color: #f3f4f6;
+        min-height: 100vh;
+      }
+
+      body {
+        box-sizing: border-box;
+        padding: 16px 16px 64px;
+      }
+
+      h1 {
+        margin: 0 0 4px;
+        font-size: 18px;
+      }
+
+      p {
+        margin: 0 0 12px;
+        color: #d1d5db;
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      fieldset {
+        margin: 0 0 12px;
+        padding: 12px;
+        border: 1px solid #4b5563;
+        border-radius: 8px;
+      }
+
+      legend {
+        padding: 0 6px;
+        color: #9ca3af;
+        font-size: 12px;
+        text-transform: uppercase;
+      }
+
+      label {
+        display: block;
+        margin: 0 0 8px;
+        font-size: 13px;
+      }
+
+      button,
+      select,
+      input[type='file'] {
+        margin: 0 0 8px;
+        padding: 10px 12px;
+        border: 1px solid #4b5563;
+        border-radius: 6px;
+        background: #111827;
+        color: #f3f4f6;
+        font-size: 14px;
+      }
+
+      button {
+        background: #1d4ed8;
+        border-color: #1d4ed8;
+      }
+
+      button:disabled {
+        background: #374151;
+        border-color: #4b5563;
+        color: #9ca3af;
+      }
+
+      .timing-status {
+        margin: 0 0 12px;
+        padding: 8px 10px;
+        border-radius: 6px;
+        background: #111827;
+        font-size: 13px;
+        min-height: 20px;
+      }
+
+      .timing-status-error {
+        background: #7f1d1d;
+        color: #fee2e2;
+      }
+
+      .timing-scroll {
+        overflow-x: auto;
+      }
+
+      table {
+        border-collapse: collapse;
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      caption {
+        padding: 0 0 6px;
+        color: #9ca3af;
+        font-size: 12px;
+        text-align: left;
+      }
+
+      th,
+      td {
+        padding: 4px 8px;
+        border-bottom: 1px solid #374151;
+        text-align: right;
+        white-space: nowrap;
+      }
+
+      th:first-child,
+      td:first-child {
+        text-align: left;
+      }
+
+      pre {
+        overflow-x: auto;
+        margin: 0;
+        padding: 10px;
+        border-radius: 6px;
+        background: #111827;
+        color: #d1d5db;
+        font-size: 11px;
+      }
+
+      .timing-device {
+        color: #9ca3af;
+        font-size: 12px;
+        overflow-wrap: anywhere;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Alignment timing</h1>
+    <p>
+      Replays a stored recording's GPS fixes through the alignment path this
+      device would run live, and reports how long one fix costs as the stored
+      history grows. Everything stays on the device: nothing is uploaded and
+      nothing is saved. Copy the JSON when the run finishes.
+    </p>
+
+    <fieldset>
+      <legend>Run</legend>
+      <label for="timing-file">Recording zip</label>
+      <input id="timing-file" type="file" accept=".zip,application/zip" />
+      <label for="timing-repeats">Timed passes per arm (after 1 warm-up)</label>
+      <select id="timing-repeats"></select>
+      <button id="timing-run" type="button" disabled>Run timing</button>
+      <div id="timing-status" class="timing-status">
+        Choose a recording zip to begin.
+      </div>
+      <div id="timing-parameters" class="timing-device"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Per-fix cost</legend>
+      <div id="timing-table" class="timing-scroll"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Whole replay</legend>
+      <div id="timing-totals" class="timing-scroll"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Device</legend>
+      <div id="timing-device" class="timing-device"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>JSON</legend>
+      <button id="timing-copy" type="button">Copy JSON</button>
+      <pre id="timing-json"></pre>
+    </fieldset>
+
+    <script type="module" src="/src/timing/alignment-timing-main.ts"></script>
+  </body>
+</html>
