@@ -45,6 +45,16 @@ screen until it is copied.
   the suite instead of the trip.
 - Its script is a bundler entry in `config/vite.config.ts`, so the page is built
   and deployable; it is otherwise unreferenced.
+- **Being a second entry DOES change the recorder's build output, and this was
+  measured rather than assumed.** The two entries share `recording-loader`, so
+  rollup hoists it into a common chunk: built with this entry, `dist/index.html`
+  references an extra `assets/recording-loader-*.js` and its `main-*.js` carries
+  a different hash; built without it, neither happens. The recorder's BEHAVIOUR
+  is unchanged (same modules, same order, one extra request for a small shared
+  chunk) and `index.html` itself is untouched, but "byte-identical output" would
+  be the wrong claim. The alternative - not registering the entry - would mean
+  the page exists only on a dev server, and the whole point is opening it on a
+  phone from a deployed branch preview.
 - All CSS is inline and local. No third-party host, no font fetch: a blocking
   asset from someone else's host is what once turned a whole e2e suite red.
 
