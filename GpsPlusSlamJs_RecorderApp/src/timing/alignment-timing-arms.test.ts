@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { ALIGNMENT_OVERRIDE_KEYS } from 'gps-plus-slam-app-framework/state';
+import {
+  ALIGNMENT_OVERRIDE_KEYS,
+  setAlignmentOverrides,
+} from 'gps-plus-slam-app-framework/state';
+import { validateLicenseKey } from 'gps-plus-slam-app-framework/core';
+import { COMMUNITY_LICENSE_KEY } from 'gps-plus-slam-app-framework/licensing';
 import {
   TIMING_ARMS,
   HISTORY_LADDER,
@@ -9,7 +14,25 @@ import {
   SHIPPED_ARM_ID,
 } from './alignment-timing-arms';
 
+// The library gates its action creators on an active license, exactly as the
+// real page does by building the app store first.
+validateLicenseKey(COMMUNITY_LICENSE_KEY);
+
 describe('the timing arms', () => {
+  // Why this test matters: every override value is range-validated inside the
+  // action creator, and an out-of-domain number THROWS at dispatch. Without
+  // this the first time anyone learns that an arm is malformed is on a phone,
+  // outdoors, mid-run - the one place the failure costs a trip rather than a
+  // test run. The whitelist check above covers the key names; this covers the
+  // values, which is a different failure.
+  it(`every arm survives the library's own override validator`, () => {
+    for (const arm of TIMING_ARMS) {
+      const action = setAlignmentOverrides(arm.overrides);
+      expect(action.type).toBe('gpsData/setAlignmentOverrides');
+      expect(action.payload).toEqual(arm.overrides);
+    }
+  });
+
   // Why this test matters: an override key the library does not know is
   // rejected at dispatch, and a page that silently measured the shipped
   // configuration four times would produce four agreeing columns that look
