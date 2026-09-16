@@ -49,3 +49,5 @@ const { caption, header, rows, totals } = buildTimingTable(report);
 parameters/recording/device envelope, raw repeats preserved, the refusal on a
 mismatched arm, the table's shape and formatting, the caption's parameters, and
 the totals with their ratio.
+
+- **Four of the types above are MODULE-PRIVATE** (`TimingRecordingInfo`, `TimingReportArm`): nothing outside their file names them, an object literal satisfies them structurally, and knip fails the gate on an export nobody imports. Listed here because the sidecar is where a reader looks for the surface, and "documented but not exported" is the honest description.

@@ -73,7 +73,12 @@ export interface AlignmentTimingSegment {
   readonly msPerFixPerRepeat: readonly number[];
 }
 
-export interface AlignmentTimingArmResult {
+/**
+ * Module-private: nothing outside this file names it, an object literal
+ * satisfies it structurally, and knip fails the gate on an export nobody
+ * imports. Same rule the rest of this workspace follows.
+ */
+interface AlignmentTimingArmResult {
   readonly armId: string;
   readonly segments: readonly AlignmentTimingSegment[];
   readonly totalMedianMs: number;
@@ -83,7 +88,12 @@ export interface AlignmentTimingArmResult {
   readonly warmupTotalMs: readonly number[];
 }
 
-export interface AlignmentTimingParameters {
+/**
+ * Module-private: nothing outside this file names it, an object literal
+ * satisfies it structurally, and knip fails the gate on an export nobody
+ * imports. Same rule the rest of this workspace follows.
+ */
+interface AlignmentTimingParameters {
   readonly fixCount: number;
   /** The ladder actually used, after {@link resolveLadder}. */
   readonly ladder: readonly number[];

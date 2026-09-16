@@ -31,14 +31,24 @@ export interface TimingEnvironment {
   readonly buildCommit: string;
 }
 
-export interface TimingRecordingInfo {
+/**
+ * Module-private: nothing outside this file names it, an object literal
+ * satisfies it structurally, and knip fails the gate on an export nobody
+ * imports. Same rule the rest of this workspace follows.
+ */
+interface TimingRecordingInfo {
   readonly fileName: string;
   readonly fixCount: number;
   /** Wall-clock span of the replayed fixes, or null when unknown. */
   readonly durationSeconds: number | null;
 }
 
-export interface TimingReportArm {
+/**
+ * Module-private: nothing outside this file names it, an object literal
+ * satisfies it structurally, and knip fails the gate on an export nobody
+ * imports. Same rule the rest of this workspace follows.
+ */
+interface TimingReportArm {
   readonly armId: string;
   readonly label: string;
   readonly overrides: AlignmentOverrides | null;

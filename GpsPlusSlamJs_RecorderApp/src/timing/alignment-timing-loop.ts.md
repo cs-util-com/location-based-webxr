@@ -70,3 +70,5 @@ result.arms[0].segments.map((s) => [s.midHistory, s.medianMsPerFix]);
   All against a fake whose per-fix cost is history-dependent and known exactly.
 - `alignment-timing-loop.property.test.ts` - ladder monotonicity and the
   segment partition, over arbitrary ladders and fix counts.
+
+- **Four of the types above are MODULE-PRIVATE** (`AlignmentTimingArmResult`, `AlignmentTimingParameters`): nothing outside their file names them, an object literal satisfies them structurally, and knip fails the gate on an export nobody imports. Listed here because the sidecar is where a reader looks for the surface, and "documented but not exported" is the honest description.
