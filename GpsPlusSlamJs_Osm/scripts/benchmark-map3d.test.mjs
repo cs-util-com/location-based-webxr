@@ -304,6 +304,41 @@ describe("selector-decomposition arms", () => {
     expect(arms["prod-33"].timeoutSeconds).toBe(180);
   });
 
+  it("offers prod-33-areal: one relation statement keeping BOTH areal types", () => {
+    // WHY THIS ARM EXISTS, and why `prod-33` alone was not enough. Measured at
+    // res 7 on 2026-09-20, `prod-33` returned 94 relations against production's
+    // 95, and that single missing relation was 1,633,030 bytes - an
+    // administrative boundary that reaches production because `place` is a
+    // selected key and Cologne's city boundary carries place=city. Dropping the
+    // `boundary` alternative is therefore free at res 10 and expensive at res 7,
+    // which is exactly the kind of verdict a single resolution gets wrong.
+    //
+    // This arm keeps both types in ONE statement, so the 32-to-1 collapse is
+    // preserved while the boundary relations come back. What it gives up is the
+    // key qualification: unkeyed boundaries are now admitted too, and how much
+    // that costs is the thing to measure rather than assume.
+    const arms = byId();
+    expect(arms["prod-33-areal"].query).toContain(
+      'relation["type"~"^(multipolygon|boundary)$"];',
+    );
+    expect(occurrences(arms["prod-33-areal"].query, 'nw["')).toBe(
+      OVERPASS_SELECT_KEYS.length,
+    );
+    expect(occurrences(arms["prod-33-areal"].query, "relation[")).toBe(1);
+    // Same header, encoding and output as production, so the only difference is
+    // how the relations are selected.
+    expect(arms["prod-33-areal"].encoding).toBe("form");
+    expect(arms["prod-33-areal"].timeoutSeconds).toBe(180);
+    expect(arms["prod-33-areal"].query.endsWith("out geom;")).toBe(true);
+    // And it differs from prod-33 in exactly the relation statement.
+    expect(
+      arms["prod-33-areal"].query.replace(
+        'relation["type"~"^(multipolygon|boundary)$"];',
+        'relation["type"="multipolygon"];',
+      ),
+    ).toBe(arms["prod-33"].query);
+  });
+
   it("keeps every arm's id unique and plannable", () => {
     // WHY: planComparisonCells builds cell ids from profile ids, and a
     // duplicate would silently overwrite a measurement.

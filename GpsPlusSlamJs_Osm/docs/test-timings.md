@@ -4,14 +4,14 @@
 
 ## Latest
 
-Last recorded 2026-09-19T22:53:59.574Z · machine `f936c64e (11th Gen Intel(R) Core(TM) i7-1185G7 @ 3.00GHz, 8 threads)` · branch `r706` @ `83bb35e0`
+Last recorded 2026-09-19T23:12:56.921Z · machine `f936c64e (11th Gen Intel(R) Core(TM) i7-1185G7 @ 3.00GHz, 8 threads)` · branch `r706` @ `b3e9c527`
 
 _Header describes the most recent write only; standalone stage runs update single rows. Median = the stage's same-machine history median. Per-recording provenance lives in the JSON block._
 
 | Stage | Duration | Δ duration | Median | Tests | Δ tests | Flag |
 | --- | ---: | ---: | ---: | --- | ---: | --- |
 | `format` | 5.8 s | ≈ | 6.2 s | – | – | |
-| `lint` | 11.5 s | ≈ | 13.8 s | – | – | |
+| `lint` | 12.1 s | ≈ | 13.3 s | – | – | |
 | `check:cycles` | 1.1 s | ≈ | 1.4 s | – | – | |
 | `typecheck` | 2.3 s | ≈ | 2.6 s | – | – | |
 | `typecheck:tests` | 2.8 s | ≈ | 3.3 s | – | – | |
@@ -21,7 +21,7 @@ _Header describes the most recent write only; standalone stage runs update singl
 ## History (last 10 recordings per stage, newest first, seconds)
 
 - `format`: 5.8, 5.4, 5.3, 5.2, 8.6, 5.7, 6.6, 6.8, 7.1, 8.0
-- `lint`: 11.5, 10.7, 10.3, 12.6, 22.8, 27.2, 14.1, 14.8, 17.0, 13.5
+- `lint`: 12.1, 11.5, 10.7, 10.3, 12.6, 22.8, 27.2, 14.1, 14.8, 17.0
 - `check:cycles`: 1.1, 1.6, 4.2, 1.4, 4.7, 1.2, 1.3, 1.4, 1.3, 2.1
 - `typecheck`: 2.3, 2.7, 2.3, 2.5, 3.7, 2.4, 2.5, 4.6, 3.1, 3.8
 - `typecheck:tests`: 2.8, 3.1, 2.8, 3.9, 3.3, 3.2, 2.8, 7.2, 4.3, 3.8
@@ -31,7 +31,7 @@ _Header describes the most recent write only; standalone stage runs update singl
 ```json
 {
   "version": 1,
-  "meta": {"project":"GpsPlusSlamJs_Osm","lastWrite":{"ts":"2026-09-19T22:53:59.574Z","machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","machineLabel":"f936c64e (11th Gen Intel(R) Core(TM) i7-1185G7 @ 3.00GHz, 8 threads)","git":"83bb35e0","branch":"r706"}},
+  "meta": {"project":"GpsPlusSlamJs_Osm","lastWrite":{"ts":"2026-09-19T23:12:56.921Z","machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","machineLabel":"f936c64e (11th Gen Intel(R) Core(TM) i7-1185G7 @ 3.00GHz, 8 threads)","git":"b3e9c527","branch":"r706"}},
   "stages": {
     "format": { "history": [
       {"ts":"2026-09-19T22:53:06.829Z","durationMs":5784,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"83bb35e0"},
@@ -46,6 +46,7 @@ _Header describes the most recent write only; standalone stage runs update singl
       {"ts":"2026-09-11T06:31:41.975Z","durationMs":8013,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"d8014c87"}
     ] },
     "lint": { "history": [
+      {"ts":"2026-09-19T23:12:56.921Z","durationMs":12141,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"b3e9c527"},
       {"ts":"2026-09-19T22:53:18.338Z","durationMs":11454,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"83bb35e0"},
       {"ts":"2026-09-19T22:50:02.097Z","durationMs":10724,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"c07c1e96"},
       {"ts":"2026-09-19T22:49:32.087Z","durationMs":10265,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"c07c1e96"},
@@ -54,8 +55,7 @@ _Header describes the most recent write only; standalone stage runs update singl
       {"ts":"2026-09-18T22:37:20.168Z","durationMs":27197,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":null},
       {"ts":"2026-09-16T14:34:20.251Z","durationMs":14060,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"d55dd008"},
       {"ts":"2026-09-11T10:58:46.687Z","durationMs":14779,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"7a3baecc"},
-      {"ts":"2026-09-11T10:20:51.810Z","durationMs":16969,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"7a3baecc"},
-      {"ts":"2026-09-11T06:31:55.571Z","durationMs":13544,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"d8014c87"}
+      {"ts":"2026-09-11T10:20:51.810Z","durationMs":16969,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"7a3baecc"}
     ] },
     "check:cycles": { "history": [
       {"ts":"2026-09-19T22:53:19.510Z","durationMs":1097,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"83bb35e0"},

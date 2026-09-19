@@ -56,6 +56,16 @@ export function buildComparisonProfiles({ bbox, keys }) {
     `(${nwStatements}relation["type"="multipolygon"];);`,
     "out geom;",
   ].join("\n");
+  // The same 32-to-1 collapse, keeping BOTH areal types. Measured at res 7,
+  // dropping the `boundary` alternative cost one relation worth 1,633,030
+  // bytes - an administrative boundary that reaches production because `place`
+  // is a selected key. This arm gives up the key qualification instead, so
+  // unkeyed boundaries are admitted; what that costs is measured, not assumed.
+  const prod33Areal = [
+    header,
+    `(${nwStatements}relation${relationType};);`,
+    "out geom;",
+  ].join("\n");
   const previewKeys = ["building", "building:part"];
   const preview = `[out:json][timeout:25];(${previewKeys.map((key) => `way["${key}"]( ${bounds} );`).join("")}${previewKeys.map((key) => `relation["${key}"]${relationType}( ${bounds} );`).join("")});out body geom;`;
   return [
@@ -99,6 +109,12 @@ export function buildComparisonProfiles({ bbox, keys }) {
       timeoutSeconds: 180,
     },
     { id: "prod-33", query: prod33, encoding: "form", timeoutSeconds: 180 },
+    {
+      id: "prod-33-areal",
+      query: prod33Areal,
+      encoding: "form",
+      timeoutSeconds: 180,
+    },
     {
       id: "everything-areal",
       query: [header, `(nw;relation${relationType};);`, "out geom;"].join("\n"),
