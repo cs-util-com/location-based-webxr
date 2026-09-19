@@ -681,6 +681,7 @@ function cellRecord(cell) {
 }
 
 async function main() {
+  if (process.argv.includes("--compare-map3d")) return runMap3dComparison();
   if (process.argv.includes("--matrix")) return runMatrix();
 
   const centre = {
@@ -742,6 +743,90 @@ async function main() {
   const outPath = join(outDir, `overpass-endpoint-benchmark-res${res}.json`);
   writeFileSync(outPath, `${JSON.stringify(out, null, 2)}\n`);
   console.log(`\nwrote ${outPath}`);
+}
+
+/** Focused, named-arm comparison; old benchmark modes remain reproducible. */
+async function runMap3dComparison() {
+  const { buildComparisonProfiles, planComparisonCells } =
+    await import("./benchmark-map3d.mjs");
+  const { runComparison } = await import("./benchmark-comparison-run.mjs");
+  const keys = selectKeysFromCaptureScript();
+  const res = comparisonNumberArg("res", 7);
+  const repeats = comparisonNumberArg("repeats", 2);
+  const budgetMs = comparisonNumberArg("budget-minutes", 15) * 60_000;
+  const maxTotalBytes = comparisonNumberArg("max-mb", 500) * 1_000_000;
+  const siteName = stringArg("site", "manhattan");
+  const bbox =
+    siteName === "manhattan"
+      ? {
+          south: 40.748649127451834,
+          west: -74.00064468383789,
+          north: 40.78467511524571,
+          east: -73.93524169921875,
+        }
+      : bboxOfCell(latLngToCell(DEFAULT_CENTRE.lat, DEFAULT_CENTRE.lng, res));
+  if (!["manhattan", "cologne"].includes(siteName))
+    throw new Error("--site must be manhattan or cologne");
+  const site = {
+    id: siteName === "manhattan" ? siteName : `${siteName}-res${res}`,
+    bbox,
+  };
+  const available = buildComparisonProfiles({ bbox, keys });
+  const selected = stringArg(
+    "profiles",
+    "map3d,encoded,geom-only,timeout180,full-production180,preview",
+  ).split(",");
+  if (selected.some((id) => !available.some((profile) => profile.id === id)))
+    throw new Error("Unknown comparison profile");
+  const profiles = selected.map((id) =>
+    available.find((profile) => profile.id === id),
+  );
+  const wantedHosts = stringArg("hosts", "overpass-api.de").split(",");
+  const hosts = wantedHosts.map((hostname) => {
+    const endpoint = ENDPOINTS.find(
+      (entry) => new URL(entry.url).hostname === hostname,
+    );
+    if (!endpoint) throw new Error(`Unknown endpoint hostname: ${hostname}`);
+    return endpoint.url;
+  });
+  const cells = planComparisonCells({
+    hosts,
+    sites: [site],
+    repeats,
+    profilesForSite: () => profiles,
+  });
+  if (process.argv.includes("--dry-run")) {
+    console.log(JSON.stringify({ site, cells }, null, 2));
+    return;
+  }
+  const outName = stringArg("out", undefined);
+  if (!outName || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*\.json$/.test(outName))
+    throw new Error("Comparison requires --out <new-filename.json>");
+  const outDir = join(__dirname, "..", "docs");
+  mkdirSync(outDir, { recursive: true });
+  const outPath = join(outDir, outName);
+  // Reserve exclusively: even --force must not overwrite comparison evidence.
+  writeFileSync(
+    outPath,
+    JSON.stringify({ plannedCells: cells, results: [], complete: false }),
+    { flag: "wx" },
+  );
+  console.log(`Comparison: ${cells.length} cases; writing ${outPath}`);
+  await runComparison(cells, {
+    budgetMs,
+    maxTotalBytes,
+    save: (document) =>
+      writeFileSync(outPath, `${JSON.stringify(document, null, 2)}\n`),
+  });
+}
+
+function comparisonNumberArg(name, fallback) {
+  const index = process.argv.indexOf(`--${name}`);
+  if (index === -1) return fallback;
+  const value = Number(process.argv[index + 1]);
+  if (!Number.isFinite(value) || value <= 0)
+    throw new Error(`--${name} must be a positive number`);
+  return value;
 }
 
 await main();
