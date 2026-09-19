@@ -8,6 +8,9 @@ import { measureRequest } from "./benchmark-request.mjs";
 
 const defaults = {
   measure: measureRequest,
+  // Opt-in: every existing caller and every historical artifact predates slot
+  // gating, so leaving it undefined keeps those invocations reproducible.
+  readStatus: undefined,
   now: Date.now,
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   save: () => {},
@@ -21,6 +24,7 @@ const defaults = {
 export async function runComparison(cells, options = {}) {
   const {
     measure,
+    readStatus,
     now,
     sleep,
     save,
@@ -30,15 +34,7 @@ export async function runComparison(cells, options = {}) {
     requestTimeoutMs,
     maxResponseBytes,
   } = { ...defaults, ...options };
-  for (const value of [
-    budgetMs,
-    maxTotalBytes,
-    requestTimeoutMs,
-    maxResponseBytes,
-  ]) {
-    if (!Number.isFinite(value) || value <= 0)
-      throw new Error("Budgets must be finite and positive");
-  }
+  assertBudgets([budgetMs, maxTotalBytes, requestTimeoutMs, maxResponseBytes]);
   const started = now();
   const results = [];
   const endedAt = {};
@@ -97,23 +93,93 @@ export async function runComparison(cells, options = {}) {
       save(snapshot());
       continue;
     }
+    const gate = await awaitSlot({
+      readStatus,
+      url: cell.url,
+      sleep,
+      log,
+      remainingMs: () => budgetMs - (now() - started),
+    });
+    if (gate.skipped !== undefined) {
+      results.push({ ...cell, statusBefore: gate.statusBefore, ...gate });
+      save(snapshot());
+      continue;
+    }
+    const { statusBefore } = gate;
+    const requestBudgetMs = budgetMs - (now() - started);
     log(`[${results.length + 1}/${cells.length}] ${cell.id}`);
     const measured = await measure({
       ...cell,
-      timeoutMs: Math.min(requestTimeoutMs, remainingMs),
+      timeoutMs: Math.min(requestTimeoutMs, requestBudgetMs),
       maxBytes: Math.min(maxResponseBytes, maxTotalBytes - bytes),
     });
     const finished = now();
     endedAt[cell.operator] = finished;
     bytes += measured.bytes ?? 0;
     recordFailure(measured, cell.operator, failures, endedAt, finished);
-    results.push({ ...cell, ...measured });
+    const statusAfter = await readStatusOnFailure(readStatus, measured, cell);
+    results.push({
+      ...cell,
+      ...measured,
+      ...(statusBefore === undefined ? {} : { statusBefore }),
+      ...(statusAfter === undefined ? {} : { statusAfter }),
+    });
     save(snapshot());
-    log(describeResult(measured));
+    log(describeResult(measured, statusAfter));
   }
   const result = snapshot();
   save(result);
   return result;
+}
+
+function assertBudgets(values) {
+  for (const value of values) {
+    if (!Number.isFinite(value) || value <= 0)
+      throw new Error("Budgets must be finite and positive");
+  }
+}
+
+/**
+ * A second status reading, taken only after a FAILED request.
+ *
+ * Reading after every success would double the request count against the
+ * operator for no diagnostic gain. Reading after a refusal is the entire point:
+ * "slots were free before and after" is what separates a query killed on
+ * arrival from one that merely queued.
+ */
+async function readStatusOnFailure(readStatus, measured, cell) {
+  if (readStatus === undefined || measured.ok) return undefined;
+  return readStatus({ url: cell.url });
+}
+
+/**
+ * Waits for a real slot before issuing, per `/api/status`.
+ *
+ * The blind cooldown assumes a slot frees on a fixed schedule; the status
+ * endpoint says when one actually does. Reading it also makes a refusal
+ * attributable, which is the part that matters most: a 504 arriving in ~10 s
+ * with slots still free is a query killed on arrival, not queueing, and without
+ * a reading the two are indistinguishable.
+ *
+ * Returns `{ statusBefore }`, or `{ statusBefore, skipped }` when the reported
+ * wait would consume the rest of the budget. `statusBefore` is undefined when
+ * no reader was supplied.
+ */
+async function awaitSlot({ readStatus, url, sleep, log, remainingMs }) {
+  if (readStatus === undefined) return {};
+  const first = await readStatus({ url });
+  if (first.waitMs <= 0) return { statusBefore: first };
+  if (first.waitMs >= remainingMs()) {
+    return {
+      statusBefore: first,
+      skipped: `no slot for ${Math.ceil(first.waitMs / 1000)}s, beyond remaining budget`,
+    };
+  }
+  log(`slot wait: ${Math.ceil(first.waitMs / 1000)}s for ${url}`);
+  await sleep(first.waitMs);
+  // Re-read rather than trusting the first snapshot's estimate: the wait was
+  // derived from the server's clock at the moment it answered.
+  return { statusBefore: await readStatus({ url }) };
 }
 
 function recordFailure(measured, operator, failures, endedAt, finished) {
@@ -123,8 +189,12 @@ function recordFailure(measured, operator, failures, endedAt, finished) {
   endedAt[operator] = finished + Math.max(0, retryDelay - OPERATOR_COOLDOWN_MS);
 }
 
-function describeResult(measured) {
-  return `${measured.ok ? "valid" : "FAILED"} ${measured.status ?? ""}: ${measured.totalMs ?? 0}ms, ${measured.bytes ?? 0} decoded bytes`;
+function describeResult(measured, statusAfter) {
+  const slots =
+    statusAfter?.ok === true
+      ? `, ${statusAfter.slotsAvailable} slots free`
+      : "";
+  return `${measured.ok ? "valid" : "FAILED"} ${measured.status ?? ""}: ${measured.totalMs ?? 0}ms, ${measured.bytes ?? 0} decoded bytes${slots}`;
 }
 
 function skipReason(operator, failures, { wait, remainingMs, remainingBytes }) {

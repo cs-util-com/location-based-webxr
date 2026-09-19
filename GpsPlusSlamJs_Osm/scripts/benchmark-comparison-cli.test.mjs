@@ -44,6 +44,38 @@ describe("comparison CLI integration (no network)", () => {
     ).toBe(true);
   });
 
+  // Why: the decomposition arms are the primary contrast for the next run
+  // (owner decision D1/D2, 2026-09-20), so the CLI must actually reach them —
+  // a plan built by hand in a unit test would not prove the flag is wired.
+  it("plans the selector-decomposition contrast against the z alias", () => {
+    const process = dryRun([
+      "--site",
+      "cologne",
+      "--res",
+      "10",
+      "--profiles",
+      "full-production180,nw-only-32,rel-only-32,prod-33",
+      "--hosts",
+      "z.overpass-api.de",
+      "--repeats",
+      "1",
+    ]);
+    expect(process.status).toBe(0);
+    const { cells } = JSON.parse(process.stdout);
+    expect(cells).toHaveLength(4);
+    expect(new Set(cells.map((cell) => cell.profile))).toEqual(
+      new Set(["full-production180", "nw-only-32", "rel-only-32", "prod-33"]),
+    );
+    expect(
+      cells.every(
+        (cell) => cell.url === "https://z.overpass-api.de/api/interpreter",
+      ),
+    ).toBe(true);
+    // Same operator as the main host, so the shared cooldown still applies —
+    // using the alias is about which INSTANCE answers, not about extra quota.
+    expect(new Set(cells.map((cell) => cell.operator)).size).toBe(1);
+  });
+
   // Why: typoed narrowing flags must never silently launch a larger default run.
   it.each([
     ["--profiles", "typo"],

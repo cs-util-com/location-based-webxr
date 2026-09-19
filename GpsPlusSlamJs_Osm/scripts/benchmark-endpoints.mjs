@@ -811,10 +811,19 @@ async function runMap3dComparison() {
     JSON.stringify({ plannedCells: cells, results: [], complete: false }),
     { flag: "wx" },
   );
-  console.log(`Comparison: ${cells.length} cases; writing ${outPath}`);
+  // Slot gating is ON by default (owner decision D1, 2026-09-20). The
+  // 2026-09-19 run fired blind and lost 24 of 37 planned cases to a give-up
+  // guard triggered by refusals the server never queued. `--no-status` exists
+  // so a host that does not serve `/api/status` stays measurable.
+  const { fetchStatus } = await import("./benchmark-status.mjs");
+  const useStatus = !process.argv.includes("--no-status");
+  console.log(
+    `Comparison: ${cells.length} cases; slot gating ${useStatus ? "on" : "OFF"}; writing ${outPath}`,
+  );
   await runComparison(cells, {
     budgetMs,
     maxTotalBytes,
+    ...(useStatus ? { readStatus: fetchStatus } : {}),
     save: (document) =>
       writeFileSync(outPath, `${JSON.stringify(document, null, 2)}\n`),
   });
