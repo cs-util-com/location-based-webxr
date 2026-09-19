@@ -8,6 +8,8 @@
  * drift without a red gate.
  */
 
+import { BENCHMARK_USER_AGENT } from "./benchmark-request.mjs";
+
 const CLIENT_RE = /^Connected as:\s*(\S+)\s*$/m;
 const TIME_RE = /^Current time:\s*(\S+)\s*$/m;
 const ENDPOINT_RE = /^Announced endpoint:\s*(\S+)\s*$/m;
@@ -167,9 +169,12 @@ export async function fetchStatus({
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
+    // The User-Agent is required, not decorative: overpass-api.de answers 406
+    // without one. No Accept header — the endpoint serves plain text and 406s
+    // on a request it cannot satisfy, so asking for anything is a way to fail.
     const response = await fetchImpl(statusUrlFor(url), {
       signal: controller.signal,
-      headers: { accept: "text/plain" },
+      headers: { "User-Agent": BENCHMARK_USER_AGENT },
     });
     if (!response.ok) {
       return { ok: false, waitMs: 0, error: `HTTP ${response.status}` };

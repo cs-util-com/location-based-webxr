@@ -95,6 +95,18 @@ function decodeResponse(chunks, response, result) {
   }
 }
 
+/**
+ * How this benchmark identifies itself to Overpass operators.
+ *
+ * Shared with `benchmark-status.mjs` rather than copied, because it carries a
+ * contract in both directions. It is the courtesy that lets an operator
+ * recognise and, if they wish, block this traffic — and it is load-bearing:
+ * `overpass-api.de` answers `/api/status` with **HTTP 406** to a request
+ * carrying no User-Agent, which is what Node's fetch sends by default.
+ */
+export const BENCHMARK_USER_AGENT =
+  "gps-plus-slam-osm comparison benchmark (github.com/cs-util-com)";
+
 function requestOptions(query, encoding, signal) {
   return {
     method: "POST",
@@ -102,8 +114,7 @@ function requestOptions(query, encoding, signal) {
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
       Accept: "application/json",
-      "User-Agent":
-        "gps-plus-slam-osm comparison benchmark (github.com/cs-util-com)",
+      "User-Agent": BENCHMARK_USER_AGENT,
     },
     signal,
   };

@@ -12,6 +12,7 @@ import {
   statusUrlFor,
   fetchStatus,
 } from "./benchmark-status.mjs";
+import { BENCHMARK_USER_AGENT } from "./benchmark-request.mjs";
 
 const FIXTURES = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -126,6 +127,27 @@ describe("benchmark status fetching", () => {
       expect(snapshot.waitMs).toBe(0);
       expect(typeof snapshot.error).toBe("string");
     }
+  });
+
+  it("identifies the benchmark with the same User-Agent as its queries", async () => {
+    // WHY THIS IS NOT COSMETIC: overpass-api.de answers `/api/status` with
+    // **HTTP 406** to a request carrying no User-Agent, which is what Node's
+    // fetch sends by default. Every status read failed that way on first
+    // contact, and because a failed read is (correctly) non-blocking, the gate
+    // would have silently degraded to the blind cooldown it exists to replace —
+    // a green suite and a useless run. The header is also the courtesy that
+    // lets an operator identify this traffic, so it is shared with the query
+    // transport rather than copied.
+    let seen;
+    await fetchStatus({
+      url: "https://z.overpass-api.de/api/interpreter",
+      fetchImpl: async (_url, init) => {
+        seen = init.headers;
+        return new Response(idle, { status: 200 });
+      },
+    });
+    expect(seen["User-Agent"]).toBe(BENCHMARK_USER_AGENT);
+    expect(BENCHMARK_USER_AGENT).toMatch(/gps-plus-slam/);
   });
 
   it("bounds its own request so a hung status read cannot stall the run", async () => {
