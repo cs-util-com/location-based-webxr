@@ -127,7 +127,12 @@ describe("comparison scheduling", () => {
   it("completes all arms each round with unique IDs and changing order", () => {
     // WHY: the historical blocked-by-arm sweep confounded arm with server load.
     const cells = planComparisonCells({ hosts, sites, profilesForSite });
-    expect(cells).toHaveLength(96);
+    // Derived, not a literal: the arm list grows (it went from 8 to 11 when
+    // the selector-decomposition arms landed) and a hardcoded product turns
+    // that into a puzzling failure instead of an obvious one.
+    const perRound =
+      hosts.length * sites.length * profilesForSite(sites[0]).length;
+    expect(cells).toHaveLength(perRound * 3);
     expect(new Set(cells.map((c) => c.id)).size).toBe(cells.length);
     const expected = hosts
       .flatMap((url) =>
@@ -140,7 +145,7 @@ describe("comparison scheduling", () => {
       .sort();
     const orders = [];
     for (const round of [1, 2, 3]) {
-      const slice = cells.slice((round - 1) * 32, round * 32);
+      const slice = cells.slice((round - 1) * perRound, round * perRound);
       expect(slice.every((c) => c.round === round)).toBe(true);
       expect(
         slice.map((c) => `${c.url}|${c.site}|${c.profile}`).sort(),
@@ -220,5 +225,95 @@ describe("comparison scheduling", () => {
         planComparisonCells({ hosts, sites, profilesForSite, ...patch }),
       ).toThrow();
     }
+  });
+});
+
+/** Counts non-overlapping occurrences of a literal needle. */
+function occurrences(haystack, needle) {
+  return haystack.split(needle).length - 1;
+}
+describe("selector-decomposition arms", () => {
+  // WHY these arms exist: the 2026-09-19 run established that first-byte cost
+  // dominates and tracks selector count (19.4 s to first byte for a 326 KB
+  // response), but production emits 64 statements — 32 `nw` plus 32
+  // `relation` — and nothing says which half carries the cost. `everything`
+  // and `everything-areal` change selection AND relation admission at once, so
+  // they cannot answer it. These three split the difference apart.
+  const byId = () =>
+    Object.fromEntries(profilesForSite(sites[0]).map((p) => [p.id, p]));
+
+  it("isolates the node/way half and the relation half from each other", () => {
+    // WHY: `nw-only-32` and `rel-only-32` must differ from production in
+    // exactly one respect each, or a latency difference is unattributable.
+    const arms = byId();
+    const relationType = '["type"~"^(multipolygon|boundary)$"]';
+    const nwStatements = OVERPASS_SELECT_KEYS.map(
+      (key) => `nw["${key}"];`,
+    ).join("");
+    const relStatements = OVERPASS_SELECT_KEYS.map(
+      (key) => `relation["${key}"]${relationType};`,
+    ).join("");
+
+    expect(arms["nw-only-32"].query).toContain(`(${nwStatements});`);
+    expect(arms["nw-only-32"].query).not.toContain("relation[");
+    expect(arms["rel-only-32"].query).toContain(`(${relStatements});`);
+    expect(arms["rel-only-32"].query).not.toContain('nw["');
+
+    // Both halves keep production's header, encoding and output spelling, so
+    // the ONLY difference from `full-production180` is which statements run.
+    for (const id of ["nw-only-32", "rel-only-32"]) {
+      expect(arms[id].encoding).toBe("form");
+      expect(arms[id].timeoutSeconds).toBe(180);
+      expect(arms[id].query.startsWith("[out:json][timeout:180][bbox:")).toBe(
+        true,
+      );
+      expect(arms[id].query.endsWith("out geom;")).toBe(true);
+    }
+
+    // And together they reconstruct production exactly — proof that the split
+    // loses nothing, which is what makes the two timings additive to compare
+    // against the whole.
+    const rejoined = arms["nw-only-32"].query.replace(
+      `(${nwStatements});`,
+      `(${nwStatements}${relStatements});`,
+    );
+    expect(rejoined).toBe(arms["full-production180"].query);
+  });
+
+  it("offers prod-33: every key kept, the 32 relation statements collapsed to one", () => {
+    // WHY this is the arm with a route to production: it drops no key, so no
+    // scoring signal can be lost, and it halves the statement count. It omits
+    // the `boundary` alternative deliberately — `boundary` is not among the 32
+    // keys, so today a `type=boundary` relation is only ever admitted when it
+    // also carries a selected key; re-admitting all of them unqualified is
+    // what makes `everything-areal` larger than production, not smaller.
+    const arms = byId();
+    expect(arms["prod-33"].query).toContain('relation["type"="multipolygon"];');
+    expect(arms["prod-33"].query).not.toContain("boundary");
+    for (const key of OVERPASS_SELECT_KEYS) {
+      expect(arms["prod-33"].query).toContain(`nw["${key}"];`);
+    }
+    // Exactly 33 statements: 32 nw and exactly 1 relation. Counting the
+    // statements themselves rather than semicolons, because the union block's
+    // own `);` and the header both carry one and make a raw count ambiguous.
+    expect(occurrences(arms["prod-33"].query, 'nw["')).toBe(
+      OVERPASS_SELECT_KEYS.length,
+    );
+    expect(occurrences(arms["prod-33"].query, "relation[")).toBe(1);
+    expect(arms["prod-33"].encoding).toBe("form");
+    expect(arms["prod-33"].timeoutSeconds).toBe(180);
+  });
+
+  it("keeps every arm's id unique and plannable", () => {
+    // WHY: planComparisonCells builds cell ids from profile ids, and a
+    // duplicate would silently overwrite a measurement.
+    const ids = profilesForSite(sites[0]).map((p) => p.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).toEqual(
+      expect.arrayContaining(["nw-only-32", "rel-only-32", "prod-33"]),
+    );
+    expect(() =>
+      planComparisonCells({ hosts, sites, profilesForSite }),
+    ).not.toThrow();
   });
 });

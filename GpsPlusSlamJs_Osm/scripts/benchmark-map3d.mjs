@@ -36,6 +36,26 @@ export function buildComparisonProfiles({ bbox, keys }) {
     `(${keys.map((key) => `nw["${key}"];`).join("")}${keys.map((key) => `relation["${key}"]${relationType};`).join("")});`,
     "out geom;",
   ].join("\n");
+  // Production emits 64 statements: 32 `nw` plus 32 `relation`. Which half
+  // carries the first-byte cost is unknown, so the two halves are measured
+  // apart. Everything else — header, encoding, output spelling — is held
+  // identical to `full-production180`.
+  const nwStatements = keys.map((key) => `nw["${key}"];`).join("");
+  const relStatements = keys
+    .map((key) => `relation["${key}"]${relationType};`)
+    .join("");
+  const nwOnly = [header, `(${nwStatements});`, "out geom;"].join("\n");
+  const relOnly = [header, `(${relStatements});`, "out geom;"].join("\n");
+  // Every key kept, the 32 relation statements collapsed into one. The
+  // `boundary` alternative is deliberately dropped: `boundary` is not a
+  // selected key, so a type=boundary relation reaches production only when it
+  // also carries one of the 32 — and re-admitting them unqualified is what
+  // makes `everything-areal` LARGER than production on relations.
+  const prod33 = [
+    header,
+    `(${nwStatements}relation["type"="multipolygon"];);`,
+    "out geom;",
+  ].join("\n");
   const previewKeys = ["building", "building:part"];
   const preview = `[out:json][timeout:25];(${previewKeys.map((key) => `way["${key}"]( ${bounds} );`).join("")}${previewKeys.map((key) => `relation["${key}"]${relationType}( ${bounds} );`).join("")});out body geom;`;
   return [
@@ -66,6 +86,19 @@ export function buildComparisonProfiles({ bbox, keys }) {
       encoding: "form",
       timeoutSeconds: 180,
     },
+    {
+      id: "nw-only-32",
+      query: nwOnly,
+      encoding: "form",
+      timeoutSeconds: 180,
+    },
+    {
+      id: "rel-only-32",
+      query: relOnly,
+      encoding: "form",
+      timeoutSeconds: 180,
+    },
+    { id: "prod-33", query: prod33, encoding: "form", timeoutSeconds: 180 },
     {
       id: "everything-areal",
       query: [header, `(nw;relation${relationType};);`, "out geom;"].join("\n"),
