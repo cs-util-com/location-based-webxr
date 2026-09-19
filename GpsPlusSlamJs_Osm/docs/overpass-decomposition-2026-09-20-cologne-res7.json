@@ -1,0 +1,543 @@
+{
+  "measuredAt": "2026-09-19T23:03:25.603Z",
+  "finishedAt": "2026-09-19T23:11:49.252Z",
+  "runtime": {
+    "node": "v24.14.1",
+    "platform": "win32"
+  },
+  "settings": {
+    "budgetMs": 1680000,
+    "maxTotalBytes": 900000000,
+    "requestTimeoutMs": 210000,
+    "maxResponseBytes": 120000000,
+    "cooldownMs": 60000
+  },
+  "plannedCells": [
+    {
+      "id": "[1,\"cologne-res7\",\"https://z.overpass-api.de/api/interpreter\",\"full-production180\"]",
+      "profile": "full-production180",
+      "query": "[out:json][timeout:180][bbox:50.93036679415017,6.946904705455983,50.95331114355559,6.982049755430545];\n(nw[\"highway\"];nw[\"surface\"];nw[\"landuse\"];nw[\"natural\"];nw[\"leisure\"];nw[\"amenity\"];nw[\"barrier\"];nw[\"access\"];nw[\"wheelchair\"];nw[\"water\"];nw[\"waterway\"];nw[\"man_made\"];nw[\"tourism\"];nw[\"sport\"];nw[\"playground\"];nw[\"building\"];nw[\"building:part\"];nw[\"building:levels\"];nw[\"height\"];nw[\"min_height\"];nw[\"roof:shape\"];nw[\"roof:levels\"];nw[\"layer\"];nw[\"historic\"];nw[\"place\"];nw[\"power\"];nw[\"entrance\"];nw[\"railway\"];nw[\"service\"];nw[\"foot\"];nw[\"crossing\"];nw[\"sidewalk\"];relation[\"highway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"surface\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"landuse\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"natural\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"leisure\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"amenity\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"barrier\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"access\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"wheelchair\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"water\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"waterway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"man_made\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"tourism\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"sport\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"playground\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building:part\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building:levels\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"height\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"min_height\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"roof:shape\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"roof:levels\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"layer\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"historic\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"place\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"power\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"entrance\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"railway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"service\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"foot\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"crossing\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"sidewalk\"][\"type\"~\"^(multipolygon|boundary)$\"];);\nout geom;",
+      "encoding": "form",
+      "timeoutSeconds": 180,
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "site": "cologne-res7",
+      "bbox": {
+        "south": 50.93036679415017,
+        "north": 50.95331114355559,
+        "west": 6.946904705455983,
+        "east": 6.982049755430545
+      },
+      "round": 1
+    },
+    {
+      "id": "[1,\"cologne-res7\",\"https://z.overpass-api.de/api/interpreter\",\"nw-only-32\"]",
+      "profile": "nw-only-32",
+      "query": "[out:json][timeout:180][bbox:50.93036679415017,6.946904705455983,50.95331114355559,6.982049755430545];\n(nw[\"highway\"];nw[\"surface\"];nw[\"landuse\"];nw[\"natural\"];nw[\"leisure\"];nw[\"amenity\"];nw[\"barrier\"];nw[\"access\"];nw[\"wheelchair\"];nw[\"water\"];nw[\"waterway\"];nw[\"man_made\"];nw[\"tourism\"];nw[\"sport\"];nw[\"playground\"];nw[\"building\"];nw[\"building:part\"];nw[\"building:levels\"];nw[\"height\"];nw[\"min_height\"];nw[\"roof:shape\"];nw[\"roof:levels\"];nw[\"layer\"];nw[\"historic\"];nw[\"place\"];nw[\"power\"];nw[\"entrance\"];nw[\"railway\"];nw[\"service\"];nw[\"foot\"];nw[\"crossing\"];nw[\"sidewalk\"];);\nout geom;",
+      "encoding": "form",
+      "timeoutSeconds": 180,
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "site": "cologne-res7",
+      "bbox": {
+        "south": 50.93036679415017,
+        "north": 50.95331114355559,
+        "west": 6.946904705455983,
+        "east": 6.982049755430545
+      },
+      "round": 1
+    },
+    {
+      "id": "[1,\"cologne-res7\",\"https://z.overpass-api.de/api/interpreter\",\"rel-only-32\"]",
+      "profile": "rel-only-32",
+      "query": "[out:json][timeout:180][bbox:50.93036679415017,6.946904705455983,50.95331114355559,6.982049755430545];\n(relation[\"highway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"surface\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"landuse\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"natural\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"leisure\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"amenity\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"barrier\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"access\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"wheelchair\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"water\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"waterway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"man_made\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"tourism\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"sport\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"playground\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building:part\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building:levels\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"height\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"min_height\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"roof:shape\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"roof:levels\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"layer\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"historic\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"place\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"power\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"entrance\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"railway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"service\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"foot\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"crossing\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"sidewalk\"][\"type\"~\"^(multipolygon|boundary)$\"];);\nout geom;",
+      "encoding": "form",
+      "timeoutSeconds": 180,
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "site": "cologne-res7",
+      "bbox": {
+        "south": 50.93036679415017,
+        "north": 50.95331114355559,
+        "west": 6.946904705455983,
+        "east": 6.982049755430545
+      },
+      "round": 1
+    },
+    {
+      "id": "[1,\"cologne-res7\",\"https://z.overpass-api.de/api/interpreter\",\"prod-33\"]",
+      "profile": "prod-33",
+      "query": "[out:json][timeout:180][bbox:50.93036679415017,6.946904705455983,50.95331114355559,6.982049755430545];\n(nw[\"highway\"];nw[\"surface\"];nw[\"landuse\"];nw[\"natural\"];nw[\"leisure\"];nw[\"amenity\"];nw[\"barrier\"];nw[\"access\"];nw[\"wheelchair\"];nw[\"water\"];nw[\"waterway\"];nw[\"man_made\"];nw[\"tourism\"];nw[\"sport\"];nw[\"playground\"];nw[\"building\"];nw[\"building:part\"];nw[\"building:levels\"];nw[\"height\"];nw[\"min_height\"];nw[\"roof:shape\"];nw[\"roof:levels\"];nw[\"layer\"];nw[\"historic\"];nw[\"place\"];nw[\"power\"];nw[\"entrance\"];nw[\"railway\"];nw[\"service\"];nw[\"foot\"];nw[\"crossing\"];nw[\"sidewalk\"];relation[\"type\"=\"multipolygon\"];);\nout geom;",
+      "encoding": "form",
+      "timeoutSeconds": 180,
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "site": "cologne-res7",
+      "bbox": {
+        "south": 50.93036679415017,
+        "north": 50.95331114355559,
+        "west": 6.946904705455983,
+        "east": 6.982049755430545
+      },
+      "round": 1
+    },
+    {
+      "id": "[2,\"cologne-res7\",\"https://z.overpass-api.de/api/interpreter\",\"prod-33\"]",
+      "profile": "prod-33",
+      "query": "[out:json][timeout:180][bbox:50.93036679415017,6.946904705455983,50.95331114355559,6.982049755430545];\n(nw[\"highway\"];nw[\"surface\"];nw[\"landuse\"];nw[\"natural\"];nw[\"leisure\"];nw[\"amenity\"];nw[\"barrier\"];nw[\"access\"];nw[\"wheelchair\"];nw[\"water\"];nw[\"waterway\"];nw[\"man_made\"];nw[\"tourism\"];nw[\"sport\"];nw[\"playground\"];nw[\"building\"];nw[\"building:part\"];nw[\"building:levels\"];nw[\"height\"];nw[\"min_height\"];nw[\"roof:shape\"];nw[\"roof:levels\"];nw[\"layer\"];nw[\"historic\"];nw[\"place\"];nw[\"power\"];nw[\"entrance\"];nw[\"railway\"];nw[\"service\"];nw[\"foot\"];nw[\"crossing\"];nw[\"sidewalk\"];relation[\"type\"=\"multipolygon\"];);\nout geom;",
+      "encoding": "form",
+      "timeoutSeconds": 180,
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "site": "cologne-res7",
+      "bbox": {
+        "south": 50.93036679415017,
+        "north": 50.95331114355559,
+        "west": 6.946904705455983,
+        "east": 6.982049755430545
+      },
+      "round": 2
+    },
+    {
+      "id": "[2,\"cologne-res7\",\"https://z.overpass-api.de/api/interpreter\",\"rel-only-32\"]",
+      "profile": "rel-only-32",
+      "query": "[out:json][timeout:180][bbox:50.93036679415017,6.946904705455983,50.95331114355559,6.982049755430545];\n(relation[\"highway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"surface\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"landuse\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"natural\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"leisure\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"amenity\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"barrier\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"access\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"wheelchair\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"water\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"waterway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"man_made\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"tourism\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"sport\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"playground\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building:part\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building:levels\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"height\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"min_height\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"roof:shape\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"roof:levels\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"layer\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"historic\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"place\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"power\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"entrance\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"railway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"service\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"foot\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"crossing\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"sidewalk\"][\"type\"~\"^(multipolygon|boundary)$\"];);\nout geom;",
+      "encoding": "form",
+      "timeoutSeconds": 180,
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "site": "cologne-res7",
+      "bbox": {
+        "south": 50.93036679415017,
+        "north": 50.95331114355559,
+        "west": 6.946904705455983,
+        "east": 6.982049755430545
+      },
+      "round": 2
+    },
+    {
+      "id": "[2,\"cologne-res7\",\"https://z.overpass-api.de/api/interpreter\",\"nw-only-32\"]",
+      "profile": "nw-only-32",
+      "query": "[out:json][timeout:180][bbox:50.93036679415017,6.946904705455983,50.95331114355559,6.982049755430545];\n(nw[\"highway\"];nw[\"surface\"];nw[\"landuse\"];nw[\"natural\"];nw[\"leisure\"];nw[\"amenity\"];nw[\"barrier\"];nw[\"access\"];nw[\"wheelchair\"];nw[\"water\"];nw[\"waterway\"];nw[\"man_made\"];nw[\"tourism\"];nw[\"sport\"];nw[\"playground\"];nw[\"building\"];nw[\"building:part\"];nw[\"building:levels\"];nw[\"height\"];nw[\"min_height\"];nw[\"roof:shape\"];nw[\"roof:levels\"];nw[\"layer\"];nw[\"historic\"];nw[\"place\"];nw[\"power\"];nw[\"entrance\"];nw[\"railway\"];nw[\"service\"];nw[\"foot\"];nw[\"crossing\"];nw[\"sidewalk\"];);\nout geom;",
+      "encoding": "form",
+      "timeoutSeconds": 180,
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "site": "cologne-res7",
+      "bbox": {
+        "south": 50.93036679415017,
+        "north": 50.95331114355559,
+        "west": 6.946904705455983,
+        "east": 6.982049755430545
+      },
+      "round": 2
+    },
+    {
+      "id": "[2,\"cologne-res7\",\"https://z.overpass-api.de/api/interpreter\",\"full-production180\"]",
+      "profile": "full-production180",
+      "query": "[out:json][timeout:180][bbox:50.93036679415017,6.946904705455983,50.95331114355559,6.982049755430545];\n(nw[\"highway\"];nw[\"surface\"];nw[\"landuse\"];nw[\"natural\"];nw[\"leisure\"];nw[\"amenity\"];nw[\"barrier\"];nw[\"access\"];nw[\"wheelchair\"];nw[\"water\"];nw[\"waterway\"];nw[\"man_made\"];nw[\"tourism\"];nw[\"sport\"];nw[\"playground\"];nw[\"building\"];nw[\"building:part\"];nw[\"building:levels\"];nw[\"height\"];nw[\"min_height\"];nw[\"roof:shape\"];nw[\"roof:levels\"];nw[\"layer\"];nw[\"historic\"];nw[\"place\"];nw[\"power\"];nw[\"entrance\"];nw[\"railway\"];nw[\"service\"];nw[\"foot\"];nw[\"crossing\"];nw[\"sidewalk\"];relation[\"highway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"surface\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"landuse\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"natural\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"leisure\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"amenity\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"barrier\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"access\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"wheelchair\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"water\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"waterway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"man_made\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"tourism\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"sport\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"playground\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building:part\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building:levels\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"height\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"min_height\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"roof:shape\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"roof:levels\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"layer\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"historic\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"place\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"power\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"entrance\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"railway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"service\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"foot\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"crossing\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"sidewalk\"][\"type\"~\"^(multipolygon|boundary)$\"];);\nout geom;",
+      "encoding": "form",
+      "timeoutSeconds": 180,
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "site": "cologne-res7",
+      "bbox": {
+        "south": 50.93036679415017,
+        "north": 50.95331114355559,
+        "west": 6.946904705455983,
+        "east": 6.982049755430545
+      },
+      "round": 2
+    }
+  ],
+  "complete": true,
+  "results": [
+    {
+      "id": "[1,\"cologne-res7\",\"https://z.overpass-api.de/api/interpreter\",\"full-production180\"]",
+      "profile": "full-production180",
+      "query": "[out:json][timeout:180][bbox:50.93036679415017,6.946904705455983,50.95331114355559,6.982049755430545];\n(nw[\"highway\"];nw[\"surface\"];nw[\"landuse\"];nw[\"natural\"];nw[\"leisure\"];nw[\"amenity\"];nw[\"barrier\"];nw[\"access\"];nw[\"wheelchair\"];nw[\"water\"];nw[\"waterway\"];nw[\"man_made\"];nw[\"tourism\"];nw[\"sport\"];nw[\"playground\"];nw[\"building\"];nw[\"building:part\"];nw[\"building:levels\"];nw[\"height\"];nw[\"min_height\"];nw[\"roof:shape\"];nw[\"roof:levels\"];nw[\"layer\"];nw[\"historic\"];nw[\"place\"];nw[\"power\"];nw[\"entrance\"];nw[\"railway\"];nw[\"service\"];nw[\"foot\"];nw[\"crossing\"];nw[\"sidewalk\"];relation[\"highway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"surface\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"landuse\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"natural\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"leisure\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"amenity\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"barrier\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"access\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"wheelchair\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"water\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"waterway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"man_made\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"tourism\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"sport\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"playground\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building:part\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building:levels\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"height\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"min_height\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"roof:shape\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"roof:levels\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"layer\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"historic\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"place\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"power\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"entrance\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"railway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"service\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"foot\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"crossing\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"sidewalk\"][\"type\"~\"^(multipolygon|boundary)$\"];);\nout geom;",
+      "encoding": "form",
+      "timeoutSeconds": 180,
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "site": "cologne-res7",
+      "bbox": {
+        "south": 50.93036679415017,
+        "north": 50.95331114355559,
+        "west": 6.946904705455983,
+        "east": 6.982049755430545
+      },
+      "round": 1,
+      "ok": true,
+      "httpStatus": 200,
+      "status": "200 OK",
+      "startedAt": "2026-09-19T23:03:25.805Z",
+      "finishedAt": "2026-09-19T23:03:40.508Z",
+      "headersMs": 13549,
+      "firstByteMs": 13550,
+      "totalMs": 14703,
+      "bytes": 21356918,
+      "decodeMs": 500,
+      "elementCount": 32260,
+      "counts": {
+        "node": 13349,
+        "way": 18816,
+        "relation": 95
+      },
+      "semanticHash": "30f558f14f19af38273c04516f4f4a387a0081e9b6027d9ea9cb137aaecb2c01",
+      "osmTimestamp": "2026-09-19T23:02:21Z",
+      "statusBefore": {
+        "ok": true,
+        "waitMs": 0,
+        "clientId": "1354463306",
+        "serverTimeMs": 1789859018000,
+        "announcedEndpoint": "gall.openstreetmap.de/",
+        "rateLimit": 2,
+        "unlimited": false,
+        "slotsAvailable": 2,
+        "slotsAvailableAtMs": [],
+        "runningQueries": 0
+      }
+    },
+    {
+      "id": "[1,\"cologne-res7\",\"https://z.overpass-api.de/api/interpreter\",\"nw-only-32\"]",
+      "profile": "nw-only-32",
+      "query": "[out:json][timeout:180][bbox:50.93036679415017,6.946904705455983,50.95331114355559,6.982049755430545];\n(nw[\"highway\"];nw[\"surface\"];nw[\"landuse\"];nw[\"natural\"];nw[\"leisure\"];nw[\"amenity\"];nw[\"barrier\"];nw[\"access\"];nw[\"wheelchair\"];nw[\"water\"];nw[\"waterway\"];nw[\"man_made\"];nw[\"tourism\"];nw[\"sport\"];nw[\"playground\"];nw[\"building\"];nw[\"building:part\"];nw[\"building:levels\"];nw[\"height\"];nw[\"min_height\"];nw[\"roof:shape\"];nw[\"roof:levels\"];nw[\"layer\"];nw[\"historic\"];nw[\"place\"];nw[\"power\"];nw[\"entrance\"];nw[\"railway\"];nw[\"service\"];nw[\"foot\"];nw[\"crossing\"];nw[\"sidewalk\"];);\nout geom;",
+      "encoding": "form",
+      "timeoutSeconds": 180,
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "site": "cologne-res7",
+      "bbox": {
+        "south": 50.93036679415017,
+        "north": 50.95331114355559,
+        "west": 6.946904705455983,
+        "east": 6.982049755430545
+      },
+      "round": 1,
+      "ok": true,
+      "httpStatus": 200,
+      "status": "200 OK",
+      "startedAt": "2026-09-19T23:04:41.202Z",
+      "finishedAt": "2026-09-19T23:04:46.351Z",
+      "headersMs": 4115,
+      "firstByteMs": 4116,
+      "totalMs": 5149,
+      "bytes": 19341794,
+      "decodeMs": 659,
+      "elementCount": 32165,
+      "counts": {
+        "node": 13349,
+        "way": 18816,
+        "relation": 0
+      },
+      "semanticHash": "698938a74593980a60a9fc4f9cb8291febeeffbb0d92bb9033929bc09410a361",
+      "osmTimestamp": "2026-09-19T23:03:26Z",
+      "statusBefore": {
+        "ok": true,
+        "waitMs": 0,
+        "clientId": "1354463306",
+        "serverTimeMs": 1789859093000,
+        "announcedEndpoint": "gall.openstreetmap.de/",
+        "rateLimit": 2,
+        "unlimited": false,
+        "slotsAvailable": 2,
+        "slotsAvailableAtMs": [],
+        "runningQueries": 0
+      }
+    },
+    {
+      "id": "[1,\"cologne-res7\",\"https://z.overpass-api.de/api/interpreter\",\"rel-only-32\"]",
+      "profile": "rel-only-32",
+      "query": "[out:json][timeout:180][bbox:50.93036679415017,6.946904705455983,50.95331114355559,6.982049755430545];\n(relation[\"highway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"surface\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"landuse\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"natural\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"leisure\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"amenity\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"barrier\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"access\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"wheelchair\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"water\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"waterway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"man_made\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"tourism\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"sport\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"playground\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building:part\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building:levels\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"height\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"min_height\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"roof:shape\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"roof:levels\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"layer\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"historic\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"place\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"power\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"entrance\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"railway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"service\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"foot\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"crossing\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"sidewalk\"][\"type\"~\"^(multipolygon|boundary)$\"];);\nout geom;",
+      "encoding": "form",
+      "timeoutSeconds": 180,
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "site": "cologne-res7",
+      "bbox": {
+        "south": 50.93036679415017,
+        "north": 50.95331114355559,
+        "west": 6.946904705455983,
+        "east": 6.982049755430545
+      },
+      "round": 1,
+      "ok": true,
+      "httpStatus": 200,
+      "status": "200 OK",
+      "startedAt": "2026-09-19T23:05:47.182Z",
+      "finishedAt": "2026-09-19T23:06:01.007Z",
+      "headersMs": 7103,
+      "firstByteMs": 7104,
+      "totalMs": 13825,
+      "bytes": 2015409,
+      "decodeMs": 66,
+      "elementCount": 95,
+      "counts": {
+        "node": 0,
+        "way": 0,
+        "relation": 95
+      },
+      "semanticHash": "3e58b9d4c23f8a8c97de126d60e58e39f85209be8d4f45261b2b4d895a2161fa",
+      "osmTimestamp": "2026-09-19T23:04:26Z",
+      "statusBefore": {
+        "ok": true,
+        "waitMs": 0,
+        "clientId": "1354463306",
+        "serverTimeMs": 1789859159000,
+        "announcedEndpoint": "gall.openstreetmap.de/",
+        "rateLimit": 2,
+        "unlimited": false,
+        "slotsAvailable": 2,
+        "slotsAvailableAtMs": [],
+        "runningQueries": 0
+      }
+    },
+    {
+      "id": "[1,\"cologne-res7\",\"https://z.overpass-api.de/api/interpreter\",\"prod-33\"]",
+      "profile": "prod-33",
+      "query": "[out:json][timeout:180][bbox:50.93036679415017,6.946904705455983,50.95331114355559,6.982049755430545];\n(nw[\"highway\"];nw[\"surface\"];nw[\"landuse\"];nw[\"natural\"];nw[\"leisure\"];nw[\"amenity\"];nw[\"barrier\"];nw[\"access\"];nw[\"wheelchair\"];nw[\"water\"];nw[\"waterway\"];nw[\"man_made\"];nw[\"tourism\"];nw[\"sport\"];nw[\"playground\"];nw[\"building\"];nw[\"building:part\"];nw[\"building:levels\"];nw[\"height\"];nw[\"min_height\"];nw[\"roof:shape\"];nw[\"roof:levels\"];nw[\"layer\"];nw[\"historic\"];nw[\"place\"];nw[\"power\"];nw[\"entrance\"];nw[\"railway\"];nw[\"service\"];nw[\"foot\"];nw[\"crossing\"];nw[\"sidewalk\"];relation[\"type\"=\"multipolygon\"];);\nout geom;",
+      "encoding": "form",
+      "timeoutSeconds": 180,
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "site": "cologne-res7",
+      "bbox": {
+        "south": 50.93036679415017,
+        "north": 50.95331114355559,
+        "west": 6.946904705455983,
+        "east": 6.982049755430545
+      },
+      "round": 1,
+      "ok": true,
+      "httpStatus": 200,
+      "status": "200 OK",
+      "startedAt": "2026-09-19T23:07:01.233Z",
+      "finishedAt": "2026-09-19T23:07:09.586Z",
+      "headersMs": 7103,
+      "firstByteMs": 7103,
+      "totalMs": 8353,
+      "bytes": 19723888,
+      "decodeMs": 416,
+      "elementCount": 32259,
+      "counts": {
+        "node": 13349,
+        "way": 18816,
+        "relation": 94
+      },
+      "semanticHash": "907435bbc38b39a2939bc5fc776fbcae1aa223dc01972e8bc7e8b2ac2b1d0b3b",
+      "osmTimestamp": "2026-09-19T23:05:30Z",
+      "statusBefore": {
+        "ok": true,
+        "waitMs": 0,
+        "clientId": "1354463306",
+        "serverTimeMs": 1789859233000,
+        "announcedEndpoint": "gall.openstreetmap.de/",
+        "rateLimit": 2,
+        "unlimited": false,
+        "slotsAvailable": 1,
+        "slotsAvailableAtMs": [
+          1789859233000
+        ],
+        "runningQueries": 0,
+        "nextSlotAtMs": 1789859233000
+      }
+    },
+    {
+      "id": "[2,\"cologne-res7\",\"https://z.overpass-api.de/api/interpreter\",\"prod-33\"]",
+      "profile": "prod-33",
+      "query": "[out:json][timeout:180][bbox:50.93036679415017,6.946904705455983,50.95331114355559,6.982049755430545];\n(nw[\"highway\"];nw[\"surface\"];nw[\"landuse\"];nw[\"natural\"];nw[\"leisure\"];nw[\"amenity\"];nw[\"barrier\"];nw[\"access\"];nw[\"wheelchair\"];nw[\"water\"];nw[\"waterway\"];nw[\"man_made\"];nw[\"tourism\"];nw[\"sport\"];nw[\"playground\"];nw[\"building\"];nw[\"building:part\"];nw[\"building:levels\"];nw[\"height\"];nw[\"min_height\"];nw[\"roof:shape\"];nw[\"roof:levels\"];nw[\"layer\"];nw[\"historic\"];nw[\"place\"];nw[\"power\"];nw[\"entrance\"];nw[\"railway\"];nw[\"service\"];nw[\"foot\"];nw[\"crossing\"];nw[\"sidewalk\"];relation[\"type\"=\"multipolygon\"];);\nout geom;",
+      "encoding": "form",
+      "timeoutSeconds": 180,
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "site": "cologne-res7",
+      "bbox": {
+        "south": 50.93036679415017,
+        "north": 50.95331114355559,
+        "west": 6.946904705455983,
+        "east": 6.982049755430545
+      },
+      "round": 2,
+      "ok": true,
+      "httpStatus": 200,
+      "status": "200 OK",
+      "startedAt": "2026-09-19T23:08:10.175Z",
+      "finishedAt": "2026-09-19T23:08:15.961Z",
+      "headersMs": 4927,
+      "firstByteMs": 4927,
+      "totalMs": 5786,
+      "bytes": 19723888,
+      "decodeMs": 413,
+      "elementCount": 32259,
+      "counts": {
+        "node": 13349,
+        "way": 18816,
+        "relation": 94
+      },
+      "semanticHash": "907435bbc38b39a2939bc5fc776fbcae1aa223dc01972e8bc7e8b2ac2b1d0b3b",
+      "osmTimestamp": "2026-09-19T23:07:33Z",
+      "statusBefore": {
+        "ok": true,
+        "waitMs": 0,
+        "clientId": "1354463306",
+        "serverTimeMs": 1789859302000,
+        "announcedEndpoint": "gall.openstreetmap.de/",
+        "rateLimit": 2,
+        "unlimited": false,
+        "slotsAvailable": 2,
+        "slotsAvailableAtMs": [],
+        "runningQueries": 0
+      }
+    },
+    {
+      "id": "[2,\"cologne-res7\",\"https://z.overpass-api.de/api/interpreter\",\"rel-only-32\"]",
+      "profile": "rel-only-32",
+      "query": "[out:json][timeout:180][bbox:50.93036679415017,6.946904705455983,50.95331114355559,6.982049755430545];\n(relation[\"highway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"surface\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"landuse\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"natural\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"leisure\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"amenity\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"barrier\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"access\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"wheelchair\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"water\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"waterway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"man_made\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"tourism\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"sport\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"playground\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building:part\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building:levels\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"height\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"min_height\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"roof:shape\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"roof:levels\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"layer\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"historic\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"place\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"power\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"entrance\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"railway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"service\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"foot\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"crossing\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"sidewalk\"][\"type\"~\"^(multipolygon|boundary)$\"];);\nout geom;",
+      "encoding": "form",
+      "timeoutSeconds": 180,
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "site": "cologne-res7",
+      "bbox": {
+        "south": 50.93036679415017,
+        "north": 50.95331114355559,
+        "west": 6.946904705455983,
+        "east": 6.982049755430545
+      },
+      "round": 2,
+      "ok": true,
+      "httpStatus": 200,
+      "status": "200 OK",
+      "startedAt": "2026-09-19T23:09:16.529Z",
+      "finishedAt": "2026-09-19T23:09:22.235Z",
+      "headersMs": 5496,
+      "firstByteMs": 5497,
+      "totalMs": 5705,
+      "bytes": 2015409,
+      "decodeMs": 41,
+      "elementCount": 95,
+      "counts": {
+        "node": 0,
+        "way": 0,
+        "relation": 95
+      },
+      "semanticHash": "3e58b9d4c23f8a8c97de126d60e58e39f85209be8d4f45261b2b4d895a2161fa",
+      "osmTimestamp": "2026-09-19T23:08:35Z",
+      "statusBefore": {
+        "ok": true,
+        "waitMs": 0,
+        "clientId": "1354463306",
+        "serverTimeMs": 1789859368000,
+        "announcedEndpoint": "gall.openstreetmap.de/",
+        "rateLimit": 2,
+        "unlimited": false,
+        "slotsAvailable": 2,
+        "slotsAvailableAtMs": [],
+        "runningQueries": 0
+      }
+    },
+    {
+      "id": "[2,\"cologne-res7\",\"https://z.overpass-api.de/api/interpreter\",\"nw-only-32\"]",
+      "profile": "nw-only-32",
+      "query": "[out:json][timeout:180][bbox:50.93036679415017,6.946904705455983,50.95331114355559,6.982049755430545];\n(nw[\"highway\"];nw[\"surface\"];nw[\"landuse\"];nw[\"natural\"];nw[\"leisure\"];nw[\"amenity\"];nw[\"barrier\"];nw[\"access\"];nw[\"wheelchair\"];nw[\"water\"];nw[\"waterway\"];nw[\"man_made\"];nw[\"tourism\"];nw[\"sport\"];nw[\"playground\"];nw[\"building\"];nw[\"building:part\"];nw[\"building:levels\"];nw[\"height\"];nw[\"min_height\"];nw[\"roof:shape\"];nw[\"roof:levels\"];nw[\"layer\"];nw[\"historic\"];nw[\"place\"];nw[\"power\"];nw[\"entrance\"];nw[\"railway\"];nw[\"service\"];nw[\"foot\"];nw[\"crossing\"];nw[\"sidewalk\"];);\nout geom;",
+      "encoding": "form",
+      "timeoutSeconds": 180,
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "site": "cologne-res7",
+      "bbox": {
+        "south": 50.93036679415017,
+        "north": 50.95331114355559,
+        "west": 6.946904705455983,
+        "east": 6.982049755430545
+      },
+      "round": 2,
+      "ok": true,
+      "httpStatus": 200,
+      "status": "200 OK",
+      "startedAt": "2026-09-19T23:10:22.473Z",
+      "finishedAt": "2026-09-19T23:10:29.474Z",
+      "headersMs": 5570,
+      "firstByteMs": 5570,
+      "totalMs": 7002,
+      "bytes": 19341794,
+      "decodeMs": 500,
+      "elementCount": 32165,
+      "counts": {
+        "node": 13349,
+        "way": 18816,
+        "relation": 0
+      },
+      "semanticHash": "698938a74593980a60a9fc4f9cb8291febeeffbb0d92bb9033929bc09410a361",
+      "osmTimestamp": "2026-09-19T23:09:34Z",
+      "statusBefore": {
+        "ok": true,
+        "waitMs": 0,
+        "clientId": "1354463306",
+        "serverTimeMs": 1789859434000,
+        "announcedEndpoint": "gall.openstreetmap.de/",
+        "rateLimit": 2,
+        "unlimited": false,
+        "slotsAvailable": 2,
+        "slotsAvailableAtMs": [],
+        "runningQueries": 0
+      }
+    },
+    {
+      "id": "[2,\"cologne-res7\",\"https://z.overpass-api.de/api/interpreter\",\"full-production180\"]",
+      "profile": "full-production180",
+      "query": "[out:json][timeout:180][bbox:50.93036679415017,6.946904705455983,50.95331114355559,6.982049755430545];\n(nw[\"highway\"];nw[\"surface\"];nw[\"landuse\"];nw[\"natural\"];nw[\"leisure\"];nw[\"amenity\"];nw[\"barrier\"];nw[\"access\"];nw[\"wheelchair\"];nw[\"water\"];nw[\"waterway\"];nw[\"man_made\"];nw[\"tourism\"];nw[\"sport\"];nw[\"playground\"];nw[\"building\"];nw[\"building:part\"];nw[\"building:levels\"];nw[\"height\"];nw[\"min_height\"];nw[\"roof:shape\"];nw[\"roof:levels\"];nw[\"layer\"];nw[\"historic\"];nw[\"place\"];nw[\"power\"];nw[\"entrance\"];nw[\"railway\"];nw[\"service\"];nw[\"foot\"];nw[\"crossing\"];nw[\"sidewalk\"];relation[\"highway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"surface\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"landuse\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"natural\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"leisure\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"amenity\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"barrier\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"access\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"wheelchair\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"water\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"waterway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"man_made\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"tourism\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"sport\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"playground\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building:part\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building:levels\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"height\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"min_height\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"roof:shape\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"roof:levels\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"layer\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"historic\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"place\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"power\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"entrance\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"railway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"service\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"foot\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"crossing\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"sidewalk\"][\"type\"~\"^(multipolygon|boundary)$\"];);\nout geom;",
+      "encoding": "form",
+      "timeoutSeconds": 180,
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "site": "cologne-res7",
+      "bbox": {
+        "south": 50.93036679415017,
+        "north": 50.95331114355559,
+        "west": 6.946904705455983,
+        "east": 6.982049755430545
+      },
+      "round": 2,
+      "ok": true,
+      "httpStatus": 200,
+      "status": "200 OK",
+      "startedAt": "2026-09-19T23:11:30.158Z",
+      "finishedAt": "2026-09-19T23:11:48.728Z",
+      "headersMs": 17266,
+      "firstByteMs": 17266,
+      "totalMs": 18570,
+      "bytes": 21356918,
+      "decodeMs": 522,
+      "elementCount": 32260,
+      "counts": {
+        "node": 13349,
+        "way": 18816,
+        "relation": 95
+      },
+      "semanticHash": "30f558f14f19af38273c04516f4f4a387a0081e9b6027d9ea9cb137aaecb2c01",
+      "osmTimestamp": "2026-09-19T23:10:36Z",
+      "statusBefore": {
+        "ok": true,
+        "waitMs": 0,
+        "clientId": "1354463306",
+        "serverTimeMs": 1789859502000,
+        "announcedEndpoint": "gall.openstreetmap.de/",
+        "rateLimit": 2,
+        "unlimited": false,
+        "slotsAvailable": 2,
+        "slotsAvailableAtMs": [],
+        "runningQueries": 0
+      }
+    }
+  ],
+  "totals": {
+    "planned": 8,
+    "sent": 8,
+    "skipped": 0,
+    "successful": 8,
+    "failed": 0,
+    "decodedBodyBytes": 124876018
+  }
+}
