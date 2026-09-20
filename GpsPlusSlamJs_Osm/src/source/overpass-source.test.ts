@@ -1037,3 +1037,105 @@ describe("the attempt log stays consistent with the request count", () => {
     );
   });
 });
+
+describe("per-attempt transport deadline", () => {
+  // WHY THIS EXISTS AT ALL. Until 2026-09-20 `dispatch` passed only the
+  // caller's signal, so there was NO transport bound: `[timeout:180]` bounds
+  // Overpass's server-side EXECUTION, not a socket that accepts a connection
+  // and then goes quiet. A field test measured `overpass.private.coffee`
+  // holding a request for 199 s before answering, and the true worst case was
+  // whatever TCP/OS timeout happened to apply - i.e. outside this codebase.
+  //
+  // 45 s comes from a swept simulation over the measured per-host latency
+  // distribution (deadline in {15,20,30,35,45,60,90,120,180,210,none}): mean
+  // time-to-first-geometry 114.2 s unbounded against 59.7 s at 45 s, p90
+  // 336.3 s against 115.1 s. The knee sits between 30 s and 35 s - below it the
+  // deadline starts killing `maps.mail.ru`'s genuine ~31-35 s successes and
+  // costs more than it saves. 45 s rather than the point optimum of 35 s
+  // because 35 s is tuned to the maximum of a three-sample distribution, which
+  // is guaranteed to be too tight in the field.
+
+  it("bounds a request that would otherwise hang forever", async () => {
+    const fetchImpl = vi.fn(
+      (_url: string, init: { signal?: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () =>
+            reject((init.signal as AbortSignal).reason as Error),
+          );
+        }),
+    );
+    const { source } = makeSource(fetchImpl, {
+      requestTimeoutMs: 40,
+      maxRetries: 0,
+    });
+    await expect(source.fetchTile(TILE)).rejects.toThrow();
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("makes the deadline RETRYABLE, not a hard abort - the whole point", async () => {
+    // THE LOAD-BEARING ASSERTION. `isAbortError` matches `name ===
+    // "AbortError"` and the attempt loop RETHROWS those instead of retrying, so
+    // spelling the deadline as `controller.abort()` would convert every slow
+    // request into a dead tile rather than a move to the next endpoint. In
+    // simulation that mistake costs single-cycle success 97.0% -> 54.9%.
+    // `AbortSignal.timeout` yields a `TimeoutError`, which the loop treats as a
+    // retryable transport failure - the same distinction `terrarium.ts` already
+    // relies on in this package.
+    let call = 0;
+    const fetchImpl = vi.fn((_url: string, init: { signal?: AbortSignal }) => {
+      call += 1;
+      if (call === 1) {
+        return new Promise((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () =>
+            reject((init.signal as AbortSignal).reason as Error),
+          );
+        });
+      }
+      return Promise.resolve(jsonResponse({ elements: [] }));
+    });
+    const { source } = makeSource(fetchImpl, { requestTimeoutMs: 40 });
+
+    const result = await source.fetchTile(TILE);
+
+    // It recovered on the NEXT endpoint rather than failing the tile.
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(result.tile).toBe(TILE);
+    // And the two attempts went to different endpoints, which is what makes the
+    // deadline useful rather than merely shorter.
+    expect(fetchImpl.mock.calls[0]?.[0]).not.toBe(fetchImpl.mock.calls[1]?.[0]);
+  });
+
+  it("still honours the caller's abort as a HARD abort", async () => {
+    // The deadline must not blunt cancellation: a caller who navigates away
+    // wants the tile abandoned, not retried onto another endpoint.
+    const controller = new AbortController();
+    const fetchImpl = vi.fn(
+      (_url: string, init: { signal?: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () =>
+            reject((init.signal as AbortSignal).reason as Error),
+          );
+        }),
+    );
+    const { source } = makeSource(fetchImpl, { requestTimeoutMs: 60_000 });
+
+    const pending = source.fetchTile(TILE, controller.signal);
+    controller.abort();
+
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    // One attempt only: an abort is not retried.
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("is configurable, and can be switched off for a self-hosted instance", async () => {
+    // A private instance with no competition may legitimately want to wait, and
+    // the pool's own `[timeout:180]` is the only other bound.
+    const fetchImpl = vi.fn(() =>
+      Promise.resolve(jsonResponse({ elements: [] })),
+    );
+    const { source } = makeSource(fetchImpl, { requestTimeoutMs: undefined });
+    await source.fetchTile(TILE);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+});

@@ -40,6 +40,7 @@ import { OverpassSlotBudget } from "./slot-budget.js";
 import { operatorForUrl } from "./overpass-operators.js";
 import { planEndpointOrder, type OperatorWeights } from "./endpoint-order.js";
 import { InFlightRequests } from "./in-flight-requests.js";
+import { composeSignals } from "./compose-signals.js";
 
 /**
  * Default endpoint pool.
@@ -133,6 +134,22 @@ export interface OverpassSourceOptions {
   /** Retries after the first attempt. */
   readonly maxRetries?: number;
   readonly timeoutSeconds?: number;
+  /**
+   * Per-attempt transport deadline, in milliseconds. Defaults to
+   * {@link DEFAULT_REQUEST_TIMEOUT_MS}; pass `undefined` explicitly to disable.
+   *
+   * **This bounds the TRANSPORT, which `[timeout:180]` does not.** Overpass's
+   * `[timeout:]` caps server-side execution; it says nothing about a connection
+   * that is accepted and then goes quiet, and before this existed the worst case
+   * was whatever TCP/OS timeout applied - i.e. not controlled here at all.
+   *
+   * A hit fails over to the next endpoint rather than killing the tile, because
+   * it surfaces as a `TimeoutError` and not an `AbortError`.
+   *
+   * Disable it for a self-hosted instance with no competition, where waiting is
+   * cheaper than retrying.
+   */
+  readonly requestTimeoutMs?: number;
   readonly backoff?: BackoffOptions;
   readonly random?: () => number;
   readonly now?: () => number;
@@ -188,6 +205,34 @@ export interface OverpassStats {
 }
 
 /** Matches the measured `Rate limit: 2` on the public instances. */
+/**
+ * Default per-attempt transport deadline.
+ *
+ * **Chosen from a sweep, not a round number.** Simulated over the per-host
+ * latency distribution measured on 2026-09-20 across all five pool endpoints,
+ * with candidates {15, 20, 30, 35, 45, 60, 90, 120, 180, 210, none} ms*1000:
+ * mean time-to-first-geometry is 114.2 s unbounded against 59.7 s here, and p90
+ * 336.3 s against 115.1 s.
+ *
+ * **The knee sits between 30 s and 35 s.** Below it the deadline starts killing
+ * `maps.mail.ru`'s genuine ~31-35 s successes, and the retry that recovers them
+ * costs more than the deadline saved (at 30 s, 23.7% of good requests are
+ * killed and the typical kill is a net loss of ~16 s). At 35-45 s the only
+ * thing killed is `private.coffee`'s 199 s success, and killing it wins ~135 s.
+ *
+ * **45 rather than the point optimum of 35**, because 35 s is tuned to the
+ * maximum of a THREE-sample distribution and is guaranteed to be too tight in
+ * the field; widening the distribution with lognormal jitter puts the fraction
+ * of requests made worse at 10.6% for 35 s against 4.7% for 45 s. 45 s
+ * dominates 60 s on both mean and p90 under every assumption swept.
+ *
+ * **What would move this number:** the fast hosts' true slow tail. If more than
+ * ~5% of legitimate successes on `lz4`/`maps.mail.ru` land beyond 50 s, 45 s is
+ * too tight and 60-75 s is right. Three samples per host cannot settle that -
+ * re-measure with `scripts/benchmark-endpoints.mjs` before trusting it further.
+ */
+const DEFAULT_REQUEST_TIMEOUT_MS = 45_000;
+
 const DEFAULT_MAX_CONCURRENT = 2;
 
 /**
@@ -367,6 +412,7 @@ export class OverpassSource implements OsmDataSource {
   private readonly maxConcurrent: number;
   private readonly maxRetries: number;
   private readonly timeoutSeconds: number;
+  private readonly requestTimeoutMs: number | undefined;
   private readonly backoff: BackoffOptions;
   private readonly random: () => number;
   private readonly now: () => number;
@@ -425,6 +471,10 @@ export class OverpassSource implements OsmDataSource {
     this.maxConcurrent = resolved.maxConcurrent;
     this.maxRetries = resolved.maxRetries;
     this.timeoutSeconds = resolved.timeoutSeconds;
+    this.requestTimeoutMs =
+      "requestTimeoutMs" in options
+        ? options.requestTimeoutMs
+        : DEFAULT_REQUEST_TIMEOUT_MS;
     this.backoff = resolved.backoff;
     this.random = resolved.random;
     this.now = resolved.now;
@@ -653,7 +703,28 @@ export class OverpassSource implements OsmDataSource {
         Referer: this.userAgent,
       },
       body: new URLSearchParams({ data: query }).toString(),
-      ...(signal !== undefined ? { signal } : {}),
+      // PER-ATTEMPT TRANSPORT DEADLINE. Until 2026-09-20 this passed only the
+      // caller's signal, so nothing bounded the transport at all: `[timeout:180]`
+      // bounds Overpass's server-side EXECUTION, not a socket that accepts a
+      // connection and then goes quiet. A field run measured
+      // `overpass.private.coffee` holding a request 199 s before answering, and
+      // the real worst case was whatever TCP/OS timeout happened to apply -
+      // outside this codebase entirely.
+      //
+      // **`AbortSignal.timeout`, NEVER `controller.abort()`, and the difference
+      // is the whole change.** A timeout rejects with `TimeoutError`, which the
+      // attempt loop treats as a retryable transport failure and fails over to
+      // the next endpoint; `isAbortError` matches only `AbortError`, which the
+      // loop RETHROWS. Spelling the deadline as a manual abort would turn every
+      // slow request into a dead tile - measured in simulation at single-cycle
+      // success 97.0% -> 54.9%. `composeSignals` keeps the two reasons
+      // distinguishable; see its sidecar for why that identity is load-bearing.
+      signal: composeSignals(
+        signal,
+        this.requestTimeoutMs === undefined
+          ? undefined
+          : AbortSignal.timeout(this.requestTimeoutMs),
+      ),
     });
   }
 

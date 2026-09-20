@@ -19,6 +19,27 @@ and the home of every item of the plan's §5.3 network discipline.
 
 ## Invariants & assumptions
 
+- **Every attempt carries a transport deadline, default 45 s
+  (`requestTimeoutMs`).** `[timeout:180]` bounds Overpass's server-side
+  EXECUTION and says nothing about a connection that is accepted and then goes
+  quiet; before 2026-09-20 nothing here bounded the transport at all, so the
+  worst case was whatever TCP/OS timeout applied. A field run measured
+  `overpass.private.coffee` holding a request 199 s before answering.
+  - **A deadline hit FAILS OVER; it does not kill the tile.** It is spelled
+    `AbortSignal.timeout`, which rejects with `TimeoutError` - a retryable
+    transport failure to the attempt loop. `isAbortError` matches only
+    `AbortError`, which the loop rethrows, so a manually-aborted deadline would
+    convert every slow request into a dead tile. Measured in simulation at
+    single-cycle success 97.0% against 54.9%.
+  - **45 s is a swept value, not a round one.** Mean time-to-first-geometry
+    114.2 s unbounded against 59.7 s at 45 s; p90 336.3 s against 115.1 s. The
+    knee is between 30 s and 35 s: below it the deadline kills `maps.mail.ru`'s
+    genuine ~31-35 s successes and costs more than it saves. 45 s over the point
+    optimum of 35 s because 35 s is tuned to the maximum of a three-sample
+    distribution. See `DEFAULT_REQUEST_TIMEOUT_MS` for what would move it.
+  - A caller's own `signal` still aborts hard and is never retried; the two
+    reasons stay distinguishable through `composeSignals`.
+
 - **`userAgent` is required with no default.** A shared default would make every
   consumer of this library indistinguishable to the servers, so one bad actor
   would get all of them blocked. Constructing without one throws.

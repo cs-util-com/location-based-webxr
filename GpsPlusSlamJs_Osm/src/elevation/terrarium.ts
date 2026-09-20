@@ -22,6 +22,7 @@
  */
 
 import type { LatLng } from "../model/osm-feature.js";
+import { composeSignals } from "../source/compose-signals.js";
 import { InFlightRequests } from "../source/in-flight-requests.js";
 import type { ElevationProvider } from "./elevation-provider.js";
 
@@ -201,32 +202,6 @@ export function fromWorldPixel(
   const n = Math.PI * (1 - (2 * point.y) / scale);
   const lat = (Math.atan(Math.sinh(n)) * 180) / Math.PI;
   return { lat, lng };
-}
-
-/**
- * The signal governing one tile fetch: the caller's, the deadline's, or both.
- *
- * `AbortSignal.any` is only reached when there really are two, purely to avoid
- * allocating a composite that stays subscribed to its sources until it is
- * collected. **That is the whole reason, and an earlier version of this comment
- * claimed a second one that is false:** `AbortSignal.any` also preserves its
- * source's `reason` *identity* (the spec assigns the source's reason object to
- * the composite), so the `AbortError` / `TimeoutError` discrimination in `load`
- * does not depend on the single-source path at all.
- *
- * Worth knowing before trusting the shape: with a deadline configured, the
- * single-source path is never taken. `load` always has the dedup controller's
- * signal, so `present.length` is 2 whenever `requestTimeoutMs` is set and 1
- * otherwise. The zero case is unreachable today and kept only so the helper is
- * total rather than partial.
- */
-function composeSignals(
-  ...signals: readonly (AbortSignal | undefined)[]
-): AbortSignal | undefined {
-  const present = signals.filter((s): s is AbortSignal => s !== undefined);
-  if (present.length === 0) return undefined;
-  if (present.length === 1) return present[0];
-  return AbortSignal.any(present);
 }
 
 /** Key for a decoded tile in the cache. */
