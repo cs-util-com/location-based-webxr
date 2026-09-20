@@ -240,9 +240,92 @@ export function buildTileQuery(
     // The one thing to watch: if a future rule ever needs a `type=route`,
     // `waterway` or `power` relation, this query stops delivering it and the
     // differential test is what will say so.
-    `(${keys.map((key) => `nw["${key}"];`).join("")}${keys
-      .map((key) => `relation["${key}"]["type"~"^(multipolygon|boundary)$"];`)
-      .join("")});`,
+    //
+    // **ONE RELATION STATEMENT, NOT 32** (2026-09-20). The relation half was
+    // where the time went and almost none of the data: measured on
+    // `z.overpass-api.de`, 32 keyed relation selectors returned 4 elements of
+    // 282 at res 10 and 95 of 32,260 at res 7, for roughly HALF the query's
+    // total time. Medians over 5 paired samples at Cologne res 7 are 18.6 s for
+    // the old 64-statement form against 10.8 s for this one; over Manhattan's
+    // 22 km² box, 24.3 s against 12.9 s. The old form also carried the variance,
+    // ranging 12.0-27.1 s.
+    //
+    // **The statement is unqualified by key on purpose, and that is the part
+    // that is a proof rather than a measurement.** For any key `k`,
+    // `relation["k"]["type"~R]` selects a subset of `relation["type"~R]` over
+    // the same bbox, so this single statement is a strict SUPERSET of the 32 it
+    // replaces. Nothing production used to receive can go missing.
+    //
+    // What the superset ADDS - areal relations carrying none of the selected
+    // keys - is removed again by `dropUnselectedRelations` before parsing, so
+    // the element set reaching the index is byte-for-byte the old one. See that
+    // function for why the extra relations are filtered rather than kept.
+    `(${keys.map((key) => `nw["${key}"];`).join("")}relation["type"~"^(multipolygon|boundary)$"];);`,
     "out geom;",
   ].join("\n");
+}
+
+/** The result of {@link dropUnselectedRelations}. */
+export interface FilteredOverpassPayload {
+  /** The payload, with unselected relations removed. */
+  readonly elements: unknown;
+  /** How many relations were dropped, for telemetry and diagnostics. */
+  readonly droppedRelations: number;
+}
+
+/**
+ * Removes the relations {@link buildTileQuery}'s single relation statement
+ * admits and the 32 keyed statements it replaced would not have returned.
+ *
+ * **Why filter at all, when the extra data might be useful.** The extra
+ * relations are areal, so `buildFeatureIndex` would accept them rather than
+ * discard them the way it discards non-areal ones. Whether any of them could
+ * move a score is an empirical question about the rule table, and **not one set
+ * theory can answer**: an element arrives on ANY selected key and then brings
+ * ALL its tags, so rules keyed on non-selected tags fire routinely on
+ * incidentally delivered elements. "They carry no selected key, so no rule can
+ * match them" is the plausible-and-wrong step.
+ *
+ * So the question is made moot rather than answered. With this filter the set
+ * reaching the parser is identical to the one production has always parsed, the
+ * query is the only thing that changed, and no scoring differential is needed.
+ * **If a later differential shows the extra relations are worth keeping, this
+ * is the one call to delete.**
+ *
+ * Filtering happens BEFORE `parseOverpassJson`, so the dropped relations' `geom`
+ * member arrays are never walked - which is where the parse cost of the extra
+ * ~2-5% payload would otherwise land.
+ *
+ * Defensive: a payload shape this does not recognise is passed through
+ * unchanged rather than rejected, because the parser downstream is what owns
+ * rejecting it. Swallowing a bad shape here would turn a loud parse failure
+ * into a silent empty tile.
+ */
+export function dropUnselectedRelations(
+  payload: unknown,
+  keys: readonly string[] = OVERPASS_SELECT_KEYS,
+): FilteredOverpassPayload {
+  const elements = (payload as { elements?: unknown } | null | undefined)
+    ?.elements;
+  if (!Array.isArray(elements)) {
+    return { elements, droppedRelations: 0 };
+  }
+  const selected = new Set(keys);
+  let droppedRelations = 0;
+  const kept = elements.filter((element) => {
+    const record = element as
+      { type?: unknown; tags?: Record<string, unknown> } | null | undefined;
+    // Nodes and ways are never touched: both query forms select them with the
+    // identical 32 `nw` statements, so filtering them could only lose data.
+    if (record?.type !== "relation") return true;
+    const tags = record.tags;
+    const carriesSelectedKey =
+      tags !== undefined &&
+      tags !== null &&
+      Object.keys(tags).some((tag) => selected.has(tag));
+    if (carriesSelectedKey) return true;
+    droppedRelations += 1;
+    return false;
+  });
+  return { elements: kept, droppedRelations };
 }

@@ -11,7 +11,14 @@ the bounding box it needs.
 - `BoundingBox` — `{ south, west, north, east }`.
 - `cellToBoundingBox(cell)` → `BoundingBox`. **Throws `AntimeridianCellError`**
   for a cell spanning ±180°.
-- `buildTileQuery(bbox, timeoutSeconds?)` → Overpass QL string.
+- `buildTileQuery(bbox, timeoutSeconds?, keys?)` → Overpass QL string.
+- `dropUnselectedRelations(payload, keys?)` → `{ elements, droppedRelations }`.
+  The counterpart of `buildTileQuery`: it removes the relations that query's
+  single unqualified relation statement admits and the old per-key statements
+  would not have returned. **Anyone calling `buildTileQuery` directly must call
+  this on the response**, or they receive areal relations carrying none of the
+  selected keys. Never throws; an unrecognised payload passes through unchanged
+  so the parser downstream stays the thing that rejects it.
 - `AntimeridianCellError`.
 
 ## Invariants & assumptions
@@ -26,6 +33,34 @@ the bounding box it needs.
   Failing loudly beats emitting a bbox that silently covers the whole globe the
   wrong way round. Detection uses a >180° longitude span, which cannot occur for
   a genuine res-8 hexagon (~1 km across).
+- **The query asks for MORE relations than it keeps, on purpose (2026-09-20).**
+  `buildTileQuery` emits 32 `nw["key"]` statements plus **one**
+  `relation["type"~"^(multipolygon|boundary)$"]`, replacing the 32 keyed
+  relation statements that used to be there. Measured against
+  `z.overpass-api.de`: median 18.6 s → 10.8 s at Cologne res 7 over 5 paired
+  samples, and 24.3 s → 12.9 s over Manhattan's 22 km² box. The old form also
+  carried the variance, ranging 12.0-27.1 s.
+  - **The single statement is a strict SUPERSET of the 32 it replaces**, by set
+    theory rather than measurement: `relation["k"]["type"~R]` selects a subset
+    of `relation["type"~R]` over the same bbox, for every `k`. So nothing that
+    used to arrive can go missing.
+  - **`dropUnselectedRelations` removes the surplus before parsing**, so the
+    element set reaching the index is exactly the old one. Verified live at
+    production resolution on 2026-09-20: the new query returned 32,278 elements,
+    the filter dropped 18, and the result was identical to the old query's
+    32,260 elements — **0 missing, 0 extra**, compared by element id.
+  - **Why filter rather than keep the extra relations.** They are areal, so
+    `buildFeatureIndex` would accept them. Whether any could move a score is an
+    empirical question about the rule table and **not** one set theory answers:
+    an element arrives on any selected key and then brings _all_ its tags, so
+    rules keyed on non-selected tags fire routinely on incidentally delivered
+    elements. Filtering makes the question moot instead of guessing at it. If a
+    differential later shows the extra relations are worth keeping, the filter
+    call is the one line to delete.
+  - **`OVERPASS_SCHEMA_VERSION` is deliberately NOT bumped**, which is the
+    correct reading of the rule below rather than an exception to it: the
+    delivered element set is unchanged, so previously cached tiles remain
+    equivalent. Bumping would force every user to re-download identical data.
 - **`OVERPASS_SCHEMA_VERSION` must be bumped whenever the query changes shape**
   in a way that makes cached tiles non-equivalent — narrowing the tag filter,
   changing `out` mode. Forgetting is a silent-wrong-data bug: a narrowed query
