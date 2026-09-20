@@ -781,14 +781,15 @@ async function runMap3dComparison() {
   const profiles = selected.map((id) =>
     available.find((profile) => profile.id === id),
   );
-  const wantedHosts = stringArg("hosts", "overpass-api.de").split(",");
-  const hosts = wantedHosts.map((hostname) => {
-    const endpoint = ENDPOINTS.find(
-      (entry) => new URL(entry.url).hostname === hostname,
-    );
-    if (!endpoint) throw new Error(`Unknown endpoint hostname: ${hostname}`);
-    return endpoint.url;
-  });
+  // THE DEFAULT IS THE GUARD, and it used to be a single hostname.
+  //
+  // On 2026-09-20 a one-statement relation query measured 1.7-2.2x faster over
+  // two cities and two resolutions, shipped, and was reverted within two hours:
+  // across the whole pool it HALVED the per-request success rate, and the
+  // benchmark had never asked the other four endpoints because `--hosts`
+  // defaulted to one. Comparing the full pool costs more time and more borrowed
+  // capacity; finding that out from a field report costs more than both.
+  const hosts = resolveComparisonHosts();
   const cells = planComparisonCells({
     hosts,
     sites: [site],
@@ -827,6 +828,50 @@ async function runMap3dComparison() {
     save: (document) =>
       writeFileSync(outPath, `${JSON.stringify(document, null, 2)}\n`),
   });
+}
+
+/**
+ * The comparison mode's endpoint pool.
+ *
+ * **THE DEFAULT IS THE GUARD, and it used to be a single hostname.** On
+ * 2026-09-20 a one-statement relation query measured 1.7-2.2x faster over two
+ * cities and two resolutions, shipped, and was reverted within two hours:
+ * across the whole pool it HALVED the per-request success rate, and
+ * `maps.mail.ru` - weight 3 of 8 in the operator draw - went 3/3 to 0/3. The
+ * benchmark had never asked the other four, because `--hosts` defaulted to one.
+ *
+ * Narrowing is still allowed, but narrowing to ONE OPERATOR is refused unless
+ * `--accept-single-host` says it was meant. That write-up DID record "one
+ * operator, one instance... inferred, not measured" in its limitations before
+ * shipping, and it changed nothing: **a named limitation is not a mitigation**,
+ * so the narrowing has to appear in the command line and therefore in the
+ * artifact.
+ *
+ * Keyed on OPERATOR rather than hostname, because `lz4`, `z` and
+ * `overpass-api.de` are three names for one operator - and it was one of those
+ * three that produced the misleading verdict.
+ */
+function resolveComparisonHosts() {
+  const wanted = stringArg(
+    "hosts",
+    ENDPOINTS.map((entry) => new URL(entry.url).hostname).join(","),
+  ).split(",");
+  const hosts = wanted.map((hostname) => {
+    const endpoint = ENDPOINTS.find(
+      (entry) => new URL(entry.url).hostname === hostname,
+    );
+    if (!endpoint) throw new Error(`Unknown endpoint hostname: ${hostname}`);
+    return endpoint.url;
+  });
+  const operators = new Set(hosts.map((url) => operatorForUrl(url)));
+  if (operators.size < 2 && !process.argv.includes("--accept-single-host")) {
+    throw new Error(
+      `Refusing a single-host comparison: ${[...operators].join(", ")} is one operator, ` +
+        `so the result cannot generalise to the pool. Widen --hosts, or pass ` +
+        `--accept-single-host to record that you meant it.`,
+    );
+  }
+  return hosts;
 }
 
 function comparisonNumberArg(name, fallback) {
