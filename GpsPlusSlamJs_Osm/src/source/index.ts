@@ -17,7 +17,6 @@ export { MemoryBlobStore } from "./memory-blob-store.js";
 export type { BoundingBox } from "./overpass-query.js";
 export {
   buildTileQuery,
-  dropUnselectedRelations,
   cellToBoundingBox,
   AntimeridianCellError,
   OVERPASS_SCHEMA_VERSION,

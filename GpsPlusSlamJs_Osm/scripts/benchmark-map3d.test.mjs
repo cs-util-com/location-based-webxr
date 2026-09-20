@@ -82,13 +82,12 @@ describe("comparison query profiles", () => {
   it("matches the actual production query across bboxes and key selections", () => {
     // WHY: the plain-Node query mirror must fail when production changes.
     //
-    // **THE PARITY ARM MOVED ON 2026-09-20, from `full-production180` to
-    // `prod-33-areal`.** Production now emits 33 statements, not 64, so the arm
-    // that mirrors it is the 33-statement one. `full-production180` deliberately
-    // KEEPS the old 64-statement form and is no longer parity-tested: every
-    // artifact under `docs/overpass-*.json` measured it under that name, and
-    // silently redefining it would make those files incomparable with anything
-    // measured later. It is the historical baseline now, not the mirror.
+    // The parity arm moved to `prod-33-areal` on 2026-09-20 and moved BACK the
+    // same day, when a counterbalanced run over all five pool endpoints showed
+    // the 33-statement form halving the success rate everywhere except the one
+    // instance it had been benchmarked on. `full-production180` is the
+    // production mirror again; `prod-33-areal` stays as a measurable arm,
+    // because the knowledge is worth keeping even though the form is not.
     for (const site of sites) {
       for (const keys of [
         OVERPASS_SELECT_KEYS,
@@ -96,16 +95,16 @@ describe("comparison query profiles", () => {
         ["highway", "building:part"],
       ]) {
         const profiles = buildComparisonProfiles({ bbox: site.bbox, keys });
-        expect(profiles.find((p) => p.id === "prod-33-areal")).toEqual({
-          id: "prod-33-areal",
+        expect(profiles.find((p) => p.id === "full-production180")).toEqual({
+          id: "full-production180",
           query: buildTileQuery(site.bbox, 180, keys),
           encoding: "form",
           timeoutSeconds: 180,
         });
-        // And the baseline still is what it always was, so the older artifacts
-        // keep meaning what they said.
-        const legacy = profiles.find((p) => p.id === "full-production180");
-        expect(occurrences(legacy.query, "relation[")).toBe(keys.length);
+        // And the reverted candidate is still BUILDABLE, so it can be measured
+        // again without reconstructing it from the write-up.
+        const candidate = profiles.find((p) => p.id === "prod-33-areal");
+        expect(occurrences(candidate.query, "relation[")).toBe(1);
       }
     }
   });

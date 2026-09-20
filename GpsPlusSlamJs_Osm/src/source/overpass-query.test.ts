@@ -15,7 +15,6 @@ import { describe, it, expect } from "vitest";
 import { latLngToCell, cellToBoundary, gridDisk } from "h3-js";
 import {
   buildTileQuery,
-  dropUnselectedRelations,
   cellToBoundingBox,
   AntimeridianCellError,
   OVERPASS_SCHEMA_VERSION,
@@ -134,125 +133,56 @@ describe("buildTileQuery", () => {
     expect(q.match(/^out /gm)).toHaveLength(1);
   });
 
-  it("covers every key once on the nw statement, and takes relations in ONE", () => {
-    // THIS REPLACES "once each, on BOTH statements", and the replacement is a
-    // deliberate design change carrying its measurements, not a loosening.
-    // Measured 2026-09-20 against z.overpass-api.de: the 32 separate keyed
-    // relation selectors cost roughly HALF the query time for a few percent of
-    // the data. Medians over 5 paired samples at Cologne res 7 were 18.6 s for
-    // the 64-statement form against 10.8 s for this one, and 24.3 s against
-    // 12.9 s over Manhattan's 22 km box. The relation half was also where the
-    // variance lived: the old form ranged 12.0-27.1 s.
-    //
-    // The relation statement is deliberately UNQUALIFIED by key. That makes it
-    // a strict superset of the 32 keyed ones, so nothing production used to
-    // receive can go missing - the half of the change that had to be free of
-    // judgement. What the superset ADDS is removed again below.
+  it("covers every key in the pinned list, once each, on BOTH statements", () => {
     const q = buildTileQuery(bbox);
     for (const key of OVERPASS_SELECT_KEYS) {
       expect(q).toContain(`nw["${key}"];`);
+      expect(q).toContain(
+        `relation["${key}"]["type"~"^(multipolygon|boundary)$"];`,
+      );
     }
     expect(countOf(q, "nw[")).toBe(OVERPASS_SELECT_KEYS.length);
-    expect(countOf(q, "relation[")).toBe(1);
-    expect(q).toContain('relation["type"~"^(multipolygon|boundary)$"];');
+    expect(countOf(q, "relation[")).toBe(OVERPASS_SELECT_KEYS.length);
   });
 
-  it("asks for MORE than it keeps, and the filter restores the old set exactly", () => {
-    // THE LOAD-BEARING TEST OF THE 2026-09-20 CHANGE. The query got cheaper by
-    // asking one question about relations instead of 32 - but the one admits
-    // areal relations carrying NONE of the selected keys, which the
-    // 64-statement form never returned.
+  it("keeps the relation selector KEYED, which a field test paid for", () => {
+    // WHY THIS TEST EXISTS, and it is the expensive kind of knowledge. On
+    // 2026-09-20 these 32 keyed relation statements were replaced by a single
+    // `relation["type"~"^(multipolygon|boundary)$"]`, benchmarked at 1.7-2.2x
+    // faster over two cities and two resolutions, with the surplus relations
+    // filtered client-side so the delivered element set was provably
+    // unchanged. It shipped. A field report of "it barely loads any more"
+    // followed within the hour.
     //
-    // Whether those extra relations could move a score is an open empirical
-    // question about the rule table, and NOT one set theory can answer: an
-    // element arrives on any selected key and then brings ALL its tags, so
-    // rules keyed on non-selected tags fire routinely on incidentally
-    // delivered elements. A "they carry no selected key, so nothing can match
-    // them" argument is exactly the plausible-and-wrong step to avoid.
+    // A counterbalanced run over all five pool endpoints, one res-7 Manhattan
+    // tile, three rounds:
     //
-    // So the question is made moot instead of answered. This filter removes
-    // precisely the relations the old query would not have returned, so the
-    // element set reaching the parser is IDENTICAL to the one production has
-    // always parsed. That is why this change needs no scoring differential and
-    // cannot move a score - and if a later differential shows the extra
-    // relations are useful, the filter is the one line to delete.
-    const kept = {
-      type: "relation",
-      id: 1,
-      tags: { type: "multipolygon", landuse: "grass" },
-    };
-    const alsoKept = {
-      type: "relation",
-      id: 2,
-      tags: { type: "boundary", place: "suburb" },
-    };
-    const dropped = {
-      type: "relation",
-      id: 3,
-      tags: { type: "multipolygon", name: "Nowhere" },
-    };
-    const untagged = { type: "relation", id: 4 };
-    const way = { type: "way", id: 5, tags: { name: "kept regardless" } };
-    const node = { type: "node", id: 6 };
-
-    const result = dropUnselectedRelations({
-      elements: [kept, alsoKept, dropped, untagged, way, node],
-    });
-
-    // Nodes and ways are never touched: both query forms select them with the
-    // identical 32 `nw` statements, so filtering them could only lose data.
-    expect(result.elements).toEqual([kept, alsoKept, way, node]);
-    expect(result.droppedRelations).toBe(2);
-  });
-
-  it("keeps a relation matching ANY selected key, not only the first", () => {
-    // Guards the shortcut that tests only `keys[0]`. No fixture would catch it:
-    // the first key is `highway` and almost no areal relation is a highway, so
-    // a first-key-only filter would look correct while discarding nearly every
-    // relation the scorer needs.
-    for (const key of OVERPASS_SELECT_KEYS) {
-      const relation = {
-        type: "relation",
-        id: 1,
-        tags: { type: "multipolygon", [key]: "x" },
-      };
-      const result = dropUnselectedRelations({ elements: [relation] });
+    //   32 keyed        lz4 1/3, vk-maps 3/3, z 3/3, coffee 1/3, main 2/3 = 10/15
+    //   1 unqualified   lz4 2/3, vk-maps 0/3, z 3/3, coffee 0/3, main 0/3 =  5/15
+    //
+    // The whole 1.7-2.2x had been measured on `z` — the ONE endpoint that
+    // tolerates it, and the same host that returned 12/12 in the 2026-08-01
+    // sweep while five others 504'd. `maps.mail.ru` holds weight 3 of 8 in the
+    // operator draw and went 3/3 to 0/3, so over a third of requests started
+    // failing over, which costs far more than the query ever saved.
+    //
+    // The mechanism is one this project already knew: a regex on a selector
+    // Overpass cannot index first is what 504s. `relation["k"]["type"~R]`
+    // starts from the key index; `relation["type"~R]` has nothing to start from
+    // and regex-matches every relation in the bbox.
+    //
+    // So this asserts the PROPERTY, not just the count: every relation
+    // statement is qualified by a key, and none selects on `type` alone.
+    const q = buildTileQuery(bbox);
+    expect(q).not.toContain('relation["type"~');
+    expect(q).not.toContain('relation["type"=');
+    for (const statement of q.split(";")) {
+      if (!statement.includes("relation[")) continue;
       expect(
-        result.elements,
-        `a relation carrying ${key} must survive`,
-      ).toEqual([relation]);
+        statement,
+        "every relation statement must start from an indexed key",
+      ).toMatch(/relation\["[a-z_:]+"\]\["type"~/);
     }
-  });
-
-  it("honours the same overridden key list the query was built with", () => {
-    // The query and the filter are two halves of ONE contract. A filter keyed
-    // on the pinned constant while the query was built from an override would
-    // silently discard data a self-hosted instance was explicitly asked for.
-    const relation = {
-      type: "relation",
-      id: 1,
-      tags: { type: "multipolygon", landuse: "grass" },
-    };
-    expect(
-      dropUnselectedRelations({ elements: [relation] }, ["building"]).elements,
-    ).toEqual([]);
-    expect(
-      dropUnselectedRelations({ elements: [relation] }, ["landuse"]).elements,
-    ).toEqual([relation]);
-  });
-
-  it("passes a payload it does not recognise through untouched", () => {
-    // Defensive, and the direction matters: this filter sits IN FRONT of the
-    // parser, so a shape the parser is meant to reject must still reach it.
-    // Swallowing it here would turn a loud parse failure into a silent empty
-    // tile, which is the worse of the two failures by a wide margin.
-    for (const payload of [undefined, null, {}, { elements: "not an array" }]) {
-      expect(() => dropUnselectedRelations(payload)).not.toThrow();
-    }
-    expect(dropUnselectedRelations({ elements: "nope" })).toEqual({
-      elements: "nope",
-      droppedRelations: 0,
-    });
   });
   it("takes only AREAL relations, which is the F32 saving", () => {
     // THIS REPLACES "selects nodes, ways and relations in each statement", and

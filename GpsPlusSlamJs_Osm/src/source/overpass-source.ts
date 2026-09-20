@@ -24,7 +24,6 @@ import {
 import { parseOverpassJson } from "../model/overpass-parser.js";
 import {
   buildTileQuery,
-  dropUnselectedRelations,
   cellToBoundingBox,
   OVERPASS_SCHEMA_VERSION,
   OVERPASS_SELECT_KEYS,
@@ -810,18 +809,7 @@ export class OverpassSource implements OsmDataSource {
     );
 
     const parseStart = this.monotonicNow();
-    // Restores the old query's element set before parsing. `buildTileQuery`
-    // takes relations in ONE unqualified statement, which is a strict superset
-    // of the 32 keyed statements it replaced; this removes the surplus so what
-    // the index sees is exactly what it has always seen. Filtering before
-    // `parseOverpassJson` means the dropped relations' `geom` arrays are never
-    // walked. See `dropUnselectedRelations` for why they are dropped at all.
-    const filtered = dropUnselectedRelations(payload, this.selectKeys);
-    const parsed = parseOverpassJson(
-      typeof payload === "object" && payload !== null
-        ? { ...payload, elements: filtered.elements }
-        : payload,
-    );
+    const parsed = parseOverpassJson(payload);
     const parseMs = elapsedMs(parseStart, this.monotonicNow());
 
     return {
