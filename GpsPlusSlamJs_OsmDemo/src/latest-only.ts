@@ -28,6 +28,23 @@ export interface LatestOnly<T> {
   readonly busy: boolean;
 }
 
+export interface LatestOnlyOptions {
+  /**
+   * Called on each TRANSITION of {@link LatestOnly.busy}, never in between.
+   *
+   * Supersession is deliberately silent: a queued input continues the same busy
+   * stretch, so a subscriber acting on the rising edge — showing something, say
+   * — is not told twice about one wait. The callback always agrees with the
+   * getter at the moment it runs.
+   *
+   * Exceptions from it are swallowed, for the same reason the runner's are: this
+   * wrapper is documented never to reject and its callers `void` it, so a
+   * subscriber touching a detached node must not be able to produce an
+   * unhandled rejection.
+   */
+  readonly onBusyChange?: (busy: boolean) => void;
+}
+
 /**
  * Wraps `run` so at most one call is in flight and only the newest waiting
  * input survives.
@@ -43,6 +60,7 @@ export interface LatestOnly<T> {
  */
 export function latestOnly<T>(
   run: (input: T, signal: AbortSignal) => Promise<void>,
+  options: LatestOnlyOptions = {},
 ): LatestOnly<T> {
   let active: Promise<void> | undefined;
   /** The one input waiting behind the active run. Newer inputs replace it. */
@@ -92,9 +110,24 @@ export function latestOnly<T>(
     active = drain(input).finally(() => {
       active = undefined;
       current = undefined;
+      // AFTER the state is cleared, so the getter and the callback agree.
+      announce(false);
     });
+    // Likewise after the assignment: during `drain`'s synchronous prefix the
+    // wrapper is not yet busy by its own definition, and a callback that
+    // contradicted the getter would be a detail nobody re-checks.
+    announce(true);
     return active;
   };
+
+  /** Reports a transition, and never lets a subscriber break the wrapper. */
+  function announce(busy: boolean): void {
+    try {
+      options.onBusyChange?.(busy);
+    } catch {
+      // Swallowed deliberately — see {@link LatestOnlyOptions.onBusyChange}.
+    }
+  }
 
   Object.defineProperty(wrapper, "busy", {
     get: () => active !== undefined,

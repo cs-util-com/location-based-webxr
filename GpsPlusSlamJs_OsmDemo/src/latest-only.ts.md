@@ -7,11 +7,13 @@ recent one, so a slow fetch cannot be overtaken by a newer click.
 
 ## Public API
 
-- `latestOnly<T>(run: (input: T) => Promise<void>): LatestOnly<T>` — returns a
-  callable wrapper. Calling it either starts `run` immediately or replaces the
-  single queued input.
+- `latestOnly<T>(run, options?): LatestOnly<T>` — returns a callable wrapper.
+  Calling it either starts `run` immediately or replaces the single queued
+  input.
 - `LatestOnly<T>` — the wrapper: callable as `(input: T) => Promise<void>`, plus
   a readonly `busy` boolean.
+- `LatestOnlyOptions.onBusyChange?(busy: boolean)` — called on each TRANSITION
+  of `busy`, never in between.
 
 ## Invariants & assumptions
 
@@ -48,6 +50,23 @@ recent one, so a slow fetch cannot be overtaken by a newer click.
   call: turning a transient Overpass 429 into a permanently dead demo would be a
   worse failure than the race this replaces. Reporting the error stays the
   runner's job, since it has the context to say what failed.
+  - **A throwing `onBusyChange` subscriber is swallowed for the same reason.**
+    Callers `void` this wrapper, so an exception escaping here becomes an
+    unhandled rejection that takes the demo's only interaction with it.
+
+- **`onBusyChange` fires on TRANSITIONS ONLY, and supersession is silent.** A
+  queued input continues the same busy stretch, so a subscriber acting on the
+  rising edge is told once per wait rather than once per click. It always agrees
+  with the `busy` getter at the moment it runs: `true` is announced after the
+  run is registered and `false` after it is cleared.
+  - **This is the only honest source for "a refresh is running", and the
+    obvious alternative is wrong.** The demo's store has a `loading.phase`, but
+    `refresh-cycle.ts` dispatches `fetchStarted` once, before the ring loop, and
+    every ring's `snapshotReady` sets the phase back to idle. With
+    `PROGRESSIVE_RADII` spanning five radii the phase is idle for four fifths of
+    the run — including the later rings that straddle new res-7 tiles and pull
+    fresh 15–90 s fetches. An indicator driven by the phase switches itself off
+    in the middle of the wait it exists to describe.
 
 ## Examples
 
@@ -63,6 +82,10 @@ if (refresh.busy) status.textContent = "still fetching…";
 the latest queued input running while superseded ones are skipped, the last
 input being the one the view ends on, surviving a rejected run, and `busy`
 tracking the in-flight state.
+
+Its `onBusyChange` block covers the transition pair, silence across a
+supersession, agreement with the getter, the falling edge after a runner that
+threw, and a throwing subscriber not breaking the never-rejects contract.
 
 Tested here rather than through the DOM because `main.ts` is wiring with no unit
 tests, and the Playwright suite serves a canned fixture that resolves instantly
