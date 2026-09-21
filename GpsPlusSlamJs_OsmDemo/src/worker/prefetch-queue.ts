@@ -54,6 +54,23 @@ export interface PrefetchQueue {
    * else — queued or in flight — is abandoned.
    */
   replace(tiles: readonly string[]): void;
+  /**
+   * Drops what is no longer wanted, and starts NOTHING.
+   *
+   * The dropping half of {@link replace}, separated so it can be called BEFORE
+   * the user's own fetch. `replace` cannot be: it starts background requests,
+   * and a background request issued before a foreground one is the exact sin
+   * this module's header forbids. So the dropping ran after the fetch instead,
+   * and the previous position's prefetch held one of the two slots for the
+   * whole of the next click's fetch - where `OverpassSlotBudget.tryAcquire`
+   * REFUSES rather than queues, the refusal lands in `demo-pipeline`'s per-tile
+   * catch, and the tile becomes silently missing geometry.
+   *
+   * A prefetch that is STILL wanted is kept. Discarding one on every click
+   * would mean a 15-90 s background fetch never completes under ordinary
+   * clicking, which is what a blanket {@link stop} would have cost.
+   */
+  retain(tiles: readonly string[]): void;
   /** Abandons everything. For teardown. */
   stop(): void;
   /** The tile currently being fetched, for tests and for the status line. */
@@ -69,8 +86,19 @@ export function createPrefetchQueue(
 
   let queue: string[] = [];
   let active: { tile: string; controller: AbortController } | undefined;
+  /**
+   * Set while `retain` is dropping, so the `finally` that fires when the
+   * aborted request settles does not start the next queued tile.
+   *
+   * WITHOUT IT `retain` WOULD START A REQUEST, which is the one thing it
+   * promises not to do: aborting the in-flight tile makes its `finally` run,
+   * and `start()` would send whatever survived the drop - before the
+   * foreground fetch, which is the contention `retain` exists to remove.
+   */
+  let suspended = false;
 
   function start(): void {
+    if (suspended) return;
     if (active !== undefined) return;
     const tile = queue.shift();
     if (tile === undefined) return;
@@ -110,6 +138,23 @@ export function createPrefetchQueue(
 
       queue = [...wanted].slice(0, MAX_PENDING);
       start();
+    },
+
+    retain(tiles: readonly string[]): void {
+      const wanted = new Set(tiles);
+      suspended = true;
+      try {
+        if (active !== undefined && !wanted.has(active.tile)) {
+          active.controller.abort();
+        }
+        queue = queue.filter((tile) => wanted.has(tile));
+      } finally {
+        // The flag is cleared synchronously, but the aborted request's
+        // `finally` runs in a later microtask - by which time `start()` has
+        // nothing to do, because `active` is only cleared there and this call
+        // has already returned. The next `replace` is what resumes the queue.
+        suspended = false;
+      }
     },
 
     stop(): void {

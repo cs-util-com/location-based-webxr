@@ -174,3 +174,96 @@ describe("createPrefetchQueue", () => {
     expect(queue.pending).toBe(0);
   });
 });
+
+describe("retain() — freeing the slot BEFORE the user's own fetch", () => {
+  /**
+   * WHY THIS EXISTS. `replace` does two things: it drops what is no longer
+   * wanted, and it starts fetching what is. The caller can only run it AFTER
+   * the foreground fetch, because starting a background request before one
+   * would be exactly the queue's stated sin. So the dropping half ran too late:
+   * the previous position's prefetch kept holding one of the two slots for the
+   * whole of the next click's fetch.
+   *
+   * That is not merely slow. `OverpassSlotBudget.tryAcquire` REFUSES rather
+   * than queues, the refusal lands in `demo-pipeline.ts`'s per-tile catch, and
+   * the tile becomes a `missingTiles` entry - geometry silently absent with no
+   * error anywhere. Ring 2 needs two tiles on 18.5% of positions.
+   *
+   * `retain` is the dropping half on its own, safe to call before the fetch
+   * because it starts nothing. A prefetch that is STILL wanted is kept, so a
+   * user who barely moved does not lose a download that was nearly finished -
+   * which is what a blanket `stop()` would have cost.
+   */
+  it("aborts an in-flight prefetch the new position no longer wants", () => {
+    const { calls, fetchTile } = controllableFetch();
+    const queue = createPrefetchQueue({ fetchTile });
+    queue.replace(["a", "b"]);
+    expect(queue.inFlight).toBe("a");
+
+    queue.retain(["x", "y"]);
+
+    expect(calls[0]?.signal.aborted).toBe(true);
+  });
+
+  it("KEEPS an in-flight prefetch that is still wanted", () => {
+    // The reason this is `retain` and not `stop`. A 21 MB prefetch takes
+    // 15-90 s; discarding one the user still wants, on every click, would mean
+    // it never completes under ordinary clicking.
+    const { calls, fetchTile } = controllableFetch();
+    const queue = createPrefetchQueue({ fetchTile });
+    queue.replace(["a", "b"]);
+
+    queue.retain(["a", "z"]);
+
+    expect(calls[0]?.signal.aborted).toBe(false);
+    expect(queue.inFlight).toBe("a");
+  });
+
+  it("starts NOTHING, which is the whole reason it can run before the fetch", () => {
+    // THE PROPERTY THAT MAKES IT SAFE. If `retain` started a request, calling it
+    // before the foreground fetch would create precisely the contention it
+    // exists to remove.
+    const { calls, fetchTile } = controllableFetch();
+    const queue = createPrefetchQueue({ fetchTile });
+
+    queue.retain(["a", "b", "c"]);
+
+    expect(calls).toHaveLength(0);
+    expect(queue.inFlight).toBeUndefined();
+    expect(queue.pending).toBe(0);
+  });
+
+  it("drops queued tiles that are no longer wanted, without touching the rest", () => {
+    const { calls, fetchTile } = controllableFetch();
+    const queue = createPrefetchQueue({ fetchTile });
+    queue.replace(["a", "b", "c"]);
+    expect(queue.pending).toBe(2);
+
+    queue.retain(["a", "c"]);
+
+    expect(queue.pending).toBe(1);
+    expect(calls[0]?.signal.aborted).toBe(false);
+  });
+
+  it("does not restart the queue when the in-flight one is dropped", () => {
+    // After aborting, the `finally` inside the queue calls `start()`. Anything
+    // still queued would then go out - before the foreground fetch, which is
+    // the one thing this must never do. Whatever survives waits for the next
+    // `replace`.
+    const { calls, fetchTile, settleFirst } = controllableFetch();
+    const queue = createPrefetchQueue({ fetchTile });
+    queue.replace(["a", "b", "c"]);
+
+    queue.retain(["b", "c"]);
+
+    return settleFirst().then(() => {
+      // NO SECOND REQUEST, which is the claim. `inFlight` is deliberately not
+      // asserted: this file's fake fetch never rejects on abort, so `active` is
+      // only cleared when a call is settled, and `settleFirst` skips aborted
+      // ones. The real `fetchTile` does reject, and the queue's `finally` then
+      // clears `active` - at which point `start()` still sends nothing, because
+      // that is what this asserts.
+      expect(calls).toHaveLength(1);
+    });
+  });
+});

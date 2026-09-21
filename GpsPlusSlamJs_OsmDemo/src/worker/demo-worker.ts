@@ -743,6 +743,23 @@ async function handle<K extends WorkerCallKind>(
       // THE HANDLER'S OWN WALL CLOCK, measured wholly inside the worker so the
       // page can derive the clone cost without needing a shared origin at all.
       const workerStart = nowMs();
+      // FREE THE SLOT BEFORE THE USER'S OWN FETCH, not after it.
+      //
+      // `prefetch.replace` runs below, AFTER `pipeline.update` - it has to,
+      // because it STARTS background requests and the user's tile must never
+      // queue behind one. The consequence was that its other half, dropping
+      // what the user has left behind, also ran too late: the previous
+      // position's prefetch held one of the two slots for the whole of this
+      // fetch. `OverpassSlotBudget.tryAcquire` refuses rather than queues, the
+      // refusal lands in `demo-pipeline`'s per-tile catch, and the tile becomes
+      // a `missingTiles` entry - geometry silently absent, no error anywhere,
+      // on the 18.5% of positions whose first ring needs two tiles.
+      //
+      // `retain` is the dropping half alone and starts nothing, so it is safe
+      // here. A prefetch the new position still wants is KEPT, because
+      // discarding a 15-90 s background fetch on every click would mean it never
+      // finishes.
+      prefetch.retain(pipeline.neighbourTilesFor(position));
       const snapshot = await pipeline.update(
         position,
         category,
