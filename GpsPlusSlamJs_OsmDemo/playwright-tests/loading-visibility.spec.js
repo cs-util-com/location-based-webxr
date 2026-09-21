@@ -78,10 +78,13 @@ test.describe("the loading channels", () => {
     counts.releaseOverpass();
     await waitForRefresh(page);
 
-    // THE TOAST GOES THE MOMENT THE MAP FILLS - owner decision, and the reason
-    // the announcer watches snapshots and not just the busy flag. Its 15 s
-    // linger is a ceiling, not a lifetime: waiting it out here would mean a
-    // toast that outlived the load it described.
+    // THE TOAST IS GONE once the refresh has delivered. Note what this does NOT
+    // show: `waitForRefresh` returns after the whole widening, by which time
+    // `busy` has fallen too, so both hide paths have fired and this cannot tell
+    // them apart. That the hide is IMMEDIATE on data arrival - the owner's
+    // "instantly" - is a unit test on a fake clock, where the two can be driven
+    // separately. The comment that used to sit here claimed this assertion
+    // proved it, which it never did.
     await expect(toast).toBeHidden(REPAINT);
     await expect(page.locator("#status")).not.toHaveClass(
       /is-loading/,
@@ -112,7 +115,53 @@ test.describe("the loading channels", () => {
       AFTER_ANNOUNCE,
     );
 
-    await expect(page.locator("#loading-toast")).toBeHidden(AFTER_ANNOUNCE);
+    // WAITING FOR IT TO APPEAR, AND REQUIRING THAT WAIT TO TIME OUT.
+    //
+    // This is the second version. The first asserted `toBeHidden(...)`, which
+    // looks like the same claim and is not: `toBeHidden` succeeds on its FIRST
+    // check, and an unattached element passes it immediately - so the assertion
+    // resolved milliseconds after the refresh began, structurally before the 1 s
+    // announce delay could have fired. It passed with the latch deleted
+    // entirely, which the cold review demonstrated. An absence is only an
+    // absence if something waited through the window in which the thing would
+    // have appeared.
+    await expect(
+      page
+        .locator("#loading-toast")
+        .waitFor({ state: "attached", timeout: 4000 }),
+    ).rejects.toThrow();
+
+    counts.releaseOverpass();
+    await waitForRefresh(page);
+    await expect(page.locator("#loading-toast")).toBeHidden(REPAINT);
+  });
+
+  test("a site pick made MID-FETCH still announces", async ({ page }) => {
+    // THE DEFECT THIS WAS WRITTEN FOR, found in cold review of the first
+    // implementation. `arm()` runs, and the very next statement dispatches
+    // `placeChanged` - which blanks the snapshot. The demo's snapshot
+    // subscription fired `dataArrived()` on that blanking, which cancelled the
+    // countdown the gesture had just started. Net effect: picking a city while
+    // anything was already fetching produced NO toast at all, for the longest
+    // wait in the app, in the collapsed-header case the feature exists for.
+    //
+    // The unit tests could not see it - the wiring is in `main.ts`, which
+    // exports nothing - and neither could the other e2e here, because they all
+    // wait for the boot to finish first and so arm while the cycle is idle.
+    // This one deliberately gestures while the boot refresh is still in flight.
+    const counts = await stubNetwork(page);
+    counts.holdOverpass();
+    await page.goto(AT_FIXTURE);
+
+    // Mid-refresh, and proven so rather than assumed.
+    await expect(page.locator("#status")).toHaveClass(
+      /is-loading/,
+      AFTER_ANNOUNCE,
+    );
+
+    await page.selectOption("#site", "porto-ribeira");
+
+    await expect(page.locator("#loading-toast")).toBeVisible(AFTER_ANNOUNCE);
 
     counts.releaseOverpass();
     await waitForRefresh(page);

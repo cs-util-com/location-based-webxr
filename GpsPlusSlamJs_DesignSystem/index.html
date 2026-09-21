@@ -171,6 +171,26 @@
         <!-- copy borrowed from the RecorderApp re-observe toast; OsmDemo has
              no equivalent string -->
         <div class="toast">Re-observed from here</div>
+        <!-- TIMED: the bar drains over the toast's own linger, so it
+             measures the countdown it belongs to rather than guessing at
+             the work. Real string, from the OsmDemo loading toast.
+             The bar runs once and stops, so a screenshot catches it
+             wherever the shot lands - which is the point of having it
+             here at all: nobody had LOOKED at it before this entry
+             existed. -->
+        <div class="toast toast--timed">Loading OpenStreetMap data…</div>
+      </section>
+
+      <section>
+        <h3>Waiting — a line that is still working</h3>
+        <!-- `.is-loading` is a PSEUDO-ELEMENT dot, because the line it
+             was built for rewrites its own textContent on every update
+             and would delete a real child. Its loop is
+             `waiting-pulse`, shared with the locate button: one
+             rendering of "waiting" in this sheet, not two. -->
+        <span class="is-loading"
+          >Fetching and scoring around 50.92310, 6.94450…</span
+        >
       </section>
 
       <section>

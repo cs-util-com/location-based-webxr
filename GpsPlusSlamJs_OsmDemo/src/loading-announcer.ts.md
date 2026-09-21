@@ -14,8 +14,13 @@ visible even when the header - and with it the status line - is collapsed away.
 - `LoadingAnnouncer`
   - `arm()` - a user gesture happened.
   - `busyChanged(busy)` - wire to `latestOnly`'s `onBusyChange`.
-  - `dataArrived()` - wire to the store's snapshot subscription.
-  - `dispose()` - drops pending timers and any toast still showing.
+  - `dataArrived()` - wire to the store's snapshot subscription, **guarded**
+    (see the example): it means "the map now has something on it", and the
+    subscription also fires when the snapshot is blanked.
+  - There is deliberately **no `dispose()`**. One was written and removed in the
+    same session: the demo creates the announcer once and never tears it down,
+    so its only justification - an AR session boundary - was a scenario that
+    does not occur, and its test proved an API nothing calls.
 - Exported constants: `ANNOUNCE_DELAY_MS` (1 s), `LOADING_TOAST_LINGER_MS`
   (15 s), `LOADING_TOAST_MESSAGE`.
 - Module-private: `DEFAULT_ARM_TTL_MS` (5 s) and `LOADING_TOAST_CLASS`. Not an
@@ -49,13 +54,26 @@ visible even when the header - and with it the status line - is collapsed away.
   of `busy` is the only signal a FAILED refresh produces, since it publishes no
   snapshot.
 - **Every show is preceded by a clear.** `toast-core` reuses one element: on a
-  replacement it neither re-appends it nor changes its class name, so a CSS
-  animation on it does not restart. The bar would then empty on the first show's
-  schedule while the toast lived on the second's. Clearing detaches the element,
-  and the next show re-attaches it.
+  replacement it neither re-appends it nor changes its class name, so the bar
+  would keep draining on the FIRST show's schedule while the toast lived on the
+  second's. Clearing detaches the element, and the next show re-attaches it.
+  - **What is verified and what is not.** The call ORDER is unit-tested. That
+    detaching and re-attaching restarts the CSS animation is how browsers
+    behave in practice, but nothing here observes it: both calls happen in one
+    task, with no forced reflow between them, and the reliable-by-spec form
+    would be an explicit style flush this module cannot perform (it never
+    touches the element). If it turns out not to restart, the consequence is a
+    re-shown bar that drains early - cosmetic, and visible in the design
+    system's catalog, which now carries the atom.
 - **The loading toast is its own `Toast` instance.** The shared toast replaces
   rather than stacks, so sharing one with the error channel would let a loading
   announcement silently delete an error the user has not read.
+  - **Consequence for tests, worth knowing before it bites:** `#toast-root` can
+    now hold TWO `.toast` elements, so `#toast-root .toast` is no longer a
+    strict-mode-safe locator. Several existing e2e use it unqualified; they pass
+    today only because they gesture after a refresh has settled, where no
+    loading toast can exist. A new test that expects one toast should target
+    `#loading-toast` or use `.first()`.
 - **No DOM, no injected clock.** The ambient `setTimeout` is used directly and
   the tests run on `vi.useFakeTimers()`, which is how `ar-toast.test.ts` already
   tests this project's other toast.
@@ -70,7 +88,14 @@ const refresh = latestOnly(runRefresh, {
 mapView.map.on("click", () => announcer.arm());
 subscribe(
   (view) => view.snapshot,
-  () => announcer.dataArrived(),
+  // THE GUARD IS PART OF THE EXAMPLE. This subscription fires on any CHANGE,
+  // and `placeChanged` / `fetchFailed` change the snapshot to `undefined`.
+  // Unguarded, the site picker cancelled its own announcement: `arm()` starts
+  // the countdown and the `placeChanged` dispatch on the next line reads as
+  // data arriving. An earlier version of this example taught the wrong form.
+  (snapshot) => {
+    if (snapshot !== undefined) announcer.dataArrived();
+  },
 );
 ```
 

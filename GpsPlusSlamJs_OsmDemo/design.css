@@ -836,12 +836,9 @@
     margin-right: 0.45em;
     border-radius: var(--radius-pill);
     background: currentcolor;
-    animation: busy-pulse 1.2s ease-in-out infinite;
-  }
-  @keyframes busy-pulse {
-    50% {
-      opacity: 0.25;
-    }
+    /* `waiting-pulse`, the sheet's one waiting loop - see the locate
+       button, which is where it is defined and what it was named for. */
+    animation: waiting-pulse 1.2s ease-in-out infinite;
   }
 
   /* --- modal / confirm dialog ---
@@ -896,9 +893,16 @@
      remedy text is the differing part and that text is not on the
      button. */
   .btn--locate[data-state="locating"] {
-    animation: locate-pulse 1.2s ease-in-out infinite;
+    animation: waiting-pulse 1.2s ease-in-out infinite;
   }
-  @keyframes locate-pulse {
+  /* THE ONE "we are waiting" LOOP IN THIS SHEET, and it is shared on
+     purpose. It was `locate-pulse`, and the loading dot below arrived
+     with a second keyframe of identical duration, easing and shape
+     differing only in its opacity floor - two slightly different
+     renderings of the same idea, which is this workspace's most
+     frequently recorded review finding. Renamed for what it means
+     rather than for the first control that used it. */
+  @keyframes waiting-pulse {
     50% {
       opacity: 0.35;
     }

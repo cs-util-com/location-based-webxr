@@ -106,10 +106,16 @@ export interface LoadingAnnouncer {
   arm(): void;
   /** Wired to `latestOnly`'s `onBusyChange`. */
   busyChanged(busy: boolean): void;
-  /** A snapshot reached the map. Takes the toast down at once. */
+  /**
+   * A snapshot reached the map. Takes the toast down at once.
+   *
+   * **Call this only when there IS a snapshot.** Two actions replace it with
+   * `undefined` - `placeChanged` and `fetchFailed` - and reporting those as
+   * data arriving cancels a pending announcement for the gesture that caused
+   * them. The site picker dispatches `placeChanged`, so the unguarded wiring
+   * silenced the longest wait in the demo.
+   */
   dataArrived(): void;
-  /** Drops every pending timer and any toast still showing. */
-  dispose(): void;
 }
 
 /**
@@ -159,8 +165,14 @@ export function createLoadingAnnouncer(
    * the more impatiently the user clicked.
    */
   function startDelay(): void {
-    if (delayTimer !== undefined) return;
+    // DISARMED FIRST, ABOVE THE EARLY RETURN, and the order is the whole point.
+    // With it below, a second gesture inside the delay window re-armed the latch
+    // and then returned without consuming it - leaving `armed` true with a fresh
+    // TTL, for the next AUTOMATIC refresh to claim. An agent step or a GPS fix
+    // within the TTL would then announce a refresh nobody asked for, which is
+    // exactly the failure the TTL exists to prevent. Found in cold review.
     disarm();
+    if (delayTimer !== undefined) return;
     delayTimer = setTimeout(() => {
       delayTimer = undefined;
       // CLEAR THEN SHOW, ALWAYS. See the module docstring: a replacement leaves
@@ -205,11 +217,6 @@ export function createLoadingAnnouncer(
       // The owner's "instantly hide it once the data is loaded". `busy` cannot
       // serve here - it stays true through four more rings of widening, long
       // after the map visibly filled.
-      hide();
-    },
-
-    dispose() {
-      disarm();
       hide();
     },
   };

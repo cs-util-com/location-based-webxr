@@ -2865,7 +2865,16 @@ async function main(): Promise<void> {
       // left to say — owner decision: "instantly hide it once the data is
       // loaded". The `busy` flag cannot serve here: it stays true through four
       // more rings of widening, long after this first snapshot drew.
-      loadingAnnouncer.dataArrived();
+      //
+      // GUARDED, AND THE GUARD IS THE WHOLE CORRECTNESS OF THE SITE PICKER.
+      // This subscriber fires on any CHANGE to the snapshot, and two actions
+      // change it to `undefined`: `placeChanged` and `fetchFailed`. Unguarded,
+      // a site pick made while a refresh was already running cancelled its own
+      // announcement — `arm()` started the countdown, the `placeChanged`
+      // dispatch two lines later read as "data arrived" and killed it, and the
+      // longest wait in the demo went unannounced under a collapsed header.
+      // Found in cold review; the e2e below drives exactly that sequence.
+      if (snapshot !== undefined) loadingAnnouncer.dataArrived();
     },
   );
 

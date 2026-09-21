@@ -202,31 +202,60 @@ describe("createLoadingAnnouncer", () => {
     expect(show).toHaveBeenCalledTimes(1);
   });
 
-  it("EXPIRES a latch whose refresh never came", () => {
+  it("EXPIRES a latch whose refresh never came, at every TTL", () => {
     // The failure this closes: a gesture can arm without ever producing a
     // refresh - a locate that times out, a rejected fix, a click the cycle
     // coalesces away. The latch would then sit set until some unrelated
     // AUTOMATIC refresh consumed it and popped a toast the user never asked
     // for, minutes later and with nothing on screen to explain it.
-    const { toast, show } = recordingToast();
-    const announcer = createLoadingAnnouncer({ toast, armTtlMs: 5_000 });
+    //
+    // SWEPT, because the plan claimed it was and it was not (cold review). The
+    // shipped 5 s is one point in a range where nothing about the behaviour
+    // should change, and the boundary is checked in both directions.
+    for (const armTtlMs of [2_000, 5_000, 15_000]) {
+      const expired = recordingToast();
+      const a = createLoadingAnnouncer({ toast: expired.toast, armTtlMs });
+      a.arm();
+      vi.advanceTimersByTime(armTtlMs);
+      a.busyChanged(true);
+      vi.advanceTimersByTime(60_000);
+      expect(expired.show, `expired at ${armTtlMs} ms`).not.toHaveBeenCalled();
 
-    announcer.arm();
-    vi.advanceTimersByTime(5_000);
-    announcer.busyChanged(true);
-    vi.advanceTimersByTime(60_000);
-
-    expect(show).not.toHaveBeenCalled();
+      const kept = recordingToast();
+      const b = createLoadingAnnouncer({ toast: kept.toast, armTtlMs });
+      b.arm();
+      vi.advanceTimersByTime(armTtlMs - 1);
+      b.busyChanged(true);
+      vi.advanceTimersByTime(ANNOUNCE_DELAY_MS);
+      expect(kept.show, `kept at ${armTtlMs} ms`).toHaveBeenCalledTimes(1);
+    }
   });
 
-  it("keeps the latch for the whole TTL, so a slow start still announces", () => {
+  it("does not leave a SECOND gesture's latch behind for an automatic refresh", () => {
+    // THE HOLE THE COLD REVIEW FOUND, and it hid behind an early return:
+    // `startDelay` returned before disarming when a countdown was already
+    // pending, so an impatient second click inside the delay window re-armed
+    // the latch and nothing consumed it. The next automatic refresh - an agent
+    // step, a GPS fix, both of which re-enter this cycle every few seconds -
+    // then announced itself.
+    //
+    // Two clicks inside one second is ordinary behaviour for someone who thinks
+    // the app ignored the first one, which is to say: exactly the user this
+    // feature exists for.
     const { toast, show } = recordingToast();
-    const announcer = createLoadingAnnouncer({ toast, armTtlMs: 5_000 });
+    const announcer = createLoadingAnnouncer({ toast });
 
     announcer.arm();
-    vi.advanceTimersByTime(4_999);
     announcer.busyChanged(true);
+    vi.advanceTimersByTime(ANNOUNCE_DELAY_MS / 2);
+    announcer.arm();
     vi.advanceTimersByTime(ANNOUNCE_DELAY_MS);
+    expect(show).toHaveBeenCalledTimes(1);
+
+    // The refresh ends, and an automatic one follows well inside the TTL.
+    announcer.busyChanged(false);
+    announcer.busyChanged(true);
+    vi.advanceTimersByTime(60_000);
 
     expect(show).toHaveBeenCalledTimes(1);
   });
@@ -269,19 +298,5 @@ describe("createLoadingAnnouncer", () => {
       "clear",
       `show:${LOADING_TOAST_MESSAGE}`,
     ]);
-  });
-
-  it("drops its pending work on dispose", () => {
-    // The demo tears down and rebuilds on an AR session boundary; a timer that
-    // outlived its announcer would write to a toast nobody owns.
-    const { toast, show } = recordingToast();
-    const announcer = createLoadingAnnouncer({ toast });
-
-    announcer.arm();
-    announcer.busyChanged(true);
-    announcer.dispose();
-    vi.advanceTimersByTime(60_000);
-
-    expect(show).not.toHaveBeenCalled();
   });
 });
