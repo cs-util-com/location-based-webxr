@@ -1139,3 +1139,127 @@ describe("per-attempt transport deadline", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("the draw learns which operators are actually serving", () => {
+  /**
+   * WHY THESE TESTS MATTER. `operator-health.ts` is unit-tested on its own, and
+   * a tracker that nothing feeds is a tracker that does nothing. These are the
+   * WIRING: that the source classifies each attempt correctly, and that the
+   * classification reaches the draw.
+   *
+   * The classification is the part worth pinning, because three outcomes look
+   * alike from here and mean opposite things - a 504 is the host refusing us, a
+   * 400 is our own malformed query, and an abort is the caller leaving. Getting
+   * the middle one wrong would walk the whole pool one endpoint at a time while
+   * the query stayed broken.
+   */
+  const FOSSGIS = "https://lz4.overpass-api.de/api/interpreter";
+  const VK = "https://maps.mail.ru/osm/tools/overpass/api/interpreter";
+
+  /** Which endpoint each call went to, in order. */
+  function endpointsHit(fetchImpl: ReturnType<typeof vi.fn>): string[] {
+    return fetchImpl.mock.calls.map((call) => String(call[0]));
+  }
+
+  it("moves the draw away from an operator that keeps refusing", async () => {
+    // THE ITEM, end to end. `private.coffee` served 2 of 5 production tiles on
+    // 2026-09-21, both of them past the shipped 45 s deadline; a static weight
+    // keeps sending traffic there all session. With a real random draw over
+    // many tiles, an operator that always 504s must end up receiving a smaller
+    // share than it started with.
+    let seed = 1;
+    const random = () => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      return seed / 0x7fffffff;
+    };
+    const fetchImpl = vi
+      .fn()
+      .mockImplementation((url: string) =>
+        Promise.resolve(
+          String(url).includes("lz4")
+            ? errorResponse(504)
+            : jsonResponse(OK_BODY),
+        ),
+      );
+    const { source } = makeSource(fetchImpl, {
+      endpoints: [FOSSGIS, VK],
+      random,
+      maxRetries: 3,
+    });
+
+    // THE FIRST ENDPOINT OF EACH TILE, which is what the DRAW chose. An earlier
+    // version of this test took the LAST call instead, and was therefore
+    // vacuous: the failing host can never be the last call, so the share read
+    // as zero whether or not the draw had learned anything. Caught by reverting
+    // the wiring and watching the test stay green.
+    const firstChoices: string[] = [];
+    for (let i = 0; i < 40; i++) {
+      await source.fetchTile(TILE);
+      const first = endpointsHit(fetchImpl)[0];
+      if (first !== undefined) firstChoices.push(first);
+      fetchImpl.mockClear();
+    }
+
+    const share =
+      firstChoices.filter((url) => url.includes("lz4")).length /
+      firstChoices.length;
+    // FOSSGIS starts at 4 of 7 by base weight. After a session of refusals it
+    // must be well below that - the exact figure depends on the draw, so this
+    // pins the DIRECTION, which is the claim.
+    expect(share).toBeLessThan(0.3);
+  });
+
+  it("does NOT demote an operator for a 400 - that is our query, not their host", async () => {
+    // A malformed query is reported honestly by whichever host happens to get
+    // it. Counting that against the host would walk the pool while the bug
+    // stayed, and the next session would start from a poisoned prior.
+    const fetchImpl = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(errorResponse(400)));
+    const { source } = makeSource(fetchImpl, { endpoints: [FOSSGIS, VK] });
+
+    await expect(source.fetchTile(TILE)).rejects.toThrow(/400/);
+
+    // The next tile must still start where the base weights say - with
+    // `random: () => 0` that is the heaviest operator, FOSSGIS.
+    fetchImpl.mockClear();
+    fetchImpl.mockImplementation(() => Promise.resolve(jsonResponse(OK_BODY)));
+    await source.fetchTile(TILE_B);
+
+    expect(endpointsHit(fetchImpl)[0]).toBe(FOSSGIS);
+  });
+
+  it("does NOT demote an operator because the caller aborted", async () => {
+    // An abort says the user left, not that the host was failing - it may have
+    // been about to answer perfectly.
+    const controller = new AbortController();
+    const fetchImpl = vi.fn().mockImplementation(() => {
+      controller.abort();
+      return Promise.reject(
+        new DOMException("The operation was aborted.", "AbortError"),
+      );
+    });
+    const { source } = makeSource(fetchImpl, { endpoints: [FOSSGIS, VK] });
+
+    await expect(source.fetchTile(TILE, controller.signal)).rejects.toThrow();
+
+    fetchImpl.mockClear();
+    fetchImpl.mockImplementation(() => Promise.resolve(jsonResponse(OK_BODY)));
+    await source.fetchTile(TILE_B);
+
+    expect(endpointsHit(fetchImpl)[0]).toBe(FOSSGIS);
+  });
+
+  it("draws exactly as the constants say on the very first fetch", async () => {
+    // A fresh session must not be a different experiment from the one the
+    // weights describe. Nothing has been observed, so nothing is scaled.
+    const fetchImpl = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse(OK_BODY)));
+    const { source } = makeSource(fetchImpl, { endpoints: [FOSSGIS, VK] });
+
+    await source.fetchTile(TILE);
+
+    expect(endpointsHit(fetchImpl)[0]).toBe(FOSSGIS);
+  });
+});

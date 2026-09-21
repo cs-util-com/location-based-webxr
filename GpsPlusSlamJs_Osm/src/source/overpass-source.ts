@@ -39,8 +39,30 @@ import {
 import { OverpassSlotBudget } from "./slot-budget.js";
 import { operatorForUrl } from "./overpass-operators.js";
 import { planEndpointOrder, type OperatorWeights } from "./endpoint-order.js";
+import {
+  createOperatorHealth,
+  type OperatorHealth,
+  type OperatorOutcome,
+} from "./operator-health.js";
 import { InFlightRequests } from "./in-flight-requests.js";
 import { composeSignals } from "./compose-signals.js";
+
+/**
+ * What a NON-OK status says about the operator that returned it.
+ *
+ * 400 and 414 are our own query - malformed, or too long for this instance's
+ * front end - and the host reported them honestly. Counting those against it
+ * would walk the pool one endpoint at a time while the query stayed broken.
+ * Everything else, quota refusals and gateway timeouts alike, is this operator
+ * failing to serve us.
+ *
+ * A module-level function rather than an inline ternary because the attempt
+ * loop is already at the complexity limit, and because this is a policy worth
+ * finding by name.
+ */
+function operatorOutcomeFor(status: number): OperatorOutcome {
+  return status === 400 || status === 414 ? "ours" : "failure";
+}
 
 /**
  * Default endpoint pool.
@@ -459,6 +481,16 @@ export class OverpassSource implements OsmDataSource {
   private readonly maxAttemptLog: number;
   private readonly operatorWeights: OperatorWeights;
 
+  /**
+   * What each operator has actually done for THIS source, so the draw can move
+   * away from one that is refusing and back when it recovers.
+   *
+   * Per instance, deliberately: two sources in one page are two clients with
+   * two quotas and two experiences, and sharing the tally would let one
+   * source's outage steer the other's draw.
+   */
+  private readonly health: OperatorHealth = createOperatorHealth();
+
   constructor(options: OverpassSourceOptions) {
     const resolved = { ...defaultOptions(), ...stripUndefined(options) };
     validateOptions(options);
@@ -601,12 +633,27 @@ export class OverpassSource implements OsmDataSource {
         recorded = true;
 
         if (response.ok) {
-          return await this.toResult(tile, endpoint, response, {
+          // AFTER `toResult`, not before it. A 200 carrying an HTML error page
+          // is not this operator serving us, and `toResult` is where that is
+          // discovered; recording the success first would credit the host for a
+          // response the catch below is about to call a failure.
+          const result = await this.toResult(tile, endpoint, response, {
             slotWaitMs,
             transportStart,
             attempts: attempt + 1,
           });
+          this.health.record(operatorForUrl(endpoint), "success");
+          return result;
         }
+
+        // CLASSIFIED HERE, where the status is, rather than in the catch where
+        // it is gone. A 400 is our own malformed query and says nothing about
+        // the host - demoting the operator that reported it honestly would walk
+        // the pool one endpoint at a time while the query stayed broken.
+        this.health.record(
+          operatorForUrl(endpoint),
+          operatorOutcomeFor(response.status),
+        );
 
         if (!RETRYABLE_STATUSES.has(response.status)) {
           throw new PermanentOverpassError(
@@ -630,8 +677,21 @@ export class OverpassSource implements OsmDataSource {
         // (our query is malformed) cost four requests instead of one, and an
         // abort kept working on an area the user had already left.
         if (isAbortError(error) || error instanceof PermanentOverpassError) {
+          // AN ABORT IS NOT EVIDENCE. The caller left; the host may have been
+          // about to answer perfectly. A permanent error already recorded its
+          // own verdict from the status.
           throw error;
         }
+        // Transport failures and unparseable bodies. Both are this operator
+        // failing to serve us, whatever the cause.
+        //
+        // NO "ALREADY RECORDED" GUARD IS NEEDED HERE, unlike `recorded` above,
+        // and the asymmetry is worth stating. The only place that records a
+        // health verdict before this one is the non-ok branch, and that branch
+        // either throws `PermanentOverpassError` - rethrown three lines up -
+        // or loops round to the next attempt. Nothing that records a verdict
+        // reaches this line.
+        this.health.record(operatorForUrl(endpoint), "failure");
         // A transport failure (DNS, reset connection) never produced a status.
         // Recorded WITHOUT one rather than omitted: dropping it would make the
         // log claim fewer requests than were really made, which is the one
@@ -919,7 +979,11 @@ export class OverpassSource implements OsmDataSource {
   private planAttemptOrder(): readonly string[] {
     const order = planEndpointOrder(
       this.endpoints,
-      this.operatorWeights,
+      // SCALED BY WHAT THIS SESSION HAS SEEN. The constants remain the prior;
+      // `operator-health.ts` only multiplies them, and returns them untouched
+      // until something has actually been observed - so the first fetch of a
+      // session draws exactly as the constants say.
+      this.health.weightsFrom(this.operatorWeights),
       this.random,
     );
     // Spending an attempt on a quota that has already refused is the same

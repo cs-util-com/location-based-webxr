@@ -139,7 +139,22 @@ inventory. Which endpoint an attempt uses comes from
 (weighted by `DEFAULT_OPERATOR_WEIGHTS`) and returns a permutation of the pool
 for that one tile.
 
-Three consequences worth knowing:
+**Those weights are now a PRIOR, not the answer.** Since 2026-09-21 the source
+holds an [`operator-health.ts`](./operator-health.ts.md) tally and passes
+`health.weightsFrom(DEFAULT_OPERATOR_WEIGHTS)` to the draw, so a host that keeps
+refusing receives less traffic and one that recovers earns it back. The
+constants are untouched until something has actually been observed, so the first
+fetch of a session draws exactly as they say.
+
+- **Each attempt is classified where its status is**, not in the catch where it
+  is gone: a 504 is the host refusing us, a 400 or 414 is our own malformed
+  query (`"ours"`, dropped rather than counted), an abort is the caller leaving
+  (also dropped). Getting the middle one wrong would walk the pool one endpoint
+  at a time while the query stayed broken.
+- **Success is recorded AFTER `toResult`**, because a 200 carrying an HTML error
+  page is not this operator serving us, and that is where it is discovered.
+
+Three consequences of the draw itself worth knowing:
 
 - **The first attempts hit distinct operators.** With the default pool that is
   three different quotas before any repeat, which is what makes a retry
