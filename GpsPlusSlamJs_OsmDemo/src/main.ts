@@ -89,6 +89,7 @@ import { autoElevationEnabled } from "./ar-elevation-auto.js";
 import { startArWalk, type ArWalk } from "./ar-walk-controller.js";
 import { createArToast } from "./ar-toast.js";
 import { createToast } from "gps-plus-slam-app-framework/utils/toast-core";
+import { createLoadingAnnouncer } from "./loading-announcer.js";
 import { canEnterAr, terrainReadout } from "./ar-origin.js";
 import { createGeoEventCycle } from "./geo-event-cycle.js";
 import { GeoEventPicker } from "./geo-event-picker.js";
@@ -221,6 +222,38 @@ async function main(): Promise<void> {
   const showBelowLabel = el("show-below-label");
 
   status.textContent = "Loading the rule table…";
+
+  /**
+   * The loading channel, and why it is a SECOND toast rather than the error one.
+   *
+   * `createToast` replaces the current message rather than stacking, so one
+   * shared instance would let a fetch announcement silently delete an error the
+   * user has not read. The error toast is created further down, next to the
+   * comment explaining why the 2D channel exists at all.
+   *
+   * Created this early because `attachSitePicker` below is one of the gestures
+   * that arms it.
+   */
+  const loadingToast = createToast(el("toast-root"), { id: "loading-toast" });
+  const loadingAnnouncer = createLoadingAnnouncer({ toast: loadingToast });
+
+  /**
+   * Both loading indicators, from the one signal that is actually true.
+   *
+   * The dot on the status line stays lit for the WHOLE refresh — five widening
+   * rings, each of which may pull a fresh res-7 tile — while the toast takes
+   * itself down as soon as the map has something on it. That is deliberate:
+   * they answer different questions, "is it still working?" and "did my tap do
+   * anything?".
+   *
+   * A CLASS, NOT AN ELEMENT: `writeStatus` rewrites `status.textContent` on
+   * every update, which would delete a child node. The dot is a pseudo-element
+   * of `.is-loading`, which survives the text being replaced.
+   */
+  const setRefreshBusy = (busy: boolean): void => {
+    status.classList.toggle("is-loading", busy);
+    loadingAnnouncer.busyChanged(busy);
+  };
 
   /**
    * Where a worker-level failure goes.
@@ -561,6 +594,10 @@ async function main(): Promise<void> {
   attachSitePicker({
     select: el<HTMLSelectElement>("site"),
     onChoose: (place) => {
+      // A gesture, so the refresh it starts may announce itself. This one is
+      // the longest wait in the demo: a declared jump to another city fetches
+      // everything cold.
+      loadingAnnouncer.arm();
       mapView.centreOn(place.position);
       declaredSiteId = place.id;
       // A DECLARED place change, not travel. The picker spans Cologne to Tokyo,
@@ -857,6 +894,11 @@ async function main(): Promise<void> {
     // terrain load's requested datum identical — the worker's gate compares
     // them, and two independent samples would be two chances to disagree.
     geoidUndulationM: () => arUndulationM,
+    // WHAT DRIVES BOTH LOADING INDICATORS. Not the store's `loading.phase`:
+    // this cycle dispatches `fetchStarted` once, above the ring loop, and every
+    // ring's `snapshotReady` sets the phase back to idle — so the phase is idle
+    // for most of a wait that can run to a minute.
+    onBusyChange: setRefreshBusy,
     // THE CLICK-PATH BREAKDOWN, one line per ring. `console.info` rather than
     // the status bar for the reason `describeGeoEventStats` uses it: this is a
     // developer diagnostic and the status line already carries the cell counts
@@ -910,6 +952,12 @@ async function main(): Promise<void> {
   // Clicking the map moves the "user", which is how a walk is simulated without
   // a phone — and crossing a res-11 boundary is what exercises the chunk cache.
   mapView.map.on("click", (event: { latlng: { lat: number; lng: number } }) => {
+    // ARMED HERE, AND THIS IS THE ONLY PLACE IT CAN BE. Every position-driven
+    // refresh — this click, a GPS fix, the walking agent, the AR controller —
+    // arrives at `refresh` through the one `positionChanged` subscriber, which
+    // cannot tell them apart. The toast is for a refresh the user asked for, so
+    // intent is latched where it is still known. See `loading-announcer.ts`.
+    loadingAnnouncer.arm();
     store.dispatch(
       actions.positionChanged({
         lat: event.latlng.lat,
@@ -918,6 +966,7 @@ async function main(): Promise<void> {
     );
   });
   categorySelect.addEventListener("change", () => {
+    loadingAnnouncer.arm();
     store.dispatch(actions.categoryChanged(categorySelect.value));
   });
   showBelow.addEventListener("change", () => {
@@ -2812,6 +2861,11 @@ async function main(): Promise<void> {
         drawScene(snapshot);
       });
       writeStatus();
+      // THE MAP NOW HAS SOMETHING ON IT, so the "loading" toast has nothing
+      // left to say — owner decision: "instantly hide it once the data is
+      // loaded". The `busy` flag cannot serve here: it stays true through four
+      // more rings of widening, long after this first snapshot drew.
+      loadingAnnouncer.dataArrived();
     },
   );
 

@@ -262,6 +262,11 @@
     /* appearance/disappearance: slow on purpose - XR guidance says
        things arriving over a moving camera get lost in motion blur */
     --t-enter: 400ms;
+    /* how long a .toast--timed stays, and therefore how long its bar
+       takes to drain - the bar measures the toast, never the work. An
+       app that overrides its toast linger overrides this with it, or the
+       bar empties on a schedule the dismissal does not keep. */
+    --t-toast-timed: 15s;
     --ease-out: cubic-bezier(0, 0, 0.2, 1);
     --ease-in: cubic-bezier(0.4, 0, 1, 1);
   }
@@ -783,6 +788,62 @@
     width: max-content;
   }
 
+  /* --- a TIMED toast: it shows how long it has left ---
+     The bar drains over the toast's own linger, which is the one
+     duration a toast can promise honestly. A bar scaled to the WORK
+     would be a guess, and the work this was built for - an Overpass
+     tile - has a p90 at twice its median, so the bar would sit full
+     while the app was still fetching. Here it cannot lie: it measures
+     the countdown it belongs to.
+     A LOOP IS NOT WHAT THIS IS, so the transient-by-default policy
+     above is satisfied: it runs once, forwards, and the element is
+     removed when it ends. */
+  .toast--timed {
+    position: relative;
+    overflow: hidden;
+  }
+  .toast--timed::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 0;
+    height: 3px;
+    background: var(--paper);
+    opacity: 0.5;
+    /* scaleX, not width: a transform animates off the main thread, and
+       this bar runs while the page is waiting on a worker reply. */
+    transform-origin: left center;
+    animation: toast-drain var(--t-toast-timed) linear forwards;
+  }
+  @keyframes toast-drain {
+    to {
+      transform: scaleX(0);
+    }
+  }
+
+  /* --- is-loading: a pulsing dot in front of a line of text ---
+     For a wait whose length nobody can predict, on a line that already
+     says WHAT is being waited for. An ongoing-and-unresolved state, so
+     the loop is the allowed kind.
+     A PSEUDO-ELEMENT ON PURPOSE. The one line this is for rewrites its
+     own `textContent` on every update, which deletes child nodes; a dot
+     that was a real element would vanish the first time the text
+     changed, and the class survives. */
+  .is-loading::before {
+    content: "";
+    display: inline-block;
+    width: 0.5em;
+    height: 0.5em;
+    margin-right: 0.45em;
+    border-radius: var(--radius-pill);
+    background: currentcolor;
+    animation: busy-pulse 1.2s ease-in-out infinite;
+  }
+  @keyframes busy-pulse {
+    50% {
+      opacity: 0.25;
+    }
+  }
+
   /* --- modal / confirm dialog ---
      The dialog itself is a plate; what makes it a modal is the
      veil behind it, which pauses the world. Cancel stays a plain
@@ -859,6 +920,15 @@
     .badge[data-tone="warn"],
     .progress[data-tone="lost"] .progress-fill,
     [data-leaving][data-leaving] {
+      animation: none;
+    }
+    /* THEIR OWN ENTRY, because `animation: none` on `.toast` does not
+       reach a pseudo-element of it - the bar and the dot would keep
+       animating under a rule that looks like it covers them. Both stay
+       VISIBLE: the bar full, the dot solid. They still say "waiting";
+       they just stop moving. */
+    .toast--timed::after,
+    .is-loading::before {
       animation: none;
     }
     * {

@@ -562,6 +562,34 @@
         pointer-events: none;
       }
 
+      /* THE LOADING TOAST, STACKED ABOVE THE ERROR ONE (loading-visibility
+         plan). A second `createToast` instance on the same root, because the
+         shared toast REPLACES its message rather than stacking - one instance
+         would let "Loading OpenStreetMap data" delete an error the user has
+         not read.
+
+         PLACEMENT BY `id`, NOT BY CLASS. `toast-core` assigns
+         `element.className` wholesale on every `show`, so a placement class
+         would be wiped the moment the announcer set `toast--timed`. The id is
+         stable; the class carries the look, which lives in `design.css` per
+         DEC-L2-14.
+
+         WHAT ELSE IS IN THIS CORNER, since the offset has to clear it: the
+         error `.toast` at 0.75rem (~2.5rem tall), and - both `hidden` until
+         the user opens them - `#hotkey-help` at 0.5rem and
+         `#geo-event-picker` at 8rem. Those two are `z-index: 1000` against
+         `#toast-root`'s 500, so an opened help panel covers this rather than
+         the other way round. That is the right order: the panel is something
+         the user deliberately opened, and the toast is transient.
+
+         `pointer-events: none` is restated for the reason `.toast` restates
+         it: this sits over the map, and clicking the map is how a user
+         retries. */
+      #loading-toast {
+        bottom: 3.5rem;
+        pointer-events: none;
+      }
+
       /* Floats over the split rather than taking a column (DEC-17). */
       #details {
         position: absolute;
