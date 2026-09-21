@@ -47,6 +47,7 @@ import type {
   OsmFeature,
   OsmFeatureKey,
 } from "../model/osm-feature.js";
+import { sameFeatureContent } from "../model/osm-feature.js";
 import { isBelowSurface } from "../model/below-surface.js";
 import { toGeometry } from "../model/osm-geometry.js";
 import type { OsmGeometry } from "../model/osm-geometry.js";
@@ -440,8 +441,15 @@ export class AffordanceIndex {
     // Drop cached geometry only where the winning record actually changed.
     // Re-converting geometry that no tile touched is the cost this class exists
     // to avoid, and a refetch of one tile must not throw away the whole map.
+    //
+    // **CHANGED BY CONTENT, NOT BY OBJECT IDENTITY.** A refetch re-parses the
+    // tile, so every record it carries is a fresh object even where the data is
+    // byte-identical - and an identity check therefore called an unchanged
+    // refetch a complete edit of everything that tile owns. Same rule, same
+    // reason, as `overlayNewTile` below.
     for (const [key, feature] of this.features) {
-      if (previous.get(key) === feature) continue;
+      const held = previous.get(key);
+      if (held !== undefined && sameFeatureContent(held, feature)) continue;
       this.geometry.delete(key);
       this.bounds.delete(key);
     }
@@ -513,7 +521,17 @@ export class AffordanceIndex {
       }
       // Only a CHANGED record invalidates cached geometry - the same rule the
       // full path applies, and the reason this class exists at all.
-      if (features.get(key) !== feature) {
+      //
+      // **BY CONTENT, NOT BY OBJECT IDENTITY**, and the difference is not
+      // academic. Fetch tiles are H3 cells' bounding RECTANGLES, so adjacent
+      // tiles overlap; `out geom` returns a feature's whole geometry whenever
+      // its bbox is touched; and the parser builds a fresh object per delivery.
+      // With `!==` every re-delivered duplicate near a seam looked like an edit
+      // and threw away its converted geometry - breaking this class's own
+      // header promise that conversion happens "once per feature ever, not once
+      // per chunk" for exactly the features a walking user keeps re-fetching.
+      const held = features.get(key);
+      if (held === undefined || !sameFeatureContent(held, feature)) {
         this.geometry.delete(key);
         this.bounds.delete(key);
       }

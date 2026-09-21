@@ -33,7 +33,7 @@ import { AffordanceIndex } from "./affordance-index.js";
 import { loadSite } from "../test-utils/load-fixtures.js";
 import { parseOverpassJson } from "../model/overpass-parser.js";
 import { isBelowSurface } from "../model/below-surface.js";
-import type { OsmFeature } from "../model/osm-feature.js";
+import type { OsmFeature, OsmWay } from "../model/osm-feature.js";
 import { parseRuleTable } from "../rules/rule-table.js";
 import type { OsmTileResult } from "../source/osm-data-source.js";
 import { mergeTiles } from "../spatial/merge-tiles.js";
@@ -1720,4 +1720,153 @@ describe("what an exhaustive scan of one event tile costs", () => {
       expect(index.scoredChunks().length).toBeGreaterThan(300);
     },
   );
+});
+
+describe("a re-delivered feature keeps its cached geometry", () => {
+  /**
+   * WHY THESE TESTS MATTER, and why this is a CORRECTNESS-SHAPED performance
+   * bug rather than a slow path.
+   *
+   * Fetch tiles are H3 cells' bounding RECTANGLES, so adjacent tiles overlap,
+   * and `out geom` returns a feature's whole geometry whenever its bbox is
+   * touched. A feature near a seam is therefore delivered by both tiles - the
+   * SAME feature, with the same id, the same tags and the same coordinates.
+   *
+   * The parser builds a fresh object per delivery, and `overlayNewTile`
+   * compared the incoming feature with the held one by OBJECT IDENTITY. So
+   * every re-delivered duplicate looked like an edit and threw away the
+   * converted geometry and the cached bounds for a feature that had not
+   * changed. Converting geometry is the expensive half of scoring - the class's
+   * own header promises it happens "once per feature ever, not once per chunk"
+   * - and this quietly broke that promise for every feature near a tile seam.
+   *
+   * The counters are the assertion, never a clock: this repo has already paid
+   * for wall-clock assertions inside a parallel suite.
+   */
+  const SEAM = patch(4242, HOME, { landuse: "grass" });
+
+  /**
+   * A position inside HOME's fetch tile AND inside a neighbour's bounding
+   * rectangle - i.e. what a feature near a tile seam actually looks like.
+   * Derived once (92% of the way from the cell centre to a boundary vertex)
+   * rather than recomputed, so the pair below cannot drift apart.
+   */
+  const SEAM_AT = { lat: 50.94530783441995, lng: 6.948310510836784 };
+  const SEAM_NEIGHBOUR = "871fa1998ffffff";
+
+  /** The same feature as a DIFFERENT object, exactly as a second parse gives it. */
+  function reparsed(feature: OsmFeature): OsmFeature {
+    return JSON.parse(JSON.stringify(feature)) as OsmFeature;
+  }
+
+  it("does not rebuild geometry when a later tile re-delivers an unchanged feature", () => {
+    // THE ITEM. The second tile outranks the first (later `fetchedAt`), so the
+    // provenance check lets the write through - which is correct, the newer
+    // tile does own the feature now. What must not follow is discarding work
+    // for a feature whose content is identical.
+    const index = new AffordanceIndex({ table: TABLE });
+    index.acceptTile(tile(HOME, [SEAM], 1_000));
+    index.update(HOME);
+    index.scoresByCell();
+    const builtOnce = index.stats.geometryBuilt;
+    expect(builtOnce).toBeGreaterThan(0);
+
+    index.acceptTile(tile(HOME, [reparsed(SEAM)], 2_000));
+    index.update(HOME);
+    index.scoresByCell();
+
+    expect(index.stats.geometryBuilt).toBe(builtOnce);
+  });
+
+  it("STILL rebuilds geometry when the re-delivered feature actually changed", () => {
+    // The mirror case, and the one that stops the fix above from becoming "never
+    // invalidate anything". An edited feature must drop its cached geometry, or
+    // the map keeps drawing the old shape forever.
+    const index = new AffordanceIndex({ table: TABLE });
+    index.acceptTile(tile(HOME, [SEAM], 1_000));
+    index.update(HOME);
+    index.scoresByCell();
+    const builtOnce = index.stats.geometryBuilt;
+
+    // Rebuilt rather than mutated: `OsmFeature` is a union and only a way has
+    // `geometry`, so narrowing is the honest way to move a vertex.
+    const base = reparsed(SEAM) as OsmWay;
+    const moved: OsmFeature = {
+      ...base,
+      geometry: [
+        { lat: HOME.lat + 0.001, lng: HOME.lng + 0.001 },
+        ...base.geometry.slice(1),
+      ],
+    };
+    index.acceptTile(tile(HOME, [moved], 2_000));
+    index.update(HOME);
+    index.scoresByCell();
+
+    expect(index.stats.geometryBuilt).toBeGreaterThan(builtOnce);
+  });
+
+  it("does not rebuild when an ADJACENT tile re-delivers the same SEAM feature", () => {
+    // THE PRODUCTION CASE, and the one the tests above miss: they re-deliver
+    // under the SAME tile id, which is the refetch path (`remergeAllTiles`).
+    // The common case in the field is the other path, `overlayNewTile`, where a
+    // NEIGHBOURING tile's bounding rectangle overlaps this one and `out geom`
+    // hands back a feature already held. Both compared by object identity; both
+    // had to be fixed.
+    //
+    // THE POSITION IS LOAD-BEARING AND WAS WRONG ONCE. A first version put the
+    // feature at the tile's CENTRE, where no neighbour's bbox reaches it: the
+    // neighbouring tile invalidated no chunk, nothing was re-scored, and the
+    // test passed with and without the fix. `SEAM_AT` is 92% of the way from
+    // the centre to a boundary vertex - inside this tile, inside the
+    // neighbour's rectangle - which is what a real seam feature looks like.
+    const index = new AffordanceIndex({ table: TABLE });
+    const seam = patch(4243, SEAM_AT, { landuse: "grass" });
+    index.acceptTile(tile(SEAM_AT, [seam], 1_000));
+    index.update(SEAM_AT);
+    index.scoresByCell();
+    const builtOnce = index.stats.geometryBuilt;
+    expect(builtOnce).toBeGreaterThan(0);
+
+    const home = latLngToCell(SEAM_AT.lat, SEAM_AT.lng, FETCH_RES);
+    const neighbourTile: OsmTileResult = {
+      tile: SEAM_NEIGHBOUR,
+      features: [reparsed(seam)],
+      fetchedAt: 2_000,
+      sourceId: "test",
+      schemaVersion: OVERPASS_SCHEMA_VERSION,
+      skipped: [],
+    };
+    expect(neighbourTile.tile).not.toBe(home);
+
+    // ASSERTED, NOT ASSUMED: the neighbour must actually invalidate something,
+    // or the geometry counter cannot move whatever the cache did and the test
+    // below is vacuous again.
+    const invalidated = index.acceptTile(neighbourTile);
+    expect(invalidated.length).toBeGreaterThan(0);
+
+    index.update(SEAM_AT);
+    index.scoresByCell();
+
+    expect(index.stats.geometryBuilt).toBe(builtOnce);
+    expect(index.stats.geometryReused).toBeGreaterThan(0);
+  });
+
+  it("STILL rebuilds when only the TAGS changed", () => {
+    // Tags are not geometry, but they decide what the feature IS - and the
+    // cached entry is keyed by feature key, which does not carry them. A
+    // content comparison that looked only at coordinates would keep a stale
+    // entry for a feature that has become something else.
+    const index = new AffordanceIndex({ table: TABLE });
+    index.acceptTile(tile(HOME, [SEAM], 1_000));
+    index.update(HOME);
+    index.scoresByCell();
+    const builtOnce = index.stats.geometryBuilt;
+
+    const retagged = { ...reparsed(SEAM), tags: { landuse: "forest" } };
+    index.acceptTile(tile(HOME, [retagged], 2_000));
+    index.update(HOME);
+    index.scoresByCell();
+
+    expect(index.stats.geometryBuilt).toBeGreaterThan(builtOnce);
+  });
 });
