@@ -20,7 +20,9 @@ Owner decision D1, 2026-09-21: adapt rather than re-tune. See
   - `snapshot()` — the decayed tallies, for diagnostics.
 - `DEFAULT_HEALTH_FLOOR` — 0.1, the smallest share of its base weight an
   operator can fall to.
-- `OperatorOutcome`, `OperatorTally`.
+- `OperatorOutcome`. (`OperatorTally` is deliberately NOT exported - nothing
+  outside names it, and the root knip stage rejects an export with no importer.
+  It is reachable as `snapshot()`'s return type.)
 
 ## Invariants & assumptions
 

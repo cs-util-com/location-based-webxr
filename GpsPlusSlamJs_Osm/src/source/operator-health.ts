@@ -110,8 +110,15 @@ const DECAY = 0.9;
 const PRIOR_ATTEMPTS = 1;
 const PRIOR_SUCCESSES = 1;
 
-/** Decayed evidence about one operator. */
-export interface OperatorTally {
+/**
+ * Decayed evidence about one operator.
+ *
+ * NOT exported: nothing outside this module names it, and the root `knip`
+ * stage rejects an export with no importer - which it did, on this very type,
+ * at the publish preflight. A consumer that wants it has `snapshot()`'s return
+ * type, structurally.
+ */
+interface OperatorTally {
   readonly attempts: number;
   readonly successes: number;
 }
