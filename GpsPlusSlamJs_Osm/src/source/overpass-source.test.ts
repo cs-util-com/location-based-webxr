@@ -1128,15 +1128,55 @@ describe("per-attempt transport deadline", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
-  it("is configurable, and can be switched off for a self-hosted instance", async () => {
+  it("can be switched off for a self-hosted instance, and the OFF is observable", async () => {
     // A private instance with no competition may legitimately want to wait, and
     // the pool's own `[timeout:180]` is the only other bound.
-    const fetchImpl = vi.fn(() =>
-      Promise.resolve(jsonResponse({ elements: [] })),
-    );
-    const { source } = makeSource(fetchImpl, { requestTimeoutMs: undefined });
+    //
+    // ASSERTS THAT THE SIGNAL NEVER FIRES, and getting to that took two
+    // attempts. The first version of this test checked only that one request
+    // went out - which a `fetchImpl` resolving immediately does under a 45 s
+    // deadline too, so it passed whether the opt-out worked or not (raised in
+    // review of PR #475). The second checked that NO signal reached `fetch`,
+    // which is also wrong: the in-flight de-duplication supplies one on every
+    // request, deadline or no deadline. What the opt-out actually controls is
+    // whether that signal ever ABORTS on its own.
+    let captured: AbortSignal | undefined;
+    const fetchImpl = vi.fn((_url: string, init?: RequestInit) => {
+      captured = init?.signal ?? undefined;
+      return new Promise<Response>((resolve) => {
+        setTimeout(() => resolve(jsonResponse({ elements: [] })), 60);
+      });
+    });
+    const { source } = makeSource(fetchImpl, {
+      requestTimeoutMs: undefined,
+      sleepImpl: () => Promise.resolve(),
+    });
+
     await source.fetchTile(TILE);
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
+
+    expect(captured).toBeInstanceOf(AbortSignal);
+    expect(captured?.aborted).toBe(false);
+  });
+
+  it("DOES fire when a deadline is configured, so the test above means something", async () => {
+    // The counterweight. Without it, a change that removed the deadline
+    // entirely would satisfy the opt-out test and nothing would notice.
+    let captured: AbortSignal | undefined;
+    const fetchImpl = vi.fn((_url: string, init?: RequestInit) => {
+      captured = init?.signal ?? undefined;
+      return new Promise<Response>((resolve) => {
+        setTimeout(() => resolve(jsonResponse({ elements: [] })), 60);
+      });
+    });
+    const { source } = makeSource(fetchImpl, {
+      requestTimeoutMs: 10,
+      sleepImpl: () => Promise.resolve(),
+    });
+
+    await source.fetchTile(TILE).catch(() => undefined);
+
+    expect(captured?.aborted).toBe(true);
+    expect((captured?.reason as Error | undefined)?.name).toBe("TimeoutError");
   });
 });
 

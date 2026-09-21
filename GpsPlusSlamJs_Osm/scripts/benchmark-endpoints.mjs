@@ -756,6 +756,13 @@ async function runMap3dComparison() {
   const budgetMs = comparisonNumberArg("budget-minutes", 15) * 60_000;
   const maxTotalBytes = comparisonNumberArg("max-mb", 500) * 1_000_000;
   const siteName = stringArg("site", "manhattan");
+  // VALIDATED BEFORE IT IS USED. This ran after the ternary below, whose else
+  // branch is Cologne - so any value other than "manhattan" resolved to a
+  // Cologne bbox first and only then threw. Harmless today because nothing
+  // between the two lines observes the bbox, and a guard that depends on that
+  // staying true is not a guard. Raised in review of PR #475.
+  if (!["manhattan", "cologne"].includes(siteName))
+    throw new Error("--site must be manhattan or cologne");
   const bbox =
     siteName === "manhattan"
       ? {
@@ -765,8 +772,6 @@ async function runMap3dComparison() {
           east: -73.93524169921875,
         }
       : bboxOfCell(latLngToCell(DEFAULT_CENTRE.lat, DEFAULT_CENTRE.lng, res));
-  if (!["manhattan", "cologne"].includes(siteName))
-    throw new Error("--site must be manhattan or cologne");
   const site = {
     id: siteName === "manhattan" ? siteName : `${siteName}-res${res}`,
     bbox,

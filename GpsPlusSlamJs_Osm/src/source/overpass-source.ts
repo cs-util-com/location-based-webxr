@@ -226,7 +226,6 @@ export interface OverpassStats {
   attempts: OverpassAttempt[];
 }
 
-/** Matches the measured `Rate limit: 2` on the public instances. */
 /**
  * Default per-attempt transport deadline.
  *
@@ -255,6 +254,7 @@ export interface OverpassStats {
  */
 const DEFAULT_REQUEST_TIMEOUT_MS = 45_000;
 
+/** Matches the measured `Rate limit: 2` on the public instances. */
 const DEFAULT_MAX_CONCURRENT = 2;
 
 /**

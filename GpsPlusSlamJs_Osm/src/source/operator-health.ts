@@ -45,7 +45,10 @@
  * @see operator-health.ts.md
  */
 
-import type { OperatorWeights } from "./endpoint-order.js";
+import {
+  DEFAULT_OPERATOR_WEIGHT,
+  type OperatorWeights,
+} from "./endpoint-order.js";
 
 /**
  * What an attempt is evidence of.
@@ -154,17 +157,25 @@ export function createOperatorHealth(): OperatorHealth {
     },
 
     weightsFrom(base: OperatorWeights): OperatorWeights {
-      const scaled: Record<string, number> = {};
-      for (const [operator, weight] of Object.entries(base)) {
-        const tally = tallies.get(operator);
-        // UNOBSERVED IS NOT UNHEALTHY. Returning the base value itself rather
-        // than `weight * 1` keeps `weightsFrom(base)` deep-equal to `base` on a
-        // fresh tracker, which is what makes "a new session behaves exactly as
-        // the constants say" testable rather than approximate.
-        if (tally === undefined) {
-          scaled[operator] = weight;
-          continue;
-        }
+      // DRIVEN BY THE TALLIES, NOT BY `base`, and the difference is a real
+      // defect this started with. Iterating `base` means an operator that has
+      // been OBSERVED but that `base` does not name never gets a scaled entry -
+      // and `takeWeighted` then falls back to `DEFAULT_OPERATOR_WEIGHT` for it.
+      // Since `operatorForUrl` makes an unknown host its own operator and
+      // `endpoints` is a documented option, a self-hosted endpoint failing
+      // every request would have kept the neutral weight all session while its
+      // named siblings were demoted around it: the mechanism steering traffic
+      // TOWARDS the broken host. Found in review of PR #477.
+      //
+      // Starting from a copy of `base` keeps two properties at once: every
+      // named operator survives, and an UNOBSERVED one keeps its value
+      // IDENTICALLY rather than as `weight * 1` - which is what makes
+      // `weightsFrom(base)` deep-equal to `base` on a fresh tracker, and so
+      // makes "a new session behaves exactly as the constants say" testable
+      // rather than approximate.
+      const scaled: Record<string, number> = { ...base };
+      for (const [operator, tally] of tallies) {
+        const weight = base[operator] ?? DEFAULT_OPERATOR_WEIGHT;
         const ratio =
           (tally.successes + PRIOR_SUCCESSES) /
           (tally.attempts + PRIOR_ATTEMPTS);

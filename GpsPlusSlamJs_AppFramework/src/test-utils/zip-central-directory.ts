@@ -144,7 +144,19 @@ export function readStoredEntryBytes(
       const localNameLength = view.getUint16(localOffset + 26, true);
       const localExtraLength = view.getUint16(localOffset + 28, true);
       const start = localOffset + 30 + localNameLength + localExtraLength;
-      return bytes.subarray(start, start + view.getUint32(at + 20, true));
+      // CHECKED, because `subarray` CLAMPS. A truncated archive, or a central
+      // directory whose size field disagrees with the bytes actually present,
+      // would otherwise come back as a SHORT buffer rather than an error - and
+      // this module exists precisely so that it does not agree with a broken
+      // writer. The local-header signature check above covers the offset; this
+      // covers the extent. Raised in review of PR #476.
+      const size = view.getUint32(at + 20, true);
+      if (start + size > bytes.length) {
+        throw new Error(
+          `entry ${name} claims ${size} bytes from ${start}, but the archive ends at ${bytes.length}`
+        );
+      }
+      return bytes.subarray(start, start + size);
     }
     at += 46 + nameLength + extraLength + commentLength;
   }

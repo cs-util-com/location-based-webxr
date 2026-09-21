@@ -41,12 +41,15 @@ export type OperatorWeights = Readonly<Record<string, number>>;
 /**
  * Used for any operator the weights do not mention.
  *
- * NOT exported: nothing outside this file reads it, and the root `knip` stage
- * rejects an export with no importer. (It was exported for one commit and
- * caught by the cascade gate — the second time in this session, both times
- * because the per-package gate cannot see that stage.)
+ * EXPORTED SINCE 2026-09-21, and the history is worth keeping because it cuts
+ * both ways. It was exported once with no importer, which the root `knip`
+ * stage rejects, and the comment here recorded that. It now has one:
+ * `operator-health.ts` scales observed operators that the base map omits, and
+ * it has to scale them from the SAME neutral value the draw would otherwise
+ * fall back to - a second literal `1` in the other file would be a copy of a
+ * contract, which is precisely what this repo's duplication rule forbids.
  */
-const DEFAULT_OPERATOR_WEIGHT = 1;
+export const DEFAULT_OPERATOR_WEIGHT = 1;
 
 /**
  * The endpoints to try, in the order to try them.

@@ -430,6 +430,45 @@ export interface DemoSnapshot {
 }
 
 /**
+ * How many of a ring's missing tiles are fetched at once.
+ *
+ * **Two, and the number is load-bearing rather than tidy.** Overpass advertises
+ * `Rate limit: 2` per client per operator and it is a CONCURRENCY limit, so two
+ * is the widest pool that structurally cannot breach it. It also matches the
+ * source's own `DEFAULT_MAX_CONCURRENT` and its slot budget's default, so
+ * raising it here alone would be worse than rude: `OverpassSlotBudget.tryAcquire`
+ * refuses rather than queues, and those refusals would surface as missing
+ * geometry with no error. Raise the budget in the same change or not at all.
+ */
+const FETCH_CONCURRENCY = 2;
+
+/**
+ * Throws if the caller has moved on.
+ *
+ * A FUNCTION rather than three inline checks, and not only to remove the
+ * duplication. Inline, TypeScript narrows `signal.aborted` to `false` after the
+ * first check and then reports every later one as unreachable - but the signal
+ * is aborted by the CALLER during an await, which no narrowing can see. Behind
+ * a call boundary the checks stay honest.
+ */
+function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted === true) {
+    throw new DOMException("Aborted", "AbortError");
+  }
+}
+
+/**
+ * A rejection that means "the caller moved on", as opposed to a failed tile.
+ *
+ * An abort must NOT become a `missingTiles` entry: the UI renders that as
+ * "N tile(s) unavailable", which would report a superseded click as a data
+ * failure the user cannot act on.
+ */
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
+}
+
+/**
  * Owns an `AffordanceIndex` and the fetches that feed it.
  *
  * STILL NOT A STORE, AND STILL NOT AN EVENT EMITTER — but the reason has
@@ -447,45 +486,6 @@ export interface DemoSnapshot {
  * argument survives where it was actually load-bearing — "is the data wrong or
  * the drawing wrong?" is still answerable by testing this in isolation.
  */
-/**
- * How many of a ring's missing tiles are fetched at once.
- *
- * **Two, and the number is load-bearing rather than tidy.** Overpass advertises
- * `Rate limit: 2` per client per operator and it is a CONCURRENCY limit, so two
- * is the widest pool that structurally cannot breach it. It also matches the
- * source's own `DEFAULT_MAX_CONCURRENT` and its slot budget's default, so
- * raising it here alone would be worse than rude: `OverpassSlotBudget.tryAcquire`
- * refuses rather than queues, and those refusals would surface as missing
- * geometry with no error. Raise the budget in the same change or not at all.
- */
-const FETCH_CONCURRENCY = 2;
-
-/**
- * A rejection that means "the caller moved on", as opposed to a failed tile.
- *
- * An abort must NOT become a `missingTiles` entry: the UI renders that as
- * "N tile(s) unavailable", which would report a superseded click as a data
- * failure the user cannot act on.
- */
-/**
- * Throws if the caller has moved on.
- *
- * A FUNCTION rather than three inline checks, and not only to remove the
- * duplication. Inline, TypeScript narrows `signal.aborted` to `false` after the
- * first check and then reports every later one as unreachable - but the signal
- * is aborted by the CALLER during an await, which no narrowing can see. Behind
- * a call boundary the checks stay honest.
- */
-function throwIfAborted(signal: AbortSignal | undefined): void {
-  if (signal?.aborted === true) {
-    throw new DOMException("Aborted", "AbortError");
-  }
-}
-
-function isAbortError(error: unknown): boolean {
-  return error instanceof Error && error.name === "AbortError";
-}
-
 export class DemoPipeline {
   private readonly source: OsmDataSource;
   private readonly index: AffordanceIndex;

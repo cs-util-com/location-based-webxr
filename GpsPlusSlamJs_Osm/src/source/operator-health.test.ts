@@ -214,3 +214,66 @@ describe("createOperatorHealth", () => {
     expect(seen["vk-maps"]).toBeUndefined();
   });
 });
+
+describe("operators the base weights do not name", () => {
+  /**
+   * WHY THIS MATTERS, and it was found by a PR reviewer rather than by these
+   * tests: `weightsFrom` iterated the BASE map, so an operator that had been
+   * observed but was absent from it never got a scaled entry at all.
+   *
+   * That is not a corner case. `operatorForUrl` makes an unknown host **its own
+   * operator**, `endpoints` is a documented option, and `takeWeighted` falls
+   * back to a neutral weight of 1 for anything the map omits. So a self-hosted
+   * endpoint that failed every request would keep weight 1 for the whole
+   * session while the named operators around it were demoted to a tenth of
+   * theirs - the mechanism steering traffic TOWARDS the broken host, which is
+   * the exact inverse of its purpose.
+   */
+  const NAMED = { fossgis: 4 };
+
+  it("demotes an observed operator that the base map omits", () => {
+    const health = createOperatorHealth();
+    for (let i = 0; i < 25; i++)
+      health.record("self.hosted.example", "failure");
+
+    const weights = health.weightsFrom(NAMED);
+    // The neutral fallback is 1, so anything below it is a demotion that
+    // `takeWeighted` will actually act on.
+    expect(weights["self.hosted.example"]).toBeLessThan(1);
+    expect(weights["self.hosted.example"]).toBeGreaterThan(0);
+  });
+
+  it("ranks an unnamed failing operator below a named healthy one", () => {
+    // The property that was inverted: the unnamed host kept 1 while `fossgis`
+    // was scaled down around it.
+    const health = createOperatorHealth();
+    for (let i = 0; i < 25; i++) {
+      health.record("self.hosted.example", "failure");
+      health.record("fossgis", "success");
+    }
+
+    const weights = health.weightsFrom(NAMED);
+    expect(weights["self.hosted.example"]).toBeLessThan(weights.fossgis ?? 0);
+  });
+
+  it("leaves an unobserved operator out, so the fallback still applies", () => {
+    // The mirror: `weightsFrom` must not invent entries for operators nobody
+    // has seen, or it would pin the fallback into the map and make a later
+    // change to `DEFAULT_OPERATOR_WEIGHT` silently ineffective.
+    const health = createOperatorHealth();
+    health.record("fossgis", "success");
+
+    expect(health.weightsFrom(NAMED)).toEqual({ fossgis: 4 });
+  });
+
+  it("keeps every base entry, observed or not", () => {
+    // Iterating the tallies must not drop the operators the caller named.
+    const health = createOperatorHealth();
+    health.record("vk-maps", "failure");
+
+    const weights = health.weightsFrom({ fossgis: 4, "private.coffee": 1 });
+    expect(weights.fossgis).toBe(4);
+    expect(weights["private.coffee"]).toBe(1);
+    expect(weights["vk-maps"]).toBeLessThan(1);
+  });
+});

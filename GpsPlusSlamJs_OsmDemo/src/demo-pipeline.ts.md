@@ -95,10 +95,18 @@ path, with no DOM in it.
     superseded during its single fetch would otherwise go on to score 19 chunks and
     931 cells for a position the user had already left. **A test found this** — see
     `demo-pipeline.test.ts`.
-  - The signal is deliberately NOT threaded into `fetchTile`, which would need an
-    `AbortSignal` through `OsmDataSource`, `CachingSource` and `OverpassSource` — a
-    package API change and its own piece of work. The request already in flight
-    completes; only the ones after it are skipped.
+  - **The signal IS threaded into `fetchTile`**, so a superseded run stops the
+    transfer rather than merely stopping before the next one. This section used
+    to say the opposite - that the API change through `OsmDataSource`,
+    `CachingSource` and `OverpassSource` was "its own piece of work" and that
+    the in-flight request completes. That change has since landed, the inline
+    comment saying so was removed with it, and this copy outlived the
+    constraint it described. Raised in review of PR #475.
+  - **A ring's missing tiles are fetched two at a time** (`FETCH_CONCURRENCY`),
+    so two tiles cost `max(t1, t2)` rather than `t1 + t2`. Two is the widest
+    pool that cannot breach Overpass's per-operator `Rate limit: 2`, and it
+    matches the source's own budget - raising it here alone would turn slot
+    refusals into missing geometry with no error.
 
 - **DOM-free and unit-tested, because the browser is a bad debugger.** Iteration
   8's value is a human judging a picture; getting the data to the picture is
