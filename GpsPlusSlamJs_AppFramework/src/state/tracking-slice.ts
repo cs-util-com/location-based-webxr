@@ -9,7 +9,7 @@
  * Every field of the manager class was pure logical state (Bucket A in the
  * survey), so it is modelled as a reducer + selectors. The transient
  * `lastRestartedPayload` field captures the LOST → TRACKING-with-reset
- * payload that the host fires as `onTrackingRestarted`; the host clears it
+ * payload that the host fires as `onRestarted`; the host clears it
  * via `clearLastRestartedPayload` after consuming the value (so consecutive
  * transitions never silently overwrite an unread payload).
  */
@@ -249,7 +249,7 @@ const trackingSlice = createSlice({
     },
 
     /**
-     * Host calls this after firing its `onTrackingRestarted` callback with
+     * Host calls this after firing its `onRestarted` callback with
      * the contents of `selectLastRestartedPayload`. Failure to call it would
      * leave a stale payload; the test matrix locks this in.
      */

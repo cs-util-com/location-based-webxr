@@ -148,7 +148,7 @@ npm run test:unit -- src/ui/summary-map.test.ts
 
 - [session-summary.ts](session-summary.ts) - Parent component that hosts the map
 - [index.html](../../index.html) - Contains the `#summary-map-container` element
-- [gps-event-markers.ts](../visualization/gps-event-markers.ts) - 3D visualization using same color scheme
+- [gps-event-markers.ts](../../../GpsPlusSlamJs_AppFramework/src/visualization/gps-event-markers.ts) - 3D visualization using same color scheme
 
 ## Dependencies
 

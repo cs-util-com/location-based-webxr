@@ -14,7 +14,7 @@ DEC-H3).
 - `rebuildZipWithEntries(zip: Blob, entries: readonly ZipEntryInput[], options?: RebuildZipOptions): Promise<Blob>`
   - Reads every file entry of `zip`, drops those whose path is in
     `entries`, and writes the rest plus `entries` through
-    `packFilesAsZip` (STORE mode).
+    `writeStoreZip` (STORE mode; `packFilesAsZip` is a different export of the same module and is never reached from here).
   - Throws `ZipPackagingError` when `zip` is not a readable archive, when a
     new path is unsafe or duplicated, or when writing fails. It NEVER
     returns the input: a caller about to upload the result must not be

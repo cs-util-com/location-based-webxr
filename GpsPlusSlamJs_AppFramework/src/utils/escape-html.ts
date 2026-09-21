@@ -5,7 +5,14 @@
  * second, WEAKER copy grew independently in `GpsPlusSlamJs_Landing` — four
  * characters instead of five. That is the failure mode a shared escaper exists
  * to prevent: two implementations mean two chances to miss a character class,
- * and the weaker one is only safe by accident of its current call site.
+ * and the weaker one was only safe by accident of its current call site.
+ *
+ * **That copy has since been brought up to all five characters** and now
+ * matches this one's behaviour exactly, so the landing site's declared
+ * exception in `duplicate-helpers.test.js` rests on its dependency budget
+ * alone, not on the escaping being equivalent-by-luck. The history is kept
+ * because it is the argument for the rule; the present tense it used to be
+ * written in was not true any more.
  *
  * THE ORIGINAL REASON IT WAS NEEDED, kept because it is the clearest statement
  * of when to reach for this. Leaflet's `bindTooltip`/`bindPopup` render their

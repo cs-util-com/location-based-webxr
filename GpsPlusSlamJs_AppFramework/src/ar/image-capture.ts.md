@@ -17,8 +17,8 @@ Captures periodic JPEG screenshots from the WebGL canvas during AR recording. Us
 | `FrameQualityVerdict`    | interface            | `{ accept, reason? }` returned by the injected `analyzeFrame` analyzer; structurally compatible with `image-quality.ts`'s `QualityVerdict`                                                                                            |
 | `ImageCaptureCallbacks`  | interface            | Hooks for pose, rotation, onCaptured, onCaptureFailed, onSuspiciousImage, captureFrame, **analyzeFrame** (off-thread blur/blackness verdict)                                                                                          |
 | `ImageCaptureManager`    | class                | Manages periodic capture lifecycle                                                                                                                                                                                                    |
-| `startImageCapture(…)`   | function             | Convenience factory: creates + starts an `ImageCaptureManager`                                                                                                                                                                        |
-| `stopImageCapture()`     | function             | Stops the active manager                                                                                                                                                                                                              |
+| `startImageCapture(…)`   | function             | **Exported by `ar/webxr-session.ts`, not this module.** Convenience factory: creates + starts an `ImageCaptureManager`                                                                                                                |
+| `stopImageCapture()`     | function             | **Exported by `ar/webxr-session.ts`, not this module.** Stops the active manager                                                                                                                                                      |
 
 ### ImageCaptureManager key methods
 

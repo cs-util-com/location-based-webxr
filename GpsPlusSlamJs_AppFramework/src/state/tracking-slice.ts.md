@@ -37,7 +37,7 @@ Redux Toolkit slice for the AR tracking-loss / tracking-restart state machine. R
   - **No zero substitution.** Writing `{alpha: 0, …}` for an absent reading makes an incomplete pair look complete, and the library's `resolveSensorPair` would then trust it — reinstating the bug one layer down.
   - **No `?? sensorOrientation` back-fill.** The reducer used to substitute the NEW reading for a missing prior one. Its effect was accidentally benign (equal sides cancel in `newSensor · inv(lastSensor)`), but it recorded a claim that the earlier snapshot held a value it never had. A recording that misreports a sensor is worse than one admitting it said nothing.
   - The library decides what an incomplete pair means; this slice's only job is to let the incompleteness survive.
-- The slice carries **no side effects** — the host (`ar/webxr-session.ts`) translates phase transitions into `onTrackingLost` / `onTrackingRestarted` / `onTrackingRecovered` callbacks via `store.subscribe`.
+- The slice carries **no side effects** — the host (`ar/webxr-session.ts`) translates phase transitions into `onLost` / `onRestarted` / `onRecovered` callbacks via `store.subscribe`.
 
 ## Examples
 

@@ -62,8 +62,25 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 /**
  * The canonical helpers, and the rule each one is held to.
  *
- * `shared` — exactly one definition in the whole repo, at `home`.
- * `perPackage` — at most one definition in any single package.
+ * `shared` — exactly one definition in THIS repo, at `home`.
+ * `perPackage` — at most one definition in any single package of THIS repo.
+ *
+ * **"This repo" is `location-based-webxr` ONLY, and the distinction is not
+ * pedantic.** `sourceFiles()` runs `git ls-files` with `cwd: repoRoot`, which
+ * is this checkout — so nothing in the sibling `gps-plus-slam` root is scanned,
+ * ever. That root holds the core library and the investigation package, and it
+ * is where the rules below were being broken without anything going red. Found
+ * 2026-09-22, all in `GpsPlusSlamJs_Investigation`: five hand-rolled
+ * `escapeHtml` copies (rule `shared`), seven `median` definitions in that one
+ * package (rule `perPackage`), and an unacknowledged `weightedMedian`. Only the
+ * escapers were folded — they carry a character class, which DEC-H3 names as
+ * shared behaviour; the medians are a separate judgement about what "the"
+ * median should even mean per call site.
+ *
+ * This docblock used to say "the whole repo", which a reader in a two-root
+ * workspace naturally reads as "the workspace". A guard that over-claims its
+ * scope is worse than a narrow one, because the narrow one does not get treated
+ * as the registry of what is already unified.
  */
 const CANONICAL = [
   {

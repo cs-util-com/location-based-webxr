@@ -10,9 +10,13 @@ slices and middleware plug in via `extraReducers` / `extraMiddleware`.
 
 Introduced in **Iter 1** of the
 [AppFramework / RecorderApp boundary migration plan](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-03-appframework-vs-recorderapp-boundary-analysis.md).
-Replaces the recorder-flavoured `createRecorderStore` in
-[store.ts](store.ts) for non-recorder consumers; the recorder will keep a
-thin `createRecorderStore` that calls this factory with its own extras.
+Replaced the recorder-flavoured `createRecorderStore` for non-recorder
+consumers. That migration is DONE: the recorder keeps its own thin
+`createRecorderStore`, which calls this factory with its own extras, and it
+now lives at
+[the recorder's state/recorder-store.ts](../../../GpsPlusSlamJs_RecorderApp/src/state/recorder-store.ts).
+(This line pointed at a framework `store.ts` that no longer exists, and said
+"will keep" about something that already happened.)
 
 ## Public API
 
