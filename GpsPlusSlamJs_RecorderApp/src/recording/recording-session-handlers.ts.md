@@ -12,7 +12,7 @@ Encapsulates recording-session lifecycle state and event handlers, extracted fro
 | -------------------------- | --------- | ----------------------------------------------------------------------- |
 | `RecordingSessionDeps`     | Interface | Dependency bag for the factory (store access, options, callbacks, etc.) |
 | `RecordingSessionHandlers` | Interface | Returned handle with lifecycle methods and tracker proxies              |
-| `SessionRuntime`           | Interface | Everything ONE recording owns; held per factory instance                |
+| `SessionRuntime`           | Interface | Re-exported from [session-runtime.ts](./session-runtime.ts.md)          |
 
 ### Factory
 
@@ -60,6 +60,27 @@ here — they are AR-scoped and store-swap-following via main's `storeRef`
 ([ui/ref-point-view-wiring.ts](../ui/ref-point-view-wiring.ts.md), round-3 feedback
 2026-07-05). The `deps.setStore(newStore)` call in `handleStartRecording` is
 what triggers their re-wire.
+
+## What lives elsewhere (2026-09-22)
+
+The stop flow was extracted; this module keeps the handlers and the wiring.
+
+- [`stop-recording.ts`](./stop-recording.ts.md) - `performStop` (170 lines, nine
+  ordered steps), `stopLiveFeeds`, `stopAbsCompassHudUpdates`.
+  **`handleStopRecording` stayed here**: it is the re-entrancy guard and the
+  thing that un-bricks the UI on a throw, and `stopInProgress` must not travel.
+- [`zip-contributors.ts`](./zip-contributors.ts.md) - `buildZipContributors`,
+  which has two callers far apart in the lifecycle (the crash-safety sync armed
+  at start, and the final export at stop).
+- [`session-runtime.ts`](./session-runtime.ts.md) - the `SessionRuntime` shape
+  and `FALLBACK_SCENARIO`, so the stop flow does not have to import its caller.
+
+The extracted modules take NARROW deps interfaces (`StopRecordingDeps`,
+`ZipContributorDeps`) rather than the whole `RecordingSessionDeps`, which is
+what keeps the dependency one-way. `RecordingSessionDeps` satisfies both
+structurally, so the factory passes `deps` unchanged.
+
+The file went from 939 lines to 682.
 
 ## Invariants & Assumptions
 
