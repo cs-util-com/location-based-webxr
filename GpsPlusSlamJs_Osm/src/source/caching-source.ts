@@ -9,7 +9,11 @@
  * @see caching-source.ts.md
  */
 
-import type { OsmDataSource, OsmTileResult } from "./osm-data-source.js";
+import type {
+  FetchTileOptions,
+  OsmDataSource,
+  OsmTileResult,
+} from "./osm-data-source.js";
 import { elapsedMs, joinedTimings } from "./osm-data-source.js";
 import type { OsmBlobStore } from "./osm-blob-store.js";
 import { OVERPASS_SCHEMA_VERSION } from "./overpass-query.js";
@@ -43,6 +47,13 @@ export interface EnsureOptions {
    * per call, and `fetchedAt` is surfaced so they can decide.
    */
   readonly maxAgeMs?: number;
+  /**
+   * Passed straight through to the inner source - see
+   * {@link FetchTileOptions.speculative}. Caching itself does not care: a
+   * speculative tile is stored and served exactly like any other, which is the
+   * whole point of warming one.
+   */
+  readonly speculative?: boolean;
 }
 
 /**
@@ -110,9 +121,11 @@ export class CachingSource implements OsmDataSource {
     return `osm/v${this.schemaVersion}/${tile}`;
   }
 
-  fetchTile(tile: string, signal?: AbortSignal): Promise<OsmTileResult> {
+  fetchTile(tile: string, options?: FetchTileOptions): Promise<OsmTileResult> {
+    const signal = options?.signal;
     return this.ensureTile(tile, {
       ...(signal !== undefined ? { signal } : {}),
+      ...(options?.speculative === true ? { speculative: true } : {}),
     });
   }
 
@@ -166,7 +179,13 @@ export class CachingSource implements OsmDataSource {
     const result = await this.inFlight.join(
       tile,
       (dedupSignal) =>
-        this.fetchAndStore(tile, cached, read.probeMs, dedupSignal),
+        this.fetchAndStore(
+          tile,
+          cached,
+          read.probeMs,
+          dedupSignal,
+          options.speculative === true,
+        ),
       options.signal,
     );
     if (!joined) return result;
@@ -203,9 +222,17 @@ export class CachingSource implements OsmDataSource {
     cached: OsmTileResult | undefined,
     probeMs: number,
     signal: AbortSignal,
+    speculative: boolean,
   ): Promise<OsmTileResult> {
     return this.inner
-      .fetchTile(tile, signal)
+      .fetchTile(tile, {
+        signal,
+        // FORWARDED RATHER THAN DROPPED. This decorator is the only thing
+        // between the prefetch queue and the Overpass client in the demo's
+        // wiring, so swallowing the flag here would silently un-exempt every
+        // background ring warm and nothing would fail.
+        ...(speculative ? { speculative: true } : {}),
+      })
       .then(async (result) => {
         // STRIPPED BEFORE PERSISTING, and this is the single most consequential
         // line in the file for the click-path breakdown. `timings` describes

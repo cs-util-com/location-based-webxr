@@ -207,12 +207,44 @@ export interface OsmDataSource {
    * Fetches every OSM feature intersecting the given fetch tile.
    *
    * @param tile - a `FETCH_RES` H3 cell id (res 7 as of 2026-07-28).
-   * @param signal - aborts in-flight work when the user leaves the area.
+   * @param options - see {@link FetchTileOptions}. Took a bare `AbortSignal`
+   *   until 2026-09-22; an implementation that ignores its second parameter is
+   *   unaffected, which is most of them.
    * @throws when the tile genuinely cannot be produced. Callers that must
    *   survive (the movement trigger) catch; callers that want to know (an
    *   explicit prefetch) propagate.
    */
-  fetchTile(tile: string, signal?: AbortSignal): Promise<OsmTileResult>;
+  fetchTile(tile: string, options?: FetchTileOptions): Promise<OsmTileResult>;
+}
+
+/**
+ * What a caller can say about ONE tile fetch.
+ *
+ * WHY THIS REPLACED A BARE `AbortSignal`. A source cannot otherwise tell a
+ * tile somebody is WAITING for from one fetched on speculation, and since
+ * 2026-09-22 that difference costs real requests: a cold tile the user is
+ * waiting on is raced at two operators, which is worth roughly twice the
+ * requests because it took tiles served inside the deadline from 4 of 9 to 7
+ * of 9. Nothing is waiting on a speculative fetch, so the same doubling there
+ * is pure load on infrastructure that is donated.
+ *
+ * An options object rather than a positional flag: `fetchTile(tile, signal,
+ * true)` is unreadable at a call site, and the signal had to move in here
+ * anyway for the two to travel together.
+ */
+export interface FetchTileOptions {
+  /** Aborts in-flight work when the user leaves the area. */
+  readonly signal?: AbortSignal | undefined;
+  /**
+   * True when NOBODY is waiting on this tile - a background ring warm.
+   *
+   * Defaults to false, so every existing caller and implementation keeps the
+   * behaviour it had. Only the prefetch queue sets it.
+   *
+   * It is a HINT about urgency, never about correctness: a speculative fetch
+   * returns the same tile by the same route, and a source is free to ignore it.
+   */
+  readonly speculative?: boolean | undefined;
 }
 
 /** The attribution every OSM-derived source owes at minimum. */

@@ -699,7 +699,7 @@ export class DemoPipeline {
         try {
           // THREADED INTO THE REQUEST ITSELF, so a superseded run stops the
           // transfer rather than merely stopping before the next one.
-          outcomes.set(tile, await this.source.fetchTile(tile, signal));
+          outcomes.set(tile, await this.source.fetchTile(tile, { signal }));
           mine += Math.max(0, this.clock() - tileStart);
         } catch (error) {
           mine += Math.max(0, this.clock() - tileStart);
@@ -1143,7 +1143,7 @@ export class DemoPipeline {
         throw new DOMException("Aborted", "AbortError");
       }
       try {
-        this.index.acceptTile(await this.source.fetchTile(missing, signal));
+        this.index.acceptTile(await this.source.fetchTile(missing, { signal }));
         this.loaded.add(missing);
         // COUNTED ON SUCCESS ONLY. `missingTiles.length` would report tiles
         // that failed to download as work done, and a failed tile is the case

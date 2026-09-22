@@ -696,8 +696,15 @@ async function handle<K extends WorkerCallKind>(
         // OPFS blob store the next foreground fetch reads from. A separate
         // source would warm a cache nobody consults.
         prefetch: createPrefetchQueue({
+          // WHERE THE EXEMPTION IS DECLARED. Everything this queue fetches
+          // is a background ring warm nobody is waiting on, so the flag
+          // belongs to the WIRING rather than inside the queue - the queue
+          // has no opinion about racing and should not grow one.
           fetchTile: (tile, prefetchSignal) =>
-            source.fetchTile(tile, prefetchSignal),
+            source.fetchTile(tile, {
+              signal: prefetchSignal,
+              speculative: true,
+            }),
           isLoaded: (tile) => pipeline.hasTile(tile),
         }),
         terrainField,

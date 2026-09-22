@@ -92,8 +92,8 @@ and the home of every item of the plan's §5.3 network discipline.
     Making the gate WEIGHTED instead would deadlock any consumer who set
     `maxConcurrent: 1`, because a weight of two can never be satisfied.
 
-- **A COLD TILE IS RACED at two distinct operators**, first answer wins, loser
-  cancelled. Measured 2026-09-21: within the shipped 45 s deadline one attempt
+- **A COLD TILE THE CALLER IS WAITING FOR IS RACED at two distinct
+  operators**, first answer wins, loser cancelled. Measured 2026-09-21: within the shipped 45 s deadline one attempt
   at a time served 4 of 9 tiles at a 32.2 s median; the race served 7 of 9 at
   27.0 s. **Most of that is the success rate, not the latency** - in 3 of 9
   races the first-drawn operator failed outright.
@@ -113,6 +113,14 @@ and the home of every item of the plan's §5.3 network discipline.
   - Covered by a test that sweeps the arrival across the whole window rather
     than guessing one offset; on the released-slot version only offset 7 of 10
     tripped it.
+  - **A SPECULATIVE tile is NOT raced** (`FetchTileOptions.speculative`,
+    2026-09-22). The whole case for spending a second request is that somebody
+    is sitting in front of a wait; nobody is waiting on a background ring warm,
+    and if it fails the neighbour is merely not warm while the fetch the user
+    eventually makes is itself raced. The demo's ring warm went from 14
+    requests to 7 - an e2e counting requests is what found the cost, before
+    anyone read this code. The spare concurrency unit stays free for a
+    foreground tile as well, which is the same argument in resource terms.
 - **`userAgent` does not reach the server from a browser.** `User-Agent` and
   `Referer` are on the fetch spec's forbidden-request-header list, so the
   browser drops both silently — no error, no warning. The option still does its

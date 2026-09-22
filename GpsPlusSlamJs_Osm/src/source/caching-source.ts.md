@@ -53,6 +53,13 @@ Cache-first decorator around any `OsmDataSource`, backed by an injected
     not share an `AbortSignal`. The inner source therefore receives an internal
     signal rather than the caller's — the tests assert cancellation still
     reaches it, and that one caller's abort leaves the other's tile alone.
+- **`speculative` is FORWARDED, not swallowed** (2026-09-22). Caching itself
+  has no opinion - a speculative tile is stored and served exactly like any
+  other, which is the whole point of warming one - but this decorator is the
+  only thing between the demo's prefetch queue and the Overpass client, so
+  dropping the flag here would silently un-exempt every background ring warm
+  and no test would fail. It travels `fetchTile` -> `EnsureOptions` ->
+  `fetchAndStore` -> the inner source.
 - **Eviction is never automatic.** Only the host app knows its storage budget
   and which areas the user cares about, so the library exposes
   `listCachedTiles`/`evictTile` and nothing more.

@@ -183,7 +183,9 @@ function fetchOne(
       ...(options.maxAgeMs !== undefined ? { maxAgeMs: options.maxAgeMs } : {}),
     });
   }
-  return source.fetchTile(tile, options.signal);
+  // NOT speculative. An area load is an explicit request whose result the
+  // caller is waiting on - see `FetchTileOptions`.
+  return source.fetchTile(tile, { signal: options.signal });
 }
 
 /**

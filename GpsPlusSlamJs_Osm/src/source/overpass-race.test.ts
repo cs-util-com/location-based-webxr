@@ -189,3 +189,80 @@ describe("what the race actually does", () => {
     expect(result.tile).toBe(TILE);
   });
 });
+
+describe("a speculative fetch is exempt from racing", () => {
+  it("asks ONE operator for a background warm and TWO for the same tile in the foreground", async () => {
+    // THE CONTRAST IS THE TEST, which is why both calls live in one case: an
+    // assertion that a speculative fetch made one request would also pass if
+    // racing stopped working altogether, and that is the failure most likely
+    // to happen by accident.
+    //
+    // WHY THE EXEMPTION. Racing is worth roughly twice the requests because it
+    // took tiles served inside the 45 s deadline from 4 of 9 to 7 of 9 - a
+    // statement about a user sitting in front of a wait. The prefetch queue
+    // warms neighbouring rings that nobody has asked for; if one fails the
+    // neighbour is simply not warm, and the fetch the user eventually makes is
+    // itself raced. An e2e counting requests found the cost first: a ring warm
+    // went from 7 requests to 14.
+    const fetchImpl = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse(OK_BODY)));
+    const source = makeSource(fetchImpl, { maxConcurrent: 2 });
+
+    await source.fetchTile(TILE, { speculative: true });
+    const speculativeCalls = fetchImpl.mock.calls.length;
+
+    // A DIFFERENT TILE, because the same one would be served from the inner
+    // dedup/in-flight path rather than fetched again.
+    await source.fetchTile(latLngToCell(48.137, 11.575, FETCH_RES));
+    const foregroundCalls = fetchImpl.mock.calls.length - speculativeCalls;
+
+    expect(speculativeCalls).toBe(1);
+    expect(foregroundCalls).toBe(2);
+  });
+
+  it("still returns the tile it was asked for", async () => {
+    // The flag is a hint about URGENCY, never about correctness. A prefetch
+    // that came back empty-handed would warm nothing, and the queue would have
+    // spent a slot for it.
+    const fetchImpl = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse(OK_BODY)));
+    const source = makeSource(fetchImpl, { maxConcurrent: 2 });
+
+    const result = await source.fetchTile(TILE, { speculative: true });
+
+    expect(result.tile).toBe(TILE);
+  });
+
+  it("leaves the spare concurrency unit free for a foreground tile", async () => {
+    // The POINT of the exemption, stated as a resource claim rather than as a
+    // request count: a background warm that took the second unit would make a
+    // user's click wait behind it. `maxConcurrent: 2` here means the warm gets
+    // one and the click gets the other, concurrently.
+    let concurrent = 0;
+    let peak = 0;
+    const fetchImpl = vi.fn().mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          concurrent++;
+          peak = Math.max(peak, concurrent);
+          setTimeout(() => {
+            concurrent--;
+            resolve(jsonResponse(OK_BODY));
+          }, 0);
+        }),
+    );
+    const source = makeSource(fetchImpl, { maxConcurrent: 2 });
+
+    await Promise.all([
+      source.fetchTile(TILE, { speculative: true }),
+      source.fetchTile(latLngToCell(48.137, 11.575, FETCH_RES), {
+        speculative: true,
+      }),
+    ]);
+
+    expect(peak).toBe(2);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+});

@@ -654,9 +654,9 @@ describe("AbortSignal support, end to end", () => {
     const controller = new AbortController();
     controller.abort();
 
-    await expect(source.fetchTile(TILE, controller.signal)).rejects.toThrow(
-      /aborted/i,
-    );
+    await expect(
+      source.fetchTile(TILE, { signal: controller.signal }),
+    ).rejects.toThrow(/aborted/i);
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
@@ -677,7 +677,7 @@ describe("AbortSignal support, end to end", () => {
     const { source } = makeSource(fetchImpl);
     const controller = new AbortController();
 
-    const pending = source.fetchTile(TILE, controller.signal);
+    const pending = source.fetchTile(TILE, { signal: controller.signal });
     pending.catch(() => undefined); // observed below; keep Node quiet meanwhile
     await Promise.resolve();
 
@@ -1142,7 +1142,7 @@ describe("per-attempt transport deadline", () => {
     );
     const { source } = makeSource(fetchImpl, { requestTimeoutMs: 60_000 });
 
-    const pending = source.fetchTile(TILE, controller.signal);
+    const pending = source.fetchTile(TILE, { signal: controller.signal });
     controller.abort();
 
     await expect(pending).rejects.toMatchObject({ name: "AbortError" });
@@ -1303,7 +1303,9 @@ describe("the draw learns which operators are actually serving", () => {
     });
     const { source } = makeSource(fetchImpl, { endpoints: [FOSSGIS, VK] });
 
-    await expect(source.fetchTile(TILE, controller.signal)).rejects.toThrow();
+    await expect(
+      source.fetchTile(TILE, { signal: controller.signal }),
+    ).rejects.toThrow();
 
     fetchImpl.mockClear();
     fetchImpl.mockImplementation(() => Promise.resolve(jsonResponse(OK_BODY)));

@@ -15,7 +15,11 @@
  * @see overpass-source.ts.md
  */
 
-import type { OsmDataSource, OsmTileResult } from "./osm-data-source.js";
+import type {
+  FetchTileOptions,
+  OsmDataSource,
+  OsmTileResult,
+} from "./osm-data-source.js";
 import {
   OSM_ATTRIBUTION,
   elapsedMs,
@@ -455,6 +459,17 @@ export class RateLimitedError extends Error {
   }
 }
 
+/**
+ * What a racing tile borrowed, so it can give back exactly that.
+ *
+ * `slot` implies `concurrency`: the shared budget is only asked once this
+ * source's own gate has said yes.
+ */
+interface RacePermits {
+  readonly concurrency: boolean;
+  readonly slot: boolean;
+}
+
 export class OverpassSource implements OsmDataSource {
   readonly attribution = OSM_ATTRIBUTION;
   readonly sourceId = "overpass";
@@ -558,7 +573,12 @@ export class OverpassSource implements OsmDataSource {
     this.poolOperators = [...new Set(this.endpoints.map(operatorForUrl))];
   }
 
-  async fetchTile(tile: string, signal?: AbortSignal): Promise<OsmTileResult> {
+  async fetchTile(
+    tile: string,
+    options?: FetchTileOptions,
+  ): Promise<OsmTileResult> {
+    const signal = options?.signal;
+    const speculative = options?.speculative === true;
     // READ BEFORE JOINING, because joining is what makes this caller a joiner.
     const joined = this.inFlight.has(tile);
     if (joined) this.stats.deduplicated++;
@@ -571,7 +591,7 @@ export class OverpassSource implements OsmDataSource {
       tile,
       (dedupSignal) =>
         this.withConcurrencyLimit((slotWaitMs) =>
-          this.fetchTileUncached(tile, slotWaitMs, dedupSignal),
+          this.fetchTileUncached(tile, slotWaitMs, dedupSignal, speculative),
         ),
       signal,
     );
@@ -585,7 +605,8 @@ export class OverpassSource implements OsmDataSource {
   private async fetchTileUncached(
     tile: string,
     slotWaitMs: number,
-    signal?: AbortSignal,
+    signal: AbortSignal | undefined,
+    speculative: boolean,
   ): Promise<OsmTileResult> {
     // Take a slot BEFORE building anything. Refusing here is the whole point of
     // the budget: a request not sent cannot be rate-limited, and the caller is
@@ -606,7 +627,12 @@ export class OverpassSource implements OsmDataSource {
       );
     }
     try {
-      return await this.fetchTileWithSlot(tile, slotWaitMs, signal);
+      return await this.fetchTileWithSlot(
+        tile,
+        slotWaitMs,
+        signal,
+        speculative,
+      );
     } finally {
       this.budget.release();
     }
@@ -615,7 +641,8 @@ export class OverpassSource implements OsmDataSource {
   private async fetchTileWithSlot(
     tile: string,
     slotWaitMs: number,
-    signal?: AbortSignal,
+    signal: AbortSignal | undefined,
+    speculative: boolean,
   ): Promise<OsmTileResult> {
     const query = buildTileQuery(
       cellToBoundingBox(tile),
@@ -624,25 +651,8 @@ export class OverpassSource implements OsmDataSource {
     );
 
     let lastError: unknown;
-    // THE RACE'S TWO PERMISSIONS (M3). It needs a second unit of BOTH budgets,
-    // and neither refusal is an error:
-    //
-    // - `tryTakeExtraSlot` is this source's own concurrency gate, which counts
-    //   REQUESTS in flight. Without this the race would quietly double what
-    //   `maxConcurrent` promises — a client configured for two in-flight
-    //   requests would make four — and that number was sized against Overpass's
-    //   `Rate limit: 2`. A guard that exists to stop this client getting an
-    //   operator's whole user base blocked is not one to route around.
-    // - `budget.tryAcquire` is the SHARED slot budget across sources, which
-    //   counts globally for the same reason.
-    //
-    // A refusal on either means this tile runs one attempt at a time, i.e.
-    // exactly the behaviour that shipped before racing existed. `RateLimitedError`
-    // therefore keeps meaning "there is nowhere to go": it is raised by the
-    // FIRST acquire in `fetchTileUncached`, never by these.
-    const raceConcurrency = this.tryTakeExtraSlot();
-    const raceSlot =
-      raceConcurrency && this.budget.tryAcquire(this.poolOperators);
+    const permits = this.acquireRacePermits(speculative);
+    const raceSlot = permits.slot;
     try {
       // TRANSPORT IS CLOCKED AROUND THE WHOLE LOOP, backoff sleeps included, and
       // `attempts` is reported next to it so the two readings that produce the
@@ -745,9 +755,58 @@ export class OverpassSource implements OsmDataSource {
         `Overpass fetch failed for tile ${tile} after ${this.maxRetries + 1} attempt(s): ${describe(lastError)}`,
       );
     } finally {
-      if (raceSlot) this.budget.release();
-      if (raceConcurrency) this.releaseExtraSlot();
+      this.releaseRacePermits(permits);
     }
+  }
+
+  /**
+   * Decides whether this tile may race, and takes what a race costs.
+   *
+   * THE RACE'S TWO PERMISSIONS (M3). It needs a second unit of BOTH budgets,
+   * and neither refusal is an error:
+   *
+   * - {@link tryTakeExtraSlot} is this source's own concurrency gate, which
+   *   counts REQUESTS in flight. Without it the race would quietly double what
+   *   `maxConcurrent` promises — a client configured for two in-flight requests
+   *   would make four — and that number was sized against Overpass's
+   *   `Rate limit: 2`. A guard that exists to stop this client getting an
+   *   operator's whole user base blocked is not one to route around.
+   * - `budget.tryAcquire` is the SHARED slot budget across sources, which
+   *   counts globally for the same reason.
+   *
+   * A refusal on either means this tile runs one attempt at a time, i.e.
+   * exactly the behaviour that shipped before racing existed. `RateLimitedError`
+   * therefore keeps meaning "there is nowhere to go": it is raised by the FIRST
+   * acquire in {@link fetchTileUncached}, never by these.
+   *
+   * **NOBODY IS WAITING ON A SPECULATIVE TILE, so it is not raced.** Racing is
+   * worth roughly twice the requests because it took tiles served inside the
+   * 45 s deadline from 4 of 9 to 7 of 9 — a statement about a user sitting in
+   * front of a wait. A background ring warm has no deadline to miss: if it
+   * fails the neighbour is simply not warm, and the fetch the user eventually
+   * makes is itself raced. Doubling it would be pure load on infrastructure
+   * that is donated, which an e2e counting requests found before anyone read
+   * this code (7 per ring warm became 14). Declining also leaves the spare
+   * concurrency unit free for a tile somebody IS waiting for.
+   *
+   * PAIRED WITH {@link releaseRacePermits}, which is the reason both halves
+   * are methods rather than four inline conditions: a race takes up to two
+   * things and returns exactly what it took, and that is easier to keep true
+   * when acquire and release sit next to each other.
+   */
+  private acquireRacePermits(speculative: boolean): RacePermits {
+    if (speculative) return { concurrency: false, slot: false };
+    const concurrency = this.tryTakeExtraSlot();
+    return {
+      concurrency,
+      slot: concurrency && this.budget.tryAcquire(this.poolOperators),
+    };
+  }
+
+  /** Returns whatever {@link acquireRacePermits} took, and nothing else. */
+  private releaseRacePermits(permits: RacePermits): void {
+    if (permits.slot) this.budget.release();
+    if (permits.concurrency) this.releaseExtraSlot();
   }
 
   /**
