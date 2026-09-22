@@ -229,7 +229,7 @@ export function poiMarkerPosition(
   return [marker.position.x, marker.groundHeightM + liftM, -marker.position.y];
 }
 
-/**
+/*
  * The FALLBACK marker for the long tail — now built in the package (DEC-S19).
  *
  * IT WAS A 6 m ORANGE CONE HERE, and the symbol port is what made that wrong.
@@ -353,20 +353,18 @@ function unitTreeGeometries(): Record<TreeVariant, THREE.BufferGeometry> {
 
 const TREE_GEOMETRY = unitTreeGeometries();
 
-/** ONE material for every tree, shared like the geometries. */
+/**
+ * ONE material for every tree, shared like the geometries.
+ *
+ * Shared, so `clear()` must not dispose it — see the note in
+ * `building-view.ts`. That sentence used to sit on a pin geometry/material
+ * pair this file no longer has; the tree pair is what it is about now.
+ */
 const TREE_MATERIAL = new THREE.MeshStandardMaterial({
   color: 0x3f7d4a,
   flatShading: true,
   roughness: 0.8,
 });
-
-/**
- * ONE geometry and ONE material, SHARED by every pin.
- *
- * Markers are numerous and identical, which is the whole reason the package emits
- * placements rather than geometry. Sharing here is also why `clear()` must not
- * dispose them — see the note in `building-view.ts`.
- */
 
 /**
  * Triangles across a layer's chunks (W20).

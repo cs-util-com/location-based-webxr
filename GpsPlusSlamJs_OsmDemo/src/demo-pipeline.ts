@@ -1063,17 +1063,6 @@ export class DemoPipeline {
     const deriveStart = nowMs();
 
     /**
-     * The cells a tile's own batch-0 candidates could climb over.
-     *
-     * `requireLoaded` ABANDONS on the first cell whose fetch tile is missing
-     * and returns `undefined`. Building the whole array and then testing it
-     * would be correct and wasteful in exactly the common case: after this
-     * gate, most neighbours are rejected, and a reach that leaves its fetch
-     * tile usually does so on an early cell. That waste would land inside
-     * `deriveMs`, which is the number W7's benchmark is read off — so the
-     * measurement would be reporting work the search did not need.
-     */
-    /**
      * EXHAUSTIVE REACH: one res-13 seed per res-11 chunk of the tile.
      *
      * 343 seeds rather than the ~1 270 cells ten candidate discs cover, because
@@ -1099,6 +1088,17 @@ export class DemoPipeline {
       return cells;
     };
 
+    /**
+     * The cells a tile's own batch-0 candidates could climb over.
+     *
+     * `requireLoaded` ABANDONS on the first cell whose fetch tile is missing
+     * and returns `undefined`. Building the whole array and then testing it
+     * would be correct and wasteful in exactly the common case: after this
+     * gate, most neighbours are rejected, and a reach that leaves its fetch
+     * tile usually does so on an early cell. That waste would land inside
+     * `deriveMs`, which is the number W7's benchmark is read off — so the
+     * measurement would be reporting work the search did not need.
+     */
     const climbReachOf = (
       each: string,
       requireLoaded = false,

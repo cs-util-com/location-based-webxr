@@ -1320,14 +1320,6 @@ describe("scoresByCell stays exactly in step with the chunk store", () => {
     chunks.flatMap((chunk) => cellToChildren(chunk, AFFORDANCE_RES));
 
   /**
-   * The invariant, checked through the public surface only.
-   *
-   * Both directions matter and they fail differently: a map with a STALE entry
-   * shows a colour on ground that is no longer scored (an evicted chunk that
-   * kept its cells), and a map MISSING an entry drops ground that is scored (a
-   * newly scored chunk whose cells never landed).
-   */
-  /**
    * PRIMES THE MAP, and without this most of these tests prove nothing.
    *
    * The map is built LAZILY on the first `scoresByCell()` call and maintained
@@ -1366,6 +1358,14 @@ describe("scoresByCell stays exactly in step with the chunk store", () => {
     }
   }
 
+  /**
+   * The invariant, checked through the public surface only.
+   *
+   * Both directions matter and they fail differently: a map with a STALE entry
+   * shows a colour on ground that is no longer scored (an evicted chunk that
+   * kept its cells), and a map MISSING an entry drops ground that is scored (a
+   * newly scored chunk whose cells never landed).
+   */
   it("agrees after a first scoring pass", () => {
     const index = prime(newIndex());
     const result = index.update(HOME);

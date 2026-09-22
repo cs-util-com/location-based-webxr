@@ -360,15 +360,6 @@ function isRefusal(result) {
 const SECOND_CITY = { lat: 49.4122, lng: 8.7101, label: "heidelberg-altstadt" };
 
 /**
- * W1's full sweep (DEC-R5-1, DEC-R5-10).
- *
- * The rules that bound the load all live in `benchmark-matrix.mjs` and are
- * unit-tested; this function is the I/O around them. What it adds on top is the
- * two things only a running process can do: **write after every cell** so three
- * unattended hours cannot be lost to a laptop sleep, and **stop cleanly at a
- * runtime budget** rather than at the end of the matrix.
- */
-/**
  * Lets a dropped host back in once its operator has been quiet (F29).
  *
  * RE-ADMISSION IS THE POINT, not the decay on its own. A decaying counter beside
@@ -404,6 +395,15 @@ function keysForCell(cell, keys) {
   return cell.keyCount === undefined ? keys : keys.slice(0, cell.keyCount);
 }
 
+/**
+ * W1's full sweep (DEC-R5-1, DEC-R5-10).
+ *
+ * The rules that bound the load all live in `benchmark-matrix.mjs` and are
+ * unit-tested; this function is the I/O around them. What it adds on top is the
+ * two things only a running process can do: **write after every cell** so three
+ * unattended hours cannot be lost to a laptop sleep, and **stop cleanly at a
+ * runtime budget** rather than at the end of the matrix.
+ */
 async function runMatrix() {
   const centre = {
     lat: arg("lat", DEFAULT_CENTRE.lat),

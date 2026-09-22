@@ -1396,28 +1396,6 @@ export class OverpassSource implements OsmDataSource {
   }
 
   /**
-   * Counting semaphore that HANDS THE SLOT OVER rather than releasing it.
-   *
-   * The distinction is the whole correctness argument. A waiter resumes in a
-   * continuation, one microtask after it is woken, so a semaphore that does
-   * `active--; queue.shift()?.()` leaves a window in which `active` reads one
-   * below the cap while a woken waiter is already committed to running. A
-   * caller arriving in that window takes the slot, the waiter then takes it
-   * too, and the cap is exceeded — against donated infrastructure that answers
-   * that with a 429, which this class treats as an expensive event.
-   *
-   * So a releaser with someone queued never decrements: it passes its own slot
-   * on, already counted, and only the last one out turns the light off.
-   */
-  /**
-   * @param task receives how long it waited for its slot, in ms.
-   *   **Passed down rather than measured inside** because the wait is a real
-   *   stage of the click the user is waiting through: folded into
-   *   `transportMs` it reads as a slow server, and dropped it reads as time
-   *   that never happened. The plan found it the same way it found the terrain
-   *   join — by reading the handler, not from the stage list.
-   */
-  /**
    * Takes a SECOND unit of this source's concurrency, or reports that there is
    * none — for the racing pair, which is two requests inside one tile.
    *
@@ -1456,6 +1434,27 @@ export class OverpassSource implements OsmDataSource {
     else next();
   }
 
+  /**
+   * Counting semaphore that HANDS THE SLOT OVER rather than releasing it.
+   *
+   * The distinction is the whole correctness argument. A waiter resumes in a
+   * continuation, one microtask after it is woken, so a semaphore that does
+   * `active--; queue.shift()?.()` leaves a window in which `active` reads one
+   * below the cap while a woken waiter is already committed to running. A
+   * caller arriving in that window takes the slot, the waiter then takes it
+   * too, and the cap is exceeded — against donated infrastructure that answers
+   * that with a 429, which this class treats as an expensive event.
+   *
+   * So a releaser with someone queued never decrements: it passes its own slot
+   * on, already counted, and only the last one out turns the light off.
+   *
+   * @param task receives how long it waited for its slot, in ms.
+   *   **Passed down rather than measured inside** because the wait is a real
+   *   stage of the click the user is waiting through: folded into
+   *   `transportMs` it reads as a slow server, and dropped it reads as time
+   *   that never happened. The plan found it the same way it found the terrain
+   *   join — by reading the handler, not from the stage list.
+   */
   private async withConcurrencyLimit<T>(
     task: (slotWaitMs: number) => Promise<T>,
   ): Promise<T> {

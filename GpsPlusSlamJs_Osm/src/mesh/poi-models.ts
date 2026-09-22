@@ -108,7 +108,7 @@ export interface PoiModel {
  */
 const STONE_MID = 0x6e7b85;
 
-/**
+/*
  * The house accents (`MUSTARD`, `COPPER`, `WATER_BRIGHT`) were REMOVED when the
  * gallery verdict was adopted (DEC-R7b-2).
  *

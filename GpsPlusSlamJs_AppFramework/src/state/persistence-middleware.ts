@@ -166,6 +166,17 @@ function isInPersistableSession(
 // ---------------------------------------------------------------------------
 
 /**
+ * The persistence middleware plus its drain hook: `flushPendingWrites`
+ * resolves once every queued action write has settled. The stop flow MUST
+ * await it before anything reads the session's `actions/` (final sync, ZIP
+ * export) — the queue is async, so a write enqueued moments before Stop
+ * could otherwise land after the export enumerated the directory.
+ */
+export type PersistenceMiddleware = Middleware & {
+  flushPendingWrites: () => Promise<void>;
+};
+
+/**
  * Create a Redux middleware that persists qualifying actions to storage
  * during active recording sessions.
  *
@@ -178,17 +189,6 @@ function isInPersistableSession(
  * - Uses 1-based indexing for action files (000001.json, 000002.json, …).
  * - Each middleware instance maintains its own action index (Bug 10 fix).
  */
-/**
- * The persistence middleware plus its drain hook: `flushPendingWrites`
- * resolves once every queued action write has settled. The stop flow MUST
- * await it before anything reads the session's `actions/` (final sync, ZIP
- * export) — the queue is async, so a write enqueued moments before Stop
- * could otherwise land after the export enumerated the directory.
- */
-export type PersistenceMiddleware = Middleware & {
-  flushPendingWrites: () => Promise<void>;
-};
-
 export function createPersistenceMiddleware(
   options: PersistenceMiddlewareOptions
 ): PersistenceMiddleware {

@@ -241,21 +241,6 @@ describe("the switch inventory attachLayerToggles builds", () => {
 
 describe("where an extra control lands inside its group", () => {
   /**
-   * WHY THIS MATTERS (round three, G2/F7).
-   *
-   * `main.ts` has claimed in a comment since F3d that the category picker sits
-   * FIRST in its group — "the group is captioned `Category`, so the control it
-   * names belongs at the top of it". It did not, and nothing tested it: the
-   * seam appended every extra AFTER the generated switches, so the bar rendered
-   * `Category · cells · areas · ‹select›`. A comment asserting a layout the
-   * code cannot produce is worse than no comment, and it survived because this
-   * file had no `extras` assertion of any kind.
-   *
-   * The two positions are now named at the call site rather than implied, which
-   * is what makes the claim checkable. Deleting `extrasBefore`'s insertion and
-   * appending instead fails the first test here and nothing else in the suite.
-   */
-  /**
    * A stand-in for a real extra.
    *
    * `show-below-label` is a `<label>` WRAPPING its input in production, so
@@ -294,6 +279,21 @@ describe("where an extra control lands inside its group", () => {
   const overlayIds = (container: HTMLElement): readonly string[] =>
     childKeys(container.querySelector("#layer-group-overlays"));
 
+  /**
+   * WHY THIS MATTERS (round three, G2/F7).
+   *
+   * `main.ts` has claimed in a comment since F3d that the category picker sits
+   * FIRST in its group — "the group is captioned `Category`, so the control it
+   * names belongs at the top of it". It did not, and nothing tested it: the
+   * seam appended every extra AFTER the generated switches, so the bar rendered
+   * `Category · cells · areas · ‹select›`. A comment asserting a layout the
+   * code cannot produce is worse than no comment, and it survived because this
+   * file had no `extras` assertion of any kind.
+   *
+   * The two positions are now named at the call site rather than implied, which
+   * is what makes the claim checkable. Deleting `extrasBefore`'s insertion and
+   * appending instead fails the first test here and nothing else in the suite.
+   */
   it("puts `extrasBefore` between the caption and the first switch", () => {
     const container = document.createElement("div");
     attachLayerToggles({

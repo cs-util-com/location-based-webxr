@@ -206,14 +206,6 @@ let terrainCentre:
 const terrainGate = createTerrainGate();
 
 /**
- * The ENU frame at `centre` plus the terrain sampler every builder reads.
- *
- * ONE PLACE, because the region slabs are now built on their own as well as
- * inside a full mesh (W6) and the two must stand on the same surface. Deriving
- * the sampler twice is the shape of defect this demo keeps finding: two
- * computations that agree today with nothing asserting they always will.
- */
-/**
  * The key the cell-mesh request's single score is filed under.
  *
  * `buildCellMesh` looks a score up by category, and the caller has already
@@ -239,6 +231,14 @@ function heightAtEnu(point: { x: number; y: number }): number {
   return field === undefined ? 0 : field.heightAt(point);
 }
 
+/**
+ * The ENU frame at `centre` plus the terrain sampler every builder reads.
+ *
+ * ONE PLACE, because the region slabs are now built on their own as well as
+ * inside a full mesh (W6) and the two must stand on the same surface. Deriving
+ * the sampler twice is the shape of defect this demo keeps finding: two
+ * computations that agree today with nothing asserting they always will.
+ */
 function meshOptions(centre: LatLng): {
   frame: ReturnType<typeof enuFrameAt>;
   groundHeightM?: (position: LatLng) => number;
@@ -560,13 +560,6 @@ let lastMeshBuild: MeshBuildRecord | undefined;
 let updatesInFlight = 0;
 
 /**
- * Builds what this pass actually needs to send.
- *
- * The region slabs are ALWAYS rebuilt, because they are a product of SCORING and
- * scoring is exactly what a widening ring changes. Everything else is a product
- * of the features, the terrain and the frame origin.
- */
-/**
  * Packs below-surface outlines into ENU x,y pairs.
  *
  * ONE IMPLEMENTATION FOR BOTH REPLY KINDS. The full mesh and the regions-only
@@ -590,6 +583,13 @@ function packUnderground(
   });
 }
 
+/**
+ * Builds what this pass actually needs to send.
+ *
+ * The region slabs are ALWAYS rebuilt, because they are a product of SCORING and
+ * scoring is exactly what a widening ring changes. Everything else is a product
+ * of the features, the terrain and the frame origin.
+ */
 function meshUpdateFor(
   snapshot: {
     position: LatLng;

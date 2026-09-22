@@ -248,18 +248,6 @@ export interface Logger {
 }
 
 /**
- * Create a logger with a specific tag prefix
- * @param tag - The tag to prefix all log messages with (e.g., 'GPS', 'Storage')
- * @returns A logger object with debug, info, warn, error methods
- *
- * @example
- * ```typescript
- * const log = createLogger('GPS');
- * log.info('Watch started'); // [GPS] Watch started
- * log.error('Error:', err);  // [GPS] Error: <error details>
- * ```
- */
-/**
  * Map LogLevel to Sentry breadcrumb severity.
  * Sentry uses 'warning' (not 'warn') for the warning level.
  */
@@ -385,6 +373,18 @@ function reportErrorsToSentry(
   }
 }
 
+/**
+ * Create a logger with a specific tag prefix
+ * @param tag - The tag to prefix all log messages with (e.g., 'GPS', 'Storage')
+ * @returns A logger object with debug, info, warn, error methods
+ *
+ * @example
+ * ```typescript
+ * const log = createLogger('GPS');
+ * log.info('Watch started'); // [GPS] Watch started
+ * log.error('Error:', err);  // [GPS] Error: <error details>
+ * ```
+ */
 export function createLogger(tag: string): Logger {
   const prefix = `[${tag}]`;
 

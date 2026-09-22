@@ -163,12 +163,6 @@ export function groundPositionFor(centreEnu: {
 }
 
 /**
- * Where the haze starts, metres.
- *
- * Two thirds of the way out, so the fade is gradual enough to read as distance
- * rather than as a wall — the whole reason the far plane can be lowered at all.
- */
-/**
  * Where the haze starts, as a fraction of the far plane.
  *
  * A RATIO RATHER THAN A SECOND DISTANCE, and the shape is deliberate.
@@ -389,12 +383,6 @@ export class BuildingView {
   /** The agent itself — one marker, created on the first route (DEC-R11-15). */
   private agent: THREE.Mesh<THREE.BufferGeometry, THREE.Material> | undefined;
   /**
-   * The walk in progress: the path, when it started, and what to call at the end.
-   *
-   * HELD RATHER THAN CLOSED OVER, so a second order replaces the first instead
-   * of running two walks against one marker — and so `dispose()` can drop it.
-   */
-  /**
    * The walk in progress: the exact path, when it began, and the BODY on it.
    *
    * `follower` is what the user actually sees (DEC-R13-3/4): the drawn polyline
@@ -403,6 +391,10 @@ export class BuildingView {
    * because the follower is integrated per elapsed second rather than per frame
    * — a rAF-counted step would make the motion depend on the display's refresh
    * rate, which is the failure `agent-follower.test.ts` pins directly.
+   *
+   * HELD RATHER THAN CLOSED OVER, so a second order replaces the first
+   * instead of running two walks against one marker — and so `dispose()` can
+   * drop it.
    */
   private walk:
     | {
@@ -1303,31 +1295,6 @@ export class BuildingView {
   }
 
   /**
-   * Draws the affordance grid, replacing any previous one.
-   *
-   * Kept out of `this.group` (and therefore out of `clear()`) so rebuilding the
-   * buildings does not silently drop the grid, and vice versa — they arrive from
-   * different parts of the same snapshot and neither should depend on the
-   * other's timing.
-   */
-  /**
-   * Draws the outlines of features excluded as below-surface, at their depth.
-   *
-   * WHY THE 3D VIEW AND NOT ONLY THE MAP. This answers what SHAPE the excluded
-   * thing was — a silo or a building dropped wrongly reads as a hole in the
-   * skyline, which no 2D outline conveys. The map answers WHERE it is. Neither
-   * answers the other's question.
-   *
-   * DRAWN BELOW THE GROUND, at a fixed depth rather than at the feature's real
-   * one, because OSM carries no reliable depth for these: `layer=-1` is an
-   * ordering, not a distance. A fixed offset is an honest "this is underneath"
-   * rather than a fabricated elevation.
-   *
-   * Kept out of `this.group` for the same reason the cell grid is: it arrives
-   * from a different part of the snapshot and rebuilding the buildings must not
-   * silently drop it.
-   */
-  /**
    * Removes and frees the underground lines, if any are up.
    *
    * SHARED BY THREE CALLERS, and that is the point. `renderUnderground` needs
@@ -1346,6 +1313,23 @@ export class BuildingView {
     this.undergroundLines = undefined;
   }
 
+  /**
+   * Draws the outlines of features excluded as below-surface, at their depth.
+   *
+   * WHY THE 3D VIEW AND NOT ONLY THE MAP. This answers what SHAPE the excluded
+   * thing was — a silo or a building dropped wrongly reads as a hole in the
+   * skyline, which no 2D outline conveys. The map answers WHERE it is. Neither
+   * answers the other's question.
+   *
+   * DRAWN BELOW THE GROUND, at a fixed depth rather than at the feature's real
+   * one, because OSM carries no reliable depth for these: `layer=-1` is an
+   * ordering, not a distance. A fixed offset is an honest "this is underneath"
+   * rather than a fabricated elevation.
+   *
+   * Kept out of `this.group` for the same reason the cell grid is: it arrives
+   * from a different part of the snapshot and rebuilding the buildings must not
+   * silently drop it.
+   */
   renderUnderground(outlines: readonly Float32Array[]): void {
     this.clearUnderground();
     // BUILT IN `underground-lines.ts`, not here. This view needs a WebGL
@@ -1360,6 +1344,14 @@ export class BuildingView {
     this.requestFrame();
   }
 
+  /**
+   * Draws the affordance grid, replacing any previous one.
+   *
+   * Kept out of `this.group` (and therefore out of `clear()`) so rebuilding the
+   * buildings does not silently drop the grid, and vice versa — they arrive from
+   * different parts of the same snapshot and neither should depend on the
+   * other's timing.
+   */
   renderCells(mesh: CellMesh): void {
     if (this.cellMesh !== undefined) {
       this.content.remove(this.cellMesh);
@@ -1435,17 +1427,6 @@ export class BuildingView {
   }
 
   /**
-   * Points the sun from the camera's current azimuth (W12).
-   *
-   * Called from the controls' `change` handler rather than from a loop: the sun
-   * only has to move when the camera does, and that is exactly when a frame is
-   * already being scheduled. DEC-R3-9's on-demand renderer is untouched.
-   *
-   * The distance is arbitrary — a `DirectionalLight` has no falloff and only its
-   * direction matters — but it must be large enough to sit outside the scene if
-   * a shadow camera is ever added.
-   */
-  /**
    * Moves the sun to a time of day in `0..1` (§1, DEC-R6-3).
    *
    * THE COST LIVES HERE, DELIBERATELY. Each call regenerates the PMREM
@@ -1470,6 +1451,17 @@ export class BuildingView {
     return this.timeOfDay;
   }
 
+  /**
+   * Points the sun from the camera's current azimuth (W12).
+   *
+   * Called from the controls' `change` handler rather than from a loop: the sun
+   * only has to move when the camera does, and that is exactly when a frame is
+   * already being scheduled. DEC-R3-9's on-demand renderer is untouched.
+   *
+   * The distance is arbitrary — a `DirectionalLight` has no falloff and only its
+   * direction matters — but it must be large enough to sit outside the scene if
+   * a shadow camera is ever added.
+   */
   private aimSun(): void {
     // ONE VECTOR, TWO CONSUMERS, and it now comes back from the rig rather than
     // being derived twice: `setSun` points the sky shader and returns the same
@@ -1511,26 +1503,6 @@ export class BuildingView {
     this.sun.target.updateMatrixWorld();
   }
 
-  /**
-   * Schedules exactly one frame, coalescing repeats.
-   *
-   * WHY NOT A PERMANENT rAF LOOP. That was the first attempt, and it was
-   * measured: an always-running loop over a static city scene made the e2e
-   * suite ~6× slower (21 s → 2.2 m) and pushed one test into a timeout, because
-   * the loop competes for the same CPU as everything else in a headless
-   * browser. On a phone it is worse than slow — it is a scene that never stops
-   * drawing, burning battery to repaint an identical picture.
-   *
-   * The scene is static except while the user is moving the camera, so frames
-   * are scheduled on demand. This still works with damping, which is the part
-   * that looks like it should need a loop: `controls.update()` emits another
-   * `change` while the camera is still easing, which schedules the next frame,
-   * so the sequence sustains itself until the motion settles and then stops.
-   *
-   * The handle is HELD so `dispose()` can cancel it. An orphaned frame callback
-   * touching a disposed WebGL context is a crash, not a leak — the same reason
-   * the resize listener is held rather than passed inline.
-   */
   /**
    * Stop drawing and hide the canvas, keeping everything else alive (M5).
    *
@@ -1576,6 +1548,26 @@ export class BuildingView {
     this.requestFrame();
   }
 
+  /**
+   * Schedules exactly one frame, coalescing repeats.
+   *
+   * WHY NOT A PERMANENT rAF LOOP. That was the first attempt, and it was
+   * measured: an always-running loop over a static city scene made the e2e
+   * suite ~6× slower (21 s → 2.2 m) and pushed one test into a timeout, because
+   * the loop competes for the same CPU as everything else in a headless
+   * browser. On a phone it is worse than slow — it is a scene that never stops
+   * drawing, burning battery to repaint an identical picture.
+   *
+   * The scene is static except while the user is moving the camera, so frames
+   * are scheduled on demand. This still works with damping, which is the part
+   * that looks like it should need a loop: `controls.update()` emits another
+   * `change` while the camera is still easing, which schedules the next frame,
+   * so the sequence sustains itself until the motion settles and then stops.
+   *
+   * The handle is HELD so `dispose()` can cancel it. An orphaned frame callback
+   * touching a disposed WebGL context is a crash, not a leak — the same reason
+   * the resize listener is held rather than passed inline.
+   */
   private requestFrame(): void {
     // THE GUARD THAT MAKES `suspend` MEAN ANYTHING. Every one of the dozen
     // `requestFrame()` call sites in this file is a path a suspended view can
@@ -2100,26 +2092,6 @@ export class BuildingView {
   }
 
   /**
-   * Hand the map-derived content to another scene graph, or take it back.
-   *
-   * **The AR entry and exit point.** AR mode calls this with the framework's
-   * scene root and `"gps-world-nue"`; leaving AR calls it with
-   * {@link localRoot} and `"demo-scene"`.
-   *
-   * **THE FRAME ARGUMENT IS NOT OPTIONAL IN PRACTICE, and an earlier version of
-   * this docstring said the coordinates were "already in the right space".**
-   * They are not: the demo's scene is X=East, Y=Up, Z=−North; the GPS-world
-   * frame is NUE. Attaching without the conversion renders the city 90° off.
-   * `scene-content.ts` owns the mapping and pins it.
-   *
-   * REPARENTING, NOT REBUILDING. The subtree moves whole and keeps its
-   * children, so returning costs nothing — which is what makes the M5 decision
-   * (hide the desktop renderer rather than dispose it) cheap to honour.
-   *
-   * **What does NOT move:** the lights, the ground plane, the sun rig and the
-   * NPC. See `scene-content.ts` for why each stays.
-   */
-  /**
    * Swap the building meshes to an AR shell material, or restore the desktop one.
    *
    * **HELD ON THE VIEW, NOT APPLIED ONCE.** A refresh while AR is running
@@ -2164,6 +2136,26 @@ export class BuildingView {
     this.requestFrame();
   }
 
+  /**
+   * Hand the map-derived content to another scene graph, or take it back.
+   *
+   * **The AR entry and exit point.** AR mode calls this with the framework's
+   * scene root and `"gps-world-nue"`; leaving AR calls it with
+   * {@link localRoot} and `"demo-scene"`.
+   *
+   * **THE FRAME ARGUMENT IS NOT OPTIONAL IN PRACTICE, and an earlier version of
+   * this docstring said the coordinates were "already in the right space".**
+   * They are not: the demo's scene is X=East, Y=Up, Z=−North; the GPS-world
+   * frame is NUE. Attaching without the conversion renders the city 90° off.
+   * `scene-content.ts` owns the mapping and pins it.
+   *
+   * REPARENTING, NOT REBUILDING. The subtree moves whole and keeps its
+   * children, so returning costs nothing — which is what makes the M5 decision
+   * (hide the desktop renderer rather than dispose it) cheap to honour.
+   *
+   * **What does NOT move:** the lights, the ground plane, the sun rig and the
+   * NPC. See `scene-content.ts` for why each stays.
+   */
   attachContentTo(
     root: THREE.Object3D,
     frame: ContentFrame,

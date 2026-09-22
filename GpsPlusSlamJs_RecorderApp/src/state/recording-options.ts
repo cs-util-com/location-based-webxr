@@ -222,13 +222,6 @@ export interface ImageCaptureOptions {
 }
 
 /**
- * Configuration for the derived AR-space occupancy grid (the voxelization of
- * the depth samples, port plan 2026-06-11). These settings do NOT change what
- * is recorded — they govern the grid derived from the recorded depth points,
- * so they also apply when replaying an existing recording, letting the same
- * session be re-quantized at a different resolution.
- */
-/**
  * Mesher strategy for the **persistent occluder** mesh, exposed as a recorder
  * setting (2026-06-30 occluder-tuning, F2/F2b) so the two surface-hugging
  * approaches can be A/B-tested on-device against the blocky baseline:
@@ -245,6 +238,13 @@ export interface ImageCaptureOptions {
 const OCCLUDER_MESH_MODES = ['greedy', 'corner-fit', 'smooth'] as const;
 export type OccluderMeshMode = (typeof OCCLUDER_MESH_MODES)[number];
 
+/**
+ * Configuration for the derived AR-space occupancy grid (the voxelization of
+ * the depth samples, port plan 2026-06-11). These settings do NOT change what
+ * is recorded — they govern the grid derived from the recorded depth points,
+ * so they also apply when replaying an existing recording, letting the same
+ * session be re-quantized at a different resolution.
+ */
 export interface OccupancyOptions {
   /**
    * Voxel edge length in metres. Drives the occupancy-grid quantization, the
@@ -944,26 +944,6 @@ export function validateImageOptions(
 }
 
 /**
- * Validate and normalize occupancy options.
- * Invalid values are clamped to valid ranges.
- *
- * Note why the `num` rule's finiteness check matters here specifically:
- * `OccupancyGrid` throws a `RangeError` on a non-finite cell size, and a bare
- * clamp would pass `NaN` straight through (it is `typeof 'number'`). Falling
- * back to the default keeps a corrupted stored value from crashing grid
- * construction.
- *
- * **Backward-compat migration:** the occlusion options were a single
- * `occlusionMeshEnabled` boolean before 2026-06-29; they are now the two
- * composable booleans `persistentOcclusion` + `liveOcclusion`. A persisted
- * object that predates the split carries only the legacy field, so when the new
- * `persistentOcclusion` is absent we read `occlusionMeshEnabled` and map
- * `true → persistentOcclusion: true` (the old mesh occluder is the persistent
- * one); the legacy shape never enabled a live occluder, so `liveOcclusion`
- * stays at its default. A present new field always wins over the legacy one.
- * See `2026-06-29-1414-occupancy-mesh-followups.md`.
- */
-/**
  * Resolve `persistentOcclusion` with legacy migration. A **present** new field
  * always wins over the legacy `occlusionMeshEnabled` — even when its value is
  * invalid: a present-but-corrupt value falls back to the default, never to the
@@ -1013,6 +993,26 @@ function resolveOccluderDebugStyle(
   return defaultValue;
 }
 
+/**
+ * Validate and normalize occupancy options.
+ * Invalid values are clamped to valid ranges.
+ *
+ * Note why the `num` rule's finiteness check matters here specifically:
+ * `OccupancyGrid` throws a `RangeError` on a non-finite cell size, and a bare
+ * clamp would pass `NaN` straight through (it is `typeof 'number'`). Falling
+ * back to the default keeps a corrupted stored value from crashing grid
+ * construction.
+ *
+ * **Backward-compat migration:** the occlusion options were a single
+ * `occlusionMeshEnabled` boolean before 2026-06-29; they are now the two
+ * composable booleans `persistentOcclusion` + `liveOcclusion`. A persisted
+ * object that predates the split carries only the legacy field, so when the new
+ * `persistentOcclusion` is absent we read `occlusionMeshEnabled` and map
+ * `true → persistentOcclusion: true` (the old mesh occluder is the persistent
+ * one); the legacy shape never enabled a live occluder, so `liveOcclusion`
+ * stays at its default. A present new field always wins over the legacy one.
+ * See `2026-06-29-1414-occupancy-mesh-followups.md`.
+ */
 export function validateOccupancyOptions(
   options: Partial<OccupancyOptions>
 ): OccupancyOptions {

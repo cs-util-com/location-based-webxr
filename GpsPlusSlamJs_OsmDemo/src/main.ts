@@ -1357,7 +1357,7 @@ async function main(): Promise<void> {
     void findGeoEvent(undefined);
   });
 
-  /**
+  /*
    * AR MODE (DEC-12, AR milestone 1).
    *
    * The button's appearance is DERIVED by `arButtonState` from three facts and

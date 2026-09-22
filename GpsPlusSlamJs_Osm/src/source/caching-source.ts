@@ -352,14 +352,6 @@ export class CachingSource implements OsmDataSource {
   }
 
   /**
-   * Reads and validates a cached entry.
-   *
-   * A corrupt or truncated entry (interrupted write, quota eviction mid-write,
-   * a storage backend that lied) is treated as a miss rather than allowed to
-   * throw. The cost of being wrong is one refetch; the cost of throwing is a
-   * permanently poisoned tile that no amount of retrying fixes.
-   */
-  /**
    * Reads, validates, and reports what the attempt cost either way.
    *
    * `probeMs` is the WHOLE attempt — read plus decode — and is what a miss or a
@@ -371,6 +363,11 @@ export class CachingSource implements OsmDataSource {
    * one branch that dropped it. (This used to say "measured in a `finally`";
    * the behaviour was right and there is no `finally` here, so a reader looking
    * for one would not find it.)
+   *
+   * A corrupt or truncated entry (interrupted write, quota eviction
+   * mid-write, a storage backend that lied) is treated as a MISS rather than
+   * allowed to throw. The cost of being wrong is one refetch; the cost of
+   * throwing is a permanently poisoned tile that no amount of retrying fixes.
    */
   private async readCachedTimed(tile: string): Promise<{
     readonly result: OsmTileResult | undefined;

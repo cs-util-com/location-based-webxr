@@ -240,23 +240,6 @@ export interface OsmViewSlice<TSnapshot, TGeoEvent> {
 }
 
 /**
- * Builds an `osmView` slice bound to the consumer's snapshot type.
- *
- * ```ts
- * const osmView = createOsmViewSlice<DemoSnapshot>({
- *   initialPosition: DEFAULT_START,
- *   initialCategory: 'walkable',
- * });
- * const store = configureStore({ reducer: { osmView: osmView.reducer } });
- * store.dispatch(osmView.actions.categoryChanged('battleArea'));
- * ```
- *
- * Returns the reducer and the action creators only. Selectors are left to the
- * consumer because the mount key is the consumer's choice — a selector here
- * would have to guess it, and guessing it wrongly fails at runtime rather than
- * at compile time.
- */
-/**
  * A position with signed zero normalised away.
  *
  * WHY THE STORE CANNOT HOLD `-0`. This state is persisted and inspected through
@@ -285,6 +268,23 @@ function withoutSignedZero(position: OsmViewLatLng): OsmViewLatLng {
   };
 }
 
+/**
+ * Builds an `osmView` slice bound to the consumer's snapshot type.
+ *
+ * ```ts
+ * const osmView = createOsmViewSlice<DemoSnapshot>({
+ *   initialPosition: DEFAULT_START,
+ *   initialCategory: 'walkable',
+ * });
+ * const store = configureStore({ reducer: { osmView: osmView.reducer } });
+ * store.dispatch(osmView.actions.categoryChanged('battleArea'));
+ * ```
+ *
+ * Returns the reducer and the action creators only. Selectors are left to the
+ * consumer because the mount key is the consumer's choice — a selector here
+ * would have to guess it, and guessing it wrongly fails at runtime rather than
+ * at compile time.
+ */
 export function createOsmViewSlice<TSnapshot, TGeoEvent = never>(
   options: CreateOsmViewSliceOptions
 ): OsmViewSlice<TSnapshot, TGeoEvent> {

@@ -171,26 +171,6 @@ interface ZipMetadataDiscoveryResult {
 const METADATA_SCAN_CONCURRENCY = 4;
 
 /**
- * Discover scenarios by reading session.json metadata from root-level zip files.
- *
- * For each `.zip` file in the root directory:
- * 1. Gets a File handle (Blob) — does NOT load the full file into memory
- * 2. Calls `loadSessionMetadataFromBlob()` which uses BlobReader to read
- *    only the zip central directory and the session.json entry
- * 3. Groups the zip by its `scenarioName` metadata field (or UNKNOWN_SCENARIO if absent)
- *
- * Memory efficiency: Uses BlobReader (not arrayBuffer) and limits concurrency
- * to METADATA_SCAN_CONCURRENCY to avoid excessive memory consumption when
- * scanning folders with many large recording zips.
- *
- * This is more accurate than filename-based discovery (`extractScenarioNamesFromZips`)
- * because it uses the actual metadata the recording app wrote, handling timestamp-only
- * filenames like `2026-03-01_09-08-48utc.zip` that carry no scenario information.
- *
- * @param rootHandle - FileSystemDirectoryHandle from showDirectoryPicker()
- * @returns Discovery result with scenario→sessions map and sorted scenario names
- */
-/**
  * Defensively parse the `h3Cells` field read from a recording's `session.json`.
  *
  * Returns the array of H3 id strings when the field is present and well-formed
@@ -231,6 +211,26 @@ function parseH3Cells(value: unknown): readonly string[] | undefined {
   return cells.length === value.length ? cells : undefined;
 }
 
+/**
+ * Discover scenarios by reading session.json metadata from root-level zip files.
+ *
+ * For each `.zip` file in the root directory:
+ * 1. Gets a File handle (Blob) — does NOT load the full file into memory
+ * 2. Calls `loadSessionMetadataFromBlob()` which uses BlobReader to read
+ *    only the zip central directory and the session.json entry
+ * 3. Groups the zip by its `scenarioName` metadata field (or UNKNOWN_SCENARIO if absent)
+ *
+ * Memory efficiency: Uses BlobReader (not arrayBuffer) and limits concurrency
+ * to METADATA_SCAN_CONCURRENCY to avoid excessive memory consumption when
+ * scanning folders with many large recording zips.
+ *
+ * This is more accurate than filename-based discovery (`extractScenarioNamesFromZips`)
+ * because it uses the actual metadata the recording app wrote, handling timestamp-only
+ * filenames like `2026-03-01_09-08-48utc.zip` that carry no scenario information.
+ *
+ * @param rootHandle - FileSystemDirectoryHandle from showDirectoryPicker()
+ * @returns Discovery result with scenario→sessions map and sorted scenario names
+ */
 export async function discoverScenariosFromZipMetadata(
   rootHandle: FileSystemDirectoryHandle
 ): Promise<ZipMetadataDiscoveryResult> {

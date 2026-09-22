@@ -114,13 +114,6 @@ export function formatEventDistance(metres: number): string {
 }
 
 /**
- * The button's terminal label for a computed event.
- *
- * Returns the "nothing found" wording when the event has no picks, which is a
- * legitimate outcome rather than an error: a tile that is all water genuinely
- * has no event.
- */
-/**
  * The RESOLVED slot, worded so a picked day is visible.
  *
  * WHY THE DATE IS CONDITIONAL (W6, and DEC-G1's real requirement). The label was
@@ -152,6 +145,13 @@ export function describeEventTime(
   return `${when.toLocaleDateString([], { day: "numeric", month: "short" })} ${time}`;
 }
 
+/**
+ * The button's terminal label for a computed event.
+ *
+ * Returns the "nothing found" wording when the event has no picks, which is a
+ * legitimate outcome rather than an error: a tile that is all water genuinely
+ * has no event.
+ */
 export function describeGeoEvent(
   user: LatLng,
   event: GeoEvent,
