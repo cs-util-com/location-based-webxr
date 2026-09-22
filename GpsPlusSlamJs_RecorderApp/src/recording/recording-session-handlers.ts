@@ -241,6 +241,64 @@ export interface RecordingSessionHandlers {
 }
 
 // ---------------------------------------------------------------------------
+// Per-recording state
+// ---------------------------------------------------------------------------
+
+/**
+ * Everything ONE recording owns: its resources, its identity, and the two
+ * results the summary screen reads.
+ *
+ * WHY IT IS A NAMED OBJECT AND NOT NINE `let`s. It was nine, and the cost was
+ * not tidiness: the stop flow reaches into all of them, so the 168-line
+ * `performStop` could not be moved anywhere without losing access to its own
+ * state. Naming the cluster is what makes that possible, and it also answers
+ * "what does a recording actually hold?" in one place instead of nine
+ * declarations spread over twenty-five lines.
+ *
+ * **MUTABLE ON PURPOSE, and every field is nulled by its owner.** These are
+ * live resources — a worker, a timer, a sync manager, a store subscription —
+ * whose lifetime is the recording's. `readonly` would be a lie here; what
+ * keeps them honest is that each is cleared on the path that stops it, which
+ * `cleanupForNewRecording` and `reset` both assert by doing it again.
+ *
+ * The two re-entrancy flags are NOT here. They guard handlers rather than the
+ * recording; see the comment at their declaration.
+ */
+export interface SessionRuntime {
+  /** Warn-once tracker for image WRITE failures; created on start. */
+  writeFailureTracker: FailureTracker | null;
+  /** Warn-once tracker for image CAPTURE failures; created on start. */
+  captureFailureTracker: FailureTracker | null;
+  /** `recording-<timestamp>`, the folder and zip name. Empty between sessions. */
+  currentSessionName: string;
+  /** External-zip sync driver, when the user chose a save location. */
+  syncManager: SyncManager | null;
+  /**
+   * What the last contributor run decided per code — shown on the summary
+   * screen, so a declined anchor is visible rather than just absent.
+   */
+  latestQrAnchorOutcomes: readonly QrAnchorOutcome[];
+  /** The zip the session ended up in, external or OPFS-generated. */
+  lastSyncResult: ZipExportResult | null;
+  /** Teardown for this recording's store subscriptions. */
+  unsubscribeStore: (() => void) | null;
+  /**
+   * Off-thread blur/blackness analyzer worker for this recording (null when the
+   * quality gate is disabled). Owned here: created on start, disposed on stop.
+   */
+  imageQualityClient: ImageQualityClient | null;
+  /**
+   * Live AbsCompass HUD refresh timer for THIS recording. The capture module
+   * surfaces lifecycle via its onStatus callback but not per-reading; this polls
+   * the latest reading a few times a second to show the live magnetic heading
+   * (the same number the v3 absolute-compass demo shows), so a field tester can
+   * point at a landmark and cross-check it on the spot. Armed on start, cleared
+   * on stop.
+   */
+  absCompassHudTimer: ReturnType<typeof setInterval> | null;
+}
+
+// ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
 
@@ -248,37 +306,43 @@ export function createRecordingSessionHandlers(
   deps: RecordingSessionDeps
 ): RecordingSessionHandlers {
   // --- State ---
-  let writeFailureTracker: FailureTracker | null = null;
-  let captureFailureTracker: FailureTracker | null = null;
-  let currentSessionName = '';
-  let syncManager: SyncManager | null = null;
-  /** What the last contributor run decided per code — shown on the summary
-   *  screen, so a declined anchor is visible rather than just absent. */
-  let latestQrAnchorOutcomes: readonly QrAnchorOutcome[] = [];
-  let lastSyncResult: ZipExportResult | null = null;
+  /**
+   * Everything ONE recording owns. See {@link SessionRuntime}.
+   *
+   * Per-instance rather than module-level, so independent handler instances
+   * never share or overwrite each other's resources — the factory's "no
+   * module-level mutable state" invariant (see sidecar).
+   */
+  const runtime: SessionRuntime = {
+    writeFailureTracker: null,
+    captureFailureTracker: null,
+    currentSessionName: '',
+    syncManager: null,
+    latestQrAnchorOutcomes: [],
+    lastSyncResult: null,
+    unsubscribeStore: null,
+    imageQualityClient: null,
+    absCompassHudTimer: null,
+  };
+
+  /**
+   * RE-ENTRANCY GUARDS, deliberately NOT in {@link SessionRuntime}.
+   *
+   * They guard a HANDLER against being entered twice, not a resource the
+   * recording owns — `stopInProgress` is false again before `handleStopRecording`
+   * returns, while everything in `runtime` outlives the call that created it.
+   * A guard also has to stay where its handler is: travelling with an extracted
+   * stop flow is precisely what it must not do, or a second entry would find a
+   * fresh copy and proceed.
+   */
   let backDuringRecordingInProgress = false;
   let stopInProgress = false;
-  let unsubscribeStore: (() => void) | null = null;
-  /** Off-thread blur/blackness analyzer worker for this recording (null when the
-   *  quality gate is disabled). Owned here: created on start, disposed on stop. */
-  let imageQualityClient: ImageQualityClient | null = null;
-  /**
-   * Live AbsCompass HUD refresh timer for THIS recording. The capture module
-   * surfaces lifecycle via its onStatus callback but not per-reading; this polls
-   * the latest reading a few times a second to show the live magnetic heading
-   * (the same number the v3 absolute-compass demo shows), so a field tester can
-   * point at a landmark and cross-check it on the spot. Armed on start, cleared
-   * on stop. Per-instance (not module-level) so independent handler instances do
-   * not share/overwrite each other's timer — the factory's "no module-level
-   * mutable state" invariant (see sidecar).
-   */
-  let absCompassHudTimer: ReturnType<typeof setInterval> | null = null;
 
   // --- Internal helpers ---
 
   function startAbsCompassHudUpdates(): void {
     stopAbsCompassHudUpdates();
-    absCompassHudTimer = setInterval(() => {
+    runtime.absCompassHudTimer = setInterval(() => {
       const reading = getLatestAbsoluteOrientation();
       if (!reading) return; // unavailable / not warmed up → leave onStatus text
       setAbsCompassStatus({
@@ -289,9 +353,9 @@ export function createRecordingSessionHandlers(
   }
 
   function stopAbsCompassHudUpdates(): void {
-    if (absCompassHudTimer !== null) {
-      clearInterval(absCompassHudTimer);
-      absCompassHudTimer = null;
+    if (runtime.absCompassHudTimer !== null) {
+      clearInterval(runtime.absCompassHudTimer);
+      runtime.absCompassHudTimer = null;
     }
   }
 
@@ -310,7 +374,7 @@ export function createRecordingSessionHandlers(
     return [
       createRefPointsZipContributor(
         getCurrentScenarioHandle(),
-        currentSessionName
+        runtime.currentSessionName
       ),
       createQrLevelZipContributor({
         // Reads the maintained sighting fold, never a re-parse of `actions/`
@@ -319,7 +383,7 @@ export function createRecordingSessionHandlers(
         allowedHosts: QR_LAUNCH_HOSTS,
         nowIso: () => new Date().toISOString(),
         onOutcomes: (outcomes) => {
-          latestQrAnchorOutcomes = outcomes;
+          runtime.latestQrAnchorOutcomes = outcomes;
         },
       }),
       createColmapZipContributor({
@@ -370,14 +434,16 @@ export function createRecordingSessionHandlers(
         // placement is degraded) AND the local load succeeded (the map shows
         // the points) — round-4 interview decision 6.
         updateStatus(
-          `Recording: ${currentSessionName} | GPS unavailable | ${loadedSummary}`
+          `Recording: ${runtime.currentSessionName} | GPS unavailable | ${loadedSummary}`
         );
         return;
       }
 
       refPointVisualizer.setZeroRef(zeroRef);
 
-      updateStatus(`Recording: ${currentSessionName} | ${loadedSummary}`);
+      updateStatus(
+        `Recording: ${runtime.currentSessionName} | ${loadedSummary}`
+      );
     } catch (err) {
       log.error('Failed to load prior reference points:', err);
     }
@@ -401,9 +467,9 @@ export function createRecordingSessionHandlers(
     );
 
     // Cleanup previous store subscription if any
-    if (unsubscribeStore) {
-      unsubscribeStore();
-      unsubscribeStore = null;
+    if (runtime.unsubscribeStore) {
+      runtime.unsubscribeStore();
+      runtime.unsubscribeStore = null;
     }
 
     // Read scenario name from the CURRENT store BEFORE creating a new one.
@@ -425,7 +491,7 @@ export function createRecordingSessionHandlers(
 
     // Generate session name from timestamp
     const now = new Date();
-    currentSessionName = `recording-${formatTimestamp(now)}`;
+    runtime.currentSessionName = `recording-${formatTimestamp(now)}`;
 
     // Initialize storage session BEFORE subscribing to store updates
     try {
@@ -447,7 +513,7 @@ export function createRecordingSessionHandlers(
         deps.getMapOverlay()?.render(data);
       },
     };
-    unsubscribeStore = wireStoreSubscribers(store, {
+    runtime.unsubscribeStore = wireStoreSubscribers(store, {
       applyAlignmentMatrix: deps.applyAlignmentMatrix,
       gpsEventVisualizer,
       mapOverlay: mapOverlayProxy,
@@ -459,8 +525,10 @@ export function createRecordingSessionHandlers(
     // 2026-07-05) — the setStore(store) call above triggers their re-wire.
 
     // Initialize failure trackers
-    writeFailureTracker = createWriteFailureTracker({ onWarning: showError });
-    captureFailureTracker = createCaptureFailureTracker({
+    runtime.writeFailureTracker = createWriteFailureTracker({
+      onWarning: showError,
+    });
+    runtime.captureFailureTracker = createCaptureFailureTracker({
       onWarning: showError,
     });
 
@@ -474,7 +542,7 @@ export function createRecordingSessionHandlers(
         // The recorder's scenario name rides along in the framework's opaque
         // `contextTag` slot (renamed from `scenarioName` on 2026-06-21).
         contextTag: scenarioName,
-        sessionName: currentSessionName,
+        sessionName: runtime.currentSessionName,
         startTime: now.getTime(),
         deviceInfo: navigator.userAgent,
         ...(notes && { notes }),
@@ -525,11 +593,11 @@ export function createRecordingSessionHandlers(
           // stop (performStop disposes on the normal flow) — dispose it so the
           // previous recording's Worker can't leak, matching this block's
           // stated contract.
-          imageQualityClient?.dispose();
-          imageQualityClient = createImageQualityAnalyzer(
+          runtime.imageQualityClient?.dispose();
+          runtime.imageQualityClient = createImageQualityAnalyzer(
             imageConfig.qualityFilter
           );
-          deps.setImageQualityAnalyzer(imageQualityClient.analyze);
+          deps.setImageQualityAnalyzer(runtime.imageQualityClient.analyze);
           log.info('Image-quality gate enabled (off-thread blur/blackness)');
         } catch (err) {
           // The worker is constructed synchronously; on a locked-down
@@ -537,7 +605,7 @@ export function createRecordingSessionHandlers(
           // is optional and fail-open everywhere, so disable it and keep
           // recording rather than aborting a session whose GPS/orientation
           // watches are already running.
-          imageQualityClient = null;
+          runtime.imageQualityClient = null;
           deps.setImageQualityAnalyzer(null);
           log.warn(
             'Image-quality gate unavailable (worker init failed) — recording without it',
@@ -568,12 +636,12 @@ export function createRecordingSessionHandlers(
     // Start external ZIP sync if user has chosen a save location
     const saveFileHandle = getSaveFileHandle();
     if (saveFileHandle) {
-      syncManager = createSyncManager(
+      runtime.syncManager = createSyncManager(
         async () => {
-          lastSyncResult = await syncScenarioSessionToExternalZip(
+          runtime.lastSyncResult = await syncScenarioSessionToExternalZip(
             saveFileHandle,
             scenarioName,
-            currentSessionName,
+            runtime.currentSessionName,
             {
               contributors: buildZipContributors(),
             }
@@ -586,7 +654,7 @@ export function createRecordingSessionHandlers(
           },
         }
       );
-      syncManager.start();
+      runtime.syncManager.start();
       log.info('External ZIP sync started');
     } else {
       log.debug('No external save location - OPFS-only storage');
@@ -600,7 +668,7 @@ export function createRecordingSessionHandlers(
 
     // Update UI to RECORDING state
     showRecordingControls();
-    updateStatus(`Recording: ${currentSessionName}`);
+    updateStatus(`Recording: ${runtime.currentSessionName}`);
   }
 
   /**
@@ -609,7 +677,7 @@ export function createRecordingSessionHandlers(
    * The teardown awaits a final external sync that can take many seconds for
    * large sessions. Without a guard, a second Stop tap during that window ran
    * the whole teardown concurrently and stopped + nulled the shared
-   * `syncManager` out from under the first call, which then threw
+   * `runtime.syncManager` out from under the first call, which then threw
    * "Cannot read properties of null (reading 'stop')" (Sentry issue
    * 7319627943). The guard makes the second tap a no-op; `setStopButtonBusy`
    * additionally disables the button so the double-tap cannot be issued.
@@ -658,8 +726,8 @@ export function createRecordingSessionHandlers(
     // Tear down the off-thread quality analyzer (worker) for this recording
     // and clear the injected callback so the next recording starts clean.
     deps.setImageQualityAnalyzer(null);
-    imageQualityClient?.dispose();
-    imageQualityClient = null;
+    runtime.imageQualityClient?.dispose();
+    runtime.imageQualityClient = null;
     hideFrameCount();
     hideTrackingQuality();
     stopDepthCapture();
@@ -737,8 +805,8 @@ export function createRecordingSessionHandlers(
     // teardown path (a second stop, or cleanupForNewRecording) sees null and
     // no-ops instead of stopping it from under us.
     // Defense in depth alongside the re-entrancy guard (Sentry issue 7319627943).
-    const sm = syncManager;
-    syncManager = null;
+    const sm = runtime.syncManager;
+    runtime.syncManager = null;
     if (sm) {
       try {
         log.info('Triggering final sync before stopping...');
@@ -752,25 +820,25 @@ export function createRecordingSessionHandlers(
     }
 
     // Cleanup store subscription
-    if (unsubscribeStore) {
-      unsubscribeStore();
-      unsubscribeStore = null;
+    if (runtime.unsubscribeStore) {
+      runtime.unsubscribeStore();
+      runtime.unsubscribeStore = null;
     }
 
     // Collect tracker errors before resetting
     const errors: string[] = [];
     deps.collectTrackerErrors(
-      writeFailureTracker,
+      runtime.writeFailureTracker,
       'image write failures',
       errors
     );
-    writeFailureTracker = null;
+    runtime.writeFailureTracker = null;
     deps.collectTrackerErrors(
-      captureFailureTracker,
+      runtime.captureFailureTracker,
       'image capture failures',
       errors
     );
-    captureFailureTracker = null;
+    runtime.captureFailureTracker = null;
 
     // Hide map overlay
     const mapOverlay = deps.getMapOverlay();
@@ -779,7 +847,7 @@ export function createRecordingSessionHandlers(
     }
 
     // Generate ZIP from OPFS when no external save location
-    if (!lastSyncResult) {
+    if (!runtime.lastSyncResult) {
       try {
         log.info('No external save location — generating ZIP from OPFS...');
         updateStatus('Packaging session...');
@@ -788,12 +856,12 @@ export function createRecordingSessionHandlers(
           FALLBACK_SCENARIO;
         const result = await exportScenarioSessionAsZip(
           scenarioName,
-          currentSessionName,
+          runtime.currentSessionName,
           {
             contributors: buildZipContributors(),
           }
         );
-        lastSyncResult = result;
+        runtime.lastSyncResult = result;
         log.info(
           `OPFS ZIP created: ${result.blob.size} bytes, ${result.fileCount} files`
         );
@@ -814,7 +882,7 @@ export function createRecordingSessionHandlers(
       errors,
       // Whatever the last contributor run decided per code — including the
       // refusals, which are invisible in the zip itself.
-      qrAnchors: latestQrAnchorOutcomes,
+      qrAnchors: runtime.latestQrAnchorOutcomes,
       failedWriteCount: state.recording.failedWriteCount,
       gpsPositions,
       odometryPositions: gpsEvents?.odometryPositions ?? [],
@@ -822,18 +890,18 @@ export function createRecordingSessionHandlers(
       alignmentSnapshotNuePositions:
         gpsEventVisualizer.getAlignmentSnapshotPositions(),
       refPoints,
-      syncResult: lastSyncResult,
-      zipFilename: lastSyncResult
+      syncResult: runtime.lastSyncResult,
+      zipFilename: runtime.lastSyncResult
         ? (getSaveFileName() ?? generateSessionFilename())
         : undefined,
     });
 
     // Clean up sync result reference
-    lastSyncResult = null;
+    runtime.lastSyncResult = null;
     // Never carry a previous recording's verdicts into this one's summary:
     // a session with QR off writes no outcomes, so a stale list would be
     // shown as if it described the recording just finished.
-    latestQrAnchorOutcomes = [];
+    runtime.latestQrAnchorOutcomes = [];
 
     log.info('Session summary:', summaryData);
 
@@ -887,31 +955,31 @@ export function createRecordingSessionHandlers(
     // Teardown parity with performStop: this path must also stop the
     // captures/watches/analyzer, not only the bookkeeping.
     stopLiveFeeds();
-    if (unsubscribeStore) {
-      unsubscribeStore();
-      unsubscribeStore = null;
+    if (runtime.unsubscribeStore) {
+      runtime.unsubscribeStore();
+      runtime.unsubscribeStore = null;
     }
 
-    if (writeFailureTracker) {
-      writeFailureTracker.reset();
-      writeFailureTracker = null;
+    if (runtime.writeFailureTracker) {
+      runtime.writeFailureTracker.reset();
+      runtime.writeFailureTracker = null;
     }
-    if (captureFailureTracker) {
-      captureFailureTracker.reset();
-      captureFailureTracker = null;
+    if (runtime.captureFailureTracker) {
+      runtime.captureFailureTracker.reset();
+      runtime.captureFailureTracker = null;
     }
 
-    if (syncManager) {
-      syncManager.stop();
-      syncManager = null;
+    if (runtime.syncManager) {
+      runtime.syncManager.stop();
+      runtime.syncManager = null;
     }
-    lastSyncResult = null;
+    runtime.lastSyncResult = null;
     // Never carry a previous recording's verdicts into this one's summary:
     // a session with QR off writes no outcomes, so a stale list would be
     // shown as if it described the recording just finished.
-    latestQrAnchorOutcomes = [];
+    runtime.latestQrAnchorOutcomes = [];
 
-    currentSessionName = '';
+    runtime.currentSessionName = '';
   }
 
   function reset(): void {
@@ -924,15 +992,15 @@ export function createRecordingSessionHandlers(
     handleStartRecording,
     handleStopRecording,
     handleBackDuringRecording,
-    getCurrentSessionName: () => currentSessionName,
+    getCurrentSessionName: () => runtime.currentSessionName,
     setCurrentSessionName: (name: string) => {
-      currentSessionName = name;
+      runtime.currentSessionName = name;
     },
-    recordWriteSuccess: () => writeFailureTracker?.recordSuccess(),
+    recordWriteSuccess: () => runtime.writeFailureTracker?.recordSuccess(),
     recordWriteFailure: (err: unknown) =>
-      writeFailureTracker?.recordFailure(err),
-    recordCaptureSuccess: () => captureFailureTracker?.recordSuccess(),
-    recordCaptureFailure: () => captureFailureTracker?.recordFailure(),
+      runtime.writeFailureTracker?.recordFailure(err),
+    recordCaptureSuccess: () => runtime.captureFailureTracker?.recordSuccess(),
+    recordCaptureFailure: () => runtime.captureFailureTracker?.recordFailure(),
     cleanupForNewRecording,
     reset,
   };
