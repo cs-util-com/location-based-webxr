@@ -254,6 +254,22 @@ export interface OverpassStats {
  */
 const DEFAULT_REQUEST_TIMEOUT_MS = 45_000;
 
+/**
+ * What one attempt produced: a tile, or a failure the loop may retry.
+ *
+ * `response` is carried because the backoff reads `Retry-After` from it, and
+ * is absent for a failure that never produced a response at all (a reset
+ * connection, DNS). It is the only thing the loop needs that the error itself
+ * cannot tell it.
+ */
+type AttemptOutcome =
+  | { readonly kind: "served"; readonly result: OsmTileResult }
+  | {
+      readonly kind: "failed";
+      readonly response: Response | undefined;
+      readonly error: unknown;
+    };
+
 /** Matches the measured `Rate limit: 2` on the public instances. */
 const DEFAULT_MAX_CONCURRENT = 2;
 
@@ -614,118 +630,168 @@ export class OverpassSource implements OsmDataSource {
       }
       this.stats.requests++;
 
-      // Whether THIS dispatch already produced a recorded attempt. The catch
-      // below must not add a second record for the same request: a 200 whose
-      // body is an HTML error page is recorded here with its status, then
-      // `toResult`'s .json() throws and lands in the catch. Recording again
-      // would make attempts.length exceed stats.requests and overstate quota
-      // use — and an instance answering 200 with an error page is exactly the
-      // case this log exists to diagnose.
-      let recorded = false;
-
-      try {
-        const response = await this.dispatch(endpoint, query, signal);
-        this.recordAttempt({
-          endpoint,
-          status: response.status,
-          at: this.now(),
-        });
-        recorded = true;
-
-        if (response.ok) {
-          // AFTER `toResult`, not before it. A 200 carrying an HTML error page
-          // is not this operator serving us, and `toResult` is where that is
-          // discovered; recording the success first would credit the host for a
-          // response the catch below is about to call a failure.
-          const result = await this.toResult(tile, endpoint, response, {
-            slotWaitMs,
-            transportStart,
-            attempts: attempt + 1,
-          });
-          this.health.record(operatorForUrl(endpoint), "success");
-          return result;
-        }
-
-        // CLASSIFIED HERE, where the status is, rather than in the catch where
-        // it is gone. A 400 is our own malformed query and says nothing about
-        // the host - demoting the operator that reported it honestly would walk
-        // the pool one endpoint at a time while the query stayed broken.
-        this.health.record(
-          operatorForUrl(endpoint),
-          operatorOutcomeFor(response.status),
-        );
-
-        if (!RETRYABLE_STATUSES.has(response.status)) {
-          throw new PermanentOverpassError(
-            `Overpass ${endpoint} returned ${response.status} ${response.statusText}`,
-          );
-        }
-        this.noteRateLimit(response, endpoint);
-        lastError = new Error(
-          `Overpass ${endpoint} returned ${response.status} ${response.statusText}`,
-        );
-        await this.waitBeforeRetry(
-          attempt,
-          response,
-          signal,
-          refusedOperators,
-          attemptOrder,
-        );
-      } catch (error) {
-        // Aborts and permanent failures must escape the loop rather than be
-        // re-attempted. Both were previously caught here and retried: a 400
-        // (our query is malformed) cost four requests instead of one, and an
-        // abort kept working on an area the user had already left.
-        if (isAbortError(error) || error instanceof PermanentOverpassError) {
-          // AN ABORT IS NOT EVIDENCE. The caller left; the host may have been
-          // about to answer perfectly. A permanent error already recorded its
-          // own verdict from the status.
-          throw error;
-        }
-        // Transport failures and unparseable bodies. Both are this operator
-        // failing to serve us, whatever the cause.
-        //
-        // NO "ALREADY RECORDED" GUARD IS NEEDED HERE, unlike `recorded` above,
-        // and the asymmetry is worth stating. The only place that records a
-        // health verdict before this one is the non-ok branch, and that branch
-        // either throws `PermanentOverpassError` - rethrown three lines up -
-        // or loops round to the next attempt. Nothing that records a verdict
-        // reaches this line.
-        this.health.record(operatorForUrl(endpoint), "failure");
-        // A transport failure (DNS, reset connection) never produced a status.
-        // Recorded WITHOUT one rather than omitted: dropping it would make the
-        // log claim fewer requests than were really made, which is the one
-        // direction of error that under-reports quota use.
-        //
-        // Only when the dispatch itself failed. The previous guard here tested
-        // `!(error instanceof PermanentOverpassError)`, which was dead code -
-        // the block above already rethrew every one of those - while the case
-        // it needed to exclude (a response recorded with its status whose BODY
-        // then failed to parse) went unguarded.
-        if (!recorded) {
-          this.recordAttempt({
-            endpoint,
-            error: describe(error),
-            at: this.now(),
-          });
-        }
-        lastError = error;
-        if (attempt >= this.maxRetries) {
-          break;
-        }
-        await this.waitBeforeRetry(
-          attempt,
-          undefined,
-          signal,
-          refusedOperators,
-          attemptOrder,
-        );
+      const outcome = await this.runOneAttempt({
+        tile,
+        query,
+        endpoint,
+        attempt,
+        slotWaitMs,
+        transportStart,
+        signal,
+      });
+      if (outcome.kind === "served") {
+        return outcome.result;
       }
+      lastError = outcome.error;
+
+      // ONE RULE FOR BOTH FAILURE PATHS, and checking that it could be one was
+      // the point of doing this extraction carefully. The two paths LOOKED
+      // asymmetric before it — the thrown one broke out on the last attempt
+      // while the non-ok one fell through to the backoff — and the first draft
+      // of this refactor faithfully preserved that with an extra condition and
+      // a comment calling the difference observable.
+      //
+      // It is not. `shouldWaitBeforeRetry` already returns false when
+      // `attempt >= maxRetries`, so the non-ok path's extra call was a no-op
+      // that the loop condition then ended anyway. The guard lives in one
+      // place; this is the same guard, stated once.
+      if (attempt >= this.maxRetries) {
+        break;
+      }
+      await this.waitBeforeRetry(
+        attempt,
+        outcome.response,
+        signal,
+        refusedOperators,
+        attemptOrder,
+      );
     }
 
     throw new Error(
       `Overpass fetch failed for tile ${tile} after ${this.maxRetries + 1} attempt(s): ${describe(lastError)}`,
     );
+  }
+
+  /**
+   * ONE attempt at ONE endpoint: dispatch, classify, record.
+   *
+   * EXTRACTED SO IT CAN BE RUN TWICE AT ONCE (racing plan, M1). The retry loop
+   * above carries a decade of reasons per branch — the attempt log that must
+   * not over-count, the rate-limit penalty, the abort/permanent/retryable
+   * three-way split, the health tally — and racing two operators duplicates
+   * every one of them unless the per-attempt work has a single home first.
+   * This milestone is a pure refactor with no behaviour change; the existing
+   * tests are its specification.
+   *
+   * TERMINAL FAILURES STILL THROW rather than being returned as an outcome. An
+   * abort means the caller left and a permanent error means retrying is
+   * pointless, so neither is a decision the loop should be able to get wrong by
+   * forgetting to re-check a discriminant.
+   */
+  private async runOneAttempt(input: {
+    readonly tile: string;
+    readonly query: string;
+    readonly endpoint: string;
+    readonly attempt: number;
+    readonly slotWaitMs: number;
+    readonly transportStart: number;
+    readonly signal?: AbortSignal | undefined;
+  }): Promise<AttemptOutcome> {
+    const { tile, query, endpoint, attempt, signal } = input;
+
+    // Whether THIS dispatch already produced a recorded attempt. The catch
+    // below must not add a second record for the same request: a 200 whose
+    // body is an HTML error page is recorded here with its status, then
+    // `toResult`'s .json() throws and lands in the catch. Recording again
+    // would make attempts.length exceed stats.requests and overstate quota
+    // use — and an instance answering 200 with an error page is exactly the
+    // case this log exists to diagnose.
+    let recorded = false;
+
+    try {
+      const response = await this.dispatch(endpoint, query, signal);
+      this.recordAttempt({
+        endpoint,
+        status: response.status,
+        at: this.now(),
+      });
+      recorded = true;
+
+      if (response.ok) {
+        // AFTER `toResult`, not before it. A 200 carrying an HTML error page
+        // is not this operator serving us, and `toResult` is where that is
+        // discovered; recording the success first would credit the host for a
+        // response the catch below is about to call a failure.
+        const result = await this.toResult(tile, endpoint, response, {
+          slotWaitMs: input.slotWaitMs,
+          transportStart: input.transportStart,
+          attempts: attempt + 1,
+        });
+        this.health.record(operatorForUrl(endpoint), "success");
+        return { kind: "served", result };
+      }
+
+      // CLASSIFIED HERE, where the status is, rather than in the catch where
+      // it is gone. A 400 is our own malformed query and says nothing about
+      // the host - demoting the operator that reported it honestly would walk
+      // the pool one endpoint at a time while the query stayed broken.
+      this.health.record(
+        operatorForUrl(endpoint),
+        operatorOutcomeFor(response.status),
+      );
+
+      if (!RETRYABLE_STATUSES.has(response.status)) {
+        throw new PermanentOverpassError(
+          `Overpass ${endpoint} returned ${response.status} ${response.statusText}`,
+        );
+      }
+      this.noteRateLimit(response, endpoint);
+      return {
+        kind: "failed",
+        response,
+        error: new Error(
+          `Overpass ${endpoint} returned ${response.status} ${response.statusText}`,
+        ),
+      };
+    } catch (error) {
+      // Aborts and permanent failures must escape rather than be re-attempted.
+      // Both were previously caught here and retried: a 400 (our query is
+      // malformed) cost four requests instead of one, and an abort kept working
+      // on an area the user had already left.
+      if (isAbortError(error) || error instanceof PermanentOverpassError) {
+        // AN ABORT IS NOT EVIDENCE. The caller left; the host may have been
+        // about to answer perfectly. A permanent error already recorded its
+        // own verdict from the status.
+        throw error;
+      }
+      // Transport failures and unparseable bodies. Both are this operator
+      // failing to serve us, whatever the cause.
+      //
+      // NO "ALREADY RECORDED" GUARD IS NEEDED HERE, unlike `recorded` above,
+      // and the asymmetry is worth stating. The only place that records a
+      // health verdict before this one is the non-ok branch, and that branch
+      // either throws `PermanentOverpassError` - rethrown three lines up -
+      // or returns. Nothing that records a verdict reaches this line.
+      this.health.record(operatorForUrl(endpoint), "failure");
+      // A transport failure (DNS, reset connection) never produced a status.
+      // Recorded WITHOUT one rather than omitted: dropping it would make the
+      // log claim fewer requests than were really made, which is the one
+      // direction of error that under-reports quota use.
+      //
+      // Only when the dispatch itself failed. The previous guard here tested
+      // `!(error instanceof PermanentOverpassError)`, which was dead code -
+      // the block above already rethrew every one of those - while the case
+      // it needed to exclude (a response recorded with its status whose BODY
+      // then failed to parse) went unguarded.
+      if (!recorded) {
+        this.recordAttempt({
+          endpoint,
+          error: describe(error),
+          at: this.now(),
+        });
+      }
+      return { kind: "failed", response: undefined, error };
+    }
   }
 
   /** Appends to the bounded attempt log. */
