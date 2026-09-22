@@ -18,7 +18,8 @@
  * **AND THE RESIDUAL HAS A SHARPER MEANING THAN "LEFTOVER", which fell out of
  * the arithmetic rather than being designed in.** Substituting the definitions:
  *
- *     Σworker  = ΣpipelineParts + terrainWait + mesh + prefetch
+ *     Σworker  = fetchCriticalPath + merge + score + derive
+ *                + terrainWait + mesh + prefetch
  *     residual = wall - Σstages
  *              = (roundTrip + draw)
  *                - (Σworker + queue + (roundTrip - workerTotal - queue) + draw)
@@ -40,7 +41,15 @@
  * {@link composeClickSummary} exists: a wall clock around the WHOLE click, with
  * `pageResidualMs` as the page's own unattributed time.
  *
- * **`ΣpipelineParts` is the ten COMPONENT fields, not `DemoStageTimings.pipelineMs`
+ * **THE PER-TILE COMPONENTS ARE NOT IN THAT SUM SINCE 2026-09-22.** They are
+ * totals over tiles that the loop now fetches two at a time, so they overstate
+ * elapsed time whenever more than one tile was needed — which made the residual
+ * negative and marked every multi-tile click untrustworthy. `fetchCriticalPath`
+ * (the busiest fetch worker's own total) is what the loop contributes; the
+ * components remain the stage breakdown, which is the right answer to a
+ * different question.
+ *
+ * **`Σworker` is COMPONENT fields, not `DemoStageTimings.pipelineMs`
  * — and the distinction is not pedantry**, because `pipelineMs` is a real field
  * of the very object being summed and reading the identity the obvious way
  * gives a different, wrong one. Since the components are summed rather than the
@@ -136,6 +145,20 @@ interface ClickStage {
   readonly ms: number;
   /** Fraction of {@link ClickTimings.wallMs}, in [0, 1]. */
   readonly share: number;
+  /**
+   * Whether this stage adds to the total the residual is measured against.
+   *
+   * **False for the per-tile split of stages 1–2**, and that is the whole point
+   * of the flag. Those seven are SUMS over tiles, and since 2026-09-20 the loop
+   * fetches two at a time — so they describe where a tile's time went while
+   * adding up to more wall clock than actually elapsed. Counting them made the
+   * residual negative on every multi-tile click. The loop contributes to the
+   * total exactly once, through `fetch-loop`.
+   *
+   * On a single-tile pass the two are equal by construction, which is why this
+   * change moves no number that was already correct.
+   */
+  readonly counted: boolean;
 }
 
 export interface ClickTimings {
@@ -252,30 +275,42 @@ export function composeClickTimings(input: ClickTimingInput): ClickTimings {
   // line unable to falsify the thing it was built to test, and would reproduce
   // the absent-vs-zero confusion the source-level type spends a whole field
   // preventing. The sub-splits of stages 1–2 are the noise, and they drop.
-  const measured: readonly (readonly [string, number, boolean])[] = [
-    // Stage 1–2, split by the source. Sub-splits drop when zero.
-    ["slot-wait", p.slotWaitMs, false],
-    ["fetch", p.transportMs, true],
-    ["decode", p.decodeMs, false],
-    ["parse", p.parseMs, true],
-    ["cache-probe", p.probeMs, false],
-    ["cache-store", p.storeMs, false],
-    ["dedup-join", p.joinedMs, false],
+  //
+  // THE FOURTH ELEMENT IS `counted`, and only the per-tile split of stages 1–2
+  // sets it false. Those seven are sums over tiles that now overlap in time, so
+  // they are the right answer to "where did a tile's time go" and the wrong
+  // answer to "how long did the loop take". `fetch-loop` carries the loop's
+  // critical path and is what the total uses. On a single-tile pass the two are
+  // identical, so nothing that was already correct moves.
+  const measured: readonly (readonly [string, number, boolean, boolean])[] = [
+    // Stage 1–2, split by the source. Sub-splits drop when zero, and NONE of
+    // them counts toward the total.
+    ["slot-wait", p.slotWaitMs, false, false],
+    ["fetch", p.transportMs, true, false],
+    ["decode", p.decodeMs, false, false],
+    ["parse", p.parseMs, true, false],
+    ["cache-probe", p.probeMs, false, false],
+    ["cache-store", p.storeMs, false, false],
+    ["dedup-join", p.joinedMs, false, false],
+    // The loop those seven describe, counted ONCE: the busiest worker's own
+    // total, i.e. the earliest the loop could have ended.
+    ["fetch-loop", p.fetchCriticalPathMs, true, true],
     // Stages 3–5.
-    ["merge", p.mergeMs, true],
-    ["score", p.scoreMs, true],
-    ["derive", p.deriveMs, true],
+    ["merge", p.mergeMs, true, true],
+    ["score", p.scoreMs, true, true],
+    ["derive", p.deriveMs, true, true],
     // Stages 6–9.
-    ["terrain-wait", w.terrainWaitMs, true],
-    ["mesh", w.meshMs, true],
-    ["prefetch-queue", w.prefetchMs, false],
-    ["queue", queueMs, true],
-    ["boundary", boundaryMs, true],
-    ["draw", input.drawMs, true],
+    ["terrain-wait", w.terrainWaitMs, true, true],
+    ["mesh", w.meshMs, true, true],
+    ["prefetch-queue", w.prefetchMs, false, true],
+    ["queue", queueMs, true, true],
+    ["boundary", boundaryMs, true, true],
+    ["draw", input.drawMs, true, true],
   ];
 
-  const stages = measured.map(([name, value, always]) => ({
+  const stages = measured.map(([name, value, always, counted]) => ({
     name,
+    counted,
     // CLAMPED HERE TOO, not only on the derived boundary term. Every producer
     // already floors its own durations, so this is belt and braces — but this
     // module is a boundary and its inputs cross a structured clone from another
@@ -314,15 +349,28 @@ export function composeClickTimings(input: ClickTimingInput): ClickTimings {
   // `measured` holds the already-clamped copy.
   // HOISTED ABOVE `clamped`, which reads it. Both mini-residuals are clamped
   // and both therefore feed the rule.
-  const insideFetchLoop =
-    p.slotWaitMs +
-    p.transportMs +
-    p.decodeMs +
-    p.parseMs +
-    p.probeMs +
-    p.storeMs +
-    p.joinedMs +
-    p.mergeMs;
+  // RECONCILED AGAINST THE CRITICAL PATH, NOT THE SUM OF THE PARTS.
+  //
+  // This used to add the seven per-tile totals and the merge. That was right
+  // while tiles were fetched one at a time and became wrong on 2026-09-20, when
+  // the loop started fetching two at once: the per-tile terms are SUMS over
+  // tiles that now overlap, so two ten-second downloads contribute twenty to
+  // this side and ten to `fetchMs`. The parts exceeded the whole, the residual
+  // went negative, and EVERY multi-tile click printed as untrustworthy —
+  // the exact case the pool exists for, and the one the instrument could no
+  // longer describe.
+  //
+  // `fetchCriticalPathMs` is the busiest worker's own total, i.e. the earliest
+  // the loop could have finished. The merge runs after it, sequentially, inside
+  // the same wall clock, so it still adds. What is left over is the loop's own
+  // overhead — scheduling, await hops, working-set arithmetic — which is what
+  // this residual was always for.
+  //
+  // The per-tile sums are NOT lost: they remain the stage breakdown above, and
+  // they are still the right thing to read when asking where a tile's time
+  // went. They are simply not a quantity that can be compared to a wall clock
+  // once two of them run side by side.
+  const insideFetchLoop = p.fetchCriticalPathMs + p.mergeMs;
   const rawFetchUnattributedMs = p.fetchMs - insideFetchLoop;
   const rawPipelineUnattributedMs =
     p.pipelineMs - (p.fetchMs + p.scoreMs + p.deriveMs);
@@ -333,7 +381,9 @@ export function composeClickTimings(input: ClickTimingInput): ClickTimings {
     rawFetchUnattributedMs < 0 ||
     rawPipelineUnattributedMs < 0;
 
-  const summed = stages.reduce((sum, s) => sum + s.ms, 0);
+  // ONLY THE COUNTED STAGES. See `ClickStage.counted`: the per-tile split
+  // would otherwise add a second, overlapping copy of the fetch loop.
+  const summed = stages.reduce((sum, s) => (s.counted ? sum + s.ms : sum), 0);
   const residualMs = wallMs - summed;
   const residualShare = wallMs > 0 ? residualMs / wallMs : 0;
 

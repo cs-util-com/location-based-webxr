@@ -148,6 +148,13 @@ they are not re-derived — **not as guidance.**
   deferring the milestone-1 cache-probe gap on the grounds that `fetchMs` minus
   the parts would expose it — and the first cut produced `fetchMs` and
   subtracted nothing from it anywhere.
+- **`ClickStage.counted` decides what enters the total, and only the per-tile
+  split of stages 1-2 is excluded.** Those seven are sums over tiles the loop
+  now fetches two at a time: they are the right answer to "where did a tile's
+  time go" and the wrong answer to "how long did the loop take". The loop enters
+  the total once, as the `fetch-loop` stage carrying `fetchCriticalPathMs`. On a
+  single-tile pass the two are identical, which is why this change moved nothing
+  that was already correct.
 - **Shares are rounded independently and the line says so.** With this many
   entries the column can miss 100 by a few points, and a reader who adds it up
   would otherwise reasonably conclude the instrument is broken.

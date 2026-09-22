@@ -40,6 +40,11 @@ const INPUT: ClickTimingInput = {
     slotWaitMs: 10,
     joinedMs: 0,
     fetchMs: 800,
+    // ONE TILE (`tilesFetched: 1`), so the busiest worker's total IS this
+    // tile's own span: 10 + 400 + 100 + 200 + 20 + 30 + 0 = 760. With the
+    // merge's 40 that accounts for the whole 800 ms loop, which is what makes
+    // this fixture a reconciling pass.
+    fetchCriticalPathMs: 760,
     mergeMs: 40,
     scoreMs: 300,
     deriveMs: 100,
@@ -206,10 +211,38 @@ describe("composeClickTimings reconciles against a measured whole", () => {
     // and a breakdown missing a third of the click would look complete. Against
     // the wall clock, a missing stage shows up as shares that do not reach 100.
     const t = composeClickTimings(INPUT);
-    const totalShare = t.stages.reduce((sum, s) => sum + s.share, 0);
+    // COUNTED STAGES ONLY, and the exclusion is load-bearing rather than
+    // bookkeeping: the seven per-tile stages are a SPLIT of the fetch loop, so
+    // adding them to the loop's own entry counts that time twice. They are sums
+    // over tiles that overlap in time, which is why they cannot be part of any
+    // identity against a wall clock.
+    const totalShare = t.stages.reduce(
+      (sum, s) => (s.counted ? sum + s.share : sum),
+      0,
+    );
 
     expect(totalShare).toBeLessThan(1);
     expect(totalShare + t.residualShare).toBeCloseTo(1, 6);
+  });
+
+  it("splits the fetch loop without double-counting it", () => {
+    // The other half of the rule above. On a ONE-TILE pass the split and the
+    // loop agree exactly, which is what makes this change safe for every
+    // measurement taken before concurrency existed: nothing that was already
+    // correct moves.
+    const t = composeClickTimings(INPUT);
+    const perTile = ["slot-wait", "fetch", "decode", "parse", "cache-probe"];
+    const splitSum = t.stages
+      .filter((s) => perTile.includes(s.name) || s.name === "cache-store")
+      .reduce((sum, s) => sum + s.ms, 0);
+    const loop = t.stages.find((s) => s.name === "fetch-loop");
+
+    expect(loop?.ms).toBe(760);
+    expect(splitSum).toBe(760);
+    // …and not one of the split stages may enter the total.
+    expect(t.stages.filter((s) => s.counted).map((s) => s.name)).not.toContain(
+      "fetch",
+    );
   });
 
   it("flags a breakdown that does not add up rather than hiding it", () => {
@@ -485,10 +518,49 @@ describe("pipelineUnattributedMs — the second anchor", () => {
     expect(t.reconciles).toBe(false);
   });
 
+  it("reconciles a pass whose tiles OVERLAPPED in time", () => {
+    // THE DEFECT THIS ARITHMETIC WAS CHANGED FOR. Since 2026-09-20 the loop
+    // fetches two tiles at once, and every per-tile term is a SUM over tiles.
+    // Two 700 ms tiles therefore contribute 1400 to the parts and about 700 to
+    // `fetchMs` — so the old reconciliation (add the parts, subtract from the
+    // whole) went negative and marked the click untrustworthy. It marked EVERY
+    // multi-tile click untrustworthy, which is precisely the case the pool was
+    // built for and precisely the case the instrument then could not describe.
+    //
+    // Here: two tiles ran side by side, each 700 ms of components, so the sums
+    // are doubled but the busiest worker only ever spent 700. With the merge's
+    // 40 that accounts for the 760 ms loop, and the click reconciles.
+    const overlapping = composeClickTimings({
+      ...INPUT,
+      pipeline: {
+        ...INPUT.pipeline,
+        tilesFetched: 2,
+        // Doubled: these are sums over two tiles.
+        slotWaitMs: 20,
+        transportMs: 800,
+        decodeMs: 200,
+        parseMs: 400,
+        probeMs: 40,
+        storeMs: 60,
+        joinedMs: 0,
+        // But the two ran CONCURRENTLY, so the loop took one tile's worth.
+        fetchCriticalPathMs: 720,
+        mergeMs: 40,
+        fetchMs: 760,
+        pipelineMs: 1160,
+      },
+      worker: { ...INPUT.worker, workerTotalMs: 1920 },
+    });
+
+    expect(overlapping.fetchUnattributedMs).toBe(0);
+    expect(overlapping.reconciles).toBe(true);
+  });
+
   it("refuses to reconcile a negative FETCH anchor gap too", () => {
     // The other mini-residual, and the other clamp site. `fetchMs` smaller than
-    // the per-tile parts inside it means the loop's own clock disagrees with
-    // the source's.
+    // the critical path plus the merge inside it means the loop's own clock
+    // disagrees with the source's — the one thing overlapping tiles cannot
+    // explain away, since the critical path is a lower bound on the loop.
     const t = composeClickTimings({
       ...INPUT,
       pipeline: { ...INPUT.pipeline, fetchMs: 1 },

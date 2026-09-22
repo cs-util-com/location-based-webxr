@@ -44,6 +44,13 @@ const arbInput = (n: fc.Arbitrary<number>): fc.Arbitrary<ClickTimingInput> =>
       slotWaitMs: n,
       joinedMs: n,
       fetchMs: n,
+      // GENERATED FREELY, like every other duration here, and that is the point
+      // of this file: the properties below must hold for a critical path that
+      // is larger than the loop that contained it, or negative, or absurd.
+      // Those are impossible from the pipeline and entirely possible across a
+      // structured clone from another thread, which is the boundary this module
+      // sits on.
+      fetchCriticalPathMs: n,
       mergeMs: n,
       scoreMs: n,
       deriveMs: n,
@@ -91,14 +98,13 @@ describe("the reconciliation identity holds for any inputs", () => {
       fc.property(arbInput(duration), (input) => {
         const p = input.pipeline;
         const w = input.worker;
+        // THE PER-TILE PARTS ARE NOT IN THIS SUM, and their replacement by
+        // the loop's critical path is the 2026-09-22 change this property
+        // had to follow. They are sums over tiles that overlap in time, so
+        // including them would assert an identity the code can only satisfy
+        // when exactly one tile was fetched.
         const enumeratedInWorker =
-          p.slotWaitMs +
-          p.transportMs +
-          p.decodeMs +
-          p.parseMs +
-          p.probeMs +
-          p.storeMs +
-          p.joinedMs +
+          p.fetchCriticalPathMs +
           p.mergeMs +
           p.scoreMs +
           p.deriveMs +
@@ -132,7 +138,13 @@ describe("the reconciliation identity holds for any inputs", () => {
     fc.assert(
       fc.property(arbInput(anyNumber), (input) => {
         const t = composeClickTimings(input);
-        const summed = t.stages.reduce((sum, s) => sum + s.ms, 0);
+        // COUNTED STAGES ONLY. The per-tile split is a breakdown OF the fetch
+        // loop, not additional time beside it, so summing all of them would
+        // count that loop twice.
+        const summed = t.stages.reduce(
+          (sum, s) => (s.counted ? sum + s.ms : sum),
+          0,
+        );
         expect(summed + t.residualMs).toBeCloseTo(t.wallMs, 6);
       }),
       { numRuns: 200 },

@@ -238,10 +238,17 @@ missing four stages** — the plan's own failure mode, one level down.
   fetching, that growth would be invisible, and it is the term nothing has ever
   measured.
 - **`fetchMs` and `pipelineMs` are wall clocks, and `fetchMs` is what makes the fetch parts
-  falsifiable.** `click-timings.ts` subtracts the per-tile parts from it and
-  reports the difference as `fetchUnattributedMs`. Any set of plausible
-  per-stage numbers adds up to something;
-  only a separately measured whole can say the parts are wrong.
+  falsifiable.** `click-timings.ts` subtracts the loop's CRITICAL PATH
+  (`fetchCriticalPathMs`) plus the merge from it and reports the difference as
+  `fetchUnattributedMs`. Any set of plausible per-stage numbers adds up to
+  something; only a separately measured whole can say the parts are wrong.
+  - **It subtracted the per-tile PARTS until 2026-09-22, and that stopped being
+    right on 2026-09-20** when the loop began fetching two tiles at once. The
+    parts are sums over tiles that overlap, so they exceeded the wall clock and
+    every multi-tile click printed as untrustworthy - the exact case the pool
+    exists for. `fetchCriticalPathMs` is the busiest fetch worker's own total,
+    i.e. the earliest the loop could have ended; on a single-tile pass it equals
+    the sum of the parts, so no already-correct number moved.
 - **`tilesUnmeasured` is a count, not an absence.** A fixture-backed run must
   not read as a click whose network cost nothing.
 - **`featuresHeld` is `tilesHeld`'s missing denominator** (added 2026-08-31).

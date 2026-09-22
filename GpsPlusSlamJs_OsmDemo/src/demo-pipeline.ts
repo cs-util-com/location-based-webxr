@@ -270,6 +270,28 @@ export interface DemoStageTimings {
    */
   readonly fetchMs: number;
   /**
+   * The BUSIEST fetch worker's own total — the fetch loop's critical path.
+   *
+   * **This exists because the 2-wide pool broke the reconciliation above.**
+   * Every other fetch term is SUMMED over tiles, and since 2026-09-20 those
+   * tiles overlap in time: two ten-second downloads cost ten seconds of
+   * `fetchMs`, not twenty. So the parts came to more than the whole, and
+   * `click-timings.ts` marked EVERY multi-tile click untrustworthy — which is
+   * exactly the case the pool was built for, and exactly the case the
+   * instrument could no longer describe.
+   *
+   * NOT the longest single tile, which is the tempting and wrong definition:
+   * with two workers and five tiles one worker may take three of them in
+   * sequence, and the pool cannot finish before that worker does. So each
+   * worker accumulates its own spans and this is the maximum over workers,
+   * which is the earliest the loop could possibly have ended.
+   *
+   * A failed tile still counts: it consumed wall clock whether or not it
+   * produced a result, and leaving it out would make the critical path look
+   * shorter than the loop that contained it.
+   */
+  readonly fetchCriticalPathMs: number;
+  /**
    * Stage 3 — `acceptTile`, i.e. `mergeTiles` over every tile held this session.
    *
    * Measured apart from `fetchMs` even though it runs inside the same loop,
@@ -630,24 +652,43 @@ export class DemoPipeline {
     const outcomes = new Map<string, OsmTileResult>();
     let next = 0;
     let aborted = false;
+    // THE CRITICAL PATH, accumulated per worker and maximised across them.
+    // See `fetchCriticalPathMs` for why the longest single TILE is the wrong
+    // definition once a worker can take several in sequence.
+    let fetchCriticalPathMs = 0;
     const worker = async (): Promise<void> => {
+      let mine = 0;
+      // FOLDED ON EVERY EXIT PATH, not only the normal one: an aborted or
+      // errored worker still spent the time it spent, and a critical path that
+      // ignored it would read shorter than the loop that contained it.
+      const done = (): void => {
+        fetchCriticalPathMs = Math.max(fetchCriticalPathMs, mine);
+      };
       for (;;) {
         const index = next++;
         const tile = wanted[index];
-        if (tile === undefined) return;
+        if (tile === undefined) {
+          done();
+          return;
+        }
         // A tile is ~21 MB, so stopping between tiles is most of the saving
         // abort can offer at all.
         if (signal?.aborted === true) {
           aborted = true;
+          done();
           return;
         }
+        const tileStart = this.clock();
         try {
           // THREADED INTO THE REQUEST ITSELF, so a superseded run stops the
           // transfer rather than merely stopping before the next one.
           outcomes.set(tile, await this.source.fetchTile(tile, signal));
+          mine += Math.max(0, this.clock() - tileStart);
         } catch (error) {
+          mine += Math.max(0, this.clock() - tileStart);
           if (isAbortError(error)) {
             aborted = true;
+            done();
             return;
           }
           // Left absent in `outcomes`; recorded as missing in working-set order
@@ -813,6 +854,7 @@ export class DemoPipeline {
       timings: {
         ...totals,
         fetchMs,
+        fetchCriticalPathMs,
         mergeMs,
         scoreMs,
         // CLOSED HERE, on the last line before the snapshot leaves, so stage 5
