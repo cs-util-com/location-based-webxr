@@ -105,16 +105,12 @@ import {
 } from '../ui/navigation';
 import { gpsEventVisualizer } from 'gps-plus-slam-app-framework/visualization/gps-event-markers';
 import { refPointVisualizer } from '../visualization/ref-point-visualizer';
-import {
-  gpsPathToCoverageCells,
-  H3_RESOLUTION,
-} from 'gps-plus-slam-app-framework/geo';
 import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
 import type { LatLong, Matrix4 } from 'gps-plus-slam-app-framework/core';
 import { magneticHeadingFromEnuQuat } from 'gps-plus-slam-app-framework/core';
 import type { LeafletMapOverlay } from 'gps-plus-slam-app-framework/visualization/leaflet-map-overlay';
 import type { MapData } from 'gps-plus-slam-app-framework/visualization/map-data';
-import { getBuildInfo } from '../utils/build-info';
+import { writeSessionMetadata } from './session-metadata-record';
 import { DEFAULT_SCENARIO } from '../storage/session-zip-naming';
 
 const log = createLogger('RecordingSession');
@@ -723,43 +719,19 @@ export function createRecordingSessionHandlers(
       );
     }
 
-    // Write session metadata
-    try {
-      let buildInfo;
-
-      try {
-        buildInfo = getBuildInfo();
-      } catch (error) {
-        log.warn('Build metadata unavailable for session metadata', error);
-      }
-
-      // Per-tour H3 coverage index (Step 2 / D1): deduped res-11 cells the GPS
-      // path crossed, so the map-centric browser can place this tour without
-      // unzipping its GPS data. Computed here at stop while the path is in state.
-      const h3Cells = gpsPathToCoverageCells(
-        gpsPositions.map((p) => ({ lat: p.latitude, lng: p.longitude }))
-      );
-
-      await store.writeSessionMetadata({
-        version: 1,
-        odomCoordVersion: 5,
-        startedAt: sessionMetadata?.startTime
-          ? new Date(sessionMetadata.startTime).toISOString()
-          : new Date(endTime).toISOString(),
-        endedAt: new Date(endTime).toISOString(),
-        contextTag: sessionMetadata?.contextTag ?? FALLBACK_SCENARIO,
-        actionCount: gpsPositions.length,
-        frameCount: imageCount,
-        userAgent: navigator.userAgent,
-        ...(buildInfo ? { build: buildInfo } : {}),
-        pageUrl: getSanitizedPageUrl(),
-        h3Cells,
-        h3Resolution: H3_RESOLUTION,
-      });
-    } catch (err) {
-      log.error('Failed to write session metadata:', err);
-    }
-
+    // WRITTEN BY ITS OWN MODULE since 2026-09-22. This was forty-five lines
+    // here, and it is the one part of the stop pipeline whose inputs are all
+    // values - everything around it closes over mutable state of this factory,
+    // which is why it moved first. See `session-metadata-record.ts`.
+    await writeSessionMetadata((record) => store.writeSessionMetadata(record), {
+      endTime,
+      startTime: sessionMetadata?.startTime,
+      contextTag: sessionMetadata?.contextTag ?? FALLBACK_SCENARIO,
+      gpsPositions,
+      frameCount: imageCount,
+      userAgent: navigator.userAgent,
+      pageUrl: getSanitizedPageUrl(),
+    });
     // Final sync before stopping. Capture the manager into a local and claim
     // ownership (null the shared field) *before* the await, so any concurrent
     // teardown path (a second stop, or cleanupForNewRecording) sees null and
