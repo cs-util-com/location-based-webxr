@@ -102,11 +102,19 @@ path, with no DOM in it.
     the in-flight request completes. That change has since landed, the inline
     comment saying so was removed with it, and this copy outlived the
     constraint it described. Raised in review of PR #475.
-  - **A ring's missing tiles are fetched two at a time** (`FETCH_CONCURRENCY`),
-    so two tiles cost `max(t1, t2)` rather than `t1 + t2`. Two is the widest
-    pool that cannot breach Overpass's per-operator `Rate limit: 2`, and it
-    matches the source's own budget - raising it here alone would turn slot
-    refusals into missing geometry with no error.
+  - **A ring's missing tiles are fetched ONE at a time** (`FETCH_CONCURRENCY`,
+    1 since 2026-09-22). It was two, so that two tiles cost `max(t1, t2)`
+    rather than `t1 + t2`.
+    - **The two in-flight requests moved to RACING instead**, by owner
+      decision: the source now asks two operators for each cold tile and takes
+      the first answer. Ring parallelism helped the 18.8% of positions whose
+      first ring needs two tiles; racing helps every cold tile, and helps on the
+      axis that actually hurt - measured 4 of 9 tiles served inside the deadline
+      without it against 7 of 9 with it.
+    - The client's peak is therefore unchanged at two in-flight requests.
+      Raising this back to two without lowering something else would make it
+      four, and that number was sized against Overpass's per-operator
+      `Rate limit: 2`.
 
 - **DOM-free and unit-tested, because the browser is a bad debugger.** Iteration
   8's value is a human judging a picture; getting the data to the picture is

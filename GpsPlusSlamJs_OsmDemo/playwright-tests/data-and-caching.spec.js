@@ -444,10 +444,22 @@ test.describe("the background ring prefetch", () => {
         .poll(() => counts.overpassQuery, { timeout: 30000 })
         .toBeGreaterThan(1);
 
-      // AT MOST SEVEN: the tile the user is in plus its six neighbours
-      // (`fetchWorkingSet`). More than that would mean the queue is following the
-      // ring of a ring, which is how a background loader becomes a crawler.
-      expect(counts.overpassQuery).toBeLessThanOrEqual(7);
+      // AT MOST FOURTEEN: seven TILES - the one the user is in plus its six
+      // neighbours (`fetchWorkingSet`) - at up to two REQUESTS each, because a
+      // cold tile is raced at two operators since 2026-09-22. More than that
+      // would mean the queue is following the ring of a ring, which is how a
+      // background loader becomes a crawler.
+      //
+      // ⚠️ THE UNITS CHANGED FROM TILES TO REQUESTS, and that is worth a second
+      // look rather than a quiet edit. Racing exists so a tile the USER is
+      // waiting for arrives at all - measured 4 of 9 served inside the deadline
+      // without it against 7 of 9 with it. Nobody is waiting on a background
+      // prefetch, so doubling its cost buys nothing: if a prefetch fails the
+      // neighbour simply is not warm, and the user's later fetch is itself
+      // raced. Exempting the prefetch would halve this number and lose nothing
+      // measurable; it needs a seam on `OsmDataSource.fetchTile`, which is
+      // published API, so it is filed rather than bolted on here.
+      expect(counts.overpassQuery).toBeLessThanOrEqual(14);
     });
 
     await test.step("a prefetched neighbour is reused, not fetched again", async () => {

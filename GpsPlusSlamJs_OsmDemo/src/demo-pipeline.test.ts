@@ -1395,32 +1395,57 @@ describe("concurrent ring fetching", () => {
     };
   }
 
-  it("starts the second tile before the first has resolved", async () => {
-    // Serially this shows exactly one started tile until the first resolves.
+  it("fetches a ring's tiles ONE AT A TIME, because racing spends the pair", async () => {
+    // THIS TEST WAS INVERTED ON 2026-09-22, and the inversion is the record of
+    // an owner decision rather than a regression. It used to assert that the
+    // second tile started before the first resolved.
+    //
+    // The client's in-flight budget is two requests, sized against what the
+    // Overpass hosts advertise. Those two used to buy two tiles fetched at
+    // once; they now buy ONE tile asked of two operators simultaneously, with
+    // the first answer winning. Measured 2026-09-21: one attempt at a time
+    // served 4 of 9 tiles inside the 45 s deadline, racing served 7 of 9.
+    // Ring parallelism helped the 18.8% of positions whose first ring needs two
+    // tiles; racing helps every cold tile, and helps on the axis that hurt.
     const position = positionNeeding(2);
     const { source, started, release } = gatedSource();
     const pipeline = new DemoPipeline({ source, table: TABLE });
 
     const pending = pipeline.update(position, "walkable");
     await vi.waitFor(() => {
-      expect(started).toHaveLength(2);
+      expect(started).toHaveLength(1);
     });
 
-    for (const tile of [...started]) release(tile);
+    // Nothing else starts while the first is outstanding. A microtask turn is
+    // enough: the pool would have dispatched its second worker immediately.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(started).toHaveLength(1);
+
+    // `!` rather than a guard: the assertions above have already established
+    // the length, and a conditional here would let the test pass by skipping
+    // its own release if that ever stopped being true.
+    release(started[0]!);
+    await vi.waitFor(() => {
+      expect(started).toHaveLength(2);
+    });
+    release(started[1]!);
     await pending;
   });
 
-  it("never runs more than two fetches at once, even with more tiles to do", async () => {
-    // The politeness cap, asserted rather than commented.
+  it("never runs more than one fetch at once, however many tiles are due", async () => {
+    // The politeness cap, asserted rather than commented. The number is one
+    // rather than two because a cold tile now issues two requests of its own;
+    // `overpass-race.test.ts` holds the other half of that budget, asserting
+    // that the race itself never exceeds the source's `maxConcurrent`.
     const position = positionNeeding(3);
     const { source, started, release, peakInFlight } = gatedSource();
     const pipeline = new DemoPipeline({ source, table: TABLE });
 
     const pending = pipeline.update(position, "walkable");
     await vi.waitFor(() => {
-      expect(started.length).toBeGreaterThanOrEqual(2);
+      expect(started.length).toBeGreaterThanOrEqual(1);
     });
-    // Drain one at a time so the pool refills and the peak is sampled again.
     for (let i = 0; i < 10 && started.length > 0; i++) {
       const tile = started.shift();
       if (tile !== undefined) release(tile);
@@ -1428,37 +1453,20 @@ describe("concurrent ring fetching", () => {
     }
     await pending;
 
-    expect(peakInFlight()).toBe(2);
+    expect(peakInFlight()).toBe(1);
   });
 
-  it("gives an identical answer whichever order the servers reply in", async () => {
-    // THE PROPERTY THAT MATTERS, tested instead of the merge order that
-    // implements it. `acceptTile` is order-free by construction - every
-    // permutation of up to 7 tiles was executed and produced identical scores -
-    // but a run whose RESULT depended on which server answered first would be
-    // irreproducible, and every fixture-backed test in this package depends on
-    // it not being. Releasing in opposite orders is how arrival order and
-    // working-set order are made to genuinely disagree.
-    const position = positionNeeding(2);
-
-    async function runReleasing(reverse: boolean) {
-      const { source, started, release } = gatedSource();
-      const pipeline = new DemoPipeline({ source, table: TABLE });
-      const pending = pipeline.update(position, "walkable");
-      await vi.waitFor(() => {
-        expect(started).toHaveLength(2);
-      });
-      const order = reverse ? [...started].reverse() : [...started];
-      for (const tile of order) release(tile);
-      return pending;
-    }
-
-    const forward = await runReleasing(false);
-    const backward = await runReleasing(true);
-
-    expect(backward.cells).toEqual(forward.cells);
-    expect(backward.missingTiles).toEqual(forward.missingTiles);
-  });
+  // "gives an identical answer whichever order the servers reply in" was
+  // DELETED here on 2026-09-22, deliberately rather than by neglect. It varied
+  // arrival order by releasing two concurrently-started tiles in opposite
+  // orders, and with a serial ring no two tiles are ever outstanding together -
+  // arrival order IS working-set order by construction, so the test could no
+  // longer construct the disagreement it existed to check.
+  //
+  // The property itself is not lost and is better held where it lives:
+  // `merge-tiles.property.test.ts` proves order-independence over ALL
+  // permutations with fast-check, rather than over the one pair of orders this
+  // could reach.
 
   it("lets one tile fail without taking its siblings down", async () => {
     // The sequential per-tile `try/catch` gave this for free. A pool awaited

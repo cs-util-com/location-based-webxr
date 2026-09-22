@@ -68,6 +68,20 @@ function makeSource(
     // care about the distribution rather than one sequence override it.
     random: () => 0,
     now: () => 1_000_000,
+    // ONE IN-FLIGHT REQUEST, so these tests see ONE request per tile.
+    //
+    // Since 2026-09-22 a cold tile is RACED at two operators when the client
+    // has spare concurrency, which would double the request count in every
+    // assertion below - and none of these tests is about racing. They are
+    // about headers, de-duplication, the retry ladder, the transport deadline
+    // and the slot budget, and each would become a test about racing wearing
+    // its old name.
+    //
+    // The race is covered in `overpass-race.test.ts`, including the invariant
+    // that made it necessary: in-flight requests never exceed `maxConcurrent`,
+    // racing included. A test here that wants the shipped two-wide behaviour
+    // overrides this, as the bounded-concurrency pair below does.
+    maxConcurrent: 1,
     sleepImpl: (ms: number) => {
       sleeps.push(ms);
       return Promise.resolve();
@@ -219,7 +233,15 @@ describe("bounded concurrency", () => {
           });
         }),
     );
-    const { source } = makeSource(fetchImpl, { maxConcurrent: 2 });
+    // A SINGLE-OPERATOR POOL, so this stays a test of the semaphore rather
+    // than of racing. With two operators a cold tile is raced and makes two
+    // requests, and the resolver bookkeeping below - one resolver per expected
+    // request - would starve. That the race itself never breaches this cap is
+    // asserted directly in `overpass-race.test.ts`.
+    const { source } = makeSource(fetchImpl, {
+      maxConcurrent: 2,
+      endpoints: ["https://lz4.overpass-api.de/api/interpreter"],
+    });
 
     const tiles = [
       TILE,

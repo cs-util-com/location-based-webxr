@@ -255,6 +255,28 @@ export interface OverpassStats {
 const DEFAULT_REQUEST_TIMEOUT_MS = 45_000;
 
 /**
+ * What the opening race produced.
+ *
+ * ONE SHAPE rather than a three-way union, and the reason is mundane but real:
+ * the caller is already at the complexity ratchet, and a union costs it a
+ * discriminant check per case. `result` present means the tile is served;
+ * otherwise `startAttempt` says where the sequential loop resumes - 2 when the
+ * pair was spent, 0 when no race happened.
+ */
+interface RaceOutcome {
+  readonly result: OsmTileResult | undefined;
+  readonly error: unknown;
+  readonly startAttempt: 0 | 2;
+}
+
+/** No race happened; the caller starts its loop from the beginning. */
+const SKIPPED_RACE: RaceOutcome = {
+  result: undefined,
+  error: undefined,
+  startAttempt: 0,
+};
+
+/**
  * What one attempt produced: a tile, or a failure the loop may retry.
  *
  * `response` is carried because the backoff reads `Retry-After` from it, and
@@ -602,74 +624,315 @@ export class OverpassSource implements OsmDataSource {
     );
 
     let lastError: unknown;
-    // TRANSPORT IS CLOCKED AROUND THE WHOLE LOOP, backoff sleeps included, and
-    // `attempts` is reported next to it so the two readings that produce the
-    // same number stay distinguishable: a big `transportMs` at one attempt is a
-    // slow server, and the same figure at three attempts is mostly sleeping.
-    const transportStart = this.monotonicNow();
-    // Operators this tile has already had refused, so the backoff can tell
-    // "wait for a quota to recover" from "ask somebody else". See
-    // `shouldWaitBeforeRetry`.
-    const refusedOperators = new Set<string>();
-    // DRAWN ONCE FOR THIS TILE. See `planAttemptOrder`.
-    const attemptOrder = this.planAttemptOrder();
-    // attempt 0 is the initial try; 1..maxRetries are retries.
-    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
-      throwIfAborted(signal);
-      // Walk the order drawn for this tile. The modulo is a backstop for a
-      // `maxRetries` larger than the pool, not the selection rule — the rule is
-      // in `endpoint-order.ts`, and the order it returns already guarantees
-      // that the first attempts hit distinct operators.
-      const endpoint = attemptOrder[attempt % attemptOrder.length] as string;
-      // Recorded before the request rather than after it fails: every path out
-      // of this iteration other than success is a refusal, and recording it in
-      // one place beats three.
-      refusedOperators.add(operatorForUrl(endpoint));
-      if (attempt > 0) {
-        this.stats.retries++;
+    // THE RACE'S TWO PERMISSIONS (M3). It needs a second unit of BOTH budgets,
+    // and neither refusal is an error:
+    //
+    // - `tryTakeExtraSlot` is this source's own concurrency gate, which counts
+    //   REQUESTS in flight. Without this the race would quietly double what
+    //   `maxConcurrent` promises — a client configured for two in-flight
+    //   requests would make four — and that number was sized against Overpass's
+    //   `Rate limit: 2`. A guard that exists to stop this client getting an
+    //   operator's whole user base blocked is not one to route around.
+    // - `budget.tryAcquire` is the SHARED slot budget across sources, which
+    //   counts globally for the same reason.
+    //
+    // A refusal on either means this tile runs one attempt at a time, i.e.
+    // exactly the behaviour that shipped before racing existed. `RateLimitedError`
+    // therefore keeps meaning "there is nowhere to go": it is raised by the
+    // FIRST acquire in `fetchTileUncached`, never by these.
+    const raceConcurrency = this.tryTakeExtraSlot();
+    const raceSlot =
+      raceConcurrency && this.budget.tryAcquire(this.poolOperators);
+    try {
+      // TRANSPORT IS CLOCKED AROUND THE WHOLE LOOP, backoff sleeps included, and
+      // `attempts` is reported next to it so the two readings that produce the
+      // same number stay distinguishable: a big `transportMs` at one attempt is a
+      // slow server, and the same figure at three attempts is mostly sleeping.
+      const transportStart = this.monotonicNow();
+      // Operators this tile has already had refused, so the backoff can tell
+      // "wait for a quota to recover" from "ask somebody else". See
+      // `shouldWaitBeforeRetry`.
+      const refusedOperators = new Set<string>();
+      // DRAWN ONCE FOR THIS TILE. See `planAttemptOrder`.
+      const attemptOrder = this.planAttemptOrder();
+      // THE RACE (M2/M3). Extracted so this method reads as "acquire, maybe
+      // race, then loop" - and because inlining it put this method over the
+      // complexity ratchet, which is the ratchet doing its job.
+      // NOT AWAITED WHEN THERE IS NO RACE, and the guard is about TIMING rather
+      // than speed. An `await` yields a microtask even on a method that returns
+      // immediately, and that turn is enough for a caller who aborted right after
+      // calling us to be seen before the first dispatch - turning one request
+      // into none. That is arguably better behaviour, but it is not a change
+      // anyone designed, and a refactor should not move an observable by
+      // accident.
+      const raced = !raceSlot
+        ? SKIPPED_RACE
+        : await this.raceFirstPairIfAllowed({
+            tile,
+            query,
+            slotWaitMs,
+            transportStart,
+            signal,
+            allowed: raceSlot,
+            attemptOrder,
+            refusedOperators,
+          });
+      if (raced.result !== undefined) {
+        return raced.result;
       }
-      this.stats.requests++;
+      lastError = raced.error;
 
-      const outcome = await this.runOneAttempt({
-        tile,
-        query,
-        endpoint,
-        attempt,
-        slotWaitMs,
-        transportStart,
-        signal,
-      });
-      if (outcome.kind === "served") {
-        return outcome.result;
-      }
-      lastError = outcome.error;
+      // attempt 0 is the initial try; 1..maxRetries are retries. When the pair
+      // above raced, attempts 0 and 1 are already spent and this resumes at 2.
+      for (
+        let attempt = raced.startAttempt;
+        attempt <= this.maxRetries;
+        attempt++
+      ) {
+        throwIfAborted(signal);
+        // Walk the order drawn for this tile. The modulo is a backstop for a
+        // `maxRetries` larger than the pool, not the selection rule — the rule is
+        // in `endpoint-order.ts`, and the order it returns already guarantees
+        // that the first attempts hit distinct operators.
+        const endpoint = attemptOrder[attempt % attemptOrder.length] as string;
+        // Recorded before the request rather than after it fails: every path out
+        // of this iteration other than success is a refusal, and recording it in
+        // one place beats three.
+        refusedOperators.add(operatorForUrl(endpoint));
+        if (attempt > 0) {
+          this.stats.retries++;
+        }
+        this.stats.requests++;
 
-      // ONE RULE FOR BOTH FAILURE PATHS, and checking that it could be one was
-      // the point of doing this extraction carefully. The two paths LOOKED
-      // asymmetric before it — the thrown one broke out on the last attempt
-      // while the non-ok one fell through to the backoff — and the first draft
-      // of this refactor faithfully preserved that with an extra condition and
-      // a comment calling the difference observable.
-      //
-      // It is not. `shouldWaitBeforeRetry` already returns false when
-      // `attempt >= maxRetries`, so the non-ok path's extra call was a no-op
-      // that the loop condition then ended anyway. The guard lives in one
-      // place; this is the same guard, stated once.
-      if (attempt >= this.maxRetries) {
-        break;
+        const outcome = await this.runOneAttempt({
+          tile,
+          query,
+          endpoint,
+          attempt,
+          slotWaitMs,
+          transportStart,
+          signal,
+        });
+        if (outcome.kind === "served") {
+          return outcome.result;
+        }
+        lastError = outcome.error;
+
+        // ONE RULE FOR BOTH FAILURE PATHS, and checking that it could be one was
+        // the point of doing this extraction carefully. The two paths LOOKED
+        // asymmetric before it — the thrown one broke out on the last attempt
+        // while the non-ok one fell through to the backoff — and the first draft
+        // of this refactor faithfully preserved that with an extra condition and
+        // a comment calling the difference observable.
+        //
+        // It is not. `shouldWaitBeforeRetry` already returns false when
+        // `attempt >= maxRetries`, so the non-ok path's extra call was a no-op
+        // that the loop condition then ended anyway. The guard lives in one
+        // place; this is the same guard, stated once.
+        if (attempt >= this.maxRetries) {
+          break;
+        }
+        await this.waitBeforeRetry(
+          attempt,
+          outcome.response,
+          signal,
+          refusedOperators,
+          attemptOrder,
+        );
       }
-      await this.waitBeforeRetry(
-        attempt,
-        outcome.response,
-        signal,
-        refusedOperators,
-        attemptOrder,
+
+      throw new Error(
+        `Overpass fetch failed for tile ${tile} after ${this.maxRetries + 1} attempt(s): ${describe(lastError)}`,
       );
+    } finally {
+      if (raceSlot) this.budget.release();
+      if (raceConcurrency) this.releaseExtraSlot();
+    }
+  }
+
+  /**
+   * Races the first two attempts, when the client has the budget for it.
+   *
+   * WHY IT IS RACED AT ALL. Measured 2026-09-21 on the production res-7 query:
+   * within the shipped 45 s deadline, one attempt at a time served **4 of 9**
+   * tiles at a 32.2 s median; racing two distinct operators served **7 of 9**
+   * at 27.0 s. **Most of that is the success rate, not the latency** - in 3 of
+   * the 9 races the first-drawn operator failed outright, and there the race
+   * did not make the tile faster, it made the tile arrive.
+   *
+   * THE COST IS THE EXTRA REQUEST AND NOTHING REDUCES IT. Cancelling the loser
+   * frees a socket, not the server's work: across all nine measured races the
+   * loser had transferred at most 695 bytes - an error page - when the winner
+   * finished, and the query had already been parsed and executed regardless.
+   * So this is roughly twice the requests per cold tile against donated
+   * infrastructure, knowingly.
+   *
+   * WHY IT IS NOT THE HEDGING REJECTED ON 2026-09-20. That objection was that
+   * two requests "double concurrency against a limit that counts concurrency" -
+   * true of two requests to ONE operator, and confirmed emphatically:
+   * same-host concurrency was refused in every arm that tried it. Overpass's
+   * `Rate limit: 2` is per client PER OPERATOR, so one request each at two
+   * operators uses one slot at each of two quotas.
+   *
+   * AND WHY A DELAYED HEDGE IS NOT USED INSTEAD. Firing the second only when
+   * the first is slow sounds strictly cheaper. Against the same artifact it
+   * saves nothing: the fastest SUCCESSFUL first-drawn response in the whole run
+   * was 16.9 s, so a 10 s hedge avoids the second request in 0 of 9 races and a
+   * 20 s hedge in 1 of 9 - by which point most of the median wait is already
+   * spent.
+   *
+   * `skipped` means this tile did not race and the caller starts at attempt 0;
+   * `spent` means attempts 0 and 1 are gone and the caller resumes at 2.
+   */
+  private async raceFirstPairIfAllowed(input: {
+    readonly tile: string;
+    readonly query: string;
+    readonly slotWaitMs: number;
+    readonly transportStart: number;
+    readonly signal?: AbortSignal | undefined;
+    readonly allowed: boolean;
+    readonly attemptOrder: readonly string[];
+    readonly refusedOperators: Set<string>;
+  }): Promise<RaceOutcome> {
+    const { tile, attemptOrder, refusedOperators, signal } = input;
+    if (!input.allowed || attemptOrder.length < 2) return SKIPPED_RACE;
+
+    const first = attemptOrder[0] as string;
+    const second = attemptOrder[1] as string;
+    // ASSERTED, NOT ASSUMED. `planEndpointOrder` already returns distinct
+    // operators first, and that is exactly the kind of guarantee a later change
+    // to the draw would break silently - into the one arrangement every
+    // measurement says is refused.
+    if (operatorForUrl(first) === operatorForUrl(second)) {
+      return SKIPPED_RACE;
     }
 
-    throw new Error(
-      `Overpass fetch failed for tile ${tile} after ${this.maxRetries + 1} attempt(s): ${describe(lastError)}`,
+    refusedOperators.add(operatorForUrl(first));
+    refusedOperators.add(operatorForUrl(second));
+    // TWO REQUESTS, RECORDED AS TWO. `stats.requests` and the attempt log are
+    // what quota use is read from, so a race that reported one would understate
+    // this client's load on hosts that donate it. `retries` keeps its meaning
+    // of "attempts after the first", preserving `requests === retries + 1`.
+    this.stats.requests += 2;
+    this.stats.retries++;
+
+    const outcome = await this.raceTwoAttempts(
+      {
+        tile,
+        query: input.query,
+        slotWaitMs: input.slotWaitMs,
+        transportStart: input.transportStart,
+        signal,
+      },
+      first,
+      second,
     );
+    if (outcome.kind === "served") {
+      return { result: outcome.result, error: undefined, startAttempt: 0 };
+    }
+    if (this.maxRetries < 2) {
+      throw new Error(
+        `Overpass fetch failed for tile ${tile} after 2 attempt(s): ${describe(outcome.error)}`,
+      );
+    }
+    await this.waitBeforeRetry(
+      1,
+      outcome.response,
+      signal,
+      refusedOperators,
+      attemptOrder,
+    );
+    return { result: undefined, error: outcome.error, startAttempt: 2 };
+  }
+
+  /**
+   * Two attempts at two DISTINCT operators, at once. First tile back wins.
+   *
+   * WHAT MAKES THIS DIFFERENT FROM `Promise.any`, and why it is written out.
+   * Three things have to be true that a bare combinator does not give:
+   *
+   * 1. **The loser is cancelled, and its cancellation must not look like the
+   *    CALLER's.** Each runner gets its own controller composed with the
+   *    caller's signal; when one serves a tile, the other's controller is
+   *    aborted and its `AbortError` is swallowed here. An abort that came from
+   *    the caller still propagates, because that signal is composed in and its
+   *    abort is not ours to swallow.
+   * 2. **Both outcomes are evidence.** A raced loser that 504s says something
+   *    true about that operator, and `runOneAttempt` has already told the
+   *    health tally so. Nothing here may discard that.
+   * 3. **A permanent error is still permanent.** If a runner throws
+   *    `PermanentOverpassError` - our query is malformed - trying the other
+   *    host cannot help, so it propagates rather than being treated as one
+   *    runner's bad luck.
+   */
+  private async raceTwoAttempts(
+    shared: {
+      readonly tile: string;
+      readonly query: string;
+      readonly slotWaitMs: number;
+      readonly transportStart: number;
+      readonly signal?: AbortSignal | undefined;
+    },
+    first: string,
+    second: string,
+  ): Promise<AttemptOutcome> {
+    const controllers = [new AbortController(), new AbortController()];
+    const endpoints = [first, second];
+    let settled = false;
+
+    const run = async (index: number): Promise<AttemptOutcome> => {
+      const controller = controllers[index] as AbortController;
+      try {
+        const outcome = await this.runOneAttempt({
+          tile: shared.tile,
+          query: shared.query,
+          endpoint: endpoints[index] as string,
+          // BOTH RACERS ARE ATTEMPT 0 for reporting purposes: `attempts` on the
+          // result is "how many requests did this tile cost before one worked",
+          // and the winner of a race cost one request of its own. The pair's
+          // true cost is in `stats.requests`, which the caller incremented by
+          // two.
+          attempt: 0,
+          slotWaitMs: shared.slotWaitMs,
+          transportStart: shared.transportStart,
+          signal: composeSignals(shared.signal, controller.signal),
+        });
+        if (outcome.kind === "served") {
+          settled = true;
+          // The other runner is now pointless. Its transfer stops; the query
+          // it asked for is already running on that server and finishes there.
+          controllers[1 - index]?.abort();
+        }
+        return outcome;
+      } catch (error) {
+        // OUR OWN CANCELLATION IS NOT A FAILURE and is not the caller's abort.
+        // Distinguishing them is the whole reason each runner has a private
+        // controller rather than sharing one.
+        if (isAbortError(error) && settled && shared.signal?.aborted !== true) {
+          return {
+            kind: "failed",
+            response: undefined,
+            error: new Error(
+              `raced attempt to ${endpoints[index] as string} was cancelled`,
+            ),
+          };
+        }
+        throw error;
+      }
+    };
+
+    // `all`, not `any`: both settle either way, and the losing runner must be
+    // awaited rather than left to reject unobserved. A floating rejection from
+    // a cancelled racer is an unhandled rejection in a worker, which is the
+    // failure mode this package's own `Promise.allSettled` comment elsewhere
+    // exists to prevent.
+    const [a, b] = await Promise.all([run(0), run(1)]);
+    if (a.kind === "served") return a;
+    if (b.kind === "served") return b;
+    // Neither served. The FIRST-DRAWN runner's failure is the one reported,
+    // because it is the one the sequential path would have produced - so a
+    // reader comparing logs across the change sees the same error text.
+    return a;
   }
 
   /**
@@ -1095,6 +1358,45 @@ export class OverpassSource implements OsmDataSource {
    *   that never happened. The plan found it the same way it found the terrain
    *   join — by reading the handler, not from the stage list.
    */
+  /**
+   * Takes a SECOND unit of this source's concurrency, or reports that there is
+   * none — for the racing pair, which is two requests inside one tile.
+   *
+   * **WHY THE GATE IS NOT MADE WEIGHTED INSTEAD.** The obvious shape is for a
+   * racing tile to acquire two units at once. That deadlocks permanently for
+   * any consumer who configured `maxConcurrent: 1`: a weight of two can never
+   * be satisfied, and the tile waits forever on a queue nothing will ever
+   * drain. Taking the second unit OPPORTUNISTICALLY cannot deadlock, because
+   * refusal is a normal answer that simply means "do not race this one".
+   *
+   * It also degrades in the right direction under load: when the client is
+   * already busy, tiles stop racing and the footprint stays flat. That is the
+   * behaviour a politeness budget should have.
+   *
+   * Never waits. Every `true` must be paired with one
+   * {@link releaseExtraSlot}.
+   */
+  private tryTakeExtraSlot(): boolean {
+    if (this.active >= this.maxConcurrent) return false;
+    this.active++;
+    return true;
+  }
+
+  /**
+   * Returns a unit taken by {@link tryTakeExtraSlot}.
+   *
+   * HANDS THE UNIT OVER rather than decrementing when someone is queued, for
+   * exactly the reason {@link withConcurrencyLimit} does: a waiter resumes one
+   * microtask after being woken, and a decrement-then-wake leaves a window in
+   * which the count reads below the cap while a woken waiter is already
+   * committed to running.
+   */
+  private releaseExtraSlot(): void {
+    const next = this.queue.shift();
+    if (next === undefined) this.active--;
+    else next();
+  }
+
   private async withConcurrencyLimit<T>(
     task: (slotWaitMs: number) => Promise<T>,
   ): Promise<T> {

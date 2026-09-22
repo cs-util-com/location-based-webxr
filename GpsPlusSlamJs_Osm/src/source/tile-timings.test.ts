@@ -106,6 +106,14 @@ function makeSource(overrides: Record<string, unknown> = {}) {
     now: () => 1_000_000,
     monotonicNow: steppingClock(10),
     sleepImpl: () => Promise.resolve(),
+    // ONE IN-FLIGHT REQUEST, so a tile is one request and the stepping clock
+    // charges one sequence of stages. A cold tile is RACED at two operators
+    // since 2026-09-22 when the client has spare concurrency, and two
+    // concurrent requests against a clock that advances a fixed amount per
+    // READING would interleave their steps - making this file's attribution
+    // assertions about the scheduler rather than about where time goes.
+    // Racing has its own tests in `overpass-race.test.ts`.
+    maxConcurrent: 1,
     ...overrides,
   });
 }

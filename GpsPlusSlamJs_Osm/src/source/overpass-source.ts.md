@@ -84,6 +84,32 @@ and the home of every item of the plan's §5.3 network discipline.
     the woken waiter's continuation) in which `active` reads below the cap while
     a waiter is already committed. A caller arriving there takes the slot too,
     and the cap is exceeded — which is what earns a 429.
+  - **A RACED TILE TAKES TWO UNITS OF THIS BUDGET, not one** (2026-09-22). The
+    gate counts tiles, so before this was fixed a racing tile made two requests
+    against a budget that thought it had made one, and a client configured for
+    two in-flight requests made four. The second unit is taken opportunistically
+    (`tryTakeExtraSlot`); a refusal simply means this tile does not race.
+    Making the gate WEIGHTED instead would deadlock any consumer who set
+    `maxConcurrent: 1`, because a weight of two can never be satisfied.
+
+- **A COLD TILE IS RACED at two distinct operators**, first answer wins, loser
+  cancelled. Measured 2026-09-21: within the shipped 45 s deadline one attempt
+  at a time served 4 of 9 tiles at a 32.2 s median; the race served 7 of 9 at
+  27.0 s. **Most of that is the success rate, not the latency** - in 3 of 9
+  races the first-drawn operator failed outright.
+  - **The cost is the extra REQUEST and nothing reduces it.** Cancelling the
+    loser frees a socket, not the server's work: across all nine measured races
+    the loser had transferred at most 695 bytes - an error page - when the
+    winner finished, and the query had already been executed regardless.
+  - **Two DISTINCT operators, asserted rather than assumed.** Same-host
+    concurrency is refused - measured in three independent runs. A later change
+    to the draw that put two of one operator first would otherwise land in the
+    one arrangement every measurement says does not work.
+  - **The loser's cancellation is not the caller's abort.** Each racer gets a
+    private controller composed with the caller's signal, so our own
+    cancellation is swallowed while a real abort still propagates.
+  - Both outcomes reach the health tally, and `stats.requests` counts two - the
+    numbers this client's load on donated infrastructure is read from.
   - Covered by a test that sweeps the arrival across the whole window rather
     than guessing one offset; on the released-slot version only offset 7 of 10
     tripped it.

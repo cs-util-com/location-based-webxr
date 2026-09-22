@@ -461,8 +461,25 @@ export interface DemoSnapshot {
  * raising it here alone would be worse than rude: `OverpassSlotBudget.tryAcquire`
  * refuses rather than queues, and those refusals would surface as missing
  * geometry with no error. Raise the budget in the same change or not at all.
+ *
+ * **ONE SINCE 2026-09-22, because racing spends the same two slots better.**
+ * The source now sends each COLD tile to two operators at once and takes the
+ * first answer. Owner decision: the client's in-flight concurrency stays where
+ * it was, so the two slots go to racing one tile rather than to fetching two
+ * tiles sequentially-each.
+ *
+ * What that trades, stated plainly: ring parallelism helped the **18.8%** of
+ * positions whose first ring needs two tiles, and helped them by overlapping
+ * two fetches. Racing helps **every** cold tile, and helps them on the axis
+ * that actually hurt - measured 2026-09-21, first-attempt-alone served 4 of 9
+ * tiles inside the 45 s deadline against the race's 7 of 9. A tile that widens
+ * a second later is a worse outcome than a tile that never arrives.
+ *
+ * With this at 1, a racing tile holds one unit here and takes a second through
+ * `tryTakeExtraSlot`, so the peak is the same two in-flight requests as before.
+ * Raising this back to 2 without lowering something else would make it four.
  */
-const FETCH_CONCURRENCY = 2;
+const FETCH_CONCURRENCY = 1;
 
 /**
  * Throws if the caller has moved on.
