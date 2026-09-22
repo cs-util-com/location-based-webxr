@@ -3286,6 +3286,20 @@ async function main(): Promise<void> {
   // resolve while the first picture is still being assembled.
   // The holder was seeded with `start`, so this reads the same origin the first
   // refresh will send — the two cannot disagree about the opening scene.
+  // THE COLD START ANNOUNCES ITSELF (owner, 2026-09-22, after seeing it live).
+  //
+  // This reverses the decision taken an hour earlier, and the reversal is the
+  // interesting part: asked in the abstract whether opening the page counts as
+  // a gesture, the answer was no - nobody clicked anything, and the status
+  // line's dot is visible at startup because the header begins open. Asked
+  // again after actually opening the app, the answer was the opposite. Opening
+  // the page IS the intent, it is the longest wait the app has, and a small dot
+  // is not what someone watching an empty scene for thirty seconds needs.
+  //
+  // `arm()` rather than a special case inside the announcer: the boot is a
+  // gesture like any other, and the latch it sets is consumed by the refresh
+  // below exactly as a map click's would be.
+  loadingAnnouncer.arm();
   await Promise.all([
     loadTerrain({ centre: start, frameOrigin: anchors.origin }),
     refresh(),

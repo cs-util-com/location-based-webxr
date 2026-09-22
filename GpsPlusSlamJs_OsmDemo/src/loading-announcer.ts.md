@@ -33,7 +33,14 @@ It owns the timing only; `loading-overlay.ts` owns what the user sees.
 
 ## Invariants & assumptions
 
-- **The surface appears only for a refresh the USER started.** The walking agent
+- **The COLD START is armed too** (owner, 2026-09-22, reversing a decision
+  taken an hour earlier). Asked in the abstract whether opening the page counts
+  as a gesture, the answer was no; asked again after actually opening the app
+  and watching an empty scene, it was yes. Opening the page is the intent, it is
+  the longest wait the app has, and the status-line dot is not enough for it.
+  `main.ts` calls `arm()` before the boot refresh, so the boot is an ordinary
+  armed gesture rather than a special case in here.
+- **Otherwise the surface appears only for a refresh the USER started.** The walking agent
   and a moving GPS fix re-enter the same refresh cycle every few steps;
   announcing those would leave something on screen during exactly the activity
   the 3D view exists for. `refresh()` cannot tell who called it - every

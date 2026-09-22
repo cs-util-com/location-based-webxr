@@ -110,24 +110,67 @@ test.describe("the loading channels", () => {
     );
   });
 
-  test("a refresh the user did not ask for stays silent", async ({ page }) => {
-    // THE ITEM, and the reason the announcer has a latch at all. The walking
-    // agent and a moving GPS fix re-enter the same refresh cycle every few
-    // steps; announcing those would leave a near-permanent toast over the 3D
-    // view during exactly the activity it exists for.
+  test("opening the page announces its own cold start", async ({ page }) => {
+    // OWNER REQUEST, 2026-09-22, made after using it: "the LOADING
+    // OPENSTREETMAP DATA does not show yet when the page is initially loaded,
+    // fix that".
     //
-    // The BOOT refresh is the unarmed refresh this suite can drive
-    // deterministically: nobody gestured, so nothing may announce. Holding
-    // Overpass before the first navigation puts the app in the state the toast
-    // would fire in, for as long as we care to look.
+    // It had been deliberately silent, on the rule that only a refresh someone
+    // ASKED for announces itself - and opening a page is not a click. That
+    // reasoning survived until the app was actually opened: the cold start is
+    // the longest wait it has, it is the first thing a new visitor sees, and
+    // the status-line dot is not what someone staring at an empty scene for
+    // thirty seconds needs. Nobody gestured, but opening the app IS the intent.
     const counts = await stubNetwork(page);
     counts.holdOverpass();
     await page.goto(AT_FIXTURE);
 
-    // The status line's dot IS expected here - it is the channel that reports
-    // every refresh, armed or not. Waiting for it is also what makes the
-    // silence below meaningful: it proves the app really is mid-refresh rather
-    // than not started yet, which a bare sleep could never establish.
+    const overlay = page.locator("#loading-overlay");
+    await expect(overlay).toBeVisible(AFTER_ANNOUNCE);
+    await expect(overlay).toContainText("Loading", AFTER_ANNOUNCE);
+
+    counts.releaseOverpass();
+    await waitForRefresh(page);
+    await expect(overlay).toBeHidden(REPAINT);
+  });
+
+  test("a refresh the user did not ask for stays silent", async ({
+    page,
+    context,
+  }) => {
+    // THE ITEM, and the reason the announcer has a latch at all. The walking
+    // agent and a moving GPS fix re-enter the same refresh cycle every few
+    // steps; announcing those would leave something on screen over the 3D view
+    // during exactly the activity it exists for.
+    //
+    // THE TRIGGER CHANGED ON 2026-09-22 and the reason is worth keeping. This
+    // used the BOOT refresh as its unarmed example - nobody gestured, so
+    // nothing could announce. Then the owner opened the app, watched an empty
+    // scene for thirty seconds, and asked for the cold start to announce after
+    // all. The boot is now armed, so it is no longer an example of silence.
+    //
+    // LOCATE is, and deliberately: pressing it produces a position change and
+    // therefore a refresh, but the button's own handler lives inside
+    // `locate-control.ts` where `main.ts` cannot reach it, and the callback it
+    // does expose (`onLocated`) fires for every watch fix as well as for the
+    // press. Arming there would arm the position stream, so locate is left
+    // unarmed - which makes it the honest stand-in for the stream itself.
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({ latitude: 50.9231, longitude: 6.9445 });
+
+    const counts = await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+    // The boot's own overlay has to be gone before this means anything.
+    await expect(page.locator("#loading-overlay")).toBeHidden(AFTER_ANNOUNCE);
+
+    counts.holdOverpass();
+    await page.locator(".locate-button").click();
+
+    // The status line's dot IS expected - it reports every refresh, armed or
+    // not. Waiting for it is what makes the silence below meaningful: it proves
+    // the app really is mid-refresh rather than not started yet, which a bare
+    // sleep could never establish.
     await expect(page.locator("#status")).toHaveClass(
       /is-loading/,
       AFTER_ANNOUNCE,
@@ -135,14 +178,13 @@ test.describe("the loading channels", () => {
 
     // WAITING FOR IT TO APPEAR, AND REQUIRING THAT WAIT TO TIME OUT.
     //
-    // This is the second version. The first asserted `toBeHidden(...)`, which
-    // looks like the same claim and is not: `toBeHidden` succeeds on its FIRST
-    // check, and an unattached element passes it immediately - so the assertion
-    // resolved milliseconds after the refresh began, structurally before the 1 s
-    // announce delay could have fired. It passed with the latch deleted
-    // entirely, which the cold review demonstrated. An absence is only an
-    // absence if something waited through the window in which the thing would
-    // have appeared.
+    // This is the second version of this assertion. The first used
+    // `toBeHidden`, which looks like the same claim and is not: it succeeds on
+    // its FIRST check, and an unattached element passes immediately - so it
+    // resolved milliseconds after the refresh began, structurally before the
+    // 1 s announce delay could fire. It passed with the latch deleted
+    // entirely. An absence is only an absence if something waited through the
+    // window in which the thing would have appeared.
     await expect(
       page
         .locator("#loading-overlay")
@@ -150,8 +192,6 @@ test.describe("the loading channels", () => {
     ).rejects.toThrow();
 
     counts.releaseOverpass();
-    await waitForRefresh(page);
-    await expect(page.locator("#loading-overlay")).toBeHidden(REPAINT);
   });
 
   test("a site pick made MID-FETCH still announces", async ({ page }) => {
