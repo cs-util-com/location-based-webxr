@@ -29,8 +29,16 @@
 //    root, so `c:\gps\gps-plus-slam\GpsPlusSlamJs` — the core library — is
 //    invisible to it, and it had one instance of its own
 //    (`alignment-config.ts`). Making it cross-root would hardcode a sibling
-//    path into CI, which is the coupling the pnpm-override rule keeps out. The
-//    rule applies there; this guard does not reach it.
+//    path into CI, which is the coupling the pnpm-override rule keeps out.
+//    **The primary repo therefore carries its own copy** at
+//    `GpsPlusSlamJs_Investigation/src/regression/orphan-doc-comments.test.ts`,
+//    scoped to the published library. A deliberate copy per root is DEC-H3's
+//    answer for a package that cannot reach shared code, the same trade
+//    `duplicate-helpers.test.js` documents for itself — so **if you change the
+//    detector, change both.**
+//  - **A `@typedef` / `@callback` block is exempt.** It declares a type by
+//    itself and attaches to nothing by design, so two of them in a row is
+//    correct JSDoc rather than a defect.
 //  - **It only finds the BACK-TO-BACK shape.** A doc block separated from its
 //    declaration by a plain `//` comment, a statement, or a blank line plus a
 //    statement is equally orphaned and equally invisible here. That shape is
@@ -125,7 +133,22 @@ export function orphanedDocBlocks(text) {
     let next = end + 1;
     while (next < lines.length && lines[next].trim() === '') next++;
 
-    if (next < lines.length && lines[next].trim() === OPEN && i > firstStatement) {
+    // A `@typedef` / `@callback` block DECLARES A TYPE BY ITSELF and attaches
+    // to nothing by design, so it is not an orphan however many blocks follow
+    // it. Nothing in this root trips it today; it is here because the primary
+    // repo's copy of this guard needs it (two in a row in
+    // `GpsPlusSlamJs/scripts/test-timing/gate-lock.mjs`) and the two detectors
+    // are meant to agree — see the note below on why there are two at all.
+    const isStandaloneTypeDecl = /@(typedef|callback)\b/.test(
+      lines.slice(i, end + 1).join('\n')
+    );
+
+    if (
+      next < lines.length &&
+      lines[next].trim() === OPEN &&
+      i > firstStatement &&
+      !isStandaloneTypeDecl
+    ) {
       found.push({
         line: i + 1,
         firstLine: (lines[i + 1] ?? '').trim().replace(/^\*\s?/, ''),
@@ -202,6 +225,28 @@ describe('doc-comment attachment guard', () => {
         ' ' + CLOSE,
         OPEN,
         ' * Documents `y`.',
+        ' ' + CLOSE,
+        'const y = 2;',
+        '',
+      ].join('\n');
+
+      expect(orphanedDocBlocks(text)).toEqual([]);
+    });
+
+    it('exempts a `@typedef` block, which attaches to nothing by design', () => {
+      // Correct JSDoc, not a defect: a typedef declares a type by itself, so
+      // two in a row is the normal way to write two of them. The primary
+      // repo's copy of this guard reported three such blocks before the
+      // exemption existed.
+      const text = [
+        'const x = 1;',
+        '',
+        OPEN,
+        ' * @typedef {object} Thing',
+        ' * @property {string} id',
+        ' ' + CLOSE,
+        OPEN,
+        ' * @typedef {object} Other',
         ' ' + CLOSE,
         'const y = 2;',
         '',
