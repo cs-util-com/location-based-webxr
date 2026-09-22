@@ -562,49 +562,6 @@
         pointer-events: none;
       }
 
-      /* THE LOADING TOAST, STACKED ABOVE THE ERROR ONE (loading-visibility
-         plan). A second `createToast` instance on the same root, because the
-         shared toast REPLACES its message rather than stacking - one instance
-         would let "Loading OpenStreetMap data" delete an error the user has
-         not read.
-
-         PLACEMENT BY `id`, NOT BY CLASS. `toast-core` assigns
-         `element.className` wholesale on every `show`, so a placement class
-         would be wiped the moment the announcer set `toast--timed`. The id is
-         stable; the class carries the look, which lives in `design.css` per
-         DEC-L2-14.
-
-         THE OFFSET, AND THE ARITHMETIC IT IS ACTUALLY DERIVED FROM. Below it
-         sits the error `.toast` at `bottom: 0.75rem`, whose height is
-         `var(--space-2)` padding top and bottom (8px each) plus its lines at
-         ~16px: about 37px for one line, 53px for two. Errors here are
-         sentences - "Failed: the worker failed: ..." - and wrap to two lines
-         well before `max-width: 78vw` on a phone. So the clearance needed is
-         0.75rem + 53px, and 5rem (80px) leaves a comfortable margin where the
-         first draft's 3.5rem (56px) would have overlapped a two-line error -
-         caught in cold review, from the arithmetic rather than from a test.
-
-         NOT PINNED BY A TEST, deliberately and with the limitation stated: an
-         overlap assertion needs both toasts on screen at once, and the harness
-         cannot produce that - the errors this demo raises come from the same
-         refresh that would be showing the loading toast, and they replace the
-         picture rather than joining it.
-
-         ALSO IN THIS CORNER, both `hidden` until the user opens them:
-         `#hotkey-help` at 0.5rem and `#geo-event-picker` at 8rem, each
-         `z-index: 1000` against `#toast-root`'s 500. So an opened panel covers
-         this rather than the other way round, which is the right order: the
-         panel is something the user deliberately opened and the toast is
-         transient.
-
-         `pointer-events: none` is restated for the reason `.toast` restates
-         it: this sits over the map, and clicking the map is how a user
-         retries. */
-      #loading-toast {
-        bottom: 5rem;
-        pointer-events: none;
-      }
-
       /* Floats over the split rather than taking a column (DEC-17). */
       #details {
         position: absolute;

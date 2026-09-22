@@ -1,6 +1,8 @@
 /**
- * Decides when the demo says "we are loading" in a channel the header cannot
- * hide.
+ * Decides WHEN the demo says "we are loading". The surface it drives is
+ * `loading-overlay.ts`, centred on the 3D scene; this module owns only the
+ * timing, and is tested on a fake clock because that is the part where the
+ * mistakes live.
  *
  * WHY THE STATUS LINE IS NOT ENOUGH. `index.html` hides `#status` and its whole
  * block under `header[data-collapsed="true"]`, and collapsing the header is
@@ -35,7 +37,16 @@
  * @see loading-announcer.ts.md
  */
 
-import type { Toast } from "gps-plus-slam-app-framework/utils/toast-core";
+/**
+ * The surface this drives. Structurally what `loading-overlay.ts` provides,
+ * and deliberately NOT the framework's `Toast`: a toast owns its own
+ * lifetime, and the whole point of this decision logic is that the surface
+ * leaves when the DATA says so, not when a timer does.
+ */
+export interface LoadingSurface {
+  show(message: string): void;
+  clear(): void;
+}
 
 /**
  * How long a refresh must run before it is announced.
@@ -49,20 +60,6 @@ import type { Toast } from "gps-plus-slam-app-framework/utils/toast-core";
 export const ANNOUNCE_DELAY_MS = 1_000;
 
 /**
- * The toast's lifetime, and therefore what its bar measures.
- *
- * A CEILING, not the usual lifetime: the toast normally goes when the data
- * lands. This only decides how long it stays on a wait that outlives it - and
- * the bar drains over exactly this span, which is the one duration the bar can
- * promise honestly. A bar scaled to the FETCH would read 100% while a median
- * cold tile still had ten seconds to go.
- *
- * The CSS animation that draws the bar must use the same number;
- * `loading-toast-duration.test.ts` is what keeps the two from drifting.
- */
-export const LOADING_TOAST_LINGER_MS = 15_000;
-
-/**
  * How long an unconsumed gesture stays armed.
  *
  * Every gesture wired to {@link LoadingAnnouncer.arm} dispatches its refresh
@@ -73,30 +70,13 @@ export const LOADING_TOAST_LINGER_MS = 15_000;
 const DEFAULT_ARM_TTL_MS = 5_000;
 
 /** What the toast says. Never empty: an empty toast announces nothing to AT. */
-export const LOADING_TOAST_MESSAGE = "Loading OpenStreetMap data…";
-
-/**
- * The toast element's class while loading.
- *
- * `toast-core` REPLACES the class name rather than adding to it, so the base
- * `toast` class has to be repeated here or the element loses its look.
- *
- * `toast--timed` is the design system's atom for a toast that draws its own
- * countdown; its bar drains over `--t-toast-timed`, which must stay equal to
- * {@link LOADING_TOAST_LINGER_MS} — `loading-toast-duration.test.ts` is what
- * holds the two together. Placement comes from the element's `id`, which
- * `index.html` positions; the class name is replaced on every show and would
- * take the placement with it.
- */
-const LOADING_TOAST_CLASS = "toast toast--timed";
+export const LOADING_MESSAGE = "Loading OpenStreetMap data…";
 
 export interface LoadingAnnouncerOptions {
-  /** The surface to announce on. A SEPARATE instance from the error toast. */
-  readonly toast: Toast;
+  /** The surface to announce on. */
+  readonly toast: LoadingSurface;
   /** Overrides {@link ANNOUNCE_DELAY_MS}. */
   readonly delayMs?: number;
-  /** Overrides {@link LOADING_TOAST_LINGER_MS}. */
-  readonly lingerMs?: number;
   /** Overrides {@link DEFAULT_ARM_TTL_MS}. */
   readonly armTtlMs?: number;
 }
@@ -127,12 +107,11 @@ export function createLoadingAnnouncer(
 ): LoadingAnnouncer {
   const { toast } = options;
   const delayMs = options.delayMs ?? ANNOUNCE_DELAY_MS;
-  const lingerMs = options.lingerMs ?? LOADING_TOAST_LINGER_MS;
   const armTtlMs = options.armTtlMs ?? DEFAULT_ARM_TTL_MS;
 
   let armed = false;
   let busy = false;
-  /** Tracked rather than asked, because `Toast` cannot be asked. */
+  /** Tracked rather than asked: the surface has no readable state. */
   let showing = false;
   let delayTimer: ReturnType<typeof setTimeout> | undefined;
   let armTimer: ReturnType<typeof setTimeout> | undefined;
@@ -175,14 +154,11 @@ export function createLoadingAnnouncer(
     if (delayTimer !== undefined) return;
     delayTimer = setTimeout(() => {
       delayTimer = undefined;
-      // CLEAR THEN SHOW, ALWAYS. See the module docstring: a replacement leaves
-      // the element attached and its class unchanged, so the bar's animation
-      // would not restart and would finish on the previous show's schedule.
+      // CLEAR THEN SHOW, ALWAYS. The surface restarts its bar on a fresh
+      // attach, so a show over an already-visible overlay would otherwise
+      // continue the previous drain instead of starting this wait's own.
       toast.clear();
-      toast.show(LOADING_TOAST_MESSAGE, {
-        className: LOADING_TOAST_CLASS,
-        lingerMs,
-      });
+      toast.show(LOADING_MESSAGE);
       showing = true;
     }, delayMs);
   }

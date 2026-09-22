@@ -26,20 +26,18 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { Toast } from "gps-plus-slam-app-framework/utils/toast-core";
-
 import {
   ANNOUNCE_DELAY_MS,
   createLoadingAnnouncer,
-  LOADING_TOAST_LINGER_MS,
-  LOADING_TOAST_MESSAGE,
+  LOADING_MESSAGE,
+  type LoadingSurface,
 } from "./loading-announcer.js";
 
 /**
- * Records what a `Toast` was asked to do, in order.
+ * Records what the surface was asked to do, in order.
  *
- * The ORDER is half the point: `clear` before `show` is what restarts the bar's
- * animation, and a spy pair alone cannot show that.
+ * The ORDER is half the point: `clear` before `show` is what restarts the bar,
+ * and a spy pair alone cannot show that.
  */
 function recordingToast() {
   const calls: string[] = [];
@@ -49,7 +47,7 @@ function recordingToast() {
   const clear = vi.fn(() => {
     calls.push("clear");
   });
-  const toast: Toast = { show, clear };
+  const toast: LoadingSurface = { show, clear };
   return { toast, show, clear, calls };
 }
 
@@ -76,11 +74,8 @@ describe("createLoadingAnnouncer", () => {
     // repeat `show()` does NOT restart the bar's CSS animation - it would
     // empty on the first show's schedule while the toast lived on the
     // second's. Detaching is what restarts it.
-    expect(calls).toEqual(["clear", `show:${LOADING_TOAST_MESSAGE}`]);
-    expect(show).toHaveBeenCalledWith(
-      LOADING_TOAST_MESSAGE,
-      expect.objectContaining({ lingerMs: LOADING_TOAST_LINGER_MS }),
-    );
+    expect(calls).toEqual(["clear", `show:${LOADING_MESSAGE}`]);
+    expect(show).toHaveBeenCalledWith(LOADING_MESSAGE);
   });
 
   it("stays silent when the refresh finishes before the delay", () => {
@@ -294,9 +289,9 @@ describe("createLoadingAnnouncer", () => {
 
     expect(calls).toEqual([
       "clear",
-      `show:${LOADING_TOAST_MESSAGE}`,
+      `show:${LOADING_MESSAGE}`,
       "clear",
-      `show:${LOADING_TOAST_MESSAGE}`,
+      `show:${LOADING_MESSAGE}`,
     ]);
   });
 });

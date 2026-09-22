@@ -171,14 +171,40 @@
         <!-- copy borrowed from the RecorderApp re-observe toast; OsmDemo has
              no equivalent string -->
         <div class="toast">Re-observed from here</div>
-        <!-- TIMED: the bar drains over the toast's own linger, so it
-             measures the countdown it belongs to rather than guessing at
-             the work. Real string, from the OsmDemo loading toast.
-             The bar runs once and stops, so a screenshot catches it
-             wherever the shot lands - which is the point of having it
-             here at all: nobody had LOOKED at it before this entry
-             existed. -->
-        <div class="toast toast--timed">Loading OpenStreetMap data…</div>
+      </section>
+
+      <section>
+        <h3>Loading overlay — waiting, and waiting longer than usual</h3>
+        <!-- NOT a toast, and the difference is the whole atom: it centres
+             on the VIEW whose content is being waited for, and it never
+             dismisses itself. Real string from the OsmDemo, whose cold
+             tiles take ~32 s against this bar's 15 s - which is exactly
+             why the second one below exists.
+             The host box stands in for `#scene`; any positioned element
+             works. Shown here so a screenshot catches both states, since
+             the drained one is otherwise only visible on a slow day. -->
+        <div class="col">
+          <div style="position: relative; height: 7rem">
+            <div class="loading-overlay plate">
+              <span class="loading-overlay-text"
+                >Loading OpenStreetMap data…</span
+              >
+              <span class="loading-overlay-bar"
+                ><span class="loading-overlay-fill"></span
+              ></span>
+            </div>
+          </div>
+          <div style="position: relative; height: 7rem">
+            <div class="loading-overlay plate" data-overrun="true">
+              <span class="loading-overlay-text"
+                >Loading OpenStreetMap data…</span
+              >
+              <span class="loading-overlay-bar"
+                ><span class="loading-overlay-fill"></span
+              ></span>
+            </div>
+          </div>
+        </div>
       </section>
 
       <section>

@@ -90,6 +90,7 @@ import { startArWalk, type ArWalk } from "./ar-walk-controller.js";
 import { createArToast } from "./ar-toast.js";
 import { createToast } from "gps-plus-slam-app-framework/utils/toast-core";
 import { createLoadingAnnouncer } from "./loading-announcer.js";
+import { createLoadingOverlay } from "./loading-overlay.js";
 import { canEnterAr, terrainReadout } from "./ar-origin.js";
 import { createGeoEventCycle } from "./geo-event-cycle.js";
 import { GeoEventPicker } from "./geo-event-picker.js";
@@ -224,18 +225,25 @@ async function main(): Promise<void> {
   status.textContent = "Loading the rule table…";
 
   /**
-   * The loading channel, and why it is a SECOND toast rather than the error one.
+   * The loading channel: an overlay CENTRED ON THE 3D SCENE, not a toast.
    *
-   * `createToast` replaces the current message rather than stacking, so one
-   * shared instance would let a fetch announcement silently delete an error the
-   * user has not read. The error toast is created further down, next to the
-   * comment explaining why the 2D channel exists at all.
+   * It was a second `createToast` in the page's bottom-left corner for about an
+   * hour. The owner's verdict on seeing it was that it belongs over the view
+   * whose content is being waited for, and that it must stay until the models
+   * are actually on screen — and a toast can do neither, because it lives in a
+   * page-corner root and dismisses itself after a linger that is roughly half a
+   * median cold load. See `loading-overlay.ts`.
+   *
+   * Retiring that second toast also removed a hazard worth not re-introducing:
+   * while it existed, `#toast-root` could hold TWO `.toast` elements, so every
+   * unqualified `#toast-root .toast` locator in the e2e suite was one timing
+   * change away from a strict-mode violation.
    *
    * Created this early because `attachSitePicker` below is one of the gestures
    * that arms it.
    */
-  const loadingToast = createToast(el("toast-root"), { id: "loading-toast" });
-  const loadingAnnouncer = createLoadingAnnouncer({ toast: loadingToast });
+  const loadingOverlay = createLoadingOverlay(el("scene"));
+  const loadingAnnouncer = createLoadingAnnouncer({ toast: loadingOverlay });
 
   /**
    * Both loading indicators, from the one signal that is actually true.

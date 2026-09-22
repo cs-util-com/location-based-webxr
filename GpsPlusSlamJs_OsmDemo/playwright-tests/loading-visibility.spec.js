@@ -67,9 +67,27 @@ test.describe("the loading channels", () => {
     // and failed for a reason that had nothing to do with the feature.
     await page.selectOption("#site", "porto-ribeira");
 
-    const toast = page.locator("#loading-toast");
-    await expect(toast).toBeVisible(AFTER_ANNOUNCE);
-    await expect(toast).toContainText("Loading", AFTER_ANNOUNCE);
+    const overlay = page.locator("#loading-overlay");
+    await expect(overlay).toBeVisible(AFTER_ANNOUNCE);
+    await expect(overlay).toContainText("Loading", AFTER_ANNOUNCE);
+
+    // CENTRED ON THE 3D SCENE, which is the owner's correction to the first
+    // version and the only thing here a unit test genuinely cannot check: the
+    // overlay is absolutely positioned inside `#scene`, so whether it lands in
+    // the middle depends on that element being positioned, on the flex layout
+    // around it, and on the real box sizes.
+    const sceneBox = await page.locator("#scene").boundingBox();
+    const overlayBox = await overlay.boundingBox();
+    if (sceneBox === null || overlayBox === null) {
+      throw new Error("expected both #scene and the overlay to be laid out");
+    }
+    const centreOf = (b) => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
+    const scene = centreOf(sceneBox);
+    const shown = centreOf(overlayBox);
+    // A couple of pixels of slack for sub-pixel layout; anything corner-ish
+    // would miss by hundreds.
+    expect(Math.abs(shown.x - scene.x)).toBeLessThan(4);
+    expect(Math.abs(shown.y - scene.y)).toBeLessThan(4);
     // THE SECOND CHANNEL, and the one that survives a collapsed header only
     // because it is a class on an element whose text is rewritten constantly -
     // a child element would be deleted by the next `writeStatus`.
@@ -85,7 +103,7 @@ test.describe("the loading channels", () => {
     // "instantly" - is a unit test on a fake clock, where the two can be driven
     // separately. The comment that used to sit here claimed this assertion
     // proved it, which it never did.
-    await expect(toast).toBeHidden(REPAINT);
+    await expect(overlay).toBeHidden(REPAINT);
     await expect(page.locator("#status")).not.toHaveClass(
       /is-loading/,
       REPAINT,
@@ -127,13 +145,13 @@ test.describe("the loading channels", () => {
     // have appeared.
     await expect(
       page
-        .locator("#loading-toast")
+        .locator("#loading-overlay")
         .waitFor({ state: "attached", timeout: 4000 }),
     ).rejects.toThrow();
 
     counts.releaseOverpass();
     await waitForRefresh(page);
-    await expect(page.locator("#loading-toast")).toBeHidden(REPAINT);
+    await expect(page.locator("#loading-overlay")).toBeHidden(REPAINT);
   });
 
   test("a site pick made MID-FETCH still announces", async ({ page }) => {
@@ -161,11 +179,11 @@ test.describe("the loading channels", () => {
 
     await page.selectOption("#site", "porto-ribeira");
 
-    await expect(page.locator("#loading-toast")).toBeVisible(AFTER_ANNOUNCE);
+    await expect(page.locator("#loading-overlay")).toBeVisible(AFTER_ANNOUNCE);
 
     counts.releaseOverpass();
     await waitForRefresh(page);
-    await expect(page.locator("#loading-toast")).toBeHidden(REPAINT);
+    await expect(page.locator("#loading-overlay")).toBeHidden(REPAINT);
   });
 
   test("a fetch that fetches nothing still takes both channels down", async ({
@@ -193,12 +211,12 @@ test.describe("the loading channels", () => {
     counts.holdOverpass();
     await page.selectOption("#site", "porto-ribeira");
 
-    const toast = page.locator("#loading-toast");
-    await expect(toast).toBeVisible(AFTER_ANNOUNCE);
+    const overlay = page.locator("#loading-overlay");
+    await expect(overlay).toBeVisible(AFTER_ANNOUNCE);
 
     counts.releaseOverpass();
 
-    await expect(toast).toBeHidden(AFTER_ANNOUNCE);
+    await expect(overlay).toBeHidden(AFTER_ANNOUNCE);
     await expect(page.locator("#status")).not.toHaveClass(
       /is-loading/,
       AFTER_ANNOUNCE,

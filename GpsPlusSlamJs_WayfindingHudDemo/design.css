@@ -262,11 +262,11 @@
     /* appearance/disappearance: slow on purpose - XR guidance says
        things arriving over a moving camera get lost in motion blur */
     --t-enter: 400ms;
-    /* how long a .toast--timed stays, and therefore how long its bar
-       takes to drain - the bar measures the toast, never the work. An
-       app that overrides its toast linger overrides this with it, or the
-       bar empties on a schedule the dismissal does not keep. */
-    --t-toast-timed: 15s;
+    /* how long the loading overlay bar takes to drain. It is NOT a
+       lifetime: the overlay stays until its host says the content is on
+       screen. This is the "about this long" claim, after which the fill
+       switches to a sweep rather than pretending to know more. */
+    --t-loading-bar: 15s;
     --ease-out: cubic-bezier(0, 0, 0.2, 1);
     --ease-in: cubic-bezier(0.4, 0, 1, 1);
   }
@@ -788,35 +788,80 @@
     width: max-content;
   }
 
-  /* --- a TIMED toast: it shows how long it has left ---
-     The bar drains over the toast's own linger, which is the one
-     duration a toast can promise honestly. A bar scaled to the WORK
-     would be a guess, and the work this was built for - an Overpass
-     tile - has a p90 at twice its median, so the bar would sit full
-     while the app was still fetching. Here it cannot lie: it measures
-     the countdown it belongs to.
-     A LOOP IS NOT WHAT THIS IS, so the transient-by-default policy
-     above is satisfied: it runs once, forwards, and the element is
-     removed when it ends. */
-  .toast--timed {
-    position: relative;
+  /* --- the loading overlay: a waiting surface centred on a view ---
+     For a wait the user is watching a specific pane for - the OSM demo
+     centres this on its 3D scene. It is NOT a toast: a toast lives in a
+     page corner and dismisses itself, and both of those were wrong for
+     a wait that regularly outlasts any linger (owner verdict, 2026-09-22).
+     The host must be positioned; `#scene` already is.
+     The bar drains once over --t-loading-bar and then STOPS. If the load
+     is still going, `data-overrun` switches the fill to a sweep - the
+     change itself is the message ("slower than usual"), where a
+     restarting drain would promise another fifteen seconds nothing can
+     keep. */
+  .loading-overlay {
+    position: absolute;
+    /* CENTRED WITHOUT `transform`, deliberately. The obvious form is
+       `left/top: 50%` plus `translate(-50%, -50%)` - but this element
+       also wears `enter-rise`, which animates transform, and an
+       animation OWNS the property it animates for as long as it runs.
+       The two fought: for the first 400 ms the box sat with its left
+       edge on the centre line, off by half its own width. Caught by an
+       e2e that measured the box while the entry animation was still
+       playing, which is also when a user sees it.
+       `inset: 0` + `margin: auto` over an intrinsic size centres in both
+       axes and touches no property any animation wants. */
+    inset: 0;
+    margin: auto;
+    height: max-content;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-4);
+    /* Snug around the message, wrapping rather than overflowing on a
+       phone-width pane. `min()` is rejected by the csstree validator this
+       package lints with, so the pair does the same job. */
+    width: max-content;
+    max-width: 80%;
+    text-align: center;
+    font-weight: var(--weight-strong);
+    animation: enter-rise var(--t-enter) var(--ease-out);
+  }
+  .loading-overlay-bar {
+    display: block;
+    height: 3px;
+    border-radius: var(--radius-pill);
+    background: var(--surface);
     overflow: hidden;
   }
-  .toast--timed::after {
-    content: "";
-    position: absolute;
-    inset: auto 0 0;
-    height: 3px;
-    background: var(--paper);
-    opacity: 0.5;
+  .loading-overlay-fill {
+    display: block;
+    height: 100%;
+    background: var(--ink);
     /* scaleX, not width: a transform animates off the main thread, and
-       this bar runs while the page is waiting on a worker reply. */
+       this runs while the page is waiting on a worker reply. */
     transform-origin: left center;
-    animation: toast-drain var(--t-toast-timed) linear forwards;
+    animation: loading-drain var(--t-loading-bar) linear forwards;
   }
-  @keyframes toast-drain {
+  @keyframes loading-drain {
     to {
       transform: scaleX(0);
+    }
+  }
+  /* Overrun: a slow sweep, sized narrow so it reads as "searching"
+     rather than as progress. An ongoing-and-unresolved state, so the
+     loop is the allowed kind under the transient-by-default policy. */
+  .loading-overlay[data-overrun="true"] .loading-overlay-fill {
+    width: 30%;
+    transform-origin: center;
+    animation: overlay-sweep 1.6s ease-in-out infinite;
+  }
+  @keyframes overlay-sweep {
+    from {
+      transform: translateX(-120%);
+    }
+    to {
+      transform: translateX(400%);
     }
   }
 
@@ -931,9 +976,17 @@
        animating under a rule that looks like it covers them. Both stay
        VISIBLE: the bar full, the dot solid. They still say "waiting";
        they just stop moving. */
-    .toast--timed::after,
-    .is-loading::before {
+    .is-loading::before,
+    .loading-overlay,
+    .loading-overlay-fill,
+    .loading-overlay[data-overrun="true"] .loading-overlay-fill {
       animation: none;
+    }
+    /* With the sweep stopped, a 30%-wide bar parked at the left edge
+       reads as "12% done" rather than "unknown". Full width says the
+       honest thing: still waiting, no estimate. */
+    .loading-overlay[data-overrun="true"] .loading-overlay-fill {
+      width: 100%;
     }
     * {
       transition-duration: 1ms !important;
