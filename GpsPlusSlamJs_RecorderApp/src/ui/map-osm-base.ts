@@ -13,33 +13,33 @@
  */
 
 import L from 'leaflet';
+import {
+  OSM_TILE_ATTRIBUTION,
+  OSM_TILE_MAX_ZOOM,
+  OSM_TILE_URL,
+} from 'gps-plus-slam-app-framework/utils/osm-tiles';
 
 // ============================================================================
 // OpenStreetMap basemap
 // ============================================================================
 
-/** OSM raster tile URL template (subdomains a/b/c). */
-export const OSM_TILE_URL =
-  'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-
-/** Attribution required by the OSM tile policy. */
-export const OSM_ATTRIBUTION =
-  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
-
-/**
- * Maximum zoom level supported by OSM raster tiles. Going beyond this
- * yields blurry up-scaled tiles, so both views cap here.
- */
-export const OSM_MAX_ZOOM = 19;
-
 /**
  * Add the standard OSM tile layer to `map` and return it so the caller can
  * track it for cleanup. The caller decides ordering relative to other layers.
+ *
+ * THE THREE BASEMAP VALUES MOVED TO THE FRAMEWORK (2026-09-22). They were
+ * declared here, again inline in `OsmDemo/src/map-view.ts`, and a third time
+ * as an option default in the framework's `LeafletMapOverlay` — and the copy
+ * here still used `https://{s}.tile.openstreetmap.org/…`, the subdomain
+ * sharding HTTP/2 made pointless and the OSM tile usage policy discourages.
+ * Three copies, two behaviours, nothing able to see it: every map renders
+ * either way. `tests/repo-config/osm-tile-url-copies.test.js` now holds it to
+ * one.
  */
 export function addOsmTileLayer(map: L.Map): L.TileLayer {
   return L.tileLayer(OSM_TILE_URL, {
-    attribution: OSM_ATTRIBUTION,
-    maxZoom: OSM_MAX_ZOOM,
+    attribution: OSM_TILE_ATTRIBUTION,
+    maxZoom: OSM_TILE_MAX_ZOOM,
   }).addTo(map);
 }
 

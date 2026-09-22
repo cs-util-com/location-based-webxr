@@ -14,10 +14,13 @@ markers, resize delays) stay in their respective files.
 
 ## Public API
 
-- `OSM_TILE_URL`, `OSM_ATTRIBUTION`, `OSM_MAX_ZOOM` — the OSM tile policy
-  values used by both maps.
 - `addOsmTileLayer(map): L.TileLayer` — creates and attaches the standard OSM
   tile layer; returns it so callers can track the layer for cleanup.
+  - **The three tile-policy values are NO LONGER declared here** (2026-09-22).
+    `OSM_TILE_URL`, `OSM_TILE_ATTRIBUTION` and `OSM_TILE_MAX_ZOOM` come from
+    `gps-plus-slam-app-framework/utils/osm-tiles`; see
+    [that sidecar](../../../GpsPlusSlamJs_AppFramework/src/utils/osm-tiles.ts.md)
+    for why. Importing them from there is what a fourth map view should do too.
 - `PATH_POLYLINE_WEIGHT`, `PATH_POLYLINE_OPACITY` — stroke style applied to
   every GPS path polyline (raw, fused, alignment snapshots).
 - `INITIAL_ZOOM` — zoom passed to `setView` before `fitBounds` runs.
@@ -29,6 +32,13 @@ markers, resize delays) stay in their respective files.
 - `addOsmTileLayer` calls `.addTo(map)` synchronously; the returned tile
   layer is already on the map.
 - All exported values are constants and safe to reuse across map instances.
+- **What stays here is the recorder's LOOK, and that is the boundary.**
+  `PATH_POLYLINE_WEIGHT`, `PATH_POLYLINE_OPACITY`, `INITIAL_ZOOM` and
+  `FIT_BOUNDS_PADDING` are this app's styling choices, with no second consumer
+  and no contract behind them. The tile URL, attribution and zoom ceiling were
+  the opposite — an agreement with the tile operator — which is why only those
+  three moved. A boundary survey that same day looked at moving the whole file
+  and rejected it for exactly this reason.
 
 ## Examples
 

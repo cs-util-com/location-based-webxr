@@ -31,10 +31,13 @@ vi.mock('leaflet', () => {
 });
 
 import {
-  addOsmTileLayer,
+  OSM_TILE_ATTRIBUTION,
+  OSM_TILE_MAX_ZOOM,
   OSM_TILE_URL,
-  OSM_ATTRIBUTION,
-  OSM_MAX_ZOOM,
+} from 'gps-plus-slam-app-framework/utils/osm-tiles';
+
+import {
+  addOsmTileLayer,
   PATH_POLYLINE_WEIGHT,
   PATH_POLYLINE_OPACITY,
   INITIAL_ZOOM,
@@ -54,16 +57,20 @@ describe('addOsmTileLayer', () => {
     expect(tileLayerCalls).toHaveLength(1);
     const call = tileLayerCalls[0]!;
     expect(call.url).toBe(OSM_TILE_URL);
-    expect(call.options.attribution).toBe(OSM_ATTRIBUTION);
-    expect(call.options.maxZoom).toBe(OSM_MAX_ZOOM);
+    expect(call.options.attribution).toBe(OSM_TILE_ATTRIBUTION);
+    expect(call.options.maxZoom).toBe(OSM_TILE_MAX_ZOOM);
   });
 
-  it('exposes an OSM tile URL pointing at openstreetmap.org', () => {
-    // Why: guards against an accidental swap to a different tile provider
-    // that might have different attribution or terms.
+  it("draws OSM tiles, not some other provider's", () => {
+    // Why: guards against an accidental swap to a different tile provider that
+    // might have different attribution or terms. The three values moved to the
+    // framework on 2026-09-22, so what this now pins is that the RECORDER still
+    // reaches for the OSM ones — which is the part that belongs in this file.
+    // Their own spelling, and the fact that only one copy of it exists, is held
+    // by `tests/repo-config/osm-tile-url-copies.test.js`.
     expect(OSM_TILE_URL).toContain('openstreetmap.org');
-    expect(OSM_ATTRIBUTION).toContain('openstreetmap.org');
-    expect(OSM_MAX_ZOOM).toBe(19);
+    expect(OSM_TILE_ATTRIBUTION).toContain('openstreetmap.org');
+    expect(OSM_TILE_MAX_ZOOM).toBe(19);
   });
 });
 

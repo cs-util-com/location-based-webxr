@@ -217,6 +217,12 @@ const entryFiles = [
   'src/utils/fused-path.ts',
   'src/utils/list-formatter.ts',
   'src/utils/logger.ts',
+  // The OSM basemap's URL, attribution and zoom ceiling — deep-imported by the
+  // recorder's map views and by the OSM demo (NOT via the `/utils` barrel,
+  // which feeds `src/index.ts`'s `export *` and would put three basemap
+  // constants on the package's root export surface). The `./utils/*` exports
+  // wildcard advertises this subpath, so it must be built per-file.
+  'src/utils/osm-tiles.ts',
   // Persisted-options validation primitive — deep-imported by the recorder's
   // recording-options catalog (NOT via the `/utils` barrel, which would pull in
   // the logger and friends). The `./utils/*` exports wildcard advertises this

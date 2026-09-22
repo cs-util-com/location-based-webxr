@@ -29,6 +29,7 @@
 import type * as THREE from 'three';
 import { CSS3DObject } from 'three/addons/renderers/CSS3DRenderer.js';
 import L from 'leaflet';
+import { OSM_TILE_URL } from '../utils/osm-tiles.js';
 import type { LatLong } from 'gps-plus-slam-js';
 import { VIS_COLORS } from './vis-colors';
 import type { MapData } from './map-data';
@@ -201,8 +202,10 @@ export class LeafletMapOverlay {
     this.heightOffset = options.heightOffset ?? DEFAULT_HEIGHT_OFFSET;
     this.mapSizePx = options.mapSizePx ?? DEFAULT_LEAFLET_MAP_SIZE_PX;
     this.zoomLevel = options.zoomLevel ?? DEFAULT_ZOOM;
-    this.tileServerUrl =
-      options.tileServerUrl ?? 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+    // A DIFFERENT TILE SERVER STAYS A SUPPORTED CHOICE — only the default
+    // moved to the shared constant. The option is how a consumer points at
+    // their own tiles, which is a decision rather than a duplicate.
+    this.tileServerUrl = options.tileServerUrl ?? OSM_TILE_URL;
     this.onTileError = options.onTileError;
     this.offscreenRoot = options.offscreenRoot ?? document.body;
     this.headingUp = options.headingUp ?? false;
