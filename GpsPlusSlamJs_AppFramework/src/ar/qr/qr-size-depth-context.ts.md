@@ -24,8 +24,10 @@ the two apps measure different QR sizes).
 - `depthAt` is **bilinear** over the sampler grid — depth varies smoothly across a
   small QR face rather than snapping to one nearest node (WS-A decision).
 - Pure composition of `createDepthUnprojector` + `createDepthGridLookup`; it adds
-  no state. Callers that need more (e.g. the demo's `cameraPose` +
-  `projectionMatrix` for PnP intrinsics) compose it on top: `{ ...base, … }`.
+  no state. Callers that need more (e.g. the demo's `projectionMatrix` for PnP
+  intrinsics) compose it on top: `{ ...base, … }`. The camera pose is not part
+  of it: since QR perf plan 2026-09-23 M4 the solve uses each captured frame's
+  own pose (`CapturedCameraFrame.cameraPose`), not the depth sample's.
 - Import via the deep subpath `…/ar/qr/qr-size-depth-context`, NOT the `…/ar` barrel —
   the barrel eagerly pulls heavy transitive deps into the Recorder's
   partially-mocked wiring tests (same rationale as `qr-depth-resolver` /
@@ -43,10 +45,6 @@ const ctx = createQrSizeDepthContext(asOfSample); // QrSizeDepthContext | null
 const base = createQrSizeDepthContext(latestSample);
 const depthContext = base && {
   ...base,
-  cameraPose: {
-    position: latestSample.cameraPos,
-    rotation: latestSample.cameraRot,
-  },
   projectionMatrix: latestSample.projectionMatrix,
 };
 ```
@@ -56,7 +54,7 @@ const depthContext = base && {
 - `GpsPlusSlamJs_RecorderApp/src/qr/qr-depth-resolver.ts` — `resolveDepthAt` calls
   it on the as-of-selected sample.
 - `GpsPlusSlamJs_QrTrackingDemo/src/seams.ts` — `getDepthContext` calls it on the
-  latest sample and adds `cameraPose` + `projectionMatrix`.
+  latest sample and adds `projectionMatrix`.
 
 ## Tests
 

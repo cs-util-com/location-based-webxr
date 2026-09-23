@@ -69,9 +69,13 @@ import {
   CameraBlitCapture,
   computeCaptureSize,
   computeAspectFitSize,
+  type CaptureTiming,
 } from './camera-blit-capture';
 import { CameraFrameSource } from './camera-frame-source';
-import type { RgbaImage } from './qr/qr-frontend';
+import {
+  capturedCameraFrame,
+  type CapturedCameraFrame,
+} from './captured-camera-frame';
 import { createRgbLookup, type RgbLookup } from './depth-rgb-lookup';
 import { acquireCameraTexture } from './xr-camera-texture';
 import { clearFrameUpdates, runFrameUpdates } from './frame-loop';
@@ -366,11 +370,20 @@ interface ArSessionHandle {
    * session-owned aspect-preserving blit (lazy, longer edge = `captureSize`).
    */
   cameraFrame: {
-    source: CameraFrameSource | null;
+    source: CameraFrameSource<CapturedCameraFrame> | null;
     blit: CameraBlitCapture | null;
     /** Longer-edge resolution (px) of the camera-frame blit. */
     captureSize: number;
-    onFrame: ((image: RgbaImage) => void) | null;
+    onFrame: ((frame: CapturedCameraFrame) => void) | null;
+    /** Opt-in per-capture stage timings (QR perf instrument); null = off. */
+    onCaptureTiming: ((timing: CaptureTiming) => void) | null;
+    /**
+     * THIS tick's viewer pose (null when the tick has none), set immediately
+     * before the source is ticked. The capture pairs its pixels with this -
+     * never with `latestArPose`, which keeps the last NON-null pose for other
+     * consumers (QR perf plan M4 review #1).
+     */
+    tickArPose: ARPose | null;
   };
   /**
    * Tracking-state pipeline (Stage 2). Store + host callbacks arrive TOGETHER
@@ -472,6 +485,8 @@ function createCameraFrameCluster(
     blit: null,
     captureSize: DEFAULT_CAMERA_FRAME_CAPTURE_SIZE,
     onFrame: orNull(cb?.onFrame),
+    onCaptureTiming: null,
+    tickArPose: null,
   };
 }
 
@@ -634,16 +649,22 @@ function acquireDepthRgbLookup(): RgbLookup | null {
 }
 
 /**
- * Capture the current XR frame as top-left RGBA for CV detection (the
+ * Capture the current XR frame as top-left RGBA for CV detection, paired with
+ * the camera pose of the SAME XR frame and its epoch-ms capture time (the
  * `capture` injected into {@link CameraFrameSource}; called at most once per
- * detection interval). Returns null — no frame this tick — when camera access
- * or the texture is unavailable; the lazy blit makes a disposal elsewhere
- * self-healing. Reuses `latestCameraTexture`, exactly like the depth-RGB path.
+ * detection interval). Returns null — no frame this tick — when camera access,
+ * the texture or the pose is unavailable (checked before the blit, so an
+ * unpairable frame costs no readback); the lazy blit makes a disposal
+ * elsewhere self-healing. Reuses `latestCameraTexture`, like the depth-RGB path.
+ *
+ * The pose is `cameraFrame.tickArPose`, set by `onXRFrame` immediately before it
+ * ticks the source - this frame's viewer pose, or null (QR perf plan M4).
  */
-function acquireCameraFrameRgba(): RgbaImage | null {
+function acquireCameraFrame(xrTimeMs: number): CapturedCameraFrame | null {
   const { latestCameraTexture, cameraFrame } = activeSession;
+  const { tickArPose } = cameraFrame;
   const { renderer } = activeSession.sceneGraph;
-  if (!renderer || !latestCameraTexture) {
+  if (!renderer || !latestCameraTexture || !tickArPose) {
     return null;
   }
   // Size the readback to the camera ASPECT with the longer edge =
@@ -662,7 +683,18 @@ function acquireCameraFrameRgba(): RgbaImage | null {
   } else {
     cameraFrame.blit.resizeIfNeeded(target.width, target.height);
   }
-  return cameraFrame.blit.captureToRgba(renderer, latestCameraTexture);
+  const image = cameraFrame.blit.captureToRgba(
+    renderer,
+    latestCameraTexture,
+    cameraFrame.onCaptureTiming ?? undefined
+  );
+  if (!image) return null;
+  return capturedCameraFrame(
+    image,
+    tickArPose,
+    xrTimeMs,
+    performance.timeOrigin
+  );
 }
 
 /**
@@ -870,8 +902,11 @@ export interface ArSessionCallbacks {
    * what begins delivering frames.
    */
   cameraFrame?: {
-    /** Called with each throttled top-left-origin RGBA frame. */
-    onFrame: (image: RgbaImage) => void;
+    /**
+     * Called with each throttled frame: top-left-origin RGBA plus the camera
+     * pose and epoch-ms time of the XR frame it was captured in.
+     */
+    onFrame: (frame: CapturedCameraFrame) => void;
   };
   /**
    * Per-frame callback, invoked every XR frame after pose updates but before
@@ -1052,14 +1087,15 @@ export async function initAR(
 
   // Initialize the camera frame source if a frame callback is set (B2). The
   // source owns the detection-cadence throttle; the session owns the blit
-  // (acquireCameraFrameRgba reuses `latestCameraTexture`), exactly like the
+  // (acquireCameraFrame reuses `latestCameraTexture`), exactly like the
   // depth-RGB path. `startCameraFrameCapture` is what begins delivering frames.
   const deliverCameraFrame = activeSession.cameraFrame.onFrame;
   if (deliverCameraFrame) {
-    activeSession.cameraFrame.source = new CameraFrameSource({
-      capture: acquireCameraFrameRgba,
-      onCapture: (image) => deliverCameraFrame(image),
-    });
+    activeSession.cameraFrame.source =
+      new CameraFrameSource<CapturedCameraFrame>({
+        capture: acquireCameraFrame,
+        onCapture: (frame) => deliverCameraFrame(frame),
+      });
   }
 
   // Start render loop
@@ -1329,6 +1365,7 @@ function onXRFrame(time: number, frame: XRFrame | undefined): void {
   // every render frame. Must run after `latestCameraTexture` is set above.
   const { source: cameraFrameSource } = activeSession.cameraFrame;
   if (cameraFrameSource) {
+    activeSession.cameraFrame.tickArPose = arPose;
     cameraFrameSource.onFrame(time);
   }
 
@@ -1824,6 +1861,32 @@ export interface CameraFrameCaptureConfig {
    * only at very close range). Applied before the first capture.
    */
   captureSize?: number;
+  /**
+   * Opt-in per-capture stage timings (blit + synchronous readback, JS flip
+   * copy) for performance instruments such as the QR demo's `?qrperf` flag.
+   * Omitted = the capture path never reads the clock.
+   */
+  onCaptureTiming?: (timing: CaptureTiming) => void;
+  /**
+   * The consumer's veto: return `false` while a capture would be wasted (e.g.
+   * the detector is still busy). A vetoed tick skips the blit + readback
+   * without consuming the interval (see `CameraFrameSource.setWantsFrame`).
+   * Omitted = capture every interval, as before.
+   */
+  wantsFrame?: () => boolean;
+}
+
+/**
+ * The per-start consumer hooks (perf timings, busy veto). Reset on every start,
+ * so a hook never outlives the capture run it was passed to.
+ */
+function applyCameraFrameHooks(
+  cameraFrame: ArSessionHandle['cameraFrame'],
+  source: CameraFrameSource<CapturedCameraFrame>,
+  { onCaptureTiming, wantsFrame }: CameraFrameCaptureConfig
+): void {
+  cameraFrame.onCaptureTiming = onCaptureTiming ?? null;
+  source.setWantsFrame(wantsFrame ?? null);
 }
 
 /**
@@ -1860,6 +1923,7 @@ export function startCameraFrameCapture(
   if (config?.intervalMs !== undefined) {
     cameraFrame.source.updateConfig({ intervalMs: config.intervalMs });
   }
+  applyCameraFrameHooks(cameraFrame, cameraFrame.source, config ?? {});
   cameraFrame.source.start();
   log.info(
     `Camera frame capture started (interval: ${cameraFrame.source.getConfig().intervalMs}ms, long edge ${cameraFrame.captureSize}px, aspect-preserved)`

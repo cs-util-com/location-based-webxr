@@ -14,6 +14,7 @@
  * cheap, and honest about what the synthetic level actually carried).
  */
 
+import { usablePhotoFrame } from "./photo-frame.js";
 import { createQrTrackingController } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
 import {
   qrLevelEntryName,
@@ -746,15 +747,20 @@ export function wireCreatorSetup(deps: {
 
   dom.photoButton.addEventListener("click", () => {
     ctx.placementNote = null;
-    const frame = ctx.latestFrame;
-    const cameraPose = seams.getCameraPose();
-    if (!placementAllowed() || frame === null || cameraPose === null) {
+    const frame = usablePhotoFrame(
+      ctx.latestFrame,
+      performance.timeOrigin + performance.now(),
+    );
+    if (!placementAllowed() || frame === null) {
       note("No camera frame yet - try again in a moment.");
       return;
     }
     dom.photoButton.disabled = true;
     note("Capturing…");
-    seams.encodeFrameJpeg(frame).then(
+    // The pose of the frame being encoded, not the pose at tap time; the
+    // frame is at most PHOTO_FRAME_MAX_AGE_MS old (QR perf plan M4).
+    const { cameraPose } = frame;
+    seams.encodeFrameJpeg(frame.image).then(
       (jpeg) => {
         const photo = mintPhoto({
           id: newObjectId(),
@@ -816,7 +822,6 @@ export function wireCreatorSetup(deps: {
       buildAuthorControllerConfig(ctx.activeSizeM, {
         frontEnd,
         solvePose: (input) => seams.solveQrPose(input),
-        getCameraPose: () => seams.getCameraPose(),
         getIntrinsics: (image) => seams.getIntrinsics(image),
         recordDetection: (event) => {
           ctx.authorErrorText = null; // a live detection supersedes a stale error

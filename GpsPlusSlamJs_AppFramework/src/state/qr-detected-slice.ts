@@ -81,7 +81,8 @@ export interface QrDetectionEntry {
   text: string;
   /**
    * Detection time in the producer's injected clock. For the RAW recorder path
-   * this MUST be **EPOCH ms** (`Date.now()`), because the depth stream it joins
+   * this MUST be **EPOCH ms** (since QR perf plan M4: the frame's capture time,
+   * `performance.timeOrigin + xrTime`), because the depth stream it joins
    * against is epoch (`DepthSample.timestamp = performance.timeOrigin + frameTs`,
    * `ar/depth-sampler.ts`) and the size as-of join pairs this with the depth
    * sample whose timestamp is `≤` this one (`ar/qr/qr-derived-pose`). A relative

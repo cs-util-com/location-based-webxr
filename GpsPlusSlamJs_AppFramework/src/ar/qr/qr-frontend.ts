@@ -12,15 +12,17 @@
  * dependency decision — see the follow-up
  * `GpsPlusSlamJs_Docs/docs/2026-06-17-0020-qr-decoder-fallback-followup.md`.
  *
- * Corners are emitted in **pixel** coordinates (top-left origin); corner-order
- * normalization / winding validation lives downstream in `qr-pose.ts`
- * (`validateQuad`), so the pose path is front-end-agnostic. The corner order is
- * not contractually TL,TR,BR,BL — validate regardless.
+ * Corners are emitted in **pixel** coordinates (top-left origin), in the order
+ * the detector reports them. The order is not contractually TL,TR,BR,BL, and
+ * nothing downstream re-sorts it: `qr-pose.ts` `validateQuad` only REJECTS a
+ * mirrored or degenerate quad. An image-position order yields a pose rotated in
+ * 90-degree steps ("Cause A", `qr-pose-stability.test.ts`).
  *
  * The native detector is INJECTED so this module and its tests need no DOM.
  */
 
 import type { Point2 } from './qr-pose.js';
+import { rgbaToImageData } from '../rgba-image-data.js';
 
 /** Raw RGBA pixels of the frame fed to detection (top-left origin). */
 export interface RgbaImage {
@@ -64,8 +66,12 @@ export interface BarcodeDetectorLike {
  */
 export type ToImageBitmapSource = (image: RgbaImage) => unknown;
 
-const defaultToImageData: ToImageBitmapSource = (image) =>
-  new ImageData(new Uint8ClampedArray(image.data), image.width, image.height);
+/**
+ * Default conversion: wrap the frame in `ImageData` WITHOUT copying (the frame
+ * is already an owned copy; QR perf plan 2026-09-23, M3). The adopt-or-copy
+ * rule lives in one place, `../rgba-image-data.ts`.
+ */
+const defaultToImageData: ToImageBitmapSource = rgbaToImageData;
 
 export class BarcodeDetectorFrontEnd implements QrFrontEnd {
   readonly kind = 'barcode-detector';
@@ -96,10 +102,12 @@ export class BarcodeDetectorFrontEnd implements QrFrontEnd {
  * Build a {@link BarcodeDetectorFrontEnd} if the runtime exposes a
  * `BarcodeDetector` constructor; otherwise `null` (→ the caller must handle the
  * unsupported-browser case; there is no OpenCV fallback). `ctor` is injectable
- * for tests.
+ * for tests; `toSource` overrides the default no-copy conversion (e.g. a
+ * measuring or copying one for a performance A/B).
  */
 export function createBarcodeDetectorFrontEnd(
-  ctor?: new (opts: { formats: string[] }) => BarcodeDetectorLike
+  ctor?: new (opts: { formats: string[] }) => BarcodeDetectorLike,
+  toSource?: ToImageBitmapSource
 ): BarcodeDetectorFrontEnd | null {
   const Ctor =
     ctor ??
@@ -111,7 +119,10 @@ export function createBarcodeDetectorFrontEnd(
       }
     ).BarcodeDetector;
   if (!Ctor) return null;
-  return new BarcodeDetectorFrontEnd(new Ctor({ formats: ['qr_code'] }));
+  return new BarcodeDetectorFrontEnd(
+    new Ctor({ formats: ['qr_code'] }),
+    toSource ?? defaultToImageData
+  );
 }
 
 // --- helpers ---------------------------------------------------------------

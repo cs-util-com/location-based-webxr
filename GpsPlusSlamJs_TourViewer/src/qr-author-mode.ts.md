@@ -23,7 +23,9 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
 - `syntheticAuthorLevel(sizeM): QrLevel` — `{version:1, qr:{physicalSizeM}}`;
   throws on a non-positive/non-finite size.
 - `buildAuthorControllerConfig(sizeM, deps: AuthorPipelineDeps)` — deps:
-  `{ frontEnd, solvePose, getCameraPose, getIntrinsics, recordDetection }`.
+  `{ frontEnd, solvePose, getIntrinsics, recordDetection }`. No pose reader:
+  the controller solves each frame against its own capture pose
+  (`CapturedCameraFrame.cameraPose`, QR perf plan 2026-09-23 M4).
 - `MIN_ALIGNMENT_SAMPLES = 3` — the mint gate's alignment floor. A non-null
   matrix is VACUOUS (the store ships an identity matrix from the first GPS
   fix), so the gate counts solved-in fixes (milestone review #1).
@@ -93,7 +95,7 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
 - **`minIntervalMs: 0`**: the camera-frame source is the single cadence
   owner (Option A); two equal throttles in series drop ~1 frame per cycle.
 - **Minting reads the STABLE pose** (delta #2) in RAW WebXR/odom space (the
-  frame the controller composes with `getCameraPose`); the conversion is
+  frame the controller composes with each frame's capture pose); the conversion is
   `alignment × WEBXR_TO_NUE × pose`, using the alignment TARGET matrix
   (`selectAlignmentMatrix`), not the lerped visual transform — for a mint,
   the converged solve is the honest frame.
@@ -108,7 +110,6 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
 const config = buildAuthorControllerConfig(0.2, {
   frontEnd,
   solvePose,
-  getCameraPose,
   getIntrinsics,
   recordDetection: (e) => store.dispatch(recordQrDetection(e)),
 });

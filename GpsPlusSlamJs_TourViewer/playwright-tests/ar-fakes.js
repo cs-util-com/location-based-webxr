@@ -31,13 +31,14 @@ export async function installTourViewerArFakes(page, options = {}) {
        *  recording slice actually started (the silent-drop trap). */
       alignmentStore: /** @type {any} */ (null),
       cameraFrameCallback: /** @type {any} */ (null),
-      /** Deliver n fake RGBA frames through the initAR camera callback. */
+      /** Deliver n fake frames (RGBA + the capture pose, as the framework
+       *  pairs them) through the initAR camera callback. */
       emitFrames(n = 1) {
         for (let i = 0; i < n; i += 1) {
           test.cameraFrameCallback?.({
-            data: new Uint8ClampedArray(16),
-            width: 2,
-            height: 2,
+            image: { data: new Uint8ClampedArray(16), width: 2, height: 2 },
+            cameraPose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+            capturedAtMs: Date.now(),
           });
         }
       },
@@ -170,7 +171,6 @@ export async function installTourViewerArFakes(page, options = {}) {
         detect: () => Promise.resolve(test.nextDetection),
       }),
       solveQrPose: () => test.nextSolution,
-      getCameraPose: () => ({ position: [0, 0, 0], rotation: [0, 0, 0, 1] }),
       getIntrinsics: () => ({ fx: 500, fy: 500, cx: 1, cy: 1 }),
       getScene: () => (test.initARCalls.length > 0 ? fakeScene : null),
       createQrDebugView: () => ({

@@ -23,7 +23,8 @@ lives here.
     `mintedLevel`, `mintGeneration`, `finishing`, `rebuiltZip`; the open
     tour's `tourManifest` (archive-open.ts); the placement layer (M4):
     `placedObjects`, `placedPreviews`, `placementNote`, `reticle`,
-    `latestFrame`;
+    `latestFrame` (a `CapturedCameraFrame | null`: the pixels the photo
+    encodes plus the capture pose the photo is placed with);
   - the scan gate and the placed content (viewer-placement.ts, M5):
     `scanGate`, `cancelEscapeClock`, `contentRendered`, `contentAttempted`,
     `contentError`; the hooks `startScanGate` / `resetScanGate` /

@@ -11,7 +11,7 @@
  *
  * FRAME CONTRACT — read this before touching {@link qrWorldPoseFromOdom}.
  * The input pose is RAW WebXR/odometry, which is what the tracking controller
- * composes with `getCameraPose`. The GPS-world NUE pose is therefore
+ * composes with each frame's capture pose. The GPS-world NUE pose is therefore
  *
  *     alignment · WEBXR_TO_NUE · pose        (basis factor LEADING)
  *

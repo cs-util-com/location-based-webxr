@@ -21,8 +21,10 @@ since the flows plan M6.
     state and the gate (the gate resolves asynchronously at boot).
   - A creator's session requests the WebXR `hit-test` feature and starts
     the reticle under the world group once the runtime is up
-    (`ctx.reticle`, disposed on session end); every camera frame is kept
-    as `ctx.latestFrame` for the photo capture (M4).
+    (`ctx.reticle`, disposed on session end); every camera frame (a
+    `CapturedCameraFrame`: pixels plus the pose and time of its capture) is
+    kept as `ctx.latestFrame` for the photo capture (M4) and offered to the
+    QR controller.
   - Every session starts the scan gate (`hooks.startScanGate`; a
     creator's is `not-required/creator`, a visitor's holds placement back)
     before the visitor's placement subscription; the session end cancels

@@ -21,6 +21,15 @@ boot store + AR session + debug view + controller → per-frame
   line with the Δt since the previous lock (cadence/tuning aid), and status
   transitions are logged too.
 - HUD re-renders on store change and status change.
+- **`?qrperf` instrument** (plan 2026-09-23 M2): `mountQrPerf(parseQrPerfParams(location.search), …)`
+  returns `null` when the flag is absent, and then nothing below changes. When
+  set, `detect` and the default pose solve (`createDefaultSolvePose()`) are
+  wrapped with timings, `onCaptureTiming` goes to `startFrameSource`, and the
+  report renders into `#qrperf-log`. See `qrperf/*.md`.
+- **Capture veto:** the frame source gets `wantsFrame: () => !controller.isBusy()`
+  (no GPU readback while the detector is busy). `?qrperf=1&baseline=1` turns the
+  veto off and restores the per-decode pixel copy - the pre-fix pipeline, in the
+  same build, for the on-phone A/B (plan DEC-Q7).
 
 ## Verification
 

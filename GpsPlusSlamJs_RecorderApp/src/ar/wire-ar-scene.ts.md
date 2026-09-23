@@ -78,6 +78,7 @@ if (arWorldGroup && arScene) {
     storeRef,
     liveFrameBlobs,
     onQrLevelState: (text, state) => qrHud.noteLevelState(text, state),
+    onQrStateChanged: refreshQrStatus, // QR row follows the store, not only frames
   });
 }
 ```

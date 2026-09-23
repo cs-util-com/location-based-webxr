@@ -7,7 +7,7 @@ import {
   setZeroPos,
 } from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
-import type { RgbaImage } from "gps-plus-slam-app-framework/ar";
+import type { CapturedCameraFrame } from "gps-plus-slam-app-framework/ar";
 import type { Object3D } from "three";
 
 import {
@@ -73,13 +73,13 @@ describe("buildArEnableConfig", () => {
     const hooks = fakeHooks();
     const config = buildArEnableConfig(hooks);
 
-    const image: RgbaImage = {
-      data: new Uint8ClampedArray(4),
-      width: 1,
-      height: 1,
+    const frame: CapturedCameraFrame = {
+      image: { data: new Uint8ClampedArray(4), width: 1, height: 1 },
+      cameraPose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+      capturedAtMs: 0,
     };
-    config.callbacks?.cameraFrame?.onFrame(image);
-    expect(hooks.onFrame).toHaveBeenCalledWith(image);
+    config.callbacks?.cameraFrame?.onFrame(frame);
+    expect(hooks.onFrame).toHaveBeenCalledWith(frame);
   });
 
   it("carries the tracking store so initAR feeds the tracking slice (flows plan M4)", () => {

@@ -201,10 +201,15 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   (`content-placement.ts`; the reticle rides the lerped visual alignment,
   which converges within ~0.3 s of a correction - the one frame difference
   to the photo's target-matrix mint, accepted);
-  "Capture a photo here" encodes the latest camera frame through
-  `seams.encodeFrameJpeg` and mints a `photo` record from the camera's
-  raw pose through the session alignment, keeping the JPEG for the
-  rebuild. Each placement renders its own preview (`renderTourObjects`
+  "Capture a photo here" encodes the latest camera frame's pixels
+  (`ctx.latestFrame.image`) through `seams.encodeFrameJpeg` and mints a
+  `photo` record from THAT frame's raw capture pose
+  (`ctx.latestFrame.cameraPose`) through the session alignment, keeping the
+  JPEG for the rebuild. The photo and its placement therefore describe the
+  same moment; the pose used to be read at tap time (QR perf plan 2026-09-23
+  M4). A frame older than `PHOTO_FRAME_MAX_AGE_MS` (1 s) is refused -
+  `photo-frame.ts`, because frames stop during a tracking loss while
+  `latestFrame` keeps the last one. Each placement renders its own preview (`renderTourObjects`
   at the scene root; `ctx.placedPreviews`, one handle per object, so two
   placements cannot race each other's disposal and a photo is decoded
   once). The outcome of a placement is `ctx.placementNote`, shown with

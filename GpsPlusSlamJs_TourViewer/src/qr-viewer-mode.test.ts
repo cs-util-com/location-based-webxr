@@ -44,7 +44,6 @@ function fakeDeps(
       detect: () => Promise.resolve(null),
     },
     solvePose: () => null,
-    getCameraPose: () => null,
     getIntrinsics: () => null,
     getLevels: () => new Map([[TEXT_ID, LEVEL]]),
     dispatchVote: vi.fn(),

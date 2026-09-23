@@ -57,7 +57,6 @@ function fakeDeps(): AuthorPipelineDeps {
       detect: () => Promise.resolve(null),
     },
     solvePose: () => null,
-    getCameraPose: () => null,
     getIntrinsics: () => null,
     recordDetection: vi.fn(),
     onError: vi.fn(),

@@ -19,8 +19,21 @@
 import * as THREE from 'three';
 import { createLogger } from '../utils/logger';
 import { disposeObject3D } from '../visualization/three-dispose';
+import { rgbaToImageData } from './rgba-image-data';
 
 const log = createLogger('CameraBlitCapture');
+
+/**
+ * Per-capture stage durations reported by {@link CameraBlitCapture.captureToRgba}
+ * when a timing callback is passed (the QR perf instrument, opt-in).
+ * `blitReadbackMs` includes the synchronous GPU->CPU readback stall.
+ */
+export interface CaptureTiming {
+  blitReadbackMs: number;
+  flipCopyMs: number;
+  width: number;
+  height: number;
+}
 
 /**
  * Configuration for the blit capture render target dimensions.
@@ -331,21 +344,41 @@ export class CameraBlitCapture {
    * IMPORTANT: Must be called within the XR animation frame callback, while the
    * camera texture is valid.
    *
+   * @param onTiming - optional per-capture stage timings (the QR perf
+   *   instrument). When omitted the clock is never read.
    * @returns `{ data, width, height }` (top-left RGBA), or null on
    *   failure/dispose.
    */
   captureToRgba(
     renderer: THREE.WebGLRenderer,
-    cameraTexture: THREE.Texture
+    cameraTexture: THREE.Texture,
+    onTiming?: (timing: CaptureTiming) => void
   ): { data: Uint8ClampedArray; width: number; height: number } | null {
-    if (!this.captureToPixels(renderer, cameraTexture)) {
-      return null;
+    if (!onTiming) {
+      if (!this.captureToPixels(renderer, cameraTexture)) return null;
+      return {
+        data: this.flippedPixelCopy(),
+        width: this.width,
+        height: this.height,
+      };
     }
-    return {
-      data: this.flippedPixelCopy(),
-      width: this.width,
-      height: this.height,
-    };
+    const t0 = performance.now();
+    if (!this.captureToPixels(renderer, cameraTexture)) return null;
+    const t1 = performance.now();
+    const data = this.flippedPixelCopy();
+    const t2 = performance.now();
+    try {
+      onTiming({
+        blitReadbackMs: t1 - t0,
+        flipCopyMs: t2 - t1,
+        width: this.width,
+        height: this.height,
+      });
+    } catch (error) {
+      // A diagnostic hook must never cost the frame it measured.
+      log.warn('Capture timing callback threw; frame kept:', error);
+    }
+    return { data, width: this.width, height: this.height };
   }
 
   /**
@@ -536,13 +569,7 @@ export async function rgbaImageToJpegBlob(
       `rgbaImageToJpegBlob: expected ${String(width * height * 4)} bytes for ${String(width)}×${String(height)}, got ${String(data.length)}`
     );
   }
-  // A plain-ArrayBuffer-backed copy only when the input is not one already
-  // (ImageData refuses a SharedArrayBuffer view).
-  const pixels =
-    data.buffer instanceof ArrayBuffer
-      ? (data as Uint8ClampedArray<ArrayBuffer>)
-      : new Uint8ClampedArray(data);
-  const imageData = new ImageData(pixels, width, height);
+  const imageData = rgbaToImageData(frame);
   if (typeof OffscreenCanvas !== 'undefined') {
     const offscreen = new OffscreenCanvas(width, height);
     const ctx = offscreen.getContext('2d');

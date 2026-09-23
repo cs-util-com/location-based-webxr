@@ -22,7 +22,7 @@ import {
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 
 import type { HitTestReticleHandle } from "gps-plus-slam-app-framework/ar";
-import type { RgbaImage } from "gps-plus-slam-app-framework/ar/qr/qr-frontend";
+import type { CapturedCameraFrame } from "gps-plus-slam-app-framework/ar/captured-camera-frame";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import type { RenderedTourObjects } from "./content-placement.js";
@@ -181,8 +181,9 @@ export interface TourViewerSession {
   placedObjects: { object: TourObject; blob?: Blob }[];
   /** The creator's hit-test reticle for the running session. */
   reticle: HitTestReticleHandle | null;
-  /** The most recent camera frame - what "Capture a photo" encodes. */
-  latestFrame: RgbaImage | null;
+  /** The most recent camera frame - what "Capture a photo" encodes, with
+   *  the pose it was captured at (the photo is placed with THAT pose). */
+  latestFrame: CapturedCameraFrame | null;
   /** The live previews, one per placed object (rendered as each lands;
    *  re-rendering everything per placement raced itself and re-decoded
    *  every photo, M4 review #7). */

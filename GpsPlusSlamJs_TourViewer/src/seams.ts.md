@@ -11,7 +11,7 @@ Keeps `main.ts` glue-only.
 
 - `interface TourViewerSeams { controllerDeps; getArWorldGroup;
 enableArWorldGroupAlignment; startCameraFrameCapture;
-stopCameraFrameCapture; createQrFrontEnd; solveQrPose; getCameraPose;
+stopCameraFrameCapture; createQrFrontEnd; solveQrPose;
 getIntrinsics; createQrDebugView; getScene; queryGeolocationPermission;
 requestLocationOnce; shareOrDownloadZip; canShareZip; downloadPdf;
 startHitTestReticle; encodeFrameJpeg;
@@ -39,12 +39,15 @@ createLabel; schedule }` - the placement layer (M4: the framework's hit-test
   the app needs both, because the copy after a share cannot promise the
   hosted link is unchanged. `canShareZip` is the same capability asked
   WITHOUT a file, for labelling the button at wire time. The
-  QR quartet (M3) is the author pipeline's device layer: BarcodeDetector
+  QR trio (M3; a quartet until the QR perf plan 2026-09-23 M4 removed
+  `getCameraPose`) is the author pipeline's device layer: BarcodeDetector
   front end (or `null` — desktop has no fallback by design), the pure-JS
-  planar-PnP solver, the current XR-frame pose as tuples (raw WebXR/odom),
-  and PnP intrinsics from the in-session camera projection scaled to the
+  planar-PnP solver, and PnP intrinsics from the in-session camera projection scaled to the
   DETECTOR buffer's dimensions (depth is OFF in this app, so the projection
-  matrix is the only source).
+  matrix is the only source). There is no camera-pose seam: every camera
+  frame arrives as a `CapturedCameraFrame` carrying the pose of the XR frame
+  it was captured in, and the QR controllers and the photo placement read
+  that (`frame.cameraPose`).
 - `realSeams: TourViewerSeams` — the unmodified framework wiring.
 - `getSeams(): TourViewerSeams` — real seams unless the DEV-only override is
   present.

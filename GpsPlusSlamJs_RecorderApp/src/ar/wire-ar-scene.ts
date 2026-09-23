@@ -69,6 +69,8 @@ export interface WireArSceneDeps {
   /** What a scanned code's level lookup did — routed to the HUD, so a code
    *  the session cannot use says so instead of being silent. */
   readonly onQrLevelState?: (text: string, state: QrLevelLookupState) => void;
+  /** QR store state changed (once per animation frame at most) - HUD refresh. */
+  readonly onQrStateChanged?: () => void;
 }
 
 export function wireArScene({
@@ -81,6 +83,7 @@ export function wireArScene({
   storeRef,
   liveFrameBlobs,
   onQrLevelState,
+  onQrStateChanged,
 }: WireArSceneDeps): void {
   // Issue 4: Create alignment lerper for smooth alignment transitions
   resources.alignmentLerper = createAlignmentLerper(arWorldGroup);
@@ -237,6 +240,7 @@ export function wireArScene({
       // on the HUD. Without this the level-consuming mode is silent for
       // exactly the codes it cannot use, which is the failure the QR row was
       // added to end.
+      ...(onQrStateChanged ? { onQrStateChanged } : {}),
       onLevelState: (text, state) => {
         onQrLevelState?.(text, state);
       },

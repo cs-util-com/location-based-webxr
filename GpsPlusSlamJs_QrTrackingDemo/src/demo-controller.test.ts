@@ -17,6 +17,7 @@ import type {
   Pose,
 } from "gps-plus-slam-app-framework/ar";
 import type { Vector3, Matrix4 } from "gps-plus-slam-app-framework/core";
+import type { CapturedCameraFrame } from "gps-plus-slam-app-framework/ar";
 import {
   createQrDemoController,
   type DepthContext,
@@ -28,6 +29,13 @@ const IMG: RgbaImage = {
   data: new Uint8ClampedArray(4),
   width: 100,
   height: 100,
+};
+
+/** The offered frame: the pixels plus the camera pose they were captured at. */
+const FRAME: CapturedCameraFrame = {
+  image: IMG,
+  cameraPose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+  capturedAtMs: 0,
 };
 
 // A symmetric perspective projection (column-major); only fx/fy/cx/cy are read.
@@ -58,7 +66,6 @@ function fakeDepthContext(): DepthContext {
       ],
     },
     depthAt: () => 1,
-    cameraPose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
     projectionMatrix: PROJECTION,
   };
 }
@@ -116,11 +123,12 @@ function setup(
 }
 
 async function feed(
-  controller: { offerFrame: (i: RgbaImage) => void },
+  controller: { offerFrame: (f: CapturedCameraFrame) => void },
   n: number,
+  frame: CapturedCameraFrame = FRAME,
 ): Promise<void> {
   for (let i = 0; i < n; i++) {
-    controller.offerFrame(IMG);
+    controller.offerFrame(frame);
     await flush();
   }
 }
@@ -250,5 +258,59 @@ describe("createQrDemoController", () => {
     await feed(controller, 4);
     controller.reset();
     expect(controller.status).toBe("idle");
+  });
+});
+
+/**
+ * Why this test matters (QR perf plan 2026-09-23, M3): `isBusy` is the camera
+ * source's veto - while a detect is in flight the scheduler would drop a new
+ * frame, so the demo skips reading it back from the GPU at all.
+ */
+describe("createQrDemoController isBusy", () => {
+  it("is busy exactly while a detect is in flight", async () => {
+    let resolveDetect: (d: QrDetection | null) => void = () => {};
+    const { controller } = setup({
+      detect: () => new Promise((r) => (resolveDetect = r)),
+    });
+    expect(controller.isBusy()).toBe(false);
+    controller.offerFrame(FRAME);
+    expect(controller.isBusy()).toBe(true);
+    resolveDetect(null);
+    await flush();
+    expect(controller.isBusy()).toBe(false);
+  });
+});
+
+/**
+ * Why this test matters (QR perf plan 2026-09-23, M4): the demo's pose used to
+ * come from the latest DEPTH sample (sampled every 250 ms), so the PnP solve
+ * paired one frame's corners with a camera pose up to 250 ms + one decode
+ * away. The solve and the recorded event must use the pose of the frame the
+ * corners came from; depth still supplies the SIZE.
+ */
+describe("createQrDemoController capture-time pose", () => {
+  it("solves against the frame's capture pose, not the depth sample's", async () => {
+    const capturePose = {
+      position: [4, 5, 6] as const,
+      rotation: [0, 0, 0, 1] as const,
+    };
+    const poses: unknown[] = [];
+    const events: unknown[] = [];
+    const { controller } = setup({
+      solvePose: (input) => {
+        poses.push(input.cameraPose);
+        return cannedSolvePose(input);
+      },
+      recordDetection: (e) => events.push(e),
+    });
+    const frame: CapturedCameraFrame = {
+      image: IMG,
+      cameraPose: capturePose,
+      capturedAtMs: 0,
+    };
+    await feed(controller, 3, frame);
+    expect(poses.length).toBeGreaterThan(0);
+    expect(poses.every((p) => p === capturePose)).toBe(true);
+    expect(events[0]).toMatchObject({ cameraPose: capturePose });
   });
 });

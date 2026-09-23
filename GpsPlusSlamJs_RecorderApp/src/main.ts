@@ -1167,8 +1167,8 @@ async function handleEnterAR(): Promise<void> {
       ...(recordingOptions.qr.enabled
         ? {
             cameraFrame: {
-              onFrame: (image) => {
-                arSessionResources.qrProducer?.offerFrame(image);
+              onFrame: (frame) => {
+                arSessionResources.qrProducer?.offerFrame(frame);
                 refreshQrStatus();
               },
             },
@@ -1293,6 +1293,9 @@ async function handleEnterAR(): Promise<void> {
           qrHud.noteLevelState(text, state);
           refreshQrStatus();
         },
+        // The row follows recorded detections too, not only camera frames: the
+        // capture veto pauses frames while a level fetch is in flight.
+        onQrStateChanged: refreshQrStatus,
       });
     }
 

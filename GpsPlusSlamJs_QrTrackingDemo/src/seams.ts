@@ -32,12 +32,16 @@ import {
   stopCameraFrameCapture,
   startDepthCapture,
   stopDepthCapture,
+  type CameraFrameCaptureConfig,
 } from "gps-plus-slam-app-framework/ar/webxr-session";
+import type { CaptureTiming } from "gps-plus-slam-app-framework/ar/camera-blit-capture";
 import {
+  type BarcodeDetectorFrontEnd,
   createBarcodeDetectorFrontEnd,
   createQrSizeDepthContext,
   type RgbaImage,
   type QrDetection,
+  type CapturedCameraFrame,
 } from "gps-plus-slam-app-framework/ar";
 import { checkWebXRSupport } from "gps-plus-slam-app-framework/sensors";
 import type { DepthSample } from "gps-plus-slam-app-framework/types";
@@ -46,24 +50,40 @@ import type { Object3D } from "three";
 import type { DemoCapabilitySupport } from "./capability.js";
 import type { DepthContext } from "./demo-controller.js";
 
+/** Options for {@link QrDemoSeams.startFrameSource}. */
+interface FrameSourceOptions {
+  intervalMs?: number;
+  /** The opt-in `?qrperf` per-capture stage timings. */
+  onCaptureTiming?: (timing: CaptureTiming) => void;
+  /** Capture veto: `false` while the detector is busy (skips the readback). */
+  wantsFrame?: () => boolean;
+}
+
 /** The device functions a Playwright e2e fake may override. */
 export interface QrDemoSeams {
   checkSupport(): Promise<DemoCapabilitySupport>;
   initAR(container: HTMLElement): Promise<void>;
   endARSession(): Promise<void>;
   getArWorldGroup(): Object3D | null;
-  /** A detect+decode function (BarcodeDetector front-end), or always-null. */
-  createDetect(): (image: RgbaImage) => Promise<QrDetection | null>;
-  /** Latest frame's depth context (unprojector + depth lookup + camera pose). */
+  /**
+   * A detect+decode function (BarcodeDetector front-end), or always-null.
+   * `copyPixels` restores the pre-fix full copy per decode, for the
+   * `?qrperf=1&baseline=1` A/B run only.
+   */
+  createDetect(options?: {
+    copyPixels?: boolean;
+    onCopyMs?: (ms: number) => void;
+  }): (image: RgbaImage) => Promise<QrDetection | null>;
+  /** Latest depth sample's context (unprojector + depth lookup + projection). */
   getDepthContext(): DepthContext | null;
   /**
-   * Start delivering frames to `onImage` at the given detection cadence
+   * Start delivering captured frames (pixels + capture pose) to `onFrame` at the given detection cadence
    * (`intervalMs`); returns a stop function. The frame source is the SINGLE
    * cadence owner (Option A): the controller it feeds runs `minIntervalMs: 0`.
    */
   startFrameSource(
-    onImage: (image: RgbaImage) => void,
-    options?: { intervalMs?: number },
+    onFrame: (frame: CapturedCameraFrame) => void,
+    options?: FrameSourceOptions,
   ): () => void;
 }
 
@@ -84,7 +104,7 @@ let latestDepthSample: DepthSample | null = null;
  * `initAR` as its `callbacks.cameraFrame` group, like the depth callback)
  * forwards each throttled RGBA frame here. `null` when no source is running.
  */
-let qrFrameConsumer: ((image: RgbaImage) => void) | null = null;
+let qrFrameConsumer: ((frame: CapturedCameraFrame) => void) | null = null;
 
 /**
  * Depth capture tuning for the QR demo (WS-A 2a). A DENSER grid than the SLAM
@@ -95,6 +115,24 @@ let qrFrameConsumer: ((image: RgbaImage) => void) | null = null;
  * WebXR depth buffer; `depthAt` bilinearly interpolates this grid.
  */
 const QR_DEPTH_CONFIG = { gridSize: 64, intervalMs: 250, rgb: false };
+
+/**
+ * The PRE-fix front end for the `?qrperf=1&baseline=1` A/B run: the same
+ * native detector, but the frame is copied once more per decode, exactly as
+ * the framework did before QR perf plan M3. `onCopyMs` receives each copy's
+ * duration, so the saving is measured directly. `null` without
+ * `BarcodeDetector`.
+ */
+function createCopyingFrontEnd(
+  onCopyMs?: (ms: number) => void,
+): BarcodeDetectorFrontEnd | null {
+  return createBarcodeDetectorFrontEnd(undefined, (image) => {
+    const t0 = performance.now();
+    const copy = new Uint8ClampedArray(image.data);
+    onCopyMs?.(performance.now() - t0);
+    return new ImageData(copy, image.width, image.height);
+  });
+}
 
 /** The production seams — the unmodified framework device wiring. */
 export const realSeams: QrDemoSeams = {
@@ -126,7 +164,7 @@ export const realSeams: QrDemoSeams = {
           },
         },
         cameraFrame: {
-          onFrame: (image) => qrFrameConsumer?.(image),
+          onFrame: (frame) => qrFrameConsumer?.(frame),
         },
       },
     );
@@ -140,8 +178,10 @@ export const realSeams: QrDemoSeams = {
     await endARSession();
   },
   getArWorldGroup,
-  createDetect() {
-    const frontEnd = createBarcodeDetectorFrontEnd();
+  createDetect(options) {
+    const frontEnd = options?.copyPixels
+      ? createCopyingFrontEnd(options.onCopyMs)
+      : createBarcodeDetectorFrontEnd();
     if (!frontEnd) return () => Promise.resolve(null);
     return (image) => frontEnd.detect(image);
   },
@@ -156,18 +196,17 @@ export const realSeams: QrDemoSeams = {
     if (!base) return null;
     return {
       ...base,
-      cameraPose: { position: sample.cameraPos, rotation: sample.cameraRot },
       projectionMatrix: sample.projectionMatrix,
     };
   },
   startFrameSource(
-    onImage: (image: RgbaImage) => void,
-    options?: { intervalMs?: number },
+    onFrame: (frame: CapturedCameraFrame) => void,
+    options?: FrameSourceOptions,
   ): () => void {
     // The framework camera-frame callback (wired in initAR) forwards frames to
     // whatever consumer is active. Point it at this controller and start the
     // throttled capture — the source is the single cadence owner (Option A).
-    qrFrameConsumer = onImage;
+    qrFrameConsumer = onFrame;
     // WS-C: allow a device tester to sweep the RGB capture resolution via
     // `?capture=<px>` (no rebuild). Absent → the framework default (1024, raised
     // from 512 by the 2026-06-17 on-device sweep).
@@ -175,9 +214,12 @@ export const realSeams: QrDemoSeams = {
       typeof window !== "undefined"
         ? parseCaptureSizeParam(window.location.search)
         : undefined;
-    const captureConfig: { intervalMs?: number; captureSize?: number } = {};
+    const captureConfig: CameraFrameCaptureConfig = {};
     if (options?.intervalMs !== undefined)
       captureConfig.intervalMs = options.intervalMs;
+    if (options?.onCaptureTiming)
+      captureConfig.onCaptureTiming = options.onCaptureTiming;
+    if (options?.wantsFrame) captureConfig.wantsFrame = options.wantsFrame;
     if (captureSize !== undefined) captureConfig.captureSize = captureSize;
     startCameraFrameCapture(
       Object.keys(captureConfig).length > 0 ? captureConfig : undefined,

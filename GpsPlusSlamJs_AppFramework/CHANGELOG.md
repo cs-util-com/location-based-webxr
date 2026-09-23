@@ -19,7 +19,46 @@
   - **Worth knowing:** Node 26 does not itself reach LTS until October 2026.
   - `devEngines` is removed as redundant.
 
+- **Camera frames now carry the camera pose and time of their capture**
+  (QR perf plan 2026-09-23, M4). `ArSessionCallbacks.cameraFrame.onFrame`,
+  `QrTrackingController.offerFrame` and `QrDetectionController.offerFrame`
+  take a `CapturedCameraFrame` (`{ image, cameraPose, capturedAtMs }`)
+  instead of a bare `RgbaImage`, and `getCameraPose` is removed from both
+  `QrTrackingControllerConfig` and `QrDetectionControllerDeps`.
+  - **Migration:** pass the frame from `cameraFrame.onFrame` straight to
+    `offerFrame`, and delete the `getCameraPose` option. Code that needs the
+    pixels reads `frame.image`. The raw QR records' `timestamp` is now the
+    frame's `capturedAtMs` (epoch ms on the depth sampler's clock); the
+    tracking controller's `onDetection` timestamp is still the lock time.
+  - **Why.** A detection's corners describe the pixels of ONE frame, so the
+    pose they are solved against must be that frame's. The old
+    `getCameraPose` was read after the asynchronous decode, so the solved QR
+    pose trailed the pixels by one decode latency. The session now pairs the
+    pose with the pixels at capture, and delivers no frame without a pose.
+- **`QrDetectionController` and `QrTrackingController` gained a required
+  `isBusy()`** (QR perf plan 2026-09-23, M3): true while a detect is in
+  flight - the camera source's capture veto. Callers are unaffected; code that
+  IMPLEMENTS or stubs either interface must add it (e.g. `isBusy: () => false`).
+
 ### Added
+
+- **QR capture-pipeline hooks** (QR perf plan 2026-09-23, M2-M4); the options
+  below are optional (the M4 signature change and the new required
+  `isBusy()` member are under Breaking changes above):
+  - `startCameraFrameCapture({ onCaptureTiming })` reports per-capture
+    `CaptureTiming` (`blitReadbackMs`, `flipCopyMs`, size); without it the
+    capture path never reads the clock. `CaptureTiming` is exported from `/ar`.
+  - `startCameraFrameCapture({ wantsFrame })` and `CameraFrameSource.setWantsFrame`:
+    the consumer vetoes captures it would drop (e.g. while its detector is
+    busy), skipping the GPU readback without consuming the interval.
+  - `CapturedCameraFrame`, `poseFromArPose(arPose)` and
+    `capturedCameraFrame(image, arPose, xrTimeMs, timeOriginMs)` (`null`
+    without a pose), exported from `/ar` and
+    **`ar/captured-camera-frame`** (deep import).
+  - `CameraFrameSource<TFrame = RgbaImage>` is generic over what its
+    `capture` builds, and `capture` now receives the XR frame `timestamp`.
+    Existing `CameraFrameSource` code compiles unchanged (the default is
+    `RgbaImage` and a zero-argument `capture` still type-checks).
 
 - **`test-utils/zip-central-directory` resolves for the first time.** The
   `./test-utils/*` export only serves what the build emits, so this
@@ -32,6 +71,10 @@
   independent of the library that wrote it.
 
 ### Changed
+
+- **`BarcodeDetectorFrontEnd`'s default conversion no longer copies the
+  frame** when it can be adopted (plain-`ArrayBuffer`-backed pixels), saving
+  one full-frame copy per decode.
 
 - **`downloadZip` resolves a boolean**: `true` when a download or save was
   started, `false` when the user dismissed the save picker (nothing was
@@ -78,9 +121,9 @@ entranceMs: 0, peakDrawMs: 0 })` to compile; a consumer that only calls
 - **Store-mode zip writing from in-memory entries, and rebuilding an
   existing zip** (`/storage`; the modules are **`storage/pack-files-as-zip`** (deep import), **`storage/zip-rebuild`** (deep import) and **`storage/zip-entry-path`** (deep import)):
   **`packFilesAsZip(entries)`** writes `{ path, data: Blob | Uint8Array |
-  string }` entries uncompressed so a range reader can slice them out
+string }` entries uncompressed so a range reader can slice them out
   (an empty list is a valid empty archive); **`rebuildZipWithEntries(zip,
-  entries, { onProgress? })`** re-emits an existing archive with entries
+entries, { onProgress? })`** re-emits an existing archive with entries
   added or replaced by path, keeping every other entry byte-identical, and
   THROWS (`ZipPackagingError`) rather than returning the input on failure;
   **`assertSafeZipEntryPaths(paths)`** is the one path rule set every
@@ -95,7 +138,7 @@ entranceMs: 0, peakDrawMs: 0 })` to compile; a consumer that only calls
   name collapses to its last occurrence) and reads them as Blobs, so a
   phone-sized recorder zip is not copied onto the JS heap; only the new
   entries are validated. Also on `/storage`: `writeStoreZip(entries,
-  caller)` (the writer without validation, for callers that validated)
+caller)` (the writer without validation, for callers that validated)
   and `assertWritableZipEntries(entries, caller)`.
 - **`tour.json` - the tour manifest** (`/ar`; **`ar/tour-manifest`** (deep import) and **`ar/tour-archive`** (deep import)): `parseTourManifest`,
   `serializeTourManifest`, `createEmptyTourManifest`; objects are text
@@ -109,7 +152,7 @@ entranceMs: 0, peakDrawMs: 0 })` to compile; a consumer that only calls
   `TourObject` is the union `TourPin | TourPhoto`. The geo-pose validator
   (`HEADING_CONSISTENCY_TOLERANCE_DEG` now public) moved from
   `qr-level.ts` into **`ar/qr/geo-pose`** (deep import) - `parseGeoPose(value, { path,
-  fail })` - so the level and the manifest share one rule set;
+fail })` - so the level and the manifest share one rule set;
   level messages are unchanged.
 - **`circleEntrance` on `createWayfindingHud`** (opt-in): the circle indicator is the design system's diamond building itself up — the outline drawn over 800 ms, the accent dot popping at 600–850 ms, the sheet's `--ease-out` — each time a target appears or comes back through the distance gate (a head turn does not restart it). Drawn per target into a canvas texture with a 30 Hz redraw cap and a 60 ms stagger for simultaneous spawns; reduced motion (the OS setting, or `reducedMotion: true`) shows the finished marker at once. Mutually exclusive with `circleSprite`; meant alongside `arrowSprite`. `WayfindingHud.entranceStats()` reports the last frame's redraws, their wall-clock cost, how many entrances still animate, and the costliest entrance's accumulated and peak draw milliseconds — the on-device cost readout (the accumulated figure clears the browser clock's 100 µs floor where a single frame does not). The building blocks are public on `/visualization` (`computeDiamondEntrance`, `DIAMOND_ENTRANCE`, `createDiamondMarkerTexture`, `DIAMOND_GEOMETRY`) and **`utils/cubic-bezier-easing`** (deep import) — evaluates CSS `cubic-bezier()` timing functions exactly.
 

@@ -187,7 +187,6 @@ export function createViewerPlacement(deps: {
       buildViewerControllerConfig({
         frontEnd,
         solvePose: (input) => seams.solveQrPose(input),
-        getCameraPose: () => seams.getCameraPose(),
         getIntrinsics: (image) => seams.getIntrinsics(image),
         getLevels: () => ctx.currentLevels,
         dispatchVote: (payload) => {

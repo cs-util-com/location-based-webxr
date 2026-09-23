@@ -7,19 +7,23 @@ coalesced cadence and exposes an async-status state machine for the UI.
 
 ## Public API
 
-- `createQrTrackingController(config): QrTrackingController` — `offerFrame(image)`
-  (call per render frame), read-only `status`, `reset()`.
+- `createQrTrackingController(config): QrTrackingController` — `offerFrame(frame: CapturedCameraFrame)`
+  (call per captured frame; the frame carries its own capture pose and time, see
+  [captured-camera-frame.ts.md](../captured-camera-frame.ts.md)), `isBusy()` (true while a detect - including a first-sighting level fetch - is in flight; the camera source's capture veto), read-only `status`, `reset()`.
 - `QrTrackingStatus` = `idle | scanning | loading-level | tracking | error`.
 - `QrTrackingControllerConfig` — injected `frontEnd`, `solvePose` (wraps
-  `solveQrPose`), `fetchLevel`, `dispatchVotes`, `getCameraPose`,
+  `solveQrPose`), `fetchLevel`, `dispatchVotes`,
   `getIntrinsics`, `syntheticAccuracyM`, optional `isPlausible` gate,
   optional `onDetection` (qrDetected emission), `resolveSizeM` (size when
   the level omits it — e.g. a depth-measured median), `resolveStablePose`
   (sliding-window filtered pose for the vote — e.g. `selectStableQrPose`),
   `onStatus`/`onLocked`/`onError`, and scheduler tuning
-  (`minIntervalMs`, `requiredLockCount`, `now`).
+  (`minIntervalMs`, `requiredLockCount`, `now`). There is no `getCameraPose`
+  any more (removed in QR perf plan 2026-09-23, M4): the pose comes with the
+  frame.
   - `onRawDetection` — fires on every DECODE, before and independently of the
-    solve, carrying the raw corners/pose/image-size. It exists so an app that
+    solve, carrying the raw corners/pose/image-size; its `cameraPose` is
+    `frame.cameraPose` and its `timestamp` is `frame.capturedAtMs`. It exists so an app that
     must record raw observations whatever else happens (the recorder) gets
     them from ONE decode instead of running a second producer on the AR frame
     path.
@@ -28,7 +32,8 @@ coalesced cadence and exposes an async-status state machine for the UI.
   - Both were undocumented here until 2026-08-30 (PR #378 review).
 - `QrDetectionEvent` — `{ text, qrPoseWorld, qrPoseInCamera,
 reprojectionErrorPx, timestamp, corners, cameraPose, imageWidth,
-imageHeight }`, emitted via `onDetection` on every lock. The last four are
+imageHeight }`, emitted via `onDetection` on every lock. Its `timestamp` is
+  the lock time (`now()`), not the frame's capture time. The last four are
   the RAW facts behind the solve, carried so a consumer needing both a solved
   pose and a raw record does not decode twice; the projection matrix is
   deliberately absent, because this controller is given `getIntrinsics(image)`
@@ -54,23 +59,22 @@ imageHeight }`, emitted via `onDetection` on every lock. The last four are
 imageHeight }`, seven fields, not the three this line claimed until
   2026-08-30 (PR #378 review) — set during `detect` is the correct context
   read by `onLocked`.
-- **The solve uses the DECODE-TIME pose sample, not a fresh one taken after the level fetch**
-  (PR #379 review). `detection.corners` come from `image`, and
-  `qrPoseWorld` is `cameraPose o qrPoseInCamera`, so the two must describe
-  the same instant. The solve used to call `getCameraPose()` a SECOND time,
-  after `await ensureLevel(...)` - and on a code's first sighting that await
-  is a real network round trip, so the code was anchored wherever the phone
-  had moved to. It also let the raw record and the solved pose describe one
-  detection with two different poses. Both now use the single decode-time
-  sample; a detection whose frame had no pose is dropped rather than solved
-  against a later one.
-  - **It is not "the pose at the frame", and the wording matters** (PR #380
-    review, correcting this bullet). `rawCameraPose` is read AFTER
-    `await frontEnd.detect(image)`, so it still trails the frame the corners
-    came from by one decode latency - the same class of error as the one
-    removed, roughly three orders of magnitude smaller. `RgbaImage` carries
-    no timestamp or pose and `offerFrame` passes only the image, so closing
-    it is a seam change: see
+- **The solve and the raw record use the FRAME's pose - the camera pose of
+  the XR frame the pixels were captured in** (`frame.cameraPose`). `detection.corners`
+  come from `frame.image`, and `qrPoseWorld` is `cameraPose o qrPoseInCamera`,
+  so the two must describe the same instant.
+  - History: the solve once called `getCameraPose()` a SECOND time, after
+    `await ensureLevel(...)` - on a code's first sighting a real network round
+    trip, so the code was anchored wherever the phone had moved to, and the raw
+    record and the solved pose disagreed about one detection (PR #379 review).
+    The fix used one decode-time sample for both, which still trailed the frame
+    by one decode latency because it was read after `await frontEnd.detect`
+    (PR #380 review).
+  - **Closed by QR perf plan 2026-09-23, M4:** the session pairs each frame
+    with its pose at capture (`CapturedCameraFrame`), `getCameraPose` is gone
+    from the config, and nothing is read after an `await`. The session does not
+    deliver a frame without a pose, so there is no "pose unavailable" skip here
+    any more. See
     [2026-08-30-0620-qr-pose-frame-pairing-followup.md](../../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-08-30-0620-qr-pose-frame-pairing-followup.md).
 - **Size lifecycle gate (Note 3):** the solve needs a size. Order: the level's
   authored `physicalSizeM`, else `resolveSizeM(text, level)` (e.g. a measured
@@ -93,8 +97,8 @@ imageHeight }`, seven fields, not the three this line claimed until
   includes the current frame. Without a resolver, the raw solve pose drives the
   vote (back-compat). See
   [2026-06-16-0858-qr-pose-stabilization-sliding-window-followup.md](../../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-16-0858-qr-pose-stabilization-sliding-window-followup.md).
-- **Fully injected** (front-end, solve, fetch, dispatch, camera/intrinsics
-  accessors, clock) → no WASM, device, or store needed to test. Production wires
+- **Fully injected** (front-end, solve, fetch, dispatch, intrinsics
+  accessor, clock; the camera pose arrives with each frame) → no WASM, device, or store needed to test. Production wires
   `solvePose` to `solveQrPose({...input, solver: new PlanarPnpSquare()})`,
   `fetchLevel` to `fetchQrLevel`, `dispatchVotes` to `recordGpsEvent`, and
   optionally `isPlausible` to `checkQrPlausibility`.
@@ -107,7 +111,9 @@ imageHeight }`, seven fields, not the three this line claimed until
   cache + returns to idle; qrDetected emitted on every lock, geo-less level
   emits detection but no vote, size gate blocks the solve when unknown, a
   `resolveSizeM`-supplied size unblocks it, the vote uses the `resolveStablePose`
-  filtered pose, and the vote is skipped (detection still emitted) until stable.
+  filtered pose, and the vote is skipped (detection still emitted) until stable;
+  the solve and the raw record use the frame's capture pose and `capturedAtMs`
+  (M4); `isBusy()` spans the detect and its level fetch (M3).
 
 ## Related
 

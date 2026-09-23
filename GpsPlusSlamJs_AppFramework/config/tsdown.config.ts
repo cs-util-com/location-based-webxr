@@ -26,6 +26,7 @@ const entryFiles = [
   'src/ar/ar-scene-hierarchy.ts',
   'src/ar/bresenham3d.ts',
   'src/ar/camera-blit-capture.ts',
+  'src/ar/captured-camera-frame.ts',
   'src/ar/capability-checker.ts',
   'src/ar/capture-failure-tracker.ts',
   // Motion-filter config types + defaults — deep-imported by the recorder's

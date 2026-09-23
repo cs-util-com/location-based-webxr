@@ -36,7 +36,13 @@ import {
   createQrDebugView,
   type QrDebugView,
 } from "gps-plus-slam-app-framework/ar/qr/qr-debug-view";
-import { createQrDemoController } from "./demo-controller.js";
+import {
+  createDefaultSolvePose,
+  createQrDemoController,
+} from "./demo-controller.js";
+import { parseQrPerfParams } from "./qrperf/qrperf-params.js";
+import { mountQrPerf, type MountedQrPerf } from "./qrperf/mount-qrperf.js";
+import type { CaptureTiming } from "gps-plus-slam-app-framework/ar/camera-blit-capture";
 import { toHudView, type DemoStatus } from "./hud-view.js";
 import { isDemoSupported, capabilityMessage } from "./capability.js";
 import {
@@ -72,10 +78,14 @@ const dom = {
   hudSpread: el("hud-spread"),
   hudLifecycle: el("hud-lifecycle"),
   debugLog: el("debug-log"),
+  qrperfLog: el("qrperf-log"),
+  qrperfCopy: el<HTMLButtonElement>("qrperf-copy"),
   error: el("error"),
 } as const;
 
 let store: QrDemoStore | null = null;
+/** The `?qrperf` instrument, when the flag is set (null otherwise). */
+let perf: MountedQrPerf | null = null;
 let view: QrDebugView | null = null;
 let stopFrames: (() => void) | null = null;
 let status: DemoStatus = "idle";
@@ -109,6 +119,8 @@ function renderHud(): void {
 function failStart(err: unknown): void {
   stopFrames?.();
   stopFrames = null;
+  perf?.dispose();
+  perf = null;
   view?.dispose();
   view = null;
   dom.startButton.disabled = false;
@@ -143,9 +155,29 @@ async function startAr(): Promise<void> {
   }
 
   view = createQrDebugView(group);
-  const detect = seams.createDetect();
+  // `?qrperf` (plan 2026-09-23 M2): opt-in stage timings; null when off, and
+  // then every hook below is exactly the un-instrumented pipeline.
+  const perfParams = parseQrPerfParams(window.location.search);
+  perf = mountQrPerf(perfParams, {
+    log: dom.qrperfLog,
+    copy: dom.qrperfCopy,
+  });
+  // `baseline=1` reproduces the pre-M3 pipeline in the same build (plan
+  // DEC-Q7): a full pixel copy per decode, and a capture every interval.
+  const baseDetect = seams.createDetect(
+    perfParams.baseline
+      ? {
+          copyPixels: true,
+          onCopyMs: (ms) => perf?.instrument.onPixelCopy(ms),
+        }
+      : undefined,
+  );
+  const detect = perf ? perf.instrument.wrapDetect(baseDetect) : baseDetect;
   const controller = createQrDemoController({
     detect,
+    ...(perf
+      ? { solvePose: perf.instrument.wrapSolve(createDefaultSolvePose()) }
+      : {}),
     getDepthContext: () => seams.getDepthContext(),
     recordDetection: (event) => {
       activeText = event.text;
@@ -195,14 +227,24 @@ async function startAr(): Promise<void> {
   });
 
   // The framework CameraFrameSource owns the cadence (Option A).
-  stopFrames = seams.startFrameSource((image) => controller.offerFrame(image), {
+  stopFrames = seams.startFrameSource((frame) => controller.offerFrame(frame), {
     intervalMs: DETECT_INTERVAL_MS,
+    ...(perf ? { onCaptureTiming: captureTimingHook(perf) } : {}),
+    // Skip the GPU readback of frames the busy detector would drop anyway.
+    ...(perfParams.baseline ? {} : { wantsFrame: () => !controller.isBusy() }),
   });
 
   dom.startScreen.hidden = true;
   dom.hud.hidden = false;
   status = "scanning";
   renderHud();
+}
+
+/** The `?qrperf` capture-timing hook, bound to its instrument. */
+function captureTimingHook(
+  mounted: MountedQrPerf,
+): (timing: CaptureTiming) => void {
+  return (timing) => mounted.instrument.onCaptureTiming(timing);
 }
 
 async function main(): Promise<void> {
@@ -232,6 +274,7 @@ async function main(): Promise<void> {
 
 window.addEventListener("beforeunload", () => {
   stopFrames?.();
+  perf?.dispose();
   view?.dispose();
 });
 

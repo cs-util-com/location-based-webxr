@@ -86,7 +86,6 @@ export async function installQrDemoFakes(page, { planar = true } = {}) {
             ],
           },
           depthAt: () => 1,
-          cameraPose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
           // A symmetric perspective projection (column-major) so PnP intrinsics
           // are sane: fx = fy = 1.732·W/2, principal point at the frame centre.
           projectionMatrix: [
@@ -103,9 +102,14 @@ export async function installQrDemoFakes(page, { planar = true } = {}) {
 
       // Stash the frame geometry for `feedFrames`.
       control.frameImage = {
-        data: new Uint8ClampedArray(0),
-        width: frameSize,
-        height: frameSize,
+        image: {
+          data: new Uint8ClampedArray(0),
+          width: frameSize,
+          height: frameSize,
+        },
+        // The pose the framework pairs every captured frame with.
+        cameraPose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+        capturedAtMs: 0,
       };
     },
     {

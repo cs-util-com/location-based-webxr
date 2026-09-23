@@ -23,6 +23,10 @@ identical here — they diverge in M3/M4.
   `hooks.requestHitTest` asks for the WebXR `hit-test` feature (the
   creator's reticle; without it the reticle never shows) - hooks:
   `{ container, trackingStore, onFrame, onSessionEnd, onGpsPosition, onOrientation }`.
+  `onFrame(frame: CapturedCameraFrame)` receives every throttled camera
+  frame - top-left RGBA plus the camera pose and epoch-ms time of its capture
+  (QR perf plan 2026-09-23 M4) - forwarded unchanged from
+  `callbacks.cameraFrame.onFrame`.
   `trackingStore` rides in as `callbacks.tracking.store` (flows plan M4):
   `initAR` dispatches `tracking/poseReceived` ONLY into the store handed in
   here, and the tracking-quality phase the placement trigger reads is

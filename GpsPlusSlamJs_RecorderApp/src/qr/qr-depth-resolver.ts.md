@@ -24,8 +24,8 @@ which is exactly what the derive-on-read size join
 
 - **Clock domain (load-bearing):** depth timestamps are EPOCH ms
   (`DepthSample.timestamp = performance.timeOrigin + frameTs`, `ar/depth-sampler.ts`);
-  the QR producer MUST stamp detections from the same epoch clock (`Date.now()`, plan
-  open topic A) or the `≤` join silently misses every time. (Stamping
+  QR detections MUST carry the same epoch clock (since QR perf plan M4 the
+  frame's capture time, `performance.timeOrigin + xrTime`; plan open topic A) or the `≤` join silently misses every time. (Stamping
   `performance.now()` was the original "no debug cube" bug.)
 - **Live == replay:** `append` is fed every recorded depth sample — live via the
   capture path, replay via the re-dispatched `recordDepthSample` reflected in the

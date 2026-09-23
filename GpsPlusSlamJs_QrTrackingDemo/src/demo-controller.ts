@@ -40,6 +40,7 @@ import {
   type QrDetectionEvent,
   type QrPoseSolution,
   type SolveQrPoseInput,
+  type CapturedCameraFrame,
 } from "gps-plus-slam-app-framework/ar";
 import type { Matrix4 } from "gps-plus-slam-app-framework/core";
 import type { DemoStatus } from "./hud-view.js";
@@ -52,12 +53,11 @@ export type DemoSolvePose = (
 /**
  * Everything device-specific the controller needs to read one frame's depth:
  * the shared framework size-measurer context (unprojector + depthAt — the demo's
- * seams already build it via `createQrSizeDepthContext`) plus the two per-frame
- * fields only the PnP solve needs.
+ * seams already build it via `createQrSizeDepthContext`) plus the projection the
+ * PnP intrinsics come from. The camera POSE is not here: it comes with each
+ * captured frame (QR perf plan 2026-09-23, M4).
  */
 export interface DepthContext extends QrSizeDepthContext {
-  /** Camera pose in raw-WebXR/odom space (for the camera-relative pose). */
-  cameraPose: Pose;
   /**
    * The view projection matrix for the detector frame — PnP intrinsics come from
    * `intrinsicsFromProjection(projectionMatrix, image.width, image.height)`. The
@@ -102,8 +102,10 @@ export interface QrDemoControllerDeps {
 }
 
 export interface QrDemoController {
-  /** Offer the latest camera frame; throttled/coalesced internally. */
-  offerFrame(image: RgbaImage): void;
+  /** Offer the latest captured frame (pixels + their capture pose); throttled/coalesced internally. */
+  offerFrame(frame: CapturedCameraFrame): void;
+  /** True while a detect is in flight - the camera source's capture veto. */
+  isBusy(): boolean;
   readonly status: DemoStatus;
   /** Clear the measured-size accumulators and return to idle. */
   reset(): void;
@@ -113,6 +115,16 @@ interface DemoLockResult {
   event: QrDetectionEvent;
   pose: Pose;
   estimate: QrSizeEstimate;
+}
+
+/**
+ * The default pose solve: the framework PnP with a pure-JS IPPE solver, built
+ * once. Exported so a caller can wrap it (the `?qrperf` instrument times it)
+ * without re-deriving it.
+ */
+export function createDefaultSolvePose(): DemoSolvePose {
+  const solver = new PlanarPnpSquare();
+  return (input) => solveQrPose({ ...input, solver });
 }
 
 export function createQrDemoController(
@@ -135,11 +147,7 @@ export function createQrDemoController(
   // The shared framework piece: per-marker depth→size accumulation (Part B,
   // Option 2). Both this demo and the Recorder wire the same measurer.
   const measurer: QrSizeMeasurer = createQrSizeMeasurer();
-  // Default pose solve: the framework PnP with a pure-JS IPPE solver, built once.
-  const defaultSolver = new PlanarPnpSquare();
-  const solvePose: DemoSolvePose =
-    deps.solvePose ??
-    ((input) => solveQrPose({ ...input, solver: defaultSolver }));
+  const solvePose: DemoSolvePose = deps.solvePose ?? createDefaultSolvePose();
   let status: DemoStatus = "idle";
 
   function setStatus(next: DemoStatus): void {
@@ -148,7 +156,10 @@ export function createQrDemoController(
     onStatus?.(next);
   }
 
-  async function runDetect(image: RgbaImage): Promise<DemoLockResult | null> {
+  async function runDetect(
+    frame: CapturedCameraFrame,
+  ): Promise<DemoLockResult | null> {
+    const { image, cameraPose } = frame;
     if (status === "idle") setStatus("scanning");
 
     const detection = await detect(image);
@@ -194,7 +205,9 @@ export function createQrDemoController(
       imagePoints: detection.corners,
       sizeM,
       intrinsics,
-      cameraPose: ctx.cameraPose,
+      // The FRAME's pose, not the depth sample's: the depth sample is up to
+      // 250 ms (+ one decode) away from these pixels (QR perf plan M4).
+      cameraPose,
     });
     if (!solution) return null;
 
@@ -208,15 +221,15 @@ export function createQrDemoController(
       // consumer that needs a raw record alongside the pose gets it from the
       // SAME decode — every producer of this event has them in hand here.
       corners: detection.corners,
-      cameraPose: ctx.cameraPose,
+      cameraPose,
       imageWidth: image.width,
       imageHeight: image.height,
     };
     return { event, pose: solution.qrPoseWorld, estimate };
   }
 
-  const scheduler: DetectionScheduler =
-    createDetectionScheduler<DemoLockResult>({
+  const scheduler: DetectionScheduler<CapturedCameraFrame> =
+    createDetectionScheduler<DemoLockResult, CapturedCameraFrame>({
       detect: runDetect,
       minIntervalMs,
       requiredLockCount,
@@ -239,8 +252,11 @@ export function createQrDemoController(
     });
 
   return {
-    offerFrame(image: RgbaImage): void {
-      scheduler.offerFrame(image);
+    offerFrame(frame: CapturedCameraFrame): void {
+      scheduler.offerFrame(frame);
+    },
+    isBusy(): boolean {
+      return scheduler.inFlight;
     },
     get status() {
       return status;

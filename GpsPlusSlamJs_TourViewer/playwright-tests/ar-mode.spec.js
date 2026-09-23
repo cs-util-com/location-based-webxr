@@ -496,6 +496,11 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   // A frame must have flowed for the photo button; the poll above emitted
   // several.
   await expect(page.getByTestId("setup-photo")).toBeEnabled();
+  // The photo uses a frame at most 1 s old (photo-frame.ts); on a phone one
+  // arrives every 125 ms, so emit a fresh one as the device would.
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+  });
   await page.getByTestId("setup-photo").click();
   await expect(page.getByTestId("setup-status")).toContainText(
     /2 objects placed/,

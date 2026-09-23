@@ -95,3 +95,88 @@ describe('createBarcodeDetectorFrontEnd', () => {
     expect(capturedOpts).toEqual({ formats: ['qr_code'] });
   });
 });
+
+/**
+ * Why these tests matter (QR perf plan 2026-09-23, M3): the frame handed to
+ * `detect` is already an owned buffer (`captureToRgba` returns a fresh copy),
+ * so wrapping it in `ImageData` must not copy ~3 MB a second time. Node has no
+ * `ImageData`, so a stub stands in: these tests prove the SAME array is handed
+ * over (not the browser's adopt-without-copy behaviour, which the platform
+ * guarantees for a plain-ArrayBuffer-backed array of the right length).
+ */
+describe('default ImageData conversion', () => {
+  class ImageDataStub {
+    constructor(
+      readonly data: Uint8ClampedArray,
+      readonly width: number,
+      readonly height: number
+    ) {}
+  }
+
+  function capturingDetector() {
+    const seen: unknown[] = [];
+    const detector = {
+      detect: (source: unknown) => {
+        seen.push(source);
+        return Promise.resolve([]);
+      },
+    };
+    return { detector, seen };
+  }
+
+  it('hands the owned pixel buffer over without copying it', async () => {
+    vi.stubGlobal('ImageData', ImageDataStub);
+    try {
+      const { detector, seen } = capturingDetector();
+      const image = {
+        data: new Uint8ClampedArray(2 * 2 * 4),
+        width: 2,
+        height: 2,
+      };
+      await new BarcodeDetectorFrontEnd(detector).detect(image);
+      expect((seen[0] as ImageDataStub).data).toBe(image.data);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('copies a buffer that ImageData cannot adopt (shared memory)', async () => {
+    vi.stubGlobal('ImageData', ImageDataStub);
+    try {
+      const { detector, seen } = capturingDetector();
+      const image = {
+        data: new Uint8ClampedArray(new SharedArrayBuffer(2 * 2 * 4)),
+        width: 2,
+        height: 2,
+      };
+      await new BarcodeDetectorFrontEnd(detector).detect(image);
+      const handed = (seen[0] as ImageDataStub).data;
+      expect(handed).not.toBe(image.data);
+      expect(handed.buffer).toBeInstanceOf(ArrayBuffer);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+/**
+ * Why this test matters: the QR demo's `?qrperf=1&baseline=1` A/B run builds
+ * its pre-fix (copying, timed) front end through this factory rather than
+ * re-implementing the BarcodeDetector lookup (DEC-H3), so the override must
+ * actually reach the detector.
+ */
+describe('createBarcodeDetectorFrontEnd toSource override', () => {
+  it('passes each frame through the given conversion', async () => {
+    const seen: unknown[] = [];
+    const ctor = class {
+      detect(source: unknown) {
+        seen.push(source);
+        return Promise.resolve([]);
+      }
+    };
+    const marker = { converted: true };
+    const fe = createBarcodeDetectorFrontEnd(ctor, () => marker);
+    await fe!.detect(image);
+    expect(seen).toEqual([marker]);
+  });
+});

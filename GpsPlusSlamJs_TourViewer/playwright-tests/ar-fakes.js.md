@@ -16,8 +16,9 @@ camera, so `installTourViewerArFakes(page)` installs
   `alignmentCalls`, `alignmentStore` (the real app store the alignment
   binding received — specs assert `recording.isRecording` through it),
   `stopCaptureCalls`, `endARSessionCalls`, `cameraFrameCallback`,
-  `emitFrames(n)` (delivers fake RGBA frames through the initAR camera
-  callback), `sessionEndCallback` + `endXrSession()` (simulate a system
+  `emitFrames(n)` (delivers fake frames - RGBA plus an identity capture pose
+  and `capturedAtMs`, the framework's `CapturedCameraFrame` shape - through
+  the initAR camera callback; there is no `getCameraPose` seam to fake), `sessionEndCallback` + `endXrSession()` (simulate a system
   session end), and `armQrDetection(text, position?)` + `nextDetection` /
   `nextSolution` — scripted device-level QR results for the author
   pipeline; the REAL controller, slice, stability gate and mint run over

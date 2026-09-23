@@ -30,7 +30,7 @@ stack to get wrong. Decision record:
 
 - **The basis factor is LEADING: `alignment · WEBXR_TO_NUE · pose`.** The
   input is a RAW WebXR/odometry pose, which is what the tracking controller
-  composes with `getCameraPose`.
+  composes with the frame's capture pose (`CapturedCameraFrame.cameraPose`).
   - A **trailing** factor is correct for a different input — replayed STATE,
     whose quaternions are already basis-conjugated (`R_nue = B·R_webxr·B⁻¹`,
     so `A·B·R_webxr = A·R_nue·B`). That is why the capture-time geo join

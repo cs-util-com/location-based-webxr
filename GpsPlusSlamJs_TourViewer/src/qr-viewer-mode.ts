@@ -69,7 +69,6 @@ const NO_LEVEL_PLACEHOLDER: QrLevel = { version: 1, qr: {} };
 export interface ViewerPipelineDeps {
   frontEnd: QrFrontEnd;
   solvePose(input: QrSolvePoseInput): QrPoseSolution | null;
-  getCameraPose(): Pose | null;
   getIntrinsics(image: RgbaImage): CameraIntrinsics | null;
   /** The open tour's levels (`TourSession.loadQrLevels()`), or null when
    *  no tour is open — every code then reads as unknown. */
@@ -185,7 +184,6 @@ export function buildViewerControllerConfig(
           },
         }
       : {}),
-    getCameraPose: () => deps.getCameraPose(),
     getIntrinsics: (image) => deps.getIntrinsics(image),
     resolveStablePose: (text) => deps.resolveStablePose(text),
     onError: (err) => {

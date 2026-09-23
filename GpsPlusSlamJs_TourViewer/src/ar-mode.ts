@@ -17,7 +17,7 @@ import type {
   ArSessionCallbacks,
   EnableGpsArConfig,
   EnableGpsArState,
-  RgbaImage,
+  CapturedCameraFrame,
   TrackingSubscribableStore,
 } from "gps-plus-slam-app-framework/ar";
 import type {
@@ -115,8 +115,8 @@ export interface ArEnableHooks {
    *  those dispatches (flows plan M4). Without it the slice is mounted but
    *  never fed, and the phase sits at `initializing` for the whole session. */
   trackingStore: TrackingSubscribableStore;
-  /** Every throttled camera frame (top-left RGBA) — the future QR feed. */
-  onFrame(image: RgbaImage): void;
+  /** Every throttled camera frame: top-left RGBA plus its capture pose/time. */
+  onFrame(frame: CapturedCameraFrame): void;
   onSessionEnd(): void;
   onGpsPosition(position: GpsPosition): void;
   onOrientation(orientation: RawDeviceOrientation): void;
@@ -131,8 +131,8 @@ export interface ArEnableHooks {
 export function buildArEnableConfig(hooks: ArEnableHooks): EnableGpsArConfig {
   const callbacks: ArSessionCallbacks = {
     cameraFrame: {
-      onFrame: (image) => {
-        hooks.onFrame(image);
+      onFrame: (frame) => {
+        hooks.onFrame(frame);
       },
     },
     // The framework's own poseReceived/poseLost dispatch path (the recorder

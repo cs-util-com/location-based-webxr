@@ -15,7 +15,8 @@ carrying the two review-ordered guardrails and the deferred negative cache.
   is forwarded from the controller's lock as is (no detected-text guard,
   M5 review #4); the framework reports the lock AFTER the frame's votes,
   so `onVotedLock` may precede it. Deps: the QR
-  device quartet plus `getLevels` (live, from the open tour),
+  device trio (`frontEnd`, `solvePose`, `getIntrinsics` - no pose reader since
+  QR perf plan 2026-09-23 M4; each frame carries its capture pose) plus `getLevels` (live, from the open tour),
   `dispatchVote` (one payload → `recordGpsEvent`), `canAcceptVotes` (the
   budget must NOT be charged while the store drops votes — before the
   first GPS fix), `resolveStablePose` (the same convergence gate minting

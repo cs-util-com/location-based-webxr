@@ -397,6 +397,76 @@ describe('camera-blit-capture', () => {
         blitCapture.captureToRgba(mockRenderer as never, mockTexture as never);
         expect(Array.from(first!.data)).toEqual(snapshot);
       });
+
+      /**
+       * Why these tests matter (QR perf instrument, plan M2): the blit +
+       * synchronous readback and the JS flip copy are the two capture stages
+       * only the framework can time. The timing callback must report both, per
+       * capture, and the default path (no callback) must not even read the
+       * clock - the instrument is opt-in and must cost nothing when off.
+       */
+      it('reports blit+readback and flip-copy durations to an optional timing callback', () => {
+        blitCapture = new CameraBlitCapture({ width: 2, height: 2 });
+        const onTiming = vi.fn();
+        const rgba = blitCapture.captureToRgba(
+          mockRenderer as never,
+          mockTexture as never,
+          onTiming
+        );
+        expect(rgba).not.toBeNull();
+        expect(onTiming).toHaveBeenCalledTimes(1);
+        const timing = onTiming.mock.calls[0]![0] as {
+          blitReadbackMs: number;
+          flipCopyMs: number;
+          width: number;
+          height: number;
+        };
+        expect(timing.blitReadbackMs).toBeGreaterThanOrEqual(0);
+        expect(timing.flipCopyMs).toBeGreaterThanOrEqual(0);
+        expect(timing.width).toBe(2);
+        expect(timing.height).toBe(2);
+      });
+
+      it('does not read the clock when no timing callback is given', () => {
+        blitCapture = new CameraBlitCapture({ width: 2, height: 2 });
+        const nowSpy = vi.spyOn(performance, 'now');
+        try {
+          blitCapture.captureToRgba(
+            mockRenderer as never,
+            mockTexture as never
+          );
+          expect(nowSpy).not.toHaveBeenCalled();
+        } finally {
+          nowSpy.mockRestore();
+        }
+      });
+
+      // Why this matters (M4 review #9): the timing hook is a diagnostic. A
+      // throwing hook must not turn every capture into 'no frame' - that would
+      // stop QR detection while still paying for each readback.
+      it('still returns the frame when the timing callback throws', () => {
+        blitCapture = new CameraBlitCapture({ width: 2, height: 2 });
+        const rgba = blitCapture.captureToRgba(
+          mockRenderer as never,
+          mockTexture as never,
+          () => {
+            throw new Error('instrument bug');
+          }
+        );
+        expect(rgba).not.toBeNull();
+      });
+
+      it('does not report a timing for a failed capture', () => {
+        blitCapture = new CameraBlitCapture({ width: 2, height: 2 });
+        blitCapture.dispose();
+        const onTiming = vi.fn();
+        blitCapture.captureToRgba(
+          mockRenderer as never,
+          mockTexture as never,
+          onTiming
+        );
+        expect(onTiming).not.toHaveBeenCalled();
+      });
     });
 
     describe('isBlack helper', () => {

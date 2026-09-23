@@ -11,16 +11,19 @@
  *    (re-attaching across `Start Recording` / replay store swaps) that renders the
  *    derived axis+cube under `arWorldGroup`.
  *
- * **Clock domain (load-bearing — plan open topic A):** the producer's `now` is
- * `Date.now()` (EPOCH ms), the SAME clock the recorded depth stream uses
- * (`DepthSample.timestamp = performance.timeOrigin + frameTs`, depth-sampler.ts),
- * so the derive-on-read size as-of join (`depth.ts <= detection.ts`) pairs each
- * detection with the right depth sample. Using `performance.now()` (relative)
+ * **Clock domain (load-bearing — plan open topic A):** a detection's timestamp is
+ * its frame's capture time, EPOCH ms (`performance.timeOrigin + xrTime`, stamped by
+ * the framework since QR perf plan M4) - the SAME clock the recorded depth stream
+ * uses (`DepthSample.timestamp = performance.timeOrigin + frameTs`,
+ * depth-sampler.ts), so the derive-on-read size as-of join
+ * (`depth.ts <= detection.ts`) pairs each detection with the right depth sample. Using `performance.now()` (relative)
  * here was a bug: it never satisfies the join, so the size — and the debug cube —
  * never resolve.
  *
- * Camera POSE comes from the current XR frame (`getCurrentArPose()`, Option A) so
- * it is not stale to the 1 Hz depth cadence; PROJECTION (PnP intrinsics) still
+ * Camera POSE comes WITH each captured frame (the framework pairs the pixels with
+ * the pose of the XR frame they were captured in - QR perf plan 2026-09-23, M4),
+ * so it is neither stale to the 1 Hz depth cadence nor read after the async
+ * decode; PROJECTION (PnP intrinsics) still
  * comes from the latest depth sample (the only per-frame projection source today;
  * a fresher per-frame projection is open topic F). The producer's
  * `imageWidth/Height` come from the detector-frame buffer (the RGBA capture).
@@ -43,11 +46,9 @@ import {
   createBarcodeDetectorFrontEnd,
   type RgbaImage,
 } from 'gps-plus-slam-app-framework/ar/qr/qr-frontend';
-import type { Pose } from 'gps-plus-slam-app-framework/ar/qr/qr-pose';
 import {
   startCameraFrameCapture,
   stopCameraFrameCapture,
-  getCurrentArPose,
 } from 'gps-plus-slam-app-framework/ar/webxr-session';
 import type { QrCaptureOptions } from '../state/recording-options';
 import { recordQrDetection } from 'gps-plus-slam-app-framework/state';
@@ -117,6 +118,12 @@ export interface WireQrRecordingOptions {
   setSightingFeeder?: (feeder: QrSightingFeeder | null) => void;
   /** What a scanned code's level lookup did, for the HUD. */
   onLevelState?: (text: string, state: QrLevelLookupState) => void;
+  /**
+   * QR store state changed (coalesced to one call per animation frame), for
+   * the HUD row. Independent of camera frames, which the capture veto pauses
+   * while a detect or level fetch is in flight.
+   */
+  onQrStateChanged?: () => void;
 }
 
 /**
@@ -197,27 +204,6 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
     ? (image: RgbaImage) => frontEnd.detect(image)
     : () => Promise.resolve(null);
 
-  // Camera pose: the CURRENT XR-frame pose (Option A) — refreshed every frame,
-  // so it is NOT the up-to-~1s-stale 1 Hz depth-sample pose. It rides the same
-  // raw-WebXR/odom frame as the depth sample's pose, so it is coordinate-
-  // compatible; we only reshape ARPose ({x,y,z}/{x,y,z,w}) into the Pose tuples.
-  const getCameraPose = (): Pose | null => {
-    const arPose = getCurrentArPose();
-    if (!arPose) return null;
-    return {
-      position: [
-        arPose.position.x,
-        arPose.position.y,
-        arPose.position.z,
-      ] as Pose['position'],
-      rotation: [
-        arPose.orientation.x,
-        arPose.orientation.y,
-        arPose.orientation.z,
-        arPose.orientation.w,
-      ] as Pose['rotation'],
-    };
-  };
   // Projection (PnP intrinsics) still comes from the depth sample — the only
   // per-frame projection source today, and FOV is near-constant per session
   // (a fresher per-frame projection is open topic F).
@@ -288,7 +274,6 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
           })
         );
       },
-      getCameraPose,
       getIntrinsics: (image) => {
         const projectionMatrix = getProjectionMatrix();
         return projectionMatrix === null
@@ -309,6 +294,9 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
     startCameraFrameCapture({
       intervalMs: qr.intervalMs,
       captureSize: qr.captureSize,
+      // Skip the GPU readback while a detect (incl. a level fetch) is in
+      // flight - the scheduler would drop that frame anyway.
+      wantsFrame: () => !tracking.isBusy(),
     });
     disposeLevelSource = () => {
       levelSource.dispose();
@@ -320,17 +308,9 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
     ? null
     : createQrDetectionController({
         detect,
-        getCameraPose,
         getProjectionMatrix,
         recordDetection: (observation) =>
           storeRef.get().dispatch(recordQrDetection(observation)),
-        // MUST share the depth stream's clock: `DepthSample.timestamp` is EPOCH ms
-        // (`performance.timeOrigin + frameTs`, depth-sampler.ts), and the derive-on-
-        // read size as-of join keys QR detections by the SAME timestamp. Date.now()
-        // is epoch; `performance.now()` (relative) would never satisfy
-        // `depth.ts <= detection.ts`, so the size — and the debug cube — never
-        // resolve. (See open topic A; the original "epoch ms" intent was correct.)
-        now: () => Date.now(),
         // The camera-frame source owns the cadence; detect every delivered frame.
         minIntervalMs: 0,
       });
@@ -341,6 +321,7 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
     startCameraFrameCapture({
       intervalMs: qr.intervalMs,
       captureSize: qr.captureSize,
+      wantsFrame: () => !producer.isBusy(),
     });
   }
 
@@ -367,6 +348,7 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
     rafId = requestAnimationFrame(() => {
       rafId = null;
       debug.update();
+      options.onQrStateChanged?.();
     });
   };
 

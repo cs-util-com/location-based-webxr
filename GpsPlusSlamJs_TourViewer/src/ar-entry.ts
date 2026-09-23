@@ -240,13 +240,14 @@ export function wireArEntry(deps: {
         container: dom.arRoot,
         requestHitTest: mode === "creator",
         trackingStore: arStore,
-        onFrame: (image) => {
+        onFrame: (frame) => {
           ctx.cameraFrameCount += 1;
           // The most recent frame is what "Capture a photo" encodes (M4).
           // The source hands out a fresh copy per frame (camera-blit-capture
-          // `flippedPixelCopy`), so keeping the reference is safe.
-          ctx.latestFrame = image;
-          ctx.qrController?.offerFrame(image);
+          // `flippedPixelCopy`), so keeping the reference is safe. The frame
+          // carries its own capture pose, which the photo is placed with.
+          ctx.latestFrame = frame;
+          ctx.qrController?.offerFrame(frame);
           renderArStatus();
         },
         onSessionEnd,

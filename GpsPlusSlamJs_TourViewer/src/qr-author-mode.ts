@@ -15,7 +15,7 @@
  *   `selectStableQrPose` gates the mint.
  *
  * Frame contract for the mint: the slice's stable pose is in RAW WebXR/odom
- * space (that is what the controller composes with `getCameraPose`). The
+ * space (the controller composes it with each frame's capture pose). The
  * GPS-world NUE pose the mint needs is `alignment × WEBXR_TO_NUE × pose` —
  * the same chain a QR-glued object under an aligned `arWorldGroup` carries.
  * The alignment TARGET matrix is used (not the lerped visual transform):
@@ -35,7 +35,6 @@ import type {
 } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
 import type {
   CameraIntrinsics,
-  Pose,
   QrPoseSolution,
 } from "gps-plus-slam-app-framework/ar/qr/qr-pose";
 import type {
@@ -64,7 +63,6 @@ export function syntheticAuthorLevel(sizeM: number): QrLevel {
 export interface AuthorPipelineDeps {
   frontEnd: QrFrontEnd;
   solvePose(input: QrSolvePoseInput): QrPoseSolution | null;
-  getCameraPose(): Pose | null;
   getIntrinsics(image: RgbaImage): CameraIntrinsics | null;
   /** onDetection → the `qrDetected` slice (`recordQrDetection`). */
   recordDetection(event: QrDetectionEvent): void;
@@ -95,7 +93,6 @@ export function buildAuthorControllerConfig(
     onDetection: (event) => {
       deps.recordDetection(event);
     },
-    getCameraPose: () => deps.getCameraPose(),
     getIntrinsics: (image) => deps.getIntrinsics(image),
     onError: (err) => {
       deps.onError(err instanceof Error ? err.message : String(err));

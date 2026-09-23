@@ -120,7 +120,7 @@ export function extractActionTimestamp(action: ReplayAction): number | null {
 
     case 'qrDetected/recordQrDetection':
       // EXPLICITLY null — like depthSample, replayed in recorded order, not paced.
-      // The QR `timestamp` is EPOCH ms (`Date.now()`, the SAME domain as the depth
+      // The QR `timestamp` is EPOCH ms (the frame's capture time, the SAME domain as the depth
       // stream) so the derive-on-read size as-of join aligns on the payload
       // timestamps; this pacing function deliberately ignores it.
       return null;

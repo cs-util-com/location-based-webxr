@@ -22,6 +22,7 @@ import type {
   QrPoseSolution,
 } from './qr-pose.js';
 import type { QrFrontEnd, RgbaImage } from './qr-frontend.js';
+import type { CapturedCameraFrame } from '../captured-camera-frame.js';
 import type { QrLevel } from './qr-level.js';
 import { buildQrGpsVotes } from './qr-gps-vote.js';
 import { validateQuad } from './qr-pose.js';
@@ -141,8 +142,6 @@ export interface QrTrackingControllerConfig {
    * the sliding-window stabilization design doc.
    */
   resolveStablePose?: (text: string) => Pose | null;
-  /** Current camera pose in raw-WebXR/odom space, or `null` if unavailable. */
-  getCameraPose: () => Pose | null;
   /** Intrinsics for the exact frame buffer, or `null` if unavailable. */
   getIntrinsics: (image: RgbaImage) => CameraIntrinsics | null;
   /** Synthetic GPS accuracy (m) → vote weight. */
@@ -171,8 +170,16 @@ export interface QrTrackingControllerConfig {
 }
 
 export interface QrTrackingController {
-  /** Offer the latest camera frame; throttled/coalesced internally. */
-  offerFrame(image: RgbaImage): void;
+  /**
+   * Offer the latest captured frame; throttled/coalesced internally. The
+   * solve and the raw record use the frame's own capture pose and time.
+   */
+  offerFrame(frame: CapturedCameraFrame): void;
+  /**
+   * True while a detect is in flight (the scheduler would drop a new frame).
+   * The camera source's `wantsFrame` veto: skip the readback while busy.
+   */
+  isBusy(): boolean;
   /** Current status. */
   readonly status: QrTrackingStatus;
   /** Stop tracking and reset to `idle` (clears the level cache). */
@@ -192,7 +199,6 @@ export function createQrTrackingController(
     shouldCacheLevel,
     resolveSizeM,
     resolveStablePose,
-    getCameraPose,
     getIntrinsics,
     syntheticAccuracyM,
     voteBaselineM,
@@ -246,7 +252,10 @@ export function createQrTrackingController(
     return level;
   }
 
-  async function detect(image: RgbaImage): Promise<QrPoseSolution | null> {
+  async function detect(
+    frame: CapturedCameraFrame
+  ): Promise<QrPoseSolution | null> {
+    const { image, cameraPose } = frame;
     if (status === 'idle' || status === 'error') setStatus('scanning');
 
     const detection = await frontEnd.detect(image);
@@ -265,15 +274,14 @@ export function createQrTrackingController(
     //
     // `validateQuad` mirrors the thin producer: keep a mirrored or degenerate
     // read out of the recording.
-    const rawCameraPose = getCameraPose();
-    if (onRawDetection && rawCameraPose && validateQuad(detection.corners).ok) {
+    if (onRawDetection && validateQuad(detection.corners).ok) {
       onRawDetection({
         text: detection.text,
         corners: detection.corners,
-        cameraPose: rawCameraPose,
+        cameraPose,
         imageWidth: image.width,
         imageHeight: image.height,
-        timestamp: timestampNow(),
+        timestamp: frame.capturedAtMs,
       });
     }
 
@@ -298,27 +306,15 @@ export function createQrTrackingController(
       return null;
     }
 
-    // The DECODE-TIME sample: taken once, above, and used for BOTH the raw
-    // record and the solve - not re-sampled after the level fetch.
-    // `qrPoseWorld` is `cameraPose o qrPoseInCamera` and `qrPoseInCamera`
-    // derives from `image`'s corners, so re-sampling here paired the old
-    // frame's corners with a pose from AFTER `ensureLevel`; on a code's
-    // first sighting that await is a real network round trip (the level
-    // source opens a remote archive under a 15 s deadline), so the code got
-    // anchored wherever the phone had moved to (PR #379 review). It also
-    // made the raw record and the solved pose describe one detection with
-    // two different poses.
-    //
-    // NOT "sampled with the frame", and the distinction is deliberate (PR
-    // #380 review): `rawCameraPose` is read after `await frontEnd.detect`,
-    // so it still trails the frame by one decode latency - the same class of
-    // error, three orders of magnitude smaller. Closing it needs a seam
-    // change (`RgbaImage` carries no timestamp or pose, and `offerFrame`
-    // passes only the image), filed rather than done here. See
+    // The FRAME's pose, captured with the pixels, serves BOTH the raw record
+    // and the solve. `qrPoseWorld` is `cameraPose o qrPoseInCamera` and
+    // `qrPoseInCamera` derives from these pixels, so any later sample - after
+    // the decode, or after the level fetch (a network round trip on a first
+    // sighting, PR #379) - anchored the code wherever the phone had moved to.
+    // QR perf plan 2026-09-23 M4 closes
     // ../../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-08-30-0620-qr-pose-frame-pairing-followup.md
-    const cameraPose = rawCameraPose;
     const intrinsics = getIntrinsics(image);
-    if (!cameraPose || !intrinsics) {
+    if (!intrinsics) {
       active = null;
       return null;
     }
@@ -350,8 +346,8 @@ export function createQrTrackingController(
     return solution;
   }
 
-  const scheduler: DetectionScheduler =
-    createDetectionScheduler<QrPoseSolution>({
+  const scheduler: DetectionScheduler<CapturedCameraFrame> =
+    createDetectionScheduler<QrPoseSolution, CapturedCameraFrame>({
       detect,
       minIntervalMs,
       requiredLockCount,
@@ -414,8 +410,11 @@ export function createQrTrackingController(
     });
 
   return {
-    offerFrame(image: RgbaImage): void {
-      scheduler.offerFrame(image);
+    offerFrame(frame: CapturedCameraFrame): void {
+      scheduler.offerFrame(frame);
+    },
+    isBusy(): boolean {
+      return scheduler.inFlight;
     },
     get status() {
       return status;
