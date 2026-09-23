@@ -20,6 +20,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   apparentSolarTimeHours,
+  atmosphericRefractionDeg,
+  instantAtApparentSolarTime,
   solarMidnight,
   solarNoon,
   solarDateAt,
@@ -332,5 +334,126 @@ describe('high-latitude winter (plan review, finding 3)', () => {
     expect(timeAtElevation(day, 67, 25, -6, 'rising')).not.toBeNull();
     expect(timeAtElevation(day, 67, 25, -6, 'setting')).not.toBeNull();
     expect(timeAtElevation(day, 67, 25, 0, 'rising')).toBeNull();
+  });
+});
+
+describe('instantAtApparentSolarTime (M2: the ?time= pin and the clock)', () => {
+  // The inverse of apparentSolarTimeHours on a solar date: the instant the
+  // local apparent solar clock reads `hours`. Round trip, anywhere.
+  it('inverts apparentSolarTimeHours within a millisecond', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 0, max: 3650 }),
+        fc.double({ min: -180, max: 180, noNaN: true }),
+        fc.double({ min: 0, max: 23.999, noNaN: true }),
+        (offset, lng, hours) => {
+          const d = new Date(Date.UTC(2020, 0, 1 + offset));
+          const date = {
+            year: d.getUTCFullYear(),
+            month: d.getUTCMonth() + 1,
+            day: d.getUTCDate(),
+          };
+          const ms = instantAtApparentSolarTime(date, lng, hours);
+          expect(apparentSolarTimeHours(ms, lng)).toBeCloseTo(hours, 5);
+          expect(solarDateAt(ms, lng)).toEqual(date);
+        }
+      ),
+      { numRuns: 300 }
+    );
+  });
+
+  it('rejects hours outside [0, 24)', () => {
+    const date = { year: 2026, month: 9, day: 23 };
+    expect(() => instantAtApparentSolarTime(date, 0, 24)).toThrow(RangeError);
+    expect(() => instantAtApparentSolarTime(date, 0, -1)).toThrow(RangeError);
+    expect(() => instantAtApparentSolarTime(date, 0, Number.NaN)).toThrow(
+      RangeError
+    );
+  });
+});
+
+describe('atmospheric refraction (the APPARENT sun, for an AR overlay)', () => {
+  // The owner's use case: a virtual sun icon over the REAL sun in an AR
+  // view. The air lifts the sun near the horizon by up to ~0.57°, more than
+  // its own diameter, so the geometric position (right for the sky model)
+  // would draw the icon visibly below the real disc at sunset.
+  //
+  // Saemundsson's formula (Meeus ch. 16: the true-to-apparent direction;
+  // Bennett's is its inverse) at standard conditions, 1010 hPa and 10 °C.
+
+  // THE TEXTBOOK ANCHOR, independent of any library: the sun's centre looks
+  // exactly on the horizon when it is geometrically ~0.57° below it (the
+  // 0.567° in the standard −0.833° sunrise, the rest being the radius).
+  it('puts an apparent altitude of 0 at a geometric −0.57°', () => {
+    const r = atmosphericRefractionDeg(-0.57);
+    expect(Math.abs(-0.57 + r)).toBeLessThan(0.02);
+  });
+
+  // About 1 arc-minute at 45° (Meeus), and nothing at the zenith.
+  it('is ~1′ at 45° and vanishes at the zenith', () => {
+    expect(atmosphericRefractionDeg(45)).toBeGreaterThan(0.014);
+    expect(atmosphericRefractionDeg(45)).toBeLessThan(0.02);
+    expect(atmosphericRefractionDeg(90)).toBeLessThan(0.001);
+  });
+
+  // The published reference implementation (astronomy-engine's 'normal'
+  // mode: Saemundsson with JPL Horizons' clamp at −1° and a taper to the
+  // nadir), over the whole range of altitudes.
+  it('matches astronomy-engine for every altitude', () => {
+    for (let h = -89; h <= 90; h += 0.25) {
+      expect(
+        Math.abs(
+          atmosphericRefractionDeg(h) - Astronomy.Refraction('normal', h)
+        )
+      ).toBeLessThan(1e-9);
+    }
+  });
+
+  it('shrinks as the sun rises', () => {
+    for (let h = -1; h < 89; h += 0.5) {
+      expect(atmosphericRefractionDeg(h + 0.5)).toBeLessThan(
+        atmosphericRefractionDeg(h)
+      );
+    }
+  });
+
+  // Meeus 16.4: proportional to pressure, inversely to absolute temperature.
+  it('scales with pressure and temperature', () => {
+    const standard = atmosphericRefractionDeg(2);
+    expect(atmosphericRefractionDeg(2, { pressureHPa: 505 })).toBeCloseTo(
+      standard / 2,
+      12
+    );
+    const cold = atmosphericRefractionDeg(2, { temperatureC: -20 });
+    expect(cold / standard).toBeCloseTo(283 / 253, 12);
+  });
+
+  // Off unless asked for: the sky model is geometric.
+  it('leaves solarPosition geometric unless refraction is asked for', () => {
+    const t = timeAtElevation(
+      { year: 2026, month: 9, day: 23 },
+      COLOGNE.lat,
+      COLOGNE.lng,
+      0.5,
+      'setting'
+    )!;
+    const geometric = solarPosition(t, COLOGNE.lat, COLOGNE.lng);
+    const apparent = solarPosition(t, COLOGNE.lat, COLOGNE.lng, {
+      refraction: true,
+    });
+    const lift =
+      (apparent.elevationRad - geometric.elevationRad) * (180 / Math.PI);
+    expect(lift).toBeCloseTo(atmosphericRefractionDeg(0.5), 6);
+    expect(apparent.azimuthRad).toBe(geometric.azimuthRad);
+  });
+
+  it('rejects impossible conditions', () => {
+    expect(() => atmosphericRefractionDeg(Number.NaN)).toThrow(RangeError);
+    expect(() => atmosphericRefractionDeg(10, { pressureHPa: -1 })).toThrow(
+      RangeError
+    );
+    expect(() => atmosphericRefractionDeg(10, { temperatureC: -300 })).toThrow(
+      RangeError
+    );
   });
 });

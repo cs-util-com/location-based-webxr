@@ -10,14 +10,26 @@ trigonometric operations per call.
 
 ## Public API
 
-- `solarPosition(ms, latDeg, lngDeg)` → `{ elevationRad, azimuthRad }`:
-  GEOMETRIC elevation (no refraction) and azimuth clockwise from north,
-  [0, 2π).
+- `solarPosition(ms, latDeg, lngDeg, { refraction? })` → `{ elevationRad,
+azimuthRad }`: GEOMETRIC elevation by default; with `refraction: true` (or
+  `{ pressureHPa, temperatureC }`) the APPARENT elevation, as a camera sees
+  the real sun (for an AR sun icon). Azimuth clockwise from north, [0, 2π),
+  never changed by refraction.
+- `atmosphericRefractionDeg(geometricElevationDeg, conditions?)` → how far
+  the air lifts a body, degrees: Saemundsson's formula (Meeus ch. 16, the
+  true-to-apparent direction; Bennett's is its inverse) at 1010 hPa / 10 °C
+  by default, scaled by pressure and absolute temperature (Meeus 16.4). Below
+  −1° it follows JPL Horizons: clamped at −1°, tapered to 0 at the nadir.
+  `RangeError` for a non-finite elevation, negative pressure or a temperature
+  at or below absolute zero.
 - `apparentSolarTimeHours(ms, lngDeg)` → local APPARENT solar time, hours in
   [0, 24): 12:00 at solar noon (the clock readout, DEC-SUN-8).
 - `solarNoon(date, lngDeg)` / `solarMidnight(date, lngDeg)` → the instants
   of the sun on the meridian, and of the apparent solar midnight that starts
   that solar date (its first millisecond: consecutive dates TILE).
+- `instantAtApparentSolarTime(date, lngDeg, hours)` → the instant the
+  local apparent solar clock reads `hours` on that date (the sun clock's
+  `?time=` pin); `RangeError` outside [0, 24).
 - `solarDateAt(ms, lngDeg)` → the solar date an instant falls in: it changes
   exactly where apparent solar time wraps through 00:00 ("today at the
   anchor" for the sun clock).
@@ -43,8 +55,12 @@ trigonometric operations per call.
   astronomy-engine's own altitude search by ≤ 12 s within ±66° of latitude;
   GRAZING crossings (a slow sun near its daily extreme, high latitudes) can
   reach ~2 min, since time error = angle error ÷ elevation rate.
-- GEOMETRIC, on purpose: the sky model is geometric. An AR overlay on the
-  real sun would add refraction (up to ~0.57° at the horizon).
+- GEOMETRIC by default, on purpose: the sky model is geometric. Refraction
+  is opt-in for drawing on the REAL sky: ~0.57° at the horizon (a sun
+  geometrically 0.57° below it appears exactly on it, more than the disc's
+  0.53°), ~1′ at 45°, 0 at the zenith. Real refraction near the horizon
+  varies with the air's layering by a few arc-minutes more than any formula
+  captures.
 - Azimuth is clockwise from north, the frame OsmDemo's `sunDirection`
   expects (−z north), so no conversion sits between them.
 - All day and time maths is in UTC milliseconds plus a longitude offset;
@@ -93,5 +109,10 @@ const clock = apparentSolarTimeHours(golden!, 6.96); // ≈ 17.6
   `solarDateAt` agrees at both edges), and impossible dates are rejected.
 - **Ordering:** dawn < noon < golden hour < dusk (property, with every run
   counted so it cannot pass vacuously).
+- **Refraction:** the textbook anchor (apparent 0° at geometric −0.57°),
+  ~1′ at 45°, 0 at the zenith, identical to astronomy-engine's `'normal'`
+  refraction at every altitude (a published reference implementation of the
+  same formula), monotone, the pressure/temperature scaling, off unless
+  asked for, and validation.
 - **Solar time and validation:** 12:00 at solar noon, solar time within
   [0, 24), and the validation errors above.

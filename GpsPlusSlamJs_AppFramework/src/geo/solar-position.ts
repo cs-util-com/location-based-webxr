@@ -98,11 +98,78 @@ export function apparentSolarTimeHours(ms: number, lngDeg: number): number {
   return wrapped / 60 >= 24 ? 0 : wrapped / 60;
 }
 
-/** The sun's geometric elevation and azimuth at an instant and a place. */
+/** Air conditions for refraction; defaults are the standard 1010 hPa, 10 °C. */
+export interface RefractionConditions {
+  readonly pressureHPa?: number;
+  readonly temperatureC?: number;
+}
+
+/** Validated air conditions, with the standard defaults filled in. */
+function airOf(conditions: RefractionConditions): {
+  pressure: number;
+  temperature: number;
+} {
+  const pressure = conditions.pressureHPa ?? 1010;
+  const temperature = conditions.temperatureC ?? 10;
+  if (!(Number.isFinite(pressure) && pressure >= 0)) {
+    throw new RangeError(
+      `pressure must be a finite number ≥ 0 hPa, got ${pressure}`
+    );
+  }
+  if (!(Number.isFinite(temperature) && temperature > -273.15)) {
+    throw new RangeError(
+      `temperature must be above absolute zero, got ${temperature} °C`
+    );
+  }
+  return { pressure, temperature };
+}
+
+/**
+ * How far the air lifts a body at a GEOMETRIC elevation, degrees: the
+ * APPARENT elevation is the geometric one plus this. Saemundsson's formula
+ * (Meeus, "Astronomical Algorithms", ch. 16: the true-to-apparent direction;
+ * Bennett's formula is its inverse), with JPL Horizons' convention below the
+ * horizon, where the formula diverges near −5°: clamped at −1°, then tapered
+ * linearly to zero at the nadir. Scaled by pressure / 1010 hPa and
+ * 283 K / temperature (Meeus 16.4).
+ *
+ * ~0.57° at the horizon (a sun geometrically 0.57° below it looks exactly
+ * on it), ~1′ at 45°, 0 at the zenith. For drawing on the REAL sky (an AR
+ * sun icon); the sky model itself is geometric.
+ */
+export function atmosphericRefractionDeg(
+  geometricElevationDeg: number,
+  conditions: RefractionConditions = {}
+): number {
+  requireFinite('elevation', geometricElevationDeg);
+  const { pressure, temperature } = airOf(conditions);
+  const h = geometricElevationDeg;
+  if (h < -90 || h > 90) return 0;
+  const clamped = Math.max(h, -1);
+  let arcMinutes = 1.02 / Math.tan((clamped + 10.3 / (clamped + 5.11)) * DEG);
+  if (h < -1) arcMinutes *= (h + 90) / 89;
+  return (arcMinutes / 60) * (pressure / 1010) * (283 / (273 + temperature));
+}
+
+/** Options for `solarPosition`. */
+export interface SolarPositionOptions {
+  /**
+   * `true` (standard air) or conditions: return the APPARENT elevation, as
+   * the eye and a camera see it. Default: geometric.
+   */
+  readonly refraction?: boolean | RefractionConditions;
+}
+
+/**
+ * The sun's elevation and azimuth at an instant and a place: GEOMETRIC by
+ * default, APPARENT (refracted) with `{ refraction }`. Refraction only lifts
+ * the elevation; the azimuth is unchanged.
+ */
 export function solarPosition(
   ms: number,
   latDeg: number,
-  lngDeg: number
+  lngDeg: number,
+  options: SolarPositionOptions = {}
 ): SolarPosition {
   requireFinite('instant', ms);
   requirePlace(latDeg, lngDeg);
@@ -120,8 +187,17 @@ export function solarPosition(
       Math.cos(hourAngle) * Math.sin(lat) -
         Math.tan(declination) * Math.cos(lat)
     ) + Math.PI;
+  const geometric = Math.PI / 2 - zenith;
+  const refraction = options.refraction ?? false;
+  const lift =
+    refraction === false
+      ? 0
+      : atmosphericRefractionDeg(
+          geometric / DEG,
+          refraction === true ? {} : refraction
+        ) * DEG;
   return {
-    elevationRad: Math.PI / 2 - zenith,
+    elevationRad: geometric + lift,
     azimuthRad: ((azimuth % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI),
   };
 }
@@ -187,6 +263,26 @@ function apparentInstant(
     ms = mean - sunAt(ms).eotMinutes * 60_000;
   }
   return ms;
+}
+
+/**
+ * The instant the local apparent solar clock reads `hours` on a solar date
+ * (the inverse of `apparentSolarTimeHours` within that date). RangeError
+ * for hours outside [0, 24).
+ */
+export function instantAtApparentSolarTime(
+  date: SolarDate,
+  lngDeg: number,
+  hours: number
+): number {
+  requireFinite('hours', hours);
+  if (hours < 0 || hours >= 24) {
+    throw new RangeError(`hours must be in [0, 24), got ${hours}`);
+  }
+  return Math.max(
+    solarMidnight(date, lngDeg),
+    apparentInstant(date, lngDeg, hours * 3_600_000)
+  );
 }
 
 /** The instant of solar noon (the sun on the meridian) on a solar date. */
