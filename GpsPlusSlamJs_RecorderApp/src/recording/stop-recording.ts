@@ -105,20 +105,6 @@ function getSanitizedPageUrl(): string | undefined {
 }
 
 /**
- * Stop everything that actively FEEDS a recording — captures, sensor
- * watches, the off-thread quality analyzer — plus their HUD readouts. The
- * ONE teardown for this resource cluster, shared by `performStop` (the
- * ordered stop flow) and `cleanupForNewRecording` (the start-over path),
- * which previously skipped it and left the camera/GPS feeds and the analyzer
- * Worker running (recurring PR #115/#120/#123 review finding). Every call is
- * idempotent, so running it on an already-stopped session is a no-op.
- *
- * NOT the XR-session-end path, despite what this comment said until
- * 2026-08-17: a system-ended XRSession is handled by `system-session-end.ts`,
- * which calls the regular `handleStopRecording` — so that path reaches this
- * function through `performStop`, never through `cleanupForNewRecording`.
- */
-/**
  * Clear the live AbsCompass HUD poll.
  *
  * OUT HERE RATHER THAN IN THE FACTORY because it is half of a pair whose other
@@ -133,6 +119,20 @@ export function stopAbsCompassHudUpdates(runtime: SessionRuntime): void {
   }
 }
 
+/**
+ * Stop everything that actively FEEDS a recording — captures, sensor
+ * watches, the off-thread quality analyzer — plus their HUD readouts. The
+ * ONE teardown for this resource cluster, shared by `performStop` (the
+ * ordered stop flow) and `cleanupForNewRecording` (the start-over path),
+ * which previously skipped it and left the camera/GPS feeds and the analyzer
+ * Worker running (recurring PR #115/#120/#123 review finding). Every call is
+ * idempotent, so running it on an already-stopped session is a no-op.
+ *
+ * NOT the XR-session-end path, despite what this comment said until
+ * 2026-08-17: a system-ended XRSession is handled by `system-session-end.ts`,
+ * which calls the regular `handleStopRecording` — so that path reaches this
+ * function through `performStop`, never through `cleanupForNewRecording`.
+ */
 export function stopLiveFeeds(
   runtime: SessionRuntime,
   deps: StopRecordingDeps
