@@ -141,6 +141,9 @@ importers:
       '@zip.js/zip.js':
         specifier: ^2.11.2
         version: 2.11.2
+      astronomy-engine:
+        specifier: 2.1.19
+        version: 2.1.19
       dpdm:
         specifier: ^4.3.0
         version: 4.3.0
@@ -2681,6 +2684,9 @@ packages:
   astral-regex@2.0.0:
     resolution: {integrity: sha512-Z7tMw1ytTXt5jqMcOP+OQteU1VuNK9Y02uuJtKQ1Sv69jXQKKg5cibLwGJow8yzZP+eAc18EmLGPal0bp36rvQ==}
     engines: {node: '>=8'}
+
+  astronomy-engine@2.1.19:
+    resolution: {integrity: sha512-8yWKNf7UeNbH458h3sAJ6ZgAjE5jTXp/mNNRFoC20j2SHwZIjAQeEsBB2Q3uCFRaTCCJRv33K2XhkhZQMXoX6w==}
 
   babel-walk@3.0.0-canary-5:
     resolution: {integrity: sha512-GAwkz0AihzY5bkwIY5QDR+LvsRQgB/B+1foMPvi0FZPMl5fjD7ICiznUiBdLYMH1QYe6vqu4gWYytZOccLouFw==}
@@ -6277,6 +6283,8 @@ snapshots:
       js-tokens: 10.0.0
 
   astral-regex@2.0.0: {}
+
+  astronomy-engine@2.1.19: {}
 
   babel-walk@3.0.0-canary-5:
     dependencies:
