@@ -36,7 +36,7 @@ observerAltitudeKm = 0.2, sunIntensity = 1 })` — adds `sky` to the scene.
   in scene units (for `scene.fog`).
 - Getters: `sky`, `visibilityKm`, `exposure`, `radianceToScene`,
   `sharedUniforms`, `skyReadbackFailed` (the driver refused the sky-view
-  readback: horizon colour stale, exposure floored at ~civil twilight).
+  readback: horizon colour stale, sky illuminance from the CPU estimate).
 - `readLutTexel(lut, x, y)` — for the look-dev parity check.
 - `dispose()` — frees everything, clears `scene.environment` if it is still
   ours, restores the `environmentIntensity` it found, removes the sky.
@@ -55,6 +55,18 @@ observerAltitudeKm = 0.2, sunIntensity = 1 })` — adds `sky` to the scene.
   WITHOUT the sun disc; `scene.environmentIntensity` applies exposure once.
   The first draft baked exposure in as well, which squared it on every lit
   surface; a test pins the fix.
+- **The bake carries `ENVIRONMENT_BAKE_GAIN` (1024)**, divided back out of
+  `environmentIntensity` (real-sun plan 2026-09-23-2149, review finding 6):
+  exposure-free twilight values (6.8e-6 at −6°) sit below the smallest
+  normal half float (6.1e-5), which a GPU may flush to zero in the
+  half-float cube. Measured headroom: 113× above that at −6°, 52× below
+  `ATMOSPHERE_MAX_SCENE_RADIANCE` for the glow next to a 10° sun; any gain
+  from ~36 to ~53 000 passes both.
+- **A failed sky-view readback** takes the sky illuminance from
+  `skyIlluminanceCpu` (the fallback sky's estimate) for a sun no lower than
+  −6°, so the exposure is right at every sun down to civil dusk and held at
+  the civil-dusk value below it. It replaced one illuminance floor that gave
+  every set sun the same exposure (review finding 7).
 - Generate-then-dispose for the environment, so a throw leaves the previous
   map in place.
 - Every material shares the same uniform objects (spread, never cloned).
@@ -80,5 +92,8 @@ scene.fog = new THREE.Fog(atmosphere.horizonColour(), near, far);
 
 `sky-atmosphere.test.ts` (fake device): refusal without float targets, GPU
 work only on change, dispose-then-replace, exposure compensation without GPU
-work, exposure-free bake, auto-exposure response, sun light, horizon colour,
+work, exposure-free bake, the bake gain against both half-float ends (CPU
+sky at −6° to −3°, single-scattering glow next to a 2° to 90° sun), a failed
+readback exposed from the CPU estimate (−1°, −3°, −6°, held below),
+auto-exposure response, sun light, horizon colour,
 context restore, sky mesh flags, disposal.

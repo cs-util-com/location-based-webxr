@@ -13,6 +13,10 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 
 import { horizonAverage } from './atmosphere-exposure.js';
+import { autoExposure } from './atmosphere-exposure.js';
+import { fallbackSky, skyIlluminanceCpu } from './atmosphere-fallback.js';
+import { ATMOSPHERE_MAX_SCENE_RADIANCE } from './atmosphere-glsl.js';
+import { skyRadiance } from './atmosphere-scattering.js';
 import { SKY_VIEW_LUT_SIZE } from './atmosphere-lut-mapping.js';
 import {
   EARTH_ATMOSPHERE,
@@ -21,6 +25,7 @@ import {
 } from './atmosphere-model.js';
 import type { AtmosphereDevice, LutName } from './atmosphere-luts.js';
 import {
+  ENVIRONMENT_BAKE_GAIN,
   SkyAtmosphere,
   SkyAtmosphereUnsupportedError,
 } from './sky-atmosphere.js';
@@ -174,7 +179,11 @@ describe('SkyAtmosphere', () => {
     expect(device.renders.length).toBe(3);
     expect(device.bakes).toBe(1);
     expect(atmosphere.exposure).toBeCloseTo(2 * before, 10);
-    expect(scene.environmentIntensity).toBeCloseTo(atmosphere.exposure, 10);
+    // The environment carries the exposure, net of the bake gain.
+    expect(scene.environmentIntensity).toBeCloseTo(
+      atmosphere.exposure / ENVIRONMENT_BAKE_GAIN,
+      10
+    );
   });
 
   // The environment is baked WITHOUT exposure, and exposure is applied once,
@@ -195,10 +204,67 @@ describe('SkyAtmosphere', () => {
     const skyScale = (atmosphere.sky.material as THREE.ShaderMaterial).uniforms
       .atmRadianceToScene!;
     expect(bakeScale).not.toBe(skyScale);
-    expect(bakeScale.value * atmosphere.exposure).toBeCloseTo(
-      atmosphere.radianceToScene,
-      12
-    );
+    // The bake carries a fixed gain (see the next test) and the environment
+    // intensity divides it back out, so a lit surface still receives the
+    // sky's radiance × exposure exactly once.
+    expect(
+      (bakeScale.value * atmosphere.exposure) / ENVIRONMENT_BAKE_GAIN
+    ).toBeCloseTo(atmosphere.radianceToScene, 12);
+  });
+
+  // WHY (real-sun plan 2026-09-23-2149, review finding 6): the environment
+  // is baked into a HALF-FLOAT cube, exposure-free, in sun-relative units.
+  // At civil twilight (−6°) those values are 1e-5 to 5e-5, below the
+  // smallest NORMAL half float (6.1e-5): a GPU may flush them to zero and
+  // the dusk scene gets no environment light at all. A fixed gain keeps the
+  // bake normal; it must not push the bright end (the Mie glow next to a
+  // high sun) past the sky's own radiance cap, or noon would clip.
+  it('keeps the twilight bake above the smallest normal half float, and noon below the cap', () => {
+    const SMALLEST_NORMAL_HALF = 6.104e-5;
+    const params = { visibilityKm: 60 };
+    const exposureFree = (sunElevationDeg: number) => {
+      const e = (sunElevationDeg * Math.PI) / 180;
+      const sky = fallbackSky({ x: Math.cos(e), y: Math.sin(e), z: 0 }, params);
+      return [...sky.zenith, ...sky.horizon].map((c) => c / sky.exposure);
+    };
+    for (const elevation of [-6, -5, -3]) {
+      const dimmest = Math.min(...exposureFree(elevation));
+      expect(dimmest * ENVIRONMENT_BAKE_GAIN).toBeGreaterThan(
+        4 * SMALLEST_NORMAL_HALF
+      );
+    }
+    // The bright end: single scattering 0.7° from the sun (half a 64² cube
+    // texel), where the Mie glow peaks; ×1.5 for the multiple scattering a
+    // zero Ψ leaves out.
+    const r =
+      EARTH_ATMOSPHERE.groundRadiusKm +
+      EARTH_ATMOSPHERE.defaultObserverAltitudeKm;
+    const toRelative =
+      1 /
+      luminance(
+        transmittanceToTop(
+          r,
+          Math.sin(EARTH_ATMOSPHERE.referenceSunElevationRad),
+          params
+        )
+      );
+    for (const elevation of [2, 10, 45, 90]) {
+      const e = (elevation * Math.PI) / 180;
+      const viewZenith = Math.max(0, Math.PI / 2 - e - (0.7 * Math.PI) / 180);
+      const glow = skyRadiance(
+        r,
+        viewZenith,
+        0,
+        Math.sin(e),
+        params,
+        () => [0, 0, 0],
+        32
+      );
+      const peak = Math.max(...glow) * toRelative * 1.5;
+      expect(peak * ENVIRONMENT_BAKE_GAIN).toBeLessThan(
+        ATMOSPHERE_MAX_SCENE_RADIANCE
+      );
+    }
   });
 
   // Auto-exposure follows the light: the same sun under a brighter sky gets
@@ -316,12 +382,32 @@ describe('SkyAtmosphere', () => {
   // A phone driver may refuse the half-float readback. Without the sky's
   // measurement, exposure must stay bounded: the unguarded version would
   // expose a blue-hour scene ×5.6e5 (review finding 5).
-  it('keeps exposure bounded when the sky readback fails', () => {
+  //
+  // AND RIGHT, not only bounded (real-sun plan 2026-09-23-2149, review
+  // finding 7, answered differently): a single illuminance floor gave EVERY
+  // set sun one exposure, so a −1° sun and civil dusk looked alike (1e-3
+  // was a −3.2° sun: −1° over-exposed, −6° 3 EV too dark). The CPU sky
+  // estimate the fallback already uses is right at every sun; below −6° it
+  // holds the civil-dusk value, which keeps the bound.
+  it('exposes a failed readback from the CPU sky estimate at every sun down to −6°', () => {
     const { atmosphere, device } = setup();
     device.readbackFails = true;
-    atmosphere.setSun({ x: 1, y: -0.07, z: 0 });
-    expect(Number.isFinite(atmosphere.exposure)).toBe(true);
-    expect(atmosphere.exposure).toBeLessThan(1000);
+    const params = { visibilityKm: atmosphere.visibilityKm };
+    const at = (deg: number) => {
+      const e = (deg * Math.PI) / 180;
+      atmosphere.setSun({ x: Math.cos(e), y: Math.sin(e), z: 0 });
+      return atmosphere.exposure;
+    };
+    for (const deg of [-1, -3, -6]) {
+      const expected = autoExposure(
+        skyIlluminanceCpu(Math.sin((deg * Math.PI) / 180), params)
+      );
+      expect(at(deg) / expected).toBeCloseTo(1, 9);
+    }
+    // Deeper suns hold the civil-dusk exposure: bounded, and finite.
+    expect(at(-20)).toBeCloseTo(at(-6), 9);
+    expect(at(-1)).toBeLessThan(at(-3));
+    expect(at(-3)).toBeLessThan(at(-6));
   });
 
   // The horizon colour (for scene.fog, which colours unpatched materials) is

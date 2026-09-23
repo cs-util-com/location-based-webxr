@@ -43,6 +43,7 @@ import {
   SKY_FRAGMENT_GLSL,
   SKY_VERTEX_GLSL,
 } from './atmosphere-glsl.js';
+import { skyIlluminanceCpu } from './atmosphere-fallback.js';
 import { SKY_VIEW_LUT_SIZE } from './atmosphere-lut-mapping.js';
 import {
   CLOUD_LAYER,
@@ -97,11 +98,33 @@ export interface SkyAtmosphereOptions {
 }
 
 /**
- * The horizontal illuminance (sun-relative) assumed when the sky readback
- * fails: roughly civil twilight. It bounds the auto-exposure at
- * π·1000^0.75 ≈ 560 instead of the ×5.6e5 an unguarded blue hour reaches.
+ * The gain the environment is baked with, divided back out of
+ * `scene.environmentIntensity` (real-sun plan 2026-09-23-2149, review
+ * finding 6). The bake is exposure-free and sun-relative, and at civil
+ * twilight (−6°) its values fall to ~1e-5, below the smallest NORMAL half
+ * float (6.1e-5): a GPU may flush the half-float cube to zero there and the
+ * dusk scene would get no environment light. A power of two, so the round
+ * trip is exact; sized in `sky-atmosphere.test.ts` against both ends (the
+ * twilight minimum stays normal, the noon Mie glow stays under
+ * `ATMOSPHERE_MAX_SCENE_RADIANCE`). Measured there (60 km visibility): the
+ * dimmest twilight value 6.8e-6 at −6° (×1024: 113× above the smallest
+ * normal), the brightest glow 1.13 next to a 10° sun (×1024: 52× below the
+ * cap); every gain from ~36 to ~53 000 passes both, 1024 is near the middle
+ * on a log scale.
  */
-const READBACK_FAILED_FLOOR = 1e-3;
+export const ENVIRONMENT_BAKE_GAIN = 1024;
+
+/**
+ * When the sky readback fails, the sky illuminance comes from the CPU
+ * estimate (`skyIlluminanceCpu`, the fallback sky's), evaluated for a sun no
+ * lower than this: civil dusk, −6°. Right at every sun down to −6°, and the
+ * civil-dusk exposure below it, which keeps the exposure bounded (an
+ * unguarded blue hour reaches ×5.6e5). It replaced a single illuminance
+ * floor of 1e-3, which gave every set sun one exposure (a −3.2° sun's: a
+ * −1° sun 3.5× over-exposed, civil dusk ~3 EV too dark; real-sun plan
+ * 2026-09-23-2149, review finding 7).
+ */
+const READBACK_FAILED_MIN_SUN_Y = Math.sin((-6 * Math.PI) / 180);
 
 /** Throws RangeError for options that would silently render a black or wrong sky. */
 function validateOptions(options: SkyAtmosphereOptions): void {
@@ -306,9 +329,9 @@ export class SkyAtmosphere {
 
   private updateScale(): void {
     const exposureFree = this.sunIntensity * this.lutToRelative();
-    this.bakeScale.value = exposureFree;
+    this.bakeScale.value = exposureFree * ENVIRONMENT_BAKE_GAIN;
     this.uniforms.atmRadianceToScene.value = exposureFree * this.exposure;
-    this.scene.environmentIntensity = this.exposure;
+    this.scene.environmentIntensity = this.exposure / ENVIRONMENT_BAKE_GAIN;
   }
 
   /**
@@ -474,8 +497,9 @@ export class SkyAtmosphere {
 
   /**
    * Horizon colour and horizontal illuminance from the sky-view LUT. A failed
-   * readback (null) keeps the previous horizon and sky measurement and floors
-   * the illuminance, so exposure stays bounded.
+   * readback (null) keeps the previous horizon colour and takes the sky
+   * illuminance from the CPU estimate instead (see
+   * `READBACK_FAILED_MIN_SUN_Y`), so exposure stays right and bounded.
    */
   private measure(skyView: Float32Array | null): void {
     const { width, height } = SKY_VIEW_LUT_SIZE;
@@ -488,17 +512,19 @@ export class SkyAtmosphere {
         this.lutToRelative();
     }
     const y = this.sun?.y ?? 1;
+    if (skyView === null) {
+      this.skyIlluminance = skyIlluminanceCpu(
+        Math.max(y, READBACK_FAILED_MIN_SUN_Y),
+        this.params()
+      );
+    }
     const s = sunLight(y, this.params());
     // The luminance the light actually delivers (colour × intensity), on a
     // horizontal surface.
     const direct = luminance(s.colour) * s.intensity * Math.max(0, y);
     // Sun-relative horizontal illuminance: the auto-exposure's input.
     const illuminance = this.skyIlluminance + direct;
-    this.autoExposureValue = autoExposure(
-      this.readbackFailed
-        ? Math.max(illuminance, READBACK_FAILED_FLOOR)
-        : illuminance
-    );
+    this.autoExposureValue = autoExposure(illuminance);
   }
 
   /** Release every GPU resource and clear what this set on the scene. */
