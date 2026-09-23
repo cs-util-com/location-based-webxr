@@ -150,6 +150,12 @@ const CANONICAL = [
     why: 'the wayfinding HUD mirrors a CSS animation whose easing is the token `--ease-out`; a second evaluator (or a look-alike `easeOutCubic`, of which Landing already has one) would drift from the sheet in every frame between the endpoints',
   },
   {
+    name: 'glslFloat',
+    rule: 'shared',
+    home: 'GpsPlusSlamJs_AppFramework/src/utils/glsl-float.ts',
+    why: 'a GLSL float literal is a CONTRACT (always a "." or an exponent, no NaN): the private toFixed(4) copy in occlusion-mesh.ts wrote 1e-9 as "0.0000" and passed NaN into a shader, where three only logs and the material silently stops drawing. Unified 2026-09-23 (sky/atmosphere plan M2)',
+  },
+  {
     name: 'normalizeBearingDeg',
     rule: 'shared',
     home: 'GpsPlusSlamJs_AppFramework/src/utils/bearing-degrees.ts',
@@ -181,11 +187,12 @@ const JUSTIFIED = [
     file: 'GpsPlusSlamJs_Landing/src/chapter-dots.ts',
     why: 'the landing page does not depend on the framework, and will not gain that dependency to share ten lines; held to the same contract by escape-html-copies.test.js',
   },
-  {
-    name: 'smoothstep',
-    file: 'GpsPlusSlamJs_AppFramework/src/visualization/occlusion-mesh.ts',
-    why: 'the three-argument GLSL form, mirroring the shader beside it line for line — related to the one-argument curve but not interchangeable with it',
-  },
+  // No smoothstep entry, deliberately. The framework's one copy
+  // (utils/smoothstep.ts, the three-argument GLSL form) and OsmDemo's and
+  // Landing's one-argument easing curves are one per package, which the
+  // perPackage rule already allows. An exemption keyed to the canonical copy
+  // EXCUSES it before the per-package count, so a second framework copy
+  // would have passed unseen (sky/atmosphere M2 review, finding 4).
 ];
 
 /**

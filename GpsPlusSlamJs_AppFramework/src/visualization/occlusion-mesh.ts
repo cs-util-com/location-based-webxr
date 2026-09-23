@@ -24,6 +24,8 @@
  * @see occlusion-mesh.ts.md for detailed documentation
  */
 
+import { glslFloat } from '../utils/glsl-float.js';
+import { smoothstep } from '../utils/smoothstep.js';
 import * as THREE from 'three';
 import type { GridCell } from '../ar/bresenham3d.js';
 import {
@@ -126,21 +128,6 @@ export const OCCLUDER_DEPTH_SHADE = {
 const FADE_TARGET_RGB = [0.03, 0.07, 0.12] as const;
 
 /**
- * GLSL `smoothstep` (clamped Hermite), mirrored exactly for the TS curves.
- *
- * DELIBERATELY NOT THE SAME FUNCTION as `GpsPlusSlamJs_OsmDemo`'s
- * `easing.ts`, which is the one-argument form on `[0, 1]`. This one takes two
- * edges and clamps, because its whole job is to match the shader beside it line
- * for line; folding the two together would make one of them read wrongly for
- * its own context. Recorded here so the duplicate-helper guard's exemption for
- * this name has its reason next to the code (DEC-H3, 2026-08-24).
- */
-function smoothstep(edge0: number, edge1: number, x: number): number {
-  const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
-  return t * t * (3 - 2 * t);
-}
-
-/**
  * Pure TS mirror of the shader's **distance fade**: 1 at/inside FADE_START_M,
  * smoothly down to FADE_MIN_BRIGHTNESS at/after FADE_END_M. The fragment color
  * is `mix(darkBlue, matcapColor, fade)` — near = bright cyan, far = dark blue.
@@ -167,11 +154,6 @@ export function occluderDepthFade(distanceM: number): number {
 export function occluderFresnelRim(cosViewAngle: number): number {
   const { RIM_POWER, RIM_STRENGTH } = OCCLUDER_DEPTH_SHADE;
   return RIM_STRENGTH * Math.pow(1 - Math.abs(cosViewAngle), RIM_POWER);
-}
-
-/** A number as a GLSL float literal (fixed decimals so it never reads as int). */
-function glslFloat(value: number): string {
-  return value.toFixed(4);
 }
 
 /**
