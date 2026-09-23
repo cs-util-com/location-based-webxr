@@ -115,6 +115,9 @@ const entryFiles = [
 
   'src/geo/index.ts',
   'src/geo/h3-proximity.ts',
+  // The real sun (plan 2026-09-23-2149) — deep-imported by OsmDemo's sun clock
+  // via `./geo/*`; kept out of the geo barrel (it feeds the root export).
+  'src/geo/solar-position.ts',
 
   // sensors/
   'src/sensors/index.ts',
