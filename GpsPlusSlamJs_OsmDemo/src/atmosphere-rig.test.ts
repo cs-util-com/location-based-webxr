@@ -21,7 +21,13 @@ import {
   TONE_MAPPING_EXPOSURE,
   type SkyLike,
 } from "./atmosphere-rig.js";
-import { sunAt, sunDirection } from "./sun-position.js";
+import { sunDirection, type SunAngles } from "./sun-position.js";
+
+/** A sun at an elevation and an azimuth, degrees (the rig does not care how it was chosen). */
+const sunAt = (elevationDeg: number, azimuthDeg = 250): SunAngles => ({
+  elevationRad: (elevationDeg * Math.PI) / 180,
+  azimuthRad: (azimuthDeg * Math.PI) / 180,
+});
 
 /** A sky that records what the rig asks of it. */
 class StubSky {
@@ -95,7 +101,7 @@ describe("AtmosphereRig with the physical sky", () => {
   // caller's), and the haze's lookup.
   it("points the sky at the sun and returns the same unit direction", () => {
     const { view, sky } = rig();
-    const angles = sunAt(0.3);
+    const angles = sunAt(45, 150);
     const direction = view.setSun(angles);
     const expected = sunDirection(angles);
     expect(direction.x).toBeCloseTo(expected.x, 12);
@@ -108,16 +114,16 @@ describe("AtmosphereRig with the physical sky", () => {
   // on every sun change.
   it("takes the fog colour from the sky's horizon at every sun change", () => {
     const { view, scene, sky } = rig();
-    view.setSun(sunAt(0.1));
+    view.setSun(sunAt(17, 108));
     const fog = scene.fog as THREE.Fog;
     expect(fog.color.equals(sky.horizonColour())).toBe(true);
-    view.setSun(sunAt(0.5));
+    view.setSun(sunAt(55, 180));
     expect(fog.color.equals(sky.horizonColour())).toBe(true);
   });
 
   it("lights the sun from the sky model", () => {
     const { view, sun, sky } = rig();
-    view.setSun(sunAt(0.5));
+    view.setSun(sunAt(55, 180));
     expect(sun.intensity).toBeCloseTo(3 + sky.sun.y, 12);
     expect(sun.color.g).toBeCloseTo(0.8, 12);
   });
@@ -143,7 +149,7 @@ describe("AtmosphereRig with the physical sky", () => {
   // looking the old way.
   it("syncs the haze after every sun change", () => {
     const { view, sky } = rig();
-    view.setSun(sunAt(0.2));
+    view.setSun(sunAt(32, 126));
     expect(view.haze.uniforms.atmSunDirection.value.equals(sky.sun)).toBe(true);
     expect(view.haze.uniforms.atmHazeMode.value).toBe(1);
   });
@@ -177,7 +183,7 @@ describe("AtmosphereRig on a device without float render targets", () => {
   it("falls back to CPU colours, a sky dome and a hemisphere light", () => {
     const { view, scene, sun } = rig({ unsupported: true });
     expect(view.usingFallback).toBe(true);
-    view.setSun(sunAt(0.5));
+    view.setSun(sunAt(55, 180));
     const hemisphere = scene.children.find(
       (c) => c instanceof THREE.HemisphereLight,
     );
@@ -236,7 +242,7 @@ describe("AtmosphereRig, M3 review fixes", () => {
   // tone mapping too, and its horizon must BE the fog colour.
   it("grades the fallback dome like the fog it meets", () => {
     const { view, scene } = rig({ unsupported: true });
-    view.setSun(sunAt(0.3));
+    view.setSun(sunAt(45, 150));
     const dome = scene.getObjectByName("fallback-sky-dome") as THREE.Mesh<
       THREE.SphereGeometry,
       THREE.MeshBasicMaterial
@@ -269,7 +275,7 @@ describe("AtmosphereRig, M3 review fixes", () => {
       sun,
       createSky: () => sky as unknown as SkyLike,
     });
-    view.setSun(sunAt(0.5));
+    view.setSun(sunAt(55, 180));
     // The rebuild changed what the sky reports.
     sky.sharedUniforms.atmRadianceToScene.value = 0.02;
     sky.horizonColour = () => new THREE.Color(0.9, 0.1, 0.1);

@@ -77,7 +77,7 @@ colour that matched the sky at one time of day.
 
 ```ts
 const atmosphere = new AtmosphereRig({ renderer, scene, sun });
-const direction = atmosphere.setSun(sunAt(timeOfDay));
+const direction = atmosphere.setSun({ elevationRad, azimuthRad }); // from sun-clock.ts
 sun.position.set(direction.x, direction.y, direction.z).multiplyScalar(1000);
 // every frame:
 atmosphere.prepareFrame(camera);

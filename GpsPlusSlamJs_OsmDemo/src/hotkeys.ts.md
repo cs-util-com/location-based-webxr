@@ -40,7 +40,7 @@ const hotkeys = new HotkeyRegistry(document);
 hotkeys.add({
   key: "t",
   description: "step the sun forward",
-  handler: () => view.setTimeOfDay(view.timeOfDayValue() + 0.05),
+  handler: () => moveSun(stepSun(sunInstant, sunPlace, 1)),
 });
 ```
 

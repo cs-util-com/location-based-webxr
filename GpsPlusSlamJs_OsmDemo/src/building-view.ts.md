@@ -40,6 +40,12 @@ map scored.
   scene reflection comes from the package's `packInstances`, which is tested where
   it lives.)
 
+- **The sun:** `initialSun` (constructor option, the angles the sky is built
+  for) and `setSunAngles(angles)`. The view only draws
+  the angles it is given; WHERE the sun is (the real sun for a place and a
+  date) is `sun-clock.ts`'s job, owned by `main.ts` (plan 2026-09-23-2149).
+  Replaced `setTimeOfDay` / `timeOfDayValue` (the retired plausible day).
+
 ## Invariants & assumptions
 
 - **`TERRAIN_EXTENT_M` is imported from `heightfield.ts`, not owned here.** It

@@ -57,72 +57,22 @@ export interface SunAngles {
 }
 
 /**
- * The sun's elevation at local noon, radians.
- *
- * 55°, which is a plausible summer noon for the demo's default latitude
- * (Cologne, 50.94° N, where the real figure runs from ~16° in December to ~62°
- * in June). NOT derived from a date and a latitude, and that is a deliberate
- * limit rather than an oversight: a real solar-position model is a well-defined
- * piece of work with its own tests, and nothing in this demo yet needs the sun
- * to be in the *correct* place — only in a *consistent and controllable* one.
- * Filed rather than faked; see the sidecar.
- */
-export const MAX_SUN_ELEVATION_RAD = (55 * Math.PI) / 180;
-
-/**
- * The MINIMUM angle between the sun and the eye at the DEFAULT time, radians.
+ * The MINIMUM angle between the sun and the eye at BOOT, radians.
  *
  * Carried over from `sun.ts`, where it was a property over every camera
- * position. It cannot be that any more — the user is now allowed to put the sun
- * behind the camera on purpose — so it is asserted at the default instead, which
- * is what a first-time viewer sees. The reason is unchanged: a light on top of
- * the eye vector makes N·L maximal and nearly constant for every surface facing
- * you, which is the definition of flat.
+ * position. It cannot be that any more (the user may put the sun behind the
+ * camera on purpose), so it is asserted where a first-time viewer meets it:
+ * the boot sun, now the REAL evening golden hour, swept over the picker's
+ * places and every month. The reason is unchanged: a light on top of the eye
+ * vector makes N·L maximal and nearly constant for every surface facing you,
+ * which is the definition of flat.
+ *
+ * (The "plausible day" that lived here, `sunAt` with a fixed 55° noon, is
+ * retired: the real sun for a place and a date is `sun-clock.ts`, plan
+ * 2026-09-23-2149. This module stays import-free, because the look-dev page
+ * loads `sunDirection` from it.)
  */
 export const MIN_SUN_EYE_ANGLE_RAD = Math.PI / 8;
-
-/**
- * The time of day the demo opens on, in `0..1` across the day.
- *
- * 0.98 — late evening, giving an elevation of about 3.4° and an azimuth of about
- * 266° (just north of west). DEC-R6-3 took the prototype's golden hour, and the
- * low angle is not only taste: grazing light turns a small height difference
- * into a long tonal gradient, which is why every cartographic hillshade uses
- * one. A high sun flattens relief because everything faces it equally.
- *
- * EVENING RATHER THAN MORNING, which is arbitrary but fixed: "golden hour"
- * conventionally means the evening one, and the default camera looks north-west
- * from the south-east, so an evening sun is in front of the viewer rather than
- * behind them.
- */
-export const DEFAULT_TIME_OF_DAY = 0.98;
-
-/**
- * The sun's angles at a time of day in `0..1`.
- *
- * `0` is sunrise due east, `0.5` is noon due south, `1` is sunset due west. The
- * elevation follows a half-sine so noon is the maximum and the two halves of the
- * day are symmetric; the azimuth sweeps 90° → 270° linearly, which stays inside
- * one turn and therefore needs no wrap — a wrap here would snap the sky round
- * mid-drag.
- *
- * **This is a plausible day, not a correct one.** It has no date, no latitude
- * and no equation of time. See {@link MAX_SUN_ELEVATION_RAD}.
- *
- * Out-of-range input is CLAMPED rather than extrapolated, and a non-finite value
- * falls back to the default: the hotkey steps this and an off-by-one would
- * otherwise put the sun below the horizon, where the scattering shader's output
- * is undefined rather than merely dark.
- */
-export function sunAt(timeOfDay: number): SunAngles {
-  const t = Number.isFinite(timeOfDay)
-    ? Math.min(1, Math.max(0, timeOfDay))
-    : DEFAULT_TIME_OF_DAY;
-  return {
-    elevationRad: MAX_SUN_ELEVATION_RAD * Math.sin(Math.PI * t),
-    azimuthRad: (Math.PI / 2) * (1 + 2 * t),
-  };
-}
 
 /**
  * A UNIT vector pointing from the scene towards the sun.

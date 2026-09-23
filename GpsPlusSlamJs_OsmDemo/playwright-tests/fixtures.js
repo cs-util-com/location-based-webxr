@@ -29,6 +29,43 @@ import { DEFAULT_OVERPASS_ENDPOINTS } from "gps-plus-slam-osm";
 const here = dirname(fileURLToPath(import.meta.url));
 
 /**
+ * THE DATE THE WHOLE SUITE'S SUN IS COMPUTED FOR (plan 2026-09-23-2149, M2).
+ *
+ * The sun is real since then: it depends on the date, so an unpinned suite
+ * would be green in September and red in June (the boot sun's azimuth runs
+ * from 225° to 304° over the year here). 23 Sep is chosen because its boot
+ * sun at the fixture, the 3.5° evening golden hour at ~265°, reproduces the
+ * retired plausible-day default (3.4° / 266°), so every threshold measured
+ * under the old sun stays valid. A URL parameter, not a faked `Date`:
+ * `pinQuestClock` fakes `Date` to 15 June for the quest specs, and the sun
+ * must not follow it.
+ */
+export const SUN_PIN_DATE = "2026-09-23";
+
+/** An app URL with the suite's sun date, unless it already pins one. */
+export function withPinnedSunDate(url) {
+  if (typeof url !== "string" || !url.startsWith("/")) return url;
+  const parsed = new URL(url, "http://pin.invalid");
+  if (!parsed.pathname.endsWith("/") && !parsed.pathname.endsWith(".html"))
+    return url;
+  if (parsed.searchParams.has("date")) return url;
+  parsed.searchParams.set("date", SUN_PIN_DATE);
+  return parsed.pathname + parsed.search + parsed.hash;
+}
+
+/**
+ * A page URL's query WITHOUT the suite's sun pin, for assertions about the
+ * app's own URL keys (`url-state.ts` keeps parameters it does not own, so
+ * the pin survives every write).
+ */
+export function appSearch(url) {
+  const params = new URL(url).searchParams;
+  params.delete("date");
+  const query = params.toString();
+  return query === "" ? "" : `?${query}`;
+}
+
+/**
  * The app URL that puts the simulated user ON the fixture.
  *
  * The park capture is in Cologne and the demo default is now Manhattan
@@ -41,7 +78,7 @@ const here = dirname(fileURLToPath(import.meta.url));
  * was Cologne Cathedral and ~2 km was already enough. What matters is that the
  * default is not ON the fixture, which is now true by a much larger margin.
  */
-export const AT_FIXTURE = `/?lat=${50.9231}&lng=${6.9445}`;
+export const AT_FIXTURE = `/?lat=${50.9231}&lng=${6.9445}&date=${SUN_PIN_DATE}`;
 
 /**
  * How long a poll waits for a REPAINT to land.

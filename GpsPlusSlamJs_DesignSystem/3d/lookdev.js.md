@@ -79,8 +79,9 @@
     composer resolves MSAA in HDR before tone mapping, the canvas after.
   - The GPU timer is re-created after a context restore.
   - Sun ELEVATION and AZIMUTH sliders instead of the plan's single
-    time-of-day slider: a superset (every time of day is reachable, twilight
-    included, which OsmDemo's `sunAt` cannot express); recorded as a
-    deviation in the plan.
+    time-of-day slider: a superset (every sun position is reachable,
+    twilight included, with no date or place needed); recorded as a
+    deviation in the plan. OsmDemo now shows the REAL sun for its place and
+    date (`sun-clock.ts`, plan 2026-09-23-2149).
 - Examples: `pnpm run serve` → `/3d/#preset=blueHour&tone=aces`.
 - Tests: `lookdev.smoke.spec.mjs` (stage `test:e2e`), and `shoot-3d.mjs`.

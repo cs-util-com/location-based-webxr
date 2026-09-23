@@ -21,13 +21,11 @@
 
 import { describe, expect, it } from "vitest";
 
-import {
-  DEFAULT_TIME_OF_DAY,
-  MAX_SUN_ELEVATION_RAD,
-  MIN_SUN_EYE_ANGLE_RAD,
-  sunAt,
-  sunDirection,
-} from "./sun-position.js";
+import { solarPosition } from "gps-plus-slam-app-framework/geo/solar-position";
+
+import { PICKER_PLACES } from "./picker-places.js";
+import { bootInstant } from "./sun-clock.js";
+import { MIN_SUN_EYE_ANGLE_RAD, sunDirection } from "./sun-position.js";
 
 /** Length of a direction vector, for the unit-length invariant. */
 function length(v: { x: number; y: number; z: number }): number {
@@ -79,81 +77,20 @@ describe("sunDirection — the compass convention", () => {
   });
 });
 
-describe("sunAt — the time of day", () => {
-  it("is highest at noon and symmetric about it", () => {
-    // The shape of a day. Asymmetry here would mean morning and evening light
-    // differed in elevation, which is the one thing a viewer would notice
-    // without being able to name.
-    const noon = sunAt(0.5);
-    expect(noon.elevationRad).toBeCloseTo(MAX_SUN_ELEVATION_RAD, 9);
-    for (const d of [0.1, 0.2, 0.3, 0.4]) {
-      expect(sunAt(0.5 - d).elevationRad).toBeCloseTo(
-        sunAt(0.5 + d).elevationRad,
-        9,
-      );
-    }
-  });
-
-  it("rises in the east and sets in the west", () => {
-    // A sun that rises in the west is the classic sign-flip, and it is
-    // invisible in a still screenshot.
-    expect(sunAt(0).azimuthRad).toBeCloseTo(90 * DEG, 9);
-    expect(sunAt(0.5).azimuthRad).toBeCloseTo(180 * DEG, 9);
-    expect(sunAt(1).azimuthRad).toBeCloseTo(270 * DEG, 9);
-  });
-
-  it("sweeps azimuth monotonically, with no wrap discontinuity", () => {
-    // A jump would make the shadows and the sky snap round mid-drag. The sweep
-    // stays inside one turn precisely so no wrap is needed.
-    let previous = -Infinity;
-    for (let t = 0; t <= 1.0001; t += 0.01) {
-      const { azimuthRad } = sunAt(Math.min(1, t));
-      expect(azimuthRad).toBeGreaterThan(previous);
-      previous = azimuthRad;
-    }
-  });
-
-  it("sits on the horizon at both ends of the day", () => {
-    expect(sunAt(0).elevationRad).toBeCloseTo(0, 9);
-    expect(sunAt(1).elevationRad).toBeCloseTo(0, 9);
-  });
-
-  it("clamps out-of-range times rather than extrapolating", () => {
-    // Defensive: the hotkey steps this value and an off-by-one would otherwise
-    // put the sun underground, where the sky shader's output is undefined
-    // rather than merely dark.
-    expect(sunAt(-1)).toEqual(sunAt(0));
-    expect(sunAt(2)).toEqual(sunAt(1));
-    expect(sunAt(Number.NaN).elevationRad).toBeCloseTo(
-      sunAt(DEFAULT_TIME_OF_DAY).elevationRad,
-      9,
-    );
-  });
-
-  it("defaults to a LOW sun, which is the whole look being adopted", () => {
-    // DEC-R6-3 took the prototype's golden hour (~3.5°) as the default. A high
-    // sun flattens relief — everything faces it equally — and grazing light is
-    // what makes small height differences read, which is why every
-    // cartographic hillshade uses one.
-    const { elevationRad } = sunAt(DEFAULT_TIME_OF_DAY);
-    expect(elevationRad).toBeGreaterThan(0);
-    expect(elevationRad).toBeLessThan(10 * DEG);
-  });
-});
-
-describe("the sun is not a headlight, at the default time", () => {
-  it("stays well off the eye vector for the default camera", () => {
+describe("the sun is not a headlight, at boot", () => {
+  it("stays well off the eye vector for the default camera, everywhere and all year", () => {
     // WHAT THIS PRESERVES FROM DEC-R4-6, and why it is now conditional. The
     // old sun could never be a headlight because it was pinned 45° off the
     // camera; a physical sun can be anywhere, and a sun directly behind the
-    // viewer flattens the scene completely — N·L becomes maximal and nearly
+    // viewer flattens the scene completely: N·L becomes maximal and nearly
     // constant for every surface facing you. That is the flash-photography
     // look, and it destroys exactly the relief §2's slope treatment exists to
     // reveal.
     //
-    // It cannot be asserted at EVERY time of day any more — the user is allowed
-    // to put the sun behind the camera deliberately. It is asserted at the
-    // DEFAULT, which is what a first-time viewer sees.
+    // It is asserted where a first-time viewer meets the sun: the BOOT sun,
+    // which is now the REAL evening golden hour, so it moves with the date and
+    // the place. Swept over every place the picker offers and every month
+    // (plan 2026-09-23-2149, review finding 13).
     const camera = { x: 140, y: 110, z: 140 };
     const target = { x: 0, y: 10, z: 0 };
     const eye = {
@@ -162,11 +99,23 @@ describe("the sun is not a headlight, at the default time", () => {
       z: camera.z - target.z,
     };
     const eyeLength = length(eye);
-    const sun = sunDirection(sunAt(DEFAULT_TIME_OF_DAY));
-    const cos =
-      (eye.x * sun.x + eye.y * sun.y + eye.z * sun.z) / (eyeLength * 1);
-    expect(Math.acos(Math.max(-1, Math.min(1, cos)))).toBeGreaterThan(
-      MIN_SUN_EYE_ANGLE_RAD,
-    );
+    let smallest = Math.PI;
+    for (const place of PICKER_PLACES) {
+      const at = { lat: place.position.lat, lng: place.position.lng };
+      for (let month = 1; month <= 12; month++) {
+        const t = bootInstant({ year: 2026, month, day: 21 }, at);
+        const p = solarPosition(t, at.lat, at.lng);
+        const sun = sunDirection({
+          elevationRad: p.elevationRad,
+          azimuthRad: p.azimuthRad,
+        });
+        const cos = (eye.x * sun.x + eye.y * sun.y + eye.z * sun.z) / eyeLength;
+        smallest = Math.min(
+          smallest,
+          Math.acos(Math.max(-1, Math.min(1, cos))),
+        );
+      }
+    }
+    expect(smallest).toBeGreaterThan(MIN_SUN_EYE_ANGLE_RAD);
   });
 });

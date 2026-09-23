@@ -61,7 +61,7 @@ import {
 import { isPickGesture, type PointerOrigin } from "./pick-gesture.js";
 import { resolvePick, type Pick, type ScenePoint } from "./pick.js";
 import { AGENT_SPEED_MPS, pathLengthM, pointAlong } from "./route-path.js";
-import { DEFAULT_TIME_OF_DAY, sunAt } from "./sun-position.js";
+import type { SunAngles } from "./sun-position.js";
 import { terrainTextureFrom } from "./terrain-texture.js";
 import type { BuildingStats, MeshLayers } from "./mesh-layers.js";
 import type { HazeModeSwitch } from "./ar-scene-environment.js";
@@ -283,6 +283,12 @@ const AGENT_RADIUS_M = 1.2;
 export interface BuildingViewOptions {
   readonly container: HTMLElement;
   /**
+   * Where the sun starts (plan 2026-09-23-2149, M2): the caller's sun clock
+   * knows the place and the date. Passed in rather than set after
+   * construction so the sky is built once for the right sun, not rebuilt.
+   */
+  readonly initialSun: SunAngles;
+  /**
    * Called with whatever the user selected (W12).
    *
    * GENERALISED from `onCellClick(cell)`, because a cell is no longer the only
@@ -428,13 +434,11 @@ export class BuildingView {
    */
   private readonly atmosphere: AtmosphereRig;
   /**
-   * Where the sun is, in `0..1` across the day (DEC-R6-3).
-   *
-   * A FIELD RATHER THAN A CONSTANT because it is now a control. It replaces the
-   * camera-derived azimuth that DEC-R4-6 introduced; see `sun-position.ts` for
-   * why that had to go and what pays for it.
+   * Where the sun is (DEC-R6-3). The REAL sun since plan 2026-09-23-2149: the
+   * caller's sun clock (`sun-clock.ts`) owns the place, the date and the
+   * stepping; this view only draws the angles it is given.
    */
-  private timeOfDay = DEFAULT_TIME_OF_DAY;
+  private sunAngles: SunAngles;
   /** The flat plane's vertex positions, kept so terrain can be re-applied. */
   private flatGround: Float32Array | undefined;
   /** The current field, so a mode switch and the ramp can re-read it. */
@@ -516,6 +520,7 @@ export class BuildingView {
 
   constructor(options: BuildingViewOptions) {
     this.container = options.container;
+    this.sunAngles = options.initialSun;
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
       // Without this the drawing buffer is cleared after each composite, so a
@@ -1441,21 +1446,17 @@ export class BuildingView {
   }
 
   /**
-   * Moves the sun to a time of day in `0..1` (§1, DEC-R6-3).
+   * Moves the sun (§1, DEC-R6-3; the real sun since plan 2026-09-23-2149).
    *
    * THE COST LIVES HERE, DELIBERATELY. Each call renders the sky's sky-view
    * LUT, reads it back (for the exposure and the fog colour) and re-bakes the
    * environment map. That is affordable precisely because this is a
    * deliberate user action rather than something a drag triggers — see
-   * `aimSun` and `sun-position.ts`.
-   *
-   * Out-of-range values are handled by `sunAt`, which clamps rather than
-   * extrapolating. (The clamp at the horizon was forced by the old Preetham
-   * sky, undefined below it; the physical sky renders twilight, so widening
-   * `sunAt`'s range is now a product decision, not a technical limit.)
+   * `aimSun` and `sun-clock.ts`, whose stops keep the sun within civil
+   * twilight (≥ −6°).
    */
-  setTimeOfDay(timeOfDay: number): void {
-    this.timeOfDay = timeOfDay;
+  setSunAngles(angles: SunAngles): void {
+    this.sunAngles = angles;
     this.aimSun();
     // On-demand rendering: without this the new sun is invisible until the
     // camera moves, which is finding R2-3 in a new place.
@@ -1468,11 +1469,6 @@ export class BuildingView {
    */
   distanceHaze(): HazeModeSwitch {
     return this.atmosphere.haze;
-  }
-
-  /** Where the sun currently is, in `0..1`. */
-  timeOfDayValue(): number {
-    return this.timeOfDay;
   }
 
   /**
@@ -1502,7 +1498,7 @@ export class BuildingView {
     // camera's azimuth was deleted once nothing had read it for two rounds.
     // That is also what makes the sky rebuild inside `setSun`
     // affordable — it runs when the user changes the time, not on every drag.
-    const direction = this.atmosphere.setSun(sunAt(this.timeOfDay));
+    const direction = this.atmosphere.setSun(this.sunAngles);
     const distance = 1000;
     this.sun.position.set(
       direction.x * distance,

@@ -1596,6 +1596,15 @@
         />
         <span id="render-distance-value">draw 2400 m</span>
       </label>
+      <!-- THE REAL SUN (plan 2026-09-23-2149, M2; DEC-SUN-3/8): the date the sun
+           is computed for (today at the map's place by default) and a labelled
+           APPARENT SOLAR time, never the wall clock. t/T step the time; the
+           input's own ↑/↓ step a day or a month. -->
+      <label class="layer-toggle" id="sun-date-label">
+        sun
+        <input type="date" id="sun-date" aria-label="Sun date" />
+        <span id="sun-readout"></span>
+      </label>
       <!-- THE READOUT BLOCK (J2, DEC-J5). "Der zusätzliche Debug-Text und die
            Farbskala ... die können ja auch dann zusammen in einen Block, weil
            die haben ja noch keinen."

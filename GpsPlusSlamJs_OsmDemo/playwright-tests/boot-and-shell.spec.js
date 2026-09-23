@@ -18,6 +18,7 @@ import {
   stubNetwork,
   waitForRefresh,
   REPAINT,
+  appSearch,
 } from "./fixtures.js";
 
 /**
@@ -549,18 +550,14 @@ test.describe("the location picker", () => {
     await page.selectOption("#site", "porto-ribeira");
     // A NAMED place writes its id: it says WHERE in a link a human reads, and it
     // survives a re-capture moving the coordinates.
-    await expect
-      .poll(() => new URL(page.url()).search)
-      .toBe("?site=porto-ribeira");
+    await expect.poll(() => appSearch(page.url())).toBe("?site=porto-ribeira");
 
     // The round trip. A reload with no other state must land back at Porto
     // rather than at the demo's default.
     await page.reload();
     await waitForRefresh(page);
     await expect(page.locator("#site")).toHaveValue("");
-    await expect
-      .poll(() => new URL(page.url()).search)
-      .toBe("?site=porto-ribeira");
+    await expect.poll(() => appSearch(page.url())).toBe("?site=porto-ribeira");
 
     // Moving without naming a place writes COORDINATES instead, and drops the
     // stale id — a walk away from Porto must not keep claiming to be at Porto.
@@ -571,7 +568,7 @@ test.describe("the location picker", () => {
     // id is gone, which is what the two checks below say separately.
     await page.locator("#map").click({ position: { x: 120, y: 120 } });
     await expect
-      .poll(() => new URL(page.url()).search)
+      .poll(() => appSearch(page.url()))
       .toMatch(/^\?lat=-?\d+\.\d{5}&lng=-?\d+\.\d{5}/);
     expect(new URL(page.url()).searchParams.get("site")).toBeNull();
   });

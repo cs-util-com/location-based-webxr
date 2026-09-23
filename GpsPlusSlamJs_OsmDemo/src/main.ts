@@ -174,17 +174,30 @@ import {
   renderSafely,
 } from "./refresh-cycle.js";
 import { createAnchorHolder } from "./scene-anchor.js";
+import {
+  bootInstant,
+  formatSunReadout,
+  instantAt,
+  moveToDate,
+  parseSolarTime,
+  parseSunDate,
+  relocate,
+  stepSun,
+  sunDateOf,
+  type SunPlace,
+} from "./sun-clock.js";
+import type { SunAngles } from "./sun-position.js";
 import type { TransferableMesh } from "./worker/protocol.js";
 import { createRpcClient, workerTransport } from "./worker/rpc-client.js";
+import { solarPosition } from "gps-plus-slam-app-framework/geo/solar-position";
 
-/**
- * How far one press of the time key moves the sun, as a fraction of the day.
- *
- * 1/24 — an hour a press, so a full day is 24 presses and holding the key sweeps
- * it in a few seconds. Small enough that the golden-hour band can be found, large
- * enough that reaching noon is not a chore.
- */
-const TIME_STEP = 1 / 24;
+/** The sun's angles at an instant and a place (the real sun, plan 2026-09-23-2149). */
+function sunAnglesAt(ms: number, place: SunPlace): SunAngles {
+  const p = solarPosition(ms, place.lat, place.lng);
+  return { elevationRad: p.elevationRad, azimuthRad: p.azimuthRad };
+}
+
+const pad2 = (n: number) => String(n).padStart(2, "0");
 
 const el = <T extends HTMLElement>(id: string): T => {
   const found = document.getElementById(id);
@@ -303,6 +316,22 @@ async function main(): Promise<void> {
 
   const start = parseStartPosition(window.location.search);
 
+  // THE REAL SUN (plan 2026-09-23-2149, M2; DEC-SUN-2..8). The sun is where
+  // it really is for the map's place and a date: today at that place by
+  // default, booting at its evening golden hour. `?date=` and `?time=`
+  // (apparent solar HH:MM) are READ-ONLY test pins, never written back, so
+  // DEC-R12-5 (no presentation state in the URL) holds; the e2e suite pins
+  // the date because the look now changes with the season.
+  const sunParams = new URLSearchParams(window.location.search);
+  let sunPlace: SunPlace = { lat: start.lat, lng: start.lng };
+  const sunBootDate =
+    parseSunDate(sunParams.get("date")) ?? sunDateOf(Date.now(), sunPlace);
+  const sunPinnedTime = parseSolarTime(sunParams.get("time"));
+  let sunInstant =
+    sunPinnedTime === null
+      ? bootInstant(sunBootDate, sunPlace)
+      : instantAt(sunBootDate, sunPlace, sunPinnedTime);
+
   const { store, actions, subscribe } = createDemoStore({
     start,
     category: categorySelect.value,
@@ -363,6 +392,7 @@ async function main(): Promise<void> {
 
   const buildingView = new BuildingView({
     container: el("scene"),
+    initialSun: sunAnglesAt(sunInstant, sunPlace),
     onCameraMove: (view) => reportCameraView(view),
     // A cell selection dispatches the SAME action a 2D cell click does: the panel
     // does not know, and must not know, which view the selection came from. A POI
@@ -434,24 +464,50 @@ async function main(): Promise<void> {
   // each press regenerates the environment map, which is a render pass. That is
   // affordable precisely because it is a deliberate press rather than something
   // a drag triggers; see `sun-position.ts`.
-  const stepTime = (by: number) => () => {
-    // WRAPPED, not clamped, so holding the key walks through a whole day and
-    // comes back. `sunAt` clamps its input, so an unwrapped step would park the
-    // sun at midnight and look broken.
-    const next = (buildingView.timeOfDayValue() + by + 1) % 1;
-    buildingView.setTimeOfDay(next);
+  // THE REAL SUN'S CONTROL (plan 2026-09-23-2149, M2). "t"/"T" step through
+  // the day's stops (fine near the horizon, the night skipped); the date
+  // input picks any date, keeping the phase. See `sun-clock.ts` for the rules.
+  //
+  // NO DAY OR MONTH KEYS (M2 review, e2e-measured): four more rows in the
+  // shortcut list pushed it over the map's own controls at phone width
+  // (`map-and-cells.spec.js`, picker and list open). The date input already
+  // steps a day or a month natively (↑/↓ on its day or month segment), which
+  // is why the input must NOT lose focus on every change.
+  const sunDateInput = el<HTMLInputElement>("sun-date");
+  const sunReadout = el("sun-readout");
+  const showSunControl = () => {
+    const d = sunDateOf(sunInstant, sunPlace);
+    sunDateInput.value = `${d.year}-${pad2(d.month)}-${pad2(d.day)}`;
+    sunReadout.textContent = formatSunReadout(sunInstant, sunPlace);
   };
+  const moveSun = (next: number) => {
+    sunInstant = next;
+    buildingView.setSunAngles(sunAnglesAt(sunInstant, sunPlace));
+    showSunControl();
+  };
+  showSunControl();
+  sunDateInput.addEventListener("change", () => {
+    const picked = parseSunDate(sunDateInput.value);
+    if (picked !== null) moveSun(moveToDate(sunInstant, sunPlace, picked));
+  });
+  // HAND FOCUS BACK ON ENTER OR ESCAPE, never on change (M2 review finding
+  // 4): "change" fires per edited segment, so blurring there broke typing a
+  // year digit by digit and ↑/↓ stepping. Focus must come back at some point
+  // because the hotkey registry ignores keys typed into inputs, so a focused
+  // field swallows "t" (plan 2026-09-23-2149, review finding 13).
+  sunDateInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === "Escape") sunDateInput.blur();
+  });
   hotkeys.add({
     key: "t",
-    description: "step the sun forward (time of day)",
-    handler: stepTime(TIME_STEP),
+    description: "step the sun forward (skips the night)",
+    handler: () => moveSun(stepSun(sunInstant, sunPlace, 1)),
   });
   hotkeys.add({
     key: "T",
     description: "step the sun back",
-    handler: stepTime(-TIME_STEP),
+    handler: () => moveSun(stepSun(sunInstant, sunPlace, -1)),
   });
-
   // THE LOOK PRESETS (§3, DEC-R6-9/10). One key cycles whole looks rather than
   // four keys toggling four axes: sixteen combinations means no combination is
   // tested, the e2e suite can only pin one, and these axes interact — opacity
@@ -2952,6 +3008,14 @@ async function main(): Promise<void> {
       // The agent goes with it. It is standing where the user WAS, and after a
       // teleport that is a different city.
       if (anchor.reanchored) buildingView.clearRoute();
+      // THE SUN FOLLOWS THE ANCHOR, keeping its phase (the same elevation on
+      // the same limb): golden hour in Cologne stays golden hour in Tokyo.
+      if (anchor.reanchored) {
+        const place = { lat: anchors.origin.lat, lng: anchors.origin.lng };
+        const moved = relocate(sunInstant, sunPlace, place);
+        sunPlace = place;
+        moveSun(moved);
+      }
       // W11 (R4-12). A click must bring the chosen point back to the middle of
       // the 3D view without spinning it: `MapControls` pans camera and target
       // together, so after any pan the pivot is somewhere else entirely and the
