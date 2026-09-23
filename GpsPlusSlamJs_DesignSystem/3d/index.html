@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Look-dev: sky and atmosphere</title>
+    <link rel="stylesheet" href="../design.css" />
+    <link rel="stylesheet" href="./lookdev.css" />
+    <!-- three comes from the framework's own lockfile-pinned copy, served by
+         serve.mjs; the deploy rewrites these to the same pinned version. -->
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "/vendor/three/build/three.module.js",
+          "three/addons/": "/vendor/three/examples/jsm/",
+          "three/examples/jsm/": "/vendor/three/examples/jsm/"
+        }
+      }
+    </script>
+    <script type="module" src="./lookdev.js"></script>
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+    <aside class="lookdev-panel plate col" aria-label="Look controls">
+      <span class="num">Sky and atmosphere</span>
+      <div class="lookdev-presets" data-presets></div>
+      <label class="lookdev-field">
+        <span class="hint">Sun elevation</span>
+        <input
+          id="elevation"
+          class="slider"
+          type="range"
+          min="-10"
+          max="70"
+          step="0.5"
+        />
+      </label>
+      <label class="lookdev-field">
+        <span class="hint">Sun azimuth</span>
+        <input
+          id="azimuth"
+          class="slider"
+          type="range"
+          min="0"
+          max="360"
+          step="1"
+        />
+      </label>
+      <label class="lookdev-field">
+        <span class="hint">Visibility</span>
+        <input
+          id="visibility"
+          class="slider"
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+        />
+      </label>
+      <label class="lookdev-field">
+        <span class="hint">Exposure compensation (EV)</span>
+        <input
+          id="exposure"
+          class="slider"
+          type="range"
+          min="-4"
+          max="4"
+          step="0.1"
+        />
+      </label>
+      <label class="lookdev-field">
+        <span class="hint">Cloud cover</span>
+        <input
+          id="clouds"
+          class="slider"
+          type="range"
+          min="0"
+          max="1"
+          step="0.05"
+        />
+      </label>
+      <span class="select-wrap">
+        <select id="tone" class="select" aria-label="Tone mapping">
+          <option value="neutral">Khronos Neutral</option>
+          <option value="agx">AgX</option>
+          <option value="aces">ACES Filmic</option>
+        </select>
+      </span>
+      <span class="select-wrap">
+        <select id="tier" class="select" aria-label="Cost tier">
+          <option value="phone">Phone tier (no bloom)</option>
+          <option value="desktop">Desktop tier (bloom)</option>
+        </select>
+      </span>
+      <label class="switch">
+        <input id="haze" type="checkbox" checked />
+        <span class="switch-track"></span>
+        Haze (sky-matched aerial perspective)
+      </label>
+      <span class="hint" data-values></span>
+      <span class="hint" data-stats></span>
+      <span class="hint lookdev-error" data-error-box></span>
+    </aside>
+  </body>
+</html>

@@ -10,7 +10,10 @@
     "format:check": "prettier --check --ignore-unknown .",
     "lint:css": "node ../scripts/test-timing/timed-stage.mjs lint:css",
     "check:tokens": "node ../scripts/test-timing/timed-stage.mjs check:tokens",
+    "test:unit": "node ../scripts/test-timing/timed-stage.mjs test:unit",
+    "test:e2e": "node ../scripts/test-timing/timed-stage.mjs test:e2e",
     "shoot": "node shoot.mjs",
+    "shoot:3d": "node shoot-3d.mjs",
     "serve": "node serve.mjs",
     "vendor": "node vendor.mjs",
     "leaks": "node leaks.mjs"

@@ -79,6 +79,17 @@ accepted cost that Android blocks `getUserMedia` without HTTPS - the
 live camera background shows its error toast there; every other
 background works.
 
+## The 3D look-dev page (`3d/`)
+
+Since 2026-09-23 the package also hosts a 3D page for the demos' scene look:
+a physical sky and atmosphere (the framework's `SkyAtmosphere`) over a
+stand-in city, with presets, a tone-map A/B, the sky-matched haze and a
+cloud layer; OsmDemo's desktop view runs the same sky since M3. It stays no-build: `serve.mjs` serves the framework's TypeScript
+source with the types stripped, and three from the framework's
+lockfile-pinned copy. `pnpm run serve` → `/3d/`, `pnpm run shoot:3d` for
+screenshots, and the `test:e2e` gate stage compiles and checks every shader.
+Details: `3d/README.md`.
+
 ## Vendoring into an app
 
 Before the first copy lands, measure what the sheet would change on the

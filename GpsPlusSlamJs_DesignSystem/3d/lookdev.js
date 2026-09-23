@@ -1,0 +1,602 @@
+/**
+ * The 3D look-dev page: the physical sky (framework `SkyAtmosphere`) over a
+ * stand-in world, with presets, sliders, a tone-mapping A/B, the haze and
+ * the cloud layer (plan 2026-09-23-0048).
+ *
+ * THE FRAMEWORK IS LOADED FROM SOURCE: `/fw/…` and `/osm/…` are TypeScript
+ * files type-stripped by `serve.mjs`, so what is judged here is the code the
+ * apps will run, not a copy. (The page used to carry OsmDemo's old Preetham
+ * sky as a baseline switch; it was retired when OsmDemo adopted this sky
+ * model in M3. OsmDemo grades it 3 EV darker, as a data view: tone `aces`
+ * with exposure −3 EV reproduces it here.)
+ *
+ * STATE LIVES IN THE URL HASH (`#preset=golden&tone=agx`), like the HUD
+ * catalog's, so a screenshot or a phone link reproduces a view.
+ *
+ * `window.__lookdev` is the page's test surface (smoke test, shoot-3d.mjs).
+ * See lookdev.js.md.
+ */
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+
+import { LOOK_PRESETS } from "/fw/visualization/atmosphere/look-presets.js";
+import { AtmosphereHaze } from "/fw/visualization/atmosphere/atmosphere-haze.js";
+import { fallbackSky } from "/fw/visualization/atmosphere/atmosphere-fallback.js";
+import { SkyAtmosphere } from "/fw/visualization/atmosphere/sky-atmosphere.js";
+import { WaterSurface } from "/fw/visualization/atmosphere/water-surface-material.js";
+import { sunDirection } from "/osm/sun-position.js";
+
+import { createGpuTimer } from "./gpu-timer.js";
+import { lutParity, skyPixelExpected } from "./parity.js";
+import { buildStandInScene } from "./stand-in-scene.js";
+
+const TONE_MAPPINGS = {
+  aces: THREE.ACESFilmicToneMapping,
+  agx: THREE.AgXToneMapping,
+  neutral: THREE.NeutralToneMapping,
+};
+/** The sun light at the reference elevation: OsmDemo's value. */
+const SUN_INTENSITY = 1.1;
+/** The atmosphere view sees the 9 km ridges; the fog only hides the clip. */
+const ATMOSPHERE_FAR_M = 30000;
+const ATMOSPHERE_FOG_NEAR_M = 20000;
+const DEG = Math.PI / 180;
+/**
+ * The two cost tiers (DEC-SKY-9). PHONE is the always-on base: device pixel
+ * ratio capped at 1.5, no post-processing. DESKTOP adds a DPR of up to 2 and
+ * bloom through three's own passes (no new dependency).
+ */
+const TIERS = {
+  phone: { maxPixelRatio: 1.5, bloom: false },
+  desktop: { maxPixelRatio: 2, bloom: true },
+};
+/**
+ * Bloom runs on the HDR scene before tone mapping, so its threshold is in
+ * scene-linear units. SWEPT at golden hour at the TRUE sun position (a first sweep used stale
+ * camera matrices and measured the frame's edge): on a physically exposed
+ * sky the glow near the sun and a veil over the bright sky come together,
+ * glow ≈ 0.45 × the share of the frame brightened by > 30 levels:
+ * threshold/strength 8/0.05 → +7.3 glow, 17 % veiled; 16/0.05 → +2.4, 3 %;
+ * 16/0.1 → +4.7, 9.7 %; 32/0.2 → +8.0, 19.5 %; 64/0.4 → +13.7, 35 %.
+ * (Threshold 4, strength 0.2, the first cut, veiled 52 %.) Shipped: 16/0.1,
+ * a gentle glow; the owner judges it on a device. At noon every setting
+ * leaves the frame within 0.1 %.
+ */
+const BLOOM = { strength: 0.1, radius: 0.35, threshold: 16 };
+/**
+ * The HDR clamp before bloom (a "firefly" clamp), scene-linear. A single
+ * pixel far above white (a GGX glint on the water reaches ~1e5; a half-float
+ * target stores that as Inf) would otherwise flare across the frame. 1024,
+ * not lower: Neutral tone mapping (the page default) does NOT saturate by
+ * ~16, and a clamp at 64 shifted saturated highlights by up to 8 levels
+ * against the phone tier; at 1024 the shift is at most 1 level for every
+ * tone mapper (M4 review, finding 6, swept 16...60 000).
+ */
+const HDR_CLAMP = 1024;
+const clampShader = {
+  uniforms: { tDiffuse: { value: null }, uMax: { value: HDR_CLAMP } },
+  vertexShader: `varying vec2 vUv;
+void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float uMax; varying vec2 vUv;
+void main() { gl_FragColor = min(texture2D(tDiffuse, vUv), vec4(uMax)); }`,
+};
+
+const api = { ready: false, error: null };
+window.__lookdev = api;
+const fail = (message) => {
+  api.error = api.error ?? message;
+  document.body.dataset.error = "true";
+  const box = document.querySelector("[data-error-box]");
+  if (box) box.textContent = message;
+};
+window.addEventListener("error", (e) => fail(String(e.message ?? e)));
+window.addEventListener("unhandledrejection", (e) => fail(String(e.reason)));
+
+const canvas = document.querySelector("#view");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(55, 1, 0.5, ATMOSPHERE_FAR_M);
+camera.position.set(-240, 55, 270);
+const controls = new OrbitControls(camera, canvas);
+controls.target.set(40, 20, 0);
+controls.update();
+const sun = new THREE.DirectionalLight(0xffffff, 1);
+scene.add(sun, sun.target);
+const parts = buildStandInScene(scene);
+// The lightweight water (M4) replaces the lake's placeholder; applied BEFORE
+// the haze below, so the haze chains after the water's patch.
+const water = new WaterSurface();
+parts.lake.material.dispose();
+parts.lake.material = water.material;
+// The haze patches the world's materials ONCE; it owns its uniforms, so an
+// atmosphere change (or a rebuilt atmosphere) only needs a sync.
+const haze = new AtmosphereHaze({ visibilityKm: 45 });
+haze.applyToObject(scene);
+
+// --- state -----------------------------------------------------------------
+
+const initial = LOOK_PRESETS.find((p) => p.id === "golden");
+const state = {
+  preset: initial.id,
+  elevation: initial.sunElevationDeg,
+  azimuth: initial.sunAzimuthDeg,
+  visibility: initial.visibilityKm,
+  exposureEv: initial.exposureEv,
+  clouds: initial.cloudCover,
+  tone: "neutral",
+  haze: true,
+  tier: "phone",
+};
+
+function readHash() {
+  const params = new URLSearchParams(location.hash.slice(1));
+  const preset = LOOK_PRESETS.find((p) => p.id === params.get("preset"));
+  if (preset) applyPresetToState(preset);
+  if (params.get("tone") in TONE_MAPPINGS) state.tone = params.get("tone");
+  if (params.get("tier") in TIERS) state.tier = params.get("tier");
+}
+
+function writeHash() {
+  const params = new URLSearchParams({
+    preset: state.preset,
+    tone: state.tone,
+    tier: state.tier,
+  });
+  history.replaceState(null, "", `#${params}`);
+}
+
+function applyPresetToState(preset) {
+  state.preset = preset.id;
+  state.elevation = preset.sunElevationDeg;
+  state.azimuth = preset.sunAzimuthDeg;
+  state.visibility = preset.visibilityKm;
+  state.exposureEv = preset.exposureEv;
+  state.clouds = preset.cloudCover;
+}
+
+// --- the look -----------------------------------------------------------------
+
+let atmosphere = null;
+let lutMs = 0;
+
+function sunVector() {
+  return sunDirection({
+    elevationRad: state.elevation * DEG,
+    azimuthRad: state.azimuth * DEG,
+  });
+}
+
+function aimSunLight(direction) {
+  sun.position.set(direction.x, direction.y, direction.z).multiplyScalar(1000);
+}
+
+function useAtmosphere() {
+  if (!atmosphere) {
+    atmosphere = new SkyAtmosphere({
+      renderer,
+      scene,
+      visibilityKm: state.visibility,
+      sunIntensity: SUN_INTENSITY,
+    });
+  }
+  const start = performance.now();
+  atmosphere.setExposureCompensation(state.exposureEv);
+  const direction = sunVector();
+  // One call, one rebuild: a preset moves the sun, the visibility and the
+  // cloud cover together (M2 review, finding 13).
+  atmosphere.configure({
+    sunDirection: direction,
+    visibilityKm: state.visibility,
+    cloudCover: state.clouds,
+  });
+  lutMs = performance.now() - start;
+  haze.sync(atmosphere);
+  haze.setMode(state.haze ? "atmosphere" : "fog");
+  atmosphere.applySunLight(sun);
+  aimSunLight(direction);
+  renderer.toneMapping = TONE_MAPPINGS[state.tone];
+  renderer.toneMappingExposure = 1;
+  scene.fog = new THREE.Fog(
+    atmosphere.horizonColour(),
+    ATMOSPHERE_FOG_NEAR_M,
+    ATMOSPHERE_FAR_M,
+  );
+  camera.far = ATMOSPHERE_FAR_M;
+}
+
+let composer = null;
+let bloomPass = null;
+
+/** Switch the cost tier: pixel ratio, and the bloom composer on or off. */
+function applyTier() {
+  const tier = TIERS[state.tier];
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, tier.maxPixelRatio));
+  if (tier.bloom && !composer) {
+    // HALF FLOAT, as three's own composer: a radiance above 65 504 would
+    // store as Inf, so the sky clamps its output (framework) and the firefly
+    // clamp below turns any other Inf into 1024. A first cut used FULL FLOAT
+    // where `EXT_color_buffer_float` exists; the M4 review found it pure
+    // cost (~3× the memory, no measurable difference) and a risk: without
+    // `OES_texture_float_linear` the linearly-filtered float texture
+    // samples black.
+    composer = new EffectComposer(
+      renderer,
+      new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType }),
+    );
+    // MULTISAMPLED where the SCENE is drawn, and only there: RenderPass draws
+    // into `readBuffer` (renderTarget2), and the two swapping passes below
+    // (clamp, output) bring it back there every frame. Without MSAA the
+    // "better" tier drew jagged silhouettes. It cannot match the canvas
+    // exactly at edges: this resolves in HDR before tone mapping, the canvas
+    // after (M4 review, finding 2).
+    composer.renderTarget2.samples = 4;
+    composer.addPass(new RenderPass(scene, camera));
+    composer.addPass(new ShaderPass(clampShader));
+    bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(256, 256),
+      BLOOM.strength,
+      BLOOM.radius,
+      BLOOM.threshold,
+    );
+    composer.addPass(bloomPass);
+    // Tone mapping and the output colour space move here: three applies
+    // them only when drawing to the screen, and the passes draw to targets.
+    composer.addPass(new OutputPass());
+  } else if (!tier.bloom && composer) {
+    // EffectComposer.dispose() frees only its own targets; the bloom pass
+    // alone holds 11 render targets (M4 review, finding 4).
+    for (const pass of composer.passes) pass.dispose?.();
+    composer.dispose();
+    composer = null;
+    bloomPass = null;
+  }
+  // SIZE NOW, not on the next animation frame: a new composer's targets are
+  // 1×1 until sized, and a readPixels straight after a tier switch rendered
+  // through them (a first bloom measurement read a stretched 1×1 image).
+  lastSize = "";
+  resize();
+}
+
+/** One frame, through the composer on the desktop tier. */
+function renderFrame() {
+  if (composer) composer.render();
+  else renderer.render(scene, camera);
+}
+
+function applyLook() {
+  useAtmosphere();
+  applyTier();
+  camera.updateProjectionMatrix();
+  writeHash();
+  syncControls();
+}
+
+/**
+ * Two camera placements, because a sky judged only from its anti-sun side is
+ * half judged: `city` is the demos' three-quarter view of the block, `sun`
+ * stands in the street and looks along the sun's azimuth, just above the
+ * horizon, where the glow, the disc and the haze all are.
+ */
+function placeCamera(view) {
+  if (view === "sun" || view === "antisun") {
+    const sign = view === "sun" ? 1 : -1;
+    const toward = sunVector();
+    const flat = (Math.hypot(toward.x, toward.z) || 1) * sign;
+    camera.position.set(-20, 18, 60);
+    controls.target.set(
+      camera.position.x + (toward.x / flat) * 100,
+      camera.position.y + 12,
+      camera.position.z + (toward.z / flat) * 100,
+    );
+  } else if (view === "lake") {
+    // Low over the lake's near shore, looking across it: water is judged at
+    // grazing angles, where the sky it mirrors fills it.
+    camera.position.set(150, 22, 60);
+    controls.target.set(260, 0, -80);
+  } else {
+    camera.position.set(-240, 55, 270);
+    controls.target.set(40, 20, 0);
+  }
+  controls.update();
+  // NOW, not at the next render: `project()` reads matrixWorldInverse, and
+  // a stale one put a test's "ring around the sun" at the frame's edge
+  // (M4 review, finding 1).
+  camera.updateMatrixWorld();
+}
+
+// --- controls ------------------------------------------------------------------
+
+const $ = (selector) => document.querySelector(selector);
+const visibilityFromSlider = (v) => 5 * 60 ** v;
+const sliderFromVisibility = (km) => Math.log(km / 5) / Math.log(60);
+
+function syncControls() {
+  for (const button of document.querySelectorAll("[data-preset]")) {
+    button.setAttribute(
+      "aria-pressed",
+      String(button.dataset.preset === state.preset),
+    );
+  }
+  $("#elevation").value = state.elevation;
+  $("#azimuth").value = state.azimuth;
+  $("#visibility").value = sliderFromVisibility(state.visibility);
+  $("#exposure").value = state.exposureEv;
+  $("#clouds").value = state.clouds;
+  $("#tone").value = state.tone;
+  $("#haze").checked = state.haze;
+  $("#tier").value = state.tier;
+  $("[data-values]").textContent =
+    `sun ${state.elevation.toFixed(1)}° / ${state.azimuth.toFixed(0)}° · ` +
+    `visibility ${state.visibility.toFixed(0)} km · ${state.exposureEv >= 0 ? "+" : ""}${state.exposureEv.toFixed(1)} EV` +
+    (atmosphere ? ` (auto ×${atmosphere.exposure.toFixed(2)})` : "");
+}
+
+function buildControls() {
+  const presets = $("[data-presets]");
+  for (const preset of LOOK_PRESETS) {
+    const button = document.createElement("button");
+    button.className = "btn";
+    button.dataset.preset = preset.id;
+    button.textContent = preset.label;
+    button.addEventListener("click", () => api.setPreset(preset.id));
+    presets.append(button);
+  }
+  const onInput = (id, update) =>
+    $(id).addEventListener("input", (e) => {
+      update(Number(e.target.value));
+      state.preset = "custom";
+      applyLook();
+    });
+  onInput("#elevation", (v) => (state.elevation = v));
+  onInput("#azimuth", (v) => (state.azimuth = v));
+  onInput("#visibility", (v) => (state.visibility = visibilityFromSlider(v)));
+  onInput("#exposure", (v) => (state.exposureEv = v));
+  onInput("#clouds", (v) => (state.clouds = v));
+  $("#tone").addEventListener("change", (e) =>
+    api.setToneMapping(e.target.value),
+  );
+  $("#haze").addEventListener("change", (e) => api.setHaze(e.target.checked));
+  $("#tier").addEventListener("change", (e) => api.setTier(e.target.value));
+}
+
+// --- loop and test surface -----------------------------------------------------
+
+let frameMs = 0;
+let gpuMs = null;
+let last = performance.now();
+let contextLost = false;
+let lastSize = "";
+let gpuTimer = createGpuTimer(renderer.getContext());
+
+function resize() {
+  const width = canvas.clientWidth;
+  const height = canvas.clientHeight;
+  const size = `${width}x${height}@${renderer.getPixelRatio()}`;
+  if (size !== lastSize) {
+    lastSize = size;
+    renderer.setSize(width, height, false);
+    composer?.setPixelRatio(renderer.getPixelRatio());
+    composer?.setSize(width, height);
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
+  }
+}
+
+function frame(now) {
+  // Clamped at 0 too: the first rAF timestamp can precede the
+  // performance.now() `last` was initialised with (the water rejected it).
+  const dt = Math.max(0, Math.min(0.1, (now - last) / 1000));
+  frameMs = frameMs * 0.9 + (now - last) * 0.1;
+  atmosphere?.advanceClouds(dt);
+  water.update(dt);
+  last = now;
+  resize();
+  if (!contextLost) {
+    gpuTimer.begin();
+    renderFrame();
+    gpuTimer.end();
+    gpuMs = gpuTimer.poll();
+    if (!api.ready && !api.error) api.ready = true;
+  }
+  const gpu = gpuTimer.supported
+    ? `GPU ${gpuMs === null ? "…" : gpuMs.toFixed(2)} ms`
+    : "GPU n/a";
+  $("[data-stats]").textContent =
+    `${state.tier} · ${frameMs.toFixed(1)} ms/frame · ${gpu} · ${renderer.info.render.calls} draws · ` +
+    `${(renderer.info.render.triangles / 1000).toFixed(0)}k tris · LUT ${lutMs.toFixed(1)} ms`;
+  requestAnimationFrame(frame);
+}
+
+canvas.addEventListener("webglcontextlost", (e) => {
+  e.preventDefault();
+  contextLost = true;
+  api.ready = false;
+});
+// A link is a view after load too: a pasted link or the back button changes
+// only the hash. writeHash uses replaceState, which fires no hashchange, so
+// this cannot loop.
+window.addEventListener("hashchange", () => {
+  readHash();
+  applyLook();
+});
+
+canvas.addEventListener("webglcontextrestored", () => {
+  contextLost = false;
+  // Queries and the extension object died with the old context; pending
+  // ones would never report and freeze the readout (M4 review, finding 9).
+  gpuTimer = createGpuTimer(renderer.getContext());
+  // SkyAtmosphere rebuilds its LUTs itself; the fog colour is re-derived.
+  applyLook();
+});
+
+Object.assign(api, {
+  setPreset(id) {
+    const preset = LOOK_PRESETS.find((p) => p.id === id);
+    if (!preset) throw new Error(`unknown preset ${id}`);
+    applyPresetToState(preset);
+    applyLook();
+  },
+  setToneMapping(name) {
+    if (!(name in TONE_MAPPINGS))
+      throw new Error(`unknown tone mapping ${name}`);
+    state.tone = name;
+    applyLook();
+  },
+  setCloudCover(cover) {
+    state.clouds = cover;
+    applyLook();
+  },
+  setHaze(on) {
+    state.haze = Boolean(on);
+    applyLook();
+  },
+  setTier(name) {
+    if (!(name in TIERS)) throw new Error(`unknown tier ${name}`);
+    state.tier = name;
+    applyLook();
+  },
+  /**
+   * Test surface: switch ONLY the bloom pass (desktop tier). With it off, the
+   * desktop pipeline must draw exactly the phone picture.
+   */
+  setBloom(on) {
+    if (!bloomPass) throw new Error("bloom exists on the desktop tier only");
+    bloomPass.enabled = Boolean(on);
+  },
+  /**
+   * Test surface: multisampling of the composer's scene target on or off
+   * (desktop tier). The target is re-allocated on the next render.
+   */
+  setSceneMsaa(on) {
+    if (!composer)
+      throw new Error("the composer exists on the desktop tier only");
+    composer.renderTarget2.samples = on ? 4 : 0;
+    composer.renderTarget2.dispose();
+  },
+  /**
+   * Render one frame and return the whole drawing buffer (RGBA bytes,
+   * bottom row first), for comparisons that need every pixel (edges).
+   */
+  readFrame() {
+    renderFrame();
+    const gl = renderer.getContext();
+    const width = gl.drawingBufferWidth;
+    const height = gl.drawingBufferHeight;
+    const data = new Uint8Array(width * height * 4);
+    gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, data);
+    return { width, height, data };
+  },
+  /** Normalised canvas point [u, v] (0,0 = top-left) of a world point. */
+  project([x, y, z]) {
+    const p = new THREE.Vector3(x, y, z).project(camera);
+    return [(p.x + 1) / 2, (1 - p.y) / 2];
+  },
+  /** Advance the water's waves (tests step time deterministically). */
+  advanceWater(seconds) {
+    water.update(seconds);
+  },
+  setView(view) {
+    if (!["city", "sun", "antisun", "lake"].includes(view)) {
+      throw new Error(`unknown view ${view}`);
+    }
+    placeCamera(view);
+  },
+  /**
+   * Render one frame and read RGBA bytes at normalised canvas points
+   * (0,0 = top-left). Read in the same task as the render, so the drawing
+   * buffer is still valid without `preserveDrawingBuffer`.
+   */
+  readPixels(points) {
+    renderFrame();
+    const gl = renderer.getContext();
+    const w = gl.drawingBufferWidth;
+    const h = gl.drawingBufferHeight;
+    return points.map(([u, v]) => {
+      const px = new Uint8Array(4);
+      const x = Math.min(w - 1, Math.max(0, Math.floor(u * w)));
+      const y = Math.min(h - 1, Math.max(0, Math.floor((1 - v) * h)));
+      gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      return [px[0], px[1], px[2], px[3]];
+    });
+  },
+  stats: () => ({
+    frameMs,
+    gpuMs,
+    gpuTimer: gpuTimer.supported,
+    lutMs,
+    drawCalls: renderer.info.render.calls,
+    triangles: renderer.info.render.triangles,
+    state: { ...state },
+  }),
+  /**
+   * GPU vs CPU for one on-screen SKY pixel at normalised point [u, v],
+   * rendered with tone mapping off: 8-bit sRGB from the canvas and from the
+   * CPU model along the same view direction.
+   */
+  skyPixelParity([u, v]) {
+    if (!atmosphere) throw new Error("sky pixel parity needs the atmosphere");
+    // Clouds off: the CPU model has no clouds, and this checks the sky itself.
+    const previous = renderer.toneMapping;
+    renderer.toneMapping = THREE.NoToneMapping;
+    atmosphere.setClouds({ cover: 0 });
+    const [px] = api.readPixels([[u, v]]);
+    atmosphere.setClouds({ cover: state.clouds });
+    renderer.toneMapping = previous;
+    const direction = new THREE.Vector3(u * 2 - 1, 1 - v * 2, 0.5)
+      .unproject(camera)
+      .sub(camera.position)
+      .normalize();
+    return {
+      gpu: px.slice(0, 3),
+      cpu: skyPixelExpected(atmosphere, {
+        direction,
+        sunDirection: sunVector(),
+      }),
+    };
+  },
+  parity() {
+    if (!atmosphere)
+      throw new Error("parity needs the atmosphere (page not ready)");
+    return lutParity(atmosphere, { sunCosZenith: sunVector().y });
+  },
+  /**
+   * The CPU fallback sky (for devices without float targets) against the GPU
+   * path it stands in for, at the current preset: exposure and the
+   * exposure-free horizon colour from each.
+   */
+  fallbackParity() {
+    if (!atmosphere)
+      throw new Error("fallback parity needs the atmosphere (page not ready)");
+    const cpu = fallbackSky(sunVector(), {
+      visibilityKm: state.visibility,
+      sunIntensity: SUN_INTENSITY,
+      exposureCompensationEv: state.exposureEv,
+    });
+    const gpuHorizon = atmosphere.horizonColour();
+    const gpu = atmosphere.exposure;
+    return {
+      gpuExposure: gpu,
+      cpuExposure: cpu.exposure,
+      gpuHorizon: [gpuHorizon.r / gpu, gpuHorizon.g / gpu, gpuHorizon.b / gpu],
+      cpuHorizon: cpu.horizon.map((c) => c / cpu.exposure),
+    };
+  },
+});
+
+try {
+  readHash();
+  buildControls();
+  applyLook();
+  requestAnimationFrame(frame);
+} catch (error) {
+  fail(
+    error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+  );
+  throw error;
+}

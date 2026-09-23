@@ -308,19 +308,34 @@ export const PROJECTS = [
         // added after it was written (the split's design.css/catalog.css
         // would never have been formatted while the gate stayed green)
         command:
-          'prettier --log-level warn --write --ignore-unknown "*.css" "*.html" "*.mjs" "*.md" "config/*.mjs" package.json',
+          'prettier --log-level warn --write --ignore-unknown "*.css" "*.html" "*.mjs" "*.md" "config/*.mjs" "3d/*" package.json',
         counts: null,
       },
       {
         name: "lint:css",
         command:
-          'stylelint "*.css" --config config/stylelint.config.mjs --allow-empty-input',
+          'stylelint "*.css" "3d/*.css" --config config/stylelint.config.mjs --allow-empty-input',
         counts: null,
       },
       {
         name: "check:tokens",
         command: "node check-tokens.mjs",
         counts: null,
+      },
+      // The 3D look-dev page (plan 2026-09-23-0048): the dev server's route
+      // table, under Node's own runner (the package has no vitest and needs
+      // none for pure .mjs), then the page's WebGL smoke. The smoke is the
+      // only place the framework's atmosphere shaders are compiled and
+      // checked, so it is a real stage, not an eyeball tool like shoot.mjs.
+      {
+        name: "test:unit",
+        command: "node --test serve-routes.test.mjs build-lookdev.test.mjs",
+        counts: null,
+      },
+      {
+        name: "test:e2e",
+        command: "playwright test --config 3d/playwright.config.mjs",
+        counts: "playwright",
       },
     ],
   },

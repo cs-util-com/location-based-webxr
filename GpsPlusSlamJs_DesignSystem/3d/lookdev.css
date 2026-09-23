@@ -1,0 +1,45 @@
+/*
+ * Page chrome for the 3D look-dev page only (like catalog.css for the HUD
+ * catalog): the canvas fills the window and the control plate floats over
+ * it. Every visual comes from design.css's atoms; this file only places them.
+ */
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: black;
+}
+
+#view {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.lookdev-panel {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  width: 340px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 24px);
+  overflow: auto;
+  gap: 8px;
+}
+
+.lookdev-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.lookdev-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.lookdev-error:empty {
+  display: none;
+}
