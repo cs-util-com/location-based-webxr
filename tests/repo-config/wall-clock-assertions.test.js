@@ -88,6 +88,10 @@ const ALLOWLIST = new Map([
     'Asserts the timing is FINITE rather than positive, because ">0" is itself a clock comparison on a coarse timer. The exemplar for this shape.',
   ],
   [
+    'GpsPlusSlamJs_AppFramework/src/ar/qr/qr-zxing.sweep.test.ts',
+    'Opt-in sweep (QR_SWEEP=1, skipped in every gate). The empty-frame decode time is measured and printed only; the numeric assertions are on row counts.',
+  ],
+  [
     'GpsPlusSlamJs_OsmDemo/src/refresh-cycle.test.ts',
     'Lower bound on a duration the test deliberately burned (spin to now()+20 ms). Load can only make the measured value larger, so the assertion cannot flake.',
   ],
