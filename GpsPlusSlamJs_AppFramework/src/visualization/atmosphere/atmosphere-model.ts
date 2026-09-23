@@ -105,11 +105,6 @@ export const EARTH_ATMOSPHERE = {
    */
   opticalDepthSteps: 40,
   /**
-   * Sky-view march steps and multi-scattering sampling. Shared by the CPU
-   * twin (`atmosphere-scattering.ts` defaults) and the GLSL, for the same
-   * reason as `opticalDepthSteps`.
-   */
-  /**
    * Lowest view elevation (as dir.y) at which the sky's in-scatter colour is
    * read. Below the horizon the sky-view LUT holds the lit GROUND seen from
    * the observer; the haze fades geometry toward the sky just above the
@@ -119,6 +114,11 @@ export const EARTH_ATMOSPHERE = {
    * clamped: undersides keep the ground's bounce light.
    */
   horizonClampDirY: 0.02,
+  /**
+   * Sky-view march steps and multi-scattering sampling. Shared by the CPU
+   * twin (`atmosphere-scattering.ts` defaults) and the GLSL, for the same
+   * reason as `opticalDepthSteps`.
+   */
   skyViewSteps: 32,
   multiScatteringSqrtDirections: 16,
   multiScatteringSteps: 20,
