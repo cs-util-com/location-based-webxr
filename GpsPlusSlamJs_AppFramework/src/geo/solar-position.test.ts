@@ -22,6 +22,7 @@ import {
   apparentSolarTimeHours,
   solarMidnight,
   solarNoon,
+  solarDateAt,
   solarPosition,
   timeAtElevation,
   type SolarDate,
@@ -105,7 +106,7 @@ describe('solarPosition against astronomy-engine', () => {
     fc.assert(
       fc.property(
         fc.integer({ min: Date.UTC(1900, 0, 1), max: Date.UTC(2100, 11, 31) }),
-        fc.double({ min: -66, max: 80, noNaN: true }),
+        fc.double({ min: -89.9, max: 89.9, noNaN: true }),
         fc.double({ min: -180, max: 180, noNaN: true }),
         (ms, lat, lng) => {
           const sep = separationDeg(
@@ -157,8 +158,8 @@ describe('solar day events', () => {
   );
 
   // Midnight sun: 78° N in June never drops to −6°, so there is no civil
-  // dusk; polar night: in December it never rises to −6°... except at
-  // the lowest point, it stays below. Both answer null rather than invent.
+  // dusk; polar night: in December its highest sun is ~−11°, so it never
+  // rises to −6° (no civil dawn). Both answer null rather than invent.
   it('answers null where the sun never crosses the elevation', () => {
     const svalbard = { lat: 78.22, lng: 15.65 };
     expect(
@@ -175,8 +176,8 @@ describe('solar day events', () => {
         { year: 2026, month: 12, day: 21 },
         svalbard.lat,
         svalbard.lng,
-        3.5,
-        'setting'
+        -6,
+        'rising'
       )
     ).toBeNull();
   });
@@ -197,6 +198,9 @@ describe('solar day events', () => {
 
   // Ordering within one solar day, wherever everything exists.
   it('orders civil dawn < noon < golden hour < civil dusk', () => {
+    // Counted, so a mutant that makes a limb always null cannot pass this
+    // vacuously (latitudes within ±55° always have all three events).
+    let checked = 0;
     fc.assert(
       fc.property(
         fc.integer({ min: 0, max: 364 }),
@@ -214,6 +218,7 @@ describe('solar day events', () => {
           const dusk = timeAtElevation(date, lat, lng, -6, 'setting');
           const noon = solarNoon(date, lng);
           if (dawn === null || golden === null || dusk === null) return;
+          checked += 1;
           expect(dawn).toBeLessThan(noon);
           expect(noon).toBeLessThan(golden);
           expect(golden).toBeLessThan(dusk);
@@ -221,6 +226,7 @@ describe('solar day events', () => {
       ),
       { numRuns: 200 }
     );
+    expect(checked).toBe(200);
   });
 });
 
@@ -255,5 +261,76 @@ describe('validation', () => {
     expect(() => solarPosition(0, 0, Number.POSITIVE_INFINITY)).toThrow(
       RangeError
     );
+  });
+});
+
+describe('solar dates (M1 review, findings 1 and 4)', () => {
+  // THE SOLAR DATE OF AN INSTANT, which the sun clock needs to know "today"
+  // at the anchor: it changes exactly where apparent solar time wraps, at
+  // the solarMidnight that starts each date, so consecutive days TILE (the
+  // first version's noon − 12 h left seams of up to 30 s, where an instant
+  // near midnight could belong to two solar days or to none).
+  it('tiles the days: each date starts where the previous one ends', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 0, max: 3650 }),
+        fc.double({ min: -180, max: 180, noNaN: true }),
+        (offset, lng) => {
+          const d = new Date(Date.UTC(2020, 0, 1 + offset));
+          const date = {
+            year: d.getUTCFullYear(),
+            month: d.getUTCMonth() + 1,
+            day: d.getUTCDate(),
+          };
+          const n = new Date(Date.UTC(2020, 0, 2 + offset));
+          const next = {
+            year: n.getUTCFullYear(),
+            month: n.getUTCMonth() + 1,
+            day: n.getUTCDate(),
+          };
+          const start = solarMidnight(date, lng);
+          expect(solarDateAt(start, lng)).toEqual(date);
+          expect(solarDateAt(start - 1, lng)).not.toEqual(date);
+          expect(solarDateAt(solarNoon(date, lng), lng)).toEqual(date);
+          const nextStart = solarMidnight(next, lng);
+          expect(solarDateAt(nextStart - 1, lng)).toEqual(date);
+          expect(solarDateAt(nextStart, lng)).toEqual(next);
+          expect(
+            apparentSolarTimeHours(start, lng) < 0.001 ||
+              apparentSolarTimeHours(start, lng) > 23.999
+          ).toBe(true);
+        }
+      ),
+      { numRuns: 300 }
+    );
+  });
+
+  it('rejects dates that do not exist, and years it cannot represent', () => {
+    expect(() => solarNoon({ year: 2026, month: 2, day: 31 }, 0)).toThrow(
+      RangeError
+    );
+    expect(() => solarNoon({ year: 2026, month: 13, day: 1 }, 0)).toThrow(
+      RangeError
+    );
+    expect(() => solarNoon({ year: 2026.5, month: 1, day: 1 }, 0)).toThrow(
+      RangeError
+    );
+    expect(() => solarNoon({ year: 300000, month: 1, day: 1 }, 0)).toThrow(
+      RangeError
+    );
+    // Years 0-99 are real years, not 1900-1999 (a Date.UTC trap).
+    const early = solarNoon({ year: 50, month: 6, day: 1 }, 0);
+    expect(new Date(early).getUTCFullYear()).toBe(50);
+  });
+});
+
+describe('high-latitude winter (plan review, finding 3)', () => {
+  // 67° N on 21 Dec: the sun never rises (geometric centre, highest ~−0.4°)
+  // but civil dawn and dusk exist; the sun clock must still find a day.
+  it('has civil twilight but no geometric sunrise at 67° N in December', () => {
+    const day = { year: 2026, month: 12, day: 21 };
+    expect(timeAtElevation(day, 67, 25, -6, 'rising')).not.toBeNull();
+    expect(timeAtElevation(day, 67, 25, -6, 'setting')).not.toBeNull();
+    expect(timeAtElevation(day, 67, 25, 0, 'rising')).toBeNull();
   });
 });

@@ -17,6 +17,7 @@
  *
  * @see solar-position.ts.md
  */
+import { normalizeBearingDeg } from '../utils/bearing-degrees.js';
 
 const DEG = Math.PI / 180;
 const DAY_MS = 86_400_000;
@@ -51,13 +52,11 @@ function requirePlace(latDeg: number, lngDeg: number): void {
   }
 }
 
-const wrap360 = (deg: number) => ((deg % 360) + 360) % 360;
-
 /** Declination (rad) and the equation of time (minutes) at an instant. */
 function sunAt(ms: number): { declination: number; eotMinutes: number } {
   const jd = ms / DAY_MS + 2440587.5;
   const t = (jd - 2451545) / 36525;
-  const l0 = wrap360(280.46646 + t * (36000.76983 + t * 0.0003032));
+  const l0 = normalizeBearingDeg(280.46646 + t * (36000.76983 + t * 0.0003032));
   const m = 357.52911 + t * (35999.05029 - 0.0001537 * t);
   const e = 0.016708634 - t * (0.000042037 + 0.0000001267 * t);
   const mr = m * DEG;
@@ -127,40 +126,99 @@ export function solarPosition(
   };
 }
 
-function requireDate(date: SolarDate): void {
+/**
+ * 00:00 UTC of a calendar date, in ms. Built with setUTCFullYear, so years
+ * 0-99 stay real years (Date.UTC maps them to 1900-1999), and checked by a
+ * round trip, so 31 Feb or month 13 is rejected instead of rolling over
+ * (M1 review, finding 4).
+ */
+function utcStartOf(date: SolarDate): number {
   const { year, month, day } = date;
+  const d = new Date(0);
+  d.setUTCFullYear(year, month - 1, day);
+  const ms = d.getTime();
   if (
     !Number.isInteger(year) ||
     !Number.isInteger(month) ||
     !Number.isInteger(day) ||
-    month < 1 ||
-    month > 12 ||
-    day < 1 ||
-    day > 31
+    !Number.isFinite(ms) ||
+    d.getUTCFullYear() !== year ||
+    d.getUTCMonth() !== month - 1 ||
+    d.getUTCDate() !== day
   ) {
     throw new RangeError(`not a calendar date: ${year}-${month}-${day}`);
   }
+  return ms;
+}
+
+/** The local apparent solar clock at an instant, as a pseudo-UTC epoch. */
+const apparentEpoch = (ms: number, lngDeg: number) =>
+  ms + lngDeg * 240_000 + sunAt(ms).eotMinutes * 60_000;
+
+/**
+ * The solar date an instant falls in at a longitude: the calendar date of
+ * the local apparent solar clock, so the date changes exactly where
+ * apparent solar time wraps through 00:00 (M1 review, finding 1).
+ */
+export function solarDateAt(ms: number, lngDeg: number): SolarDate {
+  requireFinite('instant', ms);
+  requireFinite('longitude', lngDeg);
+  const d = new Date(Math.floor(apparentEpoch(ms, lngDeg)));
+  return {
+    year: d.getUTCFullYear(),
+    month: d.getUTCMonth() + 1,
+    day: d.getUTCDate(),
+  };
+}
+
+/** The instant the apparent solar clock reads `offsetMs` into a date. */
+function apparentInstant(
+  date: SolarDate,
+  lngDeg: number,
+  offsetMs: number
+): number {
+  requireFinite('longitude', lngDeg);
+  const target = utcStartOf(date) + offsetMs;
+  // Fixed point of ms = target − lng·240 000 − EoT(ms): the equation of time
+  // changes < 30 s/day, so each pass shrinks the error ~3000×.
+  let ms = target - lngDeg * 240_000;
+  const mean = ms;
+  for (let pass = 0; pass < 3; pass++) {
+    ms = mean - sunAt(ms).eotMinutes * 60_000;
+  }
+  return ms;
 }
 
 /** The instant of solar noon (the sun on the meridian) on a solar date. */
 export function solarNoon(date: SolarDate, lngDeg: number): number {
-  requireDate(date);
-  requireFinite('longitude', lngDeg);
-  // Mean noon at the longitude, then corrected by the equation of time at
-  // the corrected instant (it changes < 30 s/day, so two passes converge).
-  let noon =
-    Date.UTC(date.year, date.month - 1, date.day, 12) -
-    (lngDeg / 15) * 3_600_000;
-  const mean = noon;
-  for (let pass = 0; pass < 3; pass++) {
-    noon = mean - sunAt(noon).eotMinutes * 60_000;
-  }
-  return noon;
+  return apparentInstant(date, lngDeg, DAY_MS / 2);
 }
 
-/** The apparent solar midnight that STARTS a solar date (its lowest sun). */
+const sameDate = (a: SolarDate, b: SolarDate) =>
+  a.year === b.year && a.month === b.month && a.day === b.day;
+
+/**
+ * The first millisecond of a solar date: apparent solar midnight, where
+ * `solarDateAt` changes to this date. Consecutive dates TILE: one date ends
+ * exactly where the next starts (the first version used noon − 12 h, which
+ * left seams of up to 30 s; M1 review, finding 1).
+ */
 export function solarMidnight(date: SolarDate, lngDeg: number): number {
-  return solarNoon(date, lngDeg) - DAY_MS / 2;
+  let ms = Math.ceil(apparentInstant(date, lngDeg, 0));
+  // Snap to the exact boundary; the solver lands within a millisecond.
+  while (!sameDate(solarDateAt(ms, lngDeg), date)) ms += 1;
+  while (sameDate(solarDateAt(ms - 1, lngDeg), date)) ms -= 1;
+  return ms;
+}
+
+/** The calendar date after `date`. */
+function nextDate(date: SolarDate): SolarDate {
+  const d = new Date(utcStartOf(date) + DAY_MS);
+  return {
+    year: d.getUTCFullYear(),
+    month: d.getUTCMonth() + 1,
+    day: d.getUTCDate(),
+  };
 }
 
 const elevationDegAt = (ms: number, lat: number, lng: number) =>
@@ -171,6 +229,12 @@ const elevationDegAt = (ms: number, lat: number, lng: number) =>
  * rising limb (solar midnight → noon) or its setting limb (noon → the next
  * midnight). `null` when it never does that day (midnight sun, polar night,
  * white nights below civil dusk). Bisection to 1 ms.
+ *
+ * Bisection assumes the elevation is monotone on each limb. It is NEARLY
+ * so: the declination drifts during the day, and the measured excursions
+ * are ≤ 2e-4° below 80° of latitude and ~2e-3° near the pole (M1 review,
+ * finding 2). An elevation inside such an excursion can return `null`;
+ * irrelevant for the thresholds the demos use (−6°, 3.5°) below ~85°.
  */
 export function timeAtElevation(
   date: SolarDate,
@@ -182,8 +246,8 @@ export function timeAtElevation(
   requirePlace(latDeg, lngDeg);
   requireFinite('elevation', elevationDeg);
   const noon = solarNoon(date, lngDeg);
-  let low = limb === 'rising' ? noon - DAY_MS / 2 : noon;
-  let high = limb === 'rising' ? noon : noon + DAY_MS / 2;
+  let low = limb === 'rising' ? solarMidnight(date, lngDeg) : noon;
+  let high = limb === 'rising' ? noon : solarMidnight(nextDate(date), lngDeg);
   const above = (ms: number) =>
     elevationDegAt(ms, latDeg, lngDeg) >= elevationDeg;
   // Rising: below at the start, above at the end; setting: the reverse.
