@@ -362,6 +362,39 @@ describe('instantAtApparentSolarTime (M2: the ?time= pin and the clock)', () => 
     );
   });
 
+  // Found by the property above (seed 1437293481, counterexample: day 263
+  // of 2020, longitude 0, 00:00): the clock and the date were computed by
+  // two formulas that disagree by ~1 ns at a date boundary, so the day's
+  // first instant read 23:59:59.999... of the PREVIOUS day, and a `?time=`
+  // pin of 00:00 would boot a day early. Every day of a year, at several
+  // longitudes, deterministically.
+  it('reads the first instant of every solar date as 00:00 of that date', () => {
+    const wrong: string[] = [];
+    for (const lng of [0, 6.9445, -122.4, 139.77, 180, -180]) {
+      for (let k = 0; k < 366; k++) {
+        const d = new Date(Date.UTC(2020, 0, 1 + k));
+        const date = {
+          year: d.getUTCFullYear(),
+          month: d.getUTCMonth() + 1,
+          day: d.getUTCDate(),
+        };
+        const midnight = solarMidnight(date, lng);
+        const hours = apparentSolarTimeHours(midnight, lng);
+        if (
+          !(hours < 1e-6) ||
+          JSON.stringify(solarDateAt(midnight, lng)) !== JSON.stringify(date)
+        )
+          wrong.push(`${lng} ${d.toISOString().slice(0, 10)}: ${hours}`);
+        const atZero = instantAtApparentSolarTime(date, lng, 0);
+        if (!(apparentSolarTimeHours(atZero, lng) < 1e-6))
+          wrong.push(
+            `${lng} ${d.toISOString().slice(0, 10)} pin: ${apparentSolarTimeHours(atZero, lng)}`
+          );
+      }
+    }
+    expect(wrong).toEqual([]);
+  });
+
   it('rejects hours outside [0, 24)', () => {
     const date = { year: 2026, month: 9, day: 23 };
     expect(() => instantAtApparentSolarTime(date, 0, 24)).toThrow(RangeError);
@@ -455,5 +488,18 @@ describe('atmospheric refraction (the APPARENT sun, for an AR overlay)', () => {
     expect(() => atmosphericRefractionDeg(10, { temperatureC: -300 })).toThrow(
       RangeError
     );
+    // M2 review finding 8: the formula divides by (273 + T), so between
+    // -273.15 and -273 °C it returned a NEGATIVE or unbounded refraction
+    // while a check at absolute zero (-273.15) let the value through. The
+    // bound is the formula's own zero.
+    expect(() =>
+      atmosphericRefractionDeg(10, { temperatureC: -273.1 })
+    ).toThrow(RangeError);
+    expect(() => atmosphericRefractionDeg(10, { temperatureC: -273 })).toThrow(
+      RangeError
+    );
+    expect(
+      atmosphericRefractionDeg(10, { temperatureC: -272 })
+    ).toBeGreaterThan(0);
   });
 });

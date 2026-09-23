@@ -19,9 +19,11 @@ azimuthRad }`: GEOMETRIC elevation by default; with `refraction: true` (or
   the air lifts a body, degrees: Saemundsson's formula (Meeus ch. 16, the
   true-to-apparent direction; Bennett's is its inverse) at 1010 hPa / 10 °C
   by default, scaled by pressure and absolute temperature (Meeus 16.4). Below
-  −1° it follows JPL Horizons: clamped at −1°, tapered to 0 at the nadir.
-  `RangeError` for a non-finite elevation, negative pressure or a temperature
-  at or below absolute zero.
+  −1° it follows astronomy-engine's `'normal'` mode: clamped at −1°, tapered
+  to 0 at the nadir (JPL Horizons only clamps). `RangeError` for a
+  non-finite elevation, negative pressure or a temperature at or below
+  −273 °C (the formula divides by 273 + T, so its own zero is the bound,
+  not absolute zero).
 - `apparentSolarTimeHours(ms, lngDeg)` → local APPARENT solar time, hours in
   [0, 24): 12:00 at solar noon (the clock readout, DEC-SUN-8).
 - `solarNoon(date, lngDeg)` / `solarMidnight(date, lngDeg)` → the instants
@@ -56,9 +58,9 @@ azimuthRad }`: GEOMETRIC elevation by default; with `refraction: true` (or
   GRAZING crossings (a slow sun near its daily extreme, high latitudes) can
   reach ~2 min, since time error = angle error ÷ elevation rate.
 - GEOMETRIC by default, on purpose: the sky model is geometric. Refraction
-  is opt-in for drawing on the REAL sky: ~0.57° at the horizon (a sun
-  geometrically 0.57° below it appears exactly on it, more than the disc's
-  0.53°), ~1′ at 45°, 0 at the zenith. Real refraction near the horizon
+  is opt-in for drawing on the REAL sky: 0.48° for a sun geometrically on
+  the horizon; a sun geometrically 0.57° below it appears exactly on it
+  (more than the disc's 0.53°); ~1′ at 45°, 0 at the zenith. Real refraction near the horizon
   varies with the air's layering by a few arc-minutes more than any formula
   captures.
 - Azimuth is clockwise from north, the frame OsmDemo's `sunDirection`

@@ -7,7 +7,7 @@
  *
  * GEOMETRIC positions: no atmospheric refraction (the sky model is
  * geometric). An augmented-reality overlay on the REAL sun would add
- * refraction (up to ~0.57° at the horizon) on top.
+ * refraction (about half a degree near the horizon) on top.
  *
  * Conventions: elevation above the horizon; azimuth clockwise from north
  * (east = 90°), the frame `sunDirection` in OsmDemo expects. Instants are
@@ -85,17 +85,19 @@ function sunAt(ms: number): { declination: number; eotMinutes: number } {
   return { declination, eotMinutes: (4 * eot) / DEG };
 }
 
-/** Minutes of UTC since midnight UTC. */
-const utcMinutes = (ms: number) => (((ms % DAY_MS) + DAY_MS) % DAY_MS) / 60_000;
-
 /** Local apparent solar time at a longitude, hours in [0, 24). */
 export function apparentSolarTimeHours(ms: number, lngDeg: number): number {
   requireFinite('instant', ms);
   requireFinite('longitude', lngDeg);
-  const minutes = utcMinutes(ms) + sunAt(ms).eotMinutes + 4 * lngDeg;
-  const wrapped = ((minutes % 1440) + 1440) % 1440;
-  // A value that rounds to exactly 1440 is midnight of the next day.
-  return wrapped / 60 >= 24 ? 0 : wrapped / 60;
+  // FROM THE SAME `apparentEpoch` AS `solarDateAt`, so the clock and the
+  // date cannot disagree at a boundary: a separate minutes formula differed
+  // by ~1 ns there, reading a date's first instant as 23:59:59.999 of the
+  // day before (a property test's counterexample, M2 gate).
+  const epoch = apparentEpoch(ms, lngDeg);
+  const dayStart = Math.floor(Math.floor(epoch) / DAY_MS) * DAY_MS;
+  const hours = (epoch - dayStart) / 3_600_000;
+  // A value that rounds to exactly 24 is midnight of the next day.
+  return hours >= 24 ? 0 : hours;
 }
 
 /** Air conditions for refraction; defaults are the standard 1010 hPa, 10 °C. */
@@ -116,9 +118,11 @@ function airOf(conditions: RefractionConditions): {
       `pressure must be a finite number ≥ 0 hPa, got ${pressure}`
     );
   }
-  if (!(Number.isFinite(temperature) && temperature > -273.15)) {
+  // −273, not absolute zero (−273.15): Meeus 16.4 divides by (273 + T), so
+  // the formula's own zero is the bound (M2 review finding 8).
+  if (!(Number.isFinite(temperature) && temperature > -273)) {
     throw new RangeError(
-      `temperature must be above absolute zero, got ${temperature} °C`
+      `temperature must be above −273 °C, got ${temperature} °C`
     );
   }
   return { pressure, temperature };
@@ -128,13 +132,15 @@ function airOf(conditions: RefractionConditions): {
  * How far the air lifts a body at a GEOMETRIC elevation, degrees: the
  * APPARENT elevation is the geometric one plus this. Saemundsson's formula
  * (Meeus, "Astronomical Algorithms", ch. 16: the true-to-apparent direction;
- * Bennett's formula is its inverse), with JPL Horizons' convention below the
- * horizon, where the formula diverges near −5°: clamped at −1°, then tapered
- * linearly to zero at the nadir. Scaled by pressure / 1010 hPa and
+ * Bennett's formula is its inverse), with astronomy-engine's 'normal'
+ * convention below the horizon, where the formula diverges near −5°: clamped
+ * at −1°, then tapered linearly to zero at the nadir (JPL Horizons only
+ * clamps; the taper is astronomy-engine's). Scaled by pressure / 1010 hPa and
  * 283 K / temperature (Meeus 16.4).
  *
- * ~0.57° at the horizon (a sun geometrically 0.57° below it looks exactly
- * on it), ~1′ at 45°, 0 at the zenith. For drawing on the REAL sky (an AR
+ * 0.48° for a sun geometrically ON the horizon, 0.57° for one geometrically
+ * 0.57° below it (which therefore appears exactly on it), ~1′ at 45°, 0 at
+ * the zenith. For drawing on the REAL sky (an AR
  * sun icon); the sky model itself is geometric.
  */
 export function atmosphericRefractionDeg(
