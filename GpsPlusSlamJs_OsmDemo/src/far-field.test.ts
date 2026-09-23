@@ -22,7 +22,6 @@ import {
   TERRAIN_SPACING_M,
 } from "./building-view.js";
 import { TERRAIN_EXTENT_M } from "./heightfield.js";
-import { FOG_RGB } from "./sky-rig.js";
 import {
   DEFAULT_RENDER_MULTIPLIER,
   renderDistanceFor,
@@ -191,19 +190,8 @@ describe("the far field", () => {
     expect(FOG_NEAR_M).toBeLessThan(TERRAIN_EXTENT_M);
   });
 
-  it("hazes towards the sky's HORIZON colour", () => {
-    // Any other colour and the fade reads as a grey band in front of the sky
-    // rather than as air. This is the same "one source of truth" rule the sun
-    // vector follows: the sky owns the horizon colour and the fog reads it.
-    //
-    // WEAKER THAN IT WAS, AND THE GAP IS NAMED IN `sky-rig.ts`. The old sky had
-    // ONE horizon colour, so a constant fog matched it exactly. The scattering
-    // sky.s horizon changes with the sun, so this can now only check the value
-    // is a well-formed colour. Deriving fog from the sky is a filed follow-up.
-    expect(FOG_RGB).toHaveLength(3);
-    for (const channel of FOG_RGB) {
-      expect(channel).toBeGreaterThanOrEqual(0);
-      expect(channel).toBeLessThanOrEqual(255);
-    }
-  });
+  // "hazes towards the sky's HORIZON colour" lived here and could only check
+  // that a constant was a colour, because the fog colour WAS a constant. It
+  // now follows the sky at every sun change, and that is tested where it
+  // happens: atmosphere-rig.test.ts.
 });

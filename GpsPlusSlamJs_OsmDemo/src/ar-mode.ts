@@ -1051,6 +1051,7 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
       scene,
       camera,
       getRenderer(),
+      deps.buildingView.distanceHaze(),
     );
 
     session.alignment = enableArWorldGroupAlignment({

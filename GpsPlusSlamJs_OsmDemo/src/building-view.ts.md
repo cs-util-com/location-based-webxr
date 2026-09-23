@@ -164,6 +164,18 @@ map scored.
   buffer sat **109 px taller than its container** for the whole session, on a
   stale camera aspect. The observer covers window resize, rotation, the sheet
   drag and the header collapse in one place.
+- **The sky is the framework's physical atmosphere, through
+  [`atmosphere-rig.ts`](atmosphere-rig.ts.md)** (plan 2026-09-23-0048, M3). It
+  owns the visible sky, `scene.environment` (a PMREM bake of the sky), the sun
+  light's colour and intensity, the fog colour (the sky's horizon, re-read at
+  every sun change) and the physical distance haze, which `prepareFrame`
+  re-applies before every render so rebuilt materials and re-assigned
+  `onBeforeCompile` installers keep it. Grading is unchanged (ACES at 0.5; the
+  sky's natural light gets −2 EV, a data view 3 EV below the look-dev
+  page, measured to keep DEC-R4-5), the fixed ambient light is gone,
+  and a device without float render targets gets the rig's CPU fallback. The
+  bullet below is the HISTORY of how `scene.environment` came to be used at
+  all, kept because its failure mode (a silent non-draw) still applies.
 - **The sky texture is a BACKGROUND only. Never assign it to
   `scene.environment`.** W20 did, and it took the entire scene down: three.js
   routes any environment map through its CubeUV path, which expects a

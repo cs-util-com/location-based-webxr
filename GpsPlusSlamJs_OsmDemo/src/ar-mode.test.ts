@@ -175,8 +175,18 @@ function fakeView() {
     offset: { north: number; up: number; east: number } | undefined;
   }[] = [];
   const shellCalls: (THREE.Material | undefined)[] = [];
+  // The desktop sky's distance haze: RECORDED like the shell, because a
+  // session that leaves it on stock fog leaves the desktop view unhazed.
+  const haze = {
+    mode: "atmosphere" as "atmosphere" | "fog",
+    setMode(mode: "atmosphere" | "fog") {
+      this.mode = mode;
+    },
+  };
   return {
     localRoot,
+    haze,
+    distanceHaze: () => haze,
     attachedTo,
     // THE OFFSET IS RECORDED, because dropping it is a silent failure: the city
     // renders at the right orientation and the wrong place, and a fixture that
@@ -1600,6 +1610,19 @@ describe("the AR building shell", () => {
     mode.dispose();
     // The LAST call must be the restore, whatever happened in between.
     expect(view.shellCalls.at(-1)).toBeUndefined();
+  });
+
+  // Same pairing for the desktop sky's haze (plan 2026-09-23-0048, M3): stock
+  // fog while the session runs, the physical haze back after it, on either
+  // way out.
+  it("puts the distance haze on stock fog for the session, and back", async () => {
+    const view = fakeView();
+    const mode = await startArMode(
+      deps({ buildingView: view as unknown as ArModeDeps["buildingView"] }),
+    );
+    expect(view.haze.mode).toBe("fog");
+    mode.dispose();
+    expect(view.haze.mode).toBe("atmosphere");
   });
 
   it("restores on a SYSTEM-initiated end too, not just dispose()", async () => {

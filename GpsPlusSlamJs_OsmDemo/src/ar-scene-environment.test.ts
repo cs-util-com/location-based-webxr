@@ -303,3 +303,42 @@ describe("leaving AR", () => {
     expect(scene.background).toBe(captured);
   });
 });
+
+describe("the desktop view's distance haze in AR (plan 2026-09-23-0048, M3)", () => {
+  // The city's materials carry the physical haze, which reads the DESKTOP
+  // sky's LUT in its own view direction. In AR there is no sky behind the
+  // city, so it must fall back to three's stock fog (the AR fog above) for
+  // the session, and get back exactly the mode it had afterwards.
+  function hazeSwitch(initial: "atmosphere" | "fog") {
+    const calls: string[] = [];
+    return {
+      calls,
+      mode: initial,
+      setMode(mode: "atmosphere" | "fog") {
+        this.mode = mode;
+        calls.push(mode);
+      },
+    };
+  }
+
+  it("switches the haze to stock fog for the session and restores it", () => {
+    const haze = hazeSwitch("atmosphere");
+    const restore = applyArEnvironment(
+      frameworkScene(),
+      frameworkCamera(),
+      null,
+      haze,
+    );
+    expect(haze.mode).toBe("fog");
+    restore();
+    expect(haze.mode).toBe("atmosphere");
+    restore();
+    expect(haze.calls).toEqual(["fog", "atmosphere"]);
+  });
+
+  it("restores the mode it FOUND, not a default", () => {
+    const haze = hazeSwitch("fog");
+    applyArEnvironment(frameworkScene(), frameworkCamera(), null, haze)();
+    expect(haze.mode).toBe("fog");
+  });
+});

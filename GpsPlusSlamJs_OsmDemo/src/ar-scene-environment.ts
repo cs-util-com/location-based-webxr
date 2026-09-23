@@ -137,6 +137,16 @@ const AR_FOG_COLOUR = 0x9aa3b8;
 const AR_TONE_MAPPING = THREE.ACESFilmicToneMapping;
 const AR_TONE_MAPPING_EXPOSURE = 0.5;
 
+/**
+ * The desktop sky's distance haze, as far as AR needs it (the framework's
+ * `AtmosphereHaze` satisfies it; structural, so this module stays free of
+ * framework imports).
+ */
+export interface HazeModeSwitch {
+  readonly mode: "atmosphere" | "fog";
+  setMode(mode: "atmosphere" | "fog"): void;
+}
+
 /** Undo the changes {@link applyArEnvironment} made. Idempotent. */
 export type RestoreArEnvironment = () => void;
 
@@ -158,11 +168,16 @@ export type RestoreArEnvironment = () => void;
  *   point: without a camera the planes are wrong and the city clips at 200 m,
  *   while without the renderer the city merely looks over-exposed. One is a
  *   broken session, the other is a worse-looking one.
+ * @param haze the desktop view's distance haze (plan 2026-09-23-0048, M3),
+ *   put on three's stock fog for the session: it reads the DESKTOP sky in its
+ *   view direction, and in AR there is no sky behind the city. The mode it
+ *   had is restored.
  */
 export function applyArEnvironment(
   scene: THREE.Scene,
   camera: THREE.PerspectiveCamera,
   renderer?: THREE.WebGLRenderer | null,
+  haze?: HazeModeSwitch | null,
 ): RestoreArEnvironment {
   // NORMALISED ONCE at the boundary, so every check below is a single `null`
   // comparison. The framework's accessor returns `null`, but an omitted
@@ -179,6 +194,7 @@ export function applyArEnvironment(
   const previousFar = camera.far;
   const previousToneMapping = target?.toneMapping;
   const previousExposure = target?.toneMappingExposure;
+  const previousHazeMode = haze?.mode;
   let restored = false;
 
   scene.background = null;
@@ -207,6 +223,7 @@ export function applyArEnvironment(
     target.toneMapping = AR_TONE_MAPPING;
     target.toneMappingExposure = AR_TONE_MAPPING_EXPOSURE;
   }
+  haze?.setMode("fog");
 
   return () => {
     if (restored) return;
@@ -223,5 +240,6 @@ export function applyArEnvironment(
     if (target !== null && previousExposure !== undefined) {
       target.toneMappingExposure = previousExposure;
     }
+    if (previousHazeMode !== undefined) haze?.setMode(previousHazeMode);
   };
 }

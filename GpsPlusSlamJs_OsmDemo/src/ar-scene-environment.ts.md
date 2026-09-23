@@ -30,7 +30,7 @@ reader can point at, rather than an absence in `ar-mode.ts` that nobody notices.
 - `AR_CAMERA_NEAR_M` / `AR_CAMERA_FAR_M` — 0.5 m and 1000 m.
 - `AR_FOG_NEAR_M` — 400 m. There is deliberately NO fog-far constant: the fade
   ends at `AR_CAMERA_FAR_M`, and one constant is what makes that unbreakable.
-- `applyArEnvironment(scene, camera, renderer?): RestoreArEnvironment` — apply,
+- `applyArEnvironment(scene, camera, renderer?, haze?): RestoreArEnvironment` — apply,
   and return the undo. Idempotent undo.
   - The framework objects are **parameters rather than `getScene()`/
     `getCamera()`/`getRenderer()` calls**, so this module needs no framework
@@ -41,6 +41,11 @@ reader can point at, rather than an absence in `ar-mode.ts` that nobody notices.
     broken session, the other a worse-looking one. An omitted or `null`
     renderer is normalised once at the top, so an older framework build without
     `getRenderer()` degrades instead of throwing.
+  - `haze` (`HazeModeSwitch`: `mode` + `setMode`) is the desktop view's
+    physical distance haze (plan 2026-09-23-0048, M3). It reads the DESKTOP
+    sky in its view direction, and in AR there is no sky behind the city, so
+    it goes on three's stock fog (the AR fog) for the session and the undo
+    restores the mode it found. Structural, so no framework import.
 
 ## Invariants & assumptions
 
@@ -136,7 +141,8 @@ one. `ar-content-materials.test.ts` holds that constraint, because it is a
 property of the materials rather than of AR: at `metalness = 1` the diffuse term
 is zero by definition, so a metallic building would compile, draw, pass every
 existing assertion, and be **black**. Nobody editing `mesh-layers.ts` for the
-desktop look — which is lit by a PMREM sky through `sky-rig.ts` — is thinking
+desktop look — which is lit by the physical sky's environment through
+`atmosphere-rig.ts` — is thinking
 about a mode that takes that light away, which is exactly why it is a guard and
 not a comment.
 

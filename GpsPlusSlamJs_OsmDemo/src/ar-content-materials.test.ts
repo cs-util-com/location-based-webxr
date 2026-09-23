@@ -3,7 +3,7 @@
  *
  * WHY THIS FILE EXISTS — milestone 2's last claim, "materials verified to
  * actually draw". The desktop view lights its `MeshStandardMaterial`s from
- * `scene.environment`: `sky-rig.ts` PMREM-processes the sky and assigns it, and
+ * `scene.environment`: `atmosphere-rig.ts` bakes the physical sky into it, and
  * that indirect light is a real part of what the demo looks like. **AR has
  * none** — `ar-scene-environment.ts` clears it deliberately, because the one
  * time this project assigned a raw equirect texture there, every standard

@@ -43,6 +43,13 @@ test.describe("the 3D view", () => {
     await test.step("actually draws pixels, not just a canvas element", async () => {
       const canvas = page.locator("#scene canvas");
       await expect(canvas).toBeVisible();
+      // THE PHYSICAL SKY, not the fallback (plan 2026-09-23-0048, M3 review
+      // finding 4): every lighting claim in this suite, the DEC-R4-5 margin
+      // above all, was measured under it, and the fallback is silent.
+      await expect(page.locator("#scene")).toHaveAttribute(
+        "data-sky",
+        "physical",
+      );
 
       // THE PIXEL PROOF. A present canvas of the right size proves nothing: a
       // scene with the camera inside a wall, a mesh with no geometry, or a render
@@ -1599,6 +1606,63 @@ test.describe("the time of day", () => {
         defaultMargin,
         `${DEFAULT_MODE} (the default): heat grid adds chroma`,
       ).toBeGreaterThan(5);
+
+      // AT EVERY TIME OF DAY, NOT ONLY ONE (plan 2026-09-23-0048, M3). The
+      // sun is a user control, and with the physical sky the backdrop's
+      // brightness and colour follow it. WHERE THE SUN IS, exactly: the steps
+      // above leave it at 0.98 + 1/24 = 0.0217 (a 3.7° MORNING sun; the
+      // margins asserted above, and the old Preetham 6.35, were measured
+      // there, not at the boot time). So the sweep first steps BACK to the
+      // real default, 0.98 (an evening sun in front of the default camera),
+      // then forward through the day: 0.1467 (24°), 0.2717 (41°), 0.5217
+      // (55°). The M3 review (finding 3) caught a first version that
+      // mislabelled these points and never measured 0.98. Same rule as
+      // above: a red here is fixed in the backdrop, never by lowering the
+      // bound.
+      const meanLuma = () =>
+        page.evaluate(() => {
+          const el = document.querySelector("#scene canvas");
+          if (!(el instanceof HTMLCanvasElement)) return -1;
+          const probe = document.createElement("canvas");
+          probe.width = el.width;
+          probe.height = el.height;
+          const ctx = probe.getContext("2d");
+          if (ctx === null) return -1;
+          ctx.drawImage(el, 0, 0);
+          const { data } = ctx.getImageData(0, 0, probe.width, probe.height);
+          let sum = 0;
+          for (let i = 0; i < data.length; i += 4) {
+            sum +=
+              0.2126 * (data[i] ?? 0) +
+              0.7152 * (data[i + 1] ?? 0) +
+              0.0722 * (data[i + 2] ?? 0);
+          }
+          return sum / (data.length / 4);
+        });
+      console.log(
+        `DEC-R4-5 t=0.0217: plain ${plainMargin.toFixed(2)}, ${DEFAULT_MODE} ${defaultMargin.toFixed(2)}, luma ${(await meanLuma()).toFixed(1)}`,
+      );
+      for (const [key, presses, when] of [
+        ["T", 1, "0.98"],
+        ["t", 4, "0.1467"],
+        ["t", 3, "0.2717"],
+        ["t", 6, "0.5217"],
+      ]) {
+        // FOCUS THE SCENE BEFORE EVERY GROUP: `marginFor` leaves focus on the
+        // ground-mode <select>, and the hotkey registry ignores keys typed
+        // into inputs, so without this every press after the first
+        // measurement went nowhere (a first sweep "measured" one sun four
+        // times; identical margins to 0.01 gave it away).
+        await page.locator("#scene").click({ position: { x: 5, y: 5 } });
+        for (let k = 0; k < presses; k++) await page.keyboard.press(key);
+        const plain = await marginFor("cpu");
+        const byDefault = await marginFor(DEFAULT_MODE);
+        console.log(
+          `DEC-R4-5 t=${when}: plain ${plain.toFixed(2)}, ${DEFAULT_MODE} ${byDefault.toFixed(2)}, luma ${(await meanLuma()).toFixed(1)}`,
+        );
+        expect(plain, `plain ground at t=${when}`).toBeGreaterThan(5);
+        expect(byDefault, `${DEFAULT_MODE} at t=${when}`).toBeGreaterThan(5);
+      }
     });
   });
 });
