@@ -1,0 +1,208 @@
+/**
+ * Tests for the cloud layer's pure parts: the tileable noise and the mapping
+ * from cover to density.
+ *
+ * Why this file matters: the noise is a repeating texture on a plane that
+ * reaches the horizon, so a seam at the tile edge would be drawn thousands of
+ * times across the sky; and a cover mapping that is not 0 at cover 0 puts
+ * clouds into a sky the owner asked to be clear. Both are visible, neither
+ * throws.
+ */
+import fc from 'fast-check';
+import { describe, expect, it } from 'vitest';
+
+import {
+  CLOUD_LAYER,
+  CLOUD_TEXTURE_SIZE,
+  cloudDensity,
+  cloudHorizonFade,
+  cloudLitRadiance,
+  cloudNoise,
+  cloudNoiseAt,
+  cloudThresholdForCover,
+  combinedCloudNoise,
+} from './cloud-layer.js';
+import {
+  EARTH_ATMOSPHERE,
+  luminance,
+  transmittanceToTop,
+} from './atmosphere-model.js';
+import { multiScattering, skyRadiance } from './atmosphere-scattering.js';
+
+describe('cloudNoiseAt', () => {
+  // Periodic with the texture size in both axes: that is what "tileable"
+  // means, and it is what makes the repeat seamless.
+  it('is periodic with the tile size', () => {
+    const size = 64;
+    fc.assert(
+      fc.property(
+        fc.double({ min: 0, max: 64, noNaN: true }),
+        fc.double({ min: 0, max: 64, noNaN: true }),
+        (x, y) => {
+          const a = cloudNoiseAt(x, y, size, 7);
+          expect(cloudNoiseAt(x + size, y, size, 7)).toBeCloseTo(a, 9);
+          expect(cloudNoiseAt(x, y + size, size, 7)).toBeCloseTo(a, 9);
+        }
+      ),
+      { numRuns: 60 }
+    );
+  });
+
+  it('stays within [0, 1]', () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: -100, max: 100, noNaN: true }),
+        fc.double({ min: -100, max: 100, noNaN: true }),
+        (x, y) => {
+          const v = cloudNoiseAt(x, y, 64, 3);
+          expect(v).toBeGreaterThanOrEqual(0);
+          expect(v).toBeLessThanOrEqual(1);
+        }
+      )
+    );
+  });
+});
+
+describe('cloudNoise (the texture data)', () => {
+  // Same seed, same sky: screenshots of a preset are comparable.
+  it('is deterministic for a seed and differs between seeds', () => {
+    expect(cloudNoise(32, 1)).toEqual(cloudNoise(32, 1));
+    expect(cloudNoise(32, 1)).not.toEqual(cloudNoise(32, 2));
+  });
+
+  // A flat texture would be a uniform grey veil, not clouds.
+  it('has real contrast', () => {
+    const data = cloudNoise(CLOUD_TEXTURE_SIZE, 1);
+    const values = Array.from(data);
+    const mean = values.reduce((a, b) => a + b, 0) / values.length;
+    const sd = Math.sqrt(
+      values.reduce((a, b) => a + (b - mean) ** 2, 0) / values.length
+    );
+    expect(sd).toBeGreaterThan(20);
+  });
+});
+
+describe('cloudDensity', () => {
+  // Density is a soft step around a THRESHOLD (a noise value, from
+  // cloudThresholdForCover): exactly 0.5 at the threshold, so the share of
+  // sky with density > 0.5 is the share of noise above it.
+  it('is 0.5 at the threshold, 0 well below, 1 well above', () => {
+    expect(cloudDensity(0.6, 0.6)).toBeCloseTo(0.5, 12);
+    expect(cloudDensity(0.3, 0.6)).toBe(0);
+    expect(cloudDensity(0.9, 0.6)).toBe(1);
+  });
+
+  // A lower threshold (more cover) never removes cloud.
+  it('never decreases as the threshold falls', () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: 0, max: 1, noNaN: true }),
+        fc.double({ min: 0, max: 1, noNaN: true }),
+        fc.double({ min: 0, max: 1, noNaN: true }),
+        (n, a, b) => {
+          const [lo, hi] = a < b ? [a, b] : [b, a];
+          expect(cloudDensity(n, lo)).toBeGreaterThanOrEqual(
+            cloudDensity(n, hi) - 1e-12
+          );
+        }
+      )
+    );
+  });
+
+  // An infinite threshold (cover 0) is a clear sky whatever the noise.
+  it('is zero everywhere for an infinite threshold', () => {
+    for (let n = 0; n <= 1; n += 0.05)
+      expect(cloudDensity(n, Number.POSITIVE_INFINITY)).toBe(0);
+  });
+});
+
+describe('cloudHorizonFade', () => {
+  // The plane is infinitely far at the horizon, where its texture would
+  // alias into noise: the layer fades out there, and is absent below it.
+  it('is 0 at and below the horizon and 1 well above it', () => {
+    expect(cloudHorizonFade(-0.1)).toBe(0);
+    expect(cloudHorizonFade(0)).toBe(0);
+    expect(cloudHorizonFade(0.5)).toBe(1);
+  });
+});
+
+describe('cover means share of sky (M2 review, finding 1)', () => {
+  // The first mapping (threshold = 1 − cover) drew 0.1 % of the sky at
+  // cover 0.2 and 1.2 % at 0.3, because the two-octave combination narrows
+  // the noise's spread: four of five presets had a clear sky. Cover now maps
+  // to a QUANTILE of the combined noise the shader actually samples, so the
+  // clouded share equals the cover by construction.
+  it.each([0.2, 0.5, 0.8])(
+    'cover %s clouds that share of the tile (±0.05)',
+    (cover) => {
+      const field = combinedCloudNoise(
+        cloudNoise(CLOUD_TEXTURE_SIZE, 1),
+        CLOUD_TEXTURE_SIZE
+      );
+      const threshold = cloudThresholdForCover(field, cover);
+      const share =
+        field.filter((n) => cloudDensity(n, threshold) > 0.5).length /
+        field.length;
+      expect(share).toBeGreaterThan(cover - 0.05);
+      expect(share).toBeLessThan(cover + 0.05);
+    }
+  );
+
+  it('gives no cloud at cover 0 and near-overcast at cover 1', () => {
+    const field = combinedCloudNoise(cloudNoise(64, 1), 64);
+    expect(
+      field.every(
+        (n) => cloudDensity(n, cloudThresholdForCover(field, 0)) === 0
+      )
+    ).toBe(true);
+    const full = cloudThresholdForCover(field, 1);
+    expect(
+      field.filter((n) => cloudDensity(n, full) > 0.5).length / field.length
+    ).toBeGreaterThan(0.95);
+  });
+
+  it('rejects a cover outside [0, 1]', () => {
+    expect(() => cloudThresholdForCover(new Float32Array([0.5]), 1.5)).toThrow(
+      RangeError
+    );
+  });
+
+  // The second octave's frequency is an INTEGER, so the combined noise stays
+  // periodic with the tile and the drift offset can wrap without a jump (the
+  // first version used 2.7, which shifted that octave by 0.7 of a tile at
+  // every wrap; review finding 10).
+  it('uses an integer second-octave frequency', () => {
+    expect(Number.isInteger(CLOUD_LAYER.secondOctaveFrequency)).toBe(true);
+  });
+});
+
+describe('cloudLitRadiance (TS twin of the shader lighting, M2 review finding 5)', () => {
+  // Plausibility against the atmosphere model: a sunlit cloud at noon, seen
+  // at 90° from the sun, is several times brighter than the blue zenith sky
+  // (real cumulus: ~3–6×), and brighter still toward the sun. The constants
+  // were bare GLSL literals with no check at all.
+  it('makes a noon cloud a few times brighter than the zenith sky', () => {
+    const params = { visibilityKm: 45 };
+    const r = EARTH_ATMOSPHERE.groundRadiusKm + 0.2;
+    const sunCos = Math.sin((58 * Math.PI) / 180);
+    const psi = (radius: number, mu: number) =>
+      multiScattering(radius, mu, params, 8, 20).psi;
+    const zenith = skyRadiance(r, 0, 0, sunCos, params, psi, 16);
+    const sunT = transmittanceToTop(r + CLOUD_LAYER.altitudeKm, sunCos, params);
+    const side = cloudLitRadiance(sunT, 0, 0.5, zenith);
+    const toward = cloudLitRadiance(sunT, 0.95, 0.5, zenith);
+    const ratio = luminance(side) / luminance(zenith);
+    expect(ratio).toBeGreaterThan(2);
+    expect(ratio).toBeLessThan(8);
+    expect(luminance(toward)).toBeGreaterThan(luminance(side));
+  });
+
+  // Thicker cloud is darker on its lit side, never brighter.
+  it('darkens with density', () => {
+    const sunT = [0.8, 0.8, 0.8] as const;
+    const sky = [0.01, 0.01, 0.02] as const;
+    expect(luminance(cloudLitRadiance(sunT, 0, 1, sky))).toBeLessThan(
+      luminance(cloudLitRadiance(sunT, 0, 0.2, sky))
+    );
+  });
+});
