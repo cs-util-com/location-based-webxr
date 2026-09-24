@@ -43,6 +43,8 @@
 
 import * as THREE from "three";
 
+import { TONE_MAPPING, TONE_MAPPING_EXPOSURE } from "./atmosphere-rig.js";
+
 /**
  * The AR camera's depth budget, metres — plan §2.3.
  *
@@ -123,7 +125,7 @@ const AR_FOG_COLOUR = 0x9aa3b8;
  * renderer sets no tone mapping and no output colour space — deliberately, as
  * it has no opinion about a consumer's grading — so it renders at
  * `NoToneMapping` and exposure 1.0. Every colour in this demo was authored
- * under ACES at exposure 0.5, and `building-view.ts` states the consequence
+ * under the demo's grade, and `building-view.ts` states the consequence
  * outright: tone mapping "re-maps EVERY colour in the scene", which is why the
  * e2e suite's absolute-colour assertions had to become palette-independent
  * before it landed. Rendering the same materials ungraded roughly doubles
@@ -132,10 +134,12 @@ const AR_FOG_COLOUR = 0x9aa3b8;
  *
  * Matched rather than re-tuned: the point of AR mode is the same city seen from
  * inside, and a second grade would be a second source of truth for a look the
- * owner judges on a phone.
+ * owner judges on a phone. So both come from `atmosphere-rig.ts`: Khronos
+ * Neutral at 0.5 / 0.6 since plan 2026-09-23-2149 M3 (DEC-SUN-11, AR follows
+ * the desktop grade; it was ACES at 0.5 before).
  */
-const AR_TONE_MAPPING = THREE.ACESFilmicToneMapping;
-const AR_TONE_MAPPING_EXPOSURE = 0.5;
+const AR_TONE_MAPPING = TONE_MAPPING;
+const AR_TONE_MAPPING_EXPOSURE = TONE_MAPPING_EXPOSURE;
 
 /**
  * The desktop sky's distance haze, as far as AR needs it (the framework's

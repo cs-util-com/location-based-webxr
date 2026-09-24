@@ -10,6 +10,12 @@ scale, so a caller can paint `scene.background`, `scene.fog.color` and a
 
 ## Public API
 
+- `psiLookupFor(params)` — the coarse multiple-scattering (Ψ) lookup for an
+  air (visibility, observer altitude), built once and memoised (eight airs
+  at most): it is ~19 of the ~23 ms a `skyIlluminanceCpu` call cost, and
+  `SkyAtmosphere` calls the estimate on every sun change while a driver
+  refuses its sky readback. `skyIlluminanceCpu` and `fallbackSky` use it.
+
 - `fallbackSky(sunDirection, options)` → `FallbackSky`
   - `sunDirection`: toward the sun, +y up, any non-zero finite length.
   - `options`: `visibilityKm`, `observerAltitudeKm?`, `sunIntensity?`

@@ -55,8 +55,15 @@ observerAltitudeKm = 0.2, sunIntensity = 1 })` — adds `sky` to the scene.
   WITHOUT the sun disc; `scene.environmentIntensity` applies exposure once.
   The first draft baked exposure in as well, which squared it on every lit
   surface; a test pins the fix.
-- **The bake carries `ENVIRONMENT_BAKE_GAIN` (1024)**, divided back out of
-  `environmentIntensity` (real-sun plan 2026-09-23-2149, review finding 6):
+- **The bake carries `ENVIRONMENT_BAKE_GAIN` (1024) and neither the
+  exposure nor `sunIntensity`**; `environmentIntensity` is
+  `sunIntensity × exposure ÷ gain`, so the gain's half-float window holds for
+  any intensity (M3 review finding 7) and a lit surface receives bake ×
+  intensity = `radianceToScene`. **The environment texture is therefore in
+  gain units**: three applies `environmentIntensity` only to Standard,
+  Lambert and Phong materials with no `envMap` of their own, so a consumer
+  that uses the texture directly (a `material.envMap`, a `scene.background`)
+  would render it 1024× too bright. No such consumer exists today (real-sun plan 2026-09-23-2149, review finding 6):
   exposure-free twilight values (6.8e-6 at −6°) sit below the smallest
   normal half float (6.1e-5), which a GPU may flush to zero in the
   half-float cube. Measured headroom: 113× above that at −6°, 52× below
@@ -66,7 +73,10 @@ observerAltitudeKm = 0.2, sunIntensity = 1 })` — adds `sky` to the scene.
   `skyIlluminanceCpu` (the fallback sky's estimate) for a sun no lower than
   −6°, so the exposure is right at every sun down to civil dusk and held at
   the civil-dusk value below it. It replaced one illuminance floor that gave
-  every set sun the same exposure (review finding 7).
+  every set sun the same exposure (review finding 7). Bounded: the
+  exposure at −6° and below is about π·(1/5.3e-5)^0.75 ≈ 5000 (the old
+  floor's 560 left civil dusk ~3 EV dark). The estimate's Ψ grid is built
+  once per air (`psiLookupFor`), so a call costs ~5 ms, not ~23.
 - Generate-then-dispose for the environment, so a throw leaves the previous
   map in place.
 - Every material shares the same uniform objects (spread, never cloned).

@@ -25,18 +25,38 @@ colour that matched the sky at one time of day.
     fog during an AR session.
   - `usingFallback` — true on a device without float render targets.
   - `dispose()` — the sky, the haze's texture, the fallback's dome and light.
-- `TONE_MAPPING_EXPOSURE` (0.5) — the ACES exposure, unchanged (DEC-R6-4).
-- `NATURAL_LIGHT_COMPENSATION_EV` (−2) — the sky's EV on top of its
+- `TONE_MAPPING` (Khronos Neutral) and `TONE_MAPPING_EXPOSURE` (0.5 / 0.6)
+  — the demo's grade, desktop and AR (see Grading).
+- `NATURAL_LIGHT_COMPENSATION_EV` (−2.75) — the sky's EV on top of its
   auto-exposure, for natural light only (see Grading).
+- **The CPU fallback sky gets the same EV**, but its dome and fog are not
+  tone-mapped (by earlier design), while geometry goes through Neutral: on
+  a device without float targets the dome now outshines the lit city more
+  than it did under ACES (M3 review finding 5; the e2e runs on the physical
+  sky only, so this is unmeasured).
 - `SkyLike` — the part of `SkyAtmosphere` the rig uses (the test seam).
 
 ## Invariants & assumptions
 
-- **Grading.** The heat grid and beacons were graded under ACES at 0.5, so
-  the tone mapping is untouched. The sky's natural light (sky, sun,
-  environment) gets −2 EV, putting the backdrop 3 EV below the look-dev
-  page's photographic grading, because this is a DATA view: DEC-R4-5 keeps
-  the heat ramp the loudest thing on screen. MEASURED with the e2e margin
+- **Grading (since plan 2026-09-23-2149 M3).** `TONE_MAPPING` is Khronos
+  Neutral and `TONE_MAPPING_EXPOSURE` 0.5 / 0.6, shared with AR
+  (`ar-scene-environment.ts` imports both; DEC-SUN-9/11), the exposure
+  cancelling ACES's missing ÷0.6 so the heat grid keeps its brightness
+  (DEC-SUN-12; the value entering the curve, not the look: Neutral renders
+  mids and highlights brighter than ACES did). The sky's natural light gets
+  **−2.75 EV**, bounded from both sides: the heat grid's margin (June noon
+  5.70, 114 % of the bound; −2 fails at 4.93) and the LIT CITY, which a
+  darker EV blacks out (−4.5 reached a 158 % margin with near-black
+  buildings, plan §10.1). The e2e sweep asserts both at seven sun points;
+  the tables are on the constant. DEC-SUN-10's 150 % margin is open for the
+  owner. (The look-dev page reproduces the grade with tone "neutral" and
+  about −3 EV of exposure: 2^−2.75 × 0.5 / 0.6 = 2^−3.01.)
+- **Grading under ACES (until M3), kept as history.** The heat grid and
+  beacons were graded under ACES at 0.5, so the tone mapping was untouched.
+  The sky's natural light (sky, sun, environment) got −2 EV, putting the
+  backdrop 3 EV below the look-dev page's photographic grading, because
+  this is a DATA view: DEC-R4-5 keeps the heat ramp the loudest thing on
+  screen. MEASURED with the e2e margin
   (chroma the heat grid adds; bound 5) at time of day 0.0217, 0.98 (the boot
   time), 0.1467, 0.2717 and 0.5217 (3.7° to 55° of sun): −2 EV 7.78 … 8.84
   (mean luma 64…72 of 255); −1.5 EV 5.70 … 7.21 (luma 72…82); −1 EV fails

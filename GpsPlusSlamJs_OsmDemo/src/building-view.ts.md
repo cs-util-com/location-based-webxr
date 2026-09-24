@@ -176,9 +176,10 @@ map scored.
   light's colour and intensity, the fog colour (the sky's horizon, re-read at
   every sun change) and the physical distance haze, which `prepareFrame`
   re-applies before every render so rebuilt materials and re-assigned
-  `onBeforeCompile` installers keep it. Grading is unchanged (ACES at 0.5; the
-  sky's natural light gets −2 EV, a data view 3 EV below the look-dev
-  page, measured to keep DEC-R4-5), the fixed ambient light is gone,
+  `onBeforeCompile` installers keep it. Grading: Khronos Neutral at
+  0.5 / 0.6 since plan 2026-09-23-2149 M3 (ACES at 0.5 before); the sky's
+  natural light gets −2.75 EV, a data view measured against both DEC-R4-5's
+  margin and the lit city's brightness (`atmosphere-rig.ts`), the fixed ambient light is gone,
   and a device without float render targets gets the rig's CPU fallback. The
   bullet below is the HISTORY of how `scene.environment` came to be used at
   all, kept because its failure mode (a silent non-draw) still applies.

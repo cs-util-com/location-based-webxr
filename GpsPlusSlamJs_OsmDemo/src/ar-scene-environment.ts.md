@@ -109,7 +109,9 @@ reader can point at, rather than an absence in `ar-mode.ts` that nobody notices.
     they are swapped.
 - **Tone mapping is matched to the demo's, because the framework sets none.**
   Its renderer is `NoToneMapping` at exposure 1.0 by deliberate neutrality;
-  every colour here was authored under ACES at 0.5, and `building-view.ts` says
+  every colour here was authored under the demo's grade (ACES at 0.5 then,
+  Khronos Neutral at 0.5 / 0.6 since the real-sun plan's M3, read from
+  `atmosphere-rig.ts` so AR and desktop cannot drift), and `building-view.ts` says
   tone mapping "re-maps EVERY colour in the scene". Inheriting the default
   roughly doubles effective exposure and drops the filmic shoulder, so the
   emissive-boosted surfaces clip. **This was the largest look delta in AR and

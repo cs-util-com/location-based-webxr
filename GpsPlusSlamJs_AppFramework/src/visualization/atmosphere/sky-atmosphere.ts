@@ -157,7 +157,10 @@ export class SkyAtmosphere {
   private readonly scene: THREE.Scene;
   private readonly device: AtmosphereDevice;
   private readonly uniforms: AtmosphereUniforms;
-  /** The bake's scale: `radianceToScene` WITHOUT exposure. */
+  /**
+   * The bake's scale: LUT radiance → sun-relative units × the bake gain,
+   * WITHOUT exposure or `sunIntensity` (both are in environmentIntensity).
+   */
   private readonly bakeScale: THREE.IUniform<number> = { value: 0 };
   private readonly bakeScene = new THREE.Scene();
   private readonly bakeMaterial: THREE.ShaderMaterial;
@@ -167,10 +170,16 @@ export class SkyAtmosphere {
   private visibility: number;
   private compensationEv = 0;
   private autoExposureValue = 1;
-  /** Sky irradiance (sun-relative) from the last successful readback. */
+  /**
+   * Sky irradiance (sun-relative): from the last readback, or from the CPU
+   * estimate when the readback failed.
+   */
   private skyIlluminance = 0;
   private readbackFailed = false;
-  /** Restored by `dispose()`: this object overwrites it with the exposure. */
+  /**
+   * Restored by `dispose()`: this object overwrites it with
+   * sunIntensity × exposure ÷ the bake gain.
+   */
   private readonly previousEnvironmentIntensity: number;
   private sun: THREE.Vector3 | undefined;
   private environment: { texture: THREE.Texture; dispose(): void } | undefined;
@@ -298,7 +307,8 @@ export class SkyAtmosphere {
 
   /**
    * True when the last sky-view readback failed (a driver that refuses the
-   * half-float read): the horizon colour is stale and exposure uses a floor.
+   * half-float read): the horizon colour is stale and the sky illuminance
+   * comes from the CPU estimate.
    */
   get skyReadbackFailed(): boolean {
     return this.readbackFailed;
@@ -328,10 +338,16 @@ export class SkyAtmosphere {
   }
 
   private updateScale(): void {
-    const exposureFree = this.sunIntensity * this.lutToRelative();
-    this.bakeScale.value = exposureFree * ENVIRONMENT_BAKE_GAIN;
-    this.uniforms.atmRadianceToScene.value = exposureFree * this.exposure;
-    this.scene.environmentIntensity = this.exposure / ENVIRONMENT_BAKE_GAIN;
+    // The bake carries neither the exposure nor `sunIntensity` (an unbounded
+    // option): both go into environmentIntensity, so the gain's measured
+    // half-float window holds for any intensity, and a lit surface still
+    // receives bake × intensity = radianceToScene.
+    const relative = this.lutToRelative();
+    this.bakeScale.value = relative * ENVIRONMENT_BAKE_GAIN;
+    this.uniforms.atmRadianceToScene.value =
+      this.sunIntensity * relative * this.exposure;
+    this.scene.environmentIntensity =
+      (this.sunIntensity * this.exposure) / ENVIRONMENT_BAKE_GAIN;
   }
 
   /**

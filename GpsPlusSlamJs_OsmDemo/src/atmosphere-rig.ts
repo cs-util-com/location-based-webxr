@@ -36,22 +36,52 @@ import type { SunAngles, Vector3Like } from "./sun-position.js";
 import { sunDirection } from "./sun-position.js";
 
 /**
- * `renderer.toneMappingExposure` for the ACES pass (DEC-R6-4), UNCHANGED by
- * the physical sky. Every emissive colour in the demo (the heat grid, the
- * beacons) was graded under ACES at 0.5, and DEC-R4-5 requires the
- * affordance ramp to stay the loudest thing on screen; `heat-ramp-dominance`
- * in the e2e suite holds that. The sky's natural light is compensated
- * instead: see {@link NATURAL_LIGHT_COMPENSATION_EV}.
+ * The demo's tone mapping, desktop AND AR (one grade; AR imports it):
+ * Khronos PBR Neutral since plan 2026-09-23-2149 M3 (DEC-SUN-9; DEC-SUN-11
+ * moves AR with it). It replaced ACES Filmic (DEC-R6-4), whose hue shifts
+ * and heavy shoulder bent both the twilight sky and the data colours;
+ * Neutral keeps hues and is near-linear below its compression knee.
  */
-export const TONE_MAPPING_EXPOSURE = 0.5;
+export const TONE_MAPPING = THREE.NeutralToneMapping;
+
+/**
+ * `renderer.toneMappingExposure`, 0.5 / 0.6. three's ACES pass divided the
+ * exposure by 0.6 before its curve; Neutral does not, so the old 0.5 would
+ * have entered the curve 0.74 EV darker, the heat grid included (DEC-SUN-12).
+ * This keeps the value that ENTERS the curve, not the look: Neutral has no
+ * filmic shoulder, so the same input renders brighter and more saturated in
+ * the mids and highlights (a 0.18 grey 80 → 93 of 255, a 1.0 grey 197 →
+ * 230; M3 review finding 4), in AR as on the desktop. DEC-R4-5 requires the
+ * affordance ramp to stay the loudest thing on screen; the e2e DEC-R4-5
+ * sweep holds that. The sky's natural light is compensated instead: see
+ * {@link NATURAL_LIGHT_COMPENSATION_EV}.
+ */
+export const TONE_MAPPING_EXPOSURE = 0.5 / 0.6;
 
 /**
  * EV added to the sky's auto-exposure for the natural light (sky, sun,
- * environment). −2, which with the 0.5 above puts the backdrop 3 EV below the
- * look-dev page's photographic grading: this is a DATA view, and DEC-R4-5
- * requires the heat ramp to stay the loudest thing on screen.
+ * environment). −2.75 under Khronos Neutral (plan 2026-09-23-2149 M3,
+ * §10-§10.1): this is a DATA view, and DEC-R4-5 requires the heat ramp to
+ * stay the loudest thing on screen, but a darker backdrop ALWAYS raises that
+ * margin, so the EV is bounded from both sides:
+ * - the heat grid's margin (bound 5; plain / default ground, 7 e2e sun
+ *   points; the JUNE noon, the highest sun, always binds):
+ *   −2 EV 4.93 (FAILS), −2.75 5.70 (114 %), −3.25 6.08, −3.75 6.78,
+ *   −4.25 7.33, −4.5 7.89 (158 %);
+ * - the LIT CITY (heat grid off; mean luma of the warm, low-saturation
+ *   pixels, i.e. buildings and roads), boot / June noon / twilight −2.9°:
+ *   the owner-approved ACES −2 look 42.6 / 64.7 / 20.8; Neutral −2
+ *   48.0 / 75.7 / 23.4; **−2.75 32.0 / 49.5 / 14.7**; −3.75 19.7 / 25.0 /
+ *   8.0; −4.5 13.9 / 13.5 / 5.2 (near-black buildings: Neutral's toe
+ *   renders a grey below 0.08 as 6.25x²).
+ * −2.75 is the brightest EV that passes the margin bound, with the lit city
+ * about 25 % darker than the approved look; the e2e sweep holds the lit city
+ * to at least half that look at every sun point. DEC-SUN-10's 150 % margin
+ * could only be met by blacking out the city (−4.5), so it is an open
+ * question for the owner (plan §10.1), not applied.
  *
- * MEASURED (e2e `heat ramp stays the loudest thing`, 2026-09-23), the
+ * UNDER ACES (the grade until M3; e2e `heat ramp stays the loudest thing`,
+ * 2026-09-23), the
  * chroma the heat grid adds on the plain ground (bound 5) at time of day
  * 0.0217 (3.7° morning) / 0.98 (the boot time, evening) / 0.1467 (24°) /
  * 0.2717 (41°) / 0.5217 (55°):
@@ -61,11 +91,10 @@ export const TONE_MAPPING_EXPOSURE = 0.5;
  * - +1 EV (the page's photographic look): −4.0 at 0.0217, −9.2 at 0.5217.
  * The old Preetham sky gave 6.35, measured at 0.0217 only. The auto-exposure
  * lifts every surface to mid-grey and absolute chroma grows with
- * brightness, so a brighter backdrop out-shouts the data. −2 keeps ≥ 153 %
- * of the bound at every time; −1.5 is brighter with 111 % at noon. A taste
- * decision for the owner within that range.
+ * brightness, so a brighter backdrop out-shouts the data. −2 kept ≥ 148 %
+ * of the bound at every sun the old day reached.
  */
-export const NATURAL_LIGHT_COMPENSATION_EV = -2;
+export const NATURAL_LIGHT_COMPENSATION_EV = -2.75;
 
 /** The sun light's intensity at the model's reference elevation (45°): the demo's old white-light value. */
 const SUN_INTENSITY = 1.1;

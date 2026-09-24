@@ -1575,19 +1575,57 @@ test.describe("the time of day", () => {
    * live in a comment, so both are asserted.
    *
    * **The wrong response to a red here is lowering the bound.** It is either
-   * fixing the backdrop or re-judging the decision that made it so (the sky
-   * plan's −2 EV natural light is exactly that, measured).
+   * fixing the backdrop or re-judging the decision that made it so (the
+   * natural-light EV in `atmosphere-rig.ts` is exactly that, measured).
+   *
+   * **AND THE CITY MUST STAY VISIBLE, because the margin alone rewards
+   * darkness** (real-sun plan 2026-09-23-2149 §10.1). A darker backdrop always
+   * raises the heat grid's margin, so the first Khronos Neutral retune chose
+   * −4.5 EV for a 150 % margin and turned the lit buildings near black; the
+   * luma recorded then was measured with the cells ON and could not show it.
+   * So each point also holds the LIT SURFACES (the warm, low-saturation
+   * pixels: buildings and roads; not the blue sky, not the cyan plates, which
+   * ignore the scene light), heat grid OFF, to at least HALF their brightness
+   * under the owner-approved ACES −2 EV look (measured 2026-09-24, below). It
+   * passes Neutral −2.75 at every point (~1.4× the floor) and fails −3.75 at
+   * every point.
    */
   const SUN_POINTS = [
-    ["the boot golden hour (3.5°)", "2026-09-23", null],
-    ["a 3.6° morning", "2026-09-23", "06:23"],
-    ["a 24° morning", "2026-09-23", "08:41"],
-    ["the September noon (38.9°)", "2026-09-23", "12:00"],
-    ["the June noon (62.5°)", "2026-06-21", "12:00"],
-    ["civil twilight at −2.9°", "2026-09-23", "18:17"],
-    ["civil twilight at −5.9°", "2026-09-23", "18:36"],
+    // [label, date, apparent solar time, lit-surface luma under ACES −2 EV]
+    ["the boot golden hour (3.5°)", "2026-09-23", null, 42.6],
+    ["a 3.6° morning", "2026-09-23", "06:23", 33.6],
+    ["a 24° morning", "2026-09-23", "08:41", 96.8],
+    ["the September noon (38.9°)", "2026-09-23", "12:00", 75.1],
+    ["the June noon (62.5°)", "2026-06-21", "12:00", 64.7],
+    ["civil twilight at −2.9°", "2026-09-23", "18:17", 20.8],
+    ["civil twilight at −5.9°", "2026-09-23", "18:36", 16.5],
   ];
-  for (const [label, date, time] of SUN_POINTS) {
+  /** Mean luma of the warm, low-saturation pixels: the lit buildings and roads. */
+  const litSurfaceLuma = (page) =>
+    page.evaluate(() => {
+      const el = document.querySelector("#scene canvas");
+      if (!(el instanceof HTMLCanvasElement)) return -1;
+      const probe = document.createElement("canvas");
+      probe.width = el.width;
+      probe.height = el.height;
+      const ctx = probe.getContext("2d");
+      if (ctx === null) return -1;
+      ctx.drawImage(el, 0, 0);
+      const { data } = ctx.getImageData(0, 0, probe.width, probe.height);
+      let sum = 0;
+      let count = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i] ?? 0;
+        const g = data[i + 1] ?? 0;
+        const b = data[i + 2] ?? 0;
+        if (r >= b && Math.max(r, g, b) - Math.min(r, g, b) < 60) {
+          sum += 0.2126 * r + 0.7152 * g + 0.0722 * b;
+          count += 1;
+        }
+      }
+      return count === 0 ? -1 : sum / count;
+    });
+  for (const [label, date, time, approvedLit] of SUN_POINTS) {
     test(`DEC-R4-5: the heat ramp stays the loudest thing at ${label}`, async ({
       page,
     }) => {
@@ -1597,13 +1635,18 @@ test.describe("the time of day", () => {
       await page.goto(`/?lat=${50.9231}&lng=${6.9445}${pin}`);
       await waitForRefresh(page);
       const DEFAULT_MODE = "cpu-slope";
+      // The lit city first, heat grid off, in the default ground mode.
+      await page.locator("#layer-cells").uncheck();
+      await settledChroma(page);
+      const lit = await litSurfaceLuma(page);
       const plain = await marginFor(page, "cpu");
       const byDefault = await marginFor(page, DEFAULT_MODE);
       console.log(
-        `DEC-R4-5 ${label}: plain ${plain.toFixed(2)}, ${DEFAULT_MODE} ${byDefault.toFixed(2)}, luma ${(await meanLuma(page)).toFixed(1)}`,
+        `DEC-R4-5 ${label}: plain ${plain.toFixed(2)}, ${DEFAULT_MODE} ${byDefault.toFixed(2)}, lit surfaces ${lit.toFixed(1)} (approved ${approvedLit}), luma with cells ${(await meanLuma(page)).toFixed(1)}`,
       );
       expect(plain, `plain ground at ${label}`).toBeGreaterThan(5);
       expect(byDefault, `${DEFAULT_MODE} at ${label}`).toBeGreaterThan(5);
+      expect(lit, `lit surfaces at ${label}`).toBeGreaterThan(approvedLit / 2);
     });
   }
 });

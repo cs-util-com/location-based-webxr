@@ -65,7 +65,8 @@ material **bypasses the scene's tone mapping and sRGB encode**. three.js
 substitutes `#include <tonemapping_fragment>` / `#include <colorspace_fragment>`
 into shader source that asks for them and injects them into source that does
 not; neither appears here, so `gl_FragColor` is written raw while
-`ar-scene-environment.ts` grades everything else through ACES at exposure. The
+`ar-scene-environment.ts` grades everything else through the demo's tone
+mapping (Khronos Neutral since the real-sun plan's M3; ACES before). The
 authored HSL therefore renders darker and less saturated than picked, and the
 shell's brightness relative to its neighbours is not the approved relationship.
 Whether that IS the approved look depends on whether the shader lab previewed

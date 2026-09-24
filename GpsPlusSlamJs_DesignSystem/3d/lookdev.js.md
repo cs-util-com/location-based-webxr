@@ -40,10 +40,11 @@
     fires no `hashchange`).
   - No baseline any more: the page carried OsmDemo's old Preetham sky as an
     A/B switch until M3, when OsmDemo adopted this same sky model. Its
-    GRADING differs: OsmDemo is a data view, ACES at exposure 0.5 with −2 EV
-    on natural light (3 EV below this page's photographic default, measured
-    to keep DEC-R4-5). The page reproduces it exactly with tone `aces` and
-    the exposure slider at −3 EV.
+    GRADING differs: OsmDemo is a data view, Khronos Neutral at exposure
+    0.5 / 0.6 with −2.75 EV on natural light (measured against DEC-R4-5's
+    margin and the lit city's brightness; real-sun plan 2026-09-23-2149 M3;
+    it was ACES at 0.5 with −2 EV before). The page reproduces it with tone
+    `neutral` and the exposure slider at −3 EV (exactly 2^−3.01).
   - The atmosphere view uses a 30 km far plane (the ridges reach 9 km) and a
     `THREE.Fog` in the sky's horizon colour: it enables three's fog chunks,
     which the haze replaces, and its near/far give the haze's boundary fade

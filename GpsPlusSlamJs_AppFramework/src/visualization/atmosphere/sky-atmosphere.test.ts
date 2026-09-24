@@ -212,6 +212,27 @@ describe('SkyAtmosphere', () => {
     ).toBeCloseTo(atmosphere.radianceToScene, 12);
   });
 
+  // The bake gain's measured window (below) assumes the bake does not
+  // scale with `sunIntensity`, a public option with no upper bound; the
+  // intensity belongs with the exposure in environmentIntensity, and a lit
+  // surface still receives bake × intensity = the sky's scene radiance
+  // (M3 review finding 7).
+  it('keeps the bake independent of sunIntensity, and the lit product exact', () => {
+    const bakeValue = (sunIntensity: number) => {
+      const { atmosphere, device, scene } = setup({ sunIntensity });
+      atmosphere.setSun(UP);
+      const mesh = device.bakedScene!.children[0] as THREE.Mesh;
+      const bake = (mesh.material as THREE.ShaderMaterial).uniforms
+        .atmRadianceToScene!.value as number;
+      expect(bake * scene.environmentIntensity).toBeCloseTo(
+        atmosphere.radianceToScene,
+        12
+      );
+      return bake;
+    };
+    expect(bakeValue(40)).toBeCloseTo(bakeValue(1), 12);
+  });
+
   // WHY (real-sun plan 2026-09-23-2149, review finding 6): the environment
   // is baked into a HALF-FLOAT cube, exposure-free, in sun-relative units.
   // At civil twilight (−6°) those values are 1e-5 to 5e-5, below the

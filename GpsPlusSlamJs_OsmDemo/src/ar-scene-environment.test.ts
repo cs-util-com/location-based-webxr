@@ -27,6 +27,7 @@ import {
   AR_CAMERA_NEAR_M,
   AR_FOG_NEAR_M,
 } from "./ar-scene-environment.js";
+import { TONE_MAPPING, TONE_MAPPING_EXPOSURE } from "./atmosphere-rig.js";
 
 /** A stand-in for the framework's scene: its own lights, no fog, a background. */
 function frameworkScene(): THREE.Scene {
@@ -148,10 +149,11 @@ describe("entering AR", () => {
     expect(camera.projectionMatrix.equals(before)).toBe(false);
   });
 
-  it("matches the demo's ACES grading, which the framework's renderer lacks", () => {
+  it("matches the demo's grading, which the framework's renderer lacks", () => {
     // THE LARGEST LOOK DELTA IN AR (r508 review). The framework sets no tone
     // mapping at all — `NoToneMapping` at exposure 1.0 — while every colour in
-    // this demo was authored under ACES at 0.5. `building-view.ts` says tone
+    // this demo was authored under its grade (ACES at 0.5 then, Khronos
+    // Neutral at 0.5 / 0.6 since plan 2026-09-23-2149 M3). `building-view.ts` says tone
     // mapping "re-maps EVERY colour in the scene", so inheriting the
     // framework's default roughly doubles effective exposure and drops the
     // filmic shoulder: the emissive-boosted surfaces clip to white.
@@ -162,8 +164,11 @@ describe("entering AR", () => {
 
     applyArEnvironment(frameworkScene(), frameworkCamera(), renderer);
 
-    expect(renderer.toneMapping).toBe(THREE.ACESFilmicToneMapping);
-    expect(renderer.toneMappingExposure).toBe(0.5);
+    // The desktop view's grade, read from the same constants (DEC-SUN-11:
+    // AR follows desktop to Khronos Neutral; one source of truth, not two).
+    expect(renderer.toneMapping).toBe(THREE.NeutralToneMapping);
+    expect(renderer.toneMapping).toBe(TONE_MAPPING);
+    expect(renderer.toneMappingExposure).toBe(TONE_MAPPING_EXPOSURE);
   });
 
   it("tolerates a missing renderer rather than failing the session", () => {

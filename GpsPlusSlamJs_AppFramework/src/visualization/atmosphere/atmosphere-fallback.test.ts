@@ -13,6 +13,7 @@ import {
   fallbackSky,
   skyIlluminanceCpu,
   type FallbackSky,
+  psiLookupFor,
 } from './atmosphere-fallback.js';
 import { autoExposure } from './atmosphere-exposure.js';
 import { luminance, sunLight } from './atmosphere-model.js';
@@ -126,4 +127,20 @@ describe('skyIlluminanceCpu', () => {
       expect(Math.abs(cheap / dense - 1)).toBeLessThan(0.1);
     }
   );
+});
+
+describe('psiLookupFor', () => {
+  // The CPU sky's multiple-scattering grid is the expensive part (~19 of
+  // ~23 ms per skyIlluminanceCpu call; M3 review finding 6). SkyAtmosphere
+  // calls the estimate on every sun change while a phone refuses the
+  // readback, so the grid must be built once per air, not per call.
+  it('returns the same lookup for the same air, a new one for different air', () => {
+    const a = psiLookupFor({ visibilityKm: 45 });
+    expect(psiLookupFor({ visibilityKm: 45 })).toBe(a);
+    expect(psiLookupFor({ visibilityKm: 45, observerAltitudeKm: 0.2 })).toBe(a);
+    expect(psiLookupFor({ visibilityKm: 60 })).not.toBe(a);
+    expect(psiLookupFor({ visibilityKm: 45, observerAltitudeKm: 1 })).not.toBe(
+      a
+    );
+  });
 });

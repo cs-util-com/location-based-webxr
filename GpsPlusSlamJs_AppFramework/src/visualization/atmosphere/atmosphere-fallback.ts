@@ -116,6 +116,31 @@ function coarsePsi(params: AtmosphereParams): PsiLookup {
   };
 }
 
+/** How many airs keep a Ψ lookup at once (a page uses one or two). */
+const PSI_CACHE_LIMIT = 8;
+const psiCache = new Map<string, PsiLookup>();
+
+/**
+ * The coarse Ψ lookup for an air, built once and reused: building it is
+ * most of a `skyIlluminanceCpu` call (~19 of ~23 ms measured), and
+ * `SkyAtmosphere` calls the estimate on every sun change while a driver
+ * refuses the sky readback (M3 review finding 6). Keyed on the only two
+ * inputs Ψ depends on; the oldest entry is dropped past eight airs.
+ */
+export function psiLookupFor(params: AtmosphereParams): PsiLookup {
+  const key = `${params.visibilityKm}|${params.observerAltitudeKm ?? EARTH_ATMOSPHERE.defaultObserverAltitudeKm}`;
+  let psi = psiCache.get(key);
+  if (psi === undefined) {
+    if (psiCache.size >= PSI_CACHE_LIMIT) {
+      const oldest = psiCache.keys().next().value;
+      if (oldest !== undefined) psiCache.delete(oldest);
+    }
+    psi = coarsePsi(params);
+    psiCache.set(key, psi);
+  }
+  return psi;
+}
+
 /** Radiance → sun-relative units (the scale `SkyAtmosphere` uses). */
 function toRelative(params: AtmosphereParams): number {
   const reference = transmittanceToTop(
@@ -136,7 +161,7 @@ export function skyIlluminanceCpu(
   sunCosZenith: number,
   params: AtmosphereParams,
   quadrature: IlluminanceQuadrature = DEFAULT_QUADRATURE,
-  psi: PsiLookup = coarsePsi(params)
+  psi: PsiLookup = psiLookupFor(params)
 ): number {
   if (!Number.isFinite(sunCosZenith)) {
     throw new RangeError(`sunCosZenith must be finite, got ${sunCosZenith}`);
@@ -199,7 +224,7 @@ export function fallbackSky(
   const sunCos = requireDirection(sunDirection);
   requireOptions(options);
   const r = observerRadius(options);
-  const psi = coarsePsi(options);
+  const psi = psiLookupFor(options);
   const relative = toRelative(options);
 
   const zenith = skyRadiance(r, 0, 0, sunCos, options, psi, SKY_STEPS);

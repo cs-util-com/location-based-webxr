@@ -18,6 +18,7 @@ import { describe, expect, it } from "vitest";
 import {
   AtmosphereRig,
   NATURAL_LIGHT_COMPENSATION_EV,
+  TONE_MAPPING,
   TONE_MAPPING_EXPOSURE,
   type SkyLike,
 } from "./atmosphere-rig.js";
@@ -128,16 +129,20 @@ describe("AtmosphereRig with the physical sky", () => {
     expect(sun.color.g).toBeCloseTo(0.8, 12);
   });
 
-  // THE GRADING CONTRACT. ACES at exposure 0.5 stays, because the heat
-  // grid's emissive colours were graded under it (DEC-R4-5); the sky's
-  // natural light gets its own EV, chosen so the data layer stays the
-  // loudest thing on screen at every time of day (measured in the e2e
-  // suite; see NATURAL_LIGHT_COMPENSATION_EV). Here: the rig hands the sky
-  // exactly that EV, and the tone-mapping exposure is untouched by it.
+  // THE GRADING CONTRACT. Khronos Neutral since plan 2026-09-23-2149 M3
+  // (DEC-SUN-9), at exposure 0.5 / 0.6: three's ACES divided the exposure by
+  // 0.6 before its curve and Neutral does not, so without the correction the
+  // whole frame, the heat grid included, would enter 0.74 EV darker
+  // (DEC-SUN-12 keeps the heat grid's brightness). The sky's natural light
+  // gets its own EV, chosen so the data layer stays the loudest thing on
+  // screen at every sun (measured in the e2e suite; see
+  // NATURAL_LIGHT_COMPENSATION_EV). Here: the rig hands the sky exactly that
+  // EV, and the tone-mapping exposure is untouched by it.
   it("applies the natural-light EV to the sky, leaving the tone mapping alone", () => {
     const { sky } = rig();
     expect(sky.ev).toBe(NATURAL_LIGHT_COMPENSATION_EV);
-    expect(TONE_MAPPING_EXPOSURE).toBe(0.5);
+    expect(TONE_MAPPING).toBe(THREE.NeutralToneMapping);
+    expect(TONE_MAPPING_EXPOSURE).toBeCloseTo(0.5 / 0.6, 12);
     // A data view: darker than the look-dev page's photographic grading.
     expect(
       2 ** NATURAL_LIGHT_COMPENSATION_EV * TONE_MAPPING_EXPOSURE,

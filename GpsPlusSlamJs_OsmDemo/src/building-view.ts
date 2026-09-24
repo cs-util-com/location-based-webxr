@@ -65,7 +65,11 @@ import type { SunAngles } from "./sun-position.js";
 import { terrainTextureFrom } from "./terrain-texture.js";
 import type { BuildingStats, MeshLayers } from "./mesh-layers.js";
 import type { HazeModeSwitch } from "./ar-scene-environment.js";
-import { AtmosphereRig, TONE_MAPPING_EXPOSURE } from "./atmosphere-rig.js";
+import {
+  AtmosphereRig,
+  TONE_MAPPING,
+  TONE_MAPPING_EXPOSURE,
+} from "./atmosphere-rig.js";
 import type { TransferableMesh } from "./worker/protocol.js";
 
 // Re-exported so the many call sites that import these from the view keep working.
@@ -570,12 +574,13 @@ export class BuildingView {
     // PMREM above ~20° of sun and blacked out every standard material. It is
     // built below, once the sun light it drives exists.
 
-    // ACES FILMIC TONE MAPPING (DEC-R6-4), and it is not optional alongside a
-    // scattering sky: unmapped, such a sky blows out to white, because its
-    // radiance range is far wider than the display's. It re-maps EVERY colour in
-    // the scene, which is why the e2e suite's absolute-colour assertions had to
-    // become palette-independent claims BEFORE this landed.
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    // TONE MAPPING (DEC-R6-4; Khronos Neutral since plan 2026-09-23-2149
+    // M3, see `TONE_MAPPING`), and it is not optional alongside a scattering
+    // sky: unmapped, such a sky blows out to white, because its radiance
+    // range is far wider than the display's. It re-maps EVERY colour in the
+    // scene, which is why the e2e suite's absolute-colour assertions had to
+    // become palette-independent claims BEFORE the first grade landed.
+    this.renderer.toneMapping = TONE_MAPPING;
     this.renderer.toneMappingExposure = TONE_MAPPING_EXPOSURE;
 
     // DISTANCE HAZE, and this REVERSES a round-2 decision on its own terms.

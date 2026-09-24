@@ -7,8 +7,9 @@
  * files type-stripped by `serve.mjs`, so what is judged here is the code the
  * apps will run, not a copy. (The page used to carry OsmDemo's old Preetham
  * sky as a baseline switch; it was retired when OsmDemo adopted this sky
- * model in M3. OsmDemo grades it 3 EV darker, as a data view: tone `aces`
- * with exposure −3 EV reproduces it here.)
+ * model in M3. OsmDemo grades it much darker, as a data view: tone
+ * `neutral` with exposure −3 EV reproduces it here; exactly
+ * 2^−2.75 × 0.5 / 0.6 = 2^−3.01, plan 2026-09-23-2149 M3.)
  *
  * STATE LIVES IN THE URL HASH (`#preset=golden&tone=agx`), like the HUD
  * catalog's, so a screenshot or a phone link reproduces a view.
