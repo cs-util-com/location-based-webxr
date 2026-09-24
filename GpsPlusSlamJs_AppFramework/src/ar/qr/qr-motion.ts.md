@@ -15,8 +15,9 @@ reads "still".
   raw signals, the NEWEST of the last `motionWindow` detections (one frame
   epoch, no long gap; `selectFusedWindow`) against the rest:
   - `movingCandidate`, `offsetM`, `speedMps`: the newest view's own position
-    (the joint solve's `viewPositions`) against the rest's median; moving
-    above `moveM`. The speed is that offset over the time since the rest's
+    against the rest's median; moving above `moveM`. The positions are the
+    entries' raw poses when every entry in the window has one, else the joint
+    solve's `viewPositions` at `sizeM`. The speed is that offset over the time since the rest's
     median detection.
   - `turningCandidate`, `newestFitPx`: the newest view's corner error
     (`viewErrorAtRotationPx`) at the rotation solved from the OTHER views
@@ -37,8 +38,8 @@ reads "still".
   the last result (persistence counts detections, not reads).
 - Options (defaults PROVISIONAL until the §26 sweep; out-of-range values
   fall back to the default): `motionWindow` 4 (≥ 2), `moveM` 0.03,
-  `turnPx` 3, `persistence` 4 (≥ 1), `sizeM` 0.16 (positions only), `solve`
-  (injectable).
+  `turnPx` 3, `persistence` 4 (≥ 1), `sizeM` 0.16 (positions only, and only
+  without raw poses), `solve` (injectable).
 
 ## Invariants & assumptions
 
@@ -52,6 +53,14 @@ reads "still".
   others' and a relative test never fires. Against the rotation of the
   views before it, the newest is clearly past it (a first attempt with the
   shared rotation missed every continuous turn).
+- **Positions come from the raw poses, because the size matters.** A view's
+  position from its corners scales with the size the solve assumes, pulling
+  it toward its camera; with a wrong size a camera walking past a still code
+  (16 cm per detection) moves the code's positions enough to read "moving".
+  The producer's raw poses are solved at the size it measured, so they are
+  used whenever every entry has one (the `qrDetected` slice always fills
+  them). Without them the detector depends on `sizeM`; the fused tracker
+  does not pass its own `sizeM` on, as no production entry lacks a raw pose.
 - **The newest against the rest**, not a spread over the window: a single
   outlier frame (a corner-order flip) is a candidate for ONE detection and
   never reaches the persistence.
@@ -87,7 +96,9 @@ if (m.state === 'still') {
 - `qr-motion.test.ts`: a still code with a walking camera reads still; a
   sideways move reads moving (with its speed), an in-plane turn reads
   turning, both read both; fewer than two detections say nothing; an
-  out-of-plane turn of an oblique code is seen; the persistence in both
+  out-of-plane turn of an oblique code is seen; a still code past a fast
+  camera reads still whatever size is assumed (0.08-0.32 m) when the entries
+  carry raw poses, and without them the assumed size matters (pinned); the persistence in both
   directions; one outlier frame never flips the state; a still code under
   1 px of corner noise stays still (10 seeds x 40 detections); one step per
   detection however often it is read; `stillSinceMs`.

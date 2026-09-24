@@ -86,7 +86,7 @@ function corners(camera: Pose, code: Pose, noise?: () => number): Point2[] {
 function scene(
   steps: number,
   codeOf: (i: number) => Pose,
-  opts: { sigmaPx?: number; seed?: number } = {}
+  opts: { sigmaPx?: number; seed?: number; extent?: number } = {}
 ): QrFusedEntry[] {
   const rand = mulberry32(opts.seed ?? 1);
   const noise =
@@ -100,7 +100,7 @@ function scene(
     kind: 'arc',
     codeWorld: codeAt(0, 0),
     distanceM: 1.2,
-    extent: 30,
+    extent: opts.extent ?? 30,
     steps,
   });
   return cams.map((cam, i) => {
@@ -159,6 +159,31 @@ describe('measureQrMotion (one detection, no persistence)', () => {
     expect(m.movingCandidate).toBe(false);
     expect(m.turningCandidate).toBe(false);
     expect(m.speedMps).toBeNull();
+  });
+});
+
+describe('measureQrMotion and the printed size', () => {
+  // Why this test matters: a view's position from its corners scales with
+  // the size the solve assumes, pulling it toward its CAMERA - so with a
+  // wrong size a camera walking past a still code moves the code's
+  // positions, and fast enough that reads as "moving". The producer's raw
+  // poses are solved at the measured size (the demo measures it from
+  // depth), so the detector takes its positions from them.
+  // The camera sweeps 60 deg in 8 detections: 16 cm per detection.
+  const fast = () => scene(8, () => codeAt(0, 5), { extent: 60 });
+
+  it('reads a still code as still whatever size it assumes, from the raw poses', () => {
+    for (const sizeM of [0.08, 0.12, 0.16, 0.24, 0.32]) {
+      expect(measureQrMotion(fast(), { sizeM }).movingCandidate).toBe(false);
+    }
+  });
+
+  // Without raw poses it can only use its own solve at its assumed size.
+  // Pinned so the limitation is visible, not mistaken for the above.
+  it('without raw poses, depends on the size it assumes', () => {
+    const noRaw = fast().map((e) => ({ ...e, rawPose: null }));
+    expect(measureQrMotion(noRaw, { sizeM: 0.16 }).movingCandidate).toBe(false);
+    expect(measureQrMotion(noRaw, { sizeM: 0.08 }).movingCandidate).toBe(true);
   });
 });
 

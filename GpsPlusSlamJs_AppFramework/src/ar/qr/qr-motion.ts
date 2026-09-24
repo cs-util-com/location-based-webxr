@@ -33,7 +33,7 @@ export interface QrMotionOptions {
   turnPx?: number;
   /** Consecutive detections a new state must show before it is taken. Default 4 (owner, ~0.5 s). */
   persistence?: number;
-  /** The printed size (positions only; the rotation does not depend on it). Default 0.16. */
+  /** The printed size, for positions only when the entries carry no raw poses (the rotation does not depend on it). Default 0.16. */
   sizeM?: number;
   /** Injectable joint solve. */
   solve?: typeof solveQrPoseMultiView;
@@ -109,12 +109,25 @@ function distance(a: Vector3, b: Vector3): number {
   return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 }
 
+/**
+ * Each view's own position: the producer's raw poses when every entry has
+ * one - solved at the size the producer measured - else the joint solve's
+ * per-view positions at the assumed `sizeM`. A wrong size pulls each view's
+ * position toward its camera, so a walking camera would move a still code.
+ */
+function viewPositions(
+  window: readonly QrFusedEntry[],
+  joint: QrMultiViewPoseResult
+): readonly Vector3[] {
+  const raws = window.map((e) => e.rawPose?.position);
+  return raws.every((p) => p !== undefined) ? raws : joint.viewPositions;
+}
+
 /** The newest view's own position offset and its speed. */
 function translation(
-  joint: QrMultiViewPoseResult,
+  ps: readonly Vector3[],
   times: readonly number[]
 ): { offsetM: number; speedMps: number | null } {
-  const ps = joint.viewPositions;
   const newest = ps[ps.length - 1]!;
   const rest = ps.slice(0, -1);
   const offsetM = distance(newest, medianPosition(rest));
@@ -156,7 +169,8 @@ export function measureQrMotion(
   const window = selectFusedWindow(entries, { windowSize: o.motionWindow });
   if (window.length < 2) return { ...NONE };
   const newest = window[window.length - 1]!;
-  // Positions: every view's own (single-frame) position, from one solve.
+  // The solve over all views checks each is usable (and gives positions
+  // when the entries carry no raw poses).
   const all = o.solve(window.map(toView), o.sizeM);
   // Rotation: from the OTHER views only. Under a continuous turn every view
   // disagrees with a rotation shared by all of them, so the newest's share
@@ -166,7 +180,7 @@ export function measureQrMotion(
   // The newest must be among the used views.
   if (!all || !rest || all.droppedViews > 0) return { ...NONE };
   const times = window.map((e) => e.timestamp);
-  const { offsetM, speedMps } = translation(all, times);
+  const { offsetM, speedMps } = translation(viewPositions(window, all), times);
   const newestFitPx = viewErrorAtRotationPx(
     toView(newest),
     rest.rotation,
