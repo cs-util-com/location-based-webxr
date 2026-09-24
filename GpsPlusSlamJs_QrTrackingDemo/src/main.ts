@@ -26,6 +26,11 @@ import {
   selectQrSize,
 } from "gps-plus-slam-app-framework/state";
 import { createFusedPoseSource } from "./fused-pose-source.js";
+import { createMotionTrail } from "./motion-trail.js";
+import {
+  createMotionTrailView,
+  type MotionTrailView,
+} from "./motion-trail-view.js";
 
 import { getSeams } from "./seams.js";
 import { createQrDemoStore, type QrDemoStore } from "./demo-store.js";
@@ -85,6 +90,7 @@ const dom = {
   hudSpread: el("hud-spread"),
   hudLifecycle: el("hud-lifecycle"),
   hudPose: el("hud-pose"),
+  hudMotion: el("hud-motion"),
   debugLog: el("debug-log"),
   qrperfLog: el("qrperf-log"),
   qrperfCopy: el<HTMLButtonElement>("qrperf-copy"),
@@ -97,6 +103,12 @@ const fusedPose = createFusedPoseSource();
 /** The `?qrperf` instrument, when the flag is set (null otherwise). */
 let perf: MountedQrPerf | null = null;
 let view: QrDebugView | null = null;
+/**
+ * The active code's last ~2 s of positions, drawn in its motion mode's
+ * colour (plan §26); cleared on a restart or another code.
+ */
+const trail = createMotionTrail();
+let trailView: MotionTrailView | null = null;
 let stopFrames: (() => void) | null = null;
 let status: DemoStatus = "idle";
 /** The most-recently detected payload — drives which marker the HUD shows. */
@@ -132,6 +144,9 @@ function renderHud(): void {
   dom.hudSpread.textContent = v.spreadLabel;
   dom.hudLifecycle.textContent = v.lifecycleLabel;
   dom.hudPose.textContent = v.poseLabel;
+  dom.hudMotion.textContent = v.motionLabel;
+  dom.hudMotion.style.color = v.motionColor ?? "";
+  trailView?.update(trail.points(), v.motionColor);
 }
 
 function failStart(err: unknown): void {
@@ -141,6 +156,9 @@ function failStart(err: unknown): void {
   perf = null;
   view?.dispose();
   view = null;
+  trailView?.dispose();
+  trailView = null;
+  trail.clear();
   dom.startButton.disabled = false;
   dom.startButton.textContent = "Start AR";
   dom.startScreen.hidden = false;
@@ -161,7 +179,11 @@ async function startAr(): Promise<void> {
 
   try {
     await seams.initAR(dom.app, {
-      onFrameChanged: () => store?.dispatch(qrFrameChanged()),
+      onFrameChanged: () => {
+        // The old positions live in the old frame: never draw through it.
+        trail.clear();
+        store?.dispatch(qrFrameChanged());
+      },
     });
   } catch (err) {
     failStart(err);
@@ -175,6 +197,7 @@ async function startAr(): Promise<void> {
   }
 
   view = createQrDebugView(group);
+  trailView = createMotionTrailView(group);
   // `?qrperf` (plan 2026-09-23 M2): opt-in stage timings; null when off, and
   // then every hook below is exactly the un-instrumented pipeline.
   const perfParams = parseQrPerfParams(window.location.search);
@@ -201,7 +224,9 @@ async function startAr(): Promise<void> {
       : {}),
     getDepthContext: () => seams.getDepthContext(),
     recordDetection: (event) => {
+      if (event.text !== activeText) trail.clear();
       activeText = event.text;
+      trail.add(event.timestamp, event.qrPoseWorld.position);
       store?.dispatch(recordQrDetection(event));
     },
     recordSize: (text, estimate) => {

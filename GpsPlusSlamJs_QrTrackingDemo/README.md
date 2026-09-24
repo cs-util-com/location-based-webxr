@@ -18,6 +18,10 @@ code" — which is the only check that proves marker tracking actually works.
   so you can walk around and confirm they stay locked to the code.
 - Shows the running median (cm), sample count, spread (mm), and lifecycle stage
   in a HUD — measure a freshly printed QR, then check it against a tape measure.
+- Shows the fused pose (the joint rotation over several detections) and the
+  code's **motion mode** - still, moving, turning, or both, with its speeds and
+  a colour per mode - plus a ~2 s trail of the code's path, so a hand-held code
+  can be told from a fixed one (the framework's QR motion detector).
 - Debug flag `?qrperf=1` (plus `&baseline=1`, or `?qrperf=zxing`) shows
   per-stage capture/decode timings and a same-frame comparison with zxing-wasm;
   see `src/qrperf/*.md` and the field-test protocol in the QR perf plan

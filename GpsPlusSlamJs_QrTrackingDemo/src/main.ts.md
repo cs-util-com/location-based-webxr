@@ -32,6 +32,11 @@ boot store + AR session + debug view + controller → per-frame
   (`hud-view.ts` `poseLabel`) shows the fused result, re-evaluated on each
   render (cached) so a restart shows at once. With `?qrperf`, each lock's
   fused result is also tallied (`qrperf/fused-tally.ts`).
+- The motion mode (plan §26): the HUD's motion row (`motionLabel`, coloured
+  by `motionColor`) and a ~2 s trail of the active code's raw positions
+  (`motion-trail.ts`, drawn by `motion-trail-view.ts` in the same colour).
+  The trail is cleared on a restart (`onFrameChanged`), on another code and
+  on a failed start.
 - **`?qrperf` instrument** (plan 2026-09-23 M2): `mountQrPerf(parseQrPerfParams(location.search), …)`
   returns `null` when the flag is absent, and then nothing below changes. When
   set, `detect` and the default pose solve (`createDefaultSolvePose()`) are

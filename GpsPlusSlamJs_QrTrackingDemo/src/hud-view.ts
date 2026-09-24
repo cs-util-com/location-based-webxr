@@ -7,7 +7,11 @@
  */
 
 import type { QrSizeEstimate } from "gps-plus-slam-app-framework/ar";
-import type { QrFusedPose } from "gps-plus-slam-app-framework/ar/qr";
+import type {
+  QrFusedPose,
+  QrMotion,
+  QrMotionState,
+} from "gps-plus-slam-app-framework/ar/qr";
 
 export type DemoStatus = "idle" | "scanning" | "tracking";
 
@@ -28,7 +32,26 @@ export interface HudView {
    * `joint · stable · 7 views · fit 0.6 px`, or `—` before any.
    */
   poseLabel: string;
+  /**
+   * The code's motion mode (plan §26) with its speeds, e.g.
+   * `moving · 12 cm/s`, `still`, or `—` before any reading.
+   */
+  motionLabel: string;
+  /** The mode's colour (`MOTION_COLORS`), or null for the default text colour. */
+  motionColor: string | null;
 }
+
+/**
+ * One colour per motion mode, shared by the HUD label and the 3D trail
+ * (plan §26). Bright and saturated, to stay readable on the translucent
+ * plate outdoors; "still" keeps the design system's own text colour.
+ */
+export const MOTION_COLORS: Record<QrMotionState, string | null> = {
+  still: null,
+  moving: "#ffb020",
+  turning: "#33ddff",
+  "moving+turning": "#ff5ad2",
+};
 
 const STATUS_LABELS: Record<DemoStatus, string> = {
   idle: "Point at a QR code",
@@ -64,6 +87,26 @@ function formatPose(fused: QrFusedPose | null | undefined): string {
   return `joint · ${fused.status} · ${fused.views} views · ${fit}`;
 }
 
+const MOTION_NAMES: Record<QrMotionState, string> = {
+  still: "still",
+  moving: "moving",
+  turning: "turning",
+  "moving+turning": "moving + turning",
+};
+
+/** The motion line: the mode, then the speeds of what is moving. */
+function formatMotion(motion: QrMotion | null | undefined): string {
+  if (!motion) return "—";
+  const parts = [MOTION_NAMES[motion.state]];
+  if (motion.moving && motion.speedMps !== null) {
+    parts.push(`${Math.round(motion.speedMps * 100)} cm/s`);
+  }
+  if (motion.turning && motion.turnRateDegPerS !== null) {
+    parts.push(`${Math.round(motion.turnRateDegPerS)}°/s`);
+  }
+  return parts.join(" · ");
+}
+
 export function toHudView(
   status: DemoStatus,
   size: QrSizeEstimate | undefined,
@@ -85,5 +128,7 @@ export function toHudView(
     spreadLabel: formatSpread(sizeEstimate.spreadM),
     lifecycleLabel: sizeEstimate.status,
     poseLabel: formatPose(fused),
+    motionLabel: formatMotion(fused?.motion),
+    motionColor: fused?.motion ? MOTION_COLORS[fused.motion.state] : null,
   };
 }

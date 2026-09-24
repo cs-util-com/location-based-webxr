@@ -45,20 +45,27 @@ test.describe("QR-tracking demo — measure + glue flow", () => {
     await feedFrames(page, 12);
 
     const scene = await page.evaluate(() => {
-      // The debug objects hang off an internal WEBXR_TO_NUE basis node, which is
-      // the single child added to arWorldGroup.
+      // The debug objects and the motion trail (plan §26) each hang off their
+      // own WEBXR_TO_NUE basis node under arWorldGroup, found by name.
       const top = window.__qrDemoTest.worldGroupChildren;
-      const kids = top[0]?.children ?? [];
+      const byName = (name) => top.find((o) => o.name === name);
+      const kids = byName("qr-debug-basis")?.children ?? [];
+      const trail = byName("qr-motion-trail-basis")?.children ?? [];
       return {
         topCount: top.length,
         kidCount: kids.length,
         lastVisible: kids[kids.length - 1]?.visible,
+        trailVisible: trail[0]?.visible,
       };
     });
-    // One basis node under arWorldGroup; axis + cube under it; revealed on lock.
-    expect(scene.topCount).toBe(1);
+    // Two basis nodes; axis + cube under the debug one, revealed on lock; the
+    // trail's line drawn once two locks have positions.
+    expect(scene.topCount).toBe(2);
     expect(scene.kidCount).toBe(2);
     expect(scene.lastVisible).toBe(true);
+    expect(scene.trailVisible).toBe(true);
+    // A code that does not move reads "still" (the motion row, plan §26).
+    await expect(page.getByTestId("hud-motion")).toHaveText("still");
   });
 });
 
@@ -88,9 +95,12 @@ test.describe("QR-tracking demo — no overlay until a size exists (PnP needs sc
     await expect(page.getByTestId("hud-size")).toHaveText("—");
 
     const scene = await page.evaluate(() => {
-      // Objects hang off the internal basis node (single child of arWorldGroup);
+      // Objects hang off the debug view's basis node under arWorldGroup;
       // basis.children[0] = axis, [1] = cube (add order in createQrDebugView).
-      const kids = window.__qrDemoTest.worldGroupChildren[0]?.children ?? [];
+      const kids =
+        window.__qrDemoTest.worldGroupChildren.find(
+          (o) => o.name === "qr-debug-basis",
+        )?.children ?? [];
       return {
         count: kids.length,
         axisVisible: kids[0]?.visible,

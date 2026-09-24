@@ -3,8 +3,9 @@
  * M3b b5, §25): per lock, whether the fused pose was stable, which rotation
  * it carried (joint or the averaged fallback), how well the views fit, how
  * far the joint rotation sat from today's averaged one - and the STABLE fused
- * pose's own jumps and wall elevation (what the overlay shows), plus the
- * frame changes the demo saw. See fused-tally.ts.md.
+ * pose's own jumps and wall elevation (what the overlay shows), the frame
+ * changes the demo saw, and the motion detector's modes and raw signals
+ * (plan §26). See fused-tally.ts.md.
  */
 
 import type { QrFusedPose } from "gps-plus-slam-app-framework/ar/qr";
@@ -48,6 +49,24 @@ export interface FusedTallySummary {
     p95Abs: number | null;
     meanSigned: number | null;
   };
+  /**
+   * The motion detector (plan §26), over results that carry a reading: how
+   * many showed each mode, how often the mode switched within a frame epoch,
+   * and the raw signals' distribution - the newest view's corner error at
+   * the others' rotation (what the 3 px turning threshold is set against)
+   * and its position offset (the 3 cm moving threshold).
+   */
+  motion: {
+    n: number;
+    still: number;
+    moving: number;
+    turning: number;
+    movingTurning: number;
+    switches: number;
+    turnSignalP50Px: number | null;
+    turnSignalP95Px: number | null;
+    moveSignalP95Cm: number | null;
+  };
 }
 
 const pct = (xs: readonly number[], p: number): number | null =>
@@ -75,6 +94,7 @@ export function createFusedTally(): {
   let lastEpoch: number | null = null;
   let previous: { rotation: Rotation; atMs: number; epoch: number } | null =
     null;
+  const motion = createMotionTally();
 
   function addStablePose(result: QrFusedPose, atMs: number): void {
     const pose = result.pose;
@@ -103,6 +123,7 @@ export function createFusedTally(): {
       if (Number.isFinite(result.averagedRotationDeltaDeg))
         deltas.push(result.averagedRotationDeltaDeg);
       addStablePose(result, atMs);
+      motion.add(result);
     },
     summary() {
       const abs = elevations.map(Math.abs);
@@ -124,6 +145,49 @@ export function createFusedTally(): {
           p95Abs: pct(abs, 0.95),
           meanSigned: mean(elevations),
         },
+        motion: motion.summary(),
+      };
+    },
+  };
+}
+
+const MODE_KEYS = {
+  still: "still",
+  moving: "moving",
+  turning: "turning",
+  "moving+turning": "movingTurning",
+} as const;
+
+function createMotionTally(): {
+  add(result: QrFusedPose): void;
+  summary(): FusedTallySummary["motion"];
+} {
+  const counts = { n: 0, still: 0, moving: 0, turning: 0, movingTurning: 0 };
+  let switches = 0;
+  let last: { state: string; epoch: number } | null = null;
+  const turnSignals: number[] = [];
+  const moveSignals: number[] = [];
+  return {
+    add(result) {
+      const m = result.motion;
+      if (!m) return;
+      counts.n += 1;
+      counts[MODE_KEYS[m.state]] += 1;
+      if (last && last.epoch === result.frameEpoch && last.state !== m.state)
+        switches += 1;
+      last = { state: m.state, epoch: result.frameEpoch };
+      if (m.newestFitPx !== null && Number.isFinite(m.newestFitPx))
+        turnSignals.push(m.newestFitPx);
+      if (m.offsetM !== null && Number.isFinite(m.offsetM))
+        moveSignals.push(m.offsetM * 100);
+    },
+    summary() {
+      return {
+        ...counts,
+        switches,
+        turnSignalP50Px: pct(turnSignals, 0.5),
+        turnSignalP95Px: pct(turnSignals, 0.95),
+        moveSignalP95Cm: pct(moveSignals, 0.95),
       };
     },
   };
@@ -132,10 +196,11 @@ export function createFusedTally(): {
 const f = (v: number | null, d = 1): string =>
   v === null ? "-" : v.toFixed(d);
 
-/** The report lines: the tally, then the stable fused pose's own quality. */
+/** The report lines: the tally, the stable fused pose's own quality, the motion modes. */
 export function fusedLines(s: FusedTallySummary): string[] {
   return [
     `fused: ${s.locks} locks | stable ${s.stable} | joint ${s.joint} / averaged ${s.averaged} | frame changes ${s.frameChanges} | fit p50/p95 ${f(s.fitP50Px)}/${f(s.fitP95Px)} px | vs averaged p50/p95 ${f(s.deltaP50Deg)}/${f(s.deltaP95Deg)} deg`,
     `fused pose (stable): jump p50/p95/max ${f(s.jumpDeg.p50)}/${f(s.jumpDeg.p95)}/${f(s.jumpDeg.max)} deg (n ${s.jumpDeg.n}) | wall elevation |p50|/|p95| ${f(s.wallElevationDeg.p50Abs)}/${f(s.wallElevationDeg.p95Abs)} deg, mean ${f(s.wallElevationDeg.meanSigned)} deg`,
+    `motion: still ${s.motion.still} | moving ${s.motion.moving} | turning ${s.motion.turning} | both ${s.motion.movingTurning} | switches ${s.motion.switches} (n ${s.motion.n}) | turn signal p50/p95 ${f(s.motion.turnSignalP50Px)}/${f(s.motion.turnSignalP95Px)} px | move signal p95 ${f(s.motion.moveSignalP95Cm)} cm`,
   ];
 }

@@ -6,10 +6,18 @@ to confirm a freshly printed QR against a tape measure (Note 4). No DOM.
 ## Public API
 
 - `toHudView(status, size, fused?): HudView` → `{ statusLabel, sizeLabel, sampleLabel,
-spreadLabel, lifecycleLabel, poseLabel }`. `poseLabel` (M3b b5) names the
+spreadLabel, lifecycleLabel, poseLabel, motionLabel, motionColor }`. `poseLabel` (M3b b5) names the
   fused pose: `joint · <status> · <views> views · fit <px> px`, or
   `averaged (views disagree) · fit <px> px` for the fallback, or `—` before any
-  (a non-finite fit reads `fit —`).
+  (a non-finite fit reads `fit —`). `motionLabel` (plan §26) names the
+  code's motion mode with the speeds of what moves: `still`,
+  `moving · 12 cm/s`, `turning · 35°/s`, `moving + turning · … · …` (a
+  missing speed is left out), or `—` without a reading; `motionColor` is the
+  mode's colour, null for `still`.
+- `MOTION_COLORS`: one colour per motion mode, shared by the HUD row and the
+  3D trail (`motion-trail-view.ts`); `still` is null (the design system's
+  own text colour). Set from JS as an inline colour, so the page adds no CSS
+  rule over the vendored design system.
 - `DemoStatus = 'idle' | 'scanning' | 'tracking'`.
 
 ## Invariants
@@ -25,4 +33,5 @@ spreadLabel, lifecycleLabel, poseLabel }`. `poseLabel` (M3b b5) names the
 ## Tests
 
 `hud-view.test.ts` — placeholders when unknown, cm/mm formatting, singular
-sample, `measuring…` path.
+sample, `measuring…` path; the pose line; the motion line (each mode with its
+speeds, `—` without a reading, three distinct mode colours, none for still).

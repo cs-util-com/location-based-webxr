@@ -11,7 +11,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { QrFusedPose } from "gps-plus-slam-app-framework/ar/qr";
-import { createFusedTally } from "./fused-tally.js";
+import { createFusedTally, fusedLines } from "./fused-tally.js";
 
 /** A stable joint result whose code normal is tilted `elevDeg` up (about x). */
 function tilted(elevDeg: number, over: Partial<QrFusedPose> = {}): QrFusedPose {
@@ -75,5 +75,65 @@ describe("createFusedTally frame changes", () => {
     expect(s.frameChanges).toBe(1);
     expect(s.jumpDeg.n).toBe(2);
     expect(s.jumpDeg.max).toBeCloseTo(1, 6);
+  });
+});
+
+describe("createFusedTally motion (plan §26)", () => {
+  // Why this test matters: the motion thresholds are provisional until a
+  // phone measures them. Tests A (still wall code) and E (hand-held) must
+  // report how often each mode was shown, how often it switched, and the
+  // raw motion signals' distribution - the corner noise the turning
+  // threshold (3 px) depends on, and the position jitter the moving one
+  // (3 cm) does.
+  const withMotion = (
+    state: "still" | "moving" | "turning" | "moving+turning",
+    newestFitPx: number,
+    offsetM: number,
+    frameEpoch = 0,
+  ): QrFusedPose =>
+    tilted(0, {
+      frameEpoch,
+      motion: {
+        state,
+        moving: state.startsWith("moving"),
+        turning: state.endsWith("turning"),
+        stillSinceMs: null,
+        movingCandidate: false,
+        turningCandidate: false,
+        offsetM,
+        speedMps: null,
+        newestFitPx,
+        turnRateDegPerS: null,
+      },
+    });
+
+  it("counts the modes, the switches and the signals", () => {
+    const t = createFusedTally();
+    t.add(withMotion("still", 1, 0.01), 0);
+    t.add(withMotion("still", 2, 0.02), 100);
+    t.add(withMotion("moving", 3, 0.05), 200);
+    t.add(withMotion("moving+turning", 9, 0.06), 300);
+    t.add(withMotion("turning", 8, 0.0), 400);
+    t.add(withMotion("still", 1, 0.0, 1), 500); // a new epoch: no switch
+    t.add(tilted(0), 600); // no motion reading: not counted
+    const m = t.summary().motion;
+    expect(m).toMatchObject({
+      n: 6,
+      still: 3,
+      moving: 1,
+      turning: 1,
+      movingTurning: 1,
+      switches: 3,
+    });
+    expect(m.turnSignalP50Px).toBe(2);
+    expect(m.turnSignalP95Px).toBe(9);
+    expect(m.moveSignalP95Cm).toBeCloseTo(6, 6);
+  });
+
+  it("puts the motion line in the report", () => {
+    const t = createFusedTally();
+    t.add(withMotion("still", 1, 0.01), 0);
+    const lines = fusedLines(t.summary());
+    expect(lines.some((l) => l.startsWith("motion: still 1"))).toBe(true);
   });
 });

@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { toHudView } from "./hud-view";
+import { MOTION_COLORS, toHudView } from "./hud-view";
 
 describe("toHudView", () => {
   it("shows placeholders when no size is known yet", () => {
@@ -131,5 +131,77 @@ describe("toHudView pose line (M3b b5)", () => {
         fused({ status: "measuring", method: "averaged", fitPx: Infinity }),
       ).poseLabel,
     ).toBe("averaged (views disagree) · fit —");
+  });
+});
+
+describe("toHudView motion line (plan §26)", () => {
+  // Why this test matters: the owner asked to SEE the motion mode on the
+  // phone - a label with the speeds and a colour per mode - to judge the
+  // detector in tests A (a still wall code must read "still") and E (a
+  // hand-held code). A still code keeps the design system's own colour.
+  const motion = (over: Record<string, unknown>) =>
+    ({
+      status: "measuring",
+      pose: null,
+      method: "joint",
+      views: 1,
+      droppedViews: 0,
+      fitPx: 0,
+      windowEntries: 1,
+      averagedRotationDeltaDeg: 0,
+      frameEpoch: 0,
+      oldestTimestamp: 0,
+      newestTimestamp: 0,
+      motion: {
+        state: "still",
+        moving: false,
+        turning: false,
+        stillSinceMs: null,
+        movingCandidate: false,
+        turningCandidate: false,
+        offsetM: 0,
+        speedMps: 0.123,
+        newestFitPx: 0.5,
+        turnRateDegPerS: 35.2,
+        ...over,
+      },
+    }) as Parameters<typeof toHudView>[2];
+
+  it("reads '—' without a motion reading", () => {
+    expect(toHudView("idle", undefined, null).motionLabel).toBe("—");
+    const v = toHudView("tracking", undefined, motion({}));
+    expect(
+      toHudView("tracking", undefined, { ...v, motion: null } as never)
+        .motionLabel,
+    ).toBe("—");
+  });
+
+  it("reads a still code as 'still' in the default colour", () => {
+    const v = toHudView("tracking", undefined, motion({}));
+    expect(v.motionLabel).toBe("still");
+    expect(v.motionColor).toBeNull();
+  });
+
+  it("names each mode with its speeds", () => {
+    const label = (over: Record<string, unknown>) =>
+      toHudView("tracking", undefined, motion(over)).motionLabel;
+    expect(label({ state: "moving", moving: true })).toBe("moving · 12 cm/s");
+    expect(label({ state: "turning", turning: true })).toBe("turning · 35°/s");
+    expect(
+      label({ state: "turning", turning: true, turnRateDegPerS: null }),
+    ).toBe("turning");
+    expect(
+      label({ state: "moving+turning", moving: true, turning: true }),
+    ).toBe("moving + turning · 12 cm/s · 35°/s");
+  });
+
+  it("gives each motion mode its own colour", () => {
+    const colors = (["moving", "turning", "moving+turning"] as const).map(
+      (state) =>
+        toHudView("tracking", undefined, motion({ state })).motionColor,
+    );
+    expect(colors.every((c) => typeof c === "string")).toBe(true);
+    expect(new Set(colors).size).toBe(3);
+    expect(MOTION_COLORS.moving).toBe(colors[0]);
   });
 });
