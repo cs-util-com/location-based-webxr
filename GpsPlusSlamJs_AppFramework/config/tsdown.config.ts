@@ -75,7 +75,9 @@ const entryFiles = [
   'src/ar/image-quality.ts',
   'src/ar/replay-scene.ts',
   'src/ar/scene-node-names.ts',
+  'src/ar/sun-check.ts',
   'src/ar/sun-check-geometry.ts',
+  'src/ar/sun-marker.ts',
   // Curated re-export of the library's NUE↔WebXR conversions, so consumer apps
   // (the recorder's replay path) reach them without a direct gps-plus-slam-js
   // dependency. Deep-imported via the `./ar/*` wildcard → per-file entry.
