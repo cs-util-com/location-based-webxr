@@ -42,19 +42,25 @@
 
 ### Added
 
+- **The sun-shadow rig** (AR sun shadow prototype plan 2026-09-23-2343,
+  M1): **`visualization/sun-shadow-rig`** (deep import), pure: the sun
+  light's pose and shadow-camera bounds (`sunShadowPose`), when to re-render
+  the map (`shadowNeedsUpdate`), the display opacity for a transmittance
+  (`shadowOpacity`) and the elevation floor (`sunShadowActive`).
 - **A cloud layer to fly through** (look-dev plan 2026-09-24-1010):
   `SkyAtmosphere.configure({ cloudMode: 'sheet' })` draws the clouds on a
   camera-following disc 2 km up (the same pattern, cover and light as the
   sky's layer, with a sunlit top seen from above), which a camera can fly
   through and look down on; `cloudMode` reads it back. The default
   `'dome'` is unchanged and adds nothing to the scene.
-- **The AR sun check** (sun-overlay plan 2026-09-24-0100, M1-M3): deep
-  imports **`ar/sun-check-geometry`** (the sun's direction, the sighting
-  error, `alignmentYawDeg`), **`ar/sun-marker`** (the virtual sun and the
-  reticle) and **`ar/sun-check`** (`startSunCheck`, the controller the
-  RecorderApp's debug wheel switches on), plus **`ar/session-disposers`**
-  (`registerSessionDisposer`, so an app can tie its own UI to the AR
-  session's end).
+- **The AR sun check** (sun-overlay plan 2026-09-24-0100, M1-M3):
+  - **`ar/sun-check-geometry`** (deep import): the sun's direction, the
+    sighting error, `alignmentYawDeg`.
+  - **`ar/sun-marker`** (deep import): the virtual sun and the reticle.
+  - **`ar/sun-check`** (deep import): `startSunCheck`, the controller the
+    RecorderApp's debug wheel switches on.
+  - **`ar/session-disposers`** (deep import): `registerSessionDisposer`, so
+    an app can tie its own UI to the AR session's end.
 - **QR capture cadence constants** (QR near-frontal pose plan 2026-09-23-2314,
   M1): `QR_CAPTURE_INTERVAL_CONSTRAINTS` (`{ min: 50, max: 1000, step: 25 }`
   ms) and `DEFAULT_QR_CAPTURE_INTERVAL_MS` (125), on the `ar/qr` barrel and
