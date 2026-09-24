@@ -383,6 +383,7 @@ const recordingSessionHandlers = createRecordingSessionHandlers({
 const refPointHandlers = createRefPointHandlers({
   getStore: () => store,
   getCurrentSessionName: () => recordingSessionHandlers.getCurrentSessionName(),
+  isStopInProgress: () => recordingSessionHandlers.isStopInProgress(),
 });
 
 // Folder manager — encapsulates folder selection, save location, scenario management

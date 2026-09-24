@@ -984,6 +984,35 @@ describe('handleMarkRefPoint — recording ends mid-flow (stop-window race)', ()
     expect(lastToast[1]).toMatchObject({ severity: 'warning' });
   });
 
+  // WHY (DEC-AFK24-6, follow-up 2026-09-24-1130): Stop flushes, then exports
+  // the zip for seconds, and only then ends the session, so
+  // `recording.isRecording` is still true while the zip is being written.
+  // A ref point confirmed in that window passed the old guard and was
+  // dispatched after the export had listed `actions/`: missing from the
+  // zip, with a plain success toast. The stop window counts as ended.
+  it('stop in progress: the recording is still flagged, but the point goes to the scenario only, with the warning', async () => {
+    let stopping = false;
+    const stopHandlers = createRefPointHandlers(
+      createDefaultDeps({
+        getStore: () => mockStore,
+        isStopInProgress: () => stopping,
+      })
+    );
+    mockShowRefPointPicker.mockImplementation(() => {
+      stopping = true; // Stop pressed while the picker was open
+      return Promise.resolve({ id: 'S1', isNew: true });
+    });
+
+    await stopHandlers.handleMarkRefPoint();
+
+    expectMarkDispatchedTimes(mockStore, 0);
+    expect(mockSaveRefPointObservation).toHaveBeenCalledTimes(1);
+    const lastToast = mockShowToast.mock.calls.at(-1)!;
+    expect(lastToast[0]).toContain('S1');
+    expect(lastToast[0]).toMatch(/recording/i);
+    expect(lastToast[1]).toMatchObject({ severity: 'warning' });
+  });
+
   it('regression: while recording, the plain success toast and the dispatch are unchanged', async () => {
     mockShowRefPointPicker.mockResolvedValue({ id: 'bench', isNew: true });
 

@@ -255,6 +255,7 @@ vi.mock('./recording/recording-session-handlers', () => ({
     handleStartRecording: vi.fn(),
     handleStopRecording: vi.fn(),
     recordCaptureFailure: vi.fn(),
+    isStopInProgress: vi.fn().mockReturnValue(true),
     reset: vi.fn(),
   }),
 }));
@@ -272,6 +273,22 @@ vi.mock('./storage/folder-manager', () => ({
 
 // Import after all mocks are set up
 import { handleEnterARForTesting, resetMainState } from './main';
+import { createRefPointHandlers } from './ref-points/ref-point-handlers';
+
+// Captured at import, before any beforeEach clears the mocks' call history:
+// main.ts builds its ref point handlers once, at module load.
+const refPointDeps = vi.mocked(createRefPointHandlers).mock.calls[0]?.[0];
+
+describe('ref point handlers: the stop window (DEC-AFK24-6)', () => {
+  // Why this test matters: the handlers only treat the stop window as
+  // ended if main.ts hands them the recording session's
+  // `isStopInProgress`; without it a ref point confirmed during Stop is
+  // dispatched after the zip export and missing from it.
+  it("hands the recording session's isStopInProgress to the ref point handlers", () => {
+    expect(refPointDeps?.isStopInProgress).toBeTypeOf('function');
+    expect(refPointDeps?.isStopInProgress?.()).toBe(true);
+  });
+});
 
 describe('Issue 8: CameraFollower wiring in live AR', () => {
   beforeEach(() => {

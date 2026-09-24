@@ -55,6 +55,13 @@ export interface RefPointHandlersDeps {
   getStore: () => RecorderStore;
   /** Returns the current session name (set when recording starts). */
   getCurrentSessionName: () => string;
+  /**
+   * True from Stop until the session has ended (the recording session
+   * handlers' `isStopInProgress`). The zip is exported in that window while
+   * `recording.isRecording` is still true, so a dispatch there can miss it:
+   * it counts as ended (DEC-AFK24-6). Omitted: never stopping.
+   */
+  isStopInProgress?: () => boolean;
 }
 
 interface NearbyRefPointInfo {
@@ -100,10 +107,13 @@ export function createRefPointHandlers(
    * Mirror of the framework persistence middleware's `readIsRecording`
    * (persistence-middleware.ts): the gate the `addRefPointEntry` dispatch
    * below is subject to. Missing slice ⇒ false, exactly like the gate, so
-   * this predicts precisely whether a dispatched action would reach the
-   * recording's `actions/`.
+   * this predicts whether a dispatched action would reach the recording's
+   * `actions/`. The stop window counts as ended: the zip is being exported
+   * while the flag is still true, so a dispatch there can miss it
+   * (DEC-AFK24-6; follow-up 2026-09-24-1130).
    */
   function isRecordingActive(): boolean {
+    if (deps.isStopInProgress?.() === true) return false;
     const state = deps.getStore().getState() as unknown as {
       recording?: { isRecording?: boolean };
     };
