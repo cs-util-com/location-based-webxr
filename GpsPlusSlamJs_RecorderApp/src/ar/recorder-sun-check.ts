@@ -47,6 +47,8 @@ export interface RecorderSunCheckDeps {
   }) => Promise<boolean>;
   /** The framework controller (injected for tests). */
   readonly start?: (deps: SunCheckDeps) => SunCheck;
+  /** The check turned itself off (see `SunCheckUiDeps.onEnabledChange`). */
+  readonly onEnabledChange?: (enabled: boolean) => void;
 }
 
 /** The controller's deps, read from the CURRENT store at every call. */
@@ -90,11 +92,12 @@ export function createRecorderSunCheck(deps: RecorderSunCheckDeps): SunCheckUi {
         cancelLabel: 'Cancel',
       }),
     showToast: deps.showToast,
-    recordSighting: createSunSightingRecorder({
+    recorderAtPress: createSunSightingRecorder({
       getStore: () => deps.storeRef.get(),
       isStopInProgress: deps.isStopInProgress,
       isReplaying: deps.isReplaying,
     }),
+    ...(deps.onEnabledChange ? { onEnabledChange: deps.onEnabledChange } : {}),
   });
 }
 

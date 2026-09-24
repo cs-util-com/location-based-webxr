@@ -11,7 +11,7 @@
 
 import type { SunCheck } from 'gps-plus-slam-app-framework/ar/sun-check';
 
-import type { SunSighting } from './sun-sighting-note';
+import type { SunSighting, SunSightingRecord } from './sun-sighting-note';
 
 type SunMarkResult = Awaited<ReturnType<SunCheck['mark']>>;
 type SunCheckStatus = ReturnType<SunCheck['status']>;
@@ -28,10 +28,18 @@ export interface SunCheckUiDeps {
     message: string,
     options: { severity: Severity; duration?: number }
   ) => void;
-  /** Logs an accepted Mark; says whether a recording kept it. */
-  readonly recordSighting: (
-    sighting: SunSighting
-  ) => 'recorded' | 'not-recording';
+  /**
+   * Called at a Mark's PRESS: returns that Mark's recorder, bound to the
+   * recording current then (`sun-sighting-note.ts`), which logs an accepted
+   * sighting and says whether a recording kept it.
+   */
+  readonly recorderAtPress: () => SunSightingRecord;
+  /**
+   * The check turned itself off (it could not start when an AR session
+   * attached), so the wheel's box can show it; `setEnabled` reports its own
+   * result instead.
+   */
+  readonly onEnabledChange?: (enabled: boolean) => void;
   /** Repeats `f` every `ms`, returns the cancel (default `setInterval`). */
   readonly every?: (ms: number, f: () => void) => () => void;
 }
@@ -59,6 +67,11 @@ const RESULT_TOAST_MS = 6000;
 const HISTORY_LENGTH = 3;
 /** Below this an error reads "on true" rather than inventing a side. */
 const ON_TRUE_DEG = 0.05;
+/**
+ * Below this apparent elevation refraction dominates the error budget (plan
+ * §5, owner default Q5/Q6: the useful window starts at 5°): a warning.
+ */
+const LOW_SUN_DEG = 5;
 
 const HIDDEN_TEXT: Record<
   NonNullable<SunCheckStatus['hiddenBecause']>,
@@ -148,17 +161,23 @@ export function describeSunMark(
     return { message: REFUSAL_TEXT[result.reason], severity: 'warning' };
   }
   const { sighting, warnings } = result;
+  const el = sighting.sunElApparentDeg;
+  const lowSun =
+    el < LOW_SUN_DEG
+      ? [`sun low (${el.toFixed(0)}°): refraction makes it less certain`]
+      : [];
   const parts = [
     describeOffsets(sighting),
-    `sun el ${sighting.sunElApparentDeg.toFixed(0)}°`,
-    ...warnings.map((w) => WARNING_TEXT(w, sighting.sunElApparentDeg)),
+    `sun el ${el.toFixed(0)}°`,
+    ...lowSun,
+    ...warnings.map((w) => WARNING_TEXT(w, el)),
     recorded === 'recorded'
       ? 'recorded'
       : 'not recorded (no recording running)',
   ];
   return {
     message: parts.join(' · '),
-    severity: warnings.length > 0 ? 'warning' : 'info',
+    severity: warnings.length + lowSun.length > 0 ? 'warning' : 'info',
   };
 }
 
@@ -242,6 +261,7 @@ export function createSunCheckUi(deps: SunCheckUiDeps): SunCheckUi {
         `Sun check could not start: ${err instanceof Error ? err.message : String(err)}`,
         { severity: 'error' }
       );
+      deps.onEnabledChange?.(false);
       return false;
     }
     deps.root.append(panel);
@@ -264,11 +284,24 @@ export function createSunCheckUi(deps: SunCheckUiDeps): SunCheckUi {
     button.setAttribute('aria-busy', 'true');
     button.textContent = 'Hold still… 1 s';
     try {
+      // Bound NOW: a store swapped while the Mark runs is another recording.
+      let record: SunSightingRecord | null = null;
+      let bindError: unknown = null;
+      try {
+        record = deps.recorderAtPress();
+      } catch (err) {
+        bindError = err;
+      }
       const result = await check.mark();
       let recorded: 'recorded' | 'not-recording' = 'not-recording';
       if (result.ok) {
         try {
-          recorded = deps.recordSighting(result.sighting);
+          if (!record) {
+            throw bindError instanceof Error
+              ? bindError
+              : new Error(String(bindError));
+          }
+          recorded = record(result.sighting);
         } catch (err) {
           deps.showToast(
             `Sun Mark measured but could not be recorded: ${err instanceof Error ? err.message : String(err)}`,

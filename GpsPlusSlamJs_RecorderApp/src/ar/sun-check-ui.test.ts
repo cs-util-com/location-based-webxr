@@ -53,12 +53,16 @@ function setup(overrides: Partial<SunCheckUiDeps> = {}) {
   document.body.append(root);
   const stub = stubCheck();
   const ticks: Array<() => void> = [];
+  const recordSighting = vi.fn(
+    (_s: SunSighting): 'recorded' | 'not-recording' => 'recorded'
+  );
   const deps = {
     root,
     startCheck: vi.fn(() => stub.check),
     confirmSafety: vi.fn(() => Promise.resolve(true)),
     showToast: vi.fn(),
-    recordSighting: vi.fn(() => 'recorded' as const),
+    recorderAtPress: vi.fn(() => recordSighting),
+    onEnabledChange: vi.fn(),
     every: vi.fn((_ms: number, f: () => void) => {
       ticks.push(f);
       return () => {
@@ -72,7 +76,7 @@ function setup(overrides: Partial<SunCheckUiDeps> = {}) {
     for (const f of [...ticks]) f();
   };
   const q = (id: string) => root.querySelector<HTMLElement>(`#${id}`);
-  return { ui, deps, stub, root, tick, q };
+  return { ui, deps, recordSighting, stub, root, tick, q, ticks };
 }
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -129,6 +133,25 @@ describe('describeSunMark', () => {
     expect(r.severity).toBe('warning');
   });
 
+  // WHY (owner defaults Q5/Q6): below 5° refraction dominates the error
+  // budget; the Mark is kept but must not read like a clean one.
+  it('warns about a low sun, below 5°, and not at 5°', () => {
+    const low = describeSunMark(
+      { ok: true, sighting: sighting(1, 0, 3.2), warnings: [] },
+      'recorded'
+    );
+    expect(low.message).toContain(
+      'sun low (3°): refraction makes it less certain'
+    );
+    expect(low.severity).toBe('warning');
+    const edge = describeSunMark(
+      { ok: true, sighting: sighting(1, 0, 5), warnings: [] },
+      'recorded'
+    );
+    expect(edge.message).not.toContain('sun low');
+    expect(edge.severity).toBe('info');
+  });
+
   it('names every refusal, with the spread for a moved Mark', () => {
     expect(
       describeSunMark(
@@ -152,6 +175,8 @@ describe('describeSunMark', () => {
       (reason) => describeSunMark({ ok: false, reason }, 'recorded').message
     );
     expect(new Set(messages).size).toBe(reasons.length);
+    expect(messages[1]).toBe('No alignment yet - walk until it has settled');
+    expect(messages[3]).toBe('The sun is below the horizon');
     for (const m of messages) expect(m.length).toBeGreaterThan(8);
   });
 });
@@ -229,11 +254,13 @@ describe('createSunCheckUi', () => {
   // WHY (the repo's async-UI rule): a Mark takes a second of holding still,
   // so the button shows it is busy, and returns to idle on every outcome.
   it('shows the in-progress state, then the result, and records an accepted Mark', async () => {
-    const { ui, deps, stub, q } = setup();
+    const { ui, deps, recordSighting, stub, q } = setup();
     await ui.setEnabled(true);
     ui.attach();
     const button = q('btn-sun-mark') as HTMLButtonElement;
     button.click();
+    // Bound at the press, before the Mark resolves (M3 review finding 1).
+    expect(deps.recorderAtPress).toHaveBeenCalledTimes(1);
     expect(button.disabled).toBe(true);
     expect(button.getAttribute('aria-busy')).toBe('true');
     expect(button.textContent).toBe('Hold still… 1 s');
@@ -243,7 +270,7 @@ describe('createSunCheckUi', () => {
     const s = sighting(1.84, -0.21);
     stub.settle({ ok: true, sighting: s, warnings: [] });
     await flush();
-    expect(deps.recordSighting).toHaveBeenCalledWith(s);
+    expect(recordSighting).toHaveBeenCalledWith(s);
     expect(deps.showToast).toHaveBeenCalledWith(
       'Content 1.8° left of true · 0.2° high · sun el 12° · recorded',
       expect.objectContaining({ severity: 'info' })
@@ -271,14 +298,14 @@ describe('createSunCheckUi', () => {
   });
 
   it('reverts the button and records nothing on a refusal', async () => {
-    const { ui, deps, stub, q } = setup();
+    const { ui, deps, recordSighting, stub, q } = setup();
     await ui.setEnabled(true);
     ui.attach();
     const button = q('btn-sun-mark') as HTMLButtonElement;
     button.click();
     stub.settle({ ok: false, reason: 'moved', spreadDeg: 0.62, frames: 30 });
     await flush();
-    expect(deps.recordSighting).not.toHaveBeenCalled();
+    expect(recordSighting).not.toHaveBeenCalled();
     expect(deps.showToast).toHaveBeenCalledWith(
       'Moved 0.6° during the Mark - hold still and try again',
       expect.objectContaining({ severity: 'warning' })
@@ -291,7 +318,7 @@ describe('createSunCheckUi', () => {
   // not leave the button stuck busy.
   it('reports a failed record as an error and reverts the button', async () => {
     const { ui, deps, stub, q } = setup({
-      recordSighting: vi.fn(() => {
+      recorderAtPress: vi.fn(() => () => {
         throw new Error('store gone');
       }),
     });
@@ -324,14 +351,33 @@ describe('createSunCheckUi', () => {
     expect(q('sun-check')).toBeNull();
   });
 
+  // WHY (M3 review finding 3): enabled before Enter-AR, the start happens
+  // on attach, where no setEnabled result carries the failure; without the
+  // callback the wheel's box stayed checked while the check was off.
+  it('tells the app when a start on attach fails', async () => {
+    const { ui, deps } = setup({
+      startCheck: vi.fn(() => {
+        throw new Error('no scene');
+      }),
+    });
+    expect(await ui.setEnabled(true)).toBe(true);
+    expect(deps.onEnabledChange).not.toHaveBeenCalled();
+    ui.attach();
+    expect(deps.onEnabledChange).toHaveBeenCalledWith(false);
+    expect(ui.isEnabled()).toBe(false);
+  });
+
   it('stops its status refresh and removes its DOM on dispose', async () => {
-    const { ui, deps, stub, q } = setup();
+    const { ui, deps, stub, q, ticks } = setup();
     await ui.setEnabled(true);
     ui.attach();
+    expect(ticks).toHaveLength(1);
     ui.dispose();
     expect(stub.check.dispose).toHaveBeenCalled();
     expect(q('sun-check')).toBeNull();
     expect(deps.every).toHaveBeenCalledTimes(1);
+    // The refresh's cancel ran (M3 review finding 6).
+    expect(ticks).toHaveLength(0);
     ui.attach();
     expect(deps.startCheck).toHaveBeenCalledTimes(1);
   });

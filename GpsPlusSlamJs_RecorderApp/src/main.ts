@@ -954,6 +954,8 @@ async function main(): Promise<void> {
         isReplaying: () => replayHandlers.getIsReplayMode(),
         showToast,
         confirm: showConfirmDialog,
+        // The check can turn itself off on attach; the box must follow.
+        onEnabledChange: (on) => debugWheel?.showSunCheck(on),
       });
       const sunCheck = sunCheckUi;
       debugWheel = createDebugWheel({

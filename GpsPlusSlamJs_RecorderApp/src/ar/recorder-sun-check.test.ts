@@ -115,15 +115,15 @@ describe('createRecorderSunCheck', () => {
 });
 
 describe('attachSunCheckToSession', () => {
-  // WHY: the recorder's scope unwinds only at the NEXT Enter-AR, so the
-  // session's end must detach the HUD on its own; and whichever comes first,
-  // the other must not act twice on a later session.
-  it('detaches on session end or on scope unwind, whichever comes first', () => {
+  /**
+   * A session-disposer registry that honours `unregister`, like the
+   * framework's, and a scope that records its entries.
+   */
+  const harness = () => {
     const ui = { attach: vi.fn(), detach: vi.fn() } as unknown as Parameters<
       typeof attachSunCheckToSession
     >[0];
-    const disposers: Array<() => void> = [];
-    const unregister = vi.fn();
+    let disposers: Array<() => void> = [];
     const scoped: Array<() => void> = [];
     attachSunCheckToSession(
       ui,
@@ -133,13 +133,42 @@ describe('attachSunCheckToSession', () => {
       } as never,
       (d) => {
         disposers.push(d);
-        return unregister;
+        return () => {
+          disposers = disposers.filter((x) => x !== d);
+        };
       }
     );
+    const endSession = () => {
+      const run = disposers;
+      disposers = [];
+      for (const d of run) d();
+    };
+    const unwindScope = () => {
+      for (const d of scoped) d();
+    };
+    return { ui, endSession, unwindScope, pending: () => disposers.length };
+  };
+
+  // WHY: the recorder's scope unwinds only at the NEXT Enter-AR, so the
+  // session's end must detach the HUD on its own.
+  it('detaches at the session end, before the scope unwinds', () => {
+    const { ui, endSession, unwindScope } = harness();
     expect(ui.attach).toHaveBeenCalledTimes(1);
-    disposers[0]!(); // the session ended
+    endSession();
     expect(ui.detach).toHaveBeenCalledTimes(1);
-    scoped[0]!(); // the scope unwinds at the next Enter-AR
-    expect(unregister).toHaveBeenCalledTimes(1);
+    unwindScope(); // the next Enter-AR
+    expect(ui.detach).toHaveBeenCalledTimes(2); // idempotent in the UI
+  });
+
+  // WHY (M3 review finding 4): a failed Enter-AR or a reset unwinds the
+  // scope FIRST; the scope's entry must detach, and must unregister the
+  // session disposer so a later session's end does not act on this UI.
+  it('detaches at the scope unwind and unregisters the session disposer', () => {
+    const { ui, endSession, unwindScope, pending } = harness();
+    unwindScope();
+    expect(ui.detach).toHaveBeenCalledTimes(1);
+    expect(pending()).toBe(0);
+    endSession();
+    expect(ui.detach).toHaveBeenCalledTimes(1);
   });
 });

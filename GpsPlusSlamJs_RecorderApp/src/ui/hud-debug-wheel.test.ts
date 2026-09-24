@@ -787,4 +787,33 @@ describe('the sun check toggle (sun-overlay plan M3)', () => {
     expect(wheel.touched()).toBe(false);
     expect(store.dispatched).toEqual([]);
   });
+  // WHY (the async-UI rule's failure path, M3 review finding 6): a callback
+  // that rejects must leave the box unchecked and usable, never stuck
+  // disabled; the success path must show the box on.
+  it('reverts to unchecked and usable when the app rejects, and shows success', async () => {
+    const failing = mountWith(() => Promise.reject(new Error('boom')));
+    failing.box!.checked = true;
+    failing.box!.dispatchEvent(new Event('change'));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(failing.box!.checked).toBe(false);
+    expect(failing.box!.disabled).toBe(false);
+
+    const ok = mountWith(() => Promise.resolve(true));
+    ok.box!.checked = true;
+    ok.box!.dispatchEvent(new Event('change'));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(ok.box!.checked).toBe(true);
+    expect(ok.box!.disabled).toBe(false);
+  });
+
+  // WHY (M3 review finding 3): the check can turn itself off when an AR
+  // session attaches; the app then sets the box, or it would read "on".
+  it('shows a state the app changed', () => {
+    const { wheel, box } = mountWith(() => Promise.resolve(true));
+    wheel.showSunCheck(true);
+    expect(box!.checked).toBe(true);
+    wheel.showSunCheck(false);
+    expect(box!.checked).toBe(false);
+    expect(() => mountWith().wheel.showSunCheck(true)).not.toThrow();
+  });
 });

@@ -37,7 +37,9 @@ attaches it after Enter-AR.
   - A degenerate matrix throws there, and the controller's callback guard
     reads that as "no target".
 - **No live scene, no start.** `startCheck` throws "no AR scene", which the UI
-  turns into an error toast and an unchecked box.
+  turns into an error toast. The box ends up unchecked on both paths: through
+  `setEnabled`'s result, or through `onEnabledChange(false)` when the failure
+  happens on attach (`main.ts` forwards it to the wheel's `showSunCheck`).
 - **Session life.**
   - The recorder's `arSessionScope` unwinds only at the next Enter-AR (or a
     failed one).

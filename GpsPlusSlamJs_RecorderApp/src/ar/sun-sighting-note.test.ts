@@ -70,13 +70,16 @@ describe('createSunSightingRecorder', () => {
       getStore: () => store,
       isStopInProgress: () => false,
       isReplaying: () => false,
+      nowEpochMs: () => 1_700_000_002_000,
     });
     const s = sighting();
-    expect(record(s)).toBe('recorded');
+    expect(record()(s)).toBe('recorded');
     expect(store.dispatched).toEqual([
       recordDiagnostic({
         kind: SUN_SIGHTING_KIND,
-        atMs: s.atMs,
+        // The envelope's time is the DISPATCH (the replay engine paces notes
+        // by it); the Mark's middle frame stays in detail.atMs.
+        atMs: 1_700_000_002_000,
         detail: { ...s },
       }),
     ]);
@@ -93,7 +96,7 @@ describe('createSunSightingRecorder', () => {
         isStopInProgress: () => false,
         isReplaying: () => false,
       });
-      expect(record(sighting())).toBe('not-recording');
+      expect(record()(sighting())).toBe('not-recording');
       expect(store.dispatched).toEqual([]);
     }
   });
@@ -108,7 +111,7 @@ describe('createSunSightingRecorder', () => {
       isStopInProgress: () => true,
       isReplaying: () => false,
     });
-    expect(record(sighting())).toBe('not-recording');
+    expect(record()(sighting())).toBe('not-recording');
     expect(store.dispatched).toEqual([]);
   });
 
@@ -121,13 +124,13 @@ describe('createSunSightingRecorder', () => {
       isStopInProgress: () => false,
       isReplaying: () => true,
     });
-    expect(record(sighting())).toBe('not-recording');
+    expect(record()(sighting())).toBe('not-recording');
     expect(store.dispatched).toEqual([]);
   });
 
   // WHY: the recorder swaps stores per recording; a captured store would
   // log into a dead store (the store-ref rule).
-  it('reads the store at call time, never a captured one', () => {
+  it('reads the store at the press, never one captured at creation', () => {
     const first = fakeStore(true);
     const second = fakeStore(true);
     let current = first;
@@ -137,8 +140,30 @@ describe('createSunSightingRecorder', () => {
       isReplaying: () => false,
     });
     current = second;
-    record(sighting());
+    record()(sighting());
     expect(first.dispatched).toEqual([]);
     expect(second.dispatched).toHaveLength(1);
+  });
+});
+
+describe('createSunSightingRecorder - bound at the press (M3 review finding 1)', () => {
+  // WHY: a Mark lives up to ~3 s. If the store is swapped meanwhile (Stop,
+  // then a new recording), the sighting belongs to the recording it was
+  // measured in, not the next one: it carries that recording's place and
+  // alignment, and an atMs before the new recording's start.
+  it('records nothing when the store changed between the press and the result', () => {
+    const first = fakeStore(true);
+    const second = fakeStore(true);
+    let current = first;
+    const record = createSunSightingRecorder({
+      getStore: () => current,
+      isStopInProgress: () => false,
+      isReplaying: () => false,
+    });
+    const atPress = record();
+    current = second;
+    expect(atPress(sighting())).toBe('not-recording');
+    expect(first.dispatched).toEqual([]);
+    expect(second.dispatched).toEqual([]);
   });
 });

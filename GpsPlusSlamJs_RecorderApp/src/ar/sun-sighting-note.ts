@@ -24,42 +24,60 @@ interface NoteStore {
 }
 
 export interface SunSightingRecorderDeps {
-  /** The CURRENT store, read at every call (the store-ref rule). */
+  /** The CURRENT store (the store-ref rule): read at the press and at the result. */
   readonly getStore: () => NoteStore;
   /** True between Stop's action flush and the session's end. */
   readonly isStopInProgress: () => boolean;
   /** True while a replay store is installed. */
   readonly isReplaying: () => boolean;
+  /** The dispatch time for the note's envelope (default `Date.now`). */
+  readonly nowEpochMs?: () => number;
 }
 
+/** Records one Mark's sighting; bound to the store current at the press. */
+export type SunSightingRecord = (
+  sighting: SunSighting
+) => 'recorded' | 'not-recording';
+
 /**
- * Returns the recorder: `'recorded'` when the note was dispatched into a
- * running recording, `'not-recording'` when no recording would keep it.
+ * Returns a function to call at a Mark's PRESS: it binds the store current
+ * then and returns that Mark's recorder. The recorder answers `'recorded'`
+ * when the note was dispatched into a running recording, `'not-recording'`
+ * when no recording would keep it or the store changed while the Mark ran
+ * (a sighting belongs to the recording it was measured in).
  */
 export function createSunSightingRecorder(
   deps: SunSightingRecorderDeps
-): (sighting: SunSighting) => 'recorded' | 'not-recording' {
-  return (sighting) => {
-    const store = deps.getStore();
-    // Mirrors the persistence middleware's gate (ref-point-handlers.ts has
-    // the same mirror): outside it the note would be dropped silently.
-    const state = store.getState() as {
-      recording?: { isRecording?: boolean };
+): () => SunSightingRecord {
+  const now = deps.nowEpochMs ?? (() => Date.now());
+  return () => {
+    const pressed = deps.getStore();
+    return (sighting) => {
+      const store = deps.getStore();
+      if (store !== pressed) return 'not-recording';
+      // Mirrors the persistence middleware's gate (ref-point-handlers.ts has
+      // the same mirror): outside it the note would be dropped silently.
+      const state = store.getState() as {
+        recording?: { isRecording?: boolean };
+      };
+      const recording = state.recording?.isRecording ?? false;
+      // Stop flushes the action writes before the zip export and ends the
+      // session only after it: a note in between would pass the gate above
+      // and still miss the zip.
+      if (!recording || deps.isStopInProgress() || deps.isReplaying()) {
+        return 'not-recording';
+      }
+      store.dispatch(
+        recordDiagnostic({
+          kind: SUN_SIGHTING_KIND,
+          // The envelope's time is the dispatch: the replay engine paces
+          // notes by it, and the Mark's middle frame (detail.atMs) is up to
+          // ~3 s older. The middle frame stays the measurement's time.
+          atMs: now(),
+          detail: { ...sighting },
+        })
+      );
+      return 'recorded';
     };
-    const recording = state.recording?.isRecording ?? false;
-    // Stop flushes the action writes before the zip export and ends the
-    // session only after it: a note in between would pass the gate above
-    // and still miss the zip.
-    if (!recording || deps.isStopInProgress() || deps.isReplaying()) {
-      return 'not-recording';
-    }
-    store.dispatch(
-      recordDiagnostic({
-        kind: SUN_SIGHTING_KIND,
-        atMs: sighting.atMs,
-        detail: { ...sighting },
-      })
-    );
-    return 'recorded';
   };
 }

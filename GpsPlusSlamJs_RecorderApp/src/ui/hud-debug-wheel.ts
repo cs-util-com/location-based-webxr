@@ -377,6 +377,11 @@ export interface DebugWheel {
   suspend(): void;
   /** Drive stores again; held changes reach the current store if decided. */
   resume(): void;
+  /**
+   * Show the sun check's state when the APP changed it (the check turned
+   * itself off on attach); a no-op without the box.
+   */
+  showSunCheck(enabled: boolean): void;
 }
 
 export function createDebugWheel(deps: DebugWheelDeps): DebugWheel {
@@ -681,6 +686,9 @@ export function createDebugWheel(deps: DebugWheelDeps): DebugWheel {
   };
 
   return {
+    showSunCheck(enabled) {
+      if (sunCheck) sunCheck.checked = enabled;
+    },
     attach() {
       if (attached) return;
       deps.controlsRoot.append(gear);

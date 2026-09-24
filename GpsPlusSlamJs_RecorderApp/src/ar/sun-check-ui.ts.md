@@ -23,8 +23,14 @@ It sits on top of the framework's `startSunCheck` controller
   - `deps.confirmSafety()`: the first-enable safety note. Resolves true when
     the user acknowledges it.
   - `deps.showToast(message, { severity, duration })`.
-  - `deps.recordSighting(sighting)`: returns `'recorded' | 'not-recording'`.
-    If it throws, an error toast says "measured but could not be recorded".
+  - `deps.recorderAtPress()`: called at the Mark's PRESS. It returns that
+    Mark's recorder, bound to the recording current then, which returns
+    `'recorded' | 'not-recording'`. If binding or recording throws, an error
+    toast says "measured but could not be recorded".
+  - `deps.onEnabledChange(enabled)` (optional): the check turned itself off
+    because it could not start when a session attached. `setEnabled` reports
+    its own result instead, so this covers only the attach path, and it
+    keeps the wheel's box honest.
   - `deps.every(ms, f)`: the status refresh timer (default `setInterval`).
 - `SunCheckUi`:
   - `setEnabled(on)`, which resolves to the state actually reached;
@@ -62,7 +68,10 @@ It sits on top of the framework's `startSunCheck` controller
   - A second tap while a Mark is running is ignored.
   - Refusals are warnings; a failed record or a failed start is an error.
 - **Warnings keep the measurement** (high sun, target changed, alignment
-  moving), but raise the toast's severity to a warning.
+  moving, and a low sun below 5°, where refraction dominates), but raise the
+  toast's severity to a warning. The high-sun warning does not state the
+  heading resolution that owner default Q6 asked for: no formula for it is
+  implemented yet (a deviation, listed in the plan's §13c).
 - The result types are named through `SunCheck`, because the framework keeps
   them unexported until an app imports them by name (see `sun-check.ts.md`).
 
