@@ -14,13 +14,17 @@ M2, §3.3). Owns no clock and no store; `ar/sun-check.ts` drives it.
     frame);
   - `setSun(azimuthDeg, elevationDeg)` — point it at the (apparent) sun;
     `RangeError` for non-finite angles or |elevation| > 90°;
-  - `setVisible(visible)`;
+  - `reticle` — the screen-centre crosshair (clip space, fixed at NDC
+    (0, 0), the pixel a Mark measures; add it to the scene too);
+  - `setVisible(visible)` — marker and reticle together;
   - `dispose()` — removes the mesh from its parent, frees geometry and
     material.
 - `SUN_MARKER` — the layout: rings at 0.265° (the disc), 1°, 2° and 5°;
   crosshair arms to 6° with a 0.6° gap; heading ticks at Δazimuth ±1, ±2,
-  ±5; elevation ticks at ±0.5, ±1, ±2; line widths 0.1° (magenta) over
-  0.25° (dark outline).
+  ±5; elevation ticks at ±0.5 and ±1.5 (between the rings: at ±1 and ±2
+  they were hidden under the rings' outlines); line widths 0.1° (magenta)
+  over 0.25° (dark outline); the reticle in NDC (gap 0.012, reach 0.05),
+  white over the dark outline.
 
 ## Invariants & assumptions
 
@@ -34,7 +38,13 @@ M2, §3.3). Owns no clock and no store; `ar/sun-check.ts` drives it.
   radius tan r), so they read as distances.
 - **Over everything, ungraded**: no depth test or write, no fog, no tone
   mapping (OsmDemo's Khronos Neutral grade cannot shift the colour), render
-  order 1e6, never frustum-culled. The outline is drawn first.
+  order 1e6, never frustum-culled. **One pass** (`forceSinglePass`): a
+  transparent DoubleSide material otherwise draws back faces first, and the
+  line quads face away, so the ring outlines covered the arms and ticks (M2
+  review finding 2). The outline is drawn first, the colour over it.
+- **Depth 0 in clip space**: neither the near nor the far plane can clip a
+  direction in front of the camera (at OsmDemo's AR near 0.5, the plain
+  1 m placement clipped anything beyond 60° off-axis).
 - Tick labels are not drawn yet (a text atlas, plan §3.3).
 
 ## Examples

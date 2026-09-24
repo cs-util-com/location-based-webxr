@@ -114,6 +114,51 @@ describe('the marker geometry', () => {
   });
 });
 
+describe('the marker layout', () => {
+  // M2 review finding 2: the elevation ticks at ±1° and ±2° sat ON the
+  // rings and vanished under their outlines. A tick's coloured line must
+  // stay clear of every ring's outline band: at least half a line width plus
+  // half an outline width away from the ring's radius.
+  it('keeps the elevation ticks off the rings', () => {
+    const clearance =
+      (SUN_MARKER.lineWidthDeg + SUN_MARKER.outlineWidthDeg) / 2;
+    for (const v of SUN_MARKER.elevationTicksDeg) {
+      for (const r of SUN_MARKER.ringsDeg) {
+        expect(Math.abs(Math.abs(v) - r)).toBeGreaterThan(clearance);
+      }
+    }
+  });
+});
+
+describe('the reticle', () => {
+  // The Mark measures the ray through NDC (0, 0) (principalRayCamera's
+  // default), so the reticle must be drawn there, fixed on the screen, in
+  // clip space (M2 review finding 3).
+  it('sits at NDC (0, 0) in clip space, symmetric, over everything', () => {
+    const { reticle } = createSunMarker();
+    const material = reticle.material as THREE.ShaderMaterial;
+    expect(material.vertexShader).not.toContain('viewMatrix');
+    expect(material.vertexShader).toContain('gl_Position = vec4(position.x');
+    const p = reticle.geometry.getAttribute('position');
+    let sx = 0;
+    let sy = 0;
+    for (let i = 0; i < p.count; i++) {
+      sx += p.getX(i);
+      sy += p.getY(i);
+      // Nothing inside the gap: the real sun at the centre stays visible.
+      expect(
+        Math.max(Math.abs(p.getX(i)), Math.abs(p.getY(i)))
+      ).toBeGreaterThanOrEqual(SUN_MARKER.reticleGapNdc - 1e-9);
+    }
+    expect(Math.abs(sx / p.count)).toBeLessThan(1e-9);
+    expect(Math.abs(sy / p.count)).toBeLessThan(1e-9);
+    expect(reticle.frustumCulled).toBe(false);
+    expect(reticle.renderOrder).toBeGreaterThan(SUN_MARKER.renderOrder);
+    expect(material.depthTest).toBe(false);
+    expect(material.toneMapped).toBe(false);
+  });
+});
+
 describe('the marker material', () => {
   // Rotation-only view, like the sky: no lag, no parallax, correct per XR
   // view. A shader that used modelMatrix or the full viewMatrix would place
@@ -123,6 +168,22 @@ describe('the marker material', () => {
     expect(material.vertexShader).toContain('mat3(viewMatrix)');
     expect(material.vertexShader).not.toContain('modelMatrix');
     expect(material.vertexShader).not.toContain('modelViewMatrix');
+    // Neither plane may clip a direction in front of the camera (M2 review
+    // finding 12: near 0.5 clipped anything beyond 60° off-axis).
+    expect(material.vertexShader).toContain('gl_Position.z = 0.0');
+  });
+
+  // M2 review finding 2: transparent + DoubleSide draws in two passes, back
+  // faces first, so the outline/colour order of the buffer was not the draw
+  // order. Both meshes draw in one pass.
+  it('draws in one pass, so the draw order is the buffer order', () => {
+    const marker = createSunMarker();
+    expect((marker.object.material as THREE.Material).forceSinglePass).toBe(
+      true
+    );
+    expect((marker.reticle.material as THREE.Material).forceSinglePass).toBe(
+      true
+    );
   });
 
   it('draws over everything, untouched by depth, fog or tone mapping', () => {
@@ -147,8 +208,10 @@ describe('the marker handle', () => {
     expect(u.sunElevationDeg!.value).toBe(7.25);
     marker.setVisible(false);
     expect(marker.object.visible).toBe(false);
+    expect(marker.reticle.visible).toBe(false);
     marker.setVisible(true);
     expect(marker.object.visible).toBe(true);
+    expect(marker.reticle.visible).toBe(true);
   });
 
   it('rejects a non-finite or out-of-range sun', () => {
@@ -157,18 +220,20 @@ describe('the marker handle', () => {
     expect(() => marker.setSun(10, 91)).toThrow(RangeError);
   });
 
-  it('disposes its geometry and material and leaves its parent', () => {
+  it('disposes both meshes and leaves their parent', () => {
     const marker = createSunMarker();
     const parent = new THREE.Scene();
-    parent.add(marker.object);
+    parent.add(marker.object, marker.reticle);
     let disposed = 0;
-    marker.object.geometry.addEventListener('dispose', () => disposed++);
-    (marker.object.material as THREE.Material).addEventListener(
-      'dispose',
-      () => disposed++
-    );
+    for (const mesh of [marker.object, marker.reticle]) {
+      mesh.geometry.addEventListener('dispose', () => disposed++);
+      (mesh.material as THREE.Material).addEventListener(
+        'dispose',
+        () => disposed++
+      );
+    }
     marker.dispose();
-    expect(disposed).toBe(2);
-    expect(parent.children).not.toContain(marker.object);
+    expect(disposed).toBe(4);
+    expect(parent.children).toEqual([]);
   });
 });

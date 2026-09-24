@@ -1,22 +1,25 @@
 /**
- * The AR sun check's controller (plan 2026-09-24-0100, M2, §3.4): keeps the
- * sun marker on the real (apparent) sun, and turns "aim the centre at the
- * sun, press Mark" into a measured heading error.
+ * The AR sun check's controller (plan 2026-09-24-0100, M2 and M2b, §3.4):
+ * keeps the sun marker on the real (apparent) sun, and turns "aim the
+ * reticle at the sun, press Mark" into a measured heading error.
  *
  * SAMPLED WHERE IT IS DRAWN. Each sample is taken in the marker's
  * `onBeforeRender`, with the camera three renders it with: the ray the user
  * SEES and the alignment-free ray come from the same frame by construction,
  * whatever order the app's frame callbacks run in (the recorder's sampler
- * ran before its alignment lerper; plan review finding 3). Nothing reads a
- * pose from an earlier frame.
+ * ran before its alignment lerper; plan review finding 3). ONLY TRACKED
+ * FRAMES count: when the viewer pose is null (tracking lost) three renders
+ * the last view again, which would read as a perfectly steady phone
+ * (M2 review finding 1).
  *
- * THE MARK. The window is the `holdMs` BEFORE the press (the tap jolts the
- * phone; review finding 5); when that second is missing (the check was just
- * switched on), it is the `holdMs` starting `joltMs` AFTER the press. The
+ * THE MARK. The window is the `holdMs` ending `preGuardMs` BEFORE the press
+ * (a click fires at touch-up, after the finger has pushed the phone; plan
+ * review finding 5, M2 review finding 5); when that second is missing or
+ * the phone moved in it, the `holdMs` starting `joltMs` AFTER the press. The
  * result is the median heading and elevation error; the spread is measured
- * on the ALIGNMENT-FREE ray, so an alignment update mid-window is flagged
- * ("target-changed"), not refused as hand shake (review finding 4). A Mark
- * always resolves, as a sighting or a refusal: never hangs.
+ * on the ALIGNMENT-FREE ray, so an alignment update mid-window is flagged,
+ * not refused as hand shake (review finding 4). A Mark always resolves, as a
+ * sighting or a refusal: never hangs, never throws.
  *
  * THE CLOCK is injected (`nowEpochMs`; production passes `Date.now`, never
  * the XR clock, which stalls while the phone sleeps; review finding 1), and
@@ -31,6 +34,10 @@ import {
   solarPosition,
   type RefractionConditions,
 } from '../geo/solar-position.js';
+import {
+  bearingDeltaDeg,
+  normalizeBearingDeg,
+} from '../utils/bearing-degrees.js';
 import { registerFrameUpdate } from './frame-loop.js';
 import { registerSessionDisposer } from './session-disposers.js';
 import {
@@ -42,11 +49,14 @@ import {
   type Vec3,
 } from './sun-check-geometry.js';
 import { createSunMarker, type SunMarker } from './sun-marker.js';
+import { registerXrFrameUpdate } from './xr-frame-loop.js';
 
-/** The controller's rules, in one place. */
+/** The controller's rules, in one place (overridable through `deps.rules`). */
 export const SUN_CHECK = {
   /** The Mark window. */
   holdMs: 1000,
+  /** The pre-press window ends this long before the press (the tap's push). */
+  preGuardMs: 150,
   /** Past the tap's jolt, when the window has to start after the press. */
   joltMs: 300,
   /** A Mark with fewer frames is refused. */
@@ -55,10 +65,13 @@ export const SUN_CHECK = {
    * Hand shake above this refuses the Mark: the 80th-percentile angular
    * distance of the alignment-free ray from its median direction (four
    * frames in five within it). Not the median distance: a two-cluster shake
-   * puts the median direction inside the larger cluster and reads 0.
+   * puts the median direction inside the larger cluster and reads 0. Stricter
+   * than the plan's first "median absolute deviation" at the same bound.
    */
   maxSpreadDeg: 0.3,
   spreadPercentile: 0.8,
+  /** A drawn-yaw range above this inside the window is flagged. */
+  maxYawRangeDeg: 0.05,
   /** How long a Mark waits for frames past its window before giving up. */
   giveUpMs: 1500,
   /** The marker hides below this apparent elevation. */
@@ -73,19 +86,25 @@ export const SUN_CHECK = {
   keepMs: 3000,
 } as const;
 
+/** The rules' shape (numbers), for `deps.rules`. */
+type SunCheckRules = { readonly [K in keyof typeof SUN_CHECK]: number };
+
 /** Why the marker is hidden (the HUD says so). */
-type SunHiddenReason = 'no-position' | 'no-alignment' | 'sun-down';
+type SunHiddenReason =
+  'no-position' | 'no-alignment' | 'not-tracking' | 'sun-down';
 
 /** Why a Mark was refused. */
 type SunMarkRefusal =
   SunHiddenReason | 'busy' | 'moved' | 'no-frames' | 'disposed';
 
 /** What a Mark warns about. */
-type SunMarkWarning = 'high-sun' | 'target-changed';
+type SunMarkWarning = 'high-sun' | 'target-changed' | 'alignment-moving';
 
 /** One accepted Mark: the raw record the recorder logs (plan §6.3), flat. */
 interface SunSighting {
   readonly schema: 1;
+  /** How the ray was aimed: the screen-centre reticle. */
+  readonly mode: 'reticle';
   /** Epoch ms of the middle frame, and the window's start. */
   readonly atMs: number;
   readonly windowStartMs: number;
@@ -106,18 +125,28 @@ interface SunSighting {
   readonly projP5: number;
   readonly projP8: number;
   readonly projP9: number;
-  /** The alignment: the drawn yaw (median, min, max) and the app's target. */
+  /** The middle frame's viewport in pixels, and the screen's angle. */
+  readonly viewportW: number;
+  readonly viewportH: number;
+  readonly screenAngleDeg: number;
+  /**
+   * The drawn yaw: median in [0, 360); min and max UNWRAPPED around the
+   * window's first yaw (so a window crossing north reads 359.9 … 360.1).
+   */
   readonly displayedYawDeg: number;
   readonly yawMinDeg: number;
   readonly yawMaxDeg: number;
+  /** The app's target yaw (as the app reports it) and whether it changed. */
   readonly targetYawDeg: number | null;
   readonly targetChanged: boolean;
-  /** The place and the sun it was computed for. */
+  /** The place, and the sun at the middle frame. */
   readonly lat: number;
   readonly lng: number;
   readonly sunAzDeg: number;
   readonly sunElApparentDeg: number;
   readonly refractionDeg: number;
+  readonly pressureHPa: number;
+  readonly temperatureC: number;
   /** `nowEpochMs − monotonicEpochMs` at the Mark. */
   readonly clockOffsetMs: number;
   /** Derived, for convenience: the median errors (plan §3.4 sign). */
@@ -132,7 +161,13 @@ type SunMarkResult =
       readonly sighting: SunSighting;
       readonly warnings: readonly SunMarkWarning[];
     }
-  | { readonly ok: false; readonly reason: SunMarkRefusal };
+  | {
+      readonly ok: false;
+      readonly reason: SunMarkRefusal;
+      /** For 'moved': the spread and the frames it was measured on. */
+      readonly spreadDeg?: number;
+      readonly frames?: number;
+    };
 
 /** The marker's state, for a HUD line. */
 interface SunCheckStatus {
@@ -143,7 +178,7 @@ interface SunCheckStatus {
 }
 
 export interface SunCheckDeps {
-  /** The GPS-world NUE scene root; the marker is added here. */
+  /** The GPS-world NUE scene root; the marker and reticle are added here. */
   readonly scene: THREE.Object3D;
   /** The group that carries the alignment (an ancestor of the camera). */
   readonly arWorldGroup: THREE.Object3D;
@@ -159,37 +194,45 @@ export interface SunCheckDeps {
   /** The monotonic clock as epoch ms (default `timeOrigin + now()`). */
   readonly monotonicEpochMs?: () => number;
   readonly refraction?: RefractionConditions;
+  /** Overrides of `SUN_CHECK` (the field sweep, plan §8.4). */
+  readonly rules?: Partial<SunCheckRules>;
 }
 
 export interface SunCheck {
   readonly marker: SunMarker;
   status(): SunCheckStatus;
-  /** Measure; always resolves. */
+  /** Measure; always resolves, never throws. */
   mark(): Promise<SunMarkResult>;
   dispose(): void;
+}
+
+interface SunAt {
+  readonly azDeg: number;
+  readonly elDeg: number;
+  readonly refractionDeg: number;
+  readonly dir: Vec3;
 }
 
 interface Sample {
   readonly t: number;
   readonly rGps: Vec3;
   readonly rOdo: Vec3;
-  readonly sun: Vec3;
+  readonly sun: SunAt;
   readonly yaw: number;
   readonly target: number | null;
   readonly viewQ: THREE.Quaternion;
   readonly projection: readonly number[];
+  readonly viewportW: number;
+  readonly viewportH: number;
 }
 
-interface SunNow {
-  readonly azDeg: number;
-  readonly elDeg: number;
-  readonly refractionDeg: number;
-  readonly dir: Vec3;
+interface SunNow extends SunAt {
   readonly place: { readonly lat: number; readonly lng: number };
 }
 
 const DEG = Math.PI / 180;
 const IDENTITY = new THREE.Matrix4();
+const STANDARD_AIR = { pressureHPa: 1010, temperatureC: 10 };
 
 const median = (values: readonly number[]): number => {
   const s = [...values].sort((a, b) => a - b);
@@ -220,20 +263,46 @@ const separationDeg = (a: Vec3, b: Vec3) =>
     Math.max(-1, Math.min(1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2]))
   ) / DEG;
 
+/** The rules with overrides, each a finite, non-negative number. */
+function rulesOf(overrides: Partial<SunCheckRules> | undefined): SunCheckRules {
+  const rules = { ...SUN_CHECK, ...overrides };
+  for (const [key, value] of Object.entries(rules)) {
+    if (!Number.isFinite(value) || (value < 0 && !key.endsWith('Deg'))) {
+      throw new RangeError(
+        `sun check rule ${key} must be finite, got ${value}`
+      );
+    }
+  }
+  return rules;
+}
+
+/** Runs `f`, or returns `fallback` if it throws (app callbacks, maths). */
+function guarded<T>(f: () => T, fallback: T): T {
+  try {
+    return f();
+  } catch {
+    return fallback;
+  }
+}
+
 /**
- * Starts the sun check: adds the marker to `deps.scene`, keeps it on the
- * sun, samples every drawn frame. Disposed with the AR session.
+ * Starts the sun check: adds the marker and the reticle to `deps.scene`,
+ * keeps them on the sun, samples every drawn, tracked frame. Disposed with
+ * the AR session.
  */
 export function startSunCheck(deps: SunCheckDeps): SunCheck {
+  const rules = rulesOf(deps.rules);
   const marker = createSunMarker();
-  deps.scene.add(marker.object);
+  deps.scene.add(marker.object, marker.reticle);
   const monotonic =
     deps.monotonicEpochMs ?? (() => performance.timeOrigin + performance.now());
+  const air = { ...STANDARD_AIR, ...deps.refraction };
 
   let samples: Sample[] = [];
   let sun: SunNow | null = null;
   let hiddenBecause: SunHiddenReason | undefined = 'no-position';
   let lastSunMs = Number.NEGATIVE_INFINITY;
+  let tracked = false;
   let pending: {
     readonly start: number;
     readonly end: number;
@@ -244,97 +313,133 @@ export function startSunCheck(deps: SunCheckDeps): SunCheck {
 
   const aligned = () => !deps.arWorldGroup.matrix.equals(IDENTITY);
 
-  const computeSun = (): SunNow | null => {
-    const place = deps.getZeroReference();
-    if (place === null) return null;
-    const now = deps.nowEpochMs();
-    const apparent = solarPosition(now, place.lat, place.lng, {
-      refraction: deps.refraction ?? true,
+  const sunAt = (t: number, place: SunNow['place']): SunAt => {
+    const apparent = solarPosition(t, place.lat, place.lng, {
+      refraction: air,
     });
-    const geometric = solarPosition(now, place.lat, place.lng);
+    const geometric = solarPosition(t, place.lat, place.lng);
     return {
       azDeg: apparent.azimuthRad / DEG,
       elDeg: apparent.elevationRad / DEG,
       refractionDeg: (apparent.elevationRad - geometric.elevationRad) / DEG,
       dir: sunDirectionNue(apparent.azimuthRad, apparent.elevationRad),
-      place,
     };
   };
 
-  /** Recompute the sun and the marker's visibility; returns the reason it is hidden. */
+  const computeSun = (): SunNow | null => {
+    const place = guarded(() => deps.getZeroReference(), null);
+    if (place === null) return null;
+    return guarded(() => ({ ...sunAt(deps.nowEpochMs(), place), place }), null);
+  };
+
+  /** Recompute the sun and the marker's visibility; returns why it is hidden. */
   const refresh = (): SunHiddenReason | undefined => {
     sun = computeSun();
     lastSunMs = deps.nowEpochMs();
     if (sun === null) hiddenBecause = 'no-position';
     else if (!aligned()) hiddenBecause = 'no-alignment';
-    else if (sun.elDeg < SUN_CHECK.hideBelowDeg) hiddenBecause = 'sun-down';
+    else if (!tracked) hiddenBecause = 'not-tracking';
+    else if (sun.elDeg < rules.hideBelowDeg) hiddenBecause = 'sun-down';
     else hiddenBecause = undefined;
     if (sun !== null) marker.setSun(sun.azDeg, sun.elDeg);
     marker.setVisible(hiddenBecause === undefined);
     return hiddenBecause;
   };
 
+  // A jump of the wall clock in EITHER direction refreshes (a clock set
+  // back would otherwise freeze the marker; M2 review finding 9).
   const unregisterFrame = registerFrameUpdate(() => {
-    if (deps.nowEpochMs() - lastSunMs >= SUN_CHECK.sunUpdateMs) refresh();
+    if (Math.abs(deps.nowEpochMs() - lastSunMs) >= rules.sunUpdateMs) refresh();
+  });
+
+  // Tracking, per XR frame: a null or emulated viewer pose means three will
+  // draw the LAST view again (M2 review finding 1). A change either way
+  // refreshes the marker at once.
+  const unregisterXr = registerXrFrameUpdate(({ frame, referenceSpace }) => {
+    const pose = guarded(() => frame.getViewerPose(referenceSpace), null);
+    const now = pose !== null && pose !== undefined && !pose.emulatedPosition;
+    if (now !== tracked) {
+      tracked = now;
+      refresh();
+    }
   });
 
   const inverse = new THREE.Matrix4();
   const odoCamera = new THREE.Matrix4();
-  marker.object.onBeforeRender = (_renderer, _scene, camera) => {
-    if (disposed || sun === null) return;
+  const viewport = new THREE.Vector4();
+  marker.object.onBeforeRender = (renderer, _scene, camera) => {
+    if (disposed || sun === null || !tracked) return;
+    // One view per frame: a stereo session renders twice, and the second
+    // eye's centre ray would read as shake (M2 review finding 11).
+    const xr = (renderer as THREE.WebGLRenderer | null)?.xr;
+    if (xr?.isPresenting === true) {
+      const views = xr.getCamera().cameras;
+      if (views.length > 1 && camera !== views[0]) return;
+    }
+    guarded(() => {
+      sample(camera, renderer);
+      return true;
+    }, false);
+  };
+
+  const sample = (
+    camera: THREE.Camera,
+    renderer: THREE.WebGLRenderer | null
+  ) => {
+    const place = sun!.place;
     const world = deps.arWorldGroup.matrixWorld;
-    let yaw: number;
-    try {
-      yaw = alignmentYawDeg(world.elements);
-    } catch {
-      return; // a degenerate alignment: no sample
-    }
+    const yaw = alignmentYawDeg(world.elements);
     const projection = [...camera.projectionMatrix.elements];
-    let ray: Vec3;
-    try {
-      ray = principalRayCamera(projection);
-    } catch {
-      return; // not a perspective view
-    }
+    const ray = principalRayCamera(projection);
     const rGps = normalize(rotateByMat4(camera.matrixWorld.elements, ray));
     inverse.copy(world).invert();
     const rOdo = normalize(rotateByMat4(inverse.elements, rGps));
     odoCamera.multiplyMatrices(inverse, camera.matrixWorld);
     const viewQ = new THREE.Quaternion().setFromRotationMatrix(odoCamera);
+    const own = (camera as THREE.Camera & { viewport?: THREE.Vector4 })
+      .viewport;
+    if (own !== undefined) viewport.copy(own);
+    else if (renderer !== null) renderer.getViewport(viewport);
+    else viewport.set(0, 0, 0, 0);
     const t = deps.nowEpochMs();
-    const at = solarPosition(t, sun.place.lat, sun.place.lng, {
-      refraction: deps.refraction ?? true,
-    });
     samples.push({
       t,
       rGps,
       rOdo,
-      sun: sunDirectionNue(at.azimuthRad, at.elevationRad),
+      sun: sunAt(t, place),
       yaw,
-      target: deps.getTargetYawDeg?.() ?? null,
+      target: guarded(() => deps.getTargetYawDeg?.() ?? null, null),
       viewQ,
       projection,
+      viewportW: viewport.z,
+      viewportH: viewport.w,
     });
-    samples = samples.filter((s) => t - s.t <= SUN_CHECK.keepMs);
+    samples = samples.filter((s) => Math.abs(t - s.t) <= rules.keepMs);
     if (pending !== null && t >= pending.end)
       finish(pending.start, pending.end);
   };
 
   const aggregate = (start: number, end: number): SunMarkResult => {
     const window = samples.filter((s) => s.t >= start && s.t <= end);
-    if (window.length < SUN_CHECK.minFrames || sun === null) {
-      return { ok: false, reason: 'no-frames' };
+    if (window.length < rules.minFrames || sun === null) {
+      return { ok: false, reason: hiddenBecause ?? 'no-frames' };
     }
     const odoMedian = medianDirection(window.map((s) => s.rOdo));
     const spreadDeg = percentile(
       window.map((s) => separationDeg(s.rOdo, odoMedian)),
-      SUN_CHECK.spreadPercentile
+      rules.spreadPercentile
     );
-    if (spreadDeg > SUN_CHECK.maxSpreadDeg)
-      return { ok: false, reason: 'moved' };
-    const errors = window.map((s) => sightingErrorDeg(s.rGps, s.sun));
+    if (spreadDeg > rules.maxSpreadDeg) {
+      return { ok: false, reason: 'moved', spreadDeg, frames: window.length };
+    }
+    const errors = window.map((s) => sightingErrorDeg(s.rGps, s.sun.dir));
     const middle = window[window.length >> 1]!;
-    const yaws = window.map((s) => s.yaw);
+    // Unwrapped around the first yaw, so a window crossing north does not
+    // read as a 360° range or a median of 180° (M2 review finding 8).
+    const first = window[0]!.yaw;
+    const yaws = window.map((s) => first + bearingDeltaDeg(s.yaw, first));
+    const yawMin = Math.min(...yaws);
+    const yawMax = Math.max(...yaws);
     const targets = window.map((s) => s.target);
     const targetChanged =
       targets.some(
@@ -342,8 +447,14 @@ export function startSunCheck(deps: SunCheckDeps): SunCheck {
       ) && targets.some((x) => x !== null);
     const rayXr = nueToWebXR([...odoMedian]);
     const place = sun.place;
+    const screenAngle = guarded(
+      () =>
+        typeof screen === 'undefined' ? 0 : (screen.orientation?.angle ?? 0),
+      0
+    );
     const sighting: SunSighting = {
       schema: 1,
+      mode: 'reticle',
       atMs: middle.t,
       windowStartMs: window[0]!.t,
       frames: window.length,
@@ -359,24 +470,31 @@ export function startSunCheck(deps: SunCheckDeps): SunCheck {
       projP5: middle.projection[5]!,
       projP8: middle.projection[8]!,
       projP9: middle.projection[9]!,
-      displayedYawDeg: median(yaws),
-      yawMinDeg: Math.min(...yaws),
-      yawMaxDeg: Math.max(...yaws),
+      viewportW: middle.viewportW,
+      viewportH: middle.viewportH,
+      screenAngleDeg: screenAngle,
+      displayedYawDeg: normalizeBearingDeg(median(yaws)),
+      yawMinDeg: yawMin,
+      yawMaxDeg: yawMax,
       targetYawDeg: middle.target,
       targetChanged,
       lat: place.lat,
       lng: place.lng,
-      sunAzDeg: sun.azDeg,
-      sunElApparentDeg: sun.elDeg,
-      refractionDeg: sun.refractionDeg,
+      sunAzDeg: middle.sun.azDeg,
+      sunElApparentDeg: middle.sun.elDeg,
+      refractionDeg: middle.sun.refractionDeg,
+      pressureHPa: air.pressureHPa,
+      temperatureC: air.temperatureC,
       clockOffsetMs: deps.nowEpochMs() - monotonic(),
       headingErrDeg: median(errors.map((e) => e.headingDeg)),
       elevationErrDeg: median(errors.map((e) => e.elevationDeg)),
       separationDeg: median(errors.map((e) => e.separationDeg)),
     };
     const warnings: SunMarkWarning[] = [];
-    if (sun.elDeg > SUN_CHECK.highSunDeg) warnings.push('high-sun');
+    if (middle.sun.elDeg > rules.highSunDeg) warnings.push('high-sun');
     if (targetChanged) warnings.push('target-changed');
+    if (yawMax - yawMin > rules.maxYawRangeDeg)
+      warnings.push('alignment-moving');
     return { ok: true, sighting, warnings };
   };
 
@@ -388,7 +506,41 @@ export function startSunCheck(deps: SunCheckDeps): SunCheck {
     resolve(result);
   };
 
-  const finish = (start: number, end: number) => settle(aggregate(start, end));
+  const finish = (start: number, end: number) =>
+    settle(
+      guarded(() => aggregate(start, end), { ok: false, reason: 'no-frames' })
+    );
+
+  const markNow = (): Promise<SunMarkResult> => {
+    const hidden = refresh();
+    if (hidden !== undefined)
+      return Promise.resolve({ ok: false, reason: hidden });
+    if (sun !== null && sun.elDeg < rules.minMarkElevationDeg) {
+      return Promise.resolve({ ok: false, reason: 'sun-down' });
+    }
+    const pressed = deps.nowEpochMs();
+    const end = pressed - rules.preGuardMs;
+    const start = end - rules.holdMs;
+    const before = samples.filter((s) => s.t >= start && s.t <= end);
+    const covered =
+      before.length >= rules.minFrames &&
+      before[0]!.t <= start + 0.1 * rules.holdMs;
+    if (covered) {
+      const result = aggregate(start, end);
+      // Moved before the press ("swing onto the sun, press at once"): try
+      // the second after the tap instead of refusing (M2 review finding 5).
+      if (result.ok || result.reason !== 'moved')
+        return Promise.resolve(result);
+    }
+    const after = pressed + rules.joltMs;
+    return new Promise<SunMarkResult>((resolve) => {
+      const timer = setTimeout(
+        () => finish(after, after + rules.holdMs),
+        rules.joltMs + rules.holdMs + rules.giveUpMs
+      );
+      pending = { start: after, end: after + rules.holdMs, resolve, timer };
+    });
+  };
 
   const check: SunCheck = {
     marker,
@@ -401,35 +553,17 @@ export function startSunCheck(deps: SunCheckDeps): SunCheck {
       if (disposed) return Promise.resolve({ ok: false, reason: 'disposed' });
       if (pending !== null)
         return Promise.resolve({ ok: false, reason: 'busy' });
-      const hidden = refresh();
-      if (hidden !== undefined)
-        return Promise.resolve({ ok: false, reason: hidden });
-      if (sun !== null && sun.elDeg < SUN_CHECK.minMarkElevationDeg) {
-        return Promise.resolve({ ok: false, reason: 'sun-down' });
-      }
-      const pressed = deps.nowEpochMs();
-      const before = samples.filter((s) => s.t >= pressed - SUN_CHECK.holdMs);
-      const covered =
-        before.length >= SUN_CHECK.minFrames &&
-        before[0]!.t <= pressed - 0.9 * SUN_CHECK.holdMs;
-      if (covered) {
-        return Promise.resolve(aggregate(pressed - SUN_CHECK.holdMs, pressed));
-      }
-      const start = pressed + SUN_CHECK.joltMs;
-      const end = start + SUN_CHECK.holdMs;
-      return new Promise<SunMarkResult>((resolve) => {
-        const timer = setTimeout(
-          () => finish(start, end),
-          SUN_CHECK.joltMs + SUN_CHECK.holdMs + SUN_CHECK.giveUpMs
-        );
-        pending = { start, end, resolve, timer };
-      });
+      return guarded(
+        markNow,
+        Promise.resolve({ ok: false, reason: 'no-frames' })
+      );
     },
     dispose() {
       if (disposed) return;
       disposed = true;
       settle({ ok: false, reason: 'disposed' });
       unregisterFrame();
+      unregisterXr();
       deregisterSession();
       marker.dispose();
     },

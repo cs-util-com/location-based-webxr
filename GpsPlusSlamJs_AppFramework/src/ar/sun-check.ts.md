@@ -17,15 +17,18 @@ heading error for an app to show or log.
   - `getTargetYawDeg?()` — the app's target alignment yaw, if known;
   - `nowEpochMs()` — the wall clock (production: `Date.now`);
   - `monotonicEpochMs?()` — default `performance.timeOrigin + now()`;
-  - `refraction?` — air conditions (default standard air).
+  - `refraction?` — air conditions (default standard air);
+  - `rules?` — overrides of `SUN_CHECK` (the field sweep, plan §8.4).
 - `SunCheck`:
   - `marker`;
   - `status()` → `{ visible, hiddenBecause?: 'no-position' | 'no-alignment'
-| 'sun-down', sunAzDeg?, sunElDeg? }` (a HUD line);
+| 'not-tracking' | 'sun-down', sunAzDeg?, sunElDeg? }` (a HUD line);
   - `mark()` → `Promise<SunMarkResult>`: `{ ok: true, sighting, warnings }`
-    or `{ ok: false, reason }` with `reason` one of the hidden reasons,
-    `'busy'`, `'moved'`, `'no-frames'`, `'disposed'`. Always resolves.
-    Warnings: `'high-sun'` (above 35°), `'target-changed'`;
+    or `{ ok: false, reason, spreadDeg?, frames? }` with `reason` one of
+    the hidden reasons, `'busy'`, `'moved'` (with its spread and frame
+    count), `'no-frames'`, `'disposed'`. Always resolves, never throws.
+    Warnings: `'high-sun'` (above 35°), `'target-changed'`,
+    `'alignment-moving'` (the drawn yaw moved more than 0.05°);
   - `dispose()` — also runs on AR session teardown.
 - `SunSighting` — the flat record the recorder logs (plan §6.3): the median
   alignment-free ray in the WebXR reference space, the middle frame's camera
@@ -43,13 +46,17 @@ heading error for an app to show or log.
 - **Sampled where it is drawn**: in the marker's `onBeforeRender`, with the
   camera three renders it with, so the drawn ray and the alignment-free ray
   come from one frame whatever order the app's frame callbacks run in (plan
-  review finding 3). Only drawn frames count: a hidden marker samples
-  nothing.
+  review finding 3; a test moves the alignment in a frame update registered
+  AFTER the check and the sample follows it). Only drawn, TRACKED frames
+  count: a hidden marker samples nothing, and a null or emulated viewer pose
+  (three then redraws the last view) hides the marker as `not-tracking` (M2
+  review finding 1). One view per frame in a stereo session.
 - **Each sample carries the sun at its own instant** (the marker's sun is up
   to 250 ms old; the sun moves up to ~0.004°/s).
-- **The window is the second BEFORE the press** when frames cover it (the
-  tap jolts the phone; review finding 5); otherwise the second starting
-  300 ms after it.
+- **The window is the second ending 150 ms BEFORE the press** when frames
+  cover it (a click fires at touch-up, after the finger pushed the phone);
+  otherwise, or when the phone moved in it, the second starting 300 ms
+  after the press.
 - **The spread is measured on the alignment-free ray** (review finding 4),
   as the 80th-percentile distance from the median direction: an alignment
   update mid-window is flagged, not refused, and a two-cluster shake cannot
@@ -61,8 +68,14 @@ heading error for an app to show or log.
 - The clock is injected; production passes `Date.now`, never the XR clock,
   which stalls while the phone sleeps (review finding 1). Each sighting
   logs `nowEpochMs − monotonicEpochMs`.
-- Sampling skips a degenerate alignment or a non-perspective view rather
-  than throwing inside the render loop.
+- Nothing throws into the render loop or out of `mark()`: app callbacks
+  and the maths are guarded (a throwing `getZeroReference` reads as no
+  position). A wall clock jumping either way refreshes the sun.
+- The drawn yaw is unwrapped around the window's first yaw, so a window
+  crossing north does not read as a 360° range; `yawMinDeg`/`yawMaxDeg` are
+  unwrapped, `displayedYawDeg` is in [0, 360).
+- The record carries `mode: 'reticle'`, the viewport and screen angle, the
+  air, and the sun at the MIDDLE frame.
 
 ## Examples
 
