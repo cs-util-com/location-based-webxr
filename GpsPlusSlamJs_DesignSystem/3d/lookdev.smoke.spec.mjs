@@ -59,43 +59,50 @@ const PARITY_BOUNDS = { t: 0.03, m: 0.01, s: 0.05 };
 // Every preset must compile and draw a real image. "Real" means not blank and
 // not one colour: the silent-failure mode of a broken shader is a canvas of
 // the clear colour, which a single "is it non-black" check can miss.
-test("every preset draws a non-uniform image without console errors", async ({
-  page,
-}) => {
-  const errors = await boot(page);
-  for (const preset of ["dawn", "noon", "golden", "blueHour", "hazy"]) {
-    const pixels = await page.evaluate(
-      ([p, grid]) => {
-        window.__lookdev.setPreset(p);
-        window.__lookdev.setView("city");
-        return window.__lookdev.readPixels(grid);
-      },
-      [preset, GRID],
+// ...and with sun shadows on, which recompiles every lit material with
+// shadow sampling (the lake's patched water included): a compile failure only
+// logs (shadow plan M2 review, finding 6).
+for (const shadows of [false, true])
+  test(`every preset draws a non-uniform image without console errors${shadows ? " (shadows on)" : ""}`, async ({
+    page,
+  }) => {
+    const errors = await boot(
+      page,
+      `preset=golden&tone=agx${shadows ? "&shadows=1" : ""}`,
     );
-    // Lit geometry, not just a lit sky: a black city over a bright sky is the
-    // silent failure a PMREM overflow produces (OsmDemo's old Preetham sky
-    // did exactly that above ~20° of sun, until M3 replaced it).
-    const geometry = await page.evaluate(() =>
-      window.__lookdev.readPixels([
-        [0.6, 0.6],
-        [0.5, 0.85],
-      ]),
-    );
-    for (const px of geometry) {
-      expect(sum(px), `${preset}: lit geometry`).toBeGreaterThan(15);
+    for (const preset of ["dawn", "noon", "golden", "blueHour", "hazy"]) {
+      const pixels = await page.evaluate(
+        ([p, grid]) => {
+          window.__lookdev.setPreset(p);
+          window.__lookdev.setView("city");
+          return window.__lookdev.readPixels(grid);
+        },
+        [preset, GRID],
+      );
+      // Lit geometry, not just a lit sky: a black city over a bright sky is the
+      // silent failure a PMREM overflow produces (OsmDemo's old Preetham sky
+      // did exactly that above ~20° of sun, until M3 replaced it).
+      const geometry = await page.evaluate(() =>
+        window.__lookdev.readPixels([
+          [0.6, 0.6],
+          [0.5, 0.85],
+        ]),
+      );
+      for (const px of geometry) {
+        expect(sum(px), `${preset}: lit geometry`).toBeGreaterThan(15);
+      }
+      const distinct = new Set(pixels.map((px) => px.slice(0, 3).join(",")));
+      expect(
+        distinct.size,
+        `${preset}: distinct colours on the grid`,
+      ).toBeGreaterThan(8);
+      expect(
+        Math.max(...pixels.map(sum)),
+        `${preset}: brightest pixel`,
+      ).toBeGreaterThan(60);
     }
-    const distinct = new Set(pixels.map((px) => px.slice(0, 3).join(",")));
-    expect(
-      distinct.size,
-      `${preset}: distinct colours on the grid`,
-    ).toBeGreaterThan(8);
-    expect(
-      Math.max(...pixels.map(sum)),
-      `${preset}: brightest pixel`,
-    ).toBeGreaterThan(60);
-  }
-  expect(errors).toEqual([]);
-});
+    expect(errors).toEqual([]);
+  });
 
 // Why the sky is blue: at noon the top of the frame (high sky) is bluer,
 // relative to red, than the sky just above the ridges.
@@ -965,5 +972,156 @@ test("the View and Cloud mode selects drive the page", async ({ page }) => {
     () => window.__lookdev.stats().state.cloudMode,
   );
   expect(mode).toBe("sheet");
+  expect(errors).toEqual([]);
+});
+
+// --- Sun shadows, the AR prototype's S1 (plan 2026-09-23-2343, M2) ------------
+// A DIRECTION, not "something changed" (plan review finding 6: the shadow
+// factor multiplies direct light only, so an anti-sun face cannot show it).
+// The ground just past the tallest building's footprint, away from the sun,
+// must get darker with shadows on; a DIFFUSE sunlit control on the sun side,
+// past every building, must not (the M2 review: the first control, the
+// tallest roof, was the glass tower, blind to shadows). A broken shadow that
+// darkens every receiver (a large positive bias, measured below) moves the
+// control a lot, so the control's bound can fail.
+/** Probe with shadows on or off; the camera looks down on each point. */
+async function probeShadows(page, shadows) {
+  return page.evaluate((on) => {
+    const d = window.__lookdev;
+    d.setCloudCover(0);
+    d.setShadows(on);
+    const probe = d.shadowProbe();
+    const look = (p) => {
+      d.placeCameraAt([p[0] + 1, 140, p[2] + 1], [p[0], 0, p[2]]);
+      return d.readPixels([d.project(p)])[0];
+    };
+    return {
+      ground: look(probe.shadowed),
+      lit: look(probe.lit),
+      roof: look(probe.roof),
+      renders: d.shadowRenders(),
+    };
+  }, shadows);
+}
+
+/**
+ * Declared per preset: the shadowed ground must fall by at least this much.
+ * Measured 2026-09-24 (SwiftShader): noon 109, hazy 74, golden 22 (at a 5°
+ * sun the direct light on the ground is weak): half or less of each.
+ */
+const MIN_DARKENING = { noon: 30, hazy: 30, golden: 10 };
+
+for (const preset of ["noon", "hazy", "golden"]) {
+  test(`sun shadows darken the ground behind a building, and nothing sunlit (${preset})`, async ({
+    page,
+  }) => {
+    const errors = await boot(page, `preset=${preset}&tone=neutral`);
+    /**
+     * Declared: the shadowed ground's RGB sum must fall by at least
+     * `minDarkening`; the sunlit control may move by at most `litMax`.
+     * Measured 2026-09-24 (SwiftShader) in the log; the broken-bias run
+     * below shows what the control does when every receiver is shadowed.
+     */
+    const minDarkening = MIN_DARKENING[preset];
+    const litMax = 6;
+    const off = await probeShadows(page, false);
+    const on = await probeShadows(page, true);
+    const darkening = sum(off.ground) - sum(on.ground);
+    const litMove = Math.abs(sum(off.lit) - sum(on.lit));
+    const roofMove = Math.abs(sum(off.roof) - sum(on.roof));
+    await page.evaluate(() => window.__lookdev.setShadowParams({ bias: 0.1 }));
+    const broken = await probeShadows(page, true);
+    await page.evaluate(() => window.__lookdev.setShadowParams({ bias: 0 }));
+    const brokenRoofMove = Math.abs(sum(off.roof) - sum(broken.roof));
+    console.log(
+      `shadows (${preset}): ground ${sum(off.ground)} -> ${sum(on.ground)} (darker by ${darkening}), sunlit ground moved ${litMove}, sunlit roof ${roofMove}; with a broken bias the roof moves ${brokenRoofMove}`,
+    );
+    expect(off.renders).toBeNull();
+    expect(on.renders).toBe(1);
+    expect(darkening).toBeGreaterThan(minDarkening);
+    expect(litMove).toBeLessThanOrEqual(litMax);
+    expect(roofMove).toBeLessThanOrEqual(litMax);
+    // The roof control can fail: a bias that makes casters shadow
+    // themselves (acne) darkens it. Probed 2026-09-24 at noon: bias 0,
+    // 0.001 and 0.01 leave the roof at 197/185/170 (the one-texel normal
+    // bias absorbs them); 0.1 drops it to 49/57/72.
+    expect(brokenRoofMove).toBeGreaterThan(litMax);
+    expect(errors).toEqual([]);
+  });
+}
+
+// The cost rule, as three sees it (M2 review, finding 5): after a map render
+// the manual flags are back (autoUpdate off, needsUpdate cleared), a change
+// that leaves the sun alone renders no map and adds no draws, and a sun move
+// renders one; switching off and on again gives the lit ground back and one
+// fresh map.
+test("sun shadows re-render only when the sun moves, and switch off cleanly", async ({
+  page,
+}) => {
+  const errors = await boot(page, "preset=noon&tone=neutral&shadows=1");
+  const result = await page.evaluate(() => {
+    const d = window.__lookdev;
+    d.setView("city");
+    d.readPixels([[0.5, 0.5]]);
+    const flags = d.shadowFlags();
+    d.readPixels([[0.5, 0.5]]);
+    const steadyDraws = d.stats().drawCalls;
+    d.setHaze(false);
+    d.setHaze(true);
+    d.readPixels([[0.5, 0.5]]);
+    const afterHaze = {
+      renders: d.shadowRenders(),
+      draws: d.stats().drawCalls,
+    };
+    d.setPreset("golden");
+    d.readPixels([[0.5, 0.5]]);
+    const updateDraws = d.stats().drawCalls;
+    const afterSun = d.shadowRenders();
+    return { flags, steadyDraws, afterHaze, updateDraws, afterSun };
+  });
+  console.log(
+    `shadow cost: steady ${result.steadyDraws} draws, after a haze toggle ${result.afterHaze.draws}, on the sun-move frame ${result.updateDraws}`,
+  );
+  expect(result.flags).toEqual({ autoUpdate: false, needsUpdate: false });
+  expect(result.afterHaze.renders).toBe(1);
+  expect(result.afterHaze.draws).toBe(result.steadyDraws);
+  expect(result.afterSun).toBe(2);
+  expect(result.updateDraws).toBeGreaterThan(result.steadyDraws);
+
+  // Off and on again: the ground is lit while off, dark again when on, and
+  // the new shadow renders its first map.
+  const offGround = await probeShadows(page, false);
+  const onAgain = await probeShadows(page, true);
+  expect(offGround.renders).toBeNull();
+  expect(onAgain.renders).toBe(1);
+  // At the golden preset the test switched to above.
+  expect(sum(offGround.ground) - sum(onAgain.ground)).toBeGreaterThan(
+    MIN_DARKENING.golden,
+  );
+  expect(errors).toEqual([]);
+});
+
+// M2 review, finding 1: a pending map render must use the rig's light
+// position. A sun move and a sun-less change in ONE task (the page re-aims
+// the light at 1 km in every applyLook) once rendered an empty map from 1 km.
+test("a pending shadow map survives another change in the same task", async ({
+  page,
+}) => {
+  const errors = await boot(page, "preset=golden&tone=neutral&shadows=1");
+  const on = await page.evaluate(() => {
+    const d = window.__lookdev;
+    d.setCloudCover(0);
+    d.setPreset("noon");
+    d.setHaze(false);
+    d.setHaze(true);
+    d.setCloudCover(0);
+    const probe = d.shadowProbe();
+    const p = probe.shadowed;
+    d.placeCameraAt([p[0] + 1, 140, p[2] + 1], [p[0], 0, p[2]]);
+    return d.readPixels([d.project(p)])[0];
+  });
+  const off = await probeShadows(page, false);
+  console.log(`pending map: ground ${sum(off.ground)} off, ${sum(on)} on`);
+  expect(sum(off.ground) - sum(on)).toBeGreaterThan(30);
   expect(errors).toEqual([]);
 });

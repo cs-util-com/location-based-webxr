@@ -14,7 +14,15 @@
     down at the city), `setCloudMode("dome" | "sheet")` (the fly-through
     sheet, plan 2026-09-24-1010), and the sheet tests' hooks
     `setCloudOffset(u, v)` (pins the drift so pixels repeat),
-    `setCloudSheetVisible(bool)` and `placeCameraAt(eye, target)`,
+    `setCloudSheetVisible(bool)` and `placeCameraAt(eye, target)`;
+    `setShadows(bool)` (sun shadows, the AR shadow prototype's S1: the
+    framework's `createSunShadow` drives the sun light over a 440 m square (R 220 m),
+    buildings cast and receive, the ground receives, a 2° floor), with
+    `shadowRenders()` (maps requested, null when off) and `shadowProbe()`
+    (a ground point in the tallest building's shadow, and a diffuse sunlit
+    ground control toward the sun), `setShadowParams(params)` (the desktop-GPU
+    cost sweep: map size, PCF radius, bias, R, every-frame renders) and
+    `shadowFlags()`,
     `setHaze(bool)`, `setCloudCover(0…1)`, `setTier("phone" | "desktop")`;
   - `setBloom(bool)` — the bloom pass alone (desktop tier only; throws on
     the phone tier): with it off, the desktop pipeline must draw exactly
@@ -39,7 +47,7 @@
     preset: both exposures and both exposure-free horizon colours. The
     fallback's only GPU oracle.
 - Invariants & assumptions:
-  - State lives in the URL hash (`#preset=…&tone=…&tier=…&cloudMode=…`), so a
+  - State lives in the URL hash (`#preset=…&tone=…&tier=…&cloudMode=…&shadows=0|1`), so a
     screenshot or phone link reproduces a view; a hash change on an open
     page re-applies it (the page's own writes use `replaceState`, which
     fires no `hashchange`).

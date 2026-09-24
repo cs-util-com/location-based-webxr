@@ -357,7 +357,9 @@ const entryFiles = [
   // must be a per-file dist entry (a missing entry breaks Vite resolution at
   // runtime — see 2026-04-29-recorder-e2e-import-resolution-failure.md).
   'src/visualization/perf-stats-overlay.ts',
-  // The AR sun shadow prototype's pure rig (plan 2026-09-23-2343, M1).
+  // The AR sun shadow prototype (plan 2026-09-23-2343): the shadow-casting
+  // sun light (M2) and its pure rig (M1).
+  'src/visualization/sun-shadow.ts',
   'src/visualization/sun-shadow-rig.ts',
   // Shared canvas-text sprite helper (2026-07-17 wayfinding graduation).
   'src/visualization/text-sprite.ts',

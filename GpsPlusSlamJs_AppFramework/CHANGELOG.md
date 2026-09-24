@@ -42,6 +42,11 @@
 
 ### Added
 
+- **The shadow-casting sun light** (AR sun shadow prototype plan
+  2026-09-23-2343, M2): **`visualization/sun-shadow`** (deep import):
+  `createSunShadow({ light })` drives a `DirectionalLight` from the rig and
+  re-renders its shadow map only when the rig says so; `enableSunShadows`
+  turns shadow maps on before the first frame.
 - **The sun-shadow rig** (AR sun shadow prototype plan 2026-09-23-2343,
   M1): **`visualization/sun-shadow-rig`** (deep import), pure: the sun
   light's pose and shadow-camera bounds (`sunShadowPose`), when to re-render

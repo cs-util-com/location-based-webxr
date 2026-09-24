@@ -31,6 +31,11 @@ import { fallbackSky } from "/fw/visualization/atmosphere/atmosphere-fallback.js
 import { SkyAtmosphere } from "/fw/visualization/atmosphere/sky-atmosphere.js";
 import { WaterSurface } from "/fw/visualization/atmosphere/water-surface-material.js";
 import { sunDirection } from "/osm/sun-position.js";
+import {
+  createSunShadow,
+  enableSunShadows,
+} from "/fw/visualization/sun-shadow.js";
+import { sunShadowActive } from "/fw/visualization/sun-shadow-rig.js";
 
 import { createGpuTimer } from "./gpu-timer.js";
 import { lutParity, skyPixelExpected } from "./parity.js";
@@ -135,7 +140,34 @@ const state = {
   tier: "phone",
   // Dome (the sky's layer) or the fly-through sheet (plan 2026-09-24-1010).
   cloudMode: "dome",
+  // Sun shadows (AR sun shadow plan 2026-09-23-2343, M2 / S1).
+  shadows: false,
 };
+
+/**
+ * The shadow parameters. R 220 m covers the whole stand-in city (7 × 42 m
+ * blocks and their shadows), not the AR prototype's 25 m around the user.
+ * `setShadowParams` is the manual desktop-GPU cost sweep's handle (plan §4 /
+ * §7 item 7: N, PCF radius, normal bias, R, and `everyFrame` to time a map
+ * render).
+ */
+const shadowParams = {
+  halfWidthM: 220,
+  mapSize: 2048,
+  radius: 1,
+  normalBiasTexels: 1,
+  bias: 0,
+  everyFrame: false,
+};
+/**
+ * The look-dev page shows shadows down to a 2° sun, the dawn preset's own
+ * elevation, so dawn casts too (the floor is inclusive); AR keeps the rig's
+ * 10° floor.
+ */
+const SHADOW_FLOOR_DEG = 2;
+let sunShadow = null;
+/** The switch is on but the sun is below the floor (the readout says so). */
+let shadowsBelowFloor = false;
 
 const CLOUD_MODES = ["dome", "sheet"];
 const VIEWS = ["city", "sun", "antisun", "lake", "aloft", "above"];
@@ -151,6 +183,7 @@ function readHash() {
   if (CLOUD_MODES.includes(params.get("cloudMode"))) {
     state.cloudMode = params.get("cloudMode");
   }
+  state.shadows = params.get("shadows") === "1";
 }
 
 function writeHash() {
@@ -159,6 +192,7 @@ function writeHash() {
     tone: state.tone,
     tier: state.tier,
     cloudMode: state.cloudMode,
+    shadows: state.shadows ? "1" : "0",
   });
   history.replaceState(null, "", `#${params}`);
 }
@@ -213,6 +247,7 @@ function useAtmosphere() {
   haze.setMode(state.haze ? "atmosphere" : "fog");
   atmosphere.applySunLight(sun);
   aimSunLight(direction);
+  applyShadows(direction);
   renderer.toneMapping = TONE_MAPPINGS[state.tone];
   renderer.toneMappingExposure = 1;
   scene.fog = new THREE.Fog(
@@ -221,6 +256,54 @@ function useAtmosphere() {
     ATMOSPHERE_FAR_M,
   );
   camera.far = ATMOSPHERE_FAR_M;
+}
+
+/**
+ * Sun shadows on or off. On: shadow maps on the renderer (once), every
+ * building casts and receives, the ground and the streets receive, and the
+ * sun light is driven by the framework's rig (a re-render only when the sun
+ * moved; the page reports how many).
+ */
+function applyShadows(direction) {
+  const elevationDeg = state.elevation;
+  const on = state.shadows && sunShadowActive(elevationDeg, SHADOW_FLOOR_DEG);
+  shadowsBelowFloor = state.shadows && !on;
+  if (!on) {
+    // dispose() restores the light as it was found when the shadow was
+    // created (the sun of THEN): aim it at the current sun again.
+    if (sunShadow) {
+      sunShadow.dispose();
+      sunShadow = null;
+      aimSunLight(direction);
+    }
+    return;
+  }
+  if (!sunShadow) {
+    enableSunShadows(renderer);
+    for (const building of parts.city.children) {
+      building.castShadow = true;
+      building.receiveShadow = true;
+    }
+    parts.ground.receiveShadow = true;
+    parts.streets.traverse((o) => (o.receiveShadow = true));
+    sunShadow = createSunShadow({ light: sun, mapSize: shadowParams.mapSize });
+  }
+  sun.shadow.radius = shadowParams.radius;
+  sun.shadow.bias = shadowParams.bias;
+  if (shadowParams.everyFrame) sun.shadow.autoUpdate = true;
+  const length = Math.hypot(direction.x, direction.y, direction.z);
+  sunShadow.update({
+    sunDir: [direction.x / length, direction.y / length, direction.z / length],
+    centre: [0, 0, 0],
+    halfWidthM: shadowParams.halfWidthM,
+    casterGeneration: "city",
+    casterOffsetM: 0,
+  });
+  // The rig sets one texel of normal bias; the sweep scales it (set, not
+  // multiplied: update() leaves it alone when it renders no map).
+  sun.shadow.normalBias =
+    ((2 * shadowParams.halfWidthM) / shadowParams.mapSize) *
+    shadowParams.normalBiasTexels;
 }
 
 let composer = null;
@@ -353,6 +436,7 @@ function syncControls() {
   $("#clouds").value = state.clouds;
   $("#tone").value = state.tone;
   $("#haze").checked = state.haze;
+  $("#shadows").checked = state.shadows;
   $("#tier").value = state.tier;
   $("#cloud-mode").value = state.cloudMode;
   $("[data-values]").textContent =
@@ -386,6 +470,9 @@ function buildControls() {
     api.setToneMapping(e.target.value),
   );
   $("#haze").addEventListener("change", (e) => api.setHaze(e.target.checked));
+  $("#shadows").addEventListener("change", (e) =>
+    api.setShadows(e.target.checked),
+  );
   $("#tier").addEventListener("change", (e) => api.setTier(e.target.value));
   $("#cloud-mode").addEventListener("change", (e) =>
     api.setCloudMode(e.target.value),
@@ -438,7 +525,7 @@ function frame(now) {
     ? `GPU ${gpuMs === null ? "…" : gpuMs.toFixed(2)} ms`
     : "GPU n/a";
   $("[data-stats]").textContent =
-    `${state.tier} · clouds ${state.cloudMode} · ${frameMs.toFixed(1)} ms/frame · ${gpu} · ${renderer.info.render.calls} draws · ` +
+    `${state.tier} · clouds ${state.cloudMode} · shadows ${sunShadow ? `on (${sunShadow.renders} maps)` : shadowsBelowFloor ? "on (sun below 2°)" : "off"} · ${frameMs.toFixed(1)} ms/frame · ${gpu} · ${renderer.info.render.calls} draws · ` +
     `${(renderer.info.render.triangles / 1000).toFixed(0)}k tris · LUT ${lutMs.toFixed(1)} ms`;
   requestAnimationFrame(frame);
 }
@@ -535,6 +622,69 @@ Object.assign(api, {
     if (!VIEWS.includes(view)) throw new Error(`unknown view ${view}`);
     placeCamera(view);
     $("#camera-view").value = view;
+  },
+  /** Sun shadows on or off (AR sun shadow plan M2). */
+  setShadows(on) {
+    state.shadows = Boolean(on);
+    applyLook();
+  },
+  /**
+   * The cost sweep's handle: any of { halfWidthM, mapSize, radius,
+   * normalBiasTexels, bias, everyFrame } (everyFrame re-renders the map every
+   * frame, to time one map render on a real GPU). Rebuilds the shadow.
+   */
+  setShadowParams(params) {
+    Object.assign(shadowParams, params);
+    sunShadow?.dispose();
+    sunShadow = null;
+    applyLook();
+  },
+  /** Test surface: the light's manual-map flags (autoUpdate, needsUpdate). */
+  shadowFlags: () => ({
+    autoUpdate: sun.shadow.autoUpdate,
+    needsUpdate: sun.shadow.needsUpdate,
+  }),
+  /** Test surface: how many shadow maps the rig asked for (null when off). */
+  shadowRenders: () => (sunShadow ? sunShadow.renders : null),
+  /**
+   * Test surface: a ground point in the tallest building's cast shadow (2 m
+   * past its footprint, away from the sun), and a DIFFUSE sunlit control:
+   * ground 205 m from the centre toward the sun, past every building (they
+   * reach ~200 m on the diagonal) and inside the 220 m map, which nothing
+   * shades. (The tallest building's roof was the first control: it is the
+   * glass tower, mostly reflected sky, blind to shadows; M2 review.)
+   */
+  shadowProbe() {
+    let tallest = null;
+    for (const b of parts.city.children) {
+      if (!tallest || b.scale.y > tallest.scale.y) tallest = b;
+    }
+    const d = sunVector();
+    const flat = Math.hypot(d.x, d.z) || 1;
+    const away = [-d.x / flat, -d.z / flat];
+    // The footprint's reach along the away direction (an axis-aligned box).
+    const reach =
+      Math.abs(away[0]) * (tallest.scale.x / 2) +
+      Math.abs(away[1]) * (tallest.scale.z / 2);
+    const p = tallest.position;
+    return {
+      shadowed: [
+        p.x + away[0] * (reach + 2),
+        0.05,
+        p.z + away[1] * (reach + 2),
+      ],
+      lit: [-away[0] * 205, 0.05, -away[1] * 205],
+      // An acne detector: the roof of the tallest DIFFUSE (non-glass)
+      // building, a caster that receives; a bad bias shadows it itself.
+      roof: (() => {
+        let best = null;
+        for (const b of parts.city.children) {
+          if (b.material.metalness >= 0.5) continue;
+          if (!best || b.scale.y > best.scale.y) best = b;
+        }
+        return [best.position.x, best.scale.y, best.position.z];
+      })(),
+    };
   },
   /** Dome (the sky's own layer) or the fly-through sheet. */
   setCloudMode(mode) {
