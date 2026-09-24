@@ -10,13 +10,20 @@ joint rotation sat from today's averaged one.
 
 ## Public API
 
-- `createFusedTally()` -> `{ add(result: QrFusedPose), summary() }`.
-  - `summary()`: `{ locks, stable, joint, averaged, fitP50Px, fitP95Px,
-deltaP50Deg, deltaP95Deg }`; the percentiles are nearest-rank over the
-    FINITE values only (`null` when there are none).
-- `fusedLine(summary)` - the report line, e.g. `fused: 40 locks | stable 30 |
-joint 38 / averaged 2 | fit p50/p95 0.6/1.1 px | vs averaged p50/p95
-2.1/6.0 deg`.
+- `createFusedTally()` -> `{ add(result: QrFusedPose, atMs), summary() }`.
+  - `summary()`: `{ locks, stable, joint, averaged, frameChanges, fitP50Px,
+fitP95Px, deltaP50Deg, deltaP95Deg, jumpDeg, wallElevationDeg }`; the
+    percentiles are nearest-rank over the FINITE values only (`null` when
+    there are none).
+  - `frameChanges`: how often the fused results' frame epoch moved on - did
+    the demo see a tracking restart (field test C, plan §25).
+  - `jumpDeg` `{ n, p50, p95, max }` and `wallElevationDeg` `{ n, p50Abs,
+p95Abs, meanSigned }`: the STABLE fused pose's own quality (what the
+    overlay shows) - jumps between consecutive stable results within 1 s and
+    in one epoch, and the code normal's elevation (0 for a wall code, 90 for
+    a code flat on a table).
+- `fusedLines(summary)` - the two report lines: the tally, then `fused pose
+(stable): jump ... | wall elevation ...`.
 
 ## Invariants & assumptions
 
@@ -28,5 +35,8 @@ joint 38 / averaged 2 | fit p50/p95 0.6/1.1 px | vs averaged p50/p95
 
 ## Tests
 
-Covered through `qrperf-instrument.test.ts` ("tallies the fused results per
-lock into the report and the JSON").
+`fused-tally.test.ts`: the stable fused pose's wall elevation; jumps between
+consecutive stable results within 1 s (a measuring result is left out, a
+gap breaks the pair); frame changes counted and never paired across. Also
+`qrperf-instrument.test.ts` ("tallies the fused results per lock into the
+report and the JSON").

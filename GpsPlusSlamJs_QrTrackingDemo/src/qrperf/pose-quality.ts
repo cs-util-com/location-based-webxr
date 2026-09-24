@@ -69,18 +69,18 @@ const STILL_GATES = {
 
 const RAD_TO_DEG = 180 / Math.PI;
 /** Detections further apart than this are not a pair (the code was lost). */
-const MAX_PAIR_GAP_MS = 1000;
+export const MAX_PAIR_GAP_MS = 1000;
 /** A jump this large is a corner-order change, not motion or noise. */
 const ORDER_CHANGE_DEG = 60;
 
 /** Angle between two unit quaternions, degrees. */
-function quatAngleDeg(a: Quat, b: Quat): number {
+export function quatAngleDeg(a: Quat, b: Quat): number {
   const dot = Math.abs(a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]);
   return 2 * Math.acos(Math.min(1, dot)) * RAD_TO_DEG;
 }
 
 /** Elevation of the rotated +z axis above the horizontal plane (y up), degrees. */
-function normalElevationDeg(q: Quat): number {
+export function normalElevationDeg(q: Quat): number {
   const [x, y, z, w] = q;
   const ny = 2 * (y * z - w * x);
   return Math.asin(Math.max(-1, Math.min(1, ny))) * RAD_TO_DEG;

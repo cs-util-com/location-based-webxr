@@ -10,6 +10,8 @@ fix (QR near-frontal pose plan 2026-09-23-2314, M1). Pure.
 
 ## Public API
 
+- Also exported for `fused-tally.ts` (one definition in the package):
+  `quatAngleDeg(a, b)`, `normalElevationDeg(q)` and `MAX_PAIR_GAP_MS` (1000).
 - `createPoseQuality({ window? })` - `window` is the number of values kept per
   series (default 240, ~30 s at 8 Hz). Returns:
   - `add(sample: PoseQualitySample)` - one solved detection: `text`,

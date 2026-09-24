@@ -5,7 +5,7 @@
  */
 
 import type { QrFusedPose } from "gps-plus-slam-app-framework/ar/qr";
-import { createFusedTally, fusedLine } from "./fused-tally.js";
+import { createFusedTally, fusedLines } from "./fused-tally.js";
 import type { CaptureTiming } from "gps-plus-slam-app-framework/ar/camera-blit-capture";
 import type { QrDetection, RgbaImage } from "gps-plus-slam-app-framework/ar";
 import {
@@ -338,7 +338,7 @@ export function createQrPerfInstrument(
       };
     },
     onFused(result) {
-      fused.add(result);
+      fused.add(result, now());
     },
     snapshot: () => timings.snapshot(now()),
     cornerOrder: () => tally.summary(),
@@ -361,7 +361,7 @@ export function createQrPerfInstrument(
       lines.push(
         `solves accepted ${solves.accepted} / ${solves.attempted}`,
         ...poseLines(pose.summary()),
-        fusedLine(fused.summary()),
+        ...fusedLines(fused.summary()),
       );
       if (options.mode === "zxing") lines.push(...zxingLines());
       return lines;
