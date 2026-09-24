@@ -34,8 +34,9 @@ is unit-tested without a WebXR session (no e2e can enter AR).
   frees the props. Idempotent.
 - `describeArSunShadow(status)`: the HUD line.
 - Types: `ArShadowView` (the BuildingView seams), `ArSunShadowDeps`,
-  `ArSunShadowFrame`, `ArSunShadowState`, `ArSunShadowStatus`,
-  `ArSunShadowSession`.
+  `ArSunShadowFrame`, `ArSunShadowStatus` (its `state` is one of `on`,
+  `waiting-for-position`, `waiting-for-floor`, `sun-low`; the union type
+  itself stays module-internal), `ArSunShadowSession`.
 
 ## Invariants & assumptions
 

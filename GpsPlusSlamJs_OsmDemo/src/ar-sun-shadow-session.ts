@@ -67,7 +67,8 @@ export interface ArSunShadowFrame {
   readonly floorEngaged: boolean;
 }
 
-export type ArSunShadowState =
+/** Module-internal: consumers read it through `ArSunShadowStatus.state`. */
+type ArSunShadowState =
   "on" | "waiting-for-position" | "waiting-for-floor" | "sun-low";
 
 export interface ArSunShadowStatus {
