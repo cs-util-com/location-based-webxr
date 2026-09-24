@@ -20,11 +20,12 @@
  */
 
 import {
+  qrFrameChanged,
   recordQrDetection,
   recordQrSizeEstimate,
   selectQrSize,
-  selectStableQrPose,
 } from "gps-plus-slam-app-framework/state";
+import { createFusedPoseSource } from "./fused-pose-source.js";
 
 import { getSeams } from "./seams.js";
 import { createQrDemoStore, type QrDemoStore } from "./demo-store.js";
@@ -90,6 +91,8 @@ const dom = {
 } as const;
 
 let store: QrDemoStore | null = null;
+/** The fused QR pose per payload (M3b b5); one per page, trackers per code. */
+const fusedPose = createFusedPoseSource();
 /** The `?qrperf` instrument, when the flag is set (null otherwise). */
 let perf: MountedQrPerf | null = null;
 let view: QrDebugView | null = null;
@@ -148,7 +151,9 @@ async function startAr(): Promise<void> {
   store.subscribe(renderHud);
 
   try {
-    await seams.initAR(dom.app);
+    await seams.initAR(dom.app, {
+      onFrameChanged: () => store?.dispatch(qrFrameChanged()),
+    });
   } catch (err) {
     failStart(err);
     return;
@@ -215,11 +220,12 @@ async function startAr(): Promise<void> {
       // which withheld even the axis while the depth size was still converging.
       view?.update(pose, sizeM);
     },
-    // Smooth the overlay with the windowed stable pose once it converges; the
-    // controller falls back to the raw frame pose while the window fills. Reads
-    // the slice AFTER recordDetection has fed the current frame in.
+    // The overlay shows the FUSED pose (the joint rotation over the window,
+    // QR near-frontal pose plan M3b b5) once its gate opens; the controller
+    // falls back to the raw frame pose until then. Reads the slice AFTER
+    // recordDetection has fed the current frame in.
     resolveStablePose: (text) =>
-      store ? selectStableQrPose(store.getState(), text) : null,
+      store ? fusedPose.resolve(store.getState(), text) : null,
     onStatus: (next) => {
       status = next;
       debugLog.append(formatStatusLine(performance.now(), next));

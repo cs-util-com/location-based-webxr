@@ -22,6 +22,12 @@ boot store + AR session + debug view + controller → per-frame
 - Maintains an on-screen **debug log** (`debug-log.ts`): every lock appends a
   line with the Δt since the previous lock (cadence/tuning aid), and status
   transitions are logged too.
+- **The overlay shows the FUSED pose** (QR near-frontal pose plan M3b b5):
+  `resolveStablePose` is `fused-pose-source.ts` - the joint rotation over the
+  window of current-epoch detections, once its gate opens; the controller
+  falls back to the raw frame pose until then (it read today's averaged
+  stable pose before). `initAR` gets `onFrameChanged`, which dispatches
+  `qrFrameChanged()` after an odometry restart (`restart-tracking.ts`).
 - HUD re-renders on store change and status change.
 - **`?qrperf` instrument** (plan 2026-09-23 M2): `mountQrPerf(parseQrPerfParams(location.search), …)`
   returns `null` when the flag is absent, and then nothing below changes. When

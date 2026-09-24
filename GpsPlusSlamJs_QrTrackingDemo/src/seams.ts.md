@@ -30,6 +30,11 @@ plan defers the Recorder's live camera wiring).
   feeds PnP intrinsics (`intrinsicsFromProjection`) in the controller. It no
   longer supplies a camera pose (QR perf plan 2026-09-23, M4): the depth sample
   arrives every 250 ms, so the solve uses each frame's own capture pose instead.
+- `initAR(container, hooks?)`: `hooks.onFrameChanged` (M3b b5) adds a
+  `callbacks.tracking` group built by `restart-tracking.ts` - a tracking
+  store of its own plus `onRestarted` - so the demo hears about odometry
+  restarts without the session's per-frame dispatches reaching the HUD's
+  store. The e2e fakes' one-parameter `initAR` stays compatible.
 - PROD frames come from the framework's generic **camera-frame RGBA capture**
   (B2): the seam's `initAR` passes the framework `initAR` a
   `callbacks.cameraFrame` group (alongside the depth group — the framework's

@@ -49,6 +49,7 @@ import { parseCaptureSizeParam } from "./capture-size-param.js";
 import type { Object3D } from "three";
 import type { DemoCapabilitySupport } from "./capability.js";
 import type { DepthContext } from "./demo-controller.js";
+import { createRestartTracking } from "./restart-tracking.js";
 
 /** Options for {@link QrDemoSeams.startFrameSource}. */
 interface FrameSourceOptions {
@@ -62,7 +63,15 @@ interface FrameSourceOptions {
 /** The device functions a Playwright e2e fake may override. */
 export interface QrDemoSeams {
   checkSupport(): Promise<DemoCapabilitySupport>;
-  initAR(container: HTMLElement): Promise<void>;
+  /**
+   * `hooks.onFrameChanged` fires after an odometry restart (M3b b5): the
+   * demo turns it into a QR frame change so the fused window never combines
+   * two coordinate frames.
+   */
+  initAR(
+    container: HTMLElement,
+    hooks?: { onFrameChanged?: () => void },
+  ): Promise<void>;
   endARSession(): Promise<void>;
   getArWorldGroup(): Object3D | null;
   /**
@@ -143,7 +152,10 @@ export const realSeams: QrDemoSeams = {
     // fires (the auto-size path simply stays in 'unknown').
     return { webxr: xr.supported, depthSensing: xr.supported };
   },
-  async initAR(container: HTMLElement): Promise<void> {
+  async initAR(
+    container: HTMLElement,
+    hooks?: { onFrameChanged?: () => void },
+  ): Promise<void> {
     // Depth + QR-frame callbacks ride into the framework initAR as its
     // `callbacks` groups (the framework creates the depth sampler and the QR
     // frame source inside it). The camera-frame path delivers top-left RGBA
@@ -166,6 +178,11 @@ export const realSeams: QrDemoSeams = {
         cameraFrame: {
           onFrame: (frame) => qrFrameConsumer?.(frame),
         },
+        // A tracking store of its own (restart-tracking.ts), so the
+        // session's per-frame pose dispatches never reach the HUD's store.
+        ...(hooks?.onFrameChanged
+          ? { tracking: createRestartTracking(hooks.onFrameChanged) }
+          : {}),
       },
     );
     startDepthCapture(QR_DEPTH_CONFIG);
