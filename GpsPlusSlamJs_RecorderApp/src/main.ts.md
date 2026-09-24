@@ -84,6 +84,11 @@ This module is the entry point that runs on page load. It also exports the follo
   options, the scope and the resources record to `wireArScene`, which attaches
   every visualizer/grid/subscriber block. `main.ts` keeps only the session
   negotiation, the callbacks struct and the user-facing status/error paths.
+- **The AR sun check** (`?debug=1` only, like the wheel; sun-overlay plan M3):
+  created at init by [`ar/recorder-sun-check.ts`](ar/recorder-sun-check.ts.md), switched by
+  the wheel's `onSunCheckChange`, and attached after `wireArScene` with
+  `attachSunCheckToSession`, which detaches it at the session's end (the
+  framework's session disposers) or at the scope's unwind, whichever comes first.
 - **Live QR recording + debug viz** (opt-in, `recording-options.qr.enabled`;
   recorder live-QR WS-2/WS-5). When enabled, `handleEnterAR` includes the
   camera-frame group in the `ArSessionCallbacks` struct passed to `initAR`

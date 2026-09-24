@@ -42,6 +42,13 @@
 
 ### Added
 
+- **The AR sun check** (sun-overlay plan 2026-09-24-0100, M1-M3): deep
+  imports **`ar/sun-check-geometry`** (the sun's direction, the sighting
+  error, `alignmentYawDeg`), **`ar/sun-marker`** (the virtual sun and the
+  reticle) and **`ar/sun-check`** (`startSunCheck`, the controller the
+  RecorderApp's debug wheel switches on), plus **`ar/session-disposers`**
+  (`registerSessionDisposer`, so an app can tie its own UI to the AR
+  session's end).
 - **QR capture cadence constants** (QR near-frontal pose plan 2026-09-23-2314,
   M1): `QR_CAPTURE_INTERVAL_CONSTRAINTS` (`{ min: 50, max: 1000, step: 25 }`
   ms) and `DEFAULT_QR_CAPTURE_INTERVAL_MS` (125), on the `ar/qr` barrel and

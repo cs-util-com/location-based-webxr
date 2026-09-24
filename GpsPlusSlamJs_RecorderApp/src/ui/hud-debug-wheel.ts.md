@@ -6,7 +6,7 @@ The in-recording settings wheel: a gear in the AR HUD, shown only with `?debug=1
 
 ## Public API
 
-- `createDebugWheel({ storeRef, controlsRoot, overlayRoot })` → `DebugWheel` with `attach()`, `dispose()`, `values()`, `touched()`, `set(patch)` (programmatic change, behaves like a tap on each key; used by the e2e hook), `suspend()` / `resume()` (replay owns the store / a recording store is back).
+- `createDebugWheel({ storeRef, controlsRoot, overlayRoot, onSunCheckChange? })` → `DebugWheel` with `attach()`, `dispose()`, `values()`, `touched()`, `set(patch)` (programmatic change, behaves like a tap on each key; used by the e2e hook), `suspend()` / `resume()` (replay owns the store / a recording store is back).
 - `dispatchWheelSettings(store, settings, controls?)` — the dispatches the given CONTROLS imply (default: all eleven): the preset is ONE action (`setAlignmentOverrides`, `null` for shipped); the compass slider is the seven compass settings from the shared mapping (`gps-plus-slam-app-framework/utils/compass-influence-mapping`) with the recorder's experiment policy; the gate, the pair selection (enabled + mode), the trust prerequisite and the heading penalty each their own setter(s).
 - `seedWheelSettings(current, touched, state)` — the untouched controls' values read from a decided store (gate, pair selection + mode, prerequisite, penalty, a preset whose overrides match the store's key-order-independently via `sameOverrides`, and the slider from the vote weight while the Stage-C prior is on); a read, never a write.
 - `sameOverrides(a, b)` — key-order-independent equality of two override payloads, `null`/`undefined` both meaning the shipped defaults.
@@ -21,6 +21,7 @@ The in-recording settings wheel: a gear in the AR HUD, shown only with `?debug=1
 - **pair selection** → `off` (`setCompassPairSelectionEnabled(false)`), `soft cut` / `hard cut` (enabled + `setCompassPairSelectionMode`). At compass influence 0 it is never enabled (the mapping's zero rule: "GPS only" is the control arm of every A/B, and no toggle may re-arm it) and the dropdown is disabled with a hint; the two tap orders end in the same config (PR #407 review).
 - **pairs need trust** → `setCompassPairSelectionRequireTrust`.
 - **heading penalty** → `setConsensusSolverHeadingPenalty(0.25)` or `0`; inert unless a preset switched the robust solver on.
+- **sun check (AR)** (only when `onSunCheckChange` is given; sun-overlay plan M3) → the app's callback, never the store: it is LOCAL UI state, so it is not in `WheelSettings`, never dispatched, and never replayed onto a new store. The box disables itself while the callback runs (the safety note can take a while) and then shows the state actually reached, so declining the note leaves it unchecked. See [`../ar/sun-check-ui.ts.md`](../ar/sun-check-ui.ts.md).
 
 ## Invariants & assumptions
 

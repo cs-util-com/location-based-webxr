@@ -146,6 +146,13 @@ export interface RecordingSessionHandlers {
   /** Handle back-button press during recording (confirmation dialog). */
   handleBackDuringRecording(): Promise<void>;
 
+  /**
+   * True for the whole Stop teardown. `isRecording` stays true after Stop
+   * has flushed the action writes for the zip, so an action dispatched in
+   * that window can miss it; recorders of late notes check this too.
+   */
+  isStopInProgress(): boolean;
+
   /** Get the current session name. */
   getCurrentSessionName(): string;
   /** Set the current session name. */
@@ -612,6 +619,7 @@ export function createRecordingSessionHandlers(
     handleStartRecording,
     handleStopRecording,
     handleBackDuringRecording,
+    isStopInProgress: () => stopInProgress,
     getCurrentSessionName: () => runtime.currentSessionName,
     setCurrentSessionName: (name: string) => {
       runtime.currentSessionName = name;

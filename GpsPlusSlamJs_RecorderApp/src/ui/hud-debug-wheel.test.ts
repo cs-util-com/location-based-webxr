@@ -741,3 +741,50 @@ describe('formatWheelReadout', () => {
     ).toBe('yaw 10.0° · churn 0.46°/fix (30) · compass – · 2 fixes');
   });
 });
+
+describe('the sun check toggle (sun-overlay plan M3)', () => {
+  // WHY: the sun check is LOCAL UI state, not a store setting: it must never
+  // be dispatched or replayed onto a new store, and the box must show the
+  // state actually reached (declining the safety note leaves it off).
+  const mountWith = (onSunCheckChange?: (on: boolean) => Promise<boolean>) => {
+    document.body.innerHTML = '<div id="controls"></div><div id="app"></div>';
+    const store = fakeStore();
+    const wheel = createDebugWheel({
+      storeRef: createStoreRef<RecorderStore>(store),
+      controlsRoot: document.getElementById('controls')!,
+      overlayRoot: document.getElementById('app')!,
+      ...(onSunCheckChange ? { onSunCheckChange } : {}),
+    });
+    wheel.attach();
+    const box = document.querySelector<HTMLInputElement>(
+      '#debug-wheel-sun-check'
+    );
+    return { wheel, store, box };
+  };
+
+  it('is absent when the app offers no sun check', () => {
+    expect(mountWith().box).toBeNull();
+  });
+
+  it('asks the app, disables itself while waiting, and shows the state reached', async () => {
+    let answer: (on: boolean) => void = () => {};
+    const onSunCheckChange = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          answer = resolve;
+        })
+    );
+    const { wheel, store, box } = mountWith(onSunCheckChange);
+    expect(box?.checked).toBe(false);
+    box!.checked = true;
+    box!.dispatchEvent(new Event('change'));
+    expect(onSunCheckChange).toHaveBeenCalledWith(true);
+    expect(box!.disabled).toBe(true);
+    answer(false); // the safety note was declined
+    await new Promise((r) => setTimeout(r, 0));
+    expect(box!.disabled).toBe(false);
+    expect(box!.checked).toBe(false);
+    expect(wheel.touched()).toBe(false);
+    expect(store.dispatched).toEqual([]);
+  });
+});

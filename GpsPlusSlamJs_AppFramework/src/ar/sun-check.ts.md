@@ -36,7 +36,7 @@ heading error for an app to show or log.
   (median, min, max) and the target yaw with a changed flag, the place, the
   apparent sun and its refraction, the clock offset, and the derived median
   heading / elevation errors and separation.
-- **Exported today: `startSunCheck`, `SunCheck`, `SunCheckDeps`, `SUN_CHECK`.** The result and status types (`SunMarkResult`, `SunSighting`, `SunMarkRefusal`, `SunMarkWarning`, `SunCheckStatus`, `SunHiddenReason`) are module-internal until the RecorderApp wiring imports them (the dead-code check refuses unused exports); callers can name them through `SunCheck` meanwhile, e.g. `Awaited<ReturnType<SunCheck["mark"]>>`.
+- **Exported today: `startSunCheck`, `SunCheck`, `SunCheckDeps`, `SUN_CHECK`.** The result and status types (`SunMarkResult`, `SunSighting`, `SunMarkRefusal`, `SunMarkWarning`, `SunCheckStatus`, `SunHiddenReason`) are module-internal (the dead-code check refuses unused exports); callers name them through `SunCheck`, as the RecorderApp does (`recorder-sun-check.ts`, `sun-sighting-note.ts`), e.g. `Awaited<ReturnType<SunCheck["mark"]>>`.
 - `SUN_CHECK` — the rules: a 1 s window, 300 ms past the tap, ≥ 10 frames,
   spread ≤ 0.3° (80th percentile), give up 1.5 s after the window, hide
   below −1°, Mark from 0°, high sun above 35°, sun recomputed every 250 ms.
@@ -83,7 +83,12 @@ heading error for an app to show or log.
 const check = startSunCheck({
   scene,
   arWorldGroup,
-  getZeroReference: () => store.getState().zeroReference,
+  // The library's LatLong spells longitude `lon`; map it (the RecorderApp's
+  // recorder-sun-check.ts reads it from the current store this way).
+  getZeroReference: () => {
+    const z = selectZeroReference(storeRef.get().getState());
+    return z ? { lat: z.lat, lng: z.lon } : null;
+  },
   nowEpochMs: Date.now,
 });
 const result = await check.mark();

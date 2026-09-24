@@ -52,7 +52,7 @@ import {
 import { initSessionSummary, hideSessionSummary } from './ui/session-summary';
 import { initLogPanel, showLogPanel } from './ui/log-panel';
 import { initToast, showToast, TOAST_DURATION_ERROR } from './ui/toast';
-import { destroyConfirmDialog } from './ui/confirm-dialog';
+import { destroyConfirmDialog, showConfirmDialog } from './ui/confirm-dialog';
 import {
   initAR,
   endARSession,
@@ -66,6 +66,12 @@ import {
   type DepthSample,
 } from 'gps-plus-slam-app-framework/ar/webxr-session';
 import { registerXrFrameUpdate } from 'gps-plus-slam-app-framework/ar/xr-frame-loop';
+import { registerSessionDisposer } from 'gps-plus-slam-app-framework/ar/session-disposers';
+import {
+  attachSunCheckToSession,
+  createRecorderSunCheck,
+} from './ar/recorder-sun-check';
+import type { SunCheckUi } from './ar/sun-check-ui';
 import { getXrErrorMessage } from 'gps-plus-slam-app-framework/ar/xr-error-handler';
 import { applyChromiumProjectionLayerWorkaround } from 'gps-plus-slam-app-framework/ar/chromium-camera-access-workaround';
 import {
@@ -211,6 +217,8 @@ const storeRef = createStoreRef(store);
 // the tester touched. `null` for every ordinary user - the flag is the only
 // surface change (see ui/hud-debug-wheel.ts.md).
 let debugWheel: DebugWheel | null = null;
+/** The AR sun check (sun-overlay plan M3), `?debug=1` only, like the wheel. */
+let sunCheckUi: SunCheckUi | null = null;
 
 // Every AR-session-scoped resource registers its teardown here at its
 // creation site (see utils/ar-session-scope.ts and the 2026-07-11
@@ -937,7 +945,23 @@ async function main(): Promise<void> {
     const controlsRoot = document.getElementById('controls');
     const overlayRoot = document.getElementById('app');
     if (controlsRoot && overlayRoot) {
-      debugWheel = createDebugWheel({ storeRef, controlsRoot, overlayRoot });
+      sunCheckUi = createRecorderSunCheck({
+        storeRef,
+        appContainer: overlayRoot,
+        getScene,
+        getArWorldGroup,
+        isStopInProgress: () => recordingSessionHandlers.isStopInProgress(),
+        isReplaying: () => replayHandlers.getIsReplayMode(),
+        showToast,
+        confirm: showConfirmDialog,
+      });
+      const sunCheck = sunCheckUi;
+      debugWheel = createDebugWheel({
+        storeRef,
+        controlsRoot,
+        overlayRoot,
+        onSunCheckChange: (on) => sunCheck.setEnabled(on),
+      });
       debugWheel.attach();
     }
   }
@@ -1297,6 +1321,14 @@ async function handleEnterAR(): Promise<void> {
         // capture veto pauses frames while a level fetch is in flight.
         onQrStateChanged: refreshQrStatus,
       });
+      // The sun check starts here if its wheel box is on (sun-overlay M3).
+      if (sunCheckUi) {
+        attachSunCheckToSession(
+          sunCheckUi,
+          arSessionScope,
+          registerSessionDisposer
+        );
+      }
     }
 
     // Issue #2 fix: Update status to match AR_READY state per Application State Machine

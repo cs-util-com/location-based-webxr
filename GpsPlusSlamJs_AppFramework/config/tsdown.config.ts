@@ -75,6 +75,8 @@ const entryFiles = [
   'src/ar/image-quality.ts',
   'src/ar/replay-scene.ts',
   'src/ar/scene-node-names.ts',
+  // The recorder ties its sun-check HUD to the session's end with it.
+  'src/ar/session-disposers.ts',
   'src/ar/sun-check.ts',
   'src/ar/sun-check-geometry.ts',
   'src/ar/sun-marker.ts',
