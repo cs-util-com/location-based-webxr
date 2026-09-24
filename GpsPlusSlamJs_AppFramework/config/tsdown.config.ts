@@ -75,6 +75,7 @@ const entryFiles = [
   'src/ar/image-quality.ts',
   'src/ar/replay-scene.ts',
   'src/ar/scene-node-names.ts',
+  'src/ar/sun-check-geometry.ts',
   // Curated re-export of the library's NUE↔WebXR conversions, so consumer apps
   // (the recorder's replay path) reach them without a direct gps-plus-slam-js
   // dependency. Deep-imported via the `./ar/*` wildcard → per-file entry.
@@ -248,6 +249,10 @@ const entryFiles = [
   // Shared rather than copied because the early return is a CONTRACT: without
   // it `360 − ε` snaps to 0, a full turn that never happened.
   'src/utils/bearing-degrees.ts',
+  // NUE direction → geographic bearing, deep-imported by the OSM demo's AR
+  // HUD and used by the AR sun check (lifted from OsmDemo 2026-09-24,
+  // DEC-H3). Built per-file for the `./utils/*` wildcard, like the above.
+  'src/utils/nue-bearing.ts',
   // CSS cubic-bezier timing functions — deep-imported by the wayfinding
   // HUD's diamond entrance (NOT via the `/utils` barrel, which would pull in
   // the logger and friends). The `./utils/*` exports wildcard advertises

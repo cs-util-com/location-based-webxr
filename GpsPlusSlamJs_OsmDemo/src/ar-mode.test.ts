@@ -142,7 +142,7 @@ import {
 } from "./ar-entry-dom-veil.js";
 import { ENTRY_VEIL_FADE_S } from "./ar-entry-veil.js";
 import { AR_DEPTH_SAMPLER_CONFIG } from "./ar-depth-pipeline.js";
-import { nueBearingDeg } from "./ar-origin.js";
+import { nueBearingDeg } from "gps-plus-slam-app-framework/utils/nue-bearing";
 import { AR_CAMERA_FAR_M, AR_CAMERA_NEAR_M } from "./ar-scene-environment.js";
 
 const COLOGNE = { lat: 50.9413, lon: 6.9583 };
@@ -992,12 +992,17 @@ describe("when AR cannot start", () => {
   it("grades the session's renderer to match the desktop view", async () => {
     // Also a wiring assertion rather than a behaviour one: `getRenderer()` is a
     // framework accessor added for this, and forgetting to CALL it would leave
-    // AR at `NoToneMapping` — every colour in the demo authored under ACES at
-    // 0.5, rendered at exposure 1.0.
+    // AR at `NoToneMapping` at exposure 1.0 instead of the demo's grade.
+    // The grade itself is Khronos Neutral since plan 2026-09-23-2149 M3
+    // (DEC-SUN-9, and DEC-SUN-11: AR follows desktop), at 0.5 / 0.6: ACES
+    // divided the exposure by 0.6 and Neutral does not, so this keeps the
+    // value entering the curve (DEC-SUN-12); Neutral has no filmic shoulder,
+    // so AR mids and highlights render brighter than under ACES (a phone
+    // field-test item, plan 2026-09-23-2149 §10).
     await startArMode(deps());
 
-    expect(renderer.toneMapping).toBe(THREE.ACESFilmicToneMapping);
-    expect(renderer.toneMappingExposure).toBe(0.5);
+    expect(renderer.toneMapping).toBe(THREE.NeutralToneMapping);
+    expect(renderer.toneMappingExposure).toBeCloseTo(0.5 / 0.6, 12);
   });
 
   it("samples the AR renderer's OWN draw cost, not the desktop view's", async () => {

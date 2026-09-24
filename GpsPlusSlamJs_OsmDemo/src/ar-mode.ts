@@ -103,9 +103,9 @@ import {
   createArExperimentPanel,
   type ArExperimentPanel,
 } from "./ar-experiment-panel.js";
+import { nueBearingDeg } from "gps-plus-slam-app-framework/utils/nue-bearing";
 import {
   canEnterAr,
-  nueBearingDeg,
   sceneAnchorOffsetNue,
   toDemoLatLng,
   type FrameworkLatLong,
@@ -1042,7 +1042,8 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
 
     // M2. Clears the background so the passthrough shows, widens the depth budget
     // to 0.5 / 1000, adds fog ending exactly at that far plane, matches the demo's
-    // ACES grading, and pointedly does NOT set an environment map.
+    // grading (Khronos Neutral since plan 2026-09-23-2149 M3), and pointedly
+    // does NOT set an environment map.
     //
     // THE RENDERER IS NOT IN THE GUARD ABOVE, deliberately: a missing camera
     // leaves the city clipping at 200 m, while a missing renderer only leaves it
