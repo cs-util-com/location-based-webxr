@@ -45,6 +45,28 @@ front end), so every app's detections are symbol-ordered.
 - Defensive: non-4 corner lists, tiny images and out-of-image quads return
   the input with `confident: false`; nothing throws.
 
+## Cross-scans (milestone review 2026-09-24, finding 1)
+
+The diagonal alone was fooled by the code's own content: from BR it crosses
+four data modules and then the alignment pattern's rings, which for many
+codes merge into a perfect 1:1:3:1:1 (e.g. `https://ex.co/p/0`: D1 L1 D3
+L1 D1). A diagonal candidate now also has to read 1:1:3:1:1 on scans through
+the centre of its core along BOTH symbol axes, ±6 modules (the module size
+from the diagonal's runs), with the core run containing the centre - as
+zxing does. The fake BR reads 3-1-5 and 1-1-4 there.
+
+Over 200 payloads (100 short at level M, versions 2-3; 100 launch URLs at
+level Q, versions 6-9), 4 rolls, the folded phone at 0.9 m, noise 2
+(`qr-zxing.sweep.test.ts`, "many payloads"):
+
+- corner error 0 / 1 px: confident 100 %, wrong 0, codes never ordered 0.
+- corner error 2 px: confident 89 %, wrong 0, codes never ordered 7 / 200.
+- TL finder washed out: confident 0 %, **wrong 0** (was the confident 90 /
+  180 deg error before).
+- Before the cross-scans: 63 of the first ~240 frames of a similar payload
+  search were unsure; the review's probe found up to 111 wrong-confident in
+  1 200 washed-out frames.
+
 ## Measured (opt-in sweep, `qr-zxing.sweep.test.ts`)
 
 Corners emulating the phone: the true corners moved by up to 1, 2 or 3 px

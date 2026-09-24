@@ -327,6 +327,75 @@ function walkReport(rows: readonly WalkRow[]): string[] {
   return lines;
 }
 
+/** 100 short (version 2-3, level M) and 100 launch-URL (version 6-9, level Q) payloads. */
+function payloadSet(): { text: string; ecLevel: 'M' | 'Q' }[] {
+  return Array.from({ length: 100 }, (_, i) => [
+    { text: `https://ex.co/p/${i}`, ecLevel: 'M' as const },
+    {
+      text: `https://gps-plus-slam.csutil.workers.dev/tour/?t=S/${(i * 7919 + 13).toString(36)}Qm2xPz9LbV4nRw8TcY3hFd6JsA1eGu5oKi0MNq`,
+      ecLevel: 'Q' as const,
+    },
+  ]).flat();
+}
+
+/** Paint the symbol's TL finder (and a margin) white: glare or a smudge. */
+function washOutTopLeftFinder(frame: ReturnType<typeof renderQrFrame>): void {
+  const [tl, tr, , bl] = frame.truthCorners;
+  const reach = 8.5 / frame.moduleCount;
+  const { data, width, height } = frame.image;
+  const ux = tr.x - tl.x;
+  const uy = tr.y - tl.y;
+  const vx = bl.x - tl.x;
+  const vy = bl.y - tl.y;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const u = ((x - tl.x) * ux + (y - tl.y) * uy) / (ux * ux + uy * uy);
+      const v = ((x - tl.x) * vx + (y - tl.y) * vy) / (vx * vx + vy * vy);
+      if (u > -0.02 && u < reach && v > -0.02 && v < reach) {
+        const o = (y * width + x) * 4;
+        data[o] = data[o + 1] = data[o + 2] = 255;
+      }
+    }
+  }
+}
+
+interface PayloadTally {
+  n: number;
+  confident: number;
+  wrong: number;
+  neverOrdered: Set<string>;
+}
+
+function tallyCornerOrder(
+  tally: PayloadTally,
+  text: string,
+  frame: ReturnType<typeof renderQrFrame>,
+  errPx: number,
+  seed: number
+): boolean {
+  const span = 2 * errPx + 1;
+  const nudge = (k: number) => ((seed * (k + 3) * 7) % span) - errPx;
+  const truth = frame.truthCorners.map((p, k) => ({
+    x: Math.round(p.x + nudge(k)),
+    y: Math.round(p.y + nudge(k + 1)),
+  }));
+  let start = 0;
+  truth.forEach((p, i) => {
+    if (p.x + p.y < truth[start]!.x + truth[start]!.y) start = i;
+  });
+  const out = canonicalizeCorners(
+    frame.image,
+    [0, 1, 2, 3].map((k) => truth[(start + k) % 4]!)
+  );
+  const correct = out.corners.every(
+    (p, i) => p.x === truth[i]!.x && p.y === truth[i]!.y
+  );
+  tally.n++;
+  if (out.confident) tally.confident++;
+  if (out.confident && !correct) tally.wrong++;
+  return out.confident;
+}
+
 describe.runIf(RUN)('QR zxing sweep (opt-in, QR_SWEEP=1)', () => {
   it(
     'geometry: distance x tilt x roll x capture size',
@@ -534,5 +603,64 @@ describe.runIf(RUN)('QR zxing sweep (opt-in, QR_SWEEP=1)', () => {
       expect(total).toBeGreaterThan(0);
     },
     4 * SWEEP_TIMEOUT_MS // three SLAM-noise levels over the whole walk set
+  );
+
+  it(
+    'corner order over many payloads (milestone review 2026-09-24, finding 1)',
+    () => {
+      // One frontal frame per payload, roll and corner error, at the phone's
+      // folded geometry and ~0.9 m (about 3-5 px/module for these versions);
+      // then the same with the TL finder washed out.
+      const projection = perspectiveProjection({
+        fovYDeg: 64,
+        aspect: 439 / 1024,
+      });
+      const lines: string[] = [];
+      for (const washed of [false, true]) {
+        for (const errPx of washed ? [0] : [0, 1, 2]) {
+          const tally: PayloadTally = {
+            n: 0,
+            confident: 0,
+            wrong: 0,
+            neverOrdered: new Set(),
+          };
+          payloadSet().forEach(({ text, ecLevel }, i) => {
+            let anyConfident = false;
+            for (const rollDeg of washed ? [0] : [0, 90, 180, 270]) {
+              const frame = renderQrFrame({
+                text,
+                ecLevel,
+                sizeM: SIZE_M,
+                qrPoseInCamera: qrPoseFacingCamera({ distanceM: 0.9, rollDeg }),
+                projection,
+                width: 439,
+                height: 1024,
+                supersample: 2,
+                noiseSigma: 2,
+                seed: i * 4 + rollDeg,
+              });
+              if (washed) washOutTopLeftFinder(frame);
+              anyConfident =
+                tallyCornerOrder(
+                  tally,
+                  text,
+                  frame,
+                  errPx,
+                  i * 4 + rollDeg + 2
+                ) || anyConfident;
+            }
+            if (!anyConfident) tally.neverOrdered.add(text);
+          });
+          lines.push(
+            `${washed ? 'TL finder washed out' : `corner error ${errPx} px`} | frames ${tally.n} | confident ${pct(tally.confident, tally.n)} | WRONG confident ${tally.wrong} | codes never ordered ${tally.neverOrdered.size}/200`
+          );
+        }
+      }
+      console.log(
+        `\nCORNER ORDER OVER 200 PAYLOADS (439x1024, 0.9 m)\n${lines.join('\n')}`
+      );
+      expect(lines.length).toBe(4);
+    },
+    SWEEP_TIMEOUT_MS
   );
 });

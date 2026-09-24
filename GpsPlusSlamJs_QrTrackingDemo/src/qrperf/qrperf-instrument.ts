@@ -180,6 +180,7 @@ function readSolve(
   text: string,
   input: unknown,
   out: unknown,
+  atMs: number,
 ): PoseQualitySample | null {
   const solution = readSolution(out);
   const given = readSolveInput(input);
@@ -191,6 +192,7 @@ function readSolve(
     cameraPosition: given.position,
     cameraRotation: given.rotation,
     reprojectionErrorPx: solution.reprojectionErrorPx,
+    atMs,
   };
 }
 
@@ -234,6 +236,8 @@ export function createQrPerfInstrument(
   let frameSize = "";
   let nextSet: ZxingOptionSet = "default";
   const pose = createPoseQuality();
+  /** Solves attempted and accepted (a null result failed, e.g. the 4 px gate). */
+  const solves = { accepted: 0, attempted: 0 };
   /** The text of the latest detection; the solve that follows is its frame's. */
   let lastText: string | null = null;
 
@@ -320,8 +324,10 @@ export function createQrPerfInstrument(
         const t0 = now();
         const out = solve(...args);
         timings.record("solve", now() - t0);
+        solves.attempted += 1;
+        if (out !== null && out !== undefined) solves.accepted += 1;
         const sample =
-          lastText === null ? null : readSolve(lastText, args[0], out);
+          lastText === null ? null : readSolve(lastText, args[0], out, t0);
         if (sample) pose.add(sample);
         return out;
       };
@@ -344,7 +350,10 @@ export function createQrPerfInstrument(
       lines.push(
         `long frames (>1.5x / >2x median): ${snap.longFrames.over1_5x} / ${snap.longFrames.over2x}`,
       );
-      lines.push(...poseLines(pose.summary()));
+      lines.push(
+        `solves accepted ${solves.accepted} / ${solves.attempted}`,
+        ...poseLines(pose.summary()),
+      );
       if (options.mode === "zxing") lines.push(...zxingLines());
       return lines;
     },
@@ -356,6 +365,7 @@ export function createQrPerfInstrument(
         intervalMs: options.intervalMs ?? null,
         ...timings.snapshot(now()),
         pose: pose.summary(),
+        solves,
         zxingSets: sets,
         zxingLoadMs: options.zxing?.loadMs() ?? null,
         cornerOrder: tally.summary(),

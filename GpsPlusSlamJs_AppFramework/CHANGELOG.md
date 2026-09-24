@@ -87,6 +87,10 @@
   cannot tell, the same code's last confident order (< 500 ms) or the
   detector's order is kept. A third, optional constructor argument
   (`orderCorners`, type `CornerOrderer`) replaces the rule.
+  Recordings made before this change keep their native-order corners, and
+  replay re-solves them unchanged. A cross-scan through each candidate
+  finder's core (as zxing does) keeps the alignment pattern near BR from
+  passing for a finder on some codes (milestone review 2026-09-24).
 - **`BarcodeDetectorFrontEnd`'s default conversion no longer copies the
   frame** when it can be adopted (plain-`ArrayBuffer`-backed pixels), saving
   one full-frame copy per decode.

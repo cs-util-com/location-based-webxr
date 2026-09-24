@@ -22,6 +22,8 @@ export interface PoseQualitySample {
   cameraPosition: Vec3;
   cameraRotation: Quat;
   reprojectionErrorPx: number;
+  /** When the solve happened, ms (any monotonic clock). */
+  atMs: number;
 }
 
 interface Percentiles {
@@ -66,6 +68,10 @@ const STILL_GATES = {
 } as const;
 
 const RAD_TO_DEG = 180 / Math.PI;
+/** Detections further apart than this are not a pair (the code was lost). */
+const MAX_PAIR_GAP_MS = 1000;
+/** A jump this large is a corner-order change, not motion or noise. */
+const ORDER_CHANGE_DEG = 60;
 
 /** Angle between two unit quaternions, degrees. */
 function quatAngleDeg(a: Quat, b: Quat): number {
@@ -122,7 +128,11 @@ export function createPoseQuality(options: PoseQualityOptions = {}): {
   }
 
   function addPair(prev: PoseQualitySample, cur: PoseQualitySample): void {
-    push(series.jump, quatAngleDeg(prev.qrRotationWorld, cur.qrRotationWorld));
+    const jump = quatAngleDeg(prev.qrRotationWorld, cur.qrRotationWorld);
+    push(series.jump, jump);
+    // A relabelled corner is not a moved corner: keep order changes out of
+    // the jitter.
+    if (jump > ORDER_CHANGE_DEG) return;
     const movedM = Math.hypot(
       cur.cameraPosition[0] - prev.cameraPosition[0],
       cur.cameraPosition[1] - prev.cameraPosition[1],
@@ -140,7 +150,13 @@ export function createPoseQuality(options: PoseQualityOptions = {}): {
     add(sample) {
       push(series.reprojection, sample.reprojectionErrorPx);
       push(series.elevation, normalElevationDeg(sample.qrRotationWorld));
-      if (previous && previous.text === sample.text) addPair(previous, sample);
+      if (
+        previous &&
+        previous.text === sample.text &&
+        sample.atMs - previous.atMs <= MAX_PAIR_GAP_MS
+      ) {
+        addPair(previous, sample);
+      }
       previous = sample;
     },
     summary() {

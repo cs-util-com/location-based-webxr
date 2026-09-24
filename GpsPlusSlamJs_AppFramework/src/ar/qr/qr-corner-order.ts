@@ -109,14 +109,20 @@ function diagonalProfile(
   return out;
 }
 
-/** Run lengths of the dark/light sequence, starting at the first dark sample. */
+/** Run lengths from the first dark sample on, and where that sample is. */
+interface DarkFirstRuns {
+  lead: number;
+  runs: number[];
+}
+
 function darkFirstRuns(
   profile: readonly number[],
   threshold: number
-): number[] | null {
+): DarkFirstRuns | null {
   let i = 0;
   while (i < profile.length && profile[i]! >= threshold) i++;
   if (i > profile.length * MAX_LEADING_LIGHT) return null;
+  const lead = i;
   const runs: number[] = [];
   let dark = true;
   let len = 0;
@@ -131,7 +137,7 @@ function darkFirstRuns(
     }
   }
   runs.push(len);
-  return runs;
+  return { lead, runs };
 }
 
 function within(
@@ -142,10 +148,14 @@ function within(
   return value >= expected * lo && value <= expected * hi;
 }
 
-/** The first five runs look like a finder's diagonal: 1:1:3:1:1. */
-function isFinderProfile(runs: readonly number[] | null): boolean {
-  if (!runs || runs.length < 6) return false; // five finder runs + what follows
-  const [a, b, c, d, e] = runs as [number, number, number, number, number];
+/** Five consecutive runs in a finder's 1:1:3:1:1 proportion. */
+function isFinderRatio(
+  a: number,
+  b: number,
+  c: number,
+  d: number,
+  e: number
+): boolean {
   const unit = (a + b + c + d + e) / 7;
   return (
     within(a, unit, RING_TOLERANCE) &&
@@ -154,6 +164,82 @@ function isFinderProfile(runs: readonly number[] | null): boolean {
     within(d, unit, RING_TOLERANCE) &&
     within(e, unit, RING_TOLERANCE)
   );
+}
+
+/** The first five runs look like a finder's diagonal: 1:1:3:1:1. */
+function isFinderProfile(fr: DarkFirstRuns | null): fr is DarkFirstRuns {
+  if (!fr || fr.runs.length < 6) return false; // five finder runs + what follows
+  const [a, b, c, d, e] = fr.runs as [number, number, number, number, number];
+  return isFinderRatio(a, b, c, d, e);
+}
+
+/**
+ * Cross-check a finder candidate the way zxing does: scan through the centre
+ * of its core along both symbol axes; a real finder reads 1:1:3:1:1 centred
+ * there in every direction. The alignment pattern plus data modules near BR
+ * can mimic a finder along the DIAGONAL (milestone review 2026-09-24,
+ * finding 1), but not across it.
+ */
+function crossChecks(
+  image: RgbaImage,
+  map: (u: number, v: number) => Point2,
+  k: number,
+  fr: DarkFirstRuns,
+  diagonalSamples: number,
+  threshold: number
+): boolean {
+  const [cu, cv] = UNIT_CORNERS[k]!;
+  const [a, b, c, d, e] = fr.runs as [number, number, number, number, number];
+  // Profile sample i sits at fraction i / (n - 1) of the half-diagonal, which
+  // moves 0.5 * PROFILE_EXTENT along each symbol axis.
+  const perSample = (0.5 * PROFILE_EXTENT) / (diagonalSamples - 1);
+  const coreMid = fr.lead + a + b + c / 2;
+  const centreU = cu + Math.sign(0.5 - cu) * coreMid * perSample;
+  const centreV = cv + Math.sign(0.5 - cv) * coreMid * perSample;
+  const module = ((a + b + c + d + e) * perSample) / 7;
+  return (
+    crossScanIsFinder(
+      image,
+      map,
+      [centreU, centreV],
+      [1, 0],
+      module,
+      threshold
+    ) &&
+    crossScanIsFinder(image, map, [centreU, centreV], [0, 1], module, threshold)
+  );
+}
+
+/** One cross-scan: 1:1:3:1:1 with the core run containing the centre. */
+function crossScanIsFinder(
+  image: RgbaImage,
+  map: (u: number, v: number) => Point2,
+  centre: readonly [number, number],
+  axis: readonly [number, number],
+  module: number,
+  threshold: number
+): boolean {
+  const half = 6 * module;
+  const from = map(centre[0] - axis[0] * half, centre[1] - axis[1] * half);
+  const to = map(centre[0] + axis[0] * half, centre[1] + axis[1] * half);
+  const n =
+    Math.max(40, Math.ceil(Math.hypot(to.x - from.x, to.y - from.y) * 3)) | 1;
+  const runs: { dark: boolean; start: number; len: number }[] = [];
+  for (let i = 0; i < n; i++) {
+    const t = -half + (2 * half * i) / (n - 1);
+    const pt = map(centre[0] + axis[0] * t, centre[1] + axis[1] * t);
+    const l = luminanceAt(image, pt.x, pt.y);
+    if (!Number.isFinite(l)) return false;
+    const dark = l < threshold;
+    const last = runs[runs.length - 1];
+    if (last && last.dark === dark) last.len++;
+    else runs.push({ dark, start: i, len: 1 });
+  }
+  const mid = (n - 1) / 2;
+  const at = runs.findIndex((r) => mid >= r.start && mid < r.start + r.len);
+  if (at < 2 || at + 2 >= runs.length || !runs[at]!.dark) return false;
+  const [l2, l1, core, r1, r2] = runs.slice(at - 2, at + 3).map((r) => r.len);
+  return isFinderRatio(l2!, l1!, core!, r1!, r2!);
 }
 
 /** Midpoint of the 10th and 90th percentiles of all samples. */
@@ -190,9 +276,12 @@ export function canonicalizeCorners(
     profiles.push(p);
   }
   const threshold = darkLightThreshold(profiles);
-  const finder = profiles.map((p) =>
-    isFinderProfile(darkFirstRuns(p, threshold))
-  );
+  const finder = profiles.map((p, k) => {
+    const fr = darkFirstRuns(p, threshold);
+    return (
+      isFinderProfile(fr) && crossChecks(image, map, k, fr, p.length, threshold)
+    );
+  });
   const missing = finder.flatMap((f, k) => (f ? [] : [k]));
   if (missing.length !== 1) return unsure;
   // Rotate so the corner without a finder (BR) lands at index 2.

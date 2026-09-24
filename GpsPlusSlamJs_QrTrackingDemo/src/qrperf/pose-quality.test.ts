@@ -26,6 +26,7 @@ function sample(over: Partial<PoseQualitySample> = {}): PoseQualitySample {
     cameraPosition: [0, 0, 0],
     cameraRotation: IDENTITY,
     reprojectionErrorPx: 0.5,
+    atMs: 0,
     ...over,
   };
 }
@@ -68,6 +69,39 @@ describe("pose quality: orientation jumps", () => {
     q.add(sample());
     q.add(sample({ qrRotationWorld: axisAngle([0, 0, 1], 90) }));
     expect(q.summary().jumpsOver60).toBe(1);
+  });
+});
+
+describe("pose quality: pairing rules (milestone review 2026-09-24, finding 10)", () => {
+  // Why this test matters: a code lost for half a minute and found again is
+  // not a "jump" - the pose may truly differ, and counting it inflates the
+  // before/after the phone test reads.
+  it("does not pair detections more than a second apart", () => {
+    const q = createPoseQuality();
+    q.add(sample({ atMs: 0 }));
+    q.add(sample({ atMs: 5000, qrRotationWorld: axisAngle([0, 1, 0], 30) }));
+    q.add(sample({ atMs: 5125, qrRotationWorld: axisAngle([0, 1, 0], 31) }));
+    const s = q.summary();
+    expect(s.pairs).toBe(1);
+    expect(s.jumpDeg.max).toBeCloseTo(1, 6);
+  });
+
+  // Why this test matters: a corner-order change is a 90 deg jump whose
+  // corners are relabelled, not moved; its "jitter" would read ~100 px.
+  it("keeps corner-order changes out of the still-phone jitter", () => {
+    const q = createPoseQuality();
+    q.add(sample({ atMs: 0 }));
+    q.add(
+      sample({
+        atMs: 125,
+        qrRotationWorld: axisAngle([0, 0, 1], 90),
+        corners: [SQUARE[1]!, SQUARE[2]!, SQUARE[3]!, SQUARE[0]!],
+      }),
+    );
+    const s = q.summary();
+    expect(s.jumpsOver60).toBe(1);
+    expect(s.stillJitterPx.strict.n).toBe(0);
+    expect(s.stillJitterPx.loose.n).toBe(0);
   });
 });
 

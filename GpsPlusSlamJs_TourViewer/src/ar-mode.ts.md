@@ -10,7 +10,7 @@ identical here — they diverge in M3/M4.
 
 ## Public API
 
-- `CAMERA_FRAME_INTERVAL_MS = 125` — the ~8 Hz detection cadence. The frame
+- `CAMERA_FRAME_INTERVAL_MS` (125, the framework's `DEFAULT_QR_CAPTURE_INTERVAL_MS`) — the ~8 Hz detection cadence. The frame
   source is the SINGLE cadence owner (Option A): the QR controller consuming
   these frames must run `minIntervalMs: 0`.
 - `arButtonView(state, mode, location?): { label; disabled }` - pure

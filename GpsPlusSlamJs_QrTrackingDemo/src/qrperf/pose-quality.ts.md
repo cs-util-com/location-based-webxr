@@ -14,7 +14,7 @@ fix (QR near-frontal pose plan 2026-09-23-2314, M1). Pure.
   series (default 240, ~30 s at 8 Hz). Returns:
   - `add(sample: PoseQualitySample)` - one solved detection: `text`,
     `qrRotationWorld` (xyzw; +z is the printed face's normal), `corners`,
-    `cameraPosition`, `cameraRotation`, `reprojectionErrorPx`.
+    `cameraPosition`, `cameraRotation`, `reprojectionErrorPx`, `atMs`.
   - `summary(): PoseQualitySummary`:
     - `pairs`, `jumpDeg { p50, p95, max }`,
       `jumpShare { over3, over5, over10 }` (fractions), `jumpsOver60`;
@@ -25,8 +25,11 @@ fix (QR near-frontal pose plan 2026-09-23-2314, M1). Pure.
 
 ## Invariants & assumptions
 
-- **Pairs are consecutive samples of the SAME code** (`text`); another code in
-  between breaks the pair. A jump is the rotation angle between the two world
+- **Pairs are consecutive samples of the SAME code** (`text`) at most 1 s
+  apart (`atMs`); another code in between, or a longer gap (the code was
+  lost), breaks the pair.
+- **A jump over 60 deg is a corner-order change,** so that pair is kept out
+  of the jitter series (its corners were relabelled, not moved). A jump is the rotation angle between the two world
   orientations.
 - **Jumps show smoothness, not accuracy:** they drop under any filter. The
   elevation is the absolute check: for a code on a vertical wall the truth is 0

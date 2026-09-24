@@ -285,6 +285,25 @@ describe("createQrPerfInstrument", () => {
       expect(inst.report().join("\n")).toContain("pose: no solves yet");
     });
 
+    // Why this test matters: on the phone most solves can fail the 4 px
+    // reprojection gate (QR summary §4b run 1) and the pose numbers then
+    // silently cover only the survivors; the report must say how many.
+    it("counts accepted and attempted solves", async () => {
+      const inst = createQrPerfInstrument({ mode: "native", baseline: false });
+      await inst.wrapDetect(() => Promise.resolve(HIT))(IMAGE);
+      const input = { imagePoints: CORNERS, cameraPose: CAMERA };
+      inst.wrapSolve(solveWith([0, 0, 0, 1]))(input);
+      inst.wrapSolve((_input: unknown) => null)(input);
+      expect(inst.report().join("\n")).toContain("solves accepted 1 / 2");
+      expect(
+        (
+          JSON.parse(inst.json()) as {
+            solves: { accepted: number; attempted: number };
+          }
+        ).solves,
+      ).toEqual({ accepted: 1, attempted: 2 });
+    });
+
     it("reports the capture interval it runs at", () => {
       const inst = createQrPerfInstrument({
         mode: "native",

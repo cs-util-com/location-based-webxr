@@ -33,6 +33,7 @@ import type {
   endSession,
   resetGpsSessionData,
 } from "gps-plus-slam-app-framework/state";
+import { DEFAULT_QR_CAPTURE_INTERVAL_MS } from "gps-plus-slam-app-framework/ar/qr/qr-capture-cadence";
 import type { Object3D } from "three";
 
 import type { ViewerMode } from "./mode.js";
@@ -42,9 +43,10 @@ import type { ViewerMode } from "./mode.js";
  * for). The frame source is the SINGLE cadence owner (Option A): the QR
  * controller that will consume these frames in M3/M4 must run
  * `minIntervalMs: 0`, because two equal throttles in series drop ~1 frame
- * per cycle.
+ * per cycle. The value is the framework's shared QR default (DEC-H3), not
+ * a copy.
  */
-export const CAMERA_FRAME_INTERVAL_MS = 125;
+export const CAMERA_FRAME_INTERVAL_MS = DEFAULT_QR_CAPTURE_INTERVAL_MS;
 
 export interface ArButtonView {
   label: string;

@@ -51,6 +51,22 @@ function frame(opts: {
   });
 }
 
+/** A frontal code of the given payload (EC level M) at ~9 px/module. */
+function codeFrame(text: string, rollDeg: number) {
+  return renderQrFrame({
+    text,
+    ecLevel: 'M',
+    sizeM: 0.16,
+    qrPoseInCamera: qrPoseFacingCamera({ distanceM: 0.55, rollDeg }),
+    projection: perspectiveProjection({ fovYDeg: 50, aspect: 1024 / 768 }),
+    width: 1024,
+    height: 768,
+    supersample: 2,
+    noiseSigma: 1,
+    seed: 1,
+  });
+}
+
 /** What an image-ordered detector returns: start at the top-left-most corner. */
 function imageOrder(truth: readonly Point2[]): Quad {
   let start = 0;
@@ -136,6 +152,57 @@ describe('canonicalizeCorners', () => {
       expectSameCorners(out.corners, moved);
     }
   );
+
+  // Why this test matters (milestone review 2026-09-24, finding 1): from the
+  // BR corner the diagonal crosses data modules and then the alignment
+  // pattern's rings; for many printed codes they merge into a perfect
+  // 1:1:3:1:1, so BR reads as a fourth finder and the order is never known.
+  // These short payloads (version 2) all did that with the diagonal-only rule.
+  it.each([
+    'https://ex.co/p/0',
+    'https://ex.co/p/10',
+    'https://ex.co/p/14',
+    'https://ex.co/p/17',
+  ])('orders a code whose BR diagonal mimics a finder (%s)', (text) => {
+    for (const rollDeg of [0, 180]) {
+      const f = codeFrame(text, rollDeg);
+      const truth = rounded(f.truthCorners);
+      const out = canonicalizeCorners(f.image, imageOrder(truth));
+      expect(out.confident, `roll ${rollDeg}`).toBe(true);
+      expectSameCorners(out.corners, truth);
+    }
+  });
+
+  // Why this test matters: with a real finder washed out (glare, a smudge),
+  // a BR that mimics a finder must not stand in for it - that was a
+  // CONFIDENT 90/180-deg error with the diagonal-only rule. Unsure is fine.
+  it('is never confidently wrong when a real finder is washed out', () => {
+    const f = codeFrame('https://ex.co/p/0', 0);
+    const [tl, tr, , bl] = f.truthCorners;
+    // Paint the TL finder (7 of 25 modules) and a margin white.
+    const reach = 8.5 / f.moduleCount;
+    const { data, width } = f.image;
+    for (let y = 0; y < f.image.height; y++) {
+      for (let x = 0; x < width; x++) {
+        const u =
+          ((x - tl.x) * (tr.x - tl.x) + (y - tl.y) * (tr.y - tl.y)) /
+          ((tr.x - tl.x) ** 2 + (tr.y - tl.y) ** 2);
+        const v =
+          ((x - tl.x) * (bl.x - tl.x) + (y - tl.y) * (bl.y - tl.y)) /
+          ((bl.x - tl.x) ** 2 + (bl.y - tl.y) ** 2);
+        if (u > -0.02 && u < reach && v > -0.02 && v < reach) {
+          const o = (y * width + x) * 4;
+          data[o] = data[o + 1] = data[o + 2] = 255;
+        }
+      }
+    }
+    const truth = rounded(f.truthCorners);
+    const out = canonicalizeCorners(f.image, imageOrder(truth));
+    const correct = out.corners.every(
+      (p, i) => p.x === truth[i]!.x && p.y === truth[i]!.y
+    );
+    expect(out.confident && !correct).toBe(false);
+  });
 
   // Why this test matters: the answer must depend on the image, never on the
   // order the detector happened to report.
