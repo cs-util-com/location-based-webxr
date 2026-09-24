@@ -107,6 +107,22 @@ describe('fallbackSky', () => {
         exposureCompensationEv: Number.NaN,
       })
     ).toThrow(RangeError);
+    expect(() =>
+      fallbackSky(sunAt(30), { visibilityKm: 60, autoExposureAdaptation: 2 })
+    ).toThrow(RangeError);
+  });
+
+  // WHY (OsmDemo light dialog, plan 2026-09-24-2140): the fallback must
+  // follow the same adaptation as the physical sky, or the dialog's slider
+  // does nothing on a device without float targets. At a low sun (dimmer
+  // than the reference) a lower adaptation lowers the exposure.
+  it('follows the auto-exposure adaptation', () => {
+    const shipped = fallbackSky(sunAt(5), { visibilityKm: 60 });
+    const lower = fallbackSky(sunAt(5), {
+      visibilityKm: 60,
+      autoExposureAdaptation: 0.5,
+    });
+    expect(lower.sun.intensity).toBeLessThan(shipped.sun.intensity);
   });
 });
 

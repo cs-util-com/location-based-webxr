@@ -101,6 +101,27 @@ describe('autoExposure', () => {
     );
   });
 
+  // The light dialog (OsmDemo, plan 2026-09-24-2140) tunes the adaptation.
+  // WHY: the default must be the shipped curve, and a lower adaptation must
+  // do what the dialog promises: brighten where the light is above the
+  // reference (noon) and darken where it is below (twilight), crossing at
+  // the reference itself.
+  it('takes the adaptation as a parameter, the default unchanged', () => {
+    const ref = AUTO_EXPOSURE.referenceIlluminance;
+    for (const e of [ref / 50, ref / 3, ref, ref * 4]) {
+      expect(autoExposure(e, AUTO_EXPOSURE.adaptation)).toBe(autoExposure(e));
+    }
+    const bright = ref * 4;
+    const dim = ref / 4;
+    expect(autoExposure(bright, 0.5)).toBeGreaterThan(autoExposure(bright));
+    expect(autoExposure(dim, 0.5)).toBeLessThan(autoExposure(dim));
+    expect(autoExposure(ref, 0.5)).toBeCloseTo(autoExposure(ref), 12);
+    expect(autoExposure(bright, 0)).toBeCloseTo(autoExposure(dim, 0), 12);
+    for (const bad of [-0.1, 1.1, Number.NaN]) {
+      expect(() => autoExposure(ref, bad)).toThrow(RangeError);
+    }
+  });
+
   // No light at all must still give a finite exposure (a black scene), not
   // Infinity in a uniform.
   it('stays finite in the dark', () => {

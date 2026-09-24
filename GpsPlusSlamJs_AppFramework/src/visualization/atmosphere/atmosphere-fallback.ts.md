@@ -20,7 +20,9 @@ scale, so a caller can paint `scene.background`, `scene.fog.color` and a
   - `sunDirection`: toward the sun, +y up, any non-zero finite length.
   - `options`: `visibilityKm`, `observerAltitudeKm?`, `sunIntensity?`
     (default 1, the light's intensity at the reference elevation, as in
-    `SkyAtmosphere`), `exposureCompensationEv?` (default 0).
+    `SkyAtmosphere`), `exposureCompensationEv?` (default 0),
+    `autoExposureAdaptation?` (default 0.75, the physical sky's; validated
+    by `autoExposure`).
   - Returns `zenith`, `horizon`, `ground` (scene-linear RGB), `sun`
     (`colour` chroma and `intensity` in scene units), `exposure`.
   - Throws `RangeError` for a zero or non-finite direction, a non-positive

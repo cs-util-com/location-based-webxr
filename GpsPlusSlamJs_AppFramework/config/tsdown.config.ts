@@ -315,6 +315,9 @@ const entryFiles = [
   'src/visualization/accuracy-circles.ts',
   // The physical sky (plan 2026-09-23-0048, M3) — deep-imported by OsmDemo
   // via `./visualization/*` (the wildcard spans the `atmosphere/` folder).
+  // The auto-exposure's parameters: OsmDemo's light dialog starts from
+  // them (plan 2026-09-24-2140).
+  'src/visualization/atmosphere/atmosphere-exposure.ts',
   'src/visualization/atmosphere/atmosphere-fallback.ts',
   'src/visualization/atmosphere/atmosphere-haze.ts',
   'src/visualization/atmosphere/sky-atmosphere.ts',

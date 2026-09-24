@@ -17,6 +17,12 @@ colour that matched the sky at one time of day.
     applies the sky's sun light to `sun`, sets `scene.fog.color` to the
     sky's horizon, syncs the haze. The caller places its light along the
     returned vector.
+  - `setExposure({ ev, adaptation })` — the light dialog's exposure (plan
+    2026-09-24-2140): sets the sky's EV compensation and auto-exposure
+    adaptation and re-derives every copy of its exposure (the sun light, the
+    fog colour, the haze), which a change on the sky alone left stale until
+    the sun moved; on the fallback it re-derives the fallback's lights.
+    Validated before any change (`RangeError`).
   - `prepareFrame(camera)` — call before every render: hazes materials built
     since the last frame (and would heal one whose `onBeforeCompile` a later
     installer re-assigned); in the fallback, keeps the sky dome on the
@@ -68,7 +74,9 @@ colour that matched the sky at one time of day.
   worse (they wash out in ACES's shoulder), and matte cells changed nothing.
   The exact EV is the owner's taste call within what the bound allows.
 - **The noon brightening** (plan 2026-09-24-0901): `NOON_SURFACE_GAIN` and
-  `surfaceGainAt(elevationRad)` give the building and road colour factor, 1
+  `surfaceGainAt(elevationRad, ramp?)` give the building and road colour factor
+  (the ramp defaults to `NOON_SURFACE_GAIN`; the light dialog passes its own,
+  `light-settings.ts`; a ramp that does not rise throws), 1
   up to a 20° sun, linear to ×1.45 at 45°, constant above; applied by
   `BuildingView` through `mesh-layers.ts`'s `applySurfaceGain`. Those surfaces
   are nearly grey, so the lift adds brightness without competing colour:

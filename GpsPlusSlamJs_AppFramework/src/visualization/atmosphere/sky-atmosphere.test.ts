@@ -13,7 +13,7 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 
 import { horizonAverage } from './atmosphere-exposure.js';
-import { autoExposure } from './atmosphere-exposure.js';
+import { AUTO_EXPOSURE, autoExposure } from './atmosphere-exposure.js';
 import { fallbackSky, skyIlluminanceCpu } from './atmosphere-fallback.js';
 import { ATMOSPHERE_MAX_SCENE_RADIANCE } from './atmosphere-glsl.js';
 import { skyRadiance } from './atmosphere-scattering.js';
@@ -184,6 +184,25 @@ describe('SkyAtmosphere', () => {
       atmosphere.exposure / ENVIRONMENT_BAKE_GAIN,
       10
     );
+  });
+
+  // The light dialog's auto-exposure strength (plan 2026-09-24-2140): like
+  // the compensation, a slider dragged freely, so no GPU work; the exposure
+  // follows the curve at the SAME illuminance; a bad value changes nothing.
+  it('applies the auto-exposure adaptation without GPU work', () => {
+    const { device, atmosphere } = setup();
+    atmosphere.setSun(UP);
+    const before = atmosphere.exposure;
+    expect(atmosphere.autoExposureAdaptation).toBe(AUTO_EXPOSURE.adaptation);
+    atmosphere.setAutoExposureAdaptation(0.4);
+    expect(device.renders.length).toBe(3);
+    expect(device.bakes).toBe(1);
+    expect(atmosphere.autoExposureAdaptation).toBe(0.4);
+    expect(atmosphere.exposure).not.toBeCloseTo(before, 6);
+    atmosphere.setAutoExposureAdaptation(AUTO_EXPOSURE.adaptation);
+    expect(atmosphere.exposure).toBeCloseTo(before, 12);
+    expect(() => atmosphere.setAutoExposureAdaptation(2)).toThrow(RangeError);
+    expect(atmosphere.autoExposureAdaptation).toBe(AUTO_EXPOSURE.adaptation);
   });
 
   // The environment is baked WITHOUT exposure, and exposure is applied once,

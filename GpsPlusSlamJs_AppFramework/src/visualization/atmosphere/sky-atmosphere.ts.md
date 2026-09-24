@@ -23,6 +23,10 @@ observerAltitudeKm = 0.2, sunIntensity = 1 })` — adds `sky` to the scene.
   changing anything. `setSun`, `setVisibilityKm` and `setClouds` delegate
   to it.
 - `setExposureCompensation(ev)` — EV on top of the auto-exposure; no GPU work.
+- `autoExposureAdaptation` (getter) and `setAutoExposureAdaptation(a)` — the
+  auto-exposure's adaptation (default 0.75), recomputed at the last
+  illuminance; no GPU work; `RangeError` outside [0, 1] before any change.
+  The caller re-reads anything that copied the exposure (OsmDemo's rig does).
 - `setClouds({ cover })` — 0…1, the share of sky clouded (a quantile
   threshold, `cloud-layer.ts`); re-bakes the environment only (the LUTs do
   not depend on clouds); unchanged cover is free. Cover does NOT dim the

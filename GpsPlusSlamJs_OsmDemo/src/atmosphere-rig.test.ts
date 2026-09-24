@@ -72,9 +72,18 @@ class StubSky {
     this.ev = ev;
   }
 
+  adaptation = 0.75;
+  setAutoExposureAdaptation(adaptation: number): void {
+    this.adaptation = adaptation;
+  }
+
   applySunLight(light: THREE.DirectionalLight): void {
     light.color.setRGB(1, 0.8, 0.6);
-    light.intensity = 3 + this.sun.y;
+    // Exposure-dependent, like the real sky: the light holds a COPY.
+    light.intensity =
+      (3 + this.sun.y) *
+      2 ** (this.ev - NATURAL_LIGHT_COMPENSATION_EV) *
+      (this.adaptation / 0.75);
   }
 
   horizonColour(): THREE.Color {
@@ -214,6 +223,60 @@ describe("AtmosphereRig with the physical sky", () => {
     const { view, sky } = rig();
     view.dispose();
     expect(sky.disposed).toBe(true);
+  });
+});
+
+describe("AtmosphereRig.setExposure (light dialog, plan 2026-09-24-2140)", () => {
+  // WHY (cold review H1): the sun light, the fog colour and the haze hold
+  // COPIES of the sky's exposure; changing the EV or the adaptation on the
+  // sky alone would leave the main light at the old exposure until the sun
+  // moved. The rig re-syncs every copy.
+  it("reaches the sky and every copy of its exposure", () => {
+    const { view, sun, sky } = rig();
+    view.setSun(sunAt(55, 180));
+    const before = sun.intensity;
+    view.setExposure({
+      ev: NATURAL_LIGHT_COMPENSATION_EV + 1,
+      adaptation: 0.6,
+    });
+    expect(sky.ev).toBe(NATURAL_LIGHT_COMPENSATION_EV + 1);
+    expect(sky.adaptation).toBe(0.6);
+    expect(sun.intensity).toBeCloseTo(before * 2 * (0.6 / 0.75), 12);
+  });
+
+  it("before any sun, sets the sky and syncs with the first sun", () => {
+    const { view, sun, sky } = rig();
+    view.setExposure({ ev: -2, adaptation: 0.75 });
+    expect(sky.ev).toBe(-2);
+    view.setSun(sunAt(55, 180));
+    expect(sun.intensity).toBeCloseTo(
+      (3 + sky.sun.y) * 2 ** (-2 - NATURAL_LIGHT_COMPENSATION_EV),
+      12,
+    );
+  });
+
+  // WHY: on the fallback the same sliders must do the same thing.
+  it("brightens the fallback's sun by the EV", () => {
+    const { view, sun } = rig({ unsupported: true });
+    view.setSun(sunAt(55, 180));
+    const before = sun.intensity;
+    view.setExposure({
+      ev: NATURAL_LIGHT_COMPENSATION_EV + 1,
+      adaptation: 0.75,
+    });
+    expect(sun.intensity).toBeCloseTo(before * 2, 9);
+  });
+
+  it("refuses a value it cannot use, changing nothing", () => {
+    const { view, sky } = rig();
+    expect(() =>
+      view.setExposure({ ev: Number.NaN, adaptation: 0.75 }),
+    ).toThrow(RangeError);
+    expect(() => view.setExposure({ ev: -2, adaptation: 2 })).toThrow(
+      RangeError,
+    );
+    expect(sky.ev).toBe(NATURAL_LIGHT_COMPENSATION_EV);
+    expect(sky.adaptation).toBe(0.75);
   });
 });
 

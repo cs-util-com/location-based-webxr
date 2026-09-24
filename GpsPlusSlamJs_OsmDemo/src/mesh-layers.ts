@@ -935,6 +935,44 @@ export function wantsAnyMeshLayer(layers: LayerSet): boolean {
 }
 
 /**
+ * The light dialog's sky light on buildings (plan 2026-09-24-2140): the
+ * building materials (the `aHeight01` geometry, the identity the AR shell
+ * swap uses) get the scene's environment as their OWN envMap, at
+ * `environmentIntensity × k`. three overwrites a material's
+ * `envMapIntensity` with the scene's whenever it has no envMap of its own,
+ * so a multiplier alone does nothing (cold review B1). Called every frame:
+ * the environment is re-baked (a new texture) on every sun change, and a
+ * material holding the old one would draw a disposed texture. `k = 1` or no
+ * environment restores three's own path exactly. Only adding or removing the
+ * envMap recompiles.
+ *
+ * @throws RangeError for a multiplier that is not a positive finite number.
+ */
+export function applyBuildingSkyLight(
+  root: THREE.Object3D,
+  environment: THREE.Texture | null,
+  environmentIntensity: number,
+  k: number,
+): void {
+  if (!(Number.isFinite(k) && k > 0)) {
+    throw new RangeError(`sky light must be positive and finite, got ${k}`);
+  }
+  const own = k === 1 ? null : environment;
+  root.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return;
+    const geometry = object.geometry as THREE.BufferGeometry;
+    if (geometry.getAttribute("aHeight01") === undefined) return;
+    const material = object.material as THREE.Material | THREE.Material[];
+    for (const m of Array.isArray(material) ? material : [material]) {
+      if (!(m instanceof THREE.MeshStandardMaterial)) continue;
+      if ((m.envMap === null) !== (own === null)) m.needsUpdate = true;
+      m.envMap = own;
+      m.envMapIntensity = own === null ? 1 : environmentIntensity * k;
+    }
+  });
+}
+
+/**
  * Sets the colour factor of the NEUTRAL SURFACES (the building and road
  * materials, tagged `userData.neutralSurface`) under `root`: the noon
  * brightening (plan 2026-09-24-0901; the factor from `surfaceGainAt`).

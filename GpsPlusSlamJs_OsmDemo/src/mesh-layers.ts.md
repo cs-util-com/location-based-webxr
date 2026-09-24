@@ -102,6 +102,16 @@ No change to `BuildingView.render` and none to `main.ts`.
 
 ## The noon brightening
 
+`applyBuildingSkyLight(root, environment, environmentIntensity, k)` is the
+light dialog's sky light on buildings (plan 2026-09-24-2140): the building
+materials (the `aHeight01` geometry) get the scene's environment as their
+OWN envMap at `environmentIntensity × k`, because three overwrites a
+material's `envMapIntensity` with the scene's whenever it has no envMap of
+its own. Called before every render (a sun change re-bakes the environment
+into a new texture); `k = 1` or no environment restores three's own path;
+only adding or removing the envMap recompiles; `RangeError` for a `k` that
+is not positive and finite.
+
 The building and road materials carry `userData.neutralSurface`, and
 `applySurfaceGain(root, gain)` sets their colour factor (absolute, so a
 re-apply after a rebuild is idempotent; `RangeError` for a gain that is not

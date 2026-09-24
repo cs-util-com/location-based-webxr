@@ -21,7 +21,11 @@ two presets.
   observer radius the LUT mapping needs. Reading the row at the geometric
   horizon instead (the first version) was up to 2.8× off the drawn horizon
   at dawn and blue hour; the look-dev fallback parity smoke found it.
-- `autoExposure(illuminance)` → exposure.
+- `autoExposure(illuminance, adaptation = AUTO_EXPOSURE.adaptation)` →
+  exposure; `RangeError` for an adaptation outside [0, 1]. A lower
+  adaptation brightens above the reference illuminance and darkens below it
+  (OsmDemo's light dialog, plan 2026-09-24-2140: at its June noon the light is
+  near the reference, so lowering it mostly darkens dawn and dusk).
 
 ## Invariants & assumptions
 

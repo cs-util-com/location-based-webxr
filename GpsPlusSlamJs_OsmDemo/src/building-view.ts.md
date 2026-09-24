@@ -40,6 +40,15 @@ map scored.
   scene reflection comes from the package's `packInstances`, which is tested where
   it lives.)
 
+- **The light dialog** (plan 2026-09-24-2140): `setLightSettings(settings)`
+  holds the settings (`light-settings.ts`) and applies them: the surface
+  gain's ramp through `aimSun`, the exposure through the rig's
+  `setExposure`, and the sky light on buildings before every render (one
+  private `prepareFrame` for every render path). `measureLight()` renders
+  and reads with `gl.readPixels` straight after each render (a copied canvas
+  shows the last composited frame): the lit-surface brightness with the heat
+  grid's mesh and outlines hidden, and the chroma they add (`null` when no
+  grid is drawn), restoring them as found.
 - **The sun:** `initialSun` (constructor option, the angles the sky is built
   for) and `setSunAngles(angles)`. The view only draws
   the angles it is given; WHERE the sun is (the real sun for a place and a

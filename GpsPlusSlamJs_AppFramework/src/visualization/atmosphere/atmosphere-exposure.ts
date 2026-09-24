@@ -138,14 +138,26 @@ export function horizonAverage(
  * illuminance (relative units, see the header).
  *
  * At the reference illuminance, a mid-grey horizontal surface renders at
- * `0.18 · key`. Away from it, exposure scales as E^(−α).
+ * `0.18 · key`. Away from it, exposure scales as E^(−α), α = `adaptation`
+ * (default `AUTO_EXPOSURE.adaptation`; OsmDemo's light dialog tunes it). A
+ * lower α brightens above the reference and darkens below it.
+ *
+ * @throws RangeError for an adaptation outside [0, 1].
  */
-export function autoExposure(illuminance: number): number {
+export function autoExposure(
+  illuminance: number,
+  adaptation: number = AUTO_EXPOSURE.adaptation
+): number {
+  if (!(Number.isFinite(adaptation) && adaptation >= 0 && adaptation <= 1)) {
+    throw new RangeError(
+      `auto-exposure adaptation must be in [0, 1], got ${adaptation}`
+    );
+  }
   const a = AUTO_EXPOSURE;
   const e = Math.max(
     Number.isFinite(illuminance) ? illuminance : 0,
     a.minimumIlluminance
   );
   const base = (Math.PI * a.key) / a.referenceIlluminance;
-  return base * (a.referenceIlluminance / e) ** a.adaptation;
+  return base * (a.referenceIlluminance / e) ** adaptation;
 }

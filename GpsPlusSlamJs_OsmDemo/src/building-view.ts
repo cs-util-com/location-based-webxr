@@ -44,7 +44,17 @@ import {
 } from "./cell-presets.js";
 import { cellFaceMaterial, cellOutlineMaterial } from "./cell-materials.js";
 import { installGroundSlope } from "./ground-slope-shader.js";
-import { applySurfaceGain, drawMeshLayers } from "./mesh-layers.js";
+import {
+  applyBuildingSkyLight,
+  applySurfaceGain,
+  drawMeshLayers,
+} from "./mesh-layers.js";
+import {
+  DEFAULT_LIGHT_SETTINGS,
+  gainOf,
+  type LightSettings,
+} from "./light-settings.js";
+import { litSurfaceLuma, meanChroma } from "./light-readouts.js";
 import { applyArShadowCasting } from "./ar-sun-shadow.js";
 import { SceneContent, type ContentFrame } from "./scene-content.js";
 import { createQuestBeacons } from "./quest-beacon.js";
@@ -458,6 +468,8 @@ export class BuildingView {
    * every rebuild re-applies it: new meshes arrive at factor 1.
    */
   private surfaceGain = 1;
+  /** The light dialog's settings (plan 2026-09-24-2140); the shipped look by default. */
+  private lightSettings: LightSettings = DEFAULT_LIGHT_SETTINGS;
   /** The flat plane's vertex positions, kept so terrain can be re-applied. */
   private flatGround: Float32Array | undefined;
   /** The current field, so a mode switch and the ramp can re-read it. */
@@ -1467,6 +1479,78 @@ export class BuildingView {
   }
 
   /**
+   * The light dialog's settings (plan 2026-09-24-2140): the surface gain's
+   * ramp (applied through `aimSun`, as the sun does), the exposure through
+   * the rig (which re-derives the sun light, fog and haze), and the sky light
+   * on buildings (applied before every render). Held, so rebuilt meshes and
+   * later sun changes keep them.
+   */
+  setLightSettings(settings: LightSettings): void {
+    this.lightSettings = settings;
+    this.atmosphere.setExposure({
+      ev: settings.exposureEv,
+      adaptation: settings.exposureAdaptation,
+    });
+    this.aimSun();
+    this.requestFrame();
+  }
+
+  /**
+   * The light dialog's readouts, measured on this view as it stands: the
+   * lit-surface brightness with the heat grid hidden, and the chroma the grid
+   * adds (the DEC-R4-5 margin; `null` when no grid is drawn). Renders
+   * synchronously and reads with `gl.readPixels` straight after each render:
+   * a copied canvas shows the last COMPOSITED frame, not the one just drawn
+   * (the recorded 0 margin, plan §7). The grid's mesh and outlines are
+   * restored as found.
+   */
+  measureLight(): { litLuma: number; margin: number | null } {
+    const read = (): Uint8Array => {
+      this.prepareFrame();
+      this.renderer.render(this.scene, this.camera);
+      const gl = this.renderer.getContext();
+      const pixels = new Uint8Array(
+        gl.drawingBufferWidth * gl.drawingBufferHeight * 4,
+      );
+      gl.readPixels(
+        0,
+        0,
+        gl.drawingBufferWidth,
+        gl.drawingBufferHeight,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        pixels,
+      );
+      return pixels;
+    };
+    const grid = [this.cellMesh, this.cellOutlines].filter(
+      (o): o is NonNullable<typeof o> => o !== undefined && o.visible,
+    );
+    for (const o of grid) o.visible = false;
+    const without = read();
+    const litLuma = litSurfaceLuma(without);
+    let margin: number | null = null;
+    if (grid.length > 0) {
+      for (const o of grid) o.visible = true;
+      margin = meanChroma(read()) - meanChroma(without);
+    }
+    for (const o of grid) o.visible = true;
+    this.requestFrame();
+    return { litLuma, margin };
+  }
+
+  /** Before every render: the haze and the sky light on buildings. */
+  private prepareFrame(): void {
+    this.atmosphere.prepareFrame(this.camera);
+    applyBuildingSkyLight(
+      this.group,
+      this.scene.environment,
+      this.scene.environmentIntensity,
+      this.lightSettings.buildingSkyLight,
+    );
+  }
+
+  /**
    * Moves the sun (§1, DEC-R6-3; the real sun since plan 2026-09-23-2149).
    *
    * THE COST LIVES HERE, DELIBERATELY. Each call renders the sky's sky-view
@@ -1544,7 +1628,10 @@ export class BuildingView {
     this.sun.target.position.set(0, 0, 0);
     this.sun.target.updateMatrixWorld();
     // The noon brightening follows the sun (plan 2026-09-24-0901).
-    this.surfaceGain = surfaceGainAt(this.sunAngles.elevationRad);
+    this.surfaceGain = surfaceGainAt(
+      this.sunAngles.elevationRad,
+      gainOf(this.lightSettings),
+    );
     applySurfaceGain(this.group, this.surfaceGain);
   }
 
@@ -1626,7 +1713,7 @@ export class BuildingView {
       // BEFORE THE RENDER, so this frame shows where the agent now is rather
       // than where it was one frame ago.
       const walking = this.advanceWalk();
-      this.atmosphere.prepareFrame(this.camera);
+      this.prepareFrame();
       this.renderer.render(this.scene, this.camera);
       // THE ONE OBSERVABLE BEHIND "THE SCENE GOES QUIET" (stage 4, DEC-R11-15).
       // The regression this stage carries is a reintroduced permanent render
@@ -1787,7 +1874,7 @@ export class BuildingView {
     // rather than at the call site so the next direct-scene layer does not
     // have to remember to add a line to `drawScene`.
     this.clearUnderground();
-    this.atmosphere.prepareFrame(this.camera);
+    this.prepareFrame();
     this.renderer.render(this.scene, this.camera);
   }
 

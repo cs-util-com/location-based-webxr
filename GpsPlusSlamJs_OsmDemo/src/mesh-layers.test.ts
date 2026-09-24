@@ -21,6 +21,7 @@ import { ALL_LAYERS, type LayerKind } from "./layers.js";
 import {
   MESH_LAYERS,
   DRAWN_BY_MESH,
+  applyBuildingSkyLight,
   applySurfaceGain,
   drawMeshLayers,
   meshLayerSelection,
@@ -927,6 +928,87 @@ describe("region slabs carry their identity into the scene", () => {
       areas: true,
     });
     expect(objects[0]?.userData["regionId"]).toBe("r1");
+  });
+});
+
+describe("applyBuildingSkyLight (light dialog, plan 2026-09-24-2140)", () => {
+  // WHY (cold review B1, M0 spike): three overwrites a material's
+  // envMapIntensity with the scene's environmentIntensity whenever the
+  // material has no envMap of its own, so a multiplier alone does nothing.
+  // The building materials get the scene's environment as their OWN envMap,
+  // at the scene's intensity times k; buildings only (the aHeight01
+  // geometry), and k = 1 restores three's default path exactly.
+  const buildingsAndOthers = () => {
+    const group = new THREE.Group();
+    // Real building chunks carry their height share (the AR shell uses it).
+    const mesh = fullMesh();
+    const withHeights = {
+      ...mesh,
+      buildings: mesh.buildings.map((c) => ({
+        ...c,
+        height01: new Float32Array(c.mesh.positions.length / 3),
+      })),
+    } as TransferableMesh;
+    group.add(...drawMeshLayers(withHeights, ALL_ON).objects);
+    const buildings: THREE.MeshStandardMaterial[] = [];
+    const others: THREE.MeshStandardMaterial[] = [];
+    group.traverse((object) => {
+      if (!(object instanceof THREE.Mesh)) return;
+      const material = object.material as THREE.Material | THREE.Material[];
+      for (const m of Array.isArray(material) ? material : [material]) {
+        if (!(m instanceof THREE.MeshStandardMaterial)) continue;
+        const geometry = object.geometry as THREE.BufferGeometry;
+        (geometry.getAttribute("aHeight01") ? buildings : others).push(m);
+      }
+    });
+    return { group, buildings, others };
+  };
+
+  it("lights the buildings from the environment at k times its intensity, and nothing else", () => {
+    const { group, buildings, others } = buildingsAndOthers();
+    expect(buildings.length).toBeGreaterThan(0);
+    const env = new THREE.Texture();
+    applyBuildingSkyLight(group, env, 0.4, 2);
+    for (const m of buildings) {
+      expect(m.envMap).toBe(env);
+      expect(m.envMapIntensity).toBeCloseTo(0.8, 12);
+    }
+    for (const m of others) expect(m.envMap).toBeNull();
+  });
+
+  it("restores three's own path at k = 1, and with no environment", () => {
+    const { group, buildings } = buildingsAndOthers();
+    const env = new THREE.Texture();
+    applyBuildingSkyLight(group, env, 0.4, 2);
+    const version = buildings[0]!.version;
+    applyBuildingSkyLight(group, env, 0.4, 1);
+    for (const m of buildings) expect(m.envMap).toBeNull();
+    // Adding or removing an envMap changes the program: a recompile.
+    expect(buildings[0]!.version).toBeGreaterThan(version);
+    applyBuildingSkyLight(group, env, 0.4, 2);
+    applyBuildingSkyLight(group, null, 0.4, 2);
+    for (const m of buildings) expect(m.envMap).toBeNull();
+  });
+
+  // WHY: it runs every frame; an unchanged state must not recompile.
+  it("does not recompile when only the texture or the intensity changes", () => {
+    const { group, buildings } = buildingsAndOthers();
+    applyBuildingSkyLight(group, new THREE.Texture(), 0.4, 2);
+    const version = buildings[0]!.version;
+    const rebaked = new THREE.Texture();
+    applyBuildingSkyLight(group, rebaked, 0.5, 2);
+    expect(buildings[0]!.version).toBe(version);
+    expect(buildings[0]!.envMap).toBe(rebaked);
+    expect(buildings[0]!.envMapIntensity).toBeCloseTo(1, 12);
+  });
+
+  it("rejects a multiplier that is not a positive finite number", () => {
+    const { group } = buildingsAndOthers();
+    for (const bad of [0, -1, Number.NaN]) {
+      expect(() => applyBuildingSkyLight(group, null, 1, bad)).toThrow(
+        RangeError,
+      );
+    }
   });
 });
 

@@ -48,6 +48,8 @@ export interface FallbackSkyOptions extends AtmosphereParams {
   readonly sunIntensity?: number;
   /** EV on top of the auto-exposure. Default 0. */
   readonly exposureCompensationEv?: number;
+  /** The auto-exposure's adaptation (`autoExposure`). Default 0.75. */
+  readonly autoExposureAdaptation?: number;
 }
 
 /** Quadrature density for {@link skyIlluminanceCpu}. */
@@ -209,6 +211,10 @@ function requireOptions(options: FallbackSkyOptions): void {
   if (!Number.isFinite(options.exposureCompensationEv ?? 0)) {
     throw new RangeError('exposureCompensationEv must be finite');
   }
+  // Validated by the curve itself (a RangeError outside [0, 1]).
+  if (options.autoExposureAdaptation !== undefined) {
+    autoExposure(1, options.autoExposureAdaptation);
+  }
 }
 
 const scale = (c: Rgb, k: number): Rgb => [c[0] * k, c[1] * k, c[2] * k];
@@ -250,7 +256,8 @@ export function fallbackSky(
     luminance(light.colour) * light.intensity * Math.max(0, sunCos);
   const skyE = skyIlluminanceCpu(sunCos, options, DEFAULT_QUADRATURE, psi);
   const exposure =
-    autoExposure(skyE + direct) * 2 ** (options.exposureCompensationEv ?? 0);
+    autoExposure(skyE + direct, options.autoExposureAdaptation) *
+    2 ** (options.exposureCompensationEv ?? 0);
   const toScene = (options.sunIntensity ?? 1) * exposure;
   // Lambertian ground: albedo / π × horizontal illuminance (grey, relative).
   const groundLevel =

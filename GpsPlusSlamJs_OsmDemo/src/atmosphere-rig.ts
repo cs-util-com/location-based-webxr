@@ -24,6 +24,7 @@
  * @see atmosphere-rig.ts.md
  */
 
+import { AUTO_EXPOSURE } from "gps-plus-slam-app-framework/visualization/atmosphere/atmosphere-exposure";
 import { fallbackSky } from "gps-plus-slam-app-framework/visualization/atmosphere/atmosphere-fallback";
 import { AtmosphereHaze } from "gps-plus-slam-app-framework/visualization/atmosphere/atmosphere-haze";
 import {
@@ -131,12 +132,33 @@ export const NOON_SURFACE_GAIN = {
   fullDeg: 45,
 } as const;
 
-/** The building and road colour factor for a sun elevation (radians). */
-export function surfaceGainAt(elevationRad: number): number {
+/** The ramp of the building and road colour factor (the light dialog tunes it). */
+export interface SurfaceGainRamp {
+  readonly max: number;
+  readonly fromDeg: number;
+  readonly fullDeg: number;
+}
+
+/**
+ * The building and road colour factor for a sun elevation (radians), on the
+ * shipped ramp or the given one.
+ *
+ * @throws RangeError for a non-finite elevation, or a ramp that does not
+ *   rise (`fullDeg` ≤ `fromDeg`).
+ */
+export function surfaceGainAt(
+  elevationRad: number,
+  ramp: SurfaceGainRamp = NOON_SURFACE_GAIN,
+): number {
   if (!Number.isFinite(elevationRad)) {
     throw new RangeError(`sun elevation must be finite, got ${elevationRad}`);
   }
-  const { max, fromDeg, fullDeg } = NOON_SURFACE_GAIN;
+  const { max, fromDeg, fullDeg } = ramp;
+  if (!(fullDeg > fromDeg)) {
+    throw new RangeError(
+      `the gain ramp must rise, got ${fromDeg}° to ${fullDeg}°`,
+    );
+  }
   const t = ((elevationRad * 180) / Math.PI - fromDeg) / (fullDeg - fromDeg);
   return 1 + (max - 1) * Math.min(1, Math.max(0, t));
 }
@@ -146,6 +168,7 @@ export type SkyLike = Pick<
   SkyAtmosphere,
   | "configure"
   | "setExposureCompensation"
+  | "setAutoExposureAdaptation"
   | "applySunLight"
   | "horizonColour"
   | "sharedUniforms"
@@ -188,6 +211,11 @@ export class AtmosphereRig {
   /** Removes the context-restore listener (physical sky only). */
   private readonly unsubscribeRestore: () => void;
   private sunSet = false;
+  /** The last sun direction (the fallback re-derives from it). */
+  private lastDirection: Vector3Like | undefined;
+  /** The exposure the light dialog set (`setExposure`); the shipped look by default. */
+  private exposureEv: number = NATURAL_LIGHT_COMPENSATION_EV;
+  private adaptation: number = AUTO_EXPOSURE.adaptation;
 
   constructor(options: AtmosphereRigOptions) {
     this.scene = options.scene;
@@ -217,7 +245,7 @@ export class AtmosphereRig {
       this.unsubscribeRestore = () => {};
     } else {
       this.fallback = undefined;
-      sky.setExposureCompensation(NATURAL_LIGHT_COMPENSATION_EV);
+      sky.setExposureCompensation(this.exposureEv);
       // A context restore makes the sky rebuild and RE-MEASURE its exposure;
       // the sun light, the fog colour and the haze hold copies of
       // exposure-dependent values, so they are re-read after it (M3 review,
@@ -249,6 +277,7 @@ export class AtmosphereRig {
   setSun(angles: SunAngles): Vector3Like {
     const direction = sunDirection(angles);
     this.sunSet = true;
+    this.lastDirection = direction;
     if (this.sky !== undefined) {
       this.sky.configure({ sunDirection: direction });
       this.syncFromSky(this.sky);
@@ -256,6 +285,40 @@ export class AtmosphereRig {
       this.applyFallback(direction);
     }
     return direction;
+  }
+
+  /**
+   * The exposure the light dialog tunes (plan 2026-09-24-2140): the EV on top
+   * of the auto-exposure and its adaptation. Re-derives every COPY of the
+   * sky's exposure (the sun light, the fog colour, the haze), which a change
+   * on the sky alone would leave stale until the sun moved (review H1). On
+   * the fallback it re-derives the fallback's lights. Validated before any
+   * change.
+   *
+   * @throws RangeError for a non-finite EV or an adaptation outside [0, 1].
+   */
+  setExposure(exposure: {
+    readonly ev: number;
+    readonly adaptation: number;
+  }): void {
+    const { ev, adaptation } = exposure;
+    if (!Number.isFinite(ev)) {
+      throw new RangeError(`exposure EV must be finite, got ${ev}`);
+    }
+    if (!(Number.isFinite(adaptation) && adaptation >= 0 && adaptation <= 1)) {
+      throw new RangeError(
+        `auto-exposure adaptation must be in [0, 1], got ${adaptation}`,
+      );
+    }
+    this.exposureEv = ev;
+    this.adaptation = adaptation;
+    if (this.sky !== undefined) {
+      this.sky.setExposureCompensation(ev);
+      this.sky.setAutoExposureAdaptation(adaptation);
+      if (this.sunSet) this.syncFromSky(this.sky);
+    } else if (this.lastDirection !== undefined) {
+      this.applyFallback(this.lastDirection);
+    }
   }
 
   /**
@@ -337,7 +400,8 @@ export class AtmosphereRig {
     const sky = fallbackSky(direction, {
       visibilityKm: VISIBILITY_KM,
       sunIntensity: SUN_INTENSITY,
-      exposureCompensationEv: NATURAL_LIGHT_COMPENSATION_EV,
+      exposureCompensationEv: this.exposureEv,
+      autoExposureAdaptation: this.adaptation,
     });
     this.sun.color.setRGB(...sky.sun.colour);
     this.sun.intensity = sky.sun.intensity;

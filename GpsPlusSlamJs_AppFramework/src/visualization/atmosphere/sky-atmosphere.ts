@@ -34,6 +34,7 @@
 import * as THREE from 'three';
 
 import {
+  AUTO_EXPOSURE,
   autoExposure,
   horizonAverage,
   skyIrradiance,
@@ -181,6 +182,10 @@ export class SkyAtmosphere {
   private visibility: number;
   private compensationEv = 0;
   private autoExposureValue = 1;
+  /** The auto-exposure's adaptation (`setAutoExposureAdaptation`). */
+  private adaptation: number = AUTO_EXPOSURE.adaptation;
+  /** The last horizontal illuminance the exposure was computed from. */
+  private illuminance = 1;
   /**
    * Sky irradiance (sun-relative): from the last readback, or from the CPU
    * estimate when the readback failed.
@@ -543,6 +548,25 @@ export class SkyAtmosphere {
     return moved ? next : undefined;
   }
 
+  /** The auto-exposure's adaptation α (`autoExposure`); default 0.75. */
+  get autoExposureAdaptation(): number {
+    return this.adaptation;
+  }
+
+  /**
+   * The auto-exposure's adaptation α in [0, 1] (0 a fixed exposure, 1 full
+   * adaptation). Recomputes the exposure at the current illuminance. No GPU
+   * work (OsmDemo's light dialog drags it). Validated before any change.
+   *
+   * @throws RangeError for a value outside [0, 1].
+   */
+  setAutoExposureAdaptation(adaptation: number): void {
+    autoExposure(1, adaptation); // validates, throwing before any change
+    this.adaptation = adaptation;
+    this.autoExposureValue = autoExposure(this.illuminance, adaptation);
+    this.updateScale();
+  }
+
   /** Exposure compensation in EV on top of the auto-exposure. No GPU work. */
   setExposureCompensation(ev: number): void {
     if (!Number.isFinite(ev)) {
@@ -648,7 +672,8 @@ export class SkyAtmosphere {
     const direct = luminance(s.colour) * s.intensity * Math.max(0, y);
     // Sun-relative horizontal illuminance: the auto-exposure's input.
     const illuminance = this.skyIlluminance + direct;
-    this.autoExposureValue = autoExposure(illuminance);
+    this.illuminance = illuminance;
+    this.autoExposureValue = autoExposure(illuminance, this.adaptation);
   }
 
   /** Release every GPU resource and clear what this set on the scene. */
