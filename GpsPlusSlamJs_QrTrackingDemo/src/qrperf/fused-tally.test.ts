@@ -28,6 +28,7 @@ function tilted(elevDeg: number, over: Partial<QrFusedPose> = {}): QrFusedPose {
     frameEpoch: 0,
     oldestTimestamp: 0,
     newestTimestamp: 0,
+    motion: null,
     ...over,
   };
 }

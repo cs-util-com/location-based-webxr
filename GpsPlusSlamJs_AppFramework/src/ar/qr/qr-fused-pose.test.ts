@@ -20,12 +20,8 @@ import {
 } from './qr-pose';
 import { PlanarPnpSquare } from './planar-pnp';
 import { solveQrPoseMultiView } from './qr-multi-view-pose';
-import {
-  createFusedQrPoseTracker,
-  evaluateFusedQrPose,
-  selectFusedWindow,
-  type QrFusedEntry,
-} from './qr-fused-pose';
+import { createFusedQrPoseTracker, evaluateFusedQrPose } from './qr-fused-pose';
+import { selectFusedWindow, type QrFusedEntry } from './qr-fused-window';
 import { walkCameraPoses } from '../../test-utils/synthetic-qr-walk';
 import { rotationAngleDeg } from '../../test-utils/qr-zxing-pipeline';
 import { mulberry32 } from '../../test-utils/elevation-offset-scenarios';
@@ -238,6 +234,13 @@ describe('selectFusedWindow', () => {
 
   // A NaN timestamp cannot be judged, so it breaks the window rather than
   // silently joining it.
+  // The motion detector's cut (plan §26): once a code stopped moving, only
+  // the views since then may be fused.
+  it('leaves out entries older than sinceMs', () => {
+    const w = selectFusedWindow(base, { sinceMs: base[6]!.timestamp });
+    expect(w).toEqual(base.slice(6));
+  });
+
   it('breaks the window at a NaN timestamp', () => {
     const bad = base.map((e, i) => ({
       ...e,
@@ -519,5 +522,141 @@ describe('createFusedQrPoseTracker', () => {
       tracker.evaluate(walkEntries(code, 8, { noise: { sigmaPx: 1.1, rand } }))
         .status
     ).toBe('stable');
+  });
+});
+
+describe('createFusedQrPoseTracker motion (plan §26)', () => {
+  // Why these tests matter: the joint solve keeps each view's OWN position
+  // and shares only the rotation, so a code slid sideways still fits well -
+  // without the motion detector the gate stays open and the median position
+  // trails the moving code. The owner's constraint is the other side: a
+  // still code must keep today's stability while the camera walks.
+
+  /** A code at `x` (m), yawed 5 deg, spun `spinDeg` in its own plane. */
+  function codeAt(x: number, spinDeg = 0): Pose {
+    const h = (5 * Math.PI) / 360;
+    const s = (spinDeg * Math.PI) / 360;
+    // yaw(5) * spin(z): [x, y, z, w]
+    const yaw = [0, Math.sin(h), 0, Math.cos(h)] as const;
+    const spin = [0, 0, Math.sin(s), Math.cos(s)] as const;
+    return {
+      position: [x, 1.5, 0],
+      rotation: [
+        yaw[3] * spin[0] +
+          yaw[0] * spin[3] +
+          yaw[1] * spin[2] -
+          yaw[2] * spin[1],
+        yaw[3] * spin[1] -
+          yaw[0] * spin[2] +
+          yaw[1] * spin[3] +
+          yaw[2] * spin[0],
+        yaw[3] * spin[2] +
+          yaw[0] * spin[1] -
+          yaw[1] * spin[0] +
+          yaw[2] * spin[3],
+        yaw[3] * spin[3] -
+          yaw[0] * spin[0] -
+          yaw[1] * spin[1] -
+          yaw[2] * spin[2],
+      ],
+    };
+  }
+
+  /** Feeds a scene detection by detection; the code follows `codeOf(i)`. */
+  function run(
+    steps: number,
+    codeOf: (i: number) => Pose,
+    options: Parameters<typeof createFusedQrPoseTracker>[0] = {}
+  ) {
+    const cams = walkCameraPoses({
+      kind: 'arc',
+      codeWorld: codeAt(0),
+      distanceM: 1.2,
+      extent: 30,
+      steps,
+    });
+    const entries = cams.map((cam, i) =>
+      entryOf(cam, cornersOf(cam, codeOf(i)), i * 125)
+    );
+    const tracker = createFusedQrPoseTracker(options);
+    return entries.map((_, i) => ({
+      truth: codeOf(i),
+      result: tracker.evaluate(entries.slice(0, i + 1)),
+    }));
+  }
+
+  const positionErrorM = (a: Pose, b: Pose) =>
+    Math.hypot(
+      a.position[0] - b.position[0],
+      a.position[1] - b.position[1],
+      a.position[2] - b.position[2]
+    );
+
+  // 8 still (0-7), then 6 detections moving at 5 cm each (0.4 m/s), then
+  // still. The motion starts at detection 8.
+  const slide = (i: number) => codeAt(0.05 * Math.min(Math.max(i - 7, 0), 6));
+  const spin = (i: number) => codeAt(0, 5 * Math.min(Math.max(i - 7, 0), 6));
+  const MOTION_START = 8;
+
+  /** Detections whose STABLE pose is off by more than the given bounds. */
+  function trailing(out: ReturnType<typeof run>): number[] {
+    return out
+      .map((o, i) => ({ ...o, i }))
+      .filter(
+        ({ truth, result }) =>
+          result.status === 'stable' &&
+          (positionErrorM(result.pose!, truth) > 0.02 ||
+            rotationAngleDeg(result.pose!.rotation, truth.rotation) > 0.5)
+      )
+      .map(({ i }) => i);
+  }
+
+  it('keeps a still code still and stable while the camera walks', () => {
+    const out = run(16, () => codeAt(0));
+    expect(out.every((o) => o.result.motion?.state === 'still')).toBe(true);
+    const last = out[out.length - 1]!.result;
+    expect(last.status).toBe('stable');
+    expect(last.windowEntries).toBe(8);
+  });
+
+  // The owner's calm switching (4 detections, ~0.5 s) has a price, pinned
+  // here: until the motion is CONFIRMED the window still fuses, so the
+  // stable pose trails for at most persistence - 1 = 3 detections (up to
+  // 15 cm at 0.4 m/s). From confirmation on, never.
+  it('lets a stable pose trail a sliding code only until the motion is confirmed', () => {
+    const out = run(32, slide);
+    expect(out.some((o) => o.result.motion?.moving)).toBe(true);
+    expect(trailing(out)).toEqual([
+      MOTION_START,
+      MOTION_START + 1,
+      MOTION_START + 2,
+    ]);
+    const last = out[out.length - 1]!.result;
+    expect(last.status).toBe('stable');
+    expect(last.motion!.state).toBe('still');
+    expect(last.oldestTimestamp).toBeGreaterThanOrEqual(
+      last.motion!.stillSinceMs!
+    );
+  });
+
+  it('lets a stable rotation trail a turning code only until the turn is confirmed', () => {
+    const out = run(32, spin);
+    expect(out.some((o) => o.result.motion?.turning)).toBe(true);
+    expect(Math.max(...trailing(out))).toBeLessThan(MOTION_START + 3);
+    expect(out[out.length - 1]!.result.status).toBe('stable');
+  });
+
+  // The contrast that makes the detector necessary: each view keeps its own
+  // position and only the rotation is shared, so a slide never trips the
+  // fit gate - switched off, the stable pose trails the code long after the
+  // point where the detector would have cut the window.
+  it('without the detector, a slide gives a stable pose that trails on', () => {
+    const out = run(32, slide, { motion: false });
+    expect(out.every((o) => o.result.motion === null)).toBe(true);
+    expect(Math.max(...trailing(out))).toBeGreaterThan(MOTION_START + 5);
+  });
+
+  it('carries no motion from a bare evaluation', () => {
+    expect(evaluateFusedQrPose(walkEntries(tilted(5), 8)).motion).toBeNull();
   });
 });

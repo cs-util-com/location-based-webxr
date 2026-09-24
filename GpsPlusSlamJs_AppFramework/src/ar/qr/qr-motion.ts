@@ -8,8 +8,7 @@
 
 import type { Vector3 } from 'gps-plus-slam-js';
 import type { Pose } from './qr-pose.js';
-import type { QrFusedEntry } from './qr-fused-pose.js';
-import { selectFusedWindow } from './qr-fused-pose.js';
+import { selectFusedWindow, type QrFusedEntry } from './qr-fused-window.js';
 import {
   solveQrPoseMultiView,
   viewErrorAtRotationPx,

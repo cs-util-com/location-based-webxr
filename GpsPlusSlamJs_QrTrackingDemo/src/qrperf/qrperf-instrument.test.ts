@@ -337,6 +337,7 @@ describe("createQrPerfInstrument fused pose (M3b b5)", () => {
       frameEpoch: 0,
       oldestTimestamp: 0,
       newestTimestamp: 0,
+      motion: null,
       ...over,
     }) as Parameters<ReturnType<typeof createQrPerfInstrument>["onFused"]>[0];
 

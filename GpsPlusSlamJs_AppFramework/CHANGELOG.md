@@ -71,6 +71,12 @@
   has been still since. The thresholds are provisional until measured on a
   phone. Also on `/ar`: `viewErrorAtRotationPx`, and
   `QrMultiViewPoseResult.viewPositions` (each view's own position).
+  `createFusedQrPoseTracker` runs it by default (`motion: false` switches
+  it off) and reports it as `QrFusedPose.motion`: while the code is moved or
+  turned the fused pose is `measuring` (the app shows the raw pose), and
+  once it is still again only the views since then are fused. Until the
+  motion is confirmed the stable pose can trail it for up to 3 detections.
+  New option `sinceMs` on `selectFusedWindow` / `evaluateFusedQrPose`.
 - **`selectQrFusedEntries(state, text)`** on `/state` (QR near-frontal pose
   plan, M3b b3): a marker's detections of the current frame epoch as
   fused-window entries, cached per detections array and epoch; raw entries derive their intrinsics from the projection

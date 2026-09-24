@@ -18,7 +18,7 @@ import {
   solveQrPose,
 } from './qr-pose';
 import { PlanarPnpSquare } from './planar-pnp';
-import type { QrFusedEntry } from './qr-fused-pose';
+import type { QrFusedEntry } from './qr-fused-window';
 import { createQrMotionTracker, measureQrMotion } from './qr-motion';
 import { walkCameraPoses } from '../../test-utils/synthetic-qr-walk';
 import { mulberry32 } from '../../test-utils/elevation-offset-scenarios';

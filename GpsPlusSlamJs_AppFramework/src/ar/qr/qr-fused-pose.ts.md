@@ -8,23 +8,15 @@ one code, the rotation comes from the joint multi-view solve
 single-frame poses, and a gate says when the pose may be used. When the
 views contradict each other (old recordings with mixed corner orders, a
 burst of bad frames), it falls back to today's averaged rotation.
-(QR near-frontal pose plan 2026-09-23-2314, M3b b1, §15-§19.)
+The tracker also runs the motion detector (`qr-motion.ts`, §26), so a code
+that is moved or turned never has its stale views fused.
+(QR near-frontal pose plan 2026-09-23-2314, M3b b1, §15-§19, §26.)
 
 ## Public API
 
-- `QrFusedEntry`: `{ timestamp, corners, cameraPose, intrinsics, frameEpoch?,
-rawPose? }`. `timestamp` is ms on the producer's own clock (only
-  differences count); `frameEpoch` is the tracking-frame epoch (bumped on an
-  odometry restart; default 0); `rawPose` is the single-frame world pose
-  when the producer solved one.
-- `selectFusedWindow(entries, { windowSize?, gapMs?, radiusM? })` - the
-  window, oldest to newest. Walking back from the newest entry it stops at
-  another frame epoch or at a time step above `gapMs` between consecutive
-  entries (in either direction, so a clock jump backwards also breaks it;
-  a NaN step breaks too); it leaves out entries whose raw position is
-  farther than `radiusM` from the newest raw position IN THE RUN (so a
-  newest entry whose own solve failed does not switch the filter off;
-  entries without a raw pose are kept); at most `windowSize` entries.
+- The window and its entry type (`QrFusedEntry`, `selectFusedWindow`,
+  the options `windowSize`, `gapMs`, `radiusM`, `sinceMs`) live in
+  `qr-fused-window.ts`; `QrFusedPoseOptions` extends its options.
 - `evaluateFusedQrPose(entries, options?, previous?) -> QrFusedPose`:
   - `status`: `unknown` (no entries), `measuring`, `stable`;
   - `pose`, `method` (`joint` | `averaged` | null);
@@ -32,22 +24,33 @@ rawPose? }`. `timestamp` is ms on the producer's own clock (only
     null), `fitPx` (the MEDIAN of the used views' own corner errors),
     `windowEntries`, `averagedRotationDeltaDeg` (joint vs averaged, a
     diagnostic), and the window's `frameEpoch`, `oldestTimestamp`,
-    `newestTimestamp`.
+    `newestTimestamp`;
+  - `motion`: the tracker's motion reading (`QrMotion`: state, speeds,
+    `stillSinceMs`); always `null` here, set by the tracker.
   - `previous` is the last result for the same code: it makes the gate and
     the method sticky (hysteresis) - but only while this window CONTINUES
     it: same frame epoch, not older (a replay seek backwards starts
     afresh), and no gap above `gapMs` since the previous window's newest
     entry.
 - `createFusedQrPoseTracker(options?)` -> `{ evaluate(entries), reset() }`:
-  caches on the entries ARRAY identity and carries the previous result.
+  caches on the entries ARRAY identity, carries the previous result, and
+  runs the motion detector (`options.motion`: its `QrMotionOptions`, or
+  `false` to switch it off, when `motion` stays null). The detector CUTS
+  the window:
+  - while the code is moving or turning, to the newest entry alone - never
+    stable, so the app shows the raw single-frame pose (owner, §26);
+  - once it is still again, to the entries since `stillSinceMs`, so the
+    window rebuilds from the views at the new place.
 - Options (defaults; the fit thresholds sit above every good rendered
   window - 0.5-1.1 px, plan §20 - and are to be re-checked against the
   phone's corner noise in b7). A missing, NaN or out-of-range numeric option
   takes its default:
-  `windowSize` 8, `gapMs` 4000, `radiusM` Infinity (off), `minViews` 5,
+  `windowSize` 8, `gapMs` 4000, `radiusM` Infinity (off), `sinceMs`
+  -Infinity (off), `minViews` 5,
   `maxFitPx` 1.5, `fallbackFitPx` 3, `hysteresis` 1.5, `sizeM` 0.16 (only
   for the position when no entry has a raw pose - the rotation does not
-  depend on the size), `solveOptions`, `solve` (injectable, for tests).
+  depend on the size), `solveOptions`, `solve` (injectable, for tests;
+  the motion detector keeps its own), `motion` (tracker only).
 
 ## Invariants & assumptions
 
@@ -68,6 +71,18 @@ fallbackFitPx` (or `<= fallbackFitPx x hysteresis` if the previous result
   the joint solve's mean position (at the tracker's `sizeM`). With no raw
   pose and a fit above the fallback bound there is NO pose (nothing to fall
   back to).
+- **Why the tracker needs the motion detector.** The joint solve shares
+  only the rotation and keeps each view's own position, so a code slid
+  sideways still fits well: without the detector the gate stays open and
+  the median position trails the code (a test pins > 10 cm, long after the
+  point where the detector would have cut). A turn inside the window
+  barely raises the fit either (15° over 3 detections: 0.64 px).
+- **The price of calm switching.** Motion is confirmed after 4 detections
+  (owner, §26); until then the window still fuses, so a stable pose trails
+  a code that starts moving for at most 3 detections (~0.4 s; 15 cm at
+  0.4 m/s, 15° at 40°/s). After it stops, the pose is stable again 5
+  detections after the confirming still run began (`minViews`).
+- The tracker costs two extra small solves per detection (the detector's).
 - **Cache key:** the entries array identity, never a timestamp (replay and
   store swaps reuse timestamps; plan §16 #5). A store that mutates an array
   in place would defeat it; the `qrDetected` slice hands out new arrays.
@@ -101,10 +116,16 @@ if (fused.status === 'stable') place(fused.pose);
   - the radius anchor when the newest entry has no raw pose; small
     out-of-order stamps; a NaN stamp; invalid options fall back to defaults;
   - the tracker solves once per new array, feeds its previous result, and
-    forgets it on `reset()`.
+    forgets it on `reset()`;
+  - `sinceMs` cuts the window; with the motion detector a still code stays
+    still and stable while the camera walks; a slid or spun code has a
+    stable pose that trails for at most the 3 unconfirmed detections, and
+    is stable again at the new pose; switched off, the slide's stable pose
+    trails on; a bare evaluation carries no motion.
 - Planted bugs (2026-09-24), each failing at least one test: mean instead
   of median, no hysteresis, no cache, no epoch check, `>=` at the gap
   boundary, always averaging; and after the milestone review: hysteresis
   carried across an epoch or a backwards seek, the radius anchored on the
   newest entry only, the position from the joint solve, the method's
-  stickiness keyed on the status, and `>` at `minViews`.
+  stickiness keyed on the status, and `>` at `minViews`; and (2026-09-25)
+  no motion cut, and `sinceMs` ignored.

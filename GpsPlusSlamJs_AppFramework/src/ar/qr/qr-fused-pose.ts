@@ -1,12 +1,19 @@
 /**
  * The fused QR pose over a window of detections (QR near-frontal pose plan
- * 2026-09-23-2314, M3b b1, §19): which detections form the window, the
- * joint rotation over them (`solveQrPoseMultiView`), the joint-fit gate that
+ * 2026-09-23-2314, M3b b1, §19): the joint rotation over the window
+ * (`qr-fused-window.ts`) (`solveQrPoseMultiView`), the joint-fit gate that
  * decides when the pose may be used (§18), and the fallback to today's
  * averaging when the views contradict each other. See qr-fused-pose.ts.md.
  */
 
-import type { Pose, Point2, CameraIntrinsics } from './qr-pose.js';
+import type { Pose } from './qr-pose.js';
+import {
+  FUSED_WINDOW_DEFAULTS,
+  resolveFusedWindowOptions,
+  selectFusedWindow,
+  type QrFusedEntry,
+  type QrFusedWindowOptions,
+} from './qr-fused-window.js';
 import { aggregateQrPose } from './qr-pose-aggregation.js';
 import {
   solveQrPoseMultiView,
@@ -14,35 +21,15 @@ import {
   type QrMultiViewPoseResult,
   type QrViewObservation,
 } from './qr-multi-view-pose.js';
+import {
+  createQrMotionTracker,
+  type QrMotion,
+  type QrMotionOptions,
+} from './qr-motion.js';
 import { geodesicAngleRad } from '../../utils/geodesic-angle.js';
 import { interpolatingMedian } from '../../utils/median.js';
 
-/** One detection, as the window needs it. */
-export interface QrFusedEntry {
-  /** Milliseconds on the producer's own clock; only differences are used. */
-  timestamp: number;
-  /** The 4 corners in symbol reading order (TL, TR, BR, BL), pixels. */
-  corners: readonly Point2[];
-  /** The capturing camera's world pose. */
-  cameraPose: Pose;
-  /** Intrinsics of the exact buffer the corners came from. */
-  intrinsics: CameraIntrinsics;
-  /**
-   * Tracking-frame epoch: bumped on an odometry restart, after which older
-   * detections live in another coordinate frame. Default 0.
-   */
-  frameEpoch?: number;
-  /** The single-frame world pose, when the producer solved one. */
-  rawPose?: Pose | null;
-}
-
-export interface QrFusedPoseOptions {
-  /** Most entries in a window. Default 8. */
-  windowSize?: number;
-  /** A larger step between consecutive timestamps starts a new window. Default 4000. */
-  gapMs?: number;
-  /** Entries whose raw position is farther from the newest one are left out. Default Infinity (off). */
-  radiusM?: number;
+export interface QrFusedPoseOptions extends QrFusedWindowOptions {
   /** Views the gate needs. Default 5. */
   minViews?: number;
   /**
@@ -64,6 +51,11 @@ export interface QrFusedPoseOptions {
   solveOptions?: QrMultiViewPoseOptions;
   /** The joint solve; injectable so a test can count solves. */
   solve?: typeof solveQrPoseMultiView;
+  /**
+   * The tracker's motion detector (`qr-motion.ts`, plan §26); `false`
+   * switches it off. Ignored by `evaluateFusedQrPose` itself.
+   */
+  motion?: QrMotionOptions | false;
 }
 
 export interface QrFusedPose {
@@ -88,12 +80,15 @@ export interface QrFusedPose {
   frameEpoch: number;
   oldestTimestamp: number;
   newestTimestamp: number;
+  /**
+   * Whether the code is being moved or turned, from the tracker's motion
+   * detector; null from `evaluateFusedQrPose` alone or with the detector off.
+   */
+  motion: QrMotion | null;
 }
 
 const DEFAULTS = {
-  windowSize: 8,
-  gapMs: 4000,
-  radiusM: Infinity,
+  ...FUSED_WINDOW_DEFAULTS,
   minViews: 5,
   maxFitPx: 1.5,
   fallbackFitPx: 3,
@@ -113,6 +108,7 @@ const UNKNOWN: QrFusedPose = {
   frameEpoch: 0,
   oldestTimestamp: Number.NaN,
   newestTimestamp: Number.NaN,
+  motion: null,
 };
 
 type Resolved = typeof DEFAULTS & {
@@ -133,9 +129,7 @@ function resolveOptions(options: QrFusedPoseOptions): Resolved {
   ) => (typeof v === 'number' && ok(v) ? v : d);
   const positive = (x: number) => x > 0;
   return {
-    windowSize: pick(options.windowSize, DEFAULTS.windowSize, (x) => x >= 1),
-    gapMs: pick(options.gapMs, DEFAULTS.gapMs, (x) => x >= 0),
-    radiusM: pick(options.radiusM, DEFAULTS.radiusM, positive),
+    ...resolveFusedWindowOptions(options),
     minViews: pick(options.minViews, DEFAULTS.minViews, (x) => x >= 1),
     maxFitPx: pick(options.maxFitPx, DEFAULTS.maxFitPx, positive),
     fallbackFitPx: pick(
@@ -152,52 +146,6 @@ function resolveOptions(options: QrFusedPoseOptions): Resolved {
     solveOptions: options.solveOptions,
     solve: options.solve,
   };
-}
-
-function distance(a: Pose['position'], b: Pose['position']): number {
-  return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
-}
-
-/**
- * The window (oldest to newest): walking back from the newest entry, stop at
- * another frame epoch or at a step in time larger than `gapMs` (either
- * direction; a NaN step breaks too); leave out entries farther than
- * `radiusM` from the newest raw position in the run (entries without a raw
- * pose are kept); keep at most `windowSize`.
- */
-export function selectFusedWindow(
-  entries: readonly QrFusedEntry[],
-  options: Pick<QrFusedPoseOptions, 'windowSize' | 'gapMs' | 'radiusM'> = {}
-): QrFusedEntry[] {
-  const o = resolveOptions(options);
-  const newest = entries[entries.length - 1];
-  if (!newest) return [];
-  const run: QrFusedEntry[] = [];
-  for (let i = entries.length - 1; i >= 0; i--) {
-    const e = entries[i]!;
-    if (breaksWindow(e, entries[i + 1], newest, o.gapMs)) break;
-    run.push(e);
-  }
-  const anchor = run.find((e) => e.rawPose)?.rawPose?.position;
-  const out = anchor
-    ? run.filter(
-        (e) => !e.rawPose || distance(e.rawPose.position, anchor) <= o.radiusM
-      )
-    : run;
-  return out.slice(0, o.windowSize).reverse();
-}
-
-/** Another frame epoch than the newest, or a time step to the next entry above `gapMs` (or NaN). */
-function breaksWindow(
-  e: QrFusedEntry,
-  later: QrFusedEntry | undefined,
-  newest: QrFusedEntry,
-  gapMs: number
-): boolean {
-  if ((e.frameEpoch ?? 0) !== (newest.frameEpoch ?? 0)) return true;
-  return (
-    later !== undefined && !(Math.abs(later.timestamp - e.timestamp) <= gapMs)
-  );
 }
 
 /** The joint solve over the window and its robust fit statistic. */
@@ -269,6 +217,7 @@ export function evaluateFusedQrPose(
     frameEpoch,
     oldestTimestamp: oldest.timestamp,
     newestTimestamp: newest.timestamp,
+    motion: null,
   };
 }
 
@@ -355,23 +304,51 @@ export interface FusedQrPoseTracker {
 }
 
 /**
+ * The window cut the motion detector asks for (plan §26): while the code is
+ * moved or turned only the newest entry (never stable, so the app shows the
+ * raw pose), once it is still again only the entries since then.
+ */
+function motionCutMs(
+  motion: QrMotion | null,
+  entries: readonly QrFusedEntry[]
+): number | undefined {
+  if (!motion) return undefined;
+  if (motion.moving || motion.turning) {
+    return entries[entries.length - 1]?.timestamp;
+  }
+  return motion.stillSinceMs ?? undefined;
+}
+
+/**
  * A per-code tracker: caches on the entries ARRAY identity (the store hands
  * out a new array per new detection; never a timestamp, which replay and
- * store swaps reuse) and carries the previous result for the hysteresis.
+ * store swaps reuse), carries the previous result for the hysteresis, and
+ * runs the motion detector (unless `motion: false`), which cuts the window
+ * so a moved or turned code never fuses its stale views.
  */
 export function createFusedQrPoseTracker(
   options: QrFusedPoseOptions = {}
 ): FusedQrPoseTracker {
+  const motionTracker =
+    options.motion === false ? null : createQrMotionTracker(options.motion);
   let lastEntries: readonly QrFusedEntry[] | null = null;
   let last: QrFusedPose | null = null;
   return {
     evaluate(entries) {
       if (entries === lastEntries && last) return last;
-      last = evaluateFusedQrPose(entries, options, last);
+      const motion = motionTracker ? motionTracker.update(entries) : null;
+      const sinceMs = motionCutMs(motion, entries);
+      const fused = evaluateFusedQrPose(
+        entries,
+        sinceMs === undefined ? options : { ...options, sinceMs },
+        last
+      );
+      last = { ...fused, motion };
       lastEntries = entries;
       return last;
     },
     reset() {
+      motionTracker?.reset();
       lastEntries = null;
       last = null;
     },

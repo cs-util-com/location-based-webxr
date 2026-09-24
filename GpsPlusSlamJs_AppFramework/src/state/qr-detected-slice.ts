@@ -34,7 +34,7 @@ import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 import type { Matrix4, Vector3 } from 'gps-plus-slam-js';
 import type { CameraIntrinsics, Point2, Pose } from '../ar/qr/qr-pose.js';
 import { intrinsicsFromProjection } from '../ar/qr/qr-pose.js';
-import type { QrFusedEntry } from '../ar/qr/qr-fused-pose.js';
+import type { QrFusedEntry } from '../ar/qr/qr-fused-window.js';
 import type { QrSizeEstimate } from '../ar/qr/qr-size-from-depth.js';
 import {
   evaluateQrPoseStability,

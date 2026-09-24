@@ -158,13 +158,18 @@ export {
   viewErrorAtRotationPx,
 } from './qr-multi-view-pose.js';
 
-// --- qr-fused-pose (the windowed joint rotation, its gate and fallback) ---
+// --- qr-fused-window (which detections of one code may be combined) ---
 export {
   type QrFusedEntry,
+  type QrFusedWindowOptions,
+  selectFusedWindow,
+} from './qr-fused-window.js';
+
+// --- qr-fused-pose (the windowed joint rotation, its gate and fallback) ---
+export {
   type QrFusedPoseOptions,
   type QrFusedPose,
   type FusedQrPoseTracker,
-  selectFusedWindow,
   evaluateFusedQrPose,
   createFusedQrPoseTracker,
 } from './qr-fused-pose.js';

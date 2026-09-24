@@ -3,7 +3,7 @@ import fc from 'fast-check';
 
 import type { CameraIntrinsics, Point2, Pose } from './qr-pose';
 import { buildObjectPoints, projectViewPoint } from './qr-pose';
-import type { QrFusedEntry } from './qr-fused-pose';
+import type { QrFusedEntry } from './qr-fused-window';
 import { solveQrPoseMultiView } from './qr-multi-view-pose';
 import { createQrMotionTracker } from './qr-motion';
 
