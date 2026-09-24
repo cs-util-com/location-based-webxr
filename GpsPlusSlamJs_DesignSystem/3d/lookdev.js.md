@@ -20,6 +20,10 @@
     sheet-era names are kept so the M1 e2e reads unchanged)
     `setCloudOffset(u, v)` (pins the drift so pixels repeat),
     `setCloudSheetVisible(bool)` and `placeCameraAt(eye, target)`;
+    `pauseLoop(bool)` (the loop stops drawing its own frames once the page
+    is ready; `readPixels` still renders: a slab frame costs about 0.7 s on
+    SwiftShader) and `sunDirection()` (the unit vector toward the sun, for
+    tests that aim along the sun or away from it);
     `setShadows(bool)` (sun shadows, the AR shadow prototype's S1: the
     framework's `createSunShadow` drives the sun light over a 440 m square (R 220 m),
     buildings cast and receive, the ground receives, a 2° floor), with

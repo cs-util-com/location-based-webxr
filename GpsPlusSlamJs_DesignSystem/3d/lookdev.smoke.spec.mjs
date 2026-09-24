@@ -1172,3 +1172,497 @@ test("the cloud slab compiles and covers the city from above", async ({
   expect(covered).toBeGreaterThan(0.5);
   expect(errors).toEqual([]);
 });
+
+// --- The slab's E1-E11 block (plan §11.7 as amended by §12) -------------------
+// Every bound is declared beside its measurement and margin, with the value
+// that would reverse it (the owner's sweep rule). The loop is paused (a slab
+// frame costs ~0.7 s on SwiftShader), so a frame renders only when read.
+
+/**
+ * The slab block's declared bounds. Measured 2026-09-24 on SwiftShader at
+ * 1280×800 and 16 steps; each with its margin and what would reverse it.
+ */
+/** E1: covered 1.00 / 1.00 at cover 0.7 (two offsets); tops 655 / 658. The
+ * sheet's floors: 0.5 fails a slab that covers half the time; 520 sits
+ * between the tops (655) and a grey underside model (~359, the M1 probe). */
+const SLAB_E1 = { floorAt07: 0.5, topsFloor: 520 };
+/** E2: tops 662 against undersides 471 away from the sun: ratio 1.41 (1.2
+ * keeps a 0.2 margin; the verdict reverses at 1.0). Toward the sun the
+ * underside reads 669, above the tops, as the CPU twin predicted. The
+ * offline mutant that measures the sun from the column BASE reads 0.99. */
+const SLAB_E2 = { ratioFloor: 1.2 };
+/** E6: 1.00 changed inside at both offsets; the sheet reads 0.00 there. */
+const SLAB_E6 = { floor: 0.8 };
+/** E7: base crossing 74.6 → 74.8 (a 0.2 jump), top 158.1 → 158.1; the slab
+ * reads 69.2 at 50 m below the base. 5 levels of jump, 30 of floor. */
+const SLAB_E7 = { jumpMax: 5, floorAt50: 30 };
+/** E8(a): the worst row step level through the layer is 0.9; the offline
+ * mutant that branches the light on the view direction (the sheet's form)
+ * reads 340.9. E8(b) is logged only: see the test. */
+const SLAB_E8 = { levelMax: 10 };
+/** E9 from above: the row at 3.0° of depression (just inside the far cut at
+ * 2.7°) reads 6 at cover 0.9; the offline mutant without the far weight
+ * reads 95. 30 sits between. */
+const SLAB_E9 = { edgeRowMax: 30 };
+/** E10: 8 against 32 steps differ by 5.6 levels on the grid; 20 is a 3.5x
+ * margin (the CPU twin bounds the alpha difference at 0.05). */
+const SLAB_E10 = { diffMax: 20 };
+
+/** Boot the slab with the drift pinned and the loop paused. */
+async function bootSlabPaused(page, offset = SHEET_OFFSETS[0], steps = 16) {
+  const errors = await bootSlab(page, offset, steps);
+  await page.evaluate(() => window.__lookdev.pauseLoop(true));
+  return errors;
+}
+
+/** Mean RGB sum of the points that the slab changes (shown vs hidden). */
+const coveredBrightness = ({ shown, hidden }) => {
+  const covered = shown.filter(
+    (px, i) => Math.abs(sum(px) - sum(hidden[i])) > CHANGED_LEVELS,
+  );
+  return {
+    share: covered.length / shown.length,
+    mean:
+      covered.reduce((t, px) => t + sum(px), 0) / Math.max(1, covered.length),
+  };
+};
+
+// E1: from above the slab covers the city, more of it the higher the cover.
+test("E1: the cloud slab covers the city from above, more with more cover", async ({
+  page,
+}) => {
+  const errors = await bootSlabPaused(page);
+  for (const offset of SHEET_OFFSETS) {
+    await page.evaluate(
+      ([a, b]) => window.__lookdev.setCloudOffset(a, b),
+      offset,
+    );
+    const shares = [];
+    let tops = 0;
+    for (const cover of SHEET_COVERS) {
+      const r = await readShownHidden(page, cover, "above", GRID);
+      shares.push(changedShare(r.shown, r.hidden));
+      if (cover === 0.9) tops = coveredBrightness(r).mean;
+    }
+    console.log(
+      `E1 slab from above, offset ${offset}: covered ${shares.map((s) => s.toFixed(2)).join(" / ")} at ${SHEET_COVERS.join(" / ")}; tops ${tops.toFixed(0)}`,
+    );
+    for (let i = 1; i < shares.length; i++) {
+      expect(shares[i]).toBeGreaterThanOrEqual(shares[i - 1] - 0.05);
+    }
+    expect(shares[2]).toBeGreaterThan(SLAB_E1.floorAt07);
+    expect(tops).toBeGreaterThan(SLAB_E1.topsFloor);
+  }
+  expect(errors).toEqual([]);
+});
+
+// E2: away from the sun, sunlit tops seen from above are brighter than
+// undersides seen from below (toward the sun the forward lobe reverses it,
+// so the geometry is named, and the toward-sun value is logged).
+test("E2: slab tops from above outshine undersides from below, away from the sun", async ({
+  page,
+}) => {
+  const errors = await bootSlabPaused(page);
+  const read = (eye, elDeg, toward) =>
+    page.evaluate(
+      ([e, el, t]) => {
+        const d = window.__lookdev;
+        d.setCloudCover(0.9);
+        const s = d.sunDirection();
+        const flat = Math.hypot(s[0], s[2]) || 1;
+        const sign = t ? 1 : -1;
+        const h = [(sign * s[0]) / flat, (sign * s[2]) / flat];
+        const r = (el * Math.PI) / 180;
+        d.placeCameraAt(e, [
+          e[0] + 1000 * Math.cos(r) * h[0],
+          e[1] + 1000 * Math.sin(r),
+          e[2] + 1000 * Math.cos(r) * h[1],
+        ]);
+        const points = [];
+        for (let i = 0; i < 6; i++)
+          for (let j = 0; j < 6; j++)
+            points.push([0.4 + i * 0.1, 0.25 + j * 0.1]);
+        d.setCloudSheetVisible(true);
+        const shown = d.readPixels(points);
+        d.setCloudSheetVisible(false);
+        const hidden = d.readPixels(points);
+        d.setCloudSheetVisible(true);
+        return { shown, hidden };
+      },
+      [eye, elDeg, toward],
+    );
+  const above = coveredBrightness(await read([-300, 3200, 600], -60, false));
+  const below = coveredBrightness(await read([-20, 18, 60], 60, false));
+  const towardBelow = coveredBrightness(await read([-20, 18, 60], 60, true));
+  const ratio = above.mean / below.mean;
+  console.log(
+    `E2 slab tops ${above.mean.toFixed(0)} (share ${above.share.toFixed(2)}), undersides away ${below.mean.toFixed(0)} (share ${below.share.toFixed(2)}), toward the sun ${towardBelow.mean.toFixed(0)}; ratio ${ratio.toFixed(2)}`,
+  );
+  expect(above.share).toBeGreaterThan(0.5);
+  expect(below.share).toBeGreaterThan(0.5);
+  expect(ratio).toBeGreaterThanOrEqual(SLAB_E2.ratioFloor);
+  expect(errors).toEqual([]);
+});
+
+// E3: occlusion. From the street a facade in front hides the slab (and the
+// same facade changes without the depth test, so the test can fail); from
+// above the slab covers the city's ground (a slab drawn at far depth, the
+// sky's trick, would read 0 there).
+test("E3: the slab is hidden behind a facade and covers the city from above", async ({
+  page,
+}) => {
+  const errors = await bootSlabPaused(page);
+  const eye = [-21, 1.5, 0];
+  await page.evaluate((e) => window.__lookdev.placeCameraAt(e, [0, 6, 0]), eye);
+  const facade = await page.evaluate(() => {
+    const d = window.__lookdev;
+    const f = [];
+    for (let z = -6; z <= 6; z += 3) {
+      for (const y of [4.5, 5.5, 6.5, 7.5]) f.push(d.project([0, y, z]));
+    }
+    return f;
+  });
+  await page.evaluate(() => window.__lookdev.setCloudCover(0.9));
+  const f = await shownHidden(page, facade);
+  const worst = Math.max(
+    ...f.shown.map((px, i) => Math.abs(sum(px) - sum(f.hidden[i]))),
+  );
+  await page.evaluate(() => window.__lookdev.setCloudSheetDepthTest(false));
+  const m = await shownHidden(page, facade);
+  await page.evaluate(() => window.__lookdev.setCloudSheetDepthTest(true));
+  const leaked = changedShare(m.shown, m.hidden);
+  const ground = await page.evaluate(() => {
+    const d = window.__lookdev;
+    d.setView("above");
+    const g = [];
+    for (let x = -150; x <= 150; x += 50)
+      for (let z = -150; z <= 150; z += 50) g.push(d.project([x, 0, z]));
+    return g;
+  });
+  const roofs = await shownHidden(page, ground);
+  const covered = changedShare(roofs.shown, roofs.hidden);
+  console.log(
+    `E3 slab facade max diff ${worst}, without the depth test ${leaked.toFixed(2)} changes; city ground covered from above ${covered.toFixed(2)}`,
+  );
+  expect(worst).toBe(0);
+  expect(leaked).toBeGreaterThan(0.2);
+  // Declared 0.8 at cover 0.9 (reverses at 0: a far-depth slab).
+  expect(covered).toBeGreaterThan(0.8);
+  expect(errors).toEqual([]);
+});
+
+// E4 and E5: the occlusion rests on the scene staying below the base, and in
+// slab mode the visible sky draws no clouds of its own.
+test("E4/E5: the scene stays below the slab, and the slab mode's sky draws no clouds", async ({
+  page,
+}) => {
+  const errors = await bootSlabPaused(page);
+  const top = await page.evaluate(() => window.__lookdev.sceneTopM());
+  expect(top).toBeGreaterThan(100);
+  expect(top).toBeLessThan(1800);
+  const sky = [];
+  for (let i = 0; i < 8; i++) sky.push([0.4 + i * 0.07, 0.08]);
+  const readAt = (cover) =>
+    page.evaluate(
+      ([c, p]) => {
+        window.__lookdev.setCloudCover(c);
+        window.__lookdev.setView("city");
+        return window.__lookdev.readPixels(p);
+      },
+      [cover, sky],
+    );
+  await page.evaluate(() => window.__lookdev.setCloudSheetVisible(false));
+  const clear = await readAt(0);
+  const hidden = await readAt(0.7);
+  const worst = Math.max(
+    ...clear.map((px, i) => Math.abs(sum(px) - sum(hidden[i]))),
+  );
+  console.log(
+    `E4 scene top ${top.toFixed(0)} m; E5 slab hidden vs clear sky ${worst}`,
+  );
+  expect(worst).toBeLessThanOrEqual(3);
+  expect(errors).toEqual([]);
+});
+
+// E6: inside the layer is a whiteout (the sheet reads 0.00 there, by its
+// near fade: the point of the A/B).
+test("E6: inside the slab is a whiteout", async ({ page }) => {
+  const errors = await bootSlabPaused(page);
+  for (const offset of SHEET_OFFSETS) {
+    await page.evaluate(
+      ([a, b]) => window.__lookdev.setCloudOffset(a, b),
+      offset,
+    );
+    const r = await readShownHidden(page, 0.9, "inside", GRID);
+    const share = changedShare(r.shown, r.hidden);
+    console.log(`E6 inside, offset ${offset}: ${share.toFixed(2)} changed`);
+    expect(share).toBeGreaterThan(SLAB_E6.floor);
+  }
+  expect(errors).toEqual([]);
+});
+
+// E7: crossing the base and the top in time is continuous (the interval
+// must not jump at a plane), and the slab is there at ±50 m.
+test("E7: crossing the slab's base and top is continuous", async ({ page }) => {
+  const errors = await bootSlabPaused(page);
+  await page.evaluate(() => window.__lookdev.setCloudCover(0.9));
+  for (const plane of [1800, 2200]) {
+    const diffs = {};
+    for (const e of [-50, -10, -2, -0.5, 0.5, 2, 10, 50]) {
+      const y = plane + e;
+      await page.evaluate(
+        (h) => window.__lookdev.placeCameraAt([-300, h, 600], [-300, h, -400]),
+        y,
+      );
+      const { shown, hidden } = await shownHidden(page, GRID);
+      diffs[e] = meanAbsDiff(shown, hidden);
+    }
+    console.log(
+      `E7 plane ${plane}: ${Object.entries(diffs)
+        .map(([e, d]) => `${e}:${d.toFixed(1)}`)
+        .join(" ")}`,
+    );
+    expect(Math.abs(diffs[-0.5] - diffs[0.5])).toBeLessThanOrEqual(
+      SLAB_E7.jumpMax,
+    );
+    expect(Math.min(diffs[-50], diffs[50])).toBeGreaterThan(SLAB_E7.floorAt50);
+  }
+  expect(errors).toEqual([]);
+});
+
+/**
+ * The max row-to-row step of a profile: rows at `rowsDeg` (elevation from
+ * the horizontal, looking toward -z), each the mean RGB sum of 16 columns,
+ * read in ONE render (triage §12 item 6).
+ */
+const rowProfile = (page, eye, pitchDeg, rowsDeg) =>
+  page.evaluate(
+    ([e, pitch, rows]) => {
+      const d = window.__lookdev;
+      const p = (pitch * Math.PI) / 180;
+      d.placeCameraAt(e, [e[0], e[1] + 1000 * Math.tan(p), e[2] - 1000]);
+      const points = [];
+      for (const r of rows) {
+        const t = Math.tan((r * Math.PI) / 180);
+        for (let k = 0; k < 16; k++) {
+          points.push(
+            d.project([e[0] + (k - 7.5) * 25, e[1] + 1000 * t, e[2] - 1000]),
+          );
+        }
+      }
+      const px = d.readPixels(points);
+      const means = [];
+      for (let i = 0; i < rows.length; i++) {
+        let s = 0;
+        for (let k = 0; k < 16; k++) {
+          const q = px[i * 16 + k];
+          s += q[0] + q[1] + q[2];
+        }
+        means.push(s / 16);
+      }
+      let worst = 0;
+      for (let i = 1; i < means.length; i++)
+        worst = Math.max(worst, Math.abs(means[i] - means[i - 1]));
+      return { worst, means };
+    },
+    [eye, pitchDeg, rowsDeg],
+  );
+
+// E8: no hard line where there is no physical edge, at cover 1.0 so the
+// pattern cannot hide one (§10 item 5). (a) Level through the middle of the
+// layer: asserted, its mutant reads 380x the measurement. (b) Just inside
+// the base and the top, pitched, rows 5°-45°: LOGGED ONLY. Its design
+// mutant (midpoint sampling instead of the exact vertical integral) read
+// 2.9 against 2.5 at 16 steps and 5.1 at 8, never twice a bound, because the
+// jitter and the level of detail hide the slicing; the design's own rule
+// replaces such a test, and the CPU twin's vertical-opacity test catches
+// that mutant exactly.
+test("E8: the slab draws no hard line inside the layer", async ({ page }) => {
+  const errors = await bootSlabPaused(page);
+  await page.evaluate(() => window.__lookdev.setCloudCover(1));
+  const level = [];
+  for (let r = -10; r <= 10; r += 0.5) level.push(r);
+  const a = await rowProfile(page, [-300, 1900, 600], 0, level);
+  const up = [];
+  for (let r = 5; r <= 45; r += 1) up.push(r);
+  const down = up.map((r) => -r);
+  const b1 = await rowProfile(page, [-300, 1800.5, 600], 25, up);
+  const b2 = await rowProfile(page, [-300, 2199.5, 600], -25, down);
+  console.log(
+    `E8 worst row step: level ${a.worst.toFixed(1)}, above the base ${b1.worst.toFixed(1)}, below the top ${b2.worst.toFixed(1)}`,
+  );
+  expect(a.worst).toBeLessThan(SLAB_E8.levelMax);
+  expect(errors).toEqual([]);
+});
+
+// E9: the far edge. From the street the slab contributes nothing below the
+// fade's end (atan(1782/21000) = 4.85°). From `above` the march's far cut
+// ends the deck at about 2.7° of depression, so rows above it are 0 with or
+// without the far weight (measured: a check there could not fail); the
+// weight shows in the row just inside the cut, which must have faded.
+test("E9: the slab's far edge fades out, from the street and from above", async ({
+  page,
+}) => {
+  const errors = await bootSlabPaused(page);
+  const fadeEndDeg = (Math.atan((1800 - 18) / 21_000) * 180) / Math.PI;
+  const rows = [];
+  for (let e = 3; e <= 10; e += 0.5) rows.push(e);
+  const horizon = [];
+  for (let e = -5; e <= 5; e += 0.5) horizon.push(e);
+  const contribution = (eye, rowsDeg) =>
+    page.evaluate(
+      ([e, rs]) => {
+        const d = window.__lookdev;
+        d.placeCameraAt(e, [e[0] + 1000, e[1], e[2]]);
+        const points = [];
+        for (const r of rs) {
+          const t = Math.tan((r * Math.PI) / 180);
+          for (let k = 0; k < 16; k++)
+            points.push(
+              d.project([e[0] + 1000, e[1] + 1000 * t, e[2] + (k - 7.5) * 25]),
+            );
+        }
+        d.setCloudSheetVisible(true);
+        const shown = d.readPixels(points);
+        d.setCloudSheetVisible(false);
+        const hidden = d.readPixels(points);
+        d.setCloudSheetVisible(true);
+        const out = [];
+        for (let i = 0; i < rs.length; i++) {
+          let total = 0;
+          for (let k = 0; k < 16; k++)
+            for (let c = 0; c < 3; c++)
+              total += Math.abs(shown[i * 16 + k][c] - hidden[i * 16 + k][c]);
+          out.push(total / 16);
+        }
+        return out;
+      },
+      [eye, rowsDeg],
+    );
+  const edgeRows = [];
+  for (const cover of [0.5, 0.9]) {
+    await page.evaluate((c) => window.__lookdev.setCloudCover(c), cover);
+    const street = await contribution([-20, 18, 60], rows);
+    const below = Math.max(...street.filter((_, i) => rows[i] < fadeEndDeg));
+    const high = await contribution([-300, 3200, 600], horizon);
+    const edgeRow = high[horizon.indexOf(-3)];
+    console.log(
+      `E9 cover ${cover}: street below the fade's end ${below.toFixed(1)}; from above, the row at -3° ${edgeRow.toFixed(1)} (profile -5°..5°: ${high.map((p) => p.toFixed(0)).join(" ")})`,
+    );
+    expect(below).toBeLessThan(2);
+    edgeRows.push(edgeRow);
+  }
+  // At cover 0.9, where the deck reaches the cut (at 0.5 it reads 0 either way).
+  expect(edgeRows[1]).toBeLessThan(SLAB_E9.edgeRowMax);
+  expect(errors).toEqual([]);
+});
+
+// E10: the step count changes the cost (direction only: SwiftShader has no
+// GPU timer) and the picture only a little, but not by nothing (a define
+// that never reached the program would read 0).
+test("E10: more slab steps cost more and change the picture a little", async ({
+  page,
+}) => {
+  const errors = await bootSlabPaused(page);
+  const measure = (steps) =>
+    page.evaluate(
+      ([n, grid]) => {
+        const d = window.__lookdev;
+        d.setCloudSlabSteps(n);
+        d.setCloudCover(0.5);
+        d.setView("above");
+        d.readPixels([[0.5, 0.5]]); // compiles the program
+        const times = [];
+        for (let i = 0; i < 3; i++) {
+          const t0 = performance.now();
+          d.readPixels([[0.5, 0.5]]);
+          times.push(performance.now() - t0);
+        }
+        times.sort((a, b) => a - b);
+        return { ms: times[1], grid: d.readPixels(grid) };
+      },
+      [steps, GRID],
+    );
+  const s8 = await measure(8);
+  const s32 = await measure(32);
+  const diff = meanAbsDiff(s8.grid, s32.grid);
+  console.log(
+    `E10 slab frame ${s8.ms.toFixed(0)} ms at 8 steps, ${s32.ms.toFixed(0)} ms at 32 (x${(s32.ms / s8.ms).toFixed(2)}); picture diff ${diff.toFixed(1)}`,
+  );
+  expect(s32.ms / s8.ms).toBeGreaterThanOrEqual(1.2);
+  expect(diff).toBeGreaterThan(0);
+  expect(diff).toBeLessThan(SLAB_E10.diffMax);
+  expect(errors).toEqual([]);
+});
+
+// E11: the owner drives it from the panel.
+test("E11: the Cloud mode and Slab steps selects drive the page", async ({
+  page,
+}) => {
+  const errors = await boot(page, "preset=noon&tone=neutral");
+  await expect(page.locator("#slab-steps")).toBeDisabled();
+  await page.selectOption("#cloud-mode", "slab");
+  await expect(page.locator("#slab-steps")).toBeEnabled();
+  await page.selectOption("#slab-steps", "8");
+  const state = await page.evaluate(() => window.__lookdev.stats().state);
+  expect(state.cloudMode).toBe("slab");
+  expect(state.slabSteps).toBe(8);
+  await expect(page.locator("[data-stats]")).toContainText("clouds slab ×8");
+  expect(errors).toEqual([]);
+});
+
+// The owner's A/B question behind triage §12 item 4: from the street, how
+// much of each elevation band the sheet and the slab cover at one cover.
+// Logged for the owner, not asserted (the slab reads cloudier low down, by
+// its 1/sin(e) path, which is physically right).
+test("the covered share per elevation band, sheet against slab (logged)", async ({
+  page,
+}) => {
+  const errors = await boot(page, "preset=noon&tone=neutral&cloudMode=sheet");
+  const bands = [10, 20, 45, 80];
+  const read = () =>
+    page.evaluate(
+      ([bs, levels]) => {
+        const d = window.__lookdev;
+        d.pauseLoop(true);
+        d.setCloudOffset(0.1, 0.2);
+        d.setCloudCover(0.5);
+        const eye = [-20, 18, 60];
+        const out = [];
+        for (const b of bs) {
+          const r = (b * Math.PI) / 180;
+          d.placeCameraAt(eye, [
+            eye[0] + 1000 * Math.cos(r),
+            eye[1] + 1000 * Math.sin(r),
+            eye[2],
+          ]);
+          const points = [];
+          for (let i = 0; i < 5; i++)
+            for (let j = 0; j < 5; j++)
+              points.push([0.4 + i * 0.12, 0.3 + j * 0.1]);
+          d.setCloudSheetVisible(true);
+          const shown = d.readPixels(points);
+          d.setCloudSheetVisible(false);
+          const hidden = d.readPixels(points);
+          d.setCloudSheetVisible(true);
+          let changed = 0;
+          for (let i = 0; i < points.length; i++) {
+            const a = shown[i][0] + shown[i][1] + shown[i][2];
+            const c = hidden[i][0] + hidden[i][1] + hidden[i][2];
+            if (Math.abs(a - c) > levels) changed++;
+          }
+          out.push(changed / points.length);
+        }
+        return out;
+      },
+      [bands, CHANGED_LEVELS],
+    );
+  const sheet = await read();
+  await page.evaluate(() => window.__lookdev.setCloudMode("slab"));
+  const slab = await read();
+  console.log(
+    `covered at cover 0.5 by band ${bands.join("/")}°: sheet ${sheet.map((s) => s.toFixed(2)).join(" / ")}, slab ${slab.map((s) => s.toFixed(2)).join(" / ")}`,
+  );
+  expect(sheet.length).toBe(bands.length);
+  expect(errors).toEqual([]);
+});

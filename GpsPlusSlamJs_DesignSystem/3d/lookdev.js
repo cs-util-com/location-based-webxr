@@ -518,6 +518,8 @@ let frameMs = 0;
 let gpuMs = null;
 let last = performance.now();
 let contextLost = false;
+/** Test surface: the loop stops drawing between a test's own renders (a slab frame costs ~0.7 s on SwiftShader). */
+let loopPaused = false;
 let lastSize = "";
 let gpuTimer = createGpuTimer(renderer.getContext());
 
@@ -544,7 +546,7 @@ function frame(now) {
   water.update(dt);
   last = now;
   resize();
-  if (!contextLost) {
+  if (!contextLost && (!loopPaused || !api.ready)) {
     gpuTimer.begin();
     renderFrame();
     gpuTimer.end();
@@ -762,6 +764,19 @@ Object.assign(api, {
       box.expandByObject(child);
     }
     return box.max.y;
+  },
+  /**
+   * Test surface: stop (or restart) the render loop's own frames; the
+   * test's `readPixels` still render. The slab's tests pause it, so a slow
+   * frame renders only when a test reads one.
+   */
+  pauseLoop(on) {
+    loopPaused = Boolean(on);
+  },
+  /** Test surface: the unit direction toward the sun (x east, y up, -z north). */
+  sunDirection() {
+    const d = sunVector();
+    return [d.x, d.y, d.z];
   },
   /** Test surface: an exact camera, for the crossing test. */
   placeCameraAt([x, y, z], [tx, ty, tz]) {
