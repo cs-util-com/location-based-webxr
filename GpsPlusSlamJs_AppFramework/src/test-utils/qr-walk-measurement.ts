@@ -6,8 +6,13 @@
  */
 
 import type { Pose } from '../ar/qr/qr-pose';
-import { intrinsicsFromProjection, solveQrPose } from '../ar/qr/qr-pose';
-import { PlanarPnpSquare } from '../ar/qr/planar-pnp';
+import {
+  buildObjectPoints,
+  intrinsicsFromProjection,
+  rotateVectorByQuaternion,
+  solveQrPose,
+} from '../ar/qr/qr-pose';
+import { PlanarPnpSquare, solveLinear } from '../ar/qr/planar-pnp';
 import { evaluateQrPoseStability } from '../ar/qr/qr-pose-aggregation';
 import { perspectiveProjection, renderQrFrame } from './synthetic-qr-frame';
 import { mulberry32 } from './elevation-offset-scenarios';
@@ -75,11 +80,23 @@ export interface WalkRow {
   errRawDeg: number;
   /** Today's windowed stable pose over the raw poses; NaN before one exists. */
   errStableDeg: number;
+  /**
+   * Whether today's stability gate lets this window through
+   * (`status === 'stable'`): consumers only ever see gated poses.
+   */
+  stableGated: boolean;
+  /** The gate's two measures on this window (it opens at <= 3 cm and <= 5 deg). */
+  stableSpread: { translationM: number; rotationDeg: number };
   errFusedDeg: Partial<Record<MultiViewVariant, number>>;
   /** The production multi-view solve (M3a) on the same window; NaN when null. */
   errProductionDeg: number;
   /** Its wall-clock time on this machine, ms (reported, never asserted). */
   productionMs: number;
+  /**
+   * The position re-fit spike: the prototype's fixedT solve with each view's
+   * position re-fitted to the production rotation (one pass); NaN when absent.
+   */
+  errRefitDeg: number;
   /**
    * The code normal's error split into PITCH (elevation, the axis the
    * phone's wall check measures) and YAW (azimuth), deg; NaN when missing.
@@ -205,6 +222,65 @@ function distinctStarts(starts: readonly Pose[]): Pose[] {
   return out;
 }
 
+/**
+ * The code's world position that best fits `view`'s corners for a GIVEN code
+ * rotation: least squares on the corners' viewing rays (each ray's
+ * perpendicular residual is linear in the position). The position re-fit
+ * spike (plan §12, §14): one pass of re-fitting the positions to the joint
+ * rotation before solving again.
+ */
+function refitPosition(
+  view: ViewObservation,
+  rotation: Pose['rotation']
+): Vec3 | null {
+  const { fx, fy, cx, cy } = view.intrinsics;
+  const cam = view.cameraWorld;
+  const camInv: Pose['rotation'] = [
+    -cam.rotation[0],
+    -cam.rotation[1],
+    -cam.rotation[2],
+    cam.rotation[3],
+  ];
+  const A = new Array<number>(9).fill(0);
+  const b = [0, 0, 0];
+  // Columns of the world->camera rotation, i.e. Rc^T applied to the axes.
+  const axes = (
+    [
+      [1, 0, 0],
+      [0, 1, 0],
+      [0, 0, 1],
+    ] as Vec3[]
+  ).map((e) => rotateVectorByQuaternion(camInv, e));
+  buildObjectPoints(SIZE_M).forEach((o, k) => {
+    const c = view.corners[k]!;
+    const d: Vec3 = [(c.x - cx) / fx, -(c.y - cy) / fy, -1];
+    const n = Math.hypot(d[0], d[1], d[2]);
+    const u = d.map((x) => x / n);
+    const perp = (x: readonly number[]) => {
+      const dot = x[0]! * u[0]! + x[1]! * u[1]! + x[2]! * u[2]!;
+      return x.map((xi, i) => xi - dot * u[i]!);
+    };
+    const M = axes.map(perp); // column j = (I - u u^T) Rc^T e_j
+    const w = rotateVectorByQuaternion(rotation, o);
+    const rhs = perp(
+      rotateVectorByQuaternion(camInv, [
+        w[0] - cam.position[0],
+        w[1] - cam.position[1],
+        w[2] - cam.position[2],
+      ])
+    ).map((x) => -x);
+    for (let a = 0; a < 3; a++) {
+      for (let r = 0; r < 3; r++) {
+        b[a]! += M[a]![r]! * rhs[r]!;
+        for (let col = 0; col < 3; col++)
+          A[a * 3 + col]! += M[a]![r]! * M[col]![r]!;
+      }
+    }
+  });
+  const p = solveLinear(A, b);
+  return p ? [p[0]!, p[1]!, p[2]!] : null;
+}
+
 /** Render, decode and solve one step; null when zxing does not decode it. */
 async function observe(
   camera: Pose,
@@ -252,6 +328,119 @@ async function observe(
   return { view, raw: raw ? raw.qrPoseWorld : null };
 }
 
+/** The robust-loss option, when the walk sets one. */
+function robustOption(o: WalkMeasurementOptions): { robustScalePx?: number } {
+  return o.robustScalePx === undefined
+    ? {}
+    : { robustScalePx: o.robustScalePx };
+}
+
+/** Rotation error against `truth`, deg; NaN when there is no pose. */
+function errDeg(p: Pose | null | undefined, truth: Pose['rotation']): number {
+  return p ? rotationAngleDeg(p.rotation, truth) : Number.NaN;
+}
+
+/**
+ * Today's stable pose over the raw poses of the SAME window of views (a
+ * rejected solve is simply absent), so every method sees the same frames;
+ * with the gate's verdict and the two spreads it judges.
+ */
+function stabilityOf(raws: readonly (Pose | null)[]): {
+  stable: Pose | null;
+  stableGated: boolean;
+  stableSpread: WalkRow['stableSpread'];
+} {
+  const accepted = raws.filter((r): r is Pose => r !== null);
+  if (accepted.length === 0) {
+    return {
+      stable: null,
+      stableGated: false,
+      stableSpread: { translationM: Number.NaN, rotationDeg: Number.NaN },
+    };
+  }
+  const s = evaluateQrPoseStability(accepted);
+  return {
+    stable: s.pose,
+    stableGated: s.status === 'stable',
+    stableSpread: {
+      translationM: s.translationSpreadM,
+      rotationDeg: s.rotationSpreadDeg,
+    },
+  };
+}
+
+/** Every prototype variant on the window: rotation and axis errors. */
+function prototypeColumns(
+  views: readonly ViewObservation[],
+  starts: readonly Pose[],
+  o: WalkMeasurementOptions
+): Pick<WalkRow, 'errFusedDeg'> & {
+  fusedAxis: WalkRow['axisErrDeg']['fused'];
+} {
+  const truth = o.codeWorld.rotation;
+  const errFusedDeg: WalkRow['errFusedDeg'] = {};
+  const fusedAxis: WalkRow['axisErrDeg']['fused'] = {};
+  for (const variant of o.variants ?? ALL_VARIANTS) {
+    const fused = solveMultiView(views, starts, {
+      sizeM: SIZE_M,
+      variant,
+      ...robustOption(o),
+    });
+    const pose = fused
+      ? { position: fused.positionWorld, rotation: fused.rotationWorld }
+      : null;
+    errFusedDeg[variant] = errDeg(pose, truth);
+    fusedAxis[variant] = axisErr(pose, truth);
+  }
+  return { errFusedDeg, fusedAxis };
+}
+
+/**
+ * The production solve on the window (timed), and the position re-fit
+ * spike: the prototype's fixedT solve with each view's position re-fitted to
+ * the production rotation.
+ */
+function productionColumns(
+  views: readonly ViewObservation[],
+  starts: readonly Pose[],
+  o: WalkMeasurementOptions
+): {
+  production: Pose | null;
+  productionMs: number;
+  errRefitDeg: number;
+} {
+  const t0 = performance.now();
+  const solved = solveQrPoseMultiView(
+    views.map((v) => ({
+      corners: v.corners,
+      cameraPose: v.cameraWorld,
+      intrinsics: v.intrinsics,
+    })),
+    SIZE_M,
+    robustOption(o)
+  );
+  const productionMs = performance.now() - t0;
+  if (!solved) {
+    return { production: null, productionMs, errRefitDeg: Number.NaN };
+  }
+  const refitted = views.map((v) => refitPosition(v, solved.rotation));
+  const refit = refitted.every((p) => p !== null)
+    ? solveMultiView(views, starts, {
+        sizeM: SIZE_M,
+        variant: 'rotSharedFixedT',
+        fixedPositions: refitted,
+        ...robustOption(o),
+      })
+    : null;
+  return {
+    production: { position: solved.position, rotation: solved.rotation },
+    productionMs,
+    errRefitDeg: refit
+      ? rotationAngleDeg(refit.rotationWorld, o.codeWorld.rotation)
+      : Number.NaN,
+  };
+}
+
 /** Score the window ending at the latest view. */
 function scoreWindow(
   views: readonly ViewObservation[],
@@ -261,60 +450,30 @@ function scoreWindow(
   o: WalkMeasurementOptions
 ): Omit<WalkRow, 'step'> {
   const truth = o.codeWorld.rotation;
-  const err = (p: Pose | null | undefined): number =>
-    p ? rotationAngleDeg(p.rotation, truth) : Number.NaN;
-  // The stable pose averages the raw poses of the SAME window of views
-  // (a rejected solve is simply absent), so every method sees the same frames.
-  const accepted = raws.filter((r): r is Pose => r !== null);
-  const stable =
-    accepted.length > 0 ? evaluateQrPoseStability(accepted).pose : null;
+  const { stable, stableGated, stableSpread } = stabilityOf(raws);
   const starts = distinctStarts(
     views.flatMap((v) => realCandidateStarts(v, SIZE_M))
   );
-  const errFusedDeg: WalkRow['errFusedDeg'] = {};
-  const fusedAxis: WalkRow['axisErrDeg']['fused'] = {};
-  for (const variant of o.variants ?? ALL_VARIANTS) {
-    const fused = solveMultiView(views, starts, {
-      sizeM: SIZE_M,
-      variant,
-      ...(o.robustScalePx === undefined
-        ? {}
-        : { robustScalePx: o.robustScalePx }),
-    });
-    errFusedDeg[variant] = fused
-      ? rotationAngleDeg(fused.rotationWorld, truth)
-      : Number.NaN;
-    fusedAxis[variant] = axisErr(
-      fused
-        ? { position: fused.positionWorld, rotation: fused.rotationWorld }
-        : null,
-      truth
-    );
-  }
-  const t0 = performance.now();
-  const production = solveQrPoseMultiView(
-    views.map((v) => ({
-      corners: v.corners,
-      cameraPose: v.cameraWorld,
-      intrinsics: v.intrinsics,
-    })),
-    SIZE_M,
-    o.robustScalePx === undefined ? {} : { robustScalePx: o.robustScalePx }
+  const { errFusedDeg, fusedAxis } = prototypeColumns(views, starts, o);
+  const { production, productionMs, errRefitDeg } = productionColumns(
+    views,
+    starts,
+    o
   );
-  const productionMs = performance.now() - t0;
   // Binned by the TRUE geometry, whatever pose the solvers were handed.
   const rays = trueCameras.map((c) => rayAngleDeg(c, o.codeWorld));
   return {
     window: views.length,
     rayDeg: rays[rays.length - 1]!,
     reachedDeg: Math.max(...rays),
-    errRawDeg: err(latestRaw),
-    errStableDeg: err(stable),
+    errRawDeg: errDeg(latestRaw, truth),
+    errStableDeg: errDeg(stable, truth),
+    stableGated,
+    stableSpread,
     errFusedDeg,
-    errProductionDeg: production
-      ? rotationAngleDeg(production.rotation, truth)
-      : Number.NaN,
+    errProductionDeg: errDeg(production, truth),
     productionMs,
+    errRefitDeg,
     axisErrDeg: {
       raw: axisErr(latestRaw, truth),
       stable: axisErr(stable, truth),

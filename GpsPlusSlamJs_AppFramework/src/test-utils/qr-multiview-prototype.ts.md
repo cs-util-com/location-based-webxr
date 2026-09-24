@@ -8,7 +8,9 @@ near-frontal pose plan 2026-09-23-2314, M0 and §8).
 
 ## Public API
 
-- `solveMultiView(views, starts, { sizeM, variant, robustScalePx?, maxIterations? })`
+- `solveMultiView(views, starts, { sizeM, variant, robustScalePx?, maxIterations?, fixedPositions? })`
+  - `fixedPositions` (`rotSharedFixedT` only): per-view world positions to
+    hold instead of each view's own solve (the position re-fit spike).
   - `views`: `{ corners (TL, TR, BR, BL), cameraWorld, intrinsics }` each.
   - `variant`: `rotSharedFixedT` (the code's world rotation shared; each
     view keeps the position of its own single-view solve), `rotSharedFreeT`

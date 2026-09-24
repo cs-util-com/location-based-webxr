@@ -27,6 +27,15 @@ describe('measureWalk (M0 walk harness)', () => {
     expect(last.errRawDeg).toBeLessThan(3);
     expect(last.errFusedDeg.rotSharedFreeT!).toBeLessThan(1);
     expect(last.errProductionDeg).toBeLessThan(1);
+    // Today's gate stays SHUT even here (M3b design review §16 #1): the raw
+    // rotations of this clean, strongly oblique window spread 5.7 deg, just
+    // over the 5 deg gate (3 cm / 1 cm is fine), while the joint solve on
+    // the same window is within 1 deg. Measured 2026-09-24.
+    expect(last.stableGated).toBe(false);
+    expect(last.stableSpread.rotationDeg).toBeGreaterThan(5);
+    expect(last.stableSpread.translationM).toBeLessThan(0.03);
+    // The re-fit spike's column exists and is sane on clean data.
+    expect(last.errRefitDeg).toBeLessThan(1);
     expect(last.axisErrDeg.production.pitch).toBeLessThan(1);
     expect(last.window).toBe(rows.length);
   }, 120_000);

@@ -405,9 +405,70 @@ function stillAndAxisLines(rows: readonly TaggedRow[]): string[] {
   ];
 }
 
+/**
+ * What consumers actually get (M3b design review §16 #1): the rotations above
+ * are compared UNGATED, but the apps only see a pose once today's gate
+ * (raw spreads within 3 cm / 5 deg) opens. Per band: how often it opens, the
+ * two rotations on the windows it lets through, and the joint solve on the
+ * windows it holds back.
+ */
+function gateLines(rows: readonly TaggedRow[]): string[] {
+  const lines = [
+    'reached deg | gate open | on open windows: stable | prod | on held windows: prod (p50/p95/max deg)',
+  ];
+  for (let i = 0; i < BANDS.length - 1; i++) {
+    const [lo, hi] = [BANDS[i]!, BANDS[i + 1]!];
+    const r = rows.filter((x) => x.reachedDeg >= lo && x.reachedDeg < hi);
+    if (r.length === 0) continue;
+    const open = r.filter((x) => x.stableGated);
+    const held = r.filter((x) => !x.stableGated);
+    lines.push(
+      [
+        `${lo}-${hi}`.padEnd(11),
+        `${open.length}/${r.length} (${Math.round((100 * open.length) / r.length)} %)`.padStart(
+          14
+        ),
+        open.length ? stats(open.map((x) => x.errStableDeg)) : '-',
+        open.length ? stats(open.map((x) => x.errProductionDeg)) : '-',
+        held.length ? stats(held.map((x) => x.errProductionDeg)) : '-',
+      ].join(' | ')
+    );
+  }
+  return lines;
+}
+
+/** The position re-fit spike (plan §12 / §14): one re-fit pass vs prod. */
+function refitLines(rows: readonly TaggedRow[]): string[] {
+  const lines = ['reached deg | n | prod | refit (p50/p95/max deg)'];
+  for (let i = 0; i < BANDS.length - 1; i++) {
+    const [lo, hi] = [BANDS[i]!, BANDS[i + 1]!];
+    const r = rows.filter(
+      (x) =>
+        x.reachedDeg >= lo &&
+        x.reachedDeg < hi &&
+        Number.isFinite(x.errRefitDeg)
+    );
+    if (r.length === 0) continue;
+    lines.push(
+      [
+        `${lo}-${hi}`.padEnd(11),
+        String(r.length).padStart(4),
+        stats(r.map((x) => x.errProductionDeg)),
+        stats(r.map((x) => x.errRefitDeg)),
+      ].join(' | ')
+    );
+  }
+  return lines;
+}
+
 function walkReport(rows: readonly TaggedRow[]): string[] {
   const same = sameFrames(rows);
-  return [...bandLines(same), ...stillAndAxisLines(same)];
+  return [
+    ...bandLines(same),
+    ...stillAndAxisLines(same),
+    ...gateLines(same),
+    ...refitLines(same),
+  ];
 }
 
 /** 100 short (version 2-3, level M) and 100 launch-URL (version 6-9, level Q) payloads. */

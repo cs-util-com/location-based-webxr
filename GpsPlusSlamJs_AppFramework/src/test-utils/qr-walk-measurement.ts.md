@@ -29,6 +29,13 @@ prototype's variants and the production multi-view solve
     production solve returned null);
   - `productionMs`: the production solve's wall-clock time on this machine,
     for the sweep to report (never asserted);
+  - `stableGated` and `stableSpread` (`translationM`, `rotationDeg`):
+    whether today's stability gate opens on this window and the two spreads
+    it judges (it opens at <= 3 cm and <= 5 deg) - consumers only ever see
+    gated poses (M3b design review, plan §16 #1);
+  - `errRefitDeg`: the position re-fit spike - the prototype's fixedT solve
+    with each view's position re-fitted (least squares on the corner rays)
+    to the production rotation, one pass; NaN when absent.
   - `axisErrDeg`: the code normal's error split into `pitch` (elevation,
     what the phone's wall check measures) and `yaw`, for `raw`, `stable`,
     each `fused` variant and `production`.

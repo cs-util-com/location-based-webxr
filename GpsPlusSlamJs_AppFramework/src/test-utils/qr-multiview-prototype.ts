@@ -40,6 +40,12 @@ export interface MultiViewOptions {
   robustScalePx?: number;
   /** Default 30. */
   maxIterations?: number;
+  /**
+   * `rotSharedFixedT` only: the per-view world positions to hold fixed,
+   * instead of each view's own single-view solve (the position re-fit spike,
+   * plan §12 / §14).
+   */
+  fixedPositions?: readonly Vec3[];
 }
 
 export interface MultiViewResult {
@@ -349,6 +355,18 @@ function meanPosition(positions: readonly Vec3[]): Vec3 {
   ) as Vec3;
 }
 
+/** The per-view positions fixedT holds: the given ones, or each view's own solve. */
+function heldPositions(
+  views: readonly ViewObservation[],
+  sizeM: number,
+  fixed: readonly Vec3[] | undefined
+): Vec3[] | null {
+  if (!fixed) return ownPositions(views, sizeM);
+  return fixed.length === views.length
+    ? fixed.map((p) => [...p] as Vec3)
+    : null;
+}
+
 /**
  * The best joint solve over `views` from any of `starts` (world code poses).
  * `null` when there is no view, no start, a view without four corners, or no
@@ -362,7 +380,7 @@ export function solveMultiView(
   const { sizeM, variant, robustScalePx = 1, maxIterations = 30 } = options;
   if (views.length === 0 || starts.length === 0) return null;
   if (views.some((v) => v.corners.length !== 4)) return null;
-  const own = ownPositions(views, sizeM);
+  const own = heldPositions(views, sizeM, options.fixedPositions);
   if (!own) return null;
   const pr: Problem = {
     views: [...views],
