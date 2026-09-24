@@ -18,6 +18,7 @@ import type {
 } from "gps-plus-slam-app-framework/ar";
 import type { Vector3, Matrix4 } from "gps-plus-slam-app-framework/core";
 import type { CapturedCameraFrame } from "gps-plus-slam-app-framework/ar";
+import { intrinsicsFromProjection } from "gps-plus-slam-app-framework/ar";
 import {
   createQrDemoController,
   type DepthContext,
@@ -322,6 +323,9 @@ describe("createQrDemoController capture-time pose", () => {
     const { controller } = setup({ recordDetection: (e) => events.push(e) });
     await feed(controller, 3);
     expect(events.length).toBeGreaterThan(0);
-    expect(events[0]!.intrinsics!.fx).toBeGreaterThan(0);
+    // Exactly the solve's intrinsics: the demo's projection over this image.
+    expect(events[0]!.intrinsics).toEqual(
+      intrinsicsFromProjection(PROJECTION, IMG.width, IMG.height),
+    );
   });
 });

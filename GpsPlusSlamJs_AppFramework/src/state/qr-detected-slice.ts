@@ -50,6 +50,7 @@ import {
 } from '../ar/qr/qr-derived-pose.js';
 import { lowerMedian } from '../utils/median.js';
 import { isSegmentingActionType } from './segmenting-actions.js';
+import { clearLastRestartedPayload } from './tracking-slice.js';
 
 // Re-exported so consumers of the slice keep importing the size lifecycle types
 // from one place. They are DEFINED in `ar/qr/qr-size-from-depth.ts` (where size is
@@ -175,18 +176,28 @@ const initialState: QrDetectedState = {
 
 /**
  * Whether an action means the odometry frame moved: the recorded gpsData
- * restart / loop-closure actions (so old recordings replay it), the
- * session's own restart bookkeeping (`tracking/clearLastRestartedPayload`,
- * dispatched right after every restart into the store holding the tracking
- * slice), or this slice's own `qrFrameChanged`. One restart can arrive as
- * two of these in the same store; the epoch then moves twice with no
- * detection in between, which partitions the detections the same way.
+ * restart / loop-closure actions (so recordings that CONTAIN them replay
+ * it), the session's own restart bookkeeping (`clearLastRestartedPayload`,
+ * dispatched after a restart into the store the session's phase
+ * subscription watches), or this slice's own `qrFrameChanged`.
+ *
+ * NOT every app gets a signal yet (QR near-frontal pose plan §22): the
+ * TourViewer does (its AR store is the tracking store); the recorder does
+ * not after its first Start Recording (the session's phase subscription is
+ * not re-established on a store rebind - filed
+ * 2026-07-11-1811-tracking-rebind-dormant-phase-subscription-followup.md);
+ * the QR demo has no tracking store (b5).
+ *
+ * One restart can arrive as two of these in the same store; the epoch then
+ * moves twice with no detection in between, which partitions the detections
+ * the same way - but epoch NUMBERS are not comparable between a live run
+ * and its replay (which lacks the tracking actions).
  */
 export function isQrFrameChangeAction(type: string): boolean {
   return (
     isSegmentingActionType(type) ||
-    type === 'tracking/clearLastRestartedPayload' ||
-    type === 'qrDetected/qrFrameChanged'
+    type === clearLastRestartedPayload.type ||
+    type === QR_FRAME_CHANGED_TYPE
   );
 }
 
@@ -244,9 +255,11 @@ const qrDetectedSlice = createSlice({
     ) {
       const { text, estimate } = action.payload;
       const existing = state.markers[text] as QrMarkerState | undefined;
+      // The SAME detections array: a size does not change the detections,
+      // and a new identity would make every fused-window reader re-solve.
       const marker: QrMarkerState = {
         text,
-        detections: existing ? existing.detections.slice() : [],
+        detections: existing ? existing.detections : [],
         size: estimate,
       };
       return { ...state, markers: { ...state.markers, [text]: marker } };
@@ -327,6 +340,9 @@ export const {
 } = qrDetectedSlice.actions;
 
 export const qrDetectedReducer = qrDetectedSlice.reducer;
+
+/** The type of {@link qrFrameChanged}; read lazily by the matcher above. */
+const QR_FRAME_CHANGED_TYPE = qrFrameChanged.type;
 
 // --- Selectors ---------------------------------------------------------
 
@@ -542,10 +558,10 @@ export function selectDerivedQrPlacement(
   return deriveQrPlacement(text, selectQrRawObservations(state, text), deps);
 }
 
-/** Mapped fused-window entries per detections array (see {@link selectQrFusedEntries}). */
+/** Mapped fused-window entries per detections array and epoch (see {@link selectQrFusedEntries}). */
 const fusedEntriesCache = new WeakMap<
   readonly QrDetectionEntry[],
-  readonly QrFusedEntry[]
+  { frameEpoch: number; mapped: readonly QrFusedEntry[] }
 >();
 
 /** The intrinsics of a stored entry: its own, or derived from its projection. */
@@ -578,12 +594,14 @@ function toFusedEntry(e: QrDetectionEntry): QrFusedEntry | null {
 }
 
 /**
- * A marker's detections as fused-window entries (QR near-frontal pose plan
- * M3b b3), oldest first. Entries without corners, a camera pose or
- * intrinsics (from the entry, or derived from its projection matrix) are
- * left out. Cached per detections ARRAY, so the same array comes back until
- * a new detection arrives - the fused tracker caches on that identity, and
- * consumers read this on hot paths.
+ * A marker's detections of the CURRENT frame epoch as fused-window entries
+ * (QR near-frontal pose plan M3b b3), oldest first. Older epochs live in
+ * another coordinate frame, so after a restart this is empty until the code
+ * is seen again (b2/b3 review #2). Entries without corners, a camera pose
+ * or intrinsics (from the entry, or derived from its projection matrix) are
+ * left out. Cached per detections ARRAY and epoch, so the same array comes
+ * back until a new detection arrives or the frame changes - the fused
+ * tracker caches on that identity, and consumers read this on hot paths.
  */
 export function selectQrFusedEntries(
   state: RootWithQrDetected,
@@ -591,14 +609,16 @@ export function selectQrFusedEntries(
 ): readonly QrFusedEntry[] {
   const marker = state.qrDetected.markers[text];
   if (!marker) return EMPTY_FUSED;
+  const frameEpoch = state.qrDetected.frameEpoch ?? 0;
   const cached = fusedEntriesCache.get(marker.detections);
-  if (cached) return cached;
+  if (cached && cached.frameEpoch === frameEpoch) return cached.mapped;
   const mapped: QrFusedEntry[] = [];
   for (const e of marker.detections) {
+    if ((e.frameEpoch ?? 0) !== frameEpoch) continue;
     const f = toFusedEntry(e);
     if (f) mapped.push(f);
   }
-  fusedEntriesCache.set(marker.detections, mapped);
+  fusedEntriesCache.set(marker.detections, { frameEpoch, mapped });
   return mapped;
 }
 

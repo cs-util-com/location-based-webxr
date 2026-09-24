@@ -50,17 +50,19 @@
 ### Added
 
 - **`selectQrFusedEntries(state, text)`** on `/state` (QR near-frontal pose
-  plan, M3b b3): a marker's detections as fused-window entries, cached per
-  detections array; raw entries derive their intrinsics from the projection
+  plan, M3b b3): a marker's detections of the current frame epoch as
+  fused-window entries, cached per detections array and epoch; raw entries derive their intrinsics from the projection
   matrix. `QrDetectionEntry` gains an optional `intrinsics`.
 - **A frame epoch in the `qrDetected` slice** (QR near-frontal pose plan
-  2026-09-23-2314, M3b b2): `state.frameEpoch` moves on every odometry
-  restart or loop closure (the recorded gpsData actions, the session's
-  `tracking/clearLastRestartedPayload`, or the new `qrFrameChanged()`), and
+  2026-09-23-2314, M3b b2): `state.frameEpoch` moves on an odometry
+  restart or loop closure that reaches the store (the recorded gpsData
+  actions, the session's `tracking/clearLastRestartedPayload`, or the new
+  `qrFrameChanged()`; not every app delivers one yet), and
   `recordQrDetection` stamps each entry's `frameEpoch` from it, so the
   fused QR window never combines detections from two coordinate frames.
   `isQrFrameChangeAction(type)` names the actions. Stored entries gain the
-  field; state without it reads as epoch 0.
+  field; state without it reads as epoch 0. `recordQrSizeEstimate` now keeps
+  the marker's detections array instead of copying it.
 - **The fused QR pose window** (QR near-frontal pose plan 2026-09-23-2314,
   M3b b1): `evaluateFusedQrPose(entries, options?, previous?)`,
   `selectFusedWindow` and `createFusedQrPoseTracker` on `/ar`. The window

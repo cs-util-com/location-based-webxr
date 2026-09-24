@@ -186,10 +186,20 @@ describe('createQrTrackingController', () => {
   // back to today's averaging without anyone noticing.
   it('carries the detector buffer intrinsics on the event', async () => {
     const events: { intrinsics?: unknown }[] = [];
-    const { controller } = setup({ onDetection: (e) => events.push(e) });
+    // Intrinsics that depend on the buffer, so a wrong-buffer bug shows.
+    const perImage = (image: { width: number; height: number }) => ({
+      fx: image.width,
+      fy: image.height,
+      cx: image.width / 2,
+      cy: image.height / 2,
+    });
+    const { controller } = setup({
+      onDetection: (e) => events.push(e),
+      getIntrinsics: perImage,
+    });
     await tick(controller);
     await tick(controller);
-    expect(events[0]!.intrinsics).toEqual(intrinsics);
+    expect(events[0]!.intrinsics).toEqual(perImage(image));
   });
 
   it('skips the vote for a geo-less level but still emits the detection', async () => {
