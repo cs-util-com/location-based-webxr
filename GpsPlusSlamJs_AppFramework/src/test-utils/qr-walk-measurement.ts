@@ -1,0 +1,237 @@
+/**
+ * One synthetic walk, measured (QR near-frontal pose plan 2026-09-23-2314,
+ * M0): render each step, decode it with zxing, and score today's raw and
+ * stable poses and the multi-view prototype's variants against the truth.
+ * Test-only. See qr-walk-measurement.ts.md.
+ */
+
+import type { Pose } from '../ar/qr/qr-pose';
+import { intrinsicsFromProjection, solveQrPose } from '../ar/qr/qr-pose';
+import { PlanarPnpSquare } from '../ar/qr/planar-pnp';
+import { evaluateQrPoseStability } from '../ar/qr/qr-pose-aggregation';
+import { perspectiveProjection, renderQrFrame } from './synthetic-qr-frame';
+import { mulberry32 } from './elevation-offset-scenarios';
+import { rotationAngleDeg, zxingDetect } from './qr-zxing-pipeline';
+import {
+  codeInCamera,
+  rayAngleDeg,
+  walkCameraPoses,
+  type WalkOptions,
+} from './synthetic-qr-walk';
+import {
+  realCandidateStarts,
+  solveMultiView,
+  type MultiViewVariant,
+  type ViewObservation,
+} from './qr-multiview-prototype';
+
+/** A launch URL of realistic length (QR version 5-8 at level Q). */
+const PAYLOAD =
+  'https://gps-plus-slam.csutil.workers.dev/tour/?t=S/k7Qm2xPz9LbV4nRw8TcY3hFd6JsA1eGu5oKi0MNq';
+const SIZE_M = 0.16;
+/** The owner's phone, folded (QR summary §4a); fovY is an assumption. */
+const PHONE = { width: 439, height: 1024, fovYDeg: 64 };
+const ALL_VARIANTS: MultiViewVariant[] = [
+  'rotSharedFixedT',
+  'rotSharedFreeT',
+  'shared6',
+];
+
+export interface WalkMeasurementOptions extends WalkOptions {
+  noiseSigma: number;
+  seed: number;
+  blurRadiusPx?: number;
+  capture?: { width: number; height: number; fovYDeg: number };
+  /** Observations per window (the stable pose's default is 8). */
+  window?: number;
+  robustScalePx?: number;
+  variants?: MultiViewVariant[];
+  /**
+   * Per-frame SLAM error on the camera poses the SOLVERS are given (the image
+   * is always rendered from the true pose): Gaussian position noise per axis
+   * (m) and a rotation about a random axis with a Gaussian angle (deg).
+   */
+  slamNoise?: { rotationDeg: number; translationM: number };
+}
+
+/** One decoded step, scored. Errors are absolute rotation errors, degrees. */
+export interface WalkRow {
+  step: number;
+  /** Observations in the window this row was scored on. */
+  window: number;
+  /** This view's angle between the code normal and its ray. */
+  rayDeg: number;
+  /** The largest `rayDeg` in the window: how oblique the window got. */
+  reachedDeg: number;
+  /** Today's per-frame pose; NaN when the solve was rejected. */
+  errRawDeg: number;
+  /** Today's windowed stable pose over the raw poses; NaN before one exists. */
+  errStableDeg: number;
+  errFusedDeg: Partial<Record<MultiViewVariant, number>>;
+}
+
+/** Standard normal sample from a uniform generator (Box-Muller). */
+function gaussian(rand: () => number): number {
+  const u = Math.max(rand(), 1e-12);
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rand());
+}
+
+/** `camera` with SLAM-like noise, or `camera` itself without any. */
+function perturbed(
+  camera: Pose,
+  noise: WalkMeasurementOptions['slamNoise'],
+  rand: () => number
+): Pose {
+  if (!noise) return camera;
+  const t = noise.translationM;
+  const axis = [gaussian(rand), gaussian(rand), gaussian(rand)];
+  const len = Math.hypot(axis[0]!, axis[1]!, axis[2]!) || 1;
+  const half = (gaussian(rand) * noise.rotationDeg * Math.PI) / 360;
+  const s = Math.sin(half) / len;
+  const d = [axis[0]! * s, axis[1]! * s, axis[2]! * s, Math.cos(half)];
+  const q = camera.rotation;
+  return {
+    position: [
+      camera.position[0] + gaussian(rand) * t,
+      camera.position[1] + gaussian(rand) * t,
+      camera.position[2] + gaussian(rand) * t,
+    ],
+    rotation: [
+      q[3] * d[0]! + q[0] * d[3]! + q[1] * d[2]! - q[2] * d[1]!,
+      q[3] * d[1]! - q[0] * d[2]! + q[1] * d[3]! + q[2] * d[0]!,
+      q[3] * d[2]! + q[0] * d[1]! - q[1] * d[0]! + q[2] * d[3]!,
+      q[3] * d[3]! - q[0] * d[0]! - q[1] * d[1]! - q[2] * d[2]!,
+    ],
+  };
+}
+
+/** Keep one start per orientation (within 2 deg): the solve is per start. */
+function distinctStarts(starts: readonly Pose[]): Pose[] {
+  const out: Pose[] = [];
+  for (const s of starts) {
+    if (!out.some((o) => rotationAngleDeg(o.rotation, s.rotation) < 2)) {
+      out.push(s);
+    }
+  }
+  return out;
+}
+
+/** Render, decode and solve one step; null when zxing does not decode it. */
+async function observe(
+  camera: Pose,
+  seenFrom: Pose,
+  o: WalkMeasurementOptions,
+  step: number
+): Promise<{ view: ViewObservation; raw: Pose | null } | null> {
+  const cap = o.capture ?? PHONE;
+  const projection = perspectiveProjection({
+    fovYDeg: cap.fovYDeg,
+    aspect: cap.width / cap.height,
+  });
+  const frame = renderQrFrame({
+    text: PAYLOAD,
+    sizeM: SIZE_M,
+    qrPoseInCamera: codeInCamera(camera, o.codeWorld),
+    projection,
+    width: cap.width,
+    height: cap.height,
+    supersample: 2,
+    blurRadiusPx: o.blurRadiusPx ?? 0,
+    noiseSigma: o.noiseSigma,
+    seed: o.seed * 1000 + step,
+  });
+  const det = await zxingDetect(frame.image);
+  if (!det || det.text !== PAYLOAD) return null;
+  const intrinsics = intrinsicsFromProjection(
+    projection,
+    cap.width,
+    cap.height
+  );
+  // The solvers see the camera pose SLAM would report (`seenFrom`).
+  const view: ViewObservation = {
+    corners: det.corners,
+    cameraWorld: seenFrom,
+    intrinsics,
+  };
+  const raw = solveQrPose({
+    imagePoints: det.corners,
+    sizeM: SIZE_M,
+    intrinsics,
+    cameraPose: seenFrom,
+    solver: new PlanarPnpSquare(),
+  });
+  return { view, raw: raw ? raw.qrPoseWorld : null };
+}
+
+/** Score the window ending at the latest view. */
+function scoreWindow(
+  views: readonly ViewObservation[],
+  trueCameras: readonly Pose[],
+  raws: readonly Pose[],
+  latestRaw: Pose | null,
+  o: WalkMeasurementOptions
+): Omit<WalkRow, 'step'> {
+  const truth = o.codeWorld.rotation;
+  const err = (p: Pose | null | undefined): number =>
+    p ? rotationAngleDeg(p.rotation, truth) : Number.NaN;
+  const stable = raws.length > 0 ? evaluateQrPoseStability(raws).pose : null;
+  const starts = distinctStarts(
+    views.flatMap((v) => realCandidateStarts(v, SIZE_M))
+  );
+  const errFusedDeg: WalkRow['errFusedDeg'] = {};
+  for (const variant of o.variants ?? ALL_VARIANTS) {
+    const fused = solveMultiView(views, starts, {
+      sizeM: SIZE_M,
+      variant,
+      ...(o.robustScalePx === undefined
+        ? {}
+        : { robustScalePx: o.robustScalePx }),
+    });
+    errFusedDeg[variant] = fused
+      ? rotationAngleDeg(fused.rotationWorld, truth)
+      : Number.NaN;
+  }
+  // Binned by the TRUE geometry, whatever pose the solvers were handed.
+  const rays = trueCameras.map((c) => rayAngleDeg(c, o.codeWorld));
+  return {
+    window: views.length,
+    rayDeg: rays[rays.length - 1]!,
+    reachedDeg: Math.max(...rays),
+    errRawDeg: err(latestRaw),
+    errStableDeg: err(stable),
+    errFusedDeg,
+  };
+}
+
+/** Walk, decode every step, and score every method on a sliding window. */
+export async function measureWalk(
+  o: WalkMeasurementOptions
+): Promise<WalkRow[]> {
+  const size = o.window ?? 8;
+  const views: ViewObservation[] = [];
+  const trueCameras: Pose[] = [];
+  const raws: Pose[] = [];
+  const rows: WalkRow[] = [];
+  const cameras = walkCameraPoses(o);
+  const rand = mulberry32(o.seed * 7919 + 17);
+  for (let step = 0; step < cameras.length; step++) {
+    const camera = cameras[step]!;
+    const seenFrom = perturbed(camera, o.slamNoise, rand);
+    const seen = await observe(camera, seenFrom, o, step);
+    if (!seen) continue;
+    views.push(seen.view);
+    trueCameras.push(camera);
+    if (seen.raw) raws.push(seen.raw);
+    rows.push({
+      step,
+      ...scoreWindow(
+        views.slice(-size),
+        trueCameras.slice(-size),
+        raws.slice(-size),
+        seen.raw,
+        o
+      ),
+    });
+  }
+  return rows;
+}

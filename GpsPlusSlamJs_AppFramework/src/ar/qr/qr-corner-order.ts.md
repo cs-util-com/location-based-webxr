@@ -45,20 +45,36 @@ front end), so every app's detections are symbol-ordered.
 - Defensive: non-4 corner lists, tiny images and out-of-image quads return
   the input with `confident: false`; nothing throws.
 
-## Measured (opt-in sweep, `qr-zxing.sweep.test.ts`, 768 synthetic frames)
+## Measured (opt-in sweep, `qr-zxing.sweep.test.ts`)
 
-Corners emulating the phone (true corners nudged by up to 1 px, rounded,
-handed over in image order); two capture geometries (439x1024 at fovY 64,
-1024x768 at 50), distances 0.3-3 m, four tilts, four rolls, blur 0/1, noise
-2/6:
+Corners emulating the phone: the true corners moved by up to 1, 2 or 3 px
+per axis, rounded, handed over in image order; two capture geometries
+(439x1024 at fovY 64, 1024x768 at 50), distances 0.3-3 m, four tilts, four
+rolls, blur 0/1, noise 2 (1 152 frames). Confident share by corner error and
+px/module (blur 0 / 1):
 
-- **Wrong confident answers: 0 in every band.**
-- Confident: 100 % at 2-4 px/module (97 % at 2-3 with blur); 42 % / 16 %
-  below 2 px/module (blur 0 / 1), where decoding mostly fails anyway; 79 % at
-  4-6 and ~64 % at 6+ px/module. Explained (diagnosed 2026-09-24): every
-  unsure near frame (0.3 / 0.6 m) had a corner OUTSIDE the image - a code the
-  detector cannot decode anyway. Every fully visible near frame was
-  confident; across the 2-4 px/module bands, 97-100 %.
+- **1 px:** 2-3 px/mod 100 / 100 %; 3-4: 100 / 100 %.
+- **2 px** (the phone's distance from zxing's corners, QR summary §4b):
+  2-3 px/mod 72 / 72 %; 3-4: 100 / 100 %.
+- **3 px:** 2-3 px/mod 0 / 0 %; 3-4: 33 / 39 %.
+- Below 2 px/module (mostly undecodable): 0-40 %. Near codes (4-6 and 6+
+  px/module): 62-79 % at every error - every unsure near frame had a corner
+  outside the image (diagnosed 2026-09-24), a code the detector cannot decode
+  anyway.
+- **Wrong confident answers: 1 in 1 152** (1 px error, below 2 px/module,
+  blur 0). Rare and at an undecodable size, but not zero.
+- An earlier run with 1 px only reported 0 wrong in 768 frames; the sampling
+  differed, so that "0" was never a guarantee.
+
+**A relaxed rule was tried and reverted (2026-09-24):** judging the ring
+ratios on the inner runs only (tolerating a cut-off outer ring) and allowing
+20 % leading light passed a 3 px-inward unit case but measured WORSE across
+the sweep: 2 px / 2-3 px/mod 63 / 53 %, 3-4 px/mod 89 / 94 %, and two wrong
+confident answers. Robustness to 2-3 px corner error on small codes is open
+(QR near-frontal pose plan, M1c follow-up).
+
+The phone (QR summary §4b run 8): 0 deg 100/100, 180 deg 39/39, 270 deg
+43/48 frames in symbol order - consistent with unsure frames on a small code.
 
 ## Examples
 
@@ -70,7 +86,7 @@ if (out.confident) solveWith(out.corners);
 ## Tests
 
 `qr-corner-order.test.ts`: rolls 0-315 and tilted codes from image-ordered
-integer corners, every cyclic shift of the input, a blank quad (unsure), a
+integer corners, corners 2 px inward or outward on a small code, every cyclic shift of the input, a blank quad (unsure), a
 hand-drawn 1:1:1:1:1 corner (mutation-checked: the core check), corners
 outside the image, and the memory (recent, stale, other code). Four
 mutations of the rule were each caught. Front-end wiring:

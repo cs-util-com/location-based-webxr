@@ -28,6 +28,11 @@ import {
 import { readQrCodes } from '../../test-utils/zxing-node';
 import { canonicalizeCorners } from './qr-corner-order';
 import {
+  measureWalk,
+  type WalkRow,
+} from '../../test-utils/qr-walk-measurement';
+import type { WalkKind } from '../../test-utils/synthetic-qr-walk';
+import {
   measureZxingPipeline,
   type PipelineMeasurement,
 } from '../../test-utils/qr-zxing-pipeline';
@@ -169,6 +174,8 @@ interface CornerOrderCase {
   rollDeg: number;
   blurRadiusPx: number;
   noiseSigma: number;
+  /** Largest corner error per axis, px, before rounding (the phone: ~2). */
+  cornerErrPx: number;
   seed: number;
 }
 
@@ -191,7 +198,11 @@ function cornerOrderCases(): CornerOrderCase[] {
     )
   );
   const imaging = [0, 1].flatMap((blurRadiusPx) =>
-    [2, 6].map((noiseSigma) => ({ blurRadiusPx, noiseSigma }))
+    [1, 2, 3].map((cornerErrPx) => ({
+      blurRadiusPx,
+      noiseSigma: 2,
+      cornerErrPx,
+    }))
   );
   return geometry
     .flatMap((g) => imaging.map((i) => ({ ...g, ...i })))
@@ -230,7 +241,8 @@ function measureCornerOrder(c: CornerOrderCase): {
     noiseSigma: c.noiseSigma,
     seed: c.seed,
   });
-  const nudge = (k: number) => ((c.seed * (k + 3)) % 3) - 1;
+  const span = 2 * c.cornerErrPx + 1;
+  const nudge = (k: number) => ((c.seed * (k + 3) * 7) % span) - c.cornerErrPx;
   const truth = frame.truthCorners.map((p, k) => ({
     x: Math.round(p.x + nudge(k)),
     y: Math.round(p.y + nudge(k + 1)),
@@ -245,10 +257,74 @@ function measureCornerOrder(c: CornerOrderCase): {
     (p, i) => p.x === truth[i]!.x && p.y === truth[i]!.y
   );
   return {
-    key: `${moduleBand(frame.modulePx).padEnd(3)} px/mod blur ${c.blurRadiusPx}`,
+    key: `err ${c.cornerErrPx}px ${moduleBand(frame.modulePx).padEnd(3)} px/mod blur ${c.blurRadiusPx}`,
     confident: out.confident,
     correct,
   };
+}
+
+const WALL_CODE = {
+  position: [0, 1.5, 0] as [number, number, number],
+  rotation: [0, 0, 0, 1] as [number, number, number, number],
+};
+
+/** The fixed walk set of the plan's done bar, at three distances, two seeds. */
+function walkCases() {
+  const shapes: { kind: WalkKind; extent: number }[] = [
+    { kind: 'sidestep', extent: 0.3 },
+    { kind: 'sidestep', extent: 0.6 },
+    { kind: 'arc', extent: 20 },
+    { kind: 'arc', extent: 40 },
+    { kind: 'approach', extent: 1 },
+    { kind: 'still', extent: 0 },
+  ];
+  return shapes.flatMap((s) =>
+    [1, 1.5, 2].flatMap((distanceM) =>
+      [1, 2].map((seed) => ({
+        ...s,
+        codeWorld: WALL_CODE,
+        distanceM,
+        steps: 12,
+        noiseSigma: 2,
+        seed,
+      }))
+    )
+  );
+}
+
+function stats(xs: number[]): string {
+  const v = xs.filter(Number.isFinite).sort((a, b) => a - b);
+  if (v.length === 0) return '-';
+  const at = (p: number) =>
+    v[Math.min(v.length - 1, Math.floor(p * v.length))]!;
+  return `${at(0.5).toFixed(1)}/${at(0.95).toFixed(1)}/${v[v.length - 1]!.toFixed(1)}`;
+}
+
+/** p50/p95/max per method, binned by the obliqueness the window reached (>= 5 obs). */
+function walkReport(rows: readonly WalkRow[]): string[] {
+  const bands = [0, 5, 10, 15, 20, 90];
+  const lines = [
+    'reached deg | n | raw | stable | fixedT | freeT | shared6 (p50/p95/max deg)',
+  ];
+  for (let i = 0; i < bands.length - 1; i++) {
+    const [lo, hi] = [bands[i]!, bands[i + 1]!];
+    const r = rows.filter(
+      (x) => x.window >= 5 && x.reachedDeg >= lo && x.reachedDeg < hi
+    );
+    if (r.length === 0) continue;
+    lines.push(
+      [
+        `${lo}-${hi}`.padEnd(11),
+        String(r.length).padStart(3),
+        stats(r.map((x) => x.errRawDeg)),
+        stats(r.map((x) => x.errStableDeg)),
+        stats(r.map((x) => x.errFusedDeg.rotSharedFixedT ?? Number.NaN)),
+        stats(r.map((x) => x.errFusedDeg.rotSharedFreeT ?? Number.NaN)),
+        stats(r.map((x) => x.errFusedDeg.shared6 ?? Number.NaN)),
+      ].join(' | ')
+    );
+  }
+  return lines;
 }
 
 describe.runIf(RUN)('QR zxing sweep (opt-in, QR_SWEEP=1)', () => {
@@ -415,10 +491,48 @@ describe.runIf(RUN)('QR zxing sweep (opt-in, QR_SWEEP=1)', () => {
             `${k} | n ${String(b.n).padStart(3)} | confident ${pct(b.confident, b.n).padStart(4)} | WRONG confident ${b.wrong}`
         );
       console.log(
-        `\nCORNER ORDER (finder patterns; noise 2/6, rolls 0/37/180/270, 4 tilts)\n${lines.join('\n')}`
+        `\nCORNER ORDER (finder patterns; noise 2, corner error 1/2/3 px, rolls 0/37/180/270, 4 tilts)\n${lines.join('\n')}`
       );
       expect(bins.size).toBeGreaterThan(0);
     },
     SWEEP_TIMEOUT_MS
+  );
+
+  it(
+    'walks: today vs the multi-view prototype (plan 2026-09-23-2314, M0)',
+    async () => {
+      // SLAM error on the poses the solvers see: none, then two levels (the
+      // variant ranking hinges on it, plan §8).
+      const levels = [
+        undefined,
+        { rotationDeg: 0.2, translationM: 0.005 },
+        { rotationDeg: 0.5, translationM: 0.01 },
+      ];
+      const reports: string[] = [];
+      let total = 0;
+      for (const slamNoise of levels) {
+        const rows: WalkRow[] = [];
+        for (const w of walkCases()) {
+          rows.push(
+            ...(await measureWalk({
+              ...w,
+              ...(slamNoise ? { slamNoise } : {}),
+            }))
+          );
+        }
+        total += rows.length;
+        reports.push(
+          slamNoise
+            ? `SLAM noise ${slamNoise.rotationDeg} deg / ${slamNoise.translationM * 1000} mm`
+            : 'exact SLAM',
+          ...walkReport(rows)
+        );
+      }
+      console.log(
+        `\nWALKS (phone 439x1024, wall code 16 cm)\n${reports.join('\n')}`
+      );
+      expect(total).toBeGreaterThan(0);
+    },
+    4 * SWEEP_TIMEOUT_MS // three SLAM-noise levels over the whole walk set
   );
 });

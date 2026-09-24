@@ -106,6 +106,37 @@ describe('canonicalizeCorners', () => {
     expectSameCorners(out.corners, rounded(f.truthCorners));
   });
 
+  // Why this test matters: the phone's corners sit ~2 px from zxing's (QR
+  // summary §4b runs 4-8). The rule copes with 2 px either way on a small
+  // code; the opt-in sweep maps where it stops (3 px on codes under 4 px per
+  // module), and a relaxed rule that passed a 3 px case measured WORSE across
+  // the sweep (fewer confident, two wrong-confident), so it was reverted.
+  it.each([
+    { shiftPx: 2, rollDeg: 270 },
+    { shiftPx: -2, rollDeg: 270 },
+    { shiftPx: 2, rollDeg: 90 },
+    { shiftPx: -2, rollDeg: 180 },
+  ])(
+    'tolerates corners $shiftPx px off (+ = inward) on a small code (roll $rollDeg)',
+    ({ shiftPx, rollDeg }) => {
+      const f = frame({ rollDeg, distanceM: 1.1 });
+      expect(f.modulePx).toBeLessThan(4.5);
+      const truth = rounded(f.truthCorners);
+      const cx = truth.reduce((sum, q) => sum + q.x, 0) / 4;
+      const cy = truth.reduce((sum, q) => sum + q.y, 0) / 4;
+      const moved = truth.map((q) => {
+        const d = Math.hypot(cx - q.x, cy - q.y);
+        return {
+          x: Math.round(q.x + ((cx - q.x) / d) * shiftPx),
+          y: Math.round(q.y + ((cy - q.y) / d) * shiftPx),
+        };
+      }) as Quad;
+      const out = canonicalizeCorners(f.image, imageOrder(moved));
+      expect(out.confident).toBe(true);
+      expectSameCorners(out.corners, moved);
+    }
+  );
+
   // Why this test matters: the answer must depend on the image, never on the
   // order the detector happened to report.
   it('gives the same order for every cyclic shift of the input', () => {
