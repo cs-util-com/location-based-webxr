@@ -90,6 +90,32 @@ describe("HotkeyRegistry", () => {
     registry.dispose();
   });
 
+  // A slider or a checkbox is an INPUT but takes no text: after dragging the
+  // sun's time slider or ticking a layer, "t" must still step the sun
+  // (plan 2026-09-24-0706; the date field's focus trap, M2 review finding
+  // 4, would otherwise come back for every non-text control).
+  it("still works after a slider or a checkbox took focus", () => {
+    const registry = new HotkeyRegistry(document);
+    const handler = vi.fn();
+    registry.add({ key: "t", description: "step time", handler });
+    for (const type of ["range", "checkbox"]) {
+      const input = document.createElement("input");
+      input.type = type;
+      document.body.appendChild(input);
+      press("t", input);
+      input.remove();
+    }
+    expect(handler).toHaveBeenCalledTimes(2);
+    // A date field does take typed text: still ignored.
+    const date = document.createElement("input");
+    date.type = "date";
+    document.body.appendChild(date);
+    press("t", date);
+    date.remove();
+    expect(handler).toHaveBeenCalledTimes(2);
+    registry.dispose();
+  });
+
   it("does nothing in a textarea or a select either", () => {
     const registry = new HotkeyRegistry(document);
     const handler = vi.fn();

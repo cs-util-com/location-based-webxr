@@ -18,6 +18,7 @@ import { describe, expect, it } from "vitest";
 import {
   AtmosphereRig,
   NATURAL_LIGHT_COMPENSATION_EV,
+  CLOUD_COVER,
   TONE_MAPPING,
   TONE_MAPPING_EXPOSURE,
   type SkyLike,
@@ -45,10 +46,14 @@ class StubSky {
     atmSkyViewLut: { value: new THREE.Texture() },
   };
 
+  cloudCover: number | undefined = undefined;
+
   configure(change: {
     sunDirection?: { x: number; y: number; z: number };
+    cloudCover?: number;
   }): void {
     this.calls.push("configure");
+    if (change.cloudCover !== undefined) this.cloudCover = change.cloudCover;
     if (change.sunDirection) {
       this.sun
         .set(
@@ -147,6 +152,15 @@ describe("AtmosphereRig with the physical sky", () => {
     expect(
       2 ** NATURAL_LIGHT_COMPENSATION_EV * TONE_MAPPING_EXPOSURE,
     ).toBeLessThan(1);
+  });
+
+  // The owner's first look at the r718 preview: the physical sky without
+  // its clouds read as "the old sky" (plan 2026-09-24-0706). The rig turns
+  // the look-dev page's cloud layer on.
+  it("turns the sky's clouds on", () => {
+    const { sky } = rig();
+    expect(sky.cloudCover).toBe(CLOUD_COVER);
+    expect(CLOUD_COVER).toBeGreaterThan(0);
   });
 
   // The haze reads the sky's state through its OWN uniforms (it copies them

@@ -23,15 +23,19 @@ import { describe, expect, it } from "vitest";
 import {
   SUN_CLOCK,
   bootInstant,
+  daySpan,
   formatSunReadout,
   instantAt,
+  instantToSlider,
   moveToDate,
   parseSolarTime,
   parseSunDate,
   relocate,
+  sliderToInstant,
   stepSun,
   stopsFor,
   sunDateOf,
+  viewerToday,
   type SunPlace,
 } from "./sun-clock.js";
 
@@ -58,19 +62,29 @@ const azimuth = (ms: number, place: SunPlace) =>
   solarPosition(ms, place.lat, place.lng).azimuthRad * DEG;
 
 describe("booting", () => {
-  // DEC-SUN-4: the evening golden hour (3.5°, west of south). The e2e suite
-  // pins Sep 23 because its boot sun (~3.5° / 265°) reproduces the old
-  // plausible-day default (3.4° / 266°), so every measured threshold holds.
-  it("boots at the evening golden hour", () => {
+  // DEC-SUN-13 (the owner, 2026-09-24): the AFTERNOON sun at 20°, "a bit
+  // higher, even in winter"; it replaced the 3.5° evening golden hour
+  // (DEC-SUN-4), which opened the scene nearly dark. 15:47 solar time at the
+  // fixture on 23 Sep, azimuth ~243°.
+  it("boots at the afternoon sun at 20°", () => {
+    expect(SUN_CLOCK.bootElevationDeg).toBe(20);
     const t = bootInstant(SEP_23, COLOGNE);
-    expect(elevation(t, COLOGNE)).toBeCloseTo(SUN_CLOCK.bootElevationDeg, 3);
-    expect(azimuth(t, COLOGNE)).toBeGreaterThan(260);
-    expect(azimuth(t, COLOGNE)).toBeLessThan(270);
+    expect(elevation(t, COLOGNE)).toBeCloseTo(20, 3);
+    expect(t).toBeGreaterThan(solarNoon(SEP_23, COLOGNE.lng));
+    expect(azimuth(t, COLOGNE)).toBeGreaterThan(235);
+    expect(azimuth(t, COLOGNE)).toBeLessThan(250);
+  });
+
+  // In a winter whose sun never reaches 20° the boot is its noon (Cologne,
+  // 21 Dec: 15.6°), not a golden hour.
+  it("boots at noon where the sun never reaches 20°", () => {
+    const dec = { year: 2026, month: 12, day: 21 };
+    expect(bootInstant(dec, COLOGNE)).toBe(solarNoon(dec, COLOGNE.lng));
   });
 
   // DEC-SUN-6, a day whose sun never reaches 3.5° but has twilight: the
   // highest sun of the day (plan §7, finding 3).
-  it("boots at noon where the sun never reaches the golden-hour height", () => {
+  it("boots at noon where the sun never reaches the boot height (Lapland, December)", () => {
     const date = { year: 2026, month: 12, day: 21 };
     const t = bootInstant(date, LAPLAND);
     expect(Math.abs(t - solarNoon(date, LAPLAND.lng))).toBeLessThan(60_000);
@@ -87,14 +101,70 @@ describe("booting", () => {
     expect(sunDateOf(t, SVALBARD)).not.toEqual(date);
   });
 
-  // Midnight sun: it never drops to 3.5°, so there is no golden hour; the
-  // lowest sun of the day stands in for it.
-  it("boots at the lowest sun under the midnight sun", () => {
+  // A sun that never drops to the boot height (20°): near the pole in June
+  // (89° N: 22.4° to 24.4° all day), the lowest sun of the day stands in.
+  it("boots at the lowest sun when it never drops to the boot height", () => {
+    const pole = { lat: 89, lng: 0 };
     const date = { year: 2026, month: 6, day: 21 };
-    const t = bootInstant(date, SVALBARD);
-    const stops = stopsFor(date, SVALBARD);
-    const lowest = Math.min(...stops.map((s) => elevation(s, SVALBARD)));
-    expect(elevation(t, SVALBARD)).toBeCloseTo(lowest, 1);
+    const t = bootInstant(date, pole);
+    const stops = stopsFor(date, pole);
+    const lowest = Math.min(...stops.map((s) => elevation(s, pole)));
+    expect(elevation(t, pole)).toBeCloseTo(lowest, 1);
+  });
+});
+
+describe("today and the time slider", () => {
+  // DEC-SUN-14: "today" is the VIEWER's calendar date. The first rule
+  // ("today at the map's place") showed 23 Sep in New York at 02:00 on the
+  // 24th in Germany: correct by the rule, a bug to the owner.
+  it("takes today from the viewer's own calendar", () => {
+    expect(viewerToday(new Date(2026, 8, 24, 2, 0))).toEqual({
+      year: 2026,
+      month: 9,
+      day: 24,
+    });
+    expect(viewerToday(new Date(2026, 11, 31, 23, 59))).toEqual({
+      year: 2026,
+      month: 12,
+      day: 31,
+    });
+  });
+
+  // DEC-SUN-15: the slider runs from civil dawn to civil dusk of the date,
+  // linear in time; the night is not on it.
+  it("spans civil dawn to civil dusk on an ordinary day", () => {
+    const span = daySpan(SEP_23, COLOGNE)!;
+    expect(elevation(span.startMs, COLOGNE)).toBeCloseTo(-6, 3);
+    expect(elevation(span.endMs, COLOGNE)).toBeCloseTo(-6, 3);
+    expect(sliderToInstant(0, SEP_23, COLOGNE)).toBe(span.startMs);
+    expect(sliderToInstant(1, SEP_23, COLOGNE)).toBe(span.endMs);
+    expect(sliderToInstant(0.5, SEP_23, COLOGNE)).toBeCloseTo(
+      (span.startMs + span.endMs) / 2,
+      0,
+    );
+  });
+
+  // Under a midnight sun there is no dusk: the slider spans the whole day.
+  it("spans the whole day under a midnight sun, and nothing in polar night", () => {
+    const june = { year: 2026, month: 6, day: 21 };
+    const span = daySpan(june, SVALBARD)!;
+    expect(span.endMs - span.startMs).toBeGreaterThan(23 * 3_600_000);
+    expect(daySpan({ year: 2026, month: 12, day: 21 }, SVALBARD)).toBeNull();
+  });
+
+  // Position → instant → position is the identity, and positions outside
+  // [0, 1] are clamped rather than leaving the day.
+  it("round-trips a slider position and clamps it", () => {
+    for (const p of [0, 0.1, 0.37, 0.5, 0.99, 1]) {
+      const t = sliderToInstant(p, SEP_23, COLOGNE);
+      expect(instantToSlider(t, COLOGNE)).toBeCloseTo(p, 9);
+    }
+    const span = daySpan(SEP_23, COLOGNE)!;
+    expect(sliderToInstant(-0.2, SEP_23, COLOGNE)).toBe(span.startMs);
+    expect(sliderToInstant(7, SEP_23, COLOGNE)).toBe(span.endMs);
+    expect(() => sliderToInstant(Number.NaN, SEP_23, COLOGNE)).toThrow(
+      RangeError,
+    );
   });
 });
 
@@ -282,11 +352,11 @@ describe("stepping", () => {
 describe("changing the date or the place keeps the phase", () => {
   // The same elevation on the same limb (plan §7, finding 3): golden hour
   // stays golden hour, a day later or across the world.
-  it("keeps the golden hour on the next day", () => {
+  it("keeps the boot phase on the next day", () => {
     const t = bootInstant(SEP_23, COLOGNE);
     const next = moveToDate(t, COLOGNE, { year: 2026, month: 9, day: 24 });
     expect(sunDateOf(next, COLOGNE)).toEqual({ year: 2026, month: 9, day: 24 });
-    expect(elevation(next, COLOGNE)).toBeCloseTo(3.5, 2);
+    expect(elevation(next, COLOGNE)).toBeCloseTo(SUN_CLOCK.bootElevationDeg, 2);
     expect(azimuth(next, COLOGNE)).toBeGreaterThan(180);
   });
 
@@ -324,10 +394,10 @@ describe("changing the date or the place keeps the phase", () => {
     );
   });
 
-  it("keeps the golden hour across a relocation", () => {
+  it("keeps the boot phase across a relocation", () => {
     const t = bootInstant(SEP_23, COLOGNE);
     const moved = relocate(t, COLOGNE, TOKYO);
-    expect(elevation(moved, TOKYO)).toBeCloseTo(3.5, 2);
+    expect(elevation(moved, TOKYO)).toBeCloseTo(SUN_CLOCK.bootElevationDeg, 2);
     expect(azimuth(moved, TOKYO)).toBeGreaterThan(180);
   });
 });
@@ -377,8 +447,8 @@ describe("parsing and the readout", () => {
   });
 
   // DEC-SUN-8: labelled local apparent solar time, never the wall clock.
-  it("reads the golden hour as apparent solar time with its date", () => {
+  it("reads the boot as apparent solar time, without the date", () => {
     const text = formatSunReadout(bootInstant(SEP_23, COLOGNE), COLOGNE);
-    expect(text).toMatch(/^17:\d\d solar time, 23 Sep$/);
+    expect(text).toMatch(/^15:47 solar time$/);
   });
 });

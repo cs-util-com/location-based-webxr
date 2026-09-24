@@ -61,15 +61,20 @@ None. Entry point only, loaded by `index.html`.
 - **The REAL SUN is booted and stepped here** (plan 2026-09-23-2149, M2).
   The sun clock (`sun-clock.ts`) starts from the start position, before the
   view exists (`BuildingView`'s `initialSun`, so the sky is built once):
-  today at that place, or the read-only `?date=` / `?time=` test pins, never
-  written back (DEC-R12-5). Keys: t/T step the day's stops. The `#sun-date`
+  the viewer's today (DEC-SUN-14) at the 20° afternoon sun (DEC-SUN-13), or
+  the read-only `?date=` / `?time=` test pins, never written back
+  (DEC-R12-5). The controls are the `#sun-group` header block (plan
+  2026-09-24-0706): it collapses with the header like WORLD and DEBUG, and
+  holds the date, the `#sun-time` slider (civil dawn to civil dusk, linear
+  in time, 0…1000, DEC-SUN-15) and the readout. Keys: t/T step the day's
+  stops. The `#sun-date`
   input picks any date keeping the phase; its own ↑/↓ step a day or a month,
   so it keeps focus while edited and hands it back on Enter or Escape (the
   hotkeys ignore keys typed into inputs). No day or month KEYS: four more
   rows in the shortcut list covered the map's own controls at phone width
   (`map-and-cells.spec.js`). `#sun-readout` shows
-  labelled APPARENT SOLAR time. A re-anchor relocates the sun keeping its
-  phase (golden hour stays golden hour).
+  labelled APPARENT SOLAR time, without the date. A re-anchor relocates the
+  sun keeping its phase.
 - **A RE-ANCHOR clears the route; an ordinary publish does not.** Every point on
   the drawn polyline is expressed in the scene's ENU frame, and round 5B's whole
   guarantee is that an ordinary step leaves that frame alone. So the route

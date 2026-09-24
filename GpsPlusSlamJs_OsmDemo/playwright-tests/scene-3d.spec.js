@@ -744,8 +744,15 @@ test.describe("the 3D view", () => {
   }) => {
     // THREE BEHAVIOURS ON ONE BOOT, with the camera drag last: it is the only
     // one of the three that leaves the view somewhere else.
+    //
+    // AT THE GOLDEN HOUR THE SKY ASSERTION WAS CALIBRATED AT, pinned by
+    // `?time=` since the boot moved to the 20° afternoon (plan 2026-09-24-0706,
+    // DEC-SUN-13). Measured there at the top-left sample: 63,57,50, a pale
+    // hazy sky with a spread of 13, the same with or without clouds; the
+    // golden hour's warm sky is what the "chromatic, not a grey wash" claim
+    // below was calibrated against, so it keeps its threshold there.
     await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
+    await page.goto(`${AT_FIXTURE}&time=17:36`);
     await waitForRefresh(page);
 
     await test.step("a building stays unpickable, which W12 must not have undone", async () => {
@@ -1492,22 +1499,20 @@ test.describe("the time of day", () => {
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
-    // The boot readout: the golden hour of the pinned date, in labelled
-    // apparent solar time (DEC-SUN-8).
-    await expect(page.locator("#sun-readout")).toHaveText(
-      /^17:3\d solar time, 23 Sep$/,
-    );
+    // The boot readout: the afternoon sun at 20° of the pinned date
+    // (DEC-SUN-13), in labelled apparent solar time without the date the
+    // field shows (DEC-SUN-8; plan 2026-09-24-0706).
+    await expect(page.locator("#sun-readout")).toHaveText("15:47 solar time");
     await expect(page.locator("#sun-date")).toHaveValue("2026-09-23");
     // THE EXACT TEXT, kept for the return trip (M2 review finding 5): the
     // regex alone cannot tell the golden hour from the stop half a degree
     // away, both read 17:3x.
     const bootReadout = await page.locator("#sun-readout").textContent();
 
-    await test.step("four presses take the golden hour past sunset, and repaint", async () => {
-      // FOUR, because the steps are FINE near the horizon (1.5° of sun, plan
-      // 2026-09-23-2149 DEC-SUN-7): 3.5° → 3° → 1.5° → 0° → −1.5°, a set sun.
-      // One press moves the sun half a degree, which is the design, and too
-      // small to be sure of a repaint count.
+    await test.step("four presses take the afternoon sun toward the evening, and repaint", async () => {
+      // FOUR: from the 20° boot, two 30-min clock stops (above 12°) and two
+      // fine 1.5° stops near the horizon (DEC-SUN-7) take the sun to ~10°,
+      // a clearly different picture.
       await installFrameProbe(page);
       await stashStableFrame(page);
       // Focus the body rather than a field: the registry deliberately ignores
@@ -1534,13 +1539,32 @@ test.describe("the time of day", () => {
       // and must then give it back, or "t" would be swallowed as typing.
       const input = page.locator("#sun-date");
       await input.fill("2026-12-21");
-      await expect(page.locator("#sun-readout")).toHaveText(/ 21 Dec$/);
+      await expect(input).toHaveValue("2026-12-21");
+      // The boot's phase (20° in the afternoon) does not exist on 21 Dec at
+      // the fixture (15.6° at noon), so the sun lands on that day's noon.
+      await expect(page.locator("#sun-readout")).toHaveText("12:00 solar time");
       await expect(input).toBeFocused();
       await input.press("Enter");
       await expect(input).not.toBeFocused();
       const before = await page.locator("#sun-readout").textContent();
       await page.keyboard.press("t");
       await expect(page.locator("#sun-readout")).not.toHaveText(before ?? "");
+    });
+
+    await test.step("the time slider moves the sun, and the keys still work after it", async () => {
+      // DEC-SUN-15 (plan 2026-09-24-0706): a dawn-to-dusk slider. A range
+      // input takes no typed text, so "t" must still step the sun while it
+      // has focus (the hotkey registry exempts non-text inputs).
+      const slider = page.locator("#sun-time");
+      const readout = page.locator("#sun-readout");
+      const before = await readout.textContent();
+      await slider.fill("150");
+      await expect(readout).not.toHaveText(before ?? "");
+      const afterSlider = await readout.textContent();
+      await slider.focus();
+      await page.keyboard.press("t");
+      await expect(readout).not.toHaveText(afterSlider ?? "");
+      await expect(slider).not.toHaveValue("150");
     });
 
     await test.step("the shortcut list is discoverable and matches the bindings", async () => {
@@ -1592,7 +1616,7 @@ test.describe("the time of day", () => {
    */
   const SUN_POINTS = [
     // [label, date, apparent solar time, lit-surface luma under ACES −2 EV]
-    ["the boot golden hour (3.5°)", "2026-09-23", null, 42.6],
+    ["the golden hour (3.6°)", "2026-09-23", "17:36", 42.6],
     ["a 3.6° morning", "2026-09-23", "06:23", 33.6],
     ["a 24° morning", "2026-09-23", "08:41", 96.8],
     ["the September noon (38.9°)", "2026-09-23", "12:00", 75.1],

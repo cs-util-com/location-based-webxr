@@ -107,6 +107,15 @@ const SUN_INTENSITY = 1.1;
  */
 const VISIBILITY_KM = 45;
 
+/**
+ * The sky's cloud cover, 0…1 (the share of the sky clouded): the look-dev
+ * page's golden-hour preset. OsmDemo adopted the physical sky without its
+ * clouds (cover 0) until the owner's first look at the r718 preview asked
+ * for them (plan 2026-09-24-0706). DEC-R4-5's margin and the lit-city floor
+ * are measured with them on.
+ */
+export const CLOUD_COVER = 0.25;
+
 /** What the rig uses of `SkyAtmosphere` (the seam its tests stub). */
 export type SkyLike = Pick<
   SkyAtmosphere,
@@ -177,6 +186,7 @@ export class AtmosphereRig {
       if (!(error instanceof SkyAtmosphereUnsupportedError)) throw error;
     }
     this.sky = sky;
+    sky?.configure({ cloudCover: CLOUD_COVER });
     if (sky === undefined) {
       this.fallback = this.buildFallback();
       this.unsubscribeRestore = () => {};

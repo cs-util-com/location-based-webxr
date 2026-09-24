@@ -67,6 +67,12 @@ colour that matched the sky at one time of day.
   photographic backdrop out-shouts the data. Brighter emissive cells made it
   worse (they wash out in ACES's shoulder), and matte cells changed nothing.
   The exact EV is the owner's taste call within what the bound allows.
+- **Clouds at `CLOUD_COVER` 0.25** (the look-dev golden preset), turned on
+  after the owner's first look at the r718 preview read the cloudless sky as
+  "the old sky" (plan 2026-09-24-0706). Measured with them on, the lit city
+  at a low sun sits close to its e2e floor: 17.6 against 16.8 at the 3.6°
+  morning, 24.0 against 21.3 at the golden hour (without clouds 23.3 and
+  32.0); the heat-grid margin at the June noon is 5.49 (bound 5).
 - **Visibility 45 km** (the middle of the look-dev presets): ~80 % of the
   light survives to the 2400 m far plane. A taste value.
 - **Sun intensity 1.1** at the model's reference elevation: the demo's old

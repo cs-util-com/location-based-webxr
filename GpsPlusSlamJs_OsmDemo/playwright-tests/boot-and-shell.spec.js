@@ -938,9 +938,13 @@ test.describe("the header", () => {
       // was its only visible child once DEC-U7 hid the ramp and the numbers.
       // The expanded legend is untouched — see the dedicated step for it.
       await expect(page.locator("#legend")).toBeHidden();
+      // The sun controls collapse with the header like WORLD and DEBUG (the
+      // owner, 2026-09-24: the sun is not important enough to stay).
+      await expect(page.locator("#sun-group")).toBeHidden();
 
       await page.locator("#header-toggle").click();
       await expect(header).toHaveAttribute("data-collapsed", "false");
+      await expect(page.locator("#sun-group")).toBeVisible();
     });
 
     await test.step("STAYS collapsed when an error occurs, and toasts it instead", async () => {

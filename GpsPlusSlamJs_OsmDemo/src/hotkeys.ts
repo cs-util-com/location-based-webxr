@@ -41,9 +41,27 @@ export interface Hotkey {
  */
 const TYPING_TAGS = new Set(["INPUT", "TEXTAREA", "SELECT"]);
 
+/**
+ * `<input>` types that take no typed text, so a key pressed on them is a
+ * shortcut. Without this, dragging the sun's time slider or ticking a layer
+ * swallowed "t" until the user clicked elsewhere (plan 2026-09-24-0706).
+ */
+const NON_TEXT_INPUTS = new Set([
+  "range",
+  "checkbox",
+  "radio",
+  "button",
+  "submit",
+  "reset",
+  "color",
+]);
+
 /** Whether a key event came from somewhere the user is entering text. */
 function isTyping(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
+  if (target instanceof HTMLInputElement && NON_TEXT_INPUTS.has(target.type)) {
+    return false;
+  }
   if (TYPING_TAGS.has(target.tagName)) return true;
   // `contenteditable` is not a tag, and the demo's panels could gain one.
   return target.isContentEditable;

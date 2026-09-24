@@ -985,7 +985,8 @@
       header[data-collapsed="true"] #status,
       header[data-collapsed="true"] #ground-mode-label,
       header[data-collapsed="true"] #layer-group-world,
-      header[data-collapsed="true"] #layer-group-diagnostics {
+      header[data-collapsed="true"] #layer-group-diagnostics,
+      header[data-collapsed="true"] #sun-group {
         display: none;
       }
 
@@ -1596,15 +1597,26 @@
         />
         <span id="render-distance-value">draw 2400 m</span>
       </label>
-      <!-- THE REAL SUN (plan 2026-09-23-2149, M2; DEC-SUN-3/8): the date the sun
-           is computed for (today at the map's place by default) and a labelled
-           APPARENT SOLAR time, never the wall clock. t/T step the time; the
-           input's own ↑/↓ step a day or a month. -->
-      <label class="layer-toggle" id="sun-date-label">
-        sun
+      <!-- THE REAL SUN (plan 2026-09-23-2149; its UI round plan 2026-09-24-0706,
+           DEC-SUN-14/15): a header block like CATEGORY / WORLD / DEBUG, so it
+           has their dark background and collapses with the header. The date
+           (the viewer's today by default), a time slider from civil dawn to
+           civil dusk, and a labelled APPARENT SOLAR time without the date the
+           field already shows. t/T step the time; the date field's own ↑/↓
+           step a day or a month. -->
+      <div class="layer-group" id="sun-group">
+        <span class="layer-group-label">Sun</span>
         <input type="date" id="sun-date" aria-label="Sun date" />
+        <input
+          type="range"
+          id="sun-time"
+          min="0"
+          max="1000"
+          step="1"
+          aria-label="Sun time of day, dawn to dusk"
+        />
         <span id="sun-readout"></span>
-      </label>
+      </div>
       <!-- THE READOUT BLOCK (J2, DEC-J5). "Der zusätzliche Debug-Text und die
            Farbskala ... die können ja auch dann zusammen in einen Block, weil
            die haben ja noch keinen."

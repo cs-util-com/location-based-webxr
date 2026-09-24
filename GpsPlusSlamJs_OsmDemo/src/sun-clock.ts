@@ -34,8 +34,12 @@ import {
 export const SUN_CLOCK = {
   /** DEC-SUN-1: civil twilight; the physical sky renders reliably to here. */
   minElevationDeg: -6,
-  /** DEC-SUN-4: the evening golden hour the demo boots at. */
-  bootElevationDeg: 3.5,
+  /**
+   * DEC-SUN-13: the demo boots at the AFTERNOON sun at this elevation
+   * (noon where the day never reaches it); it replaced DEC-SUN-4's 3.5°
+   * evening golden hour, which opened the scene nearly dark.
+   */
+  bootElevationDeg: 20,
   /** DEC-SUN-7: the elevation step near the horizon... */
   fineStepDeg: 1.5,
   /** ...below this elevation; above it the clock grid takes over. */
@@ -126,7 +130,7 @@ export function stopsFor(date: SolarDate, place: SunPlace): number[] {
     const last = stops[stops.length - 1];
     if (last === undefined || t - last >= SUN_CLOCK.mergeMs) stops.push(t);
   }
-  // The golden hour is always a stop in its own right (the boot lands on
+  // The boot moment is always a stop in its own right (the boot lands on
   // it): if merging dropped it for a neighbour, restore the exact instant.
   const golden = timeAtElevation(
     date,
@@ -307,22 +311,10 @@ export function instantAt(
   return instantAtApparentSolarTime(date, place.lng, hours);
 }
 
-const MONTHS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
-
-/** "17:36 solar time, 23 Sep" (DEC-SUN-8: labelled, never the wall clock). */
+/**
+ * "15:47 solar time" (DEC-SUN-8: labelled, never the wall clock). No date:
+ * the date field beside it shows the date (the owner, 2026-09-24).
+ */
 export function formatSunReadout(ms: number, place: SunPlace): string {
   // The epsilon (M2 review finding 6): an instant booted at HH:MM reads
   // back a hair below the minute in floating point, and a plain floor
@@ -331,6 +323,58 @@ export function formatSunReadout(ms: number, place: SunPlace): string {
   const total = Math.floor(minutes + 1e-6) % (24 * 60);
   const hh = String(Math.floor(total / 60)).padStart(2, "0");
   const mm = String(total % 60).padStart(2, "0");
-  const date = sunDateOf(ms, place);
-  return `${hh}:${mm} solar time, ${date.day} ${MONTHS[date.month - 1]}`;
+  return `${hh}:${mm} solar time`;
+}
+
+/**
+ * Today on the VIEWER's own calendar (DEC-SUN-14): the device's local date.
+ * The sun is still computed for the map's place; only "which day" follows
+ * the viewer, because "today at the map's place" read as a bug from another
+ * time zone (New York on the evening of the 23rd, seen at 02:00 on the 24th).
+ */
+export function viewerToday(now: Date): SolarDate {
+  return {
+    year: now.getFullYear(),
+    month: now.getMonth() + 1,
+    day: now.getDate(),
+  };
+}
+
+/**
+ * The span the time slider covers on a date (DEC-SUN-15): civil dawn to
+ * civil dusk, i.e. the day's first to last stop; the whole showable day
+ * under a midnight sun; `null` in polar night (the clock never lands there).
+ */
+export function daySpan(
+  date: SolarDate,
+  place: SunPlace,
+): { readonly startMs: number; readonly endMs: number } | null {
+  const stops = stopsFor(date, place);
+  if (stops.length === 0) return null;
+  return { startMs: stops[0]!, endMs: stops[stops.length - 1]! };
+}
+
+/** The instant at a slider position in [0, 1] (clamped), linear in time. */
+export function sliderToInstant(
+  fraction: number,
+  date: SolarDate,
+  place: SunPlace,
+): number {
+  if (!Number.isFinite(fraction)) {
+    throw new RangeError(`slider position must be finite, got ${fraction}`);
+  }
+  const span = daySpan(date, place);
+  if (span === null) return bootInstant(date, place);
+  const p = Math.min(1, Math.max(0, fraction));
+  return span.startMs + p * (span.endMs - span.startMs);
+}
+
+/** The slider position of an instant within its own date's span, [0, 1]. */
+export function instantToSlider(ms: number, place: SunPlace): number {
+  const span = daySpan(sunDateOf(ms, place), place);
+  if (span === null || span.endMs === span.startMs) return 0;
+  return Math.min(
+    1,
+    Math.max(0, (ms - span.startMs) / (span.endMs - span.startMs)),
+  );
 }

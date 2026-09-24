@@ -178,6 +178,9 @@ import {
   bootInstant,
   formatSunReadout,
   instantAt,
+  instantToSlider,
+  sliderToInstant,
+  viewerToday,
   moveToDate,
   parseSolarTime,
   parseSunDate,
@@ -317,15 +320,16 @@ async function main(): Promise<void> {
   const start = parseStartPosition(window.location.search);
 
   // THE REAL SUN (plan 2026-09-23-2149, M2; DEC-SUN-2..8). The sun is where
-  // it really is for the map's place and a date: today at that place by
-  // default, booting at its evening golden hour. `?date=` and `?time=`
+  // it really is for the map's place and a date: the VIEWER's today by
+  // default (DEC-SUN-14), booting at the afternoon sun at 20° (DEC-SUN-13;
+  // plan 2026-09-24-0706). `?date=` and `?time=`
   // (apparent solar HH:MM) are READ-ONLY test pins, never written back, so
   // DEC-R12-5 (no presentation state in the URL) holds; the e2e suite pins
   // the date because the look now changes with the season.
   const sunParams = new URLSearchParams(window.location.search);
   let sunPlace: SunPlace = { lat: start.lat, lng: start.lng };
   const sunBootDate =
-    parseSunDate(sunParams.get("date")) ?? sunDateOf(Date.now(), sunPlace);
+    parseSunDate(sunParams.get("date")) ?? viewerToday(new Date());
   const sunPinnedTime = parseSolarTime(sunParams.get("time"));
   let sunInstant =
     sunPinnedTime === null
@@ -474,10 +478,18 @@ async function main(): Promise<void> {
   // steps a day or a month natively (↑/↓ on its day or month segment), which
   // is why the input must NOT lose focus on every change.
   const sunDateInput = el<HTMLInputElement>("sun-date");
+  // THE TIME SLIDER (DEC-SUN-15): civil dawn to civil dusk of the shown
+  // date, linear in time; 0…1000 on the element. It follows every other
+  // move (keys, date, re-anchor) through `showSunControl`.
+  const sunTimeInput = el<HTMLInputElement>("sun-time");
+  const SUN_SLIDER_STEPS = 1000;
   const sunReadout = el("sun-readout");
   const showSunControl = () => {
     const d = sunDateOf(sunInstant, sunPlace);
     sunDateInput.value = `${d.year}-${pad2(d.month)}-${pad2(d.day)}`;
+    sunTimeInput.value = String(
+      Math.round(instantToSlider(sunInstant, sunPlace) * SUN_SLIDER_STEPS),
+    );
     sunReadout.textContent = formatSunReadout(sunInstant, sunPlace);
   };
   const moveSun = (next: number) => {
@@ -497,6 +509,12 @@ async function main(): Promise<void> {
   // field swallows "t" (plan 2026-09-23-2149, review finding 13).
   sunDateInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter" || event.key === "Escape") sunDateInput.blur();
+  });
+  sunTimeInput.addEventListener("input", () => {
+    const fraction = Number(sunTimeInput.value) / SUN_SLIDER_STEPS;
+    moveSun(
+      sliderToInstant(fraction, sunDateOf(sunInstant, sunPlace), sunPlace),
+    );
   });
   hotkeys.add({
     key: "t",
