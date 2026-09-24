@@ -13,3 +13,27 @@ export {
   h3CellsMatch,
   isH3Index,
 } from './h3-proximity.js';
+
+export {
+  calculateSunPosition,
+  sunCalcAnglesToNue,
+  type NueDirection,
+  type SunPositionResult,
+} from './sun-position.js';
+
+export {
+  sunAltitudeToLighting,
+  type SunLightingResult,
+  type LightColor,
+} from './sun-altitude-lighting.js';
+
+export {
+  createRealSunDataAdapter,
+  type RealSunDataAdapter,
+  type RealSunDataAdapterOptions,
+  type RealSunDataState,
+  type RealSunSample,
+  type SunInputSelection,
+  type SunLocationSource,
+  type SunTimeSource,
+} from './real-sun-data-adapter.js';

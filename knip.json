@@ -88,6 +88,12 @@
     "GpsPlusSlamJs_MinimalExample": {
       "project": ["src/**/*.ts"]
     },
+    "GpsPlusSlamJs_SunAltitudeLightingDemo": {
+      "project": ["src/**/*.ts"]
+    },
+    "GpsPlusSlamJs_RealisticSunLightingDemo": {
+      "project": ["src/**/*.ts"]
+    },
     "GpsPlusSlamJs_OsmDemo": {
       "entry": [
         "config/stylelint.config.mjs",

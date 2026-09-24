@@ -1,0 +1,16 @@
+:root { font-family: system-ui, sans-serif; color: #183043; background: #f3f6f8; }
+body { max-width: 1040px; margin: 24px auto; padding: 0 20px; }
+a { color: #18598a; }
+h1 { font-size: 1.65rem; }
+h2 { font-size: 1.1rem; }
+.warning { background: #fff0c4; padding: 12px; border-left: 4px solid #a56a00; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+fieldset, section { border: 1px solid #c1ced8; border-radius: 8px; padding: 14px; margin: 12px 0; background: white; }
+section.grid { padding: 0; border: 0; background: none; }
+label { display: block; margin: 8px 0; }
+input, select { display: block; box-sizing: border-box; width: 100%; margin-top: 4px; padding: 8px; font: inherit; }
+button { padding: 8px 12px; margin: 4px; cursor: pointer; font: inherit; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #377ea8; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #edf3f7; padding: 12px; }
+#input-error { color: #a31919; }
+#draft-status { font-weight: 600; }

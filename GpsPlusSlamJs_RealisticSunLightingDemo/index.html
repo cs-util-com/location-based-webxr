@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Realistic Sun Lighting & Shading AR Demo</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <!--
+      Under the WebXR DOM Overlay feature, only the initAR container's subtree
+      composites over the AR camera feed. #status-panel, #tap-hint, and #enter-ar
+      MUST be descendants of #ar-root. See tests/repo-config/hud-overlay-nesting.test.js.
+    -->
+    <div id="ar-root">
+      <div id="status-panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <svg class="sun-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="5" />
+              <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+            </svg>
+            <span>Realistic Sun AR</span>
+          </div>
+          <span id="phase-badge" class="phase-badge">Acquiring</span>
+        </div>
+
+        <div class="metrics-row">
+          <div class="metric-pill">
+            <span class="metric-label">Solar Azimuth</span>
+            <span id="val-azimuth" class="metric-value">--°</span>
+          </div>
+          <div class="metric-pill">
+            <span class="metric-label">Solar Altitude</span>
+            <span id="val-altitude" class="metric-value">--°</span>
+          </div>
+        </div>
+
+        <div class="metrics-row">
+          <div class="metric-pill">
+            <span class="metric-label">Coordinates</span>
+            <span id="val-coords" class="metric-value">Searching GPS…</span>
+          </div>
+          <div class="metric-pill">
+            <span class="metric-label">GPS Fixes</span>
+            <span id="val-fixes" class="metric-value">0</span>
+          </div>
+        </div>
+
+        <div class="controls-tabs">
+          <button id="tab-live" class="tab-btn active" type="button">Live Sensors</button>
+          <button id="tab-sim" class="tab-btn" type="button">Time Simulation</button>
+        </div>
+
+        <div id="sim-section" class="simulation-controls hidden">
+          <div class="slider-group">
+            <div class="slider-header">
+              <span>Time of Day</span>
+              <span id="time-display" class="slider-time-val">12:00</span>
+            </div>
+            <input id="time-slider" type="range" min="0" max="1439" value="720" step="1" />
+          </div>
+
+          <div class="presets-grid">
+            <button class="preset-btn" data-time="dawn" type="button">Dawn</button>
+            <button class="preset-btn" data-time="noon" type="button">Noon</button>
+            <button class="preset-btn" data-time="golden" type="button">Golden Hr</button>
+            <button class="preset-btn" data-time="dusk" type="button">Dusk</button>
+            <button class="preset-btn" data-time="night" type="button">Night</button>
+          </div>
+
+          <div class="location-row">
+            <select id="location-select" aria-label="Select simulation location">
+              <option value="live">📍 Current Device GPS</option>
+              <option value="berlin">Berlin (52.5° N)</option>
+              <option value="london">London (51.5° N)</option>
+              <option value="tokyo">Tokyo (35.7° N)</option>
+              <option value="sydney">Sydney (33.9° S)</option>
+              <option value="equator">Equator (0°)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div id="tap-hint" class="hidden">
+        <span>Point at ground & tap to place simple geometry</span>
+      </div>
+
+      <button id="enter-ar" type="button" disabled>Checking AR support…</button>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

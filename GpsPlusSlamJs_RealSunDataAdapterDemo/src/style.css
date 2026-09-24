@@ -1,0 +1,152 @@
+:root {
+  font-family: system-ui, sans-serif;
+  color: #183042;
+  background: #f4f7f9;
+  line-height: 1.5;
+}
+body {
+  margin: 0;
+}
+main {
+  max-width: 960px;
+  margin: 36px auto;
+  padding: 0 20px;
+}
+h1 {
+  font-size: clamp(1.8rem, 4vw, 2.6rem);
+  margin: 0;
+}
+h2 {
+  font-size: 1.15rem;
+  margin: 0 0 12px;
+}
+.eyebrow {
+  color: #456577;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.8rem;
+}
+section {
+  background: white;
+  padding: 22px;
+  border: 1px solid #cbd7e0;
+  border-radius: 10px;
+  margin: 18px 0;
+  min-width: 0;
+}
+.summary {
+  border-top: 4px solid #247c87;
+}
+.sources {
+  font-weight: 650;
+  color: #126270;
+}
+.controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+.controls section {
+  margin: 0;
+}
+label {
+  display: block;
+  margin: 12px 0 4px;
+}
+input,
+select,
+button {
+  font: inherit;
+}
+input,
+select {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 9px;
+  border: 1px solid #9bb0c0;
+  border-radius: 5px;
+  background: white;
+  color: inherit;
+}
+input[type="range"] {
+  padding: 10px 0;
+  accent-color: #126270;
+}
+.coordinates {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.hint,
+footer {
+  font-size: 0.85rem;
+  color: #506576;
+}
+.buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+button {
+  padding: 9px 13px;
+  border: 1px solid #8199a9;
+  border-radius: 5px;
+  background: #eff4f7;
+  cursor: pointer;
+  color: #183042;
+}
+button.primary {
+  background: #126270;
+  color: white;
+  border-color: #126270;
+}
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+:focus-visible {
+  outline: 3px solid #ce8a17;
+  outline-offset: 2px;
+}
+dl {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: 7px 16px;
+}
+dd {
+  margin: 0;
+  font-family: ui-monospace, monospace;
+  overflow-wrap: anywhere;
+}
+.error,
+[data-status="invalid-input"] {
+  color: #a42624;
+}
+output {
+  font-weight: 650;
+  float: right;
+}
+pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: #f1f5f8;
+  padding: 12px;
+}
+summary {
+  cursor: pointer;
+  margin-top: 14px;
+}
+[hidden] {
+  display: none !important;
+}
+@media (max-width: 650px) {
+  .controls {
+    grid-template-columns: 1fr;
+  }
+  section {
+    padding: 16px;
+  }
+  main {
+    margin-top: 20px;
+  }
+}

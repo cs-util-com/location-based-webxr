@@ -114,6 +114,9 @@ const entryFiles = [
 
   'src/geo/index.ts',
   'src/geo/h3-proximity.ts',
+  'src/geo/sun-position.ts',
+  'src/geo/sun-altitude-lighting.ts',
+  'src/geo/real-sun-data-adapter.ts',
 
   // sensors/
   'src/sensors/index.ts',
@@ -340,6 +343,9 @@ const entryFiles = [
   // markers, so an advertised module without an entry fails at the gate
   // (PR #412 review: this one shipped without either).
   'src/visualization/wayfinding-targets.ts',
+  'src/visualization/sun-disc-placement.ts',
+  'src/visualization/visible-sun-disc.ts',
+  'src/visualization/sun-shadow-rig.ts',
 ];
 
 export default defineConfig({
@@ -351,6 +357,13 @@ export default defineConfig({
   clean: true,
   outExtensions: () => ({ js: '.js', dts: '.d.ts' }),
   deps: {
-    neverBundle: ['three', 'leaflet', 'h3-js', '@zip.js/zip.js', 'vitest'],
+    neverBundle: [
+      'three',
+      'leaflet',
+      'h3-js',
+      'suncalc',
+      '@zip.js/zip.js',
+      'vitest',
+    ],
   },
 });

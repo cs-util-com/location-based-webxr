@@ -82,6 +82,12 @@ const APP_OVERLAY_CONTRACTS = [
     containerId: 'ar-root',
     overlayIds: ['ar-status', 'enter-ar', 'setup-panel', 'scan-escape'],
   },
+  {
+    name: 'RealisticSunLightingDemo',
+    htmlPath: 'GpsPlusSlamJs_RealisticSunLightingDemo/index.html',
+    containerId: 'ar-root',
+    overlayIds: ['status-panel', 'enter-ar'],
+  },
 ];
 
 /**
@@ -259,7 +265,14 @@ function srcImportsFramework(appDir) {
 // TourViewer left this list when M2 gave it a real initAR container — an app
 // must never sit in both registries, because this one permanently exempts it
 // from the coverage guard (PR #359 review).
-const NON_AR_APPS = new Set(['GpsPlusSlamJs_OsmDemo']);
+const NON_AR_APPS = new Set([
+  'GpsPlusSlamJs_OsmDemo',
+  'GpsPlusSlamJs_RealSunDataAdapterDemo',
+  'GpsPlusSlamJs_SunAltitudeLightingDemo',
+  'GpsPlusSlamJs_SunPositionDemo',
+  'GpsPlusSlamJs_SunShadowRigDemo',
+  'GpsPlusSlamJs_VisibleSunDiscDemo',
+]);
 
 function discoverArAppHtmlPaths(root) {
   return readdirSync(root, { withFileTypes: true })

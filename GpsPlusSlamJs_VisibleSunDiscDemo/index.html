@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Interactive GPS-world NUE Visible Sun Disc demo" />
+    <title>Visible Sun Disc Demo</title>
+  </head>
+  <body>
+    <main>
+      <section class="intro" aria-labelledby="page-title">
+        <div>
+          <p class="eyebrow">GPS + SLAM · component proof</p>
+          <h1 id="page-title">Visible Sun Disc</h1>
+        </div>
+        <p>Berlin · 52.52° N, 13.405° E. Advance a simulated summer day and watch the production sun disc travel through GPS-world NUE space. Drag the scene to turn the camera.</p>
+      </section>
+
+      <section class="stage" aria-label="Three.js sun scene">
+        <div id="scene" class="scene"></div>
+        <div class="orientation" aria-hidden="true">
+          <span class="north">+X North</span><span class="east">+Z East</span><span class="up">+Y Up</span>
+        </div>
+        <p class="scene-help">Drag to orbit · Scroll to zoom</p>
+      </section>
+
+      <section class="panel controls" aria-labelledby="time-controls-title">
+        <div class="panel-heading">
+          <div><p class="eyebrow">Simulation</p><h2 id="time-controls-title">Berlin local time</h2></div>
+          <output id="simulated-date" class="date-output"></output>
+        </div>
+        <div class="button-row">
+          <button id="play-pause" type="button">Pause</button>
+          <button id="reset" type="button" class="secondary">Reset</button>
+          <label class="speed-label" for="speed">Speed
+            <select id="speed">
+              <option value="10">10 simulated min / sec</option>
+              <option value="60" selected>1 simulated hour / sec</option>
+              <option value="240">4 simulated hours / sec</option>
+            </select>
+          </label>
+        </div>
+        <label class="timeline" for="time-slider">
+          <span>Scrub 36 hours: before sunrise → night → next morning</span>
+          <input id="time-slider" type="range" min="0" max="2160" step="1" value="240" />
+          <span class="timeline-labels" aria-hidden="true"><span>Jun 21 · 00:00</span><span>Jun 21 · 12:00</span><span>Jun 22 · 00:00</span><span>Jun 22 · 12:00</span></span>
+        </label>
+      </section>
+
+      <section class="panel status" aria-labelledby="status-title">
+        <div class="panel-heading">
+          <div><p class="eyebrow">Production API output</p><h2 id="status-title">Sun state</h2></div>
+          <strong id="visibility" class="status-pill"></strong>
+        </div>
+        <dl>
+          <div><dt>Altitude</dt><dd id="altitude"></dd></div>
+          <div><dt>NUE direction</dt><dd id="direction"></dd></div>
+          <div><dt>Vector length</dt><dd id="vector-length"></dd></div>
+          <div><dt>Above horizon</dt><dd id="above-horizon"></dd></div>
+        </dl>
+      </section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

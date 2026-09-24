@@ -236,6 +236,7 @@ export const PROJECTS = [
       packageGateStage("test:recorder", "gps-plus-slam-recorder"),
       packageGateStage("test:starter", "gps-plus-slam-anchor-starter"),
       packageGateStage("test:example", "gps-plus-slam-minimal-example"),
+      packageGateStage("test:sun-altitude-lighting", "gps-plus-slam-sun-altitude-lighting-demo"),
       packageGateStage("test:qr-demo", "gps-plus-slam-qr-tracking-demo"),
       packageGateStage("test:osm-demo", "gps-plus-slam-osm-demo"),
       packageGateStage("test:landing", "gps-plus-slam-landing"),
@@ -440,6 +441,31 @@ export const PROJECTS = [
   {
     name: "GpsPlusSlamJs_MinimalExample",
     dir: "GpsPlusSlamJs_MinimalExample",
+    chainNames: [],
+    stages: [
+      {
+        name: "typecheck",
+        command: "tsc -p tsconfig.json --noEmit",
+        counts: null,
+      },
+      { name: "test:unit", command: "vitest run", counts: "vitest" },
+    ],
+  },
+  {
+    name: "GpsPlusSlamJs_SunAltitudeLightingDemo",
+    dir: "GpsPlusSlamJs_SunAltitudeLightingDemo",
+    chainNames: [],
+    stages: [
+      {
+        name: "typecheck",
+        command: "tsc -p tsconfig.json --noEmit",
+        counts: null,
+      },
+    ],
+  },
+  {
+    name: "GpsPlusSlamJs_RealisticSunLightingDemo",
+    dir: "GpsPlusSlamJs_RealisticSunLightingDemo",
     chainNames: [],
     stages: [
       {

@@ -1,0 +1,29 @@
+{
+  "name": "gps-plus-slam-real-sun-data-adapter-demo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Standalone live/manual input test tool for the production Real Sun Data Adapter.",
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm run build:framework && vite",
+    "build:framework": "pnpm --filter gps-plus-slam-app-framework run build",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --config vitest.config.ts",
+    "test:e2e": "playwright test --config playwright-tests/playwright.config.js",
+    "build": "pnpm run build:framework && pnpm run typecheck && vite build",
+    "preview": "vite preview"
+  },
+  "engines": {
+    "node": ">=22.14.0"
+  },
+  "dependencies": {
+    "gps-plus-slam-app-framework": "workspace:*"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.12",
+    "vitest": "^5.0.0"
+  },
+  "license": "Apache-2.0"
+}

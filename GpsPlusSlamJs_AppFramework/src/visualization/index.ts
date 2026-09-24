@@ -162,6 +162,22 @@ export {
   createTextSprite,
 } from './text-sprite.js';
 
+// --- sun-disc-placement (pure placement seam for the visible sun disc) ---
+export {
+  type NuePosition,
+  computeSunDiscWorldPosition,
+  isSunDirectionAboveHorizon,
+} from './sun-disc-placement.js';
+
+// --- visible-sun-disc (camera-relative sun icon in GPS-world NUE) ---
+export {
+  type SunDiscVisibility,
+  type VisibleSunDisc,
+  type VisibleSunDiscOptions,
+  DEFAULT_VISIBLE_SUN_DISC,
+  createVisibleSunDisc,
+} from './visible-sun-disc.js';
+
 // frame-texture-decoder is deliberately NOT re-exported here: every consumer
 // deep-imports `visualization/frame-texture-decoder` (this barrel feeds the
 // package-root `export *`, and DEC-H3's shared helpers stay off the root
@@ -209,3 +225,18 @@ export {
 
 // --- vis-colors ---
 export { VIS_COLORS } from './vis-colors.js';
+
+// --- sun-shadow-rig ---
+export {
+  type Aabb3D,
+  type Sphere3D,
+  type ContentBounds,
+  type ShadowFrustum,
+  type SunLightPlacement,
+  type SunShadowRigOptions,
+  type SunShadowRig,
+  DEFAULT_SUN_SHADOW_RIG,
+  computeLightPlacement,
+  computeShadowFrustum,
+  createSunShadowRig,
+} from './sun-shadow-rig.js';

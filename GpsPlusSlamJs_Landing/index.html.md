@@ -91,7 +91,7 @@ the copy.
   per `html[data-theme='dark'|'light']`; the accent `#ef4444` matches the
   3D palette's fused-anchor color.
 - **Demo links** are root-absolute with trailing slashes (`/starter/`,
-  `/minimal/`, `/qr-demo/`, `/recorder/`, `/physics/`) — deployment URLs on the
+  `/minimal/`, `/qr-demo/`, `/recorder/`, `/physics/`, `/wayfinding/`, `/osm/`, `/tour/`, `/sun-lighting/`) — deployment URLs on the
   shared origin, asserted by `scripts/build-site.mjs` after the production build.
 - **Chapter sections** must exist for every id in `src/chapters.ts` (same
   order); `main.ts` warns on missing ones. Sections are min-height 130vh

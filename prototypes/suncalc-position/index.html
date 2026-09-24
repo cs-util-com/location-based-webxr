@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SunCalc Position Prototype</title>
+  </head>
+  <body>
+    <h1>SunCalc Position Prototype</h1>
+
+    <p><strong>Latitude:</strong> <span id="latitude"></span>&deg;</p>
+    <p><strong>Longitude:</strong> <span id="longitude"></span>&deg;</p>
+    <p><strong>Date:</strong> <span id="date"></span></p>
+    <p><strong>Azimuth:</strong> <span id="azimuth"></span> radians</p>
+    <p><strong>Altitude:</strong> <span id="altitude"></span> radians</p>
+    <p><strong>NUE x (North):</strong> <span id="nue-x"></span></p>
+    <p><strong>NUE y (Up):</strong> <span id="nue-y"></span></p>
+    <p><strong>NUE z (East):</strong> <span id="nue-z"></span></p>
+    <p><strong>NUE vector length:</strong> <span id="nue-length"></span></p>
+
+    <script src="https://cdn.jsdelivr.net/npm/suncalc@1.9.0/suncalc.js"></script>
+    <script>
+      const latitude = 52.52;
+      const longitude = 13.405;
+      const date = new Date("2026-06-21T12:00:00Z");
+
+      const position = SunCalc.getPosition(date, latitude, longitude);
+
+      // Convert SunCalc's angles to NUE: +X = North, +Y = Up, +Z = East.
+      const x = -Math.cos(position.altitude) * Math.cos(position.azimuth);
+      const y = Math.sin(position.altitude);
+      const z = -Math.cos(position.altitude) * Math.sin(position.azimuth);
+      const length = Math.sqrt(x * x + y * y + z * z);
+
+      document.querySelector("#latitude").textContent = latitude;
+      document.querySelector("#longitude").textContent = longitude;
+      document.querySelector("#date").textContent = date.toISOString();
+      document.querySelector("#azimuth").textContent = position.azimuth;
+      document.querySelector("#altitude").textContent = position.altitude;
+      document.querySelector("#nue-x").textContent = x;
+      document.querySelector("#nue-y").textContent = y;
+      document.querySelector("#nue-z").textContent = z;
+      document.querySelector("#nue-length").textContent = length;
+    </script>
+  </body>
+</html>

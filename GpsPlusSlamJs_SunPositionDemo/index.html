@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sun Position Core Demo</title>
+    <style>
+      body {
+        max-width: 42rem;
+        margin: 2rem auto;
+        padding: 0 1rem;
+        color: #1d2733;
+        font-family: system-ui, sans-serif;
+        line-height: 1.5;
+      }
+
+      form,
+      section {
+        display: grid;
+        gap: 0.75rem;
+        margin-top: 1.5rem;
+        padding: 1rem;
+        border: 1px solid #ccd5df;
+        border-radius: 0.5rem;
+      }
+
+      label {
+        display: grid;
+        gap: 0.25rem;
+      }
+
+      input,
+      button {
+        padding: 0.5rem;
+        font: inherit;
+      }
+
+      dl {
+        display: grid;
+        grid-template-columns: max-content 1fr;
+        gap: 0.5rem 1rem;
+        margin: 0;
+      }
+
+      dd {
+        margin: 0;
+        font-family: ui-monospace, monospace;
+        overflow-wrap: anywhere;
+      }
+
+      #error {
+        color: #b00020;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Sun Position Core Demo</h1>
+      <p>
+        Change the fixed inputs and calculate the Sun's direction in
+        North-Up-East coordinates.
+      </p>
+
+      <form id="sun-form">
+        <label>
+          Latitude (degrees)
+          <input id="latitude" type="number" step="any" value="52.52" />
+        </label>
+        <label>
+          Longitude (degrees)
+          <input id="longitude" type="number" step="any" value="13.405" />
+        </label>
+        <label>
+          Date and time (ISO 8601)
+          <input id="date" type="text" value="2026-06-21T12:00:00Z" />
+        </label>
+        <small>
+          Berlin nighttime example: <code>2026-06-21T00:00:00Z</code>
+        </small>
+        <button type="submit">Calculate</button>
+      </form>
+
+      <p id="error" role="alert" hidden></p>
+
+      <section id="results" aria-live="polite">
+        <h2>Result</h2>
+        <dl>
+          <dt>Azimuth</dt>
+          <dd><span id="azimuth"></span> radians</dd>
+          <dt>Altitude</dt>
+          <dd><span id="altitude"></span> radians</dd>
+          <dt>NUE x (North)</dt>
+          <dd id="nue-x"></dd>
+          <dt>NUE y (Up)</dt>
+          <dd id="nue-y"></dd>
+          <dt>NUE z (East)</dt>
+          <dd id="nue-z"></dd>
+          <dt>Vector length</dt>
+          <dd id="vector-length"></dd>
+          <dt>Above horizon</dt>
+          <dd id="above-horizon"></dd>
+        </dl>
+      </section>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

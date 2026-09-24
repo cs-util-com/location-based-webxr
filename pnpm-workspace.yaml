@@ -9,6 +9,13 @@ packages:
   - GpsPlusSlamJs_PhysicsDemo
   - GpsPlusSlamJs_WayfindingHudDemo
   - GpsPlusSlamJs_OsmDemo
+
+  - GpsPlusSlamJs_SunPositionDemo
+  - GpsPlusSlamJs_SunShadowRigDemo
+  - GpsPlusSlamJs_SunAltitudeLightingDemo
+  - GpsPlusSlamJs_VisibleSunDiscDemo
+  - GpsPlusSlamJs_RealSunDataAdapterDemo
+  - GpsPlusSlamJs_RealisticSunLightingDemo
   - GpsPlusSlamJs_TourViewer
   - GpsPlusSlamJs_SiteWorker
   - GpsPlusSlamJs_DesignSystem

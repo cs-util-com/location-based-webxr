@@ -1,0 +1,24 @@
+{
+  "name": "gps-plus-slam-sun-position-demo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Small browser demo for the AppFramework Sun Position Core.",
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm run build:framework && vite",
+    "build": "pnpm run build:framework && tsc -p tsconfig.json && vite build",
+    "build:framework": "pnpm --filter gps-plus-slam-app-framework run build",
+    "preview": "vite preview"
+  },
+  "engines": {
+    "node": ">=22.14.0"
+  },
+  "dependencies": {
+    "gps-plus-slam-app-framework": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3",
+    "vite": "^8.0.12"
+  },
+  "license": "Apache-2.0"
+}

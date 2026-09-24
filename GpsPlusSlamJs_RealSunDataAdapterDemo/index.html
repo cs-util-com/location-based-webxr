@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Real Data Adapter · Sun input test tool</title>
+  </head>
+  <body>
+    <main>
+      <header>
+        <p class="eyebrow">Sun position / standalone test tool</p>
+        <h1>Real Data Adapter</h1>
+        <p>
+          Choose where location and time come from. Watch the sun result change.
+        </p>
+      </header>
+      <section class="summary" aria-labelledby="selection-heading">
+        <h2 id="selection-heading">Selected inputs</h2>
+        <p id="sources" class="sources">Live GPS + real time</p>
+        <dl>
+          <dt>Latitude / longitude</dt>
+          <dd id="selected-location">Waiting for GPS</dd>
+          <dt>Absolute time (UTC)</dt>
+          <dd id="selected-time">—</dd>
+          <dt>GPS fix timestamp</dt>
+          <dd id="fix-time">—</dd>
+        </dl>
+        <p id="status" role="status">Waiting for location</p>
+      </section>
+      <div class="controls">
+        <section aria-labelledby="location-heading">
+          <h2 id="location-heading">1. Location</h2>
+          <label for="location-source">Location source</label>
+          <select id="location-source">
+            <option value="live">Live GPS</option>
+            <option value="fixed">Fixed / manual location</option>
+          </select>
+          <div class="coordinates">
+            <label
+              >Latitude (−90 to 90)<input
+                id="latitude"
+                type="number"
+                step="any"
+                value="52.52"
+            /></label>
+            <label
+              >Longitude (−180 to 180)<input
+                id="longitude"
+                type="number"
+                step="any"
+                value="13.405"
+            /></label>
+          </div>
+          <p class="hint">
+            Editing coordinates selects fixed location. Time mode is preserved.
+          </p>
+          <p id="gps-status" role="status">
+            Requesting GPS permission / first location…
+          </p>
+          <div class="buttons">
+            <button id="start-gps">Start / retry GPS</button
+            ><button id="stop-gps">Stop GPS &amp; clear fix</button>
+          </div>
+          <p class="hint">
+            GPS can stay active in the background while fixed location is
+            selected.
+          </p>
+        </section>
+        <section aria-labelledby="time-heading">
+          <h2 id="time-heading">2. Time</h2>
+          <label for="time-source">Time source</label>
+          <select id="time-source">
+            <option value="real">Real current time</option>
+            <option value="fixed">Fixed / manual time</option>
+          </select>
+          <label
+            >Absolute time (ISO 8601)<input
+              id="instant"
+              type="text"
+              value="2026-06-21T12:00:00Z"
+              spellcheck="false"
+              aria-describedby="time-hint time-error"
+          /></label>
+          <p id="time-hint" class="hint">
+            Use Z for UTC or an explicit offset, e.g. 2026-06-21T14:00:00+02:00.
+            Editing selects fixed time.
+          </p>
+          <p id="time-error" class="error" role="alert" hidden></p>
+          <label
+            >Slider day (UTC)<input id="utc-day" type="date" value="2026-06-21"
+          /></label>
+          <label
+            >Move through this UTC day
+            <output id="slider-time" for="time-slider">12:00 UTC</output
+            ><input
+              id="time-slider"
+              type="range"
+              min="0"
+              max="1439"
+              step="1"
+              value="720"
+          /></label>
+          <p class="hint">
+            00:00–23:59 UTC, one-minute steps. Slider edits preserve location
+            mode.
+          </p>
+        </section>
+      </div>
+      <section aria-labelledby="reproduce-heading">
+        <h2 id="reproduce-heading">Repeatable test</h2>
+        <p>
+          Apply Berlin (52.52°, 13.405°) and 21 June 2026 at 12:00 UTC together,
+          in one update. This is a synthetic example, not a Task 1 recording.
+        </p>
+        <div class="buttons">
+          <button id="apply-pair" class="primary">
+            Apply fixed location + fixed time</button
+          ><button id="refresh">Refresh now</button>
+        </div>
+        <p class="hint">
+          Real time refreshes every 30 seconds and when this tab becomes
+          visible. Fixed time remains fixed.
+        </p>
+      </section>
+      <section aria-labelledby="result-heading">
+        <h2 id="result-heading">Sun Position Core result</h2>
+        <div id="result" hidden>
+          <dl>
+            <dt>Azimuth</dt>
+            <dd id="azimuth"></dd>
+            <dt>Altitude</dt>
+            <dd id="altitude"></dd>
+            <dt>Above horizon</dt>
+            <dd id="above-horizon"></dd>
+            <dt>North (+X)</dt>
+            <dd id="north"></dd>
+            <dt>Up (+Y)</dt>
+            <dd id="up"></dd>
+            <dt>East (+Z)</dt>
+            <dd id="east"></dd>
+          </dl>
+          <p class="hint">
+            Azimuth uses SunCalc's convention: 0 = South, positive toward West.
+            Direction is the core's normalized North–Up–East vector.
+          </p>
+          <details>
+            <summary>Exact adapter state / reproduction inputs</summary>
+            <pre id="raw-state"></pre>
+          </details>
+        </div>
+        <p id="no-result">No sun result until location and time are valid.</p>
+      </section>
+      <footer>
+        Desktop GPS may be unavailable. Fixed inputs work without permission.
+        Real outdoor GPS/sun checks and Task 1 recording validation come later.
+      </footer>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "target": "ES2022", "module": "ESNext", "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM"], "strict": true, "noEmit": true,
+    "allowImportingTsExtensions": true, "skipLibCheck": true,
+    "esModuleInterop": true, "types": []
+  },
+  "include": ["shared/**/*.ts", "a-commands/**/*.ts", "b-configuration/**/*.ts", "c-snapshot/**/*.ts", "tests/**/*.ts", "../../node_modules/.pnpm/@types+webxr@*/node_modules/@types/webxr/index.d.ts"]
+}

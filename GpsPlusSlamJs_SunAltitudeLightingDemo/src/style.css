@@ -1,0 +1,15 @@
+/* Sun Altitude Lighting Demo — minimal body reset only.
+   All UI panel styling is applied inline in src/main.ts,
+   matching the SunShadowRigDemo convention. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}

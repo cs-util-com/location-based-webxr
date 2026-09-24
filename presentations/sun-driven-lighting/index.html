@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Sun-driven lighting for location-based WebXR — revised presentation version, with unvalidated integration clearly marked.">
+  <title>Sun-Driven Lighting · Alissa & Lucas</title>
+  <link rel="stylesheet" href="vendor/reveal/dist/reveal.css">
+  <link rel="stylesheet" href="deck.css">
+</head>
+<body>
+<div class="reveal"><div class="slides">
+
+<section data-timing="30" class="title-slide" aria-label="Title">
+  <div class="eyebrow">LOCATION-BASED WEBXR / FINAL PRESENTATION</div>
+  <div class="title-layout"><div>
+    <h1>Sun-Driven Lighting<br>for Location-Based<br><span class="accent">WebXR</span></h1>
+    <p class="subtitle">Making virtual sunlight<br>match the real world</p>
+    <p class="names">Alissa Farber · Chin-Lucas Woo</p>
+  </div><div class="hero scene-art" data-scene="hero" role="img" aria-label="Concept illustration: sun above a virtual cube, casting a shadow away from the sun"></div></div>
+  <aside class="notes"><p>Alissa · 0:30. Introduce the goal: geographically positioned virtual objects should also receive lighting consistent with the real sun. Present the independent components, development experience and current integration status. No outdoor validation success is claimed.</p></aside>
+</section>
+
+<section data-timing="50" aria-label="The problem">
+  <div class="eyebrow">01 / THE PROBLEM</div><h2>Project Goal</h2>
+  <div class="comparison">
+    <article class="panel wrong"><div class="panel-label"><span>FIXED LIGHTING</span><span class="small-tag">MISMATCH</span></div><div class="scene-art" data-scene="wrong" role="img" aria-label="Concept: real sun on the left, but virtual shadow wrongly points toward it"></div><p>Correct position, <strong>wrong lighting</strong></p></article>
+    <article class="panel right"><div class="panel-label"><span>SUN-DRIVEN LIGHTING</span><span class="small-tag">INTENDED</span></div><div class="scene-art" data-scene="right" role="img" aria-label="Concept: sunlight from the left produces a virtual shadow to the right"></div><p>Real location + time &rarr;<br><strong>realistic lighting</strong></p></article>
+  </div>
+  <p class="question">Can virtual lighting match the real environment?</p>
+  <aside class="notes"><p>Alissa · 0:50. Both objects can occupy the correct geographic position while their lighting tells a different story. The goal is to use device location and time for the virtual sun, light and shadows. These drawings show the intended behavior, not an outdoor before/after result.</p></aside>
+</section>
+
+<section data-timing="80" class="task1-slide" aria-label="Task 1: Recorder Testing"><div class="eyebrow">02 / FIELD EXPERIENCE</div><h2>Task 1: Recorder Testing</h2>
+<div class="task1-layout"><div class="task1-copy"><div class="field-columns"><article><div class="panel-label">TASK</div><h3>Walk. Revisit. Record.</h3><p>Outdoor recorder walks<br>Repeated reference points<br>Observe heading + lighting/shadows<br>Collect data for replay validation</p></article>
+<article><div class="panel-label">OUR OBSERVATIONS</div><h3>GPS + heading were stable.</h3><div class="path-ranking"><span>GPS<small>Most accurate</small></span><span>AR<small>Slightly less accurate</small></span><span>Fused<small>Less accurate</small></span></div><p>No useful lighting/shadows visible.<br><span class="accent">Required ZIP not generated on Android.</span></p></article></div>
+</div><img class="task1-photo" src="assets/task1-recorder.jpg" alt="Outdoor recorder test showing status, AR markers, and the Stop and Mark Point controls"></div><aside class="notes"><p>Alissa - 1:20. Describe our outdoor attempt and the observations on the slide; these are qualitative observations, not general accuracy rankings.</p><p>The first attempt lasted roughly one hour. After the first reference point, the running UI mainly exposed Capture and Stop Recording. Creating/selecting additional reference points was unclear, so Alissa stopped. This hour is included in the five-hour Task 1 total.</p><p>The missing Android ZIP blocked this session's replay. We discussed it with Simon, who accepted focusing on integration and a live test scene. Existing June ZIPs in the repository belong to other recordings. Transition: the component structure let us continue independently.</p></aside></section>
+
+<section data-timing="65" aria-label="Architecture">
+  <div class="eyebrow">03 / LIBRARY STRUCTURE</div><h2>Our Component Architecture</h2>
+  <div class="architecture">
+    <div class="architecture-flow">
+      <div class="input-line">GPS + Time</div><div class="down">↓</div>
+      <div class="node">Real Data Adapter</div><div class="down">↓</div>
+      <div class="node">Sun Position Core</div><div class="down">↓</div>
+      <div class="shared-state">one shared sun state</div>
+      <div class="branches"><div><span>↙</span><div class="node">Sun Disc</div><span>↘</span></div><div><span>↓</span><div class="node">Lighting</div><span>↓</span></div><div><span>↘</span><div class="node">Shadow Rig</div><span>↙</span></div></div>
+      <div class="node scene-node">AR Scene</div>
+    </div>
+    <div class="architecture-caption"><div class="library-layers"><div><b>PURE LOGIC</b><span>Sun position + lighting model</span></div><i>↓</i><div><b>VISUALIZATION COMPONENTS</b><span>Sun disc + shadow rig</span></div><i>↓</i><div><b>FRAMEWORK / AR INTEGRATION</b><span>Adapter connects inputs; scene composes outputs</span></div></div></div>
+  </div>
+  <p class="architecture-reflection">Splitting the feature into independent components made parallel development easier and kept integration manageable.</p><aside class="notes"><p>Shared · 1:05. Answer how the component is structured and where it fits into the library. The framework’s geo modules contain pure Sun Position and altitude-to-lighting logic. Visualization components own the Three.js disc and shadow rig. The Real Data Adapter connects device or fixed inputs to the core; host/framework integration composes the result into the AR scene. The layers are responsibilities, not three extra components.</p><p>Calculate one sun state and share it with consumers. Independent ownership enabled parallel progress; explicit contracts make the final composition possible.</p></aside>
+</section>
+
+<section data-timing="80" aria-label="Sun position">
+  <div class="eyebrow">04 / SUN POSITION</div><h2>Sun Position Core</h2>
+  <div class="coordinate-layout"><div><div class="input-stack"><span>Latitude</span><span>Longitude</span><span>UTC Time</span></div><div class="arrow-line">↓</div><div class="position-result">Sun Position</div><p class="key-statement">Correct sun angles still need<br><span class="accent">the correct coordinate conversion.</span></p></div>
+  <svg class="coordinates" viewBox="0 0 650 370" role="img" aria-label="Schematic NUE axes: positive X North, positive Y Up, positive Z East; a normalized sun direction rises above the horizon">
+    <defs><marker id="axis-arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0L6 3L0 6" fill="context-stroke"/></marker></defs>
+    <path d="M90 280L315 160L550 280L315 350Z" fill="#19242a" stroke="#35434b"/>
+    <g stroke="#34434b"><path d="M147 250L375 320M202 220L435 310M258 190L493 280M145 310L370 190M205 330L430 220M260 344L490 250"/></g>
+    <g fill="none" stroke-width="3" marker-end="url(#axis-arrow)"><path d="M315 275L125 175" stroke="#87b9d5"/><path d="M315 275L315 55" stroke="#e7ece7"/><path d="M315 275L540 298" stroke="#a5c4ac"/><path d="M315 275L472 96" stroke="#eeb961"/></g>
+    <circle cx="472" cy="96" r="15" fill="#eeb961"/><path d="M472 112V286" stroke="#eeb961" stroke-dasharray="5 8" opacity=".5"/>
+    <g fill="#e6ecee" font-family="Segoe UI, sans-serif" font-size="23"><text x="57" y="158">+X North</text><text x="280" y="36">+Y Up</text><text x="502" y="335">+Z East</text><text x="421" y="59" fill="#eeb961">Sun direction</text></g>
+    <circle cx="315" cy="275" r="5" fill="#e6ecee"/>
+  </svg></div>
+  <div class="ribbon"><span>SunCalc convention</span><b>→</b><span>NUE conversion</span><b>→</b><span class="accent">Normalized direction</span></div>
+<a class="demo-cue" data-demo="sun-position" href="http://127.0.0.1:5188/" target="_blank" rel="noopener noreferrer"><b>LIVE DEMO</b><span>Sun Position Demo</span></a>
+  <aside class="notes"><p>Alissa · 1:20 total, including 0:35 demo. Inputs are latitude, longitude and an absolute UTC instant. SunCalc angles are converted once into the framework’s North-Up-East direction. Explain +X North, +Y Up, +Z East and normalization.</p><p>LIVE DEMO — Sun Position Demo, 35 seconds: pre-open GpsPlusSlamJs_SunPositionDemo. Use Berlin (52.52, 13.405), 2026-06-21T12:00:00Z; Calculate and point out altitude, direction and horizon status. Change to 2026-06-21T00:00:00Z and show below-horizon output. No test-count claim. If the demo is unavailable, use a pre-captured clip or the existing diagram; do not troubleshoot on stage.</p></aside>
+</section>
+
+<section data-timing="65" class="plan-review-example" aria-label="A Coordinate-System Mistake"><div class="eyebrow">05 / REVIEW & TESTING</div><h2>A Coordinate-System Mistake</h2>
+<div class="review-sequence">
+<article class="assumption-card"><div class="panel-label">AI-GENERATED PLAN</div><p class="plan-assumption">&ldquo;Azimuth measured clockwise from North&rdquo;</p></article>
+<div class="review-connector"><span>&rarr;</span><p>Mismatch found<br>during review</p></div>
+<article><div class="panel-label">SUNCALC ACTUALLY USES</div><dl class="azimuth-values"><dt>0&deg;</dt><dd>South</dd><dt>+90&deg;</dt><dd>West</dd><dt>&minus;90&deg;</dt><dd>East</dd><dt>&plusmn;180&deg;</dt><dd>North</dd></dl><svg class="convention-sketch" viewBox="0 0 260 155" role="img" aria-label="SunCalc compass: zero South, positive 90 West, negative 90 East, plus or minus 180 North"><circle cx="130" cy="78" r="43" fill="none" stroke="#34424a"/><path d="M130 29v99M81 78h98" stroke="#8cbcd4"/><path d="m126 39 4-10 4 10" fill="none" stroke="#8cbcd4"/><circle cx="130" cy="78" r="3" fill="#efbc6c"/><g fill="#b1bfc5" font-size="14" font-family="Segoe UI,Arial" text-anchor="middle"><text x="130" y="18">N &#177;180&#176;</text><text x="130" y="148">S 0&#176;</text><text x="37" y="82">W +90&#176;</text><text x="221" y="82">E &#8722;90&#176;</text></g></svg></article>
+<div class="review-connector"><span>&rarr;</span><p>Correct<br>conversion</p></div>
+<article><div class="panel-label">NUE</div><p class="nue-values">+X North<br>+Y Up<br>+Z East</p><svg class="convention-sketch" viewBox="0 0 200 155" role="img" aria-label="NUE axes: X North, Y Up, Z East"><g fill="none" stroke-width="2"><path d="M85 105 28 70m0 0 10 1m-10-1 4 9" stroke="#8cbcd4"/><path d="M85 105V28m0 0-4 9m4-9 4 9" stroke="#edf0e8"/><path d="m85 105 82 21m0 0-8-6m8 6-10 2" stroke="#afd0b7"/></g><circle cx="85" cy="105" r="3" fill="#efbc6c"/><g fill="#b1bfc5" font-size="14" font-family="Segoe UI,Arial"><text x="6" y="57">+X North</text><text x="65" y="18">+Y Up</text><text x="122" y="149">+Z East</text></g></svg></article>
+</div>
+
+<p class="review-takeaway">Takeaway: A plausible assumption can still be wrong.</p>
+<aside class="notes"><p>Alissa - 1:05. Use the documented first Sun Position plan as the example. Codex assumed clockwise azimuth from North. That sounded reasonable, but comparing the plan with SunCalc exposed the mismatch: its zero is South, with positive angles toward West.</p><p>The issue was caught in plan review, before the implementation was accepted. We revised the plan/conversion and added tests for all four cardinal directions. No incorrect production code was shipped in this account. Reflect on how a technically convincing AI plan can still rest on one wrong assumption; checking the library convention made the difference.</p></aside></section>
+
+<section data-timing="135" aria-label="Visual components">
+  <div class="eyebrow">06 / COMPONENT DEMOS</div><h2>Visual Components</h2><p class="visual-intro">One calculated sun state drives all visual effects.</p>
+  <div class="visual-cards">
+    <article class="visual-card"><div class="effect-art disc-art"><div class="horizon-line"></div><div class="orbit-arc"></div><div class="sun-circle"></div><div class="eye-point"></div><div class="direction-line"></div></div><h3>Visible Sun Disc</h3><p class="component-io"><span>INPUT</span>Sun direction<span>OUTPUT</span>Visible sun position<span>SECOND PURPOSE</span>AR alignment check</p><a class="demo-cue" data-demo="sun-disc" href="http://127.0.0.1:5189/" target="_blank" rel="noopener noreferrer"><b>LIVE DEMO</b><span>Visible Sun Disc Demo</span></a></article>
+    <article class="visual-card"><div class="effect-art lighting-art"><div class="light-sample low"><span></span><small>LOW SUN</small></div><div class="light-sample high"><span></span><small>HIGH SUN</small></div></div><h3>Lighting Model</h3><p class="component-io"><span>INPUT</span>Sun altitude<span>OUTPUT</span>Light intensity + color</p><a class="demo-cue" data-demo="lighting" href="http://127.0.0.1:5191/" target="_blank" rel="noopener noreferrer"><b>LIVE DEMO</b><span>Sun Altitude Lighting Demo</span></a></article>
+    <article class="visual-card"><div class="effect-art scene-art" data-scene="card" role="img" aria-label="Concept: directional light casts a shadow behind a simple box"></div><h3>Shadow Rig</h3><p class="component-io"><span>INPUT</span>Sun direction + lighting values<span>OUTPUT</span>Directional light + matching virtual shadows</p><a class="demo-cue" data-demo="shadow" href="http://127.0.0.1:5190/" target="_blank" rel="noopener noreferrer"><b>LIVE DEMO</b><span>Shadow Rig Demo</span></a></article>
+  </div>
+  <aside class="notes"><p>Alissa → Chin-Lucas · 2:15 total: 30 seconds introduction/handover plus three 35-second demos. Keep all three existing apps pre-opened. These cues do not embed or create demos.</p><p>Visible Sun Disc Demo — Alissa, 35 seconds: pause/scrub to an above-horizon sun, rotate the camera away and back, then scrub below horizon. Show geographic direction versus camera-dependent visibility. Hand over to Chin-Lucas.</p><p>Sun Altitude Lighting Demo — Chin-Lucas, 35 seconds: use a low positive sun, then a high sun. Compare warm/dim lighting with brighter daytime color and ambient readouts. Demonstrate the current standalone app only; do not imply final AR validation.</p><p>Shadow Rig Demo — Chin-Lucas, 35 seconds: vary time between two daylight angles. Show shadow direction and length on the box/ground. Explain that light direction and shadow framing are separate from the altitude model. If an app fails, return to the concept card or a pre-captured clip, rather than debugging live.</p></aside>
+</section>
+
+<section data-timing="85" aria-label="Real data adapter">
+  <div class="eyebrow">07 / INPUTS & DEMO</div><h2>Real Data Adapter</h2>
+  <div class="adapter-columns"><article class="adapter-column live"><div class="panel-label">REAL USE / PRODUCTION</div><div class="adapter-inputs input-live"><div><svg class="small-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-8 8-13a8 8 0 0 0-16 0c0 5 8 13 8 13Z"/><circle cx="12" cy="9" r="3"/></svg>Live GPS</div><span class="input-plus">+</span><div><svg class="small-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 3"/></svg>Current time</div></div><span class="down">&darr;</span><div class="node">Real Data Adapter</div><span class="down">&darr;</span><p>Sun position</p></article><article class="adapter-column fixed"><div class="panel-label">TESTS / DEMOS</div><div class="adapter-inputs input-fixed"><div><svg class="small-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-8 8-13a8 8 0 0 0-16 0c0 5 8 13 8 13Z"/><circle cx="12" cy="9" r="3"/></svg>Fixed location</div><span class="input-plus">+</span><div><svg class="small-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 3"/></svg>Fixed time</div></div><span class="down">&darr;</span><div class="node">Real Data Adapter</div><span class="down">&darr;</span><p>Repeatable result</p></article></div><div class="available-modes"><div class="modes-label">AVAILABLE MODES</div><div class="mode-grid"><span><i class="input-live">Live GPS</i> + <i class="input-live">Real Time</i></span><span><i class="input-fixed">Fixed Location</i> + <i class="input-live">Real Time</i></span><span><i class="input-live">Live GPS</i> + <i class="input-fixed">Fixed Time</i></span><span><i class="input-fixed">Fixed Location</i> + <i class="input-fixed">Fixed Time</i></span></div></div>
+  <a class="demo-cue" data-demo="adapter" href="http://127.0.0.1:5192/" target="_blank" rel="noopener noreferrer"><b>LIVE DEMO</b><span>Real Data Adapter Demo</span></a>
+  <aside class="notes"><p>Shared · 1:25 total, including 0:35 demo. Location and time are selected independently, so real-world input can be replaced deterministically without changing the core. The host owns GPS and refresh scheduling. A GPS sample timestamp is not automatically the solar evaluation instant.</p><p>LIVE DEMO — Real Data Adapter Demo, 35 seconds: use the fixed Berlin pair before relying on permissions. Show fixed/fixed stable after Refresh; switch to fixed location/real time, then live GPS/fixed time and live/real if a genuine fix is available. If GPS is unavailable, show its honest waiting state and return to fixed location. Briefly move the UTC slider. Never present synthetic input as outdoor GPS. This is the same adapter interface intended for replay, but the field recording’s ZIP export was blocked.</p></aside>
+</section>
+
+<section data-timing="70" aria-label="AI development process">
+  <div class="eyebrow">08 / DEVELOPMENT PROCESS</div><h2>Our AI-Assisted Workflow</h2>
+  <div class="process"><div><b>PLAN</b><span>Understand the<br>existing codebase</span></div><div><b>REVIEW</b><span>Challenge<br>assumptions</span><small class="review-example-cue">Caught wrong<br>azimuth assumption</small></div><div><b>PROTOTYPES</b><span>Compare<br>designs</span></div><div class="red-step"><b>TESTS</b><span>Define behavior<br>with tests</span></div><div class="green-step"><b>IMPLEMENTATION</b><span>Build the<br>final version</span></div><div><b>DEMO</b><span>Inspect behavior<br>visually</span></div></div>
+  <div class="prototype-heading">REAL DATA ADAPTER / THREE APPROACHES</div><div class="prototype-grid"><article class="chosen"><span>A</span><h3>Immediate commands</h3><p>Direct source changes</p><small>Selected design reference</small></article><article><span>B</span><h3>Draft / apply</h3><p>Explicit configuration</p></article><article><span>C</span><h3>Snapshot-based</h3><p>Pure snapshot + wrapper</p></article></div>
+  <p class="process-caption">The simpler approach became the starting point.<br><span class="muted">AI supported planning, review and implementation.</span></p>
+  <aside class="notes"><p>Shared · 1:10. Plan → Review → Prototypes → Tests → Implementation → Demo. Use the Real Data Adapter as the example. The repository documents A: immediate commands, B: draft/apply and C: snapshot-based. A was selected as the reference because independent source changes and atomic paired updates were direct, without extra concepts.</p><p>AI helped inspect code, propose designs, review and implement. Contracts and tests constrained the output. The comparison contains prototype check evidence; we do not have a preserved production RED-to-GREEN execution transcript. Do not claim that every stage happened identically for every component or that a one-shot generation produced the finished feature.</p></aside>
+</section>
+
+<section data-timing="70" aria-label="Time Estimations"><div class="eyebrow">09 / PLANNING & ACTUAL EFFORT</div><h2>Time Estimations</h2>
+<div class="time-legend"><span><i class="estimate-key"></i>Estimated</span><span><i class="actual-key"></i>Actual</span></div>
+<div class="time-chart"><div class="time-row"><div><b>Sun Position</b><small>SunCalc + NUE conversion + unit tests + demo</small></div><div class="bar-pair" role="img" aria-label="Sun Position: estimated 2 hours, actual 7 hours"><div class="time-bar estimate" style="--hours:2"><span>2 h</span></div><div class="time-bar actual" style="--hours:7"><span>7 h</span></div></div></div><div class="time-row"><div><b>Sun Disc</b><small>Unit tests + demo</small></div><div class="bar-pair" role="img" aria-label="Sun Disc: estimated 4 hours, actual 6 hours"><div class="time-bar estimate" style="--hours:4"><span>4 h</span></div><div class="time-bar actual" style="--hours:6"><span>6 h</span></div></div></div><div class="time-row"><div><b>Real Data Adapter</b><small>Matched estimate</small></div><div class="bar-pair" role="img" aria-label="Real Data Adapter: estimated 10 hours, actual 10 hours"><div class="time-bar estimate" style="--hours:10"><span>10 h</span></div><div class="time-bar actual" style="--hours:10"><span>10 h</span></div></div></div><div class="time-row"><div><b>Lighting Model</b><small></small></div><div class="bar-pair" role="img" aria-label="Lighting Model: estimated 3 hours, actual 4 hours"><div class="time-bar estimate" style="--hours:3"><span>3 h</span></div><div class="time-bar actual" style="--hours:4"><span>4 h</span></div></div></div><div class="time-row"><div><b>Shadow Rig</b><small>Matched estimate</small></div><div class="bar-pair" role="img" aria-label="Shadow Rig: estimated 7 hours, actual 7 hours"><div class="time-bar estimate" style="--hours:7"><span>7 h</span></div><div class="time-bar actual" style="--hours:7"><span>7 h</span></div></div></div><div class="time-row"><div><b>Task 1</b><small>Recorder workflow + no ZIP export</small></div><div class="bar-pair" role="img" aria-label="Task 1: estimated 2 hours, actual 5 hours"><div class="time-bar estimate" style="--hours:2"><span>2 h</span></div><div class="time-bar actual" style="--hours:5"><span>5 h</span></div></div></div></div>
+<div class="time-highlights"><p><b>Largest underestimate</b><br>Sun Position: <span class="accent">2 h → 7 h</span></p><p><b>On estimate</b><br>Adapter + Shadow Rig</p></div><aside class="notes"><p>Shared · 1:10. These are our reported estimates and actual effort, not repository-derived measurements. Sun Position was the largest underestimate: two to seven hours, including SunCalc integration, coordinate conversion, unit tests and demo. The surprising part was the conventions and verification around the calculation.</p><p>Sun Disc took four to six hours including tests/demo. Adapter matched ten hours, Lighting three to four, Shadow Rig matched seven. Task 1 grew from two to five hours because of recorder workflow and device/export issues; the first one-hour attempt is included in that total. Avoid interpreting these figures as a controlled measure of AI productivity.</p></aside></section>
+
+<section data-timing="80" class="outdoor-integration-slide" aria-label="Final integration">
+  <div class="eyebrow">10 / OUTDOOR TEST</div><h2>Final Integration</h2>
+  <div class="outdoor-integration-layout">
+    <div class="outdoor-pipeline">GPS + Time<span>&darr;</span>Real Data Adapter<span>&darr;</span>Sun Position<span>&darr;</span><strong>Sun Disc + Lighting<br>+ Shadows</strong><span>&darr;</span>AR Scene</div>
+    <figure class="outdoor-gallery">
+      <div class="outdoor-images">
+        <img src="assets/integration-outdoor-cube.jpg" alt="AR cube placed in the outdoor courtyard">
+        <img src="assets/integration-cube-shading.jpg" alt="Close-up of the AR cube with a bright top and shaded front">
+        <img src="assets/integration-sun-disc.jpg" alt="Real sun and virtual yellow Sun Disc visible together for alignment comparison">
+      </div>
+      <figcaption>Outdoor test of the integrated AR scene</figcaption>
+    </figure>
+  </div>
+  <aside class="notes"><p>Shared - 1:20. Follow the pipeline: live GPS and clock drive one sun state, then the disc, lighting and shadows. The AR feature is intended to be off by default and replace the fixed light when enabled.</p><p>Replay was planned, but our Android session produced no ZIP. That session could not be replayed. The blocker was communicated and the live-integration focus accepted. Existing repository recordings are separate. Final footage remains a placeholder; do not claim successful live validation.</p></aside>
+</section>
+
+<section data-timing="60" aria-label="What We Learned"><div class="eyebrow">11 / REFLECTION</div><h2>What We Learned</h2>
+<div class="reflection-grid general-reflection"><article><div class="panel-label">WHAT WE LEARNED</div><ul><li>Small technical details can have a large impact</li><li>Testing is essential for real-world data</li><li>AI output requires human review</li><li>Modular development makes parallel work easier</li></ul></article><article><div class="panel-label">WHAT WE WOULD CHANGE</div><ul><li>Validate external tools earlier</li><li>Plan more time for testing and integration</li><li>Work more closely together during integration</li></ul></article></div><aside class="notes"><p>Shared - 1:00. Reflect on the broader lessons rather than repeating the earlier technical example. Small details affected the result, real-world data needed testing, and AI output still needed human review.</p><p>Independent component ownership supported parallel progress. During integration, closer collaboration would help resolve interface questions earlier. Next time, validate external tools sooner and reserve more time for testing and integration. Transition to Q&amp;A. Planned presentation time remains 14:40 including the demos, plus questions.</p></aside></section>
+
+<section data-timing="10" class="qa-slide" aria-label="Questions"><div class="qa-content"><h1>Thank you.</h1><p>Any questions?</p></div><p class="qa-contributions">Contributions to the source repository: Pull request pending</p><aside class="notes"><p>Both - 0:10, then Q&A. Invite questions. Allow 3-5 minutes within the session. Replace the background image asset with a genuine final live-testing photo when available.</p></aside></section>
+</div></div>
+
+<script src="vendor/reveal/dist/reveal.js"></script><script src="vendor/reveal/plugin/notes/notes.js"></script><script src="deck.js"></script>
+</body></html>

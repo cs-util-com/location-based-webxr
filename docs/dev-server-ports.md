@@ -12,9 +12,18 @@
 - **5184** — `GpsPlusSlamJs_PhysicsDemo`
 - **5185** — `GpsPlusSlamJs_QrTrackingDemo`
 - **5186** — `GpsPlusSlamJs_OsmDemo`
+- **5184** — `GpsPlusSlamJs_PhysicsDemo`
+- **5185** — `GpsPlusSlamJs_QrTrackingDemo`
+- **5186** — `GpsPlusSlamJs_OsmDemo`
 - **5187** — `GpsPlusSlamJs_TourViewer`
+- **5188** — `GpsPlusSlamJs_SunPositionDemo`
+- **5189** — `GpsPlusSlamJs_VisibleSunDiscDemo`
+- **5190** — `GpsPlusSlamJs_SunShadowRigDemo`
+- **5191** — `GpsPlusSlamJs_SunAltitudeLightingDemo`
+- **5192** — `GpsPlusSlamJs_RealSunDataAdapterDemo`
+- **5193** — `GpsPlusSlamJs_RealisticSunLightingDemo`
 
-Next free: **5188**.
+Next free: **5194**.
 
 ### Auxiliary e2e servers (not vite, invisible to `dev-server-ports.test.js`)
 

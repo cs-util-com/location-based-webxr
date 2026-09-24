@@ -24,6 +24,7 @@
  *     wayfinding/       ← WayfindingHudDemo, base=/wayfinding/
  *     osm/              ← OsmDemo, base=/osm/
  *     tour/             ← TourViewer, base=/tour/
+ *     sun-lighting/     ← RealisticSunLightingDemo, base=/sun-lighting/
  *     blog/             ← rendered from the project WIKI repo (not a Vite app)
  *
  * `base` and `outDir` are passed as build-time CLI flags so the committed app
@@ -135,6 +136,7 @@ function assertLandingHtml(htmlPath) {
     '/wayfinding/',
     '/osm/',
     '/tour/',
+    '/sun-lighting/',
     // Not a demo, but required for the same reason: this footer link is the
     // only inbound path a crawler has to /blog/, and the canonical-copy
     // argument (the blog should outrank the GitHub wiki copy of the same
@@ -181,6 +183,7 @@ function assertSiteTree() {
     'wayfinding/index.html',
     'osm/index.html',
     'tour/index.html',
+    'sun-lighting/index.html',
     // The blog index exists even with nothing published (it renders "No posts
     // published yet"), so its absence means the blog step did not run at all.
     'blog/index.html',
@@ -356,6 +359,21 @@ run('pnpm', [
   '--emptyOutDir',
 ]);
 assertNoBareAbsoluteUrlsInDir(join(distSite, 'osm'), '/osm/');
+
+console.log('• Building RealisticSunLightingDemo (base=/sun-lighting/)');
+run('pnpm', ['--filter', 'gps-plus-slam-realistic-sun-lighting-demo', 'run', 'typecheck']);
+run('pnpm', [
+  '--filter',
+  'gps-plus-slam-realistic-sun-lighting-demo',
+  'exec',
+  'vite',
+  'build',
+  '--base=/sun-lighting/',
+  '--outDir',
+  join(distSite, 'sun-lighting'),
+  '--emptyOutDir',
+]);
+assertNoBareAbsoluteUrlsInDir(join(distSite, 'sun-lighting'), '/sun-lighting/');
 
 // The blog is not a Vite app: it is markdown from the project WIKI repository
 // (a separate repo — see GpsPlusSlamJs_Landing/scripts/blog/) rendered to

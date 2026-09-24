@@ -11,6 +11,7 @@ output directory (`dist-site/`) that Cloudflare serves as static assets:
 - `dist-site/starter/` — `GpsPlusSlamJs_AnchorStarter`, built with `base=/starter/`.
 - `dist-site/minimal/` — `GpsPlusSlamJs_MinimalExample`, built with `base=/minimal/`.
 - `dist-site/qr-demo/` — `GpsPlusSlamJs_QrTrackingDemo`, built with `base=/qr-demo/`.
+- `dist-site/sun-lighting/` — `GpsPlusSlamJs_RealisticSunLightingDemo`, built with `base=/sun-lighting/`.
 
 Invoked via the root script `pnpm run build:site`. This is the command the
 Cloudflare Git integration runs. See

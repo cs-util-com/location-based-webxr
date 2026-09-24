@@ -1,0 +1,26 @@
+{
+  "name": "gps-plus-slam-visible-sun-disc-demo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Desktop Three.js demo for the AppFramework Visible Sun Disc.",
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm run build:framework && vite",
+    "build": "pnpm run build:framework && tsc -p tsconfig.json && vite build",
+    "build:framework": "pnpm --filter gps-plus-slam-app-framework run build",
+    "preview": "vite preview"
+  },
+  "engines": {
+    "node": ">=22.14.0"
+  },
+  "dependencies": {
+    "gps-plus-slam-app-framework": "workspace:*",
+    "three": "^0.185.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.185.4",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.12"
+  },
+  "license": "Apache-2.0"
+}
