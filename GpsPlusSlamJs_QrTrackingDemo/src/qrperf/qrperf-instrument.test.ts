@@ -317,3 +317,50 @@ describe("createQrPerfInstrument", () => {
     });
   });
 });
+
+describe("createQrPerfInstrument fused pose (M3b b5)", () => {
+  // Why this test matters: the owner's phone runs come back as this JSON.
+  // With the demo on the fused pose, the report must say how often the
+  // joint rotation was stable, how often the views disagreed (fallback to
+  // averaging), how well they fit, and how far the joint rotation sat from
+  // today's averaged one - or a field test cannot tell whether M3b helped.
+  const result = (over: Record<string, unknown>) =>
+    ({
+      status: "stable",
+      pose: null,
+      method: "joint",
+      views: 7,
+      droppedViews: 0,
+      fitPx: 0.6,
+      windowEntries: 7,
+      averagedRotationDeltaDeg: 2,
+      frameEpoch: 0,
+      oldestTimestamp: 0,
+      newestTimestamp: 0,
+      ...over,
+    }) as Parameters<ReturnType<typeof createQrPerfInstrument>["onFused"]>[0];
+
+  it("tallies the fused results per lock into the report and the JSON", () => {
+    const inst = createQrPerfInstrument({
+      mode: "native",
+      baseline: false,
+      now: steppingClock(1),
+    });
+    inst.onFused(result({}));
+    inst.onFused(result({ status: "measuring", views: 3, fitPx: 0.4 }));
+    inst.onFused(
+      result({ status: "measuring", method: "averaged", fitPx: 12 }),
+    );
+    inst.onFused(result({ status: "unknown", method: null, fitPx: Infinity }));
+    const json = JSON.parse(inst.json()) as { fused: Record<string, number> };
+    expect(json.fused).toMatchObject({
+      locks: 4,
+      stable: 1,
+      joint: 2,
+      averaged: 1,
+    });
+    expect(json.fused.fitP50Px).toBeCloseTo(0.6, 9);
+    expect(json.fused.deltaP50Deg).toBeCloseTo(2, 9);
+    expect(inst.report().some((l) => l.startsWith("fused:"))).toBe(true);
+  });
+});

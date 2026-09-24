@@ -4,6 +4,8 @@
  * screenshot-readable report. See qrperf-instrument.ts.md.
  */
 
+import type { QrFusedPose } from "gps-plus-slam-app-framework/ar/qr";
+import { createFusedTally, fusedLine } from "./fused-tally.js";
 import type { CaptureTiming } from "gps-plus-slam-app-framework/ar/camera-blit-capture";
 import type { QrDetection, RgbaImage } from "gps-plus-slam-app-framework/ar";
 import {
@@ -63,6 +65,8 @@ export interface QrPerfInstrument {
   ): (...args: A) => R;
   snapshot(): PipelineSnapshot;
   cornerOrder(): Record<number, RollBinTally>;
+  /** The demo's fused pose after a lock (M3b b5), tallied for the report. */
+  onFused(result: QrFusedPose): void;
   report(): string[];
   json(): string;
 }
@@ -236,6 +240,7 @@ export function createQrPerfInstrument(
   let frameSize = "";
   let nextSet: ZxingOptionSet = "default";
   const pose = createPoseQuality();
+  const fused = createFusedTally();
   /** Solves attempted and accepted (a null result failed, e.g. the 4 px gate). */
   const solves = { accepted: 0, attempted: 0 };
   /** The text of the latest detection; the solve that follows is its frame's. */
@@ -332,6 +337,9 @@ export function createQrPerfInstrument(
         return out;
       };
     },
+    onFused(result) {
+      fused.add(result);
+    },
     snapshot: () => timings.snapshot(now()),
     cornerOrder: () => tally.summary(),
     report() {
@@ -353,6 +361,7 @@ export function createQrPerfInstrument(
       lines.push(
         `solves accepted ${solves.accepted} / ${solves.attempted}`,
         ...poseLines(pose.summary()),
+        fusedLine(fused.summary()),
       );
       if (options.mode === "zxing") lines.push(...zxingLines());
       return lines;
@@ -366,6 +375,7 @@ export function createQrPerfInstrument(
         ...timings.snapshot(now()),
         pose: pose.summary(),
         solves,
+        fused: fused.summary(),
         zxingSets: sets,
         zxingLoadMs: options.zxing?.loadMs() ?? null,
         cornerOrder: tally.summary(),

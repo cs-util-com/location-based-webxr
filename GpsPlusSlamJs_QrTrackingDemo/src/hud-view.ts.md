@@ -5,8 +5,11 @@ to confirm a freshly printed QR against a tape measure (Note 4). No DOM.
 
 ## Public API
 
-- `toHudView(status, size): HudView` → `{ statusLabel, sizeLabel, sampleLabel,
-spreadLabel, lifecycleLabel }`.
+- `toHudView(status, size, fused?): HudView` → `{ statusLabel, sizeLabel, sampleLabel,
+spreadLabel, lifecycleLabel, poseLabel }`. `poseLabel` (M3b b5) names the
+  fused pose: `joint · <status> · <views> views · fit <px> px`, or
+  `averaged (views disagree) · fit <px> px` for the fallback, or `—` before any
+  (a non-finite fit reads `fit —`).
 - `DemoStatus = 'idle' | 'scanning' | 'tracking'`.
 
 ## Invariants

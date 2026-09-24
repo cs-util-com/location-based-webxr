@@ -69,3 +69,66 @@ describe("toHudView", () => {
     expect(v.sizeLabel).toBe("measuring…");
   });
 });
+
+describe("toHudView pose line (M3b b5)", () => {
+  // Why this test matters: on the phone the owner sees the axis settle, but
+  // not WHY - whether the joint rotation over several views is shown, or
+  // the fallback to averaging, and how well the views agree. This line says
+  // it, so a field test can tell a good window from a contradicting one.
+  const fused = (over: Record<string, unknown>) =>
+    ({
+      status: "stable",
+      pose: null,
+      method: "joint",
+      views: 7,
+      droppedViews: 0,
+      fitPx: 0.62,
+      windowEntries: 7,
+      averagedRotationDeltaDeg: 1.2,
+      frameEpoch: 0,
+      oldestTimestamp: 0,
+      newestTimestamp: 0,
+      ...over,
+    }) as Parameters<typeof toHudView>[2];
+
+  it("reads '—' before any fused evaluation", () => {
+    expect(toHudView("idle", undefined, null).poseLabel).toBe("—");
+    expect(
+      toHudView(
+        "scanning",
+        undefined,
+        fused({ status: "unknown", method: null }),
+      ).poseLabel,
+    ).toBe("—");
+  });
+
+  it("names the joint rotation, its state, views and fit", () => {
+    expect(toHudView("tracking", undefined, fused({})).poseLabel).toBe(
+      "joint · stable · 7 views · fit 0.6 px",
+    );
+    expect(
+      toHudView("tracking", undefined, fused({ status: "measuring", views: 3 }))
+        .poseLabel,
+    ).toBe("joint · measuring · 3 views · fit 0.6 px");
+  });
+
+  it("names the fallback when the views contradict each other", () => {
+    expect(
+      toHudView(
+        "tracking",
+        undefined,
+        fused({ status: "measuring", method: "averaged", fitPx: 12.34 }),
+      ).poseLabel,
+    ).toBe("averaged (views disagree) · fit 12.3 px");
+  });
+
+  it("shows a missing fit as '—'", () => {
+    expect(
+      toHudView(
+        "tracking",
+        undefined,
+        fused({ status: "measuring", method: "averaged", fitPx: Infinity }),
+      ).poseLabel,
+    ).toBe("averaged (views disagree) · fit —");
+  });
+});

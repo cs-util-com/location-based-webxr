@@ -7,6 +7,7 @@
  */
 
 import type { QrSizeEstimate } from "gps-plus-slam-app-framework/ar";
+import type { QrFusedPose } from "gps-plus-slam-app-framework/ar/qr";
 
 export type DemoStatus = "idle" | "scanning" | "tracking";
 
@@ -21,6 +22,12 @@ export interface HudView {
   spreadLabel: string;
   /** Size lifecycle stage (`unknown` | `measuring` | `estimated`). */
   lifecycleLabel: string;
+  /**
+   * The fused pose (QR near-frontal pose plan M3b b5): which rotation the
+   * overlay shows and how well the views agree, e.g.
+   * `joint · stable · 7 views · fit 0.6 px`, or `—` before any.
+   */
+  poseLabel: string;
 }
 
 const STATUS_LABELS: Record<DemoStatus, string> = {
@@ -47,9 +54,20 @@ function formatSpread(spreadM: number): string {
   return mm < 0.5 ? "<1 mm" : `±${Math.round(mm)} mm`;
 }
 
+/** The fused-pose line: method, state, views and the median per-view fit. */
+function formatPose(fused: QrFusedPose | null | undefined): string {
+  if (!fused || fused.status === "unknown" || !fused.method) return "—";
+  const fit = Number.isFinite(fused.fitPx)
+    ? `fit ${fused.fitPx.toFixed(1)} px`
+    : "fit —";
+  if (fused.method === "averaged") return `averaged (views disagree) · ${fit}`;
+  return `joint · ${fused.status} · ${fused.views} views · ${fit}`;
+}
+
 export function toHudView(
   status: DemoStatus,
   size: QrSizeEstimate | undefined,
+  fused?: QrFusedPose | null,
 ): HudView {
   const sizeEstimate = size ?? {
     status: "unknown" as const,
@@ -66,5 +84,6 @@ export function toHudView(
     sampleLabel: `${sizeEstimate.sampleCount} sample${sizeEstimate.sampleCount === 1 ? "" : "s"}`,
     spreadLabel: formatSpread(sizeEstimate.spreadM),
     lifecycleLabel: sizeEstimate.status,
+    poseLabel: formatPose(fused),
   };
 }

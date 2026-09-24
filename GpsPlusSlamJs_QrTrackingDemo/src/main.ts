@@ -84,6 +84,7 @@ const dom = {
   hudSamples: el("hud-samples"),
   hudSpread: el("hud-spread"),
   hudLifecycle: el("hud-lifecycle"),
+  hudPose: el("hud-pose"),
   debugLog: el("debug-log"),
   qrperfLog: el("qrperf-log"),
   qrperfCopy: el<HTMLButtonElement>("qrperf-copy"),
@@ -117,12 +118,20 @@ function renderHud(): void {
     store && activeText
       ? selectQrSize(store.getState(), activeText)
       : undefined;
-  const v = toHudView(status, size);
+  // Re-evaluate (cheap: cached until a new detection or a frame change) so a
+  // restart shows at once, not at the next lock.
+  if (store && activeText) fusedPose.resolve(store.getState(), activeText);
+  const v = toHudView(
+    status,
+    size,
+    activeText ? fusedPose.last(activeText) : null,
+  );
   dom.hudStatus.textContent = v.statusLabel;
   dom.hudSize.textContent = v.sizeLabel;
   dom.hudSamples.textContent = v.sampleLabel;
   dom.hudSpread.textContent = v.spreadLabel;
   dom.hudLifecycle.textContent = v.lifecycleLabel;
+  dom.hudPose.textContent = v.poseLabel;
 }
 
 function failStart(err: unknown): void {
@@ -224,8 +233,14 @@ async function startAr(): Promise<void> {
     // QR near-frontal pose plan M3b b5) once its gate opens; the controller
     // falls back to the raw frame pose until then. Reads the slice AFTER
     // recordDetection has fed the current frame in.
-    resolveStablePose: (text) =>
-      store ? fusedPose.resolve(store.getState(), text) : null,
+    resolveStablePose: (text) => {
+      if (!store) return null;
+      const pose = fusedPose.resolve(store.getState(), text);
+      // Once per lock: the ?qrperf report tallies the fused result.
+      const last = fusedPose.last(text);
+      if (perf && last) perf.instrument.onFused(last);
+      return pose;
+    },
     onStatus: (next) => {
       status = next;
       debugLog.append(formatStatusLine(performance.now(), next));

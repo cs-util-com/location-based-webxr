@@ -28,7 +28,10 @@ boot store + AR session + debug view + controller → per-frame
   falls back to the raw frame pose until then (it read today's averaged
   stable pose before). `initAR` gets `onFrameChanged`, which dispatches
   `qrFrameChanged()` after an odometry restart (`restart-tracking.ts`).
-- HUD re-renders on store change and status change.
+- HUD re-renders on store change and status change; its `pose` row
+  (`hud-view.ts` `poseLabel`) shows the fused result, re-evaluated on each
+  render (cached) so a restart shows at once. With `?qrperf`, each lock's
+  fused result is also tallied (`qrperf/fused-tally.ts`).
 - **`?qrperf` instrument** (plan 2026-09-23 M2): `mountQrPerf(parseQrPerfParams(location.search), …)`
   returns `null` when the flag is absent, and then nothing below changes. When
   set, `detect` and the default pose solve (`createDefaultSolvePose()`) are
