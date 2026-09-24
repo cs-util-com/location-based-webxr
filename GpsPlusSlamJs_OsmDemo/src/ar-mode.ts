@@ -114,6 +114,11 @@ import {
 // Only for the reusable direction vector below. `getWorldDirection` needs a
 // target and allocating one per frame would be litter on the frame path.
 import * as THREE from "three";
+import {
+  describeArSunShadow,
+  startArSunShadow,
+  type ArSunShadowSession,
+} from "./ar-sun-shadow-session.js";
 
 /**
  * Scratch for the camera's look direction, reused every frame.
@@ -319,6 +324,14 @@ export interface ArModeDeps {
       }
     | undefined;
   /**
+   * The AR sun shadow prototype (`?sunShadow=1`, plan 2026-09-23-2343 M3):
+   * a virtual shadow of a test pole and the quest beacons, in the real sun's
+   * direction, on the floor estimate. **Absent or false is a byte-identical
+   * session.** It needs `autoElevation` (the floor estimate and the gated
+   * DEM): without it the HUD says "waiting for floor" for good.
+   */
+  readonly sunShadow?: boolean | undefined;
+  /**
    * Apply the compass-influence settings the slider produced (DEC-E2).
    *
    * FOUR SETTINGS RATHER THAN ONE, and the reason is in `compass-influence.ts`:
@@ -375,6 +388,8 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
   const session: {
     alignment?: { dispose: () => void };
     restoreEnvironment?: () => void;
+    /** The AR sun shadow prototype, while `deps.sunShadow` is on. */
+    sunShadow?: ArSunShadowSession | undefined;
     hud?: ArHud;
     elevation?: ArElevationControl;
     compass?: ArCompassControl;
@@ -510,6 +525,11 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     // here because this is the one place that knows the session is over, and
     // because the next thing added to `release()` will assume the pattern.
     session.restoreEnvironment?.();
+    // THE SUN SHADOW BEFORE THE CITY IS HANDED BACK: it removes its props
+    // from the placed content and turns casting off, so the desktop view
+    // never receives a pole, a shadow plane or a casting pin.
+    session.sunShadow?.dispose();
+    session.sunShadow = undefined;
     // GIVE THE CITY BACK, and the reason is the opposite of a leak: the
     // framework DISCARDS its scene when the session ends. Content still
     // attached to it goes with it — out of the desktop view, with nothing left
@@ -824,8 +844,12 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
      * ground lagged a nudge until the next frame. Three call sites, one of them
      * missed, is the argument for none.
      */
+    // The last composed offset, for the sun shadow's frame (its caster
+    // offset and its ground height; the content root's position.y stays 0).
+    let currentComposedM = 0;
     const applyComposed = () => {
       const composedM = composeElevationM(appliedAutoM, manualTrimM, descentM);
+      currentComposedM = composedM;
       applyElevation(composedM);
       // NOTHING FOR THE VEIL HERE. Unlike the entry ground it replaced, the
       // veil is centred on the CAMERA rather than on the city, so the elevation
@@ -1054,6 +1078,34 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
       getRenderer(),
       deps.buildingView.distanceHaze(),
     );
+
+    // THE AR SUN SHADOW (`?sunShadow=1`). Started HERE, in the synchronous
+    // setup, so the renderer's shadow maps are on before the first XR frame
+    // (switching them on later recompiles every lit material mid-session).
+    // No renderer or no origin: no shadow, and the session runs as ever.
+    const shadowRenderer = getRenderer();
+    let sunShadowUnavailable: string | undefined;
+    if (
+      deps.sunShadow === true &&
+      shadowRenderer !== null &&
+      deps.origin !== null
+    ) {
+      // A PROTOTYPE NEVER COSTS THE SESSION: a scene without the named sun
+      // light (an older framework) runs on without a shadow, and the HUD
+      // says why rather than showing nothing.
+      try {
+        session.sunShadow = startArSunShadow({
+          scene,
+          renderer: shadowRenderer,
+          view: deps.buildingView,
+          origin: deps.origin,
+          geometricOffset,
+        });
+      } catch (error) {
+        sunShadowUnavailable =
+          error instanceof Error ? error.message : String(error);
+      }
+    }
 
     session.alignment = enableArWorldGroupAlignment({
       store: deps.store,
@@ -1456,6 +1508,39 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
       //
       // `due` reads the same `lastWriteMs` `sample` does, so this is one
       // cadence queried twice rather than two cadences that can drift.
+      // THE SUN SHADOW'S FRAME: everything it needs is already here. The
+      // camera's world position is NUE about `zero` once aligned; anchor ENU
+      // is that minus the geometric offset (as the estimator reconciles it).
+      let sunShadowLine: string | undefined =
+        sunShadowUnavailable === undefined
+          ? undefined
+          : `shadow: unavailable (${sunShadowUnavailable})`;
+      if (session.sunShadow !== undefined) {
+        // `aligned` is the frame's own "a solve has been applied" above.
+        let userEnu: AnchorEnuPoint | null = null;
+        let forwardEnu: AnchorEnuPoint | null = null;
+        if (aligned) {
+          camera.getWorldPosition(cameraWorld);
+          userEnu = {
+            x: cameraWorld.z - geometricOffset.east,
+            y: cameraWorld.x - geometricOffset.north,
+          };
+          camera.getWorldDirection(forward);
+          forwardEnu = { x: forward.z, y: forward.x };
+        }
+        const status = session.sunShadow.frame({
+          dtS: dt,
+          userEnu,
+          forwardEnu,
+          demAtUserM:
+            userEnu === null
+              ? undefined
+              : deps.autoElevation?.terrainHeightM(userEnu),
+          composedM: currentComposedM,
+          floorEngaged: latestAuto?.engaged === true,
+        });
+        sunShadowLine = describeArSunShadow(status);
+      }
       const hud = session.hud;
       if (hud !== undefined && hud.due(elapsed * 1000)) {
         const live = deps.liveMeasurements?.() ?? {};
@@ -1522,6 +1607,7 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
                     triangles: renderer.info.render.triangles,
                   },
             fps,
+            sunShadowLine,
             // THE VERTICAL TERM §4 PREDICTS WILL JUMP. `arWorldGroup.matrix` is
             // written directly by the alignment lerper with `matrixAutoUpdate =
             // false`, so element 13 is the live baseline rather than a stale copy.

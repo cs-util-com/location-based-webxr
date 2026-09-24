@@ -909,3 +909,16 @@ describe("the altitude line's width budget (r543, retargeted by J6)", () => {
     }
   });
 });
+
+describe("describeArMeasurements - the AR sun shadow line (shadow plan M3)", () => {
+  // WHY: under ?sunShadow=1 the field test reads the shadow's state and its
+  // frame times off the HUD; absent, nothing is printed (a session without
+  // the prototype is byte-identical).
+  it("prints the shadow line when given, and nothing when not", () => {
+    const line = "shadow on · 2 maps · sun 35°";
+    expect(describeArMeasurements({ sunShadowLine: line })).toContain(line);
+    expect(describeArMeasurements({}).some((l) => l.startsWith("shadow"))).toBe(
+      false,
+    );
+  });
+});

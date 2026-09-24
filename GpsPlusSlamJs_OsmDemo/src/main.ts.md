@@ -58,6 +58,11 @@ None. Entry point only, loaded by `index.html`.
   datum), so the estimator and the HUD's terrain line can never disagree about
   when the DEM is usable; `terrain` and `arUndulationM` are read per call from
   the same closure pattern as `liveMeasurements`.
+- **The AR sun shadow switch is read here** (`sunShadowEnabled(window.location.search)`,
+  `?sunShadow=1`, plan 2026-09-23-2343 M3), at each AR entry like the
+  auto-elevation switch above, and passed as `startArMode`'s `sunShadow`.
+  It is OFF unless asked for; the prototype also needs the auto-elevation
+  group, so `?autoElevation=off` leaves it waiting for a floor.
 - **The REAL SUN is booted and stepped here** (plan 2026-09-23-2149, M2).
   The sun clock (`sun-clock.ts`) starts from the start position, before the
   view exists (`BuildingView`'s `initialSun`, so the sky is built once):

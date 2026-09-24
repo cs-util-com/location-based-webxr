@@ -21,6 +21,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as THREE from "three";
+import { SCENE_NODE } from "gps-plus-slam-app-framework/ar/scene-node-names";
 import {
   DESCENT_ESTIMATE_WAIT_S,
   DESCENT_FALL_S,
@@ -2536,5 +2537,109 @@ describe("the AR entry fly-down (H5, Q5)", () => {
       mode.dispose();
       expect(veilIn(container)).toBeNull();
     });
+  });
+});
+
+describe("the AR sun shadow (?sunShadow=1, shadow plan 2026-09-23-2343 M3)", () => {
+  type FrameFn = (ctx: { dt: number; elapsed: number }) => void;
+
+  /** The view with the shadow seams recorded. */
+  const shadowView = () => {
+    const casting: boolean[] = [];
+    const props: THREE.Object3D[] = [];
+    return Object.assign(fakeView(), {
+      casting,
+      props,
+      setArShadowCasting: (on: boolean) => {
+        casting.push(on);
+      },
+      addArShadowProps: (...objects: THREE.Object3D[]) => {
+        props.push(...objects);
+      },
+      removeArShadowProps: (...objects: THREE.Object3D[]) => {
+        for (const o of objects) props.splice(props.indexOf(o), 1);
+      },
+      arShadowCasterSignature: "0:0",
+    });
+  };
+  const namedSunLight = () => {
+    const light = new THREE.DirectionalLight();
+    light.name = SCENE_NODE.SUN_LIGHT;
+    scene.add(light);
+    return light;
+  };
+  const withShadowMap = () => {
+    const shadowMap = { enabled: false, type: THREE.BasicShadowMap };
+    (renderer as unknown as { shadowMap: typeof shadowMap }).shadowMap =
+      shadowMap;
+    return shadowMap;
+  };
+
+  // WHY: absent, the prototype must leave a session exactly as it was: no
+  // shadow maps (a recompile of every material), no props, no casting.
+  it("leaves a session without the switch alone", async () => {
+    const shadowMap = withShadowMap();
+    namedSunLight();
+    const view = shadowView();
+    await startArMode(
+      deps({ buildingView: view as unknown as ArModeDeps["buildingView"] }),
+    );
+    expect(shadowMap.enabled).toBe(false);
+    expect(view.props).toHaveLength(0);
+    expect(view.casting).toEqual([]);
+  });
+
+  // WHY: shadow maps must be on BEFORE the first XR frame (enabling them
+  // later recompiles every lit material mid-session), the HUD must say why
+  // there is no shadow yet, and the teardown must take the props and the
+  // casting back before the city returns to the desktop view.
+  it("starts before the first frame, reports on the HUD, and tears down", async () => {
+    const shadowMap = withShadowMap();
+    namedSunLight();
+    const view = shadowView();
+    const container = document.createElement("div");
+    document.body.append(container);
+    const mode = await startArMode(
+      deps({
+        buildingView: view as unknown as ArModeDeps["buildingView"],
+        container,
+        sunShadow: true,
+      }),
+    );
+    expect(shadowMap.enabled).toBe(true);
+    expect(view.props.map((p) => p.name).sort()).toEqual([
+      "ar-shadow-plane",
+      "ar-shadow-pole",
+    ]);
+    expect(view.casting).toEqual([true]);
+    const frame = registerXrFrameUpdate.mock.calls[0]?.[0] as FrameFn;
+    // No `autoElevation`: no gated DEM, so the shadow waits for a position.
+    for (let t = 1; t <= 3; t += 0.25) frame({ dt: 0.25, elapsed: t });
+    expect(container.textContent).toContain("shadow: waiting for position");
+    mode.dispose();
+    expect(view.casting.at(-1)).toBe(false);
+    expect(view.props).toHaveLength(0);
+  });
+
+  // WHY: the prototype must never cost the session. A scene without the
+  // named light (an older framework) runs on, without a shadow.
+  it("runs on without a shadow when the scene has no named sun light", async () => {
+    withShadowMap();
+    const view = shadowView();
+    const container = document.createElement("div");
+    document.body.append(container);
+    const mode = await startArMode(
+      deps({
+        buildingView: view as unknown as ArModeDeps["buildingView"],
+        container,
+        sunShadow: true,
+      }),
+    );
+    expect(mode.started).toBe(true);
+    expect(view.props).toHaveLength(0);
+    const frame = registerXrFrameUpdate.mock.calls[0]?.[0] as FrameFn;
+    for (let t = 1; t <= 3; t += 0.25) frame({ dt: 0.25, elapsed: t });
+    expect(container.textContent).toContain("shadow: unavailable");
+    mode.dispose();
   });
 });

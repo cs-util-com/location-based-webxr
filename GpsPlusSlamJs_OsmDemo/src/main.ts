@@ -86,6 +86,7 @@ import {
 } from "./ar-entry.js";
 import { startArMode, type ArMode } from "./ar-mode.js";
 import { autoElevationEnabled } from "./ar-elevation-auto.js";
+import { sunShadowEnabled } from "./ar-sun-shadow.js";
 import { startArWalk, type ArWalk } from "./ar-walk-controller.js";
 import { createArToast } from "./ar-toast.js";
 import { createToast } from "gps-plus-slam-app-framework/utils/toast-core";
@@ -1997,6 +1998,9 @@ async function main(): Promise<void> {
             },
           }
         : {}),
+      // THE AR SUN SHADOW PROTOTYPE (`?sunShadow=1`, plan 2026-09-23-2343
+      // M3): OFF unless asked for, read at entry like the switch above.
+      sunShadow: sunShadowEnabled(window.location.search),
       // M4. Pulled at the readout's own cadence rather than pushed, because
       // fixes arrive ~1 Hz while draw cost changes every frame.
       //
