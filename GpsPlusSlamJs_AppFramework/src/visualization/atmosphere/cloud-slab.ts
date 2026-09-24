@@ -374,8 +374,16 @@ export function cloudSlabMarch(
     colour: [0, 0, 0],
     stepsTaken: 0,
   };
-  const { camera, dir, steps, sample, threshold, light } = input;
-  const interval = cloudSlabInterval(camera[1], dir);
+  const { camera, steps, sample, threshold, light } = input;
+  // Validated and normalised here: every position below assumes a unit
+  // direction (the interval normalises on its own; the march must too).
+  const interval = cloudSlabInterval(camera[1], input.dir);
+  const length = Math.hypot(input.dir[0], input.dir[1], input.dir[2]);
+  const dir: Vec3 = [
+    input.dir[0] / length,
+    input.dir[1] / length,
+    input.dir[2] / length,
+  ];
   if (interval === null || !Number.isFinite(threshold)) return result;
   const { starts, ends, samples } = cloudSlabSteps(
     steps,

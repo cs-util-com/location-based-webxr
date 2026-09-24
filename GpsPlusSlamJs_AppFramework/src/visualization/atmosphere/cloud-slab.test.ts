@@ -358,6 +358,20 @@ describe('cloudSlabMarch', () => {
     }
   });
 
+  // WHY (M2 review L4): a direction that is not unit length must march
+  // the same ray, not put its samples at the wrong distances.
+  it('marches the same ray for a direction of any length', () => {
+    const at = (dir: Vec3) =>
+      cloudSlabMarch({
+        camera: [0, 18, 0],
+        dir,
+        steps: 16,
+        sample: (x) => 0.55 + 0.1 * Math.sin(x / 700),
+        threshold: 0.6,
+      }).alpha;
+    expect(at([3, 5, -2])).toBeCloseTo(at(unit([3, 5, -2])), 12);
+  });
+
   it('exits early inside a thick cloud', () => {
     const m = cloudSlabMarch({
       camera: [0, 2000, 0],
@@ -569,6 +583,20 @@ describe('CLOUD_SLAB_FRAGMENT_GLSL', () => {
     ]) {
       expect(body).not.toContain(banned);
     }
+  });
+
+  // WHY (M2 review M1): the CPU twin's tests run the TypeScript march, so
+  // the SHADER's own step bounds and exact vertical integral are pinned
+  // here; a midpoint-sampling or jittered-bounds shader passes every other
+  // test, and its e2e line reading (2.9 against 2.5) is too close to call.
+  it('marches quadratic step bounds and integrates each step exactly in height', () => {
+    const body = loop();
+    expect(body).toContain('float t0 = tIn + u0 * u0 * lengthM;');
+    expect(body).toContain('float t1 = tIn + u1 * u1 * lengthM;');
+    expect(body).toContain('float t = tIn + um * um * lengthM;');
+    expect(body).toContain(
+      'abs(atmSlabCumulative(h1) - atmSlabCumulative(h0)) / abs(dir.y)'
+    );
   });
 
   // WHY (triage §12 item 1): the view ray comes from the pixel, never from

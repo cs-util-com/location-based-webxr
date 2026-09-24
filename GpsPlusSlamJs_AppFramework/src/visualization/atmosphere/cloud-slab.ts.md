@@ -83,7 +83,9 @@ it only in `cloudMode: 'slab'`.
   §12.1). The jitter trades the bands for a fine grain, since the page has
   no temporal accumulation.
 - **Cost:** 16 steps make 32 noise reads per pixel plus the hoisted light
-  (2 sky-view and 3 transmittance reads). On SwiftShader at 1280×800 a slab
+  (3 sky-view and 3 transmittance reads: `atmCloudLit` twice and
+  `atmCloudTopLit` once, each one of each; the two `atmCloudLit` calls read
+  the same texels). On SwiftShader at 1280×800 a slab
   frame took 0.66 s (the smoke's log); the real cost is the owner's GPU.
 
 - **Cover means share of sky, from the zenith.** σ·Q(T0) = ln 2, so a

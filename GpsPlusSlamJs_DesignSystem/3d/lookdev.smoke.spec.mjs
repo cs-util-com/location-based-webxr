@@ -1312,42 +1312,52 @@ test("E3: the slab is hidden behind a facade and covers the city from above", as
   page,
 }) => {
   const errors = await bootSlabPaused(page);
-  const eye = [-21, 1.5, 0];
-  await page.evaluate((e) => window.__lookdev.placeCameraAt(e, [0, 6, 0]), eye);
-  const facade = await page.evaluate(() => {
-    const d = window.__lookdev;
-    const f = [];
-    for (let z = -6; z <= 6; z += 3) {
-      for (const y of [4.5, 5.5, 6.5, 7.5]) f.push(d.project([0, y, z]));
-    }
-    return f;
-  });
-  await page.evaluate(() => window.__lookdev.setCloudCover(0.9));
-  const f = await shownHidden(page, facade);
-  const worst = Math.max(
-    ...f.shown.map((px, i) => Math.abs(sum(px) - sum(f.hidden[i]))),
-  );
-  await page.evaluate(() => window.__lookdev.setCloudSheetDepthTest(false));
-  const m = await shownHidden(page, facade);
-  await page.evaluate(() => window.__lookdev.setCloudSheetDepthTest(true));
-  const leaked = changedShare(m.shown, m.hidden);
-  const ground = await page.evaluate(() => {
-    const d = window.__lookdev;
-    d.setView("above");
-    const g = [];
-    for (let x = -150; x <= 150; x += 50)
-      for (let z = -150; z <= 150; z += 50) g.push(d.project([x, 0, z]));
-    return g;
-  });
-  const roofs = await shownHidden(page, ground);
-  const covered = changedShare(roofs.shown, roofs.hidden);
-  console.log(
-    `E3 slab facade max diff ${worst}, without the depth test ${leaked.toFixed(2)} changes; city ground covered from above ${covered.toFixed(2)}`,
-  );
-  expect(worst).toBe(0);
-  expect(leaked).toBeGreaterThan(0.2);
-  // Declared 0.8 at cover 0.9 (reverses at 0: a far-depth slab).
-  expect(covered).toBeGreaterThan(0.8);
+  // Both offsets (triage §12): the pattern over the city differs.
+  for (const offset of SHEET_OFFSETS) {
+    await page.evaluate(
+      ([a, b]) => window.__lookdev.setCloudOffset(a, b),
+      offset,
+    );
+    const eye = [-21, 1.5, 0];
+    await page.evaluate(
+      (e) => window.__lookdev.placeCameraAt(e, [0, 6, 0]),
+      eye,
+    );
+    const facade = await page.evaluate(() => {
+      const d = window.__lookdev;
+      const f = [];
+      for (let z = -6; z <= 6; z += 3) {
+        for (const y of [4.5, 5.5, 6.5, 7.5]) f.push(d.project([0, y, z]));
+      }
+      return f;
+    });
+    await page.evaluate(() => window.__lookdev.setCloudCover(0.9));
+    const f = await shownHidden(page, facade);
+    const worst = Math.max(
+      ...f.shown.map((px, i) => Math.abs(sum(px) - sum(f.hidden[i]))),
+    );
+    await page.evaluate(() => window.__lookdev.setCloudSheetDepthTest(false));
+    const m = await shownHidden(page, facade);
+    await page.evaluate(() => window.__lookdev.setCloudSheetDepthTest(true));
+    const leaked = changedShare(m.shown, m.hidden);
+    const ground = await page.evaluate(() => {
+      const d = window.__lookdev;
+      d.setView("above");
+      const g = [];
+      for (let x = -150; x <= 150; x += 50)
+        for (let z = -150; z <= 150; z += 50) g.push(d.project([x, 0, z]));
+      return g;
+    });
+    const roofs = await shownHidden(page, ground);
+    const covered = changedShare(roofs.shown, roofs.hidden);
+    console.log(
+      `E3 slab, offset ${offset}: facade max diff ${worst}, without the depth test ${leaked.toFixed(2)} changes; city ground covered from above ${covered.toFixed(2)}`,
+    );
+    expect(worst).toBe(0);
+    expect(leaked).toBeGreaterThan(0.2);
+    // Declared 0.8 at cover 0.9 (reverses at 0: a far-depth slab).
+    expect(covered).toBeGreaterThan(0.8);
+  }
   expect(errors).toEqual([]);
 });
 
@@ -1497,7 +1507,7 @@ test("E8: the slab draws no hard line inside the layer", async ({ page }) => {
 
 // E9: the far edge. From the street the slab contributes nothing below the
 // fade's end (atan(1782/21000) = 4.85°). From `above` the march's far cut
-// ends the deck at about 2.7° of depression, so rows above it are 0 with or
+// ends the deck at about 2.73° of depression, so rows above it are 0 with or
 // without the far weight (measured: a check there could not fail); the
 // weight shows in the row just inside the cut, which must have faded.
 test("E9: the slab's far edge fades out, from the street and from above", async ({
@@ -1584,12 +1594,27 @@ test("E10: more slab steps cost more and change the picture a little", async ({
       [steps, GRID],
     );
   const s8 = await measure(8);
+  expect(await page.evaluate(() => window.__lookdev.cloudSlabDefine())).toBe(8);
   const s32 = await measure(32);
+  expect(await page.evaluate(() => window.__lookdev.cloudSlabDefine())).toBe(
+    32,
+  );
+  // The cost ratio is a CPU-rasteriser property: on SwiftShader a frame is
+  // fragment work, on a GPU the readback dominates and the ratio can be ~1
+  // (M2 review L3). Asserted there, logged elsewhere.
+  const renderer = await page.evaluate(() => {
+    const gl = document.createElement("canvas").getContext("webgl2");
+    const info = gl?.getExtension("WEBGL_debug_renderer_info");
+    return info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : "";
+  });
   const diff = meanAbsDiff(s8.grid, s32.grid);
   console.log(
     `E10 slab frame ${s8.ms.toFixed(0)} ms at 8 steps, ${s32.ms.toFixed(0)} ms at 32 (x${(s32.ms / s8.ms).toFixed(2)}); picture diff ${diff.toFixed(1)}`,
   );
-  expect(s32.ms / s8.ms).toBeGreaterThanOrEqual(1.2);
+  const ratio = s32.ms / s8.ms;
+  expect(
+    /swiftshader/i.test(renderer) ? ratio : Number.POSITIVE_INFINITY,
+  ).toBeGreaterThanOrEqual(1.2);
   expect(diff).toBeGreaterThan(0);
   expect(diff).toBeLessThan(SLAB_E10.diffMax);
   expect(errors).toEqual([]);

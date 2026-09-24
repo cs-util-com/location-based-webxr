@@ -773,6 +773,13 @@ Object.assign(api, {
   pauseLoop(on) {
     loopPaused = Boolean(on);
   },
+  /**
+   * Test surface: the step count the slab's material is BUILT with (its
+   * define), so a test can tell a count that never reached the program.
+   */
+  cloudSlabDefine() {
+    return cloudMesh().material.defines?.ATM_SLAB_STEPS ?? null;
+  },
   /** Test surface: the unit direction toward the sun (x east, y up, -z north). */
   sunDirection() {
     const d = sunVector();
