@@ -31,6 +31,7 @@
  */
 
 import * as THREE from "three";
+import { markArShadowCaster } from "./ar-sun-shadow.js";
 import {
   packInstances,
   POI_FALLBACK_MODEL,
@@ -855,6 +856,10 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
         // it and every later frame silently draws nothing — three.js does not
         // throw for a disposed geometry.
         pins.userData = { poiInstances: markers, sharedResources: true };
+        // Ground pins cast the AR sun shadow; a symbol on a roof does not (its
+        // real building casts the real one). Tagged here, where the placement
+        // is known (shadow plan 2026-09-23-2343, §10).
+        if (!onHost) markArShadowCaster(pins);
         objects.push(pins);
       }
       return objects;

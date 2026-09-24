@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 
+import { AR_SHADOW_CASTER } from "./ar-sun-shadow.js";
 import { createQuestBeacons, questBeaconMaterials } from "./quest-beacon.js";
 import { QUEST_BEACON_HOVER_M } from "./quest-beacon-placement.js";
 import { GEO_WINNER_COLOUR } from "./surface-colours.js";
@@ -22,6 +23,20 @@ const placement = (over: Partial<Record<string, number>> = {}) => ({
 });
 
 describe("createQuestBeacons", () => {
+  // WHY (shadow plan M3): a quest beacon is a virtual object near the user,
+  // so every mesh of it casts the AR sun shadow; the tag is set here, where
+  // it is built, because `set` rebuilds the meshes wholesale.
+  it("tags every beacon mesh as an AR shadow caster", () => {
+    const beacons = createQuestBeacons();
+    beacons.set([placement(), placement({ x: 50 })]);
+    const meshes: THREE.Object3D[] = [];
+    beacons.root.traverse((o) => {
+      if (o instanceof THREE.Mesh) meshes.push(o);
+    });
+    expect(meshes.length).toBeGreaterThanOrEqual(4);
+    for (const m of meshes) expect(m.userData[AR_SHADOW_CASTER]).toBe(true);
+  });
+
   it("adds one group per placement, and clears them all on the next set", () => {
     // The 2D map draws a glyph per pick and DEC-K4 is that the views agree, so a
     // count that drifts is a disagreement nobody sees until they count.

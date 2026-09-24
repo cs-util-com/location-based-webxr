@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { markArShadowCaster } from "./ar-sun-shadow.js";
 
 import { GEO_WINNER_COLOUR } from "./surface-colours.js";
 import { type QuestBeaconPlacement } from "./quest-beacon-placement.js";
@@ -151,6 +152,9 @@ export function createQuestBeacons(): QuestBeacons {
           beacon.add(stalk);
         }
 
+        // Every beacon mesh casts the AR sun shadow (shadow plan M3); tagged
+        // here because `set` rebuilds them wholesale.
+        beacon.traverse(markArShadowCaster);
         root.add(beacon);
       }
     },

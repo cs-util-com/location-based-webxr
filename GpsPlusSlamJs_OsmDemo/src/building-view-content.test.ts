@@ -198,4 +198,17 @@ describe("suspend/resume — the desktop renderer's AR lifecycle (M5)", () => {
     const resume = /resume\(\): void \{[\s\S]*?\n {2}\}/.exec(SOURCE)?.[0];
     expect(resume).toContain("this.requestFrame()");
   });
+
+  // WHY (AR sun shadow plan 2026-09-23-2343, M3): rebuilt pins and beacons
+  // are born not casting, so a refetch or a new quest mid-session would
+  // silently drop their shadows. The casting is held and re-applied after
+  // both rebuilds, like the shell material.
+  it("re-applies the AR shadow casting after every caster rebuild", () => {
+    const render = SOURCE.slice(
+      SOURCE.indexOf("this.setArShellMaterial(this.arShellMaterial);"),
+    );
+    expect(render.slice(0, 400)).toContain("this.reapplyArShadowCasting();");
+    const beacons = SOURCE.slice(SOURCE.indexOf("setQuestBeacons(placements"));
+    expect(beacons.slice(0, 200)).toContain("this.reapplyArShadowCasting();");
+  });
 });

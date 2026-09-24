@@ -126,6 +126,10 @@ the two tagged materials scale, idempotent, bad gains refused):
   keys.
 - **`meshLayerSelection`** — picks exactly the mesh layers out of the full set.
 
+- **The AR sun shadow's caster tag** (shadow plan M3): a GROUND POI bucket is
+  tagged `markArShadowCaster` where it is built; a roof-hosted (`@host`)
+  bucket is not, because its real building casts the real shadow. Tested in
+  `poi-host-placement.test.ts`.
 - **The instanced trees (W6)** — one `InstancedMesh` per variant rather than one
   `Mesh` per tree, distinct geometry per variant, the instance matrix's position
   and scale, and the `sharedResources` flag that stops `clear()` disposing a

@@ -44,6 +44,7 @@ import {
 import { cellFaceMaterial, cellOutlineMaterial } from "./cell-materials.js";
 import { installGroundSlope } from "./ground-slope-shader.js";
 import { applySurfaceGain, drawMeshLayers } from "./mesh-layers.js";
+import { applyArShadowCasting } from "./ar-sun-shadow.js";
 import { SceneContent, type ContentFrame } from "./scene-content.js";
 import { createQuestBeacons } from "./quest-beacon.js";
 import { type QuestBeaconPlacement } from "./quest-beacon-placement.js";
@@ -432,6 +433,11 @@ export class BuildingView {
   private readonly ground: THREE.Mesh<THREE.PlaneGeometry, THREE.Material>;
   /** The AR shell material while a session runs; see `setArShellMaterial`. */
   private arShellMaterial: THREE.Material | undefined;
+  /** The AR sun shadow's casting; see `setArShadowCasting`. */
+  private arShadowCasting = false;
+  /** Bumped on every caster change, for the shadow map's update rule. */
+  private arShadowCasterGeneration = 0;
+  private arShadowCasterCount = 0;
   /**
    * The physical sky and everything that must agree with it: the environment
    * light, the sun light, the fog colour and the distance haze (plan
@@ -839,6 +845,7 @@ export class BuildingView {
    */
   setQuestBeacons(placements: readonly QuestBeaconPlacement[]): void {
     this.questBeacons.set(placements);
+    this.reapplyArShadowCasting();
     this.requestFrame();
   }
 
@@ -1719,6 +1726,9 @@ export class BuildingView {
     if (this.arShellMaterial !== undefined) {
       this.setArShellMaterial(this.arShellMaterial);
     }
+    // The same rule for the AR sun shadow's casting: the new pins are born
+    // not casting.
+    this.reapplyArShadowCasting();
 
     // SCHEDULED, not rendered inline. A synchronous `renderer.render()` here does
     // put pixels in the drawing buffer, but with `antialias: true` that buffer is
@@ -2128,6 +2138,46 @@ export class BuildingView {
         material.dispose();
       }
     }
+  }
+
+  /**
+   * The AR sun shadow prototype's casting (plan 2026-09-23-2343, M3): while
+   * on, every object tagged at build time (`markArShadowCaster`: ground POI
+   * pins, quest beacons, the test pole) casts, and nothing else does (the
+   * X-ray shells, trees, roof-hosted pins, cells). HELD and re-applied after
+   * every rebuild, like the shell material, because rebuilt objects are born
+   * not casting.
+   */
+  setArShadowCasting(on: boolean): void {
+    this.arShadowCasting = on;
+    this.reapplyArShadowCasting();
+  }
+
+  /**
+   * The casters' part of the shadow map's update rule: it changes whenever
+   * the casters were rebuilt or switched (`casterGeneration` of the rig).
+   */
+  get arShadowCasterSignature(): string {
+    return `${this.arShadowCasterGeneration}:${this.arShadowCasterCount}`;
+  }
+
+  /** Adds the shadow prototype's props (pole, plane) to the placed content. */
+  addArShadowProps(...objects: THREE.Object3D[]): void {
+    for (const object of objects) this.content.add(object);
+    this.reapplyArShadowCasting();
+  }
+
+  removeArShadowProps(...objects: THREE.Object3D[]): void {
+    for (const object of objects) this.content.remove(object);
+    this.reapplyArShadowCasting();
+  }
+
+  private reapplyArShadowCasting(): void {
+    this.arShadowCasterGeneration += 1;
+    this.arShadowCasterCount = applyArShadowCasting(
+      this.content.root,
+      this.arShadowCasting,
+    );
   }
 
   /**

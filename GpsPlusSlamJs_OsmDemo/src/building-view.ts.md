@@ -271,6 +271,19 @@ map scored.
   `updateProjectionMatrix()` on a renderer whose GL context has been released.
   Harmless while nothing calls `dispose()`, but the method exists to be called.
 
+## The AR sun shadow's casting (shadow plan 2026-09-23-2343, M3)
+
+- `setArShadowCasting(on)`: while on, every object tagged at build time
+  (`ar-sun-shadow.ts`'s `markArShadowCaster`: ground POI pins, quest beacons,
+  the test pole) casts, and nothing else does. HELD and re-applied after
+  `render()` and `setQuestBeacons()`, because rebuilt objects are born not
+  casting (a source-text test pins both re-applies).
+- `arShadowCasterSignature`: `generation:count`, bumped on every re-apply;
+  the shadow map's `casterGeneration`.
+- `addArShadowProps(...)` / `removeArShadowProps(...)`: the pole and the
+  shadow plane go into the placed content (`this.content`), so they inherit
+  the composed vertical offset like every other object.
+
 ## Examples
 
 ```ts
