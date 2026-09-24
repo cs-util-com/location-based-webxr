@@ -14,6 +14,11 @@ import {
   type RgbaImage,
   type DetectedBarcodeLike,
 } from './qr-frontend';
+import {
+  perspectiveProjection,
+  qrPoseFacingCamera,
+  renderQrFrame,
+} from '../../test-utils/synthetic-qr-frame';
 
 const image: RgbaImage = {
   data: new Uint8ClampedArray(2 * 2 * 4),
@@ -178,5 +183,45 @@ describe('createBarcodeDetectorFrontEnd toSource override', () => {
     const fe = createBarcodeDetectorFrontEnd(ctor, () => marker);
     await fe!.detect(image);
     expect(seen).toEqual([marker]);
+  });
+});
+
+describe('corner order (QR near-frontal pose plan 2026-09-23-2314, M1c)', () => {
+  // Why this test matters: the owner's phone reports corners in IMAGE order,
+  // which turned every solved pose by 90 or 180 deg (QR summary §4b runs
+  // 3-6). The front end is the one path every app's detections take, so it
+  // must hand out corners in SYMBOL order (TL, TR, BR, BL).
+  it('hands out symbol-ordered corners when the detector reports image order', async () => {
+    const f = renderQrFrame({
+      text: 'https://example.com/level/7',
+      sizeM: 0.16,
+      qrPoseInCamera: qrPoseFacingCamera({ distanceM: 0.45, rollDeg: 200 }),
+      projection: perspectiveProjection({ fovYDeg: 50, aspect: 1024 / 768 }),
+      width: 1024,
+      height: 768,
+      supersample: 2,
+    });
+    const truth = f.truthCorners.map((p) => ({
+      x: Math.round(p.x),
+      y: Math.round(p.y),
+    }));
+    // Image order: start at the top-left-most corner, as the phone does.
+    let start = 0;
+    truth.forEach((p, i) => {
+      if (p.x + p.y < truth[start]!.x + truth[start]!.y) start = i;
+    });
+    const reported = [0, 1, 2, 3].map((k) => truth[(start + k) % 4]!);
+    expect(start).not.toBe(0); // the scenario really is out of symbol order
+    const frontEnd = new BarcodeDetectorFrontEnd(
+      {
+        detect: () =>
+          Promise.resolve([
+            { rawValue: 'https://example.com/level/7', cornerPoints: reported },
+          ]),
+      },
+      (img: RgbaImage) => img
+    );
+    const hit = await frontEnd.detect(f.image);
+    expect(hit?.corners).toEqual(truth);
   });
 });

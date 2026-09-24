@@ -78,6 +78,15 @@
 
 ### Changed
 
+- **QR corners now come out in SYMBOL order (TL, TR, BR, BL of the printed
+  code)** (QR near-frontal pose plan 2026-09-23-2314, M1c).
+  `BarcodeDetectorFrontEnd` reorders the native detector's corners from the
+  image's finder patterns (`ar/qr/qr-corner-order`); the native detector on
+  Android reported IMAGE order, which turned every solved pose by 90 or 180
+  deg whenever the code was seen sideways or upside down. When the image
+  cannot tell, the same code's last confident order (< 500 ms) or the
+  detector's order is kept. A third, optional constructor argument
+  (`orderCorners`, type `CornerOrderer`) replaces the rule.
 - **`BarcodeDetectorFrontEnd`'s default conversion no longer copies the
   frame** when it can be adopted (plain-`ArrayBuffer`-backed pixels), saving
   one full-frame copy per decode.

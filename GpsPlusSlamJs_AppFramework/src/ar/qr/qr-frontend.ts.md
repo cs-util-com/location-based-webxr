@@ -10,24 +10,26 @@ Native `BarcodeDetector` only; the OpenCV `QRCodeDetector` fallback was removed
 
 - `QrFrontEnd` — `{ kind: 'barcode-detector', detect(image: RgbaImage): Promise<QrDetection | null>, dispose?() }`.
   `QrDetection = { corners: [Point2×4], text }`; `RgbaImage = { data, width, height }`.
-- `BarcodeDetectorFrontEnd` — `new (detector: BarcodeDetectorLike, toSource?)`.
+- `BarcodeDetectorFrontEnd` — `new (detector: BarcodeDetectorLike, toSource?, orderCorners?)`; `orderCorners` (a `CornerOrderer`) defaults to the finder-pattern canonicalizer.
   Wraps native `BarcodeDetector`; `toSource` converts `RgbaImage` →
   `ImageBitmapSource` (injectable for tests). The default wraps the frame in `ImageData` **without copying** when the array is plain-`ArrayBuffer`-backed (what `captureToRgba` returns, an owned copy already) and copies only otherwise, e.g. shared memory (QR perf plan 2026-09-23, M3: the second ~3 MB copy per decode bought nothing). The rule itself lives once, in `../rgba-image-data.ts` (DEC-H3), shared with the JPEG encoder.
 - `createBarcodeDetectorFrontEnd(ctor?, toSource?)` — feature-detect factory (`toSource` overrides the default conversion, e.g. the QR demo's timed, copying pre-fix baseline); `null` when no
   `BarcodeDetector` constructor exists. There is **no OpenCV fallback** — the
   caller must handle the unsupported-browser case (see the follow-up below).
 - Supporting types: `DetectedBarcodeLike`, `BarcodeDetectorLike`,
-  `ToImageBitmapSource`.
+  `ToImageBitmapSource`, `CornerOrderer`.
 
 ## Invariants & assumptions
 
-- **Front-end-agnostic corners:** corners are emitted in pixel coordinates
-  (top-left origin) in an arbitrary order; the order is not contractually
-  TL,TR,BR,BL. `qr-pose.ts` `validateQuad` only REJECTS a mirrored or degenerate
-  quad; it never re-sorts, so a detector that orders corners by image position
-  yields a pose rotated in 90-degree steps ("Cause A"). zxing's corners are
-  symbol-relative (`qr-zxing-oracle.test.ts`); the native order on Android
-  Chrome is measured by the QR demo's `?qrperf=zxing` corner-order tally.
+- **Symbol-ordered corners** (QR near-frontal pose plan 2026-09-23-2314,
+  M1c): corners are emitted in pixel coordinates (top-left origin) in SYMBOL
+  order (TL, TR, BR, BL of the printed code) whenever the finder patterns
+  decide it (`qr-corner-order.ts`). The native detector on the owner's phone
+  reports IMAGE order (QR summary §4b runs 3-6), which turned the solved pose
+  in 90-degree steps ("Cause A"); `validateQuad` cannot catch that. When the
+  image cannot tell, the same code's last confident order (< 500 ms) is used,
+  else the detector's. The `orderCorners` constructor argument replaces the
+  default (one finder-pattern canonicalizer per front end).
 - **Dependencies injected:** the native detector and the `RgbaImage`→source
   conversion are injected, so this module + tests need no DOM.
 - **Malformed output rejected:** non-4 corner counts, non-finite coordinates, and
@@ -41,7 +43,10 @@ Native `BarcodeDetector` only; the OpenCV `QRCodeDetector` fallback was removed
 
 - `qr-frontend.test.ts` — BarcodeDetector: first valid QR returned, nothing
   detected → null, malformed results (wrong corner count / empty text) skipped;
-  factory null (no ctor) and constructed-with-`qr_code`-format cases.
+  factory null (no ctor) and constructed-with-`qr_code`-format cases; a
+  rendered code whose corners the fake detector reports in IMAGE order comes
+  out in symbol order (M1c).
+- The ordering rule itself: [qr-corner-order.ts.md](qr-corner-order.ts.md).
 
 ## Related
 

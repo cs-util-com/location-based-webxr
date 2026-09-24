@@ -26,6 +26,7 @@ import {
   renderQrFrame,
 } from '../../test-utils/synthetic-qr-frame';
 import { readQrCodes } from '../../test-utils/zxing-node';
+import { canonicalizeCorners } from './qr-corner-order';
 import {
   measureZxingPipeline,
   type PipelineMeasurement,
@@ -159,6 +160,95 @@ function byModulePx(rows: BinnedRow[]): string[] {
     }
   }
   return lines;
+}
+
+interface CornerOrderCase {
+  cap: { width: number; height: number; fovYDeg: number };
+  distanceM: number;
+  tilt: { tiltXDeg?: number; tiltYDeg?: number };
+  rollDeg: number;
+  blurRadiusPx: number;
+  noiseSigma: number;
+  seed: number;
+}
+
+function cornerOrderCases(): CornerOrderCase[] {
+  const caps = [
+    { width: 439, height: 1024, fovYDeg: 64 },
+    { width: 1024, height: 768, fovYDeg: 50 },
+  ];
+  const tilts = [
+    { tiltXDeg: 0 },
+    { tiltXDeg: 30 },
+    { tiltXDeg: 55 },
+    { tiltYDeg: 40 },
+  ];
+  const geometry = caps.flatMap((cap) =>
+    [0.3, 0.6, 1, 1.5, 2, 3].flatMap((distanceM) =>
+      tilts.flatMap((tilt) =>
+        [0, 37, 180, 270].map((rollDeg) => ({ cap, distanceM, tilt, rollDeg }))
+      )
+    )
+  );
+  const imaging = [0, 1].flatMap((blurRadiusPx) =>
+    [2, 6].map((noiseSigma) => ({ blurRadiusPx, noiseSigma }))
+  );
+  return geometry
+    .flatMap((g) => imaging.map((i) => ({ ...g, ...i })))
+    .map((c, k) => ({ ...c, seed: k + 2 }));
+}
+
+function moduleBand(m: number): string {
+  if (m < 2) return '<2';
+  if (m < 3) return '2-3';
+  if (m < 4) return '3-4';
+  return m < 6 ? '4-6' : '6+';
+}
+
+/** One frame: emulated image-ordered corners through `canonicalizeCorners`. */
+function measureCornerOrder(c: CornerOrderCase): {
+  key: string;
+  confident: boolean;
+  correct: boolean;
+} {
+  const frame = renderQrFrame({
+    text: PAYLOAD,
+    sizeM: SIZE_M,
+    qrPoseInCamera: qrPoseFacingCamera({
+      distanceM: c.distanceM,
+      rollDeg: c.rollDeg,
+      ...c.tilt,
+    }),
+    projection: perspectiveProjection({
+      fovYDeg: c.cap.fovYDeg,
+      aspect: c.cap.width / c.cap.height,
+    }),
+    width: c.cap.width,
+    height: c.cap.height,
+    supersample: 2,
+    blurRadiusPx: c.blurRadiusPx,
+    noiseSigma: c.noiseSigma,
+    seed: c.seed,
+  });
+  const nudge = (k: number) => ((c.seed * (k + 3)) % 3) - 1;
+  const truth = frame.truthCorners.map((p, k) => ({
+    x: Math.round(p.x + nudge(k)),
+    y: Math.round(p.y + nudge(k + 1)),
+  }));
+  let start = 0;
+  truth.forEach((p, i) => {
+    if (p.x + p.y < truth[start]!.x + truth[start]!.y) start = i;
+  });
+  const reported = [0, 1, 2, 3].map((k) => truth[(start + k) % 4]!);
+  const out = canonicalizeCorners(frame.image, reported);
+  const correct = out.corners.every(
+    (p, i) => p.x === truth[i]!.x && p.y === truth[i]!.y
+  );
+  return {
+    key: `${moduleBand(frame.modulePx).padEnd(3)} px/mod blur ${c.blurRadiusPx}`,
+    confident: out.confident,
+    correct,
+  };
 }
 
 describe.runIf(RUN)('QR zxing sweep (opt-in, QR_SWEEP=1)', () => {
@@ -295,6 +385,39 @@ describe.runIf(RUN)('QR zxing sweep (opt-in, QR_SWEEP=1)', () => {
         `\nEMPTY-FRAME DECODE TIME (this machine)\n${lines.join('\n')}`
       );
       expect(lines.length).toBe(CAPTURES.length * 2);
+    },
+    SWEEP_TIMEOUT_MS
+  );
+
+  it(
+    'corner order from the finder patterns (plan 2026-09-23-2314, M1c)',
+    () => {
+      // The detector's corners are emulated: the true corners, nudged by up to
+      // 1 px and rounded (the phone reports whole pixels ~2 px from zxing's),
+      // then handed over in IMAGE order. A wrong CONFIDENT answer is the
+      // failure that matters; unsure frames keep today's behaviour.
+      const bins = new Map<
+        string,
+        { n: number; confident: number; wrong: number }
+      >();
+      for (const c of cornerOrderCases()) {
+        const r = measureCornerOrder(c);
+        const b = bins.get(r.key) ?? { n: 0, confident: 0, wrong: 0 };
+        b.n++;
+        if (r.confident) b.confident++;
+        if (r.confident && !r.correct) b.wrong++;
+        bins.set(r.key, b);
+      }
+      const lines = [...bins]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(
+          ([k, b]) =>
+            `${k} | n ${String(b.n).padStart(3)} | confident ${pct(b.confident, b.n).padStart(4)} | WRONG confident ${b.wrong}`
+        );
+      console.log(
+        `\nCORNER ORDER (finder patterns; noise 2/6, rolls 0/37/180/270, 4 tilts)\n${lines.join('\n')}`
+      );
+      expect(bins.size).toBeGreaterThan(0);
     },
     SWEEP_TIMEOUT_MS
   );

@@ -130,6 +130,7 @@ export {
   type DetectedBarcodeLike,
   type BarcodeDetectorLike,
   type ToImageBitmapSource,
+  type CornerOrderer,
   BarcodeDetectorFrontEnd,
   createBarcodeDetectorFrontEnd,
 } from './qr-frontend.js';
