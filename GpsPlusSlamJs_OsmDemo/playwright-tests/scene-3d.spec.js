@@ -1615,12 +1615,16 @@ test.describe("the time of day", () => {
    * every point.
    */
   const SUN_POINTS = [
-    // [label, date, apparent solar time, lit-surface luma under ACES −2 EV]
+    // [label, date, apparent solar time, lit-surface luma under ACES −2 EV,
+    //  the share of it the point must reach (half by default)]
     ["the golden hour (3.6°)", "2026-09-23", "17:36", 42.6],
     ["a 3.6° morning", "2026-09-23", "06:23", 33.6],
     ["a 24° morning", "2026-09-23", "08:41", 96.8],
     ["the September noon (38.9°)", "2026-09-23", "12:00", 75.1],
-    ["the June noon (62.5°)", "2026-06-21", "12:00", 64.7],
+    // THE NOON BRIGHTENING (plan 2026-09-24-0901): at a sun above 45° the
+    // buildings and roads are lifted to the approved noon brightness, so this
+    // point must reach 95 % of it (a ×1.3 lift measured 59.6, short of 61.5).
+    ["the June noon (62.5°)", "2026-06-21", "12:00", 64.7, 0.95],
     ["civil twilight at −2.9°", "2026-09-23", "18:17", 20.8],
     ["civil twilight at −5.9°", "2026-09-23", "18:36", 16.5],
   ];
@@ -1649,7 +1653,7 @@ test.describe("the time of day", () => {
       }
       return count === 0 ? -1 : sum / count;
     });
-  for (const [label, date, time, approvedLit] of SUN_POINTS) {
+  for (const [label, date, time, approvedLit, share = 0.5] of SUN_POINTS) {
     test(`DEC-R4-5: the heat ramp stays the loudest thing at ${label}`, async ({
       page,
     }) => {
@@ -1670,7 +1674,9 @@ test.describe("the time of day", () => {
       );
       expect(plain, `plain ground at ${label}`).toBeGreaterThan(5);
       expect(byDefault, `${DEFAULT_MODE} at ${label}`).toBeGreaterThan(5);
-      expect(lit, `lit surfaces at ${label}`).toBeGreaterThan(approvedLit / 2);
+      expect(lit, `lit surfaces at ${label}`).toBeGreaterThan(
+        approvedLit * share,
+      );
     });
   }
 });

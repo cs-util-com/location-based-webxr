@@ -43,7 +43,7 @@ import {
 } from "./cell-presets.js";
 import { cellFaceMaterial, cellOutlineMaterial } from "./cell-materials.js";
 import { installGroundSlope } from "./ground-slope-shader.js";
-import { drawMeshLayers } from "./mesh-layers.js";
+import { applySurfaceGain, drawMeshLayers } from "./mesh-layers.js";
 import { SceneContent, type ContentFrame } from "./scene-content.js";
 import { createQuestBeacons } from "./quest-beacon.js";
 import { type QuestBeaconPlacement } from "./quest-beacon-placement.js";
@@ -67,6 +67,7 @@ import type { BuildingStats, MeshLayers } from "./mesh-layers.js";
 import type { HazeModeSwitch } from "./ar-scene-environment.js";
 import {
   AtmosphereRig,
+  surfaceGainAt,
   TONE_MAPPING,
   TONE_MAPPING_EXPOSURE,
 } from "./atmosphere-rig.js";
@@ -443,6 +444,11 @@ export class BuildingView {
    * stepping; this view only draws the angles it is given.
    */
   private sunAngles: SunAngles;
+  /**
+   * The noon brightening's current factor (plan 2026-09-24-0901), HELD so
+   * every rebuild re-applies it: new meshes arrive at factor 1.
+   */
+  private surfaceGain = 1;
   /** The flat plane's vertex positions, kept so terrain can be re-applied. */
   private flatGround: Float32Array | undefined;
   /** The current field, so a mode switch and the ramp can re-read it. */
@@ -1526,6 +1532,9 @@ export class BuildingView {
     // TOGETHER so the direction is preserved.
     this.sun.target.position.set(0, 0, 0);
     this.sun.target.updateMatrixWorld();
+    // The noon brightening follows the sun (plan 2026-09-24-0901).
+    this.surfaceGain = surfaceGainAt(this.sunAngles.elevationRad);
+    applySurfaceGain(this.group, this.surfaceGain);
   }
 
   /**
@@ -1700,6 +1709,9 @@ export class BuildingView {
     // layer detectable, which the longhand form could not: see that file's header.
     const { objects, stats } = drawMeshLayers(mesh, layers, context);
     for (const object of objects) this.group.add(object);
+    // New meshes arrive at factor 1; the noon brightening is held on the
+    // view for exactly this (the lesson of the AR shell material below).
+    applySurfaceGain(this.group, this.surfaceGain);
     // RE-APPLIED AFTER EVERY REBUILD. The objects above are brand new and carry
     // the desktop material; without this a refetch mid-session would silently
     // drop the AR look at whatever moment the user walked far enough to trigger

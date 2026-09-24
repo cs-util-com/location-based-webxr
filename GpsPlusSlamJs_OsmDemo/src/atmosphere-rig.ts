@@ -116,6 +116,31 @@ const VISIBILITY_KM = 45;
  */
 export const CLOUD_COVER = 0.25;
 
+/**
+ * The noon brightening (plan 2026-09-24-0901): the colour factor of the
+ * building and road materials, 1 up to `fromDeg` of sun, rising linearly to
+ * `max` at `fullDeg` and constant above. Those surfaces are nearly grey, so
+ * the lift adds brightness without the colour that competes with the heat
+ * grid: measured at the June noon, the DEC-R4-5 margin stays 5.50 at ×1.6
+ * while lit surfaces go 48 → 70; an exposure lift to the same brightness
+ * broke the bound. ×1.45 is the approved look's noon brightness (≈ 65).
+ */
+export const NOON_SURFACE_GAIN = {
+  max: 1.45,
+  fromDeg: 20,
+  fullDeg: 45,
+} as const;
+
+/** The building and road colour factor for a sun elevation (radians). */
+export function surfaceGainAt(elevationRad: number): number {
+  if (!Number.isFinite(elevationRad)) {
+    throw new RangeError(`sun elevation must be finite, got ${elevationRad}`);
+  }
+  const { max, fromDeg, fullDeg } = NOON_SURFACE_GAIN;
+  const t = ((elevationRad * 180) / Math.PI - fromDeg) / (fullDeg - fromDeg);
+  return 1 + (max - 1) * Math.min(1, Math.max(0, t));
+}
+
 /** What the rig uses of `SkyAtmosphere` (the seam its tests stub). */
 export type SkyLike = Pick<
   SkyAtmosphere,

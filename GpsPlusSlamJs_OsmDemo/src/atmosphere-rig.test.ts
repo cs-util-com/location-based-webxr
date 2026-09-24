@@ -18,7 +18,9 @@ import { describe, expect, it } from "vitest";
 import {
   AtmosphereRig,
   NATURAL_LIGHT_COMPENSATION_EV,
+  surfaceGainAt,
   CLOUD_COVER,
+  NOON_SURFACE_GAIN,
   TONE_MAPPING,
   TONE_MAPPING_EXPOSURE,
   type SkyLike,
@@ -152,6 +154,25 @@ describe("AtmosphereRig with the physical sky", () => {
     expect(
       2 ** NATURAL_LIGHT_COMPENSATION_EV * TONE_MAPPING_EXPOSURE,
     ).toBeLessThan(1);
+  });
+
+  // The noon brightening (plan 2026-09-24-0901): the building and road
+  // colour factor is 1 up to a 20° sun (the boot, mornings, evenings and
+  // twilight keep their look), rises linearly, and is x1.45 from 45° up.
+  it("brightens the neutral surfaces only at a high sun", () => {
+    const at = (deg: number) => surfaceGainAt((deg * Math.PI) / 180);
+    expect(NOON_SURFACE_GAIN).toEqual({ max: 1.45, fromDeg: 20, fullDeg: 45 });
+    expect(at(-6)).toBe(1);
+    expect(at(0)).toBe(1);
+    expect(at(20)).toBe(1);
+    expect(at(32.5)).toBeCloseTo(1.225, 12);
+    expect(at(45)).toBeCloseTo(1.45, 12);
+    expect(at(62.5)).toBeCloseTo(1.45, 12);
+    expect(at(90)).toBeCloseTo(1.45, 12);
+    for (let deg = -10; deg < 90; deg += 0.5) {
+      expect(at(deg + 0.5)).toBeGreaterThanOrEqual(at(deg));
+    }
+    expect(() => surfaceGainAt(Number.NaN)).toThrow(RangeError);
   });
 
   // The owner's first look at the r718 preview: the physical sky without

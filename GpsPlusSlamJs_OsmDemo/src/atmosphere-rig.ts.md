@@ -67,6 +67,14 @@ colour that matched the sky at one time of day.
   photographic backdrop out-shouts the data. Brighter emissive cells made it
   worse (they wash out in ACES's shoulder), and matte cells changed nothing.
   The exact EV is the owner's taste call within what the bound allows.
+- **The noon brightening** (plan 2026-09-24-0901): `NOON_SURFACE_GAIN` and
+  `surfaceGainAt(elevationRad)` give the building and road colour factor, 1
+  up to a 20° sun, linear to ×1.45 at 45°, constant above; applied by
+  `BuildingView` through `mesh-layers.ts`'s `applySurfaceGain`. Those surfaces
+  are nearly grey, so the lift adds brightness without competing colour:
+  measured at the June noon, lit surfaces 48.1 → 64.8 (the approved look's
+  64.7) with the DEC-R4-5 margin unchanged at 5.50; the September noon
+  56.9 → 71.6. An exposure lift to the same brightness broke the bound.
 - **Clouds at `CLOUD_COVER` 0.25** (the look-dev golden preset), turned on
   after the owner's first look at the r718 preview read the cloudless sky as
   "the old sky" (plan 2026-09-24-0706). Measured with them on, the lit city

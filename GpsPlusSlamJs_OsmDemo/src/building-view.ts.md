@@ -45,6 +45,9 @@ map scored.
   the angles it is given; WHERE the sun is (the real sun for a place and a
   date) is `sun-clock.ts`'s job, owned by `main.ts` (plan 2026-09-23-2149).
   Replaced `setTimeOfDay` / `timeOfDayValue` (the retired plausible day).
+  Each sun change also sets the noon brightening (`surfaceGainAt`, plan
+  2026-09-24-0901), HELD on the view and re-applied after every rebuild,
+  because new meshes arrive at factor 1.
 
 ## Invariants & assumptions
 

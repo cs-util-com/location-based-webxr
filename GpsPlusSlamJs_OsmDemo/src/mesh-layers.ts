@@ -461,6 +461,8 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
             // reason W20 had to come first. A non-white base would tint every
             // colour in the palette by itself.
             color: 0xffffff,
+            // The noon brightening's target (`applySurfaceGain`).
+            userData: { neutralSurface: true },
             vertexColors: true,
             // SINGLE-SIDED SINCE W24 (R4-17). It was `DoubleSide`, and the
             // reason was honest: OSM volumes are not reliably closed, so a
@@ -711,6 +713,8 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
             // so that measurement is now enforced for the WHOLE palette by
             // `feature-colours.test.ts`, rather than for one constant here.
             color: 0xffffff,
+            // The noon brightening's target (`applySurfaceGain`).
+            userData: { neutralSurface: true },
             roughness: 0.9,
             // OPAQUE, and DEC-R2-13 depends on it. The disc at each vertex overlaps
             // the segment quads it joins; in translucent geometry that overlap would
@@ -923,4 +927,27 @@ export function meshLayerSelection(layers: LayerSet): MeshLayers {
 /** Whether any mesh layer is on — i.e. whether `render` has anything to do. */
 export function wantsAnyMeshLayer(layers: LayerSet): boolean {
   return MESH_LAYERS.some((descriptor) => layers[descriptor.layer]);
+}
+
+/**
+ * Sets the colour factor of the NEUTRAL SURFACES (the building and road
+ * materials, tagged `userData.neutralSurface`) under `root`: the noon
+ * brightening (plan 2026-09-24-0901; the factor from `surfaceGainAt`).
+ * Absolute, so re-applying after a rebuild is idempotent. A mesh wearing a
+ * swapped material (the AR shell) is skipped: the tag is on the desktop one.
+ */
+export function applySurfaceGain(root: THREE.Object3D, gain: number): void {
+  if (!(Number.isFinite(gain) && gain > 0)) {
+    throw new RangeError(
+      `surface gain must be positive and finite, got ${gain}`,
+    );
+  }
+  root.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return;
+    const material = object.material as THREE.Material | THREE.Material[];
+    for (const m of Array.isArray(material) ? material : [material]) {
+      if (m.userData["neutralSurface"] !== true) continue;
+      if (m instanceof THREE.MeshStandardMaterial) m.color.setScalar(gain);
+    }
+  });
 }

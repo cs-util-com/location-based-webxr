@@ -21,6 +21,7 @@ import { ALL_LAYERS, type LayerKind } from "./layers.js";
 import {
   MESH_LAYERS,
   DRAWN_BY_MESH,
+  applySurfaceGain,
   drawMeshLayers,
   meshLayerSelection,
   poiMarkerPosition,
@@ -926,5 +927,54 @@ describe("region slabs carry their identity into the scene", () => {
       areas: true,
     });
     expect(objects[0]?.userData["regionId"]).toBe("r1");
+  });
+});
+
+describe("applySurfaceGain — the noon brightening (plan 2026-09-24-0901)", () => {
+  // WHY: buildings and roads are nearly grey, so brightening them lifts a
+  // dark noon without adding the colour that would compete with the heat grid
+  // (measured: the June noon's DEC-R4-5 margin unchanged at x1.6, while an
+  // exposure lift to the same brightness broke it). Only those two layers:
+  // the ground, plates, trees, POI and area slabs keep their colour.
+  const materialsOf = (root: THREE.Object3D) => {
+    const out: THREE.MeshStandardMaterial[] = [];
+    root.traverse((object) => {
+      if (!(object instanceof THREE.Mesh)) return;
+      const material = object.material as THREE.Material | THREE.Material[];
+      for (const m of Array.isArray(material) ? material : [material]) {
+        if (m instanceof THREE.MeshStandardMaterial) out.push(m);
+      }
+    });
+    return out;
+  };
+
+  it("scales the building and road materials only, and is idempotent", () => {
+    const group = new THREE.Group();
+    group.add(...drawMeshLayers(fullMesh(), ALL_ON).objects);
+    const before = new Map(
+      materialsOf(group).map((m) => [m, m.color.getHex()] as const),
+    );
+    applySurfaceGain(group, 1.3);
+    applySurfaceGain(group, 1.3);
+    const scaled = materialsOf(group).filter(
+      (m) => m.userData["neutralSurface"] === true,
+    );
+    // Buildings and roads.
+    expect(scaled).toHaveLength(2);
+    for (const m of scaled) {
+      expect([m.color.r, m.color.g, m.color.b]).toEqual([1.3, 1.3, 1.3]);
+    }
+    for (const m of materialsOf(group)) {
+      if (m.userData["neutralSurface"] === true) continue;
+      expect(m.color.getHex()).toBe(before.get(m));
+    }
+    applySurfaceGain(group, 1);
+    for (const m of scaled) expect(m.color.getHex()).toBe(0xffffff);
+  });
+
+  it("rejects a gain that is not a positive finite number", () => {
+    const group = new THREE.Group();
+    expect(() => applySurfaceGain(group, Number.NaN)).toThrow(RangeError);
+    expect(() => applySurfaceGain(group, 0)).toThrow(RangeError);
   });
 });
