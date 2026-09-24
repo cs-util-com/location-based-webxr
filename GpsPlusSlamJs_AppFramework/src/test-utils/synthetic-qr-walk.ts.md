@@ -10,7 +10,9 @@ always looks at the code centre, upright, like a phone held by a walking user.
 
 - `walkCameraPoses({ kind, codeWorld, distanceM, extent, steps, offsetDeg? })`
   - world camera poses along one of the plan's fixed walk shapes: `sidestep`
-    (lateral travel `extent` m), `arc` (`extent` deg around the code),
+    (lateral travel `extent` m), `rise` (vertical travel `extent` m through the
+    code's height - the pitch axis the phone's wall check measures), `arc`
+    (`extent` deg around the code),
     `approach` (starts `extent` m behind `distanceM`), `still`. `offsetDeg`
     centres the walk that far off the code's normal (about world y).
   - `RangeError` on a non-positive distance, a negative extent or a

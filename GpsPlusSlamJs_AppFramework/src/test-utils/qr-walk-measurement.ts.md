@@ -22,6 +22,10 @@ prototype's variants, all against the truth.
 ## Invariants & assumptions
 
 - Frames zxing cannot decode are skipped, not scored.
+- Every method is scored on the SAME window of views: the stable pose
+  averages the raw poses of exactly those views (a rejected solve is simply
+  absent), and the sweep counts a row only when every method produced an
+  estimate (milestone review 2026-09-24, finding 7).
 - Starts for the joint solve: every window view's real candidates, one per
   orientation within 2 deg.
 - Deterministic: the image noise and the SLAM noise are seeded

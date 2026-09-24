@@ -14,7 +14,7 @@ type Vec3 = [number, number, number];
 type Quat = [number, number, number, number];
 
 /** The fixed walk shapes of the plan's done bar. */
-export type WalkKind = 'approach' | 'sidestep' | 'arc' | 'still';
+export type WalkKind = 'approach' | 'sidestep' | 'arc' | 'still' | 'rise';
 
 export interface WalkOptions {
   kind: WalkKind;
@@ -23,7 +23,8 @@ export interface WalkOptions {
   /** Camera distance from the code centre at the walk's middle, metres. */
   distanceM: number;
   /**
-   * The walk's size: `sidestep` total lateral travel (m), `arc` total angle
+   * The walk's size: `sidestep` total lateral travel (m), `rise` total
+   * vertical travel through the code's height (m), `arc` total angle
    * around the code (deg), `approach` how far it starts behind `distanceM`
    * (m). Ignored by `still`.
    */
@@ -159,6 +160,8 @@ export function walkCameraPoses(options: WalkOptions): Pose[] {
     if (kind === 'sidestep') {
       const d = (u - 0.5) * extent;
       eye = [mid[0] + lateral[0] * d, mid[1], mid[2] + lateral[2] * d];
+    } else if (kind === 'rise') {
+      eye = [mid[0], mid[1] + (u - 0.5) * extent, mid[2]];
     } else if (kind === 'arc') {
       eye = around(centre, normal, distanceM, offsetDeg + (u - 0.5) * extent);
     } else if (kind === 'approach') {

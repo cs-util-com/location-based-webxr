@@ -32,7 +32,19 @@ import {
   type WalkRow,
 } from '../../test-utils/qr-walk-measurement';
 import type { WalkKind } from '../../test-utils/synthetic-qr-walk';
+import { mulberry32 } from '../../test-utils/elevation-offset-scenarios';
+import { candidateStartsBySet } from '../../test-utils/qr-multiview-prototype';
 import {
+  intrinsicsFromProjection,
+  solveQrPose,
+  buildObjectPoints,
+  reprojectionErrorPx,
+  type Pose,
+} from './qr-pose';
+import { PlanarPnpSquare } from './planar-pnp';
+import {
+  rotationAngleDeg,
+  zxingDetect,
   measureZxingPipeline,
   type PipelineMeasurement,
 } from '../../test-utils/qr-zxing-pipeline';
@@ -275,6 +287,8 @@ function walkCases() {
     { kind: 'sidestep', extent: 0.6 },
     { kind: 'arc', extent: 20 },
     { kind: 'arc', extent: 40 },
+    { kind: 'rise', extent: 0.4 },
+    { kind: 'rise', extent: 0.8 },
     { kind: 'approach', extent: 1 },
     { kind: 'still', extent: 0 },
   ];
@@ -292,39 +306,102 @@ function walkCases() {
   );
 }
 
+/** A scored row with the walk it came from (for resampling whole walks). */
+type TaggedRow = WalkRow & { walk: number; kind: WalkKind };
+
+function quantile(sorted: readonly number[], p: number): number {
+  return sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))]!;
+}
+
 function stats(xs: number[]): string {
   const v = xs.filter(Number.isFinite).sort((a, b) => a - b);
   if (v.length === 0) return '-';
-  const at = (p: number) =>
-    v[Math.min(v.length - 1, Math.floor(p * v.length))]!;
-  return `${at(0.5).toFixed(1)}/${at(0.95).toFixed(1)}/${v[v.length - 1]!.toFixed(1)}`;
+  return `${quantile(v, 0.5).toFixed(1)}/${quantile(v, 0.95).toFixed(1)}/${v[v.length - 1]!.toFixed(1)}`;
 }
 
-/** p50/p95/max per method, binned by the obliqueness the window reached (>= 5 obs). */
-function walkReport(rows: readonly WalkRow[]): string[] {
-  const bands = [0, 5, 10, 15, 20, 90];
+/** Rows every method produced an estimate for (review finding 7). */
+function sameFrames(rows: readonly TaggedRow[]): TaggedRow[] {
+  return rows.filter(
+    (x) =>
+      x.window >= 5 &&
+      [x.errRawDeg, x.errStableDeg, ...Object.values(x.errFusedDeg)].every(
+        Number.isFinite
+      )
+  );
+}
+
+const BANDS = [0, 5, 10, 15, 20, 90];
+
+/**
+ * A 90 % interval of a method's p95 by resampling whole WALKS (overlapping
+ * windows of one walk are not independent; review finding 6).
+ */
+function p95Interval(
+  rows: readonly TaggedRow[],
+  pick: (r: TaggedRow) => number,
+  seed: number
+): string {
+  const walks = [...new Set(rows.map((r) => r.walk))];
+  if (walks.length < 2) return 'n/a';
+  const rand = mulberry32(seed);
+  const p95s: number[] = [];
+  for (let b = 0; b < 300; b++) {
+    const drawn = walks.map(() => walks[Math.floor(rand() * walks.length)]!);
+    const vals = drawn
+      .flatMap((w) => rows.filter((r) => r.walk === w).map(pick))
+      .sort((a, c) => a - c);
+    if (vals.length > 0) p95s.push(quantile(vals, 0.95));
+  }
+  p95s.sort((a, c) => a - c);
+  return `[${quantile(p95s, 0.05).toFixed(1)}, ${quantile(p95s, 0.95).toFixed(1)}]`;
+}
+
+/** Per band: every method's p50/p95/max, then the p95 intervals (stable vs fixedT). */
+function bandLines(rows: readonly TaggedRow[]): string[] {
   const lines = [
-    'reached deg | n | raw | stable | fixedT | freeT | shared6 (p50/p95/max deg)',
+    'reached deg | n (walks) | raw | stable | fixedT | freeT | shared6 (p50/p95/max deg)',
   ];
-  for (let i = 0; i < bands.length - 1; i++) {
-    const [lo, hi] = [bands[i]!, bands[i + 1]!];
-    const r = rows.filter(
-      (x) => x.window >= 5 && x.reachedDeg >= lo && x.reachedDeg < hi
-    );
+  for (let i = 0; i < BANDS.length - 1; i++) {
+    const [lo, hi] = [BANDS[i]!, BANDS[i + 1]!];
+    const r = rows.filter((x) => x.reachedDeg >= lo && x.reachedDeg < hi);
     if (r.length === 0) continue;
+    const walks = new Set(r.map((x) => x.walk)).size;
     lines.push(
       [
         `${lo}-${hi}`.padEnd(11),
-        String(r.length).padStart(3),
+        `${r.length} (${walks})`.padStart(9),
         stats(r.map((x) => x.errRawDeg)),
         stats(r.map((x) => x.errStableDeg)),
-        stats(r.map((x) => x.errFusedDeg.rotSharedFixedT ?? Number.NaN)),
-        stats(r.map((x) => x.errFusedDeg.rotSharedFreeT ?? Number.NaN)),
-        stats(r.map((x) => x.errFusedDeg.shared6 ?? Number.NaN)),
-      ].join(' | ')
+        stats(r.map((x) => x.errFusedDeg.rotSharedFixedT!)),
+        stats(r.map((x) => x.errFusedDeg.rotSharedFreeT!)),
+        stats(r.map((x) => x.errFusedDeg.shared6!)),
+      ].join(' | '),
+      `            p95 90% interval (walks resampled): stable ${p95Interval(r, (x) => x.errStableDeg, lo + 1)} | fixedT ${p95Interval(r, (x) => x.errFusedDeg.rotSharedFixedT!, lo + 2)}`
     );
   }
   return lines;
+}
+
+/** The still walk on its own, and the pitch / yaw split over all rows. */
+function stillAndAxisLines(rows: readonly TaggedRow[]): string[] {
+  const still = rows.filter((x) => x.kind === 'still');
+  const p95 = (xs: number[]) => stats(xs).split('/')[1] ?? '-';
+  const axes = (key: 'pitch' | 'yaw') =>
+    [
+      `raw ${p95(rows.map((x) => x.axisErrDeg.raw[key]))}`,
+      `stable ${p95(rows.map((x) => x.axisErrDeg.stable[key]))}`,
+      `fixedT ${p95(rows.map((x) => x.axisErrDeg.fused.rotSharedFixedT![key]))}`,
+    ].join(' | ');
+  return [
+    `still walk (n ${still.length}): raw ${stats(still.map((x) => x.errRawDeg))} | stable ${stats(still.map((x) => x.errStableDeg))} | fixedT ${stats(still.map((x) => x.errFusedDeg.rotSharedFixedT!))}`,
+    `pitch p95 (all rows): ${axes('pitch')}`,
+    `yaw p95 (all rows):   ${axes('yaw')}`,
+  ];
+}
+
+function walkReport(rows: readonly TaggedRow[]): string[] {
+  const same = sameFrames(rows);
+  return [...bandLines(same), ...stillAndAxisLines(same)];
 }
 
 /** 100 short (version 2-3, level M) and 100 launch-URL (version 6-9, level Q) payloads. */
@@ -394,6 +471,186 @@ function tallyCornerOrder(
   if (out.confident) tally.confident++;
   if (out.confident && !correct) tally.wrong++;
   return out.confident;
+}
+
+const IDENTITY_POSE: Pose = { position: [0, 0, 0], rotation: [0, 0, 0, 1] };
+
+interface CandidateCase {
+  cap: { width: number; height: number; fovYDeg: number };
+  distanceM: number;
+  tilt: { tiltXDeg?: number; tiltYDeg?: number };
+  tiltDeg: number;
+  rollDeg: number;
+  offsetM: readonly [number, number];
+  seed: number;
+}
+
+/** Small codes, near-frontal tilts about either axis, three sub-pixel phases. */
+function candidateCases(): CandidateCase[] {
+  const caps = [
+    { width: 439, height: 1024, fovYDeg: 64 },
+    { width: 1024, height: 768, fovYDeg: 50 },
+  ];
+  const offsets = [
+    [0, 0],
+    [0.013, -0.007],
+    [-0.021, 0.011],
+  ] as const;
+  return caps
+    .flatMap((cap) =>
+      [1, 1.5, 2].flatMap((distanceM) =>
+        [0, 3, 6, 10, 15, 20, 30].flatMap((tiltDeg) =>
+          [{ tiltXDeg: tiltDeg }, { tiltYDeg: tiltDeg }].flatMap((tilt) =>
+            [0, 37].flatMap((rollDeg) =>
+              offsets.map((offsetM) => ({
+                cap,
+                distanceM,
+                tilt,
+                tiltDeg,
+                rollDeg,
+                offsetM,
+              }))
+            )
+          )
+        )
+      )
+    )
+    .map((c, k) => ({ ...c, seed: k + 1 }));
+}
+
+interface CandidateRow {
+  tiltDeg: number;
+  modulePx: number;
+  /** Today's pick. */
+  prodRotDeg: number;
+  prodPosCm: number;
+  prodInvalid: boolean;
+  /** M2's pick: the best-fitting REAL candidate. */
+  m2RotDeg: number;
+  m2PosCm: number;
+  /** The best real candidate against the truth (what no selection can beat). */
+  bestRealRotDeg: number;
+}
+
+function poseErr(est: Pose, truth: Pose): { rot: number; posCm: number } {
+  return {
+    rot: rotationAngleDeg(est.rotation, truth.rotation),
+    posCm:
+      100 *
+      Math.hypot(
+        est.position[0] - truth.position[0],
+        est.position[1] - truth.position[1],
+        est.position[2] - truth.position[2]
+      ),
+  };
+}
+
+/** Distance from `pose` to the nearest of `set`: rotation deg + position cm. */
+function nearest(set: readonly Pose[], pose: Pose): number {
+  return Math.min(
+    ...set.map((c) => {
+      const e = poseErr(c, pose);
+      return e.rot + e.posCm;
+    })
+  );
+}
+
+/** One frame: today's pick vs M2's pick vs the best real candidate. */
+async function measureCandidates(
+  c: CandidateCase
+): Promise<CandidateRow | null> {
+  const projection = perspectiveProjection({
+    fovYDeg: c.cap.fovYDeg,
+    aspect: c.cap.width / c.cap.height,
+  });
+  const truth = qrPoseFacingCamera({
+    distanceM: c.distanceM,
+    rollDeg: c.rollDeg,
+    offsetM: c.offsetM,
+    ...c.tilt,
+  });
+  const frame = renderQrFrame({
+    text: PAYLOAD,
+    sizeM: SIZE_M,
+    qrPoseInCamera: truth,
+    projection,
+    width: c.cap.width,
+    height: c.cap.height,
+    supersample: 2,
+    noiseSigma: 2,
+    seed: c.seed,
+  });
+  if (frame.modulePx >= 4) return null; // small codes only
+  const det = await zxingDetect(frame.image);
+  if (!det || det.text !== PAYLOAD) return null;
+  const intrinsics = intrinsicsFromProjection(
+    projection,
+    c.cap.width,
+    c.cap.height
+  );
+  const prod = solveQrPose({
+    imagePoints: det.corners,
+    sizeM: SIZE_M,
+    intrinsics,
+    cameraPose: IDENTITY_POSE,
+    solver: new PlanarPnpSquare(),
+    maxReprojectionErrorPx: Infinity,
+  });
+  const { real, invalid } = candidateStartsBySet(
+    { corners: det.corners, cameraWorld: IDENTITY_POSE, intrinsics },
+    SIZE_M
+  );
+  if (!prod || real.length === 0) return null;
+  const object = buildObjectPoints(SIZE_M);
+  const m2 = real.reduce((best, cand) =>
+    reprojectionErrorPx(object, det.corners, cand, intrinsics) <
+    reprojectionErrorPx(object, det.corners, best, intrinsics)
+      ? cand
+      : best
+  );
+  const p = poseErr(prod.qrPoseInCamera, truth);
+  const m = poseErr(m2, truth);
+  return {
+    tiltDeg: c.tiltDeg,
+    modulePx: frame.modulePx,
+    prodRotDeg: p.rot,
+    prodPosCm: p.posCm,
+    // Nearest candidate set to today's pick, by rotation plus position: the
+    // two code paths differ by ~0.03 deg, so an exact-match threshold would
+    // misclassify; the invalid root differs in depth as well.
+    prodInvalid:
+      nearest(invalid, prod.qrPoseInCamera) <
+      nearest(real, prod.qrPoseInCamera),
+    m2RotDeg: m.rot,
+    m2PosCm: m.posCm,
+    bestRealRotDeg: Math.min(
+      ...real.map((r) => rotationAngleDeg(r.rotation, truth.rotation))
+    ),
+  };
+}
+
+function candidateReport(rows: readonly CandidateRow[]): string[] {
+  const lines = [
+    'tilt | n | today rot p50/p95/max | M2 rot p50/p95/max | best real p95 | today pos p95 cm | M2 pos p95 cm | today picked invalid',
+  ];
+  for (const tilt of [0, 3, 6, 10, 15, 20, 30]) {
+    const r = rows.filter((x) => x.tiltDeg === tilt);
+    if (r.length === 0) continue;
+    const p95 = (xs: number[]) => stats(xs).split('/')[1] ?? '-';
+    lines.push(
+      [
+        String(tilt).padStart(4),
+        String(r.length).padStart(3),
+        stats(r.map((x) => x.prodRotDeg)),
+        stats(r.map((x) => x.m2RotDeg)),
+        p95(r.map((x) => x.bestRealRotDeg)),
+        p95(r.map((x) => x.prodPosCm)),
+        p95(r.map((x) => x.m2PosCm)),
+        String(r.filter((x) => x.prodInvalid).length),
+      ].join(' | ')
+    );
+  }
+  return lines;
 }
 
 describe.runIf(RUN)('QR zxing sweep (opt-in, QR_SWEEP=1)', () => {
@@ -570,39 +827,54 @@ describe.runIf(RUN)('QR zxing sweep (opt-in, QR_SWEEP=1)', () => {
   it(
     'walks: today vs the multi-view prototype (plan 2026-09-23-2314, M0)',
     async () => {
-      // SLAM error on the poses the solvers see: none, then two levels (the
-      // variant ranking hinges on it, plan §8).
+      // SLAM error on the poses the solvers see (review finding 4): none, a
+      // level below the earlier two, the earlier two, and a drift.
       const levels = [
-        undefined,
-        { rotationDeg: 0.2, translationM: 0.005 },
-        { rotationDeg: 0.5, translationM: 0.01 },
+        { label: 'exact SLAM', noise: undefined },
+        {
+          label: 'SLAM noise 0.1 deg / 2 mm',
+          noise: { rotationDeg: 0.1, translationM: 0.002 },
+        },
+        {
+          label: 'SLAM noise 0.2 deg / 5 mm',
+          noise: { rotationDeg: 0.2, translationM: 0.005 },
+        },
+        {
+          label: 'SLAM noise 0.5 deg / 10 mm',
+          noise: { rotationDeg: 0.5, translationM: 0.01 },
+        },
+        {
+          label: 'SLAM drift 0.1 deg + 2 mm per step',
+          noise: {
+            rotationDeg: 0,
+            translationM: 0,
+            driftRotationDegPerStep: 0.1,
+            driftTranslationMPerStep: 0.002,
+          },
+        },
       ];
       const reports: string[] = [];
       let total = 0;
-      for (const slamNoise of levels) {
-        const rows: WalkRow[] = [];
+      for (const { label, noise } of levels) {
+        const rows: TaggedRow[] = [];
+        let walk = 0;
         for (const w of walkCases()) {
-          rows.push(
-            ...(await measureWalk({
-              ...w,
-              ...(slamNoise ? { slamNoise } : {}),
-            }))
-          );
+          const measured = await measureWalk({
+            ...w,
+            ...(noise ? { slamNoise: noise } : {}),
+          });
+          rows.push(...measured.map((r) => ({ ...r, walk, kind: w.kind })));
+          walk++;
         }
         total += rows.length;
-        reports.push(
-          slamNoise
-            ? `SLAM noise ${slamNoise.rotationDeg} deg / ${slamNoise.translationM * 1000} mm`
-            : 'exact SLAM',
-          ...walkReport(rows)
-        );
+        reports.push(label, ...walkReport(rows));
       }
       console.log(
         `\nWALKS (phone 439x1024, wall code 16 cm)\n${reports.join('\n')}`
       );
       expect(total).toBeGreaterThan(0);
     },
-    4 * SWEEP_TIMEOUT_MS // three SLAM-noise levels over the whole walk set
+    6 * SWEEP_TIMEOUT_MS // five SLAM-noise levels over the whole walk set
   );
 
   it(
@@ -660,6 +932,22 @@ describe.runIf(RUN)('QR zxing sweep (opt-in, QR_SWEEP=1)', () => {
         `\nCORNER ORDER OVER 200 PAYLOADS (439x1024, 0.9 m)\n${lines.join('\n')}`
       );
       expect(lines.length).toBe(4);
+    },
+    SWEEP_TIMEOUT_MS
+  );
+
+  it(
+    'per candidate: today vs removing the invalid root (plan 2026-09-23-2314, M0 for M2)',
+    async () => {
+      const rows: CandidateRow[] = [];
+      for (const c of candidateCases()) {
+        const r = await measureCandidates(c);
+        if (r) rows.push(r);
+      }
+      console.log(
+        `\nPER CANDIDATE (small codes < 4 px/module, noise 2, both tilt axes, 3 phases)\n${candidateReport(rows).join('\n')}`
+      );
+      expect(rows.length).toBeGreaterThan(0);
     },
     SWEEP_TIMEOUT_MS
   );

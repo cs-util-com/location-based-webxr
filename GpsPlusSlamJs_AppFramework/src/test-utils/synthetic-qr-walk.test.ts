@@ -24,7 +24,13 @@ describe('synthetic QR walks', () => {
   // view, centred; a camera that drifts off the code would make a solver look
   // bad for reasons that have nothing to do with the solver.
   it('keeps the code centre on the camera axis at every step, for every walk', () => {
-    for (const kind of ['approach', 'sidestep', 'arc', 'still'] as WalkKind[]) {
+    for (const kind of [
+      'approach',
+      'sidestep',
+      'arc',
+      'still',
+      'rise',
+    ] as WalkKind[]) {
       for (const code of [CODE, yawed(35)]) {
         const poses = walkCameraPoses({
           kind,
@@ -120,6 +126,24 @@ describe('synthetic QR walks', () => {
       offsetDeg: 12,
     });
     for (const p of still) expect(rayAngleDeg(p, CODE)).toBeCloseTo(12, 4);
+  });
+
+  // Why this test matters (milestone review 2026-09-24, finding 3): the
+  // phone's absolute check is the code's PITCH, which walks at the code's
+  // height never view obliquely. A rise walk moves the camera vertically.
+  it('rises through the code height, reaching pitch obliqueness', () => {
+    const poses = walkCameraPoses({
+      kind: 'rise',
+      codeWorld: CODE,
+      distanceM: 1,
+      extent: 0.4,
+      steps: 3,
+    });
+    expect(poses[0]!.position[1]).toBeCloseTo(CODE.position[1] - 0.2, 6);
+    expect(poses[2]!.position[1]).toBeCloseTo(CODE.position[1] + 0.2, 6);
+    // atan(0.2 / 1) at either end, straight on in the middle.
+    expect(rayAngleDeg(poses[0]!, CODE)).toBeCloseTo(11.31, 1);
+    expect(rayAngleDeg(poses[1]!, CODE)).toBeCloseTo(0, 4);
   });
 
   it('approaches the code along the viewing line', () => {

@@ -57,6 +57,58 @@ describe('measureWalk (M0 walk harness)', () => {
     expect(Math.abs(last(noisy) - last(clean))).toBeGreaterThan(0.1);
   }, 120_000);
 
+  // Why this test matters (milestone review 2026-09-24, finding 3): the
+  // phone's absolute check is the PITCH of a wall code's normal; a single
+  // total angle cannot show which axis a method gets right.
+  it('reports pitch and yaw errors of the code normal apart', async () => {
+    const rows = await measureWalk({
+      kind: 'rise',
+      codeWorld: WALL_CODE,
+      distanceM: 0.8,
+      extent: 0.5,
+      steps: 6,
+      noiseSigma: 0,
+      seed: 5,
+    });
+    const last = rows[rows.length - 1]!;
+    const fused = last.axisErrDeg.fused.rotSharedFixedT!;
+    expect(Number.isFinite(last.axisErrDeg.raw.pitch)).toBe(true);
+    expect(Number.isFinite(last.axisErrDeg.stable.yaw)).toBe(true);
+    expect(fused.pitch).toBeLessThan(1);
+    expect(fused.yaw).toBeLessThan(1);
+    // Neither axis can exceed the total rotation error of the same pose.
+    expect(fused.pitch).toBeLessThanOrEqual(
+      last.errFusedDeg.rotSharedFixedT! + 1e-6
+    );
+  }, 120_000);
+
+  // Why this test matters (finding 4): SLAM error drifts, it is not only
+  // white; a drift the solvers see must change what they measure.
+  it('applies a drifting SLAM error when asked', async () => {
+    const base = {
+      kind: 'arc' as const,
+      codeWorld: WALL_CODE,
+      distanceM: 0.8,
+      extent: 50,
+      steps: 6,
+      noiseSigma: 0,
+      seed: 3,
+    };
+    const clean = await measureWalk(base);
+    const drifting = await measureWalk({
+      ...base,
+      slamNoise: {
+        rotationDeg: 0,
+        translationM: 0,
+        driftRotationDegPerStep: 0.5,
+        driftTranslationMPerStep: 0.005,
+      },
+    });
+    const last = (rows: typeof clean) =>
+      rows[rows.length - 1]!.errFusedDeg.rotSharedFixedT!;
+    expect(Math.abs(last(drifting) - last(clean))).toBeGreaterThan(0.1);
+  }, 120_000);
+
   // Why this test matters: a frame that zxing cannot decode must be skipped,
   // not scored as a pose; a walk too far away yields no rows at all.
   it('returns no rows when nothing decodes', async () => {

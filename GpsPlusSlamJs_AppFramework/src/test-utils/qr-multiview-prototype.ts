@@ -388,14 +388,14 @@ export function solveMultiView(
 }
 
 /**
- * The world poses of `view`'s REAL IPPE candidates (the `tau = 1/sigma_max`
- * root, both signs): the starts a multi-view solve tries. The invalid root
- * (plan §6 finding 1) is recognised by its larger depth and left out.
+ * The world poses of ALL of `view`'s IPPE candidates, split into the REAL
+ * ones (the `tau = 1/sigma_max` root, both signs) and those of the invalid
+ * root (plan §6 finding 1), recognised by its larger depth.
  */
-export function realCandidateStarts(
+export function candidateStartsBySet(
   view: ViewObservation,
   sizeM: number
-): Pose[] {
+): { real: Pose[]; invalid: Pose[] } {
   const { fx, fy, cx, cy } = view.intrinsics;
   const object = buildObjectPoints(sizeM);
   const H = homographyFromCorrespondences(
@@ -404,23 +404,37 @@ export function realCandidateStarts(
       (c) => [(c.x - cx) / fx, (c.y - cy) / fy] as [number, number]
     )
   );
-  if (!H) return [];
+  if (!H) return { real: [], invalid: [] };
   const candidates = ippePoseCandidates(H);
-  if (candidates.length === 0) return [];
   const depth = (t: readonly number[]) => Math.hypot(t[0]!, t[1]!, t[2]!);
   const minDepth = Math.min(...candidates.map((c) => depth(c.t)));
-  return candidates
-    .filter((c) => depth(c.t) <= minDepth * (1 + 1e-9))
-    .flatMap((c) => {
-      const fixed = { rvec: rotationToRodrigues(c.R), tvec: c.t };
-      const sol = solveQrPose({
-        imagePoints: view.corners,
-        sizeM,
-        intrinsics: view.intrinsics,
-        cameraPose: view.cameraWorld,
-        solver: { solve: () => fixed },
-        maxReprojectionErrorPx: Infinity,
-      });
-      return sol ? [sol.qrPoseWorld] : [];
+  const toWorld = (c: (typeof candidates)[number]): Pose[] => {
+    const fixed = { rvec: rotationToRodrigues(c.R), tvec: c.t };
+    const sol = solveQrPose({
+      imagePoints: view.corners,
+      sizeM,
+      intrinsics: view.intrinsics,
+      cameraPose: view.cameraWorld,
+      solver: { solve: () => fixed },
+      maxReprojectionErrorPx: Infinity,
     });
+    return sol ? [sol.qrPoseWorld] : [];
+  };
+  const isReal = (c: (typeof candidates)[number]) =>
+    depth(c.t) <= minDepth * (1 + 1e-9);
+  return {
+    real: candidates.filter(isReal).flatMap(toWorld),
+    invalid: candidates.filter((c) => !isReal(c)).flatMap(toWorld),
+  };
+}
+
+/**
+ * The world poses of `view`'s REAL IPPE candidates: the starts a multi-view
+ * solve tries (the invalid root is left out).
+ */
+export function realCandidateStarts(
+  view: ViewObservation,
+  sizeM: number
+): Pose[] {
+  return candidateStartsBySet(view, sizeM).real;
 }

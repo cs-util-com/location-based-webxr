@@ -174,4 +174,18 @@ describe('multi-view QR pose prototype (M0)', () => {
       expect(starts.length).toBeLessThanOrEqual(2);
     }
   });
+
+  // Why this test matters (milestone review 2026-09-24, finding 9): a count
+  // alone passes when the filter keeps the WRONG root. On exact data the
+  // real pair contains the truth; the invalid root is frontal to the ray and
+  // sits ~the tilt away from it.
+  it('offers the true orientation among the starts on exact data', () => {
+    const code = tilted(12);
+    for (const v of arcViews(code, 30, 4)) {
+      const errors = realCandidateStarts(v, SIZE_M).map((s) =>
+        rotationAngleDeg(s.rotation, code.rotation)
+      );
+      expect(Math.min(...errors)).toBeLessThan(0.01);
+    }
+  });
 });
