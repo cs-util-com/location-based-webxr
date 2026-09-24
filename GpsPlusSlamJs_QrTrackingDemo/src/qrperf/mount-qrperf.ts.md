@@ -6,7 +6,7 @@ DOM glue for the `?qrperf` instrument: builds it from the URL params, re-renders
 
 ## Public API
 
-- **`mountQrPerf(params, { log, copy }): MountedQrPerf | null`** - `null` (touching nothing) when `params.mode === 'off'`; otherwise `{ instrument, dispose() }`. `dispose` clears the refresh timer, unregisters the XR frame hook and removes the click handler.
+- **`mountQrPerf(params, { log, copy }, intervalMs?): MountedQrPerf | null`** - `intervalMs` is passed to the instrument for its report header. - `null` (touching nothing) when `params.mode === 'off'`; otherwise `{ instrument, dispose() }`. `dispose` clears the refresh timer, unregisters the XR frame hook and removes the click handler.
 
 ## Invariants & assumptions
 

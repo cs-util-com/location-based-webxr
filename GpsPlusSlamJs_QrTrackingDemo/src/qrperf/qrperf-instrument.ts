@@ -20,6 +20,11 @@ import {
   type RollBinTally,
 } from "./corner-compare.js";
 import type { QrPerfParams } from "./qrperf-params.js";
+import {
+  createPoseQuality,
+  type PoseQualitySample,
+  type PoseQualitySummary,
+} from "./pose-quality.js";
 
 export type ZxingOptionSet = "default" | "fast";
 
@@ -41,6 +46,8 @@ export interface ZxingProbe {
 export interface QrPerfInstrumentOptions extends QrPerfParams {
   now?: () => number;
   zxing?: ZxingProbe;
+  /** The capture interval the demo runs at, ms (shown in the report). */
+  intervalMs?: number;
 }
 
 export interface QrPerfInstrument {
@@ -102,6 +109,112 @@ function stageLine(name: string, s: StageSummary): string {
   return `${name.padEnd(14)} med ${fmt(s.median)}  p95 ${fmt(s.p95)}  max ${fmt(s.max)} ms  (n ${s.n})`;
 }
 
+type Vec3 = [number, number, number];
+type Quat = [number, number, number, number];
+
+function isFiniteTuple(v: unknown, length: number): boolean {
+  return (
+    Array.isArray(v) &&
+    v.length === length &&
+    v.every((x) => typeof x === "number" && Number.isFinite(x))
+  );
+}
+
+function isPoints(v: unknown): v is Point[] {
+  return (
+    Array.isArray(v) &&
+    v.length >= 4 &&
+    v.every(
+      (p) =>
+        typeof p === "object" &&
+        p !== null &&
+        Number.isFinite((p as Point).x) &&
+        Number.isFinite((p as Point).y),
+    )
+  );
+}
+
+/** The solved world rotation and reprojection error, or null for any other shape. */
+function readSolution(
+  out: unknown,
+): { rotation: Quat; reprojectionErrorPx: number } | null {
+  if (typeof out !== "object" || out === null) return null;
+  const o = out as {
+    qrPoseWorld?: { rotation?: unknown };
+    reprojectionErrorPx?: unknown;
+  };
+  const rotation = o.qrPoseWorld?.rotation;
+  if (!isFiniteTuple(rotation, 4)) return null;
+  if (typeof o.reprojectionErrorPx !== "number") return null;
+  return {
+    rotation: rotation as Quat,
+    reprojectionErrorPx: o.reprojectionErrorPx,
+  };
+}
+
+/** The corners and camera pose a solve was given, or null for any other shape. */
+function readSolveInput(
+  input: unknown,
+): { corners: Point[]; position: Vec3; rotation: Quat } | null {
+  if (typeof input !== "object" || input === null) return null;
+  const i = input as {
+    imagePoints?: unknown;
+    cameraPose?: { position?: unknown; rotation?: unknown };
+  };
+  const camera = i.cameraPose;
+  if (!isPoints(i.imagePoints)) return null;
+  if (!isFiniteTuple(camera?.position, 3)) return null;
+  if (!isFiniteTuple(camera?.rotation, 4)) return null;
+  return {
+    corners: i.imagePoints,
+    position: camera!.position as Vec3,
+    rotation: camera!.rotation as Quat,
+  };
+}
+
+/**
+ * Read a solve's input and output defensively: the wrapper is generic, so a
+ * solve of another shape (or a failed one) yields `null`, never a throw.
+ */
+function readSolve(
+  text: string,
+  input: unknown,
+  out: unknown,
+): PoseQualitySample | null {
+  const solution = readSolution(out);
+  const given = readSolveInput(input);
+  if (!solution || !given) return null;
+  return {
+    text,
+    qrRotationWorld: solution.rotation,
+    corners: given.corners,
+    cameraPosition: given.position,
+    cameraRotation: given.rotation,
+    reprojectionErrorPx: solution.reprojectionErrorPx,
+  };
+}
+
+function pct(share: number): string {
+  return `${Math.round(share * 100)}%`;
+}
+
+/** The pose-quality lines (QR near-frontal pose plan 2026-09-23-2314, M1). */
+function poseLines(q: PoseQualitySummary): string[] {
+  if (q.reprojectionPx.n === 0) {
+    return [
+      "pose: no solves yet (the demo solves once a depth-measured size exists)",
+    ];
+  }
+  const { strict, loose } = q.stillJitterPx;
+  const e = q.wallElevationDeg;
+  return [
+    `pose jumps (${q.pairs} pairs) p50 ${fmt(q.jumpDeg.p50)} p95 ${fmt(q.jumpDeg.p95)} max ${fmt(q.jumpDeg.max)} deg | >3/5/10 ${pct(q.jumpShare.over3)}/${pct(q.jumpShare.over5)}/${pct(q.jumpShare.over10)} | >60 ${q.jumpsOver60}`,
+    `still jitter px: 2mm/0.1deg n ${strict.n} p50 ${fmt(strict.p50)} p95 ${fmt(strict.p95)} | 5mm/0.3deg n ${loose.n} p50 ${fmt(loose.p50)} p95 ${fmt(loose.p95)}`,
+    `reproj px p50 ${fmt(q.reprojectionPx.p50)} p95 ${fmt(q.reprojectionPx.p95)} (n ${q.reprojectionPx.n})`,
+    `wall normal elevation |p50| ${fmt(e.p50Abs)} |p95| ${fmt(e.p95Abs)} mean ${fmt(e.meanSigned)} deg (n ${e.n})`,
+  ];
+}
+
 function setLine(name: ZxingOptionSet, t: SetTally): string {
   return `${name}: frames ${t.frames}  native ${t.native}  zxing ${t.zxing}  both ${t.both}`;
 }
@@ -120,6 +233,9 @@ export function createQrPerfInstrument(
   };
   let frameSize = "";
   let nextSet: ZxingOptionSet = "default";
+  const pose = createPoseQuality();
+  /** The text of the latest detection; the solve that follows is its frame's. */
+  let lastText: string | null = null;
 
   async function compareWithZxing(
     image: RgbaImage,
@@ -194,6 +310,7 @@ export function createQrPerfInstrument(
         const t1 = now();
         timings.record("detect", t1 - t0);
         if (result) timings.count("hit", t1);
+        lastText = result?.text ?? null;
         await compareWithZxing(image, result);
         return result;
       };
@@ -203,6 +320,9 @@ export function createQrPerfInstrument(
         const t0 = now();
         const out = solve(...args);
         timings.record("solve", now() - t0);
+        const sample =
+          lastText === null ? null : readSolve(lastText, args[0], out);
+        if (sample) pose.add(sample);
         return out;
       };
     },
@@ -212,7 +332,7 @@ export function createQrPerfInstrument(
       const snap = timings.snapshot(now());
       const variant = options.baseline ? "BASELINE (pre-fix)" : "post-fix";
       const lines = [
-        `QRPERF ${options.mode} | ${variant} | ${frameSize || "no capture yet"}`,
+        `QRPERF ${options.mode} | ${variant} | ${frameSize || "no capture yet"}${options.intervalMs === undefined ? "" : ` | interval ${options.intervalMs} ms`}`,
         ratesLine(snap.ratesPerSec),
         `capture cost ${fmt(snap.ratesPerSec["capture-ms"] ?? 0)} ms/s (readback + flip, last 10 s)`,
         totalsLine(snap.totals),
@@ -224,6 +344,7 @@ export function createQrPerfInstrument(
       lines.push(
         `long frames (>1.5x / >2x median): ${snap.longFrames.over1_5x} / ${snap.longFrames.over2x}`,
       );
+      lines.push(...poseLines(pose.summary()));
       if (options.mode === "zxing") lines.push(...zxingLines());
       return lines;
     },
@@ -232,7 +353,9 @@ export function createQrPerfInstrument(
         mode: options.mode,
         baseline: options.baseline,
         frameSize,
+        intervalMs: options.intervalMs ?? null,
         ...timings.snapshot(now()),
+        pose: pose.summary(),
         zxingSets: sets,
         zxingLoadMs: options.zxing?.loadMs() ?? null,
         cornerOrder: tally.summary(),

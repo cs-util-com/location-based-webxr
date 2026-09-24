@@ -14,9 +14,11 @@ boot store + AR session + debug view + controller → per-frame
   store dispatches, `updateScene` to the debug view (skips until a size exists),
   and `startFrameSource` to `offerFrame`. `failStart` rolls the UI back on a boot
   error.
-- **Sets the detection throttle** here: `minIntervalMs = DETECT_INTERVAL_MS`
-  (125 ms ≈ 8 Hz, plan §9) — the controller's own default is 0 (no throttle) so
-  unit tests stay fast; production cadence is a wiring decision, set in `main`.
+- **Sets the capture cadence** here: `DETECT_INTERVAL_MS` is `?interval=<ms>`
+  (`interval-param.ts`, within the framework's QR capture bounds) or the
+  framework default `DEFAULT_QR_CAPTURE_INTERVAL_MS` (125 ms ≈ 8 Hz). It drives
+  the framework `CameraFrameSource`, the single throttle; the controller detects
+  every delivered frame (`minIntervalMs: 0`).
 - Maintains an on-screen **debug log** (`debug-log.ts`): every lock appends a
   line with the Δt since the previous lock (cadence/tuning aid), and status
   transitions are logged too.

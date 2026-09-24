@@ -41,6 +41,24 @@ test.describe("QR-tracking demo - ?qrperf instrument", () => {
     await expect(log).toContainText(/detect\s+med [0-9.]+/);
   });
 
+  // Why this test matters (QR near-frontal pose plan, M1): the field test
+  // measures a faster detection rate by URL; the value must reach the frame
+  // source, and the report must say which interval it measured and show the
+  // pose section the before/after comparison reads.
+  test("?interval reaches the frame source and the report", async ({
+    page,
+  }) => {
+    await bootWith(page, "?qrperf=1&interval=60");
+    const intervalMs = await page.evaluate(
+      () => window.__qrDemoTest.frameSourceOptions?.intervalMs,
+    );
+    expect(intervalMs).toBe(60);
+    await feedFrames(page, 3);
+    const log = page.getByTestId("qrperf-log");
+    await expect(log).toContainText("interval 60 ms");
+    await expect(log).toContainText(/pose(:| jumps)/);
+  });
+
   test("labels the pre-fix A/B run", async ({ page }) => {
     await bootWith(page, "?qrperf=1&baseline=1");
     await expect(page.getByTestId("qrperf-log")).toContainText(

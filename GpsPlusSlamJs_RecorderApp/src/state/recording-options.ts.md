@@ -54,17 +54,17 @@ User-configurable recording options for controlling high-frequency data streams 
 
 ### Constants
 
-| Constant                         | Description                                                              |
-| -------------------------------- | ------------------------------------------------------------------------ |
-| `STORAGE_KEY`                    | localStorage key: `'gps-plus-slam-recorder-options'`                     |
-| `DEFAULT_RECORDING_OPTIONS`      | Default values (all enabled)                                             |
-| `DEPTH_CONSTRAINTS`              | Min/max/step for depth options                                           |
-| `IMAGE_CONSTRAINTS`              | Min/max/step for image options                                           |
-| `MOTION_FILTER_CONSTRAINTS`      | **Re-export** of the motion gate's own bounds (`ar/capture-motion-gate`) |
-| `QUALITY_FILTER_CONSTRAINTS`     | **Re-export** of the quality gate's own bounds (`ar/image-quality`)      |
-| `OCCUPANCY_CONSTRAINTS`          | Min/max/step for `cellSizeM` (metres) and `minConfidence` (count)        |
-| `FRAME_TILE_DISPLAY_CONSTRAINTS` | Min/max/step for `frameTileDisplay.divisor` and `.maxTiles`              |
-| `QR_CONSTRAINTS`                 | Min/max/step for `qr.intervalMs` and `qr.captureSize`                    |
+| Constant                         | Description                                                                                                                           |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `STORAGE_KEY`                    | localStorage key: `'gps-plus-slam-recorder-options'`                                                                                  |
+| `DEFAULT_RECORDING_OPTIONS`      | Default values (all enabled)                                                                                                          |
+| `DEPTH_CONSTRAINTS`              | Min/max/step for depth options                                                                                                        |
+| `IMAGE_CONSTRAINTS`              | Min/max/step for image options                                                                                                        |
+| `MOTION_FILTER_CONSTRAINTS`      | **Re-export** of the motion gate's own bounds (`ar/capture-motion-gate`)                                                              |
+| `QUALITY_FILTER_CONSTRAINTS`     | **Re-export** of the quality gate's own bounds (`ar/image-quality`)                                                                   |
+| `OCCUPANCY_CONSTRAINTS`          | Min/max/step for `cellSizeM` (metres) and `minConfidence` (count)                                                                     |
+| `FRAME_TILE_DISPLAY_CONSTRAINTS` | Min/max/step for `frameTileDisplay.divisor` and `.maxTiles`                                                                           |
+| `QR_CONSTRAINTS`                 | Min/max/step for `qr.intervalMs` (the framework's `QR_CAPTURE_INTERVAL_CONSTRAINTS`, `ar/qr/qr-capture-cadence`) and `qr.captureSize` |
 
 ## Invariants & Assumptions
 

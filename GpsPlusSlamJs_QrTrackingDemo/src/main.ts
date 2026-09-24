@@ -41,6 +41,8 @@ import {
   createQrDemoController,
 } from "./demo-controller.js";
 import { parseQrPerfParams } from "./qrperf/qrperf-params.js";
+import { parseIntervalParam } from "./interval-param.js";
+import { DEFAULT_QR_CAPTURE_INTERVAL_MS } from "gps-plus-slam-app-framework/ar/qr/qr-capture-cadence";
 import { mountQrPerf, type MountedQrPerf } from "./qrperf/mount-qrperf.js";
 import type { CaptureTiming } from "gps-plus-slam-app-framework/ar/camera-blit-capture";
 import { toHudView, type DemoStatus } from "./hud-view.js";
@@ -57,8 +59,12 @@ import {
  * every frame would waste CPU/GPU/battery. This is the SINGLE cadence knob — it
  * drives the framework `CameraFrameSource` (the one throttle, Option A); the
  * controller then detects every delivered frame (`minIntervalMs: 0`).
+ * `?interval=<ms>` overrides it for field measurements (QR near-frontal pose
+ * plan, M1); the default and the bounds are the framework's, shared with the
+ * Recorder.
  */
-const DETECT_INTERVAL_MS = 125;
+const DETECT_INTERVAL_MS =
+  parseIntervalParam(location.search) ?? DEFAULT_QR_CAPTURE_INTERVAL_MS;
 
 function el<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id);
@@ -158,10 +164,11 @@ async function startAr(): Promise<void> {
   // `?qrperf` (plan 2026-09-23 M2): opt-in stage timings; null when off, and
   // then every hook below is exactly the un-instrumented pipeline.
   const perfParams = parseQrPerfParams(window.location.search);
-  perf = mountQrPerf(perfParams, {
-    log: dom.qrperfLog,
-    copy: dom.qrperfCopy,
-  });
+  perf = mountQrPerf(
+    perfParams,
+    { log: dom.qrperfLog, copy: dom.qrperfCopy },
+    DETECT_INTERVAL_MS,
+  );
   // `baseline=1` reproduces the pre-M3 pipeline in the same build (plan
   // DEC-Q7): a full pixel copy per decode, and a capture every interval.
   const baseDetect = seams.createDetect(

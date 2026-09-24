@@ -42,6 +42,12 @@
 
 ### Added
 
+- **QR capture cadence constants** (QR near-frontal pose plan 2026-09-23-2314,
+  M1): `QR_CAPTURE_INTERVAL_CONSTRAINTS` (`{ min: 50, max: 1000, step: 25 }`
+  ms) and `DEFAULT_QR_CAPTURE_INTERVAL_MS` (125), on the `ar/qr` barrel and
+  **`ar/qr/qr-capture-cadence`** (deep import). The one definition of the QR
+  capture interval's default and bounds; the Recorder's settings and the QR
+  demo's `?interval=` read them instead of restating them.
 - **QR capture-pipeline hooks** (QR perf plan 2026-09-23, M2-M4); the options
   below are optional (the M4 signature change and the new required
   `isBusy()` member are under Breaking changes above):

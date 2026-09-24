@@ -31,12 +31,15 @@ export interface QrPerfDom {
 export function mountQrPerf(
   params: QrPerfParams,
   dom: QrPerfDom,
+  /** The capture interval the demo runs at, for the report header. */
+  intervalMs?: number,
 ): MountedQrPerf | null {
   if (params.mode === "off") return null;
 
   const probe = params.mode === "zxing" ? createZxingProbe() : undefined;
   const instrument = createQrPerfInstrument({
     ...params,
+    ...(intervalMs === undefined ? {} : { intervalMs }),
     ...(probe ? { zxing: probe } : {}),
   });
   let loadError: string | null = null;

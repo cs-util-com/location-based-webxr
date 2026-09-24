@@ -39,6 +39,10 @@ import {
   DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS,
 } from 'gps-plus-slam-app-framework/ar/depth-sampler';
 import {
+  DEFAULT_QR_CAPTURE_INTERVAL_MS,
+  QR_CAPTURE_INTERVAL_CONSTRAINTS,
+} from 'gps-plus-slam-app-framework/ar/qr/qr-capture-cadence';
+import {
   DEFAULT_MOTION_FILTER,
   validateMotionFilterConfig,
   type MotionFilterConfig,
@@ -595,7 +599,7 @@ export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
     // OFF by default (§0): QR capture/detection is opt-in so existing
     // recordings pay nothing (performance must not regress).
     enabled: false,
-    intervalMs: 125, // ~8 Hz — the QR demo's DETECT_INTERVAL_MS
+    intervalMs: DEFAULT_QR_CAPTURE_INTERVAL_MS, // 125, ~8 Hz - shared with the QR demo
     captureSize: 1024, // long-edge px — the on-device-verified default
     useLevels: false,
   },
@@ -707,14 +711,14 @@ export const FRAME_TILE_DISPLAY_CONSTRAINTS = {
 /**
  * Validation constraints for QR-capture options.
  *
- * `intervalMs` is clamped to 50–1000 ms (20 Hz down to 1 Hz): below ~50 ms the
- * detector cannot keep up and frames just queue; above 1 s tracking feels dead.
+ * `intervalMs` is clamped to the framework's QR capture bounds (50-1000 ms,
+ * `ar/qr/qr-capture-cadence`; the QR demo's `?interval=` reads the same ones).
  * `captureSize` is clamped to 256–2048 px: under 256 even a near QR loses its
  * modules; over 2048 the blit + decode cost is not worth it on a phone. Both
  * back a settings slider so a corrupt stored value can never break capture.
  */
 export const QR_CONSTRAINTS = {
-  intervalMs: { min: 50, max: 1000, step: 25 },
+  intervalMs: QR_CAPTURE_INTERVAL_CONSTRAINTS,
   captureSize: { min: 256, max: 2048, step: 128 },
 } as const;
 

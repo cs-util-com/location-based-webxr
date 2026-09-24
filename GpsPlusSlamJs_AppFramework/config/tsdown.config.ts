@@ -95,6 +95,7 @@ const entryFiles = [
   // wildcard matches multi-segment subpaths, so `./ar/qr/<file>` is already
   // advertised and each must be built per-file.
   'src/ar/qr/planar-pnp.ts',
+  'src/ar/qr/qr-capture-cadence.ts',
   'src/ar/qr/qr-debug-view.ts',
   'src/ar/qr/qr-derived-pose.ts',
   'src/ar/qr/qr-detection-controller.ts',

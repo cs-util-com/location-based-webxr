@@ -147,6 +147,12 @@ export {
   PlanarPnpSquare,
 } from './planar-pnp.js';
 
+// --- qr-capture-cadence (capture interval default + bounds) ---
+export {
+  DEFAULT_QR_CAPTURE_INTERVAL_MS,
+  QR_CAPTURE_INTERVAL_CONSTRAINTS,
+} from './qr-capture-cadence.js';
+
 // --- detection-scheduler (generic) ---
 export {
   type DetectionSchedulerConfig,

@@ -236,4 +236,65 @@ describe("createQrPerfInstrument", () => {
     expect(inst.snapshot().stages["zxing-default"]).toBeUndefined();
     expect(inst.report().join("\n")).toContain("default: frames 0");
   });
+
+  describe("pose quality (QR near-frontal pose plan, M1)", () => {
+    const CAMERA = { position: [0, 0, 0], rotation: [0, 0, 0, 1] };
+    const solveWith =
+      (rotation: number[], reprojectionErrorPx = 0.4) =>
+      (_input: unknown) => ({
+        qrPoseWorld: { position: [0, 0, -1], rotation },
+        reprojectionErrorPx,
+      });
+    const tilt = (deg: number) => {
+      const h = (deg * Math.PI) / 360;
+      return [0, Math.sin(h), 0, Math.cos(h)];
+    };
+
+    // Why this test matters: the phone's before/after for the pose fix reads
+    // these numbers; they must pair the solve with the detection of the same
+    // frame (the code's text comes from the detect wrapper).
+    it("feeds each solve, with the detected text, into the pose numbers", async () => {
+      const inst = createQrPerfInstrument({ mode: "native", baseline: false });
+      const detect = inst.wrapDetect(() => Promise.resolve(HIT));
+      const input = { imagePoints: CORNERS, cameraPose: CAMERA };
+      await detect(IMAGE);
+      inst.wrapSolve(solveWith([0, 0, 0, 1]))(input);
+      await detect(IMAGE);
+      inst.wrapSolve(solveWith(tilt(4)))(input);
+      const json = JSON.parse(inst.json()) as { pose: { pairs: number } };
+      expect(json.pose.pairs).toBe(1);
+      expect(inst.report().join("\n")).toMatch(/pose jumps .*p50 4\.0/);
+    });
+
+    // Why this test matters: the wrapper is generic and must stay harmless for
+    // a solve it cannot read, or for a failed solve (null).
+    it("ignores solves it cannot read and failed solves", async () => {
+      const inst = createQrPerfInstrument({ mode: "native", baseline: false });
+      await inst.wrapDetect(() => Promise.resolve(HIT))(IMAGE);
+      expect(inst.wrapSolve((x: number) => x * 2)(21)).toBe(42);
+      expect(
+        inst.wrapSolve((_input: unknown) => null)({
+          imagePoints: CORNERS,
+          cameraPose: CAMERA,
+        }),
+      ).toBeNull();
+      const json = JSON.parse(inst.json()) as {
+        pose: { reprojectionPx: { n: number } };
+      };
+      expect(json.pose.reprojectionPx.n).toBe(0);
+      expect(inst.report().join("\n")).toContain("pose: no solves yet");
+    });
+
+    it("reports the capture interval it runs at", () => {
+      const inst = createQrPerfInstrument({
+        mode: "native",
+        baseline: false,
+        intervalMs: 60,
+      });
+      expect(inst.report()[0]).toContain("interval 60 ms");
+      expect(
+        (JSON.parse(inst.json()) as { intervalMs: number }).intervalMs,
+      ).toBe(60);
+    });
+  });
 });
