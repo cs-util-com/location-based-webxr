@@ -388,8 +388,8 @@ interface ArSessionHandle {
   /**
    * Tracking-state pipeline (Stage 2). Store + host callbacks arrive TOGETHER
    * via initAR `callbacks.tracking`; `phaseUnsubscribe` is the store phase
-   * subscription opened by `initAR` (torn down by teardown/rebind so no
-   * dangling listener outlives its store). `store` is the ONE handle field
+   * subscription opened by `initAR` (torn down by teardown so no dangling
+   * listener outlives its store; MOVED to the new store by a rebind). `store` is the ONE handle field
    * mutated mid-session — {@link rebindTrackingStore}, the recorder's
    * per-recording store swap.
    */
@@ -1061,7 +1061,11 @@ export async function initAR(
         const transformData = extractResetTransformData(
           event as unknown as Record<string, unknown>
         );
-        store.dispatch(originResetAction(transformData));
+        // The CURRENT store, not the one captured at init: the recorder
+        // rebinds mid-session, and the old store is orphaned by then.
+        (activeSession.tracking.store ?? store).dispatch(
+          originResetAction(transformData)
+        );
         log.warn(
           'XR reference space reset detected',
           transformData ? '(transform available)' : '(no transform)'
@@ -1163,8 +1167,8 @@ function subscribeToTrackingPhase(
 ): () => void {
   // `prev` is closure-local so the mirror state is naturally scoped to a
   // single subscription. Disposing the subscription (or replacing the
-  // store via `rebindTrackingStore`) discards this closure, so the next
-  // subscription always starts fresh at 'initializing'.
+  // store via `rebindTrackingStore`, which subscribes afresh) discards this
+  // closure, so the next subscription always starts fresh at 'initializing'.
   let prev: TrackingPhase = 'initializing';
   return store.subscribe(() => {
     const next = selectTrackingPhase(store.getState());
@@ -1791,16 +1795,25 @@ export function getImageCaptureFrameCount(): number {
  * @param store — any store satisfying {@link TrackingSubscribableStore}.
  */
 export function rebindTrackingStore(store: TrackingSubscribableStore): void {
-  // If we already have an active phase subscription to a different store,
-  // tear it down before swapping. The new subscription is established
-  // inside `initAR`, not here, because we also want it to survive
-  // `resetWebXRState`-then-`initAR` cycles cleanly.
+  // A live phase subscription MOVES to the new store: the recorder swaps its
+  // store on every Start Recording, and a subscription that was only torn
+  // down left the host's onLost / onRestarted / onRecovered dormant for the
+  // rest of the session (no restart recorded, no QR frame epoch, no
+  // alignment re-basing - 2026-07-11-1811-tracking-rebind-dormant-phase-
+  // subscription-followup.md). Without a live subscription (no session, or
+  // no `tracking` group) there is nothing to move: `initAR` subscribes.
+  // The new store's slice is not reset: the new subscription starts from
+  // 'initializing', and an initializing -> tracking step fires no callback.
   const { tracking } = activeSession;
+  const wasSubscribed = tracking.phaseUnsubscribe !== null;
   if (tracking.phaseUnsubscribe) {
     tracking.phaseUnsubscribe();
     tracking.phaseUnsubscribe = null;
   }
   tracking.store = store;
+  if (wasSubscribed) {
+    tracking.phaseUnsubscribe = subscribeToTrackingPhase(store);
+  }
 }
 
 /**

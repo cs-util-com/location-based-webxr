@@ -22,6 +22,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type * as THREE from 'three';
 
+// A reference space the rebind test can fire `reset` on; null (the old
+// behaviour) for every other test.
+const hoisted = vi.hoisted(() => ({
+  referenceSpace: null as EventTarget | null,
+}));
+
 // Mock only WebGLRenderer (jsdom has no WebGL context). Spreading `...actual`
 // keeps every other THREE export real.
 vi.mock('three', async (importOriginal) => {
@@ -37,7 +43,7 @@ vi.mock('three', async (importOriginal) => {
     xr = {
       enabled: false,
       setSession: vi.fn().mockResolvedValue(undefined),
-      getReferenceSpace: vi.fn().mockReturnValue(null),
+      getReferenceSpace: vi.fn(() => hoisted.referenceSpace),
     };
   }
 
@@ -134,6 +140,7 @@ describe('initAR callbacks.tracking wiring', () => {
     resetWebXRState();
     vi.unstubAllGlobals();
     container.remove();
+    hoisted.referenceSpace = null;
   });
 
   it('resets the tracking slice and subscribes to the injected store at init', async () => {
@@ -187,26 +194,76 @@ describe('initAR callbacks.tracking wiring', () => {
     expect(onRecovered).toHaveBeenCalledTimes(1);
   });
 
-  it('rebindTrackingStore detaches the previous store phase subscription (mid-session store swap)', async () => {
+  // Why this test matters (2026-07-11-1811-tracking-rebind-dormant-phase-
+  // subscription-followup.md; QR near-frontal pose plan §22-§23): the
+  // recorder swaps its store on every Start Recording. The rebind used to
+  // tear the phase subscription down WITHOUT re-subscribing, so for the
+  // rest of the session no onLost / onRestarted fired - no restart action
+  // was recorded, no QR frame epoch moved, no alignment re-basing happened.
+  // The subscription must MOVE to the new store.
+  it('rebindTrackingStore moves the phase subscription to the new store mid-session', async () => {
     const first = createFakeTrackingStore();
-
+    const onLost = vi.fn();
+    const onRestarted = vi.fn();
     await initAR(
       container,
       MINIMAL_ISOLATION,
       {},
-      {
-        tracking: { store: first.store },
-      }
+      { tracking: { store: first.store, onLost, onRestarted } }
     );
     expect(first.listeners.size).toBe(1);
 
     const second = createFakeTrackingStore();
     rebindTrackingStore(second.store);
-
-    // The old subscription is torn down; the new subscription is only
-    // (re)established by the next initAR — old setTrackingStore semantics.
     expect(first.listeners.size).toBe(0);
-    expect(second.listeners.size).toBe(0);
+    expect(second.listeners.size).toBe(1);
+
+    // The OLD store's transitions no longer reach the host ...
+    first.setPhase('tracking');
+    first.setPhase('lost');
+    expect(onLost).not.toHaveBeenCalled();
+    // ... the NEW store's do, restarts included (with the clean-up dispatch).
+    const payload = {} as OdometryTrackingRestartedPayload;
+    second.setPhase('tracking');
+    second.setPhase('lost');
+    expect(onLost).toHaveBeenCalledTimes(1);
+    second.setPhase('tracking', payload);
+    expect(onRestarted).toHaveBeenCalledWith(payload);
+    expect(
+      second.dispatched.some(
+        (a) => a.type === 'tracking/clearLastRestartedPayload'
+      )
+    ).toBe(true);
+  });
+
+  // Without a live session there is nothing to move: initAR subscribes.
+  it('rebindTrackingStore before initAR subscribes to nothing', () => {
+    const fake = createFakeTrackingStore();
+    rebindTrackingStore(fake.store);
+    expect(fake.listeners.size).toBe(0);
+  });
+
+  // The reference space's reset listener must dispatch the origin reset into
+  // the CURRENT store, not the one captured at initAR (it used to keep
+  // writing into the orphaned boot store).
+  it('dispatches a reference-space reset into the rebound store', async () => {
+    const space = new EventTarget();
+    hoisted.referenceSpace = space;
+    const first = createFakeTrackingStore();
+    await initAR(
+      container,
+      MINIMAL_ISOLATION,
+      {},
+      { tracking: { store: first.store } }
+    );
+    const second = createFakeTrackingStore();
+    rebindTrackingStore(second.store);
+    const before = first.dispatched.length;
+    space.dispatchEvent(new Event('reset'));
+    expect(first.dispatched.length).toBe(before);
+    expect(
+      second.dispatched.some((a) => a.type === 'tracking/originReset')
+    ).toBe(true);
   });
 
   it('does not touch tracking when the group is absent', async () => {

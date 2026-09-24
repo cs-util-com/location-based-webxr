@@ -47,6 +47,18 @@
   flight - the camera source's capture veto. Callers are unaffected; code that
   IMPLEMENTS or stubs either interface must add it (e.g. `isBusy: () => false`).
 
+### Fixed
+
+- **`rebindTrackingStore` keeps the host's tracking callbacks alive**
+  (`2026-07-11-1811-tracking-rebind-dormant-phase-subscription-followup.md`):
+  a mid-session store swap (the recorder's, on every Start Recording) now
+  MOVES the phase subscription to the new store instead of only tearing it
+  down, so `onLost` / `onRestarted` / `onRecovered` keep firing for the
+  rest of the session, and the reference space's reset lands in the current
+  store instead of the orphaned one. Apps that rebind get their restart
+  handling back mid-session (for the recorder: restart actions recorded,
+  alignment re-basing, QR frame resets, loss warnings).
+
 ### Added
 
 - **`selectQrFusedEntries(state, text)`** on `/state` (QR near-frontal pose
