@@ -150,6 +150,10 @@ describe('solveQrPoseMultiView', () => {
     expect(rotationAngleDeg(res!.rotation, code.rotation)).toBeLessThan(1e-3);
     expect(res!.costPx).toBeLessThan(1e-3);
     expect(res!.views).toBe(5);
+    // The mean of the views' own positions: exact views, exact position.
+    res!.position.forEach((v, a) =>
+      expect(Math.abs(v - code.position[a]!)).toBeLessThan(1e-6)
+    );
   });
 
   // Why this test matters: the point of combining views - a mirror flip that
@@ -222,6 +226,8 @@ describe('solveQrPoseMultiView', () => {
 
   // Why this test matters: the mounting prior (later) must act only where the
   // views do not determine the tilt; the solve has to say how well they do.
+  // Only the ORDERING is pinned: the value under-reads the real error by
+  // 1.3-4x (plan §13 #1) and is not calibrated yet.
   it('reports a tilt uncertainty that shrinks as the views get oblique', () => {
     const code = tilted(3);
     const still = solveQrPoseMultiView(walkViews(code, 'still', 0, 6), SIZE_M);
@@ -248,6 +254,25 @@ describe('solveQrPoseMultiView', () => {
       },
     };
     expect(solveQrPoseMultiView([badCamera], SIZE_M)).toBeNull();
+    // A non-unit camera quaternion would silently skew the projection.
+    const q = good[0]!.cameraPose.rotation;
+    const scaled = {
+      ...good[0]!,
+      cameraPose: {
+        ...good[0]!.cameraPose,
+        rotation: [
+          q[0] * 0.99,
+          q[1] * 0.99,
+          q[2] * 0.99,
+          q[3] * 0.99,
+        ] as Pose['rotation'],
+      },
+    };
+    expect(solveQrPoseMultiView([scaled], SIZE_M)).toBeNull();
+    const zeroFx = { ...good[0]!, intrinsics: { ...INTRINSICS, fx: 0 } };
+    expect(solveQrPoseMultiView([zeroFx], SIZE_M)).toBeNull();
+    expect(solveQrPoseMultiView(good, Number.NaN)).toBeNull();
+    expect(solveQrPoseMultiView(good, Infinity)).toBeNull();
     const mirrored = { ...good[0]!, corners: [...good[0]!.corners].reverse() };
     expect(solveQrPoseMultiView([mirrored], SIZE_M)).toBeNull();
     expect(
@@ -263,6 +288,77 @@ describe('solveQrPoseMultiView', () => {
     expect(
       solveQrPoseMultiView([{ ...good[0]!, corners: nan }], SIZE_M)
     ).toBeNull();
+  });
+
+  // Why this test matters: ONE unusable view nulls the whole window (M3b
+  // pre-filters with validateQuad). Checked on mixed windows, since a check
+  // that looked at only some views would pass every one-view case above.
+  it('rejects a window with one unusable view among good ones', () => {
+    const good = walkViews(tilted(4), 'arc', 20, 4);
+    const mirrored = { ...good[1]!, corners: [...good[1]!.corners].reverse() };
+    expect(solveQrPoseMultiView(good, SIZE_M)).not.toBeNull();
+    expect(
+      solveQrPoseMultiView([good[0]!, mirrored, good[2]!, good[3]!], SIZE_M)
+    ).toBeNull();
+    const nan: Point2[] = [
+      { x: Number.NaN, y: 1 },
+      ...good[3]!.corners.slice(1),
+    ];
+    expect(
+      solveQrPoseMultiView(
+        [...good.slice(0, 3), { ...good[3]!, corners: nan }],
+        SIZE_M
+      )
+    ).toBeNull();
+  });
+
+  // Why this test matters: the point of the module - under corner noise,
+  // combining views must beat one frame, by a wide margin, on the same
+  // corners. (Mutation-checked 2026-09-24: this does NOT catch a refinement
+  // that returns its start - ranking alone already beats a typical frame.
+  // The prototype-agreement and property tests below catch that one; review
+  // §13 #3.)
+  it('beats a single frame by a wide margin on noisy views', () => {
+    const rand = mulberry32(21);
+    const joint: number[] = [];
+    const single: number[] = [];
+    for (let s = 0; s < 16; s++) {
+      const code = tilted(6, s % 2 === 0 ? 'x' : 'y');
+      const kind = (['arc', 'rise'] as const)[s % 2]!;
+      const views = walkViews(code, kind, kind === 'arc' ? 30 : 0.6, 8).map(
+        (v) => noisy(v, 0.5, rand)
+      );
+      joint.push(
+        rotationAngleDeg(
+          solveQrPoseMultiView(views, SIZE_M)!.rotation,
+          code.rotation
+        )
+      );
+      single.push(
+        ...views.map((v) =>
+          rotationAngleDeg(
+            solveQrPoseMultiView([v], SIZE_M)!.rotation,
+            code.rotation
+          )
+        )
+      );
+    }
+    const median = (xs: number[]) =>
+      [...xs].sort((a, b) => a - b)[xs.length >> 1]!;
+    // Measured 2026-09-24: joint 0.90 deg vs a single frame 2.65 (medians).
+    expect(median(joint)).toBeLessThan(0.6 * median(single));
+  });
+
+  // Why this test matters: with one start, ranking must hand the refinement
+  // the CHEAPEST candidate. A one-sided oblique window keeps every view's
+  // flip far from the truth, so a ranking that picked the dearest start
+  // would settle on a flip.
+  it('refines the cheapest start when only one is allowed', () => {
+    const code = tilted(6, 'y');
+    const views = walkViews(code, 'arc', 10, 6, 1.2, 20);
+    const res = solveQrPoseMultiView(views, SIZE_M, { maxStarts: 1 })!;
+    expect(res.starts).toBe(1);
+    expect(rotationAngleDeg(res.rotation, code.rotation)).toBeLessThan(1e-3);
   });
 });
 
@@ -288,15 +384,26 @@ describe('solveQrPoseMultiView against the M0 prototype', () => {
   // (plan §10); production must not be worse than what was measured. The
   // differences - double precision throughout, and only the 3 cheapest
   // starts refined instead of all - must not cost accuracy.
+  // Windows centred on the normal AND one-sided near-frontal ones (review
+  // §13 #4: choosing the starts is only hard in the latter).
   it('is at least as accurate as the prototype on noisy near-frontal walks', () => {
     const rand = mulberry32(7);
     const worse: string[] = [];
     let n = 0;
-    for (const tilt of [3, 6, 10]) {
+    for (const offsetDeg of [0, 6, 12]) {
       for (const kind of ['arc', 'rise', 'sidestep'] as const) {
         for (let s = 0; s < 4; s++) {
-          const code = tilted(tilt, s % 2 === 0 ? 'x' : 'y');
-          const exact = walkViews(code, kind, kind === 'arc' ? 30 : 0.6, 8);
+          const code = tilted(6, s % 2 === 0 ? 'x' : 'y');
+          const extent =
+            kind === 'arc'
+              ? offsetDeg === 0
+                ? 30
+                : 10
+              : offsetDeg === 0
+                ? 0.6
+                : 0.3;
+          const distanceM = s < 2 ? 1.2 : 2.5;
+          const exact = walkViews(code, kind, extent, 8, distanceM, offsetDeg);
           const views = exact.map((v) => noisy(v, 0.5, rand));
           const mine = solveQrPoseMultiView(views, SIZE_M);
           const proto = solveMultiView(
@@ -325,7 +432,7 @@ describe('solveQrPoseMultiView against the M0 prototype', () => {
           n++;
           if (errMine > errProto + 0.1)
             worse.push(
-              `${tilt} ${kind} ${s}: ${errMine.toFixed(2)} vs ${errProto.toFixed(2)}`
+              `${offsetDeg} ${kind} ${s}: ${errMine.toFixed(2)} vs ${errProto.toFixed(2)}`
             );
         }
       }
@@ -337,12 +444,13 @@ describe('solveQrPoseMultiView against the M0 prototype', () => {
 
 describe('solveQrPoseMultiView cost', () => {
   // Why this test matters (plan §11): the solve runs per detection in M3b,
-  // over a window of about 8 views. Its work is starts x iterations, each
-  // iteration 7 residual passes over 8 x 4 corners; this pins that work,
+  // over a window of about 8 views. Each accepted iteration is 7 residual
+  // passes over 8 x 4 corners; this pins the count on THESE seeds (0.5 px,
+  // 1.2 m: 3 starts, 12-40 accepted iterations, the still window slowest),
   // deterministically, so a change that multiplies it is seen here and not
-  // on a phone. Measured 2026-09-24: 3 starts, 12-40 iterations (the still
-  // window is the slowest); all 13-16 starts took ~5x the time for the same
-  // answers (plan §12). Milliseconds are measured in the sweep, not here.
+  // on a phone. Noisier or farther still windows reach the 30-per-start cap
+  // (up to 90; plan §13 #2) - that is not a failure. Milliseconds are
+  // measured in the sweep, not here.
   it('bounds starts and iterations on a noisy window of 8', () => {
     const rand = mulberry32(11);
     for (const kind of ['still', 'arc', 'rise'] as const) {

@@ -68,15 +68,21 @@ export interface QrMultiViewPoseResult {
   /** The number of views the solve used. */
   views: number;
   /**
-   * 1-sigma uncertainty of the code's TILT (the direction of its normal) for
-   * 1 px of corner noise, degrees, along its worst direction. Large when the
-   * views do not determine the tilt (one near-frontal view, or many from one
-   * spot); `Infinity` when it is not determined at all.
+   * The formal 1-sigma of the code's TILT (the direction of its normal) for
+   * 1 px of corner noise, degrees, along its worst direction; `Infinity`
+   * when not determined at all. A RELATIVE, OPTIMISTIC indicator: it treats
+   * each view's position as exact, and measured it under-reads the real
+   * tilt error by 1.3-1.45x on arcs and up to 3-4x for windows from one spot
+   * far away (plan 2026-09-23-2314 §13). Calibrate before gating on it.
    */
   tiltSigmaDeg: number;
-  /** Distinct starts refined (the solve's work is starts x iterations). */
+  /** Distinct starts refined. */
   starts: number;
-  /** Gauss-Newton iterations over all starts. */
+  /**
+   * Accepted Gauss-Newton steps, summed over all starts (capped at
+   * `maxIterations` per start). The work also includes the rejected damping
+   * tries, one cost pass per candidate start and the uncertainty's Jacobian.
+   */
   iterations: number;
 }
 
@@ -93,6 +99,8 @@ const STEP_DONE_RAD = 1e-8;
 /** ... or the robust cost fell by less than this fraction. */
 const COST_DONE_RELATIVE = 1e-9;
 const RAD_TO_DEG = 180 / Math.PI;
+/** How far a camera quaternion's norm may be from 1 (Float32 input is ~1e-7). */
+const UNIT_QUATERNION_TOLERANCE = 1e-3;
 
 // --- double-precision quaternions [x, y, z, w] ---
 
@@ -170,12 +178,17 @@ function quatFromMatrix(m: Mat3): Quat {
 
 // --- validation ---
 
+/**
+ * A finite pose whose rotation is a UNIT quaternion: the projection assumes
+ * one, and a norm of 0.9 already moves the result by millimetres and the
+ * corners by most of a pixel (review 2026-09-24).
+ */
 function isFinitePose(pose: Pose): boolean {
   return (
     pose.position.length === 3 &&
     pose.rotation.length === 4 &&
     [...pose.position, ...pose.rotation].every(Number.isFinite) &&
-    Math.hypot(...pose.rotation) > 0.5
+    Math.abs(Math.hypot(...pose.rotation) - 1) <= UNIT_QUATERNION_TOLERANCE
   );
 }
 
@@ -222,7 +235,7 @@ function seedOf(view: QrViewObservation, sizeM: number): ViewSeed | null {
     view.intrinsics
   );
   if (!H || !own) return null;
-  const candidates = realIppeCandidates(H).filter((c) => c.t[2] > 0);
+  const candidates = realIppeCandidates(H);
   if (candidates.length === 0) return null;
   const cam = view.cameraPose;
   // OpenCV camera (+y down, +z forward) -> WebXR camera: left-multiply by

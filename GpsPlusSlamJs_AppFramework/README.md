@@ -354,7 +354,8 @@ Everything needed to turn a printed QR code into a high-precision position obser
 - **Pose solving**
   - `solveQrPose(input)` — Solve a QR's 6-DoF pose from its four detected corners.
   - `PlanarPnpSquare` — Pure-JS IPPE planar PnP; the OpenCV-free `SolvePnpSquare` implementation.
-  - `ippePoseCandidates`, `homographyFromCorrespondences`, `nearestRotation3x3`, `rotationToRodrigues`, `solveLinear` — The planar-PnP building blocks.
+  - `ippePoseCandidates`, `realIppeCandidates`, `homographyFromCorrespondences`, `nearestRotation3x3`, `rotationToRodrigues`, `solveLinear` — The planar-PnP building blocks (`realIppeCandidates`: only the candidates that can be the true pose).
+  - `solveQrPoseMultiView` — One static code's world rotation, solved jointly over several detections from different camera poses (resolves the near-frontal tilt and mirror flip a single frame cannot).
   - `buildObjectPoints`, `intrinsicsFromProjection`, `projectViewPoint`, `composePose`, `invertPose`, `transformPoint` — Pose/intrinsics math helpers.
   - `validateQuad`, `signedQuadArea`, `reprojectionErrorPx` — Quad sanity checks and residual scoring.
 - **Physical size from depth**

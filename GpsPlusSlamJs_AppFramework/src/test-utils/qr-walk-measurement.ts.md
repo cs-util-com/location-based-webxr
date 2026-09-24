@@ -50,6 +50,7 @@ prototype's variants and the production multi-view solve
 `qr-walk-measurement.test.ts`: a clean oblique walk scores every method
 (the production solve included) near the truth with the right window and
 reached angle; SLAM noise and a SLAM drift reach the solvers but not the
-binning; pitch and yaw are reported apart and neither exceeds the total
-error; nothing decodes at 12 m. The sweep that uses it:
+binning; pitch and yaw are reported apart and pitch does not exceed the
+total error (yaw, an azimuth difference, can for a tilted normal); nothing
+decodes at 12 m. The sweep that uses it:
 `ar/qr/qr-zxing.sweep.test.ts` ("walks").

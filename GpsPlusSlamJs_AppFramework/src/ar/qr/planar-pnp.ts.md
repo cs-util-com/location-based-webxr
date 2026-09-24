@@ -29,7 +29,8 @@ imagePoints, intrinsics) → OpenCvPnpResult | null`. Stateless; construct once
   clamped away, and is a rotation only because `nearestRotation3x3` forces
   it into one. Used by `qr-multi-view-pose.ts` for its starts;
   `PlanarPnpSquare` still picks among ALL candidates (owner decision, QR
-  near-frontal pose plan 2026-09-23-2314 §1).
+  near-frontal pose plan 2026-09-23-2314 §10: removing the invalid root
+  alone made the near-frontal median worse).
 - `nearestRotation3x3(M) → Mat3` — projects a near-orthogonal matrix onto SO(3)
   via iterative polar decomposition (Higham), forcing `det = +1`.
 - `rotationToRodrigues(R) → Vector3` — row-major rotation → axis·angle vector
