@@ -313,4 +313,15 @@ describe("createQrDemoController capture-time pose", () => {
     expect(poses.every((p) => p === capturePose)).toBe(true);
     expect(events[0]).toMatchObject({ cameraPose: capturePose });
   });
+
+  // Why this test matters (QR near-frontal pose plan M3b b3): the recorded
+  // event feeds the fused QR window, which re-solves the corners jointly and
+  // needs the intrinsics of the buffer they came from.
+  it("records the detector buffer's intrinsics on the event", async () => {
+    const events: { intrinsics?: { fx: number } }[] = [];
+    const { controller } = setup({ recordDetection: (e) => events.push(e) });
+    await feed(controller, 3);
+    expect(events.length).toBeGreaterThan(0);
+    expect(events[0]!.intrinsics!.fx).toBeGreaterThan(0);
+  });
 });

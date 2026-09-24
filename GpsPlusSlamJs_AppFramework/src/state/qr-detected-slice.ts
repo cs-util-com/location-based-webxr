@@ -32,7 +32,9 @@
 
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 import type { Matrix4, Vector3 } from 'gps-plus-slam-js';
-import type { Point2, Pose } from '../ar/qr/qr-pose.js';
+import type { CameraIntrinsics, Point2, Pose } from '../ar/qr/qr-pose.js';
+import { intrinsicsFromProjection } from '../ar/qr/qr-pose.js';
+import type { QrFusedEntry } from '../ar/qr/qr-fused-pose.js';
 import type { QrSizeEstimate } from '../ar/qr/qr-size-from-depth.js';
 import {
   evaluateQrPoseStability,
@@ -108,6 +110,12 @@ export interface QrDetectionEntry {
   imageWidth?: number;
   /** Detector-buffer height in pixels. */
   imageHeight?: number;
+  /**
+   * Intrinsics of the detector buffer, when the producer had them (the
+   * tracking controller's events do, M3b b3). A raw entry derives them from
+   * `projectionMatrix` + the image size instead.
+   */
+  intrinsics?: CameraIntrinsics;
 
   // --- SOLVED pose (legacy geo/demo producer) ------------------------------
   // OPTIONAL now (D-A): a RAW producer omits these and derives the pose on read.
@@ -533,3 +541,65 @@ export function selectDerivedQrPlacement(
 ): DerivedQrPlacement | null {
   return deriveQrPlacement(text, selectQrRawObservations(state, text), deps);
 }
+
+/** Mapped fused-window entries per detections array (see {@link selectQrFusedEntries}). */
+const fusedEntriesCache = new WeakMap<
+  readonly QrDetectionEntry[],
+  readonly QrFusedEntry[]
+>();
+
+/** The intrinsics of a stored entry: its own, or derived from its projection. */
+function entryIntrinsics(e: QrDetectionEntry): CameraIntrinsics | null {
+  if (e.intrinsics) return e.intrinsics;
+  if (!e.projectionMatrix || !e.imageWidth || !e.imageHeight) return null;
+  try {
+    return intrinsicsFromProjection(
+      e.projectionMatrix,
+      e.imageWidth,
+      e.imageHeight
+    );
+  } catch {
+    return null;
+  }
+}
+
+/** One stored entry as a fused-window entry, or null when it cannot feed the solve. */
+function toFusedEntry(e: QrDetectionEntry): QrFusedEntry | null {
+  const intrinsics = entryIntrinsics(e);
+  if (!e.corners || !e.cameraPose || !intrinsics) return null;
+  return {
+    timestamp: e.timestamp,
+    corners: e.corners,
+    cameraPose: e.cameraPose,
+    intrinsics,
+    frameEpoch: e.frameEpoch ?? 0,
+    rawPose: e.qrPoseWorld ?? null,
+  };
+}
+
+/**
+ * A marker's detections as fused-window entries (QR near-frontal pose plan
+ * M3b b3), oldest first. Entries without corners, a camera pose or
+ * intrinsics (from the entry, or derived from its projection matrix) are
+ * left out. Cached per detections ARRAY, so the same array comes back until
+ * a new detection arrives - the fused tracker caches on that identity, and
+ * consumers read this on hot paths.
+ */
+export function selectQrFusedEntries(
+  state: RootWithQrDetected,
+  text: string
+): readonly QrFusedEntry[] {
+  const marker = state.qrDetected.markers[text];
+  if (!marker) return EMPTY_FUSED;
+  const cached = fusedEntriesCache.get(marker.detections);
+  if (cached) return cached;
+  const mapped: QrFusedEntry[] = [];
+  for (const e of marker.detections) {
+    const f = toFusedEntry(e);
+    if (f) mapped.push(f);
+  }
+  fusedEntriesCache.set(marker.detections, mapped);
+  return mapped;
+}
+
+const EMPTY_FUSED: readonly QrFusedEntry[] = [];

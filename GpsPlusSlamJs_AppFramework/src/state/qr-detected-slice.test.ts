@@ -20,6 +20,7 @@ import {
   clearAllQrMarkers,
   setQrMaxHistory,
   qrFrameChanged,
+  selectQrFusedEntries,
   selectLatestQrDetection,
   selectQrMarker,
   selectQrSize,
@@ -512,5 +513,85 @@ describe('the frame epoch (M3b b2)', () => {
     let s = qrDetectedReducer(init(), qrFrameChanged());
     s = qrDetectedReducer(s, clearAllQrMarkers());
     expect(s.frameEpoch).toBe(1);
+  });
+});
+
+describe('selectQrFusedEntries (M3b b3)', () => {
+  const corners = [
+    { x: 100, y: 100 },
+    { x: 200, y: 100 },
+    { x: 200, y: 200 },
+    { x: 100, y: 200 },
+  ];
+  const cameraPose = {
+    position: [0, 0, 0] as [number, number, number],
+    rotation: [0, 0, 0, 1] as [number, number, number, number],
+  };
+  const intrinsics = { fx: 500, fy: 500, cx: 320, cy: 240 };
+  // A symmetric GL projection: fx = P[0] * W / 2 = 1.5 * 640 / 2 = 480.
+  const projectionMatrix = [
+    1.5, 0, 0, 0, 0, 2, 0, 0, 0, 0, -1, -1, 0, 0, -0.2, 0,
+  ] as unknown as QrDetectionEntry['projectionMatrix'] & object;
+
+  // Why this test matters: the fused window reads the slice through this
+  // selector. It must accept both producers (the tracking controller's
+  // events with intrinsics and a solved pose; the recorder's raw entries
+  // with a projection matrix instead), drop what cannot feed the solve, and
+  // keep the frame epoch the reducer stamped.
+  it('maps event entries and raw entries, and skips unusable ones', () => {
+    let s = init();
+    s = qrDetectedReducer(
+      s,
+      recordQrDetection({ ...entry('A', 1), corners, cameraPose, intrinsics })
+    );
+    s = qrDetectedReducer(
+      s,
+      recordQrDetection({
+        text: 'A',
+        timestamp: 2,
+        corners,
+        cameraPose,
+        projectionMatrix,
+        imageWidth: 640,
+        imageHeight: 480,
+      })
+    );
+    s = qrDetectedReducer(s, recordQrDetection(entry('A', 3)));
+    s = qrDetectedReducer(s, qrFrameChanged());
+    s = qrDetectedReducer(
+      s,
+      recordQrDetection({ ...entry('A', 4), corners, cameraPose, intrinsics })
+    );
+    const mapped = selectQrFusedEntries({ qrDetected: s }, 'A');
+    expect(mapped.map((e) => e.timestamp)).toEqual([1, 2, 4]);
+    expect(mapped[0]!.intrinsics).toEqual(intrinsics);
+    expect(mapped[0]!.rawPose).toEqual(entry('A', 1).qrPoseWorld);
+    expect(mapped[1]!.intrinsics.fx).toBeCloseTo(480, 9);
+    expect(mapped[1]!.rawPose).toBeNull();
+    expect(mapped.map((e) => e.frameEpoch)).toEqual([0, 0, 1]);
+  });
+
+  // Why this test matters (plan §16 #5): the fused tracker caches on the
+  // entries ARRAY; the TourViewer reads this every XR frame. The selector
+  // must hand out the SAME array until a new detection arrives, or the
+  // joint solve runs per frame.
+  it('returns the same array until the detections change', () => {
+    let s = qrDetectedReducer(
+      init(),
+      recordQrDetection({ ...entry('A', 1), corners, cameraPose, intrinsics })
+    );
+    const a = selectQrFusedEntries({ qrDetected: s }, 'A');
+    expect(selectQrFusedEntries({ qrDetected: s }, 'A')).toBe(a);
+    s = qrDetectedReducer(s, { type: 'unrelated' });
+    expect(selectQrFusedEntries({ qrDetected: s }, 'A')).toBe(a);
+    s = qrDetectedReducer(
+      s,
+      recordQrDetection({ ...entry('A', 2), corners, cameraPose, intrinsics })
+    );
+    expect(selectQrFusedEntries({ qrDetected: s }, 'A')).not.toBe(a);
+  });
+
+  it('is empty for an unknown marker', () => {
+    expect(selectQrFusedEntries({ qrDetected: init() }, 'X')).toEqual([]);
   });
 });

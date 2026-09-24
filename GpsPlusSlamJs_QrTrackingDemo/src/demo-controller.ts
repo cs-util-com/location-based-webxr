@@ -224,6 +224,7 @@ export function createQrDemoController(
       cameraPose,
       imageWidth: image.width,
       imageHeight: image.height,
+      intrinsics,
     };
     return { event, pose: solution.qrPoseWorld, estimate };
   }

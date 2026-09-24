@@ -179,6 +179,19 @@ describe('createQrTrackingController', () => {
     expect((events[0] as { timestamp: number }).timestamp).toBeTypeOf('number');
   });
 
+  // Why this test matters (QR near-frontal pose plan M3b b3): the fused QR
+  // window re-solves every detection's corners jointly, which needs the
+  // intrinsics of the exact buffer the corners came from. The controller has
+  // them in detect(); the event must carry them, or every consumer falls
+  // back to today's averaging without anyone noticing.
+  it('carries the detector buffer intrinsics on the event', async () => {
+    const events: { intrinsics?: unknown }[] = [];
+    const { controller } = setup({ onDetection: (e) => events.push(e) });
+    await tick(controller);
+    await tick(controller);
+    expect(events[0]!.intrinsics).toEqual(intrinsics);
+  });
+
   it('skips the vote for a geo-less level but still emits the detection', async () => {
     const events: unknown[] = [];
     const { controller, dispatched } = setup({

@@ -4,6 +4,13 @@
 
 ### ⚠️ Breaking changes
 
+- **`QrDetectionEvent` gains a required `intrinsics`** (QR near-frontal
+  pose plan, M3b b3): the intrinsics of the buffer the corners came from, so
+  the fused QR window can re-solve several detections jointly.
+  `QrTrackingController` fills it from `getIntrinsics(image)`.
+  - **Migration:** code that BUILDS a `QrDetectionEvent` itself (as the QR
+    demo does) adds the intrinsics it solved with; code that only receives
+    the event is unaffected.
 - **`engines.node` raised from `>=22.15.0` to `>=26.0.0`**
   (owner decision 2026-09-08). Installing on the Node 22 and 24 LTS lines
   is no longer a supported configuration.
@@ -42,6 +49,10 @@
 
 ### Added
 
+- **`selectQrFusedEntries(state, text)`** on `/state` (QR near-frontal pose
+  plan, M3b b3): a marker's detections as fused-window entries, cached per
+  detections array; raw entries derive their intrinsics from the projection
+  matrix. `QrDetectionEntry` gains an optional `intrinsics`.
 - **A frame epoch in the `qrDetected` slice** (QR near-frontal pose plan
   2026-09-23-2314, M3b b2): `state.frameEpoch` moves on every odometry
   restart or loop closure (the recorded gpsData actions, the session's

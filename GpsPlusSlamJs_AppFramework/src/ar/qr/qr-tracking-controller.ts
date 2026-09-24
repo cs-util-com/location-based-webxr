@@ -79,6 +79,14 @@ export interface QrDetectionEvent {
   readonly cameraPose: Pose;
   readonly imageWidth: number;
   readonly imageHeight: number;
+  /**
+   * The intrinsics of the exact buffer the corners came from (what
+   * `getIntrinsics(image)` returned for the solve). The fused QR window
+   * re-solves the corners of several detections jointly and needs them
+   * (QR near-frontal pose plan M3b b3). Required, so a producer cannot
+   * silently leave the fused path.
+   */
+  readonly intrinsics: CameraIntrinsics;
   /** Decoded payload (text/URL) — the marker key. */
   text: string;
   qrPoseWorld: Pose;
@@ -229,6 +237,7 @@ export function createQrTrackingController(
     cameraPose: Pose;
     imageWidth: number;
     imageHeight: number;
+    intrinsics: CameraIntrinsics;
   } | null = null;
 
   function setStatus(next: QrTrackingStatus): void {
@@ -342,6 +351,7 @@ export function createQrTrackingController(
       cameraPose,
       imageWidth: image.width,
       imageHeight: image.height,
+      intrinsics,
     };
     return solution;
   }
@@ -369,6 +379,7 @@ export function createQrTrackingController(
           cameraPose: current.cameraPose,
           imageWidth: current.imageWidth,
           imageHeight: current.imageHeight,
+          intrinsics: current.intrinsics,
         });
 
         // The GPS vote is CONDITIONAL on geo: geo-less levels (debug/observe,

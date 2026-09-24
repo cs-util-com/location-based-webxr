@@ -32,8 +32,12 @@ coalesced cadence and exposes an async-status state machine for the UI.
   - Both were undocumented here until 2026-08-30 (PR #378 review).
 - `QrDetectionEvent` — `{ text, qrPoseWorld, qrPoseInCamera,
 reprojectionErrorPx, timestamp, corners, cameraPose, imageWidth,
-imageHeight }`, emitted via `onDetection` on every lock. Its `timestamp` is
-  the lock time (`now()`), not the frame's capture time. The last four are
+imageHeight, intrinsics }`, emitted via `onDetection` on every lock. Its `timestamp` is
+  the lock time (`now()`), not the frame's capture time. `intrinsics` are
+  those `getIntrinsics(image)` returned for the solve - REQUIRED since M3b
+  b3 (QR near-frontal pose plan), because the fused QR window re-solves the
+  corners of several detections jointly and a producer that left them out
+  would silently fall back to averaging. The corners, pose and image size are
   the RAW facts behind the solve, carried so a consumer needing both a solved
   pose and a raw record does not decode twice; the projection matrix is
   deliberately absent, because this controller is given `getIntrinsics(image)`
@@ -56,8 +60,8 @@ imageHeight }`, emitted via `onDetection` on every lock. Its `timestamp` is
   `tracking` drops back to `scanning`. `onStatus` fires only on change.
 - **One detection in flight** (the scheduler coalesces), so the closure
   `active` — `{ level, text, sizeM, corners, cameraPose, imageWidth,
-imageHeight }`, seven fields, not the three this line claimed until
-  2026-08-30 (PR #378 review) — set during `detect` is the correct context
+imageHeight, intrinsics }`, eight fields (seven until M3b b3; the line
+  claimed three until 2026-08-30, PR #378 review) — set during `detect` is the correct context
   read by `onLocked`.
 - **The solve and the raw record use the FRAME's pose - the camera pose of
   the XR frame the pixels were captured in** (`frame.cameraPose`). `detection.corners`

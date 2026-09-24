@@ -60,6 +60,7 @@ export {
   setQrMaxHistory,
   qrFrameChanged,
   isQrFrameChangeAction,
+  selectQrFusedEntries,
   qrDetectedReducer,
   selectQrMarkers,
   selectQrMarker,
