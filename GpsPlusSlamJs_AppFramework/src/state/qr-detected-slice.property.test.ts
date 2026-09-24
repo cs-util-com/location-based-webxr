@@ -101,3 +101,60 @@ describe('medianQrPosition robustness', () => {
     );
   });
 });
+
+describe('qrDetected frame-epoch invariant (M3b b2)', () => {
+  // Why this test matters: the fused QR window trusts that two detections
+  // share a coordinate frame exactly when their `frameEpoch` is equal. For
+  // any interleaving of detections and frame changes, each entry's epoch
+  // must equal the number of frame changes dispatched before it.
+  it('stamps each entry with the count of earlier frame changes', () => {
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.oneof(
+            fc
+              .constantFrom('A', 'B')
+              .map((text) => ({ kind: 'det' as const, text })),
+            fc
+              .constantFrom(
+                'gpsData/odometryTrackingRestarted',
+                'gpsData/arLoopClosureDetected',
+                'tracking/clearLastRestartedPayload',
+                'qrDetected/qrFrameChanged',
+                'gpsData/unrelated'
+              )
+              .map((type) => ({ kind: 'act' as const, type }))
+          ),
+          { maxLength: 40 }
+        ),
+        (ops) => {
+          let s: QrDetectedState = { maxHistory: 100, markers: {} };
+          let changes = 0;
+          const expected: Record<string, number[]> = {};
+          ops.forEach((op, i) => {
+            if (op.kind === 'det') {
+              s = qrDetectedReducer(
+                s,
+                recordQrDetection({
+                  text: op.text,
+                  timestamp: i,
+                  qrPoseWorld: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+                })
+              );
+              (expected[op.text] ??= []).push(changes);
+            } else {
+              s = qrDetectedReducer(s, { type: op.type });
+              if (op.type !== 'gpsData/unrelated') changes++;
+            }
+          });
+          for (const [text, epochs] of Object.entries(expected)) {
+            expect(
+              s.markers[text]!.detections.map((d) => d.frameEpoch)
+            ).toEqual(epochs);
+          }
+          expect(s.frameEpoch ?? 0).toBe(changes);
+        }
+      )
+    );
+  });
+});

@@ -47,6 +47,7 @@ import {
   type RawQrObservation,
 } from '../ar/qr/qr-derived-pose.js';
 import { lowerMedian } from '../utils/median.js';
+import { isSegmentingActionType } from './segmenting-actions.js';
 
 // Re-exported so consumers of the slice keep importing the size lifecycle types
 // from one place. They are DEFINED in `ar/qr/qr-size-from-depth.ts` (where size is
@@ -119,6 +120,13 @@ export interface QrDetectionEntry {
   qrPoseInCamera?: Pose;
   /** RMS reprojection error in pixels (lower = better fit). */
   reprojectionErrorPx?: number;
+
+  /**
+   * The tracking-frame epoch the detection arrived in (M3b b2). STAMPED BY
+   * THE REDUCER from {@link QrDetectedState.frameEpoch}; a value in the
+   * payload is ignored, so a replay always reproduces the live partition.
+   */
+  frameEpoch?: number;
 }
 
 /** Per-marker state: a bounded detection history + the size lifecycle. */
@@ -132,6 +140,14 @@ export interface QrMarkerState {
 export interface QrDetectedState {
   /** Ring-buffer cap applied per marker on `recordQrDetection`. */
   maxHistory: number;
+  /**
+   * The current tracking-frame epoch: 0 at start, one more after every
+   * odometry restart or loop closure (see {@link isQrFrameChangeAction}).
+   * Detections from different epochs live in different coordinate frames
+   * and must not be combined (QR near-frontal pose plan §16 #4). Absent
+   * (state built or persisted before M3b b2) reads as 0.
+   */
+  frameEpoch?: number;
   /** Markers keyed by decoded payload. */
   markers: Record<string, QrMarkerState>;
 }
@@ -145,8 +161,26 @@ const initialSize = (): QrSizeEstimate => ({
 
 const initialState: QrDetectedState = {
   maxHistory: DEFAULT_QR_MAX_HISTORY,
+  frameEpoch: 0,
   markers: {},
 };
+
+/**
+ * Whether an action means the odometry frame moved: the recorded gpsData
+ * restart / loop-closure actions (so old recordings replay it), the
+ * session's own restart bookkeeping (`tracking/clearLastRestartedPayload`,
+ * dispatched right after every restart into the store holding the tracking
+ * slice), or this slice's own `qrFrameChanged`. One restart can arrive as
+ * two of these in the same store; the epoch then moves twice with no
+ * detection in between, which partitions the detections the same way.
+ */
+export function isQrFrameChangeAction(type: string): boolean {
+  return (
+    isSegmentingActionType(type) ||
+    type === 'tracking/clearLastRestartedPayload' ||
+    type === 'qrDetected/qrFrameChanged'
+  );
+}
 
 /** Trim a detection list to at most `cap`, dropping the oldest. */
 function capDetections(
@@ -171,7 +205,10 @@ const qrDetectedSlice = createSlice({
      * reason `tracking-slice.originReset` returns new state).
      */
     recordQrDetection(state, action: PayloadAction<QrDetectionEntry>) {
-      const entry = action.payload;
+      const entry: QrDetectionEntry = {
+        ...action.payload,
+        frameEpoch: state.frameEpoch ?? 0,
+      };
       const existing = state.markers[entry.text] as QrMarkerState | undefined;
       const detections = capDetections(
         existing ? [...existing.detections, entry] : [entry],
@@ -252,6 +289,22 @@ const qrDetectedSlice = createSlice({
       }
       return { ...state, maxHistory: next, markers };
     },
+
+    /**
+     * The odometry frame moved (restart, loop closure) in an app that
+     * dispatches neither the gpsData actions nor the tracking slice's
+     * restart bookkeeping. Handled by the frame-change matcher below.
+     */
+    qrFrameChanged() {
+      // Intentionally empty: the matcher in extraReducers bumps the epoch,
+      // so this action and the external ones share one code path.
+    },
+  },
+  extraReducers: (builder) => {
+    builder.addMatcher(
+      (action: { type: string }) => isQrFrameChangeAction(action.type),
+      (state) => ({ ...state, frameEpoch: (state.frameEpoch ?? 0) + 1 })
+    );
   },
 });
 
@@ -262,6 +315,7 @@ export const {
   clearQrMarker,
   clearAllQrMarkers,
   setQrMaxHistory,
+  qrFrameChanged,
 } = qrDetectedSlice.actions;
 
 export const qrDetectedReducer = qrDetectedSlice.reducer;

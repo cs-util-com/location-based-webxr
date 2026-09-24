@@ -42,6 +42,14 @@
 
 ### Added
 
+- **A frame epoch in the `qrDetected` slice** (QR near-frontal pose plan
+  2026-09-23-2314, M3b b2): `state.frameEpoch` moves on every odometry
+  restart or loop closure (the recorded gpsData actions, the session's
+  `tracking/clearLastRestartedPayload`, or the new `qrFrameChanged()`), and
+  `recordQrDetection` stamps each entry's `frameEpoch` from it, so the
+  fused QR window never combines detections from two coordinate frames.
+  `isQrFrameChangeAction(type)` names the actions. Stored entries gain the
+  field; state without it reads as epoch 0.
 - **The fused QR pose window** (QR near-frontal pose plan 2026-09-23-2314,
   M3b b1): `evaluateFusedQrPose(entries, options?, previous?)`,
   `selectFusedWindow` and `createFusedQrPoseTracker` on `/ar`. The window

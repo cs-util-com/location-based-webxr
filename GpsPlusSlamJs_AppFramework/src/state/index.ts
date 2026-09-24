@@ -58,6 +58,8 @@ export {
   clearQrMarker,
   clearAllQrMarkers,
   setQrMaxHistory,
+  qrFrameChanged,
+  isQrFrameChangeAction,
   qrDetectedReducer,
   selectQrMarkers,
   selectQrMarker,

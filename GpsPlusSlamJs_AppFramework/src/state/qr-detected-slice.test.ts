@@ -19,6 +19,7 @@ import {
   clearQrMarker,
   clearAllQrMarkers,
   setQrMaxHistory,
+  qrFrameChanged,
   selectLatestQrDetection,
   selectQrMarker,
   selectQrSize,
@@ -425,5 +426,91 @@ describe('selectSolvedQrPose (derive-on-read, D-A)', () => {
     let s = init();
     s = qrDetectedReducer(s, recordQrDetection(raw));
     expect(selectSolvedQrPose({ qrDetected: s }, 'A', deps)).toBeNull();
+  });
+});
+
+describe('the frame epoch (M3b b2)', () => {
+  // Why this test matters (QR near-frontal pose plan §16 #4, §19): after an
+  // odometry restart or a loop closure, older detections live in another
+  // coordinate frame, and the fused window must not combine them with newer
+  // ones. The slice stamps every detection with the frame epoch it arrived
+  // in; the epoch moves on the recorded gpsData actions (so a replay of an
+  // old recording reproduces it with no new action), on the session's own
+  // restart bookkeeping (`tracking/clearLastRestartedPayload`, which reaches
+  // any store holding the tracking slice), and on an explicit
+  // `qrFrameChanged` for apps that have neither.
+  it('stamps each detection with the current frame epoch', () => {
+    let s = init();
+    expect(s.frameEpoch).toBe(0);
+    s = qrDetectedReducer(s, recordQrDetection(entry('A', 1)));
+    expect(s.markers['A']!.detections[0]!.frameEpoch).toBe(0);
+  });
+
+  it.each([
+    'gpsData/odometryTrackingRestarted',
+    'gpsData/arLoopClosureDetected',
+    'tracking/clearLastRestartedPayload',
+  ])('moves to the next epoch on %s', (type) => {
+    let s = qrDetectedReducer(init(), recordQrDetection(entry('A', 1)));
+    s = qrDetectedReducer(s, { type });
+    expect(s.frameEpoch).toBe(1);
+    s = qrDetectedReducer(s, recordQrDetection(entry('A', 2)));
+    const d = s.markers['A']!.detections;
+    expect(d.map((e) => e.frameEpoch)).toEqual([0, 1]);
+  });
+
+  it('moves to the next epoch on qrFrameChanged', () => {
+    const s = qrDetectedReducer(init(), qrFrameChanged());
+    expect(s.frameEpoch).toBe(1);
+  });
+
+  // The epoch comes from the store, never from the payload: a recorded
+  // payload that carries one (or a producer that guesses) cannot make a
+  // replay disagree with the live run.
+  it('ignores a frame epoch in the payload', () => {
+    const s = qrDetectedReducer(
+      init(),
+      recordQrDetection({ ...entry('A', 1), frameEpoch: 7 })
+    );
+    expect(s.markers['A']!.detections[0]!.frameEpoch).toBe(0);
+  });
+
+  // Replay equivalence: the same recorded action stream gives the same
+  // partition into epochs, whatever unrelated actions sit in between.
+  it('partitions a recorded stream identically on replay', () => {
+    const stream = [
+      recordQrDetection(entry('A', 1)),
+      { type: 'gpsData/someOtherAction' },
+      recordQrDetection(entry('A', 2)),
+      { type: 'gpsData/odometryTrackingRestarted' },
+      recordQrDetection(entry('A', 3)),
+      { type: 'gpsData/arLoopClosureDetected' },
+      recordQrDetection(entry('B', 4)),
+    ];
+    const run = () => stream.reduce(qrDetectedReducer, init());
+    const a = run();
+    const b = run();
+    expect(a).toEqual(b);
+    expect(a.markers['A']!.detections.map((e) => e.frameEpoch)).toEqual([
+      0, 0, 1,
+    ]);
+    expect(a.markers['B']!.detections[0]!.frameEpoch).toBe(2);
+  });
+
+  // State from before the epoch existed (a hand-built or persisted state
+  // without the field) must not turn into NaN on the first restart.
+  it('treats a missing epoch as 0', () => {
+    const old: QrDetectedState = { maxHistory: 8, markers: {} };
+    let s = qrDetectedReducer(old, recordQrDetection(entry('A', 1)));
+    expect(s.markers['A']!.detections[0]!.frameEpoch).toBe(0);
+    s = qrDetectedReducer(s, qrFrameChanged());
+    expect(s.frameEpoch).toBe(1);
+  });
+
+  // Clearing markers is not a frame change: the epoch keeps counting.
+  it('keeps the epoch through clearAllQrMarkers', () => {
+    let s = qrDetectedReducer(init(), qrFrameChanged());
+    s = qrDetectedReducer(s, clearAllQrMarkers());
+    expect(s.frameEpoch).toBe(1);
   });
 });
