@@ -61,6 +61,16 @@
 
 ### Added
 
+- **The QR motion detector** (QR near-frontal pose plan 2026-09-23-2314,
+  §26): `measureQrMotion(entries, options?)` and
+  `createQrMotionTracker(options?)` on `/ar` tell, per code and
+  independently, whether it is being MOVED (the newest view's own position
+  against the others') and TURNED (its corner error at the others'
+  rotation): `still`, `moving`, `turning` or `moving+turning`, each
+  confirmed after 4 consecutive detections, with speeds and the time it
+  has been still since. The thresholds are provisional until measured on a
+  phone. Also on `/ar`: `viewErrorAtRotationPx`, and
+  `QrMultiViewPoseResult.viewPositions` (each view's own position).
 - **`selectQrFusedEntries(state, text)`** on `/state` (QR near-frontal pose
   plan, M3b b3): a marker's detections of the current frame epoch as
   fused-window entries, cached per detections array and epoch; raw entries derive their intrinsics from the projection

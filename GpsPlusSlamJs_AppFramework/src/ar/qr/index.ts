@@ -155,6 +155,7 @@ export {
   type QrMultiViewPoseOptions,
   type QrMultiViewPoseResult,
   solveQrPoseMultiView,
+  viewErrorAtRotationPx,
 } from './qr-multi-view-pose.js';
 
 // --- qr-fused-pose (the windowed joint rotation, its gate and fallback) ---
@@ -167,6 +168,17 @@ export {
   evaluateFusedQrPose,
   createFusedQrPoseTracker,
 } from './qr-fused-pose.js';
+
+// --- qr-motion (is the code being moved / turned; plan §26) ---
+export {
+  type QrMotionState,
+  type QrMotionOptions,
+  type QrMotionSignals,
+  type QrMotion,
+  type QrMotionTracker,
+  measureQrMotion,
+  createQrMotionTracker,
+} from './qr-motion.js';
 
 // --- qr-capture-cadence (capture interval default + bounds) ---
 export {

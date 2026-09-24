@@ -24,6 +24,7 @@ import {
 } from './planar-pnp';
 import {
   solveQrPoseMultiView,
+  viewErrorAtRotationPx,
   type QrViewObservation,
 } from './qr-multi-view-pose';
 import {
@@ -339,6 +340,50 @@ describe('solveQrPoseMultiView', () => {
     const sorted = [...bad.viewRmsPx].sort((a, b) => a - b);
     expect(bad.viewRmsPx[2]!).toBeGreaterThan(5);
     expect(sorted[2]!).toBeLessThan(1);
+  });
+
+  // Why this test matters (plan §26): the motion detector compares the
+  // newest view's OWN position with the others', so the solve must hand back
+  // each used view's position, aligned with `viewRmsPx`.
+  it("reports each used view's own position", () => {
+    const code = tilted(10);
+    const good = walkViews(code, 'arc', 30, 4);
+    const mirrored = { ...good[1]!, corners: [...good[1]!.corners].reverse() };
+    const res = solveQrPoseMultiView(
+      [good[0]!, mirrored, good[2]!, good[3]!],
+      SIZE_M
+    )!;
+    expect(res.viewPositions).toHaveLength(3);
+    expect(res.viewPositions).toHaveLength(res.viewRmsPx.length);
+    for (const p of res.viewPositions) {
+      p.forEach((v, a) =>
+        expect(Math.abs(v - code.position[a]!)).toBeLessThan(1e-6)
+      );
+    }
+  });
+
+  // The motion detector asks how well one view fits a GIVEN rotation: zero
+  // at the truth, growing as the rotation is turned away in the image plane.
+  it("measures one view's error at a given rotation", () => {
+    const code = tilted(10);
+    const [v] = walkViews(code, 'arc', 0, 1, 1.2, 20);
+    expect(viewErrorAtRotationPx(v!, code.rotation, SIZE_M)!).toBeLessThan(
+      1e-6
+    );
+    // q * spin(5 deg about the code normal, z): the Hamilton product with
+    // (0, 0, sin h, cos h).
+    const h = (5 * Math.PI) / 360;
+    const [x, y, z, w] = code.rotation;
+    const sz = Math.sin(h);
+    const cz = Math.cos(h);
+    const turned: Pose['rotation'] = [
+      x * cz + y * sz,
+      y * cz - x * sz,
+      z * cz + w * sz,
+      w * cz - z * sz,
+    ];
+    expect(viewErrorAtRotationPx(v!, turned, SIZE_M)!).toBeGreaterThan(3);
+    expect(viewErrorAtRotationPx(v!, code.rotation, 0)).toBeNull();
   });
 
   // Why this test matters (plan §15, confirmed by the review's algebra): the

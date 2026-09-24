@@ -71,6 +71,12 @@ export interface QrMultiViewPoseResult {
    * corner or view moves it little (plan 2026-09-23-2314 §16 #6).
    */
   viewRmsPx: number[];
+  /**
+   * Each USED view's own code position (its single-frame solve), world
+   * metres, aligned with `viewRmsPx` - what the motion detector compares
+   * (plan §26).
+   */
+  viewPositions: Vector3[];
   /** The number of views the solve used. */
   views: number;
   /** Views dropped as unusable (see `solveQrPoseMultiView`). */
@@ -575,10 +581,38 @@ export function solveQrPoseMultiView(
     position: [mean(0), mean(1), mean(2)],
     costPx: rmsPx(best.r),
     viewRmsPx: perViewRmsPx(best.r),
+    viewPositions: seeds.map((seed) => seed.position),
     views: used.length,
     droppedViews: views.length - used.length,
     tiltSigmaDeg: tiltSigmaDeg(pr, best),
     starts: starts.length,
     iterations,
   };
+}
+
+/**
+ * One view's RMS corner error, px, if the code had world rotation
+ * `rotation` and the view's own single-frame position - the motion
+ * detector's "does the newest view fit the others' rotation" (plan §26).
+ * `null` when the view is unusable or the size invalid.
+ */
+export function viewErrorAtRotationPx(
+  view: QrViewObservation,
+  rotation: Quaternion,
+  sizeM: number
+): number | null {
+  if (!(sizeM > 0) || !Number.isFinite(sizeM) || !isUsableView(view))
+    return null;
+  const seed = seedOf(view, sizeM);
+  if (!seed) return null;
+  const r = residuals(
+    {
+      views: [view],
+      object: buildObjectPoints(sizeM),
+      positions: [seed.position],
+      robustScalePx: DEFAULT_ROBUST_SCALE_PX,
+    },
+    qnormalize(rotation)
+  );
+  return r ? rmsPx(r) : null;
 }

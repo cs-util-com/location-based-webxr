@@ -28,6 +28,9 @@ whose camera poses SLAM supplies, constrain both. (QR near-frontal pose plan
     - `viewRmsPx`: each used view's own RMS corner error, in input order -
       its median is the fused window's robust fit statistic
       (`qr-fused-pose.ts`);
+    - `viewPositions`: each used view's OWN code position (its
+      single-frame pick), in input order - the motion detector's
+      translation signal (`qr-motion.ts`);
     - `views`: the number of views used; `droppedViews`: those left out
       as unusable (below);
     - `tiltSigmaDeg`: the tilt's FORMAL 1-sigma for 1 px of corner noise,
@@ -46,6 +49,11 @@ whose camera poses SLAM supplies, constrain both. (QR near-frontal pose plan
     - an option is out of range (`robustScalePx <= 0`, `maxStarts < 1`,
       `maxIterations < 1` or NaN);
     - no start converges.
+
+- `viewErrorAtRotationPx(view, rotation, sizeM) → number | null`: one
+  view's RMS corner error at a GIVEN rotation, the view keeping its own
+  position - the motion detector's turning signal (the newest view against
+  the rotation of the others). `null` for an unusable view or size.
 
 ## How it works
 
@@ -138,6 +146,9 @@ if (res && res.costPx < 2) useRotation(res.rotation);
     counted, the rest gives the exact rotation;
   - each used view's own corner error (`viewRmsPx`), one bad view high,
     the median low;
+  - each used view's own position (`viewPositions`), and one view's error
+    at a given rotation (`viewErrorAtRotationPx`: ~0 at the truth, clearly
+    above at a 5° spin);
   - the same rotation (to 1e-6 deg) and cost whatever size it is told
     (0.05-1 m): the rotation is size-invariant;
   - under noise, the joint rotation beats a single frame by a wide margin,
