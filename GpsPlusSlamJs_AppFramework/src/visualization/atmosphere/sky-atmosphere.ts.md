@@ -18,7 +18,7 @@ observerAltitudeKm = 0.2, sunIntensity = 1 })` — adds `sky` to the scene.
   First call renders all three LUTs; later calls only the sky view; an
   unchanged sun does nothing.
 - `setVisibilityKm(km)` — rebuilds every LUT.
-- `configure({ sunDirection?, visibilityKm?, cloudCover?, cloudMode? })` — all at once,
+- `configure({ sunDirection?, visibilityKm?, cloudCover?, cloudMode?, cloudSlabSteps? })` — all at once,
   ONE rebuild or re-bake (a preset change); validates everything before
   changing anything. `setSun`, `setVisibilityKm` and `setClouds` delegate
   to it.
@@ -27,7 +27,7 @@ observerAltitudeKm = 0.2, sunIntensity = 1 })` — adds `sky` to the scene.
   threshold, `cloud-layer.ts`); re-bakes the environment only (the LUTs do
   not depend on clouds); unchanged cover is free. Cover does NOT dim the
   sun light (parked for the owner, plan §13).
-- `cloudMode` (getter) and `configure({ cloudMode: 'dome' | 'sheet' })`: where the
+- `cloudMode` (getter) and `configure({ cloudMode: 'dome' | 'sheet' | 'slab' })`: where the
   clouds are drawn. `'dome'` (the default) is the sky's own layer and adds
   nothing to the scene. `'sheet'` adds the fly-through sheet
   ([`cloud-sheet.ts.md`](cloud-sheet.ts.md)) to the owned scene and clears the
@@ -36,6 +36,13 @@ observerAltitudeKm = 0.2, sunIntensity = 1 })` — adds `sky` to the scene.
   modes, so reflections and the diffuse light do not change with the mode,
   and a mode change needs no re-bake. `dispose()` removes and frees the
   sheet. An unknown mode is a `RangeError` before anything changes.
+  - `'slab'` adds the ray-marched volume instead
+    ([`cloud-slab.ts.md`](cloud-slab.ts.md)), with the same uniforms and the
+    same cleared visible threshold. A mode change removes the current cloud
+    mesh before adding the next, so there is never more than one.
+  - `configure({ cloudSlabSteps })` (8/16/24/32, default 16) is the slab's
+    cost knob. It is validated first, kept across modes, applied to a live
+    slab as a new program and to a later slab at creation. No re-bake.
 - `advanceClouds(seconds, windKmPerSecond = 0.012)` — drift; no GPU work;
   both arguments validated (finite, seconds ≥ 0).
 - `applySunLight(light)` — colour (chroma) and intensity

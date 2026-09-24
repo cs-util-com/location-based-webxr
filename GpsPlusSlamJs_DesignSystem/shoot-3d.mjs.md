@@ -4,7 +4,7 @@
   Neutral), from two camera views, so a
   look can be judged side by side and each taste round leaves a record
   (plan 2026-09-23-0048, DEC-SKY-11).
-- Public API (CLI): `pnpm run shoot:3d [-- --preset=<id>] [--tone=<agx|aces|neutral>] [--view=<city|sun|antisun|lake|aloft|above>] [--cloud-mode=<dome|sheet>] [--cover=<0..1>] [--parity]`. A non-dome cloud mode adds its name to the file name.
+- Public API (CLI): `pnpm run shoot:3d [-- --preset=<id>] [--tone=<agx|aces|neutral>] [--view=<city|sun|antisun|lake|aloft|inside|above>] [--cloud-mode=<dome|sheet|slab>] [--slab-steps=<8|16|24|32>] [--cover=<0..1>] [--parity]`. A non-dome cloud mode adds its name to the file name, and a slab step count other than 16 adds `x<n>`.
   Writes `shots/3d/<preset>-<tone>-<view>.png` (gitignored) and prints
   each path. With
   `--parity` it also prints the GPU/CPU LUT comparison as JSON.

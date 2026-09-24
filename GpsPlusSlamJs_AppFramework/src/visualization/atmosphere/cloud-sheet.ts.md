@@ -19,7 +19,8 @@ existing callers.
   - The near fade (60 → 400 m) and the far fade (14 → 21 km horizontal).
   - The ring mesh: `innerRadiusM` 2, `ringRatio` 1.25, `sectors` 48.
   - `topAlbedo` (0.8).
-- `CLOUD_MODES` / `CloudMode`: `'dome' | 'sheet'`.
+- `CLOUD_MODES` / `CloudMode`: `'dome' | 'sheet' | 'slab'` (the slab is
+  [`cloud-slab.ts`](cloud-slab.ts.md); `SkyAtmosphere` picks the mesh).
 - `cloudSheetFade(distanceM, horizontalM)`: the opacity factor from the
   camera (CPU twin of the shader's `fade`). `RangeError` for a distance that
   is negative or not finite, or for a horizontal distance larger than the
@@ -27,6 +28,8 @@ existing callers.
 - `cloudSheetRenderOrder(cameraY)`: -1 below the sheet, +1 above it.
 - `cloudTopRadiance(sunT, sunY, zenith)`: a cloud top seen from above (CPU
   twin of `atmCloudTopLit`).
+- `CLOUD_TOP_LIT_GLSL`: `atmCloudTopLit` itself, included by the sheet and
+  the slab, so both draw one sunlit top.
 - `cloudSheetRingRadii()`: the disc's ring radii.
 - `CLOUD_SHEET_FRAGMENT_GLSL` (the vertex shader is module-private).
 - `createCloudSheet(uniforms)`: the mesh. It reads the uniform objects it is

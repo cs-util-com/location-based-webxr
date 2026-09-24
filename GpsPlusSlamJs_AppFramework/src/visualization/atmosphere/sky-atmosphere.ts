@@ -56,6 +56,12 @@ import {
   type CloudMode,
 } from './cloud-sheet.js';
 import {
+  CLOUD_SLAB,
+  CLOUD_SLAB_STEPS,
+  createCloudSlab,
+  setCloudSlabSteps,
+} from './cloud-slab.js';
+import {
   type AtmosphereDevice,
   type AtmosphereUniforms,
   type LutName,
@@ -199,14 +205,16 @@ export class SkyAtmosphere {
   };
   /**
    * The VISIBLE sky's cloud threshold: the real one in dome mode, 2 (clear)
-   * in sheet mode, where the sheet draws the clouds. The bake keeps the real
+   * in sheet and slab mode, where the sheet or the slab draws the clouds. The bake keeps the real
    * one either way, so the lighting does not change with the mode (plan
    * 2026-09-24-1010 §2).
    */
   private readonly visibleCloudThreshold = { value: 2 };
   private mode: CloudMode = 'dome';
-  /** The fly-through sheet, while `cloudMode` is 'sheet'. */
-  private sheet: THREE.Mesh | undefined;
+  /** The fly-through sheet or slab, while `cloudMode` is 'sheet' or 'slab'. */
+  private cloudMesh: THREE.Mesh | undefined;
+  /** The slab's march steps (`configure({ cloudSlabSteps })`), kept across modes. */
+  private slabSteps: number = CLOUD_SLAB.defaultSteps;
 
   constructor(options: SkyAtmosphereOptions) {
     try {
@@ -396,16 +404,20 @@ export class SkyAtmosphere {
     sunDirection?: DirectionLike;
     visibilityKm?: number;
     cloudCover?: number;
-    /** Dome (the sky's own layer) or the fly-through sheet. */
+    /** Dome (the sky's own layer), the fly-through sheet, or the slab. */
     cloudMode?: CloudMode;
+    /** The slab's march steps, one of `CLOUD_SLAB_STEPS` (the cost knob). */
+    cloudSlabSteps?: (typeof CLOUD_SLAB_STEPS)[number];
   }): void {
     // Validate everything before changing anything.
+    const steps = this.changedSlabSteps(change.cloudSlabSteps);
     const mode = this.changedMode(change.cloudMode);
     const mie = this.changedMie(change.visibilityKm);
     const sun = this.movedSun(change.sunDirection);
     const cover = this.changedCover(change.cloudCover);
     const firstSun = this.sun === undefined && sun !== undefined;
     if (cover !== undefined) this.applyCover(cover);
+    this.applySlabSteps(steps);
     this.applyMode(mode);
     if (mie !== undefined) {
       this.visibility = change.visibilityKm!;
@@ -441,6 +453,25 @@ export class SkyAtmosphere {
     this.syncVisibleClouds();
   }
 
+  /** The new slab step count, or undefined if unchanged. Validates. */
+  private changedSlabSteps(steps: number | undefined): number | undefined {
+    if (steps === undefined) return undefined;
+    if (!(CLOUD_SLAB_STEPS as readonly number[]).includes(steps)) {
+      throw new RangeError(
+        `cloud slab steps must be one of ${CLOUD_SLAB_STEPS.join(', ')}, got ${String(steps)}`
+      );
+    }
+    return steps === this.slabSteps ? undefined : steps;
+  }
+
+  private applySlabSteps(steps: number | undefined): void {
+    if (steps === undefined) return;
+    this.slabSteps = steps;
+    if (this.mode === 'slab' && this.cloudMesh !== undefined) {
+      setCloudSlabSteps(this.cloudMesh, steps);
+    }
+  }
+
   /** The current cloud mode. */
   get cloudMode(): CloudMode {
     return this.mode;
@@ -458,34 +489,35 @@ export class SkyAtmosphere {
   }
 
   /**
-   * Adds or removes the sheet (undefined: unchanged). No re-bake: the bake keeps the dome clouds in
+   * Swaps the cloud mesh for the mode (undefined: unchanged): the current
+   * one goes first, so a switch never leaves two layers. No re-bake: the bake keeps the dome clouds in
    * both modes, so only the visible clouds change.
    */
   private applyMode(mode: CloudMode | undefined): void {
     if (mode === undefined) return;
     this.mode = mode;
-    if (mode === 'sheet') {
-      // Spread, not cloned: the sheet reads the SAME uniform objects as the
-      // sky (LUTs, sun, scale, cloud cover, offset and the real threshold).
-      this.sheet = createCloudSheet({ ...this.uniforms, ...this.clouds });
-      this.scene.add(this.sheet);
-    } else {
-      this.removeSheet();
-    }
+    this.removeCloudMesh();
+    // Spread, not cloned: the mesh reads the SAME uniform objects as the
+    // sky (LUTs, sun, scale, cloud cover, offset and the real threshold).
+    const shared = { ...this.uniforms, ...this.clouds };
+    if (mode === 'sheet') this.cloudMesh = createCloudSheet(shared);
+    if (mode === 'slab')
+      this.cloudMesh = createCloudSlab(shared, this.slabSteps);
+    if (this.cloudMesh !== undefined) this.scene.add(this.cloudMesh);
     this.syncVisibleClouds();
   }
 
   private syncVisibleClouds(): void {
     this.visibleCloudThreshold.value =
-      this.mode === 'sheet' ? 2 : this.clouds.atmCloudThreshold.value;
+      this.mode === 'dome' ? this.clouds.atmCloudThreshold.value : 2;
   }
 
-  private removeSheet(): void {
-    if (this.sheet === undefined) return;
-    this.scene.remove(this.sheet);
-    this.sheet.geometry.dispose();
-    (this.sheet.material as THREE.Material).dispose();
-    this.sheet = undefined;
+  private removeCloudMesh(): void {
+    if (this.cloudMesh === undefined) return;
+    this.scene.remove(this.cloudMesh);
+    this.cloudMesh.geometry.dispose();
+    (this.cloudMesh.material as THREE.Material).dispose();
+    this.cloudMesh = undefined;
   }
 
   /** The new sea-level Mie extinction, or undefined if unchanged. Validates. */
@@ -626,7 +658,7 @@ export class SkyAtmosphere {
     this.sky.geometry.dispose();
     (this.sky.material as THREE.Material).dispose();
     this.bakeMaterial.dispose();
-    this.removeSheet();
+    this.removeCloudMesh();
     if (this.environment !== undefined) {
       if (this.scene.environment === this.environment.texture)
         this.scene.environment = null;

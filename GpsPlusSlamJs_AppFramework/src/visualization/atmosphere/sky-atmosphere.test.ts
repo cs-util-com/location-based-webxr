@@ -693,3 +693,86 @@ describe('SkyAtmosphere cloud mode (fly-through sheet plan 2026-09-24-1010)', ()
     expect(freed).toBe(2);
   });
 });
+
+describe('SkyAtmosphere cloud slab (plan 2026-09-24-1010 §11-§12)', () => {
+  const byName = (scene: THREE.Scene, name: string) =>
+    scene.getObjectByName(name) as THREE.Mesh | undefined;
+  const slabIn = (scene: THREE.Scene) => byName(scene, 'atmosphere-cloud-slab');
+  const threshold = (material: THREE.Material) =>
+    (material as THREE.ShaderMaterial).uniforms.atmCloudThreshold!
+      .value as number;
+  const stepsOf = (mesh: THREE.Mesh) =>
+    (mesh.material as THREE.ShaderMaterial).defines['ATM_SLAB_STEPS'];
+
+  // WHY: the slab is the third way of drawing ONE layer. The visible sky
+  // clears, the slab reads the real threshold and the sky's own uniforms,
+  // and the bake keeps the dome clouds (the lighting does not change).
+  it('draws the clouds in the slab, clears the visible sky, and shares the uniforms', () => {
+    const { atmosphere, scene } = setup();
+    atmosphere.configure({ sunDirection: UP, cloudCover: 0.5 });
+    const real = threshold(atmosphere.sky.material as THREE.Material);
+    atmosphere.configure({ cloudMode: 'slab' });
+    const slab = slabIn(scene)!;
+    expect(slab).toBeDefined();
+    expect(threshold(atmosphere.sky.material as THREE.Material)).toBe(2);
+    expect(threshold(slab.material as THREE.Material)).toBe(real);
+    const sky = atmosphere.sky.material as THREE.ShaderMaterial;
+    const uniforms = (slab.material as THREE.ShaderMaterial).uniforms;
+    expect(uniforms.atmSunDirection).toBe(sky.uniforms.atmSunDirection);
+    expect(uniforms.atmCloudOffset).toBe(sky.uniforms.atmCloudOffset);
+    expect(stepsOf(slab)).toBe(16);
+  });
+
+  // WHY: switching between the two meshes must leave exactly one cloud
+  // mesh, or the A/B draws both layers at once.
+  it('keeps exactly one cloud mesh across sheet, slab and dome', () => {
+    const { atmosphere, scene } = setup();
+    atmosphere.configure({ sunDirection: UP, cloudMode: 'sheet' });
+    atmosphere.configure({ cloudMode: 'slab' });
+    expect(byName(scene, 'atmosphere-cloud-sheet')).toBeUndefined();
+    expect(slabIn(scene)).toBeDefined();
+    atmosphere.configure({ cloudMode: 'sheet' });
+    expect(slabIn(scene)).toBeUndefined();
+    expect(byName(scene, 'atmosphere-cloud-sheet')).toBeDefined();
+    atmosphere.configure({ cloudMode: 'slab' });
+    atmosphere.configure({ cloudMode: 'dome' });
+    expect(slabIn(scene)).toBeUndefined();
+    expect(byName(scene, 'atmosphere-cloud-sheet')).toBeUndefined();
+  });
+
+  // WHY: the step count is the cost knob the owner turns; a bad value must
+  // change nothing, and a value set before the slab exists must apply when
+  // it is created.
+  it('takes the step count, before or after the slab exists, and refuses one it is not built for', () => {
+    const { atmosphere, scene } = setup();
+    atmosphere.configure({ sunDirection: UP, cloudSlabSteps: 8 });
+    atmosphere.configure({ cloudMode: 'slab' });
+    const slab = slabIn(scene)!;
+    expect(stepsOf(slab)).toBe(8);
+    const material = slab.material as THREE.ShaderMaterial;
+    const version = material.version;
+    atmosphere.configure({ cloudSlabSteps: 32 });
+    expect(stepsOf(slab)).toBe(32);
+    expect(material.version).toBeGreaterThan(version);
+    expect(() =>
+      atmosphere.configure({ cloudMode: 'dome', cloudSlabSteps: 12 as never })
+    ).toThrow(RangeError);
+    expect(atmosphere.cloudMode).toBe('slab');
+    expect(stepsOf(slab)).toBe(32);
+  });
+
+  it('removes and frees the slab on dispose', () => {
+    const { atmosphere, scene } = setup();
+    atmosphere.configure({ sunDirection: UP, cloudMode: 'slab' });
+    const slab = slabIn(scene)!;
+    let freed = 0;
+    slab.geometry.addEventListener('dispose', () => (freed += 1));
+    (slab.material as THREE.Material).addEventListener(
+      'dispose',
+      () => (freed += 1)
+    );
+    atmosphere.dispose();
+    expect(slabIn(scene)).toBeUndefined();
+    expect(freed).toBe(2);
+  });
+});

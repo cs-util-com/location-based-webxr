@@ -83,6 +83,15 @@
         <select id="cloud-mode" class="select" aria-label="Cloud mode">
           <option value="dome">Clouds on the sky (dome)</option>
           <option value="sheet">Clouds to fly through (sheet)</option>
+          <option value="slab">Clouds as a thin volume (slab)</option>
+        </select>
+      </span>
+      <span class="select-wrap">
+        <select id="slab-steps" class="select" aria-label="Slab steps" disabled>
+          <option value="8">Slab: 8 steps</option>
+          <option value="16">Slab: 16 steps</option>
+          <option value="24">Slab: 24 steps</option>
+          <option value="32">Slab: 32 steps</option>
         </select>
       </span>
       <span class="select-wrap">
@@ -91,7 +100,8 @@
           <option value="sun">View: toward the sun</option>
           <option value="antisun">View: away from the sun</option>
           <option value="lake">View: lake</option>
-          <option value="aloft">View: just above the clouds (2.15 km)</option>
+          <option value="aloft">View: just above the sheet (2.15 km)</option>
+          <option value="inside">View: inside the clouds (2 km, level)</option>
           <option value="above">View: above the clouds (3.2 km)</option>
         </select>
       </span>

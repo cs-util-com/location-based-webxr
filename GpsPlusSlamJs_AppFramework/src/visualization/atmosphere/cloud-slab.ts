@@ -6,23 +6,37 @@
  * each column's thickness, so the cover keeps meaning share of sky (from the
  * zenith), and flying inside is a whiteout rather than a dissolve.
  *
- * WHAT LIVES HERE (this step, §11.9 step 1): the constants and the CPU twin
- * of everything the shader computes: the column, the vertical profile and
- * its integral, the march interval, the quadratic steps, the exact optical
- * depth of a step, the light, the level of detail, the draw order, and the
- * march itself, which the tests use as the shader's stand-in.
+ * WHAT LIVES HERE: the constants; the CPU twin of everything the shader
+ * computes (the column, the vertical profile and its integral, the march
+ * interval, the quadratic steps, the exact optical depth of a step, the
+ * light, the level of detail, the draw order, and the march itself, which
+ * the tests use as the shader's stand-in); the shader; and the mesh.
+ * `SkyAtmosphere` owns the mesh and adds it only in `cloudMode: 'slab'`.
  *
  * @see cloud-slab.ts.md
  */
 
+import * as THREE from 'three';
+
+import { glslFloat } from '../../utils/glsl-float.js';
 import { smoothstep } from '../../utils/smoothstep.js';
+import {
+  ATMOSPHERE_CLOUD_GLSL,
+  ATMOSPHERE_COMMON_GLSL,
+  ATMOSPHERE_MAX_SCENE_RADIANCE,
+} from './atmosphere-glsl.js';
 import {
   CLOUD_LAYER,
   CLOUD_TEXTURE_SIZE,
   cloudDensity,
   cloudLitRadiance,
 } from './cloud-layer.js';
-import { CLOUD_SHEET, cloudTopRadiance } from './cloud-sheet.js';
+import {
+  CLOUD_SHEET,
+  CLOUD_TOP_LIT_GLSL,
+  cloudSheetRingRadii,
+  cloudTopRadiance,
+} from './cloud-sheet.js';
 
 export type Vec3 = readonly [number, number, number];
 
@@ -158,15 +172,22 @@ export function cloudSlabInterval(
 /**
  * The march's steps over an interval of length `lengthM`, as offsets from its
  * entry: quadratic, crowding at the entry (the atmosphere's own form), with
- * each sample at the middle of its step in the same quadratic measure.
+ * each sample at `jitter` of the way through its step in the same quadratic
+ * measure (0.5: the middle). The shader jitters it per pixel: a fixed sample
+ * point drew the far deck as terraced bands at level rays, where one step
+ * spans kilometres of ground (plan §12.1, measured on the look-dev page).
  *
- * @throws RangeError for a step count the shader is not built for, or a
- *   negative or non-finite length.
+ * @throws RangeError for a step count the shader is not built for, a
+ *   negative or non-finite length, or a jitter outside [0, 1].
  */
 export function cloudSlabSteps(
   steps: number,
-  lengthM: number
+  lengthM: number,
+  jitter = 0.5
 ): { starts: number[]; ends: number[]; samples: number[] } {
+  if (!(Number.isFinite(jitter) && jitter >= 0 && jitter <= 1)) {
+    throw new RangeError(`slab step jitter must be in [0, 1], got ${jitter}`);
+  }
   if (!(CLOUD_SLAB_STEPS as readonly number[]).includes(steps)) {
     throw new RangeError(
       `slab steps must be one of ${CLOUD_SLAB_STEPS.join(', ')}, got ${steps}`
@@ -183,7 +204,7 @@ export function cloudSlabSteps(
   for (let i = 0; i < steps; i++) {
     const u0 = i / steps;
     const u1 = (i + 1) / steps;
-    const um = (i + 0.5) / steps;
+    const um = (i + jitter) / steps;
     starts.push(u0 * u0 * lengthM);
     ends.push(u1 * u1 * lengthM);
     samples.push(um * um * lengthM);
@@ -321,6 +342,8 @@ export interface CloudSlabMarchInput {
   readonly threshold: number;
   /** Radians per pixel (for the level of detail); 0 ignores the footprint. */
   readonly pixelAngle?: number;
+  /** Where in each step the noise is sampled, [0, 1]; 0.5 (the middle) by default. */
+  readonly jitter?: number;
   /** Omitted: only the opacity is marched. */
   readonly light?: CloudSlabLight;
 }
@@ -356,7 +379,8 @@ export function cloudSlabMarch(
   if (interval === null || !Number.isFinite(threshold)) return result;
   const { starts, ends, samples } = cloudSlabSteps(
     steps,
-    interval.outM - interval.inM
+    interval.outM - interval.inM,
+    input.jitter
   );
   const horizontal = Math.hypot(dir[0], dir[2]);
   const cosToSun = light
@@ -401,4 +425,270 @@ export function cloudSlabMarch(
   }
   result.opacity = 1 - transmittance;
   return result;
+}
+
+/** The slab's vertex: only covers the pixels; the direction comes from gl_FragCoord. */
+const CLOUD_SLAB_VERTEX_GLSL = /* glsl */ `
+void main() {
+  gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(position, 1.0);
+}
+`;
+
+/**
+ * The slab's fragment: the view ray from the pixel (never from the mesh's
+ * interpolated position: 24 km triangles with the eye 0.5 m away broke M1's
+ * sheet), the analytic interval, the quadratic march with each step's exact
+ * optical depth through its column, the light hoisted out of the loop, the
+ * far and aerial weights on the contribution, and the early exit. Twin of
+ * `cloudSlabMarch`. Output like the sheet: scene units, clamped, then three's
+ * tone mapping and output colour space.
+ */
+export const CLOUD_SLAB_FRAGMENT_GLSL = /* glsl */ `
+${ATMOSPHERE_COMMON_GLSL}
+uniform sampler2D atmTransmittanceLut;
+uniform sampler2D atmSkyViewLut;
+uniform vec3 atmSunDirection;
+uniform float atmObserverRadius;
+uniform float atmRadianceToScene;
+const float ATM_MAX_SCENE_RADIANCE = ${glslFloat(ATMOSPHERE_MAX_SCENE_RADIANCE)};
+${ATMOSPHERE_CLOUD_GLSL}
+${CLOUD_TOP_LIT_GLSL}
+uniform mat4 atmSlabInverseProjection;
+uniform mat4 atmSlabCameraWorld;
+uniform vec4 atmSlabViewport;
+uniform float atmSlabPixelAngle;
+const float ATM_SLAB_BASE = ${glslFloat(CLOUD_SLAB.baseM)};
+const float ATM_SLAB_TOP = ${glslFloat(CLOUD_SLAB.topM)};
+const float ATM_SLAB_SIGMA = ${glslFloat(CLOUD_SLAB.extinctionPerM)};
+const float ATM_SLAB_SOFT = ${glslFloat(CLOUD_SLAB.baseSoftM)};
+const float ATM_SLAB_HEIGHT_SCALE = ${glslFloat(CLOUD_SLAB.heightScaleM)};
+const float ATM_SLAB_T0 = ${glslFloat(cloudSlabThresholdThicknessM())};
+const float ATM_SLAB_SUN_DEPTH = ${glslFloat(CLOUD_SLAB.sunDepthScale)};
+const float ATM_SLAB_SUN_MU_FLOOR = ${glslFloat(CLOUD_SLAB.sunMuFloor)};
+const float ATM_SLAB_MAX_MARCH = ${glslFloat(CLOUD_SLAB.maxMarchM)};
+const float ATM_SLAB_EARLY_EXIT = ${glslFloat(CLOUD_SLAB.earlyExitTransmittance)};
+const float ATM_SLAB_LEVEL_DIR_Y = ${glslFloat(CLOUD_SLAB.levelDirY)};
+const float ATM_SLAB_FAR_START = ${glslFloat(CLOUD_SHEET.farFadeStartM)};
+const float ATM_SLAB_FAR_END = ${glslFloat(CLOUD_SHEET.farFadeEndM)};
+const float ATM_SLAB_TEXEL = ${glslFloat(TEXEL_M)};
+
+// Twin of cloudSlabCumulativeM.
+float atmSlabCumulative(float h) {
+  if (h <= 0.0) return 0.0;
+  if (ATM_SLAB_SOFT <= 0.0) return h;
+  return h < ATM_SLAB_SOFT ? h * h / (2.0 * ATM_SLAB_SOFT) : h - 0.5 * ATM_SLAB_SOFT;
+}
+
+// Twin of cloudSlabThicknessM (the threshold is 2, above any noise, when clear).
+float atmSlabThickness(float noise, float threshold) {
+  return clamp(ATM_SLAB_T0 + ATM_SLAB_HEIGHT_SCALE * (noise - threshold), 0.0, ATM_SLAB_TOP - ATM_SLAB_BASE);
+}
+
+void main() {
+  if (atmCloudCover <= 0.0) discard;
+  vec2 ndc = (gl_FragCoord.xy - atmSlabViewport.xy) / atmSlabViewport.zw * 2.0 - 1.0;
+  vec4 view = atmSlabInverseProjection * vec4(ndc, 1.0, 1.0);
+  vec3 dir = normalize(mat3(atmSlabCameraWorld) * (view.xyz / view.w));
+  float y = cameraPosition.y;
+  float horizontal = length(dir.xz);
+  // Twin of cloudSlabInterval.
+  float cap = min(ATM_SLAB_MAX_MARCH, ATM_SLAB_FAR_END / max(horizontal, 1e-6));
+  float tIn;
+  float tOut;
+  if (abs(dir.y) < 1e-6) {
+    if (y < ATM_SLAB_BASE || y > ATM_SLAB_TOP) discard;
+    tIn = 0.0;
+    tOut = cap;
+  } else {
+    float tBase = (ATM_SLAB_BASE - y) / dir.y;
+    float tTop = (ATM_SLAB_TOP - y) / dir.y;
+    tIn = max(min(tBase, tTop), 0.0);
+    tOut = min(max(tBase, tTop), cap);
+  }
+  if (tOut <= tIn) discard;
+  float lengthM = tOut - tIn;
+  // A static per-pixel jitter of the sample point inside each step
+  // (interleaved gradient noise): a fixed point drew the far deck as
+  // terraced bands at level rays. The step bounds, so the exact integral,
+  // do not move.
+  float jitter = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+  // Hoisted: the same for every sample. atmCloudLit is affine in density.
+  vec3 under0 = atmCloudLit(dir, atmObserverRadius, 0.0);
+  vec3 under1 = atmCloudLit(dir, atmObserverRadius, 1.0);
+  vec3 top = atmCloudTopLit(atmObserverRadius);
+  float mu = max(atmSunDirection.y, ATM_SLAB_SUN_MU_FLOOR);
+  vec3 colour = vec3(0.0);
+  float alpha = 0.0;
+  float transmittance = 1.0;
+  // atm-slab-loop-begin
+  for (int i = 0; i < ATM_SLAB_STEPS; i++) {
+    float u0 = float(i) / float(ATM_SLAB_STEPS);
+    float u1 = float(i + 1) / float(ATM_SLAB_STEPS);
+    float um = (float(i) + jitter) / float(ATM_SLAB_STEPS);
+    float t0 = tIn + u0 * u0 * lengthM;
+    float t1 = tIn + u1 * u1 * lengthM;
+    float t = tIn + um * um * lengthM;
+    float footprint = max(t * atmSlabPixelAngle, (t1 - t0) * horizontal);
+    float lod = footprint > 0.0 ? max(0.0, log2(footprint / ATM_SLAB_TEXEL)) : 0.0;
+    vec2 uv = (cameraPosition.xz + dir.xz * t) * 0.001 / ATM_CLOUD_TILE + atmCloudOffset;
+    float noise = atmCloudNoiseLod(uv, lod);
+    float thickness = atmSlabThickness(noise, atmCloudThreshold);
+    float tau = 0.0;
+    if (abs(dir.y) >= ATM_SLAB_LEVEL_DIR_Y) {
+      float h0 = clamp(y + dir.y * t0 - ATM_SLAB_BASE, 0.0, thickness);
+      float h1 = clamp(y + dir.y * t1 - ATM_SLAB_BASE, 0.0, thickness);
+      tau = ATM_SLAB_SIGMA * abs(atmSlabCumulative(h1) - atmSlabCumulative(h0)) / abs(dir.y);
+    } else {
+      float hm = y + dir.y * 0.5 * (t0 + t1) - ATM_SLAB_BASE;
+      float p = ATM_SLAB_SOFT <= 0.0 ? 1.0 : clamp(hm / ATM_SLAB_SOFT, 0.0, 1.0);
+      tau = (hm < 0.0 || hm > thickness) ? 0.0 : ATM_SLAB_SIGMA * p * (t1 - t0);
+    }
+    float a = 1.0 - exp(-tau);
+    float w = (1.0 - smoothstep(ATM_SLAB_FAR_START, ATM_SLAB_FAR_END, t * horizontal))
+      * exp(-t * 0.001 / ATM_CLOUD_AERIAL_KM);
+    float h = clamp(y + dir.y * t - ATM_SLAB_BASE, 0.0, thickness);
+    float reach = min(1.0, exp(-ATM_SLAB_SIGMA * ATM_SLAB_SUN_DEPTH
+      * (atmSlabCumulative(thickness) - atmSlabCumulative(h)) / mu));
+    vec3 source = mix(mix(under0, under1, atmCloudDensity(noise, atmCloudThreshold)), top, reach);
+    float contribution = transmittance * a * w;
+    colour += contribution * source;
+    alpha += contribution;
+    transmittance *= exp(-tau);
+    if (transmittance < ATM_SLAB_EARLY_EXIT) break;
+  }
+  // atm-slab-loop-end
+  // Premultiplied: back to straight colour, with a floor against division.
+  if (alpha < 1e-4) discard;
+  vec3 lit = colour / alpha;
+  gl_FragColor = vec4(min(lit * atmRadianceToScene, vec3(ATM_MAX_SCENE_RADIANCE)), min(alpha, 1.0));
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+}
+`;
+
+/**
+ * The prism: the sheet's ring disc as the top cap (facing up) and, reversed,
+ * the bottom cap (facing down), and the wall between them at the radius, all
+ * facing outward, so `BackSide` draws the far inside from anywhere.
+ */
+function cloudSlabGeometry(): THREE.BufferGeometry {
+  const radii = cloudSheetRingRadii();
+  const n = CLOUD_SHEET.sectors;
+  const half = (CLOUD_SLAB.topM - CLOUD_SLAB.baseM) / 2;
+  const positions: number[] = [];
+  const indices: number[] = [];
+  const cap = (y: number, up: boolean) => {
+    const start = positions.length / 3;
+    positions.push(0, y, 0);
+    for (let k = 1; k < radii.length; k++) {
+      for (let j = 0; j < n; j++) {
+        const a = (2 * Math.PI * j) / n;
+        positions.push(radii[k]! * Math.cos(a), y, radii[k]! * Math.sin(a));
+      }
+    }
+    const ring = (k: number, j: number) => start + 1 + (k - 1) * n + (j % n);
+    const tri = (a: number, b: number, c: number) =>
+      up ? indices.push(a, b, c) : indices.push(a, c, b);
+    for (let j = 0; j < n; j++) tri(start, ring(1, j + 1), ring(1, j));
+    for (let k = 1; k < radii.length - 1; k++) {
+      for (let j = 0; j < n; j++) {
+        const a = ring(k, j);
+        const b = ring(k, j + 1);
+        const c = ring(k + 1, j);
+        const d = ring(k + 1, j + 1);
+        tri(a, b, c);
+        tri(b, d, c);
+      }
+    }
+    return (j: number) => ring(radii.length - 1, j);
+  };
+  const topRim = cap(half, true);
+  const bottomRim = cap(-half, false);
+  // The wall, facing outward: (bottom j, bottom j+1, top j) turns outward
+  // for the ring's angle order.
+  for (let j = 0; j < n; j++) {
+    const b0 = bottomRim(j);
+    const b1 = bottomRim(j + 1);
+    const t0 = topRim(j);
+    const t1 = topRim(j + 1);
+    indices.push(b0, t0, b1, b1, t0, t1);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute(
+    'position',
+    new THREE.Float32BufferAttribute(positions, 3)
+  );
+  geometry.setIndex(indices);
+  return geometry;
+}
+
+/**
+ * Sets the slab's step count (a define, so a new program; three caches one
+ * per value). Validated first: a count the shader is not built for changes
+ * nothing.
+ *
+ * @throws RangeError for a step count outside `CLOUD_SLAB_STEPS`.
+ */
+export function setCloudSlabSteps(slab: THREE.Mesh, steps: number): void {
+  if (!(CLOUD_SLAB_STEPS as readonly number[]).includes(steps)) {
+    throw new RangeError(
+      `slab steps must be one of ${CLOUD_SLAB_STEPS.join(', ')}, got ${steps}`
+    );
+  }
+  const material = slab.material as THREE.ShaderMaterial;
+  material.defines = { ...material.defines, ATM_SLAB_STEPS: steps };
+  material.needsUpdate = true;
+}
+
+/**
+ * The slab mesh, reading the given uniforms (the sky's LUTs, sun, scale and
+ * the cloud uniforms, spread so one update reaches the sky and the slab) plus
+ * its own ray uniforms, which `onBeforeRender` sets from the rendering
+ * camera and viewport before three computes the model-view matrix.
+ */
+export function createCloudSlab(
+  uniforms: Record<string, THREE.IUniform>,
+  steps: number = CLOUD_SLAB.defaultSteps
+): THREE.Mesh {
+  const own = {
+    atmSlabInverseProjection: { value: new THREE.Matrix4() },
+    atmSlabCameraWorld: { value: new THREE.Matrix4() },
+    atmSlabViewport: { value: new THREE.Vector4(0, 0, 1, 1) },
+    atmSlabPixelAngle: { value: 0 },
+  };
+  const material = new THREE.ShaderMaterial({
+    name: 'atmosphere-cloud-slab',
+    vertexShader: CLOUD_SLAB_VERTEX_GLSL,
+    fragmentShader: CLOUD_SLAB_FRAGMENT_GLSL,
+    uniforms: { ...uniforms, ...own },
+    defines: { ATM_SLAB_STEPS: CLOUD_SLAB.defaultSteps },
+    side: THREE.BackSide,
+    transparent: true,
+    depthWrite: false,
+    fog: false,
+  });
+  const slab = new THREE.Mesh(cloudSlabGeometry(), material);
+  if (steps !== CLOUD_SLAB.defaultSteps) setCloudSlabSteps(slab, steps);
+  slab.name = 'atmosphere-cloud-slab';
+  // It follows the camera, so its bounds never describe what is visible.
+  slab.frustumCulled = false;
+  const middle = (CLOUD_SLAB.baseM + CLOUD_SLAB.topM) / 2;
+  slab.position.y = middle;
+  slab.renderOrder = -1;
+  const cameraAt = new THREE.Vector3();
+  slab.onBeforeRender = (renderer, _scene, camera) => {
+    cameraAt.setFromMatrixPosition(camera.matrixWorld);
+    slab.position.set(cameraAt.x, middle, cameraAt.z);
+    slab.updateMatrixWorld();
+    // Takes effect from the next frame (the sort already ran), as for the
+    // sheet; at the base the lag is hidden, where the density starts at 0.
+    slab.renderOrder = cloudSlabRenderOrder(cameraAt.y);
+    own.atmSlabInverseProjection.value.copy(camera.projectionMatrixInverse);
+    own.atmSlabCameraWorld.value.copy(camera.matrixWorld);
+    // The viewport of THIS render (a post-processing target has its own).
+    const viewport = renderer.getCurrentViewport(own.atmSlabViewport.value);
+    own.atmSlabPixelAngle.value =
+      2 / (camera.projectionMatrix.elements[5] * Math.max(viewport.w, 1));
+  };
+  return slab;
 }

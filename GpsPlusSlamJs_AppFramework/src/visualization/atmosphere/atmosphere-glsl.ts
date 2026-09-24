@@ -448,6 +448,16 @@ float atmCloudNoise(vec2 uv) {
       * (1.0 - ATM_CLOUD_OCTAVE1_WEIGHT);
 }
 
+// The same sum at an explicit level of detail, for a march: inside a loop
+// implicit derivatives are undefined. The second octave's coordinates are
+// OCTAVE2_FREQ times denser, so its level is log2 of that coarser.
+float atmCloudNoiseLod(vec2 uv, float lod) {
+  return textureLod(atmCloudTexture, uv, lod).r * ATM_CLOUD_OCTAVE1_WEIGHT
+    + textureLod(atmCloudTexture, uv * ATM_CLOUD_OCTAVE2_FREQ + ATM_CLOUD_OCTAVE2_OFFSET,
+        lod + log2(ATM_CLOUD_OCTAVE2_FREQ)).r
+      * (1.0 - ATM_CLOUD_OCTAVE1_WEIGHT);
+}
+
 // A cloud's lit radiance seen along dir from radius r (LUT units): the sun's
 // transmittance at cloud height, side-lit plus forward scattering, darker
 // where thick, plus the zenith sky as ambient. Twin of cloud-layer.ts

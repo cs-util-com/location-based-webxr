@@ -21,8 +21,12 @@ fragment shaders, and the visible sky's vertex/fragment pair.
   package's `utils/glsl-float.ts`; step counts from `EARTH_ATMOSPHERE`.
 - `ATMOSPHERE_CLOUD_GLSL`: the cloud chunk (uniforms, `CLOUD_LAYER`
   constants, `atmCloudDensity`, `atmCloudHorizonFade`, `atmCloudNoise`,
-  `atmCloudLit`), shared by the sky dome and the fly-through sheet
-  (`cloud-sheet.ts`), so both draw one pattern, cover and light. It expects
+  `atmCloudNoiseLod`, `atmCloudLit`), shared by the sky dome, the
+  fly-through sheet (`cloud-sheet.ts`) and the slab (`cloud-slab.ts`), so
+  all three draw one pattern, cover and light. `atmCloudNoiseLod` is the
+  same two-octave sum through `textureLod` (the second octave one
+  log2(frequency) coarser), for the slab's march, where implicit
+  derivatives are undefined inside the loop. It expects
   `atmTransmittanceLut`, `atmSkyViewLut` and `atmSunDirection` declared
   before it.
 - The sky fragment includes the 2D cloud layer (`atmClouds`, with twins of

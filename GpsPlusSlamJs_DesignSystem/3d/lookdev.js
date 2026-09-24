@@ -138,8 +138,11 @@ const state = {
   tone: "neutral",
   haze: true,
   tier: "phone",
-  // Dome (the sky's layer) or the fly-through sheet (plan 2026-09-24-1010).
+  // Dome (the sky's layer), the fly-through sheet, or the ray-marched slab
+  // (plan 2026-09-24-1010 §11).
   cloudMode: "dome",
+  // The slab's march steps, the cost knob (8/16/24/32).
+  slabSteps: 16,
   // Sun shadows (AR sun shadow plan 2026-09-23-2343, M2 / S1).
   shadows: false,
 };
@@ -169,8 +172,9 @@ let sunShadow = null;
 /** The switch is on but the sun is below the floor (the readout says so). */
 let shadowsBelowFloor = false;
 
-const CLOUD_MODES = ["dome", "sheet"];
-const VIEWS = ["city", "sun", "antisun", "lake", "aloft", "above"];
+const CLOUD_MODES = ["dome", "sheet", "slab"];
+const SLAB_STEPS = [8, 16, 24, 32];
+const VIEWS = ["city", "sun", "antisun", "lake", "aloft", "inside", "above"];
 /** Drift on unless a test pins the offset (pixel tests need a fixed sky). */
 let cloudDrift = true;
 
@@ -183,6 +187,8 @@ function readHash() {
   if (CLOUD_MODES.includes(params.get("cloudMode"))) {
     state.cloudMode = params.get("cloudMode");
   }
+  const steps = Number(params.get("slabSteps"));
+  if (SLAB_STEPS.includes(steps)) state.slabSteps = steps;
   state.shadows = params.get("shadows") === "1";
 }
 
@@ -192,6 +198,7 @@ function writeHash() {
     tone: state.tone,
     tier: state.tier,
     cloudMode: state.cloudMode,
+    slabSteps: String(state.slabSteps),
     shadows: state.shadows ? "1" : "0",
   });
   history.replaceState(null, "", `#${params}`);
@@ -241,6 +248,7 @@ function useAtmosphere() {
     visibilityKm: state.visibility,
     cloudCover: state.clouds,
     cloudMode: state.cloudMode,
+    cloudSlabSteps: state.slabSteps,
   });
   lutMs = performance.now() - start;
   haze.sync(atmosphere);
@@ -395,6 +403,11 @@ function placeCamera(view) {
     // its altitude: there it is edge-on and invisible (M1 review, finding 3).
     camera.position.set(-300, 2150, 600);
     controls.target.set(-300, 2100, -400);
+  } else if (view === "inside") {
+    // In the middle of the slab, level: a whiteout there, where the sheet
+    // reads nothing (plan §11.7 E6). A fixed x/z (triage §12).
+    camera.position.set(-300, 2000, 600);
+    controls.target.set(-300, 2000, -400);
   } else if (view === "above") {
     // Above the sheet, looking down at the city; offset horizontally so the
     // look-at keeps an up vector (review finding 15).
@@ -439,6 +452,8 @@ function syncControls() {
   $("#shadows").checked = state.shadows;
   $("#tier").value = state.tier;
   $("#cloud-mode").value = state.cloudMode;
+  $("#slab-steps").value = String(state.slabSteps);
+  $("#slab-steps").disabled = state.cloudMode !== "slab";
   $("[data-values]").textContent =
     `sun ${state.elevation.toFixed(1)}° / ${state.azimuth.toFixed(0)}° · ` +
     `visibility ${state.visibility.toFixed(0)} km · ${state.exposureEv >= 0 ? "+" : ""}${state.exposureEv.toFixed(1)} EV` +
@@ -477,12 +492,27 @@ function buildControls() {
   $("#cloud-mode").addEventListener("change", (e) =>
     api.setCloudMode(e.target.value),
   );
+  $("#slab-steps").addEventListener("change", (e) =>
+    api.setCloudSlabSteps(Number(e.target.value)),
+  );
   $("#camera-view").addEventListener("change", (e) =>
     api.setView(e.target.value),
   );
 }
 
 // --- loop and test surface -----------------------------------------------------
+
+/**
+ * The cloud mesh of the current mode (the sheet or the slab): the test
+ * hooks keep their sheet-era names so the M1 e2e reads unchanged.
+ */
+function cloudMesh() {
+  const mesh =
+    scene.getObjectByName("atmosphere-cloud-sheet") ??
+    scene.getObjectByName("atmosphere-cloud-slab");
+  if (!mesh) throw new Error("no cloud mesh (cloud mode is dome)");
+  return mesh;
+}
 
 let frameMs = 0;
 let gpuMs = null;
@@ -525,7 +555,7 @@ function frame(now) {
     ? `GPU ${gpuMs === null ? "…" : gpuMs.toFixed(2)} ms`
     : "GPU n/a";
   $("[data-stats]").textContent =
-    `${state.tier} · clouds ${state.cloudMode} · shadows ${sunShadow ? `on (${sunShadow.renders} maps)` : shadowsBelowFloor ? "on (sun below 2°)" : "off"} · ${frameMs.toFixed(1)} ms/frame · ${gpu} · ${renderer.info.render.calls} draws · ` +
+    `${state.tier} · clouds ${state.cloudMode}${state.cloudMode === "slab" ? ` ×${state.slabSteps}` : ""} · shadows ${sunShadow ? `on (${sunShadow.renders} maps)` : shadowsBelowFloor ? "on (sun below 2°)" : "off"} · ${frameMs.toFixed(1)} ms/frame · ${gpu} · ${renderer.info.render.calls} draws · ` +
     `${(renderer.info.render.triangles / 1000).toFixed(0)}k tris · LUT ${lutMs.toFixed(1)} ms`;
   requestAnimationFrame(frame);
 }
@@ -686,7 +716,14 @@ Object.assign(api, {
       })(),
     };
   },
-  /** Dome (the sky's own layer) or the fly-through sheet. */
+  /** The slab's march steps (8/16/24/32): its cost knob. */
+  setCloudSlabSteps(steps) {
+    if (!SLAB_STEPS.includes(steps))
+      throw new Error(`unknown slab step count ${steps}`);
+    state.slabSteps = steps;
+    applyLook();
+  },
+  /** Dome (the sky's own layer), the fly-through sheet, or the slab. */
   setCloudMode(mode) {
     if (!CLOUD_MODES.includes(mode))
       throw new Error(`unknown cloud mode ${mode}`);
@@ -707,15 +744,11 @@ Object.assign(api, {
    * prove in the same run that it would fail without it.
    */
   setCloudSheetDepthTest(on) {
-    const sheet = scene.getObjectByName("atmosphere-cloud-sheet");
-    if (!sheet) throw new Error("no cloud sheet (cloud mode is dome)");
-    sheet.material.depthTest = Boolean(on);
+    cloudMesh().material.depthTest = Boolean(on);
   },
   /** Test surface: hide the sheet mesh (proves the dome draws no clouds). */
   setCloudSheetVisible(on) {
-    const sheet = scene.getObjectByName("atmosphere-cloud-sheet");
-    if (!sheet) throw new Error("no cloud sheet (cloud mode is dome)");
-    sheet.visible = Boolean(on);
+    cloudMesh().visible = Boolean(on);
   },
   /**
    * Test surface: the highest point of the scene's own content (the sky and

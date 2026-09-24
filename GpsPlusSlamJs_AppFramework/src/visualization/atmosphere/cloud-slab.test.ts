@@ -11,6 +11,7 @@
  * below, and an interval that never leaves the slab. Each is proven here
  * against an independent formula, never against the function's own output.
  */
+import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -29,8 +30,13 @@ import {
   cloudSlabThicknessM,
   cloudSlabThresholdThicknessM,
   cloudSlabZenithOpacity,
+  CLOUD_SLAB_FRAGMENT_GLSL,
+  createCloudSlab,
+  setCloudSlabSteps,
   type Vec3,
 } from './cloud-slab.js';
+import { ATMOSPHERE_CLOUD_GLSL } from './atmosphere-glsl.js';
+import { glslFloat } from '../../utils/glsl-float.js';
 import {
   CLOUD_LAYER,
   CLOUD_TEXTURE_SIZE,
@@ -40,7 +46,11 @@ import {
   cloudThreshold,
   combinedCloudNoise,
 } from './cloud-layer.js';
-import { CLOUD_SHEET, cloudTopRadiance } from './cloud-sheet.js';
+import {
+  CLOUD_SHEET,
+  CLOUD_TOP_LIT_GLSL,
+  cloudTopRadiance,
+} from './cloud-sheet.js';
 import { mulberry32 } from '../../test-utils/elevation-offset-scenarios.js';
 
 const S = CLOUD_SLAB;
@@ -511,5 +521,221 @@ describe('cloudSlabRenderOrder and cloudSlabFarWeight', () => {
     expect(cloudSlabFarWeight(CLOUD_SHEET.farFadeStartM)).toBe(1);
     expect(cloudSlabFarWeight(CLOUD_SHEET.farFadeEndM)).toBe(0);
     expect(cloudSlabFarWeight(S.radiusM)).toBe(0);
+  });
+});
+
+describe('CLOUD_SLAB_FRAGMENT_GLSL', () => {
+  const loop = () => {
+    const begin = CLOUD_SLAB_FRAGMENT_GLSL.indexOf('// atm-slab-loop-begin');
+    const end = CLOUD_SLAB_FRAGMENT_GLSL.indexOf('// atm-slab-loop-end');
+    expect(begin).toBeGreaterThan(0);
+    expect(end).toBeGreaterThan(begin);
+    return CLOUD_SLAB_FRAGMENT_GLSL.slice(begin, end);
+  };
+
+  // WHY: one pattern, cover and light for dome, sheet and slab, and every
+  // constant from the one place the CPU twin reads.
+  it('shares the cloud chunk and the top light, and injects every constant', () => {
+    expect(CLOUD_SLAB_FRAGMENT_GLSL).toContain(ATMOSPHERE_CLOUD_GLSL);
+    expect(CLOUD_SLAB_FRAGMENT_GLSL).toContain(CLOUD_TOP_LIT_GLSL);
+    for (const v of [
+      S.baseM,
+      S.topM,
+      S.extinctionPerM,
+      S.baseSoftM,
+      S.heightScaleM,
+      T0,
+      S.sunDepthScale,
+      S.sunMuFloor,
+      S.maxMarchM,
+      S.earlyExitTransmittance,
+    ]) {
+      expect(CLOUD_SLAB_FRAGMENT_GLSL).toContain(glslFloat(v));
+    }
+  });
+
+  // WHY (cold review finding 3, cost): inside the loop implicit derivatives
+  // are undefined, so the noise is read with an explicit level; and the
+  // light's LUT reads are hoisted, the same for every sample.
+  it('reads the noise with explicit levels in the loop and hoists the light', () => {
+    const body = loop();
+    expect(body).toContain('atmCloudNoiseLod(');
+    for (const banned of [
+      'texture2D(',
+      'texture(',
+      'atmCloudNoise(',
+      'atmCloudLit(',
+      'atmCloudTopLit(',
+    ]) {
+      expect(body).not.toContain(banned);
+    }
+  });
+
+  // WHY (triage §12 item 1): the view ray comes from the pixel, never from
+  // the mesh's interpolated position, which M1 measured breaking with the
+  // eye 0.5 m from a large triangle.
+  it('takes the view ray from gl_FragCoord', () => {
+    expect(CLOUD_SLAB_FRAGMENT_GLSL).toContain('gl_FragCoord');
+    expect(CLOUD_SLAB_FRAGMENT_GLSL).not.toMatch(/varying/);
+  });
+});
+
+describe('createCloudSlab', () => {
+  const uniforms = () => ({
+    atmCloudThreshold: { value: 0.6 },
+    atmCloudCover: { value: 0.5 },
+  });
+
+  it('is a back-faced, depth-tested, transparent prism with the default steps', () => {
+    const slab = createCloudSlab(uniforms());
+    const m = slab.material as THREE.ShaderMaterial;
+    expect(slab.name).toBe('atmosphere-cloud-slab');
+    expect(m.side).toBe(THREE.BackSide);
+    expect(m.depthTest).toBe(true);
+    expect(m.depthWrite).toBe(false);
+    expect(m.transparent).toBe(true);
+    expect(m.fog).toBe(false);
+    expect(m.defines['ATM_SLAB_STEPS']).toBe(S.defaultSteps);
+    expect(slab.frustumCulled).toBe(false);
+  });
+
+  // WHY: BackSide draws the faces that point AWAY from the camera. That is
+  // the far inside of the prism from anywhere only if every face points
+  // outward: the top cap up, the bottom cap down, the wall away from the
+  // axis. One flipped cap and the slab vanishes from below or above.
+  it('faces every triangle outward', () => {
+    const geometry = createCloudSlab(uniforms()).geometry;
+    const p = geometry.getAttribute('position');
+    const index = geometry.getIndex()!;
+    const half = THICKNESS / 2;
+    const v = (i: number) => new THREE.Vector3(p.getX(i), p.getY(i), p.getZ(i));
+    const up: number[] = [];
+    const down: number[] = [];
+    const wallVertical: number[] = [];
+    const wallOutward: number[] = [];
+    for (let k = 0; k < index.count; k += 3) {
+      const a = v(index.getX(k));
+      const b = v(index.getX(k + 1));
+      const c = v(index.getX(k + 2));
+      const normal = b.clone().sub(a).cross(c.clone().sub(a)).normalize();
+      const centre = a.add(b).add(c).divideScalar(3);
+      if (Math.abs(centre.y - half) < 1e-6) up.push(normal.y);
+      else if (Math.abs(centre.y + half) < 1e-6) down.push(normal.y);
+      else {
+        wallVertical.push(Math.abs(normal.y));
+        wallOutward.push(normal.x * centre.x + normal.z * centre.z);
+      }
+    }
+    expect(up.length).toBeGreaterThan(0);
+    expect(down.length).toBe(up.length);
+    expect(Math.min(...up)).toBeGreaterThan(0.999);
+    expect(Math.max(...down)).toBeLessThan(-0.999);
+    expect(Math.max(...wallVertical)).toBeLessThan(1e-6);
+    expect(Math.min(...wallOutward)).toBeGreaterThan(0);
+    expect(wallOutward).toHaveLength(2 * CLOUD_SHEET.sectors);
+  });
+
+  // WHY: the mesh follows the camera (the pattern is sampled in world x/z),
+  // the draw order flips at the base, and the shader's ray needs the
+  // camera's matrices and the viewport of THIS render.
+  it('follows the camera and hands the shader its ray matrices and viewport', () => {
+    const slab = createCloudSlab(uniforms());
+    const camera = new THREE.PerspectiveCamera(55, 800 / 600, 0.5, 30_000);
+    camera.position.set(100, 3200, -50);
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld();
+    const renderer = {
+      getCurrentViewport: (target: THREE.Vector4) => target.set(0, 0, 800, 600),
+    } as unknown as THREE.WebGLRenderer;
+    const call = () =>
+      slab.onBeforeRender(
+        renderer,
+        new THREE.Scene(),
+        camera,
+        slab.geometry,
+        slab.material as THREE.Material,
+        null as never
+      );
+    call();
+    expect(slab.position.x).toBe(100);
+    expect(slab.position.z).toBe(-50);
+    expect(slab.position.y).toBe((S.baseM + S.topM) / 2);
+    expect(slab.renderOrder).toBe(1);
+    const u = (slab.material as THREE.ShaderMaterial).uniforms;
+    expect(
+      (u.atmSlabInverseProjection!.value as THREE.Matrix4).equals(
+        camera.projectionMatrixInverse
+      )
+    ).toBe(true);
+    expect(
+      (u.atmSlabCameraWorld!.value as THREE.Matrix4).equals(camera.matrixWorld)
+    ).toBe(true);
+    expect((u.atmSlabViewport!.value as THREE.Vector4).toArray()).toEqual([
+      0, 0, 800, 600,
+    ]);
+    expect(u.atmSlabPixelAngle!.value).toBeCloseTo(
+      2 / (camera.projectionMatrix.elements[5] * 600),
+      12
+    );
+    camera.position.set(0, 55, 0);
+    camera.updateMatrixWorld();
+    call();
+    expect(slab.renderOrder).toBe(-1);
+  });
+
+  it('changes its step count through a new program, and refuses one it is not built for', () => {
+    const slab = createCloudSlab(uniforms());
+    const m = slab.material as THREE.ShaderMaterial;
+    const version = m.version;
+    setCloudSlabSteps(slab, 32);
+    expect(m.defines['ATM_SLAB_STEPS']).toBe(32);
+    expect(m.version).toBeGreaterThan(version);
+    expect(() => setCloudSlabSteps(slab, 12)).toThrow(RangeError);
+    expect(m.defines['ATM_SLAB_STEPS']).toBe(32);
+  });
+});
+
+describe('the sample jitter', () => {
+  // WHY (found on the look-dev page): a fixed sample point per step drew
+  // the far deck as terraced bands at level rays. The shader moves the
+  // sample inside each step per pixel; the step BOUNDS must not move, or the
+  // exact integral and a vertical ray's opacity would change with it.
+  it('moves the sample inside its step and leaves the bounds alone', () => {
+    const mid = cloudSlabSteps(16, 21_000);
+    for (const jitter of [0, 0.25, 0.9999]) {
+      const j = cloudSlabSteps(16, 21_000, jitter);
+      expect(j.starts).toEqual(mid.starts);
+      expect(j.ends).toEqual(mid.ends);
+      for (let i = 0; i < 16; i++) {
+        expect(j.samples[i]).toBeGreaterThanOrEqual(j.starts[i]!);
+        expect(j.samples[i]).toBeLessThanOrEqual(j.ends[i]!);
+      }
+    }
+    expect(() => cloudSlabSteps(16, 1000, 1.5)).toThrow(RangeError);
+    expect(() => cloudSlabSteps(16, 1000, Number.NaN)).toThrow(RangeError);
+  });
+
+  it('does not change a vertical ray through a uniform column', () => {
+    for (const jitter of [0, 0.5, 0.99]) {
+      const m = cloudSlabMarch({
+        camera: [0, 18, 0],
+        dir: [0, 1, 0],
+        steps: 16,
+        sample: () => 0.6,
+        threshold: 0.6,
+        jitter,
+      });
+      expect(m.opacity).toBeCloseTo(0.5, 9);
+    }
+  });
+
+  it('is computed per pixel in the shader, inside the loop only as the sample point', () => {
+    expect(CLOUD_SLAB_FRAGMENT_GLSL).toMatch(
+      /float jitter = fract\(.*gl_FragCoord/
+    );
+    expect(CLOUD_SLAB_FRAGMENT_GLSL).toContain(
+      'float um = (float(i) + jitter)'
+    );
+    expect(CLOUD_SLAB_FRAGMENT_GLSL).toContain('float u0 = float(i) /');
   });
 });

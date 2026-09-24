@@ -1125,3 +1125,50 @@ test("a pending shadow map survives another change in the same task", async ({
   expect(sum(off.ground) - sum(on)).toBeGreaterThan(30);
   expect(errors).toEqual([]);
 });
+
+// --- The ray-marched cloud slab (plan 2026-09-24-1010 §11-§12) ----------------
+// A first, minimal block (triage §12 item 9: the GLSL must compile the commit
+// it lands in). The full E1-E10 block follows in its own commit.
+
+/** Boot in slab mode with the drift pinned. */
+async function bootSlab(page, [u, v] = SHEET_OFFSETS[0], steps = 16) {
+  const errors = await boot(
+    page,
+    `preset=noon&tone=neutral&cloudMode=slab&slabSteps=${steps}`,
+  );
+  await page.evaluate(
+    ([a, b]) => window.__lookdev.setCloudOffset(a, b),
+    [u, v],
+  );
+  return errors;
+}
+
+// WHY: a shader that fails to compile logs a console error and draws
+// nothing, and the framework gate has no GL. From above at cover 0.9 a
+// working slab covers most of the city; a broken one changes nothing.
+test("the cloud slab compiles and covers the city from above", async ({
+  page,
+}) => {
+  const errors = await bootSlab(page);
+  expect(
+    await page.evaluate(() => window.__lookdev.stats().state.cloudMode),
+  ).toBe("slab");
+  const { shown, hidden } = await readShownHidden(page, 0.9, "above", GRID);
+  const covered = changedShare(shown, hidden);
+  // The cost of one slab frame on this renderer (SwiftShader in CI): it
+  // sizes the E1-E10 block (§11.8: above 0.3 s it runs smaller and at 8
+  // steps). Logged, never asserted: the timer is the owner's GPU.
+  const frameS = await page.evaluate(() => {
+    const d = window.__lookdev;
+    const t0 = performance.now();
+    for (let i = 0; i < 3; i++) d.readPixels([[0.5, 0.5]]);
+    return (performance.now() - t0) / 3000;
+  });
+  console.log(
+    `slab from above, cover 0.9: ${covered.toFixed(2)} covered; ${frameS.toFixed(3)} s per frame`,
+  );
+  // Declared: the sheet's floor at 0.7 cover (0.5), used at 0.9 until the
+  // E1 block measures the slab's own.
+  expect(covered).toBeGreaterThan(0.5);
+  expect(errors).toEqual([]);
+});

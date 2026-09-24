@@ -84,6 +84,24 @@ export function cloudTopRadiance(
   ];
 }
 
+/**
+ * `atmCloudTopLit`, the sunlit cloud TOP (twin of `cloudTopRadiance`),
+ * shared by the sheet and the slab (`cloud-slab.ts`), so both draw one top.
+ * Expects `ATMOSPHERE_CLOUD_GLSL` and the sky's LUT uniforms before it.
+ */
+export const CLOUD_TOP_LIT_GLSL = /* glsl */ `
+const float ATM_SHEET_TOP_ALBEDO = ${glslFloat(CLOUD_SHEET.topAlbedo)};
+
+// Twin of cloud-sheet.ts cloudTopRadiance: a top seen from above reflects
+// the sun diffusely (the sky's ground-term form), plus the sky as ambient.
+vec3 atmCloudTopLit(float r) {
+  vec3 sunAtCloud = atmSampleTransmittance(atmTransmittanceLut, r + ATM_CLOUD_ALTITUDE, atmSunDirection.y);
+  vec3 zenith = texture2D(atmSkyViewLut, atmSkyViewUv(r, vec3(0.0, 1.0, 0.0), atmSunDirection)).rgb;
+  return ATM_RADIANCE_SCALE * sunAtCloud * max(atmSunDirection.y, 0.0) * ATM_SHEET_TOP_ALBEDO / ATM_PI
+    + zenith * ATM_CLOUD_SKY_AMBIENT;
+}
+`;
+
 /** The sheet's vertex: world position out, for the fades and the noise. */
 const CLOUD_SHEET_VERTEX_GLSL = /* glsl */ `
 varying vec3 vAtmSheetWorld;
@@ -116,17 +134,8 @@ const float ATM_SHEET_NEAR_START = ${glslFloat(CLOUD_SHEET.nearFadeStartM)};
 const float ATM_SHEET_NEAR_END = ${glslFloat(CLOUD_SHEET.nearFadeEndM)};
 const float ATM_SHEET_FAR_START = ${glslFloat(CLOUD_SHEET.farFadeStartM)};
 const float ATM_SHEET_FAR_END = ${glslFloat(CLOUD_SHEET.farFadeEndM)};
-const float ATM_SHEET_TOP_ALBEDO = ${glslFloat(CLOUD_SHEET.topAlbedo)};
+${CLOUD_TOP_LIT_GLSL}
 varying vec3 vAtmSheetWorld;
-
-// Twin of cloud-sheet.ts cloudTopRadiance: a top seen from above reflects
-// the sun diffusely (the sky's ground-term form), plus the sky as ambient.
-vec3 atmCloudTopLit(float r) {
-  vec3 sunAtCloud = atmSampleTransmittance(atmTransmittanceLut, r + ATM_CLOUD_ALTITUDE, atmSunDirection.y);
-  vec3 zenith = texture2D(atmSkyViewLut, atmSkyViewUv(r, vec3(0.0, 1.0, 0.0), atmSunDirection)).rgb;
-  return ATM_RADIANCE_SCALE * sunAtCloud * max(atmSunDirection.y, 0.0) * ATM_SHEET_TOP_ALBEDO / ATM_PI
-    + zenith * ATM_CLOUD_SKY_AMBIENT;
-}
 
 void main() {
   vec3 toFragment = vAtmSheetWorld - cameraPosition;
@@ -152,8 +161,11 @@ void main() {
 }
 `;
 
-/** How the clouds are drawn: on the sky dome, or on the fly-through sheet. */
-export const CLOUD_MODES = ['dome', 'sheet'] as const;
+/**
+ * How the clouds are drawn: on the sky dome, on the fly-through sheet, or
+ * in the ray-marched slab (`cloud-slab.ts`).
+ */
+export const CLOUD_MODES = ['dome', 'sheet', 'slab'] as const;
 export type CloudMode = (typeof CLOUD_MODES)[number];
 
 /**

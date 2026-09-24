@@ -23,6 +23,7 @@ import {
 } from './atmosphere-glsl.js';
 import { EARTH_ATMOSPHERE } from './atmosphere-model.js';
 import { CLOUD_SHEET_FRAGMENT_GLSL } from './cloud-sheet.js';
+import { CLOUD_SLAB_FRAGMENT_GLSL } from './cloud-slab.js';
 import { glslFloat } from '../../utils/glsl-float.js';
 
 describe('generated shaders', () => {
@@ -35,6 +36,8 @@ describe('generated shaders', () => {
     // The cloud chunk the dome and the fly-through sheet share, and the sheet.
     clouds: ATMOSPHERE_CLOUD_GLSL,
     cloudSheet: CLOUD_SHEET_FRAGMENT_GLSL,
+    // The ray-marched slab (plan 2026-09-24-1010 §11).
+    cloudSlab: CLOUD_SLAB_FRAGMENT_GLSL,
   };
 
   // Every function this module defines must be `atm`-prefixed (or be
@@ -72,6 +75,24 @@ describe('generated shaders', () => {
     expect(TRANSMITTANCE_LUT_FRAGMENT_GLSL).toContain(
       `ATM_OPTICAL_DEPTH_STEPS = ${EARTH_ATMOSPHERE.opticalDepthSteps};`
     );
+  });
+});
+
+describe('the cloud chunk explicit-level noise (plan 2026-09-24-1010 §11.3)', () => {
+  // WHY: a march reads the noise inside a loop, where implicit derivatives
+  // are undefined; the explicit-level read must be the same two-octave sum,
+  // with the second octave one log2(frequency) coarser, as its coordinates
+  // are that much denser.
+  it('sums the same two octaves through textureLod', () => {
+    const fn = ATMOSPHERE_CLOUD_GLSL.slice(
+      ATMOSPHERE_CLOUD_GLSL.indexOf('float atmCloudNoiseLod(')
+    );
+    expect(fn.startsWith('float atmCloudNoiseLod(')).toBe(true);
+    const body = fn.slice(0, fn.indexOf('}'));
+    expect(body.split('textureLod(')).toHaveLength(3);
+    expect(body).toContain('log2(ATM_CLOUD_OCTAVE2_FREQ)');
+    expect(body).toContain('ATM_CLOUD_OCTAVE1_WEIGHT');
+    expect(body).not.toContain('texture2D(');
   });
 });
 

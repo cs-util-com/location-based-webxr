@@ -9,10 +9,15 @@
   - `ready` (true after the first frame; false again while the WebGL
     context is lost), `error` (first page error, or null);
   - `setPreset(id)`, `setToneMapping("agx" | "aces" | "neutral")`,
-    `setView("city" | "sun" | "antisun" | "lake" | "aloft" | "above")`
-    (`aloft`: at the cloud sheet's 2 km, level; `above`: 3.2 km, looking
-    down at the city), `setCloudMode("dome" | "sheet")` (the fly-through
-    sheet, plan 2026-09-24-1010), and the sheet tests' hooks
+    `setView("city" | "sun" | "antisun" | "lake" | "aloft" | "inside" | "above")`
+    (`aloft`: 2.15 km, just above the sheet; `inside`: 2 km, level, in the
+    middle of the slab; `above`: 3.2 km, looking down at the city),
+    `setCloudMode("dome" | "sheet" | "slab")` (the fly-through sheet and
+    the ray-marched slab, plan 2026-09-24-1010), `setCloudSlabSteps(8 | 16
+| 24 | 32)` (the slab's cost knob, also a `Slab steps` select enabled
+    only in slab mode, and in the readout as `clouds slab ×16`), and the
+    cloud tests' hooks, which act on whichever cloud mesh exists (their
+    sheet-era names are kept so the M1 e2e reads unchanged)
     `setCloudOffset(u, v)` (pins the drift so pixels repeat),
     `setCloudSheetVisible(bool)` and `placeCameraAt(eye, target)`;
     `setShadows(bool)` (sun shadows, the AR shadow prototype's S1: the
@@ -47,7 +52,7 @@
     preset: both exposures and both exposure-free horizon colours. The
     fallback's only GPU oracle.
 - Invariants & assumptions:
-  - State lives in the URL hash (`#preset=…&tone=…&tier=…&cloudMode=…&shadows=0|1`), so a
+  - State lives in the URL hash (`#preset=…&tone=…&tier=…&cloudMode=…&slabSteps=…&shadows=0|1`), so a
     screenshot or phone link reproduces a view; a hash change on an open
     page re-applies it (the page's own writes use `replaceState`, which
     fires no `hashchange`).

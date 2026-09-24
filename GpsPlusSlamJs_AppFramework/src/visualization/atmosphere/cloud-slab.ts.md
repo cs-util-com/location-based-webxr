@@ -10,9 +10,9 @@ to A/B against the sheet on the look-dev page. The noise sets each column's
 thickness, so the cover keeps meaning share of sky from the zenith, and a
 camera inside the layer sees a whiteout instead of the sheet's dissolve.
 
-This file holds, so far (§11.9 step 1), the constants and the CPU twin of
-everything the shader will compute. The shader, the mesh and the
-`SkyAtmosphere` wiring are the next steps.
+This file holds the constants, the CPU twin of everything the shader
+computes, the shader and the mesh. `SkyAtmosphere` owns the mesh and adds
+it only in `cloudMode: 'slab'`.
 
 ## Public API
 
@@ -32,9 +32,10 @@ everything the shader will compute. The shader, the mesh and the
 - `cloudSlabInterval(y, dir)`: the analytic part of the ray inside the slab
   and the far fade, `{ inM, outM }` or null. Throws `RangeError` for a
   non-finite height or a zero or non-finite direction.
-- `cloudSlabSteps(n, L)`: quadratic step starts, ends and samples over
-  [0, L]. Throws `RangeError` for a step count outside `CLOUD_SLAB_STEPS`
-  or a bad length.
+- `cloudSlabSteps(n, L, jitter = 0.5)`: quadratic step starts, ends and
+  samples over [0, L], each sample `jitter` of the way through its step.
+  Throws `RangeError` for a step count outside `CLOUD_SLAB_STEPS`, a bad
+  length or a jitter outside [0, 1].
 - `cloudSlabStepOpticalDepth(y, dirY, t0, t1, T)`: the step's optical
   depth, integrated exactly in height (σ·|ΔQ|/|dirY|); nearly level rays
   sample the step's middle.
@@ -50,11 +51,40 @@ everything the shader will compute. The shader, the mesh and the
 - `cloudSlabMarch(input)`: the shader's march on the CPU, returning the
   weighted `alpha`, the unweighted `opacity`, the premultiplied `colour`
   (with `light`) and `stepsTaken`.
+- `CLOUD_SLAB_FRAGMENT_GLSL`: the march (the vertex shader is
+  module-private and only covers the pixels).
+- `createCloudSlab(uniforms, steps = 16)`: the mesh, reading the given
+  uniform objects (the sky's LUTs, sun, scale and cloud uniforms) plus its
+  own ray uniforms, which `onBeforeRender` sets from the rendering camera
+  and viewport.
+- `setCloudSlabSteps(slab, steps)`: the step count, as a define (a new
+  program); `RangeError` before any change for a count it is not built for.
 - Types: `Vec3`, `CloudSlabSteps`, `CloudSlabMarchInput` (its `light` is
   `{ sunTransmittance, sunDir, zenith }`),
   `CloudSlabMarchResult`.
 
 ## Invariants & assumptions
+
+- **The view ray comes from the pixel** (`gl_FragCoord`, the inverse
+  projection, the camera's world matrix and the viewport of the current
+  render), never from the mesh's interpolated position: M1 measured 24 km
+  triangles breaking with the eye 0.5 m away. The mesh only has to cover the
+  right pixels: a prism of the sheet's ring disc as caps (top facing up,
+  bottom facing down) and a 48-segment wall, every face outward, drawn
+  `BackSide` so the far inside shows from below, inside and above.
+- **Occlusion without a depth texture:** the scene never reaches the base,
+  so the depth test against the back faces is enough (as for the sheet).
+- **Draw order:** -1 from below, +1 from inside and above, one frame late
+  (as for the sheet).
+- **A static per-pixel jitter** (interleaved gradient noise) moves each
+  step's sample point, not its bounds. A fixed sample point drew the far
+  deck as terraced bands at level rays, where one step spans kilometres of
+  ground, at 16 steps and still at 32 (seen on the look-dev page, plan
+  §12.1). The jitter trades the bands for a fine grain, since the page has
+  no temporal accumulation.
+- **Cost:** 16 steps make 32 noise reads per pixel plus the hoisted light
+  (2 sky-view and 3 transmittance reads). On SwiftShader at 1280×800 a slab
+  frame took 0.66 s (the smoke's log); the real cost is the owner's GPU.
 
 - **Cover means share of sky, from the zenith.** σ·Q(T0) = ln 2, so a
   column at the threshold is half opaque straight up and opacity rises with
@@ -105,6 +135,13 @@ m.opacity; // the column's opacity straight up
 - `cloud-slab.property.test.ts`: every point the interval allows lies in
   the slab and in the far fade, for any camera and direction; the steps
   tile any interval.
+- `cloud-slab.test.ts` also covers the shader's text (the shared chunks,
+  every constant, explicit-level reads and no LUT reads inside the loop,
+  the ray from `gl_FragCoord`, the jitter as the sample point only), the
+  prism's outward faces, the material, the camera hook's uniforms and
+  order, and the step-count setter; `sky-atmosphere.test.ts` the mode
+  wiring; `atmosphere-glsl.test.ts` `atmCloudNoiseLod`; the look-dev
+  smoke that the shader compiles and covers the city from above.
 - Mutants checked: midpoint sampling for every ray fails the exact-integral
   and vertical-opacity tests; the sun measured from the base fails the
   light test.

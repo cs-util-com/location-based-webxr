@@ -7,8 +7,9 @@
  *   pnpm run shoot:3d                         # every preset × tone map
  *   pnpm run shoot:3d -- --preset=golden      # one preset
  *   pnpm run shoot:3d -- --tone=agx           # one tone map
- *   pnpm run shoot:3d -- --view=sun           # one camera view (city | sun | antisun | lake | aloft | above)
- *   pnpm run shoot:3d -- --cloud-mode=sheet   # the fly-through cloud sheet (default: dome)
+ *   pnpm run shoot:3d -- --view=sun           # one camera view (city | sun | antisun | lake | aloft | inside | above)
+ *   pnpm run shoot:3d -- --cloud-mode=sheet   # the fly-through cloud sheet, or slab (default: dome)
+ *   pnpm run shoot:3d -- --slab-steps=8       # the slab's march steps (8 | 16 | 24 | 32; default 16)
  *   pnpm run shoot:3d -- --cover=0.5          # a cloud cover (default: each preset's)
  *   pnpm run shoot:3d -- --parity             # also print the GPU/CPU LUT parity
  *
@@ -48,8 +49,14 @@ const presets = args.has("preset") ? [args.get("preset")] : PRESETS;
 const tones = args.has("tone") ? [args.get("tone")] : TONES;
 const views = args.has("view") ? [args.get("view")] : ["city", "sun"];
 const cloudMode = args.get("cloud-mode") ?? "dome";
-if (!["dome", "sheet"].includes(cloudMode)) {
-  throw new Error(`--cloud-mode must be dome or sheet, got ${cloudMode}`);
+if (!["dome", "sheet", "slab"].includes(cloudMode)) {
+  throw new Error(`--cloud-mode must be dome, sheet or slab, got ${cloudMode}`);
+}
+const slabSteps = Number(args.get("slab-steps") ?? 16);
+if (![8, 16, 24, 32].includes(slabSteps)) {
+  throw new Error(
+    `--slab-steps must be 8, 16, 24 or 32, got ${args.get("slab-steps")}`,
+  );
 }
 const cover = args.has("cover") ? Number(args.get("cover")) : null;
 if (cover !== null && !(cover >= 0 && cover <= 1)) {
@@ -108,16 +115,18 @@ try {
   for (const preset of presets) {
     for (const tone of tones) {
       await page.evaluate(
-        ([p, t, m, c]) => {
+        ([p, t, m, c, n]) => {
           window.__lookdev.setPreset(p);
           window.__lookdev.setToneMapping(t);
+          window.__lookdev.setCloudSlabSteps(n);
           window.__lookdev.setCloudMode(m);
           if (c !== null) window.__lookdev.setCloudCover(c);
         },
-        [preset, tone, cloudMode, cover],
+        [preset, tone, cloudMode, cover, slabSteps],
       );
       const suffix =
         (cloudMode === "dome" ? "" : `-${cloudMode}`) +
+        (cloudMode === "slab" && slabSteps !== 16 ? `x${slabSteps}` : "") +
         (cover === null ? "" : `-cover${cover}`);
       for (const view of views) await shoot(`${preset}-${tone}${suffix}`, view);
     }
