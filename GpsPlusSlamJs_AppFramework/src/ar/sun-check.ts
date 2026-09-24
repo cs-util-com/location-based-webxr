@@ -74,17 +74,17 @@ export const SUN_CHECK = {
 } as const;
 
 /** Why the marker is hidden (the HUD says so). */
-export type SunHiddenReason = 'no-position' | 'no-alignment' | 'sun-down';
+type SunHiddenReason = 'no-position' | 'no-alignment' | 'sun-down';
 
 /** Why a Mark was refused. */
-export type SunMarkRefusal =
+type SunMarkRefusal =
   SunHiddenReason | 'busy' | 'moved' | 'no-frames' | 'disposed';
 
 /** What a Mark warns about. */
-export type SunMarkWarning = 'high-sun' | 'target-changed';
+type SunMarkWarning = 'high-sun' | 'target-changed';
 
 /** One accepted Mark: the raw record the recorder logs (plan §6.3), flat. */
-export interface SunSighting {
+interface SunSighting {
   readonly schema: 1;
   /** Epoch ms of the middle frame, and the window's start. */
   readonly atMs: number;
@@ -126,7 +126,7 @@ export interface SunSighting {
   readonly separationDeg: number;
 }
 
-export type SunMarkResult =
+type SunMarkResult =
   | {
       readonly ok: true;
       readonly sighting: SunSighting;
@@ -135,7 +135,7 @@ export type SunMarkResult =
   | { readonly ok: false; readonly reason: SunMarkRefusal };
 
 /** The marker's state, for a HUD line. */
-export interface SunCheckStatus {
+interface SunCheckStatus {
   readonly visible: boolean;
   readonly hiddenBecause?: SunHiddenReason;
   readonly sunAzDeg?: number;
