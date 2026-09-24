@@ -63,6 +63,10 @@ None. Entry point only, loaded by `index.html`.
   auto-elevation switch above, and passed as `startArMode`'s `sunShadow`.
   It is OFF unless asked for; the prototype also needs the auto-elevation
   group, so `?autoElevation=off` leaves it waiting for a floor.
+- **The desktop shadow compile check is switched here**
+  (`shadowCheckEnabled`, `?shadowCheck=1`, M3d): once, right after the
+  view is built, `buildingView.enableShadowCheck()`. It is a read-only
+  diagnostic for the e2e and is off unless asked for.
 - **The REAL SUN is booted and stepped here** (plan 2026-09-23-2149, M2).
   The sun clock (`sun-clock.ts`) starts from the start position, before the
   view exists (`BuildingView`'s `initialSun`, so the sky is built once):

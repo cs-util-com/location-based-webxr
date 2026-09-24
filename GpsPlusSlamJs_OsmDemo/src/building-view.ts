@@ -26,6 +26,7 @@ import {
 // The shared mesh teardown, deep-imported for the same reason as the overlay
 // above: the `/visualization` barrel would pull the whole AR/scene stack into a
 // module that already costs enough to import.
+import { enableSunShadows } from "gps-plus-slam-app-framework/visualization/sun-shadow";
 import { disposeObject3D } from "gps-plus-slam-app-framework/visualization/three-dispose";
 
 import type { CellMesh } from "./cell-mesh.js";
@@ -433,6 +434,8 @@ export class BuildingView {
   private readonly ground: THREE.Mesh<THREE.PlaneGeometry, THREE.Material>;
   /** The AR shell material while a session runs; see `setArShellMaterial`. */
   private arShellMaterial: THREE.Material | undefined;
+  /** The desktop shadow compile check is on; see `enableShadowCheck`. */
+  private shadowCheck = false;
   /** The AR sun shadow's casting; see `setArShadowCasting`. */
   private arShadowCasting = false;
   /** Bumped on every caster change, for the shadow map's update rule. */
@@ -1643,6 +1646,11 @@ export class BuildingView {
       // counting something adjacent to rendering rather than rendering.
       this.frames += 1;
       this.container.dataset["frames"] = String(this.frames);
+      // The compile check's proof that a map was really drawn (three
+      // allocates it on the first shadow pass).
+      if (this.shadowCheck && this.sun.shadow.map !== null) {
+        this.container.dataset["shadowCheck"] = "rendered";
+      }
       // Captured immediately after the render: three resets these counters at
       // the START of each render, so any later read would describe a frame that
       // has not happened yet.
@@ -2138,6 +2146,30 @@ export class BuildingView {
         material.dispose();
       }
     }
+  }
+
+  /**
+   * The desktop shadow COMPILE CHECK (`?shadowCheck=1`, shadow plan
+   * 2026-09-23-2343 §10 M3d). Shadow maps on and the view's sun casting, so
+   * every lit material the demo builds compiles its shadow-map variant (three
+   * adds `USE_SHADOWMAP` to every lit program once any light casts, whatever
+   * the object's `receiveShadow`), and the tagged casters cast.
+   *
+   * **Why it exists:** the AR sun shadow does exactly this to the same
+   * materials, and no e2e can enter AR. A patched material whose chunk no
+   * longer compiles with shadows fails silently there (a console error and a
+   * missing object); here it fails an e2e. Nothing receives, so the picture
+   * is unchanged. Once a map has been drawn the container reads
+   * `data-shadow-check="rendered"`, so the check cannot pass without
+   * having run.
+   */
+  enableShadowCheck(): void {
+    enableSunShadows(this.renderer);
+    this.sun.castShadow = true;
+    this.shadowCheck = true;
+    this.container.dataset["shadowCheck"] = "on";
+    this.setArShadowCasting(true);
+    this.requestFrame();
   }
 
   /**

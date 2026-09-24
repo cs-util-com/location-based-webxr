@@ -17,6 +17,7 @@ import {
   createShadowPlane,
   createShadowPole,
   markArShadowCaster,
+  shadowCheckEnabled,
   sunShadowEnabled,
 } from "./ar-sun-shadow";
 
@@ -129,5 +130,18 @@ describe("createFrameTimes", () => {
     for (const ms of [100, 1, 2, 3, Number.NaN, -5]) times.push(ms);
     expect(times.summary()).toEqual({ p50: 2, p95: 3, max: 3, count: 3 });
     expect(() => createFrameTimes(0)).toThrow(RangeError);
+  });
+});
+
+describe("shadowCheckEnabled", () => {
+  // WHY: the compile check is a diagnostic; it must stay off unless asked
+  // for, and it must not be switched on by the AR prototype's own switch.
+  it("is on only for its own switch, with the same values", () => {
+    expect(shadowCheckEnabled("?shadowCheck=1")).toBe(true);
+    expect(shadowCheckEnabled("?shadowCheck=on")).toBe(true);
+    expect(shadowCheckEnabled("?shadowCheck=0")).toBe(false);
+    expect(shadowCheckEnabled("")).toBe(false);
+    expect(shadowCheckEnabled("?sunShadow=1")).toBe(false);
+    expect(sunShadowEnabled("?shadowCheck=1")).toBe(false);
   });
 });

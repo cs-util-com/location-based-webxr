@@ -10,14 +10,25 @@
 
 import * as THREE from "three";
 
-/** `?sunShadow=1` (also `on` / `true`); OFF by default (plan §7 item 17). */
-const SUN_SHADOW_PARAM = "sunShadow";
-
-export function sunShadowEnabled(search: string): boolean {
-  const value = new URLSearchParams(search).get(SUN_SHADOW_PARAM);
+/** A URL switch: ON only for `1`, `on` or `true`; OFF by default (plan §7 item 17). */
+function switchOn(search: string, param: string): boolean {
+  const value = new URLSearchParams(search).get(param);
   if (value === null) return false;
   const v = value.trim().toLowerCase();
   return v === "1" || v === "on" || v === "true";
+}
+
+/** `?sunShadow=1`: the AR sun shadow prototype. */
+export function sunShadowEnabled(search: string): boolean {
+  return switchOn(search, "sunShadow");
+}
+
+/**
+ * `?shadowCheck=1`: the desktop shadow COMPILE CHECK (plan §10 M3d), a
+ * read-only diagnostic for the e2e (`BuildingView.enableShadowCheck`).
+ */
+export function shadowCheckEnabled(search: string): boolean {
+  return switchOn(search, "shadowCheck");
 }
 
 /**

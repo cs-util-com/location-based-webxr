@@ -86,7 +86,7 @@ import {
 } from "./ar-entry.js";
 import { startArMode, type ArMode } from "./ar-mode.js";
 import { autoElevationEnabled } from "./ar-elevation-auto.js";
-import { sunShadowEnabled } from "./ar-sun-shadow.js";
+import { shadowCheckEnabled, sunShadowEnabled } from "./ar-sun-shadow.js";
 import { startArWalk, type ArWalk } from "./ar-walk-controller.js";
 import { createArToast } from "./ar-toast.js";
 import { createToast } from "gps-plus-slam-app-framework/utils/toast-core";
@@ -433,6 +433,11 @@ async function main(): Promise<void> {
       }
     },
   });
+  // THE DESKTOP SHADOW COMPILE CHECK (`?shadowCheck=1`, shadow plan M3d):
+  // a read-only diagnostic for the e2e, off unless asked for.
+  if (shadowCheckEnabled(window.location.search)) {
+    buildingView.enableShadowCheck();
+  }
   // THE GROUND PICKER (W11, DEC-R3-3). Three exclusive states rather than W23's
   // checkbox: the CPU path, the GPU path, and none at all — the last of which is
   // what makes the OSM ground areas inspectable on their own, since `plates`

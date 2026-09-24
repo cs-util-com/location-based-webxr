@@ -21,6 +21,9 @@ lives in `ar-mode.ts`.
 - `sunShadowEnabled(search)`: ON only for `1`, `on` or `true` (any case,
   trimmed). Absent, empty or any other value is OFF. That is the opposite
   default to `?autoElevation`, on purpose (plan §7 item 17).
+- `shadowCheckEnabled(search)`: the same rule for `?shadowCheck`, the
+  desktop shadow compile check (`BuildingView.enableShadowCheck`, plan §10
+  M3d). Each switch reads only its own parameter.
 - `AR_SHADOW_CASTER`, `markArShadowCaster(object)`: the userData tag of an
   object that casts. It is set where the object is BUILT: ground POI pins
   (`mesh-layers.ts`), quest beacon meshes (`quest-beacon.ts`) and the pole.
@@ -63,7 +66,7 @@ if (sunShadowEnabled(location.search)) {
 
 `ar-sun-shadow.test.ts` covers:
 
-- the switch's values;
+- the switch's values, and the compile check's switch kept apart from it;
 - tagged-only casting and turning it off;
 - the pole's shape and tag;
 - the plane's material flags, size and refusals;

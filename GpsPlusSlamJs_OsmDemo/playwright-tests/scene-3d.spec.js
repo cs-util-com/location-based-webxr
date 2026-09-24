@@ -2209,3 +2209,87 @@ test.describe("the NPC agent", () => {
       .toBeGreaterThan(10_000);
   });
 });
+
+/**
+ * The desktop shadow COMPILE CHECK (`?shadowCheck=1`, shadow plan
+ * 2026-09-23-2343 §7 item 8, §10 M3d).
+ *
+ * WHY THIS EXISTS. The AR sun shadow turns shadow maps on, and three then
+ * recompiles EVERY lit material with `USE_SHADOWMAP`, the demo's patched
+ * ones included. A chunk that no longer compiles fails silently in AR: a
+ * console error and a missing object, on a phone, mid-session. No e2e can
+ * enter AR (the suite rejects `requestSession`), so this is the desktop half
+ * of the same switch, on the same materials. Nothing receives a shadow on
+ * the desktop, so the picture is the ordinary one and each layer is proven
+ * the usual way: switching it changes the frame.
+ */
+test.describe("with shadow maps on (?shadowCheck=1)", () => {
+  test("still draws buildings, cells and beacons, and the console stays clean", async ({
+    page,
+  }) => {
+    const errors = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") errors.push(message.text());
+    });
+    page.on("pageerror", (error) => errors.push(String(error)));
+    await pinQuestClock(page);
+    await stubNetwork(page);
+    await page.goto(`${AT_FIXTURE}&shadowCheck=1`);
+    await waitForRefresh(page);
+
+    // NOT VACUOUS: the switch took effect and a shadow map was really drawn
+    // (three allocates it on the first shadow pass). Without this the rest
+    // would pass on a build that never turned shadows on.
+    await expect(page.locator("#scene")).toHaveAttribute(
+      "data-shadow-check",
+      "rendered",
+    );
+    await installFrameProbe(page);
+
+    await test.step("the cells draw", async () => {
+      await stashStableFrame(page);
+      await enableCellLayer(page);
+      // MEASURED 2026-09-24 at the fixture: 132 411 differing pixels. The
+      // failure that matters reads 0 (a mutant whose cell shader breaks only
+      // under USE_SHADOWMAP drew nothing), so any floor between a few hundred
+      // and a third of the measurement gives the same verdict.
+      await expect
+        .poll(async () => (await diffFromStash(page, 24)).differing, {
+          timeout: 15_000,
+        })
+        .toBeGreaterThan(40_000);
+    });
+
+    await test.step("the buildings draw", async () => {
+      await stashStableFrame(page);
+      await page.locator("#layer-buildings").uncheck();
+      // MEASURED: 6 776 differing pixels; the floor is about a third.
+      await expect
+        .poll(async () => (await diffFromStash(page, 24)).differing, {
+          timeout: 15_000,
+        })
+        .toBeGreaterThan(2_000);
+      await page.locator("#layer-buildings").check();
+    });
+
+    await test.step("a quest beacon draws", async () => {
+      await page.locator("#geo-event").click();
+      await expect(page.locator("#map .geo-winner")).not.toHaveCount(0);
+      await stashStableFrame(page);
+      // Clearing moves nothing but the marker (the sibling beacon test);
+      // measured 248 differing pixels, and the sibling's floor of 100 holds.
+      await page.locator("#geo-event-clear").click();
+      await expect(page.locator("#map .geo-winner")).toHaveCount(0);
+      await expect
+        .poll(async () => (await diffFromStash(page, 24)).differing, {
+          timeout: 15_000,
+        })
+        .toBeGreaterThan(100);
+    });
+
+    // A shader that fails to compile logs here (THREE.WebGLProgram).
+    const noise =
+      /Rule table fetch failed|net::ERR_FAILED|Failed to load resource/;
+    expect(errors.filter((text) => !noise.test(text))).toEqual([]);
+  });
+});

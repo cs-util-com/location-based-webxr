@@ -280,6 +280,18 @@ map scored.
   casting (a source-text test pins both re-applies).
 - `arShadowCasterSignature`: `generation:count`, bumped on every re-apply;
   the shadow map's `casterGeneration`.
+- `enableShadowCheck()`: the desktop shadow COMPILE CHECK (`?shadowCheck=1`,
+  M3d). It turns shadow maps on, makes the view's sun cast and turns the
+  tagged casters on. three then compiles every lit material with
+  `USE_SHADOWMAP` (whatever the object's `receiveShadow`), which is what
+  the AR sun shadow does to the same materials in a session no e2e can
+  enter. Nothing receives, so the picture is unchanged. The container reads
+  `data-shadow-check="on"`, then `"rendered"` once the first shadow map
+  exists. The e2e `with shadow maps on (?shadowCheck=1)` in
+  `scene-3d.spec.js` asserts that marker, the cells, the buildings, a
+  beacon and a clean console. Two mutants turned it red: a cell shader
+  broken only under `USE_SHADOWMAP` (0 cell pixels plus a shader error),
+  and a sun that never casts (the marker stays `"on"`).
 - `addArShadowProps(...)` / `removeArShadowProps(...)`: the pole and the
   shadow plane go into the placed content (`this.content`), so they inherit
   the composed vertical offset like every other object.
