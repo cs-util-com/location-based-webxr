@@ -147,9 +147,10 @@ export function stopsFor(date: SolarDate, place: SunPlace): number[] {
 }
 
 /**
- * Where the clock boots on a date (DEC-SUN-4, DEC-SUN-6): the evening
- * golden hour; else the highest sun (it never reaches 3.5°); else the lowest
- * sun (midnight sun, it never drops to 3.5°); in polar night, the nearest
+ * Where the clock boots on a date (DEC-SUN-13, DEC-SUN-6): the afternoon
+ * sun at `SUN_CLOCK.bootElevationDeg`; else the highest sun (it never
+ * reaches that elevation); else the lowest sun (midnight sun, it never
+ * drops to it); in polar night, the nearest
  * day with a showable sun, searched in `direction` (0: both ways, forward
  * first).
  */

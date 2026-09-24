@@ -516,12 +516,18 @@ async function main(): Promise<void> {
   sunDateInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter" || event.key === "Escape") sunDateInput.blur();
   });
-  sunTimeInput.addEventListener("input", () => {
+  // SAMPLED WHILE DRAGGING (PR #489 review): each move re-renders the sky
+  // LUT, reads it back and re-bakes the environment
+  // (`BuildingView.setSunAngles`), so a drag moves the sun at most every
+  // 50 ms, with the value the slider holds by then, and always once after
+  // the last event (`throttle.ts`).
+  const moveSunToSlider = throttle(() => {
     const fraction = Number(sunTimeInput.value) / SUN_SLIDER_STEPS;
     moveSun(
       sliderToInstant(fraction, sunDateOf(sunInstant, sunPlace), sunPlace),
     );
-  });
+  }, 50);
+  sunTimeInput.addEventListener("input", () => moveSunToSlider());
   hotkeys.add({
     key: "t",
     description: "step the sun forward (skips the night)",

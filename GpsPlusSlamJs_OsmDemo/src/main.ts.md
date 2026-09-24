@@ -75,7 +75,9 @@ None. Entry point only, loaded by `index.html`.
   (DEC-R12-5). The controls are the `#sun-group` header block (plan
   2026-09-24-0706): it collapses with the header like WORLD and DEBUG, and
   holds the date, the `#sun-time` slider (civil dawn to civil dusk, linear
-  in time, 0…1000, DEC-SUN-15) and the readout. Keys: t/T step the day's
+  in time, 0…1000, DEC-SUN-15; sampled with `throttle` to one sun move per
+  50 ms while dragged, because each move re-renders and reads back the sky)
+  and the readout. Keys: t/T step the day's
   stops. The `#sun-date`
   input picks any date keeping the phase; its own ↑/↓ step a day or a month,
   so it keeps focus while edited and hands it back on Enter or Escape (the

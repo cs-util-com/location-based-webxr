@@ -19,6 +19,10 @@ heading error for an app to show or log.
   - `monotonicEpochMs?()` — default `performance.timeOrigin + now()`;
   - `refraction?` — air conditions (default standard air);
   - `rules?` — overrides of `SUN_CHECK` (the field sweep, plan §8.4).
+    Each must be finite and non-negative, except the two elevations
+    (`hideBelowDeg`, `minMarkElevationDeg`), which may be negative; anything
+    else throws a `RangeError` at start. A negative spread or range bound
+    would otherwise refuse every Mark silently.
 - `SunCheck`:
   - `marker`;
   - `status()` → `{ visible, hiddenBecause?: 'no-position' | 'no-alignment'

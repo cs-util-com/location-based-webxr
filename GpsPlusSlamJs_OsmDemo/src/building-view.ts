@@ -1471,10 +1471,11 @@ export class BuildingView {
    *
    * THE COST LIVES HERE, DELIBERATELY. Each call renders the sky's sky-view
    * LUT, reads it back (for the exposure and the fog colour) and re-bakes the
-   * environment map. That is affordable precisely because this is a
-   * deliberate user action rather than something a drag triggers — see
-   * `aimSun` and `sun-clock.ts`, whose stops keep the sun within civil
-   * twilight (≥ −6°).
+   * environment map. That is affordable because only the user's time
+   * controls call it, never the camera: the hotkeys, the date, and the time
+   * slider, which `main.ts` samples to one call per 50 ms while it is
+   * dragged. See `aimSun` and `sun-clock.ts`, whose
+   * stops keep the sun within civil twilight (≥ −6°).
    */
   setSunAngles(angles: SunAngles): void {
     this.sunAngles = angles;

@@ -263,13 +263,22 @@ const separationDeg = (a: Vec3, b: Vec3) =>
     Math.max(-1, Math.min(1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2]))
   ) / DEG;
 
-/** The rules with overrides, each a finite, non-negative number. */
+/**
+ * The rules that are elevations and may be negative. Named, not matched by
+ * suffix: a negative spread or range bound would refuse every Mark silently.
+ */
+const SIGNED_RULES: ReadonlySet<string> = new Set([
+  'hideBelowDeg',
+  'minMarkElevationDeg',
+]);
+
+/** The rules with overrides, each finite, and non-negative unless signed. */
 function rulesOf(overrides: Partial<SunCheckRules> | undefined): SunCheckRules {
   const rules = { ...SUN_CHECK, ...overrides };
   for (const [key, value] of Object.entries(rules)) {
-    if (!Number.isFinite(value) || (value < 0 && !key.endsWith('Deg'))) {
+    if (!Number.isFinite(value) || (value < 0 && !SIGNED_RULES.has(key))) {
       throw new RangeError(
-        `sun check rule ${key} must be finite, got ${value}`
+        `sun check rule ${key} must be finite${SIGNED_RULES.has(key) ? '' : ' and non-negative'}, got ${value}`
       );
     }
   }

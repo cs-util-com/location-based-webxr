@@ -472,6 +472,19 @@ describe('M2b: the review of the marker and the controller', () => {
     );
   });
 
+  // PR #489 review: only the two ELEVATION rules may be negative. A negative
+  // spread or range bound would refuse every Mark as 'moved', silently.
+  it('refuses a negative bound, and takes a negative elevation', () => {
+    for (const key of ['maxSpreadDeg', 'maxYawRangeDeg', 'highSunDeg']) {
+      expect(() => rig({ deps: { rules: { [key]: -0.1 } } })).toThrow(
+        RangeError
+      );
+    }
+    expect(() =>
+      rig({ deps: { rules: { hideBelowDeg: -2, minMarkElevationDeg: -1 } } })
+    ).not.toThrow();
+  });
+
   // Finding 14: a Mark waiting for frames while the marker is hidden says why.
   it('reports the hidden reason, not "no-frames", when the marker hides mid-Mark', async () => {
     vi.useFakeTimers();
