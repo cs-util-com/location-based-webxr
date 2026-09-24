@@ -31,6 +31,9 @@ import {
   createShadowPole,
 } from "./ar-sun-shadow.js";
 
+/** A point in anchor ENU, metres (x east, y north). */
+type EnuPoint = { readonly x: number; readonly y: number };
+
 /** The view seams the session needs (BuildingView implements them). */
 export interface ArShadowView {
   setArShadowCasting(on: boolean): void;
@@ -48,6 +51,12 @@ export interface ArSunShadowDeps {
   readonly origin: { readonly lat: number; readonly lon: number };
   /** Anchor ENU → scene NUE offset (`sceneAnchorOffsetNue`). */
   readonly geometricOffset: { readonly north: number; readonly east: number };
+  /**
+   * The AR-datum-gated DEM height at an anchor-ENU point, or undefined (the
+   * auto-elevation group's `terrainHeightM`). Sampled under the user for
+   * the plane and under the pole for the pole, which differ on a slope.
+   */
+  readonly demAt: (enu: EnuPoint) => number | undefined;
   /** Wall clock (production `Date.now`: the XR clock stalls in suspend). */
   readonly nowMs?: () => number;
 }
@@ -59,8 +68,6 @@ export interface ArSunShadowFrame {
   readonly userEnu: { readonly x: number; readonly y: number } | null;
   /** The camera's horizontal forward in anchor ENU (for the pole), or null. */
   readonly forwardEnu: { readonly x: number; readonly y: number } | null;
-  /** The AR-datum-gated DEM height at `userEnu`, or undefined. */
-  readonly demAtUserM: number | undefined;
   /** The content root's composed vertical offset (auto + trim + descent). */
   readonly composedM: number;
   /** Whether the floor estimate is engaged. */
@@ -69,7 +76,7 @@ export interface ArSunShadowFrame {
 
 /** Module-internal: consumers read it through `ArSunShadowStatus.state`. */
 type ArSunShadowState =
-  "on" | "waiting-for-position" | "waiting-for-floor" | "sun-low";
+  "on" | "waiting-for-position" | "waiting-for-floor" | "sun-low" | "failed";
 
 export interface ArSunShadowStatus {
   readonly state: ArSunShadowState;
@@ -85,6 +92,8 @@ export interface ArSunShadowStatus {
    * is the NEXT callback's `dt`. Absent until a map has been drawn.
    */
   readonly lastMapFrameMs?: number | undefined;
+  /** Why the session failed (state `failed`), for the HUD. */
+  readonly error?: string | undefined;
 }
 
 export interface ArSunShadowSession {
@@ -93,16 +102,12 @@ export interface ArSunShadowSession {
 }
 
 const SUN_REFRESH_MS = 1000;
-/** Where the test pole stands: 3 m ahead of the user (north without a forward), in the content root's demo frame. */
-function polePosition(
-  user: { readonly x: number; readonly y: number },
-  demM: number,
-  forward: { readonly x: number; readonly y: number } | null,
-): [number, number, number] {
+/** Where the test pole stands: 3 m ahead of the user (north without a forward), in anchor ENU. */
+function poleEnu(user: EnuPoint, forward: EnuPoint | null): EnuPoint {
   const len = forward ? Math.hypot(forward.x, forward.y) : 0;
   const [fx, fy] =
     forward && len > 0 ? [forward.x / len, forward.y / len] : [0, 1];
-  return [user.x + fx * POLE_AHEAD_M, demM, -(user.y + fy * POLE_AHEAD_M)];
+  return { x: user.x + fx * POLE_AHEAD_M, y: user.y + fy * POLE_AHEAD_M };
 }
 /** Where the test pole stands, ahead of the user when the floor engages. */
 const POLE_AHEAD_M = 3;
@@ -118,20 +123,19 @@ interface SunNow {
  */
 function readyToShade(
   input: ArSunShadowFrame,
+  demAt: (enu: EnuPoint) => number | undefined,
   sun: SunNow | undefined,
 ):
-  | Exclude<ArSunShadowState, "on">
-  | {
-      readonly user: { readonly x: number; readonly y: number };
-      readonly demM: number;
-      readonly sun: SunNow;
-    } {
-  if (input.userEnu === null || input.demAtUserM === undefined) {
+  | Exclude<ArSunShadowState, "on" | "failed">
+  | { readonly user: EnuPoint; readonly demM: number; readonly sun: SunNow } {
+  const demM = input.userEnu === null ? undefined : demAt(input.userEnu);
+  // A non-finite DEM is no position either: the rig would throw on it.
+  if (input.userEnu === null || demM === undefined || !Number.isFinite(demM)) {
     return "waiting-for-position";
   }
   if (!input.floorEngaged) return "waiting-for-floor";
   if (sun === undefined || !sunShadowActive(sun.elDeg)) return "sun-low";
-  return { user: input.userEnu, demM: input.demAtUserM, sun };
+  return { user: input.userEnu, demM, sun };
 }
 
 /**
@@ -168,6 +172,8 @@ export function startArSunShadow(deps: ArSunShadowDeps): ArSunShadowSession {
   // Set when this frame's update scheduled a map; read by the next frame.
   let mapPending = false;
   let lastMapFrameMs: number | undefined;
+  // Set once a frame threw; the session stays off from then on.
+  let error: string | undefined;
 
   const refreshSun = (): void => {
     const t = now();
@@ -210,42 +216,69 @@ export function startArSunShadow(deps: ArSunShadowDeps): ArSunShadowSession {
     lastMapFrameMs,
   });
 
+  const shade = (input: ArSunShadowFrame): ArSunShadowStatus => {
+    refreshSun();
+    const ready = readyToShade(input, deps.demAt, sun);
+    if (typeof ready === "string") {
+      off();
+      return status(ready);
+    }
+    const { user, demM } = ready;
+    // The props live in the content root's DEMO frame (x east, y up,
+    // -z north), each on the DEM under itself: the root adds the composed
+    // offset.
+    plane.position.set(user.x, demM, -user.y);
+    plane.visible = true;
+    if (!polePlaced) {
+      const at = poleEnu(user, input.forwardEnu);
+      const ground = deps.demAt(at);
+      pole.position.set(
+        at.x,
+        ground !== undefined && Number.isFinite(ground) ? ground : demM,
+        -at.y,
+      );
+      polePlaced = true;
+    }
+    pole.visible = true;
+    // A NEW SunShadow starts the light casting, and three then recompiles
+    // every lit material (programs are keyed on a casting light, not on
+    // `shadowMap.enabled`), so the frame after its first map times the
+    // recompile, not the map: it is not reported (M3 review M2).
+    const switchedOn = shadow === undefined;
+    shadow ??= createSunShadow({ light });
+    const rendersBefore = shadow.renders;
+    // The rig works in the scene root's NUE frame.
+    shadow.update({
+      sunDir: ready.sun.dir,
+      centre: [
+        user.y + deps.geometricOffset.north,
+        demM + input.composedM,
+        user.x + deps.geometricOffset.east,
+      ],
+      halfWidthM: SUN_SHADOW.halfWidthM,
+      casterGeneration: deps.view.arShadowCasterSignature,
+      casterOffsetM: input.composedM,
+    });
+    mapPending = !switchedOn && shadow.renders > rendersBefore;
+    return status("on");
+  };
+
   return {
     frame(input) {
       if (disposed) return status("waiting-for-position");
+      if (error !== undefined) return { ...status("failed"), error };
       timeFrame(input.dtS);
-      refreshSun();
-      const ready = readyToShade(input, sun);
-      if (typeof ready === "string") {
+      // A PROTOTYPE NEVER COSTS THE SESSION (M3 review M1): a throw here
+      // would abort the rest of the AR frame callback every frame (the HUD
+      // with it) and leave the light casting. It fails once instead, gives
+      // the light back, and says why for the rest of the session.
+      try {
+        return shade(input);
+      } catch (thrown) {
         off();
-        return status(ready);
+        error = thrown instanceof Error ? thrown.message : String(thrown);
+        return { ...status("failed"), error };
       }
-      const { user, demM } = ready;
-      // The props live in the content root's DEMO frame (x east, y up,
-      // -z north), at the DEM: the root adds the composed offset.
-      plane.position.set(user.x, demM, -user.y);
-      plane.visible = true;
-      if (!polePlaced) {
-        pole.position.set(...polePosition(user, demM, input.forwardEnu));
-        polePlaced = true;
-      }
-      pole.visible = true;
-      shadow ??= createSunShadow({ light });
-      const rendersBefore = shadow.renders;
-      // The rig works in the scene root's NUE frame.
-      shadow.update({
-        sunDir: ready.sun.dir,
-        centre: [
-          user.y + deps.geometricOffset.north,
-          demM + input.composedM,
-          user.x + deps.geometricOffset.east,
-        ],
-        halfWidthM: SUN_SHADOW.halfWidthM,
-        casterGeneration: deps.view.arShadowCasterSignature,
-        casterOffsetM: input.composedM,
-      });
-      mapPending = shadow.renders > rendersBefore;
-      return status("on");
     },
     dispose() {
       if (disposed) return;
@@ -261,25 +294,76 @@ export function startArSunShadow(deps: ArSunShadowDeps): ArSunShadowSession {
   };
 }
 
+/** `tryStartArSunShadow`'s inputs: what the AR session may or may not have. */
+export interface ArSunShadowStartInputs extends Omit<
+  ArSunShadowDeps,
+  "renderer" | "origin" | "demAt"
+> {
+  readonly renderer: THREE.WebGLRenderer | null;
+  readonly origin: ArSunShadowDeps["origin"] | null;
+  /** Undefined while the auto-elevation group is off (`?autoElevation=off`). */
+  readonly demAt: ArSunShadowDeps["demAt"] | undefined;
+}
+
+/**
+ * Starts the session if it can, and otherwise says why, for the HUD. A
+ * PROTOTYPE NEVER COSTS THE SESSION: nothing here throws, and a refusal
+ * touches nothing (no shadow maps, no props, no casting).
+ *
+ * The auto-elevation group is required: without the floor estimate the
+ * shadow could never come on, and "waiting for position" for good would
+ * send a field tester after GPS or alignment instead (M3 review L1).
+ */
+export function tryStartArSunShadow(
+  inputs: ArSunShadowStartInputs,
+):
+  | { readonly session: ArSunShadowSession; readonly unavailable?: undefined }
+  | { readonly session?: undefined; readonly unavailable: string } {
+  const { renderer, origin, demAt } = inputs;
+  if (renderer === null) return { unavailable: "no renderer" };
+  if (origin === null) return { unavailable: "no position fix" };
+  if (demAt === undefined) return { unavailable: "auto elevation is off" };
+  try {
+    return {
+      session: startArSunShadow({ ...inputs, renderer, origin, demAt }),
+    };
+  } catch (thrown) {
+    return {
+      unavailable: thrown instanceof Error ? thrown.message : String(thrown),
+    };
+  }
+}
+
+/** The optional parts of the HUD line, each empty when unmeasured. */
+function hudSuffixes(status: ArSunShadowStatus): {
+  sun: string;
+  frames: string;
+  mapFrame: string;
+} {
+  const t = status.frameTimes;
+  return {
+    sun:
+      status.sunElevationDeg === undefined
+        ? ""
+        : ` · sun ${status.sunElevationDeg.toFixed(0)}°`,
+    frames:
+      t === null
+        ? ""
+        : ` · frame p50 ${t.p50.toFixed(0)} p95 ${t.p95.toFixed(0)} max ${t.max.toFixed(0)} ms`,
+    mapFrame:
+      status.lastMapFrameMs === undefined
+        ? ""
+        : ` · map frame ${status.lastMapFrameMs.toFixed(0)} ms`,
+  };
+}
+
 /**
  * The HUD line for a status: why there is no shadow, or the maps rendered
  * and the frame times (p50 / p95 / max, the numbers the prototype exists to
  * measure; plan §7 item 7).
  */
 export function describeArSunShadow(status: ArSunShadowStatus): string {
-  const sun =
-    status.sunElevationDeg === undefined
-      ? ""
-      : ` · sun ${status.sunElevationDeg.toFixed(0)}°`;
-  const t = status.frameTimes;
-  const frames =
-    t === null
-      ? ""
-      : ` · frame p50 ${t.p50.toFixed(0)} p95 ${t.p95.toFixed(0)} max ${t.max.toFixed(0)} ms`;
-  const mapFrame =
-    status.lastMapFrameMs === undefined
-      ? ""
-      : ` · map frame ${status.lastMapFrameMs.toFixed(0)} ms`;
+  const { sun, frames, mapFrame } = hudSuffixes(status);
   switch (status.state) {
     case "on":
       return `shadow on · ${status.renders} map${status.renders === 1 ? "" : "s"}${sun}${frames}${mapFrame}`;
@@ -289,5 +373,7 @@ export function describeArSunShadow(status: ArSunShadowStatus): string {
       return `shadow: waiting for floor${frames}`;
     case "sun-low":
       return `shadow: sun below ${SUN_SHADOW.minSunElevationDeg}°${sun}${frames}`;
+    case "failed":
+      return `shadow: unavailable (${status.error ?? "failed"})`;
   }
 }

@@ -116,7 +116,7 @@ import {
 import * as THREE from "three";
 import {
   describeArSunShadow,
-  startArSunShadow,
+  tryStartArSunShadow,
   type ArSunShadowSession,
 } from "./ar-sun-shadow-session.js";
 
@@ -326,9 +326,10 @@ export interface ArModeDeps {
   /**
    * The AR sun shadow prototype (`?sunShadow=1`, plan 2026-09-23-2343 M3):
    * a virtual shadow of a test pole and the quest beacons, in the real sun's
-   * direction, on the floor estimate. **Absent or false is a byte-identical
-   * session.** It needs `autoElevation` (the floor estimate and the gated
-   * DEM): without it the HUD says "waiting for floor" for good.
+   * direction, on the floor estimate. **Absent or false leaves the session
+   * as it was.** It needs `autoElevation` (the floor estimate and the gated
+   * DEM): without it the shadow does not start and the HUD reads
+   * "shadow: unavailable (auto elevation is off)".
    */
   readonly sunShadow?: boolean | undefined;
   /**
@@ -1079,32 +1080,25 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
       deps.buildingView.distanceHaze(),
     );
 
-    // THE AR SUN SHADOW (`?sunShadow=1`). Started HERE, in the synchronous
-    // setup, so the renderer's shadow maps are on before the first XR frame
-    // (switching them on later recompiles every lit material mid-session).
-    // No renderer or no origin: no shadow, and the session runs as ever.
-    const shadowRenderer = getRenderer();
+    // THE AR SUN SHADOW (`?sunShadow=1`), started in the synchronous setup.
+    // Shadow maps go on here, but that does NOT spare the recompile: three
+    // keys programs on a CASTING light, so every lit material recompiles
+    // when the shadow first comes on, and again at each off-to-on switch
+    // (M3 review M2). A PROTOTYPE NEVER COSTS THE SESSION: when it cannot
+    // start (no renderer, no fix, auto elevation off, no named sun light)
+    // the session runs as ever and the HUD says why.
     let sunShadowUnavailable: string | undefined;
-    if (
-      deps.sunShadow === true &&
-      shadowRenderer !== null &&
-      deps.origin !== null
-    ) {
-      // A PROTOTYPE NEVER COSTS THE SESSION: a scene without the named sun
-      // light (an older framework) runs on without a shadow, and the HUD
-      // says why rather than showing nothing.
-      try {
-        session.sunShadow = startArSunShadow({
-          scene,
-          renderer: shadowRenderer,
-          view: deps.buildingView,
-          origin: deps.origin,
-          geometricOffset,
-        });
-      } catch (error) {
-        sunShadowUnavailable =
-          error instanceof Error ? error.message : String(error);
-      }
+    if (deps.sunShadow === true) {
+      const started = tryStartArSunShadow({
+        scene,
+        renderer: getRenderer(),
+        view: deps.buildingView,
+        origin: deps.origin,
+        geometricOffset,
+        demAt: deps.autoElevation?.terrainHeightM,
+      });
+      session.sunShadow = started.session;
+      sunShadowUnavailable = started.unavailable;
     }
 
     session.alignment = enableArWorldGroupAlignment({
@@ -1532,10 +1526,6 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
           dtS: dt,
           userEnu,
           forwardEnu,
-          demAtUserM:
-            userEnu === null
-              ? undefined
-              : deps.autoElevation?.terrainHeightM(userEnu),
           composedM: currentComposedM,
           floorEngaged: latestAuto?.engaged === true,
         });

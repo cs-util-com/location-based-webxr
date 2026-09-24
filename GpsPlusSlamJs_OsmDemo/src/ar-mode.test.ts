@@ -2589,11 +2589,63 @@ describe("the AR sun shadow (?sunShadow=1, shadow plan 2026-09-23-2343 M3)", () 
     expect(view.casting).toEqual([]);
   });
 
-  // WHY: shadow maps must be on BEFORE the first XR frame (enabling them
-  // later recompiles every lit material mid-session), the HUD must say why
-  // there is no shadow yet, and the teardown must take the props and the
+  // WHY: shadow maps must be on before the first XR frame, the HUD must say
+  // why there is no shadow yet, and the teardown must take the props and the
   // casting back before the city returns to the desktop view.
-  it("starts before the first frame, reports on the HUD, and tears down", async () => {
+  //
+  // AND THE FRAME CONVERSION (M3 review M4): the camera's world position is
+  // NUE about `zero`; the DEM is sampled in anchor ENU, which is that minus
+  // the geometric offset (north 111.32 m, east 70 m in this fixture). A
+  // swapped axis or a dropped offset samples the ground somewhere else,
+  // which no e2e can see because none can enter AR. Every sample must be at
+  // the one point (the estimator shares the conversion and the sampler).
+  it("starts before the first frame, samples the DEM under the camera, reports on the HUD, and tears down", async () => {
+    const shadowMap = withShadowMap();
+    namedSunLight();
+    const view = shadowView();
+    const container = document.createElement("div");
+    document.body.append(container);
+    const sampled: { x: number; y: number }[] = [];
+    const mode = await startArMode(
+      deps({
+        buildingView: view as unknown as ArModeDeps["buildingView"],
+        container,
+        sunShadow: true,
+        autoElevation: {
+          terrainHeightM: (enu) => {
+            sampled.push({ x: enu.x, y: enu.y });
+            return 100;
+          },
+        },
+      }),
+    );
+    expect(shadowMap.enabled).toBe(true);
+    expect(view.props.map((p) => p.name).sort()).toEqual([
+      "ar-shadow-plane",
+      "ar-shadow-pole",
+    ]);
+    expect(view.casting).toEqual([true]);
+    // The fixture's alignment has landed (a yaw), so the frame is aligned;
+    // the camera stands 30 m north and 40 m east of `zero`.
+    camera.position.set(30, 1.6, 40);
+    const frame = registerXrFrameUpdate.mock.calls[0]?.[0] as FrameFn;
+    for (let t = 1; t <= 3; t += 0.25) frame({ dt: 0.25, elapsed: t });
+    // No depth samples, so the floor estimate never engages.
+    expect(container.textContent).toContain("shadow: waiting for floor");
+    expect(sampled.length).toBeGreaterThan(0);
+    for (const p of sampled) {
+      expect(p.x).toBeCloseTo(40 - 70, 6);
+      expect(p.y).toBeCloseTo(30 - 111.32, 6);
+    }
+    mode.dispose();
+    expect(view.casting.at(-1)).toBe(false);
+    expect(view.props).toHaveLength(0);
+  });
+
+  // WHY (M3 review L1): without the auto-elevation group there is no floor
+  // estimate, so the shadow could never come on. It must not start, touch
+  // nothing, and say so, not "waiting for position" for good.
+  it("does not start without auto elevation, and says so", async () => {
     const shadowMap = withShadowMap();
     namedSunLight();
     const view = shadowView();
@@ -2606,19 +2658,15 @@ describe("the AR sun shadow (?sunShadow=1, shadow plan 2026-09-23-2343 M3)", () 
         sunShadow: true,
       }),
     );
-    expect(shadowMap.enabled).toBe(true);
-    expect(view.props.map((p) => p.name).sort()).toEqual([
-      "ar-shadow-plane",
-      "ar-shadow-pole",
-    ]);
-    expect(view.casting).toEqual([true]);
-    const frame = registerXrFrameUpdate.mock.calls[0]?.[0] as FrameFn;
-    // No `autoElevation`: no gated DEM, so the shadow waits for a position.
-    for (let t = 1; t <= 3; t += 0.25) frame({ dt: 0.25, elapsed: t });
-    expect(container.textContent).toContain("shadow: waiting for position");
-    mode.dispose();
-    expect(view.casting.at(-1)).toBe(false);
+    expect(shadowMap.enabled).toBe(false);
     expect(view.props).toHaveLength(0);
+    expect(view.casting).toEqual([]);
+    const frame = registerXrFrameUpdate.mock.calls[0]?.[0] as FrameFn;
+    for (let t = 1; t <= 3; t += 0.25) frame({ dt: 0.25, elapsed: t });
+    expect(container.textContent).toContain(
+      "shadow: unavailable (auto elevation is off)",
+    );
+    mode.dispose();
   });
 
   // WHY: the prototype must never cost the session. A scene without the
@@ -2633,13 +2681,16 @@ describe("the AR sun shadow (?sunShadow=1, shadow plan 2026-09-23-2343 M3)", () 
         buildingView: view as unknown as ArModeDeps["buildingView"],
         container,
         sunShadow: true,
+        autoElevation: { terrainHeightM: () => 100 },
       }),
     );
     expect(mode.started).toBe(true);
     expect(view.props).toHaveLength(0);
     const frame = registerXrFrameUpdate.mock.calls[0]?.[0] as FrameFn;
     for (let t = 1; t <= 3; t += 0.25) frame({ dt: 0.25, elapsed: t });
-    expect(container.textContent).toContain("shadow: unavailable");
+    expect(container.textContent).toMatch(
+      /shadow: unavailable (.*sun light.*)/,
+    );
     mode.dispose();
   });
 });
