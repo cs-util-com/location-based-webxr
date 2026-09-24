@@ -19,6 +19,16 @@
   guard.
 - `parseCameraTarget(search: string): CameraInUrl | undefined` — the read side,
   living next to its writer.
+- `lightQuery(search: string, value: string | null): string` and
+  `writeLight(url: PlaceUrl, value: string | null): void` — the third writer,
+  owning `light` only (the light dialog, plan 2026-09-24-2140). `null` removes
+  the key, so the shipped look leaves the URL clean. The value comes from
+  `serializeLightSettings` and is read back by `parseLightSettings`
+  (`light-settings.ts`).
+- `sunPinnedHref(href: string, date: string, time: string): string` — `href`
+  with `?date=` and `?time=` set and every other key kept: the light dialog's
+  Copy link, so a pick is reproduced at the sun it was made at. It is never
+  written to the address bar, so the sun pins stay read-only.
 
 ## The camera target (DEC-R13-7), and why it is a safe partial reversal
 
@@ -82,7 +92,7 @@ kann"_.
 - **`replaceState`, never `pushState`.** A walk across the map is dozens of position changes; pushing would fill the back stack so the back button undoes the walk one click at a time instead of leaving the demo. The URL tracks the current view rather than narrating how it was reached.
 - **Coordinates are written at five decimals**, matching the `toFixed(5)` in `refresh-cycle.ts`'s status message (~1.1 m). A pasted link and the line on screen therefore name the same point. This is also what makes the no-op guard in `writePlace` effective: GPS jitter below a metre produces an identical string, so the history API is not called at sample rate.
 - **The two forms are mutually exclusive in the output.** `parseStartPosition` lets `?lat=&lng=` win over `?site=`, so leaving both would parse correctly — but it would be ambiguous to the human reading the link, who is who this feature is for.
-- **Presentation state stays out** (DEC-R12-5). Every new control would otherwise have to decide whether it belongs in a URL, and an old link would silently pin choices whose meaning has since moved. Accepted cost: a shared link lands on the right place with the default presentation. The camera POSE is still out; its anchor-independent TARGET is in, per DEC-R13-7 above.
+- **Presentation state stays out** (DEC-R12-5). Every new control would otherwise have to decide whether it belongs in a URL, and an old link would silently pin choices whose meaning has since moved. Accepted cost: a shared link lands on the right place with the default presentation. The camera POSE is still out; its anchor-independent TARGET is in, per DEC-R13-7 above. The light settings are the second deliberate exception (DEC-LIGHT-4): the owner asked for a tuned look to survive a reload and travel as a link. Their value is keyed and versioned, so an old link keeps meaning what it said.
 - **Nothing is written at boot.** A bare `/` stays a bare `/` until the user actually moves. The default start is not a place the user chose, and rewriting the landing URL to assert it would be the app putting words in their mouth.
 - **`replace("")` spells the empty query as the bare path.** Passing `""` to `replaceState` is a no-op that leaves the old query in place — a trap worth knowing rather than rediscovering.
 - **`siteId` is typed `?: string | undefined` deliberately.** The repo runs `exactOptionalPropertyTypes`, and the caller holds a `string | undefined` that is cleared after every move; forcing key omission would push a conditional spread into the one call site that must stay obvious.
@@ -115,5 +125,8 @@ writePlace(placeUrl, { position });
   arbitrary viewpoints; **both writers in both orders**; unrelated parameters
   preserved; partial, blank, out-of-range and zero-distance inputs refused; and
   the no-op guard.
+- The light block in `url-state.test.ts` — the key set and removed, its
+  encoded form, all three writers in both orders, and the no-op guard; the
+  sun pins set, replaced and every other key kept.
 
 No test data required.

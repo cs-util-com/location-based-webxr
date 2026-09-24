@@ -42,9 +42,17 @@ import { parseStartPosition } from "./start-position.js";
 import {
   browserPlaceUrl,
   parseCameraTarget,
+  sunPinnedHref,
   writeCamera,
+  writeLight,
   writePlace,
 } from "./url-state.js";
+import { createLightDialog } from "./light-dialog.js";
+import {
+  describeLightSettings,
+  parseLightSettings,
+  serializeLightSettings,
+} from "./light-settings.js";
 import { describeDrawCost } from "./draw-cost.js";
 import {
   describeGeoEvent,
@@ -177,6 +185,7 @@ import {
 import { createAnchorHolder } from "./scene-anchor.js";
 import {
   bootInstant,
+  formatSolarClock,
   formatSunReadout,
   instantAt,
   instantToSlider,
@@ -498,10 +507,59 @@ async function main(): Promise<void> {
     );
     sunReadout.textContent = formatSunReadout(sunInstant, sunPlace);
   };
+  // THE LIGHT DIALOG (plan 2026-09-24-2140): the owner tunes the noon
+  // lighting live and pastes the result back. The settings travel in the URL
+  // (`?light=`, a deliberate exception to DEC-R12-5, see url-state.ts); the
+  // shipped look writes nothing.
+  const lightUrl = browserPlaceUrl(window);
+  const initialLight = parseLightSettings(window.location.search);
+  if (serializeLightSettings(initialLight) !== null) {
+    buildingView.setLightSettings(initialLight);
+  }
+  // Sampled like the camera (400 ms): a drag is a stream of input events,
+  // and browsers refuse replaceState past a rate a fast drag reaches.
+  const LIGHT_URL_SAMPLE_MS = 400;
+  const writeLightUrl = throttle((value: string | null) => {
+    writeLight(lightUrl, value);
+  }, LIGHT_URL_SAMPLE_MS);
+  const lightOpen = el("light-open");
+  const lightDialog = createLightDialog({
+    parent: el("scene"),
+    opener: lightOpen,
+    initial: initialLight,
+    onChange: (settings) => {
+      buildingView.setLightSettings(settings);
+      writeLightUrl(serializeLightSettings(settings));
+    },
+    measure: (withMargin) => {
+      // A grid still building would be measured as the previous one, or as
+      // none at all right after Cells is ticked.
+      if (withMargin && buildGrid.busy) {
+        throw new Error("the heat grid is still building, try again");
+      }
+      return {
+        ...buildingView.measureLight({ withMargin }),
+        view: groundModeLabel(
+          parseGroundMode(selectOsmView(store.getState()).groundMode),
+        ),
+      };
+    },
+    // The sun on screen is pinned into the link (the address bar never
+    // carries it), so a pasted pick is reproduced at the same sun.
+    copyText: (settings) => {
+      const date = sunDateInput.value;
+      const clock = formatSolarClock(sunInstant, sunPlace);
+      return `${describeLightSettings(settings)} | sun ${date} ${clock} solar time | ${sunPinnedHref(window.location.href, date, clock)}`;
+    },
+    writeClipboard: (text) => navigator.clipboard.writeText(text),
+    // The page's 2D error channel; created further down, before any click.
+    showError: (message) => toast.show(message),
+  });
   const moveSun = (next: number) => {
     sunInstant = next;
     buildingView.setSunAngles(sunAnglesAt(sunInstant, sunPlace));
     showSunControl();
+    lightDialog.refresh();
   };
   showSunControl();
   sunDateInput.addEventListener("change", () => {
@@ -537,6 +595,12 @@ async function main(): Promise<void> {
     key: "T",
     description: "step the sun back",
     handler: () => moveSun(stepSun(sunInstant, sunPlace, -1)),
+  });
+  lightOpen.addEventListener("click", () => lightDialog.toggle());
+  hotkeys.add({
+    key: "l",
+    description: "open or close the light settings",
+    handler: () => lightDialog.toggle(),
   });
   // THE LOOK PRESETS (§3, DEC-R6-9/10). One key cycles whole looks rather than
   // four keys toggling four axes: sixteen combinations means no combination is

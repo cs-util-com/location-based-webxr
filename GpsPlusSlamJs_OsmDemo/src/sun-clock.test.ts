@@ -24,6 +24,7 @@ import {
   SUN_CLOCK,
   bootInstant,
   daySpan,
+  formatSolarClock,
   formatSunReadout,
   instantAt,
   instantToSlider,
@@ -450,5 +451,25 @@ describe("parsing and the readout", () => {
   it("reads the boot as apparent solar time, without the date", () => {
     const text = formatSunReadout(bootInstant(SEP_23, COLOGNE), COLOGNE);
     expect(text).toMatch(/^15:47 solar time$/);
+  });
+
+  // WHY (light dialog review, 2026-09-24): Copy pins the sun as
+  // `?time=HH:MM`, so what this writes must read back through the pin's
+  // parser as the same minute, or a pasted link shows another sun.
+  it("writes a clock the ?time= pin reads back as the same minute", () => {
+    const wrong: string[] = [];
+    for (let m = 0; m < 24 * 60; m++) {
+      const clock = formatSolarClock(
+        instantAt(SEP_23, COLOGNE, m / 60),
+        COLOGNE,
+      );
+      const read = parseSolarTime(clock);
+      if (read === null || Math.round(read * 60) !== m)
+        wrong.push(`${m} → ${clock}`);
+    }
+    expect(wrong).toEqual([]);
+    expect(formatSunReadout(bootInstant(SEP_23, COLOGNE), COLOGNE)).toBe(
+      `${formatSolarClock(bootInstant(SEP_23, COLOGNE), COLOGNE)} solar time`,
+    );
   });
 });

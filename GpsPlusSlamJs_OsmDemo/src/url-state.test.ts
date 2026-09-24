@@ -26,16 +26,20 @@ import { parseStartPosition } from "./start-position.js";
 import { FAR_PLANE_M } from "./building-view.js";
 import { DEFAULT_RENDER_MULTIPLIER } from "./render-distance.js";
 import {
+  lightQuery,
+  writeLight,
   browserPlaceUrl,
   cameraQuery,
   MAX_DISTANCE_M,
   parseCameraTarget,
   placeQuery,
+  sunPinnedHref,
   writeCamera,
   writePlace,
 } from "./url-state.js";
 
 const TOWER_BRIDGE = { lat: 51.5055, lng: -0.0754 };
+const LOOKING_AT = { target: TOWER_BRIDGE, distanceM: 420 };
 
 describe("placeQuery", () => {
   it("writes the site id when the user picked a named place", () => {
@@ -216,8 +220,6 @@ describe("browserPlaceUrl", () => {
  *   the failure would look like "sharing a link sometimes loses the site".
  */
 describe("the camera target in the URL", () => {
-  const LOOKING_AT = { target: TOWER_BRIDGE, distanceM: 420 };
-
   it("writes the target and the distance under their own keys", () => {
     expect(cameraQuery("", LOOKING_AT)).toBe(
       "?clat=51.50550&clng=-0.07540&cdist=420",
@@ -430,5 +432,64 @@ describe("the camera target in the URL", () => {
     expect(replace).toHaveBeenCalledWith(
       "?clat=51.50550&clng=-0.07540&cdist=900",
     );
+  });
+});
+
+describe("the light settings in the URL (plan 2026-09-24-2140)", () => {
+  // WHY: a third writer on the same query string; it must own only its key,
+  // survive the other two writers in both orders, and drop the key when the
+  // settings are back to the shipped look (a clean URL).
+  it("owns only its key, and survives the other writers in both orders", () => {
+    const light = "v1:gain=1.8";
+    const afterLight = lightQuery(
+      cameraQuery(
+        placeQuery("", {
+          position: TOWER_BRIDGE,
+          siteId: "london-tower-bridge",
+        }),
+        LOOKING_AT,
+      ),
+      light,
+    );
+    expect(new URLSearchParams(afterLight).get("light")).toBe(light);
+    expect(afterLight).toContain("site=london-tower-bridge");
+    expect(parseCameraTarget(afterLight)).not.toBeUndefined();
+    const afterOthers = cameraQuery(
+      placeQuery(lightQuery("", light), { position: TOWER_BRIDGE }),
+      LOOKING_AT,
+    );
+    expect(new URLSearchParams(afterOthers).get("light")).toBe(light);
+    expect(lightQuery("?debug=1&light=v1:gain=2", null)).toBe("?debug=1");
+    expect(lightQuery("?light=v1:gain=2", null)).toBe("");
+  });
+
+  it("writes only when the value changes", () => {
+    const replace = vi.fn();
+    // The browser holds the ENCODED form a previous write produced.
+    const url = { search: "?light=v1%3Again%3D2", replace };
+    writeLight(url, "v1:gain=2");
+    expect(replace).not.toHaveBeenCalled();
+    writeLight(url, "v1:gain=2.1");
+    expect(replace).toHaveBeenCalledWith("?light=v1%3Again%3D2.1");
+  });
+});
+
+describe("the sun pinned into a copied link (light dialog, plan 2026-09-24-2140)", () => {
+  // WHY (review, 2026-09-24): the live URL never carries the sun (`?date=`
+  // and `?time=` are read-only boot pins), so the light dialog's Copy must
+  // add the sun on screen, or the owner's pick is reproduced at another sun.
+  it("sets the date and time, replacing old pins and keeping every other key", () => {
+    const href = sunPinnedHref(
+      "https://x.test/osm/?site=cologne&time=12:00&light=v1%3Again%3D2#h",
+      "2026-06-21",
+      "14:30",
+    );
+    const url = new URL(href);
+    expect(url.searchParams.get("date")).toBe("2026-06-21");
+    expect(url.searchParams.get("time")).toBe("14:30");
+    expect(url.searchParams.get("site")).toBe("cologne");
+    expect(url.searchParams.get("light")).toBe("v1:gain=2");
+    expect(url.pathname).toBe("/osm/");
+    expect(url.hash).toBe("#h");
   });
 });

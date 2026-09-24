@@ -57,6 +57,9 @@ Positions come from the framework's `geo/solar-position` (NOAA, geometric).
 - `formatSunReadout(ms, place)` → `"15:47 solar time"` (DEC-SUN-8:
   labelled apparent solar time, never the wall clock; no date, which the
   date field beside it shows, plan 2026-09-24-0706).
+- `formatSolarClock(ms, place)` → `"15:47"`, the clock alone, in the form
+  `parseSolarTime` reads: the light dialog pins it into its Copy link as
+  `?time=`. Every minute of a day round-trips through the pin (tested).
 - `viewerToday(now: Date)` → the viewer's own calendar date (DEC-SUN-14):
   "today" follows the device, the sun follows the map's place.
 - `daySpan(date, place)` → `{ startMs, endMs }`, the time slider's span

@@ -317,6 +317,11 @@ export function instantAt(
  * the date field beside it shows the date (the owner, 2026-09-24).
  */
 export function formatSunReadout(ms: number, place: SunPlace): string {
+  return `${formatSolarClock(ms, place)} solar time`;
+}
+
+/** "15:47": the apparent solar clock, in the form the `?time=` pin reads. */
+export function formatSolarClock(ms: number, place: SunPlace): string {
   // The epsilon (M2 review finding 6): an instant booted at HH:MM reads
   // back a hair below the minute in floating point, and a plain floor
   // showed the minute before. 1e-6 min is 60 µs, far below a displayed one.
@@ -324,7 +329,7 @@ export function formatSunReadout(ms: number, place: SunPlace): string {
   const total = Math.floor(minutes + 1e-6) % (24 * 60);
   const hh = String(Math.floor(total / 60)).padStart(2, "0");
   const mm = String(total % 60).padStart(2, "0");
-  return `${hh}:${mm} solar time`;
+  return `${hh}:${mm}`;
 }
 
 /**

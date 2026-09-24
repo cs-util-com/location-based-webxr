@@ -1385,6 +1385,31 @@ const meanChroma = (page) =>
     return count === 0 ? -1 : sum / count;
   });
 
+/** Mean luma of the warm, low-saturation pixels: the lit buildings and roads. */
+const litSurfaceLuma = (page) =>
+  page.evaluate(() => {
+    const el = document.querySelector("#scene canvas");
+    if (!(el instanceof HTMLCanvasElement)) return -1;
+    const probe = document.createElement("canvas");
+    probe.width = el.width;
+    probe.height = el.height;
+    const ctx = probe.getContext("2d");
+    if (ctx === null) return -1;
+    ctx.drawImage(el, 0, 0);
+    const { data } = ctx.getImageData(0, 0, probe.width, probe.height);
+    let sum = 0;
+    let count = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i] ?? 0;
+      const g = data[i + 1] ?? 0;
+      const b = data[i + 2] ?? 0;
+      if (r >= b && Math.max(r, g, b) - Math.min(r, g, b) < 60) {
+        sum += 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        count += 1;
+      }
+    }
+    return count === 0 ? -1 : sum / count;
+  });
 /** Mean Rec. 709 luma of the 3D canvas (recorded beside each margin). */
 const meanLuma = (page) =>
   page.evaluate(() => {
@@ -1628,31 +1653,6 @@ test.describe("the time of day", () => {
     ["civil twilight at −2.9°", "2026-09-23", "18:17", 20.8],
     ["civil twilight at −5.9°", "2026-09-23", "18:36", 16.5],
   ];
-  /** Mean luma of the warm, low-saturation pixels: the lit buildings and roads. */
-  const litSurfaceLuma = (page) =>
-    page.evaluate(() => {
-      const el = document.querySelector("#scene canvas");
-      if (!(el instanceof HTMLCanvasElement)) return -1;
-      const probe = document.createElement("canvas");
-      probe.width = el.width;
-      probe.height = el.height;
-      const ctx = probe.getContext("2d");
-      if (ctx === null) return -1;
-      ctx.drawImage(el, 0, 0);
-      const { data } = ctx.getImageData(0, 0, probe.width, probe.height);
-      let sum = 0;
-      let count = 0;
-      for (let i = 0; i < data.length; i += 4) {
-        const r = data[i] ?? 0;
-        const g = data[i + 1] ?? 0;
-        const b = data[i + 2] ?? 0;
-        if (r >= b && Math.max(r, g, b) - Math.min(r, g, b) < 60) {
-          sum += 0.2126 * r + 0.7152 * g + 0.0722 * b;
-          count += 1;
-        }
-      }
-      return count === 0 ? -1 : sum / count;
-    });
   for (const [label, date, time, approvedLit, share = 0.5] of SUN_POINTS) {
     test(`DEC-R4-5: the heat ramp stays the loudest thing at ${label}`, async ({
       page,
@@ -2291,5 +2291,117 @@ test.describe("with shadow maps on (?shadowCheck=1)", () => {
     const noise =
       /Rule table fetch failed|net::ERR_FAILED|Failed to load resource/;
     expect(errors.filter((text) => !noise.test(text))).toEqual([]);
+  });
+});
+
+/**
+ * THE LIGHT DIALOG (plan 2026-09-24-2140). The owner tunes the noon by it,
+ * so each claim is a pixel claim at a pinned high sun (the boot sun is 20°,
+ * where the gain is 1 whatever its maximum: plan §7 item 4), and the
+ * dialog's readouts are held to the sweep's own independent measures on the
+ * same frame.
+ */
+test.describe("the light dialog", () => {
+  const JUNE_NOON = `/?lat=${50.9231}&lng=${6.9445}&date=2026-06-21&time=12:00`;
+  const readoutLuma = async (page) => {
+    const text = (await page.locator("#light-readout").textContent()) ?? "";
+    return Number(/Lit surfaces (\d+(?:\.\d+)?)/.exec(text)?.[1] ?? Number.NaN);
+  };
+  /** Sets a slider as a user does: input while dragging, change on release. */
+  const slide = (page, field, value) =>
+    page.locator(`#light-${field}`).evaluate((input, v) => {
+      input.value = String(v);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    }, value);
+
+  test("opens from its button and the l key, and closes with Escape", async ({
+    page,
+  }) => {
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+    const dialog = page.locator("#light-dialog");
+    await expect(dialog).toBeHidden();
+    await page.locator("#light-open").click();
+    await expect(dialog).toBeVisible();
+    await page.locator("#light-gainMax").press("Escape");
+    await expect(dialog).toBeHidden();
+    await page.locator("body").press("l");
+    await expect(dialog).toBeVisible();
+  });
+
+  // WHY: each lever the owner tunes must move the lit surfaces the way the
+  // M0 spike measured (June noon: gain x2.2 87.4, sky light x2 76.6, EV -2.25
+  // 83.9, against 64.8), and the URL must keep the pick through a reload.
+  test("brightens noon with the gain, the sky light and the EV, and keeps it in the URL", async ({
+    page,
+  }) => {
+    await stubNetwork(page);
+    await page.goto(JUNE_NOON);
+    await waitForRefresh(page);
+    await page.locator("#light-open").click();
+    const base = await readoutLuma(page);
+    expect(base).toBeGreaterThan(50);
+    await slide(page, "gainMax", 2.2);
+    await expect.poll(() => readoutLuma(page)).toBeGreaterThan(base + 10);
+    await page.locator("#light-reset").click();
+    await slide(page, "buildingSkyLight", 2);
+    await expect.poll(() => readoutLuma(page)).toBeGreaterThan(base + 5);
+    await page.locator("#light-reset").click();
+    await slide(page, "exposureEv", -2.25);
+    await expect.poll(() => readoutLuma(page)).toBeGreaterThan(base + 10);
+    await slide(page, "gainMax", 1.8);
+    // Sampled (400 ms, like the camera), so polled rather than read at once.
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get("light"))
+      .toBe("v1:gain=1.8,ev=-2.25");
+    const tuned = await readoutLuma(page);
+    await page.reload();
+    await waitForRefresh(page);
+    await page.locator("#light-open").click();
+    await expect(page.locator("#light-gainMax")).toHaveValue("1.8");
+    // WHY (review, 2026-09-24): the sliders showing the values is not the
+    // claim; the VIEW must boot in the tuned look, or the dialog would show
+    // tuned values over the shipped look. The same brightness as before the
+    // reload: within 2, which is ten times the drift between page loads
+    // (measured 0.2 once, 2026-09-24) and a tenth of what the tuned look adds
+    // (about 20 at EV -2.25, plan §8), so any value from about 0.5 to 10
+    // gives the same verdict.
+    expect(Math.abs((await readoutLuma(page)) - tuned)).toBeLessThan(2);
+    expect(tuned).toBeGreaterThan(base + 10);
+    await expect(page.locator("#light-exposureEv")).toHaveValue("-2.25");
+  });
+
+  // WHY (plan §7 item 4): the dialog's readouts must equal the sweep's own
+  // measures on the same view, or the owner would tune by a number the gate
+  // does not use. The margin is compared in the default ground mode.
+  test("reads the same brightness and heat-grid margin as the sweep", async ({
+    page,
+  }) => {
+    await stubNetwork(page);
+    await page.goto(JUNE_NOON);
+    await waitForRefresh(page);
+    await page.locator("#layer-cells").uncheck();
+    await settledChroma(page);
+    const inlineLit = await litSurfaceLuma(page);
+    await page.locator("#light-open").click();
+    // Tolerances from the measurement (2026-09-24: 65.0 vs 65.0, margin 5.31
+    // vs 5.31 on the same view): the readout rounds to 0.1 and 0.01, so a
+    // real divergence in either measure shows well above them.
+    expect(Math.abs((await readoutLuma(page)) - inlineLit)).toBeLessThan(0.2);
+    const inlineMargin = await marginFor(page, "cpu-slope");
+    await page.locator("#light-check").click();
+    await expect(page.locator("#light-readout")).toContainText(
+      "Heat grid adds",
+    );
+    const text = (await page.locator("#light-readout").textContent()) ?? "";
+    const margin = Number(/adds ([\d.-]+)/.exec(text)?.[1]);
+    console.log(
+      `light dialog parity: lit ${inlineLit.toFixed(1)} vs ${(await readoutLuma(page)).toFixed(1)}; margin ${inlineMargin.toFixed(2)} vs ${margin.toFixed(2)}`,
+    );
+    expect(Math.abs((await readoutLuma(page)) - inlineLit)).toBeLessThan(0.2);
+    expect(Math.abs(margin - inlineMargin)).toBeLessThan(0.05);
+    expect(text).toContain(margin >= 5 ? "ok" : "below the bound");
   });
 });

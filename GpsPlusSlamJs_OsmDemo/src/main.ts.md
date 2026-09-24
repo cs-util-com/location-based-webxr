@@ -86,6 +86,19 @@ None. Entry point only, loaded by `index.html`.
   (`map-and-cells.spec.js`). `#sun-readout` shows
   labelled APPARENT SOLAR time, without the date. A re-anchor relocates the
   sun keeping its phase.
+- **The light dialog** (`light-dialog.ts`, plan 2026-09-24-2140) is opened by
+  the `#light-open` button in `#sun-group` and by the `l` hotkey. The
+  settings are read from `?light=` once at boot and applied only when they
+  differ from the shipped look. Every change goes to
+  `buildingView.setLightSettings` and, sampled at 400 ms like the camera,
+  to `writeLight` (browsers refuse `replaceState` past a rate a drag
+  reaches). A sun move refreshes the dialog's brightness. Its margin check
+  refuses while the heat grid is still building (`buildGrid.busy`) and
+  names the ground mode. Copy carries the settings, the sun's date and
+  solar clock, and the page URL with the sun pinned in
+  (`sunPinnedHref`), so the pick is reproduced at the same sun; a failed
+  copy goes to the toast. The dialog is created before `moveSun`, which
+  refreshes it, so no sun move can reach it undefined.
 - **A RE-ANCHOR clears the route; an ordinary publish does not.** Every point on
   the drawn polyline is expressed in the scene's ENU frame, and round 5B's whole
   guarantee is that an ordinary step leaves that frame alone. So the route

@@ -16,14 +16,21 @@
  * meaning has moved. The accepted cost is that a shared link lands on the right
  * place with the default presentation.
  *
+ * THE LIGHT SETTINGS WENT IN AS A DELIBERATE EXCEPTION (plan
+ * 2026-09-24-2140, DEC-LIGHT-4): presentation state, which DEC-R12-5 keeps
+ * out, but the owner asked for a tuned look to survive a reload and travel as
+ * a link. Its value is keyed and versioned (`light-settings.ts`), so an old
+ * link keeps meaning what it said, and it is absent while the look is the
+ * shipped one.
+ *
  * THE CAMERA'S TARGET WENT IN LATER (DEC-R13-7), and the POSE still stays out.
  * DEC-R12-5 rejected a pose because one recorded against a scene anchor is
  * meaningless after a re-anchor; a target in lat/lng has no anchor in it, so
  * that objection does not reach this encoding.
  *
- * TWO WRITERS, SIX KEYS, AND NEITHER TOUCHES THE OTHER'S. `placeQuery` owns
- * `lat`/`lng`/`site`; `cameraQuery` owns `clat`/`clng`/`cdist`. Anything else in
- * the query survives both, so a debug flag lives through a walk and a future
+ * THREE WRITERS, SEVEN KEYS, AND NONE TOUCHES ANOTHER'S. `placeQuery` owns
+ * `lat`/`lng`/`site`; `cameraQuery` owns `clat`/`clng`/`cdist`; `lightQuery`
+ * owns `light`. Anything else in the query survives all three, so a debug flag lives through a walk and a future
  * parameter needs no change here. They share one query string through
  * `history.replaceState`, so whichever runs last decides all of it — preserving
  * what you do not own is the whole reason that is safe.
@@ -228,6 +235,26 @@ function clampDistance(distanceM: number): number {
 }
 
 /**
+ * `search` with the light settings' value (`serializeLightSettings`) set,
+ * or its key removed for `null` (the shipped look). The third writer: it
+ * owns `light` only and preserves every other key, like the two above.
+ */
+export function lightQuery(search: string, value: string | null): string {
+  const params = new URLSearchParams(search);
+  if (value === null) params.delete("light");
+  else params.set("light", value);
+  const query = params.toString();
+  return query === "" ? "" : `?${query}`;
+}
+
+/** Writes the light settings' value into `url`, and nothing when unchanged. */
+export function writeLight(url: PlaceUrl, value: string | null): void {
+  const next = lightQuery(url.search, value);
+  if (next === url.search) return;
+  url.replace(next);
+}
+
+/**
  * Writes `camera` into `url`, and does nothing when it is already there.
  *
  * THE GUARD IS WHAT MAKES THE DEBOUNCE SUFFICIENT. A drag settles into a
@@ -337,4 +364,21 @@ export function browserPlaceUrl(win: PlaceUrlWindow): PlaceUrl {
       );
     },
   };
+}
+
+/**
+ * `href` with the sun pinned (`?date=YYYY-MM-DD&time=HH:MM`, the read-only
+ * boot pins) and every other key kept: the light dialog's Copy link, so a
+ * pasted pick is reproduced at the sun it was made at. Never written to the
+ * address bar, which keeps DEC-R12-5 for the sun.
+ */
+export function sunPinnedHref(
+  href: string,
+  date: string,
+  time: string,
+): string {
+  const url = new URL(href);
+  url.searchParams.set("date", date);
+  url.searchParams.set("time", time);
+  return url.href;
 }

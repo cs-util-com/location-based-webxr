@@ -39,7 +39,11 @@ exposureAdaptation, exposureEv }`.
 
 ## Invariants & assumptions
 
-- The URL's field order is fixed; reordering breaks shared links.
+- A tuning tool: in AR the road materials keep the tuned surface gain (the
+  AR shell replaces only the buildings'), so AR is unchanged only at the
+  defaults.
+- The URL's fields are keyed, so their order does not matter; a new field
+  or new defaults leave an old link meaning what it said.
 - Values are rounded to three decimals on the way in and out, so a round
   trip through the URL is exact for any value a slider can produce.
 
@@ -48,7 +52,8 @@ exposureAdaptation, exposureEv }`.
 ```ts
 const settings = parseLightSettings(location.search);
 const gain = surfaceGainAt(sunElevationRad, gainOf(settings));
-history.replaceState(null, "", `?light=${serializeLightSettings(settings)}`);
+// null at the defaults removes the key; every other key is kept.
+writeLight(browserPlaceUrl(window), serializeLightSettings(settings));
 ```
 
 ## Tests

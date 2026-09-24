@@ -1498,13 +1498,17 @@ export class BuildingView {
   /**
    * The light dialog's readouts, measured on this view as it stands: the
    * lit-surface brightness with the heat grid hidden, and the chroma the grid
-   * adds (the DEC-R4-5 margin; `null` when no grid is drawn). Renders
-   * synchronously and reads with `gl.readPixels` straight after each render:
-   * a copied canvas shows the last COMPOSITED frame, not the one just drawn
-   * (the recorded 0 margin, plan §7). The grid's mesh and outlines are
-   * restored as found.
+   * adds (the DEC-R4-5 margin; `null` when no grid is drawn, or when
+   * `withMargin` is false, which skips the second render). Renders
+   * synchronously and reads with `gl.readPixels` straight after each render,
+   * so each read is exactly the frame just drawn with the grid as set. The
+   * grid's mesh and outlines are restored as found, also when a render
+   * throws.
    */
-  measureLight(): { litLuma: number; margin: number | null } {
+  measureLight({ withMargin = true }: { withMargin?: boolean } = {}): {
+    litLuma: number;
+    margin: number | null;
+  } {
     const read = (): Uint8Array => {
       this.prepareFrame();
       this.renderer.render(this.scene, this.camera);
@@ -1526,17 +1530,20 @@ export class BuildingView {
     const grid = [this.cellMesh, this.cellOutlines].filter(
       (o): o is NonNullable<typeof o> => o !== undefined && o.visible,
     );
-    for (const o of grid) o.visible = false;
-    const without = read();
-    const litLuma = litSurfaceLuma(without);
-    let margin: number | null = null;
-    if (grid.length > 0) {
+    try {
+      for (const o of grid) o.visible = false;
+      const without = read();
+      const litLuma = litSurfaceLuma(without);
+      let margin: number | null = null;
+      if (withMargin && grid.length > 0) {
+        for (const o of grid) o.visible = true;
+        margin = meanChroma(read()) - meanChroma(without);
+      }
+      return { litLuma, margin };
+    } finally {
       for (const o of grid) o.visible = true;
-      margin = meanChroma(read()) - meanChroma(without);
+      this.requestFrame();
     }
-    for (const o of grid) o.visible = true;
-    this.requestFrame();
-    return { litLuma, margin };
   }
 
   /** Before every render: the haze and the sky light on buildings. */
