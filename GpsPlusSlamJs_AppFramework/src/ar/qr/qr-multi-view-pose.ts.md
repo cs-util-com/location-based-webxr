@@ -23,25 +23,28 @@ whose camera poses SLAM supplies, constrain both. (QR near-frontal pose plan
   - `options.maxStarts` (default 3): how many starts are refined.
   - Result:
     - `rotation`: the code's world rotation, `[x, y, z, w]`;
-    - `position`: the mean of the views' own code positions;
-    - `costPx`: the RMS corner error over all views;
-    - `views`: the number of views used;
+    - `position`: the mean of the used views' own code positions;
+    - `costPx`: the RMS corner error over all used views;
+    - `viewRmsPx`: each used view's own RMS corner error, in input order -
+      its median is the fused window's robust fit statistic
+      (`qr-fused-pose.ts`);
+    - `views`: the number of views used; `droppedViews`: those left out
+      as unusable (below);
     - `tiltSigmaDeg`: the tilt's FORMAL 1-sigma for 1 px of corner noise,
       along its worst direction (`Infinity` when undetermined). Relative
       and optimistic: see "Tilt uncertainty" below before using it;
     - `starts`: distinct starts refined; `iterations`: accepted
       Gauss-Newton steps summed over them (rejected damping tries, the
       ranking pass and the uncertainty's Jacobian are extra work).
+  - An UNUSABLE view is dropped and counted, not fatal (M3b design review,
+    plan §16 #7): not 4 finite corners in front-facing winding
+    (`validateQuad`), bad intrinsics, a non-finite camera pose or one whose
+    quaternion norm is more than 1e-3 from 1, or no single-frame solve or
+    real candidate.
   - `null` when:
-    - there is no view, or `sizeM` is not a positive finite number;
+    - no usable view is left, or `sizeM` is not a positive finite number;
     - an option is out of range (`robustScalePx <= 0`, `maxStarts < 1`,
       `maxIterations < 1` or NaN);
-    - any view is unusable: not 4 finite corners in front-facing winding
-      (`validateQuad`), bad intrinsics, a non-finite camera pose or one
-      whose quaternion norm is more than 1e-3 from 1, or no single-frame
-      solve or real candidate. ONE such view nulls the whole window: the
-      caller filters views first (M3b uses `validateQuad`, as the raw path
-      already does);
     - no start converges.
 
 ## How it works
@@ -130,8 +133,13 @@ if (res && res.costPx < 2) useRotation(res.rotation);
   - a single oblique view;
   - the capped pull of one bad corner (10/25/50 px);
   - `tiltSigmaDeg` ordering (still vs arc);
-  - invalid input and options, including a non-unit camera quaternion and a
-    window with one bad view among good ones;
+  - invalid input and options, including a non-unit camera quaternion;
+  - a window with unusable views among good ones: they are dropped and
+    counted, the rest gives the exact rotation;
+  - each used view's own corner error (`viewRmsPx`), one bad view high,
+    the median low;
+  - the same rotation (to 1e-6 deg) and cost whatever size it is told
+    (0.05-1 m): the rotation is size-invariant;
   - under noise, the joint rotation beats a single frame by a wide margin,
     and with one start the CHEAPEST is refined;
   - planted bugs (2026-09-24): a refinement that returns its start, a

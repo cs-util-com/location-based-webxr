@@ -33,6 +33,10 @@ prototype's variants and the production multi-view solve
     whether today's stability gate opens on this window and the two spreads
     it judges (it opens at <= 3 cm and <= 5 deg) - consumers only ever see
     gated poses (M3b design review, plan §16 #1);
+  - `prodFitPx`, `prodViews`: the production solve's median per-view corner
+    error (px; Infinity without a solve) and its view count - the fused
+    window's gate inputs, so the sweep can replay the gate for any
+    threshold (M3b b1);
   - `errRefitDeg`: the position re-fit spike - the prototype's fixedT solve
     with each view's position re-fitted (least squares on the corner rays)
     to the production rotation, one pass; NaN when absent.

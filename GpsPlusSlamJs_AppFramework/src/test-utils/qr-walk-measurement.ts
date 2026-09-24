@@ -14,6 +14,7 @@ import {
 } from '../ar/qr/qr-pose';
 import { PlanarPnpSquare, solveLinear } from '../ar/qr/planar-pnp';
 import { evaluateQrPoseStability } from '../ar/qr/qr-pose-aggregation';
+import { interpolatingMedian } from '../utils/median';
 import { perspectiveProjection, renderQrFrame } from './synthetic-qr-frame';
 import { mulberry32 } from './elevation-offset-scenarios';
 import { rotationAngleDeg, zxingDetect } from './qr-zxing-pipeline';
@@ -97,6 +98,14 @@ export interface WalkRow {
    * position re-fitted to the production rotation (one pass); NaN when absent.
    */
   errRefitDeg: number;
+  /**
+   * The production solve's fit statistic (the MEDIAN of the used views'
+   * own corner errors, px; Infinity without a solve) and its view count:
+   * what the fused window's gate judges, so a sweep can replay the gate
+   * for any threshold (M3b b1, plan §19).
+   */
+  prodFitPx: number;
+  prodViews: number;
   /**
    * The code normal's error split into PITCH (elevation, the axis the
    * phone's wall check measures) and YAW (azimuth), deg; NaN when missing.
@@ -408,6 +417,8 @@ function productionColumns(
   production: Pose | null;
   productionMs: number;
   errRefitDeg: number;
+  prodFitPx: number;
+  prodViews: number;
 } {
   const t0 = performance.now();
   const solved = solveQrPoseMultiView(
@@ -421,7 +432,13 @@ function productionColumns(
   );
   const productionMs = performance.now() - t0;
   if (!solved) {
-    return { production: null, productionMs, errRefitDeg: Number.NaN };
+    return {
+      production: null,
+      productionMs,
+      errRefitDeg: Number.NaN,
+      prodFitPx: Infinity,
+      prodViews: 0,
+    };
   }
   const refitted = views.map((v) => refitPosition(v, solved.rotation));
   const refit = refitted.every((p) => p !== null)
@@ -438,6 +455,10 @@ function productionColumns(
     errRefitDeg: refit
       ? rotationAngleDeg(refit.rotationWorld, o.codeWorld.rotation)
       : Number.NaN,
+    prodFitPx: solved.viewRmsPx.length
+      ? interpolatingMedian(solved.viewRmsPx)
+      : Infinity,
+    prodViews: solved.views,
   };
 }
 
@@ -455,11 +476,8 @@ function scoreWindow(
     views.flatMap((v) => realCandidateStarts(v, SIZE_M))
   );
   const { errFusedDeg, fusedAxis } = prototypeColumns(views, starts, o);
-  const { production, productionMs, errRefitDeg } = productionColumns(
-    views,
-    starts,
-    o
-  );
+  const { production, productionMs, errRefitDeg, prodFitPx, prodViews } =
+    productionColumns(views, starts, o);
   // Binned by the TRUE geometry, whatever pose the solvers were handed.
   const rays = trueCameras.map((c) => rayAngleDeg(c, o.codeWorld));
   return {
@@ -474,6 +492,8 @@ function scoreWindow(
     errProductionDeg: errDeg(production, truth),
     productionMs,
     errRefitDeg,
+    prodFitPx,
+    prodViews,
     axisErrDeg: {
       raw: axisErr(latestRaw, truth),
       stable: axisErr(stable, truth),

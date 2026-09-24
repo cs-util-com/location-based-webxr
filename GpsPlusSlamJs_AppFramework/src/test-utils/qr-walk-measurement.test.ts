@@ -36,6 +36,9 @@ describe('measureWalk (M0 walk harness)', () => {
     expect(last.stableSpread.translationM).toBeLessThan(0.03);
     // The re-fit spike's column exists and is sane on clean data.
     expect(last.errRefitDeg).toBeLessThan(1);
+    // The fused gate's inputs: the joint fit on clean frames is sub-pixel.
+    expect(last.prodViews).toBe(last.window);
+    expect(last.prodFitPx).toBeLessThan(1);
     expect(last.axisErrDeg.production.pitch).toBeLessThan(1);
     expect(last.window).toBe(rows.length);
   }, 120_000);

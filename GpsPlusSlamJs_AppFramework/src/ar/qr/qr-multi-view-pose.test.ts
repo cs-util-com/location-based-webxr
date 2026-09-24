@@ -290,26 +290,76 @@ describe('solveQrPoseMultiView', () => {
     ).toBeNull();
   });
 
-  // Why this test matters: ONE unusable view nulls the whole window (M3b
-  // pre-filters with validateQuad). Checked on mixed windows, since a check
-  // that looked at only some views would pass every one-view case above.
-  it('rejects a window with one unusable view among good ones', () => {
-    const good = walkViews(tilted(4), 'arc', 20, 4);
+  // Why this test matters (M3b design review §16 #7): one unusable view in
+  // a live window - a mirrored quad, a NaN corner, a bad camera pose - must
+  // not throw the whole window away; it is dropped and counted, and the
+  // rest still gives the exact rotation. Checked on mixed windows, since a
+  // check that looked at only some views would pass every one-view case.
+  it('drops an unusable view among good ones and solves the rest', () => {
+    const code = tilted(4);
+    const good = walkViews(code, 'arc', 20, 4);
     const mirrored = { ...good[1]!, corners: [...good[1]!.corners].reverse() };
-    expect(solveQrPoseMultiView(good, SIZE_M)).not.toBeNull();
-    expect(
-      solveQrPoseMultiView([good[0]!, mirrored, good[2]!, good[3]!], SIZE_M)
-    ).toBeNull();
     const nan: Point2[] = [
       { x: Number.NaN, y: 1 },
       ...good[3]!.corners.slice(1),
     ];
-    expect(
-      solveQrPoseMultiView(
-        [...good.slice(0, 3), { ...good[3]!, corners: nan }],
-        SIZE_M
-      )
-    ).toBeNull();
+    const res = solveQrPoseMultiView(
+      [good[0]!, mirrored, good[2]!, { ...good[3]!, corners: nan }],
+      SIZE_M
+    )!;
+    expect(res.views).toBe(2);
+    expect(res.droppedViews).toBe(2);
+    expect(rotationAngleDeg(res.rotation, code.rotation)).toBeLessThan(1e-3);
+    // Only when NO usable view is left is there no answer.
+    expect(solveQrPoseMultiView([mirrored], SIZE_M)).toBeNull();
+  });
+
+  // Why this test matters (§16 #6): the fused window's gate judges the fit by
+  // the MEDIAN of each view's own corner error, so one bad view cannot trip
+  // it - which needs the per-view errors, in the order of the views used.
+  it("reports each used view's own corner error", () => {
+    const code = tilted(10);
+    const cams = walkCameraPoses({
+      kind: 'arc',
+      codeWorld: code,
+      distanceM: 1.2,
+      extent: 40,
+      steps: 6,
+    });
+    const exact = solveQrPoseMultiView(
+      cams.map((c) => view(c, code)),
+      SIZE_M
+    )!;
+    expect(exact.viewRmsPx).toHaveLength(6);
+    for (const e of exact.viewRmsPx) expect(e).toBeLessThan(1e-3);
+    const bad = solveQrPoseMultiView(
+      cams.map((c, i) => view(c, code, i === 2 ? 25 : 0)),
+      SIZE_M
+    )!;
+    const sorted = [...bad.viewRmsPx].sort((a, b) => a - b);
+    expect(bad.viewRmsPx[2]!).toBeGreaterThan(5);
+    expect(sorted[2]!).toBeLessThan(1);
+  });
+
+  // Why this test matters (plan §15, confirmed by the review's algebra): the
+  // joint rotation does not depend on the printed size, so the fused pose
+  // needs no size input - scaling the size scales every view's
+  // camera-relative geometry uniformly.
+  it('gives the same rotation whatever size it is told', () => {
+    const rand = mulberry32(5);
+    const code = tilted(8, 'y');
+    const views = walkViews(code, 'arc', 20, 6, 1.2, 10).map((v) =>
+      noisy(v, 0.5, rand)
+    );
+    const ref = solveQrPoseMultiView(views, SIZE_M)!;
+    for (const sizeM of [0.05, 0.5, 1]) {
+      const res = solveQrPoseMultiView(views, sizeM)!;
+      expect(
+        rotationAngleDeg(res.rotation, ref.rotation),
+        `${sizeM}`
+      ).toBeLessThan(1e-6);
+      expect(res.costPx).toBeCloseTo(ref.costPx, 9);
+    }
   });
 
   // Why this test matters: the point of the module - under corner noise,

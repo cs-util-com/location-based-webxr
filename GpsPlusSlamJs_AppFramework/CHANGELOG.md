@@ -42,6 +42,16 @@
 
 ### Added
 
+- **The fused QR pose window** (QR near-frontal pose plan 2026-09-23-2314,
+  M3b b1): `evaluateFusedQrPose(entries, options?, previous?)`,
+  `selectFusedWindow` and `createFusedQrPoseTracker` on `/ar`. The window
+  is the newest run of detections in one tracking epoch without a long time
+  gap (and, optionally, near the newest raw position); its rotation comes
+  from the joint multi-view solve, with today's averaging as the fallback
+  when the views contradict each other. `stable` needs enough views and a
+  good median per-view fit, with hysteresis. The tracker solves once per new
+  entries array. Nothing calls it yet (M3b b2-b6); the thresholds are
+  provisional until the b1 sweep.
 - **The AR scene's lights are named** (AR sun shadow prototype plan
   2026-09-23-2343, M3a): `SCENE_NODE.AMBIENT_LIGHT` and `SCENE_NODE.SUN_LIGHT`
   (the directional light fixed at (0, 10, 5)), set by `createSceneHierarchy`,
@@ -115,6 +125,12 @@
 
 ### Changed
 
+- **`solveQrPoseMultiView` drops unusable views instead of failing**
+  (QR near-frontal pose plan 2026-09-23-2314, §16 #7): a view with a
+  mirrored or non-finite quad, bad intrinsics, a non-unit camera quaternion
+  or no single-frame solve is left out and counted in the new
+  `droppedViews`; `null` only when no usable view is left. The result also
+  gains `viewRmsPx`, each used view's own corner error.
 - **QR corners now come out in SYMBOL order (TL, TR, BR, BL of the printed
   code)** (QR near-frontal pose plan 2026-09-23-2314, M1c).
   `BarcodeDetectorFrontEnd` reorders the native detector's corners from the

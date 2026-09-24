@@ -65,8 +65,16 @@ export interface QrMultiViewPoseResult {
   position: Vector3;
   /** RMS corner error over all views at `rotation`, px. */
   costPx: number;
+  /**
+   * Each USED view's own RMS corner error at `rotation`, px, in input order
+   * (dropped views left out). Its median judges the fit robustly: one bad
+   * corner or view moves it little (plan 2026-09-23-2314 §16 #6).
+   */
+  viewRmsPx: number[];
   /** The number of views the solve used. */
   views: number;
+  /** Views dropped as unusable (see `solveQrPoseMultiView`). */
+  droppedViews: number;
   /**
    * The formal 1-sigma of the code's TILT (the direction of its normal) for
    * 1 px of corner noise, degrees, along its worst direction; `Infinity`
@@ -471,16 +479,46 @@ function rankedStarts(
     .map((s) => s.q);
 }
 
-/** Every view's seed, or `null` when the views or `sizeM` are unusable. */
-function seedsOf(
+/**
+ * The usable views with their seeds; an unusable view (see
+ * `isUsableView`, or no single-frame solve / real candidate) is dropped.
+ */
+function usableSeeds(
   views: readonly QrViewObservation[],
   sizeM: number
-): ViewSeed[] | null {
-  if (views.length === 0 || !(sizeM > 0) || !Number.isFinite(sizeM))
-    return null;
-  if (!views.every(isUsableView)) return null;
-  const seeds = views.map((view) => seedOf(view, sizeM));
-  return seeds.every((seed): seed is ViewSeed => seed !== null) ? seeds : null;
+): { views: QrViewObservation[]; seeds: ViewSeed[] } {
+  const used: QrViewObservation[] = [];
+  const seeds: ViewSeed[] = [];
+  for (const view of views) {
+    const seed = isUsableView(view) ? seedOf(view, sizeM) : null;
+    if (!seed) continue;
+    used.push(view);
+    seeds.push(seed);
+  }
+  return { views: used, seeds };
+}
+
+/** Whether the size and the options are in range (NaN fails every check). */
+function inRange(
+  sizeM: number,
+  robustScalePx: number,
+  maxStarts: number,
+  maxIterations: number
+): boolean {
+  return (
+    sizeM > 0 &&
+    Number.isFinite(sizeM) &&
+    robustScalePx > 0 &&
+    maxStarts >= 1 &&
+    maxIterations >= 1
+  );
+}
+
+/** Each view's own RMS corner error from the stacked residuals (8 per view). */
+function perViewRmsPx(r: readonly number[]): number[] {
+  const out: number[] = [];
+  for (let i = 0; i < r.length; i += 8) out.push(rmsPx(r.slice(i, i + 8)));
+  return out;
 }
 
 /** The lowest-cost refinement over `starts`, and the iterations it all took. */
@@ -502,10 +540,11 @@ function bestRefinement(
 
 /**
  * The code's world rotation from several views of it, with the mean of the
- * views' own positions. `null` when there is no view, `sizeM` is not a
- * positive finite number, an option is out of range, any view is unusable
- * (not four finite corners in front-facing winding, bad intrinsics or camera
- * pose, no real candidate), or no start converges.
+ * used views' own positions. An unusable view (not four finite corners in
+ * front-facing winding, bad intrinsics, a non-finite or non-unit camera
+ * pose, no single-frame solve or real candidate) is DROPPED and counted in
+ * `droppedViews`. `null` when no usable view is left, `sizeM` is not a
+ * positive finite number, an option is out of range, or no start converges.
  */
 export function solveQrPoseMultiView(
   views: readonly QrViewObservation[],
@@ -517,12 +556,11 @@ export function solveQrPoseMultiView(
     maxIterations = DEFAULT_MAX_ITERATIONS,
     maxStarts = DEFAULT_MAX_STARTS,
   } = options;
-  if (!(robustScalePx > 0) || !(maxStarts >= 1) || !(maxIterations >= 1))
-    return null;
-  const seeds = seedsOf(views, sizeM);
-  if (!seeds) return null;
+  if (!inRange(sizeM, robustScalePx, maxStarts, maxIterations)) return null;
+  const { views: used, seeds } = usableSeeds(views, sizeM);
+  if (used.length === 0) return null;
   const pr: Problem = {
-    views,
+    views: used,
     object: buildObjectPoints(sizeM),
     positions: seeds.map((seed) => seed.position),
     robustScalePx,
@@ -536,7 +574,9 @@ export function solveQrPoseMultiView(
     rotation: best.q,
     position: [mean(0), mean(1), mean(2)],
     costPx: rmsPx(best.r),
-    views: views.length,
+    viewRmsPx: perViewRmsPx(best.r),
+    views: used.length,
+    droppedViews: views.length - used.length,
     tiltSigmaDeg: tiltSigmaDeg(pr, best),
     starts: starts.length,
     iterations,

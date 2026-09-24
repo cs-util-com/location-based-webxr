@@ -157,6 +157,17 @@ export {
   solveQrPoseMultiView,
 } from './qr-multi-view-pose.js';
 
+// --- qr-fused-pose (the windowed joint rotation, its gate and fallback) ---
+export {
+  type QrFusedEntry,
+  type QrFusedPoseOptions,
+  type QrFusedPose,
+  type FusedQrPoseTracker,
+  selectFusedWindow,
+  evaluateFusedQrPose,
+  createFusedQrPoseTracker,
+} from './qr-fused-pose.js';
+
 // --- qr-capture-cadence (capture interval default + bounds) ---
 export {
   DEFAULT_QR_CAPTURE_INTERVAL_MS,

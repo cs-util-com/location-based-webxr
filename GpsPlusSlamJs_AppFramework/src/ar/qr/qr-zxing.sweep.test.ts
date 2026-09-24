@@ -461,6 +461,41 @@ function refitLines(rows: readonly TaggedRow[]): string[] {
   return lines;
 }
 
+/**
+ * The fused window's joint-fit gate (M3b b1, plan §18-§19), replayed for a
+ * grid of minimum view counts and fit thresholds: per band, the share of
+ * windows it opens and the p95 error of what it lets through. (Hysteresis is
+ * not replayed; the windows are the harness's, up to 8 views.)
+ */
+function fusedGateLines(rows: readonly TaggedRow[]): string[] {
+  const bands = BANDS.slice(0, -1).map((lo, i) => [lo, BANDS[i + 1]!] as const);
+  const lines = [
+    'minViews fitPx | ' +
+      bands.map(([lo, hi]) => `${lo}-${hi}: open% p95`).join(' | '),
+  ];
+  for (const minViews of [3, 5, 8]) {
+    for (const maxFitPx of [0.5, 1, 1.5, 2, 3, 5]) {
+      const cells = bands.map(([lo, hi]) => {
+        const r = rows.filter((x) => x.reachedDeg >= lo && x.reachedDeg < hi);
+        const open = r.filter(
+          (x) => x.prodViews >= minViews && x.prodFitPx <= maxFitPx
+        );
+        const pct = r.length ? Math.round((100 * open.length) / r.length) : 0;
+        const p95 = open.length
+          ? stats(open.map((x) => x.errProductionDeg)).split('/')[1]
+          : '-';
+        return `${String(pct).padStart(3)}% ${p95}`;
+      });
+      lines.push(
+        `${String(minViews).padStart(8)} ${String(maxFitPx).padStart(5)} | ${cells.join(' | ')}`
+      );
+    }
+  }
+  const fits = rows.map((x) => x.prodFitPx).filter(Number.isFinite);
+  lines.push(`median per-view fit over all windows (px): ${stats(fits)}`);
+  return lines;
+}
+
 function walkReport(rows: readonly TaggedRow[]): string[] {
   const same = sameFrames(rows);
   return [
@@ -468,6 +503,7 @@ function walkReport(rows: readonly TaggedRow[]): string[] {
     ...stillAndAxisLines(same),
     ...gateLines(same),
     ...refitLines(same),
+    ...fusedGateLines(same),
   ];
 }
 
