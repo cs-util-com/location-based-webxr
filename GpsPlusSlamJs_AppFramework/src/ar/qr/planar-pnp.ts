@@ -380,6 +380,23 @@ export function ippePoseCandidates(H: Homography): PoseCandidate[] {
   return candidates;
 }
 
+/**
+ * The candidates of {@link ippePoseCandidates} that can be the true pose: the
+ * smaller-depth root `τ = 1/σ_max(g)`, both signs (the mirror-flip pair). The
+ * other root, `τ = 1/σ_min(g)`, has `τ²·(G1 + G2) > 2`, so at least one column
+ * would need a negative squared z-component: it is clamped to 0 and the
+ * result is a rotation only because `nearestRotation3x3` forces it into one.
+ * Its larger depth is what gives it away (QR near-frontal pose plan
+ * 2026-09-23-2314, §6 finding 1). Used by the
+ * multi-view solve; {@link PlanarPnpSquare} still picks among all candidates.
+ */
+export function realIppeCandidates(H: Homography): PoseCandidate[] {
+  const candidates = ippePoseCandidates(H);
+  const depth = (c: PoseCandidate) => Math.hypot(c.t[0], c.t[1], c.t[2]);
+  const minDepth = Math.min(...candidates.map(depth));
+  return candidates.filter((c) => depth(c) <= minDepth * (1 + 1e-9));
+}
+
 /** Assemble a pose candidate from the aligned-frame 2×2 block + z-components. */
 function buildCandidate(
   g00: number,

@@ -42,6 +42,15 @@
 
 ### Added
 
+- **One QR code rotation from several views** (QR near-frontal pose plan
+  2026-09-23-2314, M3a): `solveQrPoseMultiView(views, sizeM, options?)` on
+  `/ar` solves a static code's world rotation jointly over detections from
+  different camera poses, which a single near-frontal frame cannot pin down
+  (its tilt, and its mirror flip). Returns the rotation, the mean of the
+  views' own positions, the RMS corner error, a tilt uncertainty
+  (`tiltSigmaDeg`) and the work done; `null` on unusable input. Pure and
+  synchronous; nothing calls it yet (the tracking wiring is M3b). Also
+  `realIppeCandidates(H)`: the IPPE candidates that can be the true pose.
 - **The shadow-casting sun light** (AR sun shadow prototype plan
   2026-09-23-2343, M2): **`visualization/sun-shadow`** (deep import):
   `createSunShadow({ light })` drives a `DirectionalLight` from the rig and

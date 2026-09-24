@@ -144,9 +144,18 @@ export {
   homographyFromCorrespondences,
   nearestRotation3x3,
   ippePoseCandidates,
+  realIppeCandidates,
   rotationToRodrigues,
   PlanarPnpSquare,
 } from './planar-pnp.js';
+
+// --- qr-multi-view-pose (one code rotation from several views) ---
+export {
+  type QrViewObservation,
+  type QrMultiViewPoseOptions,
+  type QrMultiViewPoseResult,
+  solveQrPoseMultiView,
+} from './qr-multi-view-pose.js';
 
 // --- qr-capture-cadence (capture interval default + bounds) ---
 export {

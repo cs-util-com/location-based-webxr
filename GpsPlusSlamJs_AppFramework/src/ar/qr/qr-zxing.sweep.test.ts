@@ -324,9 +324,12 @@ function sameFrames(rows: readonly TaggedRow[]): TaggedRow[] {
   return rows.filter(
     (x) =>
       x.window >= 5 &&
-      [x.errRawDeg, x.errStableDeg, ...Object.values(x.errFusedDeg)].every(
-        Number.isFinite
-      )
+      [
+        x.errRawDeg,
+        x.errStableDeg,
+        x.errProductionDeg,
+        ...Object.values(x.errFusedDeg),
+      ].every(Number.isFinite)
   );
 }
 
@@ -356,10 +359,10 @@ function p95Interval(
   return `[${quantile(p95s, 0.05).toFixed(1)}, ${quantile(p95s, 0.95).toFixed(1)}]`;
 }
 
-/** Per band: every method's p50/p95/max, then the p95 intervals (stable vs fixedT). */
+/** Per band: every method's p50/p95/max, then the p95 intervals (stable, fixedT, prod). */
 function bandLines(rows: readonly TaggedRow[]): string[] {
   const lines = [
-    'reached deg | n (walks) | raw | stable | fixedT | freeT | shared6 (p50/p95/max deg)',
+    'reached deg | n (walks) | raw | stable | fixedT | prod | freeT | shared6 (p50/p95/max deg)',
   ];
   for (let i = 0; i < BANDS.length - 1; i++) {
     const [lo, hi] = [BANDS[i]!, BANDS[i + 1]!];
@@ -373,10 +376,11 @@ function bandLines(rows: readonly TaggedRow[]): string[] {
         stats(r.map((x) => x.errRawDeg)),
         stats(r.map((x) => x.errStableDeg)),
         stats(r.map((x) => x.errFusedDeg.rotSharedFixedT!)),
+        stats(r.map((x) => x.errProductionDeg)),
         stats(r.map((x) => x.errFusedDeg.rotSharedFreeT!)),
         stats(r.map((x) => x.errFusedDeg.shared6!)),
       ].join(' | '),
-      `            p95 90% interval (walks resampled): stable ${p95Interval(r, (x) => x.errStableDeg, lo + 1)} | fixedT ${p95Interval(r, (x) => x.errFusedDeg.rotSharedFixedT!, lo + 2)}`
+      `            p95 90% interval (walks resampled): stable ${p95Interval(r, (x) => x.errStableDeg, lo + 1)} | fixedT ${p95Interval(r, (x) => x.errFusedDeg.rotSharedFixedT!, lo + 2)} | prod ${p95Interval(r, (x) => x.errProductionDeg, lo + 3)}`
     );
   }
   return lines;
@@ -391,11 +395,13 @@ function stillAndAxisLines(rows: readonly TaggedRow[]): string[] {
       `raw ${p95(rows.map((x) => x.axisErrDeg.raw[key]))}`,
       `stable ${p95(rows.map((x) => x.axisErrDeg.stable[key]))}`,
       `fixedT ${p95(rows.map((x) => x.axisErrDeg.fused.rotSharedFixedT![key]))}`,
+      `prod ${p95(rows.map((x) => x.axisErrDeg.production[key]))}`,
     ].join(' | ');
   return [
-    `still walk (n ${still.length}): raw ${stats(still.map((x) => x.errRawDeg))} | stable ${stats(still.map((x) => x.errStableDeg))} | fixedT ${stats(still.map((x) => x.errFusedDeg.rotSharedFixedT!))}`,
+    `still walk (n ${still.length}): raw ${stats(still.map((x) => x.errRawDeg))} | stable ${stats(still.map((x) => x.errStableDeg))} | fixedT ${stats(still.map((x) => x.errFusedDeg.rotSharedFixedT!))} | prod ${stats(still.map((x) => x.errProductionDeg))}`,
     `pitch p95 (all rows): ${axes('pitch')}`,
     `yaw p95 (all rows):   ${axes('yaw')}`,
+    `prod ms per solve (this machine): ${stats(rows.map((x) => x.productionMs))}`,
   ];
 }
 

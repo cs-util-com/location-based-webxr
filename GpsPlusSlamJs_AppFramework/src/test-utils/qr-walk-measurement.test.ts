@@ -26,6 +26,8 @@ describe('measureWalk (M0 walk harness)', () => {
     expect(last.reachedDeg).toBeGreaterThan(20);
     expect(last.errRawDeg).toBeLessThan(3);
     expect(last.errFusedDeg.rotSharedFreeT!).toBeLessThan(1);
+    expect(last.errProductionDeg).toBeLessThan(1);
+    expect(last.axisErrDeg.production.pitch).toBeLessThan(1);
     expect(last.window).toBe(rows.length);
   }, 120_000);
 

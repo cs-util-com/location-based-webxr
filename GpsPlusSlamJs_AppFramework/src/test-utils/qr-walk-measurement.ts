@@ -24,6 +24,7 @@ import {
   type MultiViewVariant,
   type ViewObservation,
 } from './qr-multiview-prototype';
+import { solveQrPoseMultiView } from '../ar/qr/qr-multi-view-pose';
 
 /** A launch URL of realistic length (QR version 5-8 at level Q). */
 const PAYLOAD =
@@ -75,6 +76,10 @@ export interface WalkRow {
   /** Today's windowed stable pose over the raw poses; NaN before one exists. */
   errStableDeg: number;
   errFusedDeg: Partial<Record<MultiViewVariant, number>>;
+  /** The production multi-view solve (M3a) on the same window; NaN when null. */
+  errProductionDeg: number;
+  /** Its wall-clock time on this machine, ms (reported, never asserted). */
+  productionMs: number;
   /**
    * The code normal's error split into PITCH (elevation, the axis the
    * phone's wall check measures) and YAW (azimuth), deg; NaN when missing.
@@ -83,6 +88,7 @@ export interface WalkRow {
     raw: AxisErr;
     stable: AxisErr;
     fused: Partial<Record<MultiViewVariant, AxisErr>>;
+    production: AxisErr;
   };
 }
 
@@ -285,6 +291,17 @@ function scoreWindow(
       truth
     );
   }
+  const t0 = performance.now();
+  const production = solveQrPoseMultiView(
+    views.map((v) => ({
+      corners: v.corners,
+      cameraPose: v.cameraWorld,
+      intrinsics: v.intrinsics,
+    })),
+    SIZE_M,
+    o.robustScalePx === undefined ? {} : { robustScalePx: o.robustScalePx }
+  );
+  const productionMs = performance.now() - t0;
   // Binned by the TRUE geometry, whatever pose the solvers were handed.
   const rays = trueCameras.map((c) => rayAngleDeg(c, o.codeWorld));
   return {
@@ -294,10 +311,15 @@ function scoreWindow(
     errRawDeg: err(latestRaw),
     errStableDeg: err(stable),
     errFusedDeg,
+    errProductionDeg: production
+      ? rotationAngleDeg(production.rotation, truth)
+      : Number.NaN,
+    productionMs,
     axisErrDeg: {
       raw: axisErr(latestRaw, truth),
       stable: axisErr(stable, truth),
       fused: fusedAxis,
+      production: axisErr(production, truth),
     },
   };
 }
