@@ -42,6 +42,12 @@
 
 ### Added
 
+- **A cloud layer to fly through** (look-dev plan 2026-09-24-1010):
+  `SkyAtmosphere.configure({ cloudMode: 'sheet' })` draws the clouds on a
+  camera-following disc 2 km up (the same pattern, cover and light as the
+  sky's layer, with a sunlit top seen from above), which a camera can fly
+  through and look down on; `cloudMode` reads it back. The default
+  `'dome'` is unchanged and adds nothing to the scene.
 - **The AR sun check** (sun-overlay plan 2026-09-24-0100, M1-M3): deep
   imports **`ar/sun-check-geometry`** (the sun's direction, the sighting
   error, `alignmentYawDeg`), **`ar/sun-marker`** (the virtual sun and the

@@ -51,6 +51,11 @@ import {
   createCloudTexture,
 } from './cloud-layer.js';
 import {
+  CLOUD_MODES,
+  createCloudSheet,
+  type CloudMode,
+} from './cloud-sheet.js';
+import {
   type AtmosphereDevice,
   type AtmosphereUniforms,
   type LutName,
@@ -192,6 +197,16 @@ export class SkyAtmosphere {
     atmCloudThreshold: { value: 2 },
     atmCloudOffset: { value: new THREE.Vector2() },
   };
+  /**
+   * The VISIBLE sky's cloud threshold: the real one in dome mode, 2 (clear)
+   * in sheet mode, where the sheet draws the clouds. The bake keeps the real
+   * one either way, so the lighting does not change with the mode (plan
+   * 2026-09-24-1010 §2).
+   */
+  private readonly visibleCloudThreshold = { value: 2 };
+  private mode: CloudMode = 'dome';
+  /** The fly-through sheet, while `cloudMode` is 'sheet'. */
+  private sheet: THREE.Mesh | undefined;
 
   constructor(options: SkyAtmosphereOptions) {
     try {
@@ -239,7 +254,13 @@ export class SkyAtmosphere {
     const geometry = new THREE.BoxGeometry(2, 2, 2);
     this.sky = new THREE.Mesh(
       geometry,
-      this.skyMaterial('atmosphere-sky', 1, this.uniforms.atmRadianceToScene, 1)
+      this.skyMaterial(
+        'atmosphere-sky',
+        1,
+        this.uniforms.atmRadianceToScene,
+        1,
+        this.visibleCloudThreshold
+      )
     );
     this.sky.name = 'atmosphere-sky';
     this.sky.frustumCulled = false;
@@ -254,7 +275,8 @@ export class SkyAtmosphere {
       'atmosphere-sky-bake',
       0,
       this.bakeScale,
-      0
+      0,
+      this.clouds.atmCloudThreshold
     );
     const bakeMesh = new THREE.Mesh(geometry, this.bakeMaterial);
     bakeMesh.frustumCulled = false;
@@ -269,7 +291,8 @@ export class SkyAtmosphere {
     name: string,
     sunDisc: number,
     scale: THREE.IUniform<number>,
-    clampHorizon: number
+    clampHorizon: number,
+    threshold: THREE.IUniform<number>
   ): THREE.ShaderMaterial {
     return new THREE.ShaderMaterial({
       name,
@@ -280,6 +303,7 @@ export class SkyAtmosphere {
       uniforms: {
         ...this.uniforms,
         ...this.clouds,
+        atmCloudThreshold: threshold,
         atmSunDiscEnabled: { value: sunDisc },
         atmClampHorizon: { value: clampHorizon },
         atmRadianceToScene: scale,
@@ -372,13 +396,17 @@ export class SkyAtmosphere {
     sunDirection?: DirectionLike;
     visibilityKm?: number;
     cloudCover?: number;
+    /** Dome (the sky's own layer) or the fly-through sheet. */
+    cloudMode?: CloudMode;
   }): void {
     // Validate everything before changing anything.
+    const mode = this.changedMode(change.cloudMode);
     const mie = this.changedMie(change.visibilityKm);
     const sun = this.movedSun(change.sunDirection);
     const cover = this.changedCover(change.cloudCover);
     const firstSun = this.sun === undefined && sun !== undefined;
     if (cover !== undefined) this.applyCover(cover);
+    this.applyMode(mode);
     if (mie !== undefined) {
       this.visibility = change.visibilityKm!;
       this.uniforms.atmMieExtinction.value = mie;
@@ -410,6 +438,54 @@ export class SkyAtmosphere {
     // Cover 0 gives an infinite threshold; 2 is above any noise value and
     // keeps the uniform finite.
     this.clouds.atmCloudThreshold.value = Math.min(cloudThreshold(cover), 2);
+    this.syncVisibleClouds();
+  }
+
+  /** The current cloud mode. */
+  get cloudMode(): CloudMode {
+    return this.mode;
+  }
+
+  /** The new mode, or undefined if unchanged. Validates. */
+  private changedMode(mode: CloudMode | undefined): CloudMode | undefined {
+    if (mode === undefined) return undefined;
+    if (!(CLOUD_MODES as readonly string[]).includes(mode)) {
+      throw new RangeError(
+        `cloud mode must be one of ${CLOUD_MODES.join(', ')}, got ${String(mode)}`
+      );
+    }
+    return mode === this.mode ? undefined : mode;
+  }
+
+  /**
+   * Adds or removes the sheet (undefined: unchanged). No re-bake: the bake keeps the dome clouds in
+   * both modes, so only the visible clouds change.
+   */
+  private applyMode(mode: CloudMode | undefined): void {
+    if (mode === undefined) return;
+    this.mode = mode;
+    if (mode === 'sheet') {
+      // Spread, not cloned: the sheet reads the SAME uniform objects as the
+      // sky (LUTs, sun, scale, cloud cover, offset and the real threshold).
+      this.sheet = createCloudSheet({ ...this.uniforms, ...this.clouds });
+      this.scene.add(this.sheet);
+    } else {
+      this.removeSheet();
+    }
+    this.syncVisibleClouds();
+  }
+
+  private syncVisibleClouds(): void {
+    this.visibleCloudThreshold.value =
+      this.mode === 'sheet' ? 2 : this.clouds.atmCloudThreshold.value;
+  }
+
+  private removeSheet(): void {
+    if (this.sheet === undefined) return;
+    this.scene.remove(this.sheet);
+    this.sheet.geometry.dispose();
+    (this.sheet.material as THREE.Material).dispose();
+    this.sheet = undefined;
   }
 
   /** The new sea-level Mie extinction, or undefined if unchanged. Validates. */
@@ -550,6 +626,7 @@ export class SkyAtmosphere {
     this.sky.geometry.dispose();
     (this.sky.material as THREE.Material).dispose();
     this.bakeMaterial.dispose();
+    this.removeSheet();
     if (this.environment !== undefined) {
       if (this.scene.environment === this.environment.texture)
         this.scene.environment = null;

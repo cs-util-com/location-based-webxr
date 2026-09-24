@@ -18,7 +18,7 @@ observerAltitudeKm = 0.2, sunIntensity = 1 })` — adds `sky` to the scene.
   First call renders all three LUTs; later calls only the sky view; an
   unchanged sun does nothing.
 - `setVisibilityKm(km)` — rebuilds every LUT.
-- `configure({ sunDirection?, visibilityKm?, cloudCover? })` — all at once,
+- `configure({ sunDirection?, visibilityKm?, cloudCover?, cloudMode? })` — all at once,
   ONE rebuild or re-bake (a preset change); validates everything before
   changing anything. `setSun`, `setVisibilityKm` and `setClouds` delegate
   to it.
@@ -27,6 +27,15 @@ observerAltitudeKm = 0.2, sunIntensity = 1 })` — adds `sky` to the scene.
   threshold, `cloud-layer.ts`); re-bakes the environment only (the LUTs do
   not depend on clouds); unchanged cover is free. Cover does NOT dim the
   sun light (parked for the owner, plan §13).
+- `cloudMode` (getter) and `configure({ cloudMode: 'dome' | 'sheet' })`: where the
+  clouds are drawn. `'dome'` (the default) is the sky's own layer and adds
+  nothing to the scene. `'sheet'` adds the fly-through sheet
+  ([`cloud-sheet.ts.md`](cloud-sheet.ts.md)) to the owned scene and clears the
+  VISIBLE sky's cloud threshold (its own uniform object), so there is one
+  layer, not two. The environment bake keeps the real threshold in both
+  modes, so reflections and the diffuse light do not change with the mode,
+  and a mode change needs no re-bake. `dispose()` removes and frees the
+  sheet. An unknown mode is a `RangeError` before anything changes.
 - `advanceClouds(seconds, windKmPerSecond = 0.012)` — drift; no GPU work;
   both arguments validated (finite, seconds ≥ 0).
 - `applySunLight(light)` — colour (chroma) and intensity

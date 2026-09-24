@@ -598,3 +598,98 @@ describe('SkyAtmosphere clouds (M2 review fixes)', () => {
     expect(bake.uniforms.atmClampHorizon!.value).toBe(0);
   });
 });
+
+describe('SkyAtmosphere cloud mode (fly-through sheet plan 2026-09-24-1010)', () => {
+  const sheetIn = (scene: THREE.Scene) =>
+    scene.getObjectByName('atmosphere-cloud-sheet') as THREE.Mesh | undefined;
+  const threshold = (material: THREE.Material) =>
+    (material as THREE.ShaderMaterial).uniforms.atmCloudThreshold!
+      .value as number;
+  const bakeMaterial = (device: FakeDevice) =>
+    (device.bakedScene!.children[0] as THREE.Mesh).material as THREE.Material;
+
+  // WHY: dome mode must stay exactly what OsmDemo and every other caller get
+  // today: nothing added to their scene.
+  it('adds nothing in the default dome mode', () => {
+    const { atmosphere, scene } = setup();
+    atmosphere.configure({ sunDirection: UP, cloudCover: 0.5 });
+    expect(sheetIn(scene)).toBeUndefined();
+  });
+
+  // WHY (plan §2, review findings 9 and 13): one layer, not two, and the
+  // lighting unchanged. The visible sky's clouds clear, the sheet draws them,
+  // and the environment bake keeps the dome clouds, so reflections and the
+  // diffuse light do not change when the mode flips (no re-bake needed).
+  it('draws the clouds on the sheet, clears them from the visible sky, keeps the bake', () => {
+    const { atmosphere, scene, device } = setup();
+    atmosphere.configure({ sunDirection: UP, cloudCover: 0.5 });
+    const real = threshold(atmosphere.sky.material as THREE.Material);
+    expect(real).toBeLessThan(2);
+    const bakes = device.bakes;
+    atmosphere.configure({ cloudMode: 'sheet' });
+    const sheet = sheetIn(scene)!;
+    expect(sheet).toBeDefined();
+    expect(threshold(atmosphere.sky.material as THREE.Material)).toBe(2);
+    expect(threshold(sheet.material as THREE.Material)).toBe(real);
+    expect(threshold(bakeMaterial(device))).toBe(real);
+    expect(device.bakes).toBe(bakes);
+    // The sheet reads the sky's own uniforms (one update reaches both).
+    const sky = atmosphere.sky.material as THREE.ShaderMaterial;
+    const sheetUniforms = (sheet.material as THREE.ShaderMaterial).uniforms;
+    expect(sheetUniforms.atmSunDirection).toBe(sky.uniforms.atmSunDirection);
+    expect(sheetUniforms.atmRadianceToScene).toBe(
+      sky.uniforms.atmRadianceToScene
+    );
+    expect(sheetUniforms.atmCloudOffset).toBe(sky.uniforms.atmCloudOffset);
+  });
+
+  it('follows cover changes on the sheet while the sky stays clear', () => {
+    const { atmosphere, scene } = setup();
+    atmosphere.configure({ sunDirection: UP, cloudMode: 'sheet' });
+    atmosphere.configure({ cloudCover: 0.7 });
+    const sheet = sheetIn(scene)!;
+    expect(threshold(sheet.material as THREE.Material)).toBeLessThan(2);
+    expect(threshold(atmosphere.sky.material as THREE.Material)).toBe(2);
+  });
+
+  it('goes back to the dome, removing the sheet and restoring the sky', () => {
+    const { atmosphere, scene } = setup();
+    atmosphere.configure({ sunDirection: UP, cloudCover: 0.5 });
+    const real = threshold(atmosphere.sky.material as THREE.Material);
+    atmosphere.configure({ cloudMode: 'sheet' });
+    atmosphere.configure({ cloudMode: 'dome' });
+    expect(sheetIn(scene)).toBeUndefined();
+    expect(threshold(atmosphere.sky.material as THREE.Material)).toBe(real);
+    expect(atmosphere.cloudMode).toBe('dome');
+  });
+
+  it('rejects an unknown mode before changing anything', () => {
+    const { atmosphere, scene } = setup();
+    expect(() =>
+      atmosphere.configure({
+        cloudCover: 0.5,
+        cloudMode: 'volume' as never,
+      })
+    ).toThrow(RangeError);
+    expect(sheetIn(scene)).toBeUndefined();
+    expect(
+      (atmosphere.sky.material as THREE.ShaderMaterial).uniforms.atmCloudCover!
+        .value
+    ).toBe(0);
+  });
+
+  it('removes and frees the sheet on dispose', () => {
+    const { atmosphere, scene } = setup();
+    atmosphere.configure({ sunDirection: UP, cloudMode: 'sheet' });
+    const sheet = sheetIn(scene)!;
+    let freed = 0;
+    sheet.geometry.addEventListener('dispose', () => (freed += 1));
+    (sheet.material as THREE.Material).addEventListener(
+      'dispose',
+      () => (freed += 1)
+    );
+    atmosphere.dispose();
+    expect(sheetIn(scene)).toBeUndefined();
+    expect(freed).toBe(2);
+  });
+});

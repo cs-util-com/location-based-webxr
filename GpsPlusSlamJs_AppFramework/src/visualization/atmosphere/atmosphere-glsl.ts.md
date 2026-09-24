@@ -19,6 +19,12 @@ fragment shaders, and the visible sky's vertex/fragment pair.
   (60 000), the most the visible sky ever writes (below the largest finite
   half float; see Invariants). Float literals come from the
   package's `utils/glsl-float.ts`; step counts from `EARTH_ATMOSPHERE`.
+- `ATMOSPHERE_CLOUD_GLSL`: the cloud chunk (uniforms, `CLOUD_LAYER`
+  constants, `atmCloudDensity`, `atmCloudHorizonFade`, `atmCloudNoise`,
+  `atmCloudLit`), shared by the sky dome and the fly-through sheet
+  (`cloud-sheet.ts`), so both draw one pattern, cover and light. It expects
+  `atmTransmittanceLut`, `atmSkyViewLut` and `atmSunDirection` declared
+  before it.
 - The sky fragment includes the 2D cloud layer (`atmClouds`, with twins of
   `cloudDensity`, `cloudHorizonFade` and `cloudLitRadiance` from
   `cloud-layer.ts`; every constant interpolated from `CLOUD_LAYER`; the

@@ -630,3 +630,340 @@ test("a hash change re-applies the view", async ({ page }) => {
     .toMatchObject({ preset: "golden", tone: "aces" });
   expect(errors).toEqual([]);
 });
+
+// --- The fly-through cloud sheet (plan 2026-09-24-1010) -----------------------
+// Every threshold below is declared here, logged with its measurement, and
+// set from the measured values with a stated margin (the owner's sweep rule);
+// where a mutation run showed what a broken sheet reads, that is noted too.
+// Each test compares the sheet SHOWN against HIDDEN at the same cover: a
+// cover change also re-bakes the environment, which relights the scene, so
+// comparing two covers measured relighting (the first run did exactly that).
+
+/** Cloud covers every sheet test sweeps. */
+const SHEET_COVERS = [0.3, 0.5, 0.7, 0.9];
+/** Two pinned drift offsets (tiles): the pattern under the city differs. */
+const SHEET_OFFSETS = [
+  [0.1, 0.2],
+  [0.55, 0.8],
+];
+/** A pixel "changed" when its RGB sum moves by more than this. */
+const CHANGED_LEVELS = 15;
+
+/** Boot in sheet mode with the drift pinned. */
+async function bootSheet(page, [u, v] = SHEET_OFFSETS[0]) {
+  const errors = await boot(page, "preset=noon&tone=neutral&cloudMode=sheet");
+  await page.evaluate(
+    ([a, b]) => window.__lookdev.setCloudOffset(a, b),
+    [u, v],
+  );
+  return errors;
+}
+
+/** Read `points` with the sheet shown and hidden, in one page task. */
+const shownHidden = (page, points) =>
+  page.evaluate((p) => {
+    const d = window.__lookdev;
+    d.setCloudSheetVisible(true);
+    const shown = d.readPixels(p);
+    d.setCloudSheetVisible(false);
+    const hidden = d.readPixels(p);
+    d.setCloudSheetVisible(true);
+    return { shown, hidden };
+  }, points);
+
+/** Cover and view, then shown/hidden. */
+async function readShownHidden(page, cover, view, points) {
+  await page.evaluate(
+    ([c, w]) => {
+      window.__lookdev.setCloudCover(c);
+      window.__lookdev.setView(w);
+    },
+    [cover, view],
+  );
+  return shownHidden(page, points);
+}
+
+const changedShare = (a, b) =>
+  a.filter((px, i) => Math.abs(sum(px) - sum(b[i])) > CHANGED_LEVELS).length /
+  a.length;
+
+/** Mean over points of the per-channel absolute difference. */
+const meanAbsDiff = (a, b) =>
+  a.reduce(
+    (t, px, i) =>
+      t +
+      Math.abs(px[0] - b[i][0]) +
+      Math.abs(px[1] - b[i][1]) +
+      Math.abs(px[2] - b[i][2]),
+    0,
+  ) / a.length;
+
+// The sheet is REAL geometry at 2 km: from above it covers the city, more of
+// it the higher the cover, and its tops are sunlit WHITE (the plan's §9 top
+// term; the dome's underside model alone drew them grey, ~359 RGB sum).
+test("the cloud sheet covers the city from above, with sunlit white tops", async ({
+  page,
+}) => {
+  const errors = await bootSheet(page);
+  /**
+   * Declared floor at cover 0.7. Measured 2026-09-24 (SwiftShader, two
+   * offsets): 1.00 and 1.00 at 0.7 (0.25-0.31 at 0.3, 0.58-0.89 at 0.5). 0.5
+   * leaves a 2x margin and still fails a sheet that draws half the time.
+   */
+  const floorAt07 = 0.5;
+  /**
+   * Declared floor for the covered pixels' mean RGB sum at noon, cover 0.9.
+   * Measured: ~690 with the top term, ~359 without it (the first probe). 520
+   * sits between, so dropping or swapping the top/underside branch fails.
+   */
+  const topBrightnessFloor = 520;
+  for (const offset of SHEET_OFFSETS) {
+    await page.evaluate(
+      ([a, b]) => window.__lookdev.setCloudOffset(a, b),
+      offset,
+    );
+    const shares = [];
+    let topBrightness = 0;
+    for (const cover of SHEET_COVERS) {
+      const { shown, hidden } = await readShownHidden(
+        page,
+        cover,
+        "above",
+        GRID,
+      );
+      shares.push(changedShare(shown, hidden));
+      if (cover === 0.9) {
+        const covered = shown.filter(
+          (px, i) => Math.abs(sum(px) - sum(hidden[i])) > CHANGED_LEVELS,
+        );
+        topBrightness =
+          covered.reduce((t, px) => t + sum(px), 0) /
+          Math.max(1, covered.length);
+      }
+    }
+    console.log(
+      `sheet from above, offset ${offset}: covered ${shares.map((s) => s.toFixed(2)).join(" / ")} at covers ${SHEET_COVERS.join(" / ")}; tops ${topBrightness.toFixed(0)}`,
+    );
+    for (let i = 1; i < shares.length; i++) {
+      expect(shares[i]).toBeGreaterThanOrEqual(shares[i - 1] - 0.05);
+    }
+    expect(shares[2]).toBeGreaterThan(floorAt07);
+    expect(topBrightness).toBeGreaterThan(topBrightnessFloor);
+  }
+  expect(errors).toEqual([]);
+});
+
+// The depth test does the occlusion (M1 review, finding 2: ground pixels
+// below 5° never see the sheet at all, so they could not fail). From the
+// street, 21 m from the central block, its facade fills 7-15° of elevation,
+// where the sheet does draw: the facade must be identical with the sheet
+// shown and hidden, and the SAME facade must change once the sheet's depth
+// test is switched off, which proves the test can fail.
+test("a building in front hides the sheet, the sky above shows it", async ({
+  page,
+}) => {
+  const errors = await bootSheet(page);
+  const eye = [-21, 1.5, 0];
+  await page.evaluate((e) => window.__lookdev.placeCameraAt(e, [0, 6, 0]), eye);
+  const facade = await page.evaluate(() => {
+    const d = window.__lookdev;
+    const f = [];
+    for (let z = -6; z <= 6; z += 3) {
+      for (const y of [4.5, 5.5, 6.5, 7.5]) f.push(d.project([0, y, z]));
+    }
+    return f;
+  });
+  let withoutDepthTest = 0;
+  for (const cover of SHEET_COVERS) {
+    await page.evaluate((c) => window.__lookdev.setCloudCover(c), cover);
+    const f = await shownHidden(page, facade);
+    const worst = Math.max(
+      ...f.shown.map((px, i) => Math.abs(sum(px) - sum(f.hidden[i]))),
+    );
+    await page.evaluate(() => window.__lookdev.setCloudSheetDepthTest(false));
+    const m = await shownHidden(page, facade);
+    await page.evaluate(() => window.__lookdev.setCloudSheetDepthTest(true));
+    const leaked = changedShare(m.shown, m.hidden);
+    withoutDepthTest = Math.max(withoutDepthTest, leaked);
+    console.log(
+      `occlusion at cover ${cover}: facade max diff ${worst}; without the depth test ${leaked.toFixed(2)} of it changes`,
+    );
+    expect(worst).toBe(0);
+  }
+  expect(withoutDepthTest).toBeGreaterThan(0.2);
+  expect(errors).toEqual([]);
+});
+
+// The sheet's occlusion assumes the scene stays below it: measured, not a
+// constant (M1 review, finding 7).
+test("the look-dev scene stays below the cloud sheet", async ({ page }) => {
+  const errors = await bootSheet(page);
+  const top = await page.evaluate(() => window.__lookdev.sceneTopM());
+  console.log(`scene top ${top.toFixed(0)} m, sheet at 2000 m`);
+  expect(top).toBeGreaterThan(100);
+  expect(top).toBeLessThan(2000);
+  expect(errors).toEqual([]);
+});
+
+// One layer, not two: in sheet mode the visible sky draws no clouds of its
+// own. With the sheet hidden, the sky equals the clear sky; the dome at the
+// same cover does differ, so this test can fail.
+test("in sheet mode the sky itself draws no clouds", async ({ page }) => {
+  const errors = await bootSheet(page);
+  const sky = [];
+  for (let i = 0; i < 8; i++) sky.push([0.4 + i * 0.07, 0.08]);
+  for (let i = 0; i < 8; i++) sky.push([0.4 + i * 0.07, 0.2]);
+  const readAt = (cover, points) =>
+    page.evaluate(
+      ([c, p]) => {
+        window.__lookdev.setCloudCover(c);
+        window.__lookdev.setView("city");
+        return window.__lookdev.readPixels(p);
+      },
+      [cover, points],
+    );
+  const clear = await readAt(0, sky);
+  await page.evaluate(() => window.__lookdev.setCloudSheetVisible(false));
+  const hidden = await readAt(0.7, sky);
+  const worst = Math.max(
+    ...clear.map((px, i) => Math.abs(sum(px) - sum(hidden[i]))),
+  );
+  await page.evaluate(() => window.__lookdev.setCloudMode("dome"));
+  await page.evaluate(() => window.__lookdev.setCloudOffset(0.1, 0.2));
+  const dome = await readAt(0.7, sky);
+  const domeChanged = changedShare(dome, clear);
+  console.log(
+    `sheet hidden vs clear: max diff ${worst}; dome at 0.7 changed ${domeChanged.toFixed(2)}`,
+  );
+  // Measured 0 (the sky's own threshold is cleared); 3 levels absorbs a
+  // rasteriser's dither without letting a dome layer through (0.69 changed).
+  expect(worst).toBeLessThanOrEqual(3);
+  expect(domeChanged).toBeGreaterThan(0.2);
+  expect(errors).toEqual([]);
+});
+
+// Flying through is a dissolve (DEC-SUN-16): at the sheet's altitude the
+// sheet is edge-on AND faded near the camera, so the frame converges on the
+// sheet-free frame as the camera approaches it, from ABOVE and from BELOW
+// (the top and the underside branch). A missing near fade or a wrong sign
+// leaves a difference that does not shrink.
+test("crossing the sheet is continuous from both sides", async ({ page }) => {
+  const errors = await bootSheet(page);
+  await page.evaluate(() => window.__lookdev.setCloudCover(0.9));
+  const altitude = 2000;
+  /** Declared: at 0.5 m the frame is the sheet-free one (measured 0.00). */
+  const atSheetMax = 2;
+  /** Declared: a step toward the sheet may not grow the difference by more. */
+  const monotoneSlack = 2;
+  for (const sign of [1, -1]) {
+    const diffs = [];
+    const epsilons = [0.5, 2, 10, 50, 200];
+    for (const e of epsilons) {
+      const y = altitude + sign * e;
+      await page.evaluate(
+        (h) => window.__lookdev.placeCameraAt([-300, h, 600], [-300, h, -400]),
+        y,
+      );
+      const { shown, hidden } = await shownHidden(page, GRID);
+      diffs.push(meanAbsDiff(shown, hidden));
+    }
+    console.log(
+      `crossing ${sign > 0 ? "above" : "below"}: mean diff ${diffs.map((d) => d.toFixed(2)).join(" / ")} at ${epsilons.join(" / ")} m`,
+    );
+    expect(diffs[0]).toBeLessThan(atSheetMax);
+    for (let i = 1; i < diffs.length; i++) {
+      expect(diffs[i]).toBeGreaterThanOrEqual(diffs[i - 1] - monotoneSlack);
+    }
+  }
+  expect(errors).toEqual([]);
+});
+
+// The sheet is a finite disc; its far fade must hide the edge. From the
+// street at 18 m, the fade spans atan(1982/21000) = 5.4° to 8.1° of
+// elevation, above every ridge (≤ 3.3°), and the disc's edge is at 4.7°.
+// Below the fade's end the sheet must contribute nothing: a missing or
+// shortened fade shows the disc there, cut at its edge. (A row-to-row step
+// bound was tried first and could not fail: the cloud pattern higher up
+// makes steps as large as the cut; the steps are still logged.)
+test("the sheet's far edge fades out, with no cut", async ({ page }) => {
+  const errors = await bootSheet(page);
+  /**
+   * Declared bound on the sheet's mean absolute contribution (per-channel
+   * levels, summed, over 16 columns) in rows below the fade's end. Measured
+   * 2026-09-24: 0 at all four covers; a mutation cutting the disc hard at its
+   * edge read 8 (cover 0.5), 12 (0.7) and 13 (0.9) there, 1 at cover 0.3.
+   */
+  const belowFadeMax = 2;
+  const fadeEndDeg = (Math.atan((2000 - 18) / 21_000) * 180) / Math.PI;
+  const rowsDeg = [];
+  for (let e = 3; e <= 14; e += 0.5) rowsDeg.push(e);
+  for (const cover of SHEET_COVERS) {
+    const profile = await page.evaluate(
+      ([c, rows]) => {
+        const d = window.__lookdev;
+        d.setCloudCover(c);
+        const eye = [-20, 18, 60];
+        d.placeCameraAt(eye, [
+          -20 + 1000,
+          18 + 1000 * Math.tan((8 * Math.PI) / 180),
+          60,
+        ]);
+        const out = [];
+        for (const e of rows) {
+          const t = Math.tan((e * Math.PI) / 180);
+          const points = [];
+          for (let k = 0; k < 16; k++) {
+            const side = (k - 7.5) * 25;
+            points.push(
+              d.project([eye[0] + 1000, eye[1] + 1000 * t, eye[2] + side]),
+            );
+          }
+          d.setCloudSheetVisible(true);
+          const shown = d.readPixels(points);
+          d.setCloudSheetVisible(false);
+          const hidden = d.readPixels(points);
+          d.setCloudSheetVisible(true);
+          let total = 0;
+          for (let i = 0; i < points.length; i++) {
+            for (let ch = 0; ch < 3; ch++) {
+              total += Math.abs(shown[i][ch] - hidden[i][ch]);
+            }
+          }
+          out.push(total / points.length);
+        }
+        return out;
+      },
+      [cover, rowsDeg],
+    );
+    let worst = 0;
+    for (let i = 1; i < profile.length; i++) {
+      worst = Math.max(worst, Math.abs(profile[i] - profile[i - 1]));
+    }
+    const below = Math.max(
+      ...profile.filter((_, i) => rowsDeg[i] < fadeEndDeg),
+    );
+    console.log(
+      `far edge, cover ${cover}: |sheet| ${profile.map((p) => p.toFixed(0)).join(" ")} (3°..14°), below the fade's end ${below.toFixed(1)}, worst step ${worst.toFixed(1)}`,
+    );
+    expect(below).toBeLessThan(belowFadeMax);
+  }
+  expect(errors).toEqual([]);
+});
+
+// The owner reviews from the panel, not the test API (M1 review, finding 1:
+// the View select once shared the canvas's id and did nothing).
+test("the View and Cloud mode selects drive the page", async ({ page }) => {
+  const errors = await boot(page, "preset=noon&tone=neutral");
+  const before = await page.evaluate(() => window.__lookdev.project([0, 0, 0]));
+  await page.selectOption("#camera-view", "above");
+  const after = await page.evaluate(() => window.__lookdev.project([0, 0, 0]));
+  expect(
+    Math.hypot(after[0] - before[0], after[1] - before[1]),
+  ).toBeGreaterThan(0.01);
+  await page.selectOption("#cloud-mode", "sheet");
+  const mode = await page.evaluate(
+    () => window.__lookdev.stats().state.cloudMode,
+  );
+  expect(mode).toBe("sheet");
+  expect(errors).toEqual([]);
+});

@@ -7,10 +7,12 @@
  *   pnpm run shoot:3d                         # every preset × tone map
  *   pnpm run shoot:3d -- --preset=golden      # one preset
  *   pnpm run shoot:3d -- --tone=agx           # one tone map
- *   pnpm run shoot:3d -- --view=sun           # one camera view (city | sun)
+ *   pnpm run shoot:3d -- --view=sun           # one camera view (city | sun | antisun | lake | aloft | above)
+ *   pnpm run shoot:3d -- --cloud-mode=sheet   # the fly-through cloud sheet (default: dome)
+ *   pnpm run shoot:3d -- --cover=0.5          # a cloud cover (default: each preset's)
  *   pnpm run shoot:3d -- --parity             # also print the GPU/CPU LUT parity
  *
- * Output: shots/3d/<preset>-<tone>-<view>.png (gitignored). Like shoot.mjs this is an eyeball tool, not a gate: headless
+ * Output: shots/3d/<preset>-<tone>[-<cloud-mode>]-<view>.png (gitignored). Like shoot.mjs this is an eyeball tool, not a gate: headless
  * Chromium rasterises on the CPU (SwiftShader), so pixels differ per machine
  * and timings mean nothing for a phone. Console and page errors DO fail it,
  * because a shader compile error only ever shows up as a console line.
@@ -45,6 +47,14 @@ const TONES = ["agx", "aces", "neutral"];
 const presets = args.has("preset") ? [args.get("preset")] : PRESETS;
 const tones = args.has("tone") ? [args.get("tone")] : TONES;
 const views = args.has("view") ? [args.get("view")] : ["city", "sun"];
+const cloudMode = args.get("cloud-mode") ?? "dome";
+if (!["dome", "sheet"].includes(cloudMode)) {
+  throw new Error(`--cloud-mode must be dome or sheet, got ${cloudMode}`);
+}
+const cover = args.has("cover") ? Number(args.get("cover")) : null;
+if (cover !== null && !(cover >= 0 && cover <= 1)) {
+  throw new Error(`--cover must be in [0, 1], got ${args.get("cover")}`);
+}
 
 /** Start serve.mjs and resolve once it is listening. */
 function startServer() {
@@ -98,13 +108,18 @@ try {
   for (const preset of presets) {
     for (const tone of tones) {
       await page.evaluate(
-        ([p, t]) => {
+        ([p, t, m, c]) => {
           window.__lookdev.setPreset(p);
           window.__lookdev.setToneMapping(t);
+          window.__lookdev.setCloudMode(m);
+          if (c !== null) window.__lookdev.setCloudCover(c);
         },
-        [preset, tone],
+        [preset, tone, cloudMode, cover],
       );
-      for (const view of views) await shoot(`${preset}-${tone}`, view);
+      const suffix =
+        (cloudMode === "dome" ? "" : `-${cloudMode}`) +
+        (cover === null ? "" : `-cover${cover}`);
+      for (const view of views) await shoot(`${preset}-${tone}${suffix}`, view);
     }
   }
   if (args.has("parity")) {

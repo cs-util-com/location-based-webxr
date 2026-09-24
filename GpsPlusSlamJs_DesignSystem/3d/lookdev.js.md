@@ -9,7 +9,12 @@
   - `ready` (true after the first frame; false again while the WebGL
     context is lost), `error` (first page error, or null);
   - `setPreset(id)`, `setToneMapping("agx" | "aces" | "neutral")`,
-    `setView("city" | "sun" | "antisun" | "lake")`,
+    `setView("city" | "sun" | "antisun" | "lake" | "aloft" | "above")`
+    (`aloft`: at the cloud sheet's 2 km, level; `above`: 3.2 km, looking
+    down at the city), `setCloudMode("dome" | "sheet")` (the fly-through
+    sheet, plan 2026-09-24-1010), and the sheet tests' hooks
+    `setCloudOffset(u, v)` (pins the drift so pixels repeat),
+    `setCloudSheetVisible(bool)` and `placeCameraAt(eye, target)`,
     `setHaze(bool)`, `setCloudCover(0…1)`, `setTier("phone" | "desktop")`;
   - `setBloom(bool)` — the bloom pass alone (desktop tier only; throws on
     the phone tier): with it off, the desktop pipeline must draw exactly
@@ -34,7 +39,7 @@
     preset: both exposures and both exposure-free horizon colours. The
     fallback's only GPU oracle.
 - Invariants & assumptions:
-  - State lives in the URL hash (`#preset=…&tone=…&tier=…`), so a
+  - State lives in the URL hash (`#preset=…&tone=…&tier=…&cloudMode=…`), so a
     screenshot or phone link reproduces a view; a hash change on an open
     page re-applies it (the page's own writes use `replaceState`, which
     fires no `hashchange`).

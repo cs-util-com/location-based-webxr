@@ -133,7 +133,14 @@ const state = {
   tone: "neutral",
   haze: true,
   tier: "phone",
+  // Dome (the sky's layer) or the fly-through sheet (plan 2026-09-24-1010).
+  cloudMode: "dome",
 };
+
+const CLOUD_MODES = ["dome", "sheet"];
+const VIEWS = ["city", "sun", "antisun", "lake", "aloft", "above"];
+/** Drift on unless a test pins the offset (pixel tests need a fixed sky). */
+let cloudDrift = true;
 
 function readHash() {
   const params = new URLSearchParams(location.hash.slice(1));
@@ -141,6 +148,9 @@ function readHash() {
   if (preset) applyPresetToState(preset);
   if (params.get("tone") in TONE_MAPPINGS) state.tone = params.get("tone");
   if (params.get("tier") in TIERS) state.tier = params.get("tier");
+  if (CLOUD_MODES.includes(params.get("cloudMode"))) {
+    state.cloudMode = params.get("cloudMode");
+  }
 }
 
 function writeHash() {
@@ -148,6 +158,7 @@ function writeHash() {
     preset: state.preset,
     tone: state.tone,
     tier: state.tier,
+    cloudMode: state.cloudMode,
   });
   history.replaceState(null, "", `#${params}`);
 }
@@ -195,6 +206,7 @@ function useAtmosphere() {
     sunDirection: direction,
     visibilityKm: state.visibility,
     cloudCover: state.clouds,
+    cloudMode: state.cloudMode,
   });
   lutMs = performance.now() - start;
   haze.sync(atmosphere);
@@ -295,6 +307,16 @@ function placeCamera(view) {
       camera.position.y + 12,
       camera.position.z + (toward.z / flat) * 100,
     );
+  } else if (view === "aloft") {
+    // Just above the cloud sheet, looking slightly down at the deck. Not AT
+    // its altitude: there it is edge-on and invisible (M1 review, finding 3).
+    camera.position.set(-300, 2150, 600);
+    controls.target.set(-300, 2100, -400);
+  } else if (view === "above") {
+    // Above the sheet, looking down at the city; offset horizontally so the
+    // look-at keeps an up vector (review finding 15).
+    camera.position.set(-900, 3200, 1100);
+    controls.target.set(40, 0, 0);
   } else if (view === "lake") {
     // Low over the lake's near shore, looking across it: water is judged at
     // grazing angles, where the sky it mirrors fills it.
@@ -332,6 +354,7 @@ function syncControls() {
   $("#tone").value = state.tone;
   $("#haze").checked = state.haze;
   $("#tier").value = state.tier;
+  $("#cloud-mode").value = state.cloudMode;
   $("[data-values]").textContent =
     `sun ${state.elevation.toFixed(1)}° / ${state.azimuth.toFixed(0)}° · ` +
     `visibility ${state.visibility.toFixed(0)} km · ${state.exposureEv >= 0 ? "+" : ""}${state.exposureEv.toFixed(1)} EV` +
@@ -364,6 +387,12 @@ function buildControls() {
   );
   $("#haze").addEventListener("change", (e) => api.setHaze(e.target.checked));
   $("#tier").addEventListener("change", (e) => api.setTier(e.target.value));
+  $("#cloud-mode").addEventListener("change", (e) =>
+    api.setCloudMode(e.target.value),
+  );
+  $("#camera-view").addEventListener("change", (e) =>
+    api.setView(e.target.value),
+  );
 }
 
 // --- loop and test surface -----------------------------------------------------
@@ -394,7 +423,7 @@ function frame(now) {
   // performance.now() `last` was initialised with (the water rejected it).
   const dt = Math.max(0, Math.min(0.1, (now - last) / 1000));
   frameMs = frameMs * 0.9 + (now - last) * 0.1;
-  atmosphere?.advanceClouds(dt);
+  if (cloudDrift) atmosphere?.advanceClouds(dt);
   water.update(dt);
   last = now;
   resize();
@@ -409,7 +438,7 @@ function frame(now) {
     ? `GPU ${gpuMs === null ? "…" : gpuMs.toFixed(2)} ms`
     : "GPU n/a";
   $("[data-stats]").textContent =
-    `${state.tier} · ${frameMs.toFixed(1)} ms/frame · ${gpu} · ${renderer.info.render.calls} draws · ` +
+    `${state.tier} · clouds ${state.cloudMode} · ${frameMs.toFixed(1)} ms/frame · ${gpu} · ${renderer.info.render.calls} draws · ` +
     `${(renderer.info.render.triangles / 1000).toFixed(0)}k tris · LUT ${lutMs.toFixed(1)} ms`;
   requestAnimationFrame(frame);
 }
@@ -503,10 +532,60 @@ Object.assign(api, {
     water.update(seconds);
   },
   setView(view) {
-    if (!["city", "sun", "antisun", "lake"].includes(view)) {
-      throw new Error(`unknown view ${view}`);
-    }
+    if (!VIEWS.includes(view)) throw new Error(`unknown view ${view}`);
     placeCamera(view);
+    $("#camera-view").value = view;
+  },
+  /** Dome (the sky's own layer) or the fly-through sheet. */
+  setCloudMode(mode) {
+    if (!CLOUD_MODES.includes(mode))
+      throw new Error(`unknown cloud mode ${mode}`);
+    state.cloudMode = mode;
+    applyLook();
+  },
+  /**
+   * Test surface: pin the clouds' drift offset (tiles) and stop the drift,
+   * so pixel tests read the same sky every time.
+   */
+  setCloudOffset(u, v) {
+    if (!atmosphere) throw new Error("the clouds need the atmosphere");
+    cloudDrift = false;
+    atmosphere.sky.material.uniforms.atmCloudOffset.value.set(u, v);
+  },
+  /**
+   * Test surface: switch the sheet's depth test, so the occlusion test can
+   * prove in the same run that it would fail without it.
+   */
+  setCloudSheetDepthTest(on) {
+    const sheet = scene.getObjectByName("atmosphere-cloud-sheet");
+    if (!sheet) throw new Error("no cloud sheet (cloud mode is dome)");
+    sheet.material.depthTest = Boolean(on);
+  },
+  /** Test surface: hide the sheet mesh (proves the dome draws no clouds). */
+  setCloudSheetVisible(on) {
+    const sheet = scene.getObjectByName("atmosphere-cloud-sheet");
+    if (!sheet) throw new Error("no cloud sheet (cloud mode is dome)");
+    sheet.visible = Boolean(on);
+  },
+  /**
+   * Test surface: the highest point of the scene's own content (the sky and
+   * the cloud sheet excluded), metres: the sheet's occlusion rests on it
+   * staying below the sheet.
+   */
+  sceneTopM() {
+    const box = new THREE.Box3();
+    for (const child of scene.children) {
+      if (child.name.startsWith("atmosphere-") || !child.visible) continue;
+      box.expandByObject(child);
+    }
+    return box.max.y;
+  },
+  /** Test surface: an exact camera, for the crossing test. */
+  placeCameraAt([x, y, z], [tx, ty, tz]) {
+    camera.position.set(x, y, z);
+    controls.target.set(tx, ty, tz);
+    controls.update();
+    camera.updateMatrixWorld();
   },
   /**
    * Render one frame and read RGBA bytes at normalised canvas points

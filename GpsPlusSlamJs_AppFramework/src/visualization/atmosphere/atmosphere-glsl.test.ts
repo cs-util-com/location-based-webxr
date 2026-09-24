@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 
 import {
+  ATMOSPHERE_CLOUD_GLSL,
   ATMOSPHERE_COMMON_GLSL,
   ATMOSPHERE_MAX_SCENE_RADIANCE,
   MULTI_SCATTERING_LUT_FRAGMENT_GLSL,
@@ -21,6 +22,7 @@ import {
   TRANSMITTANCE_LUT_FRAGMENT_GLSL,
 } from './atmosphere-glsl.js';
 import { EARTH_ATMOSPHERE } from './atmosphere-model.js';
+import { CLOUD_SHEET_FRAGMENT_GLSL } from './cloud-sheet.js';
 import { glslFloat } from '../../utils/glsl-float.js';
 
 describe('generated shaders', () => {
@@ -30,6 +32,9 @@ describe('generated shaders', () => {
     multiScattering: MULTI_SCATTERING_LUT_FRAGMENT_GLSL,
     skyView: SKY_VIEW_LUT_FRAGMENT_GLSL,
     sky: SKY_FRAGMENT_GLSL,
+    // The cloud chunk the dome and the fly-through sheet share, and the sheet.
+    clouds: ATMOSPHERE_CLOUD_GLSL,
+    cloudSheet: CLOUD_SHEET_FRAGMENT_GLSL,
   };
 
   // Every function this module defines must be `atm`-prefixed (or be

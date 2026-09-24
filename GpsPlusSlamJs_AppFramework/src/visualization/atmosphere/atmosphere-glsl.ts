@@ -406,6 +406,64 @@ void main() {
 `;
 
 /**
+ * The cloud layer's uniforms, constants, density and light, shared by the
+ * sky dome (`atmClouds` below) and the fly-through sheet (`cloud-sheet.ts`),
+ * so both draw ONE pattern, cover and light. Expects `atmTransmittanceLut`,
+ * `atmSkyViewLut` and `atmSunDirection` to be declared before it, and
+ * `ATMOSPHERE_COMMON_GLSL` to be included.
+ */
+export const ATMOSPHERE_CLOUD_GLSL = /* glsl */ `
+uniform sampler2D atmCloudTexture;
+uniform float atmCloudCover;
+uniform float atmCloudThreshold;
+uniform vec2 atmCloudOffset;
+const float ATM_CLOUD_ALTITUDE = ${glslFloat(CLOUD_LAYER.altitudeKm)};
+const float ATM_CLOUD_TILE = ${glslFloat(CLOUD_LAYER.tileKm)};
+const float ATM_CLOUD_OCTAVE2_FREQ = ${glslFloat(CLOUD_LAYER.secondOctaveFrequency)};
+const float ATM_CLOUD_OCTAVE2_OFFSET = ${glslFloat(CLOUD_LAYER.secondOctaveOffset)};
+const float ATM_CLOUD_OCTAVE1_WEIGHT = ${glslFloat(CLOUD_LAYER.firstOctaveWeight)};
+const float ATM_CLOUD_EDGE = ${glslFloat(CLOUD_LAYER.edgeHalfWidth)};
+const float ATM_CLOUD_SUN_AMBIENT = ${glslFloat(CLOUD_LAYER.sunAmbient)};
+const float ATM_CLOUD_FORWARD = ${glslFloat(CLOUD_LAYER.forwardStrength)};
+const float ATM_CLOUD_FORWARD_POWER = ${glslFloat(CLOUD_LAYER.forwardPower)};
+const float ATM_CLOUD_THICKNESS = ${glslFloat(CLOUD_LAYER.thicknessDarkening)};
+const float ATM_CLOUD_SKY_AMBIENT = ${glslFloat(CLOUD_LAYER.skyAmbient)};
+const float ATM_CLOUD_AERIAL_KM = ${glslFloat(CLOUD_LAYER.aerialKm)};
+
+// Twin of cloud-layer.ts cloudDensity: a soft step, 0.5 AT the threshold
+// (the cover's quantile of the combined noise, computed on the CPU).
+float atmCloudDensity(float noise, float threshold) {
+  return smoothstep(0.0, 1.0, clamp((noise - threshold) / (2.0 * ATM_CLOUD_EDGE) + 0.5, 0.0, 1.0));
+}
+
+// Twin of cloud-layer.ts cloudHorizonFade.
+float atmCloudHorizonFade(float dirY) {
+  return smoothstep(0.0, 1.0, clamp(dirY / 0.12, 0.0, 1.0));
+}
+
+// The combined two-octave noise at a texture coordinate (tiles).
+float atmCloudNoise(vec2 uv) {
+  return texture2D(atmCloudTexture, uv).r * ATM_CLOUD_OCTAVE1_WEIGHT
+    + texture2D(atmCloudTexture, uv * ATM_CLOUD_OCTAVE2_FREQ + ATM_CLOUD_OCTAVE2_OFFSET).r
+      * (1.0 - ATM_CLOUD_OCTAVE1_WEIGHT);
+}
+
+// A cloud's lit radiance seen along dir from radius r (LUT units): the sun's
+// transmittance at cloud height, side-lit plus forward scattering, darker
+// where thick, plus the zenith sky as ambient. Twin of cloud-layer.ts
+// cloudLitRadiance (sun term in LUT units).
+vec3 atmCloudLit(vec3 dir, float r, float density) {
+  vec3 sunAtCloud = atmSampleTransmittance(atmTransmittanceLut, r + ATM_CLOUD_ALTITUDE, atmSunDirection.y);
+  float forward = pow(max(dot(dir, atmSunDirection), 0.0), ATM_CLOUD_FORWARD_POWER);
+  vec3 zenith = texture2D(atmSkyViewLut, atmSkyViewUv(r, vec3(0.0, 1.0, 0.0), atmSunDirection)).rgb;
+  return ATM_RADIANCE_SCALE * sunAtCloud
+      * (ATM_CLOUD_SUN_AMBIENT + ATM_CLOUD_FORWARD * forward)
+      * (1.0 - ATM_CLOUD_THICKNESS * density)
+    + zenith * ATM_CLOUD_SKY_AMBIENT;
+}
+`;
+
+/**
  * The visible sky: a camera-centred mesh drawn at the far plane.
  *
  * `gl_Position.z = gl_Position.w` puts every fragment at depth 1, so the sky
@@ -441,57 +499,22 @@ uniform float atmObserverRadius;
 uniform float atmRadianceToScene;
 uniform float atmSunDiscEnabled;
 const float ATM_MAX_SCENE_RADIANCE = ${glslFloat(ATMOSPHERE_MAX_SCENE_RADIANCE)};
-uniform sampler2D atmCloudTexture;
-uniform float atmCloudCover;
-uniform float atmCloudThreshold;
 uniform float atmClampHorizon;
-uniform vec2 atmCloudOffset;
 varying vec3 vAtmWorldDirection;
-const float ATM_CLOUD_ALTITUDE = ${glslFloat(CLOUD_LAYER.altitudeKm)};
-const float ATM_CLOUD_TILE = ${glslFloat(CLOUD_LAYER.tileKm)};
-const float ATM_CLOUD_OCTAVE2_FREQ = ${glslFloat(CLOUD_LAYER.secondOctaveFrequency)};
-const float ATM_CLOUD_OCTAVE2_OFFSET = ${glslFloat(CLOUD_LAYER.secondOctaveOffset)};
-const float ATM_CLOUD_OCTAVE1_WEIGHT = ${glslFloat(CLOUD_LAYER.firstOctaveWeight)};
-const float ATM_CLOUD_EDGE = ${glslFloat(CLOUD_LAYER.edgeHalfWidth)};
-const float ATM_CLOUD_SUN_AMBIENT = ${glslFloat(CLOUD_LAYER.sunAmbient)};
-const float ATM_CLOUD_FORWARD = ${glslFloat(CLOUD_LAYER.forwardStrength)};
-const float ATM_CLOUD_FORWARD_POWER = ${glslFloat(CLOUD_LAYER.forwardPower)};
-const float ATM_CLOUD_THICKNESS = ${glslFloat(CLOUD_LAYER.thicknessDarkening)};
-const float ATM_CLOUD_SKY_AMBIENT = ${glslFloat(CLOUD_LAYER.skyAmbient)};
-const float ATM_CLOUD_AERIAL_KM = ${glslFloat(CLOUD_LAYER.aerialKm)};
-
-// Twin of cloud-layer.ts cloudDensity: a soft step, 0.5 AT the threshold
-// (the cover's quantile of the combined noise, computed on the CPU).
-float atmCloudDensity(float noise, float threshold) {
-  return smoothstep(0.0, 1.0, clamp((noise - threshold) / (2.0 * ATM_CLOUD_EDGE) + 0.5, 0.0, 1.0));
-}
-
-// Twin of cloud-layer.ts cloudHorizonFade.
-float atmCloudHorizonFade(float dirY) {
-  return smoothstep(0.0, 1.0, clamp(dirY / 0.12, 0.0, 1.0));
-}
+${ATMOSPHERE_CLOUD_GLSL}
 
 // The 2D cloud layer (DEC-SKY-6): a plane at ATM_CLOUD_ALTITUDE, lit by the
 // sun's transmitted colour at that height (forward-scattering toward the
 // sun), plus the zenith sky as ambient; thicker parts darker; distant parts
 // melt into the sky behind them. Radiance in LUT units.
 vec3 atmClouds(vec3 dir, float r, vec3 skyBehind) {
-  if (atmCloudCover <= 0.0 || dir.y <= 0.0) return skyBehind;
+  // Threshold 2 is above any noise: no clouds (cover 0, or the sheet mode).
+  if (atmCloudCover <= 0.0 || atmCloudThreshold >= 2.0 || dir.y <= 0.0) return skyBehind;
   float t = ATM_CLOUD_ALTITUDE / dir.y;
   vec2 uv = dir.xz * t / ATM_CLOUD_TILE + atmCloudOffset;
-  float noise = texture2D(atmCloudTexture, uv).r * ATM_CLOUD_OCTAVE1_WEIGHT
-    + texture2D(atmCloudTexture, uv * ATM_CLOUD_OCTAVE2_FREQ + ATM_CLOUD_OCTAVE2_OFFSET).r
-      * (1.0 - ATM_CLOUD_OCTAVE1_WEIGHT);
-  float density = atmCloudDensity(noise, atmCloudThreshold) * atmCloudHorizonFade(dir.y);
+  float density = atmCloudDensity(atmCloudNoise(uv), atmCloudThreshold) * atmCloudHorizonFade(dir.y);
   if (density <= 0.0) return skyBehind;
-  vec3 sunAtCloud = atmSampleTransmittance(atmTransmittanceLut, r + ATM_CLOUD_ALTITUDE, atmSunDirection.y);
-  float forward = pow(max(dot(dir, atmSunDirection), 0.0), ATM_CLOUD_FORWARD_POWER);
-  vec3 zenith = texture2D(atmSkyViewLut, atmSkyViewUv(r, vec3(0.0, 1.0, 0.0), atmSunDirection)).rgb;
-  // Twin of cloud-layer.ts cloudLitRadiance (sun term in LUT units).
-  vec3 lit = ATM_RADIANCE_SCALE * sunAtCloud
-      * (ATM_CLOUD_SUN_AMBIENT + ATM_CLOUD_FORWARD * forward)
-      * (1.0 - ATM_CLOUD_THICKNESS * density)
-    + zenith * ATM_CLOUD_SKY_AMBIENT;
+  vec3 lit = atmCloudLit(dir, r, density);
   float aerial = exp(-t / ATM_CLOUD_AERIAL_KM);
   return mix(skyBehind, lit, density * aerial);
 }
