@@ -14,5 +14,7 @@ describe('SCENE_NODE', () => {
   it('has stable string values (change here requires scene-graph migration)', () => {
     expect(SCENE_NODE.BASIS_CHANGE).toBe('webxr-to-nue');
     expect(SCENE_NODE.CAMERA_FOLLOWER).toBe('camera-follower');
+    expect(SCENE_NODE.AMBIENT_LIGHT).toBe('ar-ambient-light');
+    expect(SCENE_NODE.SUN_LIGHT).toBe('ar-sun-light');
   });
 });

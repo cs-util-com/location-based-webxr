@@ -11,4 +11,11 @@ export const SCENE_NODE = {
   BASIS_CHANGE: 'webxr-to-nue',
   /** Camera follower node (GPS-world-aligned, tracks camera position) */
   CAMERA_FOLLOWER: 'camera-follower',
+  /** The AR scene's ambient light (`createSceneHierarchy`). */
+  AMBIENT_LIGHT: 'ar-ambient-light',
+  /**
+   * The AR scene's directional shading light, fixed at (0, 10, 5); the sun
+   * shadow prototype drives it as the sun and restores it (plan 2026-09-23-2343).
+   */
+  SUN_LIGHT: 'ar-sun-light',
 } as const;

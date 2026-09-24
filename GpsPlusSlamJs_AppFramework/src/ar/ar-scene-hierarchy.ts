@@ -151,9 +151,13 @@ export function createSceneHierarchy(): {
 
   // Add lighting to the scene (outside AR world - fixed in GPS space)
   const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+  ambientLight.name = SCENE_NODE.AMBIENT_LIGHT;
   newScene.add(ambientLight);
 
+  // Named: the sun shadow prototype finds it by name, drives it as the sun
+  // and restores it on dispose.
   const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+  directionalLight.name = SCENE_NODE.SUN_LIGHT;
   directionalLight.position.set(0, 10, 5);
   newScene.add(directionalLight);
 

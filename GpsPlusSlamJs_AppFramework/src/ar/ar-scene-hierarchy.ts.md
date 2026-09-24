@@ -47,7 +47,8 @@ put it there. It is not a reason to avoid the scene root.
 
 - **The hierarchy is exactly** `scene → arWorldGroup → basisChangeNode → arpose
 → camera`, with the two lights attached to `scene` (GPS world space), never
-  to `arWorldGroup`. Each of these edges is pinned by a test — they are the
+  to `arWorldGroup`, and named (`SCENE_NODE.AMBIENT_LIGHT`, `SCENE_NODE.SUN_LIGHT`) so a
+  consumer finds them by name. Each of these edges is pinned by a test — they are the
   contract every transform composition depends on.
 - `arWorldGroup`'s local space is **NUE** (X=North, Y=Up, Z=East). It is the
   node `applyAlignmentMatrix()` writes to.

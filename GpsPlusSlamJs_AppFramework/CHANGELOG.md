@@ -42,6 +42,10 @@
 
 ### Added
 
+- **The AR scene's lights are named** (AR sun shadow prototype plan
+  2026-09-23-2343, M3a): `SCENE_NODE.AMBIENT_LIGHT` and `SCENE_NODE.SUN_LIGHT`
+  (the directional light fixed at (0, 10, 5)), set by `createSceneHierarchy`,
+  so an app finds them with `getObjectByName` instead of by type.
 - **One QR code rotation from several views** (QR near-frontal pose plan
   2026-09-23-2314, M3a): `solveQrPoseMultiView(views, sizeM, options?)` on
   `/ar` solves a static code's world rotation jointly over detections from
