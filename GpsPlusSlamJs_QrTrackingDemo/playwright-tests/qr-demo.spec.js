@@ -64,7 +64,8 @@ test.describe("QR-tracking demo — measure + glue flow", () => {
     expect(scene.kidCount).toBe(2);
     expect(scene.lastVisible).toBe(true);
     expect(scene.trailVisible).toBe(true);
-    // A code that does not move reads "still" (the motion row, plan §26).
+    // The motion row is wired (plan §26). The faked frames never move, so
+    // this pins the wiring only - the detector itself is unit-tested.
     await expect(page.getByTestId("hud-motion")).toHaveText("still");
   });
 });

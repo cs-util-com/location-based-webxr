@@ -20,6 +20,7 @@ import {
 import { PlanarPnpSquare } from './planar-pnp';
 import type { QrFusedEntry } from './qr-fused-window';
 import { createQrMotionTracker, measureQrMotion } from './qr-motion';
+import { solveQrPoseMultiView } from './qr-multi-view-pose';
 import { walkCameraPoses } from '../../test-utils/synthetic-qr-walk';
 import { mulberry32 } from '../../test-utils/elevation-offset-scenarios';
 
@@ -271,7 +272,7 @@ describe('createQrMotionTracker (persistence, owner §26: ~0.5 s)', () => {
       for (let r = 0; r < 5; r++)
         state = tracker.update(entries.slice(0, i)).state;
     }
-    // Two moving detections (6, 7), read 5 times each: still not confirmed.
+    // One moving detection (index 6), read 5 times: not confirmed.
     expect(state).toBe('still');
   });
 
@@ -287,5 +288,90 @@ describe('createQrMotionTracker (persistence, owner §26: ~0.5 s)', () => {
     // Still from the first detection of the confirming run on.
     expect(last.stillSinceMs).toBeGreaterThanOrEqual(7 * STEP_MS);
     expect(last.stillSinceMs).toBeLessThanOrEqual(10 * STEP_MS);
+  });
+});
+
+describe('createQrMotionTracker edge cases (milestone review 2026-09-25)', () => {
+  // The store rebuilds every entry object when its detections array
+  // changes (a prune, a history cap) without a new detection; the corners
+  // are passed through by reference. Such a re-read is not a detection.
+  it('does not count a rebuilt copy of the same detection again', () => {
+    const tracker = createQrMotionTracker();
+    const entries = scene(12, (i) =>
+      i < 6 ? codeAt(0, 5) : codeAt(0.05 * (i - 5), 5)
+    );
+    let state = 'still';
+    for (let i = 1; i <= 7; i++) {
+      for (let r = 0; r < 5; r++) {
+        const copy = entries.slice(0, i).map((e) => ({ ...e }));
+        state = tracker.update(copy).state;
+      }
+    }
+    expect(state).toBe('still');
+  });
+
+  // A reading with no signal (a failed solve, an unusable view in the
+  // motion window) says nothing about motion: it must not vote "still"
+  // and end a confirmed motion.
+  it('keeps a confirmed motion through readings without a signal', () => {
+    let failing = false;
+    const tracker = createQrMotionTracker({
+      solve: (views, sizeM, options) =>
+        failing ? null : solveQrPoseMultiView(views, sizeM, options),
+    });
+    const entries = scene(18, (i) => codeAt(0.05 * i, 5));
+    const states: string[] = [];
+    for (let i = 1; i <= entries.length; i++) {
+      failing = i >= 10 && i < 15;
+      states.push(tracker.update(entries.slice(0, i)).state);
+    }
+    expect(states[8]).toBe('moving');
+    expect(states.slice(8).every((st) => st === 'moving')).toBe(true);
+  });
+
+  // A clock going backwards in one epoch (a replay seek, a store swap) is
+  // a new run: a stillSinceMs from the old run would sit in the future of
+  // the new timestamps and cut every later window to nothing.
+  it('starts afresh when the newest detection is older than the last', () => {
+    const tracker = createQrMotionTracker();
+    const moved = scene(20, (i) =>
+      i < 8 ? codeAt(0.05 * i, 5) : codeAt(0.05 * 7, 5)
+    );
+    for (let i = 1; i <= moved.length; i++) tracker.update(moved.slice(0, i));
+    const again = scene(4, () => codeAt(0, 5));
+    const m = tracker.update(again);
+    expect(m.state).toBe('still');
+    expect(m.stillSinceMs).toBeNull();
+  });
+
+  // stillSinceMs says since when the code has been STILL; while it moves
+  // again there is no such time.
+  it('reports no still time while the code moves again', () => {
+    const tracker = createQrMotionTracker();
+    const entries = scene(34, (i) =>
+      i < 8
+        ? codeAt(0.05 * i, 5)
+        : i < 20
+          ? codeAt(0.35, 5)
+          : codeAt(0.35 + 0.05 * (i - 19), 5)
+    );
+    const out = entries.map((_, i) => tracker.update(entries.slice(0, i + 1)));
+    expect(out[19]!.state).toBe('still');
+    expect(out[19]!.stillSinceMs).not.toBeNull();
+    const last = out[out.length - 1]!;
+    expect(last.state).toBe('moving');
+    expect(last.stillSinceMs).toBeNull();
+  });
+
+  // The turn rate compares the newest rotation with the others' (centred
+  // about two detections back), so it divides by that time span - like the
+  // speed - not by one detection's (which read 97 deg/s here). It stays
+  // ROUGH: the others' joint rotation sits ~12 deg behind, not 10, so a
+  // steady 40 deg/s reads ~49 (measured 2026-09-25). Display only.
+  it('reads a steady in-plane turn at its rate', () => {
+    // 5 deg per 125 ms = 40 deg/s.
+    const m = measureQrMotion(scene(8, (i) => codeAt(0, 5, 5 * i)));
+    expect(m.turnRateDegPerS!).toBeGreaterThan(34);
+    expect(m.turnRateDegPerS!).toBeLessThan(52);
   });
 });

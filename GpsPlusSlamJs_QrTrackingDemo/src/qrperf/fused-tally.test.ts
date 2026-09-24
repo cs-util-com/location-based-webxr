@@ -125,9 +125,12 @@ describe("createFusedTally motion (plan §26)", () => {
       movingTurning: 1,
       switches: 3,
     });
-    expect(m.turnSignalP50Px).toBe(2);
-    expect(m.turnSignalP95Px).toBe(9);
-    expect(m.moveSignalP95Cm).toBeCloseTo(6, 6);
+    // The signals are tallied over STILL readings only: they are what the
+    // thresholds must sit above, and a hand-held run's motion would
+    // otherwise read as noise (milestone review 2026-09-25).
+    expect(m.turnSignalP50Px).toBe(1);
+    expect(m.turnSignalP95Px).toBe(2);
+    expect(m.moveSignalP95Cm).toBeCloseTo(2, 6);
   });
 
   it("puts the motion line in the report", () => {
@@ -135,5 +138,6 @@ describe("createFusedTally motion (plan §26)", () => {
     t.add(withMotion("still", 1, 0.01), 0);
     const lines = fusedLines(t.summary());
     expect(lines.some((l) => l.startsWith("motion: still 1"))).toBe(true);
+    expect(lines.some((l) => l.includes("still turn signal"))).toBe(true);
   });
 });

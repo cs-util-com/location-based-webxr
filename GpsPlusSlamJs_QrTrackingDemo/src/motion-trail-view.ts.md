@@ -20,9 +20,11 @@ three.js line in the motion mode's colour, under `arWorldGroup`.
   `WEBXR_TO_NUE` basis node - the same construction as the framework's
   `qr-debug-view.ts`. Without it the trail would sit East/North-swapped
   beside the code on a device.
-- The geometry's position attribute is replaced on each update (a trail is
-  ~16 points at 8 Hz); frustum culling is off so the moving bounds are
-  never stale.
+- One preallocated position buffer (64 points, ~4x a 2 s trail at 8 Hz),
+  rewritten in place with a draw range on each update - the view updates on
+  every HUD render, so a new GPU buffer per update would pile up. Beyond 64
+  points the newest are kept. Frustum culling is off so the moving bounds
+  are never stale.
 
 ## Examples
 
@@ -34,5 +36,6 @@ trailView.update(trail.points(), MOTION_COLORS[state]);
 ## Tests
 
 `motion-trail-view.test.ts`: the basis node (WEBXR_TO_NUE, no auto
-update) under the parent, hidden below two points, the positions written,
+update) under the parent, hidden below two points, the positions written, one buffer rewritten in place and the newest kept
+past its capacity,
 the colour and its neutral default, `dispose` detaches.

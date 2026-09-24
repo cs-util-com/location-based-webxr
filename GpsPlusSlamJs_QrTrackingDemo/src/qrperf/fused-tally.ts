@@ -52,9 +52,10 @@ export interface FusedTallySummary {
   /**
    * The motion detector (plan §26), over results that carry a reading: how
    * many showed each mode, how often the mode switched within a frame epoch,
-   * and the raw signals' distribution - the newest view's corner error at
-   * the others' rotation (what the 3 px turning threshold is set against)
-   * and its position offset (the 3 cm moving threshold).
+   * and the raw signals' distribution over STILL readings only - the newest
+   * view's corner error at the others' rotation (what the 3 px turning
+   * threshold must sit above) and its position offset (the 3 cm moving
+   * threshold). During motion the signals measure the motion, not the noise.
    */
   motion: {
     n: number;
@@ -176,6 +177,7 @@ function createMotionTally(): {
       if (last && last.epoch === result.frameEpoch && last.state !== m.state)
         switches += 1;
       last = { state: m.state, epoch: result.frameEpoch };
+      if (m.state !== "still") return;
       if (m.newestFitPx !== null && Number.isFinite(m.newestFitPx))
         turnSignals.push(m.newestFitPx);
       if (m.offsetM !== null && Number.isFinite(m.offsetM))
@@ -201,6 +203,6 @@ export function fusedLines(s: FusedTallySummary): string[] {
   return [
     `fused: ${s.locks} locks | stable ${s.stable} | joint ${s.joint} / averaged ${s.averaged} | frame changes ${s.frameChanges} | fit p50/p95 ${f(s.fitP50Px)}/${f(s.fitP95Px)} px | vs averaged p50/p95 ${f(s.deltaP50Deg)}/${f(s.deltaP95Deg)} deg`,
     `fused pose (stable): jump p50/p95/max ${f(s.jumpDeg.p50)}/${f(s.jumpDeg.p95)}/${f(s.jumpDeg.max)} deg (n ${s.jumpDeg.n}) | wall elevation |p50|/|p95| ${f(s.wallElevationDeg.p50Abs)}/${f(s.wallElevationDeg.p95Abs)} deg, mean ${f(s.wallElevationDeg.meanSigned)} deg`,
-    `motion: still ${s.motion.still} | moving ${s.motion.moving} | turning ${s.motion.turning} | both ${s.motion.movingTurning} | switches ${s.motion.switches} (n ${s.motion.n}) | turn signal p50/p95 ${f(s.motion.turnSignalP50Px)}/${f(s.motion.turnSignalP95Px)} px | move signal p95 ${f(s.motion.moveSignalP95Cm)} cm`,
+    `motion: still ${s.motion.still} | moving ${s.motion.moving} | turning ${s.motion.turning} | both ${s.motion.movingTurning} | switches ${s.motion.switches} (n ${s.motion.n}) | still turn signal p50/p95 ${f(s.motion.turnSignalP50Px)}/${f(s.motion.turnSignalP95Px)} px | still move signal p95 ${f(s.motion.moveSignalP95Cm)} cm`,
   ];
 }

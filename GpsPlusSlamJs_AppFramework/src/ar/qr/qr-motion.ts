@@ -123,20 +123,32 @@ function viewPositions(
   return raws.every((p) => p !== undefined) ? raws : joint.viewPositions;
 }
 
+/**
+ * Seconds from the rest's median detection to the newest: the time base of
+ * both rates, since the newest is compared with the rest as a whole.
+ */
+function sinceRestS(times: readonly number[]): number {
+  return (
+    (times[times.length - 1]! - interpolatingMedian(times.slice(0, -1))) / 1000
+  );
+}
+
 /** The newest view's own position offset and its speed. */
 function translation(
   ps: readonly Vector3[],
-  times: readonly number[]
+  dtS: number
 ): { offsetM: number; speedMps: number | null } {
   const newest = ps[ps.length - 1]!;
   const rest = ps.slice(0, -1);
   const offsetM = distance(newest, medianPosition(rest));
-  const dt =
-    (times[times.length - 1]! - interpolatingMedian(times.slice(0, -1))) / 1000;
-  return { offsetM, speedMps: dt > 0 ? offsetM / dt : null };
+  return { offsetM, speedMps: dtS > 0 ? offsetM / dtS : null };
 }
 
-/** Rough turn rate: the newest single-frame rotation against the others'. */
+/**
+ * Rough turn rate: the newest single-frame (raw) rotation against the
+ * others' joint rotation. The raw rotation is the flip-prone one near
+ * head-on, so this is for display, never for a decision.
+ */
 function turnRate(
   newest: QrFusedEntry,
   restRotation: Pose['rotation'],
@@ -177,16 +189,16 @@ export function measureQrMotion(
   // of that disagreement says little; against the others' rotation it is
   // clearly past it.
   const rest = o.solve(window.slice(0, -1).map(toView), o.sizeM);
-  // The newest must be among the used views.
+  // Every view in the motion window must be usable: the newest must be
+  // judged, and a dropped view would shift the positions against their times.
   if (!all || !rest || all.droppedViews > 0) return { ...NONE };
-  const times = window.map((e) => e.timestamp);
-  const { offsetM, speedMps } = translation(viewPositions(window, all), times);
+  const dtS = sinceRestS(window.map((e) => e.timestamp));
+  const { offsetM, speedMps } = translation(viewPositions(window, all), dtS);
   const newestFitPx = viewErrorAtRotationPx(
     toView(newest),
     rest.rotation,
     o.sizeM
   );
-  const dtS = (times[times.length - 1]! - times[times.length - 2]!) / 1000;
   return {
     movingCandidate: offsetM > o.moveM,
     turningCandidate: newestFitPx !== null && newestFitPx > o.turnPx,
@@ -223,6 +235,11 @@ function step(
   };
 }
 
+/** The same detection: the store passes the corners through by reference. */
+function sameDetection(a: QrFusedEntry, b: QrFusedEntry): boolean {
+  return a === b || (a.corners === b.corners && a.timestamp === b.timestamp);
+}
+
 function stateOf(moving: boolean, turning: boolean): QrMotionState {
   if (moving && turning) return 'moving+turning';
   if (moving) return 'moving';
@@ -253,14 +270,45 @@ export function createQrMotionTracker(
   let moving = fresh();
   let turning = fresh();
   let epoch: number | null = null;
-  // Persistence counts DETECTIONS: a re-read with the same newest entry (a
-  // HUD render) returns the last result instead of stepping again.
+  // Persistence counts DETECTIONS: a re-read of the same newest detection
+  // (a HUD render, or the store rebuilding its entry objects) returns the
+  // last result instead of stepping again.
   let lastNewest: QrFusedEntry | null = null;
   let last: QrMotion | null = null;
+  const restart = (e: number) => {
+    moving = fresh();
+    turning = fresh();
+    epoch = e;
+  };
+  const result = (signals: QrMotionSignals): QrMotion => {
+    const state = stateOf(moving.value, turning.value);
+    const since = [moving.stillSinceMs, turning.stillSinceMs].filter(
+      (t): t is number => t !== null
+    );
+    return {
+      ...signals,
+      state,
+      moving: moving.value,
+      turning: turning.value,
+      stillSinceMs:
+        state === 'still' && since.length ? Math.max(...since) : null,
+    };
+  };
+  const isReRead = (newest: QrFusedEntry) =>
+    last !== null && lastNewest !== null && sameDetection(newest, lastNewest);
+  // A new frame epoch, or time going backwards in one (a replay seek, a
+  // store swap), is a new run: the old run's times mean nothing in it.
+  const startsNewRun = (newest: QrFusedEntry) =>
+    epoch !== (newest.frameEpoch ?? 0) ||
+    (lastNewest !== null && newest.timestamp < lastNewest.timestamp);
+  const advance = (signals: QrMotionSignals, atMs: number) => {
+    moving = step(moving, signals.movingCandidate, atMs, o.persistence);
+    turning = step(turning, signals.turningCandidate, atMs, o.persistence);
+  };
   return {
     update(entries) {
       const newest = entries[entries.length - 1];
-      if (newest && newest === lastNewest && last) return last;
+      if (newest && isReRead(newest)) return last!;
       const signals = measureQrMotion(entries, options);
       if (!newest)
         return {
@@ -270,35 +318,12 @@ export function createQrMotionTracker(
           turning: false,
           stillSinceMs: null,
         };
-      const e = newest.frameEpoch ?? 0;
-      if (epoch !== e) {
-        moving = fresh();
-        turning = fresh();
-        epoch = e;
-      }
-      moving = step(
-        moving,
-        signals.movingCandidate,
-        newest.timestamp,
-        o.persistence
-      );
-      turning = step(
-        turning,
-        signals.turningCandidate,
-        newest.timestamp,
-        o.persistence
-      );
-      const since = [moving.stillSinceMs, turning.stillSinceMs].filter(
-        (t): t is number => t !== null
-      );
+      if (startsNewRun(newest)) restart(newest.frameEpoch ?? 0);
       lastNewest = newest;
-      last = {
-        ...signals,
-        state: stateOf(moving.value, turning.value),
-        moving: moving.value,
-        turning: turning.value,
-        stillSinceMs: since.length ? Math.max(...since) : null,
-      };
+      // No signal (too few views, a failed solve, an unusable view) says
+      // nothing about motion: it neither confirms nor breaks a run.
+      if (signals.offsetM !== null) advance(signals, newest.timestamp);
+      last = result(signals);
       return last;
     },
     reset() {

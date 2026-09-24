@@ -27,12 +27,14 @@ p95Abs, meanSigned }`: the STABLE fused pose's own quality (what the
   - `motion` `{ n, still, moving, turning, movingTurning, switches,
 turnSignalP50Px, turnSignalP95Px, moveSignalP95Cm }`: over results that
     carry a motion reading - the modes shown, the mode switches within one
-    frame epoch, and the raw signals (the newest view's corner error at the
-    others' rotation, against the 3 px turning threshold; its position
-    offset in cm, against the 3 cm moving threshold).
+    frame epoch, and the raw signals over STILL readings only (the newest
+    view's corner error at the others' rotation, which the 3 px turning
+    threshold must sit above; its position offset in cm, the 3 cm moving
+    threshold). During motion the signals measure the motion, not the
+    noise, so a hand-held run would otherwise read as a noisy phone.
 - `fusedLines(summary)` - the three report lines: the tally, `fused pose
 (stable): jump ... | wall elevation ...`, and `motion: still … | switches …
-| turn signal … | move signal …`.
+| still turn signal … | still move signal …`.
 
 ## Invariants & assumptions
 

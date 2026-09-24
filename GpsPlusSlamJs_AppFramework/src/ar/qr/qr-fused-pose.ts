@@ -324,7 +324,9 @@ function motionCutMs(
  * out a new array per new detection; never a timestamp, which replay and
  * store swaps reuse), carries the previous result for the hysteresis, and
  * runs the motion detector (unless `motion: false`), which cuts the window
- * so a moved or turned code never fuses its stale views.
+ * once a motion is CONFIRMED, so the views from before it stop being fused.
+ * A motion too short or too slow to be confirmed is not cut (see the
+ * sidecar).
  */
 export function createFusedQrPoseTracker(
   options: QrFusedPoseOptions = {}

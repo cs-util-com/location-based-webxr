@@ -179,7 +179,12 @@ function perturbed(
 /** Render, decode and solve a scene: the entries a phone would record. */
 async function render(
   scene: Scene,
-  opts: { seed: number; noiseSigma: number; slam: SlamNoise | null }
+  opts: {
+    seed: number;
+    noiseSigma: number;
+    slam: SlamNoise | null;
+    distanceM?: number;
+  }
 ): Promise<(QrFusedEntry | null)[]> {
   const projection = perspectiveProjection({
     fovYDeg: PHONE.fovYDeg,
@@ -193,7 +198,7 @@ async function render(
   const eyes = walkCameraPoses({
     kind: scene.cameraWalks ? 'arc' : 'still',
     codeWorld: codeAt(0, 0, 0),
-    distanceM: 1.2,
+    distanceM: opts.distanceM ?? 1.2,
     extent: 30,
     steps: STEPS,
   }).map((p) => p.position as Vec3);
@@ -411,6 +416,49 @@ describe.runIf(RUN)('QR motion threshold sweep (opt-in, QR_SWEEP=1)', () => {
         console.log(out.join('\n'));
         expect(decoded).toBeGreaterThan(0);
       }
+    },
+    SWEEP_TIMEOUT_MS
+  );
+});
+
+describe.runIf(RUN)('QR motion: a still code across distance (opt-in)', () => {
+  // Milestone review finding 1: the moving signal is a single-frame position
+  // difference, whose SLAM-rotation part grows with distance and whose PnP
+  // depth part grows faster; every scene above is at 1.2 m.
+  it(
+    'measures the still move signal and false motion from 0.6 to 3 m',
+    async () => {
+      const still = scenes().find((x) => x.name === 'still, camera walks')!;
+      const out: string[] = [];
+      for (const slam of [
+        { rotationDeg: 0.2, translationM: 0.005 },
+        { rotationDeg: 0.5, translationM: 0.01 },
+      ]) {
+        for (const distanceM of [0.6, 1.2, 2, 3]) {
+          const rendered: Rendered[] = [];
+          for (const seed of [1, 2, 3, 4, 5]) {
+            rendered.push({
+              scene: still,
+              steps: await render(still, {
+                seed,
+                noiseSigma: 4,
+                slam,
+                distanceM,
+              }),
+            });
+          }
+          const decoded = rendered.flatMap((r) => r.steps).filter(Boolean);
+          const cells = [0.03, 0.05, 0.08].map((moveM) => {
+            const s = score(rendered, { moveM });
+            return `moveM ${moveM}: false ${s.falseMotion}/${s.falseN}`;
+          });
+          out.push(
+            `SLAM ${slam.rotationDeg} deg / ${slam.translationM * 1000} mm, ${distanceM} m: ${decoded.length}/${rendered.length * STEPS} decoded | ${stillSignals(rendered, 4)} | ${cells.join(' | ')}`
+          );
+        }
+      }
+      console.log(out.join('\n'));
+      expect(out.length).toBe(8);
     },
     SWEEP_TIMEOUT_MS
   );

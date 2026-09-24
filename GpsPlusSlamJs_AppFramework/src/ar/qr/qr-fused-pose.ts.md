@@ -74,14 +74,23 @@ fallbackFitPx` (or `<= fallbackFitPx x hysteresis` if the previous result
 - **Why the tracker needs the motion detector.** The joint solve shares
   only the rotation and keeps each view's own position, so a code slid
   sideways still fits well: without the detector the gate stays open and
-  the median position trails the code (a test pins > 10 cm, long after the
-  point where the detector would have cut). A turn inside the window
-  barely raises the fit either (15° over 3 detections: 0.64 px).
+  the median position trails the code (tests pin: by more than 10 cm, and
+  still after the point where the detector cuts). A turn inside the window
+  barely raises the fit either (15° over 3 detections: under 1 px, pinned).
 - **The price of calm switching.** Motion is confirmed after 4 detections
   (owner, §26); until then the window still fuses, so a stable pose trails
-  a code that starts moving for at most 3 detections (~0.4 s; 15 cm at
-  0.4 m/s, 15° at 40°/s). After it stops, the pose is stable again 5
-  detections after the confirming still run began (`minViews`).
+  a code that starts moving for exactly the 3 detections before (~0.4 s;
+  about 15 cm at 0.4 m/s and 15° at 40°/s in a trace). After it stops, the
+  pose is stable again at the 5th detection of the confirming still run
+  (`minViews`; pinned).
+- **What is NOT cut:** a motion the detector does not confirm - one over in
+  fewer than about 3-4 detections (a quick reposition: the signal compares
+  the newest view with the median of the previous three, so a step shows
+  on at most 2 detections), a slide slower than about 12 cm/s, a slow
+  out-of-plane turn near head-on (sweep findings 2026-09-25). After a quick
+  reposition the stable pose holds the old median position until the new
+  place fills half the window, then snaps. The same property ignores a
+  SLAM relocalisation jump, which is a step too.
 - The tracker costs two extra small solves per detection (the detector's).
 - **Cache key:** the entries array identity, never a timestamp (replay and
   store swaps reuse timestamps; plan §16 #5). A store that mutates an array

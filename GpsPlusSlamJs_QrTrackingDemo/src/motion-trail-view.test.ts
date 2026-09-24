@@ -48,8 +48,28 @@ describe("createMotionTrailView", () => {
     );
     expect(line.visible).toBe(true);
     const pos = line.geometry.getAttribute("position");
-    expect(pos.count).toBe(2);
+    expect(line.geometry.drawRange.count).toBe(2);
     expect([pos.getX(1), pos.getY(1), pos.getZ(1)]).toEqual([1, 2, 3]);
+  });
+
+  // It updates on every HUD render: one preallocated buffer, rewritten in
+  // place, never a new GPU buffer per render (milestone review 2026-09-25).
+  it("rewrites one buffer in place and keeps the newest points past its capacity", () => {
+    const parent = new Group();
+    const view = createMotionTrailView(parent);
+    const line = lineOf(parent);
+    const pts = (n: number) =>
+      Array.from(
+        { length: n },
+        (_, i) => [i, 0, 0] as [number, number, number],
+      );
+    view.update(pts(3), null);
+    const attr = line.geometry.getAttribute("position");
+    view.update(pts(200), null);
+    expect(line.geometry.getAttribute("position")).toBe(attr);
+    const n = line.geometry.drawRange.count;
+    expect(n).toBeLessThan(200);
+    expect(attr.getX(n - 1)).toBe(199);
   });
 
   it("takes the mode's colour, and a neutral one for none", () => {

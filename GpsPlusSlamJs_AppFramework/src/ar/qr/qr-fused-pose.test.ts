@@ -232,8 +232,6 @@ describe('selectFusedWindow', () => {
     expect(selectFusedWindow(swapped, { windowSize: 10 })).toHaveLength(10);
   });
 
-  // A NaN timestamp cannot be judged, so it breaks the window rather than
-  // silently joining it.
   // The motion detector's cut (plan §26): once a code stopped moving, only
   // the views since then may be fused.
   it('leaves out entries older than sinceMs', () => {
@@ -241,6 +239,8 @@ describe('selectFusedWindow', () => {
     expect(w).toEqual(base.slice(6));
   });
 
+  // A NaN timestamp cannot be judged, so it breaks the window rather than
+  // silently joining it.
   it('breaks the window at a NaN timestamp', () => {
     const bad = base.map((e, i) => ({
       ...e,
@@ -637,12 +637,26 @@ describe('createFusedQrPoseTracker motion (plan §26)', () => {
     expect(last.oldestTimestamp).toBeGreaterThanOrEqual(
       last.motion!.stillSinceMs!
     );
+    // Stable again at the 5th detection of the confirming still run
+    // (minViews 5): the window rebuilds from the new place only.
+    const stillFrom = last.motion!.stillSinceMs! / 125;
+    const stableAgain = out.findIndex(
+      (o, i) => i > stillFrom && o.result.status === 'stable'
+    );
+    expect(stableAgain).toBe(stillFrom + 4);
   });
 
   it('lets a stable rotation trail a turning code only until the turn is confirmed', () => {
     const out = run(32, spin);
     expect(out.some((o) => o.result.motion?.turning)).toBe(true);
-    expect(Math.max(...trailing(out))).toBeLessThan(MOTION_START + 3);
+    expect(trailing(out)).toEqual([
+      MOTION_START,
+      MOTION_START + 1,
+      MOTION_START + 2,
+    ]);
+    // A 15 deg turn inside the window barely raises the joint fit: the gate
+    // alone cannot see it.
+    expect(out[MOTION_START + 2]!.result.fitPx).toBeLessThan(1);
     expect(out[out.length - 1]!.result.status).toBe('stable');
   });
 
@@ -654,6 +668,41 @@ describe('createFusedQrPoseTracker motion (plan §26)', () => {
     const out = run(32, slide, { motion: false });
     expect(out.every((o) => o.result.motion === null)).toBe(true);
     expect(Math.max(...trailing(out))).toBeGreaterThan(MOTION_START + 5);
+    const worst = Math.max(
+      ...out
+        .filter((o) => o.result.status === 'stable')
+        .map((o) => positionErrorM(o.result.pose!, o.truth))
+    );
+    expect(worst).toBeGreaterThan(0.1);
+  });
+
+  it('without the detector, a spin gives a stable rotation that trails on', () => {
+    const out = run(32, spin, { motion: false });
+    expect(Math.max(...trailing(out))).toBeGreaterThan(MOTION_START + 3);
+  });
+
+  // A replay seek backwards (same epoch, older timestamps) must not leave a
+  // cut from the old run in the future of the new timestamps.
+  it('recovers the fused pose after time goes backwards', () => {
+    const cams = walkCameraPoses({
+      kind: 'arc',
+      codeWorld: codeAt(0),
+      distanceM: 1.2,
+      extent: 30,
+      steps: 32,
+    });
+    const first = cams.map((cam, i) =>
+      entryOf(cam, cornersOf(cam, slide(i)), i * 125)
+    );
+    const tracker = createFusedQrPoseTracker();
+    for (let i = 1; i <= first.length; i++) tracker.evaluate(first.slice(0, i));
+    const again = cams
+      .slice(0, 8)
+      .map((cam, i) => entryOf(cam, cornersOf(cam, codeAt(0)), i * 125));
+    let result = tracker.evaluate(again.slice(0, 1));
+    for (let i = 2; i <= again.length; i++)
+      result = tracker.evaluate(again.slice(0, i));
+    expect(result.status).toBe('stable');
   });
 
   it('carries no motion from a bare evaluation', () => {

@@ -22,9 +22,12 @@ reads "still".
   - `turningCandidate`, `newestFitPx`: the newest view's corner error
     (`viewErrorAtRotationPx`) at the rotation solved from the OTHER views
     alone; turning above `turnPx`.
-  - `turnRateDegPerS`: ROUGH - the newest single-frame rotation against the
-    others' rotation, per second since the previous detection (null without
-    a raw pose).
+  - `turnRateDegPerS`: ROUGH, for display only - the newest single-frame
+    (raw) rotation against the others' joint rotation, per second since the
+    rest's median detection (the same time base as the speed; null without
+    a raw pose). A steady 40°/s reads ~49°/s (pinned). §26 asked for the
+    rotation from the per-view fits; the raw one is used instead and is
+    flip-prone near head-on, which is why it never decides anything.
   - All null / false with fewer than two detections in the window, or when
     any view in it is unusable (the newest must be judged, and a dropped
     view would shift the positions against their timestamps).
@@ -33,9 +36,13 @@ reads "still".
   confirmed only after `persistence` consecutive detections agree, in both
   directions (owner: ~0.5 s). Returns the signals plus `state`, `moving`,
   `turning`, and `stillSinceMs` (when the code became still after its last
-  confirmed motion; null if it has not moved in this frame epoch). A new
-  frame epoch starts it afresh; a re-read with the same newest entry returns
-  the last result (persistence counts detections, not reads).
+  confirmed motion; null while it is moving or turning, and when it has not
+  moved in this run). A new frame epoch, or time going backwards within one
+  (a replay seek, a store swap), starts it afresh. A re-read of the same
+  newest detection (the same entry, or a rebuilt copy with the same corners
+  array and timestamp) returns the last result: persistence counts
+  detections, not reads. A reading with no signal (too few views, a failed
+  solve, an unusable view) neither confirms nor breaks a run.
 - Options (defaults PROVISIONAL until the §26 sweep; out-of-range values
   fall back to the default): `motionWindow` 4 (≥ 2), `moveM` 0.03,
   `turnPx` 3, `persistence` 4 (≥ 1), `sizeM` 0.16 (positions only, and only
@@ -77,6 +84,22 @@ reads "still".
   head-on moves its corners only at second order (the reason its tilt is
   hard to measure), so a slow such turn is seen late or not at all; turns
   of an oblique code and in-plane turns are seen at first order.
+- **What it cannot confirm:** a motion over in fewer than about 3-4
+  detections (a quick reposition shows on at most 2 detections, because
+  the newest is compared with the median of the previous three), a slide
+  slower than about 12 cm/s (the offset is about two detections of travel,
+  against 3 cm), and a slow out-of-plane turn near head-on. The same
+  property ignores a SLAM relocalisation jump.
+- **The raw poses' size must be steady.** Positions come from the raw
+  poses, so a producer whose size estimate is still converging (the QR
+  demo's running median from depth) moves a still code by about
+  distance x (relative size change) per detection - 3 cm at 1.2 m for a
+  2.5 % change. Not measured yet; the phone test's still runs show it.
+- **Distance (sweep 2026-09-25):** at the demo's 1024-px capture a 16 cm
+  code decodes to about 1.2-1.5 m only (none at 2 or 3 m); within that
+  range the still move signal barely changes (p95 1.8 -> 2.1 cm at medium
+  SLAM noise, 0.6 -> 1.2 m), while close up the turn signal grows (max
+  4.2 px at 0.6 m, heavy noise; persistence still held it at 0 false).
 - Two joint solves per detection: all `motionWindow` views (positions) and
   all but the newest (rotation).
 
@@ -99,7 +122,10 @@ if (m.state === 'still') {
   out-of-plane turn of an oblique code is seen; a still code past a fast
   camera reads still whatever size is assumed (0.08-0.32 m) when the entries
   carry raw poses, and without them the assumed size matters (pinned); the persistence in both
-  directions; one outlier frame never flips the state; a still code under
+  directions; a rebuilt copy of a detection is not counted again; a
+  confirmed motion survives readings without a signal; time going
+  backwards starts afresh; no still time while moving again; a steady
+  turn's rate; one outlier frame never flips the state; a still code under
   1 px of corner noise stays still (10 seeds x 40 detections); one step per
   detection however often it is read; `stillSinceMs`.
 - `qr-motion.property.test.ts`: for any sequence of raw moving candidates
