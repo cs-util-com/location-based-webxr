@@ -27,8 +27,11 @@ export interface QrFusedEntry {
   cameraPose: Pose;
   /** Intrinsics of the exact buffer the corners came from. */
   intrinsics: CameraIntrinsics;
-  /** Tracking-frame epoch (bumped on an odometry restart); default 0. */
-  epoch?: number;
+  /**
+   * Tracking-frame epoch: bumped on an odometry restart, after which older
+   * detections live in another coordinate frame. Default 0.
+   */
+  frameEpoch?: number;
   /** The single-frame world pose, when the producer solved one. */
   rawPose?: Pose | null;
 }
@@ -42,9 +45,13 @@ export interface QrFusedPoseOptions {
   radiusM?: number;
   /** Views the gate needs. Default 5. */
   minViews?: number;
-  /** The gate's bound on the median per-view corner error, px. Default 1.5 (provisional). */
+  /**
+   * The gate's bound on the median per-view corner error, px. Default 1.5 -
+   * above every good rendered window (0.5-1.1 px, plan §20), still to be
+   * checked against the phone's corner noise (b7).
+   */
   maxFitPx?: number;
-  /** Above this median per-view error the output falls back to averaging, px. Default 3 (provisional). */
+  /** Above this median per-view error the output falls back to averaging, px. Default 3 (b7 as above). */
   fallbackFitPx?: number;
   /** A state is kept until the error exceeds its bound x this. Default 1.5. */
   hysteresis?: number;
@@ -74,6 +81,13 @@ export interface QrFusedPose {
   windowEntries: number;
   /** Angle between the joint and the averaged rotation, deg (NaN when either is missing). */
   averagedRotationDeltaDeg: number;
+  /**
+   * The window's frame epoch and time span: the next evaluation carries this
+   * result's hysteresis over only if its window CONTINUES this one.
+   */
+  frameEpoch: number;
+  oldestTimestamp: number;
+  newestTimestamp: number;
 }
 
 const DEFAULTS = {
@@ -96,7 +110,49 @@ const UNKNOWN: QrFusedPose = {
   fitPx: Infinity,
   windowEntries: 0,
   averagedRotationDeltaDeg: Number.NaN,
+  frameEpoch: 0,
+  oldestTimestamp: Number.NaN,
+  newestTimestamp: Number.NaN,
 };
+
+type Resolved = typeof DEFAULTS & {
+  solveOptions: QrMultiViewPoseOptions | undefined;
+  solve: typeof solveQrPoseMultiView | undefined;
+};
+
+/**
+ * The options with every numeric one checked: a missing, NaN or out-of-range
+ * value takes its default instead of silently switching a check off (an
+ * explicit `undefined` from a plain JS caller included).
+ */
+function resolveOptions(options: QrFusedPoseOptions): Resolved {
+  const pick = (
+    v: number | undefined,
+    d: number,
+    ok: (x: number) => boolean
+  ) => (typeof v === 'number' && ok(v) ? v : d);
+  const positive = (x: number) => x > 0;
+  return {
+    windowSize: pick(options.windowSize, DEFAULTS.windowSize, (x) => x >= 1),
+    gapMs: pick(options.gapMs, DEFAULTS.gapMs, (x) => x >= 0),
+    radiusM: pick(options.radiusM, DEFAULTS.radiusM, positive),
+    minViews: pick(options.minViews, DEFAULTS.minViews, (x) => x >= 1),
+    maxFitPx: pick(options.maxFitPx, DEFAULTS.maxFitPx, positive),
+    fallbackFitPx: pick(
+      options.fallbackFitPx,
+      DEFAULTS.fallbackFitPx,
+      positive
+    ),
+    hysteresis: pick(options.hysteresis, DEFAULTS.hysteresis, (x) => x >= 1),
+    sizeM: pick(
+      options.sizeM,
+      DEFAULTS.sizeM,
+      (x) => positive(x) && Number.isFinite(x)
+    ),
+    solveOptions: options.solveOptions,
+    solve: options.solve,
+  };
+}
 
 function distance(a: Pose['position'], b: Pose['position']): number {
   return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
@@ -104,52 +160,50 @@ function distance(a: Pose['position'], b: Pose['position']): number {
 
 /**
  * The window (oldest to newest): walking back from the newest entry, stop at
- * another epoch or at a step in time larger than `gapMs` (either direction);
- * leave out entries farther than `radiusM` from the newest raw position
- * (entries without a raw pose are kept); keep at most `windowSize`.
+ * another frame epoch or at a step in time larger than `gapMs` (either
+ * direction; a NaN step breaks too); leave out entries farther than
+ * `radiusM` from the newest raw position in the run (entries without a raw
+ * pose are kept); keep at most `windowSize`.
  */
 export function selectFusedWindow(
   entries: readonly QrFusedEntry[],
   options: Pick<QrFusedPoseOptions, 'windowSize' | 'gapMs' | 'radiusM'> = {}
 ): QrFusedEntry[] {
-  const o = { ...DEFAULTS, ...options };
+  const o = resolveOptions(options);
   const newest = entries[entries.length - 1];
   if (!newest) return [];
-  const out: QrFusedEntry[] = [];
-  for (let i = entries.length - 1; i >= 0 && out.length < o.windowSize; i--) {
+  const run: QrFusedEntry[] = [];
+  for (let i = entries.length - 1; i >= 0; i--) {
     const e = entries[i]!;
     if (breaksWindow(e, entries[i + 1], newest, o.gapMs)) break;
-    if (!isFar(e, newest, o.radiusM)) out.push(e);
+    run.push(e);
   }
-  return out.reverse();
+  const anchor = run.find((e) => e.rawPose)?.rawPose?.position;
+  const out = anchor
+    ? run.filter(
+        (e) => !e.rawPose || distance(e.rawPose.position, anchor) <= o.radiusM
+      )
+    : run;
+  return out.slice(0, o.windowSize).reverse();
 }
 
-/** Another epoch than the newest, or a step in time above `gapMs` to the next entry. */
+/** Another frame epoch than the newest, or a time step to the next entry above `gapMs` (or NaN). */
 function breaksWindow(
   e: QrFusedEntry,
   later: QrFusedEntry | undefined,
   newest: QrFusedEntry,
   gapMs: number
 ): boolean {
-  if ((e.epoch ?? 0) !== (newest.epoch ?? 0)) return true;
-  return later !== undefined && Math.abs(later.timestamp - e.timestamp) > gapMs;
-}
-
-/** Farther than `radiusM` from the newest raw position (false when either has none). */
-function isFar(
-  e: QrFusedEntry,
-  newest: QrFusedEntry,
-  radiusM: number
-): boolean {
-  const anchor = newest.rawPose;
-  if (!anchor || !e.rawPose) return false;
-  return distance(e.rawPose.position, anchor.position) > radiusM;
+  if ((e.frameEpoch ?? 0) !== (newest.frameEpoch ?? 0)) return true;
+  return (
+    later !== undefined && !(Math.abs(later.timestamp - e.timestamp) <= gapMs)
+  );
 }
 
 /** The joint solve over the window and its robust fit statistic. */
 function jointOf(
   window: readonly QrFusedEntry[],
-  o: typeof DEFAULTS & QrFusedPoseOptions
+  o: Resolved
 ): { joint: QrMultiViewPoseResult | null; fitPx: number } {
   const views: QrViewObservation[] = window.map((e) => ({
     corners: e.corners,
@@ -183,28 +237,57 @@ function held(
 /**
  * The fused pose of the window selected from `entries`. `previous` (the last
  * result for the same code) makes the gate and the method sticky, so the
- * output does not flicker between states or methods.
+ * output does not flicker between states or methods - but only while the
+ * window CONTINUES it (same frame epoch, no gap above `gapMs` between the
+ * previous window's newest entry and this window's oldest).
  */
 export function evaluateFusedQrPose(
   entries: readonly QrFusedEntry[],
   options: QrFusedPoseOptions = {},
   previous?: QrFusedPose | null
 ): QrFusedPose {
-  const o = { ...DEFAULTS, ...options };
+  const o = resolveOptions(options);
   const window = selectFusedWindow(entries, o);
-  if (window.length === 0) return { ...UNKNOWN };
+  const oldest = window[0];
+  const newest = window[window.length - 1];
+  if (!oldest || !newest) return { ...UNKNOWN };
   const averaged = averagedOf(window);
   const { joint, fitPx } = jointOf(window, o);
-  const { useJoint, stable } = decide(joint, fitPx, o, previous);
+  const frameEpoch = newest.frameEpoch ?? 0;
+  const carried = continues(previous, frameEpoch, oldest, newest, o.gapMs)
+    ? previous
+    : null;
+  const { useJoint, stable } = decide(joint, fitPx, o, carried);
   return {
     status: stable ? 'stable' : 'measuring',
     ...poseOf(useJoint ? joint : null, averaged, joint),
     views: joint ? joint.views : 0,
-    droppedViews: joint ? joint.droppedViews : window.length,
+    droppedViews: joint ? joint.droppedViews : 0,
     fitPx,
     windowEntries: window.length,
     averagedRotationDeltaDeg: rotationDeltaDeg(joint, averaged),
+    frameEpoch,
+    oldestTimestamp: oldest.timestamp,
+    newestTimestamp: newest.timestamp,
   };
+}
+
+/**
+ * Whether this window continues `previous`'s: same frame epoch, not older (a
+ * replay seek backwards starts afresh), and no gap above `gapMs` between the
+ * previous window's newest entry and this window's oldest.
+ */
+function continues(
+  previous: QrFusedPose | null | undefined,
+  frameEpoch: number,
+  oldest: QrFusedEntry,
+  newest: QrFusedEntry,
+  gapMs: number
+): previous is QrFusedPose {
+  if (!previous || previous.status === 'unknown') return false;
+  if (previous.frameEpoch !== frameEpoch) return false;
+  if (!(newest.timestamp >= previous.newestTimestamp)) return false;
+  return oldest.timestamp - previous.newestTimestamp <= gapMs;
 }
 
 /**
@@ -215,7 +298,7 @@ export function evaluateFusedQrPose(
 function decide(
   joint: QrMultiViewPoseResult | null,
   fitPx: number,
-  o: typeof DEFAULTS,
+  o: Resolved,
   previous: QrFusedPose | null | undefined
 ): { useJoint: boolean; stable: boolean } {
   const wasJoint = previous ? previous.method === 'joint' : false;

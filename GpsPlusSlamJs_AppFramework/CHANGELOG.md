@@ -46,12 +46,14 @@
   M3b b1): `evaluateFusedQrPose(entries, options?, previous?)`,
   `selectFusedWindow` and `createFusedQrPoseTracker` on `/ar`. The window
   is the newest run of detections in one tracking epoch without a long time
-  gap (and, optionally, near the newest raw position); its rotation comes
+  gap (and, optionally, near the newest raw position; the entries carry a
+  `frameEpoch`); its rotation comes
   from the joint multi-view solve, with today's averaging as the fallback
   when the views contradict each other. `stable` needs enough views and a
   good median per-view fit, with hysteresis. The tracker solves once per new
-  entries array. Nothing calls it yet (M3b b2-b6); the thresholds are
-  provisional until the b1 sweep.
+  entries array. Nothing calls it yet (M3b b2-b6); the fit thresholds are
+  set from rendered walks and still to be checked against a phone's corner
+  noise.
 - **The AR scene's lights are named** (AR sun shadow prototype plan
   2026-09-23-2343, M3a): `SCENE_NODE.AMBIENT_LIGHT` and `SCENE_NODE.SUN_LIGHT`
   (the directional light fixed at (0, 10, 5)), set by `createSceneHierarchy`,

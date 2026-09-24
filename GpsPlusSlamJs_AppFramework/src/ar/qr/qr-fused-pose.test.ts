@@ -81,7 +81,7 @@ function entryOf(
   camera: Pose,
   corners: Point2[],
   timestamp: number,
-  epoch = 0
+  frameEpoch = 0
 ): QrFusedEntry {
   const raw = solveQrPose({
     imagePoints: corners,
@@ -96,7 +96,7 @@ function entryOf(
     corners,
     cameraPose: camera,
     intrinsics: K,
-    epoch,
+    frameEpoch,
     rawPose: raw ? raw.qrPoseWorld : null,
   };
 }
@@ -166,7 +166,7 @@ describe('selectFusedWindow', () => {
   // After an odometry restart the old detections live in another coordinate
   // frame; only the newest epoch may be combined.
   it('keeps only the newest frame epoch', () => {
-    const mixed = base.map((e, i) => ({ ...e, epoch: i < 7 ? 0 : 1 }));
+    const mixed = base.map((e, i) => ({ ...e, frameEpoch: i < 7 ? 0 : 1 }));
     expect(selectFusedWindow(mixed, { windowSize: 10 })).toEqual(
       mixed.slice(7)
     );
@@ -198,6 +198,65 @@ describe('selectFusedWindow', () => {
     expect(w).not.toContain(far[8]);
     expect(w).toContain(far[9]);
   });
+
+  // The radius anchor must not vanish when the NEWEST entry's own solve
+  // failed (review §20 #4): it falls to the newest entry that has a raw pose.
+  it('anchors the radius on the newest entry that has a raw pose', () => {
+    const moved = (e: QrFusedEntry): QrFusedEntry => ({
+      ...e,
+      rawPose: {
+        ...e.rawPose!,
+        position: [
+          e.rawPose!.position[0] + 3,
+          e.rawPose!.position[1],
+          e.rawPose!.position[2],
+        ],
+      },
+    });
+    const far = base.map((e, i) =>
+      i === 9 ? { ...e, rawPose: null } : i === 5 ? moved(e) : e
+    );
+    const w = selectFusedWindow(far, { windowSize: 10, radiusM: 0.5 });
+    expect(w).toContain(far[9]);
+    expect(w).not.toContain(far[5]);
+    expect(w).toContain(far[4]);
+  });
+
+  // Small out-of-order stamps (two frames delivered swapped) are not a gap.
+  it('keeps small out-of-order timestamps together', () => {
+    const swapped = base.map((e, i) => ({
+      ...e,
+      timestamp:
+        i === 6
+          ? base[7]!.timestamp
+          : i === 7
+            ? base[6]!.timestamp
+            : e.timestamp,
+    }));
+    expect(selectFusedWindow(swapped, { windowSize: 10 })).toHaveLength(10);
+  });
+
+  // A NaN timestamp cannot be judged, so it breaks the window rather than
+  // silently joining it.
+  it('breaks the window at a NaN timestamp', () => {
+    const bad = base.map((e, i) => ({
+      ...e,
+      timestamp: i === 6 ? Number.NaN : e.timestamp,
+    }));
+    expect(selectFusedWindow(bad, { windowSize: 10 })).toEqual(bad.slice(7));
+  });
+
+  // Plain JS callers can pass NaN or an explicit undefined; that must fall
+  // back to the default, not switch the window off.
+  it('treats invalid numeric options as their defaults', () => {
+    expect(
+      selectFusedWindow(base, {
+        windowSize: Number.NaN,
+        gapMs: undefined,
+        radiusM: Number.NaN,
+      })
+    ).toEqual(base.slice(2));
+  });
 });
 
 describe('evaluateFusedQrPose', () => {
@@ -225,11 +284,47 @@ describe('evaluateFusedQrPose', () => {
   // solve's mean.
   it('takes the position as the median of the raw positions', () => {
     const code = tilted(5);
-    const entries = walkEntries(code, 8);
+    // Every raw pose 5 cm off along x: the joint solve's own position stays
+    // at the truth, the output must follow the raw median.
+    const entries = walkEntries(code, 8).map((e) => ({
+      ...e,
+      rawPose: {
+        ...e.rawPose!,
+        position: [
+          e.rawPose!.position[0] + 0.05,
+          e.rawPose!.position[1],
+          e.rawPose!.position[2],
+        ] as Pose['position'],
+      },
+    }));
     const r = evaluateFusedQrPose(entries);
-    r.pose!.position.forEach((v, a) =>
-      expect(Math.abs(v - code.position[a]!)).toBeLessThan(1e-4)
-    );
+    expect(r.pose!.position[0]).toBeCloseTo(code.position[0] + 0.05, 4);
+    expect(r.pose!.position[1]).toBeCloseTo(code.position[1], 4);
+  });
+
+  // The gate's view count is inclusive: exactly minViews is enough.
+  it('opens the gate at exactly minViews views', () => {
+    const entries = walkEntries(tilted(5), 8);
+    expect(
+      evaluateFusedQrPose(entries.slice(0, 5), { minViews: 5 }).status
+    ).toBe('stable');
+  });
+
+  // Without any raw pose there is nothing to fall back to: a contradicting
+  // window gives no pose rather than a nonsense joint one.
+  it('gives no pose when the fit is bad and no raw pose exists', () => {
+    const entries = walkEntries(tilted(5), 8).map((e, i) => ({
+      ...e,
+      rawPose: null,
+      corners:
+        i % 2 === 0
+          ? [e.corners[1]!, e.corners[2]!, e.corners[3]!, e.corners[0]!]
+          : e.corners,
+    }));
+    const r = evaluateFusedQrPose(entries);
+    expect(r.pose).toBeNull();
+    expect(r.method).toBeNull();
+    expect(r.status).toBe('measuring');
   });
 
   // One bad corner in one view must not close the gate (§16 #6): the gate
@@ -275,6 +370,8 @@ describe('evaluateFusedQrPose', () => {
     const r = evaluateFusedQrPose(rolled);
     expect(r.method).toBe('averaged');
     expect(r.status).toBe('measuring');
+    // The contradiction's fit, far above the 3 px fallback bound.
+    expect(r.fitPx).toBeGreaterThan(10);
   });
 
   // Why this test matters (§16 #11): a window where the joint rotation and
@@ -328,6 +425,55 @@ describe('evaluateFusedQrPose', () => {
   });
 });
 
+describe('evaluateFusedQrPose hysteresis', () => {
+  const code = tilted(5);
+  const rand = mulberry32(9);
+  const noisy = walkEntries(code, 8, { noise: { sigmaPx: 1.1, rand } });
+  const tight = { maxFitPx: 0.5, fallbackFitPx: 1, hysteresis: 2 };
+
+  // The METHOD is sticky too, keyed on the previous method (not its status):
+  // a window between the fallback bound and bound x hysteresis stays joint
+  // only if the previous result was joint.
+  it('keeps the joint method through a fit just above the fallback bound', () => {
+    const cold = evaluateFusedQrPose(noisy, tight);
+    expect(cold.fitPx).toBeGreaterThan(1);
+    expect(cold.fitPx).toBeLessThan(2);
+    expect(cold.method).toBe('averaged');
+    const previous = {
+      ...cold,
+      method: 'joint' as const,
+      status: 'measuring' as const,
+    };
+    expect(evaluateFusedQrPose(noisy, tight, previous).method).toBe('joint');
+  });
+
+  // Why this test matters (review §20 #2): a stable result from ANOTHER
+  // coordinate frame must not hold the gate open for the new one.
+  it('does not carry the gate across a frame-epoch reset', () => {
+    const clean = walkEntries(code, 8);
+    const before = evaluateFusedQrPose(clean, { maxFitPx: 1, hysteresis: 2 });
+    expect(before.status).toBe('stable');
+    const later = noisy.map((e) => ({ ...e, frameEpoch: 1 }));
+    expect(
+      evaluateFusedQrPose(later, { maxFitPx: 1, hysteresis: 2 }, before).status
+    ).toBe('measuring');
+    // ... nor across a gap longer than gapMs in the same epoch.
+    const afterGap = noisy.map((e) => ({
+      ...e,
+      timestamp: e.timestamp + 60_000,
+    }));
+    expect(
+      evaluateFusedQrPose(afterGap, { maxFitPx: 1, hysteresis: 2 }, before)
+        .status
+    ).toBe('measuring');
+    // ... nor into an OLDER window (a replay seek backwards).
+    const older = noisy.map((e) => ({ ...e, timestamp: e.timestamp - 60_000 }));
+    expect(
+      evaluateFusedQrPose(older, { maxFitPx: 1, hysteresis: 2 }, before).status
+    ).toBe('measuring');
+  });
+});
+
 describe('createFusedQrPoseTracker', () => {
   // Why this test matters (§16 #5): the apps read the pose on hot paths
   // (every XR frame in the TourViewer author view). The tracker must solve
@@ -348,6 +494,19 @@ describe('createFusedQrPoseTracker', () => {
     const more = [...entries];
     tracker.evaluate(more);
     expect(solves).toBe(2);
+  });
+
+  // reset() forgets the hysteresis state and the cache.
+  it('forgets its previous result on reset', () => {
+    const code = tilted(5);
+    const tracker = createFusedQrPoseTracker({ maxFitPx: 1, hysteresis: 2 });
+    expect(tracker.evaluate(walkEntries(code, 8)).status).toBe('stable');
+    tracker.reset();
+    const rand = mulberry32(9);
+    expect(
+      tracker.evaluate(walkEntries(code, 8, { noise: { sigmaPx: 1.1, rand } }))
+        .status
+    ).toBe('measuring');
   });
 
   // The tracker carries the previous result for the hysteresis.

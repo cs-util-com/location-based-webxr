@@ -354,10 +354,10 @@ describe('solveQrPoseMultiView', () => {
     const ref = solveQrPoseMultiView(views, SIZE_M)!;
     for (const sizeM of [0.05, 0.5, 1]) {
       const res = solveQrPoseMultiView(views, sizeM)!;
-      expect(
-        rotationAngleDeg(res.rotation, ref.rotation),
-        `${sizeM}`
-      ).toBeLessThan(1e-6);
+      // Component-wise: an acos-based angle cannot resolve below ~1.7e-6 deg.
+      res.rotation.forEach((c, k) =>
+        expect(Math.abs(c - ref.rotation[k]!), `${sizeM}`).toBeLessThan(1e-9)
+      );
       expect(res.costPx).toBeCloseTo(ref.costPx, 9);
     }
   });
