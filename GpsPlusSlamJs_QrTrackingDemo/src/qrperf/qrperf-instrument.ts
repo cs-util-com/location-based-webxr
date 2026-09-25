@@ -7,6 +7,10 @@
 import type { QrFusedPose } from "gps-plus-slam-app-framework/ar/qr";
 import { createFusedTally, fusedLines } from "./fused-tally.js";
 import type { SizeState } from "./motion-tally.js";
+import {
+  createOrderChainTally,
+  type OrderChainSummary,
+} from "./order-chain-tally.js";
 import type { CaptureTiming } from "gps-plus-slam-app-framework/ar/camera-blit-capture";
 import type { QrDetection, RgbaImage } from "gps-plus-slam-app-framework/ar";
 import {
@@ -211,6 +215,12 @@ function pct(share: number): string {
   return `${Math.round(share * 100)}%`;
 }
 
+/** The chained corner order's audit and unsure runs (plan §42 S4). */
+function chainLine(c: OrderChainSummary): string {
+  const r = c.unsureRuns;
+  return `corner order chain audit agree ${c.audit.agree} | disagree ${c.audit.disagree} | reject ${c.audit.reject} || unsure runs 1/2-4/5-8/9+ ${r.r1}/${r.r2to4}/${r.r5to8}/${r.r9plus}`;
+}
+
 /** Corner-order sources and the big jumps' classes (plan §39 F0b). */
 function orderLine(q: PoseQualitySummary): string {
   const o = q.orderSources;
@@ -263,6 +273,7 @@ export function createQrPerfInstrument(
   const solves = { accepted: 0, attempted: 0 };
   /** The text of the latest detection; the solve that follows is its frame's. */
   let lastText: string | null = null;
+  const orderChain = createOrderChainTally();
   /** The corner-order source of the detection `lastText` came from (plan §39 F0b). */
   let lastOrderSource: QrDetection["orderSource"];
 
@@ -341,6 +352,7 @@ export function createQrPerfInstrument(
         if (result) timings.count("hit", t1);
         lastText = result?.text ?? null;
         lastOrderSource = result?.orderSource;
+        if (result) orderChain.add(result);
         await compareWithZxing(image, result);
         return result;
       };
@@ -391,6 +403,7 @@ export function createQrPerfInstrument(
         `solves accepted ${solves.accepted} / ${solves.attempted}`,
         ...poseLines(pose.summary()),
         ...fusedLines(fused.summary()),
+        chainLine(orderChain.summary()),
       );
       if (options.mode === "zxing") lines.push(...zxingLines());
       return lines;
@@ -408,6 +421,7 @@ export function createQrPerfInstrument(
         zxingSets: sets,
         zxingLoadMs: options.zxing?.loadMs() ?? null,
         cornerOrder: tally.summary(),
+        cornerOrderChain: orderChain.summary(),
       });
     },
   };

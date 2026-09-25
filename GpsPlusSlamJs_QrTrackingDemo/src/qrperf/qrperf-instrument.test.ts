@@ -287,6 +287,47 @@ describe("createQrPerfInstrument", () => {
       );
     });
 
+    // Plan §42 S4: the chained corner order's error rate on the phone -
+    // what the live chain would have picked on each finder frame - and how
+    // long the runs of non-finder frames are (the chain has to carry them).
+    it("tallies the corner-order audit and the runs of unsure frames", async () => {
+      const inst = createQrPerfInstrument({ mode: "native", baseline: false });
+      const seq = [
+        { orderSource: "finder" as const },
+        { orderSource: "memory" as const },
+        { orderSource: "memory" as const },
+        { orderSource: "finder" as const, orderAudit: "agree" as const },
+        { orderSource: "native" as const },
+        { orderSource: "finder" as const, orderAudit: "disagree" as const },
+        { orderSource: "finder" as const, orderAudit: "reject" as const },
+        { orderSource: "memory" as const },
+      ];
+      for (const over of seq) {
+        await inst.wrapDetect(() => Promise.resolve({ ...HIT, ...over }))(
+          IMAGE,
+        );
+      }
+      const json = JSON.parse(inst.json()) as {
+        cornerOrderChain: {
+          audit: Record<string, number>;
+          unsureRuns: Record<string, number>;
+        };
+      };
+      expect(json.cornerOrderChain.audit).toEqual({
+        agree: 1,
+        disagree: 1,
+        reject: 1,
+      });
+      // Runs: 2 (memory, memory), 1 (native), and an open 1 (memory).
+      expect(json.cornerOrderChain.unsureRuns).toEqual({
+        r1: 2,
+        r2to4: 1,
+        r5to8: 0,
+        r9plus: 0,
+      });
+      expect(inst.report().join(" ")).toContain("chain audit agree 1");
+    });
+
     // Why this test matters: the wrapper is generic and must stay harmless for
     // a solve it cannot read, or for a failed solve (null).
     it("ignores solves it cannot read and failed solves", async () => {
