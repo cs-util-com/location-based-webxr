@@ -15,11 +15,19 @@ import type { RgbaImage } from './qr-frontend.js';
 
 type Quad = [Point2, Point2, Point2, Point2];
 
+/**
+ * Where a detection's corner order came from (near-frontal pose plan §39
+ * F0a): the finder patterns (`confident`), the canonicaliser's memory of the
+ * last confident order, or the detector's own (image) order.
+ */
+export type CornerOrderSource = 'finder' | 'memory' | 'native';
+
 export interface CornerOrderResult {
   /** The corners, rotated into symbol order when `confident`. */
   corners: Quad;
   /** Exactly one corner lacked a finder pattern, so the order is known. */
   confident: boolean;
+  source: CornerOrderSource;
 }
 
 /** How far along each half-diagonal to sample (0 = corner, 1 = centre). */
@@ -265,7 +273,11 @@ export function canonicalizeCorners(
   corners: readonly Point2[]
 ): CornerOrderResult {
   const input = [...corners] as Quad;
-  const unsure = { corners: input, confident: false };
+  const unsure: CornerOrderResult = {
+    corners: input,
+    confident: false,
+    source: 'native',
+  };
   if (corners.length !== 4 || image.width < 2 || image.height < 2)
     return unsure;
   const map = squareToQuad(input);
@@ -285,7 +297,11 @@ export function canonicalizeCorners(
   const missing = finder.flatMap((f, k) => (f ? [] : [k]));
   if (missing.length !== 1) return unsure;
   // Rotate so the corner without a finder (BR) lands at index 2.
-  return { corners: rotated(input, (missing[0]! + 2) % 4), confident: true };
+  return {
+    corners: rotated(input, (missing[0]! + 2) % 4),
+    confident: true,
+    source: 'finder',
+  };
 }
 
 export interface CornerOrderCanonicalizerOptions {
@@ -338,7 +354,7 @@ export function createCornerOrderCanonicalizer(
           best = candidate;
         }
       }
-      return { corners: best, confident: false };
+      return { corners: best, confident: false, source: 'memory' };
     },
   };
 }

@@ -25,7 +25,10 @@
 
 import type { Point2 } from './qr-pose.js';
 import { rgbaToImageData } from '../rgba-image-data.js';
-import { createCornerOrderCanonicalizer } from './qr-corner-order.js';
+import {
+  createCornerOrderCanonicalizer,
+  type CornerOrderSource,
+} from './qr-corner-order.js';
 
 /** Raw RGBA pixels of the frame fed to detection (top-left origin). */
 export interface RgbaImage {
@@ -38,6 +41,11 @@ export interface RgbaImage {
 export interface QrDetection {
   corners: [Point2, Point2, Point2, Point2];
   text: string;
+  /**
+   * Where the corner order came from (near-frontal pose plan §39 F0a):
+   * `finder`, `memory` or `native`; absent when the producer does not say.
+   */
+  orderSource?: CornerOrderSource;
 }
 
 /** Front-agnostic detect+decode contract. */
@@ -58,12 +66,12 @@ export interface DetectedBarcodeLike {
   format?: string;
 }
 
-/** Puts one detection's corners into symbol order (injectable for tests). */
+/** Puts one detection's corners into symbol order, saying how (injectable for tests). */
 export type CornerOrderer = (
   text: string,
   image: RgbaImage,
   corners: [Point2, Point2, Point2, Point2]
-) => [Point2, Point2, Point2, Point2];
+) => { corners: [Point2, Point2, Point2, Point2]; source: CornerOrderSource };
 
 /** The slice of `BarcodeDetector` we depend on. */
 export interface BarcodeDetectorLike {
@@ -104,9 +112,11 @@ export class BarcodeDetectorFrontEnd implements QrFrontEnd {
     for (const r of results) {
       const corners = toQuad(r.cornerPoints);
       if (corners && typeof r.rawValue === 'string' && r.rawValue.length > 0) {
+        const ordered = this.orderCorners(r.rawValue, image, corners);
         return {
-          corners: this.orderCorners(r.rawValue, image, corners),
+          corners: ordered.corners,
           text: r.rawValue,
+          orderSource: ordered.source,
         };
       }
     }
@@ -146,8 +156,10 @@ export function createBarcodeDetectorFrontEnd(
 /** The finder-pattern orderer with its per-code memory, one per front end. */
 function defaultCornerOrderer(): CornerOrderer {
   const canonicalizer = createCornerOrderCanonicalizer();
-  return (text, image, corners) =>
-    canonicalizer.canonicalize(text, image, corners).corners;
+  return (text, image, corners) => {
+    const result = canonicalizer.canonicalize(text, image, corners);
+    return { corners: result.corners, source: result.source };
+  };
 }
 
 function toQuad(

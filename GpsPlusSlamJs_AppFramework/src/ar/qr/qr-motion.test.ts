@@ -418,3 +418,38 @@ describe('measureQrMotion code size on screen (plan §34 R1)', () => {
     expect(measureQrMotion([]).newestEdgePx).toBeNull();
   });
 });
+
+describe('motion detector with corner-order flips (plan §39 F0c)', () => {
+  // Pins what TODAY's detector does with flipped frames on a still code.
+  const shift = (c: readonly Point2[], k: number): Point2[] =>
+    [0, 1, 2, 3].map((i) => c[(i + k) % 4]!);
+  const states = (run: number, k: number) => {
+    const entries = scene(20, () => codeAt(0, 5), {
+      sigmaPx: 0.5,
+      seed: 5,
+    }).map((e, i) =>
+      i >= 10 && i < 10 + run ? { ...e, corners: shift(e.corners, k) } : e
+    );
+    const t = createQrMotionTracker();
+    return entries.map((_, i) => t.update(entries.slice(0, i + 1)));
+  };
+
+  it('absorbs a one-frame flip (a single candidate, never confirmed)', () => {
+    for (const k of [1, 2, 3]) {
+      const out = states(1, k);
+      expect(out.filter((m) => m.turningCandidate)).toHaveLength(1);
+      expect(out.every((m) => m.state === 'still')).toBe(true);
+    }
+  });
+
+  // KNOWN DEFECT (probe 2026-09-25): a two-frame flip gives FOUR turning
+  // candidates in a row - the two flipped frames, then two clean frames
+  // judged against a rest that holds them - so a still code reads
+  // "turning" for ~0.5 s and the fused window is cut. A fix must make
+  // this pass.
+  it.fails('keeps a still code still through a two-frame flip', () => {
+    for (const k of [1, 2, 3]) {
+      expect(states(2, k).every((m) => m.state === 'still')).toBe(true);
+    }
+  });
+});

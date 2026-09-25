@@ -77,6 +77,12 @@
   once it is still again only the views since then are fused. Until the
   motion is confirmed the stable pose can trail it for up to 3 detections.
   New option `sinceMs` on `selectFusedWindow` / `evaluateFusedQrPose`.
+- **Where a QR detection's corner order came from** (QR near-frontal pose
+  plan §39 F0a): `QrDetection.orderSource` - `finder` (the finder patterns),
+  `memory` (the canonicaliser's last confident order) or `native` (the
+  detector's own order) - and `CornerOrderResult.source`; type
+  `CornerOrderSource` on `/ar`. A `CornerOrderer` now returns `{ corners,
+source }` instead of the corners alone (unreleased API).
 - **The code's size on screen, and why a fused pose is not stable** (QR
   near-frontal pose plan §34 R1): `meanEdgePx(corners)` on `/ar`;
   `QrMotionSignals.newestEdgePx`, `QrFusedPose.edgePx` (the window's median)

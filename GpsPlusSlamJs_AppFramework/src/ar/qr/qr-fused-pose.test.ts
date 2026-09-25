@@ -827,3 +827,61 @@ describe('evaluateFusedQrPose size on screen and why not stable (plan §34 R1)',
     expect(cut?.notStableReason).toBe('motion');
   });
 });
+
+describe('fused window with corner-order flips (plan §39 F0c)', () => {
+  // Why these tests matter: phone runs show corner-order flips (a frame's
+  // corners labelled one or two positions round). These pin what TODAY's
+  // window does with them, so the fix (at the source or downstream) is
+  // chosen on evidence - and the known defect below turns red, forcing an
+  // update, the moment a fix lands.
+  const shift = (c: Point2[], k: number): Point2[] =>
+    [0, 1, 2, 3].map((i) => c[(i + k) % 4]!);
+  const window = (flipped: number, k: number) => {
+    const code = tilted(5);
+    const cams = walkCameraPoses({
+      kind: 'arc',
+      codeWorld: code,
+      distanceM: 1.2,
+      extent: 30,
+      steps: 8,
+    });
+    const entries = cams.map((cam, i) => {
+      const c = cornersOf(cam, code);
+      return entryOf(cam, i >= 8 - flipped ? shift(c, k) : c, i * 125);
+    });
+    const r = evaluateFusedQrPose(entries);
+    return {
+      r,
+      errDeg: r.pose ? rotationAngleDeg(r.pose.rotation, code.rotation) : NaN,
+    };
+  };
+
+  it('absorbs one flipped view of 8 (still stable, within ~1 deg)', () => {
+    for (const k of [1, 2, 3]) {
+      const { r, errDeg } = window(1, k);
+      expect(r.status).toBe('stable');
+      expect(errDeg).toBeLessThan(1.5);
+    }
+  });
+
+  it('falls back, not stable, with three or four flipped views', () => {
+    for (const k of [1, 2, 3]) {
+      for (const n of [3, 4]) {
+        const { r } = window(n, k);
+        expect(r.status).toBe('measuring');
+        expect(r.notStableReason).toBe('fallback');
+      }
+    }
+  });
+
+  // KNOWN DEFECT (probe 2026-09-25): two flipped views of 8 still pass the
+  // fit gate, and the STABLE rotation is off by 2.4-2.8 deg without noise
+  // (up to 6.8 deg at 1 px of corner noise). A fix must make this pass.
+  it.fails('keeps a stable pose within 1 deg with two flipped views', () => {
+    for (const k of [1, 2, 3]) {
+      const { r, errDeg } = window(2, k);
+      // Only a STABLE pose is shown; a measuring one may be off.
+      expect(r.status === 'stable' ? errDeg : 0).toBeLessThan(1);
+    }
+  });
+});

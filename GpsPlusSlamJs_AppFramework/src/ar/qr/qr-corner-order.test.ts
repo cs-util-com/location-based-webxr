@@ -331,3 +331,42 @@ describe('createCornerOrderCanonicalizer (memory for unsure frames)', () => {
     );
   });
 });
+
+describe('corner order source (plan §39 F0a)', () => {
+  // Why this test matters: the field tests show pose jumps of ~90/180 deg
+  // (corner-order flips), and the fix depends on whether those frames had
+  // an order from the finder patterns (confident) or a fallback. The
+  // canonicaliser knows; it must say so.
+  const blank: RgbaImage = {
+    data: new Uint8ClampedArray(1024 * 768 * 4).fill(128),
+    width: 1024,
+    height: 768,
+  };
+
+  it('names the finder patterns when confident, the native order when not', () => {
+    const f = frame({ rollDeg: 0 });
+    const truth = rounded(f.truthCorners);
+    expect(canonicalizeCorners(f.image, imageOrder(truth)).source).toBe(
+      'finder'
+    );
+    expect(canonicalizeCorners(blank, imageOrder(truth)).source).toBe('native');
+  });
+
+  it('names the memory when an unsure frame took the remembered order', () => {
+    let t = 0;
+    const c = createCornerOrderCanonicalizer({ now: () => t, memoryMs: 500 });
+    const f = frame({ rollDeg: 150 });
+    const truth = rounded(f.truthCorners);
+    expect(c.canonicalize(PAYLOAD, f.image, imageOrder(truth)).source).toBe(
+      'finder'
+    );
+    t = 200;
+    expect(c.canonicalize(PAYLOAD, blank, imageOrder(truth)).source).toBe(
+      'memory'
+    );
+    t = 900;
+    expect(c.canonicalize(PAYLOAD, blank, imageOrder(truth)).source).toBe(
+      'native'
+    );
+  });
+});

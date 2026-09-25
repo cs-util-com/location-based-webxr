@@ -11,15 +11,20 @@ QR near-frontal pose plan 2026-09-23-2314, M1c.
 
 ## Public API
 
-- `canonicalizeCorners(image, corners): { corners, confident }` - stateless.
+- `canonicalizeCorners(image, corners): { corners, confident, source }` -
+  stateless. `source` (near-frontal pose plan §39 F0a) is `finder` when
+  confident, else `native` (the detector's own order).
   `confident` is true when exactly one corner lacks a finder pattern; the
   corners are then rotated cyclically so that corner is BR (index 2).
   Otherwise the input comes back unchanged.
 - `createCornerOrderCanonicalizer({ now?, memoryMs? })` - adds a per-code
   memory: an unsure frame takes the cyclic shift closest (sum of corner
   distances, image space) to the same code's last confident order, while
-  that is younger than `memoryMs` (default 500); otherwise the detector's
-  order stands.
+  that is younger than `memoryMs` (default 500) - `source: 'memory'`;
+  otherwise the detector's order stands (`source: 'native'`).
+- `CornerOrderSource` = `'finder' | 'memory' | 'native'`: carried on
+  `QrDetection.orderSource` so a field test can tell a confidently wrong
+  order from a fallback (plan §39: the corner-order flips).
 
 Used by `qr-frontend.ts` (`BarcodeDetectorFrontEnd`, one canonicalizer per
 front end), so every app's detections are symbol-ordered.
@@ -110,6 +115,7 @@ if (out.confident) solveWith(out.corners);
 `qr-corner-order.test.ts`: rolls 0-315 and tilted codes from image-ordered
 integer corners, corners 2 px inward or outward on a small code, every cyclic shift of the input, a blank quad (unsure), a
 hand-drawn 1:1:1:1:1 corner (mutation-checked: the core check), corners
-outside the image, and the memory (recent, stale, other code). Four
+outside the image, the memory (recent, stale, other code), and the order
+source of each case (finder, memory, native). Four
 mutations of the rule were each caught. Front-end wiring:
 `qr-frontend.test.ts`.

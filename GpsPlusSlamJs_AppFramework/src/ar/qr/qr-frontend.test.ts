@@ -54,6 +54,8 @@ describe('BarcodeDetectorFrontEnd', () => {
     expect(det!.text).toBe('https://lvl/1');
     expect(det!.corners).toHaveLength(4);
     expect(det!.corners[1]).toEqual({ x: 90, y: 12 });
+    // No finder patterns in this image: the detector's own order.
+    expect(det!.orderSource).toBe('native');
     expect(detector.detect).toHaveBeenCalledWith(image);
   });
 
@@ -223,5 +225,7 @@ describe('corner order (QR near-frontal pose plan 2026-09-23-2314, M1c)', () => 
     );
     const hit = await frontEnd.detect(f.image);
     expect(hit?.corners).toEqual(truth);
+    // Plan §39 F0a: the detection says where its order came from.
+    expect(hit?.orderSource).toBe('finder');
   });
 });

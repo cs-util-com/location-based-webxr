@@ -135,6 +135,7 @@ export {
   BarcodeDetectorFrontEnd,
   createBarcodeDetectorFrontEnd,
 } from './qr-frontend.js';
+export type { CornerOrderSource } from './qr-corner-order.js';
 
 // --- planar-pnp (pure-JS IPPE; the OpenCV-free SolvePnpSquare) ---
 export {
