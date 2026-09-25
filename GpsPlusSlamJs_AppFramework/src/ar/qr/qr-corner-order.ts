@@ -28,6 +28,12 @@ export interface CornerOrderResult {
   /** Exactly one corner lacked a finder pattern, so the order is known. */
   confident: boolean;
   source: CornerOrderSource;
+  /**
+   * On a finder frame with a live chain (plan §42 S4): whether the chain
+   * would have chosen the same order (`agree` / `disagree`) or would have
+   * ended (`reject`) - the chain's error rate, measured on the phone.
+   */
+  audit?: 'agree' | 'disagree' | 'reject';
 }
 
 /** How far along each half-diagonal to sample (0 = corner, 1 = centre). */
@@ -306,15 +312,119 @@ export function canonicalizeCorners(
 
 export interface CornerOrderCanonicalizerOptions {
   now?: () => number;
-  /** How long a confident order stays usable for unsure frames, ms. Default 500. */
+  /**
+   * The longest gap between two detections of a code that the chained
+   * order survives, ms (plan §42 S1: a max GAP, not a lifetime from the
+   * last finder frame). Default 500.
+   */
   memoryMs?: number;
+  /**
+   * The largest roll between two detections the chain accepts, deg (plan
+   * §42 S2). Beyond it a roll cannot be told from a relabel, and the chain
+   * ends. Default 30.
+   */
+  maxRollDeg?: number;
+  /**
+   * The largest jump of the code's centre between two detections, in the
+   * code's edge lengths (a second print of the same payload); beyond it the
+   * chain ends. Default 1.5.
+   */
+  maxJumpEdges?: number;
+  /** The single-frame orderer; injectable so tests and sweeps need no images. */
+  orderFrame?: (
+    image: RgbaImage,
+    corners: readonly Point2[]
+  ) => CornerOrderResult;
+}
+
+/** The chain's per-code state: the last known order and where it was seen. */
+interface ChainEntry {
+  corners: Quad;
+  at: number;
+  width: number;
+  height: number;
+}
+
+function centroid(q: readonly Point2[]): Point2 {
+  return {
+    x: (q[0]!.x + q[1]!.x + q[2]!.x + q[3]!.x) / 4,
+    y: (q[0]!.y + q[1]!.y + q[2]!.y + q[3]!.y) / 4,
+  };
+}
+
+function meanEdge(q: readonly Point2[]): number {
+  let sum = 0;
+  for (let i = 0; i < 4; i++) {
+    const a = q[i]!;
+    const b = q[(i + 1) % 4]!;
+    sum += Math.hypot(b.x - a.x, b.y - a.y);
+  }
+  return sum / 4;
 }
 
 /**
- * {@link canonicalizeCorners} plus a short per-code memory: an unsure frame
- * takes the cyclic shift closest, in image space, to the last confident
- * order of the same code, while that is younger than `memoryMs`; otherwise
- * it keeps the detector's order.
+ * The roll (deg, in (-180, 180]) that best maps the centred quad `from`
+ * onto the centred quad `to`, corner i to corner i (a least-squares fit of
+ * the rotation angle). It ignores translation, so a pan never reads as a
+ * roll.
+ */
+function quadRollDeg(from: readonly Point2[], to: readonly Point2[]): number {
+  const a = centroid(from);
+  const b = centroid(to);
+  let cross = 0;
+  let dot = 0;
+  for (let i = 0; i < 4; i++) {
+    const u = { x: from[i]!.x - a.x, y: from[i]!.y - a.y };
+    const v = { x: to[i]!.x - b.x, y: to[i]!.y - b.y };
+    cross += u.x * v.y - u.y * v.x;
+    dot += u.x * v.x + u.y * v.y;
+  }
+  return (Math.atan2(cross, dot) * 180) / Math.PI;
+}
+
+/**
+ * What the chain would make of `corners` given the last known order: the
+ * cyclic shift whose roll from it is smallest - if that roll is within
+ * `maxRollDeg` and the centre did not jump - else null (the chain ends).
+ */
+function chainPick(
+  last: ChainEntry,
+  corners: Quad,
+  maxRollDeg: number,
+  maxJumpEdges: number
+): Quad | null {
+  const edge = meanEdge(last.corners);
+  const from = centroid(last.corners);
+  const to = centroid(corners);
+  if (!(Math.hypot(to.x - from.x, to.y - from.y) <= maxJumpEdges * edge))
+    return null;
+  let best: Quad | null = null;
+  let bestRoll = Infinity;
+  for (let k = 0; k < 4; k++) {
+    const candidate = rotated(corners, k);
+    const roll = Math.abs(quadRollDeg(last.corners, candidate));
+    if (roll < bestRoll) {
+      bestRoll = roll;
+      best = candidate;
+    }
+  }
+  return bestRoll <= maxRollDeg ? best : null;
+}
+
+function sameOrder(a: readonly Point2[], b: readonly Point2[]): boolean {
+  return a.every((p, i) => p.x === b[i]!.x && p.y === b[i]!.y);
+}
+
+/**
+ * {@link canonicalizeCorners} plus a per-code CHAIN (near-frontal pose plan
+ * §42): an unsure frame takes the cyclic shift of its corners with the
+ * smallest roll from the code's last known order (a finder frame or an
+ * earlier chained one) and becomes the new memory - while the previous
+ * detection is under `memoryMs` old, on the same capture size, the roll is
+ * within `maxRollDeg` and the centre did not jump. Otherwise the chain ends
+ * and the frame keeps the detector's order. A finder frame always
+ * re-anchors the chain, and reports whether the live chain would have
+ * agreed (`audit`).
  */
 export function createCornerOrderCanonicalizer(
   options: CornerOrderCanonicalizerOptions = {}
@@ -327,34 +437,66 @@ export function createCornerOrderCanonicalizer(
 } {
   const now = options.now ?? (() => performance.now());
   const memoryMs = options.memoryMs ?? 500;
-  const memory = new Map<string, { corners: Quad; at: number }>();
+  const maxRollDeg = options.maxRollDeg ?? 30;
+  const maxJumpEdges = options.maxJumpEdges ?? 1.5;
+  const orderFrame = options.orderFrame ?? canonicalizeCorners;
+  const memory = new Map<string, ChainEntry>();
+
+  /** The live chain of `text` for this frame, pruning stale entries. */
+  function liveChain(
+    text: string,
+    image: RgbaImage,
+    t: number
+  ): ChainEntry | null {
+    for (const [key, entry] of memory) {
+      if (t - entry.at > memoryMs) memory.delete(key);
+    }
+    const last = memory.get(text);
+    if (!last) return null;
+    return last.width === image.width && last.height === image.height
+      ? last
+      : null;
+  }
+
   return {
     canonicalize(text, image, corners) {
-      const result = canonicalizeCorners(image, corners);
+      const result = orderFrame(image, corners);
       const t = now();
+      const last = corners.length === 4 ? liveChain(text, image, t) : null;
+      const remember = (q: Quad) =>
+        memory.set(text, {
+          corners: q,
+          at: t,
+          width: image.width,
+          height: image.height,
+        });
       if (result.confident) {
-        memory.set(text, { corners: result.corners, at: t });
+        const audit = last
+          ? auditOf(
+              chainPick(last, [...corners] as Quad, maxRollDeg, maxJumpEdges),
+              result.corners
+            )
+          : undefined;
+        remember(result.corners);
+        return audit ? { ...result, audit } : result;
+      }
+      const pick = last
+        ? chainPick(last, result.corners, maxRollDeg, maxJumpEdges)
+        : null;
+      if (!pick) {
+        memory.delete(text);
         return result;
       }
-      const last = memory.get(text);
-      if (!last || t - last.at > memoryMs || corners.length !== 4)
-        return result;
-      let best = result.corners;
-      let bestCost = Infinity;
-      for (let k = 0; k < 4; k++) {
-        const candidate = rotated(result.corners, k);
-        const cost = candidate.reduce(
-          (sum, p, i) =>
-            sum +
-            Math.hypot(p.x - last.corners[i]!.x, p.y - last.corners[i]!.y),
-          0
-        );
-        if (cost < bestCost) {
-          bestCost = cost;
-          best = candidate;
-        }
-      }
-      return { corners: best, confident: false, source: 'memory' };
+      remember(pick);
+      return { corners: pick, confident: false, source: 'memory' };
     },
   };
+}
+
+function auditOf(
+  pick: Quad | null,
+  finder: readonly Point2[]
+): CornerOrderResult['audit'] {
+  if (!pick) return 'reject';
+  return sameOrder(pick, finder) ? 'agree' : 'disagree';
 }

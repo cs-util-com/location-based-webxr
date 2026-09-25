@@ -17,11 +17,21 @@ QR near-frontal pose plan 2026-09-23-2314, M1c.
   `confident` is true when exactly one corner lacks a finder pattern; the
   corners are then rotated cyclically so that corner is BR (index 2).
   Otherwise the input comes back unchanged.
-- `createCornerOrderCanonicalizer({ now?, memoryMs? })` - adds a per-code
-  memory: an unsure frame takes the cyclic shift closest (sum of corner
-  distances, image space) to the same code's last confident order, while
-  that is younger than `memoryMs` (default 500) - `source: 'memory'`;
-  otherwise the detector's order stands (`source: 'native'`).
+- `createCornerOrderCanonicalizer({ now?, memoryMs?, maxRollDeg?,
+maxJumpEdges?, orderFrame? })` - adds a per-code CHAIN (near-frontal pose
+  plan §42): an unsure frame takes the cyclic shift of its corners with the
+  smallest roll (a least-squares rotation between the centred quads, so a
+  pan never reads
+  as a roll) from the code's last KNOWN order - a finder frame or an
+  earlier chained one - and becomes the new memory (`source: 'memory'`).
+  The chain ends, and the frame keeps the detector's order (`source:
+'native'`), when the previous detection of the code is older than
+  `memoryMs` (default 500 - a max GAP, not a lifetime), the capture size
+  changed, the roll exceeds `maxRollDeg` (default 30) or the centre jumped
+  more than `maxJumpEdges` (default 1.5) edge lengths (a second print). A
+  finder frame always re-anchors it and reports `audit`: what the live
+  chain would have picked - `agree`, `disagree` or `reject`. `orderFrame`
+  (the single-frame orderer) is injectable for tests and sweeps.
 - `CornerOrderSource` = `'finder' | 'memory' | 'native'`: carried on
   `QrDetection.orderSource` so a field test can tell a confidently wrong
   order from a fallback (plan §39: the corner-order flips).
@@ -30,6 +40,22 @@ Used by `qr-frontend.ts` (`BarcodeDetectorFrontEnd`, one canonicalizer per
 front end), so every app's detections are symbol-ordered.
 
 ## Invariants & assumptions
+
+- **The chain's known limit:** a roll of 60-120 deg between two detections
+  is indistinguishable, in image space, from a smaller roll plus a relabel;
+  it is chained WRONG until the next finder frame (whose audit then reads
+  `disagree`). Only its rate guards it: 60 deg per detection is ~300 deg/s
+  at 5 Hz. A roll between the limit and 60 deg ends the chain (`native`,
+  wrong past 45 deg of image roll).
+- **Sweep** (`qr-corner-order.sweep.test.ts`, opt-in, 2026-09-25; one
+  factor around 20 deg/s, 5 Hz, 60 % finder frames, 1 px jitter): 0 wrong
+  frames up to 120 deg/s, at 3-7.5 Hz, 20-80 % finder frames, 0-20 px
+  jitter; at 180-240 deg/s the chain ends (native, as before the chain);
+  at 360 deg/s it chains wrong and the audit disagrees. A 40 deg limit
+  extends the clean range to 180 deg/s but chains wrong from 50 deg per
+  detection. Gaps over `memoryMs` end the chain; a longer `memoryMs` cut
+  those native frames in the sweep, which has no 90 deg phone rotation in a
+  gap - kept at 500 ms until the phone's audit says otherwise.
 
 - **Rule:** a QR symbol has finder patterns at TL, TR and BL; BR has none.
   Each corner's half-diagonal is sampled (0 to 80 % of the way to the centre,
@@ -115,7 +141,12 @@ if (out.confident) solveWith(out.corners);
 `qr-corner-order.test.ts`: rolls 0-315 and tilted codes from image-ordered
 integer corners, corners 2 px inward or outward on a small code, every cyclic shift of the input, a blank quad (unsure), a
 hand-drawn 1:1:1:1:1 corner (mutation-checked: the core check), corners
-outside the image, the memory (recent, stale, other code), and the order
-source of each case (finder, memory, native). Four
+outside the image, the memory (recent, stale, other code), the order
+source of each case (finder, memory, native), and the chain (§42, via an
+injected orderer): unsure frames chained past 500 ms of total time, a pan,
+a 45 deg roll and a fast roll ending it, a capture-size change, a centre
+jump, a gap, invariance to the reported cyclic shift, and the audit
+(agree, disagree, reject, none). Planted bugs (no roll check, no jump
+check, no size check, no chaining) each fail at least one test. Four
 mutations of the rule were each caught. Front-end wiring:
 `qr-frontend.test.ts`.

@@ -370,3 +370,188 @@ describe('corner order source (plan §39 F0a)', () => {
     );
   });
 });
+
+describe('createCornerOrderCanonicalizer chain (plan §42)', () => {
+  // Why these tests matter: on the phone every big pose jump was a frame in
+  // the detector's own (image) order after the 500 ms memory ran out
+  // (plan §40). The chain keeps a code's order frame to frame; the roll
+  // check and the breaks keep it from carrying a WRONG order.
+  /** A square code in the image, in symbol order, rolled `rollDeg`. */
+  function quadAt(cx: number, cy: number, edge: number, rollDeg: number): Quad {
+    const h = edge / 2;
+    const r = (rollDeg * Math.PI) / 180;
+    const c = Math.cos(r);
+    const s = Math.sin(r);
+    return (
+      [
+        [-h, -h],
+        [h, -h],
+        [h, h],
+        [-h, h],
+      ] as const
+    ).map(([x, y]) => ({
+      x: cx + c * x - s * y,
+      y: cy + s * x + c * y,
+    })) as Quad;
+  }
+  const image = (width = 1024, height = 768): RgbaImage => ({
+    data: new Uint8ClampedArray(4),
+    width,
+    height,
+  });
+  /** A canonicaliser whose single-frame orderer is confident only on demand. */
+  function rig() {
+    let confident: Quad | null = null;
+    let t = 0;
+    const c = createCornerOrderCanonicalizer({
+      now: () => t,
+      orderFrame: (_image, corners) =>
+        confident
+          ? { corners: confident, confident: true, source: 'finder' }
+          : {
+              corners: [...corners] as Quad,
+              confident: false,
+              source: 'native',
+            },
+    });
+    return {
+      c,
+      at(ms: number) {
+        t = ms;
+      },
+      finder(q: Quad | null) {
+        confident = q;
+      },
+    };
+  }
+  /** Anchor the code's order with a finder frame at t = 0. */
+  function anchored(q: Quad, img = image()) {
+    const r = rig();
+    r.finder(q);
+    r.c.canonicalize(PAYLOAD, img, imageOrder(q));
+    r.finder(null);
+    return r;
+  }
+
+  it('chains unsure frames past 500 ms while each follows the last within it', () => {
+    const start = quadAt(500, 380, 150, 50);
+    // At 50 deg of roll the image order is NOT the symbol order.
+    expect(imageOrder(start)[0]).not.toEqual(start[0]);
+    const r = anchored(start);
+    for (let i = 1; i <= 10; i++) {
+      r.at(i * 150);
+      const truth = quadAt(500 + 15 * i, 380, 150, 50 + 3 * i);
+      const out = r.c.canonicalize(PAYLOAD, image(), imageOrder(truth));
+      expect(out.source).toBe('memory');
+      expectSameCorners(out.corners, truth);
+    }
+  });
+
+  // A regression pin rather than a red-first test: today's nearest-shift
+  // pick already survives translation; a ratio-style ambiguity test would
+  // not (plan §42 #1), and the roll check must not either.
+  it('holds through an ordinary pan: the roll check ignores translation', () => {
+    const r = anchored(quadAt(300, 380, 150, 50));
+    for (let i = 1; i <= 4; i++) {
+      r.at(i * 150);
+      const truth = quadAt(300 + 105 * i, 380, 150, 50);
+      const out = r.c.canonicalize(PAYLOAD, image(), imageOrder(truth));
+      expect(out.source).toBe('memory');
+      expectSameCorners(out.corners, truth);
+    }
+  });
+
+  // A roll of 45 deg between two detections is as far from one shift as
+  // from the next: the chain cannot tell it from a relabel and must end.
+  // (A roll of 60-120 deg is indistinguishable from a smaller roll plus a
+  // relabel in ANY image-space check - only its implausible rate guards it.)
+  it('ends the chain on a roll it cannot tell from a relabel (45 deg)', () => {
+    const r = anchored(quadAt(500, 380, 150, 50));
+    r.at(150);
+    const truth = quadAt(500, 380, 150, 95);
+    const out = r.c.canonicalize(PAYLOAD, image(), imageOrder(truth));
+    expect(out.source).toBe('native');
+    expectSameCorners(out.corners, imageOrder(truth));
+  });
+
+  it('breaks on a fast roll and stays broken, never picking a wrong shift', () => {
+    const r = anchored(quadAt(500, 380, 150, 50));
+    r.at(150);
+    const first = quadAt(500, 380, 150, 86);
+    expect(r.c.canonicalize(PAYLOAD, image(), imageOrder(first)).source).toBe(
+      'native'
+    );
+    r.at(300);
+    const second = quadAt(500, 380, 150, 122);
+    expect(r.c.canonicalize(PAYLOAD, image(), imageOrder(second)).source).toBe(
+      'native'
+    );
+  });
+
+  it('ends the chain when the capture size changes (a fold or rotation)', () => {
+    const q = quadAt(500, 380, 150, 50);
+    const r = anchored(q, image(1024, 768));
+    r.at(150);
+    const out = r.c.canonicalize(PAYLOAD, image(768, 1024), imageOrder(q));
+    expect(out.source).toBe('native');
+  });
+
+  it("ends the chain when the code's centre jumps (a second print)", () => {
+    const r = anchored(quadAt(200, 380, 150, 50));
+    r.at(150);
+    const far = quadAt(200 + 3 * 150, 380, 150, 50);
+    expect(r.c.canonicalize(PAYLOAD, image(), imageOrder(far)).source).toBe(
+      'native'
+    );
+  });
+
+  it('ends the chain after a gap longer than memoryMs between detections', () => {
+    const q = quadAt(500, 380, 150, 50);
+    const r = anchored(q);
+    r.at(600);
+    expect(r.c.canonicalize(PAYLOAD, image(), imageOrder(q)).source).toBe(
+      'native'
+    );
+  });
+
+  it('picks the same order whatever cyclic shift the detector reports', () => {
+    const truth = quadAt(520, 380, 150, 55);
+    for (let k = 0; k < 4; k++) {
+      const r = anchored(quadAt(500, 380, 150, 50));
+      r.at(150);
+      const out = r.c.canonicalize(PAYLOAD, image(), shifted(truth, k));
+      expect(out.source).toBe('memory');
+      expectSameCorners(out.corners, truth);
+    }
+  });
+
+  // The phone check that cannot pass by construction (plan §42 #3): on
+  // every finder frame, what would the live chain have chosen?
+  it('audits a live chain against every finder frame', () => {
+    const q = quadAt(500, 380, 150, 50);
+    const agree = anchored(q);
+    agree.at(150);
+    agree.finder(q);
+    expect(agree.c.canonicalize(PAYLOAD, image(), imageOrder(q)).audit).toBe(
+      'agree'
+    );
+    const disagree = anchored(q);
+    disagree.at(150);
+    disagree.finder(shifted(q, 1));
+    expect(disagree.c.canonicalize(PAYLOAD, image(), imageOrder(q)).audit).toBe(
+      'disagree'
+    );
+    const reject = anchored(q);
+    reject.at(150);
+    const turned = quadAt(500, 380, 150, 95);
+    reject.finder(turned);
+    expect(
+      reject.c.canonicalize(PAYLOAD, image(), imageOrder(turned)).audit
+    ).toBe('reject');
+    const none = rig();
+    none.finder(q);
+    expect(
+      none.c.canonicalize(PAYLOAD, image(), imageOrder(q)).audit
+    ).toBeUndefined();
+  });
+});

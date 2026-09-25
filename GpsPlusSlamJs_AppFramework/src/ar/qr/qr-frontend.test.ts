@@ -227,5 +227,9 @@ describe('corner order (QR near-frontal pose plan 2026-09-23-2314, M1c)', () => 
     expect(hit?.corners).toEqual(truth);
     // Plan §39 F0a: the detection says where its order came from.
     expect(hit?.orderSource).toBe('finder');
+    // Plan §42 S4: a second finder frame of the same code is audited
+    // against the chain the first one started.
+    const again = await frontEnd.detect(f.image);
+    expect(again?.orderAudit).toBe('agree');
   });
 });

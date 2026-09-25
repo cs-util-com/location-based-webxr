@@ -17,8 +17,9 @@
  * so (`qr-corner-order.ts`): the native detector reports them in IMAGE order
  * on the owner's phone, which turned the solved pose in 90-degree steps
  * ("Cause A"; QR near-frontal pose plan 2026-09-23-2314, M1c). When the image
- * cannot tell, the order comes from the same code's last confident order
- * (< 500 ms) or, failing that, from the detector.
+ * cannot tell, the order is chained from the same code's last known order
+ * (plan §42: at most 500 ms between detections, a small roll, no jump of
+ * the centre) or, failing that, comes from the detector.
  *
  * The native detector is INJECTED so this module and its tests need no DOM.
  */
@@ -46,6 +47,11 @@ export interface QrDetection {
    * `finder`, `memory` or `native`; absent when the producer does not say.
    */
   orderSource?: CornerOrderSource;
+  /**
+   * On a finder frame with a live chain (plan §42 S4): whether the chain
+   * would have chosen the same order - the chain's error rate on the phone.
+   */
+  orderAudit?: 'agree' | 'disagree' | 'reject';
 }
 
 /** Front-agnostic detect+decode contract. */
@@ -71,7 +77,11 @@ export type CornerOrderer = (
   text: string,
   image: RgbaImage,
   corners: [Point2, Point2, Point2, Point2]
-) => { corners: [Point2, Point2, Point2, Point2]; source: CornerOrderSource };
+) => {
+  corners: [Point2, Point2, Point2, Point2];
+  source: CornerOrderSource;
+  audit?: 'agree' | 'disagree' | 'reject';
+};
 
 /** The slice of `BarcodeDetector` we depend on. */
 export interface BarcodeDetectorLike {
@@ -117,6 +127,7 @@ export class BarcodeDetectorFrontEnd implements QrFrontEnd {
           corners: ordered.corners,
           text: r.rawValue,
           orderSource: ordered.source,
+          ...(ordered.audit ? { orderAudit: ordered.audit } : {}),
         };
       }
     }
@@ -158,7 +169,11 @@ function defaultCornerOrderer(): CornerOrderer {
   const canonicalizer = createCornerOrderCanonicalizer();
   return (text, image, corners) => {
     const result = canonicalizer.canonicalize(text, image, corners);
-    return { corners: result.corners, source: result.source };
+    return {
+      corners: result.corners,
+      source: result.source,
+      ...(result.audit ? { audit: result.audit } : {}),
+    };
   };
 }
 

@@ -77,6 +77,17 @@
   once it is still again only the views since then are fused. Until the
   motion is confirmed the stable pose can trail it for up to 3 detections.
   New option `sinceMs` on `selectFusedWindow` / `evaluateFusedQrPose`.
+- **The corner order is chained frame to frame** (QR near-frontal pose
+  plan §42): when the finder patterns cannot be read, a detection takes the
+  cyclic shift closest in roll to the code's last known order (a finder
+  frame or an earlier chained one) instead of the detector's own image
+  order, which relabelled the corners - the 90/180 deg pose flips of the
+  field tests. The chain ends after a gap over `memoryMs` (500 ms, now the
+  max gap between detections, not a lifetime), a roll over `maxRollDeg`
+  (30 deg), a centre jump over `maxJumpEdges` (1.5 edges) or a capture-size
+  change; on a finder frame `QrDetection.orderAudit` says whether the live
+  chain would have agreed. `createCornerOrderCanonicalizer` gains those
+  options and an injectable `orderFrame`.
 - **Where a QR detection's corner order came from** (QR near-frontal pose
   plan §39 F0a): `QrDetection.orderSource` - `finder` (the finder patterns),
   `memory` (the canonicaliser's last confident order) or `native` (the
