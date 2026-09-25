@@ -227,3 +227,66 @@ describe("pose quality: reprojection by code size on screen (plan §34 R2)", () 
     expect(bands.medium.n).toBe(0);
   });
 });
+
+describe("pose quality: corner-order sources and big jumps (plan §39 F0b)", () => {
+  // Why these tests matter: the flip fix depends on WHAT the phone's flips
+  // are - frames whose corner order was a fallback (memory / native), or
+  // confidently wrong ones (finder) - and a big jump can also be the
+  // planar-solve ambiguity (the code's normal changes), which no corner
+  // relabel explains. The report must tell these apart.
+  it("counts where each solve's corner order came from", () => {
+    const q = createPoseQuality();
+    q.add(sample({ orderSource: "finder" }));
+    q.add(sample({ orderSource: "finder", atMs: 5000 }));
+    q.add(sample({ orderSource: "memory", atMs: 10000 }));
+    q.add(sample({ orderSource: "native", atMs: 15000 }));
+    q.add(sample({ atMs: 20000 }));
+    expect(q.summary().orderSources).toEqual({
+      finder: 2,
+      memory: 1,
+      native: 1,
+      unknown: 1,
+    });
+  });
+
+  it("classifies a big jump by whether the code's normal survives", () => {
+    const relabel = createPoseQuality();
+    relabel.add(sample());
+    relabel.add(
+      sample({ qrRotationWorld: axisAngle([0, 0, 1], 90), atMs: 100 }),
+    );
+    relabel.add(
+      sample({ qrRotationWorld: axisAngle([0, 0, 1], 270), atMs: 200 }),
+    );
+    expect(relabel.summary().bigJumps).toMatchObject({
+      relabel: 2,
+      normalChange: 0,
+    });
+    const ambiguity = createPoseQuality();
+    ambiguity.add(sample());
+    ambiguity.add(
+      sample({ qrRotationWorld: axisAngle([1, 0, 0], 90), atMs: 100 }),
+    );
+    expect(ambiguity.summary().bigJumps).toMatchObject({
+      relabel: 0,
+      normalChange: 1,
+    });
+  });
+
+  it("records the order sources on both sides of each big jump", () => {
+    const q = createPoseQuality();
+    q.add(sample({ orderSource: "finder" }));
+    q.add(
+      sample({
+        orderSource: "native",
+        qrRotationWorld: axisAngle([0, 0, 1], 90),
+        atMs: 100,
+      }),
+    );
+    q.add(sample({ orderSource: "finder", atMs: 200 }));
+    expect(q.summary().bigJumps.sources).toEqual({
+      "finder>native": 1,
+      "native>finder": 1,
+    });
+  });
+});

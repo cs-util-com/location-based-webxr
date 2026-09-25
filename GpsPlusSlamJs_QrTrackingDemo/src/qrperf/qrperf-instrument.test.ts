@@ -266,6 +266,27 @@ describe("createQrPerfInstrument", () => {
       expect(inst.report().join("\n")).toMatch(/pose jumps .*p50 4\.0/);
     });
 
+    // Plan §39 F0b: each solve carries the corner-order source of the
+    // detection it came from (the same frame).
+    it("hands each solve the corner-order source of its detection", async () => {
+      const inst = createQrPerfInstrument({ mode: "native", baseline: false });
+      const detect = inst.wrapDetect(() =>
+        Promise.resolve({ ...HIT, orderSource: "memory" as const }),
+      );
+      await detect(IMAGE);
+      inst.wrapSolve(solveWith([0, 0, 0, 1]))({
+        imagePoints: CORNERS,
+        cameraPose: CAMERA,
+      });
+      const json = JSON.parse(inst.json()) as {
+        pose: { orderSources: Record<string, number> };
+      };
+      expect(json.pose.orderSources.memory).toBe(1);
+      expect(inst.report().join("\n")).toContain(
+        "corner order: finder 0 | memory 1",
+      );
+    });
+
     // Why this test matters: the wrapper is generic and must stay harmless for
     // a solve it cannot read, or for a failed solve (null).
     it("ignores solves it cannot read and failed solves", async () => {

@@ -211,6 +211,16 @@ function pct(share: number): string {
   return `${Math.round(share * 100)}%`;
 }
 
+/** Corner-order sources and the big jumps' classes (plan §39 F0b). */
+function orderLine(q: PoseQualitySummary): string {
+  const o = q.orderSources;
+  const b = q.bigJumps;
+  const pairs = Object.entries(b.sources)
+    .map(([k, n]) => `${k} ${n}`)
+    .join(", ");
+  return `corner order: finder ${o.finder} | memory ${o.memory} | native ${o.native} | unknown ${o.unknown} || big jumps: relabel ${b.relabel}, normal change ${b.normalChange}${pairs ? ` (${pairs})` : ""}`;
+}
+
 /** The pose-quality lines (QR near-frontal pose plan 2026-09-23-2314, M1). */
 function poseLines(q: PoseQualitySummary): string[] {
   if (q.reprojectionPx.n === 0) {
@@ -225,6 +235,7 @@ function poseLines(q: PoseQualitySummary): string[] {
     `still jitter px: 2mm/0.1deg n ${strict.n} p50 ${fmt(strict.p50)} p95 ${fmt(strict.p95)} | 5mm/0.3deg n ${loose.n} p50 ${fmt(loose.p50)} p95 ${fmt(loose.p95)}`,
     `reproj px p50 ${fmt(q.reprojectionPx.p50)} p95 ${fmt(q.reprojectionPx.p95)} (n ${q.reprojectionPx.n})`,
     `wall normal elevation |p50| ${fmt(e.p50Abs)} |p95| ${fmt(e.p95Abs)} mean ${fmt(e.meanSigned)} deg (n ${e.n})`,
+    orderLine(q),
   ];
 }
 
@@ -252,6 +263,8 @@ export function createQrPerfInstrument(
   const solves = { accepted: 0, attempted: 0 };
   /** The text of the latest detection; the solve that follows is its frame's. */
   let lastText: string | null = null;
+  /** The corner-order source of the detection `lastText` came from (plan §39 F0b). */
+  let lastOrderSource: QrDetection["orderSource"];
 
   async function compareWithZxing(
     image: RgbaImage,
@@ -327,6 +340,7 @@ export function createQrPerfInstrument(
         timings.record("detect", t1 - t0);
         if (result) timings.count("hit", t1);
         lastText = result?.text ?? null;
+        lastOrderSource = result?.orderSource;
         await compareWithZxing(image, result);
         return result;
       };
@@ -340,7 +354,12 @@ export function createQrPerfInstrument(
         if (out !== null && out !== undefined) solves.accepted += 1;
         const sample =
           lastText === null ? null : readSolve(lastText, args[0], out, t0);
-        if (sample) pose.add(sample);
+        if (sample)
+          pose.add(
+            lastOrderSource
+              ? { ...sample, orderSource: lastOrderSource }
+              : sample,
+          );
         return out;
       };
     },

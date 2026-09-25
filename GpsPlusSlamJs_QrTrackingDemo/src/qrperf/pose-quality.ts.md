@@ -25,7 +25,15 @@ fix (QR near-frontal pose plan 2026-09-23-2314, M1). Pure.
     - `reprojectionByEdgePx`: the same error per code-size band (the
       corners' `meanEdgePx`; `edge-bands.ts`, same 240-value window per
       band) - the single-frame 4 px gate is absolute too (plan §34 R2);
-    - `wallElevationDeg { n, p50Abs, p95Abs, meanSigned }`.
+    - `wallElevationDeg { n, p50Abs, p95Abs, meanSigned }`;
+    - `orderSources { finder, memory, native, unknown }` (since start): where
+      each solve's corner order came from (plan §39 F0b);
+    - `bigJumps { relabel, normalChange, sources }` (since start): each jump
+      over 60 deg, split by whether the code's normal survived (within
+      30 deg: a roll about it - a corner-order flip) or moved (the planar
+      solve's two-fold ambiguity, or a real turn), with the order sources
+      on both sides as `before>after` counts. A flip that returns is two
+      jumps.
     - Empty series give `n` 0, shares 0 and `NaN` percentiles.
 
 ## Invariants & assumptions
@@ -68,7 +76,8 @@ q.summary().wallElevationDeg.meanSigned; // 0 for an upright wall code
 
 ## Tests
 
-`pose-quality.test.ts`: jumps between consecutive same-code poses, no pairing
+`pose-quality.test.ts`: the order-source counts; big jumps
+classified as relabel or normal change, with the sources on both sides; jumps between consecutive same-code poses, no pairing
 across codes, the over-60 bin, both still gates (translation and rotation),
 reprojection percentiles (also per code-size band), signed and absolute elevation, empty summaries, and
 a deterministic grid of invariants (p50 <= p95 <= max, ordered shares, counts

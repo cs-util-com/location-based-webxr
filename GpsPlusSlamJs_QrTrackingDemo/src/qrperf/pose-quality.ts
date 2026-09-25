@@ -5,7 +5,10 @@
  * normal's elevation against gravity. Pure. See pose-quality.ts.md.
  */
 
-import { meanEdgePx } from "gps-plus-slam-app-framework/ar/qr";
+import {
+  meanEdgePx,
+  type CornerOrderSource,
+} from "gps-plus-slam-app-framework/ar/qr";
 import {
   createBandedPercentiles,
   type BandPercentiles,
@@ -28,6 +31,8 @@ export interface PoseQualitySample {
   cameraPosition: Vec3;
   cameraRotation: Quat;
   reprojectionErrorPx: number;
+  /** Where the detection's corner order came from, when the detector said (plan §39 F0b). */
+  orderSource?: CornerOrderSource;
   /** When the solve happened, ms (any monotonic clock). */
   atMs: number;
 }
@@ -52,6 +57,24 @@ export interface PoseQualitySummary {
    *  not move. */
   stillJitterPx: { strict: Percentiles; loose: Percentiles };
   reprojectionPx: Percentiles;
+  /**
+   * Where each solve's corner order came from, since start (plan §39 F0b):
+   * the finder patterns, the canonicaliser's memory, the detector's own
+   * order, or not said.
+   */
+  orderSources: Record<CornerOrderSource | "unknown", number>;
+  /**
+   * The jumps over 60 deg since start, split by whether the code's normal
+   * survived: `relabel` (a roll about the normal - a corner-order flip)
+   * or `normalChange` (the planar solve's two-fold ambiguity or a real
+   * turn); `sources` counts the order sources on both sides of each, as
+   * "before>after". A flip episode that returns is two jumps.
+   */
+  bigJumps: {
+    relabel: number;
+    normalChange: number;
+    sources: Record<string, number>;
+  };
   /**
    * The same reprojection error per code-size band (the corners' mean edge
    * length; plan §34 R2) - the 4 px single-frame gate is absolute too.
@@ -97,6 +120,24 @@ export function normalElevationDeg(q: Quat): number {
   return Math.asin(Math.max(-1, Math.min(1, ny))) * RAD_TO_DEG;
 }
 
+/**
+ * A corner relabel rolls the code about its own normal, so the normal stays
+ * put; the planar solve's ambiguity or a real turn moves it. Normals closer
+ * than this count as "survived".
+ */
+const NORMAL_SURVIVES_DEG = 30;
+
+/** The code's printed-face normal (its +z) in the world. */
+function faceNormal(q: Quat): Vec3 {
+  const [x, y, z, w] = q;
+  return [2 * (x * z + w * y), 2 * (y * z - w * x), 1 - 2 * (x * x + y * y)];
+}
+
+function angleBetweenDeg(a: Vec3, b: Vec3): number {
+  const dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  return Math.acos(Math.max(-1, Math.min(1, dot))) * RAD_TO_DEG;
+}
+
 function maxCornerShift(a: readonly Point[], b: readonly Point[]): number {
   let max = 0;
   for (let i = 0; i < Math.min(a.length, b.length); i++) {
@@ -132,6 +173,12 @@ export function createPoseQuality(options: PoseQualityOptions = {}): {
     elevation: [] as number[],
   };
   const reprojectionBands = createBandedPercentiles(window);
+  const orderSources = { finder: 0, memory: 0, native: 0, unknown: 0 };
+  const bigJumps = {
+    relabel: 0,
+    normalChange: 0,
+    sources: {} as Record<string, number>,
+  };
   let previous: PoseQualitySample | null = null;
 
   function push(values: number[], v: number): void {
@@ -144,7 +191,10 @@ export function createPoseQuality(options: PoseQualityOptions = {}): {
     push(series.jump, jump);
     // A relabelled corner is not a moved corner: keep order changes out of
     // the jitter.
-    if (jump > ORDER_CHANGE_DEG) return;
+    if (jump > ORDER_CHANGE_DEG) {
+      addBigJump(prev, cur);
+      return;
+    }
     const movedM = Math.hypot(
       cur.cameraPosition[0] - prev.cameraPosition[0],
       cur.cameraPosition[1] - prev.cameraPosition[1],
@@ -158,8 +208,20 @@ export function createPoseQuality(options: PoseQualityOptions = {}): {
     }
   }
 
+  function addBigJump(prev: PoseQualitySample, cur: PoseQualitySample): void {
+    const normalDeg = angleBetweenDeg(
+      faceNormal(prev.qrRotationWorld),
+      faceNormal(cur.qrRotationWorld),
+    );
+    if (normalDeg < NORMAL_SURVIVES_DEG) bigJumps.relabel += 1;
+    else bigJumps.normalChange += 1;
+    const key = `${prev.orderSource ?? "unknown"}>${cur.orderSource ?? "unknown"}`;
+    bigJumps.sources[key] = (bigJumps.sources[key] ?? 0) + 1;
+  }
+
   return {
     add(sample) {
+      orderSources[sample.orderSource ?? "unknown"] += 1;
       push(series.reprojection, sample.reprojectionErrorPx);
       reprojectionBands.add(
         meanEdgePx(sample.corners),
@@ -201,6 +263,8 @@ export function createPoseQuality(options: PoseQualityOptions = {}): {
           loose: percentiles(series.loose),
         },
         reprojectionPx: percentiles(series.reprojection),
+        orderSources: { ...orderSources },
+        bigJumps: { ...bigJumps, sources: { ...bigJumps.sources } },
         reprojectionByEdgePx: reprojectionBands.summary(),
         wallElevationDeg: {
           n: series.elevation.length,
