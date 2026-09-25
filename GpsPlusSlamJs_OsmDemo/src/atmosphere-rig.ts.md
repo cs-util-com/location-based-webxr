@@ -33,8 +33,14 @@ colour that matched the sky at one time of day.
   - `dispose()` — the sky, the haze's texture, the fallback's dome and light.
 - `TONE_MAPPING` (Khronos Neutral) and `TONE_MAPPING_EXPOSURE` (0.5 / 0.6)
   — the demo's grade, desktop and AR (see Grading).
-- `NATURAL_LIGHT_COMPENSATION_EV` (−2.75) — the sky's EV on top of its
+- `NATURAL_LIGHT_COMPENSATION_EV` (−3.15) — the sky's EV on top of its
   auto-exposure, for natural light only (see Grading).
+- `NATURAL_LIGHT_ADAPTATION` (0.83) — OsmDemo's auto-exposure adaptation,
+  handed to the sky at construction (the framework's default is 0.75) and
+  used by the fallback. It acts almost only below the reference light, so
+  it sets how dark dawn, dusk and twilight get.
+- `BUILDING_SKY_LIGHT` (1.4) — the sky light on the buildings, the default
+  of the light dialog's slider (`applyBuildingSkyLight`).
 - **The CPU fallback sky gets the same EV**, but its dome and fog are not
   tone-mapped (by earlier design), while geometry goes through Neutral: on
   a device without float targets the dome now outshines the lit city more
@@ -49,8 +55,13 @@ colour that matched the sky at one time of day.
   (`ar-scene-environment.ts` imports both; DEC-SUN-9/11), the exposure
   cancelling ACES's missing ÷0.6 so the heat grid keeps its brightness
   (DEC-SUN-12; the value entering the curve, not the look: Neutral renders
-  mids and highlights brighter than ACES did). The sky's natural light gets
-  **−2.75 EV**, bounded from both sides: the heat grid's margin (June noon
+  mids and highlights brighter than ACES did). **Since 2026-09-25 the
+  owner's pick from the light dialog** (plan 2026-09-24-2140 §13-§15,
+  DEC-LIGHT-9/10): −3.15 EV with adaptation 0.83, sky light 1.4 and the
+  noon gain ×1.8, measured together at every DEC-R4-5 sun point (lowest
+  margin 6.08; the 3.6° morning 17.6 against its lit-city floor of 16.8).
+  Before that the sky's natural light got **−2.75 EV**, bounded from both
+  sides: the heat grid's margin (June noon
   5.70, 114 % of the bound; −2 fails at 4.93) and the LIT CITY, which a
   darker EV blacks out (−4.5 reached a 158 % margin with near-black
   buildings, plan §10.1). The e2e sweep asserts both at seven sun points;
@@ -77,7 +88,8 @@ colour that matched the sky at one time of day.
   `surfaceGainAt(elevationRad, ramp?)` give the building and road colour factor
   (the ramp defaults to `NOON_SURFACE_GAIN`; the light dialog passes its own,
   `light-settings.ts`; a ramp that does not rise throws), 1
-  up to a 20° sun, linear to ×1.45 at 45°, constant above; applied by
+  up to an 18° sun, linear to ×1.8 at 40°, constant above (DEC-LIGHT-9;
+  ×1.45 from 20° to 45° under −2.75 EV before); applied by
   `BuildingView` through `mesh-layers.ts`'s `applySurfaceGain`. Those surfaces
   are nearly grey, so the lift adds brightness without competing colour:
   measured at the June noon, lit surfaces 48.1 → 64.8 (the approved look's

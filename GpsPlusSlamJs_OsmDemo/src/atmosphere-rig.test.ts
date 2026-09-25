@@ -17,6 +17,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   AtmosphereRig,
+  BUILDING_SKY_LIGHT,
+  NATURAL_LIGHT_ADAPTATION,
   NATURAL_LIGHT_COMPENSATION_EV,
   surfaceGainAt,
   CLOUD_COVER,
@@ -72,6 +74,7 @@ class StubSky {
     this.ev = ev;
   }
 
+  /** The framework's default, until the rig hands the sky OsmDemo's own. */
   adaptation = 0.75;
   setAutoExposureAdaptation(adaptation: number): void {
     this.adaptation = adaptation;
@@ -83,7 +86,7 @@ class StubSky {
     light.intensity =
       (3 + this.sun.y) *
       2 ** (this.ev - NATURAL_LIGHT_COMPENSATION_EV) *
-      (this.adaptation / 0.75);
+      (this.adaptation / NATURAL_LIGHT_ADAPTATION);
   }
 
   horizonColour(): THREE.Color {
@@ -157,6 +160,8 @@ describe("AtmosphereRig with the physical sky", () => {
   it("applies the natural-light EV to the sky, leaving the tone mapping alone", () => {
     const { sky } = rig();
     expect(sky.ev).toBe(NATURAL_LIGHT_COMPENSATION_EV);
+    // And OsmDemo's own adaptation: the sky's default is the framework's.
+    expect(sky.adaptation).toBe(NATURAL_LIGHT_ADAPTATION);
     expect(TONE_MAPPING).toBe(THREE.NeutralToneMapping);
     expect(TONE_MAPPING_EXPOSURE).toBeCloseTo(0.5 / 0.6, 12);
     // A data view: darker than the look-dev page's photographic grading.
@@ -165,19 +170,31 @@ describe("AtmosphereRig with the physical sky", () => {
     ).toBeLessThan(1);
   });
 
-  // The noon brightening (plan 2026-09-24-0901): the building and road
-  // colour factor is 1 up to a 20° sun (the boot, mornings, evenings and
-  // twilight keep their look), rises linearly, and is x1.45 from 45° up.
+  // THE OWNER'S LIGHT DEFAULTS (light dialog plan 2026-09-24-2140 §13-§15,
+  // DEC-LIGHT-9/10): picked in the dialog, the gain raised so June noon
+  // keeps its approved brightness, the adaptation raised so the 3.6°
+  // morning keeps the lit-city floor. Each was measured at every DEC-R4-5
+  // sun point; changing one re-opens that measurement.
+  it("ships the owner's light defaults", () => {
+    expect(NATURAL_LIGHT_COMPENSATION_EV).toBe(-3.15);
+    expect(NATURAL_LIGHT_ADAPTATION).toBe(0.83);
+    expect(BUILDING_SKY_LIGHT).toBe(1.4);
+    expect(NOON_SURFACE_GAIN).toEqual({ max: 1.8, fromDeg: 18, fullDeg: 40 });
+  });
+
+  // The noon brightening (plan 2026-09-24-0901; the ramp from DEC-LIGHT-9):
+  // the building and road colour factor is 1 up to an 18° sun (the boot,
+  // mornings, evenings and twilight keep their look), rises linearly, and
+  // is x1.8 from 40° up.
   it("brightens the neutral surfaces only at a high sun", () => {
     const at = (deg: number) => surfaceGainAt((deg * Math.PI) / 180);
-    expect(NOON_SURFACE_GAIN).toEqual({ max: 1.45, fromDeg: 20, fullDeg: 45 });
     expect(at(-6)).toBe(1);
     expect(at(0)).toBe(1);
-    expect(at(20)).toBe(1);
-    expect(at(32.5)).toBeCloseTo(1.225, 12);
-    expect(at(45)).toBeCloseTo(1.45, 12);
-    expect(at(62.5)).toBeCloseTo(1.45, 12);
-    expect(at(90)).toBeCloseTo(1.45, 12);
+    expect(at(18)).toBe(1);
+    expect(at(29)).toBeCloseTo(1.4, 12);
+    expect(at(40)).toBeCloseTo(1.8, 12);
+    expect(at(62.5)).toBeCloseTo(1.8, 12);
+    expect(at(90)).toBeCloseTo(1.8, 12);
     for (let deg = -10; deg < 90; deg += 0.5) {
       expect(at(deg + 0.5)).toBeGreaterThanOrEqual(at(deg));
     }
@@ -241,12 +258,15 @@ describe("AtmosphereRig.setExposure (light dialog, plan 2026-09-24-2140)", () =>
     });
     expect(sky.ev).toBe(NATURAL_LIGHT_COMPENSATION_EV + 1);
     expect(sky.adaptation).toBe(0.6);
-    expect(sun.intensity).toBeCloseTo(before * 2 * (0.6 / 0.75), 12);
+    expect(sun.intensity).toBeCloseTo(
+      before * 2 * (0.6 / NATURAL_LIGHT_ADAPTATION),
+      12,
+    );
   });
 
   it("before any sun, sets the sky and syncs with the first sun", () => {
     const { view, sun, sky } = rig();
-    view.setExposure({ ev: -2, adaptation: 0.75 });
+    view.setExposure({ ev: -2, adaptation: NATURAL_LIGHT_ADAPTATION });
     expect(sky.ev).toBe(-2);
     view.setSun(sunAt(55, 180));
     expect(sun.intensity).toBeCloseTo(
@@ -262,7 +282,7 @@ describe("AtmosphereRig.setExposure (light dialog, plan 2026-09-24-2140)", () =>
     const before = sun.intensity;
     view.setExposure({
       ev: NATURAL_LIGHT_COMPENSATION_EV + 1,
-      adaptation: 0.75,
+      adaptation: NATURAL_LIGHT_ADAPTATION,
     });
     expect(sun.intensity).toBeCloseTo(before * 2, 9);
   });
@@ -276,7 +296,7 @@ describe("AtmosphereRig.setExposure (light dialog, plan 2026-09-24-2140)", () =>
       RangeError,
     );
     expect(sky.ev).toBe(NATURAL_LIGHT_COMPENSATION_EV);
-    expect(sky.adaptation).toBe(0.75);
+    expect(sky.adaptation).toBe(NATURAL_LIGHT_ADAPTATION);
   });
 });
 

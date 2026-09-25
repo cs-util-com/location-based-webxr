@@ -1637,7 +1637,10 @@ test.describe("the time of day", () => {
    * ignore the scene light), heat grid OFF, to at least HALF their brightness
    * under the owner-approved ACES −2 EV look (measured 2026-09-24, below). It
    * passes Neutral −2.75 at every point (~1.4× the floor) and fails −3.75 at
-   * every point.
+   * every point. The owner's light defaults (−3.15 EV, adaptation 0.83, sky
+   * light 1.4, gain 1.8 from 18° to 40°; light dialog plan 2026-09-24-2140
+   * §15) pass every point, the 3.6° morning with the least to spare (17.6
+   * against 16.8).
    */
   const SUN_POINTS = [
     // [label, date, apparent solar time, lit-surface luma under ACES −2 EV,
@@ -2332,8 +2335,10 @@ test.describe("the light dialog", () => {
   });
 
   // WHY: each lever the owner tunes must move the lit surfaces the way the
-  // M0 spike measured (June noon: gain x2.2 87.4, sky light x2 76.6, EV -2.25
-  // 83.9, against 64.8), and the URL must keep the pick through a reload.
+  // M0 spike measured, and the URL must keep the pick through a reload. From
+  // the owner's defaults (gain 1.8, sky light 1.4, EV -3.15; DEC-LIGHT-9) each
+  // lever is taken to its slider's end, so the step stays well above the
+  // threshold whatever the default.
   test("brightens noon with the gain, the sky light and the EV, and keeps it in the URL", async ({
     page,
   }) => {
@@ -2343,24 +2348,24 @@ test.describe("the light dialog", () => {
     await page.locator("#light-open").click();
     const base = await readoutLuma(page);
     expect(base).toBeGreaterThan(50);
-    await slide(page, "gainMax", 2.2);
+    await slide(page, "gainMax", 2.5);
     await expect.poll(() => readoutLuma(page)).toBeGreaterThan(base + 10);
     await page.locator("#light-reset").click();
-    await slide(page, "buildingSkyLight", 2);
+    await slide(page, "buildingSkyLight", 3);
     await expect.poll(() => readoutLuma(page)).toBeGreaterThan(base + 5);
     await page.locator("#light-reset").click();
     await slide(page, "exposureEv", -2.25);
     await expect.poll(() => readoutLuma(page)).toBeGreaterThan(base + 10);
-    await slide(page, "gainMax", 1.8);
+    await slide(page, "gainMax", 2);
     // Sampled (400 ms, like the camera), so polled rather than read at once.
     await expect
       .poll(() => new URL(page.url()).searchParams.get("light"))
-      .toBe("v1:gain=1.8,ev=-2.25");
+      .toBe("v1:gain=2,ev=-2.25");
     const tuned = await readoutLuma(page);
     await page.reload();
     await waitForRefresh(page);
     await page.locator("#light-open").click();
-    await expect(page.locator("#light-gainMax")).toHaveValue("1.8");
+    await expect(page.locator("#light-gainMax")).toHaveValue("2");
     // WHY (review, 2026-09-24): the sliders showing the values is not the
     // claim; the VIEW must boot in the tuned look, or the dialog would show
     // tuned values over the shipped look. The same brightness as before the

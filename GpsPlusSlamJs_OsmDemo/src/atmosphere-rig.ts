@@ -24,7 +24,6 @@
  * @see atmosphere-rig.ts.md
  */
 
-import { AUTO_EXPOSURE } from "gps-plus-slam-app-framework/visualization/atmosphere/atmosphere-exposure";
 import { fallbackSky } from "gps-plus-slam-app-framework/visualization/atmosphere/atmosphere-fallback";
 import { AtmosphereHaze } from "gps-plus-slam-app-framework/visualization/atmosphere/atmosphere-haze";
 import {
@@ -94,8 +93,30 @@ export const TONE_MAPPING_EXPOSURE = 0.5 / 0.6;
  * lifts every surface to mid-grey and absolute chroma grows with
  * brightness, so a brighter backdrop out-shouts the data. −2 kept ≥ 148 %
  * of the bound at every sun the old day reached.
+ *
+ * −3.15 IS THE OWNER'S PICK from the light dialog (plan 2026-09-24-2140
+ * §13-§15, DEC-LIGHT-9), shipped with {@link NATURAL_LIGHT_ADAPTATION},
+ * {@link BUILDING_SKY_LIGHT} and {@link NOON_SURFACE_GAIN}; the four were
+ * measured together at every DEC-R4-5 sun point (lowest margin 6.08, the
+ * 3.6° morning 17.6 against its lit-city floor of 16.8).
  */
-export const NATURAL_LIGHT_COMPENSATION_EV = -2.75;
+export const NATURAL_LIGHT_COMPENSATION_EV = -3.15;
+
+/**
+ * OsmDemo's auto-exposure adaptation (the framework's default is 0.75). It
+ * acts almost only below the reference light, so it sets how dark dawn,
+ * dusk and twilight get and barely moves noon. 0.83 lifts the 3.6° morning
+ * over its lit-city floor with 0.8 to spare (0.82 passed by 0.3, inside the
+ * run-to-run drift): plan 2026-09-24-2140 §15, DEC-LIGHT-10.
+ */
+export const NATURAL_LIGHT_ADAPTATION = 0.83;
+
+/**
+ * The sky light on the buildings: the scene environment's intensity on the
+ * building materials, as a factor (`applyBuildingSkyLight`). The owner's
+ * pick (DEC-LIGHT-9).
+ */
+export const BUILDING_SKY_LIGHT = 1.4;
 
 /** The sun light's intensity at the model's reference elevation (45°): the demo's old white-light value. */
 const SUN_INTENSITY = 1.1;
@@ -124,12 +145,14 @@ export const CLOUD_COVER = 0.25;
  * the lift adds brightness without the colour that competes with the heat
  * grid: measured at the June noon, the DEC-R4-5 margin stays 5.50 at ×1.6
  * while lit surfaces go 48 → 70; an exposure lift to the same brightness
- * broke the bound. ×1.45 is the approved look's noon brightness (≈ 65).
+ * broke the bound. ×1.45 was the approved look's noon brightness (≈ 65)
+ * under −2.75 EV; ×1.8 from 18° to 40° keeps it (64.4) under the owner's
+ * darker −3.15 (DEC-LIGHT-9).
  */
 export const NOON_SURFACE_GAIN = {
-  max: 1.45,
-  fromDeg: 20,
-  fullDeg: 45,
+  max: 1.8,
+  fromDeg: 18,
+  fullDeg: 40,
 } as const;
 
 /** The ramp of the building and road colour factor (the light dialog tunes it). */
@@ -215,7 +238,7 @@ export class AtmosphereRig {
   private lastDirection: Vector3Like | undefined;
   /** The exposure the light dialog set (`setExposure`); the shipped look by default. */
   private exposureEv: number = NATURAL_LIGHT_COMPENSATION_EV;
-  private adaptation: number = AUTO_EXPOSURE.adaptation;
+  private adaptation: number = NATURAL_LIGHT_ADAPTATION;
 
   constructor(options: AtmosphereRigOptions) {
     this.scene = options.scene;
@@ -246,6 +269,7 @@ export class AtmosphereRig {
     } else {
       this.fallback = undefined;
       sky.setExposureCompensation(this.exposureEv);
+      sky.setAutoExposureAdaptation(this.adaptation);
       // A context restore makes the sky rebuild and RE-MEASURE its exposure;
       // the sun light, the fog colour and the haze hold copies of
       // exposure-dependent values, so they are re-read after it (M3 review,

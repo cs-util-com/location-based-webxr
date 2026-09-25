@@ -18,8 +18,11 @@ tuned look can be shared and pasted back.
 - `LightSettings`: `{ gainMax, gainFromDeg, gainFullDeg, buildingSkyLight,
 exposureAdaptation, exposureEv }`.
 - `DEFAULT_LIGHT_SETTINGS`: built from `NOON_SURFACE_GAIN`,
-  `AUTO_EXPOSURE.adaptation` and `NATURAL_LIGHT_COMPENSATION_EV`, so it
-  cannot drift from the shipped constants; the sky light default is 1.
+  `BUILDING_SKY_LIGHT`, `NATURAL_LIGHT_ADAPTATION` and
+  `NATURAL_LIGHT_COMPENSATION_EV` (`atmosphere-rig.ts`), so it cannot drift
+  from the shipped constants. Since 2026-09-25 they are the owner's pick
+  (DEC-LIGHT-9/10). A link keeps the values it states; a field it leaves out
+  means today's default.
 - `LIGHT_SETTING_RANGES`: each field's slider min, max and step.
 - `parseLightSettings(search)`: from `?light=v1:gain=1.8,ev=-2.5` (keyed,
   versioned pairs; the keys are gain, from, full, sky, adapt, ev). Never

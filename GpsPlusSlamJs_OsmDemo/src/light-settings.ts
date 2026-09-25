@@ -13,9 +13,9 @@
  * @see light-settings.ts.md
  */
 
-import { AUTO_EXPOSURE } from "gps-plus-slam-app-framework/visualization/atmosphere/atmosphere-exposure";
-
 import {
+  BUILDING_SKY_LIGHT,
+  NATURAL_LIGHT_ADAPTATION,
   NATURAL_LIGHT_COMPENSATION_EV,
   NOON_SURFACE_GAIN,
   type SurfaceGainRamp,
@@ -44,8 +44,8 @@ export const DEFAULT_LIGHT_SETTINGS: LightSettings = {
   gainMax: NOON_SURFACE_GAIN.max,
   gainFromDeg: NOON_SURFACE_GAIN.fromDeg,
   gainFullDeg: NOON_SURFACE_GAIN.fullDeg,
-  buildingSkyLight: 1,
-  exposureAdaptation: AUTO_EXPOSURE.adaptation,
+  buildingSkyLight: BUILDING_SKY_LIGHT,
+  exposureAdaptation: NATURAL_LIGHT_ADAPTATION,
   exposureEv: NATURAL_LIGHT_COMPENSATION_EV,
 };
 

@@ -192,7 +192,8 @@ map scored.
   re-applies before every render so rebuilt materials and re-assigned
   `onBeforeCompile` installers keep it. Grading: Khronos Neutral at
   0.5 / 0.6 since plan 2026-09-23-2149 M3 (ACES at 0.5 before); the sky's
-  natural light gets −2.75 EV, a data view measured against both DEC-R4-5's
+  natural light gets −3.15 EV with adaptation 0.83 (the owner's light
+  defaults, DEC-LIGHT-9/10), a data view measured against both DEC-R4-5's
   margin and the lit city's brightness (`atmosphere-rig.ts`), the fixed ambient light is gone,
   and a device without float render targets gets the rig's CPU fallback. The
   bullet below is the HISTORY of how `scene.environment` came to be used at

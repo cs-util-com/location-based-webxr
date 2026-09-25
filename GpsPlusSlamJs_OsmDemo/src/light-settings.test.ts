@@ -11,9 +11,9 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
-import { AUTO_EXPOSURE } from "gps-plus-slam-app-framework/visualization/atmosphere/atmosphere-exposure";
-
 import {
+  BUILDING_SKY_LIGHT,
+  NATURAL_LIGHT_ADAPTATION,
   NATURAL_LIGHT_COMPENSATION_EV,
   NOON_SURFACE_GAIN,
   surfaceGainAt,
@@ -37,8 +37,8 @@ describe("DEFAULT_LIGHT_SETTINGS", () => {
       gainMax: NOON_SURFACE_GAIN.max,
       gainFromDeg: NOON_SURFACE_GAIN.fromDeg,
       gainFullDeg: NOON_SURFACE_GAIN.fullDeg,
-      buildingSkyLight: 1,
-      exposureAdaptation: AUTO_EXPOSURE.adaptation,
+      buildingSkyLight: BUILDING_SKY_LIGHT,
+      exposureAdaptation: NATURAL_LIGHT_ADAPTATION,
       exposureEv: NATURAL_LIGHT_COMPENSATION_EV,
     });
     for (const f of FIELDS) {
