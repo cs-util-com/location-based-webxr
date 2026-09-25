@@ -705,6 +705,37 @@ describe('createFusedQrPoseTracker motion (plan §26)', () => {
     expect(result.status).toBe('stable');
   });
 
+  // Raw producers (the recorder, replays) store no solved pose, so their
+  // entries carry no raw pose and the detector solves positions at an
+  // assumed size: it must be the tracker's, which the app sets to the
+  // printed size. Shown by telling the tracker a WRONG size: a fast camera
+  // sweep past a still code then reads as moving, which it cannot with the
+  // right (default) size.
+  it('hands its sizeM to the motion detector for entries without raw poses', () => {
+    const cams = walkCameraPoses({
+      kind: 'arc',
+      codeWorld: codeAt(0),
+      distanceM: 1.2,
+      extent: 60,
+      steps: 12,
+    });
+    const entries = cams.map((cam, i) => ({
+      ...entryOf(cam, cornersOf(cam, codeAt(0)), i * 125),
+      rawPose: null,
+    }));
+    const moving = (
+      options: Parameters<typeof createFusedQrPoseTracker>[0]
+    ) => {
+      const tracker = createFusedQrPoseTracker(options);
+      return entries.some(
+        (_, i) =>
+          tracker.evaluate(entries.slice(0, i + 1)).motion?.movingCandidate
+      );
+    };
+    expect(moving({})).toBe(false);
+    expect(moving({ sizeM: 0.08 })).toBe(true);
+  });
+
   it('carries no motion from a bare evaluation', () => {
     expect(evaluateFusedQrPose(walkEntries(tilted(5), 8)).motion).toBeNull();
   });

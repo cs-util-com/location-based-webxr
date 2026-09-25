@@ -331,8 +331,15 @@ function motionCutMs(
 export function createFusedQrPoseTracker(
   options: QrFusedPoseOptions = {}
 ): FusedQrPoseTracker {
+  // The detector solves positions at the tracker's size for entries that
+  // carry no raw pose (raw producers: the recorder, replays).
   const motionTracker =
-    options.motion === false ? null : createQrMotionTracker(options.motion);
+    options.motion === false
+      ? null
+      : createQrMotionTracker({
+          ...(options.sizeM === undefined ? {} : { sizeM: options.sizeM }),
+          ...options.motion,
+        });
   let lastEntries: readonly QrFusedEntry[] | null = null;
   let last: QrFusedPose | null = null;
   return {

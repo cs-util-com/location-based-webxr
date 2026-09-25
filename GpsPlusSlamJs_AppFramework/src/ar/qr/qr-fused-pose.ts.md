@@ -49,8 +49,11 @@ that is moved or turned never has its stale views fused.
   -Infinity (off), `minViews` 5,
   `maxFitPx` 1.5, `fallbackFitPx` 3, `hysteresis` 1.5, `sizeM` 0.16 (only
   for the position when no entry has a raw pose - the rotation does not
-  depend on the size), `solveOptions`, `solve` (injectable, for tests;
-  the motion detector keeps its own), `motion` (tracker only).
+  depend on the size; the tracker also hands it to the motion detector,
+  which needs it for entries without a raw pose - so a raw producer's app
+  must pass the printed size), `solveOptions`, `solve` (injectable, for
+  tests; the motion detector keeps its own), `motion` (tracker only; its
+  own `sizeM` wins over the tracker's).
 
 ## Invariants & assumptions
 
@@ -130,7 +133,8 @@ if (fused.status === 'stable') place(fused.pose);
     still and stable while the camera walks; a slid or spun code has a
     stable pose that trails for at most the 3 unconfirmed detections, and
     is stable again at the new pose; switched off, the slide's stable pose
-    trails on; a bare evaluation carries no motion.
+    trails on; the tracker hands its `sizeM` to the detector (entries without raw
+    poses); a backwards seek recovers; a bare evaluation carries no motion.
 - Planted bugs (2026-09-24), each failing at least one test: mean instead
   of median, no hysteresis, no cache, no epoch check, `>=` at the gap
   boundary, always averaging; and after the milestone review: hysteresis

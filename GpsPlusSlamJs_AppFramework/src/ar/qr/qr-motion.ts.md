@@ -65,9 +65,10 @@ reads "still".
   it toward its camera; with a wrong size a camera walking past a still code
   (16 cm per detection) moves the code's positions enough to read "moving".
   The producer's raw poses are solved at the size it measured, so they are
-  used whenever every entry has one (the `qrDetected` slice always fills
-  them). Without them the detector depends on `sizeM`; the fused tracker
-  does not pass its own `sizeM` on, as no production entry lacks a raw pose.
+  used whenever every entry has one. RAW producers (the recorder, and so
+  replays) store no solved pose, so their entries carry none; then the
+  detector solves at `sizeM`, which the fused tracker sets to its own
+  `sizeM` - the caller must pass the printed size there.
 - **The newest against the rest**, not a spread over the window: a single
   outlier frame (a corner-order flip) is a candidate for ONE detection and
   never reaches the persistence.
