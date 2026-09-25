@@ -181,12 +181,11 @@ const initialState: QrDetectedState = {
  * dispatched after a restart into the store the session's phase
  * subscription watches), or this slice's own `qrFrameChanged`.
  *
- * NOT every app gets a signal yet (QR near-frontal pose plan §22): the
+ * Which apps deliver a signal (QR near-frontal pose plan §22, §24): the
  * TourViewer does (its AR store is the tracking store); the recorder does
- * not after its first Start Recording (the session's phase subscription is
- * not re-established on a store rebind - filed
- * 2026-07-11-1811-tracking-rebind-dormant-phase-subscription-followup.md);
- * the QR demo has no tracking store (b5).
+ * since the rebind fix (the session's phase subscription moves with a
+ * store rebind, plan §24); the QR demo dispatches `qrFrameChanged` from its
+ * `onFrameChanged` hook (b5).
  *
  * One restart can arrive as two of these in the same store; the epoch then
  * moves twice with no detection in between, which partitions the detections

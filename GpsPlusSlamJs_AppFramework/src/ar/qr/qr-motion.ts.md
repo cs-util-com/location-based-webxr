@@ -45,7 +45,8 @@ reads "still".
   solve, an unusable view) neither confirms nor breaks a run.
 - Options (defaults PROVISIONAL until the §26 sweep; out-of-range values
   fall back to the default): `motionWindow` 4 (≥ 2), `moveM` 0.03,
-  `turnPx` 3, `persistence` 4 (≥ 1), `sizeM` 0.16 (positions only, and only
+  `turnPx` 3, `gapMs` 4000 (the fused window's default; a longer step between
+  detections breaks the motion window), `persistence` 4 (≥ 1), `sizeM` 0.16 (positions only, and only
   without raw poses), `solve` (injectable).
 
 ## Invariants & assumptions
@@ -126,7 +127,7 @@ if (m.state === 'still') {
   directions; a rebuilt copy of a detection is not counted again; a
   confirmed motion survives readings without a signal; time going
   backwards starts afresh; no still time while moving again; a steady
-  turn's rate; one outlier frame never flips the state; a still code under
+  turn's rate; the window breaks at `gapMs`; one outlier frame never flips the state; a still code under
   1 px of corner noise stays still (10 seeds x 40 detections); one step per
   detection however often it is read; `stillSinceMs`.
 - `qr-motion.property.test.ts`: for any sequence of raw moving candidates

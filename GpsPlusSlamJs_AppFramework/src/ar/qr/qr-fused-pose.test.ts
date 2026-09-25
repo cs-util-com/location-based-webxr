@@ -736,6 +736,23 @@ describe('createFusedQrPoseTracker motion (plan §26)', () => {
     expect(moving({ sizeM: 0.08 })).toBe(true);
   });
 
+  // PR #497 review: the detector's window must break at the tracker's gap.
+  it('hands its gapMs to the motion detector', () => {
+    const entries = walkEntries(tilted(5), 6).map((e, i) => ({
+      ...e,
+      timestamp: e.timestamp + (i === 5 ? 2000 : 0),
+    }));
+    const last = (options: Parameters<typeof createFusedQrPoseTracker>[0]) => {
+      const tracker = createFusedQrPoseTracker(options);
+      let r = tracker.evaluate(entries.slice(0, 1));
+      for (let i = 2; i <= entries.length; i++)
+        r = tracker.evaluate(entries.slice(0, i));
+      return r.motion!.offsetM;
+    };
+    expect(last({})).not.toBeNull();
+    expect(last({ gapMs: 1000 })).toBeNull();
+  });
+
   it('carries no motion from a bare evaluation', () => {
     expect(evaluateFusedQrPose(walkEntries(tilted(5), 8)).motion).toBeNull();
   });

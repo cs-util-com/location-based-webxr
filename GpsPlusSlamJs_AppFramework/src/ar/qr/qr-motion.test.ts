@@ -375,3 +375,19 @@ describe('createQrMotionTracker edge cases (milestone review 2026-09-25)', () =>
     expect(m.turnRateDegPerS!).toBeLessThan(52);
   });
 });
+
+describe('measureQrMotion window gap (PR #497 review)', () => {
+  // The motion window must break at the same time gap as the fused window
+  // it cuts: comparing the newest detection with ones from before a long
+  // pause would read a code carried away meanwhile as a jump.
+  const gapped = () =>
+    scene(6, () => codeAt(0, 5)).map((e, i) => ({
+      ...e,
+      timestamp: e.timestamp + (i === 5 ? 2000 : 0),
+    }));
+
+  it('breaks at its gapMs', () => {
+    expect(measureQrMotion(gapped()).offsetM).not.toBeNull();
+    expect(measureQrMotion(gapped(), { gapMs: 1000 }).offsetM).toBeNull();
+  });
+});

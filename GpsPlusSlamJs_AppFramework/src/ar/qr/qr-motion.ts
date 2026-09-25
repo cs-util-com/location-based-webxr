@@ -8,7 +8,11 @@
 
 import type { Vector3 } from 'gps-plus-slam-js';
 import type { Pose } from './qr-pose.js';
-import { selectFusedWindow, type QrFusedEntry } from './qr-fused-window.js';
+import {
+  FUSED_WINDOW_DEFAULTS,
+  selectFusedWindow,
+  type QrFusedEntry,
+} from './qr-fused-window.js';
 import {
   solveQrPoseMultiView,
   viewErrorAtRotationPx,
@@ -31,6 +35,11 @@ export interface QrMotionOptions {
    * 0.6-1.5 px, plan §25; swept in §26).
    */
   turnPx?: number;
+  /**
+   * A larger step between consecutive timestamps breaks the motion window,
+   * ms. Default: the fused window's (4000); the fused tracker hands its own.
+   */
+  gapMs?: number;
   /** Consecutive detections a new state must show before it is taken. Default 4 (owner, ~0.5 s). */
   persistence?: number;
   /** The printed size, for positions only when the entries carry no raw poses (the rotation does not depend on it). Default 0.16. */
@@ -71,6 +80,7 @@ const DEFAULTS = {
   turnPx: 3,
   persistence: 4,
   sizeM: 0.16,
+  gapMs: FUSED_WINDOW_DEFAULTS.gapMs,
 };
 
 type Resolved = typeof DEFAULTS & { solve: typeof solveQrPoseMultiView };
@@ -87,6 +97,7 @@ function resolve(o: QrMotionOptions): Resolved {
     turnPx: pick(o.turnPx, DEFAULTS.turnPx, (x) => x > 0),
     persistence: pick(o.persistence, DEFAULTS.persistence, (x) => x >= 1),
     sizeM: pick(o.sizeM, DEFAULTS.sizeM, (x) => x > 0 && Number.isFinite(x)),
+    gapMs: pick(o.gapMs, DEFAULTS.gapMs, (x) => x >= 0),
     solve: o.solve ?? solveQrPoseMultiView,
   };
 }
@@ -178,7 +189,10 @@ export function measureQrMotion(
   options: QrMotionOptions = {}
 ): QrMotionSignals {
   const o = resolve(options);
-  const window = selectFusedWindow(entries, { windowSize: o.motionWindow });
+  const window = selectFusedWindow(entries, {
+    windowSize: o.motionWindow,
+    gapMs: o.gapMs,
+  });
   if (window.length < 2) return { ...NONE };
   const newest = window[window.length - 1]!;
   // The solve over all views checks each is usable (and gives positions

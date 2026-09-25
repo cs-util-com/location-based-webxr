@@ -332,12 +332,14 @@ export function createFusedQrPoseTracker(
   options: QrFusedPoseOptions = {}
 ): FusedQrPoseTracker {
   // The detector solves positions at the tracker's size for entries that
-  // carry no raw pose (raw producers: the recorder, replays).
+  // carry no raw pose (raw producers: the recorder, replays), and breaks its
+  // window at the tracker's gap.
   const motionTracker =
     options.motion === false
       ? null
       : createQrMotionTracker({
           ...(options.sizeM === undefined ? {} : { sizeM: options.sizeM }),
+          ...(options.gapMs === undefined ? {} : { gapMs: options.gapMs }),
           ...options.motion,
         });
   let lastEntries: readonly QrFusedEntry[] | null = null;
