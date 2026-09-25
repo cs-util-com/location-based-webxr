@@ -32,7 +32,8 @@ instead of 4, and does the converging size estimate read as motion. Fed by
       `{ from, to, sinceFirstMs, sinceEpochMs, sizeStatus, sizeCm, offsetCm,
 turnSignalPx, speedCmS, turnRateDegS }` (cm values rounded to 0.01),
       and how many more there were.
-- Types: `SizeState`, `RunLengths`, `MotionSwitch`, `MotionTallySummary`.
+- Types: `SizeState`, `MotionTallySummary` (exported); `RunLengths` and
+  `MotionSwitch` are the shapes inside the summary.
 
 ## Invariants & assumptions
 

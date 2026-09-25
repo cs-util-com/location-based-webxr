@@ -19,14 +19,14 @@ export interface SizeState {
 }
 
 /** Runs of consecutive candidates that began while still, by length. */
-export interface RunLengths {
+interface RunLengths {
   r1: number;
   r2: number;
   r3: number;
   r4plus: number;
 }
 
-export interface MotionSwitch {
+interface MotionSwitch {
   from: string;
   to: string;
   /** Since the tally's first reading / the first reading of this frame epoch. */
