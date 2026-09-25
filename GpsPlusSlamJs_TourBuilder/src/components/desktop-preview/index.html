@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>gps-plus-slam — desktop preview (Component 11)</title>
+    <link rel="stylesheet" href="../shared/demo.css" />
+    <link rel="stylesheet" href="../shared/hud.css" />
+    <link rel="stylesheet" href="../shared/icon-button.css" />
+    <!-- `.map-card`'s own look (size, border, Leaflet popup skin) — shared
+         with the authoring demo/composed app rather than duplicated here,
+         same reasoning as authoring-view.css's own header comment. -->
+    <link rel="stylesheet" href="../authoring/view/authoring-view.css" />
+    <style>
+      #canvas-root canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+        cursor: grab;
+        touch-action: none;
+      }
+
+      #canvas-root canvas:active {
+        cursor: grabbing;
+      }
+
+      .preview-attribution {
+        position: absolute;
+        left: 8px;
+        top: 8px;
+        z-index: 1;
+        padding: 2px 6px;
+        font-size: 0.7rem;
+        color: rgb(255 255 255 / 80%);
+        background: rgb(0 0 0 / 35%);
+        border-radius: 3px;
+        pointer-events: none;
+      }
+
+      /* Same floating top-right placement as the composed app's in-session
+         map (app.css's `.ar-container > .map-card`) — clear of the HUD,
+         which anchors the bottom edge. Fixed size, not the app's fluid
+         `clamp()`: this demo targets desktop only, no phone breakpoint. */
+      #canvas-root > .map-card {
+        position: absolute;
+        top: 12px;
+        right: 12px;
+        z-index: 6;
+        width: 200px;
+        height: 200px;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="page-header">
+      <h1>Desktop preview</h1>
+      <p class="lead">
+        Walks a real tour with no phone, GPS, or WebXR. Component 8's AR viewing
+        scene runs unchanged inside a stand-in for the AR session.
+      </p>
+    </header>
+
+    <div id="canvas-root"></div>
+
+    <script type="module" src="./demo.ts"></script>
+  </body>
+</html>

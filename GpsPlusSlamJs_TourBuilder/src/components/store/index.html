@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>gps-plus-slam — store demo (Component 3)</title>
+    <link rel="stylesheet" href="../shared/panel-demo.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Tour data model + Redux store</h1>
+      <p class="lead">
+        Two real stores built from the framework factories. Click any action;
+        the JSON below updates on every dispatch via
+        <code>store.subscribe()</code>. Only the app slices are shown (the
+        framework base slices are hidden).
+      </p>
+      <div class="cols">
+        <section class="panel">
+          <h2>Viewing store</h2>
+          <div class="buttons" id="viewing-buttons"></div>
+          <pre id="viewing-state"></pre>
+        </section>
+        <section class="panel">
+          <h2>Authoring store</h2>
+          <div class="buttons" id="authoring-buttons"></div>
+          <pre id="authoring-state"></pre>
+        </section>
+      </div>
+    </main>
+    <script type="module" src="./demo.ts"></script>
+  </body>
+</html>

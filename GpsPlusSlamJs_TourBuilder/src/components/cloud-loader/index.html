@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>gps-plus-slam — cloud-loader demo (Component 6)</title>
+    <link rel="stylesheet" href="../shared/panel-demo.css" />
+    <style>
+      main.demo {
+        display: grid;
+        gap: 20px;
+      }
+      .load-row {
+        display: grid;
+        gap: 10px;
+      }
+      label.field {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        font-size: 12px;
+        color: #9aa7bd;
+      }
+      input[type="url"] {
+        font: inherit;
+        font-size: 12px;
+        color: #e9eef7;
+        background: #0b0e14;
+        border: 1px solid #2a3550;
+        border-radius: 6px;
+        padding: 6px 8px;
+      }
+      .assets {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .result {
+        display: grid;
+        gap: 10px;
+      }
+      .result p {
+        margin: 0;
+      }
+      .log-section {
+        display: grid;
+        gap: 10px;
+      }
+      .log-section h2 {
+        margin: 0;
+      }
+      #log {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 11px;
+        white-space: pre-wrap;
+        background: #0b0e14;
+        border: 1px solid #2a3550;
+        border-radius: 6px;
+        padding: 8px;
+        max-height: 260px;
+        overflow: auto;
+      }
+      #source {
+        font-weight: 600;
+      }
+      #preview img {
+        max-width: 160px;
+        border: 1px solid #2a3550;
+        border-radius: 6px;
+      }
+      .hint {
+        font-size: 11px;
+        color: #6b7688;
+        margin-bottom: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="demo">
+      <div class="head">
+        <h1>Cloud-storage tour source</h1>
+        <p class="lead">
+          Paste a hosted <code>tour.zip</code> URL — a direct download link
+          <em>or</em> the share link straight from Dropbox / Google Drive /
+          OneDrive / GitHub: share pages are auto-normalized to their raw
+          download form, and known no-CORS hosts (Dropbox) are auto-routed
+          through the dev proxy (see RECIPE.md). Watch the tour + POIs appear
+          before the whole archive downloads, fetch an asset by range (a
+          <strong>206 Partial Content</strong> in the Network panel), then see
+          the background warm switch the byte-source to a local copy.
+        </p>
+      </div>
+
+      <div class="load-row">
+        <label class="field">
+          Tour zip URL or share link
+          <input
+            id="url"
+            type="url"
+            placeholder="https://www.dropbox.com/scl/fi/…/tour.zip?rlkey=…&amp;dl=0"
+          />
+        </label>
+        <button id="load" type="button">Load tour</button>
+      </div>
+
+      <div class="result">
+        <p>Source: <span id="source">—</span></p>
+        <div id="tour"></div>
+        <div class="assets" id="assets"></div>
+        <div id="preview"></div>
+      </div>
+
+      <div class="log-section">
+        <h2>Log</h2>
+        <div id="log"></div>
+      </div>
+    </main>
+    <script type="module" src="./demo.ts"></script>
+  </body>
+</html>

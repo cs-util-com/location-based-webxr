@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>gps-plus-slam — authoring tools demo</title>
+    <link rel="stylesheet" href="../shared/demo.css" />
+    <link rel="stylesheet" href="./view/authoring-view.css" />
+    <style>
+      /* `#canvas-root`/`#hud` are shared/demo.css's canvas-overlay layout —
+         reused as-is (see #tools-root below) so this demo matches the real
+         app's full-bleed-map-below-header shell exactly (`#app-root >
+         .tools-shell`, app.css) instead of inventing its own. `html`
+         doesn't need the onboarding/store demos' `overflow: auto` override:
+         this demo, like the app, is meant to fill the viewport, not scroll. */
+      #tools-root {
+        position: relative;
+        flex: 1;
+        min-height: 0;
+      }
+      .map-shell {
+        /* Colocated authoring-view.css positions `.map-shell` `absolute`
+           inside its nearest positioned ancestor — `#tools-root` above is
+           that ancestor here (the real app instead nests it under its own
+           `position: fixed` `.tools-shell`, see app.css). */
+        position: absolute;
+      }
+      /* Same reasoning as `.map-shell` above: authoring-view.css's
+         `.authoring-sections` positions itself relative to its nearest
+         positioned ancestor, `#tools-root`, rather than the whole viewport
+         (`.tools-shell` in the real app). */
+      .authoring-sections {
+        position: absolute;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="page-header">
+      <h1>Authoring tools demo</h1>
+      <p class="lead">
+        Live GPS only, same as the real app — walk to drop waypoints where you
+        stand, or use the map: drag a marker to fine-tune its position, or click
+        an empty spot to drop one exactly there. Attach files to a waypoint's
+        model/sprite/audio slots, then
+        <strong>Export &amp; Pack</strong> to produce a downloadable
+        <code>tour.zip</code> via component 5's <code>packTour</code> — load it
+        in the cloud-loader or ar-scene demo to see it play back. QR generation
+        is component 5's own demo.
+      </p>
+    </header>
+    <div id="tools-root">
+      <div class="map-shell" id="map-shell">
+        <div
+          class="map-card map-card-flush map-card-fullscreen"
+          id="map-host"
+        ></div>
+        <div class="map-badge map-badge-waiting" id="gps-badge">
+          Waiting for GPS…
+        </div>
+      </div>
+      <div class="authoring-sections" id="authoring-root"></div>
+    </div>
+    <script type="module" src="./demo.ts"></script>
+  </body>
+</html>

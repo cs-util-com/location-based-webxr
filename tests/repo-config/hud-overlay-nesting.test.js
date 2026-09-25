@@ -259,7 +259,18 @@ function srcImportsFramework(appDir) {
 // TourViewer left this list when M2 gave it a real initAR container — an app
 // must never sit in both registries, because this one permanently exempts it
 // from the coverage guard (PR #359 review).
-const NON_AR_APPS = new Set(['GpsPlusSlamJs_OsmDemo']);
+//
+// `GpsPlusSlamJs_TourBuilder` is a second false positive of the same shape as
+// OsmDemo, for a different reason: it is a multi-page Vite app (one
+// `index.html` per component demo under `src/components/*/`, per its
+// `vite.config.ts` `build.rollupOptions.input`), and this guard only ever
+// discovers/checks the TOP-LEVEL `index.html`. That file is a static
+// component-gallery of links — no `<script>`, no `initAR`, no `domOverlay` —
+// so it has nothing to state a nesting contract about. The nested pages that
+// DO call `initAR` (e.g. `src/app/index.html`, `src/components/ar-scene/`)
+// are outside what this repo-wide scanner enumerates and are covered by
+// TourBuilder's own package-local test gate instead.
+const NON_AR_APPS = new Set(['GpsPlusSlamJs_OsmDemo', 'GpsPlusSlamJs_TourBuilder']);
 
 function discoverArAppHtmlPaths(root) {
   return readdirSync(root, { withFileTypes: true })

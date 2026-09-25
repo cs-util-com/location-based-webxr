@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>gps-plus-slam — packaging demo (Component 5)</title>
+    <link rel="stylesheet" href="../shared/panel-demo.css" />
+    <style>
+      label.asset-row,
+      label.field {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        margin-bottom: 10px;
+        font-size: 12px;
+        color: #9aa7bd;
+      }
+      label.toggle {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 14px;
+        font-size: 12px;
+        color: #9aa7bd;
+      }
+      input[type="file"],
+      input[type="url"],
+      textarea {
+        font: inherit;
+        font-size: 12px;
+        color: #e9eef7;
+        background: #0b0e14;
+        border: 1px solid #2a3550;
+        border-radius: 6px;
+        padding: 6px 8px;
+      }
+      textarea {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        resize: vertical;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      p.status {
+        min-height: 18px;
+        margin: 0 0 12px;
+        font-size: 12px;
+        line-height: 1.5;
+        color: #9aa7bd;
+      }
+      p.status[data-state="ok"] {
+        color: #7ee2a8;
+      }
+      p.status[data-state="error"] {
+        color: #ff9a9a;
+      }
+      pre {
+        max-height: 48vh;
+      }
+      #qr-host {
+        display: flex;
+        justify-content: center;
+        background: #fff;
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 10px;
+      }
+      #qr-host:empty {
+        display: none;
+      }
+      #qr-host svg {
+        width: 100%;
+        max-width: 320px;
+        height: auto;
+      }
+      #built-url {
+        display: block;
+        font-size: 11px;
+        line-height: 1.5;
+        color: #9ec1ff;
+        overflow-wrap: anywhere;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Tour packaging &amp; QR code</h1>
+      <p class="lead">
+        The authoring-side export step. <code>packTour</code> bundles a tour
+        (the sample fixture, or your own tour.json) + its asset files into an
+        <strong>uncompressed</strong> ZIP (store mode, so component 6 can
+        range-read a single asset without decompressing);
+        <code>buildTourUrl</code> + <code>generateQr</code> turn the hosted
+        ZIP's URL into a scannable viewing-mode link.
+      </p>
+      <div class="cols">
+        <section class="panel">
+          <h2>Tour input</h2>
+          <div class="buttons">
+            <button type="button" id="load-sample">Load sample tour</button>
+            <button type="button" id="pack">Pack tour → download</button>
+          </div>
+          <label class="field">
+            Your own tour.json (paste, edit, or upload)
+            <textarea id="tour-json-input" rows="10"></textarea>
+          </label>
+          <div class="buttons">
+            <input
+              type="file"
+              id="tour-json-file"
+              accept="application/json,.json"
+            />
+            <button type="button" id="use-tour">Use this tour</button>
+          </div>
+          <p class="status" id="tour-json-status"></p>
+          <div id="asset-inputs"></div>
+          <label class="toggle">
+            <input type="checkbox" id="use-placeholders" checked />
+            Use placeholder bytes for assets with no file picked
+          </label>
+          <p class="status" id="pack-status"></p>
+          <pre id="tour-state"></pre>
+        </section>
+        <section class="panel">
+          <h2>QR code</h2>
+          <label class="field">
+            App base URL
+            <input type="url" id="app-base" />
+          </label>
+          <label class="field">
+            Hosted ZIP URL (paste after upload)
+            <input
+              type="url"
+              id="zip-url"
+              value="https://cdn.example.com/tours/castle.zip"
+            />
+          </label>
+          <div class="buttons">
+            <button type="button" id="generate-qr">Generate QR</button>
+          </div>
+          <p class="status" id="qr-status"></p>
+          <div id="qr-host"></div>
+          <code id="built-url"></code>
+        </section>
+      </div>
+    </main>
+    <script type="module" src="./demo.ts"></script>
+  </body>
+</html>

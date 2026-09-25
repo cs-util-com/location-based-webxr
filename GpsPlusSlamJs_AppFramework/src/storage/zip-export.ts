@@ -387,7 +387,8 @@ export async function downloadBlob(
     } catch (err) {
       const error = err as Error;
       if (error.name === 'AbortError') {
-        // User cancelled - don't fall through
+        // User cancelled - don't fall through, and don't report success:
+        // a caller waiting on this promise needs to know nothing was saved.
         log.info('User cancelled save dialog');
         return false;
       }

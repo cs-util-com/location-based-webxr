@@ -1,0 +1,14 @@
+{
+  // Solution-style root config. It owns no files itself (`files: []`) and only
+  // wires up the real projects via `references`, so the VS Code / tsserver
+  // language service assigns every opened file to a project with the correct
+  // compiler options and `types`:
+  //   - production sources -> tsconfig.app.json
+  //   - tests              -> tsconfig.vitest.json (adds vitest globals)
+  // Build/CI scripts target the concrete configs directly.
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.vitest.json" }
+  ]
+}

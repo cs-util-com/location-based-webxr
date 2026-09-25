@@ -1,0 +1,852 @@
+/**
+ * Skin for `mountAuthoringView`'s DOM (authoring-view.ts) plus the
+ * full-bleed map shell it floats over: `.tools-shell`/`.map-shell`/
+ * `.map-card*`/`.map-badge*` (also used by `viewing-app.ts` for its own,
+ * differently-sized map card) and the `.authoring-sections`/`.authoring-
+ * section`/`.wp-*`/`.visual-tile`/`.audio-tile`/`.field`/`.hint-icon` classes
+ * the view assigns itself. Colocated with the view it skins (not left only
+ * in src/app/app.css) so the component demo and Goal-2 composition render
+ * the identical look instead of the demo falling back to unstyled divs —
+ * same reasoning as `onboarding-view.css`. Values are inlined rather than
+ * referencing app.css's `:root` custom properties so this file renders
+ * identically whether or not app.css is loaded. Palette matches
+ * shared/demo.css's dark theme.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* ── Authoring tools shell (full-bleed map + floating panel) ─────────────
+   The map IS the screen: it fills its container edge-to-edge, and Tour
+   Details/Waypoints/Export float on top of it in a panel the author can
+   pan/zoom the map underneath. A sidebar on desktop, a bottom sheet on
+   phone (breakpoint below). The composed app positions `.tools-shell`
+   `fixed` over the whole viewport (see app.css); the standalone demo
+   positions its equivalent host `absolute` inside its own container
+   instead (see index.html) — either way this file only styles what's
+   inside that host. */
+
+.map-shell {
+  position: absolute;
+  inset: 0;
+  /* Traps Leaflet's internal panes/controls (z-index 200–1000) inside their
+     own stacking context so they can't paint over a floating panel with a
+     lower z-index living outside `.map-shell`. */
+  z-index: 0;
+}
+
+/* Leaflet's zoom buttons crowd a phone screen that already has pinch-zoom
+   and a bottom sheet competing for the same thumb region; desktop keeps
+   them (repositioned to bottom-right by the map view, clear of the GPS
+   badge and the sidebar). */
+@media (max-width: 720px) {
+  .leaflet-control-zoom {
+    display: none;
+  }
+}
+
+/* Leaflet's popup ships light-themed (white card, black tip) by default —
+   only the click-to-place pin uses a real popup on this screen, so this is
+   scoped to the full-bleed map rather than a blanket override every future
+   popup must also fit. The button itself lives in Leaflet's popup DOM, a
+   sibling of `.authoring-sections` rather than a descendant, so it needs
+   its own full skin here (same values as `.authoring-sections button` /
+   `button.primary` above) instead of inheriting that scoped rule. */
+.map-pending-pin-card {
+  display: grid;
+  gap: 2px;
+  min-width: 156px;
+}
+
+/* Leaflet's own `.leaflet-popup-content p { margin: 1.3em 0 }` (higher
+   specificity than a bare class) is what made the card so tall, so these
+   are scoped under the card. Right padding on the title clears Leaflet's
+   absolutely-positioned close button. */
+.map-pending-pin-card .map-pending-pin-title {
+  margin: 0;
+  padding-right: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #e9eef7;
+}
+
+.map-pending-pin-card .map-pending-pin-coords {
+  margin: 0 0 6px;
+  font-size: 11px;
+  color: #9aa7bd;
+  font-variant-numeric: tabular-nums;
+}
+
+.map-pending-pin-button {
+  font: inherit;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 16px;
+  background: #3d5488;
+  border: 1px solid #4d6bb0;
+  border-radius: 6px;
+  color: #e9eef7;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    transform 140ms cubic-bezier(0.23, 1, 0.32, 1),
+    background 200ms cubic-bezier(0.23, 1, 0.32, 1),
+    border-color 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.map-pending-pin-button:hover {
+  background: #4d6bb0;
+}
+
+.map-pending-pin-button:active {
+  transform: scale(0.97);
+}
+
+.map-pending-pin-button:focus-visible {
+  outline: 2px solid #9ec1ff;
+  outline-offset: 2px;
+}
+
+.map-card-fullscreen .leaflet-popup-content-wrapper,
+.map-card-fullscreen .leaflet-popup-tip {
+  background: #10131a;
+  color: #e9eef7;
+  box-shadow: 0 8px 20px rgb(0 0 0 / 45%);
+}
+
+.map-card-fullscreen .leaflet-popup-content-wrapper {
+  border: 1px solid #2a3550;
+  border-radius: 10px;
+}
+
+.map-card-fullscreen .leaflet-popup-content {
+  margin: 10px 12px;
+}
+
+.map-card-fullscreen .leaflet-popup-close-button {
+  color: #9aa7bd;
+}
+
+.map-card {
+  /* `.map-card` is the Leaflet container element itself (see tour-map.ts) —
+     no wrapper div — so its own box must carry the explicit height Leaflet
+     needs to size tiles against, not a `> div` child selector. `.map-shell`
+     is the wrapper: it never touches Leaflet's own DOM subtree, so the GPS
+     badge can sit as its sibling instead of a child of the map. */
+  height: clamp(180px, 46vw, 260px);
+  background: rgb(255 255 255 / 3%);
+  border: 1px solid #2a3550;
+  border-radius: 10px;
+  background-clip: padding-box;
+}
+
+.map-card-flush {
+  padding: 0;
+  overflow: hidden;
+}
+
+/* The full-bleed variant of `.map-card` (still Leaflet's own container
+   element) — kept as its own modifier since `.map-card` is also the small
+   floating map on Viewing mode's entry screen and in-session HUD, which
+   must keep their own size. Must come AFTER the `.map-card` base rule
+   above: both are single-class selectors of equal specificity, so source
+   order decides, and this one needs to win. */
+.map-card-fullscreen {
+  position: absolute;
+  inset: 0;
+  height: auto;
+  border: none;
+  border-radius: 0;
+}
+
+.map-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: rgb(16 19 26 / 82%);
+  color: #9ec1ff;
+  font-size: 12px;
+  transition: color 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.map-badge::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.map-badge-waiting::before {
+  animation: map-badge-pulse 1.2s ease-in-out infinite;
+}
+
+.map-badge-live {
+  color: #6ee7a8;
+}
+
+@keyframes map-badge-pulse {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* ── Authoring view (component 10 — styled via its own classNames) ──────── */
+
+/* The floating panel itself — a sidebar top-right on desktop, a bottom
+   sheet full-width on phone (breakpoint below). Opaque (not translucent) so
+   a busy waypoint list stays legible over the map tiles underneath, and it
+   carries its own elevation since it's the one card genuinely floating
+   over other content on this screen. */
+.authoring-sections {
+  position: absolute;
+  z-index: 20;
+  top: 16px;
+  right: 16px;
+  width: 380px;
+  max-width: calc(100% - 32px);
+  max-height: calc(100% - 32px);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+  padding: clamp(12px, 6.667px + 1.6667vw, 16px);
+  background: #10131a;
+  border: 1px solid #2a3550;
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 45%);
+}
+
+@media (max-width: 720px) {
+  .authoring-sections {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    max-width: none;
+    max-height: 65%;
+    border-radius: 10px 10px 0 0;
+    padding: clamp(12px, 6.667px + 1.6667vw, 16px)
+      clamp(12px, 6.667px + 1.6667vw, 16px)
+      calc(
+        clamp(12px, 6.667px + 1.6667vw, 16px) + env(safe-area-inset-bottom, 0px)
+      );
+  }
+}
+
+/* ── Generic controls, scoped to this panel — this component's demo doesn't
+   otherwise load app.css (same reasoning as onboarding-view.css's `.gate-
+   card button`). ────────────────────────────────────────────────────────── */
+
+.authoring-sections button {
+  font: inherit;
+  min-height: 44px;
+  padding: 12px 16px;
+  background: #1b2338;
+  border: 1px solid #2a3550;
+  border-radius: 6px;
+  color: #e9eef7;
+  cursor: pointer;
+  transition:
+    transform 140ms cubic-bezier(0.23, 1, 0.32, 1),
+    background 200ms cubic-bezier(0.23, 1, 0.32, 1),
+    border-color 200ms cubic-bezier(0.23, 1, 0.32, 1),
+    opacity 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.authoring-sections button:hover:not(:disabled) {
+  background: rgb(255 255 255 / 6%);
+  border-color: #3d5488;
+}
+
+.authoring-sections button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.authoring-sections button:focus-visible {
+  outline: 2px solid #9ec1ff;
+  outline-offset: 2px;
+}
+
+.authoring-sections button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.authoring-sections button.primary {
+  background: #3d5488;
+  border-color: #4d6bb0;
+  font-weight: 600;
+}
+
+.authoring-sections button.primary:hover:not(:disabled) {
+  background: #4d6bb0;
+}
+
+.authoring-sections .field {
+  display: block;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: #0a0d13;
+  border: 1px solid #2a3550;
+  border-radius: 6px;
+}
+
+.authoring-sections .field > span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #9aa7bd;
+}
+
+.authoring-sections .field > span > label {
+  cursor: text;
+}
+
+.authoring-sections .field input,
+.authoring-sections .field textarea {
+  display: block;
+  width: 100%;
+  margin-top: 2px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  /* 16px floor: below 16px iOS Safari zooms the viewport in on focus. */
+  font-size: max(16px, 13px);
+  color: #e9eef7;
+}
+
+.authoring-sections .field input:focus-visible,
+.authoring-sections .field textarea:focus-visible {
+  outline: none;
+}
+
+.authoring-sections input[type="number"]::-webkit-outer-spin-button,
+.authoring-sections input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.authoring-sections input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+.authoring-sections input,
+.authoring-sections textarea {
+  font: inherit;
+  min-height: 44px;
+  padding: 8px 12px;
+  background: #10131a;
+  border: 1px solid #2a3550;
+  border-radius: 6px;
+  color: #e9eef7;
+  transition: border-color 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.authoring-sections textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.authoring-sections input:focus-visible,
+.authoring-sections textarea:focus-visible {
+  outline: none;
+  border-color: #9ec1ff;
+}
+
+.authoring-sections .hint-icon {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  min-height: 0;
+  padding: 0;
+  border-radius: 50%;
+  background: #1b2338;
+  border: 1px solid #2a3550;
+  color: #9aa7bd;
+  font-size: 9px;
+  cursor: help;
+}
+
+.authoring-sections .hint-icon:hover,
+.authoring-sections .hint-icon:focus-visible {
+  outline: none;
+}
+
+.authoring-sections .hint-tip {
+  display: none;
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 190px;
+  padding: 8px 12px;
+  background: #1b2338;
+  border: 1px solid #4d6bb0;
+  border-radius: 6px;
+  color: #e9eef7;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.4;
+  text-align: left;
+  text-transform: none;
+  letter-spacing: normal;
+  z-index: 5;
+}
+
+.authoring-sections .hint-tip::before {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: #4d6bb0;
+}
+
+.authoring-sections .hint-tip::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%) translateY(-1px);
+  border: 5px solid transparent;
+  border-top-color: #1b2338;
+}
+
+.authoring-sections .hint-icon:hover .hint-tip,
+.authoring-sections .hint-icon:focus .hint-tip {
+  display: block;
+}
+
+.authoring-sections p[data-testid$="-status"] {
+  min-height: 1.2em;
+  min-width: 0;
+  font-size: 13px;
+  color: #9aa7bd;
+  overflow-wrap: break-word;
+}
+
+.authoring-sections [data-state="ok"] {
+  color: #6ee7a8;
+}
+
+.authoring-sections [data-state="error"] {
+  color: #f87171;
+}
+
+/* Sections are grouped by a divider, not nested cards — the panel above is
+   already the card. */
+.authoring-section {
+  padding: 0;
+}
+
+.authoring-section + .authoring-section {
+  padding-top: 16px;
+  border-top: 1px solid #2a3550;
+}
+
+.authoring-section h2,
+.section-label {
+  margin: 0 0 12px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 400;
+  color: #9aa7bd;
+}
+
+/* Tour Details' own collapsible header/body — collapsed by default so it
+   never occupies panel space the author didn't ask for (same disclosure the
+   waypoint cards use; kept as separate classes since "details" isn't
+   waypoint-specific). */
+.details-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.details-header h2 {
+  margin: 0;
+  flex: 1;
+}
+
+.details-chevron {
+  display: flex;
+  color: #9aa7bd;
+  flex-shrink: 0;
+  transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.authoring-section.open .details-chevron {
+  transform: rotate(90deg);
+}
+
+.details-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.authoring-section.open .details-body {
+  max-height: 400px;
+  overflow: visible;
+  margin-top: 12px;
+}
+
+.waypoints-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.waypoints-heading h2 {
+  margin: 0;
+}
+
+.export-action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  text-align: center;
+}
+
+.authoring-sections .export-action button.export-button {
+  width: 100%;
+}
+
+/* The status line is an empty <p> until an export runs. Its UA default
+   1em margins, `min-height: 1.2em` and the column's 8px gap otherwise stack
+   up as a ~50px dead strip under the button, so drop the margins and hide
+   it while empty. */
+.authoring-sections .export-action p[data-testid="export-status"] {
+  margin: 0;
+}
+
+.authoring-sections .export-action p[data-testid="export-status"]:empty {
+  display: none;
+}
+
+.empty-state {
+  margin: 0;
+  padding: 24px 16px;
+  text-align: center;
+  color: #9aa7bd;
+  border: 1px dashed #2a3550;
+  border-radius: 6px;
+}
+
+/* `.authoring-sections .icon-btn` (0,2,0), not bare `.icon-btn` (0,1,0):
+   it must outrank the scoped generic `.authoring-sections button` rule
+   above (0,1,1) — same specificity fight as `button.primary`, just without
+   the second class to win it automatically. Without this the generic
+   44px/padded/dark-bg button skin bleeds through onto what should be a
+   small transparent 28px square. Same reasoning applies to `.visual-tile-
+   clear`/`.audio-tile-clear` below. */
+.authoring-sections .icon-btn {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  min-height: 0;
+  padding: 0;
+  border-radius: 6px;
+  background: transparent;
+  border: 1px solid #2a3550;
+  color: #9aa7bd;
+  flex-shrink: 0;
+}
+
+.authoring-sections .icon-btn:hover:not(:disabled) {
+  color: #f87171;
+  border-color: #f87171;
+  background: transparent;
+}
+
+.wp-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.wp-chevron {
+  display: flex;
+  color: #9aa7bd;
+  flex-shrink: 0;
+  transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.wp-drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* The grip glyph itself is 14px; the grabbable target is a real 36px box
+     around it — a bare 14px hitbox is precise to the point of unusable,
+     especially by touch. */
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  color: #9aa7bd;
+  flex-shrink: 0;
+  cursor: grab;
+  transition: background 200ms cubic-bezier(0.23, 1, 0.32, 1);
+  /* Without this, a touch press-and-hold on the handle starts the
+     browser's own scroll/pan gesture instead of the drag. */
+  touch-action: none;
+}
+
+.wp-drag-handle:hover,
+.wp-drag-handle:active {
+  background: rgb(255 255 255 / 6%);
+  color: #e9eef7;
+}
+
+.wp-drag-handle:active {
+  cursor: grabbing;
+}
+
+.waypoint-card.dragging {
+  transform: scale(1.02);
+  box-shadow: 0 12px 28px rgb(0 0 0 / 55%);
+  cursor: grabbing;
+  pointer-events: none;
+}
+
+/* Holds the dragged card's old slot open (matched height, set inline in
+   authoring-view.ts) while it floats free — the other cards FLIP-animate
+   around this, not around the floating card itself. */
+.wp-drag-placeholder {
+  border: 1.5px dashed #3d5488;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 2%);
+}
+
+.waypoint-card.open .wp-chevron {
+  transform: rotate(90deg);
+}
+
+.wp-header h3 {
+  margin: 0;
+  font-size: 14px;
+  flex: 1;
+}
+
+.wp-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #9aa7bd;
+  flex-shrink: 0;
+}
+
+.wp-summary-empty {
+  font-size: 11px;
+  font-style: italic;
+}
+
+.wp-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.waypoint-card.open .wp-body {
+  max-height: 900px;
+  overflow: visible;
+}
+
+.wp-body-in {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 12px 12px;
+}
+
+.wp-body-in > * {
+  margin: 0;
+}
+
+.waypoint-card {
+  background: rgb(255 255 255 / 3%);
+  border: 1px solid #2a3550;
+  border-radius: 6px;
+}
+
+.radius-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.radius-row > .field {
+  margin: 0;
+}
+
+.visual-tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.visual-tile,
+.audio-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 8px;
+  background: #10131a;
+  border: 1px solid #2a3550;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: center;
+  position: relative;
+}
+
+.audio-tile {
+  flex-direction: row;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.visual-tile-active,
+.audio-tile-active {
+  border-color: #4d6bb0;
+  background: rgb(61 84 136 / 14%);
+}
+
+.visual-tile-icon,
+.visual-tile-label,
+.audio-tile-icon,
+.audio-tile-label {
+  color: #9aa7bd;
+}
+
+.visual-tile-active .visual-tile-icon,
+.visual-tile-active .visual-tile-label,
+.audio-tile-active .audio-tile-icon,
+.audio-tile-active .audio-tile-label {
+  display: none;
+}
+
+.visual-tile-status,
+.audio-tile-status {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #6ee7a8;
+  width: 100%;
+}
+
+.visual-tile-active .visual-tile-status,
+.audio-tile-active .audio-tile-status {
+  display: flex;
+}
+
+/* `.authoring-sections .visual-tile-clear` (0,2,0), not bare (0,1,0): must
+   outrank the scoped generic `.authoring-sections button` rule above
+   (0,1,1) for the same reason as `.icon-btn` above — otherwise the tiny
+   transparent clear button gets the generic dark-bg/bordered/padded skin
+   instead. */
+.authoring-sections .visual-tile-clear,
+.authoring-sections .audio-tile-clear {
+  margin-left: auto;
+  color: #9aa7bd;
+  background: transparent;
+  border: none;
+  padding: 2px;
+  min-height: 0;
+  display: none;
+}
+
+.visual-tile-active .visual-tile-clear,
+.audio-tile-active .audio-tile-clear {
+  display: flex;
+}
+
+.authoring-sections .visual-tile-clear:hover,
+.authoring-sections .audio-tile-clear:hover {
+  color: #f87171;
+  background: transparent;
+}
+
+.visual-tile-input,
+.audio-tile-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.visual-hint {
+  margin: 6px 0 16px;
+  font-size: 11px;
+  color: #9aa7bd;
+}
+
+.field-error-text {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: #f87171;
+}
+
+.field-error-text:empty {
+  display: none;
+}
+
+.icon-spin {
+  animation: icon-spin 900ms linear infinite;
+}
+
+@keyframes icon-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.waypoint-list {
+  display: grid;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .authoring-sections,
+  .authoring-sections * {
+    transition-duration: 0.001ms !important;
+    animation-duration: 0.001ms !important;
+    animation-delay: 0ms !important;
+  }
+}

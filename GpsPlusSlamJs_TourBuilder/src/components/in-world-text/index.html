@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>gps-plus-slam — in-world text demo</title>
+    <link rel="stylesheet" href="../shared/demo.css" />
+    <style>
+      /* Component-specific: multi-line status + swap button. */
+      #status {
+        margin: 8px 0 0;
+        white-space: pre-line;
+      }
+      #swap {
+        margin-top: 8px;
+        padding: 6px 12px;
+        font: inherit;
+        color: #e9eef7;
+        background: rgb(79 140 255 / 18%);
+        border: 1px solid #3d5488;
+        border-radius: 8px;
+        cursor: pointer;
+      }
+      #swap:hover {
+        background: rgb(79 140 255 / 30%);
+      }
+    </style>
+  </head>
+  <body>
+    <header class="page-header">
+      <h1>In-world text demo</h1>
+      <p class="lead">
+        Drag to orbit — labels stay upright and face you. Click a label's Prev /
+        Next buttons to page through the transcript. Rendered via the HTML-in-3D
+        backend (three-html-render); it falls back to a CanvasTexture
+        automatically if that fails. On a phone, tap
+        <strong>START AR</strong> and use the controller ray to page.
+      </p>
+      <button id="swap" type="button">Swap text</button>
+      <p id="status"></p>
+    </header>
+    <div id="canvas-root"></div>
+    <script type="module" src="./demo.ts"></script>
+  </body>
+</html>

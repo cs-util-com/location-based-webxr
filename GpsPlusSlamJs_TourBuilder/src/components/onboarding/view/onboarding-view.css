@@ -1,0 +1,137 @@
+/**
+ * Skin for `mountOnboardingGate`'s DOM (onboarding-view.ts): the `.gate-card`
+ * wrapper the caller applies to its host element, and the `.perm-row` /
+ * `.perm-icon*` / `.perm-body` / `.perm-name` / `.perm-explanation` classes
+ * the view assigns itself. Colocated with the view it skins (not left in
+ * src/app/app.css) so the component demo and Goal-2 composition render the
+ * identical checklist look instead of the demo falling back to unstyled
+ * divs. Palette matches shared/demo.css's dark theme.
+ */
+
+.gate-card {
+  display: grid;
+  /* Fluid tokens: scale from a 320px phone up to app.css's 560px max-width
+     breakpoint (see app.css's --space-fluid-* comment for the clamp
+     derivation). Inlined rather than shared custom properties so this
+     file renders identically whether or not app.css's :root is loaded. */
+  gap: clamp(8px, 2.667px + 1.6667vw, 12px);
+  padding: clamp(14px, 6px + 2.5vw, 20px);
+  background: rgb(255 255 255 / 3%);
+  border: 1px solid #2a3550;
+  border-radius: 10px;
+}
+
+/* No gap here (unlike .gate-card): the border-bottom divider must sit
+   centered between the two rows, i.e. equal padding above/below it. A
+   grid/flex gap on top of that padding would push the divider toward the
+   camera row instead of centering it. */
+.perm-list {
+  display: grid;
+}
+
+.perm-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  /* Matches .gate-card's gap token so row-to-divider spacing equals
+     top-row-to-card-top and last-row-to-button spacing. */
+  padding: clamp(8px, 2.667px + 1.6667vw, 12px) 0;
+  border-bottom: 1px solid #2a3550;
+}
+
+.perm-row:last-of-type {
+  border-bottom: none;
+}
+
+.perm-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 4%);
+  color: #9aa7bd;
+  flex-shrink: 0;
+  transition:
+    background 200ms cubic-bezier(0.23, 1, 0.32, 1),
+    color 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.perm-icon-requesting {
+  background: rgb(158 193 255 / 12%);
+  color: #9ec1ff;
+}
+
+.perm-icon-granted {
+  background: rgb(110 231 168 / 14%);
+  color: #6ee7a8;
+}
+
+.perm-icon-denied {
+  background: rgb(248 113 113 / 14%);
+  color: #f87171;
+}
+
+.perm-body {
+  flex: 1;
+}
+
+.perm-name {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.perm-explanation {
+  margin: 1px 0 0;
+  font-size: 12px;
+  color: #f87171;
+  transition: color 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* Matches app.css's generic `button` + `.primary`/start skin, scoped to the
+   gate card rather than global — the demo doesn't otherwise load app.css. */
+.gate-card button {
+  width: 100%;
+  font: inherit;
+  min-height: 44px;
+  padding: 12px 16px;
+  background: #1b2338;
+  border: 1px solid #2a3550;
+  border-radius: 6px;
+  color: #e9eef7;
+  cursor: pointer;
+  transition:
+    transform 140ms cubic-bezier(0.23, 1, 0.32, 1),
+    background 200ms cubic-bezier(0.23, 1, 0.32, 1),
+    border-color 200ms cubic-bezier(0.23, 1, 0.32, 1),
+    opacity 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.gate-card button:hover:not(:disabled) {
+  background: rgb(255 255 255 / 6%);
+  border-color: #3d5488;
+}
+
+.gate-card button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.gate-card button:focus-visible {
+  outline: 2px solid #9ec1ff;
+  outline-offset: 2px;
+}
+
+.gate-card button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.gate-card [data-testid="start"] {
+  background: #3d5488;
+  border-color: #4d6bb0;
+  font-weight: 600;
+}
+
+.gate-card [data-testid="start"]:hover:not(:disabled) {
+  background: #4d6bb0;
+}

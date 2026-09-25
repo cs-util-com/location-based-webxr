@@ -320,11 +320,23 @@ const entryFiles = [
   // Engine-free desktop pointer raycast helper (2026-07-15 replay-harness Part B)
   // — deep-imported by consumer apps (PhysicsDemo) via `./visualization/*`.
   'src/visualization/pointer-picking.ts',
+  // Impure per-frame driver of proximity-machine — deep-imported by consumer
+  // apps (TourBuilder's tour-scene) via `./visualization/*`, so it must be a
+  // per-file dist entry (a missing entry breaks Vite resolution at runtime —
+  // see 2026-04-29-recorder-e2e-import-resolution-failure.md).
+  'src/visualization/proximity-driver.ts',
+  'src/visualization/proximity-machine.ts',
   // Shared Stats.js perf overlay (2026-07-17 promotion of the recorder +
   // PhysicsDemo copies) — deep-imported by both via `./visualization/*`, so it
   // must be a per-file dist entry (a missing entry breaks Vite resolution at
   // runtime — see 2026-04-29-recorder-e2e-import-resolution-failure.md).
   'src/visualization/perf-stats-overlay.ts',
+  // Pure zone state machine + its impure per-frame driver — deep-imported by
+  // TourBuilder's ar-scene runtime via `./visualization/*`, so both must be
+  // per-file dist entries (a missing entry breaks Vite resolution at runtime —
+  // see 2026-04-29-recorder-e2e-import-resolution-failure.md).
+  'src/visualization/proximity-machine.ts',
+  'src/visualization/proximity-driver.ts',
   // Shared canvas-text sprite helper (2026-07-17 wayfinding graduation).
   'src/visualization/text-sprite.ts',
   'src/visualization/three-dispose.ts',

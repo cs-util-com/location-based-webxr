@@ -1,0 +1,802 @@
+/**
+ * Goal-2 composition stylesheet (src/app/). Operate-mode UI (task
+ * completion, not persuasion) — scanability and consistency over
+ * expression. Tokens match the palette every component demo already
+ * established (shared/demo.css + each demo's own <style> block); this file
+ * is the piece that was missing — the composed app rendered those
+ * components' real classes/testids with no stylesheet supplying them.
+ *
+ * Also supplies the CSS for component 10's authoring view (targeted via its
+ * existing classNames). Component 9's onboarding gate is styled by its own
+ * colocated stylesheet, imported below, so the demo and the composed app
+ * render the identical look.
+ */
+
+@import "../components/onboarding/view/onboarding-view.css";
+@import "../components/authoring/view/authoring-view.css";
+@import "../components/shared/hud.css";
+
+:root {
+  --bg: #10131a;
+  --surface: rgb(255 255 255 / 3%);
+  --surface-hover: rgb(255 255 255 / 6%);
+  --border: #2a3550;
+  --border-strong: #3d5488;
+  --text: #e9eef7;
+  --text-muted: #9aa7bd;
+  --accent: #9ec1ff;
+  --primary: #3d5488;
+  --primary-hover: #4d6bb0;
+  --success: #6ee7a8;
+  --success-bg: rgb(110 231 168 / 12%);
+  --error: #f87171;
+  --error-bg: rgb(248 113 113 / 12%);
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-full: 999px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* Fluid tokens: scale continuously from a 320px phone (iPhone SE) up to
+     560px (this app's own `max-width` — everything above that already
+     looks the same as today, nothing here touches it). Replaces the old
+     single `@media (max-width: 400px)` hard jump with a smooth scale
+     across the real range of phone widths.
+     clamp(min, intercept + slope*vw, max), where for a given (min, max):
+       slope (vw per 1%) = (max - min) / (560 - 320) * 100
+       intercept         = min - slope/100 * 320
+     so the preferred value equals `min` at a 320px viewport and `max` at
+     560px, scaling linearly between. */
+  --space-fluid-3: clamp(8px, 2.667px + 1.6667vw, 12px);
+  --space-fluid-4: clamp(12px, 6.667px + 1.6667vw, 16px);
+  --space-fluid-5: clamp(14px, 6px + 2.5vw, 20px);
+  --text-fluid-sm: clamp(12px, 10.667px + 0.4167vw, 13px);
+  --text-fluid-base: clamp(13px, 11.667px + 0.4167vw, 14px);
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --duration-fast: 140ms;
+  --duration-base: 200ms;
+}
+
+/* Without this, padding/border add to (rather than subtract from) a
+   `width: 100%` box — every card below (`.gate-card`, `.panel`,
+   `.authoring-section`, `.resume-prompt`) overflows the viewport on narrow
+   phones as soon as it has both `width: 100%` and its own padding. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* ── Shell ─────────────────────────────────────────────────────────────── */
+
+#app-root {
+  /* `svh` (small viewport height), not `dvh`: `dvh` recalculates live as the
+     mobile browser's address/toolbar chrome collapses on the first scroll
+     gesture, so `min-height` grows mid-scroll — the browser then tries to
+     preserve visual position across that layout shift and it read as the
+     page teleporting on the very first scroll before settling down. `svh`
+     is pinned to the chrome-collapsed size from the start, so nothing
+     about it changes as the user scrolls. */
+  min-height: 100svh;
+  padding: var(--space-fluid-5) var(--space-fluid-4) var(--space-8);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-4);
+}
+
+#app-root > * {
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+}
+
+/* ── Generic controls (shared by every screen this file styles) ─────────── */
+
+button {
+  font: inherit;
+  min-height: 44px;
+  padding: var(--space-3) var(--space-4);
+  background: #1b2338;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  cursor: pointer;
+  transition:
+    transform var(--duration-fast) var(--ease-out),
+    background var(--duration-base) var(--ease-out),
+    border-color var(--duration-base) var(--ease-out),
+    opacity var(--duration-base) var(--ease-out);
+}
+
+button:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+button.primary {
+  background: var(--primary);
+  border-color: var(--primary-hover);
+  font-weight: 600;
+}
+
+button.primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+
+.field {
+  display: block;
+  margin-bottom: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: #0a0d13;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.field > span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.field > span > label {
+  cursor: text;
+}
+
+.field input,
+.field textarea {
+  display: block;
+  width: 100%;
+  margin-top: 2px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  /* 16px floor, not the fluid text token: below 16px iOS Safari zooms the
+     viewport in on focus. */
+  font-size: max(16px, var(--text-fluid-base));
+  color: var(--text);
+}
+
+.field input:focus-visible,
+.field textarea:focus-visible {
+  outline: none;
+}
+
+.hint-icon {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  min-height: 0;
+  padding: 0;
+  border-radius: 50%;
+  background: #1b2338;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 9px;
+  cursor: help;
+}
+
+.hint-icon:hover,
+.hint-icon:focus-visible {
+  outline: none;
+}
+
+.hint-tip {
+  display: none;
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 190px;
+  padding: var(--space-2) var(--space-3);
+  background: #1b2338;
+  border: 1px solid var(--primary-hover);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.4;
+  text-align: left;
+  text-transform: none;
+  letter-spacing: normal;
+  z-index: 5;
+}
+
+.hint-tip::before {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: var(--primary-hover);
+}
+
+.hint-tip::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%) translateY(-1px);
+  border: 5px solid transparent;
+  border-top-color: #1b2338;
+}
+
+.hint-icon:hover .hint-tip,
+.hint-icon:focus .hint-tip {
+  display: block;
+}
+
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+input,
+textarea {
+  font: inherit;
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  transition: border-color var(--duration-base) var(--ease-out);
+}
+
+textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+input:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* Status text driven by dataset.state = "ok" | "error" (AC13). qr-status
+   holds the generated share link as a long, unbroken URL string (see
+   pack-and-share-panel.ts). It's a grid item of `.panel` — a grid/flex
+   item's automatic minimum width is its content's intrinsic size by
+   default, and Chromium (unlike Firefox) doesn't factor `overflow-wrap`
+   into that, so the box stayed at the URL's full unbroken width and
+   pushed the panel wider than the phone screen regardless of the break
+   rule below. `min-width: 0` removes that content-driven floor so the
+   item actually shrinks to the grid track's width. */
+p[data-testid$="-status"],
+p[data-testid="pack-status"],
+p[data-testid="qr-status"] {
+  min-height: 1.2em;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  overflow-wrap: break-word;
+}
+
+[data-state="ok"] {
+  color: var(--success);
+}
+
+[data-state="error"] {
+  color: var(--error);
+}
+
+/* ── Landing screen (root-URL entry, before mode is chosen) ──────────────── */
+
+.landing {
+  display: grid;
+  gap: var(--space-fluid-3);
+  padding-top: var(--space-4);
+}
+
+.landing-title {
+  margin: 0 0 var(--space-2);
+  font-size: clamp(22px, 18px + 2.5vw, 28px);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.landing-tagline {
+  margin: calc(-1 * var(--space-2)) 0 0;
+  color: var(--text-muted);
+  font-size: var(--text-fluid-sm);
+}
+
+/* Two-line action buttons (icon + heading + supporting line). The generic
+   `button` rule already sets padding/bg/border/radius — this only adds the
+   icon+text row layout and the extra vertical room a second text line
+   needs. Deliberately two differently-weighted actions, not three identical
+   icon-cards: creating is the action anyone landing on the bare root URL
+   almost always wants (a real visitor arrives already holding `?tour=`),
+   pasting a link is the fallback, so only the first is `.primary`. */
+.landing-action {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 0;
+  padding: var(--space-4);
+  text-align: left;
+}
+
+.landing-action > svg {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.landing-action > span {
+  display: grid;
+  gap: 2px;
+}
+
+.landing-action strong {
+  font-weight: 600;
+}
+
+.landing-action small {
+  color: var(--text-muted);
+  font-weight: 400;
+  font-size: var(--text-fluid-sm);
+}
+
+/* One "open a tour" card: a demo row (a link) over the "I have a tour link"
+   row, which expands in place to reveal the paste field below it. */
+.landing-link-section {
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+/* The demo row is an <a>, not a <button>: no generic skin to strip, only the
+   link look and a divider above the next row. */
+.landing-link-section > a.landing-action {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px solid var(--border);
+}
+
+/* The row loses its own card skin (the section provides it) — `.landing-
+   link-section` prefix so this outranks the generic `button` rule. */
+.landing-link-section > .landing-action {
+  background: none;
+  border: none;
+  border-radius: 0;
+}
+
+/* No background change and no press-scale: the row is part of the card, so
+   a differently-coloured or shrinking row reads as a button nested inside a
+   button. Hover/press feedback comes from the chevron instead. These need
+   the same `:hover:not(:disabled)` specificity as the generic button
+   rules to beat them. */
+.landing-link-section > .landing-action:hover:not(:disabled),
+.landing-link-section > .landing-action:active:not(:disabled) {
+  background: none;
+  transform: none;
+}
+
+.landing-link-section > .landing-action:hover .landing-action-chevron {
+  color: var(--accent);
+}
+
+/* The card clips overflow, so the default outset focus ring would be cut off. */
+.landing-link-section > .landing-action:focus-visible {
+  outline-offset: -2px;
+}
+
+/* Not `display: grid` like the row's other spans: it holds only the
+   chevron, which turns to point down while the card is open. */
+.landing-action > .landing-action-chevron {
+  display: inline-flex;
+  margin-left: auto;
+  color: var(--text-muted);
+  transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.landing-action[aria-expanded="true"] .landing-action-chevron {
+  transform: rotate(90deg);
+}
+
+/* Expand/collapse animates the grid row 0fr -> 1fr, so the body grows to its
+   exact content height. A `max-height` guess (400px for ~200px of content)
+   makes the ease-out finish visually halfway and the collapse lag before
+   anything moves. The clip wrapper carries `overflow: hidden` + `min-height:
+   0` so the 0fr row can shrink to nothing; the padding lives on
+   the form inside it so the collapsed body is truly 0px tall. */
+.landing-link-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.landing-link-section-open .landing-link-body {
+  grid-template-rows: 1fr;
+}
+
+.landing-link-clip {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.landing-link-form {
+  display: grid;
+  gap: var(--space-3);
+  padding: 0 var(--space-fluid-4) var(--space-fluid-4);
+}
+
+/* The status line is an empty <p> until a paste fails. Its UA default 1em
+   margins, `min-height: 1.2em` and the grid gap otherwise leave a dead strip
+   under Go, so drop the margins and hide it while empty. */
+.landing-link-form p[data-testid="landing-link-status"] {
+  margin: 0;
+}
+
+.landing-link-form p[data-testid="landing-link-status"]:empty {
+  display: none;
+}
+
+.landing-link-form .field {
+  margin-bottom: 0;
+}
+
+/* Go sits beside the field, stretched to its height. The field takes the
+   remaining width; `min-width: 0` lets it shrink on a narrow phone. */
+.landing-link-row {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-3);
+}
+
+.landing-link-row > .field {
+  flex: 1;
+  min-width: 0;
+}
+
+.landing-link-row > button {
+  flex-shrink: 0;
+}
+
+.landing-dev-link {
+  justify-self: center;
+  margin-top: var(--space-2);
+  color: var(--text-muted);
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.landing-dev-link:hover,
+.landing-dev-link:focus-visible {
+  color: var(--text);
+}
+
+/* ── Resume-draft prompt ──────────────────────────────────────────────── */
+
+.resume-prompt {
+  display: grid;
+  gap: var(--space-fluid-3);
+  padding: var(--space-fluid-5);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.resume-prompt p {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.resume-prompt-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
+/* ── Authoring tools shell (full-bleed map + floating panel) ─────────────
+   The map IS the screen: it fills the real viewport (not the padded
+   560px column every other screen sits in — see the `#app-root >
+   .tools-shell` override below), and Tour Details/Waypoints/Export float
+   on top of it in a panel the author can pan/zoom the map underneath.
+   A sidebar on desktop, a bottom sheet on phone (breakpoint below). */
+
+.tools-shell {
+  position: fixed;
+  inset: 0;
+}
+
+/* `#app-root > *` (the shared centered-column rule) is an ID selector and
+   would otherwise beat a bare `.tools-shell` class, so the override has to
+   be qualified the same way to actually win — same reasoning as the
+   demo-tour chip's width override above. */
+#app-root > .tools-shell {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+}
+
+/* `.map-shell`/`.map-card*`/`.map-badge*`/`.authoring-sections`/`.authoring-
+   section`/`.wp-*`/`.visual-tile`/`.audio-tile`/etc. are all styled by
+   `../components/authoring/view/authoring-view.css`, imported above —
+   colocated with the view they skin so the standalone component demo and
+   this composed app render the identical look (same reasoning as
+   onboarding's `@import` above). Only `.tools-shell`'s override of the
+   shared `#app-root > *` centered-column rule stays here: it's specific to
+   how THIS app roots the authoring screen, not part of that view's own
+   contract. */
+
+/* ── Pack & share panel ───────────────────────────────────────────────── */
+
+.panel {
+  display: grid;
+  gap: var(--space-fluid-3);
+  padding: var(--space-fluid-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+/* Grid items don't collapse margins, so a paragraph's UA default 1em
+   top/bottom margin stacks on top of the grid gap. */
+.panel p {
+  margin: 0;
+}
+
+/* Tour name followed by the stop count, split by a dot; the count wraps
+   under the name when the name is long or the viewport narrow. */
+.tour-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.tour-summary {
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* The dot is decoration, so it lives in CSS rather than the text (the
+   summary's textContent stays "N stops"). */
+.tour-summary::before {
+  content: "-";
+  margin-right: var(--space-2);
+}
+
+.panel h2 {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.qr-host {
+  width: 0;
+  height: 0;
+  margin: 0 auto;
+  overflow: hidden;
+  opacity: 0;
+  transform: scale(0.9);
+  transition:
+    opacity var(--duration-base) var(--ease-out),
+    transform var(--duration-base) var(--ease-out),
+    width var(--duration-base) var(--ease-out),
+    height var(--duration-base) var(--ease-out);
+}
+
+.qr-host-show {
+  width: 200px;
+  height: 200px;
+  margin-top: var(--space-3);
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* generateQr() fixes the SVG's own width/height at 512 (for scan quality at
+   arm's length) regardless of host size, so without this it only shows the
+   cropped top-left corner of the code inside the 200px host. */
+.qr-host svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.field-error {
+  border-color: var(--error);
+  transition: border-color var(--duration-base) var(--ease-out);
+}
+
+/* Save-as-image row below the QR — hidden (not just empty) until a code
+   exists, same collapse-then-reveal shape as `.qr-host`/`.qr-host-show` so
+   the two appear together instead of the row flashing in a beat early. */
+.qr-actions {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-2);
+  height: 0;
+  margin: 0 auto;
+  opacity: 0;
+  overflow: hidden;
+  transition:
+    opacity var(--duration-base) var(--ease-out),
+    height var(--duration-base) var(--ease-out),
+    margin var(--duration-base) var(--ease-out);
+}
+
+.qr-actions-show {
+  height: 44px;
+  margin-top: var(--space-3);
+  opacity: 1;
+  flex-wrap: wrap;
+}
+
+/* Compact secondary action, not `.primary` — saving an image is optional
+   next to the share link itself. `flex: 1 1 0` so PNG/JPG split the row
+   evenly and stay full-height tap targets even on a 320px phone. */
+.qr-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  flex: 1 1 0;
+  max-width: 140px;
+  font-size: var(--text-fluid-sm);
+  color: var(--text-muted);
+}
+
+.qr-action-icon {
+  display: inline-flex;
+  color: var(--accent);
+}
+
+/* ── Viewing mode ─────────────────────────────────────────────────────── */
+
+/* The element handed to `initAR`, i.e. the WebXR DOM-Overlay root. Every
+   viewing screen, the HUD and the map are its DESCENDANTS: under DOM Overlay
+   only this subtree composites over the camera feed, so a sibling would
+   silently disappear the moment the session starts. */
+.ar-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Desktop preview: the rendered world stands in for the camera feed, so it
+   fills the viewport and sits BELOW the HUD and the map in the stack, exactly
+   where the camera feed sits in a real session. */
+.preview-canvas {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+  touch-action: none;
+}
+
+.preview-canvas:active {
+  cursor: grabbing;
+}
+
+/* The OSM attribution obligation (osm-building-layer.ts) — always visible
+   while desktop preview is open, below the HUD/map but above the canvas. */
+.preview-attribution {
+  position: fixed;
+  left: var(--space-2);
+  top: var(--space-2);
+  z-index: 1;
+  padding: 2px 6px;
+  font-size: 0.7rem;
+  color: rgb(255 255 255 / 80%);
+  background: rgb(0 0 0 / 35%);
+  border-radius: 3px;
+  pointer-events: none;
+}
+
+/* The map card is re-parented between the entry screen and the in-session
+   overlay, so it must look right in both. */
+.ar-container .map-card {
+  position: relative;
+  z-index: 5;
+}
+
+/* In-session (AR or preview), the map is a direct child of `.ar-container`
+   (`mountSessionShell` appends it straight to `arHost`) — floated top-right
+   over the scene, clear of the HUD which anchors the opposite edge. The
+   entry screen's map card stays nested inside `.panel` and keeps the inline
+   layout above. */
+.ar-container > .map-card {
+  position: fixed;
+  top: var(--space-fluid-4);
+  right: var(--space-fluid-4);
+  left: auto;
+  z-index: 6;
+  /* Fluid so a 320px phone doesn't lose most of its width to the overlay:
+     scales from ~110px up to the original fixed 200px. */
+  width: clamp(110px, 34vw, 200px);
+  height: clamp(110px, 34vw, 200px);
+}
+
+/* ── Small screens ────────────────────────────────────────────────────── */
+
+/* `.map-card` height and the shell/card paddings above are already fluid
+   (`clamp()`), so they need no breakpoint. Grid column *counts* can't be
+   expressed with `clamp()`, so the narrowest phones still get one explicit
+   rule: stack the resume-prompt's two buttons instead of squeezing them
+   side by side. */
+@media (max-width: 360px) {
+  .resume-prompt-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Screen-level transitions (gate ↔ tools ↔ share) ─────────────────────── */
+
+@keyframes screen-exit {
+  to {
+    opacity: 0;
+    transform: translateX(-18px);
+  }
+}
+
+@keyframes screen-enter {
+  from {
+    opacity: 0;
+    transform: translateX(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.screen-exit {
+  animation: screen-exit 140ms ease-in forwards;
+}
+
+.screen-enter {
+  animation: screen-enter 220ms var(--ease-out) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition-duration: 0.001ms !important;
+    animation-duration: 0.001ms !important;
+    animation-delay: 0ms !important;
+  }
+}

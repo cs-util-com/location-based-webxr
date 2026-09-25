@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>gps-plus-slam — 2D map overview (Component 7)</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #10131a;
+        color: #e9eef7;
+        font-family: system-ui, sans-serif;
+      }
+      .app {
+        display: grid;
+        grid-template-columns: 1fr 320px;
+        grid-template-rows: auto 1fr;
+        gap: 20px;
+        height: 100vh;
+        box-sizing: border-box;
+        padding: 20px;
+      }
+      header {
+        grid-column: 1 / -1;
+        margin: -20px -20px 0;
+        padding: 20px 20px 0;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0 0 4px;
+      }
+      p.lead {
+        margin: 0;
+        color: #9aa7bd;
+      }
+      .stage {
+        position: relative;
+        background: #0b0e14;
+        border: 1px solid #1e273b;
+        border-radius: 10px;
+        overflow: hidden;
+        min-height: 0;
+      }
+      #map {
+        width: 100%;
+        height: 100%;
+      }
+      .controls {
+        position: absolute;
+        left: 12px;
+        right: 12px;
+        bottom: 12px;
+        z-index: 1000;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 12px;
+        background: rgb(0 0 0 / 70%);
+        border: 1px solid #2a3550;
+        border-radius: 10px;
+        font-size: 13px;
+      }
+      .controls input[type="range"] {
+        flex: 1;
+      }
+      button {
+        font: inherit;
+        font-size: 13px;
+        color: #e9eef7;
+        background: rgb(79 140 255 / 18%);
+        border: 1px solid #3d5488;
+        border-radius: 8px;
+        padding: 6px 12px;
+        cursor: pointer;
+      }
+      button:hover {
+        background: rgb(79 140 255 / 30%);
+      }
+      #readout {
+        font-variant-numeric: tabular-nums;
+        color: #9ec1ff;
+        min-width: 92px;
+      }
+      .side {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        min-height: 0;
+      }
+      .panel {
+        background: rgb(255 255 255 / 3%);
+        border: 1px solid #2a3550;
+        border-radius: 10px;
+        padding: 16px 18px;
+        font-size: 13px;
+      }
+      .panel h2 {
+        font-size: 15px;
+        margin: 0 0 12px;
+        color: #9ec1ff;
+      }
+      .legend div {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 4px;
+      }
+      .swatch {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        border: 2px solid white;
+        flex: none;
+      }
+      #status {
+        margin: 0;
+        padding: 10px;
+        background: #0b0e14;
+        border: 1px solid #1e273b;
+        border-radius: 8px;
+        font-size: 12px;
+        line-height: 1.6;
+        white-space: pre-wrap;
+      }
+
+      @media (width <= 700px) {
+        .app {
+          grid-template-columns: 1fr;
+          grid-template-rows: auto minmax(320px, 55vh) auto;
+          height: auto;
+          min-height: 100vh;
+          overflow-y: auto;
+        }
+        .side {
+          flex-flow: row wrap;
+        }
+        .panel {
+          flex: 1 1 220px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <header>
+        <h1>2D map overview</h1>
+        <p class="lead">
+          A real Task&nbsp;1 walk replayed on a plain 2D Leaflet map (no
+          Three.js). The position dot and waypoint markers are driven by the
+          real store + proximity driver (components 3 + 4) — a waypoint turns
+          green once it has actually reached the ACTIVE zone.
+        </p>
+      </header>
+
+      <div class="stage">
+        <div id="map"></div>
+        <div class="controls">
+          <button id="play">▶ Play</button>
+          <input id="scrub" type="range" min="0" max="0" value="0" step="1" />
+          <span id="readout">0 / 0</span>
+        </div>
+      </div>
+
+      <div class="side">
+        <div class="panel legend">
+          <h2>Marker legend</h2>
+          <div>
+            <span class="swatch" style="background: #9ca3af"></span> unvisited
+          </div>
+          <div>
+            <span class="swatch" style="background: #f5b400"></span> next (hint
+            only, not a gate)
+          </div>
+          <div>
+            <span class="swatch" style="background: #22c55e"></span> visited
+            (reached ACTIVE at least once)
+          </div>
+        </div>
+        <div class="panel">
+          <h2>Waypoint zones</h2>
+          <pre id="status"></pre>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="./demo.ts"></script>
+  </body>
+</html>

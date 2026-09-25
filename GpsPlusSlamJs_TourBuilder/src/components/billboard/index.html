@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>gps-plus-slam — clickable billboard demo</title>
+    <link rel="stylesheet" href="../shared/demo.css" />
+  </head>
+  <body>
+    <header class="page-header">
+      <h1>Clickable billboard demo</h1>
+      <p class="lead">
+        Drag to orbit — billboards stay upright and face you. Click a billboard
+        to play it and open its panel; use the panel's button to pause/resume,
+        tap the progress bar to seek. Audio is spatialized — each clip emanates
+        from its billboard, so use headphones and orbit to hear the pan and
+        distance change.
+      </p>
+      <p id="status"></p>
+    </header>
+    <div id="canvas-root"></div>
+    <script type="module" src="./demo.ts"></script>
+  </body>
+</html>

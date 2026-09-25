@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>gps-plus-slam — onboarding gate demo</title>
+    <link rel="stylesheet" href="../shared/demo.css" />
+    <link rel="stylesheet" href="./view/onboarding-view.css" />
+    <style>
+      /* Override shared demo.css: that stylesheet assumes a full-bleed
+         #canvas-root Three.js scene below .page-header. This demo has no
+         canvas — it's a plain scrolling DOM page.
+         `html` too — on mobile browsers it's `html`'s overflow that
+         actually gates touch scrolling, not just `body`'s.
+         `!important`: Vite's production build injects demo.css's bundled
+         <link> at the END of <head>, after this inline block — reverses
+         the cascade this relies on in dev, so demo.css's `overflow: hidden`
+         otherwise wins in the deployed build only. */
+      html,
+      body {
+        overflow: auto !important;
+      }
+      /* .gate-card (onboarding-view.css) supplies the checklist skin; this
+         demo only adds the centered-column layout the real app doesn't
+         need (it places the gate inside its own screen host). */
+      #gate-root {
+        width: 420px;
+        margin: 0 auto;
+      }
+      #debug-panel {
+        max-width: 420px;
+        margin: 20px auto;
+        padding: 12px 14px;
+        background: rgb(0 0 0 / 30%);
+        border: 1px dashed #2a3550;
+        border-radius: 10px;
+      }
+      #debug-panel summary {
+        cursor: pointer;
+        font-size: 12px;
+        color: #9aa7bd;
+      }
+      #state-log {
+        margin: 10px 0 0;
+        font-size: 12px;
+        font-family: ui-monospace, monospace;
+        white-space: pre-wrap;
+        color: #9aa7bd;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="page-header">
+      <h1>Onboarding gate demo</h1>
+      <p class="lead">
+        Click <strong>Grant Access</strong> to request camera and GPS permission
+        — this uses the real browser prompts, one after another. Start stays
+        disabled until the browser itself reports both as granted. Clicking
+        <strong>Start</strong> unlocks the Web Audio API and plays a short
+        confirmation beep.
+      </p>
+      <p id="status"></p>
+    </header>
+    <div id="gate-root" class="gate-card"></div>
+    <details id="debug-panel">
+      <summary>Internal gate state (debug, not part of the real app)</summary>
+      <pre id="state-log"></pre>
+    </details>
+    <script type="module" src="./demo.ts"></script>
+  </body>
+</html>

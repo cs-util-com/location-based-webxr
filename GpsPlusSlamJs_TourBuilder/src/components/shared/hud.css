@@ -1,0 +1,252 @@
+/*
+ * Single source of styling for `hud.ts` (bar, hint bubbles). Linked by both
+ * the composed app (app/index.html) and the desktop-preview page. The round
+ * buttons themselves are styled by `icon-button.css`. Shared under
+ * components/ — see hud.ts's header comment.
+ *
+ * Every color/spacing/timing token is `var(--token, fallback)`: the composed
+ * app defines the real tokens in app.css's `:root`, so it renders unchanged;
+ * a standalone demo (no design-system tokens loaded) gets the fallback,
+ * matching the same hardcoded palette every other demo already uses
+ * (#2a3550 border, #3d5488 accent, 200ms/cubic-bezier(0.23,1,0.32,1) motion).
+ */
+
+.ar-hud {
+  position: fixed;
+  inset: auto 0 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+  padding: var(--space-3, 12px) var(--space-4, 16px)
+    calc(var(--space-4, 16px) + env(safe-area-inset-bottom, 0px));
+  background: linear-gradient(to top, rgb(16 19 26 / 92%), rgb(16 19 26 / 0%));
+  pointer-events: none;
+  font-family: system-ui, sans-serif;
+  color: var(--text, #e9eef7);
+}
+
+.ar-hud > * {
+  pointer-events: auto;
+}
+
+/* The tracking/coaching line (`hud.setStatus`) — plain text over the
+   gradient, no card/background of its own. */
+.status-banner {
+  margin: 0;
+  font-size: 13px;
+  color: var(--accent, #9ec1ff);
+}
+
+/* The one-shot notice channel (`hud.showNotice`) — same treatment, an
+   error tint instead of the coaching line's neutral accent. */
+.error-banner {
+  margin: 0;
+  font-size: 13px;
+  color: var(--error, #f87171);
+}
+
+.ar-hud-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2, 8px);
+  justify-content: flex-end;
+}
+
+/* A toggle button's one-time callout (hud.ts) — points down at the button
+   it introduces rather than turning the feature on unasked. Shared by
+   Auto-walk and the wayfinding guide toggle: same bubble, different text. */
+.hud-hint-wrap {
+  position: relative;
+}
+
+.hud-hint {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  /* Right-anchored, not centred: the buttons sit at the right edge, so a
+     centred 220px bubble would hang off-screen. The arrow is offset to
+     stay over the button instead. */
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 8px 8px 12px;
+  /* Same look as the authoring view's (?) tooltips (.hint-tip). */
+  background: #1b2338;
+  border: 1px solid #4d6bb0;
+  border-radius: var(--radius-sm, 6px);
+  color: #e9eef7;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.4;
+  /* Wraps rather than a fixed nowrap line — a phone-width viewport can be
+     narrower than the hint text itself. `max-content` is required: an
+     absolute box otherwise shrink-to-fits the ~40px button-wide wrap and
+     breaks the text one word per line; max-width then caps it. */
+  width: max-content;
+  max-width: min(220px, calc(100vw - 24px));
+  animation: hud-hint-in var(--duration-base, 200ms)
+    var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)) both;
+}
+
+/* `display: flex` above otherwise beats the UA stylesheet's `[hidden] {
+   display: none }` (same specificity, author rule loads later) — the
+   exact bug already hit once this session on `.landing-link-form` and
+   `.authoring-sections`. Without this, `hint.hidden = true` (the close
+   button, dismiss*Hint(), and the auto-timeout all just set this) updates
+   the DOM attribute but the bubble stays visually on screen. */
+.hud-hint[hidden] {
+  display: none;
+}
+
+/* Same bare "×" as the authoring map popup's Leaflet close button (muted
+   grey glyph, no circle). Visually a 24px box, but `::before` invisibly
+   pads its real click/tap area out to 40px — same fix as the waypoint drag
+   handle and map markers (a bare icon-sized hitbox is precise to the point
+   of unusable, worse on touch) without changing the bubble's footprint. */
+.hud-hint-close {
+  position: relative;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  min-height: 0;
+  margin: -4px 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #9aa7bd;
+  font:
+    bold 16px/24px Tahoma,
+    Verdana,
+    sans-serif;
+  text-align: center;
+  cursor: pointer;
+}
+
+.hud-hint-close::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
+}
+
+.hud-hint-close:hover:not(:disabled) {
+  color: #e9eef7;
+}
+
+.hud-hint-arrow {
+  --hint-arrow-right: 13px;
+  position: absolute;
+  top: 100%;
+  right: var(--hint-arrow-right); /* centre (19px) ≈ the 40px button's centre */
+  width: 12px;
+  height: 0;
+}
+
+/* Two stacked triangles: a border-coloured one, and a fill-coloured one
+   1px higher, leave a 1px outline that matches the bubble's border. */
+.hud-hint-arrow::before,
+.hud-hint-arrow::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  border: 6px solid transparent;
+}
+
+.hud-hint-arrow::before {
+  border-top-color: #4d6bb0;
+}
+
+.hud-hint-arrow::after {
+  transform: translateY(-1px);
+  border: 5px solid transparent;
+  border-top-color: #1b2338;
+  left: 1px;
+}
+
+@media (pointer: coarse) {
+  .hud-hint-arrow {
+    --hint-arrow-right: 18px; /* 48px coarse-pointer button */
+  }
+}
+
+@keyframes hud-hint-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* End-tour confirm (confirm-dialog.ts). Non-modal <dialog> inside the HUD
+   tree (WebXR DOM overlay), so the backdrop is our own element. */
+.hud-confirm {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4, 16px);
+}
+
+.hud-confirm[hidden] {
+  display: none;
+}
+
+.hud-confirm-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgb(0 0 0 / 55%);
+}
+
+/* Undo the UA's absolutely-centred <dialog> box; the grid centres it. */
+.hud-confirm-dialog {
+  position: relative;
+  inset: auto;
+  margin: 0;
+  width: min(320px, 100%);
+  box-sizing: border-box;
+  padding: var(--space-4, 16px);
+  background: #151b2b;
+  color: var(--text, #e9eef7);
+  border: 1px solid var(--border, #2a3550);
+  border-radius: var(--radius-md, 10px);
+}
+
+.hud-confirm-title {
+  margin: 0 0 var(--space-4, 16px);
+  font-size: 16px;
+}
+
+.hud-confirm-actions {
+  display: flex;
+  gap: var(--space-2, 8px);
+  justify-content: flex-end;
+}
+
+/* Skin the two buttons here too: the desktop-preview page does not load
+   app.css's generic `button` rule. */
+.hud-confirm-actions button {
+  font: inherit;
+  font-size: 14px;
+  min-height: 44px;
+  padding: var(--space-2, 8px) var(--space-4, 16px);
+  background: #1b2338;
+  border: 1px solid var(--border, #2a3550);
+  border-radius: var(--radius-sm, 6px);
+  color: var(--text, #e9eef7);
+  cursor: pointer;
+}
+
+.hud-confirm-actions .hud-confirm-confirm {
+  background: #7f1d1d;
+  border-color: var(--error, #f87171);
+}
+
+.hud-confirm-actions button:focus-visible {
+  outline: 2px solid var(--accent, #9ec1ff);
+  outline-offset: 2px;
+}

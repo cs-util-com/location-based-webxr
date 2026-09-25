@@ -1467,6 +1467,32 @@ export function getRenderer(): THREE.WebGLRenderer | null {
 }
 
 /**
+ * Get the live XRSession, or null outside a session.
+ *
+ * For hosts that need the session object itself — e.g. to listen for `select`
+ * and raycast along an input source's target ray. The framework's own
+ * per-frame work does not go through this accessor; it exists so an app does
+ * not have to re-request or track a session the framework already owns.
+ */
+export function getXrSession(): XRSession | null {
+  return activeSession.xrSession;
+}
+
+/**
+ * Get the reference space poses are expressed in, or null outside a session.
+ *
+ * Read from `renderer.xr.getReferenceSpace()` — the SAME space `onXRFrame`
+ * resolves the viewer pose against. A host computing `frame.getPose(
+ * inputSource.targetRaySpace, …)` must use this rather than requesting its own
+ * 'local-floor' space: three.js may install an offset reference space, and an
+ * independently requested one is not guaranteed to agree, which shows up as a
+ * ray that misses what the user aimed at.
+ */
+export function getXrReferenceSpace(): XRReferenceSpace | null {
+  return activeSession.sceneGraph.renderer?.xr.getReferenceSpace() ?? null;
+}
+
+/**
  * Apply an alignment matrix to the AR world group.
  *
  * The alignment matrix maps odometry positions in NUE space

@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>gps-plus-slam — TourBuilder component gallery</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background: #10131a;
+        color: #e9eef7;
+        font-family: system-ui, sans-serif;
+      }
+      main {
+        max-width: 1040px;
+        margin: 0 auto;
+        padding: 48px 20px;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0 0 4px;
+      }
+      p.lead {
+        margin: 0 0 28px;
+        color: #9aa7bd;
+      }
+      ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+        gap: 14px;
+      }
+      li {
+        display: flex;
+      }
+      a.card {
+        display: flex;
+        flex: 1;
+        flex-direction: column;
+        gap: 8px;
+        padding: 18px;
+        background: rgb(255 255 255 / 3%);
+        border: 1px solid #2a3550;
+        border-radius: 10px;
+        text-decoration: none;
+        color: inherit;
+        transition:
+          transform 0.15s ease,
+          border-color 0.15s ease,
+          background 0.15s ease,
+          box-shadow 0.15s ease;
+      }
+      a.card:hover {
+        border-color: #3d5488;
+        background: rgb(255 255 255 / 6%);
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px rgb(0 0 0 / 25%);
+      }
+      a.card .card-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      a.card .badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        width: 26px;
+        height: 26px;
+        border-radius: 999px;
+        background: rgb(158 193 255 / 12%);
+        color: #9ec1ff;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      a.card strong {
+        color: #e9eef7;
+        font-size: 14px;
+      }
+      a.card span.desc {
+        font-size: 13px;
+        color: #9aa7bd;
+        line-height: 1.4;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>TourBuilder — component gallery</h1>
+      <p class="lead">
+        Each component is an isolated, individually runnable demo. Add a folder
+        under <code>components/</code> and an entry in
+        <code>vite.config.ts</code>, then link it here.
+      </p>
+      <ul>
+        <li>
+          <a class="card" href="/src/components/billboard/">
+            <div class="card-header">
+              <span class="badge">1</span> <strong>Clickable billboard</strong>
+            </div>
+            <span class="desc"
+              >Yaw-to-face sprite that plays an audio clip and shows an in-world
+              transport panel.</span
+            >
+          </a>
+        </li>
+        <li>
+          <a class="card" href="/src/components/in-world-text/">
+            <div class="card-header">
+              <span class="badge">2</span> <strong>In-world text</strong>
+            </div>
+            <span class="desc"
+              >Billboarded, paginated transcript panel rendered via HTML-in-3D
+              with a CanvasTexture fallback; XR-safe.</span
+            >
+          </a>
+        </li>
+        <li>
+          <a class="card" href="/src/components/store/">
+            <div class="card-header">
+              <span class="badge">3</span>
+              <strong>Tour data model + store</strong>
+            </div>
+            <span class="desc"
+              >The shared tour.json schema, validator, Redux slices, selectors
+              and two store factories — an interactive state control
+              panel.</span
+            >
+          </a>
+        </li>
+        <li>
+          <a class="card" href="/src/components/proximity/">
+            <div class="card-header">
+              <span class="badge">4</span>
+              <strong>Proximity &amp; zone state machine</strong>
+            </div>
+            <span class="desc"
+              >A real recorded walk replayed top-down; each waypoint crosses
+              IDLE → PREFETCHING → ACTIVE with hysteresis. No phone.</span
+            >
+          </a>
+        </li>
+        <li>
+          <a class="card" href="/src/components/packaging/">
+            <div class="card-header">
+              <span class="badge">5</span>
+              <strong>Tour packaging &amp; QR</strong>
+            </div>
+            <span class="desc"
+              >Bundles a tour + its assets into an uncompressed tour.zip
+              (range-readable, no DEFLATE) and turns the hosted URL into a
+              scannable viewing link.</span
+            >
+          </a>
+        </li>
+        <li>
+          <a class="card" href="/src/components/cloud-loader/">
+            <div class="card-header">
+              <span class="badge">6</span>
+              <strong>Cloud-storage tour source</strong>
+            </div>
+            <span class="desc"
+              >Turns a shared <code>?tour=</code> link into a running tour:
+              byte-range reads over the network, an on-demand asset provider,
+              and a background warm that switches to a local copy — with a
+              full-download fallback when a host refuses ranges.</span
+            >
+          </a>
+        </li>
+        <li>
+          <a class="card" href="/src/components/map/">
+            <div class="card-header">
+              <span class="badge">7</span> <strong>2D map overview</strong>
+            </div>
+            <span class="desc"
+              >A toggleable, real-time 2D Leaflet map (no Three.js) showing the
+              visitor's position and the tour's waypoints, driven by the real
+              store + proximity driver.</span
+            >
+          </a>
+        </li>
+        <li>
+          <a class="card" href="/src/components/ar-scene/">
+            <div class="card-header">
+              <span class="badge">8</span> <strong>AR viewing scene</strong>
+            </div>
+            <span class="desc"
+              >The Three.js side of viewing mode: anchored knights that load
+              invisibly at 25 m and appear at 10 m, tap-to-play stories with a
+              floating transcript, and a recycled trail of breadcrumb orbs — a
+              real recorded walk, replayed on the desktop.</span
+            >
+          </a>
+        </li>
+        <li>
+          <a class="card" href="/src/components/onboarding/">
+            <div class="card-header">
+              <span class="badge">9</span>
+              <strong>Onboarding gate + audio unlock</strong>
+            </div>
+            <span class="desc"
+              >A mandatory camera/GPS permissions checklist — Start only enables
+              once the browser reports both granted — whose click is also the
+              gesture that unlocks the Web Audio API.</span
+            >
+          </a>
+        </li>
+        <li>
+          <a class="card" href="/src/components/authoring/">
+            <div class="card-header">
+              <span class="badge">10</span> <strong>Authoring tools</strong>
+            </div>
+            <span class="desc"
+              >Drop waypoints at the live GPS position (or a replayed Task 1
+              walk), attach model/sprite/audio files, record the breadcrumb
+              trail, and export a real tour.zip via component 5.</span
+            >
+          </a>
+        </li>
+        <li>
+          <a class="card" href="/src/components/desktop-preview/">
+            <div class="card-header">
+              <span class="badge">11</span> <strong>Desktop preview</strong>
+            </div>
+            <span class="desc"
+              >Walk a real tour on a desktop with no phone, no GPS and no WebXR:
+              a pinned frame and a first-person camera stand in for the AR
+              session, and component 8's scene runs inside unchanged.</span
+            >
+          </a>
+        </li>
+      </ul>
+    </main>
+  </body>
+</html>

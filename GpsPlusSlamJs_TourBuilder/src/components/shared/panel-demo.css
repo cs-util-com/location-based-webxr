@@ -1,0 +1,90 @@
+/* Shared base styles for the "control panel" demo pages (store, packaging, …) —
+   a two-column data-inspection/control layout, distinct from the canvas-overlay
+   demos' demo.css. Component-specific bits (extra controls, per-demo tweaks)
+   stay inline in each demo's index.html. */
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: #10131a;
+  color: #e9eef7;
+  font-family: system-ui, sans-serif;
+}
+
+main {
+  margin: 0 auto;
+  padding: 20px;
+}
+
+h1 {
+  font-size: 20px;
+  margin: 0 0 4px;
+}
+
+p.lead {
+  margin: 0 0 20px;
+  color: #9aa7bd;
+}
+
+.cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+@media (width <= 760px) {
+  .cols {
+    grid-template-columns: 1fr;
+  }
+}
+
+section.panel {
+  background: rgb(255 255 255 / 3%);
+  border: 1px solid #2a3550;
+  border-radius: 10px;
+  padding: 16px 18px;
+}
+
+h2 {
+  font-size: 15px;
+  margin: 0 0 12px;
+  color: #9ec1ff;
+}
+
+.buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+button {
+  font: inherit;
+  font-size: 13px;
+  color: #e9eef7;
+  background: rgb(79 140 255 / 18%);
+  border: 1px solid #3d5488;
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+button:hover {
+  background: rgb(79 140 255 / 30%);
+}
+
+pre {
+  margin: 0;
+  padding: 12px;
+  background: #0b0e14;
+  border: 1px solid #1e273b;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow: auto;
+}

@@ -5,6 +5,7 @@ packages:
   - GpsPlusSlamJs_MinimalExample
   - GpsPlusSlamJs_AnchorStarter
   - GpsPlusSlamJs_QrTrackingDemo
+  - GpsPlusSlamJs_TourBuilder
   - GpsPlusSlamJs_Landing
   - GpsPlusSlamJs_PhysicsDemo
   - GpsPlusSlamJs_WayfindingHudDemo

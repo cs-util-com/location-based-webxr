@@ -1,0 +1,5 @@
+node_modules/
+dist/
+*.tsbuildinfo
+recordings/2026-08-28_14-00-00utc_nyc-42nd-street-walk.zip
+presentation/

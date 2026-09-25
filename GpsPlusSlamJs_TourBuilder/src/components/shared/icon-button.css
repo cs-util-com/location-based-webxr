@@ -1,0 +1,114 @@
+/*
+ * Round icon button (`icon-button.ts`). Tokens use `var(--token, fallback)` so
+ * it renders the same with or without app.css's design tokens.
+ *
+ * Specificity note: app.css has a generic `button:hover:not(:disabled)`
+ * (0,2,1). Every state rule below that must beat it carries `:not(:disabled)`
+ * so it reaches (0,3,0). Pressed comes AFTER hover so a pressed+hovered button
+ * stays accent-filled.
+ */
+
+.icon-btn {
+  --icon-btn-size: 40px;
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: var(--icon-btn-size);
+  height: var(--icon-btn-size);
+  min-height: 0; /* beat app.css's generic button min-height: 44px */
+  padding: 0;
+  border-radius: 50%;
+  background: #1b2338;
+  border: 1px solid var(--border, #2a3550);
+  color: #9aa6bf;
+  cursor: pointer;
+  transition:
+    background var(--duration-base, 200ms)
+      var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
+    border-color var(--duration-base, 200ms)
+      var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
+    color var(--duration-base, 200ms)
+      var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1));
+}
+
+@media (pointer: coarse) {
+  .icon-btn {
+    --icon-btn-size: 48px;
+  }
+}
+
+.icon-btn-glyph {
+  display: grid;
+  place-items: center;
+  line-height: 0;
+}
+
+.icon-btn svg {
+  width: 24px;
+  height: 24px;
+}
+
+.icon-btn:focus-visible {
+  outline: 2px solid var(--accent, #9ec1ff);
+  outline-offset: 2px;
+}
+
+.icon-btn:hover:not(:disabled) {
+  background: var(--surface-hover, rgb(255 255 255 / 6%));
+  border-color: var(--border-strong, #3d5488);
+}
+
+/* On: solid accent fill + white icon + badge dot. Three cues (fill, badge,
+   aria-pressed) so colour is never the only signal. */
+.icon-btn[aria-pressed="true"]:not(:disabled) {
+  background: var(--primary, #3d5488);
+  border-color: var(--primary-hover, #4d6bb0);
+  color: #fff;
+  box-shadow: 0 0 0 2px rgb(158 193 255 / 40%);
+}
+
+.icon-btn[aria-pressed="true"]::after {
+  content: "";
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 10px;
+  height: 10px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--primary, #3d5488);
+}
+
+.icon-btn--danger:not(:disabled) {
+  color: var(--error, #f87171);
+}
+
+.icon-btn--error:not(:disabled) {
+  color: var(--error, #f87171);
+  border-color: var(--error, #f87171);
+  box-shadow: 0 0 0 2px rgb(248 113 113 / 35%);
+}
+
+.icon-btn--busy::before {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  border-top-color: var(--accent, #9ec1ff);
+  animation: icon-btn-spin 900ms linear infinite;
+}
+
+@keyframes icon-btn-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .icon-btn--busy::before {
+    animation: none;
+  }
+}

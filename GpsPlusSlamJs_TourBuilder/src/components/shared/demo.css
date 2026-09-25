@@ -1,0 +1,74 @@
+/* Shared base styles for the component demo pages (billboard, in-world-text, …).
+   Component-specific bits (extra controls, per-demo tweaks) stay inline in each
+   demo's index.html. Kept here so the common chrome is defined once. */
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: #10131a;
+  color: #e9eef7;
+  font-family: system-ui, sans-serif;
+  overflow: hidden;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+/* On-page heading — same look as panel-demo.css's `main h1`/`p.lead`, kept
+   here too so the canvas-overlay demos (billboard, in-world-text, ar-scene)
+   match the control-panel demos (store, packaging) instead of floating their
+   own title inside #hud. */
+.page-header {
+  flex: none;
+  padding: 20px;
+}
+
+.page-header h1 {
+  font-size: 20px;
+  margin: 0 0 4px;
+}
+
+.page-header p.lead {
+  margin: 0;
+  color: #9aa7bd;
+}
+
+#canvas-root {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  z-index: 0;
+}
+
+#hud {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 1;
+  max-width: 340px;
+  padding: 12px 14px;
+  background: rgb(0 0 0 / 55%);
+  border: 1px solid #2a3550;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  pointer-events: none;
+}
+
+#hud p {
+  margin: 0 0 6px;
+}
+
+#status {
+  margin: 0;
+  color: #9ec1ff;
+  font-variant-numeric: tabular-nums;
+}

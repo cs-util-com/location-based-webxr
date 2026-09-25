@@ -178,6 +178,23 @@
         "stylelint-config-standard"
       ]
     },
+    "GpsPlusSlamJs_TourBuilder": {
+      "entry": [
+        "src/components/*/demo.ts",
+        "src/app/main.ts",
+        "config/stylelint.config.mjs",
+        "scripts/**/*.mjs",
+        "src/store/selectors.ts",
+        "src/store/types.ts",
+        "src/store/*-slice.ts"
+      ],
+      "project": ["src/**/*.ts"],
+      "ignoreDependencies": [
+        "@carlosjeurissen/stylelint-csstree-validator",
+        "postcss-html",
+        "stylelint-config-standard"
+      ]
+    },
     "GpsPlusSlamJs_TourViewer": {
       "entry": [
         "config/stylelint.config.mjs",

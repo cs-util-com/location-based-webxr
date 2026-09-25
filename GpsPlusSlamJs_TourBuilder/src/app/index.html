@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TourBuilder</title>
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="stylesheet" href="../components/shared/demo.css" />
+    <link rel="stylesheet" href="./app.css" />
+    <link rel="stylesheet" href="../components/shared/hud.css" />
+    <link rel="stylesheet" href="../components/shared/icon-button.css" />
+    <style>
+      /* Override shared demo.css: no full-bleed canvas — a plain scrolling
+         DOM page, same override every non-Three.js demo already uses.
+         `html` too, not just `body` — demo.css hides overflow on both, and
+         on mobile browsers it's `html`'s overflow that actually gates touch
+         scrolling of the page; overriding only `body` left the page unable
+         to scroll on a phone despite working fine with a mouse wheel.
+         `!important`: Vite's production build injects demo.css's bundled
+         <link> at the END of <head> (after this inline block), reversing
+         the source-order cascade this override relies on in dev — without
+         it demo.css's `overflow: hidden` wins in the deployed build even
+         though it loses locally under `vite dev`. */
+      html,
+      body {
+        overflow: auto !important;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app-root"></div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
