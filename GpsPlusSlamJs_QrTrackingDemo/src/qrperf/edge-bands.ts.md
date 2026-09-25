@@ -15,7 +15,7 @@ band.
 
 - `edgeBand(edgePx)` -> `'small' | 'medium' | 'large' | null`: below 150 px
   small, from 300 px large (lower edge inclusive); null without a finite
-  size. `EDGE_BAND_LIMITS_PX` = `[150, 300]`.
+  size (the limits are the module's internal `EDGE_BAND_LIMITS_PX`).
 - `createBandedPercentiles(window?)` -> `{ add(edgePx, value), summary() }`:
   percentiles per band, `{ n, p50, p95 }` with nulls where a band is empty;
   a null size or a non-finite value is ignored; `window` keeps only the last

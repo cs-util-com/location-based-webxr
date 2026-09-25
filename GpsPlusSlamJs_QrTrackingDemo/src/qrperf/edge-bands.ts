@@ -11,7 +11,7 @@ import { nearestRankPercentile } from "./pipeline-timings.js";
 export type EdgeBand = "small" | "medium" | "large";
 
 /** Band limits, px: small below the first, large from the second. */
-export const EDGE_BAND_LIMITS_PX = [150, 300] as const;
+const EDGE_BAND_LIMITS_PX = [150, 300] as const;
 
 const BANDS: readonly EdgeBand[] = ["small", "medium", "large"];
 
