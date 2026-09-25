@@ -364,4 +364,49 @@ describe("createQrPerfInstrument fused pose (M3b b5)", () => {
     expect(json.fused.deltaP50Deg).toBeCloseTo(2, 9);
     expect(inst.report().some((l) => l.startsWith("fused:"))).toBe(true);
   });
+
+  // Plan §30 (PR #497 review): the fused/motion step runs three small solves
+  // per detection and sat outside every timed stage - a dropped cadence on
+  // the phone could not be blamed on it or cleared of it.
+  it("times the fused/motion step as its own stage", () => {
+    const inst = createQrPerfInstrument({
+      mode: "native",
+      baseline: false,
+      now: steppingClock(1),
+    });
+    inst.onFusedCost(3);
+    inst.onFusedCost(5);
+    expect(inst.snapshot().stages.fused?.median).toBeGreaterThanOrEqual(3);
+    expect(inst.report().some((l) => /^fused\s+med /.test(l))).toBe(true);
+  });
+
+  // The switch log records the size state at each switch (plan §30).
+  it("hands the size state to the motion tally", () => {
+    const inst = createQrPerfInstrument({
+      mode: "native",
+      baseline: false,
+      now: steppingClock(1),
+    });
+    const motion = (state: string) => ({
+      state,
+      moving: state === "moving",
+      turning: false,
+      stillSinceMs: null,
+      movingCandidate: false,
+      turningCandidate: false,
+      offsetM: 0.05,
+      speedMps: 0.2,
+      newestFitPx: 1,
+      turnRateDegPerS: null,
+    });
+    inst.onFused(result({ motion: motion("still") }), {
+      status: "measuring",
+      estimateM: 0.2,
+    });
+    inst.onFused(result({ motion: motion("moving") }));
+    const json = JSON.parse(inst.json()) as {
+      fused: { motion: { switchLog: { log: { sizeStatus: string }[] } } };
+    };
+    expect(json.fused.motion.switchLog.log[0]?.sizeStatus).toBe("measuring");
+  });
 });

@@ -6,6 +6,7 @@
 
 import type { QrFusedPose } from "gps-plus-slam-app-framework/ar/qr";
 import { createFusedTally, fusedLines } from "./fused-tally.js";
+import type { SizeState } from "./motion-tally.js";
 import type { CaptureTiming } from "gps-plus-slam-app-framework/ar/camera-blit-capture";
 import type { QrDetection, RgbaImage } from "gps-plus-slam-app-framework/ar";
 import {
@@ -65,8 +66,13 @@ export interface QrPerfInstrument {
   ): (...args: A) => R;
   snapshot(): PipelineSnapshot;
   cornerOrder(): Record<number, RollBinTally>;
-  /** The demo's fused pose after a lock (M3b b5), tallied for the report. */
-  onFused(result: QrFusedPose): void;
+  /**
+   * The demo's fused pose after a lock (M3b b5), tallied for the report;
+   * `size` is the code's size state then (plan §30's switch log).
+   */
+  onFused(result: QrFusedPose, size?: SizeState): void;
+  /** One NEW fused/motion evaluation's cost, ms (plan §30). */
+  onFusedCost(ms: number): void;
   report(): string[];
   json(): string;
 }
@@ -85,6 +91,7 @@ const STAGE_ORDER = [
   "pixel-copy",
   "detect",
   "solve",
+  "fused",
   "zxing-default",
   "zxing-fast",
   "corner-dist",
@@ -337,8 +344,11 @@ export function createQrPerfInstrument(
         return out;
       };
     },
-    onFused(result) {
-      fused.add(result, now());
+    onFused(result, size) {
+      fused.add(result, now(), size);
+    },
+    onFusedCost(ms) {
+      timings.record("fused", ms);
     },
     snapshot: () => timings.snapshot(now()),
     cornerOrder: () => tally.summary(),

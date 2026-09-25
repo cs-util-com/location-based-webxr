@@ -103,14 +103,21 @@ describe("toHudView pose line (M3b b5)", () => {
     ).toBe("—");
   });
 
-  it("names the joint rotation, its state, views and fit", () => {
+  // b5 review #7: the row must say what the OVERLAY shows. The overlay
+  // takes the fused pose only while it is stable; otherwise it shows the
+  // raw frame pose, and the row says so first.
+  it("names the fused pose when the overlay shows it, else the raw one", () => {
     expect(toHudView("tracking", undefined, fused({})).poseLabel).toBe(
-      "joint · stable · 7 views · fit 0.6 px",
+      "fused joint · 7 views · fit 0.6 px",
     );
     expect(
       toHudView("tracking", undefined, fused({ status: "measuring", views: 3 }))
         .poseLabel,
-    ).toBe("joint · measuring · 3 views · fit 0.6 px");
+    ).toBe("raw (fused measuring · 3 views · fit 0.6 px)");
+    expect(
+      toHudView("tracking", undefined, fused({ status: "measuring", views: 1 }))
+        .poseLabel,
+    ).toBe("raw (fused measuring · 1 view · fit 0.6 px)");
   });
 
   it("names the fallback when the views contradict each other", () => {
@@ -120,7 +127,7 @@ describe("toHudView pose line (M3b b5)", () => {
         undefined,
         fused({ status: "measuring", method: "averaged", fitPx: 12.34 }),
       ).poseLabel,
-    ).toBe("averaged (views disagree) · fit 12.3 px");
+    ).toBe("raw (views disagree · fit 12.3 px)");
   });
 
   it("shows a missing fit as '—'", () => {
@@ -130,7 +137,7 @@ describe("toHudView pose line (M3b b5)", () => {
         undefined,
         fused({ status: "measuring", method: "averaged", fitPx: Infinity }),
       ).poseLabel,
-    ).toBe("averaged (views disagree) · fit —");
+    ).toBe("raw (views disagree · fit —)");
   });
 });
 

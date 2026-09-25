@@ -27,9 +27,11 @@ export interface HudView {
   /** Size lifecycle stage (`unknown` | `measuring` | `estimated`). */
   lifecycleLabel: string;
   /**
-   * The fused pose (QR near-frontal pose plan M3b b5): which rotation the
-   * overlay shows and how well the views agree, e.g.
-   * `joint · stable · 7 views · fit 0.6 px`, or `—` before any.
+   * What the overlay shows (QR near-frontal pose plan M3b b5, b5 review #7):
+   * the fused pose while it is stable (`fused joint · 7 views · fit 0.6 px`),
+   * else the raw frame pose with the fused state in brackets
+   * (`raw (fused measuring · 3 views · fit 0.6 px)`,
+   * `raw (views disagree · fit 12.3 px)`), or `—` before any.
    */
   poseLabel: string;
   /**
@@ -77,14 +79,20 @@ function formatSpread(spreadM: number): string {
   return mm < 0.5 ? "<1 mm" : `±${Math.round(mm)} mm`;
 }
 
-/** The fused-pose line: method, state, views and the median per-view fit. */
+/**
+ * The pose line: what the overlay shows first. The overlay takes the fused
+ * pose only while it is stable (which the averaged fallback never is);
+ * otherwise it shows the raw frame pose.
+ */
 function formatPose(fused: QrFusedPose | null | undefined): string {
   if (!fused || fused.status === "unknown" || !fused.method) return "—";
   const fit = Number.isFinite(fused.fitPx)
     ? `fit ${fused.fitPx.toFixed(1)} px`
     : "fit —";
-  if (fused.method === "averaged") return `averaged (views disagree) · ${fit}`;
-  return `joint · ${fused.status} · ${fused.views} views · ${fit}`;
+  if (fused.method === "averaged") return `raw (views disagree · ${fit})`;
+  const views = `${fused.views} view${fused.views === 1 ? "" : "s"}`;
+  if (fused.status === "stable") return `fused joint · ${views} · ${fit}`;
+  return `raw (fused ${fused.status} · ${views} · ${fit})`;
 }
 
 const MOTION_NAMES: Record<QrMotionState, string> = {

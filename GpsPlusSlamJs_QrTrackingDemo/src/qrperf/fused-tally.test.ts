@@ -138,6 +138,202 @@ describe("createFusedTally motion (plan §26)", () => {
     t.add(withMotion("still", 1, 0.01), 0);
     const lines = fusedLines(t.summary());
     expect(lines.some((l) => l.startsWith("motion: still 1"))).toBe(true);
-    expect(lines.some((l) => l.includes("still turn signal"))).toBe(true);
+    expect(lines.some((l) => l.startsWith("motion still signals:"))).toBe(true);
+  });
+});
+
+describe("createFusedTally for the phone repeat (plan §30)", () => {
+  // Why these tests matter: the owner's repeat of tests A and E must answer
+  // two open decisions from the pasted JSON alone - may the demo switch
+  // into "moving" after 2 detections instead of 4, and does the converging
+  // size estimate read as motion - and show the overlay's position
+  // steadiness. Each field below is what one of those needs.
+  const reading = (
+    over: Partial<NonNullable<QrFusedPose["motion"]>>,
+    frameEpoch = 0,
+    pose?: QrFusedPose["pose"],
+  ): QrFusedPose =>
+    tilted(0, {
+      frameEpoch,
+      ...(pose ? { pose } : {}),
+      motion: {
+        state: "still",
+        moving: false,
+        turning: false,
+        stillSinceMs: null,
+        movingCandidate: false,
+        turningCandidate: false,
+        offsetM: 0.01,
+        speedMps: 0.1,
+        newestFitPx: 1,
+        turnRateDegPerS: 5,
+        ...over,
+      },
+    });
+
+  it("reports the still signals' p99 and max", () => {
+    const t = createFusedTally();
+    for (let i = 1; i <= 100; i++)
+      t.add(reading({ newestFitPx: i / 10, offsetM: i / 1000 }), i * 100);
+    const m = t.summary().motion;
+    expect(m.turnSignalP99Px).toBeCloseTo(9.9, 6);
+    expect(m.turnSignalMaxPx).toBeCloseTo(10, 6);
+    expect(m.moveSignalP99Cm).toBeCloseTo(9.9, 6);
+    expect(m.moveSignalMaxCm).toBeCloseTo(10, 6);
+  });
+
+  // A run of candidates that began while the mode was still: its length
+  // says whether a shorter persistence would have flipped the mode.
+  it("counts candidate runs that began while still, by length", () => {
+    const t = createFusedTally();
+    const seq: Array<Partial<NonNullable<QrFusedPose["motion"]>>> = [
+      { movingCandidate: true },
+      {},
+      { movingCandidate: true },
+      { movingCandidate: true },
+      {},
+      { movingCandidate: true, turningCandidate: true },
+      { movingCandidate: true },
+      { movingCandidate: true },
+      { movingCandidate: true, state: "moving", moving: true },
+      { movingCandidate: true, state: "moving", moving: true },
+      { state: "moving", moving: true },
+      // Candidates during a confirmed motion start no run.
+      { turningCandidate: true, state: "moving", moving: true },
+      { state: "still" },
+    ];
+    seq.forEach((over, i) => t.add(reading(over), i * 100));
+    const runs = t.summary().motion.candidateRuns;
+    expect(runs.moving).toEqual({ r1: 1, r2: 1, r3: 0, r4plus: 1 });
+    expect(runs.turning).toEqual({ r1: 1, r2: 0, r3: 0, r4plus: 0 });
+  });
+
+  it("closes an open run at a frame change and at the summary", () => {
+    const t = createFusedTally();
+    t.add(reading({ movingCandidate: true }), 0);
+    t.add(reading({ movingCandidate: true }, 1), 100);
+    t.add(reading({ movingCandidate: true }, 1), 200);
+    expect(t.summary().motion.candidateRuns.moving).toEqual({
+      r1: 1,
+      r2: 1,
+      r3: 0,
+      r4plus: 0,
+    });
+  });
+
+  // Each confirmed switch, with when it happened and the size state then:
+  // a "moving" right after the code is first seen, while the size is
+  // still being measured, is the size-convergence risk (plan §28 #4).
+  it("logs each confirmed switch with its timing and the size state", () => {
+    const t = createFusedTally();
+    t.add(reading({}), 1000, { status: "measuring", estimateM: 0.2 });
+    t.add(reading({}), 1100);
+    t.add(
+      reading({
+        state: "moving",
+        moving: true,
+        offsetM: 0.05,
+        speedMps: 0.2,
+      }),
+      1500,
+      { status: "measuring", estimateM: 0.21 },
+    );
+    t.add(reading({}, 1), 2000, { status: "estimated", estimateM: 0.2 });
+    t.add(reading({}, 1), 2300);
+    t.add(
+      reading({ state: "turning", turning: true, newestFitPx: 6 }, 1),
+      2600,
+    );
+    const m = t.summary().motion;
+    const log = m.switchLog;
+    expect(m.switches).toBe(2);
+    expect(log.dropped).toBe(0);
+    expect(log.log[0]).toEqual({
+      from: "still",
+      to: "moving",
+      sinceFirstMs: 500,
+      sinceEpochMs: 500,
+      sizeStatus: "measuring",
+      sizeCm: 21,
+      offsetCm: 5,
+      turnSignalPx: 1,
+      speedCmS: 20,
+      turnRateDegS: 5,
+    });
+    expect(log.log[1]).toMatchObject({
+      from: "still",
+      to: "turning",
+      sinceFirstMs: 1600,
+      sinceEpochMs: 600,
+      sizeStatus: "estimated",
+      sizeCm: 20,
+    });
+  });
+
+  it("caps the switch log and counts what it dropped", () => {
+    const t = createFusedTally();
+    for (let i = 0; i < 130; i++) {
+      const moving = i % 2 === 1;
+      t.add(reading(moving ? { state: "moving", moving: true } : {}), i * 100);
+    }
+    const m = t.summary().motion;
+    const log = m.switchLog;
+    expect(m.switches).toBe(129);
+    expect(log.log).toHaveLength(60);
+    expect(log.dropped).toBe(69);
+  });
+
+  // The overlay's POSITION steadiness: jumps between consecutive stable
+  // fused poses (within 1 s, one epoch), like the rotation jumps.
+  it("measures position jumps between consecutive stable fused poses", () => {
+    const t = createFusedTally();
+    const at = (x: number, over: Partial<QrFusedPose> = {}) =>
+      tilted(0, {
+        pose: { position: [x, 0, 0], rotation: [0, 0, 0, 1] },
+        ...over,
+      });
+    t.add(at(0), 0);
+    t.add(at(0.01), 100);
+    t.add(at(0.5, { status: "measuring" }), 150);
+    t.add(at(0.04), 200);
+    t.add(at(2), 5000); // after a gap: no pair
+    const s = t.summary().positionJumpCm;
+    expect(s.n).toBe(2);
+    expect(s.p50).toBeCloseTo(1, 6);
+    expect(s.max).toBeCloseTo(3, 6);
+  });
+
+  it("puts the new fields in the report lines", () => {
+    const t = createFusedTally();
+    t.add(reading({ movingCandidate: true }), 0);
+    const text = fusedLines(t.summary()).join("\n");
+    expect(text).toContain("position jump");
+    expect(text).toContain("candidate runs");
+    expect(text).toContain("p99/max");
+  });
+});
+
+describe("createFusedTally fit population (b5 review #5)", () => {
+  // While a code moves, the fused window is cut to ONE view, whose fit is
+  // its own reprojection error and whose joint-vs-averaged angle is ~0;
+  // early windows have 1-4 views. Pooling them would make test E's fit
+  // numbers drop for a reason that has nothing to do with the views
+  // agreeing. Only windows the gate could open on (>= 5 views) count.
+  it("tallies fit and delta only over windows of at least 5 views", () => {
+    const t = createFusedTally();
+    t.add(tilted(0, { views: 7, fitPx: 2, averagedRotationDeltaDeg: 4 }), 0);
+    t.add(
+      tilted(0, { views: 1, fitPx: 0.1, averagedRotationDeltaDeg: 0 }),
+      100,
+    );
+    t.add(
+      tilted(0, { views: 4, fitPx: 0.2, averagedRotationDeltaDeg: 0 }),
+      200,
+    );
+    t.add(tilted(0, { views: 5, fitPx: 3, averagedRotationDeltaDeg: 6 }), 300);
+    const s = t.summary();
+    expect(s.fitP50Px).toBe(2);
+    expect(s.fitP95Px).toBe(3);
+    expect(s.deltaP50Deg).toBe(4);
   });
 });

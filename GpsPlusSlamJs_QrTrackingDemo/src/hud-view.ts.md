@@ -6,10 +6,13 @@ to confirm a freshly printed QR against a tape measure (Note 4). No DOM.
 ## Public API
 
 - `toHudView(status, size, fused?): HudView` → `{ statusLabel, sizeLabel, sampleLabel,
-spreadLabel, lifecycleLabel, poseLabel, motionLabel, motionColor }`. `poseLabel` (M3b b5) names the
-  fused pose: `joint · <status> · <views> views · fit <px> px`, or
-  `averaged (views disagree) · fit <px> px` for the fallback, or `—` before any
-  (a non-finite fit reads `fit —`). `motionLabel` (plan §26) names the
+spreadLabel, lifecycleLabel, poseLabel, motionLabel, motionColor }`. `poseLabel` (M3b b5) says what
+  the overlay shows first: `fused joint · <views> views · fit <px> px` while
+  the fused pose is stable, else `raw (fused measuring · <views> views · fit
+<px> px)` or `raw (views disagree · fit <px> px)` - the overlay then shows
+  the raw frame pose (b5 review #7: the old wording named the fused state
+  while the raw pose was on screen); `—` before any (a non-finite fit reads
+  `fit —`). `motionLabel` (plan §26) names the
   code's motion mode with the speeds of what moves: `still`,
   `moving · 12 cm/s`, `turning · 35°/s`, `moving + turning · … · …` (a
   missing speed is left out), or `—` without a reading; `motionColor` is the

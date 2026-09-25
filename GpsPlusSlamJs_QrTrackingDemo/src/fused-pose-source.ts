@@ -25,9 +25,19 @@ export interface FusedPoseSource {
   last(text: string): QrFusedPose | null;
 }
 
+/** Optional hooks: the cost of each NEW evaluation (`?qrperf`, plan §30). */
+export interface FusedPoseSourceHooks {
+  /** Called once per new evaluation, never for a cached re-read. */
+  onEvaluated?(result: QrFusedPose, ms: number): void;
+  /** The clock the cost is measured on. Default `performance.now`. */
+  now?(): number;
+}
+
 export function createFusedPoseSource(
   options: QrFusedPoseOptions = {},
+  hooks: FusedPoseSourceHooks = {},
 ): FusedPoseSource {
+  const now = () => (hooks.now ? hooks.now() : performance.now());
   const trackers = new Map<string, FusedQrPoseTracker>();
   const results = new Map<string, QrFusedPose>();
   const trackerFor = (text: string): FusedQrPoseTracker => {
@@ -40,9 +50,12 @@ export function createFusedPoseSource(
   };
   return {
     resolve(state, text) {
+      const t0 = now();
       const result = trackerFor(text).evaluate(
         selectQrFusedEntries(state, text),
       );
+      // The tracker returns its cached result object for a re-read.
+      if (result !== results.get(text)) hooks.onEvaluated?.(result, now() - t0);
       results.set(text, result);
       return result.status === "stable" ? result.pose : null;
     },

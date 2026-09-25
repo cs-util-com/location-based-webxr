@@ -98,8 +98,16 @@ const dom = {
 } as const;
 
 let store: QrDemoStore | null = null;
-/** The fused QR pose per payload (M3b b5); one per page, trackers per code. */
-const fusedPose = createFusedPoseSource();
+/**
+ * The fused QR pose per payload (M3b b5); one per page, trackers per code.
+ * With `?qrperf`, each NEW evaluation's cost is timed (plan §30): the HUD's
+ * render evaluates first, so a stopwatch around a later read would time a
+ * cache hit.
+ */
+const fusedPose = createFusedPoseSource(
+  {},
+  { onEvaluated: (_result, ms) => perf?.instrument.onFusedCost(ms) },
+);
 /** The `?qrperf` instrument, when the flag is set (null otherwise). */
 let perf: MountedQrPerf | null = null;
 let view: QrDebugView | null = null;
@@ -263,7 +271,15 @@ async function startAr(): Promise<void> {
       const pose = fusedPose.resolve(store.getState(), text);
       // Once per lock: the ?qrperf report tallies the fused result.
       const last = fusedPose.last(text);
-      if (perf && last) perf.instrument.onFused(last);
+      if (perf && last) {
+        // The size state goes with it: the switch log shows whether a
+        // "moving" came while the size was still converging (plan §30).
+        const size = selectQrSize(store.getState(), text);
+        perf.instrument.onFused(
+          last,
+          size ? { status: size.status, estimateM: size.estimateM } : undefined,
+        );
+      }
       return pose;
     },
     onStatus: (next) => {
@@ -329,6 +345,7 @@ window.addEventListener("beforeunload", () => {
   stopFrames?.();
   perf?.dispose();
   view?.dispose();
+  trailView?.dispose();
 });
 
 void main();

@@ -12,11 +12,19 @@ The `?qrperf` instrument: times the demo's capture, detect and solve stages, opt
   - `onXrFrame(dtSec)` - records `xr-frame` intervals (for the long-frame counts).
   - `wrapDetect(detect)` - counts `detect`, records its duration, counts `hit`; in `zxing` mode then decodes the SAME image with the probe, alternating the `default` / `fast` option sets, records `zxing-default` / `zxing-fast`, keeps a same-frame tally per option set (`frames / native / zxing / both` since start, so the plan's "within 5 pp of native" rule compares identical frames), and - only when both decoders found the code - tallies the corner permutation per roll bin and records `corner-dist`. A frame the probe `skipped` (malformed input) is not an attempt and does not advance the option-set alternation.
   - `wrapSolve(solve)` - records `solve`, counts attempted and accepted solves (a null result was rejected, e.g. by the 4 px reprojection gate; the report shows "solves accepted X / Y", the JSON `solves`), and feeds the pose-quality numbers (`pose-quality.ts`): it reads the corners and camera pose from the solve input and the world rotation and reprojection error from its output, DEFENSIVELY (any other shape, or a failed `null` solve, is ignored), tagged with the text of the detection `wrapDetect` just saw - the same frame, because the scheduler detects and then solves one frame at a time.
-  - `onFused(result: QrFusedPose)` - once per lock (M3b b5), stamped with the
-    instrument's clock: tallied by `fused-tally.ts` into two report lines
-    (`fused:` and `fused pose (stable):`) and a `fused` JSON field (locks,
-    stable, joint / averaged, frame changes, fit and joint-vs-averaged
-    percentiles, and the stable fused pose's own jumps and wall elevation).
+  - `onFused(result: QrFusedPose, size?)` - once per lock (M3b b5), stamped
+    with the instrument's clock, with the code's size state then (plan §30):
+    tallied by `fused-tally.ts` (and its `motion-tally.ts`) into the report
+    lines `fused:`, `fused pose (stable):` and the three `motion` lines,
+    and a `fused` JSON field (locks, stable, joint / averaged, frame changes,
+    fit and joint-vs-averaged percentiles over windows of at least 5 views,
+    the stable fused pose's rotation and position jumps and wall elevation,
+    and the motion readings with their switch log).
+  - `onFusedCost(ms)` - one NEW fused/motion evaluation's cost (plan §30),
+    recorded as the `fused` stage. The demo feeds it from
+    `fused-pose-source.ts`'s `onEvaluated` hook, because the HUD's render
+    evaluates first and a stopwatch around a later read would time a cache
+    hit.
   - `snapshot()`, `cornerOrder()`, `report(): string[]`, `json(): string`.
 - **`ZxingProbe`** - `{ decode(image, set), loadMs() }`, injected (see `zxing-probe.ts`).
 

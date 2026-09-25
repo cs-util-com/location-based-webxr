@@ -129,4 +129,24 @@ describe("createFusedPoseSource", () => {
     source.resolve(store.getState(), "A");
     expect(solves).toBe(2);
   });
+
+  // Plan §30: ?qrperf times the fused/motion step. The HUD's re-reads hit
+  // the tracker's cache, so only a NEW evaluation is reported - with the
+  // time it took on the given clock.
+  it("reports each new evaluation's cost, never a cached re-read", () => {
+    const store = createQrDemoStore();
+    const costs: number[] = [];
+    let t = 0;
+    const source = createFusedPoseSource(
+      {},
+      { now: () => (t += 2), onEvaluated: (_r, ms) => costs.push(ms) },
+    );
+    feed(store, "A", 6);
+    source.resolve(store.getState(), "A");
+    source.resolve(store.getState(), "A");
+    expect(costs).toEqual([2]);
+    feed(store, "A", 1, 2000);
+    source.resolve(store.getState(), "A");
+    expect(costs).toHaveLength(2);
+  });
 });

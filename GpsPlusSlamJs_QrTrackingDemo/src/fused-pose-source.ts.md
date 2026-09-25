@@ -11,13 +11,18 @@ pose, as it did with today's stable pose.
 
 ## Public API
 
-- `createFusedPoseSource(options?: QrFusedPoseOptions): FusedPoseSource`
+- `createFusedPoseSource(options?: QrFusedPoseOptions, hooks?): FusedPoseSource`
   - `resolve(state, text): Pose | null` - the fused pose when its status is
     `stable`, else null. Wired as the controller's `resolveStablePose`.
   - `last(text): QrFusedPose | null` - the last evaluation for `text` (status,
     method, fit, views), for a HUD or diagnostics; null if never read.
 - `options` go to every tracker (window, gate, fallback thresholds; `solve`
   is injectable for tests).
+- `hooks.onEvaluated(result, ms)` - called once per NEW evaluation (never
+  for a cached re-read) with its cost on `hooks.now` (default
+  `performance.now`): the demo's `?qrperf` `fused` stage (plan §30). The
+  HUD's render evaluates first, so timing a later read would time a cache
+  hit (b5 review #1).
 
 ## Invariants & assumptions
 
