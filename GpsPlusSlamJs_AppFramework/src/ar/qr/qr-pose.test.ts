@@ -26,6 +26,7 @@ import {
   invertPose,
   transformPoint,
   validateQuad,
+  meanEdgePx,
   signedQuadArea,
   reprojectionErrorPx,
   solveQrPose,
@@ -195,6 +196,39 @@ describe('composePose / invertPose / transformPoint', () => {
     for (let i = 0; i < 3; i++) {
       expect(viaCompose[i]).toBeCloseTo(viaSequence[i], 4);
     }
+  });
+});
+
+describe('meanEdgePx', () => {
+  // The code's size on screen (plan §34 R1): what the pixel signals and
+  // gates are compared against, so field tests can be read per size band.
+  it('is the mean of the four edge lengths', () => {
+    const square: Point2[] = [
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+      { x: 100, y: 100 },
+      { x: 0, y: 100 },
+    ];
+    expect(meanEdgePx(square)).toBeCloseTo(100, 9);
+    const rect: Point2[] = [
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+      { x: 100, y: 50 },
+      { x: 0, y: 50 },
+    ];
+    expect(meanEdgePx(rect)).toBeCloseTo(75, 9);
+  });
+
+  it('is null for anything but four finite corners', () => {
+    expect(meanEdgePx([{ x: 0, y: 0 }])).toBeNull();
+    expect(
+      meanEdgePx([
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+        { x: Number.NaN, y: 1 },
+        { x: 0, y: 1 },
+      ])
+    ).toBeNull();
   });
 });
 

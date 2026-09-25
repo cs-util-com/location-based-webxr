@@ -6,7 +6,7 @@
  * averaging when the views contradict each other. See qr-fused-pose.ts.md.
  */
 
-import type { Pose } from './qr-pose.js';
+import { meanEdgePx, type Pose } from './qr-pose.js';
 import {
   FUSED_WINDOW_DEFAULTS,
   resolveFusedWindowOptions,
@@ -85,6 +85,16 @@ export interface QrFusedPose {
    * detector; null from `evaluateFusedQrPose` alone or with the detector off.
    */
   motion: QrMotion | null;
+  /** The window's median edge length, px: the code's size on screen (plan §34 R1). */
+  edgePx: number | null;
+  /**
+   * Why the pose is not stable (plan §34 R1): `views` (fewer than
+   * `minViews`), `fit` (the views agree too loosely for the gate),
+   * `fallback` (they contradict each other, or no joint solve), `motion`
+   * (the tracker cut the window for a moving or turning code); null when
+   * stable.
+   */
+  notStableReason: 'views' | 'fit' | 'fallback' | 'motion' | null;
 }
 
 const DEFAULTS = {
@@ -109,6 +119,8 @@ const UNKNOWN: QrFusedPose = {
   oldestTimestamp: Number.NaN,
   newestTimestamp: Number.NaN,
   motion: null,
+  edgePx: null,
+  notStableReason: 'views',
 };
 
 type Resolved = typeof DEFAULTS & {
@@ -218,7 +230,30 @@ export function evaluateFusedQrPose(
     oldestTimestamp: oldest.timestamp,
     newestTimestamp: newest.timestamp,
     motion: null,
+    edgePx: medianEdgePx(window),
+    notStableReason: notStableReason(joint, stable, useJoint, o),
   };
+}
+
+function medianEdgePx(window: readonly QrFusedEntry[]): number | null {
+  const edges: number[] = [];
+  for (const e of window) {
+    const edge = meanEdgePx(e.corners);
+    if (edge !== null) edges.push(edge);
+  }
+  return edges.length ? interpolatingMedian(edges) : null;
+}
+
+/** Which of the gate's conditions failed, in the order `decide` applies them. */
+function notStableReason(
+  joint: QrMultiViewPoseResult | null,
+  stable: boolean,
+  useJoint: boolean,
+  o: Resolved
+): QrFusedPose['notStableReason'] {
+  if (stable) return null;
+  if (!useJoint || !joint) return 'fallback';
+  return joint.views < o.minViews ? 'views' : 'fit';
 }
 
 /**
@@ -354,7 +389,15 @@ export function createFusedQrPoseTracker(
         sinceMs === undefined ? options : { ...options, sinceMs },
         last
       );
-      last = { ...fused, motion };
+      const cutByMotion = motion !== null && (motion.moving || motion.turning);
+      last = {
+        ...fused,
+        motion,
+        notStableReason:
+          cutByMotion && fused.status !== 'stable'
+            ? 'motion'
+            : fused.notStableReason,
+      };
       lastEntries = entries;
       return last;
     },

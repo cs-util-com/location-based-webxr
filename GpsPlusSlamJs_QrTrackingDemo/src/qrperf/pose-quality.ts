@@ -5,6 +5,12 @@
  * normal's elevation against gravity. Pure. See pose-quality.ts.md.
  */
 
+import { meanEdgePx } from "gps-plus-slam-app-framework/ar/qr";
+import {
+  createBandedPercentiles,
+  type BandPercentiles,
+  type Banded,
+} from "./edge-bands.js";
 import { nearestRankPercentile } from "./pipeline-timings.js";
 import type { Point } from "./corner-compare.js";
 
@@ -46,6 +52,11 @@ export interface PoseQualitySummary {
    *  not move. */
   stillJitterPx: { strict: Percentiles; loose: Percentiles };
   reprojectionPx: Percentiles;
+  /**
+   * The same reprojection error per code-size band (the corners' mean edge
+   * length; plan §34 R2) - the 4 px single-frame gate is absolute too.
+   */
+  reprojectionByEdgePx: Banded<BandPercentiles>;
   /** Elevation of the code normal above the horizon. Meaningful for a code
    *  on a vertical wall, where the truth is 0. */
   wallElevationDeg: {
@@ -120,6 +131,7 @@ export function createPoseQuality(options: PoseQualityOptions = {}): {
     reprojection: [] as number[],
     elevation: [] as number[],
   };
+  const reprojectionBands = createBandedPercentiles(window);
   let previous: PoseQualitySample | null = null;
 
   function push(values: number[], v: number): void {
@@ -149,6 +161,10 @@ export function createPoseQuality(options: PoseQualityOptions = {}): {
   return {
     add(sample) {
       push(series.reprojection, sample.reprojectionErrorPx);
+      reprojectionBands.add(
+        meanEdgePx(sample.corners),
+        sample.reprojectionErrorPx,
+      );
       push(series.elevation, normalElevationDeg(sample.qrRotationWorld));
       if (
         previous &&
@@ -185,6 +201,7 @@ export function createPoseQuality(options: PoseQualityOptions = {}): {
           loose: percentiles(series.loose),
         },
         reprojectionPx: percentiles(series.reprojection),
+        reprojectionByEdgePx: reprojectionBands.summary(),
         wallElevationDeg: {
           n: series.elevation.length,
           p50Abs: nearestRankPercentile(absElevation, 0.5),

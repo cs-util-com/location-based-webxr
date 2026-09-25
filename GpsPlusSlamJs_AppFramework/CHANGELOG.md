@@ -77,6 +77,12 @@
   once it is still again only the views since then are fused. Until the
   motion is confirmed the stable pose can trail it for up to 3 detections.
   New option `sinceMs` on `selectFusedWindow` / `evaluateFusedQrPose`.
+- **The code's size on screen, and why a fused pose is not stable** (QR
+  near-frontal pose plan §34 R1): `meanEdgePx(corners)` on `/ar`;
+  `QrMotionSignals.newestEdgePx`, `QrFusedPose.edgePx` (the window's median)
+  and `QrFusedPose.notStableReason` (`views` | `fit` | `fallback` | `motion`,
+  null when stable) - so field tests can judge every pixel threshold
+  against the code's size before any threshold becomes size-relative.
 - **`selectQrFusedEntries(state, text)`** on `/state` (QR near-frontal pose
   plan, M3b b3): a marker's detections of the current frame epoch as
   fused-window entries, cached per detections array and epoch; raw entries derive their intrinsics from the projection

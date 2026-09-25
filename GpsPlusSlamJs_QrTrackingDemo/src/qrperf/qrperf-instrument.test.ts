@@ -338,6 +338,8 @@ describe("createQrPerfInstrument fused pose (M3b b5)", () => {
       oldestTimestamp: 0,
       newestTimestamp: 0,
       motion: null,
+      edgePx: null,
+      notStableReason: null,
       ...over,
     }) as Parameters<ReturnType<typeof createQrPerfInstrument>["onFused"]>[0];
 
@@ -398,6 +400,7 @@ describe("createQrPerfInstrument fused pose (M3b b5)", () => {
       speedMps: 0.2,
       newestFitPx: 1,
       turnRateDegPerS: null,
+      newestEdgePx: null,
     });
     inst.onFused(result({ motion: motion("still") }), {
       status: "measuring",

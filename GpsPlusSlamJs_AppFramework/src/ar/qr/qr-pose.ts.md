@@ -26,6 +26,10 @@ conventions.
 - `composePose(parent, child): Pose`, `invertPose(pose): Pose`,
   `transformPoint(point, pose): Vector3` — rigid-pose algebra (gl-matrix).
 - `signedQuadArea(corners): number`, `validateQuad(corners, opts): QuadValidation`
+- `meanEdgePx(corners): number | null` - the mean length of the quad's four
+  edges, px: the code's size on screen, which the QR motion detector and the
+  fused window report so pixel signals can be judged per size (near-frontal
+  pose plan §34 R1); null for anything but four finite corners.
   — winding/degeneracy guard. **Positive** signed area = front-facing
   (TL→TR→BR→BL clockwise on a y-down screen); negative = mirrored ⇒ rejected.
 - `reprojectionErrorPx(objectPoints, imagePoints, qrPoseInCamera, intrinsics): number`
@@ -89,8 +93,8 @@ if (solution) placeUnderArWorldGroup(solution.qrPoseWorld);
 
 ## Tests
 
-- `qr-pose.test.ts` — unit coverage of every export incl. mirror/degenerate
-  rejection, reprojection gating, and the orchestration round-trip with a stub
+- `qr-pose.test.ts` — unit coverage of every export incl. `meanEdgePx`,
+  mirror/degenerate rejection, reprojection gating, and the orchestration round-trip with a stub
   solver that inverts `qrInCameraFromOpenCv` (no OpenCV needed).
 - `qr-pose.property.test.ts` — (1) intrinsics pinhole matches the GL projection
   for any frustum; (2) OpenCV↔WebXR projection agreement for any pose; (3)

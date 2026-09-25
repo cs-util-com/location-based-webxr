@@ -29,6 +29,8 @@ function tilted(elevDeg: number, over: Partial<QrFusedPose> = {}): QrFusedPose {
     oldestTimestamp: 0,
     newestTimestamp: 0,
     motion: null,
+    edgePx: null,
+    notStableReason: null,
     ...over,
   };
 }
@@ -104,6 +106,7 @@ describe("createFusedTally motion (plan §26)", () => {
         speedMps: null,
         newestFitPx,
         turnRateDegPerS: null,
+        newestEdgePx: null,
       },
     });
 
@@ -167,6 +170,7 @@ describe("createFusedTally for the phone repeat (plan §30)", () => {
         speedMps: 0.1,
         newestFitPx: 1,
         turnRateDegPerS: 5,
+        newestEdgePx: null,
         ...over,
       },
     });
@@ -335,5 +339,102 @@ describe("createFusedTally fit population (b5 review #5)", () => {
     expect(s.fitP50Px).toBe(2);
     expect(s.fitP95Px).toBe(3);
     expect(s.deltaP50Deg).toBe(4);
+  });
+});
+
+describe("createFusedTally why not stable, by size (plan §34 R2)", () => {
+  // Test A on r731 was stable on 68 % of locks and the JSON could not say
+  // why, nor how large the code was on screen.
+  it("counts the not-stable reasons", () => {
+    const t = createFusedTally();
+    t.add(tilted(0, { notStableReason: null }), 0);
+    t.add(tilted(0, { status: "measuring", notStableReason: "views" }), 100);
+    t.add(tilted(0, { status: "measuring", notStableReason: "fit" }), 200);
+    t.add(tilted(0, { status: "measuring", notStableReason: "fit" }), 300);
+    t.add(tilted(0, { status: "measuring", notStableReason: "motion" }), 400);
+    t.add(tilted(0, { status: "measuring", notStableReason: "fallback" }), 500);
+    expect(t.summary().notStable).toEqual({
+      views: 1,
+      fit: 2,
+      fallback: 1,
+      motion: 1,
+    });
+  });
+
+  it("reports the fit and the stable share per code-size band", () => {
+    const t = createFusedTally();
+    t.add(tilted(0, { edgePx: 100, fitPx: 1 }), 0);
+    t.add(
+      tilted(0, {
+        edgePx: 400,
+        fitPx: 2,
+        status: "measuring",
+        notStableReason: "fit",
+      }),
+      100,
+    );
+    t.add(tilted(0, { edgePx: 400, fitPx: 1.2 }), 200);
+    t.add(tilted(0, { edgePx: null, fitPx: 9 }), 300);
+    const s = t.summary();
+    expect(s.fitByEdgePx.small).toEqual({ n: 1, p50: 1, p95: 1 });
+    expect(s.fitByEdgePx.large).toEqual({ n: 2, p50: 1.2, p95: 2 });
+    expect(s.stableByEdgePx).toEqual({
+      small: { locks: 1, stable: 1 },
+      medium: { locks: 0, stable: 0 },
+      large: { locks: 2, stable: 1 },
+    });
+    expect(fusedLines(s).join(" ")).toContain("not stable");
+  });
+});
+
+describe("createFusedTally motion signals by size and during motion (plan §34 R2)", () => {
+  // Test E1 could not show why the mode held for 20 s: nothing was
+  // tallied while moving. And the turn signal is judged against a pixel
+  // threshold, so it is shown per size band.
+  const reading = (
+    over: Partial<NonNullable<QrFusedPose["motion"]>>,
+  ): QrFusedPose =>
+    tilted(0, {
+      motion: {
+        state: "still",
+        moving: false,
+        turning: false,
+        stillSinceMs: null,
+        movingCandidate: false,
+        turningCandidate: false,
+        offsetM: 0.01,
+        speedMps: null,
+        newestFitPx: 1,
+        turnRateDegPerS: null,
+        newestEdgePx: 100,
+        ...over,
+      },
+    });
+
+  it("reports the still turn signal per size band", () => {
+    const t = createFusedTally();
+    t.add(reading({ newestFitPx: 1, newestEdgePx: 100 }), 0);
+    t.add(reading({ newestFitPx: 4, newestEdgePx: 350 }), 100);
+    t.add(reading({ newestFitPx: 6, newestEdgePx: 360 }), 200);
+    const bands = t.summary().motion.stillTurnSignalByEdgePx;
+    expect(bands.small).toEqual({ n: 1, p50: 1, p95: 1 });
+    expect(bands.large).toEqual({ n: 2, p50: 4, p95: 6 });
+  });
+
+  it("tallies the signals and the no-signal readings during motion", () => {
+    const t = createFusedTally();
+    const moving = { state: "moving" as const, moving: true };
+    t.add(reading({ ...moving, newestFitPx: 2, offsetM: 0.05 }), 0);
+    t.add(reading({ ...moving, newestFitPx: 8, offsetM: 0.07 }), 100);
+    t.add(reading({ ...moving, newestFitPx: null, offsetM: null }), 200);
+    t.add(reading({}), 300);
+    const d = t.summary().motion.duringMotion;
+    expect(d).toMatchObject({
+      n: 3,
+      noSignal: 1,
+      turnSignalP50Px: 2,
+      turnSignalP95Px: 8,
+    });
+    expect(d.moveSignalP95Cm).toBeCloseTo(7, 6);
   });
 });

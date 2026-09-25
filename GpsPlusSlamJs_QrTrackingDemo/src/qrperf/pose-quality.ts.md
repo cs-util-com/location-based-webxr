@@ -22,6 +22,9 @@ fix (QR near-frontal pose plan 2026-09-23-2314, M1). Pure.
       `jumpShare { over3, over5, over10 }` (fractions), `jumpsOver60`;
     - `stillJitterPx { strict, loose }`, each `{ n, p50, p95 }`;
     - `reprojectionPx { n, p50, p95 }`;
+    - `reprojectionByEdgePx`: the same error per code-size band (the
+      corners' `meanEdgePx`; `edge-bands.ts`, same 240-value window per
+      band) - the single-frame 4 px gate is absolute too (plan §34 R2);
     - `wallElevationDeg { n, p50Abs, p95Abs, meanSigned }`.
     - Empty series give `n` 0, shares 0 and `NaN` percentiles.
 
@@ -67,6 +70,6 @@ q.summary().wallElevationDeg.meanSigned; // 0 for an upright wall code
 
 `pose-quality.test.ts`: jumps between consecutive same-code poses, no pairing
 across codes, the over-60 bin, both still gates (translation and rotation),
-reprojection percentiles, signed and absolute elevation, empty summaries, and
+reprojection percentiles (also per code-size band), signed and absolute elevation, empty summaries, and
 a deterministic grid of invariants (p50 <= p95 <= max, ordered shares, counts
 bounded by the window).

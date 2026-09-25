@@ -7,7 +7,7 @@
  */
 
 import type { Vector3 } from 'gps-plus-slam-js';
-import type { Pose } from './qr-pose.js';
+import { meanEdgePx, type Pose } from './qr-pose.js';
 import {
   FUSED_WINDOW_DEFAULTS,
   selectFusedWindow,
@@ -60,6 +60,12 @@ export interface QrMotionSignals {
   newestFitPx: number | null;
   /** Rough turn rate: the newest single-frame rotation against the others', deg/s. */
   turnRateDegPerS: number | null;
+  /**
+   * The newest view's mean edge length, px - the code's size on screen,
+   * which the pixel signals are judged against (plan §34 R1); null without
+   * entries.
+   */
+  newestEdgePx: number | null;
 }
 
 export interface QrMotion extends QrMotionSignals {
@@ -109,6 +115,7 @@ const NONE: QrMotionSignals = {
   speedMps: null,
   newestFitPx: null,
   turnRateDegPerS: null,
+  newestEdgePx: null,
 };
 
 function medianPosition(ps: readonly Vector3[]): Vector3 {
@@ -193,8 +200,9 @@ export function measureQrMotion(
     windowSize: o.motionWindow,
     gapMs: o.gapMs,
   });
-  if (window.length < 2) return { ...NONE };
-  const newest = window[window.length - 1]!;
+  const newest = window[window.length - 1];
+  const newestEdgePx = newest ? meanEdgePx(newest.corners) : null;
+  if (!newest || window.length < 2) return { ...NONE, newestEdgePx };
   // The solve over all views checks each is usable (and gives positions
   // when the entries carry no raw poses).
   const all = o.solve(window.map(toView), o.sizeM);
@@ -205,7 +213,7 @@ export function measureQrMotion(
   const rest = o.solve(window.slice(0, -1).map(toView), o.sizeM);
   // Every view in the motion window must be usable: the newest must be
   // judged, and a dropped view would shift the positions against their times.
-  if (!all || !rest || all.droppedViews > 0) return { ...NONE };
+  if (!all || !rest || all.droppedViews > 0) return { ...NONE, newestEdgePx };
   const dtS = sinceRestS(window.map((e) => e.timestamp));
   const { offsetM, speedMps } = translation(viewPositions(window, all), dtS);
   const newestFitPx = viewErrorAtRotationPx(
@@ -220,6 +228,7 @@ export function measureQrMotion(
     speedMps,
     newestFitPx,
     turnRateDegPerS: turnRate(newest, rest.rotation, dtS),
+    newestEdgePx,
   };
 }
 

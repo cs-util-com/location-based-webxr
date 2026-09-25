@@ -757,3 +757,73 @@ describe('createFusedQrPoseTracker motion (plan §26)', () => {
     expect(evaluateFusedQrPose(walkEntries(tilted(5), 8)).motion).toBeNull();
   });
 });
+
+describe('evaluateFusedQrPose size on screen and why not stable (plan §34 R1)', () => {
+  // Test A on r731 was stable on 68 % of locks and the JSON could not say
+  // why: too few views, the fit, the fallback, or a motion cut. And no
+  // field JSON recorded the code's size in px, which every pixel threshold
+  // is judged against.
+  it('reports the window median edge length', () => {
+    const r = evaluateFusedQrPose(walkEntries(tilted(5), 8));
+    expect(r.edgePx).toBeGreaterThan(95);
+    expect(r.edgePx).toBeLessThan(125);
+    expect(evaluateFusedQrPose([]).edgePx).toBeNull();
+  });
+
+  it('names no reason when stable', () => {
+    const r = evaluateFusedQrPose(walkEntries(tilted(5), 8));
+    expect(r.status).toBe('stable');
+    expect(r.notStableReason).toBeNull();
+  });
+
+  it('names too few views', () => {
+    const r = evaluateFusedQrPose(walkEntries(tilted(5), 3));
+    expect(r.notStableReason).toBe('views');
+  });
+
+  it('names the fit when enough views agree too loosely', () => {
+    const rand = mulberry32(9);
+    const r = evaluateFusedQrPose(
+      walkEntries(tilted(5), 8, { noise: { sigmaPx: 1.1, rand } }),
+      { maxFitPx: 0.5 }
+    );
+    expect(r.method).toBe('joint');
+    expect(r.notStableReason).toBe('fit');
+  });
+
+  it('names the fallback when the views contradict each other', () => {
+    const rand = mulberry32(9);
+    const r = evaluateFusedQrPose(
+      walkEntries(tilted(5), 8, { noise: { sigmaPx: 1.1, rand } }),
+      { maxFitPx: 0.2, fallbackFitPx: 0.3 }
+    );
+    expect(r.method).toBe('averaged');
+    expect(r.notStableReason).toBe('fallback');
+  });
+
+  it('names a motion cut from the tracker', () => {
+    const cams = walkCameraPoses({
+      kind: 'arc',
+      codeWorld: tilted(5),
+      distanceM: 1.2,
+      extent: 30,
+      steps: 16,
+    });
+    const entries = cams.map((cam, i) =>
+      entryOf(
+        cam,
+        cornersOf(cam, {
+          ...tilted(5),
+          position: [0.05 * Math.max(i - 7, 0), 1.5, 0],
+        }),
+        i * 125
+      )
+    );
+    const tracker = createFusedQrPoseTracker();
+    const out = entries.map((_, i) =>
+      tracker.evaluate(entries.slice(0, i + 1))
+    );
+    const cut = out.find((r) => r.motion?.moving);
+    expect(cut?.notStableReason).toBe('motion');
+  });
+});

@@ -26,7 +26,14 @@ that is moved or turned never has its stale views fused.
     diagnostic), and the window's `frameEpoch`, `oldestTimestamp`,
     `newestTimestamp`;
   - `motion`: the tracker's motion reading (`QrMotion`: state, speeds,
-    `stillSinceMs`); always `null` here, set by the tracker.
+    `stillSinceMs`); always `null` here, set by the tracker;
+  - `edgePx`: the window's median edge length (`meanEdgePx`), px - the
+    code's size on screen (plan §34 R1); null without a window;
+  - `notStableReason`: why the pose is not stable - `views` (fewer than
+    `minViews`, also with no window), `fit` (the views agree too loosely),
+    `fallback` (they contradict each other, or no joint solve), or, from the
+    tracker, `motion` (the window was cut for a moving or turning code);
+    null when stable.
   - `previous` is the last result for the same code: it makes the gate and
     the method sticky (hysteresis) - but only while this window CONTINUES
     it: same frame epoch, not older (a replay seek backwards starts
@@ -135,7 +142,9 @@ if (fused.status === 'stable') place(fused.pose);
     stable pose that trails for at most the 3 unconfirmed detections, and
     is stable again at the new pose; switched off, the slide's stable pose
     trails on; the tracker hands its `sizeM` and `gapMs` to the detector (entries without raw
-    poses); a backwards seek recovers; a bare evaluation carries no motion.
+    poses); a backwards seek recovers; a bare evaluation carries no motion; the window's
+    median edge length, and the not-stable reason for each condition
+    (views, fit, fallback, a motion cut).
 - Planted bugs (2026-09-24), each failing at least one test: mean instead
   of median, no hysteresis, no cache, no epoch check, `>=` at the gap
   boundary, always averaging; and after the milestone review: hysteresis

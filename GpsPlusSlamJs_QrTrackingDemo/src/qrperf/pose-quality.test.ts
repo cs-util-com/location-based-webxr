@@ -207,3 +207,23 @@ describe("pose quality invariants (deterministic grid)", () => {
     expect(violations).toEqual([]);
   });
 });
+
+describe("pose quality: reprojection by code size on screen (plan §34 R2)", () => {
+  // The single-frame 4 px reprojection gate is absolute too (it rejected
+  // 130/200 solves in hand-held test E1); the report shows it per size band.
+  it("groups the reprojection error by the corners' mean edge length", () => {
+    const q = createPoseQuality();
+    const square = (edge: number) => [
+      { x: 0, y: 0 },
+      { x: edge, y: 0 },
+      { x: edge, y: edge },
+      { x: 0, y: edge },
+    ];
+    q.add(sample({ corners: square(100), reprojectionErrorPx: 1, atMs: 0 }));
+    q.add(sample({ corners: square(400), reprojectionErrorPx: 3, atMs: 5000 }));
+    const bands = q.summary().reprojectionByEdgePx;
+    expect(bands.small).toEqual({ n: 1, p50: 1, p95: 1 });
+    expect(bands.large).toEqual({ n: 1, p50: 3, p95: 3 });
+    expect(bands.medium.n).toBe(0);
+  });
+});

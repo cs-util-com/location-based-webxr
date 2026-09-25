@@ -28,6 +28,10 @@ reads "still".
     a raw pose). A steady 40°/s reads ~49°/s (pinned). §26 asked for the
     rotation from the per-view fits; the raw one is used instead and is
     flip-prone near head-on, which is why it never decides anything.
+  - `newestEdgePx`: the newest view's mean edge length (`meanEdgePx`), px -
+    the code's size on screen, which the pixel signal is judged against
+    (plan §34 R1); reported even without a motion signal, null without
+    entries.
   - All null / false with fewer than two detections in the window, or when
     any view in it is unusable (the newest must be judged, and a dropped
     view would shift the positions against their timestamps).
@@ -127,7 +131,8 @@ if (m.state === 'still') {
   directions; a rebuilt copy of a detection is not counted again; a
   confirmed motion survives readings without a signal; time going
   backwards starts afresh; no still time while moving again; a steady
-  turn's rate; the window breaks at `gapMs`; one outlier frame never flips the state; a still code under
+  turn's rate; the window breaks at `gapMs`; the newest edge length is
+  reported, also without a signal; one outlier frame never flips the state; a still code under
   1 px of corner noise stays still (10 seeds x 40 detections); one step per
   detection however often it is read; `stillSinceMs`.
 - `qr-motion.property.test.ts`: for any sequence of raw moving candidates

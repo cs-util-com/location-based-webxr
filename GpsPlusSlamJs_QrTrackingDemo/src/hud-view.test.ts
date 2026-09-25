@@ -89,6 +89,8 @@ describe("toHudView pose line (M3b b5)", () => {
       oldestTimestamp: 0,
       newestTimestamp: 0,
       motion: null,
+      edgePx: null,
+      notStableReason: null,
       ...over,
     }) as Parameters<typeof toHudView>[2];
 
@@ -170,6 +172,7 @@ describe("toHudView motion line (plan §26)", () => {
         speedMps: 0.123,
         newestFitPx: 0.5,
         turnRateDegPerS: 35.2,
+        newestEdgePx: null,
         ...over,
       },
     }) as Parameters<typeof toHudView>[2];

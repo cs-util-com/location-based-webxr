@@ -9,6 +9,11 @@
 
 import type { QrFusedPose } from "gps-plus-slam-app-framework/ar/qr";
 import { nearestRankPercentile } from "./pipeline-timings.js";
+import {
+  createBandedPercentiles,
+  type BandPercentiles,
+  type Banded,
+} from "./edge-bands.js";
 
 type Motion = NonNullable<QrFusedPose["motion"]>;
 
@@ -65,6 +70,21 @@ export interface MotionTallySummary {
   candidateRuns: { moving: RunLengths; turning: RunLengths };
   /** The first LOG_CAP confirmed switches, and how many more there were. */
   switchLog: { log: MotionSwitch[]; dropped: number };
+  /** The still turn signal per code-size band (newest view's edge; plan §34 R2). */
+  stillTurnSignalByEdgePx: Banded<BandPercentiles>;
+  /**
+   * Readings while the mode was moving or turning: how many, how many had no
+   * signal (they neither confirm nor end a motion), and their signals - so a
+   * mode that holds can be told from a detector that is stuck.
+   */
+  duringMotion: {
+    n: number;
+    noSignal: number;
+    turnSignalP50Px: number | null;
+    turnSignalP95Px: number | null;
+    moveSignalP50Cm: number | null;
+    moveSignalP95Cm: number | null;
+  };
 }
 
 const LOG_CAP = 60;
@@ -145,6 +165,13 @@ export function createMotionTally(): {
   let epochStartMs: number | null = null;
   let size: SizeState | null = null;
   const still = { turn: [] as number[], move: [] as number[] };
+  const stillTurnBands = createBandedPercentiles();
+  const moving = {
+    n: 0,
+    noSignal: 0,
+    turn: [] as number[],
+    move: [] as number[],
+  };
   const runs = { moving: createRunCounter(), turning: createRunCounter() };
   const log: MotionSwitch[] = [];
   let dropped = 0;
@@ -172,6 +199,14 @@ export function createMotionTally(): {
   function addStillSignals(m: Motion): void {
     if (finite(m.newestFitPx)) still.turn.push(m.newestFitPx);
     if (finite(m.offsetM)) still.move.push(m.offsetM * 100);
+    stillTurnBands.add(m.newestEdgePx, m.newestFitPx);
+  }
+
+  function addMotionSignals(m: Motion): void {
+    moving.n += 1;
+    if (m.offsetM === null) moving.noSignal += 1;
+    if (finite(m.newestFitPx)) moving.turn.push(m.newestFitPx);
+    if (finite(m.offsetM)) moving.move.push(m.offsetM * 100);
   }
 
   return {
@@ -193,6 +228,7 @@ export function createMotionTally(): {
       runs.moving.add(m.movingCandidate, isStill);
       runs.turning.add(m.turningCandidate, isStill);
       if (isStill) addStillSignals(m);
+      else addMotionSignals(m);
     },
     summary() {
       return {
@@ -204,6 +240,15 @@ export function createMotionTally(): {
           turning: runs.turning.lengths(),
         },
         switchLog: { log: [...log], dropped },
+        stillTurnSignalByEdgePx: stillTurnBands.summary(),
+        duringMotion: {
+          n: moving.n,
+          noSignal: moving.noSignal,
+          turnSignalP50Px: pct(moving.turn, 0.5),
+          turnSignalP95Px: pct(moving.turn, 0.95),
+          moveSignalP50Cm: pct(moving.move, 0.5),
+          moveSignalP95Cm: pct(moving.move, 0.95),
+        },
       };
     },
   };

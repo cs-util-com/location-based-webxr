@@ -31,11 +31,19 @@ p95Abs, meanSigned }`: the STABLE fused pose's own quality (what the
     in one epoch, and the code normal's elevation (0 for a wall code, 90 for
     a code flat on a table).
   - `motion`: the motion detector's readings - modes, switches, the still
-    signals, candidate runs and the switch log (`motion-tally.ts`).
+    signals (also per code-size band), candidate runs, the switch log, and
+    the readings during motion (`motion-tally.ts`).
+  - `notStable` `{ views, fit, fallback, motion }`: how many locks were not
+    stable for each `QrFusedPose.notStableReason` (plan §34 R1/R2).
+  - `fitByEdgePx` (the fit over the same >= 5-view windows) and
+    `stableByEdgePx` `{ locks, stable }` per code-size band (the window's
+    median edge length; `edge-bands.ts`).
 - `fusedLines(summary)` - the report lines: the tally, `fused pose
 (stable): jump ... position jump ... | wall elevation ...`, and three
   `motion` lines (modes and switches; still signals p50/p95/p99/max;
-  candidate runs from still, 1/2/3/4+).
+  candidate runs from still, 1/2/3/4+), plus `fused not stable: ...`,
+  `fused by code size ...` and the motion lines by code size and during
+  motion.
 
 ## Invariants & assumptions
 
@@ -47,7 +55,8 @@ p95Abs, meanSigned }`: the STABLE fused pose's own quality (what the
 
 ## Tests
 
-`fused-tally.test.ts`: the stable fused pose's wall elevation; jumps between
+`fused-tally.test.ts`: the not-stable reasons; the fit and the stable
+share per code-size band; the stable fused pose's wall elevation; jumps between
 consecutive stable results within 1 s (a measuring result is left out, a
 gap breaks the pair), and their position jumps; fit and delta over windows
 of at least 5 views; frame changes counted and never paired across; the

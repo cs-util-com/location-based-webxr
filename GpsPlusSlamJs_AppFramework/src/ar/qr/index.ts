@@ -50,6 +50,7 @@ export {
   rotateVectorByQuaternion,
   signedQuadArea,
   validateQuad,
+  meanEdgePx,
   reprojectionErrorPx,
   solveQrPose,
 } from './qr-pose.js';

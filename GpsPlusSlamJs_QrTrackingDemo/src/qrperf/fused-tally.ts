@@ -11,6 +11,14 @@
 import type { QrFusedPose } from "gps-plus-slam-app-framework/ar/qr";
 import { nearestRankPercentile } from "./pipeline-timings.js";
 import {
+  bandsLine,
+  createBandedPercentiles,
+  edgeBand,
+  perBand,
+  type BandPercentiles,
+  type Banded,
+} from "./edge-bands.js";
+import {
   createMotionTally,
   type MotionTallySummary,
   type SizeState,
@@ -66,6 +74,12 @@ export interface FusedTallySummary {
   };
   /** The motion detector's readings (`motion-tally.ts`). */
   motion: MotionTallySummary;
+  /** Why locks were not stable (plan §34 R1/R2), per `notStableReason`. */
+  notStable: { views: number; fit: number; fallback: number; motion: number };
+  /** The fit (same windows as `fitP50Px`) per code-size band. */
+  fitByEdgePx: Banded<BandPercentiles>;
+  /** Locks and stable locks per code-size band (the window's median edge). */
+  stableByEdgePx: Banded<{ locks: number; stable: number }>;
 }
 
 const pct = (xs: readonly number[], p: number): number | null =>
@@ -93,6 +107,9 @@ export function createFusedTally(): {
   const deltas: number[] = [];
   const jumps: number[] = [];
   const positionJumps: number[] = [];
+  const notStable = { views: 0, fit: 0, fallback: 0, motion: 0 };
+  const fitBands = createBandedPercentiles();
+  const stableBands = perBand(() => ({ locks: 0, stable: 0 }));
   const elevations: number[] = [];
   let lastEpoch: number | null = null;
   let previous: { pose: Pose; atMs: number; epoch: number } | null = null;
@@ -113,20 +130,35 @@ export function createFusedTally(): {
     previous = { pose, atMs, epoch: result.frameEpoch };
   }
 
+  function addCounts(result: QrFusedPose): void {
+    counts.locks += 1;
+    if (result.status === "stable") counts.stable += 1;
+    if (result.method === "joint") counts.joint += 1;
+    if (result.method === "averaged") counts.averaged += 1;
+    if (lastEpoch !== null && result.frameEpoch > lastEpoch)
+      counts.frameChanges += 1;
+    lastEpoch = Math.max(lastEpoch ?? 0, result.frameEpoch);
+    if (result.notStableReason) notStable[result.notStableReason] += 1;
+  }
+
+  /** Fit, delta and the size bands (the gate's own windows for the fit). */
+  function addFitAndBands(result: QrFusedPose): void {
+    const band = edgeBand(result.edgePx);
+    if (band) {
+      stableBands[band].locks += 1;
+      if (result.status === "stable") stableBands[band].stable += 1;
+    }
+    if (result.views < GATE_MIN_VIEWS) return;
+    fitBands.add(result.edgePx, result.fitPx);
+    if (Number.isFinite(result.fitPx)) fits.push(result.fitPx);
+    if (Number.isFinite(result.averagedRotationDeltaDeg))
+      deltas.push(result.averagedRotationDeltaDeg);
+  }
+
   return {
     add(result, atMs, size) {
-      counts.locks += 1;
-      if (result.status === "stable") counts.stable += 1;
-      if (result.method === "joint") counts.joint += 1;
-      if (result.method === "averaged") counts.averaged += 1;
-      if (lastEpoch !== null && result.frameEpoch > lastEpoch)
-        counts.frameChanges += 1;
-      lastEpoch = Math.max(lastEpoch ?? 0, result.frameEpoch);
-      if (result.views >= GATE_MIN_VIEWS) {
-        if (Number.isFinite(result.fitPx)) fits.push(result.fitPx);
-        if (Number.isFinite(result.averagedRotationDeltaDeg))
-          deltas.push(result.averagedRotationDeltaDeg);
-      }
+      addCounts(result);
+      addFitAndBands(result);
       addStablePose(result, atMs);
       motion.add(result, atMs, size);
     },
@@ -157,6 +189,13 @@ export function createFusedTally(): {
           meanSigned: mean(elevations),
         },
         motion: motion.summary(),
+        notStable: { ...notStable },
+        fitByEdgePx: fitBands.summary(),
+        stableByEdgePx: {
+          small: { ...stableBands.small },
+          medium: { ...stableBands.medium },
+          large: { ...stableBands.large },
+        },
       };
     },
   };
@@ -186,6 +225,8 @@ function motionLines(m: MotionTallySummary): string[] {
     `motion: still ${m.still} | moving ${m.moving} | turning ${m.turning} | both ${m.movingTurning} | switches ${m.switches} (n ${m.n}, log ${m.switchLog.log.length}, dropped ${m.switchLog.dropped})`,
     `motion still signals: turn p50/p95/p99/max ${f(m.turnSignalP50Px)}/${f(m.turnSignalP95Px)}/${f(m.turnSignalP99Px)}/${f(m.turnSignalMaxPx)} px | move p50/p95/p99/max ${f(m.moveSignalP50Cm)}/${f(m.moveSignalP95Cm)}/${f(m.moveSignalP99Cm)}/${f(m.moveSignalMaxCm)} cm`,
     `motion candidate runs from still (1/2/3/4+): moving ${runs(m.candidateRuns.moving)} | turning ${runs(m.candidateRuns.turning)}`,
+    `motion still turn signal by code size p50/p95: ${bandsLine(m.stillTurnSignalByEdgePx)}`,
+    `motion during motion: n ${m.duringMotion.n}, no signal ${m.duringMotion.noSignal} | turn p50/p95 ${f(m.duringMotion.turnSignalP50Px)}/${f(m.duringMotion.turnSignalP95Px)} px | move p50/p95 ${f(m.duringMotion.moveSignalP50Cm)}/${f(m.duringMotion.moveSignalP95Cm)} cm`,
   ];
 }
 
@@ -194,6 +235,8 @@ export function fusedLines(s: FusedTallySummary): string[] {
   return [
     `fused: ${s.locks} locks | stable ${s.stable} | joint ${s.joint} / averaged ${s.averaged} | frame changes ${s.frameChanges} | fit p50/p95 ${f(s.fitP50Px)}/${f(s.fitP95Px)} px | vs averaged p50/p95 ${f(s.deltaP50Deg)}/${f(s.deltaP95Deg)} deg`,
     `fused pose (stable): jump p50/p95/max ${f(s.jumpDeg.p50)}/${f(s.jumpDeg.p95)}/${f(s.jumpDeg.max)} deg, position jump p50/p95/max ${f(s.positionJumpCm.p50)}/${f(s.positionJumpCm.p95)}/${f(s.positionJumpCm.max)} cm (n ${s.jumpDeg.n}) | wall elevation |p50|/|p95| ${f(s.wallElevationDeg.p50Abs)}/${f(s.wallElevationDeg.p95Abs)} deg, mean ${f(s.wallElevationDeg.meanSigned)} deg`,
+    `fused not stable: views ${s.notStable.views} | fit ${s.notStable.fit} | fallback ${s.notStable.fallback} | motion ${s.notStable.motion}`,
+    `fused by code size (<150/150-300/>=300 px): stable ${s.stableByEdgePx.small.stable}/${s.stableByEdgePx.small.locks}, ${s.stableByEdgePx.medium.stable}/${s.stableByEdgePx.medium.locks}, ${s.stableByEdgePx.large.stable}/${s.stableByEdgePx.large.locks} | fit p50/p95 ${bandsLine(s.fitByEdgePx)}`,
     ...motionLines(s.motion),
   ];
 }

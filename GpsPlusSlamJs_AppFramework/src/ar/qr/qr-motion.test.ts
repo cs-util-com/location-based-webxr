@@ -391,3 +391,30 @@ describe('measureQrMotion window gap (PR #497 review)', () => {
     expect(measureQrMotion(gapped(), { gapMs: 1000 }).offsetM).toBeNull();
   });
 });
+
+describe('measureQrMotion code size on screen (plan §34 R1)', () => {
+  // Field tests read the signals per size band: the newest view's mean
+  // edge length comes with every reading.
+  it('reports the newest view edge length in px', () => {
+    const entries = scene(6, () => codeAt(0, 5));
+    const m = measureQrMotion(entries);
+    const c = entries[entries.length - 1]!.corners;
+    const edge =
+      (Math.hypot(c[1]!.x - c[0]!.x, c[1]!.y - c[0]!.y) +
+        Math.hypot(c[2]!.x - c[1]!.x, c[2]!.y - c[1]!.y) +
+        Math.hypot(c[3]!.x - c[2]!.x, c[3]!.y - c[2]!.y) +
+        Math.hypot(c[0]!.x - c[3]!.x, c[0]!.y - c[3]!.y)) /
+      4;
+    expect(m.newestEdgePx).toBeCloseTo(edge, 9);
+    // A 16 cm code at 1.2 m with fx 820: about 109 px.
+    expect(m.newestEdgePx!).toBeGreaterThan(95);
+    expect(m.newestEdgePx!).toBeLessThan(125);
+  });
+
+  it('reports it even without a motion signal, and null without entries', () => {
+    expect(
+      measureQrMotion(scene(1, () => codeAt(0, 5))).newestEdgePx
+    ).not.toBeNull();
+    expect(measureQrMotion([]).newestEdgePx).toBeNull();
+  });
+});

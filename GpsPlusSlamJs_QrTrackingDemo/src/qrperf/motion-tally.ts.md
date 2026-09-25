@@ -31,7 +31,14 @@ instead of 4, and does the converging size estimate read as motion. Fed by
     - `switchLog` `{ log, dropped }`: the first 60 confirmed switches, each
       `{ from, to, sinceFirstMs, sinceEpochMs, sizeStatus, sizeCm, offsetCm,
 turnSignalPx, speedCmS, turnRateDegS }` (cm values rounded to 0.01),
-      and how many more there were.
+      and how many more there were;
+    - `stillTurnSignalByEdgePx`: the still turn signal per code-size band
+      (the newest view's edge length; `edge-bands.ts`, plan §34 R2);
+    - `duringMotion` `{ n, noSignal, turnSignalP50Px, turnSignalP95Px,
+moveSignalP50Cm, moveSignalP95Cm }`: the readings while the mode was
+      moving or turning, how many carried no signal (they neither confirm
+      nor end a motion), and their signals - so a mode that holds can be
+      told from a stuck detector (test E1 could not).
 - Types: `SizeState`, `MotionTallySummary` (exported); `RunLengths` and
   `MotionSwitch` are the shapes inside the summary.
 
@@ -49,5 +56,6 @@ modes and switches (none across an epoch), still-only signal percentiles
 with p99 and max, candidate runs by length (candidates during a confirmed
 motion start no run; open runs close at a frame change and count at the
 summary), the switch log with its timing and size state, the log cap and
-its dropped count, and the report lines. Also `qrperf-instrument.test.ts`
+its dropped count, the report lines, the still turn signal per size band,
+and the readings during motion with their no-signal count. Also `qrperf-instrument.test.ts`
 ("hands the size state to the motion tally").
