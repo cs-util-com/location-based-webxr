@@ -10,15 +10,16 @@
  * Pure; no DOM.
  */
 
-import type { Point2 } from './qr-pose.js';
+import { meanEdgePx, type Point2 } from './qr-pose.js';
 import type { RgbaImage } from './qr-frontend.js';
 
 type Quad = [Point2, Point2, Point2, Point2];
 
 /**
  * Where a detection's corner order came from (near-frontal pose plan §39
- * F0a): the finder patterns (`confident`), the canonicaliser's memory of the
- * last confident order, or the detector's own (image) order.
+ * F0a): the finder patterns (`confident`), the canonicaliser's chain (the
+ * code's last known order, carried from frame to frame, plan §42), or the
+ * detector's own (image) order.
  */
 export type CornerOrderSource = 'finder' | 'memory' | 'native';
 
@@ -29,9 +30,11 @@ export interface CornerOrderResult {
   confident: boolean;
   source: CornerOrderSource;
   /**
-   * On a finder frame with a live chain (plan §42 S4): whether the chain
-   * would have chosen the same order (`agree` / `disagree`) or would have
-   * ended (`reject`) - the chain's error rate, measured on the phone.
+   * On a finder frame that follows a CHAINED one (plan §42 S4, milestone
+   * review 2026-09-25 #2): whether the chain would have chosen the same
+   * order (`agree` / `disagree`) or would have ended (`reject`) - the
+   * chain's error rate, measured on the phone. Absent after a finder frame:
+   * that step was never the chain's.
    */
   audit?: 'agree' | 'disagree' | 'reject';
 }
@@ -340,6 +343,8 @@ export interface CornerOrderCanonicalizerOptions {
 /** The chain's per-code state: the last known order and where it was seen. */
 interface ChainEntry {
   corners: Quad;
+  /** The order was carried by the chain (`memory`), not read (`finder`). */
+  chained: boolean;
   at: number;
   width: number;
   height: number;
@@ -350,16 +355,6 @@ function centroid(q: readonly Point2[]): Point2 {
     x: (q[0]!.x + q[1]!.x + q[2]!.x + q[3]!.x) / 4,
     y: (q[0]!.y + q[1]!.y + q[2]!.y + q[3]!.y) / 4,
   };
-}
-
-function meanEdge(q: readonly Point2[]): number {
-  let sum = 0;
-  for (let i = 0; i < 4; i++) {
-    const a = q[i]!;
-    const b = q[(i + 1) % 4]!;
-    sum += Math.hypot(b.x - a.x, b.y - a.y);
-  }
-  return sum / 4;
 }
 
 /**
@@ -393,7 +388,7 @@ function chainPick(
   maxRollDeg: number,
   maxJumpEdges: number
 ): Quad | null {
-  const edge = meanEdge(last.corners);
+  const edge = meanEdgePx(last.corners) ?? Number.NaN;
   const from = centroid(last.corners);
   const to = centroid(corners);
   if (!(Math.hypot(to.x - from.x, to.y - from.y) <= maxJumpEdges * edge))
@@ -423,8 +418,9 @@ function sameOrder(a: readonly Point2[], b: readonly Point2[]): boolean {
  * detection is under `memoryMs` old, on the same capture size, the roll is
  * within `maxRollDeg` and the centre did not jump. Otherwise the chain ends
  * and the frame keeps the detector's order. A finder frame always
- * re-anchors the chain, and reports whether the live chain would have
- * agreed (`audit`).
+ * re-anchors the chain; after a chained frame it reports whether the chain
+ * would have agreed (`audit`). Non-finite or non-positive options fall
+ * back to the defaults.
  */
 export function createCornerOrderCanonicalizer(
   options: CornerOrderCanonicalizerOptions = {}
@@ -436,9 +432,9 @@ export function createCornerOrderCanonicalizer(
   ): CornerOrderResult;
 } {
   const now = options.now ?? (() => performance.now());
-  const memoryMs = options.memoryMs ?? 500;
-  const maxRollDeg = options.maxRollDeg ?? 30;
-  const maxJumpEdges = options.maxJumpEdges ?? 1.5;
+  const memoryMs = positiveOr(options.memoryMs, 500);
+  const maxRollDeg = positiveOr(options.maxRollDeg, 30);
+  const maxJumpEdges = positiveOr(options.maxJumpEdges, 1.5);
   const orderFrame = options.orderFrame ?? canonicalizeCorners;
   const memory = new Map<string, ChainEntry>();
 
@@ -463,21 +459,22 @@ export function createCornerOrderCanonicalizer(
       const result = orderFrame(image, corners);
       const t = now();
       const last = corners.length === 4 ? liveChain(text, image, t) : null;
-      const remember = (q: Quad) =>
+      const remember = (q: Quad, chained: boolean) =>
         memory.set(text, {
           corners: q,
+          chained,
           at: t,
           width: image.width,
           height: image.height,
         });
       if (result.confident) {
-        const audit = last
+        const audit = last?.chained
           ? auditOf(
               chainPick(last, [...corners] as Quad, maxRollDeg, maxJumpEdges),
               result.corners
             )
           : undefined;
-        remember(result.corners);
+        remember(result.corners, false);
         return audit ? { ...result, audit } : result;
       }
       const pick = last
@@ -487,10 +484,17 @@ export function createCornerOrderCanonicalizer(
         memory.delete(text);
         return result;
       }
-      remember(pick);
+      remember(pick, true);
       return { corners: pick, confident: false, source: 'memory' };
     },
   };
+}
+
+/** A finite, positive option, else the default (NaN compares false everywhere). */
+function positiveOr(value: number | undefined, fallback: number): number {
+  return value !== undefined && Number.isFinite(value) && value > 0
+    ? value
+    : fallback;
 }
 
 function auditOf(

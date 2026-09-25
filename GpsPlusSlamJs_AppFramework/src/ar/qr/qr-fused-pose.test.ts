@@ -831,9 +831,10 @@ describe('evaluateFusedQrPose size on screen and why not stable (plan §34 R1)',
 describe('fused window with corner-order flips (plan §39 F0c)', () => {
   // Why these tests matter: phone runs show corner-order flips (a frame's
   // corners labelled one or two positions round). These pin what TODAY's
-  // window does with them, so the fix (at the source or downstream) is
-  // chosen on evidence - and the known defect below turns red, forcing an
-  // update, the moment a fix lands.
+  // window does with them, so a fix (at the source or downstream) is
+  // chosen on evidence. The chain (plan §42) removed most flips at the
+  // source, so the known defect below is pinned by its SIZE: any change to
+  // the window that moves it turns the test red.
   const shift = (c: Point2[], k: number): Point2[] =>
     [0, 1, 2, 3].map((i) => c[(i + k) % 4]!);
   const window = (flipped: number, k: number) => {
@@ -856,7 +857,7 @@ describe('fused window with corner-order flips (plan §39 F0c)', () => {
     };
   };
 
-  it('absorbs one flipped view of 8 (still stable, within ~1 deg)', () => {
+  it('absorbs one flipped view of 8 (still stable, within 1.5 deg)', () => {
     for (const k of [1, 2, 3]) {
       const { r, errDeg } = window(1, k);
       expect(r.status).toBe('stable');
@@ -874,14 +875,17 @@ describe('fused window with corner-order flips (plan §39 F0c)', () => {
     }
   });
 
-  // KNOWN DEFECT (probe 2026-09-25): two flipped views of 8 still pass the
-  // fit gate, and the STABLE rotation is off by 2.4-2.8 deg without noise
-  // (up to 6.8 deg at 1 px of corner noise). A fix must make this pass.
-  it.fails('keeps a stable pose within 1 deg with two flipped views', () => {
+  // KNOWN DEFECT (probe 2026-09-25; milestone review 2026-09-25 #5 asked
+  // for its size rather than an it.fails, which passes on ANY failure):
+  // two flipped views of 8 still pass the fit gate, and the STABLE
+  // rotation is off by 2.4-2.8 deg without noise (up to 6.8 deg at 1 px of
+  // corner noise). A fix should turn this into "within 1 deg".
+  it('KNOWN DEFECT: two flipped views of 8 leave a stable pose 2-3 deg off', () => {
     for (const k of [1, 2, 3]) {
       const { r, errDeg } = window(2, k);
-      // Only a STABLE pose is shown; a measuring one may be off.
-      expect(r.status === 'stable' ? errDeg : 0).toBeLessThan(1);
+      expect(r.status).toBe('stable');
+      expect(errDeg).toBeGreaterThan(2);
+      expect(errDeg).toBeLessThan(3);
     }
   });
 });

@@ -85,12 +85,13 @@
   field tests. The chain ends after a gap over `memoryMs` (500 ms, now the
   max gap between detections, not a lifetime), a roll over `maxRollDeg`
   (30 deg), a centre jump over `maxJumpEdges` (1.5 edges) or a capture-size
-  change; on a finder frame `QrDetection.orderAudit` says whether the live
-  chain would have agreed. `createCornerOrderCanonicalizer` gains those
+  change; on a finder frame that follows a chained one,
+  `QrDetection.orderAudit` says whether the chain would have agreed.
+  Non-finite or non-positive options fall back to the defaults. `createCornerOrderCanonicalizer` gains those
   options and an injectable `orderFrame`.
 - **Where a QR detection's corner order came from** (QR near-frontal pose
   plan §39 F0a): `QrDetection.orderSource` - `finder` (the finder patterns),
-  `memory` (the canonicaliser's last confident order) or `native` (the
+  `memory` (the order carried by the chain) or `native` (the
   detector's own order) - and `CornerOrderResult.source`; type
   `CornerOrderSource` on `/ar`. A `CornerOrderer` now returns `{ corners,
 source }` instead of the corners alone (unreleased API).
@@ -211,8 +212,8 @@ source }` instead of the corners alone (unreleased API).
   image's finder patterns (`ar/qr/qr-corner-order`); the native detector on
   Android reported IMAGE order, which turned every solved pose by 90 or 180
   deg whenever the code was seen sideways or upside down. When the image
-  cannot tell, the same code's last confident order (< 500 ms) or the
-  detector's order is kept. A third, optional constructor argument
+  cannot tell, the code's chained order (see "The corner order is chained
+  frame to frame") or the detector's order is kept. A third, optional constructor argument
   (`orderCorners`, type `CornerOrderer`) replaces the rule.
   Recordings made before this change keep their native-order corners, and
   replay re-solves them unchanged. A cross-scan through each candidate

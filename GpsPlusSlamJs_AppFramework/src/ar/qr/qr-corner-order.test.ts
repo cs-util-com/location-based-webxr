@@ -447,9 +447,8 @@ describe('createCornerOrderCanonicalizer chain (plan §42)', () => {
     }
   });
 
-  // A regression pin rather than a red-first test: today's nearest-shift
-  // pick already survives translation; a ratio-style ambiguity test would
-  // not (plan §42 #1), and the roll check must not either.
+  // A pan of 0.7 edges per detection (under the 1.5-edge jump limit) must
+  // not read as a roll: the roll is fitted about each quad's centre.
   it('holds through an ordinary pan: the roll check ignores translation', () => {
     const r = anchored(quadAt(300, 380, 150, 50));
     for (let i = 1; i <= 4; i++) {
@@ -525,24 +524,33 @@ describe('createCornerOrderCanonicalizer chain (plan §42)', () => {
     }
   });
 
-  // The phone check that cannot pass by construction (plan §42 #3): on
-  // every finder frame, what would the live chain have chosen?
-  it('audits a live chain against every finder frame', () => {
+  /** Anchor at t = 0, then one chained (unsure) frame of `q` at 150 ms. */
+  function chainedOnce(q: Quad) {
+    const r = anchored(q);
+    r.at(150);
+    expect(r.c.canonicalize(PAYLOAD, image(), imageOrder(q)).source).toBe(
+      'memory'
+    );
+    r.at(300);
+    return r;
+  }
+
+  // The phone check that cannot pass by construction (plan §42 #3): on a
+  // finder frame that follows a CHAINED one, what would the live chain have
+  // chosen? A disagree there means the chain's last frame was wrong.
+  it('audits the chain on a finder frame that follows a chained one', () => {
     const q = quadAt(500, 380, 150, 50);
-    const agree = anchored(q);
-    agree.at(150);
+    const agree = chainedOnce(q);
     agree.finder(q);
     expect(agree.c.canonicalize(PAYLOAD, image(), imageOrder(q)).audit).toBe(
       'agree'
     );
-    const disagree = anchored(q);
-    disagree.at(150);
+    const disagree = chainedOnce(q);
     disagree.finder(shifted(q, 1));
     expect(disagree.c.canonicalize(PAYLOAD, image(), imageOrder(q)).audit).toBe(
       'disagree'
     );
-    const reject = anchored(q);
-    reject.at(150);
+    const reject = chainedOnce(q);
     const turned = quadAt(500, 380, 150, 95);
     reject.finder(turned);
     expect(
@@ -553,5 +561,58 @@ describe('createCornerOrderCanonicalizer chain (plan §42)', () => {
     expect(
       none.c.canonicalize(PAYLOAD, image(), imageOrder(q)).audit
     ).toBeUndefined();
+  });
+
+  // Milestone review 2026-09-25 #2: auditing finder-to-finder steps diluted
+  // the phone's audit with steps the chain never took (they nearly always
+  // agree), so "0 disagree" overstated how often the chain was checked.
+  it('does not audit a finder frame that follows another finder frame', () => {
+    const q = quadAt(500, 380, 150, 50);
+    const r = anchored(q);
+    r.at(150);
+    r.finder(shifted(q, 1));
+    expect(
+      r.c.canonicalize(PAYLOAD, image(), imageOrder(q)).audit
+    ).toBeUndefined();
+  });
+
+  // Milestone review 2026-09-25 #11: a NaN option compared false in every
+  // check, so `memoryMs: NaN` never pruned and `maxRollDeg: NaN` ended
+  // every chain. Invalid options fall back to the defaults (500 ms, 30 deg,
+  // 1.5 edges), as the motion detector's do.
+  it('falls back to the defaults for non-finite or non-positive options', () => {
+    for (const bad of [Number.NaN, -1, 0, Number.POSITIVE_INFINITY]) {
+      let t = 0;
+      let confident: Quad | null = null;
+      const c = createCornerOrderCanonicalizer({
+        now: () => t,
+        memoryMs: bad,
+        maxRollDeg: bad,
+        maxJumpEdges: bad,
+        orderFrame: (_image, corners) =>
+          confident
+            ? { corners: confident, confident: true, source: 'finder' }
+            : {
+                corners: [...corners] as Quad,
+                confident: false,
+                source: 'native',
+              },
+      });
+      const q = quadAt(500, 380, 150, 50);
+      confident = q;
+      c.canonicalize(PAYLOAD, image(), imageOrder(q));
+      confident = null;
+      // Within the default gap, roll and jump: chained.
+      t = 150;
+      const near = quadAt(520, 380, 150, 60);
+      expect(c.canonicalize(PAYLOAD, image(), imageOrder(near)).source).toBe(
+        'memory'
+      );
+      // Past the default 500 ms gap: ended.
+      t = 800;
+      expect(c.canonicalize(PAYLOAD, image(), imageOrder(near)).source).toBe(
+        'native'
+      );
+    }
   });
 });

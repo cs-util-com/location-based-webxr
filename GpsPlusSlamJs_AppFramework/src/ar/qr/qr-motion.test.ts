@@ -442,14 +442,17 @@ describe('motion detector with corner-order flips (plan §39 F0c)', () => {
     }
   });
 
-  // KNOWN DEFECT (probe 2026-09-25): a two-frame flip gives FOUR turning
-  // candidates in a row - the two flipped frames, then two clean frames
-  // judged against a rest that holds them - so a still code reads
-  // "turning" for ~0.5 s and the fused window is cut. A fix must make
-  // this pass.
-  it.fails('keeps a still code still through a two-frame flip', () => {
+  // KNOWN DEFECT (probe 2026-09-25; pinned by its size since milestone
+  // review 2026-09-25 #5 - an it.fails passes on ANY failure): a two-frame
+  // flip gives FOUR turning candidates in a row - the two flipped frames,
+  // then two clean frames judged against a rest that holds them - so a
+  // still code reads "turning" briefly and the fused window is cut. A fix
+  // should keep it still throughout.
+  it('KNOWN DEFECT: a two-frame flip confirms a brief "turning"', () => {
     for (const k of [1, 2, 3]) {
-      expect(states(2, k).every((m) => m.state === 'still')).toBe(true);
+      const out = states(2, k);
+      expect(out.filter((m) => m.turningCandidate)).toHaveLength(4);
+      expect(out.some((m) => m.state !== 'still')).toBe(true);
     }
   });
 });

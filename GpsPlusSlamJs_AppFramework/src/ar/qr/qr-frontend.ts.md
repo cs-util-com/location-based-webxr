@@ -11,9 +11,9 @@ Native `BarcodeDetector` only; the OpenCV `QRCodeDetector` fallback was removed
 - `QrFrontEnd` — `{ kind: 'barcode-detector', detect(image: RgbaImage): Promise<QrDetection | null>, dispose?() }`.
   `QrDetection = { corners: [Point2×4], text, orderSource?, orderAudit? }`
   (`orderSource`: where the corner order came from - `finder`, `memory` or
-  `native`, plan §39 F0a; `orderAudit`: on a finder frame, what the live
-  chain would have picked - `agree`, `disagree` or `reject`, plan §42 S4); `RgbaImage = { data, width, height }`.
-- `BarcodeDetectorFrontEnd` — `new (detector: BarcodeDetectorLike, toSource?, orderCorners?)`; `orderCorners` (a `CornerOrderer`, returning `{ corners, source }`) defaults to the finder-pattern canonicalizer.
+  `native`, plan §39 F0a; `orderAudit`: on a finder frame that follows a
+  chained one, what the chain would have picked - `agree`, `disagree` or `reject`, plan §42 S4); `RgbaImage = { data, width, height }`.
+- `BarcodeDetectorFrontEnd` — `new (detector: BarcodeDetectorLike, toSource?, orderCorners?)`; `orderCorners` (a `CornerOrderer`, returning `{ corners, source, audit? }`) defaults to the finder-pattern canonicalizer.
   Wraps native `BarcodeDetector`; `toSource` converts `RgbaImage` →
   `ImageBitmapSource` (injectable for tests). The default wraps the frame in `ImageData` **without copying** when the array is plain-`ArrayBuffer`-backed (what `captureToRgba` returns, an owned copy already) and copies only otherwise, e.g. shared memory (QR perf plan 2026-09-23, M3: the second ~3 MB copy per decode bought nothing). The rule itself lives once, in `../rgba-image-data.ts` (DEC-H3), shared with the JPEG encoder.
 - `createBarcodeDetectorFrontEnd(ctor?, toSource?)` — feature-detect factory (`toSource` overrides the default conversion, e.g. the QR demo's timed, copying pre-fix baseline); `null` when no
@@ -30,8 +30,9 @@ Native `BarcodeDetector` only; the OpenCV `QRCodeDetector` fallback was removed
   decide it (`qr-corner-order.ts`). The native detector on the owner's phone
   reports IMAGE order (QR summary §4b runs 3-6), which turned the solved pose
   in 90-degree steps ("Cause A"); `validateQuad` cannot catch that. When the
-  image cannot tell, the same code's last confident order (< 500 ms) is used,
-  else the detector's. The `orderCorners` constructor argument replaces the
+  image cannot tell, the code's chained order is used (plan §42: at most
+  500 ms between detections, a small roll, no jump of the centre), else the
+  detector's. The `orderCorners` constructor argument replaces the
   default (one finder-pattern canonicalizer per front end).
 - **Dependencies injected:** the native detector and the `RgbaImage`→source
   conversion are injected, so this module + tests need no DOM.

@@ -29,8 +29,13 @@ maxJumpEdges?, orderFrame? })` - adds a per-code CHAIN (near-frontal pose
   `memoryMs` (default 500 - a max GAP, not a lifetime), the capture size
   changed, the roll exceeds `maxRollDeg` (default 30) or the centre jumped
   more than `maxJumpEdges` (default 1.5) edge lengths (a second print). A
-  finder frame always re-anchors it and reports `audit`: what the live
-  chain would have picked - `agree`, `disagree` or `reject`. `orderFrame`
+  finder frame always re-anchors it; when it follows a CHAINED frame it
+  reports `audit`: what the chain would have picked - `agree`,
+  `disagree` or `reject` (a `disagree` means the chain's last frame was
+  wrong). Finder-to-finder steps are not audited (milestone review
+  2026-09-25 #2: they were never the chain's and diluted the phone's
+  count). Non-finite or non-positive `memoryMs`, `maxRollDeg` and
+  `maxJumpEdges` fall back to the defaults. `orderFrame`
   (the single-frame orderer) is injectable for tests and sweeps.
 - `CornerOrderSource` = `'finder' | 'memory' | 'native'`: carried on
   `QrDetection.orderSource` so a field test can tell a confidently wrong
@@ -47,15 +52,24 @@ front end), so every app's detections are symbol-ordered.
   `disagree`). Only its rate guards it: 60 deg per detection is ~300 deg/s
   at 5 Hz. A roll between the limit and 60 deg ends the chain (`native`,
   wrong past 45 deg of image roll).
-- **Sweep** (`qr-corner-order.sweep.test.ts`, opt-in, 2026-09-25; one
-  factor around 20 deg/s, 5 Hz, 60 % finder frames, 1 px jitter): 0 wrong
-  frames up to 120 deg/s, at 3-7.5 Hz, 20-80 % finder frames, 0-20 px
-  jitter; at 180-240 deg/s the chain ends (native, as before the chain);
-  at 360 deg/s it chains wrong and the audit disagrees. A 40 deg limit
-  extends the clean range to 180 deg/s but chains wrong from 50 deg per
-  detection. Gaps over `memoryMs` end the chain; a longer `memoryMs` cut
-  those native frames in the sweep, which has no 90 deg phone rotation in a
-  gap - kept at 500 ms until the phone's audit says otherwise.
+- **Sweep** (`qr-corner-order.sweep.test.ts`, opt-in; one factor at a
+  time around 20 deg/s, 10 Hz frames of which 50 % are hits - the phone's
+  detections are irregular - 60 % finder frames, 1 px jitter, no pan;
+  5 seeds x 60 s per cell; rerun 2026-09-25 after milestone review #3/#4):
+  **0 wrong frames up to 90 deg/s at every hit share tried (30-100 %);
+  from 120 deg/s the chain goes WRONG with irregular hits** (120 deg/s: 18
+  frames, runs up to 5; 150: 46; 180: 73), and the audit sees it
+  (`disagree` 13 / 34 / 33). With every frame a hit it stays clean to
+  180 deg/s - the uniform timing of the first sweep hid this band. A pan
+  never chains wrong (0 at up to 1600 px/s, any jump limit 1-3 edges); the
+  jump limit only ends chains, from ~800 px/s at 1.5 edges (the sweep has
+  no second print, which is what the limit is for). 0-20 px jitter, 20-80 %
+  finder frames and 6-15 Hz stay clean. A 40 deg roll limit chains more
+  frames wrong at 120 deg/s and above. Gaps over `memoryMs` end the
+  chain; a longer `memoryMs` cut those native frames in the sweep, which
+  has no 90 deg phone rotation in a gap - kept at 500 ms until the phone's
+  audit says otherwise. Every verdict here holds for this motion model
+  only: a smooth roll and pan, no perspective change, no size change.
 
 - **Rule:** a QR symbol has finder patterns at TL, TR and BL; BR has none.
   Each corner's half-diagonal is sampled (0 to 80 % of the way to the centre,
@@ -146,7 +160,8 @@ source of each case (finder, memory, native), and the chain (§42, via an
 injected orderer): unsure frames chained past 500 ms of total time, a pan,
 a 45 deg roll and a fast roll ending it, a capture-size change, a centre
 jump, a gap, invariance to the reported cyclic shift, and the audit
-(agree, disagree, reject, none). Planted bugs (no roll check, no jump
+(agree, disagree, reject, none; no audit after a finder frame), and the
+defaults standing in for invalid options. Planted bugs (no roll check, no jump
 check, no size check, no chaining) each fail at least one test. Four
 mutations of the rule were each caught. Front-end wiring:
 `qr-frontend.test.ts`.
