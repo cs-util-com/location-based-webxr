@@ -184,6 +184,8 @@ async function render(
     noiseSigma: number;
     slam: SlamNoise | null;
     distanceM?: number;
+    /** Gaussian jitter added to the DECODED corners, px (emulates a noisier phone run, §48). */
+    cornerJitterPx?: number;
   }
 ): Promise<(QrFusedEntry | null)[]> {
   const projection = perspectiveProjection({
@@ -224,9 +226,16 @@ async function render(
       out.push(null);
       continue;
     }
+    const jitter = opts.cornerJitterPx ?? 0;
+    const corners = jitter
+      ? det.corners.map((c) => ({
+          x: c.x + jitter * gaussian(rand),
+          y: c.y + jitter * gaussian(rand),
+        }))
+      : det.corners;
     const seenFrom = perturbed(camera, opts.slam, rand);
     const raw = solveQrPose({
-      imagePoints: det.corners,
+      imagePoints: corners,
       sizeM: SIZE_M,
       intrinsics,
       cameraPose: seenFrom,
@@ -234,7 +243,7 @@ async function render(
     });
     out.push({
       timestamp: i * STEP_MS,
-      corners: det.corners,
+      corners,
       cameraPose: seenFrom,
       intrinsics,
       rawPose: raw ? raw.qrPoseWorld : null,
@@ -463,3 +472,253 @@ describe.runIf(RUN)('QR motion: a still code across distance (opt-in)', () => {
     SWEEP_TIMEOUT_MS
   );
 });
+
+/**
+ * The turning rules compared (plan §47): today's fixed 3 px, raised fixed
+ * floors, and a per-code running baseline of the still turn signal itself.
+ * Each rule sees the history of this code's STILL, non-candidate turn
+ * signals (newest last) and returns the threshold for the next reading.
+ */
+interface TurnRule {
+  name: string;
+  threshold(history: readonly number[]): number;
+}
+
+const TURN_RULES: TurnRule[] = [
+  { name: 'fixed 3 px (today)', threshold: () => 3 },
+  { name: 'fixed 4 px', threshold: () => 4 },
+  { name: 'fixed 5 px', threshold: () => 5 },
+  ...[1.5, 2, 3].map((k) => ({
+    name: `baseline p90 x${k} (floor 3)`,
+    threshold: (h: readonly number[]) =>
+      h.length < 8 ? 3 : Math.max(3, k * pctile(h.slice(-20), 0.9)),
+  })),
+];
+
+/** Replay one code's per-detection turn signals under a rule, persistence 4. */
+function replayTurning(signals: readonly (number | null)[], rule: TurnRule) {
+  const history: number[] = [];
+  let turning = false;
+  let run = 0;
+  const states: boolean[] = [];
+  for (const s of signals) {
+    if (s === null) {
+      states.push(turning);
+      continue;
+    }
+    const candidate = s > rule.threshold(history);
+    if (!turning && !candidate) history.push(s);
+    run = candidate === turning ? 0 : run + 1;
+    if (run >= 4) {
+      turning = candidate;
+      run = 0;
+    }
+    states.push(turning);
+  }
+  return states;
+}
+
+/** One replayed still or turn run for the rule comparison. */
+interface RuleCase {
+  label: string;
+  kind: 'still' | 'turn';
+  signals: (number | null)[];
+}
+
+/** One rendered condition of the rule comparison. */
+interface RuleCell {
+  label: string;
+  noiseSigma: number;
+  slam: SlamNoise;
+  distanceM: number;
+  yaw: number;
+  cornerJitterPx?: number;
+  withTurns: boolean;
+}
+
+/** The still scene (3 seeds) and, when asked, the turn scenes (2 seeds each). */
+function scenesOf(cell: RuleCell): [Scene, number[]][] {
+  const y = cell.yaw;
+  const still: Scene = {
+    name: 'still',
+    kind: 'still',
+    codeOf: () => codeAt(0, y, 0),
+    cameraWalks: true,
+  };
+  if (!cell.withTurns) return [[still, [1, 2, 3]]];
+  const turns: Scene[] = [
+    {
+      name: 'spin 20',
+      kind: 'turning',
+      codeOf: (i) => codeAt(0, y, 2.5 * phase(i)),
+      cameraWalks: true,
+    },
+    {
+      name: 'spin 40',
+      kind: 'turning',
+      codeOf: (i) => codeAt(0, y, 5 * phase(i)),
+      cameraWalks: true,
+    },
+    {
+      name: 'out 40',
+      kind: 'turning',
+      codeOf: (i) => codeAt(0, y + 5 * phase(i), 0),
+      cameraWalks: true,
+    },
+  ];
+  return [
+    [still, [1, 2, 3]],
+    ...turns.map((t): [Scene, number[]] => [t, [1, 2]]),
+  ];
+}
+
+/** Render every scene of every cell and keep each detection's turn signal. */
+async function renderCases(cells: readonly RuleCell[]): Promise<RuleCase[]> {
+  const jobs = cells.flatMap((cell) =>
+    scenesOf(cell).flatMap(([scene, seeds]) =>
+      seeds.map((seed) => ({ cell, scene, seed }))
+    )
+  );
+  const cases: RuleCase[] = [];
+  for (const { cell, scene, seed } of jobs) {
+    const steps = await render(scene, {
+      seed,
+      noiseSigma: cell.noiseSigma,
+      slam: cell.slam,
+      distanceM: cell.distanceM,
+      ...(cell.cornerJitterPx ? { cornerJitterPx: cell.cornerJitterPx } : {}),
+    });
+    cases.push({
+      label: `${cell.label} | ${scene.name}`,
+      kind: scene.kind === 'still' ? 'still' : 'turn',
+      signals: prefixes(steps).map((e) =>
+        e ? measureQrMotion(e).newestFitPx : null
+      ),
+    });
+  }
+  return cases;
+}
+
+/** Transitions into "turning". */
+const onsets = (states: readonly boolean[]) =>
+  states.filter((t, i) => i > 0 && t && !states[i - 1]).length;
+
+/** Detections from the motion's start to confirmation, or null if missed. */
+function turnDelay(states: readonly boolean[]): number | null {
+  const first = states.findIndex((t, i) => t && i >= MOTION_START);
+  return first < 0 || first >= MOTION_START + MOTION_STEPS
+    ? null
+    : first - MOTION_START + 1;
+}
+
+function scoreRule(cases: readonly RuleCase[], rule: TurnRule): string {
+  let falseConfirms = 0;
+  let stillFrames = 0;
+  const delays: number[] = [];
+  let turns = 0;
+  for (const k of cases) {
+    const states = replayTurning(k.signals, rule);
+    if (k.kind === 'still') {
+      stillFrames += k.signals.filter((s) => s !== null).length;
+      falseConfirms += onsets(states);
+      continue;
+    }
+    turns += 1;
+    const d = turnDelay(states);
+    if (d !== null) delays.push(d);
+  }
+  const perMin = (falseConfirms / (stillFrames / 8)) * 60;
+  return `${rule.name}: false turning ${falseConfirms} (${perMin.toFixed(2)}/min of still) | turns caught ${delays.length}/${turns}, delay p50/max ${pctile(delays, 0.5).toFixed(0)}/${Math.max(...delays)} det`;
+}
+
+/** Where a rule's false confirmations come from, per still cell. */
+function byCellLine(cases: readonly RuleCase[], rule: TurnRule): string {
+  const byCell = new Map<string, number>();
+  for (const k of cases.filter((c) => c.kind === 'still')) {
+    byCell.set(
+      k.label,
+      (byCell.get(k.label) ?? 0) + onsets(replayTurning(k.signals, rule))
+    );
+  }
+  const hits = [...byCell]
+    .filter(([, n]) => n > 0)
+    .map(([l, n]) => `${l}: ${n}`);
+  return `  ${rule.name} false turning by cell: ${hits.join('; ') || 'none'}`;
+}
+
+/** False turning per minute of still, turns caught and delays, per rule. */
+function ruleReport(cases: readonly RuleCase[]): string[] {
+  return [
+    ...TURN_RULES.map((rule) => scoreRule(cases, rule)),
+    ...[TURN_RULES[0]!, TURN_RULES[1]!, TURN_RULES[4]!].map((rule) =>
+      byCellLine(cases, rule)
+    ),
+  ];
+}
+
+const SLAM_MEDIUM: SlamNoise = { rotationDeg: 0.2, translationM: 0.005 };
+const SLAM_HEAVY: SlamNoise = { rotationDeg: 0.5, translationM: 0.01 };
+
+describe.runIf(RUN)(
+  'QR motion: turning rules compared (opt-in, plan §47)',
+  () => {
+    it(
+      'reports false confirmations on still codes and delays on turns',
+      async () => {
+        const conditions = [
+          { name: 'px 4 + SLAM 0.2/5', noiseSigma: 4, slam: SLAM_MEDIUM },
+          { name: 'px 8 + SLAM 0.5/10', noiseSigma: 8, slam: SLAM_HEAVY },
+        ];
+        const cells: RuleCell[] = conditions.flatMap((c) =>
+          [0.4, 0.8, 1.2].flatMap((distanceM) =>
+            [5, 30].map((yaw) => ({
+              label: `${c.name} | ${distanceM} m | yaw ${yaw}`,
+              noiseSigma: c.noiseSigma,
+              slam: c.slam,
+              distanceM,
+              yaw,
+              withTurns: yaw === 5,
+            }))
+          )
+        );
+        const out = ruleReport(await renderCases(cells));
+        console.log(out.join(String.fromCharCode(10)));
+        expect(out.length).toBeGreaterThan(0);
+      },
+      SWEEP_TIMEOUT_MS
+    );
+  }
+);
+
+describe.runIf(RUN)(
+  'QR motion: turning rules under corner jitter (opt-in, plan §48)',
+  () => {
+    // The renderer does not reproduce r735 A's noisy run (§48): add Gaussian
+    // jitter to the decoded corners (its single-frame reprojection doubled)
+    // and compare the rules again, still codes and turns alike.
+    it(
+      'reports false confirmations and delays with 1.5 and 3 px of corner jitter',
+      async () => {
+        const out: string[] = [];
+        for (const cornerJitterPx of [1.5, 3]) {
+          const cells: RuleCell[] = [0.4, 1.2].map((distanceM) => ({
+            label: `jitter ${cornerJitterPx} | ${distanceM} m`,
+            noiseSigma: 4,
+            slam: SLAM_MEDIUM,
+            distanceM,
+            yaw: 5,
+            cornerJitterPx,
+            withTurns: true,
+          }));
+          out.push(
+            `== corner jitter ${cornerJitterPx} px`,
+            ...ruleReport(await renderCases(cells))
+          );
+        }
+        console.log(out.join(String.fromCharCode(10)));
+        expect(out.length).toBeGreaterThan(0);
+      },
+      SWEEP_TIMEOUT_MS
+    );
+  }
+);
