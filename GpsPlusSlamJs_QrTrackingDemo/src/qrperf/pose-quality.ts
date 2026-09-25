@@ -49,7 +49,7 @@ export interface PoseQualitySummary {
   jumpDeg: { p50: number; p95: number; max: number };
   /** Fraction of pairs whose orientation jumped by more than 3 / 5 / 10 deg. */
   jumpShare: { over3: number; over5: number; over10: number };
-  /** Pairs over 60 deg: corner-order snaps, not pose noise. */
+  /** Pairs over 60 deg in the window (`bigJumps` counts since start). */
   jumpsOver60: number;
   /** Largest corner displacement between consecutive same-code frames while
    *  the camera stayed within the gate (strict: 2 mm / 0.1 deg; loose: 5 mm /
@@ -65,13 +65,15 @@ export interface PoseQualitySummary {
   orderSources: Record<CornerOrderSource | "unknown", number>;
   /**
    * The jumps over 60 deg since start, split by whether the code's normal
-   * survived: `relabel` (a roll about the normal - a corner-order flip)
-   * or `normalChange` (the planar solve's two-fold ambiguity or a real
-   * turn); `sources` counts the order sources on both sides of each, as
+   * survived: `relabel` (a roll about the normal near 90 or 180 deg - a
+   * corner-order flip), `otherRoll` (a roll about the normal that no
+   * relabel explains: a fast real roll) or `normalChange` (the planar
+   * solve's two-fold ambiguity or a real turn); `sources` counts the order sources on both sides of each, as
    * "before>after". A flip episode that returns is two jumps.
    */
   bigJumps: {
     relabel: number;
+    otherRoll: number;
     normalChange: number;
     sources: Record<string, number>;
   };
@@ -126,6 +128,16 @@ export function normalElevationDeg(q: Quat): number {
  * than this count as "survived".
  */
 const NORMAL_SURVIVES_DEG = 30;
+/** A relabel rolls by 90 or 180 deg; a roll this close to one counts. */
+const RELABEL_TOLERANCE_DEG = 15;
+
+/** A roll of `deg` (0-180) about the normal is a corner relabel. */
+function isRelabelRoll(deg: number): boolean {
+  return (
+    Math.abs(deg - 90) <= RELABEL_TOLERANCE_DEG ||
+    deg >= 180 - RELABEL_TOLERANCE_DEG
+  );
+}
 
 /** The code's printed-face normal (its +z) in the world. */
 function faceNormal(q: Quat): Vec3 {
@@ -176,6 +188,7 @@ export function createPoseQuality(options: PoseQualityOptions = {}): {
   const orderSources = { finder: 0, memory: 0, native: 0, unknown: 0 };
   const bigJumps = {
     relabel: 0,
+    otherRoll: 0,
     normalChange: 0,
     sources: {} as Record<string, number>,
   };
@@ -192,7 +205,7 @@ export function createPoseQuality(options: PoseQualityOptions = {}): {
     // A relabelled corner is not a moved corner: keep order changes out of
     // the jitter.
     if (jump > ORDER_CHANGE_DEG) {
-      addBigJump(prev, cur);
+      addBigJump(prev, cur, jump);
       return;
     }
     const movedM = Math.hypot(
@@ -208,13 +221,19 @@ export function createPoseQuality(options: PoseQualityOptions = {}): {
     }
   }
 
-  function addBigJump(prev: PoseQualitySample, cur: PoseQualitySample): void {
+  function addBigJump(
+    prev: PoseQualitySample,
+    cur: PoseQualitySample,
+    jumpDeg: number,
+  ): void {
     const normalDeg = angleBetweenDeg(
       faceNormal(prev.qrRotationWorld),
       faceNormal(cur.qrRotationWorld),
     );
-    if (normalDeg < NORMAL_SURVIVES_DEG) bigJumps.relabel += 1;
-    else bigJumps.normalChange += 1;
+    // With the normal kept, the jump is (nearly) the roll about it.
+    if (normalDeg >= NORMAL_SURVIVES_DEG) bigJumps.normalChange += 1;
+    else if (isRelabelRoll(jumpDeg)) bigJumps.relabel += 1;
+    else bigJumps.otherRoll += 1;
     const key = `${prev.orderSource ?? "unknown"}>${cur.orderSource ?? "unknown"}`;
     bigJumps.sources[key] = (bigJumps.sources[key] ?? 0) + 1;
   }

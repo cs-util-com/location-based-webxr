@@ -273,6 +273,21 @@ describe("pose quality: corner-order sources and big jumps (plan §39 F0b)", () 
     });
   });
 
+  // Milestone review 2026-09-25 #6: a relabel rolls the code by a
+  // multiple of 90 deg; a 70 deg roll about the normal is a fast real roll
+  // (or noise), and calling it a flip overstated the flips left.
+  it("calls a roll about the normal a relabel only near 90 or 180 deg", () => {
+    const q = createPoseQuality();
+    q.add(sample());
+    q.add(sample({ qrRotationWorld: axisAngle([0, 0, 1], 70), atMs: 100 }));
+    q.add(sample({ qrRotationWorld: axisAngle([0, 0, 1], 250), atMs: 200 }));
+    expect(q.summary().bigJumps).toMatchObject({
+      relabel: 1,
+      otherRoll: 1,
+      normalChange: 0,
+    });
+  });
+
   it("records the order sources on both sides of each big jump", () => {
     const q = createPoseQuality();
     q.add(sample({ orderSource: "finder" }));

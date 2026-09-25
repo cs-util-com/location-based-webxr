@@ -225,8 +225,11 @@ export function createMotionTally(): {
       counts.n += 1;
       counts[MODE_KEYS[m.state]] += 1;
       const isStill = m.state === "still";
-      runs.moving.add(m.movingCandidate, isStill);
-      runs.turning.add(m.turningCandidate, isStill);
+      // No signal, no step: the detector skips such a reading too.
+      if (m.offsetM !== null) {
+        runs.moving.add(m.movingCandidate, isStill);
+        runs.turning.add(m.turningCandidate, isStill);
+      }
       if (isStill) addStillSignals(m);
       else addMotionSignals(m);
     },

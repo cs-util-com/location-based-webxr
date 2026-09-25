@@ -228,7 +228,7 @@ function orderLine(q: PoseQualitySummary): string {
   const pairs = Object.entries(b.sources)
     .map(([k, n]) => `${k} ${n}`)
     .join(", ");
-  return `corner order: finder ${o.finder} | memory ${o.memory} | native ${o.native} | unknown ${o.unknown} || big jumps: relabel ${b.relabel}, normal change ${b.normalChange}${pairs ? ` (${pairs})` : ""}`;
+  return `corner order: finder ${o.finder} | memory ${o.memory} | native ${o.native} | unknown ${o.unknown} || big jumps: relabel ${b.relabel}, other roll ${b.otherRoll}, normal change ${b.normalChange}${pairs ? ` (${pairs})` : ""}`;
 }
 
 /** The pose-quality lines (QR near-frontal pose plan 2026-09-23-2314, M1). */

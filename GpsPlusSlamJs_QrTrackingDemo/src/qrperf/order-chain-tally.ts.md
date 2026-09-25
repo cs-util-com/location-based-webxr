@@ -6,9 +6,12 @@ The `?qrperf` tally of the framework's chained corner order (QR near-frontal
 pose plan 2026-09-23-2314, §42 S4). The chain carries a code's corner order
 from frame to frame when the finder patterns cannot be read; a chained frame
 is labelled `memory` whether its order is right or wrong, so the native
-share alone cannot tell whether the chain works. The audit can: on every
-finder frame the canonicaliser reports what the live chain would have
-picked.
+share alone cannot tell whether the chain works. The audit can: on a
+finder frame that follows a chained one, the canonicaliser reports what the
+chain would have picked (finder-to-finder steps are not audited since the
+milestone review of 2026-09-25, #2 - they were never the chain's). The
+audit is counted per hit; `?qrperf`'s `orderSources` count per accepted
+solve, so the two totals differ.
 
 ## Public API
 

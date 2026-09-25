@@ -225,6 +225,26 @@ describe("createFusedTally for the phone repeat (plan §30)", () => {
     });
   });
 
+  // Milestone review 2026-09-25 #8: the detector takes no step on a
+  // reading without a signal (`offsetM` null), so a run of 4 candidates
+  // with one such reading inside still confirms; ending the run there made
+  // the tally report two short runs the rule never saw.
+  it("skips a no-signal reading inside a run, as the detector does", () => {
+    const t = createFusedTally();
+    t.add(reading({ movingCandidate: true }), 0);
+    t.add(reading({ movingCandidate: true }), 100);
+    t.add(reading({ offsetM: null, newestFitPx: null }), 200);
+    t.add(reading({ movingCandidate: true }), 300);
+    t.add(reading({ movingCandidate: true }), 400);
+    t.add(reading({}), 500);
+    expect(t.summary().motion.candidateRuns.moving).toEqual({
+      r1: 0,
+      r2: 0,
+      r3: 0,
+      r4plus: 1,
+    });
+  });
+
   // Each confirmed switch, with when it happened and the size state then:
   // a "moving" right after the code is first seen, while the size is
   // still being measured, is the size-convergence risk (plan §28 #4).

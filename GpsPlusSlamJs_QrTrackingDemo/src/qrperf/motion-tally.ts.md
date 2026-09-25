@@ -27,7 +27,9 @@ instead of 4, and does the converging size estimate read as motion. Fed by
       consecutive candidates that BEGAN while the mode was still, by length.
       A run of 2 or 3 would have flipped a 2- or 3-detection rule; 4+ is
       what the current rule confirms. A run is counted when it ends, at a
-      frame change, or as it stands at the summary;
+      frame change, or as it stands at the summary; a reading without a
+      signal (`offsetM` null) neither extends nor ends it, as in the
+      detector (milestone review 2026-09-25 #8);
     - `switchLog` `{ log, dropped }`: the first 60 confirmed switches, each
       `{ from, to, sinceFirstMs, sinceEpochMs, sizeStatus, sizeCm, offsetCm,
 turnSignalPx, speedCmS, turnRateDegS }` (cm values rounded to 0.01),
