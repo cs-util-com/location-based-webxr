@@ -4,12 +4,15 @@
   Pure, so it is unit-testable; the 3D look-dev page depends on it to load
   the framework's TypeScript source (plan 2026-09-23-0048 §4.1).
 - Public API:
+  - A route is `{ prefix, dir, typescript, copyAll?, notice? }`. `copyAll`
+    and `notice` matter only to the deploy (`build-lookdev.mjs.md`).
   - `resolveRequest(pathname, { packageRoot, routes })` →
     `{ kind: "file", file, typescript }` or `{ kind: "forbidden" }`.
     `routes` are `{ prefix, dir, typescript }`; a `typescript` route maps
     `<prefix><p>.js` to `<dir>/<p>.ts`. A trailing `/` gets `index.html`.
   - `contentType(file, typescript)` — stripped TypeScript and `.js`/`.mjs`
-    are `text/javascript`; unknown extensions are octet-stream.
+    are `text/javascript`; `.jpg`/`.jpeg`/`.webp` are images (the globe's
+    imagery); unknown extensions are octet-stream.
 - Invariants & assumptions:
   - The server binds every interface, so containment is the point: the
     path is decoded once, any `..` segment or NUL byte is refused, and the

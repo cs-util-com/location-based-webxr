@@ -24,12 +24,19 @@ const TYPES = {
   ".mjs": "text/javascript; charset=utf-8",
   ".md": "text/plain; charset=utf-8",
   ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
   ".svg": "image/svg+xml",
   ".json": "application/json",
 };
 
 /**
- * @typedef {{ prefix: string, dir: string, typescript: boolean }} Route
+ * @typedef {{ prefix: string, dir: string, typescript: boolean, copyAll?: boolean, notice?: string }} Route
+ *   `copyAll`: the deploy copies the whole directory (runtime assets that are
+ *   fetched, which no import crawl can see) when any page references it.
+ *   `notice`: a file (e.g. LICENSE) the deploy ships beside anything it
+ *   emits from this route.
  * @typedef {{ kind: "file", file: string, typescript: boolean } | { kind: "forbidden" }} Resolution
  */
 

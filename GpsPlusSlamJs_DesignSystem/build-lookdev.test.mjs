@@ -189,3 +189,91 @@ describe("buildLookdev", () => {
     assert.match(read("index.html"), /3d\//);
   });
 });
+
+// WHY (globe plan 2026-09-26-0539 §7.1, W7 M0): the globe lab serves a new
+// package's source, its vendored library and its imagery through new routes.
+// Three things a crawl alone cannot do, each a blank or broken phone page if
+// missed: rebase EVERY route's prefix (not a hard-coded list), copy runtime
+// assets that are fetched rather than imported, and ship a library's
+// LICENSE beside its chunks (Apache-2.0 §4(a): the chunks carry no header).
+describe("buildLookdev with custom routes", () => {
+  let root;
+  let extra;
+  let assets;
+  let unused;
+  let lib;
+  let out;
+  let files;
+  const BYTES = Buffer.from(Array.from({ length: 256 }, (_, i) => i));
+  before(() => {
+    root = fixture({
+      "labs/globe/index.html":
+        "<title>Globe lab</title>" +
+        '<script type="importmap">{"imports":{"lib":"/vendor/lib/index.js"}}</script>' +
+        '<script type="module" src="./globe.js"></script>',
+      "labs/globe/globe.js":
+        'import "/extra/helper.js";\nimport "lib";\n' +
+        'export const TILE = "/assets/tiles/0/0.jpg";\n',
+    });
+    extra = fixture({ "helper.js": 'export const H = "/extra/data.json";\n' });
+    assets = fixture({ "README.md": "provenance" });
+    mkdirSync(join(assets, "tiles", "0"), { recursive: true });
+    writeFileSync(join(assets, "tiles", "0", "0.jpg"), BYTES);
+    unused = fixture({ "big.bin": "never referenced" });
+    lib = fixture({
+      "index.js": 'import "./chunk-a1b2.js";\n',
+      "chunk-a1b2.js": "export {};\n",
+      LICENSE: "Apache License 2.0",
+    });
+    out = mkdtempSync(join(tmpdir(), "lookdev-routes-"));
+    files = buildLookdev({
+      outDir: out,
+      base: "/lookdev/",
+      packageRoot: root,
+      routes: [
+        { prefix: "/extra/", dir: extra, typescript: false },
+        { prefix: "/assets/", dir: assets, typescript: false, copyAll: true },
+        { prefix: "/unused/", dir: unused, typescript: false, copyAll: true },
+        {
+          prefix: "/vendor/lib/",
+          dir: lib,
+          typescript: false,
+          notice: "LICENSE",
+        },
+      ],
+    });
+  });
+  after(() => {
+    for (const dir of [root, extra, assets, unused, lib, out]) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  const read = (rel) => readFileSync(join(out, rel), "utf8");
+
+  it("rebases every route's prefix, not only the built-in ones", () => {
+    assert.match(read("labs/globe/globe.js"), /"\/lookdev\/extra\/helper\.js"/);
+    assert.match(read("labs/globe/globe.js"), /"\/lookdev\/assets\/tiles/);
+    assert.match(read("extra/helper.js"), /"\/lookdev\/extra\/data\.json"/);
+    assert.match(read("labs/globe/index.html"), /"\/lookdev\/vendor\/lib\//);
+    for (const rel of files.filter((f) => /\.(js|html)$/.test(f))) {
+      assert.doesNotMatch(read(rel), /["']\/(extra|assets|vendor)\//, rel);
+    }
+  });
+
+  it("copies a copyAll route that is referenced, byte for byte", () => {
+    assert.ok(files.includes("assets/tiles/0/0.jpg"));
+    assert.ok(files.includes("assets/README.md"));
+    assert.deepEqual(readFileSync(join(out, "assets/tiles/0/0.jpg")), BYTES);
+  });
+
+  it("copies nothing from a copyAll route nobody references", () => {
+    assert.ok(!files.some((f) => f.startsWith("unused/")));
+  });
+
+  it("ships a route's notice file beside the chunks it emitted", () => {
+    assert.ok(files.includes("vendor/lib/chunk-a1b2.js"));
+    assert.ok(files.includes("vendor/lib/LICENSE"));
+    assert.equal(read("vendor/lib/LICENSE"), "Apache License 2.0");
+  });
+});

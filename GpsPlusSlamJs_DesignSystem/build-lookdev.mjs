@@ -8,8 +8,12 @@
  * from its module script, strips TypeScript with Node's built-in stripper,
  * and writes each module to the path the browser will request, so the
  * deployed page is file-for-file the page `pnpm run serve` shows. The only
- * rewrite is the base: the page uses absolute `/fw/`, `/osm/` and
- * `/vendor/` specifiers, which move under `base` (e.g. `/lookdev/fw/`).
+ * rewrite is the base: the page uses absolute route prefixes (`/fw/`,
+ * `/osm/`, `/vendor/`, one per route in the table), which move under
+ * `base` (e.g. `/lookdev/fw/`). Two things a crawl cannot see are added
+ * after it: a `copyAll` route's whole directory when a page references it
+ * (runtime assets that are fetched, not imported), and a route's `notice`
+ * file beside anything emitted from it (a library's LICENSE).
  *
  * Output layout mirrors the package: `<outDir>/3d/index.html`,
  * `<outDir>/design.css`, `<outDir>/fw/…`, `<outDir>/osm/…`,
@@ -24,6 +28,7 @@
  * paths (relative to `outDir`).
  */
 import {
+  copyFileSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -100,21 +105,50 @@ function resolveSpecifier(specifier, fromUrl, imports) {
   throw new Error(`cannot resolve "${specifier}" imported by ${fromUrl}`);
 }
 
-/** Move the page's absolute prefixes under the deploy base. */
-function rebase(text, base) {
-  return text.replace(/(["'])\/(fw|osm|vendor)\//g, `$1${base}$2/`);
+/**
+ * The rewrite that moves the page's absolute route prefixes under the deploy
+ * base. The prefixes come from the ROUTE TABLE (their first path segment),
+ * so a new route is rebased without a second list to keep in step.
+ */
+function rebaser(routes) {
+  const heads = [
+    ...new Set(routes.map((r) => r.prefix.split("/").filter(Boolean)[0])),
+  ]
+    .sort((a, b) => b.length - a.length)
+    .map((h) => h.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const pattern = new RegExp(`(["'])\\/(${heads.join("|")})\\/`, "g");
+  return (text, base) => text.replace(pattern, `$1${base}$2/`);
+}
+
+/** Every file under `dir`, as posix paths relative to it; links skipped. */
+function walk(dir, rel = "") {
+  const out = [];
+  for (const entry of readdirSync(join(dir, rel), { withFileTypes: true })) {
+    if (entry.isSymbolicLink()) continue;
+    const path = rel ? `${rel}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) out.push(...walk(dir, path));
+    else if (entry.isFile()) out.push(path);
+  }
+  return out;
 }
 
 /**
- * @param {{ outDir: string, base: string, packageRoot?: string }} options
- *   `packageRoot` defaults to this package (tests pass a fixture).
+ * @param {{ outDir: string, base: string, packageRoot?: string,
+ *   routes?: import("./serve-routes.mjs").Route[] }} options
+ *   `packageRoot` defaults to this package and `routes` to the dev server's
+ *   table (tests pass fixtures).
  * @returns {string[]} written paths, relative to `outDir`
  */
-export function buildLookdev({ outDir, base, packageRoot = here }) {
+export function buildLookdev({
+  outDir,
+  base,
+  packageRoot = here,
+  routes = defaultRoutes(repo),
+}) {
   if (!base.startsWith("/") || !base.endsWith("/")) {
     throw new Error(`base must start and end with "/", got ${base}`);
   }
-  const routes = defaultRoutes(repo);
+  const rebase = rebaser(routes);
   const load = (url) => {
     const target = resolveRequest(url, { packageRoot, routes });
     if (target.kind !== "file") throw new Error(`refused to read ${url}`);
@@ -122,15 +156,26 @@ export function buildLookdev({ outDir, base, packageRoot = here }) {
     return target.typescript ? stripTypeScriptTypes(raw) : raw;
   };
   const written = [];
-  const emit = (url, text) => {
+  const emittedUrls = [];
+  /** The raw text of every page and module, for the asset references. */
+  const sources = [];
+  const target = (url) => {
     const file = join(outDir, ...url.replace(/^\//, "").split("/"));
     const rel = relative(outDir, file);
     if (rel.startsWith("..") || rel.includes(`..${sep}`)) {
       throw new Error(`refusing to write outside ${outDir}: ${url}`);
     }
     mkdirSync(dirname(file), { recursive: true });
-    writeFileSync(file, text);
+    emittedUrls.push(url);
     written.push(rel.split(sep).join("/"));
+    return file;
+  };
+  const emit = (url, text) => writeFileSync(target(url), text);
+  /** Binary-safe: runtime assets and notices are copied, never re-encoded. */
+  const copy = (url) => {
+    const source = resolveRequest(url, { packageRoot, routes });
+    if (source.kind !== "file") throw new Error(`refused to read ${url}`);
+    copyFileSync(source.file, target(url));
   };
 
   // One crawl over every page: a module or stylesheet shared by several
@@ -139,6 +184,7 @@ export function buildLookdev({ outDir, base, packageRoot = here }) {
   const pages = [];
   for (const entry of discoverEntries(packageRoot)) {
     const html = load(entry);
+    sources.push(html);
     const imports = readImportMap(html);
     emit(entry, rebase(html, base));
     pages.push({ entry, title: readTitle(html, entry) });
@@ -157,10 +203,30 @@ export function buildLookdev({ outDir, base, packageRoot = here }) {
       if (seen.has(url)) continue;
       seen.add(url);
       const text = load(url);
+      sources.push(text);
       for (const match of text.matchAll(SPECIFIER)) {
         queue.push(resolveSpecifier(match[1], url, imports));
       }
       emit(url, rebase(text, base));
+    }
+  }
+
+  // RUNTIME ASSETS AND NOTICES: a copyAll route is copied whole when any
+  // emitted page or module references its prefix (fetched tiles are invisible
+  // to the crawl); a notice ships beside anything emitted from its route.
+  const crawled = [...emittedUrls];
+  for (const route of routes) {
+    const used = crawled.some((u) => u.startsWith(route.prefix));
+    const referenced = used || sources.some((t) => t.includes(route.prefix));
+    if (route.copyAll && referenced) {
+      for (const rel of walk(route.dir)) {
+        const url = route.prefix + rel;
+        if (!emittedUrls.includes(url)) copy(url);
+      }
+    }
+    if (route.notice && used) {
+      const url = route.prefix + route.notice;
+      if (!emittedUrls.includes(url)) copy(url);
     }
   }
 

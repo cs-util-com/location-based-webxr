@@ -4,10 +4,11 @@
   so a PR preview (`https://<branch>-gps-plus-slam.csutil.workers.dev/lookdev/`)
   can be opened on a phone (plan 2026-09-23-0048, DEC-SKY-2).
 - Public API:
-  - `buildLookdev({ outDir, base, packageRoot? })` → the written paths
-    relative to `outDir`. `base` must start and end with `/` (e.g.
-    `/lookdev/`). `packageRoot` defaults to this package (tests pass a
-    fixture). Called by the workspace's `scripts/build-site.mjs`.
+  - `buildLookdev({ outDir, base, packageRoot?, routes? })` → the written
+    paths relative to `outDir`. `base` must start and end with `/` (e.g.
+    `/lookdev/`). `packageRoot` defaults to this package and `routes` to
+    `serve-routes.mjs`'s table (tests pass fixtures). Called by the
+    workspace's `scripts/build-site.mjs`.
   - `discoverEntries(packageRoot)` → the deployable pages as URL paths:
     `/3d/index.html` first (when present), then every
     `labs/<name>/index.html`, sorted.
@@ -21,8 +22,16 @@
     script, resolving relative, absolute and import-mapped ones, through
     `serve-routes.mjs`'s `defaultRoutes` (the SAME table the dev server
     uses), stripping TypeScript with `module.stripTypeScriptTypes`;
-  - rewrites the page's absolute `/fw/`, `/osm/`, `/vendor/` prefixes to sit
-    under `base`;
+  - rewrites the page's absolute route prefixes to sit under `base`; the
+    prefixes come from the route table (each route's first path segment),
+    so a new route needs no second list (W7 globe plan M0);
+  - copies a `copyAll` route's whole directory, binary-safe and without
+    following links, when an emitted page or module references its prefix
+    (fetched assets, e.g. imagery tiles, are invisible to the crawl); an
+    unreferenced `copyAll` route copies nothing;
+  - emits a route's `notice` file (e.g. `LICENSE`) whenever anything from
+    that route is emitted (Apache-2.0 §4(a) for vendored chunks without a
+    header);
   - writes an `index.html` that lists every page by its `<title>`, with
     relative links. It used to redirect to `3d/`, which would hide the labs.
   - A module or stylesheet shared by several pages is written once.
@@ -39,7 +48,9 @@
   - three comes from the framework's `node_modules/three`, so the deploy
     needs the workspace installed (CI runs `pnpm install` first).
 - Examples: `buildLookdev({ outDir: "dist-site/lookdev", base: "/lookdev/" })`.
-- Tests: `build-lookdev.test.mjs` (stage `test:unit`) builds the real page
+- Tests: `build-lookdev.test.mjs` (also, with fixture routes: every route's
+  prefix rebased, a referenced `copyAll` route copied byte for byte, an
+  unreferenced one not at all, a `notice` shipped beside its chunks), and (stage `test:unit`) builds the real page
   into a temp dir: page and styles present, three's graph and addons
   crawled, framework TypeScript emitted stripped, every prefix rebased,
   nothing outside the output, the index. With a temp fixture package:

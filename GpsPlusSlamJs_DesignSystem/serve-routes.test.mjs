@@ -97,6 +97,14 @@ describe("contentType", () => {
     assert.equal(contentType("a/b.ts", true), "text/javascript; charset=utf-8");
   });
 
+  // The globe's imagery (W7): an image served as octet-stream still decodes
+  // in an <img>, but a texture loader that sniffs the type may refuse it.
+  it("serves the globe's imagery as images", () => {
+    assert.equal(contentType("t/0.jpg", false), "image/jpeg");
+    assert.equal(contentType("t/0.jpeg", false), "image/jpeg");
+    assert.equal(contentType("t/0.webp", false), "image/webp");
+  });
+
   it("falls back to octet-stream for unknown extensions", () => {
     assert.equal(contentType("a/b.bin", false), "application/octet-stream");
   });
