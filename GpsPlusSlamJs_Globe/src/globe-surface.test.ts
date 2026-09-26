@@ -67,6 +67,16 @@ describe("createGlobeSurface", () => {
     const globe = createGlobeSurface(stubLoader());
     expect(globe.tiles.lruCache.maxBytesSize).toBe(GLOBE_SURFACE.cacheBytes);
     expect(GLOBE_SURFACE.cacheBytes).toBe(64 * 1024 * 1024);
+    // The library evicts only down to its FLOOR (default 0.3 GB): a floor
+    // above the cap means that once nothing is pending the cache never
+    // shrinks back under the cap (LRUCache.unloadUnusedContent).
+    expect(globe.tiles.lruCache.minBytesSize).toBe(
+      GLOBE_SURFACE.cacheFloorBytes,
+    );
+    expect(GLOBE_SURFACE.cacheFloorBytes).toBe(48 * 1024 * 1024);
+    expect(GLOBE_SURFACE.cacheFloorBytes).toBeLessThan(
+      GLOBE_SURFACE.cacheBytes,
+    );
     globe.dispose();
   });
 

@@ -45,6 +45,14 @@ export const GLOBE_SURFACE = {
    * it. A parameter to measure on the phone, not a decision.
    */
   cacheBytes: 64 * 1024 * 1024,
+  /**
+   * The floor the library evicts down to (its default is 0.3 GB). It must
+   * sit below the cap: the eviction pass trims towards the floor, so with
+   * the floor above the cap a full cache shrinks only while other tiles are
+   * pending, and once nothing is pending it stays over the cap
+   * (LRUCache.unloadUnusedContent, 0.5.3). 48 MiB, plan §7.2.
+   */
+  cacheFloorBytes: 48 * 1024 * 1024,
 } as const;
 
 /** The renderer's runtime counters and cache size (not in its typings). */
@@ -222,6 +230,7 @@ export function createGlobeSurface(
   const tiles = new TilesRenderer();
   tiles.registerPlugin(plugin);
   tiles.lruCache.maxBytesSize = GLOBE_SURFACE.cacheBytes;
+  tiles.lruCache.minBytesSize = GLOBE_SURFACE.cacheFloorBytes;
   const runtime = tiles as unknown as TilesRuntime;
   let mapsLoaded = 0;
   let mapErrors = 0;

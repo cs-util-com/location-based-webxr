@@ -11,7 +11,10 @@
   - `GLOBE_SURFACE` - the overlay projection, levels and imagery URL, taken
     from the registry, and `cacheBytes` (64 MiB), the tile cache's budget
     (the library's `lruCache.maxBytesSize`; about 90 level-3 tiles are
-    ~31 MB, to be measured on the phone).
+    ~31 MB, to be measured on the phone), and `cacheFloorBytes` (48 MiB),
+    the floor the library evicts down to. The floor must sit below the cap:
+    the library's default floor (0.3 GB) left a full cache over the cap
+    whenever nothing was pending.
   - `createGlobeSurface(loader?)` returns `{ tiles, group, plugin, overlay,
 options, sun, surfaceUniforms, setSun(directionEcef), update(camera,
 renderer), state(), activeSources(), dispose() }`.
