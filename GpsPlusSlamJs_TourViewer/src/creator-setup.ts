@@ -456,10 +456,13 @@ export function wireCreatorSetup(deps: {
       dom.mintButton.disabled = true;
       return;
     }
+    // evaluate, not last: a cache hit unless the detections changed - and
+    // after a tracking restart the old frame's result must not stand
+    // (milestone review of b4b #1).
     const fused =
       ctx.lastDetectedText === null
         ? null
-        : (ctx.fusedPose?.last(ctx.lastDetectedText) ?? null);
+        : (ctx.fusedPose?.evaluate(ctx.lastDetectedText) ?? null);
     const readout = authorStatusLine(
       ctx.lastDetectedText,
       fused,
@@ -855,8 +858,9 @@ export function wireCreatorSetup(deps: {
   dom.mintButton.addEventListener("click", () => {
     if (ctx.lastDetectedText === null) return;
     const state = arStore.getState();
-    // The result the readout showed (evaluated after the last detection).
-    const fused = ctx.fusedPose?.last(ctx.lastDetectedText) ?? null;
+    // The readout's result, re-read so a tracking restart since then counts
+    // (a cache hit otherwise; milestone review of b4b #1).
+    const fused = ctx.fusedPose?.evaluate(ctx.lastDetectedText) ?? null;
     const stablePose = fused?.status === "stable" ? fused.pose : null;
     if (stablePose === null) return; // the gate lost stability since render
     const result = mintQrLevel({

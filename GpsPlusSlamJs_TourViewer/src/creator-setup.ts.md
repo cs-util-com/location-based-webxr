@@ -254,7 +254,10 @@ and reads the produced zip back in node, including a placed pin and a
 captured photo (their records and the photo's bytes), the refused pin
 without a surface, the dismissed-picker branch and the identity-hole
 re-entry. `fused-pose-wiring.test.ts` pins that the readout and the mint
-use the fused pose, evaluated after every detection (plan §60-§61). The
+use the fused pose, evaluated after every detection and re-read (a cache
+hit) by the readout and the mint - so a tracking restart since the last
+detection withdraws the pose instead of minting the old frame's (plan
+§60-§61; milestone review of b4b #1). The
 pure pieces are unit-tested in
 `qr-author-mode.test.ts` (`authorStatusLine`, `setupHint`,
 `finishReadiness`) and `tour-session.test.ts` (`archiveFileName`,

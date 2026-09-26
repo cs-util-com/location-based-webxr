@@ -188,7 +188,9 @@ export function createViewerPlacement(deps: {
     // rotation over its recent detections, gated on their agreement. One
     // source per pipeline start, i.e. per AR session (§61 #9); each code's
     // tracker takes its level's printed size (§61 #8 - resolved before the
-    // code's first lock).
+    // code's first lock). Inert today: every TourViewer entry carries a raw
+    // pose, which gives the position, and the rotation is size-free - the
+    // size matters only for entries without one (milestone review of b4b #6).
     const fusedPose = createFusedQrPoseSource({
       entriesOf: (text) => selectQrFusedEntries(arStore.getState(), text),
       optionsFor: (text) => {
@@ -197,6 +199,10 @@ export function createViewerPlacement(deps: {
       },
     });
     ctx.fusedPose = fusedPose;
+    // This session's pipeline is live while its source is the session's: the
+    // level lookup runs its callbacks inside the fetch the controller awaits,
+    // before the controller's dispose guard (milestone review of b4b #3).
+    const live = (): boolean => ctx.fusedPose === fusedPose;
     ctx.qrController = createQrTrackingController(
       buildViewerControllerConfig({
         frontEnd,
@@ -234,6 +240,7 @@ export function createViewerPlacement(deps: {
           );
         },
         onLevelResolved: (text, level) => {
+          if (!live()) return;
           ctx.levelByText.set(text, level);
         },
         onLocked: (level) => {
@@ -249,10 +256,12 @@ export function createViewerPlacement(deps: {
           hooks.renderArStatus();
         },
         onUnknownCode: (code) => {
+          if (!live()) return;
           ctx.viewerUnknownCode = code;
           hooks.renderArStatus();
         },
         onUnusableLevel: (code) => {
+          if (!live()) return;
           ctx.viewerUnusableCode = code;
           hooks.renderArStatus();
         },

@@ -34,7 +34,7 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   what is missing, including the fix count. Since QR near-frontal pose plan
   §60 it reads the FUSED pose: while it is not stable the line names what it
   waits for, in plain words per `notStableReason` ("walk slowly around the
-  code", "keep moving slowly", "the views disagree", "hold the code still",
+  code", "keep moving slowly", "the views disagree", "the code seemed to move, keep it in view",
   "code not read clearly, move closer"), never the view threshold and never
   "hold steady" - moving the camera is what resolves the tilt (§61 #11). The copy is the creator
   setup's guidance since the guided-setup plan M3 ("Hold the phone on the

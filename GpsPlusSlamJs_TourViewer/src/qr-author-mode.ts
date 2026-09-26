@@ -150,7 +150,7 @@ export function authorStatusLine(
 /**
  * What the fused pose is waiting for, in plain words (QR near-frontal pose
  * plan §61 #11). Never "hold steady": moving the CAMERA around the code is
- * what resolves its tilt; only a moving CODE must be held still.
+ * what resolves its tilt.
  */
 function waitingFor(reason: QrFusedPose["notStableReason"]): string {
   switch (reason) {
@@ -159,7 +159,9 @@ function waitingFor(reason: QrFusedPose["notStableReason"]): string {
     case "fallback":
       return "the views disagree, keep going.";
     case "motion":
-      return "hold the code still.";
+      // A wall code cannot be held; there this is mostly a false "turning"
+      // from a relabelled frame (milestone review of b4b #11).
+      return "the code seemed to move, keep it in view.";
     case "order":
       return "code not read clearly, move closer.";
     default:

@@ -9,7 +9,7 @@
  * around it - all within the old average's 12 deg inlier cone, but beyond
  * its 5 deg spread gate - so the old pipeline never goes stable and the
  * fused one does, at the true rotation. A pipeline still on
- * the average fails every test below.
+ * the average fails the stable-pose tests below.
  */
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -30,6 +30,7 @@ import {
   createUnwiredHooks,
 } from "./tour-viewer-session.js";
 import { createViewerPlacement } from "./viewer-placement.js";
+import { endQrPipeline } from "./tour-viewer-session.js";
 import { wireCreatorSetup, type CreatorSetupDom } from "./creator-setup.js";
 
 // The pipelines build their controller from this module; capture the config
@@ -138,8 +139,21 @@ describe("the viewer votes with the fused pose", () => {
       config.onDetection?.(event);
       return config.resolveStablePose?.(TEXT) ?? null;
     };
-    return { ctx, arStore, placement, detect };
+    return { ctx, arStore, placement, config, detect };
   }
+
+  // Milestone review of b4b #3: the level lookup's callbacks run INSIDE the
+  // fetch the controller awaits, before its dispose guard; a lookup that
+  // finishes after the session ended must not pin "Code X has no level" or
+  // a level into the next session.
+  it("drops a level lookup that finishes after the session ended", async () => {
+    const v = viewer();
+    v.ctx.levelByText.clear();
+    endQrPipeline(v.ctx);
+    await v.config.fetchLevel("https://gps.csutil.com/tour/?qr=late");
+    expect(v.ctx.viewerUnknownCode).toBeNull();
+    expect(v.ctx.levelByText.size).toBe(0);
+  });
 
   it("resolves the stable pose at the true rotation, not the scattered single frames", () => {
     const v = viewer();
@@ -234,9 +248,22 @@ describe("the creator measures and mints with the fused pose", () => {
     const config = captured.configs.at(-1)!;
     return {
       dom,
+      arStore,
       detect: (i: number) => config.onDetection?.(fusedEvent(TEXT, i)),
     };
   }
+
+  // Milestone review of b4b #1: the readout and the mint read the fused
+  // result; a cached one survives a tracking restart, and minting from it
+  // would stamp the OLD frame's pose into the printed code.
+  it("does not mint the old frame's pose after a tracking restart", () => {
+    const c = creator();
+    for (let i = 0; i < 7; i++) c.detect(i);
+    c.arStore.dispatch(qrFrameChanged());
+    c.dom.mintButton.click();
+    expect(c.dom.status.textContent).not.toMatch(/no usable gps alignment/i);
+    expect(c.dom.status.textContent).not.toMatch(/pose stable/i);
+  });
 
   it("reads the fused pose as stable where the single frames scatter", () => {
     const c = creator();

@@ -21,6 +21,7 @@ import {
   setQrMaxHistory,
   qrFrameChanged,
   selectQrFusedEntries,
+  selectQrRawObservations,
   selectLatestQrDetection,
   selectQrMarker,
   selectQrSize,
@@ -642,6 +643,28 @@ describe('selectQrFusedEntries (M3b b3)', () => {
     const mapped = selectQrFusedEntries({ qrDetected: s2 }, 'A');
     expect(mapped[0]!.orderSource).toBe('native');
     expect('orderSource' in mapped[1]!).toBe(false);
+  });
+
+  // Milestone review of b4b #7: the recorder stores each detection's order
+  // source (b4b-2); the raw-observation reader a replay consumer uses must
+  // not drop it.
+  it('keeps the corner-order source in the raw observations', () => {
+    const s2 = qrDetectedReducer(
+      init(),
+      recordQrDetection({
+        text: 'A',
+        timestamp: 2,
+        corners,
+        cameraPose,
+        projectionMatrix,
+        imageWidth: 640,
+        imageHeight: 480,
+        orderSource: 'native',
+      })
+    );
+    expect(
+      selectQrRawObservations({ qrDetected: s2 }, 'A')[0]!.orderSource
+    ).toBe('native');
   });
 
   // Why this test matters (plan §16 #5): the fused tracker caches on the

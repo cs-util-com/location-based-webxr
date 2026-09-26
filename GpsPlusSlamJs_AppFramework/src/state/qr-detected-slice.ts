@@ -511,6 +511,7 @@ function toRawObservation(entry: QrDetectionEntry): RawQrObservation | null {
     imageWidth: entry.imageWidth,
     imageHeight: entry.imageHeight,
     timestamp: entry.timestamp,
+    ...(entry.orderSource ? { orderSource: entry.orderSource } : {}),
   };
 }
 

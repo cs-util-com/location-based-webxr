@@ -86,10 +86,14 @@
   changes for the TourViewer: after a tracking restart the old frame's
   detections stop counting (the entries are per frame epoch); the 3 cm
   translation-spread gate is gone (position agreement is policed by the
-  motion detector); the window is time-bounded (a 4 s gap); no vote while
-  the views' fit exceeds 1.5 px (about 30 % of locks on a wall code, plan
-  §32) or the code moves; the creator's status line names what the fused
-  pose waits for; a code's budget-spent locks are not evaluated.
+  motion detector); a gap of more than 4 s between two detections starts a
+  new window; no vote while the views' fit exceeds 1.5 px (2.25 px to stay
+  stable; about 30 % of locks on a wall code in one demo run, plan §32 -
+  provisional, it depends on `maxFitPx` and the capture resolution), while
+  the views disagree (fallback), while the code moves, or after 1 s of only
+  native-order frames; the creator's status line names what the fused
+  pose waits for; a code's budget-spent locks are not evaluated; a level
+  lookup that finishes after the session ended is dropped.
 - **Raw QR records carry the corner-order source** (QR near-frontal pose
   plan §60, b4b-2): `RawQrObservation.orderSource` (the thin producer) and
   `orderSource` on the tracking controller's raw callback; the recorder

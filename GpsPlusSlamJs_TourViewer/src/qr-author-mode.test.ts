@@ -175,7 +175,9 @@ describe("authorStatusLine", () => {
     );
     expect(line({ notStableReason: "fit" })).toMatch(/keep moving slowly/i);
     expect(line({ notStableReason: "fallback" })).toMatch(/views disagree/i);
-    expect(line({ notStableReason: "motion" })).toMatch(/hold the code still/i);
+    // A wall code the author cannot hold: "motion" there is mostly a false
+    // "turning" from a relabelled frame (milestone review of b4b #11).
+    expect(line({ notStableReason: "motion" })).toMatch(/seemed to move/i);
     expect(line({ notStableReason: "order" })).toMatch(/move closer/i);
     const unknown = authorStatusLine(
       "text",

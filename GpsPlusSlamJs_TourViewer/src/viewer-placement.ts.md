@@ -39,7 +39,13 @@ recording. Its own module since the flows plan M6.
   - `startViewerPipeline(): boolean` - creates the viewer tracking
     controller into `ctx.qrController` and the fused pose source into
     `ctx.fusedPose` (the votes' stable pose, each code at its level's
-    printed size; QR near-frontal pose plan §60) for THIS AR entry; false without a
+    printed size; QR near-frontal pose plan §60) for THIS AR entry. What
+    changed for visitors with it: no vote while the fused pose is not
+    stable - too few views, a fit above 1.5 px, views that disagree, a
+    moving code, 1 s of only native-order frames; after a tracking restart
+    the old frame's detections stop counting; a level lookup finishing
+    after the session ended is dropped (the pipeline's source is no longer
+    the session's); false without a
     detector (plain AR, still placing photos).
   - `tryPlaceTour(): void` - the placement trigger (DEC-F3): with a tour
     open and a viewer session live (`ctx.placementUnsubscribe !== null`),

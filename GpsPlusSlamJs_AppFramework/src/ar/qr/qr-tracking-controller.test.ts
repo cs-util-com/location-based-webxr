@@ -603,6 +603,33 @@ describe('createQrTrackingController isBusy', () => {
       expect(dispatched).toHaveLength(0);
     });
 
+    // Milestone review of b4b #2: a decode that REJECTS after dispose() never
+    // reaches the post-await guards; only the scheduler's own dispose keeps
+    // it from surfacing as "QR tracking failed" in the next session.
+    it('reports no error for a decode that rejects after dispose()', async () => {
+      const errors: unknown[] = [];
+      const statuses: QrTrackingStatus[] = [];
+      let rejectDetect: (e: unknown) => void = () => {};
+      const { controller } = setup({
+        onError: (e) => errors.push(e),
+        onStatus: (st) => statuses.push(st),
+        frontEnd: {
+          kind: 'barcode-detector',
+          detect: () =>
+            new Promise<QrDetection | null>(
+              (_r, reject) => (rejectDetect = reject)
+            ),
+        },
+      });
+      controller.offerFrame(frame);
+      const before = statuses.length;
+      controller.dispose();
+      rejectDetect(new Error('late'));
+      await flush();
+      expect(errors).toHaveLength(0);
+      expect(statuses).toHaveLength(before);
+    });
+
     it('records no raw detection for a decode that resolves after dispose()', async () => {
       const raws: unknown[] = [];
       const late = held<QrDetection | null>();
