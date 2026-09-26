@@ -37,7 +37,9 @@ recording. Its own module since the flows plan M6.
     to `ctx.contentError` (its own segment; the attempt stays latched,
     because the only throws there are deterministic constructors).
   - `startViewerPipeline(): boolean` - creates the viewer tracking
-    controller into `ctx.qrController` for THIS AR entry; false without a
+    controller into `ctx.qrController` and the fused pose source into
+    `ctx.fusedPose` (the votes' stable pose, each code at its level's
+    printed size; QR near-frontal pose plan §60) for THIS AR entry; false without a
     detector (plain AR, still placing photos).
   - `tryPlaceTour(): void` - the placement trigger (DEC-F3): with a tour
     open and a viewer session live (`ctx.placementUnsubscribe !== null`),
@@ -104,6 +106,10 @@ ctx.placementUnsubscribe = arStore.subscribe(() => viewer.tryPlaceTour());
 ```
 
 ## Tests
+
+`fused-pose-wiring.test.ts` - the votes' stable pose is the fused one (at
+the true rotation where single-frame poses scatter past the old average's
+gate), a restart empties it, and each pipeline start makes a new source.
 
 `playwright-tests/ar-mode.spec.js` - the capture-spots placement with no
 detection (forced `ready`), the refine-after-place lock, the ring for a

@@ -187,6 +187,26 @@ describe("buildViewerControllerConfig", () => {
     expect(config.resolveStablePose?.(TEXT)).toBe(stable);
   });
 
+  // Plan §61 #6: the controller asks for the stable pose BEFORE it knows
+  // the vote will be refused, and the fused pose costs ~10 ms per lock on
+  // the phone. Once a code's budget is spent it must not be evaluated.
+  it("stops asking for the stable pose once the code's vote budget is spent", () => {
+    const resolveStablePose = vi.fn(() => ({
+      position: [0, 0, 0] as [number, number, number],
+      rotation: [0, 0, 0, 1] as [number, number, number, number],
+    }));
+    const deps = fakeDeps({ resolveStablePose });
+    const config = buildViewerControllerConfig(deps);
+    for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) {
+      config.onDetection?.({ text: TEXT, timestamp: i } as QrDetectionEvent);
+      config.dispatchVotes([{ v: 1 }] as never[]);
+    }
+    resolveStablePose.mockClear();
+    expect(config.resolveStablePose?.(TEXT)).toBeNull();
+    expect(resolveStablePose).not.toHaveBeenCalled();
+    expect(config.resolveStablePose?.("another code")).not.toBeNull();
+  });
+
   it("reports the resolved level to the app's synchronous cache", async () => {
     // Why this matters: deriving a code's identity is async, but the debug
     // view and the image planes need the level synchronously. The one place

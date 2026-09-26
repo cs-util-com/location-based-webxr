@@ -77,6 +77,24 @@
   once it is still again only the views since then are fused. Until the
   motion is confirmed the stable pose can trail it for up to 3 detections.
   New option `sinceMs` on `selectFusedWindow` / `evaluateFusedQrPose`.
+- **The TourViewer votes and mints with the FUSED QR pose** (QR near-frontal
+  pose plan §60-§61, b4b-3) instead of the average of single-frame poses;
+  the owner switched without the replay measurement §23 had planned (no
+  usable recordings existed). New: `createFusedQrPoseSource` on `/ar/qr`
+  (and deep-importable), one fused tracker per code over the entries an app
+  reads - the QR demo's former local copy, now shared (DEC-H3). Behaviour
+  changes for the TourViewer: after a tracking restart the old frame's
+  detections stop counting (the entries are per frame epoch); the 3 cm
+  translation-spread gate is gone (position agreement is policed by the
+  motion detector); the window is time-bounded (a 4 s gap); no vote while
+  the views' fit exceeds 1.5 px (about 30 % of locks on a wall code, plan
+  §32) or the code moves; the creator's status line names what the fused
+  pose waits for; a code's budget-spent locks are not evaluated.
+- **Raw QR records carry the corner-order source** (QR near-frontal pose
+  plan §60, b4b-2): `RawQrObservation.orderSource` (the thin producer) and
+  `orderSource` on the tracking controller's raw callback; the recorder
+  stores it in both modes, so a replay can ignore native-order frames of an
+  ordered code. Recordings made before carry none.
 - **`dispose()` on the QR controllers and the detection scheduler** (QR
   near-frontal pose plan §61): `createQrTrackingController`,
   `createQrDetectionController` and `createDetectionScheduler` stop for

@@ -23,7 +23,7 @@ boot store + AR session + debug view + controller → per-frame
   line with the Δt since the previous lock (cadence/tuning aid), and status
   transitions are logged too.
 - **The overlay shows the FUSED pose** (QR near-frontal pose plan M3b b5):
-  `resolveStablePose` is `fused-pose-source.ts` - the joint rotation over the
+  `resolveStablePose` is the framework's `createFusedQrPoseSource` (`ar/qr/qr-fused-pose-source.ts`) - the joint rotation over the
   window of current-epoch detections, once its gate opens; the controller
   falls back to the raw frame pose until then (it read today's averaged
   stable pose before). `initAR` gets `onFrameChanged`, which dispatches
@@ -33,7 +33,7 @@ boot store + AR session + debug view + controller → per-frame
   render (cached) so a restart shows at once. With `?qrperf`, each lock's
   fused result is also tallied (`qrperf/fused-tally.ts`) with the code's size
   state then, and each NEW fused/motion evaluation is timed as the `fused`
-  stage through `fused-pose-source.ts`'s `onEvaluated` hook (plan §30).
+  stage through the framework's `createFusedQrPoseSource` (`ar/qr/qr-fused-pose-source.ts`)'s `onEvaluated` hook (plan §30).
 - The motion mode (plan §26): the HUD's motion row (`motionLabel`, coloured
   by `motionColor`) and a ~2 s trail of the active code's raw positions
   (`motion-trail.ts`, drawn by `motion-trail-view.ts` in the same colour).

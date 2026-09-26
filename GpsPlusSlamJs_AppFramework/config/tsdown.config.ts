@@ -309,6 +309,10 @@ const entryFiles = [
   // gate their dispatchVotes on it (DEC-H3), so it must be deep-importable.
   'src/ar/qr/qr-vote-budget.ts',
   'src/ar/qr/qr-tracking-controller.ts',
+  // The fused QR pose per code (QR near-frontal pose plan §60, b4b-3): the
+  // TourViewer votes and mints with it, deep-imported like the controller.
+  'src/ar/qr/qr-fused-pose-source.ts',
+  'src/ar/qr/qr-fused-pose.ts',
 
   // visualization/
   'src/visualization/index.ts',

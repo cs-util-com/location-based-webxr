@@ -13,6 +13,7 @@ import type {
   QrTrackingStatus,
 } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
+import type { createFusedQrPoseSource } from "gps-plus-slam-app-framework/ar/qr/qr-fused-pose-source";
 import type { TourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { AUTHOR_DEFAULT_SIZE_M } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 import {
@@ -35,6 +36,7 @@ import type { TourSession } from "./tour-session.js";
 // Reached through the session object's fields; standalone exports count as
 // dead (knip).
 type QrController = ReturnType<typeof createQrTrackingController>;
+type FusedPoseSource = ReturnType<typeof createFusedQrPoseSource>;
 type QrDebugView = ReturnType<TourViewerSeams["createQrDebugView"]>;
 
 /** The page's store: the framework store with the opt-in `qrDetected` slice
@@ -134,6 +136,12 @@ export interface TourViewerSession {
 
   // --- shared AR session state (ar-entry.ts) ------------------------------
   qrController: QrController | null;
+  /**
+   * The session's fused QR pose per code (QR near-frontal pose plan §60):
+   * what the viewer votes with and the creator mints from. Created with the
+   * controller, dropped at session end.
+   */
+  fusedPose: FusedPoseSource | null;
   /** The in-scene glue check (axis+cube on the code) — the one check a human
    *  at the poster can perform; spread alone is precision, not accuracy
    *  (milestone review #8). */
@@ -254,6 +262,7 @@ export interface TourViewerSession {
 export function endQrPipeline(ctx: TourViewerSession): void {
   ctx.qrController?.dispose();
   ctx.qrController = null;
+  ctx.fusedPose = null;
 }
 
 export function createTourViewerSession(): TourViewerSession {
@@ -264,6 +273,7 @@ export function createTourViewerSession(): TourViewerSession {
     tourManifestStatus: "settled",
     openGeneration: 0,
     qrController: null,
+    fusedPose: null,
     qrDebugView: null,
     cameraFrameCount: 0,
     levelByText: new Map(),

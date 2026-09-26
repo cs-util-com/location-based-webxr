@@ -20,7 +20,9 @@ carrying the two review-ordered guardrails and the deferred negative cache.
   `dispatchVote` (one payload → `recordGpsEvent`), `canAcceptVotes` (the
   budget must NOT be charged while the store drops votes — before the
   first GPS fix), `resolveStablePose` (the same convergence gate minting
-  uses; the controller skips unconverged votes with the budget untouched),
+  uses - the fused pose since plan §60; the controller skips unconverged
+  votes with the budget untouched, and the config stops asking once the
+  code's vote budget is spent - ~10 ms per lock saved, §61 #6),
   `recordDetection`, `onError`, and the optional `onStatus` /
   `onUnknownCode` / `onUnusableLevel` (a level with geo but no printed
   size) / `onVotedLock` UI hooks.

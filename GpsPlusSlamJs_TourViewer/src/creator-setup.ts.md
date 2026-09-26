@@ -253,7 +253,9 @@ slice, alignment solve, mint, rebuild; the download captured by the fake)
 and reads the produced zip back in node, including a placed pin and a
 captured photo (their records and the photo's bytes), the refused pin
 without a surface, the dismissed-picker branch and the identity-hole
-re-entry. The pure pieces are unit-tested in
+re-entry. `fused-pose-wiring.test.ts` pins that the readout and the mint
+use the fused pose, evaluated after every detection (plan §60-§61). The
+pure pieces are unit-tested in
 `qr-author-mode.test.ts` (`authorStatusLine`, `setupHint`,
 `finishReadiness`) and `tour-session.test.ts` (`archiveFileName`,
 `readWholeArchive`, `loadTourManifest`).

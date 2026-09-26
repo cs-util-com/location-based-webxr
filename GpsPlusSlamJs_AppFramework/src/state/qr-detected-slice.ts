@@ -467,7 +467,10 @@ export function selectQrPoseStability(
  * injects into the QR controller / demo so the `ar` layer never imports the
  * slice. The high-weight vote and the smooth overlay consume THIS, never the raw
  * latest pose (which stays available via {@link selectLatestQrDetection} for
- * scanning feedback / overlay persistence across misses).
+ * scanning feedback / overlay persistence across misses). The TourViewer
+ * and the QR demo use the FUSED pose instead (`createFusedQrPoseSource`
+ * over {@link selectQrFusedEntries}; QR near-frontal pose plan §60); this
+ * average of single-frame poses remains for the recorder until b6.
  *
  * ```ts
  * resolveStablePose: (text) => selectStableQrPose(store.getState(), text),

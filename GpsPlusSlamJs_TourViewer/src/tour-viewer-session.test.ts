@@ -25,6 +25,15 @@ describe("endQrPipeline", () => {
     expect(ctx.qrController).toBeNull();
   });
 
+  // Plan §61 #9: the fused source is per session - a kept one would carry
+  // the motion detector's confirmed flags into the next session.
+  it("forgets the session's fused pose source", () => {
+    const ctx = createTourViewerSession();
+    ctx.fusedPose = {} as NonNullable<typeof ctx.fusedPose>;
+    endQrPipeline(ctx);
+    expect(ctx.fusedPose).toBeNull();
+  });
+
   it("is harmless without a controller", () => {
     const ctx = createTourViewerSession();
     expect(() => endQrPipeline(ctx)).not.toThrow();

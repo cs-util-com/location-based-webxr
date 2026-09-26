@@ -29,9 +29,14 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
 - `MIN_ALIGNMENT_SAMPLES = 3` — the mint gate's alignment floor. A non-null
   matrix is VACUOUS (the store ships an identity matrix from the first GPS
   fix), so the gate counts solved-in fixes (milestone review #1).
-- `authorStatusLine(detectedText, stability, alignment: AuthorAlignmentInfo)`
+- `authorStatusLine(detectedText, fused: QrFusedPose | null, alignment: AuthorAlignmentInfo)`
   → `{ text; canMint }` — the mint gate's only UI; each blocked state names
-  what is missing, including the fix count. The copy is the creator
+  what is missing, including the fix count. Since QR near-frontal pose plan
+  §60 it reads the FUSED pose: while it is not stable the line names what it
+  waits for, in plain words per `notStableReason` ("walk slowly around the
+  code", "keep moving slowly", "the views disagree", "hold the code still",
+  "code not read clearly, move closer"), never the view threshold and never
+  "hold steady" - moving the camera is what resolves the tilt (§61 #11). The copy is the creator
   setup's guidance since the guided-setup plan M3 ("Hold the phone on the
   printed code…", "Measured and stable - save the position.").
 - `setupHint({ measured, tourOpen, hadLevel })` - what the panel says once
@@ -94,7 +99,7 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   the printed size is an INPUT — no depth, no corner-based sizing.
 - **`minIntervalMs: 0`**: the camera-frame source is the single cadence
   owner (Option A); two equal throttles in series drop ~1 frame per cycle.
-- **Minting reads the STABLE pose** (delta #2) in RAW WebXR/odom space (the
+- **Minting reads the STABLE fused pose** (delta #2; plan §60) in RAW WebXR/odom space (the
   frame the controller composes with each frame's capture pose); the conversion is
   `alignment × WEBXR_TO_NUE × pose`, using the alignment TARGET matrix
   (`selectAlignmentMatrix`), not the lerped visual transform — for a mint,
@@ -113,7 +118,7 @@ const config = buildAuthorControllerConfig(0.2, {
   getIntrinsics,
   recordDetection: (e) => store.dispatch(recordQrDetection(e)),
 });
-// … detections accumulate; once selectQrPoseStability says 'stable':
+// … detections accumulate; once the fused pose (createFusedQrPoseSource) is 'stable':
 const result = mintQrLevel({
   odomPose: stablePose,
   alignmentMatrix,

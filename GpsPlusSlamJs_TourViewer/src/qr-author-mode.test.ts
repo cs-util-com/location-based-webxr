@@ -1,3 +1,4 @@
+import type { QrFusedPose } from "gps-plus-slam-app-framework/ar/qr";
 import { describe, expect, it, vi } from "vitest";
 import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
@@ -106,26 +107,35 @@ describe("buildAuthorControllerConfig", () => {
 // itself now lives in the framework (qr-mint-level.test.ts) because a
 // second authoring surface needs it.
 describe("authorStatusLine", () => {
+  /** A fused result (QR near-frontal pose plan §60: the mint uses the fused pose). */
+  const fused = (over: Partial<QrFusedPose> = {}): QrFusedPose => ({
+    status: "stable",
+    pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+    method: "joint",
+    views: 7,
+    droppedViews: 0,
+    fitPx: 0.6,
+    windowEntries: 7,
+    averagedRotationDeltaDeg: 1,
+    frameEpoch: 0,
+    oldestTimestamp: 0,
+    newestTimestamp: 0,
+    motion: null,
+    edgePx: 180,
+    notStableReason: null,
+    nativeIgnored: 0,
+    ...over,
+  });
+
   it("gates the mint button on BOTH a stable pose and a live alignment", () => {
     // Why this matters: minting with either half missing writes a garbage
     // anchor into the printed code. The readout is the author's only view
     // into the gate, so each blocked state must say WHAT is missing.
-    const stable = {
-      status: "stable" as const,
-      pose: {
-        position: [0, 0, 0] as [number, number, number],
-        rotation: [0, 0, 0, 1] as [number, number, number, number],
-      },
-      translationSpreadM: 0.01,
-      rotationSpreadDeg: 1.2,
-      inlierCount: 8,
-      sampleCount: 8,
-    };
     const noAlign = { hasMatrix: false, sampleCount: 0 };
     expect(authorStatusLine(null, null, noAlign).canMint).toBe(false);
     const measuring = authorStatusLine(
       "text",
-      { ...stable, status: "measuring" as const },
+      fused({ status: "measuring", notStableReason: "views", views: 3 }),
       GOOD_ALIGNMENT_INFO,
     );
     expect(measuring.canMint).toBe(false);
@@ -134,7 +144,7 @@ describe("authorStatusLine", () => {
     // the very first GPS fix (the store ships identity), so a matrix-only
     // gate is vacuous and would mint a heading wrong by the session's
     // arbitrary WebXR yaw. The gate must count solved-in fixes.
-    const identityOnly = authorStatusLine("text", stable, {
+    const identityOnly = authorStatusLine("text", fused(), {
       hasMatrix: true,
       sampleCount: 1,
     });
@@ -144,9 +154,51 @@ describe("authorStatusLine", () => {
     expect(identityOnly.text).toMatch(
       new RegExp(String.raw`1 of ${MIN_ALIGNMENT_SAMPLES} fixes`),
     );
-    const ready = authorStatusLine("text", stable, GOOD_ALIGNMENT_INFO);
+    const ready = authorStatusLine("text", fused(), GOOD_ALIGNMENT_INFO);
     expect(ready.canMint).toBe(true);
     expect(ready.text).toMatch(/save the position/i);
+  });
+
+  // Plan §60-§61 #11: the readout says what actually gates the fused pose,
+  // in plain words per reason, and never restates the view threshold (a
+  // private tuning value) or asks the author to hold the phone still -
+  // camera movement is what resolves the code's tilt.
+  it("names what the fused pose is waiting for, per reason", () => {
+    const line = (over: Partial<QrFusedPose>) =>
+      authorStatusLine(
+        "text",
+        fused({ status: "measuring", ...over }),
+        GOOD_ALIGNMENT_INFO,
+      ).text;
+    expect(line({ notStableReason: "views", views: 2 })).toMatch(
+      /walk slowly around the code/i,
+    );
+    expect(line({ notStableReason: "fit" })).toMatch(/keep moving slowly/i);
+    expect(line({ notStableReason: "fallback" })).toMatch(/views disagree/i);
+    expect(line({ notStableReason: "motion" })).toMatch(/hold the code still/i);
+    expect(line({ notStableReason: "order" })).toMatch(/move closer/i);
+    const unknown = authorStatusLine(
+      "text",
+      fused({
+        status: "unknown",
+        pose: null,
+        views: 0,
+        notStableReason: "views",
+      }),
+      GOOD_ALIGNMENT_INFO,
+    );
+    expect(unknown.canMint).toBe(false);
+    for (const reason of [
+      "views",
+      "fit",
+      "fallback",
+      "motion",
+      "order",
+    ] as const) {
+      const text = line({ notStableReason: reason, views: 2 });
+      expect(text).not.toMatch(/hold steady/i);
+      expect(text).not.toMatch(/of 5/);
+    }
   });
 });
 

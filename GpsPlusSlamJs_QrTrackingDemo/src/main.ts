@@ -23,9 +23,10 @@ import {
   qrFrameChanged,
   recordQrDetection,
   recordQrSizeEstimate,
+  selectQrFusedEntries,
   selectQrSize,
 } from "gps-plus-slam-app-framework/state";
-import { createFusedPoseSource } from "./fused-pose-source.js";
+import { createFusedQrPoseSource } from "gps-plus-slam-app-framework/ar/qr";
 import { createMotionTrail } from "./motion-trail.js";
 import {
   createMotionTrailView,
@@ -104,10 +105,11 @@ let store: QrDemoStore | null = null;
  * render evaluates first, so a stopwatch around a later read would time a
  * cache hit.
  */
-const fusedPose = createFusedPoseSource(
-  {},
-  { onEvaluated: (_result, ms) => perf?.instrument.onFusedCost(ms) },
-);
+const fusedPose = createFusedQrPoseSource({
+  entriesOf: (text) =>
+    store ? selectQrFusedEntries(store.getState(), text) : [],
+  onEvaluated: (_result, ms) => perf?.instrument.onFusedCost(ms),
+});
 /** The `?qrperf` instrument, when the flag is set (null otherwise). */
 let perf: MountedQrPerf | null = null;
 let view: QrDebugView | null = null;
@@ -140,7 +142,7 @@ function renderHud(): void {
       : undefined;
   // Re-evaluate (cheap: cached until a new detection or a frame change) so a
   // restart shows at once, not at the next lock.
-  if (store && activeText) fusedPose.resolve(store.getState(), activeText);
+  if (store && activeText) fusedPose.evaluate(activeText);
   const v = toHudView(
     status,
     size,
@@ -268,7 +270,7 @@ async function startAr(): Promise<void> {
     // recordDetection has fed the current frame in.
     resolveStablePose: (text) => {
       if (!store) return null;
-      const pose = fusedPose.resolve(store.getState(), text);
+      const pose = fusedPose.resolve(text);
       // Once per lock: the ?qrperf report tallies the fused result.
       const last = fusedPose.last(text);
       if (perf && last) {

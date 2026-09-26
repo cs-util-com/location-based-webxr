@@ -9,12 +9,13 @@
  */
 
 import { createQrTrackingController } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
+import { createFusedQrPoseSource } from "gps-plus-slam-app-framework/ar/qr/qr-fused-pose-source";
 import { calcRelativeCoordsInMeters } from "gps-plus-slam-app-framework/core";
 import {
   recordGpsEvent,
   recordQrDetection,
   replayActions,
-  selectStableQrPose,
+  selectQrFusedEntries,
   selectTrackingQuality,
   selectZeroReference,
 } from "gps-plus-slam-app-framework/state";
@@ -183,6 +184,19 @@ export function createViewerPlacement(deps: {
       // state, the QR line just never appears.
       return false;
     }
+    // The code's FUSED pose (QR near-frontal pose plan §60): the joint
+    // rotation over its recent detections, gated on their agreement. One
+    // source per pipeline start, i.e. per AR session (§61 #9); each code's
+    // tracker takes its level's printed size (§61 #8 - resolved before the
+    // code's first lock).
+    const fusedPose = createFusedQrPoseSource({
+      entriesOf: (text) => selectQrFusedEntries(arStore.getState(), text),
+      optionsFor: (text) => {
+        const sizeM = ctx.levelByText.get(text)?.qr.physicalSizeM;
+        return sizeM === undefined ? {} : { sizeM };
+      },
+    });
+    ctx.fusedPose = fusedPose;
     ctx.qrController = createQrTrackingController(
       buildViewerControllerConfig({
         frontEnd,
@@ -207,8 +221,7 @@ export function createViewerPlacement(deps: {
         canAcceptVotes: () => arStore.getState().gpsData?.zero != null,
         // The same convergence gate minting uses (M4 review #3): the
         // controller skips the vote — budget untouched — while null.
-        resolveStablePose: (text) =>
-          selectStableQrPose(arStore.getState(), text),
+        resolveStablePose: (text) => fusedPose.resolve(text),
         recordDetection: (event) => {
           ctx.viewerUnknownCode = null; // a level-carrying detection supersedes it
           ctx.viewerUnusableCode = null;

@@ -16,6 +16,7 @@
 
 import { usablePhotoFrame } from "./photo-frame.js";
 import { createQrTrackingController } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
+import { createFusedQrPoseSource } from "gps-plus-slam-app-framework/ar/qr/qr-fused-pose-source";
 import {
   qrLevelEntryName,
   qrLevelIdFromEntryName,
@@ -37,8 +38,7 @@ import {
   recordQrDetection,
   selectAlignmentMatrix,
   selectGpsPositions,
-  selectQrPoseStability,
-  selectStableQrPose,
+  selectQrFusedEntries,
   selectZeroReference,
 } from "gps-plus-slam-app-framework/state";
 import { rebuildZipWithEntries } from "gps-plus-slam-app-framework/storage";
@@ -456,14 +456,13 @@ export function wireCreatorSetup(deps: {
       dom.mintButton.disabled = true;
       return;
     }
-    const state = arStore.getState();
-    const stability =
+    const fused =
       ctx.lastDetectedText === null
         ? null
-        : selectQrPoseStability(state, ctx.lastDetectedText);
+        : (ctx.fusedPose?.last(ctx.lastDetectedText) ?? null);
     const readout = authorStatusLine(
       ctx.lastDetectedText,
-      stability,
+      fused,
       authorAlignmentInfo(),
     );
     // Once measured, the setup hint (what to do next) joins the live
@@ -818,6 +817,14 @@ export function wireCreatorSetup(deps: {
       renderAuthorReadout();
       return false;
     }
+    // The code's FUSED pose (QR near-frontal pose plan §60), one source per
+    // pipeline start (per AR session), at the size the author entered.
+    const sizeM = ctx.activeSizeM;
+    const fusedPose = createFusedQrPoseSource({
+      entriesOf: (text) => selectQrFusedEntries(arStore.getState(), text),
+      optionsFor: () => ({ sizeM }),
+    });
+    ctx.fusedPose = fusedPose;
     ctx.qrController = createQrTrackingController(
       buildAuthorControllerConfig(ctx.activeSizeM, {
         frontEnd,
@@ -827,6 +834,11 @@ export function wireCreatorSetup(deps: {
           ctx.authorErrorText = null; // a live detection supersedes a stale error
           ctx.lastDetectedText = event.text;
           arStore.dispatch(recordQrDetection(event));
+          // Evaluated after EVERY detection, not on render: the motion
+          // detector counts detections, and the render path returns early
+          // in several states (plan §61 #7). The readout and the mint read
+          // this result.
+          fusedPose.evaluate(event.text);
           ctx.qrDebugView?.update(event.qrPoseWorld, ctx.activeSizeM);
           renderAuthorReadout();
         },
@@ -843,7 +855,9 @@ export function wireCreatorSetup(deps: {
   dom.mintButton.addEventListener("click", () => {
     if (ctx.lastDetectedText === null) return;
     const state = arStore.getState();
-    const stablePose = selectStableQrPose(state, ctx.lastDetectedText);
+    // The result the readout showed (evaluated after the last detection).
+    const fused = ctx.fusedPose?.last(ctx.lastDetectedText) ?? null;
+    const stablePose = fused?.status === "stable" ? fused.pose : null;
     if (stablePose === null) return; // the gate lost stability since render
     const result = mintQrLevel({
       odomPose: stablePose,

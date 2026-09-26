@@ -185,7 +185,13 @@ export function buildViewerControllerConfig(
         }
       : {}),
     getIntrinsics: (image) => deps.getIntrinsics(image),
-    resolveStablePose: (text) => deps.resolveStablePose(text),
+    // A code whose budget is spent casts no more votes, so its stable pose
+    // is not evaluated at all (the fused pose costs ~10 ms per lock on the
+    // phone; QR near-frontal pose plan §61 #6).
+    resolveStablePose: (text) =>
+      voteBudget.spentFor(text) >= MAX_VOTED_LOCKS_PER_CODE
+        ? null
+        : deps.resolveStablePose(text),
     onError: (err) => {
       deps.onError(err instanceof Error ? err.message : String(err));
     },

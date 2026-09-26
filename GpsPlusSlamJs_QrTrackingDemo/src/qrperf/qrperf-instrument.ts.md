@@ -26,7 +26,7 @@ The `?qrperf` instrument: times the demo's capture, detect and solve stages, opt
     `cornerOrderChain` and the report line `corner order chain audit ...`.
   - `onFusedCost(ms)` - one NEW fused/motion evaluation's cost (plan §30),
     recorded as the `fused` stage. The demo feeds it from
-    `fused-pose-source.ts`'s `onEvaluated` hook, because the HUD's render
+    the framework `createFusedQrPoseSource`'s `onEvaluated` hook, because the HUD's render
     evaluates first and a stopwatch around a later read would time a cache
     hit.
   - `snapshot()`, `cornerOrder()`, `report(): string[]`, `json(): string`.

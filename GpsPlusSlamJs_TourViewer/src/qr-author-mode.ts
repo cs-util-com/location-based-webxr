@@ -10,9 +10,10 @@
  *   validation and flap the controller status at the detection cadence. The
  *   synthetic level is GEO-LESS, which makes the controller emit detections
  *   without ever voting.
- * - **Minting reads the STABLE pose** (delta #2), never the jittery raw
- *   solve: detections land in the `qrDetected` slice and
- *   `selectStableQrPose` gates the mint.
+ * - **Minting reads the STABLE fused pose** (delta #2; QR near-frontal
+ *   pose plan §60), never the jittery raw solve: detections land in the
+ *   `qrDetected` slice and the fused pose over them (`createFusedQrPoseSource`)
+ *   gates the mint.
  *
  * Frame contract for the mint: the slice's stable pose is in RAW WebXR/odom
  * space (the controller composes it with each frame's capture pose). The
@@ -41,7 +42,7 @@ import type {
   QrFrontEnd,
   RgbaImage,
 } from "gps-plus-slam-app-framework/ar/qr/qr-frontend";
-import type { QrPoseStability } from "gps-plus-slam-app-framework/state";
+import type { QrFusedPose } from "gps-plus-slam-app-framework/ar/qr/qr-fused-pose";
 
 /**
  * Geo-less until minted (QD-4): `syntheticAccuracyM` is required by the
@@ -116,35 +117,54 @@ export interface AuthorReadout {
  */
 export function authorStatusLine(
   detectedText: string | null,
-  stability: QrPoseStability | null,
+  fused: QrFusedPose | null,
   alignment: MintAlignmentInfo,
 ): AuthorReadout {
-  if (detectedText === null || stability === null) {
+  if (detectedText === null || fused === null || fused.status === "unknown") {
     return {
       text: "Hold the phone on the printed code so it fills the screen…",
       canMint: false,
     };
   }
-  const spread = `spread ${(stability.translationSpreadM * 100).toFixed(1)} cm / ${stability.rotationSpreadDeg.toFixed(1)}°`;
-  if (stability.status !== "stable") {
+  if (fused.status !== "stable") {
     return {
-      text: `Measuring — ${String(stability.sampleCount)} samples, ${spread}. Hold steady.`,
+      text: `Measuring — ${waitingFor(fused.notStableReason)}`,
       canMint: false,
     };
   }
   if (!alignment.hasMatrix || alignment.sampleCount < MIN_ALIGNMENT_SAMPLES) {
     return {
       text:
-        `Pose stable (${spread}) — waiting for GPS alignment ` +
+        `Pose stable — waiting for GPS alignment ` +
         `(${String(alignment.sampleCount)} of ${String(MIN_ALIGNMENT_SAMPLES)} fixes). ` +
         `Walk a few metres with GPS reception.`,
       canMint: false,
     };
   }
   return {
-    text: `Measured and stable (${spread}) — save the position.`,
+    text: "Measured and stable — save the position.",
     canMint: true,
   };
+}
+
+/**
+ * What the fused pose is waiting for, in plain words (QR near-frontal pose
+ * plan §61 #11). Never "hold steady": moving the CAMERA around the code is
+ * what resolves its tilt; only a moving CODE must be held still.
+ */
+function waitingFor(reason: QrFusedPose["notStableReason"]): string {
+  switch (reason) {
+    case "fit":
+      return "keep moving slowly, still measuring.";
+    case "fallback":
+      return "the views disagree, keep going.";
+    case "motion":
+      return "hold the code still.";
+    case "order":
+      return "code not read clearly, move closer.";
+    default:
+      return "walk slowly around the code.";
+  }
 }
 
 /** What the setup panel says once the code is measured: the next move. */

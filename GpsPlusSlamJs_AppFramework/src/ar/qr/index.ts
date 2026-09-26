@@ -175,6 +175,11 @@ export {
   evaluateFusedQrPose,
   createFusedQrPoseTracker,
 } from './qr-fused-pose.js';
+export {
+  createFusedQrPoseSource,
+  type FusedQrPoseSource,
+  type FusedQrPoseSourceConfig,
+} from './qr-fused-pose-source.js';
 
 // --- qr-motion (is the code being moved / turned; plan §26) ---
 export {
