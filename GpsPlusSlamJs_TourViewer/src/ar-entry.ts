@@ -140,7 +140,9 @@ export function wireArEntry(deps: {
   function renderDebugReadout(): void {
     if (!ctx.debug || dom.arDebug === undefined) return;
     dom.arDebug.textContent = debugReadoutLines({
-      status: ctx.viewerQrStatus,
+      // The controller's own status: the creator pipeline never writes
+      // `viewerQrStatus` (milestone review of b4c #2).
+      status: ctx.qrController?.status ?? null,
       unknownCode: ctx.viewerUnknownCode,
       unusableCode: ctx.viewerUnusableCode,
       tallies: ctx.fusedTallies,

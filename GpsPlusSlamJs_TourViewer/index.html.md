@@ -68,7 +68,7 @@ The `data-testid` contract the e2e suite drives: `wizard`, `step-host`,
 `#ar-debug` (a `<pre>` in `#ar-root`, hidden unless `?debug=1`) holds the
 QR readout (QR near-frontal pose plan §66).
 Renaming one is an e2e-breaking change. `#ar-hint`, `#ar-status`,
-`#enter-ar` and `#setup-panel` must stay children of `#ar-root` (WebXR
+`#ar-debug`, `#enter-ar` and `#setup-panel` must stay children of `#ar-root` (WebXR
 DOM overlay composites only that subtree; enforced by
 `tests/repo-config/hud-overlay-nesting.test.js`). The `#ar-hint` copy is
 the creator's; `visitor-screen.ts` re-words it for a visitor.

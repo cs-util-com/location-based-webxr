@@ -53,12 +53,39 @@ describe("the fused pose's hint in the composed line (plan §66-§67)", () => {
       qr: {
         ...RUNNING_BASE.qr,
         status: "tracking",
-        fusedHint: "Measuring the code: walk slowly around the code.",
+        fusedHint: "Measuring the code: keep it in view while you move slowly.",
       },
       gate: { kind: "passed", via: "code" },
     });
     expect(line).toBe(
-      "Visitor mode — AR running · 3 camera frames · Measuring the code: walk slowly around the code. · Code recognised - placing the tour.",
+      "Visitor mode — AR running · 3 camera frames · Measuring the code: keep it in view while you move slowly. · Code recognised - placing the tour.",
+    );
+  });
+});
+
+describe("the fused pose's hint while placement waits (milestone review of b4c #7)", () => {
+  // The gate passes before tracking is ready, so a real session's line
+  // also carries the placement's coaching segment; the stable-but-no-GPS
+  // hint must read coherently beside it.
+  it("composes the GPS-wait hint with the gate and the coaching hint", () => {
+    const line = arStatusLine({
+      ...RUNNING_BASE,
+      tour: { kind: "open", levelCount: 1 },
+      qr: {
+        ...RUNNING_BASE.qr,
+        status: "tracking",
+        fusedHint: "Code measured - waiting for the first GPS fix.",
+      },
+      gate: { kind: "passed", via: "code" },
+      placement: { kind: "waiting-ready" },
+      readiness: {
+        phase: "move-around",
+        hint: "Walk around a few steps.",
+        percentReady: 40,
+      },
+    });
+    expect(line).toBe(
+      "Visitor mode — AR running · 3 camera frames · Code measured - waiting for the first GPS fix. · Code recognised - placing the tour. · Walk around a few steps.",
     );
   });
 });

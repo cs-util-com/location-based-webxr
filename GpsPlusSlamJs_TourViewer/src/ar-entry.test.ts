@@ -137,6 +137,16 @@ describe("wireArEntry QR readout and visitor hint", () => {
     expect(h.dom.arDebug.textContent).toBe("qr: off\nno code evaluated yet");
   });
 
+  // Milestone review of b4c #2: the creator pipeline never writes the
+  // viewer's status, so the block reads the running controller's own.
+  it("heads the block with the running controller's status", () => {
+    const h = harness();
+    h.ctx.debug = true;
+    h.ctx.qrController = { status: "tracking" } as never;
+    h.entry.renderArStatus();
+    expect(h.dom.arDebug.textContent.split("\n")[0]).toBe("qr: tracking");
+  });
+
   it("shows the fused pose's hint from the last evaluation while tracking", () => {
     const h = harness({ arStatus: "running" });
     h.ctx.viewerQrStatus = "tracking";

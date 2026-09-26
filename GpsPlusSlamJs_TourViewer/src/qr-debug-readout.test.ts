@@ -101,10 +101,12 @@ describe("visitorFusedHint", () => {
     atMs,
   });
 
-  it("says what the fused pose waits for, in the creator's words", () => {
+  // Too few views gets the intro's wording (a wall poster cannot be walked
+  // around, milestone review of b4c #3); the other reasons the creator's.
+  it("says what the fused pose waits for", () => {
     expect(
       visitorFusedHint({ last: last(), status: "tracking", nowMs: 1000 }),
-    ).toBe("Measuring the code: walk slowly around the code.");
+    ).toBe("Measuring the code: keep it in view while you move slowly.");
     expect(
       visitorFusedHint({
         last: last({ notStableReason: "order" }),
@@ -125,11 +127,22 @@ describe("visitorFusedHint", () => {
     ).toBe("Code measured - waiting for the first GPS fix.");
   });
 
-  // Plan §67 #5: never describe a code that left the view.
-  it("is silent while not tracking, once stale, and before any evaluation", () => {
+  // Milestone review of b4c #1: one missed detection turns the status to
+  // "scanning" until three hits in a row; the hint must hold through it,
+  // or the line flickers back to "Scanning for the printed code".
+  it("holds through a brief loss of tracking inside the window", () => {
     expect(
-      visitorFusedHint({ last: last(), status: "scanning", nowMs: 1000 }),
-    ).toBeNull();
+      visitorFusedHint({ last: last(), status: "scanning", nowMs: 1500 }),
+    ).toBe("Measuring the code: keep it in view while you move slowly.");
+  });
+
+  // Plan §67 #5: never describe a code that left the view.
+  it("is silent without a session, on error, once stale, and before any evaluation", () => {
+    for (const status of [null, "idle", "error", "loading-level"] as const) {
+      expect(
+        visitorFusedHint({ last: last(), status, nowMs: 1000 }),
+      ).toBeNull();
+    }
     expect(
       visitorFusedHint({
         last: last(),

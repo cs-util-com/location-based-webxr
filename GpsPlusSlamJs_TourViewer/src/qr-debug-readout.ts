@@ -39,7 +39,8 @@ export function tallyEvaluation(
   tally.add(result);
 }
 
-/** Characters of the decoded text a line shows: the end carries the `n` token. */
+/** Characters of the decoded text a line shows: the end carries the `n`
+ *  token of codes 2 and up (code 1 has none; its tail is its blob). */
 const LABEL_CHARS = 12;
 
 /** A short label for a decoded text (the full launch URL does not fit a line). */
@@ -48,7 +49,7 @@ export function codeLabel(text: string): string {
 }
 
 /** One code's counts on one line. */
-export function fusedCountsLine(label: string, c: FusedPoseCounts): string {
+function fusedCountsLine(label: string, c: FusedPoseCounts): string {
   const n = c.notStable;
   return (
     `${label}: locks ${String(c.locks)}, stable ${String(c.stable)}` +
@@ -78,28 +79,49 @@ export function debugReadoutLines(input: {
 
 /**
  * How long the visitor's hint outlives its evaluation (ms). The viewer
- * evaluates on every lock (~8/s while a code is in view), so 2 s without
- * one means the code left the view.
+ * evaluates on each lock; on the phone that was 1-2 per second (r731-r736
+ * field tests: 3.6-3.8 hits/s of ~7.5 detects/s, fewer locks), with runs
+ * of misses between. 2 s bridges a normal run of misses and still drops
+ * the hint soon after the code leaves the view (milestone review of b4c
+ * #1, #4). Much shorter (0.5-1 s) would flicker at that cadence.
  */
 export const HINT_STALE_MS = 2000;
 
+/** The statuses under which a recent evaluation still describes the code
+ *  in view: a single missed detection turns `tracking` into `scanning`
+ *  until three hits in a row, so gating on `tracking` alone flickered
+ *  (milestone review of b4c #1). The staleness window decides the rest. */
+const HINT_STATUSES: ReadonlySet<QrTrackingStatus> = new Set([
+  "tracking",
+  "scanning",
+]);
+
+/** The visitor's wording for "too few views": the intro's (plan §67 #4).
+ *  A wall poster cannot be walked around; views need not span angles. */
+const KEEP_IN_VIEW = "keep it in view while you move slowly.";
+
 /**
  * The visitor's line while a code is read but has not voted, or null.
- * Only while the controller tracks and the last evaluation is recent: the
- * hint describes the code in view, never one seen a while ago.
+ * Only while the controller tracks or briefly lost it, and while the last
+ * evaluation is recent: the hint describes the code in view, never one
+ * seen a while ago.
  */
 export function visitorFusedHint(input: {
   last: LastEvaluation | null;
   status: QrTrackingStatus | null;
   nowMs: number;
 }): string | null {
-  const { last } = input;
-  if (last === null || input.status !== "tracking") return null;
+  const { last, status } = input;
+  if (last === null || status === null || !HINT_STATUSES.has(status)) {
+    return null;
+  }
   if (input.nowMs - last.atMs > HINT_STALE_MS) return null;
   // Stable yet no vote: the votes wait for the session's GPS zero
   // (`canAcceptVotes`), not for the code (plan §67 #1).
   if (last.result.status === "stable") {
     return "Code measured - waiting for the first GPS fix.";
   }
-  return `Measuring the code: ${waitingFor(last.result.notStableReason)}`;
+  const reason = last.result.notStableReason;
+  // `views` also covers an empty (unknown) result.
+  return `Measuring the code: ${reason === "views" || reason === null ? KEEP_IN_VIEW : waitingFor(reason)}`;
 }

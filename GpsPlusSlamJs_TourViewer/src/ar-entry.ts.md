@@ -89,6 +89,7 @@ disposed and the fused pose source dropped (QR near-frontal pose plan §64
 #4 - the call site had no test). The status line reads the visitor hint
 from `ctx.viewerLastEvaluation` (never re-evaluating: the render runs per
 camera frame) and, with `?debug=1`, writes the QR readout into
-`dom.arDebug` (plan §66; `qr-debug-readout.ts`); the session end clears the
+`dom.arDebug` (plan §66; `qr-debug-readout.ts`), headed by the running
+controller's own status (`ctx.qrController?.status`); the session end clears the
 hint's evaluation and keeps the counts. The pure pieces: `ar-mode.test.ts`,
 `tour-flow.test.ts`.

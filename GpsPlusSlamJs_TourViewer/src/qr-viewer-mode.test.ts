@@ -325,7 +325,7 @@ describe("viewerStatusLine", () => {
   // instead of "Scanning for the printed code…" - the code IS read. A code
   // problem still wins, and the vote states replace the hint.
   it("shows the fused pose's hint before the first vote, and only then", () => {
-    const hint = "Measuring the code: walk slowly around the code.";
+    const hint = "Measuring the code: keep it in view while you move slowly.";
     const base = {
       status: "tracking" as const,
       unknownCode: null,

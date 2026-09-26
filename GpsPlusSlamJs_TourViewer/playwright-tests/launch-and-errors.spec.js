@@ -246,3 +246,20 @@ test.describe("a dark device keeps the default ground", () => {
       .toContain("rgba(0, 0, 0, 0.95)");
   });
 });
+
+// Milestone review of b4c #5 (QR near-frontal pose plan §66): `?debug=1` is
+// the owner's field-session readout; only main.ts unhides it, and a unit
+// test of the text alone would pass while the block never became visible.
+// The block lives in the collapsible AR step, so its own `hidden` flag is
+// what is asserted, not the step's disclosure.
+test("?debug=1 unhides the QR readout; without it the block stays hidden", async ({
+  page,
+}) => {
+  await page.goto("/?nocache=1&debug=1");
+  await expect(page.getByTestId("ar-debug")).not.toHaveAttribute("hidden");
+  await page.goto("/?nocache=1");
+  await expect(page.getByTestId("ar-debug")).toHaveAttribute("hidden", "");
+  // A bare ?debug is off (the framework's shared reader).
+  await page.goto("/?nocache=1&debug");
+  await expect(page.getByTestId("ar-debug")).toHaveAttribute("hidden", "");
+});
