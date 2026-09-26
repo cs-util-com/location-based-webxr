@@ -15,7 +15,7 @@ the WS-5 **consumer** (debug axis+cube). `main.ts` calls it once in `handleEnter
   - `options.qr` — `{ enabled, intervalMs, captureSize }` (caller gates on `enabled`).
   - `options.setProducer(producer | null)` — receives the producer so the
     initAR `callbacks.cameraFrame.onFrame` (wired at Enter-AR) can forward frames to it.
-  - returns a `dispose()` that stops capture, resets/clears the producer, detaches
+  - returns a `dispose()` that stops capture, disposes/clears the producer (a decode or level fetch in flight then reaches no callback, QR near-frontal pose plan §61), detaches
     the debug subscriber + swap listener, and disposes the viz.
 
 ## Invariants & assumptions

@@ -200,6 +200,14 @@ export interface QrTrackingController {
   readonly status: QrTrackingStatus;
   /** Stop tracking and reset to `idle` (clears the level cache). */
   reset(): void;
+  /**
+   * Stop for good, e.g. at the end of an AR session (QR near-frontal pose
+   * plan §61): no new frame is taken, and a decode or level fetch still in
+   * flight reaches no callback - no raw record, detection, vote, status,
+   * lock or error. `reset()` alone cannot do this: a pending decode would
+   * set its lock state again afterwards.
+   */
+  dispose(): void;
 }
 
 export function createQrTrackingController(
@@ -249,6 +257,10 @@ export function createQrTrackingController(
     orderSource: CornerOrderSource | undefined;
   } | null = null;
 
+  // Set by dispose(): every await in detect() checks it on resuming, and
+  // the scheduler runs no callback after it.
+  let disposed = false;
+
   function setStatus(next: QrTrackingStatus): void {
     if (status === next) return;
     status = next;
@@ -277,6 +289,7 @@ export function createQrTrackingController(
     if (status === 'idle' || status === 'error') setStatus('scanning');
 
     const detection = await frontEnd.detect(image);
+    if (disposed) return null;
     if (!detection) {
       active = null;
       return null;
@@ -304,6 +317,7 @@ export function createQrTrackingController(
     }
 
     const level = await ensureLevel(detection.text);
+    if (disposed) return null;
 
     // Size lifecycle gate (Note 3): authored size wins; else ask the resolver
     // (e.g. a depth-measured median). A `null`/absent size blocks the solve —
@@ -445,6 +459,12 @@ export function createQrTrackingController(
       levelCache.clear();
       active = null;
       setStatus('idle');
+    },
+    dispose(): void {
+      disposed = true;
+      scheduler.dispose();
+      levelCache.clear();
+      active = null;
     },
   };
 }

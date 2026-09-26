@@ -11,7 +11,10 @@ so a future object detector (YOLO) reuses it unchanged. It gates nothing on QR.
 
 - `createDetectionScheduler<TResult, TImage = RgbaImage>(config): DetectionScheduler<TImage>`
   — `offerFrame(image)` (call per render frame), plus read-only `inFlight`,
-  `consecutiveLocks`, `locked`.
+  `consecutiveLocks`, `locked`, and `dispose()` (QR near-frontal pose plan
+  §61): no new detection starts, and one in flight reaches no callback
+  (`onLocked` / `onMiss` / `onError`) when it settles - an app ending its
+  AR session must not see a late lock land in the next one.
 - `DetectionSchedulerConfig<TResult, TImage>` — `detect(image) => Promise<TResult|null>`
   (the injected detect→solve step), `minIntervalMs`, `requiredLockCount` (3),
   `now` (injectable clock), `onLocked(result)`, `onMiss`, `onError`.
@@ -59,7 +62,9 @@ so a future object detector (YOLO) reuses it unchanged. It gates nothing on QR.
   (offerFrame does not throw, inFlight clears, scheduler stays usable),
   **callback isolation** (a throwing `onLocked`/`onMiss` does not reset the
   counter or fire `onError`) (via the QR specialization); plus a generality test
-  proving a non-QR result type + custom frame type work.
+  proving a non-QR result type + custom frame type work; `dispose()`: a
+  detection settling after it (lock, miss or error) reaches no callback,
+  and no new frame starts one.
 
 ## Related
 

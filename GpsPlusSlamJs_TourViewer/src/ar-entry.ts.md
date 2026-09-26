@@ -38,7 +38,9 @@ since the flows plan M6.
 
 ## Invariants & assumptions
 
-- Session-state fields it owns: `qrController` (nulled on end),
+- Session-state fields it owns: `qrController` (disposed and nulled on
+  end via `endQrPipeline`, so a lock in flight cannot land in the next
+  session - plan §61),
   `qrDebugView`, `cameraFrameCount`, `gpsSamplesAtSessionStart` (the mint
   gate's snapshot, taken at the runtime start), and the session-end reset
   of every viewer/placement/author field the dead session owned (the list

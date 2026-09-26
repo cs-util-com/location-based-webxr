@@ -30,11 +30,12 @@ import { describeOpenError } from "./open-errors.js";
 import type { TourViewerSeams } from "./seams.js";
 import { arStatusLine } from "./tour-flow.js";
 import type { LocationGate } from "./visitor-screen.js";
-import type {
-  ArController,
-  TourViewerHooks,
-  TourViewerSession,
-  TourViewerStore,
+import {
+  endQrPipeline,
+  type ArController,
+  type TourViewerHooks,
+  type TourViewerSession,
+  type TourViewerStore,
 } from "./tour-viewer-session.js";
 
 export interface ArEntryDom {
@@ -163,8 +164,9 @@ export function wireArEntry(deps: {
     // and an open recording would blend the dead session's odom frame into
     // the next alignment (PR #359 review). The QR window and its tracked
     // text are session state too — a re-entry must not mint from the dead
-    // session's odom-frame poses (milestone review #2).
-    ctx.qrController = null;
+    // session's odom-frame poses (milestone review #2). Disposed, not just
+    // dropped: a lock still in flight must not land in the next session.
+    endQrPipeline(ctx);
     ctx.qrDebugView?.dispose();
     ctx.qrDebugView = null;
     ctx.lastDetectedText = null;

@@ -77,6 +77,15 @@
   once it is still again only the views since then are fused. Until the
   motion is confirmed the stable pose can trail it for up to 3 detections.
   New option `sinceMs` on `selectFusedWindow` / `evaluateFusedQrPose`.
+- **`dispose()` on the QR controllers and the detection scheduler** (QR
+  near-frontal pose plan §61): `createQrTrackingController`,
+  `createQrDetectionController` and `createDetectionScheduler` stop for
+  good - a decode or level fetch still in flight reaches no callback. Before,
+  an AR session ended mid-decode let one late lock record a dead-frame
+  detection into the next session and reset status lines, and in the
+  recorder's level mode (network fetch, ungated raw-pose votes) cast votes.
+  `reset()` cannot do this. The TourViewer and the recorder now call it at
+  session end.
 - **A QR code's native-order frames no longer reach its fused pose or
   its motion reading once its corner order is known** (QR near-frontal
   pose plan §54-§55). A detection in the detector's own corner order is 90

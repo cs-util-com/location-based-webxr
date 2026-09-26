@@ -203,4 +203,32 @@ describe('createQrDetectionController isBusy', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(controller.isBusy()).toBe(false);
   });
+
+  // Why this test matters (plan §61, b4b-1): the recorder tears its producer
+  // down at session end; a decode in flight then must record nothing.
+  it('records nothing and reports no status for a decode that settles after dispose()', async () => {
+    let resolveDetect: (d: QrDetection | null) => void = () => {};
+    let calls = 0;
+    const detect = vi.fn(() =>
+      ++calls === 1
+        ? Promise.resolve<QrDetection | null>({
+            corners: VALID_CORNERS,
+            text: 'https://x/y',
+          })
+        : new Promise<QrDetection | null>((r) => (resolveDetect = r))
+    );
+    const statuses: string[] = [];
+    const { controller, recorded } = makeController(detect, {
+      onStatus: (st) => statuses.push(st),
+    });
+    controller.offerFrame(FRAME);
+    await flush();
+    controller.offerFrame(FRAME); // the lock-completing decode, held in flight
+    const before = statuses.length;
+    controller.dispose();
+    resolveDetect({ corners: VALID_CORNERS, text: 'https://x/y' });
+    await flush();
+    expect(recorded).toHaveLength(0);
+    expect(statuses).toHaveLength(before);
+  });
 });

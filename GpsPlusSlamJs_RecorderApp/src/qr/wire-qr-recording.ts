@@ -143,7 +143,7 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
    * then came back after the session ended and dispatched into whatever store
    * was current by then.
    */
-  let frameSink: { reset: () => void } | null = null;
+  let frameSink: { dispose: () => void } | null = null;
   /** True once the tracking controller has taken over the frame stream. */
   let usingLevels = false;
   /**
@@ -383,7 +383,9 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
   return () => {
     stopCameraFrameCapture();
     disposeLevelSource?.();
-    frameSink?.reset();
+    // dispose, not reset: a decode or level fetch in flight must reach no
+    // callback after the session ended (QR near-frontal pose plan §61).
+    frameSink?.dispose();
     setProducer(null);
     options.setSightingFeeder?.(null);
     if (rafId !== null) {

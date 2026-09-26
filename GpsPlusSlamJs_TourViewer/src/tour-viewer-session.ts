@@ -245,6 +245,17 @@ export interface TourViewerSession {
   contentAttempted: boolean;
 }
 
+/**
+ * End the session's QR pipeline (QR near-frontal pose plan §61): dispose the
+ * controller, so a decode or level fetch still in flight reaches no callback
+ * - no detection into the next session's window, no status line, no vote -
+ * and forget it. Nulling it alone only stopped NEW frames.
+ */
+export function endQrPipeline(ctx: TourViewerSession): void {
+  ctx.qrController?.dispose();
+  ctx.qrController = null;
+}
+
 export function createTourViewerSession(): TourViewerSession {
   return {
     session: null,

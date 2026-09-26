@@ -508,4 +508,95 @@ describe('createQrTrackingController isBusy', () => {
     await flush();
     expect(controller.isBusy()).toBe(false);
   });
+
+  describe('createQrTrackingController dispose() (plan §61, b4b-1)', () => {
+    // Why these tests matter: the TourViewer and the recorder end an AR
+    // session while a decode or a level fetch is in flight. Before dispose()
+    // existed, the late lock recorded a dead-frame detection into the next
+    // session, set status lines the teardown had cleared, and (in the
+    // recorder, ungated) cast votes. After dispose() nothing may reach an app
+    // callback.
+    function held<T>() {
+      let resolve: (v: T) => void = () => {};
+      const promise = new Promise<T>((r) => (resolve = r));
+      return { promise, resolve };
+    }
+
+    it('emits nothing for a lock that completes after dispose()', async () => {
+      const events: unknown[] = [];
+      const statuses: QrTrackingStatus[] = [];
+      const errors: unknown[] = [];
+      const locked = vi.fn();
+      let calls = 0;
+      const late = held<QrDetection | null>();
+      const { controller, dispatched } = setup({
+        onDetection: (e) => events.push(e),
+        onStatus: (st) => statuses.push(st),
+        onError: (e) => errors.push(e),
+        onLocked: locked,
+        frontEnd: {
+          kind: 'barcode-detector',
+          detect: () =>
+            ++calls === 1 ? Promise.resolve(detection) : late.promise,
+        },
+      });
+      await tick(controller); // 1 of 2 successes
+      controller.offerFrame(frame); // the lock-completing decode, in flight
+      const before = statuses.length;
+      controller.dispose();
+      late.resolve(detection);
+      await flush();
+      expect(events).toHaveLength(0);
+      expect(dispatched).toHaveLength(0);
+      expect(locked).not.toHaveBeenCalled();
+      expect(errors).toHaveLength(0);
+      expect(statuses).toHaveLength(before);
+    });
+
+    // A level without a size is the path that reports a status right after
+    // the fetch ("loading-level" back to "scanning"), before any lock.
+    it('emits nothing when a level fetch in flight resolves after dispose()', async () => {
+      const statuses: QrTrackingStatus[] = [];
+      const levelFetch = held<QrLevel>();
+      const { controller, dispatched } = setup({
+        onStatus: (st) => statuses.push(st),
+        fetchLevel: () => levelFetch.promise,
+      });
+      controller.offerFrame(frame);
+      await flush(); // decoded, waiting for the level
+      expect(statuses[statuses.length - 1]).toBe('loading-level');
+      const before = statuses.length;
+      controller.dispose();
+      levelFetch.resolve({ version: 1, qr: {} });
+      await flush();
+      controller.offerFrame(frame);
+      await flush();
+      expect(statuses).toHaveLength(before);
+      expect(dispatched).toHaveLength(0);
+    });
+
+    it('records no raw detection for a decode that resolves after dispose()', async () => {
+      const raws: unknown[] = [];
+      const late = held<QrDetection | null>();
+      const { controller } = setup({
+        onRawDetection: (r) => raws.push(r),
+        frontEnd: { kind: 'barcode-detector', detect: () => late.promise },
+      });
+      controller.offerFrame(frame);
+      controller.dispose();
+      // A quad large enough for validateQuad (the shared fixture is 1 px, which
+      // would never be recorded anyway and make this test vacuous).
+      late.resolve({
+        text: detection.text,
+        corners: [
+          { x: 0, y: 0 },
+          { x: 100, y: 0 },
+          { x: 100, y: 100 },
+          { x: 0, y: 100 },
+        ],
+      });
+      await flush();
+      expect(raws).toHaveLength(0);
+    });
+  });
 });

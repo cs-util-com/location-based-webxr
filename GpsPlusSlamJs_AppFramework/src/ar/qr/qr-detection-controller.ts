@@ -71,6 +71,11 @@ export interface QrDetectionController {
   readonly status: QrScanStatus;
   /** Return to idle (e.g. on session end). */
   reset(): void;
+  /**
+   * Stop for good (QR near-frontal pose plan §61): no new frame is taken and
+   * a decode in flight records nothing and reports no status.
+   */
+  dispose(): void;
 }
 
 /**
@@ -154,6 +159,11 @@ export function createQrDetectionController(
     },
     reset(): void {
       setStatus('idle');
+    },
+    dispose(): void {
+      // The scheduler runs no callback after this; the decode itself only
+      // reports through them.
+      scheduler.dispose();
     },
   };
 }

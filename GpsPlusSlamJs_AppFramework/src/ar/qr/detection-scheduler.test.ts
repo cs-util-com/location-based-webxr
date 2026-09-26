@@ -298,4 +298,55 @@ describe('createDetectionScheduler<T> generality (Note 1)', () => {
 
     expect(locked).toEqual([{ label: 'chair', confidence: 0.9 }]);
   });
+
+  // Why this test matters (QR near-frontal pose plan §61, b4b-1): an app
+  // ends its AR session while a detection is in flight; after dispose() the
+  // late result must reach no callback (a lock would record a dead-frame
+  // detection into the next session and pass its gates), and no new frame
+  // may start one.
+  it('runs no callback for a detection that settles after dispose()', async () => {
+    let t = 0;
+    const onLocked = vi.fn();
+    const onMiss = vi.fn();
+    const onError = vi.fn();
+    const { detect, settle } = controllableDetect();
+    const s = createDetectionScheduler<QrPoseSolution>({
+      detect,
+      minIntervalMs: 0,
+      requiredLockCount: 1,
+      now: () => t,
+      onLocked,
+      onMiss,
+      onError,
+    });
+    s.offerFrame(image);
+    s.dispose();
+    await settle(solution);
+    expect(onLocked).not.toHaveBeenCalled();
+    t += 1;
+    s.offerFrame(image);
+    expect(detect).toHaveBeenCalledTimes(1);
+    expect(s.inFlight).toBe(false);
+  });
+
+  it('reports no miss or error for a detection that settles after dispose()', async () => {
+    const onMiss = vi.fn();
+    const onError = vi.fn();
+    for (const outcome of ['miss', 'error'] as const) {
+      const { detect, settle, reject } = controllableDetect();
+      const s = createDetectionScheduler<QrPoseSolution>({
+        detect,
+        minIntervalMs: 0,
+        onMiss,
+        onError,
+      });
+      s.offerFrame(image);
+      s.dispose();
+      if (outcome === 'miss') await settle(null);
+      else await reject(new Error('late'));
+      expect(s.inFlight).toBe(false);
+    }
+    expect(onMiss).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+  });
 });

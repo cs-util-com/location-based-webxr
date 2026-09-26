@@ -9,7 +9,7 @@ coalesced cadence and exposes an async-status state machine for the UI.
 
 - `createQrTrackingController(config): QrTrackingController` — `offerFrame(frame: CapturedCameraFrame)`
   (call per captured frame; the frame carries its own capture pose and time, see
-  [captured-camera-frame.ts.md](../captured-camera-frame.ts.md)), `isBusy()` (true while a detect - including a first-sighting level fetch - is in flight; the camera source's capture veto), read-only `status`, `reset()`.
+  [captured-camera-frame.ts.md](../captured-camera-frame.ts.md)), `isBusy()` (true while a detect - including a first-sighting level fetch - is in flight; the camera source's capture veto), read-only `status`, `reset()`, `dispose()` (QR near-frontal pose plan §61: stop for good at the end of an AR session - a decode or level fetch in flight reaches no callback: no raw record, detection, vote, status, lock or error. `reset()` cannot do this, because a pending decode sets its lock state again afterwards).
 - `QrTrackingStatus` = `idle | scanning | loading-level | tracking | error`.
 - `QrTrackingControllerConfig` — injected `frontEnd`, `solvePose` (wraps
   `solveQrPose`), `fetchLevel`, `dispatchVotes`,
@@ -115,7 +115,9 @@ imageHeight, intrinsics }`, eight fields (seven until M3b b3; the line
 - `qr-tracking-controller.test.ts` — happy-path status progression + 4 votes
   dispatched, level cached once per URL, error path on fetch failure, stays
   scanning on no-detection, plausibility gate blocks the lock, `reset()` clears
-  cache + returns to idle; qrDetected emitted on every lock, geo-less level
+  cache + returns to idle; after `dispose()`, a lock completing, a level
+  fetch resolving (a size-less level, the path that reports a status) and a
+  first decode resolving reach no callback; qrDetected emitted on every lock, geo-less level
   emits detection but no vote, size gate blocks the solve when unknown, a
   `resolveSizeM`-supplied size unblocks it, the vote uses the `resolveStablePose`
   filtered pose, and the vote is skipped (detection still emitted) until stable;

@@ -15,7 +15,7 @@ decode it emits ONE `RawQrObservation` — raw corners + capture-time camera pos
 - `createQrDetectionController(deps) → QrDetectionController` with
   `offerFrame(frame: CapturedCameraFrame)` (pixels + capture pose + epoch-ms capture time, see
   [captured-camera-frame.ts.md](../captured-camera-frame.ts.md)),
-  `isBusy()` (true while a detect is in flight - the camera source's capture veto), `status`, `reset()`.
+  `isBusy()` (true while a detect is in flight - the camera source's capture veto), `status`, `reset()`, `dispose()` (plan §61: stop for good - a decode in flight records nothing and reports no status; the recorder's teardown calls it).
 - `QrDetectionControllerDeps` — injected: `detect(image)`,
   `getProjectionMatrix()`, `recordDetection(observation)` (the sink), `now?` (the scheduler's
   clock only), `minIntervalMs?` (default 0), `requiredLockCount?` (default 2), `onStatus?`.
@@ -56,4 +56,4 @@ controller.offerFrame(frame); // throttled/coalesced internally
 count (asserting the exact raw shape + no derived fields), degenerate-quad rejection,
 null-projection skip, the record carrying the FRAME's pose and capture time rather than
 the decode-resolve moment (M4), `isBusy()` exactly while a detect is in flight (M3), and
-no-decode → stays scanning.
+no-decode → stays scanning, and nothing recorded or reported for a decode that settles after `dispose()`.

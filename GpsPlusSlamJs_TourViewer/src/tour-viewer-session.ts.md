@@ -11,6 +11,10 @@ lives here.
 
 ## Public API
 
+- `endQrPipeline(ctx)` (QR near-frontal pose plan §61): dispose the QR
+  controller - a decode or level fetch still in flight then reaches no
+  callback (no detection into the next session's window, no status line,
+  no vote) - and forget it. `ar-entry.ts`'s `onSessionEnd` calls it.
 - `interface TourViewerSession` - the fields, grouped by owner:
   - the open tour (`archive-open.ts`): `session`, `currentLevels`,
     `openGeneration`;
@@ -68,6 +72,7 @@ wireArEntry({ ctx, ... });
 
 ## Tests
 
-No logic to test; the fields' behaviour is pinned by the owning modules'
-tests and the e2e suite (`playwright-tests/*.spec.js`), which runs
+`tour-viewer-session.test.ts`: `endQrPipeline` disposes and forgets the
+QR controller, and is harmless without one. Otherwise no logic to test;
+the fields' behaviour is pinned by the owning modules' tests and the e2e suite (`playwright-tests/*.spec.js`), which runs
 unchanged across the split (the split's behaviour-neutrality proof).

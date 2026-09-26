@@ -20,6 +20,7 @@ const {
   const fakeProducer = {
     offerFrame: vi.fn(),
     reset: vi.fn(),
+    dispose: vi.fn(),
     isBusy: vi.fn(() => false),
     status: 'idle',
   };
@@ -69,6 +70,7 @@ const {
   const capturedTrackingInstance: {
     current: {
       reset: ReturnType<typeof vi.fn>;
+      dispose: ReturnType<typeof vi.fn>;
       isBusy: ReturnType<typeof vi.fn>;
     } | null;
   } = { current: null };
@@ -80,6 +82,7 @@ const {
       const instance = {
         offerFrame: vi.fn(),
         reset: vi.fn(),
+        dispose: vi.fn(),
         isBusy: vi.fn(() => false),
         status: 'idle',
       };
@@ -473,7 +476,7 @@ describe('wireQrRecording', () => {
     expect(onQrStateChanged).toHaveBeenCalledTimes(1);
   });
 
-  it('dispose() stops capture, resets the producer, clears it, and disposes the viz', () => {
+  it('dispose() stops capture, disposes the producer, clears it, and disposes the viz', () => {
     const setProducer = vi.fn();
     const { ref } = makeStoreRef(makeStore());
     const dispose = wireQrRecording({
@@ -486,7 +489,7 @@ describe('wireQrRecording', () => {
 
     dispose();
     expect(mockStopCapture).toHaveBeenCalledTimes(1);
-    expect(fakeProducer.reset).toHaveBeenCalledTimes(1);
+    expect(fakeProducer.dispose).toHaveBeenCalledTimes(1);
     expect(setProducer).toHaveBeenLastCalledWith(null);
     expect(mockDebugController.dispose).toHaveBeenCalledTimes(1);
   });
@@ -860,14 +863,14 @@ describe('wireQrRecording — teardown in level-consuming mode', () => {
     capturedTrackingInstance.current = null;
   });
 
-  it('resets the tracking controller, not just the thin producer', () => {
+  it('disposes the tracking controller, not just the thin producer', () => {
     // Why this test matters: in level mode the thin producer is never built,
-    // so the teardown's `producer?.reset()` was a no-op and the tracking
-    // controller's own reset never ran. That reset is what clears `active`,
-    // and `active` is what makes a detection already awaiting its level fetch
-    // return early instead of dispatching into whatever store is current
-    // AFTER the AR session ended. stopCameraFrameCapture() stops new frames;
-    // it cannot recall one already in flight across a network round trip.
+    // so the teardown must reach the tracking controller. A detection already
+    // awaiting its level fetch (a network round trip) must not dispatch
+    // detections or UNGATED votes into whatever store is current after the
+    // AR session ended. reset() cannot stop it - the pending decode sets its
+    // lock state again afterwards; dispose() can (QR near-frontal pose plan
+    // §61). stopCameraFrameCapture() stops new frames only.
     const { ref } = makeStoreRef(makeStore());
     const dispose = wireQrRecording({
       storeRef: ref as never,
@@ -878,16 +881,16 @@ describe('wireQrRecording — teardown in level-consuming mode', () => {
     });
 
     const tracking = capturedTrackingInstance.current!;
-    expect(tracking.reset).not.toHaveBeenCalled();
+    expect(tracking.dispose).not.toHaveBeenCalled();
 
     dispose();
 
-    expect(tracking.reset).toHaveBeenCalledTimes(1);
+    expect(tracking.dispose).toHaveBeenCalledTimes(1);
   });
 
-  it('still resets the thin producer when levels are off', () => {
+  it('still disposes the thin producer when levels are off', () => {
     // Why this test matters: the fix must not trade one mode's teardown for
-    // the other's. Both modes own a frame sink; both must reset it.
+    // the other's. Both modes own a frame sink; both must dispose it.
     const { ref } = makeStoreRef(makeStore());
     const dispose = wireQrRecording({
       storeRef: ref as never,
@@ -899,7 +902,7 @@ describe('wireQrRecording — teardown in level-consuming mode', () => {
 
     dispose();
 
-    expect(fakeProducer.reset).toHaveBeenCalledTimes(1);
+    expect(fakeProducer.dispose).toHaveBeenCalledTimes(1);
   });
 });
 
