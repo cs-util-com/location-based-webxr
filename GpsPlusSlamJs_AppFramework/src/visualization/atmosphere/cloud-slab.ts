@@ -8,9 +8,11 @@
  *
  * WHAT LIVES HERE: the constants; the CPU twin of everything the shader
  * computes (the column, the vertical profile and its integral, the march
- * interval, the quadratic steps, the exact optical depth of a step, the
- * light, the level of detail, the draw order, and the march itself, which
- * the tests use as the shader's stand-in); the shader; and the mesh.
+ * interval, the spacing and its nodes, the part of a segment under the
+ * column top, the exact optical depth of a segment, the light and its
+ * in-segment integral, the level of detail, the draw order, and the march
+ * itself, which the tests use as the shader's stand-in); the shader; and
+ * the mesh.
  * `SkyAtmosphere` owns the mesh and adds it only in `cloudMode: 'slab'`.
  *
  * @see cloud-slab.ts.md
@@ -71,6 +73,19 @@ export const CLOUD_SLAB = {
   earlyExitTransmittance: 0.01,
   /** Below this |dir.y| a step's density is sampled, not integrated in height. */
   levelDirY: 1e-5,
+  /**
+   * The steps turn from quadratic (crowding at the entry) to uniform over
+   * this height above the top (plan 2026-09-26-0549 §4): uniform from above,
+   * where every ray crosses the whole slab, and a smoothstep between, so a
+   * camera crossing the top (the globe descent) sees no jump.
+   */
+  uniformBlendM: 25,
+  /**
+   * Below this |x| (x = τ - the sun's depth change over a segment) the
+   * in-step light uses its series; above it the closed form's cancellation
+   * is below 1e-5 in float32 (GLSL has no `expm1`).
+   */
+  lightSeriesX: 1e-2,
   defaultSteps: 16 satisfies CloudSlabSteps,
 } as const;
 
@@ -110,7 +125,8 @@ const T0 = cloudSlabThresholdThicknessM();
 /**
  * A column's thickness from its noise and the cover's threshold: T0 at the
  * threshold, rising with the noise, capped at the slab's top (the deck). An
- * infinite threshold (cover 0) gives no cloud. GLSL twin: `atmSlabThickness`.
+ * infinite threshold (cover 0) gives no cloud. The shader clamps it after
+ * interpolating (`atmSlabRawThickness` is the part before the clamp).
  */
 export function cloudSlabThicknessM(noise: number, threshold: number): number {
   if (!Number.isFinite(threshold)) return 0;
@@ -170,24 +186,52 @@ export function cloudSlabInterval(
 }
 
 /**
- * The march's steps over an interval of length `lengthM`, as offsets from its
- * entry: quadratic, crowding at the entry (the atmosphere's own form), with
- * each sample at `jitter` of the way through its step in the same quadratic
- * measure (0.5: the middle). The shader jitters it per pixel: a fixed sample
- * point drew the far deck as terraced bands at level rays, where one step
- * spans kilometres of ground (plan §12.1, measured on the look-dev page).
+ * How far the camera's spacing has turned from quadratic (0) to uniform (1):
+ * 0 up to the top, 1 from `uniformBlendM` above it, a smoothstep between.
+ * Quadratic from below and inside is a recorded decision (it crowds the
+ * steps at the flat base, or at the camera); from above every ray crosses the
+ * whole slab and uniform steps measured better at every view (plan
+ * 2026-09-26-0549 §1, §4). GLSL twin: `share` in the march.
+ */
+export function cloudSlabUniformShare(cameraY: number): number {
+  const { topM, uniformBlendM } = CLOUD_SLAB;
+  if (uniformBlendM <= 0) return cameraY > topM ? 1 : 0;
+  return smoothstep(topM, topM + uniformBlendM, cameraY);
+}
+
+/** u mapped to the march's spacing: u² (quadratic) mixed toward u (uniform). */
+function spacing(u: number, uniformShare: number): number {
+  return u * u + (u - u * u) * uniformShare;
+}
+
+/** @throws RangeError unless `value` is finite and in [0, 1]. */
+function assertUnitInterval(value: number, what: string): void {
+  if (!(Number.isFinite(value) && value >= 0 && value <= 1)) {
+    throw new RangeError(`${what} must be in [0, 1], got ${value}`);
+  }
+}
+
+/**
+ * The march's NODES over an interval of length `lengthM`, as offsets from its
+ * entry: the entry, then one node `jitter` of the way through each of the
+ * `steps` steps (in the spacing's measure), then the exit, so N + 2 nodes
+ * and N + 1 segments that tile the interval exactly. The thickness is read
+ * at the nodes and taken as linear between them (plan 2026-09-26-0549 §2
+ * change 1). The shader jitters the nodes per pixel: a fixed placement drew
+ * the far deck as terraced bands at level rays, where one step spans
+ * kilometres of ground (plan 2026-09-24-1010 §13).
  *
  * @throws RangeError for a step count the shader is not built for, a
- *   negative or non-finite length, or a jitter outside [0, 1].
+ *   negative or non-finite length, or a jitter or share outside [0, 1].
  */
-export function cloudSlabSteps(
+export function cloudSlabNodes(
   steps: number,
   lengthM: number,
-  jitter = 0.5
-): { starts: number[]; ends: number[]; samples: number[] } {
-  if (!(Number.isFinite(jitter) && jitter >= 0 && jitter <= 1)) {
-    throw new RangeError(`slab step jitter must be in [0, 1], got ${jitter}`);
-  }
+  jitter = 0.5,
+  uniformShare = 0
+): number[] {
+  assertUnitInterval(jitter, 'slab step jitter');
+  assertUnitInterval(uniformShare, 'slab uniform share');
   if (!(CLOUD_SLAB_STEPS as readonly number[]).includes(steps)) {
     throw new RangeError(
       `slab steps must be one of ${CLOUD_SLAB_STEPS.join(', ')}, got ${steps}`
@@ -198,18 +242,30 @@ export function cloudSlabSteps(
       `slab march length must be finite and ≥ 0, got ${lengthM}`
     );
   }
-  const starts: number[] = [];
-  const ends: number[] = [];
-  const samples: number[] = [];
+  const nodes = [0];
   for (let i = 0; i < steps; i++) {
-    const u0 = i / steps;
-    const u1 = (i + 1) / steps;
-    const um = (i + jitter) / steps;
-    starts.push(u0 * u0 * lengthM);
-    ends.push(u1 * u1 * lengthM);
-    samples.push(um * um * lengthM);
+    nodes.push(spacing((i + jitter) / steps, uniformShare) * lengthM);
   }
-  return { starts, ends, samples };
+  nodes.push(lengthM);
+  return nodes;
+}
+
+/**
+ * The part of a segment under the column top, as fractions [fa, fb] of the
+ * segment, or null when none is. `da` and `db` are the top's height above the
+ * ray at the segment's ends; the top is linear between them (the thickness is
+ * linear in the noise before its clamp, and the ray never leaves [0, top -
+ * base], so the clamp cannot move the crossing): the secant step of parallax
+ * occlusion mapping, exact for the linear model. GLSL twin: `fa`/`fb`.
+ */
+export function cloudSlabOccupied(
+  da: number,
+  db: number
+): [number, number] | null {
+  if (da < 0 && db < 0) return null;
+  const fa = da >= 0 ? 0 : da / (da - db);
+  const fb = db >= 0 ? 1 : da / (da - db);
+  return fb > fa ? [fa, fb] : null;
 }
 
 /**
@@ -255,15 +311,47 @@ export function cloudSlabSunTransmittance(
   T: number,
   sunY: number
 ): number {
+  return Math.min(1, Math.exp(-cloudSlabSunOpticalDepth(h, T, sunY)));
+}
+
+/**
+ * The sun's optical depth to height h of a column of thickness T (the
+ * exponent of `cloudSlabSunTransmittance`), never negative. GLSL twin:
+ * `sunA`/`sunB` in the march.
+ */
+export function cloudSlabSunOpticalDepth(
+  h: number,
+  T: number,
+  sunY: number
+): number {
   const { extinctionPerM, sunDepthScale, sunMuFloor } = CLOUD_SLAB;
   const above =
     cloudSlabCumulativeM(T) - cloudSlabCumulativeM(Math.min(Math.max(h, 0), T));
-  return Math.min(
-    1,
-    Math.exp(
-      (-extinctionPerM * sunDepthScale * above) / Math.max(sunY, sunMuFloor)
-    )
-  );
+  return (extinctionPerM * sunDepthScale * above) / Math.max(sunY, sunMuFloor);
+}
+
+/**
+ * The SUNLIT share of a segment's opacity: ∫ e^(-τ(s)) R(s) dτ over the
+ * segment, with its optical depth τ spread evenly along it and the sun's
+ * reach R = e^(-sun depth) log-linear between its ends (`sunA` at the entry,
+ * `sunB` at the exit). Closed form τ·(e^(-sunA) - e^(-sunB-τ)) / x with
+ * x = τ - sunA + sunB, written so no exponent is positive (e^x would reach
+ * e^20 from below, where the reach grows faster than the view is dimmed:
+ * x < 0). Near x = 0 it cancels, so a series takes over below
+ * `lightSeriesX`. Between 0 and 1 - e^(-τ), which it equals at R ≡ 1.
+ * GLSL twin: `atmSlabInStepLight`.
+ */
+export function cloudSlabInStepLight(
+  tau: number,
+  sunA: number,
+  sunB: number
+): number {
+  const x = tau - sunA + sunB;
+  const ra = Math.exp(-sunA);
+  if (Math.abs(x) < CLOUD_SLAB.lightSeriesX) {
+    return tau * ra * (1 - x / 2 + (x * x) / 6);
+  }
+  return (tau * (ra - Math.exp(-sunB - tau))) / x;
 }
 
 /**
@@ -349,20 +437,23 @@ export interface CloudSlabMarchInput {
 }
 
 export interface CloudSlabMarchResult {
-  /** The drawn alpha: each step weighted by the far and aerial fades. */
+  /** The drawn alpha: each segment weighted by the far and aerial fades. */
   alpha: number;
-  /** The unweighted opacity, 1 - the product of the steps' transmittances. */
+  /** The unweighted opacity, 1 - the product of the segments' transmittances. */
   opacity: number;
   /** Premultiplied radiance (zero without `light`). */
   colour: [number, number, number];
-  /** Steps actually taken (fewer after an early exit). */
+  /** Segments actually marched, at most steps + 1 (fewer after an early exit). */
   stepsTaken: number;
 }
 
 /**
- * The march the shader runs, on the CPU: the interval, the quadratic steps,
- * each step's exact optical depth through its column, the far and aerial
- * weights on the contribution, the light, and the early exit. The tests'
+ * The march the shader runs, on the CPU: the interval; the nodes (quadratic
+ * below and inside, uniform above); the noise read at every node and the
+ * column top taken as linear between neighbours; per segment the part under
+ * that top (the secant step), its exact optical depth, and the light
+ * integrated over it in closed form (`cloudSlabInStepLight`); the far and
+ * aerial weights on the contribution; and the early exit. The tests'
  * stand-in for `CLOUD_SLAB_FRAGMENT_GLSL`.
  */
 export function cloudSlabMarch(
@@ -385,51 +476,96 @@ export function cloudSlabMarch(
     input.dir[2] / length,
   ];
   if (interval === null || !Number.isFinite(threshold)) return result;
-  const { starts, ends, samples } = cloudSlabSteps(
-    steps,
-    interval.outM - interval.inM,
-    input.jitter
-  );
+  const { baseM, topM, heightScaleM } = CLOUD_SLAB;
+  const lengthM = interval.outM - interval.inM;
+  const share = cloudSlabUniformShare(camera[1]);
+  const nodes = cloudSlabNodes(steps, lengthM, input.jitter, share);
   const horizontal = Math.hypot(dir[0], dir[2]);
-  const cosToSun = light
-    ? dir[0] * light.sunDir[0] +
+  const pixelAngle = input.pixelAngle ?? 0;
+  const deck = topM - baseM;
+  // A node's level of detail takes the segment that ends at it; the entry
+  // takes a whole first step.
+  const read = (t: number, stepM: number) =>
+    sample(
+      camera[0] + dir[0] * t,
+      camera[2] + dir[2] * t,
+      cloudSlabLod(t, pixelAngle, stepM, horizontal)
+    );
+  // The thickness BEFORE its clamp: linear in the noise, so linear between
+  // nodes (see `cloudSlabOccupied`).
+  const raw = (noise: number) => T0 + heightScaleM * (noise - threshold);
+  const height = (t: number) => camera[1] + dir[1] * t - baseM;
+  let ta = interval.inM;
+  let na = read(ta, spacing(1 / steps, share) * lengthM);
+  let top: [number, number, number] = [0, 0, 0];
+  let cosToSun = 0;
+  if (light) {
+    cosToSun =
+      dir[0] * light.sunDir[0] +
       dir[1] * light.sunDir[1] +
-      dir[2] * light.sunDir[2]
-    : 0;
+      dir[2] * light.sunDir[2];
+    top = cloudSlabSourceRadiance(
+      light.sunTransmittance,
+      cosToSun,
+      0,
+      light.zenith,
+      light.sunDir[1],
+      1
+    );
+  }
   let transmittance = 1;
-  for (let i = 0; i < steps; i++) {
-    const t = interval.inM + samples[i]!;
-    const t0 = interval.inM + starts[i]!;
-    const t1 = interval.inM + ends[i]!;
-    const x = camera[0] + dir[0] * t;
-    const z = camera[2] + dir[2] * t;
-    const lod = cloudSlabLod(t, input.pixelAngle ?? 0, t1 - t0, horizontal);
-    const noise = sample(x, z, lod);
-    const T = cloudSlabThicknessM(noise, threshold);
-    const tau = cloudSlabStepOpticalDepth(camera[1], dir[1], t0, t1, T);
-    const a = 1 - Math.exp(-tau);
-    const w =
-      cloudSlabFarWeight(t * horizontal) *
-      Math.exp((-t * 0.001) / CLOUD_LAYER.aerialKm);
-    const contribution = transmittance * a * w;
-    if (light) {
-      const h = camera[1] + dir[1] * t - CLOUD_SLAB.baseM;
-      const s = cloudSlabSourceRadiance(
-        light.sunTransmittance,
-        cosToSun,
-        cloudDensity(noise, threshold),
-        light.zenith,
-        light.sunDir[1],
-        cloudSlabSunTransmittance(h, T, light.sunDir[1])
-      );
-      result.colour[0] += contribution * s[0];
-      result.colour[1] += contribution * s[1];
-      result.colour[2] += contribution * s[2];
+  for (let k = 1; k < nodes.length; k++) {
+    const tb = interval.inM + nodes[k]!;
+    const nb = read(tb, tb - ta);
+    const ra = raw(na);
+    const rb = raw(nb);
+    const occupied =
+      tb > ta ? cloudSlabOccupied(ra - height(ta), rb - height(tb)) : null;
+    result.stepsTaken = k;
+    if (occupied) {
+      const [fa, fb] = occupied;
+      const t0 = ta + (tb - ta) * fa;
+      const t1 = ta + (tb - ta) * fb;
+      const tau = cloudSlabStepOpticalDepth(camera[1], dir[1], t0, t1, deck);
+      const a = 1 - Math.exp(-tau);
+      const tm = 0.5 * (t0 + t1);
+      const w =
+        cloudSlabFarWeight(tm * horizontal) *
+        Math.exp((-tm * 0.001) / CLOUD_LAYER.aerialKm);
+      if (light) {
+        const clampDeck = (v: number) => Math.min(Math.max(v, 0), deck);
+        const sunA = cloudSlabSunOpticalDepth(
+          height(t0),
+          clampDeck(ra + (rb - ra) * fa),
+          light.sunDir[1]
+        );
+        const sunB = cloudSlabSunOpticalDepth(
+          height(t1),
+          clampDeck(ra + (rb - ra) * fb),
+          light.sunDir[1]
+        );
+        const lit = cloudSlabInStepLight(tau, sunA, sunB);
+        // The source is linear in the reach: the underside for all of the
+        // opacity, plus (top - underside) for its sunlit share.
+        const under = cloudSlabSourceRadiance(
+          light.sunTransmittance,
+          cosToSun,
+          cloudDensity(na + (nb - na) * 0.5 * (fa + fb), threshold),
+          light.zenith,
+          light.sunDir[1],
+          0
+        );
+        const weight = transmittance * w;
+        result.colour[0] += weight * (under[0] * a + (top[0] - under[0]) * lit);
+        result.colour[1] += weight * (under[1] * a + (top[1] - under[1]) * lit);
+        result.colour[2] += weight * (under[2] * a + (top[2] - under[2]) * lit);
+      }
+      result.alpha += transmittance * a * w;
+      transmittance *= Math.exp(-tau);
+      if (transmittance < CLOUD_SLAB.earlyExitTransmittance) break;
     }
-    result.alpha += contribution;
-    transmittance *= Math.exp(-tau);
-    result.stepsTaken = i + 1;
-    if (transmittance < CLOUD_SLAB.earlyExitTransmittance) break;
+    ta = tb;
+    na = nb;
   }
   result.opacity = 1 - transmittance;
   return result;
@@ -445,9 +581,11 @@ void main() {
 /**
  * The slab's fragment: the view ray from the pixel (never from the mesh's
  * interpolated position: 24 km triangles with the eye 0.5 m away broke M1's
- * sheet), the analytic interval, the quadratic march with each step's exact
- * optical depth through its column, the light hoisted out of the loop, the
- * far and aerial weights on the contribution, and the early exit. Twin of
+ * sheet), the analytic interval, the jittered nodes (quadratic below and
+ * inside, uniform above), per segment the part under the linear top, its
+ * exact optical depth and the light integrated over it, the LUT reads
+ * hoisted out of the loop, the far and aerial weights on the contribution,
+ * and the early exit. Twin of
  * `cloudSlabMarch`. Output like the sheet: scene units, clamped, then three's
  * tone mapping and output colour space.
  */
@@ -479,6 +617,8 @@ const float ATM_SLAB_LEVEL_DIR_Y = ${glslFloat(CLOUD_SLAB.levelDirY)};
 const float ATM_SLAB_FAR_START = ${glslFloat(CLOUD_SHEET.farFadeStartM)};
 const float ATM_SLAB_FAR_END = ${glslFloat(CLOUD_SHEET.farFadeEndM)};
 const float ATM_SLAB_TEXEL = ${glslFloat(TEXEL_M)};
+const float ATM_SLAB_UNIFORM_BLEND = ${glslFloat(CLOUD_SLAB.uniformBlendM)};
+const float ATM_SLAB_LIGHT_SERIES = ${glslFloat(CLOUD_SLAB.lightSeriesX)};
 
 // Twin of cloudSlabCumulativeM.
 float atmSlabCumulative(float h) {
@@ -487,9 +627,29 @@ float atmSlabCumulative(float h) {
   return h < ATM_SLAB_SOFT ? h * h / (2.0 * ATM_SLAB_SOFT) : h - 0.5 * ATM_SLAB_SOFT;
 }
 
-// Twin of cloudSlabThicknessM (the threshold is 2, above any noise, when clear).
-float atmSlabThickness(float noise, float threshold) {
-  return clamp(ATM_SLAB_T0 + ATM_SLAB_HEIGHT_SCALE * (noise - threshold), 0.0, ATM_SLAB_TOP - ATM_SLAB_BASE);
+// The thickness BEFORE its clamp (twin of the march's raw): linear in the
+// noise, so linear between nodes, and the top crossing a secant step (the
+// threshold is 2, above any noise, when clear: never occupied).
+float atmSlabRawThickness(float noise, float threshold) {
+  return ATM_SLAB_T0 + ATM_SLAB_HEIGHT_SCALE * (noise - threshold);
+}
+
+// The noise at distance t along the ray, its level from the pixel footprint
+// or the step that reaches t, whichever is larger (twin of cloudSlabLod).
+float atmSlabNoiseAt(float t, float stepM, vec3 dir, float horizontal) {
+  float footprint = max(t * atmSlabPixelAngle, stepM * horizontal);
+  float lod = footprint > 0.0 ? max(0.0, log2(footprint / ATM_SLAB_TEXEL)) : 0.0;
+  return atmCloudNoiseLod((cameraPosition.xz + dir.xz * t) * 0.001 / ATM_CLOUD_TILE + atmCloudOffset, lod);
+}
+
+// Twin of cloudSlabInStepLight: the sunlit share of a segment's opacity,
+// the reach log-linear between its ends. No exponent is positive; highp for
+// the cancellation near x = 0 (the series takes over below it).
+highp float atmSlabInStepLight(highp float tau, highp float sunA, highp float sunB) {
+  highp float x = tau - sunA + sunB;
+  highp float ra = exp(-sunA);
+  if (abs(x) < ATM_SLAB_LIGHT_SERIES) return tau * ra * (1.0 - 0.5 * x + x * x / 6.0);
+  return tau * (ra - exp(-sunB - tau)) / x;
 }
 
 void main() {
@@ -515,54 +675,69 @@ void main() {
   }
   if (tOut <= tIn) discard;
   float lengthM = tOut - tIn;
-  // A static per-pixel jitter of the sample point inside each step
-  // (interleaved gradient noise): a fixed point drew the far deck as
-  // terraced bands at level rays. The step bounds, so the exact integral,
-  // do not move.
+  // Twin of cloudSlabUniformShare: quadratic from below and inside, uniform
+  // from above, blended over ATM_SLAB_UNIFORM_BLEND above the top.
+  float share = smoothstep(ATM_SLAB_TOP, ATM_SLAB_TOP + ATM_SLAB_UNIFORM_BLEND, y);
+  // A static per-pixel jitter of the NODES inside their steps (interleaved
+  // gradient noise): a fixed placement drew the far deck as terraced bands
+  // at level rays. The entry and the exit do not move, so the segments
+  // always tile the interval and a uniform column's opacity is exact.
   float jitter = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
-  // Hoisted: the same for every sample. atmCloudLit is affine in density.
+  // Hoisted: the same for every segment. atmCloudLit is affine in density.
   vec3 under0 = atmCloudLit(dir, atmObserverRadius, 0.0);
   vec3 under1 = atmCloudLit(dir, atmObserverRadius, 1.0);
   vec3 top = atmCloudTopLit(atmObserverRadius);
-  float mu = max(atmSunDirection.y, ATM_SLAB_SUN_MU_FLOOR);
+  highp float sunScale = ATM_SLAB_SIGMA * ATM_SLAB_SUN_DEPTH / max(atmSunDirection.y, ATM_SLAB_SUN_MU_FLOOR);
+  float deck = ATM_SLAB_TOP - ATM_SLAB_BASE;
   vec3 colour = vec3(0.0);
   float alpha = 0.0;
   float transmittance = 1.0;
+  // Node 0 is the entry; its level takes a whole first step.
+  float first = 1.0 / float(ATM_SLAB_STEPS);
+  float ta = tIn;
+  float na = atmSlabNoiseAt(ta, mix(first * first, first, share) * lengthM, dir, horizontal);
   // atm-slab-loop-begin
-  for (int i = 0; i < ATM_SLAB_STEPS; i++) {
-    float u0 = float(i) / float(ATM_SLAB_STEPS);
-    float u1 = float(i + 1) / float(ATM_SLAB_STEPS);
-    float um = (float(i) + jitter) / float(ATM_SLAB_STEPS);
-    float t0 = tIn + u0 * u0 * lengthM;
-    float t1 = tIn + u1 * u1 * lengthM;
-    float t = tIn + um * um * lengthM;
-    float footprint = max(t * atmSlabPixelAngle, (t1 - t0) * horizontal);
-    float lod = footprint > 0.0 ? max(0.0, log2(footprint / ATM_SLAB_TEXEL)) : 0.0;
-    vec2 uv = (cameraPosition.xz + dir.xz * t) * 0.001 / ATM_CLOUD_TILE + atmCloudOffset;
-    float noise = atmCloudNoiseLod(uv, lod);
-    float thickness = atmSlabThickness(noise, atmCloudThreshold);
-    float tau = 0.0;
-    if (abs(dir.y) >= ATM_SLAB_LEVEL_DIR_Y) {
-      float h0 = clamp(y + dir.y * t0 - ATM_SLAB_BASE, 0.0, thickness);
-      float h1 = clamp(y + dir.y * t1 - ATM_SLAB_BASE, 0.0, thickness);
-      tau = ATM_SLAB_SIGMA * abs(atmSlabCumulative(h1) - atmSlabCumulative(h0)) / abs(dir.y);
-    } else {
-      float hm = y + dir.y * 0.5 * (t0 + t1) - ATM_SLAB_BASE;
-      float p = ATM_SLAB_SOFT <= 0.0 ? 1.0 : clamp(hm / ATM_SLAB_SOFT, 0.0, 1.0);
-      tau = (hm < 0.0 || hm > thickness) ? 0.0 : ATM_SLAB_SIGMA * p * (t1 - t0);
+  for (int i = 0; i <= ATM_SLAB_STEPS; i++) {
+    float u = i == ATM_SLAB_STEPS ? 1.0 : (float(i) + jitter) / float(ATM_SLAB_STEPS);
+    float tb = tIn + mix(u * u, u, share) * lengthM;
+    float nb = atmSlabNoiseAt(tb, tb - ta, dir, horizontal);
+    float ra = atmSlabRawThickness(na, atmCloudThreshold);
+    float rb = atmSlabRawThickness(nb, atmCloudThreshold);
+    float da = ra - (y + dir.y * ta - ATM_SLAB_BASE);
+    float db = rb - (y + dir.y * tb - ATM_SLAB_BASE);
+    if (tb > ta && (da >= 0.0 || db >= 0.0)) {
+      // The secant step: the part of the segment under the linear top.
+      float fa = da >= 0.0 ? 0.0 : da / (da - db);
+      float fb = db >= 0.0 ? 1.0 : da / (da - db);
+      float t0 = mix(ta, tb, fa);
+      float t1 = mix(ta, tb, fb);
+      float h0 = clamp(y + dir.y * t0 - ATM_SLAB_BASE, 0.0, deck);
+      float h1 = clamp(y + dir.y * t1 - ATM_SLAB_BASE, 0.0, deck);
+      float tau = 0.0;
+      if (abs(dir.y) >= ATM_SLAB_LEVEL_DIR_Y) {
+        tau = ATM_SLAB_SIGMA * abs(atmSlabCumulative(h1) - atmSlabCumulative(h0)) / abs(dir.y);
+      } else {
+        float hm = y + dir.y * 0.5 * (t0 + t1) - ATM_SLAB_BASE;
+        float p = ATM_SLAB_SOFT <= 0.0 ? 1.0 : clamp(hm / ATM_SLAB_SOFT, 0.0, 1.0);
+        tau = (hm < 0.0 || hm > deck) ? 0.0 : ATM_SLAB_SIGMA * p * (t1 - t0);
+      }
+      float a = 1.0 - exp(-tau);
+      float tm = 0.5 * (t0 + t1);
+      float w = (1.0 - smoothstep(ATM_SLAB_FAR_START, ATM_SLAB_FAR_END, tm * horizontal))
+        * exp(-tm * 0.001 / ATM_CLOUD_AERIAL_KM);
+      // The sun's depth at each end, through the interpolated column above it.
+      float c0 = clamp(mix(ra, rb, fa), 0.0, deck);
+      float c1 = clamp(mix(ra, rb, fb), 0.0, deck);
+      highp float sunA = sunScale * (atmSlabCumulative(c0) - atmSlabCumulative(min(h0, c0)));
+      highp float sunB = sunScale * (atmSlabCumulative(c1) - atmSlabCumulative(min(h1, c1)));
+      vec3 under = mix(under0, under1, atmCloudDensity(mix(na, nb, 0.5 * (fa + fb)), atmCloudThreshold));
+      colour += transmittance * w * (under * a + (top - under) * atmSlabInStepLight(tau, sunA, sunB));
+      alpha += transmittance * a * w;
+      transmittance *= exp(-tau);
+      if (transmittance < ATM_SLAB_EARLY_EXIT) break;
     }
-    float a = 1.0 - exp(-tau);
-    float w = (1.0 - smoothstep(ATM_SLAB_FAR_START, ATM_SLAB_FAR_END, t * horizontal))
-      * exp(-t * 0.001 / ATM_CLOUD_AERIAL_KM);
-    float h = clamp(y + dir.y * t - ATM_SLAB_BASE, 0.0, thickness);
-    float reach = min(1.0, exp(-ATM_SLAB_SIGMA * ATM_SLAB_SUN_DEPTH
-      * (atmSlabCumulative(thickness) - atmSlabCumulative(h)) / mu));
-    vec3 source = mix(mix(under0, under1, atmCloudDensity(noise, atmCloudThreshold)), top, reach);
-    float contribution = transmittance * a * w;
-    colour += contribution * source;
-    alpha += contribution;
-    transmittance *= exp(-tau);
-    if (transmittance < ATM_SLAB_EARLY_EXIT) break;
+    ta = tb;
+    na = nb;
   }
   // atm-slab-loop-end
   // Premultiplied: back to straight colour, with a floor against division.

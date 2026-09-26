@@ -1,7 +1,8 @@
 /**
  * Tests for the cloud slab's CPU half (plan
  * 2026-09-24-1010-lookdev-fly-through-cloud-layer-plan §11, as amended by
- * its review triage §12).
+ * its review triage §12; the march from above by plan
+ * 2026-09-26-0549-clouds-from-above-plan §4-§5).
  *
  * Why this file matters: the slab is judged by eye on the look-dev page,
  * but what makes it right is arithmetic the eye cannot check: a cover that
@@ -19,16 +20,20 @@ import {
   CLOUD_SLAB_STEPS,
   cloudSlabCumulativeM,
   cloudSlabFarWeight,
+  cloudSlabInStepLight,
   cloudSlabInterval,
   cloudSlabLod,
   cloudSlabMarch,
+  cloudSlabNodes,
+  cloudSlabOccupied,
   cloudSlabRenderOrder,
   cloudSlabSourceRadiance,
   cloudSlabStepOpticalDepth,
-  cloudSlabSteps,
+  cloudSlabSunOpticalDepth,
   cloudSlabSunTransmittance,
   cloudSlabThicknessM,
   cloudSlabThresholdThicknessM,
+  cloudSlabUniformShare,
   cloudSlabZenithOpacity,
   CLOUD_SLAB_FRAGMENT_GLSL,
   createCloudSlab,
@@ -36,6 +41,7 @@ import {
   type Vec3,
 } from './cloud-slab.js';
 import { ATMOSPHERE_CLOUD_GLSL } from './atmosphere-glsl.js';
+import { EARTH_ATMOSPHERE, transmittanceToTop } from './atmosphere-model.js';
 import { glslFloat } from '../../utils/glsl-float.js';
 import {
   CLOUD_LAYER,
@@ -236,31 +242,201 @@ describe('cloudSlabInterval', () => {
   });
 });
 
-describe('cloudSlabSteps', () => {
+describe('cloudSlabNodes', () => {
   // WHY (finding 2): uniform steps over 21 km put one or two samples where
-  // a camera is looking; quadratic ones crowd at the entry.
-  it('crowds quadratically at the entry and covers the interval exactly', () => {
+  // a camera is looking; quadratic ones crowd at the entry. Quadratic stays
+  // the spacing from below and inside (plan 2026-09-26-0549 §4).
+  it('crowds quadratically at the entry and tiles the interval exactly', () => {
     for (const n of CLOUD_SLAB_STEPS) {
       const L = 21_000;
-      const { starts, ends, samples } = cloudSlabSteps(n, L);
-      const total = ends.reduce((sum, e, i) => sum + (e - starts[i]!), 0);
-      expect(Math.abs(total - L) / L).toBeLessThan(1e-9);
-      for (let i = 1; i < n; i++) {
-        expect(samples[i]!).toBeGreaterThan(samples[i - 1]!);
-        expect(starts[i]).toBe(ends[i - 1]);
+      const nodes = cloudSlabNodes(n, L);
+      expect(nodes).toHaveLength(n + 2);
+      expect(nodes[0]).toBe(0);
+      expect(nodes[n + 1]).toBe(L);
+      for (let k = 1; k < nodes.length; k++) {
+        expect(nodes[k]!).toBeGreaterThan(nodes[k - 1]!);
       }
-      expect(ends[0]! - starts[0]!).toBeCloseTo(L / (n * n), 9);
-      expect(
-        (ends[n - 1]! - starts[n - 1]!) / (ends[0]! - starts[0]!)
-      ).toBeCloseTo(2 * n - 1, 9);
+      // Node k (1..n) sits in the middle of quadratic step k - 1.
+      for (let k = 1; k <= n; k++) {
+        expect(nodes[k]).toBeCloseTo(((k - 0.5) / n) ** 2 * L, 6);
+      }
     }
-    const { samples } = cloudSlabSteps(16, 21_000);
-    expect(samples.filter((s) => s < 3000).length).toBeGreaterThanOrEqual(5);
+    const nodes = cloudSlabNodes(16, 21_000);
+    expect(nodes.filter((s) => s < 3000).length).toBeGreaterThanOrEqual(5);
   });
 
-  it('refuses a step count the shader is not built for', () => {
-    expect(() => cloudSlabSteps(12, 1000)).toThrow(RangeError);
-    expect(() => cloudSlabSteps(16, -1)).toThrow(RangeError);
+  // WHY (plan 2026-09-26-0549 §1, §4): from above every ray crosses the
+  // whole slab, and uniform nodes measured better than quadratic at every
+  // view; the share blends between the two, so the nodes move continuously.
+  it('spaces the nodes uniformly at share 1 and continuously between', () => {
+    const L = 400;
+    const uniform = cloudSlabNodes(8, L, 0.5, 1);
+    for (let k = 1; k <= 8; k++) {
+      expect(uniform[k]).toBeCloseTo(((k - 0.5) / 8) * L, 9);
+    }
+    const a = cloudSlabNodes(8, L, 0.5, 0.3);
+    const b = cloudSlabNodes(8, L, 0.5, 0.3 + 1e-6);
+    for (let k = 0; k < a.length; k++) {
+      expect(Math.abs(a[k]! - b[k]!)).toBeLessThan(1e-3);
+    }
+  });
+
+  it('refuses a step count the shader is not built for, and bad inputs', () => {
+    expect(() => cloudSlabNodes(12, 1000)).toThrow(RangeError);
+    expect(() => cloudSlabNodes(16, -1)).toThrow(RangeError);
+    expect(() => cloudSlabNodes(16, 1000, 0.5, 1.5)).toThrow(RangeError);
+    expect(() => cloudSlabNodes(16, 1000, 0.5, Number.NaN)).toThrow(RangeError);
+  });
+});
+
+describe('cloudSlabUniformShare', () => {
+  // WHY (plan 2026-09-26-0549 §4, guard E7): the spacing turns uniform only
+  // ABOVE the slab (quadratic from below is a recorded decision), and the
+  // turn is continuous, so the globe descent crossing the top does not jump.
+  it('is 0 up to the top, 1 from the blend height above it, and continuous', () => {
+    expect(S.uniformBlendM).toBeGreaterThan(0);
+    expect(cloudSlabUniformShare(18)).toBe(0);
+    expect(cloudSlabUniformShare(S.baseM)).toBe(0);
+    expect(cloudSlabUniformShare(2000)).toBe(0);
+    expect(cloudSlabUniformShare(S.topM)).toBe(0);
+    expect(cloudSlabUniformShare(S.topM + S.uniformBlendM)).toBe(1);
+    expect(cloudSlabUniformShare(5000)).toBe(1);
+    let previous = 0;
+    for (let y = S.topM; y <= S.topM + S.uniformBlendM; y += 0.25) {
+      const share = cloudSlabUniformShare(y);
+      expect(share).toBeGreaterThanOrEqual(previous);
+      // A smoothstep's steepest slope is 1.5 per blend height.
+      expect(share - previous).toBeLessThanOrEqual(
+        (1.5 * 0.25) / S.uniformBlendM + 1e-12
+      );
+      previous = share;
+    }
+  });
+});
+
+describe('cloudSlabOccupied', () => {
+  // WHY (plan 2026-09-26-0549 §2 change 1, the secant step): the part of a
+  // segment under a LINEAR top is found exactly, so a top crossing a segment
+  // no longer snaps to the segment's bounds (the contour layers from above).
+  it('finds exactly the part of a segment under a linear top', () => {
+    const random = mulberry32(5);
+    const n = 4000;
+    for (let k = 0; k < 2000; k++) {
+      const da = (random() * 2 - 1) * 300;
+      const db = (random() * 2 - 1) * 300;
+      const occupied = cloudSlabOccupied(da, db);
+      let inside = 0;
+      for (let i = 0; i < n; i++) {
+        if (da + ((db - da) * (i + 0.5)) / n >= 0) inside++;
+      }
+      const share = occupied ? occupied[1] - occupied[0] : 0;
+      expect(Math.abs(share - inside / n)).toBeLessThanOrEqual(1 / n);
+      // The occupied part's middle lies under the top (no claim when none is).
+      const middle = occupied
+        ? da + (db - da) * 0.5 * (occupied[0] + occupied[1])
+        : 0;
+      expect(middle).toBeGreaterThanOrEqual(0);
+    }
+    expect(cloudSlabOccupied(-1, -2)).toBeNull();
+    expect(cloudSlabOccupied(3, 5)).toEqual([0, 1]);
+  });
+});
+
+describe('cloudSlabInStepLight', () => {
+  /** ∫ e^(-τu) e^(-(sunA + (sunB - sunA)u)) τ du over [0, 1], midpoint rule. */
+  const numeric = (tau: number, sunA: number, sunB: number) => {
+    const n = 20_000;
+    let sum = 0;
+    for (let i = 0; i < n; i++) {
+      const u = (i + 0.5) / n;
+      sum += Math.exp(-tau * u - (sunA + (sunB - sunA) * u)) * (tau / n);
+    }
+    return sum;
+  };
+
+  // WHY (plan 2026-09-26-0549 §4, the x < 0 regime): from below and inside
+  // the sun's reach GROWS along the ray faster than the view is dimmed
+  // (x = τ - sunA + sunB < 0), where the textbook form (1 - e^-x)/x needs
+  // e^|x| up to e^20. The closed form must match the integral on BOTH sides,
+  // at x = 0 and across the series limit.
+  it('equals the integral of the reach over the dimming, for either sign of x', () => {
+    const random = mulberry32(9);
+    for (let k = 0; k < 400; k++) {
+      const tau = random() * 12;
+      const sunA = random() * 20;
+      const sunB = Math.max(
+        0,
+        random() < 0.5 ? random() * 20 : sunA - tau + (random() - 0.5) * 0.05
+      );
+      const exact = numeric(tau, sunA, sunB);
+      expect(
+        Math.abs(cloudSlabInStepLight(tau, sunA, sunB) - exact)
+      ).toBeLessThanOrEqual(1e-8 + 1e-6 * exact);
+    }
+    const limit = S.lightSeriesX;
+    for (const x of [
+      0,
+      1e-12,
+      -1e-12,
+      limit * 0.999,
+      limit * 1.001,
+      -limit * 1.001,
+    ]) {
+      const tau = 2;
+      const sunA = 1;
+      const sunB = x - tau + sunA + 2;
+      const value = cloudSlabInStepLight(tau, sunA + 2, sunB);
+      expect(Number.isFinite(value)).toBe(true);
+      expect(
+        Math.abs(value - numeric(tau, sunA + 2, sunB))
+      ).toBeLessThanOrEqual(1e-8);
+    }
+  });
+
+  // WHY: the ends of the physics: a sun that reaches everywhere lights all
+  // of the opacity (the sheet's top), one that reaches nowhere lights none,
+  // and an empty segment lights nothing.
+  it('is all of the opacity at full reach, none at none, and 0 for an empty segment', () => {
+    for (const tau of [0.01, 0.5, 3, 12]) {
+      expect(cloudSlabInStepLight(tau, 0, 0)).toBeCloseTo(
+        1 - Math.exp(-tau),
+        12
+      );
+      expect(cloudSlabInStepLight(tau, 800, 800)).toBeLessThan(1e-300);
+      const v = cloudSlabInStepLight(tau, 0.3, 5);
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(v).toBeLessThanOrEqual(1 - Math.exp(-tau));
+    }
+    expect(cloudSlabInStepLight(0, 1, 2)).toBe(0);
+  });
+
+  // WHY (the shader has no expm1, and its floats are 32-bit): emulated with
+  // Math.fround, the closed form cancels near x = 0; the series below
+  // `lightSeriesX` keeps float32 within 1e-4 of float64. MEASURED 2026-09-26
+  // (worst relative error over |x| in [1e-7, 30]) per limit: none: 0/0;
+  // 1e-4: 7.2e-4; 1e-3: 7.3e-5; 1e-2: 7.6e-6; 1e-1: 4.0e-5; 0.3: 1.2e-3
+  // (above 0.1 the series' own truncation takes over).
+  it('keeps float32 within 1e-4 of float64 across x', () => {
+    const f = Math.fround;
+    const f32 = (tau: number, sunA: number, sunB: number) => {
+      const x = f(f(f(tau) - f(sunA)) + f(sunB));
+      const ra = f(Math.exp(-f(sunA)));
+      if (Math.abs(x) < S.lightSeriesX) {
+        return f(f(f(tau) * ra) * f(1 - f(x * 0.5) + f(f(x * x) / 6)));
+      }
+      return f(f(f(tau) * f(ra - f(Math.exp(f(-f(sunB) - f(tau)))))) / x);
+    };
+    let worst = 0;
+    for (let e = -7; e <= 1.5; e += 0.05) {
+      for (const sign of [-1, 1]) {
+        const tau = 1.5;
+        const sunA = 20;
+        const sunB = sign * 10 ** e - tau + sunA;
+        const exact = cloudSlabInStepLight(tau, sunA, sunB);
+        worst = Math.max(worst, Math.abs(f32(tau, sunA, sunB) - exact) / exact);
+      }
+    }
+    expect(worst).toBeLessThanOrEqual(1e-4);
   });
 });
 
@@ -332,6 +508,14 @@ describe('the light', () => {
     expect(cloudSlabSunTransmittance(0, 400, 0.85)).toBeLessThan(
       cloudSlabSunTransmittance(200, 400, 0.85)
     );
+    // The march integrates the exponent (plan 2026-09-26-0549 §2 change 1).
+    for (const h of [-10, 0, 30, 200, 450]) {
+      expect(cloudSlabSunOpticalDepth(h, 400, 0.3)).toBeGreaterThanOrEqual(0);
+      expect(Math.exp(-cloudSlabSunOpticalDepth(h, 400, 0.3))).toBeCloseTo(
+        cloudSlabSunTransmittance(h, 400, 0.3),
+        14
+      );
+    }
   });
 });
 
@@ -355,6 +539,18 @@ describe('cloudSlabMarch', () => {
       expect(m.opacity).toBeCloseTo(0.5, 9);
       expect(m.alpha).toBeLessThan(0.5);
       expect(m.alpha).toBeGreaterThan(0.45);
+      // From above (uniform nodes, the secant step through a flat top).
+      for (const jitter of [0, 0.3, 1]) {
+        const down = cloudSlabMarch({
+          camera: [0, 3200, 0],
+          dir: [0, -1, 0],
+          steps,
+          sample: uniform(theta),
+          threshold: theta,
+          jitter,
+        });
+        expect(down.opacity).toBeCloseTo(0.5, 9);
+      }
     }
   });
 
@@ -563,17 +759,25 @@ describe('CLOUD_SLAB_FRAGMENT_GLSL', () => {
       S.sunMuFloor,
       S.maxMarchM,
       S.earlyExitTransmittance,
+      S.uniformBlendM,
+      S.lightSeriesX,
     ]) {
       expect(CLOUD_SLAB_FRAGMENT_GLSL).toContain(glslFloat(v));
     }
   });
 
   // WHY (cold review finding 3, cost): inside the loop implicit derivatives
-  // are undefined, so the noise is read with an explicit level; and the
-  // light's LUT reads are hoisted, the same for every sample.
+  // are undefined, so the noise is read with an explicit level (through
+  // `atmSlabNoiseAt`, which the entry node shares); and the light's LUT
+  // reads are hoisted, the same for every segment.
   it('reads the noise with explicit levels in the loop and hoists the light', () => {
     const body = loop();
-    expect(body).toContain('atmCloudNoiseLod(');
+    expect(body).toContain('atmSlabNoiseAt(');
+    const helper = CLOUD_SLAB_FRAGMENT_GLSL.slice(
+      CLOUD_SLAB_FRAGMENT_GLSL.indexOf('float atmSlabNoiseAt('),
+      CLOUD_SLAB_FRAGMENT_GLSL.indexOf('highp float atmSlabInStepLight(')
+    );
+    expect(helper).toContain('atmCloudNoiseLod(');
     for (const banned of [
       'texture2D(',
       'texture(',
@@ -582,20 +786,44 @@ describe('CLOUD_SLAB_FRAGMENT_GLSL', () => {
       'atmCloudTopLit(',
     ]) {
       expect(body).not.toContain(banned);
+      expect(helper).not.toContain(banned);
     }
   });
 
-  // WHY (M2 review M1): the CPU twin's tests run the TypeScript march, so
-  // the SHADER's own step bounds and exact vertical integral are pinned
-  // here; a midpoint-sampling or jittered-bounds shader passes every other
-  // test, and its e2e line reading (2.9 against 2.5) is too close to call.
-  it('marches quadratic step bounds and integrates each step exactly in height', () => {
+  // WHY (M2 review M1, re-pinned by plan 2026-09-26-0549 §4): the CPU
+  // twin's tests run the TypeScript march, so the SHADER's own nodes, secant
+  // step, exact height integral and in-segment light are pinned here. A
+  // point-sampled reach, the reach's ends swapped, nodes that do not tile the
+  // interval or a lost small-x guard would pass every other test.
+  it('marches jittered nodes, the secant step, the exact integral and the in-segment light', () => {
     const body = loop();
-    expect(body).toContain('float t0 = tIn + u0 * u0 * lengthM;');
-    expect(body).toContain('float t1 = tIn + u1 * u1 * lengthM;');
-    expect(body).toContain('float t = tIn + um * um * lengthM;');
-    expect(body).toContain(
-      'abs(atmSlabCumulative(h1) - atmSlabCumulative(h0)) / abs(dir.y)'
+    for (const line of [
+      'for (int i = 0; i <= ATM_SLAB_STEPS; i++) {',
+      'float u = i == ATM_SLAB_STEPS ? 1.0 : (float(i) + jitter) / float(ATM_SLAB_STEPS);',
+      'float tb = tIn + mix(u * u, u, share) * lengthM;',
+      'float fa = da >= 0.0 ? 0.0 : da / (da - db);',
+      'float fb = db >= 0.0 ? 1.0 : da / (da - db);',
+      'abs(atmSlabCumulative(h1) - atmSlabCumulative(h0)) / abs(dir.y)',
+      '(top - under) * atmSlabInStepLight(tau, sunA, sunB)',
+      'ta = tb;',
+      'na = nb;',
+    ]) {
+      expect(body).toContain(line);
+    }
+    expect(CLOUD_SLAB_FRAGMENT_GLSL).toContain('float ta = tIn;');
+    expect(CLOUD_SLAB_FRAGMENT_GLSL).toContain(
+      'float share = smoothstep(ATM_SLAB_TOP, ATM_SLAB_TOP + ATM_SLAB_UNIFORM_BLEND, y);'
+    );
+    // The in-segment light: highp, the closed form with no positive
+    // exponent, and the series below the limit (GLSL has no expm1).
+    expect(CLOUD_SLAB_FRAGMENT_GLSL).toContain(
+      'highp float atmSlabInStepLight(highp float tau, highp float sunA, highp float sunB) {'
+    );
+    expect(CLOUD_SLAB_FRAGMENT_GLSL).toContain(
+      'if (abs(x) < ATM_SLAB_LIGHT_SERIES) return tau * ra * (1.0 - 0.5 * x + x * x / 6.0);'
+    );
+    expect(CLOUD_SLAB_FRAGMENT_GLSL).toContain(
+      'return tau * (ra - exp(-sunB - tau)) / x;'
     );
   });
 
@@ -723,24 +951,33 @@ describe('createCloudSlab', () => {
   });
 });
 
-describe('the sample jitter', () => {
-  // WHY (found on the look-dev page): a fixed sample point per step drew
-  // the far deck as terraced bands at level rays. The shader moves the
-  // sample inside each step per pixel; the step BOUNDS must not move, or the
-  // exact integral and a vertical ray's opacity would change with it.
-  it('moves the sample inside its step and leaves the bounds alone', () => {
-    const mid = cloudSlabSteps(16, 21_000);
-    for (const jitter of [0, 0.25, 0.9999]) {
-      const j = cloudSlabSteps(16, 21_000, jitter);
-      expect(j.starts).toEqual(mid.starts);
-      expect(j.ends).toEqual(mid.ends);
-      for (let i = 0; i < 16; i++) {
-        expect(j.samples[i]).toBeGreaterThanOrEqual(j.starts[i]!);
-        expect(j.samples[i]).toBeLessThanOrEqual(j.ends[i]!);
+describe('the node jitter', () => {
+  // WHY (found on the look-dev page, plan 2026-09-24-1010 §13; restated by
+  // plan 2026-09-26-0549 §4): a fixed placement drew the far deck as
+  // terraced bands at level rays. The shader moves the INTERIOR nodes per
+  // pixel; the entry and the exit never move, so the segments always tile
+  // the interval and the exact integral keeps a uniform column's opacity
+  // independent of the jitter. This SUPERSEDES "the step bounds do not
+  // move": the nodes are now the bounds, and jittered nodes measured less
+  // bias than fixed ones at every view (W2 M1 notes).
+  it('moves each interior node inside its step and never the entry or the exit', () => {
+    const L = 21_000;
+    for (const share of [0, 0.5, 1]) {
+      const first = cloudSlabNodes(16, L, 0, share);
+      const last = cloudSlabNodes(16, L, 1, share);
+      for (const jitter of [0, 0.25, 0.9999, 1]) {
+        const nodes = cloudSlabNodes(16, L, jitter, share);
+        expect(nodes[0]).toBe(0);
+        expect(nodes[17]).toBe(L);
+        for (let k = 1; k <= 16; k++) {
+          expect(nodes[k]).toBeGreaterThanOrEqual(first[k]!);
+          expect(nodes[k]).toBeLessThanOrEqual(last[k]!);
+          expect(nodes[k]).toBeGreaterThanOrEqual(nodes[k - 1]!);
+        }
       }
     }
-    expect(() => cloudSlabSteps(16, 1000, 1.5)).toThrow(RangeError);
-    expect(() => cloudSlabSteps(16, 1000, Number.NaN)).toThrow(RangeError);
+    expect(() => cloudSlabNodes(16, 1000, 1.5)).toThrow(RangeError);
+    expect(() => cloudSlabNodes(16, 1000, Number.NaN)).toThrow(RangeError);
   });
 
   it('does not change a vertical ray through a uniform column', () => {
@@ -757,13 +994,433 @@ describe('the sample jitter', () => {
     }
   });
 
-  it('is computed per pixel in the shader, inside the loop only as the sample point', () => {
+  it('is computed per pixel in the shader and moves only the interior nodes', () => {
     expect(CLOUD_SLAB_FRAGMENT_GLSL).toMatch(
       /float jitter = fract\(.*gl_FragCoord/
     );
     expect(CLOUD_SLAB_FRAGMENT_GLSL).toContain(
-      'float um = (float(i) + jitter)'
+      'float u = i == ATM_SLAB_STEPS ? 1.0 : (float(i) + jitter)'
     );
-    expect(CLOUD_SLAB_FRAGMENT_GLSL).toContain('float u0 = float(i) /');
+    expect(CLOUD_SLAB_FRAGMENT_GLSL).toContain('float ta = tIn;');
+  });
+});
+
+/**
+ * The noise as the shader reads it at level 0 (`atmCloudNoiseLod`): two
+ * bilinear reads of the 8-bit texture (texel centres at half texels,
+ * wrapped), the second at the octave's frequency and offset.
+ */
+const shaderNoise = (() => {
+  const size = CLOUD_TEXTURE_SIZE;
+  const data = cloudNoise(size, 1);
+  const texelM = (CLOUD_LAYER.tileKm * 1000) / size;
+  const wrap = (i: number) => ((i % size) + size) % size;
+  const tex = (i: number, j: number) => data[wrap(j) * size + wrap(i)]! / 255;
+  const bilinear = (u: number, v: number) => {
+    const i = Math.floor(u - 0.5);
+    const j = Math.floor(v - 0.5);
+    const fu = u - 0.5 - i;
+    const fv = v - 0.5 - j;
+    return (
+      (tex(i, j) * (1 - fu) + tex(i + 1, j) * fu) * (1 - fv) +
+      (tex(i, j + 1) * (1 - fu) + tex(i + 1, j + 1) * fu) * fv
+    );
+  };
+  const c = CLOUD_LAYER;
+  const offset = c.secondOctaveOffset * size;
+  return (x: number, z: number) => {
+    const u = x / texelM;
+    const v = z / texelM;
+    return (
+      c.firstOctaveWeight * bilinear(u, v) +
+      (1 - c.firstOctaveWeight) *
+        bilinear(
+          u * c.secondOctaveFrequency + offset,
+          v * c.secondOctaveFrequency + offset
+        )
+    );
+  };
+})();
+
+type MarchInput = Parameters<typeof cloudSlabMarch>[0];
+type Light = NonNullable<MarchInput['light']>;
+
+/**
+ * The REFERENCE path (plan 2026-09-26-0549 §4): the SHIPPED point-sampled
+ * march at any step count, which `cloudSlabNodes` refuses outside 8/16/24/32.
+ * One noise read per step, that column's exact vertical integral, the sun's
+ * reach at the sample point, the early exit. Built only from the exported
+ * primitives, never from the nodes, the secant or the in-step light, so it
+ * is independent of the code it judges. `quadratic` with a shipped count is
+ * the march this plan replaced, exactly (pinned below).
+ */
+function referenceMarch(input: MarchInput & { quadratic?: boolean }): {
+  alpha: number;
+  opacity: number;
+  colour: [number, number, number];
+} {
+  const { camera, dir, steps, sample, threshold, light } = input;
+  const jitter = input.jitter ?? 0.5;
+  const result = {
+    alpha: 0,
+    opacity: 0,
+    colour: [0, 0, 0] as [number, number, number],
+  };
+  const interval = cloudSlabInterval(camera[1], dir);
+  if (interval === null || !Number.isFinite(threshold)) return result;
+  const L = interval.outM - interval.inM;
+  const at = (u: number) => interval.inM + (input.quadratic ? u * u : u) * L;
+  const horizontal = Math.hypot(dir[0], dir[2]);
+  const cos = light
+    ? dir[0] * light.sunDir[0] +
+      dir[1] * light.sunDir[1] +
+      dir[2] * light.sunDir[2]
+    : 0;
+  let transmittance = 1;
+  for (let i = 0; i < steps; i++) {
+    const t0 = at(i / steps);
+    const t1 = at((i + 1) / steps);
+    const t = at((i + jitter) / steps);
+    const noise = sample(camera[0] + dir[0] * t, camera[2] + dir[2] * t, 0);
+    const T = cloudSlabThicknessM(noise, threshold);
+    const tau = cloudSlabStepOpticalDepth(camera[1], dir[1], t0, t1, T);
+    const k =
+      transmittance *
+      (1 - Math.exp(-tau)) *
+      cloudSlabFarWeight(t * horizontal) *
+      Math.exp((-t * 0.001) / CLOUD_LAYER.aerialKm);
+    if (light) {
+      const s = cloudSlabSourceRadiance(
+        light.sunTransmittance,
+        cos,
+        cloudDensity(noise, threshold),
+        light.zenith,
+        light.sunDir[1],
+        cloudSlabSunTransmittance(
+          camera[1] + dir[1] * t - S.baseM,
+          T,
+          light.sunDir[1]
+        )
+      );
+      result.colour[0] += k * s[0];
+      result.colour[1] += k * s[1];
+      result.colour[2] += k * s[2];
+    }
+    result.alpha += k;
+    transmittance *= Math.exp(-tau);
+    if (transmittance < S.earlyExitTransmittance) break;
+  }
+  result.opacity = 1 - transmittance;
+  return result;
+}
+
+/**
+ * The sun at an elevation, the geometry every bound below names: its
+ * transmittance at cloud height from the CPU sky model, a zenith sky
+ * scaled with the sun (fixed values: triage §14 L5 applies here too).
+ */
+function lightAt(elevationDeg: number): Light {
+  const sunDir = dirAt(elevationDeg, 180);
+  const sunTransmittance = transmittanceToTop(
+    EARTH_ATMOSPHERE.groundRadiusKm + CLOUD_LAYER.altitudeKm,
+    sunDir[1],
+    { visibilityKm: 40 }
+  );
+  const z = Math.min(1, Math.max(sunDir[1], 0.1) / 0.85);
+  return { sunTransmittance, sunDir, zenith: [0.01 * z, 0.015 * z, 0.03 * z] };
+}
+
+/** Interleaved gradient noise: the shader's static per-pixel jitter. */
+const ign = (x: number, y: number) => {
+  const fract = (v: number) => v - Math.floor(v);
+  return fract(52.9829189 * fract(0.06711056 * x + 0.00583715 * y));
+};
+
+/**
+ * A view from height `y` at `pitch` (degrees, negative looks down): 4 camera
+ * positions × away from and toward the sun (±15°) × 20 rows over ±15°.
+ */
+function viewPixels(y: number, pitch: number) {
+  const pixels: { camera: Vec3; dir: Vec3; col: number; row: number }[] = [];
+  for (let p = 0; p < 4; p++) {
+    for (const [a, azimuth] of [0, 180].entries()) {
+      const camera: Vec3 = [500 + 3100 * p, y, 300 + 1900 * p];
+      for (let row = 0; row < 20; row++) {
+        const el = pitch - 15 + (30 * (row + 0.5)) / 20;
+        pixels.push({
+          camera,
+          dir: dirAt(el, azimuth + (p % 2 ? 15 : -15)),
+          col: 2 * p + a,
+          row,
+        });
+      }
+    }
+  }
+  return pixels;
+}
+
+const rmsOf = (v: number[]) =>
+  Math.sqrt(v.reduce((s, x) => s + x * x, 0) / Math.max(v.length, 1));
+const sum = (c: readonly number[]) => c[0]! + c[1]! + c[2]!;
+
+/**
+ * A march's error on a view against the 1024-step reference, on cloud
+ * pixels (either alpha above 0.05), in units of the sheet top's radiance
+ * for that sun (RGB sums): `bias` from the mean of 8 jittered frames (the
+ * layers the jitter cannot hide), `single` from one frame with the shader's
+ * static jitter (what the page shows). The reference early-exits too, as
+ * the GPU's 256-step reference does.
+ */
+function viewError(
+  march: (input: MarchInput) => { colour: readonly number[]; alpha: number },
+  view: { y: number; pitch: number },
+  sunEl: number,
+  steps: number,
+  cover = 0.5
+): { bias: number; single: number } {
+  const light = lightAt(sunEl);
+  const norm = sum(
+    cloudTopRadiance(light.sunTransmittance, light.sunDir[1], light.zenith)
+  );
+  const threshold = cloudThreshold(cover);
+  const bias: number[] = [];
+  const single: number[] = [];
+  for (const p of viewPixels(view.y, view.pitch)) {
+    const base = {
+      camera: p.camera,
+      dir: p.dir,
+      sample: shaderNoise,
+      threshold,
+      light,
+    };
+    const ref = referenceMarch({ ...base, steps: 1024 });
+    let colour = 0;
+    let alpha = 0;
+    for (let k = 0; k < 8; k++) {
+      const m = march({ ...base, steps, jitter: (k + 0.5) / 8 });
+      colour += sum(m.colour) / 8;
+      alpha += m.alpha / 8;
+    }
+    if (!(ref.alpha > 0.05 || alpha > 0.05)) continue;
+    const one = march({ ...base, steps, jitter: ign(p.col * 7 + 3, p.row) });
+    bias.push((colour - sum(ref.colour)) / norm);
+    single.push((sum(one.colour) - sum(ref.colour)) / norm);
+  }
+  return { bias: rmsOf(bias), single: rmsOf(single) };
+}
+
+const fixed = (input: MarchInput) => cloudSlabMarch(input);
+const shipped = (input: MarchInput) =>
+  referenceMarch({ ...input, quadratic: true });
+
+describe('the reference path', () => {
+  // WHY (plan 2026-09-26-0549 §4): every bound below is measured against the
+  // point-sampled march this plan replaced; the reference must BE that march
+  // at the shipped counts. The numbers were recorded from the pre-change
+  // `cloudSlabMarch` on 2026-09-26 (scratch w2m1/pin.mjs).
+  it('reproduces the replaced march exactly at the shipped counts', () => {
+    const cases = [
+      {
+        camera: [3600, 3200, 2200] as Vec3,
+        dir: dirAt(-65, 15),
+        steps: 8,
+        jitter: 0.5,
+        cover: 0.5,
+        sun: 58,
+        alpha: 0.9621254179985599,
+        colour: 0.49749123500286085,
+      },
+      {
+        camera: [3600, 18, 2200] as Vec3,
+        dir: dirAt(40, 200),
+        steps: 16,
+        jitter: 0.25,
+        cover: 0.9,
+        sun: 14.48,
+        alpha: 0.9478434270006281,
+        colour: 0.2052208188092708,
+      },
+      {
+        camera: [6700, 2000, 4100] as Vec3,
+        dir: dirAt(-10, 100),
+        steps: 32,
+        jitter: 0.8,
+        cover: 0.3,
+        sun: 5,
+        alpha: 0.9927944984726794,
+        colour: 0.03475010173470404,
+      },
+    ];
+    for (const c of cases) {
+      const m = referenceMarch({
+        camera: c.camera,
+        dir: c.dir,
+        steps: c.steps,
+        jitter: c.jitter,
+        sample: shaderNoise,
+        threshold: cloudThreshold(c.cover),
+        light: lightAt(c.sun),
+        quadratic: true,
+      });
+      expect(m.alpha).toBeCloseTo(c.alpha, 12);
+      expect(sum(m.colour)).toBeCloseTo(c.colour, 12);
+    }
+  });
+});
+
+describe('the march from above, below and inside (plan 2026-09-26-0549 M1)', () => {
+  // WHY: the twin must read the noise exactly where the shader does, at the
+  // nodes `cloudSlabNodes` names for its camera's spacing (uniform above,
+  // blended just above the top, quadratic below and inside). The error
+  // bounds below cannot see the spacing at steep views (1.0-1.3x), so
+  // without this a twin that ignored the rule would pass (mutant checked).
+  it("reads the noise at the nodes of its camera's spacing", () => {
+    const dir = dirAt(-40, 30);
+    const up = dirAt(40, 30);
+    for (const [y, d] of [
+      [3200, dir],
+      [2210, dir],
+      [2000, dirAt(-10, 30)],
+      [18, up],
+    ] as [number, Vec3][]) {
+      const camera: Vec3 = [100, y, -200];
+      const horizontal = Math.hypot(d[0], d[2]);
+      const read: number[] = [];
+      cloudSlabMarch({
+        camera,
+        dir: d,
+        steps: 8,
+        jitter: 0.3,
+        threshold: 0.6,
+        sample: (x, z) => {
+          read.push(Math.hypot(x - camera[0], z - camera[2]) / horizontal);
+          return 0;
+        },
+      });
+      const interval = cloudSlabInterval(y, d)!;
+      const nodes = cloudSlabNodes(
+        8,
+        interval.outM - interval.inM,
+        0.3,
+        cloudSlabUniformShare(y)
+      );
+      expect(read).toHaveLength(nodes.length);
+      read.forEach((t, k) =>
+        expect(t).toBeCloseTo(interval.inM + nodes[k]!, 6)
+      );
+    }
+  });
+
+  // WHY (the owner's report, plan §1 and §5): from above the shipped march
+  // drew contour layers, because it read one column and one sun reach per
+  // slice. At 8 steps the new march must stay under a bound the shipped 8
+  // steps exceeds at least twice over, per pose and sun, so the test can
+  // tell them apart and a regression toward the old march fails it.
+  // Each bound sits between the two, near their geometric mean. MEASURED
+  // 2026-09-26 on this test's own views (new 8 / shipped 8, bias RMS in
+  // top-radiance units): 3200 m 65°: 0.0012 / 0.0107 at noon, 0.0012 /
+  // 0.0130 at 25°, 0.0037 / 0.0240 at 5°; 2300 m 65°: 0.0012 / 0.0209,
+  // 0.0012 / 0.0249, 0.0038 / 0.0165; 5000 m 90°: 0.0010 / 0.0125, 0.0034 /
+  // 0.0227; 2600 m 30°: 0.0053 / 0.0458, 0.0321 / 0.1903. Not held here, and
+  // recorded: 3200 m 30° (0.060 / 0.038 at noon on these views, 0.026 /
+  // 0.053 on the notes' wider grid: one sub-node cloud decides it) and every
+  // 15° or 5° view (1.3-5x better, not solved; plan §2 change 3).
+  const ABOVE = [
+    { y: 3200, pitch: -65, sun: 58, bound: 0.0025 },
+    { y: 3200, pitch: -65, sun: 25, bound: 0.003 },
+    { y: 3200, pitch: -65, sun: 5, bound: 0.007 },
+    { y: 2300, pitch: -65, sun: 58, bound: 0.0035 },
+    { y: 2300, pitch: -65, sun: 25, bound: 0.004 },
+    { y: 2300, pitch: -65, sun: 5, bound: 0.0055 },
+    { y: 5000, pitch: -90, sun: 58, bound: 0.0025 },
+    { y: 5000, pitch: -90, sun: 5, bound: 0.006 },
+    { y: 2600, pitch: -30, sun: 58, bound: 0.011 },
+    { y: 2600, pitch: -30, sun: 5, bound: 0.055 },
+  ];
+  it.each(ABOVE)(
+    'from $y m, $pitch°, sun $sun°: under $bound at 8 steps, the shipped march over twice that',
+    ({ y, pitch, sun, bound }) => {
+      const now = viewError(fixed, { y, pitch }, sun, 8);
+      const before = viewError(shipped, { y, pitch }, sun, 8);
+      expect(now.bias).toBeLessThanOrEqual(bound);
+      expect(before.bias).toBeGreaterThanOrEqual(2 * bound);
+    }
+  );
+
+  // WHY (plan §4): the view from below and from inside was never the
+  // complaint and must not regress. At the shipped 16 steps the new march
+  // stays within 1.15x of the shipped 16 (bias and single frame), and at 8
+  // its bias within the shipped 8's, each plus 0.002 of the top's radiance:
+  // the floor the early exit leaves when a coarse march overshoots the 1 %
+  // cut the reference stops at (with the exit off on both sides, the new
+  // march's bias from below at the zenith is under 5e-5, 58-122x below the
+  // shipped 8). MEASURED 2026-09-26,
+  // the tightest: 1900 m level at 5°, one frame at 16, 0.413 against the
+  // shipped 0.369 (bound 0.426). NOT held, and recorded: one frame at 8
+  // inside looking up 25° at 5° reads 0.027 against the shipped 8's 0.024
+  // (the nodes' grain; the bias is equal), and at 8 against the SHIPPED 16
+  // the bias from below is up to 2.2x (0.0048 / 0.0021 at the zenith, 5°):
+  // the M4 question (8 steps as the default) is the owner's.
+  const BELOW = [
+    { y: 18, pitch: 20 },
+    { y: 18, pitch: 45 },
+    { y: 18, pitch: 90 },
+    { y: 2000, pitch: -25 },
+    { y: 2000, pitch: 0 },
+    { y: 2000, pitch: 25 },
+    { y: 1900, pitch: 0 },
+  ].flatMap((p) => [58, 14.48, 5].map((sun) => ({ ...p, sun })));
+  it.each(BELOW)(
+    'from $y m, $pitch°, sun $sun°: no worse than the shipped march',
+    ({ y, pitch, sun }) => {
+      const floor = 0.002;
+      const now16 = viewError(fixed, { y, pitch }, sun, 16);
+      const before16 = viewError(shipped, { y, pitch }, sun, 16);
+      const now8 = viewError(fixed, { y, pitch }, sun, 8);
+      const before8 = viewError(shipped, { y, pitch }, sun, 8);
+      expect(now16.bias).toBeLessThanOrEqual(1.15 * before16.bias + floor);
+      expect(now16.single).toBeLessThanOrEqual(1.15 * before16.single + floor);
+      expect(now8.bias).toBeLessThanOrEqual(before8.bias + floor);
+    }
+  );
+
+  // WHY (plan §4, the x < 0 regime, and the small-x guard): a vertical ray
+  // from the street through a column, at a low sun where the reach grows up
+  // the column faster than the view dims (x < 0: k/μ = 2.5), at the sun
+  // where they cancel (x = 0 exactly: sin(elevation) = k), and at noon.
+  // MEASURED 2026-09-26 against 8192 reference steps: at most 4.4e-5 of the
+  // top's radiance at 8 steps (the shipped 8: up to 0.020).
+  it('lights a column from below at every sign of x, finite at x = 0', () => {
+    const k = S.sunDepthScale;
+    const suns: Light[] = [lightAt(5), lightAt(58)];
+    const exactZero = lightAt(20);
+    suns.push({ ...exactZero, sunDir: [Math.sqrt(1 - k * k), k, 0] });
+    for (const light of suns) {
+      for (const T of [60, 150, 250]) {
+        const noise = 0.6 + (T - T0) / S.heightScaleM;
+        const input = {
+          camera: [0, 18, 0] as Vec3,
+          dir: [0, 1, 0] as Vec3,
+          sample: () => noise,
+          threshold: 0.6,
+          light,
+        };
+        const ref = referenceMarch({ ...input, steps: 8192 });
+        const norm = sum(
+          cloudTopRadiance(
+            light.sunTransmittance,
+            light.sunDir[1],
+            light.zenith
+          )
+        );
+        for (const steps of [8, 16]) {
+          const m = cloudSlabMarch({ ...input, steps });
+          expect(Number.isFinite(sum(m.colour))).toBe(true);
+          expect(
+            Math.abs(sum(m.colour) - sum(ref.colour)) / norm
+          ).toBeLessThanOrEqual(1e-4);
+        }
+      }
+    }
   });
 });

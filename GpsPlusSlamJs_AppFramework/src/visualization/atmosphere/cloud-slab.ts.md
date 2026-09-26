@@ -19,8 +19,9 @@ it only in `cloudMode: 'slab'`.
 - `CLOUD_SLAB`: base 1800 m, top 2200 m, radius (the sheet's 24 km),
   extinction σ 0.02/m, base ramp b 50 m, height scale H 1000 m per noise
   unit, the sun's path factor k 0.25 and elevation floor 0.1, `maxMarchM`
-  22 km, the early-exit transmittance 0.01, the level-ray limit, and
-  `defaultSteps` 16.
+  22 km, the early-exit transmittance 0.01, the level-ray limit, the
+  spacing's blend height above the top `uniformBlendM` 25 m, the in-segment
+  light's series limit `lightSeriesX` 1e-2, and `defaultSteps` 16.
 - `CLOUD_SLAB_STEPS`: the step counts the shader is built for, 8/16/24/32.
 - `cloudSlabCumulativeM(h, b?)`: Q(h), the integral of the base ramp
   clamp(x/b, 0, 1) from 0 to h.
@@ -32,15 +33,26 @@ it only in `cloudMode: 'slab'`.
 - `cloudSlabInterval(y, dir)`: the analytic part of the ray inside the slab
   and the far fade, `{ inM, outM }` or null. Throws `RangeError` for a
   non-finite height or a zero or non-finite direction.
-- `cloudSlabSteps(n, L, jitter = 0.5)`: quadratic step starts, ends and
-  samples over [0, L], each sample `jitter` of the way through its step.
-  Throws `RangeError` for a step count outside `CLOUD_SLAB_STEPS`, a bad
-  length or a jitter outside [0, 1].
+- `cloudSlabUniformShare(y)`: how far a camera at height y has turned the
+  spacing from quadratic (0: at or below the top) to uniform (1: from
+  `uniformBlendM` above it), a smoothstep between.
+- `cloudSlabNodes(n, L, jitter = 0.5, share = 0)`: the march's n + 2 nodes
+  over [0, L]: the entry, one node `jitter` of the way through each step (in
+  the spacing u² mixed toward u by `share`), the exit. Throws `RangeError`
+  for a step count outside `CLOUD_SLAB_STEPS`, a bad length, or a jitter or
+  share outside [0, 1].
+- `cloudSlabOccupied(da, db)`: the fractions [fa, fb] of a segment under a
+  column top that is linear between its ends (the secant step), or null.
 - `cloudSlabStepOpticalDepth(y, dirY, t0, t1, T)`: the step's optical
   depth, integrated exactly in height (σ·|ΔQ|/|dirY|); nearly level rays
   sample the step's middle.
 - `cloudSlabSunTransmittance(h, T, sunY)`: the sun reaching height h of a
   column through the column above it; at most 1.
+- `cloudSlabSunOpticalDepth(h, T, sunY)`: its exponent, never negative.
+- `cloudSlabInStepLight(τ, sunA, sunB)`: the sunlit share of a segment's
+  opacity, ∫ e^(-τu) R(u) dτ with the reach log-linear between the ends;
+  τ·(e^(-sunA) - e^(-sunB-τ)) / x, x = τ - sunA + sunB, with a series below
+  `lightSeriesX`. Equals 1 - e^(-τ) at full reach.
 - `cloudSlabSourceRadiance(sunT, cosToSun, density, zenith, sunY, reach)`:
   the sheet's top radiance at reach 1, the dome's underside at reach 0,
   mixed linearly.
@@ -50,7 +62,7 @@ it only in `cloudMode: 'slab'`.
 - `cloudSlabFarWeight(horizontalM)`: the sheet's far fade, as a weight.
 - `cloudSlabMarch(input)`: the shader's march on the CPU, returning the
   weighted `alpha`, the unweighted `opacity`, the premultiplied `colour`
-  (with `light`) and `stepsTaken`.
+  (with `light`) and `stepsTaken` (segments marched, at most n + 1).
 - `CLOUD_SLAB_FRAGMENT_GLSL`: the march (the vertex shader is
   module-private and only covers the pixels).
 - `createCloudSlab(uniforms, steps = 16)`: the mesh, reading the given
@@ -76,13 +88,32 @@ it only in `cloudMode: 'slab'`.
   so the depth test against the back faces is enough (as for the sheet).
 - **Draw order:** -1 from below, +1 from inside and above, one frame late
   (as for the sheet).
-- **A static per-pixel jitter** (interleaved gradient noise) moves each
-  step's sample point, not its bounds. A fixed sample point drew the far
-  deck as terraced bands at level rays, where one step spans kilometres of
-  ground, at 16 steps and still at 32 (seen on the look-dev page, plan
-  §12.1). The jitter trades the bands for a fine grain, since the page has
-  no temporal accumulation.
-- **Cost:** 16 steps make 32 noise reads per pixel plus the hoisted light
+- **The march reads the column at NODES and takes its top as linear
+  between them** (plan 2026-09-26-0549 §2 change 1): per segment the part
+  under that top (the secant step), its exact height integral, and the
+  light integrated over it in closed form. From above one sun reach per
+  slice drew contour layers where a cloud top crossed a slice (the owner's
+  report); measured at 8 steps the new march has 4-23x less layer bias than
+  the old one from above at steep views; at 16 it stays within 1.15x of the
+  old 16 from below and inside (W2 M1 notes).
+- **A static per-pixel jitter** (interleaved gradient noise) moves the
+  INTERIOR nodes inside their steps; the entry and the exit never move, so
+  the segments always tile the interval and a uniform column's opacity is
+  exact at any jitter. (This supersedes "the jitter moves the sample, not
+  the bounds": the nodes are now the bounds.) A fixed placement drew the far
+  deck as terraced bands at level rays; jittered nodes also measured less
+  bias than nodes at the step bounds at every view.
+- **Spacing:** quadratic below and inside (crowding at the base or the
+  camera, a recorded decision), uniform above the top (every ray crosses the
+  whole slab), a smoothstep over `uniformBlendM` between, so the camera
+  crossing the top does not jump (E7).
+- **The in-segment light has no positive exponent** (e^|x| would reach e^20
+  from below, where the reach grows faster than the view dims), and runs in
+  highp: near x = 0 it cancels, and the series takes over below
+  `lightSeriesX` (float32 within 1e-5 of float64 there).
+- **Cost:** 16 steps make 18 noise reads (36 texture reads) per pixel,
+  two more than the point-sampled march, plus one exp and one division per
+  segment, plus the hoisted light
   (3 sky-view and 3 transmittance reads: `atmCloudLit` twice and
   `atmCloudTopLit` once, each one of each; the two `atmCloudLit` calls read
   the same texels). On SwiftShader at 1280×800 a slab
@@ -129,21 +160,32 @@ m.opacity; // the column's opacity straight up
   ln 2 for any ramp; the column's half opacity, monotonicity and reach; the
   cover as the share of opaque zenith columns on the shipped noise (± 0.05
   at 0.2/0.5/0.8); the edge slope against the dome's; the flat-top share;
-  the interval's cases; the quadratic steps; the exact step integral
-  against a brute-force one; the light's two ends and its cap at 1; the
-  march's vertical opacity at every N, early exit, cover 0, 8 against 32
-  steps over seeded rays, and tops against undersides away from the sun
-  (measured over k); the level of detail; the draw order and far weight.
+  the interval's cases; the nodes, the spacing share and the secant step;
+  the exact step integral against a brute-force one; the light's two ends
+  and its cap at 1; the in-segment light against its integral for either
+  sign of x and in float32; the march's vertical opacity at every N (from
+  below and above), early exit, cover 0, 8 against 32 steps over seeded
+  rays, tops against undersides away from the sun (measured over k), the
+  nodes it reads, and its error against the reference path (the replaced
+  point-sampled march at 1024 steps, pinned to it at the shipped counts)
+  from above, below and inside per pose and sun; the level of detail; the
+  draw order and far weight.
 - `cloud-slab.property.test.ts`: every point the interval allows lies in
-  the slab and in the far fade, for any camera and direction; the steps
-  tile any interval.
+  the slab and in the far fade, for any camera and direction; the nodes
+  tile any interval for any jitter and share.
 - `cloud-slab.test.ts` also covers the shader's text (the shared chunks,
   every constant, explicit-level reads and no LUT reads inside the loop,
-  the ray from `gl_FragCoord`, the jitter as the sample point only), the
+  the ray from `gl_FragCoord`, the node loop, the secant step and the
+  in-segment light pinned, the jitter on the interior nodes only), the
   prism's outward faces, the material, the camera hook's uniforms and
   order, and the step-count setter; `sky-atmosphere.test.ts` the mode
   wiring; `atmosphere-glsl.test.ts` `atmCloudNoiseLod`; the look-dev
   smoke that the shader compiles and covers the city from above.
 - Mutants checked: midpoint sampling for every ray fails the exact-integral
   and vertical-opacity tests; the sun measured from the base fails the
-  light test.
+  light test; a point-sampled reach, the reach's ends swapped, the small-x
+  guard removed, quadratic spacing from above, a hard spacing switch, nodes
+  at the step bounds and the old per-step column read each fail (TS twin),
+  and the same four in the GLSL fail its pinned loop. Surviving by design:
+  the thickness clamped BEFORE interpolating (measured within ±7 %, a
+  legitimate alternative).

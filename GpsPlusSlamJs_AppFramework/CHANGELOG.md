@@ -61,6 +61,15 @@
 
 ### Added
 
+- **AR shadows on the reconstructed room** (W4 AR shadows plan
+  2026-09-26-0549, M1): `createArShadows({ renderer, light, getOccluder })`
+  makes the current `OcclusionMesh` receive virtual shadows automatically
+  whenever the renderer's shadow map is on and a light casts (not under
+  VSM). It shows a flat fallback plane while there is no mesh, and
+  re-renders the map only while casters move. `OcclusionMesh` gains the
+  `shadowReceiver` option and `setShadowReceiver`; the occluder itself
+  never casts. `createShadowPlane` is the shared shadow-only receiver.
+  Without a casting light nothing changes.
 - **A custom wave set for the water surface** (programme plan
   2026-09-26-0539, W6): `new WaterSurface({ slopeGlsl })` replaces the six
   built-in waves with a GLSL `waterSlopeAt(vec2 p, float t)`, which the
@@ -254,6 +263,17 @@ source }` instead of the corners alone (unreleased API).
 
 ### Changed
 
+- **The cloud slab reads its thickness at step boundaries and lights each
+  step exactly** (clouds-from-above plan 2026-09-26-0549, M1). The layered
+  "slices" seen from above at low step counts came from one thickness read
+  and one light sample per step. The march now reads the thickness at N + 2
+  jittered nodes, finds the part of each segment under the interpolated top
+  (a secant step), and integrates the sun's light over it in closed form.
+  Steps are spaced uniformly from above and quadratically from below and
+  inside. At steep views from above, 8 steps now carry 4-23x less layer bias
+  than before; from below and inside, 16 steps stay within 15 % (plus a
+  small floor) of their previous error. The default step count is
+  unchanged.
 - **`solveQrPoseMultiView` drops unusable views instead of failing**
   (QR near-frontal pose plan 2026-09-23-2314, §16 #7): a view with a
   mirrored or non-finite quad, bad intrinsics, a non-unit camera quaternion

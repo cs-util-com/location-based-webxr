@@ -1,6 +1,6 @@
 /**
- * Property tests for the cloud slab's march interval and steps (plan
- * 2026-09-24-1010 §11.4, §11.7).
+ * Property tests for the cloud slab's march interval and nodes (plan
+ * 2026-09-24-1010 §11.4, §11.7; plan 2026-09-26-0549 §4).
  *
  * Why this file matters: the interval is computed analytically for every
  * pixel from a camera anywhere between the street and above the deck. A
@@ -16,7 +16,7 @@ import {
   CLOUD_SLAB,
   CLOUD_SLAB_STEPS,
   cloudSlabInterval,
-  cloudSlabSteps,
+  cloudSlabNodes,
   type Vec3,
 } from './cloud-slab.js';
 import { CLOUD_SHEET } from './cloud-sheet.js';
@@ -65,23 +65,30 @@ describe('cloudSlabInterval, for any camera and direction', () => {
   });
 });
 
-describe('cloudSlabSteps, for any length', () => {
+describe('cloudSlabNodes, for any length, jitter and share', () => {
+  // WHY (plan 2026-09-26-0549 §4, the restated jitter invariant): whatever
+  // the jitter and the spacing, the entry and the exit are nodes and the
+  // nodes never go backwards, so the segments tile the interval and the
+  // march integrates all of it.
   it('tiles the interval without gaps or overlaps', () => {
     fc.assert(
       fc.property(
         fc.constantFrom(...CLOUD_SLAB_STEPS),
         fc.double({ min: 0, max: CLOUD_SLAB.maxMarchM, noNaN: true }),
-        (n, L) => {
-          const { starts, ends, samples } = cloudSlabSteps(n, L);
-          expect(starts[0]).toBe(0);
-          expect(ends[n - 1]).toBeCloseTo(L, 6);
-          for (let i = 0; i < n; i++) {
-            expect(samples[i]).toBeGreaterThanOrEqual(starts[i]!);
-            expect(samples[i]).toBeLessThanOrEqual(ends[i]!);
+        fc.double({ min: 0, max: 1, noNaN: true }),
+        fc.double({ min: 0, max: 1, noNaN: true }),
+        (n, L, jitter, share) => {
+          const nodes = cloudSlabNodes(n, L, jitter, share);
+          expect(nodes).toHaveLength(n + 2);
+          expect(nodes[0]).toBe(0);
+          expect(nodes[n + 1]).toBe(L);
+          for (let k = 1; k < nodes.length; k++) {
+            expect(nodes[k]).toBeGreaterThanOrEqual(nodes[k - 1]!);
           }
+          expect(nodes[n]).toBeLessThanOrEqual(L * (1 + 1e-12));
         }
       ),
-      { numRuns: 500, seed: 20260924 }
+      { numRuns: 500, seed: 20260926 }
     );
   });
 });
