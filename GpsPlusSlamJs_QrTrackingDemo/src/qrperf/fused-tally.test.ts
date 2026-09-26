@@ -381,6 +381,7 @@ describe("createFusedTally why not stable, by size (plan §34 R2)", () => {
       fit: 2,
       fallback: 1,
       motion: 1,
+      order: 0,
     });
   });
 
@@ -488,5 +489,33 @@ describe("createFusedTally re-reads (plan §55 #3)", () => {
     t.add(tilted(0, { newestTimestamp: Number.NaN, status: "unknown" }), 400);
     expect(t.summary().reReads).toBe(0);
     expect(t.summary().locks).toBe(4);
+  });
+
+  // Review §57 #6: a wall-clock step back must not turn real locks into
+  // re-reads; a re-read hands back the SAME newest detection.
+  it("takes only an equal newest timestamp for a re-read, not an older one", () => {
+    const t = createFusedTally();
+    t.add(tilted(0, { newestTimestamp: 200 }), 100);
+    t.add(tilted(0, { newestTimestamp: 150 }), 200);
+    expect(t.summary().reReads).toBe(0);
+    expect(t.summary().locks).toBe(2);
+  });
+
+  // Review §57 #2: `reReads` sees only a native NEWEST entry; natives
+  // dropped from inside a window show in the locks whose run had any.
+  it("counts the locks whose run had native entries ignored", () => {
+    const t = createFusedTally();
+    t.add(tilted(0, { newestTimestamp: 100, nativeIgnored: 0 }), 100);
+    t.add(tilted(0, { newestTimestamp: 200, nativeIgnored: 2 }), 200);
+    t.add(tilted(0, { newestTimestamp: 200, nativeIgnored: 3 }), 300);
+    const s = t.summary();
+    expect(s.nativeIgnoredLocks).toBe(1);
+    expect(s.reReads).toBe(1);
+  });
+
+  it("counts the order withdrawals among the not-stable reasons", () => {
+    const t = createFusedTally();
+    t.add(tilted(0, { status: "measuring", notStableReason: "order" }), 100);
+    expect(t.summary().notStable.order).toBe(1);
   });
 });

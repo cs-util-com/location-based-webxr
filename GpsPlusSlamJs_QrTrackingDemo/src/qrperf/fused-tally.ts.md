@@ -21,12 +21,16 @@ motion }`; the percentiles are nearest-rank over the FINITE values only
     windows of at least 5 views - the ones the gate can open on; a
     motion-cut 1-view window or an early small one fits trivially and would
     pull them down (b5 review #5).
-  - `reReads`: locks whose result's newest detection did not advance (same
-    epoch) - since plan §54 a native frame of a code whose order is known,
+  - `reReads`: locks whose result hands back the SAME newest detection
+    as the last tallied one (same epoch, equal timestamp - a clock step back
+    is not a re-read, plan §57 #6) - since plan §54 a native frame of a code whose order is known,
     which the fused window does not read. Counted apart and NOTHING else
     (plan §55 #3: they would add 0 deg jumps, duplicate motion readings and
     stable locks from an unchanged window); `locks` excludes them. The
-    phone's proof that the rule fired.
+    phone's proof that the rule fired on a native NEWEST entry.
+  - `nativeIgnoredLocks`: locks (re-reads excluded) whose run had native
+    entries ignored (`nativeIgnored` > 0, plan §57 #2) - the rule at work
+    inside a window, which `reReads` cannot see.
   - `frameChanges`: how often the fused results' frame epoch moved on - did
     the demo see a tracking restart (field test C, plan §25).
   - `jumpDeg` and `positionJumpCm` `{ n, p50, p95, max }` (the same pairs'
@@ -39,7 +43,7 @@ p95Abs, meanSigned }`: the STABLE fused pose's own quality (what the
   - `motion`: the motion detector's readings - modes, switches, the still
     signals (also per code-size band), candidate runs, the switch log, and
     the readings during motion (`motion-tally.ts`).
-  - `notStable` `{ views, fit, fallback, motion }`: how many locks were not
+  - `notStable` `{ views, fit, fallback, motion, order }`: how many locks were not
     stable for each `QrFusedPose.notStableReason` (plan §34 R1/R2).
   - `fitByEdgePx` (the fit over the same >= 5-view windows) and
     `stableByEdgePx` `{ locks, stable }` per code-size band (the window's

@@ -41,6 +41,12 @@ export interface FusedTallySummary {
    * add 0 deg jumps and duplicate motion readings.
    */
   reReads: number;
+  /**
+   * Locks (re-reads excluded) whose run had native entries ignored
+   * (`QrFusedPose.nativeIgnored` > 0, plan §57 #2): the rule at work inside
+   * a window, which `reReads` cannot see.
+   */
+  nativeIgnoredLocks: number;
   stable: number;
   joint: number;
   averaged: number;
@@ -83,7 +89,13 @@ export interface FusedTallySummary {
   /** The motion detector's readings (`motion-tally.ts`). */
   motion: MotionTallySummary;
   /** Why locks were not stable (plan §34 R1/R2), per `notStableReason`. */
-  notStable: { views: number; fit: number; fallback: number; motion: number };
+  notStable: {
+    views: number;
+    fit: number;
+    fallback: number;
+    motion: number;
+    order: number;
+  };
   /** The fit (same windows as `fitP50Px`) per code-size band. */
   fitByEdgePx: Banded<BandPercentiles>;
   /** Locks and stable locks per code-size band (the window's median edge). */
@@ -115,12 +127,13 @@ export function createFusedTally(): {
   const deltas: number[] = [];
   const jumps: number[] = [];
   const positionJumps: number[] = [];
-  const notStable = { views: 0, fit: 0, fallback: 0, motion: 0 };
+  const notStable = { views: 0, fit: 0, fallback: 0, motion: 0, order: 0 };
   const fitBands = createBandedPercentiles();
   const stableBands = perBand(() => ({ locks: 0, stable: 0 }));
   const elevations: number[] = [];
   let lastEpoch: number | null = null;
   let reReads = 0;
+  let nativeIgnoredLocks = 0;
   let lastNewest: { epoch: number; timestamp: number } | null = null;
   let previous: { pose: Pose; atMs: number; epoch: number } | null = null;
   const motion = createMotionTally();
@@ -140,13 +153,16 @@ export function createFusedTally(): {
     previous = { pose, atMs, epoch: result.frameEpoch };
   }
 
-  /** Same epoch and the newest detection not newer than the last tallied one. */
+  /**
+   * Same epoch and the SAME newest detection as the last tallied result (an
+   * equal timestamp: a clock step back must not read as one; plan §57 #6).
+   */
   function isReRead(result: QrFusedPose): boolean {
     return (
       lastNewest !== null &&
       Number.isFinite(result.newestTimestamp) &&
       result.frameEpoch === lastNewest.epoch &&
-      result.newestTimestamp <= lastNewest.timestamp
+      result.newestTimestamp === lastNewest.timestamp
     );
   }
 
@@ -186,6 +202,7 @@ export function createFusedTally(): {
           epoch: result.frameEpoch,
           timestamp: result.newestTimestamp,
         };
+      if (result.nativeIgnored > 0) nativeIgnoredLocks += 1;
       addCounts(result);
       addFitAndBands(result);
       addStablePose(result, atMs);
@@ -196,6 +213,7 @@ export function createFusedTally(): {
       return {
         ...counts,
         reReads,
+        nativeIgnoredLocks,
         fitP50Px: pct(fits, 0.5),
         fitP95Px: pct(fits, 0.95),
         deltaP50Deg: pct(deltas, 0.5),
@@ -263,9 +281,9 @@ function motionLines(m: MotionTallySummary): string[] {
 /** The report lines: the tally, the stable fused pose's own quality, the motion. */
 export function fusedLines(s: FusedTallySummary): string[] {
   return [
-    `fused: ${s.locks} locks (+${s.reReads} re-reads of an ignored native frame) | stable ${s.stable} | joint ${s.joint} / averaged ${s.averaged} | frame changes ${s.frameChanges} | fit p50/p95 ${f(s.fitP50Px)}/${f(s.fitP95Px)} px | vs averaged p50/p95 ${f(s.deltaP50Deg)}/${f(s.deltaP95Deg)} deg`,
+    `fused: ${s.locks} locks (+${s.reReads} re-reads of an ignored native frame; natives ignored in ${s.nativeIgnoredLocks}) | stable ${s.stable} | joint ${s.joint} / averaged ${s.averaged} | frame changes ${s.frameChanges} | fit p50/p95 ${f(s.fitP50Px)}/${f(s.fitP95Px)} px | vs averaged p50/p95 ${f(s.deltaP50Deg)}/${f(s.deltaP95Deg)} deg`,
     `fused pose (stable): jump p50/p95/max ${f(s.jumpDeg.p50)}/${f(s.jumpDeg.p95)}/${f(s.jumpDeg.max)} deg, position jump p50/p95/max ${f(s.positionJumpCm.p50)}/${f(s.positionJumpCm.p95)}/${f(s.positionJumpCm.max)} cm (n ${s.jumpDeg.n}) | wall elevation |p50|/|p95| ${f(s.wallElevationDeg.p50Abs)}/${f(s.wallElevationDeg.p95Abs)} deg, mean ${f(s.wallElevationDeg.meanSigned)} deg`,
-    `fused not stable: views ${s.notStable.views} | fit ${s.notStable.fit} | fallback ${s.notStable.fallback} | motion ${s.notStable.motion}`,
+    `fused not stable: views ${s.notStable.views} | fit ${s.notStable.fit} | fallback ${s.notStable.fallback} | motion ${s.notStable.motion} | order ${s.notStable.order}`,
     `fused by code size (<150/150-300/>=300 px): stable ${s.stableByEdgePx.small.stable}/${s.stableByEdgePx.small.locks}, ${s.stableByEdgePx.medium.stable}/${s.stableByEdgePx.medium.locks}, ${s.stableByEdgePx.large.stable}/${s.stableByEdgePx.large.locks} | fit p50/p95 ${bandsLine(s.fitByEdgePx)}`,
     ...motionLines(s.motion),
   ];
