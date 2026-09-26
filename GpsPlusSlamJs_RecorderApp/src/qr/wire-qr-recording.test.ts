@@ -633,6 +633,34 @@ describe('wireQrRecording — the level-consuming callbacks', () => {
     );
   });
 
+  // Why this test matters (QR near-frontal pose plan §60, b4b-2): the fused
+  // window ignores a native-order frame of a code whose order is known, but
+  // a replay can apply that rule only if the recording kept each
+  // detection's order source. Old recordings cannot be backfilled.
+  it('keeps the corner-order source in the recorded observation', () => {
+    const { store, config } = wireWithLevels(depthSample);
+    const onRawDetection = config.onRawDetection as (e: unknown) => void;
+    onRawDetection({
+      text: 'code',
+      timestamp: 1234,
+      corners: [
+        { x: 1, y: 1 },
+        { x: 2, y: 1 },
+        { x: 2, y: 2 },
+        { x: 1, y: 2 },
+      ],
+      cameraPose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+      imageWidth: 640,
+      imageHeight: 480,
+      orderSource: 'memory',
+    });
+    expect(store.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({ orderSource: 'memory' }),
+      })
+    );
+  });
+
   it('records nothing when there is no projection matrix to solve against', () => {
     // A raw observation without one cannot be re-solved later, so writing a
     // partial record would be worse than writing none.

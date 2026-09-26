@@ -271,6 +271,8 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
             projectionMatrix,
             imageWidth: raw.imageWidth,
             imageHeight: raw.imageHeight,
+            // Kept so a replay can ignore native-order frames (plan §60).
+            ...(raw.orderSource ? { orderSource: raw.orderSource } : {}),
           })
         );
       },

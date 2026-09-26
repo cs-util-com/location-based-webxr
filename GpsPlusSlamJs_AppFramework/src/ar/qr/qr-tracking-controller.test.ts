@@ -509,6 +509,34 @@ describe('createQrTrackingController isBusy', () => {
     expect(controller.isBusy()).toBe(false);
   });
 
+  describe('createQrTrackingController raw record (plan §60, b4b-2)', () => {
+    // Why this test matters: the recorder's level mode records this raw
+    // callback; a replay can ignore native-order frames only if it carries
+    // the front end's corner-order source.
+    it("carries the front end's corner-order source on the raw record", async () => {
+      const raws: { orderSource?: unknown }[] = [];
+      const { controller } = setup({
+        onRawDetection: (r) => raws.push(r),
+        frontEnd: {
+          kind: 'barcode-detector',
+          detect: () =>
+            Promise.resolve<QrDetection | null>({
+              text: detection.text,
+              orderSource: 'finder',
+              corners: [
+                { x: 0, y: 0 },
+                { x: 100, y: 0 },
+                { x: 100, y: 100 },
+                { x: 0, y: 100 },
+              ],
+            }),
+        },
+      });
+      await tick(controller);
+      expect(raws[0]!.orderSource).toBe('finder');
+    });
+  });
+
   describe('createQrTrackingController dispose() (plan §61, b4b-1)', () => {
     // Why these tests matter: the TourViewer and the recorder end an AR
     // session while a decode or a level fetch is in flight. Before dispose()

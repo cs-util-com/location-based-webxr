@@ -231,4 +231,23 @@ describe('createQrDetectionController isBusy', () => {
     expect(recorded).toHaveLength(0);
     expect(statuses).toHaveLength(before);
   });
+
+  // Why this test matters (plan §60, b4b-2): the recorder's default path
+  // records this observation as is; a replay can ignore native-order frames
+  // only if it carries where the corner order came from.
+  it("records the decode's corner-order source", async () => {
+    const detect = vi.fn(() =>
+      Promise.resolve<QrDetection | null>({
+        corners: VALID_CORNERS,
+        text: 'https://x/y',
+        orderSource: 'native',
+      })
+    );
+    const { controller, recorded } = makeController(detect);
+    controller.offerFrame(FRAME);
+    await flush();
+    controller.offerFrame(FRAME);
+    await flush();
+    expect(recorded[0]!.orderSource).toBe('native');
+  });
 });

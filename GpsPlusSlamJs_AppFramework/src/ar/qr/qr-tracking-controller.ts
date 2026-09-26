@@ -60,6 +60,12 @@ interface QrRawDetection {
   readonly imageWidth: number;
   readonly imageHeight: number;
   readonly timestamp: number;
+  /**
+   * Where the corner order came from (the front end's
+   * `QrDetection.orderSource`), when it says - recorded so a replay can
+   * ignore native-order frames of an ordered code (plan §60, b4b-2).
+   */
+  readonly orderSource?: CornerOrderSource;
 }
 
 export interface QrDetectionEvent {
@@ -147,7 +153,9 @@ export interface QrTrackingControllerConfig {
    */
   resolveSizeM?: (text: string, level: QrLevel) => number | null;
   /**
-   * Resolve the STABLE (sliding-window filtered) world pose for the vote — e.g.
+   * Resolve the STABLE world pose for the vote — e.g. the fused pose,
+   * `createFusedQrPoseSource(...).resolve(text)` (QR near-frontal pose plan
+   * §60; the TourViewer and the QR demo), or the older average
    * `selectStableQrPose(store.getState(), text)`. Returns `null` until the pose
    * has converged, which GATES the high-weight vote (the detection emission is
    * unconditional; only the vote waits for stability). When omitted (back-compat)
@@ -313,6 +321,9 @@ export function createQrTrackingController(
         imageWidth: image.width,
         imageHeight: image.height,
         timestamp: frame.capturedAtMs,
+        ...(detection.orderSource
+          ? { orderSource: detection.orderSource }
+          : {}),
       });
     }
 

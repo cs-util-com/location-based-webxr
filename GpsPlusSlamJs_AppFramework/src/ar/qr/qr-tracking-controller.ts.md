@@ -16,14 +16,15 @@ coalesced cadence and exposes an async-status state machine for the UI.
   `getIntrinsics`, `syntheticAccuracyM`, optional `isPlausible` gate,
   optional `onDetection` (qrDetected emission), `resolveSizeM` (size when
   the level omits it — e.g. a depth-measured median), `resolveStablePose`
-  (sliding-window filtered pose for the vote — e.g. `selectStableQrPose`),
+  (the stable pose for the vote — e.g. the fused `createFusedQrPoseSource(...).resolve`, or the older `selectStableQrPose`),
   `onStatus`/`onLocked`/`onError`, and scheduler tuning
   (`minIntervalMs`, `requiredLockCount`, `now`). There is no `getCameraPose`
   any more (removed in QR perf plan 2026-09-23, M4): the pose comes with the
   frame.
   - `onRawDetection` — fires on every DECODE, before and independently of the
     solve, carrying the raw corners/pose/image-size; its `cameraPose` is
-    `frame.cameraPose` and its `timestamp` is `frame.capturedAtMs`. It exists so an app that
+    `frame.cameraPose` and its `timestamp` is `frame.capturedAtMs`; it carries the
+    front end's `orderSource` when it says (plan §60, b4b-2). It exists so an app that
     must record raw observations whatever else happens (the recorder) gets
     them from ONE decode instead of running a second producer on the AR frame
     path.

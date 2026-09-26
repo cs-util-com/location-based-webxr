@@ -11,8 +11,10 @@ functions, differing only in the injected `resolveDepthAt`.
 ## Public API
 
 - `interface RawQrObservation` — `{ text, corners (pixels, TL,TR,BR,BL), cameraPose (raw
-WebXR), projectionMatrix (col-major GL), imageWidth, imageHeight, timestamp }`. The
-  authoritative recorded shape; carries **no depth**.
+WebXR), projectionMatrix (col-major GL), imageWidth, imageHeight, timestamp, orderSource? }`. The
+  authoritative recorded shape; carries **no depth**. `orderSource` (where the
+  corner order came from, QR near-frontal pose plan §60) lets a replay ignore
+  native-order frames of an ordered code; absent in recordings made before it.
 - `interface DeriveQrPoseDeps` — `{ resolveDepthAt(timestamp) → QrSizeDepthContext | null,
 solver: SolvePnpSquare, sizeOptions?, maxReprojectionErrorPx? }`.
 - `deriveQrSizeM(text, observations, resolveDepthAt, sizeOptions?) → number | null` —

@@ -87,6 +87,11 @@ the WS-5 **consumer** (debug axis+cube). `main.ts` calls it once in `handleEnter
   frame twice on the AR frame path, which is why the framework's detection
   event carries the raw corners and camera pose.
 
+Both modes record each detection's corner-order source (`orderSource`,
+QR near-frontal pose plan §60, b4b-2) when the front end gives one, so a
+replay can apply the fused window's native-frame rule; recordings made
+before this carry none.
+
 The raw record rides `onRawDetection` — the validated DECODE — not
 `onDetection`, which fires on a locked, solved pose and therefore needs a
 level and a size. A code whose level does not exist yet (every code on an

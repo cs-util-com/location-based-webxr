@@ -27,6 +27,7 @@
  */
 
 import type { Matrix4 } from 'gps-plus-slam-js';
+import type { CornerOrderSource } from './qr-corner-order.js';
 import {
   intrinsicsFromProjection,
   solveQrPose,
@@ -68,6 +69,11 @@ export interface RawQrObservation {
    * `≤` join in {@link deriveQrSizeM} never matches. See open topic A.
    */
   timestamp: number;
+  /**
+   * Where the corner order came from, when the producer said (plan §60,
+   * b4b-2); absent in recordings made before it.
+   */
+  orderSource?: CornerOrderSource;
 }
 
 /** Injected dependencies for the derive-on-read pose. */

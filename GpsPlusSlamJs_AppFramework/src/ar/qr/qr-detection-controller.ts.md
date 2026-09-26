@@ -6,7 +6,7 @@ The **thin, geo-less RAW producer** for live QR detection (decision **D-X** of t
 live-QR plan, realized as "thin producer + shared derive-on-read consumer"). Per accepted
 decode it emits ONE `RawQrObservation` — raw corners + capture-time camera pose + projection + frame size
 
-- timestamp — and nothing derived. No size measure, no PnP: those moved to
+- timestamp (+ the decode's `orderSource` when the front end says, plan §60) — and nothing derived. No size measure, no PnP: those moved to
   [`qr-derived-pose.ts`](./qr-derived-pose.ts.md) so the recording stays algorithm-agnostic /
   re-testable (D-A).
 

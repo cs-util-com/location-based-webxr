@@ -129,6 +129,8 @@ export function createQrDetectionController(
       imageWidth: image.width,
       imageHeight: image.height,
       timestamp: frame.capturedAtMs,
+      // Recorded so a replay can ignore native-order frames (plan §60).
+      ...(detection.orderSource ? { orderSource: detection.orderSource } : {}),
     };
   }
 
