@@ -92,6 +92,25 @@ export {
   OcclusionMesh,
 } from './occlusion-mesh.js';
 
+// --- ar-shadows (virtual shadows on the reconstructed room, automatic) ---
+export {
+  AR_SHADOWS,
+  type ArShadows,
+  type ArShadowsFrame,
+  type ArShadowsOptions,
+  type ArShadowsRenderer,
+  type ShadowCastingLight,
+  type ShadowReception,
+  createArShadows,
+  shadowReception,
+} from './ar-shadows.js';
+
+// --- shadow-receiver (the shadow-only receiver recipe) ---
+export {
+  type ShadowReceiverOptions,
+  createShadowPlane,
+} from './shadow-receiver.js';
+
 // --- occupancy-cubes-visualizer (instanced debug cubes of the occupancy grid) ---
 export {
   type OccupancyGridSource,

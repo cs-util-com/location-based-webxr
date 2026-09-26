@@ -36,6 +36,12 @@ import {
 } from '../ar/occupancy-mesher.js';
 import { WEBXR_TO_NUE } from '../ar/webxr-nue-basis.js';
 import type { Vector3 } from 'gps-plus-slam-js';
+import {
+  applyShadowReceiverOptions,
+  assertShadowReceiverOptions,
+  createShadowReceiverMaterial,
+  type ShadowReceiverOptions,
+} from './shadow-receiver.js';
 
 /**
  * Debug-visualization style for the **persistent occluder** mesh (2026-07-02
@@ -67,6 +73,11 @@ export type OccluderDebugStyle = (typeof OCCLUDER_DEBUG_STYLES)[number];
 const MESH_NAME = 'occupancy-occluder';
 const DEBUG_MESH_NAME = 'occupancy-occluder-debug';
 const DEBUG_WIREFRAME_MESH_NAME = 'occupancy-occluder-debug-wireframe';
+const SHADOW_RECEIVER_MESH_NAME = 'occupancy-occluder-shadow-receiver';
+
+/** The receiver draws after the debug skins (0 and 1), so a shadow also
+ *  darkens the visible debug surface. */
+const SHADOW_RECEIVER_RENDER_ORDER = 2;
 
 /**
  * Mesher used when the caller names none. `'greedy'` merges coplanar faces for
@@ -245,6 +256,13 @@ export interface OcclusionMeshOptions {
    * exists, sits between this and content — plan §5.)
    */
   readonly renderOrder?: number;
+  /**
+   * Receive shadows on the reconstructed surface from construction on (W4
+   * AR shadows plan): one more skin sharing the geometry, drawing only the
+   * shadow over the camera image. A construction option because PhysicsDemo
+   * recreates the occluder on every mesh-mode change. Absent: no receiver.
+   */
+  readonly shadowReceiver?: ShadowReceiverOptions;
 }
 
 /**
@@ -275,12 +293,24 @@ export class OcclusionMesh {
   private matcapMaterial: THREE.MeshMatcapMaterial | null = null;
   private depthShadedMaterial: THREE.MeshMatcapMaterial | null = null;
   private wireframeMaterial: THREE.MeshBasicMaterial | null = null;
+  // Shadow receiver (off unless asked): like the skins, additive and sharing
+  // the geometry. Its material is cached across setShadowReceiver(null) so
+  // switching it back on compiles nothing; released only in dispose().
+  private receiverSkin: THREE.Mesh | null = null;
+  private receiverMaterial: THREE.ShadowMaterial | null = null;
+  /** The last setVisible: a receiver added later must honour it. */
+  private visible = true;
 
   /**
    * @param arSpaceNode the AR-odometry-NUE node that receives the alignment
    *   matrix (`arWorldGroup` live, `replaySceneState.arWorldGroup` in replay).
+   * @throws RangeError for invalid `shadowReceiver` options, before anything
+   *   is attached to `arSpaceNode`.
    */
   constructor(arSpaceNode: THREE.Object3D, options: OcclusionMeshOptions = {}) {
+    if (options.shadowReceiver) {
+      assertShadowReceiverOptions(options.shadowReceiver);
+    }
     this.arSpaceNode = arSpaceNode;
     this.mode = options.mode ?? DEFAULT_MESH_MODE;
     this.geometry = new THREE.BufferGeometry();
@@ -297,7 +327,13 @@ export class OcclusionMesh {
     // Raw-WebXR positions; the mesh node converts to the parent's NUE frame.
     this.mesh.matrixAutoUpdate = false;
     this.mesh.matrix.copy(WEBXR_TO_NUE);
+    // Explicit, not the default: `colorWrite:false` does NOT keep a mesh out
+    // of three's shadow pass, so a casting occluder would shadow the receiver
+    // across the whole room.
+    this.mesh.castShadow = false;
+    this.mesh.receiveShadow = false;
     this.arSpaceNode.add(this.mesh);
+    if (options.shadowReceiver) this.setShadowReceiver(options.shadowReceiver);
   }
 
   /** The number of triangles currently drawn. */
@@ -333,9 +369,53 @@ export class OcclusionMesh {
    */
   setVisible(visible: boolean): void {
     if (this.disposed) return;
+    this.visible = visible;
     this.mesh.visible = visible;
     if (this.shadedSkin) this.shadedSkin.visible = visible;
     if (this.wireframeSkin) this.wireframeSkin.visible = visible;
+    if (this.receiverSkin) this.receiverSkin.visible = visible;
+  }
+
+  /**
+   * Turn the shadow receiver on (or retune it) with `options`, or off with
+   * `null` (W4 AR shadows plan). The receiver is a `ShadowMaterial` skin on
+   * the shared geometry: it draws only where the reconstructed surface is
+   * the nearest thing and darkens the camera image there by `opacity`. It
+   * follows `update` / `applyMeshData` / `clear` / `setVisible` / `dispose`,
+   * is added hidden while the occluder is hidden, and never casts.
+   *
+   * Idempotent. Off keeps the material cached, so on again recompiles
+   * nothing (the session off switch, review §6). No-op after dispose.
+   *
+   * @throws RangeError for an opacity outside [0, 1] or a positive offset.
+   */
+  setShadowReceiver(options: ShadowReceiverOptions | null): void {
+    if (this.disposed) return;
+    if (options === null) {
+      if (this.receiverSkin) {
+        this.arSpaceNode.remove(this.receiverSkin);
+        this.receiverSkin = null;
+      }
+      return;
+    }
+    if (this.receiverMaterial) {
+      applyShadowReceiverOptions(this.receiverMaterial, options);
+    } else {
+      this.receiverMaterial = createShadowReceiverMaterial(
+        options,
+        SHADOW_RECEIVER_MESH_NAME
+      );
+    }
+    if (!this.receiverSkin) {
+      this.receiverSkin = this.createSkinMesh(
+        SHADOW_RECEIVER_MESH_NAME,
+        SHADOW_RECEIVER_RENDER_ORDER,
+        this.receiverMaterial
+      );
+      this.receiverSkin.receiveShadow = true;
+      this.receiverSkin.visible = this.visible;
+      this.arSpaceNode.add(this.receiverSkin);
+    }
   }
 
   /**
@@ -411,6 +491,7 @@ export class OcclusionMesh {
   private rebindSkinGeometry(geometry: THREE.BufferGeometry): void {
     if (this.shadedSkin) this.shadedSkin.geometry = geometry;
     if (this.wireframeSkin) this.wireframeSkin.geometry = geometry;
+    if (this.receiverSkin) this.receiverSkin.geometry = geometry;
   }
 
   /**
@@ -505,6 +586,7 @@ export class OcclusionMesh {
     skin.frustumCulled = false;
     skin.matrixAutoUpdate = false;
     skin.matrix.copy(WEBXR_TO_NUE); // same raw-WebXR → NUE basis as the occluder
+    skin.castShadow = false; // infrastructure never casts
     return skin;
   }
 
@@ -595,6 +677,12 @@ export class OcclusionMesh {
       this.arSpaceNode.remove(this.wireframeSkin);
       this.wireframeSkin = null;
     }
+    if (this.receiverSkin) {
+      this.arSpaceNode.remove(this.receiverSkin);
+      this.receiverSkin = null;
+    }
+    this.receiverMaterial?.dispose();
+    this.receiverMaterial = null;
     this.matcapTexture?.dispose();
     this.matcapTexture = null;
     this.matcapMaterial?.dispose();
