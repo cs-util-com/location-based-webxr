@@ -35,6 +35,12 @@ import {
   ContactCrease,
 } from "/fw/visualization/contact-crease.js";
 import { WATER_CANDIDATES } from "./water-candidates.js";
+import { CATALOG } from "./catalog/index.js";
+import {
+  buildCatalog,
+  CATALOG_LAYOUT,
+  createCatalogLabels,
+} from "./catalog/catalog-view.js";
 import { sunDirection } from "/osm/sun-position.js";
 import {
   createSunShadow,
@@ -174,6 +180,9 @@ const state = {
   // The contact crease (W3 M2): strength k (0 is off) and radius r in m.
   crease: CONTACT_CREASE.strength,
   creaseR: CONTACT_CREASE.radiusM,
+  // The material catalog (W5 plan 2026-09-26-0549 M1): OFF by default, so
+  // the page's other tests never compile its programs (triage).
+  catalog: false,
 };
 /** The crease sliders' ranges (the hash is clamped to them). */
 const CREASE_MAX = 0.6;
@@ -212,7 +221,16 @@ let shadowsBelowFloor = false;
 
 const CLOUD_MODES = ["dome", "sheet", "slab"];
 const SLAB_STEPS = [8, 16, 24, 32];
-const VIEWS = ["city", "sun", "antisun", "lake", "aloft", "inside", "above"];
+const VIEWS = [
+  "city",
+  "sun",
+  "antisun",
+  "lake",
+  "aloft",
+  "inside",
+  "above",
+  "catalog",
+];
 /** Drift on unless a test pins the offset (pixel tests need a fixed sky). */
 let cloudDrift = true;
 
@@ -228,6 +246,7 @@ function readHash() {
   const steps = Number(params.get("slabSteps"));
   if (SLAB_STEPS.includes(steps)) state.slabSteps = steps;
   state.shadows = params.get("shadows") === "1";
+  state.catalog = params.get("catalog") === "1";
   if (WATER_IDS.includes(params.get("water"))) {
     state.water = params.get("water");
   }
@@ -258,6 +277,7 @@ function writeHash() {
     water: state.water,
     crease: String(state.crease),
     creaseR: String(state.creaseR),
+    catalog: state.catalog ? "1" : "0",
   });
   history.replaceState(null, "", `#${params}`);
 }
@@ -442,6 +462,30 @@ function applyTier() {
 function renderFrame() {
   if (composer) composer.render();
   else renderer.render(scene, camera);
+  catalogLabels?.render(scene, camera);
+}
+
+/** The catalog's spheres and labels, built while `state.catalog` is on. */
+let catalogView = null;
+let catalogLabels = null;
+
+/**
+ * The material catalog to the state (W5 M1): built on first use (hazed like
+ * the world; its spheres cast), disposed when switched off.
+ */
+function applyCatalog() {
+  if (state.catalog && !catalogView) {
+    catalogView = buildCatalog(CATALOG);
+    haze.applyToObject(catalogView.group);
+    scene.add(catalogView.group);
+    catalogLabels = createCatalogLabels(canvas, catalogView.group);
+    catalogLabels.setSize(canvas.clientWidth, canvas.clientHeight);
+  } else if (!state.catalog && catalogView) {
+    catalogLabels.dispose();
+    catalogView.dispose();
+    catalogLabels = null;
+    catalogView = null;
+  }
 }
 
 /**
@@ -492,6 +536,7 @@ function applyWater() {
 
 function applyLook() {
   applyCity();
+  applyCatalog();
   applyWater();
   crease.setStrength(state.crease);
   crease.setRadius(state.creaseR);
@@ -534,6 +579,13 @@ function placeCamera(view) {
     // look-at keeps an up vector (review finding 15).
     camera.position.set(-900, 3200, 1100);
     controls.target.set(40, 0, 0);
+  } else if (view === "catalog") {
+    // Inside the grid's near range: the nearest row about 26 m away, the
+    // farthest about 50 m, where the labels fade (W5 triage).
+    const [x0, y0, z0] = CATALOG_LAYOUT.origin;
+    const cx = x0 + ((CATALOG_LAYOUT.perRow - 1) * CATALOG_LAYOUT.pitchM) / 2;
+    camera.position.set(cx, y0 + 7, z0 + 50);
+    controls.target.set(cx, y0 - 2, z0 + 12);
   } else if (view === "lake") {
     // Just above the floating pond's near edge, looking across it: water
     // is judged at grazing angles, where the sky it mirrors fills it.
@@ -577,6 +629,7 @@ function syncControls() {
   $("#cloud-mode").value = state.cloudMode;
   $("#slab-steps").value = String(state.slabSteps);
   $("#water-set").value = state.water;
+  $("#catalog").checked = state.catalog;
   $("#crease").value = state.crease;
   $("#crease-radius").value = state.creaseR;
   $("[data-crease]").textContent =
@@ -622,6 +675,9 @@ function buildControls() {
   $("#haze").addEventListener("change", (e) => api.setHaze(e.target.checked));
   $("#shadows").addEventListener("change", (e) =>
     api.setShadows(e.target.checked),
+  );
+  $("#catalog").addEventListener("change", (e) =>
+    api.setCatalog(e.target.checked),
   );
   // Not a look parameter: moving these keeps the preset selected.
   $("#crease").addEventListener("input", (e) =>
@@ -683,6 +739,7 @@ function resize() {
     composer?.setSize(width, height);
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
+    catalogLabels?.setSize(width, height);
   }
 }
 
@@ -997,6 +1054,30 @@ Object.assign(api, {
     state.crease = strength;
     state.creaseR = radiusM;
     applyLook();
+  },
+  /** The material catalog on or off (W5 M1; off by default). */
+  setCatalog(on) {
+    state.catalog = Boolean(on);
+    applyLook();
+  },
+  /**
+   * Compile every material in the scene, drawn or not (three otherwise
+   * compiles a program only when its object is first drawn, so a check of
+   * "every entry compiles" would depend on the camera). Returns the program
+   * count.
+   */
+  compileScene() {
+    renderer.compile(scene, camera);
+    return renderer.info.programs?.length ?? 0;
+  },
+  /** The catalog's entries, built spheres, shown labels and programs. */
+  catalogInfo() {
+    return {
+      entries: CATALOG.length,
+      spheres: catalogView ? catalogView.group.children.length : 0,
+      visibleLabels: catalogLabels ? catalogLabels.visibleIds().length : 0,
+      programs: renderer.info.programs?.length ?? 0,
+    };
   },
   /** The crease's uniforms and which parts carry it (tests, the readout). */
   creaseInfo() {

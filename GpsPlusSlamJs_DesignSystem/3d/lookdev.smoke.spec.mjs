@@ -2023,3 +2023,50 @@ test("the contact crease darkens a wall's foot and not the wall above", async ({
   }
   expect(errors).toEqual([]);
 });
+
+// WHY (W5 plan 2026-09-26-0549 M1, triage): the catalog is off by default
+// (so the other tests never compile its programs); switched on, every entry
+// must build, compile without a console error (a shader error only logs),
+// and label only the nearest spheres: some labels in the catalog view, at
+// most K, and none from the city view, about 350 m away.
+test("the material catalog builds every entry and labels only the near spheres", async ({
+  page,
+}) => {
+  const errors = await boot(page, "preset=noon&tone=neutral&city=0");
+  const off = await page.evaluate(() => {
+    window.__lookdev.compileScene();
+    return window.__lookdev.catalogInfo();
+  });
+  expect(off.spheres).toBe(0);
+  const near = await page.evaluate(() => {
+    const d = window.__lookdev;
+    d.setCloudCover(0);
+    d.setCatalog(true);
+    d.compileScene();
+    d.setView("catalog");
+    d.readPixels([[0.5, 0.5]]);
+    return d.catalogInfo();
+  });
+  const far = await page.evaluate(() => {
+    const d = window.__lookdev;
+    d.setView("city");
+    d.readPixels([[0.5, 0.5]]);
+    return d.catalogInfo();
+  });
+  const again = await page.evaluate(() => {
+    window.__lookdev.setCatalog(false);
+    return window.__lookdev.catalogInfo();
+  });
+  console.log(
+    `catalog: off ${JSON.stringify(off)}, near ${JSON.stringify(near)}, far ${JSON.stringify(far)}`,
+  );
+  expect(near.spheres).toBe(near.entries);
+  expect(near.entries).toBeGreaterThanOrEqual(29);
+  // Lambert, Phong, Basic and Toon are programs the plain page never builds.
+  expect(near.programs - off.programs).toBeGreaterThanOrEqual(3);
+  expect(near.visibleLabels).toBeGreaterThan(0);
+  expect(near.visibleLabels).toBeLessThanOrEqual(16);
+  expect(far.visibleLabels).toBe(0);
+  expect(again.spheres).toBe(0);
+  expect(errors).toEqual([]);
+});

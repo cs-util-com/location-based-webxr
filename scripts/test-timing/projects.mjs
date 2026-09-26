@@ -308,7 +308,7 @@ export const PROJECTS = [
         // added after it was written (the split's design.css/catalog.css
         // would never have been formatted while the gate stayed green)
         command:
-          'prettier --log-level warn --write --ignore-unknown "*.css" "*.html" "*.mjs" "*.md" "config/*.mjs" "3d/*" "labs/**/*" package.json',
+          'prettier --log-level warn --write --ignore-unknown "*.css" "*.html" "*.mjs" "*.md" "config/*.mjs" "3d/**/*" "labs/**/*" package.json',
         counts: null,
       },
       {
@@ -329,7 +329,7 @@ export const PROJECTS = [
       // checked, so it is a real stage, not an eyeball tool like shoot.mjs.
       {
         name: "test:unit",
-        command: "node --test serve-routes.test.mjs build-lookdev.test.mjs",
+        command: 'node --test "*.test.mjs" "3d/**/*.test.mjs"',
         counts: null,
       },
       {

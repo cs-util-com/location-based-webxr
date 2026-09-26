@@ -104,3 +104,21 @@ body {
 .lookdev-error:empty {
   display: none;
 }
+
+/* The material catalog's labels (W5 plan 2026-09-26-0549, M1): an overlay
+   right after the canvas, so the panel (a later sibling) stays above it. */
+.lookdev-catalog-labels {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.lookdev-catalog-label {
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--size-read);
+  white-space: nowrap;
+}
