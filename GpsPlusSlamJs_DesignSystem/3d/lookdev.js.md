@@ -26,6 +26,14 @@
     tests that aim along the sun or away from it);
     `cloudSlabDefine()` (the step count the slab material is built with, so
     a test can tell a count that never reached the program);
+    `casterFlags()` (whether every mesh of each part casts, and whether the
+    swatches receive: W3 M1 made every stand-in object cast, since the owner
+    saw the spheres cast nothing), `shadowProbe().family` (the lee of the
+    Lambert box, a caster standing on the ground), `setFloatingVisible(bool)` (the floating pond, basin and swatches on or
+    off: from the city view they stand against the sky, so the sky-pixel tests
+    hide them), `floating()` (where the
+    pond and the swatches float, W1 M4) and `lakeSurfacePoints(n)` (points
+    on the floating pond's surface, which the water test samples);
     `setCity(count, pitch?)` (the dense city, W1 M3: the nearest `count`
     lots of a `pitch` grid; a new pitch rebuilds the part, hazes it and flags
     it as casters when shadows are on), `cityInfo()` (`{ count, max, pitch,

@@ -173,6 +173,9 @@ for (const preset of ["noon", "golden"]) {
   }) => {
     await boot(page, `preset=${preset}&tone=neutral`);
     const results = await page.evaluate(() => {
+      // The floating pond and swatches stand against the sky in this view
+      // since W1 M4; the claim is about the sky, so they are hidden.
+      window.__lookdev.setFloatingVisible(false);
       window.__lookdev.setView("city");
       return [
         window.__lookdev.skyPixelParity([0.8, 0.02]),
@@ -417,16 +420,9 @@ test("the water's waves move on the GPU, and the lake warms with the sky", async
         api.setPreset(p);
         api.setCloudCover(0);
         api.setView("lake");
-        const points = [];
-        for (let i = 0; i < 12; i++) {
-          points.push(
-            api.project([
-              215 + (i % 4) * 25,
-              0.1,
-              -40 - Math.floor(i / 4) * 25,
-            ]),
-          );
-        }
+        // From the page: the pond floats above the city since W1 M4, so
+        // its surface is wherever the page put it.
+        const points = api.lakeSurfacePoints(12).map((p) => api.project(p));
         const before = api.readPixels(points);
         api.advanceWater(dt);
         const after = api.readPixels(points);
@@ -829,6 +825,9 @@ test("in sheet mode the sky itself draws no clouds", async ({ page }) => {
       },
       [cover, points],
     );
+  // The floating pond mirrors the sky, so its pixels follow the cloud cover;
+  // the claim is about the sky itself, so the floating parts are hidden.
+  await page.evaluate(() => window.__lookdev.setFloatingVisible(false));
   const clear = await readAt(0, sky);
   await page.evaluate(() => window.__lookdev.setCloudSheetVisible(false));
   const hidden = await readAt(0.7, sky);
@@ -1841,5 +1840,76 @@ test("the dense city casts with shadows on, and the readout names the covered ra
   expect(info.casts).toBe(true);
   expect(info.receives).toBe(true);
   await expect(page.locator("[data-stats]")).toContainText("central 220 m");
+  expect(errors).toEqual([]);
+});
+
+// WHY (owner feedback 2026-09-26; W3 plan M1): with the shadow prototype on,
+// the material spheres cast no shadow, because only the city was on the
+// caster list. Every object of the stand-in world now casts (the city, the
+// dense fill, the swatches, the markers, the families), and the swatches also
+// receive. The pixel claim uses a caster that stands ON the ground (the
+// Lambert box), compared with itself with shadows off, so it cannot pass by
+// comparing two different pixels.
+test("every stand-in object casts, and the Lambert box shadows its lee", async ({
+  page,
+}) => {
+  const errors = await boot(page, "preset=noon&tone=neutral&city=0");
+  const lee = (on) =>
+    page.evaluate((shadows) => {
+      const d = window.__lookdev;
+      d.setCloudCover(0);
+      d.setShadows(shadows);
+      const p = d.shadowProbe().family;
+      d.placeCameraAt([p[0] + 1, 140, p[2] + 1], [p[0], 0, p[2]]);
+      return d.readPixels([d.project(p)])[0];
+    }, on);
+  const off = await lee(false);
+  const on = await lee(true);
+  const flags = await page.evaluate(() => window.__lookdev.casterFlags());
+  console.log(
+    `families lee: ${sum(off)} -> ${sum(on)}; flags ${JSON.stringify(flags)}`,
+  );
+  expect(flags.casts).toEqual({
+    city: true,
+    dense: true,
+    swatches: true,
+    markers: true,
+    families: true,
+  });
+  expect(flags.swatchesReceive).toBe(true);
+  // Declared from the building probe's noon bound (MIN_DARKENING.noon).
+  expect(sum(off) - sum(on)).toBeGreaterThan(MIN_DARKENING.noon);
+  expect(errors).toEqual([]);
+});
+
+// WHY (owner feedback 2026-09-26, W1 plan M4): the pond and the material
+// spheres float about 100 m above the city centre, so a city full of
+// buildings never hides them. A floating pond over a point the top-down
+// shadow probes look at would silently change those tests, so its footprint
+// must keep off every probe point, at every preset the probes run.
+test("the pond and the swatches float above the city, clear of the shadow probes", async ({
+  page,
+}) => {
+  const errors = await boot(page, "preset=noon&tone=neutral&city=0");
+  const result = await page.evaluate(() => {
+    const d = window.__lookdev;
+    const f = d.floating();
+    const inside = ([x, , z]) =>
+      ((x - f.lake.x) / f.lake.rx) ** 2 + ((z - f.lake.z) / f.lake.rz) ** 2 <=
+      1;
+    const hits = [];
+    for (const preset of ["noon", "hazy", "golden"]) {
+      d.setPreset(preset);
+      const probe = d.shadowProbe();
+      for (const key of ["shadowed", "lit", "roof", "family"]) {
+        if (inside(probe[key])) hits.push(`${preset}.${key}`);
+      }
+    }
+    return { f, hits };
+  });
+  console.log(`floating: ${JSON.stringify(result.f)}`);
+  expect(result.f.lake.y).toBeGreaterThanOrEqual(100);
+  expect(result.f.swatchesMinY).toBeGreaterThanOrEqual(95);
+  expect(result.hits).toEqual([]);
   expect(errors).toEqual([]);
 });

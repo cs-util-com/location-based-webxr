@@ -260,6 +260,15 @@ function ridges() {
   return group;
 }
 
+/**
+ * The height the pond and the material swatches float at (owner feedback
+ * 2026-09-26, W1 plan M4): above the city, so a ring full of buildings never
+ * hides them, and below the scene-top bound the atmosphere tests hold.
+ */
+export const FLOAT_HEIGHT_M = 105;
+/** The floating pond's centre and radii (x, z), clear of the shadow probes. */
+export const POND = { x: 120, z: -40, rx: 110, rz: 70 };
+
 function swatches() {
   const group = new THREE.Group();
   group.name = "swatches";
@@ -270,7 +279,7 @@ function swatches() {
       sphere,
       new THREE.MeshStandardMaterial({ color: 0xd8d8d8, roughness }),
     );
-    dielectric.position.set(-50 + k * 20, 5, 170);
+    dielectric.position.set(-50 + k * 20, FLOAT_HEIGHT_M, 170);
     const metal = new THREE.Mesh(
       sphere,
       new THREE.MeshStandardMaterial({
@@ -279,7 +288,7 @@ function swatches() {
         roughness,
       }),
     );
-    metal.position.set(-50 + k * 20, 5, 192);
+    metal.position.set(-50 + k * 20, FLOAT_HEIGHT_M, 192);
     group.add(dielectric, metal);
   }
   return group;
@@ -293,9 +302,25 @@ function lake() {
     new THREE.MeshStandardMaterial({ color: 0x1d3b4a, roughness: 0.06 }),
   );
   mesh.rotation.x = -Math.PI / 2;
-  mesh.scale.set(110, 70, 1);
-  mesh.position.set(250, 0.1, -60);
+  mesh.scale.set(POND.rx, POND.rz, 1);
+  mesh.position.set(POND.x, FLOAT_HEIGHT_M, POND.z);
   mesh.name = "lake";
+  return mesh;
+}
+
+/**
+ * A shallow closed basin under the floating pond: from below it reads as a
+ * slab, not as the back face of a sky mirror (W1 plan §4). Its top sits just
+ * under the water.
+ */
+function basin() {
+  const mesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(1, 1, 3, 64),
+    new THREE.MeshStandardMaterial({ color: 0x6b6f75, roughness: 0.9 }),
+  );
+  mesh.scale.set(POND.rx + 0.5, 1, POND.rz + 0.5);
+  mesh.position.set(POND.x, FLOAT_HEIGHT_M - 1.6, POND.z);
+  mesh.name = "basin";
   return mesh;
 }
 
@@ -371,6 +396,7 @@ export function buildStandInScene(scene) {
     ridges: ridges(),
     swatches: swatches(),
     lake: lake(),
+    basin: basin(),
     markers: markers(),
     families: materialFamilies(),
   };

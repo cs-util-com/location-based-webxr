@@ -43,6 +43,8 @@ import {
   buildStandInScene,
   DENSE_PITCHES,
   denseCity,
+  FLOAT_HEIGHT_M,
+  POND,
 } from "./stand-in-scene.js";
 
 const TONE_MAPPINGS = {
@@ -177,6 +179,8 @@ const shadowParams = {
  */
 const SHADOW_FLOOR_DEG = 2;
 let sunShadow = null;
+/** The parts besides the city and the dense fill that cast (W3 plan M1). */
+const CASTING_PARTS = ["swatches", "markers", "families"];
 /** The switch is on but the sun is below the floor (the readout says so). */
 let shadowsBelowFloor = false;
 
@@ -306,6 +310,17 @@ function applyShadows(direction) {
       building.castShadow = true;
       building.receiveShadow = true;
     }
+    // EVERY STAND-IN OBJECT CASTS (W3 plan M1; the owner saw the spheres
+    // cast nothing while only the city was listed). The swatches also
+    // receive, so a sphere's shadow can land on its neighbours.
+    for (const part of CASTING_PARTS) {
+      parts[part].traverse((o) => {
+        if (o.isMesh) o.castShadow = true;
+      });
+    }
+    parts.swatches.traverse((o) => {
+      if (o.isMesh) o.receiveShadow = true;
+    });
     parts.ground.receiveShadow = true;
     parts.streets.traverse((o) => (o.receiveShadow = true));
     sunShadow = createSunShadow({ light: sun, mapSize: shadowParams.mapSize });
@@ -457,10 +472,12 @@ function placeCamera(view) {
     camera.position.set(-900, 3200, 1100);
     controls.target.set(40, 0, 0);
   } else if (view === "lake") {
-    // Low over the lake's near shore, looking across it: water is judged at
-    // grazing angles, where the sky it mirrors fills it.
-    camera.position.set(150, 22, 60);
-    controls.target.set(260, 0, -80);
+    // Just above the floating pond's near edge, looking across it: water
+    // is judged at grazing angles, where the sky it mirrors fills it.
+    // 20 m up, like the old ground-level view (22 m over the shore): the
+    // waves stay resolved, which a flatter view fades out (W1 M4).
+    camera.position.set(POND.x - 70, FLOAT_HEIGHT_M + 20, POND.z + 100);
+    controls.target.set(POND.x + 110, FLOAT_HEIGHT_M, POND.z - 110);
   } else {
     camera.position.set(-240, 55, 270);
     controls.target.set(40, 20, 0);
@@ -724,6 +741,64 @@ Object.assign(api, {
     state.pitch = pitch;
     applyLook();
   },
+  /** Test surface: which parts cast (every mesh in them), and whether the swatches receive. */
+  casterFlags() {
+    const all = (part, key) => {
+      let every = true;
+      let any = false;
+      parts[part].traverse((o) => {
+        if (!o.isMesh) return;
+        any = true;
+        every = every && o[key];
+      });
+      return any && every;
+    };
+    return {
+      casts: {
+        city: all("city", "castShadow"),
+        dense: all("dense", "castShadow"),
+        swatches: all("swatches", "castShadow"),
+        markers: all("markers", "castShadow"),
+        families: all("families", "castShadow"),
+      },
+      swatchesReceive: all("swatches", "receiveShadow"),
+    };
+  },
+  /**
+   * Test surface: the floating pond, its basin and the swatches on or off.
+   * They float at 105 m, so from the city view they stand against the sky;
+   * a test that samples SKY pixels hides them (W1 M4).
+   */
+  setFloatingVisible(on) {
+    for (const part of ["swatches", "lake", "basin"]) {
+      parts[part].visible = Boolean(on);
+    }
+  },
+  /** Test surface: where the pond and the swatches float (W1 M4). */
+  floating() {
+    let swatchesMinY = Infinity;
+    parts.swatches.traverse((o) => {
+      if (o.isMesh) swatchesMinY = Math.min(swatchesMinY, o.position.y);
+    });
+    const p = parts.lake.position;
+    return {
+      lake: { x: p.x, y: p.y, z: p.z, rx: POND.rx, rz: POND.rz },
+      swatchesMinY,
+    };
+  },
+  /** Test surface: `n` points on the pond's surface, well inside its rim. */
+  lakeSurfacePoints(n) {
+    const p = parts.lake.position;
+    const columns = 4;
+    const rows = Math.ceil(n / columns);
+    const out = [];
+    for (let k = 0; k < n; k++) {
+      const u = (k % columns) / (columns - 1) - 0.5; // -0.5..0.5
+      const v = rows > 1 ? Math.floor(k / columns) / (rows - 1) - 0.5 : 0;
+      out.push([p.x + u * POND.rx, p.y, p.z + v * 0.8 * POND.rz]);
+    }
+    return out;
+  },
   /** Test surface: the dense city as it stands. */
   cityInfo() {
     const dense = parts.dense;
@@ -788,6 +863,20 @@ Object.assign(api, {
         p.z + away[1] * (reach + 2),
       ],
       lit: [-away[0] * 205, 0.05, -away[1] * 205],
+      // The lee of the Lambert box (a caster that stands on the ground),
+      // just past its footprint away from the sun (W3 plan M1).
+      family: (() => {
+        const box = parts.families.children.find((o) => o.isMesh);
+        box.geometry.computeBoundingBox();
+        const size = box.geometry.boundingBox.getSize(new THREE.Vector3());
+        const along =
+          Math.abs(away[0]) * (size.x / 2) + Math.abs(away[1]) * (size.z / 2);
+        return [
+          box.position.x + away[0] * (along + 2),
+          0.05,
+          box.position.z + away[1] * (along + 2),
+        ];
+      })(),
       // An acne detector: the roof of the tallest DIFFUSE (non-glass)
       // building, a caster that receives; a bad bias shadows it itself.
       roof: (() => {
