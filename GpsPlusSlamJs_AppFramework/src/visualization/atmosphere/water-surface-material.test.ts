@@ -224,3 +224,50 @@ describe('WaterSurface (the material)', () => {
     expect(shader.fragmentShader).toContain('atmHazeKeep');
   });
 });
+
+// WHY (W6 plan, the water candidates, programme plan 2026-09-26-0539): the
+// look-dev page lets the owner rate replacement wave sets on the pond. A
+// candidate supplies its own `waterSlopeAt`, which must REPLACE the six
+// built-in waves (not add to them), and must get its own shader program:
+// three shares programs between materials whose onBeforeCompile source is
+// equal, so two surfaces that differ only in their GLSL would otherwise draw
+// the same waves, silently.
+describe('WaterSurface with a custom slope (slopeGlsl)', () => {
+  const custom = (tag: string) =>
+    `vec2 waterSlopeAt(vec2 p, float t) { return vec2(0.0); } // ${tag}`;
+
+  it('replaces the built-in waves with the given waterSlopeAt', () => {
+    const shader = compile(
+      new WaterSurface({ slopeGlsl: custom('CANDIDATE-A') }).material
+    );
+    expect(shader.fragmentShader).toContain('CANDIDATE-A');
+    // The built-in set's wave calls are gone (their helper is not emitted).
+    expect(shader.fragmentShader).not.toContain('void waterWave(');
+    // The rest of the patch stays: the normal and the roughness.
+    expect(shader.fragmentShader).toContain(
+      'roughnessFactor = max(roughnessFactor'
+    );
+    expect(shader.vertexShader).toContain('vWaterWorldXZ');
+  });
+
+  it('gives each distinct slope its own program key, also under the haze', () => {
+    const key = (glsl?: string) => {
+      const water =
+        glsl === undefined
+          ? new WaterSurface()
+          : new WaterSurface({ slopeGlsl: glsl });
+      new AtmosphereHaze({ visibilityKm: 45 }).apply(water.material);
+      return water.material.customProgramCacheKey();
+    };
+    const a = key(custom('A'));
+    expect(key(custom('A'))).toBe(a);
+    expect(key(custom('B'))).not.toBe(a);
+    expect(key()).not.toBe(a);
+  });
+
+  it('refuses GLSL that does not define waterSlopeAt', () => {
+    expect(
+      () => new WaterSurface({ slopeGlsl: 'vec2 somethingElse() {}' })
+    ).toThrow(RangeError);
+  });
+});

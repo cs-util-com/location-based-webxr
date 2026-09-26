@@ -61,6 +61,12 @@
 
 ### Added
 
+- **A custom wave set for the water surface** (programme plan
+  2026-09-26-0539, W6): `new WaterSurface({ slopeGlsl })` replaces the six
+  built-in waves with a GLSL `waterSlopeAt(vec2 p, float t)`, which the
+  look-dev page uses for the water candidates. Each slope compiles to its
+  own shader program. GLSL that does not define `waterSlopeAt` throws a
+  `RangeError`. The default is unchanged.
 - **The QR motion detector** (QR near-frontal pose plan 2026-09-23-2314,
   §26): `measureQrMotion(entries, options?)` and
   `createQrMotionTracker(options?)` on `/ar` tell, per code and

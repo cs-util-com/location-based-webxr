@@ -21,7 +21,15 @@ it like any other lit material.
   for a pixel footprint as the shader fades it; `waterNormal(x, z, t)` →
   unit normal; `waterWaveFade(k, footprintM)`; `waterRoughnessAtDistance(m)`.
   TS twins of the shader.
-- `class WaterSurface` — `new WaterSurface({ tint? })`:
+- `class WaterSurface` — `new WaterSurface({ tint?, slopeGlsl? })`:
+  - `slopeGlsl`: GLSL that defines `vec2 waterSlopeAt(vec2 p, float t)`
+    (world x/z in metres, seconds), REPLACING the six built-in waves (the
+    look-dev page's water candidates, programme plan 2026-09-26-0539, W6).
+    It may declare its own helpers. A custom slope has no TS twin here.
+    `RangeError` when it does not define `waterSlopeAt`. Each slope gets its
+    own program: the key is `water-surface|<slopeGlsl or built-in>`,
+    because three shares programs between materials whose
+    `onBeforeCompile` source is equal (the haze chains after this key);
   - `material` (`MeshPhysicalMaterial`, named `water-surface`);
   - `uniforms.uWaterTime` (shared with every compiled program);
   - `update(seconds)` — advance the waves; `RangeError` for a negative or
@@ -74,7 +82,9 @@ water.update(dtSeconds);
   (untouched for a small pixel, gone for a large one, short waves first),
   roughness monotone with distance and above three's floor, the patched real ShaderLib shader and its
   shared time uniform, `update` validation, the tint, coexistence with the
-  haze.
+  haze; a custom `slopeGlsl` replacing the built-in waves, its own program
+  key per slope (also under the haze), and the refusal of GLSL without
+  `waterSlopeAt`.
 - GPU: the look-dev smoke's "the water's waves move on the GPU, and the lake
   warms with the sky" (lake view: 12/12 points move when the waves
   advance; red over blue ×1.64 from noon to golden hour).

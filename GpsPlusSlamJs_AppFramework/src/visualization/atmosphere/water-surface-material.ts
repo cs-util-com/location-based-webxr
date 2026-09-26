@@ -163,10 +163,12 @@ varying vec2 vWaterWorldXZ;`;
 const VERTEX = /* glsl */ `#include <project_vertex>
 vWaterWorldXZ = (modelMatrix * vec4(transformed, 1.0)).xz;`;
 
-const FRAGMENT_PARS = /* glsl */ `#include <common>
+const FRAGMENT_DECLARATIONS = /* glsl */ `#include <common>
 uniform float uWaterTime;
-varying vec2 vWaterWorldXZ;
-// One travelling wave's slope: A·k·cos(k(d·p) − ωt + φ) along its direction,
+varying vec2 vWaterWorldXZ;`;
+
+/** The built-in six waves' `waterSlopeAt`. */
+const BUILT_IN_SLOPE = /* glsl */ `// One travelling wave's slope: A·k·cos(k(d·p) − ωt + φ) along its direction,
 // faded as its phase change per pixel nears aliasing (twin: waterWaveFade).
 void waterWave(vec2 p, float t, vec2 d, float k, float ak, float w, float phase, inout vec2 slope) {
   float fade = 1.0 - smoothstep(${glslFloat(S.aliasFadeRad[0])}, ${glslFloat(S.aliasFadeRad[1])}, fwidth(k * dot(d, p)));
@@ -206,7 +208,18 @@ function replaceAnchor(
 export interface WaterSurfaceOptions {
   /** Depth tint, linear RGB. Default {@link WATER_SURFACE}.tint. */
   readonly tint?: THREE.Color;
+  /**
+   * GLSL that defines `vec2 waterSlopeAt(vec2 p, float t)` (world x/z in
+   * metres, seconds), REPLACING the six built-in waves: the look-dev page's
+   * water candidates (programme plan 2026-09-26-0539, W6). It may declare
+   * its own helpers. Default: the built-in waves, whose TS twins the
+   * tests check; a custom slope has no twin here.
+   */
+  readonly slopeGlsl?: string;
 }
+
+/** A custom slope must define the function the normal patch calls. */
+const DEFINES_SLOPE = /\bvec2\s+waterSlopeAt\s*\(/;
 
 /** The water material and its clock. */
 export class WaterSurface {
@@ -215,6 +228,12 @@ export class WaterSurface {
   readonly uniforms = { uWaterTime: { value: 0 } };
 
   constructor(options: WaterSurfaceOptions = {}) {
+    const slopeGlsl = options.slopeGlsl ?? BUILT_IN_SLOPE;
+    if (!DEFINES_SLOPE.test(slopeGlsl)) {
+      throw new RangeError(
+        'water slopeGlsl must define vec2 waterSlopeAt(vec2 p, float t)'
+      );
+    }
     const tint = options.tint ?? new THREE.Color(...S.tint);
     if (![tint.r, tint.g, tint.b].every(Number.isFinite)) {
       throw new RangeError('water tint must be a finite colour');
@@ -241,7 +260,7 @@ export class WaterSurface {
       shader.fragmentShader = replaceAnchor(
         shader.fragmentShader,
         '#include <common>',
-        FRAGMENT_PARS
+        `${FRAGMENT_DECLARATIONS}\n${slopeGlsl}`
       );
       shader.fragmentShader = replaceAnchor(
         shader.fragmentShader,
@@ -255,6 +274,11 @@ export class WaterSurface {
       );
       Object.assign(shader.uniforms, uniforms);
     };
+    // ONE PROGRAM PER SLOPE: three shares programs between materials whose
+    // onBeforeCompile source is equal, and this closure's source is the same
+    // for every slope. The haze chains after this key.
+    const key = `water-surface|${options.slopeGlsl ?? 'built-in'}`;
+    this.material.customProgramCacheKey = () => key;
   }
 
   /**
