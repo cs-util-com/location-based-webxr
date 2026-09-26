@@ -44,6 +44,8 @@ DOM glue, its own module since the flows plan M6.
   `teardownSession` resets the gate (`hooks.resetScanGate`), the seven
   viewer QR/line fields (a lock, its vote count, an unknown or unusable
   code and a failed image placement describe the CLOSING tour - PR #434
+  review), the fused pose's visitor-hint evaluation and `?debug=1` counts
+  (the counts emptied in place: the pipeline outlives the switch - PR #508
   review) and the placement fields the
   closing tour owned (`imagePlanes`, `imagePlanesLoading`,
   `planesRunGeneration` bump, `placementAttempted`, `joinDeclined`,
@@ -83,6 +85,8 @@ archive.boot().catch((err) => {
 the cached revisit, the changed-ETag refetch, clear cache, clear cache
 during a held warm, the hidden Storage section under `?nocache=1`),
 `launch-and-errors.spec.js` (the `?qr=` boot, both async-UI states, the
-error paths). The logic beneath: `tour-session.test.ts`,
+error paths). `archive-open.test.ts` drives the real submit handler through
+a failed open: the tour switch clears the fused-pose hint state. The logic
+beneath: `tour-session.test.ts`,
 `stats-view.test.ts`, `open-errors.test.ts`, `tour-flow.test.ts`
 (`clearCacheLabel`).

@@ -141,6 +141,11 @@ export function wireArchiveOpen(deps: {
     ctx.viewerReprojectionPx = null;
     ctx.viewerUnknownCode = null;
     ctx.viewerUnusableCode = null;
+    // The fused pose's hint and ?debug=1 counts too (PR #508 review): the
+    // pipeline outlives a tour switch, so the counts are emptied IN PLACE -
+    // it keeps writing into the same map for the new tour's codes.
+    ctx.viewerLastEvaluation = null;
+    ctx.fusedTallies?.clear();
     ctx.viewerPlanesError = null;
     ctx.placement = { kind: "idle" };
     if (ctx.session !== null) {

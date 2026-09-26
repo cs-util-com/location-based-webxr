@@ -105,6 +105,13 @@ const KEEP_IN_VIEW = "keep it in view while you move slowly.";
  * Only while the controller tracks or briefly lost it, and while the last
  * evaluation is recent: the hint describes the code in view, never one
  * seen a while ago.
+ *
+ * Assumes ONE code in view (PR #508 review): with two, it describes
+ * whichever was evaluated last, and can alternate between them. The
+ * viewer's own "code that matters" (`viewerLockedText`) is set only by the
+ * first VOTE, when this hint is no longer shown, so there is nothing
+ * better to key on before it; `last.text` is kept for the readout and the
+ * tests.
  */
 export function visitorFusedHint(input: {
   last: LastEvaluation | null;

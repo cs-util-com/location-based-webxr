@@ -56,7 +56,13 @@ so a field session where "the tour did not place" needs to say why:
   status and codes are then the attribution.
 - **Lifetime:** one `FusedTallies` per pipeline start (per AR session), held
   in the pipeline's closure and on `ctx.fusedTallies`; KEPT at session end
-  and replaced at the next start (plan §67 #10). A late evaluation of an
+  and replaced at the next start (plan §67 #10). A tour switch inside a
+  session (`archive-open.ts`) empties it IN PLACE and clears
+  `ctx.viewerLastEvaluation` - the pipeline outlives the switch (PR #508
+  review).
+- **One code in view.** With two codes in view the hint describes whichever
+  was evaluated last and can alternate; `viewerLockedText` exists only from
+  the first vote, when the hint is gone (PR #508 review). A late evaluation of an
   ended session counts into its own old map only.
 - **`HINT_STALE_MS` = 2 s:** the viewer evaluates on each lock; the phone
   field tests (r731-r736) showed 3.6-3.8 hits/s of ~7.5 detects/s and
@@ -93,3 +99,5 @@ arDebug.textContent = debugReadoutLines({
 - `ar-entry.test.ts` - the real `renderArStatus` writes the block only with
   the flag and shows the hint from the last evaluation.
 - `qr-viewer-mode.test.ts` - the hint's precedence in `viewerStatusLine`.
+- `archive-open.test.ts` - a tour switch clears the hint's evaluation and
+  empties the counts in place.
