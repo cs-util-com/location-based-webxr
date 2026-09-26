@@ -40,6 +40,12 @@ export interface QrVoteBudget {
   tryConsume(text: string): boolean;
   /** Batches already spent by `text` — for status lines. */
   spentFor(text: string): number;
+  /**
+   * Whether `text` has spent its budget at THIS budget's cap - so a
+   * consumer can skip work for a code that can no longer vote (the fused
+   * pose's solve, QR near-frontal pose plan §71).
+   */
+  isSpent(text: string): boolean;
   /** Forget every code (store swap, session end). */
   reset(): void;
 }
@@ -56,6 +62,7 @@ export function createQrVoteBudget(
       return true;
     },
     spentFor: (text) => spent.get(text) ?? 0,
+    isSpent: (text) => (spent.get(text) ?? 0) >= maxLocksPerCode,
     reset: () => {
       spent.clear();
     },

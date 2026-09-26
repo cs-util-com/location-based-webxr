@@ -10,6 +10,9 @@
   - `tryConsume(text)` — charge one batch, `false` once the cap is reached.
     Does **not** charge when it returns `false`.
   - `spentFor(text)` — batches already spent, for status lines.
+  - `isSpent(text)` — whether the code is at THIS budget's cap; the
+    TourViewer and the recorder skip the fused-pose solve for it (QR
+    near-frontal pose plan §71).
   - `reset()` — forget every code (store swap, session end).
 
 ## Invariants & assumptions
@@ -35,4 +38,5 @@
 ## Tests
 
 - `qr-vote-budget.test.ts` — the cap holds per code, codes are independent, a
-  refused charge does not consume, `spentFor` tracks, `reset` clears.
+  refused charge does not consume, `spentFor` tracks, `reset` clears,
+  `isSpent` at the budget's own cap.

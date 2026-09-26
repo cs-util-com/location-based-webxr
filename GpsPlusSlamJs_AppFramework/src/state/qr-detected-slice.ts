@@ -469,8 +469,8 @@ export function selectQrPoseStability(
  * latest pose (which stays available via {@link selectLatestQrDetection} for
  * scanning feedback / overlay persistence across misses). The TourViewer
  * and the QR demo use the FUSED pose instead (`createFusedQrPoseSource`
- * over {@link selectQrFusedEntries}; QR near-frontal pose plan §60); this
- * average of single-frame poses remains for the recorder until b6.
+ * over {@link selectQrFusedEntries}; QR near-frontal pose plan §60), and so
+ * do the recorder's votes since b6a (§71); no app wires this average today.
  *
  * ```ts
  * resolveStablePose: (text) => selectStableQrPose(store.getState(), text),

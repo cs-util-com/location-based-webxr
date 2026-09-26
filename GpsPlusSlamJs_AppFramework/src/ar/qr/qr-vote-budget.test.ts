@@ -48,4 +48,20 @@ describe('createQrVoteBudget', () => {
     expect(budget.spentFor('code-a')).toBe(0);
     expect(budget.tryConsume('code-a')).toBe(true);
   });
+
+  // Why (QR near-frontal pose plan §71): both apps skip the fused-pose
+  // solve for a code that can no longer vote. Asked of the budget itself,
+  // so a consumer's own cap is honoured instead of comparing `spentFor`
+  // with the default constant.
+  it('says when a code has spent its budget, at its own cap', () => {
+    const budget = createQrVoteBudget(2);
+    expect(budget.isSpent('code-a')).toBe(false);
+    budget.tryConsume('code-a');
+    expect(budget.isSpent('code-a')).toBe(false);
+    budget.tryConsume('code-a');
+    expect(budget.isSpent('code-a')).toBe(true);
+    expect(budget.isSpent('code-b')).toBe(false);
+    budget.reset();
+    expect(budget.isSpent('code-a')).toBe(false);
+  });
 });

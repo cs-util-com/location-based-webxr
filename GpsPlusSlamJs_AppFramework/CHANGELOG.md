@@ -61,6 +61,10 @@
 
 ### Added
 
+- **`QrVoteBudget.isSpent(text)`** (QR near-frontal pose plan §71): whether a
+  code is at the budget's own cap, so an app can skip the fused-pose solve
+  for a code that can no longer vote. Code that implements or stubs
+  `QrVoteBudget` adds it.
 - **A contact crease for buildings** (city shadows and contact crease plan
   2026-09-26-0549, M2): `new ContactCrease({ strength, radiusM,
 baseHeightM })` darkens the ambient light at the foot of walls,
