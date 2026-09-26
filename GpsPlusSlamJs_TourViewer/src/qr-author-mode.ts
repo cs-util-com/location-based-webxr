@@ -152,7 +152,7 @@ export function authorStatusLine(
  * plan §61 #11). Never "hold steady": moving the CAMERA around the code is
  * what resolves its tilt.
  */
-function waitingFor(reason: QrFusedPose["notStableReason"]): string {
+export function waitingFor(reason: QrFusedPose["notStableReason"]): string {
   switch (reason) {
     case "fit":
       return "keep moving slowly, still measuring.";

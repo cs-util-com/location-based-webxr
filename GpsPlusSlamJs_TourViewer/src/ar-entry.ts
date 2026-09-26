@@ -27,6 +27,7 @@ import {
 } from "./ar-mode.js";
 import type { ViewerMode } from "./mode.js";
 import { describeOpenError } from "./open-errors.js";
+import { debugReadoutLines, visitorFusedHint } from "./qr-debug-readout.js";
 import type { TourViewerSeams } from "./seams.js";
 import { arStatusLine } from "./tour-flow.js";
 import type { LocationGate } from "./visitor-screen.js";
@@ -49,6 +50,8 @@ export interface ArEntryDom {
   errorBox: HTMLElement;
   /** The scan gate's escape (inside the overlay); hidden until offered. */
   escapeButton: HTMLButtonElement;
+  /** The `?debug=1` QR readout (plan §66); written only while `ctx.debug`. */
+  arDebug?: HTMLElement;
 }
 
 /** Properties, not methods: they are handed to the hooks object unbound. */
@@ -83,6 +86,7 @@ export function wireArEntry(deps: {
   const authorMode = mode === "creator";
 
   function renderArStatus(): void {
+    renderDebugReadout();
     dom.arStatus.textContent = arStatusLine({
       mode,
       arStatus: arController.getState().status,
@@ -101,6 +105,15 @@ export function wireArEntry(deps: {
         votedLocks: ctx.viewerVotedLocks,
         lockedText: ctx.viewerLockedText,
         reprojectionErrorPx: ctx.viewerReprojectionPx,
+        // Read from the last evaluation, never re-evaluated here: this runs
+        // per camera frame, past the budget's short-circuit (plan §67 #5).
+        fusedHint: authorMode
+          ? null
+          : visitorFusedHint({
+              last: ctx.viewerLastEvaluation,
+              status: ctx.viewerQrStatus,
+              nowMs: performance.now(),
+            }),
       },
       // The onboarding mapping of the tracking-quality report - `null`
       // before the slice reports maps to the `initializing` hint, which is
@@ -121,6 +134,17 @@ export function wireArEntry(deps: {
               skipped: ctx.contentRendered.skipped.length,
             },
     });
+  }
+
+  /** The ?debug=1 block: the controller state and each code's counts. */
+  function renderDebugReadout(): void {
+    if (!ctx.debug || dom.arDebug === undefined) return;
+    dom.arDebug.textContent = debugReadoutLines({
+      status: ctx.viewerQrStatus,
+      unknownCode: ctx.viewerUnknownCode,
+      unusableCode: ctx.viewerUnusableCode,
+      tallies: ctx.fusedTallies,
+    }).join("\n");
   }
 
   function renderArState(state: EnableGpsArState): void {
@@ -196,6 +220,7 @@ export function wireArEntry(deps: {
     ctx.viewerVotedLocks = 0;
     ctx.viewerLockedText = null;
     ctx.viewerReprojectionPx = null;
+    ctx.viewerLastEvaluation = null;
     ctx.placement = { kind: "idle" };
     ctx.viewerPlanesError = null;
     ctx.imagePlanesLoading = false;

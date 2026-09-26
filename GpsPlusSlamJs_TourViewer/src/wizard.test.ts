@@ -646,6 +646,48 @@ describe("visitorLaunchHref / launchHrefFromPrintedUrl", () => {
   });
 });
 
+// Plan §66-§67 #2: the owner opens the creator page with ?debug=1 once;
+// the visitor link must keep it, from BOTH producers - presentLaunchUrl
+// overwrites the link as soon as a code is generated, which is the path a
+// field session takes. Without the flag the link is unchanged.
+describe("the visitor link carries ?debug=1", () => {
+  it("adds the flag to both hrefs only when asked, keeping the qr parameter (property)", () => {
+    fc.assert(
+      fc.property(fc.webUrl(), fc.boolean(), (url, debug) => {
+        for (const href of [
+          visitorLaunchHref(url, debug),
+          launchHrefFromPrintedUrl(
+            `https://gps.example/?qr=${encodeURIComponent(url)}`,
+            debug,
+          ),
+        ]) {
+          const params = new URLSearchParams(href ?? "");
+          expect(params.get("qr")).toBe(url);
+          expect(params.get("debug")).toBe(debug ? "1" : null);
+        }
+      }),
+    );
+  });
+
+  it("keeps the flag when a generated code replaces the link", () => {
+    const { dom } = fakeDom();
+    const wizard = wireWizard({
+      mode: "creator",
+      dom,
+      packStarter: () => Promise.resolve(new Blob()),
+      download: savedDownload,
+      debug: true,
+    });
+    wizard.presentTour("https://example.com/t.zip");
+    expect(new URLSearchParams(dom.visitorLink.href).get("debug")).toBe("1");
+    wizard.presentLaunchUrl("https://gps.example/?qr=~abc&n=2");
+    const params = new URLSearchParams(dom.visitorLink.href);
+    expect(params.get("qr")).toBe("~abc");
+    expect(params.get("n")).toBe("2");
+    expect(params.get("debug")).toBe("1");
+  });
+});
+
 describe("revealStep (M3 milestone review #2)", () => {
   it("opens a step without closing the one the creator is reading", () => {
     // Why this exists at all: AR refuses to start when the printed size is

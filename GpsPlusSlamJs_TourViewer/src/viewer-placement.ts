@@ -33,6 +33,7 @@ import { renderTourObjects } from "./content-placement.js";
 import { placeCapturedImagePlanes, placeImagePlanes } from "./image-planes.js";
 import type { ViewerMode } from "./mode.js";
 import { describeOpenError } from "./open-errors.js";
+import { tallyEvaluation, type FusedTallies } from "./qr-debug-readout.js";
 import {
   gateAllowsPlacement,
   isLockableLevel,
@@ -191,14 +192,27 @@ export function createViewerPlacement(deps: {
     // code's first lock). Inert today: every TourViewer entry carries a raw
     // pose, which gives the position, and the rotation is size-free - the
     // size matters only for entries without one (milestone review of b4b #6).
+    // Its counts (the ?debug=1 readout) and its last new evaluation (the
+    // visitor hint), kept in this closure so a late evaluation of an ended
+    // session reaches neither the next session's tallies nor its line
+    // (plan §66, §67 #5 and #10).
+    const tallies: FusedTallies = new Map();
     const fusedPose = createFusedQrPoseSource({
       entriesOf: (text) => selectQrFusedEntries(arStore.getState(), text),
       optionsFor: (text) => {
         const sizeM = ctx.levelByText.get(text)?.qr.physicalSizeM;
         return sizeM === undefined ? {} : { sizeM };
       },
+      onEvaluated: (result, _ms, text) => {
+        tallyEvaluation(tallies, text, result);
+        if (live()) {
+          ctx.viewerLastEvaluation = { text, result, atMs: performance.now() };
+        }
+      },
     });
     ctx.fusedPose = fusedPose;
+    ctx.fusedTallies = tallies;
+    ctx.viewerLastEvaluation = null;
     // This session's pipeline is live while its source is the session's: the
     // level lookup runs its callbacks inside the fetch the controller awaits,
     // before the controller's dispose guard (milestone review of b4b #3).

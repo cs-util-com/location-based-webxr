@@ -91,6 +91,8 @@ export interface ArStatusInput {
     votedLocks: number;
     lockedText: string | null;
     reprojectionErrorPx: number | null;
+    /** The fused pose's hint before the first vote (plan §66). */
+    fusedHint?: string | null;
   };
   /** The tracking-quality onboarding phase while running; null before the
    *  slice produced a report (or in author mode, which never reads it). */

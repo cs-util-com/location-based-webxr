@@ -179,6 +179,37 @@ describe("the viewer votes with the fused pose", () => {
     expect(v.ctx.fusedPose).not.toBeNull();
     expect(v.ctx.fusedPose).not.toBe(first);
   });
+
+  // Plan §66-§67: each lock's new evaluation feeds the ?debug=1 counts and
+  // the visitor hint's last evaluation.
+  it("counts each lock's evaluation and keeps the last one for the hint", () => {
+    const v = viewer();
+    for (let i = 0; i < 7; i++) v.detect(i);
+    const counts = v.ctx.fusedTallies?.get(TEXT)?.summary();
+    expect(counts?.locks).toBe(7);
+    expect(counts?.stable).toBeGreaterThan(0);
+    expect(v.ctx.viewerLastEvaluation?.text).toBe(TEXT);
+    expect(v.ctx.viewerLastEvaluation?.result.status).toBe("stable");
+  });
+
+  // Plan §67 #10: the counts outlive the session end (the readout still
+  // shows them) and are replaced at the next start; a late evaluation of
+  // the ended session reaches neither the new counts nor the hint.
+  it("keeps the counts past the session end and starts fresh ones per session", () => {
+    const v = viewer();
+    for (let i = 0; i < 3; i++) v.detect(i);
+    const old = v.ctx.fusedTallies;
+    endQrPipeline(v.ctx);
+    expect(v.ctx.fusedTallies).toBe(old);
+    v.placement.startViewerPipeline();
+    expect(v.ctx.fusedTallies).not.toBe(old);
+    expect(v.ctx.fusedTallies?.size).toBe(0);
+    expect(v.ctx.viewerLastEvaluation).toBeNull();
+    v.config.onDetection?.(fusedEvent(TEXT, 3));
+    v.config.resolveStablePose?.(TEXT);
+    expect(v.ctx.fusedTallies?.size).toBe(0);
+    expect(v.ctx.viewerLastEvaluation).toBeNull();
+  });
 });
 
 describe("the creator measures and mints with the fused pose", () => {
@@ -247,11 +278,21 @@ describe("the creator measures and mints with the fused pose", () => {
     expect(setup.startAuthorPipeline()).toBe(true);
     const config = captured.configs.at(-1)!;
     return {
+      ctx,
       dom,
       arStore,
       detect: (i: number) => config.onDetection?.(fusedEvent(TEXT, i)),
     };
   }
+
+  // Plan §66: the ?debug=1 readout counts the creator's evaluations too.
+  it("counts each detection's fused evaluation for the debug readout", () => {
+    const c = creator();
+    for (let i = 0; i < 7; i++) c.detect(i);
+    const counts = c.ctx.fusedTallies?.get(TEXT)?.summary();
+    expect(counts?.locks).toBe(7);
+    expect(counts?.stable).toBeGreaterThan(0);
+  });
 
   // Milestone review of b4b #1: the readout and the mint read the fused
   // result; a cached one survives a tracking restart, and minting from it

@@ -15,6 +15,7 @@
  */
 
 import { usablePhotoFrame } from "./photo-frame.js";
+import { tallyEvaluation, type FusedTallies } from "./qr-debug-readout.js";
 import { createQrTrackingController } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
 import { createFusedQrPoseSource } from "gps-plus-slam-app-framework/ar/qr/qr-fused-pose-source";
 import {
@@ -822,12 +823,18 @@ export function wireCreatorSetup(deps: {
     }
     // The code's FUSED pose (QR near-frontal pose plan §60), one source per
     // pipeline start (per AR session), at the size the author entered.
+    // Its counts feed the ?debug=1 readout (plan §66).
     const sizeM = ctx.activeSizeM;
+    const tallies: FusedTallies = new Map();
     const fusedPose = createFusedQrPoseSource({
       entriesOf: (text) => selectQrFusedEntries(arStore.getState(), text),
       optionsFor: () => ({ sizeM }),
+      onEvaluated: (result, _ms, text) => {
+        tallyEvaluation(tallies, text, result);
+      },
     });
     ctx.fusedPose = fusedPose;
+    ctx.fusedTallies = tallies;
     ctx.qrController = createQrTrackingController(
       buildAuthorControllerConfig(ctx.activeSizeM, {
         frontEnd,

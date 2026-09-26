@@ -244,6 +244,10 @@ hooks.renderAuthorReadout = setup.renderAuthorReadout;
 hooks.startAuthorPipeline = setup.startAuthorPipeline;
 ```
 
+- **The creator pipeline's fused evaluations are counted** per code into
+  `ctx.fusedTallies` for the `?debug=1` readout (plan §66), from the
+  source's `onEvaluated`.
+
 ## Tests
 
 `playwright-tests/ar-mode.spec.js` - "the creator measures the code,

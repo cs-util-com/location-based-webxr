@@ -45,7 +45,10 @@ recording. Its own module since the flows plan M6.
     moving code, 1 s of only native-order frames; after a tracking restart
     the old frame's detections stop counting; a level lookup finishing
     after the session ended is dropped (the pipeline's source is no longer
-    the session's); false without a
+    the session's); each new evaluation is counted per code into
+    `ctx.fusedTallies` (the `?debug=1` readout) and, while the pipeline is
+    the session's, kept as `ctx.viewerLastEvaluation` (the visitor hint;
+    plan §66, `qr-debug-readout.ts`); false without a
     detector (plain AR, still placing photos).
   - `tryPlaceTour(): void` - the placement trigger (DEC-F3): with a tour
     open and a viewer session live (`ctx.placementUnsubscribe !== null`),

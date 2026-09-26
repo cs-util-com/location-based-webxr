@@ -42,6 +42,27 @@ const RUNNING_BASE: ArStatusInput = {
   content: { kind: "none" },
 };
 
+describe("the fused pose's hint in the composed line (plan §66-§67)", () => {
+  // Plan §67 #6: the gate passes on the same lock that first evaluates the
+  // code, so the hint sits beside "Code recognised"; it must read as
+  // fine-tuning, not as a second "code found".
+  it("composes the hint with the passed gate, string-exact", () => {
+    const line = arStatusLine({
+      ...RUNNING_BASE,
+      tour: { kind: "open", levelCount: 1 },
+      qr: {
+        ...RUNNING_BASE.qr,
+        status: "tracking",
+        fusedHint: "Measuring the code: walk slowly around the code.",
+      },
+      gate: { kind: "passed", via: "code" },
+    });
+    expect(line).toBe(
+      "Visitor mode — AR running · 3 camera frames · Measuring the code: walk slowly around the code. · Code recognised - placing the tour.",
+    );
+  });
+});
+
 describe("the scan gate and the content in the composed line (M5)", () => {
   it("a scanning gate shows its line and suppresses the placement's coaching hint", () => {
     const line = arStatusLine({

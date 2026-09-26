@@ -319,6 +319,33 @@ describe("viewerStatusLine", () => {
       }),
     ).toMatch(/pose error 1.2 px/i);
   });
+
+  // Plan §66-§67: since b4b a code votes only while its fused pose is
+  // stable, so before the first vote the line says what the pose waits for
+  // instead of "Scanning for the printed code…" - the code IS read. A code
+  // problem still wins, and the vote states replace the hint.
+  it("shows the fused pose's hint before the first vote, and only then", () => {
+    const hint = "Measuring the code: walk slowly around the code.";
+    const base = {
+      status: "tracking" as const,
+      unknownCode: null,
+      votedLocks: 0,
+      lockedText: null,
+      fusedHint: hint,
+    };
+    expect(viewerStatusLine(base)).toBe(hint);
+    expect(viewerStatusLine({ ...base, fusedHint: null })).toMatch(/scanning/i);
+    expect(viewerStatusLine({ ...base, unknownCode: "7" })).toMatch(
+      /code 7 has no/i,
+    );
+    expect(viewerStatusLine({ ...base, unusableCode: "3" })).toMatch(
+      /no printed size/i,
+    );
+    expect(
+      viewerStatusLine({ ...base, votedLocks: 2, lockedText: TEXT }),
+    ).toMatch(/2 of \d+/);
+    expect(viewerStatusLine({ ...base, status: null })).toBe("");
+  });
 });
 
 describe("imagePlaneRingNue", () => {

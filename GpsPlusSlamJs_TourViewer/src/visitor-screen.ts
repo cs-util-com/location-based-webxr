@@ -86,7 +86,7 @@ export interface VisitorScreen {
 }
 
 const VISITOR_HINT =
-  "Once AR starts, point your phone at the printed code you scanned. The tour appears when the code is recognised.";
+  "Once AR starts, point your phone at the printed code you scanned and keep it in view while you move slowly. The tour appears when the code is recognised.";
 
 export function wireVisitorScreen(deps: {
   mode: ViewerMode;

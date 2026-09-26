@@ -28,7 +28,10 @@ carrying the two review-ordered guardrails and the deferred negative cache.
   size) / `onVotedLock` UI hooks.
 - `viewerStatusLine({...}): string` — the visitor-facing line, pure;
   carries the last lock's reprojection error (px) as the placement-quality
-  number M5's probe reads.
+  number M5's probe reads. Its optional `fusedHint` (from
+  `qr-debug-readout.ts`'s `visitorFusedHint`, plan §66) is shown before the
+  first vote instead of "Scanning for the printed code…"; an unknown or
+  unusable code still wins, and the vote states replace it.
 - `imagePlaneRingNue(centerNue, count, radiusM?)` — ring positions in
   GPS-world NUE at the anchor's height.
 

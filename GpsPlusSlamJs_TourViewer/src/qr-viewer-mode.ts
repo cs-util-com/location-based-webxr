@@ -215,6 +215,9 @@ export function viewerStatusLine(input: {
   /** Last lock's RMS reprojection error (px) — the on-device placement
    *  quality number M5's probe reads (M4 milestone review #8). */
   reprojectionErrorPx?: number | null;
+  /** What the code's fused pose waits for before its first vote
+   *  (`visitorFusedHint`, plan §66); null when nothing to say. */
+  fusedHint?: string | null;
 }): string {
   if (input.unknownCode !== null) {
     return `Code ${input.unknownCode} has no level in this tour.`;
@@ -232,6 +235,7 @@ export function viewerStatusLine(input: {
       ? `Relocalized — vote budget spent, placement holds.${quality}`
       : `Relocalizing — ${String(input.votedLocks)} of ${String(MAX_VOTED_LOCKS_PER_CODE)} vote batches.${quality}`;
   }
+  if (input.fusedHint != null) return input.fusedHint;
   return "Scanning for the printed code…";
 }
 

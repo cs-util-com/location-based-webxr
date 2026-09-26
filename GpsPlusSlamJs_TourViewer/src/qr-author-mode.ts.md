@@ -129,6 +129,9 @@ const result = mintQrLevel({
 }); // from the framework — see qr-mint-level.ts.md
 ```
 
+- `waitingFor(reason)` is exported: the visitor hint
+  (`qr-debug-readout.ts`) reads the same copy (plan §66, DEC-H3).
+
 ## Tests
 
 `qr-author-mode.test.ts` — the geo-less/local fetch pins, the cadence pin,

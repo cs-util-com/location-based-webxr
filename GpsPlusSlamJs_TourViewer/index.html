@@ -174,6 +174,13 @@
         margin-bottom: var(--space-2);
         text-shadow: var(--halo-text);
       }
+      /* The ?debug=1 QR readout: one wrapped line per code, same halo. */
+      #ar-debug {
+        font-size: var(--size-hint);
+        white-space: pre-wrap;
+        margin: 0 0 var(--space-2);
+        text-shadow: var(--halo-text);
+      }
       /* The gate's escape: the secondary, quality-degrading choice. The
          old dashed outline said so; the sheet has no quiet button variant
          (only .btn--accent, which is louder), and the brief forbids
@@ -691,6 +698,9 @@
             the phone align to the map.
           </p>
           <div id="ar-status" data-testid="ar-status" aria-live="polite"></div>
+          <!-- The ?debug=1 QR readout (main.ts shows it; plan §66). Never for
+               visitors without the flag. -->
+          <pre id="ar-debug" data-testid="ar-debug" hidden></pre>
           <button
             type="button"
             class="btn"

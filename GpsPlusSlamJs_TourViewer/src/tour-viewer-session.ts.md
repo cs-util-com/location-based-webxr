@@ -70,6 +70,11 @@ wireArchiveOpen({ ctx, ... });
 wireArEntry({ ctx, ... });
 ```
 
+- **The fused pose's debug state** (plan §66): `fusedTallies` (per code,
+  replaced at each pipeline start and kept at session end), `debug` (the
+  page's `?debug=1`, set once at boot) and `viewerLastEvaluation` (the
+  visitor hint's source, cleared at session end).
+
 ## Tests
 
 `tour-viewer-session.test.ts`: `endQrPipeline` disposes and forgets the

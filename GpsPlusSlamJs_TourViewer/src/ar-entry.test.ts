@@ -37,7 +37,7 @@ async function settle(): Promise<void> {
   for (let i = 0; i < 12; i += 1) await Promise.resolve();
 }
 
-function harness() {
+function harness(options: { arStatus?: string } = {}) {
   // The entry flags a running session on `document.body.dataset`; the
   // package tests run in node, so the page body is stood in.
   vi.stubGlobal("document", { body: { dataset: {} } });
@@ -45,7 +45,7 @@ function harness() {
   const dispose = vi.fn();
   let enabled: EnableGpsArConfig | null = null;
   const arController = {
-    getState: () => ({ status: "ready" }),
+    getState: () => ({ status: options.arStatus ?? "ready" }),
     subscribe: () => () => undefined,
     refreshSupport: () => Promise.resolve(),
     enable: vi.fn((config: EnableGpsArConfig) => {
@@ -73,8 +73,9 @@ function harness() {
     sizeInput: el(),
     errorBox: el(),
     escapeButton: el(),
+    arDebug: el(),
   };
-  wireArEntry({
+  const entry = wireArEntry({
     ctx,
     mode: "visitor",
     arStore: createTourViewerStore(),
@@ -93,6 +94,8 @@ function harness() {
   });
   return {
     ctx,
+    dom,
+    entry,
     dispose,
     async enterAndEnd() {
       dom.enterArButton.click();
@@ -114,5 +117,37 @@ describe("wireArEntry session end", () => {
     expect(h.dispose).toHaveBeenCalledTimes(1);
     expect(h.ctx.qrController).toBeNull();
     expect(h.ctx.fusedPose).toBeNull();
+  });
+});
+
+// Plan §66-§67: the render reads the fused pose's debug state and hint. It
+// runs per camera frame and had no unit harness (§67 review, "the #ar-debug
+// render call"); this drives the real renderArStatus.
+describe("wireArEntry QR readout and visitor hint", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("writes the ?debug=1 block only with the flag", () => {
+    const h = harness();
+    h.entry.renderArStatus();
+    expect(h.dom.arDebug.textContent).toBe("");
+    h.ctx.debug = true;
+    h.entry.renderArStatus();
+    expect(h.dom.arDebug.textContent).toBe("qr: off\nno code evaluated yet");
+  });
+
+  it("shows the fused pose's hint from the last evaluation while tracking", () => {
+    const h = harness({ arStatus: "running" });
+    h.ctx.viewerQrStatus = "tracking";
+    h.ctx.viewerLastEvaluation = {
+      text: "https://gps.csutil.com/tour/?qr=x",
+      result: { status: "measuring", notStableReason: "fit" } as never,
+      atMs: performance.now(),
+    };
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.textContent).toContain(
+      "Measuring the code: keep moving slowly, still measuring.",
+    );
   });
 });

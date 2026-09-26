@@ -67,6 +67,10 @@ listed in `index.html.md`. The concerns and their modules:
 `/?qr=https%3A%2F%2Fexample.com%2Ftour.zip` opens the archive on load;
 pasting the same URL into the input does the same interactively.
 
+- **`?debug=1`** (the framework's `debugUiEnabledFromSearch`) is read once
+  at boot into `ctx.debug`: it unhides `#ar-debug` and is passed to the
+  wizard, whose visitor link carries it on (QR near-frontal pose plan §66).
+
 ## Tests
 
 Driven end-to-end by `playwright-tests/*.spec.js` (streaming, fallback,

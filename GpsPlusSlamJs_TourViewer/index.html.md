@@ -61,10 +61,12 @@ The `data-testid` contract the e2e suite drives: `wizard`, `step-host`,
 `draft-offer-text`, `draft-restore`, `draft-dismiss`, `draft-discard`,
 `finish-block`,
 `finish-status`, `finish-download`, `replace-help`), `visitor-screen`,
-`stats`, `error`, `gallery`, `ar-hint`, `ar-status`, `enter-ar`,
+`stats`, `error`, `gallery`, `ar-hint`, `ar-status`, `ar-debug`, `enter-ar`,
 `setup-panel`, `setup-status`, `setup-controls`, `setup-mint`,
 `setup-pin`, `pin-label`, `pin-save`, `pin-cancel`, `setup-photo`,
 `setup-finish`, `scan-escape`.
+`#ar-debug` (a `<pre>` in `#ar-root`, hidden unless `?debug=1`) holds the
+QR readout (QR near-frontal pose plan §66).
 Renaming one is an e2e-breaking change. `#ar-hint`, `#ar-status`,
 `#enter-ar` and `#setup-panel` must stay children of `#ar-root` (WebXR
 DOM overlay composites only that subtree; enforced by

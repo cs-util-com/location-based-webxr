@@ -99,6 +99,10 @@ arStatusLine({
 // needs a code, so "photo ring (…)" would promise one forever - review #1)
 ```
 
+- `ArStatusInput.qr.fusedHint` carries the visitor hint through to
+  `viewerStatusLine` (plan §66); it sits beside the gate's "Code
+  recognised" line, which is why it reads as fine-tuning (§67 #6).
+
 ## Tests
 
 - `tour-flow.test.ts` - every branch of the line, string-exact, including

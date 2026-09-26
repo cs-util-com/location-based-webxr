@@ -18,6 +18,7 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { TOUR_MANIFEST_ENTRY } from "gps-plus-slam-app-framework/ar/tour-archive";
 import { createGpsPositionHandler } from "gps-plus-slam-app-framework/state";
+import { debugUiEnabledFromSearch } from "gps-plus-slam-app-framework/utils/debug-flag";
 import {
   BoundedLocalCacheStore,
   CacheApiStore,
@@ -85,6 +86,10 @@ const gpsHandler = createGpsPositionHandler({
 });
 const arController = createEnableGpsArController(seams.controllerDeps);
 const ctx = createTourViewerSession();
+// `?debug=1` (the apps' shared reader): the QR readout in the AR overlay
+// (plan §66); the visitor link carries it on.
+ctx.debug = debugUiEnabledFromSearch(location.search);
+element<HTMLPreElement>("ar-debug").hidden = !ctx.debug;
 const hooks = createUnwiredHooks();
 
 const printPanel = element<HTMLDetailsElement>("print-panel");
@@ -133,6 +138,7 @@ const print = wirePrintPanel({
 const stepStore = stepStoreOrUndefined();
 const wizard = wireWizard({
   mode,
+  debug: ctx.debug,
   dom: {
     steps: {
       host: element<HTMLDetailsElement>("step-host"),
@@ -292,6 +298,7 @@ const arEntry = wireArEntry({
     sizeInput,
     errorBox,
     escapeButton,
+    arDebug: element("ar-debug"),
   },
   hooks,
 });

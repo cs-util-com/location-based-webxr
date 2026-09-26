@@ -27,6 +27,7 @@ import type { CapturedCameraFrame } from "gps-plus-slam-app-framework/ar/capture
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import type { RenderedTourObjects } from "./content-placement.js";
+import type { FusedTallies, LastEvaluation } from "./qr-debug-readout.js";
 import type { ScanGate } from "./scan-gate.js";
 import type { PlacedImagePlanes } from "./image-planes.js";
 import type { TourViewerSeams } from "./seams.js";
@@ -142,6 +143,14 @@ export interface TourViewerSession {
    * controller, dropped at session end.
    */
   fusedPose: FusedPoseSource | null;
+  /**
+   * Per code, the lock counts of the fused pose (plan §66): the `?debug=1`
+   * readout. Replaced at each pipeline start and KEPT at session end, so the
+   * last session's counts outlive it until the next one (plan §67 #10).
+   */
+  fusedTallies: FusedTallies | null;
+  /** Whether the page was opened with `?debug=1` (read once at boot). */
+  debug: boolean;
   /** The in-scene glue check (axis+cube on the code) — the one check a human
    *  at the poster can perform; spread alone is precision, not accuracy
    *  (milestone review #8). */
@@ -211,6 +220,9 @@ export interface TourViewerSession {
   viewerVotedLocks: number;
   viewerLockedText: string | null;
   viewerReprojectionPx: number | null;
+  /** The viewer's last NEW fused evaluation - the visitor hint's source
+   *  (plan §67 #5: read, never re-evaluated, on render). */
+  viewerLastEvaluation: LastEvaluation | null;
   /** Last detection's RMS reprojection error — the on-device quality number. */
   latestReprojectionPx: number | null;
 
@@ -274,6 +286,8 @@ export function createTourViewerSession(): TourViewerSession {
     openGeneration: 0,
     qrController: null,
     fusedPose: null,
+    fusedTallies: null,
+    debug: false,
     qrDebugView: null,
     cameraFrameCount: 0,
     levelByText: new Map(),
@@ -299,6 +313,7 @@ export function createTourViewerSession(): TourViewerSession {
     viewerVotedLocks: 0,
     viewerLockedText: null,
     viewerReprojectionPx: null,
+    viewerLastEvaluation: null,
     latestReprojectionPx: null,
     placement: { kind: "idle" },
     viewerPlanesError: null,
