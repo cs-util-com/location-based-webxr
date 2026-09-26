@@ -1,8 +1,9 @@
 /**
- * The globe lab (globe plan 2026-09-26-0539 §7, M0): the globe package's
- * surface, served no-build through the design system's routes. M0 draws the
- * untextured ellipsoid lit by one sun; the imagery, the credits, the target
- * and the turn arrive in M1-M4.
+ * The globe lab (globe plan 2026-09-26-0539 §7, M0-M2): the globe package's
+ * surface, served no-build through the design system's routes, textured and
+ * credited (M1). It spins while it waits for a target, turns to it and
+ * holds it at the centre, north up (M2); the real sun and the surface patch
+ * arrive in M3.
  *
  * @see globe-lab.js.md
  */
@@ -12,11 +13,24 @@ import { WGS84_ELLIPSOID } from "3d-tiles-renderer";
 import { createGlobeSurface } from "/globe/globe-surface.js";
 import { creditsFor } from "/globe/globe-credits.js";
 import { GIBS_ACKNOWLEDGEMENT } from "/globe/globe-sources.js";
+import {
+  GLOBE_FALLBACK_TARGET,
+  chooseGlobeTarget,
+  parseLatLngText,
+} from "/globe/globe-target.js";
+import {
+  applyOrbitPose,
+  orbitDistanceToFit,
+  orbitPose,
+  smoothstep,
+  turnPose,
+} from "/globe/globe-camera.js";
 
 const canvas = document.getElementById("globe-canvas");
 const errorBox = document.getElementById("globe-error");
 const creditsBox = document.getElementById("globe-credits");
 const loadingLabel = document.getElementById("globe-loading");
+const replayButton = document.getElementById("globe-replay");
 
 /**
  * The async-feedback rule (globe plan §7.8, M1): a label while imagery tiles
@@ -80,13 +94,27 @@ function renderCredits(credits) {
   details.append(list, note);
   creditsBox.replaceChildren(details);
 }
-/** The camera stands this many Earth radii from the centre. */
-const DISTANCE_RADII = 3.4;
+
 /**
- * Where it looks until M2 brings the target and the turn: over North Africa
- * and Europe, on the day side of the lab's sun, with north up.
+ * The camera (globe plan §7.6, §7.9): fovY 50° with the disc filling 90 % of
+ * the narrower side, the setting the z0-z3 imagery pyramid was sized for.
  */
-const VIEW = { latDeg: 30, lonDeg: 15 };
+const FOV_Y_DEG = 50;
+const FIT_MARGIN = 0.1;
+/** Where the spin starts: North Africa and Europe, on the lab sun's day side. */
+const SPIN_START = { lat: 30, lng: 15 };
+/**
+ * The spin while the page waits for a target, in degrees per second. The
+ * view's longitude falls, so the surface moves west to east across the
+ * screen, the way the Earth turns.
+ */
+const SPIN_DEG_PER_S = -3;
+/**
+ * How long to wait for a fix before the fallback, and how long the turn
+ * takes (lab parameters `#spinMs=` and `#turnMs=`, globe plan §7.5-§7.6).
+ */
+const DEFAULT_SPIN_MS = 3000;
+const DEFAULT_TURN_MS = 5000;
 const DEG = Math.PI / 180;
 
 /** A unit ECEF direction (z north) for a latitude and longitude. */
@@ -100,18 +128,124 @@ function ecefDirection(latDeg, lonDeg) {
   );
 }
 
+/** A non-negative duration from the hash, or the default. */
+function readMs(params, name, fallback) {
+  if (!params.has(name)) return fallback;
+  const ms = Number(params.get(name));
+  return params.get(name).trim() !== "" && Number.isFinite(ms) && ms >= 0
+    ? ms
+    : fallback;
+}
+
+/** The lab's parameters from the hash: `#at=<lat>,<lng>&spinMs=&turnMs=`. */
+function readHashParams() {
+  const params = new URLSearchParams(location.hash.slice(1));
+  return {
+    url: parseLatLngText(params.get("at")),
+    spinMs: readMs(params, "spinMs", DEFAULT_SPIN_MS),
+    turnMs: readMs(params, "turnMs", DEFAULT_TURN_MS),
+  };
+}
+
+/** A longitude wrapped into [-180, 180). */
+const wrapLng = (lng) => ((((lng + 180) % 360) + 360) % 360) - 180;
+
+/**
+ * The intro's states (globe plan §7.6): `spin` until a target is chosen,
+ * `turning` towards it, then `arrived`, holding it. `history` records each
+ * phase and source change with its time since the start, and `runs`
+ * counts the starts (the replay button, a hash change), so a test reads
+ * the sequence instead of racing it.
+ */
+function introFlight(ellipsoid) {
+  let params;
+  let startedAt;
+  let phase;
+  let choice;
+  let from;
+  let to;
+  let turnStartedAt;
+  let history;
+  let runs = 0;
+  const note = (now) => {
+    history.push({
+      phase,
+      source: choice.source,
+      atMs: Math.round(now - startedAt),
+    });
+  };
+  const restart = (now) => {
+    params = readHashParams();
+    startedAt = now;
+    phase = "spin";
+    choice = { target: null, source: "waiting" };
+    history = [];
+    runs += 1;
+    note(now);
+  };
+  const spinPose = (now) =>
+    orbitPose(ellipsoid, {
+      lat: SPIN_START.lat,
+      lng: wrapLng(
+        SPIN_START.lng + (SPIN_DEG_PER_S * (now - startedAt)) / 1000,
+      ),
+    });
+  return {
+    restart,
+    /** The pose for this frame, advancing the states. */
+    pose(now) {
+      if (phase === "spin") {
+        const next = chooseGlobeTarget({
+          url: params.url,
+          fix: null,
+          fallback: GLOBE_FALLBACK_TARGET,
+          fixWaitExpired: now - startedAt >= params.spinMs,
+        });
+        if (next.source !== choice.source) {
+          choice = next;
+          if (next.target) {
+            from = spinPose(now);
+            to = orbitPose(ellipsoid, next.target);
+            turnStartedAt = now;
+            phase = "turning";
+          }
+          note(now);
+        }
+        if (phase === "spin") return spinPose(now);
+      }
+      if (phase === "turning") {
+        const t = params.turnMs > 0 ? (now - turnStartedAt) / params.turnMs : 1;
+        if (t < 1) return turnPose(from, to, smoothstep(t));
+        phase = "arrived";
+        note(now);
+      }
+      return to;
+    },
+    state: () => ({
+      phase,
+      target: choice.target,
+      source: choice.source,
+      history: history.slice(),
+      runs,
+      spinMs: params.spinMs,
+      turnMs: params.turnMs,
+    }),
+  };
+}
+
 function start() {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
   const scene = new THREE.Scene();
   const radius = WGS84_ELLIPSOID.radius.x;
-  const camera = new THREE.PerspectiveCamera(40, 1, radius * 0.01, radius * 20);
-  camera.position
-    .copy(ecefDirection(VIEW.latDeg, VIEW.lonDeg))
-    .multiplyScalar(radius * DISTANCE_RADII);
-  camera.up.set(0, 0, 1);
-  camera.lookAt(0, 0, 0);
-  // The sun over the Atlantic, west of the view: a lit face with the
+  const camera = new THREE.PerspectiveCamera(
+    FOV_Y_DEG,
+    1,
+    radius * 0.01,
+    radius * 20,
+  );
+  let distance = radius * 3;
+  // The sun over the Atlantic, west of the spin's start: a lit face with the
   // terminator on screen, until M3 brings the real sun.
   const sun = new THREE.DirectionalLight(0xffffff, 2);
   sun.position.copy(ecefDirection(20, -25));
@@ -121,27 +255,76 @@ function start() {
   const credits = creditsFor(globe.activeSources());
   renderCredits(credits);
   const status = statusView();
+  const flight = introFlight(globe.tiles.ellipsoid);
+  flight.restart(performance.now());
+  window.addEventListener("hashchange", () =>
+    flight.restart(performance.now()),
+  );
+  replayButton.addEventListener("click", () =>
+    flight.restart(performance.now()),
+  );
 
+  let fittedSize = "";
   const frame = () => {
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
-    if (canvas.width !== Math.floor(w * renderer.getPixelRatio())) {
+    // Both sides: a phone's URL bar changes only the height.
+    if (`${w}x${h}` !== fittedSize) {
+      fittedSize = `${w}x${h}`;
       renderer.setSize(w, h, false);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
+      distance = orbitDistanceToFit({
+        fovYRad: FOV_Y_DEG * DEG,
+        aspect: camera.aspect,
+        margin: FIT_MARGIN,
+        radius,
+      });
     }
+    applyOrbitPose(camera, flight.pose(performance.now()), distance);
+    camera.updateMatrixWorld();
     globe.update(camera, renderer);
     status.update(globe.state());
     renderer.render(scene, camera);
   };
   renderer.setAnimationLoop(frame);
 
+  const raycaster = new THREE.Raycaster();
+  /**
+   * The centre ray, aimed 1e-5 of the half-frame off both axes (about 50 m
+   * on the ground at the fitted distance). Observed 2026-09-26: a ray that
+   * crosses a tile edge of constant latitude (the equator, and every
+   * parallel a level splits on) exactly found no tile, or at a tile corner
+   * the far side of the Earth; 0.01° away it hit. Whether the cause is the
+   * tiles' shared vertices or three's triangle test is not established.
+   * The offset stays inside the measured miss, so it only makes the check
+   * stricter.
+   */
+  const centre = new THREE.Vector2(1e-5, 1e-5);
+  /**
+   * The latitude and longitude under the canvas centre, in degrees, found
+   * through the library's own frame: a ray against the drawn tiles, the hit
+   * converted by the tiles' ellipsoid. Null before any tile is hit.
+   */
+  const centreLatLon = () => {
+    raycaster.setFromCamera(centre, camera);
+    const hit = raycaster.intersectObject(globe.tiles.group, true)[0];
+    // A hit beyond the Earth's centre is on the far side: the ray slipped
+    // past the near surface, so there is no answer, not a wrong one.
+    if (!hit || hit.distance > camera.position.length()) return null;
+    const local = globe.tiles.group.worldToLocal(hit.point.clone());
+    const c = globe.tiles.ellipsoid.getPositionToCartographic(local, {});
+    return { lat: c.lat / DEG, lng: c.lon / DEG };
+  };
+
   window.__globeLab = {
     ready: true,
-    view: VIEW,
+    spinStart: SPIN_START,
     error: null,
     state: () => ({
       ...globe.state(),
+      ...flight.state(),
+      centreLatLon: centreLatLon(),
       radiusM: radius,
       activeSources: globe.activeSources(),
       loadingShown: status.loadingShown,

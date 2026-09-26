@@ -47,6 +47,21 @@
           sans-serif;
       }
 
+      #globe-replay {
+        position: fixed;
+        top: 10px;
+        right: 12px;
+        padding: 6px 12px;
+        border: 1px solid #5d6b7d;
+        border-radius: 6px;
+        background: #1a222d;
+        color: #e6ecf3;
+        font:
+          13px/1.2 system-ui,
+          sans-serif;
+        cursor: pointer;
+      }
+
       #globe-credits {
         position: fixed;
         left: 12px;
@@ -74,6 +89,7 @@
     <canvas id="globe-canvas"></canvas>
     <output id="globe-error" role="alert"></output>
     <output id="globe-loading" aria-live="polite" hidden></output>
+    <button id="globe-replay" type="button">Replay the turn</button>
     <footer id="globe-credits"></footer>
   </body>
 </html>
