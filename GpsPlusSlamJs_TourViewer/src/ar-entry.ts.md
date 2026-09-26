@@ -82,5 +82,9 @@ hooks.renderArStatus = arEntry.renderArStatus;
 
 `playwright-tests/ar-mode.spec.js` - both modes booting to running, the
 frame count in the status line, the system session end + clean re-entry,
-the hint hidden during a session, the unsupported state without fakes. The
-pure pieces: `ar-mode.test.ts`, `tour-flow.test.ts`.
+the hint hidden during a session, the unsupported state without fakes.
+`ar-entry.test.ts` drives the real `wireArEntry` through "Enter AR" and the
+session-end callback it hands the AR controller: the QR controller is
+disposed and the fused pose source dropped (QR near-frontal pose plan §64
+#4 - the call site had no test). The pure pieces: `ar-mode.test.ts`,
+`tour-flow.test.ts`.
