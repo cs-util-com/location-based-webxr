@@ -61,6 +61,13 @@
 
 ### Added
 
+- **A contact crease for buildings** (city shadows and contact crease plan
+  2026-09-26-0549, M2): `new ContactCrease({ strength, radiusM,
+baseHeightM })` darkens the ambient light at the foot of walls,
+  `1 - k·exp(-h/r)` (defaults k 0.3, r 3 m), so buildings sit on the ground.
+  Indirect light only, per fragment, instancing-aware; k, r and the ground
+  height are uniforms (no recompile). Apply it before the atmosphere haze.
+  Nothing changes for materials it is not applied to.
 - **`utils/debug-flag`** (deep import): `debugUiEnabledFromSearch`, the
   apps' `?debug=1` reader, moved here from the RecorderApp so the
   TourViewer reads the flag by the same rule (QR near-frontal pose plan

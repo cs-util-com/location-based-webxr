@@ -1954,3 +1954,72 @@ test("the water candidates compile, change the pond, and travel in the address",
   expect(await page.evaluate(() => location.hash)).toContain("water=P30");
   expect(errors).toEqual([]);
 });
+
+/**
+ * The crease probe's bound on the foot: on/off ratio of the RGB sum, at the
+ * default k 0.3. Measured 2026-09-26 (SwiftShader), foot ratio by look and
+ * r 1.5 / 3 / 6 m: noon 0.973 / 0.965 / 0.958, hazy 0.962 / 0.952 / 0.947,
+ * golden 0.920 / 0.894 / 0.878 (the sunlit noon wall is mostly sun, which
+ * the crease leaves alone: faint in full sun, as the plan's review said).
+ * The bound sits at half the smallest measured darkening.
+ */
+const CREASE_FOOT_MAX_RATIO = 0.985;
+
+// WHY (W3 plan 2026-09-26-0549 M2, "the wall base is darker than the same
+// wall 20 m up, with the crease on, and equal with it off"): the contact
+// crease must reach the GPU (a shader error only logs, and the material
+// silently stops drawing), darken a wall's foot, and leave the wall higher
+// up alone. Each pixel is compared with ITSELF with the crease off, so the
+// claim cannot pass by comparing two differently lit pixels. Swept over the
+// three looks and three crease heights (the owner's sweep rule).
+test("the contact crease darkens a wall's foot and not the wall above", async ({
+  page,
+}) => {
+  const errors = await boot(page, "preset=noon&tone=neutral&city=0");
+  const info = await page.evaluate(() => window.__lookdev.creaseInfo());
+  // On the buildings and the Lambert box, never on the ground.
+  expect(info.city).toBeGreaterThan(40);
+  expect(info.dense).toBe(2);
+  expect(info.families).toBe(1);
+  expect(info.ground).toBe(0);
+  const rows = [];
+  for (const preset of ["noon", "golden", "hazy"]) {
+    for (const radiusM of [1.5, 3, 6]) {
+      const read = (strength) =>
+        page.evaluate(
+          ([p, k, r]) => {
+            const d = window.__lookdev;
+            d.setPreset(p);
+            d.setCloudCover(0);
+            d.setCrease({ strength: k, radiusM: r });
+            const probe = d.creaseProbe();
+            d.placeCameraAt(probe.eye, probe.target);
+            return d.readPixels([d.project(probe.foot), d.project(probe.up)]);
+          },
+          [preset, strength, radiusM],
+        );
+      const [footOn, upOn] = await read(0.3);
+      const [footOff, upOff] = await read(0);
+      rows.push({
+        preset,
+        radiusM,
+        foot: +(sum(footOn) / Math.max(sum(footOff), 1)).toFixed(3),
+        upDelta: Math.max(
+          ...[0, 1, 2].map((c) => Math.abs(upOn[c] - upOff[c])),
+        ),
+      });
+    }
+  }
+  console.log(
+    `crease probe (foot on/off ratio, top delta): ${JSON.stringify(rows)}`,
+  );
+  for (const row of rows) {
+    expect(row.foot, `${row.preset} r ${row.radiusM}`).toBeLessThan(
+      CREASE_FOOT_MAX_RATIO,
+    );
+    expect(row.upDelta, `${row.preset} r ${row.radiusM}`).toBeLessThanOrEqual(
+      2,
+    );
+  }
+  expect(errors).toEqual([]);
+});

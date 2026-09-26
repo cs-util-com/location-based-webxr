@@ -214,6 +214,34 @@
             </label>
           </div>
         </details>
+        <details class="lookdev-section" data-section="shadows" open>
+          <summary>Shadows</summary>
+          <div class="lookdev-section-body col">
+            <label class="lookdev-field">
+              <span class="hint">Contact crease strength (0 is off)</span>
+              <input
+                id="crease"
+                class="slider"
+                type="range"
+                min="0"
+                max="0.6"
+                step="0.05"
+              />
+            </label>
+            <label class="lookdev-field">
+              <span class="hint">Contact crease height (m)</span>
+              <input
+                id="crease-radius"
+                class="slider"
+                type="range"
+                min="0.5"
+                max="12"
+                step="0.5"
+              />
+            </label>
+            <span class="hint" data-crease></span>
+          </div>
+        </details>
         <details class="lookdev-section" data-section="readout" open>
           <summary>Readout</summary>
           <div class="lookdev-section-body col">
