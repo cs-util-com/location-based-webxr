@@ -87,7 +87,8 @@ stand-in city, with presets, a tone-map A/B, the sky-matched haze and a
 cloud layer; OsmDemo's desktop view runs the same sky since M3. It stays no-build: `serve.mjs` serves the framework's TypeScript
 source with the types stripped, and three from the framework's
 lockfile-pinned copy. `pnpm run serve` → `/3d/`, `pnpm run shoot:3d` for
-screenshots, and the `test:e2e` gate stage compiles and checks every shader.
+screenshots, `pnpm run measure:globe` for the globe lab's memory and
+download table, and the `test:e2e` gate stage compiles and checks every shader.
 Details: `3d/README.md`.
 
 ## Vendoring into an app

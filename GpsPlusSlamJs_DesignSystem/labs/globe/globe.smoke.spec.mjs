@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * The globe lab (globe plan 2026-09-26-0539 §7.8, M0-M2).
+ * The globe lab (globe plan 2026-09-26-0539 §7.8, M0-M4).
  *
  * Why this file matters: M0 retires the biggest unknown of the globe intro:
  * 3d-tiles-renderer under an import map, served no-build, on SwiftShader.
@@ -34,6 +34,9 @@ const FIXED_VIEW =
 test("the globe boots, draws a lit Earth, and stays on this machine", async ({
   page,
 }) => {
+  // Two settle waits of up to 120 s each: r745's CI runner timed out four
+  // globe tests at 60 s (a view settles in 30-50 s locally, slower there).
+  test.setTimeout(300_000);
   const external = [];
   await page.route("**/*", (route) => {
     const url = route.request().url();
@@ -62,7 +65,7 @@ test("the globe boots, draws a lit Earth, and stays on this machine", async ({
       return s.models > 0 && s.centreLatLon !== null;
     },
     null,
-    { timeout: 60_000 },
+    { timeout: 120_000 },
   );
   const [centre, ...corners] = await page.evaluate(() =>
     window.__globeLab.readPixels([
@@ -108,13 +111,20 @@ test("the globe boots, draws a lit Earth, and stays on this machine", async ({
     () => window.__globeLab.state().pendingTiles === 0,
     null,
     {
-      timeout: 60_000,
+      timeout: 120_000,
     },
   );
   const settled = await page.evaluate(() => window.__globeLab.state());
   expect(settled.loadingShown).toBe(true);
   expect(settled.loadingVisible).toBe(false);
   expect(settled.cachedBytes).toBeGreaterThan(0);
+  // What the measure tool reads (measure-globe.mjs) is live, not a stub:
+  // some bytes and at most the committed assets, textures on the GPU.
+  expect(settled.loadedTiles).toBeGreaterThan(0);
+  expect(settled.bytesDownloaded).toBeGreaterThan(0);
+  expect(settled.bytesDownloaded).toBeLessThan(20 * 2 ** 20);
+  expect(settled.rendererMemory.textures).toBeGreaterThan(0);
+  expect(settled.refusedTiles).toBe(0);
   expect(settled.cachedBytes).toBeLessThanOrEqual(settled.cacheBudgetBytes);
   expect(state.radiusM).toBe(6378137);
   expect(external).toEqual([]);
@@ -156,7 +166,7 @@ test("a tile that fails to load leaves its parent drawn, and says so", async ({
       return s.tileErrors > 0 && s.pendingTiles === 0 && s.models > 0;
     },
     null,
-    { timeout: 60_000 },
+    { timeout: 120_000 },
   );
   const grid = [];
   for (let i = 0; i < 9; i++) {
@@ -208,22 +218,41 @@ function angleDeg(a, b) {
 const CENTRE_TOLERANCE_DEG = 0.01;
 const CENTRE_SWEEP_DEG = [0.01, 0.1, 0.25, 0.5];
 
-/** Waits until the page has arrived at `target` and its tiles have settled. */
+/**
+ * Waits until the page has arrived at `target` and its tiles have settled.
+ * A new view loads every committed level under SwiftShader: 30-50 s
+ * measured, so 60 s timed out once on a loaded machine.
+ */
 async function arriveAt(page, target) {
+  const started = Date.now();
+  // Children of a just-parsed tile are queued only at the next update, so
+  // one poll can see "nothing pending" between two levels: the tile count
+  // must hold still for a second.
   await page.waitForFunction(
     ({ lat, lng }) => {
       const s = window.__globeLab.state();
-      return (
+      const settled =
         s.phase === "arrived" &&
         s.target?.lat === lat &&
         s.target?.lng === lng &&
         s.pendingTiles === 0 &&
         s.mapsLoaded === s.mapsTotal &&
-        s.centreLatLon !== null
-      );
+        s.centreLatLon !== null;
+      const w = window;
+      const key = `${lat},${lng},${s.loadedTiles}`;
+      if (!settled || w.__settleKey !== key) {
+        w.__settleKey = key;
+        w.__settleSince = performance.now();
+        return false;
+      }
+      return performance.now() - w.__settleSince >= 1000;
     },
     target,
-    { timeout: 60_000 },
+    { timeout: 120_000, polling: 100 },
+  );
+  // The settle time per view: a slow creep shows here long before 120 s.
+  console.log(
+    `settled at ${target.lat},${target.lng} in ${((Date.now() - started) / 1000).toFixed(1)} s`,
   );
   return page.evaluate(() => window.__globeLab.state());
 }
@@ -237,6 +266,8 @@ async function arriveAt(page, target) {
 // by the first frame, so the turn follows the great circle that offset
 // picks; the branch itself is unit-tested.)
 test("turns to any target and holds it at the centre", async ({ page }) => {
+  // Five settled views of up to 120 s each (see arriveAt).
+  test.setTimeout(600_000);
   const errors = [];
   page.on("console", (m) => {
     if (m.type() === "error") errors.push(m.text());
@@ -290,6 +321,8 @@ test("turns to any target and holds it at the centre", async ({ page }) => {
 test("waits for a fix, then falls back to Central Park; replay runs it again", async ({
   page,
 }) => {
+  // Two settled arrivals at a new view (see arriveAt).
+  test.setTimeout(300_000);
   const spinMs = 400;
   await page.goto(`/labs/globe/#spinMs=${spinMs}&turnMs=300`);
   await page.waitForFunction(() => window.__globeLab?.ready, null, {
@@ -356,21 +389,24 @@ const M3 = { day: 30, night: 40, glint: 40, seamRatio: 1.5 };
 const SWEEP = [0.5, 1, 1.5];
 const EQUINOX_NOON = "time=2026-03-20T12:00:00Z";
 
+/**
+ * Sets the hash and waits until the page has applied it: a new target or
+ * timing restarts the intro, anything else (the time, the tuning) applies
+ * live, and either way `appliedHash` says when.
+ */
+async function applyHash(page, hash) {
+  await page.evaluate((h) => {
+    if (location.hash.slice(1) !== h) location.hash = h;
+  }, hash);
+  await page.waitForFunction(
+    (h) => window.__globeLab.state().appliedHash === h,
+    hash,
+  );
+}
+
 /** Goes to `lat,lng` with the given extra hash, arrived and settled. */
 async function viewAt(page, lat, lng, extra) {
-  const runs = await page.evaluate(() => window.__globeLab.state().runs);
-  const changed = await page.evaluate((hash) => {
-    if (location.hash.slice(1) === hash) return false;
-    location.hash = hash;
-    return true;
-  }, `at=${lat},${lng}&spinMs=0&turnMs=0&${extra}`);
-  // The hash is set at once but the restart runs on `hashchange`, later: a
-  // hash that differs only in its tuning or time keeps the same target, so
-  // wait for the restart itself, not the previous arrival. (The same hash
-  // again fires no `hashchange` and needs no restart.)
-  if (changed) {
-    await page.waitForFunction((n) => window.__globeLab.state().runs > n, runs);
-  }
+  await applyHash(page, `at=${lat},${lng}&spinMs=0&turnMs=0&${extra}`);
   return arriveAt(page, { lat, lng });
 }
 
@@ -461,11 +497,7 @@ test("the real sun: a lit day side, night lights, and a water glint", async ({
   // where the equation of time says: over 1.86°E at 12:00 UTC on this day
   // (it runs 7.45 min fast), so 91.86°E at 06:00. A mirrored chain would
   // put it over 91.9°W while every lit probe above still passed.
-  const runs = await page.evaluate(() => window.__globeLab.state().runs);
-  await page.evaluate(() => {
-    location.hash = "at=0,0&spinMs=0&turnMs=0&time=2026-03-20T06:00:00Z";
-  });
-  await page.waitForFunction((n) => window.__globeLab.state().runs > n, runs);
+  await applyHash(page, "at=0,0&spinMs=0&turnMs=0&time=2026-03-20T06:00:00Z");
   const [x, y, z] = (await page.evaluate(() => window.__globeLab.state()))
     .sunEcef;
   const sunLng = (Math.atan2(y, x) * 180) / Math.PI;
@@ -563,7 +595,7 @@ test("a global map that fails to load is reported, and the globe still draws", a
       );
     },
     null,
-    { timeout: 60_000 },
+    { timeout: 120_000 },
   );
   await expect(page.locator("#globe-error")).toContainText(
     "maps could not load",
@@ -575,4 +607,171 @@ test("a global map that fails to load is reported, and the globe still draws", a
   expect(
     consoleErrors.filter((t) => !/404|Failed to load resource/.test(t)),
   ).toEqual([]);
+});
+
+// WHY (globe plan §7.8, M4): every tunable sits on the plate and in the
+// hash, so a sweep link reproduces a view. Each control is driven once: it
+// must write its key, the page must apply it without an error, and changing
+// the time or the tuning must NOT restart the intro (only a new target or
+// timing does), or every slider drag would replay the turn.
+test("every control on the plate writes the hash and applies", async ({
+  page,
+}) => {
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  page.on("console", (m) => {
+    if (m.type() === "error") errors.push(m.text());
+  });
+  await page.goto(FIXED_VIEW);
+  await page.waitForFunction(() => window.__globeLab?.ready, null, {
+    timeout: 90_000,
+  });
+  const keys = await page.evaluate(() =>
+    [...document.querySelectorAll("[data-hash-key]")].map(
+      (el) => el.dataset.hashKey,
+    ),
+  );
+  expect(keys.sort()).toEqual(
+    [
+      "cacheMiB",
+      "cloudOpacity",
+      "errorTarget",
+      "fovY",
+      "nightGain",
+      "pixelRatio",
+      "spinMs",
+      "sunIntensity",
+      "turnMs",
+      "waterRoughness",
+    ].sort(),
+  );
+  const before = await page.evaluate(() => ({
+    ...window.__globeLab.state(),
+    historyLength: history.length,
+  }));
+  const runsBefore = before.runs;
+  for (const key of keys) {
+    // A select's first option that differs from its value; a slider's top.
+    const value = await page.evaluate((k) => {
+      const el = document.querySelector(`[data-hash-key="${k}"]`);
+      el.value =
+        el.tagName === "SELECT"
+          ? [...el.options].find((o) => o.value !== el.value).value
+          : el.max;
+      el.dispatchEvent(new Event(el.tagName === "SELECT" ? "change" : "input"));
+      return el.value;
+    }, key);
+    await page.waitForFunction(
+      ([k, v]) =>
+        new URLSearchParams(window.__globeLab.state().appliedHash).get(k) === v,
+      [key, value],
+    );
+  }
+  const state = await page.evaluate(() => window.__globeLab.state());
+  expect(state.sunIntensity).toBe(8);
+  expect(state.fovY).toBe(80);
+  expect(state.tuning).toEqual({
+    nightGain: 4,
+    waterRoughness: 1,
+    cloudOpacity: 1,
+  });
+  expect(state.errorTarget).toBe(2);
+  expect(state.cacheBudgetBytes).toBe(32 * 2 ** 20);
+  expect(state.cacheFloorBytes).toBe(24 * 2 ** 20);
+  expect(new URLSearchParams(state.appliedHash).get("pixelRatio")).toBe("1");
+  // A wider field of view refits the camera closer.
+  expect(state.distance).toBeLessThan(before.distance);
+  // Only the two timing sliders restarted the intro, once each.
+  expect(state.runs).toBe(runsBefore + 2);
+  // Controls replace the history entry: ten changes, no back-button steps.
+  expect(await page.evaluate(() => history.length)).toBe(before.historyLength);
+  // The panel follows an edited hash (a pasted link): the slider and its
+  // label show the new value.
+  await applyHash(
+    page,
+    "at=30,15&spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&nightGain=2.5",
+  );
+  expect(
+    await page.evaluate(() => [
+      document.querySelector('[data-hash-key="nightGain"]').value,
+      document.querySelector('output[data-for="nightGain"]').textContent,
+    ]),
+  ).toEqual(["2.5", "2.5"]);
+  // The hour sets #time= (UTC); "Now" removes it.
+  await page.evaluate(() => {
+    const hour = document.querySelector("[data-time-hour]");
+    hour.value = "6";
+    hour.dispatchEvent(new Event("input"));
+  });
+  await page.waitForFunction(() =>
+    /T06:00:00/.test(
+      new URLSearchParams(window.__globeLab.state().appliedHash).get("time") ??
+        "",
+    ),
+  );
+  await page.locator("[data-time-now]").click();
+  await page.waitForFunction(
+    () =>
+      !new URLSearchParams(window.__globeLab.state().appliedHash).has("time"),
+  );
+  expect(errors).toEqual([]);
+});
+
+// WHY (globe plan §7.2, M4 review): the pixel-ratio cap decides how sharp
+// the tiles refine on a phone, and a DPR-1 test browser cannot see the cap
+// act at all (min(1, cap) is 1). So a DPR-2 context: the default cap of 2
+// renders at 2, and the plate's lower cap takes effect.
+test.describe("on a DPR-2 screen", () => {
+  test.use({ deviceScaleFactor: 2 });
+  test("the pixel-ratio cap defaults to 2 and the plate lowers it", async ({
+    page,
+  }) => {
+    await page.goto(FIXED_VIEW);
+    await page.waitForFunction(() => window.__globeLab?.ready, null, {
+      timeout: 90_000,
+    });
+    expect(
+      await page.evaluate(() => window.__globeLab.state().pixelRatio),
+    ).toBe(2);
+    await page.locator('[data-hash-key="pixelRatio"]').selectOption("1.5");
+    await page.waitForFunction(
+      () => window.__globeLab.state().pixelRatio === 1.5,
+    );
+  });
+});
+
+// WHY (the async-feedback rule, M4 review): on a phone the plate spans
+// nearly the whole width, so it must not cover the loading and error lines
+// that report the imagery. Checked at a phone's size with an error showing.
+test.describe("on a phone-width screen", () => {
+  test.use({ viewport: { width: 412, height: 915 } });
+  test("the status lines sit below the folded plate", async ({ page }) => {
+    await page.route("**/globe-assets/equirect/clouds-2048.jpg", (route) =>
+      route.fulfill({ status: 404, body: "" }),
+    );
+    await page.goto(FIXED_VIEW);
+    await page.waitForFunction(
+      () =>
+        window.__globeLab?.ready && window.__globeLab.state().mapErrors === 1,
+      null,
+      { timeout: 90_000 },
+    );
+    const rects = await page.evaluate(() => {
+      const box = (el) => el.getBoundingClientRect().toJSON();
+      return {
+        plate: box(document.querySelector(".lookdev-panel")),
+        error: box(document.getElementById("globe-error")),
+        loadingTop: parseFloat(
+          getComputedStyle(document.getElementById("globe-loading")).top,
+        ),
+        folded: document
+          .querySelector(".lookdev-head")
+          .getAttribute("aria-expanded"),
+      };
+    });
+    expect(rects.folded).toBe("false");
+    expect(rects.error.height).toBeGreaterThan(0);
+    expect(rects.error.top).toBeGreaterThanOrEqual(rects.plate.bottom);
+    expect(rects.loadingTop).toBeGreaterThanOrEqual(rects.plate.bottom);
+  });
 });

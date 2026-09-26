@@ -1,16 +1,18 @@
 /**
- * The globe lab (globe plan 2026-09-26-0539 §7, M0-M3): the globe package's
+ * The globe lab (globe plan 2026-09-26-0539 §7, M0-M4): the globe package's
  * surface, served no-build through the design system's routes, textured and
  * credited (M1). It spins while it waits for a target, turns to it and
  * holds it at the centre, north up (M2). It is lit by the real sun of now or
- * of `#time=`, with night lights, a water glint and clouds (M3).
+ * of `#time=`, with night lights, a water glint and clouds (M3). Every
+ * parameter sits on a control plate and in the hash, so a link reproduces a
+ * view (M4).
  *
  * @see globe-lab.js.md
  */
 import * as THREE from "three";
 import { WGS84_ELLIPSOID } from "3d-tiles-renderer";
 
-import { createGlobeSurface } from "/globe/globe-surface.js";
+import { GLOBE_SURFACE, createGlobeSurface } from "/globe/globe-surface.js";
 import { creditsFor } from "/globe/globe-credits.js";
 import { GIBS_ACKNOWLEDGEMENT } from "/globe/globe-sources.js";
 import {
@@ -114,13 +116,9 @@ function renderCredits(credits) {
   creditsBox.replaceChildren(details);
 }
 
-/**
- * The camera (globe plan §7.6, §7.9): fovY 50° with the disc filling 90 % of
- * the narrower side, the setting the z0-z3 imagery pyramid was sized for.
- */
-const FOV_Y_DEG = 50;
+/** The camera's fit: the disc fills 90 % of the narrower side (§7.6). */
 const FIT_MARGIN = 0.1;
-/** Where the spin starts: North Africa and Europe, on the lab sun's day side. */
+/** Where the spin starts: North Africa and Europe. */
 const SPIN_START = { lat: 30, lng: 15 };
 /**
  * The spin while the page waits for a target, in degrees per second. The
@@ -128,25 +126,53 @@ const SPIN_START = { lat: 30, lng: 15 };
  * screen, the way the Earth turns.
  */
 const SPIN_DEG_PER_S = -3;
-/**
- * How long to wait for a fix before the fallback, and how long the turn
- * takes (lab parameters `#spinMs=` and `#turnMs=`, globe plan §7.5-§7.6).
- */
-const DEFAULT_SPIN_MS = 3000;
-const DEFAULT_TURN_MS = 5000;
 const DEG = Math.PI / 180;
 
-/** A non-negative duration from the hash, or the default. */
-function readMs(params, name, fallback) {
-  if (!params.has(name)) return fallback;
-  const ms = Number(params.get(name));
-  return params.get(name).trim() !== "" && Number.isFinite(ms) && ms >= 0
-    ? ms
-    : fallback;
+/**
+ * Every lab parameter, its hash key, its default and its range (globe plan
+ * §7.8, M4): the panel writes these, a link reproduces a view, and the
+ * panel's sliders take their ranges from here (one source). Out of range,
+ * empty or malformed reads as the default.
+ * - fovY 50° and a pixel-ratio cap of 2 are what the z0-z3 pyramid was
+ *   sized for (§7.2, §7.9);
+ * - the error target, the sun's intensity and the cache cap default to what
+ *   the surface itself sets (`useSurfaceDefaults`), so the lab never
+ *   overrides the surface by accident: the error target is the 1 px that
+ *   GeneratedSurfacePlugin sets (the library's bare default is 16, which
+ *   loads only level 0), the cache floor keeps the surface's floor-to-cap
+ *   ratio.
+ */
+const PARAMS = {
+  spinMs: { fallback: 3000, min: 0, max: 10_000 },
+  turnMs: { fallback: 5000, min: 0, max: 10_000 },
+  nightGain: { fallback: GLOBE_SURFACE_TUNING.nightGain, min: 0, max: 4 },
+  waterRoughness: {
+    fallback: GLOBE_SURFACE_TUNING.waterRoughness,
+    min: 0,
+    max: 1,
+  },
+  cloudOpacity: { fallback: GLOBE_SURFACE_TUNING.cloudOpacity, min: 0, max: 1 },
+  sunIntensity: { fallback: null, min: 0, max: 8 },
+  fovY: { fallback: 50, min: 20, max: 80 },
+  pixelRatio: { fallback: 2, min: 0.5, max: 4 },
+  errorTarget: { fallback: null, min: 0.25, max: 256 },
+  cacheMiB: { fallback: null, min: 8, max: 4096 },
+};
+
+/** The floor the surface keeps under its cache cap, as a fraction of it. */
+const CACHE_FLOOR_RATIO =
+  GLOBE_SURFACE.cacheFloorBytes / GLOBE_SURFACE.cacheBytes;
+
+/** The defaults the surface sets itself, read from the live surface. */
+function useSurfaceDefaults(globe) {
+  PARAMS.errorTarget.fallback = globe.tiles.errorTarget;
+  PARAMS.sunIntensity.fallback = globe.sun.intensity;
+  PARAMS.cacheMiB.fallback = GLOBE_SURFACE.cacheBytes / 2 ** 20;
 }
 
-/** A number from the hash within [min, max], or the default. */
-function readNumber(params, name, fallback, min, max) {
+/** A number from the hash within its range, or its default. */
+function readParam(params, name) {
+  const { fallback, min, max } = PARAMS[name];
   const text = params.get(name);
   const value = Number(text);
   return text !== null && text.trim() !== "" && value >= min && value <= max
@@ -154,49 +180,31 @@ function readNumber(params, name, fallback, min, max) {
     : fallback;
 }
 
-/** An instant from the hash (`#time=<ISO>`), or null for "now". */
+/**
+ * An instant from the hash (`#time=<ISO>`), or null for "now". A hand-typed
+ * offset's "+" arrives as a space (form decoding), so it is put back.
+ */
 function readTime(params) {
-  const ms = Date.parse(params.get("time") ?? "");
+  const ms = Date.parse((params.get("time") ?? "").replaceAll(" ", "+"));
   return Number.isFinite(ms) ? ms : null;
 }
 
-/**
- * The lab's parameters from the hash: `#at=<lat>,<lng>&spinMs=&turnMs=`,
- * `time=<ISO>`, and the surface's tuning `nightGain=`, `waterRoughness=`,
- * `cloudOpacity=` (M4 puts them on a panel).
- */
+/** The lab's parameters from the hash: `#at=<lat>,<lng>`, `time=<ISO>`, PARAMS. */
 function readHashParams() {
   const params = new URLSearchParams(location.hash.slice(1));
+  const values = Object.fromEntries(
+    Object.keys(PARAMS).map((name) => [name, readParam(params, name)]),
+  );
   return {
+    ...values,
     url: parseLatLngText(params.get("at")),
-    spinMs: readMs(params, "spinMs", DEFAULT_SPIN_MS),
-    turnMs: readMs(params, "turnMs", DEFAULT_TURN_MS),
     timeMs: readTime(params),
-    tuning: {
-      nightGain: readNumber(
-        params,
-        "nightGain",
-        GLOBE_SURFACE_TUNING.nightGain,
-        0,
-        100,
-      ),
-      waterRoughness: readNumber(
-        params,
-        "waterRoughness",
-        GLOBE_SURFACE_TUNING.waterRoughness,
-        0,
-        1,
-      ),
-      cloudOpacity: readNumber(
-        params,
-        "cloudOpacity",
-        GLOBE_SURFACE_TUNING.cloudOpacity,
-        0,
-        1,
-      ),
-    },
   };
 }
+
+/** What restarts the intro when it changes; everything else applies live. */
+const flightKey = (p) =>
+  JSON.stringify([p.url?.lat, p.url?.lng, p.spinMs, p.turnMs]);
 
 /** A longitude wrapped into [-180, 180). */
 const wrapLng = (lng) => ((((lng + 180) % 360) + 360) % 360) - 180;
@@ -205,8 +213,8 @@ const wrapLng = (lng) => ((((lng + 180) % 360) + 360) % 360) - 180;
  * The intro's states (globe plan §7.6): `spin` until a target is chosen,
  * `turning` towards it, then `arrived`, holding it. `history` records each
  * phase and source change with its time since the start, and `runs`
- * counts the starts (the replay button, a hash change), so a test reads
- * the sequence instead of racing it.
+ * counts the starts (the replay button, a change of target or timing), so
+ * a test reads the sequence instead of racing it.
  */
 function introFlight(ellipsoid) {
   let params;
@@ -225,8 +233,8 @@ function introFlight(ellipsoid) {
       atMs: Math.round(now - startedAt),
     });
   };
-  const restart = (now) => {
-    params = readHashParams();
+  const restart = (now, next) => {
+    params = next;
     startedAt = now;
     phase = "spin";
     choice = { target: null, source: "waiting" };
@@ -272,7 +280,6 @@ function introFlight(ellipsoid) {
       }
       return to;
     },
-    params: () => params,
     state: () => ({
       phase,
       target: choice.target,
@@ -285,54 +292,175 @@ function introFlight(ellipsoid) {
   };
 }
 
+/**
+ * The hash with one key set (null removes it), kept readable: a link's
+ * `at=30,15` and `time=...T11:00:00Z` stay as typed instead of %2C / %3A.
+ */
+function hashWith(key, value) {
+  const params = new URLSearchParams(location.hash.slice(1));
+  if (value === null) params.delete(key);
+  else params.set(key, String(value));
+  return params.toString().replaceAll("%2C", ",").replaceAll("%3A", ":");
+}
+
+/** A value for an output label: at most two decimals, no trailing zeros. */
+const shown = (value) => String(Math.round(value * 100) / 100);
+
+/**
+ * The control plate (globe plan §7.8, M4): every control writes its hash
+ * key, so the hash stays the one state and a link reproduces the view; the
+ * controls follow the hash back (a pasted link, an edited hash). A control
+ * REPLACES the history entry and applies at once through `apply`, so a
+ * slider drag neither floods the back button nor waits for `hashchange`.
+ * The hour slider sets the UTC hour of `#time=` (today's date when none is
+ * set; minutes snap to its 15-minute steps); "Now" removes `#time=`.
+ */
+function bindPanel(getParams, apply) {
+  const fields = [...document.querySelectorAll("[data-hash-key]")];
+  const hour = document.querySelector("[data-time-hour]");
+  const now = document.querySelector("[data-time-now]");
+  const write = (key, value) => {
+    history.replaceState(null, "", `#${hashWith(key, value)}`);
+    apply();
+  };
+  const show = (key, value) => {
+    const out = document.querySelector(`output[data-for="${key}"]`);
+    if (out) out.textContent = value;
+  };
+  for (const field of fields) {
+    const range = PARAMS[field.dataset.hashKey];
+    if (field.tagName !== "SELECT") {
+      field.min = String(range.min);
+      field.max = String(range.max);
+    }
+  }
+  const sync = () => {
+    const params = getParams();
+    for (const field of fields) {
+      const key = field.dataset.hashKey;
+      const value = String(params[key]);
+      // A value the hash allows but the select does not list still shows.
+      if (
+        field.tagName === "SELECT" &&
+        ![...field.options].some((o) => o.value === value)
+      ) {
+        field.add(new Option(value, value));
+      }
+      field.value = value;
+      show(key, shown(params[key]));
+    }
+    const date = new Date(params.timeMs ?? Date.now());
+    const h = date.getUTCHours() + date.getUTCMinutes() / 60;
+    hour.value = String(h);
+    show("hour", params.timeMs === null ? "now" : `${shown(h)} UTC`);
+  };
+  for (const field of fields) {
+    const event = field.tagName === "SELECT" ? "change" : "input";
+    field.addEventListener(event, () =>
+      write(field.dataset.hashKey, field.value),
+    );
+  }
+  hour.addEventListener("input", () => {
+    const date = new Date(getParams().timeMs ?? Date.now());
+    date.setUTCHours(0, Math.round(Number(hour.value) * 60), 0, 0);
+    write("time", date.toISOString());
+  });
+  now.addEventListener("click", () => write("time", null));
+  return sync;
+}
+
+/**
+ * Bytes fetched for the globe's assets so far (the resource timing log):
+ * `transferSize`, or the body size where that reads 0. A cache hit
+ * therefore still counts, so this is "bytes the page needed", which equals
+ * the download only with no cache (the measure tool: `no-store`, a fresh
+ * context per row).
+ */
+function globeBytesDownloaded() {
+  return performance
+    .getEntriesByType("resource")
+    .filter((e) => e.name.includes("/globe-assets/"))
+    .reduce((sum, e) => sum + (e.transferSize || e.encodedBodySize || 0), 0);
+}
+
 function start() {
+  // The default log keeps 250 entries: fewer than the committed pyramid.
+  performance.setResourceTimingBufferSize(4000);
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   // Phase 1's exposure (§7.3): the sun at intensity π, Neutral tone mapping
   // (the look-dev default), no ambient light, a black sky.
   renderer.toneMapping = THREE.NeutralToneMapping;
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
   const scene = new THREE.Scene();
   const radius = WGS84_ELLIPSOID.radius.x;
   const camera = new THREE.PerspectiveCamera(
-    FOV_Y_DEG,
+    PARAMS.fovY.fallback,
     1,
     radius * 0.01,
     radius * 20,
   );
   let distance = radius * 3;
+  let fittedSize = "";
   const globe = createGlobeSurface();
+  useSurfaceDefaults(globe);
   scene.add(globe.group);
   const credits = creditsFor(globe.activeSources());
   renderCredits(credits);
   const status = statusView();
   const flight = introFlight(globe.tiles.ellipsoid);
-  /** The hash's tuning onto the shared uniforms. */
-  const applyTuning = () => {
-    const { tuning } = flight.params();
+  let params = readHashParams();
+  let appliedHash = location.hash.slice(1);
+  /**
+   * Everything but the intro's target and timing, applied at once. The
+   * field of view and the pixel ratio refit the camera and resize the
+   * drawing buffer, so they are touched only when they change.
+   */
+  const applyLive = () => {
     const u = globe.surfaceUniforms;
-    u.uNightGain.value = tuning.nightGain;
-    u.uWaterRoughness.value = tuning.waterRoughness;
-    u.uCloudOpacity.value = tuning.cloudOpacity;
+    u.uNightGain.value = params.nightGain;
+    u.uWaterRoughness.value = params.waterRoughness;
+    u.uCloudOpacity.value = params.cloudOpacity;
+    globe.sun.intensity = params.sunIntensity;
+    globe.tiles.errorTarget = params.errorTarget;
+    globe.tiles.lruCache.maxBytesSize = params.cacheMiB * 2 ** 20;
+    globe.tiles.lruCache.minBytesSize =
+      params.cacheMiB * CACHE_FLOOR_RATIO * 2 ** 20;
+    const ratio = Math.min(window.devicePixelRatio, params.pixelRatio);
+    if (camera.fov !== params.fovY || renderer.getPixelRatio() !== ratio) {
+      camera.fov = params.fovY;
+      renderer.setPixelRatio(ratio);
+      fittedSize = ""; // refit on the next frame
+    }
+  };
+  /** Reads the hash and applies it; a new target or timing restarts. */
+  const onHash = () => {
+    const next = readHashParams();
+    const restart = flightKey(next) !== flightKey(params);
+    params = next;
+    if (restart) flight.restart(performance.now(), params);
+    applyLive();
+    syncPanel();
+    appliedHash = location.hash.slice(1);
   };
   /** The sun of `#time=`, or of now (it moves 0.25° a minute). */
   const sunNow = () => {
-    const ms = flight.params().timeMs ?? Date.now();
+    const ms = params.timeMs ?? Date.now();
     globe.setSun(
       sunDirectionEcef(globe.tiles.ellipsoid, solarPosition(ms, 0, 0)),
     );
     return ms;
   };
-  flight.restart(performance.now());
-  applyTuning();
-  window.addEventListener("hashchange", () => {
-    flight.restart(performance.now());
-    applyTuning();
-  });
+  const syncPanel = bindPanel(
+    () => params,
+    () => onHash(),
+  );
+  flight.restart(performance.now(), params);
+  applyLive();
+  syncPanel();
+  window.addEventListener("hashchange", onHash);
   replayButton.addEventListener("click", () =>
-    flight.restart(performance.now()),
+    flight.restart(performance.now(), params),
   );
 
-  let fittedSize = "";
   const frame = () => {
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
@@ -343,7 +471,7 @@ function start() {
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       distance = orbitDistanceToFit({
-        fovYRad: FOV_Y_DEG * DEG,
+        fovYRad: camera.fov * DEG,
         aspect: camera.aspect,
         margin: FIT_MARGIN,
         radius,
@@ -393,15 +521,29 @@ function start() {
     state: () => ({
       ...globe.state(),
       ...flight.state(),
+      appliedHash,
       centreLatLon: centreLatLon(),
       timeMs: sunNow(),
       sunEcef: globe.surfaceUniforms.uSunEcef.value.toArray(),
-      tuning: flight.params().tuning,
+      // What the shader reads, not what the hash says.
+      tuning: {
+        nightGain: globe.surfaceUniforms.uNightGain.value,
+        waterRoughness: globe.surfaceUniforms.uWaterRoughness.value,
+        cloudOpacity: globe.surfaceUniforms.uCloudOpacity.value,
+      },
+      distance,
+      sunIntensity: globe.sun.intensity,
+      fovY: camera.fov,
+      pixelRatio: renderer.getPixelRatio(),
+      errorTarget: globe.tiles.errorTarget,
+      bytesDownloaded: globeBytesDownloaded(),
+      rendererMemory: { ...renderer.info.memory },
       radiusM: radius,
       activeSources: globe.activeSources(),
       loadingShown: status.loadingShown,
       loadingVisible: !loadingLabel.hidden,
       cacheBudgetBytes: globe.tiles.lruCache.maxBytesSize,
+      cacheFloorBytes: globe.tiles.lruCache.minBytesSize,
       creditShorts: credits.map((c) => c.short),
     }),
     /**

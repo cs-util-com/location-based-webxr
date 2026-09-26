@@ -10,7 +10,8 @@
   `--parity` it also prints the GPU/CPU LUT comparison as JSON.
 - Invariants & assumptions:
   - Starts its own `serve.mjs` on the aux port 5198, bound to 127.0.0.1
-    (`docs/dev-server-ports.md`), and kills it afterwards; it never reuses
+    (`docs/dev-server-ports.md`), through `start-aux-server.mjs` (shared
+    with `measure-globe.mjs`), and kills it afterwards; it never reuses
     a server left running for a phone round.
   - An eyeball tool, not a gate: headless Chromium rasterises on the CPU,
     so pixels differ per machine and frame times mean nothing for a phone.

@@ -28,9 +28,11 @@ renderer), state(), activeSources(), dispose() }`.
       re-centres the tiles, and the light must follow them). `update`
       re-syncs it each frame. RangeError for a zero or non-finite vector.
     - `state()` is `{ models, tileErrors, cachedBytes, pendingTiles,
-loadedTiles, mapsLoaded, mapErrors, mapsTotal }` (`load-error` events;
-      the cache's bytes; tiles queued, downloading or parsing; tiles
-      loaded; global maps loaded, failed, and in all, 3).
+loadedTiles, refusedTiles, mapsLoaded, mapErrors, mapsTotal }`
+      (`load-error` events; the cache's bytes; tiles queued, downloading
+      or parsing; tiles loaded; requests refused by a full cache, which the
+      library counts apart from the pending ones, so a starved cache would
+      otherwise read as settled; global maps loaded, failed, and in all, 3).
     - `activeSources()` names every registry source (all four are drawn),
       for the credits line.
     - `loader` (`GlobeSurfaceLoader`, `loadTexture(source, onLoad,

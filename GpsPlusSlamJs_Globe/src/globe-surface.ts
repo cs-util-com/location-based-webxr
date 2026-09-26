@@ -62,6 +62,8 @@ interface TilesRuntime {
     readonly downloading: number;
     readonly parsing: number;
     readonly loaded: number;
+    /** Requests turned away because the cache was full. */
+    readonly refused: number;
   };
   readonly lruCache: { readonly cachedBytes: number };
 }
@@ -95,8 +97,9 @@ export interface GlobeSurface {
   update(camera: THREE.Camera, renderer: THREE.WebGLRenderer): void;
   /**
    * Loaded models, the library's tile load errors, the cache's bytes, the
-   * tiles still pending (queued, downloading or parsing) and loaded, and
-   * the global maps loaded, failed, and in all.
+   * tiles still pending (queued, downloading or parsing), loaded, and
+   * refused by a full cache (not pending: a starved cache would otherwise
+   * read as settled), and the global maps loaded, failed, and in all.
    */
   state(): {
     models: number;
@@ -104,6 +107,7 @@ export interface GlobeSurface {
     cachedBytes: number;
     pendingTiles: number;
     loadedTiles: number;
+    refusedTiles: number;
     mapsLoaded: number;
     mapErrors: number;
     mapsTotal: number;
@@ -316,13 +320,14 @@ export function createGlobeSurface(
       syncSun();
     },
     state: () => {
-      const { queued, downloading, parsing, loaded } = runtime.stats;
+      const { queued, downloading, parsing, loaded, refused } = runtime.stats;
       return {
         models,
         tileErrors,
         cachedBytes: runtime.lruCache.cachedBytes,
         pendingTiles: queued + downloading + parsing,
         loadedTiles: loaded,
+        refusedTiles: refused,
         mapsLoaded,
         mapErrors,
         mapsTotal: 3,

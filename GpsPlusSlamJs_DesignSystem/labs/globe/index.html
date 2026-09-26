@@ -4,6 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Lab: the globe</title>
+    <link rel="stylesheet" href="../../design.css" />
+    <link rel="stylesheet" href="../../3d/lookdev.css" />
     <script type="importmap">
       {
         "imports": {
@@ -47,19 +49,25 @@
           sans-serif;
       }
 
-      #globe-replay {
-        position: fixed;
-        top: 10px;
+      /* The plate on the right: the error and loading lines are top left. */
+      .lookdev-panel {
+        left: auto;
         right: 12px;
-        padding: 6px 12px;
-        border: 1px solid #5d6b7d;
-        border-radius: 6px;
-        background: #1a222d;
-        color: #e6ecf3;
-        font:
-          13px/1.2 system-ui,
-          sans-serif;
-        cursor: pointer;
+      }
+
+      /*
+       * On a phone the plate (340 px, folded to its header) spans nearly the
+       * whole width, so the status lines move below its header, where it
+       * never covers them folded.
+       */
+      @media (max-width: 600px) {
+        #globe-error {
+          top: 72px;
+        }
+
+        #globe-loading {
+          top: 96px;
+        }
       }
 
       #globe-credits {
@@ -84,12 +92,177 @@
       }
     </style>
     <script type="module" src="./globe-lab.js"></script>
+    <script type="module" src="../../3d/panel.js"></script>
   </head>
   <body>
     <canvas id="globe-canvas"></canvas>
     <output id="globe-error" role="alert"></output>
     <output id="globe-loading" aria-live="polite" hidden></output>
-    <button id="globe-replay" type="button">Replay the turn</button>
+    <aside class="lookdev-panel plate col" aria-label="Globe controls">
+      <button
+        type="button"
+        class="lookdev-head"
+        aria-expanded="true"
+        aria-controls="lookdev-body"
+      >
+        <span class="lookdev-title">Globe</span>
+        <span class="lookdev-chevron" aria-hidden="true"></span>
+      </button>
+      <div id="lookdev-body" class="lookdev-body col">
+        <details class="lookdev-section" data-section="globe-sun" open>
+          <summary>Sun and time</summary>
+          <div class="lookdev-section-body col">
+            <label class="lookdev-field">
+              <span class="hint">Hour <output data-for="hour"></output></span>
+              <input
+                class="slider"
+                type="range"
+                min="0"
+                max="23.75"
+                step="0.25"
+                data-time-hour
+              />
+            </label>
+            <button type="button" class="btn" data-time-now>Now</button>
+            <label class="lookdev-field">
+              <span class="hint"
+                >Sun intensity <output data-for="sunIntensity"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                min="0"
+                max="8"
+                step="0.05"
+                data-hash-key="sunIntensity"
+              />
+            </label>
+          </div>
+        </details>
+        <details class="lookdev-section" data-section="globe-surface" open>
+          <summary>Surface</summary>
+          <div class="lookdev-section-body col">
+            <label class="lookdev-field">
+              <span class="hint"
+                >Night lights <output data-for="nightGain"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                min="0"
+                max="4"
+                step="0.05"
+                data-hash-key="nightGain"
+              />
+            </label>
+            <label class="lookdev-field">
+              <span class="hint"
+                >Water roughness <output data-for="waterRoughness"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                min="0.05"
+                max="1"
+                step="0.05"
+                data-hash-key="waterRoughness"
+              />
+            </label>
+            <label class="lookdev-field">
+              <span class="hint"
+                >Cloud opacity <output data-for="cloudOpacity"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                data-hash-key="cloudOpacity"
+              />
+            </label>
+          </div>
+        </details>
+        <details class="lookdev-section" data-section="globe-camera" open>
+          <summary>Camera and turn</summary>
+          <div class="lookdev-section-body col">
+            <label class="lookdev-field">
+              <span class="hint"
+                >Field of view (°) <output data-for="fovY"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                min="20"
+                max="80"
+                step="1"
+                data-hash-key="fovY"
+              />
+            </label>
+            <label class="lookdev-field">
+              <span class="hint"
+                >Wait for a fix (ms) <output data-for="spinMs"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                min="0"
+                max="10000"
+                step="250"
+                data-hash-key="spinMs"
+              />
+            </label>
+            <label class="lookdev-field">
+              <span class="hint"
+                >Turn (ms) <output data-for="turnMs"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                min="0"
+                max="10000"
+                step="250"
+                data-hash-key="turnMs"
+              />
+            </label>
+            <button id="globe-replay" type="button" class="btn">
+              Replay the turn
+            </button>
+          </div>
+        </details>
+        <details class="lookdev-section" data-section="globe-tiles" open>
+          <summary>Tiles and memory</summary>
+          <div class="lookdev-section-body col">
+            <label class="lookdev-field">
+              <span class="hint">Error target (px)</span>
+              <select class="select" data-hash-key="errorTarget">
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="4">4</option>
+                <option value="16">16</option>
+              </select>
+            </label>
+            <label class="lookdev-field">
+              <span class="hint">Tile cache (MiB)</span>
+              <select class="select" data-hash-key="cacheMiB">
+                <option value="32">32</option>
+                <option value="48">48</option>
+                <option value="64">64</option>
+                <option value="128">128</option>
+              </select>
+            </label>
+            <label class="lookdev-field">
+              <span class="hint">Pixel ratio cap</span>
+              <select class="select" data-hash-key="pixelRatio">
+                <option value="1">1</option>
+                <option value="1.5">1.5</option>
+                <option value="2">2</option>
+              </select>
+            </label>
+          </div>
+        </details>
+      </div>
+    </aside>
     <footer id="globe-credits"></footer>
   </body>
 </html>

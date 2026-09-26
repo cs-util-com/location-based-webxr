@@ -22,13 +22,14 @@
  * bound to 127.0.0.1, and never reuses one left running for a phone round.
  */
 import { chromium } from "@playwright/test";
-import { spawn } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { AUX_PORT, startAuxServer } from "./start-aux-server.mjs";
+
 const here = dirname(fileURLToPath(import.meta.url));
-const PORT = 5198;
+const PORT = AUX_PORT;
 const outDir = join(here, "shots", "3d");
 mkdirSync(outDir, { recursive: true });
 
@@ -63,21 +64,7 @@ if (cover !== null && !(cover >= 0 && cover <= 1)) {
   throw new Error(`--cover must be in [0, 1], got ${args.get("cover")}`);
 }
 
-/** Start serve.mjs and resolve once it is listening. */
-function startServer() {
-  const child = spawn(process.execPath, [join(here, "serve.mjs")], {
-    env: { ...process.env, PORT: String(PORT), HOST: "127.0.0.1" },
-    stdio: ["ignore", "pipe", "inherit"],
-  });
-  return new Promise((resolve, reject) => {
-    child.stdout.on("data", (chunk) => {
-      if (String(chunk).includes("design system served")) resolve(child);
-    });
-    child.on("exit", (code) => reject(new Error(`serve.mjs exited ${code}`)));
-  });
-}
-
-const server = await startServer();
+const server = await startAuxServer();
 const browser = await chromium.launch();
 const problems = [];
 try {

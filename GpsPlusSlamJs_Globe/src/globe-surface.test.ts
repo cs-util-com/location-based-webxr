@@ -109,6 +109,7 @@ describe("createGlobeSurface", () => {
       cachedBytes: 0,
       pendingTiles: 0,
       loadedTiles: 0,
+      refusedTiles: 0,
       mapsLoaded: 0,
       mapErrors: 0,
       mapsTotal: 3,

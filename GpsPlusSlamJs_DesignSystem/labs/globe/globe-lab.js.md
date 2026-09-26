@@ -1,6 +1,6 @@
 # labs/globe/globe-lab.js - the globe lab
 
-- Purpose: globe plan 2026-09-26-0539 §7, M0-M3. The globe package's
+- Purpose: globe plan 2026-09-26-0539 §7, M0-M4. The globe package's
   surface (`/globe/globe-surface.js`), served no-build: the Earth textured
   from the committed Blue Marble pyramid, lit by the real sun, with night
   lights, a water glint and clouds, and a credits line (the short names, the full texts and GIBS's acknowledgement in a
@@ -8,14 +8,44 @@
   Earth imagery: n of m") shows while tiles are pending, and the error box
   names tiles that could not load ("a coarser level shows there") and global
   maps that could not load. The label counts the three global maps too, so
-  it ends only when the clouds (the largest file) have arrived. M4 adds the
-  tunables panel.
+  it ends only when the clouds (the largest file) have arrived.
+- The control plate (M4): the design system's look-dev plate
+  (`../../3d/lookdev.css`, `../../3d/panel.js`: collapses, remembered,
+  folded on a phone), moved to the right. Every control writes its hash
+  key and follows the hash back, so the hash is the one state and a link
+  reproduces a view. Sections: Sun and time (the UTC hour of `#time=`,
+  "Now" removes it, sun intensity), Surface (night lights, water roughness,
+  cloud opacity), Camera and turn (field of view, the wait for a fix, the
+  turn, "Replay the turn"), Tiles and memory (error target, tile cache,
+  pixel-ratio cap). A control REPLACES the history entry and applies at
+  once (a slider drag neither floods the back button nor waits for
+  `hashchange`); an edited or pasted hash applies on `hashchange` and the
+  controls follow it (a value a select does not list is added to it). The
+  hash stays readable (`at=30,15`, not `%2C`). Sliders take their ranges
+  from `PARAMS`. On a phone-width screen (600 px, panel.js's narrow query)
+  the error and loading lines move below the folded plate's header.
+- Hash parameters and ranges (`PARAMS`, the one source for the sliders too;
+  out of range, empty or malformed reads as the default): `spinMs`,
+  `turnMs` (0-10000), `nightGain` (0-4), `waterRoughness`,
+  `cloudOpacity` (0-1), `sunIntensity` (0-8), `fovY` (20-80, default 50),
+  `pixelRatio` (the cap, 0.5-4, default 2, what §7.2 sized the pyramid
+  for), `errorTarget` (0.25-256), `cacheMiB` (8-4096), plus `at` and
+  `time` (a hand-typed `+02:00` offset works: form decoding's space is
+  turned back into "+").
+  - The error target, the sun's intensity and the cache cap default to what
+    the surface sets itself (read from the live surface at start:
+    GeneratedSurfacePlugin's 1 px, the light's π, `GLOBE_SURFACE`'s 64 MiB),
+    so the lab never overrides the surface by accident; the cache floor
+    keeps the surface's floor-to-cap ratio.
+  - The field of view and the pixel ratio refit the camera and resize the
+    drawing buffer only when they change.
+  - Only a change of `at`, `spinMs` or `turnMs` restarts the intro;
+    everything else applies live, so dragging a slider never replays the
+    turn. `appliedHash` says when the page has applied a hash.
 - The light (M3): `solarPosition(time, 0, 0)` from `/fw/geo/solar-position.js`
   through `sunDirectionEcef` into `globe.setSun`, every frame, for
   `#time=<ISO>` or now; intensity π, Neutral tone mapping, no ambient
-  light, a black sky (plan §7.3). The surface's tuning comes from the hash:
-  `nightGain` (0-100), `waterRoughness` and `cloudOpacity` (0-1);
-  anything else keeps the default.
+  light, a black sky (plan §7.3).
 - The intro (M2, `/globe/globe-target.js`, `/globe/globe-camera.js`):
   - `spin`: from 30°N 15°E, the view's longitude falling 3°/s, so the
     surface moves west to east across the screen as the Earth turns;
@@ -25,9 +55,9 @@
   - fovY 50°, the disc filling 90 % of the narrower side
     (`orbitDistanceToFit`, re-fitted whenever the width or the height
     changes), the setting the z0-z3 imagery was sized for.
-  - Hash parameters: `#at=<lat>,<lng>` (the target; absent or malformed
-    means none), `spinMs` (the wait for a fix before the Central Park
-    fallback, default 3000) and `turnMs` (default 5000). A hash change and
+  - `#at=<lat>,<lng>` is the target (absent or malformed means none),
+    `spinMs` the wait for a fix before the Central Park fallback (default
+    3000), `turnMs` the turn (default 5000). A change of any of them and
     the "Replay the turn" button start the sequence again, from the spin's
     start (a hash edit mid-turn therefore jumps back; fine for a lab).
   - Phase 1 has no GPS (DEC-PRG-10): the fix is always null. The target is
@@ -36,8 +66,13 @@
 - Test API, `window.__globeLab`: `ready`, `error`, `spinStart`, `state()`
   (`{ models, tileErrors, cachedBytes, pendingTiles, loadedTiles, phase,
 target, source, history, runs, spinMs, turnMs, centreLatLon, timeMs,
-sunEcef, tuning, radiusM, activeSources, loadingShown, loadingVisible,
-cacheBudgetBytes, creditShorts, mapsLoaded, mapErrors, mapsTotal }`), `project(lat, lng)` (a
+sunEcef, tuning, sunIntensity, fovY, pixelRatio, errorTarget,
+bytesDownloaded, rendererMemory, appliedHash, radiusM, activeSources,
+loadingShown, loadingVisible, cacheBudgetBytes, cacheFloorBytes,
+creditShorts, mapsLoaded, mapErrors, mapsTotal, refusedTiles, distance }`;
+  `tuning` is what the shader reads (the uniforms), not the hash;
+  `bytesDownloaded` sums the resource timing log's `/globe-assets/`
+  entries, whose buffer the page raises to 4000, counting cache hits too), `project(lat, lng)` (a
   place's normalised canvas point, for probes at known places),
   `readPixels(points)` (normalised canvas points, read in the same task as
   a render).
@@ -84,3 +119,17 @@ cacheBudgetBytes, creditShorts, mapsLoaded, mapErrors, mapsTotal }`), `project(l
     against the largest ordinary jump: 0.67x with the fix, 4.02x without);
   - a global map answering 404: the error box says so, the loading label
     ends, the globe still draws, no page error.
+  - (M4) every control on the plate once: it writes its key, the page
+    applies it (the uniforms, the light, the tiles' error target and cache,
+    a closer camera for a wider field of view), only the two timing
+    controls restart the intro, ten changes add no history entries, the
+    panel follows an edited hash, the hour sets `#time=` and "Now" removes
+    it, no error; at DPR 2 the pixel-ratio cap defaults to 2 and the plate
+    lowers it; at phone width the status lines sit below the folded plate;
+    the measure tool's fields are live on the boot view.
+  - Every settle wait allows 120 s (a view settles in 30-50 s locally;
+    r745's CI runner timed out at 60 s), requires the tile count to hold
+    for 1 s, and logs its time per view; the tests that settle several
+    views carry an explicit budget.
+- The memory and download table: `pnpm run measure:globe`
+  (`measure-globe.mjs`), not a test.
