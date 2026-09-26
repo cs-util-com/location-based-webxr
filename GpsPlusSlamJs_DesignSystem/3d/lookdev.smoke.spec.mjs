@@ -1691,3 +1691,155 @@ test("the covered share per elevation band, sheet against slab (logged)", async 
   expect(sheet.length).toBe(bands.length);
   expect(errors).toEqual([]);
 });
+
+// WHY (owner feedback 2026-09-26, programme plan 2026-09-26-0539 W1 M2): on a
+// phone the control plate covered the scene. It collapses as a whole from
+// its header and per section, it remembers the choice across reloads, it
+// starts collapsed on a narrow screen, and an error is never hidden by it.
+test("the control plate collapses from its header and per section, and remembers it", async ({
+  page,
+}) => {
+  const errors = await boot(page);
+  const head = page.locator(".lookdev-head");
+  const body = page.locator("#lookdev-body");
+  await expect(head).toHaveAttribute("aria-expanded", "true");
+  await expect(body).toBeVisible();
+  // Every control the other tests select sits in a section that starts open.
+  for (const id of ["#camera-view", "#cloud-mode", "#slab-steps", "#tone"]) {
+    await expect(page.locator(id)).toBeVisible();
+  }
+  // A section folds on its own.
+  const sun = page.locator('details[data-section="sun"]');
+  await sun.locator("summary").click();
+  await expect(page.locator("#elevation")).toBeHidden();
+  // The whole plate collapses, and the choice survives a reload.
+  await head.click();
+  await expect(head).toHaveAttribute("aria-expanded", "false");
+  await expect(body).toBeHidden();
+  await page.reload();
+  await page.waitForFunction(() => window.__lookdev?.ready);
+  await expect(page.locator(".lookdev-head")).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+  // An error is never hidden by a collapsed plate: the error box sits
+  // outside the body.
+  expect(
+    await page.evaluate(() =>
+      document.querySelector("#lookdev-body [data-error-box]"),
+    ),
+  ).toBeNull();
+  // The plate itself never scrolls (its body does), so the design-system
+  // stripe on its edge always spans the whole plate.
+  await page.locator(".lookdev-head").click();
+  const scrolls = await page.evaluate(() => {
+    const plate = document.querySelector(".lookdev-panel");
+    return plate.scrollHeight > plate.clientHeight + 1;
+  });
+  expect(scrolls).toBe(false);
+  expect(errors).toEqual([]);
+});
+
+test("the control plate starts collapsed on a phone-width screen", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 780 },
+  });
+  const page = await context.newPage();
+  try {
+    await boot(page);
+    await expect(page.locator(".lookdev-head")).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    await expect(page.locator("#lookdev-body")).toBeHidden();
+    await page.locator(".lookdev-head").click();
+    await expect(page.locator("#lookdev-body")).toBeVisible();
+  } finally {
+    await context.close();
+  }
+});
+
+// WHY (owner feedback 2026-09-26, programme plan 2026-09-26-0539 W1 M3): the
+// ring inside the first mountains is filled with buildings, so shadows and
+// ambient occlusion can be judged at a city's scale (thousands of blocks, as
+// in New York). It must cost two draws per pass, whatever the count, and a
+// raised count must really be drawn far out: an InstancedMesh keeps the
+// bounding sphere of the count it was first measured at, and a stale one
+// would cull the whole fill in any view that misses the centre, which would
+// make the largest counts read falsely cheap.
+test("the dense city fills the ring in two draws, and a raised count is drawn far out", async ({
+  page,
+}) => {
+  const errors = await boot(page, "preset=noon&tone=neutral&city=0");
+  const info = () => page.evaluate(() => window.__lookdev.cityInfo());
+  const { max: full, farthest: far } = await info();
+  expect(full).toBeGreaterThan(5000);
+  // FAR OUT FIRST, while the fill has never been drawn: three measures an
+  // InstancedMesh's bounds the first time it is culled VISIBLE, over the
+  // count of that moment. So the first visible draw is a small count (the
+  // stale-bounds bug's trigger), and only then is the count raised.
+  const probe = (count) =>
+    page.evaluate(
+      ([n, lot]) => {
+        const d = window.__lookdev;
+        d.setCity(n, 42);
+        const [x, z] = lot;
+        const r = Math.hypot(x, z);
+        // Stand 150 m INSIDE the lot, looking OUTWARD at it: the centre,
+        // where a stale small-count sphere would sit, is behind the camera.
+        d.placeCameraAt(
+          [(x * (r - 150)) / r, 25, (z * (r - 150)) / r],
+          [x, 12, z],
+        );
+        return d.readPixels([[0.5, 0.55]])[0];
+      },
+      [count, far],
+    );
+  const few = await probe(100);
+  const all = await probe(full);
+  const diff = Math.abs(sum(all) - sum(few));
+  expect(
+    diff,
+    `pixel ${few} with 100 lots against ${all} with all`,
+  ).toBeGreaterThan(30);
+  // Two draws per pass, whatever the count.
+  const drawsAt = (count) =>
+    page.evaluate((n) => {
+      const d = window.__lookdev;
+      d.setCity(n, 42);
+      d.setView("city");
+      return d.drawCalls();
+    }, count);
+  const base = await drawsAt(0);
+  expect((await drawsAt(full)) - base).toBe(2);
+  expect((await drawsAt(2500)) - base).toBe(2);
+  // The count and pitch travel in the address.
+  await page.evaluate(() => window.__lookdev.setCity(2500, 31));
+  expect(await page.evaluate(() => location.hash)).toContain("city=2500");
+  expect(await page.evaluate(() => location.hash)).toContain("pitch=31");
+  expect(errors).toEqual([]);
+});
+
+// WHY: with shadows on, the fill casts and receives like the block, and the
+// shadow map re-renders when the count changes (the rig keys its re-render on
+// the caster generation). The readout names the covered radius, so a fill
+// that lies outside the map is not read as "shadows don't work".
+test("the dense city casts with shadows on, and the readout names the covered radius", async ({
+  page,
+}) => {
+  const errors = await boot(page, "preset=noon&tone=neutral&shadows=1&city=0");
+  const maps = () =>
+    page.evaluate(() => {
+      const d = window.__lookdev;
+      d.drawCalls();
+      return d.cityInfo();
+    });
+  await page.evaluate(() => window.__lookdev.setCity(2500, 42));
+  const info = await maps();
+  expect(info.casts).toBe(true);
+  expect(info.receives).toBe(true);
+  await expect(page.locator("[data-stats]")).toContainText("central 220 m");
+  expect(errors).toEqual([]);
+});

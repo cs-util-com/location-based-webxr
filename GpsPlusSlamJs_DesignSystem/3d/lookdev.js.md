@@ -26,6 +26,11 @@
     tests that aim along the sun or away from it);
     `cloudSlabDefine()` (the step count the slab material is built with, so
     a test can tell a count that never reached the program);
+    `setCity(count, pitch?)` (the dense city, W1 M3: the nearest `count`
+    lots of a `pitch` grid; a new pitch rebuilds the part, hazes it and flags
+    it as casters when shadows are on), `cityInfo()` (`{ count, max, pitch,
+farthest, casts, receives }`) and `drawCalls()` (renders one frame and
+    returns its draw calls);
     `setShadows(bool)` (sun shadows, the AR shadow prototype's S1: the
     framework's `createSunShadow` drives the sun light over a 440 m square (R 220 m),
     buildings cast and receive, the ground receives, a 2° floor), with
@@ -58,7 +63,7 @@
     preset: both exposures and both exposure-free horizon colours. The
     fallback's only GPU oracle.
 - Invariants & assumptions:
-  - State lives in the URL hash (`#preset=…&tone=…&tier=…&cloudMode=…&slabSteps=…&shadows=0|1`), so a
+  - State lives in the URL hash (`#preset=…&tone=…&tier=…&cloudMode=…&slabSteps=…&shadows=0|1&city=…&pitch=42|31|20`), so a
     screenshot or phone link reproduces a view; a hash change on an open
     page re-applies it (the page's own writes use `replaceState`, which
     fires no `hashchange`).

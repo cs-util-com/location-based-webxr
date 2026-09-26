@@ -39,7 +39,11 @@ import { sunShadowActive } from "/fw/visualization/sun-shadow-rig.js";
 
 import { createGpuTimer } from "./gpu-timer.js";
 import { lutParity, skyPixelExpected } from "./parity.js";
-import { buildStandInScene } from "./stand-in-scene.js";
+import {
+  buildStandInScene,
+  DENSE_PITCHES,
+  denseCity,
+} from "./stand-in-scene.js";
 
 const TONE_MAPPINGS = {
   aces: THREE.ACESFilmicToneMapping,
@@ -145,6 +149,10 @@ const state = {
   slabSteps: 16,
   // Sun shadows (AR sun shadow plan 2026-09-23-2343, M2 / S1).
   shadows: false,
+  // The dense city (programme plan 2026-09-26-0539, W1 M3): the nearest
+  // `count` lots of a `pitch` grid; 0 is the block alone.
+  city: 0,
+  pitch: DENSE_PITCHES[0],
 };
 
 /**
@@ -190,6 +198,10 @@ function readHash() {
   const steps = Number(params.get("slabSteps"));
   if (SLAB_STEPS.includes(steps)) state.slabSteps = steps;
   state.shadows = params.get("shadows") === "1";
+  const pitch = Number(params.get("pitch"));
+  if (DENSE_PITCHES.includes(pitch)) state.pitch = pitch;
+  const city = Number(params.get("city"));
+  state.city = Number.isFinite(city) && city > 0 ? Math.floor(city) : 0;
 }
 
 function writeHash() {
@@ -200,6 +212,8 @@ function writeHash() {
     cloudMode: state.cloudMode,
     slabSteps: String(state.slabSteps),
     shadows: state.shadows ? "1" : "0",
+    city: String(state.city),
+    pitch: String(state.pitch),
   });
   history.replaceState(null, "", `#${params}`);
 }
@@ -288,7 +302,7 @@ function applyShadows(direction) {
   }
   if (!sunShadow) {
     enableSunShadows(renderer);
-    for (const building of parts.city.children) {
+    for (const building of [...parts.city.children, ...parts.dense.children]) {
       building.castShadow = true;
       building.receiveShadow = true;
     }
@@ -304,7 +318,9 @@ function applyShadows(direction) {
     sunDir: [direction.x / length, direction.y / length, direction.z / length],
     centre: [0, 0, 0],
     halfWidthM: shadowParams.halfWidthM,
-    casterGeneration: "city",
+    // The fill's count and pitch are part of the casters: a change must
+    // re-render the map.
+    casterGeneration: `city ${state.city}@${state.pitch}`,
     casterOffsetM: 0,
   });
   // The rig sets one texel of normal bias; the sweep scales it (set, not
@@ -373,7 +389,34 @@ function renderFrame() {
   else renderer.render(scene, camera);
 }
 
+/**
+ * The dense city to the state: a new pitch rebuilds the part (hazed, and
+ * flagged as casters when shadows are on); a count only moves the prefix.
+ */
+function applyCity() {
+  if (parts.dense.userData.pitch !== state.pitch) {
+    const old = parts.dense;
+    scene.remove(old);
+    for (const mesh of old.children) {
+      mesh.geometry.dispose();
+      mesh.material.dispose();
+      mesh.dispose();
+    }
+    parts.dense = denseCity(state.pitch);
+    haze.applyToObject(parts.dense);
+    if (sunShadow) {
+      for (const mesh of parts.dense.children) {
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+      }
+    }
+    scene.add(parts.dense);
+  }
+  parts.dense.userData.setCount(state.city);
+}
+
 function applyLook() {
+  applyCity();
   useAtmosphere();
   applyTier();
   camera.updateProjectionMatrix();
@@ -453,6 +496,11 @@ function syncControls() {
   $("#tier").value = state.tier;
   $("#cloud-mode").value = state.cloudMode;
   $("#slab-steps").value = String(state.slabSteps);
+  const cityValue = `${state.city}@${state.pitch}`;
+  const citySelect = $("#city-fill");
+  if ([...citySelect.options].some((o) => o.value === cityValue)) {
+    citySelect.value = cityValue;
+  }
   $("#slab-steps").disabled = state.cloudMode !== "slab";
   $("[data-values]").textContent =
     `sun ${state.elevation.toFixed(1)}° / ${state.azimuth.toFixed(0)}° · ` +
@@ -498,6 +546,10 @@ function buildControls() {
   $("#camera-view").addEventListener("change", (e) =>
     api.setView(e.target.value),
   );
+  $("#city-fill").addEventListener("change", (e) => {
+    const [count, pitch] = e.target.value.split("@").map(Number);
+    api.setCity(count, pitch);
+  });
 }
 
 // --- loop and test surface -----------------------------------------------------
@@ -557,7 +609,7 @@ function frame(now) {
     ? `GPU ${gpuMs === null ? "…" : gpuMs.toFixed(2)} ms`
     : "GPU n/a";
   $("[data-stats]").textContent =
-    `${state.tier} · clouds ${state.cloudMode}${state.cloudMode === "slab" ? ` ×${state.slabSteps}` : ""} · shadows ${sunShadow ? `on (${sunShadow.renders} maps)` : shadowsBelowFloor ? "on (sun below 2°)" : "off"} · ${frameMs.toFixed(1)} ms/frame · ${gpu} · ${renderer.info.render.calls} draws · ` +
+    `${state.tier} · clouds ${state.cloudMode}${state.cloudMode === "slab" ? ` ×${state.slabSteps}` : ""} · shadows ${sunShadow ? `on (${sunShadow.renders} maps, central ${shadowParams.halfWidthM} m)` : shadowsBelowFloor ? "on (sun below 2°)" : "off"} · ${frameMs.toFixed(1)} ms/frame · ${gpu} · ${renderer.info.render.calls} draws · ` +
     `${(renderer.info.render.triangles / 1000).toFixed(0)}k tris · LUT ${lutMs.toFixed(1)} ms`;
   requestAnimationFrame(frame);
 }
@@ -659,6 +711,36 @@ Object.assign(api, {
   setShadows(on) {
     state.shadows = Boolean(on);
     applyLook();
+  },
+  /**
+   * The dense city (W1 M3): the nearest `count` lots of a `pitch` grid
+   * (one of DENSE_PITCHES); 0 is the block alone.
+   */
+  setCity(count, pitch = state.pitch) {
+    if (!DENSE_PITCHES.includes(pitch)) {
+      throw new Error(`unknown pitch ${pitch}; one of ${DENSE_PITCHES}`);
+    }
+    state.city = Math.max(0, Math.floor(Number(count) || 0));
+    state.pitch = pitch;
+    applyLook();
+  },
+  /** Test surface: the dense city as it stands. */
+  cityInfo() {
+    const dense = parts.dense;
+    const [concrete, glass] = dense.children;
+    return {
+      count: dense.userData.count,
+      max: dense.userData.max,
+      pitch: dense.userData.pitch,
+      farthest: dense.userData.farthest,
+      casts: concrete.castShadow && glass.castShadow,
+      receives: concrete.receiveShadow && glass.receiveShadow,
+    };
+  },
+  /** Test surface: render one frame and return its draw calls. */
+  drawCalls() {
+    renderFrame();
+    return renderer.info.render.calls;
   },
   /**
    * The cost sweep's handle: any of { halfWidthM, mapSize, radius,

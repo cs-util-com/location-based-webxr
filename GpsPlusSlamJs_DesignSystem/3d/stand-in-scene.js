@@ -95,6 +95,127 @@ function cityBlock() {
   return group;
 }
 
+/**
+ * The dense city's lot pitches (programme plan 2026-09-26-0539, W1 M3): the
+ * block's own 42 m, and two denser grids for the performance sweep. The fill
+ * is allocated per pitch, so the count a hash names always fits.
+ */
+export const DENSE_PITCHES = [42, 31, 20];
+/** The fill keeps clear of the original scene (block, lake, swatches, markers). */
+const DENSE_INNER_M = 420;
+/** And stops short of the first mountain ring at 2500 m (DEC: mountains stay). */
+const DENSE_OUTER_M = 2350;
+
+/**
+ * THE DENSE CITY: every lot of a `pitch` grid between DENSE_INNER_M and
+ * DENSE_OUTER_M, ordered by radius, as two InstancedMeshes (concrete with a
+ * per-building colour, and glass towers). `setCount(n)` shows the nearest n
+ * lots, so a count fills a growing disc. Two draws per pass whatever the
+ * count.
+ *
+ * THE BOUNDS ARE MEASURED ONCE, AT THE FULL ALLOCATION, and never again: an
+ * InstancedMesh computes its bounding sphere over `count` instances the first
+ * time it is culled and then keeps it, so a sphere measured at a small count
+ * would cull the whole fill in any view that misses the centre (W1 plan §4).
+ */
+export function denseCity(pitch = DENSE_PITCHES[0]) {
+  const lots = [];
+  const cells = Math.ceil(DENSE_OUTER_M / pitch);
+  for (let i = -cells; i <= cells; i++) {
+    for (let j = -cells; j <= cells; j++) {
+      const x = i * pitch;
+      const z = j * pitch;
+      const r = Math.hypot(x, z);
+      if (r < DENSE_INNER_M || r > DENSE_OUTER_M) continue;
+      lots.push({ x, z, r, seed: (i + 1000) * 7919 + (j + 1000) });
+    }
+  }
+  lots.sort((a, b) => a.r - b.r || a.x - b.x || a.z - b.z);
+  const concrete = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    roughness: 0.78,
+  });
+  const glass = new THREE.MeshStandardMaterial({
+    color: 0x8fa4b8,
+    metalness: 0.9,
+    roughness: 0.12,
+  });
+  const palette = [0xb9b3a8, 0xa9aeb3, 0xc4b59e, 0x9c9a95].map(
+    (c) => new THREE.Color(c),
+  );
+  const box = new THREE.BoxGeometry(1, 1, 1);
+  box.translate(0, 0.5, 0);
+  const isTower = (lot) => hash(lot.seed + 1) > 0.88;
+  const towers = lots.filter(isTower);
+  const blocks = lots.filter((lot) => !isTower(lot));
+  const concreteMesh = new THREE.InstancedMesh(box, concrete, blocks.length);
+  const glassMesh = new THREE.InstancedMesh(
+    box,
+    glass,
+    Math.max(1, towers.length),
+  );
+  concreteMesh.name = "dense-concrete";
+  glassMesh.name = "dense-glass";
+  const matrix = new THREE.Matrix4();
+  const place = (lot, tower) => {
+    const height = (8 + 52 * hash(lot.seed) ** 2) * (tower ? 1.6 : 1);
+    const footprint = pitch * 0.45;
+    matrix.makeScale(
+      footprint + pitch * 0.25 * hash(lot.seed + 3),
+      height,
+      footprint + pitch * 0.25 * hash(lot.seed + 4),
+    );
+    matrix.setPosition(lot.x, 0, lot.z);
+    return matrix;
+  };
+  blocks.forEach((lot, k) => {
+    concreteMesh.setMatrixAt(k, place(lot, false));
+    concreteMesh.setColorAt(
+      k,
+      palette[Math.floor(hash(lot.seed + 2) * palette.length)],
+    );
+  });
+  towers.forEach((lot, k) => glassMesh.setMatrixAt(k, place(lot, true)));
+  // Bounds at the full allocation, before any count is set (see above).
+  concreteMesh.computeBoundingSphere();
+  concreteMesh.computeBoundingBox();
+  glassMesh.computeBoundingSphere();
+  glassMesh.computeBoundingBox();
+  // The prefix of each kind that falls within the nearest n lots.
+  const blocksBefore = [];
+  const towersBefore = [];
+  let b = 0;
+  let t = 0;
+  for (const lot of lots) {
+    blocksBefore.push(b);
+    towersBefore.push(t);
+    if (isTower(lot)) t++;
+    else b++;
+  }
+  blocksBefore.push(b);
+  towersBefore.push(t);
+  const group = new THREE.Group();
+  group.name = "dense";
+  group.add(concreteMesh, glassMesh);
+  const setCount = (n) => {
+    const count = Math.max(0, Math.min(lots.length, Math.floor(n)));
+    concreteMesh.count = blocksBefore[count];
+    glassMesh.count = towersBefore[count];
+    group.visible = count > 0;
+    group.userData.count = count;
+  };
+  const last = lots[lots.length - 1];
+  group.userData = {
+    pitch,
+    max: lots.length,
+    count: 0,
+    farthest: last ? [last.x, last.z] : [0, 0],
+    setCount,
+  };
+  setCount(0);
+  return group;
+}
+
 function ridges() {
   const group = new THREE.Group();
   group.name = "ridges";
@@ -246,6 +367,7 @@ export function buildStandInScene(scene) {
     ground: ground(),
     streets: streets(),
     city: cityBlock(),
+    dense: denseCity(),
     ridges: ridges(),
     swatches: swatches(),
     lake: lake(),
