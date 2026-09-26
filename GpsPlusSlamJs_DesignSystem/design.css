@@ -531,11 +531,19 @@
     /* no outline: the translucent dark surface + rounded clip IS the
        box; the soft shadow alone separates it from the camera */
     overflow: hidden;
-    /* two paint layers: the surface fills the padding box, the edge
-       gradient paints only the transparent 1px border ring */
+    /* three paint layers: the accent strip flush with the right edge
+       (the signature), the surface filling the padding box, and the
+       edge gradient painting only the transparent 1px border ring. The
+       strip is a BACKGROUND layer, not an absolutely positioned ::after:
+       a background stays put while a scrolling plate's content moves,
+       where the ::after was one box high and scrolled away with it
+       (programme plan 2026-09-26-0539, W1 M1). The overflow:hidden
+       crops it to the rounded corners. */
     border: 1px solid transparent;
     background:
-      var(--surface-gradient) padding-box,
+      linear-gradient(var(--accent-signature) 0 0) right / var(--strip) 100%
+        no-repeat padding-box,
+      var(--plate-surface, var(--surface-gradient)) padding-box,
       var(--edge-gradient) border-box;
     border-radius: var(--radius);
     box-shadow: var(--raise);
@@ -543,18 +551,6 @@
     padding: var(--space-2) calc(var(--space-3) + var(--strip) + var(--space-1))
       var(--space-2) var(--space-3);
   }
-  /* the signature: a full-height accent strip flush with the right
-     edge; the plate's overflow:hidden crops it to the rounded corners */
-  .plate::after {
-    content: "";
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    right: 0;
-    width: var(--strip);
-    background: var(--accent-signature);
-  }
-
   /* --- button --- */
   .btn {
     background: var(--surface-gradient);
@@ -910,8 +906,10 @@
     /* arrives by settling onto its own shadow */
     animation: modal-settle var(--t-enter) var(--ease-out);
     /* stronger than --surface-gradient on purpose (owner feedback):
-       a modal is read, not glanced past, so it gives up translucency */
-    background: var(--surface-read-gradient);
+       a modal is read, not glanced past, so it gives up translucency.
+       Set as the plate's surface layer, so the plate's strip and edge
+       ring stay (replacing the whole background dropped them). */
+    --plate-surface: var(--surface-read-gradient);
     /* stylelint-disable-next-line csstree/validator -- csstree does not know min() */
     width: min(320px, 100%);
     display: flex;

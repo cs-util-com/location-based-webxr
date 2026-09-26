@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fixture: a scrolling plate</title>
+    <link rel="stylesheet" href="../../design.css" />
+    <style>
+      /*
+       * A test fixture for the plate's accent strip (programme plan
+       * 2026-09-26-0539, W1 M1), not a page to look at. A scrolling plate
+       * must keep its strip over the whole visible height at any scroll
+       * position. `.legacy` reproduces the OLD rule (an absolutely
+       * positioned ::after, one box high, which scrolls away), so the spec
+       * can show its probe sees the bug.
+       */
+      body {
+        margin: 0;
+        padding: 16px;
+        display: flex;
+        gap: 24px;
+        align-items: flex-start;
+        background: #20242c;
+      }
+      .fixture {
+        width: 220px;
+        overflow: auto;
+      }
+      .filler {
+        flex: none;
+        height: 1400px;
+      }
+      .legacy {
+        background:
+          var(--surface-gradient) padding-box,
+          var(--edge-gradient) border-box;
+      }
+      .legacy::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        right: 0;
+        width: var(--strip);
+        background: var(--accent-signature);
+      }
+    </style>
+  </head>
+  <body>
+    <section id="plate" class="plate fixture" style="max-height: 300px">
+      <div class="filler">Plate content</div>
+    </section>
+    <section id="legacy" class="plate legacy fixture" style="max-height: 300px">
+      <div class="filler">Legacy content</div>
+    </section>
+    <section id="static" class="plate" style="width: 220px">
+      <p>A plate that does not scroll.</p>
+    </section>
+  </body>
+</html>
