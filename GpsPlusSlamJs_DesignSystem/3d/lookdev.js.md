@@ -29,7 +29,10 @@
     `casterFlags()` (whether every mesh of each part casts, and whether the
     swatches receive: W3 M1 made every stand-in object cast, since the owner
     saw the spheres cast nothing), `shadowProbe().family` (the lee of the
-    Lambert box, a caster standing on the ground), `setFloatingVisible(bool)` (the floating pond, basin and swatches on or
+    Lambert box, a caster standing on the ground), `setWater(id)` (the pond's wave set, W6: `"C0"` for today's six
+    waves or a candidate id from `water-candidates.js`; a new WaterSurface
+    per set, hazed, keeping the wave clock) and `waterCandidates()` (the ids,
+    today's first); `setFloatingVisible(bool)` (the floating pond, basin and swatches on or
     off: from the city view they stand against the sky, so the sky-pixel tests
     hide them), `floating()` (where the
     pond and the swatches float, W1 M4) and `lakeSurfacePoints(n)` (points
@@ -71,7 +74,7 @@ farthest, casts, receives }`) and `drawCalls()` (renders one frame and
     preset: both exposures and both exposure-free horizon colours. The
     fallback's only GPU oracle.
 - Invariants & assumptions:
-  - State lives in the URL hash (`#preset=…&tone=…&tier=…&cloudMode=…&slabSteps=…&shadows=0|1&city=…&pitch=42|31|20`), so a
+  - State lives in the URL hash (`#preset=…&tone=…&tier=…&cloudMode=…&slabSteps=…&shadows=0|1&city=…&pitch=42|31|20&water=C0|C1|P50|P30|D30`), so a
     screenshot or phone link reproduces a view; a hash change on an open
     page re-applies it (the page's own writes use `replaceState`, which
     fires no `hashchange`).

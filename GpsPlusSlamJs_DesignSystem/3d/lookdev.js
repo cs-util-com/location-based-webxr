@@ -30,6 +30,7 @@ import { AtmosphereHaze } from "/fw/visualization/atmosphere/atmosphere-haze.js"
 import { fallbackSky } from "/fw/visualization/atmosphere/atmosphere-fallback.js";
 import { SkyAtmosphere } from "/fw/visualization/atmosphere/sky-atmosphere.js";
 import { WaterSurface } from "/fw/visualization/atmosphere/water-surface-material.js";
+import { WATER_CANDIDATES } from "./water-candidates.js";
 import { sunDirection } from "/osm/sun-position.js";
 import {
   createSunShadow,
@@ -123,7 +124,7 @@ scene.add(sun, sun.target);
 const parts = buildStandInScene(scene);
 // The lightweight water (M4) replaces the lake's placeholder; applied BEFORE
 // the haze below, so the haze chains after the water's patch.
-const water = new WaterSurface();
+let water = new WaterSurface();
 parts.lake.material.dispose();
 parts.lake.material = water.material;
 // The haze patches the world's materials ONCE; it owns its uniforms, so an
@@ -155,7 +156,14 @@ const state = {
   // `count` lots of a `pitch` grid; 0 is the block alone.
   city: 0,
   pitch: DENSE_PITCHES[0],
+  // The pond's wave set (W6): "C0" is today's six built-in waves, the others
+  // are the candidates the owner rates (water-candidates.js).
+  water: "C0",
 };
+
+const WATER_IDS = ["C0", ...WATER_CANDIDATES.map((c) => c.id)];
+/** The wave set the pond's current material was built with. */
+let waterId = "C0";
 
 /**
  * The shadow parameters. R 220 m covers the whole stand-in city (7 × 42 m
@@ -202,6 +210,9 @@ function readHash() {
   const steps = Number(params.get("slabSteps"));
   if (SLAB_STEPS.includes(steps)) state.slabSteps = steps;
   state.shadows = params.get("shadows") === "1";
+  if (WATER_IDS.includes(params.get("water"))) {
+    state.water = params.get("water");
+  }
   const pitch = Number(params.get("pitch"));
   if (DENSE_PITCHES.includes(pitch)) state.pitch = pitch;
   const city = Number(params.get("city"));
@@ -218,6 +229,7 @@ function writeHash() {
     shadows: state.shadows ? "1" : "0",
     city: String(state.city),
     pitch: String(state.pitch),
+    water: state.water,
   });
   history.replaceState(null, "", `#${params}`);
 }
@@ -430,8 +442,28 @@ function applyCity() {
   parts.dense.userData.setCount(state.city);
 }
 
+/**
+ * The pond's wave set to the state: a new WaterSurface with the candidate's
+ * slope (each gets its own program), hazed like the old one, keeping the
+ * wave clock so the pond does not jump.
+ */
+function applyWater() {
+  if (state.water === waterId) return;
+  const candidate = WATER_CANDIDATES.find((c) => c.id === state.water);
+  const next = new WaterSurface(
+    candidate ? { slopeGlsl: candidate.slopeGlsl } : {},
+  );
+  next.update(water.uniforms.uWaterTime.value);
+  haze.apply(next.material);
+  parts.lake.material = next.material;
+  water.dispose();
+  water = next;
+  waterId = state.water;
+}
+
 function applyLook() {
   applyCity();
+  applyWater();
   useAtmosphere();
   applyTier();
   camera.updateProjectionMatrix();
@@ -513,6 +545,7 @@ function syncControls() {
   $("#tier").value = state.tier;
   $("#cloud-mode").value = state.cloudMode;
   $("#slab-steps").value = String(state.slabSteps);
+  $("#water-set").value = state.water;
   const cityValue = `${state.city}@${state.pitch}`;
   const citySelect = $("#city-fill");
   if ([...citySelect.options].some((o) => o.value === cityValue)) {
@@ -562,6 +595,9 @@ function buildControls() {
   );
   $("#camera-view").addEventListener("change", (e) =>
     api.setView(e.target.value),
+  );
+  $("#water-set").addEventListener("change", (e) =>
+    api.setWater(e.target.value),
   );
   $("#city-fill").addEventListener("change", (e) => {
     const [count, pitch] = e.target.value.split("@").map(Number);
@@ -798,6 +834,18 @@ Object.assign(api, {
       out.push([p.x + u * POND.rx, p.y, p.z + v * 0.8 * POND.rz]);
     }
     return out;
+  },
+  /** The pond's wave set: "C0" (today's) or a candidate id (W6). */
+  setWater(id) {
+    if (!WATER_IDS.includes(id)) {
+      throw new Error(`unknown water set ${id}; one of ${WATER_IDS}`);
+    }
+    state.water = id;
+    applyLook();
+  },
+  /** Test surface: the wave-set ids, today's first. */
+  waterCandidates() {
+    return [...WATER_IDS];
   },
   /** Test surface: the dense city as it stands. */
   cityInfo() {

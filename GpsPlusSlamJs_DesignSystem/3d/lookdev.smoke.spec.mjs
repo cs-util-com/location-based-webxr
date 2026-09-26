@@ -1913,3 +1913,44 @@ test("the pond and the swatches float above the city, clear of the shadow probes
   expect(result.hits).toEqual([]);
   expect(errors).toEqual([]);
 });
+
+// WHY (owner feedback 2026-09-26, W6 plan §5): the owner rates the water
+// candidates on the pond. Each must compile (a shader error only logs, and
+// the material silently stops drawing), each must actually change the
+// waves (a candidate that fell back to today's six would read as "no
+// difference"), the choice must survive in the address for a phone link,
+// and the swapped surface must keep moving.
+test("the water candidates compile, change the pond, and travel in the address", async ({
+  page,
+}) => {
+  const errors = await boot(page, "preset=noon&tone=neutral&city=0");
+  const read = (id) =>
+    page.evaluate((candidate) => {
+      const d = window.__lookdev;
+      d.setCloudCover(0);
+      d.setWater(candidate);
+      d.setView("lake");
+      const points = d.lakeSurfacePoints(12).map((p) => d.project(p));
+      const before = d.readPixels(points);
+      d.advanceWater(2.3);
+      return { before, after: d.readPixels(points) };
+    }, id);
+  const today = await read("C0");
+  const ids = await page.evaluate(() => window.__lookdev.waterCandidates());
+  expect(ids).toEqual(["C0", "C1", "P50", "P30", "D30"]);
+  for (const id of ids.slice(1)) {
+    const candidate = await read(id);
+    const differs = candidate.before.filter(
+      (px, k) => Math.abs(sum(px) - sum(today.before[k])) > 6,
+    ).length;
+    const moved = candidate.before.filter(
+      (px, k) => Math.abs(sum(px) - sum(candidate.after[k])) > 6,
+    ).length;
+    console.log(`water ${id}: ${differs}/12 differ from C0, ${moved}/12 move`);
+    expect(differs, `${id} changes the pond`).toBeGreaterThanOrEqual(4);
+    expect(moved, `${id} keeps moving`).toBeGreaterThanOrEqual(4);
+  }
+  await page.evaluate(() => window.__lookdev.setWater("P30"));
+  expect(await page.evaluate(() => location.hash)).toContain("water=P30");
+  expect(errors).toEqual([]);
+});
