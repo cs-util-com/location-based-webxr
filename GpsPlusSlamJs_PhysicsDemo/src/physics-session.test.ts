@@ -47,6 +47,18 @@ describe("createPhysicsSession", () => {
     physics.dispose();
   });
 
+  // The thrown balls are the AR shadows' casters (W4 plan §11); three draws
+  // no shadow for a mesh whose castShadow is false, whatever the light does.
+  it("spawns balls that cast shadows", () => {
+    const physics = createPhysicsWorld();
+    const parent = new THREE.Group();
+    const session = createPhysicsSession(physics, parent);
+    session.spawnBallAt({ x: 0, y: 1, z: 0 });
+    expect(parent.children[0]!.castShadow).toBe(true);
+    session.dispose();
+    physics.dispose();
+  });
+
   it("auto-despawns a ball after maxAgeSteps steps", () => {
     const physics = createPhysicsWorld();
     const parent = new THREE.Group();

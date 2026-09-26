@@ -44,7 +44,7 @@ function fakeEl(value = ""): {
   };
 }
 
-function harness() {
+function harness(options: { shadows?: boolean } = {}) {
   const canvas = fakeEl();
   const meshStyleSelect = fakeEl("smooth");
   const meshShaderSelect = fakeEl("depth-shaded-wireframe");
@@ -67,6 +67,7 @@ function harness() {
     meshShaderSelect,
     statsEl,
     onFrame: vi.fn(),
+    shadows: options.shadows ?? true,
   } as unknown as ReplayPhysicsControls;
 
   const scheduled: Array<(t: number) => void> = [];
@@ -79,8 +80,10 @@ function harness() {
     cancel: vi.fn(),
   };
 
+  const occluder = { name: "the current occluder" };
   const occupancyView = {
     getMesh: vi.fn(),
+    getOcclusionMesh: vi.fn(() => occluder),
     setMeshMode: vi.fn(),
     setDebugStyle: vi.fn(),
     dispose: vi.fn(),
@@ -93,9 +96,11 @@ function harness() {
     colliderShapeCount: () => 0,
     dispose: vi.fn(),
   };
+  const shadows = { update: vi.fn(), isActive: () => true, dispose: vi.fn() };
   const factories = {
     createOccupancyView: vi.fn(() => occupancyView),
     createPhysicsRuntime: vi.fn(() => runtime),
+    startDemoShadows: vi.fn(() => shadows),
   } as unknown as ReplayPhysicsFactories;
 
   return {
@@ -105,7 +110,10 @@ function harness() {
     factories,
     scheduled,
     occupancyView,
+    occluder,
     runtime,
+    shadows,
+    sceneHandles,
     canvas,
     meshStyleSelect,
     meshShaderSelect,
@@ -173,6 +181,52 @@ describe("startReplayPhysics", () => {
     // Idempotent: a second dispose must not double-free.
     dispose();
     expect(h.runtime.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  // W4 AR shadows M3 (plan 2026-09-26-0549 §11): the replay scene gets the
+  // same shadows as live AR, on its own renderer, fed the CURRENT occluder
+  // and the ball count, updated after each physics step so a ball's shadow
+  // is where the ball is.
+  it("starts the AR shadows on the replay scene and updates them after each step", () => {
+    const h = harness();
+    const dispose = startReplayPhysics(
+      h.session,
+      h.controls,
+      h.scheduler,
+      h.factories,
+    );
+    const start = vi.mocked(h.factories.startDemoShadows);
+    expect(start).toHaveBeenCalledTimes(1);
+    const deps = start.mock.calls[0]![0];
+    expect(deps.renderer).toBe(h.sceneHandles.renderer);
+    expect(deps.scene).toBe(h.sceneHandles.scene);
+    expect(deps.arWorldGroup).toBe(h.sceneHandles.arWorldGroup);
+    expect(deps.getCamera()).toBe(h.sceneHandles.camera);
+    expect(deps.getOccluder()).toBe(h.occluder);
+    expect(deps.ballCount()).toBe(0);
+
+    h.scheduled[0]!(16);
+    expect(h.shadows.update).toHaveBeenCalledTimes(1);
+    expect(h.runtime.step.mock.invocationCallOrder[0]!).toBeLessThan(
+      h.shadows.update.mock.invocationCallOrder[0]!,
+    );
+
+    dispose();
+    expect(h.shadows.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it("starts no shadows when the page switched them off (?shadows=0)", () => {
+    const h = harness({ shadows: false });
+    const dispose = startReplayPhysics(
+      h.session,
+      h.controls,
+      h.scheduler,
+      h.factories,
+    );
+    expect(h.factories.startDemoShadows).not.toHaveBeenCalled();
+    h.scheduled[0]!(16);
+    expect(h.shadows.update).not.toHaveBeenCalled();
+    dispose();
   });
 
   it("click-to-shoot fires a ball from the camera along the pointer ray", () => {

@@ -35,6 +35,15 @@ onCaptured → dispatch recordDepthSample } })`.
   clipped through the mesh and the ball should go where you look, not sit on a
   surface).
 - The mesh-view controller (Cubes/Detailed) is shared with the replay path.
+- **AR shadows** (W4 AR shadows plan 2026-09-26-0549 §11): unless
+  `deps.shadows` is false (`?shadows=0`), `startDemoShadows`
+  (`ar-shadows-wiring.ts`) runs on the session's renderer and scene, fed
+  the view's CURRENT occluder (`getOcclusionMesh`) and the ball count. It
+  updates in the XR frame callback right after `runtime.step`, so the map
+  renders in the same frame as the balls move (no lag), and is disposed with
+  the session. The stats line adds `· shadows on` while they are drawn.
+  The session already renders when this starts, so the lit materials
+  recompile once (accepted, plan §8 item 6).
 
 ## Invariants & assumptions
 

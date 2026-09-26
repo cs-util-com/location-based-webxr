@@ -27,6 +27,9 @@ debugStyle='depth-shaded-wireframe' }`. The voxel size + noise floor come from t
   - `setMeshMode(mode)` — `MeshMode` (`'smooth'` Surface nets / `'greedy'` Cubes /
     `'corner-fit'`). Since the mode is an `OcclusionMesh` CONSTRUCTION option, this
     **recreates** the occluder and re-meshes from the persisted grid.
+  - `getOcclusionMesh(): OcclusionMesh` — the CURRENT occluder itself, for the
+    AR shadows, which give it their receiver every frame (a new one after
+    `setMeshMode`).
   - `setDebugStyle(style)` — live `OccluderDebugStyle` skin switch.
   - `dispose()`.
 

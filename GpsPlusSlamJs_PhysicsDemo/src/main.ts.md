@@ -28,6 +28,9 @@ lives in the tested `mode-detection` / `replay-launch` modules; this file is glu
   on an explicit horizontal drag or a short tap; swiping past the panel scrolls
   the page (paired with `touch-action: pan-y` in `index.html`, pinned by
   `slider-touch-gesture.test.ts`).
+- `?shadows=0` (or `off` / `false`) switches the AR shadows off in both
+  modes (`shadowsEnabledFromSearch`); they are on otherwise (W4 AR shadows
+  plan 2026-09-26-0549 §11), so the phone field test can compare the cost.
 - Once Rapier's WASM is ready (loaded lazily on first replay) it calls
   `startReplayPhysics` (`replay-physics.ts`), which owns the occupancy view (occlusion
   AND collider), the shared physics runtime, the rAF step loop, the mesh/shader

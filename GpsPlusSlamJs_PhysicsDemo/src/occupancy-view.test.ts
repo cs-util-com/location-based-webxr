@@ -193,6 +193,20 @@ describe("createOccupancyView", () => {
     vi.useRealTimers();
   });
 
+  // The AR shadows give the receiver to whichever occluder is current each
+  // frame (W4 plan §11); a stale handle would leave the new mesh without it.
+  it("getOcclusionMesh follows the occluder setMeshMode recreates", () => {
+    const view = createOccupancyView(new THREE.Group(), makeFakeStore());
+    const first = view.getOcclusionMesh();
+    expect(first).toBeInstanceOf(OcclusionMesh);
+    expect(first.getMesh()).toBe(view.getMesh());
+    view.setMeshMode("greedy");
+    const second = view.getOcclusionMesh();
+    expect(second).not.toBe(first);
+    expect(second.getMesh()).toBe(view.getMesh());
+    view.dispose();
+  });
+
   it("detaches the subscription on dispose", () => {
     const addSample = vi.spyOn(OccupancyGrid.prototype, "addSample");
     const store = makeFakeStore();

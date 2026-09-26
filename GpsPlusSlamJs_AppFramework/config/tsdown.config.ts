@@ -326,6 +326,9 @@ const entryFiles = [
   'src/visualization/atmosphere/atmosphere-haze.ts',
   'src/visualization/atmosphere/sky-atmosphere.ts',
   'src/visualization/alignment-lerper.ts',
+  // AR shadows on the room mesh (plan 2026-09-26-0549), deep-imported by the
+  // PhysicsDemo via `./visualization/*`.
+  'src/visualization/ar-shadows.ts',
   'src/visualization/ar-world-group-alignment.ts',
   'src/visualization/camera-follower.ts',
   'src/visualization/css3d-renderer-manager.ts',

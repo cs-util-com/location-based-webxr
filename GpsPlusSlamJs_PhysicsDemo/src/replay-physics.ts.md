@@ -23,7 +23,14 @@ statsEl, onFrame }`. The two dropdowns drive mesh-mode / shader; `onFrame`
 createPhysicsRuntime }` (defaults to the real ones); the seam that keeps the
     test headless (no WebGL/Rapier).
   - **Returns** an **idempotent disposer**: stops the rAF loop, removes the
-    pointer + dropdown listeners, and disposes the runtime + occupancy view.
+    pointer + dropdown listeners, and disposes the shadows, the runtime and the
+    occupancy view.
+  - **AR shadows** (`controls.shadows`, default on; W4 plan 2026-09-26-0549
+    §11): `factories.startDemoShadows` runs on the replay scene's renderer,
+    fed the CURRENT occluder and the ball count, and updates after each
+    physics step. The replay renderer's own rAF draws a frame later, so on the
+    desktop a flying ball's shadow can trail it by one frame; in AR it cannot.
+    The stats line adds `· shadows on` while they are drawn.
 
 ## Invariants & assumptions
 

@@ -18,6 +18,8 @@ import {
   endARSession,
   getArWorldGroup,
   getCamera,
+  getRenderer,
+  getScene,
   startDepthCapture,
   stopDepthCapture,
 } from "gps-plus-slam-app-framework/ar/webxr-session";
@@ -31,6 +33,11 @@ import { NullStorageBackend } from "gps-plus-slam-app-framework/storage/null-sto
 import { recordDepthSample } from "gps-plus-slam-app-framework/state/recording-slice";
 import { createOccupancyView } from "./occupancy-view";
 import { createPhysicsRuntime } from "./physics-runtime";
+import {
+  shadowsLabel,
+  startDemoShadows,
+  type DemoShadows,
+} from "./ar-shadows-wiring";
 import { shootBallFromCamera } from "./shoot-ball";
 import type { OccluderDebugStyle } from "gps-plus-slam-app-framework/visualization/occlusion-mesh";
 import type { MeshMode } from "gps-plus-slam-app-framework/ar/occupancy-mesher";
@@ -48,6 +55,8 @@ export interface ArModeDeps {
   readonly onStarted?: () => void;
   /** Called once per XR frame (drives the always-on perf panel). */
   readonly onFrame?: () => void;
+  /** AR shadows from the thrown balls (off with `?shadows=0`). Default on. */
+  readonly shadows?: boolean;
 }
 
 /**
@@ -109,11 +118,28 @@ export async function startArMode(deps: ArModeDeps): Promise<() => void> {
   );
 
   // Shared physics runtime — its trimesh collider follows the same occluder.
+  let shadows: DemoShadows | null = null;
   const runtime = createPhysicsRuntime(arWorldGroup, occupancy, {
     onStats: (balls, tris) => {
-      deps.statsEl.textContent = `balls ${balls} · collider ${tris} tris`;
+      deps.statsEl.textContent = `balls ${balls} · collider ${tris} tris${shadowsLabel(shadows)}`;
     },
   });
+
+  // The thrown balls cast onto the reconstructed room (W4 plan §11). The
+  // session already renders, so turning the shadow map on recompiles the lit
+  // materials once (accepted, plan §8 item 6).
+  const renderer = getRenderer();
+  const scene = getScene();
+  if ((deps.shadows ?? true) && renderer && scene) {
+    shadows = startDemoShadows({
+      renderer,
+      scene,
+      arWorldGroup,
+      getOccluder: () => occupancy.getOcclusionMesh(),
+      ballCount: () => runtime.ballCount(),
+      getCamera,
+    });
+  }
 
   // Tap-to-shoot: a ball leaves the camera along its forward direction and flies
   // into the reconstructed room. No reticle — the ball goes where you look.
@@ -131,6 +157,7 @@ export async function startArMode(deps: ArModeDeps): Promise<() => void> {
   const unregisterFrame = registerXrFrameUpdate(({ session }) => {
     // Step physics every XR frame (the throttle uses wall-clock ms).
     runtime.step(performance.now());
+    shadows?.update(); // before this frame's render: no shadow lag in AR
     deps.onFrame?.(); // advance the always-on perf panel
     if (!selectWired) {
       selectWired = true;
@@ -143,6 +170,7 @@ export async function startArMode(deps: ArModeDeps): Promise<() => void> {
   return () => {
     unregisterFrame();
     stopDepthCapture();
+    shadows?.dispose();
     occupancy.dispose();
     runtime.dispose();
     void endARSession();

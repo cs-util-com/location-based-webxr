@@ -16,6 +16,7 @@ import { detectArSupport, applyModeEntry } from "./mode-detection";
 import { loadAndStartReplay, type ReplayLaunchSink } from "./replay-launch";
 import { initRapier } from "./physics-world";
 import { startArMode } from "./ar-mode";
+import { shadowsEnabledFromSearch } from "./ar-shadows-wiring";
 import { createPerfStatsOverlay } from "gps-plus-slam-app-framework/visualization/perf-stats-overlay";
 import { guardSliderAgainstScroll } from "gps-plus-slam-app-framework/utils/slider-scroll-guard";
 import { startReplayPhysics } from "./replay-physics";
@@ -45,6 +46,8 @@ function main(): void {
   const meshStyleSelect = requireEl<HTMLSelectElement>("mesh-style");
   const meshShaderSelect = requireEl<HTMLSelectElement>("mesh-shader");
   const statsEl = requireEl("stats");
+  // AR shadows from the thrown balls, on unless `?shadows=0` (W4 plan §11).
+  const shadows = shadowsEnabledFromSearch(window.location.search);
   const replayControls = requireEl("replay-controls");
 
   // Always-on FPS / memory panel (user feedback #4): mounted into the dom-overlay
@@ -75,6 +78,7 @@ function main(): void {
           statsEl,
           meshStyleSelect,
           meshShaderSelect,
+          shadows,
           onFrame: () => perfStats.update(),
           onError: (message) => {
             startArButton.disabled = false;
@@ -135,6 +139,7 @@ function main(): void {
           meshShaderSelect,
           statsEl,
           onFrame: () => perfStats.update(),
+          shadows,
         });
       });
 

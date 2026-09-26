@@ -33,6 +33,9 @@ headless-testable (real Rapier + real THREE objects, no WebGL/rAF).
   deterministic and testable; `step` prunes balls older than `maxAgeSteps`.
 - Shared unit-sphere geometry + one material across balls (each mesh scaled to its
   radius); freed on `dispose`.
+- **Every ball casts a shadow** (`castShadow = true`): the balls are the AR
+  shadows' casters (W4 plan 2026-09-26-0549 §11). Without a casting light and
+  an enabled shadow map this costs nothing.
 - `initRapier()` must have resolved before the `physics` world was created.
 
 ## Tests

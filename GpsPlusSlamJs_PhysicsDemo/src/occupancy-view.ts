@@ -47,6 +47,8 @@ export interface OccupancyViewOptions {
 export interface OccupancyView {
   /** The current occluder `THREE.Mesh` (its trimesh feeds the physics collider). */
   getMesh(): Mesh;
+  /** The current occluder itself (the AR shadows give it their receiver). */
+  getOcclusionMesh(): OcclusionMesh;
   /** Recreate the occluder with a new mesher mode and re-mesh from the grid. */
   setMeshMode(mode: MeshMode): void;
   /** Change the visible debug skin (live). */
@@ -96,6 +98,7 @@ export function createOccupancyView(
 
   return {
     getMesh: () => occluder.getMesh(),
+    getOcclusionMesh: () => occluder,
     setMeshMode(mode: MeshMode): void {
       if (mode === meshMode) return;
       meshMode = mode;

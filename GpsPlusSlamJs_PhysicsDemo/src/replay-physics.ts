@@ -21,6 +21,11 @@ import { pointerToNdc } from "gps-plus-slam-app-framework/visualization/pointer-
 import type { OccluderDebugStyle } from "gps-plus-slam-app-framework/visualization/occlusion-mesh";
 import type { MeshMode } from "gps-plus-slam-app-framework/ar/occupancy-mesher";
 import type { ReplaySessionController } from "gps-plus-slam-app-framework/state/replay-session";
+import {
+  shadowsLabel,
+  startDemoShadows,
+  type DemoShadows,
+} from "./ar-shadows-wiring";
 import { createOccupancyView } from "./occupancy-view";
 import { createPhysicsRuntime } from "./physics-runtime";
 import { shootBallFromCamera } from "./shoot-ball";
@@ -35,6 +40,8 @@ export interface ReplayPhysicsControls {
   readonly statsEl: HTMLElement;
   /** Advance the always-on perf panel once per frame. */
   readonly onFrame: () => void;
+  /** AR shadows from the thrown balls (off with `?shadows=0`). Default on. */
+  readonly shadows?: boolean;
 }
 
 /** Injectable rAF scheduler so the step loop is unit-testable without a browser. */
@@ -47,6 +54,7 @@ export interface FrameScheduler {
 export interface ReplayPhysicsFactories {
   readonly createOccupancyView: typeof createOccupancyView;
   readonly createPhysicsRuntime: typeof createPhysicsRuntime;
+  readonly startDemoShadows: typeof startDemoShadows;
 }
 
 /**
@@ -63,6 +71,7 @@ const defaultScheduler: FrameScheduler = {
 const defaultFactories: ReplayPhysicsFactories = {
   createOccupancyView,
   createPhysicsRuntime,
+  startDemoShadows,
 };
 
 /**
@@ -100,15 +109,29 @@ export function startReplayPhysics(
   controls.meshStyleSelect.addEventListener("change", onMeshStyleChange);
   controls.meshShaderSelect.addEventListener("change", onMeshShaderChange);
 
+  let shadows: DemoShadows | null = null;
   const runtime = factories.createPhysicsRuntime(
     scene.arWorldGroup,
     occupancyView,
     {
       onStats: (balls, tris) => {
-        controls.statsEl.textContent = `balls ${balls} · collider ${tris} tris`;
+        controls.statsEl.textContent = `balls ${balls} · collider ${tris} tris${shadowsLabel(shadows)}`;
       },
     },
   );
+  // The replay renderer's own loop draws a frame later than this tick, so a
+  // flying ball's shadow can trail it by one frame on the desktop (AR has no
+  // such lag: there the update runs before the render).
+  if (controls.shadows ?? true) {
+    shadows = factories.startDemoShadows({
+      renderer: scene.renderer,
+      scene: scene.scene,
+      arWorldGroup: scene.arWorldGroup,
+      getOccluder: () => occupancyView.getOcclusionMesh(),
+      ballCount: () => runtime.ballCount(),
+      getCamera: () => scene.camera,
+    });
+  }
 
   // Desktop replay is driven by window rAF. `active` guards the straggler frame
   // that can still fire after the pending handle is cancelled.
@@ -117,6 +140,7 @@ export function startReplayPhysics(
   const tick = (t: number): void => {
     if (!active) return;
     runtime.step(t);
+    shadows?.update();
     controls.onFrame();
     frameHandle = scheduler.request(tick);
   };
@@ -173,6 +197,7 @@ export function startReplayPhysics(
     canvas.removeEventListener("pointerup", onPointerUp);
     controls.meshStyleSelect.removeEventListener("change", onMeshStyleChange);
     controls.meshShaderSelect.removeEventListener("change", onMeshShaderChange);
+    shadows?.dispose();
     runtime.dispose();
     occupancyView.dispose();
   };
