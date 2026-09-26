@@ -15,22 +15,36 @@ in `main.ts`).
   - `session: ReplaySessionController` — the live replay (reads `getScene()` +
     `getStore()`).
   - `controls: ReplayPhysicsControls` — `{ meshStyleSelect, meshShaderSelect,
-statsEl, onFrame }`. The two dropdowns drive mesh-mode / shader; `onFrame`
-    advances the perf panel each frame; `statsEl` shows `balls N · collider N tris`.
+statsEl, onFrame, shadows?, shadowToggle?, shadowProbe? }`. The two
+    dropdowns drive mesh-mode / shader; `onFrame` advances the perf panel each
+    frame; `statsEl` shows `statsText` (`ball-status.ts`): "balls N (k
+    resting, j fell through) · collider N tris · shadows on|off|unavailable".
   - `scheduler: FrameScheduler` — injectable `{ request, cancel }` around rAF
     (defaults to `requestAnimationFrame`/`cancelAnimationFrame`).
   - `factories: ReplayPhysicsFactories` — injectable `{ createOccupancyView,
 createPhysicsRuntime }` (defaults to the real ones); the seam that keeps the
     test headless (no WebGL/Rapier).
   - **Returns** an **idempotent disposer**: stops the rAF loop, removes the
-    pointer + dropdown listeners, and disposes the shadows, the runtime and the
-    occupancy view.
-  - **AR shadows** (`controls.shadows`, default on; W4 plan 2026-09-26-0549
-    §11): `factories.startDemoShadows` runs on the replay scene's renderer,
+    pointer + dropdown listeners, releases the Shadows switch, removes the
+    shadow probe, and disposes the shadows, the runtime and the occupancy
+    view.
+  - **The viewer** is the recorded phone pose (`scene.arpose`), or the
+    probe's standing view once it has one: the shadow square follows it and
+    the status line measures "fell through" from it. Never the orbit camera,
+    which hangs 5-200 m above the room (the square would miss the floor and
+    every resting ball read "fell through"; M1 review).
+  - **AR shadows** (W4 plan 2026-09-26-0549 §11; round-2 plan 2026-09-26-2055
+    M1): `factories.startDemoShadows` runs on the replay scene's renderer,
     fed the CURRENT occluder and the ball count, and updates after each
-    physics step. The replay renderer's own rAF draws a frame later, so on the
-    desktop a flying ball's shadow can trail it by one frame; in AR it cannot.
-    The stats line adds `· shadows on` while they are drawn.
+    physics step. It is started even with `?shadows=0` and then switched off
+    (`bindShadowSwitch`), so the panel's switch never recompiles the lit
+    materials mid-session. The replay renderer's own rAF draws a frame later,
+    so on the desktop a flying ball's shadow can trail it by one frame; in AR
+    it cannot.
+  - **The shadow probe** (`controls.shadowProbe`, `?shadowProbe=1`, off in
+    normal use): `shadow-probe.ts` on `window.__physicsShadowProbe`; its
+    standing view becomes the camera the shadow square follows (the replay
+    camera hangs about 200 m over the room).
 
 ## Invariants & assumptions
 

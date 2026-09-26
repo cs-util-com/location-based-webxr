@@ -12,20 +12,36 @@ to it.
 ## Public API
 
 - `startDemoShadows(deps): DemoShadows` - `deps` is `{ renderer, scene,
-arWorldGroup, getOccluder, ballCount, getCamera }`. Returns
-  `{ update(), isActive(), dispose() }`:
+arWorldGroup, getOccluder, ballCount, getCamera }`; `getCamera` returns the
+  viewer, any object (AR: the tracked camera; the replay: the recorded phone
+  pose). Returns `{ update(), isActive(), inRange(worldPosition),
+setEnabled(on), isEnabled(), dispose() }`:
   - `update()` per frame, before the render: centre = the camera's position
     in `arWorldGroup`'s frame, `FLOOR_BELOW_CAMERA_M` (1.4 m) lower;
     `casterCount` = `ballCount()`;
+  - `inRange(p)`: whether a WORLD position lies within the shadow's reach,
+    the square's half width (`AR_SHADOWS.halfWidthM`, 5 m) of the last
+    update's centre, measured flat in the room's frame (a circle inside the
+    square, so it never over-promises); the status line counts it;
+  - `setEnabled(on)` is the owner's switch (round-2 plan 2026-09-26-2055
+    M1): the framework's `ArShadows.setEnabled`, by the shadow's intensity
+    only, never `castShadow` or the shadow map, so no material recompiles;
+    `isEnabled()` reads it back;
   - `dispose()` restores the light's parent and position and its target's,
     and the rig restores the light's shadow settings. Idempotent.
-  - Returns an INERT handle (no shadow map turned on) when the scene has no
-    `SCENE_NODE.SUN_LIGHT` directional light, or when it does not shine from
-    above in the room's frame.
+  - Returns an INERT handle (no shadow map turned on, the switch still
+    answering) when the scene has no `SCENE_NODE.SUN_LIGHT` directional
+    light, or when it does not shine from above in the room's frame.
+- `bindShadowSwitch(shadows, initialOn, toggle)` - one binding for AR and
+  the replay: sets the page's initial state (`?shadows=`), mirrors it on the
+  panel's toggle when there is one, follows the toggle both ways; returns
+  the release.
 - `shadowsEnabledFromSearch(search)` - false for `shadows=0`, `off` or
   `false`; true otherwise.
-- `shadowsLabel(shadows)` - `" · shadows on"` while shadows are drawn, else
-  `""` (the stats line; the e2e reads it).
+- `shadowsLabel(shadows)` - the stats line's note, the owner's view on the
+  phone: `" · shadows on"` while drawn, `" · shadows off"` when switched
+  off, `" · shadows unavailable"` when switched on but not drawn (no light
+  from above, or the renderer's rule says no), `""` with no shadows at all.
 - `FLOOR_BELOW_CAMERA_M` - 1.4 m.
 
 ## Invariants & assumptions

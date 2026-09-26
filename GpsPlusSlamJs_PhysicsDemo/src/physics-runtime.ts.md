@@ -20,7 +20,8 @@ rAF for replay, the XR frame loop for AR) and how a spawn point is obtained
   mesh sync + `onStats`), `spawnBallWithVelocity(worldOrigin, worldVelocity)`
   (converts a WORLD origin + velocity into the ball group's local raw-WebXR space
   and spawns a moving ball — the "shoot from the camera" primitive), `clearBalls()`,
-  `ballCount()`, `colliderShapeCount()`, `dispose()`.
+  `ballCount()`, `balls()` (each ball's WORLD position and radius, for the
+  shadow probe and the status line), `colliderShapeCount()`, `dispose()`.
 
 ## Invariants & assumptions
 

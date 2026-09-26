@@ -130,6 +130,21 @@ describe("createPhysicsRuntime", () => {
     runtime.dispose();
   });
 
+  // The shadow probe (round-2 plan M1) finds each ball on screen through
+  // this: world positions after the alignment chain, and the real radius.
+  it("reports each ball's WORLD position and radius", () => {
+    const arWorldGroup = new THREE.Group();
+    arWorldGroup.position.set(10, 0, -3);
+    const runtime = createPhysicsRuntime(arWorldGroup, null);
+    const worldOrigin = new THREE.Vector3(11, 2, -4);
+    runtime.spawnBallWithVelocity(worldOrigin, new THREE.Vector3(0, 0, 0));
+    const [ball] = runtime.balls();
+    expect(runtime.balls()).toHaveLength(1);
+    expect(ball!.position.distanceTo(worldOrigin)).toBeLessThan(1e-6);
+    expect(ball!.radius).toBeCloseTo(0.08, 9);
+    runtime.dispose();
+  });
+
   it("clears balls and reports stats via onStats", () => {
     const arWorldGroup = new THREE.Group();
     let lastBalls = -1;

@@ -46,8 +46,13 @@ function main(): void {
   const meshStyleSelect = requireEl<HTMLSelectElement>("mesh-style");
   const meshShaderSelect = requireEl<HTMLSelectElement>("mesh-shader");
   const statsEl = requireEl("stats");
+  // The Shadows switch (round-2 plan M1), shared by AR and the replay.
+  const shadowToggle = requireEl<HTMLInputElement>("shadows-toggle");
   // AR shadows from the thrown balls, on unless `?shadows=0` (W4 plan §11).
   const shadows = shadowsEnabledFromSearch(window.location.search);
+  // The shadow pixel e2e's hook (round-2 plan M1); off in normal use.
+  const shadowProbe =
+    new URLSearchParams(window.location.search).get("shadowProbe") === "1";
   const replayControls = requireEl("replay-controls");
 
   // Always-on FPS / memory panel (user feedback #4): mounted into the dom-overlay
@@ -79,6 +84,8 @@ function main(): void {
           meshStyleSelect,
           meshShaderSelect,
           shadows,
+          shadowToggle,
+          panel: requireEl("mesh-controls"),
           onFrame: () => perfStats.update(),
           onError: (message) => {
             startArButton.disabled = false;
@@ -140,6 +147,8 @@ function main(): void {
           statsEl,
           onFrame: () => perfStats.update(),
           shadows,
+          shadowToggle,
+          shadowProbe,
         });
       });
 

@@ -12,7 +12,10 @@
 
 import * as THREE from "three";
 import { SCENE_NODE } from "gps-plus-slam-app-framework/ar/scene-node-names";
-import { createArShadows } from "gps-plus-slam-app-framework/visualization/ar-shadows";
+import {
+  AR_SHADOWS,
+  createArShadows,
+} from "gps-plus-slam-app-framework/visualization/ar-shadows";
 import type { OcclusionMesh } from "gps-plus-slam-app-framework/visualization/occlusion-mesh";
 import { enableSunShadows } from "gps-plus-slam-app-framework/visualization/sun-shadow";
 
@@ -35,13 +38,30 @@ export interface DemoShadowsDeps {
   /** The CURRENT occluder (`setMeshMode` recreates it), or null. */
   readonly getOccluder: () => OcclusionMesh | null;
   readonly ballCount: () => number;
-  readonly getCamera: () => THREE.Camera | null;
+  /**
+   * The viewer the shadow square follows: in AR the tracked camera, in the
+   * replay the recorded phone pose (any object: only its position is read).
+   */
+  readonly getCamera: () => THREE.Object3D | null;
 }
 
 export interface DemoShadows {
   /** Per frame, before the render. */
   update(): void;
   isActive(): boolean;
+  /**
+   * Whether a WORLD position lies within the shadow's reach: within the
+   * square's half width (5 m) of the viewer's spot, measured flat in the
+   * room's frame (a circle inside the square, so it never over-promises).
+   */
+  inRange(worldPosition: THREE.Vector3): boolean;
+  /**
+   * The on/off switch (round-2 plan M1): the framework's `setEnabled`, by
+   * shadow intensity only, so switching never recompiles a material.
+   */
+  setEnabled(on: boolean): void;
+  /** The switch's state (on until switched off). */
+  isEnabled(): boolean;
   /** Restores the light where it was found. Idempotent. */
   dispose(): void;
 }
@@ -52,16 +72,51 @@ export function shadowsEnabledFromSearch(search: string): boolean {
   return value === null || !["0", "off", "false"].includes(value.toLowerCase());
 }
 
-/** The stats line's shadow note: shown only while shadows are drawn. */
-export function shadowsLabel(shadows: DemoShadows | null): string {
-  return shadows?.isActive() ? " · shadows on" : "";
+/**
+ * The stats line's shadow note, the owner's view on the phone: "on" while
+ * drawn, "off" when switched off, "unavailable" when switched on but not
+ * drawn (no light from above, or the renderer's rule says no).
+ */
+export function shadowsLabel(
+  shadows: Pick<DemoShadows, "isActive" | "isEnabled"> | null,
+): string {
+  if (!shadows) return "";
+  if (shadows.isActive()) return " · shadows on";
+  return shadows.isEnabled() ? " · shadows unavailable" : " · shadows off";
 }
 
-const INERT: DemoShadows = {
-  update() {},
-  isActive: () => false,
-  dispose() {},
-};
+/**
+ * The owner's switch (round-2 plan M1), one binding for AR and the replay:
+ * sets `initialOn` (the page's `?shadows=`), mirrors it on the toggle when
+ * the page has one, and follows the toggle both ways. Returns the release.
+ */
+export function bindShadowSwitch(
+  shadows: Pick<DemoShadows, "setEnabled">,
+  initialOn: boolean,
+  toggle: HTMLInputElement | undefined,
+): () => void {
+  shadows.setEnabled(initialOn);
+  if (!toggle) return () => {};
+  toggle.checked = initialOn;
+  const onChange = (): void => shadows.setEnabled(toggle.checked);
+  toggle.addEventListener("change", onChange);
+  return () => toggle.removeEventListener("change", onChange);
+}
+
+/** No light from above: nothing to draw, but the switch still answers. */
+function inert(): DemoShadows {
+  let enabled = true;
+  return {
+    update() {},
+    isActive: () => false,
+    inRange: () => false,
+    setEnabled(on) {
+      enabled = on;
+    },
+    isEnabled: () => enabled,
+    dispose() {},
+  };
+}
 
 /**
  * Makes the framework's `SUN_LIGHT` cast from the room's frame and the
@@ -77,7 +132,7 @@ const INERT: DemoShadows = {
  */
 export function startDemoShadows(deps: DemoShadowsDeps): DemoShadows {
   const light = deps.scene.getObjectByName(SCENE_NODE.SUN_LIGHT);
-  if (!(light instanceof THREE.DirectionalLight)) return INERT;
+  if (!(light instanceof THREE.DirectionalLight)) return inert();
   const { arWorldGroup } = deps;
   const target = light.target;
   const found = {
@@ -94,7 +149,7 @@ export function startDemoShadows(deps: DemoShadowsDeps): DemoShadows {
   const localDir = worldDir.transformDirection(
     arWorldGroup.matrixWorld.clone().invert(),
   );
-  if (!(localDir.y > 0)) return INERT;
+  if (!(localDir.y > 0)) return inert();
 
   arWorldGroup.add(light, target);
   light.position.copy(localDir).multiplyScalar(LIGHT_DISTANCE_M);
@@ -108,7 +163,11 @@ export function startDemoShadows(deps: DemoShadowsDeps): DemoShadows {
   });
 
   const cameraPosition = new THREE.Vector3();
+  /** The square's centre in arWorldGroup's frame, from the last update. */
+  const centre = new THREE.Vector3(Number.NaN, 0, Number.NaN);
+  const local = new THREE.Vector3();
   let disposed = false;
+  let enabled = true;
   return {
     update() {
       if (disposed) return;
@@ -118,12 +177,25 @@ export function startDemoShadows(deps: DemoShadowsDeps): DemoShadows {
       const c = arWorldGroup.worldToLocal(
         camera.getWorldPosition(cameraPosition),
       );
+      centre.set(c.x, c.y - FLOOR_BELOW_CAMERA_M, c.z);
       shadows.update({
         centre: [c.x, c.y - FLOOR_BELOW_CAMERA_M, c.z],
         casterCount: deps.ballCount(),
       });
     },
     isActive: () => !disposed && shadows.isActive(),
+    inRange(worldPosition) {
+      arWorldGroup.updateWorldMatrix(true, false);
+      const p = arWorldGroup.worldToLocal(local.copy(worldPosition));
+      return (
+        Math.hypot(p.x - centre.x, p.z - centre.z) <= AR_SHADOWS.halfWidthM
+      );
+    },
+    setEnabled(on) {
+      enabled = on;
+      if (!disposed) shadows.setEnabled(on);
+    },
+    isEnabled: () => enabled,
     dispose() {
       if (disposed) return;
       disposed = true;

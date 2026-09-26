@@ -21,6 +21,7 @@ import {
   type ReplayPhysicsControls,
   type ReplayPhysicsFactories,
 } from "./replay-physics";
+import { STILL_STEPS } from "./ball-status";
 import type { ReplaySessionController } from "gps-plus-slam-app-framework/state/replay-session";
 import * as THREE from "three";
 
@@ -48,7 +49,8 @@ function harness(options: { shadows?: boolean } = {}) {
   const canvas = fakeEl();
   const meshStyleSelect = fakeEl("smooth");
   const meshShaderSelect = fakeEl("depth-shaded-wireframe");
-  const statsEl = fakeEl();
+  const statsEl = Object.assign(fakeEl(), { textContent: "" });
+  const shadowToggle = Object.assign(fakeEl(), { checked: true });
 
   const sceneHandles = {
     scene: new THREE.Scene(),
@@ -68,6 +70,7 @@ function harness(options: { shadows?: boolean } = {}) {
     statsEl,
     onFrame: vi.fn(),
     shadows: options.shadows ?? true,
+    shadowToggle,
   } as unknown as ReplayPhysicsControls;
 
   const scheduled: Array<(t: number) => void> = [];
@@ -93,10 +96,21 @@ function harness(options: { shadows?: boolean } = {}) {
     spawnBallWithVelocity: vi.fn(),
     clearBalls: vi.fn(),
     ballCount: () => 0,
+    balls: vi.fn(() => [] as { position: THREE.Vector3; radius: number }[]),
     colliderShapeCount: () => 0,
     dispose: vi.fn(),
   };
-  const shadows = { update: vi.fn(), isActive: () => true, dispose: vi.fn() };
+  let enabled = true;
+  const shadows = {
+    update: vi.fn(),
+    isActive: () => enabled,
+    inRange: () => true,
+    isEnabled: () => enabled,
+    setEnabled: vi.fn((on: boolean) => {
+      enabled = on;
+    }),
+    dispose: vi.fn(),
+  };
   const factories = {
     createOccupancyView: vi.fn(() => occupancyView),
     createPhysicsRuntime: vi.fn(() => runtime),
@@ -117,7 +131,19 @@ function harness(options: { shadows?: boolean } = {}) {
     canvas,
     meshStyleSelect,
     meshShaderSelect,
+    statsEl,
+    shadowToggle,
   };
+}
+
+/** The listener `el` registered for `type` (the fake records them). */
+function listener(
+  el: { addEventListener: ReturnType<typeof vi.fn> },
+  type: string,
+) {
+  const call = el.addEventListener.mock.calls.find(([t]) => t === type);
+  if (!call) throw new Error(`no ${type} listener`);
+  return call[1] as () => void;
 }
 
 describe("startReplayPhysics", () => {
@@ -201,7 +227,10 @@ describe("startReplayPhysics", () => {
     expect(deps.renderer).toBe(h.sceneHandles.renderer);
     expect(deps.scene).toBe(h.sceneHandles.scene);
     expect(deps.arWorldGroup).toBe(h.sceneHandles.arWorldGroup);
-    expect(deps.getCamera()).toBe(h.sceneHandles.camera);
+    // The recorded phone pose, not the orbit camera: the orbit camera sits
+    // 5-200 m above the room, where the square would miss the floor (M1
+    // review finding 1).
+    expect(deps.getCamera()).toBe(h.sceneHandles.arpose);
     expect(deps.getOccluder()).toBe(h.occluder);
     expect(deps.ballCount()).toBe(0);
 
@@ -215,7 +244,10 @@ describe("startReplayPhysics", () => {
     expect(h.shadows.dispose).toHaveBeenCalledTimes(1);
   });
 
-  it("starts no shadows when the page switched them off (?shadows=0)", () => {
+  // Round-2 plan M1: the shadow map is made ready once at start even when
+  // the page opens with ?shadows=0, so the switch never recompiles the lit
+  // materials mid-session; the page starts with them switched off.
+  it("starts the shadows switched off with ?shadows=0, the switch unticked", () => {
     const h = harness({ shadows: false });
     const dispose = startReplayPhysics(
       h.session,
@@ -223,9 +255,67 @@ describe("startReplayPhysics", () => {
       h.scheduler,
       h.factories,
     );
-    expect(h.factories.startDemoShadows).not.toHaveBeenCalled();
-    h.scheduled[0]!(16);
-    expect(h.shadows.update).not.toHaveBeenCalled();
+    expect(h.factories.startDemoShadows).toHaveBeenCalledTimes(1);
+    expect(h.shadows.setEnabled).toHaveBeenLastCalledWith(false);
+    expect(h.shadowToggle.checked).toBe(false);
+    dispose();
+  });
+
+  it("the Shadows switch turns them off and on, and lets go on dispose", () => {
+    const h = harness();
+    const dispose = startReplayPhysics(
+      h.session,
+      h.controls,
+      h.scheduler,
+      h.factories,
+    );
+    expect(h.shadowToggle.checked).toBe(true);
+    const onChange = listener(h.shadowToggle, "change");
+    h.shadowToggle.checked = false;
+    onChange();
+    expect(h.shadows.setEnabled).toHaveBeenLastCalledWith(false);
+    h.shadowToggle.checked = true;
+    onChange();
+    expect(h.shadows.setEnabled).toHaveBeenLastCalledWith(true);
+    dispose();
+    expect(h.shadowToggle.removeEventListener).toHaveBeenCalledWith(
+      "change",
+      onChange,
+    );
+  });
+
+  // The status line (round-2 plan M1): resting and fallen balls, the
+  // collider, and the shadows' state, from the runtime's stats callback.
+  // M1 review finding 1: the viewer is the recorded phone pose, never the
+  // orbit camera high above the room, or every resting ball read "fell
+  // through" in a normal replay.
+  it("writes the balls' state, the collider and the shadows into the stats line", () => {
+    const h = harness();
+    h.sceneHandles.camera.position.set(0, 200, 0);
+    h.sceneHandles.arpose.position.set(0, 1.5, 0);
+    h.sceneHandles.camera.updateMatrixWorld(true);
+    h.sceneHandles.arpose.updateMatrixWorld(true);
+    const dispose = startReplayPhysics(
+      h.session,
+      h.controls,
+      h.scheduler,
+      h.factories,
+    );
+    const onStats = vi.mocked(h.factories.createPhysicsRuntime).mock
+      .calls[0]![2]!.onStats!;
+    h.runtime.balls.mockReturnValue([
+      { position: new THREE.Vector3(0, 0.1, 0), radius: 0.08 },
+    ]);
+    for (let i = 0; i <= STILL_STEPS; i++) onStats(1, 12);
+    expect(h.statsEl.textContent).toBe(
+      "balls 1 (1 resting, 1 in shadow range) · collider 12 tris · shadows on",
+    );
+    h.shadowToggle.checked = false;
+    listener(h.shadowToggle, "change")();
+    onStats(1, 12);
+    expect(h.statsEl.textContent).toBe(
+      "balls 1 (1 resting, 1 in shadow range) · collider 12 tris · shadows off",
+    );
     dispose();
   });
 

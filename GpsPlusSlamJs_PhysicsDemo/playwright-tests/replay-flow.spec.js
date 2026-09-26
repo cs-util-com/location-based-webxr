@@ -52,8 +52,16 @@ test.describe("Physics Demo — desktop replay end-to-end", () => {
     await expect(stats).toContainText(/balls 1 /, { timeout: 10_000 });
     // The ball casts onto the reconstructed room (W4 AR shadows plan
     // 2026-09-26-0549 §11): the stats line notes the shadows only while the
-    // renderer's shadow map is on and the light casts. Their pixels are
-    // checked against the analytic oracle on the look-dev lab page.
+    // renderer's shadow map is on and the light casts. Whether a shadow is
+    // actually VISIBLE is replay-shadows.spec.js's job (round-2 plan M1).
+    await expect(stats).toContainText("shadows on", { timeout: 10_000 });
+    // The owner's switch (round-2 plan M1): off and on again, and the stats
+    // line (what the owner reads on the phone) follows it.
+    const shadowSwitch = page.locator("label.switch", { hasText: "Shadows" });
+    await shadowSwitch.click();
+    await expect(page.getByTestId("shadows-toggle")).not.toBeChecked();
+    await expect(stats).toContainText("shadows off", { timeout: 10_000 });
+    await shadowSwitch.click();
     await expect(stats).toContainText("shadows on", { timeout: 10_000 });
     await page.mouse.click(360, 240);
     await expect(stats).toContainText(/balls 2 /, { timeout: 10_000 });

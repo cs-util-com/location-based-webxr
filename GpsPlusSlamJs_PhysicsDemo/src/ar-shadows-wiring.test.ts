@@ -21,6 +21,7 @@ import { SCENE_NODE } from "gps-plus-slam-app-framework/ar/scene-node-names";
 import { OcclusionMesh } from "gps-plus-slam-app-framework/visualization/occlusion-mesh";
 import {
   FLOOR_BELOW_CAMERA_M,
+  bindShadowSwitch,
   shadowsLabel,
   shadowsEnabledFromSearch,
   startDemoShadows,
@@ -91,6 +92,45 @@ describe("startDemoShadows", () => {
     expect(s.renderer.shadowMap.type).toBe(THREE.PCFShadowMap);
     expect(shadows.isActive()).toBe(true);
     expect(s.arWorldGroup.getObjectByName(RECEIVER)).toBeDefined();
+  });
+
+  // The status line's "in shadow range" (M1 review): a ball thrown farther
+  // than the shadow's reach casts nothing, whatever "shadows on" says. The
+  // reach is a circle of the square's half width around the viewer's spot.
+  it("says whether a ball lies within the shadow's reach of the viewer", () => {
+    const s = makeScene();
+    const shadows = startDemoShadows(deps(s, { current: null }, { count: 1 }));
+    disposers.push(() => shadows.dispose());
+    shadows.update();
+    // The viewer stands at (1, 1.6, -2); the reach is 5 m.
+    expect(shadows.inRange(new THREE.Vector3(3, 0, 1))).toBe(true);
+    expect(shadows.inRange(new THREE.Vector3(1, 0, 4))).toBe(false);
+  });
+
+  // The owner's switch (round-2 plan M1): off and on again by the shadow's
+  // intensity only, never castShadow or the shadow map, so no material
+  // recompiles mid-session; the stats line's "shadows on" follows it.
+  it("switches the shadow off and on by intensity, with no recompile", () => {
+    const s = makeScene();
+    const occluder = { current: makeOccluder(s.arWorldGroup) };
+    const shadows = startDemoShadows(deps(s, occluder, { count: 0 }));
+    disposers.push(() => shadows.dispose());
+    shadows.update();
+    const intensity = s.light.shadow.intensity;
+    expect(intensity).toBeGreaterThan(0);
+    shadows.setEnabled(false);
+    shadows.update();
+    expect(s.light.shadow.intensity).toBe(0);
+    expect(s.light.castShadow).toBe(true);
+    expect(s.renderer.shadowMap.enabled).toBe(true);
+    expect(shadows.isActive()).toBe(false);
+    expect(shadows.isEnabled()).toBe(false);
+    expect(shadowsLabel(shadows)).toBe(" · shadows off");
+    shadows.setEnabled(true);
+    expect(shadows.isEnabled()).toBe(true);
+    shadows.update();
+    expect(s.light.shadow.intensity).toBe(intensity);
+    expect(shadows.isActive()).toBe(true);
   });
 
   // The frame claim (plan §11): the light and its target move under
@@ -186,6 +226,9 @@ describe("startDemoShadows", () => {
     shadows.update();
     expect(shadows.isActive()).toBe(false);
     expect(s.renderer.shadowMap.enabled).toBe(false);
+    expect(shadowsLabel(shadows)).toBe(" · shadows unavailable");
+    shadows.setEnabled(false);
+    expect(shadowsLabel(shadows)).toBe(" · shadows off");
     shadows.dispose();
   });
 });
@@ -204,13 +247,51 @@ describe("shadowsEnabledFromSearch", () => {
   });
 });
 
-// The e2e reads the stats line to know the shadows are really drawn.
+// The owner's switch (round-2 plan M1), one binding for AR and the replay:
+// the page's initial state, then the toggle both ways, released on dispose.
+describe("bindShadowSwitch", () => {
+  it("sets the initial state, follows the toggle, and lets go", () => {
+    const calls: boolean[] = [];
+    const shadows = { setEnabled: (on: boolean) => calls.push(on) };
+    const listeners = new Map<string, () => void>();
+    const toggle = {
+      checked: true,
+      addEventListener: (type: string, fn: () => void) =>
+        listeners.set(type, fn),
+      removeEventListener: (type: string) => listeners.delete(type),
+    };
+    const release = bindShadowSwitch(shadows, false, toggle as never);
+    expect(calls).toEqual([false]);
+    expect(toggle.checked).toBe(false);
+    toggle.checked = true;
+    listeners.get("change")!();
+    expect(calls).toEqual([false, true]);
+    release();
+    expect(listeners.has("change")).toBe(false);
+    // Without a toggle on the page: the initial state only.
+    bindShadowSwitch(shadows, true, undefined)();
+    expect(calls).toEqual([false, true, true]);
+  });
+});
+
+// The stats line is the owner's view on the phone (round-2 plan M1): it
+// must tell "switched off" from "switched on but not drawn".
 describe("shadowsLabel", () => {
-  it("notes the shadows only while they are drawn", () => {
-    const on = { update() {}, isActive: () => true, dispose() {} };
-    const off = { ...on, isActive: () => false };
+  it("says on, off (the switch) or unavailable (on, but not drawn)", () => {
+    const on = {
+      update() {},
+      isActive: () => true,
+      isEnabled: () => true,
+      setEnabled() {},
+      dispose() {},
+    };
     expect(shadowsLabel(on)).toBe(" · shadows on");
-    expect(shadowsLabel(off)).toBe("");
+    expect(
+      shadowsLabel({ ...on, isActive: () => false, isEnabled: () => false }),
+    ).toBe(" · shadows off");
+    expect(shadowsLabel({ ...on, isActive: () => false })).toBe(
+      " · shadows unavailable",
+    );
     expect(shadowsLabel(null)).toBe("");
   });
 });

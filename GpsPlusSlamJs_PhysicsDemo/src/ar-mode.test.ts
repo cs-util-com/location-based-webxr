@@ -55,6 +55,7 @@ vi.mock("./physics-runtime", () => ({
   createPhysicsRuntime: vi.fn(() => ({
     step: vi.fn(),
     ballCount: vi.fn(() => 4),
+    balls: vi.fn(() => []),
     dispose: vi.fn(),
   })),
 }));
@@ -69,11 +70,20 @@ const { fakeRenderer, fakeScene, fakeOccluder, fakeShadows } = vi.hoisted(
     fakeRenderer: { name: "the session renderer" },
     fakeScene: { name: "the session scene" },
     fakeOccluder: { name: "the current occluder" },
-    fakeShadows: { update: vi.fn(), isActive: () => true, dispose: vi.fn() },
+    fakeShadows: {
+      update: vi.fn(),
+      isActive: () => true,
+      isEnabled: () => true,
+      inRange: () => true,
+      setEnabled: vi.fn(),
+      dispose: vi.fn(),
+    },
   }),
 );
 
 import { startArMode } from "./ar-mode";
+import { STILL_STEPS } from "./ball-status";
+import { getCamera } from "gps-plus-slam-app-framework/ar/webxr-session";
 import { startDemoShadows } from "./ar-shadows-wiring";
 import { createPhysicsRuntime } from "./physics-runtime";
 import { registerXrFrameUpdate } from "gps-plus-slam-app-framework/ar/xr-frame-loop";
@@ -107,6 +117,26 @@ describe("startArMode depth wiring", () => {
   });
 });
 
+// M1 review finding 3: in AR a tap on the DOM overlay fires the click AND
+// an XR select, and a select shoots a ball; so each flip of the Shadows
+// switch (or a dropdown) threw a ball. The panel cancels the XR half.
+describe("startArMode panel taps", () => {
+  it("keeps taps on the panel from also shooting, and lets go on dispose", async () => {
+    const listeners = new Map<string, (e: Event) => void>();
+    const panel = {
+      addEventListener: (type: string, fn: (e: Event) => void) =>
+        listeners.set(type, fn),
+      removeEventListener: (type: string) => listeners.delete(type),
+    } as unknown as HTMLElement;
+    const dispose = await startArMode({ ...makeDeps(), panel });
+    const event = { preventDefault: vi.fn() } as unknown as Event;
+    listeners.get("beforexrselect")!(event);
+    expect(event.preventDefault).toHaveBeenCalledTimes(1);
+    dispose();
+    expect(listeners.has("beforexrselect")).toBe(false);
+  });
+});
+
 describe("startArMode AR shadows", () => {
   it("starts them on the session, updates them after each step, disposes them", async () => {
     vi.mocked(startDemoShadows).mockClear();
@@ -133,10 +163,55 @@ describe("startArMode AR shadows", () => {
     expect(fakeShadows.dispose).toHaveBeenCalledTimes(1);
   });
 
-  it("starts none when the page switched them off (?shadows=0)", async () => {
+  // Round-2 plan M1: the map is made ready once at start even with
+  // ?shadows=0 (switching later must not recompile mid-session); the page
+  // starts with them switched off, and the panel's switch turns them on.
+  it("starts them switched off with ?shadows=0, and the switch turns them on", async () => {
     vi.mocked(startDemoShadows).mockClear();
-    const dispose = await startArMode({ ...makeDeps(), shadows: false });
-    expect(startDemoShadows).not.toHaveBeenCalled();
+    fakeShadows.setEnabled.mockClear();
+    const listeners = new Map<string, () => void>();
+    const shadowToggle = {
+      checked: true,
+      addEventListener: (type: string, fn: () => void) =>
+        listeners.set(type, fn),
+      removeEventListener: (type: string) => listeners.delete(type),
+    } as unknown as HTMLInputElement;
+    const dispose = await startArMode({
+      ...makeDeps(),
+      shadows: false,
+      shadowToggle,
+    });
+    expect(startDemoShadows).toHaveBeenCalledTimes(1);
+    expect(fakeShadows.setEnabled).toHaveBeenLastCalledWith(false);
+    expect(shadowToggle.checked).toBe(false);
+    shadowToggle.checked = true;
+    listeners.get("change")!();
+    expect(fakeShadows.setEnabled).toHaveBeenLastCalledWith(true);
     dispose();
+    expect(listeners.has("change")).toBe(false);
+  });
+
+  // The owner's view on the phone: resting and fallen balls, the collider,
+  // and the shadows' state, with the viewer's height from the tracked
+  // camera (a ball on the floor 1.4 m below it rests, it did not fall).
+  it("writes the balls' state and the shadows into the stats line", async () => {
+    const camera = new THREE.PerspectiveCamera();
+    camera.position.set(0, 1.5, 0);
+    camera.updateMatrixWorld(true);
+    vi.mocked(getCamera).mockReturnValue(camera);
+    const deps = makeDeps();
+    const dispose = await startArMode(deps);
+    const onStats = vi.mocked(createPhysicsRuntime).mock.lastCall![2]!.onStats!;
+    const runtime = vi.mocked(createPhysicsRuntime).mock.results.at(-1)!
+      .value as { balls: ReturnType<typeof vi.fn> };
+    runtime.balls.mockReturnValue([
+      { position: new THREE.Vector3(0, 0.1, 0), radius: 0.08 },
+    ]);
+    for (let i = 0; i <= STILL_STEPS; i++) onStats(1, 7);
+    expect(deps.statsEl.textContent).toBe(
+      "balls 1 (1 resting, 1 in shadow range) · collider 7 tris · shadows on",
+    );
+    dispose();
+    vi.mocked(getCamera).mockReturnValue(null);
   });
 });

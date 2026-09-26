@@ -34,10 +34,12 @@ import { recordDepthSample } from "gps-plus-slam-app-framework/state/recording-s
 import { createOccupancyView } from "./occupancy-view";
 import { createPhysicsRuntime } from "./physics-runtime";
 import {
+  bindShadowSwitch,
   shadowsLabel,
   startDemoShadows,
   type DemoShadows,
 } from "./ar-shadows-wiring";
+import { createBallStatus, statsText } from "./ball-status";
 import { shootBallFromCamera } from "./shoot-ball";
 import type { OccluderDebugStyle } from "gps-plus-slam-app-framework/visualization/occlusion-mesh";
 import type { MeshMode } from "gps-plus-slam-app-framework/ar/occupancy-mesher";
@@ -57,6 +59,13 @@ export interface ArModeDeps {
   readonly onFrame?: () => void;
   /** AR shadows from the thrown balls (off with `?shadows=0`). Default on. */
   readonly shadows?: boolean;
+  /** The panel's Shadows switch (round-2 plan M1), when the page has one. */
+  readonly shadowToggle?: HTMLInputElement;
+  /**
+   * The controls panel: a tap on it must not also shoot (a DOM-overlay tap
+   * fires the click AND an XR select; see `startArMode`).
+   */
+  readonly panel?: HTMLElement;
 }
 
 /**
@@ -119,18 +128,33 @@ export async function startArMode(deps: ArModeDeps): Promise<() => void> {
 
   // Shared physics runtime — its trimesh collider follows the same occluder.
   let shadows: DemoShadows | null = null;
+  const ballStatus = createBallStatus();
+  const viewerPosition = new THREE.Vector3();
   const runtime = createPhysicsRuntime(arWorldGroup, occupancy, {
-    onStats: (balls, tris) => {
-      deps.statsEl.textContent = `balls ${balls} · collider ${tris} tris${shadowsLabel(shadows)}`;
+    // The owner's view on the phone (round-2 plan M1): resting and fallen
+    // balls, the collider, and the shadows' state.
+    onStats: (_balls, tris) => {
+      const viewerY = getCamera()?.getWorldPosition(viewerPosition).y ?? 0;
+      deps.statsEl.textContent = statsText(
+        ballStatus.update(
+          runtime.balls(),
+          viewerY,
+          (p) => shadows?.inRange(p) ?? false,
+        ),
+        tris,
+        shadowsLabel(shadows),
+      );
     },
   });
 
   // The thrown balls cast onto the reconstructed room (W4 plan §11). The
   // session already renders, so turning the shadow map on recompiles the lit
-  // materials once (accepted, plan §8 item 6).
+  // materials once (accepted, plan §8 item 6). Started even with
+  // ?shadows=0 (then switched off), so the switch never recompiles later.
   const renderer = getRenderer();
   const scene = getScene();
-  if ((deps.shadows ?? true) && renderer && scene) {
+  let releaseSwitch = (): void => {};
+  if (renderer && scene) {
     shadows = startDemoShadows({
       renderer,
       scene,
@@ -139,6 +163,11 @@ export async function startArMode(deps: ArModeDeps): Promise<() => void> {
       ballCount: () => runtime.ballCount(),
       getCamera,
     });
+    releaseSwitch = bindShadowSwitch(
+      shadows,
+      deps.shadows ?? true,
+      deps.shadowToggle,
+    );
   }
 
   // Tap-to-shoot: a ball leaves the camera along its forward direction and flies
@@ -152,6 +181,14 @@ export async function startArMode(deps: ArModeDeps): Promise<() => void> {
       camera.getWorldDirection(new THREE.Vector3()),
     );
   };
+
+  // ONE TAP, ONE EVENT (as OsmDemo's DEC-Y18): a tap on the DOM overlay
+  // fires a DOM click AND an XR select, and a select shoots a ball, so every
+  // flip of the Shadows switch or a dropdown threw one (M1 review).
+  // Cancelling `beforexrselect` on the panel suppresses only the XR half, and
+  // only for taps on the panel: taps on the scene still shoot.
+  const cancelXrSelect = (event: Event): void => event.preventDefault();
+  deps.panel?.addEventListener("beforexrselect", cancelXrSelect);
 
   let selectWired = false;
   const unregisterFrame = registerXrFrameUpdate(({ session }) => {
@@ -170,6 +207,8 @@ export async function startArMode(deps: ArModeDeps): Promise<() => void> {
   return () => {
     unregisterFrame();
     stopDepthCapture();
+    deps.panel?.removeEventListener("beforexrselect", cancelXrSelect);
+    releaseSwitch();
     shadows?.dispose();
     occupancy.dispose();
     runtime.dispose();

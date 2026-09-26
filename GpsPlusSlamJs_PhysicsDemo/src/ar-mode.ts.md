@@ -11,7 +11,11 @@ direction into the room.
 
 - **`startArMode(deps): Promise<() => void>`** — starts a WebXR session and returns
   a disposer that ends it. `deps`: `{ container, statsEl, meshStyleSelect,
-meshShaderSelect, onError, onStarted?, onFrame? }`. `onFrame` is called once per XR
+meshShaderSelect, onError, onStarted?, onFrame?, shadows?, shadowToggle?,
+panel? }`. A tap on `panel` does not also shoot: its `beforexrselect` is
+  cancelled (a DOM-overlay tap fires the click AND an XR select, and a
+  select shoots; OsmDemo's DEC-Y18), removed on dispose; taps on the scene
+  still shoot. `onFrame` is called once per XR
   frame (drives the always-on perf panel — the framework's `createPerfStatsOverlay`,
   wired in `main.ts`).
 
@@ -35,15 +39,21 @@ onCaptured → dispatch recordDepthSample } })`.
   clipped through the mesh and the ball should go where you look, not sit on a
   surface).
 - The mesh-view controller (Cubes/Detailed) is shared with the replay path.
-- **AR shadows** (W4 AR shadows plan 2026-09-26-0549 §11): unless
-  `deps.shadows` is false (`?shadows=0`), `startDemoShadows`
+- **AR shadows** (W4 AR shadows plan 2026-09-26-0549 §11; round-2 plan
+  2026-09-26-2055 M1): `startDemoShadows`
   (`ar-shadows-wiring.ts`) runs on the session's renderer and scene, fed
   the view's CURRENT occluder (`getOcclusionMesh`) and the ball count. It
   updates in the XR frame callback right after `runtime.step`, so the map
   renders in the same frame as the balls move (no lag), and is disposed with
-  the session. The stats line adds `· shadows on` while they are drawn.
+  the session. It is started even with `?shadows=0` (`deps.shadows` false)
+  and then switched off; the panel's switch (`deps.shadowToggle`,
+  `bindShadowSwitch`) turns them on and off by intensity, never recompiling.
   The session already renders when this starts, so the lit materials
   recompile once (accepted, plan §8 item 6).
+- **The stats line** (round-2 plan M1, the owner's view on the phone):
+  `statsText` from `ball-status.ts`, "balls N (k resting, j fell through)
+  · collider N tris · shadows on|off|unavailable", the viewer's height from
+  the tracked camera.
 
 ## Invariants & assumptions
 
