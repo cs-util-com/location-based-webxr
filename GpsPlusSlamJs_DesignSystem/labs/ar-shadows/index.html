@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lab: AR shadows on the room mesh</title>
+    <!-- three comes from the framework's own lockfile-pinned copy, served by
+         serve.mjs; the deploy rewrites these to the same pinned version. -->
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "/vendor/three/build/three.module.js",
+          "three/addons/": "/vendor/three/examples/jsm/"
+        }
+      }
+    </script>
+    <style>
+      :root {
+        color-scheme: dark;
+        --checker-a: #8a8f98;
+        --checker-b: #d9dde3;
+        --panel: rgb(20 22 28 / 82%);
+        --text: #f2f4f8;
+      }
+
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #101216;
+        color: var(--text);
+        font:
+          14px/1.4 system-ui,
+          sans-serif;
+      }
+
+      /* The stand-in camera image: a shadow must darken both checker
+         colours by the same factor and never tint them. */
+      .camera {
+        position: fixed;
+        inset: 0;
+        background: repeating-conic-gradient(
+            var(--checker-a) 0 25%,
+            var(--checker-b) 0 50%
+          )
+          0 0 / 48px 48px;
+      }
+
+      #lab-canvas {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+        touch-action: none;
+      }
+
+      .panel {
+        position: fixed;
+        top: 12px;
+        left: 12px;
+        max-width: calc(100% - 48px);
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: var(--panel);
+        display: grid;
+        gap: 6px;
+      }
+
+      .panel label {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      #lab-error:empty {
+        display: none;
+      }
+    </style>
+    <script type="module" src="./ar-shadows-lab.js"></script>
+  </head>
+  <body>
+    <div class="camera" aria-hidden="true"></div>
+    <canvas id="lab-canvas"></canvas>
+    <div class="panel">
+      <strong>AR shadows on the room mesh</strong>
+      <label
+        >Sun elevation
+        <input id="sun-elevation" type="range" min="10" max="90" step="1"
+      /></label>
+      <label
+        >Sun azimuth
+        <input id="sun-azimuth" type="range" min="0" max="359" step="1"
+      /></label>
+      <span id="sun-readout"></span>
+      <label>Room mesh <input id="room-mesh" type="checkbox" /></label>
+      <label>Fallback plane <input id="fallback" type="checkbox" /></label>
+      <label>Show the room <input id="show-room" type="checkbox" /></label>
+      <label
+        >Mutation
+        <select id="mutation">
+          <option value="">none</option>
+          <option value="mesh-casts">the room mesh casts</option>
+          <option value="non-caster-casts">the white ball casts</option>
+        </select></label
+      >
+      <output id="lab-error" role="alert"></output>
+    </div>
+  </body>
+</html>

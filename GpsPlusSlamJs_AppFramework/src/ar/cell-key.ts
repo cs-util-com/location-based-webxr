@@ -29,7 +29,7 @@
  * @see cell-key.ts.md for detailed documentation
  */
 
-import type { GridCell } from './bresenham3d';
+import type { GridCell } from './bresenham3d.js';
 
 /** Full-field envelope: direct cell keys are collision-free for `|c| ≤` this. */
 export const CELL_KEY_LIMIT = 65535;

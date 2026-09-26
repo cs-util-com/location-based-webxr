@@ -308,7 +308,7 @@ export const PROJECTS = [
         // added after it was written (the split's design.css/catalog.css
         // would never have been formatted while the gate stayed green)
         command:
-          'prettier --log-level warn --write --ignore-unknown "*.css" "*.html" "*.mjs" "*.md" "config/*.mjs" "3d/*" package.json',
+          'prettier --log-level warn --write --ignore-unknown "*.css" "*.html" "*.mjs" "*.md" "config/*.mjs" "3d/*" "labs/**/*" package.json',
         counts: null,
       },
       {

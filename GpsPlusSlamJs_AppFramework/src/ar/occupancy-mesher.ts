@@ -31,14 +31,14 @@
  */
 
 import type { Vector3 } from 'gps-plus-slam-js';
-import type { GridCell } from './bresenham3d';
+import type { GridCell } from './bresenham3d.js';
 import {
   CELL_KEY_STRIDE_X,
   CELL_KEY_STRIDE_Y,
   HALF_LATTICE_CELL_KEY_LIMIT,
   packCellKey as cellKey,
-} from './cell-key';
-import { PackedKeyHash } from './packed-key-hash';
+} from './cell-key.js';
+import { PackedKeyHash } from './packed-key-hash.js';
 
 /**
  * An axis-aligned bounding box for one occupied cell (or, after greedy merge, a
