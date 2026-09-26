@@ -48,3 +48,5 @@ minimumReleaseAge: 1440
 minimumReleaseAgeExclude:
   - gps-plus-slam-js
   - gps-plus-slam-app-framework
+patchedDependencies:
+  3d-tiles-renderer@0.5.3: patches/3d-tiles-renderer@0.5.3.patch

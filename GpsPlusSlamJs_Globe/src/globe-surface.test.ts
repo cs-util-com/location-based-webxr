@@ -21,6 +21,15 @@ import {
 } from "./globe-surface.js";
 
 describe("createGlobeSurface", () => {
+  // The phone's memory: the tiles' cache is capped (about 90 level-3 tiles
+  // with mips are ~31 MB, plan §7.4), and the library unloads past it.
+  it("caps the tile cache at the budget", () => {
+    const globe = createGlobeSurface();
+    expect(globe.tiles.lruCache.maxBytesSize).toBe(GLOBE_SURFACE.cacheBytes);
+    expect(GLOBE_SURFACE.cacheBytes).toBe(64 * 1024 * 1024);
+    globe.dispose();
+  });
+
   it("textures the ellipsoid from the committed 4326 Blue Marble pyramid", () => {
     const globe = createGlobeSurface();
     const plugin = globe.plugin;
@@ -44,7 +53,13 @@ describe("createGlobeSurface", () => {
 
   it("starts with no models and no tile errors, and adds its group to nothing", () => {
     const globe = createGlobeSurface();
-    expect(globe.state()).toEqual({ models: 0, tileErrors: 0 });
+    expect(globe.state()).toEqual({
+      models: 0,
+      tileErrors: 0,
+      cachedBytes: 0,
+      pendingTiles: 0,
+      loadedTiles: 0,
+    });
     // The credits line reads this: the imagery on screen is the registry's.
     expect(globe.activeSources()).toEqual(["blue-marble"]);
     expect(globe.group.parent).toBeNull();

@@ -28,7 +28,24 @@ export const GLOBE_SURFACE = {
   levels: IMAGERY.levels ?? 1,
   /** The committed pyramid, served by the design system's routes. */
   imageryUrl: IMAGERY.path,
+  /**
+   * The tile cache's byte budget: about 90 resident level-3 tiles with mips
+   * are ~31 MB (plan §7.4), so 64 MiB leaves room; the library unloads past
+   * it. A parameter to measure on the phone, not a decision.
+   */
+  cacheBytes: 64 * 1024 * 1024,
 } as const;
+
+/** The renderer's runtime counters and cache size (not in its typings). */
+interface TilesRuntime {
+  readonly stats: {
+    readonly queued: number;
+    readonly downloading: number;
+    readonly parsing: number;
+    readonly loaded: number;
+  };
+  readonly lruCache: { readonly cachedBytes: number };
+}
 
 export interface GlobeSurfaceOptions {
   readonly overlayProjection: string;
@@ -44,8 +61,17 @@ export interface GlobeSurface {
   readonly options: GlobeSurfaceOptions;
   /** Per frame, before the render. */
   update(camera: THREE.Camera, renderer: THREE.WebGLRenderer): void;
-  /** Loaded models and the library's tile load errors. */
-  state(): { models: number; tileErrors: number };
+  /**
+   * Loaded models, the library's tile load errors, the cache's bytes, and
+   * the tiles still pending (queued, downloading or parsing) and loaded.
+   */
+  state(): {
+    models: number;
+    tileErrors: number;
+    cachedBytes: number;
+    pendingTiles: number;
+    loadedTiles: number;
+  };
   /** The registry sources on screen, for the credits line. */
   activeSources(): GlobeSourceId[];
   dispose(): void;
@@ -119,6 +145,8 @@ export function createGlobeSurface(): GlobeSurface {
   });
   const tiles = new TilesRenderer();
   tiles.registerPlugin(plugin);
+  tiles.lruCache.maxBytesSize = GLOBE_SURFACE.cacheBytes;
+  const runtime = tiles as unknown as TilesRuntime;
   const template = new THREE.MeshStandardMaterial({ roughness: 0.9 });
   const owned = new WeakSet<THREE.Material>();
   let models = 0;
@@ -149,7 +177,16 @@ export function createGlobeSurface(): GlobeSurface {
       camera.updateMatrixWorld();
       tiles.update();
     },
-    state: () => ({ models, tileErrors }),
+    state: () => {
+      const { queued, downloading, parsing, loaded } = runtime.stats;
+      return {
+        models,
+        tileErrors,
+        cachedBytes: runtime.lruCache.cachedBytes,
+        pendingTiles: queued + downloading + parsing,
+        loadedTiles: loaded,
+      };
+    },
     activeSources: () => [IMAGERY.id],
     dispose() {
       tiles.dispose();

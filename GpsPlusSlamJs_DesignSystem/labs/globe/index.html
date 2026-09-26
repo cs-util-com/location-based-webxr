@@ -37,6 +37,16 @@
         display: none;
       }
 
+      #globe-loading {
+        position: fixed;
+        top: 36px;
+        left: 12px;
+        color: #c9d3e0;
+        font:
+          13px/1.4 system-ui,
+          sans-serif;
+      }
+
       #globe-credits {
         position: fixed;
         left: 12px;
@@ -63,6 +73,7 @@
   <body>
     <canvas id="globe-canvas"></canvas>
     <output id="globe-error" role="alert"></output>
+    <output id="globe-loading" aria-live="polite" hidden></output>
     <footer id="globe-credits"></footer>
   </body>
 </html>

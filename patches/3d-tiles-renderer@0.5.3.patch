@@ -1,0 +1,35 @@
+diff --git a/build/renderer-_7gAivIK.js b/build/renderer-_7gAivIK.js
+index 4c3e9d0896954ee4260572878ca88f32578ce970..7980e0d0f06905ffd2312614b02aaa0a6aeedd43 100644
+--- a/build/renderer-_7gAivIK.js
++++ b/build/renderer-_7gAivIK.js
+@@ -325,7 +325,7 @@ function k(e, t) {
+ 	}
+ }
+ function A(e) {
+-	return !w(e) && (!e.internal.hasContent || b(e.internal.loadingState));
++	return !w(e) && (!e.internal.hasContent || e.internal.loadingState === 4);
+ }
+ function j(e, t) {
+ 	if (T(e, t), !e.traversal.inFrustum) return;
+@@ -362,7 +362,7 @@ function M(e, t) {
+ 		for (let e = 0, t = r.length; e < t; e++) {
+ 			let t = r[e];
+ 			if (x(t, n)) {
+-				let e = !w(t), n = !t.internal.hasContent || b(t.internal.loadingState);
++				let e = !w(t), n = !t.internal.hasContent || t.internal.loadingState === 4;
+ 				e && n || t.traversal.allChildrenLoaded || (i = !1);
+ 			}
+ 		}
+diff --git a/src/core/renderer/tiles/traverseFunctions.js b/src/core/renderer/tiles/traverseFunctions.js
+index 7e19e81ab4fd009eeca0aa26c1d500a2296030aa..98f8b6a9865ce3bbc74b6cc250147f96678b0bdb 100644
+--- a/src/core/renderer/tiles/traverseFunctions.js
++++ b/src/core/renderer/tiles/traverseFunctions.js
+@@ -242,7 +242,7 @@ function kickActiveChildren( tile, renderer ) {
+ // Checks whether this tile is ready to be stopped at for rendering
+ function isChildReady( tile ) {
+ 
+-	return ! canUnconditionallyRefine( tile ) && ( ! tile.internal.hasContent || isDownloadFinished( tile.internal.loadingState ) );
++	return ! canUnconditionallyRefine( tile ) && ( ! tile.internal.hasContent || tile.internal.loadingState === LOADED );
+ 
+ }
+ 

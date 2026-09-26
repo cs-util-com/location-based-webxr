@@ -16,6 +16,43 @@ import { GIBS_ACKNOWLEDGEMENT } from "/globe/globe-sources.js";
 const canvas = document.getElementById("globe-canvas");
 const errorBox = document.getElementById("globe-error");
 const creditsBox = document.getElementById("globe-credits");
+const loadingLabel = document.getElementById("globe-loading");
+
+/**
+ * The async-feedback rule (globe plan §7.8, M1): a label while imagery tiles
+ * are pending, and a line in the error box when some could not load (the
+ * parent level then shows there, DEC-PRG-14). DOM writes only on a change.
+ */
+function statusView() {
+  let shown = false;
+  let lastLoading = "";
+  let lastError = "";
+  return {
+    get loadingShown() {
+      return shown;
+    },
+    update({ pendingTiles, loadedTiles, tileErrors }) {
+      const loading =
+        pendingTiles > 0
+          ? `Loading Earth imagery: ${loadedTiles} of ${loadedTiles + pendingTiles}`
+          : "";
+      if (loading !== lastLoading) {
+        lastLoading = loading;
+        loadingLabel.textContent = loading;
+        loadingLabel.hidden = loading === "";
+        shown ||= loading !== "";
+      }
+      const error =
+        tileErrors > 0
+          ? `Some Earth imagery could not load (${tileErrors} tiles): a coarser level shows there.`
+          : "";
+      if (error !== lastError) {
+        lastError = error;
+        errorBox.textContent = error;
+      }
+    },
+  };
+}
 
 /**
  * The credits line (globe plan §7.7): the short names over the canvas, the
@@ -83,6 +120,7 @@ function start() {
   scene.add(globe.group);
   const credits = creditsFor(globe.activeSources());
   renderCredits(credits);
+  const status = statusView();
 
   const frame = () => {
     const w = canvas.clientWidth;
@@ -93,6 +131,7 @@ function start() {
       camera.updateProjectionMatrix();
     }
     globe.update(camera, renderer);
+    status.update(globe.state());
     renderer.render(scene, camera);
   };
   renderer.setAnimationLoop(frame);
@@ -105,6 +144,9 @@ function start() {
       ...globe.state(),
       radiusM: radius,
       activeSources: globe.activeSources(),
+      loadingShown: status.loadingShown,
+      loadingVisible: !loadingLabel.hidden,
+      cacheBudgetBytes: globe.tiles.lruCache.maxBytesSize,
       creditShorts: credits.map((c) => c.short),
     }),
     /**

@@ -32,6 +32,18 @@ the Blue Marble tile pyramid (EPSG:4326, levels 0-3) and three global maps
 writes `assets/PROVENANCE.md`. `src/globe-sources.ts` is the one registry
 the globe loads from, so every source carries its credit.
 
+## The recorded patch (DEC-PRG-14)
+
+`patches/3d-tiles-renderer@0.5.3.patch` (at the workspace root, wired in
+`pnpm-workspace.yaml`'s `patchedDependencies`) changes one rule: a child
+tile that FAILED to load counts as not ready, so its parent stays drawn
+over that area instead of leaving a hole. The library's build is what the
+page runs, so the patch edits the bundled chunk (two places) and, for
+readers, the same line in `src/`. The globe lab's smoke proves it: with
+every level 2-3 tile answering 404, no probe is black (81 of 81 were
+without the patch). Upstream it stays to be reported; an upgrade must
+re-check whether the patch still applies.
+
 ## How it is served
 
 The design system's route table (`serve-routes.mjs`) maps `/globe/` to

@@ -7,12 +7,15 @@
   one template material so the sun makes a day and a night side.
 - Public API:
   - `GLOBE_SURFACE` - the overlay projection, levels and imagery URL, taken
-    from the registry.
+    from the registry, and `cacheBytes` (64 MiB), the tile cache's budget
+    (the library's `lruCache.maxBytesSize`; about 90 level-3 tiles are
+    ~31 MB, to be measured on the phone).
   - `createGlobeSurface()` → `{ tiles, group, plugin, overlay, options,
 update(camera, renderer), state(), activeSources(), dispose() }`. The
     caller adds `group` to its scene and calls `update` every frame before
-    rendering. `state()` is `{ models, tileErrors }` (the library's
-    `load-error` events); `activeSources()` names the registry sources on
+    rendering. `state()` is `{ models, tileErrors, cachedBytes,
+pendingTiles, loadedTiles }` (`load-error` events; the cache's bytes;
+    tiles queued, downloading or parsing; tiles loaded); `activeSources()` names the registry sources on
     screen, for the credits line.
   - `useLitMaterial(model, template, owned)` - gives each mesh of a loaded
     tile a lit clone of `template` that keeps that mesh's own texture, and
@@ -20,6 +23,10 @@ update(camera, renderer), state(), activeSources(), dispose() }`. The
   - `disposeLitMaterials(model, owned)` - frees those clones, never their
     maps.
 - Invariants & assumptions:
+  - A tile that fails to load leaves its parent drawn over that area
+    (owner decision DEC-PRG-14), through the recorded pnpm patch
+    `patches/3d-tiles-renderer@0.5.3.patch`; the library alone would leave
+    a hole.
   - The texture belongs to the overlay, which releases it itself; the
     renderer holds and frees the tile's original material. So only the lit
     clones are freed here, on the renderer's `dispose-model` event.
