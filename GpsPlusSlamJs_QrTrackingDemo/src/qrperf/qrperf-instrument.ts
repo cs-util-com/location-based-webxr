@@ -218,7 +218,8 @@ function pct(share: number): string {
 /** The chained corner order's audit and unsure runs (plan §42 S4). */
 function chainLine(c: OrderChainSummary): string {
   const r = c.unsureRuns;
-  return `corner order chain audit agree ${c.audit.agree} | disagree ${c.audit.disagree} | reject ${c.audit.reject} || unsure runs 1/2-4/5-8/9+ ${r.r1}/${r.r2to4}/${r.r5to8}/${r.r9plus}`;
+  const n = c.nativeRuns;
+  return `corner order chain audit agree ${c.audit.agree} | disagree ${c.audit.disagree} | reject ${c.audit.reject} || unsure runs 1/2-4/5-8/9+ ${r.r1}/${r.r2to4}/${r.r5to8}/${r.r9plus} || native runs ${n.r1}/${n.r2to4}/${n.r5to8}/${n.r9plus}`;
 }
 
 /** Corner-order sources and the big jumps' classes (plan §39 F0b). */

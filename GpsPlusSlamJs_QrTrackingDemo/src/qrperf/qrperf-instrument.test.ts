@@ -328,6 +328,32 @@ describe("createQrPerfInstrument", () => {
       expect(inst.report().join(" ")).toContain("chain audit agree 1");
     });
 
+    // Why this test matters (plan §55 #8): dropping native frames is right
+    // while they come in short runs; unsure runs mix memory and native, so
+    // the native runs are counted on their own.
+    it("counts the runs of native frames on their own", async () => {
+      const inst = createQrPerfInstrument({ mode: "native", baseline: false });
+      const seq = ["native", "memory", "native", "native", "finder", "native"];
+      for (const orderSource of seq) {
+        await inst.wrapDetect(() =>
+          Promise.resolve({
+            ...HIT,
+            orderSource: orderSource as "native" | "memory" | "finder",
+          }),
+        )(IMAGE);
+      }
+      const json = JSON.parse(inst.json()) as {
+        cornerOrderChain: { nativeRuns: Record<string, number> };
+      };
+      // Runs: 1, 2, and an open 1.
+      expect(json.cornerOrderChain.nativeRuns).toEqual({
+        r1: 2,
+        r2to4: 1,
+        r5to8: 0,
+        r9plus: 0,
+      });
+    });
+
     // Why this test matters: the wrapper is generic and must stay harmless for
     // a solve it cannot read, or for a failed solve (null).
     it("ignores solves it cannot read and failed solves", async () => {
@@ -398,10 +424,12 @@ describe("createQrPerfInstrument fused pose (M3b b5)", () => {
       averagedRotationDeltaDeg: 2,
       frameEpoch: 0,
       oldestTimestamp: 0,
-      newestTimestamp: 0,
+      // NaN: no window time, so no lock reads as a re-read (plan §55 #3).
+      newestTimestamp: Number.NaN,
       motion: null,
       edgePx: null,
       notStableReason: null,
+      nativeIgnored: 0,
       ...over,
     }) as Parameters<ReturnType<typeof createQrPerfInstrument>["onFused"]>[0];
 

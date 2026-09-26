@@ -32,7 +32,15 @@ import {
 type Pose = NonNullable<QrFusedPose["pose"]>;
 
 export interface FusedTallySummary {
+  /** Locks tallied (re-reads excluded). */
   locks: number;
+  /**
+   * Locks whose result's newest detection did not advance: the fused window
+   * did not read the new detection (since plan §54, a native frame of a
+   * code whose order is known). Counted apart and nothing else - they would
+   * add 0 deg jumps and duplicate motion readings.
+   */
+  reReads: number;
   stable: number;
   joint: number;
   averaged: number;
@@ -112,6 +120,8 @@ export function createFusedTally(): {
   const stableBands = perBand(() => ({ locks: 0, stable: 0 }));
   const elevations: number[] = [];
   let lastEpoch: number | null = null;
+  let reReads = 0;
+  let lastNewest: { epoch: number; timestamp: number } | null = null;
   let previous: { pose: Pose; atMs: number; epoch: number } | null = null;
   const motion = createMotionTally();
 
@@ -128,6 +138,16 @@ export function createFusedTally(): {
       positionJumps.push(distanceCm(previous.pose.position, pose.position));
     }
     previous = { pose, atMs, epoch: result.frameEpoch };
+  }
+
+  /** Same epoch and the newest detection not newer than the last tallied one. */
+  function isReRead(result: QrFusedPose): boolean {
+    return (
+      lastNewest !== null &&
+      Number.isFinite(result.newestTimestamp) &&
+      result.frameEpoch === lastNewest.epoch &&
+      result.newestTimestamp <= lastNewest.timestamp
+    );
   }
 
   function addCounts(result: QrFusedPose): void {
@@ -157,6 +177,15 @@ export function createFusedTally(): {
 
   return {
     add(result, atMs, size) {
+      if (isReRead(result)) {
+        reReads += 1;
+        return;
+      }
+      if (Number.isFinite(result.newestTimestamp))
+        lastNewest = {
+          epoch: result.frameEpoch,
+          timestamp: result.newestTimestamp,
+        };
       addCounts(result);
       addFitAndBands(result);
       addStablePose(result, atMs);
@@ -166,6 +195,7 @@ export function createFusedTally(): {
       const abs = elevations.map(Math.abs);
       return {
         ...counts,
+        reReads,
         fitP50Px: pct(fits, 0.5),
         fitP95Px: pct(fits, 0.95),
         deltaP50Deg: pct(deltas, 0.5),
@@ -233,7 +263,7 @@ function motionLines(m: MotionTallySummary): string[] {
 /** The report lines: the tally, the stable fused pose's own quality, the motion. */
 export function fusedLines(s: FusedTallySummary): string[] {
   return [
-    `fused: ${s.locks} locks | stable ${s.stable} | joint ${s.joint} / averaged ${s.averaged} | frame changes ${s.frameChanges} | fit p50/p95 ${f(s.fitP50Px)}/${f(s.fitP95Px)} px | vs averaged p50/p95 ${f(s.deltaP50Deg)}/${f(s.deltaP95Deg)} deg`,
+    `fused: ${s.locks} locks (+${s.reReads} re-reads of an ignored native frame) | stable ${s.stable} | joint ${s.joint} / averaged ${s.averaged} | frame changes ${s.frameChanges} | fit p50/p95 ${f(s.fitP50Px)}/${f(s.fitP95Px)} px | vs averaged p50/p95 ${f(s.deltaP50Deg)}/${f(s.deltaP95Deg)} deg`,
     `fused pose (stable): jump p50/p95/max ${f(s.jumpDeg.p50)}/${f(s.jumpDeg.p95)}/${f(s.jumpDeg.max)} deg, position jump p50/p95/max ${f(s.positionJumpCm.p50)}/${f(s.positionJumpCm.p95)}/${f(s.positionJumpCm.max)} cm (n ${s.jumpDeg.n}) | wall elevation |p50|/|p95| ${f(s.wallElevationDeg.p50Abs)}/${f(s.wallElevationDeg.p95Abs)} deg, mean ${f(s.wallElevationDeg.meanSigned)} deg`,
     `fused not stable: views ${s.notStable.views} | fit ${s.notStable.fit} | fallback ${s.notStable.fallback} | motion ${s.notStable.motion}`,
     `fused by code size (<150/150-300/>=300 px): stable ${s.stableByEdgePx.small.stable}/${s.stableByEdgePx.small.locks}, ${s.stableByEdgePx.medium.stable}/${s.stableByEdgePx.medium.locks}, ${s.stableByEdgePx.large.stable}/${s.stableByEdgePx.large.locks} | fit p50/p95 ${bandsLine(s.fitByEdgePx)}`,

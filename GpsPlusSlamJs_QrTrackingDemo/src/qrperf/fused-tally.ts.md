@@ -14,13 +14,19 @@ phone, which is what its provisional thresholds are set against.
 
 - `createFusedTally()` -> `{ add(result: QrFusedPose, atMs, size?), summary() }`
   (`size`: the code's size state then, for the motion switch log).
-  - `summary()`: `{ locks, stable, joint, averaged, frameChanges, fitP50Px,
+  - `summary()`: `{ locks, reReads, stable, joint, averaged, frameChanges, fitP50Px,
 fitP95Px, deltaP50Deg, deltaP95Deg, jumpDeg, positionJumpCm, wallElevationDeg,
 motion }`; the percentiles are nearest-rank over the FINITE values only
     (`null` when there are none). Fit and joint-vs-averaged count only
     windows of at least 5 views - the ones the gate can open on; a
     motion-cut 1-view window or an early small one fits trivially and would
     pull them down (b5 review #5).
+  - `reReads`: locks whose result's newest detection did not advance (same
+    epoch) - since plan §54 a native frame of a code whose order is known,
+    which the fused window does not read. Counted apart and NOTHING else
+    (plan §55 #3: they would add 0 deg jumps, duplicate motion readings and
+    stable locks from an unchanged window); `locks` excludes them. The
+    phone's proof that the rule fired.
   - `frameChanges`: how often the fused results' frame epoch moved on - did
     the demo see a tracking restart (field test C, plan §25).
   - `jumpDeg` and `positionJumpCm` `{ n, p50, p95, max }` (the same pairs'

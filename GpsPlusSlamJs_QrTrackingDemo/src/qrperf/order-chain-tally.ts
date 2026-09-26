@@ -11,15 +11,50 @@ import type { QrDetection } from "gps-plus-slam-app-framework/ar/qr";
 export interface OrderChainSummary {
   audit: { agree: number; disagree: number; reject: number };
   /** Runs of consecutive memory / native detections between finder ones. */
-  unsureRuns: { r1: number; r2to4: number; r5to8: number; r9plus: number };
+  unsureRuns: RunCounts;
+  /**
+   * Runs of consecutive NATIVE detections (plan §55 #8: the fused window
+   * ignores them once a code's order is known, which is right while they
+   * come in short runs).
+   */
+  nativeRuns: RunCounts;
 }
 
-type RunKey = keyof OrderChainSummary["unsureRuns"];
+interface RunCounts {
+  r1: number;
+  r2to4: number;
+  r5to8: number;
+  r9plus: number;
+}
+
+type RunKey = keyof RunCounts;
 
 function runKey(n: number): RunKey {
   if (n >= 9) return "r9plus";
   if (n >= 5) return "r5to8";
   return n >= 2 ? "r2to4" : "r1";
+}
+
+/** Counts runs of consecutive detections that match, as they end. */
+function createRunCounter() {
+  const runs: RunCounts = { r1: 0, r2to4: 0, r5to8: 0, r9plus: 0 };
+  let run = 0;
+  return {
+    add(inRun: boolean) {
+      if (inRun) {
+        run += 1;
+        return;
+      }
+      if (run > 0) runs[runKey(run)] += 1;
+      run = 0;
+    },
+    /** The counts, with an open run as it stands. */
+    counts(): RunCounts {
+      const out = { ...runs };
+      if (run > 0) out[runKey(run)] += 1;
+      return out;
+    },
+  };
 }
 
 export function createOrderChainTally(): {
@@ -28,24 +63,21 @@ export function createOrderChainTally(): {
   summary(): OrderChainSummary;
 } {
   const audit = { agree: 0, disagree: 0, reject: 0 };
-  const runs = { r1: 0, r2to4: 0, r5to8: 0, r9plus: 0 };
-  let run = 0;
+  const unsure = createRunCounter();
+  const native = createRunCounter();
   return {
     add(detection) {
       if (detection.orderAudit) audit[detection.orderAudit] += 1;
       if (!detection.orderSource) return;
-      if (detection.orderSource !== "finder") {
-        run += 1;
-        return;
-      }
-      if (run > 0) runs[runKey(run)] += 1;
-      run = 0;
+      unsure.add(detection.orderSource !== "finder");
+      native.add(detection.orderSource === "native");
     },
     summary() {
-      const unsureRuns = { ...runs };
-      // An open run counts as it stands.
-      if (run > 0) unsureRuns[runKey(run)] += 1;
-      return { audit: { ...audit }, unsureRuns };
+      return {
+        audit: { ...audit },
+        unsureRuns: unsure.counts(),
+        nativeRuns: native.counts(),
+      };
     },
   };
 }

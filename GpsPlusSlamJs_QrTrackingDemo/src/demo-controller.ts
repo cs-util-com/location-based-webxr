@@ -225,6 +225,9 @@ export function createQrDemoController(
       imageWidth: image.width,
       imageHeight: image.height,
       intrinsics,
+      // Where the corner order came from: the fused window ignores a
+      // native-order frame of a code whose order is known (plan §54-§55).
+      ...(detection.orderSource ? { orderSource: detection.orderSource } : {}),
     };
     return { event, pose: solution.qrPoseWorld, estimate };
   }

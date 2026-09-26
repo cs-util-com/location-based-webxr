@@ -27,10 +27,13 @@ function tilted(elevDeg: number, over: Partial<QrFusedPose> = {}): QrFusedPose {
     averagedRotationDeltaDeg: 1,
     frameEpoch: 0,
     oldestTimestamp: 0,
-    newestTimestamp: 0,
+    // NaN: no window time, so no lock reads as a re-read (plan §55 #3);
+    // the re-read tests set it.
+    newestTimestamp: Number.NaN,
     motion: null,
     edgePx: null,
     notStableReason: null,
+    nativeIgnored: 0,
     ...over,
   };
 }
@@ -456,5 +459,34 @@ describe("createFusedTally motion signals by size and during motion (plan §34 R
       turnSignalP95Px: 8,
     });
     expect(d.moveSignalP95Cm).toBeCloseTo(7, 6);
+  });
+});
+
+describe("createFusedTally re-reads (plan §55 #3)", () => {
+  // Why this test matters: since b4a a native frame of an ordered code is
+  // not read, so its lock hands back a result whose newest detection did
+  // not advance. Counting it again would add a 0 deg jump, a duplicate
+  // motion reading and a stable lock from an unchanged window; counting it
+  // apart is also the phone's proof that the rule fired.
+  it("counts a lock whose newest detection did not advance apart, and nothing else", () => {
+    const t = createFusedTally();
+    t.add(tilted(0, { newestTimestamp: 100 }), 100);
+    t.add(tilted(0, { newestTimestamp: 200 }), 200);
+    t.add(tilted(0, { newestTimestamp: 200 }), 300);
+    const s = t.summary();
+    expect(s.locks).toBe(2);
+    expect(s.stable).toBe(2);
+    expect(s.reReads).toBe(1);
+    expect(s.jumpDeg.n).toBe(1);
+  });
+
+  it("does not take a new frame epoch or an unknown result for a re-read", () => {
+    const t = createFusedTally();
+    t.add(tilted(0, { newestTimestamp: 200 }), 100);
+    t.add(tilted(0, { newestTimestamp: 200, frameEpoch: 1 }), 200);
+    t.add(tilted(0, { newestTimestamp: Number.NaN, status: "unknown" }), 300);
+    t.add(tilted(0, { newestTimestamp: Number.NaN, status: "unknown" }), 400);
+    expect(t.summary().reReads).toBe(0);
+    expect(t.summary().locks).toBe(4);
   });
 });

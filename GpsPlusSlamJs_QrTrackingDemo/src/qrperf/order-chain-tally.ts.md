@@ -22,7 +22,9 @@ solve, so the two totals differ.
 r2to4, r5to8, r9plus } }`: the audit counts (a `disagree` is a frame the
     chain would have got wrong; `reject` one where it would have ended) and
     the lengths of the runs of `memory` / `native` detections between finder
-    ones (an open run counts as it stands).
+    ones (an open run counts as it stands), and `nativeRuns` - the runs of
+    `native` detections alone (plan §55 #8: ignoring native frames is right
+    while their runs are short).
 
 ## Invariants & assumptions
 

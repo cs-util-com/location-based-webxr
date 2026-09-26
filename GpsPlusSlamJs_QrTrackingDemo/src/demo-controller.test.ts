@@ -328,4 +328,23 @@ describe("createQrDemoController capture-time pose", () => {
       intrinsicsFromProjection(PROJECTION, IMG.width, IMG.height),
     );
   });
+
+  // Why this test matters (QR near-frontal pose plan §55 #1): the demo
+  // builds its own events, and the fused window can ignore a native-order
+  // frame of an ordered code only if the source reaches the store. Without
+  // this line the b4a rule never fires in the demo, where it is measured.
+  it("records the front end's corner-order source on the event", async () => {
+    const events: { orderSource?: string }[] = [];
+    const { controller } = setup({
+      detect: () =>
+        Promise.resolve<QrDetection | null>({
+          ...detection,
+          orderSource: "memory",
+        }),
+      recordDetection: (e) => events.push(e),
+    });
+    await feed(controller, 3);
+    expect(events.length).toBeGreaterThan(0);
+    expect(events[0]!.orderSource).toBe("memory");
+  });
 });

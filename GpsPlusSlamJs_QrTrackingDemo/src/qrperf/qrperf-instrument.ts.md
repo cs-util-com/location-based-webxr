@@ -21,7 +21,8 @@ The `?qrperf` instrument: times the demo's capture, detect and solve stages, opt
     the stable fused pose's rotation and position jumps and wall elevation,
     and the motion readings with their switch log).
   - Each detection also feeds `order-chain-tally.ts` (the chained corner
-    order's audit and runs of unsure frames, plan §42 S4): the JSON
+    order's audit, runs of unsure frames and runs of native frames, plan
+    §42 S4, §55 #8): the JSON
     `cornerOrderChain` and the report line `corner order chain audit ...`.
   - `onFusedCost(ms)` - one NEW fused/motion evaluation's cost (plan §30),
     recorded as the `fused` stage. The demo feeds it from

@@ -39,7 +39,9 @@ intrinsics, cameraPose })`. Rotation no longer inherits per-corner depth noise.
   and the recorded event alike - not the depth sample's, which can be up to 250 ms
   (plus one decode) away from the pixels (M4). The event also carries the
   detector buffer's `intrinsics` (required on `QrDetectionEvent` since M3b
-  b3), so the fused QR window can re-solve the corners jointly.
+  b3), so the fused QR window can re-solve the corners jointly, and the
+  front end's `orderSource` when it says (plan §55 #1: without it the
+  fused window could not ignore a native-order frame in the demo).
   (The depth-corner `pose-from-corners.ts` hybrid-fallback was removed in the
   2026-06-17 cleanup once on-device confirmed PnP translation is robust.)
 - **Size-exists gate (relaxed):** the controller places as soon as ANY size is
