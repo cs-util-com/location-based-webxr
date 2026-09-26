@@ -23,3 +23,16 @@
   test is simply not watertight is NOT established, so this says nothing
   about visible cracks. The lab aims its centre ray 1e-5 of the half-frame
   off both axes (about 50 m, 0.0008°) and treats a far-side hit as none.
+- **A light inside `tiles.group` lights nothing.** The library's `TilesGroup`
+  refreshes its children's world matrices only when its own world matrix
+  changes; at identity it never does, so a `DirectionalLight` added there
+  keeps the matrix it was made with, sits on its target and has no
+  direction. M3's first render was an all-black globe with no error. The
+  surface's `group` now holds the tile group and the sun side by side.
+- **A 180° seam test can pass by construction.** Centred exactly on 180°,
+  the wrap falls on a 2x2 pixel-quad boundary, so no derivative ever spans
+  it and the image is identical with and without the seam fix. The view
+  must put the line inside a quad, and assert it: 179.95° first seemed to, but at 9.45 px per degree it lands the line on a quad boundary and "worked" only through a 0.03 px centring residual (milestone review). The view is 1 px west (179.894°), and the test checks the line's quad per row. Pooled over rows, a real
+  cloud edge on the line hid the seam too; the check is per row.
+- **"Nearly black" is not "a hole" once exposure changes.** Under M3's tone
+  mapping deep sea reads (0,0,9); a hole shows the black sky exactly.

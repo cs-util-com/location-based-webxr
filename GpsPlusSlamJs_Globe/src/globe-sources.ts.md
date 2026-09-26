@@ -7,7 +7,9 @@
   - `GLOBE_SOURCES` - `{ id, kind: "tiles" | "equirect", path, levels?,
 projection?, colorSpace, credit: { short, full, href } }`: the Blue
     Marble pyramid (levels 0-3), Black Marble 2016, the MODIS water mask,
-    the Blue Marble clouds.
+    the Blue Marble clouds. `colorSpace` says how the shader reads it:
+    `srgb` for colour (the tiles, the night lights), `linear` for numbers
+    (the water mask, and the clouds, whose grey level is read as coverage).
   - `globeSource(id)` - one entry; `RangeError` for an unknown id.
   - `GIBS_ACKNOWLEDGEMENT` - GIBS's acknowledgement, shown in full.
   - The types `GlobeCredit` (OsmDemo's attribution-entry shape),

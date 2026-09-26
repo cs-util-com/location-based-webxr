@@ -1,13 +1,21 @@
 # labs/globe/globe-lab.js - the globe lab
 
-- Purpose: globe plan 2026-09-26-0539 §7, M0-M2. The globe package's
+- Purpose: globe plan 2026-09-26-0539 §7, M0-M3. The globe package's
   surface (`/globe/globe-surface.js`), served no-build: the Earth textured
-  from the committed Blue Marble pyramid, lit by one sun, with a credits
-  line (the short names, the full texts and GIBS's acknowledgement in a
+  from the committed Blue Marble pyramid, lit by the real sun, with night
+  lights, a water glint and clouds, and a credits line (the short names, the full texts and GIBS's acknowledgement in a
   `<details>`, built with `textContent` only). A loading label ("Loading
   Earth imagery: n of m") shows while tiles are pending, and the error box
-  names tiles that could not load ("a coarser level shows there"). M3-M4 add
-  the real sun, the surface patch and the tunables.
+  names tiles that could not load ("a coarser level shows there") and global
+  maps that could not load. The label counts the three global maps too, so
+  it ends only when the clouds (the largest file) have arrived. M4 adds the
+  tunables panel.
+- The light (M3): `solarPosition(time, 0, 0)` from `/fw/geo/solar-position.js`
+  through `sunDirectionEcef` into `globe.setSun`, every frame, for
+  `#time=<ISO>` or now; intensity π, Neutral tone mapping, no ambient
+  light, a black sky (plan §7.3). The surface's tuning comes from the hash:
+  `nightGain` (0-100), `waterRoughness` and `cloudOpacity` (0-1);
+  anything else keeps the default.
 - The intro (M2, `/globe/globe-target.js`, `/globe/globe-camera.js`):
   - `spin`: from 30°N 15°E, the view's longitude falling 3°/s, so the
     surface moves west to east across the screen as the Earth turns;
@@ -27,10 +35,12 @@
     be ignored; phase 6 (the real locate timeout) has to decide that.
 - Test API, `window.__globeLab`: `ready`, `error`, `spinStart`, `state()`
   (`{ models, tileErrors, cachedBytes, pendingTiles, loadedTiles, phase,
-target, source, history, runs, spinMs, turnMs, centreLatLon, radiusM,
-activeSources, loadingShown, loadingVisible, cacheBudgetBytes,
-creditShorts }`), `readPixels(points)` (normalised canvas points, read in
-  the same task as a render).
+target, source, history, runs, spinMs, turnMs, centreLatLon, timeMs,
+sunEcef, tuning, radiusM, activeSources, loadingShown, loadingVisible,
+cacheBudgetBytes, creditShorts, mapsLoaded, mapErrors, mapsTotal }`), `project(lat, lng)` (a
+  place's normalised canvas point, for probes at known places),
+  `readPixels(points)` (normalised canvas points, read in the same task as
+  a render).
   - `history` lists `{ phase, source, atMs }` per change since the start,
     and `runs` counts the starts, so a test reads a sequence instead of
     racing it.
@@ -43,21 +53,34 @@ creditShorts }`), `readPixels(points)` (normalised canvas points, read in
     established). A hit beyond the Earth's centre reads as null.
 - Invariants & assumptions: the page's import map maps `three` to the
   framework's copy and `3d-tiles-renderer` (and `/plugins`) to the vendored
-  library; nothing leaves the machine. The lab's sun is fixed over the
-  Atlantic (20°N 25°W) until M3, so views towards 150-180°E are on the
-  night side and black.
+  library; nothing leaves the machine. The sun is real, so a view can be on
+  the night side: the tests pin `#time=`.
 - Tests: `globe.smoke.spec.mjs`:
-  - on a fixed view (`#at=30,15&spinMs=0&turnMs=0`): boots, lit centre,
+  - on a fixed view (`#at=30,15&spinMs=0&turnMs=0`, 11:00 UTC on an
+    equinox so it is day): boots, lit centre,
     black corners, textured (the luminance spread around the centre), every
     credit named, the loading label shown then gone, the cache within its
     budget, no tile error, no request off 127.0.0.1, no console or page
-    error; and with every level 2-3 tile answering 404, no hole (the parent
-    drawn), the error box, and no error but the library's own per-tile
-    lines;
+    error; and with every level 2-3 tile answering 404, no hole (no probe
+    showing the black sky exactly; the parent drawn), the error box, and no
+    error but the library's own per-tile lines;
   - the centre within 0.01° of the target after arriving (the visual
     requirement is 0.25°; 0.01° also catches a geodetic-normal camera), for
     Cologne, Tokyo, (0, 179.9), (80, -40) and the spin start's antipode (the
     longest turn; not the exact-antipode branch, which the unit tests
     cover), reported across {0.01, 0.1, 0.25, 0.5}°;
   - with no `#at`: `waiting`, then `fallback` no earlier than `spinMs`,
-    arriving at Central Park; the replay button runs it again.
+    arriving at Central Park; the replay button runs it again;
+  - (M3, equinox noon) the day side lit at the subsolar point (dark at
+    midnight), night lights over Tokyo (none with `nightGain=0`), and the
+    glint at the specular point with the clouds off (gone with
+    `waterRoughness=1`): each check also run with its term off, where it
+    must fail; floors reported across ±50 %;
+  - (M3) no night lights on the day side (Tokyo at noon local, the same
+    with `nightGain=0`), and the sun over 91.86°E at 06:00 UTC (the whole
+    solarPosition chain, not mirrored);
+  - no seam at 180° (the view 1 px west of 180°, at 179.894°, so a pixel
+    quad straddles the line, asserted per row; per row, the jump across 180°
+    against the largest ordinary jump: 0.67x with the fix, 4.02x without);
+  - a global map answering 404: the error box says so, the loading label
+    ends, the globe still draws, no page error.

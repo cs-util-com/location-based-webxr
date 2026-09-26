@@ -1,9 +1,9 @@
 /**
- * The globe lab (globe plan 2026-09-26-0539 §7, M0-M2): the globe package's
+ * The globe lab (globe plan 2026-09-26-0539 §7, M0-M3): the globe package's
  * surface, served no-build through the design system's routes, textured and
  * credited (M1). It spins while it waits for a target, turns to it and
- * holds it at the centre, north up (M2); the real sun and the surface patch
- * arrive in M3.
+ * holds it at the centre, north up (M2). It is lit by the real sun of now or
+ * of `#time=`, with night lights, a water glint and clouds (M3).
  *
  * @see globe-lab.js.md
  */
@@ -25,6 +25,9 @@ import {
   smoothstep,
   turnPose,
 } from "/globe/globe-camera.js";
+import { sunDirectionEcef } from "/globe/globe-sun.js";
+import { GLOBE_SURFACE_TUNING } from "/globe/globe-surface-material.js";
+import { solarPosition } from "/fw/geo/solar-position.js";
 
 const canvas = document.getElementById("globe-canvas");
 const errorBox = document.getElementById("globe-error");
@@ -45,10 +48,20 @@ function statusView() {
     get loadingShown() {
       return shown;
     },
-    update({ pendingTiles, loadedTiles, tileErrors }) {
+    update({
+      pendingTiles,
+      loadedTiles,
+      tileErrors,
+      mapsLoaded,
+      mapErrors,
+      mapsTotal,
+    }) {
+      // The tiles and the three global maps (the clouds are the largest
+      // single file): "loaded" only once all of them have arrived or failed.
+      const mapsPending = mapsTotal - mapsLoaded - mapErrors;
       const loading =
-        pendingTiles > 0
-          ? `Loading Earth imagery: ${loadedTiles} of ${loadedTiles + pendingTiles}`
+        pendingTiles > 0 || mapsPending > 0
+          ? `Loading Earth imagery: ${loadedTiles + mapsLoaded} of ${loadedTiles + pendingTiles + mapsLoaded + mapsPending}`
           : "";
       if (loading !== lastLoading) {
         lastLoading = loading;
@@ -56,10 +69,16 @@ function statusView() {
         loadingLabel.hidden = loading === "";
         shown ||= loading !== "";
       }
-      const error =
+      const error = [
         tileErrors > 0
           ? `Some Earth imagery could not load (${tileErrors} tiles): a coarser level shows there.`
-          : "";
+          : "",
+        mapErrors > 0
+          ? `${mapErrors} of the night-light, water and cloud maps could not load.`
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
       if (error !== lastError) {
         lastError = error;
         errorBox.textContent = error;
@@ -117,17 +136,6 @@ const DEFAULT_SPIN_MS = 3000;
 const DEFAULT_TURN_MS = 5000;
 const DEG = Math.PI / 180;
 
-/** A unit ECEF direction (z north) for a latitude and longitude. */
-function ecefDirection(latDeg, lonDeg) {
-  const lat = latDeg * DEG;
-  const lon = lonDeg * DEG;
-  return new THREE.Vector3(
-    Math.cos(lat) * Math.cos(lon),
-    Math.cos(lat) * Math.sin(lon),
-    Math.sin(lat),
-  );
-}
-
 /** A non-negative duration from the hash, or the default. */
 function readMs(params, name, fallback) {
   if (!params.has(name)) return fallback;
@@ -137,13 +145,56 @@ function readMs(params, name, fallback) {
     : fallback;
 }
 
-/** The lab's parameters from the hash: `#at=<lat>,<lng>&spinMs=&turnMs=`. */
+/** A number from the hash within [min, max], or the default. */
+function readNumber(params, name, fallback, min, max) {
+  const text = params.get(name);
+  const value = Number(text);
+  return text !== null && text.trim() !== "" && value >= min && value <= max
+    ? value
+    : fallback;
+}
+
+/** An instant from the hash (`#time=<ISO>`), or null for "now". */
+function readTime(params) {
+  const ms = Date.parse(params.get("time") ?? "");
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/**
+ * The lab's parameters from the hash: `#at=<lat>,<lng>&spinMs=&turnMs=`,
+ * `time=<ISO>`, and the surface's tuning `nightGain=`, `waterRoughness=`,
+ * `cloudOpacity=` (M4 puts them on a panel).
+ */
 function readHashParams() {
   const params = new URLSearchParams(location.hash.slice(1));
   return {
     url: parseLatLngText(params.get("at")),
     spinMs: readMs(params, "spinMs", DEFAULT_SPIN_MS),
     turnMs: readMs(params, "turnMs", DEFAULT_TURN_MS),
+    timeMs: readTime(params),
+    tuning: {
+      nightGain: readNumber(
+        params,
+        "nightGain",
+        GLOBE_SURFACE_TUNING.nightGain,
+        0,
+        100,
+      ),
+      waterRoughness: readNumber(
+        params,
+        "waterRoughness",
+        GLOBE_SURFACE_TUNING.waterRoughness,
+        0,
+        1,
+      ),
+      cloudOpacity: readNumber(
+        params,
+        "cloudOpacity",
+        GLOBE_SURFACE_TUNING.cloudOpacity,
+        0,
+        1,
+      ),
+    },
   };
 }
 
@@ -221,6 +272,7 @@ function introFlight(ellipsoid) {
       }
       return to;
     },
+    params: () => params,
     state: () => ({
       phase,
       target: choice.target,
@@ -235,6 +287,9 @@ function introFlight(ellipsoid) {
 
 function start() {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  // Phase 1's exposure (§7.3): the sun at intensity π, Neutral tone mapping
+  // (the look-dev default), no ambient light, a black sky.
+  renderer.toneMapping = THREE.NeutralToneMapping;
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
   const scene = new THREE.Scene();
   const radius = WGS84_ELLIPSOID.radius.x;
@@ -245,21 +300,34 @@ function start() {
     radius * 20,
   );
   let distance = radius * 3;
-  // The sun over the Atlantic, west of the spin's start: a lit face with the
-  // terminator on screen, until M3 brings the real sun.
-  const sun = new THREE.DirectionalLight(0xffffff, 2);
-  sun.position.copy(ecefDirection(20, -25));
-  scene.add(sun);
   const globe = createGlobeSurface();
   scene.add(globe.group);
   const credits = creditsFor(globe.activeSources());
   renderCredits(credits);
   const status = statusView();
   const flight = introFlight(globe.tiles.ellipsoid);
+  /** The hash's tuning onto the shared uniforms. */
+  const applyTuning = () => {
+    const { tuning } = flight.params();
+    const u = globe.surfaceUniforms;
+    u.uNightGain.value = tuning.nightGain;
+    u.uWaterRoughness.value = tuning.waterRoughness;
+    u.uCloudOpacity.value = tuning.cloudOpacity;
+  };
+  /** The sun of `#time=`, or of now (it moves 0.25° a minute). */
+  const sunNow = () => {
+    const ms = flight.params().timeMs ?? Date.now();
+    globe.setSun(
+      sunDirectionEcef(globe.tiles.ellipsoid, solarPosition(ms, 0, 0)),
+    );
+    return ms;
+  };
   flight.restart(performance.now());
-  window.addEventListener("hashchange", () =>
-    flight.restart(performance.now()),
-  );
+  applyTuning();
+  window.addEventListener("hashchange", () => {
+    flight.restart(performance.now());
+    applyTuning();
+  });
   replayButton.addEventListener("click", () =>
     flight.restart(performance.now()),
   );
@@ -281,6 +349,7 @@ function start() {
         radius,
       });
     }
+    sunNow();
     applyOrbitPose(camera, flight.pose(performance.now()), distance);
     camera.updateMatrixWorld();
     globe.update(camera, renderer);
@@ -325,6 +394,9 @@ function start() {
       ...globe.state(),
       ...flight.state(),
       centreLatLon: centreLatLon(),
+      timeMs: sunNow(),
+      sunEcef: globe.surfaceUniforms.uSunEcef.value.toArray(),
+      tuning: flight.params().tuning,
       radiusM: radius,
       activeSources: globe.activeSources(),
       loadingShown: status.loadingShown,
@@ -332,6 +404,16 @@ function start() {
       cacheBudgetBytes: globe.tiles.lruCache.maxBytesSize,
       creditShorts: credits.map((c) => c.short),
     }),
+    /**
+     * Where a latitude and longitude (degrees, on the ellipsoid) is on the
+     * canvas, normalised (0,0 = top-left), for probes at known places.
+     */
+    project(lat, lng) {
+      const p = globe.tiles.ellipsoid
+        .getCartographicToPosition(lat * DEG, lng * DEG, 0, new THREE.Vector3())
+        .project(camera);
+      return [(p.x + 1) / 2, (1 - p.y) / 2];
+    },
     /**
      * Render one frame and read RGBA bytes at normalised canvas points
      * (0,0 = top-left), in the same task as the render.

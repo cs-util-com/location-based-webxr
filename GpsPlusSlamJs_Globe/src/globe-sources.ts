@@ -77,7 +77,8 @@ export const GLOBE_SOURCES: readonly GlobeSource[] = [
     id: "clouds",
     kind: "equirect",
     path: "/globe-assets/equirect/clouds-2048.jpg",
-    colorSpace: "srgb",
+    // A grey photo, read as cloud COVERAGE: a number, not a colour.
+    colorSpace: "linear",
     credit: {
       short: "NASA Visible Earth",
       full: "NASA Visible Earth, Blue Marble clouds (R. Stöckli)",

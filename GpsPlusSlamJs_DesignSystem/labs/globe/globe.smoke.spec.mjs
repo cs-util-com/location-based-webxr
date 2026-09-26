@@ -16,16 +16,20 @@ const ORIGIN = "http://127.0.0.1:5198";
  * The luminance spread (8-bit) a textured centre must exceed. Measured
  * 2026-09-26 (SwiftShader, 7x7 grid over the central 30 %): 38.7 with the
  * Blue Marble imagery, as soon as the first tiles load (M1's camera); 41.5
- * with M2's (fovY 50°, the disc fitted to 90 % of the height). A flat colour is
+ * with M2's (fovY 50°, the disc fitted to 90 % of the height); 54.4 with
+ * M3's real sun, tone mapping and clouds. A flat colour is
  * about 0 and M0's untextured lit sphere only a smooth shading gradient, a
  * few levels; the bound sits between with 2.5x headroom under the reading.
  */
 const TEXTURE_MIN_SPREAD = 15;
 /**
  * The M0-M1 checks were measured on this view: over North Africa and
- * Europe, arrived at once (no spin, no turn), so the pixels do not move.
+ * Europe, arrived at once (no spin, no turn), so the pixels do not move,
+ * at 11:00 UTC on an equinox, when the sun stands over 16.9°E (M3's real sun
+ * would otherwise put the view on the night side half the time).
  */
-const FIXED_VIEW = "/labs/globe/#at=30,15&spinMs=0&turnMs=0";
+const FIXED_VIEW =
+  "/labs/globe/#at=30,15&spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z";
 
 test("the globe boots, draws a lit Earth, and stays on this machine", async ({
   page,
@@ -84,8 +88,8 @@ test("the globe boots, draws a lit Earth, and stays on this machine", async ({
   }
   const lum = (
     await page.evaluate((points) => window.__globeLab.readPixels(points), grid)
-  ).map((px) => 0.2126 * px[0] + 0.7152 * px[1] + 0.0722 * px[2]);
-  const mean = lum.reduce((a, b) => a + b, 0) / lum.length;
+  ).map(luminance);
+  const mean = meanOf(lum);
   const spread = Math.sqrt(
     lum.reduce((a, b) => a + (b - mean) ** 2, 0) / lum.length,
   );
@@ -159,7 +163,10 @@ test("a tile that fails to load leaves its parent drawn, and says so", async ({
     for (let j = 0; j < 9; j++) grid.push([0.3 + i * 0.05, 0.3 + j * 0.05]);
   }
   const px = await page.evaluate((g) => window.__globeLab.readPixels(g), grid);
-  const holes = px.filter((p) => p[0] + p[1] + p[2] < 10).length;
+  // A hole shows the black sky exactly. M3's exposure makes deep sea dark
+  // too, (0,0,9) and (0,1,7) in this view with or without the failures, so
+  // "nearly black" would count sea as holes.
+  const holes = px.filter((p) => p[0] + p[1] + p[2] === 0).length;
   const state = await page.evaluate(() => window.__globeLab.state());
   console.log(
     `failed tiles: ${failed} routed, ${state.tileErrors} errors, ${holes} of 81 probes black`,
@@ -211,6 +218,7 @@ async function arriveAt(page, target) {
         s.target?.lat === lat &&
         s.target?.lng === lng &&
         s.pendingTiles === 0 &&
+        s.mapsLoaded === s.mapsTotal &&
         s.centreLatLon !== null
       );
     },
@@ -307,4 +315,264 @@ test("waits for a fix, then falls back to Central Park; replay runs it again", a
     "fallback",
     "fallback",
   ]);
+});
+
+/** Rec. 709 luminance of an 8-bit RGBA pixel. */
+const luminance = (px) => 0.2126 * px[0] + 0.7152 * px[1] + 0.0722 * px[2];
+const meanOf = (values) => values.reduce((a, b) => a + b, 0) / values.length;
+const median = (values) => {
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)];
+};
+/** An n x n grid of normalised canvas points, `half` either side of `c`. */
+const gridAround = (c, half, n) => {
+  const points = [];
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      points.push([
+        c[0] - half + (2 * half * i) / (n - 1),
+        c[1] - half + (2 * half * j) / (n - 1),
+      ]);
+    }
+  }
+  return points;
+};
+
+/**
+ * The M3 checks' floors, from the first measured run (2026-09-26,
+ * SwiftShader) and reported against that run:
+ * - day: the mean luminance over the central 30 % at the subsolar point,
+ *   measured 90.4 (an unlit or night globe is about 0);
+ * - night: the brightest pixel over the central 20 % above Tokyo at 21:00
+ *   local, measured 222 (with the night lights off, 0);
+ * - glint: the median over a small grid at the specular point with the
+ *   clouds off, measured 117 (matte water, roughness 1, 6.4);
+ * - seam: per row, the jump across the 180° line against the largest
+ *   ordinary jump on that row, the worst row (see the seam test).
+ * The verdicts are reported across ±50 % of each floor (owner rule
+ * 2026-09-13).
+ */
+const M3 = { day: 30, night: 40, glint: 40, seamRatio: 1.5 };
+const SWEEP = [0.5, 1, 1.5];
+const EQUINOX_NOON = "time=2026-03-20T12:00:00Z";
+
+/** Goes to `lat,lng` with the given extra hash, arrived and settled. */
+async function viewAt(page, lat, lng, extra) {
+  const runs = await page.evaluate(() => window.__globeLab.state().runs);
+  const changed = await page.evaluate((hash) => {
+    if (location.hash.slice(1) === hash) return false;
+    location.hash = hash;
+    return true;
+  }, `at=${lat},${lng}&spinMs=0&turnMs=0&${extra}`);
+  // The hash is set at once but the restart runs on `hashchange`, later: a
+  // hash that differs only in its tuning or time keeps the same target, so
+  // wait for the restart itself, not the previous arrival. (The same hash
+  // again fires no `hashchange` and needs no restart.)
+  if (changed) {
+    await page.waitForFunction((n) => window.__globeLab.state().runs > n, runs);
+  }
+  return arriveAt(page, { lat, lng });
+}
+
+const readAt = (page, points) =>
+  page.evaluate((p) => window.__globeLab.readPixels(p), points);
+
+// WHY (globe plan §7.3, §7.8 M3): the Earth is lit by the real sun of the
+// instant, and three terms ride on it: night lights on the dark side, a
+// glint on smooth water, clouds. Each check below is also run once with its
+// own term switched off through the hash, and must then FAIL: that is what
+// proves the check can see its term, not merely that the page renders.
+test("the real sun: a lit day side, night lights, and a water glint", async ({
+  page,
+}) => {
+  // Nine settled views under SwiftShader: 1.3 min measured, near the
+  // default 3 min limit on a loaded machine.
+  test.setTimeout(300_000);
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto(`/labs/globe/#at=0,0&spinMs=0&turnMs=0&${EQUINOX_NOON}`);
+  await page.waitForFunction(() => window.__globeLab?.ready, null, {
+    timeout: 90_000,
+  });
+  const report = [];
+  const check = (name, value, floor, off) => {
+    report.push(
+      `${name} ${value.toFixed(1)} (off ${off.toFixed(1)}; floor ${floor}: ` +
+        SWEEP.map(
+          (k) => `x${k} ${value > floor * k && off <= floor * k ? "ok" : "NO"}`,
+        ).join(" ") +
+        ")",
+    );
+    expect(value).toBeGreaterThan(floor);
+    expect(off).toBeLessThanOrEqual(floor);
+  };
+
+  // The day side, centred on the subsolar point (the sun stands over about
+  // 1.9°E at 12:00 UTC on the equinox); "off" is the same view at midnight.
+  await viewAt(page, 0, 0, EQUINOX_NOON);
+  const dayMean = (points) => meanOf(points.map(luminance));
+  const day = dayMean(await readAt(page, gridAround([0.5, 0.5], 0.15, 7)));
+  await viewAt(page, 0, 0, "time=2026-03-20T00:00:00Z");
+  const dayOff = dayMean(await readAt(page, gridAround([0.5, 0.5], 0.15, 7)));
+  check("day", day, M3.day, dayOff);
+
+  // Tokyo at 21:00 local.
+  const nightMax = async (extra) => {
+    await viewAt(page, 35.68, 139.77, `${EQUINOX_NOON}${extra}`);
+    const px = await readAt(page, gridAround([0.5, 0.5], 0.1, 9));
+    return Math.max(...px.map(luminance));
+  };
+  check("night", await nightMax(""), M3.night, await nightMax("&nightGain=0"));
+  // ...and none on the day side: Tokyo at noon local looks the same with the
+  // night lights on and off (a lost terminator fade would light it).
+  const tokyoNoon = async (extra) => {
+    await viewAt(page, 35.68, 139.77, `time=2026-03-20T03:00:00Z${extra}`);
+    return meanOf(
+      (await readAt(page, gridAround([0.5, 0.5], 0.1, 9))).map(luminance),
+    );
+  };
+  // Measured 0.00; 3.35 with the terminator fade removed (a one-time source
+  // mutant), against a limit of 1.
+  const noonLights = (await tokyoNoon("")) - (await tokyoNoon("&nightGain=0"));
+  report.push(`night lights at noon ${noonLights.toFixed(2)}`);
+  expect(Math.abs(noonLights)).toBeLessThan(1);
+
+  // The specular point: half way between the camera (over 0,0) and the sun.
+  // Clouds off, so the check sees the water, not a cloud above it.
+  const glint = async (extra) => {
+    const state = await viewAt(
+      page,
+      0,
+      0,
+      `${EQUINOX_NOON}&cloudOpacity=0${extra}`,
+    );
+    const [sx, sy, sz] = state.sunEcef;
+    const n = Math.hypot(1 + sx, sy, sz);
+    const lat = (Math.asin(sz / n) * 180) / Math.PI;
+    const lng = (Math.atan2(sy, 1 + sx) * 180) / Math.PI;
+    const at = await page.evaluate(
+      ([a, b]) => window.__globeLab.project(a, b),
+      [lat, lng],
+    );
+    return median((await readAt(page, gridAround(at, 0.01, 5))).map(luminance));
+  };
+  check("glint", await glint(""), M3.glint, await glint("&waterRoughness=1"));
+  // The whole sun chain (solarPosition, then sunDirectionEcef) puts the sun
+  // where the equation of time says: over 1.86°E at 12:00 UTC on this day
+  // (it runs 7.45 min fast), so 91.86°E at 06:00. A mirrored chain would
+  // put it over 91.9°W while every lit probe above still passed.
+  const runs = await page.evaluate(() => window.__globeLab.state().runs);
+  await page.evaluate(() => {
+    location.hash = "at=0,0&spinMs=0&turnMs=0&time=2026-03-20T06:00:00Z";
+  });
+  await page.waitForFunction((n) => window.__globeLab.state().runs > n, runs);
+  const [x, y, z] = (await page.evaluate(() => window.__globeLab.state()))
+    .sunEcef;
+  const sunLng = (Math.atan2(y, x) * 180) / Math.PI;
+  const sunLat = (Math.asin(z) * 180) / Math.PI;
+  report.push(`sun at 06:00 over ${sunLat.toFixed(2)}, ${sunLng.toFixed(2)}`);
+  expect(Math.abs(sunLng - 91.86)).toBeLessThan(0.5);
+  expect(Math.abs(sunLat)).toBeLessThan(0.5);
+  console.log(`M3 terms: ${report.join("; ")}`);
+  expect(errors).toEqual([]);
+});
+
+// WHY (globe plan §7.3): the longitude wraps at 180°, and a texture read
+// there with the raw derivative picks the coarsest mip, drawing a 1-px line
+// down the Pacific. The line shows only where a 2x2 pixel quad straddles
+// 180°: centred ON 180° it falls on a quad boundary and the image is the
+// same with and without the fix. So the view is centred 1 px west of it
+// (179.894° at 9.45 px per degree, 1280x800, fovY 50°), which puts the line
+// in the middle of a quad with half a pixel to spare either way, and the
+// test asserts that precondition rather than trusting it. The image is
+// deterministic (committed maps, a pinned time). Measured: the worst row's
+// jump across 180° is 0.67x the largest ordinary jump on that row, and
+// 4.02x with the seam fix removed (a one-time source mutant).
+const SEAM_VIEW_LNG = 179.894;
+test("no seam at the 180° line", async ({ page }) => {
+  await page.goto(
+    `/labs/globe/#at=0,${SEAM_VIEW_LNG}&spinMs=0&turnMs=0&time=2026-03-20T00:00:00Z`,
+  );
+  await page.waitForFunction(() => window.__globeLab?.ready, null, {
+    timeout: 90_000,
+  });
+  await arriveAt(page, { lat: 0, lng: SEAM_VIEW_LNG });
+  const width = await page.evaluate(
+    () => document.getElementById("globe-canvas").width,
+  );
+  // Per row: the jump across 180° against the largest ordinary jump on the
+  // SAME row, and the worst row counts. (Pooling rows let a real cloud edge
+  // in one row hide the seam in another: measured, 1.48 without the fix.)
+  const rows = [];
+  for (const lat of [-3, 0, 3]) {
+    const [u, v] = await page.evaluate(
+      ([a, b]) => window.__globeLab.project(a, b),
+      [lat, 180],
+    );
+    // The precondition: the pixels either side of the line (centres at
+    // k + 0.5 and k + 1.5) share a quad, so k is even. Otherwise the test
+    // could not fail.
+    const k = Math.floor(u * width - 0.5);
+    expect(k % 2, `180° at x = ${(u * width).toFixed(2)}`).toBe(0);
+    const row = [];
+    for (let i = -40; i <= 40; i++) row.push([u + i / width, v]);
+    const lum = (await readAt(page, row)).map(luminance);
+    const jumps = lum.slice(1).map((x, i) => Math.abs(x - lum[i]));
+    const seam = Math.max(...jumps.slice(37, 43));
+    const elsewhere = Math.max(...jumps.slice(0, 35), ...jumps.slice(45));
+    rows.push({ lat, seam, elsewhere, ratio: seam / Math.max(elsewhere, 1) });
+  }
+  const ratio = Math.max(...rows.map((r) => r.ratio));
+  console.log(
+    `seam: ${rows.map((r) => `lat ${r.lat} ${r.seam.toFixed(1)}/${r.elsewhere.toFixed(1)}`).join(", ")}; worst ratio ${ratio.toFixed(2)}; ` +
+      SWEEP.map((k) => `x${k} ${ratio < M3.seamRatio * k ? "ok" : "NO"}`).join(
+        " ",
+      ),
+  );
+  expect(ratio).toBeLessThan(M3.seamRatio);
+});
+
+// WHY (the async-feedback rule, globe plan §7.8): the three global maps load
+// beside the tiles, the clouds being the largest single file. One that
+// cannot load must say so in the error box, the loading label must still
+// end, and the globe must still draw (the map reads as empty: no clouds).
+test("a global map that fails to load is reported, and the globe still draws", async ({
+  page,
+}) => {
+  await page.route("**/globe-assets/equirect/clouds-2048.jpg", (route) =>
+    route.fulfill({ status: 404, body: "" }),
+  );
+  const pageErrors = [];
+  const consoleErrors = [];
+  page.on("pageerror", (e) => pageErrors.push(e.message));
+  page.on("console", (m) => {
+    if (m.type() === "error") consoleErrors.push(m.text());
+  });
+  await page.goto(FIXED_VIEW);
+  await page.waitForFunction(() => window.__globeLab?.ready, null, {
+    timeout: 90_000,
+  });
+  await page.waitForFunction(
+    () => {
+      const s = window.__globeLab.state();
+      return (
+        s.mapErrors === 1 &&
+        s.mapsLoaded === 2 &&
+        s.pendingTiles === 0 &&
+        s.centreLatLon !== null
+      );
+    },
+    null,
+    { timeout: 60_000 },
+  );
+  await expect(page.locator("#globe-error")).toContainText(
+    "maps could not load",
+  );
+  await expect(page.locator("#globe-loading")).toBeHidden();
+  const [centre] = await readAt(page, [[0.5, 0.5]]);
+  expect(luminance(centre)).toBeGreaterThan(20);
+  expect(pageErrors).toEqual([]);
+  expect(
+    consoleErrors.filter((t) => !/404|Failed to load resource/.test(t)),
+  ).toEqual([]);
 });
