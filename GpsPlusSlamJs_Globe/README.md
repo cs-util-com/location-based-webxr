@@ -23,6 +23,15 @@ is the one recorded exception, contained in this private package:
 - Apache-2.0 §4(a): its build chunks carry no licence header, so the
   look-dev deploy ships `LICENSE` beside them (the route's `notice`).
 
+## The imagery
+
+`assets/` holds the phase-1 imagery, committed (DEC-PRG-12, about 2 MB):
+the Blue Marble tile pyramid (EPSG:4326, levels 0-3) and three global maps
+(night lights, water mask, clouds), all NASA, public domain.
+`scripts/fetch-globe-assets.mjs` regenerates them by hand (never in CI) and
+writes `assets/PROVENANCE.md`. `src/globe-sources.ts` is the one registry
+the globe loads from, so every source carries its credit.
+
 ## How it is served
 
 The design system's route table (`serve-routes.mjs`) maps `/globe/` to

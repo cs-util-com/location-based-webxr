@@ -1,15 +1,17 @@
 /**
  * Why this test matters: a loaded tile's model is a tree of arbitrary depth
  * (groups, meshes, other nodes). The lit-material swap must reach EVERY mesh
- * at any depth, or those patches of the globe stay unlit, and must leave the
- * tree itself alone. Random trees, not the one fixed shape of the unit test.
+ * at any depth, each keeping its OWN texture, or those patches of the globe
+ * stay unlit or show another tile's imagery; it must leave the tree alone;
+ * and the cleanup must free exactly the copies it made. Random trees, not
+ * the one fixed shape of the unit test.
  */
 
 import fc from "fast-check";
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
-import { useLitMaterial } from "./globe-surface.js";
+import { disposeLitMaterials, useLitMaterial } from "./globe-surface.js";
 
 type Shape = { kind: "mesh" | "node" | "group"; children: Shape[] };
 
@@ -31,7 +33,7 @@ function build(s: Shape): THREE.Object3D {
     s.kind === "mesh"
       ? new THREE.Mesh(
           new THREE.BufferGeometry(),
-          new THREE.MeshBasicMaterial(),
+          new THREE.MeshBasicMaterial({ map: new THREE.Texture() }),
         )
       : s.kind === "group"
         ? new THREE.Group()
@@ -41,22 +43,38 @@ function build(s: Shape): THREE.Object3D {
 }
 
 describe("useLitMaterial for any model tree", () => {
-  it("gives every mesh the lit material and keeps the tree", () => {
+  it("gives every mesh an owned lit copy with its own map, keeping the tree", () => {
     fc.assert(
       fc.property(shape, (s) => {
         const model = build(s);
+        const maps = new Map<THREE.Object3D, THREE.Texture | null>();
         let nodesBefore = 0;
-        model.traverse(() => (nodesBefore += 1));
-        const lit = new THREE.MeshStandardMaterial();
-        useLitMaterial(model, lit);
+        model.traverse((node) => {
+          nodesBefore += 1;
+          if (node instanceof THREE.Mesh) {
+            maps.set(node, (node.material as THREE.MeshBasicMaterial).map);
+          }
+        });
+        const owned = new WeakSet<THREE.Material>();
+        useLitMaterial(model, new THREE.MeshStandardMaterial(), owned);
         let nodesAfter = 0;
-        let unlit = 0;
+        let wrong = 0;
         model.traverse((node) => {
           nodesAfter += 1;
-          if (node instanceof THREE.Mesh && node.material !== lit) unlit += 1;
+          if (!(node instanceof THREE.Mesh)) return;
+          const lit = node.material as THREE.MeshStandardMaterial;
+          if (!owned.has(lit) || lit.map !== maps.get(node)) wrong += 1;
         });
-        expect(unlit).toBe(0);
+        expect(wrong).toBe(0);
         expect(nodesAfter).toBe(nodesBefore);
+        disposeLitMaterials(model, owned);
+        let stillOwned = 0;
+        model.traverse((node) => {
+          if (node instanceof THREE.Mesh && owned.has(node.material)) {
+            stillOwned += 1;
+          }
+        });
+        expect(stillOwned).toBe(0);
       }),
       { numRuns: 200 },
     );

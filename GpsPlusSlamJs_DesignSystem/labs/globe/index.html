@@ -37,6 +37,21 @@
         display: none;
       }
 
+      #globe-credits {
+        position: fixed;
+        left: 12px;
+        right: 12px;
+        bottom: 10px;
+        color: #c9d3e0;
+        font:
+          12px/1.4 system-ui,
+          sans-serif;
+      }
+
+      #globe-credits a {
+        color: inherit;
+      }
+
       #globe-canvas {
         display: block;
         width: 100%;
@@ -48,5 +63,6 @@
   <body>
     <canvas id="globe-canvas"></canvas>
     <output id="globe-error" role="alert"></output>
+    <footer id="globe-credits"></footer>
   </body>
 </html>

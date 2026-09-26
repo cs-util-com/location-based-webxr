@@ -10,11 +10,58 @@ import * as THREE from "three";
 import { WGS84_ELLIPSOID } from "3d-tiles-renderer";
 
 import { createGlobeSurface } from "/globe/globe-surface.js";
+import { creditsFor } from "/globe/globe-credits.js";
+import { GIBS_ACKNOWLEDGEMENT } from "/globe/globe-sources.js";
 
 const canvas = document.getElementById("globe-canvas");
 const errorBox = document.getElementById("globe-error");
+const creditsBox = document.getElementById("globe-credits");
+
+/**
+ * The credits line (globe plan §7.7): the short names over the canvas, the
+ * full texts, links and GIBS's acknowledgement in a <details>. Built with
+ * textContent only: the texts come from the registry, never from markup.
+ */
+function renderCredits(credits) {
+  const details = document.createElement("details");
+  const summary = document.createElement("summary");
+  summary.textContent = `Imagery: ${credits.map((c) => c.short).join(" · ")}`;
+  details.append(summary);
+  const list = document.createElement("ul");
+  for (const c of credits) {
+    const item = document.createElement("li");
+    const link = document.createElement("a");
+    link.href = c.href;
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.textContent = c.full;
+    item.append(link);
+    list.append(item);
+  }
+  const note = document.createElement("p");
+  note.textContent = GIBS_ACKNOWLEDGEMENT;
+  details.append(list, note);
+  creditsBox.replaceChildren(details);
+}
 /** The camera stands this many Earth radii from the centre. */
 const DISTANCE_RADII = 3.4;
+/**
+ * Where it looks until M2 brings the target and the turn: over North Africa
+ * and Europe, on the day side of the lab's sun, with north up.
+ */
+const VIEW = { latDeg: 30, lonDeg: 15 };
+const DEG = Math.PI / 180;
+
+/** A unit ECEF direction (z north) for a latitude and longitude. */
+function ecefDirection(latDeg, lonDeg) {
+  const lat = latDeg * DEG;
+  const lon = lonDeg * DEG;
+  return new THREE.Vector3(
+    Math.cos(lat) * Math.cos(lon),
+    Math.cos(lat) * Math.sin(lon),
+    Math.sin(lat),
+  );
+}
 
 function start() {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -22,13 +69,20 @@ function start() {
   const scene = new THREE.Scene();
   const radius = WGS84_ELLIPSOID.radius.x;
   const camera = new THREE.PerspectiveCamera(40, 1, radius * 0.01, radius * 20);
-  camera.position.set(0, 0, radius * DISTANCE_RADII);
+  camera.position
+    .copy(ecefDirection(VIEW.latDeg, VIEW.lonDeg))
+    .multiplyScalar(radius * DISTANCE_RADII);
+  camera.up.set(0, 0, 1);
   camera.lookAt(0, 0, 0);
+  // The sun over the Atlantic, west of the view: a lit face with the
+  // terminator on screen, until M3 brings the real sun.
   const sun = new THREE.DirectionalLight(0xffffff, 2);
-  sun.position.set(1, 0.4, 1);
+  sun.position.copy(ecefDirection(20, -25));
   scene.add(sun);
   const globe = createGlobeSurface();
   scene.add(globe.group);
+  const credits = creditsFor(globe.activeSources());
+  renderCredits(credits);
 
   const frame = () => {
     const w = canvas.clientWidth;
@@ -45,8 +99,14 @@ function start() {
 
   window.__globeLab = {
     ready: true,
+    view: VIEW,
     error: null,
-    state: () => ({ ...globe.state(), radiusM: radius }),
+    state: () => ({
+      ...globe.state(),
+      radiusM: radius,
+      activeSources: globe.activeSources(),
+      creditShorts: credits.map((c) => c.short),
+    }),
     /**
      * Render one frame and read RGBA bytes at normalised canvas points
      * (0,0 = top-left), in the same task as the render.
