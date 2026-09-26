@@ -20,6 +20,19 @@
         "dpdm"
       ]
     },
+    "GpsPlusSlamJs_Globe": {
+      "entry": [
+        "src/globe-surface.ts",
+        "src/vendor/generated-surface-plugin.ts",
+        "config/eslint.config.mjs"
+      ],
+      "project": [
+        "src/**/*.ts"
+      ],
+      "ignoreDependencies": [
+        "dpdm"
+      ]
+    },
     ".": {
       "entry": [
         "tests/**/*.test.js"

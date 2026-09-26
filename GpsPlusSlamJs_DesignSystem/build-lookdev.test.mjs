@@ -277,3 +277,48 @@ describe("buildLookdev with custom routes", () => {
     assert.equal(read("vendor/lib/LICENSE"), "Apache License 2.0");
   });
 });
+
+// WHY (globe plan 2026-09-26-0539 §8, the builder review points): the real
+// globe lab must deploy as a CLOSED graph (the library's hashed chunks are
+// found by the crawl, not listed anywhere), with the library's LICENSE
+// beside them, and the globe package's TypeScript stripped and rebased.
+describe("buildLookdev with the real globe lab", () => {
+  let out;
+  let files;
+  before(() => {
+    out = mkdtempSync(join(tmpdir(), "lookdev-globe-"));
+    files = buildLookdev({ outDir: out, base: "/lookdev/" });
+  });
+  after(() => rmSync(out, { recursive: true, force: true }));
+
+  it("emits the lab, the globe source and the library's chunks and LICENSE", () => {
+    for (const rel of [
+      "labs/globe/index.html",
+      "labs/globe/globe-lab.js",
+      "globe/globe-surface.js",
+      "globe/vendor/generated-surface-plugin.js",
+      "vendor/3d-tiles-renderer/build/index.js",
+      "vendor/3d-tiles-renderer/build/index.plugins.js",
+      "vendor/3d-tiles-renderer/LICENSE",
+      "vendor/three/LICENSE",
+    ]) {
+      assert.ok(files.includes(rel), rel);
+    }
+    const chunks = files.filter((f) =>
+      /^vendor\/3d-tiles-renderer\/build\/(renderer|plugins)-/.test(f),
+    );
+    assert.ok(chunks.length >= 2, `hashed chunks crawled: ${chunks}`);
+  });
+
+  it("strips the globe's TypeScript and rebases every prefix", () => {
+    const surface = readFileSync(join(out, "globe/globe-surface.js"), "utf8");
+    assert.doesNotMatch(surface, /^export interface /m);
+    assert.match(surface, /export function createGlobeSurface/);
+    for (const rel of files.filter((f) =>
+      /^(labs\/globe|globe)\/.*\.(js|html)$/.test(f),
+    )) {
+      const text = readFileSync(join(out, rel), "utf8");
+      assert.doesNotMatch(text, /["']\/(globe|globe-assets|vendor)\//, rel);
+    }
+  });
+});

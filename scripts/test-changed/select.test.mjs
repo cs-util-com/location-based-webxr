@@ -159,3 +159,46 @@ describe('gateCommands', () => {
     }
   });
 });
+
+// WHY (globe plan 2026-09-26-0539 §8, "the lab smoke must run on a
+// globe-only commit"): the design system does not DEPEND on the globe
+// package, it SERVES it through its routes, so pnpm's graph never selects
+// it and a globe change would skip the only browser check the globe has.
+// The served-by edge adds it, in full. Deliberately for the globe only: the
+// framework and OsmDemo are served too, but adding them would put the design
+// system's ~11 min e2e on every framework commit (an owner decision, filed).
+describe('the served-by edge', () => {
+  const SERVED = [...DIRS, 'GpsPlusSlamJs_Globe', 'GpsPlusSlamJs_DesignSystem'];
+  it('selects the design system with any globe change', () => {
+    expect(
+      selectPackages({
+        trackedChanges: ['GpsPlusSlamJs_Globe/src/globe-surface.ts'],
+        untracked: [],
+        packageDirs: SERVED,
+      })
+    ).toEqual({
+      mode: 'packages',
+      packages: ['GpsPlusSlamJs_DesignSystem', 'GpsPlusSlamJs_Globe'],
+    });
+  });
+
+  it('adds nothing for a change the design system does not serve', () => {
+    expect(
+      selectPackages({
+        trackedChanges: ['GpsPlusSlamJs_RecorderApp/src/main.ts'],
+        untracked: [],
+        packageDirs: SERVED,
+      })
+    ).toEqual({ mode: 'packages', packages: ['GpsPlusSlamJs_RecorderApp'] });
+  });
+
+  it('adds nothing when the design system is not a workspace package', () => {
+    expect(
+      selectPackages({
+        trackedChanges: ['GpsPlusSlamJs_Globe/src/globe-surface.ts'],
+        untracked: [],
+        packageDirs: [...DIRS, 'GpsPlusSlamJs_Globe'],
+      })
+    ).toEqual({ mode: 'packages', packages: ['GpsPlusSlamJs_Globe'] });
+  });
+});

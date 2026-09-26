@@ -64,6 +64,32 @@ export function defaultRoutes(repo) {
       prefix: "/vendor/three/",
       dir: join(repo, "GpsPlusSlamJs_AppFramework", "node_modules", "three"),
       typescript: false,
+      notice: "LICENSE",
+    },
+    // The globe lab (W7 plan 2026-09-26-0539 §7.1): the globe package's
+    // TypeScript source, its imagery (fetched at runtime, so copied whole),
+    // and its one dependency, which ships its LICENSE beside its chunks.
+    {
+      prefix: "/globe/",
+      dir: join(repo, "GpsPlusSlamJs_Globe", "src"),
+      typescript: true,
+    },
+    {
+      prefix: "/globe-assets/",
+      dir: join(repo, "GpsPlusSlamJs_Globe", "assets"),
+      typescript: false,
+      copyAll: true,
+    },
+    {
+      prefix: "/vendor/3d-tiles-renderer/",
+      dir: join(
+        repo,
+        "GpsPlusSlamJs_Globe",
+        "node_modules",
+        "3d-tiles-renderer",
+      ),
+      typescript: false,
+      notice: "LICENSE",
     },
   ];
 }

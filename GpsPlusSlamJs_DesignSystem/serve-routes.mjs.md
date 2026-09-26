@@ -13,6 +13,11 @@
   - `contentType(file, typescript)` — stripped TypeScript and `.js`/`.mjs`
     are `text/javascript`; `.jpg`/`.jpeg`/`.webp` are images (the globe's
     imagery); unknown extensions are octet-stream.
+- The table (`defaultRoutes`): `/fw/` (the framework's TypeScript),
+  `/osm/` (OsmDemo's), `/vendor/three/` (with its LICENSE as a notice),
+  and for the globe lab (W7): `/globe/` (the globe package's TypeScript),
+  `/globe-assets/` (its imagery, `copyAll`), `/vendor/3d-tiles-renderer/`
+  (the installed library, its LICENSE as a notice).
 - Invariants & assumptions:
   - The server binds every interface, so containment is the point: the
     path is decoded once, any `..` segment or NUL byte is refused, and the

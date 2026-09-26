@@ -1,0 +1,46 @@
+{
+  "name": "gps-plus-slam-globe",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The globe intro's code (W7 phase 1): an Earth drawn from open imagery with 3d-tiles-renderer, served no-build to the design system's globe lab. Private; OsmDemo consumes it in phase 5.",
+  "type": "module",
+  "scripts": {
+    "test": "node ../scripts/test-timing/run-gate.mjs",
+    "test:core": "pnpm run format && pnpm run lint && pnpm run check:cycles && pnpm run typecheck && pnpm run typecheck:tests && pnpm run test:unit",
+    "format": "node ../scripts/test-timing/timed-stage.mjs format",
+    "format:check": "prettier --check --ignore-unknown .",
+    "test:unit": "node ../scripts/test-timing/timed-stage.mjs test:unit",
+    "typecheck": "node ../scripts/test-timing/timed-stage.mjs typecheck",
+    "typecheck:tests": "node ../scripts/test-timing/timed-stage.mjs typecheck:tests",
+    "lint": "node ../scripts/test-timing/timed-stage.mjs lint",
+    "check:cycles": "node ../scripts/test-timing/timed-stage.mjs check:cycles",
+    "test:watch": "vitest --config config/vitest.config.ts"
+  },
+  "engines": {
+    "node": ">=26.0.0"
+  },
+  "dependencies": {
+    "3d-tiles-renderer": "0.5.3"
+  },
+  "peerDependencies": {
+    "three": ">=0.170.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^25.9.5",
+    "@types/three": "^0.185.4",
+    "@vitest/eslint-plugin": "^1.6.27",
+    "dpdm": "^4.3.0",
+    "eslint": "^10.10.0",
+    "eslint-config-prettier": "^10.1.8",
+    "fast-check": "^4.9.0",
+    "globals": "^17.12.0",
+    "prettier": "^3.9.6",
+    "three": "^0.185.1",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.69.0",
+    "vitest": "^5.0.0"
+  },
+  "author": "cs-util-com",
+  "license": "Apache-2.0"
+}

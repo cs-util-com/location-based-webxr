@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lab: the globe</title>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "/vendor/three/build/three.module.js",
+          "three/addons/": "/vendor/three/examples/jsm/",
+          "3d-tiles-renderer": "/vendor/3d-tiles-renderer/build/index.js",
+          "3d-tiles-renderer/plugins": "/vendor/3d-tiles-renderer/build/index.plugins.js"
+        }
+      }
+    </script>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #000;
+      }
+
+      #globe-error {
+        position: fixed;
+        top: 12px;
+        left: 12px;
+        color: #ffb4a8;
+        font:
+          14px/1.4 system-ui,
+          sans-serif;
+      }
+
+      #globe-error:empty {
+        display: none;
+      }
+
+      #globe-canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+    </style>
+    <script type="module" src="./globe-lab.js"></script>
+  </head>
+  <body>
+    <canvas id="globe-canvas"></canvas>
+    <output id="globe-error" role="alert"></output>
+  </body>
+</html>
