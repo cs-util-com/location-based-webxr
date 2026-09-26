@@ -9,12 +9,115 @@
  * temp directory and checks what a browser would fetch.
  */
 import { strict as assert } from "node:assert";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { after, before, describe, it } from "node:test";
 
-import { buildLookdev } from "./build-lookdev.mjs";
+import { buildLookdev, discoverEntries } from "./build-lookdev.mjs";
+
+/** Writes `files` ({ relativePath: text }) under a fresh temp directory. */
+function fixture(files) {
+  const root = mkdtempSync(join(tmpdir(), "lookdev-fixture-"));
+  for (const [rel, text] of Object.entries(files)) {
+    const file = join(root, ...rel.split("/"));
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, text);
+  }
+  return root;
+}
+
+// WHY (programme plan 2026-09-26-0539, DEC-PRG-2): prototypes are published
+// as small lab pages beside the main page. Several workstreams add labs in
+// parallel, so the builder DISCOVERS them from the folder rather than from a
+// list each of them would have to edit.
+describe("discoverEntries", () => {
+  it("lists the main page first, then every lab with an index page, sorted", () => {
+    const root = fixture({
+      "3d/index.html": "<title>Main</title>",
+      "labs/water/index.html": "<title>Water</title>",
+      "labs/clouds-above/index.html": "<title>Clouds</title>",
+      "labs/notes-only/README.md": "no page here",
+    });
+    try {
+      assert.deepEqual(discoverEntries(root), [
+        "/3d/index.html",
+        "/labs/clouds-above/index.html",
+        "/labs/water/index.html",
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("works without any labs", () => {
+    const root = fixture({ "3d/index.html": "<title>Main</title>" });
+    try {
+      assert.deepEqual(discoverEntries(root), ["/3d/index.html"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+// WHY: a lab is deployed exactly like the main page (its modules crawled,
+// its stylesheets copied), and the landing index names every page, so the
+// owner can open each prototype on a phone from one link.
+describe("buildLookdev with a lab", () => {
+  let root;
+  let out;
+  let files;
+  before(() => {
+    root = fixture({
+      "3d/index.html":
+        '<title>Main page</title><link rel="stylesheet" href="./main.css" />' +
+        '<script type="module" src="./main.js"></script>',
+      "3d/main.css": "body{}",
+      "3d/main.js": 'import "./helper.js";\n',
+      "3d/helper.js": "export {};\n",
+      "labs/water/index.html":
+        '<title>Water lab</title><link rel="stylesheet" href="./water.css" />' +
+        '<script type="module" src="./water.js"></script>',
+      "labs/water/water.css": "body{}",
+      "labs/water/water.js": 'import "./waves.js";\n',
+      "labs/water/waves.js": "export {};\n",
+    });
+    out = mkdtempSync(join(tmpdir(), "lookdev-out-"));
+    files = buildLookdev({ outDir: out, base: "/lookdev/", packageRoot: root });
+  });
+  after(() => {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(out, { recursive: true, force: true });
+  });
+
+  it("crawls each entry's modules and copies its linked stylesheets", () => {
+    for (const rel of [
+      "3d/index.html",
+      "3d/main.css",
+      "3d/helper.js",
+      "labs/water/index.html",
+      "labs/water/water.css",
+      "labs/water/waves.js",
+    ]) {
+      assert.ok(files.includes(rel), rel);
+    }
+  });
+
+  it("lists every page by its title on the landing index", () => {
+    const index = readFileSync(join(out, "index.html"), "utf8");
+    assert.match(index, /href="\.\/3d\/"[^>]*>Main page</);
+    assert.match(index, /href="\.\/labs\/water\/"[^>]*>Water lab</);
+    // A list, not the old redirect: a redirect would hide the labs.
+    assert.doesNotMatch(index, /http-equiv="refresh"/);
+  });
+});
 
 describe("buildLookdev", () => {
   let out;
@@ -32,6 +135,7 @@ describe("buildLookdev", () => {
       "3d/index.html",
       "3d/lookdev.css",
       "3d/lookdev.js",
+      "3d/panel.js",
       "design.css",
     ]) {
       assert.ok(existsSync(join(out, rel)), rel);
