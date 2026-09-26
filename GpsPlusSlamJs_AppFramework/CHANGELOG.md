@@ -77,6 +77,19 @@
   once it is still again only the views since then are fused. Until the
   motion is confirmed the stable pose can trail it for up to 3 detections.
   New option `sinceMs` on `selectFusedWindow` / `evaluateFusedQrPose`.
+- **A QR code's native-order frames no longer reach its fused pose or
+  its motion reading once its corner order is known** (QR near-frontal
+  pose plan §54-§55). A detection in the detector's own corner order is 90
+  or 180 deg wrong whenever the code is rolled past 45 deg in the image;
+  six of eight such frames agreed on a STABLE pose 90 deg off, and one
+  read as "turning" on a still code. `ignoreNativeWhenOrdered` drops the
+  `native` entries of the run ending at the newest detection when that run
+  holds a `finder` or `memory` one; `selectFusedWindow`, the motion
+  detector and the fused tracker apply it. Entries without a source (old
+  recordings) and all-native runs are kept. New: `QrFusedEntry.orderSource`,
+  `QrDetectionEvent.orderSource` (filled by the tracking controller),
+  `QrDetectionEntry.orderSource` (handed on by `selectQrFusedEntries`),
+  `QrFusedPose.nativeIgnored`.
 - **The corner order is chained frame to frame** (QR near-frontal pose
   plan §42): when the finder patterns cannot be read, a detection takes the
   cyclic shift closest in roll to the code's last known order (a finder

@@ -6,6 +6,7 @@
  */
 
 import type { Pose, Point2, CameraIntrinsics } from './qr-pose.js';
+import type { CornerOrderSource } from './qr-corner-order.js';
 
 /** One detection, as the window needs it. */
 export interface QrFusedEntry {
@@ -24,6 +25,12 @@ export interface QrFusedEntry {
   frameEpoch?: number;
   /** The single-frame world pose, when the producer solved one. */
   rawPose?: Pose | null;
+  /**
+   * Where the corner order came from (`QrDetection.orderSource`); absent
+   * when the producer does not say (old recordings, replays). A `native`
+   * entry of an ordered run is ignored ({@link ignoreNativeWhenOrdered}).
+   */
+  orderSource?: CornerOrderSource;
 }
 
 export interface QrFusedWindowOptions {
@@ -74,24 +81,63 @@ function distance(a: Pose['position'], b: Pose['position']): number {
   return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 }
 
+/** Where the run ending at the newest entry starts (non-empty input): same epoch, no step over `gapMs`. */
+function runStart(entries: readonly QrFusedEntry[], gapMs: number): number {
+  const newest = entries[entries.length - 1]!;
+  let i = entries.length - 1;
+  while (i > 0 && !breaksWindow(entries[i - 1]!, entries[i], newest, gapMs))
+    i--;
+  return i;
+}
+
+/**
+ * The entries without the `native` ones of the run ending at the newest
+ * entry, when that run holds a `finder` or `memory` entry (QR near-frontal
+ * pose plan §54-§55): once a code's corner order is known, its detector-
+ * order frames are 90/180 deg wrong whenever the code is rolled past 45 deg
+ * in the image, and a majority of them agrees with itself. Entries without
+ * an order source, an all-native run, and anything before a gap or in
+ * another epoch are kept. The same array comes back when nothing is
+ * dropped.
+ */
+export function ignoreNativeWhenOrdered(
+  entries: readonly QrFusedEntry[],
+  gapMs: number
+): readonly QrFusedEntry[] {
+  if (entries.length === 0) return entries;
+  const start = runStart(entries, gapMs);
+  let ordered = false;
+  let native = false;
+  for (let i = start; i < entries.length; i++) {
+    const source = entries[i]!.orderSource;
+    if (source === 'native') native = true;
+    else if (source === 'finder' || source === 'memory') ordered = true;
+  }
+  if (!ordered || !native) return entries;
+  return entries.filter((e, i) => i < start || e.orderSource !== 'native');
+}
+
 /**
  * The window (oldest to newest): walking back from the newest entry, stop at
  * another frame epoch, at a step in time larger than `gapMs` (either
  * direction; a NaN step breaks too) or at an entry older than `sinceMs`;
  * leave out entries farther than `radiusM` from the newest raw position in
  * the run (entries without a raw pose are kept); keep at most `windowSize`.
+ * Native entries of an ordered run are ignored first
+ * ({@link ignoreNativeWhenOrdered}).
  */
 export function selectFusedWindow(
   entries: readonly QrFusedEntry[],
   options: QrFusedWindowOptions = {}
 ): QrFusedEntry[] {
   const o = resolveFusedWindowOptions(options);
-  const newest = entries[entries.length - 1];
+  const list = ignoreNativeWhenOrdered(entries, o.gapMs);
+  const newest = list[list.length - 1];
   if (!newest) return [];
   const run: QrFusedEntry[] = [];
-  for (let i = entries.length - 1; i >= 0; i--) {
-    const e = entries[i]!;
-    if (breaksWindow(e, entries[i + 1], newest, o.gapMs)) break;
+  for (let i = list.length - 1; i >= 0; i--) {
+    const e = list[i]!;
+    if (breaksWindow(e, list[i + 1], newest, o.gapMs)) break;
     if (e.timestamp < o.sinceMs) break;
     run.push(e);
   }

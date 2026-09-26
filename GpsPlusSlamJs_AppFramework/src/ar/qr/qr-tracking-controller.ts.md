@@ -32,7 +32,10 @@ coalesced cadence and exposes an async-status state machine for the UI.
   - Both were undocumented here until 2026-08-30 (PR #378 review).
 - `QrDetectionEvent` — `{ text, qrPoseWorld, qrPoseInCamera,
 reprojectionErrorPx, timestamp, corners, cameraPose, imageWidth,
-imageHeight, intrinsics }`, emitted via `onDetection` on every lock. Its `timestamp` is
+imageHeight, intrinsics, orderSource? }`, emitted via `onDetection` on every lock.
+  `orderSource` is the front end's `QrDetection.orderSource` when it says
+  (QR near-frontal pose plan §54-§55: the fused window ignores a `native`
+  detection of a code whose order is known). Its `timestamp` is
   the lock time (`now()`), not the frame's capture time. `intrinsics` are
   those `getIntrinsics(image)` returned for the solve - REQUIRED since M3b
   b3 (QR near-frontal pose plan), because the fused QR window re-solves the

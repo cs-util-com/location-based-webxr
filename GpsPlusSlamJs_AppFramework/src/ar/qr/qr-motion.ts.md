@@ -46,7 +46,13 @@ reads "still".
   newest detection (the same entry, or a rebuilt copy with the same corners
   array and timestamp) returns the last result: persistence counts
   detections, not reads. A reading with no signal (too few views, a failed
-  solve, an unusable view) neither confirms nor breaks a run.
+  solve, an unusable view) neither confirms nor breaks a run. Native
+  entries of an ordered run are ignored before anything else
+  (`ignoreNativeWhenOrdered`, plan §54-§55): a native newest entry is a
+  re-read of the last ordered one, so a relabelled frame never reads as
+  "turning". Limit: while only native frames arrive the detector is blind
+  (a native frame's POSITION would be right - the object points are
+  centred - but the stretches are short: 6.6-9.5 % native on r736).
 - Options (defaults PROVISIONAL until the §26 sweep; out-of-range values
   fall back to the default): `motionWindow` 4 (≥ 2), `moveM` 0.03,
   `turnPx` 3, `gapMs` 4000 (the fused window's default; a longer step between

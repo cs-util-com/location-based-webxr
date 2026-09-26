@@ -21,7 +21,11 @@ import {
 import { PlanarPnpSquare } from './planar-pnp';
 import { solveQrPoseMultiView } from './qr-multi-view-pose';
 import { createFusedQrPoseTracker, evaluateFusedQrPose } from './qr-fused-pose';
-import { selectFusedWindow, type QrFusedEntry } from './qr-fused-window';
+import {
+  ignoreNativeWhenOrdered,
+  selectFusedWindow,
+  type QrFusedEntry,
+} from './qr-fused-window';
 import { walkCameraPoses } from '../../test-utils/synthetic-qr-walk';
 import { rotationAngleDeg } from '../../test-utils/qr-zxing-pipeline';
 import { mulberry32 } from '../../test-utils/elevation-offset-scenarios';
@@ -660,6 +664,37 @@ describe('createFusedQrPoseTracker motion (plan §26)', () => {
     expect(out[out.length - 1]!.result.status).toBe('stable');
   });
 
+  // Review §55 #4: while a turn is confirmed the window is cut to the
+  // newest entry the DETECTOR read. A native newest entry of an ordered run
+  // is not one of them; cut at its time, the window would be empty and the
+  // result 'unknown' (no pose at all) instead of the newest ordered view.
+  it('cuts a turning code at the newest ordered entry when a native one arrives', () => {
+    const cams = walkCameraPoses({
+      kind: 'arc',
+      codeWorld: codeAt(0),
+      distanceM: 1.2,
+      extent: 30,
+      steps: 14,
+    });
+    const entries: QrFusedEntry[] = cams.map((cam, i) => {
+      const c = cornersOf(cam, spin(i));
+      const native = i === 13;
+      return {
+        ...entryOf(cam, native ? [c[1]!, c[2]!, c[3]!, c[0]!] : c, i * 125),
+        orderSource: native ? 'native' : 'finder',
+      };
+    });
+    const tracker = createFusedQrPoseTracker();
+    const out = entries.map((_, i) =>
+      tracker.evaluate(entries.slice(0, i + 1))
+    );
+    expect(out[12]!.motion?.turning).toBe(true);
+    const last = out[13]!;
+    expect(last.status).toBe('measuring');
+    expect(last.newestTimestamp).toBe(12 * 125);
+    expect(last.nativeIgnored).toBe(1);
+  });
+
   // The contrast that makes the detector necessary: each view keeps its own
   // position and only the rotation is shared, so a slide never trips the
   // fit gate - switched off, the stable pose trails the code long after the
@@ -887,5 +922,137 @@ describe('fused window with corner-order flips (plan §39 F0c)', () => {
       expect(errDeg).toBeGreaterThan(2);
       expect(errDeg).toBeLessThan(3);
     }
+  });
+});
+
+describe('native frames of an ordered code (plan §54, §55)', () => {
+  // Why these tests matter: a detection whose corner order is the
+  // detector's own (`native`) is 90/180 deg wrong whenever the code is
+  // rolled past 45 deg in the image. On the phone every big jump had a
+  // native frame on one side (§53), and a window where native frames are
+  // the majority agrees with ITSELF - a stable pose 90 deg off (r734 A).
+  // Once the code's order is known (a finder or chained frame in the same
+  // run), its native frames must not reach the fused pose.
+  const shift = (c: Point2[], k: number): Point2[] =>
+    [0, 1, 2, 3].map((i) => c[(i + k) % 4]!);
+  /** 8 views of a still code; the newest `native` are shifted by `k` and labelled native. */
+  const labelled = (native: number, k: number) => {
+    const code = tilted(5);
+    const cams = walkCameraPoses({
+      kind: 'arc',
+      codeWorld: code,
+      distanceM: 1.2,
+      extent: 30,
+      steps: 8,
+    });
+    const entries: QrFusedEntry[] = cams.map((cam, i) => {
+      const isNative = i >= 8 - native;
+      const c = cornersOf(cam, code);
+      return {
+        ...entryOf(cam, isNative ? shift(c, k) : c, i * 125),
+        orderSource: isNative ? 'native' : 'finder',
+      };
+    });
+    return { code, entries };
+  };
+  const errDeg = (r: ReturnType<typeof evaluateFusedQrPose>, code: Pose) =>
+    r.pose ? rotationAngleDeg(r.pose.rotation, code.rotation) : Number.NaN;
+
+  // Measured before the fix (noise-free): 6 or 7 native views of 8 gave a
+  // STABLE pose 89.8-90 deg (k = 1, 3) or 180 deg (k = 2) off, fit
+  // 0.15-0.53 px; 5 of 8 fell back (fit 4.5-7.3 px).
+  it('never gives a stable pose off by 90 deg when 6 or 7 of 8 views are native', () => {
+    for (const n of [6, 7]) {
+      for (const k of [1, 2, 3]) {
+        const { code, entries } = labelled(n, k);
+        const r = evaluateFusedQrPose(entries);
+        expect(r.status === 'stable' ? errDeg(r, code) : 0).toBeLessThan(3);
+        expect(r.nativeIgnored).toBe(n);
+      }
+    }
+  });
+
+  it('fuses the ordered views alone: stable and correct with 2 natives in 8', () => {
+    for (const k of [1, 2, 3]) {
+      const { code, entries } = labelled(2, k);
+      const r = evaluateFusedQrPose(entries);
+      expect(r.status).toBe('stable');
+      expect(errDeg(r, code)).toBeLessThan(1);
+      expect(r.windowEntries).toBe(6);
+      expect(r.nativeIgnored).toBe(2);
+    }
+  });
+
+  // The tracker runs the motion detector on the same entries: the native
+  // newest entry must neither start a window of its own nor count.
+  it('keeps the tracker stable and still while native frames arrive', () => {
+    const { code, entries } = labelled(2, 1);
+    const t = createFusedQrPoseTracker();
+    const out = entries.map((_, i) => t.evaluate(entries.slice(0, i + 1)));
+    const last = out[out.length - 1]!;
+    expect(last.status).toBe('stable');
+    expect(errDeg(last, code)).toBeLessThan(1);
+    expect(out.every((r) => !r.motion?.turningCandidate)).toBe(true);
+  });
+
+  // Direct callers of the window (the motion detector's measure, apps)
+  // get the rule too, not only evaluateFusedQrPose.
+  it('leaves native entries of an ordered run out of selectFusedWindow', () => {
+    const { entries } = labelled(2, 1);
+    const w = selectFusedWindow(entries);
+    expect(w).toHaveLength(6);
+    expect(w.every((e) => e.orderSource === 'finder')).toBe(true);
+  });
+
+  describe('ignoreNativeWhenOrdered', () => {
+    const at = (
+      timestamp: number,
+      orderSource?: QrFusedEntry['orderSource'],
+      frameEpoch = 0
+    ): QrFusedEntry => ({
+      ...entryOf(tilted(0), [], timestamp, frameEpoch),
+      ...(orderSource ? { orderSource } : {}),
+    });
+
+    it('returns the same array when it drops nothing', () => {
+      const unknown = [at(0), at(125), at(250)];
+      expect(ignoreNativeWhenOrdered(unknown, 4000)).toBe(unknown);
+      const ordered = [at(0, 'finder'), at(125, 'memory'), at(250)];
+      expect(ignoreNativeWhenOrdered(ordered, 4000)).toBe(ordered);
+      // Only native: the order is unknown, not known-wrong - kept.
+      const native = [at(0, 'native'), at(125, 'native')];
+      expect(ignoreNativeWhenOrdered(native, 4000)).toBe(native);
+    });
+
+    it('drops the native entries of a run that holds an ordered one', () => {
+      const list = [
+        at(0, 'native'),
+        at(125, 'finder'),
+        at(250, 'native'),
+        at(375),
+      ];
+      expect(
+        ignoreNativeWhenOrdered(list, 4000).map((e) => e.timestamp)
+      ).toEqual([125, 375]);
+    });
+
+    // Review §55 #2: the slice caps by count, not time, so an ordered
+    // entry from before a gap must not silence the natives after it (the
+    // window would show the old pose as stable).
+    it('keeps natives after a gap or in a newer epoch than the ordered entries', () => {
+      // A native before the gap stays too: only the run's natives count.
+      const before = [
+        at(0, 'native'),
+        at(60000, 'finder'),
+        at(60125, 'native'),
+      ];
+      expect(
+        ignoreNativeWhenOrdered(before, 4000).map((e) => e.timestamp)
+      ).toEqual([0, 60000]);
+      const gap = [at(0, 'finder'), at(60000, 'native'), at(60125, 'native')];
+      expect(ignoreNativeWhenOrdered(gap, 4000)).toBe(gap);
+      const epoch = [at(0, 'finder', 0), at(125, 'native', 1)];
+      expect(ignoreNativeWhenOrdered(epoch, 4000)).toBe(epoch);
+    });
   });
 });

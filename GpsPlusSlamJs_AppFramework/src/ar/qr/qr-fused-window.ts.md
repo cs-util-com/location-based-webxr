@@ -11,10 +11,23 @@ without importing each other.
 ## Public API
 
 - `QrFusedEntry`: `{ timestamp, corners, cameraPose, intrinsics, frameEpoch?,
-rawPose? }`. `timestamp` is ms on the producer's own clock (only
+rawPose?, orderSource? }`. `timestamp` is ms on the producer's own clock (only
   differences count); `frameEpoch` is the tracking-frame epoch (bumped on an
   odometry restart; default 0); `rawPose` is the single-frame world pose
-  when the producer solved one.
+  when the producer solved one; `orderSource` where the corner order came
+  from (`finder` / `memory` / `native`), absent when the producer does
+  not say.
+- `ignoreNativeWhenOrdered(entries, gapMs)` (QR near-frontal pose plan
+  §54-§55): the entries without the `native` ones of the RUN ending at the
+  newest entry (same epoch, no step over `gapMs`) when that run holds a
+  `finder` or `memory` entry - a code's detector-order frames are 90/180
+  deg wrong whenever it is rolled past 45 deg in the image, and 6 of 8 of
+  them agreed on a stable pose 90 deg off. Entries without a source, an
+  all-native run, and anything before a gap or in another epoch are kept
+  (so an ordered entry from before a gap never silences the new natives -
+  the slice caps by count, not time). The same array comes back when
+  nothing is dropped. `selectFusedWindow` applies it first; so do the
+  motion detector's `update()` and the fused tracker's motion cut.
 - `selectFusedWindow(entries, options?)` (`windowSize`, `gapMs`, `radiusM`,
   `sinceMs`): the window, oldest to newest. Walking back from the newest entry it
   stops at another frame epoch, at a time step above `gapMs` between

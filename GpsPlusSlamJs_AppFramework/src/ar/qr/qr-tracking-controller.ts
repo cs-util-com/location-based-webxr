@@ -22,6 +22,7 @@ import type {
   QrPoseSolution,
 } from './qr-pose.js';
 import type { QrFrontEnd, RgbaImage } from './qr-frontend.js';
+import type { CornerOrderSource } from './qr-corner-order.js';
 import type { CapturedCameraFrame } from '../captured-camera-frame.js';
 import type { QrLevel } from './qr-level.js';
 import { buildQrGpsVotes } from './qr-gps-vote.js';
@@ -87,6 +88,13 @@ export interface QrDetectionEvent {
    * silently leave the fused path.
    */
   readonly intrinsics: CameraIntrinsics;
+  /**
+   * Where the corners' order came from (the front end's
+   * `QrDetection.orderSource`), when it says. The fused window ignores a
+   * `native` detection of a code whose order is known (QR near-frontal
+   * pose plan §54-§55).
+   */
+  readonly orderSource?: CornerOrderSource;
   /** Decoded payload (text/URL) — the marker key. */
   text: string;
   qrPoseWorld: Pose;
@@ -238,6 +246,7 @@ export function createQrTrackingController(
     imageWidth: number;
     imageHeight: number;
     intrinsics: CameraIntrinsics;
+    orderSource: CornerOrderSource | undefined;
   } | null = null;
 
   function setStatus(next: QrTrackingStatus): void {
@@ -352,6 +361,7 @@ export function createQrTrackingController(
       imageWidth: image.width,
       imageHeight: image.height,
       intrinsics,
+      orderSource: detection.orderSource,
     };
     return solution;
   }
@@ -380,6 +390,7 @@ export function createQrTrackingController(
           imageWidth: current.imageWidth,
           imageHeight: current.imageHeight,
           intrinsics: current.intrinsics,
+          ...(current.orderSource ? { orderSource: current.orderSource } : {}),
         });
 
         // The GPS vote is CONDITIONAL on geo: geo-less levels (debug/observe,

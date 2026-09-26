@@ -35,6 +35,7 @@ import type { Matrix4, Vector3 } from 'gps-plus-slam-js';
 import type { CameraIntrinsics, Point2, Pose } from '../ar/qr/qr-pose.js';
 import { intrinsicsFromProjection } from '../ar/qr/qr-pose.js';
 import type { QrFusedEntry } from '../ar/qr/qr-fused-window.js';
+import type { CornerOrderSource } from '../ar/qr/qr-corner-order.js';
 import type { QrSizeEstimate } from '../ar/qr/qr-size-from-depth.js';
 import {
   evaluateQrPoseStability,
@@ -136,6 +137,12 @@ export interface QrDetectionEntry {
    * payload is ignored, so a replay always reproduces the live partition.
    */
   frameEpoch?: number;
+  /**
+   * Where the corner order came from (`QrDetection.orderSource`), when the
+   * producer says; the fused window ignores a `native` entry of a code
+   * whose order is known (QR near-frontal pose plan §54-§55).
+   */
+  orderSource?: CornerOrderSource;
 }
 
 /** Per-marker state: a bounded detection history + the size lifecycle. */
@@ -589,6 +596,7 @@ function toFusedEntry(e: QrDetectionEntry): QrFusedEntry | null {
     intrinsics,
     frameEpoch: e.frameEpoch ?? 0,
     rawPose: e.qrPoseWorld ?? null,
+    ...(e.orderSource ? { orderSource: e.orderSource } : {}),
   };
 }
 

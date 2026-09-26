@@ -34,6 +34,10 @@ that is moved or turned never has its stale views fused.
     `fallback` (they contradict each other, or no joint solve), or, from the
     tracker, `motion` (the window was cut for a moving or turning code);
     null when stable.
+  - `nativeIgnored`: native entries of an ordered run left out of this
+    evaluation (`ignoreNativeWhenOrdered`, plan §54-§55); 0 when none. A
+    native NEWEST entry leaves the window, and so the result's
+    `newestTimestamp`, where they were - a re-read.
   - `previous` is the last result for the same code: it makes the gate and
     the method sticky (hysteresis) - but only while this window CONTINUES
     it: same frame epoch, not older (a replay seek backwards starts

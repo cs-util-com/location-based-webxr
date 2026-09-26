@@ -456,3 +456,40 @@ describe('motion detector with corner-order flips (plan §39 F0c)', () => {
     }
   });
 });
+
+describe('motion detector with native frames of an ordered code (plan §54, §55)', () => {
+  // Why these tests matter: on r736 A a relabelled native frame gave a
+  // 116 px turn signal and 1.6 s of false "turning" on a still wall code.
+  // A native frame of a code whose order is known must not be read at all.
+  const shift = (c: readonly Point2[], k: number): Point2[] =>
+    [0, 1, 2, 3].map((i) => c[(i + k) % 4]!);
+  const labelled = (run: number, k: number): QrFusedEntry[] =>
+    scene(20, () => codeAt(0, 5), { sigmaPx: 0.5, seed: 5 }).map((e, i) => {
+      const flipped = i >= 10 && i < 10 + run;
+      return {
+        ...e,
+        corners: flipped ? shift(e.corners, k) : e.corners,
+        orderSource: flipped ? 'native' : 'finder',
+      };
+    });
+
+  it('keeps a still code still, with no candidate, through a native two-frame flip', () => {
+    for (const k of [1, 2, 3]) {
+      const entries = labelled(2, k);
+      const t = createQrMotionTracker();
+      const out = entries.map((_, i) => t.update(entries.slice(0, i + 1)));
+      expect(out.filter((m) => m.turningCandidate)).toHaveLength(0);
+      expect(out.every((m) => m.state === 'still')).toBe(true);
+    }
+  });
+
+  // Review §55 #4: the filter must run inside update(), or a caller that
+  // passes the raw list re-measures the same window on a native newest
+  // entry and steps persistence again.
+  it('reads a native newest entry as a re-read of the last ordered one', () => {
+    const entries = labelled(1, 1);
+    const t = createQrMotionTracker();
+    const before = t.update(entries.slice(0, 10));
+    expect(t.update(entries.slice(0, 11))).toBe(before);
+  });
+});

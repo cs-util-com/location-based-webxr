@@ -10,6 +10,7 @@ import type { Vector3 } from 'gps-plus-slam-js';
 import { meanEdgePx, type Pose } from './qr-pose.js';
 import {
   FUSED_WINDOW_DEFAULTS,
+  ignoreNativeWhenOrdered,
   selectFusedWindow,
   type QrFusedEntry,
 } from './qr-fused-window.js';
@@ -278,7 +279,8 @@ export interface QrMotionTracker {
 /**
  * The per-code detector with persistence: moving and turning are each
  * confirmed only after `persistence` consecutive detections agree, in both
- * directions. A new frame epoch starts it afresh.
+ * directions. A new frame epoch starts it afresh. Native entries of an
+ * ordered run are ignored (`ignoreNativeWhenOrdered`).
  */
 export function createQrMotionTracker(
   options: QrMotionOptions = {}
@@ -329,7 +331,10 @@ export function createQrMotionTracker(
     turning = step(turning, signals.turningCandidate, atMs, o.persistence);
   };
   return {
-    update(entries) {
+    update(input) {
+      // Native frames of an ordered code are not read at all (plan §54-§55):
+      // a native newest entry is a re-read of the last ordered one.
+      const entries = ignoreNativeWhenOrdered(input, o.gapMs);
       const newest = entries[entries.length - 1];
       if (newest && isReRead(newest)) return last!;
       const signals = measureQrMotion(entries, options);

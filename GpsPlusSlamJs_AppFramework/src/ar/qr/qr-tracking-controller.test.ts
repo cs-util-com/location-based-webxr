@@ -202,6 +202,27 @@ describe('createQrTrackingController', () => {
     expect(events[0]!.intrinsics).toEqual(perImage(image));
   });
 
+  // Why this test matters (QR near-frontal pose plan §54-§55): the fused
+  // window ignores a native-order frame of a code whose order is known, but
+  // only if the source reaches it; the controller is where it would stop.
+  it("carries the front end's corner-order source on the event", async () => {
+    const events: { orderSource?: unknown }[] = [];
+    const { controller } = setup({
+      onDetection: (e) => events.push(e),
+      frontEnd: {
+        kind: 'barcode-detector',
+        detect: () =>
+          Promise.resolve<QrDetection | null>({
+            ...detection,
+            orderSource: 'native',
+          }),
+      },
+    });
+    await tick(controller);
+    await tick(controller);
+    expect(events[0]!.orderSource).toBe('native');
+  });
+
   it('skips the vote for a geo-less level but still emits the detection', async () => {
     const events: unknown[] = [];
     const { controller, dispatched } = setup({

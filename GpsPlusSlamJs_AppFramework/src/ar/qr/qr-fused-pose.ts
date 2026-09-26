@@ -9,6 +9,7 @@
 import { meanEdgePx, type Pose } from './qr-pose.js';
 import {
   FUSED_WINDOW_DEFAULTS,
+  ignoreNativeWhenOrdered,
   resolveFusedWindowOptions,
   selectFusedWindow,
   type QrFusedEntry,
@@ -95,6 +96,12 @@ export interface QrFusedPose {
    * stable.
    */
   notStableReason: 'views' | 'fit' | 'fallback' | 'motion' | null;
+  /**
+   * Native entries of an ordered run left out of this evaluation (plan
+   * §54-§55: their corner order is the detector's own, 90/180 deg wrong on
+   * a rolled code); 0 when none.
+   */
+  nativeIgnored: number;
 }
 
 const DEFAULTS = {
@@ -121,6 +128,7 @@ const UNKNOWN: QrFusedPose = {
   motion: null,
   edgePx: null,
   notStableReason: 'views',
+  nativeIgnored: 0,
 };
 
 type Resolved = typeof DEFAULTS & {
@@ -207,10 +215,12 @@ export function evaluateFusedQrPose(
   previous?: QrFusedPose | null
 ): QrFusedPose {
   const o = resolveOptions(options);
-  const window = selectFusedWindow(entries, o);
+  const kept = ignoreNativeWhenOrdered(entries, o.gapMs);
+  const nativeIgnored = entries.length - kept.length;
+  const window = selectFusedWindow(kept, o);
   const oldest = window[0];
   const newest = window[window.length - 1];
-  if (!oldest || !newest) return { ...UNKNOWN };
+  if (!oldest || !newest) return { ...UNKNOWN, nativeIgnored };
   const averaged = averagedOf(window);
   const { joint, fitPx } = jointOf(window, o);
   const frameEpoch = newest.frameEpoch ?? 0;
@@ -232,6 +242,7 @@ export function evaluateFusedQrPose(
     motion: null,
     edgePx: medianEdgePx(window),
     notStableReason: notStableReason(joint, stable, useJoint, o),
+    nativeIgnored,
   };
 }
 
@@ -377,13 +388,19 @@ export function createFusedQrPoseTracker(
           ...(options.gapMs === undefined ? {} : { gapMs: options.gapMs }),
           ...options.motion,
         });
+  const windowGapMs = resolveFusedWindowOptions(options).gapMs;
   let lastEntries: readonly QrFusedEntry[] | null = null;
   let last: QrFusedPose | null = null;
   return {
     evaluate(entries) {
       if (entries === lastEntries && last) return last;
       const motion = motionTracker ? motionTracker.update(entries) : null;
-      const sinceMs = motionCutMs(motion, entries);
+      // The cut follows the entries the detector read: a native newest
+      // entry of an ordered run is not one of them (plan §55 #4).
+      const sinceMs = motionCutMs(
+        motion,
+        ignoreNativeWhenOrdered(entries, windowGapMs)
+      );
       const fused = evaluateFusedQrPose(
         entries,
         sinceMs === undefined ? options : { ...options, sinceMs },

@@ -621,6 +621,29 @@ describe('selectQrFusedEntries (M3b b3)', () => {
     expect(mapped.map((e) => e.frameEpoch)).toEqual([0, 0, 0]);
   });
 
+  // Why this test matters (plan §54-§55): the fused window can ignore a
+  // native-order frame only if the selector hands the source on.
+  it('hands on the corner-order source, and none when the entry has none', () => {
+    let s2 = init();
+    s2 = qrDetectedReducer(
+      s2,
+      recordQrDetection({
+        ...entry('A', 1),
+        corners,
+        cameraPose,
+        intrinsics,
+        orderSource: 'native',
+      })
+    );
+    s2 = qrDetectedReducer(
+      s2,
+      recordQrDetection({ ...entry('A', 2), corners, cameraPose, intrinsics })
+    );
+    const mapped = selectQrFusedEntries({ qrDetected: s2 }, 'A');
+    expect(mapped[0]!.orderSource).toBe('native');
+    expect('orderSource' in mapped[1]!).toBe(false);
+  });
+
   // Why this test matters (plan §16 #5): the fused tracker caches on the
   // entries ARRAY; the TourViewer reads this every XR frame. The selector
   // must hand out the SAME array until a new detection arrives, or the
