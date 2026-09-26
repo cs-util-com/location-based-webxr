@@ -234,8 +234,13 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
       solvePose: (input) => solveQrPose({ ...input, solver: pnpSolver }),
       fetchLevel: async (text) => {
         const level = await levelSource.fetchLevel(text);
-        // The fused trackers need the printed size (plan §72 #1).
-        fusedVotes.noteLevelSize(text, level.qr.physicalSizeM);
+        // The fused trackers need the printed size (plan §72 #1). Only a
+        // level with geo votes, so a geo-less one (debug, trigger) is never
+        // solved (plan §75 #2).
+        fusedVotes.noteLevelSize(
+          text,
+          level.qr.geo ? level.qr.physicalSizeM : undefined
+        );
         return level;
       },
       resolveStablePose: (text) => fusedVotes.resolveStablePose(text),

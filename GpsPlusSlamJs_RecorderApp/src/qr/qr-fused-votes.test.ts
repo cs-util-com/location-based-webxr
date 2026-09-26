@@ -10,9 +10,10 @@
  * as motion), per detection (so a recording replays the same gate), and
  * never across a store swap or a tracking restart. The fixture is a real
  * slice fed with rendered corners plus 1 px of corner noise: at that noise
- * the newest view's single-frame solve is 1-8 deg off while the fused one
- * stays under 2 deg (probed over 200 seeds, 2026-09-26; at 0.5 px the
- * single-frame error drops to ~2 deg, too close to tell apart).
+ * the newest view's single-frame solve is 1-8 deg off (upper median over
+ * 3 deg) while the fused one stays under 2.5 deg (probed over 200 seeds,
+ * 2026-09-26: medians 4.5 and 0.8 deg; at 0.5 px the single-frame error
+ * drops to ~2 deg, too close to tell apart).
  */
 import { describe, expect, it } from 'vitest';
 import {

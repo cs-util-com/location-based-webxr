@@ -25,7 +25,12 @@ export interface QrFusedVotesDeps {
 export interface QrFusedVotes {
   /** A level resolved: remember its printed size for the AR session. */
   noteLevelSize(text: string, sizeM: number | undefined): void;
-  /** A raw detection of `text` was recorded: evaluate it (per detection). */
+  /**
+   * A raw detection of `text` was recorded: evaluate it (per detection). A
+   * replay rebuilds the same gate given the level from the first recorded
+   * detection; detections before a level resolves are not evaluated live
+   * (plan §75 #4).
+   */
   onRecorded(text: string): void;
   /** The stable fused pose for the lock's votes, or null. */
   resolveStablePose(text: string): Pose | null;

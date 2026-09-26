@@ -11,8 +11,10 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { capturedConfig, fusedVotes } = vi.hoisted(() => ({
+const { capturedConfig, fusedVotes, levelGeo } = vi.hoisted(() => ({
   capturedConfig: { current: null as Record<string, unknown> | null },
+  /** Whether the fetched level carries geo (only then can it vote). */
+  levelGeo: { current: true },
   fusedVotes: {
     noteLevelSize: vi.fn(),
     onRecorded: vi.fn(),
@@ -46,7 +48,15 @@ vi.mock('./qr-debug-controller', () => ({
 vi.mock('./qr-level-source', () => ({
   createQrLevelSource: vi.fn(() => ({
     fetchLevel: vi.fn(() =>
-      Promise.resolve({ version: 1, qr: { physicalSizeM: 0.25 } })
+      Promise.resolve({
+        version: 1,
+        qr: {
+          physicalSizeM: 0.25,
+          ...(levelGeo.current
+            ? { geo: { lat: 50, lon: 8, alt: 100, rotation: [0, 0, 0, 1] } }
+            : {}),
+        },
+      })
     ),
     shouldCacheLevel: vi.fn(() => true),
     dispose: vi.fn(),
@@ -58,11 +68,13 @@ vi.mock('./qr-fused-votes', () => ({
 
 import { wireQrRecording } from './wire-qr-recording';
 
-function store() {
+function store(depth = true) {
   return {
     getState: () => ({
       recording: {
-        latestDepthSample: { projectionMatrix: new Array(16).fill(0) },
+        latestDepthSample: depth
+          ? { projectionMatrix: new Array(16).fill(0) }
+          : null,
       },
       qrDetected: { maxHistory: 100, markers: {} },
       gpsData: null,
@@ -72,8 +84,8 @@ function store() {
   };
 }
 
-function wire() {
-  let current = store();
+function wire(depth = true) {
+  let current = store(depth);
   const swapListeners = new Set<(s: unknown) => void>();
   const ref = {
     get: () => current,
@@ -102,12 +114,27 @@ function wire() {
       alignmentSampleCount: 0,
     }),
   });
-  return { config: capturedConfig.current!, swap: () => ref.set(store()) };
+  return {
+    config: capturedConfig.current!,
+    store: current,
+    swap: () => ref.set(store()),
+  };
 }
+
+/** A validated decode, as the controller hands it to `onRawDetection`. */
+const RAW = {
+  text: 'code-a',
+  timestamp: 1,
+  corners: [],
+  cameraPose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+  imageWidth: 1024,
+  imageHeight: 768,
+};
 
 describe('wireQrRecording level mode votes on the fused pose (b6a)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    levelGeo.current = true;
     vi.stubGlobal('requestAnimationFrame', () => 1);
     vi.stubGlobal('cancelAnimationFrame', () => undefined);
   });
@@ -127,18 +154,31 @@ describe('wireQrRecording level mode votes on the fused pose (b6a)', () => {
     expect(fusedVotes.noteLevelSize).toHaveBeenCalledWith('code-a', 0.25);
   });
 
-  it('evaluates after each recorded raw detection', () => {
+  // Plan §75 #2: a geo-less level (debug, trigger) never votes, so its code
+  // must not be solved on every detection all session.
+  it('passes no size for a level without geo', async () => {
+    levelGeo.current = false;
     const { config } = wire();
-    const raw = {
-      text: 'code-a',
-      timestamp: 1,
-      corners: [],
-      cameraPose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-      imageWidth: 1024,
-      imageHeight: 768,
-    };
-    (config.onRawDetection as (r: unknown) => void)(raw);
+    await (config.fetchLevel as (t: string) => Promise<unknown>)('code-a');
+    expect(fusedVotes.noteLevelSize).toHaveBeenCalledWith('code-a', undefined);
+  });
+
+  it('evaluates after each recorded raw detection', () => {
+    const { config, store } = wire();
+    (config.onRawDetection as (r: unknown) => void)(RAW);
     expect(fusedVotes.onRecorded).toHaveBeenCalledWith('code-a');
+    // After the record (plan §75 #3): evaluating first would read a window
+    // without this detection.
+    expect(store.dispatch.mock.invocationCallOrder[0]!).toBeLessThan(
+      fusedVotes.onRecorded.mock.invocationCallOrder[0]!
+    );
+  });
+
+  it('neither records nor evaluates without a projection', () => {
+    const { config, store } = wire(false);
+    (config.onRawDetection as (r: unknown) => void)(RAW);
+    expect(store.dispatch).not.toHaveBeenCalled();
+    expect(fusedVotes.onRecorded).not.toHaveBeenCalled();
   });
 
   it('starts new trackers when the store swaps, not on the first attach', () => {

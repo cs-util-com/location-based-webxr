@@ -4,6 +4,12 @@
 
 ### ⚠️ Breaking changes
 
+- **`QrVoteBudget` gains a required `isSpent(text)`** (QR near-frontal pose
+  plan §71): whether a code is at the budget's own cap, so an app can skip
+  the fused-pose solve for a code that can no longer vote.
+  - **Migration:** code that implements or stubs `QrVoteBudget` adds it
+    (e.g. `isSpent: (text) => spentFor(text) >= cap`); code that only uses
+    `createQrVoteBudget` is unaffected.
 - **`QrDetectionEvent` gains a required `intrinsics`** (QR near-frontal
   pose plan, M3b b3): the intrinsics of the buffer the corners came from, so
   the fused QR window can re-solve several detections jointly.
@@ -61,10 +67,6 @@
 
 ### Added
 
-- **`QrVoteBudget.isSpent(text)`** (QR near-frontal pose plan §71): whether a
-  code is at the budget's own cap, so an app can skip the fused-pose solve
-  for a code that can no longer vote. Code that implements or stubs
-  `QrVoteBudget` adds it.
 - **A contact crease for buildings** (city shadows and contact crease plan
   2026-09-26-0549, M2): `new ContactCrease({ strength, radiusM,
 baseHeightM })` darkens the ambient light at the foot of walls,

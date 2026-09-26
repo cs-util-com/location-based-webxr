@@ -155,14 +155,16 @@ export interface QrTrackingControllerConfig {
   /**
    * Resolve the STABLE world pose for the vote — e.g. the fused pose,
    * `createFusedQrPoseSource(...).resolve(text)` (QR near-frontal pose plan
-   * §60; the TourViewer and the QR demo), or the older average
+   * §60; the TourViewer and the QR demo, and the recorder since b6a, §71),
+   * or the older average
    * `selectStableQrPose(store.getState(), text)`. Returns `null` until the pose
    * has converged, which GATES the high-weight vote (the detection emission is
    * unconditional; only the vote waits for stability). When omitted (back-compat)
    * the raw single-frame solve pose drives the vote.
    *
-   * Ordering: the `onDetection` emission above feeds this frame's RAW pose into
-   * the slice synchronously, so the window this reads already includes it. See
+   * Ordering: the window this reads already includes this frame's detection -
+   * fed by the `onDetection` emission above (the TourViewer, the demo) or,
+   * earlier still, by `onRawDetection` during the decode (the recorder). See
    * the sliding-window stabilization design doc.
    */
   resolveStablePose?: (text: string) => Pose | null;

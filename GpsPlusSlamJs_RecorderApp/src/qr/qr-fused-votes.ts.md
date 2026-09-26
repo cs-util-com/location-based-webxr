@@ -35,9 +35,14 @@ this alignment is what every other code in the session is minted against.
   while the trackers are rebuilt for each store so no hysteresis or motion
   state crosses into a store whose entries restart.
 - **Per detection.** Evaluated in `onRawDetection` right after the raw
-  record's dispatch, so the gate depends only on recorded detections and a
-  replay rebuilds it (given the level, which is fetched again by URL; its
-  size is not in the recording).
+  record's dispatch, so the gate depends on recorded detections: a replay
+  rebuilds it given the level from the first recorded detection. Two inputs
+  are not in the recording - the level itself (fetched again by URL) and
+  WHEN it resolved: detections recorded before that are not evaluated live
+  (plan §75 #4).
+- **Only codes that can vote.** The wiring passes a size only for a level
+  with geo; a geo-less level (debug, trigger) is never solved (plan §75
+  #2). b6b's marker must use its own source.
 - **A spent budget skips the solve** (the TourViewer's §61 #6 short-circuit).
 - Only the vote path evaluates this source: b6b's marker must not evaluate
   it for a code with no level (it would be skipped anyway - no size).
