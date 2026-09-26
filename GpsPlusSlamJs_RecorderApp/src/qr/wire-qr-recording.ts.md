@@ -67,6 +67,10 @@ the WS-5 **consumer** (debug axis+cube). `main.ts` calls it once in `handleEnter
   detections dispatch RAW into the current store; debug controller driven on change
   - re-attached across a swap; `dispose()` tears everything down. Framework
     producer/controller are mocked.
+- `wire-qr-recording-fused.test.ts` — the b6a seams: the controller gets the
+  fused stable pose, each resolved level's size reaches the fused votes, each
+  recorded raw detection is evaluated, a store swap (not the first attach)
+  starts fresh trackers.
 
 ## Related
 
@@ -85,7 +89,11 @@ the WS-5 **consumer** (debug axis+cube). `main.ts` calls it once in `handleEnter
   level lookup through `qr-level-source` and synthetic GPS votes into the
   store. **Only one producer runs.** Running both would decode every camera
   frame twice on the AR frame path, which is why the framework's detection
-  event carries the raw corners and camera pose.
+  event carries the raw corners and camera pose. The votes ride the FUSED
+  pose (`qr-fused-votes.ts`, QR near-frontal pose plan §71-§72, b6a): a
+  code votes only once the joint rotation over its recent detections is
+  stable, at the level's printed size, evaluated after each recorded raw
+  detection; before b6a they rode each lock's single-frame solve.
 
 Both modes record each detection's corner-order source (`orderSource`,
 QR near-frontal pose plan §60, b4b-2) when the front end gives one, so a

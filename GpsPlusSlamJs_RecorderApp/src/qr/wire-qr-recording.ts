@@ -78,6 +78,7 @@ import {
   type QrSightingFeeder,
   type QrSightingFeederDeps,
 } from './qr-sighting-feeder';
+import { createQrFusedVotes } from './qr-fused-votes';
 
 /** Bare-name `?qr=` payloads resolve under this prefix — the convention the
  *  framework's launch builder documents. */
@@ -165,13 +166,15 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
    * in the session against, so the pinned centroid would propagate one
    * code's error into every new `qr/<id>.json`.
    */
-  // NOTE: unlike the TourViewer this wires no `resolveStablePose`, so these
-  // votes ride the RAW single-frame solve rather than the sliding-window
-  // filtered pose. Whether authoring should use the stable pose too is a
-  // design question with a real cost either way (the gate SKIPS votes while
-  // converging), filed with the measurement that would settle it:
-  // ../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-08-30-1520-recorder-vote-pose-stability-followup.md
   const voteBudget = createQrVoteBudget();
+  // The votes ride the FUSED pose (QR near-frontal pose plan §71-§72, b6a;
+  // the owner's call, §66): a code votes only once the joint rotation over
+  // its recent detections is stable, at that rotation. Evaluated per
+  // recorded detection, so a replay rebuilds the same gate.
+  const fusedVotes = createQrFusedVotes({
+    getQrState: () => storeRef.get().getState(),
+    isSpent: (text) => voteBudget.isSpent(text),
+  });
   /** The code the next vote batch belongs to; see `onDetection`. */
   let lastVotedText: string | null = null;
 
@@ -229,7 +232,13 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
     const tracking = createQrTrackingController({
       frontEnd,
       solvePose: (input) => solveQrPose({ ...input, solver: pnpSolver }),
-      fetchLevel: (text) => levelSource.fetchLevel(text),
+      fetchLevel: async (text) => {
+        const level = await levelSource.fetchLevel(text);
+        // The fused trackers need the printed size (plan §72 #1).
+        fusedVotes.noteLevelSize(text, level.qr.physicalSizeM);
+        return level;
+      },
+      resolveStablePose: (text) => fusedVotes.resolveStablePose(text),
       // The source owns the retry timing; without this the controller's own
       // cache would keep the first failure for the whole session.
       shouldCacheLevel: (level) => levelSource.shouldCacheLevel(level),
@@ -275,6 +284,7 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
             ...(raw.orderSource ? { orderSource: raw.orderSource } : {}),
           })
         );
+        fusedVotes.onRecorded(raw.text);
       },
       getIntrinsics: (image) => {
         const projectionMatrix = getProjectionMatrix();
@@ -375,6 +385,7 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
       // The new store restarts its GPS list, so a code that spent its
       // budget against the previous one must be allowed to vote again.
       voteBudget.reset();
+      fusedVotes.resetForStore();
     }
     attached = true;
     const detach = store.subscribe(scheduleUpdate);
