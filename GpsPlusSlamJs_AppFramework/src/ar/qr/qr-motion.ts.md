@@ -52,7 +52,10 @@ reads "still".
   re-read of the last ordered one, so a relabelled frame never reads as
   "turning". Limit: while only native frames arrive the detector is blind
   (a native frame's POSITION would be right - the object points are
-  centred - but the stretches are short: 6.6-9.5 % native on r736).
+  centred). How long such stretches last is not measured yet: r736 had
+  6.6-9.5 % native frames - a share, not a run length; `?qrperf`'s
+  `nativeRuns` measures it. The fused pose bounds the effect: after 1 s of
+  only natives it withdraws its stable pose (plan §57 #1).
 - Options (defaults PROVISIONAL until the §26 sweep; out-of-range values
   fall back to the default): `motionWindow` 4 (≥ 2), `moveM` 0.03,
   `turnPx` 3, `gapMs` 4000 (the fused window's default; a longer step between
@@ -140,7 +143,9 @@ if (m.state === 'still') {
   turn's rate; the window breaks at `gapMs`; the newest edge length is
   reported, also without a signal; one outlier frame never flips the state; a still code under
   1 px of corner noise stays still (10 seeds x 40 detections); one step per
-  detection however often it is read; `stillSinceMs`.
+  detection however often it is read; `stillSinceMs`; native frames of an
+  ordered code (plan §54-§55): a native two-frame flip gives no candidate
+  and stays still, and a native newest entry is a re-read.
 - `qr-motion.property.test.ts`: for any sequence of raw moving candidates
   and any persistence 1-6, the confirmed flag equals the reference
   debounce (flip exactly after `persistence` consecutive opposing

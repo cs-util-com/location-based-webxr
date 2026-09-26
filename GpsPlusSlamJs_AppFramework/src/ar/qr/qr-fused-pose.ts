@@ -92,10 +92,11 @@ export interface QrFusedPose {
    * Why the pose is not stable (plan §34 R1): `views` (fewer than
    * `minViews`), `fit` (the views agree too loosely for the gate),
    * `fallback` (they contradict each other, or no joint solve), `motion`
-   * (the tracker cut the window for a moving or turning code); null when
-   * stable.
+   * (the tracker cut the window for a moving or turning code), `order`
+   * (only ignored native frames for over {@link NATIVE_HOLD_MS}, plan §57
+   * #1: the code may have moved away from the window); null when stable.
    */
-  notStableReason: 'views' | 'fit' | 'fallback' | 'motion' | null;
+  notStableReason: 'views' | 'fit' | 'fallback' | 'motion' | 'order' | null;
   /**
    * Native entries of an ordered run left out of this evaluation (plan
    * §54-§55: their corner order is the detector's own, 90/180 deg wrong on
@@ -112,6 +113,14 @@ const DEFAULTS = {
   hysteresis: 1.5,
   sizeM: 0.16,
 };
+
+/**
+ * How long ignored native frames may follow the window's newest entry
+ * before the stable pose is withdrawn, ms (plan §57 #1). Provisional: twice
+ * the corner-order chain's `memoryMs`; native frames begin where the chain
+ * ends, which is typical of a hand-held move.
+ */
+const NATIVE_HOLD_MS = 1000;
 
 const UNKNOWN: QrFusedPose = {
   status: 'unknown',
@@ -227,7 +236,12 @@ export function evaluateFusedQrPose(
   const carried = continues(previous, frameEpoch, oldest, newest, o.gapMs)
     ? previous
     : null;
-  const { useJoint, stable } = decide(joint, fitPx, o, carried);
+  const { useJoint, stable, reason } = gate(
+    decide(joint, fitPx, o, carried),
+    joint,
+    o,
+    heldTooLong(entries, kept, newest)
+  );
   return {
     status: stable ? 'stable' : 'measuring',
     ...poseOf(useJoint ? joint : null, averaged, joint),
@@ -241,9 +255,47 @@ export function evaluateFusedQrPose(
     newestTimestamp: newest.timestamp,
     motion: null,
     edgePx: medianEdgePx(window),
-    notStableReason: notStableReason(joint, stable, useJoint, o),
+    notStableReason: reason,
     nativeIgnored,
   };
+}
+
+/** The gate's decision, withdrawn (`order`) after too long on ignored natives. */
+function gate(
+  decided: { useJoint: boolean; stable: boolean },
+  joint: QrMultiViewPoseResult | null,
+  o: Resolved,
+  withdrawn: boolean
+): {
+  useJoint: boolean;
+  stable: boolean;
+  reason: QrFusedPose['notStableReason'];
+} {
+  const stable = decided.stable && !withdrawn;
+  return {
+    useJoint: decided.useJoint,
+    stable,
+    reason: withdrawn
+      ? 'order'
+      : notStableReason(joint, stable, decided.useJoint, o),
+  };
+}
+
+/**
+ * The newest input entry is an ignored native one, more than
+ * {@link NATIVE_HOLD_MS} after the window's newest entry.
+ */
+function heldTooLong(
+  entries: readonly QrFusedEntry[],
+  kept: readonly QrFusedEntry[],
+  windowNewest: QrFusedEntry
+): boolean {
+  const newest = entries[entries.length - 1];
+  return (
+    newest !== undefined &&
+    newest !== kept[kept.length - 1] &&
+    newest.timestamp - windowNewest.timestamp > NATIVE_HOLD_MS
+  );
 }
 
 function medianEdgePx(window: readonly QrFusedEntry[]): number | null {
@@ -380,6 +432,9 @@ export function createFusedQrPoseTracker(
   // The detector solves positions at the tracker's size for entries that
   // carry no raw pose (raw producers: the recorder, replays), and breaks its
   // window at the tracker's gap.
+  // A `motion.gapMs` override would let the detector and the window
+  // disagree about which run a native entry belongs to (plan §57 #7); no
+  // caller sets one.
   const motionTracker =
     options.motion === false
       ? null

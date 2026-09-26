@@ -1004,6 +1004,61 @@ describe('native frames of an ordered code (plan §54, §55)', () => {
     expect(w.every((e) => e.orderSource === 'finder')).toBe(true);
   });
 
+  // Review §57 #1: native frames begin where the chain ends - a fast roll,
+  // a jump, a gap - so they coincide with a hand-held MOVE, during which the
+  // motion detector re-reads its last "still". Fusing them again would
+  // bring the 90 deg defect back; holding the old window forever would show
+  // a pose the code has left. After 1 s of ignored natives the stable pose
+  // is withdrawn (the app shows the raw pose, as for any not-stable one).
+  it('withdraws a stable pose after 1 s of only ignored native frames', () => {
+    const code = tilted(5);
+    const cams = walkCameraPoses({
+      kind: 'arc',
+      codeWorld: code,
+      distanceM: 1.2,
+      extent: 30,
+      steps: 20,
+    });
+    const entries: QrFusedEntry[] = cams.map((cam, i) => {
+      const native = i >= 8;
+      const c = cornersOf(cam, code);
+      return {
+        ...entryOf(cam, native ? shift(c, 1) : c, i * 125),
+        orderSource: native ? 'native' : 'finder',
+      };
+    });
+    const t = createFusedQrPoseTracker();
+    const out = entries.map((_, i) => t.evaluate(entries.slice(0, i + 1)));
+    // The last ordered view is at 875 ms; natives follow every 125 ms.
+    expect(out[15]!.status).toBe('stable'); // 1875 ms: 1000 ms after
+    expect(out[16]!.status).toBe('measuring'); // 2000 ms
+    expect(out[16]!.notStableReason).toBe('order');
+    expect(out[16]!.newestTimestamp).toBe(875);
+  });
+
+  // Owner question §55 #7, pinned as TODAY's behaviour: with no ordered
+  // entry in the run, native entries are kept - and 8 of them sharing one
+  // wrong shift agree on a STABLE pose 90 deg off. Change this test only
+  // with the owner's answer.
+  it('KNOWN LIMIT: an all-native window with one wrong shift is stable and 90 deg off', () => {
+    const { code, entries } = labelled(8, 1);
+    const r = evaluateFusedQrPose(entries);
+    expect(r.status).toBe('stable');
+    expect(errDeg(r, code)).toBeGreaterThan(89);
+    expect(r.nativeIgnored).toBe(0);
+  });
+
+  it('keeps the natives after a gap in the window selectFusedWindow returns', () => {
+    const { entries } = labelled(0, 1);
+    const late: QrFusedEntry = {
+      ...entries[7]!,
+      timestamp: 60000,
+      orderSource: 'native',
+    };
+    const w = selectFusedWindow([...entries, late]);
+    expect(w).toEqual([late]);
+  });
+
   describe('ignoreNativeWhenOrdered', () => {
     const at = (
       timestamp: number,

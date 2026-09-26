@@ -62,6 +62,12 @@ const window = selectFusedWindow(entries, { windowSize: 4 });
   that file's walk helpers): the size cap, the gap boundary (exactly
   `gapMs` joins), a backwards clock jump, the epoch, the radius filter and
   its anchor, small out-of-order stamps, a NaN stamp, `sinceMs`, invalid
-  options.
+  options; `ignoreNativeWhenOrdered` (`describe('native frames of an
+ordered code')`).
+- `qr-fused-window.property.test.ts`: `ignoreNativeWhenOrdered` removes
+  only native entries, keeps the order, returns the same array exactly
+  when it removes nothing, is idempotent, never touches the entries before
+  the newest run, and leaves `selectFusedWindow`'s result unchanged when
+  applied first.
 - Used by `qr-motion.ts` for the motion window, so the motion tests cover
   it too.

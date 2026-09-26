@@ -32,10 +32,14 @@ that is moved or turned never has its stale views fused.
   - `notStableReason`: why the pose is not stable - `views` (fewer than
     `minViews`, also with no window), `fit` (the views agree too loosely),
     `fallback` (they contradict each other, or no joint solve), or, from the
-    tracker, `motion` (the window was cut for a moving or turning code);
+    tracker, `motion` (the window was cut for a moving or turning code), or
+    `order` (only ignored native frames for over 1000 ms after the window's
+    newest entry - the code may have moved; plan §57 #1: the stable pose is
+    WITHDRAWN rather than re-fused from natives, which would bring the
+    90 deg defect back; 1000 ms is provisional);
     null when stable.
-  - `nativeIgnored`: native entries of an ordered run left out of this
-    evaluation (`ignoreNativeWhenOrdered`, plan §54-§55); 0 when none. A
+  - `nativeIgnored`: native entries of the RUN (up to the 32-entry history,
+    not only the window) left out of this evaluation (`ignoreNativeWhenOrdered`, plan §54-§55); 0 when none. A
     native NEWEST entry leaves the window, and so the result's
     `newestTimestamp`, where they were - a re-read.
   - `previous` is the last result for the same code: it makes the gate and
@@ -148,7 +152,17 @@ if (fused.status === 'stable') place(fused.pose);
     trails on; the tracker hands its `sizeM` and `gapMs` to the detector (entries without raw
     poses); a backwards seek recovers; a bare evaluation carries no motion; the window's
     median edge length, and the not-stable reason for each condition
-    (views, fit, fallback, a motion cut).
+    (views, fit, fallback, a motion cut);
+  - native frames of an ordered code (plan §54-§57): 6 or 7 native views of
+    8 never give a stable pose off by 90 deg; 6 ordered views plus 2
+    natives are stable and correct; the tracker stays stable and still
+    while natives arrive; a turning code is cut at the newest ORDERED entry
+    when a native one arrives; the stable pose is withdrawn (`order`) after
+    1 s of only natives; an all-native window with one wrong shift is
+    pinned as stable and 90 deg off (KNOWN LIMIT, owner question); natives
+    after a gap are kept by `selectFusedWindow`; the helper's identity,
+    run, gap and epoch cases. Each site of the rule was mutation-checked
+    (2026-09-26): removing it fails a test.
 - Planted bugs (2026-09-24), each failing at least one test: mean instead
   of median, no hysteresis, no cache, no epoch check, `>=` at the gap
   boundary, always averaging; and after the milestone review: hysteresis
