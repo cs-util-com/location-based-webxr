@@ -290,6 +290,7 @@ export function createGlobeSurface(
     tileErrors += 1;
   });
   let cameraSet: THREE.Camera | null = null;
+  const resolution = new THREE.Vector2();
   return {
     tiles,
     group,
@@ -304,7 +305,11 @@ export function createGlobeSurface(
         tiles.setCamera(camera);
         cameraSet = camera;
       }
-      tiles.setResolutionFromRenderer(camera, renderer);
+      // DEVICE pixels: the library's setResolutionFromRenderer reads
+      // getSize(), in CSS pixels, which at DPR 2 refines one level coarser
+      // than the pyramid was sized for (plan §7.2).
+      renderer.getDrawingBufferSize(resolution);
+      tiles.setResolution(camera, resolution.x, resolution.y);
       camera.updateMatrixWorld();
       tiles.update();
       // A plugin may have moved the tiles this frame.

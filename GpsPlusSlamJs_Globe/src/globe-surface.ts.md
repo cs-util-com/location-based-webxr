@@ -61,6 +61,10 @@ onError)`) fetches the three global maps: a `TextureLoader` by default,
     matrix it was made with, sits on its target and lights nothing
     (measured 2026-09-26: an all-black globe).
   - The camera is set once (again only when a different camera is passed).
+  - Tiles refine against the DRAWING BUFFER's size (device pixels), not the
+    library's `setResolutionFromRenderer`, which reads `getSize()` in CSS
+    pixels: at DPR 2 that refined one level coarser than the pyramid was
+    sized for (plan §7.2), on exactly the phones sharpness is judged on.
 - Tests: `globe-surface.test.ts` (the registry imagery and options, the
   registration, the initial state, the maps from the registry as colour or
   data and wrapping, the maps counted as they load and fail, one call for

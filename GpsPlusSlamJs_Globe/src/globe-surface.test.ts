@@ -184,6 +184,24 @@ describe("createGlobeSurface", () => {
     globe.dispose();
   });
 
+  // The library's setResolutionFromRenderer reads renderer.getSize(), in
+  // CSS pixels: at DPR 2 the tiles refined to 2 device pixels of error, one
+  // level coarser than the pyramid was sized for (plan §7.2), exactly on the
+  // phones the owner judges sharpness on. Refinement uses DEVICE pixels.
+  it("refines to the drawing buffer's pixels, not CSS pixels", () => {
+    const globe = createGlobeSurface(stubLoader());
+    const setResolution = vi.spyOn(globe.tiles, "setResolution");
+    vi.spyOn(globe.tiles, "update").mockImplementation(() => {});
+    const camera = new THREE.PerspectiveCamera();
+    const renderer = {
+      getSize: (v: THREE.Vector2) => v.set(412, 915),
+      getDrawingBufferSize: (v: THREE.Vector2) => v.set(824, 1830),
+    } as unknown as THREE.WebGLRenderer;
+    globe.update(camera, renderer);
+    expect(setResolution).toHaveBeenCalledWith(camera, 824, 1830);
+    globe.dispose();
+  });
+
   it("points the light and the shader at the same sun, with one call", () => {
     const globe = createGlobeSurface(stubLoader());
     expect(globe.sun.parent).toBe(globe.group);
