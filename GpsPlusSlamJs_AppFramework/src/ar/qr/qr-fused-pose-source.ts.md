@@ -16,9 +16,10 @@ implementation (DEC-H3).
     (the `ar` layer never imports the state slice, so the app passes it).
   - `config.optionsFor?(text)` - the code's tracker options, above all its
     printed `sizeM`; read ONCE, when the code is first evaluated.
-  - `config.onEvaluated?(result, ms)` / `config.now?()` - the cost of each
-    NEW evaluation (never a cached re-read), e.g. the QR demo's `?qrperf`
-    `fused` stage (plan §30).
+  - `config.onEvaluated?(result, ms, text)` / `config.now?()` - each NEW
+    evaluation (never a cached re-read) with its cost and its code, e.g. the
+    QR demo's `?qrperf` `fused` stage (plan §30) and the TourViewer's
+    per-code `createFusedPoseTally` (plan §66).
   - `evaluate(text)` - evaluate now and return the `QrFusedPose`. Call it
     after every detection when the result drives a readout: the motion
     detector's persistence counts detections, so an app that only reads on

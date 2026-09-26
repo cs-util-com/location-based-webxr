@@ -188,6 +188,23 @@ describe('createFusedQrPoseSource', () => {
     expect(costs).toHaveLength(2);
   });
 
+  // Plan §66: the TourViewer keeps one tally per code from this callback,
+  // so it must say WHICH code was evaluated.
+  it('names the code each new evaluation belongs to', () => {
+    const s = slice();
+    const seen: string[] = [];
+    const source = createFusedQrPoseSource({
+      entriesOf: s.entriesOf,
+      onEvaluated: (_r, _ms, text) => seen.push(text),
+    });
+    s.feed('A', 2);
+    s.feed('B', 2);
+    source.evaluate('A');
+    source.evaluate('B');
+    source.evaluate('A');
+    expect(seen).toEqual(['A', 'B']);
+  });
+
   it('reports the last evaluation, and nothing for a code never read', () => {
     const s = slice();
     const source = createFusedQrPoseSource({ entriesOf: s.entriesOf });

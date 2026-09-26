@@ -26,8 +26,8 @@ export interface FusedQrPoseSourceConfig {
    * when the code is first evaluated. Default `{}`.
    */
   optionsFor?(text: string): QrFusedPoseOptions;
-  /** Called once per NEW evaluation (never a cached re-read), with its cost. */
-  onEvaluated?(result: QrFusedPose, ms: number): void;
+  /** Called once per NEW evaluation (never a cached re-read), with its cost and the code. */
+  onEvaluated?(result: QrFusedPose, ms: number, text: string): void;
   /** The clock the cost is measured on. Default `performance.now`. */
   now?(): number;
 }
@@ -59,7 +59,8 @@ export function createFusedQrPoseSource(
     const t0 = now();
     const result = trackerFor(text).evaluate(config.entriesOf(text));
     // The tracker returns its cached result object for a re-read.
-    if (result !== results.get(text)) config.onEvaluated?.(result, now() - t0);
+    if (result !== results.get(text))
+      config.onEvaluated?.(result, now() - t0, text);
     results.set(text, result);
     return result;
   };

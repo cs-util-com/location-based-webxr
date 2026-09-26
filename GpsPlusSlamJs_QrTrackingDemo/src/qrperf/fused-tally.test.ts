@@ -519,3 +519,51 @@ describe("createFusedTally re-reads (plan §55 #3)", () => {
     expect(t.summary().notStable.order).toBe(1);
   });
 });
+
+describe("createFusedTally report lines (plan §67 #8)", () => {
+  // Why this test matters: the lock counts moved into the framework's
+  // `createFusedPoseTally` (DEC-H3, plan §66). This pins the count lines
+  // character for character, so the delegation cannot change a report the
+  // owner compares across builds.
+  it("renders the count lines exactly", () => {
+    const t = createFusedTally();
+    t.add(tilted(0, { newestTimestamp: 100 }), 0);
+    t.add(tilted(0, { newestTimestamp: 100 }), 50); // re-read
+    t.add(tilted(1, { newestTimestamp: 200, nativeIgnored: 2 }), 100);
+    t.add(
+      tilted(0, {
+        status: "measuring",
+        method: "averaged",
+        notStableReason: "fit",
+        newestTimestamp: 300,
+      }),
+      200,
+    );
+    t.add(
+      tilted(0, {
+        status: "unknown",
+        pose: null,
+        method: null,
+        views: 0,
+        notStableReason: "views",
+        frameEpoch: 1,
+      }),
+      300,
+    );
+    t.add(
+      tilted(0, {
+        status: "measuring",
+        notStableReason: "order",
+        frameEpoch: 1,
+        newestTimestamp: 400,
+      }),
+      400,
+    );
+    const lines = fusedLines(t.summary());
+    expect(lines.slice(0, 3)).toEqual([
+      "fused: 5 locks (+1 re-reads of an ignored native frame; natives ignored in 1) | stable 2 | joint 3 / averaged 1 | frame changes 1 | fit p50/p95 0.6/0.6 px | vs averaged p50/p95 1.0/1.0 deg",
+      "fused pose (stable): jump p50/p95/max 1.0/1.0/1.0 deg, position jump p50/p95/max 0.0/0.0/0.0 cm (n 1) | wall elevation |p50|/|p95| 0.0/1.0 deg, mean 0.5 deg",
+      "fused not stable: views 1 | fit 1 | fallback 0 | motion 0 | order 1",
+    ]);
+  });
+});

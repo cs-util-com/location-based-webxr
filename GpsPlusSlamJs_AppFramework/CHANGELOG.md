@@ -61,6 +61,15 @@
 
 ### Added
 
+- **`createFusedPoseTally` on `/ar/qr`** (QR near-frontal pose plan §66):
+  the lock counts of one stream of fused QR pose results - stable, each
+  `notStableReason`, empty (`unknown`) results, locks with ignored native
+  entries, and re-reads (same epoch, equal newest timestamp), which count
+  nothing else. The QR demo's `?qrperf` report and the TourViewer's debug
+  readout share it.
+- **`createFusedQrPoseSource`'s `onEvaluated` receives the code text** as
+  a third argument (additive), so an app can keep per-code counts.
+
 - **AR shadows on the reconstructed room** (W4 AR shadows plan
   2026-09-26-0549, M1): `createArShadows({ renderer, light, getOccluder })`
   makes the current `OcclusionMesh` receive virtual shadows automatically

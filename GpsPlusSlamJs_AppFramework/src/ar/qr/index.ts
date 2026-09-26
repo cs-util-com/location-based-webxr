@@ -180,6 +180,11 @@ export {
   type FusedQrPoseSource,
   type FusedQrPoseSourceConfig,
 } from './qr-fused-pose-source.js';
+export {
+  createFusedPoseTally,
+  type FusedPoseCounts,
+  type FusedPoseTally,
+} from './qr-fused-pose-tally.js';
 
 // --- qr-motion (is the code being moved / turned; plan §26) ---
 export {

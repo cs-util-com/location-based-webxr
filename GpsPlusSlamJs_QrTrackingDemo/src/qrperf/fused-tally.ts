@@ -8,7 +8,10 @@
  * `motion-tally.ts`). See fused-tally.ts.md.
  */
 
-import type { QrFusedPose } from "gps-plus-slam-app-framework/ar/qr";
+import {
+  createFusedPoseTally,
+  type QrFusedPose,
+} from "gps-plus-slam-app-framework/ar/qr";
 import { nearestRankPercentile } from "./pipeline-timings.js";
 import {
   bandsLine,
@@ -116,9 +119,10 @@ export function createFusedTally(): {
   add(result: QrFusedPose, atMs: number, size?: SizeState): void;
   summary(): FusedTallySummary;
 } {
+  // Locks, re-reads, stable and the not-stable reasons: the framework's
+  // counting rule, shared with the TourViewer's readout (plan §66).
+  const lockCounts = createFusedPoseTally();
   const counts = {
-    locks: 0,
-    stable: 0,
     joint: 0,
     averaged: 0,
     frameChanges: 0,
@@ -127,14 +131,10 @@ export function createFusedTally(): {
   const deltas: number[] = [];
   const jumps: number[] = [];
   const positionJumps: number[] = [];
-  const notStable = { views: 0, fit: 0, fallback: 0, motion: 0, order: 0 };
   const fitBands = createBandedPercentiles();
   const stableBands = perBand(() => ({ locks: 0, stable: 0 }));
   const elevations: number[] = [];
   let lastEpoch: number | null = null;
-  let reReads = 0;
-  let nativeIgnoredLocks = 0;
-  let lastNewest: { epoch: number; timestamp: number } | null = null;
   let previous: { pose: Pose; atMs: number; epoch: number } | null = null;
   const motion = createMotionTally();
 
@@ -153,28 +153,12 @@ export function createFusedTally(): {
     previous = { pose, atMs, epoch: result.frameEpoch };
   }
 
-  /**
-   * Same epoch and the SAME newest detection as the last tallied result (an
-   * equal timestamp: a clock step back must not read as one; plan §57 #6).
-   */
-  function isReRead(result: QrFusedPose): boolean {
-    return (
-      lastNewest !== null &&
-      Number.isFinite(result.newestTimestamp) &&
-      result.frameEpoch === lastNewest.epoch &&
-      result.newestTimestamp === lastNewest.timestamp
-    );
-  }
-
   function addCounts(result: QrFusedPose): void {
-    counts.locks += 1;
-    if (result.status === "stable") counts.stable += 1;
     if (result.method === "joint") counts.joint += 1;
     if (result.method === "averaged") counts.averaged += 1;
     if (lastEpoch !== null && result.frameEpoch > lastEpoch)
       counts.frameChanges += 1;
     lastEpoch = Math.max(lastEpoch ?? 0, result.frameEpoch);
-    if (result.notStableReason) notStable[result.notStableReason] += 1;
   }
 
   /** Fit, delta and the size bands (the gate's own windows for the fit). */
@@ -193,16 +177,8 @@ export function createFusedTally(): {
 
   return {
     add(result, atMs, size) {
-      if (isReRead(result)) {
-        reReads += 1;
-        return;
-      }
-      if (Number.isFinite(result.newestTimestamp))
-        lastNewest = {
-          epoch: result.frameEpoch,
-          timestamp: result.newestTimestamp,
-        };
-      if (result.nativeIgnored > 0) nativeIgnoredLocks += 1;
+      // A re-read counts there and nothing else here.
+      if (!lockCounts.add(result)) return;
       addCounts(result);
       addFitAndBands(result);
       addStablePose(result, atMs);
@@ -210,10 +186,13 @@ export function createFusedTally(): {
     },
     summary() {
       const abs = elevations.map(Math.abs);
+      const locks = lockCounts.summary();
       return {
         ...counts,
-        reReads,
-        nativeIgnoredLocks,
+        locks: locks.locks,
+        stable: locks.stable,
+        reReads: locks.reReads,
+        nativeIgnoredLocks: locks.nativeIgnoredLocks,
         fitP50Px: pct(fits, 0.5),
         fitP95Px: pct(fits, 0.95),
         deltaP50Deg: pct(deltas, 0.5),
@@ -237,7 +216,7 @@ export function createFusedTally(): {
           meanSigned: mean(elevations),
         },
         motion: motion.summary(),
-        notStable: { ...notStable },
+        notStable: locks.notStable,
         fitByEdgePx: fitBands.summary(),
         stableByEdgePx: {
           small: { ...stableBands.small },
