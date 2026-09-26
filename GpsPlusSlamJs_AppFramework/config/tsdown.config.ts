@@ -221,6 +221,9 @@ const entryFiles = [
   // utils/
   'src/utils/index.ts',
   'src/utils/concurrency.ts',
+  // The apps' ?debug=1 reader, deep-imported by the RecorderApp and the
+  // TourViewer (QR near-frontal pose plan §67 #3).
+  'src/utils/debug-flag.ts',
   'src/utils/failure-tracker.ts',
   'src/utils/escape-html.ts',
   'src/utils/format-file-size.ts',

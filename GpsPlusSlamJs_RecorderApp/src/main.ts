@@ -134,7 +134,7 @@ import {
 } from 'gps-plus-slam-app-framework/core';
 import { isSegmentingActionType } from 'gps-plus-slam-app-framework/state/segmenting-actions';
 import { createStoreRef } from './state/store-ref';
-import { debugUiEnabledFromSearch } from './debug-flag';
+import { debugUiEnabledFromSearch } from 'gps-plus-slam-app-framework/utils/debug-flag';
 import { createDebugWheel, type DebugWheel } from './ui/hud-debug-wheel';
 import { createArSessionScope } from './utils/ar-session-scope';
 import { createArSessionResources } from './ar/ar-session-resources';

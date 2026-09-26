@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The in-recording settings wheel: a gear in the AR HUD, shown only with `?debug=1` (see [`debug-flag.ts.md`](../debug-flag.ts.md)), that opens a panel usable DURING a running recording to switch alignment presets and compass options. Every control is a store action, so a switch takes effect on the next GPS fix and lands in the recording's action stream, where the framework replayer re-applies it. 2026-09-02, rotation-first search plan D8 / M3 (private repo, `GpsPlusSlamJs_Investigation/docs/2026-09-02-0905-rotation-first-full-search-and-field-wheel-plan.md`).
+The in-recording settings wheel: a gear in the AR HUD, shown only with `?debug=1` (the framework's `utils/debug-flag.ts`), that opens a panel usable DURING a running recording to switch alignment presets and compass options. Every control is a store action, so a switch takes effect on the next GPS fix and lands in the recording's action stream, where the framework replayer re-applies it. 2026-09-02, rotation-first search plan D8 / M3 (private repo, `GpsPlusSlamJs_Investigation/docs/2026-09-02-0905-rotation-first-full-search-and-field-wheel-plan.md`).
 
 ## Public API
 

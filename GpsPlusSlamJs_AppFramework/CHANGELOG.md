@@ -61,6 +61,10 @@
 
 ### Added
 
+- **`utils/debug-flag`** (deep import): `debugUiEnabledFromSearch`, the
+  apps' `?debug=1` reader, moved here from the RecorderApp so the
+  TourViewer reads the flag by the same rule (QR near-frontal pose plan
+  §67 #3).
 - **`createFusedPoseTally` on `/ar/qr`** (QR near-frontal pose plan §66):
   the lock counts of one stream of fused QR pose results - stable, each
   `notStableReason`, empty (`unknown`) results, locks with ignored native
