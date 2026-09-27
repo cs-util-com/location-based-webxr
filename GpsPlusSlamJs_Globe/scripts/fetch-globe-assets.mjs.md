@@ -13,13 +13,13 @@
   GIBS acknowledgement).
 - Invariants: every file is checked by its header (type and size) before it
   is written; concurrency 4, 3 retries; existing files are kept unless
-  `--force`; a run that only adds files keeps the first fetch date and
-  records its own as "files added" (the date is matched as a date: a
-  capture of `\S+` once took the sentence's full stop with it and wrote
-  "2026-09-26.."). Measured 2026-09-26: 173 files, 1.94
+  `--force`; the "Fetched:" dates come from `src/provenance-date.ts`
+  (unit-tested): a run that adds files keeps the first fetch date and
+  records its own as "files added", and `--force` records today alone.
+  Measured 2026-09-26: 173 files, 1.94
   MiB (levels 0-3); 2026-09-27 with level 4: 685 files, 4,451,405 bytes
   (level 4 alone 512 files, 2.42 MB, above the plan's 1.9 MiB estimate from
   48 sampled tiles). `globe-sources.test.ts` holds the total under 4.5 MB. GIBS's WMS reports no
   `layer-time-actual`, so the Blue Marble month is recorded as not reported.
 - Tests: the pieces it imports are unit-tested (`image-header.ts`,
-  `tile-pyramid.ts`); `globe-sources.test.ts` checks what it committed.
+  `tile-pyramid.ts`, `provenance-date.ts`); `globe-sources.test.ts` checks what it committed.

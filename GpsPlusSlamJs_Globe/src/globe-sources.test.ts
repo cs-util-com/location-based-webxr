@@ -94,7 +94,9 @@ function filesUnder(dir: string): { path: string; bytes: number }[] {
  * decision DEC-FB2-4: the z4 level, about 4 MB in all): 4.5 MB, decimal,
  * as the owner stated it. Every page load of the globe may fetch from here
  * and the deploy copies it whole, so growth past it is a decision, not a
- * side effect of a re-fetch.
+ * side effect of a re-fetch. It measures the WORKING TREE's assets folder,
+ * not what is committed: an untracked file there counts, which errs on the
+ * side of the budget.
  */
 const ASSETS_BUDGET_BYTES = 4_500_000;
 

@@ -15,6 +15,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { imageInfo } from "../src/image-header.ts";
+import { provenanceFetchedOn } from "../src/provenance-date.ts";
 import { pyramidTiles, tileBBox4326, wmsBBox } from "../src/tile-pyramid.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -127,22 +128,13 @@ const kib = (n) => `${(n / 1024).toFixed(0)} KiB`;
 const previous = existsSync(join(ASSETS, "PROVENANCE.md"))
   ? readFileSync(join(ASSETS, "PROVENANCE.md"), "utf8")
   : "";
-// The first fetch's date survives a run that only adds files (a new level),
-// and that run's date is recorded beside it. The dates are matched as
-// dates: the sentence's own full stop once leaked into the capture.
-const today = new Date().toISOString().slice(0, 10);
-const DATE = "(\\d{4}-\\d{2}-\\d{2})";
-const firstFetched =
-  FORCE || !previous
-    ? today
-    : (previous.match(new RegExp(`Fetched: ${DATE}`))?.[1] ?? today);
-const lastAdded =
-  fetched > 0 && firstFetched !== today
-    ? today
-    : previous.match(new RegExp(`files added: ${DATE}`))?.[1];
-const fetchedOn = lastAdded
-  ? `${firstFetched}; files added: ${lastAdded}`
-  : firstFetched;
+// The first fetch's date, and a later run's that added files (unit-tested).
+const fetchedOn = provenanceFetchedOn({
+  previous,
+  today: new Date().toISOString().slice(0, 10),
+  force: FORCE,
+  fetched,
+});
 
 writeFileSync(
   join(ASSETS, "PROVENANCE.md"),
