@@ -26,16 +26,16 @@ from another tour's (TourViewer scan-to-open plan,
     still name one file folded together; `comparable` is false for hosts
     that reach the file only through a redirect or whose normalised form
     depends on the spelling (short links, OneDrive).
-- `comparableUrl(url)` - folds GitHub's `refs/heads/<branch>` into
-  `<branch>` (the print step's shrunk form decodes with it) and drops a
-  Dropbox link's `st` and `dl` (they differ between copies of one share;
-  milestone review #7).
 - `tourRelation(code, openArchiveUrl | null): TourRelation` - `not-a-tour`,
   `no-tour-open`, `this-tour`, `other-tour`, or `unknown` (the links differ
   and one side cannot be compared, so neither is proven).
 
 ## Invariants & assumptions
 
+- **The comparison key** (module-private `comparableUrl`) folds GitHub's
+  `refs/heads/<branch>` into `<branch>` (the print step's shrunk form
+  decodes with it) and drops a Dropbox link's `st` and `dl` (they differ
+  between copies of one share; milestone review #7).
 - **A tour's own code is always `this-tour`**, for any http(s) link and any
   of Google Drive's three spellings of one file. Comparing links as written
   broke this for Drive, and "other tour" locks Save.

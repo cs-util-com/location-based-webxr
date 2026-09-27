@@ -111,7 +111,7 @@ export function tourRelation(
  * `st` token differs between copies of one share, and `dl` only picks a
  * download mode. Anything unparseable is its own key.
  */
-export function comparableUrl(url: string): string {
+function comparableUrl(url: string): string {
   let parsed: URL;
   try {
     parsed = new URL(url);
