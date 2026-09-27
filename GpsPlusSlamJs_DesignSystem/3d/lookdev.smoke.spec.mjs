@@ -1544,21 +1544,49 @@ test("E9: the slab's far edge fades out, from the street and from above", async 
 });
 
 // E11: the owner drives it from the panel.
-// WHY (owner feedback round 2, plan 2026-09-26-2055 M2): the page opens on
-// the owner's choices, the densest city (about 42,000 buildings, not the
-// block alone) and the P50 water, and the removed contact crease leaves no
-// control behind.
-test("the page opens on the dense city and the P50 water, with no crease control", async ({
+// WHY (owner feedback round 2, plan 2026-09-26-2055 M2; round 3, plan
+// 2026-09-27-0532 DEC-FB3-5): the page opens on the owner's choices, the
+// densest city (about 42,000 buildings, not the block alone), the P50 water,
+// sun shadows, the material catalog and the slab clouds, and the removed
+// contact crease leaves no control behind. The boot hash names none of the
+// on/off keys, so this also proves the hash reader keeps an ABSENT key at
+// its default (it used to read `shadows` and `catalog` absent as off, which
+// would make the new defaults do nothing for any link without them). A link
+// that names them off must still turn them off.
+test("the page opens on the dense city, the P50 water, shadows, the catalog and the slab, with no crease control", async ({
   page,
 }) => {
   const errors = await boot(page, "preset=noon&tone=neutral", {
     pageDefaults: true,
   });
+  // A slab frame over the dense city is slow on SwiftShader; the claims
+  // below read state, not pixels.
+  await page.evaluate(() => window.__lookdev.pauseLoop(true));
   const state = await page.evaluate(() => window.__lookdev.stats().state);
   expect([state.city, state.pitch, state.water]).toEqual([100000, 20, "P50"]);
+  expect([state.shadows, state.catalog, state.cloudMode]).toEqual([
+    true,
+    true,
+    "slab",
+  ]);
   await expect(page.locator("#city-fill")).toHaveValue("100000@20");
   await expect(page.locator("#water-set")).toHaveValue("P50");
+  await expect(page.locator("#shadows")).toBeChecked();
+  await expect(page.locator("#catalog")).toBeChecked();
+  await expect(page.locator("#cloud-mode")).toHaveValue("slab");
   await expect(page.locator("#crease, #crease-radius")).toHaveCount(0);
+  const hash = await page.evaluate(() => location.hash);
+  for (const key of ["shadows=1", "catalog=1", "cloudMode=slab"]) {
+    expect(hash).toContain(key);
+  }
+  // Named off, they turn off.
+  await page.evaluate(() => {
+    location.hash =
+      "#preset=noon&tone=neutral&shadows=0&catalog=0&cloudMode=dome";
+  });
+  await expect
+    .poll(() => page.evaluate(() => window.__lookdev.stats().state))
+    .toMatchObject({ shadows: false, catalog: false, cloudMode: "dome" });
   expect(errors).toEqual([]);
 });
 

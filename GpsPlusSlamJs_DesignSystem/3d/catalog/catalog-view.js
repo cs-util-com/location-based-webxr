@@ -1,8 +1,10 @@
 /**
  * The material catalog in the scene (W5 plan 2026-09-26-0549, M1): one
  * labelled sphere per entry, floating in a grid above the city, and the
- * CSS2D labels the label rule shows. Off by default (`catalog=1` in the
- * page's hash), so the page's other tests never compile its programs.
+ * CSS2D labels the label rule shows. On by default since the owner's
+ * round 3 (plan 2026-09-27-0532, DEC-FB3-5; `catalog=0` in the page's hash
+ * turns it off); the smoke boot pins it off, so the page's other tests
+ * never compile its programs.
  *
  * @see catalog-view.js.md
  */

@@ -12,8 +12,9 @@
     after `anchor` (the canvas), so the panel stays above it; - `{ render(scene,
 camera), setSize(w, h), visibleIds(), dispose() }`.
 - Invariants & assumptions:
-  - Off by default on the page (`catalog=1`), so the page's other tests
-    never compile its programs.
+  - On by default on the page since round 3 (plan 2026-09-27-0532,
+    DEC-FB3-5; `catalog=0` turns it off). The smoke boot pins it off, so
+    the page's other tests never compile its programs.
   - The grid floats at the swatch height, beyond the swatch rows, clear of
     the pond and of the shadow probes.
   - Labels are HTML (not hidden behind geometry, not shown in immersive AR);

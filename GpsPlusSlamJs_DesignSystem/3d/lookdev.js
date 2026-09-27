@@ -159,10 +159,12 @@ const state = {
   haze: true,
   tier: "phone",
   // Dome (the sky's layer), the fly-through sheet, or the ray-marched slab
-  // (plan 2026-09-24-1010 §11).
-  cloudMode: "dome",
-  // Sun shadows (AR sun shadow plan 2026-09-23-2343, M2 / S1).
-  shadows: false,
+  // (plan 2026-09-24-1010 §11); the slab by default since the owner's
+  // round 3 (plan 2026-09-27-0532, DEC-FB3-5).
+  cloudMode: "slab",
+  // Sun shadows (AR sun shadow plan 2026-09-23-2343, M2 / S1); on by
+  // default since round 3 (DEC-FB3-5).
+  shadows: true,
   // The dense city (programme plan 2026-09-26-0539, W1 M3): the nearest
   // `count` lots of a `pitch` grid; 0 is the block alone. The default is
   // the densest, about 42,000 buildings (owner, round-2 plan 2026-09-26-2055
@@ -173,9 +175,10 @@ const state = {
   // others the candidates the owner rated (water-candidates.js); P50 rated
   // best (round-2 plan 2026-09-26-2055 M2).
   water: "P50",
-  // The material catalog (W5 plan 2026-09-26-0549 M1): OFF by default, so
-  // the page's other tests never compile its programs (triage).
-  catalog: false,
+  // The material catalog (W5 plan 2026-09-26-0549 M1): on by default since
+  // round 3 (DEC-FB3-5); the smoke boot pins it off, so the page's other
+  // tests never compile its programs (smoke-boot.mjs).
+  catalog: true,
   // Screen-space ambient occlusion (round-3 plan 2026-09-27-0532, stream C):
   // drawn on the desktop tier only, where the composer exists; off by
   // default (plan Q3-1).
@@ -247,9 +250,12 @@ function readHash() {
   if (CLOUD_MODES.includes(params.get("cloudMode"))) {
     state.cloudMode = params.get("cloudMode");
   }
-  state.shadows = params.get("shadows") === "1";
-  state.catalog = params.get("catalog") === "1";
-  state.ao = params.get("ao") === "1";
+  // An on/off key the hash does not name keeps its default (round-3 plan
+  // §8 finding 5): reading absent as off made a default of "on" do nothing
+  // for every link without the key.
+  if (params.has("shadows")) state.shadows = params.get("shadows") === "1";
+  if (params.has("catalog")) state.catalog = params.get("catalog") === "1";
+  if (params.has("ao")) state.ao = params.get("ao") === "1";
   if (WATER_IDS.includes(params.get("water"))) {
     state.water = params.get("water");
   }
@@ -257,9 +263,7 @@ function readHash() {
   if (DENSE_PITCHES.includes(pitch)) state.pitch = pitch;
   const city = Number(params.get("city"));
   // Only when the hash names it: a link without `city` keeps the default
-  // (the dense city since round 2). The on/off keys `shadows` and
-  // `catalog` still read absent as off, so a link that omits them turns
-  // them off.
+  // (the dense city since round 2), like every other key.
   if (params.has("city")) {
     state.city = Number.isFinite(city) && city > 0 ? Math.floor(city) : 0;
   }

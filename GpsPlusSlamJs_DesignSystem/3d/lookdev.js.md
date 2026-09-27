@@ -92,12 +92,17 @@ denoise, resolutionScale })` is the sweep's handle; `setAoExclusions(bool)`
     preset: both exposures and both exposure-free horizon colours. The
     fallback's only GPU oracle.
 - Invariants & assumptions:
-  - State lives in the URL hash (`#preset=…&tone=…&tier=…&cloudMode=…&shadows=0|1&city=…&pitch=42|31|20&water=C0|C1|P50|P30|D30&ao=0|1`; defaults since the owner's round 2, plan
+  - State lives in the URL hash (`#preset=…&tone=…&tier=…&cloudMode=…&shadows=0|1&city=…&pitch=42|31|20&water=C0|C1|P50|P30|D30&catalog=0|1&ao=0|1`; defaults since the owner's round 2, plan
     2026-09-26-2055 M2: the densest city, `city=100000&pitch=20`, about
-    42,000 buildings, and `water=P50`), so a
+    42,000 buildings, and `water=P50`; since round 3, plan 2026-09-27-0532
+    DEC-FB3-5: `shadows=1`, `catalog=1` and `cloudMode=slab`), so a
     screenshot or phone link reproduces a view; a hash change on an open
     page re-applies it (the page's own writes use `replaceState`, which
-    fires no `hashchange`).
+    fires no `hashchange`). A key the hash does NOT name keeps its value
+    (the default on load): the on/off keys once read absent as off, which
+    would have made an "on" default do nothing for any link without them.
+    The smoke boot (`smoke-boot.mjs`) pins the plain scene for every test
+    that does not name a key; the opening-state test checks the defaults.
   - No baseline any more: the page carried OsmDemo's old Preetham sky as an
     A/B switch until M3, when OsmDemo adopted this same sky model. Its
     GRADING differs: OsmDemo is a data view, Khronos Neutral at exposure
