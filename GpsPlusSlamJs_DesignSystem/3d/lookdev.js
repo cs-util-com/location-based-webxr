@@ -38,6 +38,7 @@ import {
   CATALOG_LAYOUT,
   createCatalogLabels,
 } from "./catalog/catalog-view.js";
+import { LABEL_RULE, labelOpacities } from "./catalog/label-rule.js";
 import { sunDirection } from "/osm/sun-position.js";
 import {
   createSunShadow,
@@ -524,6 +525,11 @@ function renderFrame() {
 /** The catalog's spheres and labels, built while `state.catalog` is on. */
 let catalogView = null;
 let catalogLabels = null;
+/**
+ * The label rule the labels read every frame: a copy of LABEL_RULE, which
+ * the round-3 K sweep changes through `setLabelRule`.
+ */
+const labelRule = { ...LABEL_RULE };
 
 /**
  * The material catalog to the state (W5 M1): built on first use (hazed like
@@ -534,7 +540,7 @@ function applyCatalog() {
     catalogView = buildCatalog(CATALOG);
     haze.applyToObject(catalogView.group);
     scene.add(catalogView.group);
-    catalogLabels = createCatalogLabels(canvas, catalogView.group);
+    catalogLabels = createCatalogLabels(canvas, catalogView.group, labelRule);
     catalogLabels.setSize(canvas.clientWidth, canvas.clientHeight);
   } else if (!state.catalog && catalogView) {
     catalogLabels.dispose();
@@ -633,8 +639,9 @@ function placeCamera(view) {
     camera.position.set(-900, 3200, 1100);
     controls.target.set(40, 0, 0);
   } else if (view === "catalog") {
-    // Inside the grid's near range: the nearest row about 26 m away, the
-    // farthest about 50 m, where the labels fade (W5 triage).
+    // Close to the grid: the nearest row about 26 m away, the farthest
+    // about 60 m, all inside the labels' 140 m fade, so the nearest-labels
+    // cap K decides which show (W5 triage; round-3 plan 2026-09-27-0532).
     const [x0, y0, z0] = CATALOG_LAYOUT.origin;
     const cx = x0 + ((CATALOG_LAYOUT.perRow - 1) * CATALOG_LAYOUT.pitchM) / 2;
     camera.position.set(cx, y0 + 7, z0 + 50);
@@ -1205,12 +1212,33 @@ Object.assign(api, {
   },
   /** The catalog's entries, built spheres, shown labels and programs. */
   catalogInfo() {
+    const labelIds = catalogLabels ? catalogLabels.visibleIds() : [];
     return {
       entries: CATALOG.length,
       spheres: catalogView ? catalogView.group.children.length : 0,
-      visibleLabels: catalogLabels ? catalogLabels.visibleIds().length : 0,
+      visibleLabels: labelIds.length,
+      labelIds,
       programs: renderer.info.programs?.length ?? 0,
     };
+  },
+  /** Test surface: the catalog's spheres (id and position), [] when off. */
+  catalogSpheres() {
+    if (!catalogView) return [];
+    return catalogView.group.children.map((mesh) => ({
+      id: mesh.name,
+      x: mesh.position.x,
+      y: mesh.position.y,
+      z: mesh.position.z,
+    }));
+  },
+  /**
+   * Test surface: change the label rule (any of { k, fadeNearM, fadeFarM });
+   * the next frame reads it. The round-3 K sweep's handle.
+   */
+  setLabelRule(rule) {
+    const next = { ...labelRule, ...rule };
+    labelOpacities([], next); // throws RangeError for a bad rule
+    Object.assign(labelRule, next);
   },
   /** Dome (the sky's own layer), the fly-through sheet, or the slab. */
   setCloudMode(mode) {

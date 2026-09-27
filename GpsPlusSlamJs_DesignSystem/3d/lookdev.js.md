@@ -57,6 +57,14 @@ farthest, casts, receives }`) and `drawCalls()` (renders one frame and
     cost sweep: map size, PCF radius, bias, R, every-frame renders) and
     `shadowFlags()`,
     `setHaze(bool)`, `setCloudCover(0…1)`, `setTier("phone" | "desktop")`;
+  - the material catalog (W5 plan 2026-09-26-0549; on by default since
+    round 3): `setCatalog(bool)`, `compileScene()` (compiles every
+    material, drawn or not; returns the program count), `catalogInfo()`
+    (`{ entries, spheres, visibleLabels, labelIds, programs }`, the labels
+    as of the last frame), `catalogSpheres()` (`[{ id, x, y, z }]`, empty
+    when off) and `setLabelRule({ k?, fadeNearM?, fadeFarM? })` (the label
+    rule the next frame reads; `RangeError` for a bad rule; the round-3 K
+    sweep's handle, default `LABEL_RULE`, 50-140 m, K 16);
   - `setBloom(bool)` — the bloom pass alone (desktop tier only; throws on
     the phone tier): with it off, the desktop pipeline must draw exactly
     the phone picture;

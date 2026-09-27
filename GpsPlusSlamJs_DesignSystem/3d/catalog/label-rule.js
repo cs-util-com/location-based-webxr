@@ -6,8 +6,14 @@
  * @see label-rule.js.md
  */
 
-/** Defaults from the research: K 8-24, fade near 10-30 m, far 40-100 m. */
-export const LABEL_RULE = { k: 16, fadeNearM: 25, fadeFarM: 70 };
+/**
+ * K from the research (8-24). The fade was the research's 25-70 m until the
+ * owner found the labels appeared too close and asked for about twice the
+ * distance (round-3 plan 2026-09-27-0532 §2): 50-140 m. From the catalog
+ * view every sphere is now inside 140 m, so K decides how many show there
+ * (K swept over 16, 24 and 41 in the round-3 record).
+ */
+export const LABEL_RULE = { k: 16, fadeNearM: 50, fadeFarM: 140 };
 
 /**
  * The opacity of each label, in the input's order: the K nearest (ties by

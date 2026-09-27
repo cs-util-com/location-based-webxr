@@ -32,6 +32,15 @@ describe("labelOpacities", () => {
     assert.deepEqual(o, [1, 0.5, 0, 0]);
   });
 
+  // The owner's distances (round-3 plan 2026-09-27-0532 §2: "about twice
+  // the distance"): full strength to 50 m, half at 95 m, gone at 140 m. The
+  // old 25-70 m rule hid a label at 70 m.
+  it("by default shows labels from twice the old distance", () => {
+    assert.deepEqual(LABEL_RULE, { k: 16, fadeNearM: 50, fadeFarM: 140 });
+    assert.deepEqual(labelOpacities([50, 95, 140, 141]), [1, 0.5, 0, 0]);
+    assert.ok(labelOpacities([100])[0] > 0);
+  });
+
   // Equal distances must not flicker from frame to frame: ties keep input order.
   it("breaks ties by index, the same every frame", () => {
     const o = labelOpacities([4, 4, 4], { k: 2, fadeNearM: 10, fadeFarM: 20 });
