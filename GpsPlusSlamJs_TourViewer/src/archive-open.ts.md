@@ -49,7 +49,8 @@ DOM glue, its own module since the flows plan M6.
   review) and the placement fields the
   closing tour owned (`imagePlanes`, `imagePlanesLoading`,
   `planesRunGeneration` bump, `placementAttempted`, `joinDeclined`,
-  `placement`) and the QR controller's level cache.
+  `placement`) and the QR controller's level cache, and a failed
+  finish (`finishError`, which keeps Save off - scan-to-open plan §9 #8).
 - **Async-UI rule:** the open button shows "Opening…" BEFORE the first
   await (PR #357 review) and restores only for the generation that owns
   it; the teardown runs INSIDE the try (PR #365 review).

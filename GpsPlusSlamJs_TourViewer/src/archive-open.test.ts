@@ -44,6 +44,36 @@ function el() {
   };
 }
 
+/** Wire the open path over `ctx` and submit another tour's link; the open
+ *  fails after the teardown (the mocked `openTourSession`). */
+function openAnotherTour(ctx: ReturnType<typeof createTourViewerSession>) {
+  const dom = {
+    form: el(),
+    linkInput: el(),
+    openButton: el(),
+    missingForm: el(),
+    missingInput: el(),
+    missingButton: el(),
+    statsPanel: el(),
+    statsHeadline: el(),
+    statsDetail: el(),
+    errorBox: el(),
+    gallery: el(),
+    storagePanel: el(),
+    clearCacheButton: el(),
+  };
+  wireArchiveOpen({
+    ctx,
+    dom: dom as unknown as ArchiveOpenDom,
+    cacheStore: undefined,
+    corsProxyBaseUrl: "https://proxy.test",
+    hooks: createUnwiredHooks(),
+  });
+  dom.linkInput.value = "https://example.com/other-tour.zip";
+  dom.form.fire("submit");
+  return dom;
+}
+
 describe("a tour switch forgets the closing tour's fused-pose state", () => {
   it("clears the visitor hint's evaluation and empties the counts in place", async () => {
     const ctx = createTourViewerSession();
@@ -56,33 +86,25 @@ describe("a tour switch forgets the closing tour's fused-pose state", () => {
       result: { status: "stable", notStableReason: null } as never,
       atMs: 0,
     };
-    const dom = {
-      form: el(),
-      linkInput: el(),
-      openButton: el(),
-      missingForm: el(),
-      missingInput: el(),
-      missingButton: el(),
-      statsPanel: el(),
-      statsHeadline: el(),
-      statsDetail: el(),
-      errorBox: el(),
-      gallery: el(),
-      storagePanel: el(),
-      clearCacheButton: el(),
-    };
-    wireArchiveOpen({
-      ctx,
-      dom: dom as unknown as ArchiveOpenDom,
-      cacheStore: undefined,
-      corsProxyBaseUrl: "https://proxy.test",
-      hooks: createUnwiredHooks(),
-    });
-    dom.linkInput.value = "https://example.com/other-tour.zip";
-    dom.form.fire("submit");
+    const dom = openAnotherTour(ctx);
     await vi.waitFor(() => expect(dom.openButton.disabled).toBe(false));
     expect(ctx.viewerLastEvaluation).toBeNull();
     expect(ctx.fusedTallies).toBe(tallies);
     expect(tallies.size).toBe(0);
+  });
+});
+
+describe("a tour switch forgets the closing tour's failed finish", () => {
+  it("clears finishError, which otherwise locks Save in the next tour", async () => {
+    // Why this test matters (TourViewer scan-to-open plan §9 #8, a
+    // pre-existing bug): while `finishError` is set the panel keeps Save
+    // off, and only a finish clears it - which returns early without a
+    // measured level. A failed finish in tour A therefore locked Save in
+    // tour B until a reload; scan-to-open makes switching tours routine.
+    const ctx = createTourViewerSession();
+    ctx.finishError = "Rebuilding the zip failed: quota";
+    const dom = openAnotherTour(ctx);
+    await vi.waitFor(() => expect(dom.openButton.disabled).toBe(false));
+    expect(ctx.finishError).toBeNull();
   });
 });

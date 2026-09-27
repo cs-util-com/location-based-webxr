@@ -93,6 +93,10 @@ export function wireArchiveOpen(deps: {
     // still in flight land on nothing.
     ctx.mintedLevel = null;
     ctx.mintGeneration += 1;
+    // A failed finish is the closing tour's too: it keeps Save off, and only
+    // a finish - which needs a measured level - clears it (scan-to-open
+    // plan §9 #8).
+    ctx.finishError = null;
     hooks.resetFinishStep();
     // From here until an open SUCCEEDS there is no tour, and the page has
     // to say so: the print step goes back to asking for a link and step 4
