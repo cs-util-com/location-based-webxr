@@ -3,7 +3,7 @@
  * The globe lab's imagery depth, sky and time (round-2 plan 2026-09-26-2055
  * M3 c-f, round-3 plan 2026-09-27-0532 §4 F): level 4 of the imagery, the
  * clock the lab owns, the cloud drift it drives, the background pass with
- * the sun disc, and the device line.
+ * the sun disc and the procedural stars, and the device line.
  *
  * Why this file matters: the globe's time is read by everything that moves
  * (the sun, the clouds, and later the dive's hand-over), so a pinned link
@@ -234,7 +234,9 @@ test("the sun is a disc with a soft glow, where the sun is", async ({
   page,
 }) => {
   test.setTimeout(300_000);
-  const errors = await bootLab(page, at(BESIDE));
+  // The stars and the Milky Way off: a star on a probe would pass for glow.
+  const disc = `${at(BESIDE)}&stars=0&milkyWay=0`;
+  const errors = await bootLab(page, disc);
   await arriveAt(page, BESIDE);
   const state = await page.evaluate(() => window.__globeLab.state());
   const sun = state.sky.sunScreen;
@@ -280,7 +282,7 @@ test("the sun is a disc with a soft glow, where the sun is", async ({
     );
     profile.push([deg, p ? luminance((await readAt(page, [p]))[0]) : null]);
   }
-  await applyHash(page, `${at(BESIDE)}&sky=0`);
+  await applyHash(page, `${disc}&sky=0`);
   const [centreOff] = await readAt(page, [sun]);
   console.log(
     `sun disc: peak ${peak.toFixed(1)}, ${brightest.length} px at peak, centroid ${offPx.toFixed(2)} px from the projected sun; centre ${centreOn} (sky off ${centreOff}); glow ${profile.map(([d, l]) => `${d}°: ${l?.toFixed(1)}`).join(", ")}`,
@@ -322,6 +324,88 @@ test("the Earth covers the sky: the sun behind it does not show through", async 
   );
   expect(worst).toBeLessThan(1);
   expect(Math.max(...on)).toBeLessThan(200);
+  expect(errors).toEqual([]);
+});
+
+// WHY (round-2 plan M3d, owner decision on Q2: procedural stars): the stars
+// fill space behind the Earth and the Earth covers them. In the view with
+// the sun behind the Earth (no glow in space), the Milky Way off: with the
+// stars on, pixels brighter than the threshold appear OUTSIDE the Earth's
+// disc and none with the stars off; INSIDE the disc the image is the same
+// with the stars on and off. A sky drawn after the Earth, or one that wrote
+// depth, would add stars to the night side.
+test("procedural stars shine in space, and never over the Earth", async ({
+  page,
+}) => {
+  test.setTimeout(300_000);
+  const view = `${at(BEHIND)}&milkyWay=0`;
+  const errors = await bootLab(page, view);
+  const state = await arriveAt(page, BEHIND);
+  const { height } = await page.evaluate(() => {
+    const c = document.getElementById("globe-canvas");
+    return { height: c.height };
+  });
+  // The Earth's disc: its angular radius from the camera, in device pixels.
+  const angular = Math.asin(state.radiusM / state.distance);
+  const rPx =
+    ((height / 2) * Math.tan(angular)) / Math.tan((state.fovY * DEG) / 2);
+  const stats = (r, t) =>
+    page.evaluate(
+      ([circle, threshold]) => window.__globeLab.regionStats(circle, threshold),
+      [{ cx: 0.5, cy: 0.5, rPx: r }, t],
+    );
+  const THRESHOLDS = [10, 20, 40];
+  const on = { inside: await stats(rPx * 0.97, 20) };
+  on.outside = await Promise.all(THRESHOLDS.map((t) => stats(rPx * 1.03, t)));
+  await applyHash(page, `${view}&stars=0`);
+  const off = { inside: await stats(rPx * 0.97, 20) };
+  off.outside = await Promise.all(THRESHOLDS.map((t) => stats(rPx * 1.03, t)));
+  console.log(
+    `stars: ${state.sky.stars.count} to mag ${state.sky.stars.magLimit}; Earth disc ${rPx.toFixed(1)} px; ` +
+      `bright pixels in space on/off at ${THRESHOLDS.map((t, k) => `${t}: ${on.outside[k].outsideBright}/${off.outside[k].outsideBright}`).join(", ")}; ` +
+      `luminance over the Earth on ${on.inside.insideSum.toFixed(0)}, off ${off.inside.insideSum.toFixed(0)}`,
+  );
+  for (let k = 0; k < THRESHOLDS.length; k++) {
+    expect(off.outside[k].outsideBright).toBe(0);
+  }
+  expect(on.outside[1].outsideBright).toBeGreaterThan(20);
+  expect(on.inside.insideSum).toBe(off.inside.insideSum);
+  expect(errors).toEqual([]);
+});
+
+// WHY (round-2 plan M3d): the stars turn with Greenwich sidereal time, and
+// the sun is placed by the framework's solar position; both must share one
+// frame, or the stars would wheel against the sun. At the March equinox
+// the sun's right ascension is 0h, and at the June solstice 6h (90°): the
+// sun's ECEF longitude plus the sidereal angle must give exactly that.
+// Two instants, so a flipped sign cannot pass both.
+test("the star frame and the sun agree: right ascension 0h at the equinox, 6h at the solstice", async ({
+  page,
+}) => {
+  const errors = await bootLab(page, "at=0,0&spinMs=0&turnMs=0");
+  const cases = [
+    ["2026-03-20T14:46:00Z", 0],
+    ["2026-06-21T08:24:00Z", 90],
+  ];
+  const report = [];
+  for (const [time, expectedDeg] of cases) {
+    await applyHash(page, `at=0,0&spinMs=0&turnMs=0&time=${time}`);
+    const s = await page.evaluate(() => window.__globeLab.state());
+    const [x, y] = s.sunEcef;
+    const ra =
+      ((((Math.atan2(y, x) + s.sky.siderealAngleRad) / DEG) % 360) + 360) % 360;
+    const miss = Math.min(
+      Math.abs(ra - expectedDeg),
+      360 - Math.abs(ra - expectedDeg),
+    );
+    report.push(`${time}: RA ${ra.toFixed(3)}° (expected ${expectedDeg}°)`);
+    expect(miss).toBeLessThan(0.3);
+  }
+  console.log(`sun against the star frame: ${report.join("; ")}`);
+  // The credits say the stars are not a catalogue.
+  await expect(page.locator("#globe-credits")).toContainText(
+    "Stars: procedural, not a star catalogue.",
+  );
   expect(errors).toEqual([]);
 });
 

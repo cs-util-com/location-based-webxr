@@ -11,7 +11,9 @@
  *   and the Earth, drawn after it, always covers it;
  * - the sun's direction is a unit vector, the same one that lights the
  *   Earth, and the disc's angular size is the real sun's unless the lab
- *   says otherwise.
+ *   says otherwise;
+ * - the stars and the Milky Way turn with the celestial rotation the
+ *   caller gives, and the magnitude limit decides how many are drawn.
  * Pixels are the lab smoke's job; this pins the wiring under Node.
  */
 
@@ -20,6 +22,11 @@ import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
 import { GLOBE_SKY, createGlobeSky } from "./globe-sky.js";
+import {
+  GALACTIC_NORTH_POLE,
+  GLOBE_STARS,
+  generateStarField,
+} from "./globe-stars.js";
 
 const DEG = Math.PI / 180;
 
@@ -38,6 +45,13 @@ describe("createGlobeSky", () => {
       expect(material.side).toBe(THREE.BackSide);
       expect(mesh.frustumCulled).toBe(false);
     }
+    // The stars: added over the sphere, no depth, never culled.
+    const stars = sky.stars.material as THREE.ShaderMaterial;
+    expect(stars.depthTest).toBe(false);
+    expect(stars.depthWrite).toBe(false);
+    expect(stars.blending).toBe(THREE.AdditiveBlending);
+    expect(sky.stars.frustumCulled).toBe(false);
+    expect(sky.stars.renderOrder).toBeGreaterThan(meshes[0].renderOrder);
     sky.dispose();
   });
 
@@ -130,5 +144,56 @@ describe("createGlobeSky", () => {
     );
     expect(material.fragmentShader).toContain("#include <colorspace_fragment>");
     sky.dispose();
+  });
+});
+
+describe("the procedural stars in the sky pass", () => {
+  it("draws the field to the default limit, and the lab's limit changes the count", () => {
+    const sky = createGlobeSky();
+    const count = (m: number) =>
+      generateStarField({
+        seed: GLOBE_STARS.seed,
+        magLimit: 7.5,
+      }).magnitudes.filter((x) => x <= m).length;
+    expect(GLOBE_SKY.starMagLimit).toBe(6.5);
+    expect(sky.visibleStars()).toBe(count(6.5));
+    expect(sky.visibleStars()).toBeGreaterThan(2000);
+    const look = { gain: 1, milkyWay: 0, pixelRatio: 2, visible: true };
+    sky.setStarLook({ ...look, magLimit: 5.5 });
+    expect(sky.visibleStars()).toBe(count(5.5));
+    expect(sky.starUniforms.uMagLimit.value).toBe(5.5);
+    expect(sky.starUniforms.uPixelRatio.value).toBe(2);
+    expect(sky.uniforms.uMilkyWay.value).toBe(0);
+    sky.setStarLook({ ...look, magLimit: 6.5, visible: false });
+    expect(sky.stars.visible).toBe(false);
+    for (const bad of [
+      { ...look, magLimit: 9 },
+      { ...look, magLimit: 6.5, gain: -1 },
+      { ...look, magLimit: 6.5, milkyWay: Number.NaN },
+      { ...look, magLimit: 6.5, pixelRatio: 0 },
+    ]) {
+      expect(() => sky.setStarLook(bad)).toThrow(RangeError);
+    }
+    sky.dispose();
+  });
+
+  it("turns the stars and the Milky Way's pole by the celestial rotation", () => {
+    fc.assert(
+      fc.property(fc.double({ min: 0, max: 2 * Math.PI, noNaN: true }), (a) => {
+        const sky = createGlobeSky();
+        const q = new THREE.Quaternion().setFromAxisAngle(
+          new THREE.Vector3(0, 0, 1),
+          -a,
+        );
+        sky.setCelestialRotation(q);
+        expect(sky.stars.quaternion.angleTo(q)).toBeLessThan(1e-9);
+        const pole = new THREE.Vector3(...GALACTIC_NORTH_POLE).applyQuaternion(
+          q,
+        );
+        expect(sky.uniforms.uGalPole.value.distanceTo(pole)).toBeLessThan(1e-9);
+        sky.dispose();
+      }),
+      { numRuns: 20 },
+    );
   });
 });

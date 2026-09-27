@@ -7,7 +7,8 @@
  * parameter sits on a control plate and in the hash, so a link reproduces a
  * view (M4). Round 2 (plan 2026-09-26-2055 M3): the lab owns a pinnable
  * clock, the clouds drift with it, and a background pass draws the sun's
- * disc behind the Earth.
+ * disc, PROCEDURAL stars (not a catalogue: round-2 Q2) and a faint Milky
+ * Way behind the Earth, turned with sidereal time.
  *
  * @see globe-lab.js.md
  */
@@ -31,6 +32,11 @@ import {
 } from "/globe/globe-camera.js";
 import { sunDirectionEcef } from "/globe/globe-sun.js";
 import { GLOBE_SKY, createGlobeSky } from "/globe/globe-sky.js";
+import {
+  GLOBE_STARS,
+  celestialToEcefQuaternion,
+  greenwichSiderealAngleRad,
+} from "/globe/globe-stars.js";
 import {
   GLOBE_CLOUD_DRIFT_DEG_PER_S,
   GLOBE_SURFACE_TUNING,
@@ -125,7 +131,7 @@ function statusView() {
 function renderCredits(credits) {
   const details = document.createElement("details");
   const summary = document.createElement("summary");
-  summary.textContent = `Imagery: ${credits.map((c) => c.short).join(" · ")}`;
+  summary.textContent = `Imagery: ${credits.map((c) => c.short).join(" · ")}. ${PROCEDURAL_STARS}`;
   details.append(summary);
   const list = document.createElement("ul");
   for (const c of credits) {
@@ -143,6 +149,13 @@ function renderCredits(credits) {
   details.append(list, note);
   creditsBox.replaceChildren(details);
 }
+
+/**
+ * The stars are generated, not a catalogue (round-2 plan Q2: no catalogue
+ * with a clearly public-domain or attribution-only licence was found), and
+ * the credits line says so.
+ */
+const PROCEDURAL_STARS = "Stars: procedural, not a star catalogue.";
 
 /** The camera's fit: the disc fills 90 % of the narrower side (§7.6). */
 const FIT_MARGIN = 0.1;
@@ -187,6 +200,16 @@ const PARAMS = {
   sky: { fallback: 1, min: 0, max: 1 },
   sunSize: { fallback: GLOBE_SKY.sunDiameterDeg, min: 0.1, max: 10 },
   sunGlow: { fallback: GLOBE_SKY.glow, min: 0, max: 4 },
+  // The procedural stars: on unless 0, the magnitude limit, their gain, and
+  // the Milky Way band's radiance.
+  stars: { fallback: 1, min: 0, max: 1 },
+  starMag: {
+    fallback: GLOBE_SKY.starMagLimit,
+    min: 0.5,
+    max: GLOBE_STARS.maxMagLimit,
+  },
+  starGain: { fallback: GLOBE_SKY.starGain, min: 0, max: 4 },
+  milkyWay: { fallback: GLOBE_SKY.milkyWay, min: 0, max: 0.1 },
   fovY: { fallback: 50, min: 20, max: 80 },
   pixelRatio: { fallback: 2, min: 0.5, max: 4 },
   errorTarget: { fallback: null, min: 0.25, max: 256 },
@@ -447,6 +470,9 @@ function start() {
   renderer.autoClear = false;
   const sky = createGlobeSky();
   const sunWorld = new THREE.Vector3();
+  const celestial = new THREE.Quaternion();
+  const placement = new THREE.Quaternion();
+  let siderealAngleRad = 0;
   const device = reportDevice(renderer);
   const scene = new THREE.Scene();
   const radius = WGS84_ELLIPSOID.radius.x;
@@ -497,6 +523,13 @@ function start() {
       renderer.setPixelRatio(ratio);
       fittedSize = ""; // refit on the next frame
     }
+    sky.setStarLook({
+      magLimit: params.starMag,
+      gain: params.starGain,
+      milkyWay: params.milkyWay,
+      pixelRatio: renderer.getPixelRatio(),
+      visible: params.stars !== 0,
+    });
   };
   /** Reads the hash and applies it; a new target or timing restarts. */
   const onHash = () => {
@@ -523,6 +556,7 @@ function start() {
       ms,
       params.cloudDrift,
     );
+    siderealAngleRad = greenwichSiderealAngleRad(ms);
     return ms;
   };
   const syncPanel = bindPanel(
@@ -568,6 +602,14 @@ function start() {
         sunWorld
           .copy(globe.sun.position)
           .transformDirection(globe.group.matrixWorld),
+      );
+      // The stars: celestial to ECEF by sidereal time, then turned by the
+      // globe's placement in the world, as the sun's light is.
+      globe.group.getWorldQuaternion(placement);
+      sky.setCelestialRotation(
+        placement.multiply(
+          celestialToEcefQuaternion(siderealAngleRad, celestial),
+        ),
       );
       sky.render(renderer, camera);
     }
@@ -619,6 +661,44 @@ function start() {
     return [(p.x + 1) / 2, (1 - p.y) / 2];
   };
 
+  /**
+   * One full read of the drawing buffer (after a render): inside and outside
+   * a circle (normalised centre, radius in device pixels), the luminance sum
+   * and the count of pixels brighter than `threshold`. For the stars'
+   * smokes: how much is drawn over the Earth's disc, and in space.
+   */
+  const regionStats = ({ cx, cy, rPx }, threshold) => {
+    frame();
+    const gl = renderer.getContext();
+    const w = gl.drawingBufferWidth;
+    const h = gl.drawingBufferHeight;
+    const px = new Uint8Array(w * h * 4);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    const out = {
+      insideSum: 0,
+      insideBright: 0,
+      outsideSum: 0,
+      outsideBright: 0,
+    };
+    for (let y = 0; y < h; y++) {
+      const dy = h - 1 - y + 0.5 - cy * h;
+      for (let x = 0; x < w; x++) {
+        const i = 4 * (y * w + x);
+        const l = 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2];
+        const dx = x + 0.5 - cx * w;
+        const inside = dx * dx + dy * dy <= rPx * rPx;
+        if (inside) {
+          out.insideSum += l;
+          if (l > threshold) out.insideBright += 1;
+        } else {
+          out.outsideSum += l;
+          if (l > threshold) out.outsideBright += 1;
+        }
+      }
+    }
+    return out;
+  };
+
   window.__globeLab = {
     ready: true,
     spinStart: SPIN_START,
@@ -648,6 +728,14 @@ function start() {
         glow: sky.uniforms.uGlow.value,
         sunDirection: sky.uniforms.uSunDirection.value.toArray(),
         sunScreen: projectDirection(sky.uniforms.uSunDirection.value),
+        stars: {
+          on: sky.stars.visible,
+          magLimit: sky.starUniforms.uMagLimit.value,
+          count: sky.visibleStars(),
+          procedural: true,
+        },
+        milkyWay: sky.uniforms.uMilkyWay.value,
+        siderealAngleRad,
       },
       fovY: camera.fov,
       pixelRatio: renderer.getPixelRatio(),
@@ -675,6 +763,7 @@ function start() {
         .project(camera);
       return [(p.x + 1) / 2, (1 - p.y) / 2];
     },
+    regionStats,
     /** Where a world direction [x, y, z] shows on the canvas, or null. */
     projectDirection: ([x, y, z]) =>
       projectDirection(new THREE.Vector3(x, y, z)),

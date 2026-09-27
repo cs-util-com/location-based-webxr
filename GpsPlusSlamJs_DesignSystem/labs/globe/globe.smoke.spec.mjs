@@ -38,10 +38,12 @@ const TEXTURE_MIN_SPREAD = 15;
  * at 11:00 UTC on an equinox, when the sun stands over 16.9°E (M3's real sun
  * would otherwise put the view on the night side half the time). The cloud
  * drift is pinned off (`cloudDrift=0`: the clouds where M1-M4 measured
- * them); the drift has its own checks in `globe-sky.smoke.spec.mjs`.
+ * them), and so are the procedural stars and the Milky Way (`stars=0`,
+ * `milkyWay=0`: the black sky the corner and hole checks were measured
+ * on); both have their own checks in `globe-sky.smoke.spec.mjs`.
  */
 const FIXED_VIEW =
-  "/labs/globe/#at=30,15&spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0";
+  "/labs/globe/#at=30,15&spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0";
 
 test("the globe boots, draws a lit Earth, and stays on this machine", async ({
   page,
@@ -581,10 +583,14 @@ test("every control on the plate writes the hash and applies", async ({
       "cloudOpacity",
       "errorTarget",
       "fovY",
+      "milkyWay",
       "nightGain",
       "pixelRatio",
       "sky",
       "spinMs",
+      "starGain",
+      "starMag",
+      "stars",
       "sunGlow",
       "sunIntensity",
       "sunSize",

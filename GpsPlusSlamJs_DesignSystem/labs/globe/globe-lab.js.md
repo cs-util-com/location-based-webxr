@@ -13,7 +13,10 @@
   the lab owns a pinnable clock that drives the sun and the clouds' drift;
   a background pass (`/globe/globe-sky.js`) draws the sun's disc and glow
   behind the Earth; a device line says whether float textures filter
-  linearly. The stars wait for their catalogue's licence (round-2 §6 Q2).
+  linearly. The stars are PROCEDURAL (`/globe/globe-stars.js`; no catalogue
+  with a clear licence was found, owner decision on round-2 Q2), turned
+  with Greenwich sidereal time, with a faint Milky Way band; the credits
+  line says "Stars: procedural, not a star catalogue."
 - The control plate (M4): the design system's look-dev plate
   (`../../3d/lookdev.css`, `../../3d/panel.js`: collapses, remembered,
   folded on a phone), moved to the right. Every control writes its hash
@@ -36,7 +39,10 @@
   `cloudOpacity` (0-1), `cloudDrift` (0-10 °/s of scene time, default 0.5),
   `sky` (0 turns the background pass off, default 1), `sunSize` (the disc's
   apparent diameter, 0.1-10°, default the real 0.533°), `sunGlow` (0-4,
-  default 1), `sunIntensity` (0-8), `fovY` (20-80, default 50),
+  default 1), `stars` (0 hides the procedural stars, default 1), `starMag`
+  (the faintest star drawn, 0.5-7.5, default 6.5: 5,000 stars), `starGain`
+  (0-4, default 1), `milkyWay` (the band's radiance, 0-0.1, default
+  0.012), `sunIntensity` (0-8), `fovY` (20-80, default 50),
   `pixelRatio` (the cap, 0.5-4, default 2, what §7.2 sized the pyramid
   for), `errorTarget` (0.25-256), `cacheMiB` (8-4096), plus `at` and
   the clock's `time` and `timeScale`.
@@ -65,7 +71,10 @@
   (`cloudLonOffsetRad(time, cloudDrift)` into `uCloudLonOffset`);
 - The frame (round 2): `autoClear` off; clear, then the sky pass (the sun
   in the direction the Earth is lit from, the light's position turned into
-  the world by the surface's group; skipped with `#sky=0`), then the Earth
+  the world by the surface's group; the stars and the Milky Way turned by
+  the group's world rotation x `celestialToEcefQuaternion` of the
+  Greenwich sidereal angle of the clock's instant; skipped with `#sky=0`),
+  then the Earth
   over it. The sky has its own camera sharing only the view's rotation and
   field of view, and no depth, so the Earth covers it by draw order.
 - The device line (round-3 plan §4 F; terrain plan 2026-09-27-0605 §7):
@@ -104,6 +113,11 @@ creditShorts, mapsLoaded, mapErrors, mapsTotal, refusedTiles, distance }`;
   drift the shader reads; `sky` is `{ on, sunDiameterDeg, glow,
 sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   null behind the camera); `device` is `{ floatLinear }`;
+  `sky.stars` is `{ on, magLimit, count, procedural }`, `sky.milkyWay` the
+  band's radiance, `sky.siderealAngleRad` the Greenwich sidereal angle;
+  `regionStats({ cx, cy, rPx }, threshold)` reads the whole buffer after a
+  render and returns the luminance sum and the count above the threshold
+  inside and outside a circle;
   `projectDirection([x, y, z])` is where a world direction shows on the
   canvas, as the sky pass draws it (the view's rotation only), or null;
   `bytesDownloaded` sums the resource timing log's `/globe-assets/`
@@ -177,9 +191,14 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   times and the drifted clouds in the pixels (not with the clouds off); the
   sun's disc white and centred on the projected sun beside the Earth (black
   with `sky=0`), its glow falling off; the sun behind the Earth not showing
-  through (the same pixels with the pass on and off); the device line. The
-  M0-M4 checks in `globe.smoke.spec.mjs` pin `cloudDrift=0`, so their
-  clouds stay where they were measured. Both specs share
+  through (the same pixels with the pass on and off); the procedural stars
+  bright in space and absent over the Earth (`regionStats` inside and
+  outside the Earth's projected disc, stars on and off, thresholds 10, 20,
+  40); the sun's right ascension from the sun and the sidereal angle (0h
+  at the March equinox, 6h at the June solstice) and the credits naming
+  the stars procedural; the device line. The M0-M4 checks in
+  `globe.smoke.spec.mjs` pin `cloudDrift=0`, `stars=0` and `milkyWay=0`,
+  so their clouds and their black sky stay as measured. Both specs share
   `globe-smoke-helpers.mjs` (the settle wait, the hash wait, luminance and
   grids).
 - The memory and download table: `pnpm run measure:globe`

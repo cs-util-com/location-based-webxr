@@ -4,12 +4,21 @@
  * pass has its own camera, which shares only the view's rotation and field
  * of view, so no far plane of the globe's camera can clip the sky, and the
  * sky neither tests nor writes depth, so the Earth, drawn after it, covers
- * it by draw order. The stars (M3d) are meant to join this pass once their
- * catalogue's licence is settled (round-2 plan §6 Q2).
+ * it by draw order. The same pass draws the stars (M3d), PROCEDURAL ones
+ * (`globe-stars.ts`: no catalogue with a clear licence was found, owner
+ * decision on round-2 Q2), and a faint Milky Way band along the galactic
+ * plane, both turned into ECEF by the caller's celestial rotation.
  *
  * @see globe-sky.ts.md
  */
 import * as THREE from "three";
+
+import {
+  GALACTIC_CENTRE,
+  GALACTIC_NORTH_POLE,
+  GLOBE_STARS,
+  generateStarField,
+} from "./globe-stars.js";
 
 export const GLOBE_SKY = {
   /** The sky sphere's radius around the sky camera (units are arbitrary). */
@@ -28,6 +37,20 @@ export const GLOBE_SKY = {
    */
   glow: 1,
   glowWidthRad: 1.5 * (Math.PI / 180),
+  /** The faintest stars drawn by default: the naked-eye limit. */
+  starMagLimit: 6.5,
+  /**
+   * The stars' brightness: a magnitude-0 star reads 10^(-0.2) of this, a
+   * magnitude-6.5 one about 3 % (the eye's compressed response, not the
+   * physical 10^(-0.4 m), which would leave only a few dozen visible).
+   */
+  starGain: 1,
+  /** The Milky Way band's peak radiance: faint, as the eye sees it. */
+  milkyWay: 0.012,
+  /** The band's half width (radians): about 10° either side of the plane. */
+  milkyWayWidthRad: 10 * (Math.PI / 180),
+  /** The stars sit inside the sky sphere, at this fraction of its radius. */
+  starShell: 0.9,
 } as const;
 
 /** The sky pass's uniforms. */
@@ -39,6 +62,19 @@ export interface GlobeSkyUniforms {
   readonly uSunRadiance: { value: number };
   readonly uGlow: { value: number };
   readonly uGlowWidth: { value: number };
+  /** The galactic pole and centre, in the view's world frame (unit). */
+  readonly uGalPole: { value: THREE.Vector3 };
+  readonly uGalCentre: { value: THREE.Vector3 };
+  readonly uMilkyWay: { value: number };
+  readonly uMilkyWayWidth: { value: number };
+}
+
+/** The star points' uniforms. */
+export interface GlobeStarUniforms {
+  readonly uMagLimit: { value: number };
+  readonly uStarGain: { value: number };
+  /** Device pixels per CSS pixel, so a star keeps its size on a phone. */
+  readonly uPixelRatio: { value: number };
 }
 
 export interface GlobeSky {
@@ -47,6 +83,29 @@ export interface GlobeSky {
   /** The sky pass's camera: at the origin, the view's rotation and fov. */
   readonly camera: THREE.PerspectiveCamera;
   readonly uniforms: GlobeSkyUniforms;
+  /** The procedural stars (generated to GLOBE_STARS.maxMagLimit). */
+  readonly stars: THREE.Points;
+  readonly starUniforms: GlobeStarUniforms;
+  /** How many stars the current magnitude limit draws. */
+  visibleStars(): number;
+  /**
+   * Turns the stars and the Milky Way from the celestial frame into the
+   * view's world frame (ECEF turned by the globe's placement; the lab
+   * builds it from Greenwich sidereal time).
+   */
+  setCelestialRotation(rotation: THREE.Quaternion): void;
+  /**
+   * The stars' look: the magnitude limit (0.5-7.5), the gain (>= 0), the
+   * Milky Way's radiance (>= 0), the device pixel ratio (> 0), and whether
+   * the stars are drawn. RangeError otherwise.
+   */
+  setStarLook(look: {
+    magLimit: number;
+    gain: number;
+    milkyWay: number;
+    pixelRatio: number;
+    visible: boolean;
+  }): void;
   /**
    * Points the sun (world frame, any length); the same direction that
    * lights the Earth. RangeError for a zero or non-finite vector.
@@ -83,6 +142,10 @@ uniform float uSunRadius;
 uniform float uSunRadiance;
 uniform float uGlow;
 uniform float uGlowWidth;
+uniform vec3 uGalPole;
+uniform vec3 uGalCentre;
+uniform float uMilkyWay;
+uniform float uMilkyWayWidth;
 varying vec3 vDirection;
 void main() {
   vec3 d = normalize( vDirection );
@@ -91,10 +154,76 @@ void main() {
   float disc = 1.0 - smoothstep( uSunRadius - edge, uSunRadius + edge, angle );
   float glow = uGlow * exp( -max( angle - uSunRadius, 0.0 ) / uGlowWidth );
   vec3 sunColor = vec3( 1.0, 0.96, 0.9 );
-  gl_FragColor = vec4( sunColor * ( disc * uSunRadiance + ( 1.0 - disc ) * glow ), 1.0 );
+  // The Milky Way: a band along the galactic plane, brighter towards the
+  // galactic centre, mottled so it does not read as a smooth ring.
+  float b = dot( d, uGalPole ) / uMilkyWayWidth;
+  float towards = 0.35 + 0.65 * max( dot( d, uGalCentre ), 0.0 );
+  float mottle = 0.7 + 0.3 * sin( 23.0 * d.x + 5.0 * d.z ) * sin( 17.0 * d.y - 11.0 * d.z );
+  vec3 milky = vec3( 0.85, 0.88, 1.0 ) * uMilkyWay * exp( -b * b ) * towards * mottle;
+  gl_FragColor = vec4( sunColor * ( disc * uSunRadiance + ( 1.0 - disc ) * glow ) + milky, 1.0 );
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }`;
+
+/**
+ * A star as a round, soft point: brightness 10^(-0.2 (m + 1)) x gain (the
+ * eye's compressed response), bigger when brighter, none past the limit.
+ */
+const STAR_VERTEX = /* glsl */ `
+attribute float aMag;
+attribute vec3 aColor;
+uniform float uMagLimit;
+uniform float uStarGain;
+uniform float uPixelRatio;
+varying vec3 vColor;
+void main() {
+  float intensity = uStarGain * pow( 10.0, -0.2 * ( aMag + 1.0 ) );
+  vColor = aColor * intensity;
+  gl_PointSize = aMag > uMagLimit ? 0.0 : uPixelRatio * ( 1.2 + 1.8 * clamp( intensity, 0.0, 1.0 ) );
+  gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+}`;
+
+const STAR_FRAGMENT = /* glsl */ `
+varying vec3 vColor;
+void main() {
+  float r = 2.0 * length( gl_PointCoord - 0.5 );
+  float a = 1.0 - smoothstep( 0.4, 1.0, r );
+  gl_FragColor = vec4( vColor * a, 1.0 );
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+}`;
+
+/** The stars, as points on a shell inside the sky sphere. */
+function createStars(uniforms: GlobeStarUniforms): {
+  points: THREE.Points;
+  magnitudes: Float32Array;
+} {
+  const field = generateStarField({
+    seed: GLOBE_STARS.seed,
+    magLimit: GLOBE_STARS.maxMagLimit,
+  });
+  const positions = field.directions.map(
+    (v) => v * GLOBE_SKY.radius * GLOBE_SKY.starShell,
+  );
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("aMag", new THREE.BufferAttribute(field.magnitudes, 1));
+  geometry.setAttribute("aColor", new THREE.BufferAttribute(field.colors, 3));
+  const material = new THREE.ShaderMaterial({
+    uniforms: { ...uniforms },
+    vertexShader: STAR_VERTEX,
+    fragmentShader: STAR_FRAGMENT,
+    blending: THREE.AdditiveBlending,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+  });
+  const points = new THREE.Points(geometry, material);
+  points.frustumCulled = false;
+  // After the sky sphere, so the stars add to its black (and its glow).
+  points.renderOrder = 1;
+  return { points, magnitudes: field.magnitudes };
+}
 
 const requireDirection = (v: THREE.Vector3): number => {
   const length = v.length();
@@ -114,7 +243,22 @@ export function createGlobeSky(): GlobeSky {
     uSunRadiance: { value: GLOBE_SKY.sunRadiance },
     uGlow: { value: GLOBE_SKY.glow },
     uGlowWidth: { value: GLOBE_SKY.glowWidthRad },
+    uGalPole: { value: new THREE.Vector3(...GALACTIC_NORTH_POLE) },
+    uGalCentre: { value: new THREE.Vector3(...GALACTIC_CENTRE) },
+    uMilkyWay: { value: GLOBE_SKY.milkyWay },
+    uMilkyWayWidth: { value: GLOBE_SKY.milkyWayWidthRad },
   };
+  const starUniforms: GlobeStarUniforms = {
+    uMagLimit: { value: GLOBE_SKY.starMagLimit },
+    uStarGain: { value: GLOBE_SKY.starGain },
+    uPixelRatio: { value: 1 },
+  };
+  const { points: stars, magnitudes } = createStars(starUniforms);
+  const galPole = new THREE.Vector3(...GALACTIC_NORTH_POLE);
+  const galCentre = new THREE.Vector3(...GALACTIC_CENTRE);
+  let visibleStars = magnitudes.filter(
+    (m) => m <= GLOBE_SKY.starMagLimit,
+  ).length;
   const material = new THREE.ShaderMaterial({
     // The same { value } objects, in the record type three expects.
     uniforms: { ...uniforms },
@@ -128,7 +272,7 @@ export function createGlobeSky(): GlobeSky {
   const sphere = new THREE.Mesh(geometry, material);
   sphere.frustumCulled = false;
   const scene = new THREE.Scene();
-  scene.add(sphere);
+  scene.add(sphere, stars);
   // Its own planes around the unit sphere: the view's would clip it.
   const camera = new THREE.PerspectiveCamera(
     50,
@@ -156,6 +300,41 @@ export function createGlobeSky(): GlobeSky {
     scene,
     camera,
     uniforms,
+    stars,
+    starUniforms,
+    visibleStars: () => visibleStars,
+    setCelestialRotation(rotation) {
+      stars.quaternion.copy(rotation);
+      stars.updateMatrixWorld();
+      uniforms.uGalPole.value.copy(galPole).applyQuaternion(rotation);
+      uniforms.uGalCentre.value.copy(galCentre).applyQuaternion(rotation);
+    },
+    setStarLook({ magLimit, gain, milkyWay, pixelRatio, visible }) {
+      if (!(magLimit >= 0.5 && magLimit <= GLOBE_STARS.maxMagLimit)) {
+        throw new RangeError(
+          `star magnitude limit must be within 0.5-${GLOBE_STARS.maxMagLimit}, got ${magLimit}`,
+        );
+      }
+      for (const [name, value] of [
+        ["star gain", gain],
+        ["Milky Way", milkyWay],
+      ] as const) {
+        if (!(value >= 0 && Number.isFinite(value))) {
+          throw new RangeError(`${name} must be finite and >= 0, got ${value}`);
+        }
+      }
+      if (!(pixelRatio > 0 && Number.isFinite(pixelRatio))) {
+        throw new RangeError(`pixel ratio must be > 0, got ${pixelRatio}`);
+      }
+      if (starUniforms.uMagLimit.value !== magLimit) {
+        visibleStars = magnitudes.filter((m) => m <= magLimit).length;
+      }
+      starUniforms.uMagLimit.value = magLimit;
+      starUniforms.uStarGain.value = gain;
+      starUniforms.uPixelRatio.value = pixelRatio;
+      uniforms.uMilkyWay.value = milkyWay;
+      stars.visible = visible;
+    },
     setSun(direction) {
       const length = requireDirection(direction);
       uniforms.uSunDirection.value.copy(direction).divideScalar(length);
@@ -180,6 +359,8 @@ export function createGlobeSky(): GlobeSky {
     dispose() {
       geometry.dispose();
       material.dispose();
+      stars.geometry.dispose();
+      (stars.material as THREE.Material).dispose();
     },
   };
 }
