@@ -12,7 +12,17 @@ import { defineConfig, devices } from "@playwright/test";
  *
  * One worker: headless Chromium rasterises WebGL on the CPU, and parallel
  * SwiftShader instances measure queueing, not work (lessons-learned).
+ *
+ * `DS_E2E_PORT` overrides the port for a second checkout (a git worktree)
+ * running its own smoke at the same time; the default stays the allocated
+ * 5198. Still never reused, so a clash fails loudly instead of testing the
+ * other checkout's code.
  */
+const PORT = process.env.DS_E2E_PORT ?? "5198";
+if (!/^\d{4,5}$/.test(PORT)) {
+  throw new Error(`DS_E2E_PORT must be a port number, got ${PORT}`);
+}
+
 export default defineConfig({
   // The package root, so the lab pages' specs (programme DEC-PRG-2:
   // `labs/<name>/`) run in the same stage as the main page's.
@@ -25,14 +35,14 @@ export default defineConfig({
   reporter: [["list"]],
   use: {
     ...devices["Desktop Chrome"],
-    baseURL: "http://127.0.0.1:5198",
+    baseURL: `http://127.0.0.1:${PORT}`,
     viewport: { width: 1280, height: 800 },
   },
   webServer: {
     command: "node serve.mjs",
     cwd: "..",
-    env: { PORT: "5198", HOST: "127.0.0.1" },
-    url: "http://127.0.0.1:5198/3d/",
+    env: { PORT, HOST: "127.0.0.1" },
+    url: `http://127.0.0.1:${PORT}/3d/`,
     reuseExistingServer: false,
     timeout: 30_000,
   },

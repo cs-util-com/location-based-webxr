@@ -11,7 +11,8 @@
  */
 import { expect, test } from "@playwright/test";
 
-const ORIGIN = "http://127.0.0.1:5198";
+/** The smoke server's origin: 5198, or a worktree's `DS_E2E_PORT` (3d/playwright.config.mjs). */
+const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
 /**
  * The luminance spread (8-bit) a textured centre must exceed. Measured
  * 2026-09-26 (SwiftShader, 7x7 grid over the central 30 %): 38.7 with the

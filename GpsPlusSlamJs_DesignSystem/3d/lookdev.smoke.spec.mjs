@@ -15,39 +15,7 @@
  */
 import { expect, test } from "@playwright/test";
 
-/**
- * Wait for the page to report ready (or an error), then two frames.
- *
- * The page opens on the dense city since the owner's round 2 (plan
- * 2026-09-26-2055 M2). Every test here was measured on the block alone, and
- * the dense city is not their subject: it hides the haze's distant ridges,
- * puts building edges into the edge-free grids, and makes each SwiftShader
- * read several times slower (measured 2026-09-27: three tests failed and the
- * run took 20.9 min instead of 8.5). So a hash without `city=` boots the block
- * alone; `{ pageDefaultCity: true }` keeps the page's own default.
- */
-async function boot(
-  page,
-  hash = "preset=golden&tone=agx",
-  { pageDefaultCity = false } = {},
-) {
-  if (!pageDefaultCity && !/(^|&)city=/.test(hash)) hash += "&city=0";
-  const errors = [];
-  page.on("console", (m) => {
-    if (m.type() === "error") errors.push(m.text());
-  });
-  page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto(`/3d/#${hash}`);
-  await page.waitForFunction(
-    () => window.__lookdev?.ready || window.__lookdev?.error,
-    null,
-    {
-      timeout: 90_000,
-    },
-  );
-  expect(await page.evaluate(() => window.__lookdev.error)).toBeNull();
-  return errors;
-}
+import { boot } from "./smoke-boot.mjs";
 
 /** A grid of points on the right of the canvas (the control plate is on the left). */
 const GRID = [];
@@ -1584,7 +1552,7 @@ test("the page opens on the dense city and the P50 water, with no crease control
   page,
 }) => {
   const errors = await boot(page, "preset=noon&tone=neutral", {
-    pageDefaultCity: true,
+    pageDefaults: true,
   });
   const state = await page.evaluate(() => window.__lookdev.stats().state);
   expect([state.city, state.pitch, state.water]).toEqual([100000, 20, "P50"]);

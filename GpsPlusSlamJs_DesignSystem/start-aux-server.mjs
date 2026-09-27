@@ -13,7 +13,11 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 
 /** The aux port the design system's local tools and smokes use. */
-export const AUX_PORT = 5198;
+/**
+ * 5198, or a second checkout's `DS_E2E_PORT` (see 3d/playwright.config.mjs),
+ * so two worktrees' tools never share a server.
+ */
+export const AUX_PORT = Number(process.env.DS_E2E_PORT ?? 5198);
 
 /** Resolves with the child once serve.mjs prints that it is listening. */
 export function startAuxServer(port = AUX_PORT) {
