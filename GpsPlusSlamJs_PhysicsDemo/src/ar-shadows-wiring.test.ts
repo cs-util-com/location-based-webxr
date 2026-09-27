@@ -94,6 +94,32 @@ describe("startDemoShadows", () => {
     expect(s.arWorldGroup.getObjectByName(RECEIVER)).toBeDefined();
   });
 
+  // The status line's shadow diagnostics (first-visit report on r753):
+  // whether the light casts, its map size and allocation, and the rig's
+  // map renders; the inert handle answers too.
+  it("reports the light's shadow state for the status line", () => {
+    const s = makeScene();
+    const occluder = { current: makeOccluder(s.arWorldGroup) };
+    const shadows = startDemoShadows(deps(s, occluder, { count: 0 }));
+    disposers.push(() => shadows.dispose());
+    shadows.update();
+    expect(shadows.diagnostics()).toEqual({
+      cast: true,
+      mapSize: s.light.shadow.mapSize.x,
+      mapAllocated: false, // three allocates it on the first render
+      mapRenders: 1,
+    });
+    const bare = makeScene();
+    bare.scene.remove(bare.light);
+    const inert = startDemoShadows(deps(bare, { current: null }, { count: 0 }));
+    expect(inert.diagnostics()).toEqual({
+      cast: false,
+      mapSize: 0,
+      mapAllocated: false,
+      mapRenders: 0,
+    });
+  });
+
   // The status line's "in shadow range" (M1 review): a ball thrown farther
   // than the shadow's reach casts nothing, whatever "shadows on" says. The
   // reach is a circle of the square's half width around the viewer's spot.

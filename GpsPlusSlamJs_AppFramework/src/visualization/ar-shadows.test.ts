@@ -267,6 +267,24 @@ describe('createArShadows: the session off switch', () => {
 });
 
 describe('createArShadows: the shadow map cost', () => {
+  // The PhysicsDemo's status line reports it (first-visit report on r753,
+  // 2026-09-27): whether the rig asked for the map at all, and how often.
+  // It counts the rig's pose renders, not the per-frame dynamic ones.
+  it('counts the map renders the rig requested', () => {
+    const light = sunLight();
+    const shadows = createArShadows({
+      renderer: renderer(),
+      light,
+      getOccluder: () => null,
+    });
+    expect(shadows.mapRenders()).toBe(0);
+    shadows.update(FRAME);
+    expect(shadows.mapRenders()).toBe(1);
+    shadows.update(FRAME);
+    expect(shadows.mapRenders()).toBe(1);
+    shadows.dispose();
+  });
+
   // Plan §2: a remesh never re-renders the map (the mesh only receives).
   it('does not re-render the map for a remesh', () => {
     const parent = new THREE.Group();

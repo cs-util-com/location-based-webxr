@@ -48,6 +48,8 @@ vi.mock("./occupancy-view", () => ({
     getOcclusionMesh: vi.fn(() => fakeOccluder),
     setMeshMode: vi.fn(),
     setDebugStyle: vi.fn(),
+    rebuild: vi.fn(),
+    depthStats: vi.fn(() => ({ samples: 3, lastSampleAtMs: 9_800 })),
     dispose: vi.fn(),
   })),
 }));
@@ -56,6 +58,7 @@ vi.mock("./physics-runtime", () => ({
     step: vi.fn(),
     ballCount: vi.fn(() => 4),
     balls: vi.fn(() => []),
+    colliderBuiltAtMs: vi.fn(() => 9_500),
     dispose: vi.fn(),
   })),
 }));
@@ -69,13 +72,25 @@ const { fakeRenderer, fakeScene, fakeOccluder, fakeShadows } = vi.hoisted(
   () => ({
     fakeRenderer: { name: "the session renderer" },
     fakeScene: { name: "the session scene" },
-    fakeOccluder: { name: "the current occluder" },
+    fakeOccluder: {
+      name: "the current occluder",
+      tris: 7,
+      getTriangleCount(): number {
+        return this.tris;
+      },
+    },
     fakeShadows: {
       update: vi.fn(),
       isActive: () => true,
       isEnabled: () => true,
       inRange: () => true,
       setEnabled: vi.fn(),
+      diagnostics: () => ({
+        cast: true,
+        mapSize: 1024,
+        mapAllocated: true,
+        mapRenders: 2,
+      }),
       dispose: vi.fn(),
     },
   }),
@@ -88,6 +103,7 @@ import { startDemoShadows } from "./ar-shadows-wiring";
 import { createPhysicsRuntime } from "./physics-runtime";
 import { registerXrFrameUpdate } from "gps-plus-slam-app-framework/ar/xr-frame-loop";
 import { startDepthCapture } from "gps-plus-slam-app-framework/ar/webxr-session";
+import { createOccupancyView } from "./occupancy-view";
 
 // Plain fakes instead of a DOM environment: ar-mode only reads `.value`,
 // sets `.textContent` and registers change listeners on these elements.
@@ -105,6 +121,41 @@ function makeDeps() {
     onError: vi.fn(),
   };
 }
+
+// The first-visit report on r753: the balls rested but cast no shadow until
+// the Mesh dropdown was switched and back (a new occluder, so a new
+// receiver). Once, when the session is `visible` and the mesh has
+// triangles, the demo takes that same path, before the shadows' update so
+// the new occluder gets its receiver in the same frame; never before, never
+// twice.
+describe("startArMode first-visit receiver rebuild", () => {
+  it("rebuilds the occluder once, only when visible with a mesh, before the shadows update", async () => {
+    fakeShadows.update.mockClear();
+    const dispose = await startArMode(makeDeps());
+    const view = vi.mocked(createOccupancyView).mock.results.at(-1)!.value as {
+      rebuild: ReturnType<typeof vi.fn>;
+    };
+    const frame = vi.mocked(registerXrFrameUpdate).mock.lastCall![0];
+    const at = (visibilityState: string) =>
+      frame({
+        session: { addEventListener: vi.fn(), visibilityState },
+      } as never);
+    fakeOccluder.tris = 0;
+    at("visible"); // no mesh yet
+    fakeOccluder.tris = 7;
+    at("visible-blurred"); // the permission prompt's state
+    at("hidden");
+    expect(view.rebuild).not.toHaveBeenCalled();
+    at("visible");
+    expect(view.rebuild).toHaveBeenCalledTimes(1);
+    expect(view.rebuild.mock.invocationCallOrder[0]!).toBeLessThan(
+      fakeShadows.update.mock.invocationCallOrder.at(-1)!,
+    );
+    for (let i = 0; i < 5; i++) at("visible");
+    expect(view.rebuild).toHaveBeenCalledTimes(1);
+    dispose();
+  });
+});
 
 describe("startArMode depth wiring", () => {
   it("starts depth capture at the framework reconstruction cadence (recorder parity)", async () => {
@@ -194,12 +245,19 @@ describe("startArMode AR shadows", () => {
   // The owner's view on the phone: resting and fallen balls, the collider,
   // and the shadows' state, with the viewer's height from the tracked
   // camera (a ball on the floor 1.4 m below it rests, it did not fall).
-  it("writes the balls' state and the shadows into the stats line", async () => {
+  // Then the diagnostics (r752 first-load report): the depth stream, the
+  // mesh, the collider's age, and how long physics and AR took to start
+  // after the tap, all on the page's one clock.
+  it("writes the balls' state, the shadows and the diagnostics into the stats line", async () => {
     const camera = new THREE.PerspectiveCamera();
     camera.position.set(0, 1.5, 0);
     camera.updateMatrixWorld(true);
     vi.mocked(getCamera).mockReturnValue(camera);
-    const deps = makeDeps();
+    const deps = {
+      ...makeDeps(),
+      now: () => 10_000,
+      start: { tappedAtMs: 5_000, physicsReadyAtMs: 5_800 },
+    };
     const dispose = await startArMode(deps);
     const onStats = vi.mocked(createPhysicsRuntime).mock.lastCall![2]!.onStats!;
     const runtime = vi.mocked(createPhysicsRuntime).mock.results.at(-1)!
@@ -209,7 +267,11 @@ describe("startArMode AR shadows", () => {
     ]);
     for (let i = 0; i <= STILL_STEPS; i++) onStats(1, 7);
     expect(deps.statsEl.textContent).toBe(
-      "balls 1 (1 resting, 1 in shadow range) · collider 7 tris · shadows on",
+      "balls 1 (1 resting, 1 in shadow range) · collider 7 tris · shadows on" +
+        " · depth 3 (0.2 s ago) · mesh 7 tris · collider 0.5 s old" +
+        " · rx off · sun cast, map 1024, renders 2" +
+        " · xr unknown (never visible) · rx rebuild pending" +
+        " · start: physics 0.8 s, AR 5.0 s",
     );
     dispose();
     vi.mocked(getCamera).mockReturnValue(null);

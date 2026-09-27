@@ -77,8 +77,11 @@ function main(): void {
       startArButton.disabled = true;
       capabilityMessage.hidden = false;
       capabilityMessage.textContent = "Starting AR…";
+      // The start timings on the status line (first-visit report on r753).
+      const tappedAtMs = performance.now();
       void initRapier().then(() =>
         startArMode({
+          start: { tappedAtMs, physicsReadyAtMs: performance.now() },
           container: app,
           statsEl,
           meshStyleSelect,

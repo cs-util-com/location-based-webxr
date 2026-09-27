@@ -60,4 +60,7 @@ setShadowsEnabled(on), remesh(), readRegion(x, y, w, h) }`:
   transparent as in AR; so the "Off" skin, whose shadow is alpha only, IS
   measurable now. Before the framework fix Wireframe and Off read 0 at every
   threshold; see `GpsPlusSlamJs_Docs/docs/2026-09-27-0651-ar-shadows-invisible-skin-findings.md`
-  (primary repo).
+  (primary repo). The spec also measures the FIRST occluder of a page load
+  (dropdowns set before the recording loads, never changed), with the
+  default skin and with Off: the path every other test skipped by switching
+  the mesh mode first (r752 field report; first-load findings, 2026-09-27).

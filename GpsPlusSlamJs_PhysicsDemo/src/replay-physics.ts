@@ -28,7 +28,8 @@ import {
   type DemoShadows,
 } from "./ar-shadows-wiring";
 import { createShadowProbe, installShadowProbe } from "./shadow-probe";
-import { createBallStatus, statsText } from "./ball-status";
+import { createBallStatus, diagnosticsText, statsText } from "./ball-status";
+import { createReceiverFlagsReader } from "./shadow-diagnostics";
 import { createOccupancyView } from "./occupancy-view";
 import { createPhysicsRuntime } from "./physics-runtime";
 import { shootBallFromCamera } from "./shoot-ball";
@@ -129,13 +130,21 @@ export function startReplayPhysics(
    */
   const viewerOf = (): THREE.Object3D => probe?.viewCamera() ?? scene.arpose;
   const ballStatus = createBallStatus();
+  // The receiver's program flags on the status line (first-visit report).
+  const readReceiver = createReceiverFlagsReader(
+    scene.renderer,
+    scene.arWorldGroup,
+  );
   const viewerPosition = new THREE.Vector3();
   const runtime = factories.createPhysicsRuntime(
     scene.arWorldGroup,
     occupancyView,
     {
       // The status line (round-2 plan M1): resting and fallen balls, the
-      // collider, and the shadows' state.
+      // collider, and the shadows' state; then the diagnostics (r752
+      // first-load report), the same as in AR but for the start timings.
+      // The rAF timestamps the collider is stamped with share
+      // performance.now's clock.
       onStats: (_balls, tris) => {
         const viewer = viewerOf().getWorldPosition(viewerPosition);
         const status = ballStatus.update(
@@ -143,11 +152,26 @@ export function startReplayPhysics(
           viewer.y,
           (p) => shadows?.inRange(p) ?? false,
         );
-        controls.statsEl.textContent = statsText(
-          status,
-          tris,
-          shadowsLabel(shadows),
-        );
+        const t = performance.now();
+        const depth = occupancyView.depthStats();
+        const builtAt = runtime.colliderBuiltAtMs();
+        controls.statsEl.textContent =
+          statsText(status, tris, shadowsLabel(shadows)) +
+          diagnosticsText({
+            depthSamples: depth.samples,
+            depthAgeMs:
+              depth.lastSampleAtMs === null ? null : t - depth.lastSampleAtMs,
+            meshTris: occupancyView.getOcclusionMesh().getTriangleCount(),
+            colliderAgeMs: builtAt === null ? null : t - builtAt,
+            ...(shadows
+              ? {
+                  shadow: {
+                    receiver: readReceiver(),
+                    ...shadows.diagnostics(),
+                  },
+                }
+              : {}),
+          });
       },
     },
   );

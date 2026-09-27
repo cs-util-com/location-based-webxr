@@ -24,6 +24,20 @@
   - `statsText(status, colliderTris, shadowsNote)`: the whole stats line,
     "balls N (...) · collider N tris · shadows on"; the e2e reads
     "balls N " and "collider N tris" from it.
+  - `diagnosticsText({ depthSamples, depthAgeMs, meshTris, colliderAgeMs,
+start? })`: appended to that line in AR and the replay (owner first-load
+    report on r752, 2026-09-27: shadows missing only on a page's first load,
+    no cause found in the code), " · depth 12 (0.2 s ago) · mesh 950 tris ·
+    collider 0.3 s old · start: physics 0.8 s, AR 2.3 s"; "depth 0" and
+    "collider not built" before the first sample or build; `start` (AR only)
+    is the tap-to-physics-ready and tap-to-AR-running time. One screenshot
+    shows which link from the depth stream to a resting ball was missing.
+    Round 4 (first-visit report on r753): optional `shadow` (" · rx S1N1D1 ·
+    sun cast, map 1024, renders 3": the receiver's program flags from
+    `shadow-diagnostics.ts`, the light, its map and the rig's renders) and,
+    in AR, `xr` (" · xr visible (first 1.3 s) · rx rebuilt 3.2 s
+    S0N0D1>S1N1D1": the session's visibility, the time to its first visible
+    frame, and the one-shot receiver rebuild's note).
 - Tests: `ball-status.test.ts` (resting only after STILL_STEPS still
   steps and ended by a move, the range predicate, fell through below the
   viewer, a changed set resets, the text) and `.property.test.ts` (over any

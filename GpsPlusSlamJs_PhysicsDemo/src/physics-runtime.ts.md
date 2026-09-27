@@ -21,7 +21,9 @@ rAF for replay, the XR frame loop for AR) and how a spawn point is obtained
   (converts a WORLD origin + velocity into the ball group's local raw-WebXR space
   and spawns a moving ball — the "shoot from the camera" primitive), `clearBalls()`,
   `ballCount()`, `balls()` (each ball's WORLD position and radius, for the
-  shadow probe and the status line), `colliderShapeCount()`, `dispose()`.
+  shadow probe and the status line), `colliderShapeCount()`,
+  `colliderBuiltAtMs()` (the `nowMs` of the last collider build, or null while
+  none was built; the status line's collider age), `dispose()`.
 
 ## Invariants & assumptions
 

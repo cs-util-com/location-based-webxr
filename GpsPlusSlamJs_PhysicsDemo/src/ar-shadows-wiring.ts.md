@@ -15,7 +15,7 @@ to it.
 arWorldGroup, getOccluder, ballCount, getCamera }`; `getCamera` returns the
   viewer, any object (AR: the tracked camera; the replay: the recorded phone
   pose). Returns `{ update(), isActive(), inRange(worldPosition),
-setEnabled(on), isEnabled(), dispose() }`:
+setEnabled(on), isEnabled(), diagnostics(), dispose() }`:
   - `update()` per frame, before the render: centre = the camera's position
     in `arWorldGroup`'s frame, `FLOOR_BELOW_CAMERA_M` (1.4 m) lower;
     `casterCount` = `ballCount()`;
@@ -27,6 +27,10 @@ setEnabled(on), isEnabled(), dispose() }`:
     M1): the framework's `ArShadows.setEnabled`, by the shadow's intensity
     only, never `castShadow` or the shadow map, so no material recompiles;
     `isEnabled()` reads it back;
+  - `diagnostics()`: `{ cast, mapSize, mapAllocated, mapRenders }` for the
+    status line (first-visit report on r753): the light's `castShadow`, its
+    map size, whether three has allocated the map yet, and the rig's
+    requested renders (`ArShadows.mapRenders`); zeros from the inert handle;
   - `dispose()` restores the light's parent and position and its target's,
     and the rig restores the light's shadow settings. Idempotent.
   - Returns an INERT handle (no shadow map turned on, the switch still

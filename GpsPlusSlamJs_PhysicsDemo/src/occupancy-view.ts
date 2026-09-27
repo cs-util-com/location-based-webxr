@@ -42,6 +42,16 @@ export interface OccupancyViewOptions {
   readonly meshMode?: MeshMode;
   /** Visible debug skin. Default `'depth-shaded-wireframe'` (combined shader). */
   readonly debugStyle?: OccluderDebugStyle;
+  /** The clock that stamps depth samples (ms). Default `performance.now`. */
+  readonly now?: () => number;
+}
+
+/** The depth stream as the grid saw it, for the status line. */
+export interface DepthStats {
+  /** Depth samples folded into the grid so far. */
+  readonly samples: number;
+  /** When the last one arrived (the view's clock), or null before the first. */
+  readonly lastSampleAtMs: number | null;
 }
 
 export interface OccupancyView {
@@ -51,6 +61,12 @@ export interface OccupancyView {
   getOcclusionMesh(): OcclusionMesh;
   /** Recreate the occluder with a new mesher mode and re-mesh from the grid. */
   setMeshMode(mode: MeshMode): void;
+  /**
+   * Recreate the occluder in the CURRENT mode, exactly as a mode change
+   * does (a new occluder, so the shadows give it a new receiver), and
+   * re-mesh it from the grid: the first-visit rebuild (r753 report).
+   */
+  rebuild(): void;
   /** Change the visible debug skin (live). */
   setDebugStyle(style: OccluderDebugStyle): void;
   /**
@@ -59,6 +75,8 @@ export interface OccupancyView {
    * this to reach the state a phone reaches on its next refresh.
    */
   remesh(): void;
+  /** The depth samples folded in so far (status-line diagnostics). */
+  depthStats(): DepthStats;
   dispose(): void;
 }
 
@@ -96,9 +114,27 @@ export function createOccupancyView(
     );
   };
 
+  // Counts what reaches the grid: the status line's depth diagnostics.
+  const now = options.now ?? (() => performance.now());
+  let samples = 0;
+  let lastSampleAtMs: number | null = null;
+  /** The Mesh dropdown's path: a new occluder (and receiver), same grid. */
+  const rebuild = (): void => {
+    occluder.dispose();
+    occluder = buildOccluder(meshMode);
+    remesh(); // re-mesh from the persisted grid so it is not momentarily empty
+  };
+
   const unsubscribe = subscribeReplayOccupancy({
     store,
-    grid,
+    grid: {
+      addSample(sample) {
+        samples += 1;
+        lastSampleAtMs = now();
+        return grid.addSample(sample);
+      },
+      clear: () => grid.clear(),
+    },
     onRefresh: () => remesh(),
   });
 
@@ -108,15 +144,15 @@ export function createOccupancyView(
     setMeshMode(mode: MeshMode): void {
       if (mode === meshMode) return;
       meshMode = mode;
-      occluder.dispose();
-      occluder = buildOccluder(mode);
-      remesh(); // re-mesh from the persisted grid so it is not momentarily empty
+      rebuild();
     },
+    rebuild,
     setDebugStyle(style: OccluderDebugStyle): void {
       debugStyle = style;
       occluder.setDebugStyle(style);
     },
     remesh,
+    depthStats: () => ({ samples, lastSampleAtMs }),
     dispose(): void {
       unsubscribe();
       occluder.dispose();

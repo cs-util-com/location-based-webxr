@@ -97,3 +97,67 @@ export function statsText(
 ): string {
   return `${ballStatusText(status)} · collider ${colliderTris} tris${shadowsNote}`;
 }
+
+/** The links from the depth stream to a resting ball, for the status line. */
+export interface Diagnostics {
+  /** Depth samples folded into the occupancy grid so far. */
+  readonly depthSamples: number;
+  /** How long ago the last one arrived (ms), or null before the first. */
+  readonly depthAgeMs: number | null;
+  /** Triangles in the current occlusion mesh (what the receiver draws on). */
+  readonly meshTris: number;
+  /** How long ago the collider was last built (ms), or null if never. */
+  readonly colliderAgeMs: number | null;
+  /** From the tap to physics ready, and to AR running (ms); AR only. */
+  readonly start?: { readonly rapierMs: number; readonly arMs: number };
+  /** The shadow side (first-visit report on r753). */
+  readonly shadow?: {
+    /** The receiver's program flags (`shadow-diagnostics.ts`). */
+    readonly receiver: string;
+    readonly cast: boolean;
+    readonly mapSize: number;
+    readonly mapAllocated: boolean;
+    /** Map renders the rig requested. */
+    readonly mapRenders: number;
+  };
+  /** The XR session (AR only). */
+  readonly xr?: {
+    readonly visibility: string;
+    /** From the session start to the first visible frame, or null. */
+    readonly firstVisibleMs: number | null;
+    /** The one-shot receiver rebuild's note. */
+    readonly rebuild: string;
+  };
+}
+
+const seconds = (ms: number): string => `${(ms / 1000).toFixed(1)} s`;
+
+/**
+ * The diagnostics appended to the stats line (owner first-load report on
+ * r752, 2026-09-27: shadows missing only on a page's first load, with no
+ * cause found in the code): one screenshot then shows which link was
+ * missing, " · depth 12 (0.2 s ago) · mesh 950 tris · collider 0.3 s old ·
+ * start: physics 0.8 s, AR 2.3 s".
+ */
+export function diagnosticsText(d: Diagnostics): string {
+  const depth =
+    d.depthAgeMs === null
+      ? `depth ${d.depthSamples}`
+      : `depth ${d.depthSamples} (${seconds(d.depthAgeMs)} ago)`;
+  const collider =
+    d.colliderAgeMs === null
+      ? "collider not built"
+      : `collider ${seconds(d.colliderAgeMs)} old`;
+  const start = d.start
+    ? ` · start: physics ${seconds(d.start.rapierMs)}, AR ${seconds(d.start.arMs)}`
+    : "";
+  const s = d.shadow;
+  const shadow = s
+    ? ` · rx ${s.receiver} · sun ${s.cast ? "cast" : "no cast"}, ${s.mapAllocated ? `map ${s.mapSize}` : "no map"}, renders ${s.mapRenders}`
+    : "";
+  const x = d.xr;
+  const xr = x
+    ? ` · xr ${x.visibility} (${x.firstVisibleMs === null ? "never visible" : `first ${seconds(x.firstVisibleMs)}`}) · rx ${x.rebuild}`
+    : "";
+  return ` · ${depth} · mesh ${d.meshTris} tris · ${collider}${shadow}${xr}${start}`;
+}

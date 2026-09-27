@@ -30,7 +30,8 @@ createPhysicsRuntime }` (defaults to the real ones); the seam that keeps the
     view.
   - **The viewer** is the recorded phone pose (`scene.arpose`), or the
     probe's standing view once it has one: the shadow square follows it and
-    the status line measures "fell through" from it. Never the orbit camera,
+    the status line measures "fell through" from it (the line also carries
+    `diagnosticsText`: depth, mesh and collider age, the receiver's program flags and the light's shadow state; no start timings, no XR). Never the orbit camera,
     which hangs 5-200 m above the room (the square would miss the floor and
     every resting ball read "fell through"; M1 review).
   - **AR shadows** (W4 plan 2026-09-26-0549 §11; round-2 plan 2026-09-26-2055

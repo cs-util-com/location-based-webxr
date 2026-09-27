@@ -62,8 +62,19 @@ export interface DemoShadows {
   setEnabled(on: boolean): void;
   /** The switch's state (on until switched off). */
   isEnabled(): boolean;
+  /** The light's shadow state, for the status line (r753 first-visit report). */
+  diagnostics(): ShadowStateDiagnostics;
   /** Restores the light where it was found. Idempotent. */
   dispose(): void;
+}
+
+export interface ShadowStateDiagnostics {
+  readonly cast: boolean;
+  readonly mapSize: number;
+  /** three allocates the map on the first render that needs it. */
+  readonly mapAllocated: boolean;
+  /** Map renders the rig requested. */
+  readonly mapRenders: number;
 }
 
 /** `?shadows=0` (or `off` / `false`) switches the shadows off; on otherwise. */
@@ -114,6 +125,12 @@ function inert(): DemoShadows {
       enabled = on;
     },
     isEnabled: () => enabled,
+    diagnostics: () => ({
+      cast: false,
+      mapSize: 0,
+      mapAllocated: false,
+      mapRenders: 0,
+    }),
     dispose() {},
   };
 }
@@ -196,6 +213,12 @@ export function startDemoShadows(deps: DemoShadowsDeps): DemoShadows {
       if (!disposed) shadows.setEnabled(on);
     },
     isEnabled: () => enabled,
+    diagnostics: () => ({
+      cast: light.castShadow,
+      mapSize: light.shadow.mapSize.x,
+      mapAllocated: light.shadow.map !== null,
+      mapRenders: shadows.mapRenders(),
+    }),
     dispose() {
       if (disposed) return;
       disposed = true;

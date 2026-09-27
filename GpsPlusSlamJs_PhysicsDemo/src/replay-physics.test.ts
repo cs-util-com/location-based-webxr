@@ -84,13 +84,14 @@ function harness(options: { shadows?: boolean; shadowProbe?: boolean } = {}) {
     cancel: vi.fn(),
   };
 
-  const occluder = { name: "the current occluder" };
+  const occluder = { name: "the current occluder", getTriangleCount: () => 12 };
   const occupancyView = {
     getMesh: vi.fn(),
     getOcclusionMesh: vi.fn(() => occluder),
     setMeshMode: vi.fn(),
     setDebugStyle: vi.fn(),
     remesh: vi.fn(),
+    depthStats: vi.fn(() => ({ samples: 0, lastSampleAtMs: null })),
     dispose: vi.fn(),
   };
   const runtime = {
@@ -100,6 +101,7 @@ function harness(options: { shadows?: boolean; shadowProbe?: boolean } = {}) {
     ballCount: () => 0,
     balls: vi.fn(() => [] as { position: THREE.Vector3; radius: number }[]),
     colliderShapeCount: () => 0,
+    colliderBuiltAtMs: () => null,
     dispose: vi.fn(),
   };
   let enabled = true;
@@ -110,6 +112,12 @@ function harness(options: { shadows?: boolean; shadowProbe?: boolean } = {}) {
     isEnabled: () => enabled,
     setEnabled: vi.fn((on: boolean) => {
       enabled = on;
+    }),
+    diagnostics: () => ({
+      cast: true,
+      mapSize: 1024,
+      mapAllocated: false,
+      mapRenders: 1,
     }),
     dispose: vi.fn(),
   };
@@ -334,13 +342,17 @@ describe("startReplayPhysics", () => {
     ]);
     for (let i = 0; i <= STILL_STEPS; i++) onStats(1, 12);
     expect(h.statsEl.textContent).toBe(
-      "balls 1 (1 resting, 1 in shadow range) · collider 12 tris · shadows on",
+      "balls 1 (1 resting, 1 in shadow range) · collider 12 tris · shadows on" +
+        " · depth 0 · mesh 12 tris · collider not built" +
+        " · rx off · sun cast, no map, renders 1",
     );
     h.shadowToggle.checked = false;
     listener(h.shadowToggle, "change")();
     onStats(1, 12);
     expect(h.statsEl.textContent).toBe(
-      "balls 1 (1 resting, 1 in shadow range) · collider 12 tris · shadows off",
+      "balls 1 (1 resting, 1 in shadow range) · collider 12 tris · shadows off" +
+        " · depth 0 · mesh 12 tris · collider not built" +
+        " · rx off · sun cast, no map, renders 1",
     );
     dispose();
   });

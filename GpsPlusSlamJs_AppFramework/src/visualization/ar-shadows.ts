@@ -96,6 +96,8 @@ export interface ArShadows {
   /** The session switch: shadow intensity, never castShadow (no recompile). */
   setEnabled(on: boolean): void;
   isActive(): boolean;
+  /** How many map renders the rig has requested (a diagnostic). */
+  mapRenders(): number;
   dispose(): void;
 }
 
@@ -171,6 +173,7 @@ export function createArShadows(options: ArShadowsOptions): ArShadows {
       reconcile();
     },
     isActive: () => active,
+    mapRenders: () => shadow.renders,
     dispose() {
       if (disposed) return;
       disposed = true;

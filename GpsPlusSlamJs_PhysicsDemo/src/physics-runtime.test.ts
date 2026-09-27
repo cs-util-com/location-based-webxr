@@ -101,6 +101,25 @@ describe("createPhysicsRuntime", () => {
     runtime.dispose();
   });
 
+  // The status line's collider age (r752 first-load report): when the
+  // collider was last built, or null while it never was.
+  it("says when it last built the collider", () => {
+    const source = meshSource(null);
+    const runtime = createPhysicsRuntime(new THREE.Group(), source, {
+      colliderRebuildMs: 500,
+    });
+    runtime.step(0);
+    expect(runtime.colliderBuiltAtMs()).toBeNull();
+    source.set(quad());
+    runtime.step(40);
+    expect(runtime.colliderBuiltAtMs()).toBe(40);
+    runtime.step(300); // inside the throttle window: not rebuilt
+    expect(runtime.colliderBuiltAtMs()).toBe(40);
+    runtime.step(600);
+    expect(runtime.colliderBuiltAtMs()).toBe(600);
+    runtime.dispose();
+  });
+
   it("shoots a ball from a WORLD origin with a WORLD velocity (both converted to local)", () => {
     const arWorldGroup = new THREE.Group(); // identity → ball group world = WEBXR_TO_NUE
     const runtime = createPhysicsRuntime(arWorldGroup, null); // no floor → free flight

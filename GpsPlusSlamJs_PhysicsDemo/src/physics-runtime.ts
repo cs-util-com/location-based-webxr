@@ -72,6 +72,11 @@ export interface PhysicsRuntime {
   /** Each ball's WORLD position and radius (metres), for probes. */
   balls(): { position: THREE.Vector3; radius: number }[];
   colliderShapeCount(): number;
+  /**
+   * The `nowMs` of the last collider build, or null while none was built
+   * (the status line's collider age).
+   */
+  colliderBuiltAtMs(): number | null;
   dispose(): void;
 }
 
@@ -146,6 +151,8 @@ export function createPhysicsRuntime(
       }));
     },
     colliderShapeCount: () => session.colliderShapeCount(),
+    colliderBuiltAtMs: () =>
+      Number.isFinite(lastRebuild) ? lastRebuild : null,
     dispose(): void {
       session.dispose();
       arWorldGroup.remove(ballGroup);

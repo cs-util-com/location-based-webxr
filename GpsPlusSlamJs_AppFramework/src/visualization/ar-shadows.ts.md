@@ -24,7 +24,8 @@ opacity?, halfWidthM?, mapSize?, dynamicCasters? })` → `ArShadows`:
     - `setEnabled(on)` is the session switch: the light's shadow intensity
       goes to 0 (no recompile) and `autoUpdate` to false (intensity 0 alone
       does not stop the shadow pass).
-    - `isActive()`, `receiverOptions()` and `dispose()`, which restores the
+    - `isActive()`, `receiverOptions()`, `mapRenders()` (the map renders the
+      rig requested, for a status line) and `dispose()`, which restores the
       light's intensity and hides the receivers.
 - Invariants & assumptions:
   - The occluder is looked up on every update (`getOccluder`), because

@@ -12,7 +12,8 @@ direction into the room.
 - **`startArMode(deps): Promise<() => void>`** — starts a WebXR session and returns
   a disposer that ends it. `deps`: `{ container, statsEl, meshStyleSelect,
 meshShaderSelect, onError, onStarted?, onFrame?, shadows?, shadowToggle?,
-panel? }`. A tap on `panel` does not also shoot: its `beforexrselect` is
+panel?, start?, now? }` (`start`: the Start AR tap and physics-ready times
+  on `now`'s clock, default `performance.now`). A tap on `panel` does not also shoot: its `beforexrselect` is
   cancelled (a DOM-overlay tap fires the click AND an XR select, and a
   select shoots; OsmDemo's DEC-Y18), removed on dispose; taps on the scene
   still shoot. `onFrame` is called once per XR
@@ -53,7 +54,22 @@ onCaptured → dispatch recordDepthSample } })`.
 - **The stats line** (round-2 plan M1, the owner's view on the phone):
   `statsText` from `ball-status.ts`, "balls N (k resting, j fell through)
   · collider N tris · shadows on|off|unavailable", the viewer's height from
-  the tracked camera.
+  the tracked camera; then `diagnosticsText` (r752 first-load report): depth
+  samples and the last one's age, the mesh's triangles, the collider's age,
+  and the tap-to-physics and tap-to-AR start times. `runtime.step` runs on
+  the same `now` clock, so the collider's age is consistent. Round 4
+  (first-visit report on r753) adds the shadow state (the receiver's program
+  flags, the light, its map, the rig's renders) and the XR session's
+  `visibilityState` with the time to its first visible frame.
+- **The first-visit receiver rebuild** (r753 report: on a new preview
+  origin, so with the camera/AR permission prompt, the balls rested but
+  cast no shadow until the Mesh dropdown was switched and back): once, on
+  the first frame where the session is `visible` AND the occlusion mesh has
+  triangles, `occupancy.rebuild()` takes the Mesh dropdown's path (a new
+  occluder, so a new receiver), BEFORE the shadows' update so the receiver
+  is back in the same frame. `createFirstVisitRebuild` (`shadow-diagnostics.ts`)
+  records the receiver's flags before and after, shown on the status line.
+  A mitigation with a measurement, not a known cause.
 
 ## Invariants & assumptions
 

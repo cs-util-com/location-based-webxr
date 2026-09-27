@@ -35,6 +35,15 @@ debugStyle='depth-shaded-wireframe' }`. The voxel size + noise floor come from t
     depth refresh makes, without adding a sample. For the shadow probe: the
     paused replay has no depth stream, and a skin switch reaches the
     receiver's geometry only through a re-mesh (round 3, 2026-09-27).
+  - `rebuild()` - the Mesh dropdown's path without a mode change: dispose the
+    occluder, build a new one in the same mode and skin (so the shadows give
+    it a new receiver on their next update), and re-mesh it from the grid at
+    once. `setMeshMode` uses it. For the first-visit rebuild (r753 report).
+  - `depthStats()` - `{ samples, lastSampleAtMs }`: the depth samples folded
+    into the grid so far and when the last one arrived (`options.now`,
+    default `performance.now`), for the status line's diagnostics. Neither a
+    mesh-mode nor a skin change touches the grid or the depth stream: they
+    re-mesh or restyle only.
   - `dispose()`.
 
 ## Invariants & assumptions

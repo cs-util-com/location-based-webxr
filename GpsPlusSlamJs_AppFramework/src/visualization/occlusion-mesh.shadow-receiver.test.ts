@@ -359,15 +359,26 @@ describe('OcclusionMesh shadow receiver: life cycle', () => {
 
   // Debug styles and the receiver are independent skins: switching styles
   // (which adds and removes the debug skins) never touches the receiver.
+  //
+  // Also the evidence behind the r752 field report (2026-09-27: "no shadow
+  // until I switched the shader"): a style switch leaves the receiver's
+  // node, material AND material version alone, so it cannot rebuild the
+  // receiver's program, and a stale program cannot be what a skin change
+  // repaired (see the first-load race findings, 2026-09-27).
   it('survives every debug style switch unchanged', () => {
     const parent = new THREE.Group();
     const occluder = new OcclusionMesh(parent, {
       shadowReceiver: { opacity: 0.42 },
     });
+    occluder.update(FLOOR, CELL_SIZE);
     const skin = receiver(parent)!;
+    const material = shadowMaterial(skin);
+    const version = material.version;
     for (const style of [...OCCLUDER_DEBUG_STYLES, 'off'] as const) {
       occluder.setDebugStyle(style);
       expect(receiver(parent)).toBe(skin);
+      expect(skin.material).toBe(material);
+      expect(material.version).toBe(version);
     }
     occluder.dispose();
   });
