@@ -100,7 +100,8 @@ const WIREFRAME_COLOR = 0xaaeeff;
 const WIREFRAME_OPACITY = 0.35;
 
 /** Which styles shade with the matcap (and therefore need vertex normals —
- *  pure 'wireframe' is unlit and keeps the remesh path normal-free). */
+ *  pure 'wireframe' is unlit and keeps the remesh path normal-free, unless a
+ *  shadow receiver is attached, which needs normals in every style). */
 function styleNeedsNormals(style: OccluderDebugStyle): boolean {
   return (
     style === 'matcap' ||
@@ -527,7 +528,8 @@ export class OcclusionMesh {
    *
    * Vertex normals (the mesher emits none) are computed only for the
    * matcap-based styles — `'wireframe'` is unlit, so like `'off'` it keeps the
-   * remesh path normal-free.
+   * remesh path normal-free, unless a shadow receiver is attached (its
+   * program may have been compiled with normals; see `setShadowReceiver`).
    *
    * Only meaningful when this occluder is actually meshing the grid (it is the
    * persistent occluder's mesh); setting a style on an empty/disabled occluder

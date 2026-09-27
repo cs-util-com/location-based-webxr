@@ -19,7 +19,9 @@ import { defineConfig, devices } from "@playwright/test";
  * other checkout's code.
  */
 const PORT = process.env.DS_E2E_PORT ?? "5198";
-if (!/^\d{4,5}$/.test(PORT)) {
+// No leading zero: the browser would normalise "05210" to 5210 while the
+// globe smoke's allow-list kept ":05210" and blocked every request.
+if (!/^[1-9]\d{3,4}$/.test(PORT)) {
   throw new Error(`DS_E2E_PORT must be a port number, got ${PORT}`);
 }
 

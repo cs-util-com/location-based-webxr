@@ -1,35 +1,16 @@
 /**
  * The look-dev page's shared smoke boot (round-3 plan 2026-09-27-0532 §8):
- * every `3d/*.smoke.spec.mjs` boots through here, so a change of the page's
- * defaults cannot silently change what an unrelated test measures.
- *
- * WHY THE PINS. The page's defaults follow the owner (the dense city since
- * round 2; shadows, the catalog and the slab clouds planned in round 3), but
- * the tests were measured on the plain scene. One default flip in round 2
- * failed three unrelated tests and took the run from 8.5 to 20.9 min
- * (plan 2026-09-26-2055 §9). So a hash that does not name a pinned key gets
- * the plain value; a test about a default opts out with `pageDefaults`.
- * A stream that adds a default adds its key here in the same commit.
+ * every look-dev (`/3d/`) smoke boots the page through here, so a change of
+ * the page's defaults cannot silently change what an unrelated test measures.
+ * The pins themselves live in `smoke-pins.mjs`, free of Playwright, with
+ * their own unit test. (`design-atoms.smoke.spec.mjs` opens a fixture page,
+ * not the look-dev page, and does not use it.)
  */
 import { expect } from "@playwright/test";
 
-/** The plain scene every test was measured on, unless it names the key. */
-export const SMOKE_PINS = {
-  city: "0",
-  shadows: "0",
-  catalog: "0",
-  cloudMode: "dome",
-};
+import { pinnedHash } from "./smoke-pins.mjs";
 
-/** The hash with every pin the hash does not name appended. */
-export function pinnedHash(hash, pins = SMOKE_PINS) {
-  const named = new URLSearchParams(hash);
-  let out = hash;
-  for (const [key, value] of Object.entries(pins)) {
-    if (!named.has(key)) out += `${out ? "&" : ""}${key}=${value}`;
-  }
-  return out;
-}
+export { pinnedHash, SMOKE_PINS } from "./smoke-pins.mjs";
 
 /**
  * Boot the page, wait for it to report ready (or an error), and return the

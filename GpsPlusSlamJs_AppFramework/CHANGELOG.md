@@ -55,6 +55,12 @@
 
 ### Fixed
 
+- **`OcclusionMesh` keeps vertex normals on the shared geometry while a
+  shadow receiver is attached, in every debug style.** A receiver compiled
+  while normals were present drew no shadow after a remesh under the
+  `'wireframe'` or `'off'` style (three does not rebuild a program when the
+  normal attribute disappears), so AR ball shadows vanished with those
+  skins. Without a receiver, `'off'` and `'wireframe'` stay normal-free.
 - **`rebindTrackingStore` keeps the host's tracking callbacks alive**
   (`2026-07-11-1811-tracking-rebind-dormant-phase-subscription-followup.md`):
   a mid-session store swap (the recorder's, on every Start Recording) now

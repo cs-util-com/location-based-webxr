@@ -1,5 +1,5 @@
 /**
- * Starts serve.mjs for a local tool on the aux port 5198
+ * Starts serve.mjs for a local tool on the aux port (5198 by default)
  * (docs/dev-server-ports.md), bound to 127.0.0.1, and resolves once it is
  * listening. Used by shoot-3d.mjs and measure-globe.mjs, which never reuse a
  * server left running for a phone round.
@@ -12,12 +12,19 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-/** The aux port the design system's local tools and smokes use. */
 /**
- * 5198, or a second checkout's `DS_E2E_PORT` (see 3d/playwright.config.mjs),
- * so two worktrees' tools never share a server.
+ * The aux port the design system's local tools and smokes use: 5198, or a
+ * second checkout's `DS_E2E_PORT` (see 3d/playwright.config.mjs), so two
+ * worktrees' tools never share a server. The same rule as the smoke config:
+ * a port without a leading zero, so the URL a tool opens is the one served.
  */
-export const AUX_PORT = Number(process.env.DS_E2E_PORT ?? 5198);
+export const AUX_PORT = (() => {
+  const raw = process.env.DS_E2E_PORT ?? "5198";
+  if (!/^[1-9]\d{3,4}$/.test(raw)) {
+    throw new Error(`DS_E2E_PORT must be a port number, got "${raw}"`);
+  }
+  return Number(raw);
+})();
 
 /** Resolves with the child once serve.mjs prints that it is listening. */
 export function startAuxServer(port = AUX_PORT) {
