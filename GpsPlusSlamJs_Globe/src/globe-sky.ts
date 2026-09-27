@@ -54,7 +54,7 @@ export const GLOBE_SKY = {
 } as const;
 
 /** The sky pass's uniforms. */
-export interface GlobeSkyUniforms {
+interface GlobeSkyUniforms {
   /** Unit direction towards the sun, in the view camera's world frame. */
   readonly uSunDirection: { value: THREE.Vector3 };
   /** The disc's angular radius, radians. */
@@ -70,7 +70,7 @@ export interface GlobeSkyUniforms {
 }
 
 /** The star points' uniforms. */
-export interface GlobeStarUniforms {
+interface GlobeStarUniforms {
   readonly uMagLimit: { value: number };
   readonly uStarGain: { value: number };
   /** Device pixels per CSS pixel, so a star keeps its size on a phone. */
