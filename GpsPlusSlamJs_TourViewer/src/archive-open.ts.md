@@ -11,16 +11,13 @@ DOM glue, its own module since the flows plan M6.
 ## Public API
 
 - `wireArchiveOpen({ ctx, dom, cacheStore, corsProxyBaseUrl, hooks }): ArchiveOpen`
-  - `ArchiveOpenDom { form; linkInput; openButton; missingForm; missingInput; missingButton; missingBlock; statsPanel; statsHeadline; statsDetail; errorBox; gallery; storagePanel; clearCacheButton }`
-    - `missing*` is step 4's "this device does not have the tour" form
-      (second testing session, F12). It is the SAME control over the SAME
-      state as step 1's: its input mirrors into `linkInput` before the
-      open, so the page keeps one link of record and one open path. It
-      hides on a SUCCESSFUL open only - a pasted link fails often on a
-      phone, and hiding on submit would take the retry away exactly when
-      it is needed.
-    - BOTH buttons carry the in-progress state, each restoring its own
-      idle label (`OPEN_BUTTON_LABEL` / `MISSING_OPEN_LABEL`).
+  - `ArchiveOpenDom { form; linkInput; openButton; statsPanel; statsHeadline; statsDetail; errorBox; gallery; storagePanel; clearCacheButton }`
+    - Step 4's paste form (F12) is gone: step 4 opens the tour its printed
+      code names (`scanOpen`, scan-to-open plan §2), writing the link of
+      record into `linkInput` first, so the page keeps one link of record
+      and one open path.
+    - The open button carries the in-progress state and restores
+      `OPEN_BUTTON_LABEL`, for a scan-started open too.
   - `cacheStore: BoundedLocalCacheStore | undefined` - undefined = no local
     copies (`?nocache=1`, no Cache API); the Storage section then hides.
   - `ArchiveOpen.boot()` - the `?qr=` launch (bare-name payloads resolve

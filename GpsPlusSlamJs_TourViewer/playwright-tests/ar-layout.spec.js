@@ -19,6 +19,27 @@ import { E2E_QR_TEXT } from "./qr-fixture.mjs";
 
 const RANGES_ARCHIVE = "http://127.0.0.1:5197/ranges-ok/tour.zip";
 
+/**
+ * The visible `#ar-root` controls whose bottom edge lies more than one
+ * screen height below the overlay's top - measured without scrolling: on
+ * the device `#ar-root` fills the screen from its top edge.
+ */
+async function controlsBelowTheFold(page) {
+  return page.evaluate(() => {
+    const root = /** @type {HTMLElement} */ (
+      document.getElementById("ar-root")
+    );
+    const top = root.getBoundingClientRect().top;
+    return [...root.querySelectorAll("button, input")]
+      .map((el) => /** @type {HTMLElement} */ (el))
+      .filter((el) => el.offsetParent !== null)
+      .filter(
+        (el) => el.getBoundingClientRect().bottom - top > window.innerHeight,
+      )
+      .map((el) => el.id || el.dataset.testid || el.tagName);
+  });
+}
+
 const PHONES = [
   { width: 360, height: 640 },
   { width: 360, height: 800 },
@@ -59,26 +80,49 @@ for (const viewport of PHONES) {
       )
       .toBe(true);
 
-    // Measured without scrolling, from the overlay's own top: on the device
-    // `#ar-root` fills the screen from its top edge.
-    const offScreen = await page.evaluate(() => {
-      const root = /** @type {HTMLElement} */ (
-        document.getElementById("ar-root")
-      );
-      const top = root.getBoundingClientRect().top;
-      return [...root.querySelectorAll("button, input")]
-        .map((el) => /** @type {HTMLElement} */ (el))
-        .filter((el) => el.offsetParent !== null)
-        .filter(
-          (el) => el.getBoundingClientRect().bottom - top > window.innerHeight,
-        )
-        .map((el) => el.id || el.dataset.testid || el.tagName);
-    });
-    expect(offScreen).toEqual([]);
+    expect(await controlsBelowTheFold(page)).toEqual([]);
     // The offer sits above the status line (the owner's decision).
     const offerY = (await page.getByTestId("size-offer").boundingBox())?.y ?? 0;
     const statusY =
       (await page.getByTestId("setup-status").boundingBox())?.y ?? 0;
     expect(offerY).toBeLessThan(statusY);
+  });
+}
+
+for (const viewport of PHONES) {
+  test(`every AR panel control fits a ${viewport.width}x${viewport.height} screen, with the longest scan-to-open note`, async ({
+    page,
+  }) => {
+    // Scan-to-open plan §9 #14: with no tour open the panel carries the
+    // code's status line, whose longest form is a file not hosted yet -
+    // one more line of text above the controls on a small phone.
+    await page.setViewportSize(viewport);
+    await installTourViewerArFakes(page);
+    await page.goto("/?debug=1");
+    const step = page.getByTestId("step-measure");
+    if (!(await step.evaluate((el) => /** @type {any} */ (el).open))) {
+      await step.locator("summary").click();
+    }
+    await expect(page.getByTestId("enter-ar")).toBeEnabled({ timeout: 10000 });
+    await page.getByTestId("enter-ar").click();
+    const missing = `https://gps.csutil.com/tour/?qr=${encodeURIComponent(
+      "http://127.0.0.1:5197/ranges-ok/does-not-exist.zip",
+    )}`;
+    await page.evaluate((text) => {
+      /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
+    }, missing);
+    await expect
+      .poll(
+        async () => {
+          await page.evaluate(() => {
+            /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+          });
+          return page.getByTestId("setup-status").textContent();
+        },
+        { timeout: 20000 },
+      )
+      .toMatch(/in view to try again/);
+
+    expect(await controlsBelowTheFold(page)).toEqual([]);
   });
 }

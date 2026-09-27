@@ -21,8 +21,10 @@ so they live inside it now and `creator-setup.ts` reveals them.
     and changes nothing else (see the invariants).
   - `Wizard.presentTour(url, { prefer? })` sets and shows the launch link
     (raw form) and, for a creator, opens a step: the one remembered for
-    this tour, else `prefer` (step 4's own "paste the link" form asks for
-    `measure`), else the print step.
+    this tour, else `prefer` (step 4's scan asks for `measure`), else
+    the print step. A tour opened while an AR session runs is remembered
+    as reached in step 4 even though the page does not change
+    (scan-to-open plan §9 #12).
   - `Wizard.presentLaunchUrl(launchUrl)` re-points the link at the PRINTED
     payload once a code is generated (`launchHrefFromPrintedUrl`: the
     printed URL's query on the viewer's origin), so the tester decodes what

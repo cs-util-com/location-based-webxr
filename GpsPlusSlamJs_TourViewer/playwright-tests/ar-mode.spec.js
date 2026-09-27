@@ -2,7 +2,11 @@
 import { expect, test } from "@playwright/test";
 
 import { installTourViewerArFakes } from "./ar-fakes.js";
-import { E2E_QR_TEXT, E2E_QR_UNKNOWN_TEXT } from "./qr-fixture.mjs";
+import {
+  E2E_QR_ARCHIVE,
+  E2E_QR_TEXT,
+  E2E_QR_UNKNOWN_TEXT,
+} from "./qr-fixture.mjs";
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 import { parseQrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import { parseTourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
@@ -1382,58 +1386,87 @@ test("a refused AR entry explains itself on the page, with no session to explain
   await expect(page.getByTestId("enter-ar")).toHaveText("Start AR setup");
 });
 
-test("step 4 asks for the tour link when this device does not have it, and stays on step 4", async ({
+test("step 4 opens the tour its printed code names, and stays on step 4", async ({
   page,
 }) => {
-  // Why this matters (F12): the reached step is remembered per device, so a
-  // creator who walks to the poster with their phone opens the viewer at
-  // step 1 with an empty field - there is no way to hand a tour from one
-  // device to another. Step 4 asking for what it lacks serves that, and a
-  // creator returning days later, and a cleared browser.
+  // Why this matters (scan-to-open plan §2, owner decision): a creator
+  // walks to the poster with their phone, which has no tour open - the
+  // reached step is remembered per device. The printed code carries the
+  // tour's link, so reading it is enough; the paste form it replaced made
+  // them send themselves the link first.
   //
-  // The trap this pins (M3 review #1): the open runs the same path as step
-  // 1's, whose default is "a tour opened, go to step 2". Without the
-  // preference the page would answer by collapsing the step the creator is
-  // standing in - and step 4's content is the AR overlay root.
+  // The trap this pins (M3 review #1): the open runs step 1's path, whose
+  // default is "a tour opened, go to step 2" - which would collapse the
+  // step holding the AR overlay.
   await page.goto("/");
   await openMeasureStep(page);
-  await expect(page.getByTestId("tour-missing")).toBeVisible();
-  await page.getByTestId("tour-missing-link").fill(RANGES_ARCHIVE);
-  await page.getByTestId("tour-missing-open").click();
-  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
-    timeout: 15000,
-  });
-  // Still on step 4, and the block that asked has done its job.
+  await expect(page.getByTestId("tour-missing")).toHaveCount(0);
+  await enterAr(page);
+  await page.evaluate((text) => {
+    /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
+  }, E2E_QR_TEXT);
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return page.getByTestId("setup-status").textContent();
+      },
+      { timeout: 15000 },
+    )
+    .toMatch(/Tour: tour.zip/);
+  // Still on step 4, and the tour behind the code is the one open.
   await expect(page.getByTestId("step-measure")).toHaveAttribute("open", "");
-  await expect(page.getByTestId("tour-missing")).toBeHidden();
-  await expect(page.getByTestId("print-panel")).not.toHaveAttribute("open", "");
-  // One link of record: step 1's input carries what step 4 was given, and
+  // One link of record: step 1's input carries what the code named, and
   // step 2's code is built from the same value.
-  await expect(page.getByTestId("link-input")).toHaveValue(RANGES_ARCHIVE);
-  await expect(page.getByTestId("print-url-shown")).toHaveText(RANGES_ARCHIVE);
+  await expect(page.getByTestId("link-input")).toHaveValue(E2E_QR_ARCHIVE);
+  await expect(page.getByTestId("print-url-shown")).toHaveText(E2E_QR_ARCHIVE);
 });
 
-test("a link that fails from step 4 keeps the form and says why", async ({
+test("a code whose tour cannot be opened says why, and one that names no tour says so", async ({
   page,
 }) => {
-  // Why this matters (M3 review #13): a pasted link fails often on a phone
-  // - a truncated paste, a share link that needs a login. A block that hid
-  // itself on submit would take the retry away at the moment it is needed.
-  // The async-UI rule applies to BOTH open buttons (M3 review #11).
+  // Why this matters (plan §9 #5, #9): the panel is the only thing a
+  // creator at the poster can read (the error box is outside the AR
+  // overlay). A file not hosted yet is retried while the code stays in
+  // view; a code of some other kind is told apart from a broken tour.
   await page.goto("/");
-  await openMeasureStep(page);
-  await page
-    .getByTestId("tour-missing-link")
-    .fill("http://127.0.0.1:5197/ranges-ok/does-not-exist.zip");
-  await page.getByTestId("tour-missing-open").click();
-  await expect(page.getByTestId("error")).not.toHaveText("");
-  await expect(page.getByTestId("tour-missing")).toBeVisible();
-  await expect(page.getByTestId("tour-missing-open")).toBeEnabled();
-  await expect(page.getByTestId("tour-missing-open")).toHaveText(
-    "Open the tour here",
-  );
-  // The other open button restored too, with its own label.
-  await expect(page.getByTestId("open-button")).toHaveText("Test link");
+  await enterAr(page);
+  const missing = `https://gps.csutil.com/tour/?qr=${encodeURIComponent(
+    "http://127.0.0.1:5197/ranges-ok/does-not-exist.zip",
+  )}`;
+  await page.evaluate((text) => {
+    /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
+  }, missing);
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return page.getByTestId("setup-status").textContent();
+      },
+      { timeout: 15000 },
+    )
+    .toMatch(/Could not open the tour: file not found.*in view to try again/);
+
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.armQrDetection(
+      "https://menu.example/today",
+    );
+  });
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return page.getByTestId("setup-status").textContent();
+      },
+      { timeout: 15000 },
+    )
+    .toMatch(/does not point to a tour/);
 });
 
 test("the print step builds a real PDF of numbered codes", async ({ page }) => {
@@ -1573,9 +1606,6 @@ test("a failed open puts the page back to having no tour, not to showing the old
   await page.getByTestId("print-panel").locator("summary").click();
   await expect(page.getByTestId("print-url-ask")).toBeVisible();
   await expect(page.getByTestId("print-url-shown")).toBeHidden();
-  // ...and so does step 4.
-  await openMeasureStep(page);
-  await expect(page.getByTestId("tour-missing")).toBeVisible();
 });
 
 test("the PDF button shows it is working, says when nothing was saved, and continues the numbering", async ({
@@ -1817,16 +1847,15 @@ test("a draft is offered again after Not now, and gone after Delete it", async (
   // Gone for good. Waited on a POSITIVE signal rather than a sleep: the
   // repo forbids waitForTimeout, and beyond the rule, hidden-after-a-sleep
   // passes for any reason the offer failed to appear - a store that never
-  // opened, a rejection, a slow OPFS. The finish block is revealed by the
-  // same manifest-settled path the draft offer rides on, so seeing the
-  // panel settle proves the draft path RAN and found nothing.
+  // opened, a rejection, a slow OPFS. The signal is the open's own success
+  // (step 2 shows the link; until scan-to-open it was step 4's paste form
+  // hiding, set at the same point). It precedes the manifest settling, so
+  // this proves less than "the draft path ran" - a known gap, as before.
   await reopen();
   await expect(page.getByTestId("setup-panel")).toBeAttached();
-  await expect
-    .poll(async () => page.getByTestId("tour-missing").isHidden(), {
-      timeout: 15000,
-    })
-    .toBe(true);
+  await expect(page.getByTestId("print-url-shown")).toHaveText(RANGES_ARCHIVE, {
+    timeout: 15000,
+  });
   await expect(page.getByTestId("draft-offer")).toBeHidden();
 });
 

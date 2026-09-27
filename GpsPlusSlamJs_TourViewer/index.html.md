@@ -30,10 +30,11 @@ screen. Everything marked `.creator-only` is hidden for a visitor
      be steps 5 and 6 - `#finish-block` (the rebuilt zip's status and
      download) and `#replace-help` inside it - because those describe the
      END of this step rather than steps of their own (F10). And
-     `#tour-missing`, the form that asks for the tour link on a device
-     that does not have it (F12), and `#draft-offer` - unsaved work this
+     `#draft-offer` - unsaved work this
      device still holds for this tour, offered with three answers rather
-     than applied (F13).
+     than applied (F13). The paste form F12 added here (`#tour-missing`) is gone: the
+     printed code carries the tour's link, so reading it in AR opens the
+     tour (scan-to-open plan §2).
 - The visitor screen (`#visitor-screen`): the consent copy above the AR
   section; the Start button is `#enter-ar`.
 - Below the steps, creator-only: the Storage section (`#storage-panel`,
@@ -57,7 +58,7 @@ The `data-testid` contract the e2e suite drives: `wizard`, `step-host`,
 `print-url-shown`, `author-size`, `author-c`, `print-generate`,
 `print-info`, `print-canvas`, `print-button`, `print-url-out`,
 `print-count`, `print-paper`, `print-pdf`, `visitor-link`), `step-hang`, `hang-done`, `step-measure` (owns
-`tour-missing`, `tour-missing-link`, `tour-missing-open`, `draft-offer`,
+`draft-offer`,
 `draft-offer-text`, `draft-restore`, `draft-dismiss`, `draft-discard`,
 `finish-block`,
 `finish-status`, `finish-download`, `replace-help`), `visitor-screen`,
@@ -103,9 +104,7 @@ the creator's; `visitor-screen.ts` re-words it for a visitor.
   grid/flex display values.
 - `#finish-block` is authored `hidden` and is NOT `.creator-only`: the
   class would un-hide it on a creator's load, and it must appear only once
-  a finish has produced a zip. `#tour-missing` is the opposite - it IS
-  `.creator-only` (a visitor never pastes a link) and is authored hidden
-  like every creator-only section, so a visitor cannot see it flash.
+  a finish has produced a zip.
 - `#author-size`'s `value` attribute must equal `AUTHOR_DEFAULT_SIZE_M`,
   which `creator-setup.ts` writes into the field on every load. A
   differing attribute is dead text that reads like a decision

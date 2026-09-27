@@ -149,8 +149,8 @@ export interface Wizard {
   rememberedTourUrl(): string | null;
   /** A tour opened: the launch link becomes usable and a step opens. Which
    *  step: the one this creator last reached with THIS tour, else `prefer`
-   *  when the caller knows where the creator is standing (step 4's own
-   *  "paste the link" form does), else the print step. */
+   *  when the caller knows where the creator is standing (step 4's scan
+   *  does), else the print step. */
   presentTour(url: string, options?: { prefer?: WizardStep }): void;
   /** A code was generated: the link carries the PRINTED payload (the
    *  measured shortest form and the code-number token), so the tester's
@@ -425,11 +425,14 @@ export function wireWizard(deps: {
       rememberUrl(url);
       // Land where the creator got to with this tour (a reload after the
       // AR session, a return from the print dialog). Failing that, where
-      // the CALLER says the creator is standing: step 4's own "paste the
-      // link" form opens the tour from step 4, and without this the page
-      // would answer by jumping to step 2 and collapsing step 4 - undoing
-      // the very thing the form exists to do (M3 review #1). A remembered
+      // the CALLER says the creator is standing: step 4's scan opens the
+      // tour from step 4, and without this the page would answer by
+      // jumping to step 2 and collapsing step 4 (M3 review #1). A remembered
       // step still wins: it is evidence about this creator and this tour.
+      // A tour opened DURING a session was reached in step 4, but openStep
+      // changes nothing and remembers nothing while a session runs - so it
+      // is remembered here (scan-to-open plan §9 #12).
+      if (arSessionActive()) remember("measure");
       openStep(remembered(url) ?? options?.prefer ?? "print");
     },
     presentLaunchUrl: (launchUrl) => {

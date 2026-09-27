@@ -47,7 +47,6 @@
         flex-wrap: wrap;
       }
       #link,
-      #tour-missing-link,
       #print-url {
         flex: 1 1 20rem;
       }
@@ -149,7 +148,6 @@
       }
       #setup-panel,
       #setup-controls,
-      #tour-missing,
       #draft-offer,
       #finish-block {
         display: grid;
@@ -157,7 +155,6 @@
         max-width: 26rem;
       }
       #setup-panel,
-      #tour-missing,
       #draft-offer,
       #finish-block {
         margin-top: var(--space-3);
@@ -664,46 +661,12 @@
           <h2>4 · Measure the code and place content</h2>
         </summary>
         <p class="step-copy hint--dim creator-only" hidden>
-          Stand at the hung code and start the AR setup. Hold the phone on the
-          code until it is measured, then place text pins and photos where the
-          tour should show them. Finish inside AR when you are done - the
-          rebuilt zip appears here afterwards.
+          Stand at the hung code and start the AR setup - the code carries the
+          tour's link, so the tour opens on this device the moment the camera
+          reads it. Hold the phone on the code until it is measured, then place
+          text pins and photos where the tour should show them. Finish inside AR
+          when you are done - the rebuilt zip appears here afterwards.
         </p>
-        <!-- The tour link, asked for HERE when this device does not have it
-             (F12). A creator walks to the poster with their phone, and the
-             reached step is remembered per device, so the phone opens at
-             step 1 with an empty field and no way to be handed the tour.
-             This is the same control over the same state as step 1's, not a
-             second one: it writes into that input and runs that open path,
-             and it is gone the moment a tour is open. -->
-        <form
-          id="tour-missing"
-          class="creator-only"
-          data-testid="tour-missing"
-          hidden
-        >
-          <p class="step-copy hint--dim">
-            This device does not have the tour open yet. Paste the link from
-            step 1 - on your phone, that usually means sending it to yourself.
-          </p>
-          <input
-            id="tour-missing-link"
-            name="tour-missing-link"
-            class="input"
-            type="text"
-            placeholder="https://… link to the .zip"
-            autocomplete="off"
-            data-testid="tour-missing-link"
-          />
-          <button
-            type="submit"
-            id="tour-missing-open"
-            class="btn btn--prose"
-            data-testid="tour-missing-open"
-          >
-            Open the tour here
-          </button>
-        </form>
         <section id="ar-root">
           <p id="ar-hint" class="hint--dim" data-testid="ar-hint">
             AR opens the camera. Keep the printed code in view until the page
