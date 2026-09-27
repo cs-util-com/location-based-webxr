@@ -36,8 +36,15 @@ import { CATALOG } from "./catalog/index.js";
 import {
   buildCatalog,
   CATALOG_LAYOUT,
+  catalogMaterial,
   createCatalogLabels,
 } from "./catalog/catalog-view.js";
+import {
+  CITY_FINISHES,
+  cityMaterialPool,
+  DEFAULT_CITY_MATERIALS,
+  pickCityMaterials,
+} from "./city-materials.js";
 import { LABEL_RULE, labelOpacities } from "./catalog/label-rule.js";
 import { sunDirection } from "/osm/sun-position.js";
 import {
@@ -184,7 +191,19 @@ const state = {
   // drawn on the desktop tier only, where the composer exists; off by
   // default (plan Q3-1).
   ao: false,
+  // The dense city's varied materials (round-3 plan 2026-09-27-0532,
+  // DEC-FB3-3): on by default, `materials` catalog entries (standard and
+  // physical only) worn at random by lot; `finish` is the owner's A/B
+  // ("mixed", each material's own roughness, "shiny" or "matte").
+  varied: true,
+  materials: DEFAULT_CITY_MATERIALS,
+  finish: "mixed",
 };
+
+/** The catalog entries a city building may wear (city-materials.js). */
+const CITY_POOL = cityMaterialPool(CATALOG);
+const isMaterialCount = (n) =>
+  Number.isInteger(n) && n >= 1 && n <= CITY_POOL.length;
 
 const WATER_IDS = ["C0", ...WATER_CANDIDATES.map((c) => c.id)];
 /** The wave set the pond's current material was built with. */
@@ -265,6 +284,12 @@ function readHash() {
   }
   const pitch = Number(params.get("pitch"));
   if (DENSE_PITCHES.includes(pitch)) state.pitch = pitch;
+  if (params.has("varied")) state.varied = params.get("varied") === "1";
+  const materials = Number(params.get("materials"));
+  if (isMaterialCount(materials)) state.materials = materials;
+  if (Object.hasOwn(CITY_FINISHES, params.get("finish") ?? "")) {
+    state.finish = params.get("finish");
+  }
   const city = Number(params.get("city"));
   // Only when the hash names it: a link without `city` keeps the default
   // (the dense city since round 2), like every other key.
@@ -285,6 +310,9 @@ function writeHash() {
     water: state.water,
     catalog: state.catalog ? "1" : "0",
     ao: state.ao ? "1" : "0",
+    varied: state.varied ? "1" : "0",
+    materials: String(state.materials),
+    finish: state.finish,
   });
   history.replaceState(null, "", `#${params}`);
 }
@@ -406,9 +434,9 @@ function applyShadows(direction) {
     sunDir: [direction.x / length, direction.y / length, direction.z / length],
     centre: [0, 0, 0],
     halfWidthM: shadowParams.halfWidthM,
-    // The fill's count and pitch are part of the casters: a change must
-    // re-render the map.
-    casterGeneration: `city ${state.city}@${state.pitch}`,
+    // The fill's count, pitch and meshes are part of the casters: a change
+    // must re-render the map.
+    casterGeneration: casterGeneration(),
     casterOffsetM: 0,
   });
   // The rig sets one texel of normal bias; the sweep scales it (set, not
@@ -453,7 +481,7 @@ function applyRingShadow(sunDir) {
     sunDir,
     centre: [0, 0, 0],
     halfWidthM: RING_HALF_WIDTH_M,
-    casterGeneration: `city ${state.city}@${state.pitch}`,
+    casterGeneration: casterGeneration(),
     casterOffsetM: 0,
   });
 }
@@ -549,12 +577,25 @@ function applyCatalog() {
   }
 }
 
+/** What the dense city's meshes depend on besides the pitch. */
+const denseKey = () => (state.varied ? `varied ${state.materials}` : "plain");
+/** The key the current dense city was built with (the stand-in's: plain). */
+let builtDenseKey = "plain";
+/** The shadow maps' caster generation: the fill's count, pitch and meshes. */
+const casterGeneration = () =>
+  `city ${state.city}@${state.pitch} ${builtDenseKey}`;
+
 /**
- * The dense city to the state: a new pitch rebuilds the part (hazed, and
- * flagged as casters when shadows are on); a count only moves the prefix.
+ * The dense city to the state: a new pitch or material set rebuilds the
+ * part (hazed, and flagged as casters when shadows are on); a count only
+ * moves the prefixes, and the finish only sets each material's roughness
+ * (a uniform: no rebuild, no new program).
  */
 function applyCity() {
-  if (parts.dense.userData.pitch !== state.pitch) {
+  if (
+    parts.dense.userData.pitch !== state.pitch ||
+    builtDenseKey !== denseKey()
+  ) {
     const old = parts.dense;
     scene.remove(old);
     for (const mesh of old.children) {
@@ -562,7 +603,15 @@ function applyCity() {
       mesh.material.dispose();
       mesh.dispose();
     }
-    parts.dense = denseCity(state.pitch);
+    const materials = state.varied
+      ? pickCityMaterials(CITY_POOL, state.materials).map((entry) => {
+          const material = catalogMaterial(entry);
+          material.userData.catalogId = entry.id;
+          return material;
+        })
+      : null;
+    parts.dense = denseCity(state.pitch, { materials });
+    builtDenseKey = denseKey();
     haze.applyToObject(parts.dense);
     if (sunShadow) {
       for (const mesh of parts.dense.children) {
@@ -571,6 +620,11 @@ function applyCity() {
       }
     }
     scene.add(parts.dense);
+  }
+  const roughness = CITY_FINISHES[state.finish];
+  for (const mesh of parts.dense.children) {
+    mesh.material.userData.baseRoughness ??= mesh.material.roughness;
+    mesh.material.roughness = roughness ?? mesh.material.userData.baseRoughness;
   }
   parts.dense.userData.setCount(state.city);
 }
@@ -692,6 +746,9 @@ function syncControls() {
   // The switch works on either tier; on the phone tier it says it draws on
   // the desktop tier only and offers the switch (the owner looked for it).
   $("[data-ao-tier]").hidden = state.tier === "desktop";
+  $("#varied").checked = state.varied;
+  $("#city-materials").value = String(state.materials);
+  $("#city-finish").value = state.finish;
   const cityValue = `${state.city}@${state.pitch}`;
   const citySelect = $("#city-fill");
   if ([...citySelect.options].some((o) => o.value === cityValue)) {
@@ -745,6 +802,15 @@ function buildControls() {
   );
   $("#water-set").addEventListener("change", (e) =>
     api.setWater(e.target.value),
+  );
+  $("#varied").addEventListener("change", (e) =>
+    api.setVaried(e.target.checked),
+  );
+  $("#city-materials").addEventListener("change", (e) =>
+    api.setVaried(state.varied, Number(e.target.value)),
+  );
+  $("#city-finish").addEventListener("change", (e) =>
+    api.setCityFinish(e.target.value),
   );
   $("#city-fill").addEventListener("change", (e) => {
     const [count, pitch] = e.target.value.split("@").map(Number);
@@ -810,9 +876,19 @@ function frame(now) {
     ? `GPU ${gpuMs === null ? "…" : gpuMs.toFixed(2)} ms`
     : "GPU n/a";
   $("[data-stats]").textContent =
-    `${state.tier} · AO ${ambientOcclusion.active ? "on" : !state.ao ? "off" : ambientOcclusion.unsupported ? "n/a on Oculus Browser" : "on (desktop tier only)"} · clouds ${state.cloudMode} · shadows ${sunShadow ? `on (${sunShadow.renders} maps, central ${shadowParams.halfWidthM} m${ringShadow ? `, ring ${RING_HALF_WIDTH_M} m` : ""})` : shadowsBelowFloor ? "on (sun below 2°)" : "off"} · ${frameMs.toFixed(1)} ms/frame · ${gpu} · ${renderer.info.render.calls} draws · ` +
+    `${state.tier} · AO ${ambientOcclusion.active ? "on" : !state.ao ? "off" : ambientOcclusion.unsupported ? "n/a on Oculus Browser" : "on (desktop tier only)"} · clouds ${state.cloudMode} · shadows ${sunShadow ? `on (${sunShadow.renders} maps, central ${shadowParams.halfWidthM} m${ringShadow ? `, ring ${RING_HALF_WIDTH_M} m` : ""})` : shadowsBelowFloor ? "on (sun below 2°)" : "off"} · ${cityReadout()} · ${frameMs.toFixed(1)} ms/frame · ${gpu} · ${renderer.info.render.calls} draws · ` +
     `${(renderer.info.render.triangles / 1000).toFixed(0)}k tris · LUT ${lutMs.toFixed(1)} ms`;
   requestAnimationFrame(frame);
+}
+
+/** The readout's city part: the material count and the A/B finish. */
+function cityReadout() {
+  const meshes = parts.dense.children.length;
+  const kind = state.varied
+    ? `${meshes} catalog materials`
+    : "plain, 2 materials";
+  const finish = state.finish === "mixed" ? "" : `, all ${state.finish}`;
+  return `city ${kind}${finish}`;
 }
 
 canvas.addEventListener("webglcontextlost", (e) => {
@@ -1103,17 +1179,83 @@ Object.assign(api, {
   waterCandidates() {
     return [...WATER_IDS];
   },
+  /**
+   * The dense city's varied materials (DEC-FB3-3): on or off, and how many
+   * catalog materials (1..the pool's size; the cost sweep uses 4, 8, 12).
+   */
+  setVaried(on, count = state.materials) {
+    if (!isMaterialCount(count)) {
+      throw new RangeError(
+        `the material count must be an integer in 1..${CITY_POOL.length}, got ${count}`,
+      );
+    }
+    state.varied = Boolean(on);
+    state.materials = count;
+    applyLook();
+  },
+  /**
+   * The owner's A/B (DEC-FB3-3): "mixed" (each material's own roughness),
+   * "shiny" (every city material at roughness 0) or "matte" (1).
+   */
+  setCityFinish(finish) {
+    if (!Object.hasOwn(CITY_FINISHES, finish)) {
+      throw new Error(
+        `unknown finish ${finish}; one of ${Object.keys(CITY_FINISHES)}`,
+      );
+    }
+    state.finish = finish;
+    applyLook();
+  },
   /** Test surface: the dense city as it stands. */
   cityInfo() {
     const dense = parts.dense;
-    const [concrete, glass] = dense.children;
+    const meshes = dense.children;
     return {
       count: dense.userData.count,
       max: dense.userData.max,
       pitch: dense.userData.pitch,
       farthest: dense.userData.farthest,
-      casts: concrete.castShadow && glass.castShadow,
-      receives: concrete.receiveShadow && glass.receiveShadow,
+      casts: meshes.every((m) => m.castShadow),
+      receives: meshes.every((m) => m.receiveShadow),
+      varied: state.varied,
+      finish: state.finish,
+      meshes: meshes.length,
+      materials: meshes.map((m) => m.material.userData.catalogId ?? m.name),
+      instances: meshes.reduce((total, m) => total + m.count, 0),
+      roughness: meshes.map((m) => m.material.roughness),
+    };
+  },
+  /**
+   * Test surface, the cost measurement's handle: one warm-up frame (a
+   * pending shadow map or a program compile lands there), then `n` timed
+   * frames, each finished by a 1-pixel read so the GPU work is inside the
+   * time. `shadowMaps` re-renders both sun shadow maps in every timed frame
+   * (the frame after a sun move). Returns the median ms, the last frame's
+   * draws and the program count. SwiftShader times are relative only.
+   */
+  timeFrames(n, { shadowMaps = false } = {}) {
+    const gl = renderer.getContext();
+    const px = new Uint8Array(4);
+    const frameOnce = () => {
+      renderFrame();
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    };
+    frameOnce();
+    const times = [];
+    for (let i = 0; i < n; i++) {
+      if (shadowMaps) {
+        if (sunShadow) sun.shadow.needsUpdate = true;
+        if (ringShadow) ringShadow.light.shadow.needsUpdate = true;
+      }
+      const start = performance.now();
+      frameOnce();
+      times.push(performance.now() - start);
+    }
+    times.sort((a, b) => a - b);
+    return {
+      medianMs: times[Math.floor(times.length / 2)],
+      draws: renderer.info.render.calls,
+      programs: renderer.info.programs?.length ?? 0,
     };
   },
   /** Test surface: render one frame and return its draw calls. */

@@ -16,6 +16,8 @@
  */
 import * as THREE from "three";
 
+import { countBelow, groupRanks } from "./city-materials.js";
+
 /** A fixed pseudo-random value in [0, 1) for an integer seed. */
 function hash(seed) {
   const x = Math.sin(seed * 12.9898 + 78.233) * 43758.5453;
@@ -106,17 +108,24 @@ const DENSE_OUTER_M = 2350;
 
 /**
  * THE DENSE CITY: every lot of a `pitch` grid between DENSE_INNER_M and
- * DENSE_OUTER_M, ordered by radius, as two InstancedMeshes (concrete with a
- * per-building colour, and glass towers). `setCount(n)` shows the nearest n
- * lots, so a count fills a growing disc. Two draws per pass whatever the
- * count.
+ * DENSE_OUTER_M, ordered by radius, as InstancedMeshes, one per material:
+ *
+ * - by default two, concrete (a per-building colour) and glass towers;
+ * - with `materials` (round-3 plan 2026-09-27-0532, DEC-FB3-3), one per
+ *   given material, each lot wearing one of them by its seed (towers stay
+ *   taller, in the lot's material).
+ *
+ * `setCount(n)` shows the nearest n lots, so a count fills a growing disc:
+ * each mesh draws the prefix of its instances that falls within the nearest
+ * n (`groupRanks` / `countBelow`). One draw per material per pass whatever
+ * the count.
  *
  * THE BOUNDS ARE MEASURED ONCE, AT THE FULL ALLOCATION, and never again: an
  * InstancedMesh computes its bounding sphere over `count` instances the first
  * time it is culled and then keeps it, so a sphere measured at a small count
  * would cull the whole fill in any view that misses the centre (W1 plan §4).
  */
-export function denseCity(pitch = DENSE_PITCHES[0]) {
+export function denseCity(pitch = DENSE_PITCHES[0], { materials = null } = {}) {
   const lots = [];
   const cells = Math.ceil(DENSE_OUTER_M / pitch);
   for (let i = -cells; i <= cells; i++) {
@@ -129,34 +138,41 @@ export function denseCity(pitch = DENSE_PITCHES[0]) {
     }
   }
   lots.sort((a, b) => a.r - b.r || a.x - b.x || a.z - b.z);
-  const concrete = new THREE.MeshStandardMaterial({
-    color: 0xffffff,
-    roughness: 0.78,
-  });
-  const glass = new THREE.MeshStandardMaterial({
-    color: 0x8fa4b8,
-    metalness: 0.9,
-    roughness: 0.12,
-  });
+  const isTower = (lot) => hash(lot.seed + 1) > 0.88;
   const palette = [0xb9b3a8, 0xa9aeb3, 0xc4b59e, 0x9c9a95].map(
     (c) => new THREE.Color(c),
   );
+  const varied = Array.isArray(materials) && materials.length > 0;
+  const groups = varied
+    ? materials.map((material, g) => ({ material, name: `dense-m${g}` }))
+    : [
+        {
+          material: new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            roughness: 0.78,
+          }),
+          name: "dense-concrete",
+          colour: (lot) =>
+            palette[Math.floor(hash(lot.seed + 2) * palette.length)],
+        },
+        {
+          material: new THREE.MeshStandardMaterial({
+            color: 0x8fa4b8,
+            metalness: 0.9,
+            roughness: 0.12,
+          }),
+          name: "dense-glass",
+        },
+      ];
+  const groupOf = varied
+    ? (lot) => Math.floor(hash(lot.seed + 5) * groups.length)
+    : (lot) => (isTower(lot) ? 1 : 0);
+  const ranks = groupRanks(lots.map(groupOf), groups.length);
   const box = new THREE.BoxGeometry(1, 1, 1);
   box.translate(0, 0.5, 0);
-  const isTower = (lot) => hash(lot.seed + 1) > 0.88;
-  const towers = lots.filter(isTower);
-  const blocks = lots.filter((lot) => !isTower(lot));
-  const concreteMesh = new THREE.InstancedMesh(box, concrete, blocks.length);
-  const glassMesh = new THREE.InstancedMesh(
-    box,
-    glass,
-    Math.max(1, towers.length),
-  );
-  concreteMesh.name = "dense-concrete";
-  glassMesh.name = "dense-glass";
   const matrix = new THREE.Matrix4();
-  const place = (lot, tower) => {
-    const height = (8 + 52 * hash(lot.seed) ** 2) * (tower ? 1.6 : 1);
+  const place = (lot) => {
+    const height = (8 + 52 * hash(lot.seed) ** 2) * (isTower(lot) ? 1.6 : 1);
     const footprint = pitch * 0.45;
     matrix.makeScale(
       footprint + pitch * 0.25 * hash(lot.seed + 3),
@@ -166,39 +182,31 @@ export function denseCity(pitch = DENSE_PITCHES[0]) {
     matrix.setPosition(lot.x, 0, lot.z);
     return matrix;
   };
-  blocks.forEach((lot, k) => {
-    concreteMesh.setMatrixAt(k, place(lot, false));
-    concreteMesh.setColorAt(
-      k,
-      palette[Math.floor(hash(lot.seed + 2) * palette.length)],
+  const meshes = groups.map((group, g) => {
+    const mesh = new THREE.InstancedMesh(
+      box,
+      group.material,
+      Math.max(1, ranks[g].length),
     );
+    mesh.name = group.name;
+    ranks[g].forEach((lotIndex, k) => {
+      const lot = lots[lotIndex];
+      mesh.setMatrixAt(k, place(lot));
+      if (group.colour) mesh.setColorAt(k, group.colour(lot));
+    });
+    // Bounds at the full allocation, before any count is set (see above).
+    mesh.computeBoundingSphere();
+    mesh.computeBoundingBox();
+    return mesh;
   });
-  towers.forEach((lot, k) => glassMesh.setMatrixAt(k, place(lot, true)));
-  // Bounds at the full allocation, before any count is set (see above).
-  concreteMesh.computeBoundingSphere();
-  concreteMesh.computeBoundingBox();
-  glassMesh.computeBoundingSphere();
-  glassMesh.computeBoundingBox();
-  // The prefix of each kind that falls within the nearest n lots.
-  const blocksBefore = [];
-  const towersBefore = [];
-  let b = 0;
-  let t = 0;
-  for (const lot of lots) {
-    blocksBefore.push(b);
-    towersBefore.push(t);
-    if (isTower(lot)) t++;
-    else b++;
-  }
-  blocksBefore.push(b);
-  towersBefore.push(t);
   const group = new THREE.Group();
   group.name = "dense";
-  group.add(concreteMesh, glassMesh);
+  group.add(...meshes);
   const setCount = (n) => {
     const count = Math.max(0, Math.min(lots.length, Math.floor(n)));
-    concreteMesh.count = blocksBefore[count];
-    glassMesh.count = towersBefore[count];
+    meshes.forEach((mesh, g) => {
+      mesh.count = countBelow(ranks[g], count);
+    });
     group.visible = count > 0;
     group.userData.count = count;
   };
@@ -208,6 +216,7 @@ export function denseCity(pitch = DENSE_PITCHES[0]) {
     max: lots.length,
     count: 0,
     farthest: last ? [last.x, last.z] : [0, 0],
+    materials: meshes.length,
     setCount,
   };
   setCount(0);

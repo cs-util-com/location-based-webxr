@@ -45,8 +45,23 @@ catalogReceives }`: whether every mesh of each part casts, the catalog
     `setCity(count, pitch?)` (the dense city, W1 M3: the nearest `count`
     lots of a `pitch` grid; a new pitch rebuilds the part, hazes it and flags
     it as casters when shadows are on), `cityInfo()` (`{ count, max, pitch,
-farthest, casts, receives }`) and `drawCalls()` (renders one frame and
-    returns its draw calls);
+farthest, casts, receives, varied, finish, meshes, materials, instances,
+roughness }`: `materials` are the catalog ids of a varied city's meshes,
+    or the plain meshes' names; `instances` the lots drawn, summed over the
+    meshes) and `drawCalls()` (renders one frame and returns its draw
+    calls);
+    `setVaried(bool, count?)` (the city's VARIED MATERIALS, round-3 plan
+    2026-09-27-0532 DEC-FB3-3, on by default with 12: one InstancedMesh per
+    catalog material, standard and physical entries only, picked evenly
+    over the pool by `city-materials.js`, worn by lot seed; a change
+    rebuilds the fill, hazed and flagged like a new pitch; `RangeError`
+    outside 1..pool size) and `setCityFinish("mixed" | "shiny" | "matte")`
+    (the owner's A/B: every city material at roughness 0 or 1, or each at
+    its own; a uniform, so the same meshes, draws and programs);
+    `timeFrames(n, { shadowMaps? })` (the cost handle: a warm-up frame,
+    then n frames each ended by a 1-pixel read, `shadowMaps` re-rendering
+    both sun maps in each; `{ medianMs, draws, programs }`, relative on
+    SwiftShader);
     `setShadows(bool)` (sun shadows, the AR shadow prototype's S1: the
     framework's `createSunShadow` drives the sun light over a 440 m square (R 220 m),
     buildings cast and receive, the ground receives, a 2° floor; while the
@@ -104,10 +119,11 @@ denoise, resolutionScale })` is the sweep's handle; `setAoExclusions(bool)`
     preset: both exposures and both exposure-free horizon colours. The
     fallback's only GPU oracle.
 - Invariants & assumptions:
-  - State lives in the URL hash (`#preset=…&tone=…&tier=…&cloudMode=…&shadows=0|1&city=…&pitch=42|31|20&water=C0|C1|P50|P30|D30&catalog=0|1&ao=0|1`; defaults since the owner's round 2, plan
+  - State lives in the URL hash (`#preset=…&tone=…&tier=…&cloudMode=…&shadows=0|1&city=…&pitch=42|31|20&water=C0|C1|P50|P30|D30&catalog=0|1&varied=0|1&materials=1…&finish=mixed|shiny|matte&ao=0|1`; defaults since the owner's round 2, plan
     2026-09-26-2055 M2: the densest city, `city=100000&pitch=20`, about
     42,000 buildings, and `water=P50`; since round 3, plan 2026-09-27-0532
-    DEC-FB3-5: `shadows=1`, `catalog=1` and `cloudMode=slab`), so a
+    DEC-FB3-5: `shadows=1`, `catalog=1` and `cloudMode=slab`; DEC-FB3-3:
+    `varied=1&materials=12&finish=mixed`), so a
     screenshot or phone link reproduces a view; a hash change on an open
     page re-applies it (the page's own writes use `replaceState`, which
     fires no `hashchange`). A key the hash does NOT name keeps its value
@@ -165,4 +181,8 @@ denoise, resolutionScale })` is the sweep's handle; `setAoExclusions(bool)`
     deviation in the plan. OsmDemo now shows the REAL sun for its place and
     date (`sun-clock.ts`, plan 2026-09-23-2149).
 - Examples: `pnpm run serve` → `/3d/#preset=blueHour&tone=aces`.
-- Tests: `lookdev.smoke.spec.mjs` (stage `test:e2e`), `ambient-occlusion.smoke.spec.mjs` (the AO switch and its checks), and `shoot-3d.mjs`.
+- Tests: `lookdev.smoke.spec.mjs`, `lookdev-tidy.smoke.spec.mjs` (the
+  round-3 labels, ramp row, varied city and its logged cost) and
+  `ambient-occlusion.smoke.spec.mjs` (the AO switch and its checks; stage
+  `test:e2e`), and `shoot-3d.mjs`. The readout's stats line names the
+  city's material count and finish next to the draws.

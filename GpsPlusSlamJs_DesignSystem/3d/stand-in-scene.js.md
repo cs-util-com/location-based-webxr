@@ -14,9 +14,16 @@ lake, basin, markers, families }`, each already added to `scene`.
     original scene, short of the first ridge at 2500 m), ordered by radius, as
     two InstancedMeshes (`dense-concrete` with a per-building colour,
     `dense-glass` towers). `userData`: `{ pitch, max, count, farthest,
-setCount(n) }`; `setCount(n)` shows the nearest n lots (clamped), and a
-    count of 0 hides the group. Starts at 0, so the default scene is
-    unchanged.
+materials, setCount(n) }`; `setCount(n)` shows the nearest n lots
+    (clamped), and a count of 0 hides the group. Starts at 0, so the default
+    scene is unchanged.
+  - `denseCity(pitch, { materials })` - the VARIED city (round-3 plan
+    2026-09-27-0532, DEC-FB3-3): one InstancedMesh per given material
+    (`dense-m0`...), each lot wearing one by its seed (towers stay taller,
+    in the lot's material; no per-building colour). The lots split with
+    `groupRanks` and each mesh draws `countBelow(ranks, n)` instances
+    (`city-materials.js`), so the meshes together show exactly the
+    nearest n lots whatever the number of materials.
   - `DENSE_PITCHES` = `[42, 31, 20]` (about 9,500, 17,500 and 42,000 lots).
   - `FLOAT_HEIGHT_M` (105) and `POND` (`{ x: 120, z: -40, rx: 110, rz: 70 }`):
     the pond (and the page's material catalog) float above the city (owner
@@ -29,8 +36,9 @@ setCount(n) }`; `setCount(n)` shows the nearest n lots (clamped), and a
     across it from 20 m above: from 8 m, only 5 of the water test's 12 points
     resolved moving waves (11 from 20 m), measured 2026-09-26.
 - Invariants & assumptions:
-  - The dense city is two draws per pass whatever the count. Its bounds are
-    measured ONCE at the full allocation: three measures an InstancedMesh's
+  - The dense city is one draw per material per pass whatever the count
+    (two plain; N varied). Every mesh's bounds are measured ONCE at the full
+    allocation: three measures an InstancedMesh's
     bounding sphere the first time it is culled visible, over the count of
     that moment, and keeps it, so a sphere measured at a small count would
     cull the whole fill in any view that misses the centre.

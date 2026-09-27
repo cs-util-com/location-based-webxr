@@ -43,6 +43,7 @@ describe("pinnedHash", () => {
       catalog: "0",
       cloudMode: "dome",
       ao: "0",
+      varied: "0",
     });
   });
 });

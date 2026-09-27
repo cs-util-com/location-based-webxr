@@ -1580,6 +1580,17 @@ test("the page opens on the dense city, the P50 water, shadows, the catalog and 
     true,
     "slab",
   ]);
+  // The city's varied materials (DEC-FB3-3), on with 12 and the mixed finish.
+  expect([state.varied, state.materials, state.finish]).toEqual([
+    true,
+    12,
+    "mixed",
+  ]);
+  const city = await page.evaluate(() => window.__lookdev.cityInfo());
+  expect(city.meshes).toBe(12);
+  await expect(page.locator("#varied")).toBeChecked();
+  await expect(page.locator("#city-materials")).toHaveValue("12");
+  await expect(page.locator("#city-finish")).toHaveValue("mixed");
   await expect(page.locator("#city-fill")).toHaveValue("100000@20");
   await expect(page.locator("#water-set")).toHaveValue("P50");
   await expect(page.locator("#shadows")).toBeChecked();
@@ -1587,7 +1598,13 @@ test("the page opens on the dense city, the P50 water, shadows, the catalog and 
   await expect(page.locator("#cloud-mode")).toHaveValue("slab");
   await expect(page.locator("#crease, #crease-radius")).toHaveCount(0);
   const hash = await page.evaluate(() => location.hash);
-  for (const key of ["shadows=1", "catalog=1", "cloudMode=slab"]) {
+  for (const key of [
+    "shadows=1",
+    "catalog=1",
+    "cloudMode=slab",
+    "varied=1",
+    "materials=12",
+  ]) {
     expect(hash).toContain(key);
   }
   // Named off, they turn off.

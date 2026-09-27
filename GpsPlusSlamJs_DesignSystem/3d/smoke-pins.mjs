@@ -20,6 +20,7 @@ export const SMOKE_PINS = {
   catalog: "0",
   cloudMode: "dome",
   ao: "0",
+  varied: "0",
 };
 
 /**

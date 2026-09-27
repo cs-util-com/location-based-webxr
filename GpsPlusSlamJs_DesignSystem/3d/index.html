@@ -209,6 +209,31 @@
               </select>
             </span>
             <label class="switch">
+              <input id="varied" type="checkbox" />
+              <span class="switch-track"></span>
+              Varied city materials (from the catalog)
+            </label>
+            <span class="select-wrap">
+              <select
+                id="city-materials"
+                class="select"
+                aria-label="City material count"
+              >
+                <option value="4">City: 4 catalog materials</option>
+                <option value="8">City: 8 catalog materials</option>
+                <option value="12">City: 12 catalog materials</option>
+              </select>
+            </span>
+            <span class="select-wrap">
+              <select id="city-finish" class="select" aria-label="City finish">
+                <option value="mixed">
+                  Finish: mixed (each material's own)
+                </option>
+                <option value="shiny">Finish: all shiny (roughness 0)</option>
+                <option value="matte">Finish: all matte (roughness 1)</option>
+              </select>
+            </span>
+            <label class="switch">
               <input id="shadows" type="checkbox" />
               <span class="switch-track"></span>
               Sun shadows (prototype)
