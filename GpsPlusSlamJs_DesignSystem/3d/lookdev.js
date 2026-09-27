@@ -692,9 +692,9 @@ function placeCamera(view) {
     camera.position.set(-900, 3200, 1100);
     controls.target.set(40, 0, 0);
   } else if (view === "catalog") {
-    // Close to the grid: the nearest row about 26 m away, the farthest
-    // about 60 m, all inside the labels' 140 m fade, so the nearest-labels
-    // cap K decides which show (W5 triage; round-3 plan 2026-09-27-0532).
+    // Close to the grid: the spheres 24-83 m away, all inside the labels'
+    // 140 m fade, so the nearest-labels cap K decides which of the spheres
+    // on screen show (W5 triage; round-3 plan 2026-09-27-0532).
     const [x0, y0, z0] = CATALOG_LAYOUT.origin;
     const cx = x0 + ((CATALOG_LAYOUT.perRow - 1) * CATALOG_LAYOUT.pitchM) / 2;
     camera.position.set(cx, y0 + 7, z0 + 50);
@@ -1378,6 +1378,12 @@ Object.assign(api, {
       x: mesh.position.x,
       y: mesh.position.y,
       z: mesh.position.z,
+      // Where its label is anchored, world space (catalog-view.js).
+      label: [
+        mesh.position.x,
+        mesh.position.y + CATALOG_LAYOUT.radiusM * 1.4,
+        mesh.position.z,
+      ],
     }));
   },
   /**

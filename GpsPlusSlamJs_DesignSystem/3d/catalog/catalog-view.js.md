@@ -10,7 +10,10 @@
     named "catalog", each mesh by its entry id, casting and receiving
     shadows (a sphere's shadow lands on its neighbours).
   - `createCatalogLabels(anchor, group, rule?)` - the overlay goes right
-    after `anchor` (the canvas), so the panel stays above it; - `{ render(scene,
+    after `anchor` (the canvas), so the panel stays above it; only
+    labels whose anchor is inside the camera frustum compete for the rule's
+    K (an off-screen anchor counts as infinitely far; round-3 review,
+    finding 1); - `{ render(scene,
 camera), setSize(w, h), visibleIds(), dispose() }`.
 - Invariants & assumptions:
   - On by default on the page since round 3 (plan 2026-09-27-0532,

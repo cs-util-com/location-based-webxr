@@ -20,62 +20,97 @@ const K_SWEEP = [16, 24, 41];
 /** The owner's fade (DEC round 3): full to 50 m, gone at 140 m. */
 const FADE = { near: 50, far: 140 };
 
+/** The viewports the K sweep runs at: the smoke's desktop and a portrait phone. */
+const VIEWPORTS = {
+  desktop: { width: 1280, height: 800 },
+  portrait: { width: 390, height: 844 },
+};
+
+/** Wait two animation frames, so the page has resized to a new viewport. */
+const settle = (page) =>
+  page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve)),
+      ),
+  );
+
 // WHY (owner feedback round 3, item 5): the labels appeared too close; the
 // owner asked for about twice the distance, so the fade runs 50-140 m (was
 // 25-70 m). From 100 m a label must show (the old rule hid it at 70 m), and
 // from past 140 m none. And K, the nearest-labels cap, now decides more than
-// the fade: at the catalog view every sphere is inside 140 m, so the count
-// shown is exactly min(K, spheres). The sweep over K is logged per view for
-// the owner (which labels each K shows).
-test("catalog labels show from about twice the old distance, and K caps them (K sweep logged)", async ({
+// the fade: at the catalog view every sphere is inside 140 m. K must be
+// spent on labels the viewer can SEE (round-3 review, finding 1): ranked by
+// distance alone, 6 of K = 16 went to spheres beside or behind the camera
+// while 6 spheres on screen got none. So every shown label's anchor is on
+// the canvas, and the count is exactly min(K, labels on screen), at the
+// desktop viewport and a portrait phone's. Logged per view for the owner.
+test("catalog labels show from about twice the old distance, and K caps the ON-SCREEN ones (K sweep logged)", async ({
   page,
 }) => {
   const errors = await boot(page, "preset=noon&tone=neutral&city=0&catalog=1");
-  const result = await page.evaluate(
-    ([ks, fade]) => {
+  const byDistance = await page.evaluate((fade) => {
+    const d = window.__lookdev;
+    d.pauseLoop(true);
+    d.setCloudCover(0);
+    const spheres = d.catalogSpheres();
+    // Stand straight back (+z) from the nearest row's middle sphere, at its
+    // height, so the nearest sphere is exactly `m` metres away.
+    const lastZ = Math.max(...spheres.map((s) => s.z));
+    const row = spheres.filter((s) => s.z === lastZ);
+    const mid = row[Math.floor(row.length / 2)];
+    const labelsFrom = (m) => {
+      d.placeCameraAt([mid.x, mid.y, mid.z + m], [mid.x, mid.y, mid.z]);
+      d.readPixels([[0.5, 0.5]]);
+      return d.catalogInfo().labelIds.length;
+    };
+    return { 100: labelsFrom(100), [fade.far + 5]: labelsFrom(fade.far + 5) };
+  }, FADE);
+  console.log(`labels by distance: ${JSON.stringify(byDistance)}`);
+  expect(byDistance[100]).toBeGreaterThan(0);
+  expect(byDistance[FADE.far + 5]).toBe(0);
+  for (const [name, viewport] of Object.entries(VIEWPORTS)) {
+    await page.setViewportSize(viewport);
+    await settle(page);
+    const sweep = await page.evaluate((ks) => {
       const d = window.__lookdev;
-      d.pauseLoop(true);
-      d.setCloudCover(0);
-      const spheres = d.catalogSpheres();
-      // Stand straight back (+z) from the nearest row's middle sphere, at its
-      // height, so the nearest sphere is exactly `m` metres away.
-      const lastZ = Math.max(...spheres.map((s) => s.z));
-      const row = spheres.filter((s) => s.z === lastZ);
-      const mid = row[Math.floor(row.length / 2)];
-      const labelsFrom = (m) => {
-        d.placeCameraAt([mid.x, mid.y, mid.z + m], [mid.x, mid.y, mid.z]);
-        d.readPixels([[0.5, 0.5]]);
-        return d.catalogInfo().labelIds.length;
-      };
-      const byDistance = {
-        100: labelsFrom(100),
-        [fade.far + 5]: labelsFrom(fade.far + 5),
-      };
-      const sweep = {};
+      const out = {};
       for (const view of ["catalog", "city", "lake", "sun", "antisun"]) {
-        sweep[view] = {};
+        out[view] = {};
         d.setView(view);
+        // A label anchor is on screen when it projects inside the canvas.
+        const onScreen = d
+          .catalogSpheres()
+          .filter((s) => {
+            const [u, v] = d.project(s.label);
+            return u >= 0 && u <= 1 && v >= 0 && v <= 1;
+          })
+          .map((s) => s.id);
         for (const k of ks) {
           d.setLabelRule({ k });
           d.readPixels([[0.5, 0.5]]);
-          sweep[view][k] = d.catalogInfo().labelIds;
+          out[view][k] = { shown: d.catalogInfo().labelIds, onScreen };
         }
       }
       d.setLabelRule({ k: 16 });
-      return { byDistance, sweep, entries: spheres.length };
-    },
-    [K_SWEEP, FADE],
-  );
-  for (const [view, byK] of Object.entries(result.sweep)) {
-    for (const [k, ids] of Object.entries(byK)) {
-      console.log(`labels ${view} K=${k}: ${ids.length} [${ids.join(", ")}]`);
+      return out;
+    }, K_SWEEP);
+    for (const [view, byK] of Object.entries(sweep)) {
+      for (const [k, { shown, onScreen }] of Object.entries(byK)) {
+        const off = shown.filter((id) => !onScreen.includes(id));
+        console.log(
+          `labels ${name} ${view} K=${k}: ${shown.length} shown of ${onScreen.length} on screen, ${off.length} off screen [${shown.join(", ")}]`,
+        );
+        expect(off, `${name} ${view} K=${k}: labels off screen`).toEqual([]);
+      }
     }
-  }
-  console.log(`labels by distance: ${JSON.stringify(result.byDistance)}`);
-  expect(result.byDistance[100]).toBeGreaterThan(0);
-  expect(result.byDistance[FADE.far + 5]).toBe(0);
-  for (const k of K_SWEEP) {
-    expect(result.sweep.catalog[k]).toHaveLength(Math.min(k, result.entries));
+    // At the catalog view every sphere is inside the fade, so K decides.
+    for (const k of K_SWEEP) {
+      const { shown, onScreen } = sweep.catalog[k];
+      expect(shown, `${name} catalog K=${k}`).toHaveLength(
+        Math.min(k, onScreen.length),
+      );
+    }
   }
   expect(errors).toEqual([]);
 });

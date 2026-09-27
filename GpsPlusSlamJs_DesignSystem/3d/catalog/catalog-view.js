@@ -83,6 +83,12 @@ export function buildCatalog(entries, layout = CATALOG_LAYOUT) {
  * The labels: a CSS2DRenderer overlay inserted right AFTER `anchor` (the
  * canvas), so the panel, a later sibling, stays above it; pointer events
  * off on the overlay. One label per sphere, shown per frame by the rule.
+ *
+ * ONLY LABELS THE CAMERA CAN SEE COMPETE FOR K: a label whose anchor lies
+ * outside the camera's frustum gets an infinite distance, which the rule
+ * hides and counts out of K. Ranked by distance alone, 6 of K = 16 went to
+ * spheres beside or behind the camera at the catalog view while 6 spheres
+ * on screen got none (round-3 review, finding 1).
  */
 export function createCatalogLabels(anchor, group, rule = LABEL_RULE) {
   const renderer = new CSS2DRenderer();
@@ -101,14 +107,24 @@ export function createCatalogLabels(anchor, group, rule = LABEL_RULE) {
   });
   const cameraPosition = new THREE.Vector3();
   const spherePosition = new THREE.Vector3();
+  const anchorPosition = new THREE.Vector3();
+  const frustum = new THREE.Frustum();
+  const viewProjection = new THREE.Matrix4();
   let visible = [];
   return {
     /** Per frame, after the scene render. */
     render(scene, camera) {
       camera.getWorldPosition(cameraPosition);
-      const distances = group.children.map((mesh) =>
-        mesh.getWorldPosition(spherePosition).distanceTo(cameraPosition),
+      viewProjection.multiplyMatrices(
+        camera.projectionMatrix,
+        camera.matrixWorldInverse,
       );
+      frustum.setFromProjectionMatrix(viewProjection);
+      const distances = group.children.map((mesh, i) => {
+        labels[i].getWorldPosition(anchorPosition);
+        if (!frustum.containsPoint(anchorPosition)) return Infinity;
+        return mesh.getWorldPosition(spherePosition).distanceTo(cameraPosition);
+      });
       const opacities = labelOpacities(distances, rule);
       visible = [];
       labels.forEach((label, i) => {
