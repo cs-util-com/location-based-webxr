@@ -132,6 +132,12 @@ const result = mintQrLevel({
 - `waitingFor(reason)` is exported: the visitor hint
   (`qr-debug-readout.ts`) reads the same copy (plan §66, DEC-H3).
 
+- `authorStatusLine(..., sizeCheckPending?)` adds "Take a step sideways to
+  check the print size." to the ready line while the print-size check has no
+  answer; `sizeOfferView(measuredM, typedM)` and `adoptedSizeNote(sizeM)`
+  are the offer's copy (QR size consensus plan S3a): approximate, the ruler
+  as arbiter, the field's unit (metres) beside the centimetres.
+
 ## Tests
 
 `qr-author-mode.test.ts` — the geo-less/local fetch pins, the cadence pin,

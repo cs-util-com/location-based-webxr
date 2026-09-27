@@ -28,6 +28,7 @@ import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import type { RenderedTourObjects } from "./content-placement.js";
 import type { FusedTallies, LastEvaluation } from "./qr-debug-readout.js";
+import type { PrintSizeCheck } from "./print-size-check.js";
 import type { ScanGate } from "./scan-gate.js";
 import type { PlacedImagePlanes } from "./image-planes.js";
 import type { TourViewerSeams } from "./seams.js";
@@ -149,6 +150,11 @@ export interface TourViewerSession {
    * last session's counts outlive it until the next one (plan §67 #10).
    */
   fusedTallies: FusedTallies | null;
+  /**
+   * The creator's print-size check (QR size consensus plan S3a); null for a
+   * visitor. Reset at AR session end and at a tour switch.
+   */
+  printSizeCheck: PrintSizeCheck | null;
   /** Whether the page was opened with `?debug=1` (read once at boot). */
   debug: boolean;
   /** The in-scene glue check (axis+cube on the code) — the one check a human
@@ -287,6 +293,7 @@ export function createTourViewerSession(): TourViewerSession {
     qrController: null,
     fusedPose: null,
     fusedTallies: null,
+    printSizeCheck: null,
     debug: false,
     qrDebugView: null,
     cameraFrameCount: 0,

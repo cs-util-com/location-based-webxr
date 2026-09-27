@@ -237,6 +237,10 @@ const setup = wireCreatorSetup({
     draftRestore: element("draft-restore"),
     draftDismiss: element("draft-dismiss"),
     draftDiscard: element("draft-discard"),
+    sizeOffer: element("size-offer"),
+    sizeOfferText: element("size-offer-text"),
+    sizeOfferUse: element("size-offer-use"),
+    sizeOfferKeep: element("size-offer-keep"),
   },
   // Crash-safe authoring (F13). OPFS, not a file handle: the File System
   // Access pickers do not exist on Chrome for Android, which is the only

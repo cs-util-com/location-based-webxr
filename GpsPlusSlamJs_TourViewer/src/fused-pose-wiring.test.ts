@@ -51,6 +51,27 @@ vi.mock("gps-plus-slam-app-framework/ar/qr/qr-tracking-controller", () => ({
   },
 }));
 
+// The creator's print-size check (QR size consensus plan S3a) is tested on
+// its own (print-size-check.test.ts); here a controllable stand-in, whose
+// defaults (no offer, nothing pending) leave the other tests as they were.
+const sizeCheck = vi.hoisted(() => ({
+  offer: null as { text: string; sizeM: number } | null,
+  detections: [] as string[],
+  answers: [] as [string, string][],
+}));
+vi.mock("./print-size-check.js", () => ({
+  createPrintSizeCheck: () => ({
+    onDetection: (text: string) => sizeCheck.detections.push(text),
+    offer: () => sizeCheck.offer,
+    pending: () => false,
+    answer: (text: string, answer: string) => {
+      sizeCheck.answers.push([text, answer]);
+      sizeCheck.offer = null;
+    },
+    reset: () => undefined,
+  }),
+}));
+
 const FUSED_SIZE_M = 0.16;
 const K = { fx: 820, fy: 820, cx: 512, cy: 384 };
 const yaw = (deg: number): Pose["rotation"] => [
@@ -236,6 +257,10 @@ describe("the creator measures and mints with the fused pose", () => {
     "draftRestore",
     "draftDismiss",
     "draftDiscard",
+    "sizeOffer",
+    "sizeOfferText",
+    "sizeOfferUse",
+    "sizeOfferKeep",
   ] as const;
   function el() {
     const handlers = new Map<string, () => void>();
@@ -284,6 +309,58 @@ describe("the creator measures and mints with the fused pose", () => {
       detect: (i: number) => config.onDetection?.(fusedEvent(TEXT, i)),
     };
   }
+
+  // QR size consensus plan S3a: the print is measured while the creator
+  // walks; a measured size on offer can be adopted, which must restart the
+  // measuring at that size and drop a position saved at the old one.
+  describe("the print-size offer", () => {
+    it("feeds every detection to the print-size check", () => {
+      sizeCheck.detections.length = 0;
+      const c = creator();
+      for (let i = 0; i < 3; i++) c.detect(i);
+      expect(sizeCheck.detections).toEqual([TEXT, TEXT, TEXT]);
+    });
+
+    it("shows the offer, and adopting it restarts measuring at the measured size", () => {
+      const c = creator();
+      c.detect(0);
+      expect(c.dom.sizeOffer.hidden).toBe(true);
+      sizeCheck.offer = { text: TEXT, sizeM: 0.1554 };
+      sizeCheck.answers.length = 0;
+      c.detect(1);
+      expect(c.dom.sizeOffer.hidden).toBe(false);
+      expect(c.dom.sizeOfferUse.textContent).toBe("Use 15.5 cm");
+      expect(c.dom.sizeOfferKeep.textContent).toBe("Keep 16.0 cm");
+      // A position saved at the old size (plan §12 #2).
+      c.ctx.mintedLevel = { id: "x", json: "{}" };
+      const generation = c.ctx.mintGeneration;
+      const controllers = captured.configs.length;
+      c.dom.sizeOfferUse.click();
+      expect(sizeCheck.answers).toEqual([[TEXT, "adopted"]]);
+      expect(c.dom.sizeInput.value).toBe("0.155");
+      expect(c.ctx.activeSizeM).toBe(0.155);
+      expect(c.ctx.mintedLevel).toBeNull();
+      expect(c.ctx.mintGeneration).toBe(generation + 1);
+      // A new controller, and the old size's detections are gone.
+      expect(captured.configs.length).toBe(controllers + 1);
+      expect(c.arStore.getState().qrDetected.markers[TEXT]).toBeUndefined();
+      expect(c.dom.sizeOfferUse.hidden).toBe(true);
+      expect(c.dom.sizeOfferText.textContent).toBe(
+        "Now using 15.5 cm (0.155 m) - walk slowly around the code again, then save the position.",
+      );
+    });
+
+    it("lets the creator keep the typed size", () => {
+      const c = creator();
+      sizeCheck.offer = { text: TEXT, sizeM: 0.1554 };
+      sizeCheck.answers.length = 0;
+      c.detect(0);
+      c.dom.sizeOfferKeep.click();
+      expect(sizeCheck.answers).toEqual([[TEXT, "kept"]]);
+      expect(c.dom.sizeOffer.hidden).toBe(true);
+      expect(c.dom.sizeInput.value).toBe(String(FUSED_SIZE_M));
+    });
+  });
 
   // Plan §66: the ?debug=1 readout counts the creator's evaluations too.
   it("counts each detection's fused evaluation for the debug readout", () => {

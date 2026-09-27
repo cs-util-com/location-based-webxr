@@ -119,6 +119,8 @@ export function authorStatusLine(
   detectedText: string | null,
   fused: QrFusedPose | null,
   alignment: MintAlignmentInfo,
+  /** The print-size check has no answer for this code yet (S3a). */
+  sizeCheckPending = false,
 ): AuthorReadout {
   if (detectedText === null || fused === null || fused.status === "unknown") {
     return {
@@ -142,9 +144,42 @@ export function authorStatusLine(
     };
   }
   return {
-    text: "Measured and stable — save the position.",
+    // The print-size check needs a sideways step that nothing else asks for
+    // (QR size consensus plan §12 #3); the mint is not held for it.
+    text: sizeCheckPending
+      ? `Measured and stable — save the position. ${SIZE_CHECK_HINT}`
+      : "Measured and stable — save the position.",
     canMint: true,
   };
+}
+
+/** What the ready line adds while the print-size check has no answer. */
+const SIZE_CHECK_HINT = "Take a step sideways to check the print size.";
+
+const cmText = (m: number): string => (m * 100).toFixed(1);
+
+/**
+ * The print-size offer (QR size consensus plan §11-§12, S3a): the measured
+ * size is approximate, the ruler decides, and the field's own unit (metres)
+ * stands beside the centimetres.
+ */
+export function sizeOfferView(
+  measuredM: number,
+  typedM: number,
+): { text: string; useLabel: string; keepLabel: string } {
+  return {
+    text:
+      `Your print measures about ${cmText(measuredM)} cm, but the printed-size ` +
+      `field says ${String(typedM)} m (${cmText(typedM)} cm) - a print dialog ` +
+      `may have shrunk it. Check the black square with a ruler to be sure.`,
+    useLabel: `Use ${cmText(measuredM)} cm`,
+    keepLabel: `Keep ${cmText(typedM)} cm`,
+  };
+}
+
+/** The confirmation after adopting a measured size: measuring starts over. */
+export function adoptedSizeNote(sizeM: number): string {
+  return `Now using ${cmText(sizeM)} cm (${String(sizeM)} m) - walk slowly around the code again, then save the position.`;
 }
 
 /**

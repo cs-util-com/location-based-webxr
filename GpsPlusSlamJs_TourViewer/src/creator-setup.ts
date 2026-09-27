@@ -10,8 +10,9 @@
  * off of the flows plan is gone: the zip is the artefact.
  *
  * The tracking controller is (re)created per AR entry so the printed-size
- * input is captured once at start (changing it means exit + re-enter -
- * cheap, and honest about what the synthetic level actually carried).
+ * input is captured once at start; the one mid-session change is adopting
+ * the print size the phone measured (QR size consensus plan S3a), which
+ * restarts the pipeline at that size and drops the old detections.
  */
 
 import { usablePhotoFrame } from "./photo-frame.js";
@@ -35,7 +36,9 @@ import {
   type TourManifest,
   type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { estimateQrSizeFromParallax } from "gps-plus-slam-app-framework/ar/qr";
 import {
+  clearQrMarker,
   recordQrDetection,
   selectAlignmentMatrix,
   selectGpsPositions,
@@ -84,14 +87,18 @@ import {
   finishBlockedHint,
   finishReadiness,
   MISSING_SIZE_MESSAGE,
+  adoptedSizeNote,
   setupHint,
+  sizeOfferView,
 } from "./qr-author-mode.js";
+import { createPrintSizeCheck } from "./print-size-check.js";
 import type { TourViewerSeams } from "./seams.js";
 import { archiveFileName } from "./tour-session.js";
-import type {
-  ArController,
-  TourViewerSession,
-  TourViewerStore,
+import {
+  endQrPipeline,
+  type ArController,
+  type TourViewerSession,
+  type TourViewerStore,
 } from "./tour-viewer-session.js";
 import type { Wizard } from "./wizard.js";
 
@@ -147,6 +154,12 @@ export interface CreatorSetupDom {
   draftRestore: HTMLButtonElement;
   draftDismiss: HTMLButtonElement;
   draftDiscard: HTMLButtonElement;
+  /** The print-size offer inside the panel (QR size consensus plan S3a):
+   *  its own element, because `status` is rewritten on every dispatch. */
+  sizeOffer: HTMLElement;
+  sizeOfferText: HTMLElement;
+  sizeOfferUse: HTMLButtonElement;
+  sizeOfferKeep: HTMLButtonElement;
 }
 
 /** Properties, not methods: they are handed to the hooks object unbound. */
@@ -332,6 +345,18 @@ export function wireCreatorSetup(deps: {
   dom.panel.hidden = !creator;
   dom.sizeInput.value = String(AUTHOR_DEFAULT_SIZE_M);
 
+  // The print-size check (QR size consensus plan S3a): measures the printed
+  // code by parallax while the creator walks; reset per AR session and per
+  // tour (ar-entry, archive-open).
+  ctx.printSizeCheck = createPrintSizeCheck({
+    estimate: (text) =>
+      estimateQrSizeFromParallax(
+        selectQrFusedEntries(arStore.getState(), text),
+      ),
+  });
+  /** The confirmation after adopting a size, until the code is stable again. */
+  let adoptedNote: string | null = null;
+
   /** True while the AR session is up: what gates the controls and the live
    *  measuring readout. Read from the controller rather than tracked, so
    *  it cannot drift out of step with the session it describes. */
@@ -390,7 +415,27 @@ export function wireCreatorSetup(deps: {
     dom.pinCancel.hidden = true;
   }
 
+  /** The print-size offer, or the confirmation after adopting one. */
+  function renderSizeOffer(): void {
+    const live = sessionLive();
+    if (!live) adoptedNote = null;
+    const offer = live ? (ctx.printSizeCheck?.offer() ?? null) : null;
+    dom.sizeOfferUse.hidden = offer === null;
+    dom.sizeOfferKeep.hidden = offer === null;
+    if (offer !== null) {
+      const view = sizeOfferView(offer.sizeM, ctx.activeSizeM);
+      dom.sizeOffer.hidden = false;
+      dom.sizeOfferText.textContent = view.text;
+      dom.sizeOfferUse.textContent = view.useLabel;
+      dom.sizeOfferKeep.textContent = view.keepLabel;
+      return;
+    }
+    dom.sizeOffer.hidden = adoptedNote === null;
+    dom.sizeOfferText.textContent = adoptedNote ?? "";
+  }
+
   function renderAuthorReadout(): void {
+    renderSizeOffer();
     if (!creator) return;
     renderPlacementButtons();
     // F11: the AR controls belong to the AR session. On the setup page they
@@ -468,6 +513,8 @@ export function wireCreatorSetup(deps: {
       ctx.lastDetectedText,
       fused,
       authorAlignmentInfo(),
+      ctx.lastDetectedText !== null &&
+        (ctx.printSizeCheck?.pending(ctx.lastDetectedText) ?? false),
     );
     // Once measured, the setup hint (what to do next) joins the live
     // measuring readout - re-measuring stays possible, and the readout's
@@ -849,6 +896,9 @@ export function wireCreatorSetup(deps: {
           // in several states (plan §61 #7). The readout and the mint read
           // this result.
           fusedPose.evaluate(event.text);
+          const fused = fusedPose.last(event.text);
+          ctx.printSizeCheck?.onDetection(event.text, fused, ctx.activeSizeM);
+          if (fused?.status === "stable") adoptedNote = null;
           ctx.qrDebugView?.update(event.qrPoseWorld, ctx.activeSizeM);
           renderAuthorReadout();
         },
@@ -861,6 +911,35 @@ export function wireCreatorSetup(deps: {
     renderAuthorReadout();
     return true;
   }
+
+  /**
+   * Adopt the measured print size (QR size consensus plan §11-§12): the size
+   * field takes it, a position saved at the old size stops counting (a mint
+   * hash still in flight lands on nothing), and measuring starts over at the
+   * new size - the old detections were solved at the old one.
+   */
+  function adoptMeasuredSize(): void {
+    const offer = ctx.printSizeCheck?.offer() ?? null;
+    if (offer === null || !sessionLive()) return;
+    const sizeM = Math.round(offer.sizeM * 1000) / 1000;
+    ctx.printSizeCheck?.answer(offer.text, "adopted");
+    dom.sizeInput.value = String(sizeM);
+    ctx.mintGeneration += 1;
+    ctx.mintedLevel = null;
+    endQrPipeline(ctx);
+    arStore.dispatch(clearQrMarker({ text: offer.text }));
+    startAuthorPipeline();
+    adoptedNote = adoptedSizeNote(sizeM);
+    if (draftTourUrl !== null) void recordMeta(draftTourUrl);
+    renderAuthorReadout();
+  }
+  dom.sizeOfferUse.addEventListener("click", adoptMeasuredSize);
+  dom.sizeOfferKeep.addEventListener("click", () => {
+    const offer = ctx.printSizeCheck?.offer() ?? null;
+    if (offer === null) return;
+    ctx.printSizeCheck?.answer(offer.text, "kept");
+    renderAuthorReadout();
+  });
 
   dom.mintButton.addEventListener("click", () => {
     if (ctx.lastDetectedText === null) return;

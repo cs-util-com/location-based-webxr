@@ -75,6 +75,10 @@ wireArEntry({ ctx, ... });
   page's `?debug=1`, set once at boot) and `viewerLastEvaluation` (the
   visitor hint's source, cleared at session end).
 
+- **`printSizeCheck`** (QR size consensus plan S3a): the creator's
+  print-size check, set by `wireCreatorSetup`, null for a visitor; reset at
+  AR session end (`ar-entry.ts`) and at a tour switch (`archive-open.ts`).
+
 ## Tests
 
 `tour-viewer-session.test.ts`: `endQrPipeline` disposes and forgets the

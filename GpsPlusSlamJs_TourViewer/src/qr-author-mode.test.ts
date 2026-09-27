@@ -21,6 +21,8 @@ import {
   finishHelpVisibility,
   finishIdleLabel,
   finishBusyLabel,
+  sizeOfferView,
+  adoptedSizeNote,
   type AuthorPipelineDeps,
 } from "./qr-author-mode";
 
@@ -106,6 +108,42 @@ describe("buildAuthorControllerConfig", () => {
 // The status line is the author's only view into the mint gate; the mint
 // itself now lives in the framework (qr-mint-level.test.ts) because a
 // second authoring surface needs it.
+describe("the print-size check's copy (QR size consensus plan S3a)", () => {
+  // Plan §12 #3: the mint usually comes before the size check has an
+  // answer, since nothing asked for the sideways step it needs.
+  it("asks for a sideways step on the ready line while the check is pending", () => {
+    const align = { hasMatrix: true, sampleCount: 5 };
+    const stable = {
+      status: "stable",
+      notStableReason: null,
+    } as unknown as QrFusedPose;
+    const ready = authorStatusLine("A", stable, align);
+    expect(ready.text).toBe("Measured and stable — save the position.");
+    const pending = authorStatusLine("A", stable, align, true);
+    expect(pending.text).toBe(
+      "Measured and stable — save the position. Take a step sideways to check the print size.",
+    );
+    // The mint is not held (plan §12 #3).
+    expect(pending.canMint).toBe(true);
+  });
+
+  // Plan §12 #1, #9, #10: an approximate figure, the ruler as the arbiter,
+  // and the field's own unit beside the centimetres.
+  it("offers the measured size in plain words, with a ruler check", () => {
+    expect(sizeOfferView(0.155, 0.16)).toEqual({
+      text: "Your print measures about 15.5 cm, but the printed-size field says 0.16 m (16.0 cm) - a print dialog may have shrunk it. Check the black square with a ruler to be sure.",
+      useLabel: "Use 15.5 cm",
+      keepLabel: "Keep 16.0 cm",
+    });
+  });
+
+  it("confirms an adopted size and says what to do next", () => {
+    expect(adoptedSizeNote(0.155)).toBe(
+      "Now using 15.5 cm (0.155 m) - walk slowly around the code again, then save the position.",
+    );
+  });
+});
+
 describe("authorStatusLine", () => {
   /** A fused result (QR near-frontal pose plan §60: the mint uses the fused pose). */
   const fused = (over: Partial<QrFusedPose> = {}): QrFusedPose => ({

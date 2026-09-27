@@ -62,7 +62,8 @@ The `data-testid` contract the e2e suite drives: `wizard`, `step-host`,
 `finish-block`,
 `finish-status`, `finish-download`, `replace-help`), `visitor-screen`,
 `stats`, `error`, `gallery`, `ar-hint`, `ar-status`, `ar-debug`, `enter-ar`,
-`setup-panel`, `setup-status`, `setup-controls`, `setup-mint`,
+`setup-panel`, `setup-status`, `size-offer`, `size-offer-text`,
+`size-offer-use`, `size-offer-keep`, `setup-controls`, `setup-mint`,
 `setup-pin`, `pin-label`, `pin-save`, `pin-cancel`, `setup-photo`,
 `setup-finish`, `scan-escape`.
 `#ar-debug` (a `<pre>` in `#ar-root`, hidden unless `?debug=1`) holds the

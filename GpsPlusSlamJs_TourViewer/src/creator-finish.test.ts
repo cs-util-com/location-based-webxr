@@ -95,6 +95,10 @@ const DOM_KEYS = [
   "draftRestore",
   "draftDismiss",
   "draftDiscard",
+  "sizeOffer",
+  "sizeOfferText",
+  "sizeOfferUse",
+  "sizeOfferKeep",
 ] as const;
 
 function fakeDom(): Record<(typeof DOM_KEYS)[number], FakeEl> {

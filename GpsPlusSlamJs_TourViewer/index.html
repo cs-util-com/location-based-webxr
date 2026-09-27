@@ -471,7 +471,7 @@
                   class="input"
                   data-testid="author-size"
                   type="number"
-                  step="0.01"
+                  step="0.001"
                   min="0.01"
                   value="0.16"
                 />
@@ -735,6 +735,26 @@
                an "AR not supported" button, which is what F11 reports. -->
           <div id="setup-panel" hidden data-testid="setup-panel">
             <div id="setup-status" data-testid="setup-status"></div>
+            <!-- The print-size offer (QR size consensus plan S3a): the phone
+                 measured the printed code; its own element because
+                 #setup-status is rewritten on every store change. -->
+            <div id="size-offer" data-testid="size-offer" hidden>
+              <p id="size-offer-text" data-testid="size-offer-text"></p>
+              <button
+                type="button"
+                id="size-offer-use"
+                class="btn btn--prose"
+                data-testid="size-offer-use"
+                hidden
+              ></button>
+              <button
+                type="button"
+                id="size-offer-keep"
+                class="btn btn--prose"
+                data-testid="size-offer-keep"
+                hidden
+              ></button>
+            </div>
             <div id="setup-controls" data-testid="setup-controls" hidden>
               <button
                 type="button"

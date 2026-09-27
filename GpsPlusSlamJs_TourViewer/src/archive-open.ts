@@ -146,6 +146,8 @@ export function wireArchiveOpen(deps: {
     // it keeps writing into the same map for the new tour's codes.
     ctx.viewerLastEvaluation = null;
     ctx.fusedTallies?.clear();
+    // The print-size check measured the closing tour's codes (S3a).
+    ctx.printSizeCheck?.reset();
     ctx.viewerPlanesError = null;
     ctx.placement = { kind: "idle" };
     if (ctx.session !== null) {
