@@ -212,8 +212,11 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   `latestFrame` keeps the last one. Each placement renders its own preview (`renderTourObjects`
   at the scene root; `ctx.placedPreviews`, one handle per object, so two
   placements cannot race each other's disposal and a photo is decoded
-  once). The outcome of a placement is `ctx.placementNote`, shown with
-  priority until the next tap. Placed objects survive a session end like
+  once). The outcome of a placement is `ctx.placementNote`, shown until
+  the next tap AHEAD of the live readout, never instead of it: it gates no
+  control (it used to replace the readout and lock Save, which on a device
+  without OPFS - the backup notice fires at tour open - left Save locked
+  for good; scan-to-open plan §5 #13). Placed objects survive a session end like
   the level; the finish step appends them to the manifest (at the wrapped
   path when the zip is wrapped) and writes the photos as
   `content/<id>.jpg`, then clears them - a re-opened tour or a re-measure

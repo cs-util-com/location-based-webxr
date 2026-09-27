@@ -211,9 +211,10 @@ export interface TourViewerSession {
    *  re-rendering everything per placement raced itself and re-decoded
    *  every photo, M4 review #7). */
   placedPreviews: RenderedTourObjects[];
-  /** The last placement's outcome, shown with priority in the panel until
-   *  the next tap (store dispatches re-render the readout at the frame
-   *  cadence and erased it within a frame, M4 review #3). */
+  /** The last placement's outcome (or a draft notice), shown ahead of the
+   *  live readout until the next tap; it gates no control (store
+   *  dispatches re-render the readout at the frame cadence and erased it
+   *  within a frame, M4 review #3). */
   placementNote: string | null;
   /** Bumped on every AR session end: an async continuation captures it
    *  and must not act on a session it did not start in (M3 review #2). */

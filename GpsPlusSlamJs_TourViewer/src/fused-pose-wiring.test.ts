@@ -23,6 +23,8 @@ import type {
   QrTrackingControllerConfig,
 } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
 import { qrFrameChanged } from "gps-plus-slam-app-framework/state";
+import { MIN_ALIGNMENT_SAMPLES } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
+import { Matrix4 } from "three";
 import type { TourViewerSeams } from "./seams.js";
 import {
   createTourViewerSession,
@@ -275,7 +277,28 @@ describe("the creator measures and mints with the fused pose", () => {
       click: () => handlers.get("click")?.(),
     };
   }
-  function creator() {
+  /** The real store, with a solved GPS alignment laid over its state: the
+   *  detections still flow through the real reducers, and the mint gate's
+   *  second half (the alignment) is met, so Save can unlock. */
+  function alignedOver(
+    real: ReturnType<typeof createTourViewerStore>,
+  ): ReturnType<typeof createTourViewerStore> {
+    const gpsData = {
+      zero: { lat: 47.5, lon: 8.7 },
+      gpsEvents: {
+        alignmentMatrix: new Matrix4(),
+        gpsPositions: Array.from({ length: MIN_ALIGNMENT_SAMPLES }, () => ({
+          lat: 47.5,
+          lon: 8.7,
+        })),
+      },
+    };
+    return {
+      ...real,
+      getState: () => ({ ...real.getState(), gpsData }) as never,
+    };
+  }
+  function creator(options: { aligned?: boolean } = {}) {
     captured.configs.length = 0;
     const dom = Object.fromEntries(DOM_KEYS.map((k) => [k, el()])) as Record<
       (typeof DOM_KEYS)[number],
@@ -283,7 +306,8 @@ describe("the creator measures and mints with the fused pose", () => {
     >;
     dom.sizeInput.value = String(FUSED_SIZE_M);
     const ctx = createTourViewerSession();
-    const arStore = createTourViewerStore();
+    const real = createTourViewerStore();
+    const arStore = options.aligned === true ? alignedOver(real) : real;
     const setup = wireCreatorSetup({
       ctx,
       mode: "creator",
@@ -306,6 +330,7 @@ describe("the creator measures and mints with the fused pose", () => {
       ctx,
       dom,
       arStore,
+      setup,
       detect: (i: number) => config.onDetection?.(fusedEvent(TEXT, i)),
     };
   }
@@ -388,6 +413,26 @@ describe("the creator measures and mints with the fused pose", () => {
     for (let i = 0; i < 7; i++) c.detect(i);
     // Stable; the mint then waits only for the GPS alignment.
     expect(c.dom.status.textContent).toMatch(/pose stable/i);
+  });
+
+  // TourViewer scan-to-open plan §5 #13 (a pre-existing bug): a note in
+  // the panel - "not saving a backup copy", a restored draft, a failed
+  // delete - replaced the live readout and locked Save until the next Pin
+  // or Photo tap. On a device without OPFS the backup note fires when the
+  // tour opens, before any measuring, so Save could never unlock: Pin and
+  // Photo need a saved position first.
+  it("keeps Save and the live readout when the panel carries a note", async () => {
+    const c = creator({ aligned: true });
+    c.setup.presentDraftForTour("https://example.test/tour.zip");
+    for (let i = 0; i < 12; i += 1) await Promise.resolve();
+    expect(
+      c.ctx.placementNote,
+      "the no-backup note must have fired, or this proves nothing",
+    ).toContain("not saving a backup copy");
+    for (let i = 0; i < 7; i++) c.detect(i);
+    expect(c.dom.status.textContent).toContain("not saving a backup copy");
+    expect(c.dom.status.textContent).toMatch(/measured and stable/i);
+    expect(c.dom.mintButton.disabled).toBe(false);
   });
 
   it("mints from the fused pose: the tap reaches the mint, which needs the alignment next", () => {

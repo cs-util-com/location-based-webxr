@@ -476,29 +476,29 @@ export function wireCreatorSetup(deps: {
       dom.finishButton.disabled = false;
       return;
     }
-    // A placement's outcome stands until the next tap (M4 review #3).
-    if (ctx.placementNote !== null) {
-      dom.status.textContent = ctx.placementNote;
-      dom.mintButton.disabled = true;
-      dom.finishButton.disabled =
-        finishReadiness({
-          measured: ctx.mintedLevel !== null,
-          tourOpen: ctx.session !== null,
-          manifest: ctx.tourManifestStatus,
-        }) !== "ready";
-      return;
-    }
+    const readiness = finishReadiness({
+      measured: ctx.mintedLevel !== null,
+      tourOpen: ctx.session !== null,
+      manifest: ctx.tourManifestStatus,
+    });
+    dom.finishButton.disabled = readiness !== "ready";
     // Everything above this line is a message about something that
-    // happened - an error, a rebuild, a placement - and is shown whenever
-    // it is true. Below is the LIVE measuring readout, which describes a
-    // camera: "hold the phone on the printed code so it fills the screen"
-    // on a desktop page with no session running is an instruction for a
-    // situation the creator is not in.
+    // happened - an error, a rebuild - and is shown whenever it is true.
+    // Below is the LIVE measuring readout, which describes a camera: "hold
+    // the phone on the printed code so it fills the screen" on a desktop
+    // page with no session running is an instruction for a situation the
+    // creator is not in.
     if (!sessionLive()) {
-      dom.status.textContent = "";
+      dom.status.textContent = ctx.placementNote ?? "";
       dom.mintButton.disabled = true;
       return;
     }
+    // A placement's outcome (or a draft notice) stands until the next tap
+    // (M4 review #3) AHEAD of the readout, never instead of it: in its
+    // place it also locked Save, and on a device without OPFS the backup
+    // notice fires at tour open, before any measuring - so Save never
+    // unlocked (scan-to-open plan §5 #13).
+    const lead = ctx.placementNote === null ? "" : `${ctx.placementNote} · `;
     // evaluate, not last: a cache hit unless the detections changed - and
     // after a tracking restart the old frame's result must not stand
     // (milestone review of b4b #1).
@@ -526,14 +526,8 @@ export function wireCreatorSetup(deps: {
         ? ` · ${placed(ctx.placedObjects.length)}`
         : "";
     dom.status.textContent =
-      (hint === "" ? readout.text : `${readout.text} · ${hint}`) + count;
+      lead + (hint === "" ? readout.text : `${readout.text} · ${hint}`) + count;
     dom.mintButton.disabled = !readout.canMint;
-    const readiness = finishReadiness({
-      measured: ctx.mintedLevel !== null,
-      tourOpen: ctx.session !== null,
-      manifest: ctx.tourManifestStatus,
-    });
-    dom.finishButton.disabled = readiness !== "ready";
     const blocked = finishBlockedHint(readiness);
     if (blocked !== "") dom.status.textContent += ` · ${blocked}`;
     if (readiness === "ready" && ctx.session !== null) {
