@@ -14,8 +14,8 @@
   folded on a phone), moved to the right. Every control writes its hash
   key and follows the hash back, so the hash is the one state and a link
   reproduces a view. Sections: Sun and time (the UTC hour of `#time=`,
-  "Now" removes it, sun intensity), Surface (night lights, water roughness,
-  cloud opacity), Camera and turn (field of view, the wait for a fix, the
+  "Now" removes it, the clock speed `timeScale`, sun intensity), Surface (night lights, water roughness,
+  cloud opacity, cloud drift), Camera and turn (field of view, the wait for a fix, the
   turn, "Replay the turn"), Tiles and memory (error target, tile cache,
   pixel-ratio cap). A control REPLACES the history entry and applies at
   once (a slider drag neither floods the back button nor waits for
@@ -27,11 +27,20 @@
 - Hash parameters and ranges (`PARAMS`, the one source for the sliders too;
   out of range, empty or malformed reads as the default): `spinMs`,
   `turnMs` (0-10000), `nightGain` (0-4), `waterRoughness`,
-  `cloudOpacity` (0-1), `sunIntensity` (0-8), `fovY` (20-80, default 50),
+  `cloudOpacity` (0-1), `cloudDrift` (0-10 °/s of scene time, default 0.5),
+  `sunIntensity` (0-8), `fovY` (20-80, default 50),
   `pixelRatio` (the cap, 0.5-4, default 2, what §7.2 sized the pyramid
   for), `errorTarget` (0.25-256), `cacheMiB` (8-4096), plus `at` and
-  `time` (a hand-typed `+02:00` offset works: form decoding's space is
-  turned back into "+").
+  the clock's `time` and `timeScale`.
+  - The clock (`/globe/globe-clock.js`, round-3 plan 2026-09-27-0532 §4 F):
+    `time=<ISO>` pins the scene's instant and the clock stands still (a
+    hand-typed `+02:00` offset works: form decoding's space is turned back
+    into "+"); `timeScale=<n>` (0-100000) runs it at n scene seconds per
+    real second, from the pin or from now; with neither it is the wall
+    clock. The sun reads it every frame. A clock is restarted only when
+    `time` or `timeScale` changes, from the pin (or now) again, so a link
+    reproduces the scene from its load. The plate's "Clock speed" select
+    shows the EFFECTIVE speed (0 when pinned, 1 when not).
   - The error target, the sun's intensity and the cache cap default to what
     the surface sets itself (read from the live surface at start:
     GeneratedSurfacePlugin's 1 px, the light's π, `GLOBE_SURFACE`'s 64 MiB),
@@ -43,8 +52,9 @@
     everything else applies live, so dragging a slider never replays the
     turn. `appliedHash` says when the page has applied a hash.
 - The light (M3): `solarPosition(time, 0, 0)` from `/fw/geo/solar-position.js`
-  through `sunDirectionEcef` into `globe.setSun`, every frame, for
-  `#time=<ISO>` or now; intensity π, Neutral tone mapping, no ambient
+  through `sunDirectionEcef` into `globe.setSun`, every frame, for the
+  clock's instant; the same instant sets the clouds' drift
+  (`cloudLonOffsetRad(time, cloudDrift)` into `uCloudLonOffset`); intensity π, Neutral tone mapping, no ambient
   light, a black sky (plan §7.3).
 - The intro (M2, `/globe/globe-target.js`, `/globe/globe-camera.js`):
   - `spin`: from 30°N 15°E, the view's longitude falling 3°/s, so the
@@ -65,12 +75,16 @@
     be ignored; phase 6 (the real locate timeout) has to decide that.
 - Test API, `window.__globeLab`: `ready`, `error`, `spinStart`, `state()`
   (`{ models, tileErrors, cachedBytes, pendingTiles, loadedTiles, phase,
-target, source, history, runs, spinMs, turnMs, centreLatLon, timeMs,
+target, source, history, runs, spinMs, turnMs, centreLatLon, timeMs, clock,
+cloudDrift, cloudLonOffsetRad,
 sunEcef, tuning, sunIntensity, fovY, pixelRatio, errorTarget,
 bytesDownloaded, tileRequestsByLevel, rendererMemory, appliedHash, radiusM, activeSources,
 loadingShown, loadingVisible, cacheBudgetBytes, cacheFloorBytes,
 creditShorts, mapsLoaded, mapErrors, mapsTotal, refusedTiles, distance }`;
   `tuning` is what the shader reads (the uniforms), not the hash;
+  `timeMs` is the clock's instant and `clock` its `{ startMs, scale }`
+  (the pin or null, and the effective scale); `cloudLonOffsetRad` is the
+  drift the shader reads;
   `bytesDownloaded` sums the resource timing log's `/globe-assets/`
   entries, whose buffer the page raises to 4000, counting cache hits too;
   `tileRequestsByLevel` counts the distinct imagery tiles requested per
@@ -133,10 +147,16 @@ creditShorts, mapsLoaded, mapErrors, mapsTotal, refusedTiles, distance }`;
     r745's CI runner timed out at 60 s), requires the tile count to hold
     for 1 s, and logs its time per view; the tests that settle several
     views carry an explicit budget.
-- `globe-sky.smoke.spec.mjs` (round-2 plan 2026-09-26-2055 DEC-FB2-4): level
-  4 of the imagery is requested and drawn without a tile error at a 0.25 px
-  error target (at the default 1 px on the fitted view it is not needed:
-  logged). Both specs share `globe-smoke-helpers.mjs` (the settle wait, the
-  hash wait, luminance and grids).
+- `globe-sky.smoke.spec.mjs` (round-3 plan §4 F): level 4 of the imagery
+  requested and drawn without a tile error at a 0.25 px error target (at
+  the default 1 px on the fitted view it is not needed: logged); the clock
+  pinned across
+  frames, a typed offset, `timeScale` running a pin, no `time` reading the
+  wall clock, and the plate's speed select; the cloud offset at two pinned
+  times and the drifted clouds in the pixels (not with the clouds off). The
+  M0-M4 checks in `globe.smoke.spec.mjs` pin `cloudDrift=0`, so their
+  clouds stay where they were measured. Both specs share
+  `globe-smoke-helpers.mjs` (the settle wait, the hash wait, luminance and
+  grids).
 - The memory and download table: `pnpm run measure:globe`
   (`measure-globe.mjs`), not a test.

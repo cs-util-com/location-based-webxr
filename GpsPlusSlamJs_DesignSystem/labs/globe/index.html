@@ -125,6 +125,16 @@
             </label>
             <button type="button" class="btn" data-time-now>Now</button>
             <label class="lookdev-field">
+              <span class="hint">Clock speed</span>
+              <select class="select" data-hash-key="timeScale">
+                <option value="0">Stopped</option>
+                <option value="1">Real time</option>
+                <option value="60">1 min per second</option>
+                <option value="600">10 min per second</option>
+                <option value="3600">1 h per second</option>
+              </select>
+            </label>
+            <label class="lookdev-field">
               <span class="hint"
                 >Sun intensity <output data-for="sunIntensity"></output
               ></span>
@@ -179,6 +189,19 @@
                 max="1"
                 step="0.05"
                 data-hash-key="cloudOpacity"
+              />
+            </label>
+            <label class="lookdev-field">
+              <span class="hint"
+                >Cloud drift (°/s) <output data-for="cloudDrift"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                min="0"
+                max="10"
+                step="0.1"
+                data-hash-key="cloudDrift"
               />
             </label>
           </div>

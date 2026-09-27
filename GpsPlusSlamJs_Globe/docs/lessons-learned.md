@@ -45,3 +45,9 @@
   has a standard error of 0.63 KiB and 3.7 was 1.5 of them low. A size
   estimate from a sample needs its spread reported with it.
   `globe-sources.test.ts` holds the total.
+- **A drift test at a whole-hour pin can see nothing.** At 0.5 °/s a full
+  turn takes 720 s, and every whole hour of epoch time is a whole number of
+  turns, so `cloudLonOffsetRad` at `2026-03-20T11:00:00Z` is exactly 0: the
+  same clouds as with the drift off. The first drift smoke compared those
+  two and measured a difference of 0.00. A pixel check of a drift needs an
+  instant (or a rate) where the offset is known to be non-zero, logged.

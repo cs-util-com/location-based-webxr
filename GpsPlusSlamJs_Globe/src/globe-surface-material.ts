@@ -1,7 +1,9 @@
 /**
  * The globe's surface patch (globe plan 2026-09-26-0539 §7.3, M3): night
  * lights on the dark side, a glint on the water, and the clouds, as one
- * string patch on three's physical shader, shared by every tile.
+ * string patch on three's physical shader, shared by every tile. The clouds
+ * drift east over the ground with the globe's clock (round-2 plan
+ * 2026-09-26-2055 M3f), so they read as a layer of their own.
  *
  * @see globe-surface-material.ts.md
  */
@@ -17,8 +19,16 @@ export const GLOBE_SURFACE_TUNING = {
   cloudOpacity: 0.8,
 } as const;
 
+/**
+ * The clouds' eastward drift, in degrees of longitude per scene second: a
+ * lab parameter, sized so the layer visibly moves within a few seconds at
+ * real time (about 1 px/s on a phone-sized globe). Real weather moves about
+ * a degree an hour; this is for reading the clouds as a layer, not physics.
+ */
+export const GLOBE_CLOUD_DRIFT_DEG_PER_S = 0.5;
+
 /** Every tile's program is the same one: three shares it by this key. */
-export const GLOBE_SURFACE_CACHE_KEY = "gps-plus-slam-globe-surface-v1";
+export const GLOBE_SURFACE_CACHE_KEY = "gps-plus-slam-globe-surface-v2";
 
 /** The one uniforms object every tile's shader reads. */
 export interface GlobeSurfaceUniforms {
@@ -29,6 +39,8 @@ export interface GlobeSurfaceUniforms {
   readonly uNightGain: { value: number };
   readonly uWaterRoughness: { value: number };
   readonly uCloudOpacity: { value: number };
+  /** How far east the clouds have drifted, radians in [0, 2π). */
+  readonly uCloudLonOffset: { value: number };
 }
 
 /**
@@ -50,7 +62,26 @@ export function createGlobeSurfaceUniforms(textures: {
     uNightGain: { value: GLOBE_SURFACE_TUNING.nightGain },
     uWaterRoughness: { value: GLOBE_SURFACE_TUNING.waterRoughness },
     uCloudOpacity: { value: GLOBE_SURFACE_TUNING.cloudOpacity },
+    uCloudLonOffset: { value: 0 },
   };
+}
+
+/**
+ * The clouds' drift at a scene instant (epoch ms, the globe clock's), for a
+ * rate in degrees per scene second: radians east, wrapped into [0, 2π). An
+ * absolute function of the instant, so a pinned time gives the same clouds
+ * on every load. Exact to about 1e-7 rad at today's epoch for rates up to
+ * 10 °/s. RangeError for a non-finite instant or rate.
+ */
+export function cloudLonOffsetRad(sceneMs: number, degPerS: number): number {
+  if (!Number.isFinite(sceneMs) || !Number.isFinite(degPerS)) {
+    throw new RangeError(
+      `cloud drift needs a finite instant and rate, got ${sceneMs}, ${degPerS}`,
+    );
+  }
+  const deg = ((((degPerS * sceneMs) / 1000) % 360) + 360) % 360;
+  // A tiny negative remainder can round up to exactly 360.
+  return deg >= 360 ? 0 : (deg * Math.PI) / 180;
 }
 
 const VERTEX_DECLARATIONS = /* glsl */ `
@@ -73,7 +104,8 @@ uniform sampler2D uWater;
 uniform sampler2D uClouds;
 uniform float uNightGain;
 uniform float uWaterRoughness;
-uniform float uCloudOpacity;`;
+uniform float uCloudOpacity;
+uniform float uCloudLonOffset;`;
 
 /**
  * After the overlay's colour is in diffuseColor: the latitude and longitude
@@ -82,6 +114,8 @@ uniform float uCloudOpacity;`;
  * the coarsest mip for a 1-px line: the gradients come from whichever of
  * two wraps (seam at 180° or at 0°) changes less across the pixel
  * (Tarini's method), computed before any choice so they stay defined.
+ * The clouds are read uCloudLonOffset further west, so they drift east: a
+ * continuous shift of a repeat-wrapped map, so the same gradients serve.
  */
 const FRAGMENT_SAMPLES = /* glsl */ `
 vec3 globeN = normalize( vGeoNormal );
@@ -96,7 +130,7 @@ bool globeWrap = fwidth( globeU2 ) < fwidth( globeU );
 vec2 globeDx = globeWrap ? globeDx2 : globeDx1;
 vec2 globeDy = globeWrap ? globeDy2 : globeDy1;
 vec2 globeUv = vec2( globeU, globeV );
-float globeCloud = textureGrad( uClouds, globeUv, globeDx, globeDy ).r;
+float globeCloud = textureGrad( uClouds, globeUv - vec2( uCloudLonOffset * 0.15915494309189535, 0.0 ), globeDx, globeDy ).r;
 float globeWater = textureGrad( uWater, globeUv, globeDx, globeDy ).g;
 vec3 globeNight = textureGrad( uNight, globeUv, globeDx, globeDy ).rgb;
 diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 1.0 ), globeCloud * uCloudOpacity );`;

@@ -36,10 +36,12 @@ const TEXTURE_MIN_SPREAD = 15;
  * The M0-M1 checks were measured on this view: over North Africa and
  * Europe, arrived at once (no spin, no turn), so the pixels do not move,
  * at 11:00 UTC on an equinox, when the sun stands over 16.9°E (M3's real sun
- * would otherwise put the view on the night side half the time).
+ * would otherwise put the view on the night side half the time). The cloud
+ * drift is pinned off (`cloudDrift=0`: the clouds where M1-M4 measured
+ * them); the drift has its own checks in `globe-sky.smoke.spec.mjs`.
  */
 const FIXED_VIEW =
-  "/labs/globe/#at=30,15&spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z";
+  "/labs/globe/#at=30,15&spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0";
 
 test("the globe boots, draws a lit Earth, and stays on this machine", async ({
   page,
@@ -339,9 +341,15 @@ const M3 = { day: 30, night: 40, glint: 40, seamRatio: 1.5 };
 const SWEEP = [0.5, 1, 1.5];
 const EQUINOX_NOON = "time=2026-03-20T12:00:00Z";
 
-/** Goes to `lat,lng` with the given extra hash, arrived and settled. */
+/**
+ * Goes to `lat,lng` with the given extra hash, arrived and settled; the
+ * cloud drift pinned off, so the clouds sit where M3 measured them.
+ */
 async function viewAt(page, lat, lng, extra) {
-  await applyHash(page, `at=${lat},${lng}&spinMs=0&turnMs=0&${extra}`);
+  await applyHash(
+    page,
+    `at=${lat},${lng}&spinMs=0&turnMs=0&cloudDrift=0&${extra}`,
+  );
   return arriveAt(page, { lat, lng });
 }
 
@@ -458,7 +466,7 @@ test("the real sun: a lit day side, night lights, and a water glint", async ({
 const SEAM_VIEW_LNG = 179.894;
 test("no seam at the 180° line", async ({ page }) => {
   await page.goto(
-    `/labs/globe/#at=0,${SEAM_VIEW_LNG}&spinMs=0&turnMs=0&time=2026-03-20T00:00:00Z`,
+    `/labs/globe/#at=0,${SEAM_VIEW_LNG}&spinMs=0&turnMs=0&time=2026-03-20T00:00:00Z&cloudDrift=0`,
   );
   await page.waitForFunction(() => window.__globeLab?.ready, null, {
     timeout: 90_000,
@@ -569,6 +577,7 @@ test("every control on the plate writes the hash and applies", async ({
   expect(keys.sort()).toEqual(
     [
       "cacheMiB",
+      "cloudDrift",
       "cloudOpacity",
       "errorTarget",
       "fovY",
@@ -576,6 +585,7 @@ test("every control on the plate writes the hash and applies", async ({
       "pixelRatio",
       "spinMs",
       "sunIntensity",
+      "timeScale",
       "turnMs",
       "waterRoughness",
     ].sort(),

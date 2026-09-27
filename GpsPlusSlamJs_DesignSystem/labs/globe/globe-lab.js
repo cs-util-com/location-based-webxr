@@ -28,7 +28,16 @@ import {
   turnPose,
 } from "/globe/globe-camera.js";
 import { sunDirectionEcef } from "/globe/globe-sun.js";
-import { GLOBE_SURFACE_TUNING } from "/globe/globe-surface-material.js";
+import {
+  GLOBE_CLOUD_DRIFT_DEG_PER_S,
+  GLOBE_SURFACE_TUNING,
+  cloudLonOffsetRad,
+} from "/globe/globe-surface-material.js";
+import {
+  readGlobeClockSetting,
+  sameGlobeClockSetting,
+  startGlobeClock,
+} from "/globe/globe-clock.js";
 import { solarPosition } from "/fw/geo/solar-position.js";
 
 const canvas = document.getElementById("globe-canvas");
@@ -152,6 +161,7 @@ const PARAMS = {
     max: 1,
   },
   cloudOpacity: { fallback: GLOBE_SURFACE_TUNING.cloudOpacity, min: 0, max: 1 },
+  cloudDrift: { fallback: GLOBE_CLOUD_DRIFT_DEG_PER_S, min: 0, max: 10 },
   sunIntensity: { fallback: null, min: 0, max: 8 },
   fovY: { fallback: 50, min: 20, max: 80 },
   pixelRatio: { fallback: 2, min: 0.5, max: 4 },
@@ -181,24 +191,22 @@ function readParam(params, name) {
 }
 
 /**
- * An instant from the hash (`#time=<ISO>`), or null for "now". A hand-typed
- * offset's "+" arrives as a space (form decoding), so it is put back.
+ * The lab's parameters from the hash: `#at=<lat>,<lng>`, the clock
+ * (`time=<ISO>` pins the instant, `timeScale=<n>` runs it; the globe
+ * package's `globe-clock.ts`), and PARAMS. `timeScale` is the clock's
+ * EFFECTIVE scale, which the plate shows.
  */
-function readTime(params) {
-  const ms = Date.parse((params.get("time") ?? "").replaceAll(" ", "+"));
-  return Number.isFinite(ms) ? ms : null;
-}
-
-/** The lab's parameters from the hash: `#at=<lat>,<lng>`, `time=<ISO>`, PARAMS. */
 function readHashParams() {
   const params = new URLSearchParams(location.hash.slice(1));
   const values = Object.fromEntries(
     Object.keys(PARAMS).map((name) => [name, readParam(params, name)]),
   );
+  const clock = readGlobeClockSetting(params);
   return {
     ...values,
     url: parseLatLngText(params.get("at")),
-    timeMs: readTime(params),
+    clock,
+    timeScale: clock.scale ?? (clock.startMs === null ? 1 : 0),
   };
 }
 
@@ -312,10 +320,11 @@ const shown = (value) => String(Math.round(value * 100) / 100);
  * controls follow the hash back (a pasted link, an edited hash). A control
  * REPLACES the history entry and applies at once through `apply`, so a
  * slider drag neither floods the back button nor waits for `hashchange`.
- * The hour slider sets the UTC hour of `#time=` (today's date when none is
- * set; minutes snap to its 15-minute steps); "Now" removes `#time=`.
+ * The hour slider sets the UTC hour of `#time=` (the clock's date; minutes
+ * snap to its 15-minute steps); "Now" removes `#time=`. `sceneMs` reads
+ * the clock.
  */
-function bindPanel(getParams, apply) {
+function bindPanel(getParams, apply, sceneMs) {
   const fields = [...document.querySelectorAll("[data-hash-key]")];
   const hour = document.querySelector("[data-time-hour]");
   const now = document.querySelector("[data-time-now]");
@@ -349,10 +358,10 @@ function bindPanel(getParams, apply) {
       field.value = value;
       show(key, shown(params[key]));
     }
-    const date = new Date(params.timeMs ?? Date.now());
+    const date = new Date(sceneMs());
     const h = date.getUTCHours() + date.getUTCMinutes() / 60;
     hour.value = String(h);
-    show("hour", params.timeMs === null ? "now" : `${shown(h)} UTC`);
+    show("hour", params.clock.startMs === null ? "now" : `${shown(h)} UTC`);
   };
   for (const field of fields) {
     const event = field.tagName === "SELECT" ? "change" : "input";
@@ -361,7 +370,7 @@ function bindPanel(getParams, apply) {
     );
   }
   hour.addEventListener("input", () => {
-    const date = new Date(getParams().timeMs ?? Date.now());
+    const date = new Date(sceneMs());
     date.setUTCHours(0, Math.round(Number(hour.value) * 60), 0, 0);
     write("time", date.toISOString());
   });
@@ -429,6 +438,14 @@ function start() {
   const flight = introFlight(globe.tiles.ellipsoid);
   let params = readHashParams();
   let appliedHash = location.hash.slice(1);
+  /** The globe's one clock; restarted only when its setting changes. */
+  const startClock = () =>
+    startGlobeClock(params.clock, {
+      epochMs: Date.now(),
+      monoMs: performance.now(),
+    });
+  let clock = startClock();
+  const sceneMs = () => clock.timeAt(performance.now());
   /**
    * Everything but the intro's target and timing, applied at once. The
    * field of view and the pixel ratio refit the camera and resize the
@@ -455,23 +472,33 @@ function start() {
   const onHash = () => {
     const next = readHashParams();
     const restart = flightKey(next) !== flightKey(params);
+    const clockChanged = !sameGlobeClockSetting(next.clock, params.clock);
     params = next;
+    if (clockChanged) clock = startClock();
     if (restart) flight.restart(performance.now(), params);
     applyLive();
     syncPanel();
     appliedHash = location.hash.slice(1);
   };
-  /** The sun of `#time=`, or of now (it moves 0.25° a minute). */
+  /**
+   * Everything the clock drives, at its instant: the sun (it moves 0.25° a
+   * minute) and the clouds' drift. Returns the instant.
+   */
   const sunNow = () => {
-    const ms = params.timeMs ?? Date.now();
+    const ms = sceneMs();
     globe.setSun(
       sunDirectionEcef(globe.tiles.ellipsoid, solarPosition(ms, 0, 0)),
+    );
+    globe.surfaceUniforms.uCloudLonOffset.value = cloudLonOffsetRad(
+      ms,
+      params.cloudDrift,
     );
     return ms;
   };
   const syncPanel = bindPanel(
     () => params,
     () => onHash(),
+    sceneMs,
   );
   flight.restart(performance.now(), params);
   applyLive();
@@ -544,6 +571,10 @@ function start() {
       appliedHash,
       centreLatLon: centreLatLon(),
       timeMs: sunNow(),
+      clock: { ...params.clock, scale: clock.scale },
+      cloudDrift: params.cloudDrift,
+      // What the shader reads: the clouds' drift east, radians.
+      cloudLonOffsetRad: globe.surfaceUniforms.uCloudLonOffset.value,
       sunEcef: globe.surfaceUniforms.uSunEcef.value.toArray(),
       // What the shader reads, not what the hash says.
       tuning: {
