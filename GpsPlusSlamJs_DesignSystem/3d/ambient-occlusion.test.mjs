@@ -148,6 +148,47 @@ describe("hiddenFromAoNormals", () => {
   it("never hides a group (its children decide for themselves)", () => {
     assert.equal(hiddenFromAoNormals(new THREE.Group()), false);
   });
+
+  // THE RULE'S EDGES (review of fb79e7c0, finding 7), pinned so a change of
+  // behaviour is a decision, not an accident; the sidecar explains each.
+  it("edge (a): a transparent mesh that DOES write depth is still left out", () => {
+    // The main pass has it in its depth; the AO then reads what is behind it.
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(),
+      new THREE.MeshStandardMaterial({ transparent: true, depthWrite: true }),
+    );
+    assert.equal(hiddenFromAoNormals(mesh), true);
+  });
+
+  it("edge (b): hiding a left-out parent hides its opaque children with it", () => {
+    // three's `visible` hides a whole subtree, so an opaque child of a sky
+    // or cloud mesh would lose its AO. The page has no such child (the
+    // framework's sky, sheet and slab meshes are never given children).
+    const scene = new THREE.Scene();
+    const parent = new THREE.Mesh(
+      new THREE.BoxGeometry(),
+      new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false }),
+    );
+    parent.name = "parent";
+    const child = new THREE.Mesh(
+      new THREE.BoxGeometry(),
+      new THREE.MeshStandardMaterial(),
+    );
+    child.name = "child";
+    parent.add(child);
+    scene.add(parent);
+    assert.equal(hiddenFromAoNormals(child), false, "the child is opaque");
+    const pass = new (withPageExclusions(GTAOPass))(
+      scene,
+      new THREE.PerspectiveCamera(),
+    );
+    const renderer = recordingRenderer();
+    pass.render(renderer, target(), target());
+    const normalPass = renderer.draws.find(
+      (d) => d.override === pass.normalMaterial,
+    );
+    assert.deepEqual(normalPass.visible, [], "the child went with its parent");
+  });
 });
 
 describe("withPageExclusions(GTAOPass), against three's real pass", () => {
@@ -270,6 +311,56 @@ describe("withPageExclusions(GTAOPass), against three's real pass", () => {
     );
   });
 
+  it("refuses to be the last pass (its blend multiplies the scene target, not the screen)", () => {
+    // Drawn to the screen, the multiply would land on a canvas that never
+    // received the scene: a silent wrong picture (review finding 9).
+    const pass = new (withPageExclusions(GTAOPass))(
+      pageLikeScene(),
+      new THREE.PerspectiveCamera(),
+    );
+    pass.renderToScreen = true;
+    assert.throws(
+      () => pass.render(recordingRenderer(), target(), target()),
+      /last pass/,
+    );
+  });
+
+  it("takes the blend intensity as a parameter (0 draws no AO)", () => {
+    const pass = new (withPageExclusions(GTAOPass))(
+      new THREE.Scene(),
+      new THREE.PerspectiveCamera(),
+      4,
+      4,
+      undefined,
+      { ...AO_PARAMS, intensity: 0 },
+    );
+    assert.equal(pass.blendIntensity, 0);
+    pass.updateGtaoMaterial({ intensity: 0.5 });
+    pass.render(recordingRenderer(), target(), target());
+    assert.equal(pass.blendMaterial.uniforms.intensity.value, 0.5);
+    assert.equal(AO_PARAMS.intensity, 1, "the page ships three's full blend");
+  });
+
+  it("disposes the materials three's own dispose leaves behind", () => {
+    // three r185's GTAOPass.dispose frees neither its AO material nor its
+    // blend material (review finding 8); the page rebuilds the pass on
+    // every tier switch.
+    const pass = new (withPageExclusions(GTAOPass))(
+      new THREE.Scene(),
+      new THREE.PerspectiveCamera(),
+    );
+    const disposed = new Set();
+    for (const name of ["gtaoMaterial", "blendMaterial", "normalMaterial"]) {
+      pass[name].addEventListener("dispose", () => disposed.add(name));
+    }
+    pass.dispose();
+    assert.deepEqual([...disposed].sort(), [
+      "blendMaterial",
+      "gtaoMaterial",
+      "normalMaterial",
+    ]);
+  });
+
   it("sizes its targets by its resolution scale", () => {
     const PagePass = withPageExclusions(GTAOPass);
     const pass = new PagePass(new THREE.Scene(), new THREE.PerspectiveCamera());
@@ -365,6 +456,28 @@ describe("createAmbientOcclusion", () => {
     assert.equal(ao.pass.gtaoRenderTarget.width, 1000, "re-sized at once");
     assert.throws(() => ao.configure({ resolutionScale: 0 }), RangeError);
     assert.throws(() => ao.configure({ resolutionScale: 2 }), RangeError);
+  });
+
+  it("refuses on Oculus Browser, where the scene it multiplies is discarded", () => {
+    // three invalidates a multisampled colour buffer after resolving it when
+    // the user agent is Oculus Browser (WebGLTextures,
+    // `supportsInvalidateFramebuffer`), so the in-place blend would multiply
+    // undefined content there (review finding 3).
+    const quest =
+      "Mozilla/5.0 (X11; Linux x86_64; Quest 3) AppleWebKit/537.36 (KHTML, like Gecko) OculusBrowser/35.1 Chrome/126 VR Safari/537.36";
+    const ao = createAmbientOcclusion({
+      GTAOPass,
+      scene: new THREE.Scene(),
+      camera: new THREE.PerspectiveCamera(),
+      userAgent: quest,
+    });
+    const composer = fakeComposer();
+    ao.sync(composer, true);
+    assert.equal(ao.pass, null);
+    assert.equal(ao.active, false);
+    assert.equal(composer.passes.length, 3);
+    assert.match(ao.unsupported, /Oculus Browser/);
+    assert.equal(make().unsupported, null, "any other browser draws it");
   });
 
   it("forgets its pass with the composer that held it (the phone tier has none)", () => {

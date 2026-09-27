@@ -800,7 +800,7 @@ function frame(now) {
     ? `GPU ${gpuMs === null ? "…" : gpuMs.toFixed(2)} ms`
     : "GPU n/a";
   $("[data-stats]").textContent =
-    `${state.tier} · AO ${ambientOcclusion.active ? "on" : state.ao ? "on (desktop tier only)" : "off"} · clouds ${state.cloudMode} · shadows ${sunShadow ? `on (${sunShadow.renders} maps, central ${shadowParams.halfWidthM} m${ringShadow ? `, ring ${RING_HALF_WIDTH_M} m` : ""})` : shadowsBelowFloor ? "on (sun below 2°)" : "off"} · ${frameMs.toFixed(1)} ms/frame · ${gpu} · ${renderer.info.render.calls} draws · ` +
+    `${state.tier} · AO ${ambientOcclusion.active ? "on" : !state.ao ? "off" : ambientOcclusion.unsupported ? "n/a on Oculus Browser" : "on (desktop tier only)"} · clouds ${state.cloudMode} · shadows ${sunShadow ? `on (${sunShadow.renders} maps, central ${shadowParams.halfWidthM} m${ringShadow ? `, ring ${RING_HALF_WIDTH_M} m` : ""})` : shadowsBelowFloor ? "on (sun below 2°)" : "off"} · ${frameMs.toFixed(1)} ms/frame · ${gpu} · ${renderer.info.render.calls} draws · ` +
     `${(renderer.info.render.triangles / 1000).toFixed(0)}k tris · LUT ${lutMs.toFixed(1)} ms`;
   requestAnimationFrame(frame);
 }
@@ -886,13 +886,16 @@ Object.assign(api, {
    * Test surface: the AO checks' world points (see ambient-occlusion.js.md).
    * `crease`: the ground 0.3 m in front of the city view's nearest
    * building's +z wall, mid-wall; `open`: ground 25 m out from its -x
-   * wall (open at the AO's metre scale); `far`: the ground 0.3 m in front of the +z wall of the dense
-   * lot nearest a point 1.5 km out, 25° right of the city view's line of
-   * sight (clear of the block; null while the dense city is off);
-   * `ridgeFoot`: where the first ridge (2.5 km) meets the ground toward
-   * the sun, which the sun view looks at.
+   * wall (open at the AO's metre scale); `farCrease`: the block's
+   * farthest crease the camera sees (the ground 0.3 m in front of a -x or
+   * +z wall, mid-wall, clear of every block building on the line of sight),
+   * with `farCreaseM` its distance; `far`: the ground 0.3 m in front of the
+   * +z wall of the dense lot nearest a point `farM` (1500) out, 25° right
+   * of the view's line of sight (clear of the block; null while the dense
+   * city is off); `ridgeFoot`: where the first ridge (2.5 km) meets the
+   * ground toward the sun, which the sun view looks at.
    */
-  aoProbe() {
+  aoProbe({ farM = 1500 } = {}) {
     const near = parts.city.children.find(
       (b) => b.position.x === -126 && b.position.z === 126,
     );
@@ -908,8 +911,8 @@ Object.assign(api, {
       const right = new THREE.Vector3(-forward.z, 0, forward.x);
       const aim = camera.position
         .clone()
-        .addScaledVector(forward, 1500 * Math.cos(25 * DEG))
-        .addScaledVector(right, 1500 * Math.sin(25 * DEG));
+        .addScaledVector(forward, farM * Math.cos(25 * DEG))
+        .addScaledVector(right, farM * Math.sin(25 * DEG));
       const matrix = new THREE.Matrix4();
       const position = new THREE.Vector3();
       const quaternion = new THREE.Quaternion();
@@ -926,9 +929,32 @@ Object.assign(api, {
         }
       }
     }
+    let farCrease = null;
+    let farCreaseM = 0;
+    const ray = new THREE.Raycaster();
+    const toPoint = new THREE.Vector3();
+    for (const b of parts.city.children) {
+      const walls = [
+        [b.position.x - b.scale.x / 2 - 0.3, b.position.z],
+        [b.position.x, b.position.z + b.scale.z / 2 + 0.3],
+      ];
+      for (const [x, z] of walls) {
+        const point = new THREE.Vector3(x, 0.06, z);
+        const distance = point.distanceTo(camera.position);
+        if (distance <= farCreaseM) continue;
+        toPoint.copy(point).sub(camera.position).normalize();
+        ray.set(camera.position, toPoint);
+        ray.far = distance - 0.05;
+        if (ray.intersectObjects(parts.city.children, false).length) continue;
+        farCrease = [x, 0.06, z];
+        farCreaseM = distance;
+      }
+    }
     const toSun = sunVector();
     const flat = Math.hypot(toSun.x, toSun.z) || 1;
     return {
+      farCrease,
+      farCreaseM,
       crease: [near.position.x, 0.06, nearFront + 0.3],
       open: [near.position.x - near.scale.x / 2 - 25, 0.06, near.position.z],
       far,

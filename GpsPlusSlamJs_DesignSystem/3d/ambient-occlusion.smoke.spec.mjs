@@ -3,7 +3,8 @@
  * The look-dev page's screen-space ambient occlusion (round-3 plan
  * 2026-09-27-0532, stream C; round-2 plan 2026-09-26-2055 M2e). Parameters
  * and the swept tolerances: ambient-occlusion.js.md and the record
- * GpsPlusSlamJs_Docs/docs/2026-09-27-*-lookdev-gtao-results.md.
+ * GpsPlusSlamJs_Docs/docs/2026-09-27-0716-lookdev-gtao-results.md and its
+ * review-fixes addendum.
  *
  * Why this file matters: the owner looked for the AO in the plate and did
  * not find it, and its known failure modes are all silent: a darkened sky
@@ -70,18 +71,19 @@ async function installHelpers(page) {
 /** The crease must darken by at least this (measured 11.1-15.8). */
 const CREASE_MIN = 3;
 /**
- * Open ground 25 m from the nearest wall (measured <= 0.13). A BOUND, not
- * a detector: no mutation within reach can make it fail, because on this
- * ground the AO physically reaches only about 4 m from a wall at every
- * radius swept (5, 10, 20, 40 m: 0.09-0.61 at 4 m, 0-0.07 from 8 m out;
- * record doc). It guards against AO spreading over open ground, and the
- * same measurement is shown able to see AO at the crease.
+ * Open ground 25 m from the nearest wall (measured <= 0.13). A larger
+ * radius does NOT reach it (radius = thickness 40 and 80 m: 0; the AO
+ * stays within ~4 m of a wall), but a distance exponent of 3 does: its
+ * samples crowd the pixel and the ground occludes itself (7.2 levels).
+ * That is the in-run mutation (review addendum).
  */
 const OPEN_MAX = 0.5;
 /** The sky and the clouds (measured 0). */
 const SKY_MAX = 0.5;
-/** Hazed distance: the dense city 1.5 km out, the ridge foot at 2.5 km (measured 0). */
+/** Hazed distance: the dense city 800 m out, the ridge foot at 2.5 km (measured <= 0.44). */
 const FAR_MAX = 0.5;
+/** The dense-city probe's distance: past the fade's end (700 m). */
+const FAR_CITY_M = 800;
 
 test("AO darkens the crease, and leaves open ground and the hazed distance alone", async ({
   page,
@@ -106,33 +108,44 @@ test("AO darkens the crease, and leaves open ground and the hazed distance alone
       const f = api.project(api.aoProbe().ridgeFoot);
       const sun = H.pair();
       const ridge = H.worst(sun.off, sun.on, f, 60, 14);
-      // THE MUTATIONS, same page: AO off (the crease cannot darken), and the
-      // depth fade off (the hazed ridge foot darkens). Open ground has no
-      // mutation (see OPEN_MAX: a bound, since the AO reaches only ~4 m
-      // from a wall at any radius); its measurement is shown able to see
-      // AO AT the crease instead (below: `crease` > OPEN_MAX).
+      // THE MUTATIONS, same page, each a rendered pair: the blend at
+      // intensity 0 (the pass runs, draws nothing: the crease cannot
+      // darken), a distance exponent of 3 (open ground occludes itself),
+      // and the depth fade off (the hazed ridge foot darkens).
       const saved = api.setAoParams({}).params;
       api.setView("city");
-      api.setAo(false);
-      const noAo = H.at(off, c) - H.at(api.readFrame(), c);
-      api.setAo(true);
-      api.setAoParams({ params: { fadeStartM: 1e6, fadeEndM: 2e6 } });
+      api.setAoParams({ params: { intensity: 0 } });
+      const blank = H.pair();
+      const noAo = H.at(blank.off, c) - H.at(blank.on, c);
+      api.setAoParams({
+        params: { intensity: saved.intensity, distanceExponent: 3 },
+      });
+      const crowded = H.pair();
+      const openCrowded = H.at(crowded.off, o) - H.at(crowded.on, o);
+      api.setAoParams({
+        params: {
+          distanceExponent: saved.distanceExponent,
+          fadeStartM: 1e6,
+          fadeEndM: 2e6,
+        },
+      });
       api.setView("sun");
       const noFade = H.pair();
       const ridgeNoFade = H.worst(noFade.off, noFade.on, f, 60, 14);
       api.setAoParams({
         params: { fadeStartM: saved.fadeStartM, fadeEndM: saved.fadeEndM },
       });
-      return { crease, open, ridge, noAo, ridgeNoFade };
+      return { crease, open, ridge, noAo, openCrowded, ridgeNoFade };
     }, preset);
     console.log(`ao ${preset}: ${JSON.stringify(r)}`);
     expect(r.crease, preset).toBeGreaterThanOrEqual(CREASE_MIN);
     expect(r.open, preset).toBeLessThanOrEqual(OPEN_MAX);
     expect(r.ridge, preset).toBeLessThanOrEqual(FAR_MAX);
-    expect(r.noAo, `${preset} mutation: AO off`).toBeLessThan(CREASE_MIN);
-    expect(r.crease, `${preset}: the open check can see AO`).toBeGreaterThan(
-      OPEN_MAX,
-    );
+    expect(r.noAo, `${preset} mutation: intensity 0`).toBeLessThan(CREASE_MIN);
+    expect(
+      r.openCrowded,
+      `${preset} mutation: distance exponent 3`,
+    ).toBeGreaterThan(OPEN_MAX);
     expect(r.ridgeNoFade, `${preset} mutation: no fade`).toBeGreaterThan(
       FAR_MAX,
     );
@@ -142,35 +155,39 @@ test("AO darkens the crease, and leaves open ground and the hazed distance alone
 
 // The round-2 concern (plan 2026-09-26-2055 M2e): AO darkening the hazed
 // dense city. Named explicitly (`city=`), since the smoke pins the block.
-test("AO leaves the hazed dense city 1.5 km out alone", async ({ page }) => {
+// At 800 m, just past the fade: the shipped AO unfaded darkens creases
+// there by ~3 levels, so the fade itself is what this check sees (at
+// 1.5 km the shipped AO is ~0.3 levels even unfaded: nothing to detect).
+test("AO leaves the hazed dense city past the fade alone", async ({ page }) => {
   const errors = await boot(
     page,
     "preset=golden&tone=neutral&tier=desktop&city=100000&pitch=20",
   );
   await installHelpers(page);
   for (const preset of ["golden", "hazy"]) {
-    const r = await page.evaluate((preset) => {
-      const api = window.__lookdev;
-      const H = window.__aoCheck;
-      api.pauseLoop(true);
-      api.setPreset(preset);
-      api.setCloudOffset(0, 0);
-      api.setView("city");
-      const f = api.project(api.aoProbe().far);
-      const { off, on } = H.pair();
-      const far = H.worst(off, on, f, 12, 6);
-      // THE MUTATION: no fade, with the first cut's 3 m radius and 3 m
-      // thickness, which darkened whole far facades (record doc; the
-      // shipped 5 m / 8 m darken them far less even unfaded).
-      const saved = api.setAoParams({}).params;
-      api.setAoParams({
-        params: { fadeStartM: 1e6, fadeEndM: 2e6, radius: 3, thickness: 3 },
-      });
-      const noFade = H.pair();
-      const farNoFade = H.worst(noFade.off, noFade.on, f, 12, 6);
-      api.setAoParams({ params: saved });
-      return { f, far, farNoFade };
-    }, preset);
+    const r = await page.evaluate(
+      ([preset, farM]) => {
+        const api = window.__lookdev;
+        const H = window.__aoCheck;
+        api.pauseLoop(true);
+        api.setPreset(preset);
+        api.setCloudOffset(0, 0);
+        api.setView("city");
+        const f = api.project(api.aoProbe({ farM }).far);
+        const { off, on } = H.pair();
+        const far = H.worst(off, on, f, 12, 6);
+        // THE MUTATION: the fade off, at the shipped parameters.
+        const saved = api.setAoParams({}).params;
+        api.setAoParams({ params: { fadeStartM: 1e6, fadeEndM: 2e6 } });
+        const noFade = H.pair();
+        const farNoFade = H.worst(noFade.off, noFade.on, f, 12, 6);
+        api.setAoParams({
+          params: { fadeStartM: saved.fadeStartM, fadeEndM: saved.fadeEndM },
+        });
+        return { f, far, farNoFade };
+      },
+      [preset, FAR_CITY_M],
+    );
     console.log(`ao far city ${preset}: ${JSON.stringify(r)}`);
     expect(r.f[0]).toBeGreaterThan(0.3);
     expect(r.f[0]).toBeLessThan(1);
@@ -308,6 +325,10 @@ test("the AO switch is in the plate on the phone tier, and offers the Desktop ti
 // With the AO on, the scene must still be drawn into the multisampled
 // target EVERY frame: a swapping AO pass would make it every other frame
 // (ambient-occlusion.test.mjs pins the no-swap; this checks the composer).
+// Consecutive frames are compared byte for byte; each frame against the
+// no-MSAA frame counts pixels more than 20 levels apart (the edges). This
+// test has no in-run mutation: the swapping pass it guards against was run
+// against it once by hand (record doc 2026-09-27 GTAO review fixes).
 test("with AO on, every frame keeps the desktop tier's MSAA", async ({
   page,
 }) => {
@@ -330,12 +351,17 @@ test("with AO on, every frame keeps the desktop tier's MSAA", async ({
       }
       return n;
     };
+    const bytesDiffer = (a, b) =>
+      a.data.filter((x, i) => x !== b.data[i]).length;
     const frames = [api.readFrame(), api.readFrame(), api.readFrame()];
     api.setSceneMsaa(false);
     const plain = api.readFrame();
     api.setSceneMsaa(true);
     return {
-      consecutive: [differ(frames[0], frames[1]), differ(frames[1], frames[2])],
+      consecutive: [
+        bytesDiffer(frames[0], frames[1]),
+        bytesDiffer(frames[1], frames[2]),
+      ],
       vsPlain: frames.map((f) => differ(f, plain)),
     };
   });

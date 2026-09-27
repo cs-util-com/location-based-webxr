@@ -67,10 +67,12 @@ farthest, casts, receives }`) and `drawCalls()` (renders one frame and
     tier's plate says so and offers the tier switch); `setAoParams({ params,
 denoise, resolutionScale })` is the sweep's handle; `setAoExclusions(bool)`
     (a test surface: off is three's own rule, which draws the sky and the
-    clouds into the AO's depth); `aoProbe()` returns the AO checks' world
-    points (`crease`, `open`, `far`, a hazed dense-city building's foot
-    1.5 km out, null without the dense city, and `ridgeFoot`, 2.5 km toward
-    the sun); `stats().aoActive` says whether it draws;
+    clouds into the AO's depth); `aoProbe({ farM })` returns the AO checks'
+    world points (`crease`, `open`, `farCrease` with `farCreaseM`, the
+    block's farthest visible crease, `far`, a dense-city building's foot
+    `farM` (1500) out, null without the dense city, and `ridgeFoot`, 2.5 km
+    toward the sun); `stats().aoActive` says whether it draws; on Oculus
+    Browser the AO is refused (see the sidecar) and the readout says so;
   - `readFrame()` → `{ width, height, data }`, the whole drawing buffer
     after one frame (edge comparisons need every pixel);
   - `project([x, y, z])` → normalised canvas `[u, v]` of a world point

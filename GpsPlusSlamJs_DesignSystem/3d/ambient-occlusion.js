@@ -32,6 +32,9 @@ export const AO_PARAMS = Object.freeze({
   scale: 1,
   samples: 16,
   screenSpaceRadius: false,
+  // three's blend strength, the page's parameter name (the pass's
+  // `blendIntensity`); NOT swept: the AO strength was swept as `scale`.
+  intensity: 1,
   // The page's own: the AO fades out between these view depths (metres),
   // before the hazed distance (see the blend below).
   fadeStartM: 300,
@@ -136,6 +139,9 @@ export function withPageExclusions(GTAOPass) {
 
     updateGtaoMaterial(parameters) {
       super.updateGtaoMaterial(parameters);
+      if (parameters.intensity !== undefined) {
+        this.blendIntensity = parameters.intensity;
+      }
       const u = this._fadeBlend();
       if (parameters.fadeStartM !== undefined) {
         u.fadeStart.value = parameters.fadeStartM;
@@ -169,7 +175,19 @@ export function withPageExclusions(GTAOPass) {
       });
     }
 
+    /** three's dispose, plus the two materials it leaves behind (r185). */
+    dispose() {
+      super.dispose();
+      this.gtaoMaterial.dispose();
+      this.blendMaterial.dispose();
+    }
+
     render(renderer, writeBuffer, readBuffer, deltaTime, maskActive) {
+      // The blend multiplies the scene target in place; as the last pass
+      // there is no scene target to multiply (the screen never got it).
+      if (this.renderToScreen) {
+        throw new Error("the AO pass cannot be the composer's last pass");
+      }
       // three's own steps up to the denoised AO, and no output of its own.
       const output = this.output;
       this.output = GTAOPass.OUTPUT.Off;
@@ -180,11 +198,7 @@ export function withPageExclusions(GTAOPass) {
       u.tDiffuse.value = this.pdRenderTarget.texture;
       u.cameraNear.value = this.camera.near;
       u.cameraFar.value = this.camera.far;
-      this._renderPass(
-        renderer,
-        this.blendMaterial,
-        this.renderToScreen ? null : readBuffer,
-      );
+      this._renderPass(renderer, this.blendMaterial, readBuffer);
     }
   };
 }
@@ -204,8 +218,16 @@ export function createAmbientOcclusion({
   camera,
   params = AO_PARAMS,
   denoise = AO_DENOISE,
+  userAgent = globalThis.navigator?.userAgent ?? "",
 }) {
   const PagePass = withPageExclusions(GTAOPass);
+  // three invalidates a multisampled colour buffer right after resolving it
+  // on Oculus Browser (WebGLTextures `supportsInvalidateFramebuffer`), and
+  // the in-place blend draws into that buffer again: it would multiply
+  // undefined content. Refused there rather than drawn wrong.
+  const unsupported = /OculusBrowser/.test(userAgent)
+    ? "not on Oculus Browser (it discards the multisampled scene the AO multiplies)"
+    : null;
   let pass = null;
   let host = null;
   let current = { ...params };
@@ -217,7 +239,7 @@ export function createAmbientOcclusion({
         pass = null;
         host = composer ?? null;
       }
-      if (!composer) return;
+      if (!composer || unsupported) return;
       if (on && !pass) {
         pass = new PagePass(
           scene,
@@ -268,5 +290,7 @@ export function createAmbientOcclusion({
     get active() {
       return pass?.enabled ?? false;
     },
+    /** Why this browser gets no AO, or null. */
+    unsupported,
   };
 }
