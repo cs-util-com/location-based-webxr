@@ -1597,6 +1597,21 @@ test("the page opens on the dense city, the P50 water, shadows, the catalog and 
   await expect(page.locator("#catalog")).toBeChecked();
   await expect(page.locator("#cloud-mode")).toHaveValue("slab");
   await expect(page.locator("#crease, #crease-radius")).toHaveCount(0);
+  // The parts are BUILT, not only switched on in the state (round-3
+  // review, finding 4): every catalog sphere, a shadow map requested, the
+  // slab's material with its 8 steps.
+  const built = await page.evaluate(() => {
+    const d = window.__lookdev;
+    return {
+      catalog: d.catalogInfo(),
+      shadowRenders: d.shadowRenders(),
+      slabSteps: d.cloudSlabDefine(),
+    };
+  });
+  expect(built.catalog.spheres).toBe(built.catalog.entries);
+  expect(built.catalog.entries).toBeGreaterThan(0);
+  expect(built.shadowRenders).not.toBeNull();
+  expect(built.slabSteps).toBe(8);
   const hash = await page.evaluate(() => location.hash);
   for (const key of [
     "shadows=1",
@@ -1607,14 +1622,28 @@ test("the page opens on the dense city, the P50 water, shadows, the catalog and 
   ]) {
     expect(hash).toContain(key);
   }
-  // Named off, they turn off.
+  // Named off, they turn off, and their parts go.
   await page.evaluate(() => {
     location.hash =
-      "#preset=noon&tone=neutral&shadows=0&catalog=0&cloudMode=dome";
+      "#preset=noon&tone=neutral&shadows=0&catalog=0&cloudMode=dome&varied=0";
   });
   await expect
     .poll(() => page.evaluate(() => window.__lookdev.stats().state))
-    .toMatchObject({ shadows: false, catalog: false, cloudMode: "dome" });
+    .toMatchObject({
+      shadows: false,
+      catalog: false,
+      cloudMode: "dome",
+      varied: false,
+    });
+  const gone = await page.evaluate(() => {
+    const d = window.__lookdev;
+    return {
+      spheres: d.catalogInfo().spheres,
+      shadowRenders: d.shadowRenders(),
+      meshes: d.cityInfo().meshes,
+    };
+  });
+  expect(gone).toEqual({ spheres: 0, shadowRenders: null, meshes: 2 });
   expect(errors).toEqual([]);
 });
 
@@ -2114,8 +2143,9 @@ test("the water candidates compile, change the pond, and travel in the address",
   expect(errors).toEqual([]);
 });
 
-// WHY (W5 plan 2026-09-26-0549 M1, triage): the catalog is off by default
-// (so the other tests never compile its programs); switched on, every entry
+// WHY (W5 plan 2026-09-26-0549 M1, triage): the smoke boot pins the catalog
+// off (so the other tests never compile its programs; the page opens with
+// it on since round 3); switched on, every entry
 // must build, compile without a console error (a shader error only logs),
 // and label only the nearest spheres: some labels in the catalog view, at
 // most K, and none from the city view, about 350 m away.

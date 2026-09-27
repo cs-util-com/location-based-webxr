@@ -134,7 +134,7 @@ test("the old white and gold ramp is one labelled catalog row, shown and hidden 
     return {
       spheres: d.catalogSpheres(),
       labels: d.catalogInfo().labelIds,
-      parts: Object.keys(d.casterFlags().casts),
+      sphereMeshes: d.sphereMeshes(),
     };
   });
   const ramp = on.spheres.filter((s) => s.id.startsWith("ramp-"));
@@ -156,8 +156,11 @@ test("the old white and gold ramp is one labelled catalog row, shown and hidden 
   for (let i = 1; i < xs.length; i++) expect(xs[i] - xs[i - 1]).toBe(pitch);
   // Labelled like the rest: some of its labels show at the catalog view.
   expect(rampLabels.length).toBeGreaterThan(0);
-  // No second set of spheres beside the catalog.
-  expect(on.parts).not.toContain("swatches");
+  // No second set of spheres beside the catalog: every sphere mesh in the
+  // scene is the catalog's (round-3 review, finding 3: a key list of the
+  // caster flags could not fail).
+  expect(on.sphereMeshes.outside).toBe(0);
+  expect(on.sphereMeshes.catalog).toBe(on.spheres.length);
   const off = await page.evaluate(() => {
     const d = window.__lookdev;
     d.setCatalog(false);
@@ -348,6 +351,7 @@ test("the finish A/B changes the city's roughness and pixels, not its draws or p
   expect(matte.roughness.every((r) => r === 1)).toBe(true);
   expect(shiny.draws).toBe(matte.draws);
   expect(shiny.programs).toBe(matte.programs);
+  expect(mixed.programs).toBe(shiny.programs);
   expect(shares[10]).toBeGreaterThanOrEqual(FINISH_MOVED_MIN);
   expect(matte.hash).toContain("finish=matte");
   expect(errors).toEqual([]);
@@ -430,5 +434,83 @@ test("the varied city's cost against the plain city (logged)", async ({
   // The finish is a uniform: the same draws and programs.
   expect(results["n12-shiny"].mapDraws).toBe(results["n12-matte"].mapDraws);
   expect(results["n12-shiny"].programs).toBe(results["n12-matte"].programs);
+  expect(errors).toEqual([]);
+});
+
+// WHY (round-3 review, finding 7): a link is a view. Links written before
+// round 3 name `city` (the page always wrote it) but never `varied`, and the
+// varied city is on by default now, so an old link would open in a
+// different look than the one it was shared for. A hash that names `city`
+// without `varied` therefore means the plain city; naming `varied=1` turns
+// it on. Checked on load and on a hash change.
+test("an old link that names the city but not the varied materials keeps the plain city", async ({
+  page,
+}) => {
+  const old =
+    "preset=noon&tone=neutral&tier=phone&cloudMode=dome&shadows=0&city=2500&pitch=42&water=P50&catalog=0";
+  const errors = await boot(page, old, { pageDefaults: true });
+  const info = () => page.evaluate(() => window.__lookdev.cityInfo());
+  await page.evaluate(() => window.__lookdev.pauseLoop(true));
+  expect((await info()).varied).toBe(false);
+  expect((await info()).materials).toEqual(["dense-concrete", "dense-glass"]);
+  await page.evaluate((hash) => {
+    location.hash = `#${hash}&varied=1`;
+  }, old);
+  await expect.poll(async () => (await info()).varied).toBe(true);
+  await page.evaluate((hash) => {
+    location.hash = `#${hash}`;
+  }, old);
+  await expect.poll(async () => (await info()).varied).toBe(false);
+  expect(errors).toEqual([]);
+});
+
+// WHY (round-3 review, finding 7): on a hash change, a key the new hash does
+// not name keeps its CURRENT value, not the page default (the reader only
+// writes the keys it is given). This pins that contract, which the smoke's
+// pinned hashes and the opening-state test both rest on. (It passed before
+// the review fix too: the comment, not the behaviour, was wrong.)
+test("a hash change keeps the current value of a key it does not name", async ({
+  page,
+}) => {
+  const errors = await boot(page, "preset=noon&tone=neutral");
+  await page.evaluate(() => {
+    const d = window.__lookdev;
+    d.pauseLoop(true);
+    d.setShadows(true); // not the pinned value, not named below
+  });
+  await page.evaluate(() => {
+    location.hash = "#preset=golden&tone=aces";
+  });
+  await expect
+    .poll(() => page.evaluate(() => window.__lookdev.stats().state))
+    .toMatchObject({
+      preset: "golden",
+      tone: "aces",
+      shadows: true,
+      catalog: false,
+      cloudMode: "dome",
+    });
+  expect(errors).toEqual([]);
+});
+
+// WHY (round-3 review, finding 12): the panel offers 4, 8 and 12 materials,
+// but a link (or setVaried) may name any count in the pool's range; the
+// select must show that count, not go blank and hide what the city wears.
+test("a material count the panel does not list still shows in its select", async ({
+  page,
+}) => {
+  const errors = await boot(
+    page,
+    "preset=noon&tone=neutral&city=100&pitch=42&varied=1&materials=5",
+  );
+  await page.evaluate(() => window.__lookdev.pauseLoop(true));
+  expect((await page.evaluate(() => window.__lookdev.cityInfo())).meshes).toBe(
+    5,
+  );
+  await expect(page.locator("#city-materials")).toHaveValue("5");
+  await page.selectOption("#city-materials", "8");
+  expect((await page.evaluate(() => window.__lookdev.cityInfo())).meshes).toBe(
+    8,
+  );
   expect(errors).toEqual([]);
 });

@@ -18,6 +18,11 @@
     Console and page errors DO fail it (exit 1), because a shader compile
     error only ever shows up as a console line.
   - Two animation frames after each change before the screenshot.
+  - Boots on the plain scene, the smoke's pins (`pinnedHash`, see
+    `3d/smoke-boot.mjs`): no dense city, shadows off, the catalog off,
+    the dome clouds (then `--cloud-mode`), the plain city materials. The
+    page's own round-3 defaults would change every shot against earlier
+    rounds.
 - Examples: `pnpm run shoot:3d -- --preset=golden --view=sun` → two PNGs
   per tone map. (Baseline shots of OsmDemo's old sky were retired with it
   in M3.)

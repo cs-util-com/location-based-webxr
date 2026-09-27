@@ -81,7 +81,9 @@ roughness }`: `materials` are the catalog ids of a varied city's meshes,
     material, drawn or not; returns the program count), `catalogInfo()`
     (`{ entries, spheres, visibleLabels, labelIds, programs }`, the labels
     as of the last frame), `catalogSpheres()` (`[{ id, x, y, z }]`, empty
-    when off) and `setLabelRule({ k?, fadeNearM?, fadeFarM? })` (the label
+    when off; each with its `label` anchor), `sphereMeshes()`
+    (`{ catalog, outside }`: the sphere meshes in and outside the catalog's
+    group) and `setLabelRule({ k?, fadeNearM?, fadeFarM? })` (the label
     rule the next frame reads; `RangeError` for a bad rule; the round-3 K
     sweep's handle, default `LABEL_RULE`, 50-140 m, K 16);
   - `setBloom(bool)` — the bloom pass alone (desktop tier only; throws on
@@ -126,9 +128,13 @@ denoise, resolutionScale })` is the sweep's handle; `setAoExclusions(bool)`
     `varied=1&materials=12&finish=mixed`), so a
     screenshot or phone link reproduces a view; a hash change on an open
     page re-applies it (the page's own writes use `replaceState`, which
-    fires no `hashchange`). A key the hash does NOT name keeps its value
-    (the default on load): the on/off keys once read absent as off, which
-    would have made an "on" default do nothing for any link without them.
+    fires no `hashchange`). A key the hash does NOT name keeps its CURRENT
+    value (the default on load, the page's state on a hash change): the
+    on/off keys once read absent as off, which would have made an "on"
+    default do nothing for any link without them. One exception keeps old
+    links' look: a hash that names `city` but not `varied` (every link
+    written before round 3) means `varied=0`. A `materials` count the
+    panel does not list is added to its select.
     The smoke boot (`smoke-boot.mjs`) pins the plain scene for every test
     that does not name a key; the opening-state test checks the defaults.
   - No baseline any more: the page carried OsmDemo's old Preetham sky as an

@@ -25,6 +25,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { pinnedHash } from "./3d/smoke-boot.mjs";
 import { AUX_PORT, startAuxServer } from "./start-aux-server.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -68,7 +69,13 @@ try {
     if (m.type() === "error") problems.push(`console: ${m.text()}`);
   });
   page.on("pageerror", (e) => problems.push(`pageerror: ${e.message}`));
-  await page.goto(`http://127.0.0.1:${PORT}/3d/#preset=golden&tone=agx`);
+  // The plain scene (the smoke's pins), so a shot compares like for like
+  // with the shots of earlier rounds; the page's own defaults since round 3
+  // (shadows, the catalog, the slab, the varied dense city) would change
+  // every shot (round-3 review, finding 8).
+  await page.goto(
+    `http://127.0.0.1:${PORT}/3d/#${pinnedHash("preset=golden&tone=agx")}`,
+  );
   await page.waitForFunction(
     () => window.__lookdev?.ready || window.__lookdev?.error,
     null,

@@ -273,9 +273,10 @@ function readHash() {
   if (CLOUD_MODES.includes(params.get("cloudMode"))) {
     state.cloudMode = params.get("cloudMode");
   }
-  // An on/off key the hash does not name keeps its default (round-3 plan
-  // §8 finding 5): reading absent as off made a default of "on" do nothing
-  // for every link without the key.
+  // A key the hash does not name keeps its CURRENT value: on load that is
+  // the default, on a hash change whatever the page shows (round-3 plan §8
+  // finding 5: reading absent as off made a default of "on" do nothing for
+  // every link without the key).
   if (params.has("shadows")) state.shadows = params.get("shadows") === "1";
   if (params.has("catalog")) state.catalog = params.get("catalog") === "1";
   if (params.has("ao")) state.ao = params.get("ao") === "1";
@@ -284,7 +285,11 @@ function readHash() {
   }
   const pitch = Number(params.get("pitch"));
   if (DENSE_PITCHES.includes(pitch)) state.pitch = pitch;
+  // Links from before round 3 name `city` (the page always wrote it) but
+  // never `varied`: they mean the plain city they were shared with
+  // (round-3 review, finding 7).
   if (params.has("varied")) state.varied = params.get("varied") === "1";
+  else if (params.has("city")) state.varied = false;
   const materials = Number(params.get("materials"));
   if (isMaterialCount(materials)) state.materials = materials;
   if (Object.hasOwn(CITY_FINISHES, params.get("finish") ?? "")) {
@@ -747,7 +752,16 @@ function syncControls() {
   // the desktop tier only and offers the switch (the owner looked for it).
   $("[data-ao-tier]").hidden = state.tier === "desktop";
   $("#varied").checked = state.varied;
-  $("#city-materials").value = String(state.materials);
+  // A count the panel does not list (a link may name any count in the
+  // pool's range) gets its own option, so the select never goes blank.
+  const materialsSelect = $("#city-materials");
+  const materialsValue = String(state.materials);
+  if (![...materialsSelect.options].some((o) => o.value === materialsValue)) {
+    materialsSelect.add(
+      new Option(`City: ${materialsValue} catalog materials`, materialsValue),
+    );
+  }
+  materialsSelect.value = materialsValue;
   $("#city-finish").value = state.finish;
   const cityValue = `${state.city}@${state.pitch}`;
   const citySelect = $("#city-fill");
@@ -1344,7 +1358,7 @@ Object.assign(api, {
       })(),
     };
   },
-  /** The material catalog on or off (W5 M1; off by default). */
+  /** The material catalog on or off (W5 M1; on by default since round 3). */
   setCatalog(on) {
     state.catalog = Boolean(on);
     applyLook();
@@ -1369,6 +1383,22 @@ Object.assign(api, {
       labelIds,
       programs: renderer.info.programs?.length ?? 0,
     };
+  },
+  /**
+   * Test surface: the sphere meshes in the scene, in the catalog's group and
+   * outside it (the old white and gold swatches were a second set).
+   */
+  sphereMeshes() {
+    const out = { catalog: 0, outside: 0 };
+    scene.traverse((o) => {
+      if (!o.isMesh || o.geometry?.type !== "SphereGeometry") return;
+      let inCatalog = false;
+      for (let p = o.parent; p; p = p.parent) {
+        if (p === catalogView?.group) inCatalog = true;
+      }
+      out[inCatalog ? "catalog" : "outside"] += 1;
+    });
+    return out;
   },
   /** Test surface: the catalog's spheres (id and position), [] when off. */
   catalogSpheres() {
