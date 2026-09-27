@@ -24,6 +24,11 @@ source to trust is chosen after field logs show which one is biased.
 
 ## Invariants & assumptions
 
+- **The counting rule is the framework's** `createQrParallaxSizeTally`
+  (DEC-H3, shared with the TourViewer's print check); this tally adds the
+  depth half, the percentiles and the report line. The JSON also carries
+  `independentWindows` - windows sharing no detection with the previous one.
+
 - **Parallax assumes a still code.** A sample taken while the code was
   turning is counted in `skippedTurning` and never enters the numbers (the
   turn signal is the size-free check; the move signal needs a size). A

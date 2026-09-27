@@ -67,6 +67,13 @@
 
 ### Added
 
+- **`createQrParallaxSizeTally` and `measuredSizeOffer` on `/ar/qr`** (QR
+  size consensus plan S3a): one counting rule for parallax sizes (turning
+  and refused windows kept out, independent windows apart) and the rule for
+  offering a measured printed size in place of a typed one (three
+  independent windows past 2 % on one side). `estimateQrSizeFromParallax`
+  also reports its window's time span, and caches each view's solve on its
+  corners, so re-reads after each detection solve only the new one.
 - **`estimateQrSizeFromParallax` on `/ar/qr`** (QR size consensus plan
   2026-09-27-0350, S1): a code's printed size from its views at different
   camera positions - no depth sensor needed. It refuses views that carry no

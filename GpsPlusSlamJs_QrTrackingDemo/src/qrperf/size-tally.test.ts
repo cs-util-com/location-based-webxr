@@ -22,7 +22,13 @@ describe("createSizeTally", () => {
     const t = createSizeTally();
     for (const cm of [15.8, 16.1, 16.0, 15.9, 16.3]) {
       t.add({
-        parallax: { sizeM: cm / 100, lateralBaselineM: 0.1, views: 8 },
+        parallax: {
+          sizeM: cm / 100,
+          lateralBaselineM: 0.1,
+          views: 8,
+          oldestTimestamp: 0,
+          newestTimestamp: 1,
+        },
         turning: false,
         depth: estimated(17.6),
       });
@@ -39,13 +45,25 @@ describe("createSizeTally", () => {
   it("keeps turning and refused windows out of the numbers, and counts them", () => {
     const t = createSizeTally();
     t.add({
-      parallax: { sizeM: 0.5, lateralBaselineM: 0.1, views: 8 },
+      parallax: {
+        sizeM: 0.5,
+        lateralBaselineM: 0.1,
+        views: 8,
+        oldestTimestamp: 0,
+        newestTimestamp: 1,
+      },
       turning: true,
       depth: estimated(16),
     });
     t.add({ parallax: null, turning: false, depth: estimated(16) });
     t.add({
-      parallax: { sizeM: 0.16, lateralBaselineM: 0.1, views: 8 },
+      parallax: {
+        sizeM: 0.16,
+        lateralBaselineM: 0.1,
+        views: 8,
+        oldestTimestamp: 0,
+        newestTimestamp: 1,
+      },
       turning: false,
       depth: estimated(16),
     });
@@ -65,7 +83,13 @@ describe("createSizeTally", () => {
     ] as const) {
       const t = createSizeTally();
       t.add({
-        parallax: { sizeM: 0.16, lateralBaselineM: 0.1, views: 8 },
+        parallax: {
+          sizeM: 0.16,
+          lateralBaselineM: 0.1,
+          views: 8,
+          oldestTimestamp: 0,
+          newestTimestamp: 1,
+        },
         turning: false,
         depth: estimated(depthCm),
       });
@@ -93,7 +117,13 @@ describe("createSizeTally", () => {
   it("renders a line a screenshot can carry", () => {
     const t = createSizeTally();
     t.add({
-      parallax: { sizeM: 0.16, lateralBaselineM: 0.12, views: 8 },
+      parallax: {
+        sizeM: 0.16,
+        lateralBaselineM: 0.12,
+        views: 8,
+        oldestTimestamp: 0,
+        newestTimestamp: 1,
+      },
       turning: false,
       depth: estimated(17.6),
     });

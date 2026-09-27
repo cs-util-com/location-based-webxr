@@ -190,6 +190,16 @@ export {
   type QrParallaxSize,
   type QrParallaxSizeOptions,
 } from './qr-size-parallax.js';
+export {
+  createQrParallaxSizeTally,
+  measuredSizeOffer,
+  type MeasuredSizeOfferOptions,
+  type QrParallaxSizeCounts,
+  type QrParallaxSizeOutcome,
+  type QrParallaxSizeSample,
+  type QrParallaxSizeTally,
+  type QrParallaxSizeWindow,
+} from './qr-parallax-size-tally.js';
 
 // --- qr-motion (is the code being moved / turned; plan §26) ---
 export {

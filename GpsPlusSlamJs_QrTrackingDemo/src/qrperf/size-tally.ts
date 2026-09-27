@@ -5,18 +5,17 @@
  * it yet. See size-tally.ts.md.
  */
 
-import type { QrParallaxSize } from "gps-plus-slam-app-framework/ar/qr";
+import {
+  createQrParallaxSizeTally,
+  type QrParallaxSizeSample,
+} from "gps-plus-slam-app-framework/ar/qr";
 import { nearestRankPercentile } from "./pipeline-timings.js";
 import type { SizeState } from "./motion-tally.js";
 
 /** Sizes further apart than this read as a conflict (plan §7: 2x-class). */
 const CONFLICT_RATIO = 0.25;
 
-export interface SizeSample {
-  /** The parallax estimate over the code's recent views, or null if refused. */
-  parallax: QrParallaxSize | null;
-  /** Whether the motion detector read the code as turning (then skipped). */
-  turning: boolean;
+export interface SizeSample extends QrParallaxSizeSample {
   /** The depth size state, when the demo has one. */
   depth?: SizeState;
 }
@@ -25,6 +24,8 @@ export interface SizeTallySummary {
   parallax: {
     /** Windows whose size entered the numbers. */
     windows: number;
+    /** Of those, windows that share no detection with the previous one. */
+    independentWindows: number;
     /** Windows the estimate refused (no scale). */
     refused: number;
     /** Windows skipped because the code was turning (parallax needs it still). */
@@ -54,10 +55,10 @@ export function createSizeTally(): {
   add(sample: SizeSample): void;
   summary(): SizeTallySummary;
 } {
-  const sizesCm: number[] = [];
-  const baselinesCm: number[] = [];
-  let refused = 0;
-  let skippedTurning = 0;
+  // The counting rule is the framework's (DEC-H3, shared with the
+  // TourViewer's print check); this tally adds the depth half and the report.
+  const parallax = createQrParallaxSizeTally();
+  const RUN = "run";
   let depth: SizeState | null = null;
   let estMin: number | null = null;
   let estMax: number | null = null;
@@ -73,14 +74,13 @@ export function createSizeTally(): {
   return {
     add(sample) {
       if (sample.depth) addDepth(sample.depth);
-      if (sample.turning) skippedTurning += 1;
-      else if (sample.parallax === null) refused += 1;
-      else {
-        sizesCm.push(sample.parallax.sizeM * 100);
-        baselinesCm.push(sample.parallax.lateralBaselineM * 100);
-      }
+      parallax.add(RUN, sample);
     },
     summary() {
+      const windows = parallax.accepted(RUN);
+      const sizesCm = windows.map((w) => w.sizeM * 100);
+      const baselinesCm = windows.map((w) => w.lateralBaselineM * 100);
+      const counts = parallax.counts(RUN);
       const p50 = pct(sizesCm, 0.5);
       const d: SizeState | null = depth;
       const latestCm = d?.estimateM == null ? null : d.estimateM * 100;
@@ -91,8 +91,9 @@ export function createSizeTally(): {
       return {
         parallax: {
           windows: sizesCm.length,
-          refused,
-          skippedTurning,
+          independentWindows: parallax.independent(RUN).length,
+          refused: counts.refused,
+          skippedTurning: counts.turning,
           p10Cm: pct(sizesCm, 0.1),
           p50Cm: p50,
           p90Cm: pct(sizesCm, 0.9),

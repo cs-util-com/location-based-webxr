@@ -15,7 +15,8 @@ states.
   - `entries`: a code's detections, oldest first (`QrFusedEntry`, e.g.
     `selectQrFusedEntries`); only the newest entry's frame epoch is used, at
     most `maxEntries` (32) of its newest.
-  - Returns `{ sizeM, lateralBaselineM, views }`, or `null` when the views
+  - Returns `{ sizeM, lateralBaselineM, views, oldestTimestamp,
+newestTimestamp }` (the window's time span, for independence), or `null` when the views
     carry no scale: fewer than `minViews` (5) usable, a median code edge
     under `minEdgePx` (40 px), a lateral baseline under
     `minLateralBaselineM` (0.08 m), or rays that do not meet ahead of the
@@ -41,8 +42,10 @@ states.
   standing phone does not.
 - **The edge floor** (median 40 px) keeps out codes so small on screen that
   corner noise biases the size (+2-4 % at 22 px).
-- Each entry's own solve is cached on the entry object (a `WeakMap`), so a
-  caller re-reading the same entries pays for new detections only.
+- Each entry's own solve is cached on its CORNERS array (a `WeakMap`):
+  `selectQrFusedEntries` builds new entry objects after every detection but
+  keeps the corners by reference, so a caller re-reading a code's entries
+  pays for new detections only (plan §12 #6; a test counts the solves).
 - Not modelled: the tracker's own SCALE error (a world a few percent too
   large makes the size a few percent too large - right for placement in that
   world), slow drift over the window (to be measured from a recorded
@@ -61,7 +64,8 @@ if (size) log(`parallax ${(size.sizeM * 100).toFixed(1)} cm`);
 
 ## Tests
 
-`qr-size-parallax.test.ts` - the scaling identity the method rests on; the
+`qr-size-parallax.cache.test.ts` - one solve per detection across rebuilt
+entry objects, and the reported time span. `qr-size-parallax.test.ts` - the scaling identity the method rests on; the
 size within 2 % (median) / 6 % (max) over 12 seeds for 10/16/25 cm codes on
 30-60 cm steps and 20-45 deg arcs at 1 px noise and +-0.5 cm / 0.2 deg
 jitter; refusal of a standing phone, a walk straight at the code, a 3 cm

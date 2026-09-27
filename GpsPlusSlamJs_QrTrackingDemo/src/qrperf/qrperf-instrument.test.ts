@@ -466,7 +466,13 @@ describe("createQrPerfInstrument fused pose (M3b b5)", () => {
       now: steppingClock(1),
     });
     inst.onSize({
-      parallax: { sizeM: 0.16, lateralBaselineM: 0.1, views: 8 },
+      parallax: {
+        sizeM: 0.16,
+        lateralBaselineM: 0.1,
+        views: 8,
+        oldestTimestamp: 0,
+        newestTimestamp: 1,
+      },
       turning: false,
       depth: { status: "estimated", estimateM: 0.176 },
     });

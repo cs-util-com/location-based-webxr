@@ -41,6 +41,9 @@ export interface QrParallaxSize {
   lateralBaselineM: number;
   /** Views used. */
   views: number;
+  /** The time span of the window it used (entry timestamps). */
+  oldestTimestamp: number;
+  newestTimestamp: number;
 }
 
 const DEFAULTS = {
@@ -54,11 +57,15 @@ const DEFAULTS = {
 const NOMINAL_SIZE_M = 0.16;
 
 const solver = new PlanarPnpSquare();
-/** Each entry's own solve at the nominal size, cached on the entry object. */
-const solvedCentre = new WeakMap<QrFusedEntry, Vector3 | null>();
+/**
+ * Each entry's own solve at the nominal size, cached on its CORNERS array:
+ * `selectQrFusedEntries` builds new entry objects after every detection but
+ * keeps the corners by reference (plan §12 #6).
+ */
+const solvedCentre = new WeakMap<readonly Point2[], Vector3 | null>();
 
 function centreOf(entry: QrFusedEntry): Vector3 | null {
-  if (solvedCentre.has(entry)) return solvedCentre.get(entry)!;
+  if (solvedCentre.has(entry.corners)) return solvedCentre.get(entry.corners)!;
   const solution = solveQrPose({
     imagePoints: entry.corners,
     sizeM: NOMINAL_SIZE_M,
@@ -67,7 +74,7 @@ function centreOf(entry: QrFusedEntry): Vector3 | null {
     solver,
   });
   const centre = solution ? solution.qrPoseWorld.position : null;
-  solvedCentre.set(entry, centre);
+  solvedCentre.set(entry.corners, centre);
   return centre;
 }
 
@@ -178,9 +185,8 @@ export function estimateQrSizeFromParallax(
   options: QrParallaxSizeOptions = {}
 ): QrParallaxSize | null {
   const o = { ...DEFAULTS, ...options };
-  const { cams, dirs, dists, edges } = usableViews(
-    recentOfNewestEpoch(entries, o.maxEntries)
-  );
+  const recent = recentOfNewestEpoch(entries, o.maxEntries);
+  const { cams, dirs, dists, edges } = usableViews(recent);
   if (cams.length < o.minViews) return null;
   if (median(edges) < o.minEdgePx) return null;
   const baseline = lateralBaselineM(cams, dirs);
@@ -196,5 +202,11 @@ export function estimateQrSizeFromParallax(
   }
   const sizeM = median(ratios);
   if (!(sizeM > 0) || !Number.isFinite(sizeM)) return null;
-  return { sizeM, lateralBaselineM: baseline, views: cams.length };
+  return {
+    sizeM,
+    lateralBaselineM: baseline,
+    views: cams.length,
+    oldestTimestamp: recent[0]!.timestamp,
+    newestTimestamp: recent[recent.length - 1]!.timestamp,
+  };
 }
