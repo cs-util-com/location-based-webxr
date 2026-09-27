@@ -1,14 +1,16 @@
 /**
- * Step 4's scan-to-open policy (TourViewer scan-to-open plan §2, §9): the
- * printed code carries the tour's link, so the first code the creator's
- * camera reads opens the tour it names - no pasted link. This module
- * decides, per detection, whether to open, switch, wait or stay put, and
- * says what the panel should report; `archive-open` supplies the open and
- * `creator-setup` feeds detections and renders the status.
+ * Step 4's scan-to-open policy (TourViewer scan-to-open plan §2, §9, §13):
+ * the printed code carries the tour's link, so the first code the
+ * creator's camera reads with no tour open opens the tour it names - no
+ * pasted link. Once a tour is open there is no wrong code (§13, owner): a
+ * code of another tour is one more reference for the open tour, measured
+ * into it, never a switch. This module decides, per detection, whether to
+ * open, and says what the panel should report; `archive-open` supplies the
+ * open and `creator-setup` feeds detections and renders the status.
  *
  * What a code names is a fact, cached for the page (`resolveCodeTour`).
- * Everything else is derived live from the session on each detection;
- * the only state kept is a failed attempt, tagged with the AR session it
+ * Everything else is derived live from the session on each detection; the
+ * only state kept is a failed attempt, tagged with the AR session it
  * happened in.
  */
 
@@ -40,22 +42,16 @@ export type CodeTourStatus =
       /** True while a later detection will try again. */
       retrying: boolean;
     }
-  /** A code of another tour that will not open now: switching would lose
-   *  unsaved work (Save stays off for it), or - with no tour open - the
-   *  level in hand was measured from `label`'s code (Save stays on: a new
-   *  measurement replaces that level, milestone review #6). */
-  | {
-      kind: "other-tour";
-      reason: "unsaved-work" | "measured-for-another";
-      label: string;
-    }
-  /** Another tour's code that will switch once it has stayed in view. */
-  | { kind: "switch-pending" }
+  /** No tour is open, and the level in hand was measured from `label`'s
+   *  code: this code's tour does not open (it would take that level), but
+   *  Save stays on - a new measurement replaces the level (§9 #4,
+   *  milestone review #6). */
+  | { kind: "measured-for-another"; label: string }
+  /** A code of another tour while one is open: one more reference code for
+   *  the open tour (§13). */
+  | { kind: "added-to-open-tour" }
   /** A link that cannot be compared with the open tour's. */
-  | { kind: "unknown" }
-  /** A code of another tour while the creator opened this one by its link
-   *  (an old print, plan §2): measured into the open tour, Save stays on. */
-  | { kind: "other-link" };
+  | { kind: "unknown" };
 
 export interface ScanOpenDeps {
   ctx: TourViewerSession;
@@ -87,10 +83,6 @@ const FIRST_RETRY_MS = 10_000;
 /** A retry costs one small request; a creator who just fixed the upload
  *  should not wait minutes at the poster (milestone review #10). */
 const MAX_RETRY_MS = 30_000;
-/** How long another tour's code must stay the ONLY code in view before a
- *  scan-opened tour switches to it: a glimpse while walking past a
- *  neighbour's poster must not swap tours (milestone review #1). */
-const SWITCH_DWELL_MS = 1_500;
 
 interface Attempt {
   cause: RangeProbeRejectCause | "other";
@@ -101,7 +93,7 @@ interface Attempt {
 }
 
 /** Wire the policy over a session. The `resolve` default is supplied by
- *  the caller, which knows the proxy base. */
+ *  the caller, which knows the proxy base (`codeResolver`). */
 export function createScanOpen(deps: ScanOpenDeps): ScanOpen {
   const { ctx } = deps;
   /** text -> what it names; "resolving" while the first read runs. */
@@ -110,10 +102,9 @@ export function createScanOpen(deps: ScanOpenDeps): ScanOpen {
   const attempts = new Map<string, Attempt>();
   /** The link a scan-started open is opening (for the status line). */
   let inFlight: string | null = null;
-  /** The code in view without a break since `runStartMs`: any other
-   *  detection restarts the run. */
-  let runText: string | null = null;
-  let runStartMs = 0;
+  /** The most recent code in view: a read that lands later acts on its
+   *  code only while it is still this one. */
+  let lastText: string | null = null;
 
   function attemptFor(url: string): Attempt | null {
     const attempt = attempts.get(url);
@@ -121,17 +112,6 @@ export function createScanOpen(deps: ScanOpenDeps): ScanOpen {
       attempt.generation === ctx.arSessionGeneration
       ? attempt
       : null;
-  }
-
-  /** Work that switching tours would throw away (plan §9 #3). A measured
-   *  level counts until its zip is rebuilt AND handed off. */
-  function unfinishedWork(): boolean {
-    return (
-      ctx.finishing ||
-      ctx.placedObjects.length > 0 ||
-      (ctx.mintedLevel !== null &&
-        (ctx.rebuiltZip === null || !ctx.rebuiltZipDelivered))
-    );
   }
 
   /** With no tour open, a level measured from ANOTHER tour's code must
@@ -146,38 +126,6 @@ export function createScanOpen(deps: ScanOpenDeps): ScanOpen {
       bound.tourUrl !== null &&
       bound.tourUrl !== code.normalizedUrl
     );
-  }
-
-  /** Another tour's code that a scan-opened tour may switch to: nothing
-   *  unsaved, and never toward a link that already failed this session -
-   *  the switch tears the open tour down before the new open can fail. */
-  function switchable(code: CodeTour & { kind: "tour" }): boolean {
-    return (
-      ctx.tourOpenedBy === "scan" &&
-      !unfinishedWork() &&
-      attemptFor(code.normalizedUrl) === null
-    );
-  }
-
-  /** Whether this code, now, is one to open: no tour and nothing bound
-   *  elsewhere, or a switchable other tour whose code has stayed in view. */
-  function wantsOpen(text: string, code: CodeTour & { kind: "tour" }): boolean {
-    const relation = tourRelation(code, ctx.session?.archive.url ?? null);
-    if (relation === "no-tour-open") return !measuredForAnother(code);
-    return (
-      relation === "other-tour" &&
-      switchable(code) &&
-      runText === text &&
-      deps.now() - runStartMs >= SWITCH_DWELL_MS
-    );
-  }
-
-  /** Act on a code that has been read: open it if it should open. */
-  function act(text: string): void {
-    const known = codes.get(text);
-    if (known === undefined || known === "resolving") return;
-    if (known.kind !== "tour" || deps.isOpening()) return;
-    if (wantsOpen(text, known)) tryOpen(known);
   }
 
   function tryOpen(code: CodeTour & { kind: "tour" }): void {
@@ -215,12 +163,21 @@ export function createScanOpen(deps: ScanOpenDeps): ScanOpen {
       });
   }
 
+  /** Open the tour a read code names, when no tour is open and nothing
+   *  measured is bound to another tour. */
+  function act(text: string): void {
+    const known = codes.get(text);
+    if (known === undefined || known === "resolving") return;
+    if (known.kind !== "tour" || deps.isOpening()) return;
+    const relation = tourRelation(known, ctx.session?.archive.url ?? null);
+    if (relation === "no-tour-open" && !measuredForAnother(known)) {
+      tryOpen(known);
+    }
+  }
+
   return {
     onDetection(text) {
-      if (text !== runText) {
-        runText = text;
-        runStartMs = deps.now();
-      }
+      lastText = text;
       if (codes.get(text) === undefined) {
         // Marked BEFORE the await, so the next frame does not start a
         // second read of the same text (plan §9 #6).
@@ -233,7 +190,7 @@ export function createScanOpen(deps: ScanOpenDeps): ScanOpen {
             // Acted on at once while it is still the code in view: waiting
             // for the next frame left "Opening…" on screen for a code seen
             // once (milestone review #9).
-            if (runText === text) act(text);
+            if (lastText === text) act(text);
             deps.render();
           });
         return;
@@ -255,21 +212,11 @@ export function createScanOpen(deps: ScanOpenDeps): ScanOpen {
       const relation = tourRelation(known, ctx.session?.archive.url ?? null);
       if (relation === "this-tour") return { kind: "quiet" };
       if (relation === "unknown") return { kind: "unknown" };
-      if (relation === "no-tour-open" && measuredForAnother(known)) {
+      if (relation === "other-tour") return { kind: "added-to-open-tour" };
+      if (measuredForAnother(known)) {
         return {
-          kind: "other-tour",
-          reason: "measured-for-another",
+          kind: "measured-for-another",
           label: tourLabel(ctx.mintedLevelTour?.tourUrl ?? ""),
-        };
-      }
-      if (relation === "other-tour" && ctx.tourOpenedBy !== "scan") {
-        return { kind: "other-link" };
-      }
-      if (relation === "other-tour" && unfinishedWork()) {
-        return {
-          kind: "other-tour",
-          reason: "unsaved-work",
-          label: ctx.tourLabel ?? "the open tour",
         };
       }
       const failed = attemptFor(known.normalizedUrl);
@@ -277,13 +224,10 @@ export function createScanOpen(deps: ScanOpenDeps): ScanOpen {
         return {
           kind: "failed",
           cause: failed.cause,
-          // A failed switch target is not retried while a tour is open.
-          retrying: failed.retryAtMs !== null && relation === "no-tour-open",
+          retrying: failed.retryAtMs !== null,
         };
       }
-      return relation === "other-tour"
-        ? { kind: "switch-pending" }
-        : { kind: "opening" };
+      return { kind: "opening" };
     },
 
     tourOf(text) {

@@ -13,11 +13,9 @@ import { createTourViewerSession } from "./tour-viewer-session.js";
  * milestone review): the owner decided step 4 needs no pasted link - the
  * first code the camera reads opens its tour. These pin the policy: one
  * open at a time; retries only for causes a creator can fix, with a capped
- * backoff; a scan-opened tour switching to another tour's code only when
- * nothing unsaved would be lost AND that code has stayed in view (a glimpse
- * must not swap tours); never switching toward a link that already failed;
- * a link-opened tour never switching (an old print, §2); and work measured
- * before any tour opened never landing in the wrong tour's zip.
+ * backoff; once a tour is open, another tour's code is added to it rather
+ * than switching (plan §13); and work measured before any tour opened
+ * never landing in the wrong tour's zip.
  */
 
 const A = "https://h.test/a.zip";
@@ -39,7 +37,6 @@ async function settle(): Promise<void> {
 function setup(
   options: {
     openAt?: string | null;
-    openedBy?: "scan" | "link";
     outcomes?: (OpenOutcome | "reject")[];
     /** Opens wait for `release()` instead of settling at once. */
     hold?: boolean;
@@ -48,7 +45,6 @@ function setup(
   const ctx = createTourViewerSession();
   if (options.openAt != null) {
     ctx.session = { archive: { url: options.openAt } } as never;
-    ctx.tourOpenedBy = options.openedBy ?? "scan";
   }
   const outcomes = [...(options.outcomes ?? [])];
   let clock = 0;
@@ -76,13 +72,8 @@ function setup(
       return gate.then(() => {
         opening = false;
         if (outcome === "reject") throw new Error("boom");
-        // Like openUrl: the open tears the old tour down FIRST, so a
-        // failed switch leaves no tour open.
-        ctx.session = null;
-        ctx.tourOpenedBy = null;
         if (outcome.kind === "opened") {
           ctx.session = { archive: { url } } as never;
-          ctx.tourOpenedBy = "scan";
         }
         return outcome;
       });
@@ -169,8 +160,7 @@ describe("a creator with no tour open", () => {
     await s.see(codeOf(B));
     expect(s.opened).toEqual([]);
     expect(s.scan.status(codeOf(B))).toMatchObject({
-      kind: "other-tour",
-      reason: "measured-for-another",
+      kind: "measured-for-another",
     });
     await s.see(codeOf(A));
     expect(s.opened).toEqual([A]);
@@ -280,7 +270,10 @@ describe("a failed open", () => {
   });
 });
 
-describe("a creator with a tour open by a scan", () => {
+describe("a creator with a tour open", () => {
+  // Plan §13 (owner): in authoring there is no wrong code. The open tour is
+  // the one being edited; a code printed from another tour's zip is one
+  // more reference for it - measured in, never a switch.
   it("does nothing for the open tour's own code", async () => {
     const s = setup({ openAt: A });
     await s.see(codeOf(A));
@@ -296,120 +289,13 @@ describe("a creator with a tour open by a scan", () => {
     expect(s.scan.status("https://menu.test/today").kind).toBe("quiet");
   });
 
-  it("switches to another tour's code once it has stayed in view", async () => {
+  it("adds another tour's code to the open tour, however long it stays in view", async () => {
     const s = setup({ openAt: A });
-    await s.see(codeOf(B));
-    expect(s.opened, "not on a glimpse").toEqual([]);
-    expect(s.scan.status(codeOf(B)).kind).toBe("switch-pending");
-    s.advance(1_500);
-    await s.see(codeOf(B));
-    expect(s.opened).toEqual([B]);
-  });
-
-  it("does not switch when the open tour's code interrupts", async () => {
-    // Milestone review #1: two tours' prints side by side must not make
-    // the phone swap back and forth.
-    const s = setup({ openAt: A });
-    await s.see(codeOf(B));
-    s.advance(1_000);
-    await s.see(codeOf(A));
-    s.advance(1_000);
-    await s.see(codeOf(B));
-    expect(s.opened).toEqual([]);
-  });
-
-  it("does not switch toward a link that already failed this session", async () => {
-    // The switch tears the open tour down before the new open can fail.
-    const s = setup({
-      openAt: A,
-      outcomes: [{ kind: "failed", cause: "missing" }],
-    });
-    await s.see(codeOf(B));
-    s.advance(1_500);
-    await s.see(codeOf(B));
-    expect(s.opened).toEqual([B]);
-    expect(s.ctx.session, "the failed switch left no tour open").toBeNull();
-    // Rescanning A brings it back; B is then never switched to again.
-    await s.see(codeOf(A));
-    expect(s.opened).toEqual([B, A]);
     await s.see(codeOf(B));
     s.advance(60_000);
     await s.see(codeOf(B));
-    expect(s.opened).toEqual([B, A]);
-    expect(s.scan.status(codeOf(B))).toMatchObject({
-      kind: "failed",
-      retrying: false,
-    });
-  });
-
-  it("keeps the tour, and says why, while placements are unsaved", async () => {
-    const s = setup({ openAt: A });
-    s.ctx.tourLabel = "a.zip";
-    s.ctx.placedObjects = [{ object: { id: "p" } as never }];
-    await s.see(codeOf(B));
-    s.advance(1_500);
-    await s.see(codeOf(B));
     expect(s.opened).toEqual([]);
-    expect(s.scan.status(codeOf(B))).toEqual({
-      kind: "other-tour",
-      reason: "unsaved-work",
-      label: "a.zip",
-    });
-  });
-
-  it.each([
-    [
-      "a measured level not finished",
-      (s: ReturnType<typeof setup>) => {
-        s.ctx.mintedLevel = { id: "lvl", json: "{}" };
-      },
-    ],
-    [
-      "a finished zip not handed off",
-      (s: ReturnType<typeof setup>) => {
-        s.ctx.mintedLevel = { id: "lvl", json: "{}" };
-        s.ctx.rebuiltZip = { blob: new Blob([]), filename: "a.zip" };
-      },
-    ],
-    [
-      "a finish running",
-      (s: ReturnType<typeof setup>) => {
-        s.ctx.finishing = true;
-      },
-    ],
-  ])("keeps the tour with %s", async (_name, arrange) => {
-    const s = setup({ openAt: A });
-    arrange(s);
-    await s.see(codeOf(B));
-    s.advance(1_500);
-    await s.see(codeOf(B));
-    expect(s.opened).toEqual([]);
-  });
-
-  it("switches once the finished zip has been handed off", async () => {
-    const s = setup({ openAt: A });
-    s.ctx.mintedLevel = { id: "lvl", json: "{}" };
-    s.ctx.rebuiltZip = { blob: new Blob([]), filename: "a.zip" };
-    s.ctx.rebuiltZipDelivered = true;
-    await s.see(codeOf(B));
-    s.advance(1_500);
-    await s.see(codeOf(B));
-    expect(s.opened).toEqual([B]);
-  });
-});
-
-describe("a tour the creator opened by its link", () => {
-  // Plan §2 (owner): step 1's link stays for "a code that points somewhere
-  // else (an old print)" - the creator chose this tour, so a code naming
-  // another one is measured into it; switching would throw the choice away
-  // and might open a dead old link.
-  it("does not switch to another tour's code, and keeps Save on for it", async () => {
-    const s = setup({ openAt: A, openedBy: "link" });
-    await s.see(codeOf(B));
-    s.advance(5_000);
-    await s.see(codeOf(B));
-    expect(s.opened).toEqual([]);
-    expect(s.scan.status(codeOf(B)).kind).toBe("other-link");
+    expect(s.scan.status(codeOf(B)).kind).toBe("added-to-open-tour");
   });
 });
 

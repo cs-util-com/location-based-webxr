@@ -551,13 +551,8 @@ export function wireCreatorSetup(deps: {
       count +
       (codeLine === "" ? "" : ` · ${codeLine}`) +
       tour;
-    // A code of another tour is not measured into this one while this
-    // one has unsaved work (§9 #4). With no tour open, a new measurement
-    // just replaces the level in hand (milestone review #6).
-    dom.mintButton.disabled =
-      !readout.canMint ||
-      (codeStatus.kind === "other-tour" &&
-        codeStatus.reason === "unsaved-work");
+    // No status locks Save: in authoring there is no wrong code (plan §13).
+    dom.mintButton.disabled = !readout.canMint;
     const blocked = finishBlockedHint(readiness);
     if (blocked !== "") dom.status.textContent += ` · ${blocked}`;
     if (readiness === "ready" && ctx.session !== null) {
@@ -1002,9 +997,6 @@ export function wireCreatorSetup(deps: {
       (id) => {
         if (mintGeneration !== ctx.mintGeneration) return;
         ctx.mintedLevel = { id, json: result.json };
-        // A new measurement is not in the zip that was saved (milestone
-        // review #2): switching tours would lose it again.
-        ctx.rebuiltZipDelivered = false;
         ctx.mintedLevelTour = {
           levelId: id,
           tourUrl: codeTour.tourOf(mintedText),
@@ -1106,7 +1098,6 @@ export function wireCreatorSetup(deps: {
           blob,
           filename: archiveFileName(current.archive.url),
         };
-        ctx.rebuiltZipDelivered = false;
         dom.finishStatus.textContent = FINISH_LABELS.ready(blob.size, canShare);
         dom.downloadButton.disabled = false;
         // The placed objects are in the zip now; the next finish (a
@@ -1207,8 +1198,6 @@ export function wireCreatorSetup(deps: {
         // to look for it in an app. Only a hand-off that DELIVERED gets to
         // change it - a dismissed picker changed nothing (PR #440 review).
         if (delivered) dom.replaceHelpShare.hidden = !help.shareNote;
-        // Saved or shared: switching tours no longer loses it (plan §9 #3).
-        if (delivered) ctx.rebuiltZipDelivered = true;
       },
       (err: unknown) => {
         if (openGeneration !== ctx.openGeneration) return;

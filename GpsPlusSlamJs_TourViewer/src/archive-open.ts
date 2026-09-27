@@ -95,9 +95,7 @@ export function wireArchiveOpen(deps: {
     ctx.currentLevels = null;
     ctx.tourManifest = null;
     ctx.rebuiltZip = null;
-    ctx.rebuiltZipDelivered = false;
     ctx.tourLabel = null;
-    ctx.tourOpenedBy = null;
     // The measured level belongs to the CLOSING tour. It survives a SESSION
     // end on purpose (finishing ends the session), but it must not survive
     // the TOUR: M5 persists it into a draft, so carrying it over would
@@ -225,8 +223,6 @@ export function wireArchiveOpen(deps: {
     /** Where the open came from - a step-4 scan asks the wizard to
      *  stay there rather than jump to step 2 (M3 review #1). */
     origin: "host-step" | "measure-step" = "host-step",
-    /** A scan in step 4, or a link typed or remembered (plan §2). */
-    by: "scan" | "link" = "link",
   ): Promise<OpenOutcome> {
     const generation = ++ctx.openGeneration;
     opening = true;
@@ -259,7 +255,6 @@ export function wireArchiveOpen(deps: {
       }
       ctx.session = opened;
       ctx.tourLabel = tourLabel(url);
-      ctx.tourOpenedBy = by;
       renderStats();
       void fillGallery(opened);
       // A tour opened AFTER entering AR places itself from the open path
@@ -362,7 +357,7 @@ export function wireArchiveOpen(deps: {
     resolve: codeResolver(corsProxyBaseUrl),
     open: (url) => {
       dom.linkInput.value = url;
-      return openUrl(url, "measure-step", "scan");
+      return openUrl(url, "measure-step");
     },
     isOpening: () => opening,
     now: () => performance.now(),

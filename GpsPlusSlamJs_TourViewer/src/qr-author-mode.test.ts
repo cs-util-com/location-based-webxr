@@ -548,24 +548,14 @@ describe("codeTourLine (scan-to-open plan §9 #9)", () => {
     expect(codeTourLine({ kind: "not-a-tour" })).toMatch(
       /does not point to a tour/,
     );
-    expect(codeTourLine({ kind: "switch-pending" })).toMatch(/switch/);
     expect(codeTourLine({ kind: "not-a-tour" })).toMatch(/step 2/);
-    // Each "another tour" line names the next move and the tour.
-    const unsaved = codeTourLine({
-      kind: "other-tour",
-      reason: "unsaved-work",
-      label: "a.zip",
-    });
-    expect(unsaved).toMatch(/another tour/);
-    expect(unsaved).toMatch(/finish a.zip and save its zip first/);
     expect(
-      codeTourLine({
-        kind: "other-tour",
-        reason: "measured-for-another",
-        label: "a.zip",
-      }),
+      codeTourLine({ kind: "measured-for-another", label: "a.zip" }),
     ).toMatch(/You measured the code of a.zip/);
-    expect(codeTourLine({ kind: "other-link" })).toMatch(/opened in step 1/);
+    // Plan §13: another tour's code joins the open tour - the line says so.
+    expect(codeTourLine({ kind: "added-to-open-tour" })).toMatch(
+      /added to the open tour/,
+    );
     expect(codeTourLine({ kind: "unknown" })).toMatch(/Cannot tell/);
   });
 
@@ -607,10 +597,8 @@ describe("codeTourLine (scan-to-open plan §9 #9)", () => {
     }
     // A tour label is cut at 24 characters (tourLabel).
     const label = "x".repeat(24) + "…";
-    for (const reason of ["unsaved-work", "measured-for-another"] as const) {
-      expect(
-        codeTourLine({ kind: "other-tour", reason, label }).length,
-      ).toBeLessThanOrEqual(110);
-    }
+    expect(
+      codeTourLine({ kind: "measured-for-another", label }).length,
+    ).toBeLessThanOrEqual(110);
   });
 });

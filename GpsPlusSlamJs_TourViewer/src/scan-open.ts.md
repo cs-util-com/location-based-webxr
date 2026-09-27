@@ -4,17 +4,18 @@
 
 Step 4's scan-to-open policy (TourViewer scan-to-open plan,
 `GpsPlusSlamJs_Docs/docs/2026-09-27-0725-tour-viewer-creator-scan-to-open-plan.md`
-§2, §9). The printed code carries the tour's link, so the first code the
-creator's camera reads opens the tour it names; no link is pasted. Per
-detection it decides whether to open, switch tours, wait, or stay put, and it
-says what the panel should report about the code in view.
+§2, §9, §13). The printed code carries the tour's link, so the first code
+the creator's camera reads with no tour open opens the tour it names; no link
+is pasted. Once a tour is open there is no wrong code (§13, owner): a code of
+another tour is one more reference for the open tour, measured into it,
+never a switch. Per detection it decides whether to open, and it says what
+the panel should report about the code in view.
 
 ## Public API
 
 - `createScanOpen(deps): ScanOpen`
   - `deps.ctx` - the session (reads `session`, `arSessionGeneration`,
-    `mintedLevel`, `mintedLevelTour`, `placedObjects`, `finishing`,
-    `rebuiltZip`, `rebuiltZipDelivered`).
+    `mintedLevel`, `mintedLevelTour`).
   - `deps.resolve(text)` - which tour a code names (`codeResolver(proxy)` =
     `resolveCodeTour` bound to the open path's proxy base).
   - `deps.open(url)` - `archive-open`'s open; resolves an `OpenOutcome`
@@ -24,10 +25,9 @@ says what the panel should report about the code in view.
   - `deps.now()`, `deps.render()`.
 - `ScanOpen.onDetection(text)` - a detection in the creator's AR session.
 - `ScanOpen.status(text | null): CodeTourStatus` - `quiet`, `opening`,
-  `switch-pending`, `not-a-tour`, `failed {cause, retrying}`, `other-tour
-{reason: unsaved-work | measured-for-another, label}`, `other-link`,
-  `unknown`;
-  `qr-author-mode.ts`'s `codeTourLine` words it.
+  `not-a-tour`, `failed {cause, retrying}`, `measured-for-another {label}`,
+  `added-to-open-tour`, `unknown`; `qr-author-mode.ts`'s `codeTourLine`
+  words it. No status locks Save.
 - `ScanOpen.tourOf(text)` - the normalised link of the tour a code names,
   once read; the mint records it (`ctx.mintedLevelTour`).
 
@@ -39,35 +39,25 @@ says what the panel should report about the code in view.
   The only kept state is the last failed attempt per tour, tagged with
   `arSessionGeneration`, so a new AR session starts afresh without a
   session-end hook.
+- **Opens only with no tour open.** Once a tour is open, a code of another
+  tour is `added-to-open-tour` and a link that cannot be compared is
+  `unknown`; both are measured into the open tour like its own codes. To
+  edit another tour: step 1's link, or reload and scan its code first
+  (plan §13, which superseded the switching rules of §9 #3, §11, §12 #1).
 - **One open at a time:** none starts while `isOpening()` (the open path's
   own flag, set before its first await). A code is acted on as soon as it
   is read, while it is still the code in view (milestone review #9).
 - **Retries (§9 #7):** only `missing` and `cors` (fixable while standing at
   the poster), after 10 s, then 20, then every 30 s (milestone review #10).
   Anything else is final for the AR session.
-- **Only a scan-opened tour switches** (owner decision, plan §2): a tour
-  the creator opened by its link in step 1 is their explicit choice - the
-  case step 1 was kept for is an old print naming another link - so a code
-  of another tour is `other-link`: measured into the open tour, Save on,
-  never a switch (`ctx.tourOpenedBy`).
-- **Switching needs dwell (milestone review #1):** another tour's code must
-  be the only code in view for 1.5 s (any other detection restarts the
-  run), so a glimpse while walking past a neighbour's poster, or two prints
-  side by side, never swaps tours. A link that already failed this AR
-  session is never switched to: the switch tears the open tour down first.
-- **Switching tours (§9 #3):** a code of another tour opens it only when
-  the open tour was scan-opened and nothing unfinished would be lost: no finish running, no placed objects,
-  and no measured level unless its rebuilt zip was handed off at least once.
-  Otherwise `other-tour`, and `creator-setup` keeps Save off for that code.
 - **Work before any tour (§9 #4):** with no tour open, a level measured from
   a code that named tour X waits for X; a code of another tour is
-  `other-tour` (reason `measured-for-another`), not an open - and Save stays
-  on, so a new measurement can replace that level (milestone review #6). A
-  level whose code named no tour binds nothing.
+  `measured-for-another`, not an open - and Save stays on, so a new
+  measurement can replace that level (milestone review #6). A level whose
+  code named no tour binds nothing.
 - **Quiet while a tour is open** about codes that name no tour (a
   third-party code near the poster, §9 #15), and about codes still being
   read.
-- `unknown` (a link that cannot be compared) never switches and never locks.
 
 ## Examples
 
@@ -88,17 +78,13 @@ codeTourLine(scanOpen.status(ctx.lastDetectedText)); // in the readout
 
 `scan-open.test.ts`, with a fake resolver, open and clock:
 
-- opening once however many frames arrive;
+- opening once, on the first sighting, however many frames arrive, and none
+  while a step-1 open is in flight;
 - a code naming no tour, with and without a tour open;
-- the pre-open level bound to its tour, and one bound to none;
-- retry with backoff (10 s, then 20 s), no retry for `corrupt`, afresh in a
-  new AR session;
-- the open tour's own code, switching when nothing is unfinished, and
-  staying put for placements, an unfinished level, an undelivered zip, a
-  running finish;
-- an uncomparable code;
+- the pre-open level bound to its tour, a stale binding, one bound to none;
+- retry with backoff (10 s, 20 s, then capped at 30 s), `cors` retried, no
+  retry for `corrupt`, a rejecting open, a superseded open not counted,
+  afresh in a new AR session;
+- with a tour open: its own code quiet, a code of another tour added (never
+  an open, however long in view), an uncomparable code `unknown`;
 - `tourOf`.
-
-Three mutations of the policy (switching ignoring unfinished work, ignoring
-the pre-open bound, retrying `corrupt`) each fail the suite (checked
-2026-09-27).

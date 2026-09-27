@@ -204,16 +204,8 @@ export interface TourViewerSession {
   finishError: string | null;
   /** The rebuilt zip awaiting download in step 5. */
   rebuiltZip: { blob: Blob; filename: string } | null;
-  /** The rebuilt zip was saved or shared at least once: switching tours by
-   *  scanning another tour's code no longer loses it (plan §9 #3). */
-  rebuiltZipDelivered: boolean;
   /** What the panel calls the open tour (`tourLabel`); null with none. */
   tourLabel: string | null;
-  /** How the open tour was opened: by scanning its code in step 4, or by
-   *  its link in step 1. A code naming another tour switches only a
-   *  scan-opened tour; a link-opened one is the creator's explicit choice
-   *  (an old print, scan-to-open plan §2), so its code is measured into it. */
-  tourOpenedBy: "scan" | "link" | null;
   /** Content placed in THIS setup session (M4): the records the finish
    *  step appends to `tour.json`, with the photo bytes that become
    *  `content/<id>.jpg`. Survives a session end like the level does. */
@@ -326,9 +318,7 @@ export function createTourViewerSession(): TourViewerSession {
     finishProgress: "",
     finishError: null,
     rebuiltZip: null,
-    rebuiltZipDelivered: false,
     tourLabel: null,
-    tourOpenedBy: null,
     arSessionGeneration: 0,
     placedObjects: [],
     reticle: null,

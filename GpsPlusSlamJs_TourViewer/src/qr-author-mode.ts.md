@@ -46,11 +46,10 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   content or finish.
 - `codeTourLine(status: CodeTourStatus): string` - the scan-to-open status
   of the code in view (`scan-open.ts`) in plain words: opening, does not
-  point to a tour, switching once it stays in view, could not open (a
-  short cause, and either "keep the code in view" or "fix the link, then
-  restart AR"), belongs to another tour (with the tour's label and the next
-  move), names another link (and is measured into the tour opened in step
-  1), cannot tell; "" when
+  point to a tour, could not open (a short cause, and either "keep the
+  code in view" or "fix the link, then restart AR"), the level in hand was
+  measured for another tour (named), another tour's code is added to the
+  open tour (plan §13), cannot tell; "" when
   quiet. At most 110 characters: it shares the panel with the readout.
 - `finishReadiness({ measured, tourOpen })` → `"ready" | "not-measured" |
 "no-tour"` - the finish button's gate.

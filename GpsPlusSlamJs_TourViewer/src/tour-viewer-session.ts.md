@@ -26,9 +26,7 @@ lives here.
     `activeSizeM`, `authorErrorText`, `gpsSamplesAtSessionStart`,
     `mintedLevel`, `mintedLevelTour` (the tour the measured code named,
     valid while its `levelId` is the level's id), `mintGeneration`,
-    `finishing`, `rebuiltZip`, `rebuiltZipDelivered` (saved or shared once;
-    scan-to-open plan §9 #3), `tourLabel` and `tourOpenedBy` (`scan` | `link`, set by archive-open;
-    only a scan-opened tour switches on another tour's code); the open
+    `finishing`, `rebuiltZip`, `tourLabel` (set by archive-open); the open
     tour's `tourManifest` (archive-open.ts); the placement layer (M4):
     `placedObjects`, `placedPreviews`, `placementNote`, `reticle`,
     `latestFrame` (a `CapturedCameraFrame | null`: the pixels the photo
