@@ -311,9 +311,15 @@ test("the AO switch is in the plate on the phone tier, and offers the Desktop ti
     true,
   );
   await expect(page.locator("[data-stats]")).toContainText("AO on ·");
-  // A link without it turns it off (like shadows and the catalog).
+  // The page's hash rule (round 3, lookdev.js readHash): a key the hash does
+  // not name keeps its current value, so a link without `ao` leaves it on...
   await page.evaluate(() => {
     location.hash = "preset=golden&tone=neutral&tier=desktop";
+  });
+  await expect(page.locator("#ao")).toBeChecked();
+  // ...and a link that names it off turns it off.
+  await page.evaluate(() => {
+    location.hash = "preset=golden&tone=neutral&tier=desktop&ao=0";
   });
   await expect(page.locator("#ao")).not.toBeChecked();
   expect(await page.evaluate(() => window.__lookdev.stats().aoActive)).toBe(
