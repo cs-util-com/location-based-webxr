@@ -10,6 +10,7 @@
 import type { BoundedLocalCacheStore } from "gps-plus-slam-app-framework/storage";
 import { resolveQrPayload } from "gps-plus-slam-app-framework/utils/qr-payload/qr-launch-dispatch";
 
+import { DEFAULT_ASSET_PREFIX } from "./code-tour.js";
 import { describeOpenError } from "./open-errors.js";
 import { toStatsView } from "./stats-view.js";
 import { clearCacheLabel } from "./tour-flow.js";
@@ -18,11 +19,6 @@ import type {
   TourViewerHooks,
   TourViewerSession,
 } from "./tour-viewer-session.js";
-
-/** Bare-name `?qr=` payloads resolve under this prefix — the convention the
- *  QR builder's `defaultAssetPrefix` example documents. */
-const DEFAULT_ASSET_PREFIX =
-  "https://raw.githubusercontent.com/cs-util-com/GeoTales/refs/heads/main/";
 
 /** The label on every button that opens a tour. "Open" until the second
  *  testing session (F6): nobody wants to open the zip, they want to know

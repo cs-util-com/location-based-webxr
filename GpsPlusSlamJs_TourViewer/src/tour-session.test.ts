@@ -1,4 +1,5 @@
 import { TextReader, Uint8ArrayWriter, ZipWriter } from "@zip.js/zip.js";
+import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -14,6 +15,7 @@ import {
   archiveFileName,
   openTourSession,
   readArchiveInSlices,
+  tourLabel,
 } from "./tour-session.js";
 
 /**
@@ -552,5 +554,49 @@ describe("loadTourManifest / readWholeArchive (guided-setup plan M3)", () => {
     const viaSession = await session.readWholeArchive();
     expect(viaSession.size).toBe(session.archive.size);
     await session.close();
+  });
+});
+
+describe("tourLabel (scan-to-open plan §9 #11)", () => {
+  // Why this matters: the panel names the tour a scan opened, so the
+  // creator can see it is the RIGHT one. archiveFileName's fallback calls
+  // every Drive tour "tour.zip", and a Drive link's last segment is "view"
+  // or "open" - neither tells two tours apart.
+  const ID = "1AbCdEfGhIjKlMnOpQ";
+  it("uses a real .zip name when the link has one", () => {
+    expect(tourLabel("https://h.test/ranges-ok/My%20Tour.zip")).toBe(
+      "My Tour.zip",
+    );
+  });
+
+  it("names a Drive tour by the start of its file id, in every spelling", () => {
+    for (const url of [
+      `https://drive.google.com/file/d/${ID}/view?usp=sharing`,
+      `https://drive.google.com/open?id=${ID}`,
+      `/api/drive-proxy?id=${ID}`,
+      `https://gps.csutil.com/api/drive-proxy?id=${ID}`,
+    ]) {
+      expect(tourLabel(url), url).toBe("Google Drive file 1AbCdEfGhI…");
+    }
+    expect(tourLabel("https://drive.google.com/open?id=short")).toBe(
+      "Google Drive file short",
+    );
+  });
+
+  it("otherwise, the host and the start of the last path segment", () => {
+    expect(tourLabel("https://h.test/files/abcdefghijklmnopq")).toBe(
+      "h.test/abcdefghijkl…",
+    );
+    expect(tourLabel("https://h.test/")).toBe("h.test");
+  });
+
+  it("never throws and stays short, whatever it is given", () => {
+    fc.assert(
+      fc.property(fc.oneof(fc.string(), fc.webUrl()), (url) => {
+        const label = tourLabel(url);
+        expect(label.length).toBeGreaterThan(0);
+        expect(label.length).toBeLessThanOrEqual(80);
+      }),
+    );
   });
 });

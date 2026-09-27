@@ -55,6 +55,11 @@ loading with MIME types, and the poisoned-cache recovery loop.
 - `archiveFileName(url): string` (pure) - the hosted file's name for the
   same-name re-upload: the last path segment when it ends in `.zip`
   (decoded), else `tour.zip`.
+- `tourLabel(url): string` (pure, never throws) - what the creator's panel
+  calls a tour (scan-to-open plan §9 #11): a real `.zip` name (cut at 60),
+  else `Google Drive file <first 10 of the id>…` for every Drive spelling
+  and the proxy route, else `host/<first 12 of the last segment>…`, else
+  "the tour". Short on purpose: it shares a line with the live readout.
 
 ## Invariants & assumptions
 

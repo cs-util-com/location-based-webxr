@@ -166,14 +166,68 @@ export async function readArchiveInSlices(
  *  the last path segment when it ends in `.zip` (decoded), else
  *  `tour.zip` (a Drive id or a proxy route says nothing useful). */
 export function archiveFileName(url: string): string {
+  return zipNameOf(url) ?? "tour.zip";
+}
+
+/** The link's last path segment when it is a real `.zip` name (decoded,
+ *  no path separator in it), else null. */
+function zipNameOf(url: string): string | null {
   try {
     const last = decodeURIComponent(
       new URL(url).pathname.split("/").filter(Boolean).at(-1) ?? "",
     );
-    return /\.zip$/i.test(last) && !/[/\\]/.test(last) ? last : "tour.zip";
+    return /\.zip$/i.test(last) && !/[/\\]/.test(last) ? last : null;
   } catch {
-    return "tour.zip";
+    return null;
   }
+}
+
+/** Resolves relative links (the same-origin Drive proxy route) for parsing. */
+const LABEL_BASE = "https://label.invalid";
+const DRIVE_HOSTS: ReadonlySet<string> = new Set([
+  "drive.google.com",
+  "drive.usercontent.google.com",
+]);
+
+/**
+ * What the creator's panel calls a tour, so they can see a scan opened the
+ * RIGHT one (scan-to-open plan §9 #11): a real `.zip` name, else a Drive
+ * file by the start of its id (every Drive spelling and the proxy route
+ * agree on it), else the host and the start of the last path segment.
+ * Short by design - it shares a line with the live readout on a phone.
+ */
+export function tourLabel(url: string): string {
+  const zip = zipNameOf(url);
+  if (zip !== null) return cut(zip, 60);
+  let parsed: URL;
+  try {
+    parsed = new URL(url, LABEL_BASE);
+  } catch {
+    return "the tour";
+  }
+  const driveId = driveFileId(parsed);
+  if (driveId !== null) return `Google Drive file ${cut(driveId, 10)}`;
+  const host = parsed.origin === LABEL_BASE ? "" : cut(parsed.hostname, 40);
+  const last = parsed.pathname.split("/").filter(Boolean).at(-1);
+  const tail = last === undefined ? "" : cut(last, 12);
+  if (host === "") return tail === "" ? "the tour" : tail;
+  return tail === "" ? host : `${host}/${tail}`;
+}
+
+function driveFileId(url: URL): string | null {
+  let id: string | null = null;
+  if (DRIVE_HOSTS.has(url.hostname)) {
+    id =
+      /^\/file\/d\/([^/]+)/.exec(url.pathname)?.[1] ??
+      url.searchParams.get("id");
+  } else if (url.pathname.endsWith("/drive-proxy")) {
+    id = url.searchParams.get("id");
+  }
+  return id === null || id === "" ? null : id;
+}
+
+function cut(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
 const IMAGE_EXTENSION = /\.(jpe?g|png|webp|gif|avif)$/i;
