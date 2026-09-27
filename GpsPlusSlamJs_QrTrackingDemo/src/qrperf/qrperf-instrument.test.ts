@@ -457,6 +457,29 @@ describe("createQrPerfInstrument fused pose (M3b b5)", () => {
     expect(inst.report().some((l) => l.startsWith("fused:"))).toBe(true);
   });
 
+  // QR size consensus plan S2: the size section - parallax beside depth -
+  // reaches both the screenshot and the copied JSON.
+  it("reports the size section in the report and the JSON", () => {
+    const inst = createQrPerfInstrument({
+      mode: "native",
+      baseline: false,
+      now: steppingClock(1),
+    });
+    inst.onSize({
+      parallax: { sizeM: 0.16, lateralBaselineM: 0.1, views: 8 },
+      turning: false,
+      depth: { status: "estimated", estimateM: 0.176 },
+    });
+    const json = JSON.parse(inst.json()) as {
+      size: { parallax: { windows: number }; ratio: number };
+    };
+    expect(json.size.parallax.windows).toBe(1);
+    expect(json.size.ratio).toBeCloseTo(0.16 / 0.176, 9);
+    expect(
+      inst.report().some((l) => l.startsWith("size: parallax p50 16.0")),
+    ).toBe(true);
+  });
+
   // Plan §30 (PR #497 review): the fused/motion step runs three small solves
   // per detection and sat outside every timed stage - a dropped cadence on
   // the phone could not be blamed on it or cleared of it.

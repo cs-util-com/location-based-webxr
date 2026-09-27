@@ -26,7 +26,10 @@ import {
   selectQrFusedEntries,
   selectQrSize,
 } from "gps-plus-slam-app-framework/state";
-import { createFusedQrPoseSource } from "gps-plus-slam-app-framework/ar/qr";
+import {
+  createFusedQrPoseSource,
+  estimateQrSizeFromParallax,
+} from "gps-plus-slam-app-framework/ar/qr";
 import { createMotionTrail } from "./motion-trail.js";
 import {
   createMotionTrailView,
@@ -277,10 +280,23 @@ async function startAr(): Promise<void> {
         // The size state goes with it: the switch log shows whether a
         // "moving" came while the size was still converging (plan §30).
         const size = selectQrSize(store.getState(), text);
-        perf.instrument.onFused(
-          last,
-          size ? { status: size.status, estimateM: size.estimateM } : undefined,
-        );
+        const depth = size
+          ? { status: size.status, estimateM: size.estimateM }
+          : undefined;
+        perf.instrument.onFused(last, depth);
+        // The size section (QR size consensus plan S2, log only): parallax
+        // assumes a still code, so a turning one is counted, not measured -
+        // the turn signal is the size-free check (plan §8).
+        const turning = last.motion?.state.includes("turning") ?? false;
+        perf.instrument.onSize({
+          parallax: turning
+            ? null
+            : estimateQrSizeFromParallax(
+                selectQrFusedEntries(store.getState(), text),
+              ),
+          turning,
+          ...(depth ? { depth } : {}),
+        });
       }
       return pose;
     },

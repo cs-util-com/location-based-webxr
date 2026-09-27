@@ -24,6 +24,10 @@ The `?qrperf` instrument: times the demo's capture, detect and solve stages, opt
     order's audit, runs of unsure frames and runs of native frames, plan
     §42 S4, §55 #8): the JSON
     `cornerOrderChain` and the report line `corner order chain audit ...`.
+  - `onSize(sample)` - one lock's size sample (`size-tally.ts`): the parallax
+    estimate (or null when refused), whether the code was turning, and the
+    depth size state; the report gains a `size:` line and the JSON a `size`
+    field (QR size consensus plan S2).
   - `onFusedCost(ms)` - one NEW fused/motion evaluation's cost (plan §30),
     recorded as the `fused` stage. The demo feeds it from
     the framework `createFusedQrPoseSource`'s `onEvaluated` hook, because the HUD's render

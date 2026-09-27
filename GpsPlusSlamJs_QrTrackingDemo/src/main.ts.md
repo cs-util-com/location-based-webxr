@@ -34,6 +34,11 @@ boot store + AR session + debug view + controller → per-frame
   fused result is also tallied (`qrperf/fused-tally.ts`) with the code's size
   state then, and each NEW fused/motion evaluation is timed as the `fused`
   stage through the framework's `createFusedQrPoseSource` (`ar/qr/qr-fused-pose-source.ts`)'s `onEvaluated` hook (plan §30).
+  Each lock also feeds the **size section** (`qrperf/size-tally.ts`; QR size
+  consensus plan S2, log only): the framework's `estimateQrSizeFromParallax`
+  over the code's current-epoch entries beside the depth size - skipped (and
+  counted) while the motion detector reads the code as turning, since
+  parallax assumes a still code.
 - The motion mode (plan §26): the HUD's motion row (`motionLabel`, coloured
   by `motionColor`) and a ~2 s trail of the active code's raw positions
   (`motion-trail.ts`, drawn by `motion-trail-view.ts` in the same colour).

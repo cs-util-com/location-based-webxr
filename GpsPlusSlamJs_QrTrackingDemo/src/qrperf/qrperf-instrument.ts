@@ -6,6 +6,7 @@
 
 import type { QrFusedPose } from "gps-plus-slam-app-framework/ar/qr";
 import { createFusedTally, fusedLines } from "./fused-tally.js";
+import { createSizeTally, sizeLines, type SizeSample } from "./size-tally.js";
 import type { SizeState } from "./motion-tally.js";
 import {
   createOrderChainTally,
@@ -77,6 +78,8 @@ export interface QrPerfInstrument {
   onFused(result: QrFusedPose, size?: SizeState): void;
   /** One NEW fused/motion evaluation's cost, ms (plan §30). */
   onFusedCost(ms: number): void;
+  /** The code's size from parallax beside its depth size, per lock (size consensus S2). */
+  onSize(sample: SizeSample): void;
   report(): string[];
   json(): string;
 }
@@ -270,6 +273,7 @@ export function createQrPerfInstrument(
   let nextSet: ZxingOptionSet = "default";
   const pose = createPoseQuality();
   const fused = createFusedTally();
+  const sizes = createSizeTally();
   /** Solves attempted and accepted (a null result failed, e.g. the 4 px gate). */
   const solves = { accepted: 0, attempted: 0 };
   /** The text of the latest detection; the solve that follows is its frame's. */
@@ -382,6 +386,9 @@ export function createQrPerfInstrument(
     onFusedCost(ms) {
       timings.record("fused", ms);
     },
+    onSize(sample) {
+      sizes.add(sample);
+    },
     snapshot: () => timings.snapshot(now()),
     cornerOrder: () => tally.summary(),
     report() {
@@ -404,6 +411,7 @@ export function createQrPerfInstrument(
         `solves accepted ${solves.accepted} / ${solves.attempted}`,
         ...poseLines(pose.summary()),
         ...fusedLines(fused.summary()),
+        ...sizeLines(sizes.summary()),
         chainLine(orderChain.summary()),
       );
       if (options.mode === "zxing") lines.push(...zxingLines());
@@ -419,6 +427,7 @@ export function createQrPerfInstrument(
         pose: pose.summary(),
         solves,
         fused: fused.summary(),
+        size: sizes.summary(),
         zxingSets: sets,
         zxingLoadMs: options.zxing?.loadMs() ?? null,
         cornerOrder: tally.summary(),
