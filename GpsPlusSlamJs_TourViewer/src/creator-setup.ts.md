@@ -43,6 +43,13 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   memory; a storage problem must never fail the tap that made it. A failed
   write says so ONCE, in the panel - a creator mid-walk cannot act on it
   more often than that.
+- **Work made before the draft opened is written when it opens**
+  (scan-to-open plan §9 #5): with no tour open, or between an open and its
+  manifest settling, there is no namespace yet - that is not a storage
+  failure and does not spend the one warning. When the store is assigned,
+  the in-memory placements the read did not return are written (after the
+  read, so no branch deletes them), and a level measured before the open is
+  recorded in the meta even when an older draft is being offered.
 - **A draft is OFFERED, never applied.** It can be days old and can be one
   the creator believes they discarded; restoring it silently would append
   content they did not ask for into a zip they are about to publish. Three

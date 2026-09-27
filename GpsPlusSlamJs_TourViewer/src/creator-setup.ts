@@ -270,7 +270,11 @@ export function wireCreatorSetup(deps: {
   function recordPlacement(object: TourObject, blob?: Blob): void {
     const store = draftStore;
     if (store === undefined) {
-      noteNoPersistence();
+      // No draft namespace YET - no tour open, or its draft still opening -
+      // is not a storage failure: the draft writes these when it opens
+      // (scan-to-open plan §9 #5). Only an opened namespace without a store
+      // is one.
+      if (draftTourUrl !== null) noteNoPersistence();
       return;
     }
     void writeDraftObject(store, object, blob).then((ok) => {
@@ -1237,6 +1241,17 @@ export function wireCreatorSetup(deps: {
         // is the only thing that reclaims them - and it is safe to repeat,
         // because removing a key that is not there is not a failure.
         for (const id of draftRejected) void removeDraftObject(store, id);
+        // Work made before this draft opened - with no tour open, or while
+        // the manifest settled - was never written (scan-to-open plan §9
+        // #5). AFTER the read on purpose: every branch below deletes only
+        // what the read returned, so these cannot be swept as a spent or
+        // rejected draft's.
+        const storedIds = new Set(stored?.storedIds ?? []);
+        for (const entry of ctx.placedObjects) {
+          if (!storedIds.has(entry.object.id)) {
+            recordPlacement(entry.object, entry.blob);
+          }
+        }
         if (stored === undefined) {
           // No draft yet, but there will be: record what is already known,
           // so a crash before the first placement still leaves the tour and
@@ -1289,6 +1304,10 @@ export function wireCreatorSetup(deps: {
           return;
         }
         const hasLevel = draftHasUnhostedLevel(stored.draft, hostedLevel);
+        // A level measured before this open is newer than the offered
+        // draft's and would otherwise live only in memory; a mint after the
+        // open would write it the same way.
+        if (ctx.mintedLevel !== null) void recordMeta(tourUrl);
         offered = {
           objects: waiting,
           storedIds: stored.storedIds,

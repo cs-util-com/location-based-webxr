@@ -1003,3 +1003,64 @@ describe("a placement reaches the draft", () => {
     // the sweep's findings.
   });
 });
+
+describe("work made before the tour's draft opened reaches it", () => {
+  // Why these tests matter (TourViewer scan-to-open plan §9 #5): a creator
+  // can measure and place before any tour is open - scan-to-open makes
+  // that the normal order - and between an open and its manifest settling
+  // there is no draft store yet either. Such a placement used to say "not
+  // saving a backup copy" (spending the one warning a real storage failure
+  // needs) and was never written, so a crash lost it even on a phone that
+  // saves drafts.
+  it("does not spend the backup warning on a placement with no tour yet", async () => {
+    // The warning is said ONCE per page. Spent on "no tour yet" - which is
+    // not a storage failure - it was gone when the tour opened on a phone
+    // that really cannot save (the first open yields no store here).
+    const { store } = memoryStore();
+    const { ctx, dom, setup } = wire(store, {
+      placeable: true,
+      firstOpenFails: true,
+    });
+    dom.pinLabel.value = "Gate";
+    dom.pinSave.click();
+    await settle();
+    expect(ctx.placedObjects).toHaveLength(1);
+    ctx.placementNote = null; // the creator's next tap
+
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    expect(String(ctx.placementNote)).toContain("not saving a backup");
+  });
+
+  it("writes the placements into the draft once it opens", async () => {
+    const { store, files } = memoryStore();
+    const { ctx, dom, setup } = wire(store, { placeable: true });
+    dom.pinLabel.value = "Gate";
+    dom.pinSave.click();
+    await settle();
+    const id = String(ctx.placedObjects[0]?.object.id);
+    expect(files.has(objectKey(id)), "nothing to write to yet").toBe(false);
+
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    expect(files.has(objectKey(id))).toBe(true);
+  });
+
+  it("records a level measured before the open, even beside an older draft", async () => {
+    // The offer branch wrote no meta: an older draft waiting to be restored
+    // left this session's measurement only in memory.
+    const { store, metaPuts } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+      [objectKey("old-pin")]: JSON.stringify(pin("old-pin")),
+    });
+    const { ctx, dom, setup } = wire(store, { placeable: true });
+    ctx.mintedLevel = { id: "fresh", json: "{}" };
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    expect(dom.draftOffer.hidden, "the older draft is offered").toBe(false);
+    const last = JSON.parse(String(metaPuts.at(-1))) as {
+      level: { id: string } | null;
+    };
+    expect(last.level?.id).toBe("fresh");
+  });
+});
