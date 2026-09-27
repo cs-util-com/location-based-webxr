@@ -215,6 +215,7 @@ describe("createPresetGlide", () => {
 
   it("rebuilds on every k-th frame, the first and the last always", () => {
     const glide = glideFrom(GOLDEN, NOON, { rebuildEvery: 4 });
+    assert.equal(glide.rebuildEvery, 4);
     const rebuilds = [];
     for (let frame = 0; frame < 10; frame++) {
       rebuilds.push(glide.tick(1000 + frame * 16).rebuild);

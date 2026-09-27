@@ -156,5 +156,9 @@ export function createPresetGlide({
     get id() {
       return run ? run.id : null;
     },
+    /** The rebuild interval it was built with, frames. */
+    get rebuildEvery() {
+      return rebuildEvery;
+    },
   };
 }

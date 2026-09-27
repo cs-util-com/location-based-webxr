@@ -47,6 +47,7 @@ import {
 } from "./city-materials.js";
 import { LABEL_RULE, labelOpacities } from "./catalog/label-rule.js";
 import { sunDirection } from "/osm/sun-position.js";
+import { smoothstep } from "/osm/easing.js";
 import {
   createSunShadow,
   enableSunShadows,
@@ -61,6 +62,7 @@ import {
   withRingShadow,
 } from "./ring-shadow.js";
 import { lutParity, skyPixelExpected } from "./parity.js";
+import { createPresetGlide, presetLook } from "./preset-glide.js";
 import {
   buildStandInScene,
   DENSE_PITCHES,
@@ -332,10 +334,96 @@ function applyPresetToState(preset) {
   state.clouds = preset.cloudCover;
 }
 
+// --- the preset glide (round-3 plan 2026-09-27-0532, feedback 1) -------------
+
+/**
+ * The sky's rebuild interval during a glide, in frames (preset-glide.js):
+ * the LUTs, the environment bake and both shadow maps together, every 2nd
+ * frame. Swept over 1, 2, 4, 8 on the page's defaults (preset-glide
+ * results, 2026-09-27; SwiftShader ratios only): a rebuild costs 0.84-0.90
+ * of a steady frame, 0.69 of it the shadow maps, so a glide frame averages
+ * 1.84-1.90x at 1, 1.42-1.45x at 2, 1.21-1.22x at 4. 2 is the one interval
+ * inside the declared 1.5x budget that still steps at 30 Hz on a 60 fps
+ * screen (at most 1.7° of sun and a 95th-percentile jump of 9 levels per
+ * step at the glide's fastest); 4 steps at 15 Hz, up to 3.4° a step.
+ */
+const GLIDE_REBUILD_EVERY = 2;
+let glide = createPresetGlide({
+  ease: smoothstep,
+  rebuildEvery: GLIDE_REBUILD_EVERY,
+});
+/** The glide's clock: real time, unless a test pins it (`pinGlideClock`). */
+let pinnedGlideMs = null;
+const glideNow = () => pinnedGlideMs ?? performance.now();
+/**
+ * The shadow configuration is HELD for a whole glide (round-3 plan §8
+ * finding 6): on when either end casts, so crossing the 2° floor mid-glide
+ * switches nothing and compiles no program; the floor applies again when
+ * the glide settles or is cancelled.
+ */
+let glideHoldsShadows = false;
+/**
+ * The shadow maps during a glide: "follow" re-renders them with every sky
+ * rebuild, "freeze" keeps them until the glide settles (the cost sweep's
+ * alternative).
+ */
+let glideShadows = "follow";
+
+const lookOfState = () => ({
+  elevation: state.elevation,
+  azimuth: state.azimuth,
+  visibility: state.visibility,
+  exposureEv: state.exposureEv,
+  clouds: state.clouds,
+});
+
+/**
+ * What the preset BUTTONS do: glide from the look the scene shows to the
+ * preset's (a click mid-glide retargets from there). `api.setPreset` and
+ * a link stay instant.
+ */
+function glideToPreset(id) {
+  const preset = LOOK_PRESETS.find((p) => p.id === id);
+  if (!preset) throw new Error(`unknown preset ${id}`);
+  const to = presetLook(preset);
+  glide.start({ from: lookOfState(), to, id, nowMs: glideNow() });
+  glideHoldsShadows =
+    sunShadow !== null || sunShadowActive(to.elevation, SHADOW_FLOOR_DEG);
+  state.preset = id;
+  syncControls();
+}
+
+/** Stop a glide where it is (a manual change or a link takes over). */
+function cancelGlide() {
+  glide.cancel();
+  glideHoldsShadows = false;
+}
+
+/**
+ * One frame of the glide: apply the look on the frames the glide says to
+ * rebuild; the settling frame applies the preset through `applyLook`, which
+ * restores the floor's rule and writes the hash.
+ */
+function glideTick() {
+  const step = glide.tick(glideNow());
+  if (!step?.rebuild) return step;
+  Object.assign(state, step.look);
+  if (step.done) {
+    glideHoldsShadows = false;
+    applyLook();
+  } else {
+    useAtmosphere();
+    syncControls();
+  }
+  return step;
+}
+
 // --- the look -----------------------------------------------------------------
 
 let atmosphere = null;
 let lutMs = 0;
+/** The whole `useAtmosphere` (LUTs, readback, bake, light, shadows), ms. */
+let atmosphereMs = 0;
 
 function sunVector() {
   return sunDirection({
@@ -382,6 +470,7 @@ function useAtmosphere() {
     ATMOSPHERE_FAR_M,
   );
   camera.far = ATMOSPHERE_FAR_M;
+  atmosphereMs = performance.now() - start;
 }
 
 /**
@@ -392,7 +481,9 @@ function useAtmosphere() {
  */
 function applyShadows(direction) {
   const elevationDeg = state.elevation;
-  const on = state.shadows && sunShadowActive(elevationDeg, SHADOW_FLOOR_DEG);
+  const on =
+    state.shadows &&
+    (glideHoldsShadows || sunShadowActive(elevationDeg, SHADOW_FLOOR_DEG));
   shadowsBelowFloor = state.shadows && !on;
   if (!on) {
     // dispose() restores the light as it was found when the shadow was
@@ -435,9 +526,27 @@ function applyShadows(direction) {
   sun.shadow.radius = shadowParams.radius;
   sun.shadow.bias = shadowParams.bias;
   if (shadowParams.everyFrame) sun.shadow.autoUpdate = true;
-  const length = Math.hypot(direction.x, direction.y, direction.z);
+  // Frozen maps keep their pose until the glide settles; the light still
+  // shades from the moving sun (aimSunLight above). Only maps that exist
+  // freeze: a shadow switched on by the glide's hold renders once.
+  const mapsExist =
+    sunShadow.renders > 0 &&
+    (ringShadow !== null || parts.dense.userData.count === 0);
+  if (glide.active && glideShadows === "freeze" && mapsExist) return;
+  // Held below the floor, the maps render from the sun at the FLOOR (same
+  // azimuth): the rig refuses a sun at or below the horizon, and there the
+  // sun light is 0, so the maps shade nothing until the sun is back up.
+  const cast =
+    elevationDeg >= SHADOW_FLOOR_DEG
+      ? direction
+      : sunDirection({
+          elevationRad: SHADOW_FLOOR_DEG * DEG,
+          azimuthRad: state.azimuth * DEG,
+        });
+  const length = Math.hypot(cast.x, cast.y, cast.z);
+  const sunDir = [cast.x / length, cast.y / length, cast.z / length];
   sunShadow.update({
-    sunDir: [direction.x / length, direction.y / length, direction.z / length],
+    sunDir,
     centre: [0, 0, 0],
     halfWidthM: shadowParams.halfWidthM,
     // The fill's count, pitch and meshes are part of the casters: a change
@@ -450,11 +559,7 @@ function applyShadows(direction) {
   sun.shadow.normalBias =
     ((2 * shadowParams.halfWidthM) / shadowParams.mapSize) *
     shadowParams.normalBiasTexels;
-  applyRingShadow([
-    direction.x / length,
-    direction.y / length,
-    direction.z / length,
-  ]);
+  applyRingShadow(sunDir);
 }
 
 /**
@@ -661,7 +766,9 @@ function applyLook() {
   useAtmosphere();
   applyTier();
   camera.updateProjectionMatrix();
-  writeHash();
+  // A glide writes the hash when it settles (round-3 plan §4 B); another
+  // control used mid-glide does not write a half-way view.
+  if (!glide.active) writeHash();
   syncControls();
 }
 
@@ -782,11 +889,12 @@ function buildControls() {
     button.className = "btn";
     button.dataset.preset = preset.id;
     button.textContent = preset.label;
-    button.addEventListener("click", () => api.setPreset(preset.id));
+    button.addEventListener("click", () => api.glideToPreset(preset.id));
     presets.append(button);
   }
   const onInput = (id, update) =>
     $(id).addEventListener("input", (e) => {
+      cancelGlide();
       update(Number(e.target.value));
       state.preset = "custom";
       applyLook();
@@ -880,6 +988,9 @@ function frame(now) {
   water.update(dt);
   last = now;
   resize();
+  // A paused loop leaves the glide to the test (`glideTick`), so its frame
+  // count is the test's.
+  if (!contextLost && !loopPaused) glideTick();
   if (!contextLost && (!loopPaused || !api.ready)) {
     gpuTimer.begin();
     renderFrame();
@@ -892,7 +1003,8 @@ function frame(now) {
     : "GPU n/a";
   $("[data-stats]").textContent =
     `${state.tier} · AO ${ambientOcclusion.active ? "on" : !state.ao ? "off" : ambientOcclusion.unsupported ? "n/a on Oculus Browser" : "on (desktop tier only)"} · clouds ${state.cloudMode} · shadows ${sunShadow ? `on (${sunShadow.renders} maps, central ${shadowParams.halfWidthM} m${ringShadow ? `, ring ${RING_HALF_WIDTH_M} m` : ""})` : shadowsBelowFloor ? "on (sun below 2°)" : "off"} · ${cityReadout()} · ${frameMs.toFixed(1)} ms/frame · ${gpu} · ${renderer.info.render.calls} draws · ` +
-    `${(renderer.info.render.triangles / 1000).toFixed(0)}k tris · LUT ${lutMs.toFixed(1)} ms`;
+    `${(renderer.info.render.triangles / 1000).toFixed(0)}k tris · LUT ${lutMs.toFixed(1)} ms · sky ${atmosphereMs.toFixed(1)} ms` +
+    (glide.active ? ` · glide to ${glide.id}` : "");
   requestAnimationFrame(frame);
 }
 
@@ -915,6 +1027,8 @@ canvas.addEventListener("webglcontextlost", (e) => {
 // only the hash. writeHash uses replaceState, which fires no hashchange, so
 // this cannot loop.
 window.addEventListener("hashchange", () => {
+  // A link opened mid-glide wins, at once (round-3 plan §8 finding 8).
+  cancelGlide();
   readHash();
   applyLook();
 });
@@ -932,9 +1046,53 @@ Object.assign(api, {
   setPreset(id) {
     const preset = LOOK_PRESETS.find((p) => p.id === id);
     if (!preset) throw new Error(`unknown preset ${id}`);
+    // Instant, as before: tests and links rely on it; it stops a glide.
+    cancelGlide();
     applyPresetToState(preset);
     applyLook();
   },
+  /** What the preset buttons do: a 5 s glide (preset-glide.js). */
+  glideToPreset(id) {
+    glideToPreset(id);
+  },
+  /**
+   * Test surface: pin the glide's clock at `ms` (null: real time again).
+   * With the loop paused, `glideTick` then runs the glide's frames.
+   */
+  pinGlideClock(ms) {
+    if (ms !== null && !Number.isFinite(ms)) {
+      throw new RangeError(`the glide clock must be finite or null, got ${ms}`);
+    }
+    pinnedGlideMs = ms;
+  },
+  /** Test surface: one glide frame; the step, or null while idle. */
+  glideTick: () => glideTick(),
+  /** Test surface: the glide's state. */
+  glideInfo: () => ({
+    active: glide.active,
+    id: glide.id,
+    rebuildEvery: glide.rebuildEvery,
+    holdsShadows: glideHoldsShadows,
+    shadows: glideShadows,
+  }),
+  /**
+   * The rate sweep's handle: the sky rebuilds on every k-th glide frame.
+   * Only while no glide runs.
+   */
+  setGlideRebuildEvery(k) {
+    if (glide.active) throw new Error("a glide is running");
+    glide = createPresetGlide({ ease: smoothstep, rebuildEvery: k });
+  },
+  /** The cost sweep's handle: "follow" (the default) or "freeze". */
+  setGlideShadows(mode) {
+    if (!["follow", "freeze"].includes(mode)) {
+      throw new Error(`unknown glide shadow mode ${mode}`);
+    }
+    glideShadows = mode;
+  },
+  /** Test surface: the ids of the programs three holds, ascending. */
+  programIds: () =>
+    (renderer.info.programs ?? []).map((p) => p.id).sort((a, b) => a - b),
   setToneMapping(name) {
     if (!(name in TONE_MAPPINGS))
       throw new Error(`unknown tone mapping ${name}`);
@@ -1245,19 +1403,20 @@ Object.assign(api, {
    * pending shadow map or a program compile lands there), then `n` timed
    * frames, each finished by a 1-pixel read so the GPU work is inside the
    * time. `shadowMaps` re-renders both sun shadow maps in every timed frame
-   * (the frame after a sun move). Returns the median ms (with an even `n`,
-   * the upper middle: with 2 it is the max; use an odd `n`), the last
-   * frame's draws and the program count. SwiftShader times are relative
-   * only.
+   * (the frame after a sun move); `warmup: false` skips the warm-up, to time
+   * the frame right after a change. Returns the median ms (with an even
+   * `n`, the upper middle: with 2 it is the max; use an odd `n`), the last
+   * frame's draws and triangles (shadow passes included) and the program
+   * count. SwiftShader times are relative only.
    */
-  timeFrames(n, { shadowMaps = false } = {}) {
+  timeFrames(n, { shadowMaps = false, warmup = true } = {}) {
     const gl = renderer.getContext();
     const px = new Uint8Array(4);
     const frameOnce = () => {
       renderFrame();
       gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
     };
-    frameOnce();
+    if (warmup) frameOnce();
     const times = [];
     for (let i = 0; i < n; i++) {
       if (shadowMaps) {
@@ -1272,6 +1431,7 @@ Object.assign(api, {
     return {
       medianMs: times[Math.floor(times.length / 2)],
       draws: renderer.info.render.calls,
+      triangles: renderer.info.render.triangles,
       programs: renderer.info.programs?.length ?? 0,
     };
   },
@@ -1519,6 +1679,7 @@ Object.assign(api, {
     gpuTimer: gpuTimer.supported,
     aoActive: ambientOcclusion.active,
     lutMs,
+    atmosphereMs,
     drawCalls: renderer.info.render.calls,
     triangles: renderer.info.render.triangles,
     state: { ...state },

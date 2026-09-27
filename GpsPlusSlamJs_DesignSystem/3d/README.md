@@ -24,6 +24,8 @@ here is a copy: the atmosphere judged on this page is the code the apps run.
   controls, camera views, and the `window.__lookdev` test surface. See
   `lookdev.js.md`. (A switch to OsmDemo's old Preetham sky was retired in
   M3, when OsmDemo adopted this sky.)
+- `preset-glide.js` - the preset buttons' 5 s eased glide (round-3 plan
+  2026-09-27-0532, feedback 1); `api.setPreset` and links stay instant.
 - `stand-in-scene.js` — the world the sky is judged against.
 - `parity.js` — GPU/CPU comparison of the atmosphere's LUTs.
 - `gpu-timer.js` — GPU frame time for the cost readout, where the
@@ -63,7 +65,11 @@ what three cannot hide:
   away from edges (≤ 3 levels, three presets); its MSAA cuts the edge
   pixels more than 30 levels off the canvas to ≤ 75 % of the no-MSAA count;
   and its bloom glows around the TRUE sun position (+4.7), veils < 15 % of
-  the frame and darkens nothing.
+  the frame and darkens nothing;
+- the preset buttons glide (`preset-glide.smoke.spec.mjs`): eased at
+  t = 0.25, the short azimuth arc, a retarget from the current state, the
+  exact end and the hash written then, a link that cancels it, and no
+  program compiled mid-glide across the 2° shadow floor.
 
 Port 5198 (aux range, `docs/dev-server-ports.md`), bound to 127.0.0.1, never
 reused, one worker (SwiftShader measures queueing, not work, in parallel).

@@ -22,7 +22,8 @@
       look the scene shows now. Validated before any change.
     - `tick(nowMs)` - null while idle, else
       `{ look, done, rebuild, id, t }`. `RangeError` for a non-finite time.
-    - `cancel()`, `active`, `id` (the target's while gliding, else null).
+    - `cancel()`, `active`, `id` (the target's while gliding, else null),
+      `rebuildEvery`.
 - Invariants & assumptions:
   - Every preset value moves together, on one eased curve (round-3 plan
     §2): no value arrives before another.
@@ -46,6 +47,9 @@
     plan's sweep asked (every 1, 2, 4, 8 frames).
   - A clock that runs backwards holds the glide at its start (t clamped to
     [0, 1]).
+  - The page (lookdev.js) keeps `api.setPreset` and a link instant; only
+    the preset buttons glide, and a `hashchange`, `setPreset` or a moved
+    slider cancels a glide.
 - Examples:
 
   ```js
@@ -66,4 +70,5 @@
   on one curve, the short arc, the exact end, the retarget, the rebuild
   frames, the refusals, and a 200-trial seeded property check that a glide
   stays between its ends, never turns the azimuth more than its short arc,
-  and settles exactly).
+  and settles exactly); the page's use, and the on-demand cost and
+  stepping sweep, in `preset-glide.smoke.spec.mjs`.

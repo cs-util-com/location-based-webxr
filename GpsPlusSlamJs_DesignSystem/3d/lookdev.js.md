@@ -8,6 +8,15 @@
   is `window.__lookdev`:
   - `ready` (true after the first frame; false again while the WebGL
     context is lost), `error` (first page error, or null);
+  - THE PRESET GLIDE (round-3 plan 2026-09-27-0532, feedback 1;
+    [preset-glide.js](preset-glide.js.md)): `glideToPreset(id)` is what the
+    preset BUTTONS do (a 5 s eased glide of every preset value; a click
+    mid-glide retargets from where the scene is); `pinGlideClock(ms | null)`
+    pins its clock and `glideTick()` runs one glide frame (the paused loop
+    leaves the glide to the test), `glideInfo()` (`{ active, id,
+rebuildEvery, holdsShadows, shadows }`), `setGlideRebuildEvery(k)` and
+    `setGlideShadows("follow" | "freeze")` (the cost sweep's handles) and
+    `programIds()` (the programs three holds, for the no-compile check);
   - `setPreset(id)`, `setToneMapping("agx" | "aces" | "neutral")`,
     `setView("city" | "sun" | "antisun" | "lake" | "aloft" | "inside" | "above")`
     (`aloft`: 2.15 km, just above the sheet; `inside`: 2 km, level, in the
@@ -60,7 +69,8 @@ roughness }`: `materials` are the catalog ids of a varied city's meshes,
     outside 1..pool size) and `setCityFinish("mixed" | "shiny" | "matte")`
     (the owner's A/B: every city material at roughness 0 or 1, or each at
     its own; a uniform, so the same meshes, draws and programs);
-    `timeFrames(n, { shadowMaps? })` (the cost handle: a warm-up frame,
+    `timeFrames(n, { shadowMaps?, warmup? })` (the cost handle: a warm-up frame
+    unless `warmup: false`, which times the frame right after a change,
     then n frames each ended by a 1-pixel read, `shadowMaps` re-rendering
     both sun maps in each; `{ medianMs, draws, programs }`, relative on
     SwiftShader);
@@ -156,6 +166,20 @@ denoise, resolutionScale })` is the sweep's handle; `setAoExclusions(bool)`
   - Exposure: the atmosphere auto-exposes; the slider is compensation in EV.
   - A preset applies sun, visibility and cloud cover with one `configure`
     call (one rebuild); the haze is synced after every change.
+  - THE GLIDE (preset-glide.js.md): only the preset buttons glide;
+    `api.setPreset` and a link (on load or a `hashchange`) stay instant,
+    and a `hashchange`, `setPreset` or a moved slider cancels a running
+    glide. The frame loop ticks the glide; on its rebuild frames the page
+    runs `useAtmosphere` (the sky, the light, the shadow maps) and the
+    controls, and the settling frame runs `applyLook` with the preset
+    itself, so the end state is the instant preset's exactly. The hash is
+    written when the glide settles: `applyLook` writes none while a glide
+    runs. The shadow configuration is HELD for the whole glide (on when
+    either end casts), so crossing the 2° floor compiles no program
+    mid-glide (round-3 plan §8 finding 6); held below the floor, the maps
+    render from the sun at the floor's elevation (the rig refuses a sun at
+    or below the horizon, where the sun light is 0 anyway). The readout
+    shows `sky … ms` (the whole `useAtmosphere`) and `glide to <id>`.
   - The haze (`AtmosphereHaze`) patches the stand-in world's materials once
     at load and owns its uniforms, so every atmosphere change only needs a
     `sync`; the haze switch puts it in `'fog'` mode.
@@ -189,7 +213,8 @@ denoise, resolutionScale })` is the sweep's handle; `setAoExclusions(bool)`
     deviation in the plan. OsmDemo now shows the REAL sun for its place and
     date (`sun-clock.ts`, plan 2026-09-23-2149).
 - Examples: `pnpm run serve` → `/3d/#preset=blueHour&tone=aces`.
-- Tests: `lookdev.smoke.spec.mjs`, `lookdev-tidy.smoke.spec.mjs` (the
+- Tests: `lookdev.smoke.spec.mjs`, `preset-glide.smoke.spec.mjs` (the
+  preset glide, and its on-demand cost and stepping sweep), `lookdev-tidy.smoke.spec.mjs` (the
   round-3 labels, ramp row, varied city and its logged cost) and
   `ambient-occlusion.smoke.spec.mjs` (the AO switch and its checks; stage
   `test:e2e`), and `shoot-3d.mjs`. The readout's stats line names the
