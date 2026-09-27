@@ -169,9 +169,8 @@ export function sizeOfferView(
 ): { text: string; useLabel: string; keepLabel: string } {
   return {
     text:
-      `Your print measures about ${cmText(measuredM)} cm, but the printed-size ` +
-      `field says ${String(typedM)} m (${cmText(typedM)} cm) - a print dialog ` +
-      `may have shrunk it. Check the black square with a ruler to be sure.`,
+      `Print measures ~${cmText(measuredM)} cm, the size field says ` +
+      `${cmText(typedM)} cm. Check it with a ruler.`,
     useLabel: `Use ${cmText(measuredM)} cm`,
     keepLabel: `Keep ${cmText(typedM)} cm`,
   };

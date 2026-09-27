@@ -66,6 +66,13 @@ The `data-testid` contract the e2e suite drives: `wizard`, `step-host`,
 `size-offer-use`, `size-offer-keep`, `setup-controls`, `setup-mint`,
 `setup-pin`, `pin-label`, `pin-save`, `pin-cancel`, `setup-photo`,
 `setup-finish`, `scan-escape`.
+The framework's AR canvas (window-sized, `#ar-root`'s first child after
+`initAR`) is taken out of the flow (`#ar-root > canvas { position: absolute }`,
+the RecorderApp's rule): in the flow it pushed the whole panel a screen
+height down, below the overlay's edge (owner's r750 field test;
+`playwright-tests/ar-layout.spec.js` pins every panel control on screen at
+360x640, 360x800 and 390x844). `#size-offer` is the panel's FIRST child,
+above `#setup-status`.
 `#ar-debug` (a `<pre>` in `#ar-root`, hidden unless `?debug=1`) holds the
 QR readout (QR near-frontal pose plan §66).
 Renaming one is an e2e-breaking change. `#ar-hint`, `#ar-status`,

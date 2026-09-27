@@ -249,7 +249,8 @@ hooks.startAuthorPipeline = setup.startAuthorPipeline;
   source's `onEvaluated`.
 
 - **The print-size check** (QR size consensus plan S3a, `print-size-check.ts`):
-  every detection feeds it; its offer renders in its own element
+  every detection feeds it (through the `estimateQrPrintSize` seam, so the
+  e2e can show an offer); its offer renders in its own element, first in the panel,
   (`dom.sizeOffer`, with "Use" / "Keep"), because `status` is rewritten on
   every dispatch. **Adopting** writes the measured size into the size field,
   invalidates a position saved this session (`mintGeneration` bump,

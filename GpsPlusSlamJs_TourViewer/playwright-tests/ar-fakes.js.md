@@ -46,6 +46,13 @@ camera, so `installTourViewerArFakes(page)` installs
 
 ## Invariants & assumptions
 
+- The fake `initAR` inserts a window-sized canvas as the overlay root's
+  first child, as the framework does - without it no spec could see a panel
+  pushed below the screen by it (the owner's r750 field test).
+  `installTourViewerArFakes(page, { printSizeM })` makes the print-size
+  estimate report that size, one new independent window per call (the
+  fakes' single camera pose carries no parallax), so the creator's size
+  offer appears after three detections.
 - The fake controller deps grant every permission and resolve `initAR`
   immediately, so the controller walks `checking → ready → running` — the
   specs prove the COMPOSED wiring, not the framework internals (those have

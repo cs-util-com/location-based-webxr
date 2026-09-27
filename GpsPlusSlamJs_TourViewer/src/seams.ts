@@ -39,6 +39,11 @@ import {
   type QrPoseSolution,
 } from "gps-plus-slam-app-framework/ar/qr/qr-pose";
 import type { QrSolvePoseInput } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
+import {
+  estimateQrSizeFromParallax,
+  type QrFusedEntry,
+  type QrParallaxSizeWindow,
+} from "gps-plus-slam-app-framework/ar/qr";
 import { PlanarPnpSquare } from "gps-plus-slam-app-framework/ar/qr/planar-pnp";
 import {
   createQrDebugView,
@@ -84,6 +89,14 @@ export interface TourViewerSeams {
   createQrFrontEnd(): QrFrontEnd | null;
   /** The planar-PnP square solver (pure JS, OpenCV-free). */
   solveQrPose(input: QrSolvePoseInput): QrPoseSolution | null;
+  /**
+   * The printed code's size from parallax over a code's entries (QR size
+   * consensus plan S3a) - a seam because the e2e fakes deliver one camera
+   * pose, which carries no parallax, and the offer's layout must be tested.
+   */
+  estimateQrPrintSize(
+    entries: readonly QrFusedEntry[],
+  ): QrParallaxSizeWindow | null;
   /** PnP intrinsics from the in-session camera projection, scaled to the
    *  DETECTOR buffer's dimensions (buffer mismatch is the #1 PnP risk). */
   getIntrinsics(image: RgbaImage): CameraIntrinsics | null;
@@ -169,6 +182,7 @@ export const realSeams: TourViewerSeams = {
   stopCameraFrameCapture,
   createQrFrontEnd: () => createBarcodeDetectorFrontEnd(),
   solveQrPose: (input) => solveQrPose({ ...input, solver: pnpSolver }),
+  estimateQrPrintSize: (entries) => estimateQrSizeFromParallax(entries),
   // Depth is OFF in this app (QD-5), so the projection comes from the
   // in-session three camera — WebXR owns its projectionMatrix during an
   // immersive session (the wayfinding-placement precedent) — scaled to the

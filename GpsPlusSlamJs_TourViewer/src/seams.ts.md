@@ -11,7 +11,7 @@ Keeps `main.ts` glue-only.
 
 - `interface TourViewerSeams { controllerDeps; getArWorldGroup;
 enableArWorldGroupAlignment; startCameraFrameCapture;
-stopCameraFrameCapture; createQrFrontEnd; solveQrPose;
+stopCameraFrameCapture; createQrFrontEnd; solveQrPose; estimateQrPrintSize;
 getIntrinsics; createQrDebugView; getScene; queryGeolocationPermission;
 requestLocationOnce; shareOrDownloadZip; canShareZip; downloadPdf;
 startHitTestReticle; encodeFrameJpeg;

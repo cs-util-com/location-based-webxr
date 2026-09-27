@@ -164,6 +164,19 @@
       }
       #ar-root {
         margin: var(--space-4) 0;
+        position: relative;
+      }
+      /* The framework's AR canvas (window-sized, inserted as #ar-root's
+         first child by initAR) must be out of the flow: in it, it pushed
+         the whole panel a screen height down, below the edge of the DOM
+         overlay - every control unreachable (owner's r750 field test;
+         the RecorderApp's #app > canvas rule, app.css). The XR layer
+         draws the camera; this canvas only needs to exist. */
+      #ar-root > canvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+        pointer-events: none;
       }
       /* Composited over the camera during the session, so it wears the
          sheet's plateless-legibility halo. It used to be #333 with a WHITE
@@ -734,10 +747,10 @@
                that is session-only: on a desktop they sat greyed out under
                an "AR not supported" button, which is what F11 reports. -->
           <div id="setup-panel" hidden data-testid="setup-panel">
-            <div id="setup-status" data-testid="setup-status"></div>
             <!-- The print-size offer (QR size consensus plan S3a): the phone
                  measured the printed code; its own element because
-                 #setup-status is rewritten on every store change. -->
+                 #setup-status is rewritten on every store change. FIRST in the
+                 panel, above the status (owner, 2026-09-27). -->
             <div id="size-offer" data-testid="size-offer" hidden>
               <p id="size-offer-text" data-testid="size-offer-text"></p>
               <button
@@ -755,6 +768,7 @@
                 hidden
               ></button>
             </div>
+            <div id="setup-status" data-testid="setup-status"></div>
             <div id="setup-controls" data-testid="setup-controls" hidden>
               <button
                 type="button"

@@ -36,7 +36,6 @@ import {
   type TourManifest,
   type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { estimateQrSizeFromParallax } from "gps-plus-slam-app-framework/ar/qr";
 import {
   clearQrMarker,
   recordQrDetection,
@@ -350,9 +349,7 @@ export function wireCreatorSetup(deps: {
   // tour (ar-entry, archive-open).
   ctx.printSizeCheck = createPrintSizeCheck({
     estimate: (text) =>
-      estimateQrSizeFromParallax(
-        selectQrFusedEntries(arStore.getState(), text),
-      ),
+      seams.estimateQrPrintSize(selectQrFusedEntries(arStore.getState(), text)),
   });
   /** The confirmation after adopting a size, until the code is stable again. */
   let adoptedNote: string | null = null;

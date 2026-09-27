@@ -1,0 +1,84 @@
+// @ts-check
+import { expect, test } from "@playwright/test";
+
+import { installTourViewerArFakes } from "./ar-fakes.js";
+import { E2E_QR_TEXT } from "./qr-fixture.mjs";
+
+/**
+ * Why these tests matter: in a WebXR DOM overlay `#ar-root` IS the screen,
+ * and nothing in it can be scrolled into view by a creator holding a phone
+ * at a poster. The owner's r750 field test found the print-size offer's
+ * buttons below the bottom edge: the framework's AR canvas (window-sized,
+ * inserted as `#ar-root`'s first child) sat in the page flow and pushed the
+ * whole panel down a screen height. No test saw it because the AR fakes
+ * inserted no canvas and nothing measured the overlay (TourViewer
+ * scan-to-open plan §1, §5 #6). Every control the creator can see must lie
+ * within one screen height of the overlay's top, in the tallest state the
+ * panel reaches (the offer, the live readout, `?debug=1`), on small phones.
+ */
+
+const RANGES_ARCHIVE = "http://127.0.0.1:5197/ranges-ok/tour.zip";
+
+const PHONES = [
+  { width: 360, height: 640 },
+  { width: 360, height: 800 },
+  { width: 390, height: 844 },
+];
+
+for (const viewport of PHONES) {
+  test(`every AR panel control fits a ${viewport.width}x${viewport.height} screen, with the size offer open`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    // A print that came out at 96 % of the typed 0.16 m (the owner's).
+    await installTourViewerArFakes(page, { printSizeM: 0.154 });
+    await page.goto("/?debug=1");
+    await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+    await page.getByTestId("open-button").click();
+    await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+      timeout: 15000,
+    });
+    const step = page.getByTestId("step-measure");
+    if (!(await step.evaluate((el) => /** @type {any} */ (el).open))) {
+      await step.locator("summary").click();
+    }
+    await expect(page.getByTestId("enter-ar")).toBeEnabled({ timeout: 10000 });
+    await page.getByTestId("enter-ar").click();
+    await page.evaluate((text) => {
+      /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
+    }, E2E_QR_TEXT);
+    await expect
+      .poll(
+        async () => {
+          await page.evaluate(() => {
+            /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+          });
+          return page.getByTestId("size-offer-use").isVisible();
+        },
+        { timeout: 20000 },
+      )
+      .toBe(true);
+
+    // Measured without scrolling, from the overlay's own top: on the device
+    // `#ar-root` fills the screen from its top edge.
+    const offScreen = await page.evaluate(() => {
+      const root = /** @type {HTMLElement} */ (
+        document.getElementById("ar-root")
+      );
+      const top = root.getBoundingClientRect().top;
+      return [...root.querySelectorAll("button, input")]
+        .map((el) => /** @type {HTMLElement} */ (el))
+        .filter((el) => el.offsetParent !== null)
+        .filter(
+          (el) => el.getBoundingClientRect().bottom - top > window.innerHeight,
+        )
+        .map((el) => el.id || el.dataset.testid || el.tagName);
+    });
+    expect(offScreen).toEqual([]);
+    // The offer sits above the status line (the owner's decision).
+    const offerY = (await page.getByTestId("size-offer").boundingBox())?.y ?? 0;
+    const statusY =
+      (await page.getByTestId("setup-status").boundingBox())?.y ?? 0;
+    expect(offerY).toBeLessThan(statusY);
+  });
+}

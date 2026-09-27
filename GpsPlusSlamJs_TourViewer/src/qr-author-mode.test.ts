@@ -131,7 +131,7 @@ describe("the print-size check's copy (QR size consensus plan S3a)", () => {
   // and the field's own unit beside the centimetres.
   it("offers the measured size in plain words, with a ruler check", () => {
     expect(sizeOfferView(0.155, 0.16)).toEqual({
-      text: "Your print measures about 15.5 cm, but the printed-size field says 0.16 m (16.0 cm) - a print dialog may have shrunk it. Check the black square with a ruler to be sure.",
+      text: "Print measures ~15.5 cm, the size field says 16.0 cm. Check it with a ruler.",
       useLabel: "Use 15.5 cm",
       keepLabel: "Keep 16.0 cm",
     });
