@@ -29,7 +29,10 @@ import {
 } from "./ar-shadows-wiring";
 import { createShadowProbe, installShadowProbe } from "./shadow-probe";
 import { createBallStatus, diagnosticsText, statsText } from "./ball-status";
-import { createReceiverFlagsReader } from "./shadow-diagnostics";
+import { createEvery, createReceiverFlagsReader } from "./shadow-diagnostics";
+
+/** The diagnostics line's rate: about 4 Hz. */
+const DIAGNOSTICS_INTERVAL_MS = 250;
 import { createOccupancyView } from "./occupancy-view";
 import { createPhysicsRuntime } from "./physics-runtime";
 import { shootBallFromCamera } from "./shoot-ball";
@@ -42,6 +45,8 @@ export interface ReplayPhysicsControls {
   readonly meshShaderSelect: HTMLSelectElement;
   /** Element that shows the `balls N · collider N tris` line. */
   readonly statsEl: HTMLElement;
+  /** The diagnostics line's element (first-visit reports), when present. */
+  readonly diagnosticsEl?: HTMLElement;
   /** Advance the always-on perf panel once per frame. */
   readonly onFrame: () => void;
   /** AR shadows from the thrown balls (off with `?shadows=0`). Default on. */
@@ -141,10 +146,7 @@ export function startReplayPhysics(
     occupancyView,
     {
       // The status line (round-2 plan M1): resting and fallen balls, the
-      // collider, and the shadows' state; then the diagnostics (r752
-      // first-load report), the same as in AR but for the start timings.
-      // The rAF timestamps the collider is stamped with share
-      // performance.now's clock.
+      // collider, and the shadows' state.
       onStats: (_balls, tris) => {
         const viewer = viewerOf().getWorldPosition(viewerPosition);
         const status = ballStatus.update(
@@ -152,26 +154,11 @@ export function startReplayPhysics(
           viewer.y,
           (p) => shadows?.inRange(p) ?? false,
         );
-        const t = performance.now();
-        const depth = occupancyView.depthStats();
-        const builtAt = runtime.colliderBuiltAtMs();
-        controls.statsEl.textContent =
-          statsText(status, tris, shadowsLabel(shadows)) +
-          diagnosticsText({
-            depthSamples: depth.samples,
-            depthAgeMs:
-              depth.lastSampleAtMs === null ? null : t - depth.lastSampleAtMs,
-            meshTris: occupancyView.getOcclusionMesh().getTriangleCount(),
-            colliderAgeMs: builtAt === null ? null : t - builtAt,
-            ...(shadows
-              ? {
-                  shadow: {
-                    receiver: readReceiver(),
-                    ...shadows.diagnostics(),
-                  },
-                }
-              : {}),
-          });
+        controls.statsEl.textContent = statsText(
+          status,
+          tris,
+          shadowsLabel(shadows),
+        );
       },
     },
   );
@@ -220,10 +207,31 @@ export function startReplayPhysics(
   // that can still fire after the pending handle is cancelled.
   let active = true;
   let frameHandle = 0;
+  // The diagnostics line (first-visit reports, 2026-09-27), the same as in
+  // AR but for the XR and start parts, at about 4 Hz. The rAF timestamp
+  // the collider is stamped with shares performance.now's clock.
+  const diagnosticsDue = createEvery(DIAGNOSTICS_INTERVAL_MS);
+  const writeDiagnostics = (t: number): void => {
+    if (!controls.diagnosticsEl || !diagnosticsDue(t)) return;
+    const depth = occupancyView.depthStats();
+    const builtAt = runtime.colliderBuiltAtMs();
+    controls.diagnosticsEl.textContent = diagnosticsText({
+      depthSamples: depth.samples,
+      depthAgeMs:
+        depth.lastSampleAtMs === null ? null : t - depth.lastSampleAtMs,
+      meshTris: occupancyView.getOcclusionMesh().getTriangleCount(),
+      colliderAgeMs: builtAt === null ? null : t - builtAt,
+      ...(shadows
+        ? { shadow: { receiver: readReceiver(), ...shadows.diagnostics() } }
+        : {}),
+    });
+  };
+
   const tick = (t: number): void => {
     if (!active) return;
     runtime.step(t);
     shadows?.update();
+    writeDiagnostics(t);
     controls.onFrame();
     frameHandle = scheduler.request(tick);
   };

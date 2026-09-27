@@ -70,7 +70,12 @@ vi.mock("./ar-shadows-wiring", async (importOriginal) => ({
 // Hoisted with the mocks that return them.
 const { fakeRenderer, fakeScene, fakeOccluder, fakeShadows } = vi.hoisted(
   () => ({
-    fakeRenderer: { name: "the session renderer" },
+    fakeRenderer: {
+      name: "the session renderer",
+      // What the receiver-flags reader reads: no program compiled yet.
+      properties: { get: () => ({}) },
+      getContext: () => ({}),
+    },
     fakeScene: { name: "the session scene" },
     fakeOccluder: {
       name: "the current occluder",
@@ -98,7 +103,11 @@ const { fakeRenderer, fakeScene, fakeOccluder, fakeShadows } = vi.hoisted(
 
 import { startArMode } from "./ar-mode";
 import { STILL_STEPS } from "./ball-status";
-import { getCamera } from "gps-plus-slam-app-framework/ar/webxr-session";
+import {
+  getArWorldGroup,
+  getCamera,
+} from "gps-plus-slam-app-framework/ar/webxr-session";
+import { RECEIVER_NODE } from "./shadow-diagnostics";
 import { startDemoShadows } from "./ar-shadows-wiring";
 import { createPhysicsRuntime } from "./physics-runtime";
 import { registerXrFrameUpdate } from "gps-plus-slam-app-framework/ar/xr-frame-loop";
@@ -129,17 +138,42 @@ function makeDeps() {
 // the new occluder gets its receiver in the same frame; never before, never
 // twice.
 describe("startArMode first-visit receiver rebuild", () => {
-  it("rebuilds the occluder once, only when visible with a mesh, before the shadows update", async () => {
+  /** Starts AR with a receiver on the room, and a frame driver. */
+  async function started(
+    extra: Partial<Parameters<typeof startArMode>[0]> = {},
+  ) {
     fakeShadows.update.mockClear();
-    const dispose = await startArMode(makeDeps());
+    const dispose = await startArMode({ ...makeDeps(), ...extra });
     const view = vi.mocked(createOccupancyView).mock.results.at(-1)!.value as {
       rebuild: ReturnType<typeof vi.fn>;
     };
+    const room = vi.mocked(getArWorldGroup).mock.results.at(-1)!
+      .value as THREE.Group;
+    const receiver = new THREE.Mesh(
+      new THREE.BufferGeometry(),
+      new THREE.ShadowMaterial(),
+    );
+    receiver.name = RECEIVER_NODE;
+    room.add(receiver);
     const frame = vi.mocked(registerXrFrameUpdate).mock.lastCall![0];
     const at = (visibilityState: string) =>
       frame({
-        session: { addEventListener: vi.fn(), visibilityState },
+        session: {
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          visibilityState,
+        },
       } as never);
+    return { dispose, view, at };
+  }
+
+  // The owner's report on r753: the balls rested, the shadow was missing
+  // until the Mesh dropdown was switched and back. Once, when the session
+  // is visible with a mesh (the fakes also give a receiver, an allocated
+  // map and balls), the demo takes that path, before the shadows' update so
+  // the new occluder gets its receiver in the same frame; never twice.
+  it("rebuilds the occluder once, only when visible with a mesh, before the shadows update", async () => {
+    const { dispose, view, at } = await started();
     fakeOccluder.tris = 0;
     at("visible"); // no mesh yet
     fakeOccluder.tris = 7;
@@ -153,6 +187,15 @@ describe("startArMode first-visit receiver rebuild", () => {
     );
     for (let i = 0; i < 5; i++) at("visible");
     expect(view.rebuild).toHaveBeenCalledTimes(1);
+    dispose();
+  });
+
+  // `?rebuild=0`: the owner's A/B, the bug's state must stay on screen.
+  it("never rebuilds with the rebuild turned off", async () => {
+    const { dispose, view, at } = await started({ rebuild: false });
+    fakeOccluder.tris = 7;
+    for (let i = 0; i < 5; i++) at("visible");
+    expect(view.rebuild).not.toHaveBeenCalled();
     dispose();
   });
 });
@@ -202,7 +245,13 @@ describe("startArMode AR shadows", () => {
     expect(deps.ballCount()).toBe(4);
 
     const frame = vi.mocked(registerXrFrameUpdate).mock.lastCall![0];
-    frame({ session: { addEventListener: vi.fn() } } as never);
+    frame({
+      session: {
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        visibilityState: "visible",
+      },
+    } as never);
     const runtime = vi.mocked(createPhysicsRuntime).mock.results.at(-1)!
       .value as { step: ReturnType<typeof vi.fn> };
     expect(fakeShadows.update).toHaveBeenCalledTimes(1);
@@ -248,15 +297,18 @@ describe("startArMode AR shadows", () => {
   // Then the diagnostics (r752 first-load report): the depth stream, the
   // mesh, the collider's age, and how long physics and AR took to start
   // after the tap, all on the page's one clock.
-  it("writes the balls' state, the shadows and the diagnostics into the stats line", async () => {
+  it("writes the balls' state and the shadows into the stats line, the diagnostics into their own", async () => {
     const camera = new THREE.PerspectiveCamera();
     camera.position.set(0, 1.5, 0);
     camera.updateMatrixWorld(true);
     vi.mocked(getCamera).mockReturnValue(camera);
+    let clock = 10_000;
     const deps = {
       ...makeDeps(),
-      now: () => 10_000,
+      now: () => clock,
       start: { tappedAtMs: 5_000, physicsReadyAtMs: 5_800 },
+      diagnosticsEl: { textContent: "" } as unknown as HTMLElement,
+      pageHidden: () => 1,
     };
     const dispose = await startArMode(deps);
     const onStats = vi.mocked(createPhysicsRuntime).mock.lastCall![2]!.onStats!;
@@ -267,10 +319,35 @@ describe("startArMode AR shadows", () => {
     ]);
     for (let i = 0; i <= STILL_STEPS; i++) onStats(1, 7);
     expect(deps.statsEl.textContent).toBe(
-      "balls 1 (1 resting, 1 in shadow range) · collider 7 tris · shadows on" +
-        " · depth 3 (0.2 s ago) · mesh 7 tris · collider 0.5 s old" +
+      "balls 1 (1 resting, 1 in shadow range) · collider 7 tris · shadows on",
+    );
+    // The diagnostics come from the frame loop, at about 4 Hz, and see this
+    // frame's visibility (the session goes visible at 10.2 s).
+    const frame = vi.mocked(registerXrFrameUpdate).mock.lastCall![0];
+    const listeners: Record<string, (e: Event) => void> = {};
+    const session = {
+      visibilityState: "visible-blurred",
+      addEventListener: (type: string, fn: (e: Event) => void) => {
+        listeners[type] = fn;
+      },
+      removeEventListener: vi.fn(),
+    };
+    frame({ session } as never);
+    // A blur and back between two frames, seen only by the event.
+    session.visibilityState = "hidden";
+    listeners.visibilitychange!({ target: session } as unknown as Event);
+    session.visibilityState = "visible";
+    listeners.visibilitychange!({ target: session } as unknown as Event);
+    clock = 10_200;
+    frame({ session } as never); // inside the 250 ms: not rewritten
+    expect(deps.diagnosticsEl.textContent).toContain("xr visible-blurred");
+    clock = 10_300;
+    frame({ session } as never);
+    expect(deps.diagnosticsEl.textContent).toBe(
+      "depth 3 (0.5 s ago) · mesh 7 tris · collider 0.8 s old" +
         " · rx off · sun cast, map 1024, renders 2" +
-        " · xr unknown (never visible) · rx rebuild pending" +
+        " · xr visible, blurred 1x, hidden 1x (first 0.2 s)" +
+        " · page hidden 1x · rebuild pending" +
         " · start: physics 0.8 s, AR 5.0 s",
     );
     dispose();

@@ -97,10 +97,11 @@ describe("statsText", () => {
   });
 });
 
-// The owner's first-load report (r752, 2026-09-27): shadows missing only on
-// the first page load, and nothing in the code explained it. These numbers
-// on the phone's status line say which link was missing at that moment:
-// no depth, no mesh, no collider, or a slow start.
+// The owners' first-load reports (r752, r753, 2026-09-27): shadows missing
+// only on a preview's first visit, and nothing in the code explained it.
+// This line (its own element, under the stats line) says which link was
+// missing at that moment: no depth, no mesh, no collider, the shadow
+// receiver's compiled state, the XR session's visibility, or a slow start.
 describe("diagnosticsText", () => {
   it("names the depth stream, the mesh, the collider's age and the start", () => {
     expect(
@@ -112,7 +113,7 @@ describe("diagnosticsText", () => {
         start: { rapierMs: 820, arMs: 2345 },
       }),
     ).toBe(
-      " · depth 12 (0.2 s ago) · mesh 950 tris · collider 0.3 s old · start: physics 0.8 s, AR 2.3 s",
+      "depth 12 (0.2 s ago) · mesh 950 tris · collider 0.3 s old · start: physics 0.8 s, AR 2.3 s",
     );
   });
 
@@ -124,7 +125,7 @@ describe("diagnosticsText", () => {
         meshTris: 0,
         colliderAgeMs: null,
       }),
-    ).toBe(" · depth 0 · mesh 0 tris · collider not built");
+    ).toBe("depth 0 · mesh 0 tris · collider not built");
   });
 
   // The first-visit report on r753: the shadow side too, the receiver's
@@ -146,14 +147,18 @@ describe("diagnosticsText", () => {
         },
         xr: {
           visibility: "visible",
+          blurred: 1,
+          hidden: 0,
           firstVisibleMs: 1250,
-          rebuild: "rebuilt 3.2 s S0N0D1>S1N1D1",
+          pageHidden: 0,
+          rebuild: "3.2 s S0N0D1>S1N1D1",
         },
       }),
     ).toBe(
-      " · depth 3 (0.1 s ago) · mesh 40 tris · collider 0.2 s old" +
+      "depth 3 (0.1 s ago) · mesh 40 tris · collider 0.2 s old" +
         " · rx S1N1D1 · sun cast, map 1024, renders 3" +
-        " · xr visible (first 1.3 s) · rx rebuilt 3.2 s S0N0D1>S1N1D1",
+        " · xr visible, blurred 1x, hidden 0x (first 1.3 s)" +
+        " · page hidden 0x · rebuild 3.2 s S0N0D1>S1N1D1",
     );
   });
 
@@ -173,14 +178,18 @@ describe("diagnosticsText", () => {
         },
         xr: {
           visibility: "visible-blurred",
+          blurred: 1,
+          hidden: 2,
           firstVisibleMs: null,
-          rebuild: "rebuild pending",
+          pageHidden: 1,
+          rebuild: "pending",
         },
       }),
     ).toBe(
-      " · depth 0 · mesh 0 tris · collider not built" +
+      "depth 0 · mesh 0 tris · collider not built" +
         " · rx off · sun no cast, no map, renders 0" +
-        " · xr visible-blurred (never visible) · rx rebuild pending",
+        " · xr visible-blurred, blurred 1x, hidden 2x (never visible)" +
+        " · page hidden 1x · rebuild pending",
     );
   });
 });

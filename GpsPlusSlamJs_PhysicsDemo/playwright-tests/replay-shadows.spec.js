@@ -259,7 +259,7 @@ test.describe("Physics Demo - shadows you can see", () => {
   //
   // Round 4 (owner on r753: first visit to a new preview origin only, so
   // with Chrome's camera/AR permission prompt): each case also reads the
-  // receiver's program flags from the status line ("rx S1N?D1": compiled
+  // receiver's program flags from the diagnostics line ("rx S1N?D1": compiled
   // with the shadow map and one directional shadow), the state a phone
   // screenshot now shows. (A third case froze the page for 3 s mid-start
   // through CDP to mimic the prompt; the ball then never came to rest,
@@ -277,9 +277,12 @@ test.describe("Physics Demo - shadows you can see", () => {
       await openReplay(page, { "mesh-style": "greedy", "mesh-shader": skin });
       await dropAndRest(page);
       const px = await measureSides(page, `first load ${label}`, 1.2);
-      const stats = await page.getByTestId("stats").textContent();
-      console.log(`first load ${label}: ${stats}`);
-      expect(stats).toMatch(/ · rx S1N[01]D1 /);
+      // The diagnostics line updates at about 4 Hz: wait for the receiver.
+      const diagnostics = page.getByTestId("diagnostics");
+      await expect(diagnostics).toContainText(/ · rx S1N[01]D1 · /, {
+        timeout: 5_000,
+      });
+      console.log(`first load ${label}: ${await diagnostics.textContent()}`);
       expect(px).toBeGreaterThanOrEqual(minShadowPx(1.2));
       expect(pageErrors).toEqual([]);
     });

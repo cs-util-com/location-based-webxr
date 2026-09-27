@@ -120,12 +120,18 @@ export interface Diagnostics {
     /** Map renders the rig requested. */
     readonly mapRenders: number;
   };
-  /** The XR session (AR only). */
+  /** The XR session and the page (AR only). */
   readonly xr?: {
+    /** The session's visibilityState now. */
     readonly visibility: string;
+    /** Entries into visible-blurred and hidden (session events). */
+    readonly blurred: number;
+    readonly hidden: number;
     /** From the session start to the first visible frame, or null. */
     readonly firstVisibleMs: number | null;
-    /** The one-shot receiver rebuild's note. */
+    /** Times the page was hidden since load (document events). */
+    readonly pageHidden: number;
+    /** The one-time receiver rebuild's note (`createFirstVisitRebuild`). */
     readonly rebuild: string;
   };
 }
@@ -133,11 +139,14 @@ export interface Diagnostics {
 const seconds = (ms: number): string => `${(ms / 1000).toFixed(1)} s`;
 
 /**
- * The diagnostics appended to the stats line (owner first-load report on
- * r752, 2026-09-27: shadows missing only on a page's first load, with no
- * cause found in the code): one screenshot then shows which link was
- * missing, " · depth 12 (0.2 s ago) · mesh 950 tris · collider 0.3 s old ·
- * start: physics 0.8 s, AR 2.3 s".
+ * The diagnostics line, in its own element under the stats line (owner
+ * first-load reports on r752 and r753, 2026-09-27: shadows missing only on
+ * a preview's first visit, cause not found): one screenshot shows which
+ * link was missing. "depth 12 (0.2 s ago) · mesh 950 tris · collider 0.3 s
+ * old · rx S1N1D1 · sun cast, map 1024, renders 3 · xr visible, blurred 1x,
+ * hidden 0x (first 1.3 s) · page hidden 0x · rebuild 3.2 s S0N0D1>S1N1D1 ·
+ * start: physics 0.8 s, AR 2.3 s"; the xr, page, rebuild and start parts
+ * only in AR.
  */
 export function diagnosticsText(d: Diagnostics): string {
   const depth =
@@ -148,16 +157,31 @@ export function diagnosticsText(d: Diagnostics): string {
     d.colliderAgeMs === null
       ? "collider not built"
       : `collider ${seconds(d.colliderAgeMs)} old`;
-  const start = d.start
-    ? ` · start: physics ${seconds(d.start.rapierMs)}, AR ${seconds(d.start.arMs)}`
-    : "";
+  const parts = [depth, `mesh ${d.meshTris} tris`, collider];
   const s = d.shadow;
-  const shadow = s
-    ? ` · rx ${s.receiver} · sun ${s.cast ? "cast" : "no cast"}, ${s.mapAllocated ? `map ${s.mapSize}` : "no map"}, renders ${s.mapRenders}`
-    : "";
+  if (s) {
+    const map = s.mapAllocated ? `map ${s.mapSize}` : "no map";
+    parts.push(
+      `rx ${s.receiver}`,
+      `sun ${s.cast ? "cast" : "no cast"}, ${map}, renders ${s.mapRenders}`,
+    );
+  }
   const x = d.xr;
-  const xr = x
-    ? ` · xr ${x.visibility} (${x.firstVisibleMs === null ? "never visible" : `first ${seconds(x.firstVisibleMs)}`}) · rx ${x.rebuild}`
-    : "";
-  return ` · ${depth} · mesh ${d.meshTris} tris · ${collider}${shadow}${xr}${start}`;
+  if (x) {
+    const first =
+      x.firstVisibleMs === null
+        ? "never visible"
+        : `first ${seconds(x.firstVisibleMs)}`;
+    parts.push(
+      `xr ${x.visibility}, blurred ${x.blurred}x, hidden ${x.hidden}x (${first})`,
+      `page hidden ${x.pageHidden}x`,
+      `rebuild ${x.rebuild}`,
+    );
+  }
+  if (d.start) {
+    parts.push(
+      `start: physics ${seconds(d.start.rapierMs)}, AR ${seconds(d.start.arMs)}`,
+    );
+  }
+  return parts.join(" · ");
 }

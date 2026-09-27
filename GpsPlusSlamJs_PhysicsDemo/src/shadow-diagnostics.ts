@@ -71,7 +71,9 @@ export interface ProgramRenderer {
 
 /**
  * Reads the receiver's program flags, re-reading the shader sources only
- * when the program object changed (the status line updates every frame).
+ * when the program object changed. "off": no receiver attached; "none":
+ * attached, not compiled yet; "unreadable": a program exists but its shader
+ * sources came back empty.
  */
 export function createReceiverFlagsReader(
   renderer: ProgramRenderer,
@@ -89,19 +91,32 @@ export function createReceiverFlagsReader(
     if (!program) return "none";
     if (program !== lastProgram) {
       lastProgram = program;
-      lastText = flagsText(programFlags(renderer.getContext(), program));
+      const flags = programFlags(renderer.getContext(), program);
+      lastText = flags ? flagsText(flags) : "unreadable";
     }
     return lastText;
   };
 }
 
+/** `?rebuild=0` (or `off` / `false`) turns the first-visit rebuild off. */
+export function rebuildEnabledFromSearch(search: string): boolean {
+  const value = new URLSearchParams(search).get("rebuild");
+  return value === null || !["0", "off", "false"].includes(value.toLowerCase());
+}
+
 export interface FirstVisitRebuildDeps {
+  /** False with `?rebuild=0`: never rebuild (the owner's A/B). */
+  readonly enabled: boolean;
   /** The Mesh dropdown's path: recreate the occluder, same mode. */
   readonly rebuild: () => void;
   /** Triangles in the current occlusion mesh. */
   readonly meshTris: () => number;
-  /** The receiver's program flags now ("none" before it is compiled). */
+  /** The receiver's program flags now (`createReceiverFlagsReader`). */
   readonly readFlags: () => string;
+  /** Whether three has allocated the light's shadow map yet. */
+  readonly mapAllocated: () => boolean;
+  /** How many balls exist (a shadow can be looked for). */
+  readonly balls: () => number;
   /** The page clock (ms). */
   readonly now: () => number;
   /** When the AR session started (the clock of `now`). */
@@ -110,23 +125,36 @@ export interface FirstVisitRebuildDeps {
 
 /** Frames to wait for the rebuilt receiver to be attached and drawn. */
 const AFTER_FRAMES_MAX = 120;
+/** With no ball yet, wait this long after the first triangles (ms). */
+export const REBUILD_GRACE_MS = 2000;
 
 /**
- * Once, on the first frame where the XR session is `visible` AND the
- * occlusion mesh has triangles, rebuild the occluder the way the Mesh
- * dropdown does; record the receiver's flags before, and after once the new
- * receiver has a program. `tick` runs once per XR frame.
+ * Once, when the symptom's preconditions hold, rebuild the occluder the
+ * way the Mesh dropdown does, and record the receiver's flags before and,
+ * once the new receiver has a program, after. The preconditions: the XR
+ * session is `visible`, the mesh has triangles, a receiver is attached
+ * (shadows on), the shadow map is allocated, and a ball exists or
+ * REBUILD_GRACE_MS passed since the first triangles. `tick` runs once per
+ * XR frame, before the shadows' update.
  */
 export function createFirstVisitRebuild(deps: FirstVisitRebuildDeps) {
   let state: "waiting" | "rebuilt" | "done" = "waiting";
+  let firstTrisAtMs: number | null = null;
   let atMs = 0;
   let before = "";
   let after = "";
   let framesSince = 0;
+  const ready = (visibility: string): boolean => {
+    if (!deps.enabled || visibility !== "visible") return false;
+    if (deps.meshTris() <= 0) return false;
+    firstTrisAtMs ??= deps.now();
+    if (deps.readFlags() === "off" || !deps.mapAllocated()) return false;
+    return deps.balls() > 0 || deps.now() - firstTrisAtMs >= REBUILD_GRACE_MS;
+  };
   return {
     tick(visibility: string): void {
       if (state === "waiting") {
-        if (visibility !== "visible" || deps.meshTris() <= 0) return;
+        if (!ready(visibility)) return;
         before = deps.readFlags();
         atMs = deps.now() - deps.startedAtMs;
         deps.rebuild();
@@ -147,12 +175,46 @@ export function createFirstVisitRebuild(deps: FirstVisitRebuildDeps) {
         }
       }
     },
-    /** "rebuild pending", or "rebuilt 3.2 s S1N0D1>S1N1D1". */
+    /** "off", "pending", or "3.2 s S1N0D1>S1N1D1" (after "rebuild "). */
     text(): string {
-      if (state === "waiting") return "rebuild pending";
+      if (!deps.enabled) return "off";
+      if (state === "waiting") return "pending";
       const seconds = (atMs / 1000).toFixed(1);
-      return `rebuilt ${seconds} s ${before}>${after || "..."}`;
+      return `${seconds} s ${before}>${after || "..."}`;
     },
     rebuilt: () => state !== "waiting",
+  };
+}
+
+/**
+ * Counts a visibility state's transitions (an XR session's
+ * `visibilitychange`, the page's `document.visibilitychange`): each entry
+ * into `visible-blurred` and `hidden`, and the current state. Events are
+ * what see a prompt that comes and goes between two frames.
+ */
+export function createVisibilityCounter(initial = "unknown") {
+  let state = initial;
+  let blurred = 0;
+  let hidden = 0;
+  return {
+    observe(next: string): void {
+      if (next === state) return;
+      state = next;
+      if (next === "visible-blurred") blurred += 1;
+      if (next === "hidden") hidden += 1;
+    },
+    state: () => state,
+    blurred: () => blurred,
+    hidden: () => hidden,
+  };
+}
+
+/** True at most once per `intervalMs` of `now` (the diagnostics' rate). */
+export function createEvery(intervalMs: number) {
+  let last = Number.NEGATIVE_INFINITY;
+  return (nowMs: number): boolean => {
+    if (nowMs - last < intervalMs) return false;
+    last = nowMs;
+    return true;
   };
 }

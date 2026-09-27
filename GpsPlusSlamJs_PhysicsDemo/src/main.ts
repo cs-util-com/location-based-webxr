@@ -17,6 +17,10 @@ import { loadAndStartReplay, type ReplayLaunchSink } from "./replay-launch";
 import { initRapier } from "./physics-world";
 import { startArMode } from "./ar-mode";
 import { shadowsEnabledFromSearch } from "./ar-shadows-wiring";
+import {
+  createVisibilityCounter,
+  rebuildEnabledFromSearch,
+} from "./shadow-diagnostics";
 import { createPerfStatsOverlay } from "gps-plus-slam-app-framework/visualization/perf-stats-overlay";
 import { guardSliderAgainstScroll } from "gps-plus-slam-app-framework/utils/slider-scroll-guard";
 import { startReplayPhysics } from "./replay-physics";
@@ -46,6 +50,16 @@ function main(): void {
   const meshStyleSelect = requireEl<HTMLSelectElement>("mesh-style");
   const meshShaderSelect = requireEl<HTMLSelectElement>("mesh-shader");
   const statsEl = requireEl("stats");
+  // The diagnostics line (first-visit report on r753), its own element.
+  const diagnosticsEl = requireEl("diagnostics");
+  // The first-visit receiver rebuild, on unless `?rebuild=0` (owner's A/B).
+  const rebuild = rebuildEnabledFromSearch(window.location.search);
+  // Page visibility from load on: a permission prompt can hide the page
+  // before the AR session exists.
+  const pageVisibility = createVisibilityCounter(document.visibilityState);
+  document.addEventListener("visibilitychange", () =>
+    pageVisibility.observe(document.visibilityState),
+  );
   // The Shadows switch (round-2 plan M1), shared by AR and the replay.
   const shadowToggle = requireEl<HTMLInputElement>("shadows-toggle");
   // AR shadows from the thrown balls, on unless `?shadows=0` (W4 plan §11).
@@ -84,6 +98,9 @@ function main(): void {
           start: { tappedAtMs, physicsReadyAtMs: performance.now() },
           container: app,
           statsEl,
+          diagnosticsEl,
+          rebuild,
+          pageHidden: () => pageVisibility.hidden(),
           meshStyleSelect,
           meshShaderSelect,
           shadows,
@@ -148,6 +165,7 @@ function main(): void {
           meshStyleSelect,
           meshShaderSelect,
           statsEl,
+          diagnosticsEl,
           onFrame: () => perfStats.update(),
           shadows,
           shadowToggle,

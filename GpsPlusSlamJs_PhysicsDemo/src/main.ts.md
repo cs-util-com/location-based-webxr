@@ -12,8 +12,11 @@ lives in the tested `mode-detection` / `replay-launch` modules; this file is glu
 
 - On load, `detectArSupport()` reveals the "Start AR" button only on a
   WebXR-capable device; clicking it inits Rapier then calls `startArMode`
-  (`ar-mode.ts`, given the tap and physics-ready times for the status line's
-  start timings) for a genuine live-AR physics session (the play/pause/speed row is
+  (`ar-mode.ts`, given the tap and physics-ready times for the start
+  timings, the `#diagnostics` element, `?rebuild=0` parsed by
+  `rebuildEnabledFromSearch`, and the page's hidden count, observed from
+  page load because a permission prompt can hide the page before the
+  session exists; the replay gets `#diagnostics` too) for a genuine live-AR physics session (the play/pause/speed row is
   hidden in AR — it is replay-only). The desktop-replay path is always available.
 - Selecting a recording moves the UI through the async-feedback states:
   `#capability-message` → "Loading recording…" (input disabled) → on success the

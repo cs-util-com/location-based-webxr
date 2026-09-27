@@ -47,7 +47,7 @@ export interface OccupancyViewOptions {
 }
 
 /** The depth stream as the grid saw it, for the status line. */
-export interface DepthStats {
+interface DepthStats {
   /** Depth samples folded into the grid so far. */
   readonly samples: number;
   /** When the last one arrived (the view's clock), or null before the first. */

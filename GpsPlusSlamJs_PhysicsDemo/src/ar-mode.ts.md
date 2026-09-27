@@ -12,8 +12,9 @@ direction into the room.
 - **`startArMode(deps): Promise<() => void>`** — starts a WebXR session and returns
   a disposer that ends it. `deps`: `{ container, statsEl, meshStyleSelect,
 meshShaderSelect, onError, onStarted?, onFrame?, shadows?, shadowToggle?,
-panel?, start?, now? }` (`start`: the Start AR tap and physics-ready times
-  on `now`'s clock, default `performance.now`). A tap on `panel` does not also shoot: its `beforexrselect` is
+panel?, start?, now?, diagnosticsEl?, rebuild?, pageHidden? }` (`start`:
+  the Start AR tap and physics-ready times on `now`'s clock, default
+  `performance.now`). A tap on `panel` does not also shoot: its `beforexrselect` is
   cancelled (a DOM-overlay tap fires the click AND an XR select, and a
   select shoots; OsmDemo's DEC-Y18), removed on dispose; taps on the scene
   still shoot. `onFrame` is called once per XR
@@ -53,23 +54,31 @@ onCaptured → dispatch recordDepthSample } })`.
   recompile once (accepted, plan §8 item 6).
 - **The stats line** (round-2 plan M1, the owner's view on the phone):
   `statsText` from `ball-status.ts`, "balls N (k resting, j fell through)
-  · collider N tris · shadows on|off|unavailable", the viewer's height from
-  the tracked camera; then `diagnosticsText` (r752 first-load report): depth
-  samples and the last one's age, the mesh's triangles, the collider's age,
-  and the tap-to-physics and tap-to-AR start times. `runtime.step` runs on
-  the same `now` clock, so the collider's age is consistent. Round 4
-  (first-visit report on r753) adds the shadow state (the receiver's program
-  flags, the light, its map, the rig's renders) and the XR session's
-  `visibilityState` with the time to its first visible frame.
+  · collider N tris · shadows on|off|unavailable", every physics step, the
+  viewer's height from the tracked camera.
+- **The diagnostics line** (first-load reports on r752 and r753), its own
+  element (`deps.diagnosticsEl`, `#diagnostics`: a fixed four-line box,
+  deaf to taps, visible in AR because the owner reads it from a
+  screenshot), written from the frame loop at about 4 Hz (`createEvery`)
+  because it walks the scene and builds a long string: `diagnosticsText`
+  with depth samples and age, mesh triangles, collider age, the receiver's
+  program flags, the light and its map, the XR session's visibility (its
+  `visibilitychange` events are counted, and it is read each frame BEFORE
+  the step, so the line never lags a frame), the page's hidden count
+  (`deps.pageHidden`, counted from page load in `main.ts`), the rebuild's
+  note and the start timings. `runtime.step` runs on the same `now` clock.
 - **The first-visit receiver rebuild** (r753 report: on a new preview
   origin, so with the camera/AR permission prompt, the balls rested but
-  cast no shadow until the Mesh dropdown was switched and back): once, on
-  the first frame where the session is `visible` AND the occlusion mesh has
-  triangles, `occupancy.rebuild()` takes the Mesh dropdown's path (a new
-  occluder, so a new receiver), BEFORE the shadows' update so the receiver
-  is back in the same frame. `createFirstVisitRebuild` (`shadow-diagnostics.ts`)
-  records the receiver's flags before and after, shown on the status line.
-  A mitigation with a measurement, not a known cause.
+  cast no shadow until the Mesh dropdown was switched and back): once, when
+  `createFirstVisitRebuild`'s preconditions hold (session `visible`, a mesh,
+  a receiver attached, the shadow map allocated, and a ball or 2 s), then
+  `occupancy.rebuild()` takes the Mesh dropdown's path (a new occluder, so a
+  new receiver material and a freshly linked program), BEFORE the shadows'
+  update so the receiver is back in the same frame. The receiver's flags
+  before and after go on the diagnostics line. `deps.rebuild: false`
+  (`?rebuild=0`) turns it off for the owner's A/B. It costs one visible
+  hitch, once (a full re-mesh and a program link). A mitigation with a
+  measurement, not a known cause.
 
 ## Invariants & assumptions
 

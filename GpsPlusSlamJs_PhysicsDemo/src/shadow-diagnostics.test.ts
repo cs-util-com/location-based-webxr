@@ -13,7 +13,11 @@ import * as THREE from "three";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  REBUILD_GRACE_MS,
   RECEIVER_NODE,
+  createEvery,
+  createVisibilityCounter,
+  rebuildEnabledFromSearch,
   createFirstVisitRebuild,
   createReceiverFlagsReader,
   flagsText,
@@ -75,10 +79,12 @@ describe("createReceiverFlagsReader", () => {
     node.name = RECEIVER_NODE;
     const first = {} as WebGLProgram;
     const second = {} as WebGLProgram;
+    const blank = {} as WebGLProgram;
     const { gl, reads } = glWith(
       new Map([
         [first, [VERTEX_WITHOUT]],
         [second, [VERTEX_WITH]],
+        [blank, [""]],
       ]),
     );
     let current: { program?: WebGLProgram } | undefined = undefined;
@@ -96,70 +102,157 @@ describe("createReceiverFlagsReader", () => {
     expect(reads.count).toBe(1); // cached while the program is the same
     current = { program: second };
     expect(read()).toBe("S1N1D1");
+    // A program whose sources come back empty is not "no program".
+    current = { program: blank };
+    expect(read()).toBe("unreadable");
   });
 });
 
 describe("createFirstVisitRebuild", () => {
-  function setup() {
-    let tris = 0;
-    let flags = "S0N0D1";
-    let now = 1000;
+  function setup(enabled = true) {
+    const s = {
+      tris: 0,
+      flags: "S0N0D1",
+      now: 1000,
+      mapAllocated: true,
+      balls: 0,
+    };
     const rebuild = vi.fn();
     const r = createFirstVisitRebuild({
+      enabled,
       rebuild,
-      meshTris: () => tris,
-      readFlags: () => flags,
-      now: () => now,
+      meshTris: () => s.tris,
+      readFlags: () => s.flags,
+      mapAllocated: () => s.mapAllocated,
+      balls: () => s.balls,
+      now: () => s.now,
       startedAtMs: 0,
     });
-    return {
-      r,
-      rebuild,
-      set: (o: { tris?: number; flags?: string; now?: number }) => {
-        tris = o.tris ?? tris;
-        flags = o.flags ?? flags;
-        now = o.now ?? now;
-      },
-    };
+    return { r, rebuild, s };
   }
 
-  it("waits for a visible session AND a mesh, then rebuilds exactly once", () => {
-    const { r, rebuild, set } = setup();
-    r.tick("visible"); // no mesh yet
-    set({ tris: 40 });
+  // Cold review, 2026-09-27: the rebuild must wait for the symptom's
+  // preconditions, or it is spent before the state it should repair exists
+  // (and a rebuild with shadows off wastes the one shot).
+  it("waits for a visible session, a mesh, a receiver, an allocated map and a ball", () => {
+    const { r, rebuild, s } = setup();
+    s.tris = 40;
+    s.balls = 1;
     r.tick("visible-blurred"); // the permission prompt's state
     r.tick("hidden");
+    s.flags = "off"; // shadows switched off: no receiver
+    r.tick("visible");
+    s.flags = "S0N0D1";
+    s.mapAllocated = false; // three has not rendered the map yet
+    r.tick("visible");
     expect(rebuild).not.toHaveBeenCalled();
-    expect(r.text()).toBe("rebuild pending");
-    set({ now: 3200 });
+    expect(r.text()).toBe("pending");
+    s.mapAllocated = true;
+    s.now = 3200;
     r.tick("visible");
     expect(rebuild).toHaveBeenCalledTimes(1);
     for (let i = 0; i < 300; i++) r.tick("visible");
     expect(rebuild).toHaveBeenCalledTimes(1);
   });
 
+  it("without a ball, waits the grace time after the first triangles", () => {
+    const { r, rebuild, s } = setup();
+    s.tris = 40;
+    r.tick("visible"); // first triangles at 1000 ms
+    s.now = 1000 + REBUILD_GRACE_MS - 1;
+    r.tick("visible");
+    expect(rebuild).not.toHaveBeenCalled();
+    s.now = 1000 + REBUILD_GRACE_MS;
+    r.tick("visible");
+    expect(rebuild).toHaveBeenCalledTimes(1);
+  });
+
   it("records the flags before, and after once the new receiver is compiled", () => {
-    const { r, set } = setup();
-    set({ tris: 40, now: 3200 });
+    const { r, s } = setup();
+    s.tris = 40;
+    s.balls = 1;
+    s.now = 3200;
     r.tick("visible");
-    expect(r.text()).toBe("rebuilt 3.2 s S0N0D1>...");
-    set({ flags: "none" }); // the new receiver, not compiled yet
+    expect(r.text()).toBe("3.2 s S0N0D1>...");
+    s.flags = "none"; // the new receiver, not compiled yet
     r.tick("visible");
-    expect(r.text()).toBe("rebuilt 3.2 s S0N0D1>...");
-    set({ flags: "S1N1D1" });
+    expect(r.text()).toBe("3.2 s S0N0D1>...");
+    s.flags = "S1N1D1";
     r.tick("visible");
-    expect(r.text()).toBe("rebuilt 3.2 s S0N0D1>S1N1D1");
-    set({ flags: "S0N0D0" }); // later changes do not rewrite the record
+    expect(r.text()).toBe("3.2 s S0N0D1>S1N1D1");
+    s.flags = "S0N0D0"; // later changes do not rewrite the record
     r.tick("visible");
-    expect(r.text()).toBe("rebuilt 3.2 s S0N0D1>S1N1D1");
+    expect(r.text()).toBe("3.2 s S0N0D1>S1N1D1");
   });
 
   it("gives up waiting for the new program after a while, and says so", () => {
-    const { r, set } = setup();
-    set({ tris: 40 });
+    const { r, s } = setup();
+    s.tris = 40;
+    s.balls = 1;
     r.tick("visible");
-    set({ flags: "none" });
+    s.flags = "none";
     for (let i = 0; i < 200; i++) r.tick("visible");
-    expect(r.text()).toBe("rebuilt 1.0 s S0N0D1>none");
+    expect(r.text()).toBe("1.0 s S0N0D1>none");
+  });
+
+  // The owner's A/B (`?rebuild=0`): the bug's state stays on screen.
+  it("never rebuilds when turned off, and says so", () => {
+    const { r, rebuild, s } = setup(false);
+    s.tris = 40;
+    s.balls = 1;
+    for (let i = 0; i < 10; i++) r.tick("visible");
+    expect(rebuild).not.toHaveBeenCalled();
+    expect(r.text()).toBe("off");
+  });
+});
+
+describe("rebuildEnabledFromSearch", () => {
+  it("is on unless ?rebuild=0, off or false", () => {
+    expect(rebuildEnabledFromSearch("")).toBe(true);
+    expect(rebuildEnabledFromSearch("?rebuild=1")).toBe(true);
+    for (const v of ["0", "off", "FALSE"]) {
+      expect(rebuildEnabledFromSearch(`?shadows=1&rebuild=${v}`)).toBe(false);
+    }
+  });
+});
+
+// A prompt can blur or hide the session between two frames, so the
+// transitions are counted from events, not sampled per frame.
+describe("createVisibilityCounter", () => {
+  it("counts entries into visible-blurred and hidden, not repeats", () => {
+    const c = createVisibilityCounter();
+    for (const s of [
+      "visible",
+      "visible-blurred",
+      "visible-blurred",
+      "visible",
+      "hidden",
+      "visible",
+      "visible-blurred",
+    ]) {
+      c.observe(s);
+    }
+    expect([c.state(), c.blurred(), c.hidden()]).toEqual([
+      "visible-blurred",
+      2,
+      1,
+    ]);
+  });
+});
+
+// The diagnostics' rate (cold review: the text was rebuilt every step).
+describe("createEvery", () => {
+  it("is true at most once per interval", () => {
+    const every = createEvery(250);
+    expect([0, 100, 249, 250, 300, 500, 749, 750].map(every)).toEqual([
+      true,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      true,
+    ]);
   });
 });

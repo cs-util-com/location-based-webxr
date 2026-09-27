@@ -68,7 +68,7 @@ export interface DemoShadows {
   dispose(): void;
 }
 
-export interface ShadowStateDiagnostics {
+interface ShadowStateDiagnostics {
   readonly cast: boolean;
   readonly mapSize: number;
   /** three allocates the map on the first render that needs it. */

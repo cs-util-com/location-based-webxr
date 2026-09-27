@@ -342,18 +342,39 @@ describe("startReplayPhysics", () => {
     ]);
     for (let i = 0; i <= STILL_STEPS; i++) onStats(1, 12);
     expect(h.statsEl.textContent).toBe(
-      "balls 1 (1 resting, 1 in shadow range) · collider 12 tris · shadows on" +
-        " · depth 0 · mesh 12 tris · collider not built" +
-        " · rx off · sun cast, no map, renders 1",
+      "balls 1 (1 resting, 1 in shadow range) · collider 12 tris · shadows on",
     );
     h.shadowToggle.checked = false;
     listener(h.shadowToggle, "change")();
     onStats(1, 12);
     expect(h.statsEl.textContent).toBe(
-      "balls 1 (1 resting, 1 in shadow range) · collider 12 tris · shadows off" +
-        " · depth 0 · mesh 12 tris · collider not built" +
+      "balls 1 (1 resting, 1 in shadow range) · collider 12 tris · shadows off",
+    );
+    dispose();
+  });
+
+  // The diagnostics line (first-visit reports, 2026-09-27) has its own
+  // element and is written from the frame loop at about 4 Hz, not by every
+  // physics step's stats callback.
+  it("writes the diagnostics into their own element, at most every 250 ms", () => {
+    const h = harness();
+    const diagnosticsEl = { textContent: "" } as unknown as HTMLElement;
+    const dispose = startReplayPhysics(
+      h.session,
+      { ...h.controls, diagnosticsEl },
+      h.scheduler,
+      h.factories,
+    );
+    h.scheduled[0]!(1000);
+    expect(diagnosticsEl.textContent).toBe(
+      "depth 0 · mesh 12 tris · collider not built" +
         " · rx off · sun cast, no map, renders 1",
     );
+    diagnosticsEl.textContent = "";
+    h.scheduled[1]!(1100);
+    expect(diagnosticsEl.textContent).toBe("");
+    h.scheduled[2]!(1250);
+    expect(diagnosticsEl.textContent).not.toBe("");
     dispose();
   });
 
