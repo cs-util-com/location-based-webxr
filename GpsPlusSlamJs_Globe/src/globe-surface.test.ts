@@ -91,8 +91,8 @@ describe("createGlobeSurface", () => {
     expect(GLOBE_SURFACE.imageryUrl).toBe(
       "/globe-assets/blue-marble-4326/{z}/{x}/{y}.jpg",
     );
-    // Levels 0-3 are committed: four levels.
-    expect(globe.options.levels).toBe(4);
+    // Levels 0-4 are committed (level 4: DEC-FB2-4): five levels.
+    expect(globe.options.levels).toBe(5);
     expect(plugin.overlay).toBe(globe.overlay);
     // The plugin has no name, so it is found in the renderer's own list.
     const registered = (globe.tiles as unknown as { plugins: object[] })

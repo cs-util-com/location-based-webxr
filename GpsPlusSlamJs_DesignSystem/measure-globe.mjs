@@ -35,11 +35,13 @@ const PHONE = { name: "phone 412x915 @2", width: 412, height: 915, scale: 2 };
 /**
  * The rows: every error target on both viewports at the lab's defaults, then
  * the phone's finest view under smaller tile caches (a starved cache refuses
- * tiles, and the view looks soft without anything saying so).
+ * tiles, and the view looks soft without anything saying so). The error
+ * targets below 1 px are where the committed level 4 (round-2 plan
+ * 2026-09-26-2055 DEC-FB2-4) starts to load on this fitted view.
  */
 const ROWS = [
   ...[DESKTOP, PHONE].flatMap((viewport) =>
-    [1, 2, 4, 16].map((errorTarget) => ({
+    [0.25, 0.5, 1, 2, 4, 16].map((errorTarget) => ({
       viewport,
       extra: `errorTarget=${errorTarget}`,
     })),
@@ -95,15 +97,15 @@ async function measure(browser, { viewport, extra }, problems) {
   await context.close();
   const mib = (bytes) => (bytes / 2 ** 20).toFixed(1);
   const cap = mib(s.cacheBudgetBytes);
-  return `| ${viewport.name} | ${s.errorTarget} | ${s.pixelRatio} | ${cap} | ${s.loadedTiles} | ${s.refusedTiles} | ${mib(s.bytesDownloaded)} | ${mib(s.cachedBytes)} | ${s.rendererMemory.textures} | ${s.rendererMemory.geometries} |`;
+  return `| ${viewport.name} | ${s.errorTarget} | ${s.pixelRatio} | ${cap} | ${s.loadedTiles} | ${s.refusedTiles} | ${s.tileRequestsByLevel.join(" / ")} | ${mib(s.bytesDownloaded)} | ${mib(s.cachedBytes)} | ${s.rendererMemory.textures} | ${s.rendererMemory.geometries} |`;
 }
 
 const server = await startAuxServer();
 const browser = await chromium.launch();
 const problems = [];
 const rows = [
-  "| Viewport | Error target (px) | Pixel ratio | Cache cap (MiB) | Tiles loaded | Tiles refused | Downloaded (MiB) | Tile cache (MiB) | GPU textures | GPU geometries |",
-  "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+  "| Viewport | Error target (px) | Pixel ratio | Cache cap (MiB) | Tiles loaded | Tiles refused | Requested per level (0 / 1 / 2 / 3 / 4) | Downloaded (MiB) | Tile cache (MiB) | GPU textures | GPU geometries |",
+  "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
 ];
 try {
   for (const row of ROWS) rows.push(await measure(browser, row, problems));

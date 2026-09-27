@@ -25,8 +25,9 @@ is the one recorded exception, contained in this private package:
 
 ## The imagery
 
-`assets/` holds the phase-1 imagery, committed (DEC-PRG-12, about 2 MB):
-the Blue Marble tile pyramid (EPSG:4326, levels 0-3) and three global maps
+`assets/` holds the phase-1 imagery, committed (DEC-PRG-12, about 2 MB; level 4 added by DEC-FB2-4, 4.45 MB in
+all, held under 4.5 MB by `globe-sources.test.ts`): the Blue Marble tile
+pyramid (EPSG:4326, levels 0-4) and three global maps
 (night lights, water mask, clouds), all NASA, public domain.
 `scripts/fetch-globe-assets.mjs` regenerates them by hand (never in CI) and
 writes `assets/PROVENANCE.md`. `src/globe-sources.ts` is the one registry

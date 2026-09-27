@@ -36,3 +36,12 @@
   cloud edge on the line hid the seam too; the check is per row.
 - **"Nearly black" is not "a hole" once exposure changes.** Under M3's tone
   mapping deep sea reads (0,0,9); a hole shows the black sky exactly.
+- **Level 4 weighs more than its sample said.** The globe plan estimated z4
+  at about 1.9 MiB from 48 random tiles (3.7 KiB each); the whole level
+  measured 2.42 MB (512 tiles, about 4.6 KiB each), so the committed assets
+  came to 4,451,405 bytes against the owner's 4.5 MB budget: about 1 %
+  headroom. Sampling error explains it: the sizes are skewed (median 3.2,
+  mean 4.6, standard deviation 4.4 KiB, 0.65-19.4 KiB), so a 48-tile mean
+  has a standard error of 0.63 KiB and 3.7 was 1.5 of them low. A size
+  estimate from a sample needs its spread reported with it.
+  `globe-sources.test.ts` holds the total.

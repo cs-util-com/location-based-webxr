@@ -1,5 +1,6 @@
 // Fetches the globe's phase-1 imagery into assets/ (globe plan 2026-09-26-0539
-// §7.4; owner decision DEC-PRG-12: about 2 MB of NASA imagery committed).
+// §7.4; owner decision DEC-PRG-12: about 2 MB of NASA imagery committed;
+// round-2 plan 2026-09-26-2055 DEC-FB2-4 added level 4, 4.45 MB in all).
 // Run by hand, never in CI: `node scripts/fetch-globe-assets.mjs [--force]`.
 //
 // Pure Node fetch, no image decoding: GIBS cuts and reprojects the tiles
@@ -19,7 +20,7 @@ import { pyramidTiles, tileBBox4326, wmsBBox } from "../src/tile-pyramid.ts";
 const here = dirname(fileURLToPath(import.meta.url));
 const ASSETS = join(here, "..", "assets");
 const FORCE = process.argv.includes("--force");
-const MAX_LEVEL = 3;
+const MAX_LEVEL = 4;
 const CONCURRENCY = 4;
 const RETRIES = 3;
 const GIBS_WMS = "https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi";

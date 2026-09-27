@@ -2,11 +2,13 @@
 
 - Purpose: globe plan 2026-09-26-0539 §7.8, M4. What the globe lab loads to
   settle on one daylight view over North Africa and Europe, at the lab's
-  defaults: for each error target (1, 2, 4, 16 px) on a desktop (1280x800
+  defaults: for each error target (0.25, 0.5, 1, 2, 4, 16 px; below 1 px
+  is where the committed level 4 starts to load on this view) on a desktop (1280x800
   at DPR 1) and a phone (412x915 at DPR 2), and for the phone's finest view
   under smaller tile caches (48 and 32 MiB). Columns: the error target, the
   pixel ratio actually used, the cache cap, tiles loaded, tiles refused by
-  a full cache, bytes downloaded, the tile cache's bytes, and three's GPU
+  a full cache, the tiles requested per pyramid level (`tileRequestsByLevel`),
+  bytes downloaded, the tile cache's bytes, and three's GPU
   texture and geometry counts. The progress entry's table is this script's
   output, never typed by hand.
 - Use: `pnpm run measure:globe` from `GpsPlusSlamJs_DesignSystem/`. Output: a
@@ -31,4 +33,5 @@
   lab smoke (`labs/globe/globe.smoke.spec.mjs`): `loadedTiles`,
   `bytesDownloaded` (above 0 and under 20 MiB), `rendererMemory.textures`,
   `cachedBytes`, `refusedTiles` (0 at the default cap), `pixelRatio` (at
-  DPR 2).
+  DPR 2); `tileRequestsByLevel` in `labs/globe/globe-sky.smoke.spec.mjs`
+  (level 4 requested at a 0.25 px target).

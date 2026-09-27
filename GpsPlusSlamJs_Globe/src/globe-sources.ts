@@ -42,7 +42,7 @@ export const GLOBE_SOURCES: readonly GlobeSource[] = [
     id: "blue-marble",
     kind: "tiles",
     path: "/globe-assets/blue-marble-4326/{z}/{x}/{y}.jpg",
-    levels: 4,
+    levels: 5,
     projection: "EPSG:4326",
     colorSpace: "srgb",
     credit: {

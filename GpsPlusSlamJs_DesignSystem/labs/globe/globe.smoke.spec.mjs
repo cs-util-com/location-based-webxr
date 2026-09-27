@@ -11,6 +11,15 @@
  */
 import { expect, test } from "@playwright/test";
 
+import {
+  applyHash,
+  arriveAt,
+  gridAround,
+  luminance,
+  meanOf,
+  median,
+} from "./globe-smoke-helpers.mjs";
+
 /** The smoke server's origin: 5198, or a worktree's `DS_E2E_PORT` (3d/playwright.config.mjs). */
 const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
 /**
@@ -219,45 +228,6 @@ function angleDeg(a, b) {
 const CENTRE_TOLERANCE_DEG = 0.01;
 const CENTRE_SWEEP_DEG = [0.01, 0.1, 0.25, 0.5];
 
-/**
- * Waits until the page has arrived at `target` and its tiles have settled.
- * A new view loads every committed level under SwiftShader: 30-50 s
- * measured, so 60 s timed out once on a loaded machine.
- */
-async function arriveAt(page, target) {
-  const started = Date.now();
-  // Children of a just-parsed tile are queued only at the next update, so
-  // one poll can see "nothing pending" between two levels: the tile count
-  // must hold still for a second.
-  await page.waitForFunction(
-    ({ lat, lng }) => {
-      const s = window.__globeLab.state();
-      const settled =
-        s.phase === "arrived" &&
-        s.target?.lat === lat &&
-        s.target?.lng === lng &&
-        s.pendingTiles === 0 &&
-        s.mapsLoaded === s.mapsTotal &&
-        s.centreLatLon !== null;
-      const w = window;
-      const key = `${lat},${lng},${s.loadedTiles}`;
-      if (!settled || w.__settleKey !== key) {
-        w.__settleKey = key;
-        w.__settleSince = performance.now();
-        return false;
-      }
-      return performance.now() - w.__settleSince >= 1000;
-    },
-    target,
-    { timeout: 120_000, polling: 100 },
-  );
-  // The settle time per view: a slow creep shows here long before 120 s.
-  console.log(
-    `settled at ${target.lat},${target.lng} in ${((Date.now() - started) / 1000).toFixed(1)} s`,
-  );
-  return page.evaluate(() => window.__globeLab.state());
-}
-
 // WHY (globe plan §7.8, M2): the intro ends with the viewer's place at the
 // centre of the screen. The unit tests prove the camera math; this proves
 // it through the library's own frame (a ray against the drawn tiles,
@@ -351,27 +321,6 @@ test("waits for a fix, then falls back to Central Park; replay runs it again", a
   ]);
 });
 
-/** Rec. 709 luminance of an 8-bit RGBA pixel. */
-const luminance = (px) => 0.2126 * px[0] + 0.7152 * px[1] + 0.0722 * px[2];
-const meanOf = (values) => values.reduce((a, b) => a + b, 0) / values.length;
-const median = (values) => {
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.floor(sorted.length / 2)];
-};
-/** An n x n grid of normalised canvas points, `half` either side of `c`. */
-const gridAround = (c, half, n) => {
-  const points = [];
-  for (let i = 0; i < n; i++) {
-    for (let j = 0; j < n; j++) {
-      points.push([
-        c[0] - half + (2 * half * i) / (n - 1),
-        c[1] - half + (2 * half * j) / (n - 1),
-      ]);
-    }
-  }
-  return points;
-};
-
 /**
  * The M3 checks' floors, from the first measured run (2026-09-26,
  * SwiftShader) and reported against that run:
@@ -389,21 +338,6 @@ const gridAround = (c, half, n) => {
 const M3 = { day: 30, night: 40, glint: 40, seamRatio: 1.5 };
 const SWEEP = [0.5, 1, 1.5];
 const EQUINOX_NOON = "time=2026-03-20T12:00:00Z";
-
-/**
- * Sets the hash and waits until the page has applied it: a new target or
- * timing restarts the intro, anything else (the time, the tuning) applies
- * live, and either way `appliedHash` says when.
- */
-async function applyHash(page, hash) {
-  await page.evaluate((h) => {
-    if (location.hash.slice(1) !== h) location.hash = h;
-  }, hash);
-  await page.waitForFunction(
-    (h) => window.__globeLab.state().appliedHash === h,
-    hash,
-  );
-}
 
 /** Goes to `lat,lng` with the given extra hash, arrived and settled. */
 async function viewAt(page, lat, lng, extra) {

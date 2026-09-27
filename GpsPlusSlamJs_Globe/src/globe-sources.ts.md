@@ -6,7 +6,7 @@
 - Public API:
   - `GLOBE_SOURCES` - `{ id, kind: "tiles" | "equirect", path, levels?,
 projection?, colorSpace, credit: { short, full, href } }`: the Blue
-    Marble pyramid (levels 0-3), Black Marble 2016, the MODIS water mask,
+    Marble pyramid (levels 0-4; level 4 is DEC-FB2-4), Black Marble 2016, the MODIS water mask,
     the Blue Marble clouds. `colorSpace` says how the shader reads it:
     `srgb` for colour (the tiles, the night lights), `linear` for numbers
     (the water mask, and the clouds, whose grey level is read as coverage).
@@ -21,4 +21,6 @@ projection?, colorSpace, credit: { short, full, href } }`: the Blue
   surface patch (M3).
 - Tests: `globe-sources.test.ts` (unique ids, full credits, the committed
   pyramid complete with every tile a 256x256 JPEG, every global map
-  2048x1024 and under the 2 MiB file ceiling).
+  2048x1024 and under the 2 MiB file ceiling, and the whole `assets/`
+  folder within its 4.5 MB budget, decimal, as the owner stated it:
+  4,451,405 bytes on 2026-09-27, so about 1 % headroom).

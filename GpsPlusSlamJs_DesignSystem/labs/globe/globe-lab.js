@@ -383,8 +383,28 @@ function globeBytesDownloaded() {
     .reduce((sum, e) => sum + (e.transferSize || e.encodedBodySize || 0), 0);
 }
 
+/**
+ * The imagery tiles requested so far per pyramid level (distinct URLs in the
+ * resource timing log), index = level: which levels a view actually uses.
+ * Level 4 (round-2 plan 2026-09-26-2055 DEC-FB2-4) refines only once a
+ * texel of level 3 spans more than the error target.
+ */
+function tileRequestsByLevel() {
+  const levels = [0, 0, 0, 0, 0];
+  const seen = new Set();
+  for (const e of performance.getEntriesByType("resource")) {
+    const m = /\/blue-marble-4326\/(\d+)\//.exec(e.name);
+    if (!m || seen.has(e.name)) continue;
+    seen.add(e.name);
+    const level = Number(m[1]);
+    levels[level] = (levels[level] ?? 0) + 1;
+  }
+  return levels;
+}
+
 function start() {
-  // The default log keeps 250 entries: fewer than the committed pyramid.
+  // The default log keeps 250 entries: fewer than the committed pyramid
+  // (682 tiles with level 4).
   performance.setResourceTimingBufferSize(4000);
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   // Phase 1's exposure (§7.3): the sun at intensity π, Neutral tone mapping
@@ -537,6 +557,7 @@ function start() {
       pixelRatio: renderer.getPixelRatio(),
       errorTarget: globe.tiles.errorTarget,
       bytesDownloaded: globeBytesDownloaded(),
+      tileRequestsByLevel: tileRequestsByLevel(),
       rendererMemory: { ...renderer.info.memory },
       radiusM: radius,
       activeSources: globe.activeSources(),

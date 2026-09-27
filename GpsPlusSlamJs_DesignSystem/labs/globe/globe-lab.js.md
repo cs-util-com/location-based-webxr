@@ -67,12 +67,14 @@
   (`{ models, tileErrors, cachedBytes, pendingTiles, loadedTiles, phase,
 target, source, history, runs, spinMs, turnMs, centreLatLon, timeMs,
 sunEcef, tuning, sunIntensity, fovY, pixelRatio, errorTarget,
-bytesDownloaded, rendererMemory, appliedHash, radiusM, activeSources,
+bytesDownloaded, tileRequestsByLevel, rendererMemory, appliedHash, radiusM, activeSources,
 loadingShown, loadingVisible, cacheBudgetBytes, cacheFloorBytes,
 creditShorts, mapsLoaded, mapErrors, mapsTotal, refusedTiles, distance }`;
   `tuning` is what the shader reads (the uniforms), not the hash;
   `bytesDownloaded` sums the resource timing log's `/globe-assets/`
-  entries, whose buffer the page raises to 4000, counting cache hits too), `project(lat, lng)` (a
+  entries, whose buffer the page raises to 4000, counting cache hits too;
+  `tileRequestsByLevel` counts the distinct imagery tiles requested per
+  pyramid level, index = level, 0-4), `project(lat, lng)` (a
   place's normalised canvas point, for probes at known places),
   `readPixels(points)` (normalised canvas points, read in the same task as
   a render).
@@ -131,5 +133,10 @@ creditShorts, mapsLoaded, mapErrors, mapsTotal, refusedTiles, distance }`;
     r745's CI runner timed out at 60 s), requires the tile count to hold
     for 1 s, and logs its time per view; the tests that settle several
     views carry an explicit budget.
+- `globe-sky.smoke.spec.mjs` (round-2 plan 2026-09-26-2055 DEC-FB2-4): level
+  4 of the imagery is requested and drawn without a tile error at a 0.25 px
+  error target (at the default 1 px on the fitted view it is not needed:
+  logged). Both specs share `globe-smoke-helpers.mjs` (the settle wait, the
+  hash wait, luminance and grids).
 - The memory and download table: `pnpm run measure:globe`
   (`measure-globe.mjs`), not a test.
