@@ -79,3 +79,56 @@ test("catalog labels show from about twice the old distance, and K caps them (K 
   }
   expect(errors).toEqual([]);
 });
+
+// WHY (owner feedback round 3, item 6; DEC-FB3-1): the page had two sets of
+// spheres, the white and gold ramp (always there, unlabelled) and the
+// catalog, at different spacings. The ramp is now one labelled catalog row:
+// twelve spheres on one line at the catalog's pitch and height, labelled
+// like every other row, and gone with the catalog. The old separate spheres
+// must be gone too (no second set), which the caster flags' parts show.
+test("the old white and gold ramp is one labelled catalog row, shown and hidden with the catalog", async ({
+  page,
+}) => {
+  const errors = await boot(page, "preset=noon&tone=neutral&city=0&catalog=1");
+  const on = await page.evaluate(() => {
+    const d = window.__lookdev;
+    d.pauseLoop(true);
+    d.setCloudCover(0);
+    d.setView("catalog");
+    d.readPixels([[0.5, 0.5]]);
+    return {
+      spheres: d.catalogSpheres(),
+      labels: d.catalogInfo().labelIds,
+      parts: Object.keys(d.casterFlags().casts),
+    };
+  });
+  const ramp = on.spheres.filter((s) => s.id.startsWith("ramp-"));
+  const others = on.spheres.filter((s) => !s.id.startsWith("ramp-"));
+  const rampLabels = on.labels.filter((id) => id.startsWith("ramp-"));
+  console.log(
+    `ramp row: ${ramp.map((s) => `${s.id}@${s.x},${s.y},${s.z}`).join(" ")}; ${rampLabels.length} of its labels shown`,
+  );
+  expect(ramp).toHaveLength(12);
+  // One row: one z, the catalog's height, the catalog's pitch.
+  expect(new Set(ramp.map((s) => s.z)).size).toBe(1);
+  expect([...new Set(ramp.map((s) => s.y))]).toEqual([
+    ...new Set(others.map((s) => s.y)),
+  ]);
+  const firstRow = others.filter((s) => s.z === others[0].z);
+  const pitch = firstRow[1].x - firstRow[0].x;
+  const xs = ramp.map((s) => s.x).sort((a, b) => a - b);
+  expect(xs[0]).toBe(firstRow[0].x);
+  for (let i = 1; i < xs.length; i++) expect(xs[i] - xs[i - 1]).toBe(pitch);
+  // Labelled like the rest: some of its labels show at the catalog view.
+  expect(rampLabels.length).toBeGreaterThan(0);
+  // No second set of spheres beside the catalog.
+  expect(on.parts).not.toContain("swatches");
+  const off = await page.evaluate(() => {
+    const d = window.__lookdev;
+    d.setCatalog(false);
+    d.readPixels([[0.5, 0.5]]);
+    return { spheres: d.catalogSpheres(), labels: d.catalogInfo().labelIds };
+  });
+  expect(off).toEqual({ spheres: [], labels: [] });
+  expect(errors).toEqual([]);
+});

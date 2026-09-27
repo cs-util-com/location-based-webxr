@@ -18,9 +18,11 @@ import {
 import { LABEL_RULE, labelOpacities } from "./label-rule.js";
 
 /**
- * Where the grid floats: the swatch height, beyond the swatch rows (+z),
- * clear of the pond and of the shadow probes' points. Rows of `perRow`
- * spheres, `pitchM` apart, one row per category run.
+ * Where the grid floats: the stand-in scene's float height (105 m), north
+ * of the pond (+z), clear of the pond and of the shadow probes' points.
+ * Rows of `perRow` spheres, `pitchM` apart, in catalog order. (The old
+ * white and gold swatch rows floated at z 170 and 192 until round 3 folded
+ * them in as a row, DEC-FB3-1.)
  */
 export const CATALOG_LAYOUT = {
   origin: [-66, 105, 225],
@@ -45,7 +47,9 @@ export function catalogMaterial(entry) {
 /**
  * The spheres: a group named "catalog", one mesh per entry (named by its
  * id, the entry on `userData.entry`), casting shadows (the owner's report:
- * a floating sphere without a shadow reads as a defect).
+ * a floating sphere without a shadow reads as a defect) and receiving them,
+ * so a sphere's shadow lands on its neighbours (as the old swatches did).
+ * Both flags only matter while the renderer's shadow maps are on.
  */
 export function buildCatalog(entries, layout = CATALOG_LAYOUT) {
   const group = new THREE.Group();
@@ -62,6 +66,7 @@ export function buildCatalog(entries, layout = CATALOG_LAYOUT) {
       z0 + Math.floor(i / layout.perRow) * layout.pitchM,
     );
     mesh.castShadow = true;
+    mesh.receiveShadow = true;
     group.add(mesh);
   });
   return {

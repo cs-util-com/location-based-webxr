@@ -7,7 +7,8 @@
   - `catalogMaterial(entry)` - the entry's material; a custom shader gets
     its own program cache key.
   - `buildCatalog(entries, layout?)` - `{ group, dispose() }`; the group is
-    named "catalog", each mesh by its entry id, casting shadows.
+    named "catalog", each mesh by its entry id, casting and receiving
+    shadows (a sphere's shadow lands on its neighbours).
   - `createCatalogLabels(anchor, group, rule?)` - the overlay goes right
     after `anchor` (the canvas), so the panel stays above it; - `{ render(scene,
 camera), setSize(w, h), visibleIds(), dispose() }`.
@@ -15,8 +16,10 @@ camera), setSize(w, h), visibleIds(), dispose() }`.
   - On by default on the page since round 3 (plan 2026-09-27-0532,
     DEC-FB3-5; `catalog=0` turns it off). The smoke boot pins it off, so
     the page's other tests never compile its programs.
-  - The grid floats at the swatch height, beyond the swatch rows, clear of
-    the pond and of the shadow probes.
+  - The grid floats at the stand-in scene's float height (105 m), north of
+    the pond, clear of it and of the shadow probes. Since round 3 the old
+    white and gold swatches are its third row (`ramp.js`, DEC-FB3-1), so
+    the page has one set of spheres at one spacing.
   - Labels are HTML (not hidden behind geometry, not shown in immersive AR);
     the framework's `text-sprite.ts` is the path if AR ever needs them.
 - Tests: the look-dev smoke test (every entry compiles, one program per

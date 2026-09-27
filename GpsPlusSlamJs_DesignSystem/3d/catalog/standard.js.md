@@ -2,7 +2,9 @@
 
 - Purpose: W5 material catalog plan
   (`GpsPlusSlamJs_Docs/docs/2026-09-26-0549-material-catalog-plan.md`), M1:
-  the physically based default swept: a red dielectric and gold, copper and steel at roughness 0-1 (24 entries), the old grey swatch rows in colour.
+  the physically based default swept: a red dielectric and gold, copper and steel at roughness 0-1 (24 entries), the old grey swatch rows in colour. The old white and gold rows
+  themselves are `ramp.js` since round 3 (DEC-FB3-1); its gold (0xe6c07a)
+  nearly duplicates this gold (0xe6b85c) at the same six roughnesses.
 - Public API: one exported array of catalog entries, in the schema that
   `validate.js.md` describes. Pure data: the page builds each material from
   `material.type` and `params`.

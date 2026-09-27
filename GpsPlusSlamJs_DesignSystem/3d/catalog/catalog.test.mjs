@@ -15,6 +15,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { CATALOG } from "./index.js";
+import { RAMP_ENTRIES } from "./ramp.js";
 import {
   CATEGORIES,
   LABEL_MAX,
@@ -46,6 +47,37 @@ describe("the catalog as shipped", () => {
     }
     assert.ok(CATALOG.filter((e) => e.category === "standard").length >= 12);
     for (const c of categories) assert.ok(CATEGORIES.includes(c));
+  });
+});
+
+// WHY (round-3 plan 2026-09-27-0532, DEC-FB3-1): the old white and gold
+// roughness ramp, which floated beside the city as twelve unlabelled
+// spheres, is folded into the catalog as one labelled row. It must keep the
+// old spheres' exact colours and roughness steps (else it is not the ramp
+// the owner knew), fill exactly one row of twelve, and stay contiguous in
+// the catalog so the grid lays it out as a row (the page's smoke test
+// checks the row's positions).
+describe("the old roughness ramp", () => {
+  it("is the old twelve spheres: white and gold, roughness 0 to 1", () => {
+    assert.equal(RAMP_ENTRIES.length, 12);
+    const expected = [0, 0.2, 0.4, 0.6, 0.8, 1];
+    const white = RAMP_ENTRIES.slice(0, 6).map((e) => e.material.params);
+    const gold = RAMP_ENTRIES.slice(6).map((e) => e.material.params);
+    assert.deepEqual(
+      white.map((p) => [p.color, p.metalness, p.roughness]),
+      expected.map((r) => [0xd8d8d8, 0, r]),
+    );
+    assert.deepEqual(
+      gold.map((p) => [p.color, p.metalness, p.roughness]),
+      expected.map((r) => [0xe6c07a, 1, r]),
+    );
+  });
+
+  it("is in the catalog as one contiguous run that starts a row of 12", () => {
+    const at = CATALOG.indexOf(RAMP_ENTRIES[0]);
+    assert.ok(at >= 0, "the ramp is in the catalog");
+    assert.deepEqual(CATALOG.slice(at, at + 12), RAMP_ENTRIES);
+    assert.equal(at % 12, 0);
   });
 });
 

@@ -2,13 +2,13 @@
 
 - Purpose: build the look-dev page's content (owner decision DEC-SKY-7):
   a city block of extruded buildings (concrete plus a few glass towers),
-  three rings of ridges at 2.5 / 5 / 9 km, two rows of material spheres
-  (dielectric and metal, roughness 0…1), a lake, and three AR-diamond
-  markers on poles, over a 12 km ground disc.
+  three rings of ridges at 2.5 / 5 / 9 km, a lake, and three AR-diamond
+  markers on poles, over a 12 km ground disc. (The two rows of white and
+  gold material spheres that stood here are the page's catalog row
+  `catalog/ramp.js` since round 3, plan 2026-09-27-0532 DEC-FB3-1.)
 - Public API:
   - `buildStandInScene(scene)` → `{ ground, streets, city, dense, ridges,
-swatches, lake, basin, markers, families }`, each already added to
-    `scene`.
+lake, basin, markers, families }`, each already added to `scene`.
   - `denseCity(pitch = 42)` → the DENSE CITY (programme plan 2026-09-26-0539,
     W1 M3): every lot of a `pitch` grid between 420 m and 2350 m (clear of the
     original scene, short of the first ridge at 2500 m), ordered by radius, as
@@ -19,8 +19,9 @@ setCount(n) }`; `setCount(n)` shows the nearest n lots (clamped), and a
     unchanged.
   - `DENSE_PITCHES` = `[42, 31, 20]` (about 9,500, 17,500 and 42,000 lots).
   - `FLOAT_HEIGHT_M` (105) and `POND` (`{ x: 120, z: -40, rx: 110, rz: 70 }`):
-    the pond and the swatches float above the city (owner feedback
-    2026-09-26, W1 plan M4), so a ring full of buildings never hides them.
+    the pond (and the page's material catalog) float above the city (owner
+    feedback 2026-09-26, W1 plan M4), so a ring full of buildings never
+    hides them.
     The pond sits on a shallow closed `basin`, so from below it reads as a
     slab rather than as the back face of a sky mirror. Its footprint keeps
     off every point the top-down shadow probes look at (a smoke test checks

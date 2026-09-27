@@ -6,8 +6,6 @@
  *   what the sky lights in practice, so its grading is the real test.
  * - DISTANT RIDGES at ~2.5, 5 and 9 km: aerial perspective can only be judged
  *   where there is depth to fade into.
- * - MATERIAL SWATCHES: spheres from matte to mirror, dielectric and metal,
- *   which show the environment light without any content in the way.
  * - A LAKE and MARKER PROPS: the lightweight water's home, and the AR diamond
  *   the demos actually place.
  *
@@ -101,7 +99,7 @@ function cityBlock() {
  * is allocated per pitch, so the count a hash names always fits.
  */
 export const DENSE_PITCHES = [42, 31, 20];
-/** The fill keeps clear of the original scene (block, lake, swatches, markers). */
+/** The fill keeps clear of the original scene (block, lake, markers, catalog). */
 const DENSE_INNER_M = 420;
 /** And stops short of the first mountain ring at 2500 m (DEC: mountains stay). */
 const DENSE_OUTER_M = 2350;
@@ -261,38 +259,14 @@ function ridges() {
 }
 
 /**
- * The height the pond and the material swatches float at (owner feedback
- * 2026-09-26, W1 plan M4): above the city, so a ring full of buildings never
- * hides them, and below the scene-top bound the atmosphere tests hold.
+ * The height the pond (and the page's material catalog) float at (owner
+ * feedback 2026-09-26, W1 plan M4): above the city, so a ring full of
+ * buildings never hides them, and below the scene-top bound the atmosphere
+ * tests hold.
  */
 export const FLOAT_HEIGHT_M = 105;
 /** The floating pond's centre and radii (x, z), clear of the shadow probes. */
 export const POND = { x: 120, z: -40, rx: 110, rz: 70 };
-
-function swatches() {
-  const group = new THREE.Group();
-  group.name = "swatches";
-  const sphere = new THREE.SphereGeometry(4, 48, 24);
-  for (let k = 0; k < 6; k++) {
-    const roughness = k / 5;
-    const dielectric = new THREE.Mesh(
-      sphere,
-      new THREE.MeshStandardMaterial({ color: 0xd8d8d8, roughness }),
-    );
-    dielectric.position.set(-50 + k * 20, FLOAT_HEIGHT_M, 170);
-    const metal = new THREE.Mesh(
-      sphere,
-      new THREE.MeshStandardMaterial({
-        color: 0xe6c07a,
-        metalness: 1,
-        roughness,
-      }),
-    );
-    metal.position.set(-50 + k * 20, FLOAT_HEIGHT_M, 192);
-    group.add(dielectric, metal);
-  }
-  return group;
-}
 
 function lake() {
   const mesh = new THREE.Mesh(
@@ -394,7 +368,6 @@ export function buildStandInScene(scene) {
     city: cityBlock(),
     dense: denseCity(),
     ridges: ridges(),
-    swatches: swatches(),
     lake: lake(),
     basin: basin(),
     markers: markers(),

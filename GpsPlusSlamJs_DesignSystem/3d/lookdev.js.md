@@ -26,17 +26,21 @@
     tests that aim along the sun or away from it);
     `cloudSlabDefine()` (the step count the slab material is built with, so
     a test can tell a count that never reached the program);
-    `casterFlags()` (whether every mesh of each part casts, and whether the
-    swatches receive: W3 M1 made every stand-in object cast, since the owner
-    saw the spheres cast nothing), `shadowProbe().family` (the lee of the
+    `casterFlags()` (`{ casts: { city, dense, catalog, markers, families },
+catalogReceives }`: whether every mesh of each part casts, the catalog
+    false while it is off, and whether the catalog's spheres receive; W3 M1
+    made every stand-in object cast, since the owner saw the spheres cast
+    nothing; the old white and gold swatches are a catalog row since round
+    3), `shadowProbe().family` (the lee of the
     Lambert box, a caster standing on the ground), `setWater(id)` (the pond's wave set, W6: `"C0"` for the original six
     waves or a candidate id from `water-candidates.js`, `"P50"` the default
     since the owner rated it best; a new WaterSurface
     per set, hazed, keeping the wave clock) and `waterCandidates()` (the ids,
-    today's first); `setFloatingVisible(bool)` (the floating pond, basin and swatches on or
-    off: from the city view they stand against the sky, so the sky-pixel tests
-    hide them), `floating()` (where the
-    pond and the swatches float, W1 M4) and `lakeSurfacePoints(n)` (points
+    today's first); `setFloatingVisible(bool)` (the floating pond, basin and
+    the catalog, when built, on or off: from the city view they stand against
+    the sky, so the sky-pixel tests hide them), `floating()` (where the
+    pond and the catalog's spheres float, W1 M4; `catalogMinY` Infinity
+    while the catalog is off) and `lakeSurfacePoints(n)` (points
     on the floating pond's surface, which the water test samples);
     `setCity(count, pitch?)` (the dense city, W1 M3: the nearest `count`
     lots of a `pitch` grid; a new pitch rebuilds the part, hazes it and flags

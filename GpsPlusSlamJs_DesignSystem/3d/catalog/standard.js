@@ -1,7 +1,9 @@
 /**
  * Catalog category "standard" (W5 plan 2026-09-26-0549, M1): three's
  * physically based default, swept. The old grey swatch rows, now in colour:
- * roughness 0-1 on a dielectric and on three metals.
+ * roughness 0-1 on a dielectric and on three metals. (The old rows
+ * themselves are the catalog's `ramp.js` row since round 3; its gold nearly
+ * duplicates the gold here, shown to the owner on purpose.)
  *
  * Pure data: the page builds the materials (`material.type` + `params`).
  */

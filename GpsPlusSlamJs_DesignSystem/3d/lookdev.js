@@ -223,8 +223,11 @@ THREE.ShaderChunk.lights_fragment_begin = withRingShadow(
 let ringShadow = null;
 /** The central map's camera distance from the centre (see applyShadows). */
 const SUN_SHADOW_DISTANCE_M = RING_HALF_WIDTH_M + 30;
-/** The parts besides the city and the dense fill that cast (W3 plan M1). */
-const CASTING_PARTS = ["swatches", "markers", "families"];
+/**
+ * The parts besides the city and the dense fill that cast (W3 plan M1). The
+ * catalog's spheres cast and receive by themselves (catalog-view.js).
+ */
+const CASTING_PARTS = ["markers", "families"];
 /** The switch is on but the sun is below the floor (the readout says so). */
 let shadowsBelowFloor = false;
 
@@ -375,16 +378,12 @@ function applyShadows(direction) {
       building.receiveShadow = true;
     }
     // EVERY STAND-IN OBJECT CASTS (W3 plan M1; the owner saw the spheres
-    // cast nothing while only the city was listed). The swatches also
-    // receive, so a sphere's shadow can land on its neighbours.
+    // cast nothing while only the city was listed).
     for (const part of CASTING_PARTS) {
       parts[part].traverse((o) => {
         if (o.isMesh) o.castShadow = true;
       });
     }
-    parts.swatches.traverse((o) => {
-      if (o.isMesh) o.receiveShadow = true;
-    });
     parts.ground.receiveShadow = true;
     parts.streets.traverse((o) => (o.receiveShadow = true));
     // The central map's camera stands BEYOND the whole dense city toward the
@@ -1026,12 +1025,16 @@ Object.assign(api, {
     state.pitch = pitch;
     applyLook();
   },
-  /** Test surface: which parts cast (every mesh in them), and whether the swatches receive. */
+  /**
+   * Test surface: which parts cast (every mesh in them; the catalog false
+   * while it is off), and whether the catalog's spheres receive.
+   */
   casterFlags() {
     const all = (part, key) => {
       let every = true;
       let any = false;
-      parts[part].traverse((o) => {
+      const object = part === "catalog" ? catalogView?.group : parts[part];
+      object?.traverse((o) => {
         if (!o.isMesh) return;
         any = true;
         every = every && o[key];
@@ -1042,33 +1045,37 @@ Object.assign(api, {
       casts: {
         city: all("city", "castShadow"),
         dense: all("dense", "castShadow"),
-        swatches: all("swatches", "castShadow"),
+        catalog: all("catalog", "castShadow"),
         markers: all("markers", "castShadow"),
         families: all("families", "castShadow"),
       },
-      swatchesReceive: all("swatches", "receiveShadow"),
+      catalogReceives: all("catalog", "receiveShadow"),
     };
   },
   /**
-   * Test surface: the floating pond, its basin and the swatches on or off.
-   * They float at 105 m, so from the city view they stand against the sky;
-   * a test that samples SKY pixels hides them (W1 M4).
+   * Test surface: the floating pond, its basin and the catalog (when built)
+   * on or off. They float at 105 m, so from the city view they stand
+   * against the sky; a test that samples SKY pixels hides them (W1 M4).
    */
   setFloatingVisible(on) {
-    for (const part of ["swatches", "lake", "basin"]) {
+    for (const part of ["lake", "basin"]) {
       parts[part].visible = Boolean(on);
     }
+    if (catalogView) catalogView.group.visible = Boolean(on);
   },
-  /** Test surface: where the pond and the swatches float (W1 M4). */
+  /**
+   * Test surface: where the pond and the catalog's spheres float (W1 M4;
+   * `catalogMinY` is Infinity while the catalog is off).
+   */
   floating() {
-    let swatchesMinY = Infinity;
-    parts.swatches.traverse((o) => {
-      if (o.isMesh) swatchesMinY = Math.min(swatchesMinY, o.position.y);
+    let catalogMinY = Infinity;
+    catalogView?.group.traverse((o) => {
+      if (o.isMesh) catalogMinY = Math.min(catalogMinY, o.position.y);
     });
     const p = parts.lake.position;
     return {
       lake: { x: p.x, y: p.y, z: p.z, rx: POND.rx, rz: POND.rz },
-      swatchesMinY,
+      catalogMinY,
     };
   },
   /** Test surface: `n` points on the pond's surface, well inside its rim. */

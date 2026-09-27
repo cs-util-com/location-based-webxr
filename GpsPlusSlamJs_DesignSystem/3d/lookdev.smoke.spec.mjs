@@ -156,8 +156,9 @@ for (const preset of ["noon", "golden"]) {
   }) => {
     await boot(page, `preset=${preset}&tone=neutral`);
     const results = await page.evaluate(() => {
-      // The floating pond and swatches stand against the sky in this view
-      // since W1 M4; the claim is about the sky, so they are hidden.
+      // The floating pond (and the catalog, when on) stand against the sky
+      // in this view since W1 M4; the claim is about the sky, so they are
+      // hidden.
       window.__lookdev.setFloatingVisible(false);
       window.__lookdev.setView("city");
       return [
@@ -1983,14 +1984,17 @@ test("the dense city's far buildings cast shadows, past the sharp central map", 
 // WHY (owner feedback 2026-09-26; W3 plan M1): with the shadow prototype on,
 // the material spheres cast no shadow, because only the city was on the
 // caster list. Every object of the stand-in world now casts (the city, the
-// dense fill, the swatches, the markers, the families), and the swatches also
-// receive. The pixel claim uses a caster that stands ON the ground (the
-// Lambert box), compared with itself with shadows off, so it cannot pass by
-// comparing two different pixels.
+// dense fill, the catalog's spheres, the markers, the families), and the
+// spheres also receive, so a sphere's shadow can land on its neighbours.
+// Since round 3 (plan 2026-09-27-0532, DEC-FB3-1) the old white and gold
+// swatches are a catalog row, so the sphere claims are read on the catalog.
+// The pixel claim uses a caster that stands ON the ground (the Lambert box),
+// compared with itself with shadows off, so it cannot pass by comparing two
+// different pixels.
 test("every stand-in object casts, and the Lambert box shadows its lee", async ({
   page,
 }) => {
-  const errors = await boot(page, "preset=noon&tone=neutral&city=0");
+  const errors = await boot(page, "preset=noon&tone=neutral&city=0&catalog=1");
   const lee = (on) =>
     page.evaluate((shadows) => {
       const d = window.__lookdev;
@@ -2009,11 +2013,11 @@ test("every stand-in object casts, and the Lambert box shadows its lee", async (
   expect(flags.casts).toEqual({
     city: true,
     dense: true,
-    swatches: true,
+    catalog: true,
     markers: true,
     families: true,
   });
-  expect(flags.swatchesReceive).toBe(true);
+  expect(flags.catalogReceives).toBe(true);
   // Declared from the building probe's noon bound (MIN_DARKENING.noon).
   expect(sum(off) - sum(on)).toBeGreaterThan(MIN_DARKENING.noon);
   expect(errors).toEqual([]);
@@ -2021,13 +2025,14 @@ test("every stand-in object casts, and the Lambert box shadows its lee", async (
 
 // WHY (owner feedback 2026-09-26, W1 plan M4): the pond and the material
 // spheres float about 100 m above the city centre, so a city full of
-// buildings never hides them. A floating pond over a point the top-down
-// shadow probes look at would silently change those tests, so its footprint
-// must keep off every probe point, at every preset the probes run.
-test("the pond and the swatches float above the city, clear of the shadow probes", async ({
+// buildings never hides them (the spheres are the catalog's since round 3,
+// the old swatches folded in as a row). A floating pond over a point the
+// top-down shadow probes look at would silently change those tests, so its
+// footprint must keep off every probe point, at every preset the probes run.
+test("the pond and the catalog float above the city, clear of the shadow probes", async ({
   page,
 }) => {
-  const errors = await boot(page, "preset=noon&tone=neutral&city=0");
+  const errors = await boot(page, "preset=noon&tone=neutral&city=0&catalog=1");
   const result = await page.evaluate(() => {
     const d = window.__lookdev;
     const f = d.floating();
@@ -2046,7 +2051,7 @@ test("the pond and the swatches float above the city, clear of the shadow probes
   });
   console.log(`floating: ${JSON.stringify(result.f)}`);
   expect(result.f.lake.y).toBeGreaterThanOrEqual(100);
-  expect(result.f.swatchesMinY).toBeGreaterThanOrEqual(95);
+  expect(result.f.catalogMinY).toBeGreaterThanOrEqual(95);
   expect(result.hits).toEqual([]);
   expect(errors).toEqual([]);
 });
