@@ -16,13 +16,12 @@
  */
 import * as THREE from "three";
 
-import { countBelow, groupRanks } from "./city-materials.js";
-
-/** A fixed pseudo-random value in [0, 1) for an integer seed. */
-function hash(seed) {
-  const x = Math.sin(seed * 12.9898 + 78.233) * 43758.5453;
-  return x - Math.floor(x);
-}
+import {
+  countBelow,
+  groupRanks,
+  lotHash as hash,
+  lotMaterialIndex,
+} from "./city-materials.js";
 
 /** Smooth 1-D ridge profile around a circle: a few octaves of hashed sines. */
 function ridgeProfile(angle, layer) {
@@ -165,7 +164,7 @@ export function denseCity(pitch = DENSE_PITCHES[0], { materials = null } = {}) {
         },
       ];
   const groupOf = varied
-    ? (lot) => Math.floor(hash(lot.seed + 5) * groups.length)
+    ? (lot) => lotMaterialIndex(lot.seed, groups.length)
     : (lot) => (isTower(lot) ? 1 : 0);
   const ranks = groupRanks(lots.map(groupOf), groups.length);
   const box = new THREE.BoxGeometry(1, 1, 1);

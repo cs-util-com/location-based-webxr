@@ -52,8 +52,10 @@ roughness }`: `materials` are the catalog ids of a varied city's meshes,
     calls);
     `setVaried(bool, count?)` (the city's VARIED MATERIALS, round-3 plan
     2026-09-27-0532 DEC-FB3-3, on by default with 12: one InstancedMesh per
-    catalog material, standard and physical entries only, picked evenly
-    over the pool by `city-materials.js`, worn by lot seed; a change
+    catalog material from the pool `city-materials.js` defines (the
+    physically based categories; today the 24 standard entries, the ramp
+    row excluded, since the catalog has no physical entry yet), half
+    dielectric and half metal, worn by lot seed; a change
     rebuilds the fill, hazed and flagged like a new pitch; `RangeError`
     outside 1..pool size) and `setCityFinish("mixed" | "shiny" | "matte")`
     (the owner's A/B: every city material at roughness 0 or 1, or each at

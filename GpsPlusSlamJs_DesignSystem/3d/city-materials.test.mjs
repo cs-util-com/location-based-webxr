@@ -24,6 +24,9 @@ import {
   countBelow,
   DEFAULT_CITY_MATERIALS,
   groupRanks,
+  lotHash,
+  lotMaterialIndex,
+  lotMaterialU,
   pickCityMaterials,
 } from "./city-materials.js";
 
@@ -31,19 +34,27 @@ const roughnessOf = (e) => e.material.params.roughness ?? 1;
 const metalnessOf = (e) => e.material.params.metalness ?? 0;
 
 describe("cityMaterialPool", () => {
-  it("holds only the catalog's standard and physical entries", () => {
+  it("holds only the catalog's physically based entries, without the ramp", () => {
     const pool = cityMaterialPool(CATALOG);
     assert.ok(pool.length >= 12, `pool of ${pool.length}`);
     for (const e of pool) {
       assert.ok(["standard", "physical"].includes(e.category), e.id);
       assert.match(e.material.type, /^Mesh(Standard|Physical)Material$/);
     }
+    // The old white and gold ramp is a sky-judging reference, not a
+    // building material, and its gold nearly duplicates the standard gold
+    // (round-3 review, finding 5): left out.
+    assert.ok(pool.every((e) => !e.id.startsWith("ramp-")));
+    assert.ok(CATALOG.some((e) => e.id.startsWith("ramp-")));
     // Every classic and toon entry is left out.
     const left = CATALOG.filter((e) => !pool.includes(e));
     assert.ok(left.some((e) => e.category === "classic"));
     assert.ok(
       left.every(
-        (e) => !["standard", "physical"].includes(e.category) || e.make,
+        (e) =>
+          !["standard", "physical"].includes(e.category) ||
+          e.make ||
+          e.id.startsWith("ramp-"),
       ),
     );
   });
@@ -90,14 +101,63 @@ describe("pickCityMaterials", () => {
     });
   }
 
+  // A city is mostly painted and plastered, not metal: the picks alternate
+  // dielectric and metal, so no count is mostly metal while the pool has
+  // dielectrics left (the pool itself is three quarters metal; round-3
+  // review, finding 5). The shares are logged for the owner's record.
+  it("keeps the metal share at one half for every swept count", () => {
+    for (const n of CITY_MATERIAL_COUNTS) {
+      const metals = pickCityMaterials(pool, n).filter(
+        (e) => metalnessOf(e) >= 0.5,
+      ).length;
+      console.log(`metal share at n = ${n}: ${metals}/${n}`);
+      assert.equal(metals / n, 0.5, `n = ${n}`);
+    }
+  });
+
   it("is deterministic and takes the whole pool at n = pool size", () => {
     assert.deepEqual(pickCityMaterials(pool, 8), pickCityMaterials(pool, 8));
-    assert.deepEqual(pickCityMaterials(pool, pool.length), pool);
+    assert.deepEqual(
+      new Set(pickCityMaterials(pool, pool.length)),
+      new Set(pool),
+    );
   });
 
   it("refuses a count outside 1..pool size", () => {
     for (const n of [0, -1, 1.5, pool.length + 1, Number.NaN]) {
       assert.throws(() => pickCityMaterials(pool, n), RangeError);
+    }
+  });
+});
+
+// WHY (round-3 review, finding 10): the lots' fixed hash draws each
+// property from its own stream (height from seed, tower from seed + 1, ...),
+// and the material came from seed + 5, which is ANOTHER lot's seed (the lot
+// five cells along), so a lot's material equalled a neighbour's height
+// draw. The material stream sits between integer seeds, where no lot's
+// base stream is.
+describe("the lot material stream", () => {
+  it("is no lot's base stream", () => {
+    for (let s = 1000 * 7919; s < 1000 * 7919 + 500; s += 7) {
+      const u = lotMaterialU(s);
+      for (let t = s - 10; t <= s + 10; t++) {
+        assert.notEqual(u, lotHash(t), `seed ${s} against ${t}`);
+      }
+    }
+  });
+
+  it("spreads the lots evenly over the materials", () => {
+    for (const n of CITY_MATERIAL_COUNTS) {
+      const counts = new Array(n).fill(0);
+      const lots = 20000;
+      for (let k = 0; k < lots; k++) {
+        const i = lotMaterialIndex(1000 * 7919 + k * 13, n);
+        assert.ok(Number.isInteger(i) && i >= 0 && i < n);
+        counts[i] += 1;
+      }
+      for (const c of counts) {
+        assert.ok(Math.abs(c / (lots / n) - 1) < 0.1, `n = ${n}: ${counts}`);
+      }
     }
   });
 });

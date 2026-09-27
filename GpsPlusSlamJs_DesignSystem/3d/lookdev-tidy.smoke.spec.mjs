@@ -175,8 +175,8 @@ const sum = (px) => px[0] + px[1] + px[2];
 
 /** The material counts the varied-city sweep covers (plan §6). */
 const MATERIAL_SWEEP = [4, 8, 12];
-/** A catalog entry id a building may wear: standard or physical only. */
-const POOL_ID = /^(standard|physical|ramp)-/;
+/** A catalog entry id a building may wear (the ramp row is not in the pool). */
+const POOL_ID = /^(standard|physical)-/;
 
 // WHY (owner feedback round 3, item 7; DEC-FB3-3): the city's buildings wear
 // catalog materials at random, so matte and shiny mix out to the horizon.
@@ -359,10 +359,14 @@ test("the finish A/B changes the city's roughness and pixels, not its draws or p
 
 // The owner's cost question (DEC-FB3-3; plan §3, §6), LOGGED for the record,
 // not asserted beyond the draw counts: SwiftShader timings are relative, so
-// every cost is a ratio against the plain city in the same page load, over
-// interleaved rounds. On the default page (the densest city, shadows on):
-// the steady frame (the shadow maps are cached) and a frame that re-renders
-// both maps (after the sun moves), per material count and per finish.
+// every cost is a ratio within one page load, over interleaved rounds. The
+// boot is PINNED (dome clouds, the catalog off) with the densest city and
+// shadows named on: the steady frame (the shadow maps are cached) and a
+// frame that re-renders both maps (after the sun moves), each the median of
+// 3, per material count and per finish. The ratios are against the varied
+// city with TWO materials, not against the plain city: the plain city also
+// differs by a per-building colour attribute and its own program (round-3
+// review, finding 6), so it is logged but not the baseline.
 // ON DEMAND (`LOOKDEV_COST=1`): it renders about 70 frames of 42,000
 // buildings, minutes on SwiftShader, and its numbers are for the round-3
 // record, not a gate; the draw counts it logs are asserted in the gated
@@ -378,7 +382,7 @@ test("the varied city's cost against the plain city (logged)", async ({
   );
   const configs = [
     { id: "plain", varied: false, n: 12, finish: "mixed" },
-    ...MATERIAL_SWEEP.map((n) => ({
+    ...[2, ...MATERIAL_SWEEP].map((n) => ({
       id: `n${n}`,
       varied: true,
       n,
@@ -402,7 +406,7 @@ test("the varied city's cost against the plain city (logged)", async ({
           d.setVaried(c.varied, c.n);
           d.setCityFinish(c.finish);
           const steady = d.timeFrames(3);
-          const maps = d.timeFrames(2, { shadowMaps: true });
+          const maps = d.timeFrames(3, { shadowMaps: true });
           out[c.id].steady.push(steady.medianMs);
           out[c.id].maps.push(maps.medianMs);
           out[c.id].steadyDraws = steady.draws;
@@ -416,11 +420,12 @@ test("the varied city's cost against the plain city (logged)", async ({
   );
   const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
   const base = results.plain;
+  const ratioBase = results.n2;
   for (const c of configs) {
     const r = results[c.id];
     console.log(
-      `cost ${c.id}: steady ${r.steadyDraws} draws x${(mean(r.steady) / mean(base.steady)).toFixed(2)}; ` +
-        `map frame ${r.mapDraws} draws x${(mean(r.maps) / mean(base.maps)).toFixed(2)}; programs ${r.programs} ` +
+      `cost ${c.id}: steady ${r.steadyDraws} draws x${(mean(r.steady) / mean(ratioBase.steady)).toFixed(2)}; ` +
+        `map frame ${r.mapDraws} draws x${(mean(r.maps) / mean(ratioBase.maps)).toFixed(2)} (against n2); programs ${r.programs} ` +
         `(raw ms steady ${r.steady.map((x) => x.toFixed(0)).join("/")}, maps ${r.maps.map((x) => x.toFixed(0)).join("/")})`,
     );
   }

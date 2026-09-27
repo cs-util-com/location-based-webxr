@@ -192,8 +192,9 @@ const state = {
   // default (plan Q3-1).
   ao: false,
   // The dense city's varied materials (round-3 plan 2026-09-27-0532,
-  // DEC-FB3-3): on by default, `materials` catalog entries (standard and
-  // physical only) worn at random by lot; `finish` is the owner's A/B
+  // DEC-FB3-3): on by default, `materials` catalog entries from the city
+  // pool (city-materials.js; today the standard entries without the ramp
+  // row) worn at random by lot; `finish` is the owner's A/B
   // ("mixed", each material's own roughness, "shiny" or "matte").
   varied: true,
   materials: DEFAULT_CITY_MATERIALS,
@@ -1244,8 +1245,10 @@ Object.assign(api, {
    * pending shadow map or a program compile lands there), then `n` timed
    * frames, each finished by a 1-pixel read so the GPU work is inside the
    * time. `shadowMaps` re-renders both sun shadow maps in every timed frame
-   * (the frame after a sun move). Returns the median ms, the last frame's
-   * draws and the program count. SwiftShader times are relative only.
+   * (the frame after a sun move). Returns the median ms (with an even `n`,
+   * the upper middle: with 2 it is the max; use an odd `n`), the last
+   * frame's draws and the program count. SwiftShader times are relative
+   * only.
    */
   timeFrames(n, { shadowMaps = false } = {}) {
     const gl = renderer.getContext();
