@@ -352,9 +352,16 @@ function introFlight(ellipsoid) {
  * `at=30,15` and `time=...T11:00:00Z` stay as typed instead of %2C / %3A.
  */
 function hashWith(key, value) {
+  return hashWithAll({ [key]: value });
+}
+
+/** The hash with several keys set at once (null removes one). */
+function hashWithAll(values) {
   const params = new URLSearchParams(location.hash.slice(1));
-  if (value === null) params.delete(key);
-  else params.set(key, String(value));
+  for (const [key, value] of Object.entries(values)) {
+    if (value === null) params.delete(key);
+    else params.set(key, String(value));
+  }
   return params.toString().replaceAll("%2C", ",").replaceAll("%3A", ":");
 }
 
@@ -369,14 +376,22 @@ const shown = (value) => String(Math.round(value * 100) / 100);
  * slider drag neither floods the back button nor waits for `hashchange`.
  * The hour slider sets the UTC hour of `#time=` (the clock's date; minutes
  * snap to its 15-minute steps); "Now" removes `#time=`. `sceneMs` reads
- * the clock.
+ * the clock, `clockScale` its effective speed. A change of the clock's
+ * speed also pins `time=` to the instant it is made at, so the scene
+ * carries on from there instead of rewinding to the old pin. Returns
+ * `sync` (the controls from the hash) and `showClock` (the hour label and
+ * slider from the clock, which the frame calls while the clock runs).
  */
-function bindPanel(getParams, apply, sceneMs) {
+function bindPanel(getParams, apply, sceneMs, clockScale) {
   const fields = [...document.querySelectorAll("[data-hash-key]")];
   const hour = document.querySelector("[data-time-hour]");
   const now = document.querySelector("[data-time-now]");
   const write = (key, value) => {
-    history.replaceState(null, "", `#${hashWith(key, value)}`);
+    const values =
+      key === "timeScale"
+        ? { time: new Date(sceneMs()).toISOString(), timeScale: value }
+        : { [key]: value };
+    history.replaceState(null, "", `#${hashWithAll(values)}`);
     apply();
   };
   const show = (key, value) => {
@@ -405,10 +420,21 @@ function bindPanel(getParams, apply, sceneMs) {
       field.value = value;
       show(key, shown(params[key]));
     }
+    showClock();
+  };
+  /**
+   * The hour label and slider from the clock: "now" for the wall clock,
+   * otherwise the UTC hour, and the speed while it runs faster or slower
+   * than real time. The slider is left alone while it is being dragged.
+   */
+  const showClock = () => {
     const date = new Date(sceneMs());
     const h = date.getUTCHours() + date.getUTCMinutes() / 60;
-    hour.value = String(h);
-    show("hour", params.clock.startMs === null ? "now" : `${shown(h)} UTC`);
+    if (document.activeElement !== hour) hour.value = String(h);
+    const scale = clockScale();
+    const wall = getParams().clock.startMs === null && scale === 1;
+    const speed = scale === 0 || scale === 1 ? "" : `, x${scale}`;
+    show("hour", wall ? "now" : `${shown(h)} UTC${speed}`);
   };
   for (const field of fields) {
     const event = field.tagName === "SELECT" ? "change" : "input";
@@ -422,7 +448,7 @@ function bindPanel(getParams, apply, sceneMs) {
     write("time", date.toISOString());
   });
   now.addEventListener("click", () => write("time", null));
-  return sync;
+  return { sync, showClock };
 }
 
 /**
@@ -501,6 +527,8 @@ function start() {
     });
   let clock = startClock();
   const sceneMs = () => clock.timeAt(performance.now());
+  /** When the frame last refreshed the hour label (performance.now()). */
+  let clockShownAt = -Infinity;
   /**
    * Everything but the intro's target and timing, applied at once. The
    * field of view and the pixel ratio refit the camera and resize the
@@ -548,22 +576,27 @@ function start() {
    * minute) and the clouds' drift. Returns the instant.
    */
   const sunNow = () => {
-    const ms = sceneMs();
+    const mono = performance.now();
+    const ms = clock.timeAt(mono);
     globe.setSun(
       sunDirectionEcef(globe.tiles.ellipsoid, solarPosition(ms, 0, 0)),
     );
+    // The drift runs on the clock's DRIFT time: the scene's time up to real
+    // time, real time above it, so a fast clock does not strobe the clouds.
     globe.surfaceUniforms.uCloudLonOffset.value = cloudLonOffsetRad(
-      ms,
+      clock.driftTimeAt(mono),
       params.cloudDrift,
     );
     siderealAngleRad = greenwichSiderealAngleRad(ms);
     return ms;
   };
-  const syncPanel = bindPanel(
+  const panel = bindPanel(
     () => params,
     () => onHash(),
     sceneMs,
+    () => clock.scale,
   );
+  const syncPanel = panel.sync;
   flight.restart(performance.now(), params);
   applyLive();
   syncPanel();
@@ -593,6 +626,12 @@ function start() {
     camera.updateMatrixWorld();
     globe.update(camera, renderer);
     status.update(globe.state());
+    // A running clock moves the hour: its label follows, once a second.
+    const mono = performance.now();
+    if (clock.scale !== 0 && mono - clockShownAt >= 1000) {
+      clockShownAt = mono;
+      panel.showClock();
+    }
     // The sky pass first, from the direction the Earth is lit from (the
     // light's position in the surface's group, turned into the world), with
     // no depth, so the Earth drawn next covers it.
@@ -710,6 +749,7 @@ function start() {
       centreLatLon: centreLatLon(),
       timeMs: sunNow(),
       clock: { ...params.clock, scale: clock.scale },
+      hourLabel: document.querySelector('output[data-for="hour"]').textContent,
       cloudDrift: params.cloudDrift,
       // What the shader reads: the clouds' drift east, radians.
       cloudLonOffsetRad: globe.surfaceUniforms.uCloudLonOffset.value,

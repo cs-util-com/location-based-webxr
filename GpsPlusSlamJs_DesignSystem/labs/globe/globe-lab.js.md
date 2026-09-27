@@ -54,7 +54,15 @@
     clock. The sun reads it every frame. A clock is restarted only when
     `time` or `timeScale` changes, from the pin (or now) again, so a link
     reproduces the scene from its load. The plate's "Clock speed" select
-    shows the EFFECTIVE speed (0 when pinned, 1 when not).
+    shows the EFFECTIVE speed (0 when pinned, 1 when not). Changing it
+    also writes `time=` to the instant it is made at, so the scene carries
+    on instead of rewinding to the old pin (the clouds jump once there).
+    While the clock runs, the hour label and slider follow it once a
+    second and the label names a speed other than real time
+    ("12.5 UTC, x3600").
+  - The clouds drift on the clock's DRIFT time (`driftTimeAt`: the
+    scene's speed up to real time, real time above it), so a fast clock
+    does not strobe them: at 600x they move 0.5 °/s, as at 1x.
   - The error target, the sun's intensity and the cache cap default to what
     the surface sets itself (read from the live surface at start:
     GeneratedSurfacePlugin's 1 px, the light's π, `GLOBE_SURFACE`'s 64 MiB),
@@ -108,6 +116,7 @@ bytesDownloaded, tileRequestsByLevel, rendererMemory, appliedHash, radiusM, acti
 loadingShown, loadingVisible, cacheBudgetBytes, cacheFloorBytes,
 creditShorts, mapsLoaded, mapErrors, mapsTotal, refusedTiles, distance }`;
   `tuning` is what the shader reads (the uniforms), not the hash;
+  `hourLabel` is the hour label's text;
   `timeMs` is the clock's instant and `clock` its `{ startMs, scale }`
   (the pin or null, and the effective scale); `cloudLonOffsetRad` is the
   drift the shader reads; `sky` is `{ on, sunDiameterDeg, glow,
@@ -196,7 +205,10 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   outside the Earth's projected disc, stars on and off, thresholds 10, 20,
   40); the sun's right ascension from the sun and the sidereal angle (0h
   at the March equinox, 6h at the June solstice) and the credits naming
-  the stars procedural; the device line. The M0-M4 checks in
+  the stars procedural; at 600x the clouds drifting at the 1x rate per
+  real second, the hour label following a running clock with its speed,
+  and a speed change from the plate carrying on from the current instant
+  (stream F review, findings 1, 6, 12); the device line. The M0-M4 checks in
   `globe.smoke.spec.mjs` pin `cloudDrift=0`, `stars=0` and `milkyWay=0`,
   so their clouds and their black sky stay as measured. Both specs share
   `globe-smoke-helpers.mjs` (the settle wait, the hash wait, luminance and

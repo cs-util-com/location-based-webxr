@@ -133,6 +133,73 @@ test("the lab's clock: pinned stands still, timeScale runs it", async ({
   expect(errors).toEqual([]);
 });
 
+// WHY (stream F review, finding 1): a fast clock must not strobe the
+// clouds. The drift per real second, measured over half a second of the
+// page's own clock: at 600x it must be the 1x rate (0.5 °/s); it was
+// 300 °/s. No settle: this reads the page's state.
+test("at 600x the clouds drift at the real-time rate", async ({ page }) => {
+  const view = "at=30,15&spinMs=0&turnMs=0";
+  const errors = await bootLab(page, `${view}&time=${PINNED}&timeScale=600`);
+  const rate = await page.evaluate(async () => {
+    const a = window.__globeLab.state();
+    const t0 = performance.now();
+    await new Promise((r) => setTimeout(r, 500));
+    const b = window.__globeLab.state();
+    const seconds = (performance.now() - t0) / 1000;
+    const turn = 2 * Math.PI;
+    let d = (b.cloudLonOffsetRad - a.cloudLonOffsetRad) % turn;
+    if (d > Math.PI) d -= turn;
+    if (d < -Math.PI) d += turn;
+    return { degPerS: (d * 180) / Math.PI / seconds, drift: b.cloudDrift };
+  });
+  console.log(
+    `drift at 600x: ${rate.degPerS.toFixed(3)} °/s (the 1x rate ${rate.drift} °/s)`,
+  );
+  expect(Math.abs(rate.degPerS - rate.drift)).toBeLessThan(rate.drift * 0.25);
+  expect(errors).toEqual([]);
+});
+
+// WHY (stream F review, finding 12): the hour label must follow a running
+// clock (it stood at the pin's hour) and say the speed it runs at.
+test("the hour label follows a running clock and names its speed", async ({
+  page,
+}) => {
+  const view = "at=30,15&spinMs=0&turnMs=0";
+  const errors = await bootLab(page, `${view}&time=${PINNED}&timeScale=3600`);
+  const first = await page.evaluate(() => window.__globeLab.state().hourLabel);
+  console.log(`hour label at the start: "${first}"`);
+  expect(first).toContain("x3600");
+  await page.waitForFunction(
+    (was) => window.__globeLab.state().hourLabel !== was,
+    first,
+    { timeout: 5000 },
+  );
+  expect(errors).toEqual([]);
+});
+
+// WHY (stream F review, finding 6): a speed change from the plate must
+// carry on from the current instant; it rewound to the old pin.
+test("a speed change from the plate carries on from the current instant", async ({
+  page,
+}) => {
+  const view = "at=30,15&spinMs=0&turnMs=0";
+  const errors = await bootLab(page, `${view}&time=${PINNED}&timeScale=3600`);
+  await page.waitForFunction(
+    (pin) => window.__globeLab.state().timeMs > pin + 2 * 3_600_000,
+    Date.parse(PINNED),
+  );
+  const before = await page.evaluate(() => window.__globeLab.state().timeMs);
+  await page.locator('[data-hash-key="timeScale"]').selectOption("60");
+  const after = await page.evaluate(() => window.__globeLab.state());
+  console.log(
+    `speed change: ${new Date(before).toISOString()} before, ${new Date(after.timeMs).toISOString()} after; hash ${after.appliedHash}`,
+  );
+  expect(after.clock.scale).toBe(60);
+  expect(after.timeMs).toBeGreaterThanOrEqual(before);
+  expect(new URLSearchParams(after.appliedHash).get("time")).not.toBe(PINNED);
+  expect(errors).toEqual([]);
+});
+
 const readAt = (page, points) =>
   page.evaluate((p) => window.__globeLab.readPixels(p), points);
 const DEG = Math.PI / 180;

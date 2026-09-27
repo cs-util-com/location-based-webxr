@@ -5,7 +5,10 @@
  * `#time=` must give exactly the same scene however long the page has been
  * open, and a running clock must advance at exactly its scale. A clock that
  * crept while pinned would move the sun under a pixel probe; one that read a
- * malformed hash as a time would put the scene at 1970.
+ * malformed hash as a time would put the scene at 1970. The clouds drift
+ * on the clock's DRIFT time, which never runs faster than real time: at an
+ * hour a second the drift would otherwise strobe at hundreds of degrees a
+ * second (stream F review, finding 1).
  */
 
 import fc from "fast-check";
@@ -112,6 +115,47 @@ describe("startGlobeClock", () => {
     expect(() => startGlobeClock({ startMs: null, scale: -1 }, wall)).toThrow(
       RangeError,
     );
+  });
+});
+
+describe("driftTimeAt", () => {
+  const wall = { epochMs: Date.parse("2026-09-27T05:00:00Z"), monoMs: 500 };
+
+  it("runs at the clock's speed up to real time, and at real time above it", () => {
+    fc.assert(
+      fc.property(
+        fc.option(fc.integer({ min: -4e12, max: 4e12 }), { nil: null }),
+        fc.option(
+          fc.double({ min: 0, max: GLOBE_CLOCK_SCALE.max, noNaN: true }),
+          {
+            nil: null,
+          },
+        ),
+        fc.integer({ min: 0, max: 1e8 }),
+        (startMs, scale, elapsed) => {
+          const clock = startGlobeClock({ startMs, scale }, wall);
+          const rate = Math.min(clock.scale, 1);
+          const start = clock.driftTimeAt(wall.monoMs);
+          expect(start).toBe(startMs ?? wall.epochMs);
+          expect(clock.driftTimeAt(wall.monoMs + elapsed) - start).toBeCloseTo(
+            elapsed * rate,
+            3,
+          );
+        },
+      ),
+    );
+  });
+
+  it("at 600x, a real second moves the drift time by one second, as at 1x", () => {
+    const fast = startGlobeClock({ startMs: EQUINOX, scale: 600 }, wall);
+    const real = startGlobeClock({ startMs: EQUINOX, scale: 1 }, wall);
+    const second = (c: typeof fast) =>
+      c.driftTimeAt(wall.monoMs + 2000) - c.driftTimeAt(wall.monoMs + 1000);
+    expect(second(fast)).toBe(1000);
+    expect(second(real)).toBe(1000);
+    // A pinned, stopped clock: the drift stands still with the scene.
+    const pinned = startGlobeClock({ startMs: EQUINOX, scale: null }, wall);
+    expect(pinned.driftTimeAt(wall.monoMs + 5000)).toBe(EQUINOX);
   });
 });
 

@@ -14,11 +14,17 @@
     turned into a space is put back). `timeScale=<n>` is the scale (null
     when absent, not a plain decimal, or out of range).
   - `startGlobeClock(setting, { epochMs, monoMs })` → `{ setting, scale,
-timeAt(monoMs) }`. `epochMs` (`Date.now()`) is "now" for an unpinned
+timeAt(monoMs), driftTimeAt(monoMs) }`. `epochMs` (`Date.now()`) is "now" for an unpinned
     clock; `monoMs` (`performance.now()`) is the reading `timeAt` measures
     from. The effective scale is the setting's, or 0 with a pinned start (it
     stands still, as `time=` always did) and 1 without one (the wall
     clock). `timeAt(mono) = start + (mono - monoMs) * scale`.
+    `driftTimeAt(mono) = start + (mono - monoMs) * min(scale, 1)`: the time
+    the clouds drift on, so a fast clock does not strobe them (at 600x the
+    drift per real second equals the 1x rate); a pinned, stopped clock's
+    drift stands still, so pinned links stay reproducible. A speed change
+    starts a new clock from the current instant (the lab writes `time=`),
+    so the clouds jump once there.
   - `sameGlobeClockSetting(a, b)` - whether a hash change needs a new clock.
 - Invariants & assumptions: a pinned clock with no scale returns its pin for
   every reading, so pixel probes that pin `time=` never drift. RangeError
@@ -36,6 +42,7 @@ timeAt(monoMs) }`. `epochMs` (`Date.now()`) is "now" for an unpinned
 
 - Tests: `globe-clock.test.ts` (the hash forms and their defaults, pinned,
   running, pinned-and-running, a property that the clock advances at exactly
-  its scale from its start, the refusals). The lab's
+  its scale from its start, the drift time at min(scale, 1) and at 600x one
+  second per real second, the refusals). The lab's
   `globe-sky.smoke.spec.mjs` checks it in the page (pinned across frames,
   an offset, `timeScale`, the plate's speed select).

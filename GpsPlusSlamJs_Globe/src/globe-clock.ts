@@ -30,6 +30,13 @@ export interface GlobeClock {
   readonly scale: number;
   /** The scene's instant (epoch ms) at a monotonic reading (`performance.now()`). */
   timeAt(monoMs: number): number;
+  /**
+   * The DRIFT time (epoch ms) at a monotonic reading, for motion that must
+   * stay watchable at any speed (the clouds): it starts at the clock's
+   * start and runs at the clock's speed up to real time, at real time
+   * above it. A pinned, stopped clock's drift time stands still.
+   */
+  driftTimeAt(monoMs: number): number;
 }
 
 /** A plain decimal number: no hex, no `Infinity`, no empty string. */
@@ -85,10 +92,12 @@ export function startGlobeClock(
   const { startMs, scale } = setting;
   const origin = startMs ?? epochMs;
   const effective = scale ?? (startMs === null ? 1 : 0);
+  const driftRate = Math.min(effective, 1);
   return {
     setting,
     scale: effective,
     timeAt: (mono) => origin + (mono - monoMs) * effective,
+    driftTimeAt: (mono) => origin + (mono - monoMs) * driftRate,
   };
 }
 
