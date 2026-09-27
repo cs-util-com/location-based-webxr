@@ -48,10 +48,12 @@ farthest, casts, receives }`) and `drawCalls()` (renders one frame and
     buildings cast and receive, the ground receives, a 2° floor; while the
     dense city shows, a coarse ring map shadows it out to 2450 m and the
     sun keeps the sharp central map, see [ring-shadow.js](ring-shadow.js.md)
-    and the readout's "ring 2450 m"), with
+    and the readout's "ring 2450 m"; the central map's camera stands 2480 m
+    out, beyond the ring, so it holds every caster), with
     `shadowRenders()` (maps requested, null when off) and `shadowProbe()`
-    (a ground point in the tallest building's shadow, and a diffuse sunlit
-    ground control toward the sun), `setShadowParams(params)` (the desktop-GPU
+    (a ground point in the tallest building's shadow, its `foot` 0.3 m past
+    the footprint, and a diffuse sunlit ground control toward the sun, sunlit
+    only with the block alone), `setShadowParams(params)` (the desktop-GPU
     cost sweep: map size, PCF radius, bias, R, every-frame renders) and
     `shadowFlags()`,
     `setHaze(bool)`, `setCloudCover(0…1)`, `setTier("phone" | "desktop")`;

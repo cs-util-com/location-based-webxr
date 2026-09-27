@@ -1821,10 +1821,22 @@ test("the dense city casts with shadows on, and the readout names the covered ra
 /**
  * Declared floor on the share of ground pixels, around a far dense lot, that
  * darken by at least 20 RGB levels when shadows go on (round-2 plan M2b).
- * Measured 2026-09-27 at golden hour over 8 azimuths: 0.63-0.88 per radius
- * (500-2300 m), and 0 with the central map alone; at noon 0.32-0.45.
+ * Measured 2026-09-27 at golden hour, this test's 4 azimuths: 0.62-0.96 per
+ * radius (500-2300 m); the spike's 8 azimuths 0.63-0.88; 0 with the central
+ * map alone. (At noon the spike read 0.30-0.47.)
  */
 const RING_COVERAGE_MIN = 0.3;
+/**
+ * Declared floor on the share of central ground, 120-210 m toward a golden
+ * sun, that the dense city darkens by at least 20 levels (M2 review, finding
+ * 1). Set from the first measurement (see the test's log).
+ */
+const CENTRE_REACH_MIN = 0.3;
+/**
+ * RGB levels the shadow's foot may lose with the ring on, against the block
+ * alone (M2 review, finding 2). The spike's coarse map lost 21-24 there.
+ */
+const FOOT_TOLERANCE = 8;
 
 // WHY (owner feedback round 2, plan 2026-09-26-2055 M2b): "shadows must work
 // on all 42k buildings, not just the central ones". The central map covers
@@ -1884,24 +1896,78 @@ test("the dense city's far buildings cast shadows, past the sharp central map", 
       RING_COVERAGE_MIN,
     );
   }
-  // The sun keeps its central map with the ring on (noon, the building probe).
-  const near = await page.evaluate(() => {
+  // The dense city's long shadows reach INTO the central square (M2 review,
+  // finding 1): at golden hour the ground 120-210 m toward the sun lies in
+  // the shadows of dense buildings 420 m and more out. The central map must
+  // hold those casters, or every long shadow has a hole across the centre.
+  const intoCentre = await page.evaluate(() => {
+    const d = window.__lookdev;
+    d.setPreset("golden");
+    d.setCloudCover(0);
+    const s = d.sunDirection();
+    const flat = Math.hypot(s[0], s[2]);
+    const toward = [s[0] / flat, s[2] / flat];
+    const side = [-toward[1], toward[0]];
+    const points = [];
+    for (const t of [120, 150, 180, 210]) {
+      for (const u of [-60, -30, 0, 30, 60]) {
+        points.push([
+          toward[0] * t + side[0] * u,
+          0.05,
+          toward[1] * t + side[1] * u,
+        ]);
+      }
+    }
+    const c = [toward[0] * 165, toward[1] * 165];
+    const read = () => {
+      d.placeCameraAt([c[0] + 1, 220, c[1] + 1], [c[0], 0, c[1]]);
+      return d.readPixels(points.map((p) => d.project(p)));
+    };
+    const sum = (p) => p[0] + p[1] + p[2];
+    const dense = read();
+    d.setCity(0);
+    const block = read();
+    d.setCity(100000, 20);
+    const counts = {};
+    for (const t of [10, 20, 40]) {
+      counts[t] =
+        block.filter((px, k) => sum(px) - sum(dense[k]) >= t).length /
+        points.length;
+    }
+    return counts;
+  });
+  console.log(
+    `dense shadows into the centre at golden hour: ${JSON.stringify(intoCentre)}`,
+  );
+  expect(intoCentre[20]).toBeGreaterThanOrEqual(CENTRE_REACH_MIN);
+  // The sun keeps its SHARP central map with the ring on (M2 review, finding
+  // 2): the shadow's foot 0.3 m from the tallest building, where the spike
+  // separated the central map (110) from a coarse map (86-89), must read as
+  // it does for the block alone (no ring) within FOOT_TOLERANCE.
+  const foot = await page.evaluate(() => {
     const d = window.__lookdev;
     d.setPreset("noon");
     d.setCloudCover(0);
-    const p = d.shadowProbe().shadowed;
-    const look = () => {
-      d.placeCameraAt([p[0] + 1, 140, p[2] + 1], [p[0], 0, p[2]]);
-      return d.readPixels([d.project(p)])[0];
+    const read = () => {
+      const p = d.shadowProbe().foot;
+      d.placeCameraAt([p[0] + 1, 60, p[2] + 1], [p[0], 0, p[2]]);
+      d.setShadows(false);
+      const off = d.readPixels([d.project(p)])[0];
+      d.setShadows(true);
+      const on = d.readPixels([d.project(p)])[0];
+      return off[0] + off[1] + off[2] - (on[0] + on[1] + on[2]);
     };
-    d.setShadows(false);
-    const off = look();
-    d.setShadows(true);
-    const on = look();
-    return off[0] + off[1] + off[2] - (on[0] + on[1] + on[2]);
+    const withRing = read();
+    d.setCity(0);
+    const blockAlone = read();
+    d.setCity(100000, 20);
+    return { withRing, blockAlone };
   });
-  console.log(`near probe with the ring on: darkened by ${near}`);
-  expect(near).toBeGreaterThan(MIN_DARKENING.noon);
+  console.log(`shadow foot at 0.3 m: ${JSON.stringify(foot)}`);
+  expect(foot.blockAlone).toBeGreaterThan(MIN_DARKENING.noon);
+  expect(foot.withRing).toBeGreaterThanOrEqual(
+    foot.blockAlone - FOOT_TOLERANCE,
+  );
   // The block alone needs no ring.
   await page.evaluate(() => window.__lookdev.setCity(0));
   await expect(page.locator("[data-stats]")).toContainText("central 220 m)");

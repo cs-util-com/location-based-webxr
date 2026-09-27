@@ -12,7 +12,15 @@
  * city exactly as well, but coarsens the central texels elevenfold (the
  * shadow's foot 0.3 m from a building loses a fifth of its darkening, and the
  * stand-in's metre-sized casters fall below one texel). Why not three's CSM:
- * it replaces the same chunks the page's haze chains onto (plan §3).
+ * it assigns every material's `onBeforeCompile` instead of chaining it (the
+ * page's water and haze chain theirs) and re-renders every cascade every
+ * frame (plan §3). This rewrite replaces no material's hook: it is one
+ * page-scoped chunk, inert with a single shadow.
+ *
+ * THE CENTRAL MAP MUST HOLD THE WHOLE CITY'S CASTERS: receivers inside its
+ * frustum read only it, so the page stands its camera beyond the ring
+ * (`distanceM`); at the rig's default R + 30 m a low sun's long shadows from
+ * the dense city had a hole across the centre (plan §11, finding 1).
  *
  * HOW. `withRingShadow` rewrites three's `lights_fragment_begin` text. The
  * rewrite is inert unless TWO directional shadows exist, and then it assumes
@@ -40,9 +48,13 @@ const MARKER = "RING SHADOW";
 /**
  * The rewritten block. For the sun (index 0, with two shadows): the central
  * map's weight is 1 inside its frustum, fading to 0 over the outer tenth of
- * its square, and 0 outside its depth range. Depth matters: x and y are
- * LATERAL to the sun's ray, so at a low sun far ground along the sun's
- * azimuth projects inside the square (a first version read it "lit").
+ * its square, and over the last part of its depth range. Depth matters: x
+ * and y are LATERAL to the sun's ray, so at a low sun far ground along the
+ * sun's azimuth projects inside the square (a first version read it "lit"),
+ * and along the azimuth the depth end is the only seam. The depth fade
+ * (0.98-0.995) is in the map's own units: with the page's 2.7 km depth
+ * range it spans about 165-205 m past the centre, like the lateral fade.
+ * The near end (the camera, beyond the city) needs no fade.
  * The ring light (index 1) carries no light and skips its own lookup.
  */
 const RING_SHADOW_BLOCK = `		// ${MARKER} (DesignSystem 3d/ring-shadow.js)
@@ -50,7 +62,7 @@ const RING_SHADOW_BLOCK = `		// ${MARKER} (DesignSystem 3d/ring-shadow.js)
 		if ( directLight.visible && receiveShadow ) {
 			vec3 nearCoord = vDirectionalShadowCoord[ 0 ].xyz;
 			float nearEdge = max( abs( nearCoord.x - 0.5 ), abs( nearCoord.y - 0.5 ) ) * 2.0;
-			float nearWeight = ( 1.0 - smoothstep( 0.85, 0.95, nearEdge ) ) * step( 0.0, nearCoord.z ) * step( nearCoord.z, 1.0 );
+			float nearWeight = ( 1.0 - smoothstep( 0.85, 0.95, nearEdge ) ) * step( 0.0, nearCoord.z ) * ( 1.0 - smoothstep( 0.98, 0.995, nearCoord.z ) );
 			DirectionalLightShadow nearShadow = directionalLightShadows[ 0 ];
 			DirectionalLightShadow ringShadow = directionalLightShadows[ 1 ];
 			float nearLit = nearWeight > 0.0 ? getShadow( directionalShadowMap[ 0 ], nearShadow.shadowMapSize, nearShadow.shadowIntensity, nearShadow.shadowBias, nearShadow.shadowRadius, vDirectionalShadowCoord[ 0 ] ) : 1.0;

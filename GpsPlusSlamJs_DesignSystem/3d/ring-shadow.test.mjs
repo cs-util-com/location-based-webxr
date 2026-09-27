@@ -45,7 +45,8 @@ describe("withRingShadow", () => {
     // 0.89).
     const out = withRingShadow(CHUNK);
     assert.match(out, /step\( 0\.0, nearCoord\.z \)/);
-    assert.match(out, /step\( nearCoord\.z, 1\.0 \)/);
+    // ...and fades out before its far end, the only seam along the azimuth.
+    assert.ok(out.includes("( 1.0 - smoothstep( 0.98, 0.995, nearCoord.z ) )"));
   });
 
   it("keeps three's own shadow line for every other case", () => {

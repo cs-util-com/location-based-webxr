@@ -211,6 +211,8 @@ THREE.ShaderChunk.lights_fragment_begin = withRingShadow(
   THREE.ShaderChunk.lights_fragment_begin,
 );
 let ringShadow = null;
+/** The central map's camera distance from the centre (see applyShadows). */
+const SUN_SHADOW_DISTANCE_M = RING_HALF_WIDTH_M + 30;
 /** The parts besides the city and the dense fill that cast (W3 plan M1). */
 const CASTING_PARTS = ["swatches", "markers", "families"];
 /** The switch is on but the sun is below the floor (the readout says so). */
@@ -248,7 +250,9 @@ function readHash() {
   if (DENSE_PITCHES.includes(pitch)) state.pitch = pitch;
   const city = Number(params.get("city"));
   // Only when the hash names it: a link without `city` keeps the default
-  // (the dense city since round 2), as every other key does.
+  // (the dense city since round 2). The on/off keys `shadows` and
+  // `catalog` still read absent as off, so a link that omits them turns
+  // them off.
   if (params.has("city")) {
     state.city = Number.isFinite(city) && city > 0 ? Math.floor(city) : 0;
   }
@@ -370,7 +374,17 @@ function applyShadows(direction) {
     });
     parts.ground.receiveShadow = true;
     parts.streets.traverse((o) => (o.receiveShadow = true));
-    sunShadow = createSunShadow({ light: sun, mapSize: shadowParams.mapSize });
+    // The central map's camera stands BEYOND the whole dense city toward the
+    // sun, not the rig's R + 30 m: a caster behind the camera is not in the
+    // map, and receivers inside the central frustum read only this map, so
+    // at a low sun every long shadow of the dense city (which starts at
+    // 420 m) had a hole across the centre (round-2 plan §11, finding 1).
+    // Depth over 2.7 km still resolves to well under a millimetre.
+    sunShadow = createSunShadow({
+      light: sun,
+      mapSize: shadowParams.mapSize,
+      distanceM: SUN_SHADOW_DISTANCE_M,
+    });
   }
   sun.shadow.radius = shadowParams.radius;
   sun.shadow.bias = shadowParams.bias;
@@ -1017,6 +1031,15 @@ Object.assign(api, {
         0.05,
         p.z + away[1] * (reach + 2),
       ],
+      // The shadow's FOOT, 0.3 m past the footprint: where a coarse map's
+      // texels and normal bias weaken it (round-2 plan M2, review finding 2).
+      foot: [
+        p.x + away[0] * (reach + 0.3),
+        0.05,
+        p.z + away[1] * (reach + 0.3),
+      ],
+      // Sunlit only with the block alone: at a low sun the dense city's long
+      // shadows reach it (the smoke boots with city=0 unless it names one).
       lit: [-away[0] * 205, 0.05, -away[1] * 205],
       // The lee of the Lambert box (a caster that stands on the ground),
       // just past its footprint away from the sun (W3 plan M1).
