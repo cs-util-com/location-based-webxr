@@ -45,7 +45,10 @@ farthest, casts, receives }`) and `drawCalls()` (renders one frame and
     returns its draw calls);
     `setShadows(bool)` (sun shadows, the AR shadow prototype's S1: the
     framework's `createSunShadow` drives the sun light over a 440 m square (R 220 m),
-    buildings cast and receive, the ground receives, a 2° floor), with
+    buildings cast and receive, the ground receives, a 2° floor; while the
+    dense city shows, a coarse ring map shadows it out to 2450 m and the
+    sun keeps the sharp central map, see [ring-shadow.js](ring-shadow.js.md)
+    and the readout's "ring 2450 m"), with
     `shadowRenders()` (maps requested, null when off) and `shadowProbe()`
     (a ground point in the tallest building's shadow, and a diffuse sunlit
     ground control toward the sun), `setShadowParams(params)` (the desktop-GPU

@@ -45,6 +45,11 @@ import {
 import { sunShadowActive } from "/fw/visualization/sun-shadow-rig.js";
 
 import { createGpuTimer } from "./gpu-timer.js";
+import {
+  RING_HALF_WIDTH_M,
+  RING_MAP_SIZE,
+  withRingShadow,
+} from "./ring-shadow.js";
 import { lutParity, skyPixelExpected } from "./parity.js";
 import {
   buildStandInScene,
@@ -197,6 +202,15 @@ const shadowParams = {
  */
 const SHADOW_FLOOR_DEG = 2;
 let sunShadow = null;
+/**
+ * The ring shadow (round-2 plan M2b): a light with no intensity whose coarse
+ * map shadows the dense city past the central map. Present while shadows are
+ * on and the dense city shows. The chunk rewrite is inert with one shadow.
+ */
+THREE.ShaderChunk.lights_fragment_begin = withRingShadow(
+  THREE.ShaderChunk.lights_fragment_begin,
+);
+let ringShadow = null;
 /** The parts besides the city and the dense fill that cast (W3 plan M1). */
 const CASTING_PARTS = ["swatches", "markers", "families"];
 /** The switch is on but the sun is below the floor (the readout says so). */
@@ -334,6 +348,7 @@ function applyShadows(direction) {
       sunShadow = null;
       aimSunLight(direction);
     }
+    applyRingShadow(null);
     return;
   }
   if (!sunShadow) {
@@ -375,6 +390,46 @@ function applyShadows(direction) {
   sun.shadow.normalBias =
     ((2 * shadowParams.halfWidthM) / shadowParams.mapSize) *
     shadowParams.normalBiasTexels;
+  applyRingShadow([
+    direction.x / length,
+    direction.y / length,
+    direction.z / length,
+  ]);
+}
+
+/**
+ * The ring shadow to the state: on while the sun casts (`sunDir` given) and
+ * the dense city shows, off otherwise. The ring light is added AFTER the sun
+ * under the same parent, so three makes it shadow 1 (ring-shadow.js).
+ */
+function applyRingShadow(sunDir) {
+  const wanted = sunDir !== null && parts.dense.userData.count > 0;
+  if (!wanted) {
+    if (ringShadow) {
+      ringShadow.shadow.dispose();
+      ringShadow.light.target.removeFromParent();
+      ringShadow.light.removeFromParent();
+      ringShadow.light.dispose();
+      ringShadow = null;
+    }
+    return;
+  }
+  if (!ringShadow) {
+    const light = new THREE.DirectionalLight(0xffffff, 0);
+    light.name = "ring-shadow";
+    sun.parent.add(light, light.target);
+    ringShadow = {
+      light,
+      shadow: createSunShadow({ light, mapSize: RING_MAP_SIZE }),
+    };
+  }
+  ringShadow.shadow.update({
+    sunDir,
+    centre: [0, 0, 0],
+    halfWidthM: RING_HALF_WIDTH_M,
+    casterGeneration: `city ${state.city}@${state.pitch}`,
+    casterOffsetM: 0,
+  });
 }
 
 let composer = null;
@@ -714,7 +769,7 @@ function frame(now) {
     ? `GPU ${gpuMs === null ? "…" : gpuMs.toFixed(2)} ms`
     : "GPU n/a";
   $("[data-stats]").textContent =
-    `${state.tier} · clouds ${state.cloudMode} · shadows ${sunShadow ? `on (${sunShadow.renders} maps, central ${shadowParams.halfWidthM} m)` : shadowsBelowFloor ? "on (sun below 2°)" : "off"} · ${frameMs.toFixed(1)} ms/frame · ${gpu} · ${renderer.info.render.calls} draws · ` +
+    `${state.tier} · clouds ${state.cloudMode} · shadows ${sunShadow ? `on (${sunShadow.renders} maps, central ${shadowParams.halfWidthM} m${ringShadow ? `, ring ${RING_HALF_WIDTH_M} m` : ""})` : shadowsBelowFloor ? "on (sun below 2°)" : "off"} · ${frameMs.toFixed(1)} ms/frame · ${gpu} · ${renderer.info.render.calls} draws · ` +
     `${(renderer.info.render.triangles / 1000).toFixed(0)}k tris · LUT ${lutMs.toFixed(1)} ms`;
   requestAnimationFrame(frame);
 }

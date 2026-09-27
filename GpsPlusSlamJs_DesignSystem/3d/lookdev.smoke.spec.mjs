@@ -1818,6 +1818,96 @@ test("the dense city casts with shadows on, and the readout names the covered ra
   expect(errors).toEqual([]);
 });
 
+/**
+ * Declared floor on the share of ground pixels, around a far dense lot, that
+ * darken by at least 20 RGB levels when shadows go on (round-2 plan M2b).
+ * Measured 2026-09-27 at golden hour over 8 azimuths: 0.63-0.88 per radius
+ * (500-2300 m), and 0 with the central map alone; at noon 0.32-0.45.
+ */
+const RING_COVERAGE_MIN = 0.3;
+
+// WHY (owner feedback round 2, plan 2026-09-26-2055 M2b): "shadows must work
+// on all 42k buildings, not just the central ones". The central map covers
+// ±220 m; the dense city reaches 2350 m. A second, coarse ring map shadows
+// the rest, and the sun keeps its sharp central map: the near probe must
+// still darken with the ring on (a swapped light order would take the sun's
+// shadow away entirely). With the block alone the ring is off.
+test("the dense city's far buildings cast shadows, past the sharp central map", async ({
+  page,
+}) => {
+  const errors = await boot(
+    page,
+    "preset=golden&tone=neutral&shadows=1&city=100000&pitch=20",
+  );
+  await expect(page.locator("[data-stats]")).toContainText(
+    "central 220 m, ring 2450 m",
+  );
+  const coverage = await page.evaluate(() => {
+    const d = window.__lookdev;
+    d.setCloudCover(0);
+    const sum = (p) => p[0] + p[1] + p[2];
+    const out = {};
+    for (const radius of [500, 1400, 2300]) {
+      const counts = { 10: 0, 20: 0, 40: 0 };
+      let total = 0;
+      for (const az of [0, 90, 180, 270]) {
+        const a = (az * Math.PI) / 180;
+        const cx = Math.round((radius * Math.cos(a)) / 20) * 20 + 10;
+        const cz = Math.round((radius * Math.sin(a)) / 20) * 20 + 10;
+        d.placeCameraAt([cx + 1, 140, cz + 1], [cx, 0, cz]);
+        const points = [];
+        for (let i = -2; i <= 2; i++) {
+          for (let j = -2; j <= 2; j++) {
+            points.push(d.project([cx + i * 8, 0.05, cz + j * 8]));
+          }
+        }
+        d.setShadows(false);
+        const off = d.readPixels(points);
+        d.setShadows(true);
+        const on = d.readPixels(points);
+        off.forEach((px, k) => {
+          total += 1;
+          for (const t of [10, 20, 40]) {
+            if (sum(px) - sum(on[k]) >= t) counts[t] += 1;
+          }
+        });
+      }
+      out[radius] = Object.fromEntries(
+        Object.entries(counts).map(([t, n]) => [t, n / total]),
+      );
+    }
+    return out;
+  });
+  console.log(`ring coverage at golden hour: ${JSON.stringify(coverage)}`);
+  for (const radius of [500, 1400, 2300]) {
+    expect(coverage[radius][20], `${radius} m`).toBeGreaterThanOrEqual(
+      RING_COVERAGE_MIN,
+    );
+  }
+  // The sun keeps its central map with the ring on (noon, the building probe).
+  const near = await page.evaluate(() => {
+    const d = window.__lookdev;
+    d.setPreset("noon");
+    d.setCloudCover(0);
+    const p = d.shadowProbe().shadowed;
+    const look = () => {
+      d.placeCameraAt([p[0] + 1, 140, p[2] + 1], [p[0], 0, p[2]]);
+      return d.readPixels([d.project(p)])[0];
+    };
+    d.setShadows(false);
+    const off = look();
+    d.setShadows(true);
+    const on = look();
+    return off[0] + off[1] + off[2] - (on[0] + on[1] + on[2]);
+  });
+  console.log(`near probe with the ring on: darkened by ${near}`);
+  expect(near).toBeGreaterThan(MIN_DARKENING.noon);
+  // The block alone needs no ring.
+  await page.evaluate(() => window.__lookdev.setCity(0));
+  await expect(page.locator("[data-stats]")).toContainText("central 220 m)");
+  expect(errors).toEqual([]);
+});
+
 // WHY (owner feedback 2026-09-26; W3 plan M1): with the shadow prototype on,
 // the material spheres cast no shadow, because only the city was on the
 // caster list. Every object of the stand-in world now casts (the city, the
