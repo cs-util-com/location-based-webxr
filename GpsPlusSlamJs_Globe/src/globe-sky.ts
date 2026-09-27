@@ -40,13 +40,18 @@ export const GLOBE_SKY = {
   /** The faintest stars drawn by default: the naked-eye limit. */
   starMagLimit: 6.5,
   /**
-   * The stars' brightness: a magnitude-0 star reads 10^(-0.2) of this, a
-   * magnitude-6.5 one about 3 % (the eye's compressed response, not the
-   * physical 10^(-0.4 m), which would leave only a few dozen visible).
+   * The stars' brightness: a star of magnitude m has the linear radiance
+   * gain x 10^(-0.2 (m + 1)), so magnitude -1 reads 1 and magnitude 6.5
+   * about 0.03, which the sRGB output shows at about 49/255 (the eye's
+   * compressed response; the physical 10^(-0.4 m) would leave only a few
+   * dozen visible). The pass is not tone mapped, so these reach the screen.
    */
   starGain: 1,
-  /** The Milky Way band's peak radiance: faint, as the eye sees it. */
-  milkyWay: 0.012,
+  /**
+   * The Milky Way band's peak linear radiance: faint, about 38/255 on
+   * screen towards the galactic centre and half that across the sky.
+   */
+  milkyWay: 0.02,
   /** The band's half width (radians): about 10° either side of the plane. */
   milkyWayWidthRad: 10 * (Math.PI / 180),
   /** The stars sit inside the sky sphere, at this fraction of its radius. */
@@ -155,19 +160,28 @@ void main() {
   float glow = uGlow * exp( -max( angle - uSunRadius, 0.0 ) / uGlowWidth );
   vec3 sunColor = vec3( 1.0, 0.96, 0.9 );
   // The Milky Way: a band along the galactic plane, brighter towards the
-  // galactic centre, mottled so it does not read as a smooth ring.
-  float b = dot( d, uGalPole ) / uMilkyWayWidth;
+  // galactic centre, mottled in GALACTIC longitude and latitude (so the
+  // pattern turns with the band; whole-number wave counts keep it seamless
+  // across the longitude's wrap).
+  vec3 galEast = normalize( cross( uGalPole, uGalCentre ) );
+  float galLat = asin( clamp( dot( d, uGalPole ), -1.0, 1.0 ) );
+  float galLon = atan( dot( d, galEast ), dot( d, uGalCentre ) );
+  float b = galLat / uMilkyWayWidth;
   float towards = 0.35 + 0.65 * max( dot( d, uGalCentre ), 0.0 );
-  float mottle = 0.7 + 0.3 * sin( 23.0 * d.x + 5.0 * d.z ) * sin( 17.0 * d.y - 11.0 * d.z );
+  float mottle = 0.7 + 0.3 * sin( 7.0 * galLon + 1.3 ) * sin( 11.0 * galLon + 19.0 * galLat );
   vec3 milky = vec3( 0.85, 0.88, 1.0 ) * uMilkyWay * exp( -b * b ) * towards * mottle;
-  gl_FragColor = vec4( sunColor * ( disc * uSunRadiance + ( 1.0 - disc ) * glow ) + milky, 1.0 );
-  #include <tonemapping_fragment>
+  // Not tone mapped (the faint band and stars would be crushed): the disc
+  // is clamped here instead, white as a camera sees the sun.
+  vec3 sky = sunColor * ( disc * uSunRadiance + ( 1.0 - disc ) * glow ) + milky;
+  gl_FragColor = vec4( min( sky, vec3( 1.0 ) ), 1.0 );
   #include <colorspace_fragment>
 }`;
 
 /**
  * A star as a round, soft point: brightness 10^(-0.2 (m + 1)) x gain (the
- * eye's compressed response), bigger when brighter, none past the limit.
+ * eye's compressed response), bigger when brighter. A star past the limit
+ * is moved outside the clip volume and blacked out: a point size of 0 is
+ * undefined in WebGL, and ANGLE draws it as one pixel.
  */
 const STAR_VERTEX = /* glsl */ `
 attribute float aMag;
@@ -177,9 +191,15 @@ uniform float uStarGain;
 uniform float uPixelRatio;
 varying vec3 vColor;
 void main() {
+  if ( aMag > uMagLimit ) {
+    vColor = vec3( 0.0 );
+    gl_PointSize = 1.0;
+    gl_Position = vec4( 2.0, 2.0, 2.0, 1.0 );
+    return;
+  }
   float intensity = uStarGain * pow( 10.0, -0.2 * ( aMag + 1.0 ) );
   vColor = aColor * intensity;
-  gl_PointSize = aMag > uMagLimit ? 0.0 : uPixelRatio * ( 1.2 + 1.8 * clamp( intensity, 0.0, 1.0 ) );
+  gl_PointSize = uPixelRatio * ( 1.2 + 1.8 * clamp( intensity, 0.0, 1.0 ) );
   gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
 }`;
 
@@ -188,8 +208,7 @@ varying vec3 vColor;
 void main() {
   float r = 2.0 * length( gl_PointCoord - 0.5 );
   float a = 1.0 - smoothstep( 0.4, 1.0, r );
-  gl_FragColor = vec4( vColor * a, 1.0 );
-  #include <tonemapping_fragment>
+  gl_FragColor = vec4( min( vColor * a, vec3( 1.0 ) ), 1.0 );
   #include <colorspace_fragment>
 }`;
 
@@ -217,6 +236,7 @@ function createStars(uniforms: GlobeStarUniforms): {
     transparent: true,
     depthTest: false,
     depthWrite: false,
+    toneMapped: false,
   });
   const points = new THREE.Points(geometry, material);
   points.frustumCulled = false;
@@ -267,6 +287,8 @@ export function createGlobeSky(): GlobeSky {
     side: THREE.BackSide,
     depthTest: false,
     depthWrite: false,
+    // The faint band would be crushed by tone mapping; the shader clamps.
+    toneMapped: false,
   });
   const geometry = new THREE.SphereGeometry(GLOBE_SKY.radius, 64, 32);
   const sphere = new THREE.Mesh(geometry, material);

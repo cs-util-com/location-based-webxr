@@ -41,8 +41,8 @@
   apparent diameter, 0.1-10°, default the real 0.533°), `sunGlow` (0-4,
   default 1), `stars` (0 hides the procedural stars, default 1), `starMag`
   (the faintest star drawn, 0.5-7.5, default 6.5: 5,000 stars), `starGain`
-  (0-4, default 1), `milkyWay` (the band's radiance, 0-0.1, default
-  0.012), `sunIntensity` (0-8), `fovY` (20-80, default 50),
+  (0-4, default 1), `milkyWay` (the band's linear radiance, 0-0.1, default
+  0.02; the sky pass is not tone mapped, so it shows), `sunIntensity` (0-8), `fovY` (20-80, default 50),
   `pixelRatio` (the cap, 0.5-4, default 2, what §7.2 sized the pyramid
   for), `errorTarget` (0.25-256), `cacheMiB` (8-4096), plus `at` and
   the clock's `time` and `timeScale`.

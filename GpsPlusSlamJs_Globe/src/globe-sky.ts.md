@@ -8,13 +8,14 @@
 - Public API:
   - `GLOBE_SKY` - `radius` (1, the sky sphere around its camera),
     `sunDiameterDeg` (0.533, the real sun's mean apparent diameter),
-    `sunRadiance` (40, far above 1 so tone mapping draws the disc white),
+    `sunRadiance` (40, far above 1: the shader clamps the disc to white),
     `glow` (1, the glow's strength at the disc's edge) and `glowWidthRad`
     (1.5°, where the glow has fallen to 1/e). The glow is a look: space has
     no air to scatter light; a lens and an eye do. `starMagLimit` (6.5),
-    `starGain` (1: a star reads `10^(-0.2 (m + 1))` x gain, the eye's
-    compressed response, so the faint ones stay visible), `milkyWay`
-    (0.012, the band's peak radiance), `milkyWayWidthRad` (10°),
+    `starGain` (1: a star's linear radiance is `10^(-0.2 (m + 1))` x gain,
+    the eye's compressed response; magnitude 6.5 reads about 0.03, about
+    49/255 on screen), `milkyWay` (0.02, the band's peak linear radiance,
+    about 38/255 towards the galactic centre), `milkyWayWidthRad` (10°),
     `starShell` (0.9, the stars' radius inside the sphere).
   - `createGlobeSky()` returns `{ scene, camera, uniforms, stars,
 starUniforms, visibleStars(), setCelestialRotation(q), setStarLook(look),
@@ -54,8 +55,15 @@ view), dispose() }`.
     `acos(d·s)` loses a 0.27° disc to 32-bit rounding. The disc's edge is
     smoothed over one pixel (`fwidth`); the glow falls off exponentially
     outside it.
-  - The shader ends with three's tone mapping and output colour space
-    chunks, like every other material on the page.
+  - NOT tone mapped (`toneMapped: false` on the sphere and the stars;
+    stream F review, finding 3): Neutral tone mapping squares values under
+    0.08, which crushed the faint stars and hid the Milky Way. The shaders
+    clamp to 1 themselves and end with the output colour space chunk.
+  - Stars past the magnitude limit are moved outside the clip volume and
+    blacked out (finding 2): a point size of 0 is undefined in WebGL, and
+    ANGLE draws it as one pixel.
+  - The Milky Way's mottle is a function of galactic longitude and
+    latitude only (finding 7), so it turns with the band.
 - Example (the globe lab):
 
   ```js
@@ -71,9 +79,10 @@ view), dispose() }`.
 - Tests: `globe-sky.test.ts` (the depth and culling flags; a property that
   the sky camera takes the view's rotation and fov, never its position or
   planes; the unit sun and its refusals; the real sun's size by default and
-  the lab's look; the chord form in the shader, with tone mapping; the
-  stars' flags and order, the limit and look and their refusals, the
-  rotation of the stars and the galactic pole). The
+  the lab's look; the chord form in the shader; tone mapping off with the
+  clamp; the mottle in galactic coordinates; the stars' flags and order,
+  the clip past the limit, the limit and look and their refusals, the
+  rotation of the stars and the galactic pole and centre). The
   lab's `globe-sky.smoke.spec.mjs` checks the pixels: the disc white and
   centred on the projected sun direction (black with the pass off), the
   glow falling off from 0.5° to 8°, and the Earth covering the sun behind

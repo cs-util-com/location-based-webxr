@@ -476,6 +476,104 @@ test("the star frame and the sun agree: right ascension 0h at the equinox, 6h at
   expect(errors).toEqual([]);
 });
 
+// WHY (stream F review, finding 2): the faintest-star limit must reach the
+// pixels. Stars past it used a point size of 0, which WebGL leaves undefined
+// and ANGLE draws as one pixel, so the limit hid nothing. In space beside
+// the Earth, with the Milky Way off, the light from the stars must fall as
+// the limit rises: at 0.5 (a handful of stars in the whole sky) almost
+// nothing is left.
+test("the faintest-star limit reaches the pixels", async ({ page }) => {
+  const view = `${at(BEHIND)}&milkyWay=0`;
+  const errors = await bootLab(page, view);
+  await page.waitForFunction(
+    () => window.__globeLab.state().phase === "arrived",
+  );
+  const state = await page.evaluate(() => window.__globeLab.state());
+  const { height } = await page.evaluate(() => ({
+    height: document.getElementById("globe-canvas").height,
+  }));
+  const rPx =
+    ((height / 2) * Math.tan(Math.asin(state.radiusM / state.distance))) /
+    Math.tan((state.fovY * DEG) / 2);
+  const light = {};
+  for (const mag of [6.5, 3.5, 0.5]) {
+    await applyHash(page, `${view}&starMag=${mag}`);
+    light[mag] = await page.evaluate(
+      (r) => window.__globeLab.regionStats({ cx: 0.5, cy: 0.5, rPx: r }, 10),
+      rPx * 1.03,
+    );
+  }
+  console.log(
+    `star light in space by limit: ${Object.entries(light)
+      .map(
+        ([m, s]) =>
+          `${m}: sum ${s.outsideSum.toFixed(0)}, ${s.outsideBright} px > 10`,
+      )
+      .join("; ")}`,
+  );
+  expect(light[3.5].outsideSum).toBeLessThan(light[6.5].outsideSum * 0.5);
+  expect(light[0.5].outsideSum).toBeLessThan(light[6.5].outsideSum * 0.05);
+  expect(errors).toEqual([]);
+});
+
+// WHY (stream F review, finding 3): Neutral tone mapping squares values
+// under 0.08, which crushed the faint band to nothing. The Milky Way must
+// show: beside the Earth, looking 30° past the galactic centre, the pixels
+// around the centre's projected point are brighter with the band on than
+// off (the stars off, so only the band differs). The floor is reported
+// across ±50 % (owner rule 2026-09-13).
+test("the Milky Way is visible towards the galactic centre", async ({
+  page,
+}) => {
+  const time = "time=2026-03-20T12:00:00Z&cloudDrift=0&stars=0";
+  const errors = await bootLab(page, `at=0,0&spinMs=0&turnMs=0&${time}`);
+  // The galactic centre (J2000) in the world frame the sky pass renders.
+  const gcCelestial = [
+    Math.cos(-28.93617 * DEG) * Math.cos(266.40499 * DEG),
+    Math.cos(-28.93617 * DEG) * Math.sin(266.40499 * DEG),
+    Math.sin(-28.93617 * DEG),
+  ];
+  const g = await page.evaluate(
+    (v) => window.__globeLab.celestialToWorld(v),
+    gcCelestial,
+  );
+  // The view's axis 30° east of the centre (so it sits beside the Earth,
+  // whose disc spans about 23°), the camera over the antipode of the axis.
+  const east = [-g[1], g[0], 0];
+  const el = Math.hypot(...east);
+  const axis = g.map(
+    (v, k) => v * Math.cos(30 * DEG) + (east[k] / el) * Math.sin(30 * DEG),
+  );
+  const cam = axis.map((v) => -v);
+  const target = {
+    lat: Math.round((Math.asin(cam[2]) / DEG) * 1000) / 1000,
+    lng: Math.round((Math.atan2(cam[1], cam[0]) / DEG) * 1000) / 1000,
+  };
+  const view = `at=${target.lat},${target.lng}&spinMs=0&turnMs=0&${time}`;
+  await applyHash(page, view);
+  await page.waitForFunction(
+    () => window.__globeLab.state().phase === "arrived",
+  );
+  const p = await page.evaluate(
+    (v) => window.__globeLab.projectCelestial(v),
+    gcCelestial,
+  );
+  expect(p).not.toBeNull();
+  const grid = gridAround(p, 0.01, 7);
+  const on = meanOf((await readAt(page, grid)).map(luminance));
+  await applyHash(page, `${view}&milkyWay=0`);
+  const off = meanOf((await readAt(page, grid)).map(luminance));
+  const FLOOR = 10;
+  console.log(
+    `Milky Way at the galactic centre (${p.map((c) => c.toFixed(3))}): luminance ${on.toFixed(1)} on, ${off.toFixed(1)} off; floor ${FLOOR}: ` +
+      [0.5, 1, 1.5]
+        .map((k) => `x${k} ${on - off > FLOOR * k ? "ok" : "NO"}`)
+        .join(" "),
+  );
+  expect(on - off).toBeGreaterThan(FLOOR);
+  expect(errors).toEqual([]);
+});
+
 // WHY (terrain plan 2026-09-27-0605 §7): the terrain dive needs float
 // textures filtered linearly, which not every phone offers. The lab states
 // it in a line the owner can read on his phone before that work starts.

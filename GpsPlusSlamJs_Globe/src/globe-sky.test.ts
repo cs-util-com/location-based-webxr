@@ -23,6 +23,7 @@ import { describe, expect, it } from "vitest";
 
 import { GLOBE_SKY, createGlobeSky } from "./globe-sky.js";
 import {
+  GALACTIC_CENTRE,
   GALACTIC_NORTH_POLE,
   GLOBE_STARS,
   generateStarField,
@@ -138,16 +139,44 @@ describe("createGlobeSky", () => {
     // acos(dot) cannot resolve a 0.27° disc in 32-bit floats; the chord can.
     expect(material.fragmentShader).toContain("length( d - uSunDirection )");
     expect(material.fragmentShader).not.toContain("acos");
-    // Tone mapping and the output colour space, like every other material.
-    expect(material.fragmentShader).toContain(
-      "#include <tonemapping_fragment>",
-    );
+    // The output colour space, like every other material; but NOT tone
+    // mapped (stream F review, finding 3): Neutral tone mapping squares
+    // values under 0.08, which made the faint stars and the Milky Way
+    // vanish. The disc is clamped in the shader instead.
     expect(material.fragmentShader).toContain("#include <colorspace_fragment>");
+    expect(material.fragmentShader).toContain("min( sky, vec3( 1.0 ) )");
+    expect(material.toneMapped).toBe(false);
+    expect((sky.stars.material as THREE.ShaderMaterial).toneMapped).toBe(false);
+    sky.dispose();
+  });
+
+  it("mottles the Milky Way in galactic coordinates, so the pattern turns with the band", () => {
+    const sky = createGlobeSky();
+    const fs = (sky.scene.children[0] as THREE.Mesh)
+      .material as THREE.ShaderMaterial;
+    // Longitude and latitude from the galactic pole and centre only: no
+    // world axis (d.x, d.y, d.z) may enter, or the mottle slides along the
+    // band as the sky turns (stream F review, finding 7).
+    expect(fs.fragmentShader).toContain("cross( uGalPole, uGalCentre )");
+    expect(fs.fragmentShader).not.toMatch(/\bd\.[xyz]\b/);
     sky.dispose();
   });
 });
 
 describe("the procedural stars in the sky pass", () => {
+  it("clips the stars past the magnitude limit in the shader, never a zero point size", () => {
+    // gl_PointSize 0 is undefined in WebGL, and ANGLE clamps it to at least
+    // one pixel, so the limit hid nothing (stream F review, finding 2). A
+    // star past the limit is moved outside the clip volume and blacked out.
+    const sky = createGlobeSky();
+    const vs = (sky.stars.material as THREE.ShaderMaterial).vertexShader;
+    expect(vs).not.toMatch(/\?\s*0\.0\s*:/);
+    expect(vs).toContain("aMag > uMagLimit");
+    expect(vs).toContain("gl_Position = vec4( 2.0, 2.0, 2.0, 1.0 )");
+    expect(vs).toContain("vColor = vec3( 0.0 )");
+    sky.dispose();
+  });
+
   it("draws the field to the default limit, and the lab's limit changes the count", () => {
     const sky = createGlobeSky();
     const count = (m: number) =>
@@ -191,6 +220,10 @@ describe("the procedural stars in the sky pass", () => {
           q,
         );
         expect(sky.uniforms.uGalPole.value.distanceTo(pole)).toBeLessThan(1e-9);
+        const centre = new THREE.Vector3(...GALACTIC_CENTRE).applyQuaternion(q);
+        expect(sky.uniforms.uGalCentre.value.distanceTo(centre)).toBeLessThan(
+          1e-9,
+        );
         sky.dispose();
       }),
       { numRuns: 20 },

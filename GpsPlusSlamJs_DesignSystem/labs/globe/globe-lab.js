@@ -804,6 +804,24 @@ function start() {
       return [(p.x + 1) / 2, (1 - p.y) / 2];
     },
     regionStats,
+    /**
+     * A celestial direction [x, y, z] (x to RA 0h, z to the pole) in the
+     * world frame, turned by the rotation the sky pass renders the stars
+     * with (after a frame, so it is the current one).
+     */
+    celestialToWorld(v) {
+      frame();
+      return new THREE.Vector3(...v)
+        .applyQuaternion(sky.stars.quaternion)
+        .toArray();
+    },
+    /** Where a celestial direction shows on the canvas, or null. */
+    projectCelestial(v) {
+      frame();
+      return projectDirection(
+        new THREE.Vector3(...v).applyQuaternion(sky.stars.quaternion),
+      );
+    },
     /** Where a world direction [x, y, z] shows on the canvas, or null. */
     projectDirection: ([x, y, z]) =>
       projectDirection(new THREE.Vector3(x, y, z)),

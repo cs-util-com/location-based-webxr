@@ -18,6 +18,7 @@ import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
 import {
+  GALACTIC_CENTRE,
   GALACTIC_NORTH_POLE,
   GLOBE_STARS,
   celestialToEcefQuaternion,
@@ -125,10 +126,17 @@ describe("generateStarField", () => {
 });
 
 describe("the Milky Way's plane", () => {
-  it("is tilted about 62.9° to the celestial equator", () => {
+  it("is tilted about 62.9° to the celestial equator, its centre in the plane", () => {
     const pole = new THREE.Vector3(...GALACTIC_NORTH_POLE);
     expect(pole.length()).toBeCloseTo(1, 12);
     expect(Math.acos(pole.z) / DEG).toBeCloseTo(62.87, 1);
+    // The centre lies in the plane (perpendicular to its pole).
+    const centre = new THREE.Vector3(...GALACTIC_CENTRE);
+    expect(Math.abs(centre.dot(pole))).toBeLessThan(1e-4);
+    // The plane crosses the celestial equator northwards at RA 282.86°.
+    const node = new THREE.Vector3(0, 0, 1).cross(pole).normalize();
+    const ra = (((Math.atan2(node.y, node.x) / DEG) % 360) + 360) % 360;
+    expect(ra).toBeCloseTo(282.86, 1);
   });
 });
 
