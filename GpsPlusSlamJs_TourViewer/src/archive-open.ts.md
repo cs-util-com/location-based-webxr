@@ -41,7 +41,11 @@ DOM glue, its own module since the flows plan M6.
   running session (`hooks.startScanGate`) and its level load's outcome
   reaches the gate either way (`hooks.reconsiderScanGate(levels)` or
   `"unavailable"` on a failed read, M5 review #1);
-  `teardownSession` resets the gate (`hooks.resetScanGate`), the seven
+  `teardownSession` clears tour state ONLY when a tour was open at its
+  start (scan-to-open plan §9 #1): with none, nothing tour-scoped exists,
+  and the creator's pre-open work (a measured level, placements, the
+  print-size check) is kept for the tour about to open. When a tour closes,
+  it resets the gate (`hooks.resetScanGate`), the seven
   viewer QR/line fields (a lock, its vote count, an unknown or unusable
   code and a failed image placement describe the CLOSING tour - PR #434
   review), the fused pose's visitor-hint evaluation and `?debug=1` counts

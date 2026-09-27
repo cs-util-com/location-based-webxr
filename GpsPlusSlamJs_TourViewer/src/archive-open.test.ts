@@ -44,6 +44,34 @@ function el() {
   };
 }
 
+/** An open tour that closes cleanly - all a teardown asks of it. */
+function openTour(): NonNullable<
+  ReturnType<typeof createTourViewerSession>["session"]
+> {
+  return { close: () => Promise.resolve() } as never;
+}
+
+/** Work a creator can have in hand: a measured level, a placed pin, a
+ *  note, and a print-size check whose reset is observable. */
+function creatorWork(ctx: ReturnType<typeof createTourViewerSession>) {
+  const reset = vi.fn();
+  ctx.mintedLevel = { id: "lvl", json: "{}" };
+  ctx.placedObjects = [
+    {
+      object: {
+        id: "pin-1",
+        kind: "pin",
+        label: "Gate",
+        createdAtIso: "2026-09-27T00:00:00.000Z",
+        geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
+      },
+    },
+  ];
+  ctx.placementNote = "1 object placed";
+  ctx.printSizeCheck = { reset } as never;
+  return { reset };
+}
+
 /** Wire the open path over `ctx` and submit another tour's link; the open
  *  fails after the teardown (the mocked `openTourSession`). */
 function openAnotherTour(ctx: ReturnType<typeof createTourViewerSession>) {
@@ -77,6 +105,7 @@ function openAnotherTour(ctx: ReturnType<typeof createTourViewerSession>) {
 describe("a tour switch forgets the closing tour's fused-pose state", () => {
   it("clears the visitor hint's evaluation and empties the counts in place", async () => {
     const ctx = createTourViewerSession();
+    ctx.session = openTour();
     // The running pipeline holds this map in its closure: it must be
     // emptied, not replaced, or the readout loses the new tour's counts.
     const tallies = new Map([["old-code", createFusedPoseTally()]]);
@@ -102,9 +131,46 @@ describe("a tour switch forgets the closing tour's failed finish", () => {
     // measured level. A failed finish in tour A therefore locked Save in
     // tour B until a reload; scan-to-open makes switching tours routine.
     const ctx = createTourViewerSession();
+    ctx.session = openTour();
     ctx.finishError = "Rebuilding the zip failed: quota";
     const dom = openAnotherTour(ctx);
     await vi.waitFor(() => expect(dom.openButton.disabled).toBe(false));
     expect(ctx.finishError).toBeNull();
+  });
+});
+
+describe("the teardown clears tour-scoped state only when a tour closes", () => {
+  // Why these tests matter (TourViewer scan-to-open plan §5 #1, §9 #1): a
+  // creator can measure and place with NO tour open - scan-to-open makes
+  // that the normal order - and the open that follows ran the whole tour
+  // teardown, wiping the measurement, the pins and the print-size check.
+  // With retries of a failed open every few seconds, the size check could
+  // never finish. Nothing tour-scoped exists without an open tour, so there
+  // is nothing to clear.
+  it("keeps work made with no tour open", async () => {
+    const ctx = createTourViewerSession();
+    const { reset } = creatorWork(ctx);
+    const dom = openAnotherTour(ctx);
+    await vi.waitFor(() => expect(dom.openButton.disabled).toBe(false));
+    expect(ctx.mintedLevel).toEqual({ id: "lvl", json: "{}" });
+    expect(ctx.placedObjects).toHaveLength(1);
+    expect(ctx.placementNote).toBe("1 object placed");
+    expect(reset).not.toHaveBeenCalled();
+  });
+
+  // The other half, which no test held before: a CLOSING tour's work must
+  // not reach the next tour's zip (M4 review #1, M5 review #9).
+  it("clears a closing tour's work", async () => {
+    const ctx = createTourViewerSession();
+    ctx.session = openTour();
+    const { reset } = creatorWork(ctx);
+    const generation = ctx.mintGeneration;
+    const dom = openAnotherTour(ctx);
+    await vi.waitFor(() => expect(dom.openButton.disabled).toBe(false));
+    expect(ctx.mintedLevel).toBeNull();
+    expect(ctx.mintGeneration).toBe(generation + 1);
+    expect(ctx.placedObjects).toEqual([]);
+    expect(ctx.placementNote).toBeNull();
+    expect(reset).toHaveBeenCalledOnce();
   });
 });

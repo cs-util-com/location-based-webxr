@@ -79,11 +79,19 @@ export function wireArchiveOpen(deps: {
     for (const url of objectUrls) URL.revokeObjectURL(url);
     objectUrls = [];
     dom.gallery.replaceChildren();
+    ctx.tourManifestStatus = "settled";
+    // Everything below belongs to a CLOSING tour, and without one there is
+    // none of it: every writer of tour state runs after `ctx.session =
+    // opened` and is guarded by it. What exists with no tour open is the
+    // creator's own work - a measurement, placements, the print-size check -
+    // made before any tour opened; the open about to run takes it, and a
+    // retried open must not wipe it (scan-to-open plan §5 #1, §9 #1).
+    const closing = ctx.session;
+    if (closing === null) return;
     // The viewer pipeline's level source and the placed planes belong to the
     // closing tour — a newly opened tour must not relocalize against them.
     ctx.currentLevels = null;
     ctx.tourManifest = null;
-    ctx.tourManifestStatus = "settled";
     ctx.rebuiltZip = null;
     // The measured level belongs to the CLOSING tour. It survives a SESSION
     // end on purpose (finishing ends the session), but it must not survive
@@ -154,11 +162,8 @@ export function wireArchiveOpen(deps: {
     ctx.printSizeCheck?.reset();
     ctx.viewerPlanesError = null;
     ctx.placement = { kind: "idle" };
-    if (ctx.session !== null) {
-      const closing = ctx.session;
-      ctx.session = null;
-      await closing.close().catch(() => undefined);
-    }
+    ctx.session = null;
+    await closing.close().catch(() => undefined);
   }
 
   function renderStats(): void {
