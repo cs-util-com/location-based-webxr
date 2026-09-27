@@ -16,6 +16,7 @@ import { PlanarPnpSquare, solveLinear } from './planar-pnp.js';
 import type { Vector3 } from 'gps-plus-slam-js';
 import { solveQrPose, type Point2 } from './qr-pose.js';
 import type { QrFusedEntry } from './qr-fused-window.js';
+import { interpolatingMedian as median } from '../../utils/median.js';
 
 export interface QrParallaxSizeOptions {
   /**
@@ -87,12 +88,6 @@ function meanEdgePx(c: readonly Point2[]): number {
     sum += Math.hypot(b.x - a.x, b.y - a.y);
   }
   return sum / 4;
-}
-
-function median(xs: number[]): number {
-  const s = [...xs].sort((a, b) => a - b);
-  const m = s.length >> 1;
-  return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2;
 }
 
 /** The newest epoch's newest entries, oldest first. */
