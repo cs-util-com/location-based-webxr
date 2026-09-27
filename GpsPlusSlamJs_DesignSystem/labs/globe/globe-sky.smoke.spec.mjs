@@ -485,9 +485,8 @@ test("the star frame and the sun agree: right ascension 0h at the equinox, 6h at
     );
     const [ux, uy, uz] = s.sky.sunDirection;
     const apart =
-      Math.acos(
-        Math.min(1, drawn[0] * ux + drawn[1] * uy + drawn[2] * uz),
-      ) / DEG;
+      Math.acos(Math.min(1, drawn[0] * ux + drawn[1] * uy + drawn[2] * uz)) /
+      DEG;
     report.push(
       `${time}: RA ${ra.toFixed(3)}° (expected ${expectedDeg}°), the drawn star frame's sun ${apart.toFixed(3)}° from the drawn sun`,
     );

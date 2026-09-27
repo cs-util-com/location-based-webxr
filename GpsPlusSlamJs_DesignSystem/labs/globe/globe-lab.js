@@ -32,10 +32,7 @@ import {
 } from "/globe/globe-camera.js";
 import { sunDirectionEcef } from "/globe/globe-sun.js";
 import { GLOBE_SKY, createGlobeSky } from "/globe/globe-sky.js";
-import {
-  GLOBE_STARS,
-  greenwichSiderealAngleRad,
-} from "/globe/globe-stars.js";
+import { GLOBE_STARS, greenwichSiderealAngleRad } from "/globe/globe-stars.js";
 import {
   GLOBE_CLOUD_DRIFT_DEG_PER_S,
   GLOBE_SURFACE_TUNING,
