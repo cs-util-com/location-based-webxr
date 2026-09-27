@@ -30,6 +30,7 @@ import { openDraftNamespace } from "gps-plus-slam-app-framework/storage";
 import { wireArchiveOpen } from "./archive-open.js";
 import { wireArEntry } from "./ar-entry.js";
 import { arSessionLive, wireCreatorSetup } from "./creator-setup.js";
+import type { ScanOpen } from "./scan-open.js";
 import { viewerModeFromSearch } from "./mode.js";
 import { describeOpenError } from "./open-errors.js";
 import { wirePrintPanel } from "./print-panel.js";
@@ -207,9 +208,19 @@ const visitor = wireVisitorScreen({
   },
 });
 
+// Step 4's scan-to-open lives in archive-open, which is wired below the
+// setup panel that feeds it; bound once both exist.
+let scanOpen: ScanOpen | null = null;
 const setup = wireCreatorSetup({
   ctx,
   mode,
+  codeTour: {
+    onDetection: (text) => {
+      scanOpen?.onDetection(text);
+    },
+    status: (text) => scanOpen?.status(text) ?? { kind: "quiet" },
+    tourOf: (text) => scanOpen?.tourOf(text) ?? null,
+  },
   arStore,
   arController,
   seams,
@@ -330,6 +341,7 @@ const archive = wireArchiveOpen({
   corsProxyBaseUrl: DRIVE_PROXY_BASE_URL,
   hooks,
 });
+scanOpen = archive.scanOpen;
 
 // The QR launch is the one flow with no retry (a printed code) — an
 // unexpected boot failure must reach the error box, not vanish in an

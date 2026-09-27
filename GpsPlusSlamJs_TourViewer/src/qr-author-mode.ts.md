@@ -40,8 +40,16 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   setup's guidance since the guided-setup plan M3 ("Hold the phone on the
   printed code…", "Measured and stable - save the position.").
 - `setupHint({ measured, tourOpen, hadLevel })` - what the panel says once
-  measured: open the tour (step 1) when none is open, that the measurement
-  replaces a code the tour already carried, else place content or finish.
+  measured: "Position saved." when no tour is open (`codeTourLine` then
+  says what is happening to the code's tour; scan-to-open plan §9 #9), that
+  the measurement replaces a code the tour already carried, else place
+  content or finish.
+- `codeTourLine(status: CodeTourStatus): string` - the scan-to-open status
+  of the code in view (`scan-open.ts`) in plain words: opening, does not
+  point to a tour, could not open (a short cause, and whether keeping the
+  code in view retries), belongs to another tour, names another link (and
+  is measured into the open tour), cannot tell; "" when
+  quiet. At most 110 characters: it shares the panel with the readout.
 - `finishReadiness({ measured, tourOpen })` → `"ready" | "not-measured" |
 "no-tour"` - the finish button's gate.
 - `MISSING_SIZE_MESSAGE` - what a creator reads when the printed-size

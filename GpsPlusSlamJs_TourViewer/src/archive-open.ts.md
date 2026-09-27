@@ -32,7 +32,12 @@ DOM glue, its own module since the flows plan M6.
     `hooks.tryPlaceTour()` and `hooks.presentTourForPrint(url, origin)` -
     the origin says which form submitted, so an open started in step 4
     does not answer by collapsing step 4 - load the
-    levels (with a `.catch`).
+    levels (with a `.catch`). It resolves an `OpenOutcome` (`opened`,
+    `superseded`, or `failed` with the reject cause) and keeps a real
+    in-flight flag; a successful open sets `ctx.tourLabel`.
+  - `ArchiveOpen.scanOpen` - step 4's scan-to-open (`scan-open.ts`)
+    over this open path: it writes the link of record, opens with origin
+    `measure-step`, and re-renders the creator panel when it settles.
 
 ## Invariants & assumptions
 

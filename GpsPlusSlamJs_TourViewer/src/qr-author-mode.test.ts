@@ -23,6 +23,7 @@ import {
   finishBusyLabel,
   sizeOfferView,
   adoptedSizeNote,
+  codeTourLine,
   type AuthorPipelineDeps,
 } from "./qr-author-mode";
 
@@ -250,9 +251,12 @@ describe("setupHint / finishReadiness", () => {
     expect(
       setupHint({ measured: false, tourOpen: true, hadLevel: false }),
     ).toBe("");
+    // With no tour open the code-status line says what is happening to the
+    // code's tour (scan-to-open plan §9 #9); "open it in step 1" pointed at
+    // a form a creator holding the phone at the poster cannot reach.
     expect(
       setupHint({ measured: true, tourOpen: false, hadLevel: false }),
-    ).toMatch(/step 1/);
+    ).toBe("Position saved.");
     expect(
       setupHint({ measured: true, tourOpen: true, hadLevel: true }),
     ).toMatch(/replaces/);
@@ -527,5 +531,61 @@ describe("the ready line names the action the button will take", () => {
     expect(FINISH_LABELS.ready(1_000_000, true)).not.toContain("Download it");
     expect(FINISH_LABELS.ready(1_000_000, false)).toContain("Download it");
     expect(FINISH_LABELS.ready(1_000_000, false)).not.toContain("Share it");
+  });
+});
+
+describe("codeTourLine (scan-to-open plan §9 #9)", () => {
+  // Why this matters: in step 4 the creator holds the phone at the poster;
+  // this line is the only place they learn that the code is opening its
+  // tour, that the open failed and why, or that the code belongs to another
+  // tour - and whether waiting will help.
+  it("says nothing when there is nothing to say", () => {
+    expect(codeTourLine({ kind: "quiet" })).toBe("");
+  });
+
+  it("names each state in plain words", () => {
+    expect(codeTourLine({ kind: "opening" })).toMatch(/Opening the tour/);
+    expect(codeTourLine({ kind: "not-a-tour" })).toMatch(
+      /does not point to a tour/,
+    );
+    expect(codeTourLine({ kind: "other-tour" })).toMatch(/another tour/);
+    expect(codeTourLine({ kind: "unknown" })).toMatch(/Cannot tell/);
+  });
+
+  it("says whether keeping the code in view will retry", () => {
+    const retrying = codeTourLine({
+      kind: "failed",
+      cause: "missing",
+      retrying: true,
+    });
+    expect(retrying).toMatch(/not found/);
+    expect(retrying).toMatch(/in view to try again/);
+    const final = codeTourLine({
+      kind: "failed",
+      cause: "corrupt",
+      retrying: false,
+    });
+    expect(final).toMatch(/not a readable tour/);
+    expect(final).not.toMatch(/try again/);
+  });
+
+  it("stays short enough for the phone panel", () => {
+    // The longest line shares the panel with the live readout at 360 px;
+    // describeOpenError's 200-character Drive text was the review's worst
+    // case (plan §9 #14).
+    const causes = [
+      "missing",
+      "cors",
+      "corrupt",
+      "unusable-link",
+      "other",
+    ] as const;
+    for (const cause of causes) {
+      for (const retrying of [true, false]) {
+        expect(
+          codeTourLine({ kind: "failed", cause, retrying }).length,
+        ).toBeLessThanOrEqual(110);
+      }
+    }
   });
 });

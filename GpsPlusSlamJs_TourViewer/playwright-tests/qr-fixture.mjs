@@ -12,11 +12,21 @@
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 import { qrLevelEntryName } from "gps-plus-slam-app-framework/ar/qr/qr-level-archive";
 
-/** The printed code the AR specs pretend to scan. */
-export const E2E_QR_TEXT = "https://gps.csutil.com/tour/?qr=x";
+/** The local test archive the printed code names. */
+export const E2E_QR_ARCHIVE = "http://127.0.0.1:5197/ranges-ok/tour.zip";
 
-/** A code the tour zip carries NO level for (the unknown-code path). */
-export const E2E_QR_UNKNOWN_TEXT = "https://gps.csutil.com/tour/?qr=x&n=9";
+/**
+ * The printed code the AR specs pretend to scan: a launch link whose `qr`
+ * payload is the local test archive, as step 3 prints it. Since step 4
+ * opens the tour a code names (scan-to-open plan §9), a payload naming
+ * anything else would send a creator spec's scan to that host - a real
+ * network request - and switch away from the tour the spec opened.
+ */
+export const E2E_QR_TEXT = `https://gps.csutil.com/tour/?qr=${encodeURIComponent(E2E_QR_ARCHIVE)}`;
+
+/** A code the tour zip carries NO level for (the unknown-code path): the
+ *  same tour, another text, so its level id differs. */
+export const E2E_QR_UNKNOWN_TEXT = `${E2E_QR_TEXT}&n=9`;
 
 /** `qr/<id>.json` for {@link E2E_QR_TEXT}. */
 export async function e2eQrLevelEntryName() {

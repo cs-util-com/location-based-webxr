@@ -44,6 +44,8 @@ import type {
 } from "gps-plus-slam-app-framework/ar/qr/qr-frontend";
 import type { QrFusedPose } from "gps-plus-slam-app-framework/ar/qr/qr-fused-pose";
 
+import type { CodeTourStatus } from "./scan-open.js";
+
 /**
  * Geo-less until minted (QD-4): `syntheticAccuracyM` is required by the
  * controller config but unreachable — a geo-less level never votes.
@@ -203,6 +205,44 @@ export function waitingFor(reason: QrFusedPose["notStableReason"]): string {
   }
 }
 
+/** A failed open's cause, in the creator's words - short, unlike
+ *  `describeOpenError`, because it shares the panel with the readout. */
+function openCauseText(cause: CodeTourStatus & { kind: "failed" }): string {
+  switch (cause.cause) {
+    case "missing":
+      return "file not found (not uploaded or shared yet?)";
+    case "cors":
+      return "the host refused the browser access";
+    case "corrupt":
+      return "the file is not a readable tour";
+    default:
+      return "the link cannot be opened as a tour";
+  }
+}
+
+/** What the panel says about the code in view (scan-to-open plan §9 #9);
+ *  empty when there is nothing to say. */
+export function codeTourLine(status: CodeTourStatus): string {
+  switch (status.kind) {
+    case "quiet":
+      return "";
+    case "opening":
+      return "Opening the tour this code points to…";
+    case "not-a-tour":
+      return "This code does not point to a tour - print it from step 3.";
+    case "other-tour":
+      return "This code belongs to another tour. Finish the work in hand first.";
+    case "unknown":
+      return "Cannot tell whether this code belongs to the open tour.";
+    case "other-link":
+      return "This code names another link - it is measured into the open tour.";
+    case "failed":
+      return status.retrying
+        ? `Could not open the tour: ${openCauseText(status)}. Keep the code in view to try again.`
+        : `Could not open the tour: ${openCauseText(status)}.`;
+  }
+}
+
 /** What the setup panel says once the code is measured: the next move. */
 export function setupHint(state: {
   measured: boolean;
@@ -210,9 +250,9 @@ export function setupHint(state: {
   hadLevel: boolean;
 }): string {
   if (!state.measured) return "";
-  if (!state.tourOpen) {
-    return "Position saved. Open your tour in step 1 to finish - the measured code is written into that zip.";
-  }
+  // With no tour open, `codeTourLine` says what is happening to the tour
+  // the code names (scan-to-open plan §9 #9).
+  if (!state.tourOpen) return "Position saved.";
   return (
     (state.hadLevel
       ? "Position saved - it replaces the code this tour already carried. "

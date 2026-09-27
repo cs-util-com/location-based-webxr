@@ -7,14 +7,27 @@
  * plan M6.
  */
 
-import type { BoundedLocalCacheStore } from "gps-plus-slam-app-framework/storage";
+import {
+  OpenRemoteArchiveError,
+  type BoundedLocalCacheStore,
+} from "gps-plus-slam-app-framework/storage";
 import { resolveQrPayload } from "gps-plus-slam-app-framework/utils/qr-payload/qr-launch-dispatch";
 
 import { DEFAULT_ASSET_PREFIX } from "./code-tour.js";
 import { describeOpenError } from "./open-errors.js";
 import { toStatsView } from "./stats-view.js";
 import { clearCacheLabel } from "./tour-flow.js";
-import { openTourSession, type TourSession } from "./tour-session.js";
+import {
+  codeResolver,
+  createScanOpen,
+  type OpenOutcome,
+  type ScanOpen,
+} from "./scan-open.js";
+import {
+  openTourSession,
+  tourLabel,
+  type TourSession,
+} from "./tour-session.js";
 import type {
   TourViewerHooks,
   TourViewerSession,
@@ -58,6 +71,8 @@ export interface ArchiveOpen {
   /** The `?qr=` launch: resolve the payload and open. Rejections reach the
    *  error box - a printed code is the one flow with no retry. */
   boot: () => Promise<void>;
+  /** Step 4's scan-to-open, fed by the creator's AR pipeline (plan §9). */
+  scanOpen: ScanOpen;
 }
 
 export function wireArchiveOpen(deps: {
@@ -70,6 +85,9 @@ export function wireArchiveOpen(deps: {
 }): ArchiveOpen {
   const { ctx, dom, cacheStore, corsProxyBaseUrl, hooks } = deps;
   let objectUrls: string[] = [];
+  /** An open is in flight (a real flag, cleared by the open that owns it):
+   *  scan-to-open starts none meanwhile (plan §9 #6). */
+  let opening = false;
 
   async function teardownSession(): Promise<void> {
     for (const url of objectUrls) URL.revokeObjectURL(url);
@@ -89,6 +107,9 @@ export function wireArchiveOpen(deps: {
     ctx.currentLevels = null;
     ctx.tourManifest = null;
     ctx.rebuiltZip = null;
+    ctx.rebuiltZipDelivered = false;
+    ctx.tourLabel = null;
+    ctx.tourOpenedBy = null;
     // The measured level belongs to the CLOSING tour. It survives a SESSION
     // end on purpose (finishing ends the session), but it must not survive
     // the TOUR: M5 persists it into a draft, so carrying it over would
@@ -219,8 +240,11 @@ export function wireArchiveOpen(deps: {
     /** Where the creator submitted from - step 4's form asks the wizard to
      *  stay there rather than jump to step 2 (M3 review #1). */
     origin: "host-step" | "measure-step" = "host-step",
-  ): Promise<void> {
+    /** A scan in step 4, or a link typed or remembered (plan §2). */
+    by: "scan" | "link" = "link",
+  ): Promise<OpenOutcome> {
     const generation = ++ctx.openGeneration;
+    opening = true;
     dom.errorBox.textContent = "";
     // Async-UI rule: the in-progress state engages BEFORE the first await —
     // teardown of a previous session is async, and a second submission
@@ -246,9 +270,11 @@ export function wireArchiveOpen(deps: {
         // A newer open superseded this one while it was in flight (e.g. a
         // click racing the ?qr= boot) — the loser cleans itself up.
         await opened.close().catch(() => undefined);
-        return;
+        return { kind: "superseded" };
       }
       ctx.session = opened;
+      ctx.tourLabel = tourLabel(url);
+      ctx.tourOpenedBy = by;
       renderStats();
       void fillGallery(opened);
       // A tour opened AFTER entering AR places itself from the open path
@@ -324,15 +350,22 @@ export function wireArchiveOpen(deps: {
           // its own line names the failure inside the overlay.
           hooks.reconsiderScanGate("unavailable");
         });
+      return { kind: "opened" };
     } catch (err) {
-      if (generation === ctx.openGeneration) {
-        dom.errorBox.textContent = describeOpenError(err, url);
-      }
+      if (generation !== ctx.openGeneration) return { kind: "superseded" };
+      dom.errorBox.textContent = describeOpenError(err, url);
+      // The scan-to-open retry policy reads the cause (plan §9 #7).
+      return {
+        kind: "failed",
+        cause:
+          err instanceof OpenRemoteArchiveError ? err.rejectCause : "other",
+      };
     } finally {
       // Guarded like every other effect in this function: a superseded
       // open's finally must not undo the newer open's in-progress state
       // (PR #357 review).
       if (generation === ctx.openGeneration) {
+        opening = false;
         for (const { button, idle } of openButtons()) {
           button.disabled = false;
           button.textContent = idle;
@@ -340,6 +373,23 @@ export function wireArchiveOpen(deps: {
       }
     }
   }
+
+  // Step 4's scan-to-open (plan §2, §9): the first code the creator's
+  // camera reads opens the tour it names. The link of record follows the
+  // open, as for a ?qr= boot (§9 #15).
+  const scanOpen = createScanOpen({
+    ctx,
+    resolve: codeResolver(corsProxyBaseUrl),
+    open: (url) => {
+      dom.linkInput.value = url;
+      return openUrl(url, "measure-step", "scan");
+    },
+    isOpening: () => opening,
+    now: () => performance.now(),
+    render: () => {
+      hooks.renderAuthorReadout();
+    },
+  });
 
   dom.form.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -360,6 +410,7 @@ export function wireArchiveOpen(deps: {
   wireClearCache(ctx, dom, cacheStore);
 
   return {
+    scanOpen,
     boot: async () => {
       const payload = new URLSearchParams(location.search).get("qr");
       if (payload === null) return;

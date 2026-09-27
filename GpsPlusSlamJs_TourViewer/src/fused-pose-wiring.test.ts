@@ -34,6 +34,7 @@ import {
 import { createViewerPlacement } from "./viewer-placement.js";
 import { endQrPipeline } from "./tour-viewer-session.js";
 import { wireCreatorSetup, type CreatorSetupDom } from "./creator-setup.js";
+import type { CodeTourStatus, ScanOpen } from "./scan-open.js";
 
 // The pipelines build their controller from this module; capture the config
 // they hand it and give back a controller that does nothing.
@@ -286,7 +287,8 @@ describe("the creator measures and mints with the fused pose", () => {
     const gpsData = {
       zero: { lat: 47.5, lon: 8.7 },
       gpsEvents: {
-        alignmentMatrix: new Matrix4(),
+        // The stored form: 16 numbers, read with `Matrix4.fromArray`.
+        alignmentMatrix: new Matrix4().toArray(),
         gpsPositions: Array.from({ length: MIN_ALIGNMENT_SAMPLES }, () => ({
           lat: 47.5,
           lon: 8.7,
@@ -298,7 +300,12 @@ describe("the creator measures and mints with the fused pose", () => {
       getState: () => ({ ...real.getState(), gpsData }) as never,
     };
   }
-  function creator(options: { aligned?: boolean } = {}) {
+  function creator(
+    options: {
+      aligned?: boolean;
+      codeTour?: Pick<ScanOpen, "onDetection" | "status" | "tourOf">;
+    } = {},
+  ) {
     captured.configs.length = 0;
     const dom = Object.fromEntries(DOM_KEYS.map((k) => [k, el()])) as Record<
       (typeof DOM_KEYS)[number],
@@ -323,6 +330,7 @@ describe("the creator measures and mints with the fused pose", () => {
       } as never,
       dom: dom as unknown as CreatorSetupDom,
       openDraftStore: () => Promise.resolve(undefined),
+      ...(options.codeTour === undefined ? {} : { codeTour: options.codeTour }),
     });
     expect(setup.startAuthorPipeline()).toBe(true);
     const config = captured.configs.at(-1)!;
@@ -433,6 +441,68 @@ describe("the creator measures and mints with the fused pose", () => {
     expect(c.dom.status.textContent).toContain("not saving a backup copy");
     expect(c.dom.status.textContent).toMatch(/measured and stable/i);
     expect(c.dom.mintButton.disabled).toBe(false);
+  });
+
+  // TourViewer scan-to-open plan §9 #4, #9, #10: the panel feeds every
+  // detection to scan-to-open, says what it reports about the code in view,
+  // names the open tour, keeps Save off for a code of another tour, and the
+  // mint remembers which tour its code named.
+  describe("step 4's scan-to-open in the panel", () => {
+    function stub(status: CodeTourStatus) {
+      const seen: string[] = [];
+      return {
+        seen,
+        codeTour: {
+          onDetection: (text: string) => {
+            seen.push(text);
+          },
+          status: () => status,
+          tourOf: () => "https://h.test/a.zip",
+        },
+      };
+    }
+
+    it("feeds every detection and shows the code's status", () => {
+      const s = stub({ kind: "failed", cause: "missing", retrying: true });
+      const c = creator({ aligned: true, codeTour: s.codeTour });
+      for (let i = 0; i < 3; i++) c.detect(i);
+      expect(s.seen).toEqual([TEXT, TEXT, TEXT]);
+      expect(c.dom.status.textContent).toMatch(/Could not open the tour/);
+    });
+
+    it("keeps Save off for a code of another tour", () => {
+      const s = stub({ kind: "other-tour" });
+      const c = creator({ aligned: true, codeTour: s.codeTour });
+      for (let i = 0; i < 7; i++) c.detect(i);
+      expect(c.dom.status.textContent).toMatch(/measured and stable/i);
+      expect(c.dom.status.textContent).toMatch(/another tour/);
+      expect(c.dom.mintButton.disabled).toBe(true);
+    });
+
+    it("names the open tour", () => {
+      const c = creator({
+        aligned: true,
+        codeTour: stub({ kind: "quiet" }).codeTour,
+      });
+      c.ctx.tourLabel = "a.zip";
+      c.detect(0);
+      expect(c.dom.status.textContent).toMatch(/Tour: a.zip/);
+    });
+
+    it("records the tour the measured code named", async () => {
+      const c = creator({
+        aligned: true,
+        codeTour: stub({ kind: "quiet" }).codeTour,
+      });
+      for (let i = 0; i < 7; i++) c.detect(i);
+      expect(c.dom.mintButton.disabled).toBe(false);
+      c.dom.mintButton.click();
+      await vi.waitFor(() => expect(c.ctx.mintedLevel).not.toBeNull());
+      expect(c.ctx.mintedLevelTour).toEqual({
+        levelId: c.ctx.mintedLevel?.id,
+        tourUrl: "https://h.test/a.zip",
+      });
+    });
   });
 
   it("mints from the fused pose: the tap reaches the mint, which needs the alignment next", () => {

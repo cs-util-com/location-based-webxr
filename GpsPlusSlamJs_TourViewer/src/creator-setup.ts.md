@@ -127,6 +127,13 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
     size (opening step 2 when it is unusable), creates the author tracking
     controller into `ctx.qrController`; false keeps AR unstarted.
 - Both are properties (handed to the hooks object unbound).
+- `deps.codeTour` (optional; `ScanOpen`'s `onDetection`, `status`,
+  `tourOf`) - step 4's scan-to-open (`scan-open.ts`, owned by
+  `archive-open`). Every author detection is fed to it; the live readout
+  appends `codeTourLine(status)` and "Tour: <label>" for the open tour; Save
+  stays off while the code in view is `other-tour`; the mint records the
+  tour its code named in `ctx.mintedLevelTour`. Without it, a no-op that
+  is always quiet.
 
 ## Invariants & assumptions
 

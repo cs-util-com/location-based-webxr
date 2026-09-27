@@ -26,7 +26,9 @@ listed in `index.html.md`. The concerns and their modules:
 - `ar-entry.ts` - the AR entry, the runtime start/end, the status line
   renderer (`wireArEntry`).
 - `archive-open.ts` - the open path, the gallery, the stats, the Storage
-  section, the `?qr=` boot (`wireArchiveOpen`).
+  section, the `?qr=` boot (`wireArchiveOpen`), and step 4's scan-to-open,
+  which the setup panel reaches through a local late binding (the panel is
+  wired before the open path).
 - `tour-viewer-session.ts` - the session object, the store factory and
   the hooks contract they share.
 

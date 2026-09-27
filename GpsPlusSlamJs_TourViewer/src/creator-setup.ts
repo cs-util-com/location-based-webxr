@@ -87,10 +87,12 @@ import {
   finishReadiness,
   MISSING_SIZE_MESSAGE,
   adoptedSizeNote,
+  codeTourLine,
   setupHint,
   sizeOfferView,
 } from "./qr-author-mode.js";
 import { createPrintSizeCheck } from "./print-size-check.js";
+import type { ScanOpen } from "./scan-open.js";
 import type { TourViewerSeams } from "./seams.js";
 import { archiveFileName } from "./tour-session.js";
 import {
@@ -185,8 +187,17 @@ export function wireCreatorSetup(deps: {
   /** Opens this tour's draft namespace, or resolves undefined where there
    *  is no persistence (no OPFS, blocked site data, a quota wall). */
   openDraftStore?: (key: string) => Promise<DraftFileStore | undefined>;
+  /** Step 4's scan-to-open (`scan-open.ts`, owned by `archive-open`):
+   *  fed every detection, asked what to say about the code in view. */
+  codeTour?: Pick<ScanOpen, "onDetection" | "status" | "tourOf">;
 }): CreatorSetup {
   const { ctx, mode, arStore, arController, seams, wizard, dom } = deps;
+  const codeTour: Pick<ScanOpen, "onDetection" | "status" | "tourOf"> =
+    deps.codeTour ?? {
+      onDetection: () => undefined,
+      status: () => ({ kind: "quiet" }),
+      tourOf: () => null,
+    };
   const creator = mode === "creator";
   const openDraftStore =
     deps.openDraftStore ?? (() => Promise.resolve(undefined));
@@ -529,9 +540,20 @@ export function wireCreatorSetup(deps: {
       ctx.placedObjects.length > 0
         ? ` · ${placed(ctx.placedObjects.length)}`
         : "";
+    // What is happening to the tour the code names (plan §9 #9), and which
+    // tour is open (§9 #10) - derived each render, never a one-off note.
+    const codeStatus = codeTour.status(ctx.lastDetectedText);
+    const codeLine = codeTourLine(codeStatus);
+    const tour = ctx.tourLabel === null ? "" : ` · Tour: ${ctx.tourLabel}`;
     dom.status.textContent =
-      lead + (hint === "" ? readout.text : `${readout.text} · ${hint}`) + count;
-    dom.mintButton.disabled = !readout.canMint;
+      lead +
+      (hint === "" ? readout.text : `${readout.text} · ${hint}`) +
+      count +
+      (codeLine === "" ? "" : ` · ${codeLine}`) +
+      tour;
+    // A code of another tour is not measured into this one (§9 #4).
+    dom.mintButton.disabled =
+      !readout.canMint || codeStatus.kind === "other-tour";
     const blocked = finishBlockedHint(readiness);
     if (blocked !== "") dom.status.textContent += ` · ${blocked}`;
     if (readiness === "ready" && ctx.session !== null) {
@@ -886,6 +908,8 @@ export function wireCreatorSetup(deps: {
           ctx.authorErrorText = null; // a live detection supersedes a stale error
           ctx.lastDetectedText = event.text;
           arStore.dispatch(recordQrDetection(event));
+          // Step 4's scan-to-open: the code names its tour (plan §9).
+          codeTour.onDetection(event.text);
           // Evaluated after EVERY detection, not on render: the motion
           // detector counts detections, and the render path returns early
           // in several states (plan §61 #7). The readout and the mint read
@@ -974,6 +998,10 @@ export function wireCreatorSetup(deps: {
       (id) => {
         if (mintGeneration !== ctx.mintGeneration) return;
         ctx.mintedLevel = { id, json: result.json };
+        ctx.mintedLevelTour = {
+          levelId: id,
+          tourUrl: codeTour.tourOf(mintedText),
+        };
         if (draftTourUrl !== null) void recordMeta(draftTourUrl);
         renderAuthorReadout();
       },
@@ -1071,6 +1099,7 @@ export function wireCreatorSetup(deps: {
           blob,
           filename: archiveFileName(current.archive.url),
         };
+        ctx.rebuiltZipDelivered = false;
         dom.finishStatus.textContent = FINISH_LABELS.ready(blob.size, canShare);
         dom.downloadButton.disabled = false;
         // The placed objects are in the zip now; the next finish (a
@@ -1171,6 +1200,8 @@ export function wireCreatorSetup(deps: {
         // to look for it in an app. Only a hand-off that DELIVERED gets to
         // change it - a dismissed picker changed nothing (PR #440 review).
         if (delivered) dom.replaceHelpShare.hidden = !help.shareNote;
+        // Saved or shared: switching tours no longer loses it (plan §9 #3).
+        if (delivered) ctx.rebuiltZipDelivered = true;
       },
       (err: unknown) => {
         if (openGeneration !== ctx.openGeneration) return;
