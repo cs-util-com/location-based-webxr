@@ -12,7 +12,10 @@
   GIBS acknowledgement).
 - Invariants: every file is checked by its header (type and size) before it
   is written; concurrency 4, 3 retries; existing files are kept unless
-  `--force`. Measured 2026-09-26: 173 files, 1.94 MiB. GIBS's WMS reports no
+  `--force`; a run that only adds files keeps the first fetch date and
+  records its own as "files added" (the date is matched as a date: a
+  capture of `\S+` once took the sentence's full stop with it and wrote
+  "2026-09-26.."). Measured 2026-09-26: 173 files, 1.94 MiB. GIBS's WMS reports no
   `layer-time-actual`, so the Blue Marble month is recorded as not reported.
 - Tests: the pieces it imports are unit-tested (`image-header.ts`,
   `tile-pyramid.ts`); `globe-sources.test.ts` checks what it committed.
