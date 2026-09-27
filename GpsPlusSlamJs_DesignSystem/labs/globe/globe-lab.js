@@ -5,7 +5,9 @@
  * holds it at the centre, north up (M2). It is lit by the real sun of now or
  * of `#time=`, with night lights, a water glint and clouds (M3). Every
  * parameter sits on a control plate and in the hash, so a link reproduces a
- * view (M4).
+ * view (M4). Round 2 (plan 2026-09-26-2055 M3): the lab owns a pinnable
+ * clock, the clouds drift with it, and a background pass draws the sun's
+ * disc behind the Earth.
  *
  * @see globe-lab.js.md
  */
@@ -28,6 +30,7 @@ import {
   turnPose,
 } from "/globe/globe-camera.js";
 import { sunDirectionEcef } from "/globe/globe-sun.js";
+import { GLOBE_SKY, createGlobeSky } from "/globe/globe-sky.js";
 import {
   GLOBE_CLOUD_DRIFT_DEG_PER_S,
   GLOBE_SURFACE_TUNING,
@@ -45,6 +48,22 @@ const errorBox = document.getElementById("globe-error");
 const creditsBox = document.getElementById("globe-credits");
 const loadingLabel = document.getElementById("globe-loading");
 const replayButton = document.getElementById("globe-replay");
+const deviceLine = document.getElementById("globe-device");
+
+/**
+ * The device line (round-3 plan 2026-09-27-0532 §4 F; terrain plan
+ * 2026-09-27-0605 §7): whether this device can filter float textures
+ * linearly (`OES_texture_float_linear`), which the terrain dive needs, so
+ * the owner can read it on his phone before that work starts. Asked once,
+ * of the renderer's own context.
+ */
+function reportDevice(renderer) {
+  const floatLinear = renderer.extensions.has("OES_texture_float_linear");
+  deviceLine.textContent = floatLinear
+    ? "This device filters float textures (OES_texture_float_linear): yes"
+    : "This device filters float textures (OES_texture_float_linear): NO";
+  return { floatLinear };
+}
 
 /**
  * The async-feedback rule (globe plan §7.8, M1): a label while imagery tiles
@@ -163,6 +182,11 @@ const PARAMS = {
   cloudOpacity: { fallback: GLOBE_SURFACE_TUNING.cloudOpacity, min: 0, max: 1 },
   cloudDrift: { fallback: GLOBE_CLOUD_DRIFT_DEG_PER_S, min: 0, max: 10 },
   sunIntensity: { fallback: null, min: 0, max: 8 },
+  // The background pass (on unless 0), the disc's apparent diameter in
+  // degrees (the real sun's by default) and the glow's strength.
+  sky: { fallback: 1, min: 0, max: 1 },
+  sunSize: { fallback: GLOBE_SKY.sunDiameterDeg, min: 0.1, max: 10 },
+  sunGlow: { fallback: GLOBE_SKY.glow, min: 0, max: 4 },
   fovY: { fallback: 50, min: 20, max: 80 },
   pixelRatio: { fallback: 2, min: 0.5, max: 4 },
   errorTarget: { fallback: null, min: 0.25, max: 256 },
@@ -419,6 +443,11 @@ function start() {
   // Phase 1's exposure (§7.3): the sun at intensity π, Neutral tone mapping
   // (the look-dev default), no ambient light, a black sky.
   renderer.toneMapping = THREE.NeutralToneMapping;
+  // The frame clears once, then draws the sky pass, then the Earth over it.
+  renderer.autoClear = false;
+  const sky = createGlobeSky();
+  const sunWorld = new THREE.Vector3();
+  const device = reportDevice(renderer);
   const scene = new THREE.Scene();
   const radius = WGS84_ELLIPSOID.radius.x;
   const camera = new THREE.PerspectiveCamera(
@@ -457,6 +486,7 @@ function start() {
     u.uWaterRoughness.value = params.waterRoughness;
     u.uCloudOpacity.value = params.cloudOpacity;
     globe.sun.intensity = params.sunIntensity;
+    sky.setLook({ sunDiameterDeg: params.sunSize, glow: params.sunGlow });
     globe.tiles.errorTarget = params.errorTarget;
     globe.tiles.lruCache.maxBytesSize = params.cacheMiB * 2 ** 20;
     globe.tiles.lruCache.minBytesSize =
@@ -529,6 +559,18 @@ function start() {
     camera.updateMatrixWorld();
     globe.update(camera, renderer);
     status.update(globe.state());
+    // The sky pass first, from the direction the Earth is lit from (the
+    // light's position in the surface's group, turned into the world), with
+    // no depth, so the Earth drawn next covers it.
+    renderer.clear();
+    if (params.sky !== 0) {
+      sky.setSun(
+        sunWorld
+          .copy(globe.sun.position)
+          .transformDirection(globe.group.matrixWorld),
+      );
+      sky.render(renderer, camera);
+    }
     renderer.render(scene, camera);
   };
   renderer.setAnimationLoop(frame);
@@ -561,6 +603,22 @@ function start() {
     return { lat: c.lat / DEG, lng: c.lon / DEG };
   };
 
+  /**
+   * Where a world DIRECTION shows on the canvas (normalised, 0,0 top-left),
+   * as the sky pass draws it: the view's rotation only. Null behind the
+   * camera.
+   */
+  const projectDirection = (direction) => {
+    sky.syncCamera(camera);
+    const view = direction
+      .clone()
+      .normalize()
+      .transformDirection(sky.camera.matrixWorldInverse);
+    if (view.z >= 0) return null;
+    const p = direction.clone().normalize().project(sky.camera);
+    return [(p.x + 1) / 2, (1 - p.y) / 2];
+  };
+
   window.__globeLab = {
     ready: true,
     spinStart: SPIN_START,
@@ -584,6 +642,13 @@ function start() {
       },
       distance,
       sunIntensity: globe.sun.intensity,
+      sky: {
+        on: params.sky !== 0,
+        sunDiameterDeg: (sky.uniforms.uSunRadius.value * 2) / DEG,
+        glow: sky.uniforms.uGlow.value,
+        sunDirection: sky.uniforms.uSunDirection.value.toArray(),
+        sunScreen: projectDirection(sky.uniforms.uSunDirection.value),
+      },
       fovY: camera.fov,
       pixelRatio: renderer.getPixelRatio(),
       errorTarget: globe.tiles.errorTarget,
@@ -591,6 +656,8 @@ function start() {
       tileRequestsByLevel: tileRequestsByLevel(),
       rendererMemory: { ...renderer.info.memory },
       radiusM: radius,
+      device,
+      deviceLine: deviceLine.textContent,
       activeSources: globe.activeSources(),
       loadingShown: status.loadingShown,
       loadingVisible: !loadingLabel.hidden,
@@ -608,6 +675,9 @@ function start() {
         .project(camera);
       return [(p.x + 1) / 2, (1 - p.y) / 2];
     },
+    /** Where a world direction [x, y, z] shows on the canvas, or null. */
+    projectDirection: ([x, y, z]) =>
+      projectDirection(new THREE.Vector3(x, y, z)),
     /**
      * Render one frame and read RGBA bytes at normalised canvas points
      * (0,0 = top-left), in the same task as the render.

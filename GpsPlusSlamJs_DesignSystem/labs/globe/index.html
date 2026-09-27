@@ -81,6 +81,18 @@
           sans-serif;
       }
 
+      /* The device line sits just above the credits line. */
+      #globe-device {
+        position: fixed;
+        left: 12px;
+        right: 12px;
+        bottom: 32px;
+        color: #c9d3e0;
+        font:
+          12px/1.4 system-ui,
+          sans-serif;
+      }
+
       #globe-credits a {
         color: inherit;
       }
@@ -206,6 +218,44 @@
             </label>
           </div>
         </details>
+        <details class="lookdev-section" data-section="globe-sky" open>
+          <summary>Sky</summary>
+          <div class="lookdev-section-body col">
+            <label class="lookdev-field">
+              <span class="hint">Sky behind the Earth</span>
+              <select class="select" data-hash-key="sky">
+                <option value="1">On</option>
+                <option value="0">Off</option>
+              </select>
+            </label>
+            <label class="lookdev-field">
+              <span class="hint"
+                >Sun disc (°) <output data-for="sunSize"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                min="0.1"
+                max="10"
+                step="0.1"
+                data-hash-key="sunSize"
+              />
+            </label>
+            <label class="lookdev-field">
+              <span class="hint"
+                >Sun glow <output data-for="sunGlow"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                min="0"
+                max="4"
+                step="0.05"
+                data-hash-key="sunGlow"
+              />
+            </label>
+          </div>
+        </details>
         <details class="lookdev-section" data-section="globe-camera" open>
           <summary>Camera and turn</summary>
           <div class="lookdev-section-body col">
@@ -286,6 +336,7 @@
         </details>
       </div>
     </aside>
+    <output id="globe-device" aria-live="polite"></output>
     <footer id="globe-credits"></footer>
   </body>
 </html>

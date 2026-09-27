@@ -2,12 +2,16 @@
 /**
  * The globe lab's imagery depth, sky and time (round-2 plan 2026-09-26-2055
  * M3 c-f, round-3 plan 2026-09-27-0532 §4 F): level 4 of the imagery, the
- * clock the lab owns and the cloud drift it drives.
+ * clock the lab owns, the cloud drift it drives, the background pass with
+ * the sun disc, and the device line.
  *
  * Why this file matters: the globe's time is read by everything that moves
  * (the sun, the clouds, and later the dive's hand-over), so a pinned link
  * must reproduce the same scene however long the page runs, and a running
- * clock must visibly move it. Kept out of `globe.smoke.spec.mjs` so the globe's streams merge in
+ * clock must visibly move it. The sky is drawn in its own pass behind the
+ * Earth, which a far plane or a depth test would otherwise clip or hide
+ * silently: only pixels can show it is where the sun says, and not over the
+ * Earth. Kept out of `globe.smoke.spec.mjs` so the globe's streams merge in
  * small pieces (round-3 plan §4).
  */
 import { expect, test } from "@playwright/test";
@@ -204,5 +208,141 @@ test("the clouds drift with the clock", async ({ page }) => {
   );
   expect(moves).toBeGreaterThan(FLOOR);
   expect(bare).toBeLessThan(0.5);
+  expect(errors).toEqual([]);
+});
+
+/**
+ * The equinox noon views for the sky (the sun stands over about 1.86°E):
+ * - beside the Earth: a view centred 150° west of the subsolar point, so
+ *   the sun is 30° off the view's axis, past the Earth's limb (about 23°
+ *   off on a 1280x800 canvas at fovY 50°) and inside the frame (37°);
+ * - behind the Earth: the antisolar point (1.86° - 180°), so the sun is at
+ *   the centre, behind the Earth's night side.
+ */
+const NOON = "time=2026-03-20T12:00:00Z&cloudDrift=0";
+const BESIDE = { lat: 0, lng: -148.14 };
+const BEHIND = { lat: 0, lng: -178.14 };
+const at = ({ lat, lng }) => `at=${lat},${lng}&spinMs=0&turnMs=0&${NOON}`;
+
+// WHY (round-2 plan M3e): the sun is a disc with a soft glow, drawn where the
+// sun direction says, in a background pass. Where: the brightest pixels near
+// the projected sun direction must be centred on it (a mirrored or unsynced
+// sky camera puts them elsewhere), white (tone mapping of the disc), black
+// with the sky pass off (so the sky pass drew it, and the sun is not over
+// the Earth in this view), and the glow must fall off with the angle.
+test("the sun is a disc with a soft glow, where the sun is", async ({
+  page,
+}) => {
+  test.setTimeout(300_000);
+  const errors = await bootLab(page, at(BESIDE));
+  await arriveAt(page, BESIDE);
+  const state = await page.evaluate(() => window.__globeLab.state());
+  const sun = state.sky.sunScreen;
+  console.log(`sun at ${JSON.stringify(sun)}, ${JSON.stringify(state.sky)}`);
+  expect(sun).not.toBeNull();
+  for (const c of sun) {
+    expect(c).toBeGreaterThan(0.02);
+    expect(c).toBeLessThan(0.98);
+  }
+  const { width, height } = await page.evaluate(() => {
+    const c = document.getElementById("globe-canvas");
+    return { width: c.width, height: c.height };
+  });
+  // A 31 x 31 pixel window around the projected sun.
+  const window31 = [];
+  for (let i = -15; i <= 15; i++) {
+    for (let j = -15; j <= 15; j++) {
+      window31.push([sun[0] + i / width, sun[1] + j / height]);
+    }
+  }
+  const lum = (await readAt(page, window31)).map(luminance);
+  const peak = Math.max(...lum);
+  const brightest = window31.filter((_, k) => lum[k] >= peak - 1);
+  const cx = meanOf(brightest.map((p) => p[0]));
+  const cy = meanOf(brightest.map((p) => p[1]));
+  const offPx = Math.hypot((cx - sun[0]) * width, (cy - sun[1]) * height);
+  const [centreOn] = await readAt(page, [sun]);
+  // The glow along the great circle from the sun towards the north (up
+  // the screen, away from the Earth beside it), at 0.5° to 8°.
+  const [sx, sy, sz] = state.sky.sunDirection;
+  const north = [-sz * sx, -sz * sy, 1 - sz * sz];
+  const nl = Math.hypot(...north);
+  const perp = north.map((v) => v / nl);
+  const profile = [];
+  for (const deg of [0.5, 1, 2, 4, 8]) {
+    const a = deg * DEG;
+    const dir = [sx, sy, sz].map(
+      (v, k) => v * Math.cos(a) + perp[k] * Math.sin(a),
+    );
+    const p = await page.evaluate(
+      (d) => window.__globeLab.projectDirection(d),
+      dir,
+    );
+    profile.push([deg, p ? luminance((await readAt(page, [p]))[0]) : null]);
+  }
+  await applyHash(page, `${at(BESIDE)}&sky=0`);
+  const [centreOff] = await readAt(page, [sun]);
+  console.log(
+    `sun disc: peak ${peak.toFixed(1)}, ${brightest.length} px at peak, centroid ${offPx.toFixed(2)} px from the projected sun; centre ${centreOn} (sky off ${centreOff}); glow ${profile.map(([d, l]) => `${d}°: ${l?.toFixed(1)}`).join(", ")}`,
+  );
+  expect(luminance(centreOn)).toBeGreaterThan(240);
+  expect(offPx).toBeLessThan(2);
+  expect(centreOff.slice(0, 3)).toEqual([0, 0, 0]);
+  // The glow is there and falls off.
+  const glow = profile.map(([, l]) => l);
+  for (const l of glow) expect(l).not.toBeNull();
+  for (let k = 1; k < glow.length; k++) {
+    expect(glow[k]).toBeLessThanOrEqual(glow[k - 1]);
+  }
+  expect(glow[0]).toBeGreaterThan(glow[glow.length - 1] + 20);
+  expect(errors).toEqual([]);
+});
+
+// WHY (round-2 plan M3d/e): the sky is drawn FIRST and without depth, so the
+// Earth must cover it: with the sun straight behind the Earth, the Earth's
+// pixels are the same with the sky pass on and off. A sky drawn after the
+// Earth, or one that wrote depth, would put a white disc on the night side.
+test("the Earth covers the sky: the sun behind it does not show through", async ({
+  page,
+}) => {
+  test.setTimeout(300_000);
+  const errors = await bootLab(page, at(BEHIND));
+  await arriveAt(page, BEHIND);
+  const state = await page.evaluate(() => window.__globeLab.state());
+  const sun = state.sky.sunScreen;
+  expect(sun).not.toBeNull();
+  expect(Math.hypot(sun[0] - 0.5, sun[1] - 0.5)).toBeLessThan(0.01);
+  const grid = gridAround(sun, 0.01, 5);
+  const on = (await readAt(page, grid)).map(luminance);
+  await applyHash(page, `${at(BEHIND)}&sky=0`);
+  const off = (await readAt(page, grid)).map(luminance);
+  const worst = Math.max(...on.map((v, k) => Math.abs(v - off[k])));
+  console.log(
+    `behind the Earth: max luminance ${Math.max(...on).toFixed(1)} (sky off ${Math.max(...off).toFixed(1)}), worst difference ${worst.toFixed(2)}`,
+  );
+  expect(worst).toBeLessThan(1);
+  expect(Math.max(...on)).toBeLessThan(200);
+  expect(errors).toEqual([]);
+});
+
+// WHY (terrain plan 2026-09-27-0605 §7): the terrain dive needs float
+// textures filtered linearly, which not every phone offers. The lab states
+// it in a line the owner can read on his phone before that work starts.
+test("the device line says whether float textures filter linearly", async ({
+  page,
+}) => {
+  const errors = await bootLab(page, "at=30,15&spinMs=0&turnMs=0");
+  const state = await page.evaluate(() => window.__globeLab.state());
+  console.log(`device: ${JSON.stringify(state.device)}; "${state.deviceLine}"`);
+  expect(typeof state.device.floatLinear).toBe("boolean");
+  await expect(page.locator("#globe-device")).toHaveText(
+    `This device filters float textures (OES_texture_float_linear): ${state.device.floatLinear ? "yes" : "NO"}`,
+  );
+  // Against a context of its own, not the page's report.
+  const direct = await page.evaluate(() => {
+    const gl = document.createElement("canvas").getContext("webgl2");
+    return gl ? gl.getExtension("OES_texture_float_linear") !== null : null;
+  });
+  expect(state.device.floatLinear).toBe(direct);
   expect(errors).toEqual([]);
 });

@@ -9,13 +9,19 @@
   names tiles that could not load ("a coarser level shows there") and global
   maps that could not load. The label counts the three global maps too, so
   it ends only when the clouds (the largest file) have arrived.
+- Round 2 (plan 2026-09-26-2055 M3 c-f; round-3 plan 2026-09-27-0532 §4 F):
+  the lab owns a pinnable clock that drives the sun and the clouds' drift;
+  a background pass (`/globe/globe-sky.js`) draws the sun's disc and glow
+  behind the Earth; a device line says whether float textures filter
+  linearly. The stars wait for their catalogue's licence (round-2 §6 Q2).
 - The control plate (M4): the design system's look-dev plate
   (`../../3d/lookdev.css`, `../../3d/panel.js`: collapses, remembered,
   folded on a phone), moved to the right. Every control writes its hash
   key and follows the hash back, so the hash is the one state and a link
   reproduces a view. Sections: Sun and time (the UTC hour of `#time=`,
   "Now" removes it, the clock speed `timeScale`, sun intensity), Surface (night lights, water roughness,
-  cloud opacity, cloud drift), Camera and turn (field of view, the wait for a fix, the
+  cloud opacity, cloud drift), Sky (the pass on or off, the sun disc's
+  apparent diameter, its glow), Camera and turn (field of view, the wait for a fix, the
   turn, "Replay the turn"), Tiles and memory (error target, tile cache,
   pixel-ratio cap). A control REPLACES the history entry and applies at
   once (a slider drag neither floods the back button nor waits for
@@ -28,7 +34,9 @@
   out of range, empty or malformed reads as the default): `spinMs`,
   `turnMs` (0-10000), `nightGain` (0-4), `waterRoughness`,
   `cloudOpacity` (0-1), `cloudDrift` (0-10 °/s of scene time, default 0.5),
-  `sunIntensity` (0-8), `fovY` (20-80, default 50),
+  `sky` (0 turns the background pass off, default 1), `sunSize` (the disc's
+  apparent diameter, 0.1-10°, default the real 0.533°), `sunGlow` (0-4,
+  default 1), `sunIntensity` (0-8), `fovY` (20-80, default 50),
   `pixelRatio` (the cap, 0.5-4, default 2, what §7.2 sized the pyramid
   for), `errorTarget` (0.25-256), `cacheMiB` (8-4096), plus `at` and
   the clock's `time` and `timeScale`.
@@ -54,7 +62,16 @@
 - The light (M3): `solarPosition(time, 0, 0)` from `/fw/geo/solar-position.js`
   through `sunDirectionEcef` into `globe.setSun`, every frame, for the
   clock's instant; the same instant sets the clouds' drift
-  (`cloudLonOffsetRad(time, cloudDrift)` into `uCloudLonOffset`); intensity π, Neutral tone mapping, no ambient
+  (`cloudLonOffsetRad(time, cloudDrift)` into `uCloudLonOffset`);
+- The frame (round 2): `autoClear` off; clear, then the sky pass (the sun
+  in the direction the Earth is lit from, the light's position turned into
+  the world by the surface's group; skipped with `#sky=0`), then the Earth
+  over it. The sky has its own camera sharing only the view's rotation and
+  field of view, and no depth, so the Earth covers it by draw order.
+- The device line (round-3 plan §4 F; terrain plan 2026-09-27-0605 §7):
+  "This device filters float textures (OES_texture_float_linear): yes" or
+  "NO", from the renderer's own context, bottom left above the credits, so
+  the owner can read it on his phone before the terrain dive is built; intensity π, Neutral tone mapping, no ambient
   light, a black sky (plan §7.3).
 - The intro (M2, `/globe/globe-target.js`, `/globe/globe-camera.js`):
   - `spin`: from 30°N 15°E, the view's longitude falling 3°/s, so the
@@ -76,7 +93,7 @@
 - Test API, `window.__globeLab`: `ready`, `error`, `spinStart`, `state()`
   (`{ models, tileErrors, cachedBytes, pendingTiles, loadedTiles, phase,
 target, source, history, runs, spinMs, turnMs, centreLatLon, timeMs, clock,
-cloudDrift, cloudLonOffsetRad,
+cloudDrift, cloudLonOffsetRad, sky, device, deviceLine,
 sunEcef, tuning, sunIntensity, fovY, pixelRatio, errorTarget,
 bytesDownloaded, tileRequestsByLevel, rendererMemory, appliedHash, radiusM, activeSources,
 loadingShown, loadingVisible, cacheBudgetBytes, cacheFloorBytes,
@@ -84,7 +101,11 @@ creditShorts, mapsLoaded, mapErrors, mapsTotal, refusedTiles, distance }`;
   `tuning` is what the shader reads (the uniforms), not the hash;
   `timeMs` is the clock's instant and `clock` its `{ startMs, scale }`
   (the pin or null, and the effective scale); `cloudLonOffsetRad` is the
-  drift the shader reads;
+  drift the shader reads; `sky` is `{ on, sunDiameterDeg, glow,
+sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
+  null behind the camera); `device` is `{ floatLinear }`;
+  `projectDirection([x, y, z])` is where a world direction shows on the
+  canvas, as the sky pass draws it (the view's rotation only), or null;
   `bytesDownloaded` sums the resource timing log's `/globe-assets/`
   entries, whose buffer the page raises to 4000, counting cache hits too;
   `tileRequestsByLevel` counts the distinct imagery tiles requested per
@@ -153,7 +174,10 @@ creditShorts, mapsLoaded, mapErrors, mapsTotal, refusedTiles, distance }`;
   pinned across
   frames, a typed offset, `timeScale` running a pin, no `time` reading the
   wall clock, and the plate's speed select; the cloud offset at two pinned
-  times and the drifted clouds in the pixels (not with the clouds off). The
+  times and the drifted clouds in the pixels (not with the clouds off); the
+  sun's disc white and centred on the projected sun beside the Earth (black
+  with `sky=0`), its glow falling off; the sun behind the Earth not showing
+  through (the same pixels with the pass on and off); the device line. The
   M0-M4 checks in `globe.smoke.spec.mjs` pin `cloudDrift=0`, so their
   clouds stay where they were measured. Both specs share
   `globe-smoke-helpers.mjs` (the settle wait, the hash wait, luminance and
