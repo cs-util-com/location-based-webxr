@@ -29,6 +29,7 @@ import {
   createGlobeSurfaceUniforms,
 } from "./globe-surface-material.js";
 import { GLOBE_SOURCES, type GlobeSource } from "./globe-sources.js";
+import { celestialToEcefQuaternion } from "./globe-stars.js";
 
 /**
  * Node has no image loader: a blank texture per map, the calls, and the
@@ -182,6 +183,37 @@ describe("createGlobeSurface", () => {
     expect(globe.surfaceUniforms.uSunEcef.value.distanceTo(ecef)).toBeLessThan(
       1e-12,
     );
+    globe.dispose();
+  });
+
+  // Stream F review, finding 4: the stars' frame left out the tile group's
+  // placement, which the sun's light includes, so once phase 5 re-centres
+  // the tiles the stars would wheel against the sun. The celestial rotation
+  // must carry the sun's celestial direction onto the light's direction in
+  // the world, whatever the tiles' and the group's placements.
+  it("turns the celestial frame into the world exactly as the sun's light is turned", () => {
+    const globe = createGlobeSurface(stubLoader());
+    const outer = new THREE.Group();
+    outer.add(globe.group);
+    outer.rotation.set(0.3, -0.7, 1.1);
+    globe.group.rotation.set(-0.2, 0.5, 0.1);
+    globe.tiles.group.rotation.set(-0.4, 0.2, 0.9);
+    globe.tiles.group.updateMatrix();
+    outer.updateMatrixWorld(true);
+    const theta = 1.234;
+    const sunEcef = new THREE.Vector3(0.3, -0.8, 0.5).normalize();
+    globe.setSun(sunEcef);
+    const lightWorld = globe.sun.position
+      .clone()
+      .sub(globe.sun.target.position)
+      .transformDirection(globe.group.matrixWorld);
+    // The sun's celestial direction: its ECEF direction turned back by the
+    // sidereal angle.
+    const sunCelestial = sunEcef
+      .clone()
+      .applyQuaternion(celestialToEcefQuaternion(theta).invert());
+    const world = sunCelestial.applyQuaternion(globe.celestialToWorld(theta));
+    expect(world.distanceTo(lightWorld)).toBeLessThan(1e-9);
     globe.dispose();
   });
 

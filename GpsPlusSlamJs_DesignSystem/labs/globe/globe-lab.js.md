@@ -80,8 +80,8 @@
 - The frame (round 2): `autoClear` off; clear, then the sky pass (the sun
   in the direction the Earth is lit from, the light's position turned into
   the world by the surface's group; the stars and the Milky Way turned by
-  the group's world rotation x `celestialToEcefQuaternion` of the
-  Greenwich sidereal angle of the clock's instant; skipped with `#sky=0`),
+  the surface's `celestialToWorld` of the Greenwich sidereal angle of the
+  clock's instant, exactly as the light is turned; skipped with `#sky=0`),
   then the Earth
   over it. The sky has its own camera sharing only the view's rotation and
   field of view, and no depth, so the Earth covers it by draw order.
@@ -192,8 +192,13 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
     for 1 s, and logs its time per view; the tests that settle several
     views carry an explicit budget.
 - `globe-sky.smoke.spec.mjs` (round-3 plan §4 F): level 4 of the imagery
-  requested and drawn without a tile error at a 0.25 px error target (at
-  the default 1 px on the fitted view it is not needed: logged); the clock
+  requested and loaded without a tile error at a 0.25 px error target
+  (whether a level-4 tile is drawn is not asserted: at 0.25 px the cache
+  refuses hundreds of tiles, and the lab has no closer camera until
+  stream E; at the default 1 px on the fitted view level 4 is not needed:
+  logged); the sun's celestial direction at the equinox and the solstice
+  turned by the rendered star rotation (`celestialToWorld`) landing on the
+  drawn sun; the clock
   pinned across
   frames, a typed offset, `timeScale` running a pin, no `time` reading the
   wall clock, and the plate's speed select; the cloud offset at two pinned

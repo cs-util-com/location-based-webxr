@@ -44,12 +44,14 @@ async function bootLab(page, hash) {
 }
 
 // WHY (round-2 plan 2026-09-26-2055 DEC-FB2-4): level 4 of the Blue Marble
-// pyramid is committed for closer views. It must actually be served and
-// drawn where a level-3 texel is too coarse for the error target, without a
-// tile error. On the fitted view a level-3 texel is about half a pixel, so
+// pyramid is committed for closer views. It must be served, requested and
+// loaded where a level-3 texel is too coarse for the error target, without
+// a tile error. (Whether a level-4 tile is DRAWN is not asserted: at 0.25
+// px the 64 MiB cache refuses hundreds of tiles, and the lab has no closer
+// camera until stream E; stream F review, finding 9.) On the fitted view a level-3 texel is about half a pixel, so
 // the default 1 px target should not need level 4 at all (logged, not
 // asserted: stream E's closer views change it); a 0.25 px target must.
-test("level 4 of the imagery loads where level 3 is too coarse", async ({
+test("level 4 of the imagery is requested and loads without an error where level 3 is too coarse", async ({
   page,
 }) => {
   // Two settled views of up to 120 s each (see arriveAt).
@@ -58,14 +60,16 @@ test("level 4 of the imagery loads where level 3 is too coarse", async ({
   const errors = await bootLab(page, view);
   const fitted = await arriveAt(page, { lat: 30, lng: 15 });
   await applyHash(page, `${view}&errorTarget=0.25`);
-  // Level 4 must be asked for before the settle wait starts: with the same
-  // target and tile count, the wait would pass at once.
+  // Not a settle: at 0.25 px the 64 MiB cache is full and refuses tiles,
+  // so the tile count may never hold still (a settle wait timed out there
+  // under load, 3 of 5 runs). The claim needs COMPLETED level-4 responses:
+  // the resource timing log records a request only once it has finished.
   await page.waitForFunction(
-    () => window.__globeLab.state().tileRequestsByLevel[4] > 0,
+    () => window.__globeLab.state().tileRequestsByLevel[4] >= 16,
     null,
     { timeout: 120_000 },
   );
-  const fine = await arriveAt(page, { lat: 30, lng: 15 });
+  const fine = await page.evaluate(() => window.__globeLab.state());
   const report = (s) =>
     `per level ${s.tileRequestsByLevel.join("/")}, ${s.loadedTiles} loaded, ${s.refusedTiles} refused, ${(s.cachedBytes / 2 ** 20).toFixed(1)} MiB cached`;
   console.log(
@@ -445,7 +449,10 @@ test("procedural stars shine in space, and never over the Earth", async ({
 // frame, or the stars would wheel against the sun. At the March equinox
 // the sun's right ascension is 0h, and at the June solstice 6h (90°): the
 // sun's ECEF longitude plus the sidereal angle must give exactly that.
-// Two instants, so a flipped sign cannot pass both.
+// Two instants, so a flipped sign cannot pass both. And through what is
+// RENDERED (stream F review, finding 5): the sun's celestial direction at
+// those instants, turned by the rotation the sky pass draws the stars with,
+// must land on the direction the sky pass draws the sun in.
 test("the star frame and the sun agree: right ascension 0h at the equinox, 6h at the solstice", async ({
   page,
 }) => {
@@ -454,6 +461,13 @@ test("the star frame and the sun agree: right ascension 0h at the equinox, 6h at
     ["2026-03-20T14:46:00Z", 0],
     ["2026-06-21T08:24:00Z", 90],
   ];
+  // The sun's celestial direction: RA 0h Dec 0 at the equinox; RA 6h Dec
+  // +23.436° (the obliquity) at the solstice.
+  const eps = 23.436 * DEG;
+  const celestialSun = {
+    0: [1, 0, 0],
+    90: [0, Math.cos(eps), Math.sin(eps)],
+  };
   const report = [];
   for (const [time, expectedDeg] of cases) {
     await applyHash(page, `at=0,0&spinMs=0&turnMs=0&time=${time}`);
@@ -465,8 +479,20 @@ test("the star frame and the sun agree: right ascension 0h at the equinox, 6h at
       Math.abs(ra - expectedDeg),
       360 - Math.abs(ra - expectedDeg),
     );
-    report.push(`${time}: RA ${ra.toFixed(3)}° (expected ${expectedDeg}°)`);
+    const drawn = await page.evaluate(
+      (v) => window.__globeLab.celestialToWorld(v),
+      celestialSun[expectedDeg],
+    );
+    const [ux, uy, uz] = s.sky.sunDirection;
+    const apart =
+      Math.acos(
+        Math.min(1, drawn[0] * ux + drawn[1] * uy + drawn[2] * uz),
+      ) / DEG;
+    report.push(
+      `${time}: RA ${ra.toFixed(3)}° (expected ${expectedDeg}°), the drawn star frame's sun ${apart.toFixed(3)}° from the drawn sun`,
+    );
     expect(miss).toBeLessThan(0.3);
+    expect(apart).toBeLessThan(0.3);
   }
   console.log(`sun against the star frame: ${report.join("; ")}`);
   // The credits say the stars are not a catalogue.

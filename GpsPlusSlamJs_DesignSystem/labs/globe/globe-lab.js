@@ -34,7 +34,6 @@ import { sunDirectionEcef } from "/globe/globe-sun.js";
 import { GLOBE_SKY, createGlobeSky } from "/globe/globe-sky.js";
 import {
   GLOBE_STARS,
-  celestialToEcefQuaternion,
   greenwichSiderealAngleRad,
 } from "/globe/globe-stars.js";
 import {
@@ -497,7 +496,6 @@ function start() {
   const sky = createGlobeSky();
   const sunWorld = new THREE.Vector3();
   const celestial = new THREE.Quaternion();
-  const placement = new THREE.Quaternion();
   let siderealAngleRad = 0;
   const device = reportDevice(renderer);
   const scene = new THREE.Scene();
@@ -643,12 +641,9 @@ function start() {
           .transformDirection(globe.group.matrixWorld),
       );
       // The stars: celestial to ECEF by sidereal time, then turned by the
-      // globe's placement in the world, as the sun's light is.
-      globe.group.getWorldQuaternion(placement);
+      // globe's placement in the world exactly as the sun's light is.
       sky.setCelestialRotation(
-        placement.multiply(
-          celestialToEcefQuaternion(siderealAngleRad, celestial),
-        ),
+        globe.celestialToWorld(siderealAngleRad, celestial),
       );
       sky.render(renderer, camera);
     }

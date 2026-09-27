@@ -17,7 +17,8 @@
     whenever nothing was pending.
   - `createGlobeSurface(loader?)` returns `{ tiles, group, plugin, overlay,
 options, sun, surfaceUniforms, setSun(directionEcef), update(camera,
-renderer), state(), activeSources(), dispose() }`.
+renderer), state(), celestialToWorld(siderealAngleRad, target?),
+activeSources(), dispose() }`.
     - The caller adds `group` to its scene, points the sun with `setSun`
       and calls `update` every frame before rendering.
     - `group` holds `tiles.group`, `sun` (a `DirectionalLight`,
@@ -35,6 +36,12 @@ loadedTiles, refusedTiles, mapsLoaded, mapErrors, mapsTotal }`
       otherwise read as settled; global maps loaded, failed, and in all, 3).
     - `activeSources()` names every registry source (all four are drawn),
       for the credits line.
+    - `celestialToWorld(θ, target?)`: the rotation from the celestial
+      frame into the WORLD at a Greenwich sidereal angle, turned exactly as
+      the sun's light is (the group's world rotation x the tile group's
+      placement x `celestialToEcefQuaternion(θ)`), so the stars cannot
+      wheel against the sun once phase 5 places the tiles (stream F
+      review, finding 4).
     - `loader` (`GlobeSurfaceLoader`, `loadTexture(source, onLoad,
 onError)`) fetches the three global maps: a `TextureLoader` by default,
       a stub in Node tests.
@@ -67,7 +74,9 @@ onError)`) fetches the three global maps: a `TextureLoader` by default,
     library's `setResolutionFromRenderer`, which reads `getSize()` in CSS
     pixels: at DPR 2 that refined one level coarser than the pyramid was
     sized for (plan §7.2), on exactly the phones sharpness is judged on.
-- Tests: `globe-surface.test.ts` (the registry imagery and options, the
+- Tests: `globe-surface.test.ts` (the celestial rotation carrying the
+  sun's celestial direction onto the light's world direction under a
+  rotated tile group, group and parent; the registry imagery and options, the
   registration, the initial state, the maps from the registry as colour or
   data and wrapping, the maps counted as they load and fail, one call for
   the light and the uniform, the light beside the tiles and turned with

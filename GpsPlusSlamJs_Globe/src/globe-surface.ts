@@ -19,6 +19,7 @@ import {
   type GlobeSource,
   type GlobeSourceId,
 } from "./globe-sources.js";
+import { celestialToEcefQuaternion } from "./globe-stars.js";
 import {
   applyGlobeSurface,
   createGlobeSurfaceUniforms,
@@ -112,6 +113,16 @@ export interface GlobeSurface {
     mapErrors: number;
     mapsTotal: number;
   };
+  /**
+   * The rotation from the celestial frame (x to RA 0h, z to the pole) into
+   * the WORLD at a Greenwich sidereal angle, turned exactly as the sun's
+   * light is: the group's world rotation x the tile group's placement x
+   * celestial-to-ECEF. The sky pass turns the stars by it.
+   */
+  celestialToWorld(
+    siderealAngleRad: number,
+    target?: THREE.Quaternion,
+  ): THREE.Quaternion;
   /** The registry sources on screen, for the credits line. */
   activeSources(): GlobeSourceId[];
   dispose(): void;
@@ -334,6 +345,12 @@ export function createGlobeSurface(
       };
     },
     // Every registry source is drawn: the tiles, and the three maps.
+    celestialToWorld(siderealAngleRad, target = new THREE.Quaternion()) {
+      group.getWorldQuaternion(target);
+      return target
+        .multiply(tiles.group.quaternion)
+        .multiply(celestialToEcefQuaternion(siderealAngleRad));
+    },
     activeSources: () => GLOBE_SOURCES.map((s) => s.id),
     dispose() {
       tiles.dispose();
