@@ -15,7 +15,7 @@
  */
 import { expect, test } from "@playwright/test";
 
-import { boot } from "./smoke-boot.mjs";
+import { boot, pinnedHash } from "./smoke-boot.mjs";
 
 /** A grid of points on the right of the canvas (the control plate is on the left). */
 const GRID = [];
@@ -605,15 +605,25 @@ test("the desktop tier's bloom glows around the sun, veils little, and darkens n
 // A LINK IS A VIEW, also after load (summary follow-up F5). The state lives
 // in the URL hash so a screenshot or a phone link reproduces a view; a hash
 // change on an open page (a pasted link, the back button) must re-apply it,
-// or the page shows one look under another look's address.
+// or the page shows one look under another look's address. The new hash is
+// pinned like the boot's (round-3 review): a key it does not name keeps its
+// current value, so the plain scene stays plain either way, but a pinned
+// hash says so rather than relying on it.
 test("a hash change re-applies the view", async ({ page }) => {
   const errors = await boot(page, "preset=noon&tone=neutral");
-  await page.evaluate(() => {
-    location.hash = "#preset=golden&tone=aces&tier=phone";
-  });
+  const next = `#${pinnedHash("preset=golden&tone=aces&tier=phone")}`;
+  await page.evaluate((hash) => {
+    location.hash = hash;
+  }, next);
   await expect
     .poll(() => page.evaluate(() => window.__lookdev.stats().state))
-    .toMatchObject({ preset: "golden", tone: "aces" });
+    .toMatchObject({
+      preset: "golden",
+      tone: "aces",
+      shadows: false,
+      catalog: false,
+      cloudMode: "dome",
+    });
   expect(errors).toEqual([]);
 });
 
