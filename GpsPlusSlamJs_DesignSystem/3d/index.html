@@ -51,6 +51,19 @@
                 <option value="desktop">Desktop tier (bloom)</option>
               </select>
             </span>
+            <label class="switch">
+              <input id="ao" type="checkbox" />
+              <span class="switch-track"></span>
+              Ambient occlusion (creases)
+            </label>
+            <div class="lookdev-ao-tier lookdev-field" data-ao-tier>
+              <span class="hint"
+                >Ambient occlusion draws on the Desktop tier only.</span
+              >
+              <button type="button" class="btn" id="ao-desktop">
+                Switch to the Desktop tier
+              </button>
+            </div>
           </div>
         </details>
         <details class="lookdev-section" data-section="sun" open>

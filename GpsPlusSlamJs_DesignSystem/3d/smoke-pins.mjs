@@ -19,6 +19,7 @@ export const SMOKE_PINS = {
   shadows: "0",
   catalog: "0",
   cloudMode: "dome",
+  ao: "0",
 };
 
 /**

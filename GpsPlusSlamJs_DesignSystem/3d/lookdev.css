@@ -122,3 +122,9 @@ body {
   font-size: var(--size-read);
   white-space: nowrap;
 }
+
+/* The ambient occlusion switch's tier note (round-3 plan 2026-09-27-0532,
+   stream C): shown on the phone tier only; `hidden` must beat the flex. */
+.lookdev-ao-tier[hidden] {
+  display: none;
+}

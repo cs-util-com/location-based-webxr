@@ -20,6 +20,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
@@ -44,6 +45,7 @@ import {
 } from "/fw/visualization/sun-shadow.js";
 import { sunShadowActive } from "/fw/visualization/sun-shadow-rig.js";
 
+import { createAmbientOcclusion } from "./ambient-occlusion.js";
 import { createGpuTimer } from "./gpu-timer.js";
 import {
   RING_HALF_WIDTH_M,
@@ -174,6 +176,10 @@ const state = {
   // The material catalog (W5 plan 2026-09-26-0549 M1): OFF by default, so
   // the page's other tests never compile its programs (triage).
   catalog: false,
+  // Screen-space ambient occlusion (round-3 plan 2026-09-27-0532, stream C):
+  // drawn on the desktop tier only, where the composer exists; off by
+  // default (plan Q3-1).
+  ao: false,
 };
 
 const WATER_IDS = ["C0", ...WATER_CANDIDATES.map((c) => c.id)];
@@ -243,6 +249,7 @@ function readHash() {
   }
   state.shadows = params.get("shadows") === "1";
   state.catalog = params.get("catalog") === "1";
+  state.ao = params.get("ao") === "1";
   if (WATER_IDS.includes(params.get("water"))) {
     state.water = params.get("water");
   }
@@ -269,6 +276,7 @@ function writeHash() {
     pitch: String(state.pitch),
     water: state.water,
     catalog: state.catalog ? "1" : "0",
+    ao: state.ao ? "1" : "0",
   });
   history.replaceState(null, "", `#${params}`);
 }
@@ -448,6 +456,8 @@ function applyRingShadow(sunDir) {
 
 let composer = null;
 let bloomPass = null;
+/** The AO pass lives in the desktop composer, built on first use. */
+const ambientOcclusion = createAmbientOcclusion({ GTAOPass, scene, camera });
 
 /** Switch the cost tier: pixel ratio, and the bloom composer on or off. */
 function applyTier() {
@@ -492,6 +502,7 @@ function applyTier() {
     composer = null;
     bloomPass = null;
   }
+  ambientOcclusion.sync(composer, state.ao);
   // SIZE NOW, not on the next animation frame: a new composer's targets are
   // 1×1 until sized, and a readPixels straight after a tier switch rendered
   // through them (a first bloom measurement read a stretched 1×1 image).
@@ -667,6 +678,10 @@ function syncControls() {
   $("#cloud-mode").value = state.cloudMode;
   $("#water-set").value = state.water;
   $("#catalog").checked = state.catalog;
+  $("#ao").checked = state.ao;
+  // The switch works on either tier; on the phone tier it says it draws on
+  // the desktop tier only and offers the switch (the owner looked for it).
+  $("[data-ao-tier]").hidden = state.tier === "desktop";
   const cityValue = `${state.city}@${state.pitch}`;
   const citySelect = $("#city-fill");
   if ([...citySelect.options].some((o) => o.value === cityValue)) {
@@ -710,6 +725,8 @@ function buildControls() {
     api.setCatalog(e.target.checked),
   );
   $("#tier").addEventListener("change", (e) => api.setTier(e.target.value));
+  $("#ao").addEventListener("change", (e) => api.setAo(e.target.checked));
+  $("#ao-desktop").addEventListener("click", () => api.setTier("desktop"));
   $("#cloud-mode").addEventListener("change", (e) =>
     api.setCloudMode(e.target.value),
   );
@@ -783,7 +800,7 @@ function frame(now) {
     ? `GPU ${gpuMs === null ? "…" : gpuMs.toFixed(2)} ms`
     : "GPU n/a";
   $("[data-stats]").textContent =
-    `${state.tier} · clouds ${state.cloudMode} · shadows ${sunShadow ? `on (${sunShadow.renders} maps, central ${shadowParams.halfWidthM} m${ringShadow ? `, ring ${RING_HALF_WIDTH_M} m` : ""})` : shadowsBelowFloor ? "on (sun below 2°)" : "off"} · ${frameMs.toFixed(1)} ms/frame · ${gpu} · ${renderer.info.render.calls} draws · ` +
+    `${state.tier} · AO ${ambientOcclusion.active ? "on" : state.ao ? "on (desktop tier only)" : "off"} · clouds ${state.cloudMode} · shadows ${sunShadow ? `on (${sunShadow.renders} maps, central ${shadowParams.halfWidthM} m${ringShadow ? `, ring ${RING_HALF_WIDTH_M} m` : ""})` : shadowsBelowFloor ? "on (sun below 2°)" : "off"} · ${frameMs.toFixed(1)} ms/frame · ${gpu} · ${renderer.info.render.calls} draws · ` +
     `${(renderer.info.render.triangles / 1000).toFixed(0)}k tris · LUT ${lutMs.toFixed(1)} ms`;
   requestAnimationFrame(frame);
 }
@@ -843,6 +860,80 @@ Object.assign(api, {
   setBloom(on) {
     if (!bloomPass) throw new Error("bloom exists on the desktop tier only");
     bloomPass.enabled = Boolean(on);
+  },
+  /** Screen-space ambient occlusion on or off (drawn on the desktop tier). */
+  setAo(on) {
+    state.ao = Boolean(on);
+    applyLook();
+  },
+  /**
+   * The AO sweep's handle: `{ params, denoise }` merged into the pass (see
+   * ambient-occlusion.js AO_PARAMS / AO_DENOISE). Returns the merged pair.
+   */
+  setAoParams(values) {
+    return ambientOcclusion.configure(values);
+  },
+  /**
+   * Test surface: the page's AO exclusions on or off (off is three's own
+   * rule, which draws the sky and the clouds into the AO's depth), so a
+   * test can show in the same run what they prevent.
+   */
+  setAoExclusions(on) {
+    if (!ambientOcclusion.pass) throw new Error("the AO pass is not built");
+    ambientOcclusion.pass.pageExclusions = Boolean(on);
+  },
+  /**
+   * Test surface: the AO checks' world points (see ambient-occlusion.js.md).
+   * `crease`: the ground 0.3 m in front of the city view's nearest
+   * building's +z wall, mid-wall; `open`: ground 25 m out from its -x
+   * wall (open at the AO's metre scale); `far`: the ground 0.3 m in front of the +z wall of the dense
+   * lot nearest a point 1.5 km out, 25° right of the city view's line of
+   * sight (clear of the block; null while the dense city is off);
+   * `ridgeFoot`: where the first ridge (2.5 km) meets the ground toward
+   * the sun, which the sun view looks at.
+   */
+  aoProbe() {
+    const near = parts.city.children.find(
+      (b) => b.position.x === -126 && b.position.z === 126,
+    );
+    const nearFront = near.position.z + near.scale.z / 2;
+    let far = null;
+    const dense = parts.dense;
+    if (dense.userData.count > 0) {
+      const forward = new THREE.Vector3(
+        controls.target.x - camera.position.x,
+        0,
+        controls.target.z - camera.position.z,
+      ).normalize();
+      const right = new THREE.Vector3(-forward.z, 0, forward.x);
+      const aim = camera.position
+        .clone()
+        .addScaledVector(forward, 1500 * Math.cos(25 * DEG))
+        .addScaledVector(right, 1500 * Math.sin(25 * DEG));
+      const matrix = new THREE.Matrix4();
+      const position = new THREE.Vector3();
+      const quaternion = new THREE.Quaternion();
+      const scale = new THREE.Vector3();
+      const [concrete] = dense.children;
+      let best = Infinity;
+      for (let k = 0; k < concrete.count; k++) {
+        concrete.getMatrixAt(k, matrix);
+        matrix.decompose(position, quaternion, scale);
+        const d = Math.hypot(position.x - aim.x, position.z - aim.z);
+        if (d < best) {
+          best = d;
+          far = [position.x, 0.06, position.z + scale.z / 2 + 0.3];
+        }
+      }
+    }
+    const toSun = sunVector();
+    const flat = Math.hypot(toSun.x, toSun.z) || 1;
+    return {
+      crease: [near.position.x, 0.06, nearFront + 0.3],
+      open: [near.position.x - near.scale.x / 2 - 25, 0.06, near.position.z],
+      far,
+      ridgeFoot: [(toSun.x / flat) * 2499, 0.06, (toSun.z / flat) * 2499],
+    };
   },
   /**
    * Test surface: multisampling of the composer's scene target on or off
@@ -1180,6 +1271,7 @@ Object.assign(api, {
     frameMs,
     gpuMs,
     gpuTimer: gpuTimer.supported,
+    aoActive: ambientOcclusion.active,
     lutMs,
     drawCalls: renderer.info.render.calls,
     triangles: renderer.info.render.triangles,

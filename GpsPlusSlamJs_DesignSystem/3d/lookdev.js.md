@@ -61,6 +61,16 @@ farthest, casts, receives }`) and `drawCalls()` (renders one frame and
     the phone tier): with it off, the desktop pipeline must draw exactly
     the phone picture;
   - `setSceneMsaa(bool)` — the composer's scene-target MSAA (desktop tier);
+  - `setAo(bool)`: screen-space ambient occlusion (round-3 plan
+    2026-09-27-0532, stream C; [ambient-occlusion.js](ambient-occlusion.js.md)):
+    a switch on either tier, drawn on the desktop tier only (the phone
+    tier's plate says so and offers the tier switch); `setAoParams({ params,
+denoise, resolutionScale })` is the sweep's handle; `setAoExclusions(bool)`
+    (a test surface: off is three's own rule, which draws the sky and the
+    clouds into the AO's depth); `aoProbe()` returns the AO checks' world
+    points (`crease`, `open`, `far`, a hazed dense-city building's foot
+    1.5 km out, null without the dense city, and `ridgeFoot`, 2.5 km toward
+    the sun); `stats().aoActive` says whether it draws;
   - `readFrame()` → `{ width, height, data }`, the whole drawing buffer
     after one frame (edge comparisons need every pixel);
   - `project([x, y, z])` → normalised canvas `[u, v]` of a world point
@@ -80,7 +90,7 @@ farthest, casts, receives }`) and `drawCalls()` (renders one frame and
     preset: both exposures and both exposure-free horizon colours. The
     fallback's only GPU oracle.
 - Invariants & assumptions:
-  - State lives in the URL hash (`#preset=…&tone=…&tier=…&cloudMode=…&shadows=0|1&city=…&pitch=42|31|20&water=C0|C1|P50|P30|D30`; defaults since the owner's round 2, plan
+  - State lives in the URL hash (`#preset=…&tone=…&tier=…&cloudMode=…&shadows=0|1&city=…&pitch=42|31|20&water=C0|C1|P50|P30|D30&ao=0|1`; defaults since the owner's round 2, plan
     2026-09-26-2055 M2: the densest city, `city=100000&pitch=20`, about
     42,000 buildings, and `water=P50`), so a
     screenshot or phone link reproduces a view; a hash change on an open
@@ -117,7 +127,10 @@ farthest, casts, receives }`) and `drawCalls()` (renders one frame and
     and can sample black without `OES_texture_float_linear`), 4× MSAA on the
     scene target only (`renderTarget2`, where RenderPass draws; the two
     swapping passes bring it back there every frame), a firefly clamp at
-    1024 (≤ 1 level against the phone tier for every tone mapper), three's
+    1024 (≤ 1 level against the phone tier for every tone mapper), the
+    ambient occlusion pass when switched on (built on first use, right
+    after the RenderPass; it blends in place and does not swap, so the
+    scene target stays the multisampled one), three's
     `UnrealBloomPass` (threshold 16, strength 0.1, radius 0.35: a gentle
     glow, swept at the true sun position, see `BLOOM`) and `OutputPass`
     (tone mapping and colour space move there). Every pass is disposed on
@@ -133,4 +146,4 @@ farthest, casts, receives }`) and `drawCalls()` (renders one frame and
     deviation in the plan. OsmDemo now shows the REAL sun for its place and
     date (`sun-clock.ts`, plan 2026-09-23-2149).
 - Examples: `pnpm run serve` → `/3d/#preset=blueHour&tone=aces`.
-- Tests: `lookdev.smoke.spec.mjs` (stage `test:e2e`), and `shoot-3d.mjs`.
+- Tests: `lookdev.smoke.spec.mjs` (stage `test:e2e`), `ambient-occlusion.smoke.spec.mjs` (the AO switch and its checks), and `shoot-3d.mjs`.

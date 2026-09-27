@@ -42,6 +42,7 @@ describe("pinnedHash", () => {
       shadows: "0",
       catalog: "0",
       cloudMode: "dome",
+      ao: "0",
     });
   });
 });
