@@ -185,6 +185,11 @@ export {
   type FusedPoseCounts,
   type FusedPoseTally,
 } from './qr-fused-pose-tally.js';
+export {
+  estimateQrSizeFromParallax,
+  type QrParallaxSize,
+  type QrParallaxSizeOptions,
+} from './qr-size-parallax.js';
 
 // --- qr-motion (is the code being moved / turned; plan §26) ---
 export {

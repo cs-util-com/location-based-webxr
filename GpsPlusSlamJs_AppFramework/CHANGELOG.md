@@ -67,6 +67,11 @@
 
 ### Added
 
+- **`estimateQrSizeFromParallax` on `/ar/qr`** (QR size consensus plan
+  2026-09-27-0350, S1): a code's printed size from its views at different
+  camera positions - no depth sensor needed. It refuses views that carry no
+  scale (standing still, walking straight at the code, a small step, a code
+  small on screen). Not yet wired into any app.
 - **`utils/debug-flag`** (deep import): `debugUiEnabledFromSearch`, the
   apps' `?debug=1` reader, moved here from the RecorderApp so the
   TourViewer reads the flag by the same rule (QR near-frontal pose plan
