@@ -739,7 +739,9 @@ describe('SkyAtmosphere cloud slab (plan 2026-09-24-1010 §11-§12)', () => {
     const uniforms = (slab.material as THREE.ShaderMaterial).uniforms;
     expect(uniforms.atmSunDirection).toBe(sky.uniforms.atmSunDirection);
     expect(uniforms.atmCloudOffset).toBe(sky.uniforms.atmCloudOffset);
-    expect(stepsOf(slab)).toBe(16);
+    // The default is 8 steps since the owner's round 2 (plan 2026-09-26-2055
+    // M2: no difference worth the cost against 16-32 on the look-dev page).
+    expect(stepsOf(slab)).toBe(8);
   });
 
   // WHY: switching between the two meshes must leave exactly one cloud

@@ -30,10 +30,6 @@ import { AtmosphereHaze } from "/fw/visualization/atmosphere/atmosphere-haze.js"
 import { fallbackSky } from "/fw/visualization/atmosphere/atmosphere-fallback.js";
 import { SkyAtmosphere } from "/fw/visualization/atmosphere/sky-atmosphere.js";
 import { WaterSurface } from "/fw/visualization/atmosphere/water-surface-material.js";
-import {
-  CONTACT_CREASE,
-  ContactCrease,
-} from "/fw/visualization/contact-crease.js";
 import { WATER_CANDIDATES } from "./water-candidates.js";
 import { CATALOG } from "./catalog/index.js";
 import {
@@ -137,14 +133,6 @@ const parts = buildStandInScene(scene);
 let water = new WaterSurface();
 parts.lake.material.dispose();
 parts.lake.material = water.material;
-// The contact crease (W3 plan 2026-09-26-0549 M2) darkens the ambient light
-// at the foot of every building, never the ground's own: installed BEFORE
-// the haze, which chains it. The families' sprite and route line are skipped
-// (only meshes are creased).
-const crease = new ContactCrease();
-for (const part of [parts.city, parts.dense, parts.families]) {
-  crease.applyToObject(part);
-}
 // The haze patches the world's materials ONCE; it owns its uniforms, so an
 // atmosphere change (or a rebuilt atmosphere) only needs a sync.
 const haze = new AtmosphereHaze({ visibilityKm: 45 });
@@ -166,27 +154,22 @@ const state = {
   // Dome (the sky's layer), the fly-through sheet, or the ray-marched slab
   // (plan 2026-09-24-1010 §11).
   cloudMode: "dome",
-  // The slab's march steps, the cost knob (8/16/24/32).
-  slabSteps: 16,
   // Sun shadows (AR sun shadow plan 2026-09-23-2343, M2 / S1).
   shadows: false,
   // The dense city (programme plan 2026-09-26-0539, W1 M3): the nearest
-  // `count` lots of a `pitch` grid; 0 is the block alone.
-  city: 0,
-  pitch: DENSE_PITCHES[0],
-  // The pond's wave set (W6): "C0" is today's six built-in waves, the others
-  // are the candidates the owner rates (water-candidates.js).
-  water: "C0",
-  // The contact crease (W3 M2): strength k (0 is off) and radius r in m.
-  crease: CONTACT_CREASE.strength,
-  creaseR: CONTACT_CREASE.radiusM,
+  // `count` lots of a `pitch` grid; 0 is the block alone. The default is
+  // the densest, about 42,000 buildings (owner, round-2 plan 2026-09-26-2055
+  // M2).
+  city: 100000,
+  pitch: 20,
+  // The pond's wave set (W6): "C0" is the original six built-in waves, the
+  // others the candidates the owner rated (water-candidates.js); P50 rated
+  // best (round-2 plan 2026-09-26-2055 M2).
+  water: "P50",
   // The material catalog (W5 plan 2026-09-26-0549 M1): OFF by default, so
   // the page's other tests never compile its programs (triage).
   catalog: false,
 };
-/** The crease sliders' ranges (the hash is clamped to them). */
-const CREASE_MAX = 0.6;
-const CREASE_R_RANGE = [0.5, 12];
 
 const WATER_IDS = ["C0", ...WATER_CANDIDATES.map((c) => c.id)];
 /** The wave set the pond's current material was built with. */
@@ -220,7 +203,6 @@ const CASTING_PARTS = ["swatches", "markers", "families"];
 let shadowsBelowFloor = false;
 
 const CLOUD_MODES = ["dome", "sheet", "slab"];
-const SLAB_STEPS = [8, 16, 24, 32];
 const VIEWS = [
   "city",
   "sun",
@@ -243,8 +225,6 @@ function readHash() {
   if (CLOUD_MODES.includes(params.get("cloudMode"))) {
     state.cloudMode = params.get("cloudMode");
   }
-  const steps = Number(params.get("slabSteps"));
-  if (SLAB_STEPS.includes(steps)) state.slabSteps = steps;
   state.shadows = params.get("shadows") === "1";
   state.catalog = params.get("catalog") === "1";
   if (WATER_IDS.includes(params.get("water"))) {
@@ -253,14 +233,10 @@ function readHash() {
   const pitch = Number(params.get("pitch"));
   if (DENSE_PITCHES.includes(pitch)) state.pitch = pitch;
   const city = Number(params.get("city"));
-  state.city = Number.isFinite(city) && city > 0 ? Math.floor(city) : 0;
-  const k = Number(params.get("crease"));
-  if (params.has("crease") && Number.isFinite(k)) {
-    state.crease = Math.min(Math.max(k, 0), CREASE_MAX);
-  }
-  const r = Number(params.get("creaseR"));
-  if (params.has("creaseR") && Number.isFinite(r)) {
-    state.creaseR = Math.min(Math.max(r, CREASE_R_RANGE[0]), CREASE_R_RANGE[1]);
+  // Only when the hash names it: a link without `city` keeps the default
+  // (the dense city since round 2), as every other key does.
+  if (params.has("city")) {
+    state.city = Number.isFinite(city) && city > 0 ? Math.floor(city) : 0;
   }
 }
 
@@ -270,13 +246,10 @@ function writeHash() {
     tone: state.tone,
     tier: state.tier,
     cloudMode: state.cloudMode,
-    slabSteps: String(state.slabSteps),
     shadows: state.shadows ? "1" : "0",
     city: String(state.city),
     pitch: String(state.pitch),
     water: state.water,
-    crease: String(state.crease),
-    creaseR: String(state.creaseR),
     catalog: state.catalog ? "1" : "0",
   });
   history.replaceState(null, "", `#${params}`);
@@ -326,7 +299,6 @@ function useAtmosphere() {
     visibilityKm: state.visibility,
     cloudCover: state.clouds,
     cloudMode: state.cloudMode,
-    cloudSlabSteps: state.slabSteps,
   });
   lutMs = performance.now() - start;
   haze.sync(atmosphere);
@@ -502,7 +474,6 @@ function applyCity() {
       mesh.dispose();
     }
     parts.dense = denseCity(state.pitch);
-    crease.applyToObject(parts.dense);
     haze.applyToObject(parts.dense);
     if (sunShadow) {
       for (const mesh of parts.dense.children) {
@@ -538,8 +509,6 @@ function applyLook() {
   applyCity();
   applyCatalog();
   applyWater();
-  crease.setStrength(state.crease);
-  crease.setRadius(state.creaseR);
   useAtmosphere();
   applyTier();
   camera.updateProjectionMatrix();
@@ -627,21 +596,13 @@ function syncControls() {
   $("#shadows").checked = state.shadows;
   $("#tier").value = state.tier;
   $("#cloud-mode").value = state.cloudMode;
-  $("#slab-steps").value = String(state.slabSteps);
   $("#water-set").value = state.water;
   $("#catalog").checked = state.catalog;
-  $("#crease").value = state.crease;
-  $("#crease-radius").value = state.creaseR;
-  $("[data-crease]").textContent =
-    state.crease > 0
-      ? `crease k ${state.crease.toFixed(2)}, r ${state.creaseR.toFixed(1)} m`
-      : "crease off";
   const cityValue = `${state.city}@${state.pitch}`;
   const citySelect = $("#city-fill");
   if ([...citySelect.options].some((o) => o.value === cityValue)) {
     citySelect.value = cityValue;
   }
-  $("#slab-steps").disabled = state.cloudMode !== "slab";
   $("[data-values]").textContent =
     `sun ${state.elevation.toFixed(1)}° / ${state.azimuth.toFixed(0)}° · ` +
     `visibility ${state.visibility.toFixed(0)} km · ${state.exposureEv >= 0 ? "+" : ""}${state.exposureEv.toFixed(1)} EV` +
@@ -679,19 +640,9 @@ function buildControls() {
   $("#catalog").addEventListener("change", (e) =>
     api.setCatalog(e.target.checked),
   );
-  // Not a look parameter: moving these keeps the preset selected.
-  $("#crease").addEventListener("input", (e) =>
-    api.setCrease({ strength: Number(e.target.value) }),
-  );
-  $("#crease-radius").addEventListener("input", (e) =>
-    api.setCrease({ radiusM: Number(e.target.value) }),
-  );
   $("#tier").addEventListener("change", (e) => api.setTier(e.target.value));
   $("#cloud-mode").addEventListener("change", (e) =>
     api.setCloudMode(e.target.value),
-  );
-  $("#slab-steps").addEventListener("change", (e) =>
-    api.setCloudSlabSteps(Number(e.target.value)),
   );
   $("#camera-view").addEventListener("change", (e) =>
     api.setView(e.target.value),
@@ -763,7 +714,7 @@ function frame(now) {
     ? `GPU ${gpuMs === null ? "…" : gpuMs.toFixed(2)} ms`
     : "GPU n/a";
   $("[data-stats]").textContent =
-    `${state.tier} · clouds ${state.cloudMode}${state.cloudMode === "slab" ? ` ×${state.slabSteps}` : ""} · shadows ${sunShadow ? `on (${sunShadow.renders} maps, central ${shadowParams.halfWidthM} m)` : shadowsBelowFloor ? "on (sun below 2°)" : "off"} · ${frameMs.toFixed(1)} ms/frame · ${gpu} · ${renderer.info.render.calls} draws · ` +
+    `${state.tier} · clouds ${state.cloudMode} · shadows ${sunShadow ? `on (${sunShadow.renders} maps, central ${shadowParams.halfWidthM} m)` : shadowsBelowFloor ? "on (sun below 2°)" : "off"} · ${frameMs.toFixed(1)} ms/frame · ${gpu} · ${renderer.info.render.calls} draws · ` +
     `${(renderer.info.render.triangles / 1000).toFixed(0)}k tris · LUT ${lutMs.toFixed(1)} ms`;
   requestAnimationFrame(frame);
 }
@@ -1038,23 +989,6 @@ Object.assign(api, {
       })(),
     };
   },
-  /**
-   * The contact crease (W3 M2): k in [0, CREASE_MAX] (0 is off), r in
-   * CREASE_R_RANGE metres. Uniforms only, never a recompile.
-   */
-  setCrease({ strength = state.crease, radiusM = state.creaseR } = {}) {
-    if (!(strength >= 0 && strength <= CREASE_MAX)) {
-      throw new Error(`crease strength must be in [0, ${CREASE_MAX}]`);
-    }
-    if (!(radiusM >= CREASE_R_RANGE[0] && radiusM <= CREASE_R_RANGE[1])) {
-      throw new Error(
-        `crease radius must be in [${CREASE_R_RANGE.join(", ")}] m`,
-      );
-    }
-    state.crease = strength;
-    state.creaseR = radiusM;
-    applyLook();
-  },
   /** The material catalog on or off (W5 M1; off by default). */
   setCatalog(on) {
     state.catalog = Boolean(on);
@@ -1078,57 +1012,6 @@ Object.assign(api, {
       visibleLabels: catalogLabels ? catalogLabels.visibleIds().length : 0,
       programs: renderer.info.programs?.length ?? 0,
     };
-  },
-  /** The crease's uniforms and which parts carry it (tests, the readout). */
-  creaseInfo() {
-    const held = (root) => {
-      let n = 0;
-      root.traverse((o) => {
-        if (o.isMesh && crease.holds(o.material)) n += 1;
-      });
-      return n;
-    };
-    return {
-      strength: crease.uniforms.creaseStrength.value,
-      radiusM: crease.uniforms.creaseRadius.value,
-      baseM: crease.uniforms.creaseBase.value,
-      city: held(parts.city),
-      dense: held(parts.dense),
-      families: held(parts.families),
-      ground: held(parts.ground),
-    };
-  },
-  /**
-   * The crease probe (W3 plan, "the wall base is darker than the same wall
-   * 20 m up"): a camera facing the outward wall of the tallest DIFFUSE
-   * building on the block's +z edge (standard material, so the sky's
-   * environment light is what the crease darkens), the wall's foot and a
-   * point min(20 m, 3/4 of its height) up. Clear of the Lambert box.
-   */
-  creaseProbe() {
-    const edgeZ = Math.max(...parts.city.children.map((b) => b.position.z));
-    let best = null;
-    for (const b of parts.city.children) {
-      if (b.position.z !== edgeZ || b.material.metalness >= 0.5) continue;
-      if (Math.abs(b.position.x + 40) < 30) continue; // the Lambert box
-      if (!best || b.scale.y > best.scale.y) best = b;
-    }
-    const face = best.position.z + best.scale.z / 2 + 0.05;
-    const x = best.position.x;
-    const up = Math.min(20, 0.75 * best.scale.y);
-    return {
-      eye: [x, 8, face + 70],
-      target: [x, up / 2, face],
-      foot: [x, 0.8, face],
-      up: [x, up, face],
-    };
-  },
-  /** The slab's march steps (8/16/24/32): its cost knob. */
-  setCloudSlabSteps(steps) {
-    if (!SLAB_STEPS.includes(steps))
-      throw new Error(`unknown slab step count ${steps}`);
-    state.slabSteps = steps;
-    applyLook();
   },
   /** Dome (the sky's own layer), the fly-through sheet, or the slab. */
   setCloudMode(mode) {

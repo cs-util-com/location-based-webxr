@@ -67,13 +67,6 @@
 
 ### Added
 
-- **A contact crease for buildings** (city shadows and contact crease plan
-  2026-09-26-0549, M2): `new ContactCrease({ strength, radiusM,
-baseHeightM })` darkens the ambient light at the foot of walls,
-  `1 - k·exp(-h/r)` (defaults k 0.3, r 3 m), so buildings sit on the ground.
-  Indirect light only, per fragment, instancing-aware; k, r and the ground
-  height are uniforms (no recompile). Apply it before the atmosphere haze.
-  Nothing changes for materials it is not applied to.
 - **`utils/debug-flag`** (deep import): `debugUiEnabledFromSearch`, the
   apps' `?debug=1` reader, moved here from the RecorderApp so the
   TourViewer reads the flag by the same rule (QR near-frontal pose plan
@@ -298,8 +291,9 @@ source }` instead of the corners alone (unreleased API).
   Steps are spaced uniformly from above and quadratically from below and
   inside. At steep views from above, 8 steps now carry 4-23x less layer bias
   than before; from below and inside, 16 steps stay within 15 % (plus a
-  small floor) of their previous error. The default step count is
-  unchanged.
+  small floor) of their previous error. The default step count is now 8
+  (was 16): the owner saw no difference worth the cost on the look-dev page
+  (round-2 plan 2026-09-26-2055 M2).
 - **`solveQrPoseMultiView` drops unusable views instead of failing**
   (QR near-frontal pose plan 2026-09-23-2314, §16 #7): a view with a
   mirrored or non-finite quad, bad intrinsics, a non-unit camera quaternion

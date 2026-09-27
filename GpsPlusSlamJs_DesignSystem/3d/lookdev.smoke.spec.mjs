@@ -15,8 +15,23 @@
  */
 import { expect, test } from "@playwright/test";
 
-/** Wait for the page to report ready (or an error), then two frames. */
-async function boot(page, hash = "preset=golden&tone=agx") {
+/**
+ * Wait for the page to report ready (or an error), then two frames.
+ *
+ * The page opens on the dense city since the owner's round 2 (plan
+ * 2026-09-26-2055 M2). Every test here was measured on the block alone, and
+ * the dense city is not their subject: it hides the haze's distant ridges,
+ * puts building edges into the edge-free grids, and makes each SwiftShader
+ * read several times slower (measured 2026-09-27: three tests failed and the
+ * run took 20.9 min instead of 8.5). So a hash without `city=` boots the block
+ * alone; `{ pageDefaultCity: true }` keeps the page's own default.
+ */
+async function boot(
+  page,
+  hash = "preset=golden&tone=agx",
+  { pageDefaultCity = false } = {},
+) {
+  if (!pageDefaultCity && !/(^|&)city=/.test(hash)) hash += "&city=0";
   const errors = [];
   page.on("console", (m) => {
     if (m.type() === "error") errors.push(m.text());
@@ -1129,12 +1144,9 @@ test("a pending shadow map survives another change in the same task", async ({
 // A first, minimal block (triage §12 item 9: the GLSL must compile the commit
 // it lands in). The full E1-E10 block follows in its own commit.
 
-/** Boot in slab mode with the drift pinned. */
-async function bootSlab(page, [u, v] = SHEET_OFFSETS[0], steps = 16) {
-  const errors = await boot(
-    page,
-    `preset=noon&tone=neutral&cloudMode=slab&slabSteps=${steps}`,
-  );
+/** Boot in slab mode (8 steps, the only count the page offers) with the drift pinned. */
+async function bootSlab(page, [u, v] = SHEET_OFFSETS[0]) {
+  const errors = await boot(page, "preset=noon&tone=neutral&cloudMode=slab");
   await page.evaluate(
     ([a, b]) => window.__lookdev.setCloudOffset(a, b),
     [u, v],
@@ -1203,13 +1215,10 @@ const SLAB_E8 = { levelMax: 10 };
  * 2.7°) reads 6 at cover 0.9; the offline mutant without the far weight
  * reads 95. 30 sits between. */
 const SLAB_E9 = { edgeRowMax: 30 };
-/** E10: 8 against 32 steps differ by 5.6 levels on the grid; 20 is a 3.5x
- * margin (the CPU twin bounds the alpha difference at 0.05). */
-const SLAB_E10 = { diffMax: 20 };
 
 /** Boot the slab with the drift pinned and the loop paused. */
-async function bootSlabPaused(page, offset = SHEET_OFFSETS[0], steps = 16) {
-  const errors = await bootSlab(page, offset, steps);
+async function bootSlabPaused(page, offset = SHEET_OFFSETS[0]) {
+  const errors = await bootSlab(page, offset);
   await page.evaluate(() => window.__lookdev.pauseLoop(true));
   return errors;
 }
@@ -1566,72 +1575,38 @@ test("E9: the slab's far edge fades out, from the street and from above", async 
   expect(errors).toEqual([]);
 });
 
-// E10: the step count changes the cost (direction only: SwiftShader has no
-// GPU timer) and the picture only a little, but not by nothing (a define
-// that never reached the program would read 0).
-test("E10: more slab steps cost more and change the picture a little", async ({
+// E11: the owner drives it from the panel.
+// WHY (owner feedback round 2, plan 2026-09-26-2055 M2): the page opens on
+// the owner's choices, the densest city (about 42,000 buildings, not the
+// block alone) and the P50 water, and the removed contact crease leaves no
+// control behind.
+test("the page opens on the dense city and the P50 water, with no crease control", async ({
   page,
 }) => {
-  const errors = await bootSlabPaused(page);
-  const measure = (steps) =>
-    page.evaluate(
-      ([n, grid]) => {
-        const d = window.__lookdev;
-        d.setCloudSlabSteps(n);
-        d.setCloudCover(0.5);
-        d.setView("above");
-        d.readPixels([[0.5, 0.5]]); // compiles the program
-        const times = [];
-        for (let i = 0; i < 3; i++) {
-          const t0 = performance.now();
-          d.readPixels([[0.5, 0.5]]);
-          times.push(performance.now() - t0);
-        }
-        times.sort((a, b) => a - b);
-        return { ms: times[1], grid: d.readPixels(grid) };
-      },
-      [steps, GRID],
-    );
-  const s8 = await measure(8);
-  expect(await page.evaluate(() => window.__lookdev.cloudSlabDefine())).toBe(8);
-  const s32 = await measure(32);
-  expect(await page.evaluate(() => window.__lookdev.cloudSlabDefine())).toBe(
-    32,
-  );
-  // The cost ratio is a CPU-rasteriser property: on SwiftShader a frame is
-  // fragment work, on a GPU the readback dominates and the ratio can be ~1
-  // (M2 review L3). Asserted there, logged elsewhere.
-  const renderer = await page.evaluate(() => {
-    const gl = document.createElement("canvas").getContext("webgl2");
-    const info = gl?.getExtension("WEBGL_debug_renderer_info");
-    return info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : "";
+  const errors = await boot(page, "preset=noon&tone=neutral", {
+    pageDefaultCity: true,
   });
-  const diff = meanAbsDiff(s8.grid, s32.grid);
-  console.log(
-    `E10 slab frame ${s8.ms.toFixed(0)} ms at 8 steps, ${s32.ms.toFixed(0)} ms at 32 (x${(s32.ms / s8.ms).toFixed(2)}); picture diff ${diff.toFixed(1)}`,
-  );
-  const ratio = s32.ms / s8.ms;
-  expect(
-    /swiftshader/i.test(renderer) ? ratio : Number.POSITIVE_INFINITY,
-  ).toBeGreaterThanOrEqual(1.2);
-  expect(diff).toBeGreaterThan(0);
-  expect(diff).toBeLessThan(SLAB_E10.diffMax);
+  const state = await page.evaluate(() => window.__lookdev.stats().state);
+  expect([state.city, state.pitch, state.water]).toEqual([100000, 20, "P50"]);
+  await expect(page.locator("#city-fill")).toHaveValue("100000@20");
+  await expect(page.locator("#water-set")).toHaveValue("P50");
+  await expect(page.locator("#crease, #crease-radius")).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
-// E11: the owner drives it from the panel.
-test("E11: the Cloud mode and Slab steps selects drive the page", async ({
+// The slab runs at 8 steps only since the owner's round 2 (plan
+// 2026-09-26-2055 M2: no difference worth the cost against 16-32); the
+// framework's CPU twin still pins 8 against 32 (cloud-slab.test.ts).
+test("E11: the Cloud mode select drives the page, and the slab is built with 8 steps", async ({
   page,
 }) => {
   const errors = await boot(page, "preset=noon&tone=neutral");
-  await expect(page.locator("#slab-steps")).toBeDisabled();
   await page.selectOption("#cloud-mode", "slab");
-  await expect(page.locator("#slab-steps")).toBeEnabled();
-  await page.selectOption("#slab-steps", "8");
   const state = await page.evaluate(() => window.__lookdev.stats().state);
   expect(state.cloudMode).toBe("slab");
-  expect(state.slabSteps).toBe(8);
-  await expect(page.locator("[data-stats]")).toContainText("clouds slab ×8");
+  await expect(page.locator("[data-stats]")).toContainText("clouds slab");
+  expect(await page.evaluate(() => window.__lookdev.cloudSlabDefine())).toBe(8);
+  await expect(page.locator("#slab-steps")).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
@@ -1704,7 +1679,7 @@ test("the control plate collapses from its header and per section, and remembers
   await expect(head).toHaveAttribute("aria-expanded", "true");
   await expect(body).toBeVisible();
   // Every control the other tests select sits in a section that starts open.
-  for (const id of ["#camera-view", "#cloud-mode", "#slab-steps", "#tone"]) {
+  for (const id of ["#camera-view", "#cloud-mode", "#tone"]) {
     await expect(page.locator(id)).toBeVisible();
   }
   // A section folds on its own.
@@ -1952,75 +1927,6 @@ test("the water candidates compile, change the pond, and travel in the address",
   }
   await page.evaluate(() => window.__lookdev.setWater("P30"));
   expect(await page.evaluate(() => location.hash)).toContain("water=P30");
-  expect(errors).toEqual([]);
-});
-
-/**
- * The crease probe's bound on the foot: on/off ratio of the RGB sum, at the
- * default k 0.3. Measured 2026-09-26 (SwiftShader), foot ratio by look and
- * r 1.5 / 3 / 6 m: noon 0.973 / 0.965 / 0.958, hazy 0.962 / 0.952 / 0.947,
- * golden 0.920 / 0.894 / 0.878 (the sunlit noon wall is mostly sun, which
- * the crease leaves alone: faint in full sun, as the plan's review said).
- * The bound sits at half the smallest measured darkening.
- */
-const CREASE_FOOT_MAX_RATIO = 0.985;
-
-// WHY (W3 plan 2026-09-26-0549 M2, "the wall base is darker than the same
-// wall 20 m up, with the crease on, and equal with it off"): the contact
-// crease must reach the GPU (a shader error only logs, and the material
-// silently stops drawing), darken a wall's foot, and leave the wall higher
-// up alone. Each pixel is compared with ITSELF with the crease off, so the
-// claim cannot pass by comparing two differently lit pixels. Swept over the
-// three looks and three crease heights (the owner's sweep rule).
-test("the contact crease darkens a wall's foot and not the wall above", async ({
-  page,
-}) => {
-  const errors = await boot(page, "preset=noon&tone=neutral&city=0");
-  const info = await page.evaluate(() => window.__lookdev.creaseInfo());
-  // On the buildings and the Lambert box, never on the ground.
-  expect(info.city).toBeGreaterThan(40);
-  expect(info.dense).toBe(2);
-  expect(info.families).toBe(1);
-  expect(info.ground).toBe(0);
-  const rows = [];
-  for (const preset of ["noon", "golden", "hazy"]) {
-    for (const radiusM of [1.5, 3, 6]) {
-      const read = (strength) =>
-        page.evaluate(
-          ([p, k, r]) => {
-            const d = window.__lookdev;
-            d.setPreset(p);
-            d.setCloudCover(0);
-            d.setCrease({ strength: k, radiusM: r });
-            const probe = d.creaseProbe();
-            d.placeCameraAt(probe.eye, probe.target);
-            return d.readPixels([d.project(probe.foot), d.project(probe.up)]);
-          },
-          [preset, strength, radiusM],
-        );
-      const [footOn, upOn] = await read(0.3);
-      const [footOff, upOff] = await read(0);
-      rows.push({
-        preset,
-        radiusM,
-        foot: +(sum(footOn) / Math.max(sum(footOff), 1)).toFixed(3),
-        upDelta: Math.max(
-          ...[0, 1, 2].map((c) => Math.abs(upOn[c] - upOff[c])),
-        ),
-      });
-    }
-  }
-  console.log(
-    `crease probe (foot on/off ratio, top delta): ${JSON.stringify(rows)}`,
-  );
-  for (const row of rows) {
-    expect(row.foot, `${row.preset} r ${row.radiusM}`).toBeLessThan(
-      CREASE_FOOT_MAX_RATIO,
-    );
-    expect(row.upDelta, `${row.preset} r ${row.radiusM}`).toBeLessThanOrEqual(
-      2,
-    );
-  }
   expect(errors).toEqual([]);
 });
 

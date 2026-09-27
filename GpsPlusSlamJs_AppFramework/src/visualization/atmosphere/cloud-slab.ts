@@ -86,7 +86,12 @@ export const CLOUD_SLAB = {
    * is below 1e-5 in float32 (GLSL has no `expm1`).
    */
   lightSeriesX: 1e-2,
-  defaultSteps: 16 satisfies CloudSlabSteps,
+  /**
+   * 8 steps: the owner saw no difference worth the cost against 16-32 on the
+   * look-dev page (round-2 plan 2026-09-26-2055 M2); the other counts stay
+   * for the quality reference (8 against 32 in the tests).
+   */
+  defaultSteps: 8 satisfies CloudSlabSteps,
 } as const;
 
 /** The noise texture's texel in metres: 24 km over 256 texels, 93.75 m. */

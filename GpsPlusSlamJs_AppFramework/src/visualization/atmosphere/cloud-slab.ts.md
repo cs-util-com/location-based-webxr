@@ -21,8 +21,12 @@ it only in `cloudMode: 'slab'`.
   unit, the sun's path factor k 0.25 and elevation floor 0.1, `maxMarchM`
   22 km, the early-exit transmittance 0.01, the level-ray limit, the
   spacing's blend height above the top `uniformBlendM` 25 m, the in-segment
-  light's series limit `lightSeriesX` 1e-2, and `defaultSteps` 16.
-- `CLOUD_SLAB_STEPS`: the step counts the shader is built for, 8/16/24/32.
+  light's series limit `lightSeriesX` 1e-2, and `defaultSteps` 8 (the
+  owner saw no difference worth the cost against 16-32, round-2 plan
+  2026-09-26-2055 M2).
+- `CLOUD_SLAB_STEPS`: the step counts the shader is built for, 8/16/24/32
+  (the look-dev page offers 8 only; the others stay as the quality
+  reference, 8 against 32 in the tests).
 - `cloudSlabCumulativeM(h, b?)`: Q(h), the integral of the base ramp
   clamp(x/b, 0, 1) from 0 to h.
 - `cloudSlabThresholdThicknessM(σ?, b?)`: T0 = Q⁻¹(ln 2/σ), the column
@@ -111,7 +115,8 @@ it only in `cloudMode: 'slab'`.
   from below, where the reach grows faster than the view dims), and runs in
   highp: near x = 0 it cancels, and the series takes over below
   `lightSeriesX` (float32 within 1e-5 of float64 there).
-- **Cost:** 16 steps make 18 noise reads (36 texture reads) per pixel,
+- **Cost:** N steps make N + 2 noise reads (twice that in texture reads)
+  per pixel: 10 (20) at the default 8, 18 (36) at 16;
   two more than the point-sampled march, plus one exp and one division per
   segment, plus the hoisted light
   (3 sky-view and 3 transmittance reads: `atmCloudLit` twice and

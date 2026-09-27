@@ -105,14 +105,6 @@ export {
   shadowReception,
 } from './ar-shadows.js';
 
-// --- contact-crease (ambient darkening at the foot of walls) ---
-export {
-  CONTACT_CREASE,
-  ContactCrease,
-  type ContactCreaseOptions,
-  contactCreaseFactor,
-} from './contact-crease.js';
-
 // --- shadow-receiver (the shadow-only receiver recipe) ---
 export {
   type ShadowReceiverOptions,
