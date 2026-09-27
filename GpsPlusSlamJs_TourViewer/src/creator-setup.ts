@@ -551,9 +551,13 @@ export function wireCreatorSetup(deps: {
       count +
       (codeLine === "" ? "" : ` · ${codeLine}`) +
       tour;
-    // A code of another tour is not measured into this one (§9 #4).
+    // A code of another tour is not measured into this one while this
+    // one has unsaved work (§9 #4). With no tour open, a new measurement
+    // just replaces the level in hand (milestone review #6).
     dom.mintButton.disabled =
-      !readout.canMint || codeStatus.kind === "other-tour";
+      !readout.canMint ||
+      (codeStatus.kind === "other-tour" &&
+        codeStatus.reason === "unsaved-work");
     const blocked = finishBlockedHint(readiness);
     if (blocked !== "") dom.status.textContent += ` · ${blocked}`;
     if (readiness === "ready" && ctx.session !== null) {
@@ -998,6 +1002,9 @@ export function wireCreatorSetup(deps: {
       (id) => {
         if (mintGeneration !== ctx.mintGeneration) return;
         ctx.mintedLevel = { id, json: result.json };
+        // A new measurement is not in the zip that was saved (milestone
+        // review #2): switching tours would lose it again.
+        ctx.rebuiltZipDelivered = false;
         ctx.mintedLevelTour = {
           levelId: id,
           tourUrl: codeTour.tourOf(mintedText),
@@ -1357,6 +1364,14 @@ export function wireCreatorSetup(deps: {
           hasLevel,
         );
         dom.draftOffer.hidden = false;
+        // The offer is outside the AR overlay, so a creator whose scan
+        // opened the tour mid-session would not see it and would place the
+        // same content again (milestone review #4).
+        if (sessionLive()) {
+          ctx.placementNote =
+            "Unsaved work for this tour is on this device - restore it after leaving AR.";
+          renderAuthorReadout();
+        }
         // The offer lives inside step 4, which is usually COLLAPSED when a
         // tour opens (the wizard lands on the remembered step, or step 2).
         // Un-hiding an element inside a closed disclosure is zero pixels

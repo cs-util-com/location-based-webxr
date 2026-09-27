@@ -106,6 +106,36 @@ describe("tourRelation", () => {
     expect(tourRelation(code, openUrl)).toBe("other-tour");
   });
 
+  it("recognises a GitHub tour whether its link carries refs/heads or not", async () => {
+    // Milestone review #7: the print step shrinks a raw GitHub link to
+    // user/repo/path, which decodes to .../refs/heads/main/... - while the
+    // tour may have been opened with the plain /main/ link.
+    const openUrl = "https://raw.githubusercontent.com/u/r/main/t.zip";
+    const code = await resolveCodeTour(
+      launch("https://raw.githubusercontent.com/u/r/refs/heads/main/t.zip"),
+      PROXY,
+    );
+    expect(tourRelation(code, openUrl)).toBe("this-tour");
+  });
+
+  it("recognises a Dropbox tour whatever copy of its share link was printed", async () => {
+    // The st token differs between copies of one share; dl only picks a mode.
+    const openUrl = normalizeShareUrl(
+      "https://www.dropbox.com/scl/fi/abc/t.zip?rlkey=k&st=one&dl=0",
+      { corsProxyBaseUrl: PROXY },
+    );
+    const code = await resolveCodeTour(
+      launch("https://www.dropbox.com/scl/fi/abc/t.zip?rlkey=k&st=two&dl=1"),
+      PROXY,
+    );
+    expect(tourRelation(code, openUrl)).toBe("this-tour");
+    const other = await resolveCodeTour(
+      launch("https://www.dropbox.com/scl/fi/abc/t.zip?rlkey=other"),
+      PROXY,
+    );
+    expect(tourRelation(other, openUrl)).toBe("other-tour");
+  });
+
   it("says unknown, not other, for a link it cannot compare", async () => {
     const code = await resolveCodeTour(launch("https://bit.ly/abc"), PROXY);
     expect(tourRelation(code, "https://h.test/t.zip")).toBe("unknown");

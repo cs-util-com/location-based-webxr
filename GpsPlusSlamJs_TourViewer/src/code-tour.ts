@@ -37,7 +37,9 @@ export type CodeTour =
       kind: "tour";
       /** The link as resolved - what the open path and step 1 take. */
       url: string;
-      /** The form an open tour's `archive.url` has. */
+      /** The comparison key: `archive.url`'s form (`normalizeShareUrl`)
+       *  with the spellings that still name one file folded together
+       *  (`comparableUrl`). Compare only with `tourRelation`. */
       normalizedUrl: string;
       /** False where a difference in links does not prove another file. */
       comparable: boolean;
@@ -73,7 +75,7 @@ export async function resolveCodeTour(
   return {
     kind: "tour",
     url,
-    normalizedUrl: normalizeShareUrl(url, { corsProxyBaseUrl }),
+    normalizedUrl: comparableUrl(normalizeShareUrl(url, { corsProxyBaseUrl })),
     comparable: !UNCOMPARABLE_HOSTS.has(hostOf(url)),
   };
 }
@@ -93,12 +95,43 @@ export function tourRelation(
 ): TourRelation {
   if (code.kind !== "tour") return "not-a-tour";
   if (openArchiveUrl === null) return "no-tour-open";
-  if (code.normalizedUrl === openArchiveUrl) return "this-tour";
+  if (code.normalizedUrl === comparableUrl(openArchiveUrl)) return "this-tour";
   // Either side may be the one only a redirect resolves: a tour opened in
   // step 1 from a short link is as uncomparable as a code carrying one.
   return code.comparable && !UNCOMPARABLE_HOSTS.has(hostOf(openArchiveUrl))
     ? "other-tour"
     : "unknown";
+}
+
+/**
+ * Fold together spellings `normalizeShareUrl` keeps apart but that name one
+ * file (milestone review #7): the print step shrinks a raw GitHub link to
+ * `user/repo/path`, which decodes to `.../refs/heads/<branch>/...` while
+ * the tour may have been opened as `.../<branch>/...`; a Dropbox link's
+ * `st` token differs between copies of one share, and `dl` only picks a
+ * download mode. Anything unparseable is its own key.
+ */
+export function comparableUrl(url: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return url;
+  }
+  if (parsed.hostname === "raw.githubusercontent.com") {
+    parsed.pathname = parsed.pathname.replace(
+      /^(\/[^/]+\/[^/]+)\/refs\/heads\//,
+      "$1/",
+    );
+  }
+  if (
+    parsed.hostname.endsWith("dropbox.com") ||
+    parsed.hostname.endsWith("dropboxusercontent.com")
+  ) {
+    parsed.searchParams.delete("st");
+    parsed.searchParams.delete("dl");
+  }
+  return parsed.toString();
 }
 
 function hostOf(url: string): string {

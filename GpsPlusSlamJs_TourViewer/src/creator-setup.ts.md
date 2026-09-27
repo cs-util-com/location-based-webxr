@@ -131,8 +131,12 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   `tourOf`) - step 4's scan-to-open (`scan-open.ts`, owned by
   `archive-open`). Every author detection is fed to it; the live readout
   appends `codeTourLine(status)` and "Tour: <label>" for the open tour; Save
-  stays off while the code in view is `other-tour`; the mint records the
-  tour its code named in `ctx.mintedLevelTour`. Without it, a no-op that
+  stays off while the code in view is `other-tour` for unsaved work (not for
+  a level measured for another tour, which a new mint replaces); the mint
+  records the tour its code named in `ctx.mintedLevelTour` and resets
+  `ctx.rebuiltZipDelivered` (a new level is not in the saved zip). A draft
+  offered while a session runs also puts a note inside the overlay, where
+  the offer itself cannot be seen. Without it, a no-op that
   is always quiet.
 
 ## Invariants & assumptions

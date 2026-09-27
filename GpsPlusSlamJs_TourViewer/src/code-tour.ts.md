@@ -21,10 +21,15 @@ from another tour's (TourViewer scan-to-open plan,
     `resolveQrPayload` refuses (or throws on);
   - `{kind: "tour", url, normalizedUrl, comparable}` - `url` is the link as
     resolved (what the open path and step 1's field take); `normalizedUrl`
-    is `normalizeShareUrl(url, {corsProxyBaseUrl})`, the same form
-    `openRemoteArchive` gives `archive.url`; `comparable` is false for hosts
+    is the comparison key: `comparableUrl(normalizeShareUrl(url,
+{corsProxyBaseUrl}))` - `archive.url`'s form with the spellings that
+    still name one file folded together; `comparable` is false for hosts
     that reach the file only through a redirect or whose normalised form
     depends on the spelling (short links, OneDrive).
+- `comparableUrl(url)` - folds GitHub's `refs/heads/<branch>` into
+  `<branch>` (the print step's shrunk form decodes with it) and drops a
+  Dropbox link's `st` and `dl` (they differ between copies of one share;
+  milestone review #7).
 - `tourRelation(code, openArchiveUrl | null): TourRelation` - `not-a-tour`,
   `no-tour-open`, `this-tour`, `other-tour`, or `unknown` (the links differ
   and one side cannot be compared, so neither is proven).
@@ -60,6 +65,7 @@ switch (tourRelation(code, ctx.session?.archive.url ?? null)) {
 - `code-tour.test.ts` - payload reading, the three outcomes, the bare-name
   prefix, the Drive spellings as one tour, another Drive file as another
   tour, `unknown` on either side's redirecting host.
-- `code-tour.property.test.ts` - any http(s) link printed into a launch code
-  is `this-tour` against the tour opened from that link; any string resolves
+- `code-tour.property.test.ts` - any http(s) link, encoded by the print
+  step's own `planPrintCode`, is `this-tour` against the tour opened from
+  that link; any string resolves
   without throwing.

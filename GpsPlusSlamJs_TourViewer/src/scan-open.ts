@@ -15,6 +15,7 @@
 import type { RangeProbeRejectCause } from "gps-plus-slam-app-framework/storage";
 
 import { resolveCodeTour, tourRelation, type CodeTour } from "./code-tour.js";
+import { tourLabel } from "./tour-session.js";
 import type { TourViewerSession } from "./tour-viewer-session.js";
 
 /** What `archive-open`'s open returned. */
@@ -39,9 +40,17 @@ export type CodeTourStatus =
       /** True while a later detection will try again. */
       retrying: boolean;
     }
-  /** A code of another tour, and switching would lose unfinished work:
-   *  Save stays off for it. */
-  | { kind: "other-tour" }
+  /** A code of another tour that will not open now: switching would lose
+   *  unsaved work (Save stays off for it), or - with no tour open - the
+   *  level in hand was measured from `label`'s code (Save stays on: a new
+   *  measurement replaces that level, milestone review #6). */
+  | {
+      kind: "other-tour";
+      reason: "unsaved-work" | "measured-for-another";
+      label: string;
+    }
+  /** Another tour's code that will switch once it has stayed in view. */
+  | { kind: "switch-pending" }
   /** A link that cannot be compared with the open tour's. */
   | { kind: "unknown" }
   /** A code of another tour while the creator opened this one by its link
@@ -75,7 +84,13 @@ export interface ScanOpen {
  *  Anything else would fail the same way every time. */
 const RETRIED_CAUSES: ReadonlySet<string> = new Set(["missing", "cors"]);
 const FIRST_RETRY_MS = 10_000;
-const MAX_RETRY_MS = 120_000;
+/** A retry costs one small request; a creator who just fixed the upload
+ *  should not wait minutes at the poster (milestone review #10). */
+const MAX_RETRY_MS = 30_000;
+/** How long another tour's code must stay the ONLY code in view before a
+ *  scan-opened tour switches to it: a glimpse while walking past a
+ *  neighbour's poster must not swap tours (milestone review #1). */
+const SWITCH_DWELL_MS = 1_500;
 
 interface Attempt {
   cause: RangeProbeRejectCause | "other";
@@ -93,8 +108,12 @@ export function createScanOpen(deps: ScanOpenDeps): ScanOpen {
   const codes = new Map<string, CodeTour | "resolving">();
   /** normalised link -> the last failed attempt at it. */
   const attempts = new Map<string, Attempt>();
-  /** The link a scan-started open is opening. */
+  /** The link a scan-started open is opening (for the status line). */
   let inFlight: string | null = null;
+  /** The code in view without a break since `runStartMs`: any other
+   *  detection restarts the run. */
+  let runText: string | null = null;
+  let runStartMs = 0;
 
   function attemptFor(url: string): Attempt | null {
     const attempt = attempts.get(url);
@@ -129,16 +148,36 @@ export function createScanOpen(deps: ScanOpenDeps): ScanOpen {
     );
   }
 
+  /** Another tour's code that a scan-opened tour may switch to: nothing
+   *  unsaved, and never toward a link that already failed this session -
+   *  the switch tears the open tour down before the new open can fail. */
+  function switchable(code: CodeTour & { kind: "tour" }): boolean {
+    return (
+      ctx.tourOpenedBy === "scan" &&
+      !unfinishedWork() &&
+      attemptFor(code.normalizedUrl) === null
+    );
+  }
+
   /** Whether this code, now, is one to open: no tour and nothing bound
-   *  elsewhere, or another tour and nothing to lose. */
-  function wantsOpen(code: CodeTour & { kind: "tour" }): boolean {
+   *  elsewhere, or a switchable other tour whose code has stayed in view. */
+  function wantsOpen(text: string, code: CodeTour & { kind: "tour" }): boolean {
     const relation = tourRelation(code, ctx.session?.archive.url ?? null);
     if (relation === "no-tour-open") return !measuredForAnother(code);
     return (
       relation === "other-tour" &&
-      ctx.tourOpenedBy === "scan" &&
-      !unfinishedWork()
+      switchable(code) &&
+      runText === text &&
+      deps.now() - runStartMs >= SWITCH_DWELL_MS
     );
+  }
+
+  /** Act on a code that has been read: open it if it should open. */
+  function act(text: string): void {
+    const known = codes.get(text);
+    if (known === undefined || known === "resolving") return;
+    if (known.kind !== "tour" || deps.isOpening()) return;
+    if (wantsOpen(text, known)) tryOpen(known);
   }
 
   function tryOpen(code: CodeTour & { kind: "tour" }): void {
@@ -178,8 +217,11 @@ export function createScanOpen(deps: ScanOpenDeps): ScanOpen {
 
   return {
     onDetection(text) {
-      const known = codes.get(text);
-      if (known === undefined) {
+      if (text !== runText) {
+        runText = text;
+        runStartMs = deps.now();
+      }
+      if (codes.get(text) === undefined) {
         // Marked BEFORE the await, so the next frame does not start a
         // second read of the same text (plan §9 #6).
         codes.set(text, "resolving");
@@ -188,13 +230,15 @@ export function createScanOpen(deps: ScanOpenDeps): ScanOpen {
           .catch((): CodeTour => ({ kind: "unreadable" }))
           .then((code) => {
             codes.set(text, code);
+            // Acted on at once while it is still the code in view: waiting
+            // for the next frame left "Opening…" on screen for a code seen
+            // once (milestone review #9).
+            if (runText === text) act(text);
             deps.render();
           });
         return;
       }
-      if (known === "resolving" || known.kind !== "tour") return;
-      if (deps.isOpening() || inFlight !== null) return;
-      if (wantsOpen(known)) tryOpen(known);
+      act(text);
     },
 
     status(text) {
@@ -212,23 +256,34 @@ export function createScanOpen(deps: ScanOpenDeps): ScanOpen {
       if (relation === "this-tour") return { kind: "quiet" };
       if (relation === "unknown") return { kind: "unknown" };
       if (relation === "no-tour-open" && measuredForAnother(known)) {
-        return { kind: "other-tour" };
+        return {
+          kind: "other-tour",
+          reason: "measured-for-another",
+          label: tourLabel(ctx.mintedLevelTour?.tourUrl ?? ""),
+        };
       }
       if (relation === "other-tour" && ctx.tourOpenedBy !== "scan") {
         return { kind: "other-link" };
       }
       if (relation === "other-tour" && unfinishedWork()) {
-        return { kind: "other-tour" };
+        return {
+          kind: "other-tour",
+          reason: "unsaved-work",
+          label: ctx.tourLabel ?? "the open tour",
+        };
       }
       const failed = attemptFor(known.normalizedUrl);
       if (failed !== null) {
         return {
           kind: "failed",
           cause: failed.cause,
-          retrying: failed.retryAtMs !== null,
+          // A failed switch target is not retried while a tour is open.
+          retrying: failed.retryAtMs !== null && relation === "no-tour-open",
         };
       }
-      return { kind: "opening" };
+      return relation === "other-tour"
+        ? { kind: "switch-pending" }
+        : { kind: "opening" };
     },
 
     tourOf(text) {

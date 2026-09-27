@@ -470,13 +470,34 @@ describe("the creator measures and mints with the fused pose", () => {
       expect(c.dom.status.textContent).toMatch(/Could not open the tour/);
     });
 
-    it("keeps Save off for a code of another tour", () => {
-      const s = stub({ kind: "other-tour" });
+    it("keeps Save off for a code of another tour while this one has unsaved work", () => {
+      const s = stub({
+        kind: "other-tour",
+        reason: "unsaved-work",
+        label: "a.zip",
+      });
       const c = creator({ aligned: true, codeTour: s.codeTour });
       for (let i = 0; i < 7; i++) c.detect(i);
       expect(c.dom.status.textContent).toMatch(/measured and stable/i);
       expect(c.dom.status.textContent).toMatch(/another tour/);
       expect(c.dom.mintButton.disabled).toBe(true);
+    });
+
+    it("keeps Save on when the level in hand was measured for another tour", () => {
+      // Milestone review #6: with no tour open, a level bound to a tour that
+      // never opens must not block measuring this code - a new measurement
+      // replaces it.
+      const s = stub({
+        kind: "other-tour",
+        reason: "measured-for-another",
+        label: "x.zip",
+      });
+      const c = creator({ aligned: true, codeTour: s.codeTour });
+      for (let i = 0; i < 7; i++) c.detect(i);
+      expect(c.dom.status.textContent).toMatch(
+        /You measured the code of x.zip/,
+      );
+      expect(c.dom.mintButton.disabled).toBe(false);
     });
 
     it("names the open tour", () => {
@@ -494,10 +515,14 @@ describe("the creator measures and mints with the fused pose", () => {
         aligned: true,
         codeTour: stub({ kind: "quiet" }).codeTour,
       });
+      // A zip saved before this measurement (milestone review #2): the new
+      // level is not in it, so switching tours must count it as unsaved.
+      c.ctx.rebuiltZipDelivered = true;
       for (let i = 0; i < 7; i++) c.detect(i);
       expect(c.dom.mintButton.disabled).toBe(false);
       c.dom.mintButton.click();
       await vi.waitFor(() => expect(c.ctx.mintedLevel).not.toBeNull());
+      expect(c.ctx.rebuiltZipDelivered).toBe(false);
       expect(c.ctx.mintedLevelTour).toEqual({
         levelId: c.ctx.mintedLevel?.id,
         tourUrl: "https://h.test/a.zip",

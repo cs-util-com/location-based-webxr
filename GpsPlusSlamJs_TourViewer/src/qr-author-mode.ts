@@ -228,18 +228,22 @@ export function codeTourLine(status: CodeTourStatus): string {
       return "";
     case "opening":
       return "Opening the tour this code points to…";
+    case "switch-pending":
+      return "Keep this code in view to switch to its tour.";
     case "not-a-tour":
-      return "This code does not point to a tour - print it from step 3.";
+      return "This code does not point to a tour - print one in step 2.";
     case "other-tour":
-      return "This code belongs to another tour. Finish the work in hand first.";
+      return status.reason === "unsaved-work"
+        ? `This code belongs to another tour - finish ${status.label} and save its zip first.`
+        : `You measured the code of ${status.label} - scan it again to open that tour.`;
     case "unknown":
-      return "Cannot tell whether this code belongs to the open tour.";
+      return "Cannot tell if this code is the open tour's - measure it only if it is.";
     case "other-link":
-      return "This code names another link - it is measured into the open tour.";
+      return "This code names another link - it is measured into the tour opened in step 1.";
     case "failed":
       return status.retrying
         ? `Could not open the tour: ${openCauseText(status)}. Keep the code in view to try again.`
-        : `Could not open the tour: ${openCauseText(status)}.`;
+        : `Could not open the tour: ${openCauseText(status)}. Fix the link, then restart AR.`;
   }
 }
 

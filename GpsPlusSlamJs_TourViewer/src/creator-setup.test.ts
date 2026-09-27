@@ -1004,6 +1004,23 @@ describe("a placement reaches the draft", () => {
   });
 });
 
+describe("a draft offered while the AR session runs", () => {
+  it("says so inside the overlay, where the creator can read it", async () => {
+    // Why this matters (milestone review #4): a scan opens the tour
+    // mid-session, and the restore offer sits outside the AR overlay - the
+    // creator would not see it and would place the same content again.
+    const { store } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+      [objectKey("old-pin")]: JSON.stringify(pin("old-pin")),
+    });
+    const { ctx, dom, setup } = wire(store, { placeable: true });
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    expect(dom.draftOffer.hidden).toBe(false);
+    expect(String(ctx.placementNote)).toMatch(/restore it after leaving AR/);
+  });
+});
+
 describe("work made before the tour's draft opened reaches it", () => {
   // Why these tests matter (TourViewer scan-to-open plan §9 #5): a creator
   // can measure and place before any tour is open - scan-to-open makes

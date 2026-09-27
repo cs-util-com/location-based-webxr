@@ -198,7 +198,7 @@ const DRIVE_HOSTS: ReadonlySet<string> = new Set([
  */
 export function tourLabel(url: string): string {
   const zip = zipNameOf(url);
-  if (zip !== null) return cut(zip, 60);
+  if (zip !== null) return cut(zip, 24);
   let parsed: URL;
   try {
     parsed = new URL(url, LABEL_BASE);

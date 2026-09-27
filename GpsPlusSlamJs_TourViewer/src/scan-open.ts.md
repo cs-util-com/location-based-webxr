@@ -24,7 +24,8 @@ says what the panel should report about the code in view.
   - `deps.now()`, `deps.render()`.
 - `ScanOpen.onDetection(text)` - a detection in the creator's AR session.
 - `ScanOpen.status(text | null): CodeTourStatus` - `quiet`, `opening`,
-  `not-a-tour`, `failed {cause, retrying}`, `other-tour`, `other-link`,
+  `switch-pending`, `not-a-tour`, `failed {cause, retrying}`, `other-tour
+{reason: unsaved-work | measured-for-another, label}`, `other-link`,
   `unknown`;
   `qr-author-mode.ts`'s `codeTourLine` words it.
 - `ScanOpen.tourOf(text)` - the normalised link of the tour a code names,
@@ -38,23 +39,31 @@ says what the panel should report about the code in view.
   The only kept state is the last failed attempt per tour, tagged with
   `arSessionGeneration`, so a new AR session starts afresh without a
   session-end hook.
-- **One open at a time:** none starts while `isOpening()` or a scan-started
-  open is in flight.
+- **One open at a time:** none starts while `isOpening()` (the open path's
+  own flag, set before its first await). A code is acted on as soon as it
+  is read, while it is still the code in view (milestone review #9).
 - **Retries (§9 #7):** only `missing` and `cors` (fixable while standing at
-  the poster), after 10 s, then 20, 40, ... capped at 120 s. Anything else is
-  final for the AR session.
+  the poster), after 10 s, then 20, then every 30 s (milestone review #10).
+  Anything else is final for the AR session.
 - **Only a scan-opened tour switches** (owner decision, plan §2): a tour
   the creator opened by its link in step 1 is their explicit choice - the
   case step 1 was kept for is an old print naming another link - so a code
   of another tour is `other-link`: measured into the open tour, Save on,
   never a switch (`ctx.tourOpenedBy`).
+- **Switching needs dwell (milestone review #1):** another tour's code must
+  be the only code in view for 1.5 s (any other detection restarts the
+  run), so a glimpse while walking past a neighbour's poster, or two prints
+  side by side, never swaps tours. A link that already failed this AR
+  session is never switched to: the switch tears the open tour down first.
 - **Switching tours (§9 #3):** a code of another tour opens it only when
   the open tour was scan-opened and nothing unfinished would be lost: no finish running, no placed objects,
   and no measured level unless its rebuilt zip was handed off at least once.
   Otherwise `other-tour`, and `creator-setup` keeps Save off for that code.
 - **Work before any tour (§9 #4):** with no tour open, a level measured from
   a code that named tour X waits for X; a code of another tour is
-  `other-tour`, not an open. A level whose code named no tour binds nothing.
+  `other-tour` (reason `measured-for-another`), not an open - and Save stays
+  on, so a new measurement can replace that level (milestone review #6). A
+  level whose code named no tour binds nothing.
 - **Quiet while a tour is open** about codes that name no tour (a
   third-party code near the poster, §9 #15), and about codes still being
   read.
