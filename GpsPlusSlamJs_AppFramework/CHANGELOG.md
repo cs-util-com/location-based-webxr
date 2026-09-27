@@ -73,6 +73,8 @@
 
 ### Added
 
+- **`ArShadows.mapRenders()`** reports how many shadow-map renders the rig
+  has requested, for diagnostics (the PhysicsDemo's status line shows it).
 - **`createQrParallaxSizeTally` and `measuredSizeOffer` on `/ar/qr`** (QR
   size consensus plan S3a): one counting rule for parallax sizes (turning
   and refused windows kept out, independent windows apart) and the rule for
