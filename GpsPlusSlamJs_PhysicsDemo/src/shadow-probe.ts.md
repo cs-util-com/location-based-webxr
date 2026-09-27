@@ -12,7 +12,7 @@
 - Public API:
   - `createShadowProbe(deps)` returns `{ pause, dropOnFloor(flat?),
 standAt(azimuthDeg), viewCamera(), atRest(), ballScreen(),
-setShadowsEnabled(on), readRegion(x, y, w, h) }`:
+setShadowsEnabled(on), remesh(), readRegion(x, y, w, h) }`:
     - `dropOnFloor`: a 15 x 15 grid of downward rays over the room's mesh;
       of the FIRST surfaces they meet, the lowest that faces up (world
       normal y at least 0.7) and has floor all around it (eight rays on a
@@ -34,6 +34,11 @@ setShadowsEnabled(on), readRegion(x, y, w, h) }`:
     - `ballScreen`: the last ball's centre and radius in the standing view,
       in drawing-buffer pixels (top-left origin);
     - `setShadowsEnabled`: the demo's switch (`DemoShadows.setEnabled`);
+    - `remesh`: re-meshes the room now (`OccupancyView.remesh`). The paused
+      replay has no depth stream, while a phone re-meshes on every refresh,
+      and a skin switch reaches the receiver's geometry only through a
+      re-mesh (round 3: the Off and Wireframe skins lost the shadow after
+      one);
     - `readRegion`: renders one frame through the standing view and
       returns that rect's RGBA bytes, read in the same task as the render.
   - `installShadowProbe(target, probe)` puts it on the window; the returned
@@ -43,10 +48,16 @@ setShadowsEnabled(on), readRegion(x, y, w, h) }`:
   normal use; it adds no per-frame work.
 - Tests: `shadow-probe.test.ts` (the rest rule; the floor under a table
   top, never a wall; not a narrow strip seen through a gap; the standing
-  view from four sides with the ball at the centre; the deps wiring;
+  view from four sides with the ball at the centre; the deps wiring,
+  re-mesh included;
   install/remove); the pixel read: `replay-shadows.spec.js` (measured
   2026-09-26 at the demo's 63.4° light on the blocky floor, lower middle of
   four sides: 717 darkened pixels at 1.2 m, 221 at 2.5 m, 82 at 4 m, the
   ball's own disc about 2,260 / 950 / 440; so a resting ball's shadow is
-  visible from a standing view on THAT floor, small at 4 m; the "Off" skin
-  cannot be measured in the replay, where there is no camera feed behind).
+  visible from a standing view on THAT floor, small at 4 m). Round 3
+  (2026-09-27): the spec measures every skin after a re-mesh, and composites
+  each pixel over a grey stand-in for the camera image, since the canvas is
+  transparent as in AR; so the "Off" skin, whose shadow is alpha only, IS
+  measurable now. Before the framework fix Wireframe and Off read 0 at every
+  threshold; see `GpsPlusSlamJs_Docs/docs/2026-09-27-0651-ar-shadows-invisible-skin-findings.md`
+  (primary repo).

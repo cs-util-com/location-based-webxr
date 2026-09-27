@@ -44,7 +44,8 @@ createPhysicsRuntime }` (defaults to the real ones); the seam that keeps the
   - **The shadow probe** (`controls.shadowProbe`, `?shadowProbe=1`, off in
     normal use): `shadow-probe.ts` on `window.__physicsShadowProbe`; its
     standing view becomes the camera the shadow square follows (the replay
-    camera hangs about 200 m over the room).
+    camera hangs about 200 m over the room), and its `remesh` is the
+    occupancy view's.
 
 ## Invariants & assumptions
 
@@ -87,5 +88,6 @@ dispose();
   removes every listener, idempotently; click-to-shoot fires a ball on pointerup
   (never on bare pointerdown); an orbit drag (displaced pointerup) does not
   shoot; a stationary right-/middle-button click does not shoot (primary
-  button only); the dropdowns drive the occupancy view. Factories + scheduler
+  button only); the dropdowns drive the occupancy view; the shadow probe's
+  `remesh` reaches the occupancy view and the probe leaves the window on dispose. Factories + scheduler
   injected → no WebGL/Rapier.

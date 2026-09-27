@@ -38,6 +38,7 @@ function probeDeps(over: Partial<ShadowProbeDeps> = {}) {
     },
     getFloorMesh: () => null,
     shadows: null,
+    remesh: () => {},
     now: () => 0,
     ...over,
   };
@@ -161,16 +162,18 @@ describe("createShadowProbe", () => {
     expect(probe.ballScreen().r).toBeLessThan(10);
   });
 
-  it("switches the demo's shadows and pauses the replay through its deps", () => {
+  it("switches the demo's shadows, re-meshes and pauses the replay through its deps", () => {
     const calls: string[] = [];
     const { deps } = probeDeps({
       pause: () => calls.push("pause"),
       shadows: { setEnabled: (on) => calls.push(`shadows ${on}`) },
+      remesh: () => calls.push("remesh"),
     });
     const probe = createShadowProbe(deps);
     probe.pause();
     probe.setShadowsEnabled(false);
-    expect(calls).toEqual(["pause", "shadows false"]);
+    probe.remesh();
+    expect(calls).toEqual(["pause", "shadows false", "remesh"]);
   });
 });
 

@@ -207,6 +207,22 @@ describe("createOccupancyView", () => {
     view.dispose();
   });
 
+  // The shadow probe re-meshes on demand (the paused replay has no depth
+  // stream): it must re-mesh the CURRENT occluder from the grid, the same
+  // call a depth refresh makes, without adding a sample.
+  it("remesh re-meshes the current occluder from the grid, no sample added", () => {
+    const addSample = vi.spyOn(OccupancyGrid.prototype, "addSample");
+    const meshUpdate = vi.spyOn(OcclusionMesh.prototype, "update");
+    const view = createOccupancyView(new THREE.Group(), makeFakeStore());
+    view.setMeshMode("greedy");
+    meshUpdate.mockClear();
+    view.remesh();
+    expect(meshUpdate).toHaveBeenCalledTimes(1);
+    expect(meshUpdate.mock.contexts[0]).toBe(view.getOcclusionMesh());
+    expect(addSample).not.toHaveBeenCalled();
+    view.dispose();
+  });
+
   it("detaches the subscription on dispose", () => {
     const addSample = vi.spyOn(OccupancyGrid.prototype, "addSample");
     const store = makeFakeStore();

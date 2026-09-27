@@ -12,7 +12,11 @@
  *  3. its visibility equal to the last `setVisible`;
  *  4. its opacity equal to the last options given;
  *  5. one cached material for the whole life (no recompile per toggle);
- *  6. nothing the occluder owns ever casting.
+ *  6. nothing the occluder owns ever casting;
+ *  7. while a receiver is attached, a non-empty geometry carries a normal
+ *     per vertex, whatever the debug style (round 3: three compiles the
+ *     receiver once and draws no shadow if the normals it was compiled
+ *     with vanish on a later remesh, which the Off and Wireframe skins did).
  */
 
 import fc from 'fast-check';
@@ -127,6 +131,11 @@ describe('OcclusionMesh shadow receiver: any operation order', () => {
             const skin = receivers[0];
             if (!skin) return;
             expect(skin.geometry).toBe(occluder.getMesh().geometry);
+            const countOf = (name: string): number =>
+              skin.geometry.hasAttribute(name)
+                ? skin.geometry.getAttribute(name).count
+                : 0;
+            expect(countOf('normal')).toBe(countOf('position'));
             expect(skin.visible).toBe(expected.visible);
             const m = skin.material as THREE.ShadowMaterial;
             expect(m.opacity).toBe(expected.opacity);

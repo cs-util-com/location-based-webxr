@@ -179,6 +179,7 @@ export function startReplayPhysics(
       runtime,
       getFloorMesh: () => occupancyView.getMesh(),
       shadows,
+      remesh: () => occupancyView.remesh(),
       now: () => performance.now(),
     });
   }

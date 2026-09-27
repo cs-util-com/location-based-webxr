@@ -45,7 +45,7 @@ function fakeEl(value = ""): {
   };
 }
 
-function harness(options: { shadows?: boolean } = {}) {
+function harness(options: { shadows?: boolean; shadowProbe?: boolean } = {}) {
   const canvas = fakeEl();
   const meshStyleSelect = fakeEl("smooth");
   const meshShaderSelect = fakeEl("depth-shaded-wireframe");
@@ -71,6 +71,7 @@ function harness(options: { shadows?: boolean } = {}) {
     onFrame: vi.fn(),
     shadows: options.shadows ?? true,
     shadowToggle,
+    shadowProbe: options.shadowProbe ?? false,
   } as unknown as ReplayPhysicsControls;
 
   const scheduled: Array<(t: number) => void> = [];
@@ -89,6 +90,7 @@ function harness(options: { shadows?: boolean } = {}) {
     getOcclusionMesh: vi.fn(() => occluder),
     setMeshMode: vi.fn(),
     setDebugStyle: vi.fn(),
+    remesh: vi.fn(),
     dispose: vi.fn(),
   };
   const runtime = {
@@ -147,6 +149,30 @@ function listener(
 }
 
 describe("startReplayPhysics", () => {
+  // The shadow e2e measures every skin after a re-mesh (round 3: the Off and
+  // Wireframe skins lost the shadow only once the room re-meshed). The
+  // paused replay has no depth stream, so the probe's re-mesh must reach the
+  // demo's own occupancy view, the one the receiver draws.
+  it("routes the shadow probe's re-mesh to the occupancy view", () => {
+    const win: { __physicsShadowProbe?: { remesh(): void } } = {};
+    vi.stubGlobal("window", win);
+    try {
+      const h = harness({ shadowProbe: true });
+      const dispose = startReplayPhysics(
+        h.session,
+        h.controls,
+        h.scheduler,
+        h.factories,
+      );
+      win.__physicsShadowProbe!.remesh();
+      expect(h.occupancyView.remesh).toHaveBeenCalledTimes(1);
+      dispose();
+      expect(win.__physicsShadowProbe).toBeUndefined();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("steps the runtime + advances the perf panel each frame, re-scheduling the next", () => {
     const h = harness();
     const dispose = startReplayPhysics(

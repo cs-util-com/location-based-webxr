@@ -48,6 +48,8 @@ export interface ShadowProbeDeps {
   /** The reconstructed room's mesh to drop onto, or null before it exists. */
   readonly getFloorMesh: () => THREE.Object3D | null;
   readonly shadows: Pick<DemoShadows, "setEnabled"> | null;
+  /** Re-meshes the room from its grid, as a depth refresh does. */
+  readonly remesh: () => void;
   /** Milliseconds, for the rest check (performance.now in the page). */
   readonly now: () => number;
 }
@@ -76,6 +78,12 @@ export interface ShadowProbe {
   /** The last ball's centre and radius in the standing view, in drawing-buffer pixels. */
   ballScreen(): { x: number; y: number; r: number };
   setShadowsEnabled(on: boolean): void;
+  /**
+   * Re-meshes the room now. The paused replay has no depth stream, while a
+   * phone re-meshes on every refresh, so this is how the probe reaches the
+   * geometry a phone draws after a skin switch.
+   */
+  remesh(): void;
   /**
    * Renders one frame through the standing view and returns the RGBA bytes
    * of a drawing-buffer rect (x, y from the top-left), read in the same task
@@ -226,6 +234,7 @@ export function createShadowProbe(deps: ShadowProbeDeps): ShadowProbe {
       return { x: centre.x, y: centre.y, r: centre.distanceTo(edge) };
     },
     setShadowsEnabled: (on) => deps.shadows?.setEnabled(on),
+    remesh: () => deps.remesh(),
     readRegion(x, y, w, h) {
       deps.renderer.render(deps.scene, requireView());
       const gl = deps.renderer.getContext();

@@ -387,6 +387,14 @@ export class OcclusionMesh {
    * Idempotent. Off keeps the material cached, so on again recompiles
    * nothing (the session off switch, review §6). No-op after dispose.
    *
+   * While it is on, the shared geometry carries normals in every debug
+   * style (round 3, owner phone test on r749). three picks the receiver's
+   * program once, with or without normals, from the geometry it first
+   * draws, and never recompiles when a remesh later drops them; a program
+   * compiled with normals then reads (0, 0, 0), its shadow coordinates turn
+   * NaN and no shadow is drawn. Only the shaded skins used to compute them,
+   * so the shadow vanished under Wireframe and Off.
+   *
    * @throws RangeError for an opacity outside [0, 1] or a positive offset.
    */
   setShadowReceiver(options: ShadowReceiverOptions | null): void {
@@ -414,6 +422,9 @@ export class OcclusionMesh {
       );
       this.receiverSkin.receiveShadow = true;
       this.receiverSkin.visible = this.visible;
+      if (!this.geometry.hasAttribute('normal')) {
+        this.geometry.computeVertexNormals();
+      }
       this.arSpaceNode.add(this.receiverSkin);
     }
   }
@@ -477,10 +488,14 @@ export class OcclusionMesh {
     next.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     next.setIndex(new THREE.BufferAttribute(indices, 1));
     // Matcap shading needs per-vertex normals; the mesher emits none. Compute
-    // them only when a matcap-based debug skin is showing, so the default
-    // occluder path (invisible — normals unused) and the pure wireframe style
-    // stay cheap.
-    if (styleNeedsNormals(this.debugStyle)) next.computeVertexNormals();
+    // them only when a matcap-based debug skin or the shadow receiver draws,
+    // so the default occluder path (invisible — normals unused) and the pure
+    // wireframe style stay cheap. The receiver needs them in EVERY style:
+    // three compiles its program once, and one compiled with normals draws
+    // no shadow once a remesh drops them (see setShadowReceiver).
+    if (styleNeedsNormals(this.debugStyle) || this.receiverSkin) {
+      next.computeVertexNormals();
+    }
     this.geometry.dispose();
     this.geometry = next;
     this.mesh.geometry = next;

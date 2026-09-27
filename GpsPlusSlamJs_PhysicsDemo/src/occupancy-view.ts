@@ -53,6 +53,12 @@ export interface OccupancyView {
   setMeshMode(mode: MeshMode): void;
   /** Change the visible debug skin (live). */
   setDebugStyle(style: OccluderDebugStyle): void;
+  /**
+   * Re-mesh the current occluder from the grid now, as every depth refresh
+   * does. The paused replay has no depth stream, so the shadow probe calls
+   * this to reach the state a phone reaches on its next refresh.
+   */
+  remesh(): void;
   dispose(): void;
 }
 
@@ -110,6 +116,7 @@ export function createOccupancyView(
       debugStyle = style;
       occluder.setDebugStyle(style);
     },
+    remesh,
     dispose(): void {
       unsubscribe();
       occluder.dispose();

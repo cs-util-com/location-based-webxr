@@ -31,6 +31,10 @@ debugStyle='depth-shaded-wireframe' }`. The voxel size + noise floor come from t
     AR shadows, which give it their receiver every frame (a new one after
     `setMeshMode`).
   - `setDebugStyle(style)` — live `OccluderDebugStyle` skin switch.
+  - `remesh()` - re-mesh the CURRENT occluder from the grid now, the call a
+    depth refresh makes, without adding a sample. For the shadow probe: the
+    paused replay has no depth stream, and a skin switch reaches the
+    receiver's geometry only through a re-mesh (round 3, 2026-09-27).
   - `dispose()`.
 
 ## Invariants & assumptions
@@ -53,5 +57,6 @@ debugStyle='depth-shaded-wireframe' }`. The voxel size + noise floor come from t
 - `occupancy-view.test.ts` (real framework objects + fake store) — each depth
   sample folds into the grid and re-meshes the occluder; defaults to Surface nets +
   the combined shader; `setDebugStyle` switches live; `setMeshMode` yields a NEW
-  `getMesh()` handle and re-meshes; the confidence guard keeps an established
+  `getMesh()` handle and re-meshes; `remesh` re-meshes the current occluder and
+  adds no sample; the confidence guard keeps an established
   cell against a deeper reading (identity-projection rays); dispose detaches.

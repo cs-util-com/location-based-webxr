@@ -180,18 +180,92 @@ describe('OcclusionMesh shadow receiver: casting', () => {
     expect(occluder.getMesh().receiveShadow).toBe(false);
     occluder.dispose();
   });
+});
 
-  // Normals are what make three's normal bias move the lookup (research §1:
-  // "normals absent, the lookup is exact"). The receiver must not be the
-  // reason they appear: under the invisible style a remesh stays normal-free.
-  it('does not add normals to the shared geometry', () => {
+/** Whether the shared geometry is non-empty and has a normal per vertex. */
+function hasNormalPerVertex(occluder: OcclusionMesh): boolean {
+  const geometry = occluder.getMesh().geometry;
+  if (!geometry.hasAttribute('position')) return false;
+  const vertices = geometry.getAttribute('position').count;
+  return (
+    vertices > 0 &&
+    geometry.hasAttribute('normal') &&
+    geometry.getAttribute('normal').count === vertices
+  );
+}
+
+describe('OcclusionMesh shadow receiver: normals in every skin', () => {
+  // The owner's phone test on r749 (2026-09-27): shadows showed with the
+  // shaded skins and vanished with "Wireframe" and "Off". three compiles the
+  // receiver's program ONCE, with or without HAS_NORMAL depending on
+  // whether the geometry it first draws has normals, and does not recompile
+  // when a later remesh drops them. Only the shaded skins computed normals,
+  // so a receiver compiled under a shaded skin (a mesh-mode change rebuilds
+  // the occluder under the current skin) read a missing normal as (0, 0, 0)
+  // after a switch to Wireframe or Off: its normalized world normal is NaN,
+  // so are its shadow coordinates, and no shadow is drawn. The replay probe
+  // measures it (replay-shadows.spec.js); this pins the cause, GPU-free:
+  // while a receiver is attached, the geometry has normals in EVERY style.
+  it('keeps normals on the geometry after a remesh, in every style', () => {
+    for (const style of OCCLUDER_DEBUG_STYLES) {
+      const parent = new THREE.Group();
+      const occluder = new OcclusionMesh(parent, {
+        shadowReceiver: { opacity: 0.42 },
+      });
+      occluder.setDebugStyle(style);
+      occluder.update(FLOOR, CELL_SIZE);
+      expect(hasNormalPerVertex(occluder)).toBe(true);
+      occluder.applyMeshData(
+        new Float32Array([0, 0, 0, 1, 0, 0, 0, 0, 1]),
+        new Uint32Array([0, 1, 2])
+      );
+      expect(hasNormalPerVertex(occluder)).toBe(true);
+      occluder.dispose();
+    }
+  });
+
+  // The owner's sequence: a shaded skin, then Off, then the next remesh.
+  it('keeps them across a switch from a shaded skin to Off and Wireframe', () => {
     const parent = new THREE.Group();
     const occluder = new OcclusionMesh(parent, {
       shadowReceiver: { opacity: 0.42 },
     });
+    occluder.setDebugStyle('depth-shaded-wireframe');
+    occluder.update(FLOOR, CELL_SIZE);
+    for (const style of ['off', 'wireframe'] as const) {
+      occluder.setDebugStyle(style);
+      occluder.update(FLOOR, CELL_SIZE);
+      expect(hasNormalPerVertex(occluder)).toBe(true);
+    }
+    occluder.dispose();
+  });
+
+  // A receiver switched on over a normal-free geometry (the shadow switch
+  // back on after remeshes under Off) must not draw it without normals.
+  it('adds normals to the current geometry when a receiver is switched on', () => {
+    const parent = new THREE.Group();
+    const occluder = new OcclusionMesh(parent);
     occluder.update(FLOOR, CELL_SIZE);
     expect(occluder.getMesh().geometry.getAttribute('normal')).toBeUndefined();
+    occluder.setShadowReceiver({ opacity: 0.42 });
+    expect(hasNormalPerVertex(occluder)).toBe(true);
     occluder.dispose();
+  });
+
+  // The cost stays where it was without a receiver: the invisible and the
+  // wireframe styles keep the remesh path normal-free (the recorder's
+  // default occluder has no receiver).
+  it('adds no normals without a receiver, under Off and Wireframe', () => {
+    for (const style of ['off', 'wireframe'] as const) {
+      const parent = new THREE.Group();
+      const occluder = new OcclusionMesh(parent);
+      occluder.setDebugStyle(style);
+      occluder.update(FLOOR, CELL_SIZE);
+      expect(
+        occluder.getMesh().geometry.getAttribute('normal')
+      ).toBeUndefined();
+      occluder.dispose();
+    }
   });
 });
 

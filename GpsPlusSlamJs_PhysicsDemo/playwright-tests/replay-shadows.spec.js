@@ -21,8 +21,36 @@ const DARKEN_BY = 6;
 const DARKEN_SWEEP = [3, 6, 12];
 /** How far the standing viewer is from the ball (m): near, and a thrower's. */
 const STAND_BACK_SWEEP_M = [1.2, 2.5, 4];
+/**
+ * Every skin of the Shader dropdown. Owner phone test on r749 (2026-09-27):
+ * shadows showed with the shaded skins but NOT with "Wireframe" and "Off",
+ * the normal AR case. The page's default first, then the two that failed,
+ * then back to shaded skins.
+ */
+const SKINS = [
+  "depth-shaded-wireframe",
+  "wireframe",
+  "off",
+  "matcap",
+  "depth-shaded",
+];
+/**
+ * The canvas is transparent (`alpha: true`, no background), in the replay
+ * as in AR, where the browser composites it over the camera image. With the
+ * "Off" skin nothing opaque lies under the floor, so the shadow is ONLY
+ * alpha: its RGB stays black over black. What a viewer sees is the canvas
+ * composited over the picture behind it, so each pixel is composited
+ * (premultiplied, as the drawing buffer is) over a flat grey stand-in for
+ * the camera image before its luminance is taken. Reported at a dark, a
+ * middle and a bright stand-in; the verdict is taken at the middle.
+ */
+const CAMERA_GREY = 128;
+const CAMERA_GREY_SWEEP = [64, 128, 192];
 
 const luminance = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+/** A premultiplied RGBA pixel's luminance over an opaque grey `grey`. */
+const seenOver = (px, i, grey) =>
+  luminance(px[i], px[i + 1], px[i + 2]) + (1 - px[i + 3] / 255) * grey;
 
 /**
  * WHY (owner feedback round 2, plan 2026-09-26-2055 M1): the owner saw no
@@ -34,12 +62,16 @@ const luminance = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
  * when the shadow is switched on are counted. The AR path renders the same
  * wiring (startDemoShadows, the same light and receiver), so a shadow too
  * small to see here is too small on the phone.
+ *
+ * Round 3 (owner phone test on r749, 2026-09-27): the shadow showed with
+ * the shaded skins and vanished with "Wireframe" and "Off". So the probe
+ * now measures EVERY skin, each after a re-mesh, as the phone draws it.
  */
 test.describe("Physics Demo - shadows you can see", () => {
-  test("a resting ball's shadow darkens the floor around it", async ({
+  test("a resting ball's shadow darkens the floor around it, in every skin", async ({
     page,
   }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(360_000);
     const pageErrors = [];
     page.on("pageerror", (err) => pageErrors.push(err.message));
 
@@ -73,33 +105,41 @@ test.describe("Physics Demo - shadows you can see", () => {
 
     // Drop a ball onto the room's floor (once the re-meshed room offers
     // one), then let it come to rest.
-    await page.waitForFunction(
-      () => window.__physicsShadowProbe.dropOnFloor() !== null,
-      null,
-      { timeout: 20_000 },
-    );
-    await page.waitForFunction(
-      () => window.__physicsShadowProbe.atRest(),
-      null,
-      {
-        timeout: 30_000,
-      },
-    );
+    const dropAndRest = async () => {
+      await page.waitForFunction(
+        () => window.__physicsShadowProbe.dropOnFloor() !== null,
+        null,
+        { timeout: 20_000 },
+      );
+      await page.waitForFunction(
+        () => window.__physicsShadowProbe.atRest(),
+        null,
+        { timeout: 30_000 },
+      );
+    };
+    await dropAndRest();
 
     // Standing 1.5 m up, from four sides (whether the ball hides its own
     // shadow depends on where the viewer stands against the light), at a
     // near view (1.2 m) and at a thrower's 2.5 m and 4 m (M1 review): the
     // window around the ball (8 ball radii), shadow off and on.
     const lowerMiddle = (values) => [...values].sort((a, b) => a - b)[1];
-    const byDistance = {};
-    for (const backM of STAND_BACK_SWEEP_M) {
-      const counts = [];
-      for (const azimuth of [0, 90, 180, 270]) {
+    // A ball despawns after 3,600 physics steps (about a minute at 60 fps),
+    // less than all the views take on a loaded machine, so a view whose ball
+    // is gone drops a new one on the same spot and measures again. A view
+    // is one synchronous evaluate, so no step can remove the ball inside it.
+    const measureView = async (azimuth, backM) => {
+      for (let attempt = 0; attempt < 3; attempt++) {
         const measured = await page.evaluate(
           ([a, back]) => {
             const probe = window.__physicsShadowProbe;
             probe.standAt(a, back);
-            const ball = probe.ballScreen();
+            let ball;
+            try {
+              ball = probe.ballScreen();
+            } catch {
+              return null; // despawned: no ball to measure
+            }
             const side = Math.max(16, Math.round(8 * ball.r));
             const x = Math.round(ball.x - side / 2);
             const y = Math.round(ball.y - side / 2);
@@ -111,38 +151,72 @@ test.describe("Physics Demo - shadows you can see", () => {
           },
           [azimuth, backM],
         );
-        const darkenedBy = (threshold) => {
-          let n = 0;
-          for (let i = 0; i < measured.on.length; i += 4) {
-            const before = luminance(
-              measured.off[i],
-              measured.off[i + 1],
-              measured.off[i + 2],
-            );
-            const after = luminance(
-              measured.on[i],
-              measured.on[i + 1],
-              measured.on[i + 2],
-            );
-            if (before - after >= threshold) n += 1;
-          }
-          return n;
-        };
-        counts.push(darkenedBy(DARKEN_BY));
-        console.log(
-          `shadow probe ${backM} m at ${azimuth}°: ball radius ${measured.ball.r.toFixed(1)} px, window ${measured.side} px, darkened by >= ${DARKEN_SWEEP.map((t) => `${t}: ${darkenedBy(t)}`).join(", ")}`,
-        );
+        if (measured) return measured;
+        await dropAndRest();
       }
-      byDistance[backM] = lowerMiddle(counts);
+      throw new Error(`no ball stayed for the view at ${azimuth}° ${backM} m`);
+    };
+    const measureSkin = async (skin) => {
+      const byDistance = {};
+      for (const backM of distancesFor(skin)) {
+        const counts = [];
+        for (const azimuth of [0, 90, 180, 270]) {
+          const measured = await measureView(azimuth, backM);
+          const darkenedBy = (threshold, grey = CAMERA_GREY) => {
+            let n = 0;
+            for (let i = 0; i < measured.on.length; i += 4) {
+              const drop =
+                seenOver(measured.off, i, grey) -
+                seenOver(measured.on, i, grey);
+              if (drop >= threshold) n += 1;
+            }
+            return n;
+          };
+          counts.push(darkenedBy(DARKEN_BY));
+          const sweep = CAMERA_GREY_SWEEP.map(
+            (grey) =>
+              `grey ${grey} [${DARKEN_SWEEP.map((t) => `${t}: ${darkenedBy(t, grey)}`).join(", ")}]`,
+          ).join(" ");
+          console.log(
+            `shadow probe ${skin} ${backM} m at ${azimuth}°: ball radius ${measured.ball.r.toFixed(1)} px, window ${measured.side} px, darkened by >= ${sweep}`,
+          );
+        }
+        byDistance[backM] = lowerMiddle(counts);
+      }
+      return byDistance;
+    };
+
+    // A TIME BUDGET, not a weaker check: every skin is measured at 1.2 m
+    // from four sides, and the page's default skin also at 2.5 m and 4 m
+    // (the M1 sweep): 28 views. Dropped: the 2.5 m and 4 m views of the four
+    // other skins (32 of the full 60). A skin decides WHETHER the receiver
+    // draws, not how the shadow falls off with distance: with the fix, Off
+    // matched the default within 2 % at all three distances (full 60-view
+    // sweep, 2026-09-27, findings doc 2026-09-27-0651), and 60 views overran
+    // the test budget on a loaded machine where the original 12 had fitted.
+    const distancesFor = (skin) =>
+      skin === SKINS[0] ? STAND_BACK_SWEEP_M : STAND_BACK_SWEEP_M.slice(0, 1);
+
+    // Every skin, in the order a user flips through the dropdown. A skin
+    // switch reaches the receiver's geometry through the next re-mesh,
+    // which a phone does on every depth refresh and the paused replay only
+    // when asked.
+    const bySkin = {};
+    for (const skin of SKINS) {
+      await page.getByTestId("mesh-shader").selectOption(skin);
+      await page.evaluate(() => window.__physicsShadowProbe.remesh());
+      bySkin[skin] = await measureSkin(skin);
     }
     console.log(
-      `shadow probe, lower middle of four sides: ${JSON.stringify(byDistance)}`,
+      `shadow probe, lower middle of four sides: ${JSON.stringify(bySkin)}`,
     );
     // The floor scales with the ball's area on screen (1 / distance²).
-    for (const backM of STAND_BACK_SWEEP_M) {
-      expect(byDistance[backM]).toBeGreaterThanOrEqual(
-        MIN_SHADOW_PX * (1.2 / backM) ** 2,
-      );
+    for (const skin of SKINS) {
+      for (const backM of distancesFor(skin)) {
+        expect
+          .soft(bySkin[skin][backM], `${skin} at ${backM} m`)
+          .toBeGreaterThanOrEqual(MIN_SHADOW_PX * (1.2 / backM) ** 2);
+      }
     }
     expect(pageErrors).toEqual([]);
   });
