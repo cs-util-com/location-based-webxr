@@ -17,7 +17,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { createSlice } from '@reduxjs/toolkit';
-import { setZeroPos, setColdStartOverrideEnabled } from 'gps-plus-slam-js';
+import {
+  setZeroPos,
+  setColdStartOverrideEnabled,
+  resetGpsSessionData,
+} from 'gps-plus-slam-js';
 import {
   composeStateSanitizer,
   createSlamAppStore,
@@ -565,6 +569,54 @@ describe('createSlamAppStore', () => {
       releaseWrite();
       await flushPromise;
       expect(flushed).toBe(true);
+    });
+
+    // Why: the Tour Viewer's troubleshooting recording spans several AR
+    // entries, so the factory must hand `persistWhile` and
+    // `continuousActionIndex` through to the middleware - the options are
+    // useless to an app that can only reach them through this factory. The
+    // library's REAL `resetGpsSessionData`, dispatched after `endSession` as
+    // the shared teardown does, is the action the default rules drop.
+    it('passes persistWhile and continuousActionIndex through to the persistence middleware', async () => {
+      const writeAction = vi.fn().mockResolvedValue(undefined);
+      const spy: StorageBackend = {
+        createSession: vi.fn().mockResolvedValue({ sessionName: 's' }),
+        listSessions: vi.fn().mockResolvedValue([]),
+        writeAction,
+        writeFrame: vi.fn().mockResolvedValue(undefined),
+        writeSessionMetadata: vi.fn().mockResolvedValue(undefined),
+      };
+      const store = createSlamAppStore({
+        storageBackend: spy,
+        persistWhile: () => true,
+        continuousActionIndex: true,
+      });
+      const visit = (startTime: number): void => {
+        store.dispatch(
+          startSession({ contextTag: 't', sessionName: 'v', startTime })
+        );
+        store.dispatch(endSession());
+        store.dispatch(resetGpsSessionData());
+      };
+
+      visit(1);
+      visit(2);
+      // Past the middleware's 3-write concurrency cap.
+      await store.flushPendingActionWrites();
+
+      expect(
+        writeAction.mock.calls.map(([action, index]): [string, number] => [
+          (action as { type: string }).type,
+          index as number,
+        ])
+      ).toEqual([
+        [startSession.type, 1],
+        [endSession.type, 2],
+        [resetGpsSessionData.type, 3],
+        [startSession.type, 4],
+        [endSession.type, 5],
+        [resetGpsSessionData.type, 6],
+      ]);
     });
   });
 

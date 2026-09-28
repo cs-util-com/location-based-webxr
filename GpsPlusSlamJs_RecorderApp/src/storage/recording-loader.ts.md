@@ -64,6 +64,7 @@ const state = rec.getFinalState();
   - `2026-04-23_15-55-36utc.zip` (era ≥ 4): asserts sidecar present, session.json present, at least one curated name (`name !== id`).
   - `getFinalState()` is memoized (`first === second`).
   - `isMarkRefPointAction — pose-array length contract`: fixture-free unit tests that accept full-length poses (3/4) and reject short or empty `position`/`rotation` arrays, proving the guard blocks `undefined`-injecting payloads.
+  - `loadRecording — a Tour Viewer authoring recording` (fixture-free, 2026-09-28): a zip in the Tour Viewer's troubleshooting-recording layout (the shared framework `session.json` builder with `contextTag: "tour-authoring"`, two AR entries each closed by `endSession` + `resetGpsSessionData`, an unknown `tourAuthoring/finished` between them) loads as era 5 with no migration, keeps every action in order and replays; without `session.json` the same zip is taken for era 1. The Tour Viewer's own tests pin that it writes this layout ([authoring recording plan](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-09-28-0953-tour-viewer-authoring-recording-anchoring-and-editing-plan.md) D6).
   - `loadRecording — lazy ZipSource Reader input`: fd-backed ranged Reader yields a `LoadedRecording` deep-equal to the Uint8Array path for both the modern and the legacy (migration) fixture — the pre-publish guard for the lazy chain, running against framework source via the vitest alias.
 
 Tests skip themselves when `TestDataJs/` is not on disk (CI without test corpus).

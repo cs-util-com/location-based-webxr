@@ -27,6 +27,7 @@ import {
   type LoadedRecording,
 } from './recording-loader';
 import type { RecordedAction } from 'gps-plus-slam-app-framework/storage/zip-reader';
+import { buildSessionMetadataRecord } from 'gps-plus-slam-app-framework/storage/session-metadata-record';
 
 const RECORDINGS_DIR = path.resolve(__dirname, '../../../../TestDataJs');
 const OLD_ZIP = path.join(RECORDINGS_DIR, '2026-03-05_06-47-31utc.zip');
@@ -504,5 +505,130 @@ describe('loadRecording — lazy ZipSource Reader input', () => {
     } finally {
       fs.closeSync(fd);
     }
+  });
+});
+
+/**
+ * A Tour Viewer authoring recording in the Recorder's loader.
+ *
+ * Why this test matters: the owner's troubleshooting loop is "record the
+ * authoring in the Tour Viewer, hand over the zip, replay it in the
+ * Recorder's desktop replay" (plan 2026-09-28-0953, decision D6). The Tour
+ * Viewer writes that zip with the SAME framework pieces the Recorder uses
+ * (`session.json` from the shared `buildSessionMetadataRecord`, flat
+ * `actions/NNNNNN.json`), but its content differs from anything the Recorder
+ * records: several AR entries in one stream, each closed by `endSession` +
+ * `resetGpsSessionData`, and `tourAuthoring/*` actions no Recorder slice
+ * knows. The Tour Viewer's own tests pin that it produces exactly this
+ * layout; this one pins that the loader takes it as era 5 (no migration),
+ * keeps the unknown actions, and replays it without throwing. The loader
+ * cannot be imported from the Tour Viewer's tests (no package imports
+ * another app), which is why the zip is built here to that layout.
+ */
+describe('loadRecording — a Tour Viewer authoring recording', () => {
+  const T0 = Date.UTC(2026, 8, 28, 10, 0, 0);
+
+  function gpsEvent(
+    i: number,
+    odom: [number, number, number],
+    lat: number,
+    lon: number
+  ): RecordedAction {
+    return {
+      type: 'gpsData/recordGpsEvent',
+      payload: {
+        odomPosition: odom,
+        odomRotation: [0, 0, 0, 1],
+        rawGpsPoint: {
+          id: `tv-${i}`,
+          latitude: lat,
+          longitude: lon,
+          altitude: 400,
+          latLongAccuracy: 5,
+          timestamp: T0 + i * 1000,
+        },
+      },
+    };
+  }
+
+  function visit(first: number): RecordedAction[] {
+    return [
+      {
+        type: 'recording/startSession',
+        payload: {
+          contextTag: 'tour-viewer',
+          sessionName: 'live',
+          startTime: T0 + first * 1000,
+        },
+      },
+      gpsEvent(first, [0, 0, 0], 47.5, 8.7),
+      gpsEvent(first + 1, [0, 0, -15], 47.500135, 8.7),
+      gpsEvent(first + 2, [15, 0, 0], 47.5, 8.7002),
+      { type: 'recording/endSession' },
+      { type: 'gpsData/resetGpsSessionData' },
+    ];
+  }
+
+  const ACTIONS: RecordedAction[] = [
+    { type: 'gpsData/setZeroPos', payload: { lat: 47.5, lon: 8.7 } },
+    ...visit(0),
+    {
+      type: 'tourAuthoring/finished',
+      payload: { levelId: 'lvl', manifest: { version: 1, objects: [] } },
+    },
+    ...visit(10),
+  ];
+
+  async function tourViewerZip(withSessionJson: boolean): Promise<Uint8Array> {
+    const zipWriter = new ZipWriter(new BlobWriter('application/zip'), {
+      level: 0,
+    });
+    if (withSessionJson) {
+      await zipWriter.add(
+        'session.json',
+        new TextReader(
+          JSON.stringify(
+            buildSessionMetadataRecord({
+              endTime: T0 + 60_000,
+              startTime: T0,
+              contextTag: 'tour-authoring',
+              gpsPositions: [{ latitude: 47.5, longitude: 8.7 }],
+              frameCount: 0,
+              userAgent: 'test',
+              pageUrl: undefined,
+            })
+          )
+        )
+      );
+    }
+    for (let i = 0; i < ACTIONS.length; i++) {
+      await zipWriter.add(
+        `actions/${String(i + 1).padStart(6, '0')}.json`,
+        new TextReader(JSON.stringify(ACTIONS[i]))
+      );
+    }
+    const blob = await zipWriter.close();
+    return new Uint8Array(await blob.arrayBuffer());
+  }
+
+  it('is read as era 5: no migration, every action kept in order, and it replays', async () => {
+    const loaded = await loadRecording(await tourViewerZip(true));
+
+    expect(loaded.capabilities.hasSessionMeta).toBe(true);
+    expect(loaded.meta?.['contextTag']).toBe('tour-authoring');
+    expect(loaded.capabilities.migrationApplied).toBe(false);
+    expect(loaded.actions.map((e) => e.action.type)).toEqual(
+      ACTIONS.map((a) => a.type)
+    );
+    // The recorder store has no slice for `tourAuthoring/*` and must simply
+    // ignore it; the GPS stream still builds the session's state.
+    const state = loaded.getFinalState();
+    expect(state.gpsData?.zero).toMatchObject({ lat: 47.5, lon: 8.7 });
+  });
+
+  it('without session.json the same zip is taken for era 1 and run through the migration - the reason the Tour Viewer writes one', async () => {
+    const loaded = await loadRecording(await tourViewerZip(false));
+
+    expect(loaded.capabilities.migrationApplied).toBe(true);
   });
 });

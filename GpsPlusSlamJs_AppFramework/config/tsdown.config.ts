@@ -195,6 +195,9 @@ const entryFiles = [
   // coverage-backfill). The `./storage/*` exports wildcard advertises this
   // subpath, so it must be built per-file.
   'src/storage/write-file-or-abort.ts',
+  // The `session.json` builder the Recorder and the Tour Viewer's
+  // troubleshooting recording share (deep-imported, 2026-09-28).
+  'src/storage/session-metadata-record.ts',
 
   // test-utils/ (advertised in `exports`; consumed by RecorderApp tests)
   'src/test-utils/browser-mocks.ts',

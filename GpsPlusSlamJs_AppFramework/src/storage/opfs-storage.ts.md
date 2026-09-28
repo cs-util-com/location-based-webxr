@@ -105,6 +105,7 @@ const { available, used } = await checkStorageQuota();
 4. Frame filenames follow the pattern `frame-{index}.jpg`
 5. Session folders are named `recording-YYYY-MM-DD_HH-MM-SSutc` (an underscore/dash-separated UTC stamp, NOT ISO 8601 — colons are illegal in directory names). The timestamp is whole-second resolution, so `createSession()` probes for an existing directory and appends a numeric suffix (`-2`, `-3`, …) on collision — two recordings started within the same UTC second get distinct directories instead of silently reusing and mixing one. The first session in a given second keeps the bare timestamp name.
    - The probe distinguishes error names (PR #158 review): `NotFoundError` → name free; `TypeMismatchError` (a **file** occupies the name — `{ create: true }` could not replace it either) → name taken, probe advances to the next suffix; any other error (`InvalidStateError`, …) is a storage failure and is **rethrown** so `createSession` fails loudly — treating it as "taken" would loop the suffix probe forever, treating it as "free" would crash later with a misleading create-time error.
+   - **`createSessionInDirectory(parent, timestamp)`** (2026-09-28) is the same layout, probe and handle hand-off in a parent directory the caller owns; `createSession()` is now that call on `sessions/`. It needs no `initOpfsStorage()`. The Tour Viewer's troubleshooting recording uses it for `gps-plus-slam/tour-viewer/`, because it shares the origin with the Recorder and must not land in the Recorder's `sessions/` folder ([authoring recording plan](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-09-28-0953-tour-viewer-authoring-recording-anchoring-and-editing-plan.md) review finding 16).
 6. All write operations go through the framework helper `writeFileOrAbort()` (`./write-file-or-abort.ts`), which guarantees `FileSystemWritableFileStream` cleanup: on write/close errors it aborts the stream (never closes it, which would commit a partial write), swallows an abort failure so it cannot mask the cause, and rethrows the original error. It lived here as a private `safeWriteToFile` until 2026-07-27, when three hand-rolled copies in the recorder — one already missing its abort guard — made it worth sharing.
 
 ## Error Modes
@@ -124,6 +125,6 @@ Write failures (e.g., disk full, quota exceeded) will propagate the error to the
 
 ## Tests
 
-- Unit tests: `opfs-storage.test.ts`
+- Unit tests: `opfs-storage.test.ts` (including `createSessionInDirectory`: the layout and writes land under the given parent with no `sessions/` folder created, and the same-second probe works there too)
 - All tests use `MockOPFSDirectoryHandle` from `browser-mocks.ts`
 - Resource cleanup tests verify `writable.abort()` is called on write errors (the helper itself is covered directly by `write-file-or-abort.test.ts`)
