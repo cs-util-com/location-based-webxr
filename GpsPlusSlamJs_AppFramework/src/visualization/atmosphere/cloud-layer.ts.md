@@ -18,6 +18,12 @@ pure parts; the GLSL (`atmClouds` in `atmosphere-glsl.ts`) mirrors
   literal.
 - `cloudNoiseAt(x, y, size, seed)` → [0, 1], periodic in `size`.
 - `cloudNoise(size, seed)` → 8-bit texture data (cached per size/seed).
+- `cloudNoiseSample(data, size, u, v)` → the two-octave noise at texture
+  coordinates (u, v), as the shader reads it at its finest level
+  (`atmCloudNoise` without mips): each octave bilinear between texel
+  centres, wrapped; `RangeError` for non-finite coordinates. The CPU twin
+  the column's tests and the look-dev page's probes use to predict where the
+  clouds are (round-3 stream D).
 - `combinedCloudNoise(data, size)` → the two-octave field the shader
   actually samples, per texel.
 - `cloudThresholdForCover(field, cover)` → the noise value above which
@@ -62,5 +68,6 @@ atmosphere.advanceClouds(dtSeconds); // per frame, optional
 `cloud-layer.test.ts` — periodicity, range, determinism, contrast, density
 around the threshold and monotone in it, horizon fade, cover = clouded share
 (±0.05 at 0.2 / 0.5 / 0.8), the integer octave, the lit-radiance ratio
-against the atmosphere model. Pixels: the look-dev smoke asserts cover
+against the atmosphere model; `cloudNoiseSample` at texel centres, periodic
+in whole tiles, and flat on a uniform texture. Pixels: the look-dev smoke asserts cover
 changes the upper sky.

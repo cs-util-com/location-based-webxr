@@ -28,11 +28,30 @@ fragment shaders, and the visible sky's vertex/fragment pair.
   log2(frequency) coarser), for the slab's march, where implicit
   derivatives are undefined inside the loop. It expects
   `atmTransmittanceLut`, `atmSkyViewLut` and `atmSunDirection` declared
-  before it.
+  before it. It also carries the column's chunk
+  ([`cloud-column.ts.md`](cloud-column.ts.md)) and the forward phase's
+  ([`cloud-sun.ts.md`](cloud-sun.ts.md)), the uniform `atmCloudForward`
+  (0 = off) and `atmCloudForwardRadiance(dir, r, tau)`, the glow of a cloud
+  of optical depth tau along the view (twin of `cloudForwardRadiance`,
+  with the sun's transmittance at cloud height as its illuminance), which
+  the dome and the slab add.
 - The sky fragment includes the 2D cloud layer (`atmClouds`, with twins of
   `cloudDensity`, `cloudHorizonFade` and `cloudLitRadiance` from
   `cloud-layer.ts`; every constant interpolated from `CLOUD_LAYER`; the
-  cover arrives as the uniform `atmCloudThreshold`).
+  cover arrives as the uniform `atmCloudThreshold`). With
+  `atmCloudForward > 0` the dome adds the forward glow through the column
+  along the view, faded like its cloud (horizon fade × aerial).
+- The sun through clouds (round-3 plan 2026-09-27-0532, DEC-FB3-6): the
+  disc is multiplied by `atmCloudDiscTransmittance(dir)` = e^(-k·τ·drawn),
+  τ the column along the view read at its crossing of the 2 km middle, from
+  the origin (`atmCloudAnchored` 0, the camera-centred dome) or from the
+  camera in the world (1, the sheet and the slab), with the REAL threshold
+  (`atmCloudSunThreshold`: the visible sky's is 2 in the sheet and slab
+  modes), and "drawn" the share of the cloud the sky shows there (the dome's
+  horizon fade or the sheet's and slab's far fade `atmCloudFarFadeM`, times
+  the aerial melt). An explicit-level read (`atmCloudNoiseLod(uv, 0)`): it
+  runs for disc pixels only, a branch. k = `atmCloudDiscExponent`, 0 = off
+  (exactly 1).
 - `atmHorizonClampedDir(dir)` in the common chunk: the one horizon clamp
   the visible sky (when `atmClampHorizon > 0.5`) and the haze share.
 
@@ -75,7 +94,11 @@ new THREE.ShaderMaterial({
 
 - `atmosphere-glsl.test.ts` — float literal formatting, `atm` prefixes in
   every generated shader, constants interpolated from the model, step count
-  shared with the CPU quadrature.
+  shared with the CPU quadrature; the disc's extinction (the real
+  threshold, an explicit level, the drawn weight, exactly 1 when off) and
+  the dome's glow (gated, the column along the view, faded like its cloud).
+- `sky-atmosphere.test.ts`: every uniform the sky, the bake and the slab
+  declare is supplied by the material.
 - Compilation, drawing and GPU/CPU parity: the look-dev smoke
   (`GpsPlusSlamJs_DesignSystem/3d/lookdev.smoke.spec.mjs`), the only place a
   GPU exists.

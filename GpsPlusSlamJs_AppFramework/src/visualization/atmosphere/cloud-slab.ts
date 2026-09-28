@@ -39,6 +39,21 @@ import {
   cloudSheetRingRadii,
   cloudTopRadiance,
 } from './cloud-sheet.js';
+import {
+  CLOUD_COLUMN,
+  cloudSlabCumulativeM,
+  cloudSlabThicknessM,
+  cloudSlabThresholdThicknessM,
+} from './cloud-column.js';
+import { cloudForwardPhase, cloudForwardShare } from './cloud-sun.js';
+
+// The column model lives in `cloud-column.ts` (a leaf the sky's GLSL can
+// import); re-exported here under its old names for the slab's callers.
+export {
+  cloudSlabCumulativeM,
+  cloudSlabThicknessM,
+  cloudSlabThresholdThicknessM,
+} from './cloud-column.js';
 
 export type Vec3 = readonly [number, number, number];
 
@@ -46,27 +61,17 @@ export type Vec3 = readonly [number, number, number];
 export const CLOUD_SLAB_STEPS = [8, 16, 24, 32] as const;
 export type CloudSlabSteps = (typeof CLOUD_SLAB_STEPS)[number];
 
-/** The slab's geometry, density and light, metres (the scene's unit). */
+/**
+ * The slab's geometry, density and light, metres (the scene's unit): the
+ * column's (`cloud-column.ts`: base 1800 m, top 2200 m, σ, the base ramp b,
+ * the height scale H and the sun's elevation floor) plus the march's own.
+ */
 export const CLOUD_SLAB = {
-  /** 400 m thick, centred on the sheet's 2 km: the A/B compares thickness. */
-  baseM: 1800,
-  topM: 2200,
+  ...CLOUD_COLUMN,
   /** The prism's radius: the sheet's, so the far fade ends inside it. */
   radiusM: CLOUD_SHEET.radiusM,
-  /** σ: an in-cloud visibility of 3.9/σ ≈ 195 m (stratocumulus: 100-300 m). */
-  extinctionPerM: 0.02,
-  /** b: the density ramps from 0 at the base to full over this height. */
-  baseSoftM: 50,
-  /**
-   * H: metres of column thickness per unit of noise above the threshold.
-   * 0.5·σ·H = 10 per noise unit matches the dome's density slope at the
-   * threshold (≈ 9.4), so cloud edges seen from the ground are as sharp.
-   */
-  heightScaleM: 1000,
   /** k: the sun's path through the column is shortened for multiple scattering. */
   sunDepthScale: 0.25,
-  /** The sun's elevation sine is floored here, so a low sun never divides by 0. */
-  sunMuFloor: 0.1,
   /** ≥ hypot(far fade end, top): the far fade ends the clouds, never the cap. */
   maxMarchM: 22_000,
   /** The march stops once less than this share of the view passes through. */
@@ -87,6 +92,12 @@ export const CLOUD_SLAB = {
    */
   lightSeriesX: 1e-2,
   /**
+   * The forward scattering (cloud-sun.ts) is faded out between this many
+   * times the early exit's transmittance and the exit itself (τ 3.0 to 4.6),
+   * where it is already small, so it is 0 before the depth is unknown.
+   */
+  forwardKnownFactor: 5,
+  /**
    * 8 steps: the owner saw no difference worth the cost against 16-32 on the
    * look-dev page (round-2 plan 2026-09-26-2055 M2); the other counts stay
    * for the quality reference (8 against 32 in the tests).
@@ -94,50 +105,10 @@ export const CLOUD_SLAB = {
   defaultSteps: 8 satisfies CloudSlabSteps,
 } as const;
 
-/** The noise texture's texel in metres: 24 km over 256 texels, 93.75 m. */
-const TEXEL_M = (CLOUD_LAYER.tileKm * 1000) / CLOUD_TEXTURE_SIZE;
-
-/**
- * Q(h): the integral of the density ramp p(x) = clamp(x/b, 0, 1) from 0 to
- * h, in metres of full density. x²/(2b) up to b, x - b/2 above. GLSL twin:
- * `atmSlabCumulative`.
- */
-export function cloudSlabCumulativeM(
-  h: number,
-  b: number = CLOUD_SLAB.baseSoftM
-): number {
-  if (h <= 0) return 0;
-  if (b <= 0) return h;
-  return h < b ? (h * h) / (2 * b) : h - b / 2;
-}
-
-/**
- * T0: the column thickness whose zenith optical depth is ln 2, i.e. whose
- * zenith opacity is exactly one half: Q⁻¹(ln 2 / σ). Defined for any ramp,
- * so no (σ, b) pair a sweep tries is invalid.
- */
-export function cloudSlabThresholdThicknessM(
-  sigma: number = CLOUD_SLAB.extinctionPerM,
-  b: number = CLOUD_SLAB.baseSoftM
-): number {
-  const q = Math.LN2 / sigma;
-  if (b <= 0) return q;
-  return q < b / 2 ? Math.sqrt(2 * b * q) : q + b / 2;
-}
-
 const T0 = cloudSlabThresholdThicknessM();
 
-/**
- * A column's thickness from its noise and the cover's threshold: T0 at the
- * threshold, rising with the noise, capped at the slab's top (the deck). An
- * infinite threshold (cover 0) gives no cloud. The shader clamps it after
- * interpolating (`atmSlabRawThickness` is the part before the clamp).
- */
-export function cloudSlabThicknessM(noise: number, threshold: number): number {
-  if (!Number.isFinite(threshold)) return 0;
-  const T = T0 + CLOUD_SLAB.heightScaleM * (noise - threshold);
-  return Math.min(Math.max(T, 0), CLOUD_SLAB.topM - CLOUD_SLAB.baseM);
-}
+/** The noise texture's texel in metres: 24 km over 256 texels, 93.75 m. */
+const TEXEL_M = (CLOUD_LAYER.tileKm * 1000) / CLOUD_TEXTURE_SIZE;
 
 /**
  * The opacity of a column seen straight up: exactly 0.5 at the threshold,
@@ -423,6 +394,11 @@ interface CloudSlabLight {
   readonly sunDir: Vec3;
   /** The zenith sky (LUT units), the ambient. */
   readonly zenith: Vec3;
+  /**
+   * The forward scattering's strength (cloud-sun.ts), 0 or omitted: none.
+   * The shader's `atmCloudForward`.
+   */
+  readonly forward?: number;
 }
 
 export interface CloudSlabMarchInput {
@@ -573,7 +549,41 @@ export function cloudSlabMarch(
     na = nb;
   }
   result.opacity = 1 - transmittance;
+  addForwardGlow(result, light, cosToSun, transmittance);
   return result;
+}
+
+/**
+ * The shader's forward glow after the march (round-3 DEC-FB3-6): the
+ * marched depth's τ·e^(-τ) through the phase toward the sun, weighted like
+ * the samples (alpha over the opacity), faded out before the early exit,
+ * past which the depth is unknown. Nothing at strength 0 or without cloud.
+ */
+function addForwardGlow(
+  result: CloudSlabMarchResult,
+  light: CloudSlabLight | undefined,
+  cosToSun: number,
+  transmittance: number
+): void {
+  const forward = light?.forward ?? 0;
+  if (light === undefined || !(forward > 0 && result.alpha >= 1e-4)) return;
+  const { earlyExitTransmittance, forwardKnownFactor } = CLOUD_SLAB;
+  const tau = -Math.log(Math.max(transmittance, 1e-6));
+  const weight = result.alpha / Math.max(result.opacity, 1e-6);
+  const known = smoothstep(
+    earlyExitTransmittance,
+    forwardKnownFactor * earlyExitTransmittance,
+    transmittance
+  );
+  const f =
+    weight *
+    known *
+    cloudForwardPhase(Math.min(Math.max(cosToSun, -1), 1)) *
+    cloudForwardShare(tau) *
+    forward;
+  for (let c = 0; c < 3; c++) {
+    result.colour[c]! += light.sunTransmittance[c]! * f;
+  }
 }
 
 /** The slab's vertex: only covers the pixels; the direction comes from gl_FragCoord. */
@@ -624,6 +634,7 @@ const float ATM_SLAB_FAR_END = ${glslFloat(CLOUD_SHEET.farFadeEndM)};
 const float ATM_SLAB_TEXEL = ${glslFloat(TEXEL_M)};
 const float ATM_SLAB_UNIFORM_BLEND = ${glslFloat(CLOUD_SLAB.uniformBlendM)};
 const float ATM_SLAB_LIGHT_SERIES = ${glslFloat(CLOUD_SLAB.lightSeriesX)};
+const float ATM_SLAB_FORWARD_KNOWN = ${glslFloat(CLOUD_SLAB.forwardKnownFactor)};
 
 // Twin of cloudSlabCumulativeM.
 float atmSlabCumulative(float h) {
@@ -747,6 +758,16 @@ void main() {
   // atm-slab-loop-end
   // Premultiplied: back to straight colour, with a floor against division.
   if (alpha < 1e-4) discard;
+  // The forward scattering (cloud-sun.ts) through the marched optical depth,
+  // weighted like the samples (alpha over the unweighted opacity), and faded
+  // out toward the early exit, past which the depth is unknown: a thick
+  // cloud would otherwise glow at the exit's depth.
+  if (atmCloudForward > 0.0) {
+    highp float tauView = -log(max(transmittance, 1e-6));
+    float weight = alpha / max(1.0 - transmittance, 1e-6);
+    float known = smoothstep(ATM_SLAB_EARLY_EXIT, ATM_SLAB_FORWARD_KNOWN * ATM_SLAB_EARLY_EXIT, transmittance);
+    colour += weight * known * atmCloudForwardRadiance(dir, atmObserverRadius, tauView);
+  }
   vec3 lit = colour / alpha;
   gl_FragColor = vec4(min(lit * atmRadianceToScene, vec3(ATM_MAX_SCENE_RADIANCE)), min(alpha, 1.0));
   #include <tonemapping_fragment>

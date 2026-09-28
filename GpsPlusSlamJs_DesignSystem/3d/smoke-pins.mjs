@@ -21,6 +21,8 @@ export const SMOKE_PINS = {
   cloudMode: "dome",
   ao: "0",
   varied: "0",
+  sunDisc: "0",
+  sunGlow: "0",
 };
 
 /**

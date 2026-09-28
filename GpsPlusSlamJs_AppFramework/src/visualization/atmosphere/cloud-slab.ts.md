@@ -16,23 +16,25 @@ it only in `cloudMode: 'slab'`.
 
 ## Public API
 
-- `CLOUD_SLAB`: base 1800 m, top 2200 m, radius (the sheet's 24 km),
+- `CLOUD_SLAB`: the column's constants spread in (`CLOUD_COLUMN`,
+  [`cloud-column.ts.md`](cloud-column.ts.md): base 1800 m, top 2200 m,
   extinction σ 0.02/m, base ramp b 50 m, height scale H 1000 m per noise
-  unit, the sun's path factor k 0.25 and elevation floor 0.1, `maxMarchM`
+  unit, the sun's elevation floor 0.1), plus the radius (the sheet's 24 km),
+  the sun's path factor k 0.25, `maxMarchM`
   22 km, the early-exit transmittance 0.01, the level-ray limit, the
   spacing's blend height above the top `uniformBlendM` 25 m, the in-segment
-  light's series limit `lightSeriesX` 1e-2, and `defaultSteps` 8 (the
+  light's series limit `lightSeriesX` 1e-2, `forwardKnownFactor` 5 (the
+  forward glow fades out between 5x the early exit's transmittance and the
+  exit, τ 3.0 to 4.6), and `defaultSteps` 8 (the
   owner saw no difference worth the cost against 16-32, round-2 plan
   2026-09-26-2055 M2).
 - `CLOUD_SLAB_STEPS`: the step counts the shader is built for, 8/16/24/32
   (the look-dev page offers 8 only; the others stay as the quality
   reference, 8 against 32 in the tests).
-- `cloudSlabCumulativeM(h, b?)`: Q(h), the integral of the base ramp
-  clamp(x/b, 0, 1) from 0 to h.
-- `cloudSlabThresholdThicknessM(σ?, b?)`: T0 = Q⁻¹(ln 2/σ), the column
-  thickness whose zenith opacity is one half; defined for any ramp.
-- `cloudSlabThicknessM(noise, threshold)`: T0 + H·(noise - threshold),
-  clamped to [0, 400 m]; 0 for an infinite threshold (cover 0).
+- `cloudSlabCumulativeM(h, b?)`, `cloudSlabThresholdThicknessM(σ?, b?)`,
+  `cloudSlabThicknessM(noise, threshold)`: the column model, re-exported
+  from `cloud-column.ts` (moved there in round 3 so the sky's GLSL can use
+  it without an import cycle; see its sidecar).
 - `cloudSlabZenithOpacity(noise, threshold)`: 1 - e^(-σ·Q(T)).
 - `cloudSlabInterval(y, dir)`: the analytic part of the ray inside the slab
   and the far fade, `{ inM, outM }` or null. Throws `RangeError` for a
@@ -64,7 +66,10 @@ it only in `cloudMode: 'slab'`.
   of detail from the pixel footprint or the step's horizontal skip.
 - `cloudSlabRenderOrder(y)`: -1 at or below the base, +1 inside and above.
 - `cloudSlabFarWeight(horizontalM)`: the sheet's far fade, as a weight.
-- `cloudSlabMarch(input)`: the shader's march on the CPU, returning the
+- `cloudSlabMarch(input)`: the shader's march on the CPU (its `light` may
+  carry `forward`, the glow's strength: after the march it adds
+  E·phase·τe^(-τ) of the marched depth, weighted by alpha over the opacity
+  and faded out before the early exit; round-3 DEC-FB3-6), returning the
   weighted `alpha`, the unweighted `opacity`, the premultiplied `colour`
   (with `light`) and `stepsTaken` (segments marched, at most n + 1).
 - `CLOUD_SLAB_FRAGMENT_GLSL`: the march (the vertex shader is
@@ -76,7 +81,7 @@ it only in `cloudMode: 'slab'`.
 - `setCloudSlabSteps(slab, steps)`: the step count, as a define (a new
   program); `RangeError` before any change for a count it is not built for.
 - Types: `Vec3`, `CloudSlabSteps`, `CloudSlabMarchInput` (its `light` is
-  `{ sunTransmittance, sunDir, zenith }`),
+  `{ sunTransmittance, sunDir, zenith, forward? }`),
   `CloudSlabMarchResult`.
 
 ## Invariants & assumptions
@@ -135,6 +140,12 @@ it only in `cloudMode: 'slab'`.
   (slightly).
 - **The weights go on the contribution, not on the extinction**, so the far
   fade reaches 0 for any thickness.
+- **The forward glow is added once, after the loop** (`atmCloudForward > 0`):
+  the marched depth τ = -ln T, the samples' weight alpha/(1 - T), and a fade
+  from 5x the early exit's transmittance down to the exit, past which τ is
+  unknown (an early-exited thick cloud would otherwise glow at τ 4.6). A few
+  ALU and one transmittance read per pixel: x1.05 frame time on SwiftShader
+  with the disc term (the look-dev smoke's on/off ratio).
 - **2.5D, not 3D:** a 2D noise field times a vertical profile. Flat bases,
   tops rising with the noise, a flat deck at the top at high cover (5.7 %
   of cloud columns at cover 0.5, 33 % at 0.9, measured).
@@ -175,6 +186,11 @@ m.opacity; // the column's opacity straight up
   point-sampled march at 1024 steps, pinned to it at the shipped counts)
   from above, below and inside per pose and sun; the level of detail; the
   draw order and far weight.
+- `cloud-slab.test.ts` also: the forward glow in the march (nothing when
+  off; E·phase·τe^(-τ)·weight toward the sun through a thin column, from
+  the column's own depth; far weaker away from the sun; nothing through a
+  cloud that exits early) and its GLSL after the loop (mutant checked: the
+  fade removed fails the early-exit case).
 - `cloud-slab.property.test.ts`: every point the interval allows lies in
   the slab and in the far fade, for any camera and direction; the nodes
   tile any interval for any jitter and share.

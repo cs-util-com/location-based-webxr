@@ -19,6 +19,7 @@ import {
   cloudLitRadiance,
   cloudNoise,
   cloudNoiseAt,
+  cloudNoiseSample,
   cloudThresholdForCover,
   combinedCloudNoise,
 } from './cloud-layer.js';
@@ -203,6 +204,71 @@ describe('cloudLitRadiance (TS twin of the shader lighting, M2 review finding 5)
     const sky = [0.01, 0.01, 0.02] as const;
     expect(luminance(cloudLitRadiance(sunT, 0, 1, sky))).toBeLessThan(
       luminance(cloudLitRadiance(sunT, 0, 0.2, sky))
+    );
+  });
+});
+
+describe("cloudNoiseSample (the CPU twin of the shader's finest read)", () => {
+  const size = CLOUD_TEXTURE_SIZE;
+  const data = cloudNoise(size, 1);
+  const c = CLOUD_LAYER;
+  const wrap = (i: number) => ((i % size) + size) % size;
+
+  // At a texel centre bilinear filtering returns that texel: the combined
+  // noise there is the two octaves' texels, weighted (independent of the
+  // interpolation code).
+  it('returns the texels at texel centres', () => {
+    for (const [i, j] of [
+      [0, 0],
+      [17, 200],
+      [255, 3],
+    ] as const) {
+      const u = (i + 0.5) / size;
+      const v = (j + 0.5) / size;
+      const u2 = u * c.secondOctaveFrequency + c.secondOctaveOffset;
+      const v2 = v * c.secondOctaveFrequency + c.secondOctaveOffset;
+      // The second read lands between texels; only check it is bracketed.
+      const x2 = u2 * size - 0.5;
+      const y2 = v2 * size - 0.5;
+      const around = [
+        [Math.floor(x2), Math.floor(y2)],
+        [Math.floor(x2) + 1, Math.floor(y2)],
+        [Math.floor(x2), Math.floor(y2) + 1],
+        [Math.floor(x2) + 1, Math.floor(y2) + 1],
+      ].map(([a, b]) => data[wrap(b!) * size + wrap(a!)]! / 255);
+      const first = data[j * size + i]! / 255;
+      const n = cloudNoiseSample(data, size, u, v);
+      const second =
+        (n - c.firstOctaveWeight * first) / (1 - c.firstOctaveWeight);
+      expect(second).toBeGreaterThanOrEqual(Math.min(...around) - 1e-9);
+      expect(second).toBeLessThanOrEqual(Math.max(...around) + 1e-9);
+    }
+  });
+
+  // The texture repeats (the drift offset wraps): so must the twin.
+  it('is periodic in whole tiles', () => {
+    for (const [u, v] of [
+      [0.123, 0.456],
+      [0.9, 0.01],
+    ] as const) {
+      expect(cloudNoiseSample(data, size, u + 3, v - 2)).toBeCloseTo(
+        cloudNoiseSample(data, size, u, v),
+        9
+      );
+    }
+  });
+
+  // A uniform texture reads uniform everywhere, in both octaves.
+  it('reads a uniform texture as its value', () => {
+    const flat = new Uint8Array(16).fill(51);
+    for (const u of [0, 0.3, 0.77]) {
+      expect(cloudNoiseSample(flat, 4, u, 1 - u)).toBeCloseTo(0.2, 12);
+    }
+  });
+
+  it('throws for non-finite coordinates', () => {
+    expect(() => cloudNoiseSample(data, size, Number.NaN, 0)).toThrow(
+      RangeError
     );
   });
 });

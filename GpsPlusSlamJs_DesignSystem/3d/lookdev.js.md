@@ -116,6 +116,17 @@ denoise, resolutionScale })` is the sweep's handle; `setAoExclusions(bool)`
     `farM` (1500) out, null without the dense city, and `ridgeFoot`, 2.5 km
     toward the sun); `stats().aoActive` says whether it draws; on Oculus
     Browser the AO is refused (see the sidecar) and the readout says so;
+  - `setSunThroughClouds({ disc?, glow? })`: the sun through clouds (round-3
+    plan 2026-09-27-0532, stream D, DEC-FB3-6; framework
+    [cloud-sun.ts](../../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/cloud-sun.ts.md)):
+    the disc dims behind a cloud (k = 4) and thin cloud glows around the
+    sun; both on by default here, off in the framework; the panel's two
+    Clouds switches. `setSunThroughCloudsRaw({ discExponent?, forward? })`
+    sets the framework's raw values until the next look change (the
+    sweep's handle); `sunCloud()` returns the CPU twins' view of the clouds
+    in front of the sun (`{ tau, drawn, noise }`, [sun-clouds.js](sun-clouds.js.md));
+    `stats().sunThroughClouds` the framework's values in effect. The view
+    `atsun` looks straight at the sun from the street;
   - `readFrame()` → `{ width, height, data }`, the whole drawing buffer
     after one frame (edge comparisons need every pixel);
   - `project([x, y, z])` → normalised canvas `[u, v]` of a world point
@@ -135,11 +146,11 @@ denoise, resolutionScale })` is the sweep's handle; `setAoExclusions(bool)`
     preset: both exposures and both exposure-free horizon colours. The
     fallback's only GPU oracle.
 - Invariants & assumptions:
-  - State lives in the URL hash (`#preset=…&tone=…&tier=…&cloudMode=…&shadows=0|1&city=…&pitch=42|31|20&water=C0|C1|P50|P30|D30&catalog=0|1&varied=0|1&materials=1…&finish=mixed|shiny|matte&ao=0|1`; defaults since the owner's round 2, plan
+  - State lives in the URL hash (`#preset=…&tone=…&tier=…&cloudMode=…&shadows=0|1&city=…&pitch=42|31|20&water=C0|C1|P50|P30|D30&catalog=0|1&varied=0|1&materials=1…&finish=mixed|shiny|matte&ao=0|1&sunDisc=0|1&sunGlow=0|1`; defaults since the owner's round 2, plan
     2026-09-26-2055 M2: the densest city, `city=100000&pitch=20`, about
     42,000 buildings, and `water=P50`; since round 3, plan 2026-09-27-0532
     DEC-FB3-5: `shadows=1`, `catalog=1` and `cloudMode=slab`; DEC-FB3-3:
-    `varied=1&materials=12&finish=mixed`), so a
+    `varied=1&materials=12&finish=mixed`; stream D: `sunDisc=1&sunGlow=1`), so a
     screenshot or phone link reproduces a view; a hash change on an open
     page re-applies it (the page's own writes use `replaceState`, which
     fires no `hashchange`). A key the hash does NOT name keeps its CURRENT
@@ -225,6 +236,8 @@ denoise, resolutionScale })` is the sweep's handle; `setAoExclusions(bool)`
 - Tests: `lookdev.smoke.spec.mjs`, `preset-glide.smoke.spec.mjs` (the
   preset glide, and its on-demand cost and stepping sweep), `lookdev-tidy.smoke.spec.mjs` (the
   round-3 labels, ramp row, varied city and its logged cost) and
-  `ambient-occlusion.smoke.spec.mjs` (the AO switch and its checks; stage
+  `ambient-occlusion.smoke.spec.mjs` (the AO switch and its checks),
+  `sun-clouds.smoke.spec.mjs` (the sun through clouds against the
+  no-effect baseline, its switches and cost; stage
   `test:e2e`), and `shoot-3d.mjs`. The readout's stats line names the
   city's material count and finish next to the draws.

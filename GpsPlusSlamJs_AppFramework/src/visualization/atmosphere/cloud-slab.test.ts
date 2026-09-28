@@ -57,6 +57,8 @@ import {
   CLOUD_TOP_LIT_GLSL,
   cloudTopRadiance,
 } from './cloud-sheet.js';
+import { cloudColumnOpticalDepth } from './cloud-column.js';
+import { cloudForwardPhase } from './cloud-sun.js';
 import { mulberry32 } from '../../test-utils/elevation-offset-scenarios.js';
 
 const S = CLOUD_SLAB;
@@ -1422,5 +1424,80 @@ describe('the march from above, below and inside (plan 2026-09-26-0549 M1)', () 
         }
       }
     }
+  });
+});
+
+describe('the forward scattering in the march (round-3 plan 2026-09-27-0532, DEC-FB3-6)', () => {
+  const theta = 0.6;
+  const sunDir = dirAt(50, 90);
+  const sunT: Vec3 = [0.9, 0.88, 0.8];
+  const zenith: Vec3 = [0.01, 0.015, 0.03];
+  const march = (noise: number, forward: number | undefined, dir: Vec3) =>
+    cloudSlabMarch({
+      camera: [0, 18, 0],
+      dir,
+      steps: 8,
+      sample: () => noise,
+      threshold: theta,
+      light: { sunTransmittance: sunT, sunDir, zenith, forward },
+    });
+
+  // WHY: off (0 or omitted) must be exactly today's march, or every
+  // measurement taken before the glow existed changes under it.
+  it('adds nothing when off', () => {
+    const off = march(theta, undefined, sunDir);
+    expect(march(theta, 0, sunDir).colour).toEqual(off.colour);
+  });
+
+  // WHY: looking at the sun through a thin column, the glow is the model's
+  // E·phase·τe^(-τ), weighted like the samples (alpha over the opacity),
+  // computed here from the column's own optical depth, not from the march.
+  it('adds E·phase·τe^(-τ) toward the sun through thin cloud', () => {
+    const off = march(theta, 0, sunDir);
+    const on = march(theta, 1, sunDir);
+    const tau = cloudColumnOpticalDepth(theta, theta, 18, sunDir[1]);
+    const weight = on.alpha / on.opacity;
+    for (let c = 0; c < 3; c++) {
+      expect(on.colour[c]! - off.colour[c]!).toBeCloseTo(
+        sunT[c]! * cloudForwardPhase(1) * tau * Math.exp(-tau) * weight,
+        6
+      );
+    }
+    // Away from the sun the glow is far weaker (the forward phase).
+    const away = dirAt(50, 270);
+    const gainAway =
+      march(theta, 1, away).colour[0] - march(theta, 0, away).colour[0];
+    expect(gainAway).toBeLessThan((on.colour[0] - off.colour[0]) / 50);
+  });
+
+  // WHY: past the early exit the depth is unknown; the glow is faded out
+  // before it, so a thick cloud never glows at the exit's depth.
+  it('adds nothing through a cloud thick enough to exit early', () => {
+    const thick = theta + 1;
+    const off = march(thick, 0, sunDir);
+    expect(off.opacity).toBeGreaterThan(1 - CLOUD_SLAB.earlyExitTransmittance);
+    expect(march(thick, 1, sunDir).colour).toEqual(off.colour);
+  });
+});
+
+describe('CLOUD_SLAB_FRAGMENT_GLSL forward scattering', () => {
+  // WHY: the CPU twin above is only the shader's stand-in if the shader
+  // does the same after its loop: the marched depth, the sample weight and
+  // the fade before the early exit, gated by the shared strength uniform.
+  it('adds the glow after the loop, weighted and faded like the twin', () => {
+    const g = CLOUD_SLAB_FRAGMENT_GLSL;
+    const after = g.slice(g.indexOf('// atm-slab-loop-end'));
+    expect(after).toContain('if (atmCloudForward > 0.0)');
+    expect(after).toContain('-log(max(transmittance, 1e-6))');
+    expect(after).toContain('alpha / max(1.0 - transmittance, 1e-6)');
+    expect(after).toContain(
+      'smoothstep(ATM_SLAB_EARLY_EXIT, ATM_SLAB_FORWARD_KNOWN * ATM_SLAB_EARLY_EXIT, transmittance)'
+    );
+    expect(after.indexOf('atmCloudForwardRadiance(')).toBeLessThan(
+      after.indexOf('vec3 lit = colour / alpha;')
+    );
+    expect(g).toContain(
+      `ATM_SLAB_FORWARD_KNOWN = ${glslFloat(CLOUD_SLAB.forwardKnownFactor)}`
+    );
   });
 });

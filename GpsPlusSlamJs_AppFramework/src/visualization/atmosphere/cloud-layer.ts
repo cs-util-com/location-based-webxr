@@ -172,6 +172,51 @@ export function combinedCloudNoise(
   return field;
 }
 
+/** The 8-bit texture `data` (size²) bilinearly at (u, v) tiles, wrapped, in [0, 1]. */
+function bilinear(data: Uint8Array, size: number, u: number, v: number) {
+  const x = u * size - 0.5;
+  const y = v * size - 0.5;
+  const x0 = Math.floor(x);
+  const y0 = Math.floor(y);
+  const fx = x - x0;
+  const fy = y - y0;
+  const wrap = (i: number) => ((i % size) + size) % size;
+  const at = (i: number, j: number) => data[wrap(j) * size + wrap(i)]! / 255;
+  const a = at(x0, y0) + (at(x0 + 1, y0) - at(x0, y0)) * fx;
+  const b = at(x0, y0 + 1) + (at(x0 + 1, y0 + 1) - at(x0, y0 + 1)) * fx;
+  return a + (b - a) * fy;
+}
+
+/**
+ * The two-octave noise at texture coordinates (u, v) (tiles), as the shader
+ * reads it at its finest level (`atmCloudNoise` without mips): each octave
+ * bilinear between texel centres, wrapped. The CPU twin tests and the
+ * look-dev page's probes use it to predict where the clouds are.
+ *
+ * @throws RangeError for non-finite coordinates.
+ */
+export function cloudNoiseSample(
+  data: Uint8Array,
+  size: number,
+  u: number,
+  v: number
+): number {
+  if (!(Number.isFinite(u) && Number.isFinite(v))) {
+    throw new RangeError(`noise coordinates must be finite, got ${u}, ${v}`);
+  }
+  const c = CLOUD_LAYER;
+  return (
+    c.firstOctaveWeight * bilinear(data, size, u, v) +
+    (1 - c.firstOctaveWeight) *
+      bilinear(
+        data,
+        size,
+        u * c.secondOctaveFrequency + c.secondOctaveOffset,
+        v * c.secondOctaveFrequency + c.secondOctaveOffset
+      )
+  );
+}
+
 /**
  * The noise threshold at which `cover` of the sky is cloud: the (1 − cover)
  * quantile of the combined noise. Infinity at cover 0 (a clear sky).

@@ -797,3 +797,121 @@ describe('SkyAtmosphere cloud slab (plan 2026-09-24-1010 §11-§12)', () => {
     expect(freed).toBe(2);
   });
 });
+
+describe('SkyAtmosphere sun through clouds (round-3 plan 2026-09-27-0532, DEC-FB3-6)', () => {
+  const uniformsOf = (m: THREE.Material | THREE.Material[]) =>
+    (m as THREE.ShaderMaterial).uniforms;
+
+  // WHY: the disc and the glow change every app's sky; they must be OFF
+  // until an app asks (the look-dev page does), so OsmDemo's sky is unchanged.
+  it('is off by default', () => {
+    const { atmosphere } = setup();
+    expect(atmosphere.sunThroughClouds).toEqual({
+      discExponent: 0,
+      forward: 0,
+    });
+    const sky = uniformsOf(atmosphere.sky.material);
+    expect(sky.atmCloudDiscExponent!.value).toBe(0);
+    expect(sky.atmCloudForward!.value).toBe(0);
+  });
+
+  // WHY: one update must reach the sky, the bake and the slab (shared
+  // uniform objects), and a field not given keeps its value.
+  it('reaches the sky, the bake and the slab, field by field', () => {
+    const { atmosphere, device, scene } = setup();
+    atmosphere.configure({ sunDirection: UP, cloudMode: 'slab' });
+    atmosphere.configure({ sunThroughClouds: { discExponent: 4 } });
+    atmosphere.configure({ sunThroughClouds: { forward: 1 } });
+    expect(atmosphere.sunThroughClouds).toEqual({
+      discExponent: 4,
+      forward: 1,
+    });
+    const sky = uniformsOf(atmosphere.sky.material);
+    const bake = uniformsOf(
+      (device.bakedScene!.children[0] as THREE.Mesh).material
+    );
+    const slab = uniformsOf(
+      (scene.getObjectByName('atmosphere-cloud-slab') as THREE.Mesh).material
+    );
+    for (const u of [bake, slab]) {
+      expect(u.atmCloudForward).toBe(sky.atmCloudForward);
+      expect(u.atmCloudDiscExponent).toBe(sky.atmCloudDiscExponent);
+    }
+    expect(sky.atmCloudDiscExponent!.value).toBe(4);
+  });
+
+  // WHY: in the slab (and sheet) mode the visible sky draws no clouds (its
+  // threshold is 2), but the disc behind the slab must still see them: the
+  // disc reads the REAL threshold, and the world-anchored column.
+  it('lets the disc see the real clouds and their anchor in every mode', () => {
+    const { atmosphere } = setup();
+    atmosphere.configure({ sunDirection: UP, cloudCover: 0.5 });
+    const sky = uniformsOf(atmosphere.sky.material);
+    const real = sky.atmCloudThreshold!.value as number;
+    expect(sky.atmCloudAnchored!.value).toBe(0);
+    for (const mode of ['slab', 'sheet'] as const) {
+      atmosphere.configure({ cloudMode: mode });
+      expect(sky.atmCloudThreshold!.value).toBe(2);
+      expect(sky.atmCloudSunThreshold!.value).toBe(real);
+      expect(sky.atmCloudAnchored!.value).toBe(1);
+    }
+    atmosphere.configure({ cloudMode: 'dome' });
+    expect(sky.atmCloudAnchored!.value).toBe(0);
+  });
+
+  // WHY: the bake carries the dome's clouds with their glow, so a new
+  // forward strength re-bakes; the disc is not in the bake, so a new
+  // exponent is free.
+  it('re-bakes for a new forward strength only', () => {
+    const { atmosphere, device } = setup();
+    atmosphere.setSun(UP);
+    const bakes = device.bakes;
+    atmosphere.configure({ sunThroughClouds: { discExponent: 4 } });
+    expect(device.bakes).toBe(bakes);
+    atmosphere.configure({ sunThroughClouds: { forward: 1 } });
+    expect(device.bakes).toBe(bakes + 1);
+    atmosphere.configure({ sunThroughClouds: { forward: 1 } });
+    expect(device.bakes).toBe(bakes + 1);
+  });
+
+  it.each([-1, Number.NaN, Number.POSITIVE_INFINITY])(
+    'rejects %s before changing anything',
+    (bad) => {
+      const { atmosphere } = setup();
+      atmosphere.setSun(UP);
+      expect(() =>
+        atmosphere.configure({
+          cloudCover: 0.5,
+          sunThroughClouds: { discExponent: 4, forward: bad },
+        })
+      ).toThrow(RangeError);
+      expect(atmosphere.sunThroughClouds.discExponent).toBe(0);
+      expect(uniformsOf(atmosphere.sky.material).atmCloudCover!.value).toBe(0);
+    }
+  );
+
+  // WHY: a uniform the shader declares but the material does not supply
+  // reads 0 or an unbound texture, silently: the disc would never dim.
+  it('supplies every uniform the sky, the bake and the slab declare', () => {
+    const { atmosphere, device, scene } = setup();
+    atmosphere.configure({ sunDirection: UP, cloudMode: 'slab' });
+    const slab = scene.getObjectByName('atmosphere-cloud-slab') as THREE.Mesh;
+    const bakeMesh = device.bakedScene!.children[0] as THREE.Mesh;
+    for (const material of [
+      atmosphere.sky.material,
+      bakeMesh.material,
+      slab.material,
+    ] as THREE.ShaderMaterial[]) {
+      const declared = [
+        ...material.fragmentShader.matchAll(/^\s*uniform\s+\w+\s+(\w+)\s*;/gm),
+      ].map((m) => m[1]!);
+      expect(declared.length).toBeGreaterThan(0);
+      for (const name of declared) {
+        expect(
+          material.uniforms[name],
+          `${material.name}: ${name}`
+        ).toBeDefined();
+      }
+    }
+  });
+});

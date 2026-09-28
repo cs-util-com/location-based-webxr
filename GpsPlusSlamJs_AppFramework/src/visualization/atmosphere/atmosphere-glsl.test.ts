@@ -116,3 +116,54 @@ describe('the visible sky stays finite in a half-float target (M4)', () => {
     );
   });
 });
+
+describe('the sun through clouds in the sky (round-3 plan 2026-09-27-0532, DEC-FB3-6)', () => {
+  const fnBody = (source: string, signature: string) => {
+    const start = source.indexOf(signature);
+    expect(start).toBeGreaterThan(0);
+    let depth = 0;
+    for (let i = source.indexOf('{', start); i < source.length; i++) {
+      if (source[i] === '{') depth++;
+      if (source[i] === '}' && --depth === 0) return source.slice(start, i + 1);
+    }
+    throw new Error(`unterminated ${signature}`);
+  };
+
+  // WHY: the disc is the one term the extinction must reach; a disc added
+  // without the factor keeps blazing behind every cloud (the owner's report).
+  it('dims the disc by the clouds along the view', () => {
+    expect(SKY_FRAGMENT_GLSL).toMatch(
+      /atmSampleTransmittance\(atmTransmittanceLut, r, dir\.y\)\s*\*\s*atmCloudDiscTransmittance\(dir\);/
+    );
+  });
+
+  // WHY: in the slab and sheet modes the visible sky's threshold is 2 (it
+  // draws no clouds); the disc must read the REAL threshold, with an
+  // explicit level (it runs for disc pixels only: a branch), weighted by how
+  // much cloud is drawn there, and be exactly 1 when off.
+  it('reads the real threshold, explicitly, and only the drawn cloud', () => {
+    const body = fnBody(SKY_FRAGMENT_GLSL, 'float atmCloudDiscTransmittance(');
+    expect(body).toContain(
+      'if (atmCloudDiscExponent <= 0.0 || atmCloudSunThreshold >= 2.0 || dir.y <= 0.0) return 1.0;'
+    );
+    expect(body).toContain('atmCloudNoiseLod(');
+    expect(body).not.toContain('atmCloudNoise(');
+    expect(body).not.toContain('atmCloudThreshold,');
+    expect(body).toContain('atmCloudHorizonFade(dir.y)');
+    expect(body).toContain('atmCloudFarFadeM');
+    expect(body).toContain('exp(-atmCloudDiscExponent * tau * drawn');
+  });
+
+  // WHY: the dome's glow must come from the same column along the view,
+  // faded like the cloud it belongs to, and be gated by its strength.
+  it('adds the forward glow to the dome, faded like its cloud', () => {
+    const body = fnBody(SKY_FRAGMENT_GLSL, 'vec3 atmClouds(');
+    expect(body).toContain('if (atmCloudForward > 0.0)');
+    expect(body).toContain(
+      'atmColumnOpticalDepth(noise, atmCloudThreshold, 0.0, dir.y)'
+    );
+    expect(body).toContain(
+      'atmCloudForwardRadiance(dir, r, tau) * fade * aerial'
+    );
+  });
+});

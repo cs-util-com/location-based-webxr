@@ -53,6 +53,7 @@ import {
 } from './cloud-layer.js';
 import {
   CLOUD_MODES,
+  CLOUD_SHEET,
   createCloudSheet,
   type CloudMode,
 } from './cloud-sheet.js';
@@ -83,6 +84,25 @@ export interface DirectionLike {
   readonly x: number;
   readonly y: number;
   readonly z: number;
+}
+
+/**
+ * The sun through clouds (`cloud-sun.ts`, round-3 DEC-FB3-6). Both off by
+ * default, so no app's sky changes unasked; the look-dev page turns them on.
+ */
+export interface SunThroughClouds {
+  /**
+   * The disc's extinction exponent k: the disc behind a cloud keeps T^k of
+   * itself, T the column's transmittance along the view. 0 = off (the disc
+   * dims only as much as the sky behind the cloud); the page uses 4.
+   */
+  readonly discExponent: number;
+  /**
+   * The forward scattering's strength (the aureole around the sun and the
+   * silver lining of thin, backlit edges), on the dome's clouds and the
+   * slab's. 0 = off, 1 = the model.
+   */
+  readonly forward: number;
 }
 
 /** Thrown when the device cannot render float targets; keep the fallback sky. */
@@ -200,14 +220,31 @@ export class SkyAtmosphere {
   private sun: THREE.Vector3 | undefined;
   private environment: { texture: THREE.Texture; dispose(): void } | undefined;
   private horizon: Rgb = [0, 0, 0];
-  /** The cloud layer's uniforms, shared by the sky and the bake. */
+  /** The noise threshold for the cover; 2 (above any noise) = clear. */
+  private readonly threshold = { value: 2 };
+  /** The cloud layer's uniforms, shared by the sky, the bake and the meshes. */
   private readonly clouds = {
     atmCloudTexture: { value: createCloudTexture() as THREE.Texture },
     atmCloudCover: { value: 0 },
-    /** The noise threshold for the cover; 2 (above any noise) = clear. */
-    atmCloudThreshold: { value: 2 },
+    atmCloudThreshold: this.threshold,
     atmCloudOffset: { value: new THREE.Vector2() },
+    /** The disc's view of the clouds: the real threshold in every mode. */
+    atmCloudSunThreshold: this.threshold,
+    atmCloudFarFadeM: {
+      value: new THREE.Vector2(
+        CLOUD_SHEET.farFadeStartM,
+        CLOUD_SHEET.farFadeEndM
+      ),
+    },
+    atmCloudDiscExponent: { value: 0 },
+    atmCloudForward: { value: 0 },
   };
+  /**
+   * Where the VISIBLE sky's disc reads the clouds: camera-centred at the
+   * origin (0, the dome) or in the world (1, the sheet and the slab). The
+   * bake has no disc and keeps 0.
+   */
+  private readonly cloudAnchored = { value: 0 };
   /**
    * The VISIBLE sky's cloud threshold: the real one in dome mode, 2 (clear)
    * in sheet and slab mode, where the sheet or the slab draws the clouds. The bake keeps the real
@@ -272,7 +309,8 @@ export class SkyAtmosphere {
         1,
         this.uniforms.atmRadianceToScene,
         1,
-        this.visibleCloudThreshold
+        this.visibleCloudThreshold,
+        this.cloudAnchored
       )
     );
     this.sky.name = 'atmosphere-sky';
@@ -289,7 +327,8 @@ export class SkyAtmosphere {
       0,
       this.bakeScale,
       0,
-      this.clouds.atmCloudThreshold
+      this.clouds.atmCloudThreshold,
+      { value: 0 }
     );
     const bakeMesh = new THREE.Mesh(geometry, this.bakeMaterial);
     bakeMesh.frustumCulled = false;
@@ -305,7 +344,8 @@ export class SkyAtmosphere {
     sunDisc: number,
     scale: THREE.IUniform<number>,
     clampHorizon: number,
-    threshold: THREE.IUniform<number>
+    threshold: THREE.IUniform<number>,
+    anchored: THREE.IUniform<number>
   ): THREE.ShaderMaterial {
     return new THREE.ShaderMaterial({
       name,
@@ -317,6 +357,7 @@ export class SkyAtmosphere {
         ...this.uniforms,
         ...this.clouds,
         atmCloudThreshold: threshold,
+        atmCloudAnchored: anchored,
         atmSunDiscEnabled: { value: sunDisc },
         atmClampHorizon: { value: clampHorizon },
         atmRadianceToScene: scale,
@@ -349,6 +390,28 @@ export class SkyAtmosphere {
    */
   get skyReadbackFailed(): boolean {
     return this.readbackFailed;
+  }
+
+  /**
+   * The cloud layer's uniforms (for the cloud shadow patch): the noise
+   * texture, the REAL threshold in every mode (2 when clear) and the drift
+   * offset. The objects themselves: the offset moves in place as the clouds
+   * drift.
+   */
+  get cloudUniforms(): {
+    readonly atmCloudTexture: THREE.IUniform<THREE.Texture>;
+    readonly atmCloudThreshold: THREE.IUniform<number>;
+    readonly atmCloudOffset: THREE.IUniform<THREE.Vector2>;
+  } {
+    return this.clouds;
+  }
+
+  /** The sun through clouds in effect (`configure({ sunThroughClouds })`). */
+  get sunThroughClouds(): SunThroughClouds {
+    return {
+      discExponent: this.clouds.atmCloudDiscExponent.value,
+      forward: this.clouds.atmCloudForward.value,
+    };
   }
 
   /** The shared uniforms (for the haze patch). */
@@ -413,15 +476,18 @@ export class SkyAtmosphere {
     cloudMode?: CloudMode;
     /** The slab's march steps, one of `CLOUD_SLAB_STEPS` (the cost knob). */
     cloudSlabSteps?: (typeof CLOUD_SLAB_STEPS)[number];
+    /** The sun through clouds; the fields not given keep their value. */
+    sunThroughClouds?: Partial<SunThroughClouds>;
   }): void {
     // Validate everything before changing anything.
+    const sunFx = this.changedSunThroughClouds(change.sunThroughClouds);
     const steps = this.changedSlabSteps(change.cloudSlabSteps);
     const mode = this.changedMode(change.cloudMode);
     const mie = this.changedMie(change.visibilityKm);
     const sun = this.movedSun(change.sunDirection);
     const cover = this.changedCover(change.cloudCover);
     const firstSun = this.sun === undefined && sun !== undefined;
-    if (cover !== undefined) this.applyCover(cover);
+    const cloudsRebake = this.applyCloudLook(cover, sunFx);
     this.applySlabSteps(steps);
     this.applyMode(mode);
     if (mie !== undefined) {
@@ -436,9 +502,65 @@ export class SkyAtmosphere {
     }
     if (this.sun === undefined) return;
     const skyChanged = mie !== undefined || sun !== undefined;
-    // The LUTs do not depend on clouds: a cover-only change just re-bakes.
+    // The LUTs do not depend on clouds: a cover-only change just re-bakes,
+    // as does a new forward strength (the bake's clouds carry the glow).
     if (skyChanged) this.rebuild(mie !== undefined || firstSun);
-    else if (cover !== undefined) this.rebake();
+    else if (cloudsRebake) this.rebake();
+  }
+
+  /**
+   * Applies a validated cover and sun-through-clouds change (undefined:
+   * none); returns whether the bake must follow (a new cover or forward
+   * strength: the bake's dome clouds carry both).
+   */
+  private applyCloudLook(
+    cover: number | undefined,
+    sunFx: SunThroughClouds | undefined
+  ): boolean {
+    if (cover !== undefined) this.applyCover(cover);
+    return this.applySunThroughClouds(sunFx) || cover !== undefined;
+  }
+
+  /**
+   * Applies a validated change (undefined: none); returns whether the
+   * forward strength changed.
+   */
+  private applySunThroughClouds(next: SunThroughClouds | undefined): boolean {
+    if (next === undefined) return false;
+    const forwardChanged = next.forward !== this.clouds.atmCloudForward.value;
+    this.clouds.atmCloudDiscExponent.value = next.discExponent;
+    this.clouds.atmCloudForward.value = next.forward;
+    return forwardChanged;
+  }
+
+  /**
+   * The sun through clouds after the change (fields not given keep their
+   * value), or undefined if unchanged. Validates.
+   */
+  private changedSunThroughClouds(
+    change: Partial<SunThroughClouds> | undefined
+  ): SunThroughClouds | undefined {
+    if (change === undefined) return undefined;
+    const current = this.sunThroughClouds;
+    const next = { ...current, ...change };
+    for (const [name, value] of Object.entries(next)) {
+      if (!(
+        typeof value === 'number' &&
+        Number.isFinite(value) &&
+        value >= 0
+      )) {
+        throw new RangeError(
+          `sunThroughClouds.${name} must be a finite number ≥ 0, got ${String(value)}`
+        );
+      }
+    }
+    if (
+      next.discExponent === current.discExponent &&
+      next.forward === current.forward
+    ) {
+      return undefined;
+    }
+    return next;
   }
 
   /** The new cover, or undefined if unchanged. Validates. */
@@ -501,6 +623,7 @@ export class SkyAtmosphere {
   private applyMode(mode: CloudMode | undefined): void {
     if (mode === undefined) return;
     this.mode = mode;
+    this.cloudAnchored.value = mode === 'dome' ? 0 : 1;
     this.removeCloudMesh();
     // Spread, not cloned: the mesh reads the SAME uniform objects as the
     // sky (LUTs, sun, scale, cloud cover, offset and the real threshold).

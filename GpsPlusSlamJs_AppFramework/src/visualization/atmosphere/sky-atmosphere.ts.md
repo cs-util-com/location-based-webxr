@@ -18,7 +18,7 @@ observerAltitudeKm = 0.2, sunIntensity = 1 })` — adds `sky` to the scene.
   First call renders all three LUTs; later calls only the sky view; an
   unchanged sun does nothing.
 - `setVisibilityKm(km)` — rebuilds every LUT.
-- `configure({ sunDirection?, visibilityKm?, cloudCover?, cloudMode?, cloudSlabSteps? })` — all at once,
+- `configure({ sunDirection?, visibilityKm?, cloudCover?, cloudMode?, cloudSlabSteps?, sunThroughClouds? })` — all at once,
   ONE rebuild or re-bake (a preset change); validates everything before
   changing anything. `setSun`, `setVisibilityKm` and `setClouds` delegate
   to it.
@@ -47,6 +47,23 @@ observerAltitudeKm = 0.2, sunIntensity = 1 })` — adds `sky` to the scene.
   - `configure({ cloudSlabSteps })` (8/16/24/32, default 16) is the slab's
     cost knob. It is validated first, kept across modes, applied to a live
     slab as a new program and to a later slab at creation. No re-bake.
+- `configure({ sunThroughClouds: { discExponent?, forward? } })` and the
+  getter `sunThroughClouds` (round-3 plan 2026-09-27-0532, DEC-FB3-6,
+  [`cloud-sun.ts.md`](cloud-sun.ts.md)): the disc behind a cloud keeps
+  T^k of itself (`discExponent` k), and thin cloud glows forward around the
+  sun on the dome and the slab (`forward`, the strength). Both 0 (OFF) by
+  default, so no app's sky changes unasked; the look-dev page uses 4 and 1.
+  A field not given keeps its value; each must be finite and ≥ 0
+  (`RangeError` before any change). A new `forward` re-bakes (the bake's
+  dome clouds carry the glow); a new exponent does not (the bake has no
+  disc). The uniforms are shared with the bake, the sheet and the slab.
+  The disc reads the REAL threshold in every mode (`atmCloudSunThreshold`,
+  the same object as the bake's) and the visible sky's own
+  `atmCloudAnchored` (0 in dome mode, 1 in sheet and slab mode; the bake
+  keeps 0).
+- `cloudUniforms` (getter): the noise texture, the real threshold and the
+  drift offset, as the uniform objects themselves, for the cloud shadow
+  patch (`cloud-shadow.ts`).
 - `advanceClouds(seconds, windKmPerSecond = 0.012)` — drift; no GPU work;
   both arguments validated (finite, seconds ≥ 0).
 - `applySunLight(light)` — colour (chroma) and intensity

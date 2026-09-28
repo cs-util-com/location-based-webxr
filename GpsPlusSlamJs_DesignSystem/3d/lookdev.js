@@ -30,6 +30,8 @@ import { LOOK_PRESETS } from "/fw/visualization/atmosphere/look-presets.js";
 import { AtmosphereHaze } from "/fw/visualization/atmosphere/atmosphere-haze.js";
 import { fallbackSky } from "/fw/visualization/atmosphere/atmosphere-fallback.js";
 import { SkyAtmosphere } from "/fw/visualization/atmosphere/sky-atmosphere.js";
+import { CLOUD_SUN } from "/fw/visualization/atmosphere/cloud-sun.js";
+import { createSunCloudProbe } from "./sun-clouds.js";
 import { WaterSurface } from "/fw/visualization/atmosphere/water-surface-material.js";
 import { WATER_CANDIDATES } from "./water-candidates.js";
 import { CATALOG } from "./catalog/index.js";
@@ -201,6 +203,12 @@ const state = {
   varied: true,
   materials: DEFAULT_CITY_MATERIALS,
   finish: "mixed",
+  // The sun through clouds (round-3 plan 2026-09-27-0532, stream D,
+  // DEC-FB3-6): the disc dims behind a cloud far faster than the sky, and
+  // thin cloud glows around the sun. On by default here, for the owner to
+  // judge; the framework's default is off. The smoke boot pins them off.
+  sunDisc: true,
+  sunGlow: true,
 };
 
 /** The catalog entries a city building may wear (city-materials.js). */
@@ -257,6 +265,7 @@ const CLOUD_MODES = ["dome", "sheet", "slab"];
 const VIEWS = [
   "city",
   "sun",
+  "atsun",
   "antisun",
   "lake",
   "aloft",
@@ -266,6 +275,8 @@ const VIEWS = [
 ];
 /** Drift on unless a test pins the offset (pixel tests need a fixed sky). */
 let cloudDrift = true;
+/** The CPU twins of the clouds in front of the sun (test surface). */
+const sunCloudProbe = createSunCloudProbe();
 
 function readHash() {
   const params = new URLSearchParams(location.hash.slice(1));
@@ -283,6 +294,8 @@ function readHash() {
   if (params.has("shadows")) state.shadows = params.get("shadows") === "1";
   if (params.has("catalog")) state.catalog = params.get("catalog") === "1";
   if (params.has("ao")) state.ao = params.get("ao") === "1";
+  if (params.has("sunDisc")) state.sunDisc = params.get("sunDisc") === "1";
+  if (params.has("sunGlow")) state.sunGlow = params.get("sunGlow") === "1";
   if (WATER_IDS.includes(params.get("water"))) {
     state.water = params.get("water");
   }
@@ -321,6 +334,8 @@ function writeHash() {
     varied: state.varied ? "1" : "0",
     materials: String(state.materials),
     finish: state.finish,
+    sunDisc: state.sunDisc ? "1" : "0",
+    sunGlow: state.sunGlow ? "1" : "0",
   });
   history.replaceState(null, "", `#${params}`);
 }
@@ -475,6 +490,10 @@ function useAtmosphere() {
     visibilityKm: state.visibility,
     cloudCover: state.clouds,
     cloudMode: state.cloudMode,
+    sunThroughClouds: {
+      discExponent: state.sunDisc ? CLOUD_SUN.pageDiscExponent : 0,
+      forward: state.sunGlow ? 1 : 0,
+    },
   });
   lutMs = performance.now() - start;
   haze.sync(atmosphere);
@@ -814,6 +833,16 @@ function placeCamera(view) {
       camera.position.y + 12,
       camera.position.z + (toward.z / flat) * 100,
     );
+  } else if (view === "atsun") {
+    // Straight at the sun from the street (round-3 stream D): the disc, its
+    // glow and the clouds in front of it, at any elevation.
+    const toward = sunVector();
+    camera.position.set(-20, 18, 60);
+    controls.target.set(
+      camera.position.x + toward.x * 100,
+      camera.position.y + toward.y * 100,
+      camera.position.z + toward.z * 100,
+    );
   } else if (view === "aloft") {
     // Just above the cloud sheet, looking slightly down at the deck. Not AT
     // its altitude: there it is edge-on and invisible (M1 review, finding 3).
@@ -881,6 +910,8 @@ function syncControls() {
   $("#water-set").value = state.water;
   $("#catalog").checked = state.catalog;
   $("#ao").checked = state.ao;
+  $("#sun-disc").checked = state.sunDisc;
+  $("#sun-glow").checked = state.sunGlow;
   // The switch works on either tier; on the phone tier it says it draws on
   // the desktop tier only and offers the switch (the owner looked for it).
   $("[data-ao-tier]").hidden = state.tier === "desktop";
@@ -941,6 +972,12 @@ function buildControls() {
   );
   $("#tier").addEventListener("change", (e) => api.setTier(e.target.value));
   $("#ao").addEventListener("change", (e) => api.setAo(e.target.checked));
+  $("#sun-disc").addEventListener("change", (e) =>
+    api.setSunThroughClouds({ disc: e.target.checked }),
+  );
+  $("#sun-glow").addEventListener("change", (e) =>
+    api.setSunThroughClouds({ glow: e.target.checked }),
+  );
   $("#ao-desktop").addEventListener("click", () => api.setTier("desktop"));
   $("#cloud-mode").addEventListener("change", (e) =>
     api.setCloudMode(e.target.value),
@@ -1626,6 +1663,33 @@ Object.assign(api, {
     labelOpacities([], next); // throws RangeError for a bad rule
     Object.assign(labelRule, next);
   },
+  /**
+   * The sun through clouds (DEC-FB3-6): `disc` (the disc dims behind a
+   * cloud) and `glow` (thin cloud glows around the sun); a key not given
+   * keeps its value.
+   */
+  setSunThroughClouds({ disc = state.sunDisc, glow = state.sunGlow } = {}) {
+    state.sunDisc = Boolean(disc);
+    state.sunGlow = Boolean(glow);
+    applyLook();
+  },
+  /**
+   * Test surface, the sweep's handle: the framework's raw values (any
+   * disc exponent k and forward strength), until the next look change.
+   */
+  setSunThroughCloudsRaw(values) {
+    if (!atmosphere) throw new Error("the sun through clouds needs the sky");
+    atmosphere.configure({ sunThroughClouds: values });
+  },
+  /**
+   * Test surface: where the clouds stand in front of the sun, from the CPU
+   * twins (sun-clouds.js): the column's optical depth along the sun from
+   * the camera, how much of it is drawn there, and the sun's screen point.
+   */
+  sunCloud() {
+    if (!atmosphere) throw new Error("the sun through clouds needs the sky");
+    return sunCloudProbe.atSun(atmosphere, camera.position, sunVector());
+  },
   /** Dome (the sky's own layer), the fly-through sheet, or the slab. */
   setCloudMode(mode) {
     if (!CLOUD_MODES.includes(mode))
@@ -1716,6 +1780,7 @@ Object.assign(api, {
     gpuMs,
     gpuTimer: gpuTimer.supported,
     aoActive: ambientOcclusion.active,
+    sunThroughClouds: atmosphere?.sunThroughClouds ?? null,
     lutMs,
     atmosphereMs,
     drawCalls: renderer.info.render.calls,

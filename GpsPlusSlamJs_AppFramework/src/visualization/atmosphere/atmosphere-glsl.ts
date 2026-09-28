@@ -42,6 +42,8 @@ import {
 import { EARTH_ATMOSPHERE } from './atmosphere-model.js';
 import { glslFloat } from '../../utils/glsl-float.js';
 import { CLOUD_LAYER } from './cloud-layer.js';
+import { CLOUD_COLUMN_GLSL } from './cloud-column.js';
+import { CLOUD_SUN_GLSL } from './cloud-sun.js';
 
 /** Sun illuminance the scattering LUTs are computed for. See the header. */
 export const ATMOSPHERE_RADIANCE_SCALE = 1000;
@@ -408,7 +410,10 @@ void main() {
 /**
  * The cloud layer's uniforms, constants, density and light, shared by the
  * sky dome (`atmClouds` below) and the fly-through sheet (`cloud-sheet.ts`),
- * so both draw ONE pattern, cover and light. Expects `atmTransmittanceLut`,
+ * so both draw ONE pattern, cover and light. It carries the column
+ * (`cloud-column.ts`), the forward scattering (`cloud-sun.ts`) and
+ * `atmCloudForwardRadiance`, which the dome and the slab add to a cloud
+ * (`atmCloudForward` 0 = off). Expects `atmTransmittanceLut`,
  * `atmSkyViewLut` and `atmSunDirection` to be declared before it, and
  * `ATMOSPHERE_COMMON_GLSL` to be included.
  */
@@ -429,6 +434,9 @@ const float ATM_CLOUD_FORWARD_POWER = ${glslFloat(CLOUD_LAYER.forwardPower)};
 const float ATM_CLOUD_THICKNESS = ${glslFloat(CLOUD_LAYER.thicknessDarkening)};
 const float ATM_CLOUD_SKY_AMBIENT = ${glslFloat(CLOUD_LAYER.skyAmbient)};
 const float ATM_CLOUD_AERIAL_KM = ${glslFloat(CLOUD_LAYER.aerialKm)};
+uniform float atmCloudForward;
+${CLOUD_COLUMN_GLSL}
+${CLOUD_SUN_GLSL}
 
 // Twin of cloud-layer.ts cloudDensity: a soft step, 0.5 AT the threshold
 // (the cover's quantile of the combined noise, computed on the CPU).
@@ -471,6 +479,16 @@ vec3 atmCloudLit(vec3 dir, float r, float density) {
       * (1.0 - ATM_CLOUD_THICKNESS * density)
     + zenith * ATM_CLOUD_SKY_AMBIENT;
 }
+
+// The sun scattered forward out of a cloud of optical depth tau along dir
+// (LUT units): strongest around the sun and through thin cloud. Twin of
+// cloud-sun.ts cloudForwardRadiance, with the sun's transmittance at cloud
+// height as its illuminance.
+vec3 atmCloudForwardRadiance(vec3 dir, float r, float tau) {
+  vec3 sunAtCloud = atmSampleTransmittance(atmTransmittanceLut, r + ATM_CLOUD_ALTITUDE, atmSunDirection.y);
+  return ATM_RADIANCE_SCALE * sunAtCloud * atmForwardPhase(dot(dir, atmSunDirection))
+    * atmForwardShare(tau) * atmCloudForward;
+}
 `;
 
 /**
@@ -512,6 +530,32 @@ const float ATM_MAX_SCENE_RADIANCE = ${glslFloat(ATMOSPHERE_MAX_SCENE_RADIANCE)}
 uniform float atmClampHorizon;
 varying vec3 vAtmWorldDirection;
 ${ATMOSPHERE_CLOUD_GLSL}
+// The sun disc behind the clouds (cloud-sun.ts): the REAL threshold in every
+// mode (the sheet and the slab draw their own clouds, the disc is the
+// sky's), where the clouds are anchored (0: the dome, camera-centred at the
+// origin; 1: the sheet and the slab, in the world), their far fade, and the
+// disc's extinction exponent (0 = off).
+uniform float atmCloudSunThreshold;
+uniform float atmCloudAnchored;
+uniform vec2 atmCloudFarFadeM;
+uniform float atmCloudDiscExponent;
+
+// The share of the disc that passes the clouds: e^(-k·tau), tau the column
+// along the view weighted by how much cloud is DRAWN there (the dome's
+// horizon fade, or the sheet's and the slab's far fade, and the aerial
+// melt), so an undrawn cloud never hides the sun. An explicit level: it
+// runs for disc pixels only, where implicit derivatives are undefined.
+float atmCloudDiscTransmittance(vec3 dir) {
+  if (atmCloudDiscExponent <= 0.0 || atmCloudSunThreshold >= 2.0 || dir.y <= 0.0) return 1.0;
+  vec3 origin = cameraPosition * atmCloudAnchored;
+  float s = atmColumnDistance(origin.y, dir.y);
+  float noise = atmCloudNoiseLod(atmColumnUv(origin, dir, atmCloudOffset), 0.0);
+  float tau = atmColumnOpticalDepth(noise, atmCloudSunThreshold, origin.y, dir.y);
+  float drawn = atmCloudAnchored > 0.5
+    ? 1.0 - smoothstep(atmCloudFarFadeM.x, atmCloudFarFadeM.y, s * length(dir.xz))
+    : atmCloudHorizonFade(dir.y);
+  return exp(-atmCloudDiscExponent * tau * drawn * exp(-s * 0.001 / ATM_CLOUD_AERIAL_KM));
+}
 
 // The 2D cloud layer (DEC-SKY-6): a plane at ATM_CLOUD_ALTITUDE, lit by the
 // sun's transmitted colour at that height (forward-scattering toward the
@@ -522,11 +566,19 @@ vec3 atmClouds(vec3 dir, float r, vec3 skyBehind) {
   if (atmCloudCover <= 0.0 || atmCloudThreshold >= 2.0 || dir.y <= 0.0) return skyBehind;
   float t = ATM_CLOUD_ALTITUDE / dir.y;
   vec2 uv = dir.xz * t / ATM_CLOUD_TILE + atmCloudOffset;
-  float density = atmCloudDensity(atmCloudNoise(uv), atmCloudThreshold) * atmCloudHorizonFade(dir.y);
+  float noise = atmCloudNoise(uv);
+  float fade = atmCloudHorizonFade(dir.y);
+  float density = atmCloudDensity(noise, atmCloudThreshold) * fade;
   if (density <= 0.0) return skyBehind;
   vec3 lit = atmCloudLit(dir, r, density);
   float aerial = exp(-t / ATM_CLOUD_AERIAL_KM);
-  return mix(skyBehind, lit, density * aerial);
+  vec3 clouded = mix(skyBehind, lit, density * aerial);
+  // The forward scattering through the column along the view (cloud-sun.ts).
+  if (atmCloudForward > 0.0) {
+    float tau = atmColumnOpticalDepth(noise, atmCloudThreshold, 0.0, dir.y);
+    clouded += atmCloudForwardRadiance(dir, r, tau) * fade * aerial;
+  }
+  return clouded;
 }
 
 void main() {
@@ -550,7 +602,8 @@ void main() {
     float limb = (1.0 - ATM_SUN_LIMB_DARKENING * (1.0 - sqrt(max(0.0, 1.0 - rho * rho))))
       / (1.0 - ATM_SUN_LIMB_DARKENING / 3.0);
     float sunRadiance = ATM_RADIANCE_SCALE / (ATM_PI * ATM_SUN_ANGULAR_RADIUS * ATM_SUN_ANGULAR_RADIUS);
-    radiance += disc * limb * sunRadiance * atmSampleTransmittance(atmTransmittanceLut, r, dir.y);
+    radiance += disc * limb * sunRadiance * atmSampleTransmittance(atmTransmittanceLut, r, dir.y)
+      * atmCloudDiscTransmittance(dir);
   }
 
   radiance = atmClouds(dir, r, radiance);
