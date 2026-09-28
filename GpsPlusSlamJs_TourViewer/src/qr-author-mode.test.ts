@@ -602,3 +602,20 @@ describe("codeTourLine (scan-to-open plan §9 #9)", () => {
     ).toBeLessThanOrEqual(110);
   });
 });
+
+describe("the finish copy points at steps that exist", () => {
+  it("never names a step beyond 4", () => {
+    // Why this matters (Drive replace plan §5 #5, a pre-existing bug): the
+    // download and the replace instructions were steps 5 and 6 until the
+    // flow rework folded them into the end of step 4 (F10). The finish
+    // messages kept saying "step 6" - the line a creator reads right after
+    // saving the zip sent them to a step that is not on the page.
+    const lines = [
+      FINISH_LABELS.ready(1_000_000, false),
+      FINISH_LABELS.ready(1_000_000, true),
+      FINISH_LABELS.saved("tour.zip"),
+      FINISH_LABELS.shared("tour.zip"),
+    ];
+    for (const line of lines) expect(line).not.toMatch(/step [5-9]/i);
+  });
+});

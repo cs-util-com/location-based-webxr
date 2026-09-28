@@ -325,12 +325,12 @@ export const FINISH_LABELS = {
   ready: (bytes: number, canShare = false) =>
     `The rebuilt zip is ready (${(bytes / 1_000_000).toFixed(1)} MB). ${
       canShare ? "Share it" : "Download it"
-    }, then replace the hosted file in step 6.`,
+    }, then put it in place of the hosted file - the steps appear below.`,
   failed: (reason: string) => `Finishing failed: ${reason}`,
   download: "Download the rebuilt zip",
   saving: "Saving…",
   saved: (filename: string) =>
-    `Saved as ${filename}. Now replace the hosted zip (step 6) - the link and the printed code stay the same.`,
+    `Saved as ${filename}. Now replace the hosted zip (steps below) - the link and the printed code stay the same.`,
   notSaved: "Not saved - tap the button again.",
   /** The share route's label and copy. Separate from the download route's
    *  because the two do different things to the hosted file, and `saved`
@@ -341,7 +341,7 @@ export const FINISH_LABELS = {
   share: "Share the rebuilt zip",
   sharing: "Sharing…",
   shared: (filename: string) =>
-    `Sent ${filename} to the app you chose. It has almost certainly saved a NEW file - so the printed code still points at the old one until you replace it (step 6).`,
+    `Sent ${filename} to the app you chose. It has almost certainly saved a NEW file - so the printed code still points at the old one until you replace it (steps below).`,
   /** Deliberately not "you cancelled": the Web Share API reports a
    *  cancelled sheet and a failed share as the same error. */
   notShared: "Nothing was shared - tap the button again.",
