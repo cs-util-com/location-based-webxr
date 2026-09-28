@@ -21,6 +21,8 @@ import {
   finishHelpVisibility,
   finishIdleLabel,
   finishBusyLabel,
+  finishRoute,
+  driveReplaceSteps,
   sizeOfferView,
   adoptedSizeNote,
   codeTourLine,
@@ -617,5 +619,65 @@ describe("the finish copy points at steps that exist", () => {
       FINISH_LABELS.shared("tour.zip"),
     ];
     for (const line of lines) expect(line).not.toMatch(/step [5-9]/i);
+  });
+});
+
+describe("the finish on a Drive-hosted tour (Drive replace plan §2, §5)", () => {
+  // Why these matter: on a phone the only way the owner found to put the
+  // rebuilt zip in place of the hosted one is the Drive WEBSITE's upload,
+  // which needs the zip saved on the phone (decision 4) and asks "Replace
+  // existing file" only for the SAME name. A share hands the zip to another
+  // app instead, and the Drive app cannot replace.
+  it("saves to the phone for a Drive tour, shares elsewhere where it can", () => {
+    expect(finishRoute({ canShare: true, drive: true })).toBe("download");
+    expect(finishRoute({ canShare: false, drive: true })).toBe("download");
+    expect(finishRoute({ canShare: true, drive: false })).toBe("share");
+    expect(finishRoute({ canShare: false, drive: false })).toBe("download");
+  });
+
+  it("labels the Drive save as a save to the phone", () => {
+    expect(finishIdleLabel(false, true)).toBe("Save the zip to this phone");
+    expect(finishIdleLabel(false)).toBe("Download the rebuilt zip");
+  });
+
+  it("gives the owner's working steps, with the file's own name", () => {
+    const { rename, steps } = driveReplaceSteps("My tour.zip");
+    expect(rename).toBeNull();
+    const text = steps.join(" ");
+    // Decision 2: typed into a NEW tab (review #6), then Desktop site.
+    expect(text).toMatch(/new tab/i);
+    expect(text).toContain("drive.google.com");
+    expect(text).toMatch(/Desktop site/);
+    expect(text).toMatch(/File upload/);
+    expect(text).toMatch(/Replace existing file/);
+    expect(text).toContain("My tour.zip");
+    // Review #1: a repeat download is saved as "name (1).zip".
+    expect(text).toMatch(/older copies/i);
+    expect(text).toContain("My tour (1).zip");
+    expect(text, "and what to do if Drive does not ask").toMatch(
+      /does not ask/i,
+    );
+    expect(text).not.toMatch(/Manage versions/);
+  });
+
+  it("asks to rename a Drive file whose name a phone would change", () => {
+    // Review #7: without .zip (Chrome may append one) or with characters a
+    // file system refuses, the saved name differs and Drive offers no
+    // "Replace".
+    expect(driveReplaceSteps("Altstadt Tour").rename).toBe("Altstadt Tour.zip");
+    expect(driveReplaceSteps("what?.zip").rename).toBe("what-.zip");
+    expect(driveReplaceSteps("tour.zip").rename).toBeNull();
+    expect(driveReplaceSteps("Altstadt Tour").steps[0]).toMatch(
+      /rename the file on Drive to "Altstadt Tour\.zip"/,
+    );
+  });
+
+  it("asks to check the name when the host sent none", () => {
+    // Plan §4: without the header the page can only guess (tour.zip), so
+    // the creator checks the Drive file carries that name.
+    expect(driveReplaceSteps("tour.zip", false).steps[0]).toMatch(
+      /Check that the file on Drive is named "tour\.zip"/,
+    );
+    expect(driveReplaceSteps("tour.zip").steps[0]).not.toMatch(/Check that/);
   });
 });

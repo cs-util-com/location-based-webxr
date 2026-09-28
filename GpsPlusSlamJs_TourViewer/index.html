@@ -159,6 +159,11 @@
       #finish-block {
         margin-top: var(--space-3);
       }
+      /* The Drive steps arrive as one numbered line each (textContent, so
+         creator-setup stays DOM-free for its node tests). */
+      #replace-help-drive {
+        white-space: pre-line;
+      }
       #ar-root {
         margin: var(--space-4) 0;
         position: relative;
@@ -392,9 +397,10 @@
               </li>
               <li>
                 <p class="step-copy hint--dim">
-                  Upload it to Google Drive, Dropbox, GitHub or OneDrive and
-                  copy its share link. The printed code will point at this link,
-                  so keep the file where it is.
+                  Upload it to Google Drive, Dropbox, GitHub or OneDrive - into
+                  a folder of its own (e.g. "My tour"), so you can find it again
+                  - and copy its share link. The printed code will point at this
+                  link, so keep the file where it is.
                 </p>
               </li>
               <li>
@@ -867,15 +873,27 @@
             Download the rebuilt zip
           </button>
           <div id="replace-help" data-testid="replace-help" hidden>
-            <p class="step-copy hint--dim">
+            <p
+              id="replace-help-generic"
+              data-testid="replace-help-generic"
+              class="step-copy hint--dim"
+            >
               Last thing: upload this zip over the one from step 1, so the link
-              - and with it the printed code - stays the same. Google Drive: on
-              drive.google.com in a browser, right-click the file, "Manage
-              versions", "Upload new version" (the Drive phone app cannot do
-              this). Dropbox: upload the file with the same name into the same
-              folder. GitHub: commit it over the same path. OneDrive: upload
-              with the same name and choose "Replace".
+              - and with it the printed code - stays the same. Dropbox: upload
+              the file with the same name into the same folder. GitHub: commit
+              it over the same path. OneDrive: upload with the same name and
+              choose "Replace".
             </p>
+            <!-- A Drive tour's steps (Drive replace plan §2): written by
+                 creator-setup (driveReplaceSteps), one numbered line each,
+                 with the zip's own name - the Drive app and "Manage
+                 versions" cannot replace a file from a phone. -->
+            <p
+              id="replace-help-drive"
+              data-testid="replace-help-drive"
+              class="step-copy hint--dim"
+              hidden
+            ></p>
             <p
               id="replace-help-share"
               data-testid="replace-help-share"

@@ -88,9 +88,18 @@ import {
   MISSING_SIZE_MESSAGE,
   adoptedSizeNote,
   codeTourLine,
+  driveReplaceSteps,
+  finishRoute,
   setupHint,
+  type FinishRoute,
+  type HandoffOutcome,
   sizeOfferView,
 } from "./qr-author-mode.js";
+import {
+  downloadSafeName,
+  nameSurvivesDownload,
+} from "./content-disposition.js";
+import { isDriveUrl } from "./open-errors.js";
 import { createPrintSizeCheck } from "./print-size-check.js";
 import type { ScanOpen } from "./scan-open.js";
 import type { TourViewerSeams } from "./seams.js";
@@ -132,6 +141,11 @@ export interface CreatorSetupDom {
   /** The share route's extra sentence inside the replace instructions -
    *  hidden on the download route, where it would be noise. */
   replaceHelpShare: HTMLElement;
+  /** The replace instructions for Dropbox, GitHub and OneDrive... */
+  replaceHelpGeneric: HTMLElement;
+  /** ...and a Drive tour's own numbered steps with the zip's name, written
+   *  here (Drive replace plan §2 decision 1). */
+  replaceHelpDrive: HTMLElement;
   /** The printed side length - lives in the print step (DEC-F2). */
   sizeInput: HTMLInputElement;
   /** The print step, opened when the size error points at it. */
@@ -1094,14 +1108,25 @@ export function wireCreatorSetup(deps: {
           },
         });
         if (ctx.session !== current) return;
+        const hosted = current.hostedFileName();
         ctx.rebuiltZip = {
           blob,
           // The hosted file's own name first: Drive offers "Replace" only
-          // for the same name (Drive replace plan §2 decision 3).
+          // for the same name (Drive replace plan §2 decision 3) - made safe
+          // to save where a phone would change it, and the Drive steps then
+          // ask for the same rename on Drive (§5 #7).
           filename:
-            current.hostedFileName() ?? archiveFileName(current.archive.url),
+            hosted === null
+              ? archiveFileName(current.archive.url)
+              : nameSurvivesDownload(hosted)
+                ? hosted
+                : downloadSafeName(hosted),
         };
-        dom.finishStatus.textContent = FINISH_LABELS.ready(blob.size, canShare);
+        dom.finishStatus.textContent = FINISH_LABELS.ready(
+          blob.size,
+          route() === "share",
+        );
+        dom.downloadButton.textContent = idleLabel();
         dom.downloadButton.disabled = false;
         // The placed objects are in the zip now; the next finish (a
         // re-measure, a re-opened tour) must not append them again - and
@@ -1146,12 +1171,33 @@ export function wireCreatorSetup(deps: {
 
   // The capability, asked ONCE at wire time. A button that says "Share"
   // where nothing can be shared is a lie, and one that says "Download" on
-  // a phone that can share describes the wrong action - and the answer
-  // cannot change between wiring and the click.
+  // a phone that can share describes the wrong action. The ROUTE, though,
+  // is per open tour (Drive replace plan §5 #3): a Drive tour saves even
+  // where the device could share, so the labels are derived when shown.
   const canShare = seams.canShareZip();
-  const idleLabel = finishIdleLabel(canShare);
-  const busyLabel = finishBusyLabel(canShare);
-  dom.downloadButton.textContent = idleLabel;
+  function drive(): boolean {
+    return ctx.session !== null && isDriveUrl(ctx.session.archive.url);
+  }
+  function route(): FinishRoute {
+    return finishRoute({ canShare, drive: drive() });
+  }
+  function idleLabel(): string {
+    return finishIdleLabel(route() === "share", drive());
+  }
+  /** The replace instructions for the open tour's host: a Drive tour gets
+   *  its own numbered steps with the zip's name (plan §2 decision 1). */
+  function presentReplaceSteps(filename: string): void {
+    const onDrive = drive();
+    dom.replaceHelpGeneric.hidden = onDrive;
+    dom.replaceHelpDrive.hidden = !onDrive;
+    if (!onDrive) return;
+    const hosted = ctx.session?.hostedFileName() ?? null;
+    const { steps } = driveReplaceSteps(hosted ?? filename, hosted !== null);
+    dom.replaceHelpDrive.textContent = steps
+      .map((step, i) => `${String(i + 1)}. ${step}`)
+      .join("\n");
+  }
+  dom.downloadButton.textContent = idleLabel();
   dom.downloadButton.addEventListener("click", () => {
     const rebuilt = ctx.rebuiltZip;
     if (rebuilt === null) return;
@@ -1159,7 +1205,7 @@ export function wireCreatorSetup(deps: {
     // after; nothing delivered (a dismissed save picker, an abandoned
     // share sheet) keeps the button live.
     dom.downloadButton.disabled = true;
-    dom.downloadButton.textContent = busyLabel;
+    dom.downloadButton.textContent = finishBusyLabel(route() === "share");
     // The share sheet can stay up for as long as the creator wants, and a
     // tour can be closed underneath it. Every other post-await path in this
     // module re-checks its generation; this one resolved straight into the
@@ -1168,13 +1214,21 @@ export function wireCreatorSetup(deps: {
     // because the block that holds them is hidden, and then already on
     // screen the moment the next tour reached its finish (PR #440 review).
     const openGeneration = ctx.openGeneration;
-    seams.shareOrDownloadZip(rebuilt.blob, rebuilt.filename).then(
-      ({ route, delivered }) => {
+    // A Drive tour SAVES, through its own seam - the share-or-download one
+    // would open the share sheet on a phone (plan §2 decision 4, §5 #3).
+    const handoff: Promise<HandoffOutcome> = drive()
+      ? seams
+          .downloadZip(rebuilt.blob, rebuilt.filename)
+          .then((delivered) => ({ route: "download" as const, delivered }))
+      : seams.shareOrDownloadZip(rebuilt.blob, rebuilt.filename);
+    handoff.then(
+      (outcome) => {
+        const { delivered } = outcome;
         if (openGeneration !== ctx.openGeneration) return;
         dom.downloadButton.disabled = false;
-        dom.downloadButton.textContent = idleLabel;
+        dom.downloadButton.textContent = idleLabel();
         dom.finishStatus.textContent = finishHandoffStatus(
-          { route, delivered },
+          outcome,
           rebuilt.filename,
         );
         // The replace instructions were step 6; they are the last thing to
@@ -1192,8 +1246,11 @@ export function wireCreatorSetup(deps: {
         // earned would take the flow's last instruction off the screen at
         // the moment they most need it (PR #439 review #3). Only
         // `resetFinishStep`, on a tour close, hides them again.
-        const help = finishHelpVisibility({ route, delivered });
-        if (help.replaceHelp) dom.replaceHelp.hidden = false;
+        const help = finishHelpVisibility(outcome);
+        if (help.replaceHelp) {
+          presentReplaceSteps(rebuilt.filename);
+          dom.replaceHelp.hidden = false;
+        }
         // `shareNote` is a claim about WHICH hand-off happened, so unlike
         // `replaceHelp` it is not earned-and-kept: a share followed by a
         // save would otherwise leave "you shared it rather than saving it"
@@ -1205,7 +1262,7 @@ export function wireCreatorSetup(deps: {
       (err: unknown) => {
         if (openGeneration !== ctx.openGeneration) return;
         dom.downloadButton.disabled = false;
-        dom.downloadButton.textContent = idleLabel;
+        dom.downloadButton.textContent = idleLabel();
         dom.finishStatus.textContent = FINISH_LABELS.failed(
           err instanceof Error ? err.message : String(err),
         );
@@ -1223,7 +1280,7 @@ export function wireCreatorSetup(deps: {
       // underneath an open share sheet. Without this the next tour's
       // finish enables a button that still reads "Sharing…" (PR #441
       // review) - the guard moved the leak here rather than removing it.
-      dom.downloadButton.textContent = idleLabel;
+      dom.downloadButton.textContent = idleLabel();
       dom.finishStatus.textContent = "";
       // The rebuilt zip belonged to the tour that just closed, so the block
       // offering it goes away with it (M3 review #6) - otherwise a newly
@@ -1231,6 +1288,9 @@ export function wireCreatorSetup(deps: {
       dom.finishBlock.hidden = true;
       dom.replaceHelp.hidden = true;
       dom.replaceHelpShare.hidden = true;
+      // The Drive steps belonged to the closing tour's host (plan §5 #13).
+      dom.replaceHelpDrive.hidden = true;
+      dom.replaceHelpGeneric.hidden = false;
       // The offer belonged to the tour that just closed.
       dom.draftOffer.hidden = true;
       offered = null;

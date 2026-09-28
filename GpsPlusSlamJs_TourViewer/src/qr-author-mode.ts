@@ -44,6 +44,10 @@ import type {
 } from "gps-plus-slam-app-framework/ar/qr/qr-frontend";
 import type { QrFusedPose } from "gps-plus-slam-app-framework/ar/qr/qr-fused-pose";
 
+import {
+  downloadSafeName,
+  nameSurvivesDownload,
+} from "./content-disposition.js";
 import type { CodeTourStatus } from "./scan-open.js";
 
 /**
@@ -328,6 +332,9 @@ export const FINISH_LABELS = {
     }, then put it in place of the hosted file - the steps appear below.`,
   failed: (reason: string) => `Finishing failed: ${reason}`,
   download: "Download the rebuilt zip",
+  /** A Drive tour's route: the zip must land in Downloads for the Drive
+   *  website's upload (Drive replace plan §2 decision 4). */
+  saveToPhone: "Save the zip to this phone",
   saving: "Saving…",
   saved: (filename: string) =>
     `Saved as ${filename}. Now replace the hosted zip (steps below) - the link and the printed code stay the same.`,
@@ -366,8 +373,69 @@ export interface HandoffOutcome {
  * link and printed code are unchanged, which is true after a save and false
  * after a share, since sharing normally creates a new file with a new id.
  */
-export function finishIdleLabel(canShare: boolean): string {
-  return canShare ? FINISH_LABELS.share : FINISH_LABELS.download;
+export function finishIdleLabel(canShare: boolean, drive = false): string {
+  if (canShare) return FINISH_LABELS.share;
+  return drive ? FINISH_LABELS.saveToPhone : FINISH_LABELS.download;
+}
+
+/** How the rebuilt zip leaves the page. */
+export type FinishRoute = "share" | "download";
+
+/**
+ * A Drive-hosted tour always SAVES to the device (Drive replace plan §2
+ * decision 4): the only replace that works on a phone is the Drive
+ * website's upload, which needs the zip in Downloads - a share hands it to
+ * another app instead. Other hosts share where the device prefers it.
+ */
+export function finishRoute(state: {
+  canShare: boolean;
+  drive: boolean;
+}): FinishRoute {
+  if (state.drive) return "download";
+  return state.canShare ? "share" : "download";
+}
+
+/**
+ * The Drive steps for putting the rebuilt zip in place of the hosted one
+ * from a phone (Drive replace plan §2, §5): the owner's working flow, in
+ * a new tab so these steps stay on screen (§5 #6), with the checks for the
+ * two ways it silently fails - a repeat download saved as "name (1).zip"
+ * (§5 #1), and a name the phone changes on save (§5 #7, `rename`).
+ */
+export function driveReplaceSteps(
+  name: string,
+  /** False when the host sent no name and `name` is the page's guess: the
+   *  creator must then check the Drive file carries it (plan §4). */
+  nameKnown = true,
+): {
+  /** The name to give the Drive file first, when a phone would not keep
+   *  this one; null when it would. */
+  rename: string | null;
+  steps: string[];
+} {
+  const rename = nameSurvivesDownload(name) ? null : downloadSafeName(name);
+  const saved = rename ?? name;
+  const stem = saved.replace(/\.zip$/i, "");
+  const first: string[] = [];
+  if (rename !== null) {
+    first.push(
+      `First rename the file on Drive to "${rename}" - a phone cannot save "${name}" unchanged, and Drive replaces only a file of the same name.`,
+    );
+  } else if (!nameKnown) {
+    first.push(
+      `Check that the file on Drive is named "${saved}" - Drive replaces only a file of the same name. Rename it on Drive if not.`,
+    );
+  }
+  return {
+    rename,
+    steps: [
+      ...first,
+      `Delete older copies of ${saved} from this phone's Downloads - a repeat download is saved as "${stem} (1).zip", which Drive treats as a new file.`,
+      `Open a new tab in Chrome (or your browser), type drive.google.com, then tick "Desktop site" in the ⋮ menu.`,
+      `Open the folder with your tour, tap New, then File upload, and pick ${saved}.`,
+      `Choose "Replace existing file", then Upload. If Drive does not ask, it uploaded a second copy - delete that copy. Keep the tab open until the upload finishes.`,
+    ],
+  };
 }
 
 export function finishBusyLabel(canShare: boolean): string {

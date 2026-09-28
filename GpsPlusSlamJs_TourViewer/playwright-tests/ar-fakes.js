@@ -83,7 +83,8 @@ export async function installTourViewerArFakes(page, options = {}) {
         /** The zips the finish step offered for download (M3): the fake
          *  captures them instead of saving; `saveOutcome` is what the fake
          *  reports (false = the picker was dismissed). */
-        downloads: /** @type {{ filename: string, blob: Blob }[]} */ ([]),
+        downloads:
+          /** @type {{ filename: string, blob: Blob, seam?: "share-or-download" | "download" }[]} */ ([]),
         saveOutcome: true,
         /** Which route the zip hand-off should take. False (the default)
          *  keeps every existing test on the save path; true makes the app
@@ -237,7 +238,7 @@ export async function installTourViewerArFakes(page, options = {}) {
           return Promise.resolve(test.locationOutcome);
         },
         shareOrDownloadZip: (blob, filename) => {
-          test.downloads.push({ filename, blob });
+          test.downloads.push({ filename, blob, seam: "share-or-download" });
           // A test drives BOTH routes through one fake: `shareRoute` picks
           // which mechanism the app should believe ran, `saveOutcome`
           // whether anything left the page. The real share sheet cannot be
@@ -247,6 +248,13 @@ export async function installTourViewerArFakes(page, options = {}) {
             route: test.shareRoute === true ? "share" : "download",
             delivered: test.saveOutcome,
           });
+        },
+        // Its own seam, recorded as such: a Drive tour must SAVE even on a
+        // phone that could share (Drive replace plan §5 #4), and a spec can
+        // only tell the routes apart by which seam ran.
+        downloadZip: (blob, filename) => {
+          test.downloads.push({ filename, blob, seam: "download" });
+          return Promise.resolve(test.saveOutcome);
         },
         canShareZip: () => test.shareRoute === true,
         downloadPdf: (blob, filename) => {

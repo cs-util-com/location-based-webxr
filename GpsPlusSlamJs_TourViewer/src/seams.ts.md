@@ -13,7 +13,7 @@ Keeps `main.ts` glue-only.
 enableArWorldGroupAlignment; startCameraFrameCapture;
 stopCameraFrameCapture; createQrFrontEnd; solveQrPose; estimateQrPrintSize;
 getIntrinsics; createQrDebugView; getScene; queryGeolocationPermission;
-requestLocationOnce; shareOrDownloadZip; canShareZip; downloadPdf;
+requestLocationOnce; shareOrDownloadZip; downloadZip; canShareZip; downloadPdf;
 startHitTestReticle; encodeFrameJpeg;
 createLabel; schedule }` - the placement layer (M4: the framework's hit-test
   reticle under the world group; the camera frame → JPEG encoder, which is
@@ -32,6 +32,8 @@ createLabel; schedule }` - the placement layer (M4: the framework's hit-test
   instead of a zip one (the printable sheet of numbered codes); it is its
   own seam so the picker offers the right file type and so the e2e
   captures the bytes rather than the browser writing a file.
+  `downloadZip` is the framework's `downloadBlob` for a zip - a SAVE, never
+  a share: a Drive tour's route (Drive replace plan §2 decision 4).
   `shareOrDownloadZip` is the framework's `shareOrDownloadBlob`: the
   device share sheet where the browser can share FILES, else the
   picker-or-anchor download (the e2e fake captures the blob). It answers

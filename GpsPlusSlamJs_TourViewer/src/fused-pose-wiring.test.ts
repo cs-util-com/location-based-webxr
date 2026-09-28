@@ -243,6 +243,8 @@ describe("the creator measures and mints with the fused pose", () => {
     "finishBlock",
     "replaceHelp",
     "replaceHelpShare",
+    "replaceHelpGeneric",
+    "replaceHelpDrive",
     "sizeInput",
     "printPanel",
     "status",

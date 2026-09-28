@@ -13,6 +13,9 @@
  * - `/flippable/tour.zip` — 200 full body with a SETTABLE ETag (`/flip`),
  *   the "author overwrote the archive at the same URL" host the
  *   revalidation spec drives.
+ * - `/api/drive-proxy?id=…` — ranges like `ranges-ok`, on the Drive proxy's
+ *   own path, so the app treats it as a Drive tour; `id=e2e-drive` sends a
+ *   `content-disposition` file name ("My tour.zip"), any other id none.
  * - `/slow-warm/tour.zip` — ranges like `ranges-ok`, but a range-less GET
  *   (the background warm download) is HELD while the warm gate is closed
  *   (`/warm-gate?state=hold` / `?state=release`) — the deterministic
@@ -216,7 +219,17 @@ let warmGate = { released: true, waiters: [] };
 const CORS_HEADERS = {
   "access-control-allow-origin": "*",
   "access-control-allow-headers": "range,if-none-match,if-modified-since",
-  "access-control-expose-headers": "content-range,content-length,etag",
+  "access-control-expose-headers":
+    "content-range,content-length,etag,content-disposition",
+};
+
+/** The Drive-shaped routes (Drive replace plan §5 #12): the proxy's own
+ *  path, so the app treats the tour as a Drive tour without any Google
+ *  host. `e2e-drive` carries a file name the link does not; the other id
+ *  sends none (the fallback). */
+const DRIVE_PROXY_PATH = "/api/drive-proxy";
+const DRIVE_FILE_NAMES = {
+  "e2e-drive": `attachment; filename="My tour.zip"; filename*=UTF-8''My%20tour.zip`,
 };
 
 /** The utility routes: preflight + health. True if handled. */
@@ -254,9 +267,17 @@ function handleWarmGate(res, url) {
 /** Serve the archive: HEAD metadata, 206 slices (ranges-ok), or a 200 body.
  *  `bytes` defaults to the standard tour; the recording route passes its own
  *  archive (distinct etag so caches cannot cross the two). */
-function handleArchive(req, res, mode, bytes = zipBytes, etag = ETAG) {
+function handleArchive(
+  req,
+  res,
+  mode,
+  bytes = zipBytes,
+  etag = ETAG,
+  extraHeaders = {},
+) {
   const baseHeaders = {
     ...CORS_HEADERS,
+    ...extraHeaders,
     etag: mode === "flippable" ? `"e2e-tour-${flippableEtagVersion}"` : etag,
     "last-modified": "Mon, 24 Aug 2026 12:00:00 GMT",
   };
@@ -319,6 +340,19 @@ createServer((req, res) => {
   }
   if (url.pathname === "/ranges-ok/plain-tour.zip") {
     handleArchive(req, res, "ranges-ok", plainZipBytes, '"e2e-plain-v1"');
+    return;
+  }
+  if (url.pathname === DRIVE_PROXY_PATH) {
+    const id = url.searchParams.get("id") ?? "";
+    const name = /** @type {Record<string, string>} */ (DRIVE_FILE_NAMES)[id];
+    handleArchive(
+      req,
+      res,
+      "ranges-ok",
+      zipBytes,
+      `"e2e-drive-${id}"`,
+      name === undefined ? {} : { "content-disposition": name },
+    );
     return;
   }
   const match = /^\/(ranges-ok|no-ranges|flippable|slow-warm)\/tour\.zip$/.exec(

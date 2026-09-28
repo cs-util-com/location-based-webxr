@@ -105,7 +105,7 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   - `openDraftStore(key)` resolves this tour's draft namespace, or
     `undefined` where there is no persistence. Injected so the unit tests
     and the e2e can supply one without OPFS.
-  - `CreatorSetupDom { panel; controls; finishBlock; replaceHelp; replaceHelpShare; sizeInput; printPanel; status; mintButton; finishButton; finishStatus; downloadButton; pinButton; pinLabel; pinSave; pinCancel; photoButton; draftOffer; draftOfferText; draftRestore; draftDismiss; draftDiscard }`
+  - `CreatorSetupDom { panel; controls; finishBlock; replaceHelp; replaceHelpShare; replaceHelpGeneric; replaceHelpDrive; sizeInput; printPanel; status; mintButton; finishButton; finishStatus; downloadButton; pinButton; pinLabel; pinSave; pinCancel; photoButton; draftOffer; draftOfferText; draftRestore; draftDismiss; draftDiscard }`
   - `arSessionLive(status)` - whether the controller's status means a
     session is up (`starting` / `running` / `stopping`). Exported because
     `main.ts` hands the same predicate to the wizard, which must not
@@ -139,6 +139,16 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
 
 ## Invariants & assumptions
 
+- **A Drive tour's finish SAVES and shows the Drive steps** (Drive replace
+  plan §2 decisions 1 and 4): the route is `finishRoute({canShare,
+drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
+  at wiring - so a Drive tour takes `seams.downloadZip` even on a phone that
+  could share, and its button reads "Save the zip to this phone". Once the
+  zip is delivered, `replaceHelpDrive` shows `driveReplaceSteps` as numbered
+  lines (textContent; the module stays DOM-free) with the zip's name, and
+  `replaceHelpGeneric` hides; `resetFinishStep` restores the generic text.
+  A hosted name a phone would change is saved as `downloadSafeName` and the
+  steps ask for the same rename on Drive.
 - **The rebuilt zip is named after the hosted file** -
   `session.hostedFileName()`, else `archiveFileName(url)` - because Drive
   offers "Replace" only for the same name (Drive replace plan §2

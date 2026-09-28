@@ -128,6 +128,11 @@ export interface TourViewerSeams {
     blob: Blob,
     filename: string,
   ): Promise<ShareOrDownloadResult>;
+  /** SAVE a zip, never share it: a Drive-hosted tour's route (Drive
+   *  replace plan §2 decision 4) - the Drive website's upload needs the
+   *  file in Downloads, and a share hands it to another app. Resolves
+   *  whether anything was saved (false: a dismissed save picker). */
+  downloadZip(blob: Blob, filename: string): Promise<boolean>;
   /** Should this device get the share sheet rather than the save path?
    *  Read once at wire time to label the button, because "Share" where
    *  nothing can be shared is a lie and "Download" on a phone that will
@@ -200,6 +205,7 @@ export const realSeams: TourViewerSeams = {
   getScene,
   shareOrDownloadZip: (blob, filename) =>
     shareOrDownloadBlob(blob, filename, ZIP_FILE_TYPE),
+  downloadZip: (blob, filename) => downloadBlob(blob, filename, ZIP_FILE_TYPE),
   canShareZip: () => prefersFileShare(ZIP_FILE_TYPE),
   downloadPdf: (blob, filename) => downloadBlob(blob, filename, PDF_FILE_TYPE),
   startHitTestReticle: (arWorldGroup) => startHitTestReticle({ arWorldGroup }),

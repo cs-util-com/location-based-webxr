@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 
 import {
+  downloadSafeName,
   fileNameFromContentDisposition,
   nameSurvivesDownload,
 } from "./content-disposition.js";
@@ -111,5 +112,28 @@ describe("nameSurvivesDownload", () => {
     ['say "hi".zip', false],
   ])("%s -> %s", (name, survives) => {
     expect(nameSurvivesDownload(name)).toBe(survives);
+  });
+});
+
+describe("downloadSafeName", () => {
+  // The rebuilt zip is saved under this name when the Drive name would not
+  // survive a download, and the Drive steps then ask the creator to rename
+  // the Drive file to it first - so it must itself survive, or the rename
+  // step sends them in a circle (plan §5 #7).
+  it.each([
+    ["Altstadt Tour", "Altstadt Tour.zip"],
+    ["what?.zip", "what-.zip"],
+    ['say "hi"', "say -hi-.zip"],
+    ["tour.ZIP", "tour.ZIP"],
+  ])("%s -> %s", (name, safe) => {
+    expect(downloadSafeName(name)).toBe(safe);
+  });
+
+  it("always gives a name that survives a download", () => {
+    fc.assert(
+      fc.property(fc.string(), (name) => {
+        expect(nameSurvivesDownload(downloadSafeName(name))).toBe(true);
+      }),
+    );
   });
 });

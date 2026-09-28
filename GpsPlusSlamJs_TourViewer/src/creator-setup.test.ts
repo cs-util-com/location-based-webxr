@@ -71,6 +71,8 @@ const DOM_KEYS = [
   "finishBlock",
   "replaceHelp",
   "replaceHelpShare",
+  "replaceHelpGeneric",
+  "replaceHelpDrive",
   "sizeInput",
   "printPanel",
   "status",
@@ -1079,5 +1081,20 @@ describe("work made before the tour's draft opened reaches it", () => {
       level: { id: string } | null;
     };
     expect(last.level?.id).toBe("fresh");
+  });
+});
+
+describe("a closed tour's replace steps", () => {
+  it("go back to the generic text, so the next tour's host decides", () => {
+    // Why this matters (Drive replace plan §5 #13): the Drive steps belong
+    // to the Drive tour they were written for; after a switch to a Dropbox
+    // tour they would tell its creator to use drive.google.com.
+    const { store } = memoryStore();
+    const { dom, setup } = wire(store);
+    dom.replaceHelpDrive.hidden = false;
+    dom.replaceHelpGeneric.hidden = true;
+    setup.resetFinishStep();
+    expect(dom.replaceHelpDrive.hidden).toBe(true);
+    expect(dom.replaceHelpGeneric.hidden).toBe(false);
   });
 });

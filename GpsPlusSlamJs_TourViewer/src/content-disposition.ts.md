@@ -2,8 +2,9 @@
 
 ## Purpose
 
-The hosted file's name from a `content-disposition` header, and whether a
-phone keeps that name when it saves the rebuilt zip (TourViewer Drive
+The hosted file's name from a `content-disposition` header, whether a
+phone keeps that name when it saves the rebuilt zip, and the nearest name
+it does keep (TourViewer Drive
 replace plan,
 `GpsPlusSlamJs_Docs/docs/2026-09-28-0653-tour-viewer-drive-replace-flow-plan.md`
 §2 decision 3, §5 #7). Drive offers "Replace" only when the uploaded file
@@ -23,6 +24,10 @@ the rebuilt zip takes the name from the host's header.
   of this name on a phone keeps it exactly: it ends in `.zip` (any case)
   and has none of `< > : " | ? *` (Chrome replaces those, and may append
   `.zip` to a name without one).
+- `downloadSafeName(name: string): string` - the nearest name that does
+  survive: each of those characters becomes `-`, and `.zip` is appended
+  when missing. The rebuilt zip is saved under it, and the Drive steps ask
+  the creator to rename the Drive file to it first.
 
 ## Invariants & assumptions
 
@@ -46,4 +51,5 @@ nameSurvivesDownload("Altstadt Tour"); // false - rename it to .zip first
 `content-disposition.test.ts`: every header form above, `filename*`
 precedence and fallback, refused names; properties - any string never
 throws and never yields a path, and any safe name round-trips through the
-RFC 8187 form; the survival cases.
+RFC 8187 form; the survival cases; `downloadSafeName` cases, and the
+property that its result always survives.

@@ -48,6 +48,15 @@ export function nameSurvivesDownload(name: string): boolean {
   return /\.zip$/i.test(name) && !RENAMED_ON_SAVE.test(name);
 }
 
+/** A name a phone saves unchanged: the characters it would replace become
+ *  "-", and `.zip` is appended when missing. The rebuilt zip takes this
+ *  name, and the Drive steps ask the creator to rename the Drive file to
+ *  it, so the two match (Drive replace plan §5 #7). */
+export function downloadSafeName(name: string): string {
+  const cleaned = name.replace(/[<>:"|?*]/g, "-");
+  return /\.zip$/i.test(cleaned) ? cleaned : `${cleaned}.zip`;
+}
+
 /** The header's parameters, keys lower-cased, first occurrence kept;
  *  quoted strings unescaped. */
 function parameters(header: string): Map<string, string> {

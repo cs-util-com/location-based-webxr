@@ -2276,3 +2276,78 @@ test("a share that hands nothing over says so, without blaming the creator", asy
   await expect(starter).toHaveText(/not shared/i);
   await expect(starter).not.toHaveText(/cancel/i);
 });
+
+/** The Drive-shaped test tour (archive-server.mjs): served on the Drive
+ *  proxy's own path, with a file name the link does not carry. */
+const DRIVE_ARCHIVE = "http://127.0.0.1:5197/api/drive-proxy?id=e2e-drive";
+/** The same, with no file name sent - the fallback. */
+const DRIVE_ARCHIVE_UNNAMED =
+  "http://127.0.0.1:5197/api/drive-proxy?id=e2e-drive-unnamed";
+
+/** Open `url` in step 1, measure the code and finish; the AR session ends
+ *  and the finish block shows the download. */
+async function measureAndFinish(page, url) {
+  await page.goto("/?nocache=1");
+  await page.getByTestId("link-input").fill(url);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  await measureTheCode(page);
+  await page.getByTestId("setup-finish").click();
+  await expect(page.getByTestId("enter-ar")).toHaveText("Start AR setup", {
+    timeout: 15000,
+  });
+  await expect(page.getByTestId("finish-block")).toBeVisible();
+}
+
+test("a Drive tour saves the zip under the Drive file's name, with the Drive steps - even on a phone that could share", async ({
+  page,
+}) => {
+  // Why this matters (Drive replace plan §2): on a phone the only way to put
+  // the rebuilt zip in place of a Drive file is the Drive WEBSITE's upload,
+  // which needs the zip in Downloads (so: save, never share) and offers
+  // "Replace existing file" only for the SAME name - which a Drive link does
+  // not carry, so it comes from the host's content-disposition. The fake
+  // records WHICH seam ran, so a share here would fail the test (§5 #4).
+  await installTourViewerArFakes(page, { shareRoute: true });
+  await measureAndFinish(page, DRIVE_ARCHIVE);
+  const download = page.getByTestId("finish-download");
+  await expect(download).toHaveText("Save the zip to this phone");
+  await download.click();
+  await expect(page.getByTestId("finish-status")).toContainText(
+    /saved as My tour\.zip/i,
+  );
+  const saved = await page.evaluate(() => {
+    const d = /** @type {any} */ (window).__tourViewerTest.downloads;
+    return d.map((/** @type {any} */ x) => ({
+      seam: x.seam,
+      filename: x.filename,
+    }));
+  });
+  expect(saved).toEqual([{ seam: "download", filename: "My tour.zip" }]);
+  // The Drive steps, with the name, in place of the other hosts' text.
+  const steps = page.getByTestId("replace-help-drive");
+  await expect(steps).toBeVisible();
+  await expect(steps).toContainText("My tour.zip");
+  await expect(steps).toContainText("Replace existing file");
+  await expect(steps).toContainText("Desktop site");
+  await expect(page.getByTestId("replace-help-generic")).toBeHidden();
+  await expect(page.getByTestId("replace-help-share")).toBeHidden();
+});
+
+test("a Drive tour whose host sends no name asks the creator to check it", async ({
+  page,
+}) => {
+  // Plan §4: without the header the page can only guess the name from the
+  // link (tour.zip) - so the steps say to check the Drive file carries it,
+  // instead of risking a silent second copy.
+  await measureAndFinish(page, DRIVE_ARCHIVE_UNNAMED);
+  await page.getByTestId("finish-download").click();
+  await expect(page.getByTestId("finish-status")).toContainText(
+    /saved as tour\.zip/i,
+  );
+  await expect(page.getByTestId("replace-help-drive")).toContainText(
+    'Check that the file on Drive is named "tour.zip"',
+  );
+});
