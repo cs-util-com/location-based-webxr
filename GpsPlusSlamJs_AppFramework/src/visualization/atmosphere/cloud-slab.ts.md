@@ -138,6 +138,15 @@ it only in `cloudMode: 'slab'`.
   step's optical depth is the exact height integral of its column. The
   drawn alpha carries the far and aerial weights, per sample, so it does
   (slightly).
+- **Already resolution-aware (round-3 DEC-FB3-8, measured):** the noise is
+  a mipmapped texture, so "octaves finer than the footprint become their
+  mean" is the level of detail, and the level takes the larger of the
+  pixel's footprint and the ground a step skips. At the default 8 steps the
+  step term is the larger one wherever the clouds are drawn; projecting
+  the pixel's footprint onto the slab's planes changed the level only at
+  3-5° up, where the far fade has hidden the clouds, and the horizon
+  shimmer read the same to two decimals, so it was not adopted. The slab
+  has no domain warp to hoist out of the march.
 - **The weights go on the contribution, not on the extinction**, so the far
   fade reaches 0 for any thickness.
 - **The forward glow is added once, after the loop** (`atmCloudForward.x + .y > 0`):

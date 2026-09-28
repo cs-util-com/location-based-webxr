@@ -865,3 +865,102 @@ test("the cost in the page's opening state, each effect on against off (logged)"
   );
   expect(errors).toEqual([]);
 });
+
+// --- The horizon shimmer (DEC-FB3-8), measured --------------------------------
+
+/**
+ * The shimmer at the horizon: the camera yaws by a quarter of a pixel per
+ * frame, and the mean absolute frame-to-frame change (sum of RGB) is taken
+ * over the low sky, about 5-15° up. A well-filtered cloud moves smoothly;
+ * an under-filtered one flickers.
+ */
+const shimmer = (page, frames = 6) =>
+  page.evaluate((frames) => {
+    const d = window.__lookdev;
+    const eye = [-20, 18, 60];
+    const pitch = (8 * Math.PI) / 180;
+    const pixelAngle = (55 * Math.PI) / 180 / 800;
+    let previous = null;
+    let total = 0;
+    let count = 0;
+    for (let f = 0; f <= frames; f++) {
+      const yaw = Math.PI * 0.25 + f * 0.25 * pixelAngle;
+      d.placeCameraAt(eye, [
+        eye[0] + Math.cos(yaw) * Math.cos(pitch) * 100,
+        eye[1] + Math.sin(pitch) * 100,
+        eye[2] - Math.sin(yaw) * Math.cos(pitch) * 100,
+      ]);
+      const { width, height, data } = d.readFrame();
+      // Rows from the bottom: pitch 8°, a 55° field, so 5-15° up is about
+      // 0.445-0.627 of the height.
+      const band = [];
+      for (
+        let y = Math.floor(height * 0.445);
+        y < Math.floor(height * 0.627);
+        y += 2
+      ) {
+        for (let x = Math.floor(width * 0.35); x < width; x += 2) {
+          const i = (y * width + x) * 4;
+          band.push(data[i] + data[i + 1] + data[i + 2]);
+        }
+      }
+      if (previous) {
+        for (let k = 0; k < band.length; k++) {
+          total += Math.abs(band[k] - previous[k]);
+          count += 1;
+        }
+      }
+      previous = band;
+    }
+    return total / count;
+  }, frames);
+
+// DEC-FB3-8 asked for a resolution-aware noise ("octaves finer than the
+// pixel become their mean"). Our clouds are a MIPMAPPED texture: the dome
+// and the sheet read it with the GPU's own level (from the derivatives),
+// the slab with an explicit level from the larger of the pixel's footprint
+// and the ground a march step skips, and at the default 8 steps the step
+// term is the larger one everywhere the clouds are drawn (the record's
+// sweep: the pixel's footprint projected on the slab's planes changes the
+// level only past about 5° up, where the far fade has hidden the clouds;
+// a candidate that did so measured the same shimmer to two decimals). So
+// this logs the shimmer per mode and asserts only that a still camera
+// reads a still sky (the slab's per-pixel jitter is static).
+test("the horizon shimmer per cloud mode under a quarter-pixel pan (logged)", async ({
+  page,
+}) => {
+  const errors = await boot(page, "preset=noon&tone=neutral&cloudMode=dome");
+  await page.evaluate(() => {
+    const d = window.__lookdev;
+    d.pauseLoop(true);
+    d.setFloatingVisible(false);
+    d.setCloudCover(0.5);
+    d.setCloudOffset(0, 0);
+  });
+  const results = {};
+  for (const mode of ["dome", "sheet", "slab"]) {
+    await page.evaluate((m) => {
+      const d = window.__lookdev;
+      d.setCloudMode(m);
+      d.setCloudOffset(0, 0);
+    }, mode);
+    const still = await page.evaluate(() => {
+      const d = window.__lookdev;
+      const a = d.readFrame().data;
+      const b = d.readFrame().data;
+      let n = 0;
+      for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) n++;
+      return n;
+    });
+    expect(still, mode).toBe(0);
+    results[mode] = await shimmer(page);
+  }
+  console.log(
+    `horizon shimmer (mean |dL| per quarter-pixel pan, 5-15° up): ${Object.entries(
+      results,
+    )
+      .map(([m, v]) => `${m} ${v.toFixed(2)}`)
+      .join(", ")}`,
+  );
+  expect(errors).toEqual([]);
+});

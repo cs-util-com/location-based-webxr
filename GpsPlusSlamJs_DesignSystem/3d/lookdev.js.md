@@ -251,7 +251,9 @@ denoise, resolutionScale })` is the sweep's handle; `setAoExclusions(bool)`
   preset glide, and its on-demand cost and stepping sweep), `lookdev-tidy.smoke.spec.mjs` (the
   round-3 labels, ramp row, varied city and its logged cost) and
   `ambient-occlusion.smoke.spec.mjs` (the AO switch and its checks),
-  `sun-clouds.smoke.spec.mjs` (the sun through clouds against the
-  no-effect baseline, its switches and cost; stage
+  `sun-clouds.smoke.spec.mjs` (the sun through clouds, the cloud
+  shadows and the sun light dimming against the no-effect baseline, one
+  switch per effect, their costs, and the horizon shimmer per cloud mode,
+  logged; stage
   `test:e2e`), and `shoot-3d.mjs`. The readout's stats line names the
   city's material count and finish next to the draws.
