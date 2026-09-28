@@ -14,9 +14,19 @@
     looking straight down).
   - `flyInPose(t)`: the pose at t in 0-1 (clamped), eased at both ends;
     altitude geometric, tilt linear, heading the short way round.
+  - `poseHashValues(pose)` -> `{ alt, tilt, head }`: the pose at the
+    hash's resolution (whole metres, 0.01°; heading in [0, 360)).
+  - `SETTLE` `{ angleDeg: 0.005, altitudeShare: 1e-4 }` and
+    `poseSettled(a, b)`: true when one frame moved every angle by less than
+    0.005° (heading compared the short way round) and the altitude by less
+    than a 1e-4 share (what 0.005° of tilt moves it by in an oblique view).
+    The page then finishes the damping at once (the remaining tail is about
+    20 such steps, 0.1°) and writes the pose it lands on: not at the
+    gesture's `end`, when the damping still turns the camera.
 - Invariants: altitude is kept at every tilt; the hash's `alt`, `tilt` and
   `head` round-trip through these two functions.
 - Tests: `terrain-camera.test.mjs`: top-down above the target, south of it
   heading north, east of it heading west; the round trip for every preset
   and an arbitrary pose; the presets' framing; the fly-in's ends, monotonic
-  descent, clamping and geometric midpoint.
+  descent, clamping and geometric midpoint; the hash rounding; settled below
+  the resolution, moving just above it on each axis, and across north.

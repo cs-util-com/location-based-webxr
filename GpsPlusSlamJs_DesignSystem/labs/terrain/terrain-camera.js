@@ -52,10 +52,44 @@ export function poseFromPosition([x, y, z]) {
   };
 }
 
+/** The hash's resolution: `alt` in whole metres, angles in 0.01°. */
+const ALT_STEP_M = 1;
+const ANGLE_STEP_DEG = 0.01;
+
+/** A pose as the hash writes it: `alt`, `tilt`, `head` at its resolution. */
+export function poseHashValues({ altitudeM, tiltDeg, headingDeg }) {
+  const round = (v, step) => Math.round(v / step) * step;
+  return {
+    alt: round(altitudeM, ALT_STEP_M),
+    tilt: +round(tiltDeg, ANGLE_STEP_DEG).toFixed(2),
+    head: +(round(headingDeg, ANGLE_STEP_DEG) % 360).toFixed(2),
+  };
+}
+
+/** The signed difference `b - a` in degrees, the short way round. */
+const angleStep = (a, b) => ((((b - a) % 360) + 540) % 360) - 180;
+
+/**
+ * When a drag's damping counts as settled (T0/T1 review finding 12): one
+ * frame moves every angle by less than 0.005° and the altitude by less than
+ * a 1e-4 share (what 0.005° of tilt moves it by in an oblique view). The page
+ * then finishes the damping at once (the remaining geometric tail is about
+ * 20 such steps, 0.1°) and writes the pose it lands on.
+ */
+export const SETTLE = Object.freeze({ angleDeg: 0.005, altitudeShare: 1e-4 });
+
+/** True when one frame moved the pose from `a` to `b` by less than SETTLE. */
+export function poseSettled(a, b) {
+  return (
+    Math.abs(b.altitudeM - a.altitudeM) < SETTLE.altitudeShare * a.altitudeM &&
+    Math.abs(b.tiltDeg - a.tiltDeg) < SETTLE.angleDeg &&
+    Math.abs(angleStep(a.headingDeg, b.headingDeg)) < SETTLE.angleDeg
+  );
+}
+
 /** The shorter way round from `a` to `b` degrees, at `t`. */
 function lerpHeading(a, b, t) {
-  const d = ((((b - a) % 360) + 540) % 360) - 180;
-  return (a + d * t + 360) % 360;
+  return (a + angleStep(a, b) * t + 360) % 360;
 }
 
 /**

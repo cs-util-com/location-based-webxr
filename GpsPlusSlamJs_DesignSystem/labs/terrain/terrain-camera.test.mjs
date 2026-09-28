@@ -18,6 +18,8 @@ import {
   flyInPose,
   orbitPosition,
   poseFromPosition,
+  poseHashValues,
+  poseSettled,
 } from "./terrain-camera.js";
 
 const close = (a, b, eps, what) =>
@@ -113,5 +115,63 @@ describe("flyInPose", () => {
   // ease), so the view does not spend the whole flight near the ground.
   it("interpolates the altitude geometrically", () => {
     close(flyInPose(0.5).altitudeM, Math.sqrt(600_000 * 20_000), 1, "midpoint");
+  });
+});
+
+// T0/T1 review finding 12: with damping on, a drag's `end` comes while the
+// camera still turns, so a pose written then is not where the view stops.
+// The page waits until one frame moves the camera by less than a
+// perceptible step (0.005° of angle, a 1e-4 share of the altitude, which is
+// what that angle moves the altitude by in an oblique view), then finishes
+// the damping at once and writes the pose it lands on.
+describe("poseHashValues", () => {
+  it("rounds to the hash's resolution: 1 m, 0.01°", () => {
+    assert.deepEqual(
+      poseHashValues({
+        altitudeM: 12_345.6,
+        tiltDeg: 33.3333,
+        headingDeg: 359.996,
+      }),
+      { alt: 12_346, tilt: 33.33, head: 0 },
+    );
+  });
+});
+
+describe("poseSettled", () => {
+  const a = { altitudeM: 170_000, tiltDeg: 60, headingDeg: 340 };
+  it("is settled when every step is below its threshold", () => {
+    assert.equal(
+      poseSettled(a, {
+        altitudeM: 170_010,
+        tiltDeg: 60.004,
+        headingDeg: 340.004,
+      }),
+      true,
+    );
+  });
+
+  // Each axis alone, just above its threshold, is still moving (17 m is
+  // 1e-4 of 170 km).
+  for (const [what, b] of [
+    ["altitude", { ...a, altitudeM: 170_020 }],
+    ["tilt", { ...a, tiltDeg: 60.006 }],
+    ["heading", { ...a, headingDeg: 340.006 }],
+  ]) {
+    it(`is still moving when the ${what} steps more`, () => {
+      assert.equal(poseSettled(a, b), false);
+    });
+  }
+
+  it("scales the altitude threshold with the altitude", () => {
+    const low = { altitudeM: 2_000, tiltDeg: 60, headingDeg: 0 };
+    assert.equal(poseSettled(low, { ...low, altitudeM: 2_000.1 }), true);
+    assert.equal(poseSettled(low, { ...low, altitudeM: 2_000.3 }), false);
+  });
+
+  it("compares the heading across north", () => {
+    assert.equal(
+      poseSettled({ ...a, headingDeg: 359.998 }, { ...a, headingDeg: 0.001 }),
+      true,
+    );
   });
 });
