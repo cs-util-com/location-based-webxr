@@ -38,6 +38,8 @@ import {
   flyInPose,
   orbitPosition,
   poseFromPosition,
+  poseHashValues,
+  poseSettled,
 } from "./terrain-camera.js";
 import {
   FIELD,
@@ -248,8 +250,19 @@ function start() {
     errorBox.textContent = [...params.notes, ...errors].join(" ");
   };
 
+  /**
+   * Ends any damping motion at once: with damping off, one update applies
+   * the remaining turn and clears it. Without this a pose applied during a
+   * drag's damping would keep drifting after it was set.
+   */
+  const finishDamping = () => {
+    controls.enableDamping = false;
+    controls.update();
+    controls.enableDamping = true;
+  };
   /** The camera from a pose; OrbitControls keeps orbiting from there. */
   const setPose = (pose) => {
+    finishDamping();
     camera.position.fromArray(orbitPosition(pose));
     controls.target.set(0, 0, 0);
     camera.lookAt(controls.target);
@@ -309,21 +322,39 @@ function start() {
     u.uShadow.value = params.shadow;
   };
   window.addEventListener("hashchange", onHash);
-  // A drag or a wheel writes the pose into the hash when it ends, so the
-  // link still reproduces the view; the preset no longer describes it.
-  controls.addEventListener("end", () => {
-    const pose = poseFromPosition(
-      camera.position.clone().sub(controls.target).toArray(),
-    );
-    lastUserWrite = performance.now();
-    panel.write({
-      preset: null,
-      fly: null,
-      alt: Math.round(pose.altitudeM),
-      tilt: shown(pose.tiltDeg),
-      head: shown(pose.headingDeg),
-    });
+  // A drag or a wheel writes the pose into the hash, so the link still
+  // reproduces the view (the preset no longer describes it). NOT at `end`:
+  // the damping keeps turning the camera after the finger lifts. Once a frame
+  // moves it by less than a perceptible step (`poseSettled`), the rest of
+  // the damping is applied at once and the pose it lands on is written
+  // (T0/T1 review finding 12).
+  const settle = { active: false, last: null };
+  controls.addEventListener("start", () => {
+    settle.active = false;
   });
+  controls.addEventListener("end", () => {
+    settle.active = true;
+    settle.last = null;
+  });
+  const currentPose = () =>
+    poseFromPosition(camera.position.clone().sub(controls.target).toArray());
+  /** Called each frame after the controls update. */
+  const writePoseWhenSettled = () => {
+    if (!settle.active) return;
+    const pose = currentPose();
+    if (settle.last !== null && poseSettled(settle.last, pose)) {
+      settle.active = false;
+      finishDamping();
+      lastUserWrite = performance.now();
+      panel.write({
+        preset: null,
+        fly: null,
+        ...poseHashValues(currentPose()),
+      });
+      return;
+    }
+    settle.last = pose;
+  };
 
   const worker = new Worker(new URL("./terrain-worker.js", import.meta.url), {
     type: "module",
@@ -334,18 +365,29 @@ function start() {
     loading.show("");
     window.__terrainLab.ready = true;
   };
+  // `||`: an ErrorEvent can carry an EMPTY message (a failed module load).
   worker.onerror = (event) =>
-    fail(`The relief worker failed: ${event.message ?? "unknown error"}`);
+    fail(`The relief worker failed: ${event.message || "unknown error"}`);
   worker.onmessageerror = () =>
     fail("The relief worker sent an unreadable message.");
 
   const lut = rampLut(PASTEL_ATLAS.land);
-  /** Posts a build of the fetched tiles (copies: the bytes are kept). */
+  /**
+   * Posts a build of the fetched tiles. The worker gets COPIES of the bytes,
+   * transferred (not cloned a second time): the originals stay here for a
+   * rebuild when the sky view setting changes.
+   */
   const build = (fetched) => {
     run.buildId += 1;
     run.svfMs = null;
     loading.show("Computing relief...");
-    worker.postMessage({
+    const copies = fetched.map(({ z, x, y, bytes }) => ({
+      z,
+      x,
+      y,
+      bytes: bytes === null ? null : bytes.slice(0),
+    }));
+    const message = {
       type: "build",
       id: run.buildId,
       spec: {
@@ -353,14 +395,13 @@ function start() {
         reliefSigmaM: FIELD.reliefSigmaM,
         detailSigmaPosts: FIELD.detailSigmaPosts,
       },
-      tiles: fetched.map(({ z, x, y, bytes }) => ({
-        z,
-        x,
-        y,
-        bytes: bytes === null ? null : bytes.slice(0),
-      })),
+      tiles: copies,
       svf: { directions: params.svf, steps: FIELD.svfSteps },
-    });
+    };
+    worker.postMessage(
+      message,
+      copies.flatMap((t) => (t.bytes === null ? [] : [t.bytes])),
+    );
   };
 
   worker.onmessage = (event) => {
@@ -377,8 +418,10 @@ function start() {
       if (!m.hasData) {
         errors.add("No elevation tile could load: there is no relief to draw.");
       } else if (failed > 0 || m.missing > 0) {
+        // By post count: that is what the hatch shows (a failed tile can
+        // cover the padding ring only, which is never drawn).
         errors.add(
-          `${failed} of ${tiles.length} elevation tiles could not load: the hatched area has no data.`,
+          `${m.missing} of ${m.total} height posts have no data (${failed} of ${tiles.length} elevation tiles could not load): they are hatched.`,
         );
       }
       showErrors();
@@ -466,6 +509,7 @@ function start() {
     } else {
       controls.enabled = true;
       controls.update();
+      writePoseWhenSettled();
     }
     const altitudeM = Math.max(1, camera.position.y);
     smoothedAltitude =

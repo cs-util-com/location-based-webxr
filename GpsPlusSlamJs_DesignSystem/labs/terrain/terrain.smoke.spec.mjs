@@ -233,7 +233,10 @@ test("a tile that fails shows a no-data hatch and says so", async ({
   expect(s.missingTiles).toBe(1);
   expect(s.missing).toBeGreaterThan(0);
   expect(s.missing).toBeLessThan(s.total);
-  expect(s.errorText).toContain("1 of 9 elevation tiles could not load");
+  // Worded by post count (what the hatch shows), with the tile count.
+  expect(s.errorText).toContain(
+    `${s.missing} of ${s.total} height posts have no data (1 of 9 elevation tiles could not load)`,
+  );
   await expect(page.locator("#terrain-error")).toBeVisible();
   // The region's south-east corner lies in that tile: it shows the hatch,
   // never a height colour (the heightfield fills its posts from the mean).
@@ -336,6 +339,133 @@ test("a constant-height tile keeps the same colours at every exaggeration", asyn
 });
 
 /**
+ * The tilted-plane tolerance (8-bit, per channel): a ground point's colour
+ * across E, read where the page projects that point LIFTED by E. The
+ * flat-tile check above cannot see the shading (a flat normal is flat at
+ * any E); this one can: the plane faces east, into the shadow side of the
+ * four lights, so a shading normal that followed E would darken it with E.
+ * Sub-pixel placement of the projected point moves the ramp by under half a
+ * level. Swept 0-3 and reported.
+ */
+const TILT_COLOUR_TOLERANCE = 2;
+
+test("a tilted plane keeps each point's colour at every exaggeration (E is not in the normal)", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  // Falling 2000 m per degree of longitude to the east, 3000 m at the
+  // centre: 1200-4800 m over the sampled points, all land, on a 2.3 %
+  // slope (7 % after the top view's slope boost).
+  const LNG0 = -79.2;
+  const heightAt = (lng) => 3000 - 2000 * (lng - LNG0);
+  const lngOf = (x, col) => ((x * 256 + col + 0.5) / 65_536) * 360 - 180;
+  const cache = new Map();
+  await routeAll(page, (key) => {
+    const x = Number(key.split("/")[1]);
+    if (!cache.has(x)) {
+      cache.set(
+        x,
+        terrariumPng(256, 256, (col) => heightAt(lngOf(x, col))),
+      );
+    }
+    return { status: 200, body: cache.get(x) };
+  });
+  await boot(page, "preset=top&svf=0&tau=0&exag=1");
+  const { datum } = await state(page);
+  expect(datum).toBeCloseTo(heightAt(LNG0), 0);
+  const lngs = [-0.9, -0.45, 0.2, 0.6, 0.9].map((d) => LNG0 + d);
+  const xs = await page.evaluate(
+    (ls) => ls.map((lng) => window.__terrainLab.toEnu(37.9, lng).x),
+    lngs,
+  );
+  let reference = null;
+  let worst = 0;
+  for (const e of [1, 2, 5, 10]) {
+    await applyHash(page, `preset=top&svf=0&tau=0&exag=${e}`);
+    expect((await state(page)).effectiveE).toBe(e);
+    const px = await page.evaluate(
+      ({ points }) =>
+        window.__terrainLab.readPixels(
+          points.map((p) => window.__terrainLab.project(p)),
+        ),
+      { points: xs.map((x, i) => [x, e * (heightAt(lngs[i]) - datum), 0]) },
+    );
+    reference ??= px;
+    const diff = Math.max(
+      ...px.flatMap((p, i) =>
+        [0, 1, 2].map((c) => Math.abs(p[c] - reference[i][c])),
+      ),
+    );
+    worst = Math.max(worst, diff);
+    const sweep = [0, 1, 2, 3].map(
+      (t) => `${t}:${diff <= t ? "pass" : "fail"}`,
+    );
+    console.log(
+      `tilted plane at E=${e}: worst channel change ${diff} (${sweep.join(" ")})`,
+    );
+  }
+  expect(worst).toBeLessThanOrEqual(TILT_COLOUR_TOLERANCE);
+});
+
+test("a drag writes the pose to the hash once the damping has settled", async ({
+  page,
+}) => {
+  test.setTimeout(300_000);
+  await routeAll(page, fixtureTile);
+  await boot(page, "preset=oblique&svf=0");
+  const box = await page.locator("#terrain-canvas").boundingBox();
+  const cx = box.x + box.width * 0.4;
+  const cy = box.y + box.height * 0.5;
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx + 60, cy + 12, { steps: 4 });
+  await page.mouse.up();
+  await page.waitForFunction(
+    () => /(^|&)alt=/.test(location.hash.slice(1)),
+    null,
+    {
+      timeout: 120_000,
+    },
+  );
+  // Let any remaining motion run out: the pose must then hold still.
+  await page.waitForFunction(
+    () => {
+      const p = window.__terrainLab.state().pose;
+      // At the hash's resolution: the damping's last sub-millimetre steps
+      // run on for seconds and are not what a link can express.
+      const key = [
+        p.altitudeM.toFixed(0),
+        p.tiltDeg.toFixed(2),
+        p.headingDeg.toFixed(2),
+      ].join();
+      const w = window;
+      if (w.__poseKey !== key) {
+        w.__poseKey = key;
+        w.__poseSince = performance.now();
+        return false;
+      }
+      return performance.now() - w.__poseSince > 1500;
+    },
+    null,
+    { timeout: 60_000, polling: 100 },
+  );
+  const { hash, pose } = await page.evaluate(() => ({
+    hash: Object.fromEntries(new URLSearchParams(location.hash.slice(1))),
+    pose: window.__terrainLab.state().pose,
+  }));
+  console.log(
+    `drag: hash ${JSON.stringify(hash)}, settled pose ${JSON.stringify(pose)}`,
+  );
+  // The link opens the view the camera stopped at, to the hash's resolution.
+  expect(Math.abs(Number(hash.alt) - pose.altitudeM)).toBeLessThanOrEqual(1);
+  expect(Math.abs(Number(hash.tilt) - pose.tiltDeg)).toBeLessThanOrEqual(0.02);
+  const dh =
+    ((((Number(hash.head) - pose.headingDeg) % 360) + 540) % 360) - 180;
+  expect(Math.abs(dh)).toBeLessThanOrEqual(0.02);
+  expect(hash.preset).toBeUndefined();
+});
+
+/**
  * The ridge-proportionality tolerance: the measured silhouette's error
  * against the page's own projection of the crest lifted by E, as a fraction
  * of the ridge's projected height. Swept over 2-10 % (plan §9 finding 7)
@@ -392,6 +522,11 @@ test("the exaggeration raises a ridge's screen height in proportion", async ({
     expect(Math.abs(corner[c] - bg[c])).toBeLessThanOrEqual(2);
   }
   const columns = [0.45, 0.5, 0.55];
+  // Normalised canvas units to CSS pixels: the canvas's own height, not
+  // the viewport's assumed 800.
+  const canvasPx = await page.evaluate(
+    () => document.getElementById("terrain-canvas").clientHeight,
+  );
   const results = [];
   for (const e of [1, 2, 5]) {
     await applyHash(page, `${view}&exag=${e}`);
@@ -404,26 +539,33 @@ test("the exaggeration raises a ridge's screen height in proportion", async ({
       { x: ridgeX, lift: e * (BASE_M + PEAK_M - datum), cols: columns },
     );
     const top = [...measured].sort((a, b) => a - b)[1]; // the median column
-    const heightPx = (foot[1] - crest[1]) * 800;
-    const errorPx = Math.abs(top - crest[1]) * 800;
-    results.push({ e, heightPx, errorPx, relative: errorPx / heightPx });
+    const heightPx = (foot[1] - crest[1]) * canvasPx;
+    const measuredPx = (foot[1] - top) * canvasPx;
+    const errorPx = Math.abs(top - crest[1]) * canvasPx;
+    results.push({
+      e,
+      heightPx,
+      measuredPx,
+      errorPx,
+      relative: errorPx / heightPx,
+    });
   }
-  const base = results[0].heightPx;
+  const base = results[0].measuredPx;
   for (const r of results) {
     const sweep = RIDGE_TOLERANCE_SWEEP.map(
       (t) => `${t * 100}%:${r.relative <= t ? "pass" : "fail"}`,
     );
     console.log(
-      `ridge E=${r.e}: projected ${r.heightPx.toFixed(1)} px (${(r.heightPx / base).toFixed(2)}x E=1), ` +
+      `ridge E=${r.e}: projected ${r.heightPx.toFixed(1)} px, measured ${r.measuredPx.toFixed(1)} px (${(r.measuredPx / base).toFixed(2)}x E=1), ` +
         `silhouette off by ${r.errorPx.toFixed(1)} px = ${(100 * r.relative).toFixed(1)}% (${sweep.join(" ")})`,
     );
   }
+  // The one assertion: the RENDERED crest is where E x its height projects,
+  // at every E (the projection's perspective, not the lab, bends the ratio
+  // off exactly E). A ratio of the projected heights alone could not fail:
+  // both sides would be the test's own arithmetic.
   for (const r of results)
     expect(r.relative).toBeLessThanOrEqual(RIDGE_TOLERANCE);
-  // In proportion: the lifted height grows with E (the projection's own
-  // perspective bends it slightly, which the check above has measured).
-  expect(results[1].heightPx).toBeGreaterThan(1.8 * base);
-  expect(results[2].heightPx).toBeGreaterThan(4 * base);
 });
 
 test("the fly-in descends from 600 km to 20 km", async ({ page }) => {
