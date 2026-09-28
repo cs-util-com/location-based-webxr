@@ -49,20 +49,28 @@ observerAltitudeKm = 0.2, sunIntensity = 1 })` — adds `sky` to the scene.
   - `configure({ cloudSlabSteps })` (8/16/24/32, default 16) is the slab's
     cost knob. It is validated first, kept across modes, applied to a live
     slab as a new program and to a later slab at creation. No re-bake.
-- `configure({ sunThroughClouds: { discExponent?, forward? } })` and the
-  getter `sunThroughClouds` (round-3 plan 2026-09-27-0532, DEC-FB3-6,
-  [`cloud-sun.ts.md`](cloud-sun.ts.md)): the disc behind a cloud keeps
-  T^k of itself (`discExponent` k), and thin cloud glows forward around the
-  sun on the dome and the slab (`forward`, the strength). Both 0 (OFF) by
-  default, so no app's sky changes unasked; the look-dev page uses 4 and 1.
-  A field not given keeps its value; each must be finite and ≥ 0
-  (`RangeError` before any change). A new `forward` re-bakes (the bake's
-  dome clouds carry the glow); a new exponent does not (the bake has no
-  disc). The uniforms are shared with the bake, the sheet and the slab.
+- `configure({ sunThroughClouds: { discExponent?, aureole?, silverLining? } })`
+  and the getter `sunThroughClouds` (round-3 plan 2026-09-27-0532,
+  DEC-FB3-6, [`cloud-sun.ts.md`](cloud-sun.ts.md)), one knob per effect
+  (the owner's requirement): the disc behind a cloud keeps T^k of itself
+  (`discExponent` k); thin cloud glows a few degrees around the sun
+  (`aureole`, the narrow lobe's strength) and thin backlit edges brighten
+  further out (`silverLining`, the broad lobe's), on the dome and the
+  slab. All 0 (OFF) by default, so no app's sky changes unasked; the
+  look-dev page uses 4, 1 and 1. A field not given keeps its value; each
+  must be finite and ≥ 0, and an unknown key (a misspelling, the first
+  cut's `forward`) is refused (`RangeError` before any change). A new lobe
+  strength re-bakes (the bake's dome clouds carry the glow); a new
+  exponent does not (the bake has no disc). The uniforms are shared with the bake, the sheet and the slab.
   The disc reads the REAL threshold in every mode (`atmCloudSunThreshold`,
   the same object as the bake's) and the visible sky's own
   `atmCloudAnchored` (0 in dome mode, 1 in sheet and slab mode; the bake
   keeps 0).
+- `cloudTransmittanceToward([x, y, z])`: the share of the sun reaching a
+  world point through the clouds, the column model on the CPU
+  (`cloudColumnTransmittanceToward` on the sky's own noise, real threshold
+  and drift); 1 before the first sun and in a clear sky; `RangeError` for a
+  non-finite point. The look-dev page's "sun light dims" switch uses it.
 - `cloudUniforms` (getter): the noise texture, the real threshold and the
   drift offset, as the uniform objects themselves, for the cloud shadow
   patch ([`cloud-shadow.ts.md`](cloud-shadow.ts.md)).

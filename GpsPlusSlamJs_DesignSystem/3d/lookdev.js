@@ -209,14 +209,22 @@ const state = {
   materials: DEFAULT_CITY_MATERIALS,
   finish: "mixed",
   // The sun through clouds (round-3 plan 2026-09-27-0532, stream D,
-  // DEC-FB3-6): the disc dims behind a cloud far faster than the sky, and
-  // thin cloud glows around the sun. On by default here, for the owner to
-  // judge; the framework's default is off. The smoke boot pins them off.
+  // DEC-FB3-6), ONE SWITCH PER EFFECT so the owner can judge each alone:
+  // the disc dims behind a cloud far faster than the sky (sunDisc), thin
+  // cloud glows a few degrees around the sun (sunAureole), thin backlit
+  // edges brighten further out (sunSilver). On by default here, for the
+  // owner to judge; the framework's default is off. The smoke boot pins
+  // them off.
   sunDisc: true,
-  sunGlow: true,
+  sunAureole: true,
+  sunSilver: true,
   // Cloud shadows on the ground (DEC-FB3-7): the sun's direct light dimmed
-  // by the cloud column toward it, in every lit material. On here too.
+  // per pixel by the cloud column toward it, in every lit material. On.
   cloudShadows: true,
+  // The sun light as a whole dimmed by the cloud column over the scene's
+  // centre (the brief's candidate). Off by default: with the cloud shadows
+  // on it dims the ground twice (the record's open question).
+  sunLightDim: false,
 };
 
 /** The catalog entries a city building may wear (city-materials.js). */
@@ -303,7 +311,14 @@ function readHash() {
   if (params.has("catalog")) state.catalog = params.get("catalog") === "1";
   if (params.has("ao")) state.ao = params.get("ao") === "1";
   if (params.has("sunDisc")) state.sunDisc = params.get("sunDisc") === "1";
-  if (params.has("sunGlow")) state.sunGlow = params.get("sunGlow") === "1";
+  if (params.has("sunAureole")) {
+    state.sunAureole = params.get("sunAureole") === "1";
+  }
+  if (params.has("sunSilver"))
+    state.sunSilver = params.get("sunSilver") === "1";
+  if (params.has("sunLightDim")) {
+    state.sunLightDim = params.get("sunLightDim") === "1";
+  }
   if (params.has("cloudShadows")) {
     state.cloudShadows = params.get("cloudShadows") === "1";
   }
@@ -346,8 +361,10 @@ function writeHash() {
     materials: String(state.materials),
     finish: state.finish,
     sunDisc: state.sunDisc ? "1" : "0",
-    sunGlow: state.sunGlow ? "1" : "0",
+    sunAureole: state.sunAureole ? "1" : "0",
+    sunSilver: state.sunSilver ? "1" : "0",
     cloudShadows: state.cloudShadows ? "1" : "0",
+    sunLightDim: state.sunLightDim ? "1" : "0",
   });
   history.replaceState(null, "", `#${params}`);
 }
@@ -504,7 +521,8 @@ function useAtmosphere() {
     cloudMode: state.cloudMode,
     sunThroughClouds: {
       discExponent: state.sunDisc ? CLOUD_SUN.pageDiscExponent : 0,
-      forward: state.sunGlow ? 1 : 0,
+      aureole: state.sunAureole ? 1 : 0,
+      silverLining: state.sunSilver ? 1 : 0,
     },
   });
   lutMs = performance.now() - start;
@@ -513,6 +531,7 @@ function useAtmosphere() {
   cloudShadow.sync(atmosphere);
   cloudShadow.setEnabled(state.cloudShadows);
   atmosphere.applySunLight(sun);
+  sunBaseIntensity = sun.intensity;
   aimSunLight(direction);
   applyShadows(direction);
   renderer.toneMapping = TONE_MAPPINGS[state.tone];
@@ -711,8 +730,26 @@ function applyTier() {
   resize();
 }
 
+/** The sun light's intensity from the sky, before the cloud dimming. */
+let sunBaseIntensity = 1;
+/** Where the "sun light dims" switch reads the clouds: the scene's centre. */
+const SUN_DIM_POINT = [0, 0, 0];
+
+/**
+ * The sun light dimmed by the cloud column over the scene's centre, when
+ * the switch is on (it follows the drift, so it is set every frame).
+ */
+function applySunLightDim() {
+  const t =
+    state.sunLightDim && atmosphere
+      ? atmosphere.cloudTransmittanceToward(SUN_DIM_POINT)
+      : 1;
+  sun.intensity = sunBaseIntensity * t;
+}
+
 /** One frame, through the composer on the desktop tier. */
 function renderFrame() {
+  applySunLightDim();
   if (composer) composer.render();
   else renderer.render(scene, camera);
   catalogLabels?.render(scene, camera);
@@ -928,8 +965,10 @@ function syncControls() {
   $("#catalog").checked = state.catalog;
   $("#ao").checked = state.ao;
   $("#sun-disc").checked = state.sunDisc;
-  $("#sun-glow").checked = state.sunGlow;
+  $("#sun-aureole").checked = state.sunAureole;
+  $("#sun-silver").checked = state.sunSilver;
   $("#cloud-shadows").checked = state.cloudShadows;
+  $("#sun-light-dim").checked = state.sunLightDim;
   // The switch works on either tier; on the phone tier it says it draws on
   // the desktop tier only and offers the switch (the owner looked for it).
   $("[data-ao-tier]").hidden = state.tier === "desktop";
@@ -993,8 +1032,14 @@ function buildControls() {
   $("#sun-disc").addEventListener("change", (e) =>
     api.setSunThroughClouds({ disc: e.target.checked }),
   );
-  $("#sun-glow").addEventListener("change", (e) =>
-    api.setSunThroughClouds({ glow: e.target.checked }),
+  $("#sun-aureole").addEventListener("change", (e) =>
+    api.setSunThroughClouds({ aureole: e.target.checked }),
+  );
+  $("#sun-silver").addEventListener("change", (e) =>
+    api.setSunThroughClouds({ silver: e.target.checked }),
+  );
+  $("#sun-light-dim").addEventListener("change", (e) =>
+    api.setSunLightDim(e.target.checked),
   );
   $("#cloud-shadows").addEventListener("change", (e) =>
     api.setCloudShadows(e.target.checked),
@@ -1685,18 +1730,43 @@ Object.assign(api, {
     Object.assign(labelRule, next);
   },
   /**
-   * The sun through clouds (DEC-FB3-6): `disc` (the disc dims behind a
-   * cloud) and `glow` (thin cloud glows around the sun); a key not given
-   * keeps its value.
+   * The sun through clouds (DEC-FB3-6), one switch per effect: `disc` (the
+   * disc dims behind a cloud), `aureole` (thin cloud glows around the
+   * sun), `silver` (thin backlit edges brighten); a key not given keeps
+   * its value.
    */
-  setSunThroughClouds({ disc = state.sunDisc, glow = state.sunGlow } = {}) {
+  setSunThroughClouds({
+    disc = state.sunDisc,
+    aureole = state.sunAureole,
+    silver = state.sunSilver,
+  } = {}) {
     state.sunDisc = Boolean(disc);
-    state.sunGlow = Boolean(glow);
+    state.sunAureole = Boolean(aureole);
+    state.sunSilver = Boolean(silver);
+    applyLook();
+  },
+  /** The sun light dimmed by the clouds over the scene's centre, on or off. */
+  setSunLightDim(on) {
+    state.sunLightDim = Boolean(on);
     applyLook();
   },
   /**
+   * Test surface: the sun light's intensity now, and the cloud column's
+   * transmittance over the scene's centre that the dimming would apply.
+   */
+  sunLightDimInfo() {
+    applySunLightDim();
+    return {
+      intensity: sun.intensity,
+      base: sunBaseIntensity,
+      transmittance: atmosphere
+        ? atmosphere.cloudTransmittanceToward(SUN_DIM_POINT)
+        : 1,
+    };
+  },
+  /**
    * Test surface, the sweep's handle: the framework's raw values (any
-   * disc exponent k and forward strength), until the next look change.
+   * disc exponent k and the two lobes' strengths), until the next look change.
    */
   setSunThroughCloudsRaw(values) {
     if (!atmosphere) throw new Error("the sun through clouds needs the sky");

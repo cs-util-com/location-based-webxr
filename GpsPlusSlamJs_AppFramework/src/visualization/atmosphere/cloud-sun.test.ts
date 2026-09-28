@@ -18,6 +18,7 @@ import {
   CLOUD_SUN_GLSL,
   cloudDiscTransmittance,
   cloudForwardPhase,
+  cloudForwardPhaseOf,
   cloudForwardRadiance,
   cloudForwardShare,
 } from './cloud-sun.js';
@@ -83,12 +84,15 @@ describe('cloudForwardShare', () => {
 describe('cloudForwardRadiance', () => {
   it('is E · phase · share · strength, and 0 at strength 0', () => {
     const cos = Math.cos(4 * DEG);
-    expect(cloudForwardRadiance(2, cos, 0.7, 1)).toBeCloseTo(
+    expect(cloudForwardRadiance(2, cos, 0.7, 1, 1)).toBeCloseTo(
       2 * cloudForwardPhase(cos) * 0.7 * Math.exp(-0.7),
       12
     );
-    expect(cloudForwardRadiance(2, cos, 0.7, 0)).toBe(0);
-    expect(() => cloudForwardRadiance(1, cos, 0.7, -1)).toThrow(RangeError);
+    expect(cloudForwardRadiance(2, cos, 0.7, 0, 0)).toBe(0);
+    expect(() => cloudForwardRadiance(1, cos, 0.7, -1, 1)).toThrow(RangeError);
+    expect(() => cloudForwardRadiance(1, cos, 0.7, 1, Number.NaN)).toThrow(
+      RangeError
+    );
   });
 });
 
@@ -130,8 +134,30 @@ describe('CLOUD_SUN_GLSL', () => {
     expect(CLOUD_SUN_GLSL).toContain(
       `ATM_FORWARD_SILVER_G = ${glslFloat(CLOUD_SUN.silverG)}`
     );
-    expect(CLOUD_SUN_GLSL).toContain('float atmForwardPhase(float cosTheta)');
+    expect(CLOUD_SUN_GLSL).toContain(
+      'float atmForwardPhase(float cosTheta, vec2 strengths)'
+    );
     expect(CLOUD_SUN_GLSL).toContain('return tau * exp(-tau);');
     expect(CLOUD_SUN_GLSL).not.toContain('uniform');
+  });
+});
+
+describe('cloudForwardPhaseOf (one knob per lobe, the owner’s requirement)', () => {
+  // Each lobe must be switchable alone, and the two at 1 must be the
+  // phase the look was judged with.
+  it('is the two lobes each at its own strength, summing to the phase', () => {
+    for (const deg of [0, 3, 12, 40]) {
+      const cos = Math.cos(deg * DEG);
+      const a = cloudForwardPhaseOf(cos, 1, 0);
+      const s = cloudForwardPhaseOf(cos, 0, 1);
+      expect(a + s).toBeCloseTo(cloudForwardPhase(cos), 12);
+      expect(cloudForwardPhaseOf(cos, 0.5, 2)).toBeCloseTo(0.5 * a + 2 * s, 12);
+      expect(cloudForwardPhaseOf(cos, 0, 0)).toBe(0);
+    }
+    // The aureole is the narrow one: it falls far faster away from the sun.
+    const fall = (a: number, s: number) =>
+      cloudForwardPhaseOf(Math.cos(20 * DEG), a, s) /
+      cloudForwardPhaseOf(1, a, s);
+    expect(fall(1, 0)).toBeLessThan(fall(0, 1) / 5);
   });
 });

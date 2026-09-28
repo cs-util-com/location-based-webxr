@@ -413,7 +413,8 @@ void main() {
  * so both draw ONE pattern, cover and light. It carries the column
  * (`cloud-column.ts`), the forward scattering (`cloud-sun.ts`) and
  * `atmCloudForwardRadiance`, which the dome and the slab add to a cloud
- * (`atmCloudForward` 0 = off). Expects `atmTransmittanceLut`,
+ * (`atmCloudForward`: x the aureole's strength, y the silver lining's;
+ * (0, 0) = off). Expects `atmTransmittanceLut`,
  * `atmSkyViewLut` and `atmSunDirection` to be declared before it, and
  * `ATMOSPHERE_COMMON_GLSL` to be included.
  */
@@ -434,7 +435,7 @@ const float ATM_CLOUD_FORWARD_POWER = ${glslFloat(CLOUD_LAYER.forwardPower)};
 const float ATM_CLOUD_THICKNESS = ${glslFloat(CLOUD_LAYER.thicknessDarkening)};
 const float ATM_CLOUD_SKY_AMBIENT = ${glslFloat(CLOUD_LAYER.skyAmbient)};
 const float ATM_CLOUD_AERIAL_KM = ${glslFloat(CLOUD_LAYER.aerialKm)};
-uniform float atmCloudForward;
+uniform vec2 atmCloudForward;
 ${CLOUD_COLUMN_GLSL}
 ${CLOUD_SUN_GLSL}
 
@@ -483,11 +484,11 @@ vec3 atmCloudLit(vec3 dir, float r, float density) {
 // The sun scattered forward out of a cloud of optical depth tau along dir
 // (LUT units): strongest around the sun and through thin cloud. Twin of
 // cloud-sun.ts cloudForwardRadiance, with the sun's transmittance at cloud
-// height as its illuminance.
+// height as its illuminance and the two lobes' strengths from the uniform.
 vec3 atmCloudForwardRadiance(vec3 dir, float r, float tau) {
   vec3 sunAtCloud = atmSampleTransmittance(atmTransmittanceLut, r + ATM_CLOUD_ALTITUDE, atmSunDirection.y);
-  return ATM_RADIANCE_SCALE * sunAtCloud * atmForwardPhase(dot(dir, atmSunDirection))
-    * atmForwardShare(tau) * atmCloudForward;
+  return ATM_RADIANCE_SCALE * sunAtCloud * atmForwardPhase(dot(dir, atmSunDirection), atmCloudForward)
+    * atmForwardShare(tau);
 }
 `;
 
@@ -574,7 +575,7 @@ vec3 atmClouds(vec3 dir, float r, vec3 skyBehind) {
   float aerial = exp(-t / ATM_CLOUD_AERIAL_KM);
   vec3 clouded = mix(skyBehind, lit, density * aerial);
   // The forward scattering through the column along the view (cloud-sun.ts).
-  if (atmCloudForward > 0.0) {
+  if (atmCloudForward.x + atmCloudForward.y > 0.0) {
     float tau = atmColumnOpticalDepth(noise, atmCloudThreshold, 0.0, dir.y);
     clouded += atmCloudForwardRadiance(dir, r, tau) * fade * aerial;
   }

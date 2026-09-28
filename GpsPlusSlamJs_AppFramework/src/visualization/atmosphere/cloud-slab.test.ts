@@ -58,7 +58,7 @@ import {
   cloudTopRadiance,
 } from './cloud-sheet.js';
 import { cloudColumnOpticalDepth } from './cloud-column.js';
-import { cloudForwardPhase } from './cloud-sun.js';
+import { cloudForwardPhase, cloudForwardPhaseOf } from './cloud-sun.js';
 import { mulberry32 } from '../../test-utils/elevation-offset-scenarios.js';
 
 const S = CLOUD_SLAB;
@@ -1432,14 +1432,25 @@ describe('the forward scattering in the march (round-3 plan 2026-09-27-0532, DEC
   const sunDir = dirAt(50, 90);
   const sunT: Vec3 = [0.9, 0.88, 0.8];
   const zenith: Vec3 = [0.01, 0.015, 0.03];
-  const march = (noise: number, forward: number | undefined, dir: Vec3) =>
+  const march = (
+    noise: number,
+    forward: number | undefined,
+    dir: Vec3,
+    silverLining = forward
+  ) =>
     cloudSlabMarch({
       camera: [0, 18, 0],
       dir,
       steps: 8,
       sample: () => noise,
       threshold: theta,
-      light: { sunTransmittance: sunT, sunDir, zenith, forward },
+      light: {
+        sunTransmittance: sunT,
+        sunDir,
+        zenith,
+        aureole: forward,
+        silverLining,
+      },
     });
 
   // WHY: off (0 or omitted) must be exactly today's march, or every
@@ -1460,6 +1471,20 @@ describe('the forward scattering in the march (round-3 plan 2026-09-27-0532, DEC
     for (let c = 0; c < 3; c++) {
       expect(on.colour[c]! - off.colour[c]!).toBeCloseTo(
         sunT[c]! * cloudForwardPhase(1) * tau * Math.exp(-tau) * weight,
+        6
+      );
+    }
+    // Each lobe alone adds its own share: the two add up to both on.
+    const aureoleOnly = march(theta, 1, sunDir, 0);
+    const silverOnly = march(theta, 0, sunDir, 1);
+    for (let c = 0; c < 3; c++) {
+      const gainA = aureoleOnly.colour[c]! - off.colour[c]!;
+      const gainS = silverOnly.colour[c]! - off.colour[c]!;
+      expect(gainA).toBeGreaterThan(0);
+      expect(gainS).toBeGreaterThan(0);
+      expect(gainA + gainS).toBeCloseTo(on.colour[c]! - off.colour[c]!, 9);
+      expect(gainA).toBeCloseTo(
+        sunT[c]! * cloudForwardPhaseOf(1, 1, 0) * tau * Math.exp(-tau) * weight,
         6
       );
     }
@@ -1487,7 +1512,7 @@ describe('CLOUD_SLAB_FRAGMENT_GLSL forward scattering', () => {
   it('adds the glow after the loop, weighted and faded like the twin', () => {
     const g = CLOUD_SLAB_FRAGMENT_GLSL;
     const after = g.slice(g.indexOf('// atm-slab-loop-end'));
-    expect(after).toContain('if (atmCloudForward > 0.0)');
+    expect(after).toContain('if (atmCloudForward.x + atmCloudForward.y > 0.0)');
     expect(after).toContain('-log(max(transmittance, 1e-6))');
     expect(after).toContain('alpha / max(1.0 - transmittance, 1e-6)');
     expect(after).toContain(

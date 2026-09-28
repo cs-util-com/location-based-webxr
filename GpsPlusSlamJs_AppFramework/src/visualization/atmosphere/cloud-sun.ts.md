@@ -31,11 +31,16 @@ front of the sun. CPU twins and their GLSL; `SkyAtmosphere` switches them
 - `cloudForwardPhase(cosθ)`: the two-lobe phase per steradian, integrating
   to 1; `RangeError` outside [-1, 1].
 - `cloudForwardShare(τ)`: τ·e^(-τ); `RangeError` for τ < 0 or not finite.
-- `cloudForwardRadiance(E, cosθ, τ, strength)`: E · phase · share ·
-  strength; `RangeError` for a negative strength.
+- `cloudForwardPhaseOf(cosθ, aureole, silverLining)`: the phase with each
+  lobe at its own strength (one switch per effect, the owner's requirement);
+  at (1, 1) it is `cloudForwardPhase`; `RangeError` for a negative or
+  non-finite strength.
+- `cloudForwardRadiance(E, cosθ, τ, aureole, silverLining)`: E ·
+  phase(of the two strengths) · share.
 - `cloudDiscTransmittance(τ, k)`: e^(-k·τ); `RangeError` for negative or
   non-finite values.
-- `CLOUD_SUN_GLSL`: `atmForwardLobe`, `atmForwardPhase`, `atmForwardShare`;
+- `CLOUD_SUN_GLSL`: `atmForwardLobe`, `atmForwardPhase(cosθ, strengths)`
+  (x the aureole's, y the silver lining's), `atmForwardShare`;
   no uniform, include-guarded. The sky's `atmCloudForwardRadiance` and
   `atmCloudDiscTransmittance` (in `atmosphere-glsl.ts`) use it.
 
@@ -45,8 +50,8 @@ front of the sun. CPU twins and their GLSL; `SkyAtmosphere` switches them
   factor is 1; the look-dev smoke measures both at the same pixels (within
   1 level).
 - **The phase is a density:** it integrates to 1 over the sphere, so the
-  glow's brightness is E × a probability, not a free gain (the strength is
-  the one free knob, 1 = the model).
+  glow's brightness is E × a probability, not a free gain (the two lobe
+  strengths are the free knobs, 1 = the model).
 - **The disc exponent is an art knob, not physics.** Physically the direct
   beam is e^(-τ) (k = 1), and a real sun behind τ = 3 still outshines the
   sky by ~750x; k = 4 makes the disc merge into a cloud of τ ≈ 3 (measured
@@ -62,7 +67,11 @@ front of the sun. CPU twins and their GLSL; `SkyAtmosphere` switches them
 
 ```ts
 atmosphere.configure({
-  sunThroughClouds: { discExponent: CLOUD_SUN.pageDiscExponent, forward: 1 },
+  sunThroughClouds: {
+    discExponent: CLOUD_SUN.pageDiscExponent,
+    aureole: 1,
+    silverLining: 1,
+  },
 });
 ```
 

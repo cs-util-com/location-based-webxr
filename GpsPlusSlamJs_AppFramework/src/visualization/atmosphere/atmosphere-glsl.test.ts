@@ -157,8 +157,13 @@ describe('the sun through clouds in the sky (round-3 plan 2026-09-27-0532, DEC-F
   // WHY: the dome's glow must come from the same column along the view,
   // faded like the cloud it belongs to, and be gated by its strength.
   it('adds the forward glow to the dome, faded like its cloud', () => {
+    // Each lobe at its own strength: x the aureole, y the silver lining.
+    expect(ATMOSPHERE_CLOUD_GLSL).toContain('uniform vec2 atmCloudForward;');
+    expect(ATMOSPHERE_CLOUD_GLSL).toContain(
+      'atmForwardPhase(dot(dir, atmSunDirection), atmCloudForward)'
+    );
     const body = fnBody(SKY_FRAGMENT_GLSL, 'vec3 atmClouds(');
-    expect(body).toContain('if (atmCloudForward > 0.0)');
+    expect(body).toContain('if (atmCloudForward.x + atmCloudForward.y > 0.0)');
     expect(body).toContain(
       'atmColumnOpticalDepth(noise, atmCloudThreshold, 0.0, dir.y)'
     );

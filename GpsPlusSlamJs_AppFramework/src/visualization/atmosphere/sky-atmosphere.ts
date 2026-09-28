@@ -48,9 +48,13 @@ import { skyIlluminanceCpu } from './atmosphere-fallback.js';
 import { SKY_VIEW_LUT_SIZE } from './atmosphere-lut-mapping.js';
 import {
   CLOUD_LAYER,
+  CLOUD_TEXTURE_SIZE,
+  cloudNoise,
+  cloudNoiseSample,
   cloudThreshold,
   createCloudTexture,
 } from './cloud-layer.js';
+import { cloudColumnTransmittanceToward } from './cloud-column.js';
 import {
   CLOUD_MODES,
   CLOUD_SHEET,
@@ -87,7 +91,8 @@ export interface DirectionLike {
 }
 
 /**
- * The sun through clouds (`cloud-sun.ts`, round-3 DEC-FB3-6). Both off by
+ * The sun through clouds (`cloud-sun.ts`, round-3 DEC-FB3-6), one knob per
+ * effect so each can be judged alone (the owner's requirement). All off by
  * default, so no app's sky changes unasked; the look-dev page turns them on.
  */
 export interface SunThroughClouds {
@@ -98,11 +103,46 @@ export interface SunThroughClouds {
    */
   readonly discExponent: number;
   /**
-   * The forward scattering's strength (the aureole around the sun and the
-   * silver lining of thin, backlit edges), on the dome's clouds and the
-   * slab's. 0 = off, 1 = the model.
+   * The aureole's strength: the narrow forward lobe, thin cloud glowing a
+   * few degrees around the sun (dome and slab). 0 = off, 1 = the model.
    */
-  readonly forward: number;
+  readonly aureole: number;
+  /**
+   * The silver lining's strength: the broad forward lobe, thin backlit
+   * cloud edges brightened up to ~30° from the sun. 0 = off, 1 = the model.
+   */
+  readonly silverLining: number;
+}
+
+const SUN_THROUGH_CLOUDS_KEYS = ['discExponent', 'aureole', 'silverLining'];
+
+/**
+ * `change` over `current`, validated: an unknown key (a misspelling, or the
+ * first cut's `forward`) would otherwise be dropped silently and its effect
+ * never switch; every value must be a finite number ≥ 0.
+ *
+ * @throws RangeError for an unknown key or a bad value.
+ */
+function mergedSunThroughClouds(
+  current: SunThroughClouds,
+  change: Partial<SunThroughClouds>
+): SunThroughClouds {
+  for (const name of Object.keys(change)) {
+    if (!SUN_THROUGH_CLOUDS_KEYS.includes(name)) {
+      throw new RangeError(
+        `sunThroughClouds has no "${name}"; one of ${SUN_THROUGH_CLOUDS_KEYS.join(', ')}`
+      );
+    }
+  }
+  const next = { ...current, ...change };
+  for (const [name, value] of Object.entries(next)) {
+    if (!(typeof value === 'number' && Number.isFinite(value) && value >= 0)) {
+      throw new RangeError(
+        `sunThroughClouds.${name} must be a finite number ≥ 0, got ${String(value)}`
+      );
+    }
+  }
+  return next;
 }
 
 /** Thrown when the device cannot render float targets; keep the fallback sky. */
@@ -237,7 +277,8 @@ export class SkyAtmosphere {
       ),
     },
     atmCloudDiscExponent: { value: 0 },
-    atmCloudForward: { value: 0 },
+    /** The forward lobes' strengths: x the aureole, y the silver lining. */
+    atmCloudForward: { value: new THREE.Vector2() },
   };
   /**
    * Where the VISIBLE sky's disc reads the clouds: camera-centred at the
@@ -410,8 +451,38 @@ export class SkyAtmosphere {
   get sunThroughClouds(): SunThroughClouds {
     return {
       discExponent: this.clouds.atmCloudDiscExponent.value,
-      forward: this.clouds.atmCloudForward.value,
+      aureole: this.clouds.atmCloudForward.value.x,
+      silverLining: this.clouds.atmCloudForward.value.y,
     };
+  }
+
+  /**
+   * The share of the sun reaching the world point `point` (metres, the
+   * scene frame) through the clouds: the cloud column the sun's ray
+   * crosses, read on the CPU from the sky's own noise, cover and drift
+   * (`cloudColumnTransmittanceToward`). 1 before the first sun, for a sun
+   * at or below the horizon and in a clear sky. For dimming a light by the
+   * clouds as a whole (the look-dev page's "sun light dims" switch); the
+   * per-pixel shadows are `CloudShadow`'s.
+   *
+   * @throws RangeError for a non-finite point.
+   */
+  cloudTransmittanceToward(point: readonly [number, number, number]): number {
+    if (!point.every(Number.isFinite)) {
+      throw new RangeError(`the point must be finite, got ${point.join(', ')}`);
+    }
+    const sun = this.sun;
+    const threshold = this.clouds.atmCloudThreshold.value;
+    if (sun === undefined || threshold >= 2) return 1;
+    const data = cloudNoise(CLOUD_TEXTURE_SIZE, 1);
+    const offset = this.clouds.atmCloudOffset.value;
+    return cloudColumnTransmittanceToward(
+      point,
+      [sun.x, sun.y, sun.z],
+      threshold,
+      (u, v) => cloudNoiseSample(data, CLOUD_TEXTURE_SIZE, u, v),
+      [offset.x, offset.y]
+    );
   }
 
   /** The shared uniforms (for the haze patch). */
@@ -503,7 +574,7 @@ export class SkyAtmosphere {
     if (this.sun === undefined) return;
     const skyChanged = mie !== undefined || sun !== undefined;
     // The LUTs do not depend on clouds: a cover-only change just re-bakes,
-    // as does a new forward strength (the bake's clouds carry the glow).
+    // as does a new forward lobe (the bake's clouds carry the glow).
     if (skyChanged) this.rebuild(mie !== undefined || firstSun);
     else if (cloudsRebake) this.rebake();
   }
@@ -511,7 +582,7 @@ export class SkyAtmosphere {
   /**
    * Applies a validated cover and sun-through-clouds change (undefined:
    * none); returns whether the bake must follow (a new cover or forward
-   * strength: the bake's dome clouds carry both).
+   * lobe: the bake's dome clouds carry both).
    */
   private applyCloudLook(
     cover: number | undefined,
@@ -523,13 +594,15 @@ export class SkyAtmosphere {
 
   /**
    * Applies a validated change (undefined: none); returns whether the
-   * forward strength changed.
+   * forward lobes changed.
    */
   private applySunThroughClouds(next: SunThroughClouds | undefined): boolean {
     if (next === undefined) return false;
-    const forwardChanged = next.forward !== this.clouds.atmCloudForward.value;
+    const forward = this.clouds.atmCloudForward.value;
+    const forwardChanged =
+      next.aureole !== forward.x || next.silverLining !== forward.y;
     this.clouds.atmCloudDiscExponent.value = next.discExponent;
-    this.clouds.atmCloudForward.value = next.forward;
+    forward.set(next.aureole, next.silverLining);
     return forwardChanged;
   }
 
@@ -542,21 +615,11 @@ export class SkyAtmosphere {
   ): SunThroughClouds | undefined {
     if (change === undefined) return undefined;
     const current = this.sunThroughClouds;
-    const next = { ...current, ...change };
-    for (const [name, value] of Object.entries(next)) {
-      if (!(
-        typeof value === 'number' &&
-        Number.isFinite(value) &&
-        value >= 0
-      )) {
-        throw new RangeError(
-          `sunThroughClouds.${name} must be a finite number ≥ 0, got ${String(value)}`
-        );
-      }
-    }
+    const next = mergedSunThroughClouds(current, change);
     if (
       next.discExponent === current.discExponent &&
-      next.forward === current.forward
+      next.aureole === current.aureole &&
+      next.silverLining === current.silverLining
     ) {
       return undefined;
     }

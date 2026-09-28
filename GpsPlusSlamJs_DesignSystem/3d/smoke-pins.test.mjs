@@ -45,7 +45,8 @@ describe("pinnedHash", () => {
       ao: "0",
       varied: "0",
       sunDisc: "0",
-      sunGlow: "0",
+      sunAureole: "0",
+      sunSilver: "0",
       cloudShadows: "0",
     });
   });

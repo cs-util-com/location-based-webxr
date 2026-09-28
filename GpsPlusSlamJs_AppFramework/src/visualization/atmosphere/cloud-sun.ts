@@ -75,28 +75,51 @@ export function cloudForwardShare(tau: number): number {
 }
 
 /**
- * The forward-scattered radiance of a cloud, for a sun of illuminance
- * `sunIlluminance` at the cloud: E · phase(cos θ) · τ·e^(-τ) · strength
- * (strength 0 = off, 1 = the model). Added to the cloud's own light, in the
- * units of E per steradian. GLSL twin: `atmCloudForwardRadiance`.
+ * The forward phase with each lobe at its own strength (the aureole's and
+ * the silver lining's; 0 = off, 1 = the model): at (1, 1) it is
+ * `cloudForwardPhase`. GLSL twin: `atmForwardPhase(cosTheta, strengths)`.
  *
  * @throws RangeError for a negative or non-finite strength, and as the
- *   phase and the share do.
+ *   phase does.
+ */
+export function cloudForwardPhaseOf(
+  cosTheta: number,
+  aureole: number,
+  silverLining: number
+): number {
+  for (const strength of [aureole, silverLining]) {
+    if (!(Number.isFinite(strength) && strength >= 0)) {
+      throw new RangeError(`strength must be finite and ≥ 0, got ${strength}`);
+    }
+  }
+  cloudForwardPhase(cosTheta); // validates the cosine
+  const s = CLOUD_SUN.aureoleShare;
+  return (
+    s * aureole * lobe(cosTheta, CLOUD_SUN.aureoleG) +
+    (1 - s) * silverLining * lobe(cosTheta, CLOUD_SUN.silverG)
+  );
+}
+
+/**
+ * The forward-scattered radiance of a cloud, for a sun of illuminance
+ * `sunIlluminance` at the cloud: E · phase(cos θ) · τ·e^(-τ), each lobe at
+ * its own strength (0 = off, 1 = the model). Added to the cloud's own
+ * light, in the units of E per steradian. GLSL twin:
+ * `atmCloudForwardRadiance`.
+ *
+ * @throws RangeError as `cloudForwardPhaseOf` and the share do.
  */
 export function cloudForwardRadiance(
   sunIlluminance: number,
   cosTheta: number,
   tau: number,
-  strength: number
+  aureole: number,
+  silverLining: number
 ): number {
-  if (!(Number.isFinite(strength) && strength >= 0)) {
-    throw new RangeError(`strength must be finite and ≥ 0, got ${strength}`);
-  }
   return (
     sunIlluminance *
-    cloudForwardPhase(cosTheta) *
-    cloudForwardShare(tau) *
-    strength
+    cloudForwardPhaseOf(cosTheta, aureole, silverLining) *
+    cloudForwardShare(tau)
   );
 }
 
@@ -120,7 +143,8 @@ export function cloudDiscTransmittance(tau: number, exponent: number): number {
 }
 
 /**
- * `atmForwardPhase` and `atmForwardShare`: self-contained (no uniform) and
+ * `atmForwardPhase(cosTheta, strengths)` (x the aureole's, y the silver
+ * lining's) and `atmForwardShare`: self-contained (no uniform) and
  * include-guarded, like the column's chunk.
  */
 export const CLOUD_SUN_GLSL = /* glsl */ `
@@ -135,10 +159,10 @@ float atmForwardLobe(float cosTheta, float g) {
   return (1.0 - g2) / (4.0 * 3.141592653589793 * pow(max(1.0 + g2 - 2.0 * g * cosTheta, 1e-6), 1.5));
 }
 
-// Twin of cloudForwardPhase.
-float atmForwardPhase(float cosTheta) {
-  return ATM_FORWARD_AUREOLE_SHARE * atmForwardLobe(cosTheta, ATM_FORWARD_AUREOLE_G)
-    + (1.0 - ATM_FORWARD_AUREOLE_SHARE) * atmForwardLobe(cosTheta, ATM_FORWARD_SILVER_G);
+// Twin of cloudForwardPhaseOf: each lobe at its own strength.
+float atmForwardPhase(float cosTheta, vec2 strengths) {
+  return ATM_FORWARD_AUREOLE_SHARE * strengths.x * atmForwardLobe(cosTheta, ATM_FORWARD_AUREOLE_G)
+    + (1.0 - ATM_FORWARD_AUREOLE_SHARE) * strengths.y * atmForwardLobe(cosTheta, ATM_FORWARD_SILVER_G);
 }
 
 // Twin of cloudForwardShare.

@@ -17,6 +17,12 @@ import { AUTO_EXPOSURE, autoExposure } from './atmosphere-exposure.js';
 import { fallbackSky, skyIlluminanceCpu } from './atmosphere-fallback.js';
 import { ATMOSPHERE_MAX_SCENE_RADIANCE } from './atmosphere-glsl.js';
 import { skyRadiance } from './atmosphere-scattering.js';
+import { cloudColumnTransmittanceToward } from './cloud-column.js';
+import {
+  CLOUD_TEXTURE_SIZE,
+  cloudNoise,
+  cloudNoiseSample,
+} from './cloud-layer.js';
 import { SKY_VIEW_LUT_SIZE } from './atmosphere-lut-mapping.js';
 import {
   EARTH_ATMOSPHERE,
@@ -808,11 +814,12 @@ describe('SkyAtmosphere sun through clouds (round-3 plan 2026-09-27-0532, DEC-FB
     const { atmosphere } = setup();
     expect(atmosphere.sunThroughClouds).toEqual({
       discExponent: 0,
-      forward: 0,
+      aureole: 0,
+      silverLining: 0,
     });
     const sky = uniformsOf(atmosphere.sky.material);
     expect(sky.atmCloudDiscExponent!.value).toBe(0);
-    expect(sky.atmCloudForward!.value).toBe(0);
+    expect(sky.atmCloudForward!.value).toEqual(new THREE.Vector2(0, 0));
   });
 
   // WHY: one update must reach the sky, the bake and the slab (shared
@@ -821,10 +828,13 @@ describe('SkyAtmosphere sun through clouds (round-3 plan 2026-09-27-0532, DEC-FB
     const { atmosphere, device, scene } = setup();
     atmosphere.configure({ sunDirection: UP, cloudMode: 'slab' });
     atmosphere.configure({ sunThroughClouds: { discExponent: 4 } });
-    atmosphere.configure({ sunThroughClouds: { forward: 1 } });
+    atmosphere.configure({ sunThroughClouds: { aureole: 1 } });
+    atmosphere.configure({ sunThroughClouds: { silverLining: 0.5 } });
+    // Each knob on its own (the owner compares each effect alone).
     expect(atmosphere.sunThroughClouds).toEqual({
       discExponent: 4,
-      forward: 1,
+      aureole: 1,
+      silverLining: 0.5,
     });
     const sky = uniformsOf(atmosphere.sky.material);
     const bake = uniformsOf(
@@ -838,6 +848,20 @@ describe('SkyAtmosphere sun through clouds (round-3 plan 2026-09-27-0532, DEC-FB
       expect(u.atmCloudDiscExponent).toBe(sky.atmCloudDiscExponent);
     }
     expect(sky.atmCloudDiscExponent!.value).toBe(4);
+    expect(sky.atmCloudForward!.value).toEqual(new THREE.Vector2(1, 0.5));
+  });
+
+  // WHY: a misspelt or retired key (the first cut had one "forward") would
+  // otherwise be dropped silently and its effect never switch.
+  it('refuses an unknown key before changing anything', () => {
+    const { atmosphere } = setup();
+    atmosphere.setSun(UP);
+    expect(() =>
+      atmosphere.configure({
+        sunThroughClouds: { discExponent: 4, forward: 1 } as never,
+      })
+    ).toThrow(/no "forward"/);
+    expect(atmosphere.sunThroughClouds.discExponent).toBe(0);
   });
 
   // WHY: in the slab (and sheet) mode the visible sky draws no clouds (its
@@ -860,18 +884,20 @@ describe('SkyAtmosphere sun through clouds (round-3 plan 2026-09-27-0532, DEC-FB
   });
 
   // WHY: the bake carries the dome's clouds with their glow, so a new
-  // forward strength re-bakes; the disc is not in the bake, so a new
-  // exponent is free.
-  it('re-bakes for a new forward strength only', () => {
+  // lobe strength re-bakes (either lobe); the disc is not in the bake, so
+  // a new exponent is free.
+  it('re-bakes for a new lobe strength only', () => {
     const { atmosphere, device } = setup();
     atmosphere.setSun(UP);
     const bakes = device.bakes;
     atmosphere.configure({ sunThroughClouds: { discExponent: 4 } });
     expect(device.bakes).toBe(bakes);
-    atmosphere.configure({ sunThroughClouds: { forward: 1 } });
+    atmosphere.configure({ sunThroughClouds: { aureole: 1 } });
     expect(device.bakes).toBe(bakes + 1);
-    atmosphere.configure({ sunThroughClouds: { forward: 1 } });
-    expect(device.bakes).toBe(bakes + 1);
+    atmosphere.configure({ sunThroughClouds: { silverLining: 1 } });
+    expect(device.bakes).toBe(bakes + 2);
+    atmosphere.configure({ sunThroughClouds: { aureole: 1 } });
+    expect(device.bakes).toBe(bakes + 2);
   });
 
   it.each([-1, Number.NaN, Number.POSITIVE_INFINITY])(
@@ -882,7 +908,7 @@ describe('SkyAtmosphere sun through clouds (round-3 plan 2026-09-27-0532, DEC-FB
       expect(() =>
         atmosphere.configure({
           cloudCover: 0.5,
-          sunThroughClouds: { discExponent: 4, forward: bad },
+          sunThroughClouds: { discExponent: 4, silverLining: bad },
         })
       ).toThrow(RangeError);
       expect(atmosphere.sunThroughClouds.discExponent).toBe(0);
@@ -913,5 +939,49 @@ describe('SkyAtmosphere sun through clouds (round-3 plan 2026-09-27-0532, DEC-FB
         ).toBeDefined();
       }
     }
+  });
+});
+
+describe('SkyAtmosphere.cloudTransmittanceToward (round-3 DEC-FB3-7)', () => {
+  // WHY: the look-dev page dims the sun light by the clouds as a whole
+  // through this; it must be the column model on the sky's OWN noise,
+  // cover and drift (the twin, computed here independently), 1 when clear.
+  it('is the column toward the sun on the sky’s own noise, cover and drift', () => {
+    const { atmosphere } = setup();
+    const sun = { x: 0.3, y: 0.8, z: -0.52 };
+    atmosphere.configure({ sunDirection: sun, cloudCover: 0.6 });
+    atmosphere.advanceClouds(500);
+    const l = Math.hypot(sun.x, sun.y, sun.z);
+    const dir: [number, number, number] = [sun.x / l, sun.y / l, sun.z / l];
+    const u = atmosphere.cloudUniforms;
+    const data = cloudNoise(CLOUD_TEXTURE_SIZE, 1);
+    const values: number[] = [];
+    for (const p of [
+      [0, 0, 0],
+      [4000, 0, -2500],
+      [-900, 12, 7000],
+    ] as [number, number, number][]) {
+      const expected = cloudColumnTransmittanceToward(
+        p,
+        dir,
+        u.atmCloudThreshold.value,
+        (a, b) => cloudNoiseSample(data, CLOUD_TEXTURE_SIZE, a, b),
+        [u.atmCloudOffset.value.x, u.atmCloudOffset.value.y]
+      );
+      expect(atmosphere.cloudTransmittanceToward(p)).toBeCloseTo(expected, 9);
+      values.push(expected);
+    }
+    // A cover this heavy puts cloud over some of the points, not none.
+    expect(Math.min(...values)).toBeLessThan(0.9);
+  });
+
+  it('is 1 before a sun and in a clear sky, and refuses a non-finite point', () => {
+    const { atmosphere } = setup();
+    expect(atmosphere.cloudTransmittanceToward([0, 0, 0])).toBe(1);
+    atmosphere.configure({ sunDirection: UP, cloudCover: 0 });
+    expect(atmosphere.cloudTransmittanceToward([0, 0, 0])).toBe(1);
+    expect(() =>
+      atmosphere.cloudTransmittanceToward([Number.NaN, 0, 0])
+    ).toThrow(RangeError);
   });
 });

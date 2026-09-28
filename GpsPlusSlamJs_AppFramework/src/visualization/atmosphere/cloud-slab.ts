@@ -45,7 +45,7 @@ import {
   cloudSlabThicknessM,
   cloudSlabThresholdThicknessM,
 } from './cloud-column.js';
-import { cloudForwardPhase, cloudForwardShare } from './cloud-sun.js';
+import { cloudForwardPhaseOf, cloudForwardShare } from './cloud-sun.js';
 
 // The column model lives in `cloud-column.ts` (a leaf the sky's GLSL can
 // import); re-exported here under its old names for the slab's callers.
@@ -395,10 +395,11 @@ interface CloudSlabLight {
   /** The zenith sky (LUT units), the ambient. */
   readonly zenith: Vec3;
   /**
-   * The forward scattering's strength (cloud-sun.ts), 0 or omitted: none.
-   * The shader's `atmCloudForward`.
+   * The forward lobes' strengths (cloud-sun.ts): the aureole's and the
+   * silver lining's, 0 or omitted: none. The shader's `atmCloudForward`.
    */
-  readonly forward?: number;
+  readonly aureole?: number;
+  readonly silverLining?: number;
 }
 
 export interface CloudSlabMarchInput {
@@ -565,8 +566,14 @@ function addForwardGlow(
   cosToSun: number,
   transmittance: number
 ): void {
-  const forward = light?.forward ?? 0;
-  if (light === undefined || !(forward > 0 && result.alpha >= 1e-4)) return;
+  const aureole = light?.aureole ?? 0;
+  const silverLining = light?.silverLining ?? 0;
+  if (
+    light === undefined ||
+    !(aureole + silverLining > 0 && result.alpha >= 1e-4)
+  ) {
+    return;
+  }
   const { earlyExitTransmittance, forwardKnownFactor } = CLOUD_SLAB;
   const tau = -Math.log(Math.max(transmittance, 1e-6));
   const weight = result.alpha / Math.max(result.opacity, 1e-6);
@@ -578,9 +585,12 @@ function addForwardGlow(
   const f =
     weight *
     known *
-    cloudForwardPhase(Math.min(Math.max(cosToSun, -1), 1)) *
-    cloudForwardShare(tau) *
-    forward;
+    cloudForwardPhaseOf(
+      Math.min(Math.max(cosToSun, -1), 1),
+      aureole,
+      silverLining
+    ) *
+    cloudForwardShare(tau);
   for (let c = 0; c < 3; c++) {
     result.colour[c]! += light.sunTransmittance[c]! * f;
   }
@@ -762,7 +772,7 @@ void main() {
   // weighted like the samples (alpha over the unweighted opacity), and faded
   // out toward the early exit, past which the depth is unknown: a thick
   // cloud would otherwise glow at the exit's depth.
-  if (atmCloudForward > 0.0) {
+  if (atmCloudForward.x + atmCloudForward.y > 0.0) {
     highp float tauView = -log(max(transmittance, 1e-6));
     float weight = alpha / max(1.0 - transmittance, 1e-6);
     float known = smoothstep(ATM_SLAB_EARLY_EXIT, ATM_SLAB_FORWARD_KNOWN * ATM_SLAB_EARLY_EXIT, transmittance);

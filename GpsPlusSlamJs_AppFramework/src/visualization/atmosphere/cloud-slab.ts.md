@@ -67,7 +67,7 @@ it only in `cloudMode: 'slab'`.
 - `cloudSlabRenderOrder(y)`: -1 at or below the base, +1 inside and above.
 - `cloudSlabFarWeight(horizontalM)`: the sheet's far fade, as a weight.
 - `cloudSlabMarch(input)`: the shader's march on the CPU (its `light` may
-  carry `forward`, the glow's strength: after the march it adds
+  carry `aureole` and `silverLining`, the two lobes' strengths: after the march it adds
   E·phase·τe^(-τ) of the marched depth, weighted by alpha over the opacity
   and faded out before the early exit; round-3 DEC-FB3-6), returning the
   weighted `alpha`, the unweighted `opacity`, the premultiplied `colour`
@@ -81,7 +81,7 @@ it only in `cloudMode: 'slab'`.
 - `setCloudSlabSteps(slab, steps)`: the step count, as a define (a new
   program); `RangeError` before any change for a count it is not built for.
 - Types: `Vec3`, `CloudSlabSteps`, `CloudSlabMarchInput` (its `light` is
-  `{ sunTransmittance, sunDir, zenith, forward? }`),
+  `{ sunTransmittance, sunDir, zenith, aureole?, silverLining? }`),
   `CloudSlabMarchResult`.
 
 ## Invariants & assumptions
@@ -140,7 +140,7 @@ it only in `cloudMode: 'slab'`.
   (slightly).
 - **The weights go on the contribution, not on the extinction**, so the far
   fade reaches 0 for any thickness.
-- **The forward glow is added once, after the loop** (`atmCloudForward > 0`):
+- **The forward glow is added once, after the loop** (`atmCloudForward.x + .y > 0`):
   the marched depth τ = -ln T, the samples' weight alpha/(1 - T), and a fade
   from 5x the early exit's transmittance down to the exit, past which τ is
   unknown (an early-exited thick cloud would otherwise glow at τ 4.6). A few

@@ -53,7 +53,7 @@ function ring(sun, deg, n = 8) {
 async function bootAtSun(page, preset, mode) {
   const errors = await boot(
     page,
-    `preset=${preset}&tone=neutral&cloudMode=${mode}&sunDisc=0&sunGlow=0`,
+    `preset=${preset}&tone=neutral&cloudMode=${mode}&sunDisc=0&sunAureole=0&sunSilver=0`,
   );
   const sun = await page.evaluate((eye) => {
     const d = window.__lookdev;
@@ -123,7 +123,9 @@ const readWith = (page, raw, offset, points) =>
   );
 
 const mean = (a) => a.reduce((t, px) => t + sum(px), 0) / a.length;
-const OFF = { discExponent: 0, forward: 0 };
+const OFF = { discExponent: 0, aureole: 0, silverLining: 0 };
+/** Both forward lobes at the model's strength. */
+const GLOW = { discExponent: 0, aureole: 1, silverLining: 1 };
 
 /**
  * The declared bounds, from the first measurement (2026-09-27, SwiftShader,
@@ -161,7 +163,7 @@ test("the disc behind a dome cloud dims to the cloud, the sky around it does not
   expect(offsets.length).toBeGreaterThan(0);
   for (const o of offsets) {
     const base = await readWith(page, OFF, o, points);
-    const on = await readWith(page, { discExponent: 4, forward: 0 }, o, points);
+    const on = await readWith(page, { ...OFF, discExponent: 4 }, o, points);
     const ring4 = Math.max(
       ...on.slice(1).map((px, i) => Math.abs(sum(px) - sum(base[i + 1]))),
     );
@@ -176,7 +178,7 @@ test("the disc behind a dome cloud dims to the cloud, the sky around it does not
   const clearOff = await readWith(page, OFF, offsets[0], points);
   const clearOn = await readWith(
     page,
-    { discExponent: 4, forward: 1 },
+    { ...GLOW, discExponent: 4 },
     offsets[0],
     points,
   );
@@ -202,12 +204,7 @@ test("the disc behind the slab is never brighter, the sky around it unchanged", 
     const line = [];
     let previous = sum(base[0]);
     for (const k of [4, 8]) {
-      const on = await readWith(
-        page,
-        { discExponent: k, forward: 0 },
-        o,
-        points,
-      );
+      const on = await readWith(page, { ...OFF, discExponent: k }, o, points);
       expect(sum(on[0])).toBeLessThanOrEqual(previous);
       previous = sum(on[0]);
       const ring4 = Math.max(
@@ -230,9 +227,10 @@ for (const mode of ["dome", "slab"]) {
     const { errors, sun } = await bootAtSun(page, "noon", mode);
     await page.evaluate(() => window.__lookdev.setCloudCover(0.5));
     const near = await screenOf(page, [...ring(sun, 2), ...ring(sun, 4)]);
+    const nearPoints = near;
     const far = await screenOf(page, ring(sun, 30));
-    const gain = async (o, points) =>
-      mean(await readWith(page, { discExponent: 0, forward: 1 }, o, points)) -
+    const gain = async (o, points, raw = GLOW) =>
+      mean(await readWith(page, raw, o, points)) -
       mean(await readWith(page, OFF, o, points));
     const thin = await offsetsWith(page, 0.3, 1.5, 2);
     const thick = await offsetsWith(page, 3, 6, 2);
@@ -240,12 +238,29 @@ for (const mode of ["dome", "slab"]) {
     expect(thick.length).toBeGreaterThan(0);
     let thinGain = 0;
     for (const o of thin) {
-      const g = await gain(o, near);
+      const g = await gain(o, nearPoints);
       console.log(
         `${mode} glow, thin (tau·drawn ${o.eff.toFixed(2)}): +${g.toFixed(1)} at 2-4°, +${(await gain(o, far)).toFixed(1)} at 30°`,
       );
       expect(g).toBeGreaterThanOrEqual(BOUNDS.glowGain);
       thinGain += g / thin.length;
+      // Each lobe alone (one switch each): the aureole carries the glow
+      // near the sun, the silver lining the edges further out.
+      const aureole = { ...OFF, aureole: 1 };
+      const silver = { ...OFF, silverLining: 1 };
+      const near = {
+        aureole: await gain(o, nearPoints, aureole),
+        silver: await gain(o, nearPoints, silver),
+      };
+      const out = {
+        aureole: await gain(o, far, aureole),
+        silver: await gain(o, far, silver),
+      };
+      console.log(
+        `${mode} lobes alone, thin: aureole +${near.aureole.toFixed(1)} near / +${out.aureole.toFixed(1)} at 30°; silver lining +${near.silver.toFixed(1)} near / +${out.silver.toFixed(1)} at 30°`,
+      );
+      expect(near.aureole).toBeGreaterThan(near.silver);
+      expect(out.silver).toBeGreaterThanOrEqual(out.aureole);
     }
     let thickGain = 0;
     for (const o of thick) {
@@ -264,27 +279,119 @@ for (const mode of ["dome", "slab"]) {
   });
 }
 
-// The page opens with both effects on (the owner judges them), the
-// switches reach the framework, and the hash carries them.
-test("the page opens with the sun through clouds on, and its switches drive it", async ({
+// The owner's requirement: every effect has its own switch and hash key,
+// so each can be judged alone. The page opens with the sun-through-cloud
+// effects and the cloud shadows on and the whole-scene dimming off; each
+// switch turns exactly its own effect and writes exactly its own key.
+test("each cloud-and-sun effect has its own switch and hash key, with the page's defaults", async ({
   page,
 }) => {
   const errors = await boot(page, "preset=noon&tone=neutral&cloudMode=dome", {
     pageDefaults: true,
   });
   await page.evaluate(() => window.__lookdev.pauseLoop(true));
-  const fx = () =>
-    page.evaluate(() => window.__lookdev.stats().sunThroughClouds);
-  expect(await fx()).toEqual({ discExponent: 4, forward: 1 });
-  await expect(page.locator("#sun-disc")).toBeChecked();
-  await expect(page.locator("#sun-glow")).toBeChecked();
-  await page.locator("#sun-disc").uncheck({ force: true });
-  expect(await fx()).toEqual({ discExponent: 0, forward: 1 });
-  await page.locator("#sun-glow").uncheck({ force: true });
-  expect(await fx()).toEqual({ discExponent: 0, forward: 0 });
-  const hash = await page.evaluate(() => location.hash);
-  expect(hash).toContain("sunDisc=0");
-  expect(hash).toContain("sunGlow=0");
+  const now = () =>
+    page.evaluate(() => {
+      const s = window.__lookdev.stats();
+      return {
+        fx: s.sunThroughClouds,
+        cloudShadows: s.state.cloudShadows,
+        sunLightDim: s.state.sunLightDim,
+      };
+    });
+  expect(await now()).toEqual({
+    fx: { discExponent: 4, aureole: 1, silverLining: 1 },
+    cloudShadows: true,
+    sunLightDim: false,
+  });
+  const switches = [
+    ["#sun-disc", "sunDisc", (v) => v.fx.discExponent === 0],
+    ["#sun-aureole", "sunAureole", (v) => v.fx.aureole === 0],
+    ["#sun-silver", "sunSilver", (v) => v.fx.silverLining === 0],
+    ["#cloud-shadows", "cloudShadows", (v) => v.cloudShadows === false],
+  ];
+  let before = await now();
+  for (const [id, key, off] of switches) {
+    await expect(page.locator(id)).toBeChecked();
+    await page.locator(id).uncheck({ force: true });
+    const after = await now();
+    expect(off(after), id).toBe(true);
+    // Nothing else moved: only this switch's own value changed.
+    const changed = JSON.stringify(after) !== JSON.stringify(before);
+    expect(changed).toBe(true);
+    const others = switches.filter(([other]) => other !== id);
+    for (const [, , otherOff] of others) {
+      expect(otherOff(after)).toBe(otherOff(before));
+    }
+    expect(await page.evaluate(() => location.hash)).toContain(`${key}=0`);
+    before = after;
+  }
+  await expect(page.locator("#sun-light-dim")).not.toBeChecked();
+  await page.locator("#sun-light-dim").check({ force: true });
+  expect((await now()).sunLightDim).toBe(true);
+  expect(await page.evaluate(() => location.hash)).toContain("sunLightDim=1");
+  expect(errors).toEqual([]);
+});
+
+// The sun light dimmed as a whole: against the switch off at the same
+// pixels, sunlit ground darkens where the column over the scene's centre
+// is thick, and nothing changes under a clear one (the cloud shadows off,
+// so only this effect is measured).
+test("the sun light dims under a thick column over the scene, and not under a clear one", async ({
+  page,
+}) => {
+  const errors = await boot(
+    page,
+    "preset=noon&tone=neutral&cloudMode=dome&cloudShadows=0&sunLightDim=0",
+  );
+  await page.evaluate(() => {
+    const d = window.__lookdev;
+    d.pauseLoop(true);
+    d.setFloatingVisible(false);
+    d.setCloudCover(0.5);
+    d.setView("city");
+  });
+  const lit = await page.evaluate(() => {
+    const d = window.__lookdev;
+    return d.project(d.shadowProbe().lit);
+  });
+  const found = await page.evaluate(() => {
+    const d = window.__lookdev;
+    const out = { thick: null, clear: null };
+    for (let i = 0; i < 64 && !(out.thick && out.clear); i++) {
+      const o = [((i * 29) % 64) / 64, ((i * 37) % 64) / 64];
+      d.setCloudOffset(o[0], o[1]);
+      const t = d.sunLightDimInfo().transmittance;
+      if (t < 0.3 && !out.thick) out.thick = { o, t };
+      if (t > 0.97 && !out.clear) out.clear = { o, t };
+    }
+    return out;
+  });
+  expect(found.thick).not.toBeNull();
+  expect(found.clear).not.toBeNull();
+  const pair = (o) =>
+    page.evaluate(
+      ([o, point]) => {
+        const d = window.__lookdev;
+        d.setCloudOffset(o[0], o[1]);
+        d.setSunLightDim(false);
+        const [off] = d.readPixels([point]);
+        d.setSunLightDim(true);
+        const [on] = d.readPixels([point]);
+        const info = d.sunLightDimInfo();
+        d.setSunLightDim(false);
+        return { off, on, info };
+      },
+      [o, lit],
+    );
+  const thick = await pair(found.thick.o);
+  const clear = await pair(found.clear.o);
+  console.log(
+    `sun light dim: thick column T ${found.thick.t.toFixed(3)} ground ${sum(thick.off)} -> ${sum(thick.on)} (intensity x${(thick.info.intensity / thick.info.base).toFixed(3)}); clear T ${found.clear.t.toFixed(3)} ground ${sum(clear.off)} -> ${sum(clear.on)}`,
+  );
+  expect(thick.info.intensity / thick.info.base).toBeCloseTo(found.thick.t, 6);
+  expect(sum(thick.off) - sum(thick.on)).toBeGreaterThanOrEqual(20);
+  expect(Math.abs(sum(clear.off) - sum(clear.on))).toBeLessThanOrEqual(3);
   expect(errors).toEqual([]);
 });
 
@@ -305,10 +412,17 @@ test("the sun through clouds costs little (on/off ratios, logged)", async ({
         d.setSunThroughCloudsRaw(raw);
         return d.timeFrames(5).medianMs;
       };
-      const off1 = time({ discExponent: 0, forward: 0 });
-      const on = time({ discExponent: 4, forward: 1 });
-      const off2 = time({ discExponent: 0, forward: 0 });
-      const off = (off1 + off2) / 2;
+      // Interleaved off/on/off rounds, the median ratio: other sessions
+      // load this machine, and one round read x0.89 and x1.44 back to back.
+      const rounds = [];
+      for (let k = 0; k < 3; k++) {
+        const off1 = time({ discExponent: 0, aureole: 0, silverLining: 0 });
+        const on = time({ discExponent: 4, aureole: 1, silverLining: 1 });
+        const off2 = time({ discExponent: 0, aureole: 0, silverLining: 0 });
+        rounds.push({ on, off: (off1 + off2) / 2 });
+      }
+      rounds.sort((x, y) => x.on / x.off - y.on / y.off);
+      const { on, off } = rounds[1];
       return { on, off, ratio: on / off };
     }, mode);
   }
@@ -519,10 +633,16 @@ test("the cloud shadows cost little (on/off ratio, logged)", async ({
       d.setCloudShadows(on);
       return d.timeFrames(5).medianMs;
     };
-    const off1 = time(false);
-    const on = time(true);
-    const off2 = time(false);
-    const off = (off1 + off2) / 2;
+    // Interleaved rounds, the median ratio (the machine is shared).
+    const rounds = [];
+    for (let k = 0; k < 3; k++) {
+      const off1 = time(false);
+      const on = time(true);
+      const off2 = time(false);
+      rounds.push({ on, off: (off1 + off2) / 2 });
+    }
+    rounds.sort((x, y) => x.on / x.off - y.on / y.off);
+    const { on, off } = rounds[1];
     return { on, off, ratio: on / off };
   });
   console.log(

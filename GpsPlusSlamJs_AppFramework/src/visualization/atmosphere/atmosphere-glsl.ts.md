@@ -31,7 +31,7 @@ fragment shaders, and the visible sky's vertex/fragment pair.
   before it. It also carries the column's chunk
   ([`cloud-column.ts.md`](cloud-column.ts.md)) and the forward phase's
   ([`cloud-sun.ts.md`](cloud-sun.ts.md)), the uniform `atmCloudForward`
-  (0 = off) and `atmCloudForwardRadiance(dir, r, tau)`, the glow of a cloud
+  (a vec2: x the aureole's strength, y the silver lining's; (0, 0) = off) and `atmCloudForwardRadiance(dir, r, tau)`, the glow of a cloud
   of optical depth tau along the view (twin of `cloudForwardRadiance`,
   with the sun's transmittance at cloud height as its illuminance), which
   the dome and the slab add.
@@ -39,7 +39,7 @@ fragment shaders, and the visible sky's vertex/fragment pair.
   `cloudDensity`, `cloudHorizonFade` and `cloudLitRadiance` from
   `cloud-layer.ts`; every constant interpolated from `CLOUD_LAYER`; the
   cover arrives as the uniform `atmCloudThreshold`). With
-  `atmCloudForward > 0` the dome adds the forward glow through the column
+  `atmCloudForward.x + .y > 0` the dome adds the forward glow through the column
   along the view, faded like its cloud (horizon fade × aerial).
 - The sun through clouds (round-3 plan 2026-09-27-0532, DEC-FB3-6): the
   disc is multiplied by `atmCloudDiscTransmittance(dir)` = e^(-k·τ·drawn),

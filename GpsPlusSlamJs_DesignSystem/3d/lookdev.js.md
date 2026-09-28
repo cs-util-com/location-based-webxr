@@ -116,12 +116,18 @@ denoise, resolutionScale })` is the sweep's handle; `setAoExclusions(bool)`
     `farM` (1500) out, null without the dense city, and `ridgeFoot`, 2.5 km
     toward the sun); `stats().aoActive` says whether it draws; on Oculus
     Browser the AO is refused (see the sidecar) and the readout says so;
-  - `setSunThroughClouds({ disc?, glow? })`: the sun through clouds (round-3
-    plan 2026-09-27-0532, stream D, DEC-FB3-6; framework
-    [cloud-sun.ts](../../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/cloud-sun.ts.md)):
-    the disc dims behind a cloud (k = 4) and thin cloud glows around the
-    sun; both on by default here, off in the framework; the panel's two
-    Clouds switches. `setSunThroughCloudsRaw({ discExponent?, forward? })`
+  - `setSunThroughClouds({ disc?, aureole?, silver? })`: the sun through
+    clouds (round-3 plan 2026-09-27-0532, stream D, DEC-FB3-6; framework
+    [cloud-sun.ts](../../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/cloud-sun.ts.md)),
+    ONE SWITCH AND HASH KEY PER EFFECT (the owner's requirement): the disc
+    dims behind a cloud (k = 4, `sunDisc`), the aureole (`sunAureole`),
+    the silver lining (`sunSilver`); all on by default here, off in the
+    framework. `setSunLightDim(bool)` (`sunLightDim`, off by default: with
+    the cloud shadows on it dims the ground twice) scales the sun light by
+    `SkyAtmosphere.cloudTransmittanceToward` at the scene's centre, set
+    before every render (it follows the drift); `sunLightDimInfo()`
+    returns `{ intensity, base, transmittance }`.
+    `setSunThroughCloudsRaw({ discExponent?, aureole?, silverLining? })`
     sets the framework's raw values until the next look change (the
     sweep's handle); `sunCloud()` returns the CPU twins' view of the clouds
     in front of the sun (`{ tau, drawn, noise }`, [sun-clouds.js](sun-clouds.js.md));
@@ -154,11 +160,11 @@ denoise, resolutionScale })` is the sweep's handle; `setAoExclusions(bool)`
     preset: both exposures and both exposure-free horizon colours. The
     fallback's only GPU oracle.
 - Invariants & assumptions:
-  - State lives in the URL hash (`#preset=…&tone=…&tier=…&cloudMode=…&shadows=0|1&city=…&pitch=42|31|20&water=C0|C1|P50|P30|D30&catalog=0|1&varied=0|1&materials=1…&finish=mixed|shiny|matte&ao=0|1&sunDisc=0|1&sunGlow=0|1&cloudShadows=0|1`; defaults since the owner's round 2, plan
+  - State lives in the URL hash (`#preset=…&tone=…&tier=…&cloudMode=…&shadows=0|1&city=…&pitch=42|31|20&water=C0|C1|P50|P30|D30&catalog=0|1&varied=0|1&materials=1…&finish=mixed|shiny|matte&ao=0|1&sunDisc=0|1&sunAureole=0|1&sunSilver=0|1&cloudShadows=0|1&sunLightDim=0|1`; defaults since the owner's round 2, plan
     2026-09-26-2055 M2: the densest city, `city=100000&pitch=20`, about
     42,000 buildings, and `water=P50`; since round 3, plan 2026-09-27-0532
     DEC-FB3-5: `shadows=1`, `catalog=1` and `cloudMode=slab`; DEC-FB3-3:
-    `varied=1&materials=12&finish=mixed`; stream D: `sunDisc=1&sunGlow=1&cloudShadows=1`), so a
+    `varied=1&materials=12&finish=mixed`; stream D: `sunDisc=1&sunAureole=1&sunSilver=1&cloudShadows=1&sunLightDim=0`), so a
     screenshot or phone link reproduces a view; a hash change on an open
     page re-applies it (the page's own writes use `replaceState`, which
     fires no `hashchange`). A key the hash does NOT name keeps its CURRENT
