@@ -149,15 +149,27 @@
       #setup-panel,
       #setup-controls,
       #draft-offer,
-      #finish-block {
+      #finish-block,
+      #recording-block {
         display: grid;
         gap: var(--space-2);
         max-width: 26rem;
       }
       #setup-panel,
       #draft-offer,
-      #finish-block {
+      #finish-block,
+      #recording-block {
         margin-top: var(--space-3);
+      }
+      /* The troubleshooting recording's marker: inside #ar-root, so it is
+         composited over the camera for the whole recorded session - never
+         writing behind the creator's back - and it wears the status line's
+         halo for the same reason. */
+      #recording-marker {
+        font-size: var(--size-hint);
+        font-weight: 600;
+        margin: 0 0 var(--space-2);
+        text-shadow: var(--halo-text);
       }
       /* The Drive steps arrive as one numbered line each (textContent, so
          creator-setup stays DOM-free for its node tests). */
@@ -673,6 +685,41 @@
           text pins and photos where the tour should show them. Finish inside AR
           when you are done - the rebuilt zip appears here afterwards.
         </p>
+        <!-- The troubleshooting recording (authoring recording plan
+             2026-09-28-0953, M1a). OPT-IN and page-side: the switch arms it
+             before AR starts (it then runs for the rest of the page's
+             life, and the switch locks on), and Save hands the recording
+             over as its own zip - never inside the tour zip. -->
+        <div
+          id="recording-block"
+          class="creator-only"
+          data-testid="recording-block"
+          hidden
+        >
+          <label class="switch">
+            <input
+              type="checkbox"
+              id="record-session"
+              data-testid="record-session"
+            />
+            <span class="switch-track"></span>
+            Record this session for troubleshooting
+          </label>
+          <button
+            type="button"
+            id="recording-save"
+            class="btn btn--prose"
+            data-testid="recording-save"
+            hidden
+          >
+            Save the recording
+          </button>
+          <div
+            id="recording-status"
+            data-testid="recording-status"
+            aria-live="polite"
+          ></div>
+        </div>
         <section id="ar-root">
           <p id="ar-hint" class="hint--dim" data-testid="ar-hint">
             AR opens the camera. Keep the printed code in view until the page
@@ -680,6 +727,9 @@
             the phone align to the map.
           </p>
           <div id="ar-status" data-testid="ar-status" aria-live="polite"></div>
+          <!-- Up while the troubleshooting recording runs: over the camera,
+               and on the page (recording-panel.ts). -->
+          <p id="recording-marker" data-testid="recording-marker" hidden></p>
           <!-- The ?debug=1 QR readout (main.ts shows it; plan §66). Never for
                visitors without the flag. -->
           <pre id="ar-debug" data-testid="ar-debug" hidden></pre>

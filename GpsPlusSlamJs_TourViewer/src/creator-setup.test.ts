@@ -20,7 +20,7 @@
  * convention.
  */
 import { describe, expect, it } from "vitest";
-import { Matrix4 } from "three";
+import { Group, Matrix4 } from "three";
 import type { Vector3 } from "three";
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 import { MIN_ALIGNMENT_SAMPLES } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
@@ -214,7 +214,15 @@ function alignedArStore(): unknown {
       },
     },
   };
-  return { getState: () => state, subscribe: () => () => undefined };
+  // `dispatch` records what the setup logs into the troubleshooting
+  // recording (`tourAuthoring/*`); nothing reads it back into state.
+  const dispatched: unknown[] = [];
+  return {
+    getState: () => state,
+    subscribe: () => () => undefined,
+    dispatch: (action: unknown) => dispatched.push(action),
+    dispatched,
+  };
 }
 
 /** A reticle that always has a surface under it, at the origin. */
@@ -230,6 +238,11 @@ function wire(
   options: { firstOpenFails?: boolean; placeable?: boolean } = {},
 ) {
   let opens = 0;
+  // The AR world group, one metre east of the odometry origin: the pin's
+  // world position minus this offset is its position in odometry.
+  const worldGroup = new Group();
+  worldGroup.position.set(1, 0, 0);
+  worldGroup.updateMatrixWorld();
   const dom = fakeDom();
   const ctx = createTourViewerSession();
   // Everything a placement needs beyond the store: a measured level, a
@@ -238,12 +251,13 @@ function wire(
     ctx.mintedLevel = { id: "lvl", json: "{}" };
     ctx.reticle = fakeReticle() as never;
   }
+  const arStore = (
+    options.placeable === true ? alignedArStore() : createTourViewerStore()
+  ) as { dispatched?: unknown[] };
   const setup = wireCreatorSetup({
     ctx,
     mode: "creator",
-    arStore: (options.placeable === true
-      ? alignedArStore()
-      : createTourViewerStore()) as never,
+    arStore: arStore as never,
     arController: {
       getState: () => ({
         status: options.placeable === true ? "running" : "idle",
@@ -253,7 +267,11 @@ function wire(
     // `getScene` yields null, so `previewObject` returns before touching
     // three.js: these tests are about what reaches DISK, and a placement
     // must be provable without a renderer.
-    seams: { canShareZip: () => false, getScene: () => null } as never,
+    seams: {
+      canShareZip: () => false,
+      getScene: () => null,
+      getArWorldGroup: () => worldGroup,
+    } as never,
     wizard: { openStep: () => undefined, revealStep: () => undefined } as never,
     dom: dom as unknown as CreatorSetupDom,
     openDraftStore: () => {
@@ -267,7 +285,7 @@ function wire(
       return Promise.resolve(store);
     },
   });
-  return { dom, ctx, setup };
+  return { dom, ctx, setup, dispatched: arStore.dispatched ?? [] };
 }
 
 /** Let every already-resolved microtask in the chain run. */
@@ -1096,5 +1114,45 @@ describe("a closed tour's replace steps", () => {
     setup.resetFinishStep();
     expect(dom.replaceHelpDrive.hidden).toBe(true);
     expect(dom.replaceHelpGeneric.hidden).toBe(false);
+  });
+});
+
+describe("the troubleshooting recording's log of a placement", () => {
+  it("records a placed pin with the reticle in odometry, the alignment and the matrix it was read through", async () => {
+    // Why this test matters (authoring recording plan 2026-09-28-0953, M1a):
+    // the pin's record carries only geo, so a recording that logged just
+    // the record could never say WHY a note landed where it did - the
+    // drift hypotheses (plan §2.1) are told apart by the reticle's
+    // odometry position and the two matrices, target and rendered.
+    const { store } = memoryStore();
+    const { dom, dispatched } = wire(store, { placeable: true });
+
+    dom.pinLabel.value = "Gate";
+    dom.pinSave.click();
+    await settle();
+
+    const logged = dispatched.filter(
+      (a) => (a as { type: string }).type === "tourAuthoring/objectPlaced",
+    ) as {
+      payload: {
+        object: TourObject;
+        reticleOdomNue: number[];
+        alignmentMatrix: unknown;
+        arWorldGroupMatrix: number[];
+        cameraOdomPose: unknown;
+        arVisitIndex: number;
+      };
+    }[];
+    expect(logged).toHaveLength(1);
+    const payload = logged[0]!.payload;
+    expect(payload.object.kind).toBe("pin");
+    // The fake reticle sits at world (1, 0, -2); the group is shifted 1 m.
+    expect(payload.reticleOdomNue).toEqual([0, 0, -2]);
+    expect(payload.arWorldGroupMatrix[12]).toBe(1);
+    expect(payload.alignmentMatrix).not.toBeNull();
+    expect(payload.cameraOdomPose).toBeNull();
+    expect(payload.arVisitIndex).toBe(0);
+    // JSON-safe: it is written to a file as it is.
+    expect(JSON.parse(JSON.stringify(payload))).toEqual(payload);
   });
 });

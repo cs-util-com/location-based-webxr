@@ -33,6 +33,21 @@ export async function installTourViewerArFakes(page, options = {}) {
         alignmentCalls: [],
         stopCaptureCalls: 0,
         endARSessionCalls: 0,
+        /** The depth sampler of a recorded entry (authoring recording plan
+         *  2026-09-28-0953, D4): the configs it was started with, how often
+         *  it was stopped, and the initAR depth callback a spec feeds. */
+        depthCaptureCalls: /** @type {unknown[]} */ ([]),
+        stopDepthCalls: 0,
+        depthCallback: /** @type {any} */ (null),
+        /** Deliver one fake depth sample through the initAR depth callback. */
+        emitDepthSample() {
+          test.depthCallback?.({
+            timestamp: Date.now(),
+            cameraPos: [0, 1.5, 0],
+            cameraRot: [0, 0, 0, 1],
+            points: [{ screenX: 0.5, screenY: 0.5, depthM: 1.5 }],
+          });
+        },
         /** The store the alignment binding received — lets specs assert the
          *  recording slice actually started (the silent-drop trap). */
         alignmentStore: /** @type {any} */ (null),
@@ -115,9 +130,24 @@ export async function installTourViewerArFakes(page, options = {}) {
       };
       /** @type {any} */ (window).__tourViewerTest = test;
 
+      /** Keep a recorded entry's depth callback for `emitDepthSample`;
+       *  whether the entry asked for depth at all. */
+      function keepDepthCallback(callbacks) {
+        test.depthCallback = callbacks?.depth?.onCaptured ?? null;
+        return test.depthCallback !== null;
+      }
+
       const worldGroup = {
         name: "fake-world-group",
         children: /** @type {unknown[]} */ ([]),
+        // An identity transform, as far as the creator's placement log
+        // reads one (its odometry position and the matrix it used).
+        matrixWorld: {
+          toArray: () => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+        },
+        worldToLocal(v) {
+          return v;
+        },
         add(object) {
           this.children.push(object);
         },
@@ -165,6 +195,7 @@ export async function installTourViewerArFakes(page, options = {}) {
             container?.insertBefore(canvas, container.firstChild);
             test.initARCalls.push({
               hasCameraFrame: Boolean(callbacks?.cameraFrame),
+              hasDepth: keepDepthCallback(callbacks),
               requestHitTest: Boolean(features?.requestHitTest),
               isolationOptions,
             });
@@ -303,6 +334,12 @@ export async function installTourViewerArFakes(page, options = {}) {
         },
         stopCameraFrameCapture: () => {
           test.stopCaptureCalls += 1;
+        },
+        startDepthCapture: (config) => {
+          test.depthCaptureCalls.push(config);
+        },
+        stopDepthCapture: () => {
+          test.stopDepthCalls += 1;
         },
       };
     },

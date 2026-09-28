@@ -31,6 +31,14 @@ listed in `index.html.md`. The concerns and their modules:
   wired before the open path).
 - `tour-viewer-session.ts` - the session object, the store factory and
   the hooks contract they share.
+- `authoring-recording.ts` / `recording-panel.ts` - the creator's
+  troubleshooting recording (authoring recording plan 2026-09-28-0953, M1a):
+  the recording is created BEFORE the store, which is built with its backend
+  and gate; the panel (creator mode only) is wired before the AR entry, which
+  asks it at each entry, and is re-rendered on every controller state change
+  and store dispatch (failed writes are counted as they happen). Save flushes
+  the store's write queue and hands the zip to `seams.shareOrDownloadZip`, as
+  the tour zip does; the page url goes into `session.json` without its query.
 
 ## Invariants & assumptions
 

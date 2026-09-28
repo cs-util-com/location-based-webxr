@@ -261,10 +261,12 @@ test("visitor mode boots to running: session started, alignment bound, capture a
   });
   // Camera frames must be wired AT initAR time (the source is built there),
   // with the M2 isolation flags: camera + texture ON, depth OFF. A VISITOR
-  // does not request hit-test (only the creator's reticle needs it).
+  // does not request hit-test (only the creator's reticle needs it), and
+  // hands initAR no depth callback (only a recorded creator entry does).
   expect(wiring.initAR).toEqual([
     {
       hasCameraFrame: true,
+      hasDepth: false,
       requestHitTest: false,
       isolationOptions: {
         enableCameraAccess: true,
@@ -2372,5 +2374,131 @@ test("a Drive tour whose host sends no name asks the creator to check it", async
   );
   await expect(page.getByTestId("replace-help-drive")).toContainText(
     'Check that the file on Drive is named "tour.zip"',
+  );
+});
+
+test("an opted-in authoring session is recorded across the finish and saved as its own zip, never inside the tour zip", async ({
+  page,
+}) => {
+  // Why this matters (authoring recording plan 2026-09-28-0953, M1a): the
+  // owner's troubleshooting loop is "record the authoring, hand over the
+  // zip, replay it". This drives the composed page end to end - the real
+  // store with the recording's backend and gate, the real OPFS in the
+  // browser, the real creator setup dispatching its log actions - and
+  // reads the saved zip back in node. Three things it proves no unit test
+  // can: the switch, the marker and Save are wired to the recording that
+  // runs; the Finish (tapped inside AR, ending it) and the exit's reset
+  // after it are in the SAME numbered stream; and the tour zip the creator
+  // publishes carries no recording (the visitor's geo join would replay
+  // any `actions/` it found there).
+  await page.goto("/?nocache=1");
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  await openMeasureStep(page);
+  // Nothing is recorded behind the creator's back: no marker, no Save.
+  await expect(page.getByTestId("recording-marker")).toBeHidden();
+  await expect(page.getByTestId("recording-save")).toBeHidden();
+  await page.getByTestId("record-session").check();
+
+  await measureTheCode(page);
+  await expect(page.getByTestId("recording-marker")).toHaveText(
+    "Recording this session",
+  );
+  await expect(page.getByTestId("record-session")).toBeDisabled();
+  // Depth instead of pictures (decision D4): requested, and sampled at
+  // the recording's rate.
+  const depth = await page.evaluate(() => {
+    const t = /** @type {any} */ (window).__tourViewerTest;
+    return { init: t.initARCalls.at(-1), capture: t.depthCaptureCalls };
+  });
+  expect(depth.init.hasDepth).toBe(true);
+  expect(depth.init.isolationOptions.enableDepthSensingFeature).toBe(true);
+  expect(depth.capture).toEqual([
+    { intervalMs: 1000, gridSize: 16, rgb: false },
+  ]);
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.emitDepthSample();
+  });
+
+  await page.getByTestId("setup-pin").click();
+  await page.getByTestId("pin-label").fill("Recorded gate");
+  await page.getByTestId("pin-save").click();
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /1 object placed/,
+  );
+
+  // The Finish ends the AR session.
+  await page.getByTestId("setup-finish").click();
+  await expect(page.getByTestId("finish-block")).toBeVisible({
+    timeout: 30000,
+  });
+  await expect(page.getByTestId("enter-ar")).toHaveText("Start AR setup");
+  expect(
+    await page.evaluate(
+      () => /** @type {any} */ (window).__tourViewerTest.stopDepthCalls,
+    ),
+  ).toBe(1);
+
+  // The published tour zip carries no recording: no actions, and the
+  // hosted zip's own session.json untouched.
+  await page.getByTestId("finish-download").click();
+  await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
+  const tour = await readDownloadedZip(page, 0);
+  expect(
+    Object.keys(tour.entries).filter((n) => /(^|\/)actions\//.test(n)),
+  ).toEqual([]);
+  expect(tour.entries["session.json"]).toBe('{"kind":"e2e-tour"}');
+
+  // Save the recording: its own zip, under its own name.
+  await expect(page.getByTestId("recording-save")).toBeEnabled();
+  await page.getByTestId("recording-save").click();
+  await expect(page.getByTestId("recording-status")).toHaveText(
+    /^Saved as tour-recording-.+\.zip\.$/,
+    { timeout: 15000 },
+  );
+  await expect(page.getByTestId("recording-save")).toHaveText(
+    "Save the recording",
+  );
+  const rec = await readDownloadedZip(page, 1);
+  expect(rec.filename).toMatch(
+    /^tour-recording-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}utc\.zip$/,
+  );
+  const meta = JSON.parse(rec.entries["session.json"]);
+  expect(meta.odomCoordVersion).toBe(5);
+  expect(meta.contextTag).toBe("tour-authoring");
+  // The three seeded fixes, counted from the recording (the store's GPS
+  // data was wiped when the finish ended AR).
+  expect(meta.actionCount).toBe(3);
+
+  // One numbering, nothing overwritten: 000001 .. N without a gap.
+  const names = Object.keys(rec.entries)
+    .filter((n) => n.startsWith("actions/"))
+    .sort();
+  expect(names).toEqual(
+    names.map((_, i) => `actions/${String(i + 1).padStart(6, "0")}.json`),
+  );
+  expect(Object.keys(rec.entries).sort()).toEqual(
+    ["session.json", ...names].sort(),
+  );
+  const actions = names.map((n) => JSON.parse(rec.entries[n]));
+  const types = actions.map((a) => a.type);
+  expect(types[0]).toBe("recording/startSession");
+  expect(types).toContain("tourAuthoring/codeMeasured");
+  expect(types).toContain("recording/recordDepthSample");
+  expect(types.some((t) => t.startsWith("qrDetected/"))).toBe(true);
+  const placed = actions.find((a) => a.type === "tourAuthoring/objectPlaced");
+  expect(placed.payload.object.label).toBe("Recorded gate");
+  // The fake world group is the identity, so odometry = world here.
+  expect(placed.payload.reticleOdomNue).toEqual([3, 400.5, -2]);
+  const finished = types.indexOf("tourAuthoring/finished");
+  expect(finished).toBeGreaterThan(types.indexOf("tourAuthoring/objectPlaced"));
+  // The exit the finish caused is recorded AFTER it: its endSession and
+  // the reset a replay needs to give the next visit its own alignment.
+  expect(types.lastIndexOf("recording/endSession")).toBeGreaterThan(finished);
+  expect(types.lastIndexOf("gpsData/resetGpsSessionData")).toBeGreaterThan(
+    types.lastIndexOf("recording/endSession"),
   );
 });

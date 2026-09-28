@@ -11,7 +11,7 @@ Keeps `main.ts` glue-only.
 
 - `interface TourViewerSeams { controllerDeps; getArWorldGroup;
 enableArWorldGroupAlignment; startCameraFrameCapture;
-stopCameraFrameCapture; createQrFrontEnd; solveQrPose; estimateQrPrintSize;
+stopCameraFrameCapture; startDepthCapture; stopDepthCapture; createQrFrontEnd; solveQrPose; estimateQrPrintSize;
 getIntrinsics; createQrDebugView; getScene; queryGeolocationPermission;
 requestLocationOnce; shareOrDownloadZip; downloadZip; canShareZip; downloadPdf;
 startHitTestReticle; encodeFrameJpeg;
@@ -21,7 +21,10 @@ createLabel; schedule }` - the placement layer (M4: the framework's hit-test
   throughout; the framework text sprite for a pin's label at a 2:1
   canvas/scale with a transparent pill) and the
   one-shot clock behind the scan gate's escape (M5; the e2e fires it instead
-  of waiting) - `controllerDeps` is a
+  of waiting); `startDepthCapture` / `stopDepthCapture` are the framework's
+  depth sampler controls, used only by an entry the troubleshooting
+  recording records (authoring recording plan 2026-09-28-0953, D4; the e2e
+  fake counts the calls) - `controllerDeps` is a
   `Partial<EnableGpsArDeps>` injected into `createEnableGpsArController`
   (empty in production; the e2e fake supplies the full dep set there). The
   `queryGeolocationPermission` / `requestLocationOnce` are the visitor

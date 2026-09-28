@@ -18,6 +18,7 @@ import {
   createUnwiredHooks,
 } from "./tour-viewer-session.js";
 import type { TourViewerSeams } from "./seams.js";
+import { RECORDING_DEPTH } from "./authoring-recording.js";
 
 /** A stand-in element: the fields `wireArEntry` writes, and click handlers. */
 function el() {
@@ -37,7 +38,9 @@ async function settle(): Promise<void> {
   for (let i = 0; i < 12; i += 1) await Promise.resolve();
 }
 
-function harness(options: { arStatus?: string } = {}) {
+function harness(
+  options: { arStatus?: string; records?: boolean; enableOk?: boolean } = {},
+) {
   // The entry flags a running session on `document.body.dataset`; the
   // package tests run in node, so the page body is stood in.
   vi.stubGlobal("document", { body: { dataset: {} } });
@@ -50,9 +53,9 @@ function harness(options: { arStatus?: string } = {}) {
     refreshSupport: () => Promise.resolve(),
     enable: vi.fn((config: EnableGpsArConfig) => {
       enabled = config;
-      // Report a failed start: the session callbacks are already handed
-      // over, and nothing after the enable needs a scene.
-      return Promise.resolve({ ok: false });
+      // By default report a failed start: the session callbacks are already
+      // handed over, and nothing after the enable needs a scene.
+      return Promise.resolve({ ok: options.enableOk === true });
     }),
     disable: () => Promise.resolve(),
   };
@@ -75,15 +78,27 @@ function harness(options: { arStatus?: string } = {}) {
     escapeButton: el(),
     arDebug: el(),
   };
+  const arStore = createTourViewerStore();
+  const seams = {
+    stopCameraFrameCapture: () => undefined,
+    // Enough of a scene for the runtime start to go through.
+    getArWorldGroup: () => ({}),
+    enableArWorldGroupAlignment: () => undefined,
+    startCameraFrameCapture: () => undefined,
+    createQrDebugView: () => ({
+      update: () => undefined,
+      dispose: () => undefined,
+    }),
+    startDepthCapture: vi.fn(),
+    stopDepthCapture: vi.fn(),
+  };
   const entry = wireArEntry({
     ctx,
     mode: "visitor",
-    arStore: createTourViewerStore(),
+    arStore,
     arController: arController as never,
     gpsHandler: () => undefined,
-    seams: {
-      stopCameraFrameCapture: () => undefined,
-    } as unknown as TourViewerSeams,
+    seams: seams as unknown as TourViewerSeams,
     locationGate: {
       pending: () => false,
       busy: () => false,
@@ -91,12 +106,22 @@ function harness(options: { arStatus?: string } = {}) {
     } as never,
     dom: dom as unknown as ArEntryDom,
     hooks,
+    ...(options.records === undefined
+      ? {}
+      : { recording: { beginOnArEntry: () => options.records === true } }),
   });
   return {
     ctx,
     dom,
     entry,
     dispose,
+    arStore,
+    seams,
+    enabledConfig: () => enabled,
+    async enter() {
+      dom.enterArButton.click();
+      await settle();
+    },
     async enterAndEnd() {
       dom.enterArButton.click();
       await settle();
@@ -159,5 +184,44 @@ describe("wireArEntry QR readout and visitor hint", () => {
     expect(h.dom.arStatus.textContent).toContain(
       "Measuring the code: keep moving slowly, still measuring.",
     );
+  });
+});
+
+// The creator's troubleshooting recording (authoring recording plan
+// 2026-09-28-0953, M1a, decision D4): a recorded entry carries depth samples
+// instead of camera pictures. Why these tests matter: depth is requested at
+// session start and sampled only once the runtime runs - wired at the wrong
+// moment it is either never requested (no samples, no error) or requested
+// for every visitor (a cost the isolation flags exist to avoid).
+describe("wireArEntry depth for a recorded entry", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("an entry the recording does not record asks for no depth and starts no sampler", async () => {
+    const h = harness({ records: false, enableOk: true });
+    await h.enter();
+
+    expect(h.enabledConfig()?.isolationOptions?.enableDepthSensingFeature).toBe(
+      false,
+    );
+    expect(h.enabledConfig()?.callbacks?.depth).toBeUndefined();
+    expect(h.seams.startDepthCapture).not.toHaveBeenCalled();
+  });
+
+  it("a recorded entry requests depth, samples at the recording's rate, dispatches each sample, and stops at the session end", async () => {
+    const h = harness({ records: true, enableOk: true });
+    await h.enter();
+
+    const config = h.enabledConfig();
+    expect(config?.isolationOptions?.enableDepthSensingFeature).toBe(true);
+    expect(h.seams.startDepthCapture).toHaveBeenCalledWith(RECORDING_DEPTH);
+
+    const sample = { timestamp: 7, points: [] };
+    config?.callbacks?.depth?.onCaptured(sample as never);
+    expect(h.arStore.getState().recording.latestDepthSample).toEqual(sample);
+
+    config?.callbacks?.onSessionEnd?.({ requestedByApp: false });
+    expect(h.seams.stopDepthCapture).toHaveBeenCalledTimes(1);
   });
 });

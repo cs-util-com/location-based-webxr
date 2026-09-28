@@ -11,7 +11,16 @@ since the flows plan M6.
 
 ## Public API
 
-- `wireArEntry({ ctx, mode, arStore, arController, gpsHandler, seams, locationGate, dom, hooks }): ArEntry`
+- `wireArEntry({ ctx, mode, arStore, arController, gpsHandler, seams, locationGate, dom, hooks, recording? }): ArEntry`
+  - `recording` (a creator's, `recording-panel.ts`; authoring recording plan
+    2026-09-28-0953, M1a): asked at each entry, BEFORE the session is
+    requested, whether this entry records - that starts the recording when
+    the creator opted in, so its `startSession` is the first action it holds.
+    A recorded entry asks for depth (decision D4): `onDepthSample` goes into
+    `buildArEnableConfig` and each sample is dispatched as-is as
+    `recording/recordDepthSample` (the Recorder's way); once the runtime runs,
+    `seams.startDepthCapture(RECORDING_DEPTH)` starts the sampler, and the
+    session end stops it.
   - `mode` (`"creator" | "visitor"`, guided-setup plan DEC-N1) replaces the
     flows plan's `authorMode`; creator mode runs the author pipeline.
   - `locationGate` (from `visitor-screen.ts`, DEC-N2): while `pending()`,
@@ -91,5 +100,8 @@ from `ctx.viewerLastEvaluation` (never re-evaluating: the render runs per
 camera frame) and, with `?debug=1`, writes the QR readout into
 `dom.arDebug` (plan §66; `qr-debug-readout.ts`), headed by the running
 controller's own status (`ctx.qrController?.status`); the session end clears the
-hint's evaluation and keeps the counts. The pure pieces: `ar-mode.test.ts`,
+hint's evaluation and keeps the counts. A recorded entry (the
+"depth for a recorded entry" block) requests depth, starts the sampler at
+the recording's rate, dispatches each sample into the store, and stops it at
+the session end; an unrecorded one asks for none. The pure pieces: `ar-mode.test.ts`,
 `tour-flow.test.ts`.

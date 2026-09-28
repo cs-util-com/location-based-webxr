@@ -41,7 +41,18 @@ lives here.
     `planesRunGeneration`, `placementUnsubscribe`, `placementAttempted`,
     `joinDeclined`.
 - `createTourViewerSession(): TourViewerSession` - the initial values.
-- `createTourViewerStore()` / `type TourViewerStore` / `type ArController` -
+- `createTourViewerStore(recording?)` - with the creator's troubleshooting
+  recording (`authoring-recording.ts`; authoring recording plan
+  2026-09-28-0953, M1a) the store writes into its backend under its
+  `persistWhile` gate, which REPLACES the `isRecording` gate, and numbers
+  actions across sessions (`continuousActionIndex`): this app starts and ends
+  a session on every AR entry and exit, so under the defaults the per-exit
+  `resetGpsSessionData` and everything done on the page would be lost and a
+  second visit would overwrite the first. Persisted beyond the framework's
+  built-ins: `qrDetected` and `tourAuthoring`, both derived from real action
+  creators (`slicePrefixOf`). Without `recording` (tests) it writes into a
+  `NullStorageBackend` as before.
+- `type TourViewerStore` / `type ArController` -
   the store factory both modes share (with the opt-in `qrDetected` slice)
   and the two handle types the wiring modules take.
 - `interface TourViewerHooks` / `createUnwiredHooks()` - the late-bound

@@ -42,7 +42,12 @@ camera, so `installTourViewerArFakes(page)` installs
   reticle and the JPEG encoder fakes; `createLabel` returns a bare object
   in place of the canvas sprite); `timers` + `fireTimers()` are the scan
   gate's escape clock (the `schedule` seam), so a spec fires the 45 s
-  without waiting.
+  without waiting. The troubleshooting recording's depth (authoring
+  recording plan 2026-09-28-0953, D4): `initARCalls` records `hasDepth`,
+  `depthCaptureCalls` / `stopDepthCalls` count the depth seams, and
+  `emitDepthSample()` feeds one sample through the initAR depth callback
+  (`depthCallback`). The fake world group carries an identity `matrixWorld`
+  and `worldToLocal`, which the creator's placement log reads.
 
 ## Invariants & assumptions
 

@@ -26,14 +26,17 @@ import {
 } from "gps-plus-slam-app-framework/storage";
 
 import { openDraftNamespace } from "gps-plus-slam-app-framework/storage";
+import { sanitizedPageUrl } from "gps-plus-slam-app-framework/storage/session-metadata-record";
 
 import { wireArchiveOpen } from "./archive-open.js";
 import { wireArEntry } from "./ar-entry.js";
+import { createAuthoringRecording } from "./authoring-recording.js";
 import { arSessionLive, wireCreatorSetup } from "./creator-setup.js";
 import type { ScanOpen } from "./scan-open.js";
 import { viewerModeFromSearch } from "./mode.js";
 import { describeOpenError } from "./open-errors.js";
 import { wirePrintPanel } from "./print-panel.js";
+import { wireRecordingPanel } from "./recording-panel.js";
 import { getSeams } from "./seams.js";
 import {
   createTourViewerSession,
@@ -80,7 +83,19 @@ const cacheStore =
 // DEV Playwright run.
 const mode = viewerModeFromSearch(location.search);
 const seams = getSeams();
-const arStore = createTourViewerStore();
+// The creator's troubleshooting recording (authoring recording plan
+// 2026-09-28-0953, M1a): the store is built with its backend and gate, and
+// both stay silent until the creator opts in and enters AR.
+const recording = createAuthoringRecording({
+  openRoot: async () => {
+    const root = await navigator.storage?.getDirectory?.();
+    if (root === undefined) {
+      throw new Error("this browser has no private file storage");
+    }
+    return root;
+  },
+});
+const arStore = createTourViewerStore(recording);
 const gpsHandler = createGpsPositionHandler({
   store: arStore,
   getArPose: getCurrentArPose,
@@ -282,6 +297,41 @@ hooks.presentNoTour = () => {
 };
 hooks.presentDraftForTour = setup.presentDraftForTour;
 
+// The recording's controls: a creator's only (a visitor records nothing in
+// this milestone), wired before the AR entry that asks them at each entry.
+const recordingPanel =
+  mode === "creator"
+    ? wireRecordingPanel({
+        recording,
+        dom: {
+          optIn: element("record-session"),
+          marker: element("recording-marker"),
+          saveButton: element("recording-save"),
+          status: element("recording-status"),
+        },
+        save: () =>
+          recording.save({
+            flush: () => arStore.flushPendingActionWrites(),
+            nowMs: Date.now(),
+            userAgent: navigator.userAgent,
+            pageUrl: sanitizedPageUrl(location.href),
+          }),
+        // Through the seam like the tour zip, so the e2e fake captures it.
+        handOff: (blob, filename) => seams.shareOrDownloadZip(blob, filename),
+        sessionLive: () => arSessionLive(arController.getState().status),
+        now: () => new Date(),
+      })
+    : null;
+if (recordingPanel !== null) {
+  arController.subscribe(() => {
+    recordingPanel.render();
+  });
+  // Failed writes are counted as they happen, after a dispatch.
+  arStore.subscribe(() => {
+    recordingPanel.render();
+  });
+}
+
 const escapeButton = element<HTMLButtonElement>("scan-escape");
 const viewer = createViewerPlacement({
   ctx,
@@ -318,6 +368,7 @@ const arEntry = wireArEntry({
     arDebug: element("ar-debug"),
   },
   hooks,
+  ...(recordingPanel === null ? {} : { recording: recordingPanel }),
 });
 hooks.renderArStatus = arEntry.renderArStatus;
 hooks.renderArEntry = arEntry.renderArEntry;

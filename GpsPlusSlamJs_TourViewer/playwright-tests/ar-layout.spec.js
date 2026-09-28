@@ -63,8 +63,13 @@ for (const viewport of PHONES) {
     if (!(await step.evaluate((el) => /** @type {any} */ (el).open))) {
       await step.locator("summary").click();
     }
+    // The troubleshooting recording's marker is one more line inside the
+    // overlay (authoring recording plan 2026-09-28-0953, M1a) - part of the
+    // tallest state the panel reaches.
+    await page.getByTestId("record-session").check();
     await expect(page.getByTestId("enter-ar")).toBeEnabled({ timeout: 10000 });
     await page.getByTestId("enter-ar").click();
+    await expect(page.getByTestId("recording-marker")).toBeVisible();
     await page.evaluate((text) => {
       /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
     }, E2E_QR_TEXT);

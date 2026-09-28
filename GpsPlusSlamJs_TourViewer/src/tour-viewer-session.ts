@@ -19,8 +19,15 @@ import { AUTHOR_DEFAULT_SIZE_M } from "gps-plus-slam-app-framework/ar/qr/qr-mint
 import {
   createSlamAppStore,
   qrDetectedReducer,
+  recordQrDetection,
+  slicePrefixOf,
 } from "gps-plus-slam-app-framework/state";
-import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
+import {
+  NullStorageBackend,
+  type StorageBackend,
+} from "gps-plus-slam-app-framework/storage";
+
+import { objectPlaced } from "./tour-authoring-actions.js";
 
 import type { HitTestReticleHandle } from "gps-plus-slam-app-framework/ar";
 import type { CapturedCameraFrame } from "gps-plus-slam-app-framework/ar/captured-camera-frame";
@@ -41,14 +48,37 @@ type QrController = ReturnType<typeof createQrTrackingController>;
 type FusedPoseSource = ReturnType<typeof createFusedQrPoseSource>;
 type QrDebugView = ReturnType<TourViewerSeams["createQrDebugView"]>;
 
-/** The page's store: the framework store with the opt-in `qrDetected` slice
- *  both modes need (author: stability gate for minting; viewer: the
- *  relocalization votes read the same window). One factory so every module
- *  types the store the same way. */
-export function createTourViewerStore() {
+/**
+ * The page's store: the framework store with the opt-in `qrDetected` slice
+ * both modes need (author: stability gate for minting; viewer: the
+ * relocalization votes read the same window). One factory so every module
+ * types the store the same way.
+ *
+ * `recording` is the creator's troubleshooting recording
+ * (`authoring-recording.ts`): its backend, and its gate REPLACING the
+ * `isRecording` one - this app starts and ends a session on every AR entry
+ * and exit, so under the default gate the per-exit reset and everything
+ * done on the page outside AR would never be written. The numbering runs
+ * across those sessions for the same reason. Without it (tests) the store
+ * writes into a `NullStorageBackend` as before.
+ */
+export function createTourViewerStore(recording?: {
+  storageBackend: StorageBackend;
+  persistWhile: () => boolean;
+}) {
   return createSlamAppStore({
-    storageBackend: new NullStorageBackend(),
+    storageBackend: recording?.storageBackend ?? new NullStorageBackend(),
+    ...(recording === undefined
+      ? {}
+      : { persistWhile: recording.persistWhile, continuousActionIndex: true }),
     extraReducers: { qrDetected: qrDetectedReducer },
+    // Beyond the framework's built-ins (GPS with its paired poses, the
+    // recording lifecycle, diagnostics): the QR detections the votes and
+    // the mint were computed from, and the creator's own log actions.
+    persistedExtraPrefixes: [
+      slicePrefixOf(recordQrDetection.type),
+      slicePrefixOf(objectPlaced.type),
+    ],
   });
 }
 export type TourViewerStore = ReturnType<typeof createTourViewerStore>;

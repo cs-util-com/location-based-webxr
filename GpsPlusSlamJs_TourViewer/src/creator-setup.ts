@@ -16,6 +16,11 @@
  */
 
 import { usablePhotoFrame } from "./photo-frame.js";
+import {
+  authoringFinished,
+  codeMeasured,
+  objectPlaced,
+} from "./tour-authoring-actions.js";
 import { tallyEvaluation, type FusedTallies } from "./qr-debug-readout.js";
 import { createQrTrackingController } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
 import { createFusedQrPoseSource } from "gps-plus-slam-app-framework/ar/qr/qr-fused-pose-source";
@@ -48,6 +53,7 @@ import { rebuildZipWithEntries } from "gps-plus-slam-app-framework/storage";
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
 import { Vector3 } from "three";
+import type { CapturedCameraFrame } from "gps-plus-slam-app-framework/ar/captured-camera-frame";
 
 import {
   mintPhoto,
@@ -610,6 +616,55 @@ export function wireCreatorSetup(deps: {
     renderAuthorReadout();
   }
 
+  /** The code in view as its last fused evaluation stood - read, never
+   *  re-evaluated (an evaluation feeds the motion detector). */
+  function codeInView() {
+    const text = ctx.lastDetectedText;
+    const fused = text === null ? null : (ctx.fusedPose?.last(text) ?? null);
+    return text === null || fused === null
+      ? null
+      : { text, status: fused.status, pose: fused.pose };
+  }
+
+  /**
+   * Record a placement into the troubleshooting recording, with the raw
+   * inputs it was computed from (authoring recording plan 2026-09-28-0953,
+   * M1a). Dispatched from the tap's own handler, never from inside another
+   * dispatch, so its recorded position follows what it depends on. Without
+   * a recording the store writes nothing, and no slice reads it.
+   */
+  function logPlacement(
+    object: TourObject,
+    raw: {
+      reticleWorld?: Vector3;
+      cameraOdomPose?: CapturedCameraFrame["cameraPose"];
+    },
+  ): void {
+    const group = seams.getArWorldGroup();
+    const reticleOdom =
+      raw.reticleWorld === undefined || group === null
+        ? null
+        : group.worldToLocal(raw.reticleWorld.clone());
+    arStore.dispatch(
+      objectPlaced({
+        object,
+        arVisitIndex: ctx.arSessionGeneration,
+        atMs: Date.now(),
+        reticleOdomNue:
+          reticleOdom === null
+            ? null
+            : [reticleOdom.x, reticleOdom.y, reticleOdom.z],
+        cameraOdomPose: raw.cameraOdomPose ?? null,
+        alignmentMatrix: selectAlignmentMatrix(arStore.getState()),
+        arWorldGroupMatrix:
+          raw.reticleWorld === undefined || group === null
+            ? null
+            : group.matrixWorld.toArray(),
+        code: codeInView(),
+      }),
+    );
+  }
+
   dom.draftRestore.addEventListener("click", () => {
     const waiting = offered;
     dom.draftOffer.hidden = true;
@@ -819,6 +874,7 @@ export function wireCreatorSetup(deps: {
     }
     ctx.placedObjects.push({ object: pin });
     recordPlacement(pin);
+    logPlacement(pin, { reticleWorld: position });
     dom.pinLabel.value = "";
     hideLabelInput();
     previewObject(ctx.placedObjects.length - 1);
@@ -857,6 +913,7 @@ export function wireCreatorSetup(deps: {
         }
         ctx.placedObjects.push({ object: photo, blob: jpeg.blob });
         recordPlacement(photo, jpeg.blob);
+        logPlacement(photo, { cameraOdomPose: cameraPose });
         previewObject(ctx.placedObjects.length - 1);
         // The plane sits at the capture spot, facing back at it: the
         // creator is standing on it and sees it once they step back.
@@ -1004,6 +1061,17 @@ export function wireCreatorSetup(deps: {
     // superseded by the newest.
     const mintedText = ctx.lastDetectedText;
     const mintGeneration = ++ctx.mintGeneration;
+    // The raw inputs, captured at the tap: the level's id lands later.
+    const measured = {
+      text: mintedText,
+      fusedOdomPose: stablePose,
+      sizeM: ctx.activeSizeM,
+      alignmentMatrix: selectAlignmentMatrix(state),
+      alignment: authorAlignmentInfo(),
+      levelJson: result.json,
+      arVisitIndex: ctx.arSessionGeneration,
+      atMs: Date.now(),
+    };
     ctx.mintedLevel = null;
     dom.status.textContent = "Saving the measured position…";
     dom.finishButton.disabled = true;
@@ -1015,6 +1083,7 @@ export function wireCreatorSetup(deps: {
           levelId: id,
           tourUrl: codeTour.tourOf(mintedText),
         };
+        arStore.dispatch(codeMeasured({ levelId: id, ...measured }));
         if (draftTourUrl !== null) void recordMeta(draftTourUrl);
         renderAuthorReadout();
       },
@@ -1135,6 +1204,13 @@ export function wireCreatorSetup(deps: {
         // review). `tourManifest` is otherwise only written at tour open.
         ctx.tourManifest = written;
         ctx.placedObjects = [];
+        arStore.dispatch(
+          authoringFinished({
+            levelId: minted.id,
+            manifest: written,
+            atMs: Date.now(),
+          }),
+        );
         // NOT cleared here, and not on the download tap either: the zip is
         // only in the creator's hands, not yet in the file the world sees.
         // It is cleared when a re-opened tour turns out to carry these ids

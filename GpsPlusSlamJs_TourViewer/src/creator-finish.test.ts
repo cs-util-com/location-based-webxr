@@ -166,7 +166,15 @@ function alignedArStore(): unknown {
       },
     },
   };
-  return { getState: () => state, subscribe: () => () => undefined };
+  // `dispatch` records what the finish logs into the troubleshooting
+  // recording (`tourAuthoring/finished`); nothing reads it back into state.
+  const dispatched: unknown[] = [];
+  return {
+    getState: () => state,
+    subscribe: () => () => undefined,
+    dispatch: (action: unknown) => dispatched.push(action),
+    dispatched,
+  };
 }
 
 /**
@@ -192,10 +200,11 @@ async function wireFinishable(options: {
     objects: [...options.hosted],
   };
   ctx.placedObjects = options.placed.map((object) => ({ object }));
+  const arStore = alignedArStore() as { dispatched: unknown[] };
   wireCreatorSetup({
     ctx,
     mode: "creator",
-    arStore: alignedArStore() as never,
+    arStore: arStore as never,
     arController: {
       getState: () => ({ status: "running" }),
       disable: () => {
@@ -208,7 +217,7 @@ async function wireFinishable(options: {
     dom: dom as unknown as CreatorSetupDom,
     openDraftStore: () => Promise.resolve(undefined),
   });
-  return { dom, ctx };
+  return { dom, ctx, dispatched: arStore.dispatched };
 }
 
 /**
@@ -368,5 +377,34 @@ describe("a tour closed while the finish ends the AR session", () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
     expect(dom.finishBlock.hidden).toBe(true);
+  });
+});
+
+describe("the troubleshooting recording's log of the finish", () => {
+  it("records the manifest the rebuilt zip carries", async () => {
+    // Why this test matters (authoring recording plan 2026-09-28-0953,
+    // M1a): the Finish is what a troubleshooting session is usually about
+    // ("the note is not where I put it"), so the recording must hold what
+    // the finish WROTE. (That the tour zip never carries the recording is
+    // pinned end to end, with a recording running, in ar-mode.spec.js.)
+    const { dom, ctx, dispatched } = await wireFinishable({
+      hosted: [pin("already-there")],
+      placed: [pin("new-one")],
+    });
+
+    dom.finishButton.click();
+    await settle(ctx);
+
+    const finished = dispatched.filter(
+      (a) => (a as { type: string }).type === "tourAuthoring/finished",
+    ) as {
+      payload: { levelId: string; manifest: { objects: TourObject[] } };
+    }[];
+    expect(finished).toHaveLength(1);
+    expect(finished[0]!.payload.levelId).toBe(LEVEL_ID);
+    expect(finished[0]!.payload.manifest.objects.map((o) => o.id)).toEqual([
+      "already-there",
+      "new-one",
+    ]);
   });
 });

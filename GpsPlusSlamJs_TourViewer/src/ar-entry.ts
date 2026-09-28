@@ -12,8 +12,10 @@
 import type { EnableGpsArState } from "gps-plus-slam-app-framework/ar";
 import type { GpsPosition } from "gps-plus-slam-app-framework/sensors";
 import {
+  type DepthSample,
   clearAllQrMarkers,
   computeOnboardingGuidance,
+  recordDepthSample,
   selectGpsPositions,
   selectTrackingQuality,
   updateDeviceOrientation,
@@ -22,15 +24,18 @@ import {
 import {
   arButtonView,
   buildArEnableConfig,
+  type ArEnableHooks,
   endTourArRuntime,
   startTourArRuntime,
 } from "./ar-mode.js";
+import { RECORDING_DEPTH } from "./authoring-recording.js";
 import type { ViewerMode } from "./mode.js";
 import { describeOpenError } from "./open-errors.js";
 import { debugReadoutLines, visitorFusedHint } from "./qr-debug-readout.js";
 import type { TourViewerSeams } from "./seams.js";
 import { arStatusLine } from "./tour-flow.js";
 import type { LocationGate } from "./visitor-screen.js";
+import type { RecordingPanel } from "./recording-panel.js";
 import {
   endQrPipeline,
   type ArController,
@@ -71,6 +76,9 @@ export function wireArEntry(deps: {
   locationGate: LocationGate;
   dom: ArEntryDom;
   hooks: TourViewerHooks;
+  /** The creator's troubleshooting recording (authoring recording plan
+   *  2026-09-28-0953, M1a): asked at each entry whether it records. */
+  recording?: Pick<RecordingPanel, "beginOnArEntry">;
 }): ArEntry {
   const {
     ctx,
@@ -84,6 +92,34 @@ export function wireArEntry(deps: {
     hooks,
   } = deps;
   const authorMode = mode === "creator";
+  /** Whether THIS session's depth sampler was started (a recorded entry). */
+  let depthRunning = false;
+
+  /**
+   * The recording's part of an AR entry (authoring recording plan
+   * 2026-09-28-0953, M1a): asked BEFORE the session is requested, so the
+   * recording (when the creator opted in) holds this entry's `startSession`
+   * as its first action, and depth - a feature the session asks for up front
+   * (decision D4) - is requested only for a recorded entry. Its samples are
+   * dispatched as the Recorder dispatches them: as-is, into the stream.
+   */
+  function recordedEntryHooks(): Pick<ArEnableHooks, "onDepthSample"> {
+    if (deps.recording?.beginOnArEntry() !== true) return {};
+    return {
+      onDepthSample: (sample: DepthSample) => {
+        arStore.dispatch(recordDepthSample(sample));
+      },
+    };
+  }
+
+  /** Once the runtime runs: start the sampler a recorded entry asked for. */
+  function startRecordedDepth(
+    depthHooks: Pick<ArEnableHooks, "onDepthSample">,
+  ): void {
+    if (depthHooks.onDepthSample === undefined) return;
+    seams.startDepthCapture(RECORDING_DEPTH);
+    depthRunning = true;
+  }
 
   function renderArStatus(): void {
     renderDebugReadout();
@@ -241,6 +277,10 @@ export function wireArEntry(deps: {
     // tens-of-seconds decode turned this race from theoretical into
     // expected).
     ctx.planesRunGeneration += 1;
+    if (depthRunning) {
+      seams.stopDepthCapture();
+      depthRunning = false;
+    }
     arStore.dispatch(clearAllQrMarkers());
     endTourArRuntime(arStore, {
       stopCameraFrameCapture: () => {
@@ -265,6 +305,7 @@ export function wireArEntry(deps: {
     // session is plain AR.
     if (authorMode && !hooks.startAuthorPipeline()) return;
     if (!authorMode) hooks.startViewerPipeline();
+    const depth = recordedEntryHooks();
     const result = await arController.enable(
       buildArEnableConfig({
         container: dom.arRoot,
@@ -287,6 +328,7 @@ export function wireArEntry(deps: {
         onOrientation: (orientation) => {
           updateDeviceOrientation(orientation);
         },
+        ...depth,
       }),
     );
     // Failure states surface via the subscribed button view (Retry — <reason>).
@@ -305,6 +347,7 @@ export function wireArEntry(deps: {
       await arController.disable();
       return;
     }
+    startRecordedDepth(depth);
     // The world group exists only AFTER initAR built the scene graph —
     // creating the glue check earlier made it dead code in production
     // (PR #360 review). The snapshot for the alignment gate belongs to the

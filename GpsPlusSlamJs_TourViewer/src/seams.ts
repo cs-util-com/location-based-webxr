@@ -21,8 +21,10 @@ import {
   getScene,
   rgbaImageToJpegBlob,
   startCameraFrameCapture,
+  startDepthCapture,
   startHitTestReticle,
   stopCameraFrameCapture,
+  stopDepthCapture,
   type EnableGpsArDeps,
   type HitTestReticleHandle,
 } from "gps-plus-slam-app-framework/ar";
@@ -61,6 +63,7 @@ import {
   type ShareOrDownloadResult,
   PDF_FILE_TYPE,
 } from "gps-plus-slam-app-framework/storage";
+import type { DepthSamplerConfig } from "gps-plus-slam-app-framework/ar/depth-sampler";
 import type { Object3D } from "three";
 
 import type {
@@ -84,6 +87,10 @@ export interface TourViewerSeams {
   }): unknown;
   startCameraFrameCapture(config?: { intervalMs?: number }): void;
   stopCameraFrameCapture(): void;
+  /** Start / stop the depth sampler of a recorded entry (the sampler
+   *  exists only when the entry asked for depth). */
+  startDepthCapture(config: Partial<DepthSamplerConfig>): void;
+  stopDepthCapture(): void;
   /** BarcodeDetector-backed detect+decode, or `null` where unavailable
    *  (desktop Chromium — there is no fallback detector by design). */
   createQrFrontEnd(): QrFrontEnd | null;
@@ -185,6 +192,8 @@ export const realSeams: TourViewerSeams = {
   enableArWorldGroupAlignment,
   startCameraFrameCapture,
   stopCameraFrameCapture,
+  startDepthCapture,
+  stopDepthCapture,
   createQrFrontEnd: () => createBarcodeDetectorFrontEnd(),
   solveQrPose: (input) => solveQrPose({ ...input, solver: pnpSolver }),
   estimateQrPrintSize: (entries) => estimateQrSizeFromParallax(entries),

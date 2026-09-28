@@ -10,7 +10,10 @@
  * acquisition are ON in viewer AND author mode, and depth stays OFF in both
  * (v1 authoring takes the printed size as an input, which dissolved the
  * per-mode depth split). Author mode only changes labels here; the pipelines
- * diverge in M3/M4.
+ * diverge in M3/M4. The one exception is an entry the creator's
+ * troubleshooting recording records: it asks for depth, because the
+ * recording carries depth samples instead of camera pictures (authoring
+ * recording plan 2026-09-28-0953, decision D4).
  */
 
 import type {
@@ -27,6 +30,7 @@ import type {
 import {
   startSession,
   teardownArSessionState,
+  type DepthSample,
   type SubscribableStore,
 } from "gps-plus-slam-app-framework/state";
 import type {
@@ -122,6 +126,10 @@ export interface ArEnableHooks {
   onSessionEnd(): void;
   onGpsPosition(position: GpsPosition): void;
   onOrientation(orientation: RawDeviceOrientation): void;
+  /** Present only for an entry the troubleshooting recording records
+   *  (decision D4): requests the depth feature and receives its samples.
+   *  Absent, depth stays off as for every other entry. */
+  onDepthSample?: (sample: DepthSample) => void;
 }
 
 /**
@@ -144,18 +152,25 @@ export function buildArEnableConfig(hooks: ArEnableHooks): EnableGpsArConfig {
     onSessionEnd: () => {
       hooks.onSessionEnd();
     },
+    // Presence creates the framework's depth sampler at initAR; sampling
+    // itself starts with `startDepthCapture` once the session runs.
+    ...(hooks.onDepthSample === undefined
+      ? {}
+      : { depth: { onCaptured: hooks.onDepthSample } }),
   };
   return {
     container: hooks.container,
     requestHitTest: hooks.requestHitTest,
-    // Camera ON (access + texture acquisition), depth OFF — in BOTH modes.
+    // Camera ON (access + texture acquisition), depth OFF — in BOTH modes,
+    // unless this entry is recorded (then depth is requested as an OPTIONAL
+    // feature: a phone without it starts AR all the same, without depth).
     // These are the opposite of MinimalExample/AnchorStarter, which turn the
     // camera path off to dodge its Chromium crash surface; a CV app needs it
     // and inherits that surface (mitigated by the framework's projection-
     // layer workaround inside initAR).
     isolationOptions: {
       enableCameraAccess: true,
-      enableDepthSensingFeature: false,
+      enableDepthSensingFeature: hooks.onDepthSample !== undefined,
       enableCameraTextureAcquisition: true,
     },
     callbacks,
