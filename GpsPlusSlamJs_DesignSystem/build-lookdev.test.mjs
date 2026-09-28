@@ -447,6 +447,7 @@ describe("buildLookdev with the real terrain lab", () => {
       "labs/terrain/index.html",
       "labs/terrain/terrain-lab.js",
       "labs/terrain/terrain-worker.js",
+      "labs/terrain/terrain-pipeline.js",
       "labs/terrain/terrain-mosaic.js",
       "labs/terrain/terrain-precompute.js",
       "osm-lib/elevation/terrarium.js",

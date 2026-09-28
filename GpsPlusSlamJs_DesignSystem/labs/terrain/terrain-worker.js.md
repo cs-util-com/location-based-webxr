@@ -7,12 +7,13 @@
   - decode each tile with the Osm library's `browserPngDecoder` (colour
     management and premultiplication off: one red step is 256 m) and
     `toElevationTile`, through `/osm-lib/elevation/terrarium.js`;
-  - stitch with `terrain-mosaic.js`, projected by the library's
-    `toWorldPixel`;
-  - resample onto the metric ENU grid with OsmDemo's `buildHeightfieldData`
-    (`/osm/heightfield.js`) in the library's `enuFrameAt` frame, then make it
-    datum-relative with OsmDemo's `terrainTextureFrom`
-    (`/osm/terrain-texture.js`);
+  - `terrain-pipeline.js`'s `reliefField`, with the served modules passed
+    in: stitch with `terrain-mosaic.js`, projected by the library's
+    `toWorldPixel`; resample onto the metric ENU grid with OsmDemo's
+    `buildHeightfieldData` (`/osm/heightfield.js`) in the library's
+    `enuFrameAt` frame; make it datum-relative with OsmDemo's
+    `terrainTextureFrom` (`/osm/terrain-texture.js`); mark the posts with no
+    data; refuse a grid whose side is not the spec's;
   - `terrain-precompute.js` for the gradient, the relief and the spread;
     the sky view afterwards, in its own message.
 - Protocol (one build at a time; `id` echoes back, the page ignores stale
@@ -37,6 +38,7 @@ reliefMs, fields }`, the fields transferred (`height`, `gx`, `gy`,
   - A failed or undecodable tile is a gap: its posts are filled by the
     heightfield from the mean of the rest (never 0 m) and marked invalid,
     which the shader draws as a hatch.
-- Tests: none in Node (it is wiring over browser APIs); its pieces are
-  unit-tested, and `terrain.smoke.spec.mjs` runs it on real and synthetic
-  tiles, including a failing tile and every tile failing.
+- Tests: none in Node for this file itself (it is wiring over browser APIs);
+  its chain is `terrain-pipeline.test.mjs` (the real served modules, held to
+  the Mercator formula), and `terrain.smoke.spec.mjs` runs it on real and
+  synthetic tiles, including a failing tile and every tile failing.

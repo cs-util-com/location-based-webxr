@@ -1,8 +1,9 @@
 /**
  * The terrain lab's worker (terrain plan 2026-09-27-0605 §4 "Data" and
  * "Precompute", §9 findings 3-5): decodes the tile bytes the page fetched,
- * stitches them into one mosaic, resamples it onto the metric ENU grid with
- * OsmDemo's `buildHeightfieldData`, and runs the precompute. The sky view
+ * runs the data chain (`terrain-pipeline.js`: the mosaic, OsmDemo's
+ * `buildHeightfieldData` onto the metric ENU grid, the no-data mask) with
+ * the served modules as its dependencies, and runs the precompute. The sky view
  * follows in a second message, so the first frame does not wait for it
  * (plan §9 finding 14).
  *
@@ -30,7 +31,7 @@ import {
 import { enuFrameAt } from "/osm-lib/mesh/enu.js";
 import { buildHeightfieldData } from "/osm/heightfield.js";
 import { terrainTextureFrom } from "/osm/terrain-texture.js";
-import { createMosaic, mosaicProvider } from "./terrain-mosaic.js";
+import { reliefField } from "./terrain-pipeline.js";
 import {
   gradient,
   localRelief,
@@ -38,7 +39,6 @@ import {
   skyView,
 } from "./terrain-precompute.js";
 
-const TILE_SIZE = 256;
 const decodePng = browserPngDecoder();
 
 /** Decodes every tile that arrived; a tile that fails to decode is a gap. */
@@ -65,41 +65,29 @@ async function build({ id, spec, tiles, svf }) {
     y0: Math.min(...tiles.map((t) => t.y)),
     y1: Math.max(...tiles.map((t) => t.y)),
   };
-  const mosaic = createMosaic(range, decoded, TILE_SIZE);
-  const inner = mosaicProvider(mosaic, (p) => toWorldPixel(p, spec.zoom));
-  // The heightfield fills a missing post from the mean of the rest (never
-  // 0 m). The raw answers are kept to mark those posts as no data.
-  let raw = [];
-  const provider = {
-    sourceId: inner.sourceId,
-    async elevationAt(positions, signal) {
-      raw = await inner.elevationAt(positions, signal);
-      return raw;
+  const field = await reliefField({
+    decoded,
+    range,
+    spec,
+    deps: {
+      toWorldPixel,
+      enuFrameAt,
+      buildHeightfieldData,
+      terrainTextureFrom,
     },
-  };
-  const field = await buildHeightfieldData(provider, {
-    frame: enuFrameAt(spec.centre),
-    extentM: spec.extentM,
-    spacingM: spec.spacingM,
   });
   const decodedMs = performance.now() - started;
-  const side = spec.side;
-  const n = side * side;
-  const valid = new Uint8Array(n);
-  // Datum-relative, as OsmDemo's GPU terrain stores it: small values keep
-  // half floats precise (1 m steps up to 2 km of relief).
-  const height = field.hasData
-    ? terrainTextureFrom(field).data
-    : new Float32Array(n);
-  if (field.hasData) {
-    for (let i = 0; i < n; i++) valid[i] = raw[i] === undefined ? 0 : 1;
-  }
+  const { side, height, valid } = field;
   const { gx, gy } = gradient(height, side, spec.spacingM);
   const sigma = spec.reliefSigmaM / spec.spacingM;
   const relief = localRelief(height, side, sigma);
   const std = reliefStd(height, side, sigma);
   const small = localRelief(height, side, spec.detailSigmaPosts);
   const reliefMs = performance.now() - started - decodedMs;
+  // The sky view runs after the relief is posted, and `height` is
+  // transferred away with it: the march reads a copy.
+  const wantSvf = svf.directions > 0 && field.hasData;
+  const posts = wantSvf ? height.slice() : null;
   postMessage(
     {
       type: "relief",
@@ -112,7 +100,7 @@ async function build({ id, spec, tiles, svf }) {
       missing: field.missing,
       total: field.total,
       reliefM: field.reliefM,
-      missingTiles: mosaic.missingTiles,
+      missingTiles: field.missingTiles,
       decodeFailures,
       decodedMs,
       reliefMs,
@@ -136,10 +124,7 @@ async function build({ id, spec, tiles, svf }) {
       valid.buffer,
     ],
   );
-  if (svf.directions > 0 && field.hasData) {
-    // `height` was transferred away; the sky view reads the field's own
-    // posts, datum-relative like everything else (the datum cancels).
-    const posts = terrainTextureFrom(field).data;
+  if (wantSvf) {
     const t0 = performance.now();
     const out = skyView(posts, side, spec.spacingM, svf);
     postMessage({ type: "svf", id, svf: out, ms: performance.now() - t0 }, [
