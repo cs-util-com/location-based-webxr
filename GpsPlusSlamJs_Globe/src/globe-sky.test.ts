@@ -215,7 +215,19 @@ describe("the procedural stars in the sky pass", () => {
           -a,
         );
         sky.setCelestialRotation(q);
-        expect(sky.stars.quaternion.angleTo(q)).toBeLessThan(1e-9);
+        // Compared by where the two rotations send two axes, not by
+        // `angleTo`: its acos turns one rounding step of the dot product
+        // near 1 into ~3e-8 rad, while an axis's displacement grows
+        // linearly with the angle, so 1e-9 still means ~1e-9 rad.
+        for (const axis of [
+          new THREE.Vector3(1, 0, 0),
+          new THREE.Vector3(0, 1, 0),
+        ]) {
+          const got = axis.clone().applyQuaternion(sky.stars.quaternion);
+          expect(got.distanceTo(axis.clone().applyQuaternion(q))).toBeLessThan(
+            1e-9,
+          );
+        }
         const pole = new THREE.Vector3(...GALACTIC_NORTH_POLE).applyQuaternion(
           q,
         );
@@ -226,7 +238,9 @@ describe("the procedural stars in the sky pass", () => {
         );
         sky.dispose();
       }),
-      { numRuns: 20 },
+      // The example is the seed-721839530 counterexample that failed the
+      // r757 cascade (2026-09-28): it must stay green on every run.
+      { numRuns: 20, examples: [[2.7478541238137337e-5]] },
     );
   });
 });
