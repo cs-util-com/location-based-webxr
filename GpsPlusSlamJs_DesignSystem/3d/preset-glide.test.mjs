@@ -296,9 +296,10 @@ describe("createPresetGlide", () => {
   });
 
   // A seeded property check (the package has no fast-check): for random
-  // looks, retarget times and frame steps, the glide never leaves the
-  // segment between its ends, the azimuth never turns more than 180° per
-  // glide, and it always settles on the target exactly.
+  // looks, start times and frame steps (one glide per trial; the retarget
+  // has its own test above), the glide never leaves the segment between
+  // its ends, the azimuth never turns more than its short arc, and it
+  // always settles on the target exactly.
   it("stays between its ends and settles exactly, for random glides", () => {
     let seed = 7;
     const random = () => {

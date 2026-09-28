@@ -16,7 +16,9 @@
     leaves the glide to the test), `glideInfo()` (`{ active, id,
 rebuildEvery, holdsShadows, shadows }`), `setGlideRebuildEvery(k)` and
     `setGlideShadows("follow" | "freeze")` (the cost sweep's handles) and
-    `programIds()` (the programs three holds, for the no-compile check);
+    `programIds()` (the programs three holds, for the no-compile check),
+    `shadowLightDirection()` (the unit direction the central map renders
+    from; null while shadows are off) and `fog()` (the scene's one fog);
   - `setPreset(id)`, `setToneMapping("agx" | "aces" | "neutral")`,
     `setView("city" | "sun" | "antisun" | "lake" | "aloft" | "inside" | "above")`
     (`aloft`: 2.15 km, just above the sheet; `inside`: 2 km, level, in the
@@ -168,17 +170,24 @@ denoise, resolutionScale })` is the sweep's handle; `setAoExclusions(bool)`
     call (one rebuild); the haze is synced after every change.
   - THE GLIDE (preset-glide.js.md): only the preset buttons glide;
     `api.setPreset` and a link (on load or a `hashchange`) stay instant,
-    and a `hashchange`, `setPreset` or a moved slider cancels a running
-    glide. The frame loop ticks the glide; on its rebuild frames the page
+    and a `hashchange`, `setPreset`, `setCloudCover` or a moved slider
+    cancels a running glide. A cancelled glide leaves `preset=custom`
+    (the look is no preset's) unless the cancelling call names a preset
+    itself. A click on the glide's own target, or on the preset already
+    shown, does nothing (it would restart the 5 s, or glide nowhere). The frame loop ticks the glide; on its rebuild frames the page
     runs `useAtmosphere` (the sky, the light, the shadow maps) and the
     controls, and the settling frame runs `applyLook` with the preset
     itself, so the end state is the instant preset's exactly. The hash is
     written when the glide settles: `applyLook` writes none while a glide
     runs. The shadow configuration is HELD for the whole glide (on when
     either end casts), so crossing the 2° floor compiles no program
-    mid-glide (round-3 plan §8 finding 6); held below the floor, the maps
-    render from the sun at the floor's elevation (the rig refuses a sun at
-    or below the horizon, where the sun light is 0 anyway). The readout
+    mid-glide (round-3 plan §8 finding 6). Held below the floor, the maps
+    follow the TRUE sun down to 0.1° (it still lights the scene there);
+    below 0.1° they render from a sun at 0.1°, same azimuth, because the
+    rig refuses a sun at or below the horizon, where the setting disc's
+    light fades to 0. The page keeps ONE `THREE.Fog` and recolours it per
+    rebuild (a new object would make three re-derive every fogged program
+    on the next frame). The readout
     shows `sky … ms` (the whole `useAtmosphere`) and `glide to <id>`.
   - The haze (`AtmosphereHaze`) patches the stand-in world's materials once
     at load and owns its uniforms, so every atmosphere change only needs a

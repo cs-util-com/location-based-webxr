@@ -342,10 +342,16 @@ function applyPresetToState(preset) {
  * frame. Swept over 1, 2, 4, 8 on the page's defaults (preset-glide
  * results, 2026-09-27; SwiftShader ratios only): a rebuild costs 0.84-0.90
  * of a steady frame, 0.69 of it the shadow maps, so a glide frame averages
- * 1.84-1.90x at 1, 1.42-1.45x at 2, 1.21-1.22x at 4. 2 is the one interval
- * inside the declared 1.5x budget that still steps at 30 Hz on a 60 fps
- * screen (at most 1.7° of sun and a 95th-percentile jump of 9 levels per
- * step at the glide's fastest); 4 steps at 15 Hz, up to 3.4° a step.
+ * 1.84-1.90x at 1, 1.42-1.45x at 2, 1.21-1.22x at 4. On SwiftShader, 2 is
+ * the one interval inside the declared 1.5x budget that still steps at
+ * 30 Hz on a 60 fps screen (at most 1.7° of sun and a 95th-percentile jump
+ * of 9 levels per step at the glide's fastest); 4 steps at 15 Hz, up to
+ * 3.4° a step, and is the fallback.
+ * NOT MEASURED ON A REAL GPU: every rebuild reads the sky-view LUT back
+ * synchronously (SkyAtmosphere's exposure measurement, a readPixels), which
+ * stalls a GPU pipeline in a way the CPU rasteriser cannot show. On a
+ * phone, a frame is either on time or a whole refresh late, so the check
+ * is whether a glide drops frames or steps unevenly, not a cost ratio.
  */
 const GLIDE_REBUILD_EVERY = 2;
 let glide = createPresetGlide({
@@ -362,6 +368,11 @@ const glideNow = () => pinnedGlideMs ?? performance.now();
  * the glide settles or is cancelled.
  */
 let glideHoldsShadows = false;
+/**
+ * The lowest sun a held shadow map is rendered from, degrees: just above
+ * the horizon, which the rig refuses (applyShadows).
+ */
+const HELD_SHADOW_MIN_DEG = 0.1;
 /**
  * The shadow maps during a glide: "follow" re-renders them with every sky
  * rebuild, "freeze" keeps them until the glide settles (the cost sweep's
@@ -385,6 +396,9 @@ const lookOfState = () => ({
 function glideToPreset(id) {
   const preset = LOOK_PRESETS.find((p) => p.id === id);
   if (!preset) throw new Error(`unknown preset ${id}`);
+  // Re-clicking the glide's target would restart its 5 s; clicking the
+  // preset already shown would glide nowhere (review finding 5).
+  if (glide.active ? glide.id === id : state.preset === id) return;
   const to = presetLook(preset);
   glide.start({ from: lookOfState(), to, id, nowMs: glideNow() });
   glideHoldsShadows =
@@ -393,8 +407,14 @@ function glideToPreset(id) {
   syncControls();
 }
 
-/** Stop a glide where it is (a manual change or a link takes over). */
+/**
+ * Stop a glide where it is (a manual change or a link takes over). The look
+ * it leaves is no preset's, so the state says "custom" (review finding 1: a
+ * link naming no preset kept the TARGET's name for a half-way sky);
+ * `setPreset` and a link that names a preset overwrite it.
+ */
 function cancelGlide() {
+  if (glide.active) state.preset = "custom";
   glide.cancel();
   glideHoldsShadows = false;
 }
@@ -464,11 +484,13 @@ function useAtmosphere() {
   applyShadows(direction);
   renderer.toneMapping = TONE_MAPPINGS[state.tone];
   renderer.toneMappingExposure = 1;
-  scene.fog = new THREE.Fog(
-    atmosphere.horizonColour(),
-    ATMOSPHERE_FOG_NEAR_M,
-    ATMOSPHERE_FAR_M,
-  );
+  // ONE fog, recoloured: a new fog object makes three re-derive every fogged
+  // material's program on the next frame (a cache hit, but work on every
+  // glide rebuild; review finding 6). Its near and far never change.
+  const horizon = atmosphere.horizonColour();
+  if (scene.fog?.isFog) scene.fog.color.copy(horizon);
+  else
+    scene.fog = new THREE.Fog(horizon, ATMOSPHERE_FOG_NEAR_M, ATMOSPHERE_FAR_M);
   camera.far = ATMOSPHERE_FAR_M;
   atmosphereMs = performance.now() - start;
 }
@@ -533,14 +555,17 @@ function applyShadows(direction) {
     sunShadow.renders > 0 &&
     (ringShadow !== null || parts.dense.userData.count === 0);
   if (glide.active && glideShadows === "freeze" && mapsExist) return;
-  // Held below the floor, the maps render from the sun at the FLOOR (same
-  // azimuth): the rig refuses a sun at or below the horizon, and there the
-  // sun light is 0, so the maps shade nothing until the sun is back up.
+  // Held below the floor, the maps follow the TRUE sun down to
+  // HELD_SHADOW_MIN_DEG, where the sun still lights the scene; below it they
+  // render from a sun at that elevation (same azimuth), because the rig
+  // refuses a sun at or below the horizon. There the setting disc's light
+  // fades to 0, so the substitute shades next to nothing (review finding 3:
+  // the first cut substituted the 2° floor, above a sun that still lit).
   const cast =
-    elevationDeg >= SHADOW_FLOOR_DEG
+    elevationDeg >= HELD_SHADOW_MIN_DEG
       ? direction
       : sunDirection({
-          elevationRad: SHADOW_FLOOR_DEG * DEG,
+          elevationRad: HELD_SHADOW_MIN_DEG * DEG,
           azimuthRad: state.azimuth * DEG,
         });
   const length = Math.hypot(cast.x, cast.y, cast.z);
@@ -1100,6 +1125,7 @@ Object.assign(api, {
     applyLook();
   },
   setCloudCover(cover) {
+    cancelGlide();
     state.clouds = cover;
     applyLook();
   },
@@ -1458,6 +1484,18 @@ Object.assign(api, {
   }),
   /** Test surface: how many shadow maps the rig asked for (null when off). */
   shadowRenders: () => (sunShadow ? sunShadow.renders : null),
+  /**
+   * Test surface: the unit direction the central shadow map is rendered
+   * from (the rig puts the light at the centre plus that direction times its
+   * distance, and the centre is the origin); null while shadows are off.
+   */
+  shadowLightDirection() {
+    if (!sunShadow) return null;
+    const d = sun.position.clone().normalize();
+    return [d.x, d.y, d.z];
+  },
+  /** Test surface: the scene's fog (one object, recoloured per rebuild). */
+  fog: () => scene.fog,
   /**
    * Test surface: a ground point in the tallest building's cast shadow (2 m
    * past its footprint, away from the sun), and a DIFFUSE sunlit control:

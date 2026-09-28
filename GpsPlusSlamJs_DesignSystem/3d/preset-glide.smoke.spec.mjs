@@ -364,6 +364,253 @@ for (const [from, to] of [
   });
 }
 
+// --- The milestone review's findings (2026-09-28) ------------------------
+
+// Review finding 1: a link that names no preset stops a glide where it is,
+// and the look it leaves is no preset's. Before the fix the state kept the
+// glide's TARGET as its preset, and the page wrote `preset=noon` for a sky
+// a quarter of the way there: a link that lied about its own view.
+test("a link without a preset, opened mid-glide, leaves the look custom", async ({
+  page,
+}) => {
+  const errors = await bootPinned(page, "preset=golden&tone=agx");
+  await page.evaluate(() => window.__lookdev.glideToPreset("noon"));
+  const mid = await tickAt(page, 0.25 * GLIDE_MS);
+  await page.evaluate(
+    (hash) => {
+      location.hash = hash;
+    },
+    `#${pinnedHash("tone=aces")}`,
+  );
+  await expect
+    .poll(() => page.evaluate(() => window.__lookdev.stats().state.tone))
+    .toBe("aces");
+  const r = await page.evaluate(() => ({
+    state: window.__lookdev.stats().state,
+    glide: window.__lookdev.glideInfo(),
+    hash: location.hash,
+  }));
+  expect(r.glide.active).toBe(false);
+  expect(r.state.preset).toBe("custom");
+  expect(r.hash).toContain("preset=custom");
+  expect(lookOf(r.state)).toEqual(lookOf(mid.state));
+  expect(errors).toEqual([]);
+});
+
+// Review findings 1 and 4b: every way of stopping a glide stops it, leaves
+// no false preset, and releases the held shadow (a hold left on would keep
+// the maps rendering below the 2° floor for good). Each case checks that
+// the hold WAS on first, so the "false" after it is not vacuous.
+test("every way of stopping a glide releases the shadow hold", async ({
+  page,
+}) => {
+  const errors = await bootPinned(page, "preset=golden&tone=agx");
+  const expected = {
+    setPreset: "hazy",
+    setCloudCover: "custom",
+    slider: "custom",
+    settle: "noon",
+  };
+  for (const [name, preset] of Object.entries(expected)) {
+    const r = await page.evaluate(
+      ([path, ms]) => {
+        const d = window.__lookdev;
+        d.setPreset("golden");
+        d.pinGlideClock(0);
+        d.glideToPreset("noon");
+        d.pinGlideClock(0.25 * ms);
+        d.glideTick();
+        const before = d.glideInfo();
+        if (path === "setPreset") d.setPreset("hazy");
+        if (path === "setCloudCover") d.setCloudCover(0.6);
+        if (path === "slider") {
+          const slider = document.querySelector("#exposure");
+          slider.value = "0.5";
+          slider.dispatchEvent(new Event("input"));
+        }
+        if (path === "settle") {
+          d.pinGlideClock(ms);
+          d.glideTick();
+        }
+        return { before, after: d.glideInfo(), state: d.stats().state };
+      },
+      [name, GLIDE_MS],
+    );
+    expect(r.before, name).toMatchObject({ active: true, holdsShadows: true });
+    expect(r.after, name).toMatchObject({ active: false, holdsShadows: false });
+    expect(r.state.preset, name).toBe(preset);
+  }
+  // The link path (a hash naming a preset) is its own event.
+  await page.evaluate((ms) => {
+    const d = window.__lookdev;
+    d.setPreset("golden");
+    d.pinGlideClock(0);
+    d.glideToPreset("noon");
+    d.pinGlideClock(0.25 * ms);
+    d.glideTick();
+  }, GLIDE_MS);
+  expect(
+    await page.evaluate(() => window.__lookdev.glideInfo().holdsShadows),
+  ).toBe(true);
+  await page.evaluate(
+    (hash) => {
+      location.hash = hash;
+    },
+    `#${pinnedHash("preset=dawn&tone=agx")}`,
+  );
+  await expect
+    .poll(() => page.evaluate(() => window.__lookdev.glideInfo()))
+    .toMatchObject({ active: false, holdsShadows: false });
+  expect(errors).toEqual([]);
+});
+
+// Review finding 4b with shadows on: a glide into blue hour holds the
+// shadow below the floor; stopping it there (an instant blue hour) must
+// switch the shadow off, as an instant blue hour always did.
+test("a glide stopped below the 2° floor switches the shadow off", async ({
+  page,
+}) => {
+  const errors = await bootPinned(page, "preset=golden&tone=agx&shadows=1");
+  const r = await page.evaluate((ms) => {
+    const d = window.__lookdev;
+    d.glideToPreset("blueHour");
+    d.pinGlideClock(0.8 * ms);
+    d.glideTick();
+    const held = {
+      elevation: d.stats().state.elevation,
+      renders: d.shadowRenders(),
+    };
+    d.setPreset("blueHour");
+    return { held, renders: d.shadowRenders(), glide: d.glideInfo() };
+  }, GLIDE_MS);
+  expect(r.held.elevation).toBeLessThan(2);
+  expect(r.held.renders).not.toBeNull();
+  expect(r.renders).toBeNull();
+  expect(r.glide.holdsShadows).toBe(false);
+  expect(errors).toEqual([]);
+});
+
+// Review finding 3: the held shadow renders from the TRUE sun wherever the
+// rig accepts it; only a sun too close to or below the horizon is
+// replaced, by one just above it at the same azimuth. The first cut
+// replaced everything below 2°, so between 0° and 2°, where the sun still
+// lights the scene, the shadows fell from a higher sun than the light.
+test("a held shadow follows the true sun between 0° and 2°", async ({
+  page,
+}) => {
+  const errors = await bootPinned(page, "preset=golden&tone=agx&shadows=1");
+  const rows = await page.evaluate((ms) => {
+    const d = window.__lookdev;
+    d.setGlideRebuildEvery(1);
+    d.glideToPreset("blueHour");
+    const out = [];
+    for (let k = 0; k <= 30; k++) {
+      d.pinGlideClock((0.3 + 0.02 * k) * ms);
+      d.glideTick();
+      out.push({
+        elevation: d.stats().state.elevation,
+        sun: d.sunDirection(),
+        shadow: d.shadowLightDirection(),
+      });
+    }
+    return out;
+  }, GLIDE_MS);
+  const deg = (u, v) =>
+    (Math.acos(Math.min(1, u[0] * v[0] + u[1] * v[1] + u[2] * v[2])) * 180) /
+    Math.PI;
+  const flat = (v) => {
+    const h = Math.hypot(v[0], v[2]);
+    return [v[0] / h, 0, v[2] / h];
+  };
+  const band = rows.filter((x) => x.elevation > 0.2 && x.elevation < 1.9);
+  const below = rows.filter((x) => x.elevation <= 0);
+  expect(band.length).toBeGreaterThan(1);
+  expect(below.length).toBeGreaterThan(1);
+  for (const x of band) {
+    expect(deg(x.sun, x.shadow), `at ${x.elevation}°`).toBeLessThan(1e-3);
+  }
+  for (const x of below) {
+    // Just above the horizon, toward the sun's azimuth.
+    const elevation = (Math.asin(x.shadow[1]) * 180) / Math.PI;
+    expect(elevation, `at ${x.elevation}°`).toBeGreaterThan(0);
+    expect(elevation, `at ${x.elevation}°`).toBeLessThan(0.2);
+    expect(deg(flat(x.sun), flat(x.shadow))).toBeLessThan(1e-3);
+  }
+  expect(errors).toEqual([]);
+});
+
+// Review finding 4a: the hash names where a glide started until it
+// settles, even when another control is used mid-glide (the page's other
+// setters all write the hash; mid-glide that would write the TARGET's name
+// for a half-way sky).
+test("a control used mid-glide does not write the hash until the glide settles", async ({
+  page,
+}) => {
+  const errors = await bootPinned(page, "preset=golden&tone=agx");
+  const r = await page.evaluate((ms) => {
+    const d = window.__lookdev;
+    const start = location.hash;
+    d.glideToPreset("noon");
+    d.pinGlideClock(0.3 * ms);
+    d.glideTick();
+    d.setHaze(false);
+    d.setHaze(true);
+    const mid = location.hash;
+    const active = d.glideInfo().active;
+    d.pinGlideClock(ms);
+    d.glideTick();
+    return { start, mid, active, end: location.hash };
+  }, GLIDE_MS);
+  expect(r.active).toBe(true);
+  expect(r.mid).toBe(r.start);
+  expect(r.end).toContain("preset=noon");
+  expect(errors).toEqual([]);
+});
+
+// Review finding 5: clicking the preset a glide is already heading to does
+// not restart its 5 s, and clicking the preset already shown starts none.
+test("a repeated click neither restarts a glide nor starts an empty one", async ({
+  page,
+}) => {
+  const errors = await bootPinned(page, "preset=golden&tone=agx");
+  await page.locator('[data-preset="golden"]').click();
+  expect(await page.evaluate(() => window.__lookdev.glideInfo().active)).toBe(
+    false,
+  );
+  await page.locator('[data-preset="noon"]').click();
+  await tickAt(page, 0.5 * GLIDE_MS);
+  await page.locator('[data-preset="noon"]').click();
+  const end = await tickAt(page, GLIDE_MS);
+  expect(end.step).toMatchObject({ done: true, id: "noon" });
+  expect(lookOf(end.state)).toEqual(LOOKS.noon);
+  expect(errors).toEqual([]);
+});
+
+// Review finding 6: the page keeps ONE fog and updates its colour. A new
+// `THREE.Fog` per sky rebuild makes three re-derive every fogged
+// material's program on the next frame (a cache hit, but work at the
+// glide's 30 Hz).
+test("a sky rebuild recolours the one fog instead of replacing it", async ({
+  page,
+}) => {
+  const errors = await bootPinned(page, "preset=golden&tone=agx");
+  const r = await page.evaluate((ms) => {
+    const d = window.__lookdev;
+    const fog = d.fog();
+    const golden = fog.color.getHex();
+    d.glideToPreset("noon");
+    d.pinGlideClock(0.5 * ms);
+    d.glideTick();
+    d.pinGlideClock(ms);
+    d.glideTick();
+    d.setCloudCover(0.5);
+    return { same: d.fog() === fog, golden, noon: d.fog().color.getHex() };
+  }, GLIDE_MS);
+  expect(r.same).toBe(true);
+  expect(r.noon).not.toBe(r.golden);
+  expect(errors).toEqual([]);
+});
+
 // --- ON DEMAND (`GLIDE_COST=1`): the rebuild rate's numbers --------------
 //
 // Measured on the page's own defaults (shadows, the dense city, the slab,
