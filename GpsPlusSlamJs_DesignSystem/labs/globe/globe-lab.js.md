@@ -35,7 +35,10 @@
   the error and loading lines move below the folded plate's header.
 - Hash parameters and ranges (`PARAMS`, the one source for the sliders too;
   out of range, empty or malformed reads as the default): `spinMs`,
-  `turnMs` (0-10000), `nightGain` (0-4), `waterRoughness`,
+  `turnMs` (0-10000), `diveMs` (the pin's dive, 1000-60000, default
+  15000), `handOverKm` (the hand-over altitude, 1-1000, default 150; the
+  plate offers 20, 50, 150), `handOver` (1 opens the city, 0 holds),
+  `nightGain` (0-4), `waterRoughness`,
   `cloudOpacity` (0-1), `cloudDrift` (0-10 °/s of scene time, default 0.5),
   `sky` (0 turns the background pass off, default 1), `sunSize` (the disc's
   apparent diameter, 0.1-10°, default the real 0.533°), `sunGlow` (0-4,
@@ -138,6 +141,44 @@
     no drag, no pointers, no drag or rotation momentum), the globe's spin
     momentum and any pending wheel step are cleared, and the intro starts
     again from the spin.
+  - `diving` and `landed`: the pin's dive (below), from the camera's
+    current pose, distance and rotation (the rotation fades out over the
+    first fifth, so a camera the controls had tilted turns smoothly
+    instead of snapping), then held at the hand-over altitude.
+
+- The pin (round-2 plan M3g, DEC-FB2-2/3), bottom right as in OsmDemo (the
+  design system's locate atom, `btn btn--locate`, with OsmDemo's pin
+  glyph), with a status line to its left. Its phases and labels are
+  `/globe/globe-pin.js`'s; the button carries them in `aria-label`,
+  `title`, `aria-busy`, `disabled` and `data-state` (`locating`
+  pulses; flying and handing over use the engaged look):
+  - idle ("Fly to my location") -> a press asks for the position ONCE,
+    only then (the framework's `locateOnce` from
+    `/fw/utils/locate-state.js`, 15 s as OsmDemo; no prompt on load,
+    DEC-PRG-10);
+  - locating ("Finding you... - tap to cancel", busy, still pressable: a
+    tap cancels the wait, since the request can stay pending while a
+    permission prompt is open; the status line then says "Stopped looking
+    for your location.", and an answer to the cancelled request is
+    dropped): a failure names its fix in the
+    status line (`labelFor`: `locateAdvice`, e.g. "location permission
+    denied: Allow location for this site in your browser's settings, then
+    try again.") and the pin is idle again;
+  - flying ("Flying to you - tap to stop"): the intro's `dive` turns over
+    the first 40 % and descends log-evenly over `diveMs` to
+    `handOverKm` above the fix (`/globe/globe-dive.js`); a press of the
+    pin or a touch on the globe stops it and leaves the camera to the
+    controls; the replay button or a new target ends it too;
+  - handing over ("Opening the city..."): once landed, the page goes to
+    `handOverUrl` (`/globe/globe-handover.js`): OsmDemo beside the lab
+    (`/osm/` on the site and the dev server, whatever the lab's base),
+    `lat`/`lng` and `clat`/`clng` at the fix, `cdist=4800` (its
+    farthest), and the globe clock's instant as OsmDemo's `date` (solar
+    date at the fix) and `time` (apparent solar time) when the sun there
+    is at or above -6°; otherwise no time, and OsmDemo boots at its own
+    afternoon sun (the jump is part of the cut). With `handOver=0` the dive
+    holds at the hand-over altitude instead and the pin is idle again
+    ("Arrived 150 km above you (the hand-over is off).").
   - Phase 1 has no GPS (DEC-PRG-10): the fix is always null. The target is
     chosen only while spinning, so a fix arriving after the fallback would
     be ignored; phase 6 (the real locate timeout) has to decide that.
@@ -150,7 +191,8 @@ sunEcef, tuning, sunIntensity, fovY, pixelRatio, errorTarget,
 bytesDownloaded, tileRequestsByLevel, rendererMemory, appliedHash, radiusM, activeSources,
 loadingShown, loadingVisible, cacheBudgetBytes, cacheFloorBytes,
 creditShorts, mapsLoaded, mapErrors, mapsTotal, refusedTiles, distance,
-cameraOwner, cameraDistanceM, altitudeM, near, far }`;
+cameraOwner, cameraDistanceM, altitudeM, near, far, pin }`;
+  `pin` is `{ phase, label, status, located, handOverUrl }`;
   `cameraOwner` is `intro` or `controls`, `altitudeM` the camera's height
   above the ellipsoid, `near`/`far` the camera's clip planes;
   `tuning` is what the shader reads (the uniforms), not the hash;
@@ -269,6 +311,17 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   touch screen (Chromium touch events through the DevTools protocol) a
   one-finger 200 px drag takes the camera and turns the centre west by
   more than 10°, and a two-finger pinch from 80 to 400 px lowers the
-  camera by more than 10 %.
+  camera by more than 10 %; with a mocked geolocation failing
+  (denied, timeout, unavailable: an init script, as the browser offers no
+  switch for the last two) the pin goes to "Finding you... - tap to
+  cancel" (busy, pulsing), then back to idle with the fix named; a second
+  tap while it waits cancels, and the late answer changes nothing; with a granted,
+  mocked position (Playwright's geolocation) the dive runs under the
+  intro with the near plane falling, and the page goes to the site-relative
+  `/osm/` (answered by the test, as the dev server has no OsmDemo app) with
+  the fix, `cdist=4800` and the pinned time as `date=2026-03-20` and an
+  11:2x solar time; with `handOver=0` the dive lands within 500 m of 50 km
+  and 0.01° of the fix and the pin reads "Arrived"; a press on the globe
+  during a 20 s dive stops it (controls own the camera, no hand-over).
 - The memory and download table: `pnpm run measure:globe`
   (`measure-globe.mjs`), not a test.

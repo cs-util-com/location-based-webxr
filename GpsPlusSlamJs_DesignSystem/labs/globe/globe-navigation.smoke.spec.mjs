@@ -245,3 +245,250 @@ test.describe("on a touch screen", () => {
     expect(errors).toEqual([]);
   });
 });
+
+/** The smoke server's origin: 5198, or a worktree's `DS_E2E_PORT`. */
+const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
+/** Cologne cathedral: where the mocked GPS says the user stands. */
+const COLOGNE = { latitude: 50.94128, longitude: 6.95817 };
+
+/**
+ * Replaces `navigator.geolocation.getCurrentPosition` before the page
+ * loads, so it fails with a given `GeolocationPositionError` code (the
+ * browser offers no switch for a timeout or an unavailable position), and
+ * only once the test calls `window.__answerGeolocation()`, so the
+ * in-progress state is read while it lasts, not raced.
+ */
+async function failGeolocationWith(page, code) {
+  await page.addInitScript((c) => {
+    Object.defineProperty(navigator, "geolocation", {
+      configurable: true,
+      value: {
+        getCurrentPosition(_ok, fail) {
+          window.__answerGeolocation = () =>
+            fail({ code: c, message: `mocked code ${c}` });
+        },
+      },
+    });
+  }, code);
+}
+
+/** The pin's view: its label, state and disabled flag, and its status line. */
+const pinView = (page) =>
+  page.evaluate(() => {
+    const b = document.getElementById("globe-pin");
+    return {
+      label: b.getAttribute("aria-label"),
+      state: b.dataset.state,
+      disabled: b.disabled,
+      busy: b.getAttribute("aria-busy"),
+      status: document.getElementById("globe-pin-status").textContent,
+      phase: window.__globeLab.state().pin.phase,
+    };
+  });
+
+// WHY (round-2 M3g; CLAUDE.md's async-feedback rule): the three ways a
+// position fails need three different fixes, the pin must say "Finding
+// you..." while it waits (disabled), and it must come back to idle after a
+// failure with the fix named: a pin stuck on "Finding you..." is the one
+// outcome worse than an error.
+for (const [code, name, fix] of [
+  [1, "denied", /settings/i],
+  [3, "timeout", /sky/i],
+  [2, "unavailable", /cannot tell where it is/i],
+]) {
+  test(`the pin names the fix when the position is ${name}, and returns to idle`, async ({
+    page,
+  }) => {
+    test.setTimeout(240_000);
+    await failGeolocationWith(page, code);
+    const { errors } = await bootArrived(page);
+    expect(await pinView(page)).toMatchObject({
+      label: "Fly to my location",
+      state: "idle",
+      disabled: false,
+    });
+    await page.locator("#globe-pin").click();
+    // In progress: busy, pulsing, and said; still pressable, to cancel.
+    expect(await pinView(page)).toMatchObject({
+      label: "Finding you... - tap to cancel",
+      state: "locating",
+      disabled: false,
+      busy: "true",
+      status: "Finding you... - tap to cancel",
+    });
+    await page.evaluate(() => window.__answerGeolocation());
+    await page.waitForFunction(
+      () => window.__globeLab.state().pin.phase === "idle",
+    );
+    const after = await pinView(page);
+    expect(after).toMatchObject({ state: "idle", disabled: false });
+    expect(after.status).toMatch(fix);
+    // The camera never left the intro.
+    expect((await page.evaluate(() => window.__globeLab.state())).phase).toBe(
+      "arrived",
+    );
+    expect(errors).toEqual([]);
+  });
+}
+
+// WHY (cold review of stream E, finding 5): a browser can leave the
+// request pending while its permission prompt is open, so the pin must not
+// be stuck waiting: a second tap cancels, and the answer that arrives later
+// for the cancelled request changes nothing.
+test("a tap while the pin waits cancels, and the late answer is dropped", async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  await failGeolocationWith(page, 1);
+  const { errors } = await bootArrived(page);
+  await page.locator("#globe-pin").click();
+  expect((await pinView(page)).phase).toBe("locating");
+  await page.locator("#globe-pin").click();
+  expect(await pinView(page)).toMatchObject({
+    phase: "idle",
+    state: "idle",
+    status: "Stopped looking for your location.",
+  });
+  // The cancelled request answers now: nothing may change.
+  await page.evaluate(() => window.__answerGeolocation());
+  await frames(page, 10);
+  expect(await pinView(page)).toMatchObject({
+    phase: "idle",
+    status: "Stopped looking for your location.",
+  });
+  expect(errors).toEqual([]);
+});
+
+/** Boots with a granted, mocked GPS at Cologne. */
+async function bootWithGps(page, context, extra) {
+  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
+  await context.setGeolocation(COLOGNE);
+  return bootArrived(page, extra ? `${VIEW}&${extra}` : VIEW);
+}
+
+// WHY (round-2 DEC-FB2-2/3, M3g): a granted position turns the globe and
+// dives to the hand-over altitude, then opens the OSM demo's city there.
+// The dev server has no /osm/ app, so the page's request is answered here
+// and the URL itself is what is checked: the site-relative path, the user
+// and the camera at the fix, the camera at the demo's farthest, and the
+// globe's pinned time as the demo's solar date and time (the sun is up in
+// Cologne at 11:00 UTC on the equinox).
+test("a granted position dives there and hands over to the city", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(300_000);
+  await page.route(`${ORIGIN}/osm/**`, (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: "<!doctype html><title>osm stand-in</title>",
+    }),
+  );
+  // The default 15 s dive, so the checks below run while it lasts.
+  const { errors } = await bootWithGps(page, context, "");
+  const fitted = await page.evaluate(() => window.__globeLab.state());
+  await page.locator("#globe-pin").click();
+  await page.waitForFunction(
+    () => window.__globeLab.state().pin.phase === "flying",
+  );
+  const flying = await pinView(page);
+  expect(flying).toMatchObject({ state: "located", disabled: false });
+  expect(flying.label).toMatch(/stop/i);
+  const mid = await page.evaluate(() => window.__globeLab.state());
+  expect(mid.phase).toBe("diving");
+  expect(mid.cameraOwner).toBe("intro");
+  await frames(page, 20);
+  // The planes follow the dive down.
+  const lower = await page.evaluate(() => window.__globeLab.state());
+  expect(lower.near).toBeLessThan(fitted.near);
+  await page.waitForURL(/\/osm\//, { timeout: 60_000 });
+  const url = new URL(page.url());
+  console.log(`hand-over: ${url.href}`);
+  expect(url.origin + url.pathname).toBe(`${ORIGIN}/osm/`);
+  const q = url.searchParams;
+  expect(q.get("lat")).toBe("50.94128");
+  expect(q.get("lng")).toBe("6.95817");
+  expect(q.get("clat")).toBe("50.94128");
+  expect(q.get("clng")).toBe("6.95817");
+  expect(q.get("cdist")).toBe("4800");
+  expect(q.get("date")).toBe("2026-03-20");
+  // 11:00 UTC at 6.96°E: +27.8 min of longitude, -7.5 min equation of time.
+  expect(q.get("time")).toMatch(/^11:2\d$/);
+  expect(errors).toEqual([]);
+});
+
+/**
+ * Sets extra hash keys on the fixed view without changing its target or
+ * timing (so the intro is not restarted), and waits until applied.
+ */
+async function applyHashKeepingView(page, extra) {
+  const hash = `${VIEW}&${extra}`;
+  await page.evaluate((h) => {
+    location.hash = h;
+  }, hash);
+  await page.waitForFunction(
+    (h) => window.__globeLab.state().appliedHash === h,
+    hash,
+  );
+}
+
+// WHY (round-2 M3g, §5): with the hand-over off the dive holds at the
+// hand-over altitude over the fix (to look at the {20, 50, 150} km sweep),
+// and the pin is idle again; a press on the globe during a dive stops it
+// and leaves the camera to the controls, with no hand-over.
+test("the dive lands on the fix at the hand-over altitude, and a touch stops a dive", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(300_000);
+  const { errors } = await bootWithGps(
+    page,
+    context,
+    "diveMs=3000&handOver=0&handOverKm=50",
+  );
+  await page.locator("#globe-pin").click();
+  await page.waitForFunction(
+    () => {
+      const s = window.__globeLab.state();
+      return s.phase === "landed" && s.pin.phase === "idle";
+    },
+    null,
+    { timeout: 60_000 },
+  );
+  const landed = await page.evaluate(() => window.__globeLab.state());
+  console.log(
+    `landed: altitude ${(landed.altitudeM / 1000).toFixed(2)} km, centre ${landed.centreLatLon?.lat.toFixed(4)}, ${landed.centreLatLon?.lng.toFixed(4)}, near ${(landed.near / 1000).toFixed(1)} km`,
+  );
+  expect(Math.abs(landed.altitudeM - 50_000)).toBeLessThan(500);
+  expect(Math.abs(landed.centreLatLon.lat - COLOGNE.latitude)).toBeLessThan(
+    0.01,
+  );
+  expect(Math.abs(landed.centreLatLon.lng - COLOGNE.longitude)).toBeLessThan(
+    0.01,
+  );
+  expect(landed.pin.status).toMatch(/Arrived 50 km above you/);
+  expect(page.url()).toContain("/labs/globe/");
+  // A second dive, stopped by a press on the globe early on.
+  await page.locator("#globe-replay").click();
+  await arriveAt(page, { lat: 30, lng: 15 });
+  await applyHashKeepingView(page, "diveMs=20000&handOver=1&handOverKm=50");
+  await page.locator("#globe-pin").click();
+  await page.waitForFunction(
+    () => window.__globeLab.state().pin.phase === "flying",
+  );
+  await frames(page, 30);
+  const c = await canvasCentre(page);
+  await page.mouse.move(c.x, c.y);
+  await page.mouse.down();
+  await page.mouse.up();
+  await page.waitForFunction(
+    () => window.__globeLab.state().pin.phase === "idle",
+  );
+  const stopped = await page.evaluate(() => window.__globeLab.state());
+  expect(stopped.cameraOwner).toBe("controls");
+  // Well above the hand-over: stopped early, and the page stays.
+  expect(stopped.altitudeM).toBeGreaterThan(50_000 * 2);
+  await frames(page, 30);
+  expect(page.url()).toContain("/labs/globe/");
+  expect(errors).toEqual([]);
+});

@@ -44,13 +44,23 @@ import {
   sameGlobeClockSetting,
   startGlobeClock,
 } from "/globe/globe-clock.js";
-import { solarPosition } from "/fw/geo/solar-position.js";
+import { GLOBE_DIVE, diveAt } from "/globe/globe-dive.js";
+import { globePinView, nextPinPhase } from "/globe/globe-pin.js";
+import { handOverUrl } from "/globe/globe-handover.js";
+import {
+  apparentSolarTimeHours,
+  solarDateAt,
+  solarPosition,
+} from "/fw/geo/solar-position.js";
+import { labelFor, locateAdvice, locateOnce } from "/fw/utils/locate-state.js";
 
 const canvas = document.getElementById("globe-canvas");
 const errorBox = document.getElementById("globe-error");
 const creditsBox = document.getElementById("globe-credits");
 const loadingLabel = document.getElementById("globe-loading");
 const replayButton = document.getElementById("globe-replay");
+const pinButton = document.getElementById("globe-pin");
+const pinStatus = document.getElementById("globe-pin-status");
 const deviceLine = document.getElementById("globe-device");
 
 /**
@@ -183,6 +193,17 @@ const DEG = Math.PI / 180;
 const PARAMS = {
   spinMs: { fallback: 3000, min: 0, max: 10_000 },
   turnMs: { fallback: 5000, min: 0, max: 10_000 },
+  // The pin's dive (round-2 plan 2026-09-26-2055 M3g): its length, the
+  // altitude it hands over at (km; the {20, 50, 150} sweep for the look),
+  // and whether it then opens the city (0 holds at the hand-over altitude,
+  // to look at it).
+  diveMs: { fallback: GLOBE_DIVE.durationMs, min: 1000, max: 60_000 },
+  handOverKm: {
+    fallback: GLOBE_DIVE.handOverAltitudeM / 1000,
+    min: 1,
+    max: 1000,
+  },
+  handOver: { fallback: 1, min: 0, max: 1 },
   nightGain: { fallback: GLOBE_SURFACE_TUNING.nightGain, min: 0, max: 4 },
   waterRoughness: {
     fallback: GLOBE_SURFACE_TUNING.waterRoughness,
@@ -264,7 +285,13 @@ const wrapLng = (lng) => ((((lng + 180) % 360) + 360) % 360) - 180;
 /**
  * The intro's states (globe plan §7.6): `spin` until a target is chosen,
  * `turning` towards it, then `arrived`, holding it; `user` once the user
- * has taken the camera (round-2 plan 2026-09-26-2055 M3a). `history` records each
+ * has taken the camera (round-2 plan 2026-09-26-2055 M3a); `diving` down
+ * to the pin's position and `landed` at the hand-over altitude (M3g).
+ * `pose(now)` returns the pose, the distance from the centre when the
+ * intro sets one (the dive; otherwise the fitted distance applies), and
+ * the camera's rotation at the dive's start with the weight still given
+ * to it, so a camera the controls had tilted turns smoothly to the dive's
+ * view instead of snapping. `history` records each
  * phase and source change with its time since the start, and `runs`
  * counts the starts (the replay button, a change of target or timing), so
  * a test reads the sequence instead of racing it.
@@ -279,6 +306,8 @@ function introFlight(ellipsoid) {
   let turnStartedAt;
   let history;
   let runs = 0;
+  /** The dive in progress: its start, curve and the target's radius. */
+  let dive = null;
   const note = (now) => {
     history.push({
       phase,
@@ -293,6 +322,7 @@ function introFlight(ellipsoid) {
     choice = { target: null, source: "waiting" };
     history = [];
     runs += 1;
+    dive = null;
     note(now);
   };
   const spinPose = (now) =>
@@ -302,6 +332,35 @@ function introFlight(ellipsoid) {
         SPIN_START.lng + (SPIN_DEG_PER_S * (now - startedAt)) / 1000,
       ),
     });
+  /** The spin, the turn and the hold. */
+  const introPose = (now) => {
+    if (phase === "spin") {
+      const next = chooseGlobeTarget({
+        url: params.url,
+        fix: null,
+        fallback: GLOBE_FALLBACK_TARGET,
+        fixWaitExpired: now - startedAt >= params.spinMs,
+      });
+      if (next.source !== choice.source) {
+        choice = next;
+        if (next.target) {
+          from = spinPose(now);
+          to = orbitPose(ellipsoid, next.target);
+          turnStartedAt = now;
+          phase = "turning";
+        }
+        note(now);
+      }
+      if (phase === "spin") return spinPose(now);
+    }
+    if (phase === "turning") {
+      const t = params.turnMs > 0 ? (now - turnStartedAt) / params.turnMs : 1;
+      if (t < 1) return turnPose(from, to, smoothstep(t));
+      phase = "arrived";
+      note(now);
+    }
+    return to;
+  };
   return {
     restart,
     /**
@@ -318,34 +377,59 @@ function introFlight(ellipsoid) {
     get drives() {
       return phase !== "user";
     },
+    /**
+     * The pin's dive (round-2 plan M3g): from the camera's current pose,
+     * distance and rotation, turn to `target` and descend to
+     * `toAltitudeM` over `durationMs` (`diveAt` in `/globe/globe-dive.js`),
+     * then hold there as `landed`. The altitude is along the target's
+     * orbit axis, above its surface point.
+     */
+    dive(
+      now,
+      target,
+      { fromPose, fromDistance, fromQuaternion, durationMs, toAltitudeM },
+    ) {
+      const radius = ellipsoid
+        .getCartographicToPosition(
+          target.lat * DEG,
+          target.lng * DEG,
+          0,
+          new THREE.Vector3(),
+        )
+        .length();
+      from = fromPose;
+      to = orbitPose(ellipsoid, target);
+      dive = {
+        startedAt: now,
+        radius,
+        fromQuaternion,
+        durationMs,
+        fromAltitudeM: Math.max(1, fromDistance - radius),
+        toAltitudeM,
+      };
+      choice = { target, source: "pin" };
+      phase = "diving";
+      note(now);
+    },
     /** The pose for this frame, advancing the states. */
     pose(now) {
-      if (phase === "spin") {
-        const next = chooseGlobeTarget({
-          url: params.url,
-          fix: null,
-          fallback: GLOBE_FALLBACK_TARGET,
-          fixWaitExpired: now - startedAt >= params.spinMs,
-        });
-        if (next.source !== choice.source) {
-          choice = next;
-          if (next.target) {
-            from = spinPose(now);
-            to = orbitPose(ellipsoid, next.target);
-            turnStartedAt = now;
-            phase = "turning";
-          }
+      if (phase === "diving" || phase === "landed") {
+        const f = diveAt(now - dive.startedAt, dive);
+        if (f.done && phase === "diving") {
+          phase = "landed";
           note(now);
         }
-        if (phase === "spin") return spinPose(now);
+        // The camera's own rotation fades out over the first fifth.
+        const weight =
+          1 - smoothstep((now - dive.startedAt) / (0.2 * dive.durationMs));
+        return {
+          pose: turnPose(from, to, f.turnT),
+          distanceM: dive.radius + f.altitudeM,
+          fromQuaternion: dive.fromQuaternion,
+          fromWeight: weight,
+        };
       }
-      if (phase === "turning") {
-        const t = params.turnMs > 0 ? (now - turnStartedAt) / params.turnMs : 1;
-        if (t < 1) return turnPose(from, to, smoothstep(t));
-        phase = "arrived";
-        note(now);
-      }
-      return to;
+      return { pose: introPose(now), distanceM: null, fromWeight: 0 };
     },
     state: () => ({
       phase,
@@ -420,6 +504,147 @@ function cameraControls(scene, camera, globe, onTake) {
       controls.globeInertia.identity();
       controls.globeInertiaFactor = 0;
     },
+  };
+}
+
+/** How long the pin waits for a fix, as OsmDemo's locate button does. */
+const LOCATE_TIMEOUT_MS = 15_000;
+
+/**
+ * The camera's current pose as an orbit pose: the direction from the
+ * centre, and the screen's up made perpendicular to it (or, looking
+ * straight along it, the view's forward direction, then north). The lab's
+ * tile group sits at the world's origin unturned, so world = ECEF here.
+ */
+function currentPose(camera) {
+  const direction = camera.position.clone().normalize();
+  for (const axis of [
+    new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion),
+    new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion),
+    new THREE.Vector3(0, 0, 1),
+  ]) {
+    const up = axis.addScaledVector(direction, -axis.dot(direction));
+    if (up.lengthSq() > 1e-12) return { direction, up: up.normalize() };
+  }
+  return { direction, up: new THREE.Vector3(1, 0, 0) };
+}
+
+/**
+ * The pin (round-2 plan 2026-09-26-2055 M3g, DEC-FB2-2/3), bottom right as
+ * in OsmDemo: a press asks for the position (the framework's `locateOnce`),
+ * the globe then turns and dives there over `diveMs` to `handOverKm`, and
+ * the page opens OsmDemo's city at that place (`handOverUrl`), with the
+ * globe's time when the sun is up there. Its phases and labels are
+ * `/globe/globe-pin.js`'s; the button carries them in its `aria-label`,
+ * `title`, `aria-busy`, `disabled` and `data-state` (the design system's
+ * locate atom: `locating` pulses), and the status line beside it shows the
+ * in-progress label or the failure with its fix (`labelFor`,
+ * `locateAdvice`). A press or a touch on the globe stops the flight and
+ * leaves the camera to the controls; a restart of the intro (the replay
+ * button, a new target) ends a flight too. `handOver=0` holds at the
+ * hand-over altitude instead of leaving, to look at it. `navigate` is
+ * `location.assign` (the page leaves).
+ */
+function bindPin({ flight, controls, camera, getParams, sceneMs, navigate }) {
+  let phase = "idle";
+  let message = "";
+  let lastUrl = null;
+  let located = null;
+  const render = () => {
+    const view = globePinView(phase);
+    pinButton.setAttribute("aria-label", view.label);
+    pinButton.title = view.label;
+    pinButton.setAttribute("aria-busy", String(view.busy));
+    pinButton.disabled = view.disabled;
+    pinButton.dataset.state =
+      phase === "idle" ? "idle" : phase === "locating" ? "locating" : "located";
+    pinStatus.textContent = phase === "idle" ? message : view.label;
+  };
+  const go = (event) => {
+    phase = nextPinPhase(phase, event);
+    render();
+  };
+  /** The globe's instant as OsmDemo reads it, at the target. */
+  const sunAt = (target) => {
+    const ms = sceneMs();
+    return {
+      date: solarDateAt(ms, target.lng),
+      solarHours: apparentSolarTimeHours(ms, target.lng),
+      elevationDeg:
+        solarPosition(ms, target.lat, target.lng).elevationRad / DEG,
+    };
+  };
+  /** Bumped by every press, so an answer to a cancelled request is dropped. */
+  let request = 0;
+  pinButton.addEventListener("click", async () => {
+    const before = phase;
+    const mine = ++request;
+    go("press");
+    if (before === "flying") {
+      // Stopped: the camera stays where the flight left it, for the controls.
+      flight.yieldToUser(performance.now());
+      return;
+    }
+    if (before === "locating") {
+      // Cancelled: a browser can leave the request pending (an open
+      // permission prompt), and the pin must not be stuck with it.
+      message = "Stopped looking for your location.";
+      render();
+      return;
+    }
+    if (phase !== "locating") return;
+    message = "";
+    const outcome = await locateOnce(navigator.geolocation, {
+      timeoutMs: LOCATE_TIMEOUT_MS,
+    });
+    if (mine !== request || phase !== "locating") return;
+    if (outcome.kind === "failed") {
+      message = `${labelFor(outcome.state)}: ${locateAdvice(outcome.state)}`;
+      go("failed");
+      return;
+    }
+    located = { lat: outcome.fix.lat, lng: outcome.fix.lng };
+    const params = getParams();
+    // The intro takes the camera: no drag or momentum left to resume.
+    controls.release();
+    flight.dive(performance.now(), located, {
+      fromPose: currentPose(camera),
+      fromDistance: camera.position.length(),
+      fromQuaternion: camera.quaternion.clone(),
+      durationMs: params.diveMs,
+      toAltitudeM: params.handOverKm * 1000,
+    });
+    go("located");
+  });
+  render();
+  return {
+    /** The controls took the camera, or the intro restarted. */
+    cameraTaken() {
+      if (phase === "flying") go("touch");
+    },
+    /** Per frame: a landed dive hands over (or holds). */
+    frame() {
+      if (phase !== "flying" || flight.state().phase !== "landed") return;
+      if (getParams().handOver === 0) {
+        message = `Arrived ${shown(getParams().handOverKm)} km above you (the hand-over is off).`;
+        go("held");
+        return;
+      }
+      lastUrl = handOverUrl({
+        pageHref: location.href,
+        target: located,
+        sun: sunAt(located),
+      });
+      go("arrived");
+      navigate(lastUrl);
+    },
+    state: () => ({
+      phase,
+      label: globePinView(phase).label,
+      status: pinStatus.textContent,
+      located,
+      handOverUrl: lastUrl,
+    }),
   };
 }
 
@@ -592,9 +817,20 @@ function start() {
   renderCredits(credits);
   const status = statusView();
   const flight = introFlight(globe.tiles.ellipsoid);
-  const controls = cameraControls(scene, camera, globe, () =>
-    flight.yieldToUser(performance.now()),
-  );
+  // Set once the pin exists (below); a touch before that has no flight.
+  let pin = null;
+  const controls = cameraControls(scene, camera, globe, () => {
+    flight.yieldToUser(performance.now());
+    pin?.cameraTaken();
+  });
+  /** The replay button or a new target or timing: the intro again. */
+  const giveBackToIntro = () => {
+    flight.restart(performance.now(), params);
+    controls.release();
+    pin?.cameraTaken();
+  };
+  const blendFrom = new THREE.Quaternion();
+  const blendTo = new THREE.Quaternion();
   let params = readHashParams();
   let appliedHash = location.hash.slice(1);
   /** The globe's one clock; restarted only when its setting changes. */
@@ -644,10 +880,7 @@ function start() {
     const clockChanged = !sameGlobeClockSetting(next.clock, params.clock);
     params = next;
     if (clockChanged) clock = startClock();
-    if (restart) {
-      flight.restart(performance.now(), params);
-      controls.release();
-    }
+    if (restart) giveBackToIntro();
     applyLive();
     syncPanel();
     appliedHash = location.hash.slice(1);
@@ -682,9 +915,14 @@ function start() {
   applyLive();
   syncPanel();
   window.addEventListener("hashchange", onHash);
-  replayButton.addEventListener("click", () => {
-    flight.restart(performance.now(), params);
-    controls.release();
+  replayButton.addEventListener("click", giveBackToIntro);
+  pin = bindPin({
+    flight,
+    controls,
+    camera,
+    getParams: () => params,
+    sceneMs,
+    navigate: (url) => location.assign(url),
   });
 
   const frame = () => {
@@ -705,12 +943,22 @@ function start() {
     }
     sunNow();
     if (flight.drives) {
-      applyOrbitPose(camera, flight.pose(performance.now()), distance);
+      const step = flight.pose(performance.now());
+      applyOrbitPose(camera, step.pose, step.distanceM ?? distance);
+      if (step.fromWeight > 0) {
+        blendTo.copy(camera.quaternion);
+        camera.quaternion.slerpQuaternions(
+          blendTo,
+          blendFrom.copy(step.fromQuaternion),
+          step.fromWeight,
+        );
+      }
       camera.updateMatrixWorld();
       controls.followIntro();
     } else {
       controls.update();
     }
+    pin.frame();
     globe.update(camera, renderer);
     status.update(globe.state());
     // A running clock moves the hour: its label follows, once a second.
@@ -845,6 +1093,7 @@ function start() {
         cloudOpacity: globe.surfaceUniforms.uCloudOpacity.value,
       },
       distance,
+      pin: pin.state(),
       // Who moves the camera, and where it is (round-2 plan M3a, M3b).
       cameraOwner: flight.drives ? "intro" : "controls",
       cameraDistanceM: camera.position.length(),
