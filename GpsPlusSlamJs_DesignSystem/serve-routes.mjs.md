@@ -14,7 +14,9 @@
     are `text/javascript`; `.jpg`/`.jpeg`/`.webp` are images (the globe's
     imagery); unknown extensions are octet-stream.
 - The table (`defaultRoutes`): `/fw/` (the framework's TypeScript),
-  `/osm/` (OsmDemo's), `/vendor/three/` (with its LICENSE as a notice),
+  `/osm/` (OsmDemo's), `/osm-lib/` (the Osm library's, for the terrain
+  lab's Terrarium decoder and ENU frame; terrain plan 2026-09-27-0605 §9
+  finding 2), `/vendor/three/` (with its LICENSE as a notice),
   and for the globe lab (W7): `/globe/` (the globe package's TypeScript),
   `/globe-assets/` (its imagery, `copyAll`), `/vendor/3d-tiles-renderer/`
   (the installed library, its LICENSE as a notice).
@@ -32,4 +34,6 @@
   → `{ kind: "file", file: ".../src/visualization/atmosphere/atmosphere-model.ts", typescript: true }`.
 - Tests: `serve-routes.test.mjs` (`node --test`, stage `test:unit`): index,
   directory index, TypeScript mapping, vendored files, five escape
-  attempts (plain, nested, percent-encoded, encoded slash, NUL), MIME types.
+  attempts (plain, nested, percent-encoded, encoded slash, NUL), MIME types;
+  on the real table: `/osm-lib/` reaches the Osm library, `/osm/` still
+  reaches OsmDemo, and an escape out of `/osm-lib/` is refused.

@@ -60,6 +60,14 @@ export function defaultRoutes(repo) {
       dir: join(repo, "GpsPlusSlamJs_OsmDemo", "src"),
       typescript: true,
     },
+    // The terrain lab (terrain plan 2026-09-27-0605 §9, finding 2): the Osm
+    // LIBRARY's source, for its Terrarium decoder and ENU frame. Its own
+    // prefix, not a subpath of "/osm/", which is OsmDemo's.
+    {
+      prefix: "/osm-lib/",
+      dir: join(repo, "GpsPlusSlamJs_Osm", "src"),
+      typescript: true,
+    },
     {
       prefix: "/vendor/three/",
       dir: join(repo, "GpsPlusSlamJs_AppFramework", "node_modules", "three"),

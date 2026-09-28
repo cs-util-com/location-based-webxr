@@ -18,6 +18,8 @@
  *   /fw/<p>.js     -> GpsPlusSlamJs_AppFramework/src/<p>.ts, types stripped
  *   /osm/<p>.js    -> GpsPlusSlamJs_OsmDemo/src/<p>.ts, types stripped (the
  *                     page uses OsmDemo's own sun model, not a copy)
+ *   /osm-lib/<p>.js -> GpsPlusSlamJs_Osm/src/<p>.ts, types stripped (the
+ *                     terrain lab's Terrarium decoder and ENU frame)
  *   /vendor/three/ -> the framework's own node_modules/three, the lockfile-
  *                     pinned copy every app uses; the page's import map
  *                     points here, so no CDN and no second version pin.

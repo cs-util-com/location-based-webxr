@@ -12,7 +12,7 @@ import { strict as assert } from "node:assert";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 
-import { contentType, resolveRequest } from "./serve-routes.mjs";
+import { contentType, defaultRoutes, resolveRequest } from "./serve-routes.mjs";
 
 const PACKAGE = join("/repo", "GpsPlusSlamJs_DesignSystem");
 const FRAMEWORK_SRC = join("/repo", "GpsPlusSlamJs_AppFramework", "src");
@@ -84,6 +84,43 @@ describe("resolveRequest", () => {
       assert.deepEqual(resolve(hostile), { kind: "forbidden" });
     });
   }
+});
+
+// WHY (terrain plan 2026-09-27-0605 §9, review finding 2): the terrain lab
+// decodes Terrarium tiles with the Osm LIBRARY's own decoder, so no second
+// copy of the 256 m-per-red-step encoding exists. No route reached that
+// package before; without this one every lab import 404s, and the lab shows
+// a blank canvas on the phone.
+describe("defaultRoutes", () => {
+  const REPO = join("/repo");
+  const resolveDefault = (path) =>
+    resolveRequest(path, {
+      packageRoot: join(REPO, "GpsPlusSlamJs_DesignSystem"),
+      routes: defaultRoutes(REPO),
+    });
+
+  it("maps /osm-lib/ to the Osm library's TypeScript source", () => {
+    assert.deepEqual(resolveDefault("/osm-lib/elevation/terrarium.js"), {
+      kind: "file",
+      file: join(REPO, "GpsPlusSlamJs_Osm", "src", "elevation", "terrarium.ts"),
+      typescript: true,
+    });
+  });
+
+  // "/osm-lib/" shares its first letters with OsmDemo's "/osm/"; neither
+  // prefix may capture the other's requests.
+  it("keeps /osm/ on OsmDemo's source", () => {
+    assert.equal(
+      resolveDefault("/osm/heightfield.js").file,
+      join(REPO, "GpsPlusSlamJs_OsmDemo", "src", "heightfield.ts"),
+    );
+  });
+
+  it("refuses an escape out of the Osm library", () => {
+    assert.deepEqual(resolveDefault("/osm-lib/../package.json"), {
+      kind: "forbidden",
+    });
+  });
 });
 
 describe("contentType", () => {
