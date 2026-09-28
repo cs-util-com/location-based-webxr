@@ -46,6 +46,7 @@ describe("pinnedHash", () => {
       varied: "0",
       sunDisc: "0",
       sunGlow: "0",
+      cloudShadows: "0",
     });
   });
 });

@@ -30,7 +30,9 @@ observerAltitudeKm = 0.2, sunIntensity = 1 })` — adds `sky` to the scene.
 - `setClouds({ cover })` — 0…1, the share of sky clouded (a quantile
   threshold, `cloud-layer.ts`); re-bakes the environment only (the LUTs do
   not depend on clouds); unchanged cover is free. Cover does NOT dim the
-  sun light (parked for the owner, plan §13).
+  sun light itself (parked for the owner, plan §13); the cloud shadow patch
+  ([`cloud-shadow.ts.md`](cloud-shadow.ts.md)) dims it per pixel in the lit
+  materials instead (round-3 DEC-FB3-7).
 - `cloudMode` (getter) and `configure({ cloudMode: 'dome' | 'sheet' | 'slab' })`: where the
   clouds are drawn. `'dome'` (the default) is the sky's own layer and adds
   nothing to the scene. `'sheet'` adds the fly-through sheet
@@ -63,7 +65,7 @@ observerAltitudeKm = 0.2, sunIntensity = 1 })` — adds `sky` to the scene.
   keeps 0).
 - `cloudUniforms` (getter): the noise texture, the real threshold and the
   drift offset, as the uniform objects themselves, for the cloud shadow
-  patch (`cloud-shadow.ts`).
+  patch ([`cloud-shadow.ts.md`](cloud-shadow.ts.md)).
 - `advanceClouds(seconds, windKmPerSecond = 0.012)` — drift; no GPU work;
   both arguments validated (finite, seconds ≥ 0).
 - `applySunLight(light)` — colour (chroma) and intensity

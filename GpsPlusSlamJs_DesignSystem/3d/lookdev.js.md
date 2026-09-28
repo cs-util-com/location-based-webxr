@@ -127,6 +127,14 @@ denoise, resolutionScale })` is the sweep's handle; `setAoExclusions(bool)`
     in front of the sun (`{ tau, drawn, noise }`, [sun-clouds.js](sun-clouds.js.md));
     `stats().sunThroughClouds` the framework's values in effect. The view
     `atsun` looks straight at the sun from the street;
+  - `setCloudShadows(bool)`: cloud shadows on the ground (DEC-FB3-7; framework
+    [cloud-shadow.ts](../../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/cloud-shadow.ts.md)):
+    every lit material is patched once, BEFORE the haze (the catalog, the
+    rebuilt dense city and a new water material too), and synced with the
+    sky in `useAtmosphere`; on by default here. `cloudShadowAt([x, y, z])`
+    returns the CPU twin's share of the sun reaching a world point, and
+    `groundAt([[u, v], …])` the ground (or street) world points under
+    canvas points (null where something else is hit first);
   - `readFrame()` → `{ width, height, data }`, the whole drawing buffer
     after one frame (edge comparisons need every pixel);
   - `project([x, y, z])` → normalised canvas `[u, v]` of a world point
@@ -146,11 +154,11 @@ denoise, resolutionScale })` is the sweep's handle; `setAoExclusions(bool)`
     preset: both exposures and both exposure-free horizon colours. The
     fallback's only GPU oracle.
 - Invariants & assumptions:
-  - State lives in the URL hash (`#preset=…&tone=…&tier=…&cloudMode=…&shadows=0|1&city=…&pitch=42|31|20&water=C0|C1|P50|P30|D30&catalog=0|1&varied=0|1&materials=1…&finish=mixed|shiny|matte&ao=0|1&sunDisc=0|1&sunGlow=0|1`; defaults since the owner's round 2, plan
+  - State lives in the URL hash (`#preset=…&tone=…&tier=…&cloudMode=…&shadows=0|1&city=…&pitch=42|31|20&water=C0|C1|P50|P30|D30&catalog=0|1&varied=0|1&materials=1…&finish=mixed|shiny|matte&ao=0|1&sunDisc=0|1&sunGlow=0|1&cloudShadows=0|1`; defaults since the owner's round 2, plan
     2026-09-26-2055 M2: the densest city, `city=100000&pitch=20`, about
     42,000 buildings, and `water=P50`; since round 3, plan 2026-09-27-0532
     DEC-FB3-5: `shadows=1`, `catalog=1` and `cloudMode=slab`; DEC-FB3-3:
-    `varied=1&materials=12&finish=mixed`; stream D: `sunDisc=1&sunGlow=1`), so a
+    `varied=1&materials=12&finish=mixed`; stream D: `sunDisc=1&sunGlow=1&cloudShadows=1`), so a
     screenshot or phone link reproduces a view; a hash change on an open
     page re-applies it (the page's own writes use `replaceState`, which
     fires no `hashchange`). A key the hash does NOT name keeps its CURRENT

@@ -31,6 +31,7 @@ import { AtmosphereHaze } from "/fw/visualization/atmosphere/atmosphere-haze.js"
 import { fallbackSky } from "/fw/visualization/atmosphere/atmosphere-fallback.js";
 import { SkyAtmosphere } from "/fw/visualization/atmosphere/sky-atmosphere.js";
 import { CLOUD_SUN } from "/fw/visualization/atmosphere/cloud-sun.js";
+import { CloudShadow } from "/fw/visualization/atmosphere/cloud-shadow.js";
 import { createSunCloudProbe } from "./sun-clouds.js";
 import { WaterSurface } from "/fw/visualization/atmosphere/water-surface-material.js";
 import { WATER_CANDIDATES } from "./water-candidates.js";
@@ -152,8 +153,12 @@ const parts = buildStandInScene(scene);
 let water = new WaterSurface();
 parts.lake.material.dispose();
 parts.lake.material = water.material;
-// The haze patches the world's materials ONCE; it owns its uniforms, so an
-// atmosphere change (or a rebuilt atmosphere) only needs a sync.
+// The cloud shadows (round-3 stream D, DEC-FB3-7) and the haze patch the
+// world's materials ONCE; each owns its uniforms, so an atmosphere change
+// (or a rebuilt atmosphere) only needs a sync. The cloud shadows go first:
+// the haze is applied last (its own contract).
+const cloudShadow = new CloudShadow();
+cloudShadow.applyToObject(scene);
 const haze = new AtmosphereHaze({ visibilityKm: 45 });
 haze.applyToObject(scene);
 
@@ -209,6 +214,9 @@ const state = {
   // judge; the framework's default is off. The smoke boot pins them off.
   sunDisc: true,
   sunGlow: true,
+  // Cloud shadows on the ground (DEC-FB3-7): the sun's direct light dimmed
+  // by the cloud column toward it, in every lit material. On here too.
+  cloudShadows: true,
 };
 
 /** The catalog entries a city building may wear (city-materials.js). */
@@ -296,6 +304,9 @@ function readHash() {
   if (params.has("ao")) state.ao = params.get("ao") === "1";
   if (params.has("sunDisc")) state.sunDisc = params.get("sunDisc") === "1";
   if (params.has("sunGlow")) state.sunGlow = params.get("sunGlow") === "1";
+  if (params.has("cloudShadows")) {
+    state.cloudShadows = params.get("cloudShadows") === "1";
+  }
   if (WATER_IDS.includes(params.get("water"))) {
     state.water = params.get("water");
   }
@@ -336,6 +347,7 @@ function writeHash() {
     finish: state.finish,
     sunDisc: state.sunDisc ? "1" : "0",
     sunGlow: state.sunGlow ? "1" : "0",
+    cloudShadows: state.cloudShadows ? "1" : "0",
   });
   history.replaceState(null, "", `#${params}`);
 }
@@ -498,6 +510,8 @@ function useAtmosphere() {
   lutMs = performance.now() - start;
   haze.sync(atmosphere);
   haze.setMode(state.haze ? "atmosphere" : "fog");
+  cloudShadow.sync(atmosphere);
+  cloudShadow.setEnabled(state.cloudShadows);
   atmosphere.applySunLight(sun);
   aimSunLight(direction);
   applyShadows(direction);
@@ -720,6 +734,7 @@ const labelRule = { ...LABEL_RULE };
 function applyCatalog() {
   if (state.catalog && !catalogView) {
     catalogView = buildCatalog(CATALOG);
+    cloudShadow.applyToObject(catalogView.group);
     haze.applyToObject(catalogView.group);
     scene.add(catalogView.group);
     catalogLabels = createCatalogLabels(canvas, catalogView.group, labelRule);
@@ -767,6 +782,7 @@ function applyCity() {
       : null;
     parts.dense = denseCity(state.pitch, { materials });
     builtDenseKey = denseKey();
+    cloudShadow.applyToObject(parts.dense);
     haze.applyToObject(parts.dense);
     if (sunShadow) {
       for (const mesh of parts.dense.children) {
@@ -796,6 +812,7 @@ function applyWater() {
     candidate ? { slopeGlsl: candidate.slopeGlsl } : {},
   );
   next.update(water.uniforms.uWaterTime.value);
+  cloudShadow.apply(next.material);
   haze.apply(next.material);
   parts.lake.material = next.material;
   water.dispose();
@@ -912,6 +929,7 @@ function syncControls() {
   $("#ao").checked = state.ao;
   $("#sun-disc").checked = state.sunDisc;
   $("#sun-glow").checked = state.sunGlow;
+  $("#cloud-shadows").checked = state.cloudShadows;
   // The switch works on either tier; on the phone tier it says it draws on
   // the desktop tier only and offers the switch (the owner looked for it).
   $("[data-ao-tier]").hidden = state.tier === "desktop";
@@ -977,6 +995,9 @@ function buildControls() {
   );
   $("#sun-glow").addEventListener("change", (e) =>
     api.setSunThroughClouds({ glow: e.target.checked }),
+  );
+  $("#cloud-shadows").addEventListener("change", (e) =>
+    api.setCloudShadows(e.target.checked),
   );
   $("#ao-desktop").addEventListener("click", () => api.setTier("desktop"));
   $("#cloud-mode").addEventListener("change", (e) =>
@@ -1689,6 +1710,37 @@ Object.assign(api, {
   sunCloud() {
     if (!atmosphere) throw new Error("the sun through clouds needs the sky");
     return sunCloudProbe.atSun(atmosphere, camera.position, sunVector());
+  },
+  /** Cloud shadows on the ground (DEC-FB3-7) on or off. */
+  setCloudShadows(on) {
+    state.cloudShadows = Boolean(on);
+    applyLook();
+  },
+  /**
+   * Test surface: the share of the sun reaching a world point through the
+   * clouds, from the CPU twin (sun-clouds.js), for the current clouds.
+   */
+  cloudShadowAt(point) {
+    if (!atmosphere) throw new Error("the cloud shadows need the sky");
+    return sunCloudProbe.shadowAt(atmosphere, point, sunVector());
+  },
+  /**
+   * Test surface: the ground (or a street) under normalised canvas points
+   * [u, v], as world points, or null where something else is hit first.
+   */
+  groundAt(points) {
+    const ray = new THREE.Raycaster();
+    const receivers = new Set([parts.ground]);
+    parts.streets.traverse((o) => receivers.add(o));
+    return points.map(([u, v]) => {
+      ray.setFromCamera(new THREE.Vector2(u * 2 - 1, 1 - v * 2), camera);
+      const [hit] = ray
+        .intersectObjects(scene.children, true)
+        .filter(
+          (h) => h.object.visible && !h.object.name.startsWith("atmosphere-"),
+        );
+      return hit && receivers.has(hit.object) ? hit.point.toArray() : null;
+    });
   },
   /** Dome (the sky's own layer), the fly-through sheet, or the slab. */
   setCloudMode(mode) {

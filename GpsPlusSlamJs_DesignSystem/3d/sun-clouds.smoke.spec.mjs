@@ -324,3 +324,210 @@ test("the sun through clouds costs little (on/off ratios, logged)", async ({
   for (const r of Object.values(ratios)) expect(r.ratio).toBeLessThan(1.3);
   expect(errors).toEqual([]);
 });
+
+// --- Cloud shadows on the ground (DEC-FB3-7) ----------------------------------
+
+/**
+ * The ground under a grid of screen points, from the view above the block
+ * (3.2 km up; the dome draws no clouds below the horizon, so the ground
+ * shows), with the CPU twin's transmittance at each for a set of offsets.
+ */
+async function groundSamples(page) {
+  const grid = [];
+  for (let i = 0; i < 8; i++) {
+    for (let j = 0; j < 6; j++) grid.push([0.36 + i * 0.08, 0.3 + j * 0.1]);
+  }
+  const hits = await page.evaluate((g) => window.__lookdev.groundAt(g), grid);
+  return grid
+    .map((uv, i) => ({ uv, point: hits[i] }))
+    .filter((s) => s.point !== null);
+}
+
+/** The CPU twin's transmittance toward the sun at each sample, per offset. */
+const twinAt = (page, samples, offset) =>
+  page.evaluate(
+    ([points, o]) => {
+      const d = window.__lookdev;
+      d.setCloudOffset(o[0], o[1]);
+      return points.map((p) => d.cloudShadowAt(p));
+    },
+    [samples.map((s) => s.point), offset],
+  );
+
+/** Pixels at the samples with the cloud shadows off and on, one offset. */
+const shadedPair = (page, samples, offset) =>
+  page.evaluate(
+    ([points, o]) => {
+      const d = window.__lookdev;
+      d.setCloudOffset(o[0], o[1]);
+      d.setCloudShadows(false);
+      const off = d.readPixels(points);
+      d.setCloudShadows(true);
+      const on = d.readPixels(points);
+      return { off, on };
+    },
+    [samples.map((s) => s.uv), offset],
+  );
+
+/**
+ * The declared bounds (first measurement 2026-09-28, SwiftShader, noon,
+ * cover 0.5, the dome, the view above the block, 6 offsets × 48 points):
+ * ground whose column toward the sun passes less than 20 % of the light
+ * darkened by 90-130 levels (sum of RGB, median 116) with the patch on;
+ * ground under a clear column (more than 95 %) moved by 0-2. darkMin 45 is
+ * half the weakest; it reverses only if the direct sun were under half the
+ * ground's light. clearMax 3 sits above the 2 measured (8-bit rounding of
+ * a 0.95-1 transmittance). The drop per transmittance bin is logged and
+ * must fall as the transmittance rises (the pattern is where the twin says).
+ */
+const SHADOW = { darkMin: 45, clearMax: 3 };
+
+const OFFSETS = [
+  [0, 0],
+  [0.13, 0.41],
+  [0.29, 0.07],
+  [0.47, 0.62],
+  [0.71, 0.33],
+  [0.9, 0.85],
+];
+
+test("clouds shadow the ground where the column toward the sun is thick, and the shadows follow the drift", async ({
+  page,
+}) => {
+  const errors = await boot(
+    page,
+    "preset=noon&tone=neutral&cloudMode=dome&cloudShadows=0",
+  );
+  await page.evaluate(() => {
+    const d = window.__lookdev;
+    d.pauseLoop(true);
+    d.setFloatingVisible(false);
+    d.setCloudCover(0.5);
+    d.setView("above");
+  });
+  const samples = await groundSamples(page);
+  expect(samples.length).toBeGreaterThan(20);
+  const dark = [];
+  const clear = [];
+  // The same ground point shadowed at one offset and clear at another: the
+  // pattern moves with the clouds.
+  const shadedAt = new Map();
+  const clearAt = new Map();
+  // The drop per band of the twin's transmittance (the sweep).
+  const BANDS = [0, 0.1, 0.3, 0.6, 0.9, 1.0001];
+  const byBand = BANDS.slice(1).map(() => []);
+  for (const offset of OFFSETS) {
+    const twin = await twinAt(page, samples, offset);
+    const { off, on } = await shadedPair(page, samples, offset);
+    samples.forEach((s, i) => {
+      const drop = sum(off[i]) - sum(on[i]);
+      byBand[
+        BANDS.findIndex((b, k) => twin[i] >= b && twin[i] < BANDS[k + 1])
+      ].push(drop);
+      if (twin[i] < 0.2) {
+        dark.push(drop);
+        shadedAt.set(i, (shadedAt.get(i) ?? 0) + 1);
+      } else if (twin[i] > 0.95) {
+        clear.push(Math.abs(drop));
+        clearAt.set(i, (clearAt.get(i) ?? 0) + 1);
+      }
+    });
+  }
+  const moved = [...shadedAt.keys()].filter((i) => clearAt.has(i)).length;
+  const stat = (a) =>
+    a.length
+      ? `n ${a.length}, min ${Math.min(...a)}, median ${[...a].sort((x, y) => x - y)[a.length >> 1]}, max ${Math.max(...a)}`
+      : "n 0";
+  console.log(
+    `cloud shadows: under thick columns drop ${stat(dark)}; under clear ${stat(clear)}; ${moved} points both shadowed and clear across the offsets`,
+  );
+  const medians = byBand.map((a) =>
+    a.length ? [...a].sort((x, y) => x - y)[a.length >> 1] : null,
+  );
+  console.log(
+    `drop by transmittance band ${BANDS.slice(0, -1)
+      .map(
+        (b, k) =>
+          `[${b}, ${Math.min(1, BANDS[k + 1])}): ${medians[k]} (n ${byBand[k].length})`,
+      )
+      .join(", ")}`,
+  );
+  const present = medians.filter((m) => m !== null);
+  for (let k = 1; k < present.length; k++) {
+    expect(present[k]).toBeLessThanOrEqual(present[k - 1]);
+  }
+  expect(dark.length).toBeGreaterThan(10);
+  expect(clear.length).toBeGreaterThan(10);
+  expect(Math.min(...dark)).toBeGreaterThanOrEqual(SHADOW.darkMin);
+  expect(Math.max(...clear)).toBeLessThanOrEqual(SHADOW.clearMax);
+  expect(moved).toBeGreaterThan(3);
+  expect(errors).toEqual([]);
+});
+
+// The patch chains with the haze and the page's ring-shadow rewrite of
+// three's light loop: with sun shadows and a dense city (two directional
+// shadows, so the rewrite is live) every program compiles and the clouds
+// still darken the open ground.
+test("cloud shadows compose with the sun shadows' ring rewrite and the haze", async ({
+  page,
+}) => {
+  const errors = await boot(
+    page,
+    "preset=noon&tone=neutral&cloudMode=dome&cloudShadows=0&shadows=1&city=2500&pitch=42",
+  );
+  await page.evaluate(() => {
+    const d = window.__lookdev;
+    d.pauseLoop(true);
+    d.setFloatingVisible(false);
+    d.setCloudCover(0.5);
+    d.setView("above");
+  });
+  const samples = await groundSamples(page);
+  let darker = 0;
+  let checked = 0;
+  for (const offset of OFFSETS.slice(0, 3)) {
+    const twin = await twinAt(page, samples, offset);
+    const { off, on } = await shadedPair(page, samples, offset);
+    samples.forEach((s, i) => {
+      if (twin[i] >= 0.2) return;
+      checked += 1;
+      // A point in a building's own shadow has no direct sun to dim.
+      if (sum(off[i]) - sum(on[i]) >= SHADOW.darkMin) darker += 1;
+    });
+  }
+  console.log(
+    `with sun shadows: ${darker}/${checked} thick-column points darker`,
+  );
+  expect(checked).toBeGreaterThan(5);
+  expect(darker / checked).toBeGreaterThan(0.5);
+  expect(errors).toEqual([]);
+});
+
+test("the cloud shadows cost little (on/off ratio, logged)", async ({
+  page,
+}) => {
+  const errors = await boot(
+    page,
+    "preset=noon&tone=neutral&cloudMode=dome&cloudShadows=1",
+  );
+  const r = await page.evaluate(() => {
+    const d = window.__lookdev;
+    d.pauseLoop(true);
+    d.setCloudCover(0.5);
+    d.setView("city");
+    const time = (on) => {
+      d.setCloudShadows(on);
+      return d.timeFrames(5).medianMs;
+    };
+    const off1 = time(false);
+    const on = time(true);
+    const off2 = time(false);
+    const off = (off1 + off2) / 2;
+    return { on, off, ratio: on / off };
+  });
+  console.log(
+    `cloud shadows cost (city view): ${r.on.toFixed(0)}/${r.off.toFixed(0)} ms = x${r.ratio.toFixed(3)}`,
+  );
+  expect(r.ratio).toBeLessThan(1.3);
+  expect(errors).toEqual([]);
+});
