@@ -12,9 +12,11 @@ framework (`cloud-column.ts`, `cloud-sun.ts`).
 
 ## Public API
 
-- `createSunCloudProbe()` → `{ atSun, shadowAt }`, built on the sky's noise
-  texture data (`cloudNoise(256, 1)`, `SkyAtmosphere`'s size and seed) read
-  with `cloudNoiseSample`.
+- `PAGE_DISC_EXPONENT` (4): the disc exponent the page opens with (page
+  policy; the framework's default is 0).
+- `createSunCloudProbe()` → `{ atSun, shadowAt }`, reading the sky's LIVE noise
+  texture (`cloudUniforms.atmCloudTexture`'s data and width) with
+  `cloudNoiseSample`.
   - `atSun(atmosphere, cameraPosition, sun)` → `{ tau, drawn, noise }`: the
     column's optical depth along the sun, the share of it the sky DRAWS
     there (the dome's horizon fade, or the sheet's and slab's far fade,
@@ -22,17 +24,18 @@ framework (`cloud-column.ts`, `cloud-sun.ts`).
     camera-centred at the origin, the sheet's and slab's in the world: the
     same anchors the sky's disc reads. `{ tau: 0, drawn: 0, noise: null }`
     for a sun at or below the horizon or a clear sky.
-  - `shadowAt(atmosphere, point, sun)` → the share of the sun reaching a
-    world point through the clouds: the cloud shadow patch's CPU twin.
+  - `shadowAt(atmosphere, point, cameraPosition)` → the share of the sun
+    reaching a world point through the clouds the sky draws for that
+    camera: the cloud shadow patch's CPU twin
+    (`SkyAtmosphere.cloudTransmittanceToward`).
 
 ## Invariants & assumptions
 
 - The GPU reads the noise with mips; the disc's read is at level 0 (the
   twin's bilinear), the lit materials' at the level their derivatives
   pick, so `shadowAt` is exact near the camera and approximate far away.
-- `drawn` has no framework twin (its far fade lives in `cloud-sheet.ts`,
-  which the sky's GLSL cannot import); it mirrors the sky's
-  `atmCloudDiscTransmittance`, and the smokes pick skies where it is near 1.
+- `drawn` is the framework's `cloudColumnDrawn`, the twin of the GLSL the
+  disc and the cloud shadows share.
 
 ## Example
 

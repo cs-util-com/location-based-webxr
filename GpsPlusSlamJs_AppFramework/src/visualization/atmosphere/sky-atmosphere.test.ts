@@ -18,6 +18,7 @@ import { fallbackSky, skyIlluminanceCpu } from './atmosphere-fallback.js';
 import { ATMOSPHERE_MAX_SCENE_RADIANCE } from './atmosphere-glsl.js';
 import { skyRadiance } from './atmosphere-scattering.js';
 import { cloudColumnTransmittanceToward } from './cloud-column.js';
+import { CLOUD_SHEET } from './cloud-sheet.js';
 import {
   CLOUD_TEXTURE_SIZE,
   cloudNoise,
@@ -844,9 +845,13 @@ describe('SkyAtmosphere sun through clouds (round-3 plan 2026-09-27-0532, DEC-FB
       (scene.getObjectByName('atmosphere-cloud-slab') as THREE.Mesh).material
     );
     for (const u of [bake, slab]) {
-      expect(u.atmCloudForward).toBe(sky.atmCloudForward);
       expect(u.atmCloudDiscExponent).toBe(sky.atmCloudDiscExponent);
     }
+    expect(slab.atmCloudForward).toBe(sky.atmCloudForward);
+    // The bake keeps its own lobes at zero: the glow must not light the
+    // scene through the environment (round-3 review, finding 4).
+    expect(bake.atmCloudForward).not.toBe(sky.atmCloudForward);
+    expect(bake.atmCloudForward!.value).toEqual(new THREE.Vector2(0, 0));
     expect(sky.atmCloudDiscExponent!.value).toBe(4);
     expect(sky.atmCloudForward!.value).toEqual(new THREE.Vector2(1, 0.5));
   });
@@ -883,21 +888,22 @@ describe('SkyAtmosphere sun through clouds (round-3 plan 2026-09-27-0532, DEC-FB
     expect(sky.atmCloudAnchored!.value).toBe(0);
   });
 
-  // WHY: the bake carries the dome's clouds with their glow, so a new
-  // lobe strength re-bakes (either lobe); the disc is not in the bake, so
-  // a new exponent is free.
-  it('re-bakes for a new lobe strength only', () => {
+  // WHY: the bake has no disc and no glow (its lobes are its own zeros), so
+  // no sun-through-cloud knob re-bakes; a glow in the bake had lit the
+  // ground +17 levels at noon (round-3 review, finding 4).
+  it('never re-bakes for the sun-through-cloud knobs', () => {
     const { atmosphere, device } = setup();
     atmosphere.setSun(UP);
     const bakes = device.bakes;
     atmosphere.configure({ sunThroughClouds: { discExponent: 4 } });
-    expect(device.bakes).toBe(bakes);
     atmosphere.configure({ sunThroughClouds: { aureole: 1 } });
-    expect(device.bakes).toBe(bakes + 1);
     atmosphere.configure({ sunThroughClouds: { silverLining: 1 } });
-    expect(device.bakes).toBe(bakes + 2);
-    atmosphere.configure({ sunThroughClouds: { aureole: 1 } });
-    expect(device.bakes).toBe(bakes + 2);
+    expect(device.bakes).toBe(bakes);
+    const bake = (device.bakedScene!.children[0] as THREE.Mesh)
+      .material as THREE.ShaderMaterial;
+    expect(bake.uniforms.atmCloudForward!.value).toEqual(
+      new THREE.Vector2(0, 0)
+    );
   });
 
   it.each([-1, Number.NaN, Number.POSITIVE_INFINITY])(
@@ -966,13 +972,55 @@ describe('SkyAtmosphere.cloudTransmittanceToward (round-3 DEC-FB3-7)', () => {
         dir,
         u.atmCloudThreshold.value,
         (a, b) => cloudNoiseSample(data, CLOUD_TEXTURE_SIZE, a, b),
-        [u.atmCloudOffset.value.x, u.atmCloudOffset.value.y]
+        [u.atmCloudOffset.value.x, u.atmCloudOffset.value.y],
+        {
+          camera: p,
+          anchored: false,
+          farFadeM: [CLOUD_SHEET.farFadeStartM, CLOUD_SHEET.farFadeEndM],
+        }
       );
       expect(atmosphere.cloudTransmittanceToward(p)).toBeCloseTo(expected, 9);
       values.push(expected);
     }
     // A cover this heavy puts cloud over some of the points, not none.
     expect(Math.min(...values)).toBeLessThan(0.9);
+  });
+
+  // WHY (round-3 review, finding 1): at a 5° sun the column toward the sun
+  // is read ~22 km out, past the slab's 21 km far fade, where the sky draws
+  // no cloud; the sun's disc shone clear while the ground went dark. The
+  // weighting by what the sky draws must make both agree: 1 in the slab
+  // there, although the unweighted column is thick.
+  it('sees no cloud where the sky draws none (a low sun in the slab mode)', () => {
+    const { atmosphere } = setup();
+    const el = (5 * Math.PI) / 180;
+    const sun = { x: Math.cos(el), y: Math.sin(el), z: 0 };
+    atmosphere.configure({ sunDirection: sun, cloudCover: 0.9 });
+    const u = atmosphere.cloudUniforms;
+    const data = cloudNoise(CLOUD_TEXTURE_SIZE, 1);
+    const raw = (p: [number, number, number]) =>
+      cloudColumnTransmittanceToward(
+        p,
+        [sun.x, sun.y, sun.z],
+        u.atmCloudThreshold.value,
+        (a, b) => cloudNoiseSample(data, CLOUD_TEXTURE_SIZE, a, b),
+        [u.atmCloudOffset.value.x, u.atmCloudOffset.value.y]
+      );
+    const points: [number, number, number][] = [];
+    for (let i = 0; i < 12; i++) points.push([i * 700, 0, i * 300]);
+    // The unweighted column darkens most of these points at this cover.
+    expect(points.filter((p) => raw(p) < 0.5).length).toBeGreaterThan(3);
+    atmosphere.configure({ cloudMode: 'slab' });
+    for (const p of points) {
+      expect(atmosphere.cloudTransmittanceToward(p, p)).toBeGreaterThan(0.999);
+    }
+    // The dome draws its low clouds (horizon fade ~0.84 at 5°): it still
+    // shades, as its disc is hidden.
+    atmosphere.configure({ cloudMode: 'dome' });
+    expect(
+      points.filter((p) => atmosphere.cloudTransmittanceToward(p, p) < 0.5)
+        .length
+    ).toBeGreaterThan(3);
   });
 
   it('is 1 before a sun and in a clear sky, and refuses a non-finite point', () => {

@@ -149,9 +149,12 @@ describe('the sun through clouds in the sky (round-3 plan 2026-09-27-0532, DEC-F
     expect(body).toContain('atmCloudNoiseLod(');
     expect(body).not.toContain('atmCloudNoise(');
     expect(body).not.toContain('atmCloudThreshold,');
-    expect(body).toContain('atmCloudHorizonFade(dir.y)');
-    expect(body).toContain('atmCloudFarFadeM');
-    expect(body).toContain('exp(-atmCloudDiscExponent * tau * drawn');
+    // The shared weight (cloud-column.ts atmColumnDrawn): the far fade or
+    // the horizon fade and the aerial melt, as the cloud shadows use it.
+    expect(body).toContain(
+      'atmColumnDrawn(s, s * length(dir.xz), dir.y, atmCloudAnchored, atmCloudFarFadeM)'
+    );
+    expect(body).toContain('exp(-atmCloudDiscExponent * tau * drawn)');
   });
 
   // WHY: the dome's glow must come from the same column along the view,

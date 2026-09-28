@@ -4,8 +4,7 @@
 
 Cloud shadows on three.js's own lit materials (round-3 plan
 `GpsPlusSlamJs_Docs/docs/2026-09-27-0532-owner-feedback-round-3-plan.md`,
-stream D; DEC-FB3-7, from the owner's "Open Ocean" demo, review
-`2026-09-27-0707-open-ocean-demo-review-findings.md` §3.2): the direct
+stream D; DEC-FB3-7): the direct
 light of every directional light is dimmed by the cloud column its ray
 crosses on the way to the fragment ([`cloud-column.ts.md`](cloud-column.ts.md)),
 one noise read (two texture reads) per light and pixel, no shadow map. The
@@ -17,9 +16,10 @@ shadows drift with the clouds and fall where the sky draws them.
   (1), `atmShadowCloudTexture` (null until a sync), `atmShadowCloudThreshold`
   (2, no cloud, until a sync), `atmShadowCloudOffset`.
 - `sync(source)`: takes an atmosphere's clouds (`SkyAtmosphere.cloudUniforms`
-  satisfies `CloudShadowSource`): the noise texture and the drift offset as
-  the OBJECTS themselves (the shadows drift with the sky, no per-frame
-  call), the threshold as a copy (call again after a cover change).
+  satisfies `CloudShadowSource`): the noise texture, the drift offset and
+  the far fade as the OBJECTS themselves (the shadows drift with the sky,
+  no per-frame call), the threshold and the anchor as copies (call again
+  after a cover or mode change).
 - `setEnabled(on)` and `enabled`: a uniform, no recompile.
 - `apply(material)`: patches one lit material (Lambert, Phong, Standard,
   Physical, Toon), chaining its `onBeforeCompile` and adding `|cloud-shadow`
@@ -55,11 +55,19 @@ shadows drift with the clouds and fall where the sky draws them.
   middle. A slanted ray crosses neighbouring columns too, so at a low sun
   the shadow is an approximation; clear sky (threshold 2) and the off
   switch skip the reads.
-- **Where the sky draws the clouds**: the sheet and the slab are
-  world-anchored, as the shadows are; the dome is camera-centred at the
-  origin, so its shadows are offset from its drawn clouds by the camera's
-  distance from the origin (a few hundred metres on the look-dev page,
-  against 24 km tiles).
+- **Only where the sky draws the clouds** (round-3 review, finding 1): the
+  column's optical depth is weighted by the disc's own helper,
+  `atmColumnDrawn` ([`cloud-column.ts.md`](cloud-column.ts.md)): the
+  sheet's and the slab's far fade on the crossing's horizontal distance
+  from the camera, or the dome's horizon fade on the light's slope, times
+  the aerial melt. Without it a 5° sun read the column ~22 km out, past the
+  21 km far fade, and ×10 deeper for the floored slope: the ground went
+  near-black under an empty sky while the disc shone clear. The anchor
+  (`atmShadowCloudAnchored`, copied) and the far fade
+  (`atmShadowCloudFarFadeM`, shared) come with `sync`; sync again after a
+  mode change. The dome is camera-centred at the origin, so its shadows
+  sit offset from its drawn clouds by the camera's distance from the
+  origin (a few hundred metres on the look-dev page, against 24 km tiles).
 - **Apply it before the haze** (which is applied last by its own contract).
   Either order compiles: each patch detects its own text, and the haze
   heals itself back on top.

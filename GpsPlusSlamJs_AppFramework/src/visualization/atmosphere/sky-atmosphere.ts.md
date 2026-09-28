@@ -59,20 +59,25 @@ observerAltitudeKm = 0.2, sunIntensity = 1 })` — adds `sky` to the scene.
   slab. All 0 (OFF) by default, so no app's sky changes unasked; the
   look-dev page uses 4, 1 and 1. A field not given keeps its value; each
   must be finite and ≥ 0, and an unknown key (a misspelling, the first
-  cut's `forward`) is refused (`RangeError` before any change). A new lobe
-  strength re-bakes (the bake's dome clouds carry the glow); a new
-  exponent does not (the bake has no disc). The uniforms are shared with the bake, the sheet and the slab.
+  cut's `forward`) is refused (`RangeError` before any change). No knob
+  re-bakes: the bake has no disc, and its own lobes are zero, so the glow
+  never reaches the scene's image-based light (in the bake it had lit the
+  ground +17 levels at noon; round-3 review, finding 4). The other
+  uniforms are shared with the bake, the sheet and the slab.
   The disc reads the REAL threshold in every mode (`atmCloudSunThreshold`,
   the same object as the bake's) and the visible sky's own
   `atmCloudAnchored` (0 in dome mode, 1 in sheet and slab mode; the bake
   keeps 0).
-- `cloudTransmittanceToward([x, y, z])`: the share of the sun reaching a
-  world point through the clouds, the column model on the CPU
-  (`cloudColumnTransmittanceToward` on the sky's own noise, real threshold
-  and drift); 1 before the first sun and in a clear sky; `RangeError` for a
-  non-finite point. The look-dev page's "sun light dims" switch uses it.
-- `cloudUniforms` (getter): the noise texture, the real threshold and the
-  drift offset, as the uniform objects themselves, for the cloud shadow
+- `cloudTransmittanceToward([x, y, z], viewer = point)`: the share of the
+  sun reaching a world point through the clouds the sky draws for a camera
+  at `viewer`: the column model on the CPU
+  (`cloudColumnTransmittanceToward` on the live noise texture's data, the
+  real threshold and the drift, weighted by the mode's far fade or horizon
+  fade and the aerial melt, as the cloud shadows are); 1 before the first
+  sun and in a clear sky; `RangeError` for a non-finite point or viewer. The look-dev page's "sun light dims" switch uses it.
+- `cloudUniforms` (getter): the noise texture, the real threshold, the
+  drift offset, the visible sky's anchor (0 dome, 1 sheet and slab) and
+  the far fade, as the uniform objects themselves, for the cloud shadow
   patch ([`cloud-shadow.ts.md`](cloud-shadow.ts.md)).
 - `advanceClouds(seconds, windKmPerSecond = 0.012)` — drift; no GPU work;
   both arguments validated (finite, seconds ≥ 0).

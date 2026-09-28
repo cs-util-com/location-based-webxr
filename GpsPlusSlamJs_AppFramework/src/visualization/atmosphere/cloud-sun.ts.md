@@ -4,8 +4,7 @@
 
 The sun through clouds (round-3 plan
 `GpsPlusSlamJs_Docs/docs/2026-09-27-0532-owner-feedback-round-3-plan.md`,
-stream D; DEC-FB3-6, taken from the owner's "Open Ocean" demo, review
-`2026-09-27-0707-open-ocean-demo-review-findings.md` §3.1): how the sun
+stream D; DEC-FB3-6): how the sun
 DISC and the light scattered FORWARD out of a cloud look when a cloud is in
 front of the sun. CPU twins and their GLSL; `SkyAtmosphere` switches them
 (`configure({ sunThroughClouds })`, off by default).
@@ -15,19 +14,20 @@ front of the sun. CPU twins and their GLSL; `SkyAtmosphere` switches them
   the cloud's opacity (as the diffuse sky is) stayed a white disc behind
   every cloud; a pixel of it stays white until it is dimmed to ~1e-5. The
   disc passes e^(-k·τ) = T^k of the column along the view, k the extinction
-  exponent (0 = off; the demo's T⁴ idea, the page's k = 4).
+  exponent (0 = off; the look-dev page uses 4).
 - **Thin cloud glows around the sun.** Sunlight scattered once through a
   cloud leaves it mostly forward: the share is τ·e^(-τ) (none in the clear,
   none through a thick cloud, most at τ = 1), spread by a phase of two
   lobes: a narrow aureole around the sun and a broad one that brightens
-  thin, backlit edges (the silver lining). The demo's own aureole is a
-  clear-sky term dimmed by T⁴; this one belongs to the cloud, which is what
-  "strongest through thin cloud" asks for.
+  thin, backlit edges (the silver lining). The glow belongs to the cloud
+  (not a clear-sky halo dimmed by the cloud), which is what "strongest
+  through thin cloud" asks for.
 
 ## Public API
 
-- `CLOUD_SUN`: `aureoleG` 0.9, `silverG` 0.6, `aureoleShare` 0.5, and
-  `pageDiscExponent` 4 (the look-dev page's k; the framework's default is 0).
+- `CLOUD_SUN`: `aureoleG` 0.9, `silverG` 0.6, `aureoleShare` 0.5. (The
+  page's disc exponent, 4, is page policy: `PAGE_DISC_EXPONENT` in the
+  design system's `3d/sun-clouds.js`.)
 - `cloudForwardPhase(cosθ)`: the two-lobe phase per steradian, integrating
   to 1; `RangeError` outside [-1, 1].
 - `cloudForwardShare(τ)`: τ·e^(-τ); `RangeError` for τ < 0 or not finite.
@@ -45,6 +45,13 @@ front of the sun. CPU twins and their GLSL; `SkyAtmosphere` switches them
   `atmCloudDiscTransmittance` (in `atmosphere-glsl.ts`) use it.
 
 ## Invariants & assumptions
+
+- **The sheet draws no aureole or silver lining** (round-3 review, finding
+  3): the dome adds the glow in scene-linear light next to its cloud, and
+  the slab after its march, but the sheet blends its cloud over the sky
+  with straight alpha, where an added glow would be scaled by the cloud's
+  own density (least at the thin edges it is for). Not built; the look-dev
+  panel's hint says so. The disc dims in every mode (it is the sky's).
 
 - **A clear sky is unchanged:** the share is 0 at τ = 0 and the disc's
   factor is 1; the look-dev smoke measures both at the same pixels (within
@@ -68,7 +75,7 @@ front of the sun. CPU twins and their GLSL; `SkyAtmosphere` switches them
 ```ts
 atmosphere.configure({
   sunThroughClouds: {
-    discExponent: CLOUD_SUN.pageDiscExponent,
+    discExponent: 4,
     aureole: 1,
     silverLining: 1,
   },

@@ -103,7 +103,8 @@ describe('cloudDiscTransmittance', () => {
   // a cloud that passes a third of the sky passes ~1 % of the disc, and a
   // cloud with T = e^-3 (still a veil to the diffuse sky) blanks the disc.
   it('dims the disc far faster than the diffuse sky behind the same cloud', () => {
-    const k = CLOUD_SUN.pageDiscExponent;
+    // The look-dev page's k (its PAGE_DISC_EXPONENT).
+    const k = 4;
     for (const tau of [0.5, 1, 2, 3]) {
       const sky = Math.exp(-tau);
       const disc = cloudDiscTransmittance(tau, k);

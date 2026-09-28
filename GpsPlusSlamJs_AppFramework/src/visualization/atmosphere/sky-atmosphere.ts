@@ -48,8 +48,6 @@ import { skyIlluminanceCpu } from './atmosphere-fallback.js';
 import { SKY_VIEW_LUT_SIZE } from './atmosphere-lut-mapping.js';
 import {
   CLOUD_LAYER,
-  CLOUD_TEXTURE_SIZE,
-  cloudNoise,
   cloudNoiseSample,
   cloudThreshold,
   createCloudTexture,
@@ -371,6 +369,12 @@ export class SkyAtmosphere {
       this.clouds.atmCloudThreshold,
       { value: 0 }
     );
+    // The glow stays out of the environment: in the bake it lit every
+    // surface's image-based light too (+17 levels on lit ground at noon,
+    // round-3 review finding 4), so the lobes switched the whole scene.
+    this.bakeMaterial.uniforms['atmCloudForward'] = {
+      value: new THREE.Vector2(0, 0),
+    };
     const bakeMesh = new THREE.Mesh(geometry, this.bakeMaterial);
     bakeMesh.frustumCulled = false;
     this.bakeScene.add(bakeMesh);
@@ -443,8 +447,10 @@ export class SkyAtmosphere {
     readonly atmCloudTexture: THREE.IUniform<THREE.Texture>;
     readonly atmCloudThreshold: THREE.IUniform<number>;
     readonly atmCloudOffset: THREE.IUniform<THREE.Vector2>;
+    readonly atmCloudAnchored: THREE.IUniform<number>;
+    readonly atmCloudFarFadeM: THREE.IUniform<THREE.Vector2>;
   } {
-    return this.clouds;
+    return { ...this.clouds, atmCloudAnchored: this.cloudAnchored };
   }
 
   /** The sun through clouds in effect (`configure({ sunThroughClouds })`). */
@@ -459,29 +465,46 @@ export class SkyAtmosphere {
   /**
    * The share of the sun reaching the world point `point` (metres, the
    * scene frame) through the clouds: the cloud column the sun's ray
-   * crosses, read on the CPU from the sky's own noise, cover and drift
-   * (`cloudColumnTransmittanceToward`). 1 before the first sun, for a sun
-   * at or below the horizon and in a clear sky. For dimming a light by the
+   * crosses, read on the CPU from the sky's own noise texture, cover and
+   * drift, weighted by how much of that cloud the sky draws for a camera at
+   * `viewer` (the mode's far fade or horizon fade, and the aerial melt;
+   * `cloudColumnTransmittanceToward`). 1 before the first sun, for a sun at
+   * or below the horizon and in a clear sky. For dimming a light by the
    * clouds as a whole (the look-dev page's "sun light dims" switch); the
    * per-pixel shadows are `CloudShadow`'s.
    *
    * @throws RangeError for a non-finite point.
    */
-  cloudTransmittanceToward(point: readonly [number, number, number]): number {
-    if (!point.every(Number.isFinite)) {
-      throw new RangeError(`the point must be finite, got ${point.join(', ')}`);
+  cloudTransmittanceToward(
+    point: readonly [number, number, number],
+    viewer: readonly [number, number, number] = point
+  ): number {
+    if (!point.every(Number.isFinite) || !viewer.every(Number.isFinite)) {
+      throw new RangeError(
+        `the point and the viewer must be finite, got ${point.join(', ')} / ${viewer.join(', ')}`
+      );
     }
     const sun = this.sun;
     const threshold = this.clouds.atmCloudThreshold.value;
     if (sun === undefined || threshold >= 2) return 1;
-    const data = cloudNoise(CLOUD_TEXTURE_SIZE, 1);
+    // The live texture's own data, not a second copy of the noise.
+    const image = this.clouds.atmCloudTexture.value.image as {
+      data: Uint8Array;
+      width: number;
+    };
     const offset = this.clouds.atmCloudOffset.value;
+    const fade = this.clouds.atmCloudFarFadeM.value;
     return cloudColumnTransmittanceToward(
       point,
       [sun.x, sun.y, sun.z],
       threshold,
-      (u, v) => cloudNoiseSample(data, CLOUD_TEXTURE_SIZE, u, v),
-      [offset.x, offset.y]
+      (u, v) => cloudNoiseSample(image.data, image.width, u, v),
+      [offset.x, offset.y],
+      {
+        camera: viewer,
+        anchored: this.mode !== 'dome',
+        farFadeM: [fade.x, fade.y],
+      }
     );
   }
 
@@ -573,37 +596,27 @@ export class SkyAtmosphere {
     }
     if (this.sun === undefined) return;
     const skyChanged = mie !== undefined || sun !== undefined;
-    // The LUTs do not depend on clouds: a cover-only change just re-bakes,
-    // as does a new forward lobe (the bake's clouds carry the glow).
+    // The LUTs do not depend on clouds: a cover-only change just re-bakes.
+    // The sun-through-cloud knobs never do: the bake has no disc, and no
+    // glow (its own zero lobes, below).
     if (skyChanged) this.rebuild(mie !== undefined || firstSun);
     else if (cloudsRebake) this.rebake();
   }
 
   /**
    * Applies a validated cover and sun-through-clouds change (undefined:
-   * none); returns whether the bake must follow (a new cover or forward
-   * lobe: the bake's dome clouds carry both).
+   * none); returns whether the bake must follow (a new cover only).
    */
   private applyCloudLook(
     cover: number | undefined,
     sunFx: SunThroughClouds | undefined
   ): boolean {
     if (cover !== undefined) this.applyCover(cover);
-    return this.applySunThroughClouds(sunFx) || cover !== undefined;
-  }
-
-  /**
-   * Applies a validated change (undefined: none); returns whether the
-   * forward lobes changed.
-   */
-  private applySunThroughClouds(next: SunThroughClouds | undefined): boolean {
-    if (next === undefined) return false;
-    const forward = this.clouds.atmCloudForward.value;
-    const forwardChanged =
-      next.aureole !== forward.x || next.silverLining !== forward.y;
-    this.clouds.atmCloudDiscExponent.value = next.discExponent;
-    forward.set(next.aureole, next.silverLining);
-    return forwardChanged;
+    if (sunFx !== undefined) {
+      this.clouds.atmCloudDiscExponent.value = sunFx.discExponent;
+      this.clouds.atmCloudForward.value.set(sunFx.aureole, sunFx.silverLining);
+    }
+    return cover !== undefined;
   }
 
   /**

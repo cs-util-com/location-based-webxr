@@ -552,10 +552,9 @@ float atmCloudDiscTransmittance(vec3 dir) {
   float s = atmColumnDistance(origin.y, dir.y);
   float noise = atmCloudNoiseLod(atmColumnUv(origin, dir, atmCloudOffset), 0.0);
   float tau = atmColumnOpticalDepth(noise, atmCloudSunThreshold, origin.y, dir.y);
-  float drawn = atmCloudAnchored > 0.5
-    ? 1.0 - smoothstep(atmCloudFarFadeM.x, atmCloudFarFadeM.y, s * length(dir.xz))
-    : atmCloudHorizonFade(dir.y);
-  return exp(-atmCloudDiscExponent * tau * drawn * exp(-s * 0.001 / ATM_CLOUD_AERIAL_KM));
+  // The same weight as the cloud shadows (cloud-column.ts atmColumnDrawn).
+  float drawn = atmColumnDrawn(s, s * length(dir.xz), dir.y, atmCloudAnchored, atmCloudFarFadeM);
+  return exp(-atmCloudDiscExponent * tau * drawn);
 }
 
 // The 2D cloud layer (DEC-SKY-6): a plane at ATM_CLOUD_ALTITUDE, lit by the

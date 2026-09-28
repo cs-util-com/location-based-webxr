@@ -66,6 +66,8 @@ ${MARKER}
 uniform sampler2D atmShadowCloudTexture;
 uniform float atmShadowCloudThreshold;
 uniform vec2 atmShadowCloudOffset;
+uniform float atmShadowCloudAnchored;
+uniform vec2 atmShadowCloudFarFadeM;
 ${CLOUD_COLUMN_GLSL}
 const float ATM_SHADOW_OCTAVE2_FREQ = ${glslFloat(CLOUD_LAYER.secondOctaveFrequency)};
 const float ATM_SHADOW_OCTAVE2_OFFSET = ${glslFloat(CLOUD_LAYER.secondOctaveOffset)};
@@ -89,7 +91,11 @@ void atmShadowCloudLightInfo(const in DirectionalLight directionalLight, out Inc
     if (toLight.y > 0.0) {
       vec3 world = cameraPosition + (vec4(-vViewPosition, 0.0) * viewMatrix).xyz;
       float noise = atmShadowCloudNoise(atmColumnUv(world, toLight, atmShadowCloudOffset));
-      light.color *= exp(-atmColumnOpticalDepth(noise, atmShadowCloudThreshold, world.y, toLight.y));
+      // Only as much cloud as the sky draws there (the disc's own weight).
+      vec3 fromCamera = world + toLight * atmColumnDistance(world.y, toLight.y) - cameraPosition;
+      float drawn = atmColumnDrawn(length(fromCamera), length(fromCamera.xz), toLight.y,
+        atmShadowCloudAnchored, atmShadowCloudFarFadeM);
+      light.color *= exp(-atmColumnOpticalDepth(noise, atmShadowCloudThreshold, world.y, toLight.y) * drawn);
     }
   }
 }
@@ -104,6 +110,8 @@ export interface CloudShadowUniforms {
   atmShadowCloudTexture: THREE.IUniform<THREE.Texture | null>;
   atmShadowCloudThreshold: THREE.IUniform<number>;
   atmShadowCloudOffset: THREE.IUniform<THREE.Vector2>;
+  atmShadowCloudAnchored: THREE.IUniform<number>;
+  atmShadowCloudFarFadeM: THREE.IUniform<THREE.Vector2>;
 }
 
 /** What the patch reads from an atmosphere (`SkyAtmosphere` satisfies it). */
@@ -112,6 +120,10 @@ export interface CloudShadowSource {
     readonly atmCloudTexture: THREE.IUniform<THREE.Texture>;
     readonly atmCloudThreshold: THREE.IUniform<number>;
     readonly atmCloudOffset: THREE.IUniform<THREE.Vector2>;
+    /** 1 while the clouds are world-anchored (the sheet, the slab), 0 on the dome. */
+    readonly atmCloudAnchored: THREE.IUniform<number>;
+    /** The sheet's and the slab's far fade, start and end (m). */
+    readonly atmCloudFarFadeM: THREE.IUniform<THREE.Vector2>;
   };
 }
 
@@ -137,6 +149,9 @@ export class CloudShadow {
     // 2 is above any noise: no cloud until a sync supplies the cover.
     atmShadowCloudThreshold: { value: 2 },
     atmShadowCloudOffset: { value: new THREE.Vector2() },
+    // The dome until a sync says otherwise; the far fade is the sky's.
+    atmShadowCloudAnchored: { value: 0 },
+    atmShadowCloudFarFadeM: { value: new THREE.Vector2(14_000, 21_000) },
   };
 
   /**
@@ -148,6 +163,8 @@ export class CloudShadow {
     const clouds = source.cloudUniforms;
     this.uniforms.atmShadowCloudTexture.value = clouds.atmCloudTexture.value;
     this.uniforms.atmShadowCloudOffset.value = clouds.atmCloudOffset.value;
+    this.uniforms.atmShadowCloudFarFadeM.value = clouds.atmCloudFarFadeM.value;
+    this.uniforms.atmShadowCloudAnchored.value = clouds.atmCloudAnchored.value;
     this.uniforms.atmShadowCloudThreshold.value =
       clouds.atmCloudThreshold.value;
   }

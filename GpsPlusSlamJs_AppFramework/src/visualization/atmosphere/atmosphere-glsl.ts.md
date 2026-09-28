@@ -49,7 +49,8 @@ fragment shaders, and the visible sky's vertex/fragment pair.
   (`atmCloudSunThreshold`: the visible sky's is 2 in the sheet and slab
   modes), and "drawn" the share of the cloud the sky shows there (the dome's
   horizon fade or the sheet's and slab's far fade `atmCloudFarFadeM`, times
-  the aerial melt). An explicit-level read (`atmCloudNoiseLod(uv, 0)`): it
+  the aerial melt: the column's `atmColumnDrawn`, which the cloud shadows
+  share). An explicit-level read (`atmCloudNoiseLod(uv, 0)`): it
   runs for disc pixels only, a branch. k = `atmCloudDiscExponent`, 0 = off
   (exactly 1).
 - `atmHorizonClampedDir(dir)` in the common chunk: the one horizon clamp

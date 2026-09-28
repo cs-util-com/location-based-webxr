@@ -30,9 +30,8 @@ import { LOOK_PRESETS } from "/fw/visualization/atmosphere/look-presets.js";
 import { AtmosphereHaze } from "/fw/visualization/atmosphere/atmosphere-haze.js";
 import { fallbackSky } from "/fw/visualization/atmosphere/atmosphere-fallback.js";
 import { SkyAtmosphere } from "/fw/visualization/atmosphere/sky-atmosphere.js";
-import { CLOUD_SUN } from "/fw/visualization/atmosphere/cloud-sun.js";
 import { CloudShadow } from "/fw/visualization/atmosphere/cloud-shadow.js";
-import { createSunCloudProbe } from "./sun-clouds.js";
+import { createSunCloudProbe, PAGE_DISC_EXPONENT } from "./sun-clouds.js";
 import { WaterSurface } from "/fw/visualization/atmosphere/water-surface-material.js";
 import { WATER_CANDIDATES } from "./water-candidates.js";
 import { CATALOG } from "./catalog/index.js";
@@ -520,7 +519,7 @@ function useAtmosphere() {
     cloudCover: state.clouds,
     cloudMode: state.cloudMode,
     sunThroughClouds: {
-      discExponent: state.sunDisc ? CLOUD_SUN.pageDiscExponent : 0,
+      discExponent: state.sunDisc ? PAGE_DISC_EXPONENT : 0,
       aureole: state.sunAureole ? 1 : 0,
       silverLining: state.sunSilver ? 1 : 0,
     },
@@ -742,7 +741,10 @@ const SUN_DIM_POINT = [0, 0, 0];
 function applySunLightDim() {
   const t =
     state.sunLightDim && atmosphere
-      ? atmosphere.cloudTransmittanceToward(SUN_DIM_POINT)
+      ? atmosphere.cloudTransmittanceToward(
+          SUN_DIM_POINT,
+          camera.position.toArray(),
+        )
       : 1;
   sun.intensity = sunBaseIntensity * t;
 }
@@ -1760,7 +1762,10 @@ Object.assign(api, {
       intensity: sun.intensity,
       base: sunBaseIntensity,
       transmittance: atmosphere
-        ? atmosphere.cloudTransmittanceToward(SUN_DIM_POINT)
+        ? atmosphere.cloudTransmittanceToward(
+            SUN_DIM_POINT,
+            camera.position.toArray(),
+          )
         : 1,
     };
   },
@@ -1792,7 +1797,7 @@ Object.assign(api, {
    */
   cloudShadowAt(point) {
     if (!atmosphere) throw new Error("the cloud shadows need the sky");
-    return sunCloudProbe.shadowAt(atmosphere, point, sunVector());
+    return sunCloudProbe.shadowAt(atmosphere, point, camera.position);
   },
   /**
    * Test surface: the ground (or a street) under normalised canvas points

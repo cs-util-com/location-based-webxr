@@ -16,12 +16,13 @@ import {
   CLOUD_COLUMN,
   CLOUD_COLUMN_GLSL,
   cloudColumnDistanceM,
+  cloudColumnDrawn,
   cloudColumnOpticalDepth,
   cloudColumnTransmittanceToward,
   cloudColumnUv,
   cloudSlabThicknessM,
 } from './cloud-column.js';
-import { CLOUD_LAYER } from './cloud-layer.js';
+import { CLOUD_LAYER, cloudHorizonFade } from './cloud-layer.js';
 import { CLOUD_SLAB, cloudSlabZenithOpacity } from './cloud-slab.js';
 import { glslFloat } from '../../utils/glsl-float.js';
 
@@ -237,5 +238,77 @@ describe('CLOUD_COLUMN_GLSL', () => {
     expect(g).toContain('vec2 atmColumnUv(');
     // No uniform: every includer supplies its own inputs.
     expect(g).not.toContain('uniform');
+  });
+});
+
+describe('cloudColumnDrawn and the view (round-3 review, finding 1)', () => {
+  const FAR: [number, number] = [14_000, 21_000];
+
+  // The sky draws a world-anchored cloud fully inside the far fade's start,
+  // none past its end; the dome by the slope's horizon fade; both melt with
+  // distance. These are the sky's own fades, so the disc, the shadows and
+  // the dimming agree with what is drawn.
+  it('is the far fade (anchored) or the horizon fade (dome), times the aerial melt', () => {
+    const melt = (m: number) => Math.exp((-m * 0.001) / CLOUD_LAYER.aerialKm);
+    expect(cloudColumnDrawn(5_000, 4_000, 0.4, true, FAR)).toBeCloseTo(
+      melt(5_000),
+      12
+    );
+    expect(cloudColumnDrawn(22_000, 21_500, 0.09, true, FAR)).toBe(0);
+    expect(cloudColumnDrawn(3_000, 2_000, 0.03, false, FAR)).toBeCloseTo(
+      cloudHorizonFade(0.03) * melt(3_000),
+      12
+    );
+    expect(cloudColumnDrawn(3_000, 2_000, 0.5, false, FAR)).toBeCloseTo(
+      melt(3_000),
+      12
+    );
+  });
+
+  // Past the far fade the line sees nothing; with no view it sees the whole
+  // column (the unweighted form stays for callers that want the physics).
+  it('weights the column by what the sky draws for the view', () => {
+    const el = (5 * Math.PI) / 180;
+    const dir: [number, number, number] = [Math.cos(el), Math.sin(el), 0];
+    const thick = () => THRESHOLD + 0.3;
+    const unweighted = cloudColumnTransmittanceToward(
+      [0, 0, 0],
+      dir,
+      THRESHOLD,
+      thick,
+      [0, 0]
+    );
+    expect(unweighted).toBeLessThan(0.01);
+    const anchored = cloudColumnTransmittanceToward(
+      [0, 0, 0],
+      dir,
+      THRESHOLD,
+      thick,
+      [0, 0],
+      { camera: [0, 0, 0], anchored: true, farFadeM: FAR }
+    );
+    expect(anchored).toBe(1);
+    // Near the camera at a high sun, fully drawn but for the melt.
+    const up: [number, number, number] = [0, 1, 0];
+    const near = cloudColumnTransmittanceToward(
+      [0, 0, 0],
+      up,
+      THRESHOLD,
+      thick,
+      [0, 0],
+      { camera: [0, 0, 0], anchored: true, farFadeM: FAR }
+    );
+    const depth = cloudColumnOpticalDepth(THRESHOLD + 0.3, THRESHOLD, 0, 1);
+    expect(near).toBeCloseTo(
+      Math.exp(-depth * Math.exp(-2 / CLOUD_LAYER.aerialKm)),
+      12
+    );
+  });
+
+  it('has a GLSL twin, used by the disc and by the shadows', () => {
+    expect(CLOUD_COLUMN_GLSL).toContain('float atmColumnDrawn(');
+    expect(CLOUD_COLUMN_GLSL).toContain(
+      `ATM_COLUMN_AERIAL_KM = ${glslFloat(CLOUD_LAYER.aerialKm)}`
+    );
   });
 });

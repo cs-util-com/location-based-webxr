@@ -28,12 +28,6 @@ export const CLOUD_SUN = {
   silverG: 0.6,
   /** The aureole's share of the phase (the rest is the silver lining's). */
   aureoleShare: 0.5,
-  /**
-   * The disc's extinction exponent the look-dev page opens with: the idea of
-   * the owner's "Open Ocean" demo (disc × T⁴, review 2026-09-27-0707 §3.1).
-   * The framework's default is 0 (off): no app's sky changes unasked.
-   */
-  pageDiscExponent: 4,
 } as const;
 
 /** One lobe: a normalised single-lobe phase of asymmetry g, per steradian. */

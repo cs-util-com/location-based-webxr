@@ -197,7 +197,14 @@ test("the disc behind the slab is never brighter, the sky around it unchanged", 
   await page.evaluate(() => window.__lookdev.setCloudCover(0.5));
   const [disc] = await screenOf(page, [sun]);
   const points = [disc, ...(await screenOf(page, ring(sun, 4)))];
-  const offsets = await offsetsWith(page, 1, 6, 3);
+  // The thin band too (round-3 review, finding 2): a thick band alone is
+  // vacuous in the slab, whose own alpha already hides the disc there.
+  const offsets = [
+    ...(await offsetsWith(page, 0.2, 0.5, 2)),
+    ...(await offsetsWith(page, 0.5, 1, 2)),
+    ...(await offsetsWith(page, 1, 2, 2)),
+    ...(await offsetsWith(page, 2, 6, 2)),
+  ];
   expect(offsets.length).toBeGreaterThan(0);
   for (const o of offsets) {
     const base = await readWith(page, OFF, o, points);
@@ -259,8 +266,16 @@ for (const mode of ["dome", "slab"]) {
       console.log(
         `${mode} lobes alone, thin: aureole +${near.aureole.toFixed(1)} near / +${out.aureole.toFixed(1)} at 30°; silver lining +${near.silver.toFixed(1)} near / +${out.silver.toFixed(1)} at 30°`,
       );
-      expect(near.aureole).toBeGreaterThan(near.silver);
-      expect(out.silver).toBeGreaterThanOrEqual(out.aureole);
+      // Each lobe does something on its own. The relation between them is
+      // asserted in the dome only: in the slab the 30° gains are 3-6 levels
+      // and their order sat within 1-3 levels of 8-bit rounding (round-3
+      // review, finding 6); it is logged there.
+      expect(near.aureole).toBeGreaterThan(0);
+      expect(Math.max(near.silver, out.silver)).toBeGreaterThan(0);
+      if (mode === "dome") {
+        expect(near.aureole).toBeGreaterThan(near.silver);
+        expect(out.silver).toBeGreaterThanOrEqual(out.aureole);
+      }
     }
     let thickGain = 0;
     for (const o of thick) {
@@ -649,5 +664,204 @@ test("the cloud shadows cost little (on/off ratio, logged)", async ({
     `cloud shadows cost (city view): ${r.on.toFixed(0)}/${r.off.toFixed(0)} ms = x${r.ratio.toFixed(3)}`,
   );
   expect(r.ratio).toBeLessThan(1.3);
+  expect(errors).toEqual([]);
+});
+
+// WHY (round-3 review, finding 1): at a low sun the column toward the sun
+// is read ~22 km out, past the slab's 21 km far fade, where the sky draws no
+// cloud; the ground went dark under an empty sky while the disc shone clear.
+// Swept over the sun's elevation, in the dome and the slab: the GPU's cloud
+// shadow must follow the twin that weights the column by what the sky
+// draws (clear columns change nothing, thick ones darken), and the disc and
+// the ground must tell one story (logged per elevation).
+test("cloud shadows fall only under clouds the sky draws, at every sun elevation", async ({
+  page,
+}) => {
+  const errors = await boot(
+    page,
+    "preset=noon&tone=neutral&cloudMode=dome&cloudShadows=0",
+  );
+  await page.evaluate(() => {
+    const d = window.__lookdev;
+    d.pauseLoop(true);
+    d.setFloatingVisible(false);
+    d.setCloudCover(0.6);
+    d.setView("city");
+  });
+  const lines = [];
+  const results = [];
+  for (const mode of ["dome", "slab"]) {
+    for (const elevation of [2, 5, 10, 20, 58]) {
+      await page.evaluate(
+        ([m, e]) => {
+          const d = window.__lookdev;
+          d.setCloudMode(m);
+          const slider = document.querySelector("#elevation");
+          slider.value = String(e);
+          slider.dispatchEvent(new Event("input"));
+          d.setView("city");
+        },
+        [mode, elevation],
+      );
+      const samples = await groundSamples(page);
+      let clear = 0;
+      let clearMoved = 0;
+      let thick = 0;
+      let thickDark = 0;
+      let discClear = 0;
+      for (const offset of OFFSETS.slice(0, 3)) {
+        const twin = await twinAt(page, samples, offset);
+        const disc = await page.evaluate(() => {
+          const c = window.__lookdev.sunCloud();
+          return c.tau * c.drawn;
+        });
+        if (disc < 0.05) discClear += 1;
+        const { off, on } = await shadedPair(page, samples, offset);
+        samples.forEach((s, i) => {
+          const drop = sum(off[i]) - sum(on[i]);
+          if (twin[i] > 0.95) {
+            clear += 1;
+            if (Math.abs(drop) > SHADOW.clearMax) clearMoved += 1;
+          } else if (twin[i] < 0.2) {
+            thick += 1;
+            if (drop >= SHADOW.darkMin / 3) thickDark += 1;
+          }
+        });
+      }
+      lines.push(
+        `${mode} ${elevation}°: clear ${clear} (moved ${clearMoved}), thick ${thick} (dark ${thickDark}), disc clear at ${discClear}/3 offsets`,
+      );
+      results.push({ mode, elevation, clearMoved, thick, thickDark });
+    }
+  }
+  console.log(`cloud shadows by elevation (cover 0.6): ${lines.join("; ")}`);
+  for (const r of results) {
+    const at = `${r.mode} ${r.elevation}°`;
+    // Clear columns (the twin, weighted by what the sky draws) change
+    // nothing, at every elevation: the review's dark ground under an
+    // empty sky reads here as moved clear points.
+    expect(r.clearMoved, at).toBe(0);
+    // Thick columns darken where the direct sun is strong enough to show
+    // it (from 10°; at 2-5° the sun light itself is dim, logged only).
+    if (r.elevation >= 10 && r.thick > 0) {
+      expect(r.thickDark / r.thick, at).toBeGreaterThan(0.8);
+    }
+  }
+  // The review's case: a 5° sun in the slab draws no cloud toward the sun,
+  // so no ground may be thick-shadowed there.
+  expect(lines.find((l) => l.startsWith("slab 5°"))).toContain("thick 0");
+  expect(errors).toEqual([]);
+});
+
+// Round-3 review, finding 4: a lobe switch re-bakes the environment, whose
+// dome clouds then carry the glow, so the glow also reaches every lit
+// surface's image-based light. Measured on the lit ground and objects
+// (never the sky) against the lobes off, at the same pixels.
+test("the glow's share of the scene's image-based light, lobes on against off (logged)", async ({
+  page,
+}) => {
+  const errors = await boot(page, "preset=noon&tone=neutral&cloudMode=dome");
+  await page.evaluate(() => {
+    const d = window.__lookdev;
+    d.pauseLoop(true);
+    d.setCloudCover(0.5);
+    d.setCloudOffset(0.13, 0.41);
+    d.setView("city");
+  });
+  const grid = [];
+  for (let i = 0; i < 10; i++) {
+    for (let j = 0; j < 8; j++) grid.push([0.36 + i * 0.065, 0.3 + j * 0.09]);
+  }
+  const hits = await page.evaluate((g) => window.__lookdev.groundAt(g), grid);
+  const lit = grid.filter((_, i) => hits[i] !== null);
+  expect(lit.length).toBeGreaterThan(20);
+  const results = {};
+  for (const preset of ["noon", "golden"]) {
+    const r = await page.evaluate(
+      ([p, points]) => {
+        const d = window.__lookdev;
+        d.setPreset(p);
+        d.setCloudCover(0.5);
+        d.setCloudOffset(0.13, 0.41);
+        d.setView("city");
+        d.setSunThroughCloudsRaw({
+          discExponent: 0,
+          aureole: 0,
+          silverLining: 0,
+        });
+        const off = d.readPixels(points);
+        d.setSunThroughCloudsRaw({
+          discExponent: 0,
+          aureole: 1,
+          silverLining: 1,
+        });
+        const on = d.readPixels(points);
+        return { off, on };
+      },
+      [preset, lit],
+    );
+    const diffs = r.on.map((px, i) => sum(px) - sum(r.off[i]));
+    results[preset] = {
+      max: Math.max(...diffs.map(Math.abs)),
+      mean: diffs.reduce((t, x) => t + x, 0) / diffs.length,
+    };
+  }
+  console.log(
+    `glow in the bake, lit ground (sum of RGB): ${Object.entries(results)
+      .map(([p, v]) => `${p} max ${v.max}, mean ${v.mean.toFixed(2)}`)
+      .join("; ")}`,
+  );
+  // Declared: 2 levels is below what the eye tells apart on lit ground.
+  for (const v of Object.values(results)) expect(v.max).toBeLessThanOrEqual(2);
+  expect(errors).toEqual([]);
+});
+
+// Round-3 review, finding 5: the cost in the page's OPENING state (the dense
+// city, shadows, the catalog, the slab, the phone tier), the cloud shadows
+// and the sun-through-cloud terms each on against off, interleaved rounds,
+// the median ratio. SwiftShader on a shared machine: relative only.
+test("the cost in the page's opening state, each effect on against off (logged)", async ({
+  page,
+}) => {
+  // The opening state is the page's heaviest (a slab frame over 42,000
+  // buildings with two shadow maps): 36 frames need more than the default.
+  test.setTimeout(600_000);
+  const errors = await boot(page, "preset=noon&tone=neutral", {
+    pageDefaults: true,
+  });
+  const ratios = await page.evaluate(() => {
+    const d = window.__lookdev;
+    d.pauseLoop(true);
+    const ratio = (set) => {
+      const rounds = [];
+      for (let k = 0; k < 3; k++) {
+        set(false);
+        const off1 = d.timeFrames(1).medianMs;
+        set(true);
+        const on = d.timeFrames(1).medianMs;
+        set(false);
+        const off2 = d.timeFrames(1).medianMs;
+        rounds.push({ on, off: (off1 + off2) / 2 });
+      }
+      set(true);
+      rounds.sort((a, b) => a.on / a.off - b.on / b.off);
+      return rounds[1];
+    };
+    return {
+      cloudShadows: ratio((on) => d.setCloudShadows(on)),
+      sunThroughClouds: ratio((on) =>
+        d.setSunThroughClouds({ disc: on, aureole: on, silver: on }),
+      ),
+      state: d.stats().state,
+    };
+  });
+  expect([
+    ratios.state.city,
+    ratios.state.cloudMode,
+    ratios.state.tier,
+  ]).toEqual([100000, "slab", "phone"]);
+  console.log(
+    `opening-state cost (phone tier): cloud shadows ${ratios.cloudShadows.on.toFixed(0)}/${ratios.cloudShadows.off.toFixed(0)} ms = x${(ratios.cloudShadows.on / ratios.cloudShadows.off).toFixed(3)}; sun through clouds ${ratios.sunThroughClouds.on.toFixed(0)}/${ratios.sunThroughClouds.off.toFixed(0)} ms = x${(ratios.sunThroughClouds.on / ratios.sunThroughClouds.off).toFixed(3)}`,
+  );
   expect(errors).toEqual([]);
 });

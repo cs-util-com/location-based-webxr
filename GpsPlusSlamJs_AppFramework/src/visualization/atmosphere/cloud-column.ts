@@ -17,7 +17,8 @@
  */
 
 import { glslFloat } from '../../utils/glsl-float.js';
-import { CLOUD_LAYER } from './cloud-layer.js';
+import { smoothstep } from '../../utils/smoothstep.js';
+import { CLOUD_LAYER, cloudHorizonFade } from './cloud-layer.js';
 
 type Vec3 = readonly [number, number, number];
 
@@ -149,32 +150,86 @@ export function cloudColumnUv(
 }
 
 /**
+ * How much of the cloud at a column's crossing the sky DRAWS, seen from the
+ * viewer: the sheet's and the slab's far fade on the crossing's horizontal
+ * distance from the viewer (`anchored`, world-anchored clouds), or the
+ * dome's horizon fade on the line's slope (the camera-centred dome), times
+ * the aerial melt over `aerialM` metres. Every straight line to the sun
+ * weights its optical depth by this, so the disc, the cloud shadows and the
+ * sun-light dimming never see a cloud the sky does not show (round-3 review:
+ * at a 5° sun the crossing lies ~22 km out, past the 21 km far fade, and the
+ * ground went dark under an empty sky). GLSL twin: `atmColumnDrawn`.
+ */
+export function cloudColumnDrawn(
+  aerialM: number,
+  horizontalM: number,
+  dirY: number,
+  anchored: boolean,
+  farFadeM: readonly [number, number]
+): number {
+  const fade = anchored
+    ? 1 - smoothstep(farFadeM[0], farFadeM[1], horizontalM)
+    : cloudHorizonFade(dirY);
+  return fade * Math.exp((-aerialM * 0.001) / CLOUD_LAYER.aerialKm);
+}
+
+/**
+ * Where the sky's clouds are drawn, for a line toward the light: the viewer
+ * (the camera), whether the clouds are world-anchored (the sheet and the
+ * slab) or on the camera-centred dome, and the far fade's start and end.
+ */
+export interface CloudColumnView {
+  readonly camera: Vec3;
+  readonly anchored: boolean;
+  readonly farFadeM: readonly [number, number];
+}
+
+/**
  * The share of a straight line of light from `point` along the unit
  * direction `dir` (toward the light) that passes the cloud layer:
  * e^(-optical depth) of the column read where the line crosses the layer's
- * middle. 1 for a light at or below the horizon (it lights nothing through
- * the layer) and for an infinite threshold (a clear sky). `noiseAt(u, v)`
- * is the two-octave noise at texture coordinates (`cloudNoiseSample` on the
- * CPU). The CPU twin of the cloud shadow patch (`cloud-shadow.ts`).
+ * middle, the depth weighted by how much of that cloud the sky draws for
+ * `view` (`cloudColumnDrawn`; omitted: all of it). 1 for a light at or
+ * below the horizon (it lights nothing through the layer) and for an
+ * infinite threshold (a clear sky). `noiseAt(u, v)` is the two-octave noise
+ * at texture coordinates (`cloudNoiseSample` on the CPU). The CPU twin of
+ * the cloud shadow patch (`cloud-shadow.ts`).
  */
 export function cloudColumnTransmittanceToward(
   point: Vec3,
   dir: Vec3,
   threshold: number,
   noiseAt: (u: number, v: number) => number,
-  offset: readonly [number, number]
+  offset: readonly [number, number],
+  view?: CloudColumnView
 ): number {
   if (!(dir[1] > 0) || !Number.isFinite(threshold)) return 1;
   const [u, v] = cloudColumnUv(point, dir, offset);
-  return Math.exp(
-    -cloudColumnOpticalDepth(noiseAt(u, v), threshold, point[1], dir[1])
+  const depth = cloudColumnOpticalDepth(
+    noiseAt(u, v),
+    threshold,
+    point[1],
+    dir[1]
   );
+  if (view === undefined) return Math.exp(-depth);
+  const s = cloudColumnDistanceM(point[1], dir[1]);
+  const dx = point[0] + dir[0] * s - view.camera[0];
+  const dy = point[1] + dir[1] * s - view.camera[1];
+  const dz = point[2] + dir[2] * s - view.camera[2];
+  const drawn = cloudColumnDrawn(
+    Math.hypot(dx, dy, dz),
+    Math.hypot(dx, dz),
+    dir[1],
+    view.anchored,
+    view.farFadeM
+  );
+  return Math.exp(-depth * drawn);
 }
 
 /**
  * The column's GLSL: constants, `atmColumnCumulative`,
  * `atmColumnOpticalDepth`, `atmColumnDistance` (metres along a line to its
- * crossing of the middle) and `atmColumnUv`. SELF-CONTAINED (no uniform,
+ * crossing of the middle), `atmColumnUv` and `atmColumnDrawn`. SELF-CONTAINED (no uniform,
  * no other chunk) and include-guarded, so the sky, the slab and three's own
  * lit materials (through the cloud shadow patch, next to the haze's chunk)
  * can all include it.
@@ -192,6 +247,7 @@ const float ATM_COLUMN_T0 = ${glslFloat(T0)};
 const float ATM_COLUMN_MU_FLOOR = ${glslFloat(CLOUD_COLUMN.sunMuFloor)};
 const float ATM_COLUMN_CROSSING_FLOOR = ${glslFloat(CROSSING_DIR_Y_FLOOR)};
 const float ATM_COLUMN_TILE_M = ${glslFloat(CLOUD_LAYER.tileKm * 1000)};
+const float ATM_COLUMN_AERIAL_KM = ${glslFloat(CLOUD_LAYER.aerialKm)};
 
 // Twin of cloudSlabCumulativeM.
 float atmColumnCumulative(float h) {
@@ -216,6 +272,17 @@ float atmColumnDistance(float heightM, float dirY) {
 // Twin of cloudColumnUv: the crossing of the middle, in noise tiles.
 vec2 atmColumnUv(vec3 pointM, vec3 dir, vec2 offset) {
   return (pointM.xz + dir.xz * atmColumnDistance(pointM.y, dir.y)) / ATM_COLUMN_TILE_M + offset;
+}
+
+// Twin of cloudColumnDrawn: how much of the cloud at a crossing the sky
+// draws (anchored: the far fade on the horizontal distance; the dome: its
+// horizon fade, the twin of cloudHorizonFade), times the aerial melt. The
+// disc and the cloud shadows both weight their optical depth by it.
+float atmColumnDrawn(float aerialM, float horizontalM, float dirY, float anchored, vec2 farFadeM) {
+  float fade = anchored > 0.5
+    ? 1.0 - smoothstep(farFadeM.x, farFadeM.y, horizontalM)
+    : smoothstep(0.0, 1.0, clamp(dirY / 0.12, 0.0, 1.0));
+  return fade * exp(-aerialM * 0.001 / ATM_COLUMN_AERIAL_KM);
 }
 #endif
 `;

@@ -36,13 +36,21 @@ a cycle. The column model (constants, Q, T0, the thickness) moved here from
   layer's middle (2 km), 0 from above it; the slope floored at 1e-3.
 - `cloudColumnUv(point, dir, offset)`: where a line reads the column, the
   crossing of the middle, in noise tiles plus the drift offset.
-- `cloudColumnTransmittanceToward(point, dir, threshold, noiseAt, offset)`:
-  e^(-optical depth) of the column the line crosses; 1 for a light at or
-  below the horizon and for an infinite threshold. The CPU twin of the
+- `cloudColumnDrawn(aerialM, horizontalM, dirY, anchored, farFadeM)`: how
+  much of the cloud at a crossing the sky draws: the sheet's and the slab's
+  far fade on the horizontal distance (`anchored`) or the dome's horizon
+  fade on the slope, times the aerial melt. GLSL twin `atmColumnDrawn`,
+  which the disc and the cloud shadows both use (round-3 review, finding
+  1: a low sun's column lies past the far fade).
+- `cloudColumnTransmittanceToward(point, dir, threshold, noiseAt, offset,
+view?)`: e^(-optical depth × drawn) of the column the line crosses, with
+  `view` `{ camera, anchored, farFadeM }` (`CloudColumnView`; omitted:
+  the whole column); 1 for a light at or below the horizon and for an
+  infinite threshold. The CPU twin of the
   cloud shadow patch; `noiseAt` is `cloudNoiseSample` on the CPU.
 - `CLOUD_COLUMN_GLSL`: `atmColumnCumulative`, `atmColumnOpticalDepth`,
   `atmColumnDistance`, `atmColumnUv` and the constants; no uniform, and an
-  include guard (`ATM_CLOUD_COLUMN_GLSL`).
+  include guard (`ATM_CLOUD_COLUMN_GLSL`); also `atmColumnDrawn`.
 
 ## Invariants & assumptions
 
