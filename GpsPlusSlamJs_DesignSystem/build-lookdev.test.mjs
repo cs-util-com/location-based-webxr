@@ -427,3 +427,57 @@ describe("buildLookdev with the real globe lab", () => {
     }
   });
 });
+
+// WHY (terrain plan 2026-09-27-0605 §9 findings 2 and 3): the real terrain
+// lab deploys as a CLOSED graph: its worker (reached by `new Worker`, not an
+// import), the Osm library through `/osm-lib/` and OsmDemo's heightfield
+// through `/osm/`, all stripped and rebased. A missed one is a lab that
+// stays on "Computing relief..." on the phone.
+describe("buildLookdev with the real terrain lab", () => {
+  let out;
+  let files;
+  before(() => {
+    out = mkdtempSync(join(tmpdir(), "lookdev-terrain-"));
+    files = buildLookdev({ outDir: out, base: "/lookdev/" });
+  });
+  after(() => rmSync(out, { recursive: true, force: true }));
+
+  it("emits the lab, its worker and the served Osm modules", () => {
+    for (const rel of [
+      "labs/terrain/index.html",
+      "labs/terrain/terrain-lab.js",
+      "labs/terrain/terrain-worker.js",
+      "labs/terrain/terrain-mosaic.js",
+      "labs/terrain/terrain-precompute.js",
+      "osm-lib/elevation/terrarium.js",
+      "osm-lib/source/compose-signals.js",
+      "osm-lib/source/in-flight-requests.js",
+      "osm-lib/mesh/enu.js",
+      "osm/heightfield.js",
+      "osm/terrain-texture.js",
+    ]) {
+      assert.ok(files.includes(rel), rel);
+    }
+  });
+
+  it("strips the served TypeScript and rebases every prefix", () => {
+    const terrarium = readFileSync(
+      join(out, "osm-lib/elevation/terrarium.js"),
+      "utf8",
+    );
+    assert.doesNotMatch(terrarium, /^export interface /m);
+    assert.match(terrarium, /export function browserPngDecoder/);
+    for (const rel of files.filter((f) =>
+      /^(labs\/terrain|osm-lib)\/.*\.(js|html)$/.test(f),
+    )) {
+      const text = readFileSync(join(out, rel), "utf8");
+      assert.doesNotMatch(text, /["']\/(osm-lib|osm|vendor)\//, rel);
+    }
+  });
+
+  // The fixtures are for the smoke only: fetched from the network in
+  // production, so nothing references them and nothing copies them.
+  it("does not ship the smoke's fixture tiles", () => {
+    assert.ok(!files.some((f) => f.startsWith("labs/terrain/fixtures/")));
+  });
+});

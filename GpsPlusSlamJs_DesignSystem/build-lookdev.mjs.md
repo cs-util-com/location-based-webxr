@@ -68,6 +68,9 @@
   nothing outside the output, the index. With a temp fixture package:
   entry discovery (main page first, labs sorted, folders without an index
   ignored), a lab's modules and stylesheets crawled, and the index listing
-  every page by title instead of redirecting. A one-off check on
+  every page by title instead of redirecting. The real terrain lab builds as
+  a closed graph: its worker, the Osm library under `osm-lib/` and OsmDemo's
+  heightfield under `osm/`, stripped and rebased, its fixtures not shipped.
+  A one-off check on
   2026-09-23 also served the built tree statically and booted it in
   headless Chromium: no page or console error.
