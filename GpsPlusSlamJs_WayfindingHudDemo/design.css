@@ -927,8 +927,9 @@
   }
 
   /* --- locate button ---
-     The six-state GPS control from OsmDemo (locate-state.ts): idle /
-     locating / located / denied / timeout / unavailable. An icon
+     The six-state GPS control of OsmDemo and the globe lab's pin (the
+     states: the framework's utils/locate-state.ts): idle / locating /
+     located / denied / timeout / unavailable. An icon
      button; the wording lives in title + aria-label (the shipped
      three-channel model), so the VISIBLE states are: pulsing while
      locating, engaged accent when located, and an accent warning dot
