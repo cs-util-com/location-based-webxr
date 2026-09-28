@@ -26,7 +26,7 @@
  * to what it can actually resolve.
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
@@ -174,15 +174,49 @@ describe('the globe package stays servable to the no-build globe lab', () => {
  * the design system, so their own gates never load the lab; this is the
  * check that runs when one of them changes.
  */
-const TERRAIN_LAB_SERVED = [
-  join(repoRoot, 'GpsPlusSlamJs_Osm', 'src', 'elevation', 'terrarium.ts'),
-  join(repoRoot, 'GpsPlusSlamJs_Osm', 'src', 'mesh', 'enu.ts'),
-  join(repoRoot, 'GpsPlusSlamJs_OsmDemo', 'src', 'heightfield.ts'),
-  join(repoRoot, 'GpsPlusSlamJs_OsmDemo', 'src', 'terrain-texture.ts'),
-];
+const TERRAIN_LAB = join(repoRoot, 'GpsPlusSlamJs_DesignSystem', 'labs', 'terrain');
+/** The served routes the lab reaches, and the source directory behind each. */
+const TERRAIN_ROUTES = {
+  '/osm-lib/': join(repoRoot, 'GpsPlusSlamJs_Osm', 'src'),
+  '/osm/': join(repoRoot, 'GpsPlusSlamJs_OsmDemo', 'src'),
+};
+
+/**
+ * The TypeScript sources the lab's modules (its page and its worker) import
+ * through `/osm-lib/` and `/osm/`, derived from their import statements, so
+ * a new import is checked without anyone editing this list (T0/T1 review,
+ * finding 5).
+ */
+function terrainLabServed() {
+  const files = readdirSync(TERRAIN_LAB).filter(
+    (f) => f.endsWith('.js') && !f.includes('.test.') && !f.includes('.spec.')
+  );
+  const served = new Set();
+  for (const f of files) {
+    const source = readFileSync(join(TERRAIN_LAB, f), 'utf8');
+    for (const match of source.matchAll(SPECIFIER)) {
+      const route = Object.keys(TERRAIN_ROUTES).find((r) => match[1].startsWith(r));
+      if (!route) continue;
+      const rel = match[1].slice(route.length).replace(/\.js$/, '.ts');
+      served.add(join(TERRAIN_ROUTES[route], ...rel.split('/')));
+    }
+  }
+  return [...served].sort();
+}
+const TERRAIN_LAB_SERVED = terrainLabServed();
 
 describe('the terrain lab served modules stay servable inside a worker', () => {
-  it('finds every served module', () => {
+  // Non-vacuous: the worker's decoder and heightfield, and the page's frame.
+  it('finds every served module the lab and its worker import', () => {
+    const names = TERRAIN_LAB_SERVED.map((f) => relative(repoRoot, f).split(sep).join('/'));
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'GpsPlusSlamJs_Osm/src/elevation/terrarium.ts',
+        'GpsPlusSlamJs_Osm/src/mesh/enu.ts',
+        'GpsPlusSlamJs_OsmDemo/src/heightfield.ts',
+        'GpsPlusSlamJs_OsmDemo/src/terrain-texture.ts',
+      ])
+    );
     for (const file of TERRAIN_LAB_SERVED) expect(existsSync(file), file).toBe(true);
   });
 
