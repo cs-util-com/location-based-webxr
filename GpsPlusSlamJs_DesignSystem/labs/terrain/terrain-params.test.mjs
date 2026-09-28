@@ -16,16 +16,30 @@ import { describe, it } from "node:test";
 import {
   FIELD,
   PARAMS,
+  STYLE_SHADOW,
   TERRAIN_PLACES,
   fieldSpec,
   readTerrainParams,
 } from "./terrain-params.js";
+import { TERRAIN_STYLES } from "./terrain-styles.js";
 
 describe("the Appalachians place", () => {
   // DEC-TR-3 and plan §9 finding 8: the Blue Ridge, a 256 km region at z8.
   it("is a 256 km square over the Blue Ridge at z8", () => {
     const p = TERRAIN_PLACES.appalachians;
     assert.deepEqual(p.centre, { lat: 37.9, lng: -79.2 });
+    assert.equal(p.halfExtentM, 128_000);
+    assert.equal(p.zoom, 8);
+  });
+});
+
+describe("the Alps place", () => {
+  // DEC-TR-3 and plan §5 T2 (style B's snow is checked on the Alps): the
+  // same 256 km square at z8, centred on z8 tile 134/90 so the region and
+  // its padding fit in 3 x 3 tiles (the pipeline test checks the set).
+  it("is a 256 km square over the central Alps at z8", () => {
+    const p = TERRAIN_PLACES.alps;
+    assert.deepEqual(p.centre, { lat: 46.56, lng: 9.14 });
     assert.equal(p.halfExtentM, 128_000);
     assert.equal(p.zoom, 8);
   });
@@ -109,11 +123,48 @@ describe("readTerrainParams", () => {
     assert.equal(readTerrainParams("preset=moon").preset, null);
   });
 
-  // T1 has one place and one style; anything else falls back, and says so.
+  // A place or style the lab does not have falls back, and says so.
   it("falls back to the Appalachians and style A, with a note", () => {
-    const p = readTerrainParams("place=gps&style=swiss");
+    const p = readTerrainParams("place=moon&style=watercolour");
     assert.equal(p.place, "appalachians");
     assert.equal(p.style, "pastel");
     assert.equal(p.notes.length, 2);
+  });
+
+  it("reads every style of DEC-TR-2/6 and the Alps", () => {
+    for (const id of Object.keys(TERRAIN_STYLES)) {
+      assert.equal(readTerrainParams(`style=${id}`).style, id);
+    }
+    assert.equal(readTerrainParams("place=alps").place, "alps");
+  });
+
+  // Each style has its own shading strength; a `shadow` key overrides it
+  // for any style, so a link the owner tuned keeps its value.
+  it("uses the style's own shadow unless the hash sets one", () => {
+    for (const id of Object.keys(TERRAIN_STYLES)) {
+      assert.equal(readTerrainParams(`style=${id}`).shadow, STYLE_SHADOW[id]);
+      assert.equal(readTerrainParams(`style=${id}&shadow=0.3`).shadow, 0.3);
+    }
+    assert.equal(
+      readTerrainParams("style=clay&shadow=7").shadow,
+      STYLE_SHADOW.clay,
+    );
+  });
+
+  // Plan §9 finding 11: the far field is off by default (style A matches
+  // the screenshots), style C is "far field on", any style can switch it.
+  it("turns the far field on for style C or far=1 only", () => {
+    assert.equal(readTerrainParams("").farOn, false);
+    assert.equal(readTerrainParams("style=globe").farOn, true);
+    assert.equal(readTerrainParams("style=natural&far=1").farOn, true);
+    assert.equal(readTerrainParams("style=natural").farOn, false);
+  });
+
+  it("refuses a far-field blend whose low altitude is not under its high one", () => {
+    const p = readTerrainParams("style=globe&farHigh=200&farLow=400");
+    assert.deepEqual([p.farHigh, p.farLow], [1500, 300]);
+    assert.equal(p.notes.length, 1);
+    const ok = readTerrainParams("style=globe&farHigh=1000&farLow=100");
+    assert.deepEqual([ok.farHigh, ok.farLow, ok.notes.length], [1000, 100, 0]);
   });
 });

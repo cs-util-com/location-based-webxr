@@ -20,6 +20,7 @@ import { registerHooks } from "node:module";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { regionTiles } from "./terrain-mosaic.js";
 import { fieldSpec, TERRAIN_PLACES } from "./terrain-params.js";
 import { reliefField } from "./terrain-pipeline.js";
 
@@ -180,5 +181,41 @@ describe("reliefField: lon/lat to texel", () => {
     assert.equal(out.hasData, false);
     assert.equal(out.height.length, SPEC.side * SPEC.side);
     assert.ok(out.valid.every((v) => v === 0));
+  });
+});
+
+// WHY (plan §9 finding 6, DEC-TR-8): every place's committed fixture set is
+// exactly the tiles the lab asks for through the REAL projection and frame,
+// so the smoke serves each place without a network request, and a moved
+// centre that needs a tenth tile fails here, not as a hatch in the browser.
+describe("each place's tile set", () => {
+  const expected = {
+    appalachians: { x: [70, 72], y: [97, 99] },
+    alps: { x: [133, 135], y: [89, 91] },
+  };
+  for (const [id, range] of Object.entries(expected)) {
+    it(`${id} needs exactly its 3 x 3 z8 tiles`, () => {
+      const place = TERRAIN_PLACES[id];
+      const spec = fieldSpec(place);
+      const frame = enuFrameAt(place.centre);
+      const tiles = regionTiles(spec, {
+        toLatLng: (p) => frame.toLatLng(p),
+        toWorldPixel,
+      });
+      const want = [];
+      for (let y = range.y[0]; y <= range.y[1]; y++) {
+        for (let x = range.x[0]; x <= range.x[1]; x++) want.push(`8/${x}/${y}`);
+      }
+      assert.deepEqual(
+        tiles.map((t) => `${t.z}/${t.x}/${t.y}`),
+        want,
+      );
+    });
+  }
+  it("covers every place the lab has", () => {
+    assert.deepEqual(
+      Object.keys(expected).sort(),
+      Object.keys(TERRAIN_PLACES).sort(),
+    );
   });
 });

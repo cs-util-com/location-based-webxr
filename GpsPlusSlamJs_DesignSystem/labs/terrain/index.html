@@ -113,12 +113,17 @@
               <span class="hint">Place</span>
               <select class="select" data-hash-key="place">
                 <option value="appalachians">Appalachians (Blue Ridge)</option>
+                <option value="alps">Alps (Valais to Bernina)</option>
               </select>
             </label>
             <label class="lookdev-field">
               <span class="hint">Style</span>
               <select class="select" data-hash-key="style">
                 <option value="pastel">A: Pastel atlas</option>
+                <option value="natural">B: Natural colour</option>
+                <option value="globe">C: Globe blend</option>
+                <option value="swiss">D: Swiss classic</option>
+                <option value="clay">E: Clay</option>
               </select>
             </label>
           </div>
@@ -154,7 +159,7 @@
         <details class="lookdev-section" data-section="terrain-look" open>
           <summary>Look</summary>
           <div class="lookdev-section-body col">
-            <label class="lookdev-field">
+            <label class="lookdev-field" data-styles="pastel globe">
               <span class="hint"
                 >Relief green <output data-for="green"></output
               ></span>
@@ -194,6 +199,145 @@
                 <option value="8">8</option>
                 <option value="16">16</option>
               </select>
+            </label>
+          </div>
+        </details>
+        <details
+          class="lookdev-section"
+          data-section="terrain-natural"
+          data-styles="natural"
+          open
+        >
+          <summary>B: Natural colour</summary>
+          <div class="lookdev-section-body col">
+            <label class="lookdev-field">
+              <span class="hint"
+                >Tree line offset (m) <output data-for="tree"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                step="50"
+                data-hash-key="tree"
+              />
+            </label>
+            <label class="lookdev-field">
+              <span class="hint"
+                >Snow line offset (m) <output data-for="snow"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                step="50"
+                data-hash-key="snow"
+              />
+            </label>
+            <label class="lookdev-field">
+              <span class="hint"
+                >Poleward snow (m) <output data-for="aspect"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                step="25"
+                data-hash-key="aspect"
+              />
+            </label>
+            <label class="lookdev-field">
+              <span class="hint"
+                >Rock slope (°) <output data-for="rock"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                step="1"
+                data-hash-key="rock"
+              />
+            </label>
+            <label class="lookdev-field">
+              <span class="hint"
+                >Lift toward white <output data-for="lift"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                step="0.02"
+                data-hash-key="lift"
+              />
+            </label>
+            <label class="lookdev-field">
+              <span class="hint">Show</span>
+              <select class="select" data-hash-key="snowMask">
+                <option value="0">Colours</option>
+                <option value="1">Snow mask</option>
+              </select>
+            </label>
+            <output id="terrain-lines" class="hint"></output>
+          </div>
+        </details>
+        <details
+          class="lookdev-section"
+          data-section="terrain-swiss"
+          data-styles="swiss"
+          open
+        >
+          <summary>D: Swiss classic</summary>
+          <div class="lookdev-section-body col">
+            <label class="lookdev-field">
+              <span class="hint"
+                >Exposure colour <output data-for="exposure"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                step="0.05"
+                data-hash-key="exposure"
+              />
+            </label>
+            <label class="lookdev-field">
+              <span class="hint"
+                >Lowland contrast <output data-for="contrast"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                step="0.05"
+                data-hash-key="contrast"
+              />
+            </label>
+          </div>
+        </details>
+        <details class="lookdev-section" data-section="terrain-far" open>
+          <summary>Globe far field</summary>
+          <div class="lookdev-section-body col">
+            <label class="lookdev-field">
+              <span class="hint">Far field (always on in style C)</span>
+              <select class="select" data-hash-key="far">
+                <option value="0">Off</option>
+                <option value="1">On</option>
+              </select>
+            </label>
+            <label class="lookdev-field">
+              <span class="hint"
+                >Globe only above (km) <output data-for="farHigh"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                step="50"
+                data-hash-key="farHigh"
+              />
+            </label>
+            <label class="lookdev-field">
+              <span class="hint"
+                >Style only below (km) <output data-for="farLow"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                step="10"
+                data-hash-key="farLow"
+              />
             </label>
           </div>
         </details>

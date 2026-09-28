@@ -18,8 +18,13 @@ const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
 
 /** DEC-TR-8: every place's fixtures together. */
 const ALL_PLACES_BUDGET_BYTES = 5_000_000;
-/** The Appalachians' share (the brief: about 1.5 MB or less). */
-const APPALACHIANS_BUDGET_BYTES = 1_500_000;
+/** Each place's share (the T1 brief: about 1.5 MB or less). */
+const PLACE_BUDGET_BYTES = 1_500_000;
+/** Each place's committed z8 tiles (fixtures/PROVENANCE.md). */
+const PLACES = {
+  appalachians: /^terrarium\/8\/7[0-2]\/9[7-9]\.png$/,
+  alps: /^terrarium\/8\/13[3-5]\/(89|9[01])\.png$/,
+};
 
 /** Every file under a directory, as posix paths relative to FIXTURES. */
 function files(dir) {
@@ -41,27 +46,30 @@ describe("the terrain fixtures", () => {
   const tiles = all.filter((f) => f.rel.endsWith(".png"));
   const total = (list) => list.reduce((sum, f) => sum + f.bytes, 0);
 
-  // Non-vacuous: the Appalachians' nine z8 tiles are here.
-  it("holds the Appalachians' tiles", () => {
-    assert.equal(
-      tiles.filter((f) => f.rel.startsWith("terrarium/8/")).length,
-      9,
+  // Non-vacuous: each place's nine z8 tiles are here, and no tile belongs
+  // to no place.
+  for (const [id, pattern] of Object.entries(PLACES)) {
+    it(`holds the ${id} place's nine tiles`, () => {
+      assert.equal(tiles.filter((f) => pattern.test(f.rel)).length, 9);
+    });
+  }
+  it("holds no tile outside the places", () => {
+    const stray = tiles.filter(
+      (f) => !Object.values(PLACES).some((p) => p.test(f.rel)),
     );
+    assert.deepEqual(stray, []);
   });
 
   it(`stays within the ${ALL_PLACES_BUDGET_BYTES} byte budget for all places`, () => {
     assert.ok(total(all) <= ALL_PLACES_BUDGET_BYTES, `${total(all)} bytes`);
   });
 
-  it(`keeps the Appalachians within ${APPALACHIANS_BUDGET_BYTES} bytes`, () => {
-    const appalachians = tiles.filter((f) =>
-      /^terrarium\/8\/7[0-2]\/9[7-9]\.png$/.test(f.rel),
-    );
-    assert.ok(
-      total(appalachians) <= APPALACHIANS_BUDGET_BYTES,
-      `${total(appalachians)} bytes`,
-    );
-  });
+  for (const [id, pattern] of Object.entries(PLACES)) {
+    it(`keeps the ${id} place within ${PLACE_BUDGET_BYTES} bytes`, () => {
+      const own = tiles.filter((f) => pattern.test(f.rel));
+      assert.ok(total(own) <= PLACE_BUDGET_BYTES, `${total(own)} bytes`);
+    });
+  }
 
   // Plan §9 finding 6: real fixtures at z8 or coarser only.
   it("holds no real tile finer than z8", () => {

@@ -1,8 +1,9 @@
 /**
- * The terrain lab (terrain plan 2026-09-27-0605, T1): a map-style 3D relief
- * of the Blue Ridge from coarse Terrarium tiles, in style A "Pastel atlas",
- * with an exaggeration slider (1-10, default 2) and an "auto" switch (off
- * by default), orbit and zoom, three camera presets and a scripted fly-in.
+ * The terrain lab (terrain plan 2026-09-27-0605, T1-T2): a map-style 3D
+ * relief from coarse Terrarium tiles, in five styles (A "Pastel atlas", B
+ * "Natural colour", C "Globe blend", D "Swiss classic", E "Clay"), with an
+ * exaggeration slider (1-10, default 2) and an "auto" switch (off by
+ * default), orbit and zoom, three camera presets and a scripted fly-in.
  * Every parameter sits on the control plate and in the hash, as in the
  * globe lab, so a link reproduces a view.
  *
@@ -33,6 +34,17 @@ import {
   viewWidthM,
 } from "./terrain-exaggeration.js";
 import { PASTEL_ATLAS, hexToRgb, rampLut } from "./terrain-style.js";
+import { SHADER_STYLE, SWISS } from "./terrain-styles.js";
+import {
+  FAR_FIELD,
+  farFieldAt,
+  farFieldGrid,
+  farWeights,
+  imageryTiles,
+  regionBox,
+  sampleImagery,
+} from "./terrain-far-field.js";
+import { globeSource } from "/globe/globe-sources.js";
 import {
   CAMERA_PRESETS,
   flyInPose,
@@ -54,6 +66,8 @@ import {
   TERRAIN_CREDIT_SHORT,
 } from "./terrain-credits.js";
 import {
+  applyStyle,
+  createFarTexture,
   createTerrainGeometry,
   createTerrainMaterial,
   createTerrainTextures,
@@ -65,6 +79,7 @@ const loadingLabel = document.getElementById("terrain-loading");
 const readout = document.getElementById("terrain-readout");
 const costLine = document.getElementById("terrain-cost");
 const creditsBox = document.getElementById("terrain-credits");
+const linesLabel = document.getElementById("terrain-lines");
 
 const DEG = Math.PI / 180;
 /** The page behind the relief; the silhouette smoke keys on it. */
@@ -84,6 +99,22 @@ function hashWithAll(values) {
     else params.set(key, String(value));
   }
   return params.toString();
+}
+
+/**
+ * The lowest and highest land (m, absolute) over the posts that are data,
+ * with sea level as the floor: style D spreads its contrast over it.
+ */
+function landRange(height, valid, datum) {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let i = 0; i < height.length; i++) {
+    if (!valid[i]) continue;
+    const h = height[i] + datum;
+    if (h < lo) lo = h;
+    if (h > hi) hi = h;
+  }
+  return Number.isFinite(lo) ? [Math.max(0, lo), Math.max(0, hi)] : [0, 4000];
 }
 
 /** A value for an output label: at most two decimals. */
@@ -107,18 +138,27 @@ function loadingView() {
   };
 }
 
-/** The credits line: the short text, and every source in a <details>. */
-function renderCredits() {
+/**
+ * The credits line: the short text, and every source in a <details>. With
+ * the far field on, the globe's imagery credit joins it (the globe's own
+ * registry, `globe-sources.ts`, so the text is the globe's).
+ */
+function renderCredits(withImagery) {
+  const imagery = globeSource("blue-marble").credit;
   const details = document.createElement("details");
   const summary = document.createElement("summary");
-  summary.textContent = TERRAIN_CREDIT_SHORT;
+  summary.textContent =
+    TERRAIN_CREDIT_SHORT + (withImagery ? ` Imagery: ${imagery.short}.` : "");
   const list = document.createElement("ul");
   for (const text of TERRAIN_CREDITS) {
     const item = document.createElement("li");
     item.textContent = text;
     list.append(item);
   }
-  for (const { text, href } of TERRAIN_CREDIT_LINKS) {
+  const links = withImagery
+    ? [...TERRAIN_CREDIT_LINKS, { text: imagery.full, href: imagery.href }]
+    : TERRAIN_CREDIT_LINKS;
+  for (const { text, href } of links) {
     const item = document.createElement("li");
     const link = document.createElement("a");
     link.href = href;
@@ -207,6 +247,10 @@ function bindPanel(getParams, apply) {
         field.value = String(params[key]);
         show(key, shown(params[key]));
       }
+      // A style's own controls show only with it (`data-styles`).
+      for (const el of document.querySelectorAll("[data-styles]")) {
+        el.hidden = !el.dataset.styles.split(" ").includes(params.style);
+      }
     },
   };
 }
@@ -234,7 +278,10 @@ function start() {
     toWorldPixel,
   });
   const loading = loadingView();
-  renderCredits();
+  let creditsWithImagery = params.farOn;
+  renderCredits(creditsWithImagery);
+  /** The region's lowest and highest land, for style D's contrast. */
+  let hRange = [0, 4000];
 
   const run = {
     tilesLoaded: 0,
@@ -246,8 +293,23 @@ function start() {
     fetched: null,
   };
   const errors = new Set();
+  /**
+   * The far field (style C): the globe's imagery, loaded the first time a
+   * style needs it, as a grid over the region (`terrain-far-field.js`).
+   */
+  const far = {
+    state: "idle",
+    tiles: null,
+    grid: null,
+    texture: null,
+    error: null,
+  };
   const showErrors = () => {
-    errorBox.textContent = [...params.notes, ...errors].join(" ");
+    errorBox.textContent = [
+      ...params.notes,
+      ...errors,
+      ...(far.error && params.farOn ? [far.error] : []),
+    ].join(" ");
   };
 
   /**
@@ -303,9 +365,17 @@ function start() {
     () => params,
     () => onHash(),
   );
-  /** Reads the hash and applies it; a sky-view change recomputes. */
+  /**
+   * Reads the hash and applies it; a sky-view change recomputes. Another
+   * place reloads the page: the hash is the whole state, so the reload
+   * opens exactly the view the link describes.
+   */
   const onHash = () => {
     const next = readTerrainParams(location.hash.slice(1));
+    if (next.place !== params.place) {
+      location.reload();
+      return;
+    }
     const recompute = next.svf !== params.svf;
     params = next;
     applyCamera();
@@ -316,10 +386,75 @@ function start() {
     if (recompute && run.fetched) build(run.fetched);
   };
   const applyLive = () => {
+    if (params.farOn && far.state === "idle") loadFarField();
+    if (params.farOn !== creditsWithImagery) {
+      creditsWithImagery = params.farOn;
+      renderCredits(creditsWithImagery);
+    }
     if (!material) return;
+    applyStyle(material, params, {
+      shaderStyle: SHADER_STYLE[params.style],
+      latDeg: place.centre.lat,
+      hRange,
+    });
     const u = material.uniforms;
-    u.uGreenAmount.value = params.green;
-    u.uShadow.value = params.shadow;
+    const lat = place.centre.lat;
+    linesLabel.textContent =
+      `Tree line ${Math.round(u.uTreeM.value)} m, snow line ${Math.round(u.uSnowM.value)} m ` +
+      `(fitted for ${Math.abs(lat).toFixed(1)}° ${lat < 0 ? "S" : "N"}, off by up to ~500 m)`;
+  };
+  /** Fetches, decodes and grids the imagery; a failure turns it off, said. */
+  const loadFarField = async () => {
+    far.state = "loading";
+    const imageryLoading = "Loading Earth imagery...";
+    if (loadingLabel.hidden) loading.show(imageryLoading);
+    const source = globeSource("blue-marble");
+    const pixelDeg = 180 / 2 ** FAR_FIELD.level / FAR_FIELD.tileSize;
+    const box = regionBox((p) => frame.toLatLng(p), spec.halfExtentM, pixelDeg);
+    try {
+      far.tiles = await Promise.all(
+        imageryTiles(box, FAR_FIELD.level).map(async (k) => {
+          const url = source.path
+            .replace("{z}", String(k.z))
+            .replace("{x}", String(k.x))
+            .replace("{y}", String(k.y));
+          const response = await fetch(url, {
+            signal: AbortSignal.timeout(TILE_TIMEOUT_MS),
+          });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          // As the elevation decoder does: no colour management, so the
+          // bytes are the file's own.
+          const bitmap = await createImageBitmap(await response.blob(), {
+            colorSpaceConversion: "none",
+            premultiplyAlpha: "none",
+          });
+          const surface = new OffscreenCanvas(bitmap.width, bitmap.height);
+          const context = surface.getContext("2d");
+          context.drawImage(bitmap, 0, 0);
+          const { data } = context.getImageData(
+            0,
+            0,
+            bitmap.width,
+            bitmap.height,
+          );
+          return { ...k, width: bitmap.width, height: bitmap.height, data };
+        }),
+      );
+      far.grid = farFieldGrid({
+        side: FAR_FIELD.side,
+        halfM: spec.halfExtentM,
+        toLatLng: (p) => frame.toLatLng(p),
+        sample: (lat, lng) => sampleImagery(far.tiles, lat, lng),
+      });
+      far.texture = createFarTexture(far.grid, FAR_FIELD.side);
+      if (material) material.uniforms.uFar.value = far.texture;
+      far.state = "ready";
+    } catch (e) {
+      far.state = "failed";
+      far.error = `The Earth imagery could not load (${e?.message ?? e}): the far field is off.`;
+      showErrors();
+    }
+    if (loadingLabel.textContent === imageryLoading) loading.show("");
   };
   window.addEventListener("hashchange", onHash);
   // A drag or a wheel writes the pose into the hash, so the link still
@@ -372,6 +507,7 @@ function start() {
     fail("The relief worker sent an unreadable message.");
 
   const lut = rampLut(PASTEL_ATLAS.land);
+  const lutSwiss = rampLut(SWISS.land);
   /**
    * Posts a build of the fetched tiles. The worker gets COPIES of the bytes,
    * transferred (not cloned a second time): the originals stay here for a
@@ -428,12 +564,23 @@ function start() {
       const packed = packTerrain({ ...m.fields, svf: null }, m.side, (v) =>
         THREE.DataUtils.toHalfFloat(v),
       );
-      textures?.data.dispose();
-      textures?.aux.dispose();
-      textures?.lut.dispose();
-      textures = createTerrainTextures({ ...packed, side: m.side, lut });
+      for (const t of Object.values(textures ?? {})) t.dispose();
+      textures = createTerrainTextures({
+        ...packed,
+        side: m.side,
+        lut,
+        lutSwiss,
+      });
+      run.fields = m.fields;
+      hRange = landRange(m.fields.height, m.fields.valid, m.datum);
       if (!mesh) {
-        material = createTerrainMaterial(PASTEL_ATLAS, textures, m);
+        material = createTerrainMaterial(textures, m);
+        const u = material.uniforms;
+        u.uHalfM.value = spec.halfExtentM;
+        u.uFarDeltaM.value = (2 * spec.halfExtentM) / FAR_FIELD.side;
+        u.uFarDeltaUv.value =
+          (u.uFarDeltaM.value * (m.side - 1)) / (m.side * 2 * m.extentM);
+        if (far.texture) u.uFar.value = far.texture;
         mesh = new THREE.Mesh(
           createTerrainGeometry(spec.halfExtentM, MESH_STEP_M),
           material,
@@ -445,6 +592,7 @@ function start() {
         material.uniforms.uData.value = textures.data;
         material.uniforms.uAux.value = textures.aux;
         material.uniforms.uLut.value = textures.lut;
+        material.uniforms.uLutSwiss.value = textures.lutSwiss;
         material.uniforms.uDatum.value = m.datum;
       }
       run.aux = packed.rgba8;
@@ -479,13 +627,21 @@ function start() {
   });
 
   applyCamera();
+  // Starts the far field's imagery at once when the hash asks for it.
+  applyLive();
   panel.sync();
   showErrors();
 
   let fittedSize = "";
   let lastFrame = performance.now();
   let smoothedAltitude = null;
-  const live = { effectiveE: params.exag, factor: 1, widthM: 0, boost: 1 };
+  const live = {
+    effectiveE: params.exag,
+    factor: 1,
+    widthM: 0,
+    boost: 1,
+    far: { near: 1, relief: 0 },
+  };
   let readoutText = "";
   const frameOnce = () => {
     const now = performance.now();
@@ -529,9 +685,16 @@ function start() {
       ...SLOPE_BOOST,
       exponent: params.boostExp,
     });
+    live.far = farWeights(smoothedAltitude, {
+      on: params.farOn && far.state === "ready",
+      highKm: params.farHigh,
+      lowKm: params.farLow,
+    });
     if (material) {
       material.uniforms.uExag.value = live.effectiveE;
       material.uniforms.uGain.value = params.shade * live.boost;
+      material.uniforms.uNearW.value = live.far.near;
+      material.uniforms.uFarReliefW.value = live.far.relief;
     }
     const distance = camera.position.distanceTo(controls.target);
     camera.near = Math.max(10, distance * 0.002);
@@ -580,6 +743,18 @@ function start() {
         appliedHash,
         place: params.place,
         style: params.style,
+        shaderStyle: material?.uniforms.uStyle.value ?? null,
+        farOn: params.farOn,
+        farState: far.state,
+        farWeights: { ...live.far },
+        hRange: hRange.slice(),
+        lines: material
+          ? {
+              treeM: material.uniforms.uTreeM.value,
+              snowM: material.uniforms.uSnowM.value,
+            }
+          : null,
+        credits: creditsBox.textContent,
         exag: params.exag,
         auto: params.auto,
         effectiveE: live.effectiveE,
@@ -623,8 +798,59 @@ function start() {
       const p = new THREE.Vector3(x, y, z).project(camera);
       return [(p.x + 1) / 2, (1 - p.y) / 2];
     },
+    /** `project` for many points after ONE frame (a frame is slow on a CPU). */
+    projectAll(points) {
+      frameOnce();
+      const v = new THREE.Vector3();
+      return points.map(([x, y, z]) => {
+        v.set(x, y, z).project(camera);
+        return [(v.x + 1) / 2, (1 - v.y) / 2];
+      });
+    },
     /** A position's ENU metres in the lab's frame (x east, y north). */
     toEnu: (lat, lng) => frame.toEnu({ lat, lng }),
+    /** ENU metres to a position. */
+    toLatLng: (x, y) => frame.toLatLng({ x, y }),
+    /**
+     * The field the shader reads, bilinear at ENU metres: the absolute
+     * height, the gradient (m/m east, north) and the small relief; null
+     * before the relief or outside the field.
+     */
+    fieldAt(x, y) {
+      if (!run.fields) return null;
+      const side = spec.side;
+      const gx = (x + spec.extentM) / spec.spacingM;
+      const gy = (y + spec.extentM) / spec.spacingM;
+      if (!(gx >= 0 && gy >= 0 && gx <= side - 1 && gy <= side - 1)) {
+        return null;
+      }
+      const c0 = Math.min(side - 2, Math.floor(gx));
+      const r0 = Math.min(side - 2, Math.floor(gy));
+      const fx = gx - c0;
+      const fy = gy - r0;
+      const at = (grid) => {
+        const i = r0 * side + c0;
+        return (
+          (grid[i] * (1 - fx) + grid[i + 1] * fx) * (1 - fy) +
+          (grid[i + side] * (1 - fx) + grid[i + side + 1] * fx) * fy
+        );
+      };
+      const f = run.fields;
+      return {
+        heightM: at(f.height) + run.relief.datum,
+        gx: at(f.gx),
+        gy: at(f.gy),
+        smallM: at(f.reliefSmall),
+      };
+    },
+    /** The far field's grid at ENU metres (sRGB 0-1), or null. */
+    farAt: (x, y) =>
+      far.grid
+        ? farFieldAt(far.grid, FAR_FIELD.side, spec.halfExtentM, x, y)
+        : null,
+    /** The decoded imagery itself at a position (sRGB 0-1), or null. */
+    imageryAt: (lat, lng) =>
+      far.tiles ? sampleImagery(far.tiles, lat, lng) : null,
     /** RGBA bytes at normalised canvas points (0,0 top-left). */
     readPixels(points) {
       const { width, height, px } = readBuffer();

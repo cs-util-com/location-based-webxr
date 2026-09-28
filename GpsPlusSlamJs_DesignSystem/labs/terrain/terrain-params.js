@@ -11,18 +11,32 @@ import {
   EXAGGERATION,
   SLOPE_BOOST,
 } from "./terrain-exaggeration.js";
+import { FAR_FIELD } from "./terrain-far-field.js";
 import { PASTEL_ATLAS } from "./terrain-style.js";
+import { CLAY, NATURAL, SWISS, TERRAIN_STYLES } from "./terrain-styles.js";
 
 /**
- * The places (DEC-TR-3). T1 has one: the Blue Ridge, the screenshots'
- * framing, a 256 km region at z8 (plan §9 finding 8). The Alps, northern
- * Germany and the GPS place come in T3.
+ * The places (DEC-TR-3), each a 256 km region at z8 (plan §9 finding 8):
+ * the Blue Ridge (the screenshots' framing) and the central Alps (T2: style
+ * B's snow is checked on them). Northern Germany and the GPS place come in
+ * T3.
+ *
+ * The Alps' centre is the middle of z8 tile 134/90, so the region and its
+ * padding fit in 3 x 3 tiles (the committed fixtures): 7.4-10.9° E,
+ * 45.3-47.8° N, from Monte Rosa and the Bernese Oberland to the Bernina.
  */
 export const TERRAIN_PLACES = Object.freeze({
   appalachians: Object.freeze({
     id: "appalachians",
     label: "Appalachians (Blue Ridge)",
     centre: Object.freeze({ lat: 37.9, lng: -79.2 }),
+    halfExtentM: 128_000,
+    zoom: 8,
+  }),
+  alps: Object.freeze({
+    id: "alps",
+    label: "Alps (Valais to Bernina)",
+    centre: Object.freeze({ lat: 46.56, lng: 9.14 }),
     halfExtentM: 128_000,
     zoom: 8,
   }),
@@ -74,14 +88,37 @@ export const PARAMS = Object.freeze({
   shade: { fallback: 1, min: 0, max: 3 },
   boostExp: { fallback: SLOPE_BOOST.exponent, min: 0.1, max: 0.6 },
   green: { fallback: PASTEL_ATLAS.greenAmount, min: 0, max: 1 },
+  /** The shading's strength; with no `shadow` key, the style's own. */
   shadow: { fallback: PASTEL_ATLAS.shadow, min: 0, max: 1 },
+  /** Style B: tree and snow line offsets (m), their aspect and rock slope. */
+  tree: { fallback: 0, min: -1500, max: 1500 },
+  snow: { fallback: 0, min: -1500, max: 1500 },
+  aspect: { fallback: NATURAL.aspectSnowM, min: 0, max: 600 },
+  rock: { fallback: NATURAL.rockSlopeDeg, min: 28, max: 50 },
+  lift: { fallback: NATURAL.lift, min: 0, max: 0.4 },
+  /** Style B's snow mask instead of the colours (1), for the smoke. */
+  snowMask: { fallback: 0, min: 0, max: 1 },
+  /** Style D: the exposure palette's share and the lowlands' contrast. */
+  exposure: { fallback: SWISS.exposure, min: 0, max: 0.7 },
+  contrast: { fallback: SWISS.lowContrast, min: 0.2, max: 1 },
+  /** The globe's far field (style C, or any style with far=1), in km. */
+  far: { fallback: 0, min: 0, max: 1 },
+  farHigh: { fallback: FAR_FIELD.highKm, min: 100, max: 5000 },
+  farLow: { fallback: FAR_FIELD.lowKm, min: 10, max: 2000 },
   /** Sky-view directions; 0 turns the term off (a reduced smoke setting). */
   svf: { fallback: 8, min: 0, max: 16 },
   flyMs: { fallback: 12_000, min: 0, max: 60_000 },
 });
 
 const PRESETS = new Set(["top", "oblique", "low", "fly"]);
-const STYLES = new Set(["pastel"]);
+/** Each style's own shading strength, used when the hash has no `shadow`. */
+export const STYLE_SHADOW = Object.freeze({
+  pastel: PASTEL_ATLAS.shadow,
+  natural: NATURAL.shadow,
+  globe: PASTEL_ATLAS.shadow,
+  swiss: SWISS.shadow,
+  clay: CLAY.shadow,
+});
 
 /** A number from the params within its range, or its fallback. */
 function readNumber(params, name, { fallback, min, max }) {
@@ -112,12 +149,25 @@ export function readTerrainParams(hash) {
     );
   }
   const style = params.get("style");
-  out.style = style !== null && STYLES.has(style) ? style : "pastel";
+  out.style = style !== null && style in TERRAIN_STYLES ? style : "pastel";
   if (style !== null && out.style !== style) {
     out.notes.push(
-      `Style "${style}" is not in this lab yet: showing Pastel atlas.`,
+      `Style "${style}" is not in this lab: showing Pastel atlas.`,
     );
   }
+  const shadowRange = { ...PARAMS.shadow, fallback: null };
+  if (readNumber(params, "shadow", shadowRange) === null) {
+    out.shadow = STYLE_SHADOW[out.style];
+  }
+  if (out.farLow >= out.farHigh) {
+    out.notes.push(
+      `The far field's low altitude (${out.farLow} km) must be under its high one (${out.farHigh} km): using ${FAR_FIELD.lowKm} and ${FAR_FIELD.highKm} km.`,
+    );
+    out.farLow = FAR_FIELD.lowKm;
+    out.farHigh = FAR_FIELD.highKm;
+  }
+  // Style C IS the far field on (plan §9 finding 11); any style can have it.
+  out.farOn = out.style === "globe" || out.far === 1;
   const preset = params.get("preset");
   out.preset = preset !== null && PRESETS.has(preset) ? preset : null;
   const altitudeM = readNumber(params, "alt", {

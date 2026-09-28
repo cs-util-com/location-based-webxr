@@ -456,6 +456,12 @@ describe("buildLookdev with the real terrain lab", () => {
       "osm-lib/mesh/enu.js",
       "osm/heightfield.js",
       "osm/terrain-texture.js",
+      // Style C's far field (T2): the globe's source registry and the
+      // imagery it names (the Blue Ridge's level-4 tile).
+      "labs/terrain/terrain-far-field.js",
+      "labs/terrain/terrain-styles.js",
+      "globe/globe-sources.js",
+      "globe-assets/blue-marble-4326/4/8/4.jpg",
     ]) {
       assert.ok(files.includes(rel), rel);
     }
@@ -469,10 +475,14 @@ describe("buildLookdev with the real terrain lab", () => {
     assert.doesNotMatch(terrarium, /^export interface /m);
     assert.match(terrarium, /export function browserPngDecoder/);
     for (const rel of files.filter((f) =>
-      /^(labs\/terrain|osm-lib)\/.*\.(js|html)$/.test(f),
+      /^(labs\/terrain|osm-lib|globe)\/.*\.(js|html)$/.test(f),
     )) {
       const text = readFileSync(join(out, rel), "utf8");
-      assert.doesNotMatch(text, /["']\/(osm-lib|osm|vendor)\//, rel);
+      assert.doesNotMatch(
+        text,
+        /["']\/(osm-lib|osm|vendor|globe|globe-assets)\//,
+        rel,
+      );
     }
   });
 
