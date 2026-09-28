@@ -40,10 +40,13 @@ Plan and decision record:
   same-origin and read it regardless.
 - **A proxied file is never a page of the site** (Drive replace plan
   §5 #11): every answer is `content-disposition: attachment` (Drive's own
-  parameters - the file name - kept), `x-content-type-options: nosniff` and
-  `content-security-policy: sandbox`. The proxy serves ANY public Drive file
-  from our origin; without these a crafted SVG opened directly would run
-  script as gps.csutil.com. `fetch` readers are unaffected.
+  parameters - the file name - kept), `x-content-type-options: nosniff`,
+  `content-security-policy: sandbox`, and `content-type:
+application/octet-stream` in place of Drive's own type. The proxy serves
+  ANY public Drive file from our origin; without these a crafted SVG opened
+  directly would run script as gps.csutil.com, and a file served as
+  JavaScript could load through `new Worker` (which `sandbox` does not bind).
+  `fetch` readers are unaffected, and none reads the type.
 - **Only Drive is reachable**: the upstream URL is a constant base plus
   `encodeURIComponent(id)` — an id cannot smuggle parameters or hosts.
   Validation is deliberately loose beyond that (ids are opaque values,

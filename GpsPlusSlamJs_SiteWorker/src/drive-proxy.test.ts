@@ -349,6 +349,26 @@ describe("handleDriveProxy — a proxied file never runs as a page on the site",
       );
     }
   });
+
+  it("never serves Drive's content type, so a proxied file cannot load as a script", async () => {
+    // Milestone review #8: `sandbox` does not bind worker scripts and
+    // `nosniff` does not block a CORRECT script type, so a Drive file served
+    // as JavaScript could still run on the site's origin via `new Worker`
+    // or `serviceWorker.register`. Every reader uses fetch and none reads
+    // the type, so every proxied answer is plain bytes.
+    for (const method of ["GET", "HEAD"]) {
+      const { fetchImpl } = recordingFetch(
+        upstreamResponse(200, { "content-type": "text/javascript" }),
+      );
+      const response = await handleDriveProxy(
+        request("?id=file123", { method }),
+        { fetchImpl },
+      );
+      expect(response.headers.get("content-type"), method).toBe(
+        "application/octet-stream",
+      );
+    }
+  });
 });
 
 describe("handleDriveProxy — the file name reaches the page", () => {

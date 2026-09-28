@@ -30,9 +30,9 @@ const FORWARDED_REQUEST_HEADERS = [
   "if-modified-since",
 ] as const;
 
-/** Response headers copied back unchanged. */
+/** Response headers copied back unchanged. Not `content-type`: it is
+ *  replaced (see `handleDriveProxy`). */
 const FORWARDED_RESPONSE_HEADERS = [
-  "content-type",
   "content-length",
   "content-range",
   "accept-ranges",
@@ -143,6 +143,11 @@ export async function handleDriveProxy(
   );
   headers.set("x-content-type-options", "nosniff");
   headers.set("content-security-policy", "sandbox");
+  // And never Drive's own type: `sandbox` does not bind worker scripts and
+  // `nosniff` does not block a correct script type, so a file served as
+  // JavaScript could still run here via `new Worker` (milestone review #8).
+  // Every reader uses fetch and none reads the type.
+  headers.set("content-type", "application/octet-stream");
   // HEAD must answer body-less WITH the explicit content-length: the
   // Workers runtime chunk-encodes streamed bodies and drops the length, and
   // the transport sizes the archive from this probe — a lost size silently
