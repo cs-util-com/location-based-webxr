@@ -41,9 +41,30 @@
       owner to judge on the phone).
   - `smoothstep(t)` - the Hermite ease, clamped (the package's one copy,
     DEC-H3's per-package rule).
+  - `clipPlanes(ellipsoid, position)` and `GLOBE_CLIP` (round-2 plan
+    2026-09-26-2055 M3b) - the near and far planes while the intro drives
+    the camera, for a position in the ellipsoid's frame, whatever the
+    camera looks at:
+    - near: `nearFraction` (0.3) of the height above the ellipsoid (the
+      shortest distance to it), at least `minNearM` (1 m). Every surface
+      point is at least that height away and a point seen at θ off the axis
+      has depth distance x cos θ, so no ground is clipped in a view whose
+      half-diagonal is within acos(0.3) = 72.5° (fovY 80° at 2.5:1 is 66°);
+    - far: the horizon distance of a sphere of the polar radius plus the
+      difference of the radii (the ellipsoid's limb needs that margin: the
+      property test fails without it), at least twice the near plane.
+      Nothing beyond it is visible, and past it the tiles renderer culls
+      the far side of the Earth, which it otherwise loaded (globe plan §15);
+    - RangeError for a position at the centre or not finite.
+      The controls (`GlobeControls`) set their own planes while they own the
+      camera.
 - Deviation from the plan: §7.6 named `turnDirection(from, to, t)`; the turn
   also needs the up (the pole case above), so it is `turnPose` over poses.
-- Tests: `globe-camera.test.ts`, with fast-check through three's own camera
+- Tests: `globe-camera.property.test.ts` (the clip planes against the
+  geometry, cameras from 1 km to ten radii: every surface point beyond
+  `near / nearFraction`, every visible point and the limb in every
+  direction within `far`; the limb check fails with the margin removed or
+  the equatorial radius used), and `globe-camera.test.ts`, with fast-check through three's own camera
   and projection:
   - any target (poles, ±180°, south) projects to NDC (0, 0) within 1e-9,
     for fovY 20-70° and aspect 0.4-2.5;
@@ -58,6 +79,8 @@
     half the angle at half way, exact antipodes via `from.up`, and the
     half-turn roll over a pole spread at every step count;
   - `smoothstep`: ends, clamping, monotonic, symmetric.
+  - `clipPlanes`: the near plane's scale and floor, the fitted view's far
+    plane short of the centre, the 150 km horizon, the refusals.
   - Mutants checked 2026-09-26, each failing one test: the geodetic normal
     for the direction, the roll removed, the roll's sign flipped, a 10°
     roll on the north, the antipode turn via south.

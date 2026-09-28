@@ -104,6 +104,27 @@
     3000), `turnMs` the turn (default 5000). A change of any of them and
     the "Replay the turn" button start the sequence again, from the spin's
     start (a hash edit mid-turn therefore jumps back; fine for a lab).
+  - `user`: the user has taken the camera (below); the intro stands still
+    until the replay button or a new `at`, `spinMs` or `turnMs` restarts it.
+- Touch and mouse (round-2 plan 2026-09-26-2055 M3a, M3b; round-3 plan
+  2026-09-27-0532 §4 E): the tile library's own `GlobeControls` on the
+  canvas (drag to turn, pinch or wheel to zoom, two fingers or the right
+  button to tilt, a double tap to zoom in; damping on). The camera has ONE
+  owner at a time:
+  - the intro while it spins, turns or holds (`cameraOwner: "intro"`): it
+    sets the pose and the clip planes (`clipPlanes` in
+    `/globe/globe-camera.js`: near 0.3 of the height above the ground, far
+    just past the horizon, so the far side of the Earth is culled from the
+    tile traversal); the controls are not updated, but they stay enabled
+    (a disabled control ignores the press that should take the camera) and
+    their up direction follows the camera, so that press finds the Earth;
+  - the controls from their `start` event (a press on the Earth, a wheel
+    step, a double tap; a press on space starts nothing): the intro yields
+    (phase `user`), and only the controls move the camera and set its
+    planes;
+  - the replay button and a new target or timing in the hash give the
+    camera back: the controls drop any drag and leftover momentum, and the
+    intro starts again from the spin.
   - Phase 1 has no GPS (DEC-PRG-10): the fix is always null. The target is
     chosen only while spinning, so a fix arriving after the fallback would
     be ignored; phase 6 (the real locate timeout) has to decide that.
@@ -114,7 +135,10 @@ cloudDrift, cloudLonOffsetRad, sky, device, deviceLine,
 sunEcef, tuning, sunIntensity, fovY, pixelRatio, errorTarget,
 bytesDownloaded, tileRequestsByLevel, rendererMemory, appliedHash, radiusM, activeSources,
 loadingShown, loadingVisible, cacheBudgetBytes, cacheFloorBytes,
-creditShorts, mapsLoaded, mapErrors, mapsTotal, refusedTiles, distance }`;
+creditShorts, mapsLoaded, mapErrors, mapsTotal, refusedTiles, distance,
+cameraOwner, cameraDistanceM, altitudeM, near, far }`;
+  `cameraOwner` is `intro` or `controls`, `altitudeM` the camera's height
+  above the ellipsoid, `near`/`far` the camera's clip planes;
   `tuning` is what the shader reads (the uniforms), not the hash;
   `hourLabel` is the hour label's text;
   `timeMs` is the clock's instant and `clock` its `{ startMs, scale }`
@@ -218,5 +242,13 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   so their clouds and their black sky stay as measured. Both specs share
   `globe-smoke-helpers.mjs` (the settle wait, the hash wait, luminance and
   grids).
+- `globe-navigation.smoke.spec.mjs` (round-3 plan §4 E): the intro's clip
+  planes from the altitude on the fitted view (the far plane short of the
+  Earth's centre); a 200 px mouse drag takes the camera (`user`), turns
+  the centre west by more than 10°, the view stays put a second later, and
+  the replay button returns the camera to the intro, which arrives at the
+  target again; wheel steps take the camera below 1,500 km with the near
+  plane under the altitude, and level-4 tiles (none on the fitted view)
+  load there without a tile error.
 - The memory and download table: `pnpm run measure:globe`
   (`measure-globe.mjs`), not a test.

@@ -93,6 +93,55 @@ export function orbitDistanceToFit(input: {
   return (radius * Math.hypot(1, tanAlpha)) / tanAlpha;
 }
 
+/**
+ * The clip planes while the intro drives the camera (round-2 plan
+ * 2026-09-26-2055 M3b): the near plane a fraction of the height above the
+ * ground, the far plane just past the horizon.
+ */
+export const GLOBE_CLIP = {
+  /**
+   * The near plane as a fraction of the height above the ellipsoid. Every
+   * surface point is at least that height away, and a point seen at angle
+   * θ off the view axis has depth distance x cos θ, so the ground is never
+   * clipped in a view whose half-diagonal is within acos(0.3) = 72.5°:
+   * fovY 80° on a 2.5:1 screen is 66°.
+   */
+  nearFraction: 0.3,
+  /** A floor for the near plane, metres. */
+  minNearM: 1,
+} as const;
+
+/**
+ * The near and far planes for a camera at `position` (the ellipsoid's
+ * frame, metres), whatever it looks at:
+ * - near: `GLOBE_CLIP.nearFraction` of the height above the ellipsoid
+ *   (the shortest distance to it), at least `minNearM`;
+ * - far: the distance to the horizon of a sphere of the POLAR radius,
+ *   plus the difference of the radii. Nothing beyond the horizon is
+ *   visible, and past the far plane the tiles renderer culls the far side
+ *   of the Earth too, which it would otherwise load (globe plan §15).
+ *
+ * RangeError for a non-finite position or one at the centre.
+ */
+export function clipPlanes(
+  ellipsoid: Ellipsoid,
+  position: THREE.Vector3,
+): { near: number; far: number } {
+  const distance = position.length();
+  if (!(distance > 0 && Number.isFinite(distance))) {
+    throw new RangeError(
+      `camera position must be finite and off the centre, got ${position.toArray().join(", ")}`,
+    );
+  }
+  const height = Math.max(0, ellipsoid.getPositionElevation(position));
+  const near = Math.max(GLOBE_CLIP.minNearM, height * GLOBE_CLIP.nearFraction);
+  const radii = [ellipsoid.radius.x, ellipsoid.radius.y, ellipsoid.radius.z];
+  const a = Math.max(...radii);
+  const b = Math.min(...radii);
+  const far = Math.sqrt(Math.max(0, distance ** 2 - b ** 2)) + (a - b);
+  return { near, far: Math.max(far, near * 2) };
+}
+
 /** Hermite ease on [0, 1], clamped outside it. */
 export function smoothstep(t: number): number {
   const x = Math.min(Math.max(t, 0), 1);

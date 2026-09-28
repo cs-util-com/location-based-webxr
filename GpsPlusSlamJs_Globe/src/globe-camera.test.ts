@@ -15,7 +15,9 @@ import { WGS84_ELLIPSOID } from "3d-tiles-renderer";
 import { describe, expect, it } from "vitest";
 
 import {
+  GLOBE_CLIP,
   applyOrbitPose,
+  clipPlanes,
   orbitDistanceToFit,
   orbitPose,
   smoothstep,
@@ -330,5 +332,64 @@ describe("smoothstep", () => {
         },
       ),
     );
+  });
+});
+
+// WHY (round-2 plan 2026-09-26-2055 M3b): the intro's planes follow the
+// altitude. The geometry is covered by globe-camera.property.test.ts; these
+// pin the scale (a dive's near plane shrinks with it, the fitted view's far
+// plane stops short of the Earth's centre, so the far side is culled) and
+// the refusals.
+describe("clipPlanes", () => {
+  it("scales the near plane with the height, down to its floor", () => {
+    const over = (h: number) =>
+      clipPlanes(
+        WGS84_ELLIPSOID,
+        WGS84_ELLIPSOID.getCartographicToPosition(
+          0.3,
+          0.2,
+          h,
+          new THREE.Vector3(),
+        ),
+      );
+    expect(over(150_000).near).toBeCloseTo(
+      150_000 * GLOBE_CLIP.nearFraction,
+      3,
+    );
+    expect(over(20_000).near).toBeCloseTo(20_000 * GLOBE_CLIP.nearFraction, 3);
+    expect(over(0).near).toBe(GLOBE_CLIP.minNearM);
+  });
+
+  it("puts the far plane short of the centre from the fitted view, and near the horizon low down", () => {
+    const fitted = orbitDistanceToFit({
+      fovYRad: 50 * DEG,
+      aspect: 1.6,
+      margin: 0.1,
+      radius: R,
+    });
+    const { far } = clipPlanes(
+      WGS84_ELLIPSOID,
+      new THREE.Vector3(fitted, 0, 0),
+    );
+    // The Earth's far half lies beyond the centre, so it is culled.
+    expect(far).toBeLessThan(fitted);
+    // At 150 km a sphere of the equatorial radius has its horizon about
+    // 1,390 km away; the polar radius and the radii's difference (the
+    // ellipsoid's limb) add about 120 km.
+    const low = clipPlanes(
+      WGS84_ELLIPSOID,
+      new THREE.Vector3(R + 150_000, 0, 0),
+    );
+    expect(low.far).toBeGreaterThan(1_380_000);
+    expect(low.far).toBeLessThan(1_550_000);
+  });
+
+  it("refuses a camera at the centre or off the numbers", () => {
+    expect(() => clipPlanes(WGS84_ELLIPSOID, new THREE.Vector3())).toThrow(
+      RangeError,
+    );
+    expect(() =>
+      clipPlanes(WGS84_ELLIPSOID, new THREE.Vector3(Number.NaN, 0, 0)),
+    ).toThrow(RangeError);
   });
 });

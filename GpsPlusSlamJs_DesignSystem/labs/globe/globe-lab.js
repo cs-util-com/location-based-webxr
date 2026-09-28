@@ -13,7 +13,7 @@
  * @see globe-lab.js.md
  */
 import * as THREE from "three";
-import { WGS84_ELLIPSOID } from "3d-tiles-renderer";
+import { GlobeControls, WGS84_ELLIPSOID } from "3d-tiles-renderer";
 
 import { GLOBE_SURFACE, createGlobeSurface } from "/globe/globe-surface.js";
 import { creditsFor } from "/globe/globe-credits.js";
@@ -25,6 +25,7 @@ import {
 } from "/globe/globe-target.js";
 import {
   applyOrbitPose,
+  clipPlanes,
   orbitDistanceToFit,
   orbitPose,
   smoothstep,
@@ -262,7 +263,8 @@ const wrapLng = (lng) => ((((lng + 180) % 360) + 360) % 360) - 180;
 
 /**
  * The intro's states (globe plan §7.6): `spin` until a target is chosen,
- * `turning` towards it, then `arrived`, holding it. `history` records each
+ * `turning` towards it, then `arrived`, holding it; `user` once the user
+ * has taken the camera (round-2 plan 2026-09-26-2055 M3a). `history` records each
  * phase and source change with its time since the start, and `runs`
  * counts the starts (the replay button, a change of target or timing), so
  * a test reads the sequence instead of racing it.
@@ -302,6 +304,20 @@ function introFlight(ellipsoid) {
     });
   return {
     restart,
+    /**
+     * The user took the camera (a drag, a pinch, a wheel, a double tap):
+     * the intro stops where it is, as the phase `user`, until a restart
+     * gives the camera back.
+     */
+    yieldToUser(now) {
+      if (phase === "user") return;
+      phase = "user";
+      note(now);
+    },
+    /** Whether the intro drives the camera: every phase but `user`. */
+    get drives() {
+      return phase !== "user";
+    },
     /** The pose for this frame, advancing the states. */
     pose(now) {
       if (phase === "spin") {
@@ -340,6 +356,57 @@ function introFlight(ellipsoid) {
       spinMs: params.spinMs,
       turnMs: params.turnMs,
     }),
+  };
+}
+
+/**
+ * Touch and mouse (round-2 plan 2026-09-26-2055 M3a): the tile library's
+ * own `GlobeControls` on the canvas (drag to turn, pinch or wheel to zoom,
+ * two fingers or the right button to tilt, a double tap to zoom in).
+ * The camera has ONE owner at a time:
+ * - the intro (spin, turn, dive) while `flight.drives`: it sets the pose
+ *   AND the clip planes (`followIntro`, from the height above the ground,
+ *   so a dive never clips the ground and the far side is culled), and the
+ *   controls are not updated;
+ * - the controls once the user touches: their `start` event (a press on
+ *   the Earth, a wheel step, a double tap) calls `onTake`, which stops the
+ *   intro, and from then on only `update` moves the camera, including its
+ *   planes (the library sets them itself);
+ * - the replay button and a new target or timing in the hash give the
+ *   camera back: `release` drops any drag and leftover momentum, so the
+ *   next touch starts clean.
+ * The controls stay enabled throughout, because a disabled control ignores
+ * the very press that should take the camera; the intro keeps their up
+ * direction in step so that press finds the Earth under the pointer.
+ */
+function cameraControls(scene, camera, globe, onTake) {
+  const controls = new GlobeControls(scene, camera, canvas);
+  controls.setEllipsoid(globe.tiles.ellipsoid, globe.tiles.group);
+  controls.enableDamping = true;
+  controls.addEventListener("start", onTake);
+  const local = new THREE.Vector3();
+  return {
+    followIntro() {
+      local.copy(camera.position);
+      globe.tiles.group.worldToLocal(local);
+      const { near, far } = clipPlanes(globe.tiles.ellipsoid, local);
+      if (camera.near !== near || camera.far !== far) {
+        camera.near = near;
+        camera.far = far;
+        camera.updateProjectionMatrix();
+      }
+      controls.getCameraUpDirection(controls.up);
+    },
+    update() {
+      controls.update();
+    },
+    release() {
+      controls.resetState();
+      controls.dragInertia.set(0, 0, 0);
+      controls.rotationInertia.set(0, 0);
+      controls.globeInertia.identity();
+      controls.globeInertiaFactor = 0;
+    },
   };
 }
 
@@ -512,6 +579,9 @@ function start() {
   renderCredits(credits);
   const status = statusView();
   const flight = introFlight(globe.tiles.ellipsoid);
+  const controls = cameraControls(scene, camera, globe, () =>
+    flight.yieldToUser(performance.now()),
+  );
   let params = readHashParams();
   let appliedHash = location.hash.slice(1);
   /** The globe's one clock; restarted only when its setting changes. */
@@ -561,7 +631,10 @@ function start() {
     const clockChanged = !sameGlobeClockSetting(next.clock, params.clock);
     params = next;
     if (clockChanged) clock = startClock();
-    if (restart) flight.restart(performance.now(), params);
+    if (restart) {
+      flight.restart(performance.now(), params);
+      controls.release();
+    }
     applyLive();
     syncPanel();
     appliedHash = location.hash.slice(1);
@@ -596,9 +669,10 @@ function start() {
   applyLive();
   syncPanel();
   window.addEventListener("hashchange", onHash);
-  replayButton.addEventListener("click", () =>
-    flight.restart(performance.now(), params),
-  );
+  replayButton.addEventListener("click", () => {
+    flight.restart(performance.now(), params);
+    controls.release();
+  });
 
   const frame = () => {
     const w = canvas.clientWidth;
@@ -617,8 +691,13 @@ function start() {
       });
     }
     sunNow();
-    applyOrbitPose(camera, flight.pose(performance.now()), distance);
-    camera.updateMatrixWorld();
+    if (flight.drives) {
+      applyOrbitPose(camera, flight.pose(performance.now()), distance);
+      camera.updateMatrixWorld();
+      controls.followIntro();
+    } else {
+      controls.update();
+    }
     globe.update(camera, renderer);
     status.update(globe.state());
     // A running clock moves the hour: its label follows, once a second.
@@ -753,6 +832,14 @@ function start() {
         cloudOpacity: globe.surfaceUniforms.uCloudOpacity.value,
       },
       distance,
+      // Who moves the camera, and where it is (round-2 plan M3a, M3b).
+      cameraOwner: flight.drives ? "intro" : "controls",
+      cameraDistanceM: camera.position.length(),
+      altitudeM: globe.tiles.ellipsoid.getPositionElevation(
+        globe.tiles.group.worldToLocal(camera.position.clone()),
+      ),
+      near: camera.near,
+      far: camera.far,
       sunIntensity: globe.sun.intensity,
       sky: {
         on: params.sky !== 0,
