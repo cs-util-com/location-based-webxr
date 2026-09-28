@@ -25,6 +25,9 @@ export const SMOKE_PINS = {
   sunAureole: "0",
   sunSilver: "0",
   cloudShadows: "0",
+  // Off by default today; pinned so the owner flipping it on changes no
+  // smoke (stream G).
+  godRays: "0",
 };
 
 /**

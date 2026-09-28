@@ -22,6 +22,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+import { FullScreenQuad, Pass } from "three/addons/postprocessing/Pass.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
@@ -57,6 +58,7 @@ import {
 import { sunShadowActive } from "/fw/visualization/sun-shadow-rig.js";
 
 import { createAmbientOcclusion } from "./ambient-occlusion.js";
+import { createGodRays } from "./god-rays.js";
 import { createGpuTimer } from "./gpu-timer.js";
 import {
   RING_HALF_WIDTH_M,
@@ -224,6 +226,11 @@ const state = {
   // centre (the brief's candidate). Off by default: with the cloud shadows
   // on it dims the ground twice (the record's open question).
   sunLightDim: false,
+  // God rays (round-3 look-dev programme, stream G; god-rays.js): radial
+  // screen-space light shafts from the sky around the sun, on either tier
+  // (the phone tier renders through a small composer while they are on).
+  // Off until the owner has looked (his decision of 2026-09-28).
+  godRays: false,
 };
 
 /** The catalog entries a city building may wear (city-materials.js). */
@@ -321,6 +328,7 @@ function readHash() {
   if (params.has("cloudShadows")) {
     state.cloudShadows = params.get("cloudShadows") === "1";
   }
+  if (params.has("godRays")) state.godRays = params.get("godRays") === "1";
   if (WATER_IDS.includes(params.get("water"))) {
     state.water = params.get("water");
   }
@@ -364,6 +372,7 @@ function writeHash() {
     sunSilver: state.sunSilver ? "1" : "0",
     cloudShadows: state.cloudShadows ? "1" : "0",
     sunLightDim: state.sunLightDim ? "1" : "0",
+    godRays: state.godRays ? "1" : "0",
   });
   history.replaceState(null, "", `#${params}`);
 }
@@ -675,14 +684,49 @@ function applyRingShadow(sunDir) {
 
 let composer = null;
 let bloomPass = null;
+/**
+ * What the composer was built for: "bloom" (the desktop tier), "rays" (the
+ * phone tier while the god rays are on: the same pipeline without the
+ * bloom), or null (no composer: the phone tier draws straight to the
+ * canvas).
+ */
+let composerKind = null;
 /** The AO pass lives in the desktop composer, built on first use. */
 const ambientOcclusion = createAmbientOcclusion({ GTAOPass, scene, camera });
+/** The god-rays pass lives in either composer, built on first use. */
+const godRays = createGodRays({
+  THREE,
+  Pass,
+  FullScreenQuad,
+  camera,
+  sunDirection: () => {
+    const d = sunVector();
+    return [d.x, d.y, d.z];
+  },
+});
 
-/** Switch the cost tier: pixel ratio, and the bloom composer on or off. */
+/** The composer the state asks for (see `composerKind`). */
+const wantedComposerKind = () =>
+  TIERS[state.tier].bloom ? "bloom" : state.godRays ? "rays" : null;
+
+/**
+ * Switch the cost tier: pixel ratio, and the composer (bloom on the desktop
+ * tier; on the phone tier only while the god rays are on).
+ */
 function applyTier() {
   const tier = TIERS[state.tier];
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, tier.maxPixelRatio));
-  if (tier.bloom && !composer) {
+  const kind = wantedComposerKind();
+  if (composer && composerKind !== kind) {
+    // EffectComposer.dispose() frees only its own targets; the bloom pass
+    // alone holds 11 render targets (M4 review, finding 4).
+    for (const pass of composer.passes) pass.dispose?.();
+    composer.dispose();
+    composer = null;
+    composerKind = null;
+    bloomPass = null;
+  }
+  if (kind && !composer) {
     // HALF FLOAT, as three's own composer: a radiance above 65 504 would
     // store as Inf, so the sky clamps its output (framework) and the firefly
     // clamp below turns any other Inf into 1024. A first cut used FULL FLOAT
@@ -703,25 +747,24 @@ function applyTier() {
     composer.renderTarget2.samples = 4;
     composer.addPass(new RenderPass(scene, camera));
     composer.addPass(new ShaderPass(clampShader));
-    bloomPass = new UnrealBloomPass(
-      new THREE.Vector2(256, 256),
-      BLOOM.strength,
-      BLOOM.radius,
-      BLOOM.threshold,
-    );
-    composer.addPass(bloomPass);
+    if (kind === "bloom") {
+      bloomPass = new UnrealBloomPass(
+        new THREE.Vector2(256, 256),
+        BLOOM.strength,
+        BLOOM.radius,
+        BLOOM.threshold,
+      );
+      composer.addPass(bloomPass);
+    }
     // Tone mapping and the output colour space move here: three applies
     // them only when drawing to the screen, and the passes draw to targets.
     composer.addPass(new OutputPass());
-  } else if (!tier.bloom && composer) {
-    // EffectComposer.dispose() frees only its own targets; the bloom pass
-    // alone holds 11 render targets (M4 review, finding 4).
-    for (const pass of composer.passes) pass.dispose?.();
-    composer.dispose();
-    composer = null;
-    bloomPass = null;
+    composerKind = kind;
   }
-  ambientOcclusion.sync(composer, state.ao);
+  // The AO draws on the desktop tier only, never in the phone tier's
+  // god-rays composer.
+  ambientOcclusion.sync(composerKind === "bloom" ? composer : null, state.ao);
+  godRays.sync(composer, state.godRays);
   // SIZE NOW, not on the next animation frame: a new composer's targets are
   // 1×1 until sized, and a readPixels straight after a tier switch rendered
   // through them (a first bloom measurement read a stretched 1×1 image).
@@ -971,6 +1014,7 @@ function syncControls() {
   $("#sun-silver").checked = state.sunSilver;
   $("#cloud-shadows").checked = state.cloudShadows;
   $("#sun-light-dim").checked = state.sunLightDim;
+  $("#god-rays").checked = state.godRays;
   // The switch works on either tier; on the phone tier it says it draws on
   // the desktop tier only and offers the switch (the owner looked for it).
   $("[data-ao-tier]").hidden = state.tier === "desktop";
@@ -1045,6 +1089,9 @@ function buildControls() {
   );
   $("#cloud-shadows").addEventListener("change", (e) =>
     api.setCloudShadows(e.target.checked),
+  );
+  $("#god-rays").addEventListener("change", (e) =>
+    api.setGodRays(e.target.checked),
   );
   $("#ao-desktop").addEventListener("click", () => api.setTier("desktop"));
   $("#cloud-mode").addEventListener("change", (e) =>
@@ -1134,6 +1181,9 @@ function frame(now) {
   $("[data-stats]").textContent =
     `${state.tier} · AO ${ambientOcclusion.active ? "on" : !state.ao ? "off" : ambientOcclusion.unsupported ? "n/a on Oculus Browser" : "on (desktop tier only)"} · clouds ${state.cloudMode} · shadows ${sunShadow ? `on (${sunShadow.renders} maps, central ${shadowParams.halfWidthM} m${ringShadow ? `, ring ${RING_HALF_WIDTH_M} m` : ""})` : shadowsBelowFloor ? "on (sun below 2°)" : "off"} · ${cityReadout()} · ${frameMs.toFixed(1)} ms/frame · ${gpu} · ${renderer.info.render.calls} draws · ` +
     `${(renderer.info.render.triangles / 1000).toFixed(0)}k tris · LUT ${lutMs.toFixed(1)} ms · sky ${atmosphereMs.toFixed(1)} ms` +
+    (state.godRays
+      ? ` · god rays (fade ${godRays.info().fade.toFixed(2)})`
+      : "") +
     (glide.active ? ` · glide to ${glide.id}` : "");
   requestAnimationFrame(frame);
 }
@@ -1790,6 +1840,73 @@ Object.assign(api, {
   setCloudShadows(on) {
     state.cloudShadows = Boolean(on);
     applyLook();
+  },
+  /**
+   * God rays (stream G; god-rays.js) on or off, on either tier: the phone
+   * tier renders through a composer while they are on, and straight to the
+   * canvas again when they are off.
+   */
+  setGodRays(on) {
+    state.godRays = Boolean(on);
+    applyLook();
+  },
+  /**
+   * The sweep's handle: merge look values (god-rays.js `GOD_RAYS`) into the
+   * pass and any later one; RangeError for a bad value. Returns the set.
+   */
+  setGodRaysParams(values) {
+    return godRays.configure(values);
+  },
+  /**
+   * Test surface: `{ active, x, y, inFront, fade, params, composer }`: the
+   * last drawn frame's sun point (NDC) and fade, and the composer the page
+   * renders through ("bloom", "rays" or null).
+   */
+  godRaysInfo() {
+    return { ...godRays.info(), composer: composerKind };
+  },
+  /**
+   * Test surface, the scale of the mask threshold's sweep: render one frame
+   * and return the scene-linear luminance (Rec. 709 weights) the OutputPass
+   * tone-mapped, at normalised canvas points (0,0 = top-left): the clamped
+   * HDR scene plus the bloom (desktop tier) and the god rays when on. Needs
+   * a composer. The composer's even number of swapping passes leaves that
+   * buffer as its `writeBuffer` after a frame (applyTier).
+   */
+  sceneLuminance(points) {
+    if (!composer) throw new Error("no composer (phone tier, rays off)");
+    renderFrame();
+    const target = composer.writeBuffer;
+    const w = target.width;
+    const h = target.height;
+    const half = new Uint16Array(4);
+    return points.map(([u, v]) => {
+      const x = Math.min(w - 1, Math.max(0, Math.floor(u * w)));
+      const y = Math.min(h - 1, Math.max(0, Math.floor((1 - v) * h)));
+      renderer.readRenderTargetPixels(target, x, y, 1, 1, half);
+      const [r, g, b] = [half[0], half[1], half[2]].map((c) =>
+        THREE.DataUtils.fromHalfFloat(c),
+      );
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    });
+  },
+  /**
+   * Test surface: the block's tallest building, `{ x, z, sx, sz, h }`
+   * (centre, footprint and height, metres; it stands on the ground), so a
+   * god-rays check can put its edge or its wall in front of the sun.
+   */
+  tallestBuilding() {
+    let best = null;
+    for (const b of parts.city.children) {
+      if (!best || b.scale.y > best.scale.y) best = b;
+    }
+    return {
+      x: best.position.x,
+      z: best.position.z,
+      sx: best.scale.x,
+      sz: best.scale.z,
+      h: best.scale.y,
+    };
   },
   /**
    * Test surface: the share of the sun reaching a world point through the

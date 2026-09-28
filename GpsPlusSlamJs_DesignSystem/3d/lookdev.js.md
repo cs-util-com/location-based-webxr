@@ -141,6 +141,28 @@ denoise, resolutionScale })` is the sweep's handle; `setAoExclusions(bool)`
     returns the CPU twin's share of the sun reaching a world point, and
     `groundAt([[u, v], …])` the ground (or street) world points under
     canvas points (null where something else is hit first);
+  - `setGodRays(bool)`: god rays (round-3 look-dev programme, stream G;
+    [god-rays.js](god-rays.js.md)), radial screen-space light shafts from
+    the sky around the sun, ONE SWITCH AND HASH KEY (`godRays`), off by
+    default until the owner has looked, and pinned off in the smoke boot.
+    Drawn on both tiers: on the phone tier the page renders through a
+    composer while they are on (the desktop pipeline without the bloom:
+    the multisampled HDR scene target, the firefly clamp, the rays, the
+    OutputPass) and straight to the canvas again when they are off; on the
+    desktop tier the pass sits after the bloom, before the OutputPass.
+    `setGodRaysParams(values)` is the sweep's handle (the keys of
+    `GOD_RAYS`; `RangeError` for a bad value), `godRaysInfo()` returns
+    `{ active, x, y, inFront, fade, params, composer }` (the last drawn
+    frame's sun point in NDC and fade, and the composer the page renders
+    through: `"bloom"`, `"rays"` or null), and `tallestBuilding()` the
+    block's tallest building (`{ x, z, sx, sz, h }`), whose edge or wall a
+    check puts in front of the sun. The readout adds `god rays (fade …)`
+
+    while they are on. `sceneLuminance([[u, v], …])` renders a frame and
+    returns the scene-linear luminance the OutputPass tone-maps there (the
+    clamped HDR scene, plus the bloom and the rays when on; needs a
+    composer), the scale the mask threshold was chosen on;
+
   - `readFrame()` → `{ width, height, data }`, the whole drawing buffer
     after one frame (edge comparisons need every pixel);
   - `project([x, y, z])` → normalised canvas `[u, v]` of a world point
@@ -160,11 +182,11 @@ denoise, resolutionScale })` is the sweep's handle; `setAoExclusions(bool)`
     preset: both exposures and both exposure-free horizon colours. The
     fallback's only GPU oracle.
 - Invariants & assumptions:
-  - State lives in the URL hash (`#preset=…&tone=…&tier=…&cloudMode=…&shadows=0|1&city=…&pitch=42|31|20&water=C0|C1|P50|P30|D30&catalog=0|1&varied=0|1&materials=1…&finish=mixed|shiny|matte&ao=0|1&sunDisc=0|1&sunAureole=0|1&sunSilver=0|1&cloudShadows=0|1&sunLightDim=0|1`; defaults since the owner's round 2, plan
+  - State lives in the URL hash (`#preset=…&tone=…&tier=…&cloudMode=…&shadows=0|1&city=…&pitch=42|31|20&water=C0|C1|P50|P30|D30&catalog=0|1&varied=0|1&materials=1…&finish=mixed|shiny|matte&ao=0|1&sunDisc=0|1&sunAureole=0|1&sunSilver=0|1&cloudShadows=0|1&sunLightDim=0|1&godRays=0|1`; defaults since the owner's round 2, plan
     2026-09-26-2055 M2: the densest city, `city=100000&pitch=20`, about
     42,000 buildings, and `water=P50`; since round 3, plan 2026-09-27-0532
     DEC-FB3-5: `shadows=1`, `catalog=1` and `cloudMode=slab`; DEC-FB3-3:
-    `varied=1&materials=12&finish=mixed`; stream D: `sunDisc=1&sunAureole=1&sunSilver=1&cloudShadows=1&sunLightDim=0`), so a
+    `varied=1&materials=12&finish=mixed`; stream D: `sunDisc=1&sunAureole=1&sunSilver=1&cloudShadows=1&sunLightDim=0`; stream G: `godRays=0`), so a
     screenshot or phone link reproduces a view; a hash change on an open
     page re-applies it (the page's own writes use `replaceState`, which
     fires no `hashchange`). A key the hash does NOT name keeps its CURRENT
@@ -235,7 +257,10 @@ denoise, resolutionScale })` is the sweep's handle; `setAoExclusions(bool)`
     `UnrealBloomPass` (threshold 16, strength 0.1, radius 0.35: a gentle
     glow, swept at the true sun position, see `BLOOM`) and `OutputPass`
     (tone mapping and colour space move there). Every pass is disposed on
-    a switch back to phone. The composer is sized at once on a tier switch
+    a switch back to phone. The phone tier builds a composer too while the
+    god rays are on (the same pipeline without the bloom and the AO, which
+    stays desktop-only); a tier switch or the rays switch rebuilds the
+    composer when the kind it needs changes (`composerKind`). The composer is sized at once on a tier switch
     (a new one's targets are 1×1 until sized). The tier is in the URL hash
     (`tier=`).
   - The tiers agree exactly away from edges; AT edges they cannot: the
@@ -254,6 +279,8 @@ denoise, resolutionScale })` is the sweep's handle; `setAoExclusions(bool)`
   `sun-clouds.smoke.spec.mjs` (the sun through clouds, the cloud
   shadows and the sun light dimming against the no-effect baseline, one
   switch per effect, their costs, and the horizon shimmer per cloud mode,
-  logged; stage
-  `test:e2e`), and `shoot-3d.mjs`. The readout's stats line names the
+  logged), `god-rays.smoke.spec.mjs` (the god rays against their own
+  off baseline, sky only, nothing behind the camera or below the horizon,
+  the switch off byte-identical on both tiers, the switch and key, the
+  cost; stage `test:e2e`), and `shoot-3d.mjs`. The readout's stats line names the
   city's material count and finish next to the draws.

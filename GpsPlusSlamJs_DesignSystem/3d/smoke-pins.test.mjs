@@ -48,6 +48,7 @@ describe("pinnedHash", () => {
       sunAureole: "0",
       sunSilver: "0",
       cloudShadows: "0",
+      godRays: "0",
     });
   });
 });
