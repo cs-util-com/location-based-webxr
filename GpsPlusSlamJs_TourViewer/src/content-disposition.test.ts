@@ -42,6 +42,17 @@ describe("fileNameFromContentDisposition", () => {
     expect(fileNameFromContentDisposition(header)).toBe(name);
   });
 
+  it("skips a parameter without a value, and a tab after the equals sign", () => {
+    // Milestone review #5: the key ran on to the next "=", so a bare
+    // `foo;` swallowed the filename parameter behind it.
+    expect(
+      fileNameFromContentDisposition('attachment; foo; filename="x.zip"'),
+    ).toBe("x.zip");
+    expect(
+      fileNameFromContentDisposition('attachment; filename=\t"x.zip"'),
+    ).toBe("x.zip");
+  });
+
   it("prefers filename* over filename", () => {
     expect(
       fileNameFromContentDisposition(
@@ -76,8 +87,25 @@ describe("fileNameFromContentDisposition", () => {
   });
 
   it("never throws, and never returns a path", () => {
+    // Any code point, not fast-check's printable-ASCII default, and headers
+    // shaped like the real forms, so control characters and non-ASCII
+    // reach the name paths (milestone review #3).
+    const text = fc.string({ unit: "binary" });
+    const header = fc.oneof(
+      text,
+      text.map((s) => `attachment; filename="${s}"`),
+      text.map((s) => `attachment; filename=${s}`),
+      fc
+        .uint8Array()
+        .map(
+          (bytes) =>
+            `attachment; filename*=UTF-8''${[...bytes]
+              .map((b) => `%${b.toString(16).padStart(2, "0")}`)
+              .join("")}`,
+        ),
+    );
     fc.assert(
-      fc.property(fc.string(), (header) => {
+      fc.property(header, (header) => {
         const name = fileNameFromContentDisposition(header);
         expect(name === null || (name !== "" && !unsafe(name))).toBe(true);
       }),
@@ -86,7 +114,7 @@ describe("fileNameFromContentDisposition", () => {
 
   it("round-trips any safe name through the RFC 8187 form", () => {
     const safe = fc
-      .string({ minLength: 1 })
+      .string({ minLength: 1, unit: "grapheme" })
       .filter((s) => !unsafe(s) && s.trim() === s);
     fc.assert(
       fc.property(safe, (name) => {
@@ -131,7 +159,7 @@ describe("downloadSafeName", () => {
 
   it("always gives a name that survives a download", () => {
     fc.assert(
-      fc.property(fc.string(), (name) => {
+      fc.property(fc.string({ unit: "binary" }), (name) => {
         expect(nameSurvivesDownload(downloadSafeName(name))).toBe(true);
       }),
     );

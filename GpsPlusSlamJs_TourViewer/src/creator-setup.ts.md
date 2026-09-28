@@ -143,7 +143,9 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   plan §2 decisions 1 and 4): the route is `finishRoute({canShare,
 drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
   at wiring - so a Drive tour takes `seams.downloadZip` even on a phone that
-  could share, and its button reads "Save the zip to this phone". Once the
+  could share, and its button reads "Save the zip to this phone". Its ready
+  line (`FINISH_LABELS.readyDrive`) warns about an older copy in Downloads
+  BEFORE the tap, and its status after the save is `savedToPhone`. Once the
   zip is delivered, `replaceHelpDrive` shows `driveReplaceSteps` as numbered
   lines (textContent; the module stays DOM-free) with the zip's name, and
   `replaceHelpGeneric` hides; `resetFinishStep` restores the generic text.

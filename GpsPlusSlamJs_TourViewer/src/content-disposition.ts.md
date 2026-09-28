@@ -49,7 +49,11 @@ nameSurvivesDownload("Altstadt Tour"); // false - rename it to .zip first
 ## Tests
 
 `content-disposition.test.ts`: every header form above, `filename*`
-precedence and fallback, refused names; properties - any string never
-throws and never yields a path, and any safe name round-trips through the
-RFC 8187 form; the survival cases; `downloadSafeName` cases, and the
-property that its result always survives.
+precedence and fallback, refused names, a parameter without a value and a
+tab after `=`; properties over any code point (fast-check's `binary` unit,
+not its printable-ASCII default) and over headers shaped like the real
+forms, including percent-encoded control bytes - never throws, never yields
+a path; any well-formed Unicode name round-trips through the RFC 8187 form;
+the survival cases; `downloadSafeName` cases, and the property that its
+result always survives (close to its own definition - it guards the
+`.zip` append more than the character class).

@@ -56,4 +56,17 @@ describe("isDriveUrl", () => {
     expect(isDriveUrl("https://example.com/x")).toBe(false);
     expect(isDriveUrl("not a url", "not a base")).toBe(false);
   });
+
+  it("recognises the Drive API form a configured API key normalises to", () => {
+    // Why (Drive replace milestone review #6): the finish step decides
+    // "Drive: save, show the Drive steps" from this function, on the
+    // NORMALISED url - with a `googleDriveApiKey` a Drive tour would
+    // otherwise quietly get the share route and the generic text.
+    expect(
+      isDriveUrl(
+        "https://www.googleapis.com/drive/v3/files/abc?alt=media&key=k",
+      ),
+    ).toBe(true);
+    expect(isDriveUrl("https://www.googleapis.com/youtube/v3/x")).toBe(false);
+  });
 });

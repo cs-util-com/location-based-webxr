@@ -617,6 +617,8 @@ describe("the finish copy points at steps that exist", () => {
       FINISH_LABELS.ready(1_000_000, true),
       FINISH_LABELS.saved("tour.zip"),
       FINISH_LABELS.shared("tour.zip"),
+      FINISH_LABELS.readyDrive(1_000_000, "tour.zip"),
+      FINISH_LABELS.savedToPhone("tour.zip"),
     ];
     for (const line of lines) expect(line).not.toMatch(/step [5-9]/i);
   });
@@ -651,9 +653,13 @@ describe("the finish on a Drive-hosted tour (Drive replace plan §2, §5)", () =
     expect(text).toMatch(/File upload/);
     expect(text).toMatch(/Replace existing file/);
     expect(text).toContain("My tour.zip");
-    // Review #1: a repeat download is saved as "name (1).zip".
-    expect(text).toMatch(/older copies/i);
-    expect(text).toContain("My tour (1).zip");
+    // Review #1: a repeat download is saved as "name (1).zip". These steps
+    // appear only AFTER the save, so they cannot prevent it - they check
+    // for it, and send the creator back to the button (milestone review
+    // #1: "pick X" would otherwise pick the OLD zip).
+    expect(steps[0]).toContain("My tour (1).zip");
+    expect(steps[0]).toMatch(/delete every copy/i);
+    expect(steps[0]).toMatch(/Save the zip to this phone.*again/);
     expect(text, "and what to do if Drive does not ask").toMatch(
       /does not ask/i,
     );
@@ -679,5 +685,30 @@ describe("the finish on a Drive-hosted tour (Drive replace plan §2, §5)", () =
       /Check that the file on Drive is named "tour\.zip"/,
     );
     expect(driveReplaceSteps("tour.zip").steps[0]).not.toMatch(/Check that/);
+  });
+
+  it("warns about an older copy BEFORE the save, in the button's words", () => {
+    // Why (milestone review #1): Chrome names a repeat download
+    // "name (1).zip", and Drive then offers no "Replace". Only a warning
+    // read before the tap can prevent that; the ready line is the sentence
+    // the creator reads right before pressing "Save the zip to this phone".
+    const line = FINISH_LABELS.readyDrive(1_000_000, "My tour.zip");
+    expect(line).toMatch(/Before you save/);
+    expect(line).toContain("My tour.zip");
+    expect(line).toContain("My tour (1).zip");
+    expect(line).toMatch(/Save the zip to this phone/);
+    expect(line).not.toMatch(/Download it|Share it/);
+  });
+
+  it("says where a Drive save went and what comes next", () => {
+    // Plan §5 #5: the file is in Downloads, and the Drive steps follow.
+    const outcome = { route: "download", delivered: true } as const;
+    const status = finishHandoffStatus(outcome, "My tour.zip", true);
+    expect(status).toBe(FINISH_LABELS.savedToPhone("My tour.zip"));
+    expect(status).toMatch(/Downloads/);
+    expect(status).toMatch(/Drive steps below/);
+    expect(finishHandoffStatus(outcome, "My tour.zip")).toBe(
+      FINISH_LABELS.saved("My tour.zip"),
+    );
   });
 });

@@ -330,6 +330,12 @@ export const FINISH_LABELS = {
     `The rebuilt zip is ready (${(bytes / 1_000_000).toFixed(1)} MB). ${
       canShare ? "Share it" : "Download it"
     }, then put it in place of the hosted file - the steps appear below.`,
+  /** A Drive tour's ready line. It carries the one warning that only helps
+   *  BEFORE the tap: a repeat download is saved as "name (1).zip", which
+   *  Drive treats as a new file (Drive replace plan §5 #1, milestone
+   *  review #1). */
+  readyDrive: (bytes: number, filename: string) =>
+    `The rebuilt zip is ready (${(bytes / 1_000_000).toFixed(1)} MB). Before you save: delete any older ${filename} from this phone's Downloads, or the phone names the new one "${repeatDownloadName(filename)}". Then tap "Save the zip to this phone" - the Drive steps appear below.`,
   failed: (reason: string) => `Finishing failed: ${reason}`,
   download: "Download the rebuilt zip",
   /** A Drive tour's route: the zip must land in Downloads for the Drive
@@ -338,6 +344,8 @@ export const FINISH_LABELS = {
   saving: "Saving…",
   saved: (filename: string) =>
     `Saved as ${filename}. Now replace the hosted zip (steps below) - the link and the printed code stay the same.`,
+  savedToPhone: (filename: string) =>
+    `Saved as ${filename} in Downloads. Now follow the Drive steps below - the link and the printed code stay the same.`,
   notSaved: "Not saved - tap the button again.",
   /** The share route's label and copy. Separate from the download route's
    *  because the two do different things to the hosted file, and `saved`
@@ -415,7 +423,6 @@ export function driveReplaceSteps(
 } {
   const rename = nameSurvivesDownload(name) ? null : downloadSafeName(name);
   const saved = rename ?? name;
-  const stem = saved.replace(/\.zip$/i, "");
   const first: string[] = [];
   if (rename !== null) {
     first.push(
@@ -430,12 +437,20 @@ export function driveReplaceSteps(
     rename,
     steps: [
       ...first,
-      `Delete older copies of ${saved} from this phone's Downloads - a repeat download is saved as "${stem} (1).zip", which Drive treats as a new file.`,
+      // After the save, so a check rather than a warning (the warning is
+      // `readyDrive`): picking "name.zip" beside a new "name (1).zip"
+      // would upload the OLD zip over the tour (milestone review #1).
+      `Check the new file in Downloads is named ${saved}. If it is "${repeatDownloadName(saved)}", delete every copy of ${saved}, then tap "Save the zip to this phone" again.`,
       `Open a new tab in Chrome (or your browser), type drive.google.com, then tick "Desktop site" in the ⋮ menu.`,
       `Open the folder with your tour, tap New, then File upload, and pick ${saved}.`,
       `Choose "Replace existing file", then Upload. If Drive does not ask, it uploaded a second copy - delete that copy. Keep the tab open until the upload finishes.`,
     ],
   };
+}
+
+/** The name Chrome gives a download whose name is already taken. */
+function repeatDownloadName(filename: string): string {
+  return `${filename.replace(/\.zip$/i, "")} (1).zip`;
 }
 
 export function finishBusyLabel(canShare: boolean): string {
@@ -462,11 +477,16 @@ export function finishHelpVisibility(outcome: HandoffOutcome): {
 export function finishHandoffStatus(
   outcome: HandoffOutcome,
   filename: string,
+  /** A Drive tour's save names Downloads and the Drive steps (plan §5 #5). */
+  drive = false,
 ): string {
   if (!outcome.delivered) {
     return outcome.route === "share"
       ? FINISH_LABELS.notShared
       : FINISH_LABELS.notSaved;
+  }
+  if (drive && outcome.route === "download") {
+    return FINISH_LABELS.savedToPhone(filename);
   }
   return outcome.route === "share"
     ? FINISH_LABELS.shared(filename)

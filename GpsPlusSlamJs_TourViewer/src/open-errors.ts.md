@@ -14,8 +14,11 @@ the image-plane loader and the AR entry (flows plan M6 pulled it out of
   generic "cannot be opened as an archive"; a non-probe error passes its
   message through.
 - `isDriveUrl(url, base = location.href): boolean` - the share page, the
-  raw download host, or the site worker's `/api/drive-proxy` route. A
-  malformed URL is `false`, never a throw.
+  raw download host, the site worker's `/api/drive-proxy` route, or the
+  Drive API form (`www.googleapis.com/drive/…`) that a configured
+  `googleDriveApiKey` normalises to. A malformed URL is `false`, never a
+  throw. The finish step's Drive route (save, Drive steps) reads it on the
+  normalised url, so every form a Drive link can take belongs here.
 
 ## Invariants & assumptions
 

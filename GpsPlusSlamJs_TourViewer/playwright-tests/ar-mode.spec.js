@@ -550,6 +550,10 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   // The share route's extra paragraph is noise on the save route: this
   // creator overwrote the hosted file, so their link IS unchanged.
   await expect(page.getByTestId("replace-help-share")).toBeHidden();
+  // A tour NOT on Drive keeps the other hosts' text; the Drive steps are
+  // for Drive only (Drive replace plan §3 M3, milestone review #2).
+  await expect(page.getByTestId("replace-help-generic")).toBeVisible();
+  await expect(page.getByTestId("replace-help-drive")).toBeHidden();
 
   const rebuilt = await readDownloadedZip(page, 1);
   expect(rebuilt.filename).toBe("tour.zip");
@@ -2313,11 +2317,27 @@ test("a Drive tour saves the zip under the Drive file's name, with the Drive ste
   await installTourViewerArFakes(page, { shareRoute: true });
   await measureAndFinish(page, DRIVE_ARCHIVE);
   const download = page.getByTestId("finish-download");
+  const status = page.getByTestId("finish-status");
   await expect(download).toHaveText("Save the zip to this phone");
+  // The "(1)" warning is read BEFORE the tap - afterwards it is too late
+  // (milestone review #1).
+  await expect(status).toContainText("Before you save");
+  await expect(status).toContainText("My tour (1).zip");
+  // A dismissed save keeps the button live and reveals no steps (async-UI
+  // rule: the failure path of the Drive route, milestone review #2).
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.saveOutcome = false;
+  });
   await download.click();
-  await expect(page.getByTestId("finish-status")).toContainText(
-    /saved as My tour\.zip/i,
-  );
+  await expect(status).toContainText(/not saved/i);
+  await expect(download).toBeEnabled();
+  await expect(download).toHaveText("Save the zip to this phone");
+  await expect(page.getByTestId("replace-help-drive")).toBeHidden();
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.saveOutcome = true;
+  });
+  await download.click();
+  await expect(status).toContainText(/saved as My tour\.zip in Downloads/i);
   const saved = await page.evaluate(() => {
     const d = /** @type {any} */ (window).__tourViewerTest.downloads;
     return d.map((/** @type {any} */ x) => ({
@@ -2325,7 +2345,10 @@ test("a Drive tour saves the zip under the Drive file's name, with the Drive ste
       filename: x.filename,
     }));
   });
-  expect(saved).toEqual([{ seam: "download", filename: "My tour.zip" }]);
+  expect(saved).toEqual([
+    { seam: "download", filename: "My tour.zip" },
+    { seam: "download", filename: "My tour.zip" },
+  ]);
   // The Drive steps, with the name, in place of the other hosts' text.
   const steps = page.getByTestId("replace-help-drive");
   await expect(steps).toBeVisible();

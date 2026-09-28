@@ -68,9 +68,14 @@ function parameters(header: string): Map<string, string> {
     while (i < header.length && /[\s;]/.test(header.charAt(i))) i += 1;
     const eq = header.indexOf("=", i);
     if (eq < 0) break;
+    const semi = header.indexOf(";", i);
+    if (semi >= 0 && semi < eq) {
+      i = semi; // a parameter without a value: skip it
+      continue;
+    }
     const key = header.slice(i, eq).trim().toLowerCase();
     i = eq + 1;
-    while (header.charAt(i) === " ") i += 1;
+    while (header.charAt(i) === " " || header.charAt(i) === "\t") i += 1;
     let value = "";
     if (header.charAt(i) === '"') {
       i += 1;

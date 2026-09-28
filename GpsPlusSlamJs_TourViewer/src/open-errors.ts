@@ -8,7 +8,10 @@
 import { OpenRemoteArchiveError } from "gps-plus-slam-app-framework/storage";
 
 /** True for the URLs whose open failures are Drive's to explain: the share
- *  page, the raw download host, and the site worker's proxy route. */
+ *  page, the raw download host, the site worker's proxy route, and the
+ *  Drive API form a `googleDriveApiKey` normalises to. The finish step's
+ *  Drive route reads it too, on the NORMALISED url, so every form a Drive
+ *  link can take must be listed here (Drive replace plan §5 #9). */
 export function isDriveUrl(url: string, base?: string): boolean {
   try {
     // The page's own URL resolves a relative proxy path; absolute URLs need
@@ -20,7 +23,9 @@ export function isDriveUrl(url: string, base?: string): boolean {
     return (
       parsed.hostname === "drive.google.com" ||
       parsed.hostname === "drive.usercontent.google.com" ||
-      parsed.pathname.endsWith("/api/drive-proxy")
+      parsed.pathname.endsWith("/api/drive-proxy") ||
+      (parsed.hostname === "www.googleapis.com" &&
+        parsed.pathname.startsWith("/drive/"))
     );
   } catch {
     return false;

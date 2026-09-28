@@ -1122,10 +1122,9 @@ export function wireCreatorSetup(deps: {
                 ? hosted
                 : downloadSafeName(hosted),
         };
-        dom.finishStatus.textContent = FINISH_LABELS.ready(
-          blob.size,
-          route() === "share",
-        );
+        dom.finishStatus.textContent = drive()
+          ? FINISH_LABELS.readyDrive(blob.size, ctx.rebuiltZip.filename)
+          : FINISH_LABELS.ready(blob.size, route() === "share");
         dom.downloadButton.textContent = idleLabel();
         dom.downloadButton.disabled = false;
         // The placed objects are in the zip now; the next finish (a
@@ -1230,6 +1229,7 @@ export function wireCreatorSetup(deps: {
         dom.finishStatus.textContent = finishHandoffStatus(
           outcome,
           rebuilt.filename,
+          drive(),
         );
         // The replace instructions were step 6; they are the last thing to
         // do and only once the file exists, so they appear once the zip has

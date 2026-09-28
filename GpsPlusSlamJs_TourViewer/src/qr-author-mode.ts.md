@@ -81,9 +81,18 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   (reading, rebuilding N of M, ready, failed, download, saving, saved as,
   not saved) AND the share route's own (share, sharing, shared, nothing
   was shared).
+  A Drive tour has its own two: `readyDrive(bytes, filename)` carries the
+  "delete any older copy first" warning - the only moment it can prevent a
+  repeat download's "name (1).zip" - and `savedToPhone(filename)` names
+  Downloads and the Drive steps.
+- `driveReplaceSteps(name, nameKnown)` - the numbered Drive steps shown
+  after the save: an optional rename/check-the-name step, then a check that
+  the saved file is not "name (1).zip" (if it is: delete every copy, save
+  again - picking "name.zip" beside it would upload the OLD zip), the new
+  tab with "Desktop site", the folder upload, "Replace existing file".
 - `finishIdleLabel(canShare)`, `finishBusyLabel(canShare)`,
-  `finishHandoffStatus({ route, delivered }, filename)` - the button's words
-  and the status line, as pure functions.
+  `finishHandoffStatus({ route, delivered }, filename, drive)` - the
+  button's words and the status line, as pure functions.
   - They are pure, and here rather than inline in the click handler,
     because THREE of the four outcomes cannot be reached in an e2e run: a
     headless browser has no share sheet, so this is the only place the
