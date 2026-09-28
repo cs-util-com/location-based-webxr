@@ -40,6 +40,8 @@ import {
   type TourManifest,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
+import { fileNameFromContentDisposition } from "./content-disposition.js";
+
 /** One archive entry as the gallery sees it (reached via `TourSession.entries`
  *  — not separately exported; knip counts a standalone export as dead). */
 interface TourEntry {
@@ -130,6 +132,13 @@ export interface TourSession {
    * the full size through the session (`?nocache=1`, no Cache API).
    */
   readWholeArchive(): Promise<Blob>;
+  /**
+   * The hosted file's name as its host sends it (`content-disposition`),
+   * or null: an offline cache hit, or a host that sends none. Read from the
+   * open's own requests - the probe's HEAD - never an extra one (Drive
+   * replace plan §5 #8). Drive offers "Replace" only for the same name.
+   */
+  hostedFileName(): string | null;
   close(): Promise<void>;
 }
 
@@ -264,9 +273,26 @@ export async function openTourSession(
     options.onStats?.(stats);
   };
 
-  const first = await openArchive(url, options, onRead, false);
+  // The hosted file's name, recorded from whichever response carries it
+  // first; the session reads it through `hostedFileName`.
+  let hostedName: string | null = null;
+  const baseFetch: FetchImpl =
+    options.fetchImpl ?? ((input, init) => fetch(input, init));
+  const recording: OpenTourOptions = {
+    ...options,
+    fetchImpl: async (input, init) => {
+      const response = await baseFetch(input, init);
+      hostedName ??= fileNameFromContentDisposition(
+        response.headers.get("content-disposition"),
+      );
+      return response;
+    },
+  };
+  const named = { hostedFileName: () => hostedName };
+
+  const first = await openArchive(url, recording, onRead, false);
   try {
-    return await buildSession(first, stats, options.cacheStore);
+    return await buildSession(first, stats, options.cacheStore, named);
   } catch (err) {
     // Whatever failed to parse must not stay cached and must not keep
     // downloading: dispose (aborts the session's downloads), then evict —
@@ -278,9 +304,9 @@ export async function openTourSession(
     // Only a cache-served archive earns the retry: a remote parse failure
     // means the hosted file itself is broken.
     if (first.origin !== "cache") throw err;
-    const second = await openArchive(url, options, onRead, true);
+    const second = await openArchive(url, recording, onRead, true);
     try {
-      return await buildSession(second, stats, options.cacheStore);
+      return await buildSession(second, stats, options.cacheStore, named);
     } catch (retryErr) {
       second.dispose();
       await second.evict();
@@ -317,6 +343,7 @@ async function buildSession(
   archive: OpenedArchive,
   stats: StreamStats,
   cacheStore: LocalCacheStore | undefined,
+  named: Pick<TourSession, "hostedFileName">,
 ): Promise<TourSession> {
   const reader = new ZipReader(new ByteSourceReader(archive.source));
   const zipEntries = await reader.getEntries();
@@ -348,6 +375,7 @@ async function buildSession(
     archive,
     hasRecording,
     manifestWrap,
+    hostedFileName: named.hostedFileName,
     stats: () => ({ ...stats }),
     loadEntry: (filename) => {
       const entry = byName.get(filename);

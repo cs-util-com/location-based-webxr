@@ -137,9 +137,10 @@ async function hostedArchive(existing: readonly TourObject[]): Promise<Blob> {
 }
 
 /** The slice of an open session the finish handler actually reaches for. */
-function fakeSession(blob: Blob): unknown {
+function fakeSession(blob: Blob, hostedName: string | null = null): unknown {
   return {
     archive: { url: "https://example.test/mytour.zip", size: blob.size },
+    hostedFileName: () => hostedName,
     entries: [
       { filename: `${WRAP}tour.json` },
       { filename: `${WRAP}qr/${LEVEL_ID}.json` },
@@ -174,11 +175,12 @@ function alignedArStore(): unknown {
 async function wireFinishable(options: {
   hosted: readonly TourObject[];
   placed: readonly TourObject[];
+  hostedName?: string | null;
 }) {
   const blob = await hostedArchive(options.hosted);
   const dom = fakeDom();
   const ctx = createTourViewerSession();
-  ctx.session = fakeSession(blob) as never;
+  ctx.session = fakeSession(blob, options.hostedName ?? null) as never;
   ctx.mintedLevel = { id: LEVEL_ID, json: '{"measured":true}' };
   ctx.tourManifestStatus = "settled";
   ctx.tourManifest = {
@@ -310,5 +312,29 @@ describe("what the finish actually writes into the published zip", () => {
       new Set(ids).size,
       "every id appears exactly once in the PUBLISHED manifest",
     ).toBe(ids.length);
+  });
+});
+
+describe("the rebuilt zip's name (Drive replace plan §2 decision 3)", () => {
+  // Why this matters: Drive offers "Replace" only when the uploaded file has
+  // the SAME name as the one in Drive, and a Drive link carries no name -
+  // the host's content-disposition does. A wrong name uploads a silent
+  // second file, and the printed code keeps pointing at the old one.
+  it("takes the name the host sent", async () => {
+    const { dom, ctx } = await wireFinishable({
+      hosted: [],
+      placed: [],
+      hostedName: "Altstadt Tour.zip",
+    });
+    dom.finishButton.click();
+    await settle(ctx);
+    expect(ctx.rebuiltZip?.filename).toBe("Altstadt Tour.zip");
+  });
+
+  it("falls back to the name in the link without one", async () => {
+    const { dom, ctx } = await wireFinishable({ hosted: [], placed: [] });
+    dom.finishButton.click();
+    await settle(ctx);
+    expect(ctx.rebuiltZip?.filename).toBe("mytour.zip");
   });
 });

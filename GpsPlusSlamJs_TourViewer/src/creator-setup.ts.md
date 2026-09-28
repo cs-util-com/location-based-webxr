@@ -139,6 +139,10 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
 
 ## Invariants & assumptions
 
+- **The rebuilt zip is named after the hosted file** -
+  `session.hostedFileName()`, else `archiveFileName(url)` - because Drive
+  offers "Replace" only for the same name (Drive replace plan §2
+  decision 3).
 - **Mint:** reads the STABLE pose from the `qrDetected` slice, the
   alignment TARGET matrix and the zero; the level's identity is the async
   `qrCodeId` of the exact printed text, guarded by `ctx.mintGeneration` so

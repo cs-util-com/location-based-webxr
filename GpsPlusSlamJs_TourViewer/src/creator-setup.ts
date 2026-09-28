@@ -1096,7 +1096,10 @@ export function wireCreatorSetup(deps: {
         if (ctx.session !== current) return;
         ctx.rebuiltZip = {
           blob,
-          filename: archiveFileName(current.archive.url),
+          // The hosted file's own name first: Drive offers "Replace" only
+          // for the same name (Drive replace plan §2 decision 3).
+          filename:
+            current.hostedFileName() ?? archiveFileName(current.archive.url),
         };
         dom.finishStatus.textContent = FINISH_LABELS.ready(blob.size, canShare);
         dom.downloadButton.disabled = false;

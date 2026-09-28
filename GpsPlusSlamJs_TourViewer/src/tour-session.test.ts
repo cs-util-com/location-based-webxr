@@ -600,3 +600,54 @@ describe("tourLabel (scan-to-open plan §9 #11)", () => {
     );
   });
 });
+
+describe("hostedFileName (Drive replace plan §5 #8)", () => {
+  // Why this matters: Drive offers "Replace" only for the SAME name, and a
+  // Drive link carries no name - only the host's content-disposition does.
+  // The name is read from the requests the open already makes (no extra
+  // request against the proxy's free-tier cap), so it also closes with the
+  // session instead of leaking into the next tour.
+  function named(server: FetchImpl, header: string | null): FetchImpl {
+    return async (input, init) => {
+      const response = await server(input, init);
+      if (header === null) return response;
+      const headers = new Headers(response.headers);
+      headers.set("content-disposition", header);
+      return new Response(response.body, { status: response.status, headers });
+    };
+  }
+
+  it("carries the name the host sends, without an extra request", async () => {
+    let requests = 0;
+    const server = named(
+      rangeServer(await buildZip()),
+      `attachment; filename*=UTF-8''My%20tour.zip`,
+    );
+    const counted: FetchImpl = (input, init) => {
+      requests += 1;
+      return server(input, init);
+    };
+    const plain = rangeServer(await buildZip());
+    let plainRequests = 0;
+    await openTourSession("https://x/tour.zip", {
+      fetchImpl: (input, init) => {
+        plainRequests += 1;
+        return plain(input, init);
+      },
+    });
+    const session = await openTourSession("https://x/tour.zip", {
+      fetchImpl: counted,
+    });
+    expect(session.hostedFileName()).toBe("My tour.zip");
+    expect(requests, "the same requests as an open without a name").toBe(
+      plainRequests,
+    );
+  });
+
+  it("has none when the host sends none", async () => {
+    const session = await openTourSession("https://x/tour.zip", {
+      fetchImpl: rangeServer(await buildZip()),
+    });
+    expect(session.hostedFileName()).toBeNull();
+  });
+});
