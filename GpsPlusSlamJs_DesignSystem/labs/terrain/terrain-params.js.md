@@ -9,7 +9,11 @@
     DEC-TR-3 come in T3.
   - `FIELD`: posts every 500 m (about the z8 texel), an 8 km padding ring,
     the relief sigma (2 km), the detail sigma (2 posts), the sky view's
-    march (16 posts).
+    march (16 posts, 8 km: the padding covers it exactly). The hash sets the
+    sky view's directions only, never the steps; 32 steps would need a 16 km
+    ring (and, at z8, may reach a tenth tile row: check the fixtures).
+  - The grid is equirectangular ENU: see `terrain-pipeline.js.md` for its
+    residual against the true ground (about +-1.6 % east-west at the edges).
   - `fieldSpec(place)` -> `{ centre, zoom, halfExtentM, extentM, spacingM,
 side }`: `extentM` includes the padding; `side` counts both edges.
   - `PARAMS`: every numeric key with its default and range: `exag` (1-10,
@@ -24,6 +28,6 @@ side }`: `extentM` includes the padding; `side` counts both edges.
   NaN (a NaN uniform removes the draw silently). `place=gps` falls back to
   the Appalachians with a note; the hash never carries coordinates.
 - Tests: `terrain-params.test.mjs`: the place, the field's posts, its
-  padding against the sky-view march (8 and 16 posts) and three blur
-  sigmas, the defaults, in-range values, five malformed values, the camera
+  padding against the sky-view march the lab runs and three blur
+  sigmas, no hash key for the steps, the defaults, in-range values, five malformed values, the camera
   triple, presets, and the place and style fallbacks.

@@ -43,12 +43,18 @@ describe("fieldSpec", () => {
   });
 
   // Plan §9 finding 14: the padding ring is at least the sky-view search
-  // radius, swept over the directions/steps settings the hash allows.
-  for (const steps of [8, 16]) {
-    it(`pads at least the sky-view march of ${steps} posts`, () => {
-      assert.ok(FIELD.padM >= steps * FIELD.spacingM);
-    });
-  }
+  // radius, or the march reads past the data and the region's edge darkens.
+  // The march is FIELD.svfSteps, the one value the lab runs: the hash sets
+  // the directions only (32 steps would need 16 km of padding).
+  it("pads at least the sky-view march the lab runs", () => {
+    assert.ok(
+      FIELD.padM >= FIELD.svfSteps * FIELD.spacingM,
+      `${FIELD.padM} m < ${FIELD.svfSteps} x ${FIELD.spacingM} m`,
+    );
+  });
+  it("gives the hash no key for the march's steps", () => {
+    assert.ok(!("steps" in PARAMS) && !("svfSteps" in PARAMS));
+  });
   it("pads at least three blur sigmas", () => {
     assert.ok(FIELD.padM >= 3 * FIELD.reliefSigmaM);
   });
