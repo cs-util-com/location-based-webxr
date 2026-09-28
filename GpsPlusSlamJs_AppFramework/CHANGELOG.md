@@ -73,6 +73,21 @@
 
 ### Added
 
+- **The sun through clouds** (`SkyAtmosphere.configure({ sunThroughClouds:
+{ discExponent, aureole, silverLining } })`): the sun disc behind a cloud
+  keeps T^k of itself, and thin cloud glows around the sun (a narrow
+  aureole and a broad silver lining), each switched on its own; all off by
+  default; the glow stays out of the environment bake.
+- **`CloudShadow`** (`visualization/atmosphere/cloud-shadow.js`): a chained
+  material patch that dims every directional light by the cloud column
+  toward it, only where the sky draws the cloud, drifting with the sky's
+  clouds.
+- **`SkyAtmosphere.cloudTransmittanceToward(point, viewer?)`**,
+  `SkyAtmosphere.cloudUniforms`, `cloudNoiseSample`, and the column model
+  module `cloud-column.js` (`cloudColumnDrawn`,
+  `cloudColumnTransmittanceToward`; the slab's `cloudSlabCumulativeM`,
+  `cloudSlabThresholdThicknessM` and `cloudSlabThicknessM` moved there and
+  are re-exported from `cloud-slab.js`).
 - **`utils/locate-state`** (deep import, not on the root export surface):
   the behaviour every "my location" button shares, moved here from the OSM
   demo so the globe lab's pin uses the same contract. `LocateState`,
