@@ -22,11 +22,13 @@
 export type LocateState =
   'idle' | 'locating' | 'located' | 'denied' | 'timeout' | 'unavailable';
 
-/** The three ways a request for a position fails. */
-export type LocateFailure = Extract<
-  LocateState,
-  'denied' | 'timeout' | 'unavailable'
->;
+/**
+ * The three ways a request for a position fails. The three types below are
+ * not exported until a TypeScript caller needs them (the one caller of
+ * `locateOnce` today is the globe lab's plain JavaScript); `check:deadcode`
+ * rejects an exported type nothing imports.
+ */
+type LocateFailure = Extract<LocateState, 'denied' | 'timeout' | 'unavailable'>;
 
 /**
  * The button's accessible label for a state.
@@ -100,7 +102,7 @@ export function stateForError(code: number | undefined): LocateFailure {
  * (`accuracyM` in metres, `undefined` when the browser omits it), or the
  * failure.
  */
-export type LocateOutcome =
+type LocateOutcome =
   | {
       readonly kind: 'located';
       readonly fix: {
@@ -113,7 +115,7 @@ export type LocateOutcome =
   | { readonly kind: 'failed'; readonly state: LocateFailure };
 
 /** The part of `navigator.geolocation` a request uses. */
-export type LocateGeolocation = Pick<Geolocation, 'getCurrentPosition'>;
+type LocateGeolocation = Pick<Geolocation, 'getCurrentPosition'>;
 
 /**
  * Asks once where the device is (`getCurrentPosition`, a fresh fix:
@@ -122,12 +124,13 @@ export type LocateGeolocation = Pick<Geolocation, 'getCurrentPosition'>;
  * NEVER REJECTS FOR ANYTHING THE BROWSER DOES: no geolocation at all, a
  * request that throws (an insecure context), an error code, a fix whose
  * coordinates are not a place, and a callback called twice all resolve,
- * the failures as `unavailable` unless the code says otherwise. A button
- * awaiting this can therefore always leave its in-progress state.
+ * the failures as `unavailable` unless the code says otherwise. So no
+ * rejection leaves a button stuck in its in-progress state.
  *
- * The browser's timeout starts only once permission is granted, so while a
- * permission prompt is open this stays pending, and the button rightly says
- * it is still locating.
+ * It CAN stay pending: the browser's timeout starts only once permission
+ * is granted, so while a permission prompt is open (or if a browser never
+ * answers) the promise does not settle. A button awaiting it should
+ * therefore let a tap cancel the wait rather than stay disabled.
  *
  * Rejects with a RangeError only for a caller's mistake: a timeout that is
  * not a positive number.

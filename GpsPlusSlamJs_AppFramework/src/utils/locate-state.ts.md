@@ -13,7 +13,11 @@ through the design system's `/fw/` route) uses all of it.
 ## Public API
 
 - `LocateState`: `idle | locating | located | denied | timeout | unavailable`.
-- `LocateFailure`: the three failures, `denied | timeout | unavailable`.
+- `LocateFailure` (not exported): the three failures, `denied | timeout |
+unavailable`. It and `LocateOutcome` and `LocateGeolocation` stay
+  module-private until a TypeScript caller imports them: `check:deadcode`
+  rejects an exported type that nothing imports, and today's only caller of
+  `locateOnce` is the globe lab's plain JavaScript.
 - `labelFor(state): string`: the button's accessible label. Every state has
   a distinct, non-empty label; the texts are the ones the OSM demo shipped
   with (its `title` / `aria-label`), unchanged by the move.
@@ -47,9 +51,10 @@ accuracyM, timestamp } }` or `{ kind: "failed", state }`.
   code says otherwise; the first answer wins). It rejects with a
   `RangeError` only for a caller's mistake: a `timeoutMs` that is not a
   positive number.
-- **A pending permission prompt keeps it pending.** The browser starts its
-  timeout only once permission is granted, so a button awaiting this keeps
-  saying it is locating while the prompt is open, which is true.
+- **It can stay pending.** The browser starts its timeout only once
+  permission is granted, so while a prompt is open (or if a browser never
+  answers) the promise does not settle. A button awaiting it should let a
+  tap cancel the wait instead of staying disabled.
 - A non-finite accuracy becomes `undefined`, never `NaN`.
 - Related, NOT unified yet: `sensors/permission-checker.ts` carries its own
   error strings for the same three codes (a permission check, not a locate
@@ -64,10 +69,13 @@ import {
   locateOnce,
 } from 'gps-plus-slam-app-framework/utils/locate-state';
 
-button.disabled = true;
-button.textContent = 'Finding you...';
+// The wait can be cancelled: a tap while locating bumps `request`, and
+// an outcome for an older request is ignored.
+const mine = ++request;
+button.textContent = 'Finding you... (tap to cancel)';
 const outcome = await locateOnce(navigator.geolocation, { timeoutMs: 15_000 });
-button.disabled = false;
+if (mine !== request) return;
+button.textContent = 'my location';
 if (outcome.kind === 'failed') {
   errorLine.textContent = `${labelFor(outcome.state)}: ${locateAdvice(outcome.state)}`;
 }

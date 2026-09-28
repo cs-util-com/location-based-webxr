@@ -16,7 +16,7 @@
  */
 import { expect, test } from "@playwright/test";
 
-import { arriveAt } from "./globe-smoke-helpers.mjs";
+import { arriveAt, luminance, meanOf } from "./globe-smoke-helpers.mjs";
 
 /**
  * A fixed daylight view with the sky pinned as the other specs pin it
@@ -134,10 +134,12 @@ test("a drag turns the globe and takes the camera; replay gives it back", async 
 });
 
 // WHY (round-2 plan §1: "zoom in, to try the tile loading"): the wheel
-// takes the camera and zooms in; close to the ground the library's planes
-// follow it (nothing clipped), and tiles of the finest committed level,
-// which the fitted view never needs, load there.
-test("a wheel zooms in, and the finest level loads close up", async ({
+// takes the camera and zooms in; close to the ground (below 50 km) the
+// library's planes follow it: its near plane stays within its own band
+// (at most 1 km this low) and well under the altitude, and the ground
+// under the centre is drawn, not clipped to the black of space. Tiles of
+// the finest committed level, which the fitted view never needs, load.
+test("a wheel zooms in close to the ground, unclipped, and the finest level loads", async ({
   page,
 }) => {
   test.setTimeout(300_000);
@@ -145,17 +147,18 @@ test("a wheel zooms in, and the finest level loads close up", async ({
   const c = await canvasCentre(page);
   await page.mouse.move(c.x, c.y);
   let state = fitted;
-  for (let i = 0; i < 60 && state.altitudeM > 1_500_000; i++) {
+  for (let i = 0; i < 200 && state.altitudeM > 50_000; i++) {
     await page.mouse.wheel(0, -400);
     await frames(page, 3);
     state = await page.evaluate(() => window.__globeLab.state());
   }
   console.log(
-    `wheel: altitude ${(fitted.altitudeM / 1000).toFixed(0)} -> ${(state.altitudeM / 1000).toFixed(0)} km, near ${(state.near / 1000).toFixed(1)} km`,
+    `wheel: altitude ${(fitted.altitudeM / 1000).toFixed(0)} -> ${(state.altitudeM / 1000).toFixed(1)} km, near ${state.near.toFixed(0)} m`,
   );
   expect(state.cameraOwner).toBe("controls");
-  expect(state.altitudeM).toBeLessThan(1_500_000);
-  expect(state.near).toBeLessThan(state.altitudeM);
+  expect(state.altitudeM).toBeLessThan(50_000);
+  expect(state.near).toBeLessThanOrEqual(1000);
+  expect(state.near).toBeLessThan(state.altitudeM * 0.5);
   // The fitted view needs no level 4 at the default target (globe sky
   // results §3.1); close up it must load some.
   expect(fitted.tileRequestsByLevel[4]).toBe(0);
@@ -165,9 +168,80 @@ test("a wheel zooms in, and the finest level loads close up", async ({
     { timeout: 120_000 },
   );
   const close = await page.evaluate(() => window.__globeLab.state());
-  console.log(
-    `close up: tiles per level ${close.tileRequestsByLevel.join("/")}, ${close.refusedTiles} refused, tile errors ${close.tileErrors}`,
+  expect(close.centreLatLon).not.toBeNull();
+  // Space is pure black on this view (no stars, no Milky Way), so a
+  // clipped ground reads 0; the Sahara at 11:00 UTC reads far above it.
+  const grid = await page.evaluate(() =>
+    window.__globeLab.readPixels(
+      [0.4, 0.45, 0.5, 0.55, 0.6].flatMap((u) =>
+        [0.4, 0.45, 0.5, 0.55, 0.6].map((v) => [u, v]),
+      ),
+    ),
   );
+  const lum = grid.map(luminance);
+  const lit = lum.filter((l) => l > 10).length;
+  console.log(
+    `close up: tiles per level ${close.tileRequestsByLevel.join("/")}, ${close.refusedTiles} refused, tile errors ${close.tileErrors}; centre grid lit ${lit}/25, mean luminance ${meanOf(lum).toFixed(1)}`,
+  );
+  expect(lit).toBe(25);
   expect(close.tileErrors).toBe(0);
   expect(errors).toEqual([]);
+});
+
+// WHY (the owner asked how to turn and zoom the globe with fingers): the
+// controls must answer real touch input, not only the mouse. Chromium's
+// touch events (through the DevTools protocol, as a phone's would arrive)
+// drive a one-finger drag, then a two-finger pinch: the drag takes the
+// camera and turns the globe, the pinch brings the camera down.
+test.describe("on a touch screen", () => {
+  test.use({ hasTouch: true });
+  test("a one-finger drag turns the globe and a pinch zooms in", async ({
+    page,
+  }) => {
+    test.setTimeout(300_000);
+    const { errors, state: before } = await bootArrived(page);
+    const c = await canvasCentre(page);
+    const cdp = await page.context().newCDPSession(page);
+    const touch = (type, points) =>
+      cdp.send("Input.dispatchTouchEvent", {
+        type,
+        touchPoints: points.map(([x, y], id) => ({ x, y, id })),
+      });
+    // One finger, 200 px to the right.
+    await touch("touchStart", [[c.x, c.y]]);
+    for (let i = 1; i <= 10; i++) {
+      await touch("touchMove", [[c.x + 20 * i, c.y]]);
+      await frames(page, 2);
+    }
+    await touch("touchEnd", []);
+    await frames(page, 30);
+    const dragged = await page.evaluate(() => window.__globeLab.state());
+    const dLng = dragged.centreLatLon.lng - before.centreLatLon.lng;
+    console.log(
+      `touch drag 200 px right: centre moved ${dLng.toFixed(2)}° in longitude`,
+    );
+    expect(dragged.cameraOwner).toBe("controls");
+    expect(dLng).toBeLessThan(-10);
+    // Two fingers, 80 px apart, spread to 400 px.
+    await touch("touchStart", [
+      [c.x - 40, c.y],
+      [c.x + 40, c.y],
+    ]);
+    for (let i = 1; i <= 10; i++) {
+      await touch("touchMove", [
+        [c.x - 40 - 16 * i, c.y],
+        [c.x + 40 + 16 * i, c.y],
+      ]);
+      await frames(page, 2);
+    }
+    await touch("touchEnd", []);
+    await frames(page, 30);
+    const pinched = await page.evaluate(() => window.__globeLab.state());
+    console.log(
+      `pinch 80 -> 400 px: altitude ${(dragged.altitudeM / 1000).toFixed(0)} -> ${(pinched.altitudeM / 1000).toFixed(0)} km`,
+    );
+    expect(pinched.cameraOwner).toBe("controls");
+    expect(pinched.altitudeM).toBeLessThan(dragged.altitudeM * 0.9);
+    expect(errors).toEqual([]);
+  });
 });

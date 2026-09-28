@@ -361,12 +361,18 @@ function introFlight(ellipsoid) {
 
 /**
  * Touch and mouse (round-2 plan 2026-09-26-2055 M3a): the tile library's
- * own `GlobeControls` on the canvas (drag to turn, pinch or wheel to zoom,
- * two fingers or the right button to tilt, a double tap to zoom in).
+ * own `GlobeControls` on the canvas. One finger (or the left button) on
+ * the Earth drags it round, a pinch or the wheel zooms, a double tap zooms
+ * in. Two fingers moved together (or the right button) tilt, but only once
+ * zoomed in: farther out than where the Earth spans the narrower side of
+ * the view (about 7,300 km up at fovY 50° on a landscape screen, about
+ * 24,000 km on a portrait phone) the library turns tilting off. A
+ * one-finger swipe beside the globe, on space, does nothing: a press takes
+ * the camera only where its ray hits the Earth.
  * The camera has ONE owner at a time:
- * - the intro (spin, turn, dive) while `flight.drives`: it sets the pose
+ * - the intro (spin, turn, hold) while `flight.drives`: it sets the pose
  *   AND the clip planes (`followIntro`, from the height above the ground,
- *   so a dive never clips the ground and the far side is culled), and the
+ *   so a close view never clips the ground and the far side is culled), and the
  *   controls are not updated;
  * - the controls once the user touches: their `start` event (a press on
  *   the Earth, a wheel step, a double tap) calls `onTake`, which stops the
@@ -378,6 +384,10 @@ function introFlight(ellipsoid) {
  * The controls stay enabled throughout, because a disabled control ignores
  * the very press that should take the camera; the intro keeps their up
  * direction in step so that press finds the Earth under the pointer.
+ * Cost to measure on a phone: while the controls own the camera, each
+ * frame raycasts the tiles twice (the library's height adjustment, in
+ * `update` and in `adjustCamera`); `adjustHeight = false` removes both
+ * if they show.
  */
 function cameraControls(scene, camera, globe, onTake) {
   const controls = new GlobeControls(scene, camera, canvas);
@@ -401,9 +411,12 @@ function cameraControls(scene, camera, globe, onTake) {
       controls.update();
     },
     release() {
-      controls.resetState();
-      controls.dragInertia.set(0, 0, 0);
-      controls.rotationInertia.set(0, 0);
+      // Toggling `enabled` is the library's own reset: it ends any drag,
+      // forgets the pointers and drops the drag and rotation momentum. The
+      // globe's spin momentum and a pending wheel step are cleared here.
+      controls.enabled = false;
+      controls.enabled = true;
+      controls.zoomDelta = 0;
       controls.globeInertia.identity();
       controls.globeInertiaFactor = 0;
     },

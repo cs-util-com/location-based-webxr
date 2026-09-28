@@ -384,6 +384,22 @@ describe("clipPlanes", () => {
     expect(low.far).toBeLessThan(1_550_000);
   });
 
+  it("is safe for the widest view the lab allows: cos(half-diagonal) >= nearFraction", () => {
+    // A surface point at distance d seen at angle θ off the axis has depth
+    // d cos θ, and d >= height, so the near plane (nearFraction x height)
+    // never clips ground inside a half-diagonal θ with cos θ >= the
+    // fraction. The widest view: the lab's fovY maximum (80°, its PARAMS)
+    // on a 2.5:1 screen (a phone in landscape is about 2.2:1).
+    const fovYMax = 80 * DEG;
+    const aspectMax = 2.5;
+    const halfDiagonal = Math.atan(
+      Math.tan(fovYMax / 2) * Math.hypot(1, aspectMax),
+    );
+    expect(Math.cos(halfDiagonal)).toBeGreaterThanOrEqual(
+      GLOBE_CLIP.nearFraction,
+    );
+  });
+
   it("refuses a camera at the centre or off the numbers", () => {
     expect(() => clipPlanes(WGS84_ELLIPSOID, new THREE.Vector3())).toThrow(
       RangeError,

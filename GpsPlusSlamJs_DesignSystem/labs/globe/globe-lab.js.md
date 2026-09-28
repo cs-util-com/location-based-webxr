@@ -108,9 +108,20 @@
     until the replay button or a new `at`, `spinMs` or `turnMs` restarts it.
 - Touch and mouse (round-2 plan 2026-09-26-2055 M3a, M3b; round-3 plan
   2026-09-27-0532 §4 E): the tile library's own `GlobeControls` on the
-  canvas (drag to turn, pinch or wheel to zoom, two fingers or the right
-  button to tilt, a double tap to zoom in; damping on). The camera has ONE
-  owner at a time:
+  canvas, damping on:
+  - one finger (or the left button) on the Earth drags it round; a pinch or
+    the wheel zooms; a double tap zooms in;
+  - two fingers moved together (or the right button) tilt, but only once
+    zoomed in: farther out than where the Earth spans the narrower side of
+    the view (at fovY 50° about 7,300 km up on a landscape screen, about
+    24,000 km on a portrait phone) the library turns tilting off;
+  - a one-finger swipe beside the globe, on space, does nothing: a press
+    takes the camera only where its ray hits the Earth.
+  - To measure on a phone: while the controls own the camera, each frame
+    raycasts the tiles twice (the library's height adjustment, in `update`
+    and `adjustCamera`); `adjustHeight = false` removes both if they cost.
+
+  The camera has ONE owner at a time:
   - the intro while it spins, turns or holds (`cameraOwner: "intro"`): it
     sets the pose and the clip planes (`clipPlanes` in
     `/globe/globe-camera.js`: near 0.3 of the height above the ground, far
@@ -123,11 +134,14 @@
     (phase `user`), and only the controls move the camera and set its
     planes;
   - the replay button and a new target or timing in the hash give the
-    camera back: the controls drop any drag and leftover momentum, and the
-    intro starts again from the spin.
+    camera back: the controls are toggled off and on (the library's reset:
+    no drag, no pointers, no drag or rotation momentum), the globe's spin
+    momentum and any pending wheel step are cleared, and the intro starts
+    again from the spin.
   - Phase 1 has no GPS (DEC-PRG-10): the fix is always null. The target is
     chosen only while spinning, so a fix arriving after the fallback would
     be ignored; phase 6 (the real locate timeout) has to decide that.
+
 - Test API, `window.__globeLab`: `ready`, `error`, `spinStart`, `state()`
   (`{ models, tileErrors, cachedBytes, pendingTiles, loadedTiles, phase,
 target, source, history, runs, spinMs, turnMs, centreLatLon, timeMs, clock,
@@ -247,8 +261,14 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   Earth's centre); a 200 px mouse drag takes the camera (`user`), turns
   the centre west by more than 10°, the view stays put a second later, and
   the replay button returns the camera to the intro, which arrives at the
-  target again; wheel steps take the camera below 1,500 km with the near
-  plane under the altitude, and level-4 tiles (none on the fitted view)
-  load there without a tile error.
+  target again; wheel steps take the camera below 50 km, where the near
+  plane stays within the library's band (at most 1 km) and under half the
+  altitude, the centre ray hits the Earth and a 5x5 pixel grid round the
+  centre is lit (a clipped ground reads the black of space), and level-4
+  tiles (none on the fitted view) load there without a tile error; on a
+  touch screen (Chromium touch events through the DevTools protocol) a
+  one-finger 200 px drag takes the camera and turns the centre west by
+  more than 10°, and a two-finger pinch from 80 to 400 px lowers the
+  camera by more than 10 %.
 - The memory and download table: `pnpm run measure:globe`
   (`measure-globe.mjs`), not a test.
