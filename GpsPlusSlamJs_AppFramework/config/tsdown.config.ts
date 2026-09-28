@@ -272,6 +272,12 @@ const entryFiles = [
   // tsc and vitest resolve it while Vite in the browser does not (found by
   // the recorder e2e stage, 26 minutes into a cascade).
   'src/utils/median.ts',
+  // The locate buttons' shared behaviour (labels, error mapping, the fix
+  // each failure names, one request) - deep-imported by the OSM demo's
+  // locate control and served to the globe lab's pin (round-2 plan
+  // 2026-09-26-2055 M3g, DEC-H3). Built per-file for the `./utils/*`
+  // wildcard, like the above.
+  'src/utils/locate-state.ts',
   'src/utils/toast-core.ts',
   // QR launch payload codec — deep-imported by the TourViewer app: the decode
   // side (codec-dictionary) implements the ?qr= launch-handler dispatch, and
