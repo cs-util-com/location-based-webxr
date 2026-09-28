@@ -73,6 +73,14 @@
 
 ### Added
 
+- **`utils/locate-state`** (deep import, not on the root export surface):
+  the behaviour every "my location" button shares, moved here from the OSM
+  demo so the globe lab's pin uses the same contract. `LocateState`,
+  `labelFor`, `locateAdvice`, `stateForError`, and `locateOnce`, one
+  position request that never rejects for anything the browser does (a
+  failure resolves as a state; the browser timeout bounds it, so a caller
+  that must not wait should make locating cancellable). The OSM demo now
+  imports it; its behaviour is unchanged.
 - **`ArShadows.mapRenders()`** reports how many shadow-map renders the rig
   has requested, for diagnostics (the PhysicsDemo's status line shows it).
 - **`createQrParallaxSizeTally` and `measuredSizeOffer` on `/ar/qr`** (QR
