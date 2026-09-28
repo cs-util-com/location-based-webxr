@@ -350,3 +350,39 @@ describe("handleDriveProxy — a proxied file never runs as a page on the site",
     }
   });
 });
+
+describe("handleDriveProxy — the file name reaches the page", () => {
+  // Why this matters (Drive replace plan §2 decision 3, §5 #2): the
+  // TourViewer names the rebuilt zip after the Drive file, because Drive
+  // offers "Replace" only for the same name. A dev host calls the proxy
+  // cross-origin, and a header that is not EXPOSED is invisible to its
+  // JavaScript - forwarding alone is not enough.
+  it("exposes content-disposition on a ranged GET and on a HEAD", async () => {
+    for (const method of ["GET", "HEAD"]) {
+      const { fetchImpl } = recordingFetch(
+        upstreamResponse(
+          method === "GET" ? 206 : 200,
+          {
+            "content-type": "application/zip",
+            "content-disposition": 'attachment; filename="My tour.zip"',
+          },
+          null,
+        ),
+      );
+      const response = await handleDriveProxy(
+        request("?id=file123", {
+          method,
+          headers: { Range: "bytes=0-99", Origin: "http://localhost:5187" },
+        }),
+        { fetchImpl },
+      );
+      expect(response.headers.get("content-disposition"), method).toBe(
+        'attachment; filename="My tour.zip"',
+      );
+      expect(
+        response.headers.get("access-control-expose-headers")?.toLowerCase(),
+        method,
+      ).toContain("content-disposition");
+    }
+  });
+});

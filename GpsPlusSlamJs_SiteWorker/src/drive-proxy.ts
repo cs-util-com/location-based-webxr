@@ -30,9 +30,7 @@ const FORWARDED_REQUEST_HEADERS = [
   "if-modified-since",
 ] as const;
 
-/** Response headers copied back; also the Expose list, so browser JS can
- *  actually read them (richer than GitHub raw, which omits the Expose
- *  header and forces the transport to limp around it). */
+/** Response headers copied back unchanged. */
 const FORWARDED_RESPONSE_HEADERS = [
   "content-type",
   "content-length",
@@ -42,8 +40,26 @@ const FORWARDED_RESPONSE_HEADERS = [
   "last-modified",
 ] as const;
 
-const EXPOSE_HEADERS =
-  "Content-Type, Content-Length, Content-Range, Accept-Ranges, ETag, Last-Modified";
+/** What browser JS on a dev host may read (production is same-origin):
+ *  every forwarded header, richer than GitHub raw, which omits the Expose
+ *  header and forces the transport to limp around it - plus the file name,
+ *  which the TourViewer gives the rebuilt zip so Drive offers "Replace"
+ *  (Drive replace plan §2 decision 3). Derived, so the two lists cannot
+ *  drift apart. */
+const EXPOSE_HEADERS = [...FORWARDED_RESPONSE_HEADERS, "content-disposition"]
+  .map(canonicalHeaderName)
+  .join(", ");
+
+/** `content-length` -> `Content-Length`, `etag` -> `ETag`: the spelling the
+ *  Expose list has always carried (names are case-insensitive, readers of
+ *  the raw header are not always). */
+function canonicalHeaderName(name: string): string {
+  if (name === "etag") return "ETag";
+  return name.replace(
+    /(^|-)([a-z])/g,
+    (_match, dash: string, letter: string) => `${dash}${letter.toUpperCase()}`,
+  );
+}
 
 /** Dev servers only — production is same-origin with the worker and never
  *  needs CORS. Covers the repo's documented device-test flows too (vite

@@ -33,6 +33,11 @@ Plan and decision record:
 
 ## Invariants & assumptions
 
+- **Exposed to a dev host's JavaScript:** every forwarded response header
+  plus `content-disposition` (the file name the TourViewer gives the rebuilt
+  zip, so Drive offers "Replace"; Drive replace plan §2 decision 3). The
+  list is derived from the forwarded one. Production and previews are
+  same-origin and read it regardless.
 - **A proxied file is never a page of the site** (Drive replace plan
   §5 #11): every answer is `content-disposition: attachment` (Drive's own
   parameters - the file name - kept), `x-content-type-options: nosniff` and
