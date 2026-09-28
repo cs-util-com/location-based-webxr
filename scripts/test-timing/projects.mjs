@@ -330,9 +330,12 @@ export const PROJECTS = [
       // none for pure .mjs), then the page's WebGL smoke. The smoke is the
       // only place the framework's atmosphere shaders are compiled and
       // checked, so it is a real stage, not an eyeball tool like shoot.mjs.
+      // `labs/**`: the lab pages' pure modules (terrain plan 2026-09-27-0605
+      // §9, finding 1); without it their unit tests would never run.
       {
         name: "test:unit",
-        command: 'node --test "*.test.mjs" "3d/**/*.test.mjs"',
+        command:
+          'node --test "*.test.mjs" "3d/**/*.test.mjs" "labs/**/*.test.mjs"',
         counts: null,
       },
       {

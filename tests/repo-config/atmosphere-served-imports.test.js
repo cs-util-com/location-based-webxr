@@ -40,6 +40,7 @@ const ATMOSPHERE = join(
 );
 const SPECIFIER =
   /(?:^|[;\s])(?:import|export)\s*(?:[\w*${}\s,]*?\bfrom\s*)?['"]([^'"]+)['"]/g;
+const TYPE_ONLY = /^[;\s]*(?:import|export)\s+type[\s{]/;
 
 /**
  * Every problem in the served graph, as "file: problem". `mapped` is the
@@ -67,6 +68,9 @@ function servedGraphProblems(
     }
     for (const match of source.matchAll(SPECIFIER)) {
       const specifier = match[1];
+      // `import type` / `export type` statements are erased whole by the
+      // stripper, so their specifier never reaches the browser.
+      if (TYPE_ONLY.test(match[0])) continue;
       if (mapped.includes(specifier)) continue;
       if (!specifier.startsWith('.')) {
         problems.push(
@@ -159,5 +163,39 @@ describe('the globe package stays servable to the no-build globe lab', () => {
       globeLabMapped()
     );
     expect(problems.join('\n')).toContain('bare import');
+  });
+});
+
+/**
+ * THE TERRAIN LAB (terrain plan 2026-09-27-0605 §9, findings 2 and 5) is
+ * served the Osm library (`/osm-lib/`) and OsmDemo's heightfield (`/osm/`),
+ * and imports them from a module Worker, where no import map applies: so
+ * nothing bare may appear in their graphs at all. Neither package depends on
+ * the design system, so their own gates never load the lab; this is the
+ * check that runs when one of them changes.
+ */
+const TERRAIN_LAB_SERVED = [
+  join(repoRoot, 'GpsPlusSlamJs_Osm', 'src', 'elevation', 'terrarium.ts'),
+  join(repoRoot, 'GpsPlusSlamJs_Osm', 'src', 'mesh', 'enu.ts'),
+  join(repoRoot, 'GpsPlusSlamJs_OsmDemo', 'src', 'heightfield.ts'),
+  join(repoRoot, 'GpsPlusSlamJs_OsmDemo', 'src', 'terrain-texture.ts'),
+];
+
+describe('the terrain lab served modules stay servable inside a worker', () => {
+  it('finds every served module', () => {
+    for (const file of TERRAIN_LAB_SERVED) expect(existsSync(file), file).toBe(true);
+  });
+
+  it('imports only .js-suffixed relatives, with erasable syntax', () => {
+    expect(servedGraphProblems(TERRAIN_LAB_SERVED, undefined, [])).toEqual([]);
+  });
+
+  // The type-only skip must not open a hole for a value import.
+  it('skips a type-only import but flags a value import of the same package', () => {
+    const fake = join(repoRoot, 'GpsPlusSlamJs_OsmDemo', 'src', '__planted__.ts');
+    const typeOnly = "import type { EnuFrame } from 'gps-plus-slam-osm';";
+    const value = "import { enuFrameAt } from 'gps-plus-slam-osm';";
+    expect(servedGraphProblems([fake], () => typeOnly, [])).toEqual([]);
+    expect(servedGraphProblems([fake], () => value, []).join('\n')).toContain('bare import');
   });
 });
