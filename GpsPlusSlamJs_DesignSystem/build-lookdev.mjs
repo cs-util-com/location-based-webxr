@@ -10,7 +10,10 @@
  * deployed page is file-for-file the page `pnpm run serve` shows. The only
  * rewrite is the base: the page uses absolute route prefixes (`/fw/`,
  * `/osm/`, `/vendor/`, one per route in the table), which move under
- * `base` (e.g. `/lookdev/fw/`). Two things a crawl cannot see are added
+ * `base` (e.g. `/lookdev/fw/`). Module workers and `new URL(…,
+ * import.meta.url)` references are followed too, a worker's graph without
+ * the import map (browsers apply none inside a worker). Two things a crawl
+ * cannot see are added
  * after it: a `copyAll` route's whole directory when a page references it
  * (runtime assets that are fetched, not imported), and a route's `notice`
  * file beside anything emitted from it (a library's LICENSE).
@@ -51,6 +54,19 @@ const SPECIFIER =
   /(?:^|[;\s])(?:import|export)\s*(?:[\w*${}\s,]*?\bfrom\s*)?["']([^"']+)["']/g;
 /** A stylesheet the page links (the import crawl cannot see links). */
 const STYLESHEET = /<link[^>]*rel="stylesheet"[^>]*href="([^"]+)"/g;
+/**
+ * A module Worker, `new Worker(new URL("x", import.meta.url), …)`: resolved
+ * against the module that names it. Terrain plan 2026-09-27-0605 §9, finding 3.
+ */
+const WORKER_BY_URL =
+  /new\s+(?:Shared)?Worker\s*\(\s*new\s+URL\s*\(\s*["']([^"']+)["']\s*,\s*import\.meta\.url\s*\)/g;
+/** A Worker named by a plain string: resolved against the PAGE, not the module. */
+const WORKER_BY_STRING = /new\s+(?:Shared)?Worker\s*\(\s*["']([^"']+)["']/g;
+/** Any other `new URL("x", import.meta.url)`: a module or a fetched asset. */
+const META_URL =
+  /new\s+URL\s*\(\s*["']([^"']+)["']\s*,\s*import\.meta\.url\s*\)/g;
+/** What the crawl follows as a module rather than copying as an asset. */
+const MODULE_FILE = /\.m?js$/;
 
 /** The page's import map; a page without modules that need one has none. */
 function readImportMap(html) {
@@ -91,18 +107,37 @@ export function discoverEntries(packageRoot) {
   ];
 }
 
-/** A module specifier as the browser resolves it, as a URL path. */
+/**
+ * A module specifier as the browser resolves it, as a URL path. Inside a
+ * worker (`imports` is null) there is no import map, so a bare specifier
+ * cannot resolve at all, and the error says why.
+ */
 function resolveSpecifier(specifier, fromUrl, imports) {
   if (specifier.startsWith("./") || specifier.startsWith("../")) {
     return posix.normalize(posix.join(posix.dirname(fromUrl), specifier));
   }
   if (specifier.startsWith("/")) return specifier;
+  if (imports === null) {
+    throw new Error(
+      `cannot resolve "${specifier}" imported by ${fromUrl} (a worker: import maps do not apply there, use a route URL)`,
+    );
+  }
   if (imports[specifier]) return imports[specifier];
   const prefix = Object.keys(imports)
     .filter((key) => key.endsWith("/") && specifier.startsWith(key))
     .sort((a, b) => b.length - a.length)[0];
   if (prefix) return imports[prefix] + specifier.slice(prefix.length);
   throw new Error(`cannot resolve "${specifier}" imported by ${fromUrl}`);
+}
+
+/**
+ * A URL reference (`new URL(ref, base)`, `new Worker(ref)`) as a URL path:
+ * relative to `baseUrl` unless absolute; null for another origin.
+ */
+function resolveUrlRef(ref, baseUrl) {
+  if (/^[a-z][a-z\d+.-]*:/i.test(ref)) return null;
+  if (ref.startsWith("/")) return posix.normalize(ref);
+  return posix.normalize(posix.join(posix.dirname(baseUrl), ref));
 }
 
 /**
@@ -195,19 +230,46 @@ export function buildLookdev({
       seen.add(url);
       emit(url, load(url));
     }
+    // A queued module carries its context: a worker's graph has no import
+    // map, so the same file is checked again when a worker reaches it.
     const queue = [
       ...html.matchAll(/<script type="module" src="([^"]+)"/g),
-    ].map((m) => resolveSpecifier(m[1], entry, imports));
+    ].map((m) => ({
+      url: resolveSpecifier(m[1], entry, imports),
+      worker: false,
+    }));
     while (queue.length > 0) {
-      const url = queue.shift();
-      if (seen.has(url)) continue;
-      seen.add(url);
+      const { url, worker } = queue.shift();
+      const key = worker ? `worker:${url}` : url;
+      if (seen.has(key)) continue;
+      seen.add(key);
       const text = load(url);
       sources.push(text);
+      const scope = worker ? null : imports;
       for (const match of text.matchAll(SPECIFIER)) {
-        queue.push(resolveSpecifier(match[1], url, imports));
+        queue.push({ url: resolveSpecifier(match[1], url, scope), worker });
       }
-      emit(url, rebase(text, base));
+      // WORKERS AND import.meta.url REFERENCES (terrain plan §9, finding 3):
+      // not imports, so the specifier scan above cannot see them.
+      const workers = [
+        ...[...text.matchAll(WORKER_BY_URL)].map((m) =>
+          resolveUrlRef(m[1], url),
+        ),
+        // A string names its worker relative to the PAGE.
+        ...[...text.matchAll(WORKER_BY_STRING)].map((m) =>
+          resolveUrlRef(m[1], entry),
+        ),
+      ];
+      for (const ref of workers) {
+        if (ref !== null) queue.push({ url: ref, worker: true });
+      }
+      for (const match of text.replace(WORKER_BY_URL, "").matchAll(META_URL)) {
+        const ref = resolveUrlRef(match[1], url);
+        if (ref === null) continue;
+        if (MODULE_FILE.test(ref)) queue.push({ url: ref, worker });
+        else if (!emittedUrls.includes(ref)) copy(ref);
+      }
+      if (!emittedUrls.includes(url)) emit(url, rebase(text, base));
     }
   }
 

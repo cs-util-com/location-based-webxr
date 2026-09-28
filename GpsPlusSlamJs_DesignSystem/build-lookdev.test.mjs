@@ -278,6 +278,111 @@ describe("buildLookdev with custom routes", () => {
   });
 });
 
+// WHY (terrain plan 2026-09-27-0605 §9, review finding 3): the terrain lab
+// decodes tiles in a module Worker. A Worker is not an `import`, so the
+// crawl never saw it, and the preview served the page without its worker:
+// a 404 that shows as an endless "Computing relief" on the phone. Import
+// maps do not apply inside a worker, so a bare specifier there must fail
+// the BUILD, not the phone.
+describe("buildLookdev with a module Worker", () => {
+  const BYTES = Buffer.from([0, 1, 2, 250, 251, 252]);
+  let root;
+  let extra;
+  let out;
+  let files;
+  before(() => {
+    root = fixture({
+      "labs/relief/index.html":
+        "<title>Relief lab</title>" +
+        '<script type="importmap">{"imports":{"lib":"/extra/lib.js"}}</script>' +
+        '<script type="module" src="./relief.js"></script>',
+      "labs/relief/relief.js":
+        'import "lib";\n' +
+        "const w = new Worker(\n" +
+        '  new URL("./relief-worker.js", import.meta.url),\n' +
+        '  { type: "module" },\n' +
+        ");\n" +
+        "const s = new Worker('/labs/relief/string-worker.js');\n" +
+        'export const DATA = new URL("./data.bin", import.meta.url);\n',
+      "labs/relief/relief-worker.js":
+        'import { H } from "/extra/helper.js";\nimport "./maths.js";\n',
+      "labs/relief/maths.js": "export {};\n",
+      "labs/relief/string-worker.js": "export {};\n",
+    });
+    writeFileSync(join(root, "labs", "relief", "data.bin"), BYTES);
+    extra = fixture({
+      "helper.js": "export const H = 1;\n",
+      "lib.js": "export {};\n",
+    });
+    out = mkdtempSync(join(tmpdir(), "lookdev-worker-"));
+    files = buildLookdev({
+      outDir: out,
+      base: "/lookdev/",
+      packageRoot: root,
+      routes: [{ prefix: "/extra/", dir: extra, typescript: false }],
+    });
+  });
+  after(() => {
+    for (const dir of [root, extra, out]) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("crawls a Worker named by new URL(..., import.meta.url) and its imports", () => {
+    for (const rel of [
+      "labs/relief/relief-worker.js",
+      "labs/relief/maths.js",
+      "extra/helper.js",
+    ]) {
+      assert.ok(files.includes(rel), rel);
+    }
+  });
+
+  it("crawls a Worker named by a plain string", () => {
+    assert.ok(files.includes("labs/relief/string-worker.js"));
+  });
+
+  it("rebases the worker's route imports under the base", () => {
+    const worker = readFileSync(
+      join(out, "labs/relief/relief-worker.js"),
+      "utf8",
+    );
+    assert.match(worker, /"\/lookdev\/extra\/helper\.js"/);
+  });
+
+  it("copies a non-module new URL(...) asset byte for byte", () => {
+    assert.deepEqual(readFileSync(join(out, "labs/relief/data.bin")), BYTES);
+  });
+
+  it("refuses a bare specifier inside a Worker (no import map there)", () => {
+    const bad = fixture({
+      "labs/bad/index.html":
+        "<title>Bad</title>" +
+        '<script type="importmap">{"imports":{"lib":"/extra/lib.js"}}</script>' +
+        '<script type="module" src="./bad.js"></script>',
+      "labs/bad/bad.js":
+        'new Worker(new URL("./w.js", import.meta.url), { type: "module" });\n',
+      "labs/bad/w.js": 'import "lib";\n',
+    });
+    const badOut = mkdtempSync(join(tmpdir(), "lookdev-bad-"));
+    try {
+      assert.throws(
+        () =>
+          buildLookdev({
+            outDir: badOut,
+            base: "/lookdev/",
+            packageRoot: bad,
+            routes: [{ prefix: "/extra/", dir: extra, typescript: false }],
+          }),
+        /"lib".*worker/i,
+      );
+    } finally {
+      rmSync(bad, { recursive: true, force: true });
+      rmSync(badOut, { recursive: true, force: true });
+    }
+  });
+});
+
 // WHY (globe plan 2026-09-26-0539 §8, the builder review points): the real
 // globe lab must deploy as a CLOSED graph (the library's hashed chunks are
 // found by the crawl, not listed anywhere), with the library's LICENSE

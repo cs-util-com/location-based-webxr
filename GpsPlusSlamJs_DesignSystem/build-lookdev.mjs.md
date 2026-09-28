@@ -22,6 +22,14 @@
     script, resolving relative, absolute and import-mapped ones, through
     `serve-routes.mjs`'s `defaultRoutes` (the SAME table the dev server
     uses), stripping TypeScript with `module.stripTypeScriptTypes`;
+  - follows module WORKERS too (terrain plan 2026-09-27-0605 §9, finding
+    3): `new Worker(new URL("x", import.meta.url), …)` resolved against
+    the naming module, `new Worker("x")` against the PAGE (the browser's
+    rule for a string). A worker's graph is crawled with NO import map,
+    because import maps do not apply inside a worker: a bare specifier
+    there fails the build with that reason instead of 404ing on a phone.
+    Any other `new URL("x", import.meta.url)` is crawled when it names a
+    `.js`/`.mjs` module and copied byte for byte otherwise;
   - rewrites the page's absolute route prefixes to sit under `base`; the
     prefixes come from the route table (each route's first path segment),
     so a new route needs no second list (W7 globe plan M0);
@@ -41,7 +49,8 @@
   - No bundler and no dependency: the deployed page is file-for-file what
     `pnpm run serve` shows (22 files on 2026-09-23, three's `build/` and the
     two addons included).
-  - Only STATIC imports are followed; a dynamic `import()` in the page
+  - Only STATIC imports, workers and `new URL(literal, import.meta.url)`
+    are followed; a dynamic `import()` or a URL built from a variable
     would need adding by hand.
   - Nothing is written outside `outDir`; `resolveRequest`'s containment
     applies to every read.
@@ -50,7 +59,10 @@
 - Examples: `buildLookdev({ outDir: "dist-site/lookdev", base: "/lookdev/" })`.
 - Tests: `build-lookdev.test.mjs` (also, with fixture routes: every route's
   prefix rebased, a referenced `copyAll` route copied byte for byte, an
-  unreferenced one not at all, a `notice` shipped beside its chunks), and (stage `test:unit`) builds the real page
+  unreferenced one not at all, a `notice` shipped beside its chunks; a
+  module Worker by `new URL` and by string crawled with its imports and
+  rebased, a non-module `new URL` asset copied byte for byte, a bare
+  specifier inside a worker refused), and (stage `test:unit`) builds the real page
   into a temp dir: page and styles present, three's graph and addons
   crawled, framework TypeScript emitted stripped, every prefix rebased,
   nothing outside the output, the index. With a temp fixture package:
