@@ -178,6 +178,8 @@ async function wireFinishable(options: {
   hosted: readonly TourObject[];
   placed: readonly TourObject[];
   hostedName?: string | null;
+  /** Runs while the finish awaits the AR session's end. */
+  onDisable?: (ctx: ReturnType<typeof createTourViewerSession>) => void;
 }) {
   const blob = await hostedArchive(options.hosted);
   const dom = fakeDom();
@@ -196,7 +198,10 @@ async function wireFinishable(options: {
     arStore: alignedArStore() as never,
     arController: {
       getState: () => ({ status: "running" }),
-      disable: () => undefined,
+      disable: () => {
+        options.onDisable?.(ctx);
+        return Promise.resolve();
+      },
     } as never,
     seams: { canShareZip: () => false, getScene: () => null } as never,
     wizard: { openStep: () => undefined, revealStep: () => undefined } as never,
@@ -338,5 +343,30 @@ describe("the rebuilt zip's name (Drive replace plan §2 decision 3)", () => {
     dom.finishButton.click();
     await settle(ctx);
     expect(ctx.rebuiltZip?.filename).toBe("mytour.zip");
+  });
+});
+
+describe("a tour closed while the finish ends the AR session", () => {
+  it("does not reveal the closed tour's finish block", async () => {
+    // Why this matters (DEC-A3, found by the Drive replace milestone review
+    // #7): every other await in the finish re-checks that its tour is still
+    // open, but the one that ends the AR session did not. A close in that
+    // window hid the block (resetFinishStep) and the finish then showed it
+    // again - the closed tour's disabled button, on the page of whatever
+    // opens next.
+    const { dom, ctx } = await wireFinishable({
+      hosted: [],
+      placed: [],
+      onDisable: (c) => {
+        c.session = null;
+      },
+    });
+    dom.finishBlock.hidden = true;
+    dom.finishButton.click();
+    await settle(ctx);
+    for (let i = 0; i < 20; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    expect(dom.finishBlock.hidden).toBe(true);
   });
 });

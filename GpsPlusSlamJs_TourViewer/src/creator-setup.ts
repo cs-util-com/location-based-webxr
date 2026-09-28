@@ -1146,6 +1146,9 @@ export function wireCreatorSetup(deps: {
         // started, which is then not ours to end.
         if (sessionGeneration === ctx.arSessionGeneration) {
           await arController.disable();
+          // A close during the session's end already hid the block; showing
+          // it now would put the closed tour's button on the next page.
+          if (ctx.session !== current) return;
         }
         // The download used to be step 5. It is the END of step 4 (F10):
         // the creator finished in AR, the session is closing, and what they
