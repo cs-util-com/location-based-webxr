@@ -52,10 +52,36 @@ describe("osmDemoBase", () => {
   });
 });
 
+// WHY (milestone review of the pin, finding M1): OsmDemo's camera looks at
+// its target from `cdist` metres, and its linear fog runs from
+// fogNearRatio x far to the far plane. At the demo's maximum `cdist` (4800
+// m, its far plane) the user's own spot sat exactly at the far plane, fully
+// fogged, and the fetched tile beyond it was lost in the fog. The bound is
+// derived from the demo's far plane and fog ratio (held to its source by
+// tests/repo-config/globe-handover-contract.test.js), not from a literal.
+describe("the hand-over distance", () => {
+  const fogNearM = OSM_HANDOVER.fogNearRatio * OSM_HANDOVER.farPlaneM;
+
+  it("keeps the spot and the far side of its data tile in front of the fog", () => {
+    expect(
+      OSM_HANDOVER.cameraDistanceM + OSM_HANDOVER.tileHalfM,
+    ).toBeLessThanOrEqual(fogNearM);
+  });
+
+  it("is a distance the demo accepts, and far enough to see the tile", () => {
+    expect(OSM_HANDOVER.cameraDistanceM).toBeLessThanOrEqual(
+      OSM_HANDOVER.maxCameraDistanceM,
+    );
+    expect(OSM_HANDOVER.cameraDistanceM).toBeGreaterThanOrEqual(
+      OSM_HANDOVER.tileHalfM,
+    );
+  });
+});
+
 describe("handOverUrl", () => {
   const page = "https://example.org/lookdev/labs/globe/";
 
-  it("moves the user and the camera to the target, the camera as far out as the demo allows", () => {
+  it("moves the user and the camera to the target, the camera at the hand-over distance", () => {
     const url = new URL(handOverUrl({ pageHref: page, target: COLOGNE }));
     expect(url.origin + url.pathname).toBe("https://example.org/osm/");
     const q = url.searchParams;
@@ -63,8 +89,7 @@ describe("handOverUrl", () => {
     expect(q.get("lng")).toBe("6.95817");
     expect(q.get("clat")).toBe("50.94128");
     expect(q.get("clng")).toBe("6.95817");
-    expect(q.get("cdist")).toBe(String(OSM_HANDOVER.maxCameraDistanceM));
-    expect(OSM_HANDOVER.maxCameraDistanceM).toBe(4800);
+    expect(q.get("cdist")).toBe(String(OSM_HANDOVER.cameraDistanceM));
     // No time given: the demo boots at its own afternoon sun.
     expect(q.has("date")).toBe(false);
     expect(q.has("time")).toBe(false);

@@ -288,9 +288,10 @@ const pinView = (page) =>
 
 // WHY (round-2 M3g; CLAUDE.md's async-feedback rule): the three ways a
 // position fails need three different fixes, the pin must say "Finding
-// you..." while it waits (disabled), and it must come back to idle after a
-// failure with the fix named: a pin stuck on "Finding you..." is the one
-// outcome worse than an error.
+// you..." while it waits (busy, and pressable to cancel), and it must come
+// back to idle after a failure with the fix named and the atom's warning
+// look: a pin stuck on "Finding you..." is the one outcome worse than an
+// error.
 for (const [code, name, fix] of [
   [1, "denied", /settings/i],
   [3, "timeout", /sky/i],
@@ -321,7 +322,11 @@ for (const [code, name, fix] of [
       () => window.__globeLab.state().pin.phase === "idle",
     );
     const after = await pinView(page);
-    expect(after).toMatchObject({ state: "idle", disabled: false });
+    expect(after).toMatchObject({
+      phase: "idle",
+      state: name,
+      disabled: false,
+    });
     expect(after.status).toMatch(fix);
     // The camera never left the intro.
     expect((await page.evaluate(() => window.__globeLab.state())).phase).toBe(
@@ -410,7 +415,8 @@ test("a granted position dives there and hands over to the city", async ({
   expect(q.get("lng")).toBe("6.95817");
   expect(q.get("clat")).toBe("50.94128");
   expect(q.get("clng")).toBe("6.95817");
-  expect(q.get("cdist")).toBe("4800");
+  // The hand-over distance, well inside OsmDemo's fog (milestone review M1).
+  expect(q.get("cdist")).toBe("1800");
   expect(q.get("date")).toBe("2026-03-20");
   // 11:00 UTC at 6.96°E: +27.8 min of longitude, -7.5 min equation of time.
   expect(q.get("time")).toMatch(/^11:2\d$/);
@@ -490,5 +496,134 @@ test("the dive lands on the fix at the hand-over altitude, and a touch stops a d
   expect(stopped.altitudeM).toBeGreaterThan(50_000 * 2);
   await frames(page, 30);
   expect(page.url()).toContain("/labs/globe/");
+  expect(errors).toEqual([]);
+});
+
+/**
+ * Answers the page's hand-over request with 204 No Content, which a
+ * browser treats as "stay on this page", and records the URL: the lab then
+ * sits in "handing over" as it would when the city opens, without leaving.
+ */
+async function catchHandOver(page) {
+  const urls = [];
+  await page.route(`${ORIGIN}/osm/**`, (route) => {
+    urls.push(route.request().url());
+    return route.fulfill({ status: 204 });
+  });
+  return urls;
+}
+
+// WHY (milestone review of the pin, findings m4, m5 a and c): a flight
+// must stop, with no hand-over, whenever the user or the page takes over:
+// a press of the pin, a hidden page (another tab, a locked phone: the dive
+// would otherwise run on and hand over the moment the page is seen again),
+// and a new target in the hash. Each stop leaves the pin idle.
+test("a press, a hidden page and a new target each stop a flight without a hand-over", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(300_000);
+  const urls = await catchHandOver(page);
+  const { errors } = await bootWithGps(page, context, "diveMs=30000");
+  const flying = () =>
+    page.waitForFunction(
+      () => window.__globeLab.state().pin.phase === "flying",
+    );
+  // A press of the pin mid-dive.
+  await page.locator("#globe-pin").click();
+  await flying();
+  await frames(page, 20);
+  await page.locator("#globe-pin").click();
+  let s = await page.evaluate(() => window.__globeLab.state());
+  expect(s.pin.phase).toBe("idle");
+  expect(s.phase).toBe("user");
+  expect(s.cameraOwner).toBe("controls");
+  // A hidden page mid-dive.
+  await page.locator("#globe-pin").click();
+  await flying();
+  await frames(page, 20);
+  await page.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => "hidden",
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  s = await page.evaluate(() => window.__globeLab.state());
+  expect(s.pin.phase).toBe("idle");
+  expect(s.phase).toBe("user");
+  expect(s.pin.status).toMatch(/hidden/);
+  await page.evaluate(() => {
+    delete document.visibilityState;
+  });
+  // A new target in the hash mid-dive: the intro starts again.
+  await page.locator("#globe-pin").click();
+  await flying();
+  await frames(page, 20);
+  const runs = s.runs;
+  await page.evaluate(() => {
+    location.hash = location.hash.replace("at=30,15", "at=10,20");
+  });
+  await page.waitForFunction((r) => window.__globeLab.state().runs > r, runs);
+  s = await page.evaluate(() => window.__globeLab.state());
+  expect(s.pin.phase).toBe("idle");
+  expect(s.cameraOwner).toBe("intro");
+  await frames(page, 30);
+  expect(urls).toEqual([]);
+  expect(page.url()).toContain("/labs/globe/");
+  expect(errors).toEqual([]);
+});
+
+// WHY (milestone review of the pin, findings M2 and m5 b): at night where
+// the user stands (below civil twilight) the link carries no time, since
+// OsmDemo cannot draw that sky, so the city opens at its own afternoon sun;
+// and Back from the city restores the lab from the back-forward cache
+// exactly as it was left, handing over, so the pin must be idle again and
+// a new flight must start.
+test("a night hand-over carries no time, and the pin is idle again back from the city", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(300_000);
+  const urls = await catchHandOver(page);
+  // 23:00 UTC on the equinox: night in Cologne.
+  const { errors } = await bootWithGps(page, context, "diveMs=2000");
+  await page.evaluate(() => {
+    location.hash = location.hash.replace(
+      "time=2026-03-20T11:00:00Z",
+      "time=2026-03-20T23:00:00Z",
+    );
+  });
+  await page.waitForFunction(() =>
+    window.__globeLab.state().appliedHash.includes("T23:00:00Z"),
+  );
+  await page.locator("#globe-pin").click();
+  await page.waitForFunction(
+    () => window.__globeLab.state().pin.phase === "handingOver",
+    null,
+    { timeout: 60_000 },
+  );
+  await expect.poll(() => urls.length).toBe(1);
+  const q = new URL(urls[0]).searchParams;
+  console.log(`night hand-over: ${urls[0]}`);
+  expect(q.get("lat")).toBe("50.94128");
+  expect(q.has("date")).toBe(false);
+  expect(q.has("time")).toBe(false);
+  expect(await pinView(page)).toMatchObject({ phase: "handingOver" });
+  // Back from the city: the page is shown again from the cache.
+  await page.evaluate(() =>
+    window.dispatchEvent(
+      new PageTransitionEvent("pageshow", { persisted: true }),
+    ),
+  );
+  expect(await pinView(page)).toMatchObject({
+    phase: "idle",
+    disabled: false,
+    status: "Back from the city.",
+  });
+  await page.locator("#globe-pin").click();
+  await page.waitForFunction(
+    () => window.__globeLab.state().pin.phase === "flying",
+  );
   expect(errors).toEqual([]);
 });

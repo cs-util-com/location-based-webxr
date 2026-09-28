@@ -21,7 +21,9 @@ export type GlobePinPhase = (typeof GLOBE_PIN_PHASES)[number];
  * What can happen to the pin: a `press` of it, a `touch` on the globe (the
  * controls took the camera), the position `located` or `failed`, the dive
  * `arrived` at the hand-over altitude, or the dive ended `held` there (the
- * lab's hand-over switched off, so the page stays on the globe).
+ * lab's hand-over switched off, so the page stays on the globe), or the
+ * user `returned` from the city (Back restored the page from the
+ * back-forward cache, as it was left).
  */
 export const GLOBE_PIN_EVENTS = [
   "press",
@@ -30,6 +32,7 @@ export const GLOBE_PIN_EVENTS = [
   "failed",
   "arrived",
   "held",
+  "returned",
 ] as const;
 export type GlobePinEvent = (typeof GLOBE_PIN_EVENTS)[number];
 
@@ -43,7 +46,8 @@ export type GlobePinEvent = (typeof GLOBE_PIN_EVENTS)[number];
  *   open); a touch on the globe does not (the fix still flies);
  * - flying: a press or a touch stops it, back to idle; the arrival hands
  *   over, or with the hand-over off the dive holds and the pin is idle;
- * - handingOver: the page is leaving; nothing changes it.
+ * - handingOver: the page is leaving; only the user's return from the city
+ *   (the page restored from the back-forward cache) makes it idle again.
  */
 const TRANSITIONS: Readonly<
   Record<GlobePinPhase, Partial<Record<GlobePinEvent, GlobePinPhase>>>
@@ -56,7 +60,7 @@ const TRANSITIONS: Readonly<
     arrived: "handingOver",
     held: "idle",
   },
-  handingOver: {},
+  handingOver: { returned: "idle" },
 };
 
 /** The next phase (see `TRANSITIONS`). */

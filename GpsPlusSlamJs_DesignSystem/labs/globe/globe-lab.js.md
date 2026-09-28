@@ -164,21 +164,34 @@
     status line (`labelFor`: `locateAdvice`, e.g. "location permission
     denied: Allow location for this site in your browser's settings, then
     try again.") and the pin is idle again;
-  - flying ("Flying to you - tap to stop"): the intro's `dive` turns over
-    the first 40 % and descends log-evenly over `diveMs` to
-    `handOverKm` above the fix (`/globe/globe-dive.js`); a press of the
-    pin or a touch on the globe stops it and leaves the camera to the
+  - flying ("Flying to you - tap to stop"): the intro's `dive`
+    (`planDive` / `diveStep` in `/globe/globe-dive.js`) turns over the
+    first 40 % and descends log-evenly over `diveMs` to `handOverKm` above
+    the fix, the height taken along the camera's own direction, and a
+    tilted start's offset fading out over the first fifth; a press of the
+    pin, a touch on the globe, or the page being hidden (another tab, a
+    locked phone: the flight would otherwise run on and hand over the
+    moment it is seen again) stops it and leaves the camera to the
     controls; the replay button or a new target ends it too;
   - handing over ("Opening the city..."): once landed, the page goes to
     `handOverUrl` (`/globe/globe-handover.js`): OsmDemo beside the lab
-    (`/osm/` on the site and the dev server, whatever the lab's base),
-    `lat`/`lng` and `clat`/`clng` at the fix, `cdist=4800` (its
-    farthest), and the globe clock's instant as OsmDemo's `date` (solar
+    (`<root>osm/` for a lab at `<root>lookdev/labs/globe/` on the site;
+    on the design system's dev server `/osm/` is only its route to
+    OsmDemo's source files, not the app), `lat`/`lng` and `clat`/`clng`
+    at the fix, `cdist=1800` (the hand-over distance, well inside
+    OsmDemo's fog: the sweep is in `globe-handover.ts.md`), and the globe clock's instant as OsmDemo's `date` (solar
     date at the fix) and `time` (apparent solar time) when the sun there
     is at or above -6°; otherwise no time, and OsmDemo boots at its own
     afternoon sun (the jump is part of the cut). With `handOver=0` the dive
     holds at the hand-over altitude instead and the pin is idle again
-    ("Arrived 150 km above you (the hand-over is off).").
+    ("Arrived 150 km above you (the hand-over is off)."). Back from the
+    city, the browser may restore the lab from its back-forward cache as
+    it was left, handing over: `pageshow` with `persisted` makes the pin
+    idle again ("Back from the city."), and a press flies again from where
+    the view is.
+  - After a failure the button keeps the failure's `data-state`
+    (`denied`, `timeout`, `unavailable`: the locate atom's warning dot)
+    until the next press.
   - Phase 1 has no GPS (DEC-PRG-10): the fix is always null. The target is
     chosen only while spinning, so a fix arriving after the fallback would
     be ignored; phase 6 (the real locate timeout) has to decide that.
@@ -318,10 +331,15 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   tap while it waits cancels, and the late answer changes nothing; with a granted,
   mocked position (Playwright's geolocation) the dive runs under the
   intro with the near plane falling, and the page goes to the site-relative
-  `/osm/` (answered by the test, as the dev server has no OsmDemo app) with
-  the fix, `cdist=4800` and the pinned time as `date=2026-03-20` and an
+  `/osm/` (answered by the test, since the dev server serves no OsmDemo
+  app there) with the fix, `cdist=1800` and the pinned time as `date=2026-03-20` and an
   11:2x solar time; with `handOver=0` the dive lands within 500 m of 50 km
   and 0.01° of the fix and the pin reads "Arrived"; a press on the globe
-  during a 20 s dive stops it (controls own the camera, no hand-over).
+  during a 20 s dive stops it (controls own the camera, no hand-over); a
+  press of the pin, a hidden page and a new `at` each stop a 30 s flight
+  without a hand-over (the request is caught with a 204, which keeps the
+  page); at 23:00 UTC in Cologne the link carries no `date` or `time`,
+  and a `pageshow` with `persisted` makes the handing-over pin idle, after
+  which a press flies again.
 - The memory and download table: `pnpm run measure:globe`
   (`measure-globe.mjs`), not a test.

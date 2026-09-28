@@ -2,12 +2,16 @@
  * The pin's dive (round-2 plan 2026-09-26-2055 M3g; the owner: "turns the
  * globe towards me and zooms in over about 15 s"): from wherever the camera
  * is, turn to the target and descend to the hand-over altitude. Pure: time
- * in, a turn fraction and an altitude out; the lab turns them into a pose.
+ * in; a turn fraction and an altitude (`diveAt`), or the camera's position
+ * and rotation (`planDive`, `diveStep`), out.
  *
  * @see globe-dive.ts.md
  */
 
-import { smoothstep } from "./globe-camera.js";
+import * as THREE from "three";
+import type { Ellipsoid } from "3d-tiles-renderer";
+
+import { smoothstep, turnPose, type OrbitPose } from "./globe-camera.js";
 
 export const GLOBE_DIVE = {
   /** The whole dive, turn and descent (the owner's "about 15 s"). */
@@ -76,5 +80,120 @@ export function diveAt(
     turnT: smoothstep(t / turnShare),
     altitudeM: fromAltitudeM * (toAltitudeM / fromAltitudeM) ** eased,
     done: false,
+  };
+}
+
+/**
+ * The distance from the centre to the ellipsoid's surface along a
+ * direction (any length, not zero): the geocentric ray's surface point, the
+ * one `orbitPose` puts at the centre of the frame.
+ */
+export function surfaceRadiusAlong(
+  ellipsoid: Ellipsoid,
+  direction: THREE.Vector3,
+): number {
+  const { x: a, y: b, z: c } = ellipsoid.radius;
+  const d = direction.clone().normalize();
+  return 1 / Math.hypot(d.x / a, d.y / b, d.z / c);
+}
+
+const ORIGIN = new THREE.Vector3();
+const lookAtMatrix = new THREE.Matrix4();
+
+/**
+ * The rotation a camera has on an orbit pose, looking at the centre (what
+ * `applyOrbitPose` sets through three's `lookAt`).
+ */
+export function orbitQuaternion(
+  pose: OrbitPose,
+  target: THREE.Quaternion,
+): THREE.Quaternion {
+  lookAtMatrix.lookAt(pose.direction, ORIGIN, pose.up);
+  return target.setFromRotationMatrix(lookAtMatrix);
+}
+
+/** Where the camera is when a dive begins. */
+export interface DiveStart {
+  /** Its orbit pose: the direction from the centre and the screen's up. */
+  readonly pose: OrbitPose;
+  /** Its distance from the centre, metres. */
+  readonly distanceM: number;
+  /** Its rotation (the controls may have tilted it off the orbit view). */
+  readonly quaternion: THREE.Quaternion;
+}
+
+/** A planned dive, for `diveStep`. */
+export interface Dive {
+  readonly ellipsoid: Ellipsoid;
+  readonly from: OrbitPose;
+  readonly to: OrbitPose;
+  /** The start's rotation relative to its own orbit view (identity if untilted). */
+  readonly startOffset: THREE.Quaternion;
+  readonly durationMs: number;
+  readonly fromAltitudeM: number;
+  readonly toAltitudeM: number;
+}
+
+/** The share of the dive over which a tilted start turns to the orbit view. */
+const OFFSET_FADE_SHARE = 0.2;
+
+/**
+ * A dive from `start` to `target` (an orbit pose), ending `toAltitudeM`
+ * above the target's surface point. The start's altitude is its own height
+ * above the surface along its own direction (not above the target's
+ * surface radius, which differs by up to 21 km between a pole and the
+ * equator). RangeError as `diveAt`.
+ */
+export function planDive(
+  ellipsoid: Ellipsoid,
+  start: DiveStart,
+  target: OrbitPose,
+  options: { readonly durationMs: number; readonly toAltitudeM: number },
+): Dive {
+  const startOrbit = orbitQuaternion(start.pose, new THREE.Quaternion());
+  const dive: Dive = {
+    ellipsoid,
+    from: start.pose,
+    to: target,
+    startOffset: startOrbit.invert().multiply(start.quaternion),
+    durationMs: options.durationMs,
+    fromAltitudeM: Math.max(
+      1,
+      start.distanceM - surfaceRadiusAlong(ellipsoid, start.pose.direction),
+    ),
+    toAltitudeM: options.toAltitudeM,
+  };
+  diveAt(0, dive); // validates the numbers
+  return dive;
+}
+
+/**
+ * The camera `elapsedMs` into a dive: on the turned orbit pose, at the
+ * dive's altitude above the surface along its own direction, looking at
+ * the centre, with the start's own tilt (its offset from its orbit view)
+ * fading out over the first fifth. So an untilted start looks at the
+ * centre all the way, and a tilted one does not snap.
+ */
+export function diveStep(
+  dive: Dive,
+  elapsedMs: number,
+): {
+  position: THREE.Vector3;
+  quaternion: THREE.Quaternion;
+  altitudeM: number;
+  done: boolean;
+} {
+  const frame = diveAt(elapsedMs, dive);
+  const pose = turnPose(dive.from, dive.to, frame.turnT);
+  const distance =
+    surfaceRadiusAlong(dive.ellipsoid, pose.direction) + frame.altitudeM;
+  const weight =
+    1 - smoothstep(elapsedMs / (OFFSET_FADE_SHARE * dive.durationMs));
+  const offset = new THREE.Quaternion().slerp(dive.startOffset, weight);
+  return {
+    position: pose.direction.clone().multiplyScalar(distance),
+    quaternion: orbitQuaternion(pose, new THREE.Quaternion()).multiply(offset),
+    altitudeM: frame.altitudeM,
+    done: frame.done,
   };
 }

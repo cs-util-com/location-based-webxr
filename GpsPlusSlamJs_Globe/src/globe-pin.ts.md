@@ -10,7 +10,8 @@
   - `GLOBE_PIN_PHASES`: `idle`, `locating`, `flying`, `handingOver`.
   - `GLOBE_PIN_EVENTS`: `press` (the pin), `touch` (the controls took the
     camera), `located`, `failed`, `arrived` (the dive reached the hand-over
-    altitude), `held` (the dive ended with the lab's hand-over off).
+    altitude), `held` (the dive ended with the lab's hand-over off), `returned`
+    (the page came back from the back-forward cache after the hand-over).
   - `nextPinPhase(phase, event)`:
     - idle + press -> locating;
     - locating + located -> flying; + failed -> idle; + press -> idle (a
@@ -19,7 +20,9 @@
       fix still flies);
     - flying + press or touch -> idle (the flight stops, the controls keep
       the camera); + arrived -> handingOver; + held -> idle;
-    - handingOver: terminal, the page is leaving;
+    - handingOver: the page is leaving; + returned -> idle (Back restores
+      the lab from the back-forward cache as it was left, milestone review
+      M2);
     - anything else leaves the phase as it is, so a late fix or arrival after
       a cancel starts nothing.
   - `globePinView(phase)` -> `{ label, disabled, busy }`: "Fly to my
@@ -32,7 +35,7 @@
   add the framework's `locateAdvice`.
 - Tests: `globe-pin.test.ts` - the granted path; a held dive back to idle; a failure back to idle; a
   press cancels the wait; a press and a touch stop the flight;
-  a touch while locating does not cancel; handing over is terminal; late
+  a touch while locating does not cancel; handing over holds but for a return, which makes it idle; late
   events after a cancel change nothing; any event sequence stays in the
   known phases (fast-check); every phase its own label; the locating,
   flying, idle and handing-over views.

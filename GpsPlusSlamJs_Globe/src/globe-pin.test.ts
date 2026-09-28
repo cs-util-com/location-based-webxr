@@ -2,10 +2,11 @@
  * Why this test matters: the globe's pin is an async button (CLAUDE.md's
  * async-feedback rule; round-2 plan 2026-09-26-2055 M3g). A GPS fix takes
  * seconds and the dive 15 s more, so the button must say what is happening
- * at every step, must not accept a second press while it waits for the
- * fix, must let a press stop the flight, and must come back to idle after
- * any failure: a pin stuck on "Finding you..." is the one outcome worse
- * than an error message.
+ * at every step, must let a press cancel the wait for the fix (a browser
+ * can leave the request pending) and stop the flight, and must come back
+ * to idle after any failure and after the user comes back from the city:
+ * a pin stuck on "Finding you..." or "Opening the city..." is the one
+ * outcome worse than an error message.
  */
 
 import fc from "fast-check";
@@ -54,9 +55,19 @@ describe("nextPinPhase", () => {
     expect(nextPinPhase("locating", "touch")).toBe("locating");
   });
 
-  it("stays handing over whatever happens: the page is leaving", () => {
-    for (const event of GLOBE_PIN_EVENTS) {
+  it("stays handing over while the page leaves, whatever else happens", () => {
+    for (const event of GLOBE_PIN_EVENTS.filter((e) => e !== "returned")) {
       expect(nextPinPhase("handingOver", event)).toBe("handingOver");
+    }
+  });
+
+  it("is idle again when the user comes back from the city", () => {
+    // Milestone review, finding M2: Back restores the lab from the
+    // back-forward cache as it was left, handing over; without this the
+    // pin would be disabled for good.
+    expect(nextPinPhase("handingOver", "returned")).toBe("idle");
+    for (const phase of ["idle", "locating", "flying"] as const) {
+      expect(nextPinPhase(phase, "returned")).toBe(phase);
     }
   });
 

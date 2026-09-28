@@ -3,9 +3,9 @@
 - Purpose: round-2 plan 2026-09-26-2055 M3g (DEC-FB2-2/3; the owner: "turns
   the globe towards me and zooms in over about 15 s"). The curve of the dive
   from wherever the camera is to the hand-over altitude over the user's
-  position. Pure: elapsed time in, a turn fraction and an altitude out; the
-  lab turns them into a pose (`turnPose` from `globe-camera.ts`, the distance
-  = the target's surface radius + the altitude).
+  position. Pure: elapsed time in; a turn fraction and an altitude
+  (`diveAt`), or the camera's position and rotation (`planDive`,
+  `diveStep`), out.
 - Public API:
   - `GLOBE_DIVE` - `durationMs` 15,000 (the owner's number), and
     `handOverAltitudeM` 150,000 (round-2 §6 Q1's default: the least soft of
@@ -25,9 +25,36 @@
       it by the same curve;
     - RangeError for a duration or an altitude that is not a positive number,
       or a `turnShare` outside (0, 1].
-- Invariants & assumptions: the altitude is along the geocentric ray through
-  the target's surface point (the orbit pose's axis), not the geodetic
-  normal; the difference is a fraction of a metre at these heights.
+  - `surfaceRadiusAlong(ellipsoid, direction)` - the distance from the
+    centre to the surface along a direction (the geocentric ray's surface
+    point, the one `orbitPose` centres).
+  - `orbitQuaternion(pose, target)` - the rotation of a camera on an orbit
+    pose looking at the centre (what `applyOrbitPose` sets).
+  - `planDive(ellipsoid, start, target, { durationMs, toAltitudeM })` ->
+    `Dive`: `start` is `{ pose, distanceM, quaternion }` (the camera as it
+    is), `target` an orbit pose. The start's altitude is its own height
+    above the surface along its own direction, at least 1 m; its tilt is
+    kept as its offset from its own orbit view.
+  - `diveStep(dive, elapsedMs)` -> `{ position, quaternion, altitudeM,
+done }`: the pose turned by `turnPose`, at `surfaceRadiusAlong` of the
+    CURRENT direction plus the dive's altitude, looking at the centre, times
+    the start's offset slerped from itself to identity over the first
+    fifth (`1 - smoothstep(t / 0.2)`).
+- Invariants & assumptions: the altitude is the height above the surface
+  along the camera's own geocentric ray (not the geodetic normal; the
+  difference is a fraction of a metre at these heights).
+- Milestone review of the pin (2026-09-28), two corrections:
+  - m2: the start's height was first taken above the TARGET's surface
+    radius; the radii of a pole and the equator differ by 21 km, so a
+    camera 1 km over a pole diving to the equator was placed at 1 m and
+    jumped at the start. Now the height is along the current direction
+    throughout, so the camera is never lower than the lower of the two
+    altitudes.
+  - m3: the camera's whole start rotation was first blended in, which
+    pulled even an untilted start back towards its old look direction
+    mid-turn (up to 14° on a half turn). Now only the start's offset from
+    its own orbit view fades, so an untilted start looks at the centre all
+    the way.
 - Known limit (for the owner's eye): the turn and the descent overlap, so a
   dive that starts LOW and far from the target (the controls zoomed in on
   another continent) sweeps across the globe while still low. A real
@@ -37,4 +64,11 @@
   altitudes and durations; the altitude monotone and within its ends, the
   turn forward only; the geometric mean at half way; the turn done at its
   share and eased; no jump (under 0.5 % of the altitude per millisecond on
-  a 10,000 km to 20 km dive); the refusals.
+  a 10,000 km to 20 km dive); the refusals; `surfaceRadiusAlong` on the
+  equator, at a pole and anywhere (the point lies on the ellipsoid within a
+  millimetre); a camera 1 km over the north pole diving to the equator
+  starts exactly where it is and stays at least 1 km above the surface
+  (fails with the target's radius, a checked mutant); an untilted start
+  looks at the centre throughout; a tilted start begins at its own
+  rotation and looks at the centre from a fifth in (a residual tilt
+  mutant fails both).

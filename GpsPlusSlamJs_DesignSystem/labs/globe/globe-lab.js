@@ -44,7 +44,7 @@ import {
   sameGlobeClockSetting,
   startGlobeClock,
 } from "/globe/globe-clock.js";
-import { GLOBE_DIVE, diveAt } from "/globe/globe-dive.js";
+import { GLOBE_DIVE, diveStep, planDive } from "/globe/globe-dive.js";
 import { globePinView, nextPinPhase } from "/globe/globe-pin.js";
 import { handOverUrl } from "/globe/globe-handover.js";
 import {
@@ -287,11 +287,9 @@ const wrapLng = (lng) => ((((lng + 180) % 360) + 360) % 360) - 180;
  * `turning` towards it, then `arrived`, holding it; `user` once the user
  * has taken the camera (round-2 plan 2026-09-26-2055 M3a); `diving` down
  * to the pin's position and `landed` at the hand-over altitude (M3g).
- * `pose(now)` returns the pose, the distance from the centre when the
- * intro sets one (the dive; otherwise the fitted distance applies), and
- * the camera's rotation at the dive's start with the weight still given
- * to it, so a camera the controls had tilted turns smoothly to the dive's
- * view instead of snapping. `history` records each
+ * `pose(now)` returns either an orbit `pose` (the fitted distance
+ * applies) or, during the dive, the camera's `position` and `quaternion`
+ * (`diveStep` in `/globe/globe-dive.js`). `history` records each
  * phase and source change with its time since the start, and `runs`
  * counts the starts (the replay button, a change of target or timing), so
  * a test reads the sequence instead of racing it.
@@ -306,8 +304,9 @@ function introFlight(ellipsoid) {
   let turnStartedAt;
   let history;
   let runs = 0;
-  /** The dive in progress: its start, curve and the target's radius. */
+  /** The dive in progress (`planDive`) and when it began. */
   let dive = null;
+  let diveStartedAt = 0;
   const note = (now) => {
     history.push({
       phase,
@@ -378,35 +377,19 @@ function introFlight(ellipsoid) {
       return phase !== "user";
     },
     /**
-     * The pin's dive (round-2 plan M3g): from the camera's current pose,
-     * distance and rotation, turn to `target` and descend to
-     * `toAltitudeM` over `durationMs` (`diveAt` in `/globe/globe-dive.js`),
-     * then hold there as `landed`. The altitude is along the target's
-     * orbit axis, above its surface point.
+     * The pin's dive (round-2 plan M3g): from the camera as it is (`start`:
+     * its orbit pose, distance and rotation), turn to `target` and descend
+     * to `toAltitudeM` over `durationMs` (`planDive` in
+     * `/globe/globe-dive.js`: the height above the surface along the
+     * camera's own direction, the start's tilt fading out), then hold there
+     * as `landed`.
      */
-    dive(
-      now,
-      target,
-      { fromPose, fromDistance, fromQuaternion, durationMs, toAltitudeM },
-    ) {
-      const radius = ellipsoid
-        .getCartographicToPosition(
-          target.lat * DEG,
-          target.lng * DEG,
-          0,
-          new THREE.Vector3(),
-        )
-        .length();
-      from = fromPose;
-      to = orbitPose(ellipsoid, target);
-      dive = {
-        startedAt: now,
-        radius,
-        fromQuaternion,
+    dive(now, target, start, { durationMs, toAltitudeM }) {
+      dive = planDive(ellipsoid, start, orbitPose(ellipsoid, target), {
         durationMs,
-        fromAltitudeM: Math.max(1, fromDistance - radius),
         toAltitudeM,
-      };
+      });
+      diveStartedAt = now;
       choice = { target, source: "pin" };
       phase = "diving";
       note(now);
@@ -414,22 +397,14 @@ function introFlight(ellipsoid) {
     /** The pose for this frame, advancing the states. */
     pose(now) {
       if (phase === "diving" || phase === "landed") {
-        const f = diveAt(now - dive.startedAt, dive);
-        if (f.done && phase === "diving") {
+        const step = diveStep(dive, now - diveStartedAt);
+        if (step.done && phase === "diving") {
           phase = "landed";
           note(now);
         }
-        // The camera's own rotation fades out over the first fifth.
-        const weight =
-          1 - smoothstep((now - dive.startedAt) / (0.2 * dive.durationMs));
-        return {
-          pose: turnPose(from, to, f.turnT),
-          distanceM: dive.radius + f.altitudeM,
-          fromQuaternion: dive.fromQuaternion,
-          fromWeight: weight,
-        };
+        return step;
       }
-      return { pose: introPose(now), distanceM: null, fromWeight: 0 };
+      return { pose: introPose(now) };
     },
     state: () => ({
       phase,
@@ -550,14 +525,22 @@ function bindPin({ flight, controls, camera, getParams, sceneMs, navigate }) {
   let message = "";
   let lastUrl = null;
   let located = null;
+  /** The last failure (denied, timeout, unavailable), until the next press. */
+  let failure = null;
   const render = () => {
     const view = globePinView(phase);
     pinButton.setAttribute("aria-label", view.label);
     pinButton.title = view.label;
     pinButton.setAttribute("aria-busy", String(view.busy));
     pinButton.disabled = view.disabled;
+    // The locate atom's looks: pulsing while locating, engaged in flight,
+    // the warning dot after a failure.
     pinButton.dataset.state =
-      phase === "idle" ? "idle" : phase === "locating" ? "locating" : "located";
+      phase === "idle"
+        ? (failure ?? "idle")
+        : phase === "locating"
+          ? "locating"
+          : "located";
     pinStatus.textContent = phase === "idle" ? message : view.label;
   };
   const go = (event) => {
@@ -579,6 +562,7 @@ function bindPin({ flight, controls, camera, getParams, sceneMs, navigate }) {
   pinButton.addEventListener("click", async () => {
     const before = phase;
     const mine = ++request;
+    failure = null;
     go("press");
     if (before === "flying") {
       // Stopped: the camera stays where the flight left it, for the controls.
@@ -600,6 +584,7 @@ function bindPin({ flight, controls, camera, getParams, sceneMs, navigate }) {
     if (mine !== request || phase !== "locating") return;
     if (outcome.kind === "failed") {
       message = `${labelFor(outcome.state)}: ${locateAdvice(outcome.state)}`;
+      failure = outcome.state;
       go("failed");
       return;
     }
@@ -607,13 +592,16 @@ function bindPin({ flight, controls, camera, getParams, sceneMs, navigate }) {
     const params = getParams();
     // The intro takes the camera: no drag or momentum left to resume.
     controls.release();
-    flight.dive(performance.now(), located, {
-      fromPose: currentPose(camera),
-      fromDistance: camera.position.length(),
-      fromQuaternion: camera.quaternion.clone(),
-      durationMs: params.diveMs,
-      toAltitudeM: params.handOverKm * 1000,
-    });
+    flight.dive(
+      performance.now(),
+      located,
+      {
+        pose: currentPose(camera),
+        distanceM: camera.position.length(),
+        quaternion: camera.quaternion.clone(),
+      },
+      { durationMs: params.diveMs, toAltitudeM: params.handOverKm * 1000 },
+    );
     go("located");
   });
   render();
@@ -621,6 +609,30 @@ function bindPin({ flight, controls, camera, getParams, sceneMs, navigate }) {
     /** The controls took the camera, or the intro restarted. */
     cameraTaken() {
       if (phase === "flying") go("touch");
+    },
+    /**
+     * The page is hidden (another tab, a locked phone) while flying: the
+     * flight stops as a touch stops it, and the camera stays where it is,
+     * for the controls. Without it the dive would run on in the background
+     * and hand over the moment the page is seen again (milestone review m4;
+     * pausing the dive's clock instead would need a second clock).
+     */
+    hidden() {
+      if (phase !== "flying") return;
+      flight.yieldToUser(performance.now());
+      message = "Stopped: the page was hidden. Tap the pin to fly again.";
+      go("touch");
+    },
+    /**
+     * Back from the city: the browser restored this page from its
+     * back-forward cache as it was left, handing over (milestone review M2).
+     * The pin is idle again; the view holds where the dive ended, and a
+     * press starts a new flight from there.
+     */
+    returned() {
+      if (phase !== "handingOver") return;
+      message = "Back from the city.";
+      go("returned");
     },
     /** Per frame: a landed dive hands over (or holds). */
     frame() {
@@ -829,8 +841,6 @@ function start() {
     controls.release();
     pin?.cameraTaken();
   };
-  const blendFrom = new THREE.Quaternion();
-  const blendTo = new THREE.Quaternion();
   let params = readHashParams();
   let appliedHash = location.hash.slice(1);
   /** The globe's one clock; restarted only when its setting changes. */
@@ -916,6 +926,12 @@ function start() {
   syncPanel();
   window.addEventListener("hashchange", onHash);
   replayButton.addEventListener("click", giveBackToIntro);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") pin?.hidden();
+  });
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted) pin?.returned();
+  });
   pin = bindPin({
     flight,
     controls,
@@ -944,14 +960,11 @@ function start() {
     sunNow();
     if (flight.drives) {
       const step = flight.pose(performance.now());
-      applyOrbitPose(camera, step.pose, step.distanceM ?? distance);
-      if (step.fromWeight > 0) {
-        blendTo.copy(camera.quaternion);
-        camera.quaternion.slerpQuaternions(
-          blendTo,
-          blendFrom.copy(step.fromQuaternion),
-          step.fromWeight,
-        );
+      if (step.pose) {
+        applyOrbitPose(camera, step.pose, distance);
+      } else {
+        camera.position.copy(step.position);
+        camera.quaternion.copy(step.quaternion);
       }
       camera.updateMatrixWorld();
       controls.followIntro();

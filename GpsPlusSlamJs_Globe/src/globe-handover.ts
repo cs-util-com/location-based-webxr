@@ -1,7 +1,7 @@
 /**
  * The pin's hand-over (round-2 plan 2026-09-26-2055 DEC-FB2-3, M3g): the
  * link that opens the OSM demo's city where the globe's dive ended, with
- * the camera as far out as the demo allows and, while the sun is up, the
+ * the camera at the hand-over distance and, while the sun is up, the
  * globe's time. A quick cut, not the seamless descent (that is the globe
  * plan's phase 5).
  *
@@ -12,16 +12,36 @@ import type { LatLng } from "./globe-target.js";
 
 /**
  * The OSM demo's side of the contract, written out (this package does not
- * depend on the demo):
+ * depend on the demo; tests/repo-config/globe-handover-contract.test.js
+ * holds each copy to the demo's source):
  * - `maxCameraDistanceM`: `MAX_DISTANCE_M` in its `url-state.ts`; a `cdist`
  *   above it is refused, and the demo then opens its default view;
+ * - `farPlaneM`: the far plane it boots with, `FAR_PLANE_M` x
+ *   `DEFAULT_RENDER_MULTIPLIER` (`building-view.ts`, `render-distance.ts`);
+ * - `fogNearRatio`: `FOG_NEAR_RATIO` in `building-view.ts`: its linear fog
+ *   runs from this fraction of the far plane to the far plane;
  * - `minSunElevationDeg`: `SUN_CLOCK.minElevationDeg` in its
  *   `sun-clock.ts`, civil twilight, below which its sky does not render
  *   reliably.
+ *
+ * And the lab's own choice:
+ * - `tileHalfM`: about half the span of the tile the demo fetches round
+ *   the spot (an H3 res-7 cell's bounding box, 2.2-2.7 km measured at
+ *   0°, 41°, 51° and 60° north), rounded up;
+ * - `cameraDistanceM`: the `cdist` handed over. The camera looks at the
+ *   spot from this far, so the spot and the tile's far side (the worst
+ *   case, a level view: `cameraDistanceM + tileHalfM`) stay in front of
+ *   the fog's start (0.66 x 4800 = 3168 m), while a landscape view still
+ *   spans the tile. The sweep behind it is in the sidecar; the demo's
+ *   maximum, 4800 m, put the spot itself at the far plane, fully fogged.
  */
 export const OSM_HANDOVER = {
   maxCameraDistanceM: 4800,
+  farPlaneM: 4800,
+  fogNearRatio: 0.66,
   minSunElevationDeg: -6,
+  tileHalfM: 1300,
+  cameraDistanceM: 1800,
 } as const;
 
 /** The globe's instant as the OSM demo reads it (`?date=&time=`). */
@@ -72,7 +92,7 @@ function solarClock(hours: number): string {
 
 /**
  * The hand-over link: the demo at `target` (`lat`/`lng` move the user,
- * `clat`/`clng`/`cdist` the camera, at its farthest), and the globe's time
+ * `clat`/`clng`/`cdist` the camera, at the hand-over distance), and the globe's time
  * as `date`/`time` when `sun` is given and at or above civil twilight.
  * Without a time the demo boots at its own afternoon sun: the jump in the
  * light is part of the cut.
@@ -96,7 +116,7 @@ export function handOverUrl(input: {
   q.set("lng", coordinate(lng));
   q.set("clat", coordinate(lat));
   q.set("clng", coordinate(lng));
-  q.set("cdist", String(OSM_HANDOVER.maxCameraDistanceM));
+  q.set("cdist", String(OSM_HANDOVER.cameraDistanceM));
   const sun = input.sun;
   if (sun && sun.elevationDeg >= OSM_HANDOVER.minSunElevationDeg) {
     const { year, month, day } = sun.date;

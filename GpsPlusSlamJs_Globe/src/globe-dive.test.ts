@@ -14,7 +14,18 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
-import { GLOBE_DIVE, diveAt } from "./globe-dive.js";
+import * as THREE from "three";
+import { WGS84_ELLIPSOID } from "3d-tiles-renderer";
+
+import { orbitPose } from "./globe-camera.js";
+import {
+  GLOBE_DIVE,
+  diveAt,
+  diveStep,
+  orbitQuaternion,
+  planDive,
+  surfaceRadiusAlong,
+} from "./globe-dive.js";
 
 const altitude = fc
   .double({ min: Math.log(1_000), max: Math.log(60_000_000), noNaN: true })
@@ -130,6 +141,126 @@ describe("diveAt", () => {
       { toAltitudeM: Number.POSITIVE_INFINITY },
     ]) {
       expect(() => diveAt(0, { ...ok, ...bad })).toThrow(RangeError);
+    }
+  });
+});
+
+// WHY (milestone review of the pin, findings m2 and m3): the dive must
+// start exactly where the camera is, whatever it looks at and wherever it
+// is. Two ways it did not:
+// - the start's height was taken above the TARGET's surface radius, so a
+//   camera low over a pole diving to the equator (21 km of radius apart)
+//   jumped at the start and skimmed the ground;
+// - the camera's own rotation was blended in whole, so even an untilted
+//   start was pulled back towards its old look direction mid-turn (up to
+//   14 deg on a half turn): only the start's OFFSET from its own orbit view
+//   may fade out.
+describe("surfaceRadiusAlong", () => {
+  it("meets the ellipsoid: the equatorial radius on the equator, the polar at a pole", () => {
+    const { x: a, z: b } = WGS84_ELLIPSOID.radius;
+    expect(
+      surfaceRadiusAlong(WGS84_ELLIPSOID, new THREE.Vector3(1, 0, 0)),
+    ).toBeCloseTo(a, 6);
+    expect(
+      surfaceRadiusAlong(WGS84_ELLIPSOID, new THREE.Vector3(0, 0, -3)),
+    ).toBeCloseTo(b, 6);
+    fc.assert(
+      fc.property(
+        fc.double({ min: -1, max: 1, noNaN: true }),
+        fc.double({ min: -1, max: 1, noNaN: true }),
+        fc.double({ min: -1, max: 1, noNaN: true }),
+        (x, y, z) => {
+          const d = new THREE.Vector3(x, y, z);
+          fc.pre(d.length() > 1e-3);
+          const p = d
+            .normalize()
+            .multiplyScalar(surfaceRadiusAlong(WGS84_ELLIPSOID, d));
+          expect(
+            Math.abs(WGS84_ELLIPSOID.getPositionElevation(p)),
+          ).toBeLessThan(1e-3);
+        },
+      ),
+    );
+  });
+});
+
+describe("planDive and diveStep", () => {
+  const ell = WGS84_ELLIPSOID;
+  const angle = (a: THREE.Quaternion, b: THREE.Quaternion) => a.angleTo(b);
+  /** A camera posed on its orbit, as the lab's intro leaves it. */
+  const orbitCamera = (lat: number, lng: number, distanceM: number) => {
+    const pose = orbitPose(ell, { lat, lng });
+    return {
+      pose,
+      distanceM,
+      quaternion: orbitQuaternion(pose, new THREE.Quaternion()),
+    };
+  };
+  const equator = orbitPose(ell, { lat: 0, lng: 20 });
+
+  it("starts exactly where a camera low over a pole is, and never skims the ground", () => {
+    const start = orbitCamera(90, 0, ell.radius.z + 1000);
+    const dive = planDive(ell, start, equator, {
+      durationMs: 15_000,
+      toAltitudeM: 150_000,
+    });
+    const first = diveStep(dive, 0);
+    expect(
+      first.position.distanceTo(
+        start.pose.direction.clone().multiplyScalar(start.distanceM),
+      ),
+    ).toBeLessThan(1e-6);
+    for (let i = 0; i <= 200; i++) {
+      const step = diveStep(dive, (15_000 * i) / 200);
+      const height =
+        step.position.length() - surfaceRadiusAlong(ell, step.position);
+      expect(height).toBeGreaterThanOrEqual(1000 * (1 - 1e-9));
+      expect(ell.getPositionElevation(step.position)).toBeGreaterThan(900);
+    }
+    expect(diveStep(dive, 15_000).altitudeM).toBe(150_000);
+  });
+
+  it("keeps an untilted start looking at the Earth's centre all the way", () => {
+    const start = orbitCamera(48, -120, 20_000_000);
+    const dive = planDive(ell, start, equator, {
+      durationMs: 15_000,
+      toAltitudeM: 150_000,
+    });
+    for (let i = 0; i <= 100; i++) {
+      const step = diveStep(dive, (15_000 * i) / 100);
+      const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
+        step.quaternion,
+      );
+      const toCentre = step.position.clone().negate().normalize();
+      expect(forward.dot(toCentre)).toBeGreaterThan(1 - 1e-12);
+    }
+  });
+
+  it("starts at a tilted camera's own rotation and fades it out over the first fifth", () => {
+    const start = orbitCamera(10, 30, 3_000_000);
+    const tilt = new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(1, 0, 0),
+      0.6,
+    );
+    const tilted = {
+      ...start,
+      quaternion: start.quaternion.clone().multiply(tilt),
+    };
+    const dive = planDive(ell, tilted, equator, {
+      durationMs: 15_000,
+      toAltitudeM: 150_000,
+    });
+    expect(angle(diveStep(dive, 0).quaternion, tilted.quaternion)).toBeLessThan(
+      1e-7,
+    );
+    for (const ms of [3_000, 8_000, 15_000]) {
+      const step = diveStep(dive, ms);
+      const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
+        step.quaternion,
+      );
+      expect(
+        forward.dot(step.position.clone().negate().normalize()),
+      ).toBeGreaterThan(1 - 1e-12);
     }
   });
 });
