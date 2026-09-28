@@ -33,6 +33,12 @@ Plan and decision record:
 
 ## Invariants & assumptions
 
+- **A proxied file is never a page of the site** (Drive replace plan
+  §5 #11): every answer is `content-disposition: attachment` (Drive's own
+  parameters - the file name - kept), `x-content-type-options: nosniff` and
+  `content-security-policy: sandbox`. The proxy serves ANY public Drive file
+  from our origin; without these a crafted SVG opened directly would run
+  script as gps.csutil.com. `fetch` readers are unaffected.
 - **Only Drive is reachable**: the upstream URL is a constant base plus
   `encodeURIComponent(id)` — an id cannot smuggle parameters or hosts.
   Validation is deliberately loose beyond that (ids are opaque values,

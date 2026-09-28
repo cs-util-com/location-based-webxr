@@ -116,6 +116,17 @@ export async function handleDriveProxy(
     if (value !== null) headers.set(name, value);
   }
   headers.set("access-control-expose-headers", EXPOSE_HEADERS);
+  // Never a page of this site (Drive replace plan §5 #11): the proxy serves
+  // any public Drive file from our origin, so a crafted one - an SVG with a
+  // script - opened directly would run as gps.csutil.com. A download, never
+  // sniffed, sandboxed; Drive's file name is kept. `fetch` readers (the
+  // TourViewer) are unaffected by all three.
+  headers.set(
+    "content-disposition",
+    asAttachment(upstream.headers.get("content-disposition")),
+  );
+  headers.set("x-content-type-options", "nosniff");
+  headers.set("content-security-policy", "sandbox");
   // HEAD must answer body-less WITH the explicit content-length: the
   // Workers runtime chunk-encodes streamed bodies and drops the length, and
   // the transport sizes the archive from this probe — a lost size silently
@@ -131,6 +142,13 @@ export async function handleDriveProxy(
   // review). HEAD keeps the length: body-less-with-length is its contract.
   if (isHtml && !isHeadRequest) headers.set("content-length", "0");
   return new Response(body, { status: upstream.status, headers });
+}
+
+/** Drive's `content-disposition` with its type forced to `attachment` and
+ *  its parameters (the file name) kept; plain `attachment` without one. */
+function asAttachment(upstream: string | null): string {
+  if (upstream === null || upstream.trim() === "") return "attachment";
+  return upstream.replace(/^\s*[^;]*/, "attachment");
 }
 
 /** CORS response headers for this request: the echoed dev origin, or none.

@@ -307,3 +307,46 @@ describe("handleDriveProxy — CORS", () => {
     );
   });
 });
+
+describe("handleDriveProxy — a proxied file never runs as a page on the site", () => {
+  // Why this matters (Drive replace plan §5 #11, a pre-existing security
+  // gap): the proxy serves ANY public Drive file from the site's own origin
+  // with Drive's content type. Opened directly, a crafted file - an SVG
+  // with a script in it - would run as a page of gps.csutil.com. Every
+  // proxied answer is a download, never sniffed, and sandboxed; the
+  // TourViewer reads it with fetch, which none of this affects.
+  it("marks a file as a download, keeping Drive's file name", async () => {
+    const { fetchImpl } = recordingFetch(
+      upstreamResponse(200, {
+        "content-type": "image/svg+xml",
+        "content-disposition": 'inline; filename="evil.svg"',
+      }),
+    );
+    const response = await handleDriveProxy(request("?id=file123"), {
+      fetchImpl,
+    });
+    expect(response.headers.get("content-disposition")).toBe(
+      'attachment; filename="evil.svg"',
+    );
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(response.headers.get("content-security-policy")).toBe("sandbox");
+  });
+
+  it("marks a file without a name as a download too, on GET and HEAD", async () => {
+    for (const method of ["GET", "HEAD"]) {
+      const { fetchImpl } = recordingFetch(
+        upstreamResponse(200, { "content-type": "application/zip" }, null),
+      );
+      const response = await handleDriveProxy(
+        request("?id=file123", { method }),
+        { fetchImpl },
+      );
+      expect(response.headers.get("content-disposition"), method).toBe(
+        "attachment",
+      );
+      expect(response.headers.get("x-content-type-options"), method).toBe(
+        "nosniff",
+      );
+    }
+  });
+});
