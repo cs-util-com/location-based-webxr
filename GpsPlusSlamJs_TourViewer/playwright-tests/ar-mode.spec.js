@@ -2401,6 +2401,10 @@ test("an opted-in authoring session is recorded across the finish and saved as i
   // Nothing is recorded behind the creator's back: no marker, no Save.
   await expect(page.getByTestId("recording-marker")).toBeHidden();
   await expect(page.getByTestId("recording-save")).toBeHidden();
+  // What leaves the phone with the zip is said beside the switch.
+  await expect(page.getByTestId("recording-privacy")).toHaveText(
+    "The recording holds the tour link and your GPS track.",
+  );
   await page.getByTestId("record-session").check();
 
   await measureTheCode(page);
@@ -2472,6 +2476,10 @@ test("an opted-in authoring session is recorded across the finish and saved as i
   // The three seeded fixes, counted from the recording (the store's GPS
   // data was wiped when the finish ended AR).
   expect(meta.actionCount).toBe(3);
+  // Stamped with the build that made it (M1a review finding 2): the Vite
+  // define block reaches the framework's reader in the page.
+  expect(meta.build.commitHash).toMatch(/^([0-9a-f]{7,}|dev)$/);
+  expect(meta.build.frameworkVersion).toMatch(/^\d+\.\d+\.\d+/);
 
   // One numbering, nothing overwritten: 000001 .. N without a gap.
   const names = Object.keys(rec.entries)

@@ -705,6 +705,21 @@
             <span class="switch-track"></span>
             Record this session for troubleshooting
           </label>
+          <!-- What leaves the phone with the zip (M1a review finding 5):
+               the tour link is in the recorded QR texts, kept because a
+               replay needs it. -->
+          <p class="hint--dim" data-testid="recording-privacy">
+            The recording holds the tour link and your GPS track.
+          </p>
+          <!-- "Reload the page to record" once an unrecorded AR session has
+               run, or the low-storage warning after ticking the box
+               (recording-panel.ts). -->
+          <p
+            id="recording-notice"
+            data-testid="recording-notice"
+            aria-live="polite"
+            hidden
+          ></p>
           <button
             type="button"
             id="recording-save"

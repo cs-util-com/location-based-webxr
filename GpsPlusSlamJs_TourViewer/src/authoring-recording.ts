@@ -40,6 +40,7 @@ import {
   writeSessionMetadata as opfsWriteSessionMetadata,
 } from "gps-plus-slam-app-framework/storage/opfs-storage";
 import { buildSessionMetadataRecord } from "gps-plus-slam-app-framework/storage/session-metadata-record";
+import type { BuildInfo } from "gps-plus-slam-app-framework/utils/build-info";
 
 /** `session.json`'s tag: what kind of recording this is. */
 export const RECORDING_CONTEXT_TAG = "tour-authoring";
@@ -53,14 +54,59 @@ const RECORDINGS_DIR = "tour-viewer";
  * 16 x 16 grid (the framework sampler's own default, 256 points - the
  * Recorder records 24 x 24 at 5 Hz for reconstruction, which a
  * troubleshooting recording does not need); no per-point colour, which costs
- * a camera read-back per sample. The size per hour and the frame-time cost
- * on a phone are not measured yet (plan §5).
+ * a camera read-back per sample. Its size on disk is measured (below); the
+ * frame-time cost on a phone is not (plan §5).
  */
 export const RECORDING_DEPTH: Partial<DepthSamplerConfig> = {
   intervalMs: 1000,
   gridSize: 16,
   rgb: false,
 };
+
+/**
+ * What one second of recording writes: one depth sample and one GPS fix
+ * (both 1 Hz), as files on disk. MEASURED, not computed: the test writes a
+ * phone-like sample and fix through the real store and holds this number
+ * within 25 % above what they took (the sidecar has the bytes). QR
+ * detections are not in it - they are written only while a code is in
+ * view (see the sidecar).
+ */
+export const RECORDING_BYTES_PER_SECOND = 40_000;
+
+/**
+ * Below this much free storage, opting in warns: one hour of recording at
+ * the measured rate. The sidecar's "Storage cost" gives the reasoning and
+ * the range it was weighed over.
+ */
+export const LOW_STORAGE_BYTES = RECORDING_BYTES_PER_SECOND * 60 * 60;
+
+const BYTES_PER_MB = 1024 * 1024;
+
+/**
+ * The warning for a storage estimate, or null when there is room - or when
+ * the browser gives no usable estimate (it is a warning; silence is the
+ * safe failure). The free space is this page's share (`quota - usage`),
+ * which is what the recording can use, not the disk's.
+ */
+export function lowStorageWarning(
+  estimate: StorageEstimate | undefined,
+): string | null {
+  const quota = estimate?.quota;
+  const usage = estimate?.usage;
+  if (
+    typeof quota !== "number" ||
+    typeof usage !== "number" ||
+    !Number.isFinite(quota) ||
+    !Number.isFinite(usage)
+  ) {
+    return null;
+  }
+  const free = Math.max(0, quota - usage);
+  if (free >= LOW_STORAGE_BYTES) return null;
+  const mb = Math.floor(free / BYTES_PER_MB);
+  const minutes = Math.floor(free / RECORDING_BYTES_PER_SECOND / 60);
+  return `Only ${String(mb)} MB of storage is left for this page - about ${String(minutes)} minutes of recording.`;
+}
 
 /** Where the recording stands, for the page to show. */
 export type RecordingStatus =
@@ -74,6 +120,9 @@ interface SavedRecording {
   filename: string;
   /** Action files in the zip. */
   actionCount: number;
+  /** Why `session.json` could not be written; absent when it was. The zip
+   *  then holds the actions without it (or with an earlier save's). */
+  metadataError?: string;
 }
 
 export interface AuthoringRecording {
@@ -88,15 +137,41 @@ export interface AuthoringRecording {
   /**
    * Flush the queued writes, write `session.json`, and zip the folder.
    * Rejects when nothing was started, when the folder could not be made,
-   * or when a write fails - the caller surfaces it (a save the creator
-   * asked for must not fail silently).
+   * or when the flush or the zip fails - the caller surfaces it (a save the
+   * creator asked for must not fail silently). A `session.json` that cannot
+   * be written does NOT reject: the actions on disk are zipped all the same
+   * and the reason comes back as `metadataError`.
    */
   save(input: {
     flush: () => Promise<void>;
     nowMs: number;
     userAgent: string;
     pageUrl: string | undefined;
+    /** The page's build stamp (`getBuildInfo`); may throw where the
+     *  build constants were never injected, which only drops the field. */
+    getBuildInfo?: () => BuildInfo;
   }): Promise<SavedRecording>;
+}
+
+/** The metadata file's name in a recording folder (the Recorder's layout). */
+const SESSION_METADATA_FILE = "session.json";
+
+/**
+ * Remove `name` from `folder` when it is EMPTY - what a write refused after
+ * its file was created leaves behind. An earlier save's complete file is
+ * kept (an aborted write leaves the old content). Best effort: a folder that
+ * cannot even be read here has nothing better to offer.
+ */
+async function dropEmptyFile(
+  folder: FileSystemDirectoryHandle,
+  name: string,
+): Promise<void> {
+  try {
+    const file = await (await folder.getFileHandle(name)).getFile();
+    if (file.size === 0) await folder.removeEntry(name);
+  } catch {
+    // Absent (the create itself failed) or unreadable: nothing to drop.
+  }
 }
 
 /** The recording zip's name, from the folder's start time. */
@@ -206,22 +281,35 @@ export function createAuthoringRecording(deps: {
       }
       const session = await folder;
       await input.flush();
-      await storageBackend.writeSessionMetadata(
-        buildSessionMetadataRecord({
-          endTime: input.nowMs,
-          startTime: startedAt.getTime(),
-          contextTag: RECORDING_CONTEXT_TAG,
-          gpsPositions: fixes,
-          frameCount: 0,
-          userAgent: input.userAgent,
-          pageUrl: input.pageUrl,
-        }),
-      );
+      let metadataError: string | undefined;
+      try {
+        await storageBackend.writeSessionMetadata(
+          buildSessionMetadataRecord({
+            endTime: input.nowMs,
+            startTime: startedAt.getTime(),
+            contextTag: RECORDING_CONTEXT_TAG,
+            gpsPositions: fixes,
+            frameCount: 0,
+            userAgent: input.userAgent,
+            pageUrl: input.pageUrl,
+            ...(input.getBuildInfo === undefined
+              ? {}
+              : { getBuildInfo: input.getBuildInfo }),
+          }),
+        );
+      } catch (err) {
+        // The actions ARE the recording; the metadata only describes it. A
+        // full disk that refuses this last small file must not cost the
+        // creator what is already written - the caller reports the loss.
+        metadataError = err instanceof Error ? err.message : String(err);
+        await dropEmptyFile(session, SESSION_METADATA_FILE);
+      }
       const { blob } = await exportSessionHandleAsZip(session);
       return {
         blob,
         filename: recordingFileName(startedAt),
         actionCount: actionFiles,
+        ...(metadataError === undefined ? {} : { metadataError }),
       };
     },
   };

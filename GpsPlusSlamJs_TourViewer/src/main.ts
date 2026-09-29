@@ -27,6 +27,7 @@ import {
 
 import { openDraftNamespace } from "gps-plus-slam-app-framework/storage";
 import { sanitizedPageUrl } from "gps-plus-slam-app-framework/storage/session-metadata-record";
+import { getBuildInfo } from "gps-plus-slam-app-framework/utils/build-info";
 
 import { wireArchiveOpen } from "./archive-open.js";
 import { wireArEntry } from "./ar-entry.js";
@@ -308,6 +309,7 @@ const recordingPanel =
           marker: element("recording-marker"),
           saveButton: element("recording-save"),
           status: element("recording-status"),
+          notice: element("recording-notice"),
         },
         save: () =>
           recording.save({
@@ -315,10 +317,18 @@ const recordingPanel =
             nowMs: Date.now(),
             userAgent: navigator.userAgent,
             pageUrl: sanitizedPageUrl(location.href),
+            getBuildInfo,
           }),
         // Through the seam like the tour zip, so the e2e fake captures it.
         handOff: (blob, filename) => seams.shareOrDownloadZip(blob, filename),
         sessionLive: () => arSessionLive(arController.getState().status),
+        // A session ended (the counter) or one running now: either way the
+        // store's zero reference is no longer the recording's to write.
+        arHasRun: () =>
+          ctx.arSessionGeneration > 0 ||
+          arSessionLive(arController.getState().status),
+        estimateStorage: () =>
+          navigator.storage?.estimate?.() ?? Promise.resolve(undefined),
         now: () => new Date(),
       })
     : null;

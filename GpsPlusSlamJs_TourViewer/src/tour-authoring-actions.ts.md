@@ -19,7 +19,9 @@ reads them (the framework's `diagnostics/note` precedent). Plan:
   null for a pin), `alignmentMatrix` (the store's, the solve's target),
   `arWorldGroupMatrix` (a pin: the group's rendered matrix, which lags the
   target while it lerps), `code` (the code last in view: text, fused status,
-  fused pose or null).
+  fused pose or null), `codeSizeM` (the anchor code's printed size in metres
+  the setup worked with, `ctx.activeSizeM` - known even with no code in
+  view; a code's solved pose scales with it).
 - `codeMeasured(payload)` - `tourAuthoring/codeMeasured`: `levelId`, `text`,
   `fusedOdomPose` (the stable fused pose minted from), `sizeM`,
   `alignmentMatrix`, `alignment` (the mint gate's info), `levelJson` (the level
@@ -63,7 +65,10 @@ arStore.dispatch(
 
 - `creator-setup.test.ts` ("the troubleshooting recording's log of a
   placement"): a placed pin logs its reticle in odometry, the store's and the
-  group's matrices, and a JSON-safe payload.
+  group's matrices, the code's printed size, and a JSON-safe payload; with
+  the world group yawed 90 degrees the logged reticle is the group-local
+  position (not the world one, nor the opposite rotation), and the logged
+  matrix maps it back onto the reticle.
 - `creator-finish.test.ts` ("the troubleshooting recording's log of the
   finish"): the finish logs the manifest the rebuilt zip carries.
 - `authoring-recording.test.ts`: a finish dispatched on the page between two

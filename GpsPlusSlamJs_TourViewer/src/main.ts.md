@@ -38,7 +38,11 @@ listed in `index.html.md`. The concerns and their modules:
   asks it at each entry, and is re-rendered on every controller state change
   and store dispatch (failed writes are counted as they happen). Save flushes
   the store's write queue and hands the zip to `seams.shareOrDownloadZip`, as
-  the tour zip does; the page url goes into `session.json` without its query.
+  the tour zip does; the page url goes into `session.json` without its query,
+  and the framework's `getBuildInfo` stamps it. The panel's `arHasRun` is
+  `ctx.arSessionGeneration > 0` or a live controller status (the switch locks
+  once an unrecorded session has run), and its `estimateStorage` is
+  `navigator.storage.estimate` where the browser has one.
 
 ## Invariants & assumptions
 

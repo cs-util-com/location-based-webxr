@@ -145,7 +145,8 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   world group's local frame for a pin via `worldToLocal`, the frame's capture
   pose for a photo, the store's alignment, the group's rendered matrix for a
   pin, the code last in view as its last fused evaluation stood - read with
-  `last`, never `evaluate`, which would feed the motion detector); a mint
+  `last`, never `evaluate`, which would feed the motion detector - and the
+  code's printed size, `ctx.activeSizeM`); a mint
   whose identity hash landed dispatches `tourAuthoring/codeMeasured` (inputs
   captured at the tap); a finish whose rebuild succeeded dispatches
   `tourAuthoring/finished` with the manifest written, before the session is
@@ -328,4 +329,5 @@ pure pieces are unit-tested in
 `finishReadiness`) and `tour-session.test.ts` (`archiveFileName`,
 `readWholeArchive`, `loadTourManifest`). The recording's log:
 `creator-setup.test.ts` (a pin's `objectPlaced`, its odometry position and
-matrices) and `creator-finish.test.ts` (the finish's manifest).
+matrices, the code's size, and the reticle with the world group yawed 90
+degrees) and `creator-finish.test.ts` (the finish's manifest).

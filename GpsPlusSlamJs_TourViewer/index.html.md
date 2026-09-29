@@ -68,7 +68,12 @@ The `data-testid` contract the e2e suite drives: `wizard`, `step-host`,
 `size-offer-use`, `size-offer-keep`, `setup-controls`, `setup-mint`,
 `setup-pin`, `pin-label`, `pin-save`, `pin-cancel`, `setup-photo`,
 `setup-finish`, `scan-escape`, `recording-block` (owns `record-session`,
-`recording-save`, `recording-status`), `recording-marker`.
+`recording-privacy`, `recording-notice`, `recording-save`,
+`recording-status`), `recording-marker`.
+`recording-privacy` is a static line saying the recording holds the tour
+link and the GPS track (M1a review finding 5); `recording-notice` carries
+"Reload the page to record." once an unrecorded AR session has run, or the
+low-storage warning after the box is ticked (`recording-panel.ts`).
 The troubleshooting recording (authoring recording plan 2026-09-28-0953,
 M1a): `#recording-block` sits in step 4 BEFORE `#ar-root` - its switch
 arms the recording before AR starts and Save is a page action, so neither

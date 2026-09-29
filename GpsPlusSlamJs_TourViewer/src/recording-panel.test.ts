@@ -12,9 +12,10 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
-import type {
-  AuthoringRecording,
-  RecordingStatus,
+import {
+  LOW_STORAGE_BYTES,
+  type AuthoringRecording,
+  type RecordingStatus,
 } from "./authoring-recording.js";
 import {
   SAVE_RECORDING_BUSY_LABEL,
@@ -25,7 +26,7 @@ import {
 
 function el() {
   const handlers = new Map<string, () => void>();
-  return {
+  const element = {
     hidden: false,
     textContent: "",
     disabled: false,
@@ -33,7 +34,13 @@ function el() {
     addEventListener: (type: string, handler: () => void) =>
       handlers.set(type, handler),
     click: () => handlers.get("click")?.(),
+    /** Tick or untick, as a tap on the switch does. */
+    toggle: (checked: boolean) => {
+      element.checked = checked;
+      handlers.get("change")?.();
+    },
   };
+  return element;
 }
 
 function fakeRecording(): AuthoringRecording & {
@@ -75,11 +82,19 @@ const SAVED = {
   actionCount: 42,
 };
 const AT = new Date(Date.UTC(2026, 8, 28, 10, 0, 0));
+/** Plenty of room: ten times the warning threshold. */
+const ROOMY: StorageEstimate = { usage: 0, quota: 10 * LOW_STORAGE_BYTES };
 
 function harness(
   options: {
     live?: boolean;
-    save?: () => Promise<typeof SAVED>;
+    arHasRun?: () => boolean;
+    estimateStorage?: () => Promise<StorageEstimate | undefined>;
+    save?: () => Promise<{
+      blob: Blob;
+      filename: string;
+      metadataError?: string;
+    }>;
     handOff?: () => Promise<{
       route: "share" | "download";
       delivered: boolean;
@@ -91,6 +106,7 @@ function harness(
     marker: el(),
     saveButton: el(),
     status: el(),
+    notice: el(),
   };
   const recording = fakeRecording();
   const handOff = vi.fn(
@@ -103,6 +119,8 @@ function harness(
     save: options.save ?? (() => Promise.resolve(SAVED)),
     handOff,
     sessionLive: () => options.live === true,
+    arHasRun: options.arHasRun ?? (() => false),
+    estimateStorage: options.estimateStorage ?? (() => Promise.resolve(ROOMY)),
     now: () => AT,
   });
   return { dom, recording, handOff, panel };
@@ -164,6 +182,50 @@ describe("the opt-in and the marker", () => {
     expect(h.panel.beginOnArEntry()).toBe(false);
   });
 
+  it("before any AR session the switch is free and no reload line shows", () => {
+    // Why this test matters (M1a review finding 1): the other half of the
+    // pair below - the lock must not fire on a fresh page, or nobody could
+    // ever opt in.
+    const h = harness({ arHasRun: () => false });
+
+    expect(h.dom.optIn.disabled).toBe(false);
+    expect(h.dom.notice.hidden).toBe(true);
+  });
+
+  it("once an AR session has run unrecorded, the switch locks and says to reload the page", () => {
+    // Why this test matters (M1a review finding 1): the store's zero
+    // reference is set by the first GPS fix of the page's first AR session
+    // and kept across sessions. A recording started on a later entry would
+    // hold no `setZeroPos` and replay empty - so after an unrecorded
+    // session the only honest offer is a fresh page.
+    let hasRun = false;
+    const h = harness({ arHasRun: () => hasRun });
+    hasRun = true;
+    h.panel.render();
+
+    expect(h.dom.optIn.disabled).toBe(true);
+    expect(h.dom.notice.hidden).toBe(false);
+    expect(h.dom.notice.textContent).toBe("Reload the page to record.");
+    // A box ticked anyway (the DOM allows a script to) starts nothing.
+    h.dom.optIn.checked = true;
+    expect(h.panel.beginOnArEntry()).toBe(false);
+    expect(h.recording.start).not.toHaveBeenCalled();
+  });
+
+  it("a recording that runs keeps its switch locked on without the reload line", () => {
+    // The lock above is for an UNRECORDED page; a running recording locks
+    // the switch for its own reason and needs no reload.
+    let hasRun = false;
+    const h = harness({ arHasRun: () => hasRun });
+    h.dom.optIn.checked = true;
+    h.panel.beginOnArEntry();
+    hasRun = true;
+    h.panel.render();
+
+    expect(h.dom.optIn.disabled).toBe(true);
+    expect(h.dom.notice.hidden).toBe(true);
+  });
+
   it("Save waits for the page: it is disabled while an AR session runs", () => {
     const h = harness({ live: true });
     h.dom.optIn.checked = true;
@@ -173,7 +235,80 @@ describe("the opt-in and the marker", () => {
   });
 });
 
+describe("the free-space check at opt-in", () => {
+  // Why these tests matter (M1a review finding 3): a recording that fills
+  // the phone's storage fails its writes part-way (each one counted on the
+  // marker, but the recording is then incomplete). Ticking the box is the
+  // one moment the creator can still free space or decide not to record,
+  // so the check runs there - and it WARNS, never blocks: the estimate is
+  // the browser's guess at this site's share, not the disk.
+  it("warns when less than the threshold is free, and the box stays ticked", async () => {
+    const h = harness({
+      estimateStorage: () =>
+        Promise.resolve({ usage: 0, quota: LOW_STORAGE_BYTES - 1 }),
+    });
+
+    h.dom.optIn.toggle(true);
+    await settle();
+
+    expect(h.dom.optIn.checked).toBe(true);
+    expect(h.dom.notice.hidden).toBe(false);
+    expect(h.dom.notice.textContent).toMatch(
+      /^Only \d+ MB of storage is left for this page - about \d+ minutes of recording\.$/,
+    );
+    // Warned, not blocked: the entry still records.
+    expect(h.panel.beginOnArEntry()).toBe(true);
+  });
+
+  it("says nothing when there is room, when the browser gives no estimate, or when the estimate fails", async () => {
+    for (const estimateStorage of [
+      () => Promise.resolve(ROOMY),
+      () => Promise.resolve(undefined),
+      () => Promise.resolve({}),
+      () => Promise.reject(new Error("no storage manager")),
+    ]) {
+      const h = harness({ estimateStorage });
+      h.dom.optIn.toggle(true);
+      await settle();
+      expect(h.dom.notice.hidden).toBe(true);
+    }
+  });
+
+  it("unticking takes the warning away", async () => {
+    const h = harness({
+      estimateStorage: () => Promise.resolve({ usage: 0, quota: 1 }),
+    });
+    h.dom.optIn.toggle(true);
+    await settle();
+    h.dom.optIn.toggle(false);
+    await settle();
+
+    expect(h.dom.notice.hidden).toBe(true);
+  });
+});
+
 describe("Save the recording", () => {
+  it("names the saved file AND says session.json is missing when only the metadata could not be written", async () => {
+    // Why this test matters (M1a review finding 3): the zip of what is on
+    // disk is still worth handing over, but without session.json the
+    // Recorder takes it for an old recording and migrates its coordinates -
+    // the creator must know the zip is not the whole story.
+    const h = harness({
+      save: () =>
+        Promise.resolve({ ...SAVED, metadataError: "quota exceeded" }),
+    });
+    h.dom.optIn.checked = true;
+    h.panel.beginOnArEntry();
+
+    h.dom.saveButton.click();
+    await settle();
+
+    expect(h.handOff).toHaveBeenCalledWith(SAVED.blob, SAVED.filename);
+    expect(h.dom.status.textContent).toBe(
+      "Saved as tour-recording-2026-09-28_10-00-00utc.zip, but without its session.json (quota exceeded) - the Recorder may replay it misaligned.",
+    );
+  });
+
   it("shows it is busy while the zip is built and handed over, then names the saved file", async () => {
     const pending = deferred<typeof SAVED>();
     const h = harness({ save: () => pending.promise });

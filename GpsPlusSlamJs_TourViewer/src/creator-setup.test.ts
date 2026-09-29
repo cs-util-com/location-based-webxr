@@ -20,10 +20,12 @@
  * convention.
  */
 import { describe, expect, it } from "vitest";
-import { Group, Matrix4 } from "three";
-import type { Vector3 } from "three";
+import { Group, Matrix4, Vector3 } from "three";
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
-import { MIN_ALIGNMENT_SAMPLES } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
+import {
+  AUTHOR_DEFAULT_SIZE_M,
+  MIN_ALIGNMENT_SAMPLES,
+} from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 import { wireCreatorSetup } from "./creator-setup.js";
 import type { CreatorSetupDom } from "./creator-setup.js";
 import {
@@ -235,13 +237,19 @@ function fakeReticle(): unknown {
 
 function wire(
   store: DraftFileStore,
-  options: { firstOpenFails?: boolean; placeable?: boolean } = {},
+  options: {
+    firstOpenFails?: boolean;
+    placeable?: boolean;
+    /** Turn the world group about +Y (up) by this many degrees. */
+    worldGroupYawDeg?: number;
+  } = {},
 ) {
   let opens = 0;
   // The AR world group, one metre east of the odometry origin: the pin's
   // world position minus this offset is its position in odometry.
   const worldGroup = new Group();
   worldGroup.position.set(1, 0, 0);
+  worldGroup.rotation.y = ((options.worldGroupYawDeg ?? 0) * Math.PI) / 180;
   worldGroup.updateMatrixWorld();
   const dom = fakeDom();
   const ctx = createTourViewerSession();
@@ -1141,6 +1149,7 @@ describe("the troubleshooting recording's log of a placement", () => {
         arWorldGroupMatrix: number[];
         cameraOdomPose: unknown;
         arVisitIndex: number;
+        codeSizeM: number;
       };
     }[];
     expect(logged).toHaveLength(1);
@@ -1152,7 +1161,51 @@ describe("the troubleshooting recording's log of a placement", () => {
     expect(payload.alignmentMatrix).not.toBeNull();
     expect(payload.cameraOdomPose).toBeNull();
     expect(payload.arVisitIndex).toBe(0);
+    // The anchor code's printed size (M1a review finding 8): a code's
+    // solved pose scales with it, so a placement read against a code
+    // cannot be re-derived without it.
+    expect(payload.codeSizeM).toBe(AUTHOR_DEFAULT_SIZE_M);
     // JSON-safe: it is written to a file as it is.
     expect(JSON.parse(JSON.stringify(payload))).toEqual(payload);
+  });
+
+  it("with the world group yawed 90 degrees, records the reticle in the group's frame, not the world's", async () => {
+    // Why this test matters (M1a review finding 6): the test above uses a
+    // translation only, and the e2e fake's `worldToLocal` is the identity,
+    // so a rotated frame was never exercised - and a 90-degree frame mix-up
+    // is a class of bug this code base has had. With the group turned
+    // +90 degrees about up and shifted 1 m east, the reticle at world
+    // (1, 0, -2) is group-local (2, 0, 0): the world position would read
+    // (1, 0, -2), and the opposite rotation (-2, 0, 0).
+    const { store } = memoryStore();
+    const { dom, dispatched } = wire(store, {
+      placeable: true,
+      worldGroupYawDeg: 90,
+    });
+
+    dom.pinLabel.value = "Gate";
+    dom.pinSave.click();
+    await settle();
+
+    const logged = dispatched.filter(
+      (a) => (a as { type: string }).type === "tourAuthoring/objectPlaced",
+    ) as {
+      payload: { reticleOdomNue: number[]; arWorldGroupMatrix: number[] };
+    }[];
+    expect(logged).toHaveLength(1);
+    const { reticleOdomNue, arWorldGroupMatrix } = logged[0]!.payload;
+    const [x, y, z] = reticleOdomNue;
+    expect(x).toBeCloseTo(2, 9);
+    expect(y).toBeCloseTo(0, 9);
+    expect(z).toBeCloseTo(0, 9);
+    // The two logged fields agree: the logged matrix takes the logged
+    // local position back onto the reticle, so a replay can rebuild either
+    // from the other.
+    const world = new Vector3(x, y, z).applyMatrix4(
+      new Matrix4().fromArray(arWorldGroupMatrix),
+    );
+    expect(world.x).toBeCloseTo(1, 9);
+    expect(world.y).toBeCloseTo(0, 9);
+    expect(world.z).toBeCloseTo(-2, 9);
   });
 });

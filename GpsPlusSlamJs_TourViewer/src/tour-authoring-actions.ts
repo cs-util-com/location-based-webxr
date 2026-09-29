@@ -69,6 +69,10 @@ interface ObjectPlacedLog {
    *  through - the lerped one, which can trail the target. */
   readonly arWorldGroupMatrix: readonly number[] | null;
   readonly code: CodeInViewLog | null;
+  /** The anchor code's printed size (m) the setup worked with - what a
+   *  code's solved pose, and so any anchoring to it, scales with. Known
+   *  even when no code is in view. */
+  readonly codeSizeM: number;
 }
 
 interface CodeMeasuredLog {

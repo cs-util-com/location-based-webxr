@@ -661,6 +661,7 @@ export function wireCreatorSetup(deps: {
             ? null
             : group.matrixWorld.toArray(),
         code: codeInView(),
+        codeSizeM: ctx.activeSizeM,
       }),
     );
   }
