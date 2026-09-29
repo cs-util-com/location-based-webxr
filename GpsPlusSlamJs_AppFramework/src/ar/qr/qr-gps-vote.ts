@@ -3,12 +3,20 @@
  * tracking plan (§6).
  *
  * A detected QR is NOT a rigid re-anchor. Instead its solved pose is turned into
- * one (or, by default, four) very-high-weight synthetic GPS observation(s) and
- * injected into the existing weighted alignment + outlier-rejection fusion via
- * the normal `recordGpsEvent` path. "Mostly but not entirely overrides the other
- * votes" then falls out of the existing accuracy→weight curve for free, and a
- * single bad detection is still rejectable as an outlier rather than teleporting
- * the scene.
+ * one (or, by default, four) synthetic GPS observation(s) and injected into the
+ * existing weighted alignment + outlier-rejection fusion via the normal
+ * `recordGpsEvent` path, stamped `source: GPS_POINT_SOURCE_SYNTHETIC_QR` so the
+ * core, a recording and every GPS listener can tell them from device fixes.
+ *
+ * Each vote weighs about as much as ONE GPS fix, whatever its accuracy: the
+ * core's accuracy weight is `1/max(acc, 1 m)^0.1` (the published default
+ * exponent), so a 5 m vote weighs 0.85, a 3 m fix 0.90, and even a 0.05 m vote
+ * only 1.0 - about 1.17x a 5 m fix. A code's pull on the alignment therefore
+ * comes from how MANY votes it casts, how wide they are spread (`baselineM`)
+ * and how recent they stay, never from a tiny accuracy (Tour Viewer authoring
+ * plan 2026-09-28-0953, M0). With the core's default hard outlier trim a
+ * single bad detection is still rejectable as an outlier rather than
+ * teleporting the scene.
  *
  * Multi-correspondence (default): a single QR gives a full 6-DoF pose, but the
  * fusion is point-based. We know the QR's 4 corners in BOTH odom space (from the
@@ -30,7 +38,7 @@ import type {
   RecordGpsEventPayload,
 } from 'gps-plus-slam-js';
 import type { Vector3 } from 'gps-plus-slam-js';
-import { calcGpsCoords } from 'gps-plus-slam-js';
+import { GPS_POINT_SOURCE_SYNTHETIC_QR, calcGpsCoords } from 'gps-plus-slam-js';
 import {
   buildObjectPoints,
   rotateVectorByQuaternion,
@@ -78,9 +86,10 @@ export interface QrGpsVoteInput {
   /** Absolute geo pose from the level file. */
   qrGeo: QrGeoPose;
   /**
-   * Synthetic GPS accuracy in meters. Small → very high weight (the core
-   * library computes `weight = 1/accuracy^gpsAccuracyExponent`). Pick & validate
-   * against the fusion rather than hardcoding blindly (plan §6).
+   * Synthetic GPS accuracy in meters, the vote weight's input. The core
+   * computes `weight = 1/max(accuracy, 1 m)^gpsAccuracyExponent` (0.1 by
+   * default), so the accuracy moves a vote's weight by at most ~17 % against
+   * a 5 m fix and cannot make a vote dominant (see the module header).
    */
   syntheticAccuracyM: number;
   /**
@@ -268,6 +277,7 @@ export function buildQrGpsVotes(
       altitude: geo.altitude,
       latLongAccuracy: syntheticAccuracyM,
       timestamp,
+      source: GPS_POINT_SOURCE_SYNTHETIC_QR,
     };
     return { odomPosition, odomRotation, rawGpsPoint };
   });

@@ -11,7 +11,11 @@
 
 import { describe, it, expect } from 'vitest';
 import type { Quaternion } from 'gps-plus-slam-js';
-import { calcGpsCoords, calcRelativeCoordsInMeters } from 'gps-plus-slam-js';
+import {
+  GPS_POINT_SOURCE_SYNTHETIC_QR,
+  calcGpsCoords,
+  calcRelativeCoordsInMeters,
+} from 'gps-plus-slam-js';
 import { buildObjectPoints, transformPoint, type Pose } from './qr-pose';
 import {
   buildQrGpsVotes,
@@ -153,6 +157,38 @@ describe('buildQrGpsVotes', () => {
     });
     expect(def[0].odomRotation).toEqual(qrPoseWorld.rotation);
     expect(ovr[0].odomRotation).toEqual(override);
+  });
+
+  // Why this test matters: the core cannot tell a vote from a device fix by
+  // anything but this stamp (the id prefix was the old convention the field
+  // replaced). A listener that re-votes on every GPS fix - the Tour Viewer's
+  // keep-alive - would otherwise feed on its own votes, and a recording
+  // could not separate the two (authoring plan 2026-09-28-0953 §3.2).
+  it('stamps every payload, in every mode, with the synthetic-QR source', () => {
+    const modes = [
+      buildQrGpsVotes({ qrPoseWorld, sizeM, qrGeo, syntheticAccuracyM }),
+      buildQrGpsVotes({
+        qrPoseWorld,
+        sizeM,
+        qrGeo,
+        syntheticAccuracyM,
+        multiCorrespondence: false,
+      }),
+      buildQrGpsVotes({
+        qrPoseWorld,
+        sizeM,
+        qrGeo,
+        syntheticAccuracyM,
+        baselineM: 30,
+        count: 8,
+      }),
+    ];
+    for (const votes of modes) {
+      expect(votes.length).toBeGreaterThan(0);
+      for (const v of votes) {
+        expect(v.rawGpsPoint.source).toBe(GPS_POINT_SOURCE_SYNTHETIC_QR);
+      }
+    }
   });
 
   it('rejects a non-positive synthetic accuracy or size', () => {

@@ -339,6 +339,18 @@ source }` instead of the corners alone (unreleased API).
 
 ### Changed
 
+- **QR votes carry their provenance** (Tour Viewer authoring plan
+  2026-09-28-0953, M2b). Every payload `buildQrGpsVotes` builds is stamped
+  `rawGpsPoint.source: GPS_POINT_SOURCE_SYNTHETIC_QR`, the core's provenance
+  field (`gps-plus-slam-js` 1.25.0), which the reducer keeps on the stored
+  point. Recordings written from now on can tell a vote from a device fix
+  (`gpsPointSourceOf`); older recordings read as device, as before. The
+  core does not weigh or trim by the stamp. `core` re-exports
+  `gpsPointSourceOf`, `GPS_POINT_SOURCE_DEVICE` and
+  `GPS_POINT_SOURCE_SYNTHETIC_QR`. The module and its page no longer call
+  the votes "very-high-weight": a vote weighs about one GPS fix
+  (`1/max(acc, 1 m)^0.1`).
+
 - **The cloud slab reads its thickness at step boundaries and lights each
   step exactly** (clouds-from-above plan 2026-09-26-0549, M1). The layered
   "slices" seen from above at low step counts came from one thickness read
