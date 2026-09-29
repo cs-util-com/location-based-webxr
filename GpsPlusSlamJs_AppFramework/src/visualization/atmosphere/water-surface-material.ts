@@ -24,6 +24,17 @@ import * as THREE from 'three';
 
 import { glslFloat } from '../../utils/glsl-float.js';
 import { smoothstep } from '../../utils/smoothstep.js';
+import {
+  buildWaterPolish,
+  configureWaterPolishUniforms,
+  createWaterPolishUniforms,
+  normalizeWaterPolish,
+  WATER_POLISH_SWITCHES,
+  type WaterPolishFlags,
+  type WaterPolishParams,
+  type WaterPolishSwitch,
+  type WaterPolishUniforms,
+} from './water-polish.js';
 
 const GRAVITY = 9.81;
 
@@ -185,9 +196,12 @@ float waterDistance = length(vViewPosition);
 float waterFar = smoothstep(${glslFloat(S.roughnessRampM[0])}, ${glslFloat(S.roughnessRampM[1])}, waterDistance);
 roughnessFactor = max(roughnessFactor, mix(${glslFloat(S.roughnessNear)}, ${glslFloat(S.roughnessFar)}, waterFar));`;
 
-const NORMAL = /* glsl */ `#include <normal_fragment_maps>
+/** The normal patch; `before` runs first in its block (the polish's fields). */
+const normalPatch = (
+  before: string
+) => /* glsl */ `#include <normal_fragment_maps>
 {
-  vec2 waterSlope = waterSlopeAt(vWaterWorldXZ, uWaterTime);
+${before ? `${before}\n` : ''}  vec2 waterSlope = waterSlopeAt(vWaterWorldXZ, uWaterTime);
   vec3 waterNormalWorld = normalize(vec3(-waterSlope.x, 1.0, -waterSlope.y));
   normal = normalize((viewMatrix * vec4(waterNormalWorld, 0.0)).xyz);
 }`;
@@ -216,6 +230,12 @@ export interface WaterSurfaceOptions {
    * tests check; a custom slope has no twin here.
    */
   readonly slopeGlsl?: string;
+  /**
+   * The water polish's switches (`water-polish.ts`, round-3 stream W), each
+   * off unless named true. With every switch off the shader, program key
+   * and uniforms are exactly the unpolished water's.
+   */
+  readonly polish?: WaterPolishFlags;
 }
 
 /** A custom slope must define the function the normal patch calls. */
@@ -226,6 +246,13 @@ export class WaterSurface {
   readonly material: THREE.MeshPhysicalMaterial;
   /** Shared by every program compiled from the material. */
   readonly uniforms = { uWaterTime: { value: 0 } };
+  /** The polish's switches, every one named (see `water-polish.ts`). */
+  readonly polish: Readonly<Record<WaterPolishSwitch, boolean>>;
+  /**
+   * The polish's constants as uniforms, bound only while a switch is on;
+   * change them with {@link configurePolish}.
+   */
+  readonly polishUniforms: WaterPolishUniforms = createWaterPolishUniforms();
 
   constructor(options: WaterSurfaceOptions = {}) {
     const slopeGlsl = options.slopeGlsl ?? BUILT_IN_SLOPE;
@@ -234,6 +261,11 @@ export class WaterSurface {
         'water slopeGlsl must define vec2 waterSlopeAt(vec2 p, float t)'
       );
     }
+    this.polish = normalizeWaterPolish(options.polish);
+    const polish = buildWaterPolish(this.polish);
+    // Hooked now, so a wave set the per-wave tricks cannot hook is refused
+    // here rather than at the first compile.
+    const polishedSlope = polish.slope(slopeGlsl);
     const tint = options.tint ?? new THREE.Color(...S.tint);
     if (![tint.r, tint.g, tint.b].every(Number.isFinite)) {
       throw new RangeError('water tint must be a finite colour');
@@ -246,6 +278,7 @@ export class WaterSurface {
     });
     this.material.name = 'water-surface';
     const uniforms = this.uniforms;
+    const polishUniforms = this.polishUniforms;
     this.material.onBeforeCompile = (shader) => {
       shader.vertexShader = replaceAnchor(
         shader.vertexShader,
@@ -260,7 +293,9 @@ export class WaterSurface {
       shader.fragmentShader = replaceAnchor(
         shader.fragmentShader,
         '#include <common>',
-        `${FRAGMENT_DECLARATIONS}\n${slopeGlsl}`
+        polish.active
+          ? `${FRAGMENT_DECLARATIONS}\n${polish.declarations}\n${polishedSlope}`
+          : `${FRAGMENT_DECLARATIONS}\n${slopeGlsl}`
       );
       shader.fragmentShader = replaceAnchor(
         shader.fragmentShader,
@@ -270,15 +305,42 @@ export class WaterSurface {
       shader.fragmentShader = replaceAnchor(
         shader.fragmentShader,
         '#include <normal_fragment_maps>',
-        NORMAL
+        normalPatch(polish.beforeSlope)
       );
+      if (polish.afterMaterial) {
+        shader.fragmentShader = replaceAnchor(
+          shader.fragmentShader,
+          '#include <lights_physical_fragment>',
+          `#include <lights_physical_fragment>${polish.afterMaterial}`
+        );
+      }
+      if (polish.afterLightingPars) {
+        shader.fragmentShader = replaceAnchor(
+          shader.fragmentShader,
+          '#include <lights_physical_pars_fragment>',
+          `#include <lights_physical_pars_fragment>${polish.afterLightingPars}`
+        );
+      }
       Object.assign(shader.uniforms, uniforms);
+      if (polish.active) Object.assign(shader.uniforms, polishUniforms);
     };
     // ONE PROGRAM PER SLOPE: three shares programs between materials whose
     // onBeforeCompile source is equal, and this closure's source is the same
     // for every slope. The haze chains after this key.
-    const key = `water-surface|${options.slopeGlsl ?? 'built-in'}`;
+    // The polish's switches join the key only when one is on, so the
+    // unpolished water keeps its key (and its program).
+    const on = WATER_POLISH_SWITCHES.filter((name) => this.polish[name]);
+    const key = `water-surface|${options.slopeGlsl ?? 'built-in'}${on.length ? `|polish:${on.join(',')}` : ''}`;
     this.material.customProgramCacheKey = () => key;
+  }
+
+  /**
+   * Change the polish's constants (any subset of {@link WaterPolishParams});
+   * no recompile. RangeError for an unknown name or a value out of range,
+   * and then nothing changes.
+   */
+  configurePolish(values: Partial<WaterPolishParams>): void {
+    configureWaterPolishUniforms(this.polishUniforms, values);
   }
 
   /**

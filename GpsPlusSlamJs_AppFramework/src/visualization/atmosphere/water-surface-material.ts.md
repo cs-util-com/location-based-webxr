@@ -30,6 +30,18 @@ it like any other lit material.
     own program: the key is `water-surface|<slopeGlsl or built-in>`,
     because three shares programs between materials whose
     `onBeforeCompile` source is equal (the haze chains after this key);
+  - `polish`: the water polish's switches (`water-polish.ts`, round-3
+    stream W: `lostVariance`, `sunSize`, `fresnelDamp`, `antiTiling`,
+    `gusts`, `body`), each off unless named true. Each combination gets
+    its own program (`|polish:<names>` on the key); with every switch off
+    the source, key and uniforms are exactly the unpolished water's.
+    RangeError for an unknown switch, and for `lostVariance`, `antiTiling`
+    or `gusts` on a wave set without the per-wave statement the hook needs
+    (see `water-polish.ts.md`);
+  - `polish` (read back: every switch named) and `polishUniforms` (bound
+    only while a switch is on); `configurePolish(values)` changes the
+    polish's constants without a recompile (RangeError for a bad value,
+    and then nothing changes);
   - `material` (`MeshPhysicalMaterial`, named `water-surface`);
   - `uniforms.uWaterTime` (shared with every compiled program);
   - `update(seconds)` — advance the waves; `RangeError` for a negative or
@@ -84,7 +96,12 @@ water.update(dtSeconds);
   shared time uniform, `update` validation, the tint, coexistence with the
   haze; a custom `slopeGlsl` replacing the built-in waves, its own program
   key per slope (also under the haze), and the refusal of GLSL without
-  `waterSlopeAt`.
+  `waterSlopeAt`; the polish: the patch before the polish PINNED (a
+  SHA-256 of the output on a shader made of the patch's anchors, taken at
+  webxr 542ac053, so three's own chunk text does not move it), every
+  switch off equal to no polish, each switch on the real ShaderLib shader
+  with its own key and uniforms, all six under the cloud shadows and the
+  haze, the refusal of an unhookable wave set, `configurePolish`.
 - GPU: the look-dev smoke's "the water's waves move on the GPU, and the lake
   warms with the sky" (lake view: 12/12 points move when the waves
   advance; red over blue ×1.64 from noon to golden hour).

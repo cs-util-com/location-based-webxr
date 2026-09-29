@@ -9,11 +9,15 @@
  * not fade with distance shimmers at the horizon. The GPU half is checked by
  * the look-dev smoke; these check the TS twin every GLSL constant comes from.
  */
+import { createHash } from 'node:crypto';
+
 import fc from 'fast-check';
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 
 import { AtmosphereHaze } from './atmosphere-haze.js';
+import { CloudShadow } from './cloud-shadow.js';
+import { WATER_POLISH_SWITCHES } from './water-polish.js';
 import {
   WATER_SURFACE,
   WaterSurface,
@@ -269,5 +273,180 @@ describe('WaterSurface with a custom slope (slopeGlsl)', () => {
     expect(
       () => new WaterSurface({ slopeGlsl: 'vec2 somethingElse() {}' })
     ).toThrow(RangeError);
+  });
+});
+
+// WHY (round-3 stream W, DEC-FB3-9): the water polish must leave the owner's
+// P50 water EXACTLY as it was while every one of its switches is off, so a
+// judgement "P50 alone" is a judgement of today's water. The patch only
+// replaces anchors, so its whole contribution shows on a synthetic shader
+// made of those anchors, independent of three's own chunk text (a three
+// upgrade does not move these pins). The pins were taken from the water
+// BEFORE the polish existed (webxr 542ac053): equal source means three
+// builds the same program, so the pixels are byte-identical.
+describe('WaterSurface before the polish (pinned)', () => {
+  const ANCHORS = {
+    vertex: ['#include <common>', '#include <project_vertex>'].join('\n'),
+    fragment: [
+      '#include <common>',
+      '#include <lights_physical_pars_fragment>',
+      '#include <roughnessmap_fragment>',
+      '#include <normal_fragment_maps>',
+      '#include <lights_physical_fragment>',
+      '#include <lights_fragment_begin>',
+    ].join('\n'),
+  };
+  const patched = (water: WaterSurface) => {
+    const shader = {
+      uniforms: {},
+      vertexShader: ANCHORS.vertex,
+      fragmentShader: ANCHORS.fragment,
+    } as unknown as THREE.WebGLProgramParametersWithUniforms;
+    water.material.onBeforeCompile(shader, {} as THREE.WebGLRenderer);
+    return {
+      hash: createHash('sha256')
+        .update(`${shader.vertexShader}\n//--\n${shader.fragmentShader}`)
+        .digest('hex'),
+      uniforms: Object.keys(shader.uniforms).sort(),
+      key: water.material.customProgramCacheKey(),
+    };
+  };
+  const STUB = 'vec2 waterSlopeAt(vec2 p, float t) { return vec2(0.0); } // P';
+
+  it('patches the built-in waves as before the polish', () => {
+    expect(patched(new WaterSurface())).toEqual({
+      hash: 'db3fd51b9b1915776f7731677e898fd1e74b3fb04a4fd52c134e05956daf2004',
+      uniforms: ['uWaterTime'],
+      key: 'water-surface|built-in',
+    });
+  });
+
+  it('patches a custom slope as before the polish', () => {
+    expect(patched(new WaterSurface({ slopeGlsl: STUB }))).toEqual({
+      hash: 'e016e8f7d559219d9bfe41e149bf4e1a992d825123f153742514aa14abe20171',
+      uniforms: ['uWaterTime'],
+      key: `water-surface|${STUB}`,
+    });
+  });
+});
+
+// WHY (round-3 stream W, DEC-FB3-9): each polish switch reaches the real
+// three shader (its anchors exist there), gets its own program (three
+// shares programs by key, so a switch missing from the key would draw the
+// unpolished water, silently), binds its uniforms, and chains under the
+// haze and the cloud shadows the look-dev page applies after it.
+describe('WaterSurface with the polish', () => {
+  const STUB_WAVES = `void waterWave(vec2 q, float t, vec2 d, float k, float ak, float w, float phase, inout vec2 slope) {
+  float ph = k * dot(d, q);
+  float fade = 1.0 - smoothstep(0.8, 1.6, fwidth(ph));
+  slope += fade * ak * cos(ph - w * t + phase) * d;
+}
+vec2 waterSlopeAt(vec2 p, float t) {
+  vec2 slope = vec2(0.0);
+  waterWave(p, t, vec2(1.0, 0.0), 4.0, 0.06, 6.2, 0.0, slope);
+  return slope;
+}`;
+
+  it('with every switch named off, is the unpolished water', () => {
+    const allOff = Object.fromEntries(
+      WATER_POLISH_SWITCHES.map((name) => [name, false])
+    );
+    for (const slopeGlsl of [undefined, STUB_WAVES]) {
+      const plain = new WaterSurface(slopeGlsl ? { slopeGlsl } : {});
+      const off = new WaterSurface({
+        ...(slopeGlsl ? { slopeGlsl } : {}),
+        polish: allOff,
+      });
+      const a = compile(plain.material);
+      const b = compile(off.material);
+      expect(b.fragmentShader).toBe(a.fragmentShader);
+      expect(b.vertexShader).toBe(a.vertexShader);
+      expect(Object.keys(b.uniforms).sort()).toEqual(
+        Object.keys(a.uniforms).sort()
+      );
+      expect(off.material.customProgramCacheKey()).toBe(
+        plain.material.customProgramCacheKey()
+      );
+    }
+  });
+
+  it('patches the real shader for each switch, with its own program key and uniforms', () => {
+    const keys = new Set<string>();
+    for (const name of WATER_POLISH_SWITCHES) {
+      const water = new WaterSurface({
+        slopeGlsl: STUB_WAVES,
+        polish: { [name]: true },
+      });
+      const shader = compile(water.material);
+      const key = water.material.customProgramCacheKey();
+      expect(key).toContain(`|polish:${name}`);
+      keys.add(key);
+      expect(shader.uniforms.uWaterPolishGustDepth).toBe(
+        water.polishUniforms.uWaterPolishGustDepth
+      );
+      expect(shader.uniforms.uWaterTime).toBe(water.uniforms.uWaterTime);
+      const lighting = ['sunSize', 'fresnelDamp', 'body'].includes(name);
+      expect(
+        shader.fragmentShader.includes('#define RE_Direct waterPolishDirect')
+      ).toBe(lighting);
+      expect(shader.fragmentShader.includes('waterPolishWave(q,')).toBe(
+        ['lostVariance', 'antiTiling', 'gusts'].includes(name)
+      );
+    }
+    expect(keys.size).toBe(WATER_POLISH_SWITCHES.length);
+  });
+
+  it('hooks the built-in waves too', () => {
+    const shader = compile(
+      new WaterSurface({ polish: { lostVariance: true } }).material
+    );
+    expect(shader.fragmentShader).toContain(
+      'waterPolishWave(p, t, d, k, ak, w, phase, fade, k * dot(d, p) - w * t + phase, slope);'
+    );
+    expect(shader.fragmentShader).toContain(
+      'material.roughness = min(pow(pow4(material.roughness) + uWaterPolishVarianceScale * waterLostVar'
+    );
+  });
+
+  it('lists every switch in order when all are on, and chains under the haze and the cloud shadows', () => {
+    const all = Object.fromEntries(
+      WATER_POLISH_SWITCHES.map((name) => [name, true])
+    );
+    const water = new WaterSurface({ slopeGlsl: STUB_WAVES, polish: all });
+    expect(water.material.customProgramCacheKey()).toBe(
+      `water-surface|${STUB_WAVES}|polish:${WATER_POLISH_SWITCHES.join(',')}`
+    );
+    new CloudShadow().apply(water.material);
+    new AtmosphereHaze({ visibilityKm: 45 }).apply(water.material);
+    const shader = compile(water.material);
+    expect(shader.fragmentShader).toContain('waterPolishIndirectSpecular');
+    expect(shader.fragmentShader).toContain('atmShadowCloudLightInfo');
+    expect(shader.fragmentShader).toContain('atmHazeKeep');
+  });
+
+  it('refuses a wave set the per-wave switches cannot hook, at construction', () => {
+    const plain = 'vec2 waterSlopeAt(vec2 p, float t) { return vec2(0.0); }';
+    expect(
+      () => new WaterSurface({ slopeGlsl: plain, polish: { gusts: true } })
+    ).toThrow(RangeError);
+    expect(
+      () => new WaterSurface({ slopeGlsl: plain, polish: { body: true } })
+    ).not.toThrow();
+    expect(
+      () =>
+        new WaterSurface({
+          polish: { typo: true } as unknown as { gusts: boolean },
+        })
+    ).toThrow(RangeError);
+  });
+
+  it('changes a constant through configurePolish without a recompile', () => {
+    const water = new WaterSurface({ polish: { gusts: true } });
+    const version = water.material.version;
+    water.configurePolish({ gustDepth: 0.4 });
+    expect(water.polishUniforms.uWaterPolishGustDepth.value).toBe(0.4);
+    expect(water.material.version).toBe(version);
+    expect(() => water.configurePolish({ gustDepth: 2 })).toThrow(RangeError);
+    expect(water.polishUniforms.uWaterPolishGustDepth.value).toBe(0.4);
   });
 });
