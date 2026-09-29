@@ -33,19 +33,29 @@
   hash stays readable (`at=30,15`, not `%2C`). Sliders take their ranges
   from `PARAMS`. On a phone-width screen (600 px, panel.js's narrow query)
   the error and loading lines move below the folded plate's header.
+- The look's defaults are the owner's tuned values (round-4 plan
+  2026-09-28-2105 DEC-GL4-1): sun intensity 5, night lights 0.7, sun disc
+  1°, sun glow 0.95, stars to magnitude 7.5 at gain 4, Milky Way 0.03. They
+  live in the globe package (`GLOBE_SURFACE.sunIntensity`,
+  `GLOBE_SURFACE_TUNING.nightGain`, `GLOBE_SKY`), so whatever consumes
+  the globe later starts from the same look; the lab reads them as its
+  fallbacks. A link that names a value keeps it. The smokes that measure
+  pixels pin the look before round 4 (`withPreRound4Look` in
+  `globe-smoke-helpers.mjs`).
 - Hash parameters and ranges (`PARAMS`, the one source for the sliders too;
   out of range, empty or malformed reads as the default): `spinMs`,
   `turnMs` (0-10000), `diveMs` (the pin's dive, 1000-60000, default
   15000), `handOverKm` (the hand-over altitude, 1-1000, default 150; the
   plate offers 20, 50, 150), `handOver` (1 opens the city, 0 holds),
-  `nightGain` (0-4), `waterRoughness`,
+  `nightGain` (0-4, default 0.7), `waterRoughness`,
   `cloudOpacity` (0-1), `cloudDrift` (0-10 °/s of scene time, default 0.5),
   `sky` (0 turns the background pass off, default 1), `sunSize` (the disc's
-  apparent diameter, 0.1-10°, default the real 0.533°), `sunGlow` (0-4,
-  default 1), `stars` (0 hides the procedural stars, default 1), `starMag`
-  (the faintest star drawn, 0.5-7.5, default 6.5: 5,000 stars), `starGain`
-  (0-4, default 1), `milkyWay` (the band's linear radiance, 0-0.1, default
-  0.02; the sky pass is not tone mapped, so it shows), `sunIntensity` (0-8), `fovY` (20-80, default 50),
+  apparent diameter, 0.1-10°, default 1°, about twice the real 0.533°),
+  `sunGlow` (0-4, default 0.95), `stars` (0 hides the procedural stars,
+  default 1), `starMag` (the faintest star drawn, 0.5-7.5, default 7.5:
+  15,811 stars), `starGain` (0-4, default 4), `milkyWay` (the band's
+  linear radiance, 0-0.1, default 0.03; the sky pass is not tone mapped,
+  so it shows), `sunIntensity` (0-8, default 5), `fovY` (20-80, default 50),
   `pixelRatio` (the cap, 0.5-4, default 2, what §7.2 sized the pyramid
   for), `errorTarget` (0.25-256), `cacheMiB` (8-4096), plus `at` and
   the clock's `time` and `timeScale`.
@@ -68,7 +78,7 @@
     does not strobe them: at 600x they move 0.5 °/s, as at 1x.
   - The error target, the sun's intensity and the cache cap default to what
     the surface sets itself (read from the live surface at start:
-    GeneratedSurfacePlugin's 1 px, the light's π, `GLOBE_SURFACE`'s 64 MiB),
+    GeneratedSurfacePlugin's 1 px, the light's 5, `GLOBE_SURFACE`'s 64 MiB),
     so the lab never overrides the surface by accident; the cache floor
     keeps the surface's floor-to-cap ratio.
   - The field of view and the pixel ratio refit the camera and resize the
@@ -91,7 +101,7 @@
 - The device line (round-3 plan §4 F; terrain plan 2026-09-27-0605 §7):
   "This device filters float textures (OES_texture_float_linear): yes" or
   "NO", from the renderer's own context, bottom left above the credits, so
-  the owner can read it on his phone before the terrain dive is built; intensity π, Neutral tone mapping, no ambient
+  the owner can read it on his phone before the terrain dive is built; intensity 5 (DEC-GL4-1), Neutral tone mapping, no ambient
   light, a black sky (plan §7.3).
 - The intro (M2, `/globe/globe-target.js`, `/globe/globe-camera.js`):
   - `spin`: from 30°N 15°E, the view's longitude falling 3°/s, so the

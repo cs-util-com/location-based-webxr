@@ -24,7 +24,12 @@ export const GLOBE_SKY = {
   /** The sky sphere's radius around the sky camera (units are arbitrary). */
   radius: 1,
   /** The real sun's mean apparent diameter, 0.533° (32 arc minutes). */
-  sunDiameterDeg: 0.533,
+  realSunDiameterDeg: 0.533,
+  /**
+   * The disc's default apparent diameter: the owner's look, about twice
+   * the real sun's (round-4 plan 2026-09-28-2105 DEC-GL4-1).
+   */
+  sunDiameterDeg: 1,
   /**
    * The disc's radiance: far above 1, so tone mapping draws it white
    * whatever the exposure, as a camera sees the sun.
@@ -33,25 +38,32 @@ export const GLOBE_SKY = {
   /**
    * The glow's strength at the disc's edge and its angular width (radians):
    * it falls to 1/e this far outside the disc. A look, not physics: space
-   * has no air to scatter it; a lens and an eye do.
+   * has no air to scatter it; a lens and an eye do. 0.95 is the owner's
+   * look (DEC-GL4-1; 1 before).
    */
-  glow: 1,
+  glow: 0.95,
   glowWidthRad: 1.5 * (Math.PI / 180),
-  /** The faintest stars drawn by default: the naked-eye limit. */
-  starMagLimit: 6.5,
+  /**
+   * The faintest stars drawn by default: 7.5, a magnitude past the
+   * naked-eye limit, the owner's look (DEC-GL4-1; 6.5 before).
+   */
+  starMagLimit: 7.5,
   /**
    * The stars' brightness: a star of magnitude m has the linear radiance
    * gain x 10^(-0.2 (m + 1)), so magnitude -1 reads 1 and magnitude 6.5
    * about 0.03, which the sRGB output shows at about 49/255 (the eye's
    * compressed response; the physical 10^(-0.4 m) would leave only a few
    * dozen visible). The pass is not tone mapped, so these reach the screen.
+   * The default gain 4 is the owner's look (DEC-GL4-1; 1 before): it lifts
+   * every star four times, so magnitude 6.5 reads about 0.13.
    */
-  starGain: 1,
+  starGain: 4,
   /**
    * The Milky Way band's peak linear radiance: faint, about 38/255 on
-   * screen towards the galactic centre and half that across the sky.
+   * screen towards the galactic centre and half that across the sky at
+   * 0.02; 0.03 is the owner's look (DEC-GL4-1; 0.02 before).
    */
-  milkyWay: 0.02,
+  milkyWay: 0.03,
   /** The band's half width (radians): about 10° either side of the plane. */
   milkyWayWidthRad: 10 * (Math.PI / 180),
   /** The stars sit inside the sky sphere, at this fraction of its radius. */

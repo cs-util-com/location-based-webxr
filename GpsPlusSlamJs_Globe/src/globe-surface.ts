@@ -54,6 +54,11 @@ export const GLOBE_SURFACE = {
    * (LRUCache.unloadUnusedContent, 0.5.3). 48 MiB, plan §7.2.
    */
   cacheFloorBytes: 48 * 1024 * 1024,
+  /**
+   * The sun light's intensity: 5, the owner's look (round-4 plan
+   * 2026-09-28-2105 DEC-GL4-1). Phase 1 lit the Earth at π (§7.3).
+   */
+  sunIntensity: 5,
 } as const;
 
 /** The renderer's runtime counters and cache size (not in its typings). */
@@ -82,7 +87,8 @@ export interface GlobeSurface {
   readonly overlay: XYZTilesOverlay;
   readonly options: GlobeSurfaceOptions;
   /**
-   * The sun: a directional light in `group`, intensity π (§7.3), turned
+   * The sun: a directional light in `group`, intensity
+   * `GLOBE_SURFACE.sunIntensity` (DEC-GL4-1), turned
    * with `tiles.group` so it stays the ECEF sun however the tiles are
    * placed.
    */
@@ -263,7 +269,7 @@ export function createGlobeSurface(
   const surfaceUniforms = createGlobeSurfaceUniforms(maps);
   const template = new THREE.MeshStandardMaterial({ roughness: 0.9 });
   applyGlobeSurface(template, surfaceUniforms);
-  const sun = new THREE.DirectionalLight(0xffffff, Math.PI);
+  const sun = new THREE.DirectionalLight(0xffffff, GLOBE_SURFACE.sunIntensity);
   // NOT inside tiles.group: that group updates its children's world
   // matrices only when its own changes, so a light there keeps the matrix
   // it was made with, sits on its target and lights nothing (measured).

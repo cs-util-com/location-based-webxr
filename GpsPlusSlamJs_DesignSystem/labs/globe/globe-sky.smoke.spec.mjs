@@ -22,6 +22,7 @@ import {
   gridAround,
   luminance,
   meanOf,
+  withPreRound4Look,
 } from "./globe-smoke-helpers.mjs";
 
 const PINNED = "2026-03-20T11:00:00Z";
@@ -222,7 +223,8 @@ const angleBetween = (a, b) => {
 // proves the difference is the clouds, not anything else).
 test("the clouds drift with the clock", async ({ page }) => {
   test.setTimeout(300_000);
-  const view = "at=30,15&spinMs=0&turnMs=0";
+  // The look its floor was measured on (none of these keys varies below).
+  const view = withPreRound4Look("at=30,15&spinMs=0&turnMs=0");
   const t1 = PINNED;
   const t2 = "2026-03-20T11:01:00Z";
   const errors = await bootLab(page, `${view}&time=${t1}&cloudDrift=0.5`);
@@ -306,7 +308,8 @@ test("the sun is a disc with a soft glow, where the sun is", async ({
 }) => {
   test.setTimeout(300_000);
   // The stars and the Milky Way off: a star on a probe would pass for glow.
-  const disc = `${at(BESIDE)}&stars=0&milkyWay=0`;
+  // The disc and glow it was measured with (`withPreRound4Look`).
+  const disc = withPreRound4Look(`${at(BESIDE)}&stars=0&milkyWay=0`);
   const errors = await bootLab(page, disc);
   await arriveAt(page, BESIDE);
   const state = await page.evaluate(() => window.__globeLab.state());
@@ -379,7 +382,8 @@ test("the Earth covers the sky: the sun behind it does not show through", async 
   page,
 }) => {
   test.setTimeout(300_000);
-  const errors = await bootLab(page, at(BEHIND));
+  const behind = withPreRound4Look(at(BEHIND));
+  const errors = await bootLab(page, behind);
   await arriveAt(page, BEHIND);
   const state = await page.evaluate(() => window.__globeLab.state());
   const sun = state.sky.sunScreen;
@@ -387,7 +391,7 @@ test("the Earth covers the sky: the sun behind it does not show through", async 
   expect(Math.hypot(sun[0] - 0.5, sun[1] - 0.5)).toBeLessThan(0.01);
   const grid = gridAround(sun, 0.01, 5);
   const on = (await readAt(page, grid)).map(luminance);
-  await applyHash(page, `${at(BEHIND)}&sky=0`);
+  await applyHash(page, `${behind}&sky=0`);
   const off = (await readAt(page, grid)).map(luminance);
   const worst = Math.max(...on.map((v, k) => Math.abs(v - off[k])));
   console.log(
@@ -409,7 +413,7 @@ test("procedural stars shine in space, and never over the Earth", async ({
   page,
 }) => {
   test.setTimeout(300_000);
-  const view = `${at(BEHIND)}&milkyWay=0`;
+  const view = withPreRound4Look(`${at(BEHIND)}&milkyWay=0`);
   const errors = await bootLab(page, view);
   const state = await arriveAt(page, BEHIND);
   const { height } = await page.evaluate(() => {
@@ -522,7 +526,8 @@ test("the faintest-star limit reaches the pixels", async ({ page }) => {
     Math.tan((state.fovY * DEG) / 2);
   const light = {};
   for (const mag of [6.5, 3.5, 0.5]) {
-    await applyHash(page, `${view}&starMag=${mag}`);
+    // The pre-round-4 gain, appended AFTER the limit (the first key wins).
+    await applyHash(page, withPreRound4Look(`${view}&starMag=${mag}`));
     light[mag] = await page.evaluate(
       (r) => window.__globeLab.regionStats({ cx: 0.5, cy: 0.5, rPx: r }, 10),
       rPx * 1.03,
@@ -575,7 +580,8 @@ test("the Milky Way is visible towards the galactic centre", async ({
     lng: Math.round((Math.atan2(cam[1], cam[0]) / DEG) * 1000) / 1000,
   };
   const view = `at=${target.lat},${target.lng}&spinMs=0&turnMs=0&${time}`;
-  await applyHash(page, view);
+  // The band's radiance its floor was measured with (0.02).
+  await applyHash(page, withPreRound4Look(view));
   await page.waitForFunction(
     () => window.__globeLab.state().phase === "arrived",
   );
@@ -586,7 +592,7 @@ test("the Milky Way is visible towards the galactic centre", async ({
   expect(p).not.toBeNull();
   const grid = gridAround(p, 0.01, 7);
   const on = meanOf((await readAt(page, grid)).map(luminance));
-  await applyHash(page, `${view}&milkyWay=0`);
+  await applyHash(page, withPreRound4Look(`${view}&milkyWay=0`));
   const off = meanOf((await readAt(page, grid)).map(luminance));
   const FLOOR = 10;
   console.log(

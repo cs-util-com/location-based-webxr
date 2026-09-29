@@ -214,7 +214,8 @@ const PARAMS = {
   cloudDrift: { fallback: GLOBE_CLOUD_DRIFT_DEG_PER_S, min: 0, max: 10 },
   sunIntensity: { fallback: null, min: 0, max: 8 },
   // The background pass (on unless 0), the disc's apparent diameter in
-  // degrees (the real sun's by default) and the glow's strength.
+  // degrees and the glow's strength (the owner's look by default,
+  // round-4 plan 2026-09-28-2105 DEC-GL4-1: `GLOBE_SKY`).
   sky: { fallback: 1, min: 0, max: 1 },
   sunSize: { fallback: GLOBE_SKY.sunDiameterDeg, min: 0.1, max: 10 },
   sunGlow: { fallback: GLOBE_SKY.glow, min: 0, max: 4 },
@@ -802,8 +803,9 @@ function start() {
   // (682 tiles with level 4).
   performance.setResourceTimingBufferSize(4000);
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  // Phase 1's exposure (§7.3): the sun at intensity π, Neutral tone mapping
-  // (the look-dev default), no ambient light, a black sky.
+  // Phase 1's exposure (§7.3): Neutral tone mapping (the look-dev
+  // default), no ambient light, a black sky; the sun at the surface's own
+  // intensity (5 since round 4, DEC-GL4-1; π in phase 1).
   renderer.toneMapping = THREE.NeutralToneMapping;
   // The frame clears once, then draws the sky pass, then the Earth over it.
   renderer.autoClear = false;

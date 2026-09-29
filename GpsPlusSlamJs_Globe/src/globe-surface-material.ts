@@ -11,8 +11,11 @@ import * as THREE from "three";
 
 /** The patch's tunables (lab parameters; the phone round sets them). */
 export const GLOBE_SURFACE_TUNING = {
-  /** Night-light radiance per unit of the (sRGB-decoded) map. */
-  nightGain: 1,
+  /**
+   * Night-light radiance per unit of the (sRGB-decoded) map: 0.7, the
+   * owner's look (round-4 plan 2026-09-28-2105 DEC-GL4-1; 1 before).
+   */
+  nightGain: 0.7,
   /** Water's roughness, where the mask says water and no cloud covers it. */
   waterRoughness: 0.35,
   /** How far a full cloud whitens the ground. */

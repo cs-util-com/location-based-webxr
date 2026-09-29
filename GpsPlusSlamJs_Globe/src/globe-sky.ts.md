@@ -5,17 +5,25 @@
   `globe-stars.ts`: not a catalogue, owner decision on round-2 Q2) and a
   faint Milky Way band along the galactic plane, drawn in a BACKGROUND
   pass before the Earth.
+- Defaults (round-4 plan 2026-09-28-2105 DEC-GL4-1): the disc, the
+  glow, the star limit and gain and the Milky Way default to the values
+  the owner tuned by eye on his phone (disc 1°, glow 0.95, stars to 7.5
+  at gain 4, Milky Way 0.03; before: 0.533°, 1, 6.5, 1, 0.02). The globe
+  smokes pin the old values where their pixel floors were measured on
+  them (`withPreRound4Look` in `labs/globe/globe-smoke-helpers.mjs`).
 - Public API:
   - `GLOBE_SKY` - `radius` (1, the sky sphere around its camera),
-    `sunDiameterDeg` (0.533, the real sun's mean apparent diameter),
+    `realSunDiameterDeg` (0.533, the real sun's mean apparent diameter),
+    `sunDiameterDeg` (1, the default disc: the owner's look),
     `sunRadiance` (40, far above 1: the shader clamps the disc to white),
-    `glow` (1, the glow's strength at the disc's edge) and `glowWidthRad`
+    `glow` (0.95, the glow's strength at the disc's edge) and `glowWidthRad`
     (1.5°, where the glow has fallen to 1/e). The glow is a look: space has
-    no air to scatter light; a lens and an eye do. `starMagLimit` (6.5),
-    `starGain` (1: a star's linear radiance is `10^(-0.2 (m + 1))` x gain,
-    the eye's compressed response; magnitude 6.5 reads about 0.03, about
-    49/255 on screen), `milkyWay` (0.02, the band's peak linear radiance,
-    about 38/255 towards the galactic centre), `milkyWayWidthRad` (10°),
+    no air to scatter light; a lens and an eye do. `starMagLimit` (7.5),
+    `starGain` (4: a star's linear radiance is `10^(-0.2 (m + 1))` x gain,
+    the eye's compressed response; at gain 1 magnitude 6.5 reads about
+    0.03, about 49/255 on screen), `milkyWay` (0.03, the band's peak
+    linear radiance; 0.02 reads about 38/255 towards the galactic centre),
+    `milkyWayWidthRad` (10°),
     `starShell` (0.9, the stars' radius inside the sphere).
   - `createGlobeSky()` returns `{ scene, camera, uniforms, stars,
 starUniforms, visibleStars(), setCelestialRotation(q), setStarLook(look),

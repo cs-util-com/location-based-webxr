@@ -55,6 +55,8 @@ describe("createGlobeSurfaceUniforms", () => {
     expect(u.uClouds.value).toBe(t.clouds);
     expect(u.uSunEcef.value.length()).toBeCloseTo(1, 12);
     expect(u.uNightGain.value).toBe(GLOBE_SURFACE_TUNING.nightGain);
+    // The owner's night lights (round-4 plan DEC-GL4-1).
+    expect(GLOBE_SURFACE_TUNING.nightGain).toBe(0.7);
     expect(u.uWaterRoughness.value).toBe(GLOBE_SURFACE_TUNING.waterRoughness);
     expect(u.uCloudOpacity.value).toBe(GLOBE_SURFACE_TUNING.cloudOpacity);
     expect(u.uCloudLonOffset.value).toBe(0);

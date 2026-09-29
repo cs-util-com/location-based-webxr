@@ -112,9 +112,27 @@ describe("createGlobeSky", () => {
     sky.dispose();
   });
 
-  it("sizes the disc as the real sun by default, and takes the lab's size and glow", () => {
+  // Why: the owner tuned the look by eye on his phone (round-4 plan
+  // 2026-09-28-2105 DEC-GL4-1) and asked for exactly these values as the
+  // defaults, so a link without them shows what he chose. The real sun's
+  // 0.533° stays named beside the look's 1°, which is about twice it.
+  it("defaults to the owner's look (DEC-GL4-1): disc 1°, glow 0.95, stars to 7.5 at gain 4, Milky Way 0.03", () => {
+    expect(GLOBE_SKY.realSunDiameterDeg).toBeCloseTo(0.533, 3);
+    expect(GLOBE_SKY.sunDiameterDeg).toBe(1);
+    expect(GLOBE_SKY.glow).toBe(0.95);
+    expect(GLOBE_SKY.starMagLimit).toBe(7.5);
+    expect(GLOBE_SKY.starGain).toBe(4);
+    expect(GLOBE_SKY.milkyWay).toBe(0.03);
     const sky = createGlobeSky();
-    expect(GLOBE_SKY.sunDiameterDeg).toBeCloseTo(0.533, 3);
+    expect(sky.uniforms.uGlow.value).toBe(0.95);
+    expect(sky.uniforms.uMilkyWay.value).toBe(0.03);
+    expect(sky.starUniforms.uMagLimit.value).toBe(7.5);
+    expect(sky.starUniforms.uStarGain.value).toBe(4);
+    sky.dispose();
+  });
+
+  it("sizes the disc from the look by default, and takes the lab's size and glow", () => {
+    const sky = createGlobeSky();
     expect(sky.uniforms.uSunRadius.value).toBeCloseTo(
       (GLOBE_SKY.sunDiameterDeg / 2) * DEG,
       12,
@@ -182,10 +200,9 @@ describe("the procedural stars in the sky pass", () => {
     const count = (m: number) =>
       generateStarField({
         seed: GLOBE_STARS.seed,
-        magLimit: 7.5,
+        magLimit: GLOBE_STARS.maxMagLimit,
       }).magnitudes.filter((x) => x <= m).length;
-    expect(GLOBE_SKY.starMagLimit).toBe(6.5);
-    expect(sky.visibleStars()).toBe(count(6.5));
+    expect(sky.visibleStars()).toBe(count(GLOBE_SKY.starMagLimit));
     expect(sky.visibleStars()).toBeGreaterThan(2000);
     const look = { gain: 1, milkyWay: 0, pixelRatio: 2, visible: true };
     sky.setStarLook({ ...look, magLimit: 5.5 });

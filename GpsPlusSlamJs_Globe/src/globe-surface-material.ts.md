@@ -7,7 +7,8 @@
   with the globe's clock (round-2 plan 2026-09-26-2055 M3f), so they read
   as a layer of their own.
 - Public API:
-  - `GLOBE_SURFACE_TUNING` - `{ nightGain: 1, waterRoughness: 0.35,
+  - `GLOBE_SURFACE_TUNING` - `{ nightGain: 0.7 (the owner's look, round-4
+plan DEC-GL4-1; 1 before), waterRoughness: 0.35,
 cloudOpacity: 0.8 }`, the defaults (lab parameters `#nightGain=`,
     `#waterRoughness=`, `#cloudOpacity=`; the phone round sets them).
   - `GLOBE_CLOUD_DRIFT_DEG_PER_S` - 0.5, the clouds' default drift in

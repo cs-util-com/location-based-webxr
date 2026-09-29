@@ -22,7 +22,9 @@ activeSources(), dispose() }`.
     - The caller adds `group` to its scene, points the sun with `setSun`
       and calls `update` every frame before rendering.
     - `group` holds `tiles.group`, `sun` (a `DirectionalLight`,
-      intensity π) and the sun's target at the group's origin.
+      intensity `GLOBE_SURFACE.sunIntensity`: 5, the owner's look, round-4
+      plan 2026-09-28-2105 DEC-GL4-1; π before) and the sun's target at
+      the group's origin.
     - `setSun(direction)` sets `surfaceUniforms.uSunEcef` from one ECEF
       direction (any length) and points the light along it as turned by
       `tiles.group`'s placement in `group` (identity in the lab; phase 5

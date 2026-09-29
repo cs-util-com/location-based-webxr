@@ -242,7 +242,9 @@ describe("createGlobeSurface", () => {
     // child's world matrix, so a light there would light nothing.
     expect(globe.sun.parent).not.toBe(globe.tiles.group);
     expect(globe.tiles.group.parent).toBe(globe.group);
-    expect(globe.sun.intensity).toBeCloseTo(Math.PI, 12);
+    // The owner's sun intensity (round-4 plan DEC-GL4-1), not phase 1's π.
+    expect(GLOBE_SURFACE.sunIntensity).toBe(5);
+    expect(globe.sun.intensity).toBe(GLOBE_SURFACE.sunIntensity);
     globe.setSun(new THREE.Vector3(0, 3, 4));
     const toLight = globe.sun.position
       .clone()

@@ -18,6 +18,7 @@ import {
   luminance,
   meanOf,
   median,
+  withPreRound4Look,
 } from "./globe-smoke-helpers.mjs";
 
 /** The smoke server's origin: 5198, or a worktree's `DS_E2E_PORT` (3d/playwright.config.mjs). */
@@ -40,10 +41,13 @@ const TEXTURE_MIN_SPREAD = 15;
  * drift is pinned off (`cloudDrift=0`: the clouds where M1-M4 measured
  * them), and so are the procedural stars and the Milky Way (`stars=0`,
  * `milkyWay=0`: the black sky the corner and hole checks were measured
- * on); both have their own checks in `globe-sky.smoke.spec.mjs`.
+ * on); both have their own checks in `globe-sky.smoke.spec.mjs`. The
+ * look before round 4 is pinned too (`withPreRound4Look`): the checks
+ * were measured on it.
  */
-const FIXED_VIEW =
-  "/labs/globe/#at=30,15&spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0";
+const FIXED_VIEW = `/labs/globe/#${withPreRound4Look(
+  "at=30,15&spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0",
+)}`;
 
 test("the globe boots, draws a lit Earth, and stays on this machine", async ({
   page,
@@ -345,12 +349,15 @@ const EQUINOX_NOON = "time=2026-03-20T12:00:00Z";
 
 /**
  * Goes to `lat,lng` with the given extra hash, arrived and settled; the
- * cloud drift pinned off, so the clouds sit where M3 measured them.
+ * cloud drift pinned off, so the clouds sit where M3 measured them, and
+ * the look M3 was measured on (`withPreRound4Look`).
  */
 async function viewAt(page, lat, lng, extra) {
   await applyHash(
     page,
-    `at=${lat},${lng}&spinMs=0&turnMs=0&cloudDrift=0&${extra}`,
+    withPreRound4Look(
+      `at=${lat},${lng}&spinMs=0&turnMs=0&cloudDrift=0&${extra}`,
+    ),
   );
   return arriveAt(page, { lat, lng });
 }
@@ -468,7 +475,7 @@ test("the real sun: a lit day side, night lights, and a water glint", async ({
 const SEAM_VIEW_LNG = 179.894;
 test("no seam at the 180° line", async ({ page }) => {
   await page.goto(
-    `/labs/globe/#at=0,${SEAM_VIEW_LNG}&spinMs=0&turnMs=0&time=2026-03-20T00:00:00Z&cloudDrift=0`,
+    `/labs/globe/#${withPreRound4Look(`at=0,${SEAM_VIEW_LNG}&spinMs=0&turnMs=0&time=2026-03-20T00:00:00Z&cloudDrift=0`)}`,
   );
   await page.waitForFunction(() => window.__globeLab?.ready, null, {
     timeout: 90_000,

@@ -16,14 +16,20 @@
  */
 import { expect, test } from "@playwright/test";
 
-import { arriveAt, luminance, meanOf } from "./globe-smoke-helpers.mjs";
+import {
+  arriveAt,
+  luminance,
+  meanOf,
+  withPreRound4Look,
+} from "./globe-smoke-helpers.mjs";
 
 /**
- * A fixed daylight view with the sky pinned as the other specs pin it
- * (`globe.smoke.spec.mjs` FIXED_VIEW).
+ * A fixed daylight view with the sky and the pre-round-4 look pinned as the
+ * other specs pin them (`globe.smoke.spec.mjs` FIXED_VIEW).
  */
-const VIEW =
-  "at=30,15&spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0";
+const VIEW = withPreRound4Look(
+  "at=30,15&spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0",
+);
 
 /** Boots the lab at a hash and waits until it has arrived and settled. */
 async function bootArrived(page, hash = VIEW) {
