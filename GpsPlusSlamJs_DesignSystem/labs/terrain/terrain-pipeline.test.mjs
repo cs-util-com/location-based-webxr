@@ -192,6 +192,7 @@ describe("each place's tile set", () => {
   const expected = {
     appalachians: { x: [70, 72], y: [97, 99] },
     alps: { x: [133, 135], y: [89, 91] },
+    germany: { x: [133, 135], y: [81, 83] },
   };
   for (const [id, range] of Object.entries(expected)) {
     it(`${id} needs exactly its 3 x 3 z8 tiles`, () => {

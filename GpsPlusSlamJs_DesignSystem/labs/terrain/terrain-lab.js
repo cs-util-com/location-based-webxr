@@ -1,9 +1,11 @@
 /**
- * The terrain lab (terrain plan 2026-09-27-0605, T1-T2): a map-style 3D
+ * The terrain lab (terrain plan 2026-09-27-0605, T1-T3): a map-style 3D
  * relief from coarse Terrarium tiles, in five styles (A "Pastel atlas", B
- * "Natural colour", C "Globe blend", D "Swiss classic", E "Clay"), with an
- * exaggeration slider (1-10, default 2) and an "auto" switch (off by
- * default), orbit and zoom, three camera presets and a scripted fly-in.
+ * "Natural colour", C "Globe blend", D "Swiss classic", E "Clay"), at four
+ * places (the Blue Ridge, the Alps, northern Germany and the viewer's GPS
+ * position), with an exaggeration slider (1-10, default 2) and an "auto"
+ * switch (off by default), orbit and zoom, three camera presets and a
+ * scripted fly-in.
  * Every parameter sits on the control plate and in the hash, as in the
  * globe lab, so a link reproduces a view.
  *
@@ -55,11 +57,13 @@ import {
 } from "./terrain-camera.js";
 import {
   FIELD,
+  GPS_PLACE,
   PARAMS,
-  TERRAIN_PLACES,
   fieldSpec,
+  placeFor,
   readTerrainParams,
 } from "./terrain-params.js";
+import { labelFor, locateAdvice, locateOnce } from "/fw/utils/locate-state.js";
 import {
   TERRAIN_CREDITS,
   TERRAIN_CREDIT_LINKS,
@@ -80,6 +84,8 @@ const readout = document.getElementById("terrain-readout");
 const costLine = document.getElementById("terrain-cost");
 const creditsBox = document.getElementById("terrain-credits");
 const linesLabel = document.getElementById("terrain-lines");
+const pinButton = document.getElementById("terrain-pin");
+const pinStatus = document.getElementById("terrain-pin-status");
 
 const DEG = Math.PI / 180;
 /** The page behind the relief; the silhouette smoke keys on it. */
@@ -115,6 +121,86 @@ function landRange(height, valid, datum) {
     if (h > hi) hi = h;
   }
   return Number.isFinite(lo) ? [Math.max(0, lo), Math.max(0, hi)] : [0, 4000];
+}
+
+/** How long the pin waits for a fix, as the globe's pin and OsmDemo do. */
+const LOCATE_TIMEOUT_MS = 15_000;
+/** What the pin's line says while `place=gps` waits for a press. */
+const GPS_PROMPT =
+  "Press the location pin (bottom right) to load the terrain around you.";
+
+/**
+ * The location pin (DEC-TR-3's GPS place): a PRESS asks for the position
+ * (the framework's `locateOnce`), never the page's load; a second press
+ * while it waits cancels (a browser can leave the request pending while its
+ * permission prompt is open), and an answer for a cancelled request is
+ * dropped. A failure names its fix (`labelFor`, `locateAdvice`) and
+ * returns the pin to idle with the locate atom's warning look; a fix calls
+ * `onFix`. The button carries the state in its `aria-label`, `title`,
+ * `aria-busy` and `data-state` (the design system's locate atom).
+ */
+function bindPin(onFix) {
+  let phase = "idle";
+  let failure = null;
+  let located = false;
+  let message = "";
+  let request = 0;
+  const render = () => {
+    const locating = phase === "locating";
+    const label = locating
+      ? "Finding you... - tap to cancel"
+      : "Load the terrain around my location";
+    pinButton.setAttribute("aria-label", label);
+    pinButton.title = label;
+    pinButton.setAttribute("aria-busy", String(locating));
+    pinButton.dataset.state = locating
+      ? "locating"
+      : (failure ?? (located ? "located" : "idle"));
+    pinStatus.textContent = locating ? label : message;
+  };
+  pinButton.addEventListener("click", async () => {
+    const mine = ++request;
+    failure = null;
+    if (phase === "locating") {
+      phase = "idle";
+      message = "Stopped looking for your location.";
+      render();
+      return;
+    }
+    phase = "locating";
+    message = "";
+    render();
+    const outcome = await locateOnce(navigator.geolocation, {
+      timeoutMs: LOCATE_TIMEOUT_MS,
+    });
+    if (mine !== request || phase !== "locating") return;
+    phase = "idle";
+    if (outcome.kind === "failed") {
+      failure = outcome.state;
+      message = `${labelFor(outcome.state)}: ${locateAdvice(outcome.state)}`;
+      render();
+      return;
+    }
+    located = true;
+    const accuracy = outcome.fix.accuracyM;
+    message =
+      "The terrain around you" +
+      (accuracy === undefined
+        ? "."
+        : ` (located to ${Math.round(accuracy)} m).`);
+    render();
+    onFix({ lat: outcome.fix.lat, lng: outcome.fix.lng });
+  });
+  render();
+  return {
+    phase: () => phase,
+    /** A line for the idle pin (the GPS place waiting for a press). */
+    say(text) {
+      if (phase !== "idle") return;
+      message = text;
+      render();
+    },
+  };
 }
 
 /** A value for an output label: at most two decimals. */
@@ -270,13 +356,16 @@ function start() {
 
   let params = readTerrainParams(location.hash.slice(1));
   let appliedHash = location.hash.slice(1);
-  const place = TERRAIN_PLACES[params.place];
-  const spec = fieldSpec(place);
-  const frame = enuFrameAt(place.centre);
-  const tiles = regionTiles(spec, {
-    toLatLng: (p) => frame.toLatLng(p),
-    toWorldPixel,
-  });
+  /** The position a press of the pin found; never in the hash. */
+  let gpsFix = null;
+  /**
+   * The region drawn: its place, field, frame and tiles, all null while
+   * `place=gps` waits for a press of the pin. `loadRegion` sets them.
+   */
+  let place = null;
+  let spec = null;
+  let frame = null;
+  let tiles = [];
   const loading = loadingView();
   let creditsWithImagery = params.farOn;
   renderCredits(creditsWithImagery);
@@ -291,6 +380,9 @@ function start() {
     svfMs: null,
     buildId: 0,
     fetched: null,
+    fields: null,
+    /** Bumped by every region, so an answer for an old one is dropped. */
+    regionId: 0,
   };
   const errors = new Set();
   /**
@@ -303,6 +395,7 @@ function start() {
     grid: null,
     texture: null,
     error: null,
+    regionId: 0,
   };
   const showErrors = () => {
     errorBox.textContent = [
@@ -366,16 +459,12 @@ function start() {
     () => onHash(),
   );
   /**
-   * Reads the hash and applies it; a sky-view change recomputes. Another
-   * place reloads the page: the hash is the whole state, so the reload
-   * opens exactly the view the link describes.
+   * Reads the hash and applies it; another place loads its region, a
+   * sky-view change recomputes the one drawn.
    */
   const onHash = () => {
     const next = readTerrainParams(location.hash.slice(1));
-    if (next.place !== params.place) {
-      location.reload();
-      return;
-    }
+    const moved = next.place !== params.place;
     const recompute = next.svf !== params.svf;
     params = next;
     applyCamera();
@@ -383,7 +472,8 @@ function start() {
     panel.sync();
     showErrors();
     appliedHash = location.hash.slice(1);
-    if (recompute && run.fetched) build(run.fetched);
+    if (moved) loadRegion();
+    else if (recompute && run.fetched) build(run.fetched);
   };
   const applyLive = () => {
     if (params.farOn && far.state === "idle") loadFarField();
@@ -391,7 +481,7 @@ function start() {
       creditsWithImagery = params.farOn;
       renderCredits(creditsWithImagery);
     }
-    if (!material) return;
+    if (!material || !place) return;
     applyStyle(material, params, {
       shaderStyle: SHADER_STYLE[params.style],
       latDeg: place.centre.lat,
@@ -405,7 +495,10 @@ function start() {
   };
   /** Fetches, decodes and grids the imagery; a failure turns it off, said. */
   const loadFarField = async () => {
+    if (!place) return;
     far.state = "loading";
+    const mine = run.regionId;
+    far.regionId = mine;
     const imageryLoading = "Loading Earth imagery...";
     if (loadingLabel.hidden) loading.show(imageryLoading);
     const source = globeSource("blue-marble");
@@ -440,6 +533,7 @@ function start() {
           return { ...k, width: bitmap.width, height: bitmap.height, data };
         }),
       );
+      if (mine !== run.regionId) return;
       far.grid = farFieldGrid({
         side: FAR_FIELD.side,
         halfM: spec.halfExtentM,
@@ -450,6 +544,7 @@ function start() {
       if (material) material.uniforms.uFar.value = far.texture;
       far.state = "ready";
     } catch (e) {
+      if (mine !== run.regionId) return;
       far.state = "failed";
       far.error = `The Earth imagery could not load (${e?.message ?? e}): the far field is off.`;
       showErrors();
@@ -575,12 +670,6 @@ function start() {
       hRange = landRange(m.fields.height, m.fields.valid, m.datum);
       if (!mesh) {
         material = createTerrainMaterial(textures, m);
-        const u = material.uniforms;
-        u.uHalfM.value = spec.halfExtentM;
-        u.uFarDeltaM.value = (2 * spec.halfExtentM) / FAR_FIELD.side;
-        u.uFarDeltaUv.value =
-          (u.uFarDeltaM.value * (m.side - 1)) / (m.side * 2 * m.extentM);
-        if (far.texture) u.uFar.value = far.texture;
         mesh = new THREE.Mesh(
           createTerrainGeometry(spec.halfExtentM, MESH_STEP_M),
           material,
@@ -595,6 +684,13 @@ function start() {
         material.uniforms.uLutSwiss.value = textures.lutSwiss;
         material.uniforms.uDatum.value = m.datum;
       }
+      const u = material.uniforms;
+      u.uHalfM.value = spec.halfExtentM;
+      u.uFarDeltaM.value = (2 * spec.halfExtentM) / FAR_FIELD.side;
+      u.uFarDeltaUv.value =
+        (u.uFarDeltaM.value * (m.side - 1)) / (m.side * 2 * m.extentM);
+      if (far.texture) u.uFar.value = far.texture;
+      mesh.visible = true;
       run.aux = packed.rgba8;
       applyLive();
       loading.show(params.svf > 0 && m.hasData ? "Computing sky view..." : "");
@@ -615,15 +711,78 @@ function start() {
     }
   };
 
-  loading.show(`Loading elevation tiles: 0 of ${tiles.length}`);
-  fetchTiles(tiles, (done) =>
-    loading.show(`Loading elevation tiles: ${done} of ${tiles.length}`),
-  ).then((fetched) => {
-    run.fetched = fetched;
-    run.tilesLoaded = fetched.filter((t) => t.bytes !== null).length;
-    run.tilesFailed = fetched.length - run.tilesLoaded;
-    run.bytes = fetched.reduce((sum, t) => sum + (t.bytes?.byteLength ?? 0), 0);
-    build(fetched);
+  /**
+   * Loads the region of the hash's place: its tiles fetched here (a
+   * superseded region's answers are dropped), then built by the worker. The
+   * mesh is hidden until the new relief arrives, so the old place is never
+   * drawn under the new name. The GPS place without a fix loads nothing and
+   * says what to press.
+   */
+  const loadRegion = () => {
+    run.regionId += 1;
+    run.buildId += 1;
+    const mine = run.regionId;
+    Object.assign(run, {
+      tilesLoaded: 0,
+      tilesFailed: 0,
+      bytes: 0,
+      relief: null,
+      svfMs: null,
+      fetched: null,
+      fields: null,
+    });
+    far.texture?.dispose();
+    Object.assign(far, {
+      state: "idle",
+      tiles: null,
+      grid: null,
+      texture: null,
+      error: null,
+    });
+    errors.clear();
+    hRange = [0, 4000];
+    if (mesh) mesh.visible = false;
+    place = placeFor(params.place, gpsFix);
+    if (!place) {
+      spec = null;
+      frame = null;
+      tiles = [];
+      loading.show("");
+      pin.say(GPS_PROMPT);
+      showErrors();
+      window.__terrainLab.ready = true;
+      return;
+    }
+    spec = fieldSpec(place);
+    frame = enuFrameAt(place.centre);
+    tiles = regionTiles(spec, {
+      toLatLng: (p) => frame.toLatLng(p),
+      toWorldPixel,
+    });
+    const count = tiles.length;
+    showErrors();
+    applyLive();
+    loading.show(`Loading elevation tiles: 0 of ${count}`);
+    fetchTiles(tiles, (done) => {
+      if (mine === run.regionId) {
+        loading.show(`Loading elevation tiles: ${done} of ${count}`);
+      }
+    }).then((fetched) => {
+      if (mine !== run.regionId) return;
+      run.fetched = fetched;
+      run.tilesLoaded = fetched.filter((t) => t.bytes !== null).length;
+      run.tilesFailed = fetched.length - run.tilesLoaded;
+      run.bytes = fetched.reduce(
+        (sum, t) => sum + (t.bytes?.byteLength ?? 0),
+        0,
+      );
+      build(fetched);
+    });
+  };
+  const pin = bindPin((fix) => {
+    gpsFix = fix;
+    if (params.place === GPS_PLACE) loadRegion();
+    else panel.write({ place: GPS_PLACE });
   });
 
   applyCamera();
@@ -767,6 +926,9 @@ function start() {
         ),
         flight: { phase: flight.phase, samples: flight.samples.slice() },
         tiles: tiles.map((t) => `${t.z}/${t.x}/${t.y}`),
+        centre: place ? { ...place.centre } : null,
+        awaitingFix: place === null,
+        pin: pin.phase(),
         tilesLoaded: run.tilesLoaded,
         tilesFailed: run.tilesFailed,
         bytes: run.bytes,
@@ -808,16 +970,16 @@ function start() {
       });
     },
     /** A position's ENU metres in the lab's frame (x east, y north). */
-    toEnu: (lat, lng) => frame.toEnu({ lat, lng }),
+    toEnu: (lat, lng) => frame?.toEnu({ lat, lng }) ?? null,
     /** ENU metres to a position. */
-    toLatLng: (x, y) => frame.toLatLng({ x, y }),
+    toLatLng: (x, y) => frame?.toLatLng({ x, y }) ?? null,
     /**
      * The field the shader reads, bilinear at ENU metres: the absolute
      * height, the gradient (m/m east, north) and the small relief; null
      * before the relief or outside the field.
      */
     fieldAt(x, y) {
-      if (!run.fields) return null;
+      if (!run.fields || !spec) return null;
       const side = spec.side;
       const gx = (x + spec.extentM) / spec.spacingM;
       const gy = (y + spec.extentM) / spec.spacingM;
@@ -845,7 +1007,7 @@ function start() {
     },
     /** The far field's grid at ENU metres (sRGB 0-1), or null. */
     farAt: (x, y) =>
-      far.grid
+      far.grid && spec
         ? farFieldAt(far.grid, FAR_FIELD.side, spec.halfExtentM, x, y)
         : null,
     /** The decoded imagery itself at a position (sRGB 0-1), or null. */
@@ -884,6 +1046,8 @@ function start() {
       });
     },
   };
+  // After the hooks exist: the GPS place without a fix is ready at once.
+  loadRegion();
 }
 
 try {

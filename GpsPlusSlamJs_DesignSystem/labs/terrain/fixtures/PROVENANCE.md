@@ -66,6 +66,43 @@ The files (bytes, first 16 hex digits of the SHA-256):
 - `terrarium/8/135/91.png`: 75748 bytes, `6cca99b1ac03aaa0`
 - Total: 797039 bytes (778 KiB).
 
+## Real tiles: northern Germany (Elbe and coast)
+
+- Source and encoding: as above (AWS Open Data Terrain Tiles, Terrarium).
+- Fetched: 2026-09-28 with `curl`, byte for byte (`Last-Modified`
+  2017-11-15 for every tile). Not re-encoded.
+- Cropped to the region: the 9 tiles `regionTiles` asks for at z8 for the
+  256 km region around 53.75° N, 9.14° E (the middle of tile 134/82) plus
+  its 8 km padding ring; the pipeline test holds the set to the lab's own
+  projection.
+- Zoom 8 only. Land: SRTM (NASA/NGA, distributed by the USGS), public
+  domain, as for the Alps. The North Sea and the Baltic in these tiles
+  carry the tile set's bathymetry (ETOPO1, NOAA), so the region has posts
+  at or below 0 m.
+- Credits: Mapzen, the USGS line (SRTM) and "Global ETOPO1 terrain data
+  U.S. National Oceanic and Atmospheric Administration", from the lab's
+  full list.
+
+The files (bytes, first 16 hex digits of the SHA-256):
+
+- `terrarium/8/133/81.png`: 74918 bytes, `0f5032cd699bc79c`
+- `terrarium/8/133/82.png`: 64300 bytes, `ffb76831d200e325`
+- `terrarium/8/133/83.png`: 40980 bytes, `0eac8fcc9f91d6a3`
+- `terrarium/8/134/81.png`: 58224 bytes, `5441d22543efd96c`
+- `terrarium/8/134/82.png`: 53955 bytes, `b2e741f7b95f2fe4`
+- `terrarium/8/134/83.png`: 43885 bytes, `ec324c804ea0d5ad`
+- `terrarium/8/135/81.png`: 83835 bytes, `efb1373745a420b0`
+- `terrarium/8/135/82.png`: 53760 bytes, `dca499543e668542`
+- `terrarium/8/135/83.png`: 48383 bytes, `41ae7d9a83e46d81`
+- Total: 522240 bytes (510 KiB).
+
+All three places together: 2063373 bytes (2.0 MB).
+
+## The GPS place
+
+It has no fixtures: its tiles depend on where the phone is. The smoke
+answers its requests with synthetic tiles.
+
 ## Budget (DEC-TR-8)
 
 The terrain fixtures of all four places may total 5 MB (the owner,

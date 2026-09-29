@@ -10,7 +10,13 @@
       tile 134/90, so the region and its padding fit in 3 x 3 tiles),
       7.4-10.9° E and 45.3-47.8° N, Monte Rosa and the Bernese Oberland to
       the Bernina. Added in T2 because style B's snow is checked on it.
-    - Northern Germany and the GPS place come in T3.
+    - `germany`: northern Germany, centre 53.75° N, 9.14° E (the middle of
+      tile 134/82, 3 x 3 tiles), 7.1-11.2° E and 52.5-55.0° N: the lower
+      Elbe, Hamburg, the North Sea coast and Schleswig-Holstein; the flat
+      place (T3), with sea posts.
+  - `GPS_PLACE` (`"gps"`) and `placeFor(id, fix)`: a committed place by
+    id, or the GPS place (the same 256 km z8 region) around a fix, or null
+    for the GPS place before any fix (the page then waits for a press).
   - `FIELD`: posts every 500 m (about the z8 texel), an 8 km padding ring,
     the relief sigma (2 km), the detail sigma (2 posts), the sky view's
     march (16 posts, 8 km: the padding covers it exactly). The hash sets the
@@ -41,10 +47,12 @@ side }`: `extentM` includes the padding; `side` counts both edges.
     `notes` (what fell back, for the status line).
 - Invariants: out of range, empty or malformed reads as the default, never
   NaN (a NaN uniform removes the draw silently). A `farLow` at or above
-  `farHigh` falls back to both defaults with a note. An unknown place (T2:
-  `place=gps` too) falls back to the Appalachians with a note; the hash
-  never carries coordinates.
-- Tests: `terrain-params.test.mjs`: the places, the field's posts, its
+  `farHigh` falls back to both defaults with a note. An unknown place
+  falls back to the Appalachians with a note. `place=gps` is read as it
+  is; the hash never carries coordinates (plan §9 finding 20), so a link
+  to it needs a press of the pin to draw anything.
+- Tests: `terrain-params.test.mjs`: the places and `placeFor` (with and
+  without a fix, an invalid fix, `place=gps` without a note), the field's posts, its
   padding against the sky-view march the lab runs and three blur sigmas, no
   hash key for the steps, the defaults, in-range values, five malformed
   values, the camera triple, presets, the place and style fallbacks, every

@@ -1,7 +1,8 @@
 # terrain-lab.js: the terrain lab page
 
 - Purpose: the terrain relief lab (terrain plan 2026-09-27-0605, milestones
-  T1-T2): the Blue Ridge or the Alps from coarse Terrarium tiles in five
+  T1-T3): the Blue Ridge, the Alps, northern Germany or the viewer's GPS
+  position from coarse Terrarium tiles in five
   styles (A "Pastel atlas", B "Natural colour", C "Globe blend", D "Swiss
   classic", E "Clay"), with the exaggeration slider (1-10, default 2), the
   "auto" switch (off by default; E = slider x factor, W = 0.43 x altitude),
@@ -9,7 +10,11 @@
   to 20 km). Served at `/labs/terrain/`; deployed with the other labs by
   `build-lookdev.mjs`.
 - How it works:
-  - reads the hash (`terrain-params.js`); the tiles of the region
+  - reads the hash (`terrain-params.js`); `loadRegion` resolves the
+    place (`placeFor`, with the GPS fix a press of the pin found) and, on
+    a place change, loads the new region without a reload: the mesh is
+    hidden until its relief arrives, the far field starts over, and every
+    answer for a superseded region is dropped (`run.regionId`); the tiles of the region
     (`regionTiles`, projected by the Osm library's `toWorldPixel` in its
     `enuFrameAt` frame) are FETCHED ON THE PAGE, each bounded by a 30 s
     timeout, a failure a gap, never a thrown batch;
@@ -38,10 +43,17 @@
   the camera. At that point the rest of the damping is applied at once and
   the pose it lands on is written, so the link reproduces where the view
   stopped. Every applied pose (preset, hash, fly-in) also ends any damping
-  first, or it would drift after being set. A style's own controls
+  first, or it would drift after being set. The location pin (bottom right,
+  the design system's locate atom): a PRESS asks for the position with the
+  framework's `locateOnce` (15 s), never the page's load; a second press
+  while it waits cancels, and a late answer is dropped; a failure names its
+  fix (`labelFor`, `locateAdvice`) and leaves the place drawn; a fix loads
+  the GPS place around it (`place=gps` in the hash, never the
+  coordinates). A `place=gps` link, or choosing "My position" before any
+  fix, draws nothing and says to press the pin. A style's own controls
   (`[data-styles]`) show only with that style; B's section says the fitted
-  tree and snow lines. Another place reloads the page (the hash is the
-  whole state). Keys: see `terrain-params.js.md`, plus `preset` and the
+  tree and snow lines. Another place loads its region in place (above).
+  Keys: see `terrain-params.js.md`, plus `preset` and the
   camera triple.
 - Feedback (the async-feedback rule): "Loading elevation tiles: n of 9",
   then "Computing relief...", then "Computing sky view..." (the terrain is
@@ -59,7 +71,8 @@
 - Test hooks, `window.__terrainLab`: `ready`, `error`, `background`,
   `state()` (the applied hash, the style and its shader branch, the far
   field's state and weights, the land range, B's lines, the credits text,
-  E and its parts, W, the boost, the pose, the flight's samples, the tiles,
+  the region's centre, whether the GPS place awaits a fix, the pin's
+  phase, E and its parts, W, the boost, the pose, the flight's samples, the tiles,
   bytes, datum, missing posts and tiles, the relief, the loading history
   and visibility, the error and readout text, and the textures' types),
   `project([x, y, z])`, `projectAll(points)` (one frame for many),
@@ -87,6 +100,10 @@
   `terrain-styles.smoke.spec.mjs` (T2: every style against A, B's snow on
   the Alps at E 1, 2, 5, D's warm and cool slopes and terraces, E's
   saturation, C's far field against the grid and the imagery, a failed
-  imagery load, the plate's styles). Both share
+  imagery load, the plate's styles) and `terrain-places.smoke.spec.mjs`
+  (T3: every place on its own tiles and switched on the plate without a
+  reload, Germany flat with sea posts, the GPS place granted, linked,
+  denied, timed out and cancelled with the browser's geolocation mocked,
+  the three presets framing every place). All share
   `terrain-smoke-helpers.mjs`. The modules beside it have their own
   `node --test` files.

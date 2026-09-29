@@ -84,6 +84,29 @@
           sans-serif;
       }
 
+      /*
+       * The location pin (DEC-TR-3's GPS place), bottom right above the
+       * credits, as the globe lab's; its line to its left says what it is
+       * doing, what to press, or why it failed and how to fix it.
+       */
+      #terrain-pin {
+        position: fixed;
+        right: 12px;
+        bottom: 64px;
+      }
+
+      #terrain-pin-status {
+        position: fixed;
+        right: 68px;
+        bottom: 70px;
+        max-width: min(60vw, 420px);
+        color: #30404f;
+        text-align: right;
+        font:
+          13px/1.4 system-ui,
+          sans-serif;
+      }
+
       #terrain-credits a {
         color: inherit;
       }
@@ -114,6 +137,10 @@
               <select class="select" data-hash-key="place">
                 <option value="appalachians">Appalachians (Blue Ridge)</option>
                 <option value="alps">Alps (Valais to Bernina)</option>
+                <option value="germany">
+                  Northern Germany (Elbe and coast)
+                </option>
+                <option value="gps">My position (press the pin)</option>
               </select>
             </label>
             <label class="lookdev-field">
@@ -361,6 +388,29 @@
         </details>
       </div>
     </aside>
+    <button
+      id="terrain-pin"
+      type="button"
+      class="btn btn--icon btn--locate"
+      data-state="idle"
+      aria-label="Load the terrain around my location"
+      title="Load the terrain around my location"
+    >
+      <svg
+        viewBox="5 2 14 20"
+        width="18"
+        height="18"
+        aria-hidden="true"
+        focusable="false"
+      >
+        <path
+          fill="currentColor"
+          d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7Z"
+        />
+        <circle cx="12" cy="9" r="2.6" fill="#171b26" />
+      </svg>
+    </button>
+    <output id="terrain-pin-status" aria-live="polite"></output>
     <footer id="terrain-credits"></footer>
   </body>
 </html>

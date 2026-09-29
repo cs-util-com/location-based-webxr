@@ -16,14 +16,16 @@ import { PASTEL_ATLAS } from "./terrain-style.js";
 import { CLAY, NATURAL, SWISS, TERRAIN_STYLES } from "./terrain-styles.js";
 
 /**
- * The places (DEC-TR-3), each a 256 km region at z8 (plan §9 finding 8):
- * the Blue Ridge (the screenshots' framing) and the central Alps (T2: style
- * B's snow is checked on them). Northern Germany and the GPS place come in
- * T3.
+ * The committed places (DEC-TR-3), each a 256 km region at z8 (plan §9
+ * finding 8): the Blue Ridge (the screenshots' framing), the central Alps
+ * (style B's snow is checked on them) and northern Germany (the flat one).
+ * The fourth, the GPS position, is `placeFor("gps", fix)`.
  *
- * The Alps' centre is the middle of z8 tile 134/90, so the region and its
- * padding fit in 3 x 3 tiles (the committed fixtures): 7.4-10.9° E,
- * 45.3-47.8° N, from Monte Rosa and the Bernese Oberland to the Bernina.
+ * The Alps' and Germany's centres are the middles of z8 tiles 134/90 and
+ * 134/82, so each region and its padding fit in 3 x 3 tiles (the committed
+ * fixtures): the Alps 7.4-10.9° E, 45.3-47.8° N, from Monte Rosa and the
+ * Bernese Oberland to the Bernina; Germany 7.1-11.2° E, 52.5-55.0° N, the
+ * Elbe from above Hamburg to the North Sea, the coast and Schleswig-Holstein.
  */
 export const TERRAIN_PLACES = Object.freeze({
   appalachians: Object.freeze({
@@ -40,7 +42,39 @@ export const TERRAIN_PLACES = Object.freeze({
     halfExtentM: 128_000,
     zoom: 8,
   }),
+  germany: Object.freeze({
+    id: "germany",
+    label: "Northern Germany (Elbe and coast)",
+    centre: Object.freeze({ lat: 53.75, lng: 9.14 }),
+    halfExtentM: 128_000,
+    zoom: 8,
+  }),
 });
+
+/** The GPS place's id in the hash: the hash never carries the position. */
+export const GPS_PLACE = "gps";
+
+/**
+ * The place for a hash's place id: a committed one, or the GPS place
+ * around `fix` (the same 256 km z8 region), or null for the GPS place
+ * before any fix (the page then waits for a press of the pin).
+ *
+ * @param {string} id
+ * @param {{ lat: number, lng: number } | null} fix
+ */
+export function placeFor(id, fix) {
+  if (id !== GPS_PLACE) return TERRAIN_PLACES[id] ?? null;
+  if (!fix || !Number.isFinite(fix.lat) || !Number.isFinite(fix.lng)) {
+    return null;
+  }
+  return Object.freeze({
+    id: GPS_PLACE,
+    label: "My position",
+    centre: Object.freeze({ lat: fix.lat, lng: fix.lng }),
+    halfExtentM: 128_000,
+    zoom: 8,
+  });
+}
 
 /**
  * The metric grid (plan §9 finding 5): posts every 500 m, about the z8
@@ -142,10 +176,12 @@ export function readTerrainParams(hash) {
   }
   const place = params.get("place");
   out.place =
-    place !== null && place in TERRAIN_PLACES ? place : "appalachians";
+    place !== null && (place in TERRAIN_PLACES || place === GPS_PLACE)
+      ? place
+      : "appalachians";
   if (place !== null && out.place !== place) {
     out.notes.push(
-      `Place "${place}" is not in this lab yet: showing the Appalachians.`,
+      `Place "${place}" is not in this lab: showing the Appalachians.`,
     );
   }
   const style = params.get("style");

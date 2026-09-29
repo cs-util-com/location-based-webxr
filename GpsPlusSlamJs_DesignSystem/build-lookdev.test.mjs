@@ -462,6 +462,8 @@ describe("buildLookdev with the real terrain lab", () => {
       "labs/terrain/terrain-styles.js",
       "globe/globe-sources.js",
       "globe-assets/blue-marble-4326/4/8/4.jpg",
+      // The GPS place's pin (T3): the framework's locate behaviour.
+      "fw/utils/locate-state.js",
     ]) {
       assert.ok(files.includes(rel), rel);
     }

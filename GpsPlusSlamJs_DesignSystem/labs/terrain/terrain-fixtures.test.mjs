@@ -24,6 +24,7 @@ const PLACE_BUDGET_BYTES = 1_500_000;
 const PLACES = {
   appalachians: /^terrarium\/8\/7[0-2]\/9[7-9]\.png$/,
   alps: /^terrarium\/8\/13[3-5]\/(89|9[01])\.png$/,
+  germany: /^terrarium\/8\/13[3-5]\/8[1-3]\.png$/,
 };
 
 /** Every file under a directory, as posix paths relative to FIXTURES. */

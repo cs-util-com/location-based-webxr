@@ -15,10 +15,12 @@ import { describe, it } from "node:test";
 
 import {
   FIELD,
+  GPS_PLACE,
   PARAMS,
   STYLE_SHADOW,
   TERRAIN_PLACES,
   fieldSpec,
+  placeFor,
   readTerrainParams,
 } from "./terrain-params.js";
 import { TERRAIN_STYLES } from "./terrain-styles.js";
@@ -42,6 +44,43 @@ describe("the Alps place", () => {
     assert.deepEqual(p.centre, { lat: 46.56, lng: 9.14 });
     assert.equal(p.halfExtentM, 128_000);
     assert.equal(p.zoom, 8);
+  });
+});
+
+describe("the northern Germany place", () => {
+  // DEC-TR-3's flat region, centred on z8 tile 134/82 (3 x 3 tiles).
+  it("is a 256 km square over the lower Elbe and the coast at z8", () => {
+    const p = TERRAIN_PLACES.germany;
+    assert.deepEqual(p.centre, { lat: 53.75, lng: 9.14 });
+    assert.equal(p.halfExtentM, 128_000);
+    assert.equal(p.zoom, 8);
+  });
+});
+
+describe("placeFor and the GPS place", () => {
+  it("returns a committed place by its id", () => {
+    assert.equal(placeFor("alps", null), TERRAIN_PLACES.alps);
+    assert.equal(placeFor("alps", { lat: 1, lng: 2 }), TERRAIN_PLACES.alps);
+  });
+  // DEC-TR-3: the GPS place is the same 256 km z8 region around the fix.
+  it("builds the GPS place around a fix", () => {
+    const p = placeFor(GPS_PLACE, { lat: 50.94, lng: 6.96 });
+    assert.deepEqual(p.centre, { lat: 50.94, lng: 6.96 });
+    assert.equal(p.id, "gps");
+    assert.equal(p.halfExtentM, TERRAIN_PLACES.appalachians.halfExtentM);
+    assert.equal(p.zoom, 8);
+  });
+  // Before a press of the pin there is no fix: no region, never a guess.
+  it("has no GPS place without a valid fix", () => {
+    assert.equal(placeFor(GPS_PLACE, null), null);
+    assert.equal(placeFor(GPS_PLACE, { lat: Number.NaN, lng: 1 }), null);
+    assert.equal(placeFor("moon", null), null);
+  });
+  // Plan §9 finding 20: the hash says place=gps, never coordinates.
+  it("reads place=gps from the hash without a note", () => {
+    const p = readTerrainParams("place=gps");
+    assert.equal(p.place, "gps");
+    assert.deepEqual(p.notes, []);
   });
 });
 
@@ -136,6 +175,7 @@ describe("readTerrainParams", () => {
       assert.equal(readTerrainParams(`style=${id}`).style, id);
     }
     assert.equal(readTerrainParams("place=alps").place, "alps");
+    assert.equal(readTerrainParams("place=germany").place, "germany");
   });
 
   // Each style has its own shading strength; a `shadow` key overrides it
