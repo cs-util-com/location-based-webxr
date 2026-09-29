@@ -28,7 +28,9 @@ lives here.
     valid while its `levelId` is the level's id), `mintGeneration`,
     `finishing`, `rebuiltZip`, `tourLabel` (set by archive-open); the open
     tour's `tourManifest` (archive-open.ts); the placement layer (M4):
-    `placedObjects`, `placedPreviews`, `placementNote`, `reticle`,
+    `placedObjects` (each with an optional `placement`: the odometry-NUE
+    pose in the world group and the AR visit it belongs to, authoring plan
+    2026-09-28-0953 M2c), `placedPreviews`, `placementNote`, `reticle`,
     `latestFrame` (a `CapturedCameraFrame | null`: the pixels the photo
     encodes plus the capture pose the photo is placed with);
   - the scan gate and the placed content (viewer-placement.ts, M5):

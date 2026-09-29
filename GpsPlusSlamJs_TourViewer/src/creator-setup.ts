@@ -61,6 +61,7 @@ import {
   newObjectId,
   renderTourObjects,
 } from "./content-placement.js";
+import { odomNueFromWebXr } from "./visit-anchoring.js";
 
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 
@@ -589,9 +590,29 @@ export function wireCreatorSetup(deps: {
     const zero = selectZeroReference(arStore.getState());
     if (entry === undefined || scene === null || zero === null) return;
     const generation = ctx.arSessionGeneration;
+    // An object placed in THIS visit is RIGID in AR (decision D2): under
+    // the world group at its odometry pose, where GPS re-solves move it
+    // together with the camera. Anything else has only its geo and is
+    // placed from it, like the viewer's content (plan §3.2).
+    const group = seams.getArWorldGroup();
+    const placement = entry.placement;
+    const rigid =
+      placement !== undefined &&
+      placement.visit === generation &&
+      group !== null
+        ? { parent: group, local: placement.local }
+        : null;
     void renderTourObjects([entry.object], {
-      scene,
+      scene: rigid?.parent ?? scene,
       zero,
+      ...(rigid === null
+        ? {}
+        : {
+            poseOf: () => ({
+              positionNue: rigid.local.position,
+              rotationNue: rigid.local.rotation,
+            }),
+          }),
       makeLabel: (text) => seams.createLabel(text),
       loadPhotoTexture: () =>
         entry.blob === undefined
@@ -862,6 +883,10 @@ export function wireCreatorSetup(deps: {
       return;
     }
     const position = reticle.getWorldPosition(new Vector3());
+    // The reticle's place in the world group's own frame (odometry-NUE):
+    // what the rigid preview and the settle work from (plan §3.2, M2c).
+    const group = seams.getArWorldGroup();
+    const local = group === null ? null : group.worldToLocal(position.clone());
     const pin = mintPin({
       id: newObjectId(),
       label,
@@ -873,7 +898,20 @@ export function wireCreatorSetup(deps: {
       note("No GPS fix yet - the pin cannot be placed.");
       return;
     }
-    ctx.placedObjects.push({ object: pin });
+    ctx.placedObjects.push(
+      local === null
+        ? { object: pin }
+        : {
+            object: pin,
+            placement: {
+              visit: ctx.arSessionGeneration,
+              local: {
+                position: [local.x, local.y, local.z],
+                rotation: [0, 0, 0, 1],
+              },
+            },
+          },
+    );
     recordPlacement(pin);
     logPlacement(pin, { reticleWorld: position });
     dom.pinLabel.value = "";
@@ -897,6 +935,9 @@ export function wireCreatorSetup(deps: {
     // The pose of the frame being encoded, not the pose at tap time; the
     // frame is at most PHOTO_FRAME_MAX_AGE_MS old (QR perf plan M4).
     const { cameraPose } = frame;
+    // The visit the frame's odometry belongs to, taken at the tap: the
+    // encode is async and the session may end meanwhile.
+    const visit = ctx.arSessionGeneration;
     seams.encodeFrameJpeg(frame.image).then(
       (jpeg) => {
         const photo = mintPhoto({
@@ -912,7 +953,13 @@ export function wireCreatorSetup(deps: {
           note("No usable GPS alignment yet - the photo cannot be placed.");
           return;
         }
-        ctx.placedObjects.push({ object: photo, blob: jpeg.blob });
+        ctx.placedObjects.push({
+          object: photo,
+          blob: jpeg.blob,
+          // The capture pose is RAW WebXR: through the one conversion into
+          // the world group's frame, never composed by hand (plan §3.2).
+          placement: { visit, local: odomNueFromWebXr(cameraPose) },
+        });
         recordPlacement(photo, jpeg.blob);
         logPlacement(photo, { cameraOdomPose: cameraPose });
         previewObject(ctx.placedObjects.length - 1);

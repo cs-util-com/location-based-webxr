@@ -39,6 +39,7 @@ import type { PrintSizeCheck } from "./print-size-check.js";
 import type { ScanGate } from "./scan-gate.js";
 import type { PlacedImagePlanes } from "./image-planes.js";
 import type { TourViewerSeams } from "./seams.js";
+import type { NuePose } from "./visit-anchoring.js";
 import type { PlacementState } from "./tour-flow.js";
 import type { TourSession } from "./tour-session.js";
 
@@ -47,6 +48,19 @@ import type { TourSession } from "./tour-session.js";
 type QrController = ReturnType<typeof createQrTrackingController>;
 type FusedPoseSource = ReturnType<typeof createFusedQrPoseSource>;
 type QrDebugView = ReturnType<TourViewerSeams["createQrDebugView"]>;
+
+/**
+ * Where an object was placed in AR, kept for the settle (authoring plan
+ * 2026-09-28-0953 §3.2, M2c): its pose in the world group's frame
+ * (odometry-NUE, `visit-anchoring.ts`) and the AR visit that frame belongs
+ * to - odometry from another visit is meaningless. Absent for an object
+ * that came back from a draft: it has only its geo.
+ */
+interface VisitPlacement {
+  /** `arSessionGeneration` at the tap. */
+  readonly visit: number;
+  readonly local: NuePose;
+}
 
 /**
  * The page's store: the framework store with the opt-in `qrDetected` slice
@@ -239,7 +253,11 @@ export interface TourViewerSession {
   /** Content placed in THIS setup session (M4): the records the finish
    *  step appends to `tour.json`, with the photo bytes that become
    *  `content/<id>.jpg`. Survives a session end like the level does. */
-  placedObjects: { object: TourObject; blob?: Blob }[];
+  placedObjects: {
+    object: TourObject;
+    blob?: Blob;
+    placement?: VisitPlacement;
+  }[];
   /** The creator's hit-test reticle for the running session. */
   reticle: HitTestReticleHandle | null;
   /** The most recent camera frame - what "Capture a photo" encodes, with

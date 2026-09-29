@@ -256,10 +256,16 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
   same moment; the pose used to be read at tap time (QR perf plan 2026-09-23
   M4). A frame older than `PHOTO_FRAME_MAX_AGE_MS` (1 s) is refused -
   `photo-frame.ts`, because frames stop during a tracking loss while
-  `latestFrame` keeps the last one. Each placement renders its own preview (`renderTourObjects`
-  at the scene root; `ctx.placedPreviews`, one handle per object, so two
-  placements cannot race each other's disposal and a photo is decoded
-  once). The outcome of a placement is `ctx.placementNote`, shown until
+  `latestFrame` keeps the last one. Each placement renders its own preview (`renderTourObjects`;
+  `ctx.placedPreviews`, one handle per object, so two placements cannot
+  race each other's disposal and a photo is decoded once). A preview of an
+  object placed in the RUNNING visit is rigid (decision D2, plan §3.2, M2c):
+  it goes under the AR world group at its odometry pose, kept in
+  `placedObjects[i].placement` (`{ visit, local }`; a pin's reticle through
+  `worldToLocal`, a photo's capture pose through `odomNueFromWebXr`), so a
+  GPS re-solve moves it together with the camera instead of sliding it
+  against the world (symptom A). Anything else - a restored draft object,
+  an earlier visit's - has only its geo and is placed from it. The outcome of a placement is `ctx.placementNote`, shown until
   the next tap AHEAD of the live readout, never instead of it: it gates no
   control (it used to replace the readout and lock Save, which on a device
   without OPFS - the backup notice fires at tour open - left Save locked
