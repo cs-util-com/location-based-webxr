@@ -73,6 +73,35 @@
 
 ### Added
 
+- **Session-spanning recordings: `persistWhile` and `continuousActionIndex`**
+  on `createSlamAppStore` (passed through to `createPersistenceMiddleware`,
+  which takes them too). `persistWhile: () => boolean` REPLACES the
+  `isRecording` gate: an action is persisted exactly when the predicate is
+  true after the reducer ran, so the reset dispatched after `endSession` and
+  anything dispatched outside a session are written as well.
+  `continuousActionIndex: true` stops the action numbering from restarting at
+  `startSession`, so a second session no longer overwrites the first one's
+  files. Both are optional and off by default; without them the store behaves
+  exactly as before. For a recording that outlives the app's sessions (the
+  Tour Viewer's troubleshooting recording, one session per AR entry).
+- **`createSessionInDirectory(parent, timestamp)`** on
+  **`storage/opfs-storage`** (deep import): `createSession`'s folder layout
+  (`actions/`, `images/`) and same-second name probe in a parent directory
+  the caller owns, instead of the Recorder's `sessions/`. `createSession()` is
+  now that call on `sessions/`, unchanged in behaviour. Both apps share one
+  origin, so a second app's recordings need a folder of their own.
+- **`storage/session-metadata-record`** (deep import, a new subpath):
+  `buildSessionMetadataRecord`, `writeSessionMetadata` and `sanitizedPageUrl`,
+  the builder of a recording's `session.json` (`odomCoordVersion: 5`, the H3
+  coverage, the build stamp), moved here from the RecorderApp so a second
+  writer agrees with it on the coordinate era (DEC-H3). The build info is
+  injected (`getBuildInfo`, which may throw: that drops only the `build`
+  field), and `pageUrl` is left out rather than `undefined` when absent.
+- **`utils/build-info`** (deep import): `getBuildInfo()` and `BuildInfo`, the
+  reader of the five build constants a Vite `define` block injects, moved
+  here from the RecorderApp. The block itself is built by the framework's
+  node-only `scripts/build-metadata-define.mjs`, which the RecorderApp and
+  the Tour Viewer import from their Vite configs (it is not published).
 - **`utils/locate-state`** (deep import, not on the root export surface):
   the behaviour every "my location" button shares, moved here from the OSM
   demo so the globe lab's pin uses the same contract. `LocateState`,

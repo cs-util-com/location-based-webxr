@@ -57,6 +57,11 @@ await writeSessionMetadata({
 });
 ```
 
+- `createSessionInDirectory(parent, timestamp)` - the same session layout and
+  same-second name probe in a parent directory the caller owns (a second
+  app's recordings, outside the Recorder's `sessions/`); the write functions
+  above then target it. See Invariants.
+
 ### Listing
 
 ```typescript
