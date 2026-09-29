@@ -83,6 +83,24 @@
           sans-serif;
       }
 
+      /*
+       * The distance readout (round-4 plan DEC-GL4-5), above the device
+       * line, clear of the pin and its status line on the right. Tabular
+       * figures, so the numbers do not jitter sideways as they change.
+       */
+      #globe-readout {
+        position: fixed;
+        left: 12px;
+        bottom: 52px;
+        max-width: calc(100% - 96px);
+        color: #e6edf5;
+        font:
+          13px/1.4 system-ui,
+          sans-serif;
+        font-variant-numeric: tabular-nums;
+        text-shadow: 0 0 3px #000;
+      }
+
       /* The device line sits just above the credits line. */
       #globe-device {
         position: fixed;
@@ -463,6 +481,9 @@
       </svg>
     </button>
     <output id="globe-pin-status" aria-live="polite"></output>
+    <!-- aria-live off: an output is a polite live region by default, and
+         4 updates a second would flood a screen reader. -->
+    <output id="globe-readout" aria-live="off"></output>
     <output id="globe-device" aria-live="polite"></output>
     <footer id="globe-credits"></footer>
   </body>

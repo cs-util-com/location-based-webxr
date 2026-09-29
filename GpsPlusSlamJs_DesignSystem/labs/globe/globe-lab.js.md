@@ -98,6 +98,20 @@
   then the Earth
   over it. The sky has its own camera sharing only the view's rotation and
   field of view, and no depth, so the Earth covers it by draw order.
+- The distance readout (round-4 plan 2026-09-28-2105 DEC-GL4-5):
+  "Altitude 20,180 km" bottom left, above the device line, and while the
+  pin's dive is on its way or holding over the target, " · 1,300 km to the
+  target" after it (the straight-line distance to the target's point on
+  the ellipsoid). The altitude is the camera's height above the WGS84
+  ellipsoid (`getPositionElevation`), so the owner can name the altitudes
+  where the flight's cloud fade should start. Formatting and throttling are
+  the globe package's `globe-readout.ts`: whole km from 100 km, one
+  decimal from 1 km, metres below; written at most 4 times a second and
+  only when the text changes; not a live region (`aria-live="off"`: an
+  `<output>` is a polite live region by default). `state().readout` is
+  this frame's text, `readoutShown` what the line shows. On a phone it
+  stays clear of the pin, its status line, the device line and the
+  credits (`globe-readout.smoke.spec.mjs`).
 - The device line (round-3 plan §4 F; terrain plan 2026-09-27-0605 §7):
   "This device filters float textures (OES_texture_float_linear): yes" or
   "NO", from the renderer's own context, bottom left above the credits, so

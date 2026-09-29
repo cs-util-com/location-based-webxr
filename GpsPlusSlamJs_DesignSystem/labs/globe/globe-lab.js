@@ -46,6 +46,7 @@ import {
 } from "/globe/globe-clock.js";
 import { GLOBE_DIVE, diveStep, planDive } from "/globe/globe-dive.js";
 import { globePinView, nextPinPhase } from "/globe/globe-pin.js";
+import { globeReadoutText, readoutThrottle } from "/globe/globe-readout.js";
 import { handOverUrl } from "/globe/globe-handover.js";
 import {
   apparentSolarTimeHours,
@@ -62,6 +63,7 @@ const replayButton = document.getElementById("globe-replay");
 const pinButton = document.getElementById("globe-pin");
 const pinStatus = document.getElementById("globe-pin-status");
 const deviceLine = document.getElementById("globe-device");
+const readoutLine = document.getElementById("globe-readout");
 
 /**
  * The device line (round-3 plan 2026-09-27-0532 §4 F; terrain plan
@@ -923,6 +925,38 @@ function start() {
     () => clock.scale,
   );
   const syncPanel = panel.sync;
+  /**
+   * The distance readout (round-4 plan 2026-09-28-2105 DEC-GL4-5): the
+   * camera's altitude above the ellipsoid, and while the pin's dive is on
+   * its way or holding over the target, the straight-line distance to the
+   * target's point on the ellipsoid. Written at most 4 times a second and
+   * only when the text changes (`/globe/globe-readout.js`).
+   */
+  const readout = readoutThrottle((text) => {
+    readoutLine.textContent = text;
+  });
+  const cameraLocal = new THREE.Vector3();
+  const targetLocal = new THREE.Vector3();
+  let readoutText = "";
+  const readoutNow = () => {
+    const ellipsoid = globe.tiles.ellipsoid;
+    globe.tiles.group.worldToLocal(cameraLocal.copy(camera.position));
+    const { phase, target } = flight.state();
+    let targetDistanceM = null;
+    if ((phase === "diving" || phase === "landed") && target) {
+      ellipsoid.getCartographicToPosition(
+        target.lat * DEG,
+        target.lng * DEG,
+        0,
+        targetLocal,
+      );
+      targetDistanceM = cameraLocal.distanceTo(targetLocal);
+    }
+    return globeReadoutText({
+      altitudeM: ellipsoid.getPositionElevation(cameraLocal),
+      targetDistanceM,
+    });
+  };
   flight.restart(performance.now(), params);
   applyLive();
   syncPanel();
@@ -976,6 +1010,8 @@ function start() {
     pin.frame();
     globe.update(camera, renderer);
     status.update(globe.state());
+    readoutText = readoutNow();
+    readout.offer(readoutText, performance.now());
     // A running clock moves the hour: its label follows, once a second.
     const mono = performance.now();
     if (clock.scale !== 0 && mono - clockShownAt >= 1000) {
@@ -1112,6 +1148,10 @@ function start() {
       // Who moves the camera, and where it is (round-2 plan M3a, M3b).
       cameraOwner: flight.drives ? "intro" : "controls",
       cameraDistanceM: camera.position.length(),
+      // The readout's text as of the last frame, and what the line shows
+      // (the line is throttled, so it may lag by up to 250 ms).
+      readout: readoutText,
+      readoutShown: readoutLine.textContent,
       altitudeM: globe.tiles.ellipsoid.getPositionElevation(
         globe.tiles.group.worldToLocal(camera.position.clone()),
       ),
