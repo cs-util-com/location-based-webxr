@@ -5,14 +5,14 @@
  * Validates that getBuildInfo() correctly reads the Vite-injected build-time
  * constants and returns a well-typed BuildInfo object. Since the real globals
  * are replaced at build time by Vite's `define`, tests must set up globals
- * manually to simulate the injection.
+ * manually to simulate the injection. Moved here from the RecorderApp with
+ * the reader (2026-09-28). The round trip against the define block the
+ * apps use is pinned in `scripts/build-metadata-define.test.mjs`.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import type { BuildInfo } from './build-info';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// The module reads globals at call time, so we can set them before importing.
-// We use dynamic import to ensure each test gets fresh globals.
+import { getBuildInfo, type BuildInfo } from './build-info';
 
 describe('getBuildInfo', () => {
   const FAKE_COMMIT = 'abc1234';
@@ -34,8 +34,7 @@ describe('getBuildInfo', () => {
     vi.unstubAllGlobals();
   });
 
-  it('returns all build fields from injected globals', async () => {
-    const { getBuildInfo } = await import('./build-info');
+  it('returns all build fields from injected globals', () => {
     const info: BuildInfo = getBuildInfo();
 
     expect(info).toEqual({
@@ -47,32 +46,23 @@ describe('getBuildInfo', () => {
     });
   });
 
-  it('returns string values for all fields', async () => {
-    const { getBuildInfo } = await import('./build-info');
-    const info = getBuildInfo();
-
-    for (const [, value] of Object.entries(info)) {
-      expect(typeof value).toBe('string');
-    }
-  });
-
-  it('returns exactly five fields', async () => {
-    const { getBuildInfo } = await import('./build-info');
-    const info = getBuildInfo();
-
-    expect(Object.keys(info)).toHaveLength(5);
-  });
-
-  it('throws when required metadata is missing', async () => {
+  it('throws when required metadata is missing', () => {
     // Why this test matters:
     // Missing metadata should fail loudly at the helper boundary so callers
-    // can decide whether to surface a warning or degrade gracefully.
+    // can decide whether to surface a warning or degrade gracefully (the
+    // session.json builder drops only its `build` field).
     vi.unstubAllGlobals();
-
-    const { getBuildInfo } = await import('./build-info');
 
     expect(() => getBuildInfo()).toThrow(
       'Missing or invalid build metadata: __BUILD_COMMIT__'
+    );
+  });
+
+  it('throws when a constant is not a string', () => {
+    vi.stubGlobal('__FW_VERSION__', 42);
+
+    expect(() => getBuildInfo()).toThrow(
+      'Missing or invalid build metadata: __FW_VERSION__'
     );
   });
 });

@@ -53,7 +53,7 @@ import {
   sanitizedPageUrl,
   writeSessionMetadata,
 } from 'gps-plus-slam-app-framework/storage/session-metadata-record';
-import { getBuildInfo } from '../utils/build-info';
+import { getBuildInfo } from 'gps-plus-slam-app-framework/utils/build-info';
 import { buildZipContributors } from './zip-contributors';
 import type { ZipContributorDeps } from './zip-contributors';
 import { FALLBACK_SCENARIO, type SessionRuntime } from './session-runtime';

@@ -223,6 +223,9 @@ const entryFiles = [
 
   // utils/
   'src/utils/index.ts',
+  // The build-stamp reader, deep-imported by the RecorderApp and the Tour
+  // Viewer (moved from the RecorderApp 2026-09-28, DEC-H3).
+  'src/utils/build-info.ts',
   'src/utils/concurrency.ts',
   // The apps' ?debug=1 reader, deep-imported by the RecorderApp and the
   // TourViewer (QR near-frontal pose plan §67 #3).

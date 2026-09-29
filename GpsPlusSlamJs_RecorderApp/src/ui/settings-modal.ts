@@ -31,7 +31,7 @@ import {
   BLUR_METRIC_IDS,
   type BlurMetricId,
 } from 'gps-plus-slam-app-framework/ar/image-quality';
-import { getBuildInfo } from '../utils/build-info';
+import { getBuildInfo } from 'gps-plus-slam-app-framework/utils/build-info';
 import { showConfirmDialog } from './confirm-dialog';
 import { guardSliderAgainstScroll } from 'gps-plus-slam-app-framework/utils/slider-scroll-guard';
 
