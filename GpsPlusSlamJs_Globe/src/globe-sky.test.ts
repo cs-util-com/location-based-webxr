@@ -27,6 +27,7 @@ import {
   GALACTIC_NORTH_POLE,
   GLOBE_STARS,
   generateStarField,
+  packStarField,
 } from "./globe-stars.js";
 
 const DEG = Math.PI / 180;
@@ -197,11 +198,14 @@ describe("the procedural stars in the sky pass", () => {
 
   it("draws the field to the default limit, and the lab's limit changes the count", () => {
     const sky = createGlobeSky();
-    const count = (m: number) =>
+    // The packed magnitudes (a byte each), as the sky counts them.
+    const packed = packStarField(
       generateStarField({
         seed: GLOBE_STARS.seed,
         magLimit: GLOBE_STARS.maxMagLimit,
-      }).magnitudes.filter((x) => x <= m).length;
+      }),
+    ).magnitudes;
+    const count = (m: number) => packed.filter((x) => x <= m).length;
     expect(sky.visibleStars()).toBe(count(GLOBE_SKY.starMagLimit));
     expect(sky.visibleStars()).toBeGreaterThan(2000);
     const look = { gain: 1, milkyWay: 0, pixelRatio: 2, visible: true };
@@ -210,15 +214,52 @@ describe("the procedural stars in the sky pass", () => {
     expect(sky.starUniforms.uMagLimit.value).toBe(5.5);
     expect(sky.starUniforms.uPixelRatio.value).toBe(2);
     expect(sky.uniforms.uMilkyWay.value).toBe(0);
+    // The owner's new top of the range (round-4 plan DEC-GL4-2).
+    sky.setStarLook({ ...look, magLimit: 9 });
+    expect(sky.visibleStars()).toBe(count(9));
     sky.setStarLook({ ...look, magLimit: 6.5, visible: false });
     expect(sky.stars.visible).toBe(false);
     for (const bad of [
-      { ...look, magLimit: 9 },
+      { ...look, magLimit: 9.5 },
       { ...look, magLimit: 6.5, gain: -1 },
       { ...look, magLimit: 6.5, milkyWay: Number.NaN },
       { ...look, magLimit: 6.5, pixelRatio: 0 },
     ]) {
       expect(() => sky.setStarLook(bad)).toThrow(RangeError);
+    }
+    sky.dispose();
+  });
+
+  // Why (round-4 plan DEC-GL4-2): generated to magnitude 9 the field holds
+  // about 89,000 points, eighteen times the old default's 5,000. Sorted
+  // brightest first, the draw range stops at the limit, so the GPU runs
+  // the vertex shader only for the stars the limit shows and a lower limit
+  // costs less, instead of every frame paying for the whole field.
+  it("sorts the stars brightest first and draws only up to the limit", () => {
+    const sky = createGlobeSky();
+    // The magnitude bytes, brightest first; 6 bytes a star in all.
+    const magTint = sky.stars.geometry.getAttribute("aMagTint");
+    const oct = sky.stars.geometry.getAttribute("aOct");
+    expect(magTint.array).toBeInstanceOf(Uint8Array);
+    expect(oct.array).toBeInstanceOf(Int16Array);
+    expect(magTint.normalized && oct.normalized).toBe(true);
+    for (let i = 1; i < magTint.count; i++) {
+      expect(magTint.getX(i)).toBeGreaterThanOrEqual(magTint.getX(i - 1));
+    }
+    expect(magTint.array.byteLength + oct.array.byteLength).toBe(
+      6 * magTint.count,
+    );
+    // No position attribute: the direction is decoded in the shader, so
+    // attribute 0 is bound to it.
+    expect(sky.stars.geometry.getAttribute("position")).toBeUndefined();
+    expect(
+      (sky.stars.material as THREE.ShaderMaterial).index0AttributeName,
+    ).toBe("aOct");
+    const look = { gain: 1, milkyWay: 0, pixelRatio: 1, visible: true };
+    for (const magLimit of [0.5, 3.5, 6.5, 7.5, 9]) {
+      sky.setStarLook({ ...look, magLimit });
+      expect(sky.stars.geometry.drawRange.start).toBe(0);
+      expect(sky.stars.geometry.drawRange.count).toBe(sky.visibleStars());
     }
     sky.dispose();
   });

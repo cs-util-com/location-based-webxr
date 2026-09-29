@@ -52,8 +52,9 @@
   `sky` (0 turns the background pass off, default 1), `sunSize` (the disc's
   apparent diameter, 0.1-10°, default 1°, about twice the real 0.533°),
   `sunGlow` (0-4, default 0.95), `stars` (0 hides the procedural stars,
-  default 1), `starMag` (the faintest star drawn, 0.5-7.5, default 7.5:
-  15,811 stars), `starGain` (0-4, default 4), `milkyWay` (the band's
+  default 1), `starMag` (the faintest star drawn, 0.5-9, default 7.5:
+  15,811 stars; 88,914 at 9, DEC-GL4-2), `starGain` (0-10, default 4),
+  `milkyWay` (the band's
   linear radiance, 0-0.1, default 0.03; the sky pass is not tone mapped,
   so it shows), `sunIntensity` (0-8, default 5), `fovY` (20-80, default 50),
   `pixelRatio` (the cap, 0.5-4, default 2, what §7.2 sized the pyramid
@@ -98,6 +99,10 @@
   then the Earth
   over it. The sky has its own camera sharing only the view's rotation and
   field of view, and no depth, so the Earth covers it by draw order.
+- The cost probe (round-4 plan DEC-GL4-2/4): `__globeLab.timeFrames(n)`
+  draws n frames back to back, reads one pixel so the GPU has finished,
+  and returns the wall time in ms. Under SwiftShader it is relative only:
+  the smokes compare two settings within one page load.
 - The distance readout (round-4 plan 2026-09-28-2105 DEC-GL4-5):
   "Altitude 20,180 km" bottom left, above the device line, and while the
   pin's dive is on its way or holding over the target, " · 1,300 km to the

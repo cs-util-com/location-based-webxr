@@ -17,7 +17,10 @@ import {
   GALACTIC_CENTRE,
   GALACTIC_NORTH_POLE,
   GLOBE_STARS,
+  fromSnorm16,
   generateStarField,
+  octahedralDecode,
+  packStarField,
 } from "./globe-stars.js";
 
 export const GLOBE_SKY = {
@@ -89,6 +92,10 @@ interface GlobeSkyUniforms {
 /** The star points' uniforms. */
 interface GlobeStarUniforms {
   readonly uMagLimit: { value: number };
+  /** The packed magnitude byte's range: [brightestMag, maxMagLimit]. */
+  readonly uMagRange: { value: THREE.Vector2 };
+  /** The shell's radius the unit directions are drawn at. */
+  readonly uStarShell: { value: number };
   readonly uStarGain: { value: number };
   /** Device pixels per CSS pixel, so a star keeps its size on a phone. */
   readonly uPixelRatio: { value: number };
@@ -100,11 +107,20 @@ export interface GlobeSky {
   /** The sky pass's camera: at the origin, the view's rotation and fov. */
   readonly camera: THREE.PerspectiveCamera;
   readonly uniforms: GlobeSkyUniforms;
-  /** The procedural stars (generated to GLOBE_STARS.maxMagLimit). */
+  /**
+   * The procedural stars (generated to GLOBE_STARS.maxMagLimit, packed 6
+   * bytes a star, brightest first; the draw range ends at the limit).
+   */
   readonly stars: THREE.Points;
   readonly starUniforms: GlobeStarUniforms;
   /** How many stars the current magnitude limit draws. */
   visibleStars(): number;
+  /**
+   * The brightest star's direction in the celestial frame, as the GPU
+   * decodes it (for a check that the packed directions draw where they
+   * should).
+   */
+  brightestStar(): [number, number, number];
   /**
    * Turns the stars and the Milky Way from the celestial frame into the
    * view's world frame (ECEF turned by the globe's placement; the lab
@@ -112,7 +128,7 @@ export interface GlobeSky {
    */
   setCelestialRotation(rotation: THREE.Quaternion): void;
   /**
-   * The stars' look: the magnitude limit (0.5-7.5), the gain (>= 0), the
+   * The stars' look: the magnitude limit (0.5-9), the gain (>= 0), the
    * Milky Way's radiance (>= 0), the device pixel ratio (> 0), and whether
    * the stars are drawn. RangeError otherwise.
    */
@@ -193,16 +209,33 @@ void main() {
  * A star as a round, soft point: brightness 10^(-0.2 (m + 1)) x gain (the
  * eye's compressed response), bigger when brighter. A star past the limit
  * is moved outside the clip volume and blacked out: a point size of 0 is
- * undefined in WebGL, and ANGLE draws it as one pixel.
+ * undefined in WebGL, and ANGLE draws it as one pixel. The draw range
+ * already stops at the limit; this keeps the limit exact at its edge.
+ * Packed (round-4 plan DEC-GL4-2): the direction is octahedral (the same
+ * fold as `octahedralDecode`), the magnitude a byte over uMagRange, the
+ * colour a tint t in [-0.5, 0.5] (bluish below 0, reddish above).
  */
 const STAR_VERTEX = /* glsl */ `
-attribute float aMag;
-attribute vec3 aColor;
+attribute vec2 aOct;
+attribute vec2 aMagTint;
 uniform float uMagLimit;
+uniform vec2 uMagRange;
+uniform float uStarShell;
 uniform float uStarGain;
 uniform float uPixelRatio;
 varying vec3 vColor;
+vec3 octDecode( vec2 e ) {
+  vec3 v = vec3( e, 1.0 - abs( e.x ) - abs( e.y ) );
+  if ( v.z < 0.0 ) {
+    v.xy = ( 1.0 - abs( v.yx ) ) * vec2( v.x >= 0.0 ? 1.0 : -1.0, v.y >= 0.0 ? 1.0 : -1.0 );
+  }
+  return normalize( v );
+}
 void main() {
+  float aMag = mix( uMagRange.x, uMagRange.y, aMagTint.x );
+  float t = aMagTint.y - 0.5;
+  vec3 aColor = t < 0.0 ? vec3( 1.0 + 0.6 * t, 1.0 + 0.3 * t, 1.0 ) : vec3( 1.0, 1.0 - 0.3 * t, 1.0 - 0.6 * t );
+  vec3 starPosition = octDecode( aOct ) * uStarShell;
   if ( aMag > uMagLimit ) {
     vColor = vec3( 0.0 );
     gl_PointSize = 1.0;
@@ -212,7 +245,7 @@ void main() {
   float intensity = uStarGain * pow( 10.0, -0.2 * ( aMag + 1.0 ) );
   vColor = aColor * intensity;
   gl_PointSize = uPixelRatio * ( 1.2 + 1.8 * clamp( intensity, 0.0, 1.0 ) );
-  gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+  gl_Position = projectionMatrix * modelViewMatrix * vec4( starPosition, 1.0 );
 }`;
 
 const STAR_FRAGMENT = /* glsl */ `
@@ -224,22 +257,31 @@ void main() {
   #include <colorspace_fragment>
 }`;
 
-/** The stars, as points on a shell inside the sky sphere. */
+/**
+ * The stars, as points on a shell inside the sky sphere: the field packed
+ * (`packStarField`), brightest first, with no `position` attribute (the
+ * shader decodes it), so attribute 0 is bound to the packed direction.
+ */
 function createStars(uniforms: GlobeStarUniforms): {
   points: THREE.Points;
   magnitudes: Float32Array;
+  brightest: [number, number, number];
 } {
-  const field = generateStarField({
-    seed: GLOBE_STARS.seed,
-    magLimit: GLOBE_STARS.maxMagLimit,
-  });
-  const positions = field.directions.map(
-    (v) => v * GLOBE_SKY.radius * GLOBE_SKY.starShell,
+  const packed = packStarField(
+    generateStarField({
+      seed: GLOBE_STARS.seed,
+      magLimit: GLOBE_STARS.maxMagLimit,
+    }),
   );
   const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  geometry.setAttribute("aMag", new THREE.BufferAttribute(field.magnitudes, 1));
-  geometry.setAttribute("aColor", new THREE.BufferAttribute(field.colors, 3));
+  geometry.setAttribute(
+    "aOct",
+    new THREE.BufferAttribute(packed.octahedral, 2, true),
+  );
+  geometry.setAttribute(
+    "aMagTint",
+    new THREE.BufferAttribute(packed.magTint, 2, true),
+  );
   const material = new THREE.ShaderMaterial({
     uniforms: { ...uniforms },
     vertexShader: STAR_VERTEX,
@@ -250,11 +292,28 @@ function createStars(uniforms: GlobeStarUniforms): {
     depthWrite: false,
     toneMapped: false,
   });
+  material.index0AttributeName = "aOct";
   const points = new THREE.Points(geometry, material);
   points.frustumCulled = false;
   // After the sky sphere, so the stars add to its black (and its glow).
   points.renderOrder = 1;
-  return { points, magnitudes: field.magnitudes };
+  const brightest = octahedralDecode(
+    fromSnorm16(packed.octahedral[0] ?? 0),
+    fromSnorm16(packed.octahedral[1] ?? 0),
+  );
+  return { points, magnitudes: packed.magnitudes, brightest };
+}
+
+/** How many of the ascending `magnitudes` are at or under `limit`. */
+function countUpTo(magnitudes: Float32Array, limit: number): number {
+  let lo = 0;
+  let hi = magnitudes.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if ((magnitudes[mid] ?? Infinity) <= limit) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
 }
 
 const requireDirection = (v: THREE.Vector3): number => {
@@ -282,15 +341,21 @@ export function createGlobeSky(): GlobeSky {
   };
   const starUniforms: GlobeStarUniforms = {
     uMagLimit: { value: GLOBE_SKY.starMagLimit },
+    uMagRange: {
+      value: new THREE.Vector2(
+        GLOBE_STARS.brightestMag,
+        GLOBE_STARS.maxMagLimit,
+      ),
+    },
+    uStarShell: { value: GLOBE_SKY.radius * GLOBE_SKY.starShell },
     uStarGain: { value: GLOBE_SKY.starGain },
     uPixelRatio: { value: 1 },
   };
-  const { points: stars, magnitudes } = createStars(starUniforms);
+  const { points: stars, magnitudes, brightest } = createStars(starUniforms);
   const galPole = new THREE.Vector3(...GALACTIC_NORTH_POLE);
   const galCentre = new THREE.Vector3(...GALACTIC_CENTRE);
-  let visibleStars = magnitudes.filter(
-    (m) => m <= GLOBE_SKY.starMagLimit,
-  ).length;
+  let visibleStars = countUpTo(magnitudes, GLOBE_SKY.starMagLimit);
+  stars.geometry.setDrawRange(0, visibleStars);
   const material = new THREE.ShaderMaterial({
     // The same { value } objects, in the record type three expects.
     uniforms: { ...uniforms },
@@ -337,6 +402,7 @@ export function createGlobeSky(): GlobeSky {
     stars,
     starUniforms,
     visibleStars: () => visibleStars,
+    brightestStar: () => [...brightest],
     setCelestialRotation(rotation) {
       stars.quaternion.copy(rotation);
       stars.updateMatrixWorld();
@@ -361,7 +427,8 @@ export function createGlobeSky(): GlobeSky {
         throw new RangeError(`pixel ratio must be > 0, got ${pixelRatio}`);
       }
       if (starUniforms.uMagLimit.value !== magLimit) {
-        visibleStars = magnitudes.filter((m) => m <= magLimit).length;
+        visibleStars = countUpTo(magnitudes, magLimit);
+        stars.geometry.setDrawRange(0, visibleStars);
       }
       starUniforms.uMagLimit.value = magLimit;
       starUniforms.uStarGain.value = gain;

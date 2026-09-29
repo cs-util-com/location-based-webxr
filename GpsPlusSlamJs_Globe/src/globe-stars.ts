@@ -20,8 +20,12 @@ export const GLOBE_STARS = {
   countAt6_5: 5000,
   /** The brightest star generated (the real sky's brightest is -1.46). */
   brightestMag: -1.5,
-  /** The faintest limit a field can be generated to (the lab's slider). */
-  maxMagLimit: 7.5,
+  /**
+   * The faintest limit a field can be generated to (the lab's slider): 9,
+   * the owner's wish (round-4 plan 2026-09-28-2105 DEC-GL4-2; 7.5 before).
+   * About 89,000 stars on this count law.
+   */
+  maxMagLimit: 9,
 } as const;
 
 /**
@@ -50,6 +54,106 @@ export interface StarField {
   readonly colors: Float32Array;
 }
 
+/**
+ * A field packed for the GPU (round-4 plan DEC-GL4-2): 6 bytes a star
+ * instead of 28, sorted brightest first, so a draw range can stop at the
+ * magnitude limit.
+ * - `octahedral`: the direction as two signed, normalised 16-bit values
+ *   (octahedral mapping: the unit sphere folded onto a square), about
+ *   0.005° at worst;
+ * - `magTint`: the magnitude over [brightestMag, maxMagLimit] and the
+ *   colour's tint t (see `generateStarField`) over [-0.5, 0.5], one
+ *   unsigned normalised byte each;
+ * - `magnitudes`: the magnitudes as the GPU decodes them (ascending), for
+ *   counting what a limit draws.
+ */
+export interface PackedStars {
+  readonly count: number;
+  readonly octahedral: Int16Array;
+  readonly magTint: Uint8Array;
+  readonly magnitudes: Float32Array;
+}
+
+/** The magnitude a packed byte stands for (the shader's decode, in JS). */
+export function unpackMagnitude(byte: number): number {
+  const { brightestMag, maxMagLimit } = GLOBE_STARS;
+  return brightestMag + (byte / 255) * (maxMagLimit - brightestMag);
+}
+
+const signNotZero = (v: number): number => (v >= 0 ? 1 : -1);
+
+/**
+ * A unit vector folded onto the octahedron and unfolded onto [-1, 1]^2.
+ * The inverse is `octahedralDecode` (and the star shader's `octDecode`).
+ */
+export function octahedralEncode(
+  x: number,
+  y: number,
+  z: number,
+): [number, number] {
+  const l1 = Math.abs(x) + Math.abs(y) + Math.abs(z);
+  const u = x / l1;
+  const v = y / l1;
+  return z >= 0
+    ? [u, v]
+    : [(1 - Math.abs(v)) * signNotZero(u), (1 - Math.abs(u)) * signNotZero(v)];
+}
+
+/** The unit vector an octahedral pair stands for. */
+export function octahedralDecode(
+  u: number,
+  v: number,
+): [number, number, number] {
+  let x = u;
+  let y = v;
+  const z = 1 - Math.abs(u) - Math.abs(v);
+  if (z < 0) {
+    x = (1 - Math.abs(v)) * signNotZero(u);
+    y = (1 - Math.abs(u)) * signNotZero(v);
+  }
+  const n = Math.hypot(x, y, z);
+  return [x / n, y / n, z / n];
+}
+
+/** A float in [-1, 1] as a signed normalised 16-bit value, and back. */
+const toSnorm16 = (v: number): number =>
+  Math.round(Math.min(1, Math.max(-1, v)) * 32767);
+export const fromSnorm16 = (s: number): number => Math.max(s / 32767, -1);
+
+/** A field packed for the GPU, brightest first (see `PackedStars`). */
+export function packStarField(field: StarField): PackedStars {
+  const { count } = field;
+  const order = Array.from({ length: count }, (_, i) => i).sort(
+    (a, b) => (field.magnitudes[a] ?? 0) - (field.magnitudes[b] ?? 0),
+  );
+  const { brightestMag, maxMagLimit } = GLOBE_STARS;
+  const octahedral = new Int16Array(2 * count);
+  const magTint = new Uint8Array(2 * count);
+  const magnitudes = new Float32Array(count);
+  order.forEach((from, to) => {
+    const d = field.directions;
+    const [u, v] = octahedralEncode(
+      d[3 * from] ?? 0,
+      d[3 * from + 1] ?? 0,
+      d[3 * from + 2] ?? 1,
+    );
+    octahedral[2 * to] = toSnorm16(u);
+    octahedral[2 * to + 1] = toSnorm16(v);
+    const m = field.magnitudes[from] ?? maxMagLimit;
+    const magByte = Math.round(
+      ((m - brightestMag) / (maxMagLimit - brightestMag)) * 255,
+    );
+    // The colour's tint: red minus blue is 0.6 t on both sides of white.
+    const c = field.colors;
+    const t = ((c[3 * from] ?? 1) - (c[3 * from + 2] ?? 1)) / 0.6;
+    magTint[2 * to] = magByte;
+    magTint[2 * to + 1] = Math.round((t + 0.5) * 255);
+    magnitudes[to] = unpackMagnitude(magByte);
+  });
+  // Rounding is monotonic, so the packed magnitudes stay in order.
+  return { count, octahedral, magTint, magnitudes };
+}
+
 /** A small seeded generator (32-bit state), uniform in [0, 1). */
 function seeded(seed: number): () => number {
   let a = seed >>> 0;
@@ -63,7 +167,7 @@ function seeded(seed: number): () => number {
 }
 
 /**
- * A star field down to `magLimit` (0.5-7.5), from an integer `seed`. The
+ * A star field down to `magLimit` (0.5-9), from an integer `seed`. The
  * cumulative count is N(<m) = countAt6_5 * 10^(0.5 (m - 6.5)), so the same
  * seed at a fainter limit gives more stars, not the same ones. RangeError
  * for a non-integer seed or a limit out of range.

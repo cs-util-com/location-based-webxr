@@ -229,7 +229,8 @@ const PARAMS = {
     min: 0.5,
     max: GLOBE_STARS.maxMagLimit,
   },
-  starGain: { fallback: GLOBE_SKY.starGain, min: 0, max: 4 },
+  // Up to 10 (round-4 plan 2026-09-28-2105 DEC-GL4-2; 4 before).
+  starGain: { fallback: GLOBE_SKY.starGain, min: 0, max: 10 },
   milkyWay: { fallback: GLOBE_SKY.milkyWay, min: 0, max: 0.1 },
   fovY: { fallback: 50, min: 20, max: 80 },
   pixelRatio: { fallback: 2, min: 0.5, max: 4 },
@@ -1168,6 +1169,8 @@ function start() {
           on: sky.stars.visible,
           magLimit: sky.starUniforms.uMagLimit.value,
           count: sky.visibleStars(),
+          // Celestial direction of the brightest star, as the GPU decodes it.
+          brightest: sky.brightestStar(),
           procedural: true,
         },
         milkyWay: sky.uniforms.uMilkyWay.value,
@@ -1200,6 +1203,22 @@ function start() {
       return [(p.x + 1) / 2, (1 - p.y) / 2];
     },
     regionStats,
+    /**
+     * The cost probe (round-4 plan DEC-GL4-2/4): `n` frames drawn back to
+     * back, then one pixel read so the GPU has finished them; the wall
+     * time in ms. Under SwiftShader it is relative only: compare two
+     * settings within one page load, never across machines.
+     */
+    timeFrames(n) {
+      const gl = renderer.getContext();
+      const px = new Uint8Array(4);
+      frame();
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      const t0 = performance.now();
+      for (let i = 0; i < n; i++) frame();
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      return performance.now() - t0;
+    },
     /**
      * A celestial direction [x, y, z] (x to RA 0h, z to the pole) in the
      * world frame, turned by the rotation the sky pass renders the stars

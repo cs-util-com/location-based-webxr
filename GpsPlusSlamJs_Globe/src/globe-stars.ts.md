@@ -12,7 +12,8 @@
   one: no constellation is where it really is.
 - Public API:
   - `GLOBE_STARS` - `seed` (one fixed sky), `countAt6_5` (5000),
-    `brightestMag` (-1.5), `maxMagLimit` (7.5).
+    `brightestMag` (-1.5), `maxMagLimit` (9: round-4 plan 2026-09-28-2105
+    DEC-GL4-2; 7.5 before).
   - `generateStarField({ seed, magLimit })` → `{ count, directions,
 magnitudes, colors }` (Float32Arrays; directions are unit vectors in the
     celestial frame, x to RA 0h, z to the north celestial pole). The
@@ -20,7 +21,18 @@ magnitudes, colors }` (Float32Arrays; directions are unit vectors in the
     [-1.5, magLimit]: magnitudes are drawn by inverting that law; directions
     uniformly on the sphere (z uniform, longitude uniform); a slight colour
     per star, each channel in [0.6, 1], bluish or reddish around white.
-    RangeError for a non-integer seed or a limit outside 0.5-7.5.
+    RangeError for a non-integer seed or a limit outside 0.5-9.
+  - `packStarField(field)` -> `{ count, octahedral, magTint, magnitudes }`
+    (DEC-GL4-2): the field packed for the GPU, 6 bytes a star instead of
+    28, sorted brightest first. `octahedral`: the direction folded onto
+    the octahedron as two signed normalised 16-bit values (worst error
+    under 0.01°, property-tested); `magTint`: the magnitude as a byte over
+    [brightestMag, maxMagLimit] (a step of 0.041 mag) and the colour's tint
+    t (red minus blue is 0.6 t) as a byte over [-0.5, 0.5]; `magnitudes`:
+    the decoded magnitudes, ascending, for counting what a limit draws.
+  - `octahedralEncode(x, y, z)` / `octahedralDecode(u, v)`, `fromSnorm16`,
+    `unpackMagnitude(byte)`: the packing's halves, the same as the star
+    shader's decode.
   - `greenwichSiderealAngleRad(ms)` - Greenwich mean sidereal time as an
     angle in [0, 2π) (the standard 1982 expression from J2000.0), matching
     the published reference values to 1e-7 rad. RangeError when non-finite.
@@ -31,12 +43,19 @@ magnitudes, colors }` (Float32Arrays; directions are unit vectors in the
     192.859° Dec +27.128°; RA 266.405° Dec -28.936°); the galactic plane is
     tilted 62.87° to the celestial equator. The sky pass draws the Milky
     Way band from them.
-- Counts and sizes (one field, 28 bytes per star: position, magnitude,
-  colour as float32):
-  - to 5.5: 1,581 stars, 44 KB;
-  - to 6.5: 5,000 stars, 140 KB (the default limit);
-  - to 7.5: 15,811 stars, 443 KB (what the sky pass generates, once, on
-    the CPU at load; the limit is a uniform, so changing it is free).
+- Counts and sizes (float32 at 28 bytes a star; packed at 6):
+  - to 5.5: 1,581 stars;
+  - to 6.5: 5,000 stars;
+  - to 7.5: 15,811 stars, 443 KB float32, 95 KB packed (the default limit
+    since DEC-GL4-1);
+  - to 8.5: 50,000 stars, 1.40 MB float32, 0.30 MB packed;
+  - to 9: 88,914 stars, 2.49 MB float32, 0.53 MB packed (what the sky
+    pass generates, once, on the CPU at load; the limit is a uniform and
+    a draw range, so changing it costs nothing to set, and a lower limit
+    draws fewer points).
+  - The real sky has about 9,100 stars to 6.5 and about 128,000 to 9 (the
+    research findings 2026-09-28-2129 §2.9, from Sky2000); this law grows
+    a little faster below 6.5 and a little slower above it.
   - The real sky has about 9,100 stars to 6.5 (the Bright Star Catalogue);
     5,000 is the owner's "a few thousand".
 - Invariants & assumptions: deterministic per seed (a pinned link shows the

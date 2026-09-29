@@ -22,8 +22,13 @@ import {
   GALACTIC_NORTH_POLE,
   GLOBE_STARS,
   celestialToEcefQuaternion,
+  fromSnorm16,
   generateStarField,
   greenwichSiderealAngleRad,
+  octahedralDecode,
+  octahedralEncode,
+  packStarField,
+  unpackMagnitude,
 } from "./globe-stars.js";
 
 const DEG = Math.PI / 180;
@@ -62,6 +67,22 @@ describe("generateStarField", () => {
       expect(m).toBeGreaterThanOrEqual(GLOBE_STARS.brightestMag);
       expect(m).toBeLessThanOrEqual(6.5);
     }
+  });
+
+  // Why (round-4 plan 2026-09-28-2105 DEC-GL4-2): the owner asked for more
+  // than the old 7.5 limit. The field is generated to magnitude 9 and the
+  // counts follow the same law all the way: about 89,000 stars.
+  it("reaches magnitude 9 on the same count law (DEC-GL4-2)", () => {
+    expect(GLOBE_STARS.maxMagLimit).toBe(9);
+    const at = (magLimit: number) =>
+      generateStarField({ seed: 1, magLimit }).count;
+    expect(at(9)).toBe(Math.round(GLOBE_STARS.countAt6_5 * 10 ** 1.25));
+    expect(at(9) / at(8)).toBeCloseTo(Math.sqrt(10), 1);
+    const field = generateStarField({ seed: 2, magLimit: 9 });
+    expect(Math.max(...field.magnitudes)).toBeLessThanOrEqual(9);
+    expect(Math.min(...field.magnitudes)).toBeGreaterThanOrEqual(
+      GLOBE_STARS.brightestMag,
+    );
   });
 
   it("scatters unit directions uniformly over the sphere", () => {
@@ -117,11 +138,92 @@ describe("generateStarField", () => {
     for (const bad of [
       { seed: 1.5, magLimit: 6.5 },
       { seed: 1, magLimit: Number.NaN },
-      { seed: 1, magLimit: 9 },
+      { seed: 1, magLimit: 9.5 },
       { seed: 1, magLimit: 0 },
     ]) {
       expect(() => generateStarField(bad)).toThrow(RangeError);
     }
+  });
+});
+
+/**
+ * Why (round-4 plan DEC-GL4-2): at magnitude 9 the field is about 89,000
+ * stars, 2.5 MB as float32 (28 bytes a star). Packed to 6 bytes a star it
+ * is 0.53 MB, but only if the packing keeps every star where it was, as
+ * bright as it was, in the colour it had, and in the order the draw range
+ * relies on (brightest first).
+ */
+describe("packStarField", () => {
+  const DEG_ = Math.PI / 180;
+  const unit = fc
+    .tuple(
+      fc.double({ min: -1, max: 1, noNaN: true }),
+      fc.double({ min: -1, max: 1, noNaN: true }),
+      fc.double({ min: -1, max: 1, noNaN: true }),
+    )
+    .filter(([x, y, z]) => Math.hypot(x, y, z) > 1e-3)
+    .map(([x, y, z]) => {
+      const n = Math.hypot(x, y, z);
+      return [x / n, y / n, z / n] as const;
+    });
+
+  it("folds any direction onto the square and back, 16-bit, within 0.01°", () => {
+    fc.assert(
+      fc.property(unit, ([x, y, z]) => {
+        const [u, v] = octahedralEncode(x, y, z);
+        expect(Math.abs(u)).toBeLessThanOrEqual(1);
+        expect(Math.abs(v)).toBeLessThanOrEqual(1);
+        const q = (a: number) => fromSnorm16(Math.round(a * 32767));
+        const [a, b, c] = octahedralDecode(q(u), q(v));
+        const dot = Math.min(1, a * x + b * y + c * z);
+        expect(Math.acos(dot) / DEG_).toBeLessThan(0.01);
+      }),
+      { examples: [[[0, 0, -1]], [[0, 0, 1]], [[1, 0, 0]], [[0, -1, 0]]] },
+    );
+  });
+
+  it("keeps each star's direction, magnitude and tint, brightest first, in 6 bytes", () => {
+    const field = generateStarField({ seed: 9, magLimit: 7 });
+    const packed = packStarField(field);
+    /** An array element that must exist (the arrays are sized by count). */
+    const at = (a: ArrayLike<number>, i: number): number => {
+      const v = a[i];
+      if (v === undefined) throw new Error(`no element ${i}`);
+      return v;
+    };
+    expect(packed.count).toBe(field.count);
+    expect(packed.octahedral.byteLength + packed.magTint.byteLength).toBe(
+      6 * field.count,
+    );
+    for (let i = 1; i < packed.count; i++) {
+      expect(packed.magnitudes[i]).toBeGreaterThanOrEqual(
+        at(packed.magnitudes, i - 1),
+      );
+    }
+    // Half a byte step of magnitude: (9 + 1.5) / 255 / 2.
+    const halfStep = (GLOBE_STARS.maxMagLimit - GLOBE_STARS.brightestMag) / 510;
+    const sorted = [...field.magnitudes].sort((a, b) => a - b);
+    packed.magnitudes.forEach((m, i) => {
+      expect(Math.abs(m - at(sorted, i))).toBeLessThanOrEqual(halfStep + 1e-6);
+      // Stored as float32: equal to the decode within its precision.
+      expect(unpackMagnitude(at(packed.magTint, 2 * i))).toBeCloseTo(m, 5);
+    });
+    // The brightest star is first after the sort, and decodes to where the
+    // field put it.
+    const src = [...field.magnitudes].indexOf(at(sorted, 0));
+    const [x, y, z] = octahedralDecode(
+      fromSnorm16(at(packed.octahedral, 0)),
+      fromSnorm16(at(packed.octahedral, 1)),
+    );
+    const d = field.directions;
+    const dot =
+      x * at(d, 3 * src) + y * at(d, 3 * src + 1) + z * at(d, 3 * src + 2);
+    expect(Math.acos(Math.min(1, dot)) / DEG_).toBeLessThan(0.01);
+    // The tint: red minus blue is 0.6 t; bytes over [-0.5, 0.5].
+    const t = (at(field.colors, 3 * src) - at(field.colors, 3 * src + 2)) / 0.6;
+    expect(Math.abs(at(packed.magTint, 1) / 255 - 0.5 - t)).toBeLessThanOrEqual(
+      0.5 / 255 + 1e-6,
+    );
   });
 });
 

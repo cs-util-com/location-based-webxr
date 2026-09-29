@@ -45,10 +45,17 @@ view), dispose() }`.
       Greenwich sidereal angle); turns the stars and the Milky Way's pole
       and centre.
     - `setStarLook({ magLimit, gain, milkyWay, pixelRatio, visible })`:
-      the limit (0.5-7.5, a uniform: the field is generated to 7.5 once),
+      the limit (0.5-9, a uniform and the geometry's draw range: the
+      field is generated to 9 once, packed 6 bytes a star and sorted
+      brightest first, so the range stops at the limit; DEC-GL4-2),
       the gain and Milky Way (>= 0), the device pixel ratio (> 0, so a
       star keeps its size on a phone); RangeError otherwise.
-      `visibleStars()` counts the stars the limit draws.
+      `visibleStars()` counts the stars the limit draws;
+      `brightestStar()` is the brightest star's celestial direction as
+      the GPU decodes it (the lab's smoke checks the pixels there).
+    - The star vertex shader has no `position`: it decodes the packed
+      octahedral direction (`index0AttributeName` is `aOct`), the
+      magnitude byte over `uMagRange` and the colour tint.
     - `render(renderer, view)`: syncs, then draws the sky. The caller
       clears first (with `autoClear` off) and draws its scene after.
   - `uniforms`: `uSunDirection` (unit), `uSunRadius` (radians),
