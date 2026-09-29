@@ -34,6 +34,7 @@ import { SkyAtmosphere } from "/fw/visualization/atmosphere/sky-atmosphere.js";
 import { CloudShadow } from "/fw/visualization/atmosphere/cloud-shadow.js";
 import { createSunCloudProbe, PAGE_DISC_EXPONENT } from "./sun-clouds.js";
 import { WaterSurface } from "/fw/visualization/atmosphere/water-surface-material.js";
+import { WATER_POLISH_DEFAULT_PARAMS } from "/fw/visualization/atmosphere/water-polish.js";
 import { WATER_CANDIDATES } from "./water-candidates.js";
 import { CATALOG } from "./catalog/index.js";
 import {
@@ -231,7 +232,47 @@ const state = {
   // (the phone tier renders through a small composer while they are on).
   // Off until the owner has looked (his decision of 2026-09-28).
   godRays: false,
+  // The water polish (round-3 plan 2026-09-27-0532, stream W, DEC-FB3-9),
+  // ONE SWITCH PER TRICK on top of the wave set, so the owner can judge
+  // each alone (the framework's water-polish.ts; the keys in
+  // WATER_POLISH_KEYS). The smoke boot pins every one that opens on.
+  // Defaults by measurement and the owner's "cheap" (the stream-W record):
+  // ON where the measured effect is the label's and the cost is small (far
+  // water to sheen, the sun's disc, gusts); OFF where it measured nothing
+  // (the Fresnel damp, which three's own environment term already does), or
+  // where it changes the look in a way only the owner can call better (the
+  // body, which flattens the water seen from above).
+  waterRough: true,
+  waterSun: true,
+  waterFresnel: false,
+  waterTiles: false,
+  waterGusts: true,
+  waterBody: false,
 };
+
+/**
+ * The water polish's hash keys (and state keys) and the framework switch
+ * each drives (`water-polish.ts`).
+ */
+const WATER_POLISH_KEYS = {
+  waterRough: "lostVariance",
+  waterSun: "sunSize",
+  waterFresnel: "fresnelDamp",
+  waterTiles: "antiTiling",
+  waterGusts: "gusts",
+  waterBody: "body",
+};
+/** The state's polish as the framework's switches. */
+const waterPolishFlags = () =>
+  Object.fromEntries(
+    Object.entries(WATER_POLISH_KEYS).map(([key, name]) => [name, state[key]]),
+  );
+/**
+ * The polish's constants the page applies to every rebuilt surface (a
+ * sweep changes them with `setWaterPolishParams`); empty: the framework's
+ * defaults.
+ */
+const waterPolishParams = {};
 
 /** The catalog entries a city building may wear (city-materials.js). */
 const CITY_POOL = cityMaterialPool(CATALOG);
@@ -239,8 +280,40 @@ const isMaterialCount = (n) =>
   Number.isInteger(n) && n >= 1 && n <= CITY_POOL.length;
 
 const WATER_IDS = ["C0", ...WATER_CANDIDATES.map((c) => c.id)];
-/** The wave set the pond's current material was built with. */
-let waterId = "C0";
+/**
+ * The wave set and polish the pond's current material was built with
+ * (`waterKey()`); the page's first material is the built-in waves, no polish.
+ */
+let waterBuiltKey = "C0|";
+const waterKey = () =>
+  `${state.water}|${Object.keys(WATER_POLISH_KEYS)
+    .filter((key) => state[key])
+    .join(",")}${waterNormalView ? "|normals" : ""}`;
+/**
+ * Test surface (`setWaterNormalView`): the pond draws its world normal as
+ * colour (x, y, z × 0.5 + 0.5, after every other patch, no tone mapping),
+ * so the water polish's smoke measures the waves themselves, not the sky
+ * they happen to mirror. Never on for the owner.
+ */
+let waterNormalView = false;
+const NORMAL_VIEW_ANCHOR = "#include <dithering_fragment>";
+
+/** Make `material` draw its world normal (the last write of the fragment). */
+function drawWorldNormal(material) {
+  const previous = material.onBeforeCompile.bind(material);
+  const previousKey = material.customProgramCacheKey.bind(material);
+  material.onBeforeCompile = (shader, renderer) => {
+    previous(shader, renderer);
+    if (!shader.fragmentShader.includes(NORMAL_VIEW_ANCHOR)) {
+      throw new Error(`normal view: no "${NORMAL_VIEW_ANCHOR}" to patch`);
+    }
+    shader.fragmentShader = shader.fragmentShader.replace(
+      NORMAL_VIEW_ANCHOR,
+      `${NORMAL_VIEW_ANCHOR}\ngl_FragColor = vec4(normalize((vec4(normal, 0.0) * viewMatrix).xyz) * 0.5 + 0.5, 1.0);`,
+    );
+  };
+  material.customProgramCacheKey = () => `${previousKey()}|normal-view`;
+}
 
 /**
  * The shadow parameters. R 220 m covers the whole stand-in city (7 × 42 m
@@ -332,6 +405,9 @@ function readHash() {
   if (WATER_IDS.includes(params.get("water"))) {
     state.water = params.get("water");
   }
+  for (const key of Object.keys(WATER_POLISH_KEYS)) {
+    if (params.has(key)) state[key] = params.get(key) === "1";
+  }
   const pitch = Number(params.get("pitch"));
   if (DENSE_PITCHES.includes(pitch)) state.pitch = pitch;
   // Links from before round 3 name `city` (the page always wrote it) but
@@ -373,6 +449,12 @@ function writeHash() {
     cloudShadows: state.cloudShadows ? "1" : "0",
     sunLightDim: state.sunLightDim ? "1" : "0",
     godRays: state.godRays ? "1" : "0",
+    ...Object.fromEntries(
+      Object.keys(WATER_POLISH_KEYS).map((key) => [
+        key,
+        state[key] ? "1" : "0",
+      ]),
+    ),
   });
   history.replaceState(null, "", `#${params}`);
 }
@@ -883,23 +965,28 @@ function applyCity() {
 }
 
 /**
- * The pond's wave set to the state: a new WaterSurface with the candidate's
- * slope (each gets its own program), hazed like the old one, keeping the
- * wave clock so the pond does not jump.
+ * The pond's wave set and polish to the state: a new WaterSurface with the
+ * candidate's slope and the polish's switches (each combination gets its
+ * own program), hazed like the old one, keeping the wave clock so the pond
+ * does not jump.
  */
 function applyWater() {
-  if (state.water === waterId) return;
+  const key = waterKey();
+  if (key === waterBuiltKey) return;
   const candidate = WATER_CANDIDATES.find((c) => c.id === state.water);
-  const next = new WaterSurface(
-    candidate ? { slopeGlsl: candidate.slopeGlsl } : {},
-  );
+  const next = new WaterSurface({
+    ...(candidate ? { slopeGlsl: candidate.slopeGlsl } : {}),
+    polish: waterPolishFlags(),
+  });
+  next.configurePolish(waterPolishParams);
   next.update(water.uniforms.uWaterTime.value);
   cloudShadow.apply(next.material);
   haze.apply(next.material);
+  if (waterNormalView) drawWorldNormal(next.material);
   parts.lake.material = next.material;
   water.dispose();
   water = next;
-  waterId = state.water;
+  waterBuiltKey = key;
 }
 
 function applyLook() {
@@ -1015,6 +1102,9 @@ function syncControls() {
   $("#cloud-shadows").checked = state.cloudShadows;
   $("#sun-light-dim").checked = state.sunLightDim;
   $("#god-rays").checked = state.godRays;
+  for (const key of Object.keys(WATER_POLISH_KEYS)) {
+    $(`[data-water-polish="${key}"]`).checked = state[key];
+  }
   // The switch works on either tier; on the phone tier it says it draws on
   // the desktop tier only and offers the switch (the owner looked for it).
   $("[data-ao-tier]").hidden = state.tier === "desktop";
@@ -1103,6 +1193,11 @@ function buildControls() {
   $("#water-set").addEventListener("change", (e) =>
     api.setWater(e.target.value),
   );
+  for (const [key, name] of Object.entries(WATER_POLISH_KEYS)) {
+    $(`[data-water-polish="${key}"]`).addEventListener("change", (e) =>
+      api.setWaterPolish({ [name]: e.target.checked }),
+    );
+  }
   $("#varied").addEventListener("change", (e) =>
     api.setVaried(e.target.checked),
   );
@@ -1533,6 +1628,61 @@ Object.assign(api, {
   waterCandidates() {
     return [...WATER_IDS];
   },
+  /**
+   * The water polish (DEC-FB3-9), one switch per trick, by the framework's
+   * names (`lostVariance`, `sunSize`, `fresnelDamp`, `antiTiling`, `gusts`,
+   * `body`); a switch not given keeps its value.
+   */
+  setWaterPolish(flags) {
+    const byName = Object.fromEntries(
+      Object.entries(WATER_POLISH_KEYS).map(([key, name]) => [name, key]),
+    );
+    for (const [name, on] of Object.entries(flags)) {
+      if (!(name in byName)) {
+        throw new Error(
+          `unknown water polish switch ${name}; one of ${Object.keys(byName)}`,
+        );
+      }
+      state[byName[name]] = Boolean(on);
+    }
+    applyLook();
+  },
+  /**
+   * The sweep's handle: the polish's constants (`WaterPolishParams`), kept
+   * for every rebuilt surface; no recompile. Returns the page's set.
+   */
+  setWaterPolishParams(values) {
+    water.configurePolish(values);
+    Object.assign(waterPolishParams, values);
+    return { ...waterPolishParams };
+  },
+  /** The sweep's handle: every polish constant back to the framework's default. */
+  resetWaterPolishParams() {
+    for (const key of Object.keys(waterPolishParams)) {
+      delete waterPolishParams[key];
+    }
+    water.configurePolish(WATER_POLISH_DEFAULT_PARAMS);
+  },
+  /**
+   * Test surface: the wave clock at `seconds` (tests compare two looks at
+   * the SAME waves; `advanceWater` only moves forward).
+   */
+  setWaterTime(seconds) {
+    if (!(Number.isFinite(seconds) && seconds >= 0)) {
+      throw new RangeError(`seconds must be finite and >= 0, got ${seconds}`);
+    }
+    water.uniforms.uWaterTime.value = seconds;
+  },
+  /**
+   * Test surface: the pond draws its world normal as colour (see
+   * `waterNormalView`), or its shading again.
+   */
+  setWaterNormalView(on) {
+    waterNormalView = Boolean(on);
+    applyWater();
+  },
+  /** Test surface: the pond's polish switches (framework names). */
+  waterPolish: () => ({ ...water.polish }),
   /**
    * The dense city's varied materials (DEC-FB3-3): on or off, and how many
    * catalog materials (1..the pool's size; the cost sweep uses 4, 8, 12).

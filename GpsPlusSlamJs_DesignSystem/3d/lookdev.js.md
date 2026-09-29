@@ -47,7 +47,21 @@ catalogReceives }`: whether every mesh of each part casts, the catalog
     waves or a candidate id from `water-candidates.js`, `"P50"` the default
     since the owner rated it best; a new WaterSurface
     per set, hazed, keeping the wave clock) and `waterCandidates()` (the ids,
-    today's first); `setFloatingVisible(bool)` (the floating pond, basin and
+    today's first); the water polish (round-3 plan 2026-09-27-0532, stream
+    W, DEC-FB3-9; framework
+    [water-polish.ts](../../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/water-polish.ts.md)),
+    ONE SWITCH AND HASH KEY PER TRICK on top of the wave set:
+    `setWaterPolish({ lostVariance?, sunSize?, fresnelDamp?, antiTiling?,
+gusts?, body? })` (keys `waterRough`, `waterSun`, `waterFresnel`,
+    `waterTiles`, `waterGusts`, `waterBody`; a switch not given keeps its
+    value; each combination is a new WaterSurface like a wave set),
+    `waterPolish()` (the pond's switches), `setWaterPolishParams(values)` /
+    `resetWaterPolishParams()` (the sweep's handles: the framework's
+    `WaterPolishParams`, kept for every rebuilt surface, no recompile),
+    `setWaterTime(s)` (the wave clock, so two looks compare the same waves)
+    and `setWaterNormalView(bool)` (test surface: the pond draws its world
+    normal as colour, after every other patch, so the smoke measures the
+    waves rather than the sky they mirror); `setFloatingVisible(bool)` (the floating pond, basin and
     the catalog, when built, on or off: from the city view they stand against
     the sky, so the sky-pixel tests hide them), `floating()` (where the
     pond and the catalog's spheres float, W1 M4; `catalogMinY` Infinity
@@ -182,11 +196,11 @@ denoise, resolutionScale })` is the sweep's handle; `setAoExclusions(bool)`
     preset: both exposures and both exposure-free horizon colours. The
     fallback's only GPU oracle.
 - Invariants & assumptions:
-  - State lives in the URL hash (`#preset=…&tone=…&tier=…&cloudMode=…&shadows=0|1&city=…&pitch=42|31|20&water=C0|C1|P50|P30|D30&catalog=0|1&varied=0|1&materials=1…&finish=mixed|shiny|matte&ao=0|1&sunDisc=0|1&sunAureole=0|1&sunSilver=0|1&cloudShadows=0|1&sunLightDim=0|1&godRays=0|1`; defaults since the owner's round 2, plan
+  - State lives in the URL hash (`#preset=…&tone=…&tier=…&cloudMode=…&shadows=0|1&city=…&pitch=42|31|20&water=C0|C1|P50|P30|D30&catalog=0|1&varied=0|1&materials=1…&finish=mixed|shiny|matte&ao=0|1&sunDisc=0|1&sunAureole=0|1&sunSilver=0|1&cloudShadows=0|1&sunLightDim=0|1&waterRough=0|1&waterSun=0|1&waterFresnel=0|1&waterTiles=0|1&waterGusts=0|1&waterBody=0|1&godRays=0|1`; defaults since the owner's round 2, plan
     2026-09-26-2055 M2: the densest city, `city=100000&pitch=20`, about
     42,000 buildings, and `water=P50`; since round 3, plan 2026-09-27-0532
     DEC-FB3-5: `shadows=1`, `catalog=1` and `cloudMode=slab`; DEC-FB3-3:
-    `varied=1&materials=12&finish=mixed`; stream D: `sunDisc=1&sunAureole=1&sunSilver=1&cloudShadows=1&sunLightDim=0`; stream G: `godRays=0`), so a
+    `varied=1&materials=12&finish=mixed`; stream D: `sunDisc=1&sunAureole=1&sunSilver=1&cloudShadows=1&sunLightDim=0`; stream W: `waterRough=1&waterSun=1&waterFresnel=0&waterTiles=0&waterGusts=1&waterBody=0`; stream G: `godRays=0`), so a
     screenshot or phone link reproduces a view; a hash change on an open
     page re-applies it (the page's own writes use `replaceState`, which
     fires no `hashchange`). A key the hash does NOT name keeps its CURRENT
@@ -276,6 +290,9 @@ denoise, resolutionScale })` is the sweep's handle; `setAoExclusions(bool)`
   preset glide, and its on-demand cost and stepping sweep), `lookdev-tidy.smoke.spec.mjs` (the
   round-3 labels, ramp row, varied city and its logged cost) and
   `ambient-occlusion.smoke.spec.mjs` (the AO switch and its checks),
+  `water-polish.smoke.spec.mjs` (the water polish: each trick against
+  P50 at the same pixels, all off byte-identical, on-demand cost and
+  sweeps; metrics in `water-metrics.mjs`),
   `sun-clouds.smoke.spec.mjs` (the sun through clouds, the cloud
   shadows and the sun light dimming against the no-effect baseline, one
   switch per effect, their costs, and the horizon shimmer per cloud mode,

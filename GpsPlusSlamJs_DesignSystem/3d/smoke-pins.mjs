@@ -28,6 +28,9 @@ export const SMOKE_PINS = {
   // Off by default today; pinned so the owner flipping it on changes no
   // smoke (stream G).
   godRays: "0",
+  waterRough: "0",
+  waterSun: "0",
+  waterGusts: "0",
 };
 
 /**
