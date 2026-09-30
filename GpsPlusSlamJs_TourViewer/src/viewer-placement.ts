@@ -265,10 +265,14 @@ export function createViewerPlacement(deps: {
           if (!live()) return;
           ctx.levelByText.set(text, level);
         },
-        onLocked: (level) => {
-          // The gate passes on the LOCK against a lockable level, not on a
-          // vote (M5; plan review #1).
-          if (isLockableLevel(level)) passGate("code");
+        onLocked: (level, hasVoted) => {
+          // The gate passes on the LOCK of a lockable level (M5; plan review
+          // #1) whose code has cast votes: a lock before the store takes
+          // votes, or while the pose converges, corrected nothing, and
+          // passing on it placed the content through GPS alone while the
+          // line said the code had worked (authoring plan 2026-09-28-0953
+          // §2.2 B3). The escape button still passes a gate no vote reaches.
+          if (hasVoted && isLockableLevel(level)) passGate("code");
         },
         onError: (message) => {
           errorBox.textContent = `QR tracking failed: ${message}`;

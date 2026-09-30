@@ -252,8 +252,36 @@ describe("buildViewerControllerConfig - the lock adapter (M5)", () => {
     const onLocked = vi.fn();
     const config = buildViewerControllerConfig(fakeDeps({ onLocked }));
     config.onLocked?.({} as never, LEVEL);
-    expect(onLocked).toHaveBeenCalledWith(LEVEL);
+    expect(onLocked).toHaveBeenCalledWith(LEVEL, false);
     expect(buildViewerControllerConfig(fakeDeps()).onLocked).toBeUndefined();
+  });
+
+  // Why this matters (authoring plan 2026-09-28-0953 §2.2 B3, M2b): the
+  // gate used to pass on ANY lock, including one that cast no vote - the
+  // store not yet able to take votes, or the pose still converging - so the
+  // content was placed through an alignment no code had corrected. The
+  // adapter now says whether the locked code has voted in this AR entry.
+  it("tells the app whether the locked code has cast votes in this entry", () => {
+    const onLocked = vi.fn();
+    let accepting = false;
+    const config = buildViewerControllerConfig(
+      fakeDeps({ onLocked, canAcceptVotes: () => accepting }),
+    );
+    const frame = (i: number): void => {
+      config.onDetection?.({ text: TEXT, timestamp: i } as QrDetectionEvent);
+      config.dispatchVotes([{ v: i }] as never[]);
+      config.onLocked?.({} as never, LEVEL);
+    };
+    frame(1); // the store drops votes: none cast
+    expect(onLocked).toHaveBeenLastCalledWith(LEVEL, false);
+    accepting = true;
+    frame(2);
+    expect(onLocked).toHaveBeenLastCalledWith(LEVEL, true);
+    // A lock without a vote of its own (the budget spent, the pose not
+    // re-evaluated) still belongs to a code that has voted.
+    config.onDetection?.({ text: TEXT, timestamp: 3 } as QrDetectionEvent);
+    config.onLocked?.({} as never, LEVEL);
+    expect(onLocked).toHaveBeenLastCalledWith(LEVEL, true);
   });
 });
 

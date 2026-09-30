@@ -32,9 +32,15 @@ clock, the escape button).
 
 ## Invariants & assumptions
 
-- A lock is the controller's `onLocked` with a lockable level, not a vote
-  (a vote additionally needs the GPS zero and the budget; keying on it left
-  a visibly locked code unable to pass, plan review #1).
+- The driver passes the gate on the controller's `onLocked` with a
+  lockable level whose code has CAST VOTES in this AR entry (`hasVoted`,
+  since the authoring plan 2026-09-28-0953 M2b). The M5 rule (any lock;
+  plan review #1: keying on a vote left a visibly locked code unable to
+  pass) placed the content through an alignment no code had corrected
+  whenever the lock came before the first GPS fix or while the pose
+  converged, and said the code had worked (§2.2 B3). A lock that cannot
+  vote now keeps the gate scanning: the fused pose's hint says what it
+  waits for, and the 45 s escape still offers GPS-only placement.
 - The escape has its own clock in the driver, independent of camera frames
   (plan review #11).
 

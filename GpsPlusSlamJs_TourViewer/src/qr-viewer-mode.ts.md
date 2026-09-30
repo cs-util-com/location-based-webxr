@@ -11,10 +11,12 @@ carrying the two review-ordered guardrails and the deferred negative cache.
 - `VIEWER_SYNTHETIC_ACCURACY_M = 5`, `VIEWER_VOTE_BASELINE_M = 2` (delta
   #6 cap — only M5's measurements may raise it), `VIEWER_VOTE_COUNT = 4`,
   `MAX_VOTED_LOCKS_PER_CODE = 10` (review #6 budget; M5 tunes).
-- `buildViewerControllerConfig(deps: ViewerPipelineDeps)` — `onLocked(level)`
-  is forwarded from the controller's lock as is (no detected-text guard,
-  M5 review #4); the framework reports the lock AFTER the frame's votes,
-  so `onVotedLock` may precede it. Deps: the QR
+- `buildViewerControllerConfig(deps: ViewerPipelineDeps)` — `onLocked(level,
+hasVoted)` is forwarded from every controller lock (no detected-text
+  guard, M5 review #4), with whether the locked code has cast votes in
+  this AR entry (the scan gate passes only then; authoring plan
+  2026-09-28-0953 §2.2 B3); the framework reports the lock AFTER the
+  frame's votes, so `onVotedLock` may precede it. Deps: the QR
   device trio (`frontEnd`, `solvePose`, `getIntrinsics` - no pose reader since
   QR perf plan 2026-09-23 M4; each frame carries its capture pose) plus `getLevels` (live, from the open tour),
   `dispatchVote` (one payload → `recordGpsEvent`), `canAcceptVotes` (the

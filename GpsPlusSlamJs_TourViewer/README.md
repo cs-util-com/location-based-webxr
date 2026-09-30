@@ -57,7 +57,8 @@ clear-cache control.
 
 The tour's archive streams in while the consent screen shows (a visitor
 gets no thumbnails; the tour appears in AR). Inside AR the status line
-asks for the printed code; once it locks, the tour's
+asks for the printed code; once it locks and its votes have corrected
+the placement, the tour's
 `tour.json` content appears (pins as labels, photos as planes at their
 capture spots), and a tour that carries a recording also places its
 photos at the spots they were taken. A tour whose zip carries no measured

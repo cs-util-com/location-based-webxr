@@ -99,8 +99,10 @@ export interface ViewerPipelineDeps {
   /** The controller locked a code against its level. The framework
    *  dispatches the frame's votes first and reports the lock after them
    *  (`qr-tracking-controller.ts`), so `onVotedLock` may precede this on
-   *  the first lock. The scan gate keys on this (M5, plan review #1). */
-  onLocked?(level: QrLevel): void;
+   *  the first lock. `hasVoted`: whether this code has cast votes in this
+   *  AR entry (this frame or an earlier one) - the scan gate passes only on
+   *  such a lock (M5; authoring plan 2026-09-28-0953 §2.2 B3). */
+  onLocked?(level: QrLevel, hasVoted: boolean): void;
   /** The level this decoded text resolved to (`null` when the tour has
    *  none). Resolving the id is ASYNC, so the app caches the answer here
    *  and the synchronous callbacks — the debug view, the image planes —
@@ -180,7 +182,13 @@ export function buildViewerControllerConfig(
     ...(deps.onLocked !== undefined
       ? {
           onLocked: (_solution: unknown, level: QrLevel) => {
-            deps.onLocked?.(level);
+            // The same frame's onDetection set the text, synchronously
+            // before this (the controller's ordering contract).
+            const text = lastDetectedText;
+            deps.onLocked?.(
+              level,
+              text !== null && voteBudget.spentFor(text) > 0,
+            );
           },
         }
       : {}),

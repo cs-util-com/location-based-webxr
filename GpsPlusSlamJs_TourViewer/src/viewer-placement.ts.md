@@ -26,7 +26,9 @@ recording. Its own module since the flows plan M6.
     cancelled - a gate waived for one tour never carries into the next.
     `reconsiderScanGate(levels | "unavailable")` (the levels arrived, or
     could not be read) waives a scanning gate that cannot lock. The
-    controller's `onLocked` with a lockable level passes the gate; the
+    controller's `onLocked` with a lockable level whose code has cast
+    votes in this entry (`hasVoted`; authoring plan M2b, §2.2 B3) passes
+    the gate - a lock that cast none corrected nothing; the
     escape button passes it as "skipped"; both place first and render the
     line after. Nothing is placed until the gate allows it (DEC-N3): the
     capture-spot join, the tour's content, AND the ring placed on a voted
