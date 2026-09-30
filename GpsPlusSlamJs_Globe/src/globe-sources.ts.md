@@ -6,7 +6,8 @@
 - Public API:
   - `GLOBE_SOURCES` - `{ id, kind: "tiles" | "equirect" | "alpha", path,
 levels?, projection?, colorSpace, credit: { short, full, href } }`: the
-    Blue Marble pyramid (WebP; levels 0-4, level 4 is DEC-FB2-4), Black
+    Blue Marble pyramid (WebP; levels 0-5, level 4 is DEC-FB2-4, level 5
+    DEC-GL4-3), Black
     Marble 2016, the MODIS water mask, the Blue Marble clouds. The water
     mask is `kind: "alpha"` (round-4 plan 2026-09-28-2105 DEC-GL4-6): it
     rides in the imagery tiles' alpha, cut to the same tiles, so its

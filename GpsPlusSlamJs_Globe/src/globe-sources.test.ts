@@ -181,8 +181,8 @@ function filesUnder(dir: string): { path: string; bytes: number }[] {
 const ASSETS_BUDGET_BYTES = 10_000_000;
 
 describe("the committed assets' total size", () => {
-  it("includes the level-4 pyramid (DEC-FB2-4) and stays within 10 MB (DEC-GL4-9)", () => {
-    expect(globeSource("blue-marble").levels).toBe(5);
+  it("includes the level-5 pyramid (DEC-GL4-3) and stays within 10 MB (DEC-GL4-9)", () => {
+    expect(globeSource("blue-marble").levels).toBe(6);
     const files = filesUnder(ASSETS);
     const total = files.reduce((sum, f) => sum + f.bytes, 0);
     expect(total).toBeGreaterThan(0);

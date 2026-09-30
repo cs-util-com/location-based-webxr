@@ -816,10 +816,11 @@ function globeBytesDownloaded() {
  * The imagery tiles requested so far per pyramid level (distinct URLs in the
  * resource timing log), index = level: which levels a view actually uses.
  * Level 4 (round-2 plan 2026-09-26-2055 DEC-FB2-4) refines only once a
- * texel of level 3 spans more than the error target.
+ * texel of level 3 spans more than the error target; level 5 (round-4 plan
+ * 2026-09-28-2105 DEC-GL4-3) once a level-4 texel does.
  */
 function tileRequestsByLevel() {
-  const levels = [0, 0, 0, 0, 0];
+  const levels = [0, 0, 0, 0, 0, 0];
   const seen = new Set();
   for (const e of performance.getEntriesByType("resource")) {
     const m = /\/blue-marble-4326\/(\d+)\//.exec(e.name);
@@ -833,7 +834,7 @@ function tileRequestsByLevel() {
 
 function start() {
   // The default log keeps 250 entries: fewer than the committed pyramid
-  // (682 tiles with level 4).
+  // (2,730 tiles with level 5).
   performance.setResourceTimingBufferSize(4000);
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   // Phase 1's exposure (§7.3): Neutral tone mapping (the look-dev

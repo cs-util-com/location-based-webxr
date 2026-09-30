@@ -47,7 +47,9 @@ export const GLOBE_SOURCES: readonly GlobeSource[] = [
     id: "blue-marble",
     kind: "tiles",
     path: "/globe-assets/blue-marble-4326/{z}/{x}/{y}.webp",
-    levels: 5,
+    // Levels 0-5 (level 5: round-4 plan 2026-09-28-2105 DEC-GL4-3, about
+    // 2.4 km a pixel at the equator).
+    levels: 6,
     projection: "EPSG:4326",
     colorSpace: "srgb",
     credit: {

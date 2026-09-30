@@ -1,14 +1,14 @@
 # Globe imagery provenance
 
 Written by `scripts/fetch-globe-assets.mjs` (globe plan 2026-09-26-0539
-§7.4). Fetched: 2026-09-29. All sources are NASA, public domain; the
+§7.4). Fetched: 2026-09-29; files added: 2026-09-30. All sources are NASA, public domain; the
 globe's credits line names each. Every file is WebP at quality
 75, encoded once from a lossless source (round-4 plan
 2026-09-28-2105 DEC-GL4-10).
 
 - `blue-marble-4326/{z}/{x}/{y}.webp`: NASA Earth Observatory, Blue Marble:
   Next Generation, via NASA GIBS (WMS `BlueMarble_NextGeneration` as PNG,
-  EPSG:4326, levels 0-4, 682 tiles of 256x256, 2550 KiB).
+  EPSG:4326, levels 0-5, 2730 tiles of 256x256, 8234 KiB).
   GIBS layer time: not reported. Each tile's
   ALPHA is the MODIS Water Mask (MOD44W), via NASA GIBS (WMS
   `MODIS_Water_Mask`, cut to the same tile) where the imagery is also

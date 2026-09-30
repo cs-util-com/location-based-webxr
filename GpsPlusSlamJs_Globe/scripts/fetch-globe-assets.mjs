@@ -1,6 +1,7 @@
 // Fetches the globe's imagery into assets/ (globe plan 2026-09-26-0539
 // §7.4; owner decision DEC-PRG-12: about 2 MB of NASA imagery committed;
-// round-2 plan 2026-09-26-2055 DEC-FB2-4 added level 4).
+// round-2 plan 2026-09-26-2055 DEC-FB2-4 added level 4; round-4 plan
+// 2026-09-28-2105 DEC-GL4-3 level 5).
 // Run by hand, never in CI: `node scripts/fetch-globe-assets.mjs [--force]`.
 //
 // Round 4 (plan 2026-09-28-2105 DEC-GL4-3/6/9/10): everything is WebP,
@@ -38,7 +39,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const ASSETS = join(here, "..", "assets");
 const CACHE = join(here, "..", ".fetch-cache");
 const FORCE = process.argv.includes("--force");
-const MAX_LEVEL = 4;
+const MAX_LEVEL = 5;
 const CONCURRENCY = 4;
 const RETRIES = 3;
 const TILE = 256;
