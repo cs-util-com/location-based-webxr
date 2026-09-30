@@ -113,9 +113,14 @@ const plan = planVisitSettle({
   photo's rotation, the re-minted code's quality block (the settle
   alignment's; a refused re-mint changes neither geo nor block), other visits and restored objects untouched, nothing to
   do, refusals without alignment or zero; the cross-visit correction to the
-  measuring visit's alignment, the plain alignment without a sighting or
+  measuring visit's alignment, the same with the second session's odometry
+  origin turned 70 degrees and moved 8 m (so only the sighting, never the
+  measurement's pose, gives the right answer; M2c review #3), the plain
+  alignment without a sighting or
   with a different code's, a restored level counting as stored earlier, and
   an unreadable stored level.
 - `authoring-settle.test.ts` - the same through the real creator setup
-  (mint, place, end the visit), the recording's action, the draft rewrite.
+  (mint, place, end the visit), the recording's action, the draft rewrite,
+  and the cross-visit case with the second session's detections in a moved
+  odometry origin.
 - `creator-finish.test.ts` - the settle at Finish, once.

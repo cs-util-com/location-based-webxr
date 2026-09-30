@@ -104,9 +104,27 @@ function yawAlignment(deg: number, t: [number, number, number]): number[] {
 const TRUE_CODE: Pose = { position: [0, 0, 0], rotation: yawQ(6) };
 const TEXT = "https://gps.csutil.com/tour/?qr=anchoring";
 
+/** A raw WebXR pose moved by a rigid `origin` change (the identity when
+ *  none): what the same physical pose reads in another session's odometry. */
+function inOrigin(pose: Pose, origin?: Matrix4): Pose {
+  if (origin === undefined) return pose;
+  const m = new Matrix4()
+    .compose(
+      new Vector3(...pose.position),
+      new Quaternion(...pose.rotation),
+      new Vector3(1, 1, 1),
+    )
+    .premultiply(origin);
+  const p = new Vector3();
+  const q = new Quaternion();
+  m.decompose(p, q, new Vector3());
+  return { position: [p.x, p.y, p.z], rotation: [q.x, q.y, q.z, q.w] };
+}
+
 /** The i-th detection of the code, from a camera stepping sideways
- *  (the fused-pose wiring test's walk: stable after about seven). */
-function detection(i: number): QrDetectionEvent {
+ *  (the fused-pose wiring test's walk: stable after about seven), in the
+ *  odometry of a session whose origin is `origin` away from the first. */
+function detection(i: number, origin?: Matrix4): QrDetectionEvent {
   const dx = -0.3 + 0.1 * i;
   const corners = buildObjectPoints(SIZE_M).map((p) => {
     const w = rotateVectorByQuaternion(TRUE_CODE.rotation, p);
@@ -120,11 +138,14 @@ function detection(i: number): QrDetectionEvent {
     text: TEXT,
     timestamp: i * 125,
     corners,
-    cameraPose: { position: [dx, 0, 1.2], rotation: [0, 0, 0, 1] },
+    cameraPose: inOrigin(
+      { position: [dx, 0, 1.2], rotation: [0, 0, 0, 1] },
+      origin,
+    ),
     intrinsics: K,
     imageWidth: 1024,
     imageHeight: 768,
-    qrPoseWorld: raw,
+    qrPoseWorld: inOrigin(raw, origin),
     qrPoseInCamera: raw,
     reprojectionErrorPx: 0.5,
   };
@@ -326,9 +347,9 @@ function authoring(options: { store?: DraftFileStore } = {}) {
   expect(setup.startAuthorPipeline()).toBe(true);
 
   /** Walk the code until its fused pose is stable. */
-  function seeTheCode(): void {
+  function seeTheCode(origin?: Matrix4): void {
     for (let i = 0; i < 8; i += 1) {
-      captured.configs.at(-1)?.onDetection?.(detection(i));
+      captured.configs.at(-1)?.onDetection?.(detection(i, origin));
     }
   }
 
@@ -654,6 +675,44 @@ describe(
       replayed.forEach((v, i) => {
         expect(v).toBeCloseTo(last.usedAlignment[i]!, 9);
       });
+    });
+
+    it("keeps the note's place relative to the code when the second session's odometry origin moved", async () => {
+      // Why this test matters (M2c review #3): every other cross-visit test
+      // saw the code at the same odometry pose in both visits, so a settle
+      // through the MEASURING visit's pose instead of this visit's sighting
+      // passed. Each WebXR session has its own origin; here the second one
+      // is turned 70 degrees and moved 8 m, and the reticle spot is where
+      // the SAME physical point reads in it.
+      const a = await firstVisit();
+      const codeLocal = mintedOdom(a.dispatched);
+      const origin = new Matrix4().compose(
+        new Vector3(4, -0.3, -7),
+        new Quaternion(...yawQ(70)),
+        new Vector3(1, 1, 1),
+      );
+      a.beginVisit();
+      a.setAlignment(SECOND);
+      a.seeTheCode(origin);
+      await flush();
+      // The physical spot at odometry-NUE [3, 0, 1] of the first session.
+      const spotRaw: Pose = {
+        position: [1, 0, -3],
+        rotation: [0, 0, 0, 1],
+      };
+      expect(odomNueFromWebXr(spotRaw).position).toEqual([3, 0, 1]);
+      const spot2 = odomNueFromWebXr(inOrigin(spotRaw, origin)).position;
+      await a.placePin("Later", [...spot2]);
+      a.endVisit();
+
+      expect(a.settledLogs().at(-1)?.payload.basis).toBe("code-corrected");
+      const later = a.ctx.placedObjects[1]!.object;
+      const offset = worldOf(later.geo).sub(
+        codeWorldOf(a.ctx.mintedLevel!.json),
+      );
+      expect(
+        offset.distanceTo(new Vector3(3, 0, 1).sub(codeLocal)),
+      ).toBeLessThan(1e-2);
     });
 
     it("without a sighting of the code, keeps the plain visit alignment (and its GPS difference)", async () => {

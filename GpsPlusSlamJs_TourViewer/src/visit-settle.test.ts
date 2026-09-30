@@ -376,6 +376,56 @@ describe("a later visit, corrected through the code (D10b)", () => {
     expect(plan?.level).toBeNull();
   });
 
+  it("corrects through THIS visit's sighting when the odometry origin moved between visits", () => {
+    // Why this test matters (M2c review #3): every other D10b test put the
+    // code at the same odometry pose in both visits, so settling through
+    // the measuring visit's `measurement.odomPose` instead of this visit's
+    // `sighting.odomPose` passed them all. WebXR gives every session its own
+    // origin: here visit 1's odometry is visit 0's turned 70 degrees and
+    // moved 8 m, so only the sighting says where the code is now.
+    const move = new Matrix4().compose(
+      new Vector3(4, -0.3, -7),
+      new Quaternion(...yawQ(70)),
+      new Vector3(1, 1, 1),
+    );
+    const inVisit1 = (pose: Pose): Pose => {
+      const m = new Matrix4()
+        .compose(
+          new Vector3(...pose.position),
+          new Quaternion(...pose.rotation),
+          new Vector3(1, 1, 1),
+        )
+        .premultiply(move);
+      const p = new Vector3();
+      const q = new Quaternion();
+      m.decompose(p, q, new Vector3());
+      return { position: [p.x, p.y, p.z], rotation: [q.x, q.y, q.z, q.w] };
+    };
+    // A spot 3 m in front of the code, as raw odometry of visit 0.
+    const spot: Pose = { position: [0.3, 0, -5], rotation: [0, 0, 0, 1] };
+    const local1 = odomNueFromWebXr(inVisit1(spot)).position;
+    const plan = planVisitSettle({
+      visit: 1,
+      placed: [placedPin("later", [...local1], 1, a2)],
+      alignment: a2,
+      zero: ZERO,
+      mintedLevel: stored,
+      measurement: measuredInVisit(0),
+      sighting: { ...sighting, odomPose: inVisit1(CODE) },
+      alignmentInfo: INFO,
+      nowIso: NOW,
+    });
+    expect(plan?.basis).toBe("code-corrected");
+    // Where the measuring visit's alignment puts that spot: the note keeps
+    // its place relative to the stored code across the origin change.
+    const expected = new Vector3(
+      ...throughAlignment(odomNueFromWebXr(spot), a1)!.position,
+    );
+    expect(worldOf(plan!.objects[0]!.object).distanceTo(expected)).toBeLessThan(
+      1e-3,
+    );
+  });
+
   it("uses the plain visit alignment when the code was not seen in this visit", () => {
     const choice = settleAlignment({
       visit: 1,

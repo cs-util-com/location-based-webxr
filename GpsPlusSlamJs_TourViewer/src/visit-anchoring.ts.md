@@ -81,5 +81,9 @@ const noteWorld = corrected && throughAlignment(noteLocal, corrected);
   with `qrWorldPoseFromOdom`, the correction's identity / exact mapping /
   kept Up, and the cross-visit recovery of the measuring visit's alignment.
 - `visit-anchoring.property.test.ts` - identity, exact mapping, distance and
-  height preservation, independence from the visit's alignment, and the
-  conversion's agreement with the mint composition for any pose.
+  height preservation, independence from the visit's alignment, the
+  recovery of the measuring visit's placement of any point when the second
+  session's odometry is the first's moved by any yaw and translation (M2c
+  review #3: the only property that tells THIS visit's sighting from the
+  measuring visit's pose), and the conversion's agreement with the mint
+  composition for any pose.

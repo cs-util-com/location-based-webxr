@@ -147,6 +147,50 @@ describe("correctedAlignment properties", () => {
     );
   });
 
+  it("recovers the measuring visit's placement of ANY point when the odometry origin moved between visits", () => {
+    // Why this property matters (M2c review #3): each WebXR session has its
+    // own origin, so the code sits at a different odometry pose in every
+    // visit. With visit 2's odometry = M x visit 1's (a gravity-keeping
+    // yaw and translation), a point placed in visit 2 and settled through
+    // the correction built from visit 2's sighting lands exactly where the
+    // measuring visit's alignment puts the same physical point. A settle
+    // that used the measuring visit's code pose instead fails this for
+    // every non-identity M.
+    fc.assert(
+      fc.property(
+        yawAlignment,
+        yawAlignment,
+        yawAlignment,
+        codePose,
+        vec3,
+        (a1, a2, move, code1, point1) => {
+          const m = new Matrix4().fromArray(move);
+          const moved = (pose: NuePose): NuePose => {
+            const out = new Matrix4()
+              .compose(
+                new Vector3(...pose.position),
+                new Quaternion(...pose.rotation),
+                new Vector3(1, 1, 1),
+              )
+              .premultiply(m);
+            const p = new Vector3();
+            const q = new Quaternion();
+            out.decompose(p, q, new Vector3());
+            return {
+              position: [p.x, p.y, p.z],
+              rotation: [q.x, q.y, q.z, q.w],
+            };
+          };
+          const stored = throughAlignment(code1, a1)!;
+          const corrected = correctedAlignment(a2, moved(code1), stored)!;
+          const point2 = apply(move, point1);
+          const settled = apply(corrected, point2.toArray());
+          expect(settled.distanceTo(apply(a1, point1))).toBeLessThan(1e-6);
+        },
+      ),
+    );
+  });
+
   it("puts this visit's code on its stored position, through any alignment", () => {
     fc.assert(
       fc.property(yawAlignment, codePose, codePose, (a, codeLocal, stored) => {
