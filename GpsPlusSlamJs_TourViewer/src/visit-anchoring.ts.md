@@ -56,6 +56,15 @@ Pure: three.js math only, no store, no DOM. `visit-settle.ts` and
   is equivariant under rotations about Up. So an earlier visit's object
   placed through it under `arWorldGroup` stays rigid while GPS re-solves
   (property test "does not depend on the visit's GPS alignment").
+  - **That rests on the core, not on this module**: the solver is yaw-only
+    because of `ignoreYAxisForRotation: true` in the core's alignment
+    config, which is not exported and cannot be overridden per session.
+    `visit-anchoring.test.ts` pins its EFFECT through the real store (a walk
+    whose GPS altitude climbs 1 m per 5 m on flat odometry must still solve
+    to an alignment that keeps Up, and the correction through it must equal
+    the one through any other yaw-only alignment; M2c review #8). A core
+    that tilted would fail that test rather than let earlier visits' notes
+    follow GPS re-solves unnoticed.
 - No threshold is introduced here. There is deliberately no agreement guard
   between the two measurements (the rejected code-offset design had one;
   plan §7 finding 9); a wrong sighting moves the visit's notes with it, the
@@ -79,7 +88,8 @@ const noteWorld = corrected && throughAlignment(noteLocal, corrected);
   a 90-degree turn faces West), agreement with the real scene graph
   (group, basis node, raw pose) with the group yawed 90 degrees, agreement
   with `qrWorldPoseFromOdom`, the correction's identity / exact mapping /
-  kept Up, and the cross-visit recovery of the measuring visit's alignment.
+  kept Up, the cross-visit recovery of the measuring visit's alignment, and
+  the guard on the real solver staying yaw-only.
 - `visit-anchoring.property.test.ts` - identity, exact mapping, distance and
   height preservation, independence from the visit's alignment, the
   recovery of the measuring visit's placement of any point when the second

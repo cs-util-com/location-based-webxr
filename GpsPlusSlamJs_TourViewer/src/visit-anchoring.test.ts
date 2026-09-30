@@ -15,6 +15,14 @@ import { Group, Matrix4, Object3D, Quaternion, Vector3 } from "three";
 import { WEBXR_TO_NUE } from "gps-plus-slam-app-framework/ar/webxr-nue-basis";
 import { qrWorldPoseFromOdom } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 import type { Pose } from "gps-plus-slam-app-framework/ar/qr/qr-pose";
+import { calcGpsCoords, webxrToNUE } from "gps-plus-slam-app-framework/core";
+import {
+  createSlamAppStore,
+  recordGpsEvent,
+  selectAlignmentMatrix,
+  setZeroPos,
+} from "gps-plus-slam-app-framework/state";
+import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 
 import {
   codeCorrection,
@@ -250,5 +258,65 @@ describe("correctedAlignment: a later visit, corrected through the code (D10b)",
   it("refuses an alignment it cannot read", () => {
     const code: NuePose = { position: [0, 0, 0], rotation: [0, 0, 0, 1] };
     expect(correctedAlignment([1, 2, 3], code, code)).toBeNull();
+  });
+});
+
+describe("the correction's independence from the visit's alignment rests on the solver", () => {
+  it("the real solver turns only about Up, even where GPS altitude and odometry height disagree (ignoreYAxisForRotation: true)", () => {
+    // Why this test matters (M2c review #8): the corrected alignment does
+    // not depend on the visit's GPS alignment ONLY because that alignment
+    // is yaw-only - which is the core's `ignoreYAxisForRotation: true`
+    // (`alignment-config.ts`), not a property of this module. That flag is
+    // not exported, so this pins its effect: a walk on flat odometry whose
+    // GPS altitude climbs 1 m every 5 m (a full 3-D fit would pitch the
+    // alignment about 11 degrees). If the core ever tilts, the first
+    // assertion fails here instead of every earlier visit's note quietly
+    // following GPS re-solves.
+    const zero = { lat: 47.5, lon: 8.7 };
+    const store = createSlamAppStore({
+      storageBackend: new NullStorageBackend(),
+    });
+    store.dispatch(setZeroPos(zero));
+    const walk: [number, number, number][] = [];
+    for (let s = 0; s <= 25; s += 1) walk.push([0, 1.5, -s]);
+    for (let s = 1; s <= 15; s += 1) walk.push([s, 1.5, -25]);
+    walk.forEach((odom, i) => {
+      const nue = webxrToNUE(odom);
+      const geo = calcGpsCoords(zero, [nue[0] + 3, 0, nue[2] - 2]);
+      store.dispatch(
+        recordGpsEvent({
+          odomPosition: odom,
+          odomRotation: [0, 0, 0, 1],
+          rawGpsPoint: {
+            id: `gps-${String(i)}`,
+            latitude: geo.lat,
+            longitude: geo.lon,
+            altitude: 400 + 0.2 * nue[0],
+            latLongAccuracy: 3,
+            timestamp: 1_790_000_000_000 + i * 1000,
+          },
+        }),
+      );
+    });
+    const solved = [
+      ...(selectAlignmentMatrix(store.getState()) as unknown as number[]),
+    ];
+    expect(solved).toHaveLength(16);
+    const up = new Vector3(0, 1, 0).transformDirection(
+      new Matrix4().fromArray(solved),
+    );
+    expect(maxDiff(up.toArray(), [0, 1, 0])).toBeLessThan(1e-9);
+
+    // And so the correction built through the real alignment equals the one
+    // built through any other yaw-only alignment.
+    const code: NuePose = { position: [22, 1.5, 6], rotation: yawQ(40) };
+    const stored: NuePose = { position: [25, 401, 4], rotation: yawQ(75) };
+    const viaSolved = correctedAlignment(solved, code, stored)!;
+    const viaOther = correctedAlignment(
+      yawAlignment(-50, [9, 390, 30]),
+      code,
+      stored,
+    )!;
+    expect(maxDiff(viaSolved, viaOther)).toBeLessThan(1e-9);
   });
 });
