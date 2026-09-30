@@ -44,7 +44,13 @@ lives here.
     tour's `tourManifest` (archive-open.ts); the placement layer (M4):
     `placedObjects` (each with an optional `placement`: the odometry-NUE
     pose in the world group and the AR visit it belongs to, authoring plan
-    2026-09-28-0953 M2c), `placedPreviews`, `placementNote`, `reticle`,
+    2026-09-28-0953 M2c; an edit or a move of a hosted object is an entry
+    with the SAME id, M4), `deletedObjectIds` (tombstones of objects the
+    manifest carries, applied by the Finish and reset when the tour
+    closes, M4), `placedPreviews` (a `Map` by object id - this device's
+    objects AND the hosted zip's in the running visit, so an edit, a move
+    or a delete finds its preview and a tap in AR names what it hit, M4),
+    `placementNote`, `reticle`,
     `latestFrame` (a `CapturedCameraFrame | null`: the pixels the photo
     encodes plus the capture pose the photo is placed with);
   - the scan gate and the placed content (viewer-placement.ts, M5):

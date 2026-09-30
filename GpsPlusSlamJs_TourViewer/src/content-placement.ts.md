@@ -30,8 +30,10 @@ imageHeight, nowIso }): TourPhoto | null` - the camera's RAW odometry pose
   Details:
   Promise<RenderedTourObjects>` - pins as label objects, photos as capture
 planes (`placeCapturedImagePlanes`), all at the scene root; a photo whose
-texture fails is skipped and named in `skipped`; `dispose()` removes and
-  frees everything.
+texture fails is skipped and named in `skipped`; `dispose()`removes and
+frees everything.`root` is the one group every rendered object hangs
+under - what a tap in AR is cast against to name the object
+(`object-pick.ts`, authoring plan 2026-09-28-0953 M4).
 
 ## Invariants & assumptions
 

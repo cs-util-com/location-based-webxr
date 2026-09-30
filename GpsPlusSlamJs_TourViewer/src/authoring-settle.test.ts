@@ -39,6 +39,7 @@ import {
 import { Group, Matrix4, Object3D, Quaternion, Vector3 } from "three";
 
 import { wireCreatorSetup, type CreatorSetupDom } from "./creator-setup.js";
+import type { ObjectListHandlers, ObjectListModel } from "./object-list.js";
 import type { TourViewerSeams } from "./seams.js";
 import {
   createTourViewerSession,
@@ -46,7 +47,7 @@ import {
   endQrPipeline,
 } from "./tour-viewer-session.js";
 import { mintPin, objectPoseNue } from "./content-placement.js";
-import { META_KEY, objectKey } from "./draft-persistence.js";
+import { deletedKey, META_KEY, objectKey } from "./draft-persistence.js";
 import { WEBXR_TO_NUE } from "gps-plus-slam-app-framework/ar/webxr-nue-basis";
 import {
   correctedAlignment,
@@ -181,10 +182,16 @@ const DOM_KEYS = [
   "sizeOfferText",
   "sizeOfferUse",
   "sizeOfferKeep",
+  "objectList",
+  "replaceCodeButton",
+  "replaceCodeConfirm",
+  "replaceCodeConfirmText",
+  "replaceCodeYes",
+  "replaceCodeNo",
 ] as const;
 
 function el() {
-  const handlers = new Map<string, () => void>();
+  const handlers = new Map<string, (event?: unknown) => void>();
   return {
     hidden: false,
     textContent: "",
@@ -192,9 +199,23 @@ function el() {
     value: "",
     open: false,
     focus: () => undefined,
-    addEventListener: (type: string, handler: () => void) =>
+    addEventListener: (type: string, handler: (event?: unknown) => void) =>
       handlers.set(type, handler),
     click: () => handlers.get("click")?.(),
+    /** Fire any other listener with an event (the overlay's
+     *  `beforexrselect`). */
+    fire: (type: string, event: unknown) => handlers.get(type)?.(event),
+    // The object list's view (authoring plan M4): records what the setup
+    // binds and draws - the model is tested in object-list.test.ts, the
+    // DOM by the Playwright suite.
+    listHandlers: null as ObjectListHandlers | null,
+    lastModel: null as ObjectListModel | null,
+    bind(bound: ObjectListHandlers) {
+      this.listHandlers = bound;
+    },
+    render(model: ObjectListModel) {
+      this.lastModel = model;
+    },
   };
 }
 
@@ -299,7 +320,14 @@ function authoring(options: { store?: DraftFileStore } = {}) {
     dispose: () => undefined,
   };
   const labels: Object3D[] = [];
+  /** What a tap in AR picks (the raycast itself is `object-pick.test.ts`'s):
+   *  handed the rendered roots by id, as production hands them. */
+  const pick: {
+    fn: (targets: ReadonlyMap<string, Object3D>) => string | null;
+  } = { fn: () => null };
   const seams = {
+    pickObjectInView: (targets: ReadonlyMap<string, Object3D>) =>
+      pick.fn(targets),
     canShareZip: () => false,
     createQrFrontEnd: () => ({
       kind: "barcode-detector",
@@ -376,8 +404,8 @@ function authoring(options: { store?: DraftFileStore } = {}) {
     ctx.arSessionGeneration += 1;
     endQrPipeline(ctx);
     ctx.lastDetectedText = null;
-    for (const preview of ctx.placedPreviews) preview.dispose();
-    ctx.placedPreviews = [];
+    for (const preview of ctx.placedPreviews.values()) preview.dispose();
+    ctx.placedPreviews.clear();
   }
 
   /** A new AR session: a fresh pipeline, then the visit's start. */
@@ -457,6 +485,11 @@ function authoring(options: { store?: DraftFileStore } = {}) {
     settledLogs,
     labels,
     scene,
+    pick,
+    /** Put the reticle at `local` (odometry-NUE). */
+    setReticle: (local: [number, number, number]): void => {
+      reticleLocal.set(...local);
+    },
   };
 }
 
@@ -1233,3 +1266,297 @@ describe("the entry hint (§3.2a, D5)", { timeout: SLOW_MS }, () => {
     expect(a.dom.status.textContent).toMatch(/First, point the camera/);
   });
 });
+
+describe(
+  "editing placed objects, through the composed setup (authoring plan 2026-09-28-0953 §3.4, M4)",
+  { timeout: SLOW_MS },
+  () => {
+    // Why these tests matter (owner item 6: "create works; move, edit and
+    // delete do not"): each action has to reach every place the object
+    // lives - the in-memory list the Finish writes, the preview in AR, the
+    // draft that survives a crash and the troubleshooting recording - and a
+    // move has to go through the same code correction as the settle, or a
+    // pin moved in a later visit lands where that visit's GPS says instead
+    // of where the code says (symptom B through the editing door).
+
+    /** A pin the hosted zip carries, at GPS-world NUE (north, 400, east). */
+    function hostedPin(id: string, label: string, north = 4, east = 2) {
+      return mintPin({
+        id,
+        label,
+        worldNuePosition: { x: north, y: 400, z: east },
+        zero: ZERO,
+        nowIso: "2026-09-29T10:00:00.000Z",
+      })!;
+    }
+
+    /** A creator in AR with a hosted tour open whose zip carries `objects`. */
+    async function withHostedTour(
+      objects: TourObject[],
+      store?: DraftFileStore,
+    ) {
+      const a = authoring(store === undefined ? {} : { store });
+      await openFinishableTour(a);
+      a.ctx.tourManifest = { version: 1, objects };
+      a.setup.presentDraftForTour("https://example.test/tour.zip");
+      await flush();
+      a.beginVisit();
+      await flush();
+      return a;
+    }
+
+    function logged(a: ReturnType<typeof authoring>, type: string) {
+      return a.dispatched.filter((x) => x.type === type) as {
+        payload: Record<string, unknown>;
+      }[];
+    }
+
+    it("shows the hosted zip's objects in author mode, keyed by id, and lists them", async () => {
+      const a = await withHostedTour([hostedPin("h1", "Hosted gate")]);
+      expect(a.ctx.placedPreviews.has("h1")).toBe(true);
+      expect(a.labels.some((o) => o.name === "Hosted gate")).toBe(true);
+      const model = a.dom.objectList.lastModel!;
+      expect(model.moreRows.map((r) => [r.id, r.detail])).toEqual([
+        ["h1", "Pin · in the zip"],
+      ]);
+    });
+
+    it("edits a hosted pin's text in place: one record by id, a new label, a log with before and after", async () => {
+      const a = await withHostedTour(
+        [hostedPin("h1", "Hosted gate")],
+        memoryDraftStore().store,
+      );
+      a.dom.objectList.listHandlers!.editText("h1", "  The old mill ");
+      await flush();
+      expect(a.ctx.placedObjects.map((p) => p.object)).toEqual([
+        { ...hostedPin("h1", "Hosted gate"), label: "The old mill" },
+      ]);
+      expect(a.labels.some((o) => o.name === "The old mill")).toBe(true);
+      expect(a.ctx.placedPreviews.size).toBe(1);
+      const log = logged(a, "tourAuthoring/objectEdited").at(-1)!.payload;
+      expect((log["before"] as { label: string }).label).toBe("Hosted gate");
+      expect((log["after"] as { label: string }).label).toBe("The old mill");
+      expect(log["surface"]).toBe("ar");
+      expect(a.dom.objectList.lastModel?.note).toMatch(/Saved "The old mill"/);
+      // An empty text changes nothing.
+      a.dom.objectList.listHandlers!.editText("h1", "   ");
+      expect(a.ctx.placedObjects[0]?.object).toMatchObject({
+        label: "The old mill",
+      });
+    });
+
+    it("shows the edit as in progress until the draft write lands, then says whether it did", async () => {
+      // The async-UI rule: an in-progress state, then the durable end
+      // state - and a refused write said, never swallowed.
+      const { store, files } = memoryDraftStore();
+      const held: (() => void)[] = [];
+      let refuse = false;
+      const slow: DraftFileStore = {
+        ...store,
+        put: (key, data) =>
+          new Promise<boolean>((resolve) => {
+            held.push(() => {
+              files.set(key, data);
+              resolve(!refuse);
+            });
+          }),
+      };
+      const a = await withHostedTour([hostedPin("h1", "Gate")], slow);
+      const release = async () => {
+        for (const r of held.splice(0)) r();
+        await flush();
+      };
+      await release();
+      a.dom.objectList.listHandlers!.editText("h1", "First");
+      await flush();
+      const busy = a.dom.objectList.lastModel!.moreRows[0]!;
+      expect([busy.busy, busy.enabled]).toEqual(["Saving…", false]);
+      await release();
+      const done = a.dom.objectList.lastModel!;
+      expect(done.moreRows[0]?.busy).toBeNull();
+      expect(done.note).toMatch(/Saved "First"/);
+
+      refuse = true;
+      a.dom.objectList.listHandlers!.editText("h1", "Second");
+      await flush();
+      await release();
+      expect(a.dom.objectList.lastModel?.note).toMatch(
+        /could not save a backup copy/,
+      );
+    });
+
+    it("deletes a hosted pin as a tombstone: gone from the scene and the list, recorded in the draft and the log", async () => {
+      const { store, files } = memoryDraftStore();
+      const a = await withHostedTour([hostedPin("h1", "Gate")], store);
+      a.dom.objectList.listHandlers!.remove("h1");
+      await flush();
+      expect(a.ctx.deletedObjectIds).toEqual(["h1"]);
+      expect(a.ctx.placedPreviews.has("h1")).toBe(false);
+      expect(files.has(deletedKey("h1"))).toBe(true);
+      expect(a.dom.objectList.lastModel?.moreRows).toEqual([]);
+      expect(a.dom.objectList.lastModel?.note).toMatch(
+        /Deleted "Gate" - it leaves the zip on the next Finish/,
+      );
+      const log = logged(a, "tourAuthoring/objectDeleted").at(-1)!.payload;
+      expect(log["hosted"]).toBe(true);
+    });
+
+    it("deletes a pin placed on this device outright - no tombstone, its draft file gone", async () => {
+      const { store, files } = memoryDraftStore();
+      const a = await withHostedTour([], store);
+      await a.mint();
+      await a.placePin("Temp", [1, 0, 1]);
+      const id = a.ctx.placedObjects.at(-1)!.object.id;
+      expect(files.has(objectKey(id))).toBe(true);
+      a.dom.objectList.listHandlers!.remove(id);
+      await flush();
+      expect(a.ctx.placedObjects).toEqual([]);
+      expect(a.ctx.deletedObjectIds).toEqual([]);
+      expect(files.has(objectKey(id))).toBe(false);
+    });
+
+    it("moves an earlier visit's pin to the reticle through the code correction, as the settle would", async () => {
+      // D10b for editing: the second visit's GPS is 20 m and 30 degrees
+      // off; the moved pin must land where the CODE says.
+      const a = authoring();
+      a.setAlignment(yawAlignment(0, [0, 400, 0]));
+      await a.mint();
+      await a.placePin("Gate", [2, 0, -1]);
+      a.endVisit();
+      const codeLocal = mintedOdom(a.dispatched);
+      const gate = a.ctx.placedObjects[0]!.object;
+      a.beginVisit();
+      a.setAlignment(yawAlignment(30, [20, 401, -8]));
+      a.seeTheCode();
+      await flush();
+      a.setReticle([4, 0, 2]);
+      a.dom.objectList.listHandlers!.move(gate.id);
+      await flush();
+
+      const moved = a.ctx.placedObjects[0]!.object;
+      expect(moved.id).toBe(gate.id);
+      const offset = worldOf(moved.geo).sub(
+        codeWorldOf(a.ctx.mintedLevel!.json),
+      );
+      expect(
+        offset.distanceTo(new Vector3(4, 0, 2).sub(codeLocal)),
+      ).toBeLessThan(1e-2);
+      const log = logged(a, "tourAuthoring/objectMoved").at(-1)!.payload;
+      expect(log["basis"]).toBe("code-corrected");
+      const reticle = log["reticleOdomNue"] as number[];
+      [4, 0, 2].forEach((v, i) => {
+        expect(reticle[i]).toBeCloseTo(v, 9);
+      });
+      expect(log["sighting"]).not.toBeNull();
+      // Rigid in AR now, like a new placement - and the visit's own settle
+      // keeps it where the move put it.
+      expect(
+        a.inWorldGroup("Gate").distanceTo(new Vector3(4, 0, 2)),
+      ).toBeLessThan(1e-6);
+      a.endVisit();
+      expect(
+        worldOf(a.ctx.placedObjects[0]!.object.geo).distanceTo(
+          worldOf(moved.geo),
+        ),
+      ).toBeLessThan(1e-2);
+    });
+
+    it("selects what a tap in AR hits among the rendered objects, and clears the selection on a miss", async () => {
+      const a = await withHostedTour([hostedPin("h1", "Gate")]);
+      let seen: ReadonlyMap<string, Object3D> | null = null;
+      a.pick.fn = (targets) => {
+        seen = targets;
+        return targets.has("h1") ? "h1" : null;
+      };
+      a.setup.selectInView();
+      // The ray is cast against each object's rendered root.
+      expect(seen!.get("h1")).toBe(a.ctx.placedPreviews.get("h1")!.root);
+      const model = a.dom.objectList.lastModel!;
+      expect(model.rows.map((r) => [r.id, r.selected, r.canMove])).toEqual([
+        ["h1", true, true],
+      ]);
+      a.pick.fn = () => null;
+      a.setup.selectInView();
+      expect(a.dom.objectList.lastModel!.rows).toEqual([]);
+    });
+
+    it("cancels the XR select of a tap on the panel, so Delete does not also select what is behind it", () => {
+      const a = authoring();
+      let prevented = false;
+      a.dom.panel.fire("beforexrselect", {
+        preventDefault: () => {
+          prevented = true;
+        },
+      });
+      expect(prevented).toBe(true);
+    });
+  },
+);
+
+describe(
+  "re-measuring a stored code on purpose (M4; M2c review #5)",
+  { timeout: SLOW_MS },
+  () => {
+    // Why these tests matter: since M2c a new measurement of a stored code
+    // only corrects its visit - replacing the stored pose became an
+    // explicit action. It must exist, ask first, say what it does, and be
+    // recorded; and without it the stored pose must stay.
+    async function secondVisitAtStoredCode() {
+      const a = authoring();
+      await a.mint();
+      a.endVisit();
+      const stored = a.ctx.mintedLevel!;
+      a.beginVisit();
+      a.setAlignment(yawAlignment(30, [20, 401, -8]));
+      a.seeTheCode();
+      await flush();
+      a.setup.renderAuthorReadout();
+      return { a, stored };
+    }
+
+    it("offers the replace for the stored code in view, asks first, then replaces it and records what it replaced", async () => {
+      const { a, stored } = await secondVisitAtStoredCode();
+      expect(a.dom.replaceCodeButton.hidden).toBe(false);
+      expect(a.dom.replaceCodeButton.disabled).toBe(false);
+      a.dom.replaceCodeButton.click();
+      expect(a.dom.replaceCodeConfirm.hidden).toBe(false);
+      expect(a.dom.replaceCodeConfirmText.textContent).toMatch(
+        /Everyone who opens the tour/,
+      );
+      // Nothing changed yet: the confirm step comes first.
+      expect(a.ctx.mintedLevel).toEqual(stored);
+      a.dom.replaceCodeYes.click();
+      await vi.waitFor(() => {
+        expect(a.ctx.mintedLevel).not.toBeNull();
+        expect(a.ctx.mintedLevel?.json).not.toBe(stored.json);
+      });
+      expect(a.ctx.mintedLevel?.id).toBe(stored.id);
+      expect(a.ctx.codeMeasurement?.visit).toBe(a.ctx.arSessionGeneration);
+      const log = a.dispatched.filter(
+        (x) => x.type === "tourAuthoring/codeMeasured",
+      ) as { payload: { kept: string; replaced?: unknown } }[];
+      expect(log.at(-1)?.payload.kept).toBe("measurement");
+      expect(log.at(-1)?.payload.replaced).toEqual(stored);
+      // Measured here now: the offer goes away.
+      a.setup.renderAuthorReadout();
+      expect(a.dom.replaceCodeButton.hidden).toBe(true);
+    });
+
+    it("keeps the stored pose when the creator declines", async () => {
+      const { a, stored } = await secondVisitAtStoredCode();
+      a.dom.replaceCodeButton.click();
+      a.dom.replaceCodeNo.click();
+      expect(a.dom.replaceCodeConfirm.hidden).toBe(true);
+      expect(a.dom.replaceCodeButton.hidden).toBe(false);
+      await flush();
+      expect(a.ctx.mintedLevel).toEqual(stored);
+    });
+
+    it("is not offered for a code measured in this visit - that measurement is already the reference", async () => {
+      const a = authoring();
+      await a.mint();
+      a.setup.renderAuthorReadout();
+      expect(a.dom.replaceCodeButton.hidden).toBe(true);
+    });
+  },
+);

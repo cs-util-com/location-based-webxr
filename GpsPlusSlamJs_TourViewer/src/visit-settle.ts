@@ -145,7 +145,7 @@ function readAlignment(alignment: ArrayLike<number> | null): number[] | null {
 
 /** A level's stored geo, or null when the JSON is not a level or carries
  *  no geo (external data: a zip, a draft). */
-function storedGeo(json: string): QrGeoPose | null {
+export function storedGeo(json: string): QrGeoPose | null {
   try {
     return parseQrLevel(JSON.parse(json) as unknown).qr.geo ?? null;
   } catch {
@@ -390,6 +390,41 @@ export function planVisitSettle(input: VisitSettleInput): VisitSettle | null {
     level,
     refused: choice.refused,
   };
+}
+
+/**
+ * Move an object to `local` (the reticle, odometry-NUE) in the running
+ * visit (authoring plan 2026-09-28-0953 §3.4, M4): its geo recomputed
+ * through the SAME alignment the visit's settle would use
+ * ({@link settleAlignment} - the code correction of D10b when this visit
+ * saw a stored code), so a pin moved in a later visit lands where the code
+ * says, not where this visit's GPS says. The record keeps its id, text and
+ * creation time; the caller also keeps the new odometry pose, so the
+ * visit's own settle recomputes it once more at the end with the rest.
+ *
+ * @returns null when no alignment or zero can be read, or the pose cannot
+ *   be minted (the caller refuses the move with a reason).
+ */
+export function planMove(
+  input: SettleAlignmentInput & {
+    readonly object: TourObject;
+    readonly local: NuePose;
+  },
+): {
+  object: TourObject;
+  basis: SettleBasis;
+  alignment: number[];
+  refused: CorrectionRefusal | null;
+} | null {
+  const choice = settleAlignment(input);
+  if (choice === null || input.zero === null) return null;
+  const object = settledObject(
+    input.object,
+    input.local,
+    choice.alignment,
+    input.zero,
+  );
+  return object === null ? null : { object, ...choice };
 }
 
 /** The level in hand re-minted from its measurement through `alignment`,

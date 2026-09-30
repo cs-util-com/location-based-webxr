@@ -41,9 +41,13 @@ screen. Everything marked `.creator-only` is hidden for a visitor
   summary "Other settings" - something you normally do not open, F9).
 - Shared: `#error`, `#ar-root` (the DOM-overlay root: hint, status line,
   button, the setup panel `#setup-panel` with `setup-status` and, inside
-  `#setup-controls`, `setup-mint`, the placement controls `setup-pin` /
-  `pin-label` / `pin-save` / `pin-cancel` / `setup-photo`, and
-  `setup-finish`; the visitor's `scan-escape`), `#stats`, `#gallery`.
+  `#setup-controls`, `setup-mint`, the explicit replace `replace-code`
+  with its confirm `replace-code-confirm` (authoring plan 2026-09-28-0953
+  M4), the placement controls `setup-pin` / `pin-label` / `pin-save` /
+  `pin-cancel` / `setup-photo`; then, outside the controls because it
+  works on the page too, the object list `#object-list` (drawn by
+  `object-list.ts`, M4), and `setup-finish`; the visitor's `scan-escape`),
+  `#stats`, `#gallery`.
 
 Behaviour lives in the wiring modules composed by `src/main.ts` (see
 `main.ts.md`); the page carries only structure and its inline CSS
@@ -66,6 +70,13 @@ The `data-testid` contract the e2e suite drives: `wizard`, `step-host`,
 `stats`, `error`, `gallery`, `ar-hint`, `ar-status`, `ar-debug`, `enter-ar`,
 `setup-panel`, `setup-status`, `size-offer`, `size-offer-text`,
 `size-offer-use`, `size-offer-keep`, `setup-controls`, `setup-mint`,
+`replace-code`, `replace-code-confirm` (owns `replace-code-confirm-text`,
+`replace-code-yes`, `replace-code-no`), `object-list` (its rows carry
+`object-row`, `object-title`, `object-detail`, `object-edit`,
+`object-move`, `object-delete`, `object-deselect`, `object-edit-input`,
+`object-edit-save`, `object-edit-cancel`, `object-busy`, and the list
+`object-list-heading`, `object-list-hint`, `object-list-more`,
+`object-list-note`),
 `setup-pin`, `pin-label`, `pin-save`, `pin-cancel`, `setup-photo`,
 `setup-finish`, `scan-escape`, `recording-block` (owns `recording-offer`
 with `recording-offer-text`, `recording-offer-save`,

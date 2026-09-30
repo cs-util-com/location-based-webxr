@@ -27,6 +27,7 @@ import {
   CORRECTION_MAX_YAW_DEG,
   correctionBoundM,
   measurementRole,
+  planMove,
   planVisitSettle,
   settleAlignment,
   type CodeMeasurement,
@@ -675,5 +676,79 @@ describe("the code correction's plausibility bound (M2c review #2)", () => {
     });
     expect(plan?.basis).toBe("visit-alignment");
     expect(plan?.refused?.horizontalM).toBeCloseTo(60, 2);
+  });
+});
+
+describe("moving a pin to the reticle (M4) goes through the settle's alignment", () => {
+  // Why these tests matter: the plan (§3.2, D10b) requires a move to use
+  // the SAME code correction the settle uses. A move minted through the
+  // visit's raw GPS alignment would put a pin moved in a later visit
+  // metres from the code - symptom B again, through the editing door.
+  const a1 = yawAlignment(20, [100, 400, 50]);
+  const a2 = yawAlignment(-35, [80, 403, 40]);
+  const stored = levelThrough(a1);
+  const sighting: CodeSighting = {
+    text: TEXT,
+    levelId: LEVEL_ID,
+    odomPose: CODE,
+  };
+  const hostedPin = placedPin("hosted", [9, 0, 9], 0, a1).object;
+  const reticle = {
+    position: [3, 0, -1] as const,
+    rotation: [0, 0, 0, 1] as const,
+  };
+
+  it("puts a pin moved in a later visit where the code says, through the correction", () => {
+    const moved = planMove({
+      object: hostedPin,
+      local: reticle,
+      visit: 1,
+      alignment: a2,
+      zero: ZERO,
+      mintedLevel: stored,
+      measurement: measuredInVisit(0),
+      sighting,
+    });
+    expect(moved?.basis).toBe("code-corrected");
+    const offset = worldOf(moved!.object).sub(codeWorldOf(stored));
+    const expected = new Vector3(...reticle.position)
+      .sub(new Vector3(...odomNueFromWebXr(CODE).position))
+      .applyQuaternion(new Quaternion(...yawQ(20)));
+    expect(offset.distanceTo(expected)).toBeLessThan(1e-3);
+    // The record is the same object: id, text and creation time kept.
+    expect(moved!.object.id).toBe("hosted");
+    expect(moved!.object.kind === "pin" && moved!.object.label).toBe("hosted");
+    expect(moved!.object.createdAtIso).toBe(hostedPin.createdAtIso);
+  });
+
+  it("uses the plain visit alignment when the code was not seen, and says so", () => {
+    const moved = planMove({
+      object: hostedPin,
+      local: reticle,
+      visit: 1,
+      alignment: a2,
+      zero: ZERO,
+      mintedLevel: stored,
+      measurement: measuredInVisit(0),
+      sighting: null,
+    });
+    expect(moved?.basis).toBe("visit-alignment");
+    const world = throughAlignment(reticle, a2)!;
+    expect(
+      worldOf(moved!.object).distanceTo(new Vector3(...world.position)),
+    ).toBeLessThan(1e-3);
+  });
+
+  it("refuses without a readable alignment or a zero", () => {
+    const base = {
+      object: hostedPin,
+      local: reticle,
+      visit: 1,
+      mintedLevel: stored,
+      measurement: null,
+      sighting: null,
+    };
+    expect(planMove({ ...base, alignment: null, zero: ZERO })).toBeNull();
+    expect(planMove({ ...base, alignment: a2, zero: null })).toBeNull();
   });
 });

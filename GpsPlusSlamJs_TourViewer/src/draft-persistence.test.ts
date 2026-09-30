@@ -17,10 +17,13 @@ import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import {
+  deletedKey,
   objectKey,
   parseDraftObject,
   photoKey,
   readDraft,
+  removeDraftObject,
+  writeDraftDeletion,
   writeDraftMeta,
   writeDraftObject,
 } from "./draft-persistence.js";
@@ -355,5 +358,74 @@ describe("a rejection recorded in the meta is the commit point", () => {
 
     const read = await readDraft(store);
     expect(read?.draft.objects.map((o) => o.id)).toEqual(["kept"]);
+  });
+});
+
+describe("a deletion is its own file (a tombstone, authoring plan 2026-09-28-0953 §3.4)", () => {
+  /**
+   * Why these tests matter. Deleting an object the hosted zip carries is
+   * work the draft must survive a crash with - the delete has to reach the
+   * next Finish - and it cannot live in the meta, which is rewritten on
+   * every mint and finish from memory: a meta written before the creator
+   * restores a draft would drop the deletions it held, and the deleted
+   * object would come back. One file per deletion, like one per object.
+   */
+
+  it("records the deletion and hides the object's record and bytes, though they were on disk", async () => {
+    const store = memoryStore();
+    await writeDraftMeta(store, META);
+    await writeDraftObject(store, photo("shot"), new Blob(["x"]));
+    await writeDraftObject(store, pin("kept"));
+    expect(await writeDraftDeletion(store, "shot")).toBe(true);
+    // A crash between the tombstone and the record's removal leaves both;
+    // the tombstone outranks the record.
+    await store.put(objectKey("shot"), JSON.stringify(photo("shot")));
+
+    const read = await readDraft(store);
+    expect(read?.draft.deleted).toEqual(["shot"]);
+    expect(read?.draft.objects.map((o) => o.id)).toEqual(["kept"]);
+    expect(read?.photos.get("shot")).toBeUndefined();
+  });
+
+  it("removes the object's own files once the tombstone is written", async () => {
+    const store = memoryStore();
+    await writeDraftMeta(store, META);
+    await writeDraftObject(store, photo("shot"), new Blob(["x"]));
+    await writeDraftDeletion(store, "shot");
+    expect(store.files.has(objectKey("shot"))).toBe(false);
+    expect(store.files.has(photoKey("shot"))).toBe(false);
+    expect(store.files.has(deletedKey("shot"))).toBe(true);
+  });
+
+  it("lists a tombstone among the stored ids, so a discard or a spent draft sweeps it", async () => {
+    const store = memoryStore();
+    await writeDraftMeta(store, META);
+    await writeDraftDeletion(store, "gone");
+    const read = await readDraft(store);
+    expect(read?.storedIds).toEqual(["gone"]);
+    await removeDraftObject(store, "gone");
+    expect(store.files.has(deletedKey("gone"))).toBe(false);
+  });
+
+  it("ignores a tombstone the meta rejects, like any rejected file", async () => {
+    const store = memoryStore();
+    await writeDraftMeta(store, { ...META, rejected: ["gone"] });
+    await writeDraftDeletion(store, "gone");
+    expect((await readDraft(store))?.draft.deleted).toEqual([]);
+  });
+
+  it("reports a refused tombstone write, and then keeps the object's files", async () => {
+    // A tombstone that did not land must not be followed by the removal of
+    // the record: that would be a delete that is neither on disk as a
+    // deletion nor recoverable as an object.
+    const store = memoryStore();
+    await writeDraftMeta(store, META);
+    await writeDraftObject(store, pin("a"));
+    const refusing: typeof store = {
+      ...store,
+      put: () => Promise.resolve(false),
+    };
+    expect(await writeDraftDeletion(refusing, "a")).toBe(false);
+    expect(store.files.has(objectKey("a"))).toBe(true);
   });
 });

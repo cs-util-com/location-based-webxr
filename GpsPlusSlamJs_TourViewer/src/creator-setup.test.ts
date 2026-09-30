@@ -33,6 +33,7 @@ import {
   createTourViewerStore,
 } from "./tour-viewer-session.js";
 import {
+  deletedKey,
   META_KEY,
   objectKey,
   photoKey,
@@ -51,6 +52,8 @@ interface FakeEl {
   handlers: Map<string, () => void>;
   addEventListener: (type: string, handler: () => void) => void;
   click: () => void;
+  bind: () => void;
+  render: () => void;
 }
 
 function el(): FakeEl {
@@ -64,6 +67,10 @@ function el(): FakeEl {
     handlers,
     addEventListener: (type, handler) => handlers.set(type, handler),
     click: () => handlers.get("click")?.(),
+    // The object list's view (authoring plan M4): a stand-in - its model
+    // is tested in object-list.test.ts, its DOM by the Playwright suite.
+    bind: () => undefined,
+    render: () => undefined,
   };
 }
 
@@ -96,6 +103,12 @@ const DOM_KEYS = [
   "sizeOfferText",
   "sizeOfferUse",
   "sizeOfferKeep",
+  "objectList",
+  "replaceCodeButton",
+  "replaceCodeConfirm",
+  "replaceCodeConfirmText",
+  "replaceCodeYes",
+  "replaceCodeNo",
 ] as const;
 
 function fakeDom(): Record<(typeof DOM_KEYS)[number], FakeEl> {
@@ -1207,5 +1220,87 @@ describe("the troubleshooting recording's log of a placement", () => {
     expect(world.x).toBeCloseTo(1, 9);
     expect(world.y).toBeCloseTo(0, 9);
     expect(world.z).toBeCloseTo(-2, 9);
+  });
+});
+
+describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §3.4, M4)", () => {
+  // Why these tests matter: before M4 the draft compared IDS with the
+  // hosted zip, so an edit of a hosted object (same id, new content) was
+  // "already in the zip": never offered, and deleted as spent - the edit
+  // lost across a crash with nothing on screen saying so. A deletion had
+  // no representation at all, so a crash brought the object back.
+  const HOSTED = pin("hosted");
+  const EDITED: TourObject = { ...pin("hosted"), label: "the new text" };
+
+  it("offers an edit of a hosted object as a change, and restores it in place of the hosted one", async () => {
+    const { store, files } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+      [objectKey("hosted")]: JSON.stringify(EDITED),
+    });
+    const { ctx, dom, setup } = wire(store);
+    ctx.tourManifest = { version: 1, objects: [HOSTED] } as never;
+    dom.draftOffer.hidden = true;
+    setup.presentDraftForTour(TOUR);
+    await settle();
+
+    expect(dom.draftOffer.hidden, "an edit is unsaved work").toBe(false);
+    expect(dom.draftOfferText.textContent).toContain("1 change");
+    expect(files.has(objectKey("hosted")), "and it is not swept").toBe(true);
+    dom.draftRestore.click();
+    expect(ctx.placedObjects.map((p) => p.object)).toEqual([EDITED]);
+  });
+
+  it("offers a deletion the hosted zip has not seen, and restores it as a tombstone", async () => {
+    const { store } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+      [deletedKey("hosted")]: "1",
+    });
+    const { ctx, dom, setup } = wire(store);
+    ctx.tourManifest = { version: 1, objects: [HOSTED] } as never;
+    dom.draftOffer.hidden = true;
+    setup.presentDraftForTour(TOUR);
+    await settle();
+
+    expect(dom.draftOfferText.textContent).toContain("1 deletion");
+    dom.draftRestore.click();
+    expect(ctx.deletedObjectIds).toEqual(["hosted"]);
+    expect(ctx.placedObjects).toEqual([]);
+    expect(ctx.placementNote).toContain("1 deletion restored");
+  });
+
+  it("treats a deletion the hosted zip no longer carries as spent", async () => {
+    const { store, files } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+      [deletedKey("gone")]: "1",
+    });
+    const { ctx, dom, setup } = wire(store);
+    ctx.tourManifest = { version: 1, objects: [HOSTED] } as never;
+    dom.draftOffer.hidden = true;
+    setup.presentDraftForTour(TOUR);
+    await settle();
+
+    expect(dom.draftOffer.hidden).toBe(true);
+    expect(files.has(deletedKey("gone"))).toBe(false);
+  });
+
+  it("does not sweep a hosted object's file the creator edited while the draft was being read", async () => {
+    // A spent draft deletes what the read returned. A new placement can
+    // never be in that list (its id is fresh) - but an edit keeps its id,
+    // so the sweep would take the live edit's file with it.
+    const { store, files } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+      [objectKey("hosted")]: JSON.stringify(HOSTED),
+    });
+    const { ctx, setup } = wire(store);
+    ctx.tourManifest = { version: 1, objects: [HOSTED] } as never;
+    ctx.placedObjects = [{ object: EDITED }];
+    setup.presentDraftForTour(TOUR);
+    await settle();
+
+    expect(files.has(objectKey("hosted"))).toBe(true);
+    const meta = JSON.parse(String(files.get(META_KEY))) as {
+      rejected?: string[];
+    };
+    expect(meta.rejected ?? []).not.toContain("hosted");
   });
 });

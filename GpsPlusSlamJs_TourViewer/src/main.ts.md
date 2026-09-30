@@ -20,7 +20,10 @@ listed in `index.html.md`. The concerns and their modules:
 - `visitor-screen.ts` - the visitor's consent screen and the location
   gate (`wireVisitorScreen`).
 - `creator-setup.ts` - the creator's AR setup panel: measuring, finish
-  (the zip rebuild), the download (`wireCreatorSetup`).
+  (the zip rebuild), the download (`wireCreatorSetup`); `main.ts` builds
+  the object list's DOM view (`createObjectListView` over `#object-list`,
+  authoring plan 2026-09-28-0953 M4) and hands it in, and binds
+  `hooks.selectInView`.
 - `viewer-placement.ts` - the viewer pipeline and the photo placement
   (`createViewerPlacement`).
 - `ar-entry.ts` - the AR entry, the runtime start/end, the status line

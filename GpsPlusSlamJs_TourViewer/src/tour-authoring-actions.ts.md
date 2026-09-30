@@ -48,6 +48,22 @@ reads them (the framework's `diagnostics/note` precedent). Plan:
   tab keeps; this is what the zip carries, so a replay needs it.
 - `authoringFinished(payload)` - `tourAuthoring/finished`: `levelId`,
   `manifest` (what the rebuilt zip carries), `atMs`.
+- Editing (plan §3.4, M4; `object-editing.ts`):
+  - `objectEdited(payload)` - `tourAuthoring/objectEdited`: `before`,
+    `after` (the records), `arVisitIndex`, `atMs`, `surface` (`page` or
+    `ar`).
+  - `objectMoved(payload)` - `tourAuthoring/objectMoved`: `before`,
+    `after`, `arVisitIndex`, `atMs`, `reticleOdomNue` (the reticle in the
+    world group's frame), `basis`, `visitAlignment`, `usedAlignment` (the
+    corrected one when `basis` is `code-corrected`), `sighting`,
+    `refusedCorrection` and `zero` - the settle's set, so a replay
+    recomputes the moved geo.
+  - `objectDeleted(payload)` - `tourAuthoring/objectDeleted`: `object`,
+    `hosted` (a tombstone the Finish applies, or only on this device),
+    `arVisitIndex`, `atMs`, `surface`.
+  - `codeMeasured` gains `replaced` - the stored pose the explicit
+    "Re-measure the code (replace its saved position)" replaced; absent for
+    every other measurement.
 - Each creator carries `.type`, as RTK's do; the payload interfaces are
   module-private (knip), reachable as `Parameters<typeof objectPlaced>[0]`.
 - `logAction`, `LogActionCreator`, `AlignmentMatrix` - exported since M1b
@@ -97,3 +113,6 @@ arStore.dispatch(
   AR visits is in the recorded stream.
 - `playwright-tests/ar-mode.spec.js` (the recording e2e): `codeMeasured`,
   `objectPlaced` and `finished` are in the saved zip, in order.
+- `authoring-settle.test.ts` ("editing placed objects", "re-measuring a
+  stored code on purpose"): `objectEdited`, `objectMoved` (with the
+  correction's inputs), `objectDeleted`, and `codeMeasured.replaced`.

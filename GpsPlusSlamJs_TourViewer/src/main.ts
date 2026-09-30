@@ -36,6 +36,7 @@ import { wireArchiveOpen } from "./archive-open.js";
 import { wireArEntry } from "./ar-entry.js";
 import { createAuthoringRecording } from "./authoring-recording.js";
 import { arSessionLive, wireCreatorSetup } from "./creator-setup.js";
+import { createObjectListView } from "./object-list.js";
 import type { ScanOpen } from "./scan-open.js";
 import { viewerModeFromSearch } from "./mode.js";
 import { describeOpenError } from "./open-errors.js";
@@ -292,6 +293,13 @@ const setup = wireCreatorSetup({
     sizeOfferText: element("size-offer-text"),
     sizeOfferUse: element("size-offer-use"),
     sizeOfferKeep: element("size-offer-keep"),
+    // Editing placed objects (authoring plan 2026-09-28-0953 M4).
+    objectList: createObjectListView(element("object-list"), document),
+    replaceCodeButton: element("replace-code"),
+    replaceCodeConfirm: element("replace-code-confirm"),
+    replaceCodeConfirmText: element("replace-code-confirm-text"),
+    replaceCodeYes: element("replace-code-yes"),
+    replaceCodeNo: element("replace-code-no"),
   },
   // Crash-safe authoring (F13). OPFS, not a file handle: the File System
   // Access pickers do not exist on Chrome for Android, which is the only
@@ -317,6 +325,7 @@ hooks.startAuthorPipeline = setup.startAuthorPipeline;
 hooks.resetFinishStep = setup.resetFinishStep;
 hooks.beginAuthorVisit = setup.beginAuthorVisit;
 hooks.endAuthorVisit = setup.endAuthorVisit;
+hooks.selectInView = setup.selectInView;
 hooks.presentNoTour = () => {
   print.presentNoTour();
 };

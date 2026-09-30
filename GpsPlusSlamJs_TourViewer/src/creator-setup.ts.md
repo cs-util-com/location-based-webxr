@@ -105,7 +105,12 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   - `openDraftStore(key)` resolves this tour's draft namespace, or
     `undefined` where there is no persistence. Injected so the unit tests
     and the e2e can supply one without OPFS.
-  - `CreatorSetupDom { panel; controls; finishBlock; replaceHelp; replaceHelpShare; replaceHelpGeneric; replaceHelpDrive; sizeInput; printPanel; status; mintButton; finishButton; finishStatus; downloadButton; pinButton; pinLabel; pinSave; pinCancel; photoButton; draftOffer; draftOfferText; draftRestore; draftDismiss; draftDiscard }`
+  - `CreatorSetupDom { panel; controls; finishBlock; replaceHelp; replaceHelpShare; replaceHelpGeneric; replaceHelpDrive; sizeInput; printPanel; status; mintButton; finishButton; finishStatus; downloadButton; pinButton; pinLabel; pinSave; pinCancel; photoButton; draftOffer; draftOfferText; draftRestore; draftDismiss; draftDiscard; sizeOffer; sizeOfferText; sizeOfferUse; sizeOfferKeep; objectList; replaceCodeButton; replaceCodeConfirm; replaceCodeConfirmText; replaceCodeYes; replaceCodeNo }`
+    - `objectList` (authoring plan 2026-09-28-0953 §3.4, M4) - the
+      `object-list.ts` view (`bind`, `render`); `main.ts` builds it over
+      `#object-list` inside the panel.
+    - `replaceCode*` - the explicit "Re-measure the code (replace its
+      saved position)" and its confirm step, inside `#setup-controls`.
   - `arSessionLive(status)` - whether the controller's status means a
     session is up (`starting` / `running` / `stopping`). Exported because
     `main.ts` hands the same predicate to the wizard, which must not
@@ -116,9 +121,13 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
       OUTSIDE `#ar-root` - the download is tapped after the session ends,
       so putting it over the camera would promise otherwise.
   - `CreatorSetup` members: `renderAuthorReadout`, `startAuthorPipeline`,
-    `resetFinishStep` (a tour closed) and `presentDraftForTour` (a tour
+    `resetFinishStep` (a tour closed), `presentDraftForTour` (a tour
     opened AND its manifest settled - "spent" is a question about that
-    manifest, so it cannot be asked earlier).
+    manifest, so it cannot be asked earlier), `beginAuthorVisit`,
+    `endAuthorVisit`, and `selectInView` (M4: a tap in AR - an XR select
+    the overlay did not cancel - selects the object the `pickObjectInView`
+    seam names among the rendered previews, or clears the selection on a
+    miss).
   - `CreatorSetup.renderAuthorReadout()` - the measuring readout
     (`authorStatusLine`) joined with the setup hint once measured
     (`setupHint`); a persistent pipeline error (`ctx.authorErrorText`) has
@@ -382,6 +391,47 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
   finish visibly instead of freezing the panel.
 - The measured level survives a session end on purpose (finishing ends
   the session); a new measurement replaces it.
+- **Editing placed objects (authoring plan 2026-09-28-0953 §3.4, M4)**,
+  through `object-editing.ts`:
+  - **The hosted zip's objects are rendered in author mode**, keyed by id,
+    through the same path as the earlier visits' objects: from geo in the
+    earlier-visits frame, which moves under the world group once the code
+    is seen (D10b). Before M4 they were invisible to an author reopening a
+    tour. `syncPreviews` keeps `ctx.placedPreviews` (a map by id) in line
+    with `authoringObjects`: a preview whose object changed look or pose
+    (`previewKey`) is replaced, one whose object is gone is disposed, the
+    rest are left alone. Each visit starts with a fresh render into its
+    frames. A hosted photo's bytes come from the zip
+    (`session.loadContentEntry`); a photo a Finish took out of
+    `placedObjects` keeps its bytes in `finishedPhotoBlobs` until the tour
+    closes, since the hosted zip lacks them until the upload.
+  - **The Finish replaces and filters** (`applyObjectChanges`), removes
+    each deleted photo's content file (`contentEntriesToRemove` into the
+    rebuild's `remove`), and afterwards drops from `placedObjects` only
+    what the zip carries WITH THE SAME CONTENT, and clears the applied
+    deletions. The draft's tombstones stay until the hosted zip lacks the
+    ids, the same proof the objects wait for.
+  - **Draft**: an edit is a record under the same id; a delete of a
+    hosted object is `writeDraftDeletion`; the offer names changes and
+    deletions (`restoreOfferText`); a restore replaces by id and brings
+    deletions back as tombstones, with live work on the same id winning.
+    The spent sweep and the discard skip ids changed live since the read
+    (`notLive`): an edit keeps its id, so unlike a new placement its file
+    can be in the read's list.
+  - **Overlay taps are not scene taps**: `beforexrselect` is cancelled on
+    the panel (the PhysicsDemo pattern), so a tap on Delete does not also
+    select what stands behind the button. The framework's reticle driver
+    carries the `select` listener through its own `onSelect` option; the
+    driver is unchanged (MinimalExample's use stays as it is).
+  - **The explicit replace of a stored code** (M2c review #5): offered in
+    AR while the level in hand is a stored pose, enabled with the mint gate
+    for that code in view, behind a confirm step that says the code moves
+    for every visitor while placed objects keep their positions. Confirmed,
+    the measurement becomes the reference (`kept: "measurement"`, logged
+    with `replaced`); without it a new measurement of a stored code stays
+    a correction sighting.
+  - The readout's "N objects placed" counts only objects the zip does not
+    carry; an edit of a hosted object is not a placement.
 - Owns the session fields `lastDetectedText`, `activeSizeM`,
   `authorErrorText`, `mintedLevel`, `mintGeneration`, `finishing`,
   `rebuiltZip`, `placedObjects`, `placedPreviews`, `placementNote`; reads
@@ -447,4 +497,11 @@ Finish does not stop the next visit, a failed Finish leaves the visit to
 settle at its end - and late photos joining their visit's settle, including
 one landing during a live Finish; a restored object shown once the zero
 arrives), `creator-finish.test.ts` (the settle at
-Finish, once).
+Finish, once). Editing (M4): `authoring-settle.test.ts` (hosted objects
+rendered and listed, edit, delete, move through the code correction, the
+async states, tap-select, the overlay guard, the explicit replace),
+`creator-finish.test.ts` (an edit replaces in place; a deletion filters
+the object and takes a deleted photo's jpg out of the archive),
+`creator-setup.test.ts` (a draft's edit and deletion offered and
+restored, a spent deletion swept, a live edit's file not swept), and
+`playwright-tests/object-editing.spec.js`.

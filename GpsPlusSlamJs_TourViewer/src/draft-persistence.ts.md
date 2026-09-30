@@ -16,10 +16,15 @@ are the framework's.
 - `writeDraftObject(store, object, blob?)` - one placement. Returns false
   if either file failed, so a half-written photo is reported rather than
   believed.
-- `removeDraftObject(store, id)` - deletes one placement AND its photo,
-  because an object is two files and a caller rejecting a list of ids
-  should not have to know which of them ever reached disk. Neither half
-  missing is a failure: a pin has no photo.
+- `removeDraftObject(store, id)` - deletes every file of one id: the
+  record, its photo AND a tombstone, because a caller rejecting a list of
+  ids should not have to know which of them ever reached disk. None
+  missing is a failure: a pin has no photo, a placement no tombstone.
+- `writeDraftDeletion(store, id) -> Promise<boolean>` (authoring plan
+  2026-09-28-0953 §3.4, M4) - records that `id` was deleted (a tombstone,
+  `deleted:<id>`), THEN removes its record and bytes. The tombstone is the
+  commit point: `readDraft` lets it outrank a record a crash left behind.
+  A refused tombstone returns false and leaves the record alone.
 - `StoredDraft.storedIds` - EVERY object id the read saw on disk, not
   just the ones that parsed.
   - **It exists because cleanup must cover what the reader refused.** A
@@ -56,7 +61,17 @@ are the framework's.
   `{ draft, photos, rejectedIds, storedIds }`, or `undefined` when there
   is no meta file. Objects the meta rejects are absent from `draft.objects`
   and `photos` whether or not their files are still on disk.
-- `parseDraftObject(text)`, `objectKey(id)`, `photoKey(id)`.
+- `readDraft` also returns `draft.deleted` - the tombstoned ids (sorted),
+  minus rejected ones; a tombstoned id's record and bytes are skipped.
+  `storedIds` includes tombstone ids, so a discard or a spent draft sweeps
+  them too.
+- `parseDraftObject(text)`, `objectKey(id)`, `photoKey(id)`,
+  `deletedKey(id)`.
+- **Why a deletion is a FILE and not a list in the meta**: the meta is
+  rewritten from memory on every mint and finish, so a list kept there
+  would be dropped by any meta write that happens before the creator
+  restores the draft that held it - and the deleted object would come
+  back. One file per deletion, for the reason there is one per object.
 
 ## Invariants & assumptions
 
@@ -134,7 +149,11 @@ a property that the order is stable and is the order things were placed in.
 Plus the rejection set: an object the meta rejects is refused though its
 file is on disk, its photo bytes with it, the list is pruned to ids that
 still have files, and a missing or malformed `rejected` reads as no
-rejection.
+rejection. And the tombstones: a deletion hides the record and bytes
+though they were on disk, the tombstone is written before they are
+removed, a tombstone is a stored id and `removeDraftObject` takes it, a
+rejected tombstone is ignored, and a refused tombstone write keeps the
+record.
 
 `removeDraftObject` and `storedIds` are exercised from
 `creator-setup.test.ts`, not from here - the contract they carry is

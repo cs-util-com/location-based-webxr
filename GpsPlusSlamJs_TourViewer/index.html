@@ -148,6 +148,8 @@
       }
       #setup-panel,
       #setup-controls,
+      #object-list,
+      #replace-code-confirm,
       #draft-offer,
       #recording-offer,
       #finish-block,
@@ -161,6 +163,40 @@
       #finish-block,
       #recording-block {
         margin-top: var(--space-3);
+      }
+      /* The object list (authoring plan 2026-09-28-0953 M4): one row per
+         object, its words over its buttons. Over the camera in AR, so the
+         text wears the status line's halo. The selected row (a tap in AR)
+         is marked by weight and an accent rule, never a border (the
+         sheet's brief). */
+      .object-rows {
+        display: grid;
+        gap: var(--space-2);
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      .object-row {
+        display: grid;
+        gap: var(--space-1);
+        text-shadow: var(--halo-text);
+      }
+      .object-title {
+        font-weight: 600;
+        overflow-wrap: anywhere;
+      }
+      .object-row[data-selected="true"] .object-title {
+        color: var(--accent-ink);
+        font-weight: 700;
+      }
+      .object-detail,
+      .object-busy {
+        font-size: var(--size-hint);
+      }
+      .object-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-2);
       }
       /* The troubleshooting recording's marker: inside #ar-root, so it is
          composited over the camera for the whole recorded session - never
@@ -849,6 +885,48 @@
               >
                 Save the measured position
               </button>
+              <!-- The explicit replace of a STORED code pose (authoring plan
+                   2026-09-28-0953 §3.4, M4): without it a new measurement
+                   of a stored code only corrects this visit (D10b). A
+                   confirm step first - it moves the code for every
+                   visitor. creator-setup.ts decides when it shows. -->
+              <button
+                type="button"
+                id="replace-code"
+                class="btn btn--prose"
+                data-testid="replace-code"
+                hidden
+                disabled
+              >
+                Re-measure the code (replace its saved position)
+              </button>
+              <div
+                id="replace-code-confirm"
+                data-testid="replace-code-confirm"
+                hidden
+              >
+                <p
+                  id="replace-code-confirm-text"
+                  data-testid="replace-code-confirm-text"
+                ></p>
+                <button
+                  type="button"
+                  id="replace-code-yes"
+                  class="btn btn--prose"
+                  data-testid="replace-code-yes"
+                  disabled
+                >
+                  Replace the saved position
+                </button>
+                <button
+                  type="button"
+                  id="replace-code-no"
+                  class="btn"
+                  data-testid="replace-code-no"
+                >
+                  Keep the saved position
+                </button>
+              </div>
               <!-- Placement (M4): a pin at the reticle with a typed label
                    (the input is an overlay control: window.prompt is
                    unavailable in an XR session), a photo of the current
@@ -899,6 +977,17 @@
                 Capture a photo here
               </button>
             </div>
+            <!-- The tour's objects with Edit text, Move to the reticle and
+                 Delete (authoring plan 2026-09-28-0953 §3.4, M4). OUTSIDE
+                 #setup-controls: listing, editing and deleting need no AR,
+                 so it shows on the page too. Drawn by object-list.ts; in
+                 AR it shows the tapped object first. -->
+            <div
+              id="object-list"
+              data-testid="object-list"
+              aria-label="Objects in this tour"
+              hidden
+            ></div>
             <!-- OUTSIDE #setup-controls on purpose: the controls are the
                  camera's (mint, pin, photo) and go with the session, but a
                  creator who measured and left AR must still be able to

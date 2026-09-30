@@ -66,6 +66,8 @@ import {
 import type { DepthSamplerConfig } from "gps-plus-slam-app-framework/ar/depth-sampler";
 import type { Object3D } from "three";
 
+import { pickObject } from "./object-pick.js";
+
 import type {
   LocationPermission,
   LocationRequestOutcome,
@@ -154,8 +156,17 @@ export interface TourViewerSeams {
   /** The screen-centre hit-test reticle under the world group (its world
    *  position is GPS-world NUE once the group carries the alignment) -
    *  the pin's position (guided-setup plan M4). Needs the session feature
-   *  (`requestHitTest`). */
-  startHitTestReticle(arWorldGroup: Object3D): HitTestReticleHandle;
+   *  (`requestHitTest`). `onSelect` hears every XR `select` the DOM
+   *  overlay did not cancel (a tap in AR, authoring plan 2026-09-28-0953
+   *  M4) through the framework driver's own option. */
+  startHitTestReticle(
+    arWorldGroup: Object3D,
+    onSelect?: () => void,
+  ): HitTestReticleHandle;
+  /** The id of the object under the screen centre (a camera-ray raycast
+   *  against each object's rendered root, `object-pick.ts`), or null. A
+   *  seam because the e2e scene is a stub with no geometry to hit. */
+  pickObjectInView(targets: ReadonlyMap<string, Object3D>): string | null;
   /** Encode a camera frame (top-left RGBA) as a JPEG for a placed photo.
    *  Rejects when the frame is not opaque: the canvas would composite it
    *  over its ground and the JPEG would come out dark (plan review #15). */
@@ -217,7 +228,21 @@ export const realSeams: TourViewerSeams = {
   downloadZip: (blob, filename) => downloadBlob(blob, filename, ZIP_FILE_TYPE),
   canShareZip: () => prefersFileShare(ZIP_FILE_TYPE),
   downloadPdf: (blob, filename) => downloadBlob(blob, filename, PDF_FILE_TYPE),
-  startHitTestReticle: (arWorldGroup) => startHitTestReticle({ arWorldGroup }),
+  startHitTestReticle: (arWorldGroup, onSelect) =>
+    startHitTestReticle(
+      onSelect === undefined
+        ? { arWorldGroup }
+        : {
+            arWorldGroup,
+            onSelect: () => {
+              onSelect();
+            },
+          },
+    ),
+  pickObjectInView: (targets) => {
+    const camera = getCamera();
+    return camera ? pickObject(camera, targets) : null;
+  },
   schedule: (fn, ms) => {
     const handle = setTimeout(fn, ms);
     return () => {

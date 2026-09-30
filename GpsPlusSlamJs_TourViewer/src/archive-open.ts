@@ -139,8 +139,11 @@ export function wireArchiveOpen(deps: {
     // and into the same tour re-opened after a finish they would duplicate
     // their own ids and break every later finish.
     ctx.placedObjects = [];
-    for (const preview of ctx.placedPreviews) preview.dispose();
-    ctx.placedPreviews = [];
+    // ...and so do its deletions (authoring plan 2026-09-28-0953 §3.4):
+    // an id deleted from one tour means nothing in another.
+    ctx.deletedObjectIds = [];
+    for (const preview of ctx.placedPreviews.values()) preview.dispose();
+    ctx.placedPreviews.clear();
     ctx.placementNote = null;
     // Clear the latch HERE too (PR #367 review): the stale run's finally is
     // generation-guarded and cannot clear it any more, and a latched

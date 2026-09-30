@@ -25,6 +25,7 @@ import {
 import {
   measurementRole,
   planVisitSettle,
+  storedGeo,
   settleAlignment,
   type CodeMeasurement,
   type CodeSighting,
@@ -76,22 +77,33 @@ import { odomNueFromWebXr } from "./visit-anchoring.js";
 
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 import type { LatLong, Matrix4 } from "gps-plus-slam-app-framework/core";
+import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 
 import {
-  appendWithoutDuplicateIds,
+  applyObjectChanges,
+  contentEntriesToRemove,
+  draftDeletionsNotYetHosted,
   draftHasUnhostedLevel,
   draftIsSpent,
   draftKeyForTour,
   draftObjectsNotYetHosted,
+  objectContentKey,
   restoredText,
   restoreOfferText,
 } from "./authoring-draft.js";
 import {
   readDraft,
   removeDraftObject,
+  writeDraftDeletion,
   writeDraftMeta,
   writeDraftObject,
 } from "./draft-persistence.js";
+import {
+  upsertPlaced,
+  wireObjectEditing,
+  type AuthoringObject,
+} from "./object-editing.js";
+import type { ObjectListView } from "./object-list.js";
 import type { ViewerMode } from "./mode.js";
 import {
   archiveSizeNote,
@@ -132,6 +144,11 @@ import {
   type TourViewerStore,
 } from "./tour-viewer-session.js";
 import type { Wizard } from "./wizard.js";
+
+/** The explicit replace's confirm question (M4): what changes, and for
+ *  whom, in plain words. */
+const REPLACE_CODE_CONFIRM =
+  "Replace the code's saved position with a new measurement? Everyone who opens the tour is lined up with the code, so it moves for them too. Objects already placed keep their own positions.";
 
 /** Said when a new measurement kept the code's stored pose (D10b). */
 const STORED_POSITION_KEPT =
@@ -218,6 +235,17 @@ export interface CreatorSetupDom {
   sizeOfferText: HTMLElement;
   sizeOfferUse: HTMLButtonElement;
   sizeOfferKeep: HTMLButtonElement;
+  /** The placed objects' list with Edit text, Move and Delete (authoring
+   *  plan 2026-09-28-0953 §3.4, M4): `object-list.ts`'s view. */
+  objectList: ObjectListView;
+  /** The explicit "Re-measure the code (replace its saved position)"
+   *  (M4; M2c review #5), shown in AR while the level in hand is a stored
+   *  pose, and its confirm step. */
+  replaceCodeButton: HTMLButtonElement;
+  replaceCodeConfirm: HTMLElement;
+  replaceCodeConfirmText: HTMLElement;
+  replaceCodeYes: HTMLButtonElement;
+  replaceCodeNo: HTMLButtonElement;
 }
 
 /** Properties, not methods: they are handed to the hooks object unbound. */
@@ -235,6 +263,9 @@ export interface CreatorSetup {
   /** A tour opened and its manifest settled: load any draft for it, and
    *  either offer what is not already hosted or delete a spent one. */
   presentDraftForTour: (tourUrl: string) => void;
+  /** A tap in AR (an XR `select` the overlay did not cancel): select the
+   *  object under the screen centre, or clear the selection on a miss. */
+  selectInView: () => void;
 }
 
 export function wireCreatorSetup(deps: {
@@ -322,6 +353,12 @@ export function wireCreatorSetup(deps: {
      *  half of a lost walk, and what makes Finish reachable again. */
     level: { id: string; json: string } | null;
     sizeM: number;
+    /** The deletions the hosted zip still carries (tombstones, plan
+     *  §3.4, M4). */
+    deleted: readonly string[];
+    /** How `objects` splits into new placements and changes of objects
+     *  the hosted zip carries - the offer's and the restore's words. */
+    counts: { placed: number; changed: number };
   } | null = null;
   /** Said once, not per placement: a creator mid-walk cannot act on it. */
   let warnedAboutPersistence = false;
@@ -355,6 +392,39 @@ export function wireCreatorSetup(deps: {
     void writeDraftObject(store, object, blob).then((ok) => {
       if (!ok) noteNoPersistence();
     });
+  }
+
+  /**
+   * `ids` minus those the creator changed or deleted in this page (M4):
+   * an edit of a hosted object keeps its id, so its file on disk is the
+   * live change's now, and a sweep of an older draft must not take it.
+   */
+  function notLive(ids: readonly string[]): string[] {
+    const live = new Set([
+      ...ctx.placedObjects.map((p) => p.object.id),
+      ...ctx.deletedObjectIds,
+    ]);
+    return ids.filter((id) => !live.has(id));
+  }
+
+  /**
+   * One draft write for the object list's actions (authoring plan
+   * 2026-09-28-0953 §3.4, M4), AWAITED: the row shows its in-progress state
+   * until this settles and then says whether the change reached the draft.
+   * Before the tour's draft namespace exists there is nothing to write yet
+   * and nothing failed - `presentDraftForTour` writes what was made
+   * meanwhile - so that reads as landed.
+   */
+  function draftWrite(
+    write: (store: DraftFileStore) => Promise<boolean>,
+  ): Promise<boolean> {
+    const store = draftStore;
+    if (store === undefined) {
+      if (draftTourUrl === null) return Promise.resolve(true);
+      noteNoPersistence();
+      return Promise.resolve(false);
+    }
+    return write(store).catch(() => false);
   }
 
   /**
@@ -421,6 +491,14 @@ export function wireCreatorSetup(deps: {
   }
 
   dom.panel.hidden = !creator;
+  // ONE TAP, ONE EVENT (the PhysicsDemo pattern, `ar-mode.ts`): a tap on
+  // the DOM overlay fires a DOM click AND an XR select, and a select picks
+  // the object under the ring (M4) - so a tap on Delete would also select
+  // whatever stands behind the button. Cancelling `beforexrselect` on the
+  // panel suppresses only the XR half, and only for taps on the panel.
+  dom.panel.addEventListener("beforexrselect", (event) => {
+    event.preventDefault();
+  });
   dom.sizeInput.value = String(AUTHOR_DEFAULT_SIZE_M);
 
   // The print-size check (QR size consensus plan S3a): measures the printed
@@ -439,20 +517,55 @@ export function wireCreatorSetup(deps: {
   function sessionLive(): boolean {
     return arSessionLive(arController.getState().status);
   }
-  /** Ids of placed objects whose preview waits for the zero (see
-   *  `previewObject`); emptied when a visit ends - the next one renders
-   *  everything again. */
-  const previewsAwaitingZero = new Set<string>();
+  /** A preview sync found no zero yet (see `syncPreviews`): the store
+   *  subscription runs it again once the zero lands. */
+  let previewsWaitForZero = false;
 
-  /** Render what waited for the zero, once the store has one. */
-  function renderPreviewsAwaitingZero(): void {
-    if (previewsAwaitingZero.size === 0) return;
-    if (selectZeroReference(arStore.getState()) === null) return;
-    const waiting = new Set(previewsAwaitingZero);
-    previewsAwaitingZero.clear();
-    ctx.placedObjects.forEach((entry, index) => {
-      if (waiting.has(entry.object.id)) previewObject(index);
-    });
+  /** The object list and its actions (authoring plan 2026-09-28-0953
+   *  §3.4, M4): edit, move and delete over the same in-memory state the
+   *  placement fills, and the selection a tap in AR makes. */
+  const editing = wireObjectEditing({
+    ctx,
+    arStore,
+    view: dom.objectList,
+    getArWorldGroup: () => seams.getArWorldGroup(),
+    sessionLive,
+    placementAllowed,
+    settleInputs: () => ({
+      mintedLevel: ctx.mintedLevel,
+      measurement: ctx.codeMeasurement,
+      sighting: ctx.visitCodeSighting,
+      gpsAccuracyM: authorAlignmentInfo().gpsAccuracyM,
+    }),
+    codes: storedCodes,
+    saveDraftObject: (object, blob) =>
+      draftWrite((store) => writeDraftObject(store, object, blob)),
+    saveDraftDeletion: (id) =>
+      draftWrite((store) => writeDraftDeletion(store, id)),
+    forgetDraftObject: async (id) => {
+      const store = draftStore;
+      if (store !== undefined) await removeDraftObject(store, id);
+    },
+    syncPreviews: () => {
+      syncPreviews();
+    },
+    renderAuthorReadout: () => {
+      renderAuthorReadout();
+    },
+  });
+
+  /** The stored codes' geo (the level in hand, then the open tour's other
+   *  levels), for the list's "4 m from the code". */
+  function storedCodes(): QrGeoPose[] {
+    const out: QrGeoPose[] = [];
+    const inHand = ctx.mintedLevel;
+    const inHandGeo = inHand === null ? null : storedGeo(inHand.json);
+    if (inHandGeo !== null) out.push(inHandGeo);
+    for (const [id, level] of ctx.currentLevels ?? []) {
+      if (id === inHand?.id || level.qr.geo === undefined) continue;
+      out.push(level.qr.geo);
+    }
+    return out;
   }
 
   if (creator) {
@@ -460,7 +573,12 @@ export function wireCreatorSetup(deps: {
     // readout must follow the store, or "waiting for GPS alignment" sticks.
     // So does the zero, which the previews from geo wait for.
     arStore.subscribe(() => {
-      renderPreviewsAwaitingZero();
+      if (
+        previewsWaitForZero &&
+        selectZeroReference(arStore.getState()) !== null
+      ) {
+        syncPreviews();
+      }
       renderAuthorReadout();
     });
   }
@@ -555,10 +673,42 @@ export function wireCreatorSetup(deps: {
     );
   }
 
+  /** Whether the explicit replace's confirm step is open. */
+  let replaceConfirmOpen = false;
+
+  /**
+   * The explicit "Re-measure the code (replace its saved position)"
+   * (authoring plan 2026-09-28-0953 §3.4, M4; M2c review #5): offered in AR
+   * while the level in hand is a STORED pose - the only case in which a
+   * measurement does not replace it by itself. Enabled with the mint gate
+   * (see the live readout), and only for that code in view.
+   */
+  function renderReplaceCode(): void {
+    const shown = sessionLive() && levelInHandIsStored();
+    if (!shown) replaceConfirmOpen = false;
+    dom.replaceCodeButton.hidden = !shown || replaceConfirmOpen;
+    dom.replaceCodeConfirm.hidden = !(shown && replaceConfirmOpen);
+    // Re-enabled by the live readout when the gate is open.
+    dom.replaceCodeButton.disabled = true;
+    dom.replaceCodeYes.disabled = true;
+  }
+
+  /** The code in view is the one whose level is in hand. */
+  function codeInViewIsLevelInHand(): boolean {
+    const text = ctx.lastDetectedText;
+    return (
+      text !== null &&
+      ctx.mintedLevel !== null &&
+      codeIds.get(text) === ctx.mintedLevel.id
+    );
+  }
+
   function renderAuthorReadout(): void {
     renderSizeOffer();
     if (!creator) return;
     renderPlacementButtons();
+    renderReplaceCode();
+    editing.render();
     // F11: the AR controls belong to the AR session. On the setup page they
     // were a row of greyed-out buttons under "AR not supported", which is
     // what the owner reported. The STATUS line stays either way - it is
@@ -649,10 +799,7 @@ export function wireCreatorSetup(deps: {
       hadLevel: (ctx.currentLevels?.size ?? 0) > 0,
       keptStored: levelInHandIsStored(),
     });
-    const count =
-      ctx.placedObjects.length > 0
-        ? ` · ${placed(ctx.placedObjects.length)}`
-        : "";
+    const count = newlyPlaced() > 0 ? ` · ${placed(newlyPlaced())}` : "";
     // What is happening to the tour the code names (plan §9 #9), and which
     // tour is open (§9 #10) - derived each render, never a one-off note.
     const codeStatus = codeTour.status(ctx.lastDetectedText);
@@ -666,6 +813,10 @@ export function wireCreatorSetup(deps: {
       tour;
     // No status locks Save: in authoring there is no wrong code (plan §13).
     dom.mintButton.disabled = !readout.canMint;
+    // The explicit replace takes the same gate, for the stored code only.
+    const canReplace = readout.canMint && codeInViewIsLevelInHand();
+    dom.replaceCodeButton.disabled = !canReplace;
+    dom.replaceCodeYes.disabled = !canReplace;
     const blocked = finishBlockedHint(readiness);
     if (blocked !== "") dom.status.textContent += ` · ${blocked}`;
     if (readiness === "ready" && ctx.session !== null) {
@@ -699,38 +850,131 @@ export function wireCreatorSetup(deps: {
     };
   }
 
-  /** Render ONE newly placed object into the live preview (incremental:
-   *  each placement decodes only its own photo, and two placements cannot
-   *  race each other's disposal - M4 review #7). */
-  function previewObject(placedIndex: number): void {
-    const entry = ctx.placedObjects[placedIndex];
+  /**
+   * What each preview was rendered from, by object id (authoring plan
+   * 2026-09-28-0953 §3.4, M4): its look and where its pose comes from. A
+   * preview whose key no longer matches is replaced; one whose object is
+   * gone (deleted, or its tour closed) is disposed. Emptied with the
+   * previews at each visit's end - the next visit renders everything again.
+   */
+  const previewKeys = new Map<string, string>();
+  /**
+   * The bytes of photos a Finish took out of `placedObjects`: the hosted
+   * zip does not carry them until the creator uploads the rebuilt one, so
+   * their preview reads them from here. Emptied when the tour closes.
+   */
+  const finishedPhotoBlobs = new Map<string, Blob>();
+
+  function previewKey(entry: AuthoringObject): string {
+    const { object } = entry;
+    const placement = entry.placed?.placement;
+    const rigid =
+      placement !== undefined && placement.visit === ctx.arSessionGeneration;
+    return JSON.stringify([
+      object.kind,
+      object.kind === "pin" ? object.label : object.image,
+      rigid ? placement.local : object.geo,
+    ]);
+  }
+
+  /** Dispose every preview and forget what they were made from. */
+  function clearPreviews(): void {
+    previewKeys.clear();
+    for (const preview of ctx.placedPreviews.values()) preview.dispose();
+    ctx.placedPreviews.clear();
+  }
+
+  /**
+   * Bring the previews in line with the tour's objects now - this device's
+   * AND the hosted zip's (M4: an author reopening a tour used to see none
+   * of what was already there), keyed by id. Incremental: an object whose
+   * preview still matches is left alone, so each placement decodes only
+   * its own photo and two placements cannot race each other's disposal
+   * (M4 review #7 of the guided-setup plan).
+   */
+  function syncPreviews(): void {
     const scene = seams.getScene();
+    if (!creator || scene === null) return;
+    const desired = new Map(
+      editing.objects().map((entry) => [entry.object.id, entry]),
+    );
+    dropStalePreviews(desired);
     const zero = selectZeroReference(arStore.getState());
-    if (entry === undefined || scene === null) return;
-    if (zero === null) {
-      // Placed from geo, which needs the zero - and on the first visit of a
-      // page load (a restored draft) the zero comes with the first GPS fix,
-      // after the visit began. Rendered when it lands (M2c review #4).
-      previewsAwaitingZero.add(entry.object.id);
-      return;
+    // Placed from geo, which needs the zero - and on the first visit of a
+    // page load (a restored draft) the zero comes with the first GPS fix,
+    // after the visit began. Rendered when it lands (M2c review #4).
+    previewsWaitForZero = zero === null;
+    if (zero === null) return;
+    for (const entry of desired.values()) {
+      if (!previewKeys.has(entry.object.id)) {
+        renderPreview(entry, zero, earlierFrame ?? scene);
+      }
     }
+  }
+
+  /** Dispose each preview whose object is gone or no longer looks or sits
+   *  as it was rendered. */
+  function dropStalePreviews(
+    desired: ReadonlyMap<string, AuthoringObject>,
+  ): void {
+    for (const [id, key] of previewKeys) {
+      const entry = desired.get(id);
+      if (entry !== undefined && previewKey(entry) === key) continue;
+      previewKeys.delete(id);
+      ctx.placedPreviews.get(id)?.dispose();
+      ctx.placedPreviews.delete(id);
+    }
+  }
+
+  function renderPreview(
+    entry: AuthoringObject,
+    zero: LatLong,
+    fromGeo: Object3D,
+  ): void {
+    const id = entry.object.id;
+    const key = previewKey(entry);
+    previewKeys.set(id, key);
     const generation = ctx.arSessionGeneration;
+    const blob = entry.placed?.blob ?? finishedPhotoBlobs.get(id);
+    const session = ctx.session;
     void renderTourObjects([entry.object], {
-      ...previewFrame(entry.placement, earlierFrame ?? scene),
+      ...previewFrame(entry.placed?.placement, fromGeo),
       zero,
       makeLabel: (text) => seams.createLabel(text),
-      loadPhotoTexture: () =>
-        entry.blob === undefined
-          ? Promise.resolve(null)
-          : decodeFrameTexture(entry.blob, 2),
-    }).then((rendered) => {
-      // The session may have ended while the photo decoded.
-      if (generation !== ctx.arSessionGeneration) {
-        rendered.dispose();
-        return;
-      }
-      ctx.placedPreviews.push(rendered);
-    });
+      loadPhotoTexture: async (image) => {
+        // This device's bytes first; a hosted photo's come from the zip,
+        // through the session (it knows the folder the manifest sits in).
+        if (blob !== undefined) return decodeFrameTexture(blob, 2);
+        if (session === null) return null;
+        return decodeFrameTexture(await session.loadContentEntry(image), 2);
+      },
+    }).then(
+      (rendered) => {
+        // The session may have ended while the photo decoded, or the
+        // object changed or went away meanwhile.
+        if (
+          generation !== ctx.arSessionGeneration ||
+          previewKeys.get(id) !== key
+        ) {
+          rendered.dispose();
+          return;
+        }
+        ctx.placedPreviews.get(id)?.dispose();
+        ctx.placedPreviews.set(id, rendered);
+      },
+      () => {
+        // A throwing label or plane: forget it, so a later sync may retry.
+        if (previewKeys.get(id) === key) previewKeys.delete(id);
+      },
+    );
+  }
+
+  /** Objects placed on this device that the zip does not carry yet - an
+   *  edit or a move of a hosted object is in `placedObjects` too (M4),
+   *  but it was not "placed". */
+  function newlyPlaced(): number {
+    const hosted = new Set((ctx.tourManifest?.objects ?? []).map((o) => o.id));
+    return ctx.placedObjects.filter((p) => !hosted.has(p.object.id)).length;
   }
 
   function placed(count: number): string {
@@ -792,20 +1036,39 @@ export function wireCreatorSetup(deps: {
     );
   }
 
+  /** Put a restored draft's objects and deletions back into the lists
+   *  a live placement fills (see the restore below). */
+  function restoreWork(waiting: NonNullable<typeof offered>): void {
+    // Live work on the same id is newer than the draft's, and wins.
+    const live = new Set([
+      ...ctx.placedObjects.map((p) => p.object.id),
+      ...ctx.deletedObjectIds,
+    ]);
+    for (const object of waiting.objects) {
+      if (live.has(object.id)) continue;
+      const blob = waiting.photos.get(object.id);
+      ctx.placedObjects = upsertPlaced(
+        ctx.placedObjects,
+        blob === undefined ? { object } : { object, blob },
+      );
+    }
+    // The deletions come back as the tombstones they are (plan §3.4).
+    for (const id of waiting.deleted) {
+      if (!live.has(id)) ctx.deletedObjectIds = [...ctx.deletedObjectIds, id];
+    }
+  }
+
   dom.draftRestore.addEventListener("click", () => {
     const waiting = offered;
     dom.draftOffer.hidden = true;
     offered = null;
     if (waiting === null) return;
     // Into the SAME list a live placement fills, so the finish needs no
-    // second path: it appends these to the manifest exactly as it appends
-    // anything else, and writes the photo bytes as content entries.
-    for (const object of waiting.objects) {
-      const blob = waiting.photos.get(object.id);
-      ctx.placedObjects.push(
-        blob === undefined ? { object } : { object, blob },
-      );
-    }
+    // second path: it writes these into the manifest exactly as it writes
+    // anything else (an edit of a hosted object replaces it by id), and
+    // the photo bytes as content entries. Live work on the same id is
+    // newer than the draft's, and wins.
+    restoreWork(waiting);
     // The measured level comes back too, and it is what unlocks Finish
     // without walking to the poster again. Only when the session has not
     // already measured one: a live measurement is newer than a draft.
@@ -821,18 +1084,13 @@ export function wireCreatorSetup(deps: {
     }
     // Render them, or the readout says "5 objects placed" over an empty
     // scene and the creator places them again - new ids, real duplicates
-    // at the same spot in the published zip. previewObject already guards
-    // against a dead scene, so this is safe outside a session too.
-    for (
-      let i = ctx.placedObjects.length - waiting.objects.length;
-      i < ctx.placedObjects.length;
-      i += 1
-    ) {
-      previewObject(i);
-    }
+    // at the same spot in the published zip. The sync guards against a
+    // dead scene, so this is safe outside a session too.
+    syncPreviews();
     ctx.placementNote = restoredText(
-      waiting.objects.length,
+      waiting.counts.placed,
       waiting.level !== null,
+      { changed: waiting.counts.changed, deleted: waiting.deleted.length },
     );
     renderAuthorReadout();
   });
@@ -848,7 +1106,8 @@ export function wireCreatorSetup(deps: {
     dom.draftOffer.hidden = true;
     // Captured BEFORE the offer is dropped: this is the list of what the
     // creator is rejecting, and it is the only thing that gets deleted.
-    const rejectedIds = offered?.storedIds ?? [];
+    // Minus the ids changed live since (`notLive`, M4).
+    const rejectedIds = notLive(offered?.storedIds ?? []);
     offered = null;
     const store = draftStore;
     if (store === undefined) return;
@@ -1021,8 +1280,8 @@ export function wireCreatorSetup(deps: {
     logPlacement(pin, { reticleWorld: position });
     dom.pinLabel.value = "";
     hideLabelInput();
-    previewObject(ctx.placedObjects.length - 1);
-    note(`Pin "${label}" placed · ${placed(ctx.placedObjects.length)}.`);
+    syncPreviews();
+    note(`Pin "${label}" placed · ${placed(newlyPlaced())}.`);
   });
 
   dom.photoButton.addEventListener("click", () => {
@@ -1079,11 +1338,11 @@ export function wireCreatorSetup(deps: {
         if (settled !== undefined) {
           logSettle(visit, "late-arrival", settled, [photo], null);
         }
-        previewObject(ctx.placedObjects.length - 1);
+        syncPreviews();
         // The plane sits at the capture spot, facing back at it: the
         // creator is standing on it and sees it once they step back.
         note(
-          `Photo placed - step back a metre to see it · ${placed(ctx.placedObjects.length)}.`,
+          `Photo placed - step back a metre to see it · ${placed(newlyPlaced())}.`,
         );
       },
       (err: unknown) => {
@@ -1475,7 +1734,15 @@ export function wireCreatorSetup(deps: {
     ctx.placementNote = STORED_POSITION_KEPT;
   }
 
-  dom.mintButton.addEventListener("click", () => {
+  /**
+   * Measure the code in view ("Save the measured position"), or - with
+   * `replace` - deliberately replace the stored pose in hand with the new
+   * measurement ("Re-measure the code (replace its saved position)",
+   * authoring plan 2026-09-28-0953 §3.4, M4; M2c review #5). Without
+   * `replace`, a measurement of a code whose pose is already stored is a
+   * correction sighting for this visit (`measurementRole`, D10b).
+   */
+  function measureCode(replace: boolean): void {
     if (ctx.lastDetectedText === null) return;
     const state = arStore.getState();
     // The readout's result, re-read so a tracking restart since then counts
@@ -1540,15 +1807,24 @@ export function wireCreatorSetup(deps: {
         return;
       }
       if (mintGeneration !== ctx.mintGeneration) return;
-      const hostedJson = await hostedCandidate(id, prior.level, openAtTap);
+      // The explicit replace applies to the stored pose in hand, and only
+      // when the code measured IS that code.
+      const replaced = replace && prior.level?.id === id ? prior.level : null;
+      const hostedJson =
+        replaced === null
+          ? await hostedCandidate(id, prior.level, openAtTap)
+          : null;
       if (mintGeneration !== ctx.mintGeneration) return;
-      const role = measurementRole({
-        levelId: id,
-        visit: measured.arVisitIndex,
-        inHand: prior.level,
-        inHandMeasurement: prior.measurement,
-        hostedJson,
-      });
+      const role =
+        replaced === null
+          ? measurementRole({
+              levelId: id,
+              visit: measured.arVisitIndex,
+              inHand: prior.level,
+              inHandMeasurement: prior.measurement,
+              hostedJson,
+            })
+          : { kept: "measurement" as const };
       adoptMeasurement(role, prior.measurement, {
         level: { id, json: result.json },
         // What the settle re-mints the code from at the visit's end, and
@@ -1575,11 +1851,43 @@ export function wireCreatorSetup(deps: {
         tourUrl: codeTour.tourOf(mintedText),
       };
       arStore.dispatch(
-        codeMeasured({ levelId: id, ...measured, kept: role.kept }),
+        codeMeasured({
+          levelId: id,
+          ...measured,
+          kept: role.kept,
+          ...(replaced === null ? {} : { replaced }),
+        }),
       );
+      if (replaced !== null) {
+        ctx.placementNote =
+          "The code's saved position was replaced with this measurement.";
+      }
       if (draftTourUrl !== null) void recordMeta(draftTourUrl);
       renderAuthorReadout();
     })();
+  }
+
+  dom.mintButton.addEventListener("click", () => {
+    measureCode(false);
+  });
+
+  // The explicit replace: a confirm step first, because it moves the code
+  // for everyone who opens the tour (M4).
+  dom.replaceCodeConfirmText.textContent = REPLACE_CODE_CONFIRM;
+  dom.replaceCodeButton.addEventListener("click", () => {
+    replaceConfirmOpen = true;
+    renderAuthorReadout();
+  });
+  dom.replaceCodeNo.addEventListener("click", () => {
+    replaceConfirmOpen = false;
+    renderAuthorReadout();
+  });
+  dom.replaceCodeYes.addEventListener("click", () => {
+    replaceConfirmOpen = false;
+    // Hidden directly: a re-render would overwrite the "Saving…" line the
+    // measurement puts up; its own end re-renders the panel.
+    dom.replaceCodeConfirm.hidden = true;
+    measureCode(true);
   });
 
   dom.finishButton.addEventListener("click", () => {
@@ -1627,20 +1935,26 @@ export function wireCreatorSetup(deps: {
         // apart in the first place (PR #435 review).
         const wrap = current.manifestWrap;
         const manifestPath = `${wrap}${TOUR_MANIFEST_ENTRY}`;
-        // The manifest: what the zip carried plus what this session placed;
-        // the photos' bytes become content entries next to it.
+        // The manifest: what the zip carried, with this device's records
+        // REPLACING theirs by id (an edit or a move of a hosted object),
+        // the new ones appended and the deleted ones filtered out (plan
+        // §3.4, M4); the photos' bytes become content entries next to it.
         const manifest = ctx.tourManifest ?? createEmptyTourManifest();
+        const deleted = [...ctx.deletedObjectIds];
         const written: TourManifest = {
           ...manifest,
-          // De-duplicating by id, and not for tidiness: the serializer
-          // REJECTS duplicates, so one restored object that is already in
-          // the manifest would make every finish throw - for as long as the
+          // Never an id twice, and not for tidiness: the serializer REJECTS
+          // duplicates, so one restored object that is already in the
+          // manifest would make every finish throw - for as long as the
           // draft is restored, with no escape inside the app (M5 review #4).
-          objects: appendWithoutDuplicateIds(
+          objects: applyObjectChanges(
             manifest.objects,
             ctx.placedObjects.map((p) => p.object),
+            deleted,
           ),
         };
+        // A deleted photo takes its content file with it.
+        const removed = contentEntriesToRemove(manifest.objects, deleted, wrap);
         const entries = [
           {
             path: existingLevelPath ?? qrLevelEntryName(minted.id),
@@ -1664,6 +1978,7 @@ export function wireCreatorSetup(deps: {
           ctx.rebuiltZip?.blob ?? (await current.readWholeArchive());
         if (ctx.session !== current) return; // re-opened meanwhile
         const blob = await rebuildZipWithEntries(input, entries, {
+          remove: removed,
           onProgress: (done, total) => {
             ctx.finishProgress = FINISH_LABELS.rebuilding(done, total);
             renderAuthorReadout();
@@ -1696,13 +2011,30 @@ export function wireCreatorSetup(deps: {
         // pre-finish manifest and silently drop this batch (PR #435
         // review). `tourManifest` is otherwise only written at tour open.
         ctx.tourManifest = written;
-        // Only what this zip carries leaves the list: a photo that landed
-        // while the zip was rebuilt is in neither, and waits for the next
-        // Finish (M2c review #6).
-        const inZip = new Set(written.objects.map((o) => o.id));
-        ctx.placedObjects = ctx.placedObjects.filter(
-          (p) => !inZip.has(p.object.id),
+        // Only what this zip carries leaves the list - by CONTENT, not id:
+        // a photo that landed while the zip was rebuilt is in neither, and
+        // waits for the next Finish (M2c review #6). A photo that leaves
+        // keeps its bytes here for its preview: the hosted zip does not
+        // have them until the creator uploads this one.
+        const inZip = new Map(
+          written.objects.map((o) => [o.id, objectContentKey(o)]),
         );
+        const kept: typeof ctx.placedObjects = [];
+        for (const p of ctx.placedObjects) {
+          if (inZip.get(p.object.id) !== objectContentKey(p.object)) {
+            kept.push(p);
+          } else if (p.blob !== undefined) {
+            finishedPhotoBlobs.set(p.object.id, p.blob);
+          }
+        }
+        ctx.placedObjects = kept;
+        // The deletions are applied: the manifest no longer carries them.
+        // (Their tombstones stay in the draft until the hosted zip lacks
+        // them too - the same proof the objects wait for.)
+        ctx.deletedObjectIds = ctx.deletedObjectIds.filter(
+          (id) => !deleted.includes(id),
+        );
+        syncPreviews();
         wroteZip = true;
         arStore.dispatch(
           authoringFinished({
@@ -1870,19 +2202,27 @@ export function wireCreatorSetup(deps: {
       earlierFrame.matrixAutoUpdate = false;
       earlierFrameUnderGroup = false;
       scene.add(earlierFrame);
-      for (let i = 0; i < ctx.placedObjects.length; i += 1) previewObject(i);
+      // Everything is rendered afresh into this visit's frames - the
+      // hosted zip's objects too (M4) - keyed by id.
+      clearPreviews();
+      syncPreviews();
       placeEarlierObjects();
+      editing.render();
     },
     endAuthorVisit: () => {
       if (!creator) return;
       settleVisit("visit-end");
       ctx.visitCodeSighting = null;
       liveRefusal = null;
-      previewsAwaitingZero.clear();
-      // The previews inside are disposed with `placedPreviews`; the frame
-      // itself is this module's.
+      previewsWaitForZero = false;
+      // The previews are disposed by the entry's teardown right after this
+      // (`placedPreviews`); what they were made from goes now, so the next
+      // visit renders everything again. The frame itself is this module's.
+      previewKeys.clear();
       earlierFrame?.removeFromParent();
       earlierFrame = null;
+      // An AR selection means nothing on the page.
+      editing.reset();
     },
     resetFinishStep: () => {
       dom.downloadButton.disabled = true;
@@ -1908,6 +2248,11 @@ export function wireCreatorSetup(deps: {
       draftStore = undefined;
       draftTourUrl = null;
       draftRejected = [];
+      // The closing tour's previews, photo bytes and list (M4).
+      clearPreviews();
+      finishedPhotoBlobs.clear();
+      replaceConfirmOpen = false;
+      editing.reset();
     },
     presentDraftForTour: (tourUrl) => {
       if (!creator) return; // a visitor authors nothing
@@ -1919,6 +2264,10 @@ export function wireCreatorSetup(deps: {
       // open path already guards every other continuation this way.
       const generation = ctx.openGeneration;
       const stale = (): boolean => generation !== ctx.openGeneration;
+      // The manifest just settled: its objects join the previews and the
+      // list (M4 - an author reopening a tour sees what is already there).
+      syncPreviews();
+      editing.render();
       void (async () => {
         const store = await openDraftStore(draftKeyForTour(tourUrl));
         if (stale()) return;
@@ -1953,6 +2302,10 @@ export function wireCreatorSetup(deps: {
             recordPlacement(entry.object, entry.blob);
           }
         }
+        // Deletions made meanwhile likewise (plan §3.4, M4).
+        for (const id of ctx.deletedObjectIds) {
+          if (!storedIds.has(id)) void writeDraftDeletion(store, id);
+        }
         if (stored === undefined) {
           // No draft yet, but there will be: record what is already known,
           // so a crash before the first placement still leaves the tour and
@@ -1961,6 +2314,10 @@ export function wireCreatorSetup(deps: {
           return;
         }
         const waiting = draftObjectsNotYetHosted(
+          stored.draft,
+          ctx.tourManifest,
+        );
+        const waitingDeletions = draftDeletionsNotYetHosted(
           stored.draft,
           ctx.tourManifest,
         );
@@ -1992,7 +2349,12 @@ export function wireCreatorSetup(deps: {
           // `storedIds`, not `draft.objects`: the latter is what parsed,
           // and a record this read refused still has files. Nothing
           // reclaims those since `clear` lost its last caller.
-          draftRejected = stored.storedIds;
+          // Minus what the creator changed or deleted during the awaits
+          // above (M4): an edit of a hosted object keeps its id, so unlike a
+          // new placement it CAN be in this list, and its file is now the
+          // live change's.
+          const sweep = notLive(stored.storedIds);
+          draftRejected = sweep;
           // Same commit point as the discard, for the same reason: an
           // interrupted sweep must not bring a spent draft back - and the
           // same notice when it does not land.
@@ -2001,10 +2363,16 @@ export function wireCreatorSetup(deps: {
             return;
           }
           if (stale()) return;
-          for (const id of stored.storedIds) void removeDraftObject(store, id);
+          for (const id of sweep) void removeDraftObject(store, id);
           return;
         }
         const hasLevel = draftHasUnhostedLevel(stored.draft, hostedLevel);
+        // New placements, and changes of objects the hosted zip carries.
+        const hostedIds = new Set(
+          (ctx.tourManifest?.objects ?? []).map((o) => o.id),
+        );
+        const changed = waiting.filter((o) => hostedIds.has(o.id)).length;
+        const counts = { placed: waiting.length - changed, changed };
         // A level measured before this open is newer than the offered
         // draft's and would otherwise live only in memory; a mint after the
         // open would write it the same way.
@@ -2021,10 +2389,13 @@ export function wireCreatorSetup(deps: {
           // as spent.
           level: stored.draft.level,
           sizeM: stored.draft.sizeM,
+          deleted: waitingDeletions,
+          counts,
         };
         dom.draftOfferText.textContent = restoreOfferText(
-          waiting.length,
+          counts.placed,
           hasLevel,
+          { changed: counts.changed, deleted: waitingDeletions.length },
         );
         dom.draftOffer.hidden = false;
         // The offer is outside the AR overlay, so a creator whose scan
@@ -2042,6 +2413,13 @@ export function wireCreatorSetup(deps: {
         // whatever the creator was reading.
         wizard.revealStep("measure");
       })();
+    },
+    selectInView: () => {
+      if (!creator || !sessionLive()) return;
+      const targets = new Map(
+        [...ctx.placedPreviews].map(([id, preview]) => [id, preview.root]),
+      );
+      editing.select(seams.pickObjectInView(targets));
     },
   };
 }

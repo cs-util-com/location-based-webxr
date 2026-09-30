@@ -96,6 +96,62 @@ interface CodeMeasuredLog {
    *  hand (`level-in-hand`) or the hosted zip's (`hosted-level`). The
    *  setup always sets it; absent in recordings made before it existed. */
   readonly kept?: "measurement" | "level-in-hand" | "hosted-level";
+  /** The stored pose this measurement deliberately REPLACED, when the
+   *  creator confirmed "Re-measure the code (replace its saved position)"
+   *  (authoring plan 2026-09-28-0953 §3.4, M4; M2c review #5). Absent for
+   *  every other measurement - those never replace a stored pose. */
+  readonly replaced?: { readonly id: string; readonly json: string };
+}
+
+/** Where an edit came from: the list on the page, or in AR (a tapped
+ *  selection or the overlay's list). */
+type EditSurface = "page" | "ar";
+
+/** An object's text changed (plan §3.4, M4). */
+interface ObjectEditedLog {
+  readonly before: TourObject;
+  readonly after: TourObject;
+  /** `arSessionGeneration` at the tap (AR visits ended before it). */
+  readonly arVisitIndex: number;
+  readonly atMs: number;
+  readonly surface: EditSurface;
+}
+
+/**
+ * A pin moved to the reticle (plan §3.4, M4), with the raw inputs its new
+ * geo was computed from - the same set a settle records - so a replay can
+ * recompute it: the reticle in odometry, the visit's alignment, the
+ * alignment actually used (corrected through the code when the visit saw
+ * it, D10b) and the sighting behind a correction.
+ */
+interface ObjectMovedLog {
+  readonly before: TourObject;
+  readonly after: TourObject;
+  readonly arVisitIndex: number;
+  readonly atMs: number;
+  /** The reticle in the world group's local frame (odometry-NUE). */
+  readonly reticleOdomNue: readonly [number, number, number];
+  readonly basis: SettleBasis;
+  readonly visitAlignment: AlignmentMatrix;
+  readonly usedAlignment: readonly number[];
+  readonly sighting: {
+    readonly text: string;
+    readonly levelId: string;
+    readonly odomPose: Pose;
+  } | null;
+  readonly refusedCorrection: CorrectionRefusal | null;
+  readonly zero: LatLong;
+}
+
+/** An object deleted (plan §3.4, M4). */
+interface ObjectDeletedLog {
+  readonly object: TourObject;
+  /** The open tour's zip (or the last Finish) carried it, so the delete is
+   *  a tombstone the Finish applies; otherwise it was only on this device. */
+  readonly hosted: boolean;
+  readonly arVisitIndex: number;
+  readonly atMs: number;
+  readonly surface: EditSurface;
 }
 
 /**
@@ -163,4 +219,13 @@ export const visitSettled = logAction<VisitSettledLog>()(
 );
 export const authoringFinished = logAction<FinishedLog>()(
   "tourAuthoring/finished",
+);
+export const objectEdited = logAction<ObjectEditedLog>()(
+  "tourAuthoring/objectEdited",
+);
+export const objectMoved = logAction<ObjectMovedLog>()(
+  "tourAuthoring/objectMoved",
+);
+export const objectDeleted = logAction<ObjectDeletedLog>()(
+  "tourAuthoring/objectDeleted",
 );

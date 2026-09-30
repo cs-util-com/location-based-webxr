@@ -187,6 +187,10 @@ export interface RenderedTourObjects {
   count: number;
   /** Ids of objects that could not be rendered, for the status line. */
   skipped: string[];
+  /** The one group every rendered object hangs under: what a tap in AR
+   *  is cast against to name the object (`object-pick.ts`, authoring plan
+   *  2026-09-28-0953 M4). */
+  root: Object3D;
   dispose(): void;
 }
 
@@ -236,6 +240,7 @@ export async function renderTourObjects(
   deps.scene.add(group);
   return {
     count: labels.length + planes.count,
+    root: group,
     skipped,
     dispose: () => {
       deps.scene.remove(group);

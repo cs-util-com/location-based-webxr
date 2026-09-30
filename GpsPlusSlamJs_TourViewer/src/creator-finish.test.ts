@@ -60,6 +60,8 @@ interface FakeEl {
   handlers: Map<string, () => void>;
   addEventListener: (type: string, handler: () => void) => void;
   click: () => void;
+  bind: () => void;
+  render: () => void;
 }
 
 function el(): FakeEl {
@@ -73,6 +75,10 @@ function el(): FakeEl {
     handlers,
     addEventListener: (type, handler) => handlers.set(type, handler),
     click: () => handlers.get("click")?.(),
+    // The object list's view (authoring plan M4): a stand-in - its model
+    // is tested in object-list.test.ts, its DOM by the Playwright suite.
+    bind: () => undefined,
+    render: () => undefined,
   };
 }
 
@@ -105,6 +111,12 @@ const DOM_KEYS = [
   "sizeOfferText",
   "sizeOfferUse",
   "sizeOfferKeep",
+  "objectList",
+  "replaceCodeButton",
+  "replaceCodeConfirm",
+  "replaceCodeConfirmText",
+  "replaceCodeYes",
+  "replaceCodeNo",
 ] as const;
 
 function fakeDom(): Record<(typeof DOM_KEYS)[number], FakeEl> {
@@ -134,11 +146,15 @@ const WRAP = "mytour/";
  * A hosted archive in the wrapped shape, carrying one object already and a
  * level file for `LEVEL_ID`.
  */
-async function hostedArchive(existing: readonly TourObject[]): Promise<Blob> {
+async function hostedArchive(
+  existing: readonly TourObject[],
+  content: readonly { path: string; data: string }[] = [],
+): Promise<Blob> {
   const manifest = { ...createEmptyTourManifest(), objects: [...existing] };
   return packFilesAsZip([
     { path: `${WRAP}tour.json`, data: serializeTourManifest(manifest) },
     { path: `${WRAP}qr/${LEVEL_ID}.json`, data: '{"old":true}' },
+    ...content,
   ]);
 }
 
@@ -191,6 +207,10 @@ function alignedArStore(alignment?: number[]): unknown {
  */
 async function wireFinishable(options: {
   hosted: readonly TourObject[];
+  /** Content files the hosted zip carries (a photo's `content/<id>.jpg`). */
+  hostedContent?: readonly { path: string; data: string }[];
+  /** Ids deleted before the Finish (tombstones, M4). */
+  deleted?: readonly string[];
   placed: readonly TourObject[];
   hostedName?: string | null;
   /** Runs while the finish awaits the AR session's end. */
@@ -203,7 +223,7 @@ async function wireFinishable(options: {
     local: [number, number, number];
   }[];
 }) {
-  const blob = await hostedArchive(options.hosted);
+  const blob = await hostedArchive(options.hosted, options.hostedContent);
   const dom = fakeDom();
   const ctx = createTourViewerSession();
   ctx.session = fakeSession(blob, options.hostedName ?? null) as never;
@@ -213,6 +233,7 @@ async function wireFinishable(options: {
     ...createEmptyTourManifest(),
     objects: [...options.hosted],
   };
+  ctx.deletedObjectIds = [...(options.deleted ?? [])];
   ctx.placedObjects = [
     ...options.placed.map((object) => ({ object })),
     ...(options.placedInVisit ?? []).map(({ object, local }) => ({
@@ -353,6 +374,74 @@ describe("what the finish actually writes into the published zip", () => {
       new Set(ids).size,
       "every id appears exactly once in the PUBLISHED manifest",
     ).toBe(ids.length);
+  });
+});
+
+/** The manifest the rebuilt ARCHIVE carries, read from its bytes. */
+async function publishedManifest(blob: Blob) {
+  const bytes = readStoredEntryBytes(
+    new Uint8Array(await blob.arrayBuffer()),
+    `${WRAP}tour.json`,
+  );
+  expect(bytes, "the archive must carry a manifest").toBeDefined();
+  return parseTourManifest(JSON.parse(new TextDecoder().decode(bytes)));
+}
+
+function photo(id: string): TourObject {
+  return {
+    id,
+    kind: "photo",
+    image: `content/${id}.jpg`,
+    imageWidth: 4,
+    imageHeight: 3,
+    createdAtIso: "2026-09-11T00:00:01.000Z",
+    geo: { lat: 47.5, lon: 8.7, alt: 400, rotation: [0, 0, 0, 1] },
+  };
+}
+
+describe("edits and deletions reach the published zip (authoring plan 2026-09-28-0953 §3.4, M4)", () => {
+  // Why these tests matter: the finish used to APPEND, skipping ids the
+  // manifest already had - so an edit of a hosted pin was silently dropped
+  // at Finish, a delete could not be written at all, and nothing could
+  // take a deleted photo's jpg out of the archive.
+
+  it("replaces an edited hosted object in place, keeping its position in the list", async () => {
+    const edited: TourObject = { ...pin("b"), label: "the new text" };
+    const { dom, ctx } = await wireFinishable({
+      hosted: [pin("a"), pin("b"), pin("c")],
+      placed: [edited],
+    });
+    dom.finishButton.click();
+    await settle(ctx);
+    expect(ctx.finishError).toBeNull();
+    const written = await publishedManifest(ctx.rebuiltZip!.blob);
+    expect(written.objects.map((o) => o.id)).toEqual(["a", "b", "c"]);
+    expect(written.objects[1]).toEqual(edited);
+    // The edit is in the zip, so it leaves the list of work to write.
+    expect(ctx.placedObjects).toEqual([]);
+  });
+
+  it("drops a deleted object and takes a deleted photo's jpg out of the archive", async () => {
+    const { dom, ctx } = await wireFinishable({
+      hosted: [pin("a"), photo("gone"), photo("kept")],
+      hostedContent: [
+        { path: `${WRAP}content/gone.jpg`, data: "gone" },
+        { path: `${WRAP}content/kept.jpg`, data: "kept" },
+      ],
+      placed: [],
+      deleted: ["gone", "a"],
+    });
+    dom.finishButton.click();
+    await settle(ctx);
+    expect(ctx.finishError).toBeNull();
+    const blob = ctx.rebuiltZip!.blob;
+    const written = await publishedManifest(blob);
+    expect(written.objects.map((o) => o.id)).toEqual(["kept"]);
+    const names = await entryNamesOf(blob);
+    expect(names).not.toContain(`${WRAP}content/gone.jpg`);
+    expect(names).toContain(`${WRAP}content/kept.jpg`);
+    // Applied: the next Finish has nothing left to delete.
+    expect(ctx.deletedObjectIds).toEqual([]);
   });
 });
 

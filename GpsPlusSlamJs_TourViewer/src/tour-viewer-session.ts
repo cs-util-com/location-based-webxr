@@ -135,6 +135,10 @@ export interface TourViewerHooks {
   /** A creator's AR visit ends: settle it. Called BEFORE the session's
    *  store teardown, which resets the alignment the settle reads. */
   endAuthorVisit(): void;
+  /** A creator's tap in AR (an XR select the overlay did not cancel):
+   *  select the object under the ring (authoring plan 2026-09-28-0953
+   *  M4). */
+  selectInView(): void;
   /** No tour is open any more (one closed, or an open failed): the panels
    *  that show a tour's link go back to ASKING for one. Without this, the
    *  print step keeps showing the previous tour's link as immutable text
@@ -170,6 +174,7 @@ export function createUnwiredHooks(): TourViewerHooks {
     resetFinishStep: () => undefined,
     beginAuthorVisit: () => undefined,
     endAuthorVisit: () => undefined,
+    selectInView: () => undefined,
     presentNoTour: () => undefined,
     presentDraftForTour: () => undefined,
     startScanGate: () => undefined,
@@ -292,10 +297,20 @@ export interface TourViewerSession {
   /** The most recent camera frame - what "Capture a photo" encodes, with
    *  the pose it was captured at (the photo is placed with THAT pose). */
   latestFrame: CapturedCameraFrame | null;
-  /** The live previews, one per placed object (rendered as each lands;
-   *  re-rendering everything per placement raced itself and re-decoded
-   *  every photo, M4 review #7). */
-  placedPreviews: RenderedTourObjects[];
+  /**
+   * Ids of objects the open tour's manifest carries that the creator
+   * deleted (tombstones, authoring plan 2026-09-28-0953 §3.4): the Finish
+   * filters them out and removes a deleted photo's content file. Emptied by
+   * a Finish (the manifest no longer carries them) and when the tour
+   * closes.
+   */
+  deletedObjectIds: string[];
+  /** The live previews in the running AR visit, one per object id - this
+   *  device's and the hosted zip's (rendered as each lands; re-rendering
+   *  everything per placement raced itself and re-decoded every photo, M4
+   *  review #7). Keyed by id so an edit, a move or a delete finds its
+   *  object, and a tap in AR names what it hit. */
+  placedPreviews: Map<string, RenderedTourObjects>;
   /** The last placement's outcome (or a draft notice), shown ahead of the
    *  live readout until the next tap; it gates no control (store
    *  dispatches re-render the readout at the frame cadence and erased it
@@ -429,7 +444,8 @@ export function createTourViewerSession(): TourViewerSession {
     placedObjects: [],
     reticle: null,
     latestFrame: null,
-    placedPreviews: [],
+    deletedObjectIds: [],
+    placedPreviews: new Map(),
     placementNote: null,
     viewerQrStatus: null,
     viewerUnknownCode: null,

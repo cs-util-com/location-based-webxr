@@ -249,8 +249,8 @@ export function wireArEntry(deps: {
     ctx.reticle?.dispose();
     ctx.reticle = null;
     ctx.latestFrame = null;
-    for (const preview of ctx.placedPreviews) preview.dispose();
-    ctx.placedPreviews = [];
+    for (const preview of ctx.placedPreviews.values()) preview.dispose();
+    ctx.placedPreviews.clear();
     // The gate and the placed content are session state (M5).
     ctx.cancelEscapeClock?.();
     ctx.cancelEscapeClock = null;
@@ -368,8 +368,14 @@ export function wireArEntry(deps: {
     if (worldGroup !== null) {
       ctx.qrDebugView = seams.createQrDebugView(worldGroup);
       // The creator's reticle (M4): under the world group, so its world
-      // position is GPS-world NUE once the alignment lands.
-      if (authorMode) ctx.reticle = seams.startHitTestReticle(worldGroup);
+      // position is GPS-world NUE once the alignment lands. A tap in AR
+      // selects the object under it (authoring plan 2026-09-28-0953 M4;
+      // taps on the panel are cancelled there, `beforexrselect`).
+      if (authorMode) {
+        ctx.reticle = seams.startHitTestReticle(worldGroup, () => {
+          hooks.selectInView();
+        });
+      }
     }
     if (authorMode) hooks.beginAuthorVisit();
     // The scan gate first (M5): a creator's is `not-required/creator` (a

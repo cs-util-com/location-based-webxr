@@ -51,8 +51,19 @@ draft and logs `tourAuthoring/settled`.
     THIS visit (same odometry; the visit's settle re-mints it anyway).
     With a reference kept, the caller keeps it as `mintedLevel`, takes the
     measurement as this visit's sighting, and the visit settles
-    `code-corrected`. Replacing a stored pose on purpose is an explicit action
-    later (plan §3.4, M4), never a side effect of measuring.
+    `code-corrected`. Replacing a stored pose on purpose is the explicit
+    "Re-measure the code (replace its saved position)" action in
+    `creator-setup.ts` (plan §3.4, M4), which skips this function with a
+    confirm step first - never a side effect of measuring.
+- `planMove(input & { object, local })` (M4) - an object moved to `local`
+  (the reticle, odometry-NUE) in the running visit: its geo recomputed
+  through `settleAlignment`'s choice - the D10b code correction when this
+  visit saw a stored code - so a pin moved in a later visit lands where
+  the code says. Returns `{ object, basis, alignment, refused }`, or null
+  without an alignment or a zero. The record keeps its id, text and
+  creation time.
+- `storedGeo(json)` - a level's stored geo, or null (the object list's
+  distance to the code).
 - `planVisitSettle(input): VisitSettle | null` - the settled records by
   index into `placed` (only objects whose `placement.visit` is this visit),
   the basis and the alignment used, and the level re-minted through it when
@@ -201,7 +212,10 @@ const plan = planVisitSettle({
   the plan).
 - `visit-settle.test.ts` also covers `measurementRole`: the level in hand
   kept (earlier visit, restored draft), the hosted level kept, a same-visit
-  re-measure replacing, and every no-readable-pose case.
+  re-measure replacing, and every no-readable-pose case; and `planMove`:
+  a pin moved in a later visit lands relative to the stored code through
+  the correction, the plain visit alignment without a sighting, and a
+  refusal without an alignment or a zero.
 - `authoring-settle.test.ts` - the same through the real creator setup
   (mint, place, end the visit), the recording's action, the draft rewrite,
   and the cross-visit case with the second session's detections in a moved
