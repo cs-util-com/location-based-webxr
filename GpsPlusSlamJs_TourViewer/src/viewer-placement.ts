@@ -10,6 +10,7 @@
 
 import { createQrTrackingController } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
 import { createFusedQrPoseSource } from "gps-plus-slam-app-framework/ar/qr/qr-fused-pose-source";
+import { createQrVoteBudget } from "gps-plus-slam-app-framework/ar/qr/qr-vote-budget";
 import { calcRelativeCoordsInMeters } from "gps-plus-slam-app-framework/core";
 import {
   recordGpsEvent,
@@ -47,6 +48,7 @@ import {
   buildViewerControllerConfig,
   createViewerKeepAlive,
   imagePlaneRingNue,
+  MAX_VOTED_LOCKS_PER_CODE,
 } from "./qr-viewer-mode.js";
 import {
   createDeviceFixWatch,
@@ -106,6 +108,11 @@ export function createViewerPlacement(deps: {
   /** The `?debug=1` viewer recording's `tourViewing/*` log (M1b); silent
    *  while no recording runs. Absent: nothing is logged. */
   viewingLog?: ViewingLog;
+  /** The page clock: the QR controller's detection times and the moment a
+   *  GPS fix ARRIVES, the one clock the keep-alive's hold runs on (M2b
+   *  review #4). Absent: `Date.now` - the controller's own default and
+   *  what the status line reads the hold with. */
+  now?: () => number;
 }): ViewerPlacement {
   const {
     ctx,
@@ -118,6 +125,7 @@ export function createViewerPlacement(deps: {
     hooks,
   } = deps;
   const authorMode = mode === "creator";
+  const now = deps.now ?? Date.now;
   /** Whether this session has a detector (set by startViewerPipeline). */
   let hasDetector = false;
 
@@ -234,9 +242,14 @@ export function createViewerPlacement(deps: {
       arStore.dispatch(recordGpsEvent(payload));
     };
     const keepAlive = startKeepAlive(castVote);
+    // Per AR entry like the keep-alive, reset per TOUR by the tour switch
+    // (`endTourCodeVotes`, M2b review #6).
+    const voteBudget = createQrVoteBudget(MAX_VOTED_LOCKS_PER_CODE);
+    ctx.viewerVoteBudget = voteBudget;
     ctx.qrController = createQrTrackingController(
       buildViewerControllerConfig({
         frontEnd,
+        now,
         solvePose: (input) => seams.solveQrPose(input),
         getIntrinsics: (image) => seams.getIntrinsics(image),
         getLevels: () => ctx.currentLevels,
@@ -248,6 +261,7 @@ export function createViewerPlacement(deps: {
           deps.viewingLog?.vote(payload);
         },
         keepAlive,
+        voteBudget,
         // recordGpsEvent silently no-ops until the session ZERO exists -
         // the budget must not be charged for dropped votes (M4 review #2).
         //
@@ -349,13 +363,19 @@ export function createViewerPlacement(deps: {
 
   /**
    * This AR entry's code keep-alive (authoring plan 2026-09-28-0953 §3.2,
-   * M2b), and its trigger: one store subscription that casts the keep-alive's
-   * votes for every NEW device GPS fix. The cadence is the one M0b/M0c
-   * measured - one batch right after each fix - and only device fixes count
-   * (`createDeviceFixWatch`): the votes it casts are stamped synthetic, so
-   * the subscription never answers its own output. The subscription ends
-   * itself once the entry's keep-alive is no longer the session's
-   * (`endQrPipeline` at AR exit, or the next entry's pipeline).
+   * M2b), and its triggers: one store subscription that casts the keep-alive's
+   * votes for every NEW device GPS fix, and stops it when the odometry frame
+   * changes. The cadence is the one M0b/M0c measured - one batch right after
+   * each fix - and only device fixes count (`createDeviceFixWatch`): the
+   * votes it casts are stamped synthetic, so the subscription never answers
+   * its own output. A fix is scheduled by when it ARRIVED, on the clock the
+   * locks are timed on; its Geolocation time only stamps the votes (M2b
+   * review #4). A frame change (`qrDetected.frameEpoch`: an odometry
+   * restart or loop closure) leaves the kept pose naming a place in the old
+   * frame, so the hold ends there (M2b review #1); the code's next scan
+   * votes afresh in the new one. The subscription ends itself once the
+   * entry's keep-alive is no longer the session's (`endQrPipeline` at AR
+   * exit, or the next entry's pipeline).
    */
   function startKeepAlive(
     castVote: (payload: RecordGpsEventPayload) => void,
@@ -366,14 +386,24 @@ export function createViewerPlacement(deps: {
     const keepAlive = deps.viewingLog?.keepAlive(created) ?? created;
     ctx.viewerKeepAlive = keepAlive;
     const nextDeviceFix = createDeviceFixWatch();
+    const frameEpoch = (): number =>
+      arStore.getState().qrDetected.frameEpoch ?? 0;
+    let keptFrameEpoch = frameEpoch();
     const unsubscribe = arStore.subscribe(() => {
       if (ctx.viewerKeepAlive !== keepAlive) {
         unsubscribe();
         return;
       }
-      const fixMs = nextDeviceFix(selectGpsPositions(arStore.getState()));
-      if (fixMs === null) return;
-      for (const vote of keepAlive.votesForFix(fixMs)) castVote(vote);
+      const epoch = frameEpoch();
+      if (epoch !== keptFrameEpoch) {
+        keptFrameEpoch = epoch;
+        keepAlive.stop();
+      }
+      const stampMs = nextDeviceFix(selectGpsPositions(arStore.getState()));
+      if (stampMs === null) return;
+      for (const vote of keepAlive.votesForFix({ atMs: now(), stampMs })) {
+        castVote(vote);
+      }
     });
     return keepAlive;
   }

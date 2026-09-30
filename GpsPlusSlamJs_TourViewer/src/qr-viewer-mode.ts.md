@@ -41,11 +41,23 @@ hasVoted)` is forwarded from every controller lock (no detected-text
   `recordDetection`, `onError`, and the optional `onStatus` /
   `onUnknownCode` / `onUnusableLevel` (a level with geo but no printed
   size) / `onVotedLock` UI hooks, and the optional `keepAlive`: each lock
-  that dispatched votes hands it the stable pose the controller resolved
-  for that frame (with the level's geo and size) - after the budget the
+  that dispatched votes - from the FIRST, not only once the budget is
+  spent (M2b review #7) - hands it the stable pose the controller resolved
+  for that frame (with the level's geo and size); after the budget the
   config no longer resolves a pose, so this is the only place it can be
-  kept - and every other lock of a code is a re-scan (`relock`). `onLocked`
-  is present when the app listens or a keep-alive is given.
+  kept. Every other lock of a code is a re-scan (`relock`, which restarts
+  the hold only from a fresh pose). A detection of a SPENT code that the
+  keep-alive does not hold from a fresh pose (`holdsFreshPose` false: the
+  pose outlived the hold window, another code took over, or the keep-alive
+  was stopped at a frame change) re-arms that code's budget
+  (`QrVoteBudget.forget`) before the frame's stable-pose check, so the
+  re-scan's own frame votes from the code's current pose (M2b review #1).
+  Without a keep-alive a spent code stays spent. The optional `voteBudget`
+  is the budget when the app resets it itself (the viewer, per tour: M2b
+  review #6); absent, the config owns one. The optional `now` is the
+  controller's detection clock (`Date.now` when absent), which the
+  keep-alive's hold runs on. `onLocked` is present when the app listens or
+  a keep-alive is given.
 - `viewerStatusLine({...}): string` — the visitor-facing line, pure;
   carries the last lock's reprojection error (px) as the placement-quality
   number M5's probe reads. Its optional `fusedHint` (from
@@ -107,8 +119,11 @@ const controller = createQrTrackingController(
 
 `qr-viewer-mode.test.ts` — the measured-geometry pin (30 m, 16 votes), the
 `hasVoted` lock adapter, the keep-alive hand-over (a voted lock keeps its
-pose past the budget, a lock without votes keeps nothing, a later lock
-restarts the hold), the hold and fade pins, the hold lines, level resolution by
+pose past the budget, armed from the first voted lock, a lock without votes
+keeps nothing, a re-scan inside the hold window restarts the hold without
+votes, one 20 minutes later votes afresh from the current pose, a spent
+code re-arms after a stop and after another code took over, and stays
+spent without a keep-alive), the hold and fade pins, the hold lines, level resolution by
 detected code, the placeholder + `onUnknownCode`, the per-code budget
 (stops exactly at the cap, other codes unaffected, detections keep
 recording), the status-line table, and the ring geometry. The composed

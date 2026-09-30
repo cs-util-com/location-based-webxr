@@ -305,66 +305,160 @@ describe("buildViewerControllerConfig - the lock adapter (M5)", () => {
 describe("buildViewerControllerConfig - the keep-alive (authoring plan M2b)", () => {
   // Why this matters: once the budget is spent the config stops asking for
   // the stable pose (§61 #6), so the keep-alive can only re-vote from a pose
-  // the config KEPT when a lock last voted. These pin that hand-over, and
-  // that a lock which cast nothing hands nothing over.
+  // the config KEPT when a lock last voted. These pin that hand-over, that a
+  // lock which cast nothing hands nothing over, and (M2b review #1) that a
+  // kept pose older than one hold window is never held again: a re-scan past
+  // it earns a fresh voted lock from a fresh stable pose.
   const T = 1_790_000_000_000;
   const POSE = {
     position: [2, 1.5, -3] as [number, number, number],
     rotation: [0, 0, 0, 1] as [number, number, number, number],
   };
+  /** Where the same printed code reads after 20 minutes of tracking drift. */
+  const MOVED = {
+    position: [2.9, 1.5, -3.4] as [number, number, number],
+    rotation: [0, 0, 0, 1] as [number, number, number, number],
+  };
   function pipeline(canAccept = true) {
     const keepAlive = createViewerKeepAlive();
+    const stable = { pose: POSE };
+    const dispatchVote = vi.fn();
     const config = buildViewerControllerConfig(
       fakeDeps({
         keepAlive,
+        dispatchVote,
         canAcceptVotes: () => canAccept,
-        resolveStablePose: () => POSE,
+        resolveStablePose: () => stable.pose,
       }),
     );
-    /** One locked frame in the controller's order. */
-    const frame = (atMs: number): void => {
-      config.onDetection?.({ text: TEXT, timestamp: atMs } as QrDetectionEvent);
-      if (config.resolveStablePose?.(TEXT) != null) {
-        config.dispatchVotes([{ v: atMs }] as never[]);
+    /** One locked frame in the controller's order; whether it voted. The
+     *  vote carries the pose it was built from, so a test can tell which. */
+    const frame = (atMs: number, text = TEXT): boolean => {
+      config.onDetection?.({ text, timestamp: atMs } as QrDetectionEvent);
+      const pose = config.resolveStablePose?.(text) ?? null;
+      const before = dispatchVote.mock.calls.length;
+      if (pose !== null) {
+        config.dispatchVotes([{ odomPosition: pose.position }] as never[]);
       }
       config.onLocked?.({} as never, LEVEL);
+      return dispatchVote.mock.calls.length > before;
     };
-    return { keepAlive, config, frame };
+    return { keepAlive, config, frame, stable, dispatchVote };
+  }
+  const at = (t: number) => ({ atMs: t, stampMs: t });
+  function centroidOf(
+    votes: readonly { odomPosition: readonly number[] }[],
+  ): number[] {
+    const c = [0, 0, 0];
+    for (const v of votes) {
+      for (let k = 0; k < 3; k += 1) c[k]! += v.odomPosition[k]! / votes.length;
+    }
+    return c;
   }
 
   it("keeps the last voted pose after the budget stops resolving it, and re-votes from it", () => {
     const p = pipeline();
     for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE + 3; i += 1) p.frame(T + i);
     expect(p.config.resolveStablePose?.(TEXT)).toBeNull(); // spent
-    const votes = p.keepAlive.votesForFix(T + 1000);
+    const votes = p.keepAlive.votesForFix(at(T + 1000));
     // The keep-alive's full-strength ring is the lock's count (D13: 16).
     expect(votes).toHaveLength(16);
-    const c = [0, 0, 0];
-    for (const v of votes) {
-      for (let k = 0; k < 3; k += 1) c[k]! += v.odomPosition[k]! / votes.length;
-    }
+    const c = centroidOf(votes);
     for (let k = 0; k < 3; k += 1)
       expect(c[k]).toBeCloseTo(POSE.position[k]!, 4);
+  });
+
+  // Why (M2b review #7): the docs said the keep-alive starts once the budget
+  // is spent; it starts at the first voted lock, so its rings ride along
+  // with the scan's own burst. This pins what the docs now say.
+  it("is armed by the FIRST voted lock, not by the spent budget", () => {
+    const p = pipeline();
+    p.frame(T);
+    expect(p.keepAlive.phase(T)).toEqual({
+      kind: "holding",
+      text: TEXT,
+      remainingMs: VIEWER_KEEP_ALIVE_HOLD_MS,
+    });
+    expect(p.keepAlive.votesForFix(at(T + 500))).toHaveLength(16);
   });
 
   it("keeps nothing for a lock that cast no votes", () => {
     const p = pipeline(false);
     p.frame(T);
     expect(p.keepAlive.phase(T)).toEqual({ kind: "none" });
-    expect(p.keepAlive.votesForFix(T + 1000)).toEqual([]);
+    expect(p.keepAlive.votesForFix(at(T + 1000))).toEqual([]);
   });
 
-  it("holds from the kept code's LAST lock: a later lock restarts the hold", () => {
+  it("holds from the kept code's LAST lock: a re-scan inside the hold window restarts the hold, without new votes", () => {
     const p = pipeline();
     for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) p.frame(T + i);
-    const late = T + VIEWER_KEEP_ALIVE_HOLD_MS + VIEWER_KEEP_ALIVE_FADE_MS / 2;
-    expect(p.keepAlive.phase(late).kind).toBe("fading");
-    p.frame(late); // budget spent: no vote, a re-scan
+    const rescan = T + VIEWER_KEEP_ALIVE_HOLD_MS - 10_000;
+    expect(p.frame(rescan)).toBe(false); // budget spent, pose still fresh
+    expect(p.keepAlive.phase(rescan + 60_000)).toEqual({
+      kind: "holding",
+      text: TEXT,
+      remainingMs: VIEWER_KEEP_ALIVE_HOLD_MS - 60_000,
+    });
+  });
+
+  it("a re-scan 20 minutes later votes afresh from the code's CURRENT stable pose, and the keep-alive re-votes from it", () => {
+    const p = pipeline();
+    for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) p.frame(T + i);
+    const late = T + 20 * 60_000;
+    expect(p.keepAlive.phase(late).kind).toBe("ended");
+    p.stable.pose = MOVED;
+    // The re-scan's own frame votes: the budget was re-armed for it.
+    expect(p.frame(late)).toBe(true);
+    expect(p.dispatchVote).toHaveBeenLastCalledWith({
+      odomPosition: MOVED.position,
+    });
     expect(p.keepAlive.phase(late)).toEqual({
       kind: "holding",
       text: TEXT,
       remainingMs: VIEWER_KEEP_ALIVE_HOLD_MS,
     });
+    const c = centroidOf(p.keepAlive.votesForFix(at(late + 1000)));
+    for (let k = 0; k < 3; k += 1)
+      expect(c[k]).toBeCloseTo(MOVED.position[k]!, 4);
+    // A full new burst, then spent again.
+    for (let i = 1; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) {
+      expect(p.frame(late + i)).toBe(true);
+    }
+    expect(p.frame(late + MAX_VOTED_LOCKS_PER_CODE)).toBe(false);
+  });
+
+  it("re-arms a spent code the keep-alive no longer holds (stopped at a frame change)", () => {
+    const p = pipeline();
+    for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) p.frame(T + i);
+    p.keepAlive.stop(); // what the pipeline does when the odometry frame changes
+    p.stable.pose = MOVED;
+    expect(p.frame(T + 5000)).toBe(true);
+    expect(p.keepAlive.holdsFreshPose(TEXT, T + 5000)).toBe(true);
+  });
+
+  it("a re-scan of a code another code took over from votes afresh and takes the keep-alive back", () => {
+    const OTHER = "https://gps.csutil.com/tour/?qr=other";
+    const p = pipeline();
+    for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) p.frame(T + i);
+    p.frame(T + 30_000, OTHER);
+    expect(p.keepAlive.phase(T + 30_000)).toMatchObject({ text: OTHER });
+    expect(p.frame(T + 40_000)).toBe(true);
+    expect(p.keepAlive.phase(T + 40_000)).toMatchObject({ text: TEXT });
+  });
+
+  it("without a keep-alive a spent code stays spent (the budget is the only rule)", () => {
+    const dispatchVote = vi.fn();
+    const config = buildViewerControllerConfig(
+      fakeDeps({ dispatchVote, resolveStablePose: () => POSE }),
+    );
+    for (let i = 0; i <= MAX_VOTED_LOCKS_PER_CODE; i += 1) {
+      const atMs = i === MAX_VOTED_LOCKS_PER_CODE ? T + 20 * 60_000 : T + i;
+      config.onDetection?.({ text: TEXT, timestamp: atMs } as QrDetectionEvent);
+      if (config.resolveStablePose?.(TEXT) != null) {
+        config.dispatchVotes([{ v: i }] as never[]);
+      }
+    }
+    expect(dispatchVote).toHaveBeenCalledTimes(MAX_VOTED_LOCKS_PER_CODE);
   });
 
   it("pins the measured hold and fade: two minutes each (owner, D9 applied after M0c)", () => {

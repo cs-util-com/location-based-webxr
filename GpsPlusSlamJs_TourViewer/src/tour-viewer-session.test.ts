@@ -8,9 +8,11 @@
  * cleared. Nulling the controller does not stop it; disposing it does.
  */
 import { describe, expect, it, vi } from "vitest";
+import { createQrVoteBudget } from "gps-plus-slam-app-framework/ar/qr/qr-vote-budget";
 import {
   createTourViewerSession,
   endQrPipeline,
+  endTourCodeVotes,
 } from "./tour-viewer-session.js";
 
 describe("endQrPipeline", () => {
@@ -38,5 +40,42 @@ describe("endQrPipeline", () => {
     const ctx = createTourViewerSession();
     expect(() => endQrPipeline(ctx)).not.toThrow();
     expect(ctx.qrController).toBeNull();
+  });
+
+  // Authoring plan M2b: the keep-alive and the vote budget are per AR
+  // entry; the next entry's pipeline makes its own.
+  it("stops the keep-alive and forgets it and the vote budget", () => {
+    const ctx = createTourViewerSession();
+    const stop = vi.fn();
+    ctx.viewerKeepAlive = { stop } as never;
+    ctx.viewerVoteBudget = createQrVoteBudget();
+    endQrPipeline(ctx);
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(ctx.viewerKeepAlive).toBeNull();
+    expect(ctx.viewerVoteBudget).toBeNull();
+  });
+});
+
+// Why (M2b review #6): the pipeline outlives a tour switch, so the switch
+// must end the closing tour's votes itself - a reopened tour found its code
+// already "voted" and passed its gate without a vote.
+describe("endTourCodeVotes", () => {
+  it("stops the hold and starts every code's budget again, keeping both objects", () => {
+    const ctx = createTourViewerSession();
+    const stop = vi.fn();
+    const keepAlive = { stop } as never;
+    ctx.viewerKeepAlive = keepAlive;
+    const budget = createQrVoteBudget(1);
+    budget.tryConsume("code");
+    ctx.viewerVoteBudget = budget;
+    endTourCodeVotes(ctx);
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(budget.isSpent("code")).toBe(false);
+    expect(ctx.viewerKeepAlive).toBe(keepAlive);
+    expect(ctx.viewerVoteBudget).toBe(budget);
+  });
+
+  it("is harmless outside an AR entry", () => {
+    expect(() => endTourCodeVotes(createTourViewerSession())).not.toThrow();
   });
 });

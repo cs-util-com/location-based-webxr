@@ -16,7 +16,15 @@ lives here.
   callback (no detection into the next session's window, no status line,
   no vote) - and forget it; it also stops and forgets the code keep-alive
   (`viewerKeepAlive`, authoring plan M2b), whose pose belongs to the
-  ending session's odometry frame. `ar-entry.ts`'s `onSessionEnd` calls it.
+  ending session's odometry frame, and forgets the entry's vote budget
+  (`viewerVoteBudget`). `ar-entry.ts`'s `onSessionEnd` calls it.
+- `endTourCodeVotes(ctx)` (authoring plan M2b review #6): a tour closed
+  while the AR entry goes on - stop the keep-alive's hold and reset every
+  code's vote budget, keeping both objects (the running pipeline holds
+  them). Before it, the budget outlived the tour: a reopened tour found its
+  code already "voted", so its gate passed on a lock that cast nothing and
+  a spent code never voted or held again. `archive-open.ts`'s teardown
+  calls it.
 - `interface TourViewerSession` - the fields, grouped by owner:
   - the open tour (`archive-open.ts`): `session`, `currentLevels`,
     `openGeneration`;
@@ -47,7 +55,9 @@ lives here.
     `viewer*` line inputs, `latestReprojectionPx`, `viewerKeepAlive` (the
     code keep-alive, created per AR entry by `startViewerPipeline`, stopped
     by `endQrPipeline` and by a tour close in `archive-open.ts`; the status
-    line reads its phase), `placement`,
+    line reads its phase), `viewerVoteBudget` (the per-code vote budget,
+    created with the pipeline, forgotten by `endQrPipeline`, reset by
+    `endTourCodeVotes`), `placement`,
     `viewerPlanesError`, `imagePlanes`, `imagePlanesLoading`,
     `planesRunGeneration`, `placementUnsubscribe`, `placementAttempted`,
     `joinDeclined`.
@@ -108,6 +118,9 @@ wireArEntry({ ctx, ... });
 ## Tests
 
 `tour-viewer-session.test.ts`: `endQrPipeline` disposes and forgets the
-QR controller, and is harmless without one. Otherwise no logic to test;
+QR controller, is harmless without one, and stops and forgets the
+keep-alive and the vote budget; `endTourCodeVotes` stops the hold and
+re-arms every code while keeping both objects. `viewer-votes.test.ts`
+drives a reopened tour through it. Otherwise no logic to test;
 the fields' behaviour is pinned by the owning modules' tests and the e2e suite (`playwright-tests/*.spec.js`), which runs
 unchanged across the split (the split's behaviour-neutrality proof).

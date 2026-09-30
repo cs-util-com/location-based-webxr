@@ -13,6 +13,7 @@ import type {
   QrTrackingStatus,
 } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
+import type { QrVoteBudget } from "gps-plus-slam-app-framework/ar/qr/qr-vote-budget";
 import type { createFusedQrPoseSource } from "gps-plus-slam-app-framework/ar/qr/qr-fused-pose-source";
 import type { TourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { AUTHOR_DEFAULT_SIZE_M } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
@@ -320,6 +321,10 @@ export interface TourViewerSession {
    *  per AR entry with the pipeline, stopped at AR exit (`endQrPipeline`)
    *  and when its tour closes; the status line reads its phase. */
   viewerKeepAlive: QrVoteKeepAlive | null;
+  /** The viewer pipeline's per-code vote budget: created per AR entry with
+   *  the pipeline, dropped at AR exit, and reset when its tour closes
+   *  ({@link endTourCodeVotes}) - the pipeline outlives a tour switch. */
+  viewerVoteBudget: QrVoteBudget | null;
 
   // --- placement (viewer-placement.ts) ------------------------------------
   /** What the photo placement did — rendered by tour-flow. */
@@ -374,6 +379,21 @@ export function endQrPipeline(ctx: TourViewerSession): void {
   // pose is in this session's odometry frame, which the next entry resets.
   ctx.viewerKeepAlive?.stop();
   ctx.viewerKeepAlive = null;
+  ctx.viewerVoteBudget = null;
+}
+
+/**
+ * A tour closed while the AR entry goes on (`archive-open.ts`): its codes'
+ * votes end with it. The keep-alive stops holding the closing tour's code,
+ * and every code's vote budget starts again - the budget lives in the
+ * pipeline, which outlives the switch, and a reopened tour used to find its
+ * code already "voted": its gate passed on a lock that cast nothing, and a
+ * spent code never voted again (authoring plan 2026-09-28-0953, M2b
+ * review #6).
+ */
+export function endTourCodeVotes(ctx: TourViewerSession): void {
+  ctx.viewerKeepAlive?.stop();
+  ctx.viewerVoteBudget?.reset();
 }
 
 export function createTourViewerSession(): TourViewerSession {
@@ -420,6 +440,7 @@ export function createTourViewerSession(): TourViewerSession {
     viewerLastEvaluation: null,
     latestReprojectionPx: null,
     viewerKeepAlive: null,
+    viewerVoteBudget: null,
     placement: { kind: "idle" },
     viewerPlanesError: null,
     contentError: null,

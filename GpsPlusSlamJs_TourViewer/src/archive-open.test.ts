@@ -12,6 +12,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import { createFusedPoseTally } from "gps-plus-slam-app-framework/ar/qr";
+import { createQrVoteBudget } from "gps-plus-slam-app-framework/ar/qr/qr-vote-budget";
 import { wireArchiveOpen, type ArchiveOpenDom } from "./archive-open.js";
 import {
   createTourViewerSession,
@@ -123,8 +124,11 @@ describe("a tour switch forgets the closing tour's fused-pose state", () => {
   // minutes. That code belongs to the closing tour - voting it into the next
   // tour's alignment would pull it toward a place the new tour never
   // measured. The pipeline (and its keep-alive) outlive the switch, so the
-  // hold is stopped, not the keep-alive replaced.
-  it("stops the closing tour's code keep-alive", async () => {
+  // hold is stopped, not the keep-alive replaced. The vote budget outlives
+  // it too, and a reopened tour found its code already "voted" (M2b review
+  // #6: a gate passed without a vote, a spent code never voted again), so
+  // the switch resets it; `viewer-votes.test.ts` drives the reopen.
+  it("stops the closing tour's code keep-alive and starts every code's vote budget again", async () => {
     const ctx = createTourViewerSession();
     ctx.session = openTour();
     const keepAlive = {
@@ -132,10 +136,15 @@ describe("a tour switch forgets the closing tour's fused-pose state", () => {
       phase: () => ({ kind: "none" as const }),
     };
     ctx.viewerKeepAlive = keepAlive as never;
+    const voteBudget = createQrVoteBudget(1);
+    voteBudget.tryConsume("old-code");
+    ctx.viewerVoteBudget = voteBudget;
     const dom = openAnotherTour(ctx);
     await vi.waitFor(() => expect(dom.openButton.disabled).toBe(false));
     expect(keepAlive.stop).toHaveBeenCalled();
     expect(ctx.viewerKeepAlive).toBe(keepAlive);
+    expect(ctx.viewerVoteBudget).toBe(voteBudget);
+    expect(voteBudget.spentFor("old-code")).toBe(0);
   });
 });
 

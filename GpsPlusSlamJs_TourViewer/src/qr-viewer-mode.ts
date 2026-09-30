@@ -17,16 +17,21 @@
  *   the alignment takes the saved code's heading error unchanged at every
  *   radius from 5 to 100 m, while the 2 m ring left the heading 6-31° off
  *   after a scan because it has almost no rotational lever against the GPS.
- * - **The keep-alive** (M0b/M0c, owner decisions D8/D9): after the budget
- *   the config stops evaluating the stable pose, so it KEEPS the pose each
- *   voted lock used and hands it to {@link ViewerPipelineDeps.keepAlive},
- *   which re-votes from it on every device GPS fix - full strength for
- *   {@link VIEWER_KEEP_ALIVE_HOLD_MS} after the code's last lock, then
- *   fading to zero over {@link VIEWER_KEEP_ALIVE_FADE_MS}
- *   (`qr-vote-keep-alive.ts`). Under the core's shipped hard outlier trim
- *   the hand-off to GPS above a 5 m bias is one jump (M0c); the soft
- *   trimming that makes it smooth is a per-entry override the viewer does
- *   not dispatch yet (see the sidecar).
+ * - **The keep-alive** (M0b/M0c, owner decisions D8/D9): every voted lock,
+ *   from the FIRST on, hands the stable pose its votes were built from to
+ *   {@link ViewerPipelineDeps.keepAlive}, which re-votes from it on every
+ *   device GPS fix - full strength for {@link VIEWER_KEEP_ALIVE_HOLD_MS}
+ *   after the code's last lock, then fading to zero over
+ *   {@link VIEWER_KEEP_ALIVE_FADE_MS} (`qr-vote-keep-alive.ts`). The pose
+ *   has to be KEPT because after the budget the config stops evaluating the
+ *   stable pose. A kept pose carries a hold for one hold window at most: a
+ *   re-scan of a spent code the keep-alive does not hold from a fresh pose
+ *   (the pose outlived the window, another code took over, or the odometry
+ *   frame changed) re-arms that code's budget, so the re-scan votes afresh
+ *   from a fresh stable pose (M2b review #1). Under the core's shipped
+ *   hard outlier trim the hand-off to GPS above a 5 m bias is one jump
+ *   (M0c); the soft trimming that makes it smooth is a per-entry override
+ *   the viewer does not dispatch yet (see the sidecar).
  *
  * The level lookup is the deferred NEGATIVE CACHE (delta #8): a scanned
  * code with no `qr/<c>.json` in the open tour resolves a geo-less
@@ -57,6 +62,7 @@ import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-i
 import {
   createQrVoteBudget,
   MAX_VOTED_LOCKS_PER_CODE,
+  type QrVoteBudget,
 } from "gps-plus-slam-app-framework/ar/qr/qr-vote-budget";
 
 import {
@@ -171,9 +177,19 @@ export interface ViewerPipelineDeps {
   onLevelResolved?(text: string, level: QrLevel | null): void;
   /** The code's keep-alive (`createViewerKeepAlive`): each voted lock hands
    *  it the stable pose the votes were built from, every other lock is a
-   *  re-scan that restarts its hold. Casting its votes per device fix is the
-   *  caller's (`viewer-placement.ts`). Absent: no keep-alive. */
+   *  re-scan that restarts its hold while that pose is fresh, and re-arms
+   *  a spent code's budget when it is not. Casting its votes per device fix
+   *  is the caller's (`viewer-placement.ts`). Absent: no keep-alive, and a
+   *  spent code stays spent. */
   keepAlive?: QrVoteKeepAlive;
+  /** The per-code vote budget, when the app must reset it itself - the
+   *  viewer does at a tour switch, which the pipeline outlives (M2b review
+   *  #6). Absent: the config owns one for its lifetime. */
+  voteBudget?: QrVoteBudget;
+  /** The clock of the detection timestamps (the controller's `now`), which
+   *  the keep-alive's hold runs on. Absent: the controller's default,
+   *  `Date.now`. */
+  now?: () => number;
 }
 
 /** The viewer's keep-alive, with the measured schedule (M0b/M0c). */
@@ -207,10 +223,24 @@ export function buildViewerControllerConfig(
    *  synchronously here. (Under the old `&c=` scheme two different texts
    *  could resolve to one code, which is why that version keyed by the
    *  resolved code instead.) */
-  const voteBudget = createQrVoteBudget(MAX_VOTED_LOCKS_PER_CODE);
+  const voteBudget =
+    deps.voteBudget ?? createQrVoteBudget(MAX_VOTED_LOCKS_PER_CODE);
+
+  /** A spent code that the keep-alive does not hold from a fresh pose gets
+   *  its budget back, BEFORE this frame's stable-pose check: the re-scan's
+   *  own frame then votes, from the code's current stable pose, and its
+   *  lock keeps that pose (M2b review #1). Without it a re-scan long after
+   *  the burst restarted the hold from a pose frozen ~1.25 s after the
+   *  first lock, drift and all. */
+  function rearmStaleCode(text: string, atMs: number): void {
+    const keepAlive = deps.keepAlive;
+    if (keepAlive === undefined || !voteBudget.isSpent(text)) return;
+    if (!keepAlive.holdsFreshPose(text, atMs)) voteBudget.forget(text);
+  }
 
   /** A lock that voted hands the keep-alive its pose (a different code
-   *  takes over); any other lock of the kept code restarts the hold. */
+   *  takes over); any other lock of the kept code restarts the hold while
+   *  the kept pose is fresh (the keep-alive refuses a stale one). */
   function keepAliveOnLock(text: string, level: QrLevel): void {
     const keepAlive = deps.keepAlive;
     if (keepAlive === undefined) return;
@@ -292,6 +322,7 @@ export function buildViewerControllerConfig(
       lastDetectedAtMs = event.timestamp;
       frameStablePose = null;
       frameVoted = false;
+      rearmStaleCode(event.text, event.timestamp);
       deps.recordDetection(event);
     },
     ...(deps.onLocked !== undefined || deps.keepAlive !== undefined
@@ -329,6 +360,7 @@ export function buildViewerControllerConfig(
     voteBaselineM: VIEWER_VOTE_BASELINE_M,
     voteCount: VIEWER_VOTE_COUNT,
     minIntervalMs: 0, // the camera-frame source is the single cadence owner
+    ...(deps.now !== undefined ? { now: deps.now } : {}),
   };
 }
 

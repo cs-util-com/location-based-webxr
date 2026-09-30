@@ -52,9 +52,11 @@ DOM glue, its own module since the flows plan M6.
   code and a failed image placement describe the CLOSING tour - PR #434
   review), the fused pose's visitor-hint evaluation and `?debug=1` counts
   (the counts emptied in place: the pipeline outlives the switch - PR #508
-  review), stops the code keep-alive's hold (`ctx.viewerKeepAlive.stop()`,
-  authoring plan M2b: the closing tour's code must not keep voting into the
-  next tour's alignment) and the placement fields the
+  review), ends the closing tour's code votes (`endTourCodeVotes`,
+  authoring plan M2b: the keep-alive's hold stops, so the closing tour's
+  code does not keep voting into the next tour's alignment, and every
+  code's vote budget starts again, so a reopened tour's gate waits for a
+  real vote - M2b review #6) and the placement fields the
   closing tour owned (`imagePlanes`, `imagePlanesLoading`,
   `planesRunGeneration` bump, `placementAttempted`, `joinDeclined`,
   `placement`) and the QR controller's level cache, and a failed

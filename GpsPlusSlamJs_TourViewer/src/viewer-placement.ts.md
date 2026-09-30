@@ -11,7 +11,11 @@ recording. Its own module since the flows plan M6.
 
 ## Public API
 
-- `createViewerPlacement({ ctx, mode, arStore, arController, seams, errorBox, escapeButton, hooks, viewingLog? }): ViewerPlacement` - places only in visitor mode
+- `createViewerPlacement({ ctx, mode, arStore, arController, seams, errorBox, escapeButton, hooks, viewingLog?, now? }): ViewerPlacement` - places only in visitor mode
+  - `now` (M2b review #4): the page clock - the QR controller's detection
+    times and the moment a GPS fix arrives, the one clock the keep-alive's
+    hold runs on; `Date.now` when absent (the controller's own default, and
+    what the status line reads the hold with). Tests pass a fake clock.
   - `viewingLog` (M1b, `viewing-log.ts`): the `?debug=1` viewer recording's
     hooks - `detection` after each recorded detection (with the status before
     it), `vote` after each dispatched vote, `votedLock` first in
@@ -63,10 +67,15 @@ recording. Its own module since the flows plan M6.
     plan §66, `qr-debug-readout.ts`). It also starts THIS entry's code
     keep-alive (`ctx.viewerKeepAlive`, authoring plan M2b): one store
     subscription casts the keep-alive's votes after every new DEVICE fix
-    (`createDeviceFixWatch`), through the same `castVote` sink as a lock's
-    votes, and removes itself once that keep-alive is no longer the
-    session's (`endQrPipeline`, the next entry). False without a
-    detector (plain AR, still placing photos; no keep-alive).
+    (`createDeviceFixWatch`), scheduled by the fix's ARRIVAL on `now` and
+    stamped with its Geolocation time (M2b review #4), through the same
+    `castVote` sink as a lock's votes; stops the keep-alive when the
+    odometry frame changes (`qrDetected.frameEpoch`: the kept pose names a
+    place in the old frame, M2b review #1); and removes itself once that
+    keep-alive is no longer the session's (`endQrPipeline`, the next
+    entry). It creates the entry's vote budget as `ctx.viewerVoteBudget`,
+    which a tour switch resets (`endTourCodeVotes`, M2b review #6). False
+    without a detector (plain AR, still placing photos; no keep-alive).
   - `tryPlaceTour(): void` - the placement trigger (DEC-F3): with a tour
     open and a viewer session live (`ctx.placementUnsubscribe !== null`),
     runs the capture join ONCE per session+tour
@@ -172,9 +181,15 @@ exit's stop included; nothing without a running recording).
 
 `viewer-votes.test.ts` (authoring plan M2b) - with the real store: the
 scan gate stays scanning on a lock that cast no vote (no GPS zero yet, a
-converging pose) and passes on the first one that did; the keep-alive
-casts exactly one ring per device fix from the kept pose, answers no
-synthetic point, stops at AR exit, and starts fresh per entry.
+converging pose) and passes on the first one that did, and a code that
+locks but never votes still gets the 45 s escape (M2b review #8); the
+keep-alive casts exactly one ring per device fix from the kept pose,
+answers no synthetic point, stops at AR exit, and starts fresh per entry;
+a code re-scanned 20 minutes later votes from where it reads now and the
+keep-alive re-votes from there, a frame change ends the hold (review #1);
+the hold hands over by arrival with the fix clock skewed by 5 s or 1 h
+either way (review #4); a tour reopened in the same entry waits for a real
+vote and holds again (review #6).
 
 `fused-pose-wiring.test.ts` - the votes' stable pose is the fused one (at
 the true rotation where single-frame poses scatter past the old average's

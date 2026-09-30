@@ -564,7 +564,10 @@ function runScenario(p: VoteParams): Measured {
       }),
     );
     // The shipped keep-alive answers every device fix (viewer-placement).
-    for (const v of keepAlive?.votesForFix(EPOCH_MS + t) ?? []) {
+    for (const v of keepAlive?.votesForFix({
+      atMs: EPOCH_MS + t,
+      stampMs: EPOCH_MS + t,
+    }) ?? []) {
       dispatchVote(v);
     }
   };

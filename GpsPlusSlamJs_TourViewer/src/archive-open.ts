@@ -28,9 +28,10 @@ import {
   tourLabel,
   type TourSession,
 } from "./tour-session.js";
-import type {
-  TourViewerHooks,
-  TourViewerSession,
+import {
+  endTourCodeVotes,
+  type TourViewerHooks,
+  type TourViewerSession,
 } from "./tour-viewer-session.js";
 
 /** The label on every button that opens a tour. "Open" until the second
@@ -120,9 +121,10 @@ export function wireArchiveOpen(deps: {
     // review #8).
     ctx.qrController?.reset();
     ctx.levelByText.clear();
-    // The code keep-alive holds a closing tour's code for up to ~4 min;
-    // the pipeline outlives the switch, so its hold ends here (M2b).
-    ctx.viewerKeepAlive?.stop();
+    // The code keep-alive holds a closing tour's code for up to ~4 min,
+    // and the vote budget remembers which codes voted; the pipeline
+    // outlives the switch, so both end with the tour here (M2b; review #6).
+    endTourCodeVotes(ctx);
     ctx.imagePlanes?.dispose();
     ctx.imagePlanes = null;
     ctx.contentRendered?.dispose();
