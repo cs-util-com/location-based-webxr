@@ -45,11 +45,13 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   hand has not been seen stable in this visit; empty otherwise. It blocks
   nothing: a later visit's notes are corrected through the code only when
   the code was seen (D10b), and the owner chose a hint over a rule.
-- `setupHint({ measured, tourOpen, hadLevel })` - what the panel says once
-  measured: "Position saved." when no tour is open (`codeTourLine` then
-  says what is happening to the code's tour; scan-to-open plan §9 #9), that
-  the measurement replaces a code the tour already carried, else place
-  content or finish.
+- `setupHint({ measured, tourOpen, hadLevel, keptStored? })` - what the
+  panel says once measured: "Position saved." when no tour is open
+  (`codeTourLine` then says what is happening to the code's tour;
+  scan-to-open plan §9 #9); "Saved position kept." when the level in hand
+  is a stored pose this visit did not measure (D10b: a new measurement only
+  corrects the visit, M2c review #5); that the measurement replaces a code
+  the tour already carried; else place content or finish.
 - `codeTourLine(status: CodeTourStatus): string` - the scan-to-open status
   of the code in view (`scan-open.ts`) in plain words: opening, does not
   point to a tour, could not open (a short cause, and either "keep the

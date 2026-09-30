@@ -23,6 +23,7 @@ import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 import { mintPin, objectPoseNue } from "./content-placement.js";
 import { odomNueFromWebXr, throughAlignment } from "./visit-anchoring.js";
 import {
+  measurementRole,
   planVisitSettle,
   settleAlignment,
   type CodeMeasurement,
@@ -473,5 +474,96 @@ describe("a later visit, corrected through the code (D10b)", () => {
       sighting,
     });
     expect(choice?.basis).toBe("visit-alignment");
+  });
+});
+
+describe("a new measurement of a code whose pose is already stored (D10b, M2c review #5)", () => {
+  // Why these tests matter: "newest wins" let a re-measure silently replace
+  // the stored pose, and a hosted tour opened in a new page had to be
+  // re-measured before Finish - which rewrote the code's geo through THIS
+  // visit's GPS while the hosted notes kept the old frame: symptom B across
+  // sessions. A stored pose is the reference; a new measurement of it is a
+  // sighting that corrects the visit. Replacing it on purpose is M4's.
+  const stored = levelThrough(yawAlignment(20, [100, 400, 50]));
+
+  it("keeps the level in hand (an earlier visit's, or a restored draft's) as the reference", () => {
+    expect(
+      measurementRole({
+        levelId: LEVEL_ID,
+        visit: 1,
+        inHand: stored,
+        inHandMeasurement: measuredInVisit(0),
+        hostedJson: null,
+      }),
+    ).toEqual({ kept: "level-in-hand", reference: stored });
+    expect(
+      measurementRole({
+        levelId: LEVEL_ID,
+        visit: 0,
+        inHand: stored,
+        inHandMeasurement: null,
+        hostedJson: null,
+      }),
+    ).toEqual({ kept: "level-in-hand", reference: stored });
+  });
+
+  it("keeps the hosted zip's level when nothing is in hand", () => {
+    expect(
+      measurementRole({
+        levelId: LEVEL_ID,
+        visit: 0,
+        inHand: null,
+        inHandMeasurement: null,
+        hostedJson: stored.json,
+      }),
+    ).toEqual({
+      kept: "hosted-level",
+      reference: { id: LEVEL_ID, json: stored.json },
+    });
+  });
+
+  it("lets a re-measure in the SAME visit replace its own measurement (nothing was stored yet)", () => {
+    // Both measurements share this visit's odometry, and the settle re-mints
+    // the level at the visit's end anyway: the newer one is simply better.
+    expect(
+      measurementRole({
+        levelId: LEVEL_ID,
+        visit: 0,
+        inHand: stored,
+        inHandMeasurement: measuredInVisit(0),
+        hostedJson: stored.json,
+      }),
+    ).toEqual({ kept: "measurement" });
+  });
+
+  it("makes the measurement the reference when no stored pose reads", () => {
+    const base = {
+      levelId: LEVEL_ID,
+      visit: 1,
+      inHandMeasurement: null,
+    };
+    // Nothing stored anywhere.
+    expect(
+      measurementRole({ ...base, inHand: null, hostedJson: null }),
+    ).toEqual({ kept: "measurement" });
+    // A DIFFERENT code in hand is not this code's reference.
+    expect(
+      measurementRole({
+        ...base,
+        inHand: { id: "ffffffffffff", json: stored.json },
+        hostedJson: null,
+      }),
+    ).toEqual({ kept: "measurement" });
+    // A stored level without a readable pose (no geo, or not a level).
+    expect(
+      measurementRole({ ...base, inHand: null, hostedJson: "{}" }),
+    ).toEqual({ kept: "measurement" });
+    expect(
+      measurementRole({
+        ...base,
+        inHand: { id: LEVEL_ID, json: "not json" },
+        hostedJson: null,
+      }),
+    ).toEqual({ kept: "measurement" });
   });
 });

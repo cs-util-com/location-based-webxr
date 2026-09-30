@@ -23,6 +23,7 @@ import {
   visitSettled,
 } from "./tour-authoring-actions.js";
 import {
+  measurementRole,
   planVisitSettle,
   settleAlignment,
   type CodeSighting,
@@ -128,6 +129,10 @@ import {
   type TourViewerStore,
 } from "./tour-viewer-session.js";
 import type { Wizard } from "./wizard.js";
+
+/** Said when a new measurement kept the code's stored pose (D10b). */
+const STORED_POSITION_KEPT =
+  "Code seen - its saved position stays, and this visit is lined up with it";
 
 /** What a visit settled through (`visitSettles` in `wireCreatorSetup`). */
 interface VisitSettleRecord {
@@ -531,6 +536,20 @@ export function wireCreatorSetup(deps: {
     return hint === "" ? "" : `${hint} · `;
   }
 
+  /** Whether the level in hand is a stored pose THIS visit did not measure
+   *  (hosted, draft, or an earlier visit's): what a new measurement keeps. */
+  function levelInHandIsStored(): boolean {
+    const level = ctx.mintedLevel;
+    const measurement = ctx.codeMeasurement;
+    return (
+      level !== null &&
+      !(
+        measurement?.levelId === level.id &&
+        measurement.visit === ctx.arSessionGeneration
+      )
+    );
+  }
+
   function renderAuthorReadout(): void {
     renderSizeOffer();
     if (!creator) return;
@@ -622,6 +641,7 @@ export function wireCreatorSetup(deps: {
       measured: ctx.mintedLevel !== null,
       tourOpen: ctx.session !== null,
       hadLevel: (ctx.currentLevels?.size ?? 0) > 0,
+      keptStored: levelInHandIsStored(),
     });
     const count =
       ctx.placedObjects.length > 0
@@ -1429,13 +1449,41 @@ export function wireCreatorSetup(deps: {
       arVisitIndex: ctx.arSessionGeneration,
       atMs: Date.now(),
     };
+    // The level in hand before this tap. When it - or the open tour's zip
+    // - already stores THIS code's pose, that pose stays the reference and
+    // the new measurement only corrects this visit (D10b, M2c review #5).
+    const prior = { level: ctx.mintedLevel, measurement: ctx.codeMeasurement };
+    const openAtTap = ctx.openGeneration;
     ctx.mintedLevel = null;
     ctx.codeMeasurement = null;
     dom.status.textContent = "Saving the measured position…";
     dom.finishButton.disabled = true;
-    qrCodeId(mintedText).then(
-      (id) => {
+    void (async () => {
+      let id: string;
+      try {
+        id = await qrCodeId(mintedText);
+      } catch {
         if (mintGeneration !== ctx.mintGeneration) return;
+        // A failed identity must not lose the reference in hand.
+        ctx.mintedLevel = prior.level;
+        ctx.codeMeasurement = prior.measurement;
+        dom.status.textContent =
+          "Could not derive the code's identity - tap the button again.";
+        return;
+      }
+      if (mintGeneration !== ctx.mintGeneration) return;
+      const hostedJson =
+        prior.level?.id === id ? null : await hostedLevelJson(id);
+      if (mintGeneration !== ctx.mintGeneration) return;
+      const role = measurementRole({
+        levelId: id,
+        visit: measured.arVisitIndex,
+        inHand: prior.level,
+        inHandMeasurement: prior.measurement,
+        // A tour opened meanwhile is not the tour this code was read from.
+        hostedJson: ctx.openGeneration === openAtTap ? hostedJson : null,
+      });
+      if (role.kept === "measurement") {
         ctx.mintedLevel = { id, json: result.json };
         // What the settle re-mints the code from at the visit's end, and
         // a sighting of it in this visit (plan §3.2, M2c).
@@ -1446,28 +1494,31 @@ export function wireCreatorSetup(deps: {
           sizeM: measured.sizeM,
           visit: measured.arVisitIndex,
         };
-        codeIds.set(mintedText, id);
-        if (measured.arVisitIndex === ctx.arSessionGeneration) {
-          ctx.visitCodeSighting = {
-            text: mintedText,
-            levelId: id,
-            odomPose: stablePose,
-          };
-        }
-        ctx.mintedLevelTour = {
+      } else {
+        ctx.mintedLevel = role.reference;
+        ctx.codeMeasurement =
+          prior.measurement?.levelId === id ? prior.measurement : null;
+        ctx.placementNote = STORED_POSITION_KEPT;
+      }
+      codeIds.set(mintedText, id);
+      if (measured.arVisitIndex === ctx.arSessionGeneration) {
+        ctx.visitCodeSighting = {
+          text: mintedText,
           levelId: id,
-          tourUrl: codeTour.tourOf(mintedText),
+          odomPose: stablePose,
         };
-        arStore.dispatch(codeMeasured({ levelId: id, ...measured }));
-        if (draftTourUrl !== null) void recordMeta(draftTourUrl);
-        renderAuthorReadout();
-      },
-      () => {
-        if (mintGeneration !== ctx.mintGeneration) return;
-        dom.status.textContent =
-          "Could not derive the code's identity - tap the button again.";
-      },
-    );
+        placeEarlierObjects();
+      }
+      ctx.mintedLevelTour = {
+        levelId: id,
+        tourUrl: codeTour.tourOf(mintedText),
+      };
+      arStore.dispatch(
+        codeMeasured({ levelId: id, ...measured, kept: role.kept }),
+      );
+      if (draftTourUrl !== null) void recordMeta(draftTourUrl);
+      renderAuthorReadout();
+    })();
   });
 
   dom.finishButton.addEventListener("click", () => {

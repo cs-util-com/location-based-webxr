@@ -91,6 +91,11 @@ interface CodeMeasuredLog {
   readonly levelJson: string;
   readonly arVisitIndex: number;
   readonly atMs: number;
+  /** What the measurement became (D10b, `measurementRole`): the code's
+   *  reference (`measurement`), or a sighting that kept the stored pose in
+   *  hand (`level-in-hand`) or the hosted zip's (`hosted-level`). The
+   *  setup always sets it; absent in recordings made before it existed. */
+  readonly kept?: "measurement" | "level-in-hand" | "hosted-level";
 }
 
 /**

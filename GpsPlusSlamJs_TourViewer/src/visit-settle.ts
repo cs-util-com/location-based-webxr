@@ -38,6 +38,7 @@ import {
   type MintAlignmentInfo,
 } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 import type { Pose } from "gps-plus-slam-app-framework/ar/qr/qr-pose";
+import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { LatLong } from "gps-plus-slam-app-framework/core";
 
@@ -92,17 +93,82 @@ function readAlignment(alignment: ArrayLike<number> | null): number[] | null {
     : null;
 }
 
+/** A level's stored geo, or null when the JSON is not a level or carries
+ *  no geo (external data: a zip, a draft). */
+function storedGeo(json: string): QrGeoPose | null {
+  try {
+    return parseQrLevel(JSON.parse(json) as unknown).qr.geo ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** The stored code's pose in GPS-world NUE, or null when the level carries
  *  none that reads. */
 function storedCodePose(json: string, zero: LatLong): NuePose | null {
+  const geo = storedGeo(json);
+  if (geo === null) return null;
   try {
-    const geo = parseQrLevel(JSON.parse(json) as unknown).qr.geo;
-    if (geo === undefined) return null;
     const pose = objectPoseNue(geo, zero);
     return { position: pose.positionNue, rotation: pose.rotationNue };
   } catch {
     return null;
   }
+}
+
+/**
+ * What a new measurement of a code IS (D10b; M2c review #5): the code's new
+ * reference, or a sighting that corrects this visit onto a pose already
+ * stored.
+ *
+ * - `level-in-hand` - the level in hand is this code's and was NOT measured
+ *   in this visit (an earlier visit of this page, a restored draft, or the
+ *   hosted level a previous measurement kept): it stays the reference.
+ * - `hosted-level` - nothing of this code in hand, but the open tour's zip
+ *   stores it with a readable pose: that stays the reference.
+ * - `measurement` - nothing stored reads, or the level in hand was measured
+ *   in THIS visit (same odometry, and the visit's settle re-mints it
+ *   anyway): the new measurement is the reference, as before.
+ *
+ * Replacing a stored pose on purpose is an explicit action (plan §3.4, M4),
+ * never a side effect of measuring.
+ */
+export function measurementRole(input: {
+  readonly levelId: string;
+  /** The visit the measurement was taken in. */
+  readonly visit: number;
+  readonly inHand: { readonly id: string; readonly json: string } | null;
+  /** The raw inputs behind `inHand`, when this page measured it. */
+  readonly inHandMeasurement: CodeMeasurement | null;
+  /** The hosted zip's level file for `levelId`, or null. */
+  readonly hostedJson: string | null;
+}):
+  | { kept: "measurement" }
+  | {
+      kept: "level-in-hand" | "hosted-level";
+      reference: { id: string; json: string };
+    } {
+  const { levelId, inHand, inHandMeasurement } = input;
+  if (inHand !== null && inHand.id === levelId) {
+    const measuredThisVisit =
+      inHandMeasurement !== null &&
+      inHandMeasurement.levelId === levelId &&
+      inHandMeasurement.visit === input.visit;
+    if (measuredThisVisit) return { kept: "measurement" };
+    if (storedGeo(inHand.json) !== null) {
+      return {
+        kept: "level-in-hand",
+        reference: { id: inHand.id, json: inHand.json },
+      };
+    }
+  }
+  if (input.hostedJson !== null && storedGeo(input.hostedJson) !== null) {
+    return {
+      kept: "hosted-level",
+      reference: { id: levelId, json: input.hostedJson },
+    };
+  }
+  return { kept: "measurement" };
 }
 
 function measuredHere(input: SettleAlignmentInput): boolean {

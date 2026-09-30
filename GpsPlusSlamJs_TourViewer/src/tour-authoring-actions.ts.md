@@ -25,7 +25,11 @@ reads them (the framework's `diagnostics/note` precedent). Plan:
 - `codeMeasured(payload)` - `tourAuthoring/codeMeasured`: `levelId`, `text`,
   `fusedOdomPose` (the stable fused pose minted from), `sizeM`,
   `alignmentMatrix`, `alignment` (the mint gate's info), `levelJson` (the level
-  as written), `arVisitIndex`, `atMs`.
+  as written), `arVisitIndex`, `atMs`, and `kept` (M2c review #5): what the
+  measurement became - `measurement` (the code's reference), or a sighting
+  that kept the stored pose in hand (`level-in-hand`) or the hosted zip's
+  (`hosted-level`). Optional in the type only because recordings made
+  before it lack it.
 - `visitSettled(payload)` - `tourAuthoring/settled` (M2c, plan §3.2): an AR
   visit's settle - `arVisitIndex`, `atMs`, `trigger` (`visit-end`,
   `finish`, or `late-arrival` - a photo of an already settled visit, minted

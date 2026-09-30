@@ -258,6 +258,19 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
   `qrCodeId` of the exact printed text, guarded by `ctx.mintGeneration` so
   a stale hash cannot install an older level. Until it lands the finish
   button stays off.
+  - **A stored pose stays the reference** (D10b, M2c review #5): the level
+    in hand before the tap is captured, and once the id lands
+    `measurementRole` (`visit-settle.ts`) decides - with the hosted zip's
+    `qr/<id>.json` read through `hostedLevelJson` when nothing of this code
+    is in hand (ignored if another tour was opened meanwhile). A kept
+    reference stays `mintedLevel` (so Finish writes the hosted file back
+    byte for byte), the measurement becomes this visit's sighting, the
+    line says "Code seen - its saved position stays, and this visit is
+    lined up with it", and `setupHint` says "Saved position kept" rather
+    than "replaces". `tourAuthoring/codeMeasured` logs which happened
+    (`kept`). A failed identity hash restores the level in hand. A hosted
+    level whose file cannot be read, or carries no geo, is not a
+    reference: the measurement is, as before.
 - **Finish** (`finishReadiness`): needs a measured level, an open tour AND
   a settled manifest load (pending or broken refuses, with the reason:
   finishing would overwrite a placement it could not read, M3 review #5);

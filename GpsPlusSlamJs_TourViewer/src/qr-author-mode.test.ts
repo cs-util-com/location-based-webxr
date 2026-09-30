@@ -281,6 +281,19 @@ describe("setupHint / finishReadiness", () => {
     expect(
       setupHint({ measured: true, tourOpen: true, hadLevel: false }),
     ).toMatch(/Finish/);
+    // A stored pose in hand (the hosted zip's, a draft's, an earlier
+    // visit's kept through a new measurement) is NOT replaced (D10b, M2c
+    // review #5): saying "replaces" there would contradict what the zip
+    // gets.
+    const kept = setupHint({
+      measured: true,
+      tourOpen: true,
+      hadLevel: true,
+      keptStored: true,
+    });
+    expect(kept).not.toMatch(/replaces/);
+    expect(kept).toMatch(/Saved position kept/);
+    expect(kept).toMatch(/Finish/);
     const settled = "settled" as const;
     expect(
       finishReadiness({ measured: false, tourOpen: true, manifest: settled }),

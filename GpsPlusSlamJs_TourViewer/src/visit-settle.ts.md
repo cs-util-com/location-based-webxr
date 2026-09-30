@@ -34,6 +34,22 @@ draft and logs `tourAuthoring/settled`.
     does not read, a sighting of a DIFFERENT code, or a correction that
     cannot be computed.
   - null - the alignment is not 16 finite numbers, or there is no zero.
+- `measurementRole(input)` - what a NEW measurement of a code is (D10b, M2c
+  review #5), from the level id, the visit it was taken in, the level in
+  hand with its measurement, and the hosted zip's level file:
+  - `{ kept: "level-in-hand", reference }` - the level in hand is this
+    code's, reads a pose, and was NOT measured in this visit (an earlier
+    visit of this page, a restored draft, or a hosted level a previous
+    measurement kept): it stays the reference;
+  - `{ kept: "hosted-level", reference }` - nothing of this code in hand, but
+    the open tour's zip stores it with a readable pose;
+  - `{ kept: "measurement" }` - nothing stored reads (no file, no geo, not
+    JSON), a DIFFERENT code is in hand, or the level in hand was measured in
+    THIS visit (same odometry; the visit's settle re-mints it anyway).
+    With a reference kept, the caller keeps it as `mintedLevel`, takes the
+    measurement as this visit's sighting, and the visit settles
+    `code-corrected`. Replacing a stored pose on purpose is an explicit action
+    later (plan §3.4, M4), never a side effect of measuring.
 - `planVisitSettle(input): VisitSettle | null` - the settled records by
   index into `placed` (only objects whose `placement.visit` is this visit),
   the basis and the alignment used, and the level re-minted through it when
@@ -85,9 +101,15 @@ draft and logs `tourAuthoring/settled`.
     Finish, so the zip's level says 6.
 - **No threshold is introduced.** "Seen" for the correction is the fused
   pose source's own `stable` status (the gate the mint already uses; see
-  `creator-setup.ts.md`). A code re-measured in a later visit becomes that
-  visit's `measured-here`; which measurement a level should keep across
-  visits is the M3a spike (plan §3.3).
+  `creator-setup.ts.md`).
+- **A stored pose is never replaced by measuring** (`measurementRole`):
+  a code re-measured in a later visit is that visit's sighting, and the
+  earlier pose stays the reference. Until M2c review #5 the newest
+  measurement won, which re-minted the code through the later visit's GPS
+  away from the notes settled against it - and, for a hosted tour opened in
+  a new page, replaced the hosted code while the hosted notes kept the old
+  frame (symptom B across sessions). Combining several visits'
+  measurements is still the M3a spike (plan §3.3).
 - Never throws: a pose that cannot be minted leaves that object out.
 
 ## Examples
@@ -119,6 +141,9 @@ const plan = planVisitSettle({
   alignment without a sighting or
   with a different code's, a restored level counting as stored earlier, and
   an unreadable stored level.
+- `visit-settle.test.ts` also covers `measurementRole`: the level in hand
+  kept (earlier visit, restored draft), the hosted level kept, a same-visit
+  re-measure replacing, and every no-readable-pose case.
 - `authoring-settle.test.ts` - the same through the real creator setup
   (mint, place, end the visit), the recording's action, the draft rewrite,
   and the cross-visit case with the second session's detections in a moved

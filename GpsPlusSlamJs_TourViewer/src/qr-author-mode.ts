@@ -268,11 +268,18 @@ export function setupHint(state: {
   measured: boolean;
   tourOpen: boolean;
   hadLevel: boolean;
+  /** The level in hand is a stored pose this visit did not measure (a
+   *  hosted or draft level, or an earlier visit's): it is kept, never
+   *  replaced by a new measurement (D10b). */
+  keptStored?: boolean;
 }): string {
   if (!state.measured) return "";
   // With no tour open, `codeTourLine` says what is happening to the tour
   // the code names (scan-to-open plan §9 #9).
   if (!state.tourOpen) return "Position saved.";
+  if (state.keptStored === true) {
+    return "Saved position kept. Place content, or tap Finish to rebuild the zip.";
+  }
   return (
     (state.hadLevel
       ? "Position saved - it replaces the code this tour already carried. "

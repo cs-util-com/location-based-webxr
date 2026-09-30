@@ -775,19 +775,31 @@ describe(
  */
 async function openFinishableTour(
   a: ReturnType<typeof authoring>,
-  options: { holdArchive?: boolean } = {},
+  options: {
+    holdArchive?: boolean;
+    /** Level files the hosted zip already carries (`qr/<id>.json`). */
+    levels?: readonly { id: string; json: string }[];
+  } = {},
 ): Promise<{ releaseArchive: () => void }> {
+  const levels = (options.levels ?? []).map((l) => ({
+    path: `qr/${l.id}.json`,
+    data: l.json,
+  }));
   const blob = await packFilesAsZip([
     {
       path: "tour.json",
       data: serializeTourManifest(createEmptyTourManifest()),
     },
+    ...levels,
   ]);
   const held: (() => void)[] = [];
   a.ctx.session = {
     archive: { url: "https://example.test/tour.zip", size: blob.size },
     hostedFileName: () => null,
-    entries: [{ filename: "tour.json" }],
+    entries: [
+      { filename: "tour.json" },
+      ...levels.map((l) => ({ filename: l.path })),
+    ],
     manifestWrap: "",
     readWholeArchive: () =>
       options.holdArchive === true
@@ -797,7 +809,10 @@ async function openFinishableTour(
             });
           })
         : Promise.resolve(blob),
-    loadEntry: () => Promise.resolve(new Blob([])),
+    loadEntry: (filename: string) =>
+      Promise.resolve(
+        new Blob([levels.find((l) => l.path === filename)?.data ?? ""]),
+      ),
   } as never;
   a.ctx.tourManifestStatus = "settled";
   a.ctx.tourManifest = createEmptyTourManifest();
@@ -1022,6 +1037,118 @@ describe(
       a.setZero(ZERO);
       await flush();
       expect(a.labels.filter((o) => o.name === "Old")).toHaveLength(1);
+    });
+  },
+);
+
+describe(
+  "a new measurement of a stored code corrects the visit, it does not replace the code (D10b, M2c review #5)",
+  { timeout: SLOW_MS },
+  () => {
+    // GPS 20 m and 30 degrees away from the visit that stored the code.
+    const SECOND = yawAlignment(30, [20, 401, -8]);
+
+    /** The `kept` of the last `tourAuthoring/codeMeasured`. */
+    function lastKept(a: ReturnType<typeof authoring>): unknown {
+      const logs = a.dispatched.filter(
+        (x) => x.type === "tourAuthoring/codeMeasured",
+      ) as { payload: { kept: unknown } }[];
+      return logs.at(-1)?.payload.kept;
+    }
+
+    /** A code measured and settled in a first visit, in its own page. */
+    async function storedByAnEarlierPage(): Promise<{
+      id: string;
+      json: string;
+    }> {
+      const first = authoring();
+      await first.mint();
+      first.endVisit();
+      return first.ctx.mintedLevel!;
+    }
+
+    it("keeps an earlier visit's measurement as the reference when the code is measured again", async () => {
+      // Why this test matters: "newest wins" re-minted the code through
+      // the second visit's GPS, moving it away from the notes the first
+      // visit had settled against it.
+      const a = authoring();
+      await a.mint();
+      a.endVisit();
+      const stored = a.ctx.mintedLevel!;
+      const codeLocal = mintedOdom(a.dispatched);
+      a.beginVisit();
+      a.setAlignment(SECOND);
+      await a.mint();
+
+      expect(a.ctx.mintedLevel).toEqual(stored);
+      expect(lastKept(a)).toBe("level-in-hand");
+      expect(a.dom.status.textContent).toMatch(/saved position stays/);
+      await a.placePin("Later", [3, 0, 1]);
+      a.endVisit();
+      const last = a.settledLogs().at(-1)!.payload;
+      expect(last.basis).toBe("code-corrected");
+      expect(last.level).toBeNull();
+      const offset = worldOf(a.ctx.placedObjects[0]!.object.geo).sub(
+        codeWorldOf(stored.json),
+      );
+      expect(
+        offset.distanceTo(new Vector3(3, 0, 1).sub(codeLocal)),
+      ).toBeLessThan(1e-2);
+    });
+
+    it("keeps the hosted zip's code as the reference in a new page, and Finish writes it back unchanged", async () => {
+      // Symptom B across sessions: a hosted tour opened in a new page must
+      // be measured before Finish, and that measurement used to REPLACE
+      // the hosted code's geo through this visit's GPS - while the hosted
+      // notes kept the old frame.
+      const hosted = await storedByAnEarlierPage();
+      const a = authoring();
+      await openFinishableTour(a, { levels: [hosted] });
+      a.ctx.currentLevels = new Map([
+        [hosted.id, parseQrLevel(JSON.parse(hosted.json) as unknown)],
+      ]);
+      a.setAlignment(SECOND);
+      await a.mint();
+
+      expect(a.ctx.mintedLevel).toEqual(hosted);
+      expect(lastKept(a)).toBe("hosted-level");
+      // The panel says the saved position stays - never that it is replaced.
+      expect(a.dom.status.textContent).toMatch(/saved position stays/);
+      expect(a.dom.status.textContent).not.toMatch(/replaces/);
+      await a.placePin("Later", [3, 0, 1]);
+      a.dom.finishButton.click();
+      await finished(a.ctx);
+      expect(a.ctx.finishError).toBeNull();
+      const settle = a.settledLogs().at(-1)!.payload;
+      expect(settle.basis).toBe("code-corrected");
+      expect(settle.referenceLevel).toEqual(hosted);
+      expect(settle.level).toBeNull();
+      // What the zip carries for the code is the hosted file, byte for byte.
+      expect(a.ctx.mintedLevel!.json).toBe(hosted.json);
+    });
+
+    it("makes the new measurement the reference when the hosted level has no readable pose", async () => {
+      const hosted = await storedByAnEarlierPage();
+      const a = authoring();
+      await openFinishableTour(a, {
+        levels: [{ id: hosted.id, json: '{"old":true}' }],
+      });
+      a.setAlignment(SECOND);
+      await a.mint();
+      expect(lastKept(a)).toBe("measurement");
+      expect(a.ctx.mintedLevel!.json).not.toBe('{"old":true}');
+      a.endVisit();
+      expect(a.settledLogs().at(-1)!.payload.basis).toBe("measured-here");
+    });
+
+    it("lets a second measurement in the same visit replace the first", async () => {
+      const a = authoring();
+      await a.mint();
+      const firstJson = a.ctx.mintedLevel!.json;
+      a.setAlignment(yawAlignment(3, [1, 400, 1]));
+      await a.mint();
+      expect(lastKept(a)).toBe("measurement");
+      expect(a.ctx.mintedLevel!.json).not.toBe(firstJson);
     });
   },
 );
