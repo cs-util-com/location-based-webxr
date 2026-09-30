@@ -269,6 +269,14 @@ describe('doc-comment attachment guard', () => {
     });
   });
 
+  it('lists a non-trivial number of files (the scan below is not vacuous)', () => {
+    // Why this test matters: an empty listing (a wrong cwd, a broken git, a
+    // pathspec that stopped matching) makes the scan below pass having read
+    // nothing. `git ls-files` run from a subdirectory lists paths relative
+    // to it, and a filter anchored at the package level then matches none.
+    expect(trackedSourceFiles().length).toBeGreaterThan(1000);
+  });
+
   it('no tracked source file has a doc comment attached to nothing', () => {
     const offenders = [];
     for (const file of trackedSourceFiles()) {

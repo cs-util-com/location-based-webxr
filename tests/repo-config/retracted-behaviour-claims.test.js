@@ -212,6 +212,14 @@ describe('removed behaviour is not described as current', () => {
     }
   );
 
+  it('lists a non-trivial number of files (the scan below is not vacuous)', () => {
+    // Why this test matters: an empty listing (a wrong cwd, a broken git, a
+    // pathspec that stopped matching) makes the scan below pass having read
+    // nothing. `git ls-files` run from a subdirectory lists paths relative
+    // to it, and a filter anchored at the package level then matches none.
+    expect(trackedDocs().length).toBeGreaterThan(1000);
+  });
+
   it('accepts a corrected sentence that names the removal', () => {
     // The replacement text must pass, or the guard blocks its own fix.
     const corrected =

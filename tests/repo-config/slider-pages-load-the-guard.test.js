@@ -37,12 +37,11 @@
  * double-guard a slider that the page-wide install already covers.
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+import { readTracked, repoRoot, trackedFiles } from './tracked-tree.js';
 
 /**
  * Pages that keep sliders without the guard, each with its reason.
@@ -184,13 +183,7 @@ function installRuns(source) {
 }
 
 function tracked(...patterns) {
-  return execFileSync('git', ['ls-files', ...patterns], {
-    cwd: repoRoot,
-    encoding: 'utf8',
-    maxBuffer: 64 * 1024 * 1024,
-  })
-    .split('\n')
-    .filter(Boolean)
+  return trackedFiles(...patterns)
     .filter((f) => !f.includes('node_modules/') && !f.includes('/dist/'));
 }
 
@@ -279,8 +272,8 @@ function unguardedPages(pages, readPage, read) {
   return problems;
 }
 
-const readRepo = (page) => readFileSync(join(repoRoot, page), 'utf8');
-const readAbs = (file) => readFileSync(file, 'utf8');
+const readRepo = (page) => readTracked(page);
+const readAbs = (file) => readTracked(file);
 
 describe('every page with a slider installs the page-wide slider guard', () => {
   const pages = tracked('*.html');
