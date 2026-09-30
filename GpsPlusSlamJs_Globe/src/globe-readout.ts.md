@@ -11,7 +11,11 @@
   - `formatDistance(metres)` -> text: whole km from 100 km ("20,180 km",
     en-US grouping), one decimal from 1 km ("45.6 km"), whole metres below
     ("850 m"). Negative reads "0 m"; NaN or an infinity reads "unknown"
-    (it never throws: the lab calls it every frame).
+    (it never throws: the lab calls it every frame). A deliberate second
+    copy of the framework's `utils/format-distance.ts`: this package does
+    not depend on the framework, and the grouping and "unknown" are not
+    among that formatter's options (a justified entry in
+    `tests/repo-config/duplicate-helpers.test.js`).
   - `globeReadoutText({ altitudeM, targetDistanceM })` -> "Altitude
     1,234 km", plus " · 1,300 km to the target" when `targetDistanceM` is
     not null.
