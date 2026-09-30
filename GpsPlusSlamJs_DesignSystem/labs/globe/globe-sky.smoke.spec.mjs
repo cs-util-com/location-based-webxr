@@ -57,7 +57,12 @@ test("level 4 of the imagery is requested and loads without an error where level
 }) => {
   // Two settled views of up to 120 s each (see arriveAt).
   test.setTimeout(300_000);
-  const view = "at=30,15&spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z";
+  // The atmosphere pass is off (`atmo=0`): this test is about the imagery
+  // and the camera, and on the CPU rasteriser the pass doubles the frame
+  // time, and the tiles stream about one a frame, so a cold settle took
+  // 117-120 s with it on against 51 s off (fresh contexts, both orders,
+  // 2026-09-30), against a 120 s settle bound.
+  const view = "at=30,15&spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&atmo=0";
   const errors = await bootLab(page, view);
   const fitted = await arriveAt(page, { lat: 30, lng: 15 });
   await applyHash(page, `${view}&errorTarget=0.25`);

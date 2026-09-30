@@ -259,7 +259,12 @@ test("turns to any target and holds it at the centre", async ({ page }) => {
     ["the Arctic", { lat: 80, lng: -40 }],
     ["the spin start's antipode", { lat: -30, lng: -165 }],
   ];
-  const at = ({ lat, lng }) => `at=${lat},${lng}&spinMs=0&turnMs=300`;
+  // The atmosphere pass is off (`atmo=0`): this test is about the imagery
+  // and the camera, and on the CPU rasteriser the pass doubles the frame
+  // time, and the tiles stream about one a frame, so a cold settle took
+  // 117-120 s with it on against 51 s off (fresh contexts, both orders,
+  // 2026-09-30), against a 120 s settle bound.
+  const at = ({ lat, lng }) => `at=${lat},${lng}&spinMs=0&turnMs=300&atmo=0`;
   await page.goto(`/labs/globe/#${at(targets[0][1])}`);
   await page.waitForFunction(() => window.__globeLab?.ready, null, {
     timeout: 90_000,
@@ -303,7 +308,12 @@ test("waits for a fix, then falls back to Central Park; replay runs it again", a
   // Two settled arrivals at a new view (see arriveAt).
   test.setTimeout(300_000);
   const spinMs = 400;
-  await page.goto(`/labs/globe/#spinMs=${spinMs}&turnMs=300`);
+  // The atmosphere pass is off (`atmo=0`): this test is about the imagery
+  // and the camera, and on the CPU rasteriser the pass doubles the frame
+  // time, and the tiles stream about one a frame, so a cold settle took
+  // 117-120 s with it on against 51 s off (fresh contexts, both orders,
+  // 2026-09-30), against a 120 s settle bound.
+  await page.goto(`/labs/globe/#spinMs=${spinMs}&turnMs=300&atmo=0`);
   await page.waitForFunction(() => window.__globeLab?.ready, null, {
     timeout: 90_000,
   });
@@ -618,7 +628,14 @@ test("every control on the plate writes the hash and applies", async ({
     historyLength: history.length,
   }));
   const runsBefore = before.runs;
-  for (const key of keys) {
+  // The atmosphere switch goes LAST. Flipped first (the start view pins it
+  // off, so its "other option" is on), it would run every later step with
+  // the pass at its sliders' tops (64 samples, thickness 10, strength 4):
+  // 0.64-0.69 animation frames a second on the CPU rasteriser, and every
+  // wait below polls per frame, so the test ran 3.8-4.3 min against its
+  // 3 min bound while the Now click itself took 4-8 s (2026-09-30).
+  const ordered = [...keys.filter((k) => k !== "atmo"), "atmo"];
+  for (const key of ordered) {
     // A select's first option that differs from its value; a slider's top.
     const value = await page.evaluate((k) => {
       const el = document.querySelector(`[data-hash-key="${k}"]`);
@@ -655,9 +672,12 @@ test("every control on the plate writes the hash and applies", async ({
   expect(await page.evaluate(() => history.length)).toBe(before.historyLength);
   // The panel follows an edited hash (a pasted link): the slider and its
   // label show the new value.
+  // A pasted link resets every key it does not name, which would turn the
+  // pass back on (the default) while the view refits: rim off here, as in
+  // every test that is not about it (1.78 against 3.37 frames a second).
   await applyHash(
     page,
-    "at=30,15&spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&nightGain=2.5",
+    "at=30,15&spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&nightGain=2.5&atmo=0",
   );
   expect(
     await page.evaluate(() => [
