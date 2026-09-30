@@ -72,6 +72,11 @@ const preview = await renderTourObjects(objects, {
 
 ## Tests
 
+`viewer-content-alignment.test.ts` (authoring plan M2d, decision D10a) -
+the viewer's rendered pin sits at the scene root, not under the odometry
+group or an anchor, and a scan's votes move it in the visitor's view from
+~8 m off to within 0.3 m in the same dispatches, without re-placing it.
+
 `content-placement.test.ts` - the pin round trip (mint → NUE) as a property
 over positions; the photo's frame direction pinned by bearing against the
 framework's basis constant; refusals without zero/alignment; the id shape

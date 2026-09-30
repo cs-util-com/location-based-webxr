@@ -112,6 +112,15 @@ recording. Its own module since the flows plan M6.
   Viewer dispatches overrides. The vote-strength harness
   (`viewer-vote-strength.test.ts`) then re-measures the shipped arm under
   the soft solver.
+- **The tour's content follows the live alignment - no per-note GPS anchors
+  (owner decision D10a, authoring plan 2026-09-28-0953 §3.2, M2d).**
+  `tryPlaceContent` hands `renderTourObjects` the scene root
+  (`seams.getScene()`), so every alignment change - a scan's votes above
+  all - moves the content in the visitor's view in the same dispatch. A
+  GPS anchor (`FW/visualization/gps-anchor.ts`) moves only off screen and by
+  at least ~2.2 m, position only: it would hide a scan's correction and put
+  the 0.3 m field acceptance out of reach. Pinned by
+  `viewer-content-alignment.test.ts`; revisit only with that decision.
 - Planes live at the SCENE ROOT in raw GPS-world NUE (the framework's
   built-once parenting rule); the alignment moves the odometry group under
   them, which is why a later lock needs no re-placement.
