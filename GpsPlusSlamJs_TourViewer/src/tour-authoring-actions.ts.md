@@ -33,7 +33,11 @@ reads them (the framework's `diagnostics/note` precedent). Plan:
   before the teardown), `usedAlignment` (what the geo went through),
   `sighting` (the code pose a correction used, or null), `objects` (each
   settled object's `id` and new `geo`), `level` (the re-minted code, or
-  null). The tap-time geo of `objectPlaced`/`codeMeasured` is what a killed
+  null), `referenceLevel` (the level in hand when the settle ran, before any
+  re-mint - the stored pose a code correction maps onto) and `zero` (M2c
+  review #7): with `visitAlignment` and `sighting` a replay recomputes a
+  code-corrected `usedAlignment` through `correctedAlignment` (pinned by the
+  cross-visit test in `authoring-settle.test.ts`). The tap-time geo of `objectPlaced`/`codeMeasured` is what a killed
   tab keeps; this is what the zip carries, so a replay needs it.
 - `authoringFinished(payload)` - `tourAuthoring/finished`: `levelId`,
   `manifest` (what the rebuilt zip carries), `atMs`.

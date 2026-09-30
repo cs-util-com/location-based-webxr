@@ -25,6 +25,7 @@
 import type { selectAlignmentMatrix } from "gps-plus-slam-app-framework/state";
 import type { MintAlignmentInfo } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 import type { Pose } from "gps-plus-slam-app-framework/ar/qr/qr-pose";
+import type { LatLong } from "gps-plus-slam-app-framework/core";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type {
   TourManifest,
@@ -123,6 +124,16 @@ interface VisitSettledLog {
   /** The code re-minted through `usedAlignment` when this visit measured
    *  it; null otherwise. */
   readonly level: { readonly id: string; readonly json: string } | null;
+  /** The level in hand when the settle ran, before any re-mint: the stored
+   *  pose a code correction mapped this visit onto. With `zero`,
+   *  `visitAlignment` and `sighting` a replay recomputes a corrected
+   *  `usedAlignment` (`correctedAlignment`, `visit-anchoring.ts`). */
+  readonly referenceLevel: {
+    readonly id: string;
+    readonly json: string;
+  } | null;
+  /** The zero the geo was minted against. */
+  readonly zero: LatLong;
 }
 
 interface FinishedLog {

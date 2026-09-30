@@ -47,7 +47,11 @@ import {
 } from "./tour-viewer-session.js";
 import { objectPoseNue } from "./content-placement.js";
 import { META_KEY, objectKey } from "./draft-persistence.js";
-import { odomNueFromWebXr, throughAlignment } from "./visit-anchoring.js";
+import {
+  correctedAlignment,
+  odomNueFromWebXr,
+  throughAlignment,
+} from "./visit-anchoring.js";
 
 // The pipeline builds its controller from this module; capture the config
 // it hands over (its `onDetection` is how detections reach the setup) and
@@ -370,6 +374,10 @@ function authoring(options: { store?: DraftFileStore } = {}) {
         usedAlignment: number[];
         objects: { id: string; geo: TourObject["geo"] }[];
         level: { id: string; json: string } | null;
+        referenceLevel: { id: string; json: string } | null;
+        zero: { lat: number; lon: number } | null;
+        sighting: { odomPose: Pose } | null;
+        refusedCorrection: unknown;
       };
     }[];
   }
@@ -527,6 +535,7 @@ describe(
       // the SETTLED geo - which exists nowhere but in this action.
       const a = authoring();
       await a.mint();
+      const tapLevel = a.ctx.mintedLevel;
       await a.placePin("Gate", [2, 0, -1]);
       const end = yawAlignment(4, [1.5, 400.2, -1]);
       a.setAlignment(end);
@@ -548,6 +557,10 @@ describe(
         },
       ]);
       expect(payload.level).toEqual(a.ctx.mintedLevel);
+      // The level in hand BEFORE the settle and the zero (review #7): what a
+      // replay needs to recompute a code-corrected settle.
+      expect(payload.referenceLevel).toEqual(tapLevel);
+      expect(payload.zero).toEqual(ZERO);
       // JSON-safe: the recording writes it to a file as it is.
       expect(JSON.parse(JSON.stringify(payload))).toEqual(payload);
     });
@@ -627,6 +640,20 @@ describe(
       expect(logs.at(-1)?.payload.basis).toBe("code-corrected");
       // The stored code is the reference; the second visit does not move it.
       expect(logs.at(-1)?.payload.level).toBeNull();
+      // A replay recomputes the corrected alignment from the log alone.
+      const last = logs.at(-1)!.payload;
+      const stored = parseQrLevel(
+        JSON.parse(last.referenceLevel!.json) as unknown,
+      ).qr.geo!;
+      const storedPose = objectPoseNue(stored, last.zero!);
+      const replayed = correctedAlignment(
+        last.visitAlignment as number[],
+        odomNueFromWebXr(last.sighting!.odomPose),
+        { position: storedPose.positionNue, rotation: storedPose.rotationNue },
+      )!;
+      replayed.forEach((v, i) => {
+        expect(v).toBeCloseTo(last.usedAlignment[i]!, 9);
+      });
     });
 
     it("without a sighting of the code, keeps the plain visit alignment (and its GPS difference)", async () => {

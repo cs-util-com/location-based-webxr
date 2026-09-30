@@ -138,6 +138,11 @@ interface VisitSettleRecord {
   readonly zero: LatLong;
   /** The sighting a code correction used; null otherwise. */
   readonly sighting: CodeSighting | null;
+  /** The level in hand when the settle ran, before any re-mint. */
+  readonly referenceLevel: {
+    readonly id: string;
+    readonly json: string;
+  } | null;
 }
 
 /**
@@ -1295,6 +1300,7 @@ export function wireCreatorSetup(deps: {
       zero,
       sighting:
         choice.basis === "code-corrected" ? ctx.visitCodeSighting : null,
+      referenceLevel: ctx.mintedLevel,
     };
     visitSettles.set(visit, record);
     const plan = planVisitSettle(input);
@@ -1350,6 +1356,8 @@ export function wireCreatorSetup(deps: {
         sighting: record.sighting,
         objects: objects.map((object) => ({ id: object.id, geo: object.geo })),
         level,
+        referenceLevel: record.referenceLevel,
+        zero: record.zero,
       }),
     );
   }
