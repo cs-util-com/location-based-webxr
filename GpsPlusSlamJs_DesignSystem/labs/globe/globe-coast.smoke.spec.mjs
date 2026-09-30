@@ -130,6 +130,10 @@ function glintOnLand(on, off, awayPx) {
     coast,
     landMax: Math.max(0, ...land),
     seaMean: meanOf(sea),
+    // A sample well out on the sea side, for the sea's own colour.
+    seaSample: leftBrighter
+      ? Math.min(off.length - 1, coast + 3 * awayPx)
+      : Math.max(0, coast - 3 * awayPx),
   };
 }
 
@@ -201,6 +205,24 @@ for (const altKm of [150, 50]) {
     // The view must show a glint at all, or the check could not fail.
     expect(verdicts[1].seaMean).toBeGreaterThan(3 * LAND_GLINT_MAX);
     expect(verdicts[1].landMax).toBeLessThanOrEqual(LAND_GLINT_MAX);
+    // From 150 km the half-texel ramp is under a sample: no land glint
+    // beyond 2.5 km either (measured 1.1 levels; review B6).
+    if (altKm === 150) {
+      expect(verdicts[0].landMax).toBeLessThanOrEqual(LAND_GLINT_MAX);
+    }
+    // WHY (review B7): the water's colour rides UNDER the alpha that
+    // carries the mask, and an upload path that premultiplies or clips
+    // alpha would zero it, turning the sea black. With the water as rough
+    // as land (no glint) and the rim off, a sample well out at sea must
+    // still be the imagery's dark blue, not black.
+    const n2 = verdicts[2].seaSample;
+    const [sea] = await page.evaluate(
+      (p) => window.__globeLab.readPixels(p),
+      [[(n2 + 0.5) / n, 0.5]],
+    );
+    console.log(`open sea at sample ${n2}: RGB ${sea.slice(0, 3).join("/")}`);
+    expect(sea[2]).toBeGreaterThan(sea[0]);
+    expect(Math.max(sea[0], sea[1], sea[2])).toBeGreaterThan(5);
     expect(errors).toEqual([]);
   });
 }
