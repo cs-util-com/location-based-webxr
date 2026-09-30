@@ -116,15 +116,43 @@ recording. Its own module since the flows plan M6.
   soft trimming only for its own AR entries, never as a global default:
   `resetGpsSessionData` keeps overrides across entries, so without a reset
   every later GPS-only solve would run the soft kernel the corpus never
-  credited. The step is two dispatches, both in `startViewerPipeline`'s
-  closure: (1) at its start - once per AR entry, before `arController.enable`
-  and before any fix or vote - `setAlignmentOverrides(null)`; (2) in
-  `castVote`, before the entry's FIRST payload (a closure flag),
-  `setAlignmentOverrides({ ...current overrides, ...soft keys })` - merged,
-  because the action replaces the whole object. Nothing else in the Tour
-  Viewer dispatches overrides. The vote-strength harness
-  (`viewer-vote-strength.test.ts`) then re-measures the shipped arm under
-  the soft solver.
+  credited. The contract, exactly (restated after the M2b/M2d milestone
+  review #3, which found the keep-alive unsafe under the hard trim: B = 5 m
+  fails the rule, 8 m jumps, 15 m never hands off):
+  1. **Clear first, on EVERY entry.** `setAlignmentOverrides(null)` is the
+     first statement of `startViewerPipeline`, BEFORE its early return for
+     a device without a detector: a plain-AR entry must never keep a
+     previous entry's soft setting, and it casts no vote that would clear
+     it later. It runs before any fix or vote of the entry.
+  2. **Soft on at the entry's first vote.** In `castVote`, before the
+     entry's FIRST payload (a flag in `startViewerPipeline`'s closure),
+     `setAlignmentOverrides({ ...current overrides, ...soft keys })` -
+     merged, because the action replaces the whole object. Every viewer
+     vote (a lock's burst, the keep-alive's rings) goes through `castVote`,
+     so no vote reaches the solver under the hard trim once the seam is
+     wired.
+  3. **A tour switch inside one entry turns it off again** (decided here;
+     the coordinator may overrule it in the wiring step):
+     `endTourCodeVotes` also dispatches `setAlignmentOverrides(null)` and
+     re-arms the closure flag, so the next tour's first vote turns soft
+     trimming back on. Reason: M0c credited the soft kernel for a session
+     whose alignment a code is holding; between tours no code holds it
+     (the keep-alive is stopped, the budget reset), and a GPS-only solve is
+     the one the corpus credited. The cost: the closing tour's votes still
+     in the solve meet the hard trim again, which can move the alignment
+     once - at a moment the closing tour's content is torn down anyway.
+     The alternative (keep soft on until AR exit) avoids that one move and
+     runs GPS-only solving under an uncredited kernel for the rest of the
+     entry.
+     Nothing else in the Tour Viewer dispatches overrides. The vote-strength
+     harness (`viewer-vote-strength.test.ts`) then re-measures the shipped
+     arm under the soft solver. **Until then** `viewer-soft-trim-guard.test.ts`
+     holds the line: it passes only while the installed core REFUSES the soft
+     keys, and breaks (a type error at `typecheck:tests`, and at run time) on
+     the first core that accepts them, so bumping the core forces this wiring.
+     It cannot stop a build that ships the keep-alive under the hard trim
+     before that core exists; only a release rule, or gating the keep-alive
+     off until the seam is wired, can - an owner decision.
 - **The tour's content follows the live alignment - no per-note GPS anchors
   (owner decision D10a, authoring plan 2026-09-28-0953 §3.2, M2d).**
   `tryPlaceContent` hands `renderTourObjects` the scene root
