@@ -40,7 +40,15 @@ camera, so `installTourViewerArFakes(page)` installs
   `reticleVisible` / `reticlePosition` / `reticleDisposals` and
   `encodedFrames` script the creator's placement layer (the hit-test
   reticle and the JPEG encoder fakes; `createLabel` returns a bare object
-  in place of the canvas sprite); `timers` + `fireTimers()` are the scan
+  in place of the canvas sprite); a tap in AR (authoring plan
+  2026-09-28-0953 M4): `startHitTestReticle` keeps the app's select
+  listener as `xrSelect`, `tapXr(selector?)` taps like the runtime does -
+  `beforexrselect` dispatched at the overlay element first, and NO select
+  when it was cancelled (it returns whether the select fired) - and
+  `pickObjectInView` returns the scripted `pickId` only when the app
+  rendered that id (`pickTargets` records the ids it was offered; the stub
+  scene has no geometry, the real raycast is `object-pick.test.ts`'s);
+  `timers` + `fireTimers()` are the scan
   gate's escape clock (the `schedule` seam), so a spec fires the 45 s
   without waiting. The troubleshooting recording's depth (authoring
   recording plan 2026-09-28-0953, D4): `initARCalls` records `hasDepth`,
@@ -71,5 +79,6 @@ camera, so `installTourViewerArFakes(page)` installs
 
 ## Tests
 
-Consumed by `ar-mode.spec.js`. Not a test file itself; the prod-inert
+Consumed by `ar-mode.spec.js`, `ar-layout.spec.js` and
+`object-editing.spec.js`. Not a test file itself; the prod-inert
 guarantee it relies on is unit-tested in `src/seams.test.ts`.

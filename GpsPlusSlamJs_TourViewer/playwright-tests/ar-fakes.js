@@ -113,6 +113,31 @@ export async function installTourViewerArFakes(page, options = {}) {
         reticleVisible: true,
         reticlePosition: [3, 400.5, -2],
         reticleDisposals: 0,
+        /** A tap in AR (authoring plan 2026-09-28-0953 M4): the XR select
+         *  listener the app handed the reticle, what the fake camera ray
+         *  "hits" (an object id, or null), and the ids it was offered. */
+        xrSelect: /** @type {null | (() => void)} */ (null),
+        pickId: /** @type {string | null} */ (null),
+        pickTargets: /** @type {string[]} */ ([]),
+        /**
+         * Tap the screen in AR, as the runtime does: a tap on a DOM-overlay
+         * element first dispatches `beforexrselect` there, and a cancelled
+         * one fires NO select. Returns whether the select fired.
+         * @param {string} [selector] the overlay element tapped, if any
+         */
+        tapXr(selector) {
+          if (selector !== undefined) {
+            const target = document.querySelector(selector);
+            const event = new Event("beforexrselect", {
+              bubbles: true,
+              cancelable: true,
+            });
+            target?.dispatchEvent(event);
+            if (event.defaultPrevented) return false;
+          }
+          test.xrSelect?.();
+          return true;
+        },
         /** Photos "encoded" by the fake (a 3-byte stand-in per capture). */
         encodedFrames: 0,
         /** The scan gate's escape clock (M5): armed timers the spec fires. */
@@ -324,17 +349,29 @@ export async function installTourViewerArFakes(page, options = {}) {
             test.releasePdfSave = () => resolve(test.saveOutcome);
           });
         },
-        startHitTestReticle: () => ({
-          isVisible: () => test.reticleVisible,
-          getWorldPosition: (out) => {
-            const [x, y, z] = test.reticlePosition;
-            out.set(x, y, z);
-            return out;
-          },
-          dispose: () => {
-            test.reticleDisposals += 1;
-          },
-        }),
+        startHitTestReticle: (_group, onSelect) => {
+          test.xrSelect = onSelect ?? null;
+          return {
+            isVisible: () => test.reticleVisible,
+            getWorldPosition: (out) => {
+              const [x, y, z] = test.reticlePosition;
+              out.set(x, y, z);
+              return out;
+            },
+            dispose: () => {
+              test.reticleDisposals += 1;
+            },
+          };
+        },
+        // The camera ray, scripted: the stub scene has no geometry (the
+        // real raycast is object-pick.test.ts's). Only an id the app
+        // actually rendered can be hit.
+        pickObjectInView: (targets) => {
+          test.pickTargets = [...targets.keys()];
+          return test.pickId !== null && targets.has(test.pickId)
+            ? test.pickId
+            : null;
+        },
         encodeFrameJpeg: (image) => {
           test.encodedFrames += 1;
           return Promise.resolve({
