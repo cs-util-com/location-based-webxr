@@ -56,8 +56,13 @@ recording. Its own module since the flows plan M6.
     the session's); each new evaluation is counted per code into
     `ctx.fusedTallies` (the `?debug=1` readout) and, while the pipeline is
     the session's, kept as `ctx.viewerLastEvaluation` (the visitor hint;
-    plan §66, `qr-debug-readout.ts`); false without a
-    detector (plain AR, still placing photos).
+    plan §66, `qr-debug-readout.ts`). It also starts THIS entry's code
+    keep-alive (`ctx.viewerKeepAlive`, authoring plan M2b): one store
+    subscription casts the keep-alive's votes after every new DEVICE fix
+    (`createDeviceFixWatch`), through the same `castVote` sink as a lock's
+    votes, and removes itself once that keep-alive is no longer the
+    session's (`endQrPipeline`, the next entry). False without a
+    detector (plain AR, still placing photos; no keep-alive).
   - `tryPlaceTour(): void` - the placement trigger (DEC-F3): with a tour
     open and a viewer session live (`ctx.placementUnsubscribe !== null`),
     runs the capture join ONCE per session+tour
@@ -88,6 +93,25 @@ recording. Its own module since the flows plan M6.
 - Votes: `canAcceptVotes` tests the session ZERO, not merely the slice
   (PR #386 review) - votes before the zero would charge the budget while
   `recordGpsEvent` wrote nothing.
+- **`castVote` is the one vote sink** (authoring plan M2b): every viewer
+  vote - a lock's burst and the keep-alive's rings - is dispatched through
+  it, so a per-vote concern has exactly one place to go. Its payloads carry
+  the synthetic-QR source stamp, which is what keeps the keep-alive's own
+  fix listener from answering them.
+- **The seam for the per-entry solver overrides** (plan §3.2, D12; waits for
+  the core release of M2a's soft-trimming keys). The viewer is to run the
+  soft trimming only for its own AR entries, never as a global default:
+  `resetGpsSessionData` keeps overrides across entries, so without a reset
+  every later GPS-only solve would run the soft kernel the corpus never
+  credited. The step is two dispatches, both in `startViewerPipeline`'s
+  closure: (1) at its start - once per AR entry, before `arController.enable`
+  and before any fix or vote - `setAlignmentOverrides(null)`; (2) in
+  `castVote`, before the entry's FIRST payload (a closure flag),
+  `setAlignmentOverrides({ ...current overrides, ...soft keys })` - merged,
+  because the action replaces the whole object. Nothing else in the Tour
+  Viewer dispatches overrides. The vote-strength harness
+  (`viewer-vote-strength.test.ts`) then re-measures the shipped arm under
+  the soft solver.
 - Planes live at the SCENE ROOT in raw GPS-world NUE (the framework's
   built-once parenting rule); the alignment moves the odometry group under
   them, which is why a later lock needs no re-placement.
@@ -127,7 +151,15 @@ ctx.placementUnsubscribe = arStore.subscribe(() => viewer.tryPlaceTour());
 `viewer-placement-viewing-log.test.ts` - the `tourViewing/*` hooks through the
 real viewer controller config (a lock, then its votes as one batch; no
 second lock for the next tracked frame), and exactly today's dispatches
-without a running recording.
+without a running recording. Only a lock's votes are batched into
+`votesCast`; the keep-alive's go through `castVote` alone and reach a
+recording as source-stamped GPS events.
+
+`viewer-votes.test.ts` (authoring plan M2b) - with the real store: the
+scan gate stays scanning on a lock that cast no vote (no GPS zero yet, a
+converging pose) and passes on the first one that did; the keep-alive
+casts exactly one ring per device fix from the kept pose, answers no
+synthetic point, stops at AR exit, and starts fresh per entry.
 
 `fused-pose-wiring.test.ts` - the votes' stable pose is the fused one (at
 the true rotation where single-frame poses scatter past the old average's

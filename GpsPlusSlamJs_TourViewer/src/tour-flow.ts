@@ -24,6 +24,7 @@ import {
 
 import type { ViewerMode } from "./mode.js";
 import { viewerStatusLine } from "./qr-viewer-mode.js";
+import type { KeepAlivePhase } from "./qr-vote-keep-alive.js";
 import { gateSegment, type ScanGate } from "./scan-gate.js";
 
 /** What the page knows about the open tour, for copy decisions (reached
@@ -93,6 +94,9 @@ export interface ArStatusInput {
     reprojectionErrorPx: number | null;
     /** The fused pose's hint before the first vote (plan §66). */
     fusedHint?: string | null;
+    /** The code keep-alive's phase (authoring plan M2b): what the line
+     *  says once the vote budget is spent. */
+    hold?: KeepAlivePhase | null;
   };
   /** The tracking-quality onboarding phase while running; null before the
    *  slice produced a report (or in author mode, which never reads it). */

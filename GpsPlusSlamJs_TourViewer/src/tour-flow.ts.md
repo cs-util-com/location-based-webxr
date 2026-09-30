@@ -102,6 +102,10 @@ arStatusLine({
 - `ArStatusInput.qr.fusedHint` carries the visitor hint through to
   `viewerStatusLine` (plan §66); it sits beside the gate's "Code
   recognised" line, which is why it reads as fine-tuning (§67 #6).
+- `ArStatusInput.qr.hold` carries the code keep-alive's phase (authoring
+  plan M2b) to `viewerStatusLine`: once the budget is spent the line says
+  whether the code still holds the placement (with the seconds left), is
+  fading, or has ended - never the old unconditional "placement holds".
 
 ## Tests
 

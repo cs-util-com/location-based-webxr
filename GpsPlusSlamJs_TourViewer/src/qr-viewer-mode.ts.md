@@ -16,8 +16,11 @@ carrying the two review-ordered guardrails and the deferred negative cache.
   `MAX_VOTED_LOCKS_PER_CODE = 10` (review #6 budget). The ring used to be
   capped at 2 m (delta #6: "a wide ring amplifies the saved code's heading
   error"); M0b measured that it does not, and that the 2 m ring left the
-  heading 6-31° off after a scan. Each constant's doc comment names what
-  would reverse it.
+  heading 6-31° off after a scan. `VIEWER_KEEP_ALIVE_HOLD_MS = 120000` and
+  `VIEWER_KEEP_ALIVE_FADE_MS = 120000` (the owner's "about two minutes, then
+  fade", M0c). Each constant's doc comment names what would reverse it.
+- `createViewerKeepAlive()` - the code keep-alive (`qr-vote-keep-alive.ts`)
+  with these constants.
 - `buildViewerControllerConfig(deps: ViewerPipelineDeps)` — `onLocked(level,
 hasVoted)` is forwarded from every controller lock (no detected-text
   guard, M5 review #4), with whether the locked code has cast votes in
@@ -34,13 +37,24 @@ hasVoted)` is forwarded from every controller lock (no detected-text
   code's vote budget is spent - ~10 ms per lock saved, §61 #6),
   `recordDetection`, `onError`, and the optional `onStatus` /
   `onUnknownCode` / `onUnusableLevel` (a level with geo but no printed
-  size) / `onVotedLock` UI hooks.
+  size) / `onVotedLock` UI hooks, and the optional `keepAlive`: each lock
+  that dispatched votes hands it the stable pose the controller resolved
+  for that frame (with the level's geo and size) - after the budget the
+  config no longer resolves a pose, so this is the only place it can be
+  kept - and every other lock of a code is a re-scan (`relock`). `onLocked`
+  is present when the app listens or a keep-alive is given.
 - `viewerStatusLine({...}): string` — the visitor-facing line, pure;
   carries the last lock's reprojection error (px) as the placement-quality
   number M5's probe reads. Its optional `fusedHint` (from
   `qr-debug-readout.ts`'s `visitorFusedHint`, plan §66) is shown before the
   first vote instead of "Scanning for the printed code…"; an unknown or
-  unusable code still wins, and the vote states replace it.
+  unusable code still wins, and the vote states replace it. Its optional
+  `hold` (the keep-alive's phase) decides the spent-budget line: "the code
+  holds the placement for N s more", "the code's hold is fading; GPS takes
+  over gradually", or "the code's hold has ended - GPS places the tour now";
+  without a phase for the locked code it only says the batches were cast.
+  It used to say "placement holds" unconditionally while the votes faded
+  out of the solve (authoring plan §2.2 B1).
 - `imagePlaneRingNue(centerNue, count, radiusM?)` — ring positions in
   GPS-world NUE at the anchor's height.
 
@@ -89,7 +103,9 @@ const controller = createQrTrackingController(
 ## Tests
 
 `qr-viewer-mode.test.ts` — the measured-geometry pin (30 m, 8 votes), the
-`hasVoted` lock adapter, level resolution by
+`hasVoted` lock adapter, the keep-alive hand-over (a voted lock keeps its
+pose past the budget, a lock without votes keeps nothing, a later lock
+restarts the hold), the hold and fade pins, the hold lines, level resolution by
 detected code, the placeholder + `onUnknownCode`, the per-code budget
 (stops exactly at the cap, other codes unaffected, detections keep
 recording), the status-line table, and the ring geometry. The composed

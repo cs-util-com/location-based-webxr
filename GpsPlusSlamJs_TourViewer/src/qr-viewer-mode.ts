@@ -17,8 +17,17 @@
  *   the alignment takes the saved code's heading error unchanged at every
  *   radius from 5 to 100 m, while the 2 m ring left the heading 6-31° off
  *   after a scan because it has almost no rotational lever against the GPS.
+ * - **The keep-alive** (M0b/M0c, owner decisions D8/D9): after the budget
+ *   the config stops evaluating the stable pose, so it KEEPS the pose each
+ *   voted lock used and hands it to {@link ViewerPipelineDeps.keepAlive},
+ *   which re-votes from it on every device GPS fix - full strength for
+ *   {@link VIEWER_KEEP_ALIVE_HOLD_MS} after the code's last lock, then
+ *   fading to zero over {@link VIEWER_KEEP_ALIVE_FADE_MS}
+ *   (`qr-vote-keep-alive.ts`). Under the core's shipped hard outlier trim
+ *   the hand-off to GPS above a 5 m bias is one jump (M0c); the soft
+ *   trimming that makes it smooth is a per-entry override the viewer does
+ *   not dispatch yet (see the sidecar).
  *
-
  * The level lookup is the deferred NEGATIVE CACHE (delta #8): a scanned
  * code with no `qr/<c>.json` in the open tour resolves a geo-less
  * placeholder — cached per text by the controller — instead of rejecting,
@@ -50,6 +59,12 @@ import {
   MAX_VOTED_LOCKS_PER_CODE,
 } from "gps-plus-slam-app-framework/ar/qr/qr-vote-budget";
 
+import {
+  createQrVoteKeepAlive,
+  type KeepAlivePhase,
+  type QrVoteKeepAlive,
+} from "./qr-vote-keep-alive.js";
+
 /**
  * Synthetic per-vote GPS accuracy (m), the vote weight's input. It barely
  * matters: the core weighs `1/max(acc, 1 m)^0.1`, 0.85 here against 0.90
@@ -73,6 +88,21 @@ export const VIEWER_VOTE_BASELINE_M = 30;
  * exact on the 30 m ring; 16 gained under 0.1 m at twice the solver input.
  */
 export const VIEWER_VOTE_COUNT = 8;
+/**
+ * The keep-alive's full-strength hold after the kept code's last lock (ms):
+ * the owner's "about two minutes" (D8: tracking drifts little for one to
+ * two minutes, then 0.5-1 m). M0c swept 60-180 s at a 120 s fade: every
+ * value met the rule under soft trimming; under the hard trim a longer hold
+ * only postponed the hand-off jump.
+ */
+export const VIEWER_KEEP_ALIVE_HOLD_MS = 120_000;
+/**
+ * The keep-alive's linear fade to zero after the hold (ms). M0c swept
+ * 60-180 s at a 120 s hold: all met the rule under soft trimming. What
+ * would reverse it: no hold with a 120 s fade (0.64 m inside the rule's
+ * 120 s window). Supersedes D9's 240 s fade (owner, after M0c).
+ */
+export const VIEWER_KEEP_ALIVE_FADE_MS = 120_000;
 /**
  * Locked frames per code that actually vote (review #6); M5 tunes.
  *
@@ -130,6 +160,22 @@ export interface ViewerPipelineDeps {
    *  and the synchronous callbacks — the debug view, the image planes —
    *  read the cache instead of re-deriving it. */
   onLevelResolved?(text: string, level: QrLevel | null): void;
+  /** The code's keep-alive (`createViewerKeepAlive`): each voted lock hands
+   *  it the stable pose the votes were built from, every other lock is a
+   *  re-scan that restarts its hold. Casting its votes per device fix is the
+   *  caller's (`viewer-placement.ts`). Absent: no keep-alive. */
+  keepAlive?: QrVoteKeepAlive;
+}
+
+/** The viewer's keep-alive, with the measured schedule (M0b/M0c). */
+export function createViewerKeepAlive(): QrVoteKeepAlive {
+  return createQrVoteKeepAlive({
+    holdMs: VIEWER_KEEP_ALIVE_HOLD_MS,
+    fadeMs: VIEWER_KEEP_ALIVE_FADE_MS,
+    votesPerFix: VIEWER_VOTE_COUNT,
+    baselineM: VIEWER_VOTE_BASELINE_M,
+    syntheticAccuracyM: VIEWER_SYNTHETIC_ACCURACY_M,
+  });
 }
 
 export function buildViewerControllerConfig(
@@ -139,6 +185,13 @@ export function buildViewerControllerConfig(
    *  ordering contract fires `onDetection` synchronously before the same
    *  frame's vote dispatch, which is what lets the budget key by text. */
   let lastDetectedText: string | null = null;
+  /** The current frame's detection time (the controller's clock). */
+  let lastDetectedAtMs = 0;
+  /** The stable pose the current frame's votes are built from: the
+   *  controller resolves it right before it builds them. */
+  let frameStablePose: { text: string; pose: Pose } | null = null;
+  /** Whether the current frame's votes were dispatched. */
+  let frameVoted = false;
   /** Keyed by the decoded TEXT. Since a code's identity is now the hash of
    *  that exact text, distinct texts always have distinct ids — so text and
    *  id are equivalent budget keys, and text is the one available
@@ -146,6 +199,33 @@ export function buildViewerControllerConfig(
    *  could resolve to one code, which is why that version keyed by the
    *  resolved code instead.) */
   const voteBudget = createQrVoteBudget(MAX_VOTED_LOCKS_PER_CODE);
+
+  /** A lock that voted hands the keep-alive its pose (a different code
+   *  takes over); any other lock of the kept code restarts the hold. */
+  function keepAliveOnLock(text: string, level: QrLevel): void {
+    const keepAlive = deps.keepAlive;
+    if (keepAlive === undefined) return;
+    const { geo, physicalSizeM } = level.qr;
+    if (
+      frameVoted &&
+      frameStablePose?.text === text &&
+      geo !== undefined &&
+      physicalSizeM !== undefined
+    ) {
+      keepAlive.keep(
+        {
+          text,
+          qrPoseWorld: frameStablePose.pose,
+          qrGeo: geo,
+          sizeM: physicalSizeM,
+        },
+        lastDetectedAtMs,
+      );
+    } else {
+      keepAlive.relock(text, lastDetectedAtMs);
+    }
+  }
+
   return {
     frontEnd: deps.frontEnd,
     solvePose: (input) => deps.solvePose(input),
@@ -195,18 +275,23 @@ export function buildViewerControllerConfig(
       if (!deps.canAcceptVotes()) return; // budget untouched — see the dep
       if (!voteBudget.tryConsume(text)) return;
       for (const vote of votes) deps.dispatchVote(vote);
+      frameVoted = true;
       deps.onVotedLock?.(text, voteBudget.spentFor(text));
     },
     onDetection: (event) => {
       lastDetectedText = event.text;
+      lastDetectedAtMs = event.timestamp;
+      frameStablePose = null;
+      frameVoted = false;
       deps.recordDetection(event);
     },
-    ...(deps.onLocked !== undefined
+    ...(deps.onLocked !== undefined || deps.keepAlive !== undefined
       ? {
           onLocked: (_solution: unknown, level: QrLevel) => {
             // The same frame's onDetection set the text, synchronously
             // before this (the controller's ordering contract).
             const text = lastDetectedText;
+            if (text !== null) keepAliveOnLock(text, level);
             deps.onLocked?.(
               level,
               text !== null && voteBudget.spentFor(text) > 0,
@@ -217,9 +302,14 @@ export function buildViewerControllerConfig(
     getIntrinsics: (image) => deps.getIntrinsics(image),
     // A code whose budget is spent casts no more votes, so its stable pose
     // is not evaluated at all (the fused pose costs ~10 ms per lock on the
-    // phone; QR near-frontal pose plan §61 #6).
-    resolveStablePose: (text) =>
-      voteBudget.isSpent(text) ? null : deps.resolveStablePose(text),
+    // phone; QR near-frontal pose plan §61 #6) - which is why the pose a
+    // voted lock used is kept for the keep-alive.
+    resolveStablePose: (text) => {
+      if (voteBudget.isSpent(text)) return null;
+      const pose = deps.resolveStablePose(text);
+      frameStablePose = pose === null ? null : { text, pose };
+      return pose;
+    },
     onError: (err) => {
       deps.onError(err instanceof Error ? err.message : String(err));
     },
@@ -246,6 +336,9 @@ export function viewerStatusLine(input: {
   /** What the code's fused pose waits for before its first vote
    *  (`visitorFusedHint`, plan §66); null when nothing to say. */
   fusedHint?: string | null;
+  /** The keep-alive's phase now (`QrVoteKeepAlive.phase`); what the line
+   *  says once the budget is spent. Absent or another code's: no claim. */
+  hold?: KeepAlivePhase | null;
 }): string {
   if (input.unknownCode !== null) {
     return `Code ${input.unknownCode} has no level in this tour.`;
@@ -260,11 +353,33 @@ export function viewerStatusLine(input: {
         ? ` Pose error ${input.reprojectionErrorPx.toFixed(1)} px.`
         : "";
     return input.votedLocks >= MAX_VOTED_LOCKS_PER_CODE
-      ? `Relocalized — vote budget spent, placement holds.${quality}`
+      ? `${holdLine(input.hold, input.lockedText)}${quality}`
       : `Relocalizing — ${String(input.votedLocks)} of ${String(MAX_VOTED_LOCKS_PER_CODE)} vote batches.${quality}`;
   }
   if (input.fusedHint != null) return input.fusedHint;
   return "Scanning for the printed code…";
+}
+
+/**
+ * The spent-budget line: what the keep-alive does for the locked code. It
+ * used to say "placement holds" unconditionally while the votes faded out
+ * of the solve (authoring plan 2026-09-28-0953 §2.2 B1).
+ */
+function holdLine(
+  hold: KeepAlivePhase | null | undefined,
+  lockedText: string,
+): string {
+  if (hold == null || hold.kind === "none" || hold.text !== lockedText) {
+    return `Relocalized - all ${String(MAX_VOTED_LOCKS_PER_CODE)} vote batches cast.`;
+  }
+  switch (hold.kind) {
+    case "holding":
+      return `Relocalized - the code holds the placement for ${String(Math.ceil(hold.remainingMs / 1000))} s more.`;
+    case "fading":
+      return "Relocalized - the code's hold is fading; GPS takes over gradually.";
+    case "ended":
+      return "The code's hold has ended - GPS places the tour now. Scan the code again to hold it.";
+  }
 }
 
 /**

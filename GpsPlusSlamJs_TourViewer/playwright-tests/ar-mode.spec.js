@@ -1157,7 +1157,7 @@ test("viewer mode relocalizes against the tour's level: budgeted votes, marker, 
       },
       { timeout: 20000 },
     )
-    .toMatch(/vote budget spent/i);
+    .toMatch(/the code holds the placement/i);
 
   const afterBudget = await page.evaluate(() => {
     const t = /** @type {any} */ (window).__tourViewerTest;

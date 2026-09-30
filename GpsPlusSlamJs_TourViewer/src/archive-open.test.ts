@@ -118,6 +118,25 @@ describe("a tour switch forgets the closing tour's fused-pose state", () => {
     expect(ctx.fusedTallies).toBe(tallies);
     expect(tallies.size).toBe(0);
   });
+
+  // Authoring plan M2b: the keep-alive re-votes a kept code for up to four
+  // minutes. That code belongs to the closing tour - voting it into the next
+  // tour's alignment would pull it toward a place the new tour never
+  // measured. The pipeline (and its keep-alive) outlive the switch, so the
+  // hold is stopped, not the keep-alive replaced.
+  it("stops the closing tour's code keep-alive", async () => {
+    const ctx = createTourViewerSession();
+    ctx.session = openTour();
+    const keepAlive = {
+      stop: vi.fn(),
+      phase: () => ({ kind: "none" as const }),
+    };
+    ctx.viewerKeepAlive = keepAlive as never;
+    const dom = openAnotherTour(ctx);
+    await vi.waitFor(() => expect(dom.openButton.disabled).toBe(false));
+    expect(keepAlive.stop).toHaveBeenCalled();
+    expect(ctx.viewerKeepAlive).toBe(keepAlive);
+  });
 });
 
 describe("a tour switch forgets the closing tour's failed finish", () => {

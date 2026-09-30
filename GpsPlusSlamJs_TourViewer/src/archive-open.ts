@@ -120,6 +120,9 @@ export function wireArchiveOpen(deps: {
     // review #8).
     ctx.qrController?.reset();
     ctx.levelByText.clear();
+    // The code keep-alive holds a closing tour's code for up to ~4 min;
+    // the pipeline outlives the switch, so its hold ends here (M2b).
+    ctx.viewerKeepAlive?.stop();
     ctx.imagePlanes?.dispose();
     ctx.imagePlanes = null;
     ctx.contentRendered?.dispose();

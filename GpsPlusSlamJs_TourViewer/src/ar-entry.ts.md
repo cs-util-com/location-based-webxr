@@ -105,7 +105,8 @@ session-end callback it hands the AR controller: the QR controller is
 disposed and the fused pose source dropped (QR near-frontal pose plan §64
 #4 - the call site had no test). The status line reads the visitor hint
 from `ctx.viewerLastEvaluation` (never re-evaluating: the render runs per
-camera frame) and, with `?debug=1`, writes the QR readout into
+camera frame) and the code keep-alive's phase from `ctx.viewerKeepAlive` at
+`Date.now()` (a cheap read that counts the hold down) and, with `?debug=1`, writes the QR readout into
 `dom.arDebug` (plan §66; `qr-debug-readout.ts`), headed by the running
 controller's own status (`ctx.qrController?.status`); the session end clears the
 hint's evaluation and keeps the counts. A recorded entry (the

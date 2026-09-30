@@ -37,6 +37,7 @@ import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { RenderedTourObjects } from "./content-placement.js";
 import type { FusedTallies, LastEvaluation } from "./qr-debug-readout.js";
 import type { PrintSizeCheck } from "./print-size-check.js";
+import type { QrVoteKeepAlive } from "./qr-vote-keep-alive.js";
 import type { ScanGate } from "./scan-gate.js";
 import type { PlacedImagePlanes } from "./image-planes.js";
 import type { TourViewerSeams } from "./seams.js";
@@ -315,6 +316,10 @@ export interface TourViewerSession {
   viewerLastEvaluation: LastEvaluation | null;
   /** Last detection's RMS reprojection error — the on-device quality number. */
   latestReprojectionPx: number | null;
+  /** The viewer pipeline's code keep-alive (authoring plan M2b): created
+   *  per AR entry with the pipeline, stopped at AR exit (`endQrPipeline`)
+   *  and when its tour closes; the status line reads its phase. */
+  viewerKeepAlive: QrVoteKeepAlive | null;
 
   // --- placement (viewer-placement.ts) ------------------------------------
   /** What the photo placement did — rendered by tour-flow. */
@@ -365,6 +370,10 @@ export function endQrPipeline(ctx: TourViewerSession): void {
   ctx.qrController?.dispose();
   ctx.qrController = null;
   ctx.fusedPose = null;
+  // The code's keep-alive ends with the AR entry (authoring plan M2b): its
+  // pose is in this session's odometry frame, which the next entry resets.
+  ctx.viewerKeepAlive?.stop();
+  ctx.viewerKeepAlive = null;
 }
 
 export function createTourViewerSession(): TourViewerSession {
@@ -410,6 +419,7 @@ export function createTourViewerSession(): TourViewerSession {
     viewerReprojectionPx: null,
     viewerLastEvaluation: null,
     latestReprojectionPx: null,
+    viewerKeepAlive: null,
     placement: { kind: "idle" },
     viewerPlanesError: null,
     contentError: null,

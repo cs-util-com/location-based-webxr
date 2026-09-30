@@ -141,6 +141,8 @@ export function wireArEntry(deps: {
         votedLocks: ctx.viewerVotedLocks,
         lockedText: ctx.viewerLockedText,
         reprojectionErrorPx: ctx.viewerReprojectionPx,
+        // The code keep-alive's phase at render time (it counts down).
+        hold: ctx.viewerKeepAlive?.phase(Date.now()) ?? null,
         // Read from the last evaluation, never re-evaluated here: this runs
         // per camera frame, past the budget's short-circuit (plan §67 #5).
         fusedHint: authorMode

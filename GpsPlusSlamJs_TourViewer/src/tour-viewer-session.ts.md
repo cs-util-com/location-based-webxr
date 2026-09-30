@@ -14,7 +14,9 @@ lives here.
 - `endQrPipeline(ctx)` (QR near-frontal pose plan §61): dispose the QR
   controller - a decode or level fetch still in flight then reaches no
   callback (no detection into the next session's window, no status line,
-  no vote) - and forget it. `ar-entry.ts`'s `onSessionEnd` calls it.
+  no vote) - and forget it; it also stops and forgets the code keep-alive
+  (`viewerKeepAlive`, authoring plan M2b), whose pose belongs to the
+  ending session's odometry frame. `ar-entry.ts`'s `onSessionEnd` calls it.
 - `interface TourViewerSession` - the fields, grouped by owner:
   - the open tour (`archive-open.ts`): `session`, `currentLevels`,
     `openGeneration`;
@@ -42,7 +44,10 @@ lives here.
     `contentError`; the hooks `startScanGate` / `resetScanGate` /
     `reconsiderScanGate(levels | "unavailable")`;
   - the viewer QR line and the placement (`viewer-placement.ts`): the six
-    `viewer*` line inputs, `latestReprojectionPx`, `placement`,
+    `viewer*` line inputs, `latestReprojectionPx`, `viewerKeepAlive` (the
+    code keep-alive, created per AR entry by `startViewerPipeline`, stopped
+    by `endQrPipeline` and by a tour close in `archive-open.ts`; the status
+    line reads its phase), `placement`,
     `viewerPlanesError`, `imagePlanes`, `imagePlanesLoading`,
     `planesRunGeneration`, `placementUnsubscribe`, `placementAttempted`,
     `joinDeclined`.

@@ -5,14 +5,22 @@ import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 
 import {
   MAX_VOTED_LOCKS_PER_CODE,
+  VIEWER_KEEP_ALIVE_FADE_MS,
+  VIEWER_KEEP_ALIVE_HOLD_MS,
   VIEWER_SYNTHETIC_ACCURACY_M,
   VIEWER_VOTE_BASELINE_M,
   VIEWER_VOTE_COUNT,
   buildViewerControllerConfig,
+  createViewerKeepAlive,
   imagePlaneRingNue,
   viewerStatusLine,
   type ViewerPipelineDeps,
 } from "./qr-viewer-mode";
+import { createTourViewerStore } from "./tour-viewer-session";
+
+// The vote builder's geodesy is licence-gated; the store's construction
+// activates it (the same activation main.ts performs at boot).
+createTourViewerStore();
 
 /**
  * Why these tests matter: viewer mode is where a stranger's phone WRITES
@@ -292,6 +300,76 @@ describe("buildViewerControllerConfig - the lock adapter (M5)", () => {
   });
 });
 
+describe("buildViewerControllerConfig - the keep-alive (authoring plan M2b)", () => {
+  // Why this matters: once the budget is spent the config stops asking for
+  // the stable pose (§61 #6), so the keep-alive can only re-vote from a pose
+  // the config KEPT when a lock last voted. These pin that hand-over, and
+  // that a lock which cast nothing hands nothing over.
+  const T = 1_790_000_000_000;
+  const POSE = {
+    position: [2, 1.5, -3] as [number, number, number],
+    rotation: [0, 0, 0, 1] as [number, number, number, number],
+  };
+  function pipeline(canAccept = true) {
+    const keepAlive = createViewerKeepAlive();
+    const config = buildViewerControllerConfig(
+      fakeDeps({
+        keepAlive,
+        canAcceptVotes: () => canAccept,
+        resolveStablePose: () => POSE,
+      }),
+    );
+    /** One locked frame in the controller's order. */
+    const frame = (atMs: number): void => {
+      config.onDetection?.({ text: TEXT, timestamp: atMs } as QrDetectionEvent);
+      if (config.resolveStablePose?.(TEXT) != null) {
+        config.dispatchVotes([{ v: atMs }] as never[]);
+      }
+      config.onLocked?.({} as never, LEVEL);
+    };
+    return { keepAlive, config, frame };
+  }
+
+  it("keeps the last voted pose after the budget stops resolving it, and re-votes from it", () => {
+    const p = pipeline();
+    for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE + 3; i += 1) p.frame(T + i);
+    expect(p.config.resolveStablePose?.(TEXT)).toBeNull(); // spent
+    const votes = p.keepAlive.votesForFix(T + 1000);
+    expect(votes).toHaveLength(VIEWER_VOTE_COUNT);
+    const c = [0, 0, 0];
+    for (const v of votes) {
+      for (let k = 0; k < 3; k += 1) c[k]! += v.odomPosition[k]! / votes.length;
+    }
+    for (let k = 0; k < 3; k += 1)
+      expect(c[k]).toBeCloseTo(POSE.position[k]!, 4);
+  });
+
+  it("keeps nothing for a lock that cast no votes", () => {
+    const p = pipeline(false);
+    p.frame(T);
+    expect(p.keepAlive.phase(T)).toEqual({ kind: "none" });
+    expect(p.keepAlive.votesForFix(T + 1000)).toEqual([]);
+  });
+
+  it("holds from the kept code's LAST lock: a later lock restarts the hold", () => {
+    const p = pipeline();
+    for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) p.frame(T + i);
+    const late = T + VIEWER_KEEP_ALIVE_HOLD_MS + VIEWER_KEEP_ALIVE_FADE_MS / 2;
+    expect(p.keepAlive.phase(late).kind).toBe("fading");
+    p.frame(late); // budget spent: no vote, a re-scan
+    expect(p.keepAlive.phase(late)).toEqual({
+      kind: "holding",
+      text: TEXT,
+      remainingMs: VIEWER_KEEP_ALIVE_HOLD_MS,
+    });
+  });
+
+  it("pins the measured hold and fade: two minutes each (owner, D9 applied after M0c)", () => {
+    expect(VIEWER_KEEP_ALIVE_HOLD_MS).toBe(120_000);
+    expect(VIEWER_KEEP_ALIVE_FADE_MS).toBe(120_000);
+  });
+});
+
 describe("viewerStatusLine", () => {
   it("covers the visitor-facing states in plain words", () => {
     expect(
@@ -318,6 +396,7 @@ describe("viewerStatusLine", () => {
         lockedText: TEXT,
       }),
     ).toMatch(/4 of \d+/);
+    // A spent budget with no word from the keep-alive claims no hold.
     expect(
       viewerStatusLine({
         status: "tracking",
@@ -325,7 +404,7 @@ describe("viewerStatusLine", () => {
         votedLocks: MAX_VOTED_LOCKS_PER_CODE,
         lockedText: TEXT,
       }),
-    ).toMatch(/placement holds/i);
+    ).not.toMatch(/hold/i);
     expect(
       viewerStatusLine({
         status: "scanning",
@@ -353,6 +432,46 @@ describe("viewerStatusLine", () => {
         reprojectionErrorPx: 1.234,
       }),
     ).toMatch(/pose error 1.2 px/i);
+  });
+
+  // Why this matters (authoring plan 2026-09-28-0953 §2.2 B1): the line
+  // said "placement holds" once the budget was spent, while the code's
+  // votes were already fading out of the solve and, above a 5 m GPS bias,
+  // being trimmed within ~30 s. The line now says what the keep-alive does:
+  // holds (with the time left), fades, or has ended.
+  it("says what the keep-alive does once the budget is spent: holding, fading, ended", () => {
+    const spent = {
+      status: "tracking" as const,
+      unknownCode: null,
+      votedLocks: MAX_VOTED_LOCKS_PER_CODE,
+      lockedText: TEXT,
+      reprojectionErrorPx: 0.8,
+    };
+    expect(
+      viewerStatusLine({
+        ...spent,
+        hold: { kind: "holding", text: TEXT, remainingMs: 95_200 },
+      }),
+    ).toBe(
+      "Relocalized - the code holds the placement for 96 s more. Pose error 0.8 px.",
+    );
+    expect(
+      viewerStatusLine({
+        ...spent,
+        hold: { kind: "fading", text: TEXT, share: 0.4 },
+      }),
+    ).toMatch(/^Relocalized - the code's hold is fading; GPS takes over/);
+    expect(
+      viewerStatusLine({ ...spent, hold: { kind: "ended", text: TEXT } }),
+    ).toMatch(/hold has ended.*GPS.*scan the code again/i);
+    // Still relocalizing: the budget states win over the hold.
+    expect(
+      viewerStatusLine({
+        ...spent,
+        votedLocks: 3,
+        hold: { kind: "holding", text: TEXT, remainingMs: 120_000 },
+      }),
+    ).toMatch(/3 of \d+/);
   });
 
   // Plan §66-§67: since b4b a code votes only while its fused pose is

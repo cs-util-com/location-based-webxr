@@ -15,9 +15,11 @@ import {
   recordGpsEvent,
   recordQrDetection,
   replayActions,
+  selectGpsPositions,
   selectQrFusedEntries,
   selectTrackingQuality,
   selectZeroReference,
+  type RecordGpsEventPayload,
 } from "gps-plus-slam-app-framework/state";
 import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
@@ -43,8 +45,13 @@ import {
 } from "./scan-gate.js";
 import {
   buildViewerControllerConfig,
+  createViewerKeepAlive,
   imagePlaneRingNue,
 } from "./qr-viewer-mode.js";
+import {
+  createDeviceFixWatch,
+  type QrVoteKeepAlive,
+} from "./qr-vote-keep-alive.js";
 import type { TourViewerSeams } from "./seams.js";
 import { isPlacementReady } from "./tour-flow.js";
 import type { TourSession } from "./tour-session.js";
@@ -221,16 +228,26 @@ export function createViewerPlacement(deps: {
     // level lookup runs its callbacks inside the fetch the controller awaits,
     // before the controller's dispose guard (milestone review of b4b #3).
     const live = (): boolean => ctx.fusedPose === fusedPose;
+    // The ONE sink every viewer vote takes, a lock's and the keep-alive's
+    // alike (see the sidecar: the per-entry solver overrides join here).
+    const castVote = (payload: RecordGpsEventPayload): void => {
+      arStore.dispatch(recordGpsEvent(payload));
+    };
+    const keepAlive = startKeepAlive(castVote);
     ctx.qrController = createQrTrackingController(
       buildViewerControllerConfig({
         frontEnd,
         solvePose: (input) => seams.solveQrPose(input),
         getIntrinsics: (image) => seams.getIntrinsics(image),
         getLevels: () => ctx.currentLevels,
+        // Only a lock's votes join the viewing log's per-lock batch; the
+        // keep-alive's are recorded as stamped GPS events, never mislabelled
+        // as the next lock's.
         dispatchVote: (payload) => {
-          arStore.dispatch(recordGpsEvent(payload));
+          castVote(payload);
           deps.viewingLog?.vote(payload);
         },
+        keepAlive,
         // recordGpsEvent silently no-ops until the session ZERO exists -
         // the budget must not be charged for dropped votes (M4 review #2).
         //
@@ -328,6 +345,35 @@ export function createViewerPlacement(deps: {
       }),
     );
     return true;
+  }
+
+  /**
+   * This AR entry's code keep-alive (authoring plan 2026-09-28-0953 §3.2,
+   * M2b), and its trigger: one store subscription that casts the keep-alive's
+   * votes for every NEW device GPS fix. The cadence is the one M0b/M0c
+   * measured - one batch right after each fix - and only device fixes count
+   * (`createDeviceFixWatch`): the votes it casts are stamped synthetic, so
+   * the subscription never answers its own output. The subscription ends
+   * itself once the entry's keep-alive is no longer the session's
+   * (`endQrPipeline` at AR exit, or the next entry's pipeline).
+   */
+  function startKeepAlive(
+    castVote: (payload: RecordGpsEventPayload) => void,
+  ): QrVoteKeepAlive {
+    ctx.viewerKeepAlive?.stop();
+    const keepAlive = createViewerKeepAlive();
+    ctx.viewerKeepAlive = keepAlive;
+    const nextDeviceFix = createDeviceFixWatch();
+    const unsubscribe = arStore.subscribe(() => {
+      if (ctx.viewerKeepAlive !== keepAlive) {
+        unsubscribe();
+        return;
+      }
+      const fixMs = nextDeviceFix(selectGpsPositions(arStore.getState()));
+      if (fixMs === null) return;
+      for (const vote of keepAlive.votesForFix(fixMs)) castVote(vote);
+    });
+    return keepAlive;
   }
 
   /**
