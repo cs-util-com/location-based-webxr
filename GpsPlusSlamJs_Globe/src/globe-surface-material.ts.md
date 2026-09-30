@@ -48,6 +48,16 @@ cloudOpacity: 0.8 }`, the defaults (lab parameters `#nightGain=`,
       smoothstep with edge0 > edge1 undefined) and dimmed 80 % under cloud.
     - Throws, naming the chunk, when an anchor is missing or repeated (a
       three upgrade that renamed one), instead of dropping a term.
+  - The reference look's uniforms (round-4 plan 2026-09-28-2105
+    DEC-GL4-8), each 0 (off: the patch then draws exactly as before) to 1:
+    `uGrade` (the ground's colour mixed towards its luma times a cool blue,
+    by 0.7 at 1), `uCloudRelief` (the clouds whiten towards a shade: blue
+    grey where thin, white where thick, lighter on the side facing the sun
+    from the coverage's screen-space gradient against the sun's direction
+    in view space, clamped to 0.65-1.3; assumes the tiles' group unturned
+    in the world, as in the lab), `uTwilight` (warm city lights, a faint
+    blue-grey night side and a soft band just past the terminator, both
+    from the ground's own colour, added as emission).
   - `applyGlobeSurface(material, uniforms)` - sets `onBeforeCompile` (the
     patch) and `customProgramCacheKey`.
 - Invariants & assumptions:

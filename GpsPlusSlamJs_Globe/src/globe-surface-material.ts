@@ -31,7 +31,7 @@ export const GLOBE_SURFACE_TUNING = {
 export const GLOBE_CLOUD_DRIFT_DEG_PER_S = 0.5;
 
 /** Every tile's program is the same one: three shares it by this key. */
-export const GLOBE_SURFACE_CACHE_KEY = "gps-plus-slam-globe-surface-v3";
+export const GLOBE_SURFACE_CACHE_KEY = "gps-plus-slam-globe-surface-v4";
 
 /** The one uniforms object every tile's shader reads. */
 export interface GlobeSurfaceUniforms {
@@ -43,6 +43,16 @@ export interface GlobeSurfaceUniforms {
   readonly uCloudOpacity: { value: number };
   /** How far east the clouds have drifted, radians in [0, 2π). */
   readonly uCloudLonOffset: { value: number };
+  /**
+   * The reference image's looks (round-4 plan 2026-09-28-2105 DEC-GL4-8),
+   * each 0 (off, the look before) to 1: a cool blue grade over the
+   * ground (item 1); clouds with blue-grey thin edges and a lit side
+   * (item 2, the shading only); a soft blue-grey night side, a softer
+   * terminator and warm city lights (item 3).
+   */
+  readonly uGrade: { value: number };
+  readonly uCloudRelief: { value: number };
+  readonly uTwilight: { value: number };
 }
 
 /**
@@ -65,6 +75,9 @@ export function createGlobeSurfaceUniforms(textures: {
     uWaterRoughness: { value: GLOBE_SURFACE_TUNING.waterRoughness },
     uCloudOpacity: { value: GLOBE_SURFACE_TUNING.cloudOpacity },
     uCloudLonOffset: { value: 0 },
+    uGrade: { value: 0 },
+    uCloudRelief: { value: 0 },
+    uTwilight: { value: 0 },
   };
 }
 
@@ -106,7 +119,11 @@ uniform sampler2D uClouds;
 uniform float uNightGain;
 uniform float uWaterRoughness;
 uniform float uCloudOpacity;
-uniform float uCloudLonOffset;`;
+uniform float uCloudLonOffset;
+uniform float uGrade;
+uniform float uCloudRelief;
+uniform float uTwilight;
+const vec3 GLOBE_WARM_LIGHTS = vec3( 1.4, 0.95, 0.5 );`;
 
 /**
  * After the overlay's colour is in diffuseColor: the water from the tile's
@@ -139,7 +156,13 @@ vec2 globeDy = globeWrap ? globeDy2 : globeDy1;
 vec2 globeUv = vec2( globeU, globeV );
 float globeCloud = textureGrad( uClouds, globeUv - vec2( uCloudLonOffset * 0.15915494309189535, 0.0 ), globeDx, globeDy ).r;
 vec3 globeNight = textureGrad( uNight, globeUv, globeDx, globeDy ).rgb;
-diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 1.0 ), globeCloud * uCloudOpacity );`;
+vec2 globeCloudGrad = vec2( dFdx( globeCloud ), dFdy( globeCloud ) );
+vec2 globeSunView = ( viewMatrix * vec4( uSunEcef, 0.0 ) ).xy;
+float globeCloudLit = clamp( 1.0 - 6.0 * dot( globeCloudGrad, globeSunView / max( length( globeSunView ), 1e-6 ) ), 0.65, 1.3 );
+vec3 globeCloudShade = mix( vec3( 0.6, 0.68, 0.8 ), vec3( 1.0 ), smoothstep( 0.15, 0.85, globeCloud ) ) * globeCloudLit;
+diffuseColor.rgb = mix( diffuseColor.rgb, mix( vec3( 1.0 ), globeCloudShade, uCloudRelief ), globeCloud * uCloudOpacity );
+float globeLuma = dot( diffuseColor.rgb, vec3( 0.2126, 0.7152, 0.0722 ) );
+diffuseColor.rgb = mix( diffuseColor.rgb, globeLuma * vec3( 0.7, 0.88, 1.2 ), uGrade * 0.7 );`;
 
 /** Water, where no cloud covers it, is smooth: the sun's glint. */
 const FRAGMENT_GLINT = /* glsl */ `
@@ -147,10 +170,14 @@ roughnessFactor = mix( roughnessFactor, uWaterRoughness, globeWater * ( 1.0 - gl
 
 /**
  * The lights fade in across the terminator (sun 4.6° above to 6.9° below
- * the horizon) and dim under cloud.
+ * the horizon) and dim under cloud; the twilight look (DEC-GL4-8 item 3)
+ * warms them, lights the night side faintly blue-grey (from the ground's
+ * own colour) and adds a soft band just past the terminator.
  */
 const FRAGMENT_NIGHT = /* glsl */ `
-totalEmissiveRadiance += globeNight * uNightGain * ( 1.0 - smoothstep( -0.12, 0.08, dot( globeN, uSunEcef ) ) ) * ( 1.0 - 0.8 * globeCloud );`;
+float globeNdl = dot( globeN, uSunEcef );
+totalEmissiveRadiance += globeNight * mix( vec3( 1.0 ), GLOBE_WARM_LIGHTS, uTwilight ) * uNightGain * ( 1.0 - smoothstep( -0.12, 0.08, globeNdl ) ) * ( 1.0 - 0.8 * globeCloud );
+totalEmissiveRadiance += uTwilight * diffuseColor.rgb * ( vec3( 0.06, 0.09, 0.16 ) * ( 1.0 - smoothstep( -0.25, 0.05, globeNdl ) ) + vec3( 0.35, 0.3, 0.3 ) * smoothstep( -0.12, 0.0, globeNdl ) * ( 1.0 - smoothstep( 0.0, 0.12, globeNdl ) ) );`;
 
 /** `source` with `code` after `anchor`, which must occur exactly once. */
 function after(source: string, anchor: string, code: string): string {

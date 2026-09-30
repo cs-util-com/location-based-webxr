@@ -151,6 +151,50 @@ describe("createGlobeSky", () => {
     sky.dispose();
   });
 
+  // Why (round-4 plan 2026-09-28-2105 DEC-GL4-8 items 6 and 7): the
+  // reference image's navy space, lighter towards the Earth, and its few
+  // bright stars with a soft glow are each one switch, 0 by default, so the
+  // owner compares each against its own OFF. The Earth's direction and
+  // size are validated, since a zero direction would put NaN into every
+  // sky pixel.
+  it("takes the space and star-glow looks, off by default, and refuses bad input", () => {
+    const sky = createGlobeSky();
+    expect(sky.uniforms.uSpace.value).toBe(0);
+    expect(sky.starUniforms.uStarGlow.value).toBe(0);
+    sky.setSpace({
+      strength: 1,
+      earthDirection: new THREE.Vector3(0, 0, -3),
+      earthAngularRadiusRad: 0.2,
+    });
+    expect(sky.uniforms.uSpace.value).toBe(1);
+    expect(sky.uniforms.uEarthDirection.value.toArray()).toEqual([0, 0, -1]);
+    expect(sky.uniforms.uEarthRadius.value).toBe(0.2);
+    sky.setStarGlow(0.5);
+    expect(sky.starUniforms.uStarGlow.value).toBe(0.5);
+    const ok = {
+      strength: 1,
+      earthDirection: new THREE.Vector3(1, 0, 0),
+      earthAngularRadiusRad: 0.2,
+    };
+    for (const bad of [
+      { ...ok, strength: -1 },
+      { ...ok, earthDirection: new THREE.Vector3() },
+      { ...ok, earthAngularRadiusRad: Number.NaN },
+      { ...ok, earthAngularRadiusRad: 2 },
+    ]) {
+      expect(() => sky.setSpace(bad)).toThrow(RangeError);
+    }
+    expect(() => sky.setStarGlow(-0.1)).toThrow(RangeError);
+    expect(() => sky.setStarGlow(Number.NaN)).toThrow(RangeError);
+    const fs = (sky.scene.children[0] as THREE.Mesh)
+      .material as THREE.ShaderMaterial;
+    expect(fs.fragmentShader).toContain("* uSpace");
+    const star = sky.stars.material as THREE.ShaderMaterial;
+    expect(star.vertexShader).toContain("uStarGlow");
+    expect(star.fragmentShader).toContain("uStarGlow");
+    sky.dispose();
+  });
+
   it("the shader measures the angle to the sun without the float cancellation of acos near 1", () => {
     const sky = createGlobeSky();
     const material = (sky.scene.children[0] as THREE.Mesh)

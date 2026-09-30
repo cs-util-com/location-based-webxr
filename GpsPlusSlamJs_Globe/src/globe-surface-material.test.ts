@@ -60,6 +60,10 @@ describe("createGlobeSurfaceUniforms", () => {
     expect(u.uWaterRoughness.value).toBe(GLOBE_SURFACE_TUNING.waterRoughness);
     expect(u.uCloudOpacity.value).toBe(GLOBE_SURFACE_TUNING.cloudOpacity);
     expect(u.uCloudLonOffset.value).toBe(0);
+    // The reference image's looks (round-4 plan DEC-GL4-8): off by default.
+    expect(u.uGrade.value).toBe(0);
+    expect(u.uCloudRelief.value).toBe(0);
+    expect(u.uTwilight.value).toBe(0);
   });
 });
 
@@ -81,6 +85,9 @@ describe("patchGlobeSurfaceShader", () => {
       "uWaterRoughness",
       "uCloudOpacity",
       "uCloudLonOffset",
+      "uGrade",
+      "uCloudRelief",
+      "uTwilight",
     ]) {
       expect(shader.uniforms[name]).toBe(
         uniforms[name as keyof typeof uniforms],
@@ -95,9 +102,9 @@ describe("patchGlobeSurfaceShader", () => {
       at("uWaterRoughness, globeWater"),
     );
     expect(at("#include <emissivemap_fragment>")).toBeLessThan(
-      at("globeNight * uNightGain"),
+      at("totalEmissiveRadiance += globeNight"),
     );
-    expect(at("globeNight * uNightGain")).toBeLessThan(
+    expect(at("totalEmissiveRadiance += globeNight")).toBeLessThan(
       at("#include <lights_fragment_begin>"),
     );
     // The overlay's colour is in diffuseColor before the clouds cover it.
@@ -154,6 +161,27 @@ describe("patchGlobeSurfaceShader", () => {
     expect(at("diffuseColor.a = 1.0;")).toBeLessThan(
       at("uWaterRoughness, globeWater"),
     );
+  });
+
+  // Why (round-4 plan 2026-09-28-2105 DEC-GL4-8): the reference image's
+  // blue grade, its shaded clouds and its soft blue-grey night with warm
+  // lights are each one uniform, 0 by default, so the owner compares each
+  // against its own OFF. A term multiplied by its switch everywhere it acts
+  // is what makes OFF exactly the look before: checked on the source, and
+  // in the browser against pixels (globe-look.smoke.spec.mjs).
+  it("scales each look term by its own switch", () => {
+    const shader = standardShader();
+    patchGlobeSurfaceShader(shader, createGlobeSurfaceUniforms(textures()));
+    const fs = shader.fragmentShader;
+    for (const name of ["uGrade", "uCloudRelief", "uTwilight"]) {
+      expect(count(fs, `uniform float ${name};`)).toBe(1);
+    }
+    expect(fs).toContain("uGrade * 0.7");
+    expect(fs).toContain("mix( vec3( 1.0 ), globeCloudShade, uCloudRelief )");
+    expect(fs).toContain("mix( vec3( 1.0 ), GLOBE_WARM_LIGHTS, uTwilight )");
+    expect(fs).toContain("uTwilight * diffuseColor.rgb");
+    // The clouds are still whitened by the opacity, now towards their shade.
+    expect(fs).toContain("globeCloud * uCloudOpacity");
   });
 
   it("refuses a shader missing an anchor, or holding one twice, naming it", () => {

@@ -56,6 +56,16 @@ view), dispose() }`.
     - The star vertex shader has no `position`: it decodes the packed
       octahedral direction (`index0AttributeName` is `aOct`), the
       magnitude byte over `uMagRange` and the colour tint.
+    - `setSpace({ strength, earthDirection, earthAngularRadiusRad })`
+      (DEC-GL4-8 item 6): navy space instead of black, lighter over the
+      last half radian towards the Earth's limb; the caller passes the
+      Earth's direction from the camera and its angular radius every frame.
+      0 (the default) is black. RangeError for a negative strength, a zero
+      direction or a radius outside 0 to π/2.
+    - `setStarGlow(glow)` (item 7): widens the sprite of bright stars (by
+      their intensity squared) and adds a soft halo round the core, which
+      keeps its size; 0 (the default) draws exactly as before. RangeError
+      when negative or not finite.
     - `render(renderer, view)`: syncs, then draws the sky. The caller
       clears first (with `autoClear` off) and draws its scene after.
   - `uniforms`: `uSunDirection` (unit), `uSunRadius` (radians),

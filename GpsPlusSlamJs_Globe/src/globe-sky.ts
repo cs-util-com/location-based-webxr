@@ -87,6 +87,14 @@ interface GlobeSkyUniforms {
   readonly uGalCentre: { value: THREE.Vector3 };
   readonly uMilkyWay: { value: number };
   readonly uMilkyWayWidth: { value: number };
+  /**
+   * Navy space (round-4 plan 2026-09-28-2105 DEC-GL4-8 item 6): 0 = black
+   * (off), 1 = the reference's navy, lighter towards the Earth, whose
+   * direction (unit, world) and angular radius (radians) the caller sets.
+   */
+  readonly uSpace: { value: number };
+  readonly uEarthDirection: { value: THREE.Vector3 };
+  readonly uEarthRadius: { value: number };
 }
 
 /** The star points' uniforms. */
@@ -99,6 +107,8 @@ interface GlobeStarUniforms {
   readonly uStarGain: { value: number };
   /** Device pixels per CSS pixel, so a star keeps its size on a phone. */
   readonly uPixelRatio: { value: number };
+  /** A soft glow round bright stars (DEC-GL4-8 item 7): 0 = off. */
+  readonly uStarGlow: { value: number };
 }
 
 export interface GlobeSky {
@@ -149,6 +159,18 @@ export interface GlobeSky {
    * glow's strength (>= 0). RangeError otherwise.
    */
   setLook(look: { sunDiameterDeg: number; glow: number }): void;
+  /**
+   * Navy space: its strength (>= 0; 0 is black), the Earth's direction from
+   * the camera (world, any non-zero length) and its angular radius (0 to
+   * π/2 radians). RangeError otherwise.
+   */
+  setSpace(space: {
+    strength: number;
+    earthDirection: THREE.Vector3;
+    earthAngularRadiusRad: number;
+  }): void;
+  /** The bright stars' glow (>= 0; 0 is off). RangeError otherwise. */
+  setStarGlow(glow: number): void;
   /** Copies the view's world rotation, fov, aspect and zoom (never more). */
   syncCamera(view: THREE.PerspectiveCamera): void;
   /** Syncs the camera to `view` and draws the sky (the caller clears first). */
@@ -179,6 +201,9 @@ uniform vec3 uGalPole;
 uniform vec3 uGalCentre;
 uniform float uMilkyWay;
 uniform float uMilkyWayWidth;
+uniform float uSpace;
+uniform vec3 uEarthDirection;
+uniform float uEarthRadius;
 varying vec3 vDirection;
 void main() {
   vec3 d = normalize( vDirection );
@@ -200,7 +225,12 @@ void main() {
   vec3 milky = vec3( 0.85, 0.88, 1.0 ) * uMilkyWay * exp( -b * b ) * towards * mottle;
   // Not tone mapped (the faint band and stars would be crushed): the disc
   // is clamped here instead, white as a camera sees the sun.
-  vec3 sky = sunColor * ( disc * uSunRadiance + ( 1.0 - disc ) * glow ) + milky;
+  // Navy space, lighter over the last half radian towards the Earth's
+  // limb (under the Earth it is covered anyway).
+  float fromEarth = 2.0 * asin( clamp( 0.5 * length( d - uEarthDirection ), 0.0, 1.0 ) );
+  float nearEarth = exp( -max( fromEarth - uEarthRadius, 0.0 ) / 0.25 );
+  vec3 space = ( vec3( 0.005, 0.009, 0.026 ) + vec3( 0.008, 0.018, 0.055 ) * nearEarth ) * uSpace;
+  vec3 sky = sunColor * ( disc * uSunRadiance + ( 1.0 - disc ) * glow ) + milky + space;
   gl_FragColor = vec4( min( sky, vec3( 1.0 ) ), 1.0 );
   #include <colorspace_fragment>
 }`;
@@ -223,7 +253,9 @@ uniform vec2 uMagRange;
 uniform float uStarShell;
 uniform float uStarGain;
 uniform float uPixelRatio;
+uniform float uStarGlow;
 varying vec3 vColor;
+varying float vCore;
 vec3 octDecode( vec2 e ) {
   vec3 v = vec3( e, 1.0 - abs( e.x ) - abs( e.y ) );
   if ( v.z < 0.0 ) {
@@ -244,15 +276,23 @@ void main() {
   }
   float intensity = uStarGain * pow( 10.0, -0.2 * ( aMag + 1.0 ) );
   vColor = aColor * intensity;
-  gl_PointSize = uPixelRatio * ( 1.2 + 1.8 * clamp( intensity, 0.0, 1.0 ) );
+  float core = 1.2 + 1.8 * clamp( intensity, 0.0, 1.0 );
+  // The glow widens the sprite for bright stars only (intensity squared);
+  // vCore is the core's share of it, so the core keeps its size.
+  float size = core + uStarGlow * 12.0 * clamp( intensity * intensity, 0.0, 1.0 );
+  vCore = core / size;
+  gl_PointSize = uPixelRatio * size;
   gl_Position = projectionMatrix * modelViewMatrix * vec4( starPosition, 1.0 );
 }`;
 
 const STAR_FRAGMENT = /* glsl */ `
+uniform float uStarGlow;
 varying vec3 vColor;
+varying float vCore;
 void main() {
   float r = 2.0 * length( gl_PointCoord - 0.5 );
-  float a = 1.0 - smoothstep( 0.4, 1.0, r );
+  float a = 1.0 - smoothstep( 0.4, 1.0, r / vCore );
+  a += uStarGlow * 0.35 * exp( -4.0 * r / max( 1.0 - vCore, 1e-3 ) ) * ( 1.0 - r ) * step( r, 1.0 );
   gl_FragColor = vec4( min( vColor * a, vec3( 1.0 ) ), 1.0 );
   #include <colorspace_fragment>
 }`;
@@ -338,6 +378,9 @@ export function createGlobeSky(): GlobeSky {
     uGalCentre: { value: new THREE.Vector3(...GALACTIC_CENTRE) },
     uMilkyWay: { value: GLOBE_SKY.milkyWay },
     uMilkyWayWidth: { value: GLOBE_SKY.milkyWayWidthRad },
+    uSpace: { value: 0 },
+    uEarthDirection: { value: new THREE.Vector3(0, 0, -1) },
+    uEarthRadius: { value: 0 },
   };
   const starUniforms: GlobeStarUniforms = {
     uMagLimit: { value: GLOBE_SKY.starMagLimit },
@@ -350,6 +393,7 @@ export function createGlobeSky(): GlobeSky {
     uStarShell: { value: GLOBE_SKY.radius * GLOBE_SKY.starShell },
     uStarGain: { value: GLOBE_SKY.starGain },
     uPixelRatio: { value: 1 },
+    uStarGlow: { value: 0 },
   };
   const { points: stars, magnitudes, brightest } = createStars(starUniforms);
   const galPole = new THREE.Vector3(...GALACTIC_NORTH_POLE);
@@ -451,6 +495,33 @@ export function createGlobeSky(): GlobeSky {
       }
       uniforms.uSunRadius.value = (sunDiameterDeg / 2) * (Math.PI / 180);
       uniforms.uGlow.value = glow;
+    },
+    setSpace({ strength, earthDirection, earthAngularRadiusRad }) {
+      if (!(strength >= 0 && Number.isFinite(strength))) {
+        throw new RangeError(`space strength must be >= 0, got ${strength}`);
+      }
+      const length = earthDirection.length();
+      if (!(length > 0 && Number.isFinite(length))) {
+        throw new RangeError(
+          "the Earth's direction must be finite and non-zero",
+        );
+      }
+      if (!(
+        earthAngularRadiusRad >= 0 && earthAngularRadiusRad <= Math.PI / 2
+      )) {
+        throw new RangeError(
+          `the Earth's angular radius must be 0 to π/2, got ${earthAngularRadiusRad}`,
+        );
+      }
+      uniforms.uSpace.value = strength;
+      uniforms.uEarthDirection.value.copy(earthDirection).divideScalar(length);
+      uniforms.uEarthRadius.value = earthAngularRadiusRad;
+    },
+    setStarGlow(glow) {
+      if (!(glow >= 0 && Number.isFinite(glow))) {
+        throw new RangeError(`star glow must be >= 0, got ${glow}`);
+      }
+      starUniforms.uStarGlow.value = glow;
     },
     syncCamera,
     render(renderer, view) {
