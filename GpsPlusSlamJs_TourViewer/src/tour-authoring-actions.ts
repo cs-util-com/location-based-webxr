@@ -25,10 +25,13 @@
 import type { selectAlignmentMatrix } from "gps-plus-slam-app-framework/state";
 import type { MintAlignmentInfo } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 import type { Pose } from "gps-plus-slam-app-framework/ar/qr/qr-pose";
+import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type {
   TourManifest,
   TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+
+import type { SettleBasis } from "./visit-settle.js";
 
 /** The store's alignment matrix (the library's tuple), or null. */
 type AlignmentMatrix = ReturnType<typeof selectAlignmentMatrix>;
@@ -89,6 +92,38 @@ interface CodeMeasuredLog {
   readonly atMs: number;
 }
 
+/**
+ * An AR visit's settle (authoring plan 2026-09-28-0953 §3.2, M2c): the geo
+ * its objects and its code were recomputed to, and the alignment used. The
+ * tap-time geo of `objectPlaced`/`codeMeasured` is what a killed tab keeps;
+ * THIS is what the zip carries.
+ */
+interface VisitSettledLog {
+  /** The visit settled (`arSessionGeneration`). */
+  readonly arVisitIndex: number;
+  readonly atMs: number;
+  /** At the session's end, or at a Finish while the visit still ran. */
+  readonly trigger: "visit-end" | "finish";
+  readonly basis: SettleBasis;
+  /** The store's alignment when the settle ran - before the teardown. */
+  readonly visitAlignment: AlignmentMatrix;
+  /** The alignment the geo was recomputed through: `visitAlignment`, or
+   *  it corrected through the code (`basis: "code-corrected"`). */
+  readonly usedAlignment: readonly number[];
+  /** The code sighting a correction used: this visit's stable fused pose
+   *  (raw WebXR odometry) of the level in hand. Null otherwise. */
+  readonly sighting: {
+    readonly text: string;
+    readonly levelId: string;
+    readonly odomPose: Pose;
+  } | null;
+  /** Each settled object's new geo. */
+  readonly objects: readonly { readonly id: string; readonly geo: QrGeoPose }[];
+  /** The code re-minted through `usedAlignment` when this visit measured
+   *  it; null otherwise. */
+  readonly level: { readonly id: string; readonly json: string } | null;
+}
+
 interface FinishedLog {
   readonly levelId: string;
   /** The manifest the rebuilt zip carries. */
@@ -101,6 +136,9 @@ export const objectPlaced = logAction<ObjectPlacedLog>()(
 );
 export const codeMeasured = logAction<CodeMeasuredLog>()(
   "tourAuthoring/codeMeasured",
+);
+export const visitSettled = logAction<VisitSettledLog>()(
+  "tourAuthoring/settled",
 );
 export const authoringFinished = logAction<FinishedLog>()(
   "tourAuthoring/finished",

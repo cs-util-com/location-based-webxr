@@ -55,6 +55,14 @@ since the flows plan M6.
   of every viewer/placement/author field the dead session owned (the list
   in `onSessionEnd`, one line per field - a field missing there blends the
   dead session into the next one).
+- **A creator's session end settles the visit FIRST** (authoring plan
+  2026-09-28-0953 §3.2, M2c): `hooks.endAuthorVisit()` runs before the
+  generation bump and before `endTourArRuntime`, whose
+  `teardownArSessionState` resets the alignment the settle reads
+  (`ar-entry.test.ts` pins the order against `endSession` and
+  `resetGpsSessionData`). A visitor's never calls it. Once the runtime runs
+  and the reticle exists, `hooks.beginAuthorVisit()` shows the earlier
+  visits' objects.
 - `#ar-status` and `#enter-ar` must stay DOM children of `#ar-root` (the
   DOM-overlay root; `tests/repo-config/hud-overlay-nesting.test.js`). The
   hint is hidden while a session is starting/running/stopping.

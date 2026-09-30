@@ -26,6 +26,10 @@ lives here.
     `activeSizeM`, `authorErrorText`, `gpsSamplesAtSessionStart`,
     `mintedLevel`, `mintedLevelTour` (the tour the measured code named,
     valid while its `levelId` is the level's id), `mintGeneration`,
+    `codeMeasurement` (the raw inputs of a mint made in this page, cleared
+    with the level) and `visitCodeSighting` (the anchor code's latest stable
+    pose in the running AR visit, cleared at the visit's end) - both for the
+    settle (authoring plan 2026-09-28-0953 §3.2, M2c),
     `finishing`, `rebuiltZip`, `tourLabel` (set by archive-open); the open
     tour's `tourManifest` (archive-open.ts); the placement layer (M4):
     `placedObjects` (each with an optional `placement`: the odometry-NUE
@@ -60,7 +64,9 @@ lives here.
 - `interface TourViewerHooks` / `createUnwiredHooks()` - the late-bound
   cross-module calls (`renderArStatus`, `renderArEntry`, `renderAuthorReadout`,
   `tryPlaceTour`, `startAuthorPipeline`, `startViewerPipeline`,
-  `presentTourForPrint`), no-ops until their owner module is wired.
+  `presentTourForPrint`, `beginAuthorVisit` / `endAuthorVisit` - the
+  creator's AR visit start and its settle, M2c), no-ops until their owner
+  module is wired.
   (`QrController` and `QrDebugView` are module-private: reached through
   the fields, a standalone export counts as dead.)
 

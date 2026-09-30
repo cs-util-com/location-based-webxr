@@ -26,6 +26,9 @@ import type {
   QrTrackingControllerConfig,
 } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
 import { MIN_ALIGNMENT_SAMPLES } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
+import { parseQrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
+import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 import { Group, Matrix4, Object3D, Quaternion, Vector3 } from "three";
 
 import { wireCreatorSetup, type CreatorSetupDom } from "./creator-setup.js";
@@ -33,7 +36,10 @@ import type { TourViewerSeams } from "./seams.js";
 import {
   createTourViewerSession,
   createTourViewerStore,
+  endQrPipeline,
 } from "./tour-viewer-session.js";
+import { objectPoseNue } from "./content-placement.js";
+import { META_KEY, objectKey } from "./draft-persistence.js";
 import { odomNueFromWebXr } from "./visit-anchoring.js";
 
 // The pipeline builds its controller from this module; capture the config
@@ -161,7 +167,36 @@ async function flush(): Promise<void> {
  * group under it (its matrix IS the alignment, as the lerp settles to), a
  * reticle at a chosen odometry spot, and labels that are real Object3Ds.
  */
-function authoring() {
+/** A plain in-memory draft store. */
+function memoryDraftStore(): {
+  store: DraftFileStore;
+  files: Map<string, unknown>;
+} {
+  const files = new Map<string, unknown>();
+  const store: DraftFileStore = {
+    put: (key, data) => {
+      files.set(key, data);
+      return Promise.resolve(true);
+    },
+    getText: (key) => {
+      const value = files.get(key);
+      return Promise.resolve(typeof value === "string" ? value : undefined);
+    },
+    getBlob: () => Promise.resolve(undefined),
+    keys: () => Promise.resolve([...files.keys()]),
+    remove: (key) => {
+      files.delete(key);
+      return Promise.resolve();
+    },
+    clear: () => {
+      files.clear();
+      return Promise.resolve();
+    },
+  };
+  return { store, files };
+}
+
+function authoring(options: { store?: DraftFileStore } = {}) {
   captured.configs.length = 0;
   const dom = Object.fromEntries(DOM_KEYS.map((k) => [k, el()])) as Record<
     (typeof DOM_KEYS)[number],
@@ -222,6 +257,8 @@ function authoring() {
     solveQrPose: () => null,
     getIntrinsics: () => null,
     getScene: () => scene,
+    // The print-size check measures nothing here.
+    estimateQrPrintSize: () => null,
     getArWorldGroup: () => world,
     createLabel: (text: string) => {
       const object = new Object3D();
@@ -246,9 +283,60 @@ function authoring() {
       revealStep: () => undefined,
     } as never,
     dom: dom as unknown as CreatorSetupDom,
-    openDraftStore: () => Promise.resolve(undefined),
+    openDraftStore: () => Promise.resolve(options.store),
   });
   expect(setup.startAuthorPipeline()).toBe(true);
+
+  /** Walk the code until its fused pose is stable. */
+  function seeTheCode(): void {
+    for (let i = 0; i < 8; i += 1) {
+      captured.configs.at(-1)?.onDetection?.(detection(i));
+    }
+  }
+
+  /** Measure the code: stable, then "Save the measured position". */
+  async function mint(): Promise<void> {
+    seeTheCode();
+    expect(dom.mintButton.disabled, "the mint gate should be open").toBe(false);
+    dom.mintButton.click();
+    await vi.waitFor(() => {
+      expect(ctx.mintedLevel).not.toBeNull();
+    });
+  }
+
+  /** The AR session ends: the creator setup settles FIRST (while the
+   *  store still holds the visit's alignment), then the entry's teardown
+   *  (`ar-entry.ts` onSessionEnd) - here the parts the setup reads. */
+  function endVisit(): void {
+    setup.endAuthorVisit();
+    ctx.arSessionGeneration += 1;
+    endQrPipeline(ctx);
+    ctx.lastDetectedText = null;
+    for (const preview of ctx.placedPreviews) preview.dispose();
+    ctx.placedPreviews = [];
+  }
+
+  /** A new AR session: a fresh pipeline, then the visit's start. */
+  function beginVisit(): void {
+    expect(setup.startAuthorPipeline()).toBe(true);
+    setup.beginAuthorVisit();
+  }
+
+  /** The `tourAuthoring/settled` actions logged so far. */
+  function settledLogs() {
+    return dispatched.filter((a) => a.type === "tourAuthoring/settled") as {
+      type: string;
+      payload: {
+        arVisitIndex: number;
+        trigger: string;
+        basis: string;
+        visitAlignment: unknown;
+        usedAlignment: number[];
+        objects: { id: string; geo: TourObject["geo"] }[];
+        level: { id: string; json: string } | null;
+      };
+    }[];
+  }
 
   /** Place a pin at `local` (odometry-NUE) with this label. */
   async function placePin(label: string, local: [number, number, number]) {
@@ -275,7 +363,13 @@ function authoring() {
     setAlignment,
     placePin,
     inWorldGroup,
-    detect: (i: number) => captured.configs.at(-1)?.onDetection?.(detection(i)),
+    seeTheCode,
+    mint,
+    endVisit,
+    beginVisit,
+    settledLogs,
+    labels,
+    scene,
   };
 }
 
@@ -320,5 +414,112 @@ describe("symptom A: a note placed in AR stays put while GPS re-solves", () => {
     expect(photo?.object.kind).toBe("photo");
     expect(photo?.placement?.visit).toBe(0);
     expect(photo?.placement?.local).toEqual(odomNueFromWebXr(cameraPose));
+  });
+});
+
+/** A pose's GPS-world NUE position from its geo. */
+function worldOf(geo: TourObject["geo"]): Vector3 {
+  return new Vector3(...objectPoseNue(geo, ZERO).positionNue);
+}
+
+/** The code's stored GPS-world NUE position. */
+function codeWorldOf(json: string): Vector3 {
+  return worldOf(parseQrLevel(JSON.parse(json) as unknown).qr.geo!);
+}
+
+/** The fused pose the mint used, from its own log. */
+function mintedOdom(
+  dispatched: { type: string; payload?: unknown }[],
+): Vector3 {
+  const measured = dispatched.find(
+    (a) => a.type === "tourAuthoring/codeMeasured",
+  ) as { payload: { fusedOdomPose: Pose } } | undefined;
+  expect(measured, "the mint should have logged its pose").toBeDefined();
+  return new Vector3(
+    ...odomNueFromWebXr(measured!.payload.fusedOdomPose).position,
+  );
+}
+
+describe("symptom B within a visit: the code and its notes settle together (B2)", () => {
+  it("stores a pin relative to the code as placed, though GPS moved between the two taps", async () => {
+    // Plan §2.2 B2: the code was composed through the alignment at its Save
+    // tap and the pin through the alignment at ITS tap. They differ, so the
+    // zip's relative geometry was wrong before anyone relocalized. At the
+    // visit's end both are recomputed through the visit's final alignment.
+    const a = authoring();
+    await a.mint();
+    const codeLocal = mintedOdom(a.dispatched);
+    a.setAlignment(yawAlignment(7, [3, 400, -2]));
+    await a.placePin("Gate", [2, 0, -1]);
+    a.setAlignment(yawAlignment(4, [1.5, 400.2, -1]));
+
+    a.endVisit();
+
+    const pin = a.ctx.placedObjects[0]!.object;
+    const offset = worldOf(pin.geo).sub(codeWorldOf(a.ctx.mintedLevel!.json));
+    const expected = new Vector3(2, 0, -1)
+      .sub(codeLocal)
+      .applyQuaternion(new Quaternion(...yawQ(4)));
+    expect(offset.distanceTo(expected)).toBeLessThan(1e-3);
+  });
+
+  it("logs the settle into the recording: the new geo, the level and the alignment used", async () => {
+    // Plan §3.2: a replay must reproduce the zip, and the zip now carries
+    // the SETTLED geo - which exists nowhere but in this action.
+    const a = authoring();
+    await a.mint();
+    await a.placePin("Gate", [2, 0, -1]);
+    const end = yawAlignment(4, [1.5, 400.2, -1]);
+    a.setAlignment(end);
+
+    a.endVisit();
+
+    const logs = a.settledLogs();
+    expect(logs).toHaveLength(1);
+    const payload = logs[0]!.payload;
+    expect(payload.arVisitIndex).toBe(0);
+    expect(payload.trigger).toBe("visit-end");
+    expect(payload.basis).toBe("measured-here");
+    expect(payload.visitAlignment).toEqual(end);
+    expect(payload.usedAlignment).toEqual(end);
+    expect(payload.objects).toEqual([
+      {
+        id: a.ctx.placedObjects[0]!.object.id,
+        geo: a.ctx.placedObjects[0]!.object.geo,
+      },
+    ]);
+    expect(payload.level).toEqual(a.ctx.mintedLevel);
+    // JSON-safe: the recording writes it to a file as it is.
+    expect(JSON.parse(JSON.stringify(payload))).toEqual(payload);
+  });
+
+  it("rewrites the draft's record and level, so a reload keeps the settled geo", async () => {
+    // A page reload restores from the draft. Without the rewrite it would
+    // bring back the tap-time geo the settle just replaced (plan §3.2 says
+    // only a KILLED tab keeps the tap-time geo).
+    const { store, files } = memoryDraftStore();
+    const a = authoring({ store });
+    a.setup.presentDraftForTour("https://example.test/tour.zip");
+    await flush();
+    await a.mint();
+    await a.placePin("Gate", [2, 0, -1]);
+    const tapGeo = a.ctx.placedObjects[0]!.object.geo;
+    const tapLevel = a.ctx.mintedLevel!.json;
+    a.setAlignment(yawAlignment(9, [2, 400, 2]));
+
+    a.endVisit();
+    await flush();
+
+    const pin = a.ctx.placedObjects[0]!.object;
+    expect(pin.geo, "the settle should have moved the pin").not.toEqual(tapGeo);
+    expect(a.ctx.mintedLevel!.json).not.toBe(tapLevel);
+    const onDisk = JSON.parse(
+      String(files.get(objectKey(pin.id))),
+    ) as TourObject;
+    expect(onDisk.geo).toEqual(pin.geo);
+    const meta = JSON.parse(String(files.get(META_KEY))) as {
+      level: { json: string };
+    };
+    expect(meta.level.json).toBe(a.ctx.mintedLevel!.json);
   });
 });

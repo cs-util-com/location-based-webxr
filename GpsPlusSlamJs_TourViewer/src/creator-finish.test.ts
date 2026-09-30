@@ -29,7 +29,7 @@
  * gets is the file, not the call.
  */
 import { describe, expect, it } from "vitest";
-import { Matrix4 } from "three";
+import { Matrix4, Quaternion, Vector3 } from "three";
 import { packFilesAsZip } from "gps-plus-slam-app-framework/storage";
 import {
   readStoredCentralDirectory,
@@ -44,7 +44,11 @@ import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { MIN_ALIGNMENT_SAMPLES } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 import { wireCreatorSetup } from "./creator-setup.js";
 import type { CreatorSetupDom } from "./creator-setup.js";
-import { createTourViewerSession } from "./tour-viewer-session.js";
+import {
+  createTourViewerSession,
+  createTourViewerStore,
+} from "./tour-viewer-session.js";
+import { objectPoseNue } from "./content-placement.js";
 
 /** The element surface `creator-setup` writes to, and nothing else. */
 interface FakeEl {
@@ -153,12 +157,15 @@ function fakeSession(blob: Blob, hostedName: string | null = null): unknown {
   };
 }
 
-function alignedArStore(): unknown {
+function alignedArStore(alignment?: number[]): unknown {
   const state = {
     gpsData: {
       zero: { lat: 47.5, lon: 8.7 },
       gpsEvents: {
-        alignmentMatrix: new Matrix4(),
+        // A three.js matrix object unless a test hands the store's real
+        // shape (16 numbers): the settle reads only the latter, so the
+        // tests about paths inside the zip see no settle at all.
+        alignmentMatrix: alignment ?? new Matrix4(),
         gpsPositions: Array.from({ length: MIN_ALIGNMENT_SAMPLES }, () => ({
           lat: 47.5,
           lon: 8.7,
@@ -188,6 +195,13 @@ async function wireFinishable(options: {
   hostedName?: string | null;
   /** Runs while the finish awaits the AR session's end. */
   onDisable?: (ctx: ReturnType<typeof createTourViewerSession>) => void;
+  /** The store's alignment as 16 numbers (enables the settle). */
+  alignment?: number[];
+  /** Objects placed in the RUNNING visit (0), at these odometry spots. */
+  placedInVisit?: readonly {
+    object: TourObject;
+    local: [number, number, number];
+  }[];
 }) {
   const blob = await hostedArchive(options.hosted);
   const dom = fakeDom();
@@ -199,9 +213,20 @@ async function wireFinishable(options: {
     ...createEmptyTourManifest(),
     objects: [...options.hosted],
   };
-  ctx.placedObjects = options.placed.map((object) => ({ object }));
-  const arStore = alignedArStore() as { dispatched: unknown[] };
-  wireCreatorSetup({
+  ctx.placedObjects = [
+    ...options.placed.map((object) => ({ object })),
+    ...(options.placedInVisit ?? []).map(({ object, local }) => ({
+      object,
+      placement: {
+        visit: 0,
+        local: { position: local, rotation: [0, 0, 0, 1] as const },
+      },
+    })),
+  ];
+  const arStore = alignedArStore(options.alignment) as {
+    dispatched: unknown[];
+  };
+  const setup = wireCreatorSetup({
     ctx,
     mode: "creator",
     arStore: arStore as never,
@@ -217,7 +242,7 @@ async function wireFinishable(options: {
     dom: dom as unknown as CreatorSetupDom,
     openDraftStore: () => Promise.resolve(undefined),
   });
-  return { dom, ctx, dispatched: arStore.dispatched };
+  return { dom, ctx, setup, dispatched: arStore.dispatched };
 }
 
 /**
@@ -406,5 +431,78 @@ describe("the troubleshooting recording's log of the finish", () => {
       "already-there",
       "new-one",
     ]);
+  });
+});
+
+describe("the finish settles the AR visit still running (authoring plan 2026-09-28-0953 §3.2, M2c)", () => {
+  // Why these tests matter: a Finish tapped inside AR writes the zip
+  // BEFORE the session ends, so the session-end settle comes too late for
+  // the zip. The visit is settled at the tap instead - and then must not be
+  // settled again a moment later, or the draft's level would differ from
+  // the one just written and the draft would be offered again after upload.
+  // The geodesy is licence-gated; building a store activates it, as the
+  // page does at boot.
+  createTourViewerStore();
+  const END = new Matrix4()
+    .compose(
+      new Vector3(4, 400, -3),
+      new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), Math.PI / 6),
+      new Vector3(1, 1, 1),
+    )
+    .toArray();
+
+  it("writes the objects placed in the running visit with their settled geo", async () => {
+    const { dom, ctx, dispatched } = await wireFinishable({
+      hosted: [],
+      placed: [],
+      alignment: END,
+      placedInVisit: [{ object: pin("in-visit"), local: [2, 0, -1] }],
+    });
+
+    dom.finishButton.click();
+    await settle(ctx);
+
+    const types = dispatched.map((a) => (a as { type: string }).type);
+    expect(types.indexOf("tourAuthoring/settled")).toBeLessThan(
+      types.indexOf("tourAuthoring/finished"),
+    );
+    const finished = dispatched.find(
+      (a) => (a as { type: string }).type === "tourAuthoring/finished",
+    ) as { payload: { manifest: { objects: TourObject[] } } };
+    const written = finished.payload.manifest.objects[0]!;
+    const expected = new Vector3(2, 0, -1).applyMatrix4(
+      new Matrix4().fromArray(END),
+    );
+    const at = objectPoseNue(written.geo, { lat: 47.5, lon: 8.7 }).positionNue;
+    expect(new Vector3(...at).distanceTo(expected)).toBeLessThan(1e-3);
+  });
+
+  it("does not settle the same visit again when its session then ends", async () => {
+    const { dom, ctx, setup, dispatched } = await wireFinishable({
+      hosted: [],
+      placed: [],
+      alignment: END,
+      placedInVisit: [{ object: pin("in-visit"), local: [2, 0, -1] }],
+    });
+    // The code was measured in this visit, so a second settle would
+    // re-mint it - which is exactly what must not happen after the zip.
+    ctx.codeMeasurement = {
+      levelId: LEVEL_ID,
+      text: "https://example.test/code",
+      odomPose: { position: [0, 1.5, -1], rotation: [0, 0, 0, 1] },
+      sizeM: 0.16,
+      visit: 0,
+    };
+
+    dom.finishButton.click();
+    await settle(ctx);
+    const level = ctx.mintedLevel;
+    setup.endAuthorVisit();
+
+    const settles = dispatched.filter(
+      (a) => (a as { type: string }).type === "tourAuthoring/settled",
+    );
+    expect(settles).toHaveLength(1);
+    expect(ctx.mintedLevel).toBe(level);
   });
 });

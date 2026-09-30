@@ -41,6 +41,15 @@ asked. Pure - the OPFS mechanics are the framework's
   creator still has to upload it by hand afterwards.
   - A draft made against a hosted zip that changed underneath is a real
     hazard this does not detect. Carried knowingly rather than guessed at.
+- **The settle rewrites records in place, and changes no shape**
+  (authoring plan 2026-09-28-0953 §3.2, M2c): at a visit's end (and at
+  Finish for a running visit) `creator-setup.ts` writes each settled object's
+  record again under its id and the meta with the re-minted level. The same
+  ids, the same fields - only the geo is newer - so neither the spent rule
+  nor `appendWithoutDuplicateIds` sees anything new, and a page reload
+  restores the SETTLED geo. A tab killed before the settle keeps the
+  tap-time geo (accepted in the plan); the odometry pose behind it is not
+  stored, because another visit's odometry is meaningless.
 - **`sizeM` is part of the draft** because a crash loses it:
   `creator-setup.ts` rewrites the printed-size field from the framework
   default on every load, so a creator who printed at 20 cm would re-enter

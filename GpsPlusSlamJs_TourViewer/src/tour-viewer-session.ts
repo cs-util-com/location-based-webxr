@@ -40,6 +40,7 @@ import type { ScanGate } from "./scan-gate.js";
 import type { PlacedImagePlanes } from "./image-planes.js";
 import type { TourViewerSeams } from "./seams.js";
 import type { NuePose } from "./visit-anchoring.js";
+import type { CodeMeasurement, CodeSighting } from "./visit-settle.js";
 import type { PlacementState } from "./tour-flow.js";
 import type { TourSession } from "./tour-session.js";
 
@@ -91,6 +92,7 @@ export function createTourViewerStore(recording?: {
     // the mint were computed from, and the creator's own log actions.
     persistedExtraPrefixes: [
       slicePrefixOf(recordQrDetection.type),
+      // Every `tourAuthoring/*` action: placed, measured, settled, finished.
       slicePrefixOf(objectPlaced.type),
     ],
   });
@@ -122,6 +124,12 @@ export interface TourViewerHooks {
   presentTourForPrint(url: string, origin?: "host-step" | "measure-step"): void;
   /** A tour closed: the finish step's page-side state is stale. */
   resetFinishStep(): void;
+  /** A creator's AR visit is running (its world group exists): show the
+   *  earlier visits' objects (authoring plan 2026-09-28-0953 §3.2, M2c). */
+  beginAuthorVisit(): void;
+  /** A creator's AR visit ends: settle it. Called BEFORE the session's
+   *  store teardown, which resets the alignment the settle reads. */
+  endAuthorVisit(): void;
   /** No tour is open any more (one closed, or an open failed): the panels
    *  that show a tour's link go back to ASKING for one. Without this, the
    *  print step keeps showing the previous tour's link as immutable text
@@ -155,6 +163,8 @@ export function createUnwiredHooks(): TourViewerHooks {
     startViewerPipeline: () => false,
     presentTourForPrint: () => undefined,
     resetFinishStep: () => undefined,
+    beginAuthorVisit: () => undefined,
+    endAuthorVisit: () => undefined,
     presentNoTour: () => undefined,
     presentDraftForTour: () => undefined,
     startScanGate: () => undefined,
@@ -238,6 +248,20 @@ export interface TourViewerSession {
   /** Bumped per mint so a stale identity hash cannot install an older
    *  level over a newer one. */
   mintGeneration: number;
+  /**
+   * The raw inputs of the mint behind `mintedLevel` when it was made in
+   * this page (the fused pose, the size, the AR visit): what the settle
+   * re-mints the code from (authoring plan 2026-09-28-0953 §3.2, M2c).
+   * Null for a level restored from a draft, and cleared with the level.
+   */
+  codeMeasurement: CodeMeasurement | null;
+  /**
+   * The anchor code as the RUNNING AR visit last saw it, stable (the
+   * latest stable fused pose): what a later visit is corrected through
+   * (D10b) and what hides the entry hint (§3.2a). Cleared at each visit's
+   * end - odometry does not carry over.
+   */
+  visitCodeSighting: CodeSighting | null;
   /** The finish step is running (one at a time); the panel shows its
    *  progress with priority over the measuring readout. */
   finishing: boolean;
@@ -362,6 +386,8 @@ export function createTourViewerSession(): TourViewerSession {
     mintedLevel: null,
     mintedLevelTour: null,
     mintGeneration: 0,
+    codeMeasurement: null,
+    visitCodeSighting: null,
     finishing: false,
     finishProgress: "",
     finishError: null,

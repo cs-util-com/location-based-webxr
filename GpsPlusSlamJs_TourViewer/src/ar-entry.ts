@@ -221,6 +221,11 @@ export function wireArEntry(deps: {
   }
 
   function onSessionEnd(): void {
+    // FIRST, while the visit is still the current one and the store still
+    // holds its alignment: the creator's settle reads both, and the
+    // teardown at the end of this function resets the alignment
+    // (authoring plan 2026-09-28-0953 §3.2, M2c; a test pins the order).
+    if (authorMode) hooks.endAuthorVisit();
     ctx.arSessionGeneration += 1;
     // Full teardown, not just capture stop: the AR entry is re-enterable,
     // and an open recording would blend the dead session's odom frame into
@@ -364,6 +369,7 @@ export function wireArEntry(deps: {
       // position is GPS-world NUE once the alignment lands.
       if (authorMode) ctx.reticle = seams.startHitTestReticle(worldGroup);
     }
+    if (authorMode) hooks.beginAuthorVisit();
     // The scan gate first (M5): a creator's is `not-required/creator` (a
     // real state, M5 review #11), a visitor's holds placement back until
     // the code locks; the subscription below re-attempts on every dispatch

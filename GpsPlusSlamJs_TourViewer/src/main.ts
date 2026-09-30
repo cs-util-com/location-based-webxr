@@ -293,6 +293,8 @@ const setup = wireCreatorSetup({
 hooks.renderAuthorReadout = setup.renderAuthorReadout;
 hooks.startAuthorPipeline = setup.startAuthorPipeline;
 hooks.resetFinishStep = setup.resetFinishStep;
+hooks.beginAuthorVisit = setup.beginAuthorVisit;
+hooks.endAuthorVisit = setup.endAuthorVisit;
 hooks.presentNoTour = () => {
   print.presentNoTour();
 };

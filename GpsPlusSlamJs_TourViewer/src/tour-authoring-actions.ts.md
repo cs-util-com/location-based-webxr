@@ -26,6 +26,14 @@ reads them (the framework's `diagnostics/note` precedent). Plan:
   `fusedOdomPose` (the stable fused pose minted from), `sizeM`,
   `alignmentMatrix`, `alignment` (the mint gate's info), `levelJson` (the level
   as written), `arVisitIndex`, `atMs`.
+- `visitSettled(payload)` - `tourAuthoring/settled` (M2c, plan §3.2): an AR
+  visit's settle - `arVisitIndex`, `atMs`, `trigger` (`visit-end` or
+  `finish`), `basis` (`visit-settle.ts`), `visitAlignment` (the store's, read
+  before the teardown), `usedAlignment` (what the geo went through),
+  `sighting` (the code pose a correction used, or null), `objects` (each
+  settled object's `id` and new `geo`), `level` (the re-minted code, or
+  null). The tap-time geo of `objectPlaced`/`codeMeasured` is what a killed
+  tab keeps; this is what the zip carries, so a replay needs it.
 - `authoringFinished(payload)` - `tourAuthoring/finished`: `levelId`,
   `manifest` (what the rebuilt zip carries), `atMs`.
 - Each creator carries `.type`, as RTK's do; the payload interfaces are

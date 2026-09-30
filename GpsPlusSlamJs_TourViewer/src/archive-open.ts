@@ -103,6 +103,7 @@ export function wireArchiveOpen(deps: {
     // into its zip (M5 review #9). The generation bump makes any mint hash
     // still in flight land on nothing.
     ctx.mintedLevel = null;
+    ctx.codeMeasurement = null;
     ctx.mintGeneration += 1;
     // A failed finish is the closing tour's too: it keeps Save off, and only
     // a finish - which needs a measured level - clears it (scan-to-open

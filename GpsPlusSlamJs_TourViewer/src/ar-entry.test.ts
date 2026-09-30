@@ -19,6 +19,10 @@ import {
 } from "./tour-viewer-session.js";
 import type { TourViewerSeams } from "./seams.js";
 import { RECORDING_DEPTH } from "./authoring-recording.js";
+import {
+  endSession,
+  resetGpsSessionData,
+} from "gps-plus-slam-app-framework/state";
 
 /** A stand-in element: the fields `wireArEntry` writes, and click handlers. */
 function el() {
@@ -39,7 +43,12 @@ async function settle(): Promise<void> {
 }
 
 function harness(
-  options: { arStatus?: string; records?: boolean; enableOk?: boolean } = {},
+  options: {
+    arStatus?: string;
+    records?: boolean;
+    enableOk?: boolean;
+    mode?: "visitor" | "creator";
+  } = {},
 ) {
   // The entry flags a running session on `document.body.dataset`; the
   // package tests run in node, so the page body is stood in.
@@ -68,6 +77,7 @@ function harness(
     ctx.fusedPose = {} as NonNullable<typeof ctx.fusedPose>;
     return true;
   };
+  hooks.startAuthorPipeline = () => true;
   const dom = {
     arRoot: el(),
     arStatus: el(),
@@ -94,7 +104,7 @@ function harness(
   };
   const entry = wireArEntry({
     ctx,
-    mode: "visitor",
+    mode: options.mode ?? "visitor",
     arStore,
     arController: arController as never,
     gpsHandler: () => undefined,
@@ -114,6 +124,7 @@ function harness(
     ctx,
     dom,
     entry,
+    hooks,
     dispose,
     arStore,
     seams,
@@ -134,6 +145,42 @@ function harness(
 describe("wireArEntry session end", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("settles the creator's visit BEFORE the store teardown resets the alignment", async () => {
+    // Why this test matters (authoring plan 2026-09-28-0953 §3.2, M2c): the
+    // settle recomputes the visit's geo through the store's alignment, and
+    // `teardownArSessionState` (endSession, then resetGpsSessionData)
+    // drops it. Settled after the teardown, every note would keep its
+    // tap-time geo with nothing to say so. And the settle must still see
+    // THIS visit's number, before the generation bump.
+    const h = harness({ mode: "creator" });
+    const order: string[] = [];
+    const dispatch = h.arStore.dispatch.bind(h.arStore);
+    h.arStore.dispatch = ((action: { type: string }) => {
+      order.push(action.type);
+      return dispatch(action as never);
+    }) as typeof h.arStore.dispatch;
+    h.hooks.endAuthorVisit = () => {
+      order.push(`settle visit ${String(h.ctx.arSessionGeneration)}`);
+    };
+
+    await h.enterAndEnd();
+
+    const settle = order.indexOf("settle visit 0");
+    expect(settle).toBeGreaterThanOrEqual(0);
+    expect(settle).toBeLessThan(order.indexOf(endSession.type));
+    expect(settle).toBeLessThan(order.indexOf(resetGpsSessionData.type));
+  });
+
+  it("does not settle anything when a visitor's session ends", async () => {
+    const h = harness();
+    let settled = 0;
+    h.hooks.endAuthorVisit = () => {
+      settled += 1;
+    };
+    await h.enterAndEnd();
+    expect(settled).toBe(0);
   });
 
   it("disposes the QR controller and drops the session's fused pose source", async () => {

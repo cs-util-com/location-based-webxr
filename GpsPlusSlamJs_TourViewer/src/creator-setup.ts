@@ -20,7 +20,9 @@ import {
   authoringFinished,
   codeMeasured,
   objectPlaced,
+  visitSettled,
 } from "./tour-authoring-actions.js";
+import { planVisitSettle } from "./visit-settle.js";
 import { tallyEvaluation, type FusedTallies } from "./qr-debug-readout.js";
 import { createQrTrackingController } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
 import { createFusedQrPoseSource } from "gps-plus-slam-app-framework/ar/qr/qr-fused-pose-source";
@@ -192,6 +194,10 @@ export interface CreatorSetup {
   startAuthorPipeline: () => boolean;
   /** A tour closed: step 5's download and status are stale (M3 review #6). */
   resetFinishStep: () => void;
+  /** A creator's AR visit runs: show the earlier visits' objects. */
+  beginAuthorVisit: () => void;
+  /** A creator's AR visit ends: settle it (before the store teardown). */
+  endAuthorVisit: () => void;
   /** A tour opened and its manifest settled: load any draft for it, and
    *  either offer what is not already hosted or delete a spent one. */
   presentDraftForTour: (tourUrl: string) => void;
@@ -262,6 +268,9 @@ export function wireCreatorSetup(deps: {
    * promises, dropped with the page.
    */
   const metaWrites = new Map<string, Promise<boolean>>();
+  /** Each decoded code text's level id (`qrCodeId`, a hash - async), so a
+   *  detection can be matched to the level in hand synchronously. */
+  const codeIds = new Map<string, string>();
   /** The creator-facing url of the open tour, for later draft writes. */
   let draftTourUrl: string | null = null;
   /** What a draft is offering, until the creator answers. */
@@ -1063,6 +1072,7 @@ export function wireCreatorSetup(deps: {
     dom.sizeInput.value = String(sizeM);
     ctx.mintGeneration += 1;
     ctx.mintedLevel = null;
+    ctx.codeMeasurement = null;
     endQrPipeline(ctx);
     arStore.dispatch(clearQrMarker({ text: offer.text }));
     startAuthorPipeline();
@@ -1077,6 +1087,70 @@ export function wireCreatorSetup(deps: {
     ctx.printSizeCheck?.answer(offer.text, "kept");
     renderAuthorReadout();
   });
+
+  /**
+   * The visit whose Finish already settled it (and wrote it into the zip),
+   * so its session end does not settle it a second time.
+   */
+  let visitSettledByFinish: number | null = null;
+
+  /**
+   * Settle the running AR visit (authoring plan 2026-09-28-0953 §3.2, M2c):
+   * the code measured in it and every object placed in it get their geo
+   * recomputed through ONE alignment (`visit-settle.ts` decides which), the
+   * draft is rewritten so a reload keeps it, and the troubleshooting
+   * recording gets a `tourAuthoring/settled` action.
+   *
+   * READS THE STORE, SO IT MUST RUN BEFORE THE SESSION'S TEARDOWN:
+   * `teardownArSessionState` resets the alignment (`ar-entry.ts` calls
+   * `endAuthorVisit` first; a test pins the order).
+   */
+  function settleVisit(trigger: "visit-end" | "finish"): void {
+    const visit = ctx.arSessionGeneration;
+    if (visitSettledByFinish === visit) return;
+    const state = arStore.getState();
+    const visitAlignment = selectAlignmentMatrix(state);
+    const plan = planVisitSettle({
+      visit,
+      placed: ctx.placedObjects,
+      alignment: visitAlignment,
+      zero: selectZeroReference(state),
+      mintedLevel: ctx.mintedLevel,
+      measurement: ctx.codeMeasurement,
+      sighting: ctx.visitCodeSighting,
+      alignmentInfo: authorAlignmentInfo(),
+      nowIso: new Date().toISOString(),
+    });
+    if (plan === null) return;
+    for (const { index, object } of plan.objects) {
+      const entry = ctx.placedObjects[index];
+      if (entry === undefined) continue;
+      ctx.placedObjects[index] = { ...entry, object };
+      // The record only: a photo's bytes did not change.
+      recordPlacement(object);
+    }
+    if (plan.level !== null) {
+      ctx.mintedLevel = plan.level;
+      if (draftTourUrl !== null) void recordMeta(draftTourUrl);
+    }
+    arStore.dispatch(
+      visitSettled({
+        arVisitIndex: visit,
+        atMs: Date.now(),
+        trigger,
+        basis: plan.basis,
+        visitAlignment,
+        usedAlignment: plan.alignment,
+        sighting:
+          plan.basis === "code-corrected" ? ctx.visitCodeSighting : null,
+        objects: plan.objects.map(({ object }) => ({
+          id: object.id,
+          geo: object.geo,
+        })),
+        level: plan.level,
+      }),
+    );
+  }
 
   dom.mintButton.addEventListener("click", () => {
     if (ctx.lastDetectedText === null) return;
@@ -1121,12 +1195,30 @@ export function wireCreatorSetup(deps: {
       atMs: Date.now(),
     };
     ctx.mintedLevel = null;
+    ctx.codeMeasurement = null;
     dom.status.textContent = "Saving the measured position…";
     dom.finishButton.disabled = true;
     qrCodeId(mintedText).then(
       (id) => {
         if (mintGeneration !== ctx.mintGeneration) return;
         ctx.mintedLevel = { id, json: result.json };
+        // What the settle re-mints the code from at the visit's end, and
+        // a sighting of it in this visit (plan §3.2, M2c).
+        ctx.codeMeasurement = {
+          levelId: id,
+          text: mintedText,
+          odomPose: stablePose,
+          sizeM: measured.sizeM,
+          visit: measured.arVisitIndex,
+        };
+        codeIds.set(mintedText, id);
+        if (measured.arVisitIndex === ctx.arSessionGeneration) {
+          ctx.visitCodeSighting = {
+            text: mintedText,
+            levelId: id,
+            odomPose: stablePose,
+          };
+        }
         ctx.mintedLevelTour = {
           levelId: id,
           tourUrl: codeTour.tourOf(mintedText),
@@ -1145,15 +1237,19 @@ export function wireCreatorSetup(deps: {
 
   dom.finishButton.addEventListener("click", () => {
     const current = ctx.session;
-    const minted = ctx.mintedLevel;
     if (
       current === null ||
-      minted === null ||
+      ctx.mintedLevel === null ||
       ctx.finishing ||
       ctx.tourManifestStatus !== "settled"
     ) {
       return;
     }
+    // The visit still running is settled BEFORE anything is read for the
+    // zip (plan §3.2): its objects and its code are written as settled, not
+    // as tapped. A visit already over was settled at its end.
+    if (sessionLive()) settleVisit("finish");
+    const minted = ctx.mintedLevel;
     // Both guards for the continuation: the tour may be re-opened and the
     // AR session may end (and a new one start) while the rebuild runs; the
     // result must not land in a session or a tour it was not made for
@@ -1252,6 +1348,12 @@ export function wireCreatorSetup(deps: {
         // review). `tourManifest` is otherwise only written at tour open.
         ctx.tourManifest = written;
         ctx.placedObjects = [];
+        // This visit's settle is in the zip now; settling it again at the
+        // session's end would re-mint the code a moment later and leave the
+        // draft's level different from the one just written.
+        if (sessionGeneration === ctx.arSessionGeneration) {
+          visitSettledByFinish = sessionGeneration;
+        }
         arStore.dispatch(
           authoringFinished({
             levelId: minted.id,
@@ -1400,6 +1502,12 @@ export function wireCreatorSetup(deps: {
   return {
     renderAuthorReadout,
     startAuthorPipeline,
+    beginAuthorVisit: () => undefined,
+    endAuthorVisit: () => {
+      if (!creator) return;
+      settleVisit("visit-end");
+      ctx.visitCodeSighting = null;
+    },
     resetFinishStep: () => {
       dom.downloadButton.disabled = true;
       // The LABEL too, because the hand-off continuation is generation-

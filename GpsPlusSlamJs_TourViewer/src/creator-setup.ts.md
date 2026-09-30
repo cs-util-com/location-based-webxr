@@ -150,9 +150,29 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   whose identity hash landed dispatches `tourAuthoring/codeMeasured` (inputs
   captured at the tap); a finish whose rebuild succeeded dispatches
   `tourAuthoring/finished` with the manifest written, before the session is
-  ended. All are top-level dispatches (a handler, a promise continuation),
+  ended; each settle dispatches `tourAuthoring/settled` (below). All are top-level dispatches (a handler, a promise continuation),
   never inside another dispatch. They change no state; without a recording
   the store writes nothing.
+
+- **The settle** (authoring plan 2026-09-28-0953 §3.2, M2c; D2, D10b):
+  `endAuthorVisit` (called by `ar-entry.ts` FIRST in the session end, before
+  the store teardown resets the alignment) and a Finish tapped while the
+  session is live run `settleVisit`: `planVisitSettle` (`visit-settle.ts`)
+  recomputes the geo of the code measured in this visit and of every object
+  placed in it through one alignment; the records replace the tap-time ones
+  in `ctx.placedObjects` and `ctx.mintedLevel`, each settled object's draft
+  record and the meta are REWRITTEN (the per-object file design already
+  keys by id; no format change - so a page reload keeps the settled geo,
+  while a killed tab keeps the tap-time geo, accepted in the plan), and
+  `tourAuthoring/settled` is logged. A Finish that wrote the zip marks its
+  visit settled, so that visit's session end does not re-mint the code a
+  moment later (the draft's level would then differ from the one just
+  written, and the draft would be offered again after the upload).
+  - The mint records `ctx.codeMeasurement` (its raw inputs and visit) with
+    the level, and clears it whenever the level is cleared (a new tap, an
+    adopted print size, a tour close in `archive-open.ts`).
+  - A photo's visit is taken at the tap, before its async encode: one whose
+    session ended during the encode keeps its tap-time geo.
 
 - **A Drive tour's finish SAVES and shows the Drive steps** (Drive replace
   plan §2 decisions 1 and 4): the route is `finishRoute({canShare,
@@ -336,4 +356,7 @@ pure pieces are unit-tested in
 `readWholeArchive`, `loadTourManifest`). The recording's log:
 `creator-setup.test.ts` (a pin's `objectPlaced`, its odometry position and
 matrices, the code's size, and the reticle with the world group yawed 90
-degrees) and `creator-finish.test.ts` (the finish's manifest).
+degrees) and `creator-finish.test.ts` (the finish's manifest). Anchoring (M2c):
+`authoring-settle.test.ts` (rigid previews, the settle through the real
+setup, its log and draft rewrite), `creator-finish.test.ts` (the settle at
+Finish, once).
