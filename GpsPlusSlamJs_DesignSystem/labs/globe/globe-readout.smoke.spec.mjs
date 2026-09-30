@@ -83,7 +83,7 @@ test("during a dive the readout follows the camera and names the distance to the
   page,
   context,
 }) => {
-  test.setTimeout(300_000);
+  test.setTimeout(120_000);
   await context.grantPermissions(["geolocation"], { origin: ORIGIN });
   await context.setGeolocation(COLOGNE);
   const errors = await boot(
@@ -94,8 +94,22 @@ test("during a dive the readout follows the camera and names the distance to the
     await page.evaluate(() => window.__globeLab.state().readoutShown),
   );
   await page.locator("#globe-pin").click();
-  await page.waitForFunction(() =>
-    / to the target$/.test(window.__globeLab.state().readoutShown),
+  // The line names the target from the dive's first frame, before the
+  // camera has moved: wait, while the dive still flies, for a line that
+  // names it AND reads lower than before (the first such line was once
+  // taken as "during", at the start altitude: a race, 2026-09-30).
+  await page.waitForFunction(
+    (startKm) => {
+      const s = window.__globeLab.state();
+      const m = /^Altitude ([\d,.]+) (km|m) · .* to the target$/.exec(
+        s.readoutShown,
+      );
+      if (!m || s.phase === "landed") return false;
+      const value = Number(m[1].replaceAll(",", ""));
+      return (m[2] === "km" ? value : value / 1000) < startKm;
+    },
+    before,
+    { timeout: 60_000 },
   );
   const during = await page.evaluate(() => window.__globeLab.state());
   await page.waitForFunction(
