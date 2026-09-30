@@ -71,6 +71,12 @@ draft and logs `tourAuthoring/settled`.
   - The tap-time values are not lost for troubleshooting: the recording's
     `tourAuthoring/codeMeasured` logs the tap's alignment info and level,
     and `tourAuthoring/settled` the visit alignment and the one used.
+  - **Every mint-time field comes from the settle, none from the tap**:
+    `mintedAtIso` (the settle's time), `alignmentSampleCount` and
+    `gpsAccuracyM` (the end alignment's). The unit test compares the whole
+    block, so a field that stayed tap-time would fail it. The tap's mint
+    passes no extra `quality` fields today; one added there would have to
+    be re-derived here too, or the settle would silently drop it.
   - Geo and block always travel together: a corrected visit does not
     re-mint (the stored geo keeps its block), and a refused re-mint keeps
     both old halves.
