@@ -90,7 +90,7 @@ describe("createGlobeSurface", () => {
     expect(globe.options.overlayProjection).toBe("EPSG:4326");
     expect(globe.options.applyOverlayTexture).toBe(true);
     expect(GLOBE_SURFACE.imageryUrl).toBe(
-      "/globe-assets/blue-marble-4326/{z}/{x}/{y}.jpg",
+      "/globe-assets/blue-marble-4326/{z}/{x}/{y}.webp",
     );
     // Levels 0-4 are committed (level 4: DEC-FB2-4): five levels.
     expect(globe.options.levels).toBe(5);
@@ -113,7 +113,7 @@ describe("createGlobeSurface", () => {
       refusedTiles: 0,
       mapsLoaded: 0,
       mapErrors: 0,
-      mapsTotal: 3,
+      mapsTotal: 2,
     });
     // The credits line reads this: every source drawn is the registry's.
     expect(globe.activeSources()).toEqual(GLOBE_SOURCES.map((s) => s.id));
@@ -121,7 +121,7 @@ describe("createGlobeSurface", () => {
     globe.dispose();
   });
 
-  it("loads the three global maps from the registry, as colour or data, wrapping in longitude", () => {
+  it("loads the two global maps from the registry, as colour or data, wrapping in longitude", () => {
     const loader = stubLoader();
     const globe = createGlobeSurface(loader);
     const equirect = GLOBE_SOURCES.filter((s) => s.kind === "equirect");
@@ -129,7 +129,6 @@ describe("createGlobeSurface", () => {
     const u = globe.surfaceUniforms;
     const bySource = {
       "black-marble": u.uNight.value,
-      "water-mask": u.uWater.value,
       clouds: u.uClouds.value,
     } as const;
     for (const source of equirect) {
@@ -141,7 +140,7 @@ describe("createGlobeSurface", () => {
       );
       expect(texture.wrapS).toBe(THREE.RepeatWrapping);
     }
-    // The clouds and the water are read as numbers (coverage, a mask).
+    // The clouds are read as numbers (coverage).
     expect(u.uClouds.value.colorSpace).toBe(THREE.NoColorSpace);
     expect(u.uNight.value.colorSpace).toBe(THREE.SRGBColorSpace);
     globe.dispose();
@@ -153,10 +152,9 @@ describe("createGlobeSurface", () => {
     const loader = stubLoader();
     const globe = createGlobeSurface(loader);
     loader.finish[0]!();
-    loader.finish[2]!();
     loader.fail[1]!();
     const s = globe.state();
-    expect([s.mapsLoaded, s.mapErrors, s.mapsTotal]).toEqual([2, 1, 3]);
+    expect([s.mapsLoaded, s.mapErrors, s.mapsTotal]).toEqual([1, 1, 2]);
     globe.dispose();
   });
 
@@ -316,7 +314,6 @@ describe("useLitMaterial", () => {
       template,
       createGlobeSurfaceUniforms({
         night: new THREE.Texture(),
-        water: new THREE.Texture(),
         clouds: new THREE.Texture(),
       }),
     );

@@ -44,7 +44,7 @@ async function boot(page, hash) {
 // must light the pixels where the view projects it. Only the stars to 0.5
 // are drawn (a handful), so a bright pixel there is that star.
 test("the packed stars draw where their directions say", async ({ page }) => {
-  test.setTimeout(300_000);
+  test.setTimeout(120_000);
   const errors = await boot(page, `${VIEW}&starMag=0.5&starGain=4`);
   const brightest = await page.evaluate(
     () => window.__globeLab.state().sky.stars.brightest,
@@ -152,7 +152,7 @@ for (const [tier, use] of [
   test.describe(tier, () => {
     test.use(use);
     test(`what the stars cost per limit (${tier})`, async ({ page }) => {
-      test.setTimeout(300_000);
+      test.setTimeout(120_000);
       const errors = await boot(page, VIEW);
       const { off, rows } = await costTable(page);
       console.log(

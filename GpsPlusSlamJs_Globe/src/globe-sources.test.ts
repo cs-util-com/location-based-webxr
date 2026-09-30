@@ -4,8 +4,10 @@
  * acknowledgement; a source without one would load uncredited), and the
  * paths must match what the fetch script wrote, or the page asks for files
  * that do not exist. The committed pyramid is checked for completeness here
- * too: 2 x 4^z tiles per level, each a 256x256 JPEG, and the global maps at
- * 2048x1024, read by their headers. And the committed total stays inside
+ * too: 2 x 4^z tiles per level, each a 256x256 WebP (round-4 plan
+ * 2026-09-28-2105 DEC-GL4-3/10) whose alpha is the water mask where the tile
+ * has water (DEC-GL4-6), and the global maps as 2048x1024 WebPs, read by
+ * their headers. And the committed total stays inside
  * its budget: nothing else guards it (the repo checks single files only),
  * and each level of the pyramid quadruples the tile count.
  */
@@ -47,9 +49,12 @@ describe("GLOBE_SOURCES", () => {
 });
 
 describe("the committed imagery", () => {
-  it("has the complete Blue Marble pyramid, every tile a 256x256 JPEG", () => {
+  it("has the complete Blue Marble pyramid, every tile a 256x256 WebP, the water in its alpha", () => {
     const tiles = globeSource("blue-marble");
     const levels = tiles.levels ?? 0;
+    // The water mask rides in the same files.
+    expect(globeSource("water-mask").path).toBe(tiles.path);
+    expect(globeSource("water-mask").kind).toBe("alpha");
     for (let z = 0; z < levels; z++) {
       const files: string[] = [];
       const levelDir = onDisk(tiles.path.split("{z}")[0] + String(z));
@@ -58,20 +63,33 @@ describe("the committed imagery", () => {
           files.push(join(levelDir, x, y));
       }
       expect(files, `level ${z}`).toHaveLength(2 * 4 ** z);
+      let withWater = 0;
       for (const file of files) {
-        expect(imageInfo(readFileSync(file)), file).toEqual({
-          type: "jpeg",
+        expect(file.endsWith(".webp"), file).toBe(true);
+        const info = imageInfo(readFileSync(file));
+        expect(info, file).toMatchObject({
+          type: "webp",
           width: 256,
           height: 256,
         });
+        if (info?.type === "webp" && info.alpha) withWater += 1;
       }
+      // Most of the Earth is sea: most tiles at every level have water
+      // (measured: every tile at levels 0-2, 85 % at level 4).
+      expect(withWater / files.length, `level ${z}`).toBeGreaterThan(0.5);
     }
+    // Open Pacific (level 4, 0-11°S, 169-158°W): water, so alpha.
+    const pacific = imageInfo(
+      readFileSync(onDisk(tiles.path.replace("{z}/{x}/{y}", "4/1/8"))),
+    );
+    expect(pacific).toMatchObject({ type: "webp", alpha: true });
   });
 
-  it("has every global map at 2048x1024, under the repo's 2 MiB file ceiling", () => {
+  it("has every global map as a 2048x1024 WebP, under the repo's 2 MiB file ceiling", () => {
     for (const s of GLOBE_SOURCES.filter((u) => u.kind === "equirect")) {
       const file = onDisk(s.path);
       const info = imageInfo(readFileSync(file));
+      expect(info?.type, s.id).toBe("webp");
       expect(info?.width, s.id).toBe(2048);
       expect(info?.height, s.id).toBe(1024);
       expect(statSync(file).size, s.id).toBeLessThan(2 * 1024 * 1024);

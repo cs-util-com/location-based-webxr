@@ -37,13 +37,33 @@ describe("imageInfo for any size and any bytes", () => {
     );
   });
 
+  // The extended WebP header holds 24-bit sizes (width - 1): every one of
+  // them, with or without alpha, must read back (round-4 plan DEC-GL4-3).
+  it("reads back every extended WebP size and its alpha flag", () => {
+    const size = fc.integer({ min: 1, max: 2 ** 24 });
+    fc.assert(
+      fc.property(size, size, fc.boolean(), (width, height, alpha) => {
+        const b = new Uint8Array(30);
+        b.set(new TextEncoder().encode("RIFF"), 0);
+        b.set(new TextEncoder().encode("WEBPVP8X"), 8);
+        b[20] = alpha ? 0x10 : 0;
+        const w = width - 1;
+        const h = height - 1;
+        b.set([w & 0xff, (w >> 8) & 0xff, (w >> 16) & 0xff], 24);
+        b.set([h & 0xff, (h >> 8) & 0xff, (h >> 16) & 0xff], 27);
+        expect(imageInfo(b)).toEqual({ type: "webp", width, height, alpha });
+      }),
+    );
+  });
+
   it("never throws, and refuses what does not start like an image", () => {
     fc.assert(
       fc.property(fc.uint8Array({ maxLength: 64 }), (bytes) => {
         const info = imageInfo(bytes);
         const looksLikeImage =
           (bytes[0] === 0xff && bytes[1] === 0xd8) ||
-          (bytes[0] === 0x89 && bytes[1] === 0x50);
+          (bytes[0] === 0x89 && bytes[1] === 0x50) ||
+          (bytes[0] === 0x52 && bytes[1] === 0x49);
         expect(info === null || looksLikeImage).toBe(true);
       }),
     );

@@ -6,11 +6,24 @@
 - Use: `node scripts/fetch-globe-assets.mjs [--force]` from the package, by
   hand, never in CI. Node 26 runs it as is (it imports `../src/*.ts` through
   Node's own type stripping).
-- What it writes: `assets/blue-marble-4326/{z}/{x}/{y}.jpg` (levels 0-4,
-  682 tiles, via GIBS WMS `BlueMarble_NextGeneration`), `assets/equirect/`
-  night (VIIRS Black Marble 2016), water (MODIS MOD44W) and clouds (NASA
-  Visible Earth), and `assets/PROVENANCE.md` (sources, sizes, licence, the
-  GIBS acknowledgement).
+- What it writes (round-4 plan 2026-09-28-2105 DEC-GL4-3/6/10): every
+  file WebP at `WEBP_QUALITY`, encoded ONCE from a lossless source, never
+  from a JPEG: `assets/blue-marble-4326/{z}/{x}/{y}.webp` (via GIBS WMS
+  `BlueMarble_NextGeneration` as PNG), each tile's alpha the MODIS water
+  mask (`MODIS_Water_Mask` as PNG on the same box) kept only where the
+  imagery shows dark sea (`src/water-alpha.ts`), lossless: land 255,
+  water 0, the colour under the water kept by `exact`; a tile with no
+  water has no alpha); `assets/equirect/` night (VIIRS Black Marble 2016,
+  as PNG) and clouds (NASA Visible Earth's `cloud_combined_2048.tif`);
+  and `assets/PROVENANCE.md` (sources, sizes, licence, the GIBS
+  acknowledgement). The downloads are kept in `.fetch-cache/`
+  (gitignored), so a re-encode at another quality needs no network.
+- Checks: every download by its header (TIFF by decoding it); every mask
+  pixel is water cyan or transparent land (a GIBS style change fails the
+  run instead of drawing a wrong coast); every written WebP's size, and
+  its alpha present exactly when the tile has water. `sharp` is a
+  devDependency of this package for the encoding (it is never loaded by
+  the page).
 - Invariants: every file is checked by its header (type and size) before it
   is written; concurrency 4, 3 retries; existing files are kept unless
   `--force`; the "Fetched:" dates come from `src/provenance-date.ts`

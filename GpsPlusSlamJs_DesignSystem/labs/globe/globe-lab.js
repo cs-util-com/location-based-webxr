@@ -101,7 +101,7 @@ function statusView() {
       mapErrors,
       mapsTotal,
     }) {
-      // The tiles and the three global maps (the clouds are the largest
+      // The tiles and the two global maps (the clouds are the largest
       // single file): "loaded" only once all of them have arrived or failed.
       const mapsPending = mapsTotal - mapsLoaded - mapErrors;
       const loading =
@@ -119,7 +119,7 @@ function statusView() {
           ? `Some Earth imagery could not load (${tileErrors} tiles): a coarser level shows there.`
           : "",
         mapErrors > 0
-          ? `${mapErrors} of the night-light, water and cloud maps could not load.`
+          ? `${mapErrors} of the night-light and cloud maps could not load.`
           : "",
       ]
         .filter(Boolean)

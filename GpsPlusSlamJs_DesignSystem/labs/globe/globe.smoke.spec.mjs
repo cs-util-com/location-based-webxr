@@ -516,14 +516,14 @@ test("no seam at the 180° line", async ({ page }) => {
   expect(ratio).toBeLessThan(M3.seamRatio);
 });
 
-// WHY (the async-feedback rule, globe plan §7.8): the three global maps load
+// WHY (the async-feedback rule, globe plan §7.8): the global maps load
 // beside the tiles, the clouds being the largest single file. One that
 // cannot load must say so in the error box, the loading label must still
 // end, and the globe must still draw (the map reads as empty: no clouds).
 test("a global map that fails to load is reported, and the globe still draws", async ({
   page,
 }) => {
-  await page.route("**/globe-assets/equirect/clouds-2048.jpg", (route) =>
+  await page.route("**/globe-assets/equirect/clouds-2048.webp", (route) =>
     route.fulfill({ status: 404, body: "" }),
   );
   const pageErrors = [];
@@ -541,7 +541,7 @@ test("a global map that fails to load is reported, and the globe still draws", a
       const s = window.__globeLab.state();
       return (
         s.mapErrors === 1 &&
-        s.mapsLoaded === 2 &&
+        s.mapsLoaded === s.mapsTotal - 1 &&
         s.pendingTiles === 0 &&
         s.centreLatLon !== null
       );
@@ -710,7 +710,7 @@ test.describe("on a DPR-2 screen", () => {
 test.describe("on a phone-width screen", () => {
   test.use({ viewport: { width: 412, height: 915 } });
   test("the status lines sit below the folded plate", async ({ page }) => {
-    await page.route("**/globe-assets/equirect/clouds-2048.jpg", (route) =>
+    await page.route("**/globe-assets/equirect/clouds-2048.webp", (route) =>
       route.fulfill({ status: 404, body: "" }),
     );
     await page.goto(FIXED_VIEW);

@@ -38,7 +38,6 @@ function withJunk(source: string, junk: [number, string][]): string {
 
 const textures = () => ({
   night: new THREE.Texture(),
-  water: new THREE.Texture(),
   clouds: new THREE.Texture(),
 });
 

@@ -39,7 +39,6 @@ function standardShader(): THREE.WebGLProgramParametersWithUniforms {
 
 const textures = () => ({
   night: new THREE.Texture(),
-  water: new THREE.Texture(),
   clouds: new THREE.Texture(),
 });
 
@@ -47,12 +46,13 @@ const count = (text: string, needle: string): number =>
   text.split(needle).length - 1;
 
 describe("createGlobeSurfaceUniforms", () => {
-  it("holds the three maps, a unit sun and the tuning defaults", () => {
+  it("holds the two maps, a unit sun and the tuning defaults", () => {
     const t = textures();
     const u = createGlobeSurfaceUniforms(t);
     expect(u.uNight.value).toBe(t.night);
-    expect(u.uWater.value).toBe(t.water);
     expect(u.uClouds.value).toBe(t.clouds);
+    // The water is the tiles' alpha now, not a map (DEC-GL4-6).
+    expect("uWater" in u).toBe(false);
     expect(u.uSunEcef.value.length()).toBeCloseTo(1, 12);
     expect(u.uNightGain.value).toBe(GLOBE_SURFACE_TUNING.nightGain);
     // The owner's night lights (round-4 plan DEC-GL4-1).
@@ -76,7 +76,6 @@ describe("patchGlobeSurfaceShader", () => {
     for (const name of [
       "uSunEcef",
       "uNight",
-      "uWater",
       "uClouds",
       "uNightGain",
       "uWaterRoughness",
@@ -112,8 +111,8 @@ describe("patchGlobeSurfaceShader", () => {
     patchGlobeSurfaceShader(shader, createGlobeSurfaceUniforms(textures()));
     const fs = shader.fragmentShader;
     expect(fs).toContain("fract( globeU + 0.5 )");
-    expect(count(fs, "textureGrad(")).toBe(3);
-    expect(fs).not.toMatch(/texture\( u(Night|Water|Clouds)/);
+    expect(count(fs, "textureGrad(")).toBe(2);
+    expect(fs).not.toMatch(/texture\( u(Night|Clouds)/);
   });
 
   it("moves only the clouds by the drift offset, with the seam fix's gradients", () => {
@@ -128,8 +127,33 @@ describe("patchGlobeSurfaceShader", () => {
       "textureGrad( uClouds, globeUv - vec2( uCloudLonOffset * 0.15915494309189535, 0.0 ), globeDx, globeDy )",
     );
     expect(count(fs, "uCloudLonOffset")).toBe(2);
-    expect(fs).toContain("textureGrad( uWater, globeUv, globeDx, globeDy )");
     expect(fs).toContain("textureGrad( uNight, globeUv, globeDx, globeDy )");
+  });
+
+  // Why (round-4 plan 2026-09-28-2105 DEC-GL4-6): the 2048 px global mask
+  // (about 20 km a pixel) put the water's low roughness, and with it the
+  // sun's glint, onto the land beside every coast: the owner's bright line.
+  // The imagery tiles now carry the mask in their alpha, at the imagery's
+  // resolution; the patch reads it from the tile's colour BEFORE anything
+  // else uses the alpha, and sets it back to opaque, so no tile turns
+  // translucent over water.
+  it("reads the water from the tile's alpha, then makes the tile opaque again", () => {
+    const shader = standardShader();
+    patchGlobeSurfaceShader(shader, createGlobeSurfaceUniforms(textures()));
+    const fs = shader.fragmentShader;
+    expect(fs).toContain("float globeWater = 1.0 - diffuseColor.a;");
+    // No global mask sampler is left (uWaterRoughness stays).
+    expect(fs).not.toMatch(/\buWater\b/);
+    const at = (s: string) => fs.indexOf(s);
+    expect(at("#include <map_fragment>")).toBeLessThan(
+      at("float globeWater = 1.0 - diffuseColor.a;"),
+    );
+    expect(at("float globeWater = 1.0 - diffuseColor.a;")).toBeLessThan(
+      at("diffuseColor.a = 1.0;"),
+    );
+    expect(at("diffuseColor.a = 1.0;")).toBeLessThan(
+      at("uWaterRoughness, globeWater"),
+    );
   });
 
   it("refuses a shader missing an anchor, or holding one twice, naming it", () => {

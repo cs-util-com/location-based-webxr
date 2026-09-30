@@ -19,8 +19,11 @@ export type GlobeSourceId =
 
 export interface GlobeSource {
   readonly id: GlobeSourceId;
-  /** A tile pyramid (`{z}/{x}/{y}` template) or one global map. */
-  readonly kind: "tiles" | "equirect";
+  /**
+   * A tile pyramid (`{z}/{x}/{y}` template), one global map, or the alpha
+   * channel of another source's files (`path` is theirs).
+   */
+  readonly kind: "tiles" | "equirect" | "alpha";
   /** Served by the design system at /globe-assets/. */
   readonly path: string;
   /** Tile levels committed (0 to levels - 1), for a pyramid. */
@@ -39,9 +42,11 @@ export const GIBS_ACKNOWLEDGEMENT =
 
 export const GLOBE_SOURCES: readonly GlobeSource[] = [
   {
+    // WebP (round-4 plan 2026-09-28-2105 DEC-GL4-3/10), its alpha the water
+    // mask (the next entry).
     id: "blue-marble",
     kind: "tiles",
-    path: "/globe-assets/blue-marble-4326/{z}/{x}/{y}.jpg",
+    path: "/globe-assets/blue-marble-4326/{z}/{x}/{y}.webp",
     levels: 5,
     projection: "EPSG:4326",
     colorSpace: "srgb",
@@ -54,7 +59,7 @@ export const GLOBE_SOURCES: readonly GlobeSource[] = [
   {
     id: "black-marble",
     kind: "equirect",
-    path: "/globe-assets/equirect/night-2016-2048.jpg",
+    path: "/globe-assets/equirect/night-2016-2048.webp",
     colorSpace: "srgb",
     credit: {
       short: "NASA Black Marble",
@@ -63,9 +68,11 @@ export const GLOBE_SOURCES: readonly GlobeSource[] = [
     },
   },
   {
+    // The imagery tiles' alpha, cut to the same tiles (DEC-GL4-6): 1 on
+    // land, 0 on water. Lossless, and exactly where the imagery's coasts are.
     id: "water-mask",
-    kind: "equirect",
-    path: "/globe-assets/equirect/water-2048.png",
+    kind: "alpha",
+    path: "/globe-assets/blue-marble-4326/{z}/{x}/{y}.webp",
     colorSpace: "linear",
     credit: {
       short: "MODIS Water Mask",
@@ -76,7 +83,7 @@ export const GLOBE_SOURCES: readonly GlobeSource[] = [
   {
     id: "clouds",
     kind: "equirect",
-    path: "/globe-assets/equirect/clouds-2048.jpg",
+    path: "/globe-assets/equirect/clouds-2048.webp",
     // A grey photo, read as cloud COVERAGE: a number, not a colour.
     colorSpace: "linear",
     credit: {

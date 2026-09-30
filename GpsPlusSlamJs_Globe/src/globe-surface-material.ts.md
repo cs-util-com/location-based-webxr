@@ -21,8 +21,8 @@ cloudOpacity: 0.8 }`, the defaults (lab parameters `#nightGain=`,
     load. RangeError for a non-finite instant or rate.
   - `GLOBE_SURFACE_CACHE_KEY` - the program key every tile shares (`-v2`
     since the drift uniform joined the program).
-  - `createGlobeSurfaceUniforms({ night, water, clouds })` returns the one
-    shared uniforms object: `uSunEcef` (unit, ECEF), `uNight`, `uWater`,
+  - `createGlobeSurfaceUniforms({ night, clouds })` returns the one
+    shared uniforms object: `uSunEcef` (unit, ECEF), `uNight`,
     `uClouds`, `uNightGain`, `uWaterRoughness`, `uCloudOpacity`,
     `uCloudLonOffset` (radians, 0 until the caller sets it).
   - `patchGlobeSurfaceShader(shader, uniforms)` - a pure string transform,
@@ -32,8 +32,11 @@ cloudOpacity: 0.8 }`, the defaults (lab parameters `#nightGain=`,
     placement; a world normal would misplace the maps once phase 5
     re-centres) and the terms, each after its chunk:
     - after `alphamap_fragment` (so after `map_fragment` and
-      `color_fragment`, over the tile imagery): latitude and longitude from
-      the normal, the three maps sampled once (the clouds
+      `color_fragment`, over the tile imagery): the water from the tile's
+      alpha (`1 - diffuseColor.a`; round-4 plan 2026-09-28-2105
+      DEC-GL4-6), then the alpha set back to 1 so no tile turns
+      translucent; latitude and longitude from the normal, the two global
+      maps sampled once (the clouds
       `uCloudLonOffset` further west, so they drift east, with the same
       gradients: the shift is continuous and the map repeats, so it adds
       no seam), and the clouds whitening `diffuseColor` by
@@ -48,9 +51,22 @@ cloudOpacity: 0.8 }`, the defaults (lab parameters `#nightGain=`,
   - `applyGlobeSurface(material, uniforms)` - sets `onBeforeCompile` (the
     patch) and `customProgramCacheKey`.
 - Invariants & assumptions:
-  - The maps are equirect, north at the top; the shader reads `.g` of the
-    water mask (water is cyan), `.r` of the clouds (coverage, read as data)
-    and `.rgb` of the night lights (sRGB, decoded by the GPU).
+  - The maps are equirect, north at the top; the shader reads `.r` of
+    the clouds (coverage, read as data) and `.rgb` of the night lights
+    (sRGB, decoded by the GPU). The water is each imagery tile's alpha (0
+    on water, 1 on land; a tile with no water has no alpha and reads as
+    land; the MODIS mask kept only where the imagery shows dark sea,
+    `water-alpha.ts`), at the imagery's own resolution (4.9 km a pixel at level 4, 2.4
+    km at level 5) and cut to the same tiles, so the glint ends where the
+    imagery's coast is. It replaced a 2048 px global map (about 20 km a
+    pixel) whose blur put the glint onto the land beside every coast (the
+    owner's bright coastal line; `labs/globe/globe-coast.smoke.spec.mjs`).
+  - That reading relies on 3d-tiles-renderer 0.5.3 handing each surface
+    tile its ONE imagery tile's texture directly (`RegionImageSource`'s
+    single-tile fast path; the surface tiles are cut on the overlay's own
+    tiling), decoded with `premultiplyAlpha: 'none'`. A path that
+    composited tiles into a 2D canvas (premultiplied) would lose the colour
+    under the water and turn the sea black.
   - **No seam at 180°:** the longitude wraps there, and its raw derivative
     would pick the coarsest mip for a 1-2 px line. Samples use
     `textureGrad` with the derivatives of whichever of two wraps (seam at

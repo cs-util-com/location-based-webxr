@@ -7,7 +7,7 @@
   `<details>`, built with `textContent` only). A loading label ("Loading
   Earth imagery: n of m") shows while tiles are pending, and the error box
   names tiles that could not load ("a coarser level shows there") and global
-  maps that could not load. The label counts the three global maps too, so
+  maps that could not load. The label counts the two global maps too, so
   it ends only when the clouds (the largest file) have arrived.
 - Round 2 (plan 2026-09-26-2055 M3 c-f; round-3 plan 2026-09-27-0532 §4 F):
   the lab owns a pinnable clock that drives the sun and the clouds' drift;

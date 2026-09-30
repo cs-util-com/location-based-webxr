@@ -188,7 +188,7 @@ export function disposeLitMaterials(
   }
 }
 
-/** How the three global maps are fetched: a texture that fills in later. */
+/** How the global maps are fetched: a texture that fills in later. */
 export interface GlobeSurfaceLoader {
   loadTexture(
     source: GlobeSource,
@@ -261,9 +261,9 @@ export function createGlobeSurface(
   const mapError = () => {
     mapErrors += 1;
   };
+  // The water mask is not among them: it is the imagery tiles' alpha.
   const maps = {
     night: globalMap(globeSource("black-marble"), loader, mapLoaded, mapError),
-    water: globalMap(globeSource("water-mask"), loader, mapLoaded, mapError),
     clouds: globalMap(globeSource("clouds"), loader, mapLoaded, mapError),
   };
   const surfaceUniforms = createGlobeSurfaceUniforms(maps);
@@ -347,10 +347,11 @@ export function createGlobeSurface(
         refusedTiles: refused,
         mapsLoaded,
         mapErrors,
-        mapsTotal: 3,
+        mapsTotal: Object.keys(maps).length,
       };
     },
-    // Every registry source is drawn: the tiles, and the three maps.
+    // Every registry source is drawn: the tiles (with the water mask in
+    // their alpha), and the two maps.
     celestialToWorld(siderealAngleRad, target = new THREE.Quaternion()) {
       group.getWorldQuaternion(target);
       return target

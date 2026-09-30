@@ -3,3 +3,6 @@ node_modules/
 
 # TypeScript cache
 *.tsbuildinfo
+
+# The fetch script's downloads (lossless sources, re-encoded from here).
+.fetch-cache/

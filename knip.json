@@ -24,10 +24,12 @@
       "entry": [
         "src/globe-surface.ts",
         "src/vendor/generated-surface-plugin.ts",
+        "scripts/fetch-globe-assets.mjs",
         "config/eslint.config.mjs"
       ],
       "project": [
-        "src/**/*.ts"
+        "src/**/*.ts",
+        "scripts/**/*.mjs"
       ],
       "ignoreDependencies": [
         "dpdm"

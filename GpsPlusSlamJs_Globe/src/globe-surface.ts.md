@@ -45,7 +45,7 @@ loadedTiles, refusedTiles, mapsLoaded, mapErrors, mapsTotal }`
       wheel against the sun once phase 5 places the tiles (stream F
       review, finding 4).
     - `loader` (`GlobeSurfaceLoader`, `loadTexture(source, onLoad,
-onError)`) fetches the three global maps: a `TextureLoader` by default,
+onError)`) fetches the two global maps (night lights, clouds; the water mask is the tiles' alpha): a `TextureLoader` by default,
       a stub in Node tests.
   - `useLitMaterial(model, template, owned)` - gives each mesh of a loaded
     tile a lit clone of `template` that keeps that mesh's own texture and
@@ -62,7 +62,7 @@ onError)`) fetches the three global maps: a `TextureLoader` by default,
   - The texture belongs to the overlay, which releases it itself; the
     renderer holds and frees the tile's original material. So only the lit
     clones are freed here, on the renderer's `dispose-model` event.
-  - The three global maps live only in `surfaceUniforms`, never on a
+  - The global maps live only in `surfaceUniforms`, never on a
     material: the tile renderer disposes every texture it finds on a tile's
     material when that tile unloads. Each is configured from the registry
     (sRGB colour or linear data) and wraps in longitude (`RepeatWrapping`),

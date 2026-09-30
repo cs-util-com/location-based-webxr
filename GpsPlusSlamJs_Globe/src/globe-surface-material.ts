@@ -31,13 +31,12 @@ export const GLOBE_SURFACE_TUNING = {
 export const GLOBE_CLOUD_DRIFT_DEG_PER_S = 0.5;
 
 /** Every tile's program is the same one: three shares it by this key. */
-export const GLOBE_SURFACE_CACHE_KEY = "gps-plus-slam-globe-surface-v2";
+export const GLOBE_SURFACE_CACHE_KEY = "gps-plus-slam-globe-surface-v3";
 
 /** The one uniforms object every tile's shader reads. */
 export interface GlobeSurfaceUniforms {
   readonly uSunEcef: { value: THREE.Vector3 };
   readonly uNight: { value: THREE.Texture };
-  readonly uWater: { value: THREE.Texture };
   readonly uClouds: { value: THREE.Texture };
   readonly uNightGain: { value: number };
   readonly uWaterRoughness: { value: number };
@@ -47,20 +46,20 @@ export interface GlobeSurfaceUniforms {
 }
 
 /**
- * The shared uniforms, over the three global maps (equirect, north at the
+ * The shared uniforms, over the two global maps (equirect, north at the
  * top). The maps live ONLY here, never on a material: the tile renderer
  * disposes every texture it finds on a tile's material when the tile
- * unloads, which would blank them for every other tile.
+ * unloads, which would blank them for every other tile. The water mask is
+ * not a map: it is each imagery tile's alpha (round-4 plan 2026-09-28-2105
+ * DEC-GL4-6).
  */
 export function createGlobeSurfaceUniforms(textures: {
   night: THREE.Texture;
-  water: THREE.Texture;
   clouds: THREE.Texture;
 }): GlobeSurfaceUniforms {
   return {
     uSunEcef: { value: new THREE.Vector3(1, 0, 0) },
     uNight: { value: textures.night },
-    uWater: { value: textures.water },
     uClouds: { value: textures.clouds },
     uNightGain: { value: GLOBE_SURFACE_TUNING.nightGain },
     uWaterRoughness: { value: GLOBE_SURFACE_TUNING.waterRoughness },
@@ -103,7 +102,6 @@ const FRAGMENT_DECLARATIONS = /* glsl */ `
 varying vec3 vGeoNormal;
 uniform vec3 uSunEcef;
 uniform sampler2D uNight;
-uniform sampler2D uWater;
 uniform sampler2D uClouds;
 uniform float uNightGain;
 uniform float uWaterRoughness;
@@ -111,8 +109,12 @@ uniform float uCloudOpacity;
 uniform float uCloudLonOffset;`;
 
 /**
- * After the overlay's colour is in diffuseColor: the latitude and longitude
- * from the geodetic normal, the three maps sampled once, and the clouds.
+ * After the overlay's colour is in diffuseColor: the water from the tile's
+ * alpha (round-4 plan 2026-09-28-2105 DEC-GL4-6: the imagery tiles carry
+ * the water mask there, 1 on land and 0 on water, so the glint follows the
+ * imagery's own coastline at the imagery's resolution; the alpha is then
+ * set back to opaque), the latitude and longitude from the geodetic normal,
+ * the two global maps sampled once, and the clouds.
  * The longitude wraps at 180°, where its derivative jumps and would pick
  * the coarsest mip for a 1-px line: the gradients come from whichever of
  * two wraps (seam at 180° or at 0°) changes less across the pixel
@@ -121,6 +123,8 @@ uniform float uCloudLonOffset;`;
  * continuous shift of a repeat-wrapped map, so the same gradients serve.
  */
 const FRAGMENT_SAMPLES = /* glsl */ `
+float globeWater = 1.0 - diffuseColor.a;
+diffuseColor.a = 1.0;
 vec3 globeN = normalize( vGeoNormal );
 float globeU = atan( globeN.y, globeN.x ) * 0.15915494309189535 + 0.5;
 float globeV = asin( clamp( globeN.z, -1.0, 1.0 ) ) * 0.3183098861837907 + 0.5;
@@ -134,7 +138,6 @@ vec2 globeDx = globeWrap ? globeDx2 : globeDx1;
 vec2 globeDy = globeWrap ? globeDy2 : globeDy1;
 vec2 globeUv = vec2( globeU, globeV );
 float globeCloud = textureGrad( uClouds, globeUv - vec2( uCloudLonOffset * 0.15915494309189535, 0.0 ), globeDx, globeDy ).r;
-float globeWater = textureGrad( uWater, globeUv, globeDx, globeDy ).g;
 vec3 globeNight = textureGrad( uNight, globeUv, globeDx, globeDy ).rgb;
 diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 1.0 ), globeCloud * uCloudOpacity );`;
 
