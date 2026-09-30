@@ -26,19 +26,23 @@ live save and the orphan save take.
 - `listRecordingFolders(dir, skip?)` - every recording folder, oldest first,
   as `RecordingFolder { name, startedAtMs, actionFiles, savedAtMs, saved }`,
   without those in `skip`; an unreadable folder is left out.
-- `countActionFiles(folder)`. (The marker is written through the pack's
-  `markSaved`; the orphan metadata builder behind `packOrphanRecording` is
-  module-private.)
+- `countActionFiles(folder)` - the action files by name (a directory
+  listing). (The marker is written through the pack's `markSaved`, with the
+  count of files that hold content; that count and the orphan metadata
+  builder behind `packOrphanRecording` are module-private.)
 - `recordingsToDelete(folders, nowMs, bounds?)` - pure: the names the cleanup
   deletes. `SAVED_RECORDING_MAX_AGE_MS` (7 days), `SAVED_RECORDINGS_KEPT` (3).
 - `tidyRecordings(dir, held, nowMs)` - the page-open housekeeping: list,
   delete what `recordingsToDelete` names (a refused delete is skipped), return
   the unsaved recordings to offer.
 - `deleteRecordingFolder(dir, name)` - recursive; rejects when OPFS refuses.
-- `packRecordingFolder(folder, startedAt, writeMetadata)` ->
+- `packRecordingFolder(folder, startedAt, writeMetadata, zip?)` ->
   `PackedRecording { blob, filename, actionCount, metadataError?, markSaved(atMs) }`.
-- `packOrphanRecording(dir, name, environment, fallbackTag)` - rebuild the
-  folder's `session.json` from its own files, write it, pack.
+  `zip` defaults to the framework's `exportSessionHandleAsZip`; the tests wrap
+  it to write while the zip is built.
+- `packOrphanRecording(dir, name, environment, fallbackTag)` - drop the
+  folder's empty action files, rebuild its `session.json` from its own files,
+  write it, pack.
 - `recordedFix(action)` - a recorded GPS action's fix, or null.
 - `holdRecordingFolder(locks, name)`, `heldRecordingFolders(locks)` - the Web
   Lock a live page holds on its folder, and the folders whose lock is held.
@@ -49,10 +53,21 @@ live save and the orphan save take.
   "Why this marker" below. A folder is saved when its marker reads and names
   at least as many action files as the folder holds; a marker that does not
   read counts as unsaved (offered again, never deleted).
-- **The count is taken BEFORE the zip.** An action written while the zip is
-  built, or after the save (a recording runs on after a save), makes the
-  folder unsaved again. Every error is "offered once too often", never
-  "deleted with an action the author did not get".
+- **The count is taken BEFORE the zip, and counts only files with content**
+  (M1b review #3). OPFS creates an action file empty at
+  `getFileHandle({ create: true })` and fills it only when the write closes,
+  so a write in flight at the save is a name with no content, and the zip
+  holds it empty; counted by name, the marker would cover it and the cleanup
+  could delete the action the zip lacks. An action created while the zip is
+  built, one still being written, or one recorded after the save (a
+  recording runs on after a save) makes the folder unsaved again. Every
+  error is "offered once too often", never "deleted with an action the author
+  did not get".
+- **The page-open listing counts NAMES** (a directory listing, no file
+  reads), the marker counts CONTENT: a name count can only be higher, which
+  is the unsaved direction. So that a saved orphan is not offered forever,
+  the orphan save first removes the empty action files a killed tab left
+  (its unclosed writes, which nothing will fill).
 - **Nothing unsaved that holds actions is ever deleted here.** Only the
   offer's "Delete it" removes one. A folder with no action file at all has
   nothing to save and is deleted by the cleanup.
@@ -177,13 +192,17 @@ if (dir !== null) {
 
 - `recording-folders.test.ts` (the framework's OPFS mock): which names are
   recordings; the marker across a killed tab, a save, and recording on after
-  it; an action landing during the zip; an unreadable marker; the listing's
+  it; an action created after the zip read the folder, and an action file
+  still empty at the count and the zip (both through a wrapped zip step;
+  both fail if the count moves after the zip, the second also when it
+  counts names); an unreadable marker; the listing's
   filter and order and the skip set; the cleanup bound's examples;
   `tidyRecordings` (deletes old saved and empty folders, keeps a held one,
   returns the unsaved, survives a refused delete); the lock round trip and its
   absence; the refused `session.json`; the orphan's rebuilt `session.json`
   (era 5, start, end from the files, coverage, tag from the log actions, an
-  earlier save's tag, the fallback, a truncated last action).
+  earlier save's tag, the fallback, a truncated last action, the empty file a
+  killed write left dropped so the saved orphan is not offered again).
 - `recording-folders.property.test.ts`: for any folders, bound and clock, the
   cleanup never deletes an unsaved folder with actions, what survives is
   within the bound, and nothing it could keep is deleted.

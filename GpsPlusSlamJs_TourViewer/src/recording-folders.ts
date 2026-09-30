@@ -8,9 +8,10 @@
  * - SAVED IS A MARKER, WRITTEN AFTER THE HAND-OFF. A folder counts as saved
  *   when its marker (`saved` in a `DraftFileStore` over the folder - the
  *   draft machinery's never-throwing key file) names at least as many
- *   action files as the folder holds. The count is taken BEFORE the zip, so
- *   an action written while the zip was built or after it (a recording
- *   keeps running after a save) makes the folder unsaved again: the error
+ *   action files as the folder holds. The count is taken BEFORE the zip and
+ *   counts only files with content, so an action written while the zip was
+ *   built, still being written, or written after it (a recording keeps
+ *   running after a save) makes the folder unsaved again: the error
  *   is always "offered once too often", never "deleted unsaved". A killed
  *   tab never wrote a marker, so its folder is unsaved.
  * - NOTHING UNSAVED IS DELETED WITHOUT THE AUTHOR. The cleanup deletes
@@ -197,18 +198,53 @@ function parseMarker(text: string | undefined): SavedMarker | null {
   }
 }
 
-/** The action files in a recording folder (0 without an `actions/`). */
-export async function countActionFiles(
+/** The names of a recording folder's action files, with their directory
+ *  (none without an `actions/`). */
+async function actionFileNames(
   folder: FileSystemDirectoryHandle,
-): Promise<number> {
-  let count = 0;
+): Promise<{ actions: FileSystemDirectoryHandle | null; names: string[] }> {
+  const names: string[] = [];
+  let actions: FileSystemDirectoryHandle | null = null;
   try {
-    const actions = await folder.getDirectoryHandle(ACTIONS_DIR);
+    actions = await folder.getDirectoryHandle(ACTIONS_DIR);
     for await (const name of actions.keys()) {
-      if (name.endsWith(".json")) count += 1;
+      if (name.endsWith(".json")) names.push(name);
     }
   } catch {
     // No actions directory: nothing was written.
+  }
+  return { actions, names };
+}
+
+/** The action files in a recording folder, by name (0 without an
+ *  `actions/`): a directory listing, no file reads - the page-open count. */
+export async function countActionFiles(
+  folder: FileSystemDirectoryHandle,
+): Promise<number> {
+  return (await actionFileNames(folder)).names.length;
+}
+
+/**
+ * The action files that hold content - the count a saved marker carries.
+ * OPFS creates a file empty at `getFileHandle({ create: true })` and fills
+ * it only when the write closes, so a write in flight is a name with no
+ * content yet, and a zip taken then holds it empty. Leaving it out of the
+ * marker makes the folder unsaved once the write lands (M1b review #3). A
+ * file that cannot be read counts as empty, the same safe direction.
+ */
+async function countWrittenActionFiles(
+  folder: FileSystemDirectoryHandle,
+): Promise<number> {
+  const { actions, names } = await actionFileNames(folder);
+  if (actions === null) return 0;
+  let count = 0;
+  for (const name of names) {
+    try {
+      const file = await (await actions.getFileHandle(name)).getFile();
+      if (file.size > 0) count += 1;
+    } catch {
+      // Unreadable: not counted (see above).
+    }
   }
   return count;
 }
@@ -384,6 +420,10 @@ export async function packRecordingFolder(
   folder: FileSystemDirectoryHandle,
   startedAt: Date,
   writeMetadata: () => Promise<void>,
+  /** The zip step; the tests wrap it to write while the zip is built. */
+  zip: (
+    folder: FileSystemDirectoryHandle,
+  ) => Promise<{ blob: Blob }> = exportSessionHandleAsZip,
 ): Promise<PackedRecording> {
   let metadataError: string | undefined;
   try {
@@ -392,11 +432,13 @@ export async function packRecordingFolder(
     metadataError = err instanceof Error ? err.message : String(err);
     await dropEmptyFile(folder, SESSION_METADATA_FILE);
   }
-  // Counted BEFORE the zip reads the folder: an action written meanwhile
-  // is in the zip but not in the count, so the marker under-counts and the
-  // folder is offered once more - never the other way round.
-  const actionCount = await countActionFiles(folder);
-  const { blob } = await exportSessionHandleAsZip(folder);
+  // Counted BEFORE the zip reads the folder, and only files with content:
+  // an action created meanwhile, or one still being written, may be in the
+  // zip (empty, for the latter) but is not in the count, so the marker
+  // under-counts and the folder is offered once more - never the other way
+  // round.
+  const actionCount = await countWrittenActionFiles(folder);
+  const { blob } = await zip(folder);
   return {
     blob,
     filename: recordingFileName(startedAt),
@@ -544,6 +586,14 @@ export async function packOrphanRecording(
     throw new Error(`${name} is not a recording folder`);
   }
   const folder = await dir.getDirectoryHandle(name);
+  // A killed tab's unclosed writes: empty, and nothing will fill them. Left
+  // in place, the page-open listing (which counts names) would find more
+  // files than the marker (which counts content) and offer the saved
+  // orphan on every open.
+  const { actions, names } = await actionFileNames(folder);
+  if (actions !== null) {
+    for (const file of names) await dropEmptyFile(actions, file);
+  }
   return packRecordingFolder(folder, new Date(startedAtMs), async () => {
     const record = await buildOrphanSessionMetadata(
       folder,

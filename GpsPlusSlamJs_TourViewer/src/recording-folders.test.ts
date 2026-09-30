@@ -15,6 +15,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  exportSessionHandleAsZip,
   loadActionsFromZip,
   loadSessionMetadataFromZip,
 } from "gps-plus-slam-app-framework/storage";
@@ -196,20 +197,63 @@ describe("the saved marker", () => {
     expect(listed?.saved).toBe(false);
   });
 
-  it("an action written while the zip was built is not covered by the marker (the count is taken first)", async () => {
-    // Why: the zip reads the folder after the count; an action landing in
-    // between must leave the folder UNSAVED - offered once more, never
-    // deleted with an action the author did not get.
+  it("an action created after the zip read the folder is not covered by the marker (the count is taken before the zip)", async () => {
+    // Why: the zip enumerates the folder once; an action file created after
+    // that is not in the zip. The count taken BEFORE the zip leaves it out
+    // of the marker too, so the folder is unsaved - offered once more,
+    // never deleted with an action the author did not get. A count taken
+    // after the zip would cover it, and this test fails.
     const dir = await recordingsDir();
     const live = await makeFolder("recording-2026-09-28_10-00-00utc", [
       gpsAction(0, 47.5, 8.7),
     ]);
-    const packed = await packRecordingFolder(live, new Date(T0), () =>
-      Promise.resolve(),
+    const packed = await packRecordingFolder(
+      live,
+      new Date(T0),
+      () => Promise.resolve(),
+      async (folder) => {
+        const zipped = await exportSessionHandleAsZip(folder);
+        // The live page writes its next action while the zip is finished.
+        await addAction(live, 2, gpsAction(1, 47.5001, 8.7));
+        return zipped;
+      },
     );
-    await addAction(live, 2, gpsAction(1, 47.5001, 8.7));
+    expect(await zipNames(packed.blob)).toEqual(["actions/000001.json"]);
     await packed.markSaved(T0 + 1000);
     const [listed] = await listRecordingFolders(dir);
+    expect(listed?.saved).toBe(false);
+  });
+
+  it("an action file still empty when counted and zipped (a write in flight) is not covered by the marker once it lands", async () => {
+    // Why (M1b review #3): OPFS creates an action file empty at
+    // `getFileHandle({ create: true })` and fills it only at `close()`. A
+    // write the store started after the flush is counted by name and zipped
+    // EMPTY; when it lands the folder must be unsaved, or the cleanup deletes
+    // an action the zip does not hold.
+    const dir = await recordingsDir();
+    const live = await makeFolder("recording-2026-09-28_10-00-00utc", [
+      gpsAction(0, 47.5, 8.7),
+    ]);
+    const actionsDir = (await live.getDirectoryHandle(
+      "actions",
+    )) as unknown as MockOPFSDirectoryHandle;
+    // Created, not yet written: what the page's in-flight write leaves.
+    await actionsDir.getFileHandle("000002.json", { create: true });
+    const packed = await packRecordingFolder(
+      live,
+      new Date(T0),
+      () => Promise.resolve(),
+      async (folder) => {
+        const zipped = await exportSessionHandleAsZip(folder);
+        // The in-flight write lands after the zip read the empty file.
+        await addAction(live, 2, gpsAction(1, 47.5001, 8.7));
+        return zipped;
+      },
+    );
+    expect(packed.actionCount).toBe(1);
+    await packed.markSaved(T0 + 1000);
+    const [listed] = await listRecordingFolders(dir);
+    expect(listed?.actionFiles).toBe(2);
     expect(listed?.saved).toBe(false);
   });
 
@@ -519,6 +563,37 @@ describe("saving an orphan - a folder whose page was killed", () => {
     );
     expect(meta).toMatchObject({ actionCount: 1 });
     expect(packed.actionCount).toBe(2);
+  });
+
+  it("drops the empty action file a killed write left, so the saved orphan is not offered again", async () => {
+    // Why: a tab killed mid-write leaves its last action file created but
+    // empty (OPFS fills it only at close). Nothing will ever fill it, and
+    // the marker counts files WITH content; left in place, the listing would
+    // count it by name and offer the saved orphan on every open.
+    const dir = await recordingsDir();
+    const orphan = await makeFolder("recording-2026-09-28_10-00-00utc", [
+      gpsAction(0, 47.5, 8.7),
+      gpsAction(1, 47.5001, 8.7),
+    ]);
+    const actionsDir = (await orphan.getDirectoryHandle(
+      "actions",
+    )) as unknown as MockOPFSDirectoryHandle;
+    await actionsDir.getFileHandle("000003.json", { create: true });
+
+    const packed = await packOrphanRecording(
+      dir,
+      "recording-2026-09-28_10-00-00utc",
+      ENV,
+      AUTHORING_CONTEXT_TAG,
+    );
+    expect(await zipNames(packed.blob)).toEqual([
+      "actions/000001.json",
+      "actions/000002.json",
+      "session.json",
+    ]);
+    await packed.markSaved(T0 + 1000);
+    const [listed] = await listRecordingFolders(dir);
+    expect(listed).toMatchObject({ actionFiles: 2, saved: true });
   });
 
   it("refuses a name that is not a recording folder", async () => {
