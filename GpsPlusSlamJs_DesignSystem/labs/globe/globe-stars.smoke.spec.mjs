@@ -17,7 +17,7 @@ import { applyHash, luminance } from "./globe-smoke-helpers.mjs";
 
 /** The sun behind the Earth at the equinox noon: space is dark around it. */
 const VIEW =
-  "at=0,-178.14&spinMs=0&turnMs=0&time=2026-03-20T12:00:00Z&cloudDrift=0&milkyWay=0";
+  "at=0,-178.14&spinMs=0&turnMs=0&time=2026-03-20T12:00:00Z&cloudDrift=0&milkyWay=0&atmo=0";
 
 async function boot(page, hash) {
   const errors = [];

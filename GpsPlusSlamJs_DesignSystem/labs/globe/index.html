@@ -331,6 +331,54 @@
               />
             </label>
             <label class="lookdev-field">
+              <span class="hint">Atmosphere (rim, halo, veil)</span>
+              <select class="select" data-hash-key="atmo">
+                <option value="1">On</option>
+                <option value="0">Off</option>
+              </select>
+            </label>
+            <label class="lookdev-field">
+              <span class="hint"
+                >Atmosphere samples per ray
+                <output data-for="atmoSteps"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                min="2"
+                max="64"
+                step="1"
+                data-hash-key="atmoSteps"
+              />
+            </label>
+            <label class="lookdev-field">
+              <span class="hint"
+                >Atmosphere strength <output data-for="atmoStrength"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                min="0"
+                max="4"
+                step="0.05"
+                data-hash-key="atmoStrength"
+              />
+            </label>
+            <label class="lookdev-field">
+              <span class="hint"
+                >Atmosphere thickness (x real)
+                <output data-for="atmoThickness"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                min="1"
+                max="10"
+                step="0.1"
+                data-hash-key="atmoThickness"
+              />
+            </label>
+            <label class="lookdev-field">
               <span class="hint"
                 >Milky Way <output data-for="milkyWay"></output
               ></span>

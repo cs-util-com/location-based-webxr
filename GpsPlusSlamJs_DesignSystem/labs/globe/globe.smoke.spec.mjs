@@ -585,6 +585,10 @@ test("every control on the plate writes the hash and applies", async ({
   );
   expect(keys.sort()).toEqual(
     [
+      "atmo",
+      "atmoSteps",
+      "atmoStrength",
+      "atmoThickness",
       "cacheMiB",
       "cloudDrift",
       "cloudOpacity",

@@ -48,6 +48,8 @@ import { GLOBE_DIVE, diveStep, planDive } from "/globe/globe-dive.js";
 import { globePinView, nextPinPhase } from "/globe/globe-pin.js";
 import { globeReadoutText, readoutThrottle } from "/globe/globe-readout.js";
 import { handOverUrl } from "/globe/globe-handover.js";
+import { createGlobeAtmosphere } from "./globe-atmosphere.js";
+import { GLOBE_ATMOSPHERE } from "./globe-atmosphere-frame.js";
 import {
   apparentSolarTimeHours,
   solarDateAt,
@@ -232,6 +234,15 @@ const PARAMS = {
   // Up to 10 (round-4 plan 2026-09-28-2105 DEC-GL4-2; 4 before).
   starGain: { fallback: GLOBE_SKY.starGain, min: 0, max: 10 },
   milkyWay: { fallback: GLOBE_SKY.milkyWay, min: 0, max: 0.1 },
+  // The atmosphere seen from space (round-4 plan 2026-09-28-2105
+  // DEC-GL4-4; `globe-atmosphere.js`): on unless 0 (on by default: the
+  // owner asked for it), the march's samples per ray, a scale on its light
+  // (1 = as computed) and how many times thicker than the real air the
+  // shell is drawn (1 = physical).
+  atmo: { fallback: 1, min: 0, max: 1 },
+  atmoSteps: { fallback: GLOBE_ATMOSPHERE.steps, min: 2, max: 64 },
+  atmoStrength: { fallback: GLOBE_ATMOSPHERE.strength, min: 0, max: 4 },
+  atmoThickness: { fallback: GLOBE_ATMOSPHERE.thickness, min: 1, max: 10 },
   fovY: { fallback: 50, min: 20, max: 80 },
   pixelRatio: { fallback: 2, min: 0.5, max: 4 },
   errorTarget: { fallback: null, min: 0.25, max: 256 },
@@ -829,6 +840,12 @@ function start() {
   let fittedSize = "";
   const globe = createGlobeSurface();
   useSurfaceDefaults(globe);
+  const { radius: radii } = globe.tiles.ellipsoid;
+  const atmosphere = createGlobeAtmosphere(renderer, [
+    radii.x,
+    radii.y,
+    radii.z,
+  ]);
   scene.add(globe.group);
   const credits = creditsFor(globe.activeSources());
   renderCredits(credits);
@@ -880,6 +897,11 @@ function start() {
       renderer.setPixelRatio(ratio);
       fittedSize = ""; // refit on the next frame
     }
+    atmosphere.setLook({
+      steps: params.atmoSteps,
+      strength: params.atmoStrength,
+      thickness: params.atmoThickness,
+    });
     sky.setStarLook({
       magLimit: params.starMag,
       gain: params.starGain,
@@ -1037,6 +1059,14 @@ function start() {
       sky.render(renderer, camera);
     }
     renderer.render(scene, camera);
+    // The air over the Earth and the sky, lit by the same sun.
+    if (params.atmo !== 0) {
+      atmosphere.render(camera, {
+        worldFromEcef: globe.tiles.group.matrixWorld,
+        sunEcef: globe.surfaceUniforms.uSunEcef.value,
+        sunIntensity: globe.sun.intensity,
+      });
+    }
   };
   renderer.setAnimationLoop(frame);
 
@@ -1175,6 +1205,11 @@ function start() {
         },
         milkyWay: sky.uniforms.uMilkyWay.value,
         siderealAngleRad,
+      },
+      atmosphere: {
+        on: params.atmo !== 0,
+        supported: atmosphere.supported,
+        ...atmosphere.look,
       },
       fovY: camera.fov,
       pixelRatio: renderer.getPixelRatio(),

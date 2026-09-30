@@ -5,6 +5,33 @@
  * second arrived, round-3 plan 2026-09-27-0532 §4 F). Not a spec: the
  * Playwright config matches `*.smoke.spec.mjs` only.
  */
+import { expect } from "@playwright/test";
+
+/**
+ * Opens the lab at `hash`, waits until it is ready without an error and
+ * has arrived at its target, and returns the list the page's console
+ * errors collect into.
+ */
+export async function bootGlobe(page, hash) {
+  const errors = [];
+  page.on("console", (m) => {
+    if (m.type() === "error") errors.push(m.text());
+  });
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto(`/labs/globe/#${hash}`);
+  await page.waitForFunction(
+    () => window.__globeLab?.ready || window.__globeLab?.error,
+    null,
+    { timeout: 90_000 },
+  );
+  expect(await page.evaluate(() => window.__globeLab.error)).toBeNull();
+  await page.waitForFunction(
+    () => window.__globeLab.state().phase === "arrived",
+    null,
+    { timeout: 90_000 },
+  );
+  return errors;
+}
 
 /**
  * Waits until the page has arrived at `target` and its tiles have settled.
@@ -75,6 +102,9 @@ const PRE_ROUND4_LOOK = {
   starMag: "6.5",
   starGain: "1",
   milkyWay: "0.02",
+  // No atmosphere pass (round 4 DEC-GL4-4 turned it on by default): the
+  // floors were measured on the bare surface and sky.
+  atmo: "0",
 };
 
 /**

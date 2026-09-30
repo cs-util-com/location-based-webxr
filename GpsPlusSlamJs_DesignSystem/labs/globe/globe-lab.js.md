@@ -99,6 +99,21 @@
   then the Earth
   over it. The sky has its own camera sharing only the view's rotation and
   field of view, and no depth, so the Earth covers it by draw order.
+  Last, unless `#atmo=0`, the atmosphere pass over both.
+- The atmosphere seen from space (round-4 plan 2026-09-28-2105 DEC-GL4-4,
+  DEC-GL4-11; `globe-atmosphere.js`, its numbers in
+  `globe-atmosphere-frame.js`): the lit limb's bright band, the blue halo
+  outside it and the blue veil over the day side, from one march through
+  the framework's physical atmosphere tables, lit by the Earth's own sun.
+  ON by default (the owner asked for it). Hash keys: `atmo` (1 on, 0 off),
+  `atmoSteps` (samples per ray, 2-64, default 12), `atmoStrength` (a
+  scale on its light, 0-4, 1 = as computed), `atmoThickness` (the shell
+  drawn 1-10 times thicker than the real air at the same optical depth,
+  default 6: as wide as the owner's reference, 1 = physical).
+  `state().atmosphere` is `{ on, supported, steps, strength, thickness }`
+  (`supported` false where float render targets are missing: no pass).
+  Every smoke that measures pixels on the look before round 4 pins
+  `atmo=0` (`withPreRound4Look`, and the coast and stars specs).
 - The cost probe (round-4 plan DEC-GL4-2/4): `__globeLab.timeFrames(n)`
   draws n frames back to back, reads one pixel so the GPU has finished,
   and returns the wall time in ms. Under SwiftShader it is relative only:
@@ -370,5 +385,13 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   page); at 23:00 UTC in Cologne the link carries no `date` or `time`,
   and a `pageshow` with `persisted` makes the handing-over pin idle, after
   which a press flies again.
+- `globe-atmosphere.smoke.spec.mjs` (round-4 DEC-GL4-4/11): against the
+  pass off, the lit limb brighter inside and just outside, the night limb
+  unchanged, the day side bluer, far space untouched (floors at x0.5-x2);
+  the rim's profile from 600 km inside to 1000 km outside the lit edge at
+  thickness 1, the default and 10 (the halo falls off, its brightest
+  point stays blue); the banding per sample count against 64 (no ring at
+  the default); the cost per sample count on the desktop and phone tiers
+  (pixel ratio 1, 1.5, 2), as on/off ratios.
 - The memory and download table: `pnpm run measure:globe`
   (`measure-globe.mjs`), not a test.
