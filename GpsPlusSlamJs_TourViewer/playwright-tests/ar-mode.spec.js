@@ -582,9 +582,13 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   expect(level.qr.physicalSizeM).toBeCloseTo(0.16, 9);
   expect(level.qr.geo?.lat).toEqual(expect.any(Number));
   expect(level.qr.geo?.rotation).toHaveLength(4);
-  // The quality block records what the alignment looked like at MINT time
-  // (milestone review #7) — M5's error attribution reads these.
-  expect(level.qr.mintQuality?.alignmentSampleCount).toBe(3);
+  // The quality block records the alignment the stored geo CAME FROM
+  // (milestone review #7) — M5's error attribution reads these. Since the
+  // authoring settle (M2c) that is the Finish-time re-mint, not the tap:
+  // the 3 fixes solved in at "Save the position" plus the 3 seeded before
+  // the placement, i.e. 6 (visit-settle.ts.md, "Why the block describes
+  // the SETTLE").
+  expect(level.qr.mintQuality?.alignmentSampleCount).toBe(6);
   expect(level.qr.mintQuality?.gpsAccuracyM).toBe(5);
   // The pin the hosted zip already carried SURVIVES the rebuild - the
   // whole reason the manifest is loaded at open (M3 review #5/#7).

@@ -225,6 +225,49 @@ describe("settling the visit that measured the code (B2)", () => {
     ).toBeLessThan(1e-6);
   });
 
+  it("gives the re-minted code the quality block of the alignment its geo now comes from, not the tap's", () => {
+    // Why this matters: `mintQuality` is how the field validation (QR-pose
+    // plan M5) attributes a code's position error - "this geo came from an
+    // alignment of N fixes at accuracy A". After the settle the stored geo
+    // comes from the visit's END alignment, so a block still describing the
+    // tap-time alignment would blame the error on numbers that did not
+    // produce it. The e2e sees this as 3 fixes at the tap, 6 at Finish.
+    const tapLevel = levelThrough(yawAlignment(0, [0, 400, 0]));
+    const later = "2026-09-30T10:05:00.000Z";
+    const settleInfo = { hasMatrix: true, sampleCount: 9, gpsAccuracyM: 3 };
+    const input = {
+      visit: 0,
+      placed: [],
+      alignment: yawAlignment(4, [1.5, 400.2, -1]),
+      zero: ZERO,
+      mintedLevel: tapLevel,
+      measurement: measuredInVisit(0),
+      sighting: null,
+      alignmentInfo: settleInfo,
+      nowIso: later,
+    };
+    const quality = (json: string) =>
+      parseQrLevel(JSON.parse(json) as unknown).qr.mintQuality;
+    expect(quality(tapLevel.json)).toEqual({
+      mintedAtIso: NOW,
+      alignmentSampleCount: INFO.sampleCount,
+      gpsAccuracyM: INFO.gpsAccuracyM,
+    });
+    const plan = planVisitSettle(input);
+    expect(quality(plan!.level!.json)).toEqual({
+      mintedAtIso: later,
+      alignmentSampleCount: 9,
+      gpsAccuracyM: 3,
+    });
+    // A re-mint the gate refuses changes neither half: the old geo keeps
+    // the block that describes it (the caller keeps `mintedLevel`).
+    const refused = planVisitSettle({
+      ...input,
+      alignmentInfo: { ...settleInfo, sampleCount: 2 },
+    });
+    expect(refused?.level).toBeNull();
+  });
+
   it("leaves objects of other visits and restored ones exactly as they were", () => {
     const end = yawAlignment(12, [5, 400, 5]);
     const earlier = placedPin(

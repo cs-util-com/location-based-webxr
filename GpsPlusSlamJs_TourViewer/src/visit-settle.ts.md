@@ -59,6 +59,24 @@ draft and logs `tourAuthoring/settled`.
   alignment at the visit's end (`alignmentInfo`) and the settle's time as
   `mintedAtIso`. A refused re-mint (fewer than `MIN_ALIGNMENT_SAMPLES` fixes)
   keeps the old level.
+  - **Why the block describes the SETTLE, not the tap.** `mintQuality` is
+    the record the field validation (QR-pose plan M5) attributes a code's
+    position error with: "this geo came from an alignment of N fixes at a
+    median accuracy of A m, at time T". After the settle the stored `geo`
+    comes from the visit's end alignment, so the block must describe that
+    alignment; keeping the tap-time block would pair the settled geo with
+    numbers that did not produce it. No field is added or renamed: the
+    block keeps meaning "the mint that produced this geo", and the settle
+    is such a mint (`mintQrLevelFromWorld`).
+  - The tap-time values are not lost for troubleshooting: the recording's
+    `tourAuthoring/codeMeasured` logs the tap's alignment info and level,
+    and `tourAuthoring/settled` the visit alignment and the one used.
+  - Geo and block always travel together: a corrected visit does not
+    re-mint (the stored geo keeps its block), and a refused re-mint keeps
+    both old halves.
+  - Visible in the e2e "the creator measures the code, finishes, and
+    downloads a rebuilt zip": 3 fixes at the tap, 3 more seeded before
+    Finish, so the zip's level says 6.
 - **No threshold is introduced.** "Seen" for the correction is the fused
   pose source's own `stable` status (the gate the mint already uses; see
   `creator-setup.ts.md`). A code re-measured in a later visit becomes that
@@ -86,7 +104,8 @@ const plan = planVisitSettle({
 
 - `visit-settle.test.ts` - B2 (code and pin through different tap-time
   alignments disagree; settled they agree), a pin's record and facing, a
-  photo's rotation, other visits and restored objects untouched, nothing to
+  photo's rotation, the re-minted code's quality block (the settle
+  alignment's; a refused re-mint changes neither geo nor block), other visits and restored objects untouched, nothing to
   do, refusals without alignment or zero; the cross-visit correction to the
   measuring visit's alignment, the plain alignment without a sighting or
   with a different code's, a restored level counting as stored earlier, and
