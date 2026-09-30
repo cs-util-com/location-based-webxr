@@ -10,12 +10,12 @@ A headless-Chromium 3D suite renders WebGL on the CPU (SwiftShader) and can take
 
 ## Public API
 
-- `BROWSER_PRIORITY_ENV`: the name of the opt-out env var, `GATE_BROWSER_PRIORITY`.
-  - Set to exactly `normal`, it keeps browser stages at normal priority, for example as the control arm of a measurement.
-  - Any other value keeps the default, so a typo cannot silently switch the lowering off.
+- `BROWSER_PRIORITY_ENV`: the name of the opt-in env var, `GATE_BROWSER_PRIORITY`.
+  - Set to exactly `below`, it lowers browser stages (and, through the marker, turns on `--in-process-gpu`). Off by default since 2026-09-30: lowered, the design system's timing-sensitive 3D specs (the globe dive, the god-rays cost) went red in 2 of 3 runs and ran about 15 % slower, against 2 of 2 green at normal priority.
+  - Any other value is off, so a typo cannot silently slow the 3D suites.
 - `LOWERED_MARKER_ENV`: `GATE_BROWSER_STAGE_LOWERED`. run-stage sets it to `1` in a stage's environment only when the stage really runs at or below the lowered priority, and clears it otherwise. The Playwright configs key `--in-process-gpu` on it (`scripts/e2e/browser-launch.mjs`).
 - `stageSpawnPriority(stage, { platform, env })` returns a `number | null`:
-  - `os.constants.priority.PRIORITY_BELOW_NORMAL` for a browser stage (`isBrowserStage` from `projects.mjs`, matched on the command) when `platform === 'win32'` and there is no opt-out;
+  - `os.constants.priority.PRIORITY_BELOW_NORMAL` for a browser stage (`isBrowserStage` from `projects.mjs`, matched on the command) when `platform === 'win32'` and `GATE_BROWSER_PRIORITY=below`;
   - otherwise `null`, meaning inherit.
 - `spawnAtPriority(spawn, priority, os)` returns whatever `spawn` returns. `spawn` is called with `{ lowered }`:
   - **`priority === null`:** `spawn({ lowered: false })`, and the priority is left untouched.
@@ -51,8 +51,8 @@ const child = spawnAtPriority(
 ```
 
 ```bash
-# control arm: browser stages at normal priority, no in-process GPU
-GATE_BROWSER_PRIORITY=normal pnpm run test:e2e
+# opt in: browser stages below normal, with the in-process GPU
+GATE_BROWSER_PRIORITY=below pnpm run test:e2e
 ```
 
 ## Tests
@@ -60,7 +60,7 @@ GATE_BROWSER_PRIORITY=normal pnpm run test:e2e
 - `stage-priority.test.mjs` (root repo-config suite, 12 tests including a fast-check property):
   - which stages are lowered;
   - the win32-only rule;
-  - the opt-out, and the typo case;
+  - the opt-in, off by default, and the typo case;
   - that the parent is lowered during the spawn and restored afterwards, including when the spawn throws;
   - that a parent already running lower is never raised, and its child still counts as lowered;
   - that a refused lowering still spawns and does not claim to be lowered;

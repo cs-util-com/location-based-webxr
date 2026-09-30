@@ -4,7 +4,7 @@ import { constants } from 'node:os';
 
 import { isBrowserStage } from './projects.mjs';
 
-/** `GATE_BROWSER_PRIORITY=normal` keeps browser stages at normal priority. */
+/** `GATE_BROWSER_PRIORITY=below` opts browser stages into below-normal priority (off by default). */
 export const BROWSER_PRIORITY_ENV = 'GATE_BROWSER_PRIORITY';
 
 /**
@@ -32,7 +32,7 @@ export const LOWERED_MARKER_ENV = 'GATE_BROWSER_STAGE_LOWERED';
 export function stageSpawnPriority(stage, { platform, env }) {
   if (platform !== 'win32') return null;
   if (!isBrowserStage(stage)) return null;
-  if (env[BROWSER_PRIORITY_ENV] === 'normal') return null;
+  if (env[BROWSER_PRIORITY_ENV] !== 'below') return null;
   return constants.priority.PRIORITY_BELOW_NORMAL;
 }
 

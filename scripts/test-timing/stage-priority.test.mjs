@@ -29,35 +29,41 @@ const unit = { command: 'vitest run --config vitest.config.js' };
 const format = { command: 'prettier --write "src" "playwright-tests"' };
 
 describe('stageSpawnPriority', () => {
-  it('lowers a browser stage on Windows', () => {
-    expect(stageSpawnPriority(browser, { platform: 'win32', env: {} })).toBe(BELOW);
+  it(`lowers a browser stage on Windows only when ${BROWSER_PRIORITY_ENV}=below`, () => {
+    // Opt-in since 2026-09-30: lowered, the design system's timing-sensitive
+    // 3D specs (the globe dive, the god-rays cost) went red in 2 of 3 runs
+    // and ran about 15 % slower; at normal priority 2 of 2 were green.
+    expect(
+      stageSpawnPriority(browser, { platform: 'win32', env: { [BROWSER_PRIORITY_ENV]: 'below' } })
+    ).toBe(BELOW);
+  });
+
+  it('leaves a browser stage at normal priority by default', () => {
+    expect(stageSpawnPriority(browser, { platform: 'win32', env: {} })).toBeNull();
   });
 
   it('leaves non-browser stages alone, including a command that only names playwright-tests', () => {
-    expect(stageSpawnPriority(unit, { platform: 'win32', env: {} })).toBeNull();
-    expect(stageSpawnPriority(format, { platform: 'win32', env: {} })).toBeNull();
+    const on = { [BROWSER_PRIORITY_ENV]: 'below' };
+    expect(stageSpawnPriority(unit, { platform: 'win32', env: on })).toBeNull();
+    expect(stageSpawnPriority(format, { platform: 'win32', env: on })).toBeNull();
   });
 
   it('is a no-op off Windows', () => {
     // Linux CI runs one job per machine; nothing competes there, and a
     // lowered nice value would only slow the e2e job itself.
     for (const platform of ['linux', 'darwin']) {
-      expect(stageSpawnPriority(browser, { platform, env: {} })).toBeNull();
+      expect(
+        stageSpawnPriority(browser, { platform, env: { [BROWSER_PRIORITY_ENV]: 'below' } })
+      ).toBeNull();
     }
   });
 
-  it(`can be switched off with ${BROWSER_PRIORITY_ENV}=normal`, () => {
-    // The control arm of a measurement needs the old behaviour back without
-    // editing code.
-    expect(
-      stageSpawnPriority(browser, { platform: 'win32', env: { [BROWSER_PRIORITY_ENV]: 'normal' } })
-    ).toBeNull();
-  });
-
-  it('keeps the default for any other value, so a typo cannot silently restore normal', () => {
-    expect(
-      stageSpawnPriority(browser, { platform: 'win32', env: { [BROWSER_PRIORITY_ENV]: 'Normal ' } })
-    ).toBe(BELOW);
+  it('treats any other value as off, so a typo cannot silently slow the 3D suites', () => {
+    for (const value of ['normal', 'Below ', 'yes', '1']) {
+      expect(
+        stageSpawnPriority(browser, { platform: 'win32', env: { [BROWSER_PRIORITY_ENV]: value } })
+      ).toBeNull();
+    }
   });
 });
 

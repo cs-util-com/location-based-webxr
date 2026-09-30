@@ -34,8 +34,8 @@
     does the stage's env get `GATE_BROWSER_STAGE_LOWERED=1` (otherwise the
     variable is cleared); the Playwright configs key `--in-process-gpu` on
     it (`scripts/e2e/browser-launch.mjs`), which moves Chromium's GPU work
-    out of a process that raises itself. Opt out with
-    `GATE_BROWSER_PRIORITY=normal`. See `stage-priority.mjs.md`.
+    out of a process that raises itself. Opt in with
+    `GATE_BROWSER_PRIORITY=below` (off by default). See `stage-priority.mjs.md`.
 - Examples: `await runStage(project, 'test:unit', ['src/foo.test.ts'])` runs
   a filtered, unrecorded unit run scoped to one file.
 - Tests: the pure modules it composes (`timing-store`, `delta`,

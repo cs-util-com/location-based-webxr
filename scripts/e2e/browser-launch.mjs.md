@@ -30,7 +30,7 @@ Headless Chromium renders WebGL on the CPU. By default it does that in a separat
 
 - **Keyed on run-stage's marker (`LOWERED_MARKER_ENV` in `stage-priority.mjs`), never on the platform alone.** run-stage sets the marker only when the stage really runs at or below BELOW_NORMAL. So nothing changes in any of these cases:
   - on Linux CI;
-  - with `GATE_BROWSER_PRIORITY=normal`;
+  - without `GATE_BROWSER_PRIORITY=below` (the default);
   - when the OS refuses the lowering;
   - when a spec is run with `playwright test` directly.
 - **Every Playwright config uses it.** `browser-launch.test.mjs` enumerates the tracked configs and fails for any that does not pass `browserLaunchArgs(process.env)`. Every app here renders WebGL; the landing page has a globe.
