@@ -47,6 +47,7 @@ import {
 } from "./tour-viewer-session.js";
 import { mintPin, objectPoseNue } from "./content-placement.js";
 import { META_KEY, objectKey } from "./draft-persistence.js";
+import { WEBXR_TO_NUE } from "gps-plus-slam-app-framework/ar/webxr-nue-basis";
 import {
   correctedAlignment,
   odomNueFromWebXr,
@@ -700,7 +701,18 @@ describe(
         new Vector3(1, 1, 1),
       );
       a.beginVisit();
-      a.setAlignment(SECOND);
+      // The second visit's GPS alignment, as the solver would find it for
+      // the moved origin: SECOND's GPS error, in the new odometry frame.
+      const originNue = new Matrix4()
+        .copy(WEBXR_TO_NUE)
+        .multiply(origin)
+        .multiply(new Matrix4().copy(WEBXR_TO_NUE).invert());
+      a.setAlignment(
+        new Matrix4()
+          .fromArray(SECOND)
+          .multiply(originNue.clone().invert())
+          .toArray(),
+      );
       a.seeTheCode(origin);
       await flush();
       // The physical spot at odometry-NUE [3, 0, 1] of the first session.
@@ -721,6 +733,32 @@ describe(
       expect(
         offset.distanceTo(new Vector3(3, 0, 1).sub(codeLocal)),
       ).toBeLessThan(1e-2);
+    });
+
+    it("refuses a correction 60 m away - a second print, not GPS - says so in the panel, and logs it", async () => {
+      // Why this test matters (M2c review #2): a level's id is a hash of the
+      // printed text, so a second print hung 60 m away IS "the code" to the
+      // setup. Corrected through it, every note of the visit would move
+      // 60 m. Refused, the visit keeps its own GPS alignment, the author
+      // is told in one line, and the recording says why.
+      const a = await firstVisit();
+      a.beginVisit();
+      a.setAlignment(yawAlignment(0, [60, 400, 0]));
+      a.seeTheCode();
+      await flush();
+      a.setup.renderAuthorReadout();
+      expect(a.dom.status.textContent).toMatch(
+        /Code seen 60 m from its saved position/,
+      );
+      await a.placePin("Later", [3, 0, 1]);
+      a.endVisit();
+      const last = a.settledLogs().at(-1)!.payload as {
+        basis: string;
+        refusedCorrection: { horizontalM: number; maxHorizontalM: number };
+      };
+      expect(last.basis).toBe("visit-alignment");
+      expect(last.refusedCorrection.horizontalM).toBeCloseTo(60, 1);
+      expect(last.refusedCorrection.maxHorizontalM).toBeLessThan(60);
     });
 
     it("without a sighting of the code, keeps the plain visit alignment (and its GPS difference)", async () => {

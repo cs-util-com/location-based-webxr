@@ -45,6 +45,11 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   hand has not been seen stable in this visit; empty otherwise. It blocks
   nothing: a later visit's notes are corrected through the code only when
   the code was seen (D10b), and the owner chose a hint over a rule.
+- `correctionRefusedLine({ horizontalM, yawDeg, maxHorizontalM })` - the one
+  line that says a code correction was refused (M2c review #2): "Code seen
+  N m from its saved position" (or "turned N°" when only the yaw broke the
+  bound) "- a second print or a moved poster? Not used; this visit follows
+  GPS".
 - `setupHint({ measured, tourOpen, hadLevel, keptStored? })` - what the
   panel says once measured: "Position saved." when no tour is open
   (`codeTourLine` then says what is happening to the code's tour;

@@ -26,7 +26,9 @@ import {
   measurementRole,
   planVisitSettle,
   settleAlignment,
+  type CodeMeasurement,
   type CodeSighting,
+  type CorrectionRefusal,
   type SettleBasis,
 } from "./visit-settle.js";
 import { tallyEvaluation, type FusedTallies } from "./qr-debug-readout.js";
@@ -105,6 +107,7 @@ import {
   MISSING_SIZE_MESSAGE,
   adoptedSizeNote,
   codeTourLine,
+  correctionRefusedLine,
   driveReplaceSteps,
   entryHint,
   finishRoute,
@@ -148,6 +151,8 @@ interface VisitSettleRecord {
     readonly id: string;
     readonly json: string;
   } | null;
+  /** A code correction the plausibility bound refused; null otherwise. */
+  readonly refused: CorrectionRefusal | null;
 }
 
 /**
@@ -619,6 +624,7 @@ export function wireCreatorSetup(deps: {
     // unlocked (scan-to-open plan §5 #13).
     const lead =
       entryLead() +
+      refusalLead() +
       (ctx.placementNote === null ? "" : `${ctx.placementNote} · `);
     // evaluate, not last: a cache hit unless the detections changed - and
     // after a tracking restart the old frame's result must not stand
@@ -1201,9 +1207,26 @@ export function wireCreatorSetup(deps: {
    * (`visit-anchoring.ts`). Null outside a visit.
    */
   let earlierFrame: Group | null = null;
+  /** The code correction this visit's latest sighting would make, when
+   *  the plausibility bound refused it (M2c review #2): the panel says so
+   *  until the visit ends or a sighting is accepted. */
+  let liveRefusal: CorrectionRefusal | null = null;
   /** Where `earlierFrame` is attached. Tracked, not read from `parent`:
    *  the e2e fakes' scene nodes do not set it. */
   let earlierFrameUnderGroup = false;
+
+  /** A refused correction's line, as the live line's lead. */
+  function refusalLead(): string {
+    return liveRefusal === null
+      ? ""
+      : `${correctionRefusedLine(liveRefusal)} · `;
+  }
+
+  function refusalOf(
+    choice: ReturnType<typeof settleAlignment>,
+  ): CorrectionRefusal | null {
+    return choice === null ? null : choice.refused;
+  }
 
   /** Move the earlier visits' frame to where this visit's knowledge of the
    *  code puts it (see `earlierFrame`). Cheap: one matrix. */
@@ -1222,7 +1245,9 @@ export function wireCreatorSetup(deps: {
       mintedLevel: ctx.mintedLevel,
       measurement: ctx.codeMeasurement,
       sighting: ctx.visitCodeSighting,
+      gpsAccuracyM: authorAlignmentInfo().gpsAccuracyM,
     });
+    liveRefusal = refusalOf(choice);
     if (choice?.basis === "code-corrected" && group !== null) {
       frame.matrix.fromArray(choice.alignment).invert();
       frame.matrixWorldNeedsUpdate = true;
@@ -1334,6 +1359,7 @@ export function wireCreatorSetup(deps: {
       measurement: ctx.codeMeasurement,
       sighting: ctx.visitCodeSighting,
       alignmentInfo: authorAlignmentInfo(),
+      gpsAccuracyM: authorAlignmentInfo().gpsAccuracyM,
       nowIso: new Date().toISOString(),
     };
     const choice = settleAlignment(input);
@@ -1346,6 +1372,7 @@ export function wireCreatorSetup(deps: {
       sighting:
         choice.basis === "code-corrected" ? ctx.visitCodeSighting : null,
       referenceLevel: ctx.mintedLevel,
+      refused: choice.refused,
     };
     visitSettles.set(visit, record);
     const plan = planVisitSettle(input);
@@ -1403,8 +1430,49 @@ export function wireCreatorSetup(deps: {
         level,
         referenceLevel: record.referenceLevel,
         zero: record.zero,
+        refusedCorrection: record.refused,
       }),
     );
+  }
+
+  /**
+   * The hosted zip's level file for `levelId`, when nothing of this code
+   * is in hand (then the hand's level is the candidate); null too when
+   * another tour was opened since the tap - that is not the tour the code
+   * was read from.
+   */
+  async function hostedCandidate(
+    levelId: string,
+    inHand: { id: string } | null,
+    openAtTap: number,
+  ): Promise<string | null> {
+    if (inHand?.id === levelId) return null;
+    const json = await hostedLevelJson(levelId);
+    return ctx.openGeneration === openAtTap ? json : null;
+  }
+
+  /**
+   * Install what a measurement became (`measurementRole`, D10b): the new
+   * level with its raw inputs, or the stored reference kept - the
+   * measurement is then only this visit's sighting, and the panel says so.
+   */
+  function adoptMeasurement(
+    role: ReturnType<typeof measurementRole>,
+    priorMeasurement: CodeMeasurement | null,
+    fresh: {
+      level: { id: string; json: string };
+      measurement: CodeMeasurement;
+    },
+  ): void {
+    if (role.kept === "measurement") {
+      ctx.mintedLevel = fresh.level;
+      ctx.codeMeasurement = fresh.measurement;
+      return;
+    }
+    ctx.mintedLevel = role.reference;
+    ctx.codeMeasurement =
+      priorMeasurement?.levelId === fresh.level.id ? priorMeasurement : null;
+    ctx.placementNote = STORED_POSITION_KEPT;
   }
 
   dom.mintButton.addEventListener("click", () => {
@@ -1472,34 +1540,27 @@ export function wireCreatorSetup(deps: {
         return;
       }
       if (mintGeneration !== ctx.mintGeneration) return;
-      const hostedJson =
-        prior.level?.id === id ? null : await hostedLevelJson(id);
+      const hostedJson = await hostedCandidate(id, prior.level, openAtTap);
       if (mintGeneration !== ctx.mintGeneration) return;
       const role = measurementRole({
         levelId: id,
         visit: measured.arVisitIndex,
         inHand: prior.level,
         inHandMeasurement: prior.measurement,
-        // A tour opened meanwhile is not the tour this code was read from.
-        hostedJson: ctx.openGeneration === openAtTap ? hostedJson : null,
+        hostedJson,
       });
-      if (role.kept === "measurement") {
-        ctx.mintedLevel = { id, json: result.json };
+      adoptMeasurement(role, prior.measurement, {
+        level: { id, json: result.json },
         // What the settle re-mints the code from at the visit's end, and
         // a sighting of it in this visit (plan §3.2, M2c).
-        ctx.codeMeasurement = {
+        measurement: {
           levelId: id,
           text: mintedText,
           odomPose: stablePose,
           sizeM: measured.sizeM,
           visit: measured.arVisitIndex,
-        };
-      } else {
-        ctx.mintedLevel = role.reference;
-        ctx.codeMeasurement =
-          prior.measurement?.levelId === id ? prior.measurement : null;
-        ctx.placementNote = STORED_POSITION_KEPT;
-      }
+        },
+      });
       codeIds.set(mintedText, id);
       if (measured.arVisitIndex === ctx.arSessionGeneration) {
         ctx.visitCodeSighting = {
@@ -1816,6 +1877,7 @@ export function wireCreatorSetup(deps: {
       if (!creator) return;
       settleVisit("visit-end");
       ctx.visitCodeSighting = null;
+      liveRefusal = null;
       previewsAwaitingZero.clear();
       // The previews inside are disposed with `placedPreviews`; the frame
       // itself is this module's.

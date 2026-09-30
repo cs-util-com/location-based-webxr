@@ -41,7 +41,10 @@ reads them (the framework's `diagnostics/note` precedent). Plan:
   re-mint - the stored pose a code correction maps onto) and `zero` (M2c
   review #7): with `visitAlignment` and `sighting` a replay recomputes a
   code-corrected `usedAlignment` through `correctedAlignment` (pinned by the
-  cross-visit test in `authoring-settle.test.ts`). The tap-time geo of `objectPlaced`/`codeMeasured` is what a killed
+  cross-visit test in `authoring-settle.test.ts`), and `refusedCorrection`
+  (a code correction the plausibility bound refused - its horizontal size,
+  yaw and the bounds - after which the visit settled through its plain
+  alignment; null otherwise; M2c review #2). The tap-time geo of `objectPlaced`/`codeMeasured` is what a killed
   tab keeps; this is what the zip carries, so a replay needs it.
 - `authoringFinished(payload)` - `tourAuthoring/finished`: `levelId`,
   `manifest` (what the rebuilt zip carries), `atMs`.

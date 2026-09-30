@@ -27,6 +27,7 @@ import {
   sizeOfferView,
   adoptedSizeNote,
   codeTourLine,
+  correctionRefusedLine,
   type AuthorPipelineDeps,
 } from "./qr-author-mode";
 
@@ -739,5 +740,26 @@ describe("the finish on a Drive-hosted tour (Drive replace plan §2, §5)", () =
     expect(finishHandoffStatus(outcome, "My tour.zip")).toBe(
       FINISH_LABELS.saved("My tour.zip"),
     );
+  });
+});
+
+describe("correctionRefusedLine (M2c review #2)", () => {
+  it("names the distance, or the turn when only the yaw broke the bound, and says the visit follows GPS", () => {
+    // Why this matters: a refused correction changes where this visit's
+    // notes go; the author must see why in one line, in plain words.
+    const far = correctionRefusedLine({
+      horizontalM: 61.4,
+      yawDeg: 3,
+      maxHorizontalM: 26,
+    });
+    expect(far).toMatch(/^Code seen 61 m from its saved position/);
+    expect(far).toMatch(/this visit follows GPS/);
+    expect(
+      correctionRefusedLine({
+        horizontalM: 2,
+        yawDeg: 150.2,
+        maxHorizontalM: 26,
+      }),
+    ).toMatch(/^Code seen turned 150° from its saved position/);
   });
 });

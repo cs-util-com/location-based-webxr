@@ -32,7 +32,7 @@ import type {
   TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
-import type { SettleBasis } from "./visit-settle.js";
+import type { CorrectionRefusal, SettleBasis } from "./visit-settle.js";
 
 /** The store's alignment matrix (the library's tuple), or null. */
 export type AlignmentMatrix = ReturnType<typeof selectAlignmentMatrix>;
@@ -139,6 +139,10 @@ interface VisitSettledLog {
   } | null;
   /** The zero the geo was minted against. */
   readonly zero: LatLong;
+  /** A code correction this visit had that the plausibility bound refused
+   *  (its size and the bounds; M2c review #2) - the visit then settled
+   *  through its plain alignment. Null otherwise. */
+  readonly refusedCorrection: CorrectionRefusal | null;
 }
 
 interface FinishedLog {

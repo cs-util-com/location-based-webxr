@@ -31,8 +31,11 @@ draft and logs `tourAuthoring/settled`.
     that code (`sighting.levelId === mintedLevel.id`): the visit's alignment
     corrected through the code (`correctedAlignment`, `visit-anchoring.ts`);
   - `visit-alignment` - everything else, including a stored level whose geo
-    does not read, a sighting of a DIFFERENT code, or a correction that
-    cannot be computed.
+    does not read, a sighting of a DIFFERENT code, a correction that cannot
+    be computed, or one the plausibility bound refuses (`refused` then
+    says how far and how turned, and the bounds).
+  - the input's optional `gpsAccuracyM` is this visit's median GPS
+    accuracy, for the bound.
   - null - the alignment is not 16 finite numbers, or there is no zero.
 - `measurementRole(input)` - what a NEW measurement of a code is (D10b, M2c
   review #5), from the level id, the visit it was taken in, the level in
@@ -99,8 +102,60 @@ draft and logs `tourAuthoring/settled`.
   - Visible in the e2e "the creator measures the code, finishes, and
     downloads a rebuilt zip": 3 fixes at the tap, 3 more seeded before
     Finish, so the zip's level says 6.
-- **No threshold is introduced.** "Seen" for the correction is the fused
-  pose source's own `stable` status (the gate the mint already uses; see
+- **The code correction is bounded** (M2c review #2; constants
+  `CORRECTION_FLOOR_M` = 5, `CORRECTION_ACCURACY_FACTOR` = 3,
+  `CORRECTION_DEFAULT_ACCURACY_M` = 5, `CORRECTION_MAX_YAW_DEG` = 120;
+  `correctionBoundM`, `CorrectionRefusal`). A level's id is a hash of the
+  printed text, so a second print of the poster, or one re-hung elsewhere,
+  is "the same code", and its correction would move every note of the
+  visit. A correction whose HORIZONTAL move of the code exceeds
+  `5 m + 3 x hypot(this visit's median GPS accuracy, the stored level's
+mint accuracy)` (unknown or unusable accuracies count as 5 m), or whose
+  yaw exceeds 120 degrees, is refused: `settleAlignment` returns the plain
+  visit alignment with `refused` set, the plan carries it, the setup
+  shows one line and logs it in `tourAuthoring/settled`.
+  - **What the correction's size is when nothing is wrong** - the
+    difference of two visits' GPS-only alignments at the code. Measured
+    through the real solver (a throwaway sweep, 2026-09-30, 25 seeded pairs
+    per arm): visit shapes {a straight walk, pacing within ~6 m of the
+    poster, a 30 m walk then pacing}, lengths {30, 120} s at 1 Hz, white
+    GPS noise sigma {3, 5} m, and a constant bias of {0, 8, 15} m that was
+    (by the sweep's construction) nearly the SAME in both visits:
+    - horizontal: p95 3.8-13.8 m, max 14.9 m (30 s visits at sigma 5 m);
+      the bias barely moves it when it is shared;
+    - yaw: p95 2.3-80.5 degrees, max 95.3 degrees (30 s of pacing at
+      sigma 5 m); 120 s of pacing at sigma 5 m still reaches 42.6 degrees,
+      a 120 s straight walk only 5.7.
+  - **Horizontal bound.** With sigma 3 m in both visits it is 17.7 m, with
+    5 m 26.2 m, with 10 m 47.4 m, with 15 m 68.6 m: noise alone (max 14.9 m)
+    is never refused. What reverses it: GPS biases that DIFFER between the
+    visits add up to their difference on top (two independent 8-10 m
+    biases in opposite directions, reported as 5 m accuracy, reach the
+    26 m bound) - then a legitimate correction is refused and the visit
+    keeps its plain alignment, i.e. symptom B for that visit, never worse
+    than before D10b. The other side: a wrong print closer than the bound
+    (a poster moved a few metres) cannot be told from GPS and IS applied,
+    moving the visit's notes by that much. The costs are symmetric in the
+    distance, so the bound only catches gross cases - which is what it is
+    for.
+  - **Yaw bound.** The heading of a GPS-only alignment is weak when a visit
+    is short and stays near the poster: legitimate yaw corrections reached
+    95 degrees in the sweep, and those are exactly the corrections D10b
+    exists to make (without them the visit's notes turn about the walk's
+    centre). So no bound near the code's own yaw noise (a few degrees) is
+    admissible; 120 degrees refuses a code seen on the opposite side
+    (a print facing another way) and no measured legitimate sample. What
+    reverses it: a visit shorter than 30 s, or one minted after the mint
+    gate's 3 fixes and settled before more arrive, can have any heading,
+    and a legitimate correction above 120 degrees is then refused (plain
+    alignment, as above).
+  - Not modelled: correlated (random-walk) GPS noise, which makes headings
+    worse than white noise does; multi-code tours.
+- **The sighting is already a fused pose.** `CodeSighting.odomPose` is the
+  fused source's joint solve over its window (up to 8 detections), not a
+  single frame. The source offers no average across successive stable
+  evaluations (overlapping windows, correlated), so none is taken.
+- **"Seen" is the fused pose source's own `stable` status** (the gate the mint already uses; see
   `creator-setup.ts.md`).
 - **A stored pose is never replaced by measuring** (`measurementRole`):
   a code re-measured in a later visit is that visit's sighting, and the
@@ -140,7 +195,10 @@ const plan = planVisitSettle({
   measurement's pose, gives the right answer; M2c review #3), the plain
   alignment without a sighting or
   with a different code's, a restored level counting as stored earlier, and
-  an unreadable stored level.
+  an unreadable stored level; the plausibility bound (its formula, a
+  correction just inside and just outside it at accuracies {3, 5, 10, 15}
+  m, the yaw bound at 119 and 121 degrees, and the refusal carried into
+  the plan).
 - `visit-settle.test.ts` also covers `measurementRole`: the level in hand
   kept (earlier visit, restored draft), the hosted level kept, a same-visit
   re-measure replacing, and every no-readable-pose case.

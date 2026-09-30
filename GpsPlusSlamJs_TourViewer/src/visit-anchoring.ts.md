@@ -35,6 +35,11 @@ Pure: three.js math only, no store, no DOM. `visit-settle.ts` and
   code's stored pose, both GPS-world NUE: `T(p) = R_yaw (p - m) + s`.
   Null for non-finite input, a zero quaternion, or the one pair with no
   defined yaw (a half turn about a horizontal axis).
+- `correctionSize(measured, stored): { horizontalM, yawDeg } | null` - how
+  far the correction moves the code horizontally (North/East; height is not
+  judged, GPS altitude differs between visits by more than position) and
+  how far it turns the visit, degrees in [0, 180]. Null where
+  `codeCorrection` is. The input of the plausibility bound.
 - `correctedAlignment(alignment, codeOdomNue, storedCode): number[] | null`
   - `codeCorrection(alignment · codeOdomNue, storedCode) · alignment`, the
     alignment a later visit's objects settle through (D10b). This is the
@@ -65,10 +70,11 @@ Pure: three.js math only, no store, no DOM. `visit-settle.ts` and
     the one through any other yaw-only alignment; M2c review #8). A core
     that tilted would fail that test rather than let earlier visits' notes
     follow GPS re-solves unnoticed.
-- No threshold is introduced here. There is deliberately no agreement guard
-  between the two measurements (the rejected code-offset design had one;
-  plan §7 finding 9); a wrong sighting moves the visit's notes with it, the
-  same way a wrong code pulls the viewer's alignment (plan §3.2).
+- No threshold lives here: `correctionSize` measures, and the plausibility
+  bound that refuses a too-large correction is `visit-settle.ts`'s (M2c
+  review #2), with its derivation in that sidecar. A wrong sighting inside
+  the bound still moves the visit's notes with it, the same way a wrong
+  code pulls the viewer's alignment (plan §3.2).
 
 ## Examples
 

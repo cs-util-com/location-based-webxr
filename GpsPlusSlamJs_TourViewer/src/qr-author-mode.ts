@@ -263,6 +263,24 @@ export function entryHint(state: {
   return "First, point the camera at the code you scanned to open this tour.";
 }
 
+/**
+ * The one line that says a code correction was refused (M2c review #2):
+ * the code seen here is further from its saved position, or turned
+ * further, than two visits' GPS plausibly disagree - a second print or a
+ * moved poster, not GPS - so this visit's notes follow GPS instead.
+ */
+export function correctionRefusedLine(refusal: {
+  horizontalM: number;
+  yawDeg: number;
+  maxHorizontalM: number;
+}): string {
+  const where =
+    refusal.horizontalM > refusal.maxHorizontalM
+      ? `${String(Math.round(refusal.horizontalM))} m`
+      : `turned ${String(Math.round(refusal.yawDeg))}°`;
+  return `Code seen ${where} from its saved position - a second print or a moved poster? Not used; this visit follows GPS`;
+}
+
 /** What the setup panel says once the code is measured: the next move. */
 export function setupHint(state: {
   measured: boolean;

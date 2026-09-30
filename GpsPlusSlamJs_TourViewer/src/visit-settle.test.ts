@@ -16,6 +16,7 @@ import { Matrix4, Quaternion, Vector3 } from "three";
 import { mintQrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 import { parseQrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import type { Pose } from "gps-plus-slam-app-framework/ar/qr/qr-pose";
+import { WEBXR_TO_NUE } from "gps-plus-slam-app-framework/ar/webxr-nue-basis";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
@@ -23,6 +24,8 @@ import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 import { mintPin, objectPoseNue } from "./content-placement.js";
 import { odomNueFromWebXr, throughAlignment } from "./visit-anchoring.js";
 import {
+  CORRECTION_MAX_YAW_DEG,
+  correctionBoundM,
   measurementRole,
   planVisitSettle,
   settleAlignment,
@@ -405,10 +408,20 @@ describe("a later visit, corrected through the code (D10b)", () => {
     // A spot 3 m in front of the code, as raw odometry of visit 0.
     const spot: Pose = { position: [0.3, 0, -5], rotation: [0, 0, 0, 1] };
     const local1 = odomNueFromWebXr(inVisit1(spot)).position;
+    // Visit 1's GPS alignment as the solver finds it for the moved origin:
+    // a2's GPS error, in the new odometry frame.
+    const moveNue = new Matrix4()
+      .copy(WEBXR_TO_NUE)
+      .multiply(move)
+      .multiply(new Matrix4().copy(WEBXR_TO_NUE).invert());
+    const a2Moved = new Matrix4()
+      .fromArray(a2)
+      .multiply(moveNue.invert())
+      .toArray();
     const plan = planVisitSettle({
       visit: 1,
-      placed: [placedPin("later", [...local1], 1, a2)],
-      alignment: a2,
+      placed: [placedPin("later", [...local1], 1, a2Moved)],
+      alignment: a2Moved,
       zero: ZERO,
       mintedLevel: stored,
       measurement: measuredInVisit(0),
@@ -565,5 +578,102 @@ describe("a new measurement of a code whose pose is already stored (D10b, M2c re
         hostedJson: null,
       }),
     ).toEqual({ kept: "measurement" });
+  });
+});
+
+describe("the code correction's plausibility bound (M2c review #2)", () => {
+  // Why these tests matter: a level's id is a hash of the printed TEXT, so a
+  // second print of the poster, or one re-hung elsewhere, counts as the same
+  // code - and an unbounded correction would move every note of the visit
+  // by however far apart the two prints hang. A correction larger than two
+  // visits' GPS can plausibly disagree is refused; the visit then settles
+  // through its plain alignment, and the refusal is reported.
+  const a1 = yawAlignment(20, [100, 400, 50]);
+  const stored = levelThrough(a1);
+  const sighting: CodeSighting = {
+    text: TEXT,
+    levelId: LEVEL_ID,
+    odomPose: CODE,
+  };
+  /** A visit alignment whose view of the code is `dx` m North and `dyaw`
+   *  degrees off the stored one (the code is the pivot). */
+  function offBy(dx: number, dyaw: number): number[] {
+    const c = new Vector3(...odomNueFromWebXr(CODE).position);
+    const turned = yawAlignment(20 + dyaw, [0, 0, 0]);
+    const at = c.clone().applyMatrix4(new Matrix4().fromArray(turned));
+    const want = c.clone().applyMatrix4(new Matrix4().fromArray(a1));
+    return yawAlignment(20 + dyaw, [
+      want.x - at.x + dx,
+      want.y - at.y,
+      want.z - at.z,
+    ]);
+  }
+  const choose = (alignment: number[], gpsAccuracyM?: number) =>
+    settleAlignment({
+      visit: 1,
+      alignment,
+      zero: ZERO,
+      mintedLevel: stored,
+      measurement: measuredInVisit(0),
+      sighting,
+      ...(gpsAccuracyM === undefined ? {} : { gpsAccuracyM }),
+    });
+
+  it("is 5 m plus three times the two visits' combined GPS accuracy", () => {
+    expect(correctionBoundM(3, 4)).toBeCloseTo(5 + 3 * 5, 9);
+    // Unknown or unusable accuracies count as the default.
+    expect(correctionBoundM(undefined, null)).toBeCloseTo(
+      5 + 3 * Math.hypot(5, 5),
+      9,
+    );
+    expect(correctionBoundM(Number.NaN, -2)).toBe(
+      correctionBoundM(undefined, undefined),
+    );
+  });
+
+  it("accepts a correction just inside the bound and refuses one just outside, across plausible accuracies", () => {
+    // The stored level's mint quality says 4 m (INFO); this visit's
+    // accuracy is swept over what phones report outdoors and near
+    // buildings.
+    for (const accuracy of [3, 5, 10, 15]) {
+      const bound = correctionBoundM(accuracy, INFO.gpsAccuracyM);
+      const inside = choose(offBy(bound - 0.5, 0), accuracy);
+      expect(inside?.basis, `accuracy ${String(accuracy)} m`).toBe(
+        "code-corrected",
+      );
+      expect(inside?.refused).toBeNull();
+      const outside = choose(offBy(bound + 0.5, 0), accuracy);
+      expect(outside?.basis).toBe("visit-alignment");
+      expect(outside?.refused?.maxHorizontalM).toBeCloseTo(bound, 9);
+      expect(outside?.refused?.horizontalM).toBeCloseTo(bound + 0.5, 2);
+    }
+  });
+
+  it("refuses a correction that turns the visit by more than the yaw bound, whatever the distance", () => {
+    expect(choose(offBy(0, CORRECTION_MAX_YAW_DEG - 1))?.basis).toBe(
+      "code-corrected",
+    );
+    const refused = choose(offBy(0, CORRECTION_MAX_YAW_DEG + 1));
+    expect(refused?.basis).toBe("visit-alignment");
+    expect(refused?.refused?.yawDeg).toBeCloseTo(CORRECTION_MAX_YAW_DEG + 1, 4);
+    // The refused choice is the plain visit alignment, not a corrected one.
+    expect(refused?.alignment).toEqual(offBy(0, CORRECTION_MAX_YAW_DEG + 1));
+  });
+
+  it("carries the refusal into the settle plan", () => {
+    const far = offBy(60, 0);
+    const plan = planVisitSettle({
+      visit: 1,
+      placed: [placedPin("later", [3, 0, -1], 1, far)],
+      alignment: far,
+      zero: ZERO,
+      mintedLevel: stored,
+      measurement: measuredInVisit(0),
+      sighting,
+      alignmentInfo: INFO,
+      nowIso: NOW,
+    });
+    expect(plan?.basis).toBe("visit-alignment");
+    expect(plan?.refused?.horizontalM).toBeCloseTo(60, 2);
   });
 });

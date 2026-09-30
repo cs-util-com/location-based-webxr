@@ -126,17 +126,48 @@ export function codeCorrection(
   measured: NuePose,
   stored: NuePose,
 ): number[] | null {
+  const yaw = yawTwist(measured, stored);
+  if (yaw === null) return null;
+  const t = new Matrix4().makeRotationFromQuaternion(yaw);
+  const turned = new Vector3(...measured.position).applyMatrix4(t);
+  t.setPosition(new Vector3(...stored.position).sub(turned));
+  return t.toArray();
+}
+
+/** The twist about Up of `stored · measured^-1` (see {@link codeCorrection}),
+ *  or null for non-finite input and the half-turn pair with no yaw. */
+function yawTwist(measured: NuePose, stored: NuePose): Quaternion | null {
   if (!finitePose(measured) || !finitePose(stored)) return null;
   const delta = new Quaternion(...stored.rotation)
     .normalize()
     .multiply(new Quaternion(...measured.rotation).normalize().invert());
   const twistNorm = Math.hypot(delta.y, delta.w);
   if (twistNorm < 1e-9) return null;
-  const yaw = new Quaternion(0, delta.y / twistNorm, 0, delta.w / twistNorm);
-  const t = new Matrix4().makeRotationFromQuaternion(yaw);
-  const turned = new Vector3(...measured.position).applyMatrix4(t);
-  t.setPosition(new Vector3(...stored.position).sub(turned));
-  return t.toArray();
+  return new Quaternion(0, delta.y / twistNorm, 0, delta.w / twistNorm);
+}
+
+/**
+ * How far the {@link codeCorrection} of `measured` onto `stored` moves and
+ * turns a visit (both GPS-world NUE): the HORIZONTAL distance between the
+ * two code positions (North and East; GPS altitude differs between visits
+ * by more than position does, so height is not judged), and the yaw it
+ * turns by, in degrees within [0, 180].
+ *
+ * @returns null wherever `codeCorrection` is null.
+ */
+export function correctionSize(
+  measured: NuePose,
+  stored: NuePose,
+): { horizontalM: number; yawDeg: number } | null {
+  const yaw = yawTwist(measured, stored);
+  if (yaw === null) return null;
+  return {
+    horizontalM: Math.hypot(
+      stored.position[0] - measured.position[0],
+      stored.position[2] - measured.position[2],
+    ),
+    yawDeg: (2 * Math.acos(Math.min(1, Math.abs(yaw.w))) * 180) / Math.PI,
+  };
 }
 
 /**

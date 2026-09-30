@@ -45,6 +45,7 @@ import type { LatLong } from "gps-plus-slam-app-framework/core";
 import { objectPoseNue } from "./content-placement.js";
 import {
   correctedAlignment,
+  correctionSize,
   odomNueFromWebXr,
   throughAlignment,
   type NuePose,
@@ -82,6 +83,55 @@ export interface SettleAlignmentInput {
   readonly mintedLevel: { readonly id: string; readonly json: string } | null;
   readonly measurement: CodeMeasurement | null;
   readonly sighting: CodeSighting | null;
+  /** This visit's median GPS accuracy (m), for the correction's bound;
+   *  absent or unusable counts as {@link CORRECTION_DEFAULT_ACCURACY_M}. */
+  readonly gpsAccuracyM?: number | null | undefined;
+}
+
+/**
+ * THE CODE CORRECTION'S PLAUSIBILITY BOUND (M2c review #2). A level's id is
+ * a hash of the printed text, so a second print of the poster, or one
+ * re-hung elsewhere, is "the same code" - and its correction would move
+ * every note of the visit. A correction is refused when it moves the code
+ * further than two visits' GPS can plausibly disagree, or turns the visit
+ * further than two visits' GPS headings plausibly do. The derivation, the
+ * sweep and the values that would reverse the choice are in the sidecar.
+ */
+export const CORRECTION_FLOOR_M = 5;
+/** The multiple of the two visits' combined GPS accuracy admitted. */
+export const CORRECTION_ACCURACY_FACTOR = 3;
+/** The accuracy assumed for a visit, or a stored level, that reports none. */
+export const CORRECTION_DEFAULT_ACCURACY_M = 5;
+/** The largest yaw a correction may turn a visit by, degrees. */
+export const CORRECTION_MAX_YAW_DEG = 120;
+
+/** Why a code correction was refused: its size and the bounds it broke. */
+export interface CorrectionRefusal {
+  readonly horizontalM: number;
+  readonly yawDeg: number;
+  readonly maxHorizontalM: number;
+  readonly maxYawDeg: number;
+}
+
+/**
+ * The largest horizontal correction admitted, m: {@link CORRECTION_FLOOR_M}
+ * plus {@link CORRECTION_ACCURACY_FACTOR} times the combined accuracy of
+ * the two visits (`hypot`: the correction is the DIFFERENCE of two
+ * independent alignment errors).
+ */
+export function correctionBoundM(
+  visitAccuracyM: number | null | undefined,
+  storedAccuracyM: number | null | undefined,
+): number {
+  const usable = (v: number | null | undefined): number =>
+    typeof v === "number" && Number.isFinite(v) && v > 0
+      ? v
+      : CORRECTION_DEFAULT_ACCURACY_M;
+  return (
+    CORRECTION_FLOOR_M +
+    CORRECTION_ACCURACY_FACTOR *
+      Math.hypot(usable(visitAccuracyM), usable(storedAccuracyM))
+  );
 }
 
 /** 16 finite numbers, or null. */
@@ -103,14 +153,20 @@ function storedGeo(json: string): QrGeoPose | null {
   }
 }
 
-/** The stored code's pose in GPS-world NUE, or null when the level carries
- *  none that reads. */
-function storedCodePose(json: string, zero: LatLong): NuePose | null {
-  const geo = storedGeo(json);
-  if (geo === null) return null;
+/** The stored code's pose in GPS-world NUE and the GPS accuracy its mint
+ *  recorded, or null when the level carries no pose that reads. */
+function storedCode(
+  json: string,
+  zero: LatLong,
+): { pose: NuePose; accuracyM: number | undefined } | null {
   try {
-    const pose = objectPoseNue(geo, zero);
-    return { position: pose.positionNue, rotation: pose.rotationNue };
+    const qr = parseQrLevel(JSON.parse(json) as unknown).qr;
+    if (qr.geo === undefined) return null;
+    const pose = objectPoseNue(qr.geo, zero);
+    return {
+      pose: { position: pose.positionNue, rotation: pose.rotationNue },
+      accuracyM: qr.mintQuality?.gpsAccuracyM,
+    };
   } catch {
     return null;
   }
@@ -187,32 +243,65 @@ function measuredHere(input: SettleAlignmentInput): boolean {
  * @returns null when the alignment is not 16 finite numbers or there is no
  *   zero: nothing can be settled, and the tap-time geo stands.
  */
-export function settleAlignment(
-  input: SettleAlignmentInput,
-): { basis: SettleBasis; alignment: number[] } | null {
+export function settleAlignment(input: SettleAlignmentInput): {
+  basis: SettleBasis;
+  alignment: number[];
+  /** A code correction this visit had, refused by the plausibility bound;
+   *  null otherwise. */
+  refused: CorrectionRefusal | null;
+} | null {
   const alignment = readAlignment(input.alignment);
   if (alignment === null || input.zero === null) return null;
-  if (measuredHere(input)) return { basis: "measured-here", alignment };
+  if (measuredHere(input)) {
+    return { basis: "measured-here", alignment, refused: null };
+  }
+  const correction = codeCorrectionOf(input, alignment, input.zero);
+  if (correction === null) {
+    return { basis: "visit-alignment", alignment, refused: null };
+  }
+  if ("refused" in correction) {
+    return { basis: "visit-alignment", alignment, refused: correction.refused };
+  }
+  return {
+    basis: "code-corrected",
+    alignment: correction.alignment,
+    refused: null,
+  };
+}
+
+/** The visit's alignment corrected through its sighting of the stored
+ *  code, the refusal when the correction breaks the bound, or null when
+ *  there is no correction to make. */
+function codeCorrectionOf(
+  input: SettleAlignmentInput,
+  alignment: readonly number[],
+  zero: LatLong,
+): { alignment: number[] } | { refused: CorrectionRefusal } | null {
   const { mintedLevel, sighting } = input;
   if (
-    mintedLevel !== null &&
-    sighting !== null &&
-    sighting.levelId === mintedLevel.id
+    mintedLevel === null ||
+    sighting === null ||
+    sighting.levelId !== mintedLevel.id
   ) {
-    const stored = storedCodePose(mintedLevel.json, input.zero);
-    const corrected =
-      stored === null
-        ? null
-        : correctedAlignment(
-            alignment,
-            odomNueFromWebXr(sighting.odomPose),
-            stored,
-          );
-    if (corrected !== null) {
-      return { basis: "code-corrected", alignment: corrected };
-    }
+    return null;
   }
-  return { basis: "visit-alignment", alignment };
+  const stored = storedCode(mintedLevel.json, zero);
+  if (stored === null) return null;
+  const codeLocal = odomNueFromWebXr(sighting.odomPose);
+  const measured = throughAlignment(codeLocal, alignment);
+  const size = measured === null ? null : correctionSize(measured, stored.pose);
+  if (size === null) return null;
+  const maxHorizontalM = correctionBoundM(input.gpsAccuracyM, stored.accuracyM);
+  if (
+    size.horizontalM > maxHorizontalM ||
+    size.yawDeg > CORRECTION_MAX_YAW_DEG
+  ) {
+    return {
+      refused: { ...size, maxHorizontalM, maxYawDeg: CORRECTION_MAX_YAW_DEG },
+    };
+  }
+  const corrected = correctedAlignment(alignment, codeLocal, stored.pose);
+  return corrected === null ? null : { alignment: corrected };
 }
 
 /**
@@ -267,6 +356,8 @@ export interface VisitSettle {
   /** The code re-minted through the visit's alignment, when this visit
    *  measured it; null otherwise (or when the re-mint was refused). */
   readonly level: { id: string; json: string } | null;
+  /** A code correction refused by the plausibility bound; null otherwise. */
+  readonly refused: CorrectionRefusal | null;
 }
 
 /**
@@ -292,7 +383,13 @@ export function planVisitSettle(input: VisitSettleInput): VisitSettle | null {
     return settled === null ? [] : [{ index, object: settled }];
   });
   const level = measured ? remintedLevel(input, choice.alignment, zero) : null;
-  return { basis: choice.basis, alignment: choice.alignment, objects, level };
+  return {
+    basis: choice.basis,
+    alignment: choice.alignment,
+    objects,
+    level,
+    refused: choice.refused,
+  };
 }
 
 /** The level in hand re-minted from its measurement through `alignment`,
