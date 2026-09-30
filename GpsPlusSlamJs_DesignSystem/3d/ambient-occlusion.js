@@ -13,9 +13,11 @@
  *   composer's scene is drawn into its multisampled target only while an
  *   even number of passes swap (lookdev.js `applyTier`).
  * - The AO fades out with view depth before the hazed distance.
+ * - The denoise noise comes from a FIXED seed, so the AO looks the same on
+ *   every page load (three draws it from Math.random).
  *
- * No imports: the page hands in `GTAOPass`, so Node's runner tests this
- * against the real pass of the three the page serves.
+ * No imports: the page hands in `GTAOPass` and `SimplexNoise`, so Node's
+ * runner tests this against the real pass of the three the page serves.
  *
  * @see ambient-occlusion.js.md
  */
@@ -97,12 +99,47 @@ export function hiddenFromAoNormals(object) {
 }
 
 /**
+ * The seed of the AO's denoise noise (review follow-up 2026-09-30, the AO
+ * far-city flake). three's `GTAOPass` builds that noise with
+ * `new SimplexNoise()`, whose permutation table comes from Math.random, so
+ * the AO's look changed with every page load (the far-city smoke read
+ * 0.365-0.571 levels across loads). Any integer gives the same kind of
+ * noise; this one is fixed so every load draws the same picture. The smoke's
+ * bounds are set on a sweep over several seeds, not on this one alone.
+ */
+export const AO_NOISE_SEED = 1;
+
+/**
+ * A seeded generator in [0, 1) (mulberry32), the `random()` the page's
+ * `SimplexNoise` reads. RangeError for a seed that is not an integer.
+ */
+export function aoNoiseRandom(seed) {
+  if (!Number.isInteger(seed)) {
+    throw new RangeError(`the AO noise seed must be an integer, got ${seed}`);
+  }
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
  * `GTAOPass` with the page's exclusions, the depth fade and the in-place
- * blend. It relies on three's INTERNALS (`_overrideVisibility` and
+ * blend, and its denoise noise from `AO_NOISE_SEED` (`SimplexNoise` is
+ * three's, handed in; TypeError without it). It relies on three's INTERNALS (`_overrideVisibility` and
  * `_visibilityCache`, `_renderPass`, the blend material's uniforms);
  * ambient-occlusion.test.mjs fails if a three upgrade takes them away.
  */
-export function withPageExclusions(GTAOPass) {
+export function withPageExclusions(GTAOPass, SimplexNoise) {
+  if (typeof SimplexNoise !== "function") {
+    throw new TypeError(
+      "withPageExclusions needs three's SimplexNoise for the seeded denoise noise",
+    );
+  }
   return class PageGTAOPass extends GTAOPass {
     constructor(...args) {
       super(...args);
@@ -175,6 +212,57 @@ export function withPageExclusions(GTAOPass) {
       });
     }
 
+    /**
+     * three's own denoise noise (`GTAOPass._generateNoise`, r185: four
+     * simplex channels over a 64 x 64 repeating RGBA8 texture), with the
+     * simplex table from `aoNoiseRandom(noiseSeed)` instead of Math.random.
+     * three's constructor calls this before this class's constructor body
+     * runs, so the seed falls back to `AO_NOISE_SEED` there. The texture
+     * class, format and type are those of three's own GTAO noise texture,
+     * built just before (no import of three here); the unit test holds the
+     * result to three's own function fed the same generator.
+     */
+    _generateNoise(size = 64) {
+      const simplex = new SimplexNoise({
+        random: aoNoiseRandom(this.noiseSeed ?? AO_NOISE_SEED),
+      });
+      const data = new Uint8Array(size * size * 4);
+      for (let i = 0; i < size; i++) {
+        for (let j = 0; j < size; j++) {
+          const k = (i * size + j) * 4;
+          data[k] = (simplex.noise(i, j) * 0.5 + 0.5) * 255;
+          data[k + 1] = (simplex.noise(i + size, j) * 0.5 + 0.5) * 255;
+          data[k + 2] = (simplex.noise(i, j + size) * 0.5 + 0.5) * 255;
+          data[k + 3] = (simplex.noise(i + size, j + size) * 0.5 + 0.5) * 255;
+        }
+      }
+      const like = this.gtaoNoiseTexture;
+      const texture = new like.constructor(
+        data,
+        size,
+        size,
+        like.format,
+        like.type,
+      );
+      texture.wrapS = like.wrapS;
+      texture.wrapT = like.wrapT;
+      texture.needsUpdate = true;
+      return texture;
+    }
+
+    /**
+     * Test surface (the smoke's seed sweep): rebuild the denoise noise from
+     * another seed. RangeError for a seed that is not an integer.
+     */
+    setNoiseSeed(seed) {
+      aoNoiseRandom(seed);
+      this.noiseSeed = seed;
+      const old = this.pdNoiseTexture;
+      this.pdNoiseTexture = this._generateNoise();
+      this.pdMaterial.uniforms.tNoise.value = this.pdNoiseTexture;
+      old.dispose();
+    }
+
     /** three's dispose, plus the two materials it leaves behind (r185). */
     dispose() {
       super.dispose();
@@ -214,13 +302,14 @@ export function withPageExclusions(GTAOPass) {
  */
 export function createAmbientOcclusion({
   GTAOPass,
+  SimplexNoise,
   scene,
   camera,
   params = AO_PARAMS,
   denoise = AO_DENOISE,
   userAgent = globalThis.navigator?.userAgent ?? "",
 }) {
-  const PagePass = withPageExclusions(GTAOPass);
+  const PagePass = withPageExclusions(GTAOPass, SimplexNoise);
   // three invalidates a multisampled colour buffer right after resolving it
   // on Oculus Browser (WebGLTextures `supportsInvalidateFramebuffer`), and
   // the in-place blend draws into that buffer again: it would multiply
@@ -233,6 +322,7 @@ export function createAmbientOcclusion({
   let current = { ...params };
   let currentDenoise = { ...denoise };
   let scale = 1;
+  let noiseSeed = AO_NOISE_SEED;
   return {
     sync(composer, on) {
       if (composer !== host) {
@@ -251,6 +341,7 @@ export function createAmbientOcclusion({
           currentDenoise,
         );
         pass.resolutionScale = scale;
+        if (noiseSeed !== AO_NOISE_SEED) pass.setNoiseSeed(noiseSeed);
         const after = composer.passes.findIndex((p) => p.isRenderPass);
         composer.insertPass(pass, after + 1);
       }
@@ -258,10 +349,21 @@ export function createAmbientOcclusion({
     },
     /**
      * The sweep's handle: merge AO and denoise parameters (and the AO
-     * targets' `resolutionScale`, 1 = the composer's size) into the live
-     * pass and into any pass built later. Returns the merged values.
+     * targets' `resolutionScale`, 1 = the composer's size, and the denoise
+     * noise's `noiseSeed`) into the live pass and into any pass built
+     * later. Returns the merged values.
      */
-    configure({ params: p = {}, denoise: d = {}, resolutionScale } = {}) {
+    configure({
+      params: p = {},
+      denoise: d = {},
+      resolutionScale,
+      noiseSeed: seed,
+    } = {}) {
+      if (seed !== undefined) {
+        aoNoiseRandom(seed);
+        noiseSeed = seed;
+        pass?.setNoiseSeed(seed);
+      }
       current = { ...current, ...p };
       currentDenoise = { ...currentDenoise, ...d };
       pass?.updateGtaoMaterial(p);
@@ -280,6 +382,7 @@ export function createAmbientOcclusion({
         params: { ...current },
         denoise: { ...currentDenoise },
         resolutionScale: scale,
+        noiseSeed,
       };
     },
     /** The pass, or null (never switched on under this composer). */

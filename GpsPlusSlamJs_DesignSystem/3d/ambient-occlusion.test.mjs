@@ -19,7 +19,9 @@ import { pathToFileURL } from "node:url";
 
 import {
   AO_DENOISE,
+  AO_NOISE_SEED,
   AO_PARAMS,
+  aoNoiseRandom,
   createAmbientOcclusion,
   hiddenFromAoNormals,
   withPageExclusions,
@@ -40,6 +42,10 @@ const { GTAOPass } = await import(
   pathToFileURL(
     join(THREE_ROOT, "examples", "jsm", "postprocessing", "GTAOPass.js"),
   ).href
+);
+const { SimplexNoise } = await import(
+  pathToFileURL(join(THREE_ROOT, "examples", "jsm", "math", "SimplexNoise.js"))
+    .href
 );
 
 /** The page's kinds of object, each named for the assertion messages. */
@@ -178,7 +184,7 @@ describe("hiddenFromAoNormals", () => {
     parent.add(child);
     scene.add(parent);
     assert.equal(hiddenFromAoNormals(child), false, "the child is opaque");
-    const pass = new (withPageExclusions(GTAOPass))(
+    const pass = new (withPageExclusions(GTAOPass, SimplexNoise))(
       scene,
       new THREE.PerspectiveCamera(),
     );
@@ -207,7 +213,7 @@ describe("withPageExclusions(GTAOPass), against three's real pass", () => {
   });
 
   it("draws the normal/depth pass without the sky, the clouds, sprites, lines or points, then restores them", () => {
-    const PagePass = withPageExclusions(GTAOPass);
+    const PagePass = withPageExclusions(GTAOPass, SimplexNoise);
     const scene = pageLikeScene();
     const camera = new THREE.PerspectiveCamera();
     const pass = new PagePass(scene, camera, 4, 4);
@@ -237,7 +243,7 @@ describe("withPageExclusions(GTAOPass), against three's real pass", () => {
   it("falls back to three's own rule with the exclusions off (the smoke test's mutation)", () => {
     // Documents what the page's rule adds: three alone draws the sky, the
     // clouds and the sprite into the normal/depth pass.
-    const PagePass = withPageExclusions(GTAOPass);
+    const PagePass = withPageExclusions(GTAOPass, SimplexNoise);
     const pass = new PagePass(pageLikeScene(), new THREE.PerspectiveCamera());
     pass.pageExclusions = false;
     const renderer = recordingRenderer();
@@ -260,7 +266,7 @@ describe("withPageExclusions(GTAOPass), against three's real pass", () => {
     // only while an EVEN number of passes swap (lookdev.js applyTier). A
     // swapping AO pass made it a third and the scene would alternate between
     // the multisampled and the plain target, frame by frame.
-    const PagePass = withPageExclusions(GTAOPass);
+    const PagePass = withPageExclusions(GTAOPass, SimplexNoise);
     const pass = new PagePass(pageLikeScene(), new THREE.PerspectiveCamera());
     assert.equal(pass.needsSwap, false);
     const renderer = recordingRenderer();
@@ -287,7 +293,7 @@ describe("withPageExclusions(GTAOPass), against three's real pass", () => {
     // 780 m) is where the AO was measured darkening flat facades and the
     // ground-ridge line by up to ~30 levels; metre-scale AO cannot be seen
     // there, so the blend fades it out (the record's sweep).
-    const PagePass = withPageExclusions(GTAOPass);
+    const PagePass = withPageExclusions(GTAOPass, SimplexNoise);
     const pass = new PagePass(
       new THREE.Scene(),
       new THREE.PerspectiveCamera(55, 1, 0.5, 30000),
@@ -314,7 +320,7 @@ describe("withPageExclusions(GTAOPass), against three's real pass", () => {
   it("refuses to be the last pass (its blend multiplies the scene target, not the screen)", () => {
     // Drawn to the screen, the multiply would land on a canvas that never
     // received the scene: a silent wrong picture (review finding 9).
-    const pass = new (withPageExclusions(GTAOPass))(
+    const pass = new (withPageExclusions(GTAOPass, SimplexNoise))(
       pageLikeScene(),
       new THREE.PerspectiveCamera(),
     );
@@ -326,7 +332,7 @@ describe("withPageExclusions(GTAOPass), against three's real pass", () => {
   });
 
   it("takes the blend intensity as a parameter (0 draws no AO)", () => {
-    const pass = new (withPageExclusions(GTAOPass))(
+    const pass = new (withPageExclusions(GTAOPass, SimplexNoise))(
       new THREE.Scene(),
       new THREE.PerspectiveCamera(),
       4,
@@ -345,7 +351,7 @@ describe("withPageExclusions(GTAOPass), against three's real pass", () => {
     // three r185's GTAOPass.dispose frees neither its AO material nor its
     // blend material (review finding 8); the page rebuilds the pass on
     // every tier switch.
-    const pass = new (withPageExclusions(GTAOPass))(
+    const pass = new (withPageExclusions(GTAOPass, SimplexNoise))(
       new THREE.Scene(),
       new THREE.PerspectiveCamera(),
     );
@@ -362,7 +368,7 @@ describe("withPageExclusions(GTAOPass), against three's real pass", () => {
   });
 
   it("sizes its targets by its resolution scale", () => {
-    const PagePass = withPageExclusions(GTAOPass);
+    const PagePass = withPageExclusions(GTAOPass, SimplexNoise);
     const pass = new PagePass(new THREE.Scene(), new THREE.PerspectiveCamera());
     pass.resolutionScale = 0.5;
     pass.setSize(1280, 801);
@@ -374,7 +380,7 @@ describe("withPageExclusions(GTAOPass), against three's real pass", () => {
   });
 
   it("takes the page's metre-scale parameters", () => {
-    const PagePass = withPageExclusions(GTAOPass);
+    const PagePass = withPageExclusions(GTAOPass, SimplexNoise);
     const pass = new PagePass(
       new THREE.Scene(),
       new THREE.PerspectiveCamera(),
@@ -392,6 +398,95 @@ describe("withPageExclusions(GTAOPass), against three's real pass", () => {
   });
 });
 
+// Review follow-up 2026-09-30 (the AO far-city flake): three's GTAOPass
+// builds its Poisson-denoise noise with `new SimplexNoise()`, whose table
+// comes from Math.random, so the AO's look changed with every page load
+// (the far-city smoke read 0.365-0.571 across loads, the same value for the
+// same seed). The page's pass builds that noise from a FIXED seed: the same
+// bytes on every construction whatever Math.random does, with three's own
+// algorithm, so the look is identical on every load and a bound on it is a
+// bound on one picture.
+describe("the AO's denoise noise", () => {
+  const build = () =>
+    new (withPageExclusions(GTAOPass, SimplexNoise))(
+      new THREE.Scene(),
+      new THREE.PerspectiveCamera(),
+      8,
+      8,
+    );
+  // (three still reads Math.random while building a pass, for its objects'
+  // UUIDs: two different replacements must not change the noise.)
+  it("is the same on every construction, whatever Math.random returns", () => {
+    const saved = Math.random;
+    let first;
+    let second;
+    try {
+      let k = 0;
+      Math.random = () => (++k * 0.6180339887) % 1;
+      first = build().pdNoiseTexture.image.data;
+      Math.random = () => 0.25;
+      second = build().pdNoiseTexture.image.data;
+    } finally {
+      Math.random = saved;
+    }
+    assert.deepEqual(second, first);
+    // Noise, not a constant: most byte values occur.
+    assert.ok(new Set(first).size > 150, `${new Set(first).size} values`);
+  });
+
+  it("is three's own simplex noise, drawn from the seeded generator", () => {
+    // three's own `_generateNoise`, fed the same generator through
+    // Math.random here (restored at once), must give the same bytes: the
+    // page changes the seed, never the noise's shape.
+    const ours = build().pdNoiseTexture;
+    const saved = Math.random;
+    let theirs;
+    try {
+      Math.random = aoNoiseRandom(AO_NOISE_SEED);
+      theirs = GTAOPass.prototype._generateNoise.call({}, 64);
+    } finally {
+      Math.random = saved;
+    }
+    assert.deepEqual(ours.image.data, theirs.image.data);
+    for (const key of ["width", "height"]) {
+      assert.equal(ours.image[key], theirs.image[key], key);
+    }
+    assert.equal(ours.format, theirs.format);
+    assert.equal(ours.type, theirs.type);
+    assert.equal(ours.wrapS, THREE.RepeatWrapping);
+    assert.equal(ours.wrapT, THREE.RepeatWrapping);
+  });
+
+  it("follows a new seed on the live pass, and refuses a pass class without SimplexNoise", () => {
+    const pass = build();
+    const shipped = pass.pdNoiseTexture.image.data.slice();
+    pass.setNoiseSeed(AO_NOISE_SEED + 1);
+    const other = pass.pdNoiseTexture.image.data;
+    assert.notDeepEqual(other, shipped);
+    assert.equal(pass.pdMaterial.uniforms.tNoise.value, pass.pdNoiseTexture);
+    pass.setNoiseSeed(AO_NOISE_SEED);
+    assert.deepEqual(pass.pdNoiseTexture.image.data, shipped);
+    assert.throws(() => pass.setNoiseSeed(1.5), RangeError);
+    assert.throws(() => withPageExclusions(GTAOPass), TypeError);
+  });
+
+  it("gives the generator a fixed sequence per seed, in [0, 1)", () => {
+    const a = aoNoiseRandom(7);
+    const b = aoNoiseRandom(7);
+    const c = aoNoiseRandom(8);
+    const xs = Array.from({ length: 1000 }, () => a());
+    assert.deepEqual(
+      Array.from({ length: 1000 }, () => b()),
+      xs,
+    );
+    assert.notDeepEqual(
+      Array.from({ length: 1000 }, () => c()),
+      xs,
+    );
+    assert.ok(xs.every((x) => x >= 0 && x < 1));
+  });
+});
+
 describe("createAmbientOcclusion", () => {
   /** A composer with a RenderPass and two passes after it. */
   function fakeComposer() {
@@ -405,6 +500,7 @@ describe("createAmbientOcclusion", () => {
   const make = () =>
     createAmbientOcclusion({
       GTAOPass,
+      SimplexNoise,
       scene: new THREE.Scene(),
       camera: new THREE.PerspectiveCamera(),
     });
@@ -467,6 +563,7 @@ describe("createAmbientOcclusion", () => {
       "Mozilla/5.0 (X11; Linux x86_64; Quest 3) AppleWebKit/537.36 (KHTML, like Gecko) OculusBrowser/35.1 Chrome/126 VR Safari/537.36";
     const ao = createAmbientOcclusion({
       GTAOPass,
+      SimplexNoise,
       scene: new THREE.Scene(),
       camera: new THREE.PerspectiveCamera(),
       userAgent: quest,

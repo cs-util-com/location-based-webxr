@@ -80,10 +80,32 @@ const CREASE_MIN = 3;
 const OPEN_MAX = 0.5;
 /** The sky and the clouds (measured 0). */
 const SKY_MAX = 0.5;
-/** Hazed distance: the dense city 800 m out, the ridge foot at 2.5 km (measured <= 0.44). */
-const FAR_MAX = 0.5;
+/**
+ * Hazed distance: the dense city 800 m out, the ridge foot at 2.5 km. Set
+ * from a sweep over the denoise noise's seeds (2026-09-30, follow-up "the AO
+ * far-city flake"), not from the one seed the page ships. The far city read:
+ * - hazy, seeds 1-6: 0.420, 0.516, 0.436, 0.388, 0.388, 0.428;
+ * - golden, seeds 1-6: 0.159, 0.183, 0.270, 0.278, 0.135, 0.191;
+ * - the in-run mutation (the fade off), every seed and preset: 3.13-5.51.
+ * The ridge foot at the shipped seed read 0 / 0.111 / 0.191 (golden, noon,
+ * hazy), its mutation 5.4-24.9. 1.0 sits 1.94x above the worst seed (0.516)
+ * and 3.1x below the weakest mutation (3.13). Swept: 0.5 fails seed 2; 0.6
+ * passes every seed but leaves only 1.16x headroom; 1.5 leaves only 2.1x to
+ * the mutation. (Before the seed, the noise came from Math.random and the
+ * hazy reading moved 0.365-0.571 between page loads.)
+ */
+const FAR_MAX = 1.0;
 /** The dense-city probe's distance: past the fade's end (700 m). */
 const FAR_CITY_M = 800;
+/**
+ * The denoise noise's seeds the far-city bound is held to, the shipped one
+ * (ambient-occlusion.js AO_NOISE_SEED) first. The noise was once drawn from
+ * Math.random per page load and the reading moved with it (0.365-0.571
+ * across loads, follow-up 2026-09-30), so the bound is set on a sweep over
+ * seeds, never on the one seed the page ships. `AO_SEED_SWEEP=1` runs the
+ * wider sweep the bound was set from.
+ */
+const FAR_SEEDS = process.env.AO_SEED_SWEEP ? [1, 2, 3, 4, 5, 6] : [1, 2, 3];
 
 test("AO darkens the crease, and leaves open ground and the hazed distance alone", async ({
   page,
@@ -159,6 +181,7 @@ test("AO darkens the crease, and leaves open ground and the hazed distance alone
 // there by ~3 levels, so the fade itself is what this check sees (at
 // 1.5 km the shipped AO is ~0.3 levels even unfaded: nothing to detect).
 test("AO leaves the hazed dense city past the fade alone", async ({ page }) => {
+  test.setTimeout(process.env.AO_SEED_SWEEP ? 240_000 : 180_000);
   const errors = await boot(
     page,
     "preset=golden&tone=neutral&tier=desktop&city=100000&pitch=20",
@@ -166,7 +189,7 @@ test("AO leaves the hazed dense city past the fade alone", async ({ page }) => {
   await installHelpers(page);
   for (const preset of ["golden", "hazy"]) {
     const r = await page.evaluate(
-      ([preset, farM]) => {
+      ([preset, farM, seeds]) => {
         const api = window.__lookdev;
         const H = window.__aoCheck;
         api.pauseLoop(true);
@@ -174,25 +197,43 @@ test("AO leaves the hazed dense city past the fade alone", async ({ page }) => {
         api.setCloudOffset(0, 0);
         api.setView("city");
         const f = api.project(api.aoProbe({ farM }).far);
-        const { off, on } = H.pair();
-        const far = H.worst(off, on, f, 12, 6);
-        // THE MUTATION: the fade off, at the shipped parameters.
-        const saved = api.setAoParams({}).params;
-        api.setAoParams({ params: { fadeStartM: 1e6, fadeEndM: 2e6 } });
-        const noFade = H.pair();
-        const farNoFade = H.worst(noFade.off, noFade.on, f, 12, 6);
-        api.setAoParams({
-          params: { fadeStartM: saved.fadeStartM, fadeEndM: saved.fadeEndM },
-        });
-        return { f, far, farNoFade };
+        const bySeed = [];
+        for (const seed of seeds) {
+          api.setAoParams({ noiseSeed: seed });
+          const { off, on } = H.pair();
+          const far = H.worst(off, on, f, 12, 6);
+          // THE MUTATION: the fade off, at the shipped parameters.
+          const saved = api.setAoParams({}).params;
+          api.setAoParams({ params: { fadeStartM: 1e6, fadeEndM: 2e6 } });
+          const noFade = H.pair();
+          const farNoFade = H.worst(noFade.off, noFade.on, f, 12, 6);
+          api.setAoParams({
+            params: { fadeStartM: saved.fadeStartM, fadeEndM: saved.fadeEndM },
+          });
+          bySeed.push({ seed, far, farNoFade });
+        }
+        api.setAoParams({ noiseSeed: seeds[0] });
+        return { f, bySeed };
       },
-      [preset, FAR_CITY_M],
+      [preset, FAR_CITY_M, FAR_SEEDS],
     );
-    console.log(`ao far city ${preset}: ${JSON.stringify(r)}`);
+    console.log(
+      `ao far city ${preset}: f ${JSON.stringify(r.f)}; ${r.bySeed
+        .map(
+          (q) =>
+            `seed ${q.seed} ${q.far.toFixed(3)} (no fade ${q.farNoFade.toFixed(2)})`,
+        )
+        .join(", ")}`,
+    );
     expect(r.f[0]).toBeGreaterThan(0.3);
     expect(r.f[0]).toBeLessThan(1);
-    expect(r.far, preset).toBeLessThanOrEqual(FAR_MAX);
-    expect(r.farNoFade, `${preset} mutation: no fade`).toBeGreaterThan(FAR_MAX);
+    for (const q of r.bySeed) {
+      expect(q.far, `${preset} seed ${q.seed}`).toBeLessThanOrEqual(FAR_MAX);
+      expect(
+        q.farNoFade,
+        `${preset} seed ${q.seed} mutation: no fade`,
+      ).toBeGreaterThan(FAR_MAX);
+    }
   }
   expect(errors).toEqual([]);
 });

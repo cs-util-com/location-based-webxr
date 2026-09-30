@@ -21,6 +21,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
+import { SimplexNoise } from "three/addons/math/SimplexNoise.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { FullScreenQuad, Pass } from "three/addons/postprocessing/Pass.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
@@ -774,7 +775,12 @@ let bloomPass = null;
  */
 let composerKind = null;
 /** The AO pass lives in the desktop composer, built on first use. */
-const ambientOcclusion = createAmbientOcclusion({ GTAOPass, scene, camera });
+const ambientOcclusion = createAmbientOcclusion({
+  GTAOPass,
+  SimplexNoise,
+  scene,
+  camera,
+});
 /** The god-rays pass lives in either composer, built on first use. */
 const godRays = createGodRays({
   THREE,
@@ -1402,8 +1408,9 @@ Object.assign(api, {
     applyLook();
   },
   /**
-   * The AO sweep's handle: `{ params, denoise }` merged into the pass (see
-   * ambient-occlusion.js AO_PARAMS / AO_DENOISE). Returns the merged pair.
+   * The AO sweep's handle: `{ params, denoise, noiseSeed }` merged into the
+   * pass (see ambient-occlusion.js AO_PARAMS / AO_DENOISE / AO_NOISE_SEED).
+   * Returns the merged values.
    */
   setAoParams(values) {
     return ambientOcclusion.configure(values);

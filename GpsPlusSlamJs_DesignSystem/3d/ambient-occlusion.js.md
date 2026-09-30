@@ -22,6 +22,14 @@ M2e). It is three's own `GTAOPass`, with three page changes:
   even number of passes swap (`lookdev.js` `applyTier`: the clamp and the
   output pass), so a swapping AO pass would put every other frame's scene
   into the plain target.
+- **The AO looks the same on every page load.** three's `GTAOPass` builds
+  its Poisson-denoise noise with `new SimplexNoise()`, whose table comes
+  from `Math.random`, so the denoised AO differed per load: the far-city
+  smoke read 0.365-0.571 levels across loads, always the same value for the
+  same seed (follow-up 2026-09-30, the AO far-city flake). The page builds
+  that noise with three's own algorithm from `AO_NOISE_SEED`, through a
+  seeded generator handed to `SimplexNoise`; `Math.random` is never
+  replaced, not even for a moment.
 - **The AO fades out with view depth** (between `fadeStartM` 300 m and
   `fadeEndM` 700 m), in the blend, from the pass's own depth target. Without
   it the AO darkened the hazed distance: the ground-ridge line at 2.5 km by
@@ -53,7 +61,11 @@ false`), plus the page's `intensity` (three's `blendIntensity`, 1; not
   for a mesh none of whose materials is visible, opaque and depth-writing.
   A group (anything that is not drawn itself) is never hidden: its children
   decide.
-- `withPageExclusions(GTAOPass)`: a subclass of the given `GTAOPass`:
+- `AO_NOISE_SEED` (1): the denoise noise's seed. `aoNoiseRandom(seed)`: a
+  seeded generator in [0, 1) (mulberry32); `RangeError` for a seed that is
+  not an integer.
+- `withPageExclusions(GTAOPass, SimplexNoise)`: a subclass of the given
+  `GTAOPass` (`TypeError` without three's `SimplexNoise`):
   - `needsSwap = false`; `render` computes the AO with three's own output
     off, then draws the depth-faded blend onto `readBuffer`. It **throws**
     when it is the composer's last pass (`renderToScreen`): the screen never
@@ -63,24 +75,33 @@ false`), plus the page's `intensity` (three's `blendIntensity`, 1; not
   - `updateGtaoMaterial` also takes `intensity`, `fadeStartM`, `fadeEndM`;
   - `resolutionScale` (1 by default) scales its targets against the
     composer's size (`setSize`); a sweep handle, see the record;
+  - `_generateNoise` is three's denoise noise (four simplex channels over
+    a 64 x 64 repeating RGBA8 texture) from `aoNoiseRandom(noiseSeed)`;
+    three's constructor calls it before the subclass's body, so it falls
+    back to `AO_NOISE_SEED` there. The texture class, format and type are
+    taken from three's own GTAO noise texture (the module imports nothing);
+  - `setNoiseSeed(seed)` rebuilds that noise from another seed (the seed
+    sweep's handle);
   - `dispose` also frees `gtaoMaterial` and `blendMaterial`, which three
     r185's own dispose leaves behind.
-- `createAmbientOcclusion({ GTAOPass, scene, camera, params?, denoise?,
-userAgent? })` returns the page's controller:
+- `createAmbientOcclusion({ GTAOPass, SimplexNoise, scene, camera, params?,
+denoise?, userAgent? })` returns the page's controller:
   - `sync(composer, on)`: builds the pass the first time `on` is true while
     a composer exists, inserts it right after the composer's `RenderPass`
     (before the HDR clamp and the bloom), and sets `enabled`. A different
     composer, or `null`, drops the pass (the page disposes a composer's
     passes with it).
-  - `configure({ params, denoise, resolutionScale })`: merges parameters
-    into the live pass and into any pass built later (a new scale re-sizes
-    the live pass at once; outside (0, 1] it throws a `RangeError`);
-    returns the merged values.
+  - `configure({ params, denoise, resolutionScale, noiseSeed })`: merges
+    parameters into the live pass and into any pass built later (a new
+    scale re-sizes the live pass at once; outside (0, 1] it throws a
+    `RangeError`; a new `noiseSeed` rebuilds the live pass's noise, and a
+    seed that is not an integer throws a `RangeError`); returns the merged
+    values.
   - `pass` (or `null`), `active` (whether the AO draws), and `unsupported`
     (null, or why this browser gets none: see Oculus Browser below).
 
-The module has no imports: the page hands in three's `GTAOPass`, so Node's
-runner tests it against the real pass.
+The module has no imports: the page hands in three's `GTAOPass` and
+`SimplexNoise`, so Node's runner tests it against the real pass.
 
 ## Invariants & assumptions
 
@@ -142,9 +163,10 @@ runner tests it against the real pass.
 
 ```js
 import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
+import { SimplexNoise } from "three/addons/math/SimplexNoise.js";
 import { createAmbientOcclusion } from "./ambient-occlusion.js";
 
-const ao = createAmbientOcclusion({ GTAOPass, scene, camera });
+const ao = createAmbientOcclusion({ GTAOPass, SimplexNoise, scene, camera });
 ao.sync(composer, true); // built, inserted after the RenderPass, enabled
 ao.configure({ params: { radius: 4 } });
 ao.sync(composer, false); // kept, disabled
@@ -157,11 +179,15 @@ ao.sync(composer, false); // kept, disabled
   without the excluded objects and restored after, the in-place blend with
   no swap, the refusal as last pass, the depth fade's uniforms, intensity,
   dispose, the parameters, the Oculus Browser refusal, and the controller's
-  lazy build, reuse and composer change.
+  lazy build, reuse and composer change; the denoise noise is the same on
+  every construction whatever `Math.random` returns, equals three's own
+  `_generateNoise` fed the same seeded generator, follows a new seed on the
+  live pass, and the generator's sequence is fixed per seed.
 - `ambient-occlusion.smoke.spec.mjs` (the page, SwiftShader): the crease
   darkens, open ground, the sky and clouds, the ridge foot and the dense
-  city past the fade stay within their tolerances, each shown failing on an
-  in-run mutation (intensity 0, distance exponent 3, the fade off, three's
+  city past the fade stay within their tolerances (the far city over three
+  noise seeds, the shipped one first; `AO_SEED_SWEEP=1` runs six, the sweep
+  `FAR_MAX` was set from), each shown failing on an in-run mutation (intensity 0, distance exponent 3, the fade off, three's
   own exclusion rule); the phone tier draws no AO; the switch and its tier
   note; the scene keeps its MSAA on every frame (no in-run mutation; the
   swapping pass was run against it once, record); and the logged cost
