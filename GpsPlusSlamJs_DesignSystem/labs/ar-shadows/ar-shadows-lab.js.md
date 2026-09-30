@@ -48,6 +48,10 @@ fallback, mutation, showRoom })`: rebuilds the occluder and the rig.
   - `lightPose()`: the rig's actual light direction next to the oracle's
     sun (they must agree).
 - Invariants & assumptions:
+  - The module installs the framework's page-wide [`guardSlidersIn(document)`](../../../GpsPlusSlamJs_AppFramework/src/utils/slider-scroll-guard.ts.md) (fetched over `/fw/`) when it
+    loads, so a swipe that starts on a sun slider does not edit it (owner
+    report 2026-09-30); held to it by the root
+    `tests/repo-config/slider-pages-load-the-guard.test.js`.
   - The occluder takes RAW WebXR positions and applies `WEBXR_TO_NUE`
     itself, so the room is built in world coordinates and handed over
     through the inverse. Passing world positions straight in swaps the

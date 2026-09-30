@@ -14,6 +14,11 @@ import { OcclusionMesh } from "/fw/visualization/occlusion-mesh.js";
 import { createShadowPlane } from "/fw/visualization/shadow-receiver.js";
 import { enableSunShadows } from "/fw/visualization/sun-shadow.js";
 import { classifyProbe, shadowTexelM } from "/fw/test-utils/shadow-oracle.js";
+import { guardSlidersIn } from "/fw/utils/slider-scroll-guard.js";
+
+// A swipe that starts on a sun slider must not edit it (owner report
+// 2026-09-30; the framework's page-wide slider guard).
+guardSlidersIn(document);
 
 const DEG = Math.PI / 180;
 /** The room: 8 × 8 m, meshed at 10 cm like a fine occupancy grid. */

@@ -5,8 +5,14 @@
  * reload, and a narrow screen starts folded. The error box sits outside the
  * body, so a folded plate never hides an error.
  *
+ * It also installs the framework's slider guard for the whole page (owner
+ * report 2026-09-30): a vertical swipe that starts on one of the plate's
+ * sliders scrolls the plate instead of editing the value. Every page that
+ * loads this module (the look-dev page, the globe and terrain labs) gets it.
+ *
  * @see panel.js.md
  */
+import { guardSlidersIn } from "/fw/utils/slider-scroll-guard.js";
 
 /** Namespaced: the page shares its origin with every app on the preview. */
 export const PANEL_STORAGE_KEY = "lookdev.panel";
@@ -68,3 +74,4 @@ function safeStorage() {
 }
 
 initPanel(document);
+guardSlidersIn(document);

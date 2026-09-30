@@ -22,7 +22,7 @@ import {
   rebuildEnabledFromSearch,
 } from "./shadow-diagnostics";
 import { createPerfStatsOverlay } from "gps-plus-slam-app-framework/visualization/perf-stats-overlay";
-import { guardSliderAgainstScroll } from "gps-plus-slam-app-framework/utils/slider-scroll-guard";
+import { guardSlidersIn } from "gps-plus-slam-app-framework/utils/slider-scroll-guard";
 import { startReplayPhysics } from "./replay-physics";
 import type { ReplaySessionController } from "gps-plus-slam-app-framework/state/replay-session";
 
@@ -35,6 +35,10 @@ function requireEl<T extends HTMLElement = HTMLElement>(id: string): T {
 }
 
 function main(): void {
+  // Every slider on the page: a vertical swipe that starts on one scrolls the
+  // panel instead of editing it (2026-07-27 recorder field feedback, the same
+  // bug class; generalised to every demo page 2026-09-30).
+  guardSlidersIn(document);
   const app = requireEl("app");
   const overlay = requireEl("overlay");
   const modeScreen = requireEl("mode-screen");
@@ -208,11 +212,6 @@ function main(): void {
     speedValue.textContent = `${factor}×`;
     controller?.setSpeed(factor);
   };
-  // Guard BEFORE the listener: on a phone the replay panel is swiped past, and
-  // a native range input would otherwise edit itself as the finger travels
-  // (2026-07-27 recorder field feedback, same bug class). At-target listeners
-  // fire in registration order, which is what lets the guard shield this one.
-  guardSliderAgainstScroll(speedInput);
   speedInput.addEventListener("input", applySpeed);
 }
 

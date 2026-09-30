@@ -68,6 +68,12 @@
         gap: 6px;
       }
 
+      /* A vertical swipe over a slider scrolls; the value is held by the
+         framework's slider guard (ar-shadows-lab.js). */
+      .panel input[type="range"] {
+        touch-action: pan-y;
+      }
+
       .panel label {
         display: flex;
         gap: 8px;

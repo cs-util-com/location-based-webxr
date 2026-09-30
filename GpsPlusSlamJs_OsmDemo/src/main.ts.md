@@ -11,6 +11,10 @@ None. Entry point only, loaded by `index.html`.
 
 ## Invariants & assumptions
 
+- `main()` first installs the framework's page-wide [`guardSlidersIn(document)`](../../GpsPlusSlamJs_AppFramework/src/utils/slider-scroll-guard.ts.md): a vertical swipe that starts on
+  any slider (the page's own, the light dialog's and the AR compass control's,
+  built at runtime) scrolls instead of editing it (owner report 2026-09-30).
+  Held to it by the root `tests/repo-config/slider-pages-load-the-guard.test.js`.
 - **Deliberately thin.** Everything that can be wrong in an interesting way is
   in `demo-pipeline.ts` (data), `refresh-cycle.ts` (the async cycle and its two
   failure kinds), `osm-store.ts` (shared state) and `heat-colours.ts`, all pure

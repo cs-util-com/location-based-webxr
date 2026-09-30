@@ -98,6 +98,7 @@ import { shadowCheckEnabled, sunShadowEnabled } from "./ar-sun-shadow.js";
 import { startArWalk, type ArWalk } from "./ar-walk-controller.js";
 import { createArToast } from "./ar-toast.js";
 import { createToast } from "gps-plus-slam-app-framework/utils/toast-core";
+import { guardSlidersIn } from "gps-plus-slam-app-framework/utils/slider-scroll-guard";
 import { createLoadingAnnouncer } from "./loading-announcer.js";
 import { createLoadingOverlay } from "./loading-overlay.js";
 import { canEnterAr, terrainReadout } from "./ar-origin.js";
@@ -241,6 +242,10 @@ function createWorkerClient(onFatal: (message: string) => void) {
 }
 
 async function main(): Promise<void> {
+  // Every slider on the page, including the ones the light dialog and the AR
+  // compass control build at runtime: a vertical swipe that starts on one
+  // scrolls instead of editing it (owner report 2026-09-30).
+  guardSlidersIn(document);
   const status = el("status");
   const categorySelect = el<HTMLSelectElement>("category");
   const showBelow = el<HTMLInputElement>("show-below");

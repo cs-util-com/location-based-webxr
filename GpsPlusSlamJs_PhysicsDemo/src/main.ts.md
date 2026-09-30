@@ -23,15 +23,14 @@ lives in the tested `mode-detection` / `replay-launch` modules; this file is glu
   mode screen hides and `#replay-panel` appears with a status + play/pause + speed;
   on failure the message reverts to the error and the input re-enables.
 - Play/pause toggles `controller.pause()`/`resume()` and its label; the speed
-  slider calls `controller.setSpeed()` and updates the `N×` readout. The slider
-  is first wrapped by the framework's
-  [`guardSliderAgainstScroll`](../../GpsPlusSlamJs_AppFramework/src/utils/slider-scroll-guard.ts.md)
-  — **installed before the `input` listener**, since at-target listeners fire in
-  registration order and that is the only reason the guard can stop a
-  scroll-gesture event before this file reacts. On touch, the speed changes only
-  on an explicit horizontal drag or a short tap; swiping past the panel scrolls
-  the page (paired with `touch-action: pan-y` in `index.html`, pinned by
-  `slider-touch-gesture.test.ts`).
+  slider calls `controller.setSpeed()` and updates the `N×` readout. `main()`
+  first installs the framework's page-wide
+  [`guardSlidersIn(document)`](../../GpsPlusSlamJs_AppFramework/src/utils/slider-scroll-guard.ts.md)
+  (capture phase, so listener order does not matter; held to it by the root
+  `slider-pages-load-the-guard` repo-config test). On touch, the speed changes
+  only on an explicit horizontal drag or a short tap; swiping past the panel
+  scrolls the page (paired with `touch-action: pan-y` in `index.html`, pinned
+  by `slider-touch-gesture.test.ts`).
 - `?shadows=0` (or `off` / `false`) starts the AR shadows switched off in
   both modes (`shadowsEnabledFromSearch`); they are on otherwise (W4 AR
   shadows plan 2026-09-26-0549 §11). The panel's Shadows switch

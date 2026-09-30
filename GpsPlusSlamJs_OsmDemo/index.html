@@ -63,6 +63,10 @@
          restyle of the element it protects. */
       input[type="range"] {
         margin: 2px;
+        /* Not a pin: a vertical swipe over a slider scrolls (Chromium's own
+           default, said out loud for other engines); the value itself is
+           held by the framework's slider guard, installed in main.ts. */
+        touch-action: pan-y;
       }
       * {
         box-sizing: border-box;

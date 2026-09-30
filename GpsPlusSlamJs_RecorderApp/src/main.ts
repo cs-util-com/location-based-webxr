@@ -165,6 +165,7 @@ import {
   type RecordingOptions,
 } from './state/recording-options';
 import { initSettingsModal } from './ui/settings-modal';
+import { guardSlidersIn } from 'gps-plus-slam-app-framework/utils/slider-scroll-guard';
 
 import { listFormatter } from 'gps-plus-slam-app-framework/utils/list-formatter';
 
@@ -851,6 +852,11 @@ export function collectTrackerErrors(
 
 async function main(): Promise<void> {
   log.info('Initializing...');
+
+  // Every slider on the page, the settings modal's and the ones built at
+  // runtime (the HUD debug wheel): a vertical swipe that starts on one
+  // scrolls instead of editing it (2026-07-27 feedback, 2026-09-30 report).
+  guardSlidersIn(document);
 
   // Load recording options from localStorage (before any other init)
   recordingOptions = loadRecordingOptions();

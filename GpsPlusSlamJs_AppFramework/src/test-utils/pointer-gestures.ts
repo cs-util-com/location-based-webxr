@@ -64,6 +64,8 @@ export function applyNativeSliderValue(
 
 export interface SliderGestureOptions {
   readonly pointerType?: string;
+  /** The gesture's pointer id (default 1), e.g. to model a second finger. */
+  readonly pointerId?: number;
   /** How the browser ends the gesture: released, or taken over for scrolling. */
   readonly end?: 'up' | 'cancel';
   /**
@@ -72,10 +74,29 @@ export interface SliderGestureOptions {
    * says so explicitly.
    */
   readonly durationMs?: number;
+  /**
+   * Also dispatch the touch events Chromium sends beside the pointer stream:
+   * `touchstart` / `touchmove` after each pointer event (before the value
+   * write, which is the touch event's default action) and a `touchend` last.
+   */
+  readonly touchEvents?: boolean;
+  /**
+   * Points Blink keeps writing AFTER a `pointercancel`: its own direction lock
+   * said horizontal on the first move, so every later `touchmove` still drags
+   * the thumb while the page scrolls. Needs `end: 'cancel'` and
+   * `touchEvents`.
+   */
+  readonly afterCancel?: readonly GesturePoint[];
+  /** Leave the final `touchend` out, to model a lost end event. */
+  readonly omitTouchEnd?: boolean;
 }
 
 /** Well above the guard's tap window — the deliberate default for swipes. */
 const DEFAULT_GESTURE_MS = 1000;
+
+function dispatchTouch(input: HTMLInputElement, type: string): void {
+  input.dispatchEvent(new Event(type, { bubbles: true, cancelable: true }));
+}
 
 /**
  * Drive a full gesture over a range input the way Blink does: the thumb jumps
@@ -99,42 +120,47 @@ export function simulateNativeSliderGesture(
   if (!first) {
     throw new Error('simulateNativeSliderGesture: path must not be empty');
   }
-  const pointerType = options.pointerType ?? 'touch';
+  const touch = options.touchEvents === true;
   const duration = options.durationMs ?? DEFAULT_GESTURE_MS;
   const stepMs = duration / Math.max(1, path.length - 1);
+  const pointer = (type: string, point: GesturePoint, timeStamp: number) =>
+    input.dispatchEvent(
+      createPointerEvent(type, {
+        x: point.x,
+        y: point.y,
+        pointerType: options.pointerType ?? 'touch',
+        pointerId: options.pointerId ?? 1,
+        timeStamp,
+      })
+    );
 
-  input.dispatchEvent(
-    createPointerEvent('pointerdown', {
-      x: first.x,
-      y: first.y,
-      pointerType,
-      timeStamp: 0,
-    })
-  );
+  pointer('pointerdown', first, 0);
+  if (touch) dispatchTouch(input, 'touchstart');
   applyNativeSliderValue(input, first.x);
 
   path.slice(1).forEach((point, index) => {
-    input.dispatchEvent(
-      createPointerEvent('pointermove', {
-        x: point.x,
-        y: point.y,
-        pointerType,
-        timeStamp: (index + 1) * stepMs,
-      })
-    );
+    pointer('pointermove', point, (index + 1) * stepMs);
+    if (touch) dispatchTouch(input, 'touchmove');
     applyNativeSliderValue(input, point.x);
   });
 
   const last = path[path.length - 1] ?? first;
-  input.dispatchEvent(
-    createPointerEvent(
-      options.end === 'cancel' ? 'pointercancel' : 'pointerup',
-      {
-        x: last.x,
-        y: last.y,
-        pointerType,
-        timeStamp: duration,
-      }
-    )
+  pointer(
+    options.end === 'cancel' ? 'pointercancel' : 'pointerup',
+    last,
+    duration
   );
+  if (touch) finishTouchSequence(input, options);
+}
+
+/** Blink's writes after a pointercancel, then the touch sequence's end. */
+function finishTouchSequence(
+  input: HTMLInputElement,
+  options: SliderGestureOptions
+): void {
+  for (const point of options.afterCancel ?? []) {
+    dispatchTouch(input, 'touchmove');
+    applyNativeSliderValue(input, point.x);
+  }
+  if (!options.omitTouchEnd) dispatchTouch(input, 'touchend');
 }

@@ -14,6 +14,12 @@
     `NARROW_QUERY` (`(max-width: 600px)`).
   - The module calls `initPanel(document)` when loaded; `index.html` loads
     it as its own module script, beside `lookdev.js`.
+  - It also installs the framework's page-wide [`guardSlidersIn(document)`](../../GpsPlusSlamJs_AppFramework/src/utils/slider-scroll-guard.ts.md) (fetched over `/fw/`) when loaded, for
+    every page that loads it (the look-dev page, the globe and terrain labs):
+    a vertical swipe that starts on a slider scrolls the plate instead of
+    editing it (owner report 2026-09-30). Held to it by the root
+    `tests/repo-config/slider-pages-load-the-guard.test.js`; proven in a
+    browser by `slider-touch.smoke.spec.mjs`.
 - Invariants & assumptions:
   - The stored choice (`"open"` or `"collapsed"`) wins over the width; with
     none, a narrow screen starts folded and a wide one open.
