@@ -51,7 +51,7 @@ export interface ObjectListState {
   readonly note: string;
 }
 
-export interface ObjectRowModel {
+interface ObjectRowModel {
   readonly id: string;
   readonly kind: TourObject["kind"];
   /** A pin's text; a photo's caption or "Photo". */
