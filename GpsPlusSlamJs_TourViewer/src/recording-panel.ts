@@ -144,20 +144,34 @@ export interface SaveGuard {
   /** Give it back (in a `finally`). */
   finish(): void;
   active(): boolean;
+  /** Called after every take and give-back: a control that shows the
+   *  guard (the panel's disabled Save) follows it without waiting for an
+   *  unrelated re-render. */
+  onChange(listener: () => void): void;
 }
 
 export function createSaveGuard(): SaveGuard {
   let active = false;
+  const listeners: (() => void)[] = [];
+  function changed(): void {
+    for (const listener of listeners) listener();
+  }
   return {
     tryStart() {
       if (active) return false;
       active = true;
+      changed();
       return true;
     },
     finish() {
+      if (!active) return;
       active = false;
+      changed();
     },
     active: () => active,
+    onChange(listener) {
+      listeners.push(listener);
+    },
   };
 }
 
@@ -265,6 +279,8 @@ export function wireRecordingPanel(deps: {
     })();
   });
 
+  // The offer's save takes and gives back the same guard (M1b review #9).
+  deps.saveGuard.onChange(render);
   render();
   return {
     beginOnArEntry: () => {

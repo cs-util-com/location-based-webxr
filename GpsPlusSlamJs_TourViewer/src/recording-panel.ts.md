@@ -39,9 +39,11 @@ estimateStorage, now, saveGuard }): RecordingPanel`
   (module-private) - "Saved as ...", "Shared as ...", the same with ", but
   without its session.json (reason) - the Recorder may replay it
   misaligned.", or "Nothing was saved - tap <retryLabel> again.".
-- `createSaveGuard(): SaveGuard { tryStart(), finish(), active() }` - the
+- `createSaveGuard(): SaveGuard { tryStart(), finish(), active(), onChange(listener) }` - the
   recording block's one-save-at-a-time guard (M1b review #9). The page makes
   one and hands it to this panel (`saveGuard` dep) and to the orphan offer.
+  `onChange` listeners run after every take and every real give-back (a
+  second `finish()` is a no-op); the panel registers its `render`.
 - `SAVE_RECORDING_LABEL`, `SAVE_RECORDING_BUSY_LABEL`, `ANOTHER_SAVE_RUNNING`
   (the line a save tap gets while another save runs).
 
@@ -74,7 +76,9 @@ estimateStorage, now, saveGuard }): RecordingPanel`
 - **One save at a time across the block** (M1b review #9). "Save the
   recording" and the offer's two steps share one guard: each builds or hands
   over a zip of up to a gigabyte and writes the block's one status line. The
-  button is disabled while the guard is taken (at the next render), and a
+  button is disabled while the guard is taken - the panel re-renders on the
+  guard's own changes, because after the AR exit no dispatch would (a
+  finished offer save used to leave Save disabled) - and a
   tap that still reaches it starts nothing and says "Another recording is
   being saved - wait for it to finish." A zip saved without its `session.json` says so, because the
   Recorder then takes it for an old recording and migrates its coordinates.
@@ -129,7 +133,7 @@ state, the share wording, the nothing-saved wording, the missing-session.json
 wording, a failure with its reason, and no second save while busy; the saved
 mark only after a hand-off that delivered, at its moment, and a mark that does
 not persist still reports the save (M1b); the guard shared with the offer
-(a tap while it is taken starts nothing and says why) and given back after a
-failure (M1b review #9). End to
+(a tap while it is taken starts nothing and says why), given back after a
+failure (M1b review #9), and followed by the button with no other render. End to
 end: `playwright-tests/ar-mode.spec.js` (the recording e2e) and
 `ar-layout.spec.js` (the marker inside the overlay's tallest state).

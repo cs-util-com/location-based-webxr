@@ -461,6 +461,23 @@ describe("Save the recording", () => {
     expect(saveGuard.active()).toBe(false);
   });
 
+  it("follows the offer's save on its own: disabled while it runs, enabled again when it ends, with no other re-render", () => {
+    // Why: the panel re-renders on store dispatches and AR state changes,
+    // and after the AR exit neither happens. An offer save that ended then
+    // left "Save the recording" disabled although nothing was running -
+    // the button only came back with the next unrelated render.
+    const saveGuard = createSaveGuard();
+    const h = harness({ saveGuard });
+    h.dom.optIn.checked = true;
+    h.panel.beginOnArEntry();
+    expect(h.dom.saveButton.disabled).toBe(false);
+
+    expect(saveGuard.tryStart()).toBe(true); // the offer's save starts
+    expect(h.dom.saveButton.disabled).toBe(true);
+    saveGuard.finish(); // ...and ends
+    expect(h.dom.saveButton.disabled).toBe(false);
+  });
+
   it("a failed save gives the guard back", async () => {
     const saveGuard = createSaveGuard();
     const h = harness({
