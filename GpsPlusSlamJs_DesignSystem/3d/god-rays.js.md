@@ -41,6 +41,10 @@ info() }`:
     composer, inserted right before the composer's `OutputPass`, and gives
     the composer's scene target (`renderTarget2`) a `DepthTexture`; off
     keeps it disabled; a different composer (or none) drops it.
+  - `sync(composer, true)` THROWS (and leaves the pass off) when the
+    composer's enabled passes swap an odd number of times a frame (the
+    invariant below, review 2026-09-29 A1). The page calls it on every
+    tier or look change, so a new swapping pass fails loudly there.
   - `configure` merges values into the live pass and any later one
     (a refused value changes nothing) and returns the merged set.
   - `info()` → `{ active, x, y, inFront, fade, params }`, the last drawn
@@ -59,8 +63,13 @@ info() }`:
 - THE DEPTH TEXTURE IS THE SCENE TARGET'S, resolved from its multisampled
   depth by three at the end of the RenderPass. It is the scene's only while
   the composer's swapping passes are even in number (lookdev.js
-  `applyTier`); the pass itself does not swap (`needsSwap` false) and its
-  three draws neither test nor write depth.
+  `applyTier`: the clamp and the OutputPass swap; the RenderPass, the bloom,
+  the AO and this pass do not). `sync` checks that count whenever the rays
+  are on: three keeps its read and write buffers across frames, so an odd
+  count would put the RenderPass on renderTarget1 every other frame, and
+  the mask would read a cleared depth there (every pixel sky, a flicker).
+  The pass itself does not swap (`needsSwap` false) and its three draws
+  neither test nor write depth.
 - Three draws a frame: the sky mask and the radial blur into two
   half-float buffers at `scale` of the composer's size (linear filtered),
   and a composite that ADDS the rays' colour into the composer's read
@@ -113,10 +122,12 @@ rays.configure({ samples: 64 }); // the sweep's handle
   validation, and the pass against a recording renderer (its place before
   the output, the depth texture, no swap, three draws into the right
   targets with no depth test or write, additive colour with the alpha
-  kept, autoClear restored, no draw at fade 0, the last-pass refusal).
+  kept, autoClear restored, no draw at fade 0, the last-pass refusal, the
+  odd-swap refusal).
 - `god-rays.smoke.spec.mjs` (the page, SwiftShader): the rays against
   their own off baseline at the same pixels (a partly covered sun gains
-  light in a band, less far out, nothing darker), sky only (a wall in
+  light in a band, less far out, nothing darker), the same with the AO
+  on (the desktop default: the rays still only add), sky only (a wall in
   front of the sun adds nothing at threshold 0, with a control),
   byte-identical frames behind the camera and below the horizon (with an
   in-run mutation of the horizon fade), byte-identical frames with the

@@ -327,14 +327,18 @@ function recordingRenderer() {
   return r;
 }
 
-/** A stand-in for the page's composer: RenderPass, clamp, OutputPass. */
+/**
+ * A stand-in for the page's composer: RenderPass, clamp, OutputPass, with
+ * three's flags (a Pass is enabled and swaps unless it says otherwise; the
+ * RenderPass does not swap).
+ */
 function composerLike() {
   const renderTarget1 = new THREE.WebGLRenderTarget(8, 8);
   const renderTarget2 = renderTarget1.clone();
   const passes = [
-    { name: "render", isRenderPass: true },
-    { name: "clamp" },
-    { name: "output", isOutputPass: true },
+    { name: "render", isRenderPass: true, enabled: true, needsSwap: false },
+    { name: "clamp", enabled: true, needsSwap: true },
+    { name: "output", isOutputPass: true, enabled: true, needsSwap: true },
   ];
   return {
     passes,
@@ -390,6 +394,30 @@ describe("createGodRays", () => {
     rays.sync(null, true);
     assert.equal(rays.pass, null);
     assert.equal(rays.active, false);
+  });
+
+  // Review 2026-09-29 A1: the mask reads the depth of renderTarget2, where
+  // the RenderPass draws only while the composer's enabled passes swap an
+  // EVEN number of times a frame (three keeps its read/write buffers from
+  // one frame to the next). A third swapping pass would make every other
+  // frame read a cleared depth (every pixel sky, a flicker) with no error
+  // and no smoke that sees it, so switching the rays on refuses it.
+  it("refuses to run under a composer whose enabled passes swap an odd number of times", () => {
+    const rays = godRaysFor(direction(10));
+    const composer = composerLike();
+    const extra = { name: "extra", enabled: true, needsSwap: true };
+    composer.insertPass(extra, 2);
+    assert.throws(() => rays.sync(composer, true), /swap/);
+    assert.equal(rays.active, false);
+    // Off asks nothing of the composer.
+    assert.doesNotThrow(() => rays.sync(composer, false));
+    // A disabled swapping pass does not swap: the count is even again.
+    extra.enabled = false;
+    assert.doesNotThrow(() => rays.sync(composer, true));
+    assert.equal(rays.active, true);
+    // A later odd count is refused at the next sync that keeps them on.
+    extra.enabled = true;
+    assert.throws(() => rays.sync(composer, true), /swap/);
   });
 
   it("draws mask, rays and an additive composite into the read buffer, and restores autoClear", () => {

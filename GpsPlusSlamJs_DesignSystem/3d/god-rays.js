@@ -452,6 +452,11 @@ function godRaysPassClass({ THREE, Pass, FullScreenQuad }) {
  *
  * `sync(composer, on)` brings it to the state; a different composer (or
  * none) drops the pass, and the page disposes a composer's passes with it.
+ * Switching them on (or keeping them on) under a composer whose enabled
+ * passes swap an ODD number of times a frame throws, with the pass left
+ * off: three keeps its read and write buffers across frames, so the
+ * RenderPass would draw into renderTarget2 only every other frame and the
+ * mask would read a cleared depth in between (review 2026-09-29 A1).
  */
 export function createGodRays({
   THREE,
@@ -473,6 +478,17 @@ export function createGodRays({
         host = composer ?? null;
       }
       if (!composer) return;
+      if (on) {
+        const swaps = composer.passes.filter(
+          (p) => p.enabled !== false && p.needsSwap,
+        ).length;
+        if (swaps % 2 !== 0) {
+          if (pass) pass.enabled = false;
+          throw new Error(
+            `god rays need the composer's enabled passes to swap an even number of times a frame, so the scene (and the depth the mask reads) stays on renderTarget2; ${swaps} swap`,
+          );
+        }
+      }
       if (on && !pass) {
         const target = composer.renderTarget2;
         if (!target.depthTexture) {

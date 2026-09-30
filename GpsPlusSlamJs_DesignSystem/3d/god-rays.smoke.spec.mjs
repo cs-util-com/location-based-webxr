@@ -262,7 +262,11 @@ async function bootPlain(page, preset, extra = "") {
  * VEIL: the open golden sun (street view, clouds 0.3) brightened 53 % of
  * the frame by > 30 levels at the shipped look (the bloom's own bound is
  * 15 %, for a far gentler effect); veilMax 0.65 guards a whiteout, it does
- * not judge the look (airM 0 measured 66 %, strength 0.4 more).
+ * not judge the look. It BELONGS TO THE SHIPPED DEFAULT and is re-measured
+ * with any change of it: values the results record offers the owner read
+ * airM 0: 66-70 % (fails it), strength 0.4: 63.3 % (passes by 1.7 points),
+ * strength 0.15: 31.9 % (review 2026-09-29 A3). Raising it to fit them
+ * would stop it catching a real veil at the default.
  * HDR: before tone mapping the pass only adds (the worst point within
  * half-float rounding), and the ring 0.1 heights from the sun gains more
  * than the ring 0.6 out (measured 0.76 vs 0.05 behind the block, 0.22 vs
@@ -345,6 +349,32 @@ test("rays add light around a partly covered sun, fall off with distance, and da
   );
   // The open golden sun: a glow, bounded.
   expect(results[1][1].veil).toBeLessThanOrEqual(BOUNDS.veilMax);
+  expect(errors).toEqual([]);
+});
+
+// Review 2026-09-29 A2: the owner's desktop default (DEC-FB3-18) runs the
+// AO and the god rays together, in one composer. Behind the block (where
+// the AO darkens the creases the rays shine past), the rays against their
+// own off baseline WITH THE AO ON: in scene-linear light they still only
+// add, more near the sun than far out, and the band still gains.
+test("with the AO on, the rays still only add light", async ({ page }) => {
+  test.setTimeout(180_000);
+  const errors = await bootPlain(page, "golden", "&tier=desktop&ao=1");
+  await page.evaluate(() => window.__lookdev.setCloudCover(0));
+  await lookAtSun(page, await blockEye(page));
+  const r = await page.evaluate(() => {
+    const out = { ...window.__gr.gain(), hdr: window.__gr.hdrGain() };
+    return { ...out, aoActive: window.__lookdev.stats().aoActive };
+  });
+  console.log(
+    `AO + god rays, behind the block: AO ${r.aoActive}, band +${r.band.toFixed(1)} (bound ${BOUNDS.bandMin}), HDR +${r.hdr.near.toFixed(3)} at 0.1 / +${r.hdr.far.toFixed(3)} at 0.6, worst ${r.hdr.worst.toFixed(4)}, fade ${r.fade.toFixed(2)}`,
+  );
+  expect(r.aoActive).toBe(true);
+  expect(r.fade).toBe(1);
+  expect(r.hdr.worst).toBeGreaterThanOrEqual(0);
+  expect(r.hdr.near).toBeGreaterThan(0);
+  expect(r.hdr.far).toBeLessThan(r.hdr.near);
+  expect(r.band).toBeGreaterThanOrEqual(BOUNDS.bandMin);
   expect(errors).toEqual([]);
 });
 
