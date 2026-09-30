@@ -56,9 +56,25 @@ async function prepare(page) {
         document.querySelector(slider)
       );
       const panel = /** @type {HTMLElement} */ (document.querySelector(body));
-      const seen = { input: 0, change: 0, downAt: NaN, pressMs: NaN };
-      input.addEventListener("input", () => (seen.input += 1));
-      input.addEventListener("change", () => (seen.change += 1));
+      const seen = {
+        input: 0,
+        change: 0,
+        downAt: NaN,
+        pressMs: NaN,
+        // Every value event in order, "t" for a trusted (browser) one and
+        // "s" for a synthetic one (the guard's), for a failure message.
+        log: /** @type {string[]} */ ([]),
+      };
+      const note = (/** @type {Event} */ e) =>
+        seen.log.push(`${e.type}:${e.isTrusted ? "t" : "s"}`);
+      input.addEventListener("input", (e) => {
+        seen.input += 1;
+        note(e);
+      });
+      input.addEventListener("change", (e) => {
+        seen.change += 1;
+        note(e);
+      });
       input.addEventListener("pointerdown", (e) => (seen.downAt = e.timeStamp));
       input.addEventListener(
         "pointerup",
@@ -275,14 +291,23 @@ test.describe("on a touch screen", () => {
     const point = await farPoint(page, box);
 
     await tap(cdp, point);
+    // Let any event the browser queues after touchend land before counting.
+    await page.evaluate(
+      () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0))),
+    );
 
     const after = await state(page);
     // Precondition: the press was a tap by the guard's rule, not a slow
     // press (which the guard discards on purpose).
     expect(after.seen.pressMs).toBeLessThan(300);
     expect(after.value).not.toBe(before.value);
-    expect(after.seen.input).toBeGreaterThan(0);
-    expect(after.seen.change).toBeGreaterThan(0);
+    // Exactly one of each (review 2026-09-30, A3), as Chromium delivers a
+    // tap without the guard: an app that saves or logs on `change` must see
+    // one edit, not the guard's commit plus the browser's own `change` on
+    // touchend.
+    const order = after.seen.log.join(" ");
+    expect(after.seen.input, order).toBe(1);
+    expect(after.seen.change, order).toBe(1);
   });
 
   // Parameter sweep (owner rule 2026-09-13): the lean of a swipe decides

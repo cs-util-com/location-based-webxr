@@ -104,7 +104,8 @@ function asRangeInput(target: EventTarget | null): HTMLInputElement | null {
  * Listeners sit in the CAPTURE phase on `root`, so the guard runs before any
  * listener on the slider itself, whatever the registration order. Installing
  * twice on the same root is harmless: the calls share one install, removed
- * when the last disposer runs.
+ * when the last disposer runs. The shared install keeps the FIRST call's
+ * `tuning`; a different `tuning` passed to a later call is ignored.
  *
  * Range inputs inside a shadow root are not reached (their events are
  * retargeted to the host); guard the shadow root itself for those.
@@ -148,9 +149,16 @@ export function guardSliderAgainstScroll(input: HTMLInputElement): () => void {
 
 function attach(root: EventTarget, tuning: SliderGuardTuning): () => void {
   let gesture: ActiveGesture | null = null;
+  /**
+   * The slider of a touch tap the guard just replayed, while that tap's touch
+   * sequence ends. Chromium fires its own `change` as the `touchend`'s
+   * default action (measured 2026-09-30), which would deliver the tap twice.
+   */
+  let replayedTap: HTMLInputElement | null = null;
   const tanMax = Math.tan((tuning.horizontalMaxDeg * Math.PI) / 180);
 
   const onPointerDown = (event: PointerEvent): void => {
+    replayedTap = null; // a new interaction: nothing is still ending
     const input = asRangeInput(event.target);
     if (!input) return;
     // Only touch/pen gestures can be confused with scrolling. An unknown
@@ -225,6 +233,7 @@ function attach(root: EventTarget, tuning: SliderGuardTuning): () => void {
     ended.input.value = tapped;
     ended.input.dispatchEvent(new Event('input', { bubbles: true }));
     ended.input.dispatchEvent(new Event('change', { bubbles: true }));
+    if (ended.touchSeen) replayedTap = ended.input;
   };
 
   const onPointerCancel = (event: PointerEvent): void => {
@@ -244,6 +253,15 @@ function attach(root: EventTarget, tuning: SliderGuardTuning): () => void {
   };
 
   const onTouchEnd = (event: Event): void => {
+    const tap = replayedTap;
+    if (tap && asRangeInput(event.target) === tap) {
+      // The browser's `change` follows in this same dispatch, as the
+      // default action; once the task is over, nothing more is expected, so
+      // a later `change` (an arrow key, say) is never dropped.
+      setTimeout(() => {
+        if (replayedTap === tap) replayedTap = null;
+      }, 0);
+    }
     if (!gesture?.awaitingTouchEnd) return;
     if (asRangeInput(event.target) !== gesture.input) return;
     gesture.input.value = gesture.startValue;
@@ -251,6 +269,15 @@ function attach(root: EventTarget, tuning: SliderGuardTuning): () => void {
   };
 
   const onValueEvent = (event: Event): void => {
+    if (
+      event.type === 'change' &&
+      replayedTap !== null &&
+      asRangeInput(event.target) === replayedTap
+    ) {
+      replayedTap = null; // the browser's repeat of a tap already delivered
+      event.stopImmediatePropagation();
+      return;
+    }
     if (!gesture || gesture.intent === 'horizontal') return;
     if (asRangeInput(event.target) !== gesture.input) return;
     if (!gesture.awaitingTouchEnd) gesture.pendingValue = gesture.input.value;
@@ -279,6 +306,7 @@ function attach(root: EventTarget, tuning: SliderGuardTuning): () => void {
 
   return () => {
     gesture = null;
+    replayedTap = null;
     for (const [type, handler, options] of listeners) {
       root.removeEventListener(type, handler, options);
     }

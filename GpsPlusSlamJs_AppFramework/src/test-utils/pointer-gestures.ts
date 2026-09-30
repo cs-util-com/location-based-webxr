@@ -77,7 +77,11 @@ export interface SliderGestureOptions {
   /**
    * Also dispatch the touch events Chromium sends beside the pointer stream:
    * `touchstart` / `touchmove` after each pointer event (before the value
-   * write, which is the touch event's default action) and a `touchend` last.
+   * write, which is the touch event's default action) and a `touchend` last,
+   * followed by the `change` Blink fires as the touchend's default action
+   * when the value differs from the one the gesture started with (seen in
+   * headless Chromium 2026-09-30: after an unguarded swipe and after a
+   * guarded tap, never after a guarded scroll whose value was restored).
    */
   readonly touchEvents?: boolean;
   /**
@@ -121,6 +125,8 @@ export function simulateNativeSliderGesture(
     throw new Error('simulateNativeSliderGesture: path must not be empty');
   }
   const touch = options.touchEvents === true;
+  // Read before the gesture, as Blink's touchend compares against it.
+  const startValue = input.value;
   const duration = options.durationMs ?? DEFAULT_GESTURE_MS;
   const stepMs = duration / Math.max(1, path.length - 1);
   const pointer = (type: string, point: GesturePoint, timeStamp: number) =>
@@ -150,17 +156,25 @@ export function simulateNativeSliderGesture(
     last,
     duration
   );
-  if (touch) finishTouchSequence(input, options);
+  if (touch) finishTouchSequence(input, options, startValue);
 }
 
-/** Blink's writes after a pointercancel, then the touch sequence's end. */
+/**
+ * Blink's writes after a pointercancel, then the touch sequence's end and
+ * the `change` Blink fires with it when the value moved.
+ */
 function finishTouchSequence(
   input: HTMLInputElement,
-  options: SliderGestureOptions
+  options: SliderGestureOptions,
+  startValue: string
 ): void {
   for (const point of options.afterCancel ?? []) {
     dispatchTouch(input, 'touchmove');
     applyNativeSliderValue(input, point.x);
   }
-  if (!options.omitTouchEnd) dispatchTouch(input, 'touchend');
+  if (options.omitTouchEnd) return;
+  dispatchTouch(input, 'touchend');
+  if (input.value !== startValue) {
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }
 }

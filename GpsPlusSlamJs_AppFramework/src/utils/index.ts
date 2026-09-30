@@ -46,4 +46,7 @@ export {
   type FieldSpec,
   type GroupSpec,
 } from './validate-option-fields.js';
-export { guardSliderAgainstScroll } from './slider-scroll-guard.js';
+export {
+  guardSlidersIn,
+  guardSliderAgainstScroll,
+} from './slider-scroll-guard.js';

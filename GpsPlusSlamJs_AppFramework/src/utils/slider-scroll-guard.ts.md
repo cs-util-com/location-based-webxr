@@ -56,7 +56,12 @@ range input to it.
   - Returns a disposer. Installing twice on the same root shares one install
     (so a tap is never replayed twice); the listeners go when the last disposer
     runs; a disposer called twice is a no-op.
+  - **A later install keeps the first one's `tuning`.** A second call on the
+    same root only adds a reference; a different `tuning` passed to it is
+    ignored, silently (pinned by a test). Pages never pass one; the sweeps
+    dispose between runs.
   - No error modes; never throws.
+  - Also exported from the `utils` barrel, beside its deprecated alias.
 - `guardSliderAgainstScroll(input): () => void` - **deprecated**, equal to
   `guardSlidersIn(input)`. Kept for external callers; no page in this repo uses
   it (the repo-config test keeps it that way, since a per-slider install under
@@ -83,8 +88,15 @@ On release the guard decides:
 
 - `pointerup` while still `undecided`, within `tapMaxMs` of pointer-down →
   **tap**: the suppressed value is re-applied and fresh `input` + `change` events
-  are dispatched so the application sees the edit. (Chromium then fires its own
-  trusted `change` on `touchend` with the same value.)
+  are dispatched so the application sees the edit. Chromium then fires its own
+  trusted `change` as the `touchend`'s default action (measured in headless
+  Chromium 2026-09-30: `input:s change:s change:t`), which would deliver the
+  tap twice, so when the tap came with touch events the guard drops that one
+  `change` on that slider. The drop is armed only until the task that
+  dispatches the tap's `touchend` is over (a `setTimeout(0)` scheduled in the
+  `touchend` listener) or the next `pointerdown`, so an engine that sends no
+  trailing `change` never loses a later one. The app sees exactly one
+  `input` and one `change` per tap, as Chromium delivers without the guard.
 - `pointercancel` (the browser took the gesture over for scrolling) → the start
   value is restored. When a `touchstart` for the gesture reached the slider, the
   guard **keeps holding** the slider (intent `scroll`) until that touch
@@ -192,9 +204,12 @@ guardSlidersIn(document);
   the gesture is in flight, mouse untouched, non-gesture events, multi-touch,
   re-arming after a lost `pointerup`, the hold after `pointercancel` until the
   touch ends (and its release, and its re-arming), the disposer (which doubles
-  as the unguarded bug reproduction). Page-wide only: sliders created later,
-  a listener registered before the install, other inputs untouched, shared
-  installs.
+  as the unguarded bug reproduction), a touch tap delivering exactly one
+  `input` and one `change` despite the browser's trailing `change`, a later
+  `change` passing when the browser sent none, and the browser's `change`
+  after a drag passing. Page-wide only: sliders created later, a listener
+  registered before the install, other inputs untouched, shared installs
+  (keeping the first install's `tuning`), the `utils` barrel export.
 - [`slider-scroll-guard.property.test.ts`](slider-scroll-guard.property.test.ts)
   — random gesture paths: vertical-dominant swipes never edit, clearly
   horizontal drags always apply, gestures slower than the tap window only edit

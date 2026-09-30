@@ -18,6 +18,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   guardSliderAgainstScroll,
   guardSlidersIn,
+  SLIDER_GUARD_TUNING,
 } from './slider-scroll-guard.js';
 import {
   applyNativeSliderValue,
@@ -118,6 +119,70 @@ describe.each(INSTALLS)('slider-scroll-guard on %s', (_name, install) => {
 
     expect(slider.value).toBe('70');
     expect(onInput).toHaveBeenCalledTimes(1);
+  });
+
+  it('delivers a touch tap as exactly one input and one change', () => {
+    // Why this test matters (review 2026-09-30, A3; measured in headless
+    // Chromium the same day as `input:s change:s change:t`): Chromium fires
+    // its own `change` on touchend, AFTER the guard committed the tap with
+    // its own pair, so an app that saves or logs on `change` saw one tap as
+    // two edits. Without the guard Chromium delivers one of each.
+    const onChange = vi.fn<() => void>();
+    slider.addEventListener('change', onChange);
+
+    simulateNativeSliderGesture(slider, [{ x: 70, y: 300 }], {
+      durationMs: 90,
+      touchEvents: true,
+    });
+
+    expect(slider.value).toBe('70');
+    expect(onInput).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets a later change through when the browser sent none after the tap', async () => {
+    // Why this test matters: the guard drops the browser's trailing change
+    // only while that tap's touch sequence is ending. An engine that sends no
+    // such change must not leave the guard waiting to swallow the next real
+    // one, e.g. an arrow-key edit a moment later.
+    const onChange = vi.fn<() => void>();
+    slider.addEventListener('change', onChange);
+    slider.dispatchEvent(
+      createPointerEvent('pointerdown', { x: 70, y: 300, timeStamp: 0 })
+    );
+    slider.dispatchEvent(new Event('touchstart', { bubbles: true }));
+    applyNativeSliderValue(slider, 70);
+    slider.dispatchEvent(
+      createPointerEvent('pointerup', { x: 70, y: 300, timeStamp: 90 })
+    );
+    slider.dispatchEvent(new Event('touchend', { bubbles: true }));
+    expect(onChange).toHaveBeenCalledTimes(1);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    slider.value = '71';
+    slider.dispatchEvent(new Event('change', { bubbles: true }));
+
+    expect(onChange).toHaveBeenCalledTimes(2);
+  });
+
+  it('passes the browser change after a horizontal drag', () => {
+    // Why this test matters: the trailing `change` is dropped only after a
+    // tap the guard replayed; after a drag it is the only `change` there is.
+    const onChange = vi.fn<() => void>();
+    slider.addEventListener('change', onChange);
+
+    simulateNativeSliderGesture(
+      slider,
+      [
+        { x: 40, y: 300 },
+        { x: 55, y: 302 },
+        { x: 80, y: 305 },
+      ],
+      { touchEvents: true }
+    );
+
+    expect(slider.value).toBe('80');
+    expect(onChange).toHaveBeenCalledTimes(1);
   });
 
   it('discards a slow press that never moved', () => {
@@ -396,5 +461,37 @@ describe('guardSlidersIn(document)', () => {
       { x: 21, y: 200 },
     ]);
     expect(slider.value).toBe('21');
+  });
+
+  it('keeps the tuning of the first install: a later install on the same root only adds a reference', () => {
+    // Why this test matters (review 2026-09-30): installs on one root are
+    // shared, so a second caller passing a different `tuning` gets the first
+    // caller's rule, silently. This pins that documented behaviour, so a
+    // change to it is a decision rather than an accident.
+    const first = guardSlidersIn(document);
+    const second = guardSlidersIn(document, {
+      ...SLIDER_GUARD_TUNING,
+      intentPx: 1000,
+    });
+    const slider = makeSlider();
+    // A 60 px sideways drag: horizontal under the default 12 px rule, still
+    // undecided (so discarded) under the ignored 1000 px one.
+    simulateNativeSliderGesture(slider, [
+      { x: 20, y: 300 },
+      { x: 50, y: 300 },
+      { x: 80, y: 300 },
+    ]);
+    expect(slider.value).toBe('80');
+    second();
+    first();
+  });
+
+  it('is exported from the utils barrel beside its deprecated alias', async () => {
+    // Why this test matters (review 2026-09-30): the barrel carried only the
+    // deprecated per-slider alias, so a consumer of `/utils` could not reach
+    // the page-wide install the migration note tells it to use.
+    const barrel = await import('./index.js');
+    expect(barrel.guardSlidersIn).toBe(guardSlidersIn);
+    expect(barrel.guardSliderAgainstScroll).toBe(guardSliderAgainstScroll);
   });
 });
