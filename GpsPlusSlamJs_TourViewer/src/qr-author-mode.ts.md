@@ -39,6 +39,12 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   "hold steady" - moving the camera is what resolves the tilt (§61 #11). The copy is the creator
   setup's guidance since the guided-setup plan M3 ("Hold the phone on the
   printed code…", "Measured and stable - save the position.").
+- `entryHint({ tourOpen, codeSeen })` - the AR visit's first hint (authoring
+  plan 2026-09-28-0953 §3.2a, decision D5): "First, point the camera at the
+  code you scanned to open this tour." while a tour is open and the code in
+  hand has not been seen stable in this visit; empty otherwise. It blocks
+  nothing: a later visit's notes are corrected through the code only when
+  the code was seen (D10b), and the owner chose a hint over a rule.
 - `setupHint({ measured, tourOpen, hadLevel })` - what the panel says once
   measured: "Position saved." when no tour is open (`codeTourLine` then
   says what is happening to the code's tour; scan-to-open plan §9 #9), that

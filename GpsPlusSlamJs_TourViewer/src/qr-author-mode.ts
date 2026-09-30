@@ -247,6 +247,22 @@ export function codeTourLine(status: CodeTourStatus): string {
   }
 }
 
+/**
+ * The first thing the panel says in an AR visit (authoring plan
+ * 2026-09-28-0953 §3.2a, decision D5): look at the tour's code first, until
+ * this visit has seen it. A later visit's notes are corrected through the
+ * code only when the code was seen in that visit (D10b); the owner chose a
+ * hint over a rule, so nothing is blocked while it shows. Empty with no
+ * tour open - there is no "code of this tour" yet.
+ */
+export function entryHint(state: {
+  tourOpen: boolean;
+  codeSeen: boolean;
+}): string {
+  if (!state.tourOpen || state.codeSeen) return "";
+  return "First, point the camera at the code you scanned to open this tour.";
+}
+
 /** What the setup panel says once the code is measured: the next move. */
 export function setupHint(state: {
   measured: boolean;

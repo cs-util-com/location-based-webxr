@@ -206,6 +206,10 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
     the choice: a field recording in which the stable poses of a re-sighted
     code disagree with its stored pose by more than the 0.3 m / 2 degree
     acceptance (plan §3.2) - then an averaged hold is the next step.
+  - **The entry hint** (§3.2a, D5): the live status line starts with
+    `entryHint` while a tour is open and `ctx.visitCodeSighting` holds no
+    sighting of the code in hand (any code while none is measured); it goes
+    the moment this visit has one, and never locks a control.
 
 - **A Drive tour's finish SAVES and shows the Drive steps** (Drive replace
   plan §2 decisions 1 and 4): the route is `finishRoute({canShare,

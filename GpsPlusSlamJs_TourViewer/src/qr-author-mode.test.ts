@@ -12,6 +12,7 @@ import {
   finishBlockedHint,
   finishReadiness,
   setupHint,
+  entryHint,
   codeIndexFromInput,
   buildAuthorControllerConfig,
   syntheticAuthorLevel,
@@ -242,6 +243,21 @@ describe("authorStatusLine", () => {
       expect(text).not.toMatch(/hold steady/i);
       expect(text).not.toMatch(/of 5/);
     }
+  });
+});
+
+describe("entryHint (authoring plan 2026-09-28-0953 §3.2a, decision D5)", () => {
+  it("asks for the code first while a tour is open and the code was not seen in this AR visit", () => {
+    // Why this matters: a later visit's notes are only corrected through
+    // the code when the code was seen in THAT visit (D10b). The owner chose
+    // a hint over a rule: nothing blocks placing, so the hint is all that
+    // tells the author what to do first.
+    expect(entryHint({ tourOpen: true, codeSeen: false })).toBe(
+      "First, point the camera at the code you scanned to open this tour.",
+    );
+    expect(entryHint({ tourOpen: true, codeSeen: true })).toBe("");
+    // No tour open: there is no "code of this tour" to point at yet.
+    expect(entryHint({ tourOpen: false, codeSeen: false })).toBe("");
   });
 });
 

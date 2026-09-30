@@ -61,6 +61,14 @@ vi.mock("gps-plus-slam-app-framework/ar/qr/qr-tracking-controller", () => ({
   },
 }));
 
+/**
+ * Per-test timeout. A test here walks one or two whole AR visits through the
+ * real fused-pose source (eight detections each, plus the mint): 0.4-1.2 s
+ * on an idle machine, 5-10 s measured at 100% CPU with other suites running.
+ * The default 5 s would make them fail on load alone, never on behaviour.
+ */
+const SLOW_MS = 30_000;
+
 const SIZE_M = 0.16;
 const ZERO = { lat: 47.5, lon: 8.7 };
 const K = { fx: 820, fy: 820, cx: 512, cy: 384 };
@@ -373,49 +381,56 @@ function authoring(options: { store?: DraftFileStore } = {}) {
   };
 }
 
-describe("symptom A: a note placed in AR stays put while GPS re-solves", () => {
-  it("keeps a pin's preview at its spot in AR when the alignment changes", async () => {
-    // Before M2c the preview was added to the SCENE ROOT from its geo, while
-    // the camera rides the world group, so every alignment re-solve slid the
-    // note against the real world - what the owner saw (plan §2.1, A1).
-    const a = authoring();
-    a.ctx.mintedLevel = { id: "lvl", json: "{}" };
-    await a.placePin("Gate", [2, 0, -1]);
-    const before = a.inWorldGroup("Gate");
-    expect(before.distanceTo(new Vector3(2, 0, -1))).toBeLessThan(1e-9);
+describe(
+  "symptom A: a note placed in AR stays put while GPS re-solves",
+  { timeout: SLOW_MS },
+  () => {
+    it("keeps a pin's preview at its spot in AR when the alignment changes", async () => {
+      // Before M2c the preview was added to the SCENE ROOT from its geo, while
+      // the camera rides the world group, so every alignment re-solve slid the
+      // note against the real world - what the owner saw (plan §2.1, A1).
+      const a = authoring();
+      a.ctx.mintedLevel = { id: "lvl", json: "{}" };
+      await a.placePin("Gate", [2, 0, -1]);
+      const before = a.inWorldGroup("Gate");
+      expect(before.distanceTo(new Vector3(2, 0, -1))).toBeLessThan(1e-9);
 
-    // GPS moves the alignment 4 m and turns it 8 degrees.
-    a.setAlignment(yawAlignment(8, [4, 400, -1]));
+      // GPS moves the alignment 4 m and turns it 8 degrees.
+      a.setAlignment(yawAlignment(8, [4, 400, -1]));
 
-    const after = a.inWorldGroup("Gate");
-    expect(after.distanceTo(new Vector3(2, 0, -1))).toBeLessThan(1e-9);
-  });
+      const after = a.inWorldGroup("Gate");
+      expect(after.distanceTo(new Vector3(2, 0, -1))).toBeLessThan(1e-9);
+    });
 
-  it("keeps each object's odometry pose and its visit, a photo's through the one conversion", async () => {
-    // What the settle recomputes geo from (plan §3.2): the pose in the
-    // world group's frame, and the AR visit it is valid in. A photo's
-    // capture pose is raw WebXR, so it goes through `odomNueFromWebXr` -
-    // never the trailing basis form.
-    const a = authoring();
-    a.ctx.mintedLevel = { id: "lvl", json: "{}" };
-    await a.placePin("Gate", [2, 0, -1]);
-    const cameraPose: Pose = { position: [0.5, 1.4, -0.2], rotation: yawQ(90) };
-    a.ctx.latestFrame = {
-      image: { data: new Uint8ClampedArray(48), width: 4, height: 3 },
-      cameraPose,
-      capturedAtMs: performance.timeOrigin + performance.now(),
-    };
-    a.dom.photoButton.click();
-    await flush();
+    it("keeps each object's odometry pose and its visit, a photo's through the one conversion", async () => {
+      // What the settle recomputes geo from (plan §3.2): the pose in the
+      // world group's frame, and the AR visit it is valid in. A photo's
+      // capture pose is raw WebXR, so it goes through `odomNueFromWebXr` -
+      // never the trailing basis form.
+      const a = authoring();
+      a.ctx.mintedLevel = { id: "lvl", json: "{}" };
+      await a.placePin("Gate", [2, 0, -1]);
+      const cameraPose: Pose = {
+        position: [0.5, 1.4, -0.2],
+        rotation: yawQ(90),
+      };
+      a.ctx.latestFrame = {
+        image: { data: new Uint8ClampedArray(48), width: 4, height: 3 },
+        cameraPose,
+        capturedAtMs: performance.timeOrigin + performance.now(),
+      };
+      a.dom.photoButton.click();
+      await flush();
 
-    const [pin, photo] = a.ctx.placedObjects;
-    expect(pin?.placement?.visit).toBe(0);
-    expect(pin?.placement?.local.position).toEqual([2, 0, -1]);
-    expect(photo?.object.kind).toBe("photo");
-    expect(photo?.placement?.visit).toBe(0);
-    expect(photo?.placement?.local).toEqual(odomNueFromWebXr(cameraPose));
-  });
-});
+      const [pin, photo] = a.ctx.placedObjects;
+      expect(pin?.placement?.visit).toBe(0);
+      expect(pin?.placement?.local.position).toEqual([2, 0, -1]);
+      expect(photo?.object.kind).toBe("photo");
+      expect(photo?.placement?.visit).toBe(0);
+      expect(photo?.placement?.local).toEqual(odomNueFromWebXr(cameraPose));
+    });
+  },
+);
 
 /** A pose's GPS-world NUE position from its geo. */
 function worldOf(geo: TourObject["geo"]): Vector3 {
@@ -440,165 +455,223 @@ function mintedOdom(
   );
 }
 
-describe("symptom B within a visit: the code and its notes settle together (B2)", () => {
-  it("stores a pin relative to the code as placed, though GPS moved between the two taps", async () => {
-    // Plan §2.2 B2: the code was composed through the alignment at its Save
-    // tap and the pin through the alignment at ITS tap. They differ, so the
-    // zip's relative geometry was wrong before anyone relocalized. At the
-    // visit's end both are recomputed through the visit's final alignment.
-    const a = authoring();
-    await a.mint();
-    const codeLocal = mintedOdom(a.dispatched);
-    a.setAlignment(yawAlignment(7, [3, 400, -2]));
-    await a.placePin("Gate", [2, 0, -1]);
-    a.setAlignment(yawAlignment(4, [1.5, 400.2, -1]));
+describe(
+  "symptom B within a visit: the code and its notes settle together (B2)",
+  { timeout: SLOW_MS },
+  () => {
+    it("stores a pin relative to the code as placed, though GPS moved between the two taps", async () => {
+      // Plan §2.2 B2: the code was composed through the alignment at its Save
+      // tap and the pin through the alignment at ITS tap. They differ, so the
+      // zip's relative geometry was wrong before anyone relocalized. At the
+      // visit's end both are recomputed through the visit's final alignment.
+      const a = authoring();
+      await a.mint();
+      const codeLocal = mintedOdom(a.dispatched);
+      a.setAlignment(yawAlignment(7, [3, 400, -2]));
+      await a.placePin("Gate", [2, 0, -1]);
+      a.setAlignment(yawAlignment(4, [1.5, 400.2, -1]));
 
-    a.endVisit();
+      a.endVisit();
 
-    const pin = a.ctx.placedObjects[0]!.object;
-    const offset = worldOf(pin.geo).sub(codeWorldOf(a.ctx.mintedLevel!.json));
-    const expected = new Vector3(2, 0, -1)
-      .sub(codeLocal)
-      .applyQuaternion(new Quaternion(...yawQ(4)));
-    expect(offset.distanceTo(expected)).toBeLessThan(1e-3);
-  });
+      const pin = a.ctx.placedObjects[0]!.object;
+      const offset = worldOf(pin.geo).sub(codeWorldOf(a.ctx.mintedLevel!.json));
+      const expected = new Vector3(2, 0, -1)
+        .sub(codeLocal)
+        .applyQuaternion(new Quaternion(...yawQ(4)));
+      expect(offset.distanceTo(expected)).toBeLessThan(1e-3);
+    });
 
-  it("logs the settle into the recording: the new geo, the level and the alignment used", async () => {
-    // Plan §3.2: a replay must reproduce the zip, and the zip now carries
-    // the SETTLED geo - which exists nowhere but in this action.
-    const a = authoring();
-    await a.mint();
-    await a.placePin("Gate", [2, 0, -1]);
-    const end = yawAlignment(4, [1.5, 400.2, -1]);
-    a.setAlignment(end);
+    it("logs the settle into the recording: the new geo, the level and the alignment used", async () => {
+      // Plan §3.2: a replay must reproduce the zip, and the zip now carries
+      // the SETTLED geo - which exists nowhere but in this action.
+      const a = authoring();
+      await a.mint();
+      await a.placePin("Gate", [2, 0, -1]);
+      const end = yawAlignment(4, [1.5, 400.2, -1]);
+      a.setAlignment(end);
 
-    a.endVisit();
+      a.endVisit();
 
-    const logs = a.settledLogs();
-    expect(logs).toHaveLength(1);
-    const payload = logs[0]!.payload;
-    expect(payload.arVisitIndex).toBe(0);
-    expect(payload.trigger).toBe("visit-end");
-    expect(payload.basis).toBe("measured-here");
-    expect(payload.visitAlignment).toEqual(end);
-    expect(payload.usedAlignment).toEqual(end);
-    expect(payload.objects).toEqual([
-      {
-        id: a.ctx.placedObjects[0]!.object.id,
-        geo: a.ctx.placedObjects[0]!.object.geo,
-      },
-    ]);
-    expect(payload.level).toEqual(a.ctx.mintedLevel);
-    // JSON-safe: the recording writes it to a file as it is.
-    expect(JSON.parse(JSON.stringify(payload))).toEqual(payload);
-  });
+      const logs = a.settledLogs();
+      expect(logs).toHaveLength(1);
+      const payload = logs[0]!.payload;
+      expect(payload.arVisitIndex).toBe(0);
+      expect(payload.trigger).toBe("visit-end");
+      expect(payload.basis).toBe("measured-here");
+      expect(payload.visitAlignment).toEqual(end);
+      expect(payload.usedAlignment).toEqual(end);
+      expect(payload.objects).toEqual([
+        {
+          id: a.ctx.placedObjects[0]!.object.id,
+          geo: a.ctx.placedObjects[0]!.object.geo,
+        },
+      ]);
+      expect(payload.level).toEqual(a.ctx.mintedLevel);
+      // JSON-safe: the recording writes it to a file as it is.
+      expect(JSON.parse(JSON.stringify(payload))).toEqual(payload);
+    });
 
-  it("rewrites the draft's record and level, so a reload keeps the settled geo", async () => {
-    // A page reload restores from the draft. Without the rewrite it would
-    // bring back the tap-time geo the settle just replaced (plan §3.2 says
-    // only a KILLED tab keeps the tap-time geo).
-    const { store, files } = memoryDraftStore();
-    const a = authoring({ store });
-    a.setup.presentDraftForTour("https://example.test/tour.zip");
-    await flush();
-    await a.mint();
-    await a.placePin("Gate", [2, 0, -1]);
-    const tapGeo = a.ctx.placedObjects[0]!.object.geo;
-    const tapLevel = a.ctx.mintedLevel!.json;
-    a.setAlignment(yawAlignment(9, [2, 400, 2]));
+    it("rewrites the draft's record and level, so a reload keeps the settled geo", async () => {
+      // A page reload restores from the draft. Without the rewrite it would
+      // bring back the tap-time geo the settle just replaced (plan §3.2 says
+      // only a KILLED tab keeps the tap-time geo).
+      const { store, files } = memoryDraftStore();
+      const a = authoring({ store });
+      a.setup.presentDraftForTour("https://example.test/tour.zip");
+      await flush();
+      await a.mint();
+      await a.placePin("Gate", [2, 0, -1]);
+      const tapGeo = a.ctx.placedObjects[0]!.object.geo;
+      const tapLevel = a.ctx.mintedLevel!.json;
+      a.setAlignment(yawAlignment(9, [2, 400, 2]));
 
-    a.endVisit();
-    await flush();
+      a.endVisit();
+      await flush();
 
-    const pin = a.ctx.placedObjects[0]!.object;
-    expect(pin.geo, "the settle should have moved the pin").not.toEqual(tapGeo);
-    expect(a.ctx.mintedLevel!.json).not.toBe(tapLevel);
-    const onDisk = JSON.parse(
-      String(files.get(objectKey(pin.id))),
-    ) as TourObject;
-    expect(onDisk.geo).toEqual(pin.geo);
-    const meta = JSON.parse(String(files.get(META_KEY))) as {
-      level: { json: string };
-    };
-    expect(meta.level.json).toBe(a.ctx.mintedLevel!.json);
-  });
-});
+      const pin = a.ctx.placedObjects[0]!.object;
+      expect(pin.geo, "the settle should have moved the pin").not.toEqual(
+        tapGeo,
+      );
+      expect(a.ctx.mintedLevel!.json).not.toBe(tapLevel);
+      const onDisk = JSON.parse(
+        String(files.get(objectKey(pin.id))),
+      ) as TourObject;
+      expect(onDisk.geo).toEqual(pin.geo);
+      const meta = JSON.parse(String(files.get(META_KEY))) as {
+        level: { json: string };
+      };
+      expect(meta.level.json).toBe(a.ctx.mintedLevel!.json);
+    });
+  },
+);
 
-describe("symptom B across visits: a later visit is corrected through the code (D10b)", () => {
-  /** Visit 0 measures the code and places "Gate"; its visit ends. */
-  async function firstVisit() {
-    const a = authoring();
-    a.setAlignment(yawAlignment(0, [0, 400, 0]));
-    await a.mint();
-    await a.placePin("Gate", [2, 0, -1]);
-    a.endVisit();
-    return a;
+describe(
+  "symptom B across visits: a later visit is corrected through the code (D10b)",
+  { timeout: SLOW_MS },
+  () => {
+    /** Visit 0 measures the code and places "Gate"; its visit ends. */
+    async function firstVisit() {
+      const a = authoring();
+      a.setAlignment(yawAlignment(0, [0, 400, 0]));
+      await a.mint();
+      await a.placePin("Gate", [2, 0, -1]);
+      a.endVisit();
+      return a;
+    }
+
+    // The second visit's GPS alignment is 20 m and 30 degrees away from the
+    // first's - GPS error that differs between visits (plan §7b finding 2).
+    const SECOND = yawAlignment(30, [20, 401, -8]);
+
+    it("keeps a second visit's note where it was placed relative to the code, when the code was seen", async () => {
+      const a = await firstVisit();
+      const codeLocal = mintedOdom(a.dispatched);
+      a.beginVisit();
+      a.setAlignment(SECOND);
+      a.seeTheCode();
+      await flush();
+      await a.placePin("Later", [3, 0, 1]);
+      a.endVisit();
+
+      const later = a.ctx.placedObjects[1]!.object;
+      const offset = worldOf(later.geo).sub(
+        codeWorldOf(a.ctx.mintedLevel!.json),
+      );
+      // Relative to the code exactly as placed, turned by the FIRST visit's
+      // alignment (the frame the code's geo was stored in) - not the 20 m
+      // the second visit's GPS put between them.
+      const expected = new Vector3(3, 0, 1).sub(codeLocal);
+      expect(offset.distanceTo(expected)).toBeLessThan(1e-2);
+      const logs = a.settledLogs();
+      expect(logs.at(-1)?.payload.basis).toBe("code-corrected");
+      // The stored code is the reference; the second visit does not move it.
+      expect(logs.at(-1)?.payload.level).toBeNull();
+    });
+
+    it("without a sighting of the code, keeps the plain visit alignment (and its GPS difference)", async () => {
+      const a = await firstVisit();
+      a.beginVisit();
+      a.setAlignment(SECOND);
+      await a.placePin("Later", [3, 0, 1]);
+      a.endVisit();
+
+      expect(a.settledLogs().at(-1)?.payload.basis).toBe("visit-alignment");
+    });
+
+    it("shows the earlier visit's note from its geo on re-entry, then at its spot relative to the code once the code is seen", async () => {
+      // Plan §3.2 "Earlier visits' objects on re-entry": placed from geo like
+      // viewer content until the code is seen in this visit, then through the
+      // code correction - which, like this visit's own notes, is rigid in AR.
+      const a = await firstVisit();
+      const gate = a.ctx.placedObjects[0]!.object;
+      a.setAlignment(SECOND);
+      a.beginVisit();
+
+      // From geo: at the scene root, where the stored geo is.
+      const shown = [...a.labels].reverse().find((o) => o.name === "Gate");
+      expect(
+        shown,
+        "the earlier note should be shown on re-entry",
+      ).toBeDefined();
+      a.scene.updateMatrixWorld(true);
+      expect(
+        shown!.getWorldPosition(new Vector3()).distanceTo(worldOf(gate.geo)),
+      ).toBeLessThan(1e-3);
+
+      a.seeTheCode();
+      await flush();
+      // The code sits at the same odometry spot in this visit, so the note is
+      // back at the odometry spot it was placed at - whatever GPS says.
+      expect(
+        a.inWorldGroup("Gate").distanceTo(new Vector3(2, 0, -1)),
+      ).toBeLessThan(1e-2);
+      a.setAlignment(yawAlignment(-12, [5, 399, 3]));
+      expect(
+        a.inWorldGroup("Gate").distanceTo(new Vector3(2, 0, -1)),
+      ).toBeLessThan(1e-2);
+    });
+  },
+);
+
+describe("the entry hint (§3.2a, D5)", { timeout: SLOW_MS }, () => {
+  /** An open tour, as far as the panel's readout reads one. */
+  function openTour(a: ReturnType<typeof authoring>): void {
+    a.ctx.session = {
+      archive: { url: "https://example.test/tour.zip", size: 2048 },
+      entries: [],
+      hostedFileName: () => null,
+    } as never;
   }
 
-  // The second visit's GPS alignment is 20 m and 30 degrees away from the
-  // first's - GPS error that differs between visits (plan §7b finding 2).
-  const SECOND = yawAlignment(30, [20, 401, -8]);
-
-  it("keeps a second visit's note where it was placed relative to the code, when the code was seen", async () => {
-    const a = await firstVisit();
-    const codeLocal = mintedOdom(a.dispatched);
+  it("says first to point at the code, until this visit has seen it - and never blocks placing", async () => {
+    const a = await (async () => {
+      const b = authoring();
+      openTour(b);
+      await b.mint();
+      await b.placePin("Gate", [2, 0, -1]);
+      b.endVisit();
+      return b;
+    })();
     a.beginVisit();
-    a.setAlignment(SECOND);
-    a.seeTheCode();
-    await flush();
-    await a.placePin("Later", [3, 0, 1]);
-    a.endVisit();
-
-    const later = a.ctx.placedObjects[1]!.object;
-    const offset = worldOf(later.geo).sub(codeWorldOf(a.ctx.mintedLevel!.json));
-    // Relative to the code exactly as placed, turned by the FIRST visit's
-    // alignment (the frame the code's geo was stored in) - not the 20 m
-    // the second visit's GPS put between them.
-    const expected = new Vector3(3, 0, 1).sub(codeLocal);
-    expect(offset.distanceTo(expected)).toBeLessThan(1e-2);
-    const logs = a.settledLogs();
-    expect(logs.at(-1)?.payload.basis).toBe("code-corrected");
-    // The stored code is the reference; the second visit does not move it.
-    expect(logs.at(-1)?.payload.level).toBeNull();
-  });
-
-  it("without a sighting of the code, keeps the plain visit alignment (and its GPS difference)", async () => {
-    const a = await firstVisit();
-    a.beginVisit();
-    a.setAlignment(SECOND);
-    await a.placePin("Later", [3, 0, 1]);
-    a.endVisit();
-
-    expect(a.settledLogs().at(-1)?.payload.basis).toBe("visit-alignment");
-  });
-
-  it("shows the earlier visit's note from its geo on re-entry, then at its spot relative to the code once the code is seen", async () => {
-    // Plan §3.2 "Earlier visits' objects on re-entry": placed from geo like
-    // viewer content until the code is seen in this visit, then through the
-    // code correction - which, like this visit's own notes, is rigid in AR.
-    const a = await firstVisit();
-    const gate = a.ctx.placedObjects[0]!.object;
-    a.setAlignment(SECOND);
-    a.beginVisit();
-
-    // From geo: at the scene root, where the stored geo is.
-    const shown = [...a.labels].reverse().find((o) => o.name === "Gate");
-    expect(shown, "the earlier note should be shown on re-entry").toBeDefined();
-    a.scene.updateMatrixWorld(true);
-    expect(
-      shown!.getWorldPosition(new Vector3()).distanceTo(worldOf(gate.geo)),
-    ).toBeLessThan(1e-3);
+    a.setup.renderAuthorReadout();
+    expect(a.dom.status.textContent).toMatch(
+      /^First, point the camera at the code you scanned to open this tour\./,
+    );
+    // Placing is not blocked while the hint shows (D5).
+    expect(a.dom.pinButton.disabled).toBe(false);
 
     a.seeTheCode();
     await flush();
-    // The code sits at the same odometry spot in this visit, so the note is
-    // back at the odometry spot it was placed at - whatever GPS says.
-    expect(
-      a.inWorldGroup("Gate").distanceTo(new Vector3(2, 0, -1)),
-    ).toBeLessThan(1e-2);
-    a.setAlignment(yawAlignment(-12, [5, 399, 3]));
-    expect(
-      a.inWorldGroup("Gate").distanceTo(new Vector3(2, 0, -1)),
-    ).toBeLessThan(1e-2);
+    expect(a.dom.status.textContent).not.toMatch(/First, point the camera/);
+  });
+
+  it("stays while only a DIFFERENT code is seen", async () => {
+    const a = authoring();
+    openTour(a);
+    a.ctx.mintedLevel = { id: "ffffffffffff", json: "{}" };
+    a.beginVisit();
+    a.seeTheCode();
+    await flush();
+    expect(a.dom.status.textContent).toMatch(/First, point the camera/);
   });
 });

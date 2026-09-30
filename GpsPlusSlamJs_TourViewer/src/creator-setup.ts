@@ -99,6 +99,7 @@ import {
   adoptedSizeNote,
   codeTourLine,
   driveReplaceSteps,
+  entryHint,
   finishRoute,
   setupHint,
   type FinishRoute,
@@ -477,6 +478,19 @@ export function wireCreatorSetup(deps: {
     dom.sizeOfferText.textContent = adoptedNote ?? "";
   }
 
+  /** The entry hint (§3.2a, D5) as the line's first part, until this
+   *  visit has seen the code in hand (or any code, with none measured). */
+  function entryLead(): string {
+    const sighting = ctx.visitCodeSighting;
+    const hint = entryHint({
+      tourOpen: ctx.session !== null,
+      codeSeen:
+        sighting !== null &&
+        (ctx.mintedLevel === null || sighting.levelId === ctx.mintedLevel.id),
+    });
+    return hint === "" ? "" : `${hint} · `;
+  }
+
   function renderAuthorReadout(): void {
     renderSizeOffer();
     if (!creator) return;
@@ -544,7 +558,9 @@ export function wireCreatorSetup(deps: {
     // place it also locked Save, and on a device without OPFS the backup
     // notice fires at tour open, before any measuring - so Save never
     // unlocked (scan-to-open plan §5 #13).
-    const lead = ctx.placementNote === null ? "" : `${ctx.placementNote} · `;
+    const lead =
+      entryLead() +
+      (ctx.placementNote === null ? "" : `${ctx.placementNote} · `);
     // evaluate, not last: a cache hit unless the detections changed - and
     // after a tracking restart the old frame's result must not stand
     // (milestone review of b4b #1).

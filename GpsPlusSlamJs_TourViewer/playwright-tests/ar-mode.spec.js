@@ -698,6 +698,50 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   ).toEqual([255, 216, 255]);
 });
 
+test("the creator's AR visit first asks for the tour's code, and stops asking once the code is seen (authoring plan 2026-09-28-0953 §3.2a, D5)", async ({
+  page,
+}) => {
+  // Why this matters: a later visit's notes are corrected through the code
+  // only when the code was seen in that visit (D10b), and the owner chose a
+  // hint over a rule - so the hint is the only thing that tells the author
+  // to look at the code first. Composed here with the real pipeline: the
+  // hint must go away through a real stable fused pose and the async
+  // identity hash, not a test's shortcut.
+  await page.goto("/");
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  await enterAr(page);
+  await expect(page.getByTestId("setup-status")).toHaveText(
+    /^First, point the camera at the code you scanned to open this tour\./,
+  );
+  // It asks; it does not block (D5): the readout is there beside it.
+  await expect(page.getByTestId("setup-status")).toHaveText(
+    /hold the phone on the printed code/i,
+  );
+  await page.evaluate((text) => {
+    /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
+  }, E2E_QR_TEXT);
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return page.getByTestId("setup-status").textContent();
+      },
+      { timeout: 15000 },
+    )
+    .toMatch(/Pose stable/);
+  // The code's identity is a hash that lands a moment later; then the hint
+  // goes, with nothing else to do.
+  await expect(page.getByTestId("setup-status")).not.toHaveText(
+    /First, point the camera/,
+  );
+});
+
 test("a failed finish says so with priority and can be retried; the panel shows the rebuild's progress meanwhile", async ({
   page,
 }) => {
