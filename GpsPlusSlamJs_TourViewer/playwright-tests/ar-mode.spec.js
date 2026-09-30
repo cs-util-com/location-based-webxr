@@ -375,10 +375,15 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   // Why this matters (QR-pose plan M3): this drives the COMPOSED author
   // pipeline — scripted device detect/solve, but the REAL tracking
   // controller, the real qrDetected slice + stability gate, the real
-  // alignment solve fed through the store, the real mint conversion and the
-  // real serializer — and asserts the exported JSON is a parseable level
-  // with a geo pose. Frame-exactness is pinned by the unit tests; this
-  // proves the pieces are actually wired to each other.
+  // alignment solve fed through the store and the real serializer — and
+  // asserts the rebuilt zip carries a parseable level with a geo pose and
+  // tour.json. Frame-exactness is pinned by the unit tests; this proves the
+  // pieces are actually wired to each other.
+  //
+  // The hosted fixture already STORES this code's pose, so this is the
+  // re-measure of a hosted tour: the stored level is kept (D10b). The first
+  // measurement of a code - the mint conversion and the settle's re-mint
+  // reaching the zip - is the next test's.
   await page.goto("/");
   await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
   await page.getByTestId("open-button").click();
@@ -468,9 +473,15 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   );
 
   await page.getByTestId("setup-mint").click();
-  // The measured level replaces the fixture's authored one (same printed
-  // text) - the panel says so and the finish button unlocks.
-  await expect(page.getByTestId("setup-status")).toContainText(/replaces/i);
+  // The hosted zip already stores this code's pose, so the new measurement
+  // does NOT replace it: the stored pose stays the reference and the
+  // measurement only lines this visit up with it (authoring plan
+  // 2026-09-28-0953 D10b, M2c review #5). The panel says so and the finish
+  // button unlocks.
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /saved position kept/i,
+  );
+  await expect(page.getByTestId("setup-status")).not.toContainText(/replaces/i);
   await expect(page.getByTestId("setup-finish")).toBeEnabled();
 
   // PLACE CONTENT (guided-setup plan M4, DEC-N9): a pin at the reticle
@@ -565,31 +576,28 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   const hosted = await zipEntries(
     new Uint8Array(await (await request.get(RANGES_ARCHIVE)).body()),
   );
-  const carried = Object.keys(hosted).filter(
-    (n) => !n.startsWith("qr/") && n !== "tour.json",
-  );
-  expect(carried.length).toBeGreaterThanOrEqual(10); // 8 images + 2
+  // The stored level is carried too (D10b): the re-measure kept it.
+  const carried = Object.keys(hosted).filter((n) => n !== "tour.json");
+  expect(carried.length).toBeGreaterThanOrEqual(11); // 8 images + 3
   for (const name of carried) {
     expect(rebuilt.entries[name], name).toEqual(hosted[name]);
   }
   expect(names).toContain("tour.json");
-  // ONE level (the fixture's, REPLACED - its physicalSizeM was 0.2 and it
-  // carried no mintQuality; the minted one is 0.16 with the quality block).
+  // ONE level: the fixture's, BYTE FOR BYTE (above) - its 0.2 m size and
+  // geo, and no mintQuality, because nothing re-minted it. Neither the
+  // tap nor the Finish-time settle may rewrite a stored pose through this
+  // visit's GPS; the hosted notes are expressed in its frame.
   const levelNames = names.filter((n) => n.startsWith("qr/"));
   expect(levelNames).toEqual([`qr/${await qrCodeId(E2E_QR_TEXT)}.json`]);
   const level = parseQrLevel(JSON.parse(rebuilt.entries[levelNames[0]]));
-  // 0.16 — the page-fitting default (PR #364 review; see the print spec).
-  expect(level.qr.physicalSizeM).toBeCloseTo(0.16, 9);
-  expect(level.qr.geo?.lat).toEqual(expect.any(Number));
-  expect(level.qr.geo?.rotation).toHaveLength(4);
-  // The quality block records the alignment the stored geo CAME FROM
-  // (milestone review #7) — M5's error attribution reads these. Since the
-  // authoring settle (M2c) that is the Finish-time re-mint, not the tap:
-  // the 3 fixes solved in at "Save the position" plus the 3 seeded before
-  // the placement, i.e. 6 (visit-settle.ts.md, "Why the block describes
-  // the SETTLE").
-  expect(level.qr.mintQuality?.alignmentSampleCount).toBe(6);
-  expect(level.qr.mintQuality?.gpsAccuracyM).toBe(5);
+  expect(level.qr.physicalSizeM).toBe(0.2);
+  expect(level.qr.geo).toMatchObject({
+    lat: 47.5001,
+    lon: 8.7001,
+    alt: 400,
+    rotation: [0, 0, 0, 1],
+  });
+  expect(level.qr.mintQuality).toBeUndefined();
   // The pin the hosted zip already carried SURVIVES the rebuild - the
   // whole reason the manifest is loaded at open (M3 review #5/#7).
   const manifest = parseTourManifest(JSON.parse(rebuilt.entries["tour.json"]));
@@ -600,11 +608,26 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   const [, pin, photo] = manifest.objects;
   expect(pin?.kind).toBe("pin");
   expect(pin?.kind === "pin" ? pin.label : null).toBe("The old gate");
-  // The pin sits where the reticle was: 3 m north, 2 m west of the zero,
-  // at the reticle's absolute altitude (GPS-world y IS altitude).
-  expect(pin?.geo.alt).toBeCloseTo(400.5, 6);
-  expect(pin?.geo.lat).toBeGreaterThan(47.5);
-  expect(pin?.geo.lon).toBeLessThan(8.7);
+  // The pin keeps its place RELATIVE TO THE CODE (D10b): the visit settles
+  // through its alignment corrected rigidly onto the code's stored pose.
+  // The reticle (3 m north, 2 m west of the zero, altitude 400.5 - GPS-world
+  // y IS altitude) is 1 m below the code as this visit measured it
+  // (odometry y 1.5 on the seeded alignment's 400 m datum: 401.5) and
+  // hypot(1, 3) m from it horizontally, so the pin sits that far from the
+  // STORED code (47.5001, 8.7001, 400). Distances, not directions: the
+  // fixture's hand-written stored rotation and the fake's measured one
+  // differ by a yaw, which the correction turns the offset by (the frame
+  // math is pinned in visit-settle.test.ts). Without the correction the pin
+  // would be ~12.5 m from the code, at altitude 400.5.
+  const metresPerDegLat = 111_195.08; // mean Earth radius, degrees to m
+  const metresPerDegLon = metresPerDegLat * Math.cos((47.5001 * Math.PI) / 180);
+  expect(pin?.geo.alt).toBeCloseTo(399, 6);
+  expect(
+    Math.hypot(
+      ((pin?.geo.lat ?? 0) - 47.5001) * metresPerDegLat,
+      ((pin?.geo.lon ?? 0) - 8.7001) * metresPerDegLon,
+    ),
+  ).toBeCloseTo(Math.hypot(1, 3), 1);
   expect(photo?.kind).toBe("photo");
   if (photo?.kind === "photo") {
     expect(photo.image).toBe(`content/${photo.id}.jpg`);
@@ -700,6 +723,122 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
       second.entries[keptPhoto?.kind === "photo" ? keptPhoto.image : ""],
     ),
   ).toEqual([255, 216, 255]);
+});
+
+/** A hosted tour with images only: no tour.json and no stored code, so a
+ *  code measured into it is a FIRST measurement (D10b keeps nothing). */
+const PLAIN_ARCHIVE = "http://127.0.0.1:5197/ranges-ok/plain-tour.zip";
+
+test("a first measurement of a code the tour does not store is minted into the rebuilt zip, and re-minted by the Finish", async ({
+  page,
+}) => {
+  // Why this matters (QR-pose plan M3; authoring plan 2026-09-28-0953 M2c):
+  // the previous test's tour already stores its code, so since D10b its
+  // measurement keeps that pose and never reaches the mint. Creating a
+  // tour's FIRST code is the main authoring path, and this is the only
+  // place its composed pipeline is proven: the real mint conversion, the
+  // Finish-time settle that re-mints the code from the whole visit's
+  // alignment, and the serializer, down to the zip's bytes. A code of
+  // another tour measured into the open one is a reference for it (scan-
+  // to-open plan §13), so the fixture's code works for the plain tour.
+  await page.goto("/");
+  await page.getByTestId("link-input").fill(PLAIN_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  await enterAr(page);
+  await page.evaluate((text) => {
+    /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
+  }, E2E_QR_TEXT);
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return page.getByTestId("setup-status").textContent();
+      },
+      { timeout: 15000 },
+    )
+    .toMatch(/waiting for GPS alignment/i);
+  // Three fixes before the tap (ids distinct from `seedAlignment`'s, which
+  // adds three more after it).
+  await page.evaluate(() => {
+    const store = /** @type {any} */ (window).__tourViewerTest.alignmentStore;
+    store.dispatch({
+      type: "gpsData/setZeroPos",
+      payload: { lat: 47.5, lon: 8.7 },
+    });
+    const pairs = [
+      { odom: [0, 0, 0], lat: 47.5, lon: 8.7 },
+      { odom: [0, 0, -15], lat: 47.500135, lon: 8.7 },
+      { odom: [15, 0, 0], lat: 47.5, lon: 8.7002 },
+    ];
+    for (const [i, p] of pairs.entries()) {
+      store.dispatch({
+        type: "gpsData/recordGpsEvent",
+        payload: {
+          odomPosition: p.odom,
+          odomRotation: [0, 0, 0, 1],
+          rawGpsPoint: {
+            id: `first-${String(i)}`,
+            latitude: p.lat,
+            longitude: p.lon,
+            altitude: 400,
+            latLongAccuracy: 5,
+            timestamp: 1756150000000 + i * 1000,
+          },
+        },
+      });
+    }
+  });
+  await expect(page.getByTestId("setup-mint")).toBeEnabled({ timeout: 10000 });
+  await page.getByTestId("setup-mint").click();
+  // Nothing stored, nothing kept: the measurement IS the code's position.
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /Position saved\. Place content/,
+  );
+  await expect(page.getByTestId("setup-status")).not.toContainText(
+    /kept|replaces/i,
+  );
+  await seedAlignment(page);
+  await expect(page.getByTestId("setup-pin")).toBeEnabled();
+  await page.getByTestId("setup-pin").click();
+  await page.getByTestId("pin-label").fill("First code's pin");
+  await page.getByTestId("pin-save").click();
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /1 object placed/,
+  );
+
+  await page.getByTestId("setup-finish").click();
+  await expect(page.getByTestId("finish-block")).toBeVisible({
+    timeout: 30000,
+  });
+  await page.getByTestId("finish-download").click();
+  await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
+
+  const rebuilt = await readDownloadedZip(page, 0);
+  const names = Object.keys(rebuilt.entries);
+  const levelNames = names.filter((n) => n.startsWith("qr/"));
+  expect(levelNames).toEqual([`qr/${await qrCodeId(E2E_QR_TEXT)}.json`]);
+  const level = parseQrLevel(JSON.parse(rebuilt.entries[levelNames[0]]));
+  // 0.16 — the page-fitting default (PR #364 review; see the print spec).
+  expect(level.qr.physicalSizeM).toBeCloseTo(0.16, 9);
+  expect(level.qr.geo?.lat).toEqual(expect.any(Number));
+  expect(level.qr.geo?.rotation).toHaveLength(4);
+  // The quality block records the alignment the stored geo CAME FROM
+  // (milestone review #7) — M5's error attribution reads these. Since the
+  // authoring settle (M2c) that is the Finish-time re-mint, not the tap:
+  // the 3 fixes solved in at "Save the position" plus the 3 seeded after
+  // it, i.e. 6 (visit-settle.ts.md, "Why the block describes the
+  // SETTLE"). 3 would mean the tap's level reached the zip unsettled.
+  expect(level.qr.mintQuality?.alignmentSampleCount).toBe(6);
+  expect(level.qr.mintQuality?.gpsAccuracyM).toBe(5);
+  const manifest = parseTourManifest(JSON.parse(rebuilt.entries["tour.json"]));
+  expect(
+    manifest.objects.map((o) => (o.kind === "pin" ? o.label : o.kind)),
+  ).toEqual(["First code's pin"]);
 });
 
 test("the creator's AR visit first asks for the tour's code, and stops asking once the code is seen (authoring plan 2026-09-28-0953 §3.2a, D5)", async ({
@@ -2208,8 +2347,13 @@ test("a measurement alone survives a crash - the draft is not deleted for having
   // GPS has aligned. Mint, then have the tab killed before the first pin,
   // and the draft holds a level and no objects - which the first version
   // judged "spent" and DELETED, sending the creator back to the wall.
+  //
+  // The tour must store no pose for the code: re-measuring a code the
+  // hosted zip already stores keeps that pose (authoring plan
+  // 2026-09-28-0953 D10b), so such a draft holds exactly what the hosted
+  // zip holds - it IS spent, and nothing is lost by deleting it.
   await page.goto("/?nocache=1");
-  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("link-input").fill(PLAIN_ARCHIVE);
   await page.getByTestId("open-button").click();
   await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
     timeout: 15000,
@@ -2217,7 +2361,7 @@ test("a measurement alone survives a crash - the draft is not deleted for having
   await measureTheCode(page);
   // Nothing placed. The crash.
   await page.reload();
-  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("link-input").fill(PLAIN_ARCHIVE);
   await page.getByTestId("open-button").click();
   await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
     timeout: 15000,
