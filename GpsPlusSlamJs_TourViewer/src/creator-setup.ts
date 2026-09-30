@@ -1129,10 +1129,12 @@ export function wireCreatorSetup(deps: {
   /** Move the earlier visits' frame to where this visit's knowledge of the
    *  code puts it (see `earlierFrame`). Cheap: one matrix. */
   function placeEarlierObjects(): void {
+    // Nothing to place outside a visit - and nothing to read either.
     const frame = earlierFrame;
+    if (frame === null) return;
     const scene = seams.getScene();
     const group = seams.getArWorldGroup();
-    if (frame === null || scene === null) return;
+    if (scene === null) return;
     const state = arStore.getState();
     const choice = settleAlignment({
       visit: ctx.arSessionGeneration,
