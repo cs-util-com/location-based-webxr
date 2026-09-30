@@ -198,6 +198,12 @@
         flex-wrap: wrap;
         gap: var(--space-2);
       }
+      /* Empty until an action ends: no margin, so it costs no height over
+         the camera meanwhile. */
+      .object-list-note,
+      .object-list-heading {
+        margin: 0;
+      }
       /* The troubleshooting recording's marker: inside #ar-root, so it is
          composited over the camera for the whole recorded session - never
          writing behind the creator's back - and it wears the status line's
@@ -977,17 +983,6 @@
                 Capture a photo here
               </button>
             </div>
-            <!-- The tour's objects with Edit text, Move to the reticle and
-                 Delete (authoring plan 2026-09-28-0953 §3.4, M4). OUTSIDE
-                 #setup-controls: listing, editing and deleting need no AR,
-                 so it shows on the page too. Drawn by object-list.ts; in
-                 AR it shows the tapped object first. -->
-            <div
-              id="object-list"
-              data-testid="object-list"
-              aria-label="Objects in this tour"
-              hidden
-            ></div>
             <!-- OUTSIDE #setup-controls on purpose: the controls are the
                  camera's (mint, pin, photo) and go with the session, but a
                  creator who measured and left AR must still be able to
@@ -1002,6 +997,19 @@
             >
               Finish - rebuild the zip
             </button>
+            <!-- The tour's objects with Edit text, Move to the reticle and
+                 Delete (authoring plan 2026-09-28-0953 §3.4, M4). OUTSIDE
+                 #setup-controls: listing, editing and deleting need no AR,
+                 so it shows on the page too. LAST in the panel: in AR every
+                 line over the camera pushes the controls above it down, and
+                 Finish must stay on the first screen. Drawn by
+                 object-list.ts; in AR it shows the tapped object first. -->
+            <section
+              id="object-list"
+              data-testid="object-list"
+              aria-label="Objects in this tour"
+              hidden
+            ></section>
           </div>
         </section>
         <!-- Unsaved work found on this device (F13). OFFERED, never applied

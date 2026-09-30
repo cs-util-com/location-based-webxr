@@ -72,7 +72,9 @@ export interface ObjectRowModel {
 
 export interface ObjectListModel {
   readonly hidden: boolean;
-  /** "Objects in this tour (3)". */
+  /** "Objects in this tour (3)" on the page; "" in AR, where the
+   *  disclosure's summary carries the count and every line over the camera
+   *  costs the creator part of the view. */
   readonly heading: string;
   /** In AR: how to select; on the page: where moving happens. */
   readonly hint: string;
@@ -163,7 +165,7 @@ export function objectListModel(state: ObjectListState): ObjectListModel {
   const selected = rows.filter((row) => row.selected);
   return {
     hidden: count === 0 && state.note === "",
-    heading,
+    heading: "",
     hint: selected.length === 0 && count > 0 ? SELECT_HINT : "",
     rows: selected,
     moreRows: rows.filter((row) => !row.selected),
@@ -315,6 +317,7 @@ export function createObjectListView(
   hint.dataset["testid"] = "object-list-hint";
   const body = doc.createElement("div");
   const note = doc.createElement("p");
+  note.className = "object-list-note";
   note.dataset["testid"] = "object-list-note";
   note.setAttribute("aria-live", "polite");
   container.replaceChildren(heading, hint, body, note);
@@ -333,6 +336,7 @@ export function createObjectListView(
     if (more !== null) moreOpen = more.open;
     container.hidden = model.hidden;
     heading.textContent = model.heading;
+    heading.hidden = model.heading === "";
     hint.textContent = model.hint;
     hint.hidden = model.hint === "";
     note.textContent = model.note;

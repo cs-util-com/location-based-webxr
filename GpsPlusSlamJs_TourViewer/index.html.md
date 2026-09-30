@@ -44,10 +44,11 @@ screen. Everything marked `.creator-only` is hidden for a visitor
   `#setup-controls`, `setup-mint`, the explicit replace `replace-code`
   with its confirm `replace-code-confirm` (authoring plan 2026-09-28-0953
   M4), the placement controls `setup-pin` / `pin-label` / `pin-save` /
-  `pin-cancel` / `setup-photo`; then, outside the controls because it
-  works on the page too, the object list `#object-list` (drawn by
-  `object-list.ts`, M4), and `setup-finish`; the visitor's `scan-escape`),
-  `#stats`, `#gallery`.
+  `pin-cancel` / `setup-photo`; then `setup-finish`, and LAST, outside
+  the controls because it works on the page too, the object list
+  `#object-list` (drawn by `object-list.ts`, M4; last so that in AR it
+  never pushes Finish off the first screen); the visitor's
+  `scan-escape`), `#stats`, `#gallery`.
 
 Behaviour lives in the wiring modules composed by `src/main.ts` (see
 `main.ts.md`); the page carries only structure and its inline CSS

@@ -175,7 +175,10 @@ describe("objectListModel in AR", () => {
           const model = objectListModel(state({ entries, selectedId, inAr }));
           const shown = [...model.rows, ...model.moreRows].map((r) => r.id);
           expect([...shown].sort()).toEqual([...ids].sort());
-          expect(model.heading).toContain(`(${String(ids.length)})`);
+          // The count: in the heading on the page, in the disclosure in AR.
+          expect(model.heading).toBe(
+            inAr ? "" : `Objects in this tour (${String(ids.length)})`,
+          );
         },
       ),
     );
