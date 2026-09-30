@@ -64,7 +64,9 @@ const offer = wireRecordingOffer({
   describeTime: (ms) => new Date(ms).toLocaleString(),
   reveal: () => wizard.revealStep("measure"),
 });
-offer.present(await tidyRecordings(dir, held, Date.now()));
+offer.present(
+  await tidyRecordings(dir, () => heldRecordingFolders(locks), Date.now()),
+);
 ```
 
 ## Tests

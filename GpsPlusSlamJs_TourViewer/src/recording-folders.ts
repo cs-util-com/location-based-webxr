@@ -54,13 +54,26 @@ export const VIEWING_CONTEXT_TAG = "tour-viewing";
 export type RecordingContextTag =
   typeof AUTHORING_CONTEXT_TAG | typeof VIEWING_CONTEXT_TAG;
 
+const HOUR_MS = 60 * 60 * 1000;
+
 /**
- * How long a SAVED recording stays on the phone after its save, and how
- * many saved ones are kept at most. The sidecar's "Cleanup bound" weighs
- * both over a range against the measured ~125 MB per recorded hour.
+ * How long a SAVED recording stays on the phone after its save, how many
+ * saved ones are kept, and how long after its save a copy is safe from the
+ * count (a field day's sessions all stay until the owner has looked at
+ * them: "delivered" is optimistic). The sidecar's "Cleanup bound" weighs
+ * them over a range against the measured ~125 MB per recorded hour.
  */
-export const SAVED_RECORDING_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+export const SAVED_RECORDING_MAX_AGE_MS = 7 * 24 * HOUR_MS;
 export const SAVED_RECORDINGS_KEPT = 3;
+export const SAVED_RECORDING_MIN_AGE_MS = 24 * HOUR_MS;
+
+/**
+ * How old (from its start) a folder with no action file must be before the
+ * cleanup deletes it: younger, it may be a live page's that has not written
+ * yet. Long, because keeping an empty folder costs nothing and deleting a
+ * live one costs the recording (sidecar, "Cleanup bound").
+ */
+export const EMPTY_RECORDING_MIN_AGE_MS = HOUR_MS;
 
 const FOLDER_NAME =
   /^recording-(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})utc(?:-\d+)?$/;
@@ -112,28 +125,49 @@ type RecordingLocks = Pick<LockManager, "query" | "request">;
 /**
  * Hold the folder's lock until the page goes: the request's callback
  * returns a promise that never settles, so the lock is released only when
- * the browser drops the page. Without Web Locks nothing is held (and the
- * next page's offer may then offer a folder another open tab still
+ * the browser drops the page. Resolves once the browser answered - true
+ * when the lock is now held, false when another page holds the name (the
+ * request is `ifAvailable`, so it never waits for a lock held for a page's
+ * life), without Web Locks, or when the request fails. The page takes it
+ * BEFORE it creates the folder (M1b review #2), so a folder another page's
+ * cleanup can see is already held. Without Web Locks nothing is held (and
+ * the next page's offer may then offer a folder another open tab still
  * records into - the tab's own writes then fail visibly on its marker).
  */
 export function holdRecordingFolder(
   locks: RecordingLocks | undefined,
   folderName: string,
-): void {
-  void locks
-    ?.request(recordingLockName(folderName), () => new Promise<never>(() => {}))
-    .catch(() => undefined);
+): Promise<boolean> {
+  if (locks === undefined) return Promise.resolve(false);
+  return new Promise<boolean>((resolve) => {
+    locks
+      .request(
+        recordingLockName(folderName),
+        { ifAvailable: true },
+        (lock: Lock | null) => {
+          resolve(lock !== null);
+          return lock === null ? undefined : new Promise<never>(() => {});
+        },
+      )
+      .catch(() => {
+        resolve(false);
+      });
+  });
 }
 
-/** The folders whose lock a live page holds (none without Web Locks, or
- *  when the query fails). */
+/** The folders a live page holds or waits for (none without Web Locks, or
+ *  when the query fails). A pending request counts: its page is alive and
+ *  wants that folder. */
 export async function heldRecordingFolders(
   locks: RecordingLocks | undefined,
 ): Promise<Set<string>> {
   const held = new Set<string>();
   try {
     const snapshot = await locks?.query();
-    for (const lock of snapshot?.held ?? []) {
+    for (const lock of [
+      ...(snapshot?.held ?? []),
+      ...(snapshot?.pending ?? []),
+    ]) {
       if (lock.name?.startsWith(LOCK_PREFIX) === true) {
         held.add(lock.name.slice(LOCK_PREFIX.length));
       }
@@ -307,23 +341,53 @@ async function markRecordingSaved(
   );
 }
 
+/** The bounds `recordingsToDelete` applies (the exported constants by
+ *  default). */
+export interface CleanupBounds {
+  /** A saved copy goes this long after its save, whatever else. */
+  readonly maxAgeMs: number;
+  /** The most recently saved copies the count keeps. */
+  readonly kept: number;
+  /** A saved copy younger than this (since its save) is never deleted by
+   *  the count. */
+  readonly minAgeMs: number;
+  /** A folder with no action file goes once older than this (since its
+   *  start). */
+  readonly emptyMinAgeMs: number;
+}
+
+const DEFAULT_BOUNDS: CleanupBounds = {
+  maxAgeMs: SAVED_RECORDING_MAX_AGE_MS,
+  kept: SAVED_RECORDINGS_KEPT,
+  minAgeMs: SAVED_RECORDING_MIN_AGE_MS,
+  emptyMinAgeMs: EMPTY_RECORDING_MIN_AGE_MS,
+};
+
 /**
- * The folders the cleanup deletes: saved folders saved more than
- * `maxAgeMs` ago, saved folders beyond the `kept` most recently saved, and
- * folders with no action file (nothing to save). Never an unsaved folder
- * that holds actions. Pure.
+ * The folders the cleanup deletes. Pure.
+ * - A folder with no action file (nothing to save, saved or not), once it
+ *   is older than `emptyMinAgeMs` since its start: younger, it may be a
+ *   live page's that has not written yet (M1b review #2, #9).
+ * - A saved copy saved more than `maxAgeMs` ago.
+ * - A saved copy beyond the `kept` most recently saved, once it is older
+ *   than `minAgeMs` since its save: a hand-off counted as delivered may not
+ *   have reached the owner, and a field day's sessions must all survive
+ *   until the owner has looked at them (M1b review #1).
+ * Never an unsaved folder that holds actions.
  */
 export function recordingsToDelete(
   folders: readonly RecordingFolder[],
   nowMs: number,
-  bounds: { maxAgeMs: number; kept: number } = {
-    maxAgeMs: SAVED_RECORDING_MAX_AGE_MS,
-    kept: SAVED_RECORDINGS_KEPT,
-  },
+  bounds: CleanupBounds = DEFAULT_BOUNDS,
 ): string[] {
   const doomed = new Set<string>();
   for (const folder of folders) {
-    if (!folder.saved && folder.actionFiles === 0) doomed.add(folder.name);
+    if (
+      folder.actionFiles === 0 &&
+      nowMs - folder.startedAtMs > bounds.emptyMinAgeMs
+    ) {
+      doomed.add(folder.name);
+    }
   }
   const saved = folders
     .filter((folder) => folder.saved && folder.actionFiles > 0)
@@ -334,7 +398,8 @@ export function recordingsToDelete(
     );
   for (const [rank, folder] of saved.entries()) {
     const age = nowMs - (folder.savedAtMs ?? Number.NEGATIVE_INFINITY);
-    if (rank >= bounds.kept || age > bounds.maxAgeMs) doomed.add(folder.name);
+    const beyondCount = rank >= bounds.kept && age > bounds.minAgeMs;
+    if (beyondCount || age > bounds.maxAgeMs) doomed.add(folder.name);
   }
   return folders
     .filter((folder) => doomed.has(folder.name))
@@ -351,21 +416,46 @@ export async function deleteRecordingFolder(
   await dir.removeEntry(name, { recursive: true });
 }
 
+/** A folder's action count now, or null when it cannot be read (gone). */
+async function actionFilesNow(
+  dir: FileSystemDirectoryHandle,
+  name: string,
+): Promise<number | null> {
+  try {
+    return await countActionFiles(await dir.getDirectoryHandle(name));
+  } catch {
+    return null;
+  }
+}
+
 /**
- * The page-open housekeeping: list the folders (without those a live page
- * holds), delete what `recordingsToDelete` names, and return the unsaved
- * recordings to offer, oldest first. A delete OPFS refuses is skipped -
- * the folder is tried again on the next open, and it is never offered
- * (only unsaved folders with actions are, and those are never deleted
- * here).
+ * The page-open housekeeping: list the folders, THEN ask which of them a
+ * live page holds (`heldNow`, e.g. `heldRecordingFolders`) and leave those
+ * alone, delete what `recordingsToDelete` names, and return the unsaved
+ * recordings to offer, oldest first.
+ *
+ * - The held set is read AFTER the listing: a page takes its folder's lock
+ *   before it creates the folder, so every folder the listing saw is held
+ *   by then if its page is alive. Read before, a tab that started recording
+ *   in between would have its folder offered here (M1b review #2).
+ * - Each folder's action files are counted again right before its delete,
+ *   and a folder whose count changed since the listing is kept: the verdict
+ *   rested on the old count.
+ * - A delete OPFS refuses is skipped - the folder is tried again on the next
+ *   open, and it is never offered (only unsaved folders with actions are,
+ *   and those are never deleted here).
  */
 export async function tidyRecordings(
   dir: FileSystemDirectoryHandle,
-  held: ReadonlySet<string>,
+  heldNow: () => Promise<ReadonlySet<string>>,
   nowMs: number,
 ): Promise<RecordingFolder[]> {
-  const folders = await listRecordingFolders(dir, held);
+  const listed = await listRecordingFolders(dir);
+  const held = await heldNow();
+  const folders = listed.filter((folder) => !held.has(folder.name));
   for (const name of recordingsToDelete(folders, nowMs)) {
+    const before = folders.find((folder) => folder.name === name);
+    if ((await actionFilesNow(dir, name)) !== before?.actionFiles) continue;
     try {
       await deleteRecordingFolder(dir, name);
     } catch {

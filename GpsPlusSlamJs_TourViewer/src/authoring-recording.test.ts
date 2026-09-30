@@ -449,7 +449,10 @@ describe("the creator's troubleshooting recording", () => {
     const recording = createAuthoringRecording({
       openRoot: () => navigator.storage.getDirectory(),
       contextTag: VIEWING_CONTEXT_TAG,
-      holdFolder: (name) => held.push(name),
+      holdFolder: (name) => {
+        held.push(name);
+        return Promise.resolve(true);
+      },
     });
     const store = createTourViewerStore(recording);
     recording.start(START);
@@ -483,6 +486,51 @@ describe("the creator's troubleshooting recording", () => {
     expect(
       (await loadActionsFromZip(bytes)).map((e) => e.action.type),
     ).toContain("tourViewing/votesCast");
+  });
+
+  it("takes the folder's lock BEFORE the folder exists, a suffixed name's too when another tab took the name (M1b review #2)", async () => {
+    // Why: another tab's page-open cleanup may delete an empty folder whose
+    // lock nobody holds. Created first and locked after, a new folder was
+    // exposed in between; locked first, it never is. Two tabs starting in
+    // the same second get two folders, each locked before it exists.
+    const folderExists = async (name: string): Promise<boolean> => {
+      const dir = await openRecordingsDir(root, false);
+      if (dir === null) return false;
+      try {
+        await dir.getDirectoryHandle(name);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    const calls: { name: string; existed: boolean }[] = [];
+    const holdFolder = async (name: string): Promise<boolean> => {
+      calls.push({ name, existed: await folderExists(name) });
+      return true;
+    };
+    const first = createAuthoringRecording({
+      openRoot: () => navigator.storage.getDirectory(),
+      holdFolder,
+    });
+    first.start(START);
+    await settle();
+    expect(first.status()).toEqual({ kind: "on", failedWrites: 0 });
+    expect(calls).toEqual([
+      { name: "recording-2026-09-28_10-00-00utc", existed: false },
+    ]);
+
+    calls.length = 0;
+    const second = createAuthoringRecording({
+      openRoot: () => navigator.storage.getDirectory(),
+      holdFolder,
+    });
+    second.start(START);
+    await settle();
+    expect(second.status()).toEqual({ kind: "on", failedWrites: 0 });
+    expect(calls).toEqual([
+      { name: "recording-2026-09-28_10-00-00utc-2", existed: false },
+    ]);
+    expect(await folderExists("recording-2026-09-28_10-00-00utc-2")).toBe(true);
   });
 
   it("a folder that cannot be made switches the recording off and says why", async () => {

@@ -147,6 +147,30 @@ export interface AuthoringRecording {
   }): Promise<PackedRecording>;
 }
 
+/**
+ * The name `createSessionInDirectory` will give a folder started at `at`:
+ * `recording-<ts>`, or the first free `-N` suffix. Its probe's rules, run
+ * ahead of it so the lock can be taken first: only NotFoundError means
+ * free, a file on the name (TypeMismatchError) means taken, and anything
+ * else is a storage failure that fails the start.
+ */
+async function freeFolderName(
+  parent: FileSystemDirectoryHandle,
+  at: Date,
+): Promise<string> {
+  const base = `recording-${formatTimestamp(at)}`;
+  for (let suffix = 1; ; suffix += 1) {
+    const name = suffix === 1 ? base : `${base}-${String(suffix)}`;
+    try {
+      await parent.getDirectoryHandle(name);
+    } catch (err) {
+      const kind = err instanceof DOMException ? err.name : "";
+      if (kind === "NotFoundError") return name;
+      if (kind !== "TypeMismatchError") throw err;
+    }
+  }
+}
+
 export function createAuthoringRecording(deps: {
   /** The OPFS root (`navigator.storage.getDirectory`), or a rejection
    *  where there is none. */
@@ -156,11 +180,12 @@ export function createAuthoringRecording(deps: {
   contextTag?: RecordingContextTag;
   /**
    * Hold the folder's Web Lock for the rest of the page's life
-   * (`recordingLockName`): the next page's orphan offer and cleanup skip a
-   * folder a live page holds. Absent (tests, a browser without Web Locks):
-   * nothing is held.
+   * (`holdRecordingFolder`): the next page's orphan offer and cleanup skip
+   * a folder a live page holds. Awaited BEFORE the folder is created (M1b
+   * review #2), so it must settle once the browser answered, granted or
+   * not. Absent (tests, a browser without Web Locks): nothing is held.
    */
-  holdFolder?: (folderName: string) => void;
+  holdFolder?: (folderName: string) => Promise<unknown>;
 }): AuthoringRecording {
   const contextTag = deps.contextTag ?? AUTHORING_CONTEXT_TAG;
   let startedAt: Date | null = null;
@@ -174,10 +199,17 @@ export function createAuthoringRecording(deps: {
   async function makeFolder(at: Date): Promise<FileSystemDirectoryHandle> {
     const parent = await openRecordingsDir(await deps.openRoot(), true);
     if (parent === null) throw new Error("the recordings folder is missing");
+    // The lock first, the folder after: another tab's page-open cleanup
+    // deletes an empty folder nobody holds, and a folder created before its
+    // lock was exposed in between (M1b review #2).
+    const name = await freeFolderName(parent, at);
+    await deps.holdFolder?.(name);
     const { sessionName } = await createSessionInDirectory(parent, at);
+    // Another tab took the name in between (both started in the same
+    // second): the framework picked the next one, locked right after.
+    if (sessionName !== name) await deps.holdFolder?.(sessionName);
     const session = getSessionHandle();
     if (session === null) throw new Error("the recording folder is missing");
-    deps.holdFolder?.(sessionName);
     return session;
   }
 

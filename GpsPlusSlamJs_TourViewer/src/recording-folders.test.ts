@@ -37,7 +37,9 @@ import {
   packRecordingFolder,
   recordingStartOf,
   recordingsToDelete,
+  EMPTY_RECORDING_MIN_AGE_MS,
   SAVED_RECORDING_MAX_AGE_MS,
+  SAVED_RECORDING_MIN_AGE_MS,
   SAVED_RECORDINGS_KEPT,
   tidyRecordings,
   VIEWING_CONTEXT_TAG,
@@ -306,17 +308,52 @@ describe("listRecordingFolders", () => {
 });
 
 describe("recordingsToDelete - the cleanup bound", () => {
-  const saved = (name: string, savedAtMs: number) =>
-    folder({ name, saved: true, savedAtMs });
+  const saved = (name: string, savedAtMs: number, actionFiles = 10) =>
+    folder({ name, saved: true, savedAtMs, actionFiles });
+  const OLD = T0 - SAVED_RECORDING_MIN_AGE_MS - 1;
 
   it("never deletes an unsaved recording that holds actions, however old", () => {
     const old = folder({ startedAtMs: T0 - 365 * DAY });
     expect(recordingsToDelete([old], T0)).toEqual([]);
   });
 
-  it("deletes a folder with no action file: there is nothing to save", () => {
-    const empty = folder({ actionFiles: 0 });
-    expect(recordingsToDelete([empty], T0)).toEqual([empty.name]);
+  it(`deletes a folder with no action file once it is older than ${String(EMPTY_RECORDING_MIN_AGE_MS / 60_000)} minutes, saved or not: there is nothing to save`, () => {
+    // Why (M1b review #2 and #9): a folder is empty from its creation until
+    // its page writes the first action, so a young empty folder may be a
+    // live page's - on a browser without Web Locks, or in the moment before
+    // its lock; and an empty folder marked saved (a save before anything was
+    // recorded) was never deleted at all.
+    const oldEnough = T0 - EMPTY_RECORDING_MIN_AGE_MS - 1;
+    const emptyOld = folder({
+      name: "old",
+      actionFiles: 0,
+      startedAtMs: oldEnough,
+    });
+    const emptySavedOld = folder({
+      name: "old-saved",
+      actionFiles: 0,
+      startedAtMs: oldEnough,
+      saved: true,
+      savedAtMs: oldEnough,
+    });
+    const emptyYoung = folder({
+      name: "young",
+      actionFiles: 0,
+      startedAtMs: T0 - EMPTY_RECORDING_MIN_AGE_MS,
+    });
+    const emptySavedYoung = folder({
+      name: "young-saved",
+      actionFiles: 0,
+      startedAtMs: T0 - 60_000,
+      saved: true,
+      savedAtMs: T0 - 30_000,
+    });
+    expect(
+      recordingsToDelete(
+        [emptyOld, emptySavedOld, emptyYoung, emptySavedYoung],
+        T0,
+      ),
+    ).toEqual(["old", "old-saved"]);
   });
 
   it(`deletes a saved recording ${String(SAVED_RECORDING_MAX_AGE_MS / DAY)} days after its save, not before`, () => {
@@ -325,31 +362,55 @@ describe("recordingsToDelete - the cleanup bound", () => {
     expect(recordingsToDelete([a, b], T0)).toEqual(["b"]);
   });
 
-  it(`keeps the ${String(SAVED_RECORDINGS_KEPT)} most recently saved, whatever their start`, () => {
+  it(`keeps the ${String(SAVED_RECORDINGS_KEPT)} most recently saved, whatever their start, once the others are ${String(SAVED_RECORDING_MIN_AGE_MS / 3_600_000)} h old`, () => {
     const folders = [
-      saved("started-first-saved-last", T0 - 1000),
-      saved("s2", T0 - 2000),
-      saved("s3", T0 - 3000),
-      saved("s4", T0 - 4000),
-      saved("s5", T0 - 5000),
+      saved("started-first-saved-last", OLD - 1000),
+      saved("s2", OLD - 2000),
+      saved("s3", OLD - 3000),
+      saved("s4", OLD - 4000),
+      saved("s5", OLD - 5000),
     ];
     expect(recordingsToDelete(folders, T0).sort()).toEqual(["s4", "s5"]);
+  });
+
+  it(`a field day of five saved sessions keeps all five until each is ${String(SAVED_RECORDING_MIN_AGE_MS / 3_600_000)} h old`, () => {
+    // Why (M1b review #1): "delivered" is optimistic - a download started
+    // by the page's fallback always reports it, and a share only reached
+    // the app the author picked. The saved copy is the backstop until the
+    // owner has looked at the file, which is the same evening or the next
+    // morning; a count alone deleted the morning session's copy as soon as
+    // the fourth was saved.
+    const HOUR = 3_600_000;
+    const day = [9, 11, 13, 15, 17].map((h, i) =>
+      saved(`session-${String(i + 1)}`, T0 + h * HOUR),
+    );
+    // The evening of the field day: nothing goes.
+    expect(recordingsToDelete(day, T0 + 20 * HOUR)).toEqual([]);
+    // The next morning, before any is 24 h old: nothing goes.
+    expect(recordingsToDelete(day, T0 + 32 * HOUR)).toEqual([]);
+    // A day later: the two oldest are past 24 h and outside the kept three.
+    expect(recordingsToDelete(day, T0 + (24 + 12) * HOUR)).toEqual([
+      "session-1",
+      "session-2",
+    ]);
   });
 
   it("an unsaved recording does not use up a kept place", () => {
     const folders = [
       folder({ name: "unsaved-1" }),
       folder({ name: "unsaved-2" }),
-      saved("s1", T0 - 1000),
-      saved("s2", T0 - 2000),
-      saved("s3", T0 - 3000),
+      saved("s1", OLD - 1000),
+      saved("s2", OLD - 2000),
+      saved("s3", OLD - 3000),
     ];
     expect(recordingsToDelete(folders, T0)).toEqual([]);
   });
 });
 
 describe("tidyRecordings - what a page open does", () => {
-  it("deletes the old saved and the empty folders, keeps a live page's, and hands back the unsaved ones to offer", async () => {
+  const noneHeld = () => Promise.resolve(new Set<string>());
+
+  it("deletes the old saved and the old empty folders, keeps a live page's, and hands back the unsaved ones to offer", async () => {
     const dir = await recordingsDir();
     const oldSaved = await makeFolder("recording-2026-09-01_10-00-00utc", [
       gpsAction(0, 47.5, 8.7),
@@ -367,7 +428,7 @@ describe("tidyRecordings - what a page open does", () => {
 
     const orphans = await tidyRecordings(
       dir,
-      new Set(["recording-2026-09-04_10-00-00utc"]),
+      () => Promise.resolve(new Set(["recording-2026-09-04_10-00-00utc"])),
       T0,
     );
 
@@ -382,6 +443,57 @@ describe("tidyRecordings - what a page open does", () => {
     ]);
   });
 
+  it("asks which folders are held AFTER listing them, so a folder another tab creates meanwhile is neither offered nor deleted", async () => {
+    // Why (M1b review #2): a page takes its folder's lock BEFORE creating
+    // the folder, so any folder the listing sees is already held if its
+    // page is alive - but only if the held set is read after the listing.
+    // Read before it, a tab that starts recording in between has its folder
+    // offered here for "Delete it".
+    const dir = await recordingsDir();
+    const LIVE = "recording-2026-09-28_10-00-00utc";
+    const held = new Set<string>();
+    const entries = dir.entries.bind(dir);
+    let raced = false;
+    dir.entries = async function* () {
+      if (!raced) {
+        raced = true;
+        // The other tab: its lock first, then its folder and first action.
+        held.add(LIVE);
+        await makeFolder(LIVE, [gpsAction(0, 47.5, 8.7)]);
+      }
+      yield* entries();
+    } as typeof dir.entries;
+
+    const orphans = await tidyRecordings(
+      dir,
+      () => Promise.resolve(new Set(held)),
+      T0 + DAY,
+    );
+    expect(orphans).toEqual([]);
+  });
+
+  it("counts a folder's actions again right before deleting it, and keeps one that gained an action since the listing", async () => {
+    // Why (M1b review #2): an old empty folder the listing found may start
+    // receiving actions before the delete reaches it (a live page on a
+    // browser without Web Locks); the count the verdict rested on is stale.
+    const dir = await recordingsDir();
+    const NAME = "recording-2026-09-01_10-00-00utc";
+    const late = await makeFolder(NAME, []);
+    const orphans = await tidyRecordings(
+      dir,
+      async () => {
+        // Between the listing and the delete, the folder's page writes.
+        await addAction(late, 1, gpsAction(0, 47.5, 8.7));
+        return new Set<string>();
+      },
+      T0,
+    );
+    expect(orphans).toEqual([]);
+    const left = [];
+    for await (const name of dir.keys()) left.push(name);
+    expect(left).toEqual([NAME]);
+  });
+
   it("a delete OPFS refuses is skipped, not fatal", async () => {
     const dir = await recordingsDir();
     await makeFolder("recording-2026-09-02_10-00-00utc", []);
@@ -389,7 +501,7 @@ describe("tidyRecordings - what a page open does", () => {
       gpsAction(0, 47.5, 8.7),
     ]);
     dir.removeEntry = () => Promise.reject(new Error("NoModificationAllowed"));
-    const orphans = await tidyRecordings(dir, new Set(), T0);
+    const orphans = await tidyRecordings(dir, noneHeld, T0);
     expect(orphans.map((f) => f.name)).toEqual([
       "recording-2026-09-03_10-00-00utc",
     ]);
@@ -397,40 +509,76 @@ describe("tidyRecordings - what a page open does", () => {
 });
 
 describe("the live page's lock on its folder", () => {
-  /** Web Locks as the browser keeps them: a request holds until its
-   *  callback's promise settles. */
-  function fakeLocks() {
+  /** Web Locks as the browser keeps them: an `ifAvailable` request is
+   *  granted when nobody holds the name (its callback gets the lock and
+   *  holds it until the callback's promise settles), else its callback gets
+   *  null. `pending` holds another page's queued request. */
+  function fakeLocks(pending: string[] = []) {
     const held: { name: string }[] = [
       { name: "some-other-feature" },
       { name: "gps-plus-slam/tour-viewer/" },
     ];
     return {
-      request: (name: string) => {
+      request: (
+        name: string,
+        _options: LockOptions,
+        callback: (lock: Lock | null) => unknown,
+      ) => {
+        if (held.some((l) => l.name === name)) {
+          return Promise.resolve(callback(null));
+        }
         held.push({ name });
-        return new Promise(() => {});
+        return Promise.resolve(callback({ name, mode: "exclusive" }));
       },
-      query: () => Promise.resolve({ held, pending: [] }),
+      query: () =>
+        Promise.resolve({ held, pending: pending.map((name) => ({ name })) }),
     } as unknown as LockManager;
   }
 
-  it("a held folder is reported by name, and nothing else is", async () => {
+  it("a held folder is reported by name once its lock is granted, and nothing else is", async () => {
     // Why: the offer and the cleanup skip exactly these - a folder another
-    // open tab records into must not be offered for deletion.
+    // open tab records into must not be offered for deletion. The hold
+    // resolves once granted, so the page can take it BEFORE it creates
+    // the folder.
     const locks = fakeLocks();
-    holdRecordingFolder(locks, "recording-2026-09-28_10-00-00utc");
+    expect(
+      await holdRecordingFolder(locks, "recording-2026-09-28_10-00-00utc"),
+    ).toBe(true);
     expect(await heldRecordingFolders(locks)).toEqual(
       new Set(["", "recording-2026-09-28_10-00-00utc"]),
     );
   });
 
+  it("a name another page holds is not granted, and the hold does not wait for it", async () => {
+    // Why: two tabs starting in the same second want the same name; the
+    // second one's folder gets a suffix, and it must not hang waiting for
+    // a lock the first holds for its whole life.
+    const locks = fakeLocks();
+    await holdRecordingFolder(locks, "recording-2026-09-28_10-00-00utc");
+    expect(
+      await holdRecordingFolder(locks, "recording-2026-09-28_10-00-00utc"),
+    ).toBe(false);
+  });
+
+  it("a pending request counts as held: a live page wants that folder", async () => {
+    const locks = fakeLocks(["gps-plus-slam/tour-viewer/recording-x"]);
+    expect(await heldRecordingFolders(locks)).toEqual(
+      new Set(["", "recording-x"]),
+    );
+  });
+
   it("without Web Locks, or when the query fails, nothing is held and nothing throws", async () => {
-    holdRecordingFolder(undefined, "recording-2026-09-28_10-00-00utc");
+    expect(
+      await holdRecordingFolder(undefined, "recording-2026-09-28_10-00-00utc"),
+    ).toBe(false);
     expect(await heldRecordingFolders(undefined)).toEqual(new Set());
     const failing = {
       request: () => Promise.reject(new Error("SecurityError")),
       query: () => Promise.reject(new Error("SecurityError")),
     } as unknown as LockManager;
-    holdRecordingFolder(failing, "recording-2026-09-28_10-00-00utc");
+    expect(
+      await holdRecordingFolder(failing, "recording-2026-09-28_10-00-00utc"),
+    ).toBe(false);
     expect(await heldRecordingFolders(failing)).toEqual(new Set());
   });
 });

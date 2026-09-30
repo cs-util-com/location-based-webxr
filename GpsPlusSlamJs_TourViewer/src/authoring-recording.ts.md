@@ -17,9 +17,12 @@ loads. Plan:
     rejects.
   - `contextTag` - `session.json`'s tag: `"tour-authoring"` (the default) or
     `"tour-viewing"` (a visitor's `?debug=1` recording, M1b).
-  - `holdFolder(name)` - called once the folder exists; the page holds the
-    folder's Web Lock for its life (`holdRecordingFolder`), so the next page's
-    orphan offer and cleanup skip it (M1b).
+  - `holdFolder(name): Promise` - awaited BEFORE the folder is created
+    (M1b review #2); the page holds the folder's Web Lock for its life
+    (`holdRecordingFolder`), so the next page's orphan offer and cleanup skip
+    it. The name is the one `createSessionInDirectory` will pick (the same
+    probe, run ahead of it); when another tab takes it in between, the
+    suffixed name the framework picked is locked right after.
   - `storageBackend` - handed to `createTourViewerStore`.
   - `persistWhile()` - the store's persistence gate: true from `start()` until
     the folder could not be made.
@@ -217,8 +220,9 @@ the real zip export, read back with `loadActionsFromZip` + `replayActions`):
   and over the threshold and without an estimate;
 - the saved marker: unsaved after the pack, saved after `markSaved`, unsaved
   again once more is recorded (M1b);
-- a `tour-viewing` recording's tag, and the folder lock taken once the folder
-  exists (M1b).
+- a `tour-viewing` recording's tag, and the folder lock taken BEFORE the
+  folder exists, a suffixed name's too when another recording took the name
+  in the same second (M1b).
 
 The Recorder's loader accepting this layout is pinned on its side
 (`RecorderApp/src/storage/recording-loader.test.ts`, "a Tour Viewer authoring

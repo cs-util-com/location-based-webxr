@@ -120,10 +120,9 @@ const recording = createAuthoringRecording({
     }
     return root;
   },
-  // Held for the page's life: the next page's offer and cleanup skip it.
-  holdFolder: (name) => {
-    holdRecordingFolder(navigator.locks, name);
-  },
+  // Held for the page's life, taken before the folder exists: the next
+  // page's offer and cleanup skip it.
+  holdFolder: (name) => holdRecordingFolder(navigator.locks, name),
 });
 const arStore = createTourViewerStore(recording);
 const gpsHandler = createGpsPositionHandler({
@@ -428,7 +427,7 @@ function wireRecordingHousekeeping(): void {
       offer.present(
         await tidyRecordings(
           dir,
-          await heldRecordingFolders(navigator.locks),
+          () => heldRecordingFolders(navigator.locks),
           Date.now(),
         ),
       );
