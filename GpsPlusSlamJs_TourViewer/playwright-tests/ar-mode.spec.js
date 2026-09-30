@@ -375,7 +375,7 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   // Why this matters (QR-pose plan M3): this drives the COMPOSED author
   // pipeline — scripted device detect/solve, but the REAL tracking
   // controller, the real qrDetected slice + stability gate, the real
-  // alignment solve fed through the store and the real serializer — and
+  // alignment solve fed through the store and the real serializer - and
   // asserts the rebuilt zip carries a parseable level with a geo pose and
   // tour.json. Frame-exactness is pinned by the unit tests; this proves the
   // pieces are actually wired to each other.
@@ -823,12 +823,12 @@ test("a first measurement of a code the tour does not store is minted into the r
   const levelNames = names.filter((n) => n.startsWith("qr/"));
   expect(levelNames).toEqual([`qr/${await qrCodeId(E2E_QR_TEXT)}.json`]);
   const level = parseQrLevel(JSON.parse(rebuilt.entries[levelNames[0]]));
-  // 0.16 — the page-fitting default (PR #364 review; see the print spec).
+  // 0.16 - the page-fitting default (PR #364 review; see the print spec).
   expect(level.qr.physicalSizeM).toBeCloseTo(0.16, 9);
   expect(level.qr.geo?.lat).toEqual(expect.any(Number));
   expect(level.qr.geo?.rotation).toHaveLength(4);
   // The quality block records the alignment the stored geo CAME FROM
-  // (milestone review #7) — M5's error attribution reads these. Since the
+  // (milestone review #7) - M5's error attribution reads these. Since the
   // authoring settle (M2c) that is the Finish-time re-mint, not the tap:
   // the 3 fixes solved in at "Save the position" plus the 3 seeded after
   // it, i.e. 6 (visit-settle.ts.md, "Why the block describes the
