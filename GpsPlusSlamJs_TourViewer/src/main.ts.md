@@ -43,6 +43,15 @@ listed in `index.html.md`. The concerns and their modules:
   `ctx.arSessionGeneration > 0` or a live controller status (the switch locks
   once an unrecorded session has run), and its `estimateStorage` is
   `navigator.storage.estimate` where the browser has one.
+- `recording-folders.ts` / `recording-offer.ts` - the recordings across page
+  lives (M1b): the recording holds its folder's Web Lock
+  (`holdRecordingFolder(navigator.locks, …)`) for the page's life; where the
+  panel is wired, `wireRecordingHousekeeping` runs once at boot - it lists
+  the folders without the held ones, deletes what the cleanup bound names,
+  and offers the unsaved ones (`wizard.revealStep("measure")` makes the offer
+  visible), then marks `#recording-block` `data-housekeeping="done"`. The
+  orphan's `session.json` is stamped like a live save's (query-free page url,
+  `getBuildInfo`); its hand-off goes through `seams.shareOrDownloadZip`.
 
 ## Invariants & assumptions
 

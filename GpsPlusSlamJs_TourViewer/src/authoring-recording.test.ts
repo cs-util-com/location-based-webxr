@@ -49,10 +49,15 @@ import {
   LOW_STORAGE_BYTES,
   lowStorageWarning,
   RECORDING_BYTES_PER_SECOND,
-  RECORDING_CONTEXT_TAG,
   RECORDING_DEPTH,
-  recordingFileName,
 } from "./authoring-recording.js";
+import {
+  AUTHORING_CONTEXT_TAG,
+  listRecordingFolders,
+  openRecordingsDir,
+  recordingFileName,
+  VIEWING_CONTEXT_TAG,
+} from "./recording-folders.js";
 import {
   authoringFinished,
   codeMeasured,
@@ -396,7 +401,7 @@ describe("the creator's troubleshooting recording", () => {
     );
     expect(meta).toMatchObject({
       odomCoordVersion: 5,
-      contextTag: RECORDING_CONTEXT_TAG,
+      contextTag: AUTHORING_CONTEXT_TAG,
       startedAt: "2026-09-28T10:00:00.000Z",
       actionCount: VISIT_1.length,
       frameCount: 0,
@@ -411,6 +416,59 @@ describe("the creator's troubleshooting recording", () => {
       own.getDirectoryHandle("recording-2026-09-28_10-00-00utc"),
     ).resolves.toBeDefined();
     await expect(app.getDirectoryHandle("sessions")).rejects.toThrow();
+  });
+
+  it("a save leaves the folder unsaved until the hand-off delivered and the caller marks it; recording on after that makes it unsaved again (M1b)", async () => {
+    // Why: the next page's orphan offer and cleanup read this marker. A
+    // save whose share sheet was cancelled handed nothing over, so only the
+    // caller - who knows the hand-off's outcome - may mark it.
+    const { recording, store, save } = recordingAndStore();
+    recording.start(START);
+    store.dispatch(setZeroPos({ lat: 47.5, lon: 8.7 }));
+    enter(store, T0);
+    feed(store, VISIT_1, 0);
+    const saved = await save();
+    const dir = await openRecordingsDir(root, false);
+    if (dir === null) throw new Error("no recordings folder");
+    expect((await listRecordingFolders(dir))[0]?.saved).toBe(false);
+
+    expect(await saved.markSaved(T0 + 61_000)).toBe(true);
+    expect((await listRecordingFolders(dir))[0]).toMatchObject({
+      saved: true,
+      savedAtMs: T0 + 61_000,
+    });
+
+    feed(store, VISIT_1, 3);
+    await store.flushPendingActionWrites();
+    expect((await listRecordingFolders(dir))[0]?.saved).toBe(false);
+  });
+
+  it("a visitor's debug recording is tagged tour-viewing, and the folder's lock is taken for the page's life (M1b)", async () => {
+    const held: string[] = [];
+    const recording = createAuthoringRecording({
+      openRoot: () => navigator.storage.getDirectory(),
+      contextTag: VIEWING_CONTEXT_TAG,
+      holdFolder: (name) => held.push(name),
+    });
+    const store = createTourViewerStore(recording);
+    recording.start(START);
+    store.dispatch(setZeroPos({ lat: 47.5, lon: 8.7 }));
+    enter(store, T0);
+    feed(store, VISIT_1, 0);
+    const saved = await recording.save({
+      flush: () => store.flushPendingActionWrites(),
+      nowMs: T0 + 60_000,
+      userAgent: "test-agent",
+      pageUrl: undefined,
+    });
+    expect(held).toEqual(["recording-2026-09-28_10-00-00utc"]);
+    const meta = await loadSessionMetadataFromZip(
+      new Uint8Array(await saved.blob.arrayBuffer()),
+    );
+    expect(meta).toMatchObject({
+      odomCoordVersion: 5,
+      contextTag: VIEWING_CONTEXT_TAG,
+    });
   });
 
   it("a folder that cannot be made switches the recording off and says why", async () => {

@@ -2568,3 +2568,79 @@ test("an opted-in authoring session is recorded across the finish and saved as i
     types.lastIndexOf("recording/endSession"),
   );
 });
+
+test("a recording whose tab was killed is offered on the next open, saved from its own actions, and not offered again", async ({
+  page,
+}) => {
+  // Why this matters (authoring recording plan 2026-09-28-0953, M1b): the
+  // recording of a field session that went wrong is most likely one whose
+  // tab the phone killed, and only this offer brings it back. The reload is
+  // the kill: nothing was saved, the folder holds the actions alone (no
+  // session.json), and the page that held its lock is gone. Proves on the
+  // real OPFS and Web Locks what no unit test can: the lock of a dead page
+  // is released, the new page finds the folder, rebuilds session.json from
+  // the recorded fixes, hands the zip over through the same seam, and the
+  // saved marker keeps it from being offered a second time.
+  await page.goto("/?nocache=1");
+  await openMeasureStep(page);
+  await expect(page.getByTestId("recording-block")).toHaveAttribute(
+    "data-housekeeping",
+    "done",
+    { timeout: 15000 },
+  );
+  await expect(page.getByTestId("recording-offer")).toBeHidden();
+  await page.getByTestId("record-session").check();
+  await enterAr(page);
+  await expect(page.getByTestId("recording-marker")).toHaveText(
+    "Recording this session",
+  );
+  await seedAlignment(page);
+  await page.evaluate(() =>
+    /** @type {any} */ (
+      window
+    ).__tourViewerTest.alignmentStore.flushPendingActionWrites(),
+  );
+
+  // The kill.
+  await page.reload();
+
+  // Offered without opening step 4 by hand: the offer reveals its step.
+  await expect(page.getByTestId("recording-offer")).toBeVisible({
+    timeout: 15000,
+  });
+  await expect(page.getByTestId("recording-offer-text")).toContainText(
+    /^The recording from .+ was not saved\. Save it or delete it\?$/,
+  );
+  await page.getByTestId("recording-offer-save").click();
+  await expect(page.getByTestId("recording-status")).toHaveText(
+    /^Saved as tour-recording-.+\.zip\.$/,
+    { timeout: 15000 },
+  );
+  await expect(page.getByTestId("recording-offer")).toBeHidden();
+
+  const rec = await readDownloadedZip(page, 0);
+  expect(rec.filename).toMatch(
+    /^tour-recording-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}utc\.zip$/,
+  );
+  const meta = JSON.parse(rec.entries["session.json"]);
+  expect(meta.odomCoordVersion).toBe(5);
+  expect(meta.contextTag).toBe("tour-authoring");
+  // The three seeded fixes, counted from the folder's own action files.
+  expect(meta.actionCount).toBe(3);
+  const types = Object.keys(rec.entries)
+    .filter((n) => n.startsWith("actions/"))
+    .sort()
+    .map((n) => JSON.parse(rec.entries[n]).type);
+  expect(types[0]).toBe("recording/startSession");
+  expect(types.filter((t) => t === "gpsData/recordGpsEvent")).toHaveLength(3);
+
+  // Saved: the next open offers nothing - asserted after its check ran,
+  // or "hidden" would hold before the check had even looked.
+  await page.reload();
+  await expect(page.getByTestId("recording-block")).toHaveAttribute(
+    "data-housekeeping",
+    "done",
+    { timeout: 15000 },
+  );
+  await expect(page.getByTestId("recording-offer")).toBeHidden();
+});

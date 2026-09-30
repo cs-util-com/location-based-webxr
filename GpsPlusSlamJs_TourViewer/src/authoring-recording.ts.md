@@ -12,8 +12,14 @@ loads. Plan:
 
 ## Public API
 
-- `createAuthoringRecording({ openRoot }): AuthoringRecording` - `openRoot`
-  resolves the OPFS root (`navigator.storage.getDirectory`) or rejects.
+- `createAuthoringRecording({ openRoot, contextTag?, holdFolder? }): AuthoringRecording`
+  - `openRoot` resolves the OPFS root (`navigator.storage.getDirectory`) or
+    rejects.
+  - `contextTag` - `session.json`'s tag: `"tour-authoring"` (the default) or
+    `"tour-viewing"` (a visitor's `?debug=1` recording, M1b).
+  - `holdFolder(name)` - called once the folder exists; the page holds the
+    folder's Web Lock for its life (`holdRecordingFolder`), so the next page's
+    orphan offer and cleanup skip it (M1b).
   - `storageBackend` - handed to `createTourViewerStore`.
   - `persistWhile()` - the store's persistence gate: true from `start()` until
     the folder could not be made.
@@ -25,12 +31,16 @@ loads. Plan:
   - `save({ flush, nowMs, userAgent, pageUrl, getBuildInfo? })` - flushes
     the store's write queue, writes `session.json` (stamped with
     `getBuildInfo()`, the framework's `utils/build-info` reader in the page),
-    zips the folder; resolves `{ blob, filename, actionCount, metadataError? }`.
+    zips the folder (`packRecordingFolder`, shared with the orphan save in
+    `recording-folders.ts`); resolves a `PackedRecording`
+    `{ blob, filename, actionCount, metadataError?, markSaved(atMs) }`.
     Rejects when nothing was started, when the folder could not be made, or
     when the flush or the zip fails - the caller surfaces it. A `session.json`
     that cannot be written does not reject: see "Save zips what is on disk".
-- `recordingFileName(startedAt)` - `tour-recording-YYYY-MM-DD_HH-MM-SSutc.zip`.
-- `RECORDING_CONTEXT_TAG` - `"tour-authoring"`, `session.json`'s tag.
+    The caller marks the folder saved only after a hand-off that delivered
+    (`handOverRecording` in `recording-panel.ts`).
+- The zip's name (`recordingFileName`) and the context tags live in
+  `recording-folders.ts` since M1b.
 - `RECORDING_DEPTH` - the depth sampler's config while recording.
 - `RECORDING_BYTES_PER_SECOND`, `LOW_STORAGE_BYTES`,
   `lowStorageWarning(estimate): string | null` - the measured write rate, the
@@ -66,7 +76,10 @@ loads. Plan:
   `actions/` + `session.json` in a tour zip; this zip is only handed over on
   its own, under a name that cannot collide with the tour's.
 - **Save is a snapshot.** Recording continues after a save; a later save
-  rewrites `session.json` and zips everything again.
+  rewrites `session.json` and zips everything again. The saved marker counts
+  the action files a save handed over, so an action recorded after it makes
+  the folder unsaved again (offered on the next open if the tab is killed;
+  `recording-folders.ts`).
 - **Failures are counted, not swallowed.** A failed action write is counted
   (`status().failedWrites`) and rethrown to the middleware, which dispatches
   `recordWriteFailure`. A folder that cannot be made switches the gate off and
@@ -184,7 +197,11 @@ the real zip export, read back with `loadActionsFromZip` + `replayActions`):
   lock, a depth sample, the log actions, two visits' teardowns) - the
   sequence the Recorder's loader test copies;
 - what a recording costs on disk (above), and `lowStorageWarning` at, under
-  and over the threshold and without an estimate.
+  and over the threshold and without an estimate;
+- the saved marker: unsaved after the pack, saved after `markSaved`, unsaved
+  again once more is recorded (M1b);
+- a `tour-viewing` recording's tag, and the folder lock taken once the folder
+  exists (M1b).
 
 The Recorder's loader accepting this layout is pinned on its side
 (`RecorderApp/src/storage/recording-loader.test.ts`, "a Tour Viewer authoring

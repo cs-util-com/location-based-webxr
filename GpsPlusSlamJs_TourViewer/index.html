@@ -149,6 +149,7 @@
       #setup-panel,
       #setup-controls,
       #draft-offer,
+      #recording-offer,
       #finish-block,
       #recording-block {
         display: grid;
@@ -696,6 +697,42 @@
           data-testid="recording-block"
           hidden
         >
+          <!-- A recording a killed tab left unsaved (M1b,
+               recording-offer.ts). OFFERED, never applied, with the draft
+               offer's three choices: "Not now" keeps it for the next open,
+               and "Delete it" is the only way an unsaved recording is
+               removed. -->
+          <div id="recording-offer" data-testid="recording-offer" hidden>
+            <p
+              id="recording-offer-text"
+              class="step-copy hint--dim"
+              data-testid="recording-offer-text"
+            ></p>
+            <button
+              type="button"
+              class="btn btn--prose"
+              id="recording-offer-save"
+              data-testid="recording-offer-save"
+            >
+              Save it
+            </button>
+            <button
+              type="button"
+              class="btn btn--prose"
+              id="recording-offer-dismiss"
+              data-testid="recording-offer-dismiss"
+            >
+              Not now
+            </button>
+            <button
+              type="button"
+              class="btn btn--prose"
+              id="recording-offer-discard"
+              data-testid="recording-offer-discard"
+            >
+              Delete it
+            </button>
+          </div>
           <label class="switch">
             <input
               type="checkbox"

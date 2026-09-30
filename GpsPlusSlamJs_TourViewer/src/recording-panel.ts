@@ -75,14 +75,16 @@ function recordingMarkerText(status: RecordingStatus): string | null {
   }
 }
 
-/** What a finished hand-off did, in the creator's words. */
+/** What a finished hand-off did, in the author's words. `retryLabel` is
+ *  the button that tries again. */
 function saveOutcomeText(
   outcome: ShareOrDownloadResult,
   filename: string,
   metadataError: string | undefined,
+  retryLabel: string,
 ): string {
   if (!outcome.delivered) {
-    return `Nothing was saved - tap ${SAVE_RECORDING_LABEL} again.`;
+    return `Nothing was saved - tap ${retryLabel} again.`;
   }
   const verb = outcome.route === "share" ? "Shared" : "Saved";
   return metadataError === undefined
@@ -90,15 +92,48 @@ function saveOutcomeText(
     : `${verb} as ${filename}, but without its session.json (${metadataError}) - the Recorder may replay it misaligned.`;
 }
 
+/** A packed recording, as the hand-off needs it (`PackedRecording`). */
+interface HandableRecording {
+  blob: Blob;
+  filename: string;
+  metadataError?: string;
+  markSaved: (atMs: number) => Promise<boolean>;
+}
+
+/**
+ * Hand a packed recording over, mark its folder saved when the hand-off
+ * DELIVERED, and say what happened - the one path both "Save the
+ * recording" and the orphan offer's "Save it" take (M1b).
+ *
+ * The mark comes after the hand-off, never before: a share sheet the
+ * author closed handed nothing over, and a marked folder is one the
+ * cleanup may delete. A mark that does not persist is not reported - the
+ * zip WAS handed over; the folder is merely offered again next time.
+ */
+export async function handOverRecording(
+  saved: HandableRecording,
+  handOff: (blob: Blob, filename: string) => Promise<ShareOrDownloadResult>,
+  now: () => Date,
+  retryLabel: string,
+): Promise<{ delivered: boolean; text: string }> {
+  const outcome = await handOff(saved.blob, saved.filename);
+  if (outcome.delivered) await saved.markSaved(now().getTime());
+  return {
+    delivered: outcome.delivered,
+    text: saveOutcomeText(
+      outcome,
+      saved.filename,
+      saved.metadataError,
+      retryLabel,
+    ),
+  };
+}
+
 export function wireRecordingPanel(deps: {
   recording: AuthoringRecording;
   dom: RecordingPanelDom;
   /** Flush, write `session.json`, zip (the recording's `save`, bound). */
-  save: () => Promise<{
-    blob: Blob;
-    filename: string;
-    metadataError?: string;
-  }>;
+  save: () => Promise<HandableRecording>;
   /** The share sheet or a save picker - the same seam as the tour zip's. */
   handOff: (blob: Blob, filename: string) => Promise<ShareOrDownloadResult>;
   sessionLive: () => boolean;
@@ -171,13 +206,13 @@ export function wireRecordingPanel(deps: {
     render();
     void (async () => {
       try {
-        const saved = await deps.save();
-        const outcome = await deps.handOff(saved.blob, saved.filename);
-        dom.status.textContent = saveOutcomeText(
-          outcome,
-          saved.filename,
-          saved.metadataError,
+        const handed = await handOverRecording(
+          await deps.save(),
+          deps.handOff,
+          deps.now,
+          SAVE_RECORDING_LABEL,
         );
+        dom.status.textContent = handed.text;
       } catch (err) {
         dom.status.textContent = `Could not save the recording: ${
           err instanceof Error ? err.message : String(err)

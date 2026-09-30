@@ -1,11 +1,12 @@
 /**
- * The creator's troubleshooting recording (authoring recording plan
- * 2026-09-28-0953 §3.1, M1a): once the creator opts in, every persisted
- * action of the page's store - GPS with its paired poses, QR detections,
- * depth samples, the `tourAuthoring/*` log actions, the per-visit resets -
- * is written to an OPFS folder of its own, and "Save the recording" hands
- * the folder over as `tour-recording-<UTC timestamp>.zip`, a zip the
- * Recorder's desktop replay loads.
+ * The page's troubleshooting recording (authoring recording plan
+ * 2026-09-28-0953 §3.1, M1a; the visitor's `?debug=1` recording since M1b):
+ * once the creator (or a debugging visitor) opts in, every persisted action
+ * of the page's store - GPS with its paired poses, QR detections, depth
+ * samples, the `tourAuthoring/*` or `tourViewing/*` log actions, the
+ * per-visit resets - is written to an OPFS folder of its own, and "Save the
+ * recording" hands the folder over as `tour-recording-<UTC timestamp>.zip`,
+ * a zip the Recorder's desktop replay loads.
  *
  * - SILENT UNTIL STARTED. The store is created at page boot with this
  *   module's `StorageBackend` and `persistWhile` gate; before `start()` the
@@ -17,7 +18,9 @@
  *   the Recorder's `sessions/` folder, which must never receive a Tour Viewer
  *   recording (review finding 16). The folder is made by the framework's
  *   `createSessionInDirectory`, and the writes go through the framework's
- *   OPFS write functions.
+ *   OPFS write functions. Across page lives the folders are
+ *   `recording-folders.ts`'s: the saved marker, the orphan offer, the
+ *   cleanup.
  * - NEVER PART OF THE TOUR ZIP. The visitor's capture-time geo join replays
  *   any `actions/` + `session.json` it finds in a tour zip, so this zip is
  *   only ever handed over on its own, under a name that cannot collide with
@@ -27,9 +30,7 @@
  */
 
 import type { DepthSamplerConfig } from "gps-plus-slam-app-framework/ar/depth-sampler";
-import { recordGpsEvent } from "gps-plus-slam-app-framework/state";
 import {
-  exportSessionHandleAsZip,
   formatTimestamp,
   type StorageBackend,
 } from "gps-plus-slam-app-framework/storage";
@@ -42,11 +43,14 @@ import {
 import { buildSessionMetadataRecord } from "gps-plus-slam-app-framework/storage/session-metadata-record";
 import type { BuildInfo } from "gps-plus-slam-app-framework/utils/build-info";
 
-/** `session.json`'s tag: what kind of recording this is. */
-export const RECORDING_CONTEXT_TAG = "tour-authoring";
-
-/** The folder under `gps-plus-slam/` that holds this app's recordings. */
-const RECORDINGS_DIR = "tour-viewer";
+import {
+  AUTHORING_CONTEXT_TAG,
+  openRecordingsDir,
+  packRecordingFolder,
+  recordedFix,
+  type PackedRecording,
+  type RecordingContextTag,
+} from "./recording-folders.js";
 
 /**
  * Depth while a recording runs (owner decision D4: depth, not camera
@@ -114,17 +118,6 @@ export type RecordingStatus =
   | { kind: "on"; failedWrites: number }
   | { kind: "failed"; error: string };
 
-/** What "Save the recording" hands over. */
-interface SavedRecording {
-  blob: Blob;
-  filename: string;
-  /** Action files in the zip. */
-  actionCount: number;
-  /** Why `session.json` could not be written; absent when it was. The zip
-   *  then holds the actions without it (or with an earlier save's). */
-  metadataError?: string;
-}
-
 export interface AuthoringRecording {
   /** The backend the page's store is created with. */
   readonly storageBackend: StorageBackend;
@@ -140,7 +133,8 @@ export interface AuthoringRecording {
    * or when the flush or the zip fails - the caller surfaces it (a save the
    * creator asked for must not fail silently). A `session.json` that cannot
    * be written does NOT reject: the actions on disk are zipped all the same
-   * and the reason comes back as `metadataError`.
+   * and the reason comes back as `metadataError`. After a hand-off that
+   * delivered, the caller marks the folder saved (`markSaved`).
    */
   save(input: {
     flush: () => Promise<void>;
@@ -150,81 +144,40 @@ export interface AuthoringRecording {
     /** The page's build stamp (`getBuildInfo`); may throw where the
      *  build constants were never injected, which only drops the field. */
     getBuildInfo?: () => BuildInfo;
-  }): Promise<SavedRecording>;
-}
-
-/** The metadata file's name in a recording folder (the Recorder's layout). */
-const SESSION_METADATA_FILE = "session.json";
-
-/**
- * Remove `name` from `folder` when it is EMPTY - what a write refused after
- * its file was created leaves behind. An earlier save's complete file is
- * kept (an aborted write leaves the old content). Best effort: a folder that
- * cannot even be read here has nothing better to offer.
- */
-async function dropEmptyFile(
-  folder: FileSystemDirectoryHandle,
-  name: string,
-): Promise<void> {
-  try {
-    const file = await (await folder.getFileHandle(name)).getFile();
-    if (file.size === 0) await folder.removeEntry(name);
-  } catch {
-    // Absent (the create itself failed) or unreadable: nothing to drop.
-  }
-}
-
-/** The recording zip's name, from the folder's start time. */
-export function recordingFileName(startedAt: Date): string {
-  return `tour-recording-${formatTimestamp(startedAt)}.zip`;
-}
-
-function finiteOrNull(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-/** A recorded GPS action's fix, or null for anything else. */
-function recordedFix(
-  action: unknown,
-): { latitude: number; longitude: number } | null {
-  const { type, payload } = (action ?? {}) as {
-    type?: unknown;
-    payload?: { rawGpsPoint?: { latitude?: unknown; longitude?: unknown } };
-  };
-  if (type !== recordGpsEvent.type) return null;
-  const point = payload?.rawGpsPoint;
-  const latitude = finiteOrNull(point?.latitude);
-  const longitude = finiteOrNull(point?.longitude);
-  return latitude === null || longitude === null
-    ? null
-    : { latitude, longitude };
+  }): Promise<PackedRecording>;
 }
 
 export function createAuthoringRecording(deps: {
   /** The OPFS root (`navigator.storage.getDirectory`), or a rejection
    *  where there is none. */
   openRoot: () => Promise<FileSystemDirectoryHandle>;
+  /** `session.json`'s tag: `tour-authoring` (the default) for a creator,
+   *  `tour-viewing` for a visitor's `?debug=1` recording. */
+  contextTag?: RecordingContextTag;
+  /**
+   * Hold the folder's Web Lock for the rest of the page's life
+   * (`recordingLockName`): the next page's orphan offer and cleanup skip a
+   * folder a live page holds. Absent (tests, a browser without Web Locks):
+   * nothing is held.
+   */
+  holdFolder?: (folderName: string) => void;
 }): AuthoringRecording {
+  const contextTag = deps.contextTag ?? AUTHORING_CONTEXT_TAG;
   let startedAt: Date | null = null;
   let folder: Promise<FileSystemDirectoryHandle> | null = null;
   let failure: string | null = null;
   let failedWrites = 0;
-  let actionFiles = 0;
   /** The fixes this recording wrote: `session.json`'s coverage comes from
    *  here, because the store's GPS data is wiped at every AR exit. */
   const fixes: { latitude: number; longitude: number }[] = [];
 
   async function makeFolder(at: Date): Promise<FileSystemDirectoryHandle> {
-    const root = await deps.openRoot();
-    const app = await root.getDirectoryHandle("gps-plus-slam", {
-      create: true,
-    });
-    const parent = await app.getDirectoryHandle(RECORDINGS_DIR, {
-      create: true,
-    });
-    await createSessionInDirectory(parent, at);
+    const parent = await openRecordingsDir(await deps.openRoot(), true);
+    if (parent === null) throw new Error("the recordings folder is missing");
+    const { sessionName } = await createSessionInDirectory(parent, at);
     const session = getSessionHandle();
     if (session === null) throw new Error("the recording folder is missing");
+    deps.holdFolder?.(sessionName);
     return session;
   }
 
@@ -245,7 +198,6 @@ export function createAuthoringRecording(deps: {
         failedWrites += 1;
         throw err;
       }
-      actionFiles += 1;
       const fix = recordedFix(action);
       if (fix !== null) fixes.push(fix);
     },
@@ -279,15 +231,18 @@ export function createAuthoringRecording(deps: {
       if (folder === null || startedAt === null) {
         throw new Error("nothing is being recorded");
       }
+      const started = startedAt;
       const session = await folder;
       await input.flush();
-      let metadataError: string | undefined;
-      try {
-        await storageBackend.writeSessionMetadata(
+      // The metadata write, the empty-file cleanup after a refused one, the
+      // count the saved marker will carry and the zip are the same for a
+      // folder whose page was killed (`recording-folders.ts`).
+      return packRecordingFolder(session, started, () =>
+        storageBackend.writeSessionMetadata(
           buildSessionMetadataRecord({
             endTime: input.nowMs,
-            startTime: startedAt.getTime(),
-            contextTag: RECORDING_CONTEXT_TAG,
+            startTime: started.getTime(),
+            contextTag,
             gpsPositions: fixes,
             frameCount: 0,
             userAgent: input.userAgent,
@@ -296,21 +251,8 @@ export function createAuthoringRecording(deps: {
               ? {}
               : { getBuildInfo: input.getBuildInfo }),
           }),
-        );
-      } catch (err) {
-        // The actions ARE the recording; the metadata only describes it. A
-        // full disk that refuses this last small file must not cost the
-        // creator what is already written - the caller reports the loss.
-        metadataError = err instanceof Error ? err.message : String(err);
-        await dropEmptyFile(session, SESSION_METADATA_FILE);
-      }
-      const { blob } = await exportSessionHandleAsZip(session);
-      return {
-        blob,
-        filename: recordingFileName(startedAt),
-        actionCount: actionFiles,
-        ...(metadataError === undefined ? {} : { metadataError }),
-      };
+        ),
+      );
     },
   };
 }

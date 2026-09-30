@@ -67,9 +67,17 @@ The `data-testid` contract the e2e suite drives: `wizard`, `step-host`,
 `setup-panel`, `setup-status`, `size-offer`, `size-offer-text`,
 `size-offer-use`, `size-offer-keep`, `setup-controls`, `setup-mint`,
 `setup-pin`, `pin-label`, `pin-save`, `pin-cancel`, `setup-photo`,
-`setup-finish`, `scan-escape`, `recording-block` (owns `record-session`,
+`setup-finish`, `scan-escape`, `recording-block` (owns `recording-offer`
+with `recording-offer-text`, `recording-offer-save`,
+`recording-offer-dismiss`, `recording-offer-discard`; `record-session`,
 `recording-privacy`, `recording-notice`, `recording-save`,
 `recording-status`), `recording-marker`.
+`#recording-offer` (M1b, `recording-offer.ts`) offers a recording a killed
+tab left unsaved - the draft offer's three answers and its CSS rule, but its
+own element (it appears at page open, not when a tour opens). The block
+carries `data-housekeeping="done"` once the page-open check of the recording
+folders finished, found something or not (the e2e waits for it before it
+asserts that nothing is offered).
 `recording-privacy` is a static line saying the recording holds the tour
 link and the GPS track (M1a review finding 5); `recording-notice` carries
 "Reload the page to record." once an unrecorded AR session has run, or the

@@ -80,6 +80,7 @@ const SAVED = {
   blob: new Blob(["zip"]),
   filename: "tour-recording-2026-09-28_10-00-00utc.zip",
   actionCount: 42,
+  markSaved: () => Promise.resolve(true),
 };
 const AT = new Date(Date.UTC(2026, 8, 28, 10, 0, 0));
 /** Plenty of room: ten times the warning threshold. */
@@ -94,6 +95,7 @@ function harness(
       blob: Blob;
       filename: string;
       metadataError?: string;
+      markSaved: (atMs: number) => Promise<boolean>;
     }>;
     handOff?: () => Promise<{
       route: "share" | "download";
@@ -369,6 +371,47 @@ describe("Save the recording", () => {
     );
     expect(h.dom.saveButton.disabled).toBe(false);
     expect(h.dom.saveButton.textContent).toBe(SAVE_RECORDING_LABEL);
+  });
+
+  it("marks the folder saved only after a hand-off that delivered, at the moment it did (M1b)", async () => {
+    // Why: the next page offers every folder without the mark, and the
+    // cleanup deletes only marked ones. A share sheet the author closed
+    // handed nothing over - marking it would let the cleanup delete the
+    // only copy.
+    const delivered = vi.fn(() => Promise.resolve(true));
+    const h = harness({
+      save: () => Promise.resolve({ ...SAVED, markSaved: delivered }),
+    });
+    h.dom.optIn.checked = true;
+    h.panel.beginOnArEntry();
+    h.dom.saveButton.click();
+    await settle();
+    expect(delivered).toHaveBeenCalledWith(AT.getTime());
+
+    const cancelled = vi.fn(() => Promise.resolve(true));
+    const none = harness({
+      save: () => Promise.resolve({ ...SAVED, markSaved: cancelled }),
+      handOff: () => Promise.resolve({ route: "share", delivered: false }),
+    });
+    none.dom.optIn.checked = true;
+    none.panel.beginOnArEntry();
+    none.dom.saveButton.click();
+    await settle();
+    expect(cancelled).not.toHaveBeenCalled();
+  });
+
+  it("a mark that does not persist still reports the save: the zip was handed over, the folder is only offered again", async () => {
+    const h = harness({
+      save: () =>
+        Promise.resolve({ ...SAVED, markSaved: () => Promise.resolve(false) }),
+    });
+    h.dom.optIn.checked = true;
+    h.panel.beginOnArEntry();
+    h.dom.saveButton.click();
+    await settle();
+    expect(h.dom.status.textContent).toBe(
+      "Saved as tour-recording-2026-09-28_10-00-00utc.zip.",
+    );
   });
 
   it("a second tap while busy starts no second save", () => {

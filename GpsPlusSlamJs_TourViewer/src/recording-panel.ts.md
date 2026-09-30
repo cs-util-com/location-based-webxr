@@ -28,10 +28,17 @@ estimateStorage, now }): RecordingPanel`
     records (and so needs depth).
   - `RecordingPanel.render()`.
 - `recordingMarkerText(status)` (module-private) - the marker's words, or null (hidden).
-- `saveOutcomeText(outcome, filename, metadataError)` (module-private) -
-  "Saved as ...", "Shared as ...", the same with ", but without its
-  session.json (reason) - the Recorder may replay it misaligned.", or
-  "Nothing was saved - tap Save the recording again.".
+- `handOverRecording(saved, handOff, now, retryLabel)` ->
+  `{ delivered, text }` - hands a packed recording over, marks its folder
+  saved (`saved.markSaved(now())`) only when the hand-off DELIVERED, and says
+  what happened. The one path "Save the recording" and the orphan offer's
+  "Save it" (`recording-offer.ts`) both take (M1b). A mark that does not
+  persist is not reported: the zip was handed over; the folder is merely
+  offered again on the next open.
+- `saveOutcomeText(outcome, filename, metadataError, retryLabel)`
+  (module-private) - "Saved as ...", "Shared as ...", the same with ", but
+  without its session.json (reason) - the Recorder may replay it
+  misaligned.", or "Nothing was saved - tap <retryLabel> again.".
 - `SAVE_RECORDING_LABEL`, `SAVE_RECORDING_BUSY_LABEL`.
 
 ## Invariants & assumptions
@@ -103,6 +110,8 @@ locked without that line; Save is disabled during a session; the free-space
 warning at opt-in (shown under the threshold without blocking, silent with
 room or without an estimate, cleared by an untick); the busy then saved
 state, the share wording, the nothing-saved wording, the missing-session.json
-wording, a failure with its reason, and no second save while busy. End to
+wording, a failure with its reason, and no second save while busy; the saved
+mark only after a hand-off that delivered, at its moment, and a mark that does
+not persist still reports the save (M1b). End to
 end: `playwright-tests/ar-mode.spec.js` (the recording e2e) and
 `ar-layout.spec.js` (the marker inside the overlay's tallest state).
