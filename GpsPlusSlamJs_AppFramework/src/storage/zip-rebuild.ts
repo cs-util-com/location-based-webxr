@@ -112,6 +112,15 @@ export interface RebuildZipOptions {
    *  so far, `total` = the entry count the OUTPUT will have), and once more
    *  with `done === total` after the archive is written. */
   onProgress?: (done: number, total: number) => void;
+  /**
+   * Archive paths to leave OUT of the output (a deleted photo's
+   * `content/<id>.jpg`, Tour Viewer authoring plan 2026-09-28-0953 M4).
+   * Matched under the archive's own `./` convention, like a replacement;
+   * a path the archive does not carry is ignored (removing what is not
+   * there is not a failure). A path that is also among the new entries is
+   * refused: the call would both drop and write it.
+   */
+  remove?: readonly string[];
 }
 
 /**
@@ -207,8 +216,16 @@ export async function rebuildZipWithEntries(
     // happens to carry says nothing about the bytes behind it.
     assertNoDuplicateNewPaths(entries, dotSlash);
     assertWritableZipData(entries, 'rebuildZipWithEntries');
+    const removed = removedArchiveNames(
+      options.remove ?? [],
+      entries,
+      archiveByName,
+      dotSlash
+    );
     const replaced = new Set(targeted.map((e) => e.path));
-    const existing = all.filter((e) => !replaced.has(e.filename));
+    const existing = all.filter(
+      (e) => !replaced.has(e.filename) && !removed.has(e.filename)
+    );
     const total = existing.length + targeted.length;
     const carried: ZipEntryInput[] = [];
     for (const entry of existing) {
@@ -235,6 +252,41 @@ export async function rebuildZipWithEntries(
   } finally {
     await reader.close();
   }
+}
+
+/**
+ * The archive's own names for the paths in `remove` (each matched under the
+ * archive's `./` convention, the way a replacement is); paths the archive
+ * does not carry drop out.
+ *
+ * @throws {ZipPackagingError} when a removed path is also a new entry.
+ */
+function removedArchiveNames(
+  remove: readonly string[],
+  entries: readonly ZipEntryInput[],
+  archiveByName: ReadonlyMap<string, string>,
+  dotSlash: boolean
+): Set<string> {
+  const written = new Set(
+    entries.map((e) => underArchiveConvention(e.path, dotSlash))
+  );
+  const out = new Set<string>();
+  for (const path of remove) {
+    // The archive's convention, and ALSO a bare `./` the caller wrote on a
+    // flat archive: both spellings name one file to every reader.
+    const key = underArchiveConvention(
+      path,
+      dotSlash || path.startsWith(DOT_SLASH)
+    );
+    if (written.has(key) || written.has(DOT_SLASH + key)) {
+      throw new ZipPackagingError(
+        `rebuildZipWithEntries: entry '${path}' is both removed and written`
+      );
+    }
+    const existing = archiveByName.get(key);
+    if (existing !== undefined) out.add(existing);
+  }
+  return out;
 }
 
 /** Input order, each name once, the LAST occurrence kept. */
