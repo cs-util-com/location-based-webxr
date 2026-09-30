@@ -180,7 +180,7 @@ const alpha2 = (roughness: number) => roughness ** 4;
 const roughnessOf = (a2: number) => Math.min(1, a2 ** 0.25);
 
 /** The anti-aliasing fade the wave sets use (phase change per pixel, rad). */
-export const WATER_POLISH_FADE_RAD = [0.8, 1.6] as const;
+const WATER_POLISH_FADE_RAD = [0.8, 1.6] as const;
 
 /**
  * Trick 1's twin: the slope variance (both axes) the fade removed from

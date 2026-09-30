@@ -255,6 +255,9 @@
         "*.mjs",
         "config/*.mjs"
       ],
+      "ignoreUnresolved": [
+        "/3d/water-metrics.mjs"
+      ],
       "ignoreDependencies": [
         "@carlosjeurissen/stylelint-csstree-validator",
         "stylelint-config-standard"

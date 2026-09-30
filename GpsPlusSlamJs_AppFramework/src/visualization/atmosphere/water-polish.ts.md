@@ -51,8 +51,8 @@ water. `WaterSurface` (`water-surface-material.ts`) takes the switches as
   `waterSunRoughness(r, scale?, radiusRad?)`,
   `waterFresnelDampFactor(r, c?)`, `waterGustGain(noise, depth?)`,
   `waterTileWave(direction, k, omega, rotationRad?, scale?)`,
-  `waterTileBlend(mask)`;
-  `WATER_POLISH_FADE_RAD` ([0.8, 1.6], the wave sets' own fade).
+  `waterTileBlend(mask)`. The wave sets' fade ([0.8, 1.6] rad) is a module
+  constant (`WATER_POLISH_FADE_RAD`), not exported.
 - `WATER_POLISH_DEFAULT_PARAMS`: the swept constants at their defaults (a
   sweep's "back to default").
 - `createWaterPolishUniforms()`, `configureWaterPolishUniforms(uniforms,
