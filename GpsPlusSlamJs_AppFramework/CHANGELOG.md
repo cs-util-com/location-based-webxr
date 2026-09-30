@@ -73,6 +73,14 @@
 
 ### Added
 
+- **`guardSlidersIn(root)`** in `utils/slider-scroll-guard`: one install per
+  page (`guardSlidersIn(document)`) guards every range input, including ones
+  built later, against touch scrolling (owner report 2026-09-30: a vertical
+  swipe starting on a slider edited it). It listens in the capture phase, so
+  it no longer has to be registered before the page's own listener, and a
+  second install on the same root is shared. Also exports
+  `SLIDER_GUARD_TUNING` and `SliderGuardTuning`; the `tuning` parameter
+  exists for measurements, pages keep the default.
 - **The sun through clouds** (`SkyAtmosphere.configure({ sunThroughClouds:
 { discExponent, aureole, silverLining } })`): the sun disc behind a cloud
   keeps T^k of itself, and thin cloud glows around the sun (a narrow
@@ -336,6 +344,21 @@ source }` instead of the corners alone (unreleased API).
 
 ### Changed
 
+- **The slider guard holds a cancelled swipe until the finger lifts.** It
+  used to stop at `pointercancel` (the browser taking the swipe over for
+  scrolling). Blink's source can keep writing the value on later
+  `touchmove`s after its own first-move direction lock, so the guard now
+  keeps the slider frozen until the touch sequence's `touchend` or
+  `touchcancel`, and re-arms for any new finger meanwhile. A defence from
+  the source: headless Chromium did not reproduce such late writes.
+- **The guard's direction threshold is 12 px, up from 10** (owner decision
+  2026-09-30): a swipe leaning 40 degrees off vertical that starts with a
+  sideways twitch now stays a scroll.
+- **`guardSliderAgainstScroll(input)` is deprecated** in favour of
+  `guardSlidersIn(input)`.
+  - **Migration:** replace per-slider calls with one
+    `guardSlidersIn(document)` in the page's entry; keeping a per-slider
+    call under a page-wide install double-guards that slider.
 - **The cloud slab reads its thickness at step boundaries and lights each
   step exactly** (clouds-from-above plan 2026-09-26-0549, M1). The layered
   "slices" seen from above at low step counts came from one thickness read
