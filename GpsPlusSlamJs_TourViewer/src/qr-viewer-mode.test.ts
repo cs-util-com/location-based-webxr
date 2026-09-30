@@ -20,11 +20,11 @@ import {
  * ordered are a per-code VOTE BUDGET (review #6: every locked frame
  * dispatches a fresh vote set, so an unbounded visitor standing at the
  * poster injects thousands of near-identical points and pins the alignment
- * centroid) and the wide-baseline CAP (delta #6: minted rotation error
- * enters every wide-baseline correspondence at ~0.17 m per degree per 10 m,
- * so `voteBaselineM` starts ≤ 2 and only M5's measured numbers may raise
- * it). The level lookup's placeholder is the deferred negative cache: a
- * scanned code with no level must not flap the controller at 8 Hz.
+ * centroid) and the vote geometry, which is now the MEASURED one (authoring
+ * plan 2026-09-28-0953 M0b/M0c: a 30 m ring of 8 votes per lock; the old
+ * 2 m cap left the heading 6-31° off after a scan). The level lookup's
+ * placeholder is the deferred negative cache: a scanned code with no level
+ * must not flap the controller at 8 Hz.
  */
 
 const LEVEL: QrLevel = {
@@ -66,9 +66,16 @@ beforeAll(async () => {
 });
 
 describe("buildViewerControllerConfig", () => {
-  it("pins the wide-baseline cap at 2 m — only M5's measurements may raise it", () => {
+  // The values M0b/M0c measured (results doc 2026-09-28-1433): a 30 m ring
+  // (heading 0.45° after the scan at 4 votes, B = 8 m, against 18.1° at
+  // 2 m; the radius does not amplify the saved code's own heading error)
+  // and 8 votes per lock (16 gained < 0.1 m for twice the solver input).
+  // Changing one means re-running the harness, `viewer-vote-strength.test.ts`.
+  it("pins the measured vote geometry: a 30 m ring of 8 votes per lock", () => {
     const config = buildViewerControllerConfig(fakeDeps());
-    expect(VIEWER_VOTE_BASELINE_M).toBe(2);
+    expect(VIEWER_VOTE_BASELINE_M).toBe(30);
+    expect(VIEWER_VOTE_COUNT).toBe(8);
+    expect(VIEWER_SYNTHETIC_ACCURACY_M).toBe(5);
     expect(config.voteBaselineM).toBe(VIEWER_VOTE_BASELINE_M);
     expect(config.voteCount).toBe(VIEWER_VOTE_COUNT);
     expect(config.syntheticAccuracyM).toBe(VIEWER_SYNTHETIC_ACCURACY_M);

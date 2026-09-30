@@ -8,9 +8,16 @@ carrying the two review-ordered guardrails and the deferred negative cache.
 
 ## Public API
 
-- `VIEWER_SYNTHETIC_ACCURACY_M = 5`, `VIEWER_VOTE_BASELINE_M = 2` (delta
-  #6 cap — only M5's measurements may raise it), `VIEWER_VOTE_COUNT = 4`,
-  `MAX_VOTED_LOCKS_PER_CODE = 10` (review #6 budget; M5 tunes).
+- The measured vote geometry (authoring plan 2026-09-28-0953, M0b/M0c;
+  [results](../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-09-28-1433-viewer-vote-strength-results.md)):
+  `VIEWER_VOTE_BASELINE_M = 30` (ring radius in the code's plane),
+  `VIEWER_VOTE_COUNT = 8` (votes per lock), `VIEWER_SYNTHETIC_ACCURACY_M = 5`
+  (barely matters: the core weighs `1/max(acc, 1 m)^0.1`), and
+  `MAX_VOTED_LOCKS_PER_CODE = 10` (review #6 budget). The ring used to be
+  capped at 2 m (delta #6: "a wide ring amplifies the saved code's heading
+  error"); M0b measured that it does not, and that the 2 m ring left the
+  heading 6-31° off after a scan. Each constant's doc comment names what
+  would reverse it.
 - `buildViewerControllerConfig(deps: ViewerPipelineDeps)` — `onLocked(level,
 hasVoted)` is forwarded from every controller lock (no detected-text
   guard, M5 review #4), with whether the locked code has cast votes in
@@ -81,7 +88,8 @@ const controller = createQrTrackingController(
 
 ## Tests
 
-`qr-viewer-mode.test.ts` — the 2 m baseline pin, level resolution by
+`qr-viewer-mode.test.ts` — the measured-geometry pin (30 m, 8 votes), the
+`hasVoted` lock adapter, level resolution by
 detected code, the placeholder + `onUnknownCode`, the per-code budget
 (stops exactly at the cap, other codes unaffected, detections keep
 recording), the status-line table, and the ring geometry. The composed

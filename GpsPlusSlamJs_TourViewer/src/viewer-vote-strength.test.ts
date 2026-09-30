@@ -394,6 +394,7 @@ interface Measured {
   endDeg: number;
 }
 
+/** The viewer's shipped vote constants, through its own dispatch path. */
 const TODAY: VoteParams = {
   biasM: 8,
   budget: MAX_VOTED_LOCKS_PER_CODE,
@@ -403,6 +404,13 @@ const TODAY: VoteParams = {
   outlierThresholdM: 5,
   path: "viewer",
 };
+
+/**
+ * The viewer as M0 measured it, before M2b: a 2 m ring of 4 votes per lock
+ * and no keep-alive. Kept explicit so M0's pins and sweeps stay the
+ * evidence they were (D3), whatever the shipped constants become.
+ */
+const M0_VIEWER: VoteParams = { ...TODAY, baselineM: 2, voteCount: 4 };
 
 /** The decision rule of plan §3.2. */
 function meetsRule(m: Measured): boolean {
@@ -847,7 +855,8 @@ describe("viewer vote strength (plan M0)", () => {
     );
   }, 60_000);
 
-  // Today's constants, measured (2026-09-28, gps-plus-slam-js 1.25.0).
+  // M0's viewer (a 2 m ring of 4 votes per lock, no keep-alive; the
+  // constants before M2b), measured 2026-09-28 with gps-plus-slam-js 1.25.0.
   // Why these pins matter: they are M0's evidence for decision D3. They
   // assert the numbers as MEASURED, whichever way the rule falls, so any
   // later change to the votes or the solver shows up here as a diff to
@@ -890,9 +899,9 @@ describe("viewer vote strength (plan M0)", () => {
     },
   ];
   it.each(PINNED)(
-    "today's votes, GPS biased $biasM m: the scan fixes the position at the code but not the heading, and GPS takes it back",
+    "M0's votes (2 m ring, 4 per lock), GPS biased $biasM m: the scan fixes the position at the code but not the heading, and GPS takes it back",
     (pin) => {
-      const m = runScenario({ ...TODAY, biasM: pin.biasM });
+      const m = runScenario({ ...M0_VIEWER, biasM: pin.biasM });
       expect(m.preScanM).toBeCloseTo(pin.biasM, 2);
       expect(m.scanEndM).toBeCloseTo(pin.scanEndM, 1);
       expect(m.scanEndDeg).toBeCloseTo(pin.scanEndDeg, 0);
@@ -900,7 +909,7 @@ describe("viewer vote strength (plan M0)", () => {
       expect(m.at120M).toBeCloseTo(pin.at120M, 1);
       expect(m.max120M).toBeCloseTo(pin.max120M, 1);
       expect(m.at300M).toBeCloseTo(pin.at300M, 1);
-      // The decision rule: today's votes do NOT meet it at any bias - the
+      // The decision rule: M0's votes do NOT meet it at any bias - the
       // heading after the scan is > 2°, and the position does not hold.
       expect(m.scanEndDeg).toBeGreaterThan(2);
       expect(m.max120M).toBeGreaterThan(0.5);
@@ -925,7 +934,7 @@ describe.runIf(SWEEP === "1" || SWEEP === "heavy")(
     it("prints the sweep table", () => {
       const rows: Record<string, unknown>[] = [];
       for (const biasM of [3, 8, 15]) {
-        const base: VoteParams = { ...TODAY, biasM };
+        const base: VoteParams = { ...M0_VIEWER, biasM };
         const r: VoteParams = { ...base, path: "replica" };
         const arms: [string, VoteParams][] = [
           ["today", base],
@@ -1013,7 +1022,11 @@ function rowM0b(
   };
 }
 
-const M0B_BASE: VoteParams = { ...TODAY, path: "replica", postScanS: 125 };
+const M0B_BASE: VoteParams = {
+  ...M0_VIEWER,
+  path: "replica",
+  postScanS: 125,
+};
 
 function m0bArms(which: string): [string, VoteParams][] {
   const arms: [string, VoteParams][] = [];

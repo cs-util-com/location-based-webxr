@@ -9,11 +9,16 @@
  *   points and pin the alignment centroid to the poster. The first
  *   {@link MAX_VOTED_LOCKS_PER_CODE} locked frames per code vote; later
  *   locks still track (marker, readout) but write nothing.
- * - **The wide-baseline CAP** (delta #6): the minted rotation error enters
- *   every wide-baseline correspondence at ~0.17 m per degree per 10 m of
- *   ring radius, so {@link VIEWER_VOTE_BASELINE_M} starts at 2 and only
- *   M5's measured numbers may raise it.
+ * - **The measured vote geometry** (Tour Viewer authoring plan
+ *   2026-09-28-0953, M0b/M0c): {@link VIEWER_VOTE_COUNT} votes per lock on
+ *   a ring of {@link VIEWER_VOTE_BASELINE_M} in the code's plane. The ring
+ *   used to be capped at 2 m on the reasoning that a wide ring amplifies
+ *   the saved code's heading error (delta #6); M0b measured the opposite -
+ *   the alignment takes the saved code's heading error unchanged at every
+ *   radius from 5 to 100 m, while the 2 m ring left the heading 6-31° off
+ *   after a scan because it has almost no rotational lever against the GPS.
  *
+
  * The level lookup is the deferred NEGATIVE CACHE (delta #8): a scanned
  * code with no `qr/<c>.json` in the open tour resolves a geo-less
  * placeholder — cached per text by the controller — instead of rejecting,
@@ -45,12 +50,29 @@ import {
   MAX_VOTED_LOCKS_PER_CODE,
 } from "gps-plus-slam-app-framework/ar/qr/qr-vote-budget";
 
-/** Synthetic per-vote GPS accuracy (m) — the vote weight's input; M5 tunes. */
+/**
+ * Synthetic per-vote GPS accuracy (m), the vote weight's input. It barely
+ * matters: the core weighs `1/max(acc, 1 m)^0.1`, 0.85 here against 0.90
+ * for a 3 m fix (M0's `accuracy 1 m` arm changed nothing).
+ */
 export const VIEWER_SYNTHETIC_ACCURACY_M = 5;
-/** Wide-baseline ring radius cap (m) — delta #6; only M5 may raise it. */
-export const VIEWER_VOTE_BASELINE_M = 2;
-/** Correspondences per vote batch (`buildQrGpsVotes` count). */
-export const VIEWER_VOTE_COUNT = 4;
+/**
+ * Ring radius (m) of the votes in the code's plane (M0b/M0c). Rests on:
+ * the ~58 m pre-scan walk the harness models, 8 votes per lock, and the
+ * solver's settings. The heading after a scan (4 votes, B = 8 m) was 18.1°
+ * at 2 m, 3.4° at 10 m, 0.45° at 30 m; a 10 m ring met the position rule
+ * but left 27-43° of heading error through the hand-off. What would
+ * reverse 30 m: a saved code with a heading error near 9.5° (its far ring
+ * points then cross the 5 m hard trim, M0b), and M2a's store-path sweep of
+ * {10, 30} m with a 10-minute pre-scan walk.
+ */
+export const VIEWER_VOTE_BASELINE_M = 30;
+/**
+ * Correspondences per lock (`buildQrGpsVotes` count), and per keep-alive
+ * fix at full strength (M0b/M0c): 8 is the smallest count whose scan was
+ * exact on the 30 m ring; 16 gained under 0.1 m at twice the solver input.
+ */
+export const VIEWER_VOTE_COUNT = 8;
 /**
  * Locked frames per code that actually vote (review #6); M5 tunes.
  *
