@@ -161,7 +161,10 @@ recording. Its own module since the flows plan M6.
   GPS anchor (`FW/visualization/gps-anchor.ts`) moves only off screen and by
   at least ~2.2 m, position only: it would hide a scan's correction and put
   the 0.3 m field acceptance out of reach. Pinned by
-  `viewer-content-alignment.test.ts`; revisit only with that decision.
+  `viewer-content-alignment.test.ts` through this call site and the real
+  QR controller (which also pins the votes-before-lock order the gate
+  relies on: the content is placed on the first voted lock, through that
+  lock's votes); revisit only with that decision.
 - Planes live at the SCENE ROOT in raw GPS-world NUE (the framework's
   built-once parenting rule); the alignment moves the odometry group under
   them, which is why a later lock needs no re-placement.

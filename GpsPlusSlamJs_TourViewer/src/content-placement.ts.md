@@ -73,9 +73,14 @@ const preview = await renderTourObjects(objects, {
 ## Tests
 
 `viewer-content-alignment.test.ts` (authoring plan M2d, decision D10a) -
-the viewer's rendered pin sits at the scene root, not under the odometry
-group or an anchor, and a scan's votes move it in the visitor's view from
-~8 m off to within 0.3 m in the same dispatches, without re-placing it.
+through the real call site (`viewer-placement.ts`) and the real QR
+controller: the pin is rendered on the first voted lock, at the scene root
+(not under the odometry group or an anchor), with that lock's votes already
+in the store, and is never re-placed while the scan's votes move it in the
+visitor's view. At B = 8 m the hard trim makes the result exact (the case
+pins that the whole correction arrives, not an accuracy); at B = 3 m over a
+longer walk the pin shows the alignment's GPS/vote compromise (between 5 mm
+and 0.1 m, measured 24 mm).
 
 `content-placement.test.ts` - the pin round trip (mint → NUE) as a property
 over positions; the photo's frame direction pinned by bearing against the
