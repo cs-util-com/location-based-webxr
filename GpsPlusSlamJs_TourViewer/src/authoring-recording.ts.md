@@ -106,28 +106,41 @@ loads. Plan:
   comes from the `getBuildInfo` the page passes to `save` - the framework's
   reader of the constants the Tour Viewer's `vite.config.ts` defines. Where
   they were never injected the reader throws and only the field is dropped.
-- **Privacy: the tour link is kept, deliberately.** The recorded QR texts
-  (`qrDetected/*`, and `text` in `tourAuthoring/*`) carry the tour's link, and
-  the fixes carry the creator's GPS track; a line beside the switch says so.
-  The link is NOT stripped because a replay needs it: it is what ties each
-  detection to its code and tour. `session.json`'s `pageUrl` is query-free
-  (`sanitizedPageUrl`) as before.
-- **Privacy of the VISITOR's recording (decided again in M1b, plan §7a
-  finding 5): the tour link is kept there too, and the same line stands
-  beside the switch.** The person recording is not the tour's author, so it
-  was weighed on its own:
-  - For stripping: a visitor's zip could carry a private (e.g. Drive) tour
-    link and their GPS track to whoever they send it to.
-  - Against: a replay needs the link - it is what ties each detection, each
-    `tourViewing/codeLocked` and each vote batch to its code and tour; a
-    recording without it cannot say which code a vote came from, which is
-    the question it exists to answer.
-  - What decides it: the recording needs `?debug=1` (a link the tour's
-    owner hands out for troubleshooting, never the printed code's) AND an
-    explicit tap on the switch, whose line says what it holds; it never
-    leaves the phone unless the visitor saves and shares it; and whoever
-    debugs a visitor's session already has the tour link. A visitor without
-    `?debug=1` gets no switch, no recording, no log actions.
+- **What a recording holds, and the line that says so.** The recorded QR
+  texts (`qrDetected/*`, and `text` in `tourAuthoring/*` / `tourViewing/*`)
+  carry the tour's link; the fixes carry the recorder's GPS track; the depth
+  samples (`RECORDING_DEPTH`, about one a second) carry the 3D shape of the
+  surroundings. The line beside the switch names all three: "The recording
+  holds the tour link, your GPS track and the 3D shape of the surroundings."
+  (`index.html`; the depth was missing from it until the M1b review, #6).
+  `session.json`'s `pageUrl` is query-free (`sanitizedPageUrl`) as before.
+- **Privacy: the tour link is kept, deliberately - and NOT because a replay
+  needs it** (corrected in the M1b review, #6). A replay needs each
+  detection's and each vote batch's code IDENTITY, which a hash of the text
+  would give as well; the link's CONTENT is not what a replay needs. The
+  earlier reasoning ("a replay needs the link") confused the two. What
+  actually decides it, for the creator's recording and the visitor's alike:
+  - it needs an explicit opt-in: the creator's switch, and for a visitor
+    `?debug=1` (a link the tour's owner hands out for troubleshooting, never
+    the printed code's) AND the switch, whose line says what it holds; a
+    visitor without `?debug=1` gets no switch, no recording, no log actions;
+  - the zip never leaves the phone unless the person saves and hands it
+    over (the recording is on the phone's private storage until then);
+  - whoever debugs the session - the tour's owner - already has the tour
+    link, so keeping it discloses nothing to the one reader the zip is made
+    for. Stripping it would protect only against a zip sent to someone
+    else, which the person chooses on the share sheet.
+  - What would reverse it: recordings routinely shared beyond the tour's
+    owner (a public issue tracker, say), or a private-link tour whose
+    visitors' zips reach people without the link; then the texts should be
+    replaced by their code ids at record time.
+- **What runs on a visitor's `?debug=1` page before any opt-in.** The
+  recording itself writes nothing until the switch is on and AR starts. The
+  page-open housekeeping (`recording-housekeeping.ts`) DOES run at page
+  open, before the opt-in, wherever the switch shows: it reads this app's
+  recording folders on the phone, deletes what the cleanup bound names, and
+  offers a killed tab's unsaved recording. It only reads and deletes; it
+  creates and writes nothing.
 - **Visitor recordings (M1b).** With `?debug=1` a visitor's page wires the
   same panel; the recording is tagged `tour-viewing` (`contextTag`) and
   records depth like the creator's (the AR entry is mode-agnostic).

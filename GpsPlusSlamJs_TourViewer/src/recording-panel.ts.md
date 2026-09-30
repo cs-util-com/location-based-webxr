@@ -79,7 +79,9 @@ estimateStorage, now, saveGuard }): RecordingPanel`
   being saved - wait for it to finish." A zip saved without its `session.json` says so, because the
   Recorder then takes it for an old recording and migrates its coordinates.
 - **Privacy.** The static line beside the switch (`index.html`) says the
-  recording holds the tour link and the GPS track.
+  recording holds the tour link, the GPS track and the 3D shape of the
+  surroundings (the depth samples; M1b review #6). Why the link is kept:
+  `authoring-recording.ts.md`.
 - **A creator's, and a `?debug=1` visitor's (M1b).** `main.ts` wires it and
   unhides the block in creator mode, and for a visitor only with `?debug=1`
   (the viewer recording, tagged `tour-viewing`); a visitor without it gets no

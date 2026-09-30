@@ -2452,7 +2452,7 @@ test("an opted-in authoring session is recorded across the finish and saved as i
   await expect(page.getByTestId("recording-save")).toBeHidden();
   // What leaves the phone with the zip is said beside the switch.
   await expect(page.getByTestId("recording-privacy")).toHaveText(
-    "The recording holds the tour link and your GPS track.",
+    "The recording holds the tour link, your GPS track and the 3D shape of the surroundings.",
   );
   await page.getByTestId("record-session").check();
 
@@ -2682,7 +2682,7 @@ test("a visitor records only with ?debug=1 and the switch: the scan lock, its vo
   });
   await expect(page.getByTestId("record-session")).toBeVisible();
   await expect(page.getByTestId("recording-privacy")).toHaveText(
-    "The recording holds the tour link and your GPS track.",
+    "The recording holds the tour link, your GPS track and the 3D shape of the surroundings.",
   );
   await page.getByTestId("record-session").check();
   await enterAr(page);
