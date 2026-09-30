@@ -338,18 +338,34 @@ function hasFusedObservation(defs: readonly RefPointDefinition[]): boolean {
  */
 export async function loadRecording(zip: ZipSource): Promise<LoadedRecording> {
   const [rawEntries, meta, sidecarDefs] = await Promise.all([
-    loadActionsFromZip(zip),
+    loadActionsFromZip(zip, 10 * 1024 * 1024), // Allow up to 10MB per action file
     loadSessionMetadata(zip),
     readSidecarRefPoints(zip),
   ]);
 
-  const rawActions = rawEntries.map((e) => e.action);
+  // Drop hydrateMeasurementPoints actions that may have leaked into the
+  // recording action log (so that replaying them doesn't instantly render all
+  // historical measurement points).
+  const validRawEntries = rawEntries.filter(
+    (e) => e.action.type !== 'measurementPoints/hydrateMeasurementPoints'
+  );
+
+  const rawActions = validRawEntries.map((e) => e.action);
   const migratedActions = migrateActionsIfNeeded(rawActions, meta);
   const migrationApplied = migratedActions !== rawActions;
-  const actions: ZipActionEntry[] = rawEntries.map((e, i) => ({
-    ...e,
-    action: migratedActions[i]!,
-  }));
+
+  // NOTE: If migrateActionsIfNeeded changes the length (e.g. injectRefPointsActions),
+  // mapping by index is flawed. We rebuild ZipActionEntry for each migrated action.
+  const actions: ZipActionEntry[] = migratedActions.map((action, i) => {
+    // If the length matches (which is typical for modern files), preserve the original metadata.
+    // If it differs, we do our best by fallback.
+    const originalEntry = validRawEntries[i];
+    return {
+      filename: originalEntry?.filename ?? `migrated_${i}.json`,
+      index: Number(originalEntry?.index ?? i),
+      action,
+    };
+  });
 
   const sessionId = inferSessionId(actions, meta);
   const actionDerived = buildDefsFromActions(actions, sessionId);

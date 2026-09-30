@@ -52,6 +52,11 @@ import { ScenarioWrappingStorageBackend } from '../storage/scenario-storage';
 import type { SessionMetadata as OpfsSessionMetadata } from 'gps-plus-slam-app-framework/storage/opfs-storage';
 import { routingReducer, type RoutingState } from './routing-slice';
 import { scenarioReducer, type ScenarioState } from './scenario-slice';
+import {
+  addMeasurementRay,
+  measurementPointsReducer,
+  type MeasurementPointsState,
+} from './measurement-points-slice';
 
 // --- Recorder-owned types ---
 
@@ -67,6 +72,7 @@ export interface CombinedRootState extends LibraryRootState {
   routing: RoutingState;
   scenario: ScenarioState;
   qrDetected: QrDetectedState;
+  measurementPoints: MeasurementPointsState;
 }
 
 /**
@@ -170,12 +176,14 @@ export function createRecorderStore(
     persistedExtraPrefixes: [
       slicePrefixOf(addRefPointEntry.type),
       slicePrefixOf(recordQrDetection.type),
+      slicePrefixOf(addMeasurementRay.type),
     ],
     extraReducers: {
       refPoints: refPointsReducer,
       routing: routingReducer,
       scenario: scenarioReducer,
       qrDetected: qrDetectedReducer,
+      measurementPoints: measurementPointsReducer,
     },
   });
 

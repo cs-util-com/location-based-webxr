@@ -192,7 +192,7 @@
         <div class="flex justify-between items-end">
           <!-- Left: Playback controls + speed presets + progress -->
           <div class="flex gap-2 items-center">
-            <!-- Play/pause + speed presets grouped in a single pill -->
+            <!-- Play/pause + restart + speed presets grouped in a single pill -->
             <div
               class="flex items-center bg-gray-700/80 rounded-xl shadow-lg overflow-hidden"
             >
@@ -201,6 +201,14 @@
                 class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 transition-all"
               >
                 ▶ Play
+              </button>
+              <button
+                id="btn-replay-restart"
+                class="hidden bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 px-3 transition-all border-l border-gray-600"
+                title="Restart replay from the beginning"
+                aria-label="Restart Replay"
+              >
+                🔄
               </button>
               <button
                 data-replay-speed="0.1"
@@ -292,6 +300,20 @@
               </button>
             </div>
           </div>
+        </div>
+        <!-- Scrubber / timeline slider (full width, below buttons) -->
+        <div class="mt-2 px-1">
+          <input
+            type="range"
+            id="replay-scrubber"
+            class="replay-scrubber w-full"
+            min="0"
+            max="0"
+            value="0"
+            step="1"
+            title="Seek through replay actions"
+            aria-label="Replay timeline scrubber"
+          />
         </div>
       </div>
 

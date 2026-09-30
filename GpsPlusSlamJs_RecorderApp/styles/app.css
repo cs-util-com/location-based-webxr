@@ -201,4 +201,61 @@ body {
    pointer-down. */
 input[type='range'] {
   touch-action: pan-y;
+/* --- Replay scrubber / timeline slider [VISUAL] ---
+   Video-player-like range input for seeking through replay actions.
+   Cross-browser styling (Webkit + Firefox). */
+.replay-scrubber {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.2);
+  outline: none;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.replay-scrubber:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+/* Webkit (Chrome, Safari, Edge) thumb */
+.replay-scrubber::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #22c55e; /* green-500 */
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  cursor: grab;
+  transition: transform 0.1s;
+}
+.replay-scrubber::-webkit-slider-thumb:active {
+  cursor: grabbing;
+  transform: scale(1.2);
+}
+/* Firefox thumb */
+.replay-scrubber::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #22c55e;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  cursor: grab;
+}
+.replay-scrubber::-moz-range-thumb:active {
+  cursor: grabbing;
+  transform: scale(1.2);
+}
+/* Firefox track */
+.replay-scrubber::-moz-range-track {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.2);
+}
+/* Seeking state — pulsing opacity to indicate loading */
+.replay-scrubber.seeking {
+  opacity: 0.5;
+  pointer-events: none;
 }

@@ -28,6 +28,13 @@ export interface ReplayUICallbacks {
   onMapToggle: () => void;
   onMapZoomIn: () => void;
   onMapZoomOut: () => void;
+  onRestart: () => void;
+  /** Called when the user releases the scrubber slider at a new position. */
+  onSeek: (actionIndex: number) => void;
+  /** Called when user presses Right arrow to step forward one action. */
+  onStepForward: () => void;
+  /** Called when user presses Left arrow to step backward one action. */
+  onStepBackward: () => void;
 }
 
 // ─── Module state ─────────────────────────────────────────────
@@ -35,6 +42,9 @@ export interface ReplayUICallbacks {
 let callbacks: ReplayUICallbacks | null = null;
 // Track which session entry is selected (used by selectSessionEntry)
 let _selectedSessionIndex = -1;
+/** True while the user is actively dragging the scrubber thumb — prevents
+ *  programmatic updates from fighting with the user's drag. */
+let _isUserDraggingScrubber = false;
 
 // ─── Helpers ──────────────────────────────────────────────────
 
@@ -67,9 +77,9 @@ export function initReplayUI(cb: ReplayUICallbacks): void {
     callbacks?.onScenarioChange(scenarioSelect.value);
   });
 
-  // Start Replay button — always starts at 1× (speed adjustable via live overlay)
+  // Start Replay button — starts at 0.1× by default for better visibility
   el('btn-start-replay')?.addEventListener('click', () => {
-    callbacks?.onStartReplay(1);
+    callbacks?.onStartReplay(0.1);
   });
 
   // Play/Pause button
@@ -94,6 +104,30 @@ export function initReplayUI(cb: ReplayUICallbacks): void {
   el('btn-map-zoom-out-replay')?.addEventListener('click', () => {
     callbacks?.onMapZoomOut();
   });
+
+  // Restart button (shown after replay completes)
+  el('btn-replay-restart')?.addEventListener('click', () => {
+    callbacks?.onRestart();
+  });
+
+  // Scrubber / timeline slider
+  const scrubber = el('replay-scrubber') as HTMLInputElement | null;
+  if (scrubber) {
+    // Track drag state to suppress programmatic updates while user is dragging
+    scrubber.addEventListener('pointerdown', () => {
+      _isUserDraggingScrubber = true;
+    });
+    // On release: fire seek and clear drag state
+    scrubber.addEventListener('pointerup', () => {
+      _isUserDraggingScrubber = false;
+    });
+    // change fires when the user commits a new value (mouseup / touchend)
+    scrubber.addEventListener('change', () => {
+      _isUserDraggingScrubber = false;
+      const targetIndex = parseInt(scrubber.value, 10);
+      callbacks?.onSeek(targetIndex);
+    });
+  }
 
   // Live speed presets (in the playback controls overlay)
   for (const btn of document.querySelectorAll('.replay-live-speed')) {
@@ -120,6 +154,17 @@ export function initReplayUI(cb: ReplayUICallbacks): void {
     selectSessionEntry(index);
 
     callbacks?.onSessionSelect(index);
+  });
+
+  // Keyboard stepping: Left/Right arrows for single-action stepping
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      callbacks?.onStepForward();
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      callbacks?.onStepBackward();
+    }
   });
 }
 
@@ -307,6 +352,7 @@ export function showReplayControls(): void {
   show('replay-controls');
   show('replay-legend');
   hide('controls');
+  hide('btn-replay-restart');
 }
 
 /** Hide replay playback controls and color legend. */
@@ -315,11 +361,40 @@ export function hideReplayControls(): void {
   hide('replay-legend');
 }
 
-/** Update progress display. */
+/** Update progress display and scrubber position. */
 export function updateReplayProgress(current: number, total: number): void {
   const progress = el('replay-progress');
   if (progress) {
     progress.textContent = `Action ${current}/${total}`;
+  }
+  // Update scrubber thumb position (unless user is actively dragging)
+  if (!_isUserDraggingScrubber) {
+    const scrubber = el('replay-scrubber') as HTMLInputElement | null;
+    if (scrubber) {
+      scrubber.max = String(total);
+      scrubber.value = String(current);
+    }
+  }
+}
+
+/**
+ * Initialize the scrubber range for a new replay session.
+ * Sets the max value and resets the thumb to 0.
+ */
+export function initScrubber(totalActions: number): void {
+  const scrubber = el('replay-scrubber') as HTMLInputElement | null;
+  if (scrubber) {
+    scrubber.min = '0';
+    scrubber.max = String(totalActions);
+    scrubber.value = '0';
+  }
+}
+
+/** Mark the scrubber as seeking (visual feedback). */
+export function setScrubberSeeking(seeking: boolean): void {
+  const scrubber = el('replay-scrubber');
+  if (scrubber) {
+    scrubber.classList.toggle('seeking', seeking);
   }
 }
 
@@ -335,12 +410,14 @@ export function updatePlayPauseButton(
   switch (state) {
     case 'playing':
       btn.textContent = '⏸ Pause';
+      hide('btn-replay-restart');
       break;
     case 'paused':
       btn.textContent = '▶ Resume';
       break;
     case 'completed':
       btn.textContent = '✅ Complete';
+      show('btn-replay-restart');
       break;
   }
 }
@@ -353,4 +430,18 @@ export function updateCameraModeButton(mode: 'orbit' | 'fps'): void {
   }
 
   btn.textContent = mode === 'orbit' ? '🔄 Orbit' : '🎮 Free Fly';
+}
+
+/** Highlight the selected speed button. */
+export function updateSpeedButtonSelection(speed: number): void {
+  for (const btn of document.querySelectorAll('.replay-live-speed')) {
+    const btnSpeed = parseFloat((btn as HTMLElement).dataset.replaySpeed ?? '1');
+    if (btnSpeed === speed) {
+      btn.classList.add('bg-blue-600');
+      btn.classList.remove('hover:bg-gray-600');
+    } else {
+      btn.classList.remove('bg-blue-600');
+      btn.classList.add('hover:bg-gray-600');
+    }
+  }
 }

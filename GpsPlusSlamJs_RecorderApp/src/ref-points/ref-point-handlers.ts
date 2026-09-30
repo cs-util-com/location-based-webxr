@@ -68,7 +68,12 @@ interface NearbyRefPointInfo {
 export interface RefPointHandlers {
   // Primary handler. When forceNew is true, bypass re-observation and
   // show the picker for creating a new ref point even when near a known one.
-  handleMarkRefPoint(options?: { forceNew?: boolean }): Promise<void>;
+  // When overrideArPosition is provided, the ref point is anchored at that
+  // 3D coordinate instead of the camera's current position (measurement integration).
+  handleMarkRefPoint(options?: {
+    forceNew?: boolean;
+    overrideArPosition?: Vector3;
+  }): Promise<void>;
 
   // Proximity check for live button label + neighbor-cell detection
   checkNearbyRefPoint(lat: number, lng: number): NearbyRefPointInfo | undefined;
@@ -238,6 +243,7 @@ export function createRefPointHandlers(
 
   async function handleMarkRefPoint(options?: {
     forceNew?: boolean;
+    overrideArPosition?: Vector3;
   }): Promise<void> {
     // Guard: ignore if picker is already open (prevents overwriting currentResolver)
     if (isRefPointPickerVisible()) {
@@ -333,7 +339,10 @@ export function createRefPointHandlers(
       const timestamp = Date.now();
 
       // Extract odometry data once from AR pose (used by dispatch, persist, visualize)
-      const odomPosition = extractOdomPosition(arPose);
+      // When overrideArPosition is provided (measurement triangulation), use it
+      // as the ref point's 3D position instead of the camera's current location.
+      const odomPosition: Vector3 =
+        options?.overrideArPosition ?? extractOdomPosition(arPose);
       const odomRotation = extractOdomRotation(arPose);
 
       // Compute fused GPS if alignment matrix is available

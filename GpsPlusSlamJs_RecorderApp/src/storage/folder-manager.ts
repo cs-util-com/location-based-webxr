@@ -53,6 +53,8 @@ import {
 import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
 import { setCurrentScenarioName } from '../state/scenario-slice';
 import { setImportedRefPointEntries } from '../state/ref-points-slice';
+import { loadAllMeasurementPoints } from '../storage/measurement-point-loader';
+import { hydrateMeasurementPoints } from '../state/measurement-points-slice';
 import type { RecorderStore } from '../state/recorder-store';
 
 const log = createLogger('FolderManager');
@@ -625,6 +627,18 @@ export function createFolderManager(deps: FolderManagerDeps): FolderManager {
     // what feeds it. The previous deps.mapOverlay.addPriorMarkers call was
     // dead code: it ran at scenario-selection time, before the lazily
     // created overlay ever existed.
+
+    // FIX 5: Load measurement points alongside ref points and hydrate
+    // the Redux slice. Deduplication is handled by the reducer.
+    try {
+      const measurementPoints = await loadAllMeasurementPoints(handle);
+      if (measurementPoints.length > 0) {
+        deps.getStore().dispatch(hydrateMeasurementPoints(measurementPoints));
+        log.info(`Hydrated ${measurementPoints.length} measurement points from OPFS`);
+      }
+    } catch (mpErr) {
+      log.warn('Failed to load measurement points:', mpErr);
+    }
 
     return {
       refPointCount: refPointDefs.length,

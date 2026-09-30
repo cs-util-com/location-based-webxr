@@ -110,6 +110,10 @@ function createCallbacks(): ReplayUICallbacks {
     onMapToggle: vi.fn(),
     onMapZoomIn: vi.fn(),
     onMapZoomOut: vi.fn(),
+    onRestart: vi.fn(),
+    onSeek: vi.fn(),
+    onStepForward: vi.fn(),
+    onStepBackward: vi.fn(),
   };
 }
 
@@ -362,14 +366,14 @@ describe('replay-ui', () => {
       expect(callbacks.onSessionSelect).toHaveBeenCalledWith(1);
     });
 
-    // Why: With setup speed control removed (Issue 1), replay always starts at 1×.
+    // Why: With setup speed control removed (Issue 1), replay always starts at 0.1× default.
     // Speed is adjustable at runtime via live overlay presets.
-    it('fires onStartReplay with default speed 1 (no setup speed control)', () => {
+    it('fires onStartReplay with default speed 0.1 (no setup speed control)', () => {
       const startBtn = document.getElementById('btn-start-replay')!;
       startBtn.removeAttribute('disabled');
       startBtn.click();
 
-      expect(callbacks.onStartReplay).toHaveBeenCalledWith(1);
+      expect(callbacks.onStartReplay).toHaveBeenCalledWith(0.1);
     });
 
     // Why: Confirms the setup speed input and preset buttons were removed (Issue 1).
