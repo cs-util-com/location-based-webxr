@@ -63,7 +63,7 @@ export interface StarField {
  *   0.005° at worst;
  * - `magTint`: the magnitude over [brightestMag, maxMagLimit] and the
  *   colour's tint t (see `generateStarField`) over [-0.5, 0.5], one
- *   unsigned normalised byte each;
+ *   unsigned normalised byte each, clamped to its range (never wrapped);
  * - `magnitudes`: the magnitudes as the GPU decodes them (ascending), for
  *   counting what a limit draws.
  */
@@ -115,6 +115,10 @@ export function octahedralDecode(
   return [x / n, y / n, z / n];
 }
 
+/** A value in [0, 1] as an unsigned byte, clamped (a Uint8Array wraps). */
+const toUnorm8 = (v: number): number =>
+  Math.round(Math.min(1, Math.max(0, v)) * 255);
+
 /** A float in [-1, 1] as a signed normalised 16-bit value, and back. */
 const toSnorm16 = (v: number): number =>
   Math.round(Math.min(1, Math.max(-1, v)) * 32767);
@@ -140,14 +144,12 @@ export function packStarField(field: StarField): PackedStars {
     octahedral[2 * to] = toSnorm16(u);
     octahedral[2 * to + 1] = toSnorm16(v);
     const m = field.magnitudes[from] ?? maxMagLimit;
-    const magByte = Math.round(
-      ((m - brightestMag) / (maxMagLimit - brightestMag)) * 255,
-    );
+    const magByte = toUnorm8((m - brightestMag) / (maxMagLimit - brightestMag));
     // The colour's tint: red minus blue is 0.6 t on both sides of white.
     const c = field.colors;
     const t = ((c[3 * from] ?? 1) - (c[3 * from + 2] ?? 1)) / 0.6;
     magTint[2 * to] = magByte;
-    magTint[2 * to + 1] = Math.round((t + 0.5) * 255);
+    magTint[2 * to + 1] = toUnorm8(t + 0.5);
     magnitudes[to] = unpackMagnitude(magByte);
   });
   // Rounding is monotonic, so the packed magnitudes stay in order.

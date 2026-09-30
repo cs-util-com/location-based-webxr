@@ -225,6 +225,25 @@ describe("packStarField", () => {
       0.5 / 255 + 1e-6,
     );
   });
+
+  // Why: the bytes are a Uint8Array, which WRAPS a value outside 0-255
+  // (256 reads as 0). A tint or magnitude outside its packed range, from a
+  // field built by hand or a future generator, must clamp to the nearest
+  // end, never turn a deep-red star blue or a faint one the brightest.
+  it("clamps a tint or magnitude outside its packed range instead of wrapping", () => {
+    const field = {
+      count: 2,
+      directions: new Float32Array([0, 0, 1, 1, 0, 0]),
+      // Red minus blue 1 (t = 1.67) and -1 (t = -1.67).
+      colors: new Float32Array([1, 0.5, 0, 0, 0.5, 1]),
+      magnitudes: new Float32Array([
+        GLOBE_STARS.brightestMag - 3,
+        GLOBE_STARS.maxMagLimit + 3,
+      ]),
+    };
+    const packed = packStarField(field);
+    expect(Array.from(packed.magTint)).toEqual([0, 255, 255, 0]);
+  });
 });
 
 describe("the Milky Way's plane", () => {

@@ -7,7 +7,8 @@
   Gaia are non-commercial; HYG is share-alike: the evidence is in the
   stream-F record `2026-09-27-0743-globe-sky-results.md` §2). So the field
   is generated in code from a seed, nothing is added to the committed
-  assets (which are 99 % of their 4.5 MB budget), and the lab's credits
+  assets (which were 99 % of their 4.5 MB budget then; 10 MB since round-4
+  DEC-GL4-9), and the lab's credits
   line says the stars are procedural. It is a plausible sky, not the real
   one: no constellation is where it really is.
 - Public API:
@@ -28,7 +29,8 @@ magnitudes, colors }` (Float32Arrays; directions are unit vectors in the
     the octahedron as two signed normalised 16-bit values (worst error
     under 0.01°, property-tested); `magTint`: the magnitude as a byte over
     [brightestMag, maxMagLimit] (a step of 0.041 mag) and the colour's tint
-    t (red minus blue is 0.6 t) as a byte over [-0.5, 0.5]; `magnitudes`:
+    t (red minus blue is 0.6 t) as a byte over [-0.5, 0.5], each clamped
+    to its range (a Uint8Array would wrap 256 to 0); `magnitudes`:
     the decoded magnitudes, ascending, for counting what a limit draws.
   - `octahedralEncode(x, y, z)` / `octahedralDecode(u, v)`, `fromSnorm16`,
     `unpackMagnitude(byte)`: the packing's halves, the same as the star
