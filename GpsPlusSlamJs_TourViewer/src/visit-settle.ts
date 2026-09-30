@@ -97,11 +97,11 @@ export interface SettleAlignmentInput {
  * further than two visits' GPS headings plausibly do. The derivation, the
  * sweep and the values that would reverse the choice are in the sidecar.
  */
-export const CORRECTION_FLOOR_M = 5;
+const CORRECTION_FLOOR_M = 5;
 /** The multiple of the two visits' combined GPS accuracy admitted. */
-export const CORRECTION_ACCURACY_FACTOR = 3;
+const CORRECTION_ACCURACY_FACTOR = 3;
 /** The accuracy assumed for a visit, or a stored level, that reports none. */
-export const CORRECTION_DEFAULT_ACCURACY_M = 5;
+const CORRECTION_DEFAULT_ACCURACY_M = 5;
 /** The largest yaw a correction may turn a visit by, degrees. */
 export const CORRECTION_MAX_YAW_DEG = 120;
 
