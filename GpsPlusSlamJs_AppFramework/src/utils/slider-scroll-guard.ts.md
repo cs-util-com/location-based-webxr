@@ -143,6 +143,31 @@ degrees, and 90 ms taps wandering 0-8 px.
   family, and so do its neighbours 14-16 px at 45 degrees and 12-16 px at
   37.5 degrees; the sweep test pins it.
 
+## Tap-window sweep (2026-09-30, same file)
+
+`tapMaxMs` over 150, 200, 250, 300, 400, 500, 600 and 800 ms, and with no
+window at all, at the shipped 12 px / 45 degrees (review 2026-09-30, A2).
+Families: scrolls that start with a still dwell of 0-800 ms, leaning 0-40
+degrees off vertical, ended by `pointercancel` or by a lift; still presses the
+browser cancelled; presses of 60-1000 ms the browser never cancelled,
+standing still or wandering 6 px; and a 10 px vertical creep the browser never
+cancelled (below `intentPx`, so the direction rule cannot see it).
+
+- **At every window, and with none, no scroll and no cancelled press edits.**
+  The direction rule and the browser's `pointercancel` stop every scroll;
+  the window is not what keeps the reported bug fixed.
+- **What the window does:** it discards a press the browser never took over
+  exactly when the press outlasts it, whether the finger stood still,
+  wandered, or crept 10 px vertically. At 300 ms the 400-1000 ms presses are
+  lost; at 800 ms only the 1000 ms one; with no window none.
+- **Kept at 300 ms.** Whether a hold that never became a scroll should set
+  the value is a product decision, not a measurement: "a short tap still sets
+  the value, a longer hold does not" is the owner's decision of 2026-07-28
+  (`2026-07-27-2349-settings-slider-scroll-gesture-plan.md`, "Tap
+  handling"). The sweep removes its stated reason ("a hold is how a scroll
+  begins": a hold that turns into a scroll is caught without the window), so
+  the question is back with the owner.
+
 ## Examples
 
 ```ts
@@ -175,7 +200,9 @@ guardSlidersIn(document);
   horizontal drags always apply, gestures slower than the tap window only edit
   when horizontal, state is always released.
 - [`slider-scroll-guard.sweep.test.ts`](slider-scroll-guard.sweep.test.ts) -
-  the threshold sweep above; prints the table, asserts the shipped rule.
+  the threshold sweep and the tap-window sweep above; prints both tables,
+  asserts the shipped rule and, at every window, that no scroll edits and
+  that exactly the presses longer than the window are discarded.
 - Gesture simulation lives in
   [`../test-utils/pointer-gestures.ts`](../test-utils/pointer-gestures.ts)
   (jsdom has neither `PointerEvent` nor native range-input behaviour).
