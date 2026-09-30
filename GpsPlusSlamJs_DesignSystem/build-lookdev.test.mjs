@@ -461,7 +461,7 @@ describe("buildLookdev with the real terrain lab", () => {
       "labs/terrain/terrain-far-field.js",
       "labs/terrain/terrain-styles.js",
       "globe/globe-sources.js",
-      "globe-assets/blue-marble-4326/4/8/4.jpg",
+      "globe-assets/blue-marble-4326/4/8/4.webp",
       // The GPS place's pin (T3): the framework's locate behaviour.
       "fw/utils/locate-state.js",
     ]) {
