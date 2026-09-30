@@ -22,7 +22,12 @@ import {
   objectPlaced,
   visitSettled,
 } from "./tour-authoring-actions.js";
-import { planVisitSettle, settleAlignment } from "./visit-settle.js";
+import {
+  planVisitSettle,
+  settleAlignment,
+  type CodeSighting,
+  type SettleBasis,
+} from "./visit-settle.js";
 import { tallyEvaluation, type FusedTallies } from "./qr-debug-readout.js";
 import { createQrTrackingController } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
 import { createFusedQrPoseSource } from "gps-plus-slam-app-framework/ar/qr/qr-fused-pose-source";
@@ -67,6 +72,7 @@ import {
 import { odomNueFromWebXr } from "./visit-anchoring.js";
 
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
+import type { LatLong, Matrix4 } from "gps-plus-slam-app-framework/core";
 
 import {
   appendWithoutDuplicateIds,
@@ -122,6 +128,17 @@ import {
   type TourViewerStore,
 } from "./tour-viewer-session.js";
 import type { Wizard } from "./wizard.js";
+
+/** What a visit settled through (`visitSettles` in `wireCreatorSetup`). */
+interface VisitSettleRecord {
+  readonly basis: SettleBasis;
+  readonly alignment: number[];
+  /** The store's alignment when the settle ran. */
+  readonly visitAlignment: ReturnType<typeof selectAlignmentMatrix>;
+  readonly zero: LatLong;
+  /** The sighting a code correction used; null otherwise. */
+  readonly sighting: CodeSighting | null;
+}
 
 /**
  * Whether an AR session is live, from the controller's status.
@@ -972,11 +989,20 @@ export function wireCreatorSetup(deps: {
     const visit = ctx.arSessionGeneration;
     seams.encodeFrameJpeg(frame.image).then(
       (jpeg) => {
+        // A visit that settled while this encoded (its session ended, or a
+        // Finish ran) has its alignment on record: minted through that, the
+        // photo IS settled - and the store's alignment may already belong
+        // to no visit at all (the teardown resets it).
+        const settled = visitSettles.get(visit);
         const photo = mintPhoto({
           id: newObjectId(),
           cameraPose,
-          alignmentMatrix: selectAlignmentMatrix(arStore.getState()),
-          zero: selectZeroReference(arStore.getState()),
+          alignmentMatrix:
+            settled === undefined
+              ? selectAlignmentMatrix(arStore.getState())
+              : // 16 finite numbers: `settleAlignment` checked them.
+                (settled.alignment as unknown as Matrix4),
+          zero: settled?.zero ?? selectZeroReference(arStore.getState()),
           imageWidth: jpeg.width,
           imageHeight: jpeg.height,
           nowIso: new Date().toISOString(),
@@ -994,6 +1020,9 @@ export function wireCreatorSetup(deps: {
         });
         recordPlacement(photo, jpeg.blob);
         logPlacement(photo, { cameraOdomPose: cameraPose });
+        if (settled !== undefined) {
+          logSettle(visit, "late-arrival", settled, [photo], null);
+        }
         previewObject(ctx.placedObjects.length - 1);
         // The plane sits at the capture spot, facing back at it: the
         // creator is standing on it and sees it once they step back.
@@ -1211,10 +1240,23 @@ export function wireCreatorSetup(deps: {
   }
 
   /**
-   * The visit whose Finish already settled it (and wrote it into the zip),
-   * so its session end does not settle it a second time.
+   * What each settled visit settled through, by `arSessionGeneration`
+   * (authoring plan 2026-09-28-0953 §3.2; M2c review #1 and #6). Two jobs:
+   *
+   * - A visit settles ONCE. A Finish tapped during a visit settles it at
+   *   the tap, and the session end the Finish then causes finds it here and
+   *   does nothing - a second settle would re-mint the code a moment after
+   *   the zip was written. Keyed by the visit a settle actually RAN for:
+   *   the generation read at any other moment is not that visit, because
+   *   between visits it already names the NEXT one (a page-side Finish once
+   *   marked the next visit settled that way, so it never settled).
+   * - A photo of the visit that lands AFTER its settle (the encode is
+   *   async) is minted through the same record when it lands, so every
+   *   object of a visit goes through one alignment.
+   *
+   * Recorded even for a visit with nothing to settle yet, for that photo.
    */
-  let visitSettledByFinish: number | null = null;
+  const visitSettles = new Map<number, VisitSettleRecord>();
 
   /**
    * Settle the running AR visit (authoring plan 2026-09-28-0953 §3.2, M2c):
@@ -1229,20 +1271,33 @@ export function wireCreatorSetup(deps: {
    */
   function settleVisit(trigger: "visit-end" | "finish"): void {
     const visit = ctx.arSessionGeneration;
-    if (visitSettledByFinish === visit) return;
+    if (visitSettles.has(visit)) return;
     const state = arStore.getState();
     const visitAlignment = selectAlignmentMatrix(state);
-    const plan = planVisitSettle({
+    const zero = selectZeroReference(state);
+    const input = {
       visit,
       placed: ctx.placedObjects,
       alignment: visitAlignment,
-      zero: selectZeroReference(state),
+      zero,
       mintedLevel: ctx.mintedLevel,
       measurement: ctx.codeMeasurement,
       sighting: ctx.visitCodeSighting,
       alignmentInfo: authorAlignmentInfo(),
       nowIso: new Date().toISOString(),
-    });
+    };
+    const choice = settleAlignment(input);
+    if (choice === null || zero === null) return;
+    const record: VisitSettleRecord = {
+      basis: choice.basis,
+      alignment: choice.alignment,
+      visitAlignment,
+      zero,
+      sighting:
+        choice.basis === "code-corrected" ? ctx.visitCodeSighting : null,
+    };
+    visitSettles.set(visit, record);
+    const plan = planVisitSettle(input);
     if (plan === null) return;
     for (const { index, object } of plan.objects) {
       const entry = ctx.placedObjects[index];
@@ -1255,21 +1310,46 @@ export function wireCreatorSetup(deps: {
       ctx.mintedLevel = plan.level;
       if (draftTourUrl !== null) void recordMeta(draftTourUrl);
     }
+    logSettle(
+      visit,
+      trigger,
+      record,
+      plan.objects.map(({ object }) => object),
+      plan.level,
+    );
+  }
+
+  /** Forget the settle of `visit` if it is still the running visit, so
+   *  its session end settles it again (with everything placed since). */
+  function unsettleRunningVisit(visit: number | null): void {
+    if (visit !== null && visit === ctx.arSessionGeneration) {
+      visitSettles.delete(visit);
+    }
+  }
+
+  /**
+   * Log a settle into the troubleshooting recording: the visit's own, or
+   * a late arrival's through its visit's record - so a replay finds every
+   * settled geo, whenever it was settled.
+   */
+  function logSettle(
+    visit: number,
+    trigger: "visit-end" | "finish" | "late-arrival",
+    record: VisitSettleRecord,
+    objects: readonly TourObject[],
+    level: { id: string; json: string } | null,
+  ): void {
     arStore.dispatch(
       visitSettled({
         arVisitIndex: visit,
         atMs: Date.now(),
         trigger,
-        basis: plan.basis,
-        visitAlignment,
-        usedAlignment: plan.alignment,
-        sighting:
-          plan.basis === "code-corrected" ? ctx.visitCodeSighting : null,
-        objects: plan.objects.map(({ object }) => ({
-          id: object.id,
-          geo: object.geo,
-        })),
-        level: plan.level,
+        basis: record.basis,
+        visitAlignment: record.visitAlignment,
+        usedAlignment: record.alignment,
+        sighting: record.sighting,
+        objects: objects.map((object) => ({ id: object.id, geo: object.geo })),
+        level,
       }),
     );
   }
@@ -1370,7 +1450,8 @@ export function wireCreatorSetup(deps: {
     // The visit still running is settled BEFORE anything is read for the
     // zip (plan §3.2): its objects and its code are written as settled, not
     // as tapped. A visit already over was settled at its end.
-    if (sessionLive()) settleVisit("finish");
+    const settledAtTap = sessionLive() ? ctx.arSessionGeneration : null;
+    if (settledAtTap !== null) settleVisit("finish");
     const minted = ctx.mintedLevel;
     // Both guards for the continuation: the tour may be re-opened and the
     // AR session may end (and a new one start) while the rebuild runs; the
@@ -1382,6 +1463,7 @@ export function wireCreatorSetup(deps: {
     ctx.placementNote = null;
     ctx.finishProgress = FINISH_LABELS.reading(current.archive.size);
     renderAuthorReadout();
+    let wroteZip = false;
     void (async () => {
       try {
         // Assembled INSIDE the try (M4 review #1): a manifest the reader
@@ -1469,13 +1551,14 @@ export function wireCreatorSetup(deps: {
         // pre-finish manifest and silently drop this batch (PR #435
         // review). `tourManifest` is otherwise only written at tour open.
         ctx.tourManifest = written;
-        ctx.placedObjects = [];
-        // This visit's settle is in the zip now; settling it again at the
-        // session's end would re-mint the code a moment later and leave the
-        // draft's level different from the one just written.
-        if (sessionGeneration === ctx.arSessionGeneration) {
-          visitSettledByFinish = sessionGeneration;
-        }
+        // Only what this zip carries leaves the list: a photo that landed
+        // while the zip was rebuilt is in neither, and waits for the next
+        // Finish (M2c review #6).
+        const inZip = new Set(written.objects.map((o) => o.id));
+        ctx.placedObjects = ctx.placedObjects.filter(
+          (p) => !inZip.has(p.object.id),
+        );
+        wroteZip = true;
         arStore.dispatch(
           authoringFinished({
             levelId: minted.id,
@@ -1512,6 +1595,11 @@ export function wireCreatorSetup(deps: {
           );
         }
       } finally {
+        // A Finish that wrote no zip leaves its visit unsettled again while
+        // it still runs: what the creator places after a failure must
+        // settle with the rest of the visit at its end, through one
+        // alignment - the tap's settle is redone then.
+        if (!wroteZip) unsettleRunningVisit(settledAtTap);
         ctx.finishing = false;
         ctx.finishProgress = "";
         renderAuthorReadout();

@@ -102,8 +102,9 @@ interface VisitSettledLog {
   /** The visit settled (`arSessionGeneration`). */
   readonly arVisitIndex: number;
   readonly atMs: number;
-  /** At the session's end, or at a Finish while the visit still ran. */
-  readonly trigger: "visit-end" | "finish";
+  /** At the session's end, at a Finish while the visit still ran, or a
+   *  photo of an already settled visit that landed afterwards. */
+  readonly trigger: "visit-end" | "finish" | "late-arrival";
   readonly basis: SettleBasis;
   /** The store's alignment when the settle ran - before the teardown. */
   readonly visitAlignment: AlignmentMatrix;

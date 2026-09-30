@@ -164,15 +164,35 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   record and the meta are REWRITTEN (the per-object file design already
   keys by id; no format change - so a page reload keeps the settled geo,
   while a killed tab keeps the tap-time geo, accepted in the plan), and
-  `tourAuthoring/settled` is logged. A Finish that wrote the zip marks its
-  visit settled, so that visit's session end does not re-mint the code a
-  moment later (the draft's level would then differ from the one just
-  written, and the draft would be offered again after the upload).
+  `tourAuthoring/settled` is logged.
+  - **Each visit settles once, keyed by the visit the settle ran for**
+    (`visitSettles`, M2c review #1): the record holds the basis, the
+    alignment used, the store's alignment, the zero and the sighting. A
+    Finish tapped during a visit settles it at the tap, so the session end
+    the Finish causes finds the record and does not re-mint the code a
+    moment later (the draft's level would then differ from the one just
+    written, and the draft would be offered again after the upload). A
+    Finish that wrote no zip forgets the record while its visit still runs,
+    so the session end settles everything of the visit again, including
+    what was placed after the failure. A Finish tapped on the page settles
+    nothing and records nothing: `arSessionGeneration` is bumped at the
+    session END, so between visits it already names the NEXT visit, and
+    marking that number is what once kept the next visit from settling.
+  - **Late arrivals join their visit's settle** (M2c review #6): the record
+    is kept even for a visit with nothing to settle yet. A photo whose
+    encode lands after its visit settled (the session ended, or a Finish
+    ran) is minted through the record's alignment and zero - which IS the
+    settle - and logged as `tourAuthoring/settled` with trigger
+    `late-arrival`. Minting it through the store instead would use an
+    alignment that belongs to no visit (the teardown resets it).
+  - **A Finish removes from the list only what its zip carries** (the ids
+    of the manifest it wrote): a photo that landed during the rebuild is in
+    neither and waits, settled, for the next Finish.
   - The mint records `ctx.codeMeasurement` (its raw inputs and visit) with
     the level, and clears it whenever the level is cleared (a new tap, an
     adopted print size, a tour close in `archive-open.ts`).
-  - A photo's visit is taken at the tap, before its async encode: one whose
-    session ended during the encode keeps its tap-time geo.
+  - A photo's visit is taken at the tap, before its async encode (its
+    odometry belongs to that visit); see "Late arrivals" above.
   - **Later visits, corrected through the code (D10b).** Every detection's
     fused evaluation goes through `noteSighting`: a STABLE pose of the code
     whose level is in hand (or of any code while none is measured) becomes
@@ -395,5 +415,8 @@ pure pieces are unit-tested in
 matrices, the code's size, and the reticle with the world group yawed 90
 degrees) and `creator-finish.test.ts` (the finish's manifest). Anchoring (M2c):
 `authoring-settle.test.ts` (rigid previews, the settle through the real
-setup, its log and draft rewrite), `creator-finish.test.ts` (the settle at
+setup, its log and draft rewrite; each visit settling once - a page-side
+Finish does not stop the next visit, a failed Finish leaves the visit to
+settle at its end - and late photos joining their visit's settle, including
+one landing during a live Finish), `creator-finish.test.ts` (the settle at
 Finish, once).

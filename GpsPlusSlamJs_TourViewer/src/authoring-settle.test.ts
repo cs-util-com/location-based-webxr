@@ -27,8 +27,15 @@ import type {
 } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
 import { MIN_ALIGNMENT_SAMPLES } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 import { parseQrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
-import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
+import {
+  createEmptyTourManifest,
+  serializeTourManifest,
+  type TourObject,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
+import {
+  packFilesAsZip,
+  type DraftFileStore,
+} from "gps-plus-slam-app-framework/storage";
 import { Group, Matrix4, Object3D, Quaternion, Vector3 } from "three";
 
 import { wireCreatorSetup, type CreatorSetupDom } from "./creator-setup.js";
@@ -40,7 +47,7 @@ import {
 } from "./tour-viewer-session.js";
 import { objectPoseNue } from "./content-placement.js";
 import { META_KEY, objectKey } from "./draft-persistence.js";
-import { odomNueFromWebXr } from "./visit-anchoring.js";
+import { odomNueFromWebXr, throughAlignment } from "./visit-anchoring.js";
 
 // The pipeline builds its controller from this module; capture the config
 // it hands over (its `onDetection` is how detections reach the setup) and
@@ -205,6 +212,13 @@ function memoryDraftStore(): {
 }
 
 function authoring(options: { store?: DraftFileStore } = {}) {
+  /** Whether the AR session is up, as the controller reports it. */
+  const device = { live: true };
+  /** Photo encodes held until the test lets them land (`hold`). */
+  const encodes: { hold: boolean; waiting: (() => void)[] } = {
+    hold: false,
+    waiting: [],
+  };
   captured.configs.length = 0;
   const dom = Object.fromEntries(DOM_KEYS.map((k) => [k, el()])) as Record<
     (typeof DOM_KEYS)[number],
@@ -274,16 +288,28 @@ function authoring(options: { store?: DraftFileStore } = {}) {
       labels.push(object);
       return { object, dispose: () => undefined };
     },
-    encodeFrameJpeg: () =>
-      Promise.resolve({ blob: new Blob([]), width: 4, height: 3 }),
+    encodeFrameJpeg: () => {
+      const jpeg = { blob: new Blob([]), width: 4, height: 3 };
+      if (!encodes.hold) return Promise.resolve(jpeg);
+      return new Promise((resolve) => {
+        encodes.waiting.push(() => {
+          resolve(jpeg);
+        });
+      });
+    },
   } as unknown as TourViewerSeams;
   const setup = wireCreatorSetup({
     ctx,
     mode: "creator",
     arStore,
     arController: {
-      getState: () => ({ status: "running" }),
-      disable: () => Promise.resolve(),
+      getState: () => ({ status: device.live ? "running" : "idle" }),
+      // A Finish ends the session: the entry's session end runs, as
+      // `ar-entry.ts` onSessionEnd would.
+      disable: () => {
+        if (device.live) endVisit();
+        return Promise.resolve();
+      },
     } as never,
     seams,
     wizard: {
@@ -317,6 +343,7 @@ function authoring(options: { store?: DraftFileStore } = {}) {
    *  (`ar-entry.ts` onSessionEnd) - here the parts the setup reads. */
   function endVisit(): void {
     setup.endAuthorVisit();
+    device.live = false;
     ctx.arSessionGeneration += 1;
     endQrPipeline(ctx);
     ctx.lastDetectedText = null;
@@ -326,6 +353,7 @@ function authoring(options: { store?: DraftFileStore } = {}) {
 
   /** A new AR session: a fresh pipeline, then the visit's start. */
   function beginVisit(): void {
+    device.live = true;
     expect(setup.startAuthorPipeline()).toBe(true);
     setup.beginAuthorVisit();
   }
@@ -362,11 +390,24 @@ function authoring(options: { store?: DraftFileStore } = {}) {
     return world.worldToLocal(object!.getWorldPosition(new Vector3()));
   }
 
+  /** Tap "Capture a photo" with the camera at `cameraPose` (raw WebXR). */
+  function tapPhoto(cameraPose: Pose): void {
+    ctx.latestFrame = {
+      image: { data: new Uint8ClampedArray(48), width: 4, height: 3 },
+      cameraPose,
+      capturedAtMs: performance.timeOrigin + performance.now(),
+    };
+    dom.photoButton.click();
+  }
+
   return {
     ctx,
     dom,
     setup,
     dispatched,
+    device,
+    encodes,
+    tapPhoto,
     world,
     setAlignment,
     placePin,
@@ -629,6 +670,223 @@ describe(
       expect(
         a.inWorldGroup("Gate").distanceTo(new Vector3(2, 0, -1)),
       ).toBeLessThan(1e-2);
+    });
+  },
+);
+
+/**
+ * Open a tour the Finish can write: a zip with an empty manifest, its load
+ * settled. With `holdArchive` the Finish's whole-archive read waits until
+ * `releaseArchive`, so a test can act while the rebuild is in flight.
+ */
+async function openFinishableTour(
+  a: ReturnType<typeof authoring>,
+  options: { holdArchive?: boolean } = {},
+): Promise<{ releaseArchive: () => void }> {
+  const blob = await packFilesAsZip([
+    {
+      path: "tour.json",
+      data: serializeTourManifest(createEmptyTourManifest()),
+    },
+  ]);
+  const held: (() => void)[] = [];
+  a.ctx.session = {
+    archive: { url: "https://example.test/tour.zip", size: blob.size },
+    hostedFileName: () => null,
+    entries: [{ filename: "tour.json" }],
+    manifestWrap: "",
+    readWholeArchive: () =>
+      options.holdArchive === true
+        ? new Promise<Blob>((resolve) => {
+            held.push(() => {
+              resolve(blob);
+            });
+          })
+        : Promise.resolve(blob),
+    loadEntry: () => Promise.resolve(new Blob([])),
+  } as never;
+  a.ctx.tourManifestStatus = "settled";
+  a.ctx.tourManifest = createEmptyTourManifest();
+  return {
+    releaseArchive: () => {
+      for (const release of held.splice(0)) release();
+    },
+  };
+}
+
+/** Wait for a Finish's async body to reach an end state (a real zip
+ *  rebuild: polled, never a fixed count of turns). */
+async function finished(ctx: {
+  rebuiltZip: unknown;
+  finishError: unknown;
+}): Promise<void> {
+  for (let i = 0; i < 600; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    if (ctx.rebuiltZip !== null || ctx.finishError !== null) return;
+  }
+}
+
+describe(
+  "each visit settles once, and what arrives late joins its visit's settle (M2c review #1, #6)",
+  { timeout: SLOW_MS },
+  () => {
+    const CAMERA: Pose = { position: [0.5, 1.4, -0.2], rotation: yawQ(90) };
+
+    /** Where the settle puts a photo taken at `CAMERA` through `alignment`. */
+    function settledPhotoAt(alignment: number[]): Vector3 {
+      return new Vector3(
+        ...throughAlignment(odomNueFromWebXr(CAMERA), alignment)!.position,
+      );
+    }
+
+    it("a Finish tapped on the page, outside AR, does not stop the NEXT visit from settling", async () => {
+      // Review #1: `arSessionGeneration` is bumped at a session's END, so
+      // between visits it already holds the NEXT visit's number. A Finish on
+      // the page marked that number "settled by Finish", and the next
+      // visit's own session end then skipped its settle - its notes went
+      // into the zip with tap-time geo.
+      const a = authoring();
+      await openFinishableTour(a);
+      await a.mint();
+      await a.placePin("Gate", [2, 0, -1]);
+      a.endVisit();
+      a.dom.finishButton.click();
+      await finished(a.ctx);
+      expect(a.ctx.finishError).toBeNull();
+
+      a.beginVisit();
+      a.seeTheCode();
+      await flush();
+      await a.placePin("Later", [3, 0, 1]);
+      a.endVisit();
+
+      expect(a.settledLogs().map((l) => l.payload.arVisitIndex)).toEqual([
+        0, 1,
+      ]);
+    });
+
+    it("settles a photo whose encode finished after its visit ended, through that visit's alignment", async () => {
+      // Review #6: the photo's visit is taken at the tap, but the photo was
+      // pushed after that visit's settle had run - minted through whatever
+      // the store held by then (the teardown resets the alignment), and
+      // never settled.
+      const a = authoring();
+      await a.mint();
+      const end = yawAlignment(4, [1.5, 400.2, -1]);
+      a.setAlignment(end);
+      a.encodes.hold = true;
+      a.tapPhoto(CAMERA);
+      a.endVisit();
+      // The teardown's reset, then the next visit's GPS.
+      a.setAlignment(yawAlignment(-20, [9, 398, 7]));
+      for (const land of a.encodes.waiting.splice(0)) land();
+      await flush();
+
+      const photo = a.ctx.placedObjects.at(-1)!.object;
+      expect(photo.kind).toBe("photo");
+      expect(worldOf(photo.geo).distanceTo(settledPhotoAt(end))).toBeLessThan(
+        1e-3,
+      );
+      const late = a.settledLogs().at(-1)!.payload;
+      expect(late.trigger).toBe("late-arrival");
+      expect(late.arVisitIndex).toBe(0);
+      expect(late.usedAlignment).toEqual(end);
+      expect(late.objects.map((o) => o.id)).toEqual([photo.id]);
+    });
+
+    it("settles a late photo of a visit that settled nothing else, through the code correction", async () => {
+      // A visit that placed nothing and measured nothing has nothing to
+      // settle at its end - but the alignment it WOULD settle through still
+      // has to be kept for a photo still encoding.
+      const a = authoring();
+      a.setAlignment(yawAlignment(0, [0, 400, 0]));
+      await a.mint();
+      a.endVisit();
+      const first = yawAlignment(0, [0, 400, 0]);
+      a.beginVisit();
+      a.setAlignment(yawAlignment(30, [20, 401, -8]));
+      a.seeTheCode();
+      await flush();
+      a.encodes.hold = true;
+      a.tapPhoto(CAMERA);
+      a.endVisit();
+      a.setAlignment(yawAlignment(-20, [9, 398, 7]));
+      for (const land of a.encodes.waiting.splice(0)) land();
+      await flush();
+
+      const photo = a.ctx.placedObjects.at(-1)!.object;
+      // The code sits at the same odometry spot in both visits here, so
+      // the corrected alignment is the first visit's.
+      expect(worldOf(photo.geo).distanceTo(settledPhotoAt(first))).toBeLessThan(
+        1e-2,
+      );
+      expect(a.settledLogs().at(-1)!.payload.basis).toBe("code-corrected");
+    });
+
+    it("after a Finish that failed, settles the running visit again at its end, with what was placed since", async () => {
+      // The Finish settles at the tap; one that wrote no zip must not keep
+      // the visit marked settled, or a pin placed after the failure would
+      // keep its tap-time geo in the next Finish's zip.
+      const a = authoring();
+      await openFinishableTour(a);
+      (
+        a.ctx.session as unknown as { readWholeArchive: () => Promise<Blob> }
+      ).readWholeArchive = () => Promise.reject(new Error("offline"));
+      await a.mint();
+      await a.placePin("Gate", [2, 0, -1]);
+      a.dom.finishButton.click();
+      await finished(a.ctx);
+      expect(a.ctx.finishError).not.toBeNull();
+      a.ctx.finishError = null;
+      await a.placePin("Later", [3, 0, 1]);
+      const end = yawAlignment(4, [1.5, 400.2, -1]);
+      a.setAlignment(end);
+      a.endVisit();
+
+      const logs = a.settledLogs();
+      expect(logs.map((l) => l.payload.trigger)).toEqual([
+        "finish",
+        "visit-end",
+      ]);
+      expect(logs[1]!.payload.usedAlignment).toEqual(end);
+      expect(logs[1]!.payload.objects).toHaveLength(2);
+    });
+
+    it("keeps a photo that lands while a live Finish rebuilds the zip - settled, and left for the next Finish", async () => {
+      // Review #6: the Finish emptied the whole placed list when its rebuild
+      // landed, which wiped a photo pushed DURING the rebuild - it was in
+      // neither the zip nor the list.
+      const a = authoring();
+      const tour = await openFinishableTour(a, { holdArchive: true });
+      await a.mint();
+      await a.placePin("Gate", [2, 0, -1]);
+      const end = yawAlignment(4, [1.5, 400.2, -1]);
+      a.setAlignment(end);
+      a.encodes.hold = true;
+      a.tapPhoto(CAMERA);
+      a.dom.finishButton.click(); // settles the running visit at the tap
+      a.setAlignment(yawAlignment(-20, [9, 398, 7]));
+      for (const land of a.encodes.waiting.splice(0)) land();
+      await flush();
+      tour.releaseArchive();
+      await finished(a.ctx);
+      expect(a.ctx.finishError).toBeNull();
+
+      const written = a.ctx.tourManifest!.objects.map((o) =>
+        o.kind === "pin" ? o.label : o.id,
+      );
+      expect(written).toEqual(["Gate"]);
+      expect(a.ctx.placedObjects.map((p) => p.object.kind)).toEqual(["photo"]);
+      const photo = a.ctx.placedObjects[0]!.object;
+      expect(worldOf(photo.geo).distanceTo(settledPhotoAt(end))).toBeLessThan(
+        1e-3,
+      );
+      // One settle for the visit, plus the late photo's - the session end
+      // the Finish caused did not settle the visit again.
+      expect(a.settledLogs().map((l) => l.payload.trigger)).toEqual([
+        "finish",
+        "late-arrival",
+      ]);
     });
   },
 );
