@@ -83,8 +83,10 @@ export type KeepAlivePhase =
   | { readonly kind: "fading"; readonly text: string; readonly share: number }
   | { readonly kind: "ended"; readonly text: string };
 
-/** One device GPS fix as the keep-alive sees it. */
-export interface KeepAliveFix {
+/** One device GPS fix as the keep-alive sees it. Not exported: callers
+ *  pass an object literal, and a named export nothing imports is what the
+ *  dead-code check flags. */
+interface KeepAliveFix {
   /** When the fix ARRIVED, on the clock the locks are timed on - the only
    *  time the schedule reads. */
   readonly atMs: number;
