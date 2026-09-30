@@ -155,12 +155,28 @@ test("the rim glows on the lit limb only, and veils the day side blue", async ({
   expect(errors).toEqual([]);
 });
 
+/**
+ * Where the halo may peak outside the lit edge, as a fraction of the
+ * shell's thickness (100 km x k). Physically the limb is brightest a
+ * little above the ground, where a grazing ray's optical depth falls to
+ * about 1 (about 20 km for the real air: 8 km scale height, a grazing
+ * depth of 7-20 at the ground), and the thicker shell keeps that depth
+ * (review B2), so the peak moves out with k. Measured 2026-09-30 with the
+ * grazing compensation: a near-white plateau (163-167 levels) from the
+ * edge out to under a pixel (17.7 km) at k = 1, about 30 km at 6 and 60 km
+ * at 10, its top at 0, 10 and 45 km, then one fall-off (to half by about 150 km at 6, 250 km at 10);
+ * no rise near the shell's top (600 / 1000 km). Without the compensation
+ * the top sat at the edge. Reported at x0.5, x1, x2.
+ */
+const PEAK_FRACTION = 0.3;
+
 // WHY: the owner judges the halo's width by eye (DEC-GL4-11: as wide as
 // the reference by default, the thickness slider back down to the physical
 // air); this puts numbers on it. Across the lit edge, the luminance inside
 // the disc and out into space per distance, at both ends of the slider and
 // at the default, and the colour at the brightest point, which must stay
-// blue whatever the width (the thickness keeps the optical depth).
+// blue whatever the width. Out in space the halo rises to one peak near
+// the edge and then falls off; it must not rise again.
 test("the rim's profile at both ends of the thickness slider", async ({
   page,
 }) => {
@@ -168,7 +184,11 @@ test("the rim's profile at both ends of the thickness slider", async ({
   const errors = await bootGlobe(page, VIEW);
   const g = await discGeometry(page);
   const r = Math.round(g.rPx);
-  const kms = [-600, -300, -150, -60, -20, 0, 20, 60, 150, 300, 600, 1000];
+  const inside = [-600, -300, -150, -60, -20];
+  const outside = [
+    0, 10, 20, 30, 45, 60, 90, 120, 150, 200, 300, 450, 600, 1000,
+  ];
+  const kms = [...inside, ...outside];
   const points = rowPoints(
     g,
     kms.map((km) =>
@@ -185,21 +205,43 @@ test("the rim's profile at both ends of the thickness slider", async ({
       points,
     );
     const lum = px.map(luminance);
-    const outside = lum.slice(kms.indexOf(0) + 1);
-    const peak = px[lum.indexOf(Math.max(...lum))];
-    rows.push(
-      `x${thickness}: ${kms.map((km, i) => `${km} km ${lum[i].toFixed(0)}`).join(", ")}; brightest RGB ${peak.slice(0, 3).join("/")}`,
-    );
-    // Out in space the halo falls off (1 level of slack for 8-bit rounding).
-    for (let i = 1; i < outside.length; i++) {
-      expect(outside[i]).toBeLessThanOrEqual(outside[i - 1] + 1);
-    }
-    // The rim's brightest point is blue-white, not grey or warm.
-    expect(peak[2]).toBeGreaterThan(peak[0]);
+    const out = lum.slice(inside.length);
+    const peakAt = out.indexOf(Math.max(...out));
+    rows.push({
+      thickness,
+      lum,
+      out,
+      peakAt,
+      peakKm: outside[peakAt] ?? 0,
+      brightest: px[lum.indexOf(Math.max(...lum))] ?? [0, 0, 0, 0],
+    });
   }
   console.log(
-    `rim profile, km from the lit edge (negative inside; ${g.kmPerPx.toFixed(1)} km a pixel): ${rows.join("; ")}`,
+    `rim profile, km from the lit edge (negative inside; ${g.kmPerPx.toFixed(1)} km a pixel): ` +
+      rows
+        .map(
+          (row) =>
+            `x${row.thickness}: ${kms.map((km, i) => `${km} ${(row.lum[i] ?? 0).toFixed(0)}`).join(", ")}; halo peak at ${row.peakKm} km (bound ${(PEAK_FRACTION * 100 * row.thickness).toFixed(0)} km: ` +
+            [0.5, 1, 2]
+              .map(
+                (k) =>
+                  `x${k} ${row.peakKm <= PEAK_FRACTION * 100 * row.thickness * k ? "ok" : "NO"}`,
+              )
+              .join(" ") +
+            `); brightest RGB ${row.brightest.slice(0, 3).join("/")}`,
+        )
+        .join("; "),
   );
+  for (const row of rows) {
+    // One peak near the edge, then a fall-off with no second rise (1
+    // level of slack for 8-bit rounding).
+    expect(row.peakKm).toBeLessThanOrEqual(PEAK_FRACTION * 100 * row.thickness);
+    for (let i = row.peakAt + 1; i < row.out.length; i++) {
+      expect(row.out[i]).toBeLessThanOrEqual((row.out[i - 1] ?? 0) + 1);
+    }
+    // The rim's brightest point is blue-white, not grey or warm.
+    expect(row.brightest[2]).toBeGreaterThan(row.brightest[0]);
+  }
   expect(errors).toEqual([]);
 });
 
@@ -271,6 +313,20 @@ test("the rim's colour stays the same across the thickness slider", async ({
         .join("; ") +
       `; largest chromaticity shift per place ${shift.map((v) => v.toFixed(3)).join(" ")}`,
   );
+  // Outside the edge (the air alone, no ground behind it) the colour must
+  // hold across k: measured 0.017-0.026 with the grazing compensation,
+  // 0.030-0.112 without it (2026-09-30). Inside, the places sample
+  // different ground at each k (a cloud at x10), so they are logged only.
+  const HALO_SHIFT = 0.05;
+  const halo = shift.filter((_, i) => (fractions[i] ?? 0) > 0);
+  console.log(
+    `halo colour shift ${Math.max(...halo).toFixed(3)} (bound ${HALO_SHIFT}: ` +
+      SWEEP.map(
+        (k) => `x${k} ${Math.max(...halo) < HALO_SHIFT * k ? "ok" : "NO"}`,
+      ).join(" ") +
+      ")",
+  );
+  expect(Math.max(...halo)).toBeLessThan(HALO_SHIFT);
   expect(errors).toEqual([]);
 });
 

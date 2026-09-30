@@ -44,8 +44,14 @@
     `grazingCompensation` (`globe-atmosphere-frame.js`): Chapman's
     function at the two scale heights, sqrt(k) at the limb, 1 at k = 1
     and within 6-12 % of 1 for a steep ray, taken at the ray's lowest
-    point (its ground hit, or the limb). Its effect on the colour is
-    measured in the rim spec across k = 1, 6, 10.
+    point (its ground hit, or the limb). Measured across k = 1, 6, 10 at
+    the same fractions of the rim's width: the halo's chromaticity moves
+    0.017-0.026 with it against 0.030-0.112 without (inside the disc
+    0.015-0.034 either way, the ground behind differing). It also moves the
+    limb's brightest point out of the ground's edge, as the physics says
+    (the limb is brightest where a grazing ray's optical depth falls to
+    about 1): a near-white plateau to about 30 km at k = 6 and 60 km at 10,
+    then one fall-off, and no rise near the shell's top.
   - The march: `steps` samples between where the ray enters the air and
     where it leaves it or meets the ground, packed quadratically towards
     the ray's point nearest the centre from both sides (at the limb the
