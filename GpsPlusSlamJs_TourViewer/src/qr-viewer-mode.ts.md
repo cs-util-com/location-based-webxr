@@ -8,10 +8,13 @@ carrying the two review-ordered guardrails and the deferred negative cache.
 
 ## Public API
 
-- The measured vote geometry (authoring plan 2026-09-28-0953, M0b/M0c;
+- The measured vote geometry (authoring plan 2026-09-28-0953, M0b/M0c/M2a;
   [results](../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-09-28-1433-viewer-vote-strength-results.md)):
   `VIEWER_VOTE_BASELINE_M = 30` (ring radius in the code's plane),
-  `VIEWER_VOTE_COUNT = 8` (votes per lock), `VIEWER_SYNTHETIC_ACCURACY_M = 5`
+  `VIEWER_VOTE_COUNT = 16` (votes per lock and per keep-alive fix at full
+  strength; owner decision D13 on M2a's count lever: 8 left the code
+  0.31-0.58 m off after 8+ minutes of GPS before the scan, 16 met the rule
+  on every measured arm up to a 15-minute walk), `VIEWER_SYNTHETIC_ACCURACY_M = 5`
   (barely matters: the core weighs `1/max(acc, 1 m)^0.1`), and
   `MAX_VOTED_LOCKS_PER_CODE = 10` (review #6 budget). The ring used to be
   capped at 2 m (delta #6: "a wide ring amplifies the saved code's heading
@@ -102,7 +105,7 @@ const controller = createQrTrackingController(
 
 ## Tests
 
-`qr-viewer-mode.test.ts` — the measured-geometry pin (30 m, 8 votes), the
+`qr-viewer-mode.test.ts` — the measured-geometry pin (30 m, 16 votes), the
 `hasVoted` lock adapter, the keep-alive hand-over (a voted lock keeps its
 pose past the budget, a lock without votes keeps nothing, a later lock
 restarts the hold), the hold and fade pins, the hold lines, level resolution by

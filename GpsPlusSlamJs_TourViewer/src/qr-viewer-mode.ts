@@ -10,7 +10,7 @@
  *   {@link MAX_VOTED_LOCKS_PER_CODE} locked frames per code vote; later
  *   locks still track (marker, readout) but write nothing.
  * - **The measured vote geometry** (Tour Viewer authoring plan
- *   2026-09-28-0953, M0b/M0c): {@link VIEWER_VOTE_COUNT} votes per lock on
+ *   2026-09-28-0953, M0b/M0c, D13): {@link VIEWER_VOTE_COUNT} votes per lock on
  *   a ring of {@link VIEWER_VOTE_BASELINE_M} in the code's plane. The ring
  *   used to be capped at 2 m on the reasoning that a wide ring amplifies
  *   the saved code's heading error (delta #6); M0b measured the opposite -
@@ -72,22 +72,31 @@ import {
  */
 export const VIEWER_SYNTHETIC_ACCURACY_M = 5;
 /**
- * Ring radius (m) of the votes in the code's plane (M0b/M0c). Rests on:
- * the ~58 m pre-scan walk the harness models, 8 votes per lock, and the
- * solver's settings. The heading after a scan (4 votes, B = 8 m) was 18.1°
- * at 2 m, 3.4° at 10 m, 0.45° at 30 m; a 10 m ring met the position rule
- * but left 27-43° of heading error through the hand-off. What would
- * reverse 30 m: a saved code with a heading error near 9.5° (its far ring
- * points then cross the 5 m hard trim, M0b), and M2a's store-path sweep of
- * {10, 30} m with a 10-minute pre-scan walk.
+ * Ring radius (m) of the votes in the code's plane (M0b/M0c/M2a). Rests
+ * on: the pre-scan walks the harnesses model (49 s and 599 s), 8 votes per
+ * lock (the radius was not re-swept at D13's 16), and the solver's
+ * settings. The heading after a scan (4 votes, B = 8 m) was 18.1° at 2 m,
+ * 3.4° at 10 m, 0.45° at 30 m; a 10 m ring met the position rule but left
+ * 27-43° of heading error through the hand-off (M0b), and 2.8-6.3° by the
+ * keep-alive's end under M2a's soft setting (against 0.34° at 30 m). What
+ * would reverse 30 m: a saved code with a heading error near 9.5° (its far
+ * ring points then cross the 5 m hard trim, M0b).
  */
 export const VIEWER_VOTE_BASELINE_M = 30;
 /**
  * Correspondences per lock (`buildQrGpsVotes` count), and per keep-alive
- * fix at full strength (M0b/M0c): 8 is the smallest count whose scan was
- * exact on the 30 m ring; 16 gained under 0.1 m at twice the solver input.
+ * fix at full strength: owner decision D13 (2026-09-30), on M2a's count
+ * lever. Rests on: the 30 m ring, B = 8 m, exact odometry and no GPS noise,
+ * M2a's soft outlier setting, the rule of plan §3.2. 8 met the rule on a
+ * 49 s pre-scan walk but left the code 0.31-0.37 m off after 8+ minutes of
+ * GPS, and 0.54-0.58 m with the bias toward the code's face; 16 met it on
+ * every measured arm up to a 15-minute walk (0.27-0.28 m at 900 s), and
+ * the keep-alive held 0.32 m at the run's end (0.64 m at 8). 24 added
+ * margin (0.12 m at 599 s) for 3x the solver input. What would reverse
+ * 16: the phone's solver cost per fix (unmeasured, 2x the input of 8), a
+ * multi-code session, or walks beyond about 16-17 minutes (extrapolated).
  */
-export const VIEWER_VOTE_COUNT = 8;
+export const VIEWER_VOTE_COUNT = 16;
 /**
  * The keep-alive's full-strength hold after the kept code's last lock (ms):
  * the owner's "about two minutes" (D8: tracking drifts little for one to

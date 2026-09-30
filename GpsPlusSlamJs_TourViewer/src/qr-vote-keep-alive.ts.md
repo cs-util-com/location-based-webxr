@@ -18,7 +18,7 @@ Pure: every time is an argument.
   `RangeError` for a negative or non-finite hold/fade, a `votesPerFix` that is
   not an integer >= 3, or a non-positive radius/accuracy. The viewer builds
   it through `createViewerKeepAlive()` (`qr-viewer-mode.ts`: 120 s hold,
-  120 s fade, 8 votes, 30 m, 5 m).
+  120 s fade, 16 votes (D13), 30 m, 5 m).
   - `keep(code, atMs)` - a lock of `code` cast votes from `code.qrPoseWorld`
     (the stable pose): keep it and restart the hold. A different code takes
     over (its credit starts at zero).

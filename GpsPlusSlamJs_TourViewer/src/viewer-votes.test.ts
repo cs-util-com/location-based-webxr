@@ -237,7 +237,7 @@ describe(
       v.fix(T0 + 3000);
       const added = v.positions().slice(afterScan);
       // Exactly the fix plus ONE ring: had any listener re-voted on the
-      // ring's own points, each of the 8 would have cast another ring.
+      // ring's own points, each of its points would have cast another ring.
       expect(added).toHaveLength(1 + VIEWER_VOTE_COUNT);
       expect(gpsPointSourceOf(added[0]!)).toBe(GPS_POINT_SOURCE_DEVICE);
       for (const vote of added.slice(1)) {

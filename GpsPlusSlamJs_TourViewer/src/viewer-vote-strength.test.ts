@@ -71,14 +71,15 @@
  * A minted heading error passes straight through (the alignment takes the
  * mint's 1°/3°) at every radius >= 5 m; the radius does not amplify it.
  *
- * M2b (2026-09-30): the viewer now SHIPS the 30 m ring of 8 votes and a
- * keep-alive (hold 120 s, fade 120 s). `TODAY` is those constants; M0's pins
- * and sweeps run on the explicit `M0_VIEWER` (2 m, 4 votes) so they stay
- * the evidence they were; the `shippedKeepAlive` arm drives the viewer's own
- * keep-alive module. Under today's hard trim it meets the rule at B = 3, 8
- * and 15 m and fails at 5 m, and above the trim the hand-off is still one
- * jump (2.97 m at B = 8) or none (B = 15): see the M2b block at the bottom
- * (`VOTE_STRENGTH_SWEEP=m2b`).
+ * M2b (2026-09-30): the viewer now SHIPS the 30 m ring and a keep-alive
+ * (hold 120 s, fade 120 s), with 16 votes per lock and per keep-alive fix
+ * since owner decision D13 (8 before). `TODAY` is those constants; M0's
+ * pins and sweeps run on the explicit `M0_VIEWER` (2 m, 4 votes) so they
+ * stay the evidence they were; the `shippedKeepAlive` arm drives the
+ * viewer's own keep-alive module. Under today's hard trim, at 16 votes it
+ * meets the rule at B = 3, 5, 8 and 15 m, and above the trim (8, 15 m) it
+ * never hands back to GPS within the 60 s after the keep-alive ends: see
+ * the M2b block at the bottom (`VOTE_STRENGTH_SWEEP=m2b`).
  */
 
 import { describe, expect, it } from "vitest";
@@ -1203,30 +1204,34 @@ describe.runIf(SWEEP?.startsWith("m0b") === true)(
 
 /**
  * M2b, the SHIPPED viewer (authoring plan 2026-09-28-0953): the 30 m ring of
- * 8 votes per lock and the viewer's own keep-alive (hold 120 s after the
+ * 16 votes per lock (D13) and the viewer's own keep-alive (hold 120 s after the
  * code's last lock, fade 120 s, one ring per GPS fix) under TODAY's solver -
  * the published core's defaults, hard 5 m outlier trim on. The soft
  * trimming M0c adopted needs M2a's override keys and a core release; until
  * the viewer dispatches them this is what visitors get.
  *
- * Measured 2026-09-30 (gps-plus-slam-js 1.25.0), swept over the bias (owner
- * rule: a one-value verdict is provisional) and pinned as MEASURED, so a
- * change to the votes, the keep-alive or the solver shows up as a diff:
- * - B = 3 m meets the rule (0.37 m worst hold) and hands off smoothly
- *   (largest step 0.07 m); B = 5 m just fails it (0.34 m at the scan, 0.62 m
- *   hold) - below the trim the votes only blend with the GPS.
- * - B = 8 m holds exactly, then hands back to GPS in ONE fix during the
- *   fade: 2.97 m / 1.77° - the bistable hard trim M0b/M0c found.
- * - B = 15 m holds exactly and never hands off within 60 s of the
- *   keep-alive's end: once the votes own the solve the biased GPS stays
- *   trimmed.
- * The rule's verdict therefore flips between 3 and 5 m and again above the
- * 5 m trim, and the graceful hand-off the owner asked for (D8) is not met
- * above the trim: that is what the soft settings of M0c are for.
+ * Measured 2026-09-30 at 16 votes (D13; gps-plus-slam-js 1.25.0), swept
+ * over the bias (owner rule: a one-value verdict is provisional) and pinned
+ * as MEASURED, so a change to the votes, the keep-alive or the solver shows
+ * up as a diff. Parameters: 300 s of biased GPS after the scan, the M0
+ * scenario's 48 s pre-scan walk, bias bearing 60°.
+ * - B = 3 m meets the rule (0.11 m / 0.09° at the scan, 0.20 m worst hold)
+ *   and hands off smoothly (largest step 0.04 m, 0.71 m at the end).
+ * - B = 5 m now meets it too (0.18 m, 0.34 m hold, step 0.07 m, 1.18 m at
+ *   the end) - below the trim the votes still only blend with the GPS.
+ * - B = 8 and 15 m hold exactly and never hand off within the 60 s after
+ *   the keep-alive's end: once the votes own the solve the biased GPS stays
+ *   trimmed. What would reverse "no jump": a longer post-scan window (not
+ *   measured; the hand-off may come later, as one jump).
+ * At 8 votes (M2b as first shipped) the same arms measured B = 3: 0.20 m /
+ * 0.37 m hold, meets; B = 5: 0.34 m / 0.62 m, FAILS; B = 8: holds, then one
+ * 2.97 m / 1.77° jump during the fade; B = 15 as now. The graceful hand-off
+ * the owner asked for (D8) is still not shown above the trim: that is what
+ * the soft settings of M0c are for.
  *
- * Opt-in (`VOTE_STRENGTH_SWEEP=m2b`): each 300 s arm re-solves ~1,500
- * votes and took 1-4 minutes on a loaded machine. The default run keeps the
- * cheap wiring check below.
+ * Opt-in (`VOTE_STRENGTH_SWEEP=m2b`): each 300 s arm re-solves ~3,000
+ * votes at 16 per lock and took 3-19 minutes on a loaded machine (1-4 at
+ * 8). The default run keeps the cheap wiring check below.
  */
 const SHIPPED: VoteParams = {
   ...TODAY,
@@ -1256,29 +1261,29 @@ describe.runIf(SWEEP === "m2b")(
     const PINS = [
       {
         biasM: 3,
-        scanEndM: 0.2,
-        scanEndDeg: 0.18,
-        max120M: 0.37,
-        stepM: 0.07,
-        endM: 1.14,
+        scanEndM: 0.11,
+        scanEndDeg: 0.09,
+        max120M: 0.2,
+        stepM: 0.04,
+        endM: 0.71,
         meets: true,
       },
       {
         biasM: 5,
-        scanEndM: 0.34,
-        scanEndDeg: 0.3,
-        max120M: 0.62,
-        stepM: 0.12,
-        endM: 1.9,
-        meets: false,
+        scanEndM: 0.18,
+        scanEndDeg: 0.16,
+        max120M: 0.34,
+        stepM: 0.07,
+        endM: 1.18,
+        meets: true,
       },
       {
         biasM: 8,
         scanEndM: 0,
         scanEndDeg: 0,
         max120M: 0,
-        stepM: 2.97,
-        endM: 3.04,
+        stepM: 0,
+        endM: 0,
         meets: true,
       },
       {
@@ -1295,6 +1300,9 @@ describe.runIf(SWEEP === "m2b")(
       "GPS biased $biasM m: as measured on 2026-09-30",
       (pin) => {
         const m = runScenario({ ...SHIPPED, biasM: pin.biasM });
+        console.log(
+          `m2b B=${String(pin.biasM)} scan ${m.scanEndM.toFixed(2)} m / ${m.scanEndDeg.toFixed(2)}°, max120 ${m.max120M.toFixed(2)} m / ${m.max120Deg.toFixed(2)}°, step ${m.maxStepM.toFixed(2)} m, end ${m.endM.toFixed(2)} m, meets ${String(meetsRule(m))}`,
+        );
         expect(m.scanEndM).toBeCloseTo(pin.scanEndM, 1);
         expect(m.scanEndDeg).toBeCloseTo(pin.scanEndDeg, 1);
         expect(m.max120M).toBeCloseTo(pin.max120M, 1);

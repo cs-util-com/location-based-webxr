@@ -1172,9 +1172,9 @@ test("viewer mode relocalizes against the tour's level: budgeted votes, marker, 
       planes: t.fakeScene.children.length,
     };
   });
-  // 3 seeded fixes + 10 vote batches × 8 correspondences (the 30 m ring,
-  // authoring plan M2b) = 83.
-  expect(afterBudget.gpsCount).toBe(83);
+  // 3 seeded fixes + 10 vote batches × 16 correspondences (the 30 m ring,
+  // authoring plan M2b; 16 per lock since owner decision D13) = 163.
+  expect(afterBudget.gpsCount).toBe(163);
   expect(afterBudget.markerUpdates).toBeGreaterThan(0);
   // The image ring (3 planes), placed once, plus the fixture pin's label
   // that the tour.json content placed after the lock (M5).
@@ -1192,7 +1192,7 @@ test("viewer mode relocalizes against the tour's level: budgeted votes, marker, 
             .gpsData.gpsEvents.gpsPositions.length,
       ),
     )
-    .toBe(83);
+    .toBe(163);
 });
 
 test("a scanned code with no level reads as unknown instead of flapping", async ({
@@ -2752,7 +2752,7 @@ test("a visitor records only with ?debug=1 and the switch: the scan lock, its vo
   expect(batches.map((a) => a.payload.votedLocks)).toEqual([
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
   ]);
-  expect(batches.every((a) => a.payload.votes.length === 8)).toBe(true);
+  expect(batches.every((a) => a.payload.votes.length === 16)).toBe(true);
   // The lock is logged before the votes it cast.
   expect(types.indexOf("tourViewing/codeLocked")).toBeLessThan(
     types.indexOf("tourViewing/votesCast"),

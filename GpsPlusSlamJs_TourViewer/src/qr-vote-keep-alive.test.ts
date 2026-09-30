@@ -35,10 +35,12 @@ import { createTourViewerStore } from "./tour-viewer-session";
 // construction activates it (the same activation main.ts performs at boot).
 createTourViewerStore();
 
+/** The viewer's shipped schedule (`createViewerKeepAlive`): 16 votes per
+ *  fix at full strength since owner decision D13 (M2a's count lever). */
 const SETTINGS: KeepAliveSettings = {
   holdMs: 120_000,
   fadeMs: 120_000,
-  votesPerFix: 8,
+  votesPerFix: 16,
   baselineM: 30,
   syntheticAccuracyM: 5,
 };
@@ -56,6 +58,8 @@ const CODE_B: KeptCode = {
   qrGeo: { lat: 47.5004, lon: 8.7003, alt: 401, headingDeg: 120 },
   sizeM: 0.2,
 };
+
+const FULL = SETTINGS.votesPerFix;
 
 /** The odometry centroid of a batch - the code's position for a ring. */
 function centroid(votes: readonly RecordGpsEventPayload[]): number[] {
@@ -109,7 +113,7 @@ describe("createQrVoteKeepAlive - the measured schedule", () => {
     const keepAlive = createQrVoteKeepAlive(SETTINGS);
     keepAlive.keep(CODE_A, T0);
     const batch = keepAlive.votesForFix(T0 + 1000);
-    expect(batch).toHaveLength(8);
+    expect(batch).toHaveLength(FULL);
     expectAt(batch, CODE_A.qrPoseWorld);
     for (const vote of batch) {
       expect(vote.rawGpsPoint.source).toBe(GPS_POINT_SOURCE_SYNTHETIC_QR);
@@ -117,7 +121,7 @@ describe("createQrVoteKeepAlive - the measured schedule", () => {
       expect(vote.rawGpsPoint.latLongAccuracy).toBe(5);
       expect(vote.rawGpsPoint.id.startsWith("qr-keep-")).toBe(true);
     }
-    expect(fixes(keepAlive, 2, 120).every((n) => n === 8)).toBe(true);
+    expect(fixes(keepAlive, 2, 120).every((n) => n === FULL)).toBe(true);
     expect(keepAlive.phase(T0 + 60_000)).toEqual({
       kind: "holding",
       text: CODE_A.text,
@@ -131,12 +135,18 @@ describe("createQrVoteKeepAlive - the measured schedule", () => {
     fixes(keepAlive, 1, 120);
     const fade = fixes(keepAlive, 121, 239);
     const total = fade.reduce((a, b) => a + b, 0);
-    // Sum over the 119 fixes of 8 x (1 - (s - 120) / 120): 8 x 59.5 = 476,
-    // minus a residual credit below 3.
-    expect(total).toBeGreaterThan(476 - 3);
-    expect(total).toBeLessThanOrEqual(476);
-    expect(fade.every((n) => n === 0 || (n >= 3 && n <= 8))).toBe(true);
-    expect(fade.slice(-10).filter((n) => n > 0).length).toBeLessThan(3);
+    // Sum over the 119 fixes of 16 x (1 - (s - 120) / 120): 16 x 59.5 =
+    // 952, minus a residual credit below 3.
+    expect(FULL * 59.5).toBe(952);
+    expect(total).toBeGreaterThan(952 - 3);
+    expect(total).toBeLessThanOrEqual(952);
+    expect(fade.every((n) => n === 0 || (n >= 3 && n <= FULL))).toBe(true);
+    // The tail thins out: the last 10 fixes accrue FULL x (1 + ... + 10) /
+    // 120 votes of credit (7.3 at 16) plus a carried residual below 3, so
+    // at most 3 rings of 3 - most of those fixes cast nothing.
+    const tail = fade.slice(-10);
+    expect(tail.reduce((a, b) => a + b, 0)).toBeLessThan((FULL * 55) / 120 + 3);
+    expect(tail.filter((n) => n > 0).length).toBeLessThanOrEqual(3);
     expect(keepAlive.phase(T0 + 180_000)).toEqual({
       kind: "fading",
       text: CODE_A.text,
@@ -168,7 +178,7 @@ describe("createQrVoteKeepAlive - the measured schedule", () => {
           for (const dt of intervals) {
             t += dt;
             credit +=
-              8 * keepAliveShare(t - T0, SETTINGS.holdMs, SETTINGS.fadeMs);
+              FULL * keepAliveShare(t - T0, SETTINGS.holdMs, SETTINGS.fadeMs);
             const batch = keepAlive.votesForFix(t);
             expect(batch.length === 0 || batch.length >= 3).toBe(true);
             emitted += batch.length;
@@ -192,7 +202,7 @@ describe("createQrVoteKeepAlive - the lifecycle", () => {
     };
     keepAlive.keep(refreshed, T0 + 125);
     const batch = keepAlive.votesForFix(T0 + 1000);
-    expect(batch).toHaveLength(8);
+    expect(batch).toHaveLength(FULL);
     expectAt(batch, refreshed.qrPoseWorld);
   });
 
@@ -209,7 +219,7 @@ describe("createQrVoteKeepAlive - the lifecycle", () => {
     // Full strength again, from the SAME kept pose (a spent code's pose is
     // not re-evaluated).
     const batch = keepAlive.votesForFix(T0 + 201_000);
-    expect(batch).toHaveLength(8);
+    expect(batch).toHaveLength(FULL);
     expectAt(batch, CODE_A.qrPoseWorld);
     // A lock of another code that cast no vote changes nothing.
     keepAlive.relock(CODE_B.text, T0 + 500_000);
@@ -224,7 +234,7 @@ describe("createQrVoteKeepAlive - the lifecycle", () => {
     keepAlive.keep(CODE_A, T0);
     keepAlive.keep(CODE_B, T0 + 30_000);
     const batch = keepAlive.votesForFix(T0 + 31_000);
-    expect(batch).toHaveLength(8);
+    expect(batch).toHaveLength(FULL);
     expectAt(batch, CODE_B.qrPoseWorld);
     // The first code's re-scan no longer restarts anything: B holds.
     keepAlive.relock(CODE_A.text, T0 + 100_000);
@@ -252,7 +262,7 @@ describe("createQrVoteKeepAlive - the lifecycle", () => {
     keepAlive.keep(CODE_A, T0);
     keepAlive.relock(CODE_A.text, Number.POSITIVE_INFINITY);
     expect(keepAlive.votesForFix(Number.NaN)).toEqual([]);
-    expect(keepAlive.votesForFix(T0 + 1000)).toHaveLength(8);
+    expect(keepAlive.votesForFix(T0 + 1000)).toHaveLength(FULL);
   });
 
   it("drops a code whose votes cannot be built rather than throwing into the store listener", () => {

@@ -29,7 +29,7 @@ createTourViewerStore();
  * dispatches a fresh vote set, so an unbounded visitor standing at the
  * poster injects thousands of near-identical points and pins the alignment
  * centroid) and the vote geometry, which is now the MEASURED one (authoring
- * plan 2026-09-28-0953 M0b/M0c: a 30 m ring of 8 votes per lock; the old
+ * plan 2026-09-28-0953 M0b/M0c/M2a: a 30 m ring of 16 votes per lock; the old
  * 2 m cap left the heading 6-31° off after a scan). The level lookup's
  * placeholder is the deferred negative cache: a scanned code with no level
  * must not flap the controller at 8 Hz.
@@ -77,12 +77,14 @@ describe("buildViewerControllerConfig", () => {
   // The values M0b/M0c measured (results doc 2026-09-28-1433): a 30 m ring
   // (heading 0.45° after the scan at 4 votes, B = 8 m, against 18.1° at
   // 2 m; the radius does not amplify the saved code's own heading error)
-  // and 8 votes per lock (16 gained < 0.1 m for twice the solver input).
+  // and 16 votes per lock (owner decision D13 on M2a's count lever: 8 left
+  // the code 0.31-0.58 m off after 8+ minutes of GPS before the scan; 16
+  // met the rule on every measured arm up to a 15-minute walk).
   // Changing one means re-running the harness, `viewer-vote-strength.test.ts`.
-  it("pins the measured vote geometry: a 30 m ring of 8 votes per lock", () => {
+  it("pins the measured vote geometry: a 30 m ring of 16 votes per lock", () => {
     const config = buildViewerControllerConfig(fakeDeps());
     expect(VIEWER_VOTE_BASELINE_M).toBe(30);
-    expect(VIEWER_VOTE_COUNT).toBe(8);
+    expect(VIEWER_VOTE_COUNT).toBe(16);
     expect(VIEWER_SYNTHETIC_ACCURACY_M).toBe(5);
     expect(config.voteBaselineM).toBe(VIEWER_VOTE_BASELINE_M);
     expect(config.voteCount).toBe(VIEWER_VOTE_COUNT);
@@ -335,7 +337,8 @@ describe("buildViewerControllerConfig - the keep-alive (authoring plan M2b)", ()
     for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE + 3; i += 1) p.frame(T + i);
     expect(p.config.resolveStablePose?.(TEXT)).toBeNull(); // spent
     const votes = p.keepAlive.votesForFix(T + 1000);
-    expect(votes).toHaveLength(VIEWER_VOTE_COUNT);
+    // The keep-alive's full-strength ring is the lock's count (D13: 16).
+    expect(votes).toHaveLength(16);
     const c = [0, 0, 0];
     for (const v of votes) {
       for (let k = 0; k < 3; k += 1) c[k]! += v.odomPosition[k]! / votes.length;
