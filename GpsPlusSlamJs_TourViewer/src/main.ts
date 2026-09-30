@@ -42,15 +42,10 @@ import { describeOpenError } from "./open-errors.js";
 import { wirePrintPanel } from "./print-panel.js";
 import {
   AUTHORING_CONTEXT_TAG,
-  deleteRecordingFolder,
-  heldRecordingFolders,
   holdRecordingFolder,
-  openRecordingsDir,
-  packOrphanRecording,
-  tidyRecordings,
   VIEWING_CONTEXT_TAG,
 } from "./recording-folders.js";
-import { wireRecordingOffer } from "./recording-offer.js";
+import { wireRecordingHousekeeping as wireHousekeeping } from "./recording-housekeeping.js";
 import { createSaveGuard, wireRecordingPanel } from "./recording-panel.js";
 import { getSeams } from "./seams.js";
 import {
@@ -376,15 +371,11 @@ if (recordingPanel !== null) {
 
 /**
  * A recording a killed tab left unsaved is offered, and old saved ones are
- * cleaned up (M1b, `recording-folders.ts`), wherever the recording's
+ * cleaned up (M1b, `recording-housekeeping.ts`), wherever the recording's
  * controls show. Best effort: without OPFS there is nothing to offer.
  */
 function wireRecordingHousekeeping(): void {
-  const openRecordings = async () => {
-    const root = await navigator.storage?.getDirectory?.();
-    return root === undefined ? null : openRecordingsDir(root, false);
-  };
-  const offer = wireRecordingOffer({
+  void wireHousekeeping({
     dom: {
       offer: element("recording-offer"),
       text: element("recording-offer-text"),
@@ -392,30 +383,22 @@ function wireRecordingHousekeeping(): void {
       dismissButton: element("recording-offer-dismiss"),
       discardButton: element("recording-offer-discard"),
       status: element("recording-status"),
+      block: element("recording-block"),
     },
-    pack: async (name) => {
-      const dir = await openRecordings();
-      if (dir === null) throw new Error("the recordings folder is gone");
-      return packOrphanRecording(
-        dir,
-        name,
-        {
-          userAgent: navigator.userAgent,
-          pageUrl: sanitizedPageUrl(location.href),
-          getBuildInfo,
-        },
-        AUTHORING_CONTEXT_TAG,
-      );
-    },
-    discard: async (name) => {
-      const dir = await openRecordings();
-      if (dir !== null) await deleteRecordingFolder(dir, name);
-    },
+    openRoot: async () => navigator.storage?.getDirectory?.(),
+    locks: navigator.locks,
+    // The saving page's own tag: an orphan with no log action of either
+    // kind is labelled by the page that saves it (M1b review #7).
+    contextTag: recordingTag,
+    environment: () => ({
+      userAgent: navigator.userAgent,
+      pageUrl: sanitizedPageUrl(location.href),
+      getBuildInfo,
+    }),
     // Through the seam like every other zip, so the e2e fake captures it.
     handOff: (blob, filename) => seams.shareOrDownloadZip(blob, filename),
     canShare: () => seams.canShareZip(),
     now: () => new Date(),
-    saveGuard: recordingSaveGuard,
     describeTime: (ms) =>
       new Date(ms).toLocaleString(undefined, {
         dateStyle: "medium",
@@ -424,26 +407,8 @@ function wireRecordingHousekeeping(): void {
     reveal: () => {
       wizard.revealStep("measure");
     },
+    saveGuard: recordingSaveGuard,
   });
-  void (async () => {
-    try {
-      const dir = await openRecordings();
-      if (dir === null) return;
-      offer.present(
-        await tidyRecordings(
-          dir,
-          () => heldRecordingFolders(navigator.locks),
-          Date.now(),
-        ),
-      );
-    } catch {
-      // No private file storage: nothing was left to offer.
-    } finally {
-      // Observable end of the page-open check (the e2e waits for it
-      // before asserting that nothing is offered).
-      element("recording-block").dataset["housekeeping"] = "done";
-    }
-  })();
 }
 
 const escapeButton = element<HTMLButtonElement>("scan-escape");

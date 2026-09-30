@@ -80,7 +80,7 @@ open, reusing the draft-offer machinery"), M1b.
 ```ts
 const offer = wireRecordingOffer({
   dom,
-  pack: (name) => packOrphanRecording(dir, name, env, AUTHORING_CONTEXT_TAG),
+  pack: (name) => packOrphanRecording(dir, name, env, pageTag), // the saving page's tag
   discard: (name) => deleteRecordingFolder(dir, name),
   handOff: (blob, filename) => seams.shareOrDownloadZip(blob, filename),
   canShare: () => seams.canShareZip(),

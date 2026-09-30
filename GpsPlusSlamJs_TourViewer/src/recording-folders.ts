@@ -120,7 +120,7 @@ function recordingLockName(folderName: string): string {
 }
 
 /** The Web Locks this module needs (`navigator.locks`). */
-type RecordingLocks = Pick<LockManager, "query" | "request">;
+export type RecordingLocks = Pick<LockManager, "query" | "request">;
 
 /**
  * Hold the folder's lock until the page goes: the request's callback
