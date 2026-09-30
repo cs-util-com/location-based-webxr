@@ -38,6 +38,9 @@ reads them (the framework's `diagnostics/note` precedent). Plan:
   `manifest` (what the rebuilt zip carries), `atMs`.
 - Each creator carries `.type`, as RTK's do; the payload interfaces are
   module-private (knip), reachable as `Parameters<typeof objectPlaced>[0]`.
+- `logAction`, `LogActionCreator`, `AlignmentMatrix` - exported since M1b
+  for `tour-viewing-actions.ts`, the package's other log actions (one
+  helper per package).
 
 ## Invariants & assumptions
 
@@ -57,9 +60,8 @@ reads them (the framework's `diagnostics/note` precedent). Plan:
 - **Not RTK's `createAction`** only because this package has no direct
   `@reduxjs/toolkit` dependency; adding one changes the lockfile, a root file
   that sends every commit gate to the full cascade.
-- The `tourViewing/*` family of the plan is NOT here: it is born with the
-  viewer recording (M1b), and a prefix may only be derived from an action that
-  exists.
+- The `tourViewing/*` family lives in `tour-viewing-actions.ts` (M1b, the
+  viewer recording), built with this module's `logAction`.
 
 ## Examples
 

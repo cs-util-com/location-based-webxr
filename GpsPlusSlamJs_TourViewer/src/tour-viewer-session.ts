@@ -28,6 +28,7 @@ import {
 } from "gps-plus-slam-app-framework/storage";
 
 import { objectPlaced } from "./tour-authoring-actions.js";
+import { codeLocked } from "./tour-viewing-actions.js";
 
 import type { HitTestReticleHandle } from "gps-plus-slam-app-framework/ar";
 import type { CapturedCameraFrame } from "gps-plus-slam-app-framework/ar/captured-camera-frame";
@@ -89,11 +90,13 @@ export function createTourViewerStore(recording?: {
     extraReducers: { qrDetected: qrDetectedReducer },
     // Beyond the framework's built-ins (GPS with its paired poses, the
     // recording lifecycle, diagnostics): the QR detections the votes and
-    // the mint were computed from, and the creator's own log actions.
+    // the mint were computed from, the creator's own log actions, and a
+    // debugging visitor's (M1b).
     persistedExtraPrefixes: [
       slicePrefixOf(recordQrDetection.type),
       // Every `tourAuthoring/*` action: placed, measured, settled, finished.
       slicePrefixOf(objectPlaced.type),
+      slicePrefixOf(codeLocked.type),
     ],
   });
 }

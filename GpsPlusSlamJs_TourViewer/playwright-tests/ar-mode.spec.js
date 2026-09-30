@@ -2644,3 +2644,109 @@ test("a recording whose tab was killed is offered on the next open, saved from i
   );
   await expect(page.getByTestId("recording-offer")).toBeHidden();
 });
+
+test("a visitor records only with ?debug=1 and the switch: the scan lock, its votes and the placement land in a tour-viewing zip", async ({
+  page,
+}) => {
+  // Why this matters (authoring recording plan 2026-09-28-0953, M1b): a
+  // viewer session that placed the tour wrongly is the other half of the
+  // owner's troubleshooting loop. Proves through the composed page: a
+  // visitor without ?debug=1 sees no switch at all (nothing changes for
+  // visitors); with it, the same switch and privacy line as the creator's,
+  // and the recording holds the viewer's own log actions - which lock cast
+  // which votes, and what the ring was placed around - tagged tour-viewing
+  // for the Recorder's replay.
+  const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/tour.zip";
+  await openAsVisitor(page, ARCHIVE, 8);
+  await expect(page.getByTestId("recording-block")).toBeHidden();
+  await expect(page.getByTestId("record-session")).toBeHidden();
+
+  await page.goto(`/?qr=${encodeURIComponent(ARCHIVE)}&debug=1`);
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  await expect(page.getByTestId("record-session")).toBeVisible();
+  await expect(page.getByTestId("recording-privacy")).toHaveText(
+    "The recording holds the tour link and your GPS track.",
+  );
+  await page.getByTestId("record-session").check();
+  await enterAr(page);
+  await expect(page.getByTestId("enter-ar")).toHaveText("Tour running");
+  await expect(page.getByTestId("recording-marker")).toHaveText(
+    "Recording this session",
+  );
+  // Depth while recording, as the creator's recording (decision D4).
+  expect(
+    await page.evaluate(
+      () =>
+        /** @type {any} */ (window).__tourViewerTest.initARCalls.at(-1)
+          .hasDepth,
+    ),
+  ).toBe(true);
+
+  await seedAlignment(page);
+  await forceTrackingReady(page);
+  await page.evaluate((text) => {
+    /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
+  }, E2E_QR_TEXT);
+  // Frames until the budget is spent: the votes flowed, and the ring was
+  // placed at a voted lock (the relocalization e2e's path).
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return page.getByTestId("ar-status").textContent();
+      },
+      { timeout: 20000 },
+    )
+    .toMatch(/vote budget spent/i);
+  // The ring (3 planes) and the fixture pin's label.
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          /** @type {any} */ (window).__tourViewerTest.fakeScene.children
+            .length,
+      ),
+    )
+    .toBe(4);
+
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.endXrSession();
+  });
+  await expect(page.getByTestId("recording-save")).toBeEnabled();
+  await page.getByTestId("recording-save").click();
+  await expect(page.getByTestId("recording-status")).toHaveText(
+    /^Saved as tour-recording-.+\.zip\.$/,
+    { timeout: 15000 },
+  );
+  const rec = await readDownloadedZip(page, 0);
+  const meta = JSON.parse(rec.entries["session.json"]);
+  expect(meta.odomCoordVersion).toBe(5);
+  expect(meta.contextTag).toBe("tour-viewing");
+  const actions = Object.keys(rec.entries)
+    .filter((n) => n.startsWith("actions/"))
+    .sort()
+    .map((n) => JSON.parse(rec.entries[n]));
+  const types = actions.map((a) => a.type);
+  const locked = actions.find((a) => a.type === "tourViewing/codeLocked");
+  expect(locked.payload.text).toBe(E2E_QR_TEXT);
+  expect(locked.payload.level.geo).toBeDefined();
+  const cast = actions.find((a) => a.type === "tourViewing/votesCast");
+  expect(cast.payload.text).toBe(E2E_QR_TEXT);
+  expect(cast.payload.votes.length).toBeGreaterThan(0);
+  // The lock is logged before the votes it cast.
+  expect(types.indexOf("tourViewing/codeLocked")).toBeLessThan(
+    types.indexOf("tourViewing/votesCast"),
+  );
+  const placed = actions.filter((a) => a.type === "tourViewing/placed");
+  expect(placed.map((a) => a.payload.what)).toEqual(
+    expect.arrayContaining(["ring", "content"]),
+  );
+  const ring = placed.find((a) => a.payload.what === "ring");
+  expect(ring.payload.basis).toBe("code");
+  expect(ring.payload.code.text).toBe(E2E_QR_TEXT);
+  expect(types).toContain("gpsData/resetGpsSessionData");
+});

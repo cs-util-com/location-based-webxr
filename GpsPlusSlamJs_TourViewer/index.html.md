@@ -85,7 +85,9 @@ low-storage warning after the box is ticked (`recording-panel.ts`).
 The troubleshooting recording (authoring recording plan 2026-09-28-0953,
 M1a): `#recording-block` sits in step 4 BEFORE `#ar-root` - its switch
 arms the recording before AR starts and Save is a page action, so neither
-belongs over the camera - and is `.creator-only`. `#recording-marker` is
+belongs over the camera. It is NOT `.creator-only` since M1b: `main.ts` shows
+it for a creator, and for a visitor only with `?debug=1` (the viewer
+recording, contextTag `tour-viewing`). `#recording-marker` is
 inside `#ar-root`, so the marker is composited over the camera for the
 whole recorded session and shows on the page too; `ar-layout.spec.js`
 measures the overlay with it visible.

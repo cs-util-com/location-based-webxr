@@ -34,15 +34,15 @@ import type {
 import type { SettleBasis } from "./visit-settle.js";
 
 /** The store's alignment matrix (the library's tuple), or null. */
-type AlignmentMatrix = ReturnType<typeof selectAlignmentMatrix>;
+export type AlignmentMatrix = ReturnType<typeof selectAlignmentMatrix>;
 
 /** An action creator that also names its type, as RTK's do. */
-interface LogActionCreator<T extends string, P> {
+export interface LogActionCreator<T extends string, P> {
   (payload: P): { type: T; payload: P };
   readonly type: T;
 }
 
-function logAction<P>() {
+export function logAction<P>() {
   return <T extends string>(type: T): LogActionCreator<T, P> =>
     Object.assign((payload: P) => ({ type, payload }), { type });
 }

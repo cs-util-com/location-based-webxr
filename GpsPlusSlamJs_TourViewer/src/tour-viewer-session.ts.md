@@ -55,7 +55,7 @@ lives here.
   a session on every AR entry and exit, so under the defaults the per-exit
   `resetGpsSessionData` and everything done on the page would be lost and a
   second visit would overwrite the first. Persisted beyond the framework's
-  built-ins: `qrDetected` and `tourAuthoring`, both derived from real action
+  built-ins: `qrDetected`, `tourAuthoring` and `tourViewing` (M1b), all derived from real action
   creators (`slicePrefixOf`). Without `recording` (tests) it writes into a
   `NullStorageBackend` as before.
 - `type TourViewerStore` / `type ArController` -

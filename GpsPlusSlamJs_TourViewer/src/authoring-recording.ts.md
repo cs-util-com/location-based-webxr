@@ -108,9 +108,26 @@ loads. Plan:
   the fixes carry the creator's GPS track; a line beside the switch says so.
   The link is NOT stripped because a replay needs it: it is what ties each
   detection to its code and tour. `session.json`'s `pageUrl` is query-free
-  (`sanitizedPageUrl`) as before. This is to be decided again for M1b's
-  VISITOR recording, where the person recording is not the tour's author
-  (plan §7a, finding 5).
+  (`sanitizedPageUrl`) as before.
+- **Privacy of the VISITOR's recording (decided again in M1b, plan §7a
+  finding 5): the tour link is kept there too, and the same line stands
+  beside the switch.** The person recording is not the tour's author, so it
+  was weighed on its own:
+  - For stripping: a visitor's zip could carry a private (e.g. Drive) tour
+    link and their GPS track to whoever they send it to.
+  - Against: a replay needs the link - it is what ties each detection, each
+    `tourViewing/codeLocked` and each vote batch to its code and tour; a
+    recording without it cannot say which code a vote came from, which is
+    the question it exists to answer.
+  - What decides it: the recording needs `?debug=1` (a link the tour's
+    owner hands out for troubleshooting, never the printed code's) AND an
+    explicit tap on the switch, whose line says what it holds; it never
+    leaves the phone unless the visitor saves and shares it; and whoever
+    debugs a visitor's session already has the tour link. A visitor without
+    `?debug=1` gets no switch, no recording, no log actions.
+- **Visitor recordings (M1b).** With `?debug=1` a visitor's page wires the
+  same panel; the recording is tagged `tour-viewing` (`contextTag`) and
+  records depth like the creator's (the AR entry is mode-agnostic).
 - **Module-level OPFS handles.** The framework's write functions write to the
   session `createSessionInDirectory` set last. Nothing else on this page uses
   them (the draft store has its own handles).

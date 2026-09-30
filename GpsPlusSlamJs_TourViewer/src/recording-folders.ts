@@ -259,7 +259,7 @@ export async function listRecordingFolders(
 /** Record that a save handed over `actionFiles` action files at `atMs`.
  *  False when the marker could not be written (the folder is then offered
  *  again on the next open - the harmless direction). */
-export async function markRecordingSaved(
+async function markRecordingSaved(
   folder: FileSystemDirectoryHandle,
   actionFiles: number,
   atMs: number,
@@ -467,7 +467,7 @@ async function earlierContextTag(
  * An action file that does not parse is skipped: a killed tab can leave a
  * truncated last write, which the Recorder's loader skips the same way.
  */
-export async function buildOrphanSessionMetadata(
+async function buildOrphanSessionMetadata(
   folder: FileSystemDirectoryHandle,
   startedAtMs: number,
   environment: RecordingEnvironment,

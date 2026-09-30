@@ -70,8 +70,11 @@ estimateStorage, now }): RecordingPanel`
   Recorder then takes it for an old recording and migrates its coordinates.
 - **Privacy.** The static line beside the switch (`index.html`) says the
   recording holds the tour link and the GPS track.
-- **Creator-only.** `main.ts` wires it only in creator mode; the block wears
-  `.creator-only`.
+- **A creator's, and a `?debug=1` visitor's (M1b).** `main.ts` wires it and
+  unhides the block in creator mode, and for a visitor only with `?debug=1`
+  (the viewer recording, tagged `tour-viewing`); a visitor without it gets no
+  block at all. The same privacy line stands beside the switch in both modes
+  (the reasoning for the visitor is in `authoring-recording.ts.md`).
 - Reaches no globals: every element, the clock, the storage estimate and the
   hand-off are injected. `render` runs after every store dispatch, so it
   writes text only when it changed.

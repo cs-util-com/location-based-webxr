@@ -63,6 +63,7 @@ import {
   codeMeasured,
   objectPlaced,
 } from "./tour-authoring-actions.js";
+import { votesCast } from "./tour-viewing-actions.js";
 import { endTourArRuntime, startTourArRuntime } from "./ar-mode.js";
 import { createTourViewerStore } from "./tour-viewer-session.js";
 
@@ -455,6 +456,17 @@ describe("the creator's troubleshooting recording", () => {
     store.dispatch(setZeroPos({ lat: 47.5, lon: 8.7 }));
     enter(store, T0);
     feed(store, VISIT_1, 0);
+    // The viewer's log actions are persisted like the creator's.
+    store.dispatch(
+      votesCast({
+        text: "code",
+        votedLocks: 1,
+        votes: [],
+        alignmentMatrix: null,
+        arVisitIndex: 0,
+        atMs: T0 + 5000,
+      }),
+    );
     const saved = await recording.save({
       flush: () => store.flushPendingActionWrites(),
       nowMs: T0 + 60_000,
@@ -462,13 +474,15 @@ describe("the creator's troubleshooting recording", () => {
       pageUrl: undefined,
     });
     expect(held).toEqual(["recording-2026-09-28_10-00-00utc"]);
-    const meta = await loadSessionMetadataFromZip(
-      new Uint8Array(await saved.blob.arrayBuffer()),
-    );
+    const bytes = new Uint8Array(await saved.blob.arrayBuffer());
+    const meta = await loadSessionMetadataFromZip(bytes);
     expect(meta).toMatchObject({
       odomCoordVersion: 5,
       contextTag: VIEWING_CONTEXT_TAG,
     });
+    expect(
+      (await loadActionsFromZip(bytes)).map((e) => e.action.type),
+    ).toContain("tourViewing/votesCast");
   });
 
   it("a folder that cannot be made switches the recording off and says why", async () => {

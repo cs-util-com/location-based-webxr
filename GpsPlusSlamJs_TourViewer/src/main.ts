@@ -17,7 +17,10 @@ import {
   serializeTourManifest,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { TOUR_MANIFEST_ENTRY } from "gps-plus-slam-app-framework/ar/tour-archive";
-import { createGpsPositionHandler } from "gps-plus-slam-app-framework/state";
+import {
+  createGpsPositionHandler,
+  selectAlignmentMatrix,
+} from "gps-plus-slam-app-framework/state";
 import { debugUiEnabledFromSearch } from "gps-plus-slam-app-framework/utils/debug-flag";
 import {
   BoundedLocalCacheStore,
@@ -45,6 +48,7 @@ import {
   openRecordingsDir,
   packOrphanRecording,
   tidyRecordings,
+  VIEWING_CONTEXT_TAG,
 } from "./recording-folders.js";
 import { wireRecordingOffer } from "./recording-offer.js";
 import { wireRecordingPanel } from "./recording-panel.js";
@@ -55,6 +59,7 @@ import {
   createUnwiredHooks,
 } from "./tour-viewer-session.js";
 import { createViewerPlacement } from "./viewer-placement.js";
+import { createViewingLog } from "./viewing-log.js";
 import { wireVisitorScreen } from "./visitor-screen.js";
 import { driveProxyBaseUrl } from "./drive-proxy-url.js";
 import { stepStoreOrUndefined, wireWizard } from "./wizard.js";
@@ -94,10 +99,20 @@ const cacheStore =
 // DEV Playwright run.
 const mode = viewerModeFromSearch(location.search);
 const seams = getSeams();
-// The creator's troubleshooting recording (authoring recording plan
-// 2026-09-28-0953, M1a): the store is built with its backend and gate, and
-// both stay silent until the creator opts in and enters AR.
+// `?debug=1` (the apps' shared reader): the QR readout in the AR overlay
+// (plan §66), the visitor's troubleshooting recording (M1b); the visitor
+// link carries it on.
+const debug = debugUiEnabledFromSearch(location.search);
+// The troubleshooting recording (authoring recording plan 2026-09-28-0953,
+// M1a; a visitor's with `?debug=1` since M1b): the store is built with its
+// backend and gate, and both stay silent until someone opts in and enters
+// AR. Its controls show for a creator, and for a visitor only with
+// `?debug=1` - without it nothing about a visitor's page changes.
+const recordingControls = mode === "creator" || debug;
+const recordingTag =
+  mode === "creator" ? AUTHORING_CONTEXT_TAG : VIEWING_CONTEXT_TAG;
 const recording = createAuthoringRecording({
+  contextTag: recordingTag,
   openRoot: async () => {
     const root = await navigator.storage?.getDirectory?.();
     if (root === undefined) {
@@ -117,10 +132,9 @@ const gpsHandler = createGpsPositionHandler({
 });
 const arController = createEnableGpsArController(seams.controllerDeps);
 const ctx = createTourViewerSession();
-// `?debug=1` (the apps' shared reader): the QR readout in the AR overlay
-// (plan §66); the visitor link carries it on.
-ctx.debug = debugUiEnabledFromSearch(location.search);
+ctx.debug = debug;
 element<HTMLPreElement>("ar-debug").hidden = !ctx.debug;
+element("recording-block").hidden = !recordingControls;
 const hooks = createUnwiredHooks();
 
 const printPanel = element<HTMLDetailsElement>("print-panel");
@@ -314,40 +328,39 @@ hooks.presentNoTour = () => {
 };
 hooks.presentDraftForTour = setup.presentDraftForTour;
 
-// The recording's controls: a creator's only (a visitor records nothing in
-// this milestone), wired before the AR entry that asks them at each entry.
-const recordingPanel =
-  mode === "creator"
-    ? wireRecordingPanel({
-        recording,
-        dom: {
-          optIn: element("record-session"),
-          marker: element("recording-marker"),
-          saveButton: element("recording-save"),
-          status: element("recording-status"),
-          notice: element("recording-notice"),
-        },
-        save: () =>
-          recording.save({
-            flush: () => arStore.flushPendingActionWrites(),
-            nowMs: Date.now(),
-            userAgent: navigator.userAgent,
-            pageUrl: sanitizedPageUrl(location.href),
-            getBuildInfo,
-          }),
-        // Through the seam like the tour zip, so the e2e fake captures it.
-        handOff: (blob, filename) => seams.shareOrDownloadZip(blob, filename),
-        sessionLive: () => arSessionLive(arController.getState().status),
-        // A session ended (the counter) or one running now: either way the
-        // store's zero reference is no longer the recording's to write.
-        arHasRun: () =>
-          ctx.arSessionGeneration > 0 ||
-          arSessionLive(arController.getState().status),
-        estimateStorage: () =>
-          navigator.storage?.estimate?.() ?? Promise.resolve(undefined),
-        now: () => new Date(),
-      })
-    : null;
+// The recording's controls: a creator's, and a `?debug=1` visitor's (M1b);
+// wired before the AR entry that asks them at each entry.
+const recordingPanel = recordingControls
+  ? wireRecordingPanel({
+      recording,
+      dom: {
+        optIn: element("record-session"),
+        marker: element("recording-marker"),
+        saveButton: element("recording-save"),
+        status: element("recording-status"),
+        notice: element("recording-notice"),
+      },
+      save: () =>
+        recording.save({
+          flush: () => arStore.flushPendingActionWrites(),
+          nowMs: Date.now(),
+          userAgent: navigator.userAgent,
+          pageUrl: sanitizedPageUrl(location.href),
+          getBuildInfo,
+        }),
+      // Through the seam like the tour zip, so the e2e fake captures it.
+      handOff: (blob, filename) => seams.shareOrDownloadZip(blob, filename),
+      sessionLive: () => arSessionLive(arController.getState().status),
+      // A session ended (the counter) or one running now: either way the
+      // store's zero reference is no longer the recording's to write.
+      arHasRun: () =>
+        ctx.arSessionGeneration > 0 ||
+        arSessionLive(arController.getState().status),
+      estimateStorage: () =>
+        navigator.storage?.estimate?.() ?? Promise.resolve(undefined),
+      now: () => new Date(),
+    })
+  : null;
 if (recordingPanel !== null) {
   arController.subscribe(() => {
     recordingPanel.render();
@@ -439,6 +452,20 @@ const viewer = createViewerPlacement({
   errorBox,
   escapeButton,
   hooks,
+  // The `tourViewing/*` log (M1b): only where a recording can run, and
+  // silent until it does.
+  ...(recordingPanel === null
+    ? {}
+    : {
+        viewingLog: createViewingLog({
+          enabled: () => recording.persistWhile(),
+          dispatch: (action) => arStore.dispatch(action),
+          alignmentMatrix: () => selectAlignmentMatrix(arStore.getState()),
+          scanGate: () => ctx.scanGate.kind,
+          arVisitIndex: () => ctx.arSessionGeneration,
+          now: () => Date.now(),
+        }),
+      }),
 });
 hooks.startViewerPipeline = viewer.startViewerPipeline;
 hooks.tryPlaceTour = viewer.tryPlaceTour;

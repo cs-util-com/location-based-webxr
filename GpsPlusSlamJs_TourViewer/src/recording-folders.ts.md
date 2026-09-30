@@ -26,7 +26,9 @@ live save and the orphan save take.
 - `listRecordingFolders(dir, skip?)` - every recording folder, oldest first,
   as `RecordingFolder { name, startedAtMs, actionFiles, savedAtMs, saved }`,
   without those in `skip`; an unreadable folder is left out.
-- `countActionFiles(folder)`, `markRecordingSaved(folder, actionFiles, atMs)`.
+- `countActionFiles(folder)`. (The marker is written through the pack's
+  `markSaved`; the orphan metadata builder behind `packOrphanRecording` is
+  module-private.)
 - `recordingsToDelete(folders, nowMs, bounds?)` - pure: the names the cleanup
   deletes. `SAVED_RECORDING_MAX_AGE_MS` (7 days), `SAVED_RECORDINGS_KEPT` (3).
 - `tidyRecordings(dir, held, nowMs)` - the page-open housekeeping: list,
@@ -36,7 +38,7 @@ live save and the orphan save take.
 - `packRecordingFolder(folder, startedAt, writeMetadata)` ->
   `PackedRecording { blob, filename, actionCount, metadataError?, markSaved(atMs) }`.
 - `packOrphanRecording(dir, name, environment, fallbackTag)` - rebuild the
-  folder's `session.json` (`buildOrphanSessionMetadata`), write it, pack.
+  folder's `session.json` from its own files, write it, pack.
 - `recordedFix(action)` - a recorded GPS action's fix, or null.
 - `holdRecordingFolder(locks, name)`, `heldRecordingFolders(locks)` - the Web
   Lock a live page holds on its folder, and the folders whose lock is held.

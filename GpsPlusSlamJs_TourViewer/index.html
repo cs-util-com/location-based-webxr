@@ -690,13 +690,10 @@
              2026-09-28-0953, M1a). OPT-IN and page-side: the switch arms it
              before AR starts (it then runs for the rest of the page's
              life, and the switch locks on), and Save hands the recording
-             over as its own zip - never inside the tour zip. -->
-        <div
-          id="recording-block"
-          class="creator-only"
-          data-testid="recording-block"
-          hidden
-        >
+             over as its own zip - never inside the tour zip. A creator's,
+             and a visitor's only with ?debug=1 (M1b): main.ts unhides it,
+             so it is not .creator-only. -->
+        <div id="recording-block" data-testid="recording-block" hidden>
           <!-- A recording a killed tab left unsaved (M1b,
                recording-offer.ts). OFFERED, never applied, with the draft
                offer's three choices: "Not now" keeps it for the next open,

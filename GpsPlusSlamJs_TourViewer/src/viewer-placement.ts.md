@@ -11,7 +11,13 @@ recording. Its own module since the flows plan M6.
 
 ## Public API
 
-- `createViewerPlacement({ ctx, mode, arStore, arController, seams, errorBox, escapeButton, hooks }): ViewerPlacement` - places only in visitor mode
+- `createViewerPlacement({ ctx, mode, arStore, arController, seams, errorBox, escapeButton, hooks, viewingLog? }): ViewerPlacement` - places only in visitor mode
+  - `viewingLog` (M1b, `viewing-log.ts`): the `?debug=1` viewer recording's
+    hooks - `detection` after each recorded detection (with the status before
+    it), `vote` after each dispatched vote, `votedLock` first in
+    `onVotedLock`, `placed` after the content, the capture-spot and the ring
+    placements (the ring's count comes back from `placeDecodedPlanes`, 0 when
+    it bailed). Silent unless a recording runs; absent, nothing is logged.
   - `ViewerPlacement.startScanGate()` (called when the session reaches
     running, and again when a tour opens into a running session) derives
     the scan gate (`scan-gate.ts`) and arms the escape clock
@@ -115,6 +121,11 @@ ctx.placementUnsubscribe = arStore.subscribe(() => viewer.tryPlaceTour());
 ```
 
 ## Tests
+
+`viewer-placement-viewing-log.test.ts` - the `tourViewing/*` hooks through the
+real viewer controller config (a lock, then its votes as one batch; no
+second lock for the next tracked frame), and exactly today's dispatches
+without a running recording.
 
 `fused-pose-wiring.test.ts` - the votes' stable pose is the fused one (at
 the true rotation where single-frame poses scatter past the old average's
