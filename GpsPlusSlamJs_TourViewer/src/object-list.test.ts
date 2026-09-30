@@ -138,7 +138,11 @@ describe("objectListModel on the page", () => {
 });
 
 describe("objectListModel in AR", () => {
-  it("shows the selected object first, with Move for a pin, and the rest behind the disclosure", () => {
+  it("shows ONLY the selected object, with Move for a pin - nothing else over the camera", () => {
+    // Why: the DOM overlay IS the screen and cannot be scrolled; a closed
+    // disclosure of every object still laid its buttons out below the
+    // first screen on a small phone (ar-layout.spec.js, 360x640). The page
+    // lists everything; in AR a tap picks the one to edit.
     const model = objectListModel(
       state({
         inAr: true,
@@ -149,8 +153,7 @@ describe("objectListModel in AR", () => {
     expect(model.rows.map((r) => [r.id, r.selected, r.canMove])).toEqual([
       ["b", true, true],
     ]);
-    expect(model.moreRows.map((r) => r.id)).toEqual(["a", "p"]);
-    expect(model.moreRows.map((r) => r.canMove)).toEqual([true, false]);
+    expect(model).not.toHaveProperty("moreRows");
     expect(model.hint).toBe("");
   });
 
@@ -162,7 +165,7 @@ describe("objectListModel in AR", () => {
     expect(model.hint).toBe(SELECT_HINT);
   });
 
-  it("never drops or repeats an object, whatever is selected (property)", () => {
+  it("lists every object exactly once on the page, and in AR at most the selected one (property)", () => {
     fc.assert(
       fc.property(
         fc.uniqueArray(fc.constantFrom("a", "b", "c", "d", "e"), {
@@ -173,9 +176,15 @@ describe("objectListModel in AR", () => {
         (ids, selectedId, inAr) => {
           const entries: ObjectListEntry[] = ids.map((id) => entry(pin(id)));
           const model = objectListModel(state({ entries, selectedId, inAr }));
-          const shown = [...model.rows, ...model.moreRows].map((r) => r.id);
-          expect([...shown].sort()).toEqual([...ids].sort());
-          // The count: in the heading on the page, in the disclosure in AR.
+          const shown = model.rows.map((r) => r.id);
+          const selectedShown =
+            selectedId !== null && (ids as string[]).includes(selectedId)
+              ? [selectedId]
+              : [];
+          expect([...shown].sort()).toEqual(
+            inAr ? selectedShown : [...ids].sort(),
+          );
+          // The count is in the heading on the page; AR has no heading.
           expect(model.heading).toBe(
             inAr ? "" : `Objects in this tour (${String(ids.length)})`,
           );

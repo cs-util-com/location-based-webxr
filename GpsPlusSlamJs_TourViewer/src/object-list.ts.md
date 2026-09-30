@@ -16,8 +16,8 @@ zip's and this device's - with **Edit text**, **Move to the reticle** and
   - `state.codes` - the stored codes' geo; each row says how far the object
     is from the nearest one ("11 m from the code", whole metres).
   - `state.inAr` - on the page every row is in `rows`; in AR `rows` holds
-    only the selected object and `moreRows` the rest (drawn behind an "All
-    objects (N)" disclosure), with `SELECT_HINT` while nothing is selected.
+    only the selected object (none while nothing is selected, with
+    `SELECT_HINT`), and there is no heading.
   - `state.busy` - an action in flight per id (its busy label); `locked`
     (a Finish is rebuilding) disables every row.
   - `state.note` - the last action's outcome or failure, shown under the
@@ -33,8 +33,12 @@ zip's and this device's - with **Edit text**, **Move to the reticle** and
 
 ## Invariants & assumptions
 
-- **No row is ever dropped or repeated** by the AR split: `rows` plus
-  `moreRows` is every entry exactly once (property test).
+- **On the page every object is listed exactly once; in AR at most the
+  selected one** (property test). The AR overlay IS the screen and cannot
+  be scrolled: an "All objects" disclosure, even collapsed, laid its
+  buttons out below the first screen of a 360x640 phone
+  (`ar-layout.spec.js`), so AR shows only what a tap selected and the page
+  lists everything.
 - **Move is offered only where it can work**: a pin, in AR. A photo's pose
   is where it was taken, and the page has no reticle; the page's hint says
   where moving happens instead of offering a button that can only fail.
@@ -71,8 +75,8 @@ view.render(
 
 ## Tests
 
-- `object-list.test.ts` - the page and AR splits, the words per row, the
+- `object-list.test.ts` - the page list and the AR selection, the words per row, the
   nearest code, hidden when empty, busy and locked rows, and a property
-  that every object appears exactly once whatever is selected.
+  that the page lists every object once and AR at most the selected one.
 - The DOM view: `playwright-tests/object-editing.spec.js` (edit, delete,
   move, the selected row, the overlay-tap guard).

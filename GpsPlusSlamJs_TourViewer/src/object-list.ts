@@ -11,10 +11,11 @@
  *   Playwright suite (this package's unit tests run without a DOM).
  *
  * The list lives in the setup panel, so it is on the page (desktop: list,
- * edit, delete need no AR) and inside the AR overlay. In AR it shows the
- * object selected by a tap (`object-pick.ts`) first, and the rest behind
- * an "All objects" disclosure - a long list over the camera would hide what
- * the creator is looking at.
+ * edit, delete need no AR) and inside the AR overlay. In AR it shows ONLY
+ * the object selected by a tap (`object-pick.ts`): the overlay is the
+ * screen and cannot be scrolled, so every further row would push the
+ * panel's controls off it (a collapsed disclosure of all rows did exactly
+ * that on a 360x640 phone - its buttons still took layout).
  *
  * @see object-list.ts.md
  */
@@ -72,16 +73,13 @@ interface ObjectRowModel {
 
 export interface ObjectListModel {
   readonly hidden: boolean;
-  /** "Objects in this tour (3)" on the page; "" in AR, where the
-   *  disclosure's summary carries the count and every line over the camera
-   *  costs the creator part of the view. */
+  /** "Objects in this tour (3)" on the page; "" in AR, where every line
+   *  over the camera costs the creator part of the view. */
   readonly heading: string;
   /** In AR: how to select; on the page: where moving happens. */
   readonly hint: string;
-  /** The selected row (AR) or every row (page), shown first. */
+  /** Every row on the page; in AR only the selected one (or none). */
   readonly rows: readonly ObjectRowModel[];
-  /** In AR, the rows behind the "All objects" disclosure; empty on the page. */
-  readonly moreRows: readonly ObjectRowModel[];
   readonly note: string;
 }
 
@@ -158,7 +156,6 @@ export function objectListModel(state: ObjectListState): ObjectListModel {
       heading,
       hint: hasPins ? MOVE_HINT : "",
       rows,
-      moreRows: [],
       note: state.note,
     };
   }
@@ -168,7 +165,6 @@ export function objectListModel(state: ObjectListState): ObjectListModel {
     heading: "",
     hint: selected.length === 0 && count > 0 ? SELECT_HINT : "",
     rows: selected,
-    moreRows: rows.filter((row) => !row.selected),
     note: state.note,
   };
 }
@@ -190,8 +186,7 @@ export interface ObjectListView {
 
 /**
  * The DOM view over `container` (`#object-list`). Redraws only when the
- * model changed, keeps an open inline editor's text across a redraw, and
- * remembers whether the "All objects" disclosure was open.
+ * model changed, and keeps an open inline editor's text across a redraw.
  */
 export function createObjectListView(
   container: HTMLElement,
@@ -201,7 +196,6 @@ export function createObjectListView(
   let lastKey = "";
   /** The row whose text is being edited, and its typed value. */
   let editing: { id: string; value: string } | null = null;
-  let moreOpen = false;
   let current: ObjectListModel | null = null;
 
   function button(
@@ -332,8 +326,6 @@ export function createObjectListView(
     if (editing !== null && typed !== null) {
       editing = { id: editing.id, value: typed.value };
     }
-    const more = body.querySelector<HTMLDetailsElement>("details");
-    if (more !== null) moreOpen = more.open;
     container.hidden = model.hidden;
     heading.textContent = model.heading;
     heading.hidden = model.heading === "";
@@ -345,18 +337,6 @@ export function createObjectListView(
     list.className = "object-rows";
     for (const row of model.rows) list.append(rowElement(row));
     body.append(list);
-    if (model.moreRows.length > 0) {
-      const details = doc.createElement("details");
-      details.dataset["testid"] = "object-list-more";
-      details.open = moreOpen;
-      const summary = doc.createElement("summary");
-      summary.textContent = `All objects (${String(model.moreRows.length)})`;
-      const rest = doc.createElement("ul");
-      rest.className = "object-rows";
-      for (const row of model.moreRows) rest.append(rowElement(row));
-      details.append(summary, rest);
-      body.append(details);
-    }
   }
 
   return {
@@ -371,9 +351,7 @@ export function createObjectListView(
       // An editor whose row went away (deleted, list locked) closes.
       if (
         editing !== null &&
-        ![...model.rows, ...model.moreRows].some(
-          (row) => row.id === editing?.id && row.enabled,
-        )
+        !model.rows.some((row) => row.id === editing?.id && row.enabled)
       ) {
         editing = null;
       }

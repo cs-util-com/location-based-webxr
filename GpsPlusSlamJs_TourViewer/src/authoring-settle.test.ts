@@ -1315,8 +1315,11 @@ describe(
       const a = await withHostedTour([hostedPin("h1", "Hosted gate")]);
       expect(a.ctx.placedPreviews.has("h1")).toBe(true);
       expect(a.labels.some((o) => o.name === "Hosted gate")).toBe(true);
+      // Listed on the page (in AR only a tapped object is shown).
+      a.endVisit();
+      a.setup.renderAuthorReadout();
       const model = a.dom.objectList.lastModel!;
-      expect(model.moreRows.map((r) => [r.id, r.detail])).toEqual([
+      expect(model.rows.map((r) => [r.id, r.detail])).toEqual([
         ["h1", "Pin · in the zip"],
       ]);
     });
@@ -1367,13 +1370,16 @@ describe(
         await flush();
       };
       await release();
+      // Selected in AR, so its row is the one shown.
+      a.pick.fn = () => "h1";
+      a.setup.selectInView();
       a.dom.objectList.listHandlers!.editText("h1", "First");
       await flush();
-      const busy = a.dom.objectList.lastModel!.moreRows[0]!;
+      const busy = a.dom.objectList.lastModel!.rows[0]!;
       expect([busy.busy, busy.enabled]).toEqual(["Saving…", false]);
       await release();
       const done = a.dom.objectList.lastModel!;
-      expect(done.moreRows[0]?.busy).toBeNull();
+      expect(done.rows[0]?.busy).toBeNull();
       expect(done.note).toMatch(/Saved "First"/);
 
       refuse = true;
@@ -1393,7 +1399,7 @@ describe(
       expect(a.ctx.deletedObjectIds).toEqual(["h1"]);
       expect(a.ctx.placedPreviews.has("h1")).toBe(false);
       expect(files.has(deletedKey("h1"))).toBe(true);
-      expect(a.dom.objectList.lastModel?.moreRows).toEqual([]);
+      expect(a.dom.objectList.lastModel?.rows).toEqual([]);
       expect(a.dom.objectList.lastModel?.note).toMatch(
         /Deleted "Gate" - it leaves the zip on the next Finish/,
       );
