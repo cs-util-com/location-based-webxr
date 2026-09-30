@@ -15,6 +15,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 
 import { imageInfo } from "./image-header.js";
@@ -85,6 +86,38 @@ describe("the committed imagery", () => {
     expect(pacific).toMatchObject({ type: "webp", alpha: true });
   });
 
+  // Why (review B7): the water mask is a HARD mask, lossless in the alpha
+  // plane (0 water, 255 land), and the colour under the water is kept
+  // (libwebp's `exact`), because the glint and the shading read the sea's
+  // own colour there. A lossy or blended alpha would put a glint fringe on
+  // every coast; a zeroed colour would turn the sea black. Decoded, not
+  // read from headers: every 8th level-4 tile with water (the level the
+  // coast check looks at; one encoder run wrote them all).
+  it("keeps the level-4 tiles' alpha at 0 or 255 and the sea's colour under it", async () => {
+    const tiles = globeSource("blue-marble");
+    const levelDir = onDisk(tiles.path.split("{z}")[0] + "4");
+    const withWater = readdirSync(levelDir)
+      .flatMap((x) =>
+        readdirSync(join(levelDir, x)).map((y) => join(levelDir, x, y)),
+      )
+      .filter((file) => {
+        const info = imageInfo(readFileSync(file));
+        return info?.type === "webp" && info.alpha;
+      })
+      .filter((_, i) => i % 8 === 0);
+    let waterPixels = 0;
+    let waterRgbSum = 0;
+    for (const file of withWater) {
+      const water = await decodeWater(file);
+      waterPixels += water.pixels;
+      waterRgbSum += water.rgbSum;
+    }
+    expect(waterPixels).toBeGreaterThan(0);
+    // Blue Marble's open sea is dark navy (brightest channel about 20), not
+    // black: a mean channel sum under 3 would mean the colour was dropped.
+    expect(waterRgbSum / waterPixels).toBeGreaterThan(10);
+  }, 120_000);
+
   it("has every global map as a 2048x1024 WebP, under the repo's 2 MiB file ceiling", () => {
     for (const s of GLOBE_SOURCES.filter((u) => u.kind === "equirect")) {
       const file = onDisk(s.path);
@@ -96,6 +129,33 @@ describe("the committed imagery", () => {
     }
   });
 });
+
+/**
+ * A tile's water pixels (alpha 0) and the sum of their R, G and B, after
+ * checking every alpha is 0 or 255 (throws naming the first that is not).
+ */
+async function decodeWater(
+  file: string,
+): Promise<{ pixels: number; rgbSum: number }> {
+  const { data, info } = await sharp(file)
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  if (info.channels !== 4)
+    throw new Error(`${file}: ${info.channels} channels`);
+  let pixels = 0;
+  let rgbSum = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    const a = data[i + 3] ?? -1;
+    if (a !== 0 && a !== 255) {
+      throw new Error(`${file}: alpha ${a} at pixel ${i / 4}`);
+    }
+    if (a === 0) {
+      pixels += 1;
+      rgbSum += (data[i] ?? 0) + (data[i + 1] ?? 0) + (data[i + 2] ?? 0);
+    }
+  }
+  return { pixels, rgbSum };
+}
 
 /** Every file under `dir`, recursively, with its size in bytes. */
 function filesUnder(dir: string): { path: string; bytes: number }[] {
