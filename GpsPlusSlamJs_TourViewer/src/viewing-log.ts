@@ -193,7 +193,11 @@ export function createViewingLog(deps: {
           }
         },
         relock(text, atMs) {
+          // A stale pose refuses the restart; the re-scan's fresh voted
+          // lock is then logged by keep() as "armed" instead.
+          const restarts = inner.holdsFreshPose(text, atMs);
           inner.relock(text, atMs);
+          if (!restarts) return;
           const phase = inner.phase(atMs);
           if (phase.kind === "none" || phase.text !== text) return;
           const rescan = rescanOf === text;
@@ -202,9 +206,9 @@ export function createViewingLog(deps: {
             log("relocked", text, atMs, phase);
           }
         },
-        votesForFix(fixMs) {
-          const votes = inner.votesForFix(fixMs);
-          const phase = inner.phase(fixMs);
+        votesForFix(fix) {
+          const votes = inner.votesForFix(fix);
+          const phase = inner.phase(fix.atMs);
           if (phase.kind === "none") {
             // A code whose votes cannot be built was dropped.
             if (last !== null) log("stopped", last.text, null, phase);
@@ -212,7 +216,7 @@ export function createViewingLog(deps: {
             (phase.kind === "fading" || phase.kind === "ended") &&
             (phase.kind !== last?.kind || phase.text !== last.text)
           ) {
-            log(phase.kind, phase.text, fixMs, phase);
+            log(phase.kind, phase.text, fix.atMs, phase);
           }
           return votes;
         },

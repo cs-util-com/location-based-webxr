@@ -239,7 +239,7 @@ describe("the viewer's tourViewing log", () => {
     const h = harness();
     const keepAlive = h.log.keepAlive(createQrVoteKeepAlive(KEEP_SETTINGS));
     keepAlive.keep(KEPT, 0);
-    keepAlive.votesForFix(1500);
+    keepAlive.votesForFix({ atMs: 1500, stampMs: 1500 });
     keepAlive.stop();
     expect(h.dispatched.length).toBeGreaterThan(0);
     for (const action of h.dispatched) {
@@ -283,18 +283,22 @@ describe("the viewer's tourViewing log of the code keep-alive (M1b review #5)", 
     const keepAlive = h.log.keepAlive(createQrVoteKeepAlive(KEEP_SETTINGS));
 
     keepAlive.keep(KEPT, 0);
-    expect(keepAlive.votesForFix(500)).toHaveLength(3); // holding: silent
+    expect(keepAlive.votesForFix({ atMs: 500, stampMs: 500 })).toHaveLength(3); // holding: silent
     keepAlive.relock("code-a", 600); // a tracked frame of the same lock
     keepAlive.relock("code-b", 650); // another code: nothing kept for it
-    keepAlive.votesForFix(1700); // past the hold (from 600): fading
-    keepAlive.votesForFix(1800); // still fading: silent
-    // A re-scan: the lock starts tracking again, then its relock.
+    keepAlive.votesForFix({ atMs: 1700, stampMs: 1700 }); // past the hold (from 600): fading
+    keepAlive.votesForFix({ atMs: 1800, stampMs: 1800 }); // still fading: silent
+    // A re-scan after the kept pose went stale (older than one hold
+    // window): its relock restarts nothing (M2b review #1) and is silent;
+    // the re-armed budget lets the re-scan vote again from a fresh pose,
+    // which keeps the code anew.
     h.log.detection(detection("code-a"), LEVEL, "scanning");
     keepAlive.relock("code-a", 1900);
+    keepAlive.keep(KEPT, 1900);
     keepAlive.relock("code-a", 1950); // its next tracked frame: silent
-    keepAlive.votesForFix(3100); // fading again
-    keepAlive.votesForFix(4000); // past the fade: ended
-    keepAlive.votesForFix(4100);
+    keepAlive.votesForFix({ atMs: 3100, stampMs: 3100 }); // fading again
+    keepAlive.votesForFix({ atMs: 4000, stampMs: 4000 }); // past the fade: ended
+    keepAlive.votesForFix({ atMs: 4100, stampMs: 4100 });
     keepAlive.stop();
     keepAlive.stop(); // nothing kept any more: silent
 
@@ -302,7 +306,7 @@ describe("the viewer's tourViewing log of the code keep-alive (M1b review #5)", 
     expect(log.map((e) => e["event"])).toEqual([
       "armed",
       "fading",
-      "relocked",
+      "armed",
       "fading",
       "ended",
       "stopped",
@@ -324,8 +328,9 @@ describe("the viewer's tourViewing log of the code keep-alive (M1b review #5)", 
       keepAliveMs: 1700,
       phase: { kind: "fading", share: expect.closeTo(0.9, 9) as number },
     });
-    // The re-scan restarted the hold: its phase says so.
+    // The re-scan's fresh voted lock restarted the hold: its phase says so.
     expect(log[2]).toMatchObject({
+      event: "armed",
       text: "code-a",
       keepAliveMs: 1900,
       phase: { kind: "holding", remainingMs: 1000 },
@@ -348,7 +353,7 @@ describe("the viewer's tourViewing log of the code keep-alive (M1b review #5)", 
     const h = harness();
     const keepAlive = h.log.keepAlive(createQrVoteKeepAlive(KEEP_SETTINGS));
     keepAlive.keep(KEPT, 0);
-    expect(keepAlive.votesForFix(100)).toHaveLength(3);
+    expect(keepAlive.votesForFix({ atMs: 100, stampMs: 100 })).toHaveLength(3);
     h.log.votedLock("code-a", 2);
     const batch = h.dispatched.find((a) => a.type === "tourViewing/votesCast");
     expect(batch?.payload).toMatchObject({ votes: [] });
@@ -358,9 +363,9 @@ describe("the viewer's tourViewing log of the code keep-alive (M1b review #5)", 
     const h = harness(false);
     const keepAlive = h.log.keepAlive(createQrVoteKeepAlive(KEEP_SETTINGS));
     keepAlive.keep(KEPT, 0);
-    expect(keepAlive.votesForFix(100)).toHaveLength(3);
+    expect(keepAlive.votesForFix({ atMs: 100, stampMs: 100 })).toHaveLength(3);
     expect(keepAlive.phase(100)).toMatchObject({ kind: "holding" });
-    keepAlive.votesForFix(2500);
+    keepAlive.votesForFix({ atMs: 2500, stampMs: 2500 });
     keepAlive.stop();
     expect(h.dispatched).toEqual([]);
     expect(keepAlive.phase(100)).toEqual({ kind: "none" });

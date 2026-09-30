@@ -56,7 +56,10 @@ Plan:
   - `relock` -> `relocked` only on the first frame of a NEW lock of the kept
     code (the lock start `detection` saw) or when it changed the phase's
     kind; the tracked frames after it restart the hold silently, and
-    `phase` in each later entry carries the time base;
+    `phase` in each later entry carries the time base. A relock whose kept
+    pose is older than one hold window restarts nothing
+    (`holdsFreshPose`) and logs nothing; the re-scan's fresh voted lock is
+    then an `armed`;
   - `votesForFix` -> `fading` / `ended` the first time a device fix finds
     the phase there (so a transition is logged at fix granularity), or
     `stopped` when the keep-alive dropped an unbuildable code;
