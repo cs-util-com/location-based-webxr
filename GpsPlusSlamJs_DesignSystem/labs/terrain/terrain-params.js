@@ -63,7 +63,10 @@ export const GPS_PLACE = "gps";
  * @param {{ lat: number, lng: number } | null} fix
  */
 export function placeFor(id, fix) {
-  if (id !== GPS_PLACE) return TERRAIN_PLACES[id] ?? null;
+  if (id !== GPS_PLACE) {
+    // Own keys only: `in` or an index would also find `toString` and kin.
+    return Object.hasOwn(TERRAIN_PLACES, id) ? TERRAIN_PLACES[id] : null;
+  }
   if (!fix || !Number.isFinite(fix.lat) || !Number.isFinite(fix.lng)) {
     return null;
   }
@@ -176,7 +179,8 @@ export function readTerrainParams(hash) {
   }
   const place = params.get("place");
   out.place =
-    place !== null && (place in TERRAIN_PLACES || place === GPS_PLACE)
+    place !== null &&
+    (Object.hasOwn(TERRAIN_PLACES, place) || place === GPS_PLACE)
       ? place
       : "appalachians";
   if (place !== null && out.place !== place) {
@@ -185,7 +189,8 @@ export function readTerrainParams(hash) {
     );
   }
   const style = params.get("style");
-  out.style = style !== null && style in TERRAIN_STYLES ? style : "pastel";
+  out.style =
+    style !== null && Object.hasOwn(TERRAIN_STYLES, style) ? style : "pastel";
   if (style !== null && out.style !== style) {
     out.notes.push(
       `Style "${style}" is not in this lab: showing Pastel atlas.`,

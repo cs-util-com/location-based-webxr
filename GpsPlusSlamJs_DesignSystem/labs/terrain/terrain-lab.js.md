@@ -49,7 +49,11 @@
   while it waits cancels, and a late answer is dropped; a failure names its
   fix (`labelFor`, `locateAdvice`) and leaves the place drawn; a fix loads
   the GPS place around it (`place=gps` in the hash, never the
-  coordinates). A `place=gps` link, or choosing "My position" before any
+  coordinates). The pin's line says "Found you ...: loading the terrain
+  around you..." until that region's relief is built, and only then "The
+  terrain around you (located to N m)."; a build with no data or a failed
+  worker says it could not be drawn, and choosing another place first
+  clears the line (`regionSettled`). A `place=gps` link, or choosing "My position" before any
   fix, draws nothing and says to press the pin. A style's own controls
   (`[data-styles]`) show only with that style; B's section says the fitted
   tree and snow lines. Another place loads its region in place (above).
@@ -85,9 +89,10 @@
 - Invariants & assumptions:
   - No tone mapping: the colours are the style's sRGB, as a printed map;
     only the far field is tone mapped, as the globe is.
-  - One region at z8 (256 km); the finer regions per preset (64 km at z10,
-    20 km at z12, plan §9 finding 8) come with T3, so the low preset and the
-    end of the fly-in show the z8 data magnified.
+  - One region at z8 (256 km) for every place and preset. The finer
+    regions per preset (64 km at z10, 20 km at z12, plan §9 finding 8) are
+    NOT built: T3 left them for a later milestone, so the low preset and
+    the end of the fly-in show the z8 data magnified (about 480 m a texel).
   - Pan is off: the camera orbits the region's centre, so the hash's pose
     alone reproduces a view.
 - Tests: `terrain.smoke.spec.mjs` (boot on the committed tiles with nothing

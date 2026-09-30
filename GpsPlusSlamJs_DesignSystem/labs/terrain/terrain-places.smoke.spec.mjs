@@ -179,14 +179,22 @@ const anyTile = (() => {
 // feedback rule): no permission prompt the user did not ask for; while the
 // fix is awaited the pin says so and stays pressable; a granted fix builds
 // the region AROUND it (its tiles, its centre), and the link says
-// `place=gps`, never the coordinates (plan §9 finding 20).
+// `place=gps`, never the coordinates (plan §9 finding 20). The GPS region's
+// tiles are held until the pin's loading line has been read: the success
+// line must wait for the drawn terrain, not the fix (review 2026-09-29 B5).
 test("the GPS place: nothing asked on load, a granted fix builds the region there", async ({
   page,
 }) => {
   test.setTimeout(300_000);
   await mockGeolocation(page);
+  let releaseTiles = () => {};
+  const held = new Promise((resolve) => {
+    releaseTiles = resolve;
+  });
   const record = await routeAll(page, (key, r) =>
-    /^8\/7[0-2]\/9[7-9]$/.test(key) ? fixtureTile(key, r) : anyTile(key),
+    /^8\/7[0-2]\/9[7-9]$/.test(key)
+      ? fixtureTile(key, r)
+      : held.then(() => anyTile(key)),
   );
   const errors = await boot(page, "preset=top&svf=0");
   expect(await page.evaluate(() => window.__geoRequests)).toBe(0);
@@ -201,6 +209,21 @@ test("the GPS place: nothing asked on load, a granted fix builds the region ther
   expect(await page.evaluate(() => window.__geoRequests)).toBe(1);
   record.requested.length = 0;
   await page.evaluate((c) => window.__answerGeolocation(c), COLOGNE);
+  // The fix is in and the region's tiles are asked for, none answered yet.
+  await page.waitForFunction(
+    () =>
+      window.__terrainLab.state().place === "gps" &&
+      window.__terrainLab.state().centre !== null &&
+      window.__terrainLab.state().pin === "idle",
+    null,
+    { timeout: 60_000 },
+  );
+  expect(await pinView(page)).toMatchObject({
+    state: "located",
+    status: "Found you (located to 12 m): loading the terrain around you...",
+  });
+  expect((await state(page)).hasData).toBeNull();
+  releaseTiles();
   await page.waitForFunction(
     () =>
       window.__terrainLab.state().place === "gps" &&
@@ -217,12 +240,28 @@ test("the GPS place: nothing asked on load, a granted fix builds the region ther
   expect(s.tiles).toContain("8/132/85");
   expect([...record.requested].sort()).toEqual([...s.tiles].sort());
   expect(record.requested.every((k) => !/^8\/7[0-2]\//.test(k))).toBe(true);
-  const hash = await page.evaluate(() => location.hash);
-  expect(hash).toContain("place=gps");
-  expect(hash).not.toContain("50.9");
+  // Review 2026-09-29 B2: a coordinate could leak under any key and in any
+  // rounding, so the hash holds exactly the keys this flow writes, and no
+  // number in it lies within 1 of the fix's latitude or longitude (a
+  // "50.9" substring check misses "lat=50.94" rounded as "51").
+  const hash = await page.evaluate(() => location.hash.slice(1));
+  const entries = [...new URLSearchParams(hash)];
+  expect(entries.map(([k]) => k).sort()).toEqual(["place", "preset", "svf"]);
+  expect(Object.fromEntries(entries).place).toBe("gps");
+  for (const [key, value] of entries) {
+    const n = Number(value);
+    if (value.trim() === "" || !Number.isFinite(n)) continue;
+    expect(Math.abs(n - COLOGNE.lat), `${key}=${value}`).toBeGreaterThanOrEqual(
+      1,
+    );
+    expect(Math.abs(n - COLOGNE.lng), `${key}=${value}`).toBeGreaterThanOrEqual(
+      1,
+    );
+  }
   expect(await pinView(page)).toMatchObject({
     phase: "idle",
     state: "located",
+    status: "The terrain around you (located to 12 m).",
   });
   expect(record.external).toEqual([]);
   expect(errors).toEqual([]);

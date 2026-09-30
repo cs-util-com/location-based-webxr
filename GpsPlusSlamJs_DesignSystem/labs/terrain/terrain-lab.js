@@ -138,6 +138,10 @@ const GPS_PROMPT =
  * returns the pin to idle with the locate atom's warning look; a fix calls
  * `onFix`. The button carries the state in its `aria-label`, `title`,
  * `aria-busy` and `data-state` (the design system's locate atom).
+ *
+ * A fix is not yet the terrain: the line says the region is loading until
+ * the page calls `regionSettled` with how the build ended (the async-
+ * feedback rule's durable end state; review 2026-09-29 B5).
  */
 function bindPin(onFix) {
   let phase = "idle";
@@ -145,6 +149,8 @@ function bindPin(onFix) {
   let located = false;
   let message = "";
   let request = 0;
+  /** The line to show once the fix's region is drawn; null when none waits. */
+  let drawnMessage = null;
   const render = () => {
     const locating = phase === "locating";
     const label = locating
@@ -161,6 +167,7 @@ function bindPin(onFix) {
   pinButton.addEventListener("click", async () => {
     const mine = ++request;
     failure = null;
+    drawnMessage = null;
     if (phase === "locating") {
       phase = "idle";
       message = "Stopped looking for your location.";
@@ -183,11 +190,10 @@ function bindPin(onFix) {
     }
     located = true;
     const accuracy = outcome.fix.accuracyM;
-    message =
-      "The terrain around you" +
-      (accuracy === undefined
-        ? "."
-        : ` (located to ${Math.round(accuracy)} m).`);
+    const within =
+      accuracy === undefined ? "" : ` (located to ${Math.round(accuracy)} m)`;
+    message = `Found you${within}: loading the terrain around you...`;
+    drawnMessage = `The terrain around you${within}.`;
     render();
     onFix({ lat: outcome.fix.lat, lng: outcome.fix.lng });
   });
@@ -198,6 +204,22 @@ function bindPin(onFix) {
     say(text) {
       if (phase !== "idle") return;
       message = text;
+      render();
+    },
+    /**
+     * How the build for the last fix ended: `drawn`, `failed` (no data, or
+     * the worker failed; the error line says why) or `replaced` (another
+     * place was chosen first). Does nothing when no fix's region waits.
+     */
+    regionSettled(outcome) {
+      if (drawnMessage === null) return;
+      message =
+        outcome === "drawn"
+          ? drawnMessage
+          : outcome === "failed"
+            ? "Found you, but the terrain around you could not be drawn."
+            : "";
+      drawnMessage = null;
       render();
     },
   };
@@ -593,6 +615,7 @@ function start() {
     errors.add(message);
     showErrors();
     loading.show("");
+    pin.regionSettled("failed");
     window.__terrainLab.ready = true;
   };
   // `||`: an ErrorEvent can carry an EMPTY message (a failed module load).
@@ -694,6 +717,9 @@ function start() {
       run.aux = packed.rgba8;
       applyLive();
       loading.show(params.svf > 0 && m.hasData ? "Computing sky view..." : "");
+      if (place?.id === GPS_PLACE) {
+        pin.regionSettled(m.hasData ? "drawn" : "failed");
+      }
       window.__terrainLab.ready = true;
       return;
     }
@@ -743,6 +769,7 @@ function start() {
     hRange = [0, 4000];
     if (mesh) mesh.visible = false;
     place = placeFor(params.place, gpsFix);
+    if (place?.id !== GPS_PLACE) pin.regionSettled("replaced");
     if (!place) {
       spec = null;
       frame = null;

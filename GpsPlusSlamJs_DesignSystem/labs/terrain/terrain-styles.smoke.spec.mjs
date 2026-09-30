@@ -105,6 +105,16 @@ const SNOW_OFF = 5;
  * vertical; the whole region's E = 5 counts are reported.
  */
 const NADIR_M = 60_000;
+/**
+ * The middle's own grid (review 2026-09-29 B3): the region's 2 km grid held
+ * ONE gentle snowfield point within `NADIR_M`, so E = 5's "snow above"
+ * rested on a single sample. The middle is sampled at the field's post
+ * spacing (500 m, about 1.4 pixels at this view) and must hold at least
+ * `NEAR_ABOVE_MIN` gentle snowfield points; the counts on its 1 km subgrid
+ * are reported beside them (the sweep of the spacing).
+ */
+const NEAR_STEP_M = 500;
+const NEAR_ABOVE_MIN = 10;
 
 test("style B: snow above its line on the Alps and none below, whatever E", async ({
   page,
@@ -141,23 +151,53 @@ test("style B: snow above its line on the Alps and none below, whatever E", asyn
     ...p,
     lineM: naturalWeights({ ...p, latDeg: 46.56 }).localSnowM,
   }));
+  // The middle, at the post spacing; `coarse` marks its 1 km subgrid.
+  const middle = (
+    await page.evaluate(
+      ([radius, step]) => {
+        const out = [];
+        const n = Math.floor(radius / step);
+        for (let i = -n; i <= n; i++) {
+          for (let j = -n; j <= n; j++) {
+            const x = i * step;
+            const y = j * step;
+            if (Math.hypot(x, y) >= radius) continue;
+            const f = window.__terrainLab.fieldAt(x, y);
+            if (f) out.push({ x, y, coarse: i % 2 === 0 && j % 2 === 0, ...f });
+          }
+        }
+        return out;
+      },
+      [NADIR_M, NEAR_STEP_M],
+    )
+  ).map((p) => ({
+    ...p,
+    lineM: naturalWeights({ ...p, latDeg: 46.56 }).localSnowM,
+  }));
   const gentle = (p) => Math.hypot(p.gx, p.gy) < 0.3;
-  const nearNadir = (p) => Math.hypot(p.x, p.y) < NADIR_M;
   const results = [];
   for (const e of [1, 2, 5]) {
     await applyHash(page, `${view}&exag=${e}`);
-    const at = await project(
-      page,
-      ground.map((p) => [p.x, e * (p.heightM - s0.datum), -p.y]),
-    );
-    const mask = (await readPixels(page, at)).map((px) => px[0]);
+    const maskOf = async (list) =>
+      (
+        await readPixels(
+          page,
+          await project(
+            page,
+            list.map((p) => [p.x, e * (p.heightM - s0.datum), -p.y]),
+          ),
+        )
+      ).map((px) => px[0]);
+    const masks = { region: await maskOf(ground), near: await maskOf(middle) };
     for (const margin of SNOW_MARGINS) {
-      for (const [area, inArea] of [
-        ["region", () => true],
-        ["near", nearNadir],
+      for (const [area, list, inArea] of [
+        ["region", ground, () => true],
+        ["near", middle, () => true],
+        ["near 1 km", middle, (p) => p.coarse],
       ]) {
+        const mask = masks[area === "region" ? "region" : "near"];
         const pick = (test) =>
-          ground.flatMap((p, i) =>
+          list.flatMap((p, i) =>
             gentle(p) && inArea(p) && test(p) ? [mask[i]] : [],
           );
         const above = pick((p) => p.heightM > p.lineM + margin);
@@ -186,11 +226,14 @@ test("style B: snow above its line on the Alps and none below, whatever E", asyn
   // The line in metres does not move with E (plan §9 finding 7): the whole
   // region at E = 1 and 2, the middle at E = 5.
   for (const r of [find(1, "region"), find(2, "region"), find(5, "near")]) {
-    // Non-vacuous: real snowfields and real valleys in the sample (the
-    // middle has one gentle snowfield point at this grid, 40 in the region).
-    expect(r.above, `E=${r.e} ${r.area}`).toBeGreaterThan(
-      r.area === "region" ? 20 : 0,
-    );
+    // Non-vacuous: real snowfields and real valleys in the sample.
+    if (r.area === "region") {
+      expect(r.above, `E=${r.e} ${r.area}`).toBeGreaterThan(20);
+    } else {
+      expect(r.above, `E=${r.e} ${r.area}`).toBeGreaterThanOrEqual(
+        NEAR_ABOVE_MIN,
+      );
+    }
     expect(r.below, `E=${r.e} ${r.area}`).toBeGreaterThan(100);
     expect(r.aboveOk, `E=${r.e} ${r.area}`).toBe(r.above);
     expect(r.belowOk, `E=${r.e} ${r.area}`).toBe(r.below);

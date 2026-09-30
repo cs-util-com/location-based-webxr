@@ -170,6 +170,21 @@ describe("readTerrainParams", () => {
     assert.equal(p.notes.length, 2);
   });
 
+  // Review 2026-09-29 B1: an `in` lookup also finds the objects' inherited
+  // properties, so `#place=toString` read as a place (a function, whose
+  // region side is NaN) and `#style=constructor` fed a function into the
+  // shader's style switch. Only the tables' own keys are places and styles.
+  it("refuses inherited property names as a place or a style", () => {
+    for (const name of ["toString", "constructor", "__proto__", "valueOf"]) {
+      const p = readTerrainParams(`place=${name}&style=${name}`);
+      assert.equal(p.place, "appalachians", `place=${name}`);
+      assert.equal(p.style, "pastel", `style=${name}`);
+      assert.equal(p.notes.length, 2, `notes for ${name}`);
+      assert.equal(placeFor(name, null), null, `placeFor(${name})`);
+      assert.equal(p.shadow, STYLE_SHADOW.pastel, `shadow for ${name}`);
+    }
+  });
+
   it("reads every style of DEC-TR-2/6 and the Alps", () => {
     for (const id of Object.keys(TERRAIN_STYLES)) {
       assert.equal(readTerrainParams(`style=${id}`).style, id);

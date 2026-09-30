@@ -48,14 +48,17 @@ side }`: `extentM` includes the padding; `side` counts both edges.
 - Invariants: out of range, empty or malformed reads as the default, never
   NaN (a NaN uniform removes the draw silently). A `farLow` at or above
   `farHigh` falls back to both defaults with a note. An unknown place
-  falls back to the Appalachians with a note. `place=gps` is read as it
+  falls back to the Appalachians with a note, an unknown style to style A.
+  Places and styles are the tables' OWN keys (`Object.hasOwn`): an `in`
+  lookup also accepted `toString` or `constructor`, which reached the
+  region and the shader as functions (review 2026-09-29 B1). `place=gps` is read as it
   is; the hash never carries coordinates (plan §9 finding 20), so a link
   to it needs a press of the pin to draw anything.
 - Tests: `terrain-params.test.mjs`: the places and `placeFor` (with and
   without a fix, an invalid fix, `place=gps` without a note), the field's posts, its
   padding against the sky-view march the lab runs and three blur sigmas, no
   hash key for the steps, the defaults, in-range values, five malformed
-  values, the camera triple, presets, the place and style fallbacks, every
+  values, the camera triple, presets, the place and style fallbacks (inherited property names included), every
   style, each style's own shadow and the override, the far field's switch
   and its altitude check. `terrain-pipeline.test.mjs` holds each place's
   tile set to its committed fixtures.
