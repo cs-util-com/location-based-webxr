@@ -82,6 +82,17 @@
   material patch that dims every directional light by the cloud column
   toward it, only where the sky draws the cloud, drifting with the sky's
   clouds.
+- **Water polish** (`visualization/atmosphere/water-polish.js`;
+  `new WaterSurface({ polish })` and `WaterSurface.configurePolish(values)`):
+  six switchable shading tricks on top of any wave set (`lostVariance`,
+  `sunSize`, `fresnelDamp`, `antiTiling`, `gusts`, `body`), each compiled in
+  only when on; with every switch off the water is unchanged (same program
+  key, source and uniforms). New read-backs `WaterSurface.polish` and
+  `WaterSurface.polishUniforms`, and the module's TS twins.
+  - A malformed `polish` or an out-of-range `configurePolish` value throws a
+    `RangeError`. `lostVariance`, `antiTiling` and `gusts` also throw a
+    `RangeError` with a custom `slopeGlsl` that lacks the wave set's one
+    `void waterWave(...)` with one `slope += ...` statement.
 - **`SkyAtmosphere.cloudTransmittanceToward(point, viewer?)`**,
   `SkyAtmosphere.cloudUniforms`, `cloudNoiseSample`, and the column model
   module `cloud-column.js` (`cloudColumnDrawn`,
