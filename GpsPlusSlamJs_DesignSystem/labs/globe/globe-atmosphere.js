@@ -30,6 +30,7 @@ import {
 } from "/fw/visualization/atmosphere/atmosphere-model.js";
 
 import {
+  CHAPMAN_GLSL,
   GLOBE_ATMOSPHERE,
   atmosphereLook,
   ellipsoidToModel,
@@ -58,9 +59,17 @@ void main() {
  * that span, from both sides, so the thin dense layer at the limb is not
  * stepped over (for a ray to the ground t* is the ground end).
  *
- * `uThickness` k draws the shell k times thicker at the same optical depth:
- * a sample at altitude h reads the air at h / k and its step counts 1 / k,
- * so colours and the terminator stay physical and only the widths grow.
+ * `uThickness` k draws the shell k times thicker: a sample at altitude h
+ * reads the air at h / k and its step counts 1 / k, which keeps a
+ * VERTICAL ray's optical depth. A grazing ray's does not keep: through an
+ * exponential layer of scale height H it is about n0 H Ch(R / H, mu), with
+ * Chapman's function Ch(x, mu) about sqrt(pi x / 2) at mu = 0 and 1 / mu
+ * for a steep ray, so at the limb a k times thicker shell holds only
+ * 1 / sqrt(k) of it (review B2). Each ray's steps are therefore weighted
+ * by Ch(R / H, mu) / Ch(R / (k H), mu), mu being the ray's zenith cosine
+ * where it meets the ground, or 0 for a ray that passes the limb: 1 for
+ * k = 1 and for a steep ray, sqrt(k) at the limb, so the limb's colour
+ * does not change with k (DEC-GL4-11), only its width.
  */
 const FRAGMENT = /* glsl */ `
 ${ATMOSPHERE_COMMON_GLSL}
@@ -71,6 +80,9 @@ uniform vec3 uSun;
 uniform float uRadiance;
 uniform float uThickness;
 varying vec3 vDirection;
+
+// Chapman's grazing-incidence function (chapman in the frame module).
+${CHAPMAN_GLSL}
 
 void atmSpaceSample( vec3 p, float dt, float phaseR, float phaseM,
                      inout vec3 radiance, inout vec3 throughput ) {
@@ -85,7 +97,7 @@ void atmSpaceSample( vec3 p, float dt, float phaseR, float phaseM,
   vec3 single = ATM_RADIANCE_SCALE * sunT * ( rs * phaseR + vec3( ms * phaseM ) );
   vec3 source = single + multi * ( rs + vec3( ms ) );
   vec3 sigma = max( extinction, vec3( 1e-9 ) );
-  vec3 stepT = exp( -sigma * ( dt / uThickness ) );
+  vec3 stepT = exp( -sigma * dt );
   radiance += throughput * ( source - source * stepT ) / sigma;
   throughput *= stepT;
 }
@@ -107,6 +119,11 @@ void main() {
   float tEnd = hitsGround ? tGround : tExit;
   if ( tEnd <= tEnter ) discard;
   float tMid = clamp( -b, tEnter, tEnd );
+  // The grazing compensation (see above): the step weight 1 / k times
+  // Ch(R / H, mu) / Ch(R / (k H), mu), with the Rayleigh scale height.
+  float muRay = hitsGround ? max( 0.0, -dot( dir, normalize( o + dir * tGround ) ) ) : 0.0;
+  float xR = ATM_GROUND_RADIUS / ATM_RAYLEIGH_SCALE_HEIGHT;
+  float weight = atmChapman( xR, muRay ) / atmChapman( xR / uThickness, muRay ) / uThickness;
   float cosTheta = dot( dir, uSun );
   float phaseR = atmRayleighPhase( cosTheta );
   float phaseM = atmMiePhase( cosTheta );
@@ -120,7 +137,7 @@ void main() {
     float u1 = 1.0 - float( k + 1 ) / float( NEAR );
     float um = 1.0 - ( float( k ) + 0.5 ) / float( NEAR );
     atmSpaceSample( o + dir * ( tMid - um * um * lenA ),
-                    ( u0 * u0 - u1 * u1 ) * lenA, phaseR, phaseM, radiance, throughput );
+                    ( u0 * u0 - u1 * u1 ) * lenA * weight, phaseR, phaseM, radiance, throughput );
   }
   float lenB = tEnd - tMid;
   for ( int k = 0; k < FAR; k++ ) {
@@ -128,7 +145,7 @@ void main() {
     float u1 = float( k + 1 ) / float( FAR );
     float um = ( float( k ) + 0.5 ) / float( FAR );
     atmSpaceSample( o + dir * ( tMid + um * um * lenB ),
-                    ( u1 * u1 - u0 * u0 ) * lenB, phaseR, phaseM, radiance, throughput );
+                    ( u1 * u1 - u0 * u0 ) * lenB * weight, phaseR, phaseM, radiance, throughput );
   }
   // The in-scattered light, and the share of the ground behind it that
   // comes through: one grey value, the mean over R, G, B (a per-channel

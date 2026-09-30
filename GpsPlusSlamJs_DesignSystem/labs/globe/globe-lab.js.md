@@ -109,8 +109,8 @@
   `atmoSteps` (samples per ray, 2-64, default 12, or 8 on a coarse
   pointer: `defaultAtmosphereSteps`), `atmoStrength` (a
   scale on its light, 0-4, 1 = as computed), `atmoThickness` (the shell
-  drawn 1-10 times thicker than the real air at the same optical depth,
-  default 6: as wide as the owner's reference, 1 = physical).
+  drawn 1-10 times thicker than the real air, each ray keeping the real
+  optical depth so only the width changes, default 6: as wide as the owner's reference, 1 = physical).
   `state().atmosphere` is `{ on, supported, steps, strength, thickness }`
   (`supported` false where float render targets are missing: no pass).
   Every smoke that measures pixels on the look before round 4 pins

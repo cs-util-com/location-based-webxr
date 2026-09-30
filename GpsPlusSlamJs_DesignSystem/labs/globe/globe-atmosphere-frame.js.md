@@ -14,6 +14,12 @@
     the primary pointer is coarse (a touch screen), `steps` (12) otherwise
     (review B5: the march cost x3.9 against x4.6 at the phone tier's pixel
     ratio 2, with no ring measured from 6 samples up).
+  - `chapman(x, mu)`, `grazingCompensation(k, mu, x)`, `CHAPMAN_GLSL` -
+    Chapman's grazing function (1 / (mu + 1 / sqrt(pi x / 2))) and the
+    factor a ray's steps need in a k times thicker shell to keep the real
+    air's optical depth (review B2): sqrt(k) at the limb, 1 at k = 1, at
+    most 1.06 straight down and 1.12 at 60 degrees for k up to 10; the
+    GLSL twin is what the pass's march includes.
   - `atmosphereLook(input)` - `{ steps, strength, thickness }`, each from
     `input` or the default, the steps rounded; RangeError outside steps
     2-64, strength 0-4, thickness 1-10 or for a non-finite value.
@@ -35,6 +41,7 @@
   const look = atmosphereLook({ steps: 12 }); // { steps: 12, strength: 1, thickness: 6 }
   ```
 
-- Tests: `globe-atmosphere-frame.test.mjs` (every point of the ellipsoid
+- Tests: `globe-atmosphere-frame.test.mjs` (the compensation: 1 at k = 1,
+  sqrt(k) at the limb, near 1 for a steep ray, monotonic; every point of the ellipsoid
   on the ground sphere; altitudes kept within 0.4 %; refusals; the look's
   defaults, rounding and ranges).

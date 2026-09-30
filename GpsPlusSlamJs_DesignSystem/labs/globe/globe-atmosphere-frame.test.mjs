@@ -19,6 +19,7 @@ import {
   atmosphereLook,
   defaultAtmosphereSteps,
   ellipsoidToModel,
+  grazingCompensation,
 } from "./globe-atmosphere-frame.js";
 
 const WGS84 = [6378137, 6378137, 6356752.314245];
@@ -80,6 +81,55 @@ describe("defaultAtmosphereSteps", () => {
     assert.equal(defaultAtmosphereSteps(true), GLOBE_ATMOSPHERE.coarseSteps);
     assert.ok(GLOBE_ATMOSPHERE.coarseSteps < GLOBE_ATMOSPHERE.steps);
     assert.ok(GLOBE_ATMOSPHERE.coarseSteps >= 6, "banding measured from 6 up");
+  });
+});
+
+// Why (review B2, DEC-GL4-11): reading the air at h / k with steps
+// weighted 1 / k keeps a VERTICAL ray's optical depth, but a grazing ray
+// through a k times thicker shell holds only 1 / sqrt(k) of it, so the
+// limb and the halo would turn thinner and bluer as the slider widens
+// them (measured: the halo's chromaticity moved 0.09-0.11 between k = 1,
+// 6 and 10). The compensation multiplies a ray's steps by the ratio of
+// Chapman's grazing function at the two scale heights: sqrt(k) at the
+// limb, 1 for a steep ray and for k = 1, so only the width changes.
+describe("grazingCompensation", () => {
+  const X = 6360 / 8; // the ground radius over the Rayleigh scale height
+
+  it("is exactly 1 at the physical thickness, for every ray", () => {
+    for (const mu of [0, 0.01, 0.1, 0.5, 1]) {
+      assert.equal(grazingCompensation(1, mu, X), 1);
+    }
+  });
+
+  it("is sqrt(k) for a ray that grazes the limb", () => {
+    for (const k of [2, 6, 10]) {
+      const f = grazingCompensation(k, 0, X);
+      assert.ok(Math.abs(f - Math.sqrt(k)) < 1e-9, `k ${k}: ${f}`);
+    }
+  });
+
+  // The bounds are Chapman's own numbers for a shell up to 10 times
+  // thicker: 1.01-1.06 straight down, 1.02-1.12 at 60 degrees from the
+  // zenith (a thicker shell's curvature still shortens a slanted path).
+  it("stays near 1 for a steep ray: under 1.06 straight down, 1.12 at 60 degrees", () => {
+    for (const k of [2, 6, 10]) {
+      for (const [mu, bound] of [
+        [1, 1.06],
+        [0.5, 1.12],
+      ]) {
+        const f = grazingCompensation(k, mu, X);
+        assert.ok(f >= 1 && f < bound, `k ${k}, mu ${mu}: ${f}`);
+      }
+    }
+  });
+
+  it("falls monotonically from the limb to a steep ray", () => {
+    let previous = Infinity;
+    for (let mu = 0; mu <= 1; mu += 0.01) {
+      const f = grazingCompensation(6, mu, X);
+      assert.ok(f <= previous + 1e-12, `mu ${mu}: ${f} after ${previous}`);
+      previous = f;
+    }
   });
 });
 

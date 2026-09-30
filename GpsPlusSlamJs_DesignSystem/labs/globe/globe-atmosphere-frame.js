@@ -19,8 +19,9 @@
  * - `strength`: a scale on the physical light (0-4), 1 = as computed for
  *   the scene's sun.
  * - `thickness`: how many times thicker than the real air the shell is
- *   drawn (1-10), at the SAME optical depth, so the colours stay physical
- *   and only the band and the halo widen. 1 = the real 100 km. 6 by
+ *   drawn (1-10), its steps weighted so a ray keeps the real air's
+ *   optical depth (`grazingCompensation`), so the colours stay and only
+ *   the band and the halo widen. 1 = the real 100 km. 6 by
  *   default (owner decision DEC-GL4-11: as wide as the reference image,
  *   the slider back down to physical): a 600 km shell, about the depth of
  *   the reference's bright inner band (10 % of the radius); the halo then
@@ -69,6 +70,32 @@ export function atmosphereLook(input) {
   }
   return look;
 }
+
+/**
+ * Chapman's grazing-incidence function in its common approximation,
+ * 1 / (mu + 1 / sqrt(pi x / 2)): the optical depth of a ray through an
+ * exponential layer, in units of the layer's vertical depth, for x = the
+ * radius over the scale height and mu the ray's zenith cosine where it
+ * is lowest (0 at the limb). Exact at mu = 0 (sqrt(pi x / 2)), 1 / mu for
+ * a steep ray.
+ */
+export const chapman = (x, mu) =>
+  1 / (Math.max(mu, 0) + 1 / Math.sqrt((Math.PI * x) / 2));
+
+/**
+ * How much more optical depth a ray needs in a shell drawn k times thicker
+ * (scale height k H, density 1 / k) to match the real air's (review B2):
+ * Ch(x, mu) / Ch(x / k, mu), with x = R / H. sqrt(k) at the limb, 1 at
+ * k = 1, towards 1 for a steep ray.
+ */
+export const grazingCompensation = (k, mu, x) =>
+  chapman(x, mu) / chapman(x / k, mu);
+
+/** The GLSL twin of `chapman` (the pass's march includes it). */
+export const CHAPMAN_GLSL = /* glsl */ `
+float atmChapman( float x, float mu ) {
+  return 1.0 / ( max( mu, 0.0 ) + inversesqrt( 0.5 * 3.141592653589793 * x ) );
+}`;
 
 /**
  * Per-axis factors from ECEF metres to the model's frame in km, in which

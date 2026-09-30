@@ -34,10 +34,18 @@
     the thickness. Rays stay straight under the affine map, so the top and
     the ground are hit analytically; a ray that misses the top is discarded
     at once (space costs almost nothing).
-  - Thickness k: the shell is drawn k times thicker at the SAME optical
-    depth (a sample at altitude h reads the air at h / k and its step
-    counts 1 / k), so the colours and the terminator do not change with
-    it; only the band and the halo widen (DEC-GL4-11).
+  - Thickness k: the shell is drawn k times thicker (a sample at altitude
+    h reads the air at h / k and its step counts 1 / k). That keeps a
+    VERTICAL ray's optical depth but NOT a grazing ray's, which through a
+    k times thicker layer holds only 1 / sqrt(k) of it (review B2; an
+    earlier version of this file claimed the colours could not change,
+    and measured, the halo's chromaticity moved 0.09-0.11 between k = 1,
+    6 and 10). So each ray's steps are also weighted by
+    `grazingCompensation` (`globe-atmosphere-frame.js`): Chapman's
+    function at the two scale heights, sqrt(k) at the limb, 1 at k = 1
+    and within 6-12 % of 1 for a steep ray, taken at the ray's lowest
+    point (its ground hit, or the limb). Its effect on the colour is
+    measured in the rim spec across k = 1, 6, 10.
   - The march: `steps` samples between where the ray enters the air and
     where it leaves it or meets the ground, packed quadratically towards
     the ray's point nearest the centre from both sides (at the limb the
@@ -51,13 +59,31 @@
     Earth) and sRGB-encoded before it is added over the already encoded
     Earth: an approximation (exact would be one HDR target for both),
     accepted for a look judged by eye; it is exact over black space and
-    dark sea.
+    dark sea. So the SCATTERING is physical, the final pixel is not
+    (review B4): the air's light is composited in display space, which
+    overstates it over bright land and clouds, and the ground is dimmed
+    by one grey transmittance, not per channel.
   - Light: the tables hold radiance for a sun of 1000 (the framework's
     radiance scale); the pass multiplies by the sun's intensity / 1000 and
     the strength.
   - The camera ray comes from the view's inverse projection and one 3x3
     (camera rotation, world to ECEF, ECEF to the model's axes); the camera
     position is converted to km on the CPU in double precision.
+  - The terminator's crossing (review B3, measured 2026-09-30 at
+    thickness 6, 17.7 km a pixel): where the terminator meets the edge
+    the limb turns a dim violet (27/16/45 just inside, 46/35/56 just
+    outside), about 5 degrees of the edge wide, and 0-2 levels from 5
+    degrees into the night. It is the twilight the tables describe: the
+    grazing sun reddened by the air, scattered by blue-favouring
+    Rayleigh. ACCEPTED and documented rather than tuned away (a spot, not
+    a line along the night limb; no rim on the night side beyond it);
+    the owner judges it by eye.
+  - Cost (SwiftShader, frame time on / off, relative only; the phone's
+    GPU is not measured): desktop x4.0 at 12 samples (x2.6 at 6, x6.6 at
+    24); phone 412x915 at pixel ratio 1 / 1.5 / 2 x3.4 / x4.2 / x4.6 at 12
+    and x2.8 / x3.4 / x3.9 at 8, hence 8 samples on a coarse pointer
+    (review B5). With tiles loading at 30,15 the rim took the frame
+    from 337 to 733 ms.
   - No context-loss handling: after a restored WebGL context the tables
     are not rebuilt (the lab has none either).
 - Examples:
