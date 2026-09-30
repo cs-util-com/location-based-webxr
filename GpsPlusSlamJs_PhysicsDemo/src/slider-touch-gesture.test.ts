@@ -5,11 +5,13 @@
  * A native range input inside a panel the user swipes past is a touch trap —
  * on a phone the value follows the finger during a scroll (recorder field
  * feedback 2026-07-27, same bug class here). The fix has two halves: the
- * framework's `guardSliderAgainstScroll` (fully tested there, wired in
- * `main.ts`) and this `touch-action: pan-y` rule, which is what lets the page
- * scroll instead of the slider swallowing the gesture. Losing the rule brings
- * back the "cannot scroll past the panel" half of the bug silently, so it is
- * pinned here against the production HTML.
+ * framework's page-wide slider guard, `guardSlidersIn(document)` (fully
+ * tested there, installed once in `main.ts` since 2026-09-30), and this
+ * `touch-action: pan-y` rule, which lets the page scroll instead of the slider
+ * taking the gesture. Chromium already gives a horizontal slider `pan-y`
+ * itself (measured in headless Chromium 2026-09-30), so the rule is belt and
+ * braces for other engines; it is pinned here against the production HTML so
+ * it cannot be lost silently.
  */
 
 import { describe, it, expect } from "vitest";
