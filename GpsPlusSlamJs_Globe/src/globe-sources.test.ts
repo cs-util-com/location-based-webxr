@@ -108,18 +108,20 @@ function filesUnder(dir: string): { path: string; bytes: number }[] {
 }
 
 /**
- * The committed assets' budget (round-2 plan 2026-09-26-2055 M3c, owner
- * decision DEC-FB2-4: the z4 level, about 4 MB in all): 4.5 MB, decimal,
- * as the owner stated it. Every page load of the globe may fetch from here
- * and the deploy copies it whole, so growth past it is a decision, not a
+ * The committed assets' budget: 10 MB, decimal, as the owner stated it
+ * (round-4 plan 2026-09-28-2105 DEC-GL4-9, 2026-09-28: level 5 of the
+ * imagery committed as WebP; measured 8.99 MB with levels 0-5 at WebP
+ * quality 75, DEC-GL4-3/10). It was 4.5 MB (round-2 plan 2026-09-26-2055
+ * M3c, DEC-FB2-4: the z4 level). Every page load of the globe may fetch
+ * from here and the deploy copies it whole, so growth past it is a decision, not a
  * side effect of a re-fetch. It measures the WORKING TREE's assets folder,
  * not what is committed: an untracked file there counts, which errs on the
  * side of the budget.
  */
-const ASSETS_BUDGET_BYTES = 4_500_000;
+const ASSETS_BUDGET_BYTES = 10_000_000;
 
 describe("the committed assets' total size", () => {
-  it("includes the level-4 pyramid (DEC-FB2-4) and stays within 4.5 MB", () => {
+  it("includes the level-4 pyramid (DEC-FB2-4) and stays within 10 MB (DEC-GL4-9)", () => {
     expect(globeSource("blue-marble").levels).toBe(5);
     const files = filesUnder(ASSETS);
     const total = files.reduce((sum, f) => sum + f.bytes, 0);

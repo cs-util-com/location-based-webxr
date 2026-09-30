@@ -32,7 +32,8 @@
   Measured 2026-09-26: 173 files, 1.94
   MiB (levels 0-3); 2026-09-27 with level 4: 685 files, 4,451,405 bytes
   (level 4 alone 512 files, 2.42 MB, above the plan's 1.9 MiB estimate from
-  48 sampled tiles). `globe-sources.test.ts` holds the total under 4.5 MB. GIBS's WMS reports no
+  48 sampled tiles). `globe-sources.test.ts` holds the total under 10 MB (4.5 MB until
+  round-4 DEC-GL4-9). GIBS's WMS reports no
   `layer-time-actual`, so the Blue Marble month is recorded as not reported.
 - Tests: the pieces it imports are unit-tested (`image-header.ts`,
   `tile-pyramid.ts`, `provenance-date.ts`); `globe-sources.test.ts` checks what it committed.
