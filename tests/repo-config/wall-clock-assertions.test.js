@@ -92,6 +92,10 @@ const ALLOWLIST = new Map([
     'Opt-in sweep (QR_SWEEP=1, skipped in every gate). The empty-frame decode time is measured and printed only; the numeric assertions are on row counts.',
   ],
   [
+    'GpsPlusSlamJs_TourViewer/src/viewer-vote-strength.test.ts',
+    'Opt-in sweeps (VOTE_STRENGTH_SWEEP, skipped in every gate). Each arm run time is measured and printed only, as a cost column; the numeric assertions are on alignment error in metres and degrees.',
+  ],
+  [
     'GpsPlusSlamJs_OsmDemo/src/refresh-cycle.test.ts',
     'Lower bound on a duration the test deliberately burned (spin to now()+20 ms). Load can only make the measured value larger, so the assertion cannot flake.',
   ],
