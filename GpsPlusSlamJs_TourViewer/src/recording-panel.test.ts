@@ -18,10 +18,13 @@ import {
   type RecordingStatus,
 } from "./authoring-recording.js";
 import {
+  ANOTHER_SAVE_RUNNING,
+  createSaveGuard,
   SAVE_RECORDING_BUSY_LABEL,
   SAVE_RECORDING_LABEL,
   wireRecordingPanel,
   type RecordingPanelDom,
+  type SaveGuard,
 } from "./recording-panel.js";
 
 function el() {
@@ -101,8 +104,10 @@ function harness(
       route: "share" | "download";
       delivered: boolean;
     }>;
+    saveGuard?: SaveGuard;
   } = {},
 ) {
+  const saveGuard = options.saveGuard ?? createSaveGuard();
   const dom = {
     optIn: el(),
     marker: el(),
@@ -124,8 +129,9 @@ function harness(
     arHasRun: options.arHasRun ?? (() => false),
     estimateStorage: options.estimateStorage ?? (() => Promise.resolve(ROOMY)),
     now: () => AT,
+    saveGuard,
   });
-  return { dom, recording, handOff, panel };
+  return { dom, recording, handOff, panel, saveGuard };
 }
 
 describe("the opt-in and the marker", () => {
@@ -425,5 +431,46 @@ describe("Save the recording", () => {
     h.dom.saveButton.click();
 
     expect(save).toHaveBeenCalledTimes(1);
+  });
+
+  it("shares one in-progress guard with the offer: while another save runs, a tap starts nothing and says why (M1b review #9)", async () => {
+    // Why: "Save the recording" and the offer's "Save it" each build a zip
+    // of up to a gigabyte and open a share sheet, and write one status
+    // line. With a busy flag each, both could run at once.
+    const saveGuard = createSaveGuard();
+    const save = vi.fn(() => Promise.resolve(SAVED));
+    const h = harness({ save, saveGuard });
+    h.dom.optIn.checked = true;
+    h.panel.beginOnArEntry();
+
+    expect(saveGuard.tryStart()).toBe(true); // the offer's save runs
+    h.panel.render();
+    expect(h.dom.saveButton.disabled).toBe(true);
+    h.dom.saveButton.click();
+    expect(save).not.toHaveBeenCalled();
+    expect(h.dom.status.textContent).toBe(ANOTHER_SAVE_RUNNING);
+
+    saveGuard.finish();
+    h.panel.render();
+    expect(h.dom.saveButton.disabled).toBe(false);
+    h.dom.saveButton.click();
+    // Its own save holds the guard until it settles.
+    expect(saveGuard.active()).toBe(true);
+    await settle();
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(saveGuard.active()).toBe(false);
+  });
+
+  it("a failed save gives the guard back", async () => {
+    const saveGuard = createSaveGuard();
+    const h = harness({
+      save: () => Promise.reject(new Error("disk full")),
+      saveGuard,
+    });
+    h.dom.optIn.checked = true;
+    h.panel.beginOnArEntry();
+    h.dom.saveButton.click();
+    await settle();
+    expect(saveGuard.active()).toBe(false);
   });
 });

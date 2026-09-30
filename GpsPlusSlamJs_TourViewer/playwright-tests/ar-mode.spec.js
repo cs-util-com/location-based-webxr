@@ -2616,6 +2616,16 @@ test("a recording whose tab was killed is offered on the next open, saved from i
   await expect(page.getByTestId("recording-offer-text")).toContainText(
     /^The recording from .+ was not saved\. Save it or delete it\?$/,
   );
+  // Two taps (M1b review #4): the first prepares the zip, the second hands
+  // it over on a fresh user activation.
+  await page.getByTestId("recording-offer-save").click();
+  await expect(page.getByTestId("recording-offer-save")).toHaveText(
+    /^(Share|Download) it$/,
+    { timeout: 15000 },
+  );
+  await expect(page.getByTestId("recording-status")).toHaveText(
+    /^Ready: tour-recording-.+\.zip\. Tap (Share|Download) it to save it\.$/,
+  );
   await page.getByTestId("recording-offer-save").click();
   await expect(page.getByTestId("recording-status")).toHaveText(
     /^Saved as tour-recording-.+\.zip\.$/,

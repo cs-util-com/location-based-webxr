@@ -51,7 +51,7 @@ import {
   VIEWING_CONTEXT_TAG,
 } from "./recording-folders.js";
 import { wireRecordingOffer } from "./recording-offer.js";
-import { wireRecordingPanel } from "./recording-panel.js";
+import { createSaveGuard, wireRecordingPanel } from "./recording-panel.js";
 import { getSeams } from "./seams.js";
 import {
   createTourViewerSession,
@@ -328,7 +328,9 @@ hooks.presentNoTour = () => {
 hooks.presentDraftForTour = setup.presentDraftForTour;
 
 // The recording's controls: a creator's, and a `?debug=1` visitor's (M1b);
-// wired before the AR entry that asks them at each entry.
+// wired before the AR entry that asks them at each entry. One save at a
+// time across the block: "Save the recording" and the offer share a guard.
+const recordingSaveGuard = createSaveGuard();
 const recordingPanel = recordingControls
   ? wireRecordingPanel({
       recording,
@@ -358,6 +360,7 @@ const recordingPanel = recordingControls
       estimateStorage: () =>
         navigator.storage?.estimate?.() ?? Promise.resolve(undefined),
       now: () => new Date(),
+      saveGuard: recordingSaveGuard,
     })
   : null;
 if (recordingPanel !== null) {
@@ -410,7 +413,9 @@ function wireRecordingHousekeeping(): void {
     },
     // Through the seam like every other zip, so the e2e fake captures it.
     handOff: (blob, filename) => seams.shareOrDownloadZip(blob, filename),
+    canShare: () => seams.canShareZip(),
     now: () => new Date(),
+    saveGuard: recordingSaveGuard,
     describeTime: (ms) =>
       new Date(ms).toLocaleString(undefined, {
         dateStyle: "medium",

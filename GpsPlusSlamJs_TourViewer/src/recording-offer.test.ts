@@ -9,16 +9,25 @@
  * folder on "Not now", save it through the same hand-off (and saved mark)
  * as "Save the recording", delete it only on "Delete it", and show each
  * async step's busy and final state (the async-UI rule), a failure
- * included.
+ * included. The save is TWO taps (M1b review #4): preparing parses every
+ * action of a recording that may be an hour long, and a share sheet opened
+ * after that has lost the tap's user activation - so the hand-off gets a
+ * fresh tap of its own.
  */
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  RECORDING_OFFER_PREPARE_BUSY_LABEL,
   RECORDING_OFFER_SAVE_BUSY_LABEL,
   RECORDING_OFFER_SAVE_LABEL,
   wireRecordingOffer,
   type RecordingOfferDom,
 } from "./recording-offer.js";
+import {
+  ANOTHER_SAVE_RUNNING,
+  createSaveGuard,
+  type SaveGuard,
+} from "./recording-panel.js";
 
 function el() {
   const handlers = new Map<string, () => void>();
@@ -54,16 +63,23 @@ const SECOND = {
   startedAtMs: T0 + 3_600_000,
 };
 
+interface Packed {
+  blob: Blob;
+  filename: string;
+  metadataError?: string;
+  markSaved: (atMs: number) => Promise<boolean>;
+}
+
 function harness(
   options: {
-    pack?: (name: string) => Promise<{
-      blob: Blob;
-      filename: string;
-      metadataError?: string;
-      markSaved: (atMs: number) => Promise<boolean>;
-    }>;
+    pack?: (name: string) => Promise<Packed>;
     discard?: (name: string) => Promise<void>;
-    delivered?: boolean;
+    handOff?: () => Promise<{
+      route: "share" | "download";
+      delivered: boolean;
+    }>;
+    canShare?: boolean;
+    saveGuard?: SaveGuard;
   } = {},
 ) {
   const dom = {
@@ -86,23 +102,30 @@ function harness(
         })),
   );
   const discard = vi.fn(options.discard ?? (() => Promise.resolve()));
-  const handOff = vi.fn(() =>
-    Promise.resolve({
-      route: "download" as const,
-      delivered: options.delivered ?? true,
-    }),
+  const handOff = vi.fn(
+    options.handOff ??
+      (() => Promise.resolve({ route: "download" as const, delivered: true })),
   );
   const reveal = vi.fn();
+  const saveGuard = options.saveGuard ?? createSaveGuard();
   const offer = wireRecordingOffer({
     dom: dom as unknown as RecordingOfferDom,
     pack,
     discard,
     handOff,
+    canShare: () => options.canShare ?? false,
     now: () => NOW,
     describeTime: (ms) => `T+${String((ms - T0) / 3_600_000)}h`,
     reveal,
+    saveGuard,
   });
-  return { dom, offer, pack, discard, handOff, markSaved, reveal };
+  return { dom, offer, pack, discard, handOff, markSaved, reveal, saveGuard };
+}
+
+/** Tap "Save it" and let the preparation finish. */
+async function prepare(h: ReturnType<typeof harness>): Promise<void> {
+  h.dom.saveButton.click();
+  await settle();
 }
 
 describe("the unsaved-recording offer", () => {
@@ -127,19 +150,16 @@ describe("the unsaved-recording offer", () => {
     expect(h.discard).not.toHaveBeenCalled();
   });
 
-  it("Save it: busy while packing and handing over, then the saved name, the folder marked, and the next recording offered", async () => {
-    const pending = deferred<{
-      blob: Blob;
-      filename: string;
-      markSaved: (atMs: number) => Promise<boolean>;
-    }>();
-    const markSaved = vi.fn(() => Promise.resolve(true));
+  it("Save it, step 1: busy while the zip is prepared, then ready with a Download button - and nothing handed over yet", async () => {
+    const pending = deferred<Packed>();
     const h = harness({ pack: () => pending.promise });
     h.offer.present([FIRST, SECOND]);
     expect(h.dom.text.textContent).toContain("(1 of 2)");
 
     h.dom.saveButton.click();
-    expect(h.dom.saveButton.textContent).toBe(RECORDING_OFFER_SAVE_BUSY_LABEL);
+    expect(h.dom.saveButton.textContent).toBe(
+      RECORDING_OFFER_PREPARE_BUSY_LABEL,
+    );
     expect(h.dom.saveButton.disabled).toBe(true);
     expect(h.dom.dismissButton.disabled).toBe(true);
     expect(h.dom.discardButton.disabled).toBe(true);
@@ -147,48 +167,106 @@ describe("the unsaved-recording offer", () => {
     pending.resolve({
       blob: new Blob(["zip"]),
       filename: "tour-recording-2026-09-28_10-00-00utc.zip",
-      markSaved,
+      markSaved: h.markSaved,
     });
     await settle();
 
+    // The hand-off needs a fresh tap: a share sheet opened now, long after
+    // the first tap, would have lost its user activation.
+    expect(h.handOff).not.toHaveBeenCalled();
+    expect(h.dom.saveButton.textContent).toBe("Download it");
+    expect(h.dom.saveButton.disabled).toBe(false);
+    expect(h.dom.status.textContent).toBe(
+      "Ready: tour-recording-2026-09-28_10-00-00utc.zip. Tap Download it to save it.",
+    );
+    expect(h.dom.text.textContent).toContain("T+0h");
+  });
+
+  it("the ready button says Share it where the page shares files", async () => {
+    const h = harness({ canShare: true });
+    h.offer.present([FIRST]);
+    await prepare(h);
+    expect(h.dom.saveButton.textContent).toBe("Share it");
+  });
+
+  it("Save it, step 2: busy while handing over, then the saved name, the folder marked, and the next recording offered", async () => {
+    const pending = deferred<{ route: "download"; delivered: boolean }>();
+    const h = harness({ handOff: () => pending.promise });
+    h.offer.present([FIRST, SECOND]);
+    await prepare(h);
+
+    h.dom.saveButton.click();
+    expect(h.dom.saveButton.textContent).toBe(RECORDING_OFFER_SAVE_BUSY_LABEL);
+    expect(h.dom.saveButton.disabled).toBe(true);
+    expect(h.dom.discardButton.disabled).toBe(true);
+    pending.resolve({ route: "download", delivered: true });
+    await settle();
+
+    expect(h.pack).toHaveBeenCalledTimes(1);
     expect(h.dom.status.textContent).toBe(
       "Saved as tour-recording-2026-09-28_10-00-00utc.zip.",
     );
-    expect(markSaved).toHaveBeenCalledWith(NOW.getTime());
+    expect(h.markSaved).toHaveBeenCalledWith(NOW.getTime());
+    // The next one takes its place, back at step 1.
     expect(h.dom.saveButton.textContent).toBe(RECORDING_OFFER_SAVE_LABEL);
     expect(h.dom.saveButton.disabled).toBe(false);
-    // The next one takes its place.
     expect(h.dom.offer.hidden).toBe(false);
     expect(h.dom.text.textContent).toBe(
       "The recording from T+1h was not saved. Save it or delete it? (2 of 2)",
     );
   });
 
-  it("a hand-off that delivered nothing keeps the offer up and says so", async () => {
-    const h = harness({ delivered: false });
+  it("a hand-off that delivered nothing keeps the prepared zip for another tap, without preparing it again", async () => {
+    const h = harness({
+      handOff: () => Promise.resolve({ route: "share", delivered: false }),
+      canShare: true,
+    });
     h.offer.present([FIRST]);
+    await prepare(h);
     h.dom.saveButton.click();
     await settle();
     expect(h.dom.status.textContent).toBe(
-      `Nothing was saved - tap ${RECORDING_OFFER_SAVE_LABEL} again.`,
+      "Nothing was saved - tap Share it again.",
     );
     expect(h.markSaved).not.toHaveBeenCalled();
     expect(h.dom.offer.hidden).toBe(false);
-    expect(h.dom.text.textContent).toContain("T+0h");
+    expect(h.dom.saveButton.textContent).toBe("Share it");
+
+    h.dom.saveButton.click();
+    await settle();
+    expect(h.pack).toHaveBeenCalledTimes(1);
+    expect(h.handOff).toHaveBeenCalledTimes(2);
   });
 
-  it("a failed save surfaces its reason and the offer stays", async () => {
+  it("a failed preparation surfaces its reason and the offer stays at step 1", async () => {
     const h = harness({
       pack: () => Promise.reject(new Error("the folder is gone")),
     });
     h.offer.present([FIRST]);
-    h.dom.saveButton.click();
-    await settle();
+    await prepare(h);
     expect(h.dom.status.textContent).toBe(
-      "Could not save the recording: the folder is gone",
+      "Could not prepare the recording: the folder is gone",
     );
     expect(h.dom.offer.hidden).toBe(false);
     expect(h.dom.saveButton.disabled).toBe(false);
+    expect(h.dom.saveButton.textContent).toBe(RECORDING_OFFER_SAVE_LABEL);
+    expect(h.handOff).not.toHaveBeenCalled();
+  });
+
+  it("a failed hand-off surfaces its reason and keeps the prepared zip", async () => {
+    const h = harness({
+      handOff: () => Promise.reject(new Error("no save picker")),
+    });
+    h.offer.present([FIRST]);
+    await prepare(h);
+    h.dom.saveButton.click();
+    await settle();
+    expect(h.dom.status.textContent).toBe(
+      "Could not save the recording: no save picker",
+    );
+    expect(h.dom.saveButton.textContent).toBe("Download it");
+    expect(h.dom.saveButton.disabled).toBe(false);
+    expect(h.dom.offer.hidden).toBe(false);
   });
 
   it("Not now hides the offer and deletes nothing: it comes back on the next open", () => {
@@ -200,10 +278,11 @@ describe("the unsaved-recording offer", () => {
     expect(h.pack).not.toHaveBeenCalled();
   });
 
-  it("Delete it: busy while deleting, then says what went, and offers the next", async () => {
+  it("Delete it: busy while deleting, then says what went, and offers the next at step 1", async () => {
     const pending = deferred<undefined>();
     const h = harness({ discard: () => pending.promise });
     h.offer.present([FIRST, SECOND]);
+    await prepare(h);
     h.dom.discardButton.click();
     expect(h.dom.discardButton.textContent).toBe("Deleting…");
     expect(h.dom.saveButton.disabled).toBe(true);
@@ -214,6 +293,8 @@ describe("the unsaved-recording offer", () => {
     expect(h.dom.status.textContent).toBe("Deleted the recording from T+0h.");
     expect(h.dom.discardButton.textContent).toBe("Delete it");
     expect(h.dom.text.textContent).toContain("T+1h");
+    // The first recording's prepared zip does not carry over.
+    expect(h.dom.saveButton.textContent).toBe(RECORDING_OFFER_SAVE_LABEL);
 
     h.dom.discardButton.click();
     await settle();
@@ -243,5 +324,29 @@ describe("the unsaved-recording offer", () => {
     h.dom.discardButton.click();
     expect(h.pack).toHaveBeenCalledTimes(1);
     expect(h.discard).not.toHaveBeenCalled();
+  });
+
+  it("shares one in-progress guard with Save the recording: while that runs, Save it starts nothing and says why (M1b review #9)", async () => {
+    const saveGuard = createSaveGuard();
+    const h = harness({ saveGuard });
+    h.offer.present([FIRST]);
+
+    expect(saveGuard.tryStart()).toBe(true); // "Save the recording" runs
+    h.dom.saveButton.click();
+    expect(h.pack).not.toHaveBeenCalled();
+    expect(h.dom.status.textContent).toBe(ANOTHER_SAVE_RUNNING);
+
+    saveGuard.finish();
+    h.dom.saveButton.click();
+    // Held while preparing, given back once ready.
+    expect(saveGuard.active()).toBe(true);
+    await settle();
+    expect(saveGuard.active()).toBe(false);
+
+    expect(saveGuard.tryStart()).toBe(true);
+    h.dom.saveButton.click(); // the hand-off step is guarded too
+    expect(h.handOff).not.toHaveBeenCalled();
+    expect(h.dom.status.textContent).toBe(ANOTHER_SAVE_RUNNING);
+    saveGuard.finish();
   });
 });

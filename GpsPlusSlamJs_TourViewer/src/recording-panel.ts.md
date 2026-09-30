@@ -12,7 +12,7 @@ beside the switch, and "Save the recording". Plan:
 ## Public API
 
 - `wireRecordingPanel({ recording, dom, save, handOff, sessionLive, arHasRun,
-estimateStorage, now }): RecordingPanel`
+estimateStorage, now, saveGuard }): RecordingPanel`
   - `dom`: `optIn` (the switch's checkbox), `marker`, `saveButton`, `status`,
     `notice` (the line beside the switch).
   - `save`: the recording's `save`, bound to the store's flush; resolves
@@ -39,7 +39,11 @@ estimateStorage, now }): RecordingPanel`
   (module-private) - "Saved as ...", "Shared as ...", the same with ", but
   without its session.json (reason) - the Recorder may replay it
   misaligned.", or "Nothing was saved - tap <retryLabel> again.".
-- `SAVE_RECORDING_LABEL`, `SAVE_RECORDING_BUSY_LABEL`.
+- `createSaveGuard(): SaveGuard { tryStart(), finish(), active() }` - the
+  recording block's one-save-at-a-time guard (M1b review #9). The page makes
+  one and hands it to this panel (`saveGuard` dep) and to the orphan offer.
+- `SAVE_RECORDING_LABEL`, `SAVE_RECORDING_BUSY_LABEL`, `ANOTHER_SAVE_RUNNING`
+  (the line a save tap gets while another save runs).
 
 ## Invariants & assumptions
 
@@ -66,7 +70,13 @@ estimateStorage, now }): RecordingPanel`
 - **Async-UI rule.** Busy label and disabled while the zip is built and handed
   over; then the durable outcome (the file's name, or that nothing was saved);
   a failure surfaces its reason and the button comes back. A tap while busy
-  starts nothing. A zip saved without its `session.json` says so, because the
+  starts nothing.
+- **One save at a time across the block** (M1b review #9). "Save the
+  recording" and the offer's two steps share one guard: each builds or hands
+  over a zip of up to a gigabyte and writes the block's one status line. The
+  button is disabled while the guard is taken (at the next render), and a
+  tap that still reaches it starts nothing and says "Another recording is
+  being saved - wait for it to finish." A zip saved without its `session.json` says so, because the
   Recorder then takes it for an old recording and migrates its coordinates.
 - **Privacy.** The static line beside the switch (`index.html`) says the
   recording holds the tour link and the GPS track.
@@ -98,6 +108,7 @@ const panel = wireRecordingPanel({
   arHasRun, // has one run on this page (ended, or live now)?
   estimateStorage: () => navigator.storage.estimate(),
   now: () => new Date(),
+  saveGuard, // createSaveGuard(), shared with the orphan offer
 });
 ```
 
@@ -115,6 +126,8 @@ room or without an estimate, cleared by an untick); the busy then saved
 state, the share wording, the nothing-saved wording, the missing-session.json
 wording, a failure with its reason, and no second save while busy; the saved
 mark only after a hand-off that delivered, at its moment, and a mark that does
-not persist still reports the save (M1b). End to
+not persist still reports the save (M1b); the guard shared with the offer
+(a tap while it is taken starts nothing and says why) and given back after a
+failure (M1b review #9). End to
 end: `playwright-tests/ar-mode.spec.js` (the recording e2e) and
 `ar-layout.spec.js` (the marker inside the overlay's tallest state).

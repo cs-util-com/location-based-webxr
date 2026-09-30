@@ -38,6 +38,9 @@ import {
 
 export const SAVE_RECORDING_LABEL = "Save the recording";
 export const SAVE_RECORDING_BUSY_LABEL = "Saving the recording…";
+/** The line a save tap gets while another save of the block runs. */
+export const ANOTHER_SAVE_RUNNING =
+  "Another recording is being saved - wait for it to finish.";
 /** The notice when an unrecorded AR session has already run. */
 const RELOAD_TO_RECORD = "Reload the page to record.";
 
@@ -129,6 +132,35 @@ export async function handOverRecording(
   };
 }
 
+/**
+ * One save at a time across the recording block (M1b review #9): "Save the
+ * recording" and the orphan offer's steps each build a zip of up to a
+ * gigabyte, open a share sheet, and write the block's one status line. The
+ * page creates one guard and hands it to both.
+ */
+export interface SaveGuard {
+  /** Take the guard: true when nothing else held it. */
+  tryStart(): boolean;
+  /** Give it back (in a `finally`). */
+  finish(): void;
+  active(): boolean;
+}
+
+export function createSaveGuard(): SaveGuard {
+  let active = false;
+  return {
+    tryStart() {
+      if (active) return false;
+      active = true;
+      return true;
+    },
+    finish() {
+      active = false;
+    },
+    active: () => active,
+  };
+}
+
 export function wireRecordingPanel(deps: {
   recording: AuthoringRecording;
   dom: RecordingPanelDom;
@@ -142,6 +174,8 @@ export function wireRecordingPanel(deps: {
   /** `navigator.storage.estimate`, or undefined where there is none. */
   estimateStorage: () => Promise<StorageEstimate | undefined>;
   now: () => Date;
+  /** Shared with the orphan offer (`createSaveGuard`). */
+  saveGuard: SaveGuard;
 }): RecordingPanel {
   const { recording, dom } = deps;
   let busy = false;
@@ -176,7 +210,8 @@ export function wireRecordingPanel(deps: {
       dom.notice.textContent = notice ?? "";
     }
     dom.saveButton.hidden = !on;
-    dom.saveButton.disabled = busy || deps.sessionLive();
+    // The guard covers this panel's own save and the offer's.
+    dom.saveButton.disabled = deps.saveGuard.active() || deps.sessionLive();
   }
 
   dom.optIn.addEventListener("change", () => {
@@ -200,6 +235,10 @@ export function wireRecordingPanel(deps: {
 
   dom.saveButton.addEventListener("click", () => {
     if (busy) return;
+    if (!deps.saveGuard.tryStart()) {
+      dom.status.textContent = ANOTHER_SAVE_RUNNING;
+      return;
+    }
     busy = true;
     dom.saveButton.textContent = SAVE_RECORDING_BUSY_LABEL;
     dom.status.textContent = "";
@@ -219,6 +258,7 @@ export function wireRecordingPanel(deps: {
         }`;
       } finally {
         busy = false;
+        deps.saveGuard.finish();
         dom.saveButton.textContent = SAVE_RECORDING_LABEL;
         render();
       }
