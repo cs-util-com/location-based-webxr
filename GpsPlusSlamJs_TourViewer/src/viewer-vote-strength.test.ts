@@ -70,6 +70,15 @@
  * the same fade smooth (<= 0.37 m per fix) and too weak (0.73 m at the scan).
  * A minted heading error passes straight through (the alignment takes the
  * mint's 1°/3°) at every radius >= 5 m; the radius does not amplify it.
+ *
+ * M2b (2026-09-30): the viewer now SHIPS the 30 m ring of 8 votes and a
+ * keep-alive (hold 120 s, fade 120 s). `TODAY` is those constants; M0's pins
+ * and sweeps run on the explicit `M0_VIEWER` (2 m, 4 votes) so they stay
+ * the evidence they were; the `shippedKeepAlive` arm drives the viewer's own
+ * keep-alive module. Under today's hard trim it meets the rule at B = 3, 8
+ * and 15 m and fails at 5 m, and above the trim the hand-off is still one
+ * jump (2.97 m at B = 8) or none (B = 15): see the M2b block at the bottom
+ * (`VOTE_STRENGTH_SWEEP=m2b`).
  */
 
 import { describe, expect, it } from "vitest";
@@ -98,10 +107,14 @@ import {
 import { transformPoint } from "gps-plus-slam-app-framework/ar/qr/qr-pose";
 import { createQrVoteBudget } from "gps-plus-slam-app-framework/ar/qr/qr-vote-budget";
 import type { QrDetectionEvent } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
+import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 
 import {
   buildViewerControllerConfig,
+  createViewerKeepAlive,
+  VIEWER_KEEP_ALIVE_FADE_MS,
+  VIEWER_KEEP_ALIVE_HOLD_MS,
   MAX_VOTED_LOCKS_PER_CODE,
   VIEWER_SYNTHETIC_ACCURACY_M,
   VIEWER_VOTE_BASELINE_M,
@@ -356,6 +369,14 @@ interface VoteParams {
    * points, line an even count ≥ 2).
    */
   keepAliveFadeS?: number;
+  /**
+   * M2b, SHIPPED: the viewer's own keep-alive (`createViewerKeepAlive`:
+   * hold 120 s after the code's last lock, fade 120 s), handed to the
+   * viewer config and fed each lock in the controller's order, its votes
+   * cast after every GPS fix as `viewer-placement` casts them. Viewer path
+   * only; replaces the test-local `keepAliveFadeS` schedule.
+   */
+  shippedKeepAlive?: boolean;
 }
 
 interface Measured {
@@ -433,6 +454,11 @@ function runScenario(p: VoteParams): Measured {
     store.dispatch(recordGpsEvent(payload));
   };
   const canAcceptVotes = (): boolean => store.getState().gpsData?.zero != null;
+  const keepAlive =
+    p.shippedKeepAlive === true ? createViewerKeepAlive() : undefined;
+  if (keepAlive !== undefined && p.path !== "viewer") {
+    throw new Error("the shipped keep-alive runs on the viewer path");
+  }
 
   // The viewer's own dispatch path (budget + zero gate), stubs elsewhere.
   const viewerConfig = buildViewerControllerConfig({
@@ -442,9 +468,11 @@ function runScenario(p: VoteParams): Measured {
     getLevels: () => null,
     dispatchVote,
     canAcceptVotes,
-    resolveStablePose: () => null,
+    // The votes sit at the TRUE code pose (a perfectly measured code).
+    resolveStablePose: () => CODE_POSE_ODOM,
     recordDetection: () => undefined,
     onError: () => undefined,
+    ...(keepAlive !== undefined ? { keepAlive } : {}),
   });
   const replicaBudget = createQrVoteBudget(p.budget);
   if (p.path === "viewer" && p.budget !== MAX_VOTED_LOCKS_PER_CODE) {
@@ -454,6 +482,10 @@ function runScenario(p: VoteParams): Measured {
    *  `timestamp` defaults to `Date.now()`, the clock GPS fixes carry). */
   const qrGeo = mintedGeo(p.codeHeadingErrDeg ?? 0);
   const baselineM = p.baselineM ?? VIEWER_VOTE_BASELINE_M;
+  const level: QrLevel = {
+    version: 1,
+    qr: { physicalSizeM: CODE_SIZE_M, geo: qrGeo },
+  };
   const buildVotes = (
     t: number,
     count: number = p.voteCount,
@@ -480,8 +512,14 @@ function runScenario(p: VoteParams): Measured {
     const votes = buildVotes(t);
     const before = votesDispatched;
     if (p.path === "viewer") {
-      viewerConfig.onDetection?.({ text: CODE_TEXT } as QrDetectionEvent);
+      // The controller's order: detection, stable pose, votes, lock.
+      viewerConfig.onDetection?.({
+        text: CODE_TEXT,
+        timestamp: EPOCH_MS + t,
+      } as QrDetectionEvent);
+      viewerConfig.resolveStablePose?.(CODE_TEXT);
       viewerConfig.dispatchVotes(votes);
+      viewerConfig.onLocked?.({} as never, level);
     } else if (canAcceptVotes() && replicaBudget.tryConsume(CODE_TEXT)) {
       for (const v of votes) dispatchVote(v);
     }
@@ -524,6 +562,10 @@ function runScenario(p: VoteParams): Measured {
         },
       }),
     );
+    // The shipped keep-alive answers every device fix (viewer-placement).
+    for (const v of keepAlive?.votesForFix(EPOCH_MS + t) ?? []) {
+      dispatchVote(v);
+    }
   };
 
   const errorAtCode = (): {
@@ -619,7 +661,10 @@ function runScenario(p: VoteParams): Measured {
   let maxStepAfterFadeM = 0;
   let maxStepAfterFadeDeg = 0;
   let prev = scanEnd;
-  const fadeS = p.keepAliveFadeS ?? 0;
+  const fadeS =
+    keepAlive !== undefined
+      ? (VIEWER_KEEP_ALIVE_HOLD_MS + VIEWER_KEEP_ALIVE_FADE_MS) / 1000
+      : (p.keepAliveFadeS ?? 0);
   let keepAliveCredit = 0;
   const minKeepAlive = p.layout === "line" ? 2 : 3;
   const trace: { s: number; m: number; deg: number }[] = [
@@ -644,7 +689,7 @@ function runScenario(p: VoteParams): Measured {
       for (const v of buildVotes(nextGps)) dispatchVote(v);
     }
     const dt = (nextGps - lastVoteT) / 1000;
-    if (fadeS > 0 && dt < fadeS) {
+    if (keepAlive === undefined && fadeS > 0 && dt < fadeS) {
       keepAliveCredit += p.voteCount * (1 - dt / fadeS);
       let k = Math.floor(keepAliveCredit);
       if (p.layout === "line") k -= k % 2;
@@ -1153,5 +1198,111 @@ describe.runIf(SWEEP?.startsWith("m0b") === true)(
       for (const r of rows)
         expect(Number.isFinite(r["scan m"] as number)).toBe(true);
     }, 7_200_000);
+  },
+);
+
+/**
+ * M2b, the SHIPPED viewer (authoring plan 2026-09-28-0953): the 30 m ring of
+ * 8 votes per lock and the viewer's own keep-alive (hold 120 s after the
+ * code's last lock, fade 120 s, one ring per GPS fix) under TODAY's solver -
+ * the published core's defaults, hard 5 m outlier trim on. The soft
+ * trimming M0c adopted needs M2a's override keys and a core release; until
+ * the viewer dispatches them this is what visitors get.
+ *
+ * Measured 2026-09-30 (gps-plus-slam-js 1.25.0), swept over the bias (owner
+ * rule: a one-value verdict is provisional) and pinned as MEASURED, so a
+ * change to the votes, the keep-alive or the solver shows up as a diff:
+ * - B = 3 m meets the rule (0.37 m worst hold) and hands off smoothly
+ *   (largest step 0.07 m); B = 5 m just fails it (0.34 m at the scan, 0.62 m
+ *   hold) - below the trim the votes only blend with the GPS.
+ * - B = 8 m holds exactly, then hands back to GPS in ONE fix during the
+ *   fade: 2.97 m / 1.77° - the bistable hard trim M0b/M0c found.
+ * - B = 15 m holds exactly and never hands off within 60 s of the
+ *   keep-alive's end: once the votes own the solve the biased GPS stays
+ *   trimmed.
+ * The rule's verdict therefore flips between 3 and 5 m and again above the
+ * 5 m trim, and the graceful hand-off the owner asked for (D8) is not met
+ * above the trim: that is what the soft settings of M0c are for.
+ *
+ * Opt-in (`VOTE_STRENGTH_SWEEP=m2b`): each 300 s arm re-solves ~1,500
+ * votes and took 1-4 minutes on a loaded machine. The default run keeps the
+ * cheap wiring check below.
+ */
+const SHIPPED: VoteParams = {
+  ...TODAY,
+  shippedKeepAlive: true,
+  postScanS: 300,
+};
+
+describe("the shipped keep-alive through the harness (M2b)", () => {
+  it("casts the burst, then one full ring after every fix of the hold", () => {
+    // Why this matters: the opt-in pins below measure the SHIPPED keep-alive
+    // only if the harness drives it the way the viewer does. 20 s after the
+    // scan every fix is inside the hold, so each adds exactly one ring.
+    const m = runScenario({ ...SHIPPED, biasM: 8, postScanS: 20 });
+    const burst = MAX_VOTED_LOCKS_PER_CODE * VIEWER_VOTE_COUNT;
+    const fixesAfterFirstVote = m.trace.length - 1 + 2; // + 2 during the scan
+    expect(m.votesDispatched).toBe(
+      burst + fixesAfterFirstVote * VIEWER_VOTE_COUNT,
+    );
+    expect(m.scanEndM).toBeLessThan(0.01);
+    expect(m.max120M).toBeLessThan(0.01);
+  }, 120_000);
+});
+
+describe.runIf(SWEEP === "m2b")(
+  "the shipped viewer under today's solver (M2b)",
+  () => {
+    const PINS = [
+      {
+        biasM: 3,
+        scanEndM: 0.2,
+        scanEndDeg: 0.18,
+        max120M: 0.37,
+        stepM: 0.07,
+        endM: 1.14,
+        meets: true,
+      },
+      {
+        biasM: 5,
+        scanEndM: 0.34,
+        scanEndDeg: 0.3,
+        max120M: 0.62,
+        stepM: 0.12,
+        endM: 1.9,
+        meets: false,
+      },
+      {
+        biasM: 8,
+        scanEndM: 0,
+        scanEndDeg: 0,
+        max120M: 0,
+        stepM: 2.97,
+        endM: 3.04,
+        meets: true,
+      },
+      {
+        biasM: 15,
+        scanEndM: 0,
+        scanEndDeg: 0,
+        max120M: 0,
+        stepM: 0,
+        endM: 0,
+        meets: true,
+      },
+    ] as const;
+    it.each(PINS)(
+      "GPS biased $biasM m: as measured on 2026-09-30",
+      (pin) => {
+        const m = runScenario({ ...SHIPPED, biasM: pin.biasM });
+        expect(m.scanEndM).toBeCloseTo(pin.scanEndM, 1);
+        expect(m.scanEndDeg).toBeCloseTo(pin.scanEndDeg, 1);
+        expect(m.max120M).toBeCloseTo(pin.max120M, 1);
+        expect(m.maxStepM).toBeCloseTo(pin.stepM, 1);
+        expect(m.endM).toBeCloseTo(pin.endM, 1);
+        expect(meetsRule(m)).toBe(pin.meets);
+      },
+      1_800_000,
+    );
   },
 );
