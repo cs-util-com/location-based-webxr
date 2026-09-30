@@ -44,6 +44,7 @@ import {
   VIEWER_KEEP_ALIVE_HOLD_MS,
   VIEWER_VOTE_COUNT,
 } from "./qr-viewer-mode.js";
+import { SCAN_GATE_ESCAPE_MS } from "./scan-gate.js";
 import type { TourViewerSeams } from "./seams.js";
 import {
   createTourViewerSession,
@@ -498,5 +499,49 @@ describe(
         });
       },
     );
+  },
+);
+
+// Why (M2b review #8): since M2b the gate passes only on a lock that cast
+// votes, so a code that locks but never votes - no GPS zero yet, or a pose
+// that never converges - leaves the visitor at the gate. The 45 s escape
+// is their way out; the e2e covers only a code that never locks, and the
+// wiring stubbed the clock away, so nothing proved a vote-less lock does
+// not cancel it.
+describe(
+  "the gate's escape is offered to a code that locks but never votes (M2b review #8)",
+  { timeout: 30_000 },
+  () => {
+    it.each([
+      ["no GPS zero yet", false],
+      ["a pose that never converges", true],
+    ] as const)("%s", (_cause, withZero) => {
+      const v = viewer();
+      if (withZero) {
+        v.fix(T0);
+        captured.stablePose = null;
+      }
+      expect(v.scheduled).toHaveLength(1);
+      expect(v.scheduled[0]!.delayMs).toBe(SCAN_GATE_ESCAPE_MS);
+      const before = v.positions().length;
+      for (let i = 0; i < 3 * MAX_VOTED_LOCKS_PER_CODE; i += 1) {
+        v.lock(T0 + 500 + i * 125);
+      }
+      expect(v.positions()).toHaveLength(before);
+      expect(v.ctx.scanGate).toEqual({
+        kind: "scanning",
+        escapeOffered: false,
+      });
+      expect(v.escapeButton.hidden).toBe(true);
+      v.scheduled[0]!.run(); // 45 s later
+      expect(v.ctx.scanGate).toEqual({
+        kind: "scanning",
+        escapeOffered: true,
+      });
+      expect(v.escapeButton.hidden).toBe(false);
+      v.clickEscape();
+      expect(v.ctx.scanGate).toEqual({ kind: "passed", via: "skipped" });
+      expect(v.escapeButton.hidden).toBe(true);
+    });
   },
 );
