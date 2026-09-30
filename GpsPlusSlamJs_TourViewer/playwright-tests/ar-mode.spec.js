@@ -2543,10 +2543,24 @@ test("an opted-in authoring session is recorded across the finish and saved as i
   expect(types.some((t) => t.startsWith("qrDetected/"))).toBe(true);
   const placed = actions.find((a) => a.type === "tourAuthoring/objectPlaced");
   expect(placed.payload.object.label).toBe("Recorded gate");
-  // The fake world group is the identity, so odometry = world here.
-  expect(placed.payload.reticleOdomNue).toEqual([3, 400.5, -2]);
+  // The logged odometry, taken back through the logged group matrix, is
+  // the reticle's world position (the fake group follows the alignment).
+  const [ox, oy, oz] = placed.payload.reticleOdomNue;
+  const g = placed.payload.arWorldGroupMatrix;
+  const back = [0, 1, 2].map(
+    (i) => g[i] * ox + g[4 + i] * oy + g[8 + i] * oz + g[12 + i],
+  );
+  expect(back[0]).toBeCloseTo(3, 6);
+  expect(back[1]).toBeCloseTo(400.5, 6);
+  expect(back[2]).toBeCloseTo(-2, 6);
+  // The visit the finish ended was settled first (authoring plan
+  // 2026-09-28-0953 M2c), and the settle is in the recording: the zip
+  // carries its geo, not the tap's.
+  expect(types.indexOf("tourAuthoring/settled")).toBeGreaterThan(
+    types.indexOf("tourAuthoring/objectPlaced"),
+  );
   const finished = types.indexOf("tourAuthoring/finished");
-  expect(finished).toBeGreaterThan(types.indexOf("tourAuthoring/objectPlaced"));
+  expect(finished).toBeGreaterThan(types.indexOf("tourAuthoring/settled"));
   // The exit the finish caused is recorded AFTER it: its endSession and
   // the reset a replay needs to give the next visit its own alignment.
   expect(types.lastIndexOf("recording/endSession")).toBeGreaterThan(finished);

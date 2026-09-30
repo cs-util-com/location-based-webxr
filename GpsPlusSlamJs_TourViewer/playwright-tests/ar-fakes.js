@@ -137,15 +137,40 @@ export async function installTourViewerArFakes(page, options = {}) {
         return test.depthCallback !== null;
       }
 
+      /**
+       * The store's alignment right now (16 numbers, column-major), or the
+       * identity before there is one. The real world group's matrix IS the
+       * alignment (lerped toward it), and since the authoring settle
+       * (authoring plan 2026-09-28-0953 M2c) recomputes geo as
+       * `alignment · local`, a group that pretended to be the identity
+       * under a real alignment would move every settled pin by it.
+       */
+      function currentAlignment() {
+        const m =
+          test.alignmentStore?.getState?.().gpsData?.gpsEvents?.alignmentMatrix;
+        return m != null && m.length === 16
+          ? Array.from(m)
+          : [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+      }
       const worldGroup = {
         name: "fake-world-group",
         children: /** @type {unknown[]} */ ([]),
-        // An identity transform, as far as the creator's placement log
-        // reads one (its odometry position and the matrix it used).
+        // The alignment, as far as the creator's placement reads the group
+        // (its odometry position, the matrix it used, the settle).
         matrixWorld: {
-          toArray: () => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+          toArray: () => currentAlignment(),
         },
+        /** World to the group's frame: the rigid inverse of the alignment,
+         *  `R^T (v - t)`, in place like three's. */
         worldToLocal(v) {
+          const m = currentAlignment();
+          const d = [v.x - m[12], v.y - m[13], v.z - m[14]];
+          const x = m[0] * d[0] + m[1] * d[1] + m[2] * d[2];
+          const y = m[4] * d[0] + m[5] * d[1] + m[6] * d[2];
+          const z = m[8] * d[0] + m[9] * d[1] + m[10] * d[2];
+          v.x = x;
+          v.y = y;
+          v.z = z;
           return v;
         },
         add(object) {

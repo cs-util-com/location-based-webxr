@@ -46,8 +46,12 @@ camera, so `installTourViewerArFakes(page)` installs
   recording plan 2026-09-28-0953, D4): `initARCalls` records `hasDepth`,
   `depthCaptureCalls` / `stopDepthCalls` count the depth seams, and
   `emitDepthSample()` feeds one sample through the initAR depth callback
-  (`depthCallback`). The fake world group carries an identity `matrixWorld`
-  and `worldToLocal`, which the creator's placement log reads.
+  (`depthCallback`). The fake world group's `matrixWorld` and `worldToLocal`
+  follow the store's alignment (the identity before one exists), as the real
+  group's lerped matrix does: the creator's placement reads the reticle's
+  odometry through it, and the authoring settle (authoring plan
+  2026-09-28-0953 M2c) maps that back through the alignment - an identity
+  group under a real alignment would move every settled pin by it.
 
 ## Invariants & assumptions
 
