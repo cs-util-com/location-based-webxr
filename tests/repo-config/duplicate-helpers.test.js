@@ -51,13 +51,11 @@
 //
 // See GpsPlusSlamJs_Docs/docs/2026-08-24-0111-helper-unification-plan.md.
 
-import { execFileSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
-import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { existsSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
+import { readTracked, repoRoot, trackedFiles } from "./tracked-tree.js";
 
 /**
  * The canonical helpers, and the rule each one is held to.
@@ -219,13 +217,7 @@ const JUSTIFIED = [
  */
 function sourceFiles() {
   return (
-    execFileSync("git", ["ls-files", "*/src/**.ts"], {
-      cwd: repoRoot,
-      encoding: "utf8",
-      maxBuffer: 64 * 1024 * 1024,
-    })
-      .split("\n")
-      .filter(Boolean)
+    trackedFiles("*/src/**.ts")
       .filter((file) => !file.endsWith(".d.ts"))
       .filter((file) => !/\.(test|spec)\.ts$/.test(file))
       // The mirror of "an untracked file is invisible": a tracked file DELETED
@@ -417,9 +409,7 @@ describe("duplicate-helper guard", () => {
     // Without this, a matcher that matched NOTHING would leave every assertion
     // below permanently green. This is the check the plan called for after a
     // review found a precondition test that could not fail.
-    const found = definitions(sourceFiles(), (file) =>
-      readFileSync(resolve(repoRoot, file), "utf8"),
-    );
+    const found = definitions(sourceFiles(), readTracked);
     const paths = found.map((d) => `${d.name} @ ${d.file}`);
 
     for (const entry of CANONICAL.filter((e) => e.rule === "shared")) {
@@ -475,9 +465,7 @@ describe("duplicate-helper guard", () => {
   it("every justified exception still names a real definition", () => {
     // An exception that outlives its file is a claim nobody checked. Failing on
     // it is what keeps the list from becoming a graveyard.
-    const found = definitions(sourceFiles(), (file) =>
-      readFileSync(resolve(repoRoot, file), "utf8"),
-    );
+    const found = definitions(sourceFiles(), readTracked);
 
     expect(staleExceptions(found, JUSTIFIED)).toEqual([]);
   });
@@ -491,9 +479,7 @@ describe("duplicate-helper guard", () => {
   it("no canonical helper is re-implemented", () => {
     // A non-empty result names the offending file: import the canonical helper,
     // or add a JUSTIFIED entry saying why this one cannot.
-    const found = definitions(sourceFiles(), (file) =>
-      readFileSync(resolve(repoRoot, file), "utf8"),
-    );
+    const found = definitions(sourceFiles(), readTracked);
 
     expect(violations(found, CANONICAL, JUSTIFIED)).toEqual([]);
   });

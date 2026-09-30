@@ -24,12 +24,10 @@
 // are meant to be there" — true when written, and by 2026-08-04 the largest was
 // 1.25 MB after the minify pass, with 2 MiB now the enforced ceiling.
 
-import { execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
-import { dirname, resolve, basename } from 'node:path';
+import { basename } from 'node:path';
 import { describe, it, expect } from 'vitest';
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+import { trackedFiles } from './tracked-tree.js';
 
 /**
  * Filename patterns that indicate a working artefact rather than a deliberate
@@ -77,16 +75,6 @@ function looksLikeScratch(name) {
 
 /** Paths that look scratch-like but are deliberate. Empty is the goal. */
 const ALLOWLIST = new Set([]);
-
-function trackedFiles() {
-  return execFileSync('git', ['ls-files'], {
-    cwd: repoRoot,
-    encoding: 'utf8',
-    maxBuffer: 1 << 26,
-  })
-    .split('\n')
-    .filter((line) => line !== '');
-}
 
 describe('no scratch artefacts are tracked in git', () => {
   const files = trackedFiles();

@@ -58,13 +58,9 @@
 // `max-file-size.test.js` sets out: a gate over a hand-maintained list only
 // guards what someone already remembered.
 
-import { execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
-import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+import { readTracked, trackedFiles } from './tracked-tree.js';
 
 /** Assembled rather than written out, so this file does not match itself. */
 const OPEN = `/*${'*'}`;
@@ -73,13 +69,7 @@ const CLOSE = `${'*'}/`;
 const SOURCE_PATTERN = /^[^/]+\/(src|config|scripts|playwright-tests)\/.*\.(ts|tsx|js|mjs|cjs)$/;
 
 function trackedSourceFiles() {
-  return execFileSync('git', ['ls-files'], {
-    cwd: repoRoot,
-    encoding: 'utf8',
-    maxBuffer: 64 * 1024 * 1024,
-  })
-    .split('\n')
-    .filter(Boolean)
+  return trackedFiles()
     .filter((file) => SOURCE_PATTERN.test(file))
     .filter((file) => !file.endsWith('.d.ts'));
 }
@@ -284,7 +274,7 @@ describe('doc-comment attachment guard', () => {
     for (const file of trackedSourceFiles()) {
       let text;
       try {
-        text = readFileSync(resolve(repoRoot, file), 'utf8');
+        text = readTracked(file);
       } catch {
         continue; // tracked but deleted in the working tree
       }

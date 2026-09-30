@@ -37,13 +37,9 @@
 //  - **It cannot see a URL assembled from parts.** `'https://' + host + '/{z}…'`
 //    passes. Nobody has written one; if anyone does, this is the file to widen.
 
-import { execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
-import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+import { readTracked, trackedFiles } from './tracked-tree.js';
 
 /** The one file allowed to spell the tile URL out. */
 const CANONICAL = 'GpsPlusSlamJs_AppFramework/src/utils/osm-tiles.ts';
@@ -51,13 +47,7 @@ const CANONICAL = 'GpsPlusSlamJs_AppFramework/src/utils/osm-tiles.ts';
 const SOURCE_PATTERN = /^[^/]+\/(src|config|scripts)\/.*\.(ts|tsx|js|mjs|cjs)$/;
 
 function trackedSourceFiles() {
-  return execFileSync('git', ['ls-files'], {
-    cwd: repoRoot,
-    encoding: 'utf8',
-    maxBuffer: 64 * 1024 * 1024,
-  })
-    .split('\n')
-    .filter(Boolean)
+  return trackedFiles()
     .filter((file) => SOURCE_PATTERN.test(file))
     .filter((file) => !file.endsWith('.d.ts'));
 }
@@ -105,7 +95,7 @@ describe('OSM tile URL', () => {
     const offenders = trackedSourceFiles().filter((file) => {
       if (file === CANONICAL) return false;
       try {
-        return hasOsmTileUrl(readFileSync(resolve(repoRoot, file), 'utf8'));
+        return hasOsmTileUrl(readTracked(file));
       } catch {
         return false; // tracked but deleted in the working tree
       }
@@ -132,7 +122,7 @@ describe('OSM tile URL', () => {
   it('the canonical file really does define it', () => {
     // Without this, deleting `osm-tiles.ts` would make the guard above pass
     // vacuously — zero copies is not the same as one home.
-    expect(hasOsmTileUrl(readFileSync(resolve(repoRoot, CANONICAL), 'utf8'))).toBe(
+    expect(hasOsmTileUrl(readTracked(CANONICAL))).toBe(
       true
     );
   });

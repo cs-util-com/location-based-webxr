@@ -26,13 +26,9 @@
 // Introducing a NEW wrong number is still invisible here, and no automated
 // check can fix that.
 
-import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
 import { describe, it, expect } from 'vitest';
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+import { readTracked, trackedFiles } from './tracked-tree.js';
 
 /**
  * The figures this repo has formally retracted, with what replaced them.
@@ -182,16 +178,6 @@ const SCANNED = /\.(ts|tsx|js|mjs|cjs|md)$/;
 const EXEMPT =
   /(^|\/)(dist|node_modules|coverage)\/|(^|\/)pnpm-lock\.yaml$|(^|\/)test-timings\.md$|(^|\/)retracted-osm-figures\.test\.js$/;
 
-function trackedFiles() {
-  return execFileSync('git', ['ls-files'], {
-    cwd: repoRoot,
-    encoding: 'utf8',
-    maxBuffer: 1 << 26,
-  })
-    .split('\n')
-    .filter((line) => line !== '');
-}
-
 /**
  * Every place a retracted figure is stated without a nearby retraction marker.
  *
@@ -204,7 +190,7 @@ function unmarkedClaims(files) {
     if (EXEMPT.test(file) || !SCANNED.test(file)) continue;
     let content;
     try {
-      content = readFileSync(resolve(repoRoot, file), 'utf8');
+      content = readTracked(file);
     } catch {
       continue; // a tracked path that is not readable is another test's problem
     }

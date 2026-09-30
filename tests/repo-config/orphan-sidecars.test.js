@@ -18,13 +18,11 @@
 // `max-file-size.test.js` sets out at length: a gate over a hand-maintained
 // list only guards what someone already remembered.
 
-import { execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+import { repoRoot, trackedFiles } from './tracked-tree.js';
 
 /**
  * Source extensions that must exist when a `<name>.<ext>.md` sidecar does.
@@ -36,16 +34,6 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SIDECAR_EXTENSIONS = ['ts', 'tsx', 'js', 'mjs', 'cjs'];
 
 const SIDECAR_PATTERN = new RegExp(`\\.(${SIDECAR_EXTENSIONS.join('|')})\\.md$`);
-
-function trackedFiles() {
-  return execFileSync('git', ['ls-files'], {
-    cwd: repoRoot,
-    encoding: 'utf8',
-    maxBuffer: 64 * 1024 * 1024,
-  })
-    .split('\n')
-    .filter(Boolean);
-}
 
 /**
  * The sidecars whose documented file is missing, as repo-relative paths.

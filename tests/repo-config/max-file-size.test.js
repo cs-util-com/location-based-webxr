@@ -21,13 +21,11 @@
 //
 // See GpsPlusSlamJs_Docs/docs/2026-08-04-0709-pr-249-diff-weight-audit.md (D4).
 
-import { execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { statSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+import { repoRoot, trackedFiles } from './tracked-tree.js';
 
 /**
  * Per-file ceiling, in bytes.
@@ -72,16 +70,6 @@ const ALLOWLIST = new Set([
   // suite covers, so it gets an entry rather than a trim.
   'GpsPlusSlamJs_PhysicsDemo/playwright-tests/fixtures/sample-recording.zip',
 ]);
-
-function trackedFiles() {
-  return execFileSync('git', ['ls-files'], {
-    cwd: repoRoot,
-    encoding: 'utf8',
-    maxBuffer: 1 << 26,
-  })
-    .split('\n')
-    .filter((line) => line !== '');
-}
 
 /** Size of a tracked path, or `undefined` if it is not on disk. */
 function sizeOf(file) {

@@ -13,19 +13,16 @@
 // deep-imports a non-entry passes today and misleads the next reader into
 // copying the import into production). The import must be an entry, OR the
 // barrel of a directory whose `index.ts` is an entry.
-import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+import { readTracked, trackedFiles } from './tracked-tree.js';
+
 const PACKAGE = 'gps-plus-slam-app-framework';
 const CONFIG = 'GpsPlusSlamJs_AppFramework/config/tsdown.config.ts';
 
 /** Subpaths the build produces: `src/utils/median.ts` → `utils/median`, `src/ar/index.ts` → `ar`. */
 function builtSubpaths() {
-  const config = readFileSync(resolve(repoRoot, CONFIG), 'utf8')
+  const config = readTracked(CONFIG)
     .split('\n')
     .filter((line) => !line.trim().startsWith('//'))
     .join('\n');
@@ -37,13 +34,7 @@ function builtSubpaths() {
 }
 
 function sourceFiles() {
-  return execFileSync('git', ['ls-files', '*/src/**.ts'], {
-    cwd: repoRoot,
-    encoding: 'utf8',
-    maxBuffer: 64 * 1024 * 1024,
-  })
-    .split('\n')
-    .filter(Boolean)
+  return trackedFiles('*/src/**.ts')
     .filter((file) => !file.startsWith('GpsPlusSlamJs_AppFramework/'));
 }
 
@@ -78,7 +69,7 @@ describe('framework deep imports are built entrypoints', () => {
     expect(files.length).toBeGreaterThan(100);
     const imports = files.flatMap((f) => {
       try {
-        return [...deepImports(readFileSync(resolve(repoRoot, f), 'utf8'))];
+        return [...deepImports(readTracked(f))];
       } catch {
         return [];
       }
@@ -93,10 +84,7 @@ describe('framework deep imports are built entrypoints', () => {
     // guard was green while a consumer following the CHANGELOG would have
     // hit a resolution failure (PR #412 review). The CHANGELOG marks such
     // modules "(deep import)"; each must be an entry.
-    const changelog = readFileSync(
-      resolve(repoRoot, 'GpsPlusSlamJs_AppFramework/CHANGELOG.md'),
-      'utf8'
-    );
+    const changelog = readTracked('GpsPlusSlamJs_AppFramework/CHANGELOG.md');
     const advertised = [
       ...changelog.matchAll(/\*\*`([A-Za-z0-9_./-]+)`\*\* \(deep import/g),
     ].map(([, sub]) => sub);
@@ -134,7 +122,7 @@ describe('framework deep imports are built entrypoints', () => {
     for (const file of sourceFiles()) {
       let source;
       try {
-        source = readFileSync(resolve(repoRoot, file), 'utf8');
+        source = readTracked(file);
       } catch {
         continue; // deleted but not yet staged — defines no imports
       }
