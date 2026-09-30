@@ -25,6 +25,13 @@
     `PLAYWRIGHT_JSON_OUTPUT_NAME`. Parse failure ⇒ duration-only row.
   - Atomic write: temp file + rename, last-writer-wins; concurrent recorded
     runs in one project are unsupported (single-dev workflow).
+  - Browser stages run at BELOW_NORMAL priority on Windows (2026-09-30):
+    `execShell` spawns through `spawnAtPriority` with the priority
+    `stageSpawnPriority` picks, so the shell, Playwright and Chromium all
+    inherit it and short gates beside a 3D suite get the CPU first. The
+    parent process is restored after the spawn, because run-gate runs every
+    stage in-process. Opt out with `GATE_BROWSER_PRIORITY=normal`. See
+    `stage-priority.mjs.md`.
 - Examples: `await runStage(project, 'test:unit', ['src/foo.test.ts'])` runs
   a filtered, unrecorded unit run scoped to one file.
 - Tests: the pure modules it composes (`timing-store`, `delta`,

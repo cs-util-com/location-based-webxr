@@ -28,6 +28,7 @@ import { machineFingerprint, machineLabel } from './machine.mjs';
 import { parsePlaywrightCounts, parseVitestCounts } from './reporter-parse.mjs';
 import { buildStageCommand, decideRecording } from './stage-args.mjs';
 import { getStage, stageOrder } from './projects.mjs';
+import { spawnAtPriority, stageSpawnPriority } from './stage-priority.mjs';
 import {
   appendRecording,
   formatSeconds,
@@ -114,11 +115,17 @@ function withBinPath(env, root) {
  * @param {string} command
  * @param {string} cwd
  * @param {NodeJS.ProcessEnv} env
+ * @param {number | null} priority - OS priority for the stage's process tree,
+ *   or null to inherit (see stage-priority.mjs)
  * @returns {Promise<number>}
  */
-function execShell(command, cwd, env) {
+function execShell(command, cwd, env, priority) {
   return new Promise((resolve) => {
-    const child = spawn(command, { shell: true, stdio: 'inherit', cwd, env });
+    const child = spawnAtPriority(
+      () => spawn(command, { shell: true, stdio: 'inherit', cwd, env }),
+      priority,
+      os
+    );
     child.on('error', (error) => {
       console.error(
         `test-timing: failed to spawn stage command: ${String(error)}`
@@ -283,7 +290,12 @@ export async function runStage(project, stageName, forwardedArgs) {
   }
 
   const start = performance.now();
-  const exitCode = await execShell(command, root, env);
+  const exitCode = await execShell(
+    command,
+    root,
+    env,
+    stageSpawnPriority(stage, { platform: process.platform, env })
+  );
   const durationMs = Math.round(performance.now() - start);
 
   let recorded = false;
