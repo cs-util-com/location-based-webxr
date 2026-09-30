@@ -13,6 +13,9 @@
  *   (extra step at most 1.6 levels), the error against 64 flattens from
  *   12 on (limb 10.9 / 10.1 / 10.1 at 12 / 16 / 24, radial 5.4 / 4.6 /
  *   5.1), and 16 costs 15-40 % more frame time than 12.
+ * - `coarseSteps`: the default on a coarse pointer (a phone, review B5):
+ *   8, where the march cost x3.9 against x4.6 at 12 (phone tier, pixel
+ *   ratio 2, SwiftShader) with no ring measured.
  * - `strength`: a scale on the physical light (0-4), 1 = as computed for
  *   the scene's sun.
  * - `thickness`: how many times thicker than the real air the shell is
@@ -27,10 +30,18 @@
  */
 export const GLOBE_ATMOSPHERE = {
   steps: 12,
+  coarseSteps: 8,
   strength: 1,
   thickness: 6,
   visibilityKm: 60,
 };
+
+/**
+ * The default samples per ray for a device: `coarseSteps` where the
+ * primary pointer is coarse (a touch screen), `steps` otherwise.
+ */
+export const defaultAtmosphereSteps = (coarsePointer) =>
+  coarsePointer ? GLOBE_ATMOSPHERE.coarseSteps : GLOBE_ATMOSPHERE.steps;
 
 const RANGES = {
   steps: [2, 64],

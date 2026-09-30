@@ -154,8 +154,8 @@ for (const altKm of [150, 50]) {
     page,
     context,
   }) => {
-    // Well under the 5 min runaway bound (coordinator 2026-09-29): a
-    // view settles in 30-50 s under SwiftShader; the waits above cap it.
+    // Well under a 5 min runaway bound: a view settles in 30-50 s under
+    // SwiftShader; the waits above cap it.
     test.setTimeout(120_000);
     const { errors, hash } = await holdOverCoast(page, context, altKm);
     const state = await page.evaluate(() => window.__globeLab.state());

@@ -106,7 +106,8 @@
   outside it and the blue veil over the day side, from one march through
   the framework's physical atmosphere tables, lit by the Earth's own sun.
   ON by default (the owner asked for it). Hash keys: `atmo` (1 on, 0 off),
-  `atmoSteps` (samples per ray, 2-64, default 12), `atmoStrength` (a
+  `atmoSteps` (samples per ray, 2-64, default 12, or 8 on a coarse
+  pointer: `defaultAtmosphereSteps`), `atmoStrength` (a
   scale on its light, 0-4, 1 = as computed), `atmoThickness` (the shell
   drawn 1-10 times thicker than the real air at the same optical depth,
   default 6: as wide as the owner's reference, 1 = physical).
@@ -392,6 +393,9 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   thickness 1, the default and 10 (the halo falls off, its brightest
   point stays blue); the banding per sample count against 64 (no ring at
   the default); the cost per sample count on the desktop and phone tiers
-  (pixel ratio 1, 1.5, 2), as on/off ratios.
+  (pixel ratio 1, 1.5, 2), as on/off ratios, only with `GLOBE_COST=1` (a
+  measurement that cannot fail); the colour at fractions of the rim's
+  width across thickness 1, 6 and 10; the limb around the terminator's
+  crossing, on and off.
 - The memory and download table: `pnpm run measure:globe`
   (`measure-globe.mjs`), not a test.

@@ -49,7 +49,10 @@ import { globePinView, nextPinPhase } from "/globe/globe-pin.js";
 import { globeReadoutText, readoutThrottle } from "/globe/globe-readout.js";
 import { handOverUrl } from "/globe/globe-handover.js";
 import { createGlobeAtmosphere } from "./globe-atmosphere.js";
-import { GLOBE_ATMOSPHERE } from "./globe-atmosphere-frame.js";
+import {
+  GLOBE_ATMOSPHERE,
+  defaultAtmosphereSteps,
+} from "./globe-atmosphere-frame.js";
 import {
   apparentSolarTimeHours,
   solarDateAt,
@@ -240,7 +243,14 @@ const PARAMS = {
   // (1 = as computed) and how many times thicker than the real air the
   // shell is drawn (1 = physical).
   atmo: { fallback: 1, min: 0, max: 1 },
-  atmoSteps: { fallback: GLOBE_ATMOSPHERE.steps, min: 2, max: 64 },
+  // Fewer samples on a touch screen (review B5; `defaultAtmosphereSteps`).
+  atmoSteps: {
+    fallback: defaultAtmosphereSteps(
+      window.matchMedia?.("(pointer: coarse)").matches === true,
+    ),
+    min: 2,
+    max: 64,
+  },
   atmoStrength: { fallback: GLOBE_ATMOSPHERE.strength, min: 0, max: 4 },
   atmoThickness: { fallback: GLOBE_ATMOSPHERE.thickness, min: 1, max: 10 },
   fovY: { fallback: 50, min: 20, max: 80 },

@@ -10,6 +10,10 @@
     shell drawn this many times thicker than the real air at the same
     optical depth, 1 = physical), `visibilityKm` (the aerosol density, the
     framework's 60 km).
+  - `defaultAtmosphereSteps(coarsePointer)` - `coarseSteps` (8) where
+    the primary pointer is coarse (a touch screen), `steps` (12) otherwise
+    (review B5: the march cost x3.9 against x4.6 at the phone tier's pixel
+    ratio 2, with no ring measured from 6 samples up).
   - `atmosphereLook(input)` - `{ steps, strength, thickness }`, each from
     `input` or the default, the steps rounded; RangeError outside steps
     2-64, strength 0-4, thickness 1-10 or for a non-finite value.

@@ -17,6 +17,7 @@ import { describe, it } from "node:test";
 import {
   GLOBE_ATMOSPHERE,
   atmosphereLook,
+  defaultAtmosphereSteps,
   ellipsoidToModel,
 } from "./globe-atmosphere-frame.js";
 
@@ -66,6 +67,19 @@ describe("ellipsoidToModel", () => {
       assert.throws(() => ellipsoidToModel(bad, GROUND_KM), RangeError);
     }
     assert.throws(() => ellipsoidToModel(WGS84, 0), RangeError);
+  });
+});
+
+// Why (review B5): the march costs x3.4-4.6 of a frame on the CPU
+// rasteriser at a phone's pixel ratios, and banding was measured fine from
+// 6 samples up, so a touch device starts at fewer samples; the slider
+// still reaches the rest.
+describe("defaultAtmosphereSteps", () => {
+  it("is fewer samples on a coarse pointer (a phone) than on a mouse", () => {
+    assert.equal(defaultAtmosphereSteps(false), GLOBE_ATMOSPHERE.steps);
+    assert.equal(defaultAtmosphereSteps(true), GLOBE_ATMOSPHERE.coarseSteps);
+    assert.ok(GLOBE_ATMOSPHERE.coarseSteps < GLOBE_ATMOSPHERE.steps);
+    assert.ok(GLOBE_ATMOSPHERE.coarseSteps >= 6, "banding measured from 6 up");
   });
 });
 

@@ -203,6 +203,111 @@ test("the rim's profile at both ends of the thickness slider", async ({
   expect(errors).toEqual([]);
 });
 
+/** Normalised canvas points on a circle of `radiusPx` about the centre, at angles from the top (clockwise, degrees). */
+const circlePoints = ({ width, height }, radiusPx, degs) =>
+  degs.map((deg) => {
+    const a = (deg * Math.PI) / 180;
+    return [
+      (width / 2 + radiusPx * Math.sin(a) + 0.5) / width,
+      (height / 2 - radiusPx * Math.cos(a) + 0.5) / height,
+    ];
+  });
+
+/** An RGB pixel's chromaticity: each channel's share of the sum. */
+const chroma = ([r, g, b]) => {
+  const sum = Math.max(1, r + g + b);
+  return [r / sum, g / sum, b / sum];
+};
+
+// WHY (review B2, DEC-GL4-11): the owner's rule is that the thickness
+// slider changes the rim's WIDTH, not its colour. Density read at h / k
+// with steps weighted 1 / k keeps the vertical optical depth, but a
+// grazing ray's grows only as sqrt(k), so an uncompensated shell would
+// turn the limb thinner and bluer as it widens. The colour is compared at
+// the same place RELATIVE to the rim's width (a fraction of the shell's
+// thickness inside and outside the lit edge), across k = 1, the default
+// and 10.
+test("the rim's colour stays the same across the thickness slider", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const errors = await bootGlobe(page, VIEW);
+  const g = await discGeometry(page);
+  const r = g.rPx;
+  // Fractions of the shell's thickness (100 km x k) from the lit edge.
+  const fractions = [-1, -0.5, -0.25, -0.1, 0.05, 0.15, 0.3];
+  const rows = [];
+  for (const k of [1, GLOBE_ATMOSPHERE.thickness, 10]) {
+    await applyHash(page, `${VIEW}&atmoThickness=${k}`);
+    const px = await page.evaluate(
+      (p) => window.__globeLab.readPixels(p),
+      rowPoints(
+        g,
+        fractions.map((f) => -Math.round(r + (f * 100 * k) / g.kmPerPx)),
+      ),
+    );
+    rows.push({ k, px, chroma: px.map(chroma) });
+  }
+  const shift = fractions.map((_, i) =>
+    Math.max(
+      ...rows.flatMap((a) =>
+        rows.map((b) =>
+          Math.max(
+            ...[0, 1, 2].map((c) =>
+              Math.abs((a.chroma[i]?.[c] ?? 0) - (b.chroma[i]?.[c] ?? 0)),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+  console.log(
+    `rim colour per thickness (fractions of the shell from the lit edge ${fractions.join(", ")}): ` +
+      rows
+        .map(
+          (row) =>
+            `x${row.k}: ${row.px.map((p) => p.slice(0, 3).join("/")).join(" ")}`,
+        )
+        .join("; ") +
+      `; largest chromaticity shift per place ${shift.map((v) => v.toFixed(3)).join(" ")}`,
+  );
+  expect(errors).toEqual([]);
+});
+
+// WHY (review B3): a thin violet line showed along the night limb near
+// where the terminator meets the edge, while the pass is on by default.
+// The limb just inside and just outside the edge is read around the
+// terminator's crossing at the top of the disc, from 40 degrees on the
+// lit side to 40 on the night side, with the pass on and off; "violet" is
+// how far red and blue both exceed green.
+test("the limb at the terminator's crossing", async ({ page }) => {
+  test.setTimeout(120_000);
+  const errors = await bootGlobe(page, `${VIEW}&atmo=0`);
+  const g = await discGeometry(page);
+  const degs = [-40, -20, -10, -5, 0, 5, 10, 20, 40];
+  const read = async () => ({
+    inside: await page.evaluate(
+      (p) => window.__globeLab.readPixels(p),
+      circlePoints(g, g.rPx - 2, degs),
+    ),
+    outside: await page.evaluate(
+      (p) => window.__globeLab.readPixels(p),
+      circlePoints(g, g.rPx + 3, degs),
+    ),
+  });
+  const off = await read();
+  await applyHash(page, VIEW);
+  const on = await read();
+  const violet = ([r, g2, b]) => Math.min(r, b) - g2;
+  const fmt = (list) => list.map((p) => p.slice(0, 3).join("/")).join(" ");
+  console.log(
+    `terminator crossing at the top, degrees ${degs.join(", ")} (negative = lit side): ` +
+      `inside on ${fmt(on.inside)}; off ${fmt(off.inside)}; outside on ${fmt(on.outside)}; ` +
+      `violet inside ${on.inside.map(violet).join(" ")}, outside ${on.outside.map(violet).join(" ")}`,
+  );
+  expect(errors).toEqual([]);
+});
+
 /** The sample counts swept (the research's {6, 8, 12, 16, 24}). */
 const STEPS = [6, 8, 12, 16, 24];
 
@@ -295,6 +400,9 @@ async function medianMs(page) {
 // the owner decides with the ratio in hand. Logged per sample count and,
 // on the phone tier, per pixel-ratio cap; SwiftShader timings are relative
 // only, so each is a ratio to the pass off in the same page and setting.
+// A MEASUREMENT, not a check (it cannot fail on a cost), so it runs only
+// when asked: GLOBE_COST=1 (review B8; about 4 min of browser time that
+// every gate would otherwise spend).
 for (const [tier, use, cap] of /** @type {const} */ ([
   ["desktop 1280x800", {}, 1],
   ["phone 412x915", PHONE, 1],
@@ -306,6 +414,10 @@ for (const [tier, use, cap] of /** @type {const} */ ([
     test(`what the atmosphere costs (${tier}, pixel ratio ${cap})`, async ({
       page,
     }) => {
+      test.skip(
+        !process.env.GLOBE_COST,
+        "a cost measurement: run with GLOBE_COST=1",
+      );
       test.setTimeout(120_000);
       const view = `${VIEW}&pixelRatio=${cap}`;
       const errors = await bootGlobe(page, `${view}&atmo=0`);
