@@ -348,7 +348,7 @@ function authoring(options: { store?: DraftFileStore } = {}) {
 
   /** Where a label sits in the AR world group's frame right now. */
   function inWorldGroup(label: string): Vector3 {
-    const object = labels.find((o) => o.name === label);
+    const object = [...labels].reverse().find((o) => o.name === label);
     expect(object, `no preview for ${label}`).toBeDefined();
     scene.updateMatrixWorld(true);
     return world.worldToLocal(object!.getWorldPosition(new Vector3()));
@@ -521,5 +521,84 @@ describe("symptom B within a visit: the code and its notes settle together (B2)"
       level: { json: string };
     };
     expect(meta.level.json).toBe(a.ctx.mintedLevel!.json);
+  });
+});
+
+describe("symptom B across visits: a later visit is corrected through the code (D10b)", () => {
+  /** Visit 0 measures the code and places "Gate"; its visit ends. */
+  async function firstVisit() {
+    const a = authoring();
+    a.setAlignment(yawAlignment(0, [0, 400, 0]));
+    await a.mint();
+    await a.placePin("Gate", [2, 0, -1]);
+    a.endVisit();
+    return a;
+  }
+
+  // The second visit's GPS alignment is 20 m and 30 degrees away from the
+  // first's - GPS error that differs between visits (plan §7b finding 2).
+  const SECOND = yawAlignment(30, [20, 401, -8]);
+
+  it("keeps a second visit's note where it was placed relative to the code, when the code was seen", async () => {
+    const a = await firstVisit();
+    const codeLocal = mintedOdom(a.dispatched);
+    a.beginVisit();
+    a.setAlignment(SECOND);
+    a.seeTheCode();
+    await flush();
+    await a.placePin("Later", [3, 0, 1]);
+    a.endVisit();
+
+    const later = a.ctx.placedObjects[1]!.object;
+    const offset = worldOf(later.geo).sub(codeWorldOf(a.ctx.mintedLevel!.json));
+    // Relative to the code exactly as placed, turned by the FIRST visit's
+    // alignment (the frame the code's geo was stored in) - not the 20 m
+    // the second visit's GPS put between them.
+    const expected = new Vector3(3, 0, 1).sub(codeLocal);
+    expect(offset.distanceTo(expected)).toBeLessThan(1e-2);
+    const logs = a.settledLogs();
+    expect(logs.at(-1)?.payload.basis).toBe("code-corrected");
+    // The stored code is the reference; the second visit does not move it.
+    expect(logs.at(-1)?.payload.level).toBeNull();
+  });
+
+  it("without a sighting of the code, keeps the plain visit alignment (and its GPS difference)", async () => {
+    const a = await firstVisit();
+    a.beginVisit();
+    a.setAlignment(SECOND);
+    await a.placePin("Later", [3, 0, 1]);
+    a.endVisit();
+
+    expect(a.settledLogs().at(-1)?.payload.basis).toBe("visit-alignment");
+  });
+
+  it("shows the earlier visit's note from its geo on re-entry, then at its spot relative to the code once the code is seen", async () => {
+    // Plan §3.2 "Earlier visits' objects on re-entry": placed from geo like
+    // viewer content until the code is seen in this visit, then through the
+    // code correction - which, like this visit's own notes, is rigid in AR.
+    const a = await firstVisit();
+    const gate = a.ctx.placedObjects[0]!.object;
+    a.setAlignment(SECOND);
+    a.beginVisit();
+
+    // From geo: at the scene root, where the stored geo is.
+    const shown = [...a.labels].reverse().find((o) => o.name === "Gate");
+    expect(shown, "the earlier note should be shown on re-entry").toBeDefined();
+    a.scene.updateMatrixWorld(true);
+    expect(
+      shown!.getWorldPosition(new Vector3()).distanceTo(worldOf(gate.geo)),
+    ).toBeLessThan(1e-3);
+
+    a.seeTheCode();
+    await flush();
+    // The code sits at the same odometry spot in this visit, so the note is
+    // back at the odometry spot it was placed at - whatever GPS says.
+    expect(
+      a.inWorldGroup("Gate").distanceTo(new Vector3(2, 0, -1)),
+    ).toBeLessThan(1e-2);
+    a.setAlignment(yawAlignment(-12, [5, 399, 3]));
+    expect(
+      a.inWorldGroup("Gate").distanceTo(new Vector3(2, 0, -1)),
+    ).toBeLessThan(1e-2);
   });
 });

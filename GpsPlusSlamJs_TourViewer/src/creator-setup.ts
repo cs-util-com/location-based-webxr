@@ -22,7 +22,7 @@ import {
   objectPlaced,
   visitSettled,
 } from "./tour-authoring-actions.js";
-import { planVisitSettle } from "./visit-settle.js";
+import { planVisitSettle, settleAlignment } from "./visit-settle.js";
 import { tallyEvaluation, type FusedTallies } from "./qr-debug-readout.js";
 import { createQrTrackingController } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
 import { createFusedQrPoseSource } from "gps-plus-slam-app-framework/ar/qr/qr-fused-pose-source";
@@ -54,7 +54,7 @@ import {
 import { rebuildZipWithEntries } from "gps-plus-slam-app-framework/storage";
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
-import { Vector3 } from "three";
+import { Group, Vector3, type Object3D } from "three";
 import type { CapturedCameraFrame } from "gps-plus-slam-app-framework/ar/captured-camera-frame";
 
 import {
@@ -62,6 +62,7 @@ import {
   mintPin,
   newObjectId,
   renderTourObjects,
+  type TourObjectRendererDeps,
 } from "./content-placement.js";
 import { odomNueFromWebXr } from "./visit-anchoring.js";
 
@@ -590,6 +591,32 @@ export function wireCreatorSetup(deps: {
     }
   }
 
+  /**
+   * Where a preview goes. An object placed in THIS visit is RIGID in AR
+   * (decision D2): under the world group at its odometry pose, where GPS
+   * re-solves move it together with the camera. Anything else has only its
+   * geo and is placed from it in `fromGeo` - the earlier visits' frame, or
+   * the scene root outside a visit (plan §3.2).
+   */
+  function previewFrame(
+    placement: (typeof ctx.placedObjects)[number]["placement"],
+    fromGeo: Object3D,
+  ): Pick<TourObjectRendererDeps, "scene" | "poseOf"> {
+    const group = seams.getArWorldGroup();
+    if (
+      placement === undefined ||
+      placement.visit !== ctx.arSessionGeneration ||
+      group === null
+    ) {
+      return { scene: fromGeo };
+    }
+    const { position, rotation } = placement.local;
+    return {
+      scene: group,
+      poseOf: () => ({ positionNue: position, rotationNue: rotation }),
+    };
+  }
+
   /** Render ONE newly placed object into the live preview (incremental:
    *  each placement decodes only its own photo, and two placements cannot
    *  race each other's disposal - M4 review #7). */
@@ -599,29 +626,9 @@ export function wireCreatorSetup(deps: {
     const zero = selectZeroReference(arStore.getState());
     if (entry === undefined || scene === null || zero === null) return;
     const generation = ctx.arSessionGeneration;
-    // An object placed in THIS visit is RIGID in AR (decision D2): under
-    // the world group at its odometry pose, where GPS re-solves move it
-    // together with the camera. Anything else has only its geo and is
-    // placed from it, like the viewer's content (plan §3.2).
-    const group = seams.getArWorldGroup();
-    const placement = entry.placement;
-    const rigid =
-      placement !== undefined &&
-      placement.visit === generation &&
-      group !== null
-        ? { parent: group, local: placement.local }
-        : null;
     void renderTourObjects([entry.object], {
-      scene: rigid?.parent ?? scene,
+      ...previewFrame(entry.placement, earlierFrame ?? scene),
       zero,
-      ...(rigid === null
-        ? {}
-        : {
-            poseOf: () => ({
-              positionNue: rigid.local.position,
-              rotationNue: rigid.local.rotation,
-            }),
-          }),
       makeLabel: (text) => seams.createLabel(text),
       loadPhotoTexture: () =>
         entry.blob === undefined
@@ -1043,6 +1050,7 @@ export function wireCreatorSetup(deps: {
           // this result.
           fusedPose.evaluate(event.text);
           const fused = fusedPose.last(event.text);
+          noteSighting(event.text, fused);
           ctx.printSizeCheck?.onDetection(event.text, fused, ctx.activeSizeM);
           if (fused?.status === "stable") adoptedNote = null;
           ctx.qrDebugView?.update(event.qrPoseWorld, ctx.activeSizeM);
@@ -1087,6 +1095,102 @@ export function wireCreatorSetup(deps: {
     ctx.printSizeCheck?.answer(offer.text, "kept");
     renderAuthorReadout();
   });
+
+  /**
+   * The frame the earlier visits' objects are shown in during this AR visit
+   * (plan §3.2 "Earlier visits' objects on re-entry"): at the scene root
+   * with the identity while they can only be placed from geo, under the AR
+   * world group with the corrected alignment's inverse once the code has
+   * been seen - which puts each where the code says, rigid in AR, because
+   * the corrected alignment does not depend on the visit's GPS alignment
+   * (`visit-anchoring.ts`). Null outside a visit.
+   */
+  let earlierFrame: Group | null = null;
+  /** Where `earlierFrame` is attached. Tracked, not read from `parent`:
+   *  the e2e fakes' scene nodes do not set it. */
+  let earlierFrameUnderGroup = false;
+
+  /** Move the earlier visits' frame to where this visit's knowledge of the
+   *  code puts it (see `earlierFrame`). Cheap: one matrix. */
+  function placeEarlierObjects(): void {
+    const frame = earlierFrame;
+    const scene = seams.getScene();
+    const group = seams.getArWorldGroup();
+    if (frame === null || scene === null) return;
+    const state = arStore.getState();
+    const choice = settleAlignment({
+      visit: ctx.arSessionGeneration,
+      alignment: selectAlignmentMatrix(state),
+      zero: selectZeroReference(state),
+      mintedLevel: ctx.mintedLevel,
+      measurement: ctx.codeMeasurement,
+      sighting: ctx.visitCodeSighting,
+    });
+    if (choice?.basis === "code-corrected" && group !== null) {
+      frame.matrix.fromArray(choice.alignment).invert();
+      frame.matrixWorldNeedsUpdate = true;
+      if (!earlierFrameUnderGroup) {
+        scene.remove(frame);
+        group.add(frame);
+        earlierFrameUnderGroup = true;
+      }
+      return;
+    }
+    frame.matrix.identity();
+    frame.matrixWorldNeedsUpdate = true;
+    if (earlierFrameUnderGroup) {
+      group?.remove(frame);
+      scene.add(frame);
+      earlierFrameUnderGroup = false;
+    }
+  }
+
+  /** Texts whose level id is being derived (`qrCodeId` is async). */
+  const identifying = new Set<string>();
+
+  /**
+   * Keep the anchor code's latest STABLE pose in this visit (plan §3.2,
+   * D10b; the entry hint §3.2a): the code whose level is in hand, or - with
+   * none measured yet - any code, since that is the one about to be
+   * measured. "Seen" is the fused pose's own `stable`, the gate the mint
+   * uses: a merely detected code gives a single-frame pose whose yaw error
+   * (several degrees) would swing every corrected note by a metre at 20 m.
+   */
+  function noteSighting(
+    text: string,
+    fused: ReturnType<NonNullable<typeof ctx.fusedPose>["last"]>,
+  ): void {
+    if (fused?.status !== "stable" || fused.pose === null) return;
+    const id = codeIds.get(text);
+    if (id === undefined) {
+      identify(text);
+      return;
+    }
+    if (ctx.mintedLevel !== null && ctx.mintedLevel.id !== id) return;
+    ctx.visitCodeSighting = { text, levelId: id, odomPose: fused.pose };
+    placeEarlierObjects();
+  }
+
+  /** Derive a text's level id once, then take the sighting it waited for. */
+  function identify(text: string): void {
+    if (identifying.has(text)) return;
+    identifying.add(text);
+    const visit = ctx.arSessionGeneration;
+    qrCodeId(text).then(
+      (id) => {
+        identifying.delete(text);
+        codeIds.set(text, id);
+        if (visit !== ctx.arSessionGeneration) return;
+        noteSighting(text, ctx.fusedPose?.last(text) ?? null);
+        renderAuthorReadout();
+      },
+      () => {
+        // No Web Crypto (an insecure context): no sighting, no correction -
+        // the plain visit alignment, as without a code in view.
+        identifying.delete(text);
+      },
+    );
+  }
 
   /**
    * The visit whose Finish already settled it (and wrote it into the zip),
@@ -1502,11 +1606,30 @@ export function wireCreatorSetup(deps: {
   return {
     renderAuthorReadout,
     startAuthorPipeline,
-    beginAuthorVisit: () => undefined,
+    beginAuthorVisit: () => {
+      if (!creator) return;
+      const scene = seams.getScene();
+      if (scene === null) return;
+      // Earlier visits' objects (plan §3.2): each keeps only its geo in this
+      // visit, so they go into one frame that starts at the scene root -
+      // placed from geo, like the viewer's content - and moves under the
+      // world group once the code is seen (`placeEarlierObjects`).
+      earlierFrame = new Group();
+      earlierFrame.name = "earlier-visits";
+      earlierFrame.matrixAutoUpdate = false;
+      earlierFrameUnderGroup = false;
+      scene.add(earlierFrame);
+      for (let i = 0; i < ctx.placedObjects.length; i += 1) previewObject(i);
+      placeEarlierObjects();
+    },
     endAuthorVisit: () => {
       if (!creator) return;
       settleVisit("visit-end");
       ctx.visitCodeSighting = null;
+      // The previews inside are disposed with `placedPreviews`; the frame
+      // itself is this module's.
+      earlierFrame?.removeFromParent();
+      earlierFrame = null;
     },
     resetFinishStep: () => {
       dom.downloadButton.disabled = true;

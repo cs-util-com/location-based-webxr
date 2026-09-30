@@ -173,6 +173,39 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
     adopted print size, a tour close in `archive-open.ts`).
   - A photo's visit is taken at the tap, before its async encode: one whose
     session ended during the encode keeps its tap-time geo.
+  - **Later visits, corrected through the code (D10b).** Every detection's
+    fused evaluation goes through `noteSighting`: a STABLE pose of the code
+    whose level is in hand (or of any code while none is measured) becomes
+    `ctx.visitCodeSighting`, the latest one of this visit. A text's level id
+    is a hash (`qrCodeId`, async), so it is derived once per text
+    (`codeIds`) and the sighting waits for it. When the level's pose was
+    stored in an EARLIER visit (or came from a draft) and this visit saw the
+    code, the visit settles through the corrected alignment
+    (`visit-settle.ts`); without a sighting, through its plain alignment.
+  - **Earlier visits' objects on re-entry.** `beginAuthorVisit` (called by
+    `ar-entry.ts` once the runtime runs) renders every earlier object into
+    one frame at the scene root, placed from geo like the viewer's content;
+    each sighting re-places that frame (`placeEarlierObjects`): once the
+    basis is `code-corrected` it moves under the world group with the
+    corrected alignment's inverse as its matrix, which puts each object at
+    the odometry spot the code says - rigid in AR, since the corrected
+    alignment does not depend on the visit's GPS alignment
+    (`visit-anchoring.ts` property test). `endAuthorVisit` removes the frame;
+    the previews inside are disposed with `placedPreviews`. Objects already
+    written to the zip by a Finish (the manifest's) are not shown - showing
+    hosted objects in author mode is M4.
+  - **"Seen" is the fused pose's `stable`, no new threshold.** The same gate
+    the mint uses (the fused-pose source's own fit, motion and spread
+    checks). Considered over the plausible range of "seen": at one end a
+    single detection, whose single-frame pose is not gated at all (the fused
+    source exists because single frames scatter; its tests use +-6 degrees),
+    and every 3 degrees of yaw error moves a corrected note 20 m away by
+    about 1 m; at the other end an average over several stable evaluations,
+    which costs the author a longer look for an improvement nobody has
+    measured. `stable` is the middle and already exists. What would change
+    the choice: a field recording in which the stable poses of a re-sighted
+    code disagree with its stored pose by more than the 0.3 m / 2 degree
+    acceptance (plan §3.2) - then an averaged hold is the next step.
 
 - **A Drive tour's finish SAVES and shows the Drive steps** (Drive replace
   plan §2 decisions 1 and 4): the route is `finishRoute({canShare,
