@@ -253,6 +253,15 @@ const PARAMS = {
   },
   atmoStrength: { fallback: GLOBE_ATMOSPHERE.strength, min: 0, max: 4 },
   atmoThickness: { fallback: GLOBE_ATMOSPHERE.thickness, min: 1, max: 10 },
+  // The reference image's looks (round-4 plan 2026-09-28-2105 DEC-GL4-8),
+  // each 0 (off, the look before) to 1: a blue grade over the ground,
+  // shaded clouds, a soft blue-grey night with warm lights, navy space and
+  // a glow round bright stars.
+  grade: { fallback: 0, min: 0, max: 1 },
+  cloudRelief: { fallback: 0, min: 0, max: 1 },
+  twilight: { fallback: 0, min: 0, max: 1 },
+  space: { fallback: 0, min: 0, max: 1 },
+  starGlow: { fallback: 0, min: 0, max: 1 },
   fovY: { fallback: 50, min: 20, max: 80 },
   pixelRatio: { fallback: 2, min: 0.5, max: 4 },
   errorTarget: { fallback: null, min: 0.25, max: 256 },
@@ -835,6 +844,7 @@ function start() {
   renderer.autoClear = false;
   const sky = createGlobeSky();
   const sunWorld = new THREE.Vector3();
+  const earthDirection = new THREE.Vector3();
   const celestial = new THREE.Quaternion();
   let siderealAngleRad = 0;
   const device = reportDevice(renderer);
@@ -895,6 +905,10 @@ function start() {
     u.uNightGain.value = params.nightGain;
     u.uWaterRoughness.value = params.waterRoughness;
     u.uCloudOpacity.value = params.cloudOpacity;
+    u.uGrade.value = params.grade;
+    u.uCloudRelief.value = params.cloudRelief;
+    u.uTwilight.value = params.twilight;
+    sky.setStarGlow(params.starGlow);
     globe.sun.intensity = params.sunIntensity;
     sky.setLook({ sunDiameterDeg: params.sunSize, glow: params.sunGlow });
     globe.tiles.errorTarget = params.errorTarget;
@@ -1066,6 +1080,15 @@ function start() {
       sky.setCelestialRotation(
         globe.celestialToWorld(siderealAngleRad, celestial),
       );
+      // Navy space, lighter towards the Earth (the globe at the origin).
+      const cameraDistance = camera.position.length();
+      sky.setSpace({
+        strength: params.space,
+        earthDirection: earthDirection.copy(camera.position).negate(),
+        earthAngularRadiusRad: Math.asin(
+          Math.min(1, radius / Math.max(cameraDistance, radius)),
+        ),
+      });
       sky.render(renderer, camera);
     }
     renderer.render(scene, camera);
@@ -1179,6 +1202,13 @@ function start() {
       cloudLonOffsetRad: globe.surfaceUniforms.uCloudLonOffset.value,
       sunEcef: globe.surfaceUniforms.uSunEcef.value.toArray(),
       // What the shader reads, not what the hash says.
+      look: {
+        grade: globe.surfaceUniforms.uGrade.value,
+        cloudRelief: globe.surfaceUniforms.uCloudRelief.value,
+        twilight: globe.surfaceUniforms.uTwilight.value,
+        space: sky.uniforms.uSpace.value,
+        starGlow: sky.starUniforms.uStarGlow.value,
+      },
       tuning: {
         nightGain: globe.surfaceUniforms.uNightGain.value,
         waterRoughness: globe.surfaceUniforms.uWaterRoughness.value,

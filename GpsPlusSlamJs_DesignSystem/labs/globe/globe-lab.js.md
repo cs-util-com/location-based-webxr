@@ -119,6 +119,30 @@
   draws n frames back to back, reads one pixel so the GPU has finished,
   and returns the wall time in ms. Under SwiftShader it is relative only:
   the smokes compare two settings within one page load.
+- The reference look (round-4 plan 2026-09-28-2105 DEC-GL4-8, the
+  owner's reference image, §1.1 items 1-7): five switches on the plate's
+  "Reference look" section, each 0 (off, the look before) to 1, each
+  compared against its own OFF (`globe-look.smoke.spec.mjs`):
+  - `grade` (item 1): the ground desaturated towards a cool blue
+    (`uGrade`);
+  - `cloudRelief` (item 2, the shading only; a sharper cloud texture is a
+    data decision, see the round-4 results): thin cloud edges blue-grey and
+    the side of a cloud mass facing the sun lighter, from the coverage's
+    screen-space gradient against the sun's direction on screen
+    (`uCloudRelief`);
+  - `twilight` (item 3): the night side faintly blue-grey (from the
+    ground's own colour), a soft band just past the terminator, and warm
+    orange city lights (`uTwilight`);
+  - `space` (item 6): navy space, lighter towards the Earth's limb (the sky
+    pass's `setSpace`, fed the Earth's direction and angular radius every
+    frame);
+  - `starGlow` (item 7): a soft glow round bright stars; with a low
+    `starMag` (fewer stars) and a high `starGain` it gives the
+    reference's few bright stars as an alternative to the owner's dense
+    field.
+  - Item 5 (a dark sea without a bright glint) needs no new switch:
+    `waterRoughness=0.9` makes the water as rough as the land. Item 4
+    (relief from elevation) needs a height map (data), not done.
 - The distance readout (round-4 plan 2026-09-28-2105 DEC-GL4-5):
   "Altitude 20,180 km" bottom left, above the device line, and while the
   pin's dive is on its way or holding over the target, " · 1,300 km to the
