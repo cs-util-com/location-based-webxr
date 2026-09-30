@@ -429,10 +429,28 @@ export function wireCreatorSetup(deps: {
   function sessionLive(): boolean {
     return arSessionLive(arController.getState().status);
   }
+  /** Ids of placed objects whose preview waits for the zero (see
+   *  `previewObject`); emptied when a visit ends - the next one renders
+   *  everything again. */
+  const previewsAwaitingZero = new Set<string>();
+
+  /** Render what waited for the zero, once the store has one. */
+  function renderPreviewsAwaitingZero(): void {
+    if (previewsAwaitingZero.size === 0) return;
+    if (selectZeroReference(arStore.getState()) === null) return;
+    const waiting = new Set(previewsAwaitingZero);
+    previewsAwaitingZero.clear();
+    ctx.placedObjects.forEach((entry, index) => {
+      if (waiting.has(entry.object.id)) previewObject(index);
+    });
+  }
+
   if (creator) {
     // Alignment arrives via GPS dispatches, not via controller state - the
     // readout must follow the store, or "waiting for GPS alignment" sticks.
+    // So does the zero, which the previews from geo wait for.
     arStore.subscribe(() => {
+      renderPreviewsAwaitingZero();
       renderAuthorReadout();
     });
   }
@@ -662,7 +680,14 @@ export function wireCreatorSetup(deps: {
     const entry = ctx.placedObjects[placedIndex];
     const scene = seams.getScene();
     const zero = selectZeroReference(arStore.getState());
-    if (entry === undefined || scene === null || zero === null) return;
+    if (entry === undefined || scene === null) return;
+    if (zero === null) {
+      // Placed from geo, which needs the zero - and on the first visit of a
+      // page load (a restored draft) the zero comes with the first GPS fix,
+      // after the visit began. Rendered when it lands (M2c review #4).
+      previewsAwaitingZero.add(entry.object.id);
+      return;
+    }
     const generation = ctx.arSessionGeneration;
     void renderTourObjects([entry.object], {
       ...previewFrame(entry.placement, earlierFrame ?? scene),
@@ -1740,6 +1765,7 @@ export function wireCreatorSetup(deps: {
       if (!creator) return;
       settleVisit("visit-end");
       ctx.visitCodeSighting = null;
+      previewsAwaitingZero.clear();
       // The previews inside are disposed with `placedPreviews`; the frame
       // itself is this module's.
       earlierFrame?.removeFromParent();

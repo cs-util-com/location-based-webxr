@@ -214,6 +214,12 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
     the previews inside are disposed with `placedPreviews`. Objects already
     written to the zip by a Finish (the manifest's) are not shown - showing
     hosted objects in author mode is M4.
+  - **A preview from geo waits for the zero** (M2c review #4): on the
+    first visit of a page load (a restored draft) the zero arrives with the
+    first GPS fix, after `beginAuthorVisit` ran. `previewObject` records the
+    object's id instead of returning silently, and the store subscription
+    renders what waited once the zero is there (once each; the set is
+    emptied at the visit's end, since the next visit renders everything).
   - **"Seen" is the fused pose's `stable`, no new threshold.** The same gate
     the mint uses (the fused-pose source's own fit, motion and spread
     checks). Considered over the plausible range of "seen": at one end a
@@ -418,5 +424,6 @@ degrees) and `creator-finish.test.ts` (the finish's manifest). Anchoring (M2c):
 setup, its log and draft rewrite; each visit settling once - a page-side
 Finish does not stop the next visit, a failed Finish leaves the visit to
 settle at its end - and late photos joining their visit's settle, including
-one landing during a live Finish), `creator-finish.test.ts` (the settle at
+one landing during a live Finish; a restored object shown once the zero
+arrives), `creator-finish.test.ts` (the settle at
 Finish, once).

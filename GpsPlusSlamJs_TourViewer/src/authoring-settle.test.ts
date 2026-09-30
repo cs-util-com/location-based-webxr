@@ -45,7 +45,7 @@ import {
   createTourViewerStore,
   endQrPipeline,
 } from "./tour-viewer-session.js";
-import { objectPoseNue } from "./content-placement.js";
+import { mintPin, objectPoseNue } from "./content-placement.js";
 import { META_KEY, objectKey } from "./draft-persistence.js";
 import {
   correctedAlignment,
@@ -252,7 +252,10 @@ function authoring(options: { store?: DraftFileStore } = {}) {
   dom.sizeInput.value = String(SIZE_M);
   const ctx = createTourViewerSession();
   const real = createTourViewerStore();
-  const gps = { alignment: yawAlignment(0, [0, 400, 0]) };
+  const gps: {
+    alignment: number[];
+    zero: { lat: number; lon: number } | null;
+  } = { alignment: yawAlignment(0, [0, 400, 0]), zero: ZERO };
   const dispatched: { type: string; payload?: unknown }[] = [];
   const arStore = {
     ...real,
@@ -260,7 +263,7 @@ function authoring(options: { store?: DraftFileStore } = {}) {
       ({
         ...real.getState(),
         gpsData: {
-          zero: ZERO,
+          zero: gps.zero,
           gpsEvents: {
             alignmentMatrix: gps.alignment,
             gpsPositions: Array.from({ length: MIN_ALIGNMENT_SAMPLES }, () => ({
@@ -439,6 +442,11 @@ function authoring(options: { store?: DraftFileStore } = {}) {
     tapPhoto,
     world,
     setAlignment,
+    /** The zero arrives (or goes): a store dispatch, as the first fix's. */
+    setZero: (zero: { lat: number; lon: number } | null): void => {
+      gps.zero = zero;
+      real.dispatch({ type: "test/zeroChanged" } as never);
+    },
     placePin,
     inWorldGroup,
     seeTheCode,
@@ -973,6 +981,47 @@ describe(
         "finish",
         "late-arrival",
       ]);
+    });
+  },
+);
+
+describe(
+  "earlier objects wait for the zero (M2c review #4)",
+  { timeout: SLOW_MS },
+  () => {
+    it("shows a restored object once the zero arrives, when the visit began without one", async () => {
+      // Why this test matters: an object is placed from its geo, which needs
+      // the zero - and the zero arrives with the first GPS fix, AFTER the
+      // visit began on the first visit of a page load (a restored draft).
+      // The preview returned early and nothing rendered it later, so the
+      // creator saw an empty scene and placed the same notes again.
+      const a = authoring();
+      const old = mintPin({
+        id: "old",
+        label: "Old",
+        worldNuePosition: { x: 4, y: 401, z: -2 },
+        zero: ZERO,
+        nowIso: "2026-09-30T10:00:00.000Z",
+      })!;
+      a.ctx.placedObjects = [{ object: old }];
+      a.setZero(null);
+      a.beginVisit();
+      await flush();
+      expect(a.labels.map((o) => o.name)).not.toContain("Old");
+
+      a.setZero(ZERO);
+      await flush();
+      const shown = a.labels.filter((o) => o.name === "Old");
+      expect(shown).toHaveLength(1);
+      a.scene.updateMatrixWorld(true);
+      expect(
+        shown[0]!.getWorldPosition(new Vector3()).distanceTo(worldOf(old.geo)),
+      ).toBeLessThan(1e-3);
+
+      // Later dispatches do not render it a second time.
+      a.setZero(ZERO);
+      await flush();
+      expect(a.labels.filter((o) => o.name === "Old")).toHaveLength(1);
     });
   },
 );
