@@ -1,6 +1,8 @@
 // @ts-check
 import { defineConfig, devices } from '@playwright/test';
 
+import { browserLaunchArgs } from '../../scripts/e2e/browser-launch.mjs';
+
 /**
  * Playwright configuration for Recorder App UI tests.
  *
@@ -33,6 +35,11 @@ export default defineConfig({
       ]
     : [['list'], ['html', { open: 'never' }]],
   use: {
+    // A browser stage that run-stage lowered below normal priority (Windows)
+    // renders in the browser process, which inherits that priority, instead
+    // of a GPU process Chromium raises itself. See
+    // scripts/e2e/browser-launch.mjs.md.
+    launchOptions: { args: browserLaunchArgs(process.env) },
     baseURL: 'http://127.0.0.1:5173',
     trace: captureArtifacts ? 'on' : 'on-first-retry',
     screenshot: captureArtifacts ? 'on' : 'only-on-failure',

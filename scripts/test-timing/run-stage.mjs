@@ -28,7 +28,11 @@ import { machineFingerprint, machineLabel } from './machine.mjs';
 import { parsePlaywrightCounts, parseVitestCounts } from './reporter-parse.mjs';
 import { buildStageCommand, decideRecording } from './stage-args.mjs';
 import { getStage, stageOrder } from './projects.mjs';
-import { spawnAtPriority, stageSpawnPriority } from './stage-priority.mjs';
+import {
+  LOWERED_MARKER_ENV,
+  spawnAtPriority,
+  stageSpawnPriority,
+} from './stage-priority.mjs';
 import {
   appendRecording,
   formatSeconds,
@@ -122,7 +126,16 @@ function withBinPath(env, root) {
 function execShell(command, cwd, env, priority) {
   return new Promise((resolve) => {
     const child = spawnAtPriority(
-      () => spawn(command, { shell: true, stdio: 'inherit', cwd, env }),
+      ({ lowered }) =>
+        spawn(command, {
+          shell: true,
+          stdio: 'inherit',
+          cwd,
+          // The marker tells the Playwright configs the stage really runs
+          // lowered, so they may move the GPU work into the browser process.
+          // Never inherited: a stage that is not lowered must not claim it.
+          env: { ...env, [LOWERED_MARKER_ENV]: lowered ? '1' : undefined },
+        }),
       priority,
       os
     );

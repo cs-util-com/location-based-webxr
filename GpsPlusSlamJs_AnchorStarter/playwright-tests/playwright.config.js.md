@@ -7,6 +7,7 @@
 - **Key settings:**
   - `testDir: '.'` — specs live next to this config in `playwright-tests/`.
   - **Chromium only** — WebXR is Chrome-focused; other engines add no signal.
+  - Chromium is launched with `browserLaunchArgs(process.env)` from `scripts/e2e/browser-launch.mjs`: `--in-process-gpu` when run-stage lowered the browser stage (Windows), so the WebGL work inherits the lowered priority; nothing otherwise.
   - `baseURL: http://127.0.0.1:5181` — the starter's dedicated dev port, kept
     distinct from the minimal example (5180) and recorder (5173).
   - `webServer.command: pnpm run dev -- --port 5181` with

@@ -1,7 +1,7 @@
 // @ts-check
 import { defineConfig, devices } from "@playwright/test";
 
-import { browserLaunchArgs } from "./browser-launch.mjs";
+import { browserLaunchArgs } from "../../scripts/e2e/browser-launch.mjs";
 
 /**
  * The 3D look-dev page's smoke test and the lab pages' specs (the design
@@ -41,12 +41,11 @@ export default defineConfig({
     ...devices["Desktop Chrome"],
     baseURL: `http://127.0.0.1:${PORT}`,
     viewport: { width: 1280, height: 800 },
-    // On Windows: render in the browser process, which inherits the browser
-    // stage's below-normal priority, instead of a GPU process Chromium raises
-    // to AboveNormal (browser-launch.mjs.md).
-    launchOptions: {
-      args: browserLaunchArgs({ platform: process.platform, env: process.env }),
-    },
+    // A browser stage that run-stage lowered below normal priority (Windows)
+    // renders in the browser process, which inherits that priority, instead
+    // of a GPU process Chromium raises itself. See
+    // scripts/e2e/browser-launch.mjs.md.
+    launchOptions: { args: browserLaunchArgs(process.env) },
   },
   webServer: {
     command: "node serve.mjs",

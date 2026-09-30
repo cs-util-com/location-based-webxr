@@ -27,11 +27,15 @@
     runs in one project are unsupported (single-dev workflow).
   - Browser stages run at BELOW_NORMAL priority on Windows (2026-09-30):
     `execShell` spawns through `spawnAtPriority` with the priority
-    `stageSpawnPriority` picks, so the shell, Playwright and Chromium all
+    `stageSpawnPriority` picks, so the shell, Playwright and Chromium
     inherit it and short gates beside a 3D suite get the CPU first. The
-    parent process is restored after the spawn, because run-gate runs every
-    stage in-process. Opt out with `GATE_BROWSER_PRIORITY=normal`. See
-    `stage-priority.mjs.md`.
+    parent process is restored after the spawn (run-gate runs every stage
+    in-process) and never raised. Only when the stage really runs lowered
+    does the stage's env get `GATE_BROWSER_STAGE_LOWERED=1` (otherwise the
+    variable is cleared); the Playwright configs key `--in-process-gpu` on
+    it (`scripts/e2e/browser-launch.mjs`), which moves Chromium's GPU work
+    out of a process that raises itself. Opt out with
+    `GATE_BROWSER_PRIORITY=normal`. See `stage-priority.mjs.md`.
 - Examples: `await runStage(project, 'test:unit', ['src/foo.test.ts'])` runs
   a filtered, unrecorded unit run scoped to one file.
 - Tests: the pure modules it composes (`timing-store`, `delta`,

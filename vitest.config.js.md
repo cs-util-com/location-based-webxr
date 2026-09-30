@@ -23,4 +23,4 @@ pnpm exec vitest --config vitest.config.js  # watch mode
 
 ## Tests
 
-Exercises every `tests/repo-config/*.test.js` guard and the root `scripts/` tooling tests. Future repo-meta tests can land under `tests/**/*.test.js` and will be picked up automatically. Why `isolate: false` and the shared tracked-tree helper exist: the 2026-09-28 follow-up on repo-config guards failing under load (`GpsPlusSlamJs_Docs/docs/2026-09-28-1913-repo-config-guards-under-load-followup.md`, private repo).
+Exercises every `tests/repo-config/*.test.js` guard and the root `scripts/` tooling tests. Future repo-meta tests can land under `tests/**/*.test.js` and will be picked up automatically. Why `isolate: false` and the shared tracked-tree helper exist: the repo-config guards failed on timeouts under machine load (2026-09-28/30); `tests/repo-config/tracked-tree.js` records the mechanism and the measurements.
