@@ -16,6 +16,11 @@
  * - VOTES ARE LOGGED PER LOCK. The controller dispatches a lock's votes one
  *   by one and then reports the voted lock; the votes are collected in
  *   between and logged as one batch with the lock's code.
+ * - THE KEEP-ALIVE IS LOGGED PER STATE CHANGE (M1b review #5), through a
+ *   thin wrapper around the entry's keep-alive: armed, a re-scan, the fade,
+ *   the end, the stop - never per tracked frame or per fix. Its votes stay
+ *   out of the lock batches; they are in the raw stream as `qr-keep` GPS
+ *   events.
  *
  * @see viewing-log.ts.md
  */
@@ -25,9 +30,11 @@ import type { QrTrackingStatus } from "gps-plus-slam-app-framework/ar/qr/qr-trac
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import type { RecordGpsEventPayload } from "gps-plus-slam-app-framework/state";
 
+import type { KeepAlivePhase, QrVoteKeepAlive } from "./qr-vote-keep-alive.js";
 import type { AlignmentMatrix } from "./tour-authoring-actions.js";
 import {
   codeLocked,
+  keepAliveChanged,
   tourPlaced,
   votesCast,
   type TourViewingAction,
@@ -52,7 +59,13 @@ export interface ViewingLog {
   /** The lock whose votes were just dispatched. */
   votedLock(text: string, votedLocks: number): void;
   placed(input: PlacedInput): void;
+  /** Wrap the AR entry's keep-alive so its state changes are logged; the
+   *  wrapper forwards every call unchanged. */
+  keepAlive(inner: QrVoteKeepAlive): QrVoteKeepAlive;
 }
+
+type KeepAliveEvent = ReturnType<typeof keepAliveChanged>["payload"]["event"];
+type KeptCode = Parameters<QrVoteKeepAlive["keep"]>[0];
 
 function finiteOrNull(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -72,6 +85,10 @@ export function createViewingLog(deps: {
   let pendingVotes: RecordGpsEventPayload[] = [];
   /** The last logged lock: its code and visit. */
   let lastLock: { text: string; visit: number } | null = null;
+  /** The code whose lock just started tracking and has not yet reached the
+   *  keep-alive: its next relock is a re-scan, the ones after it are
+   *  tracked frames of the same lock. */
+  let rescanOf: string | null = null;
 
   function moment() {
     return { arVisitIndex: deps.arVisitIndex(), atMs: deps.now() };
@@ -87,6 +104,7 @@ export function createViewingLog(deps: {
         lastLock.visit === visit;
       lastLock = { text: event.text, visit };
       if (continues) return;
+      rescanOf = event.text;
       deps.dispatch(
         codeLocked({
           text: event.text,
@@ -132,6 +150,77 @@ export function createViewingLog(deps: {
           ...moment(),
         }),
       );
+    },
+    keepAlive(inner) {
+      /** The last phase logged (or passed while off): its kind and code. */
+      let last: { kind: KeepAlivePhase["kind"]; text: string } | null = null;
+      function log(
+        event: KeepAliveEvent,
+        text: string,
+        keepAliveMs: number | null,
+        phase: KeepAlivePhase,
+        kept?: KeptCode,
+      ): void {
+        last = phase.kind === "none" ? null : { kind: phase.kind, text };
+        if (!deps.enabled()) return;
+        deps.dispatch(
+          keepAliveChanged({
+            event,
+            text,
+            keepAliveMs,
+            phase,
+            ...(kept === undefined
+              ? {}
+              : {
+                  kept: {
+                    qrPoseWorld: kept.qrPoseWorld,
+                    qrGeo: kept.qrGeo,
+                    sizeM: kept.sizeM,
+                  },
+                }),
+            ...moment(),
+          }),
+        );
+      }
+      return {
+        ...inner,
+        keep(code, atMs) {
+          inner.keep(code, atMs);
+          if (code.text === rescanOf) rescanOf = null;
+          const phase = inner.phase(atMs);
+          if (phase.kind !== "none" && phase.text === code.text) {
+            log("armed", code.text, atMs, phase, code);
+          }
+        },
+        relock(text, atMs) {
+          inner.relock(text, atMs);
+          const phase = inner.phase(atMs);
+          if (phase.kind === "none" || phase.text !== text) return;
+          const rescan = rescanOf === text;
+          if (rescan) rescanOf = null;
+          if (rescan || phase.kind !== last?.kind) {
+            log("relocked", text, atMs, phase);
+          }
+        },
+        votesForFix(fixMs) {
+          const votes = inner.votesForFix(fixMs);
+          const phase = inner.phase(fixMs);
+          if (phase.kind === "none") {
+            // A code whose votes cannot be built was dropped.
+            if (last !== null) log("stopped", last.text, null, phase);
+          } else if (
+            (phase.kind === "fading" || phase.kind === "ended") &&
+            (phase.kind !== last?.kind || phase.text !== last.text)
+          ) {
+            log(phase.kind, phase.text, fixMs, phase);
+          }
+          return votes;
+        },
+        stop() {
+          inner.stop();
+          if (last !== null) log("stopped", last.text, null, { kind: "none" });
+        },
+      };
     },
   };
 }

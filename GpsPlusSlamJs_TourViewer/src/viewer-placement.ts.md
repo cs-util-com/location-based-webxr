@@ -17,7 +17,11 @@ recording. Its own module since the flows plan M6.
     it), `vote` after each dispatched vote, `votedLock` first in
     `onVotedLock`, `placed` after the content, the capture-spot and the ring
     placements (the ring's count comes back from `placeDecodedPlanes`, 0 when
-    it bailed). Silent unless a recording runs; absent, nothing is logged.
+    it bailed), and `keepAlive` wrapping each AR entry's code keep-alive so
+    its state changes are logged (M1b review #5; the wrapper is what
+    `ctx.viewerKeepAlive` holds, so the AR exit's and the tour close's
+    `stop()` are logged too). Silent unless a recording runs; absent,
+    nothing is logged.
   - `ViewerPlacement.startScanGate()` (called when the session reaches
     running, and again when a tour opens into a running session) derives
     the scan gate (`scan-gate.ts`) and arms the escape clock
@@ -162,7 +166,9 @@ real viewer controller config (a lock, then its votes as one batch; no
 second lock for the next tracked frame), and exactly today's dispatches
 without a running recording. Only a lock's votes are batched into
 `votesCast`; the keep-alive's go through `castVote` alone and reach a
-recording as source-stamped GPS events.
+recording as source-stamped GPS events, its state changes as
+`tourViewing/keepAlive` (the session's keep-alive is the logged one, the AR
+exit's stop included; nothing without a running recording).
 
 `viewer-votes.test.ts` (authoring plan M2b) - with the real store: the
 scan gate stays scanning on a lock that cast no vote (no GPS zero yet, a

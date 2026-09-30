@@ -361,7 +361,9 @@ export function createViewerPlacement(deps: {
     castVote: (payload: RecordGpsEventPayload) => void,
   ): QrVoteKeepAlive {
     ctx.viewerKeepAlive?.stop();
-    const keepAlive = createViewerKeepAlive();
+    // Its state changes go to the viewing log (M1b review #5).
+    const created = createViewerKeepAlive();
+    const keepAlive = deps.viewingLog?.keepAlive(created) ?? created;
     ctx.viewerKeepAlive = keepAlive;
     const nextDeviceFix = createDeviceFixWatch();
     const unsubscribe = arStore.subscribe(() => {

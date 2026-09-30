@@ -15,6 +15,8 @@ import type { QrDetectionEvent } from "gps-plus-slam-app-framework/ar/qr/qr-trac
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import type { RecordGpsEventPayload } from "gps-plus-slam-app-framework/state";
 
+import { createQrVoteKeepAlive } from "./qr-vote-keep-alive.js";
+import { createTourViewerStore } from "./tour-viewer-session.js";
 import type { TourViewingAction } from "./tour-viewing-actions.js";
 import { createViewingLog } from "./viewing-log.js";
 
@@ -231,5 +233,136 @@ describe("the viewer's tourViewing log", () => {
     for (const action of h.dispatched) {
       expect(JSON.parse(JSON.stringify(action))).toEqual(action);
     }
+  });
+
+  it("the keep-alive payload survives the JSON round trip too", () => {
+    const h = harness();
+    const keepAlive = h.log.keepAlive(createQrVoteKeepAlive(KEEP_SETTINGS));
+    keepAlive.keep(KEPT, 0);
+    keepAlive.votesForFix(1500);
+    keepAlive.stop();
+    expect(h.dispatched.length).toBeGreaterThan(0);
+    for (const action of h.dispatched) {
+      expect(JSON.parse(JSON.stringify(action))).toEqual(action);
+    }
+  });
+});
+
+// The geodesy the keep-alive's vote builder calls is licence-gated; the
+// store's construction activates it (the same activation main.ts performs).
+createTourViewerStore();
+
+/** A short schedule, so the phases pass within a few calls. */
+const KEEP_SETTINGS = {
+  holdMs: 1000,
+  fadeMs: 1000,
+  votesPerFix: 3,
+  baselineM: 30,
+  syntheticAccuracyM: 5,
+};
+const KEPT = {
+  text: "code-a",
+  qrPoseWorld: { position: [0, 1, -2], rotation: [0, 0, 0, 1] },
+  qrGeo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 90 },
+  sizeM: 0.2,
+} as const;
+
+describe("the viewer's tourViewing log of the code keep-alive (M1b review #5)", () => {
+  // Why these tests matter: after a scan's budget the keep-alive keeps
+  // voting for minutes, and its votes are in the raw stream only as stamped
+  // GPS events. Without its state changes a replay cannot tell when the
+  // hold started, what pose it re-voted from, whether a re-scan restarted
+  // it, or when it faded out - the questions a misplaced tour asks.
+  const keepAliveLog = (dispatched: TourViewingAction[]) =>
+    dispatched
+      .filter((a) => a.type === "tourViewing/keepAlive")
+      .map((a) => a.payload as unknown as Record<string, unknown>);
+
+  it("logs each state change - armed with the pose it re-votes from, a re-scan, the fade, the end, the stop - and nothing per tracked frame or per fix", () => {
+    const h = harness();
+    const keepAlive = h.log.keepAlive(createQrVoteKeepAlive(KEEP_SETTINGS));
+
+    keepAlive.keep(KEPT, 0);
+    expect(keepAlive.votesForFix(500)).toHaveLength(3); // holding: silent
+    keepAlive.relock("code-a", 600); // a tracked frame of the same lock
+    keepAlive.relock("code-b", 650); // another code: nothing kept for it
+    keepAlive.votesForFix(1700); // past the hold (from 600): fading
+    keepAlive.votesForFix(1800); // still fading: silent
+    // A re-scan: the lock starts tracking again, then its relock.
+    h.log.detection(detection("code-a"), LEVEL, "scanning");
+    keepAlive.relock("code-a", 1900);
+    keepAlive.relock("code-a", 1950); // its next tracked frame: silent
+    keepAlive.votesForFix(3100); // fading again
+    keepAlive.votesForFix(4000); // past the fade: ended
+    keepAlive.votesForFix(4100);
+    keepAlive.stop();
+    keepAlive.stop(); // nothing kept any more: silent
+
+    const log = keepAliveLog(h.dispatched);
+    expect(log.map((e) => e["event"])).toEqual([
+      "armed",
+      "fading",
+      "relocked",
+      "fading",
+      "ended",
+      "stopped",
+    ]);
+    expect(log[0]).toEqual({
+      event: "armed",
+      text: "code-a",
+      keepAliveMs: 0,
+      phase: { kind: "holding", text: "code-a", remainingMs: 1000 },
+      kept: {
+        qrPoseWorld: KEPT.qrPoseWorld,
+        qrGeo: KEPT.qrGeo,
+        sizeM: 0.2,
+      },
+      arVisitIndex: 0,
+      atMs: T0,
+    });
+    expect(log[1]).toMatchObject({
+      keepAliveMs: 1700,
+      phase: { kind: "fading", share: expect.closeTo(0.9, 9) as number },
+    });
+    // The re-scan restarted the hold: its phase says so.
+    expect(log[2]).toMatchObject({
+      text: "code-a",
+      keepAliveMs: 1900,
+      phase: { kind: "holding", remainingMs: 1000 },
+    });
+    expect(log[4]).toMatchObject({
+      keepAliveMs: 4000,
+      phase: { kind: "ended" },
+    });
+    expect(log[5]).toMatchObject({
+      text: "code-a",
+      keepAliveMs: null,
+      phase: { kind: "none" },
+    });
+  });
+
+  it("keeps the keep-alive's votes out of the lock batches", () => {
+    // Why: `votesCast` answers "which lock cast which votes"; a keep-alive
+    // ring folded into the next lock's batch would say something that did
+    // not happen.
+    const h = harness();
+    const keepAlive = h.log.keepAlive(createQrVoteKeepAlive(KEEP_SETTINGS));
+    keepAlive.keep(KEPT, 0);
+    expect(keepAlive.votesForFix(100)).toHaveLength(3);
+    h.log.votedLock("code-a", 2);
+    const batch = h.dispatched.find((a) => a.type === "tourViewing/votesCast");
+    expect(batch?.payload).toMatchObject({ votes: [] });
+  });
+
+  it("logs nothing while the recording is off, and the keep-alive works the same", () => {
+    const h = harness(false);
+    const keepAlive = h.log.keepAlive(createQrVoteKeepAlive(KEEP_SETTINGS));
+    keepAlive.keep(KEPT, 0);
+    expect(keepAlive.votesForFix(100)).toHaveLength(3);
+    expect(keepAlive.phase(100)).toMatchObject({ kind: "holding" });
+    keepAlive.votesForFix(2500);
+    keepAlive.stop();
+    expect(h.dispatched).toEqual([]);
+    expect(keepAlive.phase(100)).toEqual({ kind: "none" });
   });
 });

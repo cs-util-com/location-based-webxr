@@ -18,8 +18,11 @@
  * @see tour-viewing-actions.ts.md
  */
 
+import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { Pose } from "gps-plus-slam-app-framework/ar/qr/qr-pose";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
+
+import type { KeepAlivePhase } from "./qr-vote-keep-alive.js";
 
 import {
   logAction,
@@ -96,6 +99,35 @@ interface PlacedLog extends ViewingMoment {
   readonly skipped?: readonly string[];
 }
 
+interface KeepAliveLog extends ViewingMoment {
+  /**
+   * What changed in the code's keep-alive (`qr-vote-keep-alive.ts`):
+   * - `armed` - a voted lock handed it the code and the stable pose it
+   *   re-votes from (`kept`); the hold starts over;
+   * - `relocked` - a re-scan of the kept code (the first frame of a new
+   *   lock); `phase` says whether the hold started over;
+   * - `fading` / `ended` - noticed at the first device fix past the hold,
+   *   or past the fade;
+   * - `stopped` - forgotten: the AR exit, the code's tour closed, or a
+   *   code whose votes cannot be built.
+   */
+  readonly event: "armed" | "relocked" | "fading" | "ended" | "stopped";
+  /** The kept code. */
+  readonly text: string;
+  /** The time the keep-alive was given, on its own clock (the lock's
+   *  detection time, or the fix's timestamp); null for `stopped`. */
+  readonly keepAliveMs: number | null;
+  /** The keep-alive's phase at `keepAliveMs`, after the change. */
+  readonly phase: KeepAlivePhase;
+  /** `armed`: what it re-votes from (raw WebXR odometry, the level's geo,
+   *  the printed size). */
+  readonly kept?: {
+    readonly qrPoseWorld: Pose;
+    readonly qrGeo: QrGeoPose;
+    readonly sizeM: number;
+  };
+}
+
 export const codeLocked: LogActionCreator<
   "tourViewing/codeLocked",
   CodeLockedLog
@@ -106,9 +138,14 @@ export const votesCast: LogActionCreator<
 > = logAction<VotesCastLog>()("tourViewing/votesCast");
 export const tourPlaced: LogActionCreator<"tourViewing/placed", PlacedLog> =
   logAction<PlacedLog>()("tourViewing/placed");
+export const keepAliveChanged: LogActionCreator<
+  "tourViewing/keepAlive",
+  KeepAliveLog
+> = logAction<KeepAliveLog>()("tourViewing/keepAlive");
 
 /** Any `tourViewing/*` action. */
 export type TourViewingAction =
   | ReturnType<typeof codeLocked>
   | ReturnType<typeof votesCast>
-  | ReturnType<typeof tourPlaced>;
+  | ReturnType<typeof tourPlaced>
+  | ReturnType<typeof keepAliveChanged>;

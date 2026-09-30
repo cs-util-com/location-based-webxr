@@ -2763,6 +2763,13 @@ test("a visitor records only with ?debug=1 and the switch: the scan lock, its vo
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
   ]);
   expect(batches.every((a) => a.payload.votes.length === 16)).toBe(true);
+  // The keep-alive's hold is in the log (M1b review #5): armed by a voted
+  // lock with the code and the pose it re-votes from.
+  const armed = actions.find(
+    (a) => a.type === "tourViewing/keepAlive" && a.payload.event === "armed",
+  );
+  expect(armed.payload.text).toBe(E2E_QR_TEXT);
+  expect(armed.payload.kept.qrPoseWorld).toBeDefined();
   // The lock is logged before the votes it cast.
   expect(types.indexOf("tourViewing/codeLocked")).toBeLessThan(
     types.indexOf("tourViewing/votesCast"),

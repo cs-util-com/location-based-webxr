@@ -30,7 +30,18 @@ altitude, accuracyM, odomPosition }` as the fusion received it),
   `code`: around a locked code's geo), `count`, `zero`, `alignmentMatrix`,
   and per kind `code` (`text`, `geo`, `centerNue`), `join` (`fixes`,
   `gpsAccuracyMedianM`) or `skipped` (content ids that could not render).
-- `type TourViewingAction` - any of the three.
+- `keepAliveChanged(payload)` - `tourViewing/keepAlive` (M1b review #5): the
+  code keep-alive's state changes. `event` (`armed` - a voted lock handed it
+  the code and its stable pose, carried as `kept { qrPoseWorld, qrGeo, sizeM
+}`; `relocked` - a re-scan of the kept code; `fading` / `ended` - noticed
+  at the first device fix past the hold or the fade; `stopped` - the AR exit,
+  the tour closed, or an unbuildable code), `text`, `keepAliveMs` (the time
+  the keep-alive was given, on its own clock; null for `stopped`), `phase`
+  (the keep-alive's `KeepAlivePhase` after the change: `holding` with
+  `remainingMs`, `fading` with `share`, `ended`, `none`). With the build's
+  hold and fade, `phase` at `keepAliveMs` fixes the hold's time base, so a
+  replay can rebuild the hold without the keep-alive's internals.
+- `type TourViewingAction` - any of the four.
 - Built with `tour-authoring-actions.ts`'s `logAction` (one helper per
   package), each creator annotated with its `LogActionCreator` type.
 
@@ -46,7 +57,9 @@ altitude, accuracyM, odomPosition }` as the fusion received it),
   without `?debug=1` and the switch never sees one.
 - The raw stream already holds every locked frame (`qrDetected/*`) and every
   vote (`gpsData/recordGpsEvent`); these add what the raw stream cannot say:
-  which lock cast which votes, and what a placement was computed against.
+  which lock cast which votes, what a placement was computed against, and
+  what the keep-alive held and when (its votes are in the raw stream as
+  `qr-keep` GPS events; never in a `votesCast` batch).
 
 ## Examples
 

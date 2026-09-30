@@ -28,6 +28,7 @@ import {
   createTourViewerSession,
   createTourViewerStore,
   createUnwiredHooks,
+  endQrPipeline,
 } from "./tour-viewer-session.js";
 import { createViewerPlacement } from "./viewer-placement.js";
 import { createViewingLog } from "./viewing-log.js";
@@ -191,6 +192,45 @@ describe("the viewer pipeline's tourViewing hooks", () => {
         "gpsData/recordGpsEvent",
         "gpsData/recordGpsEvent",
       ]);
+    }
+  });
+
+  it("the session's keep-alive is the logged one: its hold is recorded, and the AR exit's stop too (M1b review #5)", () => {
+    // Why: the log hangs on the keep-alive the pipeline creates for the AR
+    // entry, through its existing state transitions; the page's other
+    // callers (the tour close, the AR exit) reach it as `ctx.viewerKeepAlive`.
+    const h = harness("on");
+    h.ctx.viewerKeepAlive?.keep(
+      {
+        text: TEXT,
+        qrPoseWorld: { position: [0, 1, -2], rotation: [0, 0, 0, 1] },
+        qrGeo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 90 },
+        sizeM: 0.2,
+      },
+      0,
+    );
+    endQrPipeline(h.ctx);
+    expect(
+      h.logged
+        .filter((a) => a.type === "tourViewing/keepAlive")
+        .map((a) => (a.payload as unknown as { event: string }).event),
+    ).toEqual(["armed", "stopped"]);
+  });
+
+  it("without the recording running, the keep-alive logs nothing", () => {
+    for (const recording of ["none", "off"] as const) {
+      const h = harness(recording);
+      h.ctx.viewerKeepAlive?.keep(
+        {
+          text: TEXT,
+          qrPoseWorld: { position: [0, 1, -2], rotation: [0, 0, 0, 1] },
+          qrGeo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 90 },
+          sizeM: 0.2,
+        },
+        0,
+      );
+      endQrPipeline(h.ctx);
+      expect(h.logged).toEqual([]);
     }
   });
 });

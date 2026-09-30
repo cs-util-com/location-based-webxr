@@ -4,8 +4,9 @@
 
 The visitor's `tourViewing/*` log: thin hooks the viewer pipeline
 (`viewer-placement.ts`) calls at its existing seams - a recorded detection,
-each vote it dispatches, the voted lock, a placement - turned into the log
-actions of `tour-viewing-actions.ts` for the `?debug=1` viewer recording.
+each vote it dispatches, the voted lock, a placement, the code keep-alive's
+state changes - turned into the log actions of `tour-viewing-actions.ts` for
+the `?debug=1` viewer recording.
 Plan:
 [authoring recording plan](../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-09-28-0953-tour-viewer-authoring-recording-anchoring-and-editing-plan.md)
 §3.1, M1b.
@@ -24,6 +25,10 @@ Plan:
   `votesCast`.
 - `ViewingLog.placed(input)` - logs `tourPlaced`, adding the alignment, the
   visit and the time.
+- `ViewingLog.keepAlive(inner): QrVoteKeepAlive` - wraps the AR entry's
+  keep-alive (`viewer-placement.ts`, `startKeepAlive`): every call is
+  forwarded unchanged, and each state change is logged as
+  `tourViewing/keepAlive` (M1b review #5).
 
 ## Invariants & assumptions
 
@@ -39,10 +44,26 @@ Plan:
   which the framework's controller updates only AFTER the frame's votes.
 - **Votes are logged per lock.** The controller dispatches a lock's votes one
   by one, then reports the voted lock (`qr-viewer-mode.ts`,
-  `dispatchVotes`); the hook collects them in between. A vote path that
-  bypasses `dispatchVote` (a keep-alive that re-casts votes outside a lock,
-  if one is added) is still in the raw stream as `gpsData/recordGpsEvent`,
-  but not in a `votesCast` batch unless it calls these hooks too.
+  `dispatchVotes`); the hook collects them in between. The code keep-alive's
+  votes bypass `dispatchVote` on purpose: they are in the raw stream as
+  `gpsData/recordGpsEvent` with `qr-keep` ids, never in a `votesCast` batch
+  (a batch answers "which lock cast these").
+- **The keep-alive is logged per state change, not per frame or fix.**
+  The wrapper observes the keep-alive only through its public calls and
+  `phase()`, so it does not depend on how the hold is kept:
+  - `keep` (a voted lock) -> `armed`, with the code and the stable pose it
+    re-votes from;
+  - `relock` -> `relocked` only on the first frame of a NEW lock of the kept
+    code (the lock start `detection` saw) or when it changed the phase's
+    kind; the tracked frames after it restart the hold silently, and
+    `phase` in each later entry carries the time base;
+  - `votesForFix` -> `fading` / `ended` the first time a device fix finds
+    the phase there (so a transition is logged at fix granularity), or
+    `stopped` when the keep-alive dropped an unbuildable code;
+  - `stop` -> `stopped` when something was kept (the AR exit's
+    `endQrPipeline`, the tour close in `archive-open.ts`).
+    A method the keep-alive gains later is forwarded by the spread but not
+    logged until it is wrapped here.
 - **Dispatched at top level**: from the controller's detection callbacks and
   from the placements' async continuations, never inside another dispatch.
 
@@ -65,7 +86,11 @@ createViewerPlacement({ ...deps, viewingLog });
 `viewing-log.test.ts`: nothing logged or kept while off; a lock's payload; a
 lock per acquisition, not per frame (a miss, another code, another visit);
 votes as one batch per lock; a placement's payload; every payload survives
-JSON. `viewer-placement-viewing-log.test.ts`: the hooks through the real
-viewer controller config, and exactly today's dispatches without a running
-recording. End to end: `playwright-tests/ar-mode.spec.js` ("a visitor records
+JSON; the keep-alive's state changes over a real keep-alive (armed with its
+pose, a re-scan, the fade, the end, the stop, and nothing per tracked frame
+or per fix), its votes kept out of the lock batches, nothing while off.
+`viewer-placement-viewing-log.test.ts`: the hooks through the real viewer
+controller config, exactly today's dispatches without a running recording,
+and the session's keep-alive as the logged one (armed, then the AR exit's
+stop; silent without a recording). End to end: `playwright-tests/ar-mode.spec.js` ("a visitor records
 only with ?debug=1 ...").
