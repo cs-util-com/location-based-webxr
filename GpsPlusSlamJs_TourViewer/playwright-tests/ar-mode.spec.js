@@ -2695,7 +2695,9 @@ test("a visitor records only with ?debug=1 and the switch: the scan lock, its vo
     /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
   }, E2E_QR_TEXT);
   // Frames until the budget is spent: the votes flowed, and the ring was
-  // placed at a voted lock (the relocalization e2e's path).
+  // placed at a voted lock (the relocalization e2e's path). Since M2b the
+  // spent-budget line is the code's hold ("Relocalized - the code holds the
+  // placement for N s more"), as in the relocalization e2e.
   await expect
     .poll(
       async () => {
@@ -2706,7 +2708,7 @@ test("a visitor records only with ?debug=1 and the switch: the scan lock, its vo
       },
       { timeout: 20000 },
     )
-    .toMatch(/vote budget spent/i);
+    .toMatch(/the code holds the placement/i);
   // The ring (3 planes) and the fixture pin's label.
   await expect
     .poll(() =>
@@ -2742,6 +2744,15 @@ test("a visitor records only with ?debug=1 and the switch: the scan lock, its vo
   const cast = actions.find((a) => a.type === "tourViewing/votesCast");
   expect(cast.payload.text).toBe(E2E_QR_TEXT);
   expect(cast.payload.votes.length).toBeGreaterThan(0);
+  // One batch per VOTED lock (the budget's 10), each the lock's full ring.
+  // The keep-alive's per-fix rings are deliberately NOT votesCast (they are
+  // recorded as stamped GPS events, M2b); no device fix follows the lock
+  // here, so none were cast anyway.
+  const batches = actions.filter((a) => a.type === "tourViewing/votesCast");
+  expect(batches.map((a) => a.payload.votedLocks)).toEqual([
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+  ]);
+  expect(batches.every((a) => a.payload.votes.length === 8)).toBe(true);
   // The lock is logged before the votes it cast.
   expect(types.indexOf("tourViewing/codeLocked")).toBeLessThan(
     types.indexOf("tourViewing/votesCast"),
