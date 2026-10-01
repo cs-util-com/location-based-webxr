@@ -101,6 +101,11 @@
     `RangeError`. `lostVariance`, `antiTiling` and `gusts` also throw a
     `RangeError` with a custom `slopeGlsl` that lacks the wave set's one
     `void waterWave(...)` with one `slope += ...` statement.
+  - With `lostVariance` on, `WaterSurface` holds its distance roughness ramp
+    at `roughnessNear`, so far water is no longer roughened twice;
+    `waterRoughnessAtDistance(distanceM, polish?)` takes the switches.
+    `configurePolish` throws a `RangeError` for a parameter set that is not
+    an object.
 - **`SkyAtmosphere.cloudTransmittanceToward(point, viewer?)`**,
   `SkyAtmosphere.cloudUniforms`, `cloudNoiseSample`, and the column model
   module `cloud-column.js` (`cloudColumnDrawn`,
