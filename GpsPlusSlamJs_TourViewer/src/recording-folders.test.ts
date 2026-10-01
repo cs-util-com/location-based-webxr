@@ -660,6 +660,36 @@ describe("saving an orphan - a folder whose page was killed", () => {
     );
   });
 
+  it("counts every fix of a recordGpsEventBatch in a killed page's coverage, skipping a malformed one alone", async () => {
+    // Why (authoring plan 2026-09-28-0953 D18): a viewer page records its
+    // device fix with the code keep-alive's ring as ONE batch action. The
+    // orphan's session.json is rebuilt from the folder's actions, and that
+    // reader knew only `recordGpsEvent`: a killed viewer recording came back
+    // with its batched fixes missing. An event without coordinates is
+    // skipped alone, as a single one is.
+    const dir = await recordingsDir();
+    const event = (i: number) => gpsAction(i, 47.5 + i * 1e-4, 8.7).payload;
+    await makeFolder("recording-2026-09-28_10-00-00utc", [
+      gpsAction(0, 47.5, 8.7),
+      {
+        type: "gpsData/recordGpsEventBatch",
+        payload: {
+          events: [event(1), { ...event(2), rawGpsPoint: {} }, event(3)],
+        },
+      },
+    ]);
+    const packed = await packOrphanRecording(
+      dir,
+      "recording-2026-09-28_10-00-00utc",
+      ENV,
+      AUTHORING_CONTEXT_TAG,
+    );
+    const meta = await loadSessionMetadataFromZip(
+      new Uint8Array(await packed.blob.arrayBuffer()),
+    );
+    expect(meta).toMatchObject({ actionCount: 3 });
+  });
+
   it("keeps the tag an earlier save wrote, and falls back to the saving page's own when nothing says", async () => {
     const dir = await recordingsDir();
     await makeFolder(

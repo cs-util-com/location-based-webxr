@@ -24,6 +24,7 @@ import {
   createGpsPositionHandler,
   recordDepthSample,
   recordGpsEvent,
+  recordGpsEventBatch,
   recordQrDetection,
   replayActions,
   selectAlignmentMatrix,
@@ -417,6 +418,40 @@ describe("the creator's troubleshooting recording", () => {
       own.getDirectoryHandle("recording-2026-09-28_10-00-00utc"),
     ).resolves.toBeDefined();
     await expect(app.getDirectoryHandle("sessions")).rejects.toThrow();
+  });
+
+  it("counts every fix of a recordGpsEventBatch in the session's coverage, as it counts single fixes", async () => {
+    // Why (authoring plan 2026-09-28-0953 D18): the viewer sends its device
+    // fix together with the code keep-alive's ring as ONE batch action. The
+    // live save's coverage is built from the actions it writes, and it knew
+    // only `recordGpsEvent` - a viewer recording made of batches saved with
+    // its fixes missing from session.json.
+    const { recording, store, save } = recordingAndStore();
+    recording.start(START);
+    store.dispatch(setZeroPos({ lat: 47.5, lon: 8.7 }));
+    enter(store, T0);
+    store.dispatch(
+      recordGpsEventBatch({
+        events: VISIT_1.map((p, i) => ({
+          odomPosition: p.odom,
+          odomRotation: [0, 0, 0, 1],
+          rawGpsPoint: {
+            id: `fix-${String(i)}`,
+            latitude: p.lat,
+            longitude: p.lon,
+            altitude: 400,
+            latLongAccuracy: 5,
+            timestamp: T0 + i * 1000,
+          },
+        })),
+      }),
+    );
+
+    const saved = await save();
+    const meta = await loadSessionMetadataFromZip(
+      new Uint8Array(await saved.blob.arrayBuffer()),
+    );
+    expect(meta).toMatchObject({ actionCount: VISIT_1.length });
   });
 
   it("a save leaves the folder unsaved until the hand-off delivered and the caller marks it; recording on after that makes it unsaved again (M1b)", async () => {

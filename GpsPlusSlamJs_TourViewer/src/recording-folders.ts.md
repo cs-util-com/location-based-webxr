@@ -48,7 +48,12 @@ emptyMinAgeMs }`, by default `SAVED_RECORDING_MAX_AGE_MS` (7 days),
 - `packOrphanRecording(dir, name, environment, fallbackTag)` - drop the
   folder's empty action files, rebuild its `session.json` from its own files,
   write it, pack.
-- `recordedFix(action)` - a recorded GPS action's fix, or null.
+- `recordedFixes(action)` - a recorded GPS action's fixes, in order: one for a
+  `recordGpsEvent`, every event of a `recordGpsEventBatch` (core 1.26; the
+  viewer's device fix with its keep-alive ring, read through the framework's
+  `utils/gps-event-actions`), none for anything else; a fix without finite
+  coordinates is skipped alone. The live save's and the orphan's coverage both
+  count through it.
 - `holdRecordingFolder(locks, name): Promise<boolean>` - take the folder's
   Web Lock for the page's life (`ifAvailable`: true once granted, false when
   another page holds the name, without Web Locks, or on a failed request).

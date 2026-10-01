@@ -65,8 +65,9 @@ loads. Plan:
 - **The Recorder's layout, era 5.** `session.json` comes from the framework's
   shared builder: `odomCoordVersion: 5`, `contextTag: "tour-authoring"`,
   `frameCount: 0`. Its `actionCount` and H3 coverage come from the GPS
-  actions THIS recording wrote (`gpsData/recordGpsEvent`, matched by the
-  action creator's type) - the store's own GPS data is wiped at every AR exit.
+  actions THIS recording wrote (each fix of a `gpsData/recordGpsEvent` and of
+  a `gpsData/recordGpsEventBatch`, through `recording-folders.ts`'s
+  `recordedFixes`) - the store's own GPS data is wiped at every AR exit.
   `startedAt` is the moment the recording started. The page url is passed in
   query-free.
 - **One numbering for the whole recording.** The store numbers across its AR

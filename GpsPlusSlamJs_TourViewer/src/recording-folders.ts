@@ -30,7 +30,7 @@ import {
   formatTimestamp,
   writeFileOrAbort,
 } from "gps-plus-slam-app-framework/storage";
-import { recordGpsEvent } from "gps-plus-slam-app-framework/state";
+import { recordedGpsEventPayloads } from "gps-plus-slam-app-framework/utils/gps-event-actions";
 import {
   buildSessionMetadataRecord,
   type SessionMetadataRecord,
@@ -542,21 +542,27 @@ function finiteOrNull(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-/** A recorded GPS action's fix, or null for anything else. */
-export function recordedFix(
+/** A recorded GPS action's fixes, in order: one for a `recordGpsEvent`,
+ *  every event of a `recordGpsEventBatch` (core 1.26; the viewer's device
+ *  fix with its keep-alive ring), none for anything else. A fix without
+ *  finite coordinates is skipped alone. */
+export function recordedFixes(
   action: unknown,
-): { latitude: number; longitude: number } | null {
-  const { type, payload } = (action ?? {}) as {
-    type?: unknown;
-    payload?: { rawGpsPoint?: { latitude?: unknown; longitude?: unknown } };
-  };
-  if (type !== recordGpsEvent.type) return null;
-  const point = payload?.rawGpsPoint;
-  const latitude = finiteOrNull(point?.latitude);
-  const longitude = finiteOrNull(point?.longitude);
-  return latitude === null || longitude === null
-    ? null
-    : { latitude, longitude };
+): { latitude: number; longitude: number }[] {
+  const fixes: { latitude: number; longitude: number }[] = [];
+  for (const event of recordedGpsEventPayloads(action)) {
+    const point = (
+      event as {
+        rawGpsPoint?: { latitude?: unknown; longitude?: unknown };
+      } | null
+    )?.rawGpsPoint;
+    const latitude = finiteOrNull(point?.latitude);
+    const longitude = finiteOrNull(point?.longitude);
+    if (latitude !== null && longitude !== null) {
+      fixes.push({ latitude, longitude });
+    }
+  }
+  return fixes;
 }
 
 /** What the page that saves an orphan knows about itself. */
@@ -634,8 +640,7 @@ async function buildOrphanSessionMetadata(
         authoring ||= type.startsWith("tourAuthoring/");
         viewing ||= type.startsWith("tourViewing/");
       }
-      const fix = recordedFix(action);
-      if (fix !== null) fixes.push(fix);
+      fixes.push(...recordedFixes(action));
     }
   }
   const contextTag =

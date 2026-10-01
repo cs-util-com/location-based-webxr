@@ -47,7 +47,7 @@ import {
   AUTHORING_CONTEXT_TAG,
   openRecordingsDir,
   packRecordingFolder,
-  recordedFix,
+  recordedFixes,
   type PackedRecording,
   type RecordingContextTag,
 } from "./recording-folders.js";
@@ -230,8 +230,7 @@ export function createAuthoringRecording(deps: {
         failedWrites += 1;
         throw err;
       }
-      const fix = recordedFix(action);
-      if (fix !== null) fixes.push(fix);
+      fixes.push(...recordedFixes(action));
     },
     writeFrame: () =>
       Promise.reject(new Error("the tour recording captures no frames")),
