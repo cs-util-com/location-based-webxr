@@ -410,3 +410,42 @@ export async function installTourViewerArFakes(page, options = {}) {
     { shareRoute, printSizeM },
   );
 }
+
+/**
+ * The session zero plus three consistent fixes - the alignment a placement
+ * is expressed against (and that the votes refine). Shared by the specs
+ * that place, edit or lay out the AR panel; it was copied into two of them.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+export async function seedAlignment(page) {
+  await page.evaluate(() => {
+    const store = /** @type {any} */ (window).__tourViewerTest.alignmentStore;
+    store.dispatch({
+      type: "gpsData/setZeroPos",
+      payload: { lat: 47.5, lon: 8.7 },
+    });
+    const pairs = [
+      { odom: [0, 0, 0], lat: 47.5, lon: 8.7 },
+      { odom: [0, 0, -15], lat: 47.500135, lon: 8.7 },
+      { odom: [15, 0, 0], lat: 47.5, lon: 8.7002 },
+    ];
+    for (const [i, p] of pairs.entries()) {
+      store.dispatch({
+        type: "gpsData/recordGpsEvent",
+        payload: {
+          odomPosition: p.odom,
+          odomRotation: [0, 0, 0, 1],
+          rawGpsPoint: {
+            id: `seed-${String(i)}`,
+            latitude: p.lat,
+            longitude: p.lon,
+            altitude: 400,
+            latLongAccuracy: 5,
+            timestamp: 1756150000000 + i * 1000,
+          },
+        },
+      });
+    }
+  });
+}

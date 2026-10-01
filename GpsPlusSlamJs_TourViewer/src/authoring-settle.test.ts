@@ -1551,6 +1551,43 @@ describe(
       expect(a.dom.objectList.lastModel!.rows).toEqual([]);
     });
 
+    it("steps the selection through every object with the chooser, wrapping, and moves the one it reached (M4 review #4)", async () => {
+      // Why: a tap cannot reach an object that is too far, too small or
+      // behind another, and Move acts on the selection in AR only - the
+      // chooser is how such an object is still selected and moved.
+      const a = await withHostedTour([
+        hostedPin("h1", "Gate"),
+        hostedPin("h2", "Mill"),
+        hostedPin("h3", "Oak"),
+      ]);
+      await a.mint();
+      const list = a.dom.objectList;
+      const selected = () => list.lastModel!.rows.map((r) => r.id);
+      list.listHandlers!.step(1);
+      expect(selected()).toEqual(["h1"]);
+      expect(list.lastModel!.chooser).toEqual({ position: "1 of 3" });
+      list.listHandlers!.step(1);
+      expect(selected()).toEqual(["h2"]);
+      list.listHandlers!.step(-1);
+      list.listHandlers!.step(-1);
+      expect(selected(), "wraps from the first to the last").toEqual(["h3"]);
+      list.listHandlers!.step(1);
+      expect(selected(), "and from the last to the first").toEqual(["h1"]);
+      // Nothing selected: Previous starts at the last.
+      list.listHandlers!.clearSelection();
+      list.listHandlers!.step(-1);
+      expect(selected()).toEqual(["h3"]);
+
+      a.setReticle([4, 0, 2]);
+      list.listHandlers!.move("h3");
+      await flush();
+      expect(list.lastModel?.note).toMatch(/^Moved "Oak"/);
+      expect(
+        a.ctx.placedObjects.find((p) => p.object.id === "h3")?.placement?.local
+          .position,
+      ).toEqual([4, 0, 2]);
+    });
+
     it("cancels the XR select of a tap on the panel, so Delete does not also select what is behind it", () => {
       const a = authoring();
       let prevented = false;

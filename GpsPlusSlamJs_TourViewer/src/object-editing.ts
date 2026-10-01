@@ -539,6 +539,16 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
     });
   }
 
+  /** Select `id` (a tap in AR, or the chooser), or clear with null. */
+  function selectObject(id: string | null): void {
+    selectedId = id;
+    // A tap in AR is also how the creator carries on, so it must not take
+    // an outcome off the screen before it could be read (M4 review #6);
+    // once the hold is over it clears it.
+    if (!held) note = "";
+    render();
+  }
+
   view.bind({
     editText,
     move,
@@ -552,18 +562,24 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
       undoable = null;
       pending?.run();
     },
+    step: (delta) => {
+      const ids = objects().map((o) => o.object.id);
+      if (ids.length === 0) return;
+      const at = selectedId === null ? -1 : ids.indexOf(selectedId);
+      // Nothing selected: Next starts at the first, Previous at the last.
+      const target =
+        at < 0
+          ? delta > 0
+            ? 0
+            : ids.length - 1
+          : (at + delta + ids.length) % ids.length;
+      selectObject(ids[target] ?? null);
+    },
   });
 
   return {
     render,
-    select: (id) => {
-      selectedId = id;
-      // A tap in AR is also how the creator carries on, so it must not
-      // take an outcome off the screen before it could be read (M4 review
-      // #6); once the hold is over it clears it.
-      if (!held) note = "";
-      render();
-    },
+    select: selectObject,
     objects,
     reset: () => {
       selectedId = null;

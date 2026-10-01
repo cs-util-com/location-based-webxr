@@ -1,7 +1,7 @@
 // @ts-check
 import { expect, test } from "@playwright/test";
 
-import { installTourViewerArFakes } from "./ar-fakes.js";
+import { installTourViewerArFakes, seedAlignment } from "./ar-fakes.js";
 import { E2E_QR_TEXT } from "./qr-fixture.mjs";
 import { parseTourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { BlobReader, TextWriter, ZipReader } from "@zip.js/zip.js";
@@ -60,39 +60,6 @@ async function openTour(page) {
   if (!(await step.evaluate((el) => /** @type {any} */ (el).open))) {
     await step.locator("summary").click();
   }
-}
-
-/** The session zero plus three consistent fixes (ar-mode.spec.js). */
-async function seedAlignment(page) {
-  await page.evaluate(() => {
-    const store = /** @type {any} */ (window).__tourViewerTest.alignmentStore;
-    store.dispatch({
-      type: "gpsData/setZeroPos",
-      payload: { lat: 47.5, lon: 8.7 },
-    });
-    const pairs = [
-      { odom: [0, 0, 0], lat: 47.5, lon: 8.7 },
-      { odom: [0, 0, -15], lat: 47.500135, lon: 8.7 },
-      { odom: [15, 0, 0], lat: 47.5, lon: 8.7002 },
-    ];
-    for (const [i, p] of pairs.entries()) {
-      store.dispatch({
-        type: "gpsData/recordGpsEvent",
-        payload: {
-          odomPosition: p.odom,
-          odomRotation: [0, 0, 0, 1],
-          rawGpsPoint: {
-            id: `seed-${String(i)}`,
-            latitude: p.lat,
-            longitude: p.lon,
-            altitude: 400,
-            latLongAccuracy: 5,
-            timestamp: 1756150000000 + i * 1000,
-          },
-        },
-      });
-    }
-  });
 }
 
 /** Enter AR and measure the fixture's code (it stores a pose, so the

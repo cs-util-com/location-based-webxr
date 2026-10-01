@@ -172,6 +172,26 @@ describe("objectListModel in AR", () => {
     expect(model.hint).toBe("");
   });
 
+  it("offers a chooser that reaches every object without aiming - its place, or the count before a selection (M4 review #4)", () => {
+    // Why: a far, small or occluded object may be impossible to tap, and
+    // Move is AR-only and acts on the selection - so without a way to step
+    // through the objects some could never be moved. The page lists them
+    // all and needs no chooser.
+    const entries = [entry(pin("a")), entry(pin("b")), entry(photo("p"))];
+    expect(
+      objectListModel(state({ inAr: true, selectedId: "b", entries })).chooser,
+    ).toEqual({ position: "2 of 3" });
+    expect(objectListModel(state({ inAr: true, entries })).chooser).toEqual({
+      position: "3 objects",
+    });
+    expect(
+      objectListModel(state({ inAr: true, entries: [entry(pin("a"))] }))
+        .chooser,
+    ).toEqual({ position: "1 object" });
+    expect(objectListModel(state({ inAr: true })).chooser).toBeNull();
+    expect(objectListModel(state({ entries })).chooser).toBeNull();
+  });
+
   it("says how to select while nothing is selected", () => {
     const model = objectListModel(
       state({ inAr: true, entries: [entry(pin("a"))] }),

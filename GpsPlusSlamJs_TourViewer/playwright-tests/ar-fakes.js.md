@@ -11,6 +11,10 @@ camera, so `installTourViewerArFakes(page)` installs
 ## Public API
 
 - `installTourViewerArFakes(page)` — call in `beforeEach`, before `goto`.
+- `seedAlignment(page)` — dispatches the session zero and three consistent
+  GPS fixes into the app store, so the mint gate and placement unlock.
+  Shared by `ar-mode.spec.js`, `object-editing.spec.js` and
+  `ar-layout.spec.js` (it was copied into the first two).
 - Control surface `window.__tourViewerTest`: `initARCalls` (records
   `hasCameraFrame` + the isolation flags), `captureCalls`,
   `alignmentCalls`, `alignmentStore` (the real app store the alignment

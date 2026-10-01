@@ -18,6 +18,9 @@ Wired by `creator-setup.ts`, drawn by `object-list.ts`.
 - `wireObjectEditing(deps): ObjectEditing` - binds the list's handlers.
   - `render()` - redraw the list (cheap when nothing changed).
   - `select(id | null)` - a tap in AR (the id `object-pick.ts` returned).
+  - the list's `step(1 | -1)` handler - the AR chooser: the next or
+    previous object in list order, wrapping (Next from none is the first,
+    Previous the last); same note rule as a tap.
   - `objects()` - `authoringObjects` over the live state.
   - `reset()` - a visit ended or a tour closed: selection and note go.
 - `ObjectEditingDeps` - the creator setup's state and callbacks: the
@@ -107,6 +110,7 @@ editing.render(); // from the panel's render
   delete (list, scene, draft, log), of an edited hosted pin with its edit
   and of a local pin with its record, its expiry at `OUTCOME_HOLD_MS`,
   Delete's "Deleting…" and Move's "Moving…" with their refused (and
-  throwing) writes, and an outcome held through a selecting tap.
+  throwing) writes, an outcome held through a selecting tap, and the
+  chooser stepping (and wrapping) through every object to move one.
 - `playwright-tests/object-editing.spec.js` - the page's Undo button and
   its withdrawal when the hold timer fires.

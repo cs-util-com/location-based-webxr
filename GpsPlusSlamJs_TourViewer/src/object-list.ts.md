@@ -31,8 +31,13 @@ zip's and this device's - with **Edit text**, **Move to the reticle** and
 - `SELECT_HINT` - the AR hint while nothing is selected.
 - `createObjectListView(container, doc): ObjectListView` - the DOM view over
   `#object-list`: `bind(handlers)` once, `render(model)` any time.
+- `ObjectListModel.chooser` - in AR with any object, `{ position }`:
+  "2 of 5" for the selection's place, "5 objects" ("1 object") before one;
+  null on the page and with no objects. The view draws it as one line,
+  `‹ Previous` / position / `Next ›` (`object-previous`,
+  `object-position`, `object-next`).
 - `ObjectListHandlers` - `editText(id, text)`, `move(id)`, `remove(id)`,
-  `clearSelection()`, `undo()`.
+  `clearSelection()`, `undo()`, `step(1 | -1)` (the chooser).
 
 ## Invariants & assumptions
 
@@ -45,6 +50,16 @@ zip's and this device's - with **Edit text**, **Move to the reticle** and
 - **Move is offered only where it can work**: a pin, in AR. A photo's pose
   is where it was taken, and the page has no reticle; the page's hint says
   where moving happens instead of offering a button that can only fail.
+  **The page list still has no Move** (2026-10-01): it needs the reticle,
+  which exists only in a session.
+- **In AR every object can be reached without aiming** (M4 review #4): a
+  tap selects through the tapped point with a tolerance
+  (`object-pick.ts`), but a far, small or occluded object may still be
+  impossible to tap - and Move acts on the selection - so the chooser
+  steps through every object in list order, wrapping; with nothing
+  selected, Next starts at the first and Previous at the last. One line,
+  so the first-screen rule holds (`ar-layout.spec.js` covers the selected
+  state with the re-measure button shown).
 - **Edit text is for pins only**: a photo's optional caption is shown
   nowhere in the viewer, so editing it would change nothing a visitor sees.
 - **The view redraws only when the model changed** (JSON key), and the
@@ -80,7 +95,7 @@ view.render(
 
 ## Tests
 
-- `object-list.test.ts` - the page list and the AR selection, the words per row, the
+- `object-list.test.ts` - the chooser's position and count, the page list and the AR selection, the words per row, the
   nearest code, hidden when empty, busy and locked rows, and a property
   that the page lists every object once and AR at most the selected one.
 - The DOM view: `playwright-tests/object-editing.spec.js` (edit, delete,

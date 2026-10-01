@@ -85,6 +85,14 @@ export interface ObjectListModel {
   readonly note: string;
   /** Offer Undo beside the note: the delete it reports can be undone. */
   readonly undo: boolean;
+  /**
+   * In AR, Previous / Next through every object with the selection's place
+   * ("2 of 5") or, before one, the count ("5 objects"): how an object too
+   * far, too small or hidden behind another to tap is still selected - and
+   * moved, which needs the selection (M4 review #4). Null on the page,
+   * which lists everything, and with no objects.
+   */
+  readonly chooser: { readonly position: string } | null;
 }
 
 /** Said in AR while nothing is selected. */
@@ -162,9 +170,22 @@ export function objectListModel(state: ObjectListState): ObjectListModel {
       rows,
       note: state.note,
       undo: state.undo,
+      chooser: null,
     };
   }
   const selected = rows.filter((row) => row.selected);
+  const index = rows.findIndex((row) => row.selected);
+  const chooser =
+    count === 0
+      ? null
+      : {
+          position:
+            index >= 0
+              ? `${String(index + 1)} of ${String(count)}`
+              : count === 1
+                ? "1 object"
+                : `${String(count)} objects`,
+        };
   return {
     hidden: count === 0 && state.note === "",
     heading: "",
@@ -172,6 +193,7 @@ export function objectListModel(state: ObjectListState): ObjectListModel {
     rows: selected,
     note: state.note,
     undo: state.undo,
+    chooser,
   };
 }
 
@@ -184,6 +206,8 @@ export interface ObjectListHandlers {
   clearSelection(): void;
   /** Undo the last delete (the note's "Undo"). */
   undo(): void;
+  /** Select the next (+1) or previous (-1) object (the AR chooser). */
+  step(delta: 1 | -1): void;
 }
 
 /** The list as the creator setup drives it. */
@@ -317,6 +341,21 @@ export function createObjectListView(
   const hint = doc.createElement("p");
   hint.className = "hint--dim";
   hint.dataset["testid"] = "object-list-hint";
+  // The AR chooser (M4 review #4): one compact line, so every control
+  // still fits the first screen of a small phone (ar-layout.spec.js).
+  const chooser = doc.createElement("div");
+  chooser.className = "object-chooser";
+  chooser.dataset["testid"] = "object-chooser";
+  const previous = button("‹ Previous", "object-previous", () => {
+    handlers?.step(-1);
+  });
+  const position = doc.createElement("span");
+  position.className = "object-position";
+  position.dataset["testid"] = "object-position";
+  const next = button("Next ›", "object-next", () => {
+    handlers?.step(1);
+  });
+  chooser.append(previous, position, next);
   const body = doc.createElement("div");
   const note = doc.createElement("p");
   note.className = "object-list-note";
@@ -330,7 +369,7 @@ export function createObjectListView(
   const noteLine = doc.createElement("div");
   noteLine.className = "object-list-note-line";
   noteLine.append(note, undo);
-  container.replaceChildren(heading, hint, body, noteLine);
+  container.replaceChildren(heading, hint, chooser, body, noteLine);
 
   function redraw(): void {
     const model = current;
@@ -349,6 +388,8 @@ export function createObjectListView(
     hint.hidden = model.hint === "";
     note.textContent = model.note;
     undo.hidden = !model.undo;
+    chooser.hidden = model.chooser === null;
+    position.textContent = model.chooser?.position ?? "";
     body.replaceChildren();
     const list = doc.createElement("ul");
     list.className = "object-rows";
