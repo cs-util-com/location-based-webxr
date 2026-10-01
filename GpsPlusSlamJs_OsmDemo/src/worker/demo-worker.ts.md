@@ -39,6 +39,11 @@ Vite detection finds `src/main.ts` through `index.html` but does not follow
     (`rules/v1/…`) and — since the Mapterhorn composition — DEM tile bytes,
     keyed by full request URL through `createCachingTileFetch`. The key
     families cannot collide, so a second OPFS directory would buy nothing.
+  - **The store and the Overpass source are built in
+    [`osm-tile-cache.ts`](../osm-tile-cache.ts.md)** (`openOsmStore`,
+    `createOsmTileSource`), the one place the globe's arrival prefetch builds
+    them too, so the prefetch warms exactly the cache this worker reads
+    (round-5 plan 2026-10-01-0945 §3.6).
 - **The DEM provider is composed in [`dem-provider.ts`](../dem-provider.ts.md)**
   (Mapterhorn primary, AWS Terrarium fallback, one shared caching fetch), not
   inline in `init` — `init` needs `navigator.storage` and `OffscreenCanvas`, so

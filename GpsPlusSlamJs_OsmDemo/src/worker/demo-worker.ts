@@ -34,9 +34,6 @@
  */
 
 import {
-  CachingSource,
-  MemoryBlobStore,
-  OverpassSource,
   browserPngDecoder,
   buildAreaPlates,
   buildBarriers,
@@ -70,13 +67,10 @@ import {
   type OsmFeature,
   type RuleTable,
 } from "gps-plus-slam-osm";
-import {
-  OpfsOsmBlobStore,
-  openOsmStoreDirectory,
-} from "gps-plus-slam-app-framework/osm-bridge";
 
 import { planRouteWithIndex } from "../agent-route.js";
 import { createDemProvider } from "../dem-provider.js";
+import { createOsmTileSource, openOsmStore } from "../osm-tile-cache.js";
 import { WALKABLE_CATEGORY, walkableScoreOf } from "../route-penalty.js";
 import { buildCellMesh } from "../cell-mesh.js";
 import { shellRandFor } from "./shell-rand.js";
@@ -92,6 +86,7 @@ import { createTerrainField, type TerrainField } from "../terrain-field.js";
 import { terrainWindowFor } from "../terrain-window.js";
 import { createMeshPlanner } from "./mesh-planner.js";
 import { createObstacleIndexCache } from "./obstacle-index-cache.js";
+import { osmStoreWarn } from "./osm-store-warn.js";
 import { createPrefetchQueue, type PrefetchQueue } from "./prefetch-queue.js";
 import {
   createTerrainGate,
@@ -110,24 +105,6 @@ import {
   type UpdateResult,
   type WorkerCalls,
 } from "./protocol.js";
-
-/**
- * OPFS where available, memory otherwise.
- *
- * OPFS is the point — a cached res-7 tile is tens of MB and refetching it on
- * every reload would be an abuse of donated infrastructure. But the demo must
- * still run in a browser without it rather than refusing to start.
- */
-async function makeStore() {
-  try {
-    const root = await navigator.storage.getDirectory();
-    return new OpfsOsmBlobStore({
-      directory: await openOsmStoreDirectory(root),
-    });
-  } catch {
-    return new MemoryBlobStore();
-  }
-}
 
 /** Everything the worker owns, built once on `init`. */
 interface WorkerState {
@@ -652,14 +629,14 @@ async function handle<K extends WorkerCallKind>(
       // The same OPFS store serves both because the keys are namespaced —
       // `rules/v1/table.csv` against `osm/v{n}/{tile}` — and a second store would
       // be a second OPFS directory for no reason.
-      const store = await makeStore();
+      // OPFS where available, memory otherwise - built in `osm-tile-cache.ts`,
+      // the one place the globe's arrival prefetch builds it too, so the two
+      // can never warm and read different caches. Its failures go to the
+      // framework logger (a Sentry Issue), as before the store stopped
+      // importing the logger itself.
+      const store = await openOsmStore({ warn: osmStoreWarn });
       const loaded = await loadRuleTable({ store });
-      const source = new CachingSource(
-        new OverpassSource({
-          userAgent: "gps-plus-slam-osm-demo (github.com/cs-util-com)",
-        }),
-        store,
-      );
+      const source = createOsmTileSource(store);
       const pipeline = new DemoPipeline({ source, table: loaded.table });
       // THE SAME STORE AGAIN, third tenant: DEM tiles are keyed by their full
       // request URL, so they coexist with `osm/v{n}/…` and `rules/v1/…` the
