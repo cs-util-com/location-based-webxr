@@ -268,6 +268,62 @@ describe("the evidence: time span and spatial spread, never a fix count", () => 
     expect(walk?.spreadM).toBeCloseTo(5, 6);
   });
 
+  // Why this test matters (M5a review §7l G2): a visitor standing at the
+  // code sways by centimetres, which is spread enough to pass the numerical
+  // guard but not enough to fit a turn - the fitted yaw is then noise, and
+  // through the lever of the standing spot it swings the logged offset.
+  // The rule calls such evidence `undecided` anyway; the estimator the rule
+  // ships with must not report a turn it cannot see either.
+  it("fits no turn below the rule's minimum spread, so a swaying visitor's offset is the residual mean", () => {
+    const pin = pinCode(codeSeen([0, 0]), STORED)!;
+    const swaying = Array.from({ length: 61 }, (_, i) =>
+      sampleAt(
+        100 + i,
+        12 + 0.05 * Math.sin(i / 3),
+        20 + 0.05 * Math.cos(i / 4),
+        [3 * Math.sin(i / 5), 3 * Math.cos(i / 7)],
+      ),
+    );
+    const bare = estimateCodeDisplacement(swaying, pin, { kind: "rigid" })!;
+    expect(bare.spreadM).toBeGreaterThan(0.01);
+    expect(bare.spreadM).toBeLessThan(CODE_MOVE_RULE.minSpreadM);
+    // Without the guard the fit draws a turn from the GPS wander.
+    expect(Math.abs(bare.yawDeg)).toBeGreaterThan(1);
+    const guarded = estimateCodeDisplacement(
+      swaying,
+      pin,
+      CODE_MOVE_ESTIMATOR,
+    )!;
+    const mean = estimateCodeDisplacement(swaying, pin, {
+      kind: "residual",
+      radiusM: 40,
+    })!;
+    expect(guarded.yawDeg).toBe(0);
+    expect(guarded.displacementM[0]).toBeCloseTo(mean.displacementM[0], 9);
+    expect(guarded.displacementM[1]).toBeCloseTo(mean.displacementM[1], 9);
+    // Above the minimum spread the same estimator fits the turn as before.
+    const turned = pinCode(codeSeen([0, 0], 0, 18), STORED)!;
+    const walk = estimateCodeDisplacement(
+      circleWalk([10, 60], 8, 60),
+      turned,
+      CODE_MOVE_ESTIMATOR,
+    );
+    expect(Math.abs(walk?.yawDeg ?? 0)).toBeCloseTo(18, 6);
+    expect(walk?.magnitudeM).toBeLessThan(1e-6);
+  });
+
+  it("refuses a minimum yaw spread that is not a non-negative number", () => {
+    const pin = pinCode(codeSeen([0, 0]), STORED)!;
+    for (const minYawSpreadM of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() =>
+        estimateCodeDisplacement(circleWalk([10, 25], 5, 10), pin, {
+          kind: "rigid",
+          minYawSpreadM,
+        }),
+      ).toThrow(RangeError);
+    }
+  });
+
   it("skips a sample that is not finite and keeps the rest", () => {
     const pin = pinCode(codeSeen([0, 20]), STORED)!;
     const good = circleWalk([10, 40], 3, 10);
@@ -415,7 +471,10 @@ describe("judgeCodeDisplacement (the decision rule)", () => {
       minSpanS: 60,
       minSpreadM: 2,
     });
-    expect(CODE_MOVE_ESTIMATOR).toEqual({ kind: "rigid" });
+    expect(CODE_MOVE_ESTIMATOR).toEqual({
+      kind: "rigid",
+      minYawSpreadM: CODE_MOVE_RULE.minSpreadM,
+    });
     // The floor binds at every reported accuracy up to 5 m (26.2 m).
     for (const acc of [2, 3, 5]) {
       expect(

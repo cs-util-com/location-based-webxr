@@ -22,7 +22,7 @@ east]`, odometry-NUE), their own time and reported accuracy. A fix without
   (`objectPoseNue` of the level's geo), horizontal part only, plus the
   saved position. Null where `codeCorrection` is null.
 - `type DisplacementEstimator` - `{ kind: "residual", radiusM }` or
-  `{ kind: "rigid" }`.
+  `{ kind: "rigid", minYawSpreadM? }`.
 - `EMPTY_DISPLACEMENT_STATS`, `addDisplacementSample(stats, pin,
 estimator, sample)`, `displacementEstimate(stats, estimator)` - the
   incremental form: O(1) per fix (what a per-fix check needs).
@@ -35,7 +35,8 @@ estimator, sample)`, `displacementEstimate(stats, estimator)` - the
 - `judgeCodeDisplacement(estimate, { deviceM, storedM }, rule)` -
   `{ verdict, boundM }`, with `CodeMoveRule` = `{ floorM, accuracyFactor,
 defaultAccuracyM, agreementM, minSpanS, minSpreadM }`.
-- Errors: a residual radius that is not a positive finite number throws
+- Errors: a residual radius that is not a positive finite number, or a
+  rigid `minYawSpreadM` that is not a non-negative finite number, throws
   `RangeError` (a programming error); external data never throws.
 
 ## The two estimators
@@ -49,9 +50,13 @@ both relative to the saved code.
   test), about 10 m at 50 m for a "Good" 12 degrees (§7j #1).
 - `rigid`: the closed-form 2D least-squares fit `q = R(psi) p + t` over
   every device fix, evaluated at the code: `t`. A heading error or a turn
-  alone reads as no move at the code (property test). Without spread
-  (`spreadM` under 1 micrometre, a numerical guard) the yaw is 0 and the
-  estimate is the residual mean.
+  alone reads as no move at the code (property test). Below
+  `minYawSpreadM` (default 1 micrometre, a numerical guard) the yaw is 0
+  and the estimate is the residual mean. `CODE_MOVE_ESTIMATOR` sets it to
+  the rule's `minSpreadM` (2 m): a visitor swaying by centimetres passes
+  the numerical guard, and the fit would then draw a turn from the GPS
+  wander and report a noise offset (§7l G2). Verdicts do not change, since
+  the rule calls such evidence `undecided`.
 - Neither can tell a constant GPS bias from a move: both add it exactly
   (property test). This is why the rule's bound has a floor.
 
@@ -85,8 +90,11 @@ Harness: the M5a block of `viewer-vote-strength.test.ts` (opt-in
 `VOTE_STRENGTH_SWEEP=m5a-detect`, `m5a-breakdown`, `m5a-bias`, `m5a-two`,
 `m5a-recovery`; the default run keeps the frame sanity and the store pin).
 Full numbers: the results doc
-`GpsPlusSlamJs_Docs/docs/2026-09-28-1433-viewer-vote-strength-results.md`,
-section "M5a".
+`GpsPlusSlamJs_Docs/docs/2026-10-01-2040-moved-code-detection-results.md`.
+**Every value is synthetic and provisional**: simulated GPS (no owner
+field recording existed), and the "no false alarm" figures rest on 12
+independent noise draws per cell (the noise is seeded by the seed alone;
+0 of 12 bounds the rate only below about 22 %).
 
 - **Model.** GPS = truth + constant bias B (0, 8, 15 m, at 0/90/180
   degrees from the move) + Gauss-Markov error per axis (tau 30-300 s,
@@ -102,20 +110,24 @@ section "M5a".
 - **`CODE_MOVE_RULE`** (rigid, 60 s, 2 m, floor 30 m, factor 3, default
   5 m, agreement 10 m): no false alarm while sigma <= 3 m and B < 22.5 m
   (tau 300 s) or < 25 m (tau 30 s), nor at sigma 5 m (tau 100 s) for
-  B < 15 m. With the floor binding, factor and default accuracy matter
-  only at a reported 5 m (factor 4 or default 8 m lift the bound to
-  33-43 m).
+  B < 15 m; at sigma 10 m from B = 2.5 m at tau 30 s and at any bias,
+  B = 0 included, at tau 300 s. With the floor binding, factor 4 or
+  default 8 m lift the bound to 33-43 m at a reported 5 m, and a level
+  with no mint accuracy under the 8 m default gives 30.6 m already at a
+  reported 3 m; in practice the rule is a fixed 30 m threshold (§7l D5).
 - **Detection** (reported accuracy 3 m): 100 % of 50 m moves (median
   under 20 s after the scan), 75 % of 30 m, 34 % of 20 m, 12 % of 10 m,
-  5 % of 5 m - mostly where the bias adds to the move. A move that is
-  detected at all is detected within 240 s (the share by 240 s equals the
-  share by 600 s in every cell; medians 20-60 s), so the veto lands during
-  the hold and fade, not only on re-scans. The detection limit is the bound: a move
+  5 % of 5 m - mostly where the bias adds to the move. Almost every
+  detected move is detected within 240 s (one sweep: 36 % of 20 m moves
+  by 240 s, 37 % by 600 s; medians 20-60 s), so the veto lands during the
+  hold and fade, not only on re-scans. The detection limit is the bound: a move
   smaller than about 30 m minus the bias along it is not seen.
 - **Heading error and turn**: the rigid fit's detection is identical at
-  every saved heading error (0-18 degrees) and turn (0-180); the residual
-  estimator's is not (R = 20 m: 75 % of 30 m moves unturned, 46 % turned
-  90 degrees).
+  every saved heading error (0-18 degrees, pinned by the breakdown sweep)
+  and within a few points at every turn (0-180; different cells, not
+  pinned); the residual estimator's is not (R = 20 m: 75 % of 30 m moves
+  unturned, 46 % turned 90 degrees). The other side of this: a poster
+  turned in place reads `consistent`, never `moved` (§7l D3).
 - **`consistent`** (agreement 10 m) is read by 100 % of unmoved codes
   at B = 0 but also, first, by 54 % of 5 m and 16 % of 20 m moves: it is
   no reason to stop checking.
@@ -168,12 +180,15 @@ const { verdict } = judgeCodeDisplacement(
 - `code-displacement.test.ts` - the pin, each estimator on hand-built
   geometry (a translated code, a heading error near and far, a moved and
   turned code, a bias), the evidence (span from times, spread from the
-  odometry, a standing visitor's rigid fit equal to the residual mean),
+  odometry, a standing visitor's rigid fit equal to the residual mean, a
+  swaying visitor's under `CODE_MOVE_ESTIMATOR` too), the estimator
+  parameter checks,
   skipped samples, the fold equal to the list, `displacementSamples`
   dropping the votes, and the rule's three verdicts and bound.
 - `code-displacement.property.test.ts` - for any frame, saved pose,
   heading error, turn, move, walk and bias: the rigid fit reads exactly
-  move plus bias; the residual estimator leaks at most `2 sin(theta/2) R`;
+  move plus bias; the residual estimator leaks at most `2 sin(theta/2) R`
+  (every run carries fixes inside R, so none passes without an estimate);
   the order of the fixes does not matter.
 - `viewer-vote-strength.test.ts` (M5a block) - the default run pins the
   harness frames (exact data reads 0 or exactly the move) and that the

@@ -131,7 +131,15 @@ export function pinCode(
 
 export type DisplacementEstimator =
   | { readonly kind: "residual"; readonly radiusM: number }
-  | { readonly kind: "rigid" };
+  | {
+      readonly kind: "rigid";
+      /** Below this spread (m) no turn is fitted: the yaw is 0 and the
+       *  estimate is the residual mean. Default: a numerical guard of
+       *  1 micrometre. A swaying visitor's centimetres pass that guard but
+       *  carry no turn, so the shipped estimator sets the rule's
+       *  `minSpreadM` here (§7l G2); a non-negative finite number. */
+      readonly minYawSpreadM?: number;
+    };
 
 /**
  * Running sums of the fixes an estimator kept, both points relative to the
@@ -180,9 +188,10 @@ export interface DisplacementEstimate {
   readonly yawDeg: number;
 }
 
-/** A spread (m) below which the rigid fit has no turn to fit: a numerical
- *  guard (micrometres; real standing sway is millimetres or more), not a
- *  tuning parameter - the rule's `minSpreadM` is where evidence is judged. */
+/** The rigid fit's default `minYawSpreadM`: a numerical guard
+ *  (micrometres), below which the cross sums are rounding noise. Real
+ *  standing sway is millimetres or more and passes it, which is why the
+ *  shipped estimator raises it to the rule's `minSpreadM`. */
 const DEGENERATE_SPREAD_M = 1e-6;
 
 function checkEstimator(estimator: DisplacementEstimator): void {
@@ -192,6 +201,15 @@ function checkEstimator(estimator: DisplacementEstimator): void {
   ) {
     throw new RangeError(
       `residual radius must be a positive number, got ${String(estimator.radiusM)}`,
+    );
+  }
+  if (
+    estimator.kind === "rigid" &&
+    estimator.minYawSpreadM !== undefined &&
+    !(Number.isFinite(estimator.minYawSpreadM) && estimator.minYawSpreadM >= 0)
+  ) {
+    throw new RangeError(
+      `rigid minimum yaw spread must be a non-negative number, got ${String(estimator.minYawSpreadM)}`,
     );
   }
 }
@@ -246,8 +264,8 @@ export function addDisplacementSample(
  *
  * `residual`: the mean of `q - p`. `rigid`: the yaw psi and shift that best
  * map `p` onto `q` (closed-form 2D least squares), applied to the code (the
- * origin): `R(psi) (0 - mean p) + mean q`. With a degenerate spread the
- * yaw is 0 and the rigid estimate is the residual mean.
+ * origin): `R(psi) (0 - mean p) + mean q`. Below the estimator's
+ * `minYawSpreadM` the yaw is 0 and the rigid estimate is the residual mean.
  */
 export function displacementEstimate(
   stats: DisplacementStats,
@@ -267,9 +285,14 @@ export function displacementEstimate(
     const sDot = stats.dot - n * (pn * qn + pe * qe);
     const sCross = stats.cross - n * (pn * qe - pe * qn);
     // Without a spread there is no turn to fit: the cross sums are then
-    // rounding noise, and their angle would swing the estimate by up to
-    // twice the distance of the fixes from the code.
-    yaw = spreadM < DEGENERATE_SPREAD_M ? 0 : Math.atan2(sCross, sDot);
+    // noise (rounding, or GPS wander over a visitor's sway), and their angle
+    // would swing the estimate by up to twice the distance of the fixes
+    // from the code.
+    const minSpread = estimator.minYawSpreadM ?? DEGENERATE_SPREAD_M;
+    yaw =
+      spreadM < Math.max(minSpread, DEGENERATE_SPREAD_M)
+        ? 0
+        : Math.atan2(sCross, sDot);
     const c = Math.cos(yaw);
     const s = Math.sin(yaw);
     // R(psi) p = (c pn - s pe, s pn + c pe), applied to -mean p.
@@ -319,28 +342,23 @@ export interface CodeMoveRule {
 }
 
 /**
- * The estimator M5a recommends: the rigid fit. A saved heading error or a
- * turned poster does not reach it (the residual estimator's detection
- * changed with both; the rigid fit's did not, at 0-18 degrees and 0-180).
- * The price: at a 30 m floor its first false alarm came one 2.5 m bias
- * step earlier than the 20 m residual estimator's at sigma 5 and 10 m.
- */
-export const CODE_MOVE_ESTIMATOR: DisplacementEstimator = Object.freeze({
-  kind: "rigid",
-});
-
-/**
- * The rule M5a measured (results doc 2026-09-28-1433, "M5a"; sidecar).
+ * The rule M5a measured (results:
+ * `GpsPlusSlamJs_Docs/docs/2026-10-01-2040-moved-code-detection-results.md`;
+ * sidecar). SYNTHETIC AND PROVISIONAL: every value rests on simulated GPS
+ * (no owner field recording existed), and the "never" figures below rest on
+ * 12 independent noise draws per cell (0 of 12 bounds the false-alarm rate
+ * only below about 22 %). Re-measure on recordings before trusting them.
  * Parameters it rests on: GPS error as Gauss-Markov noise of tau 30-300 s
  * and sigma 3-10 m plus a constant bias, 1 % odometry drift, the M5a
- * walks. With it an UNMOVED code never reads `moved` while sigma <= 3 m
- * and the bias is under 22.5 m (tau 300 s; 25 m at tau 30 s), nor at sigma
- * 5 m (tau 100 s) under 15 m; at sigma 10 m it does at any bias. A moved
- * code is read as moved when |move + bias| clears about 30 m: 100 % of
- * 50 m moves within 20 s (median), 75 % of 30 m, 34 % of 20 m, 12 % of
- * 10 m. What reverses it: a lower floor (25 m: false alarms from sigma
- * 5 m at B = 10 m), a shorter span (0-30 s: the scan's first fixes decide
- * alone), a GPS whose error is larger than sigma 5 m without reporting it.
+ * walks. With it an UNMOVED code did not read `moved` while sigma <= 3 m
+ * and the bias was under 22.5 m (tau 300 s; 25 m at tau 30 s), nor at sigma
+ * 5 m (tau 100 s) under 15 m; at sigma 10 m it did from B = 2.5 m at tau
+ * 30 s, and at tau 300 s at any bias, B = 0 included. A moved code is read
+ * as moved when |move + bias| clears about 30 m: 100 % of 50 m moves within
+ * 20 s (median), 75 % of 30 m, 34 % of 20 m, 12 % of 10 m. What reverses
+ * it: a lower floor (25 m: false alarms from sigma 5 m at B = 10 m), a
+ * shorter span (0-30 s: the scan's first fixes decide alone), a GPS whose
+ * error is larger than sigma 5 m without reporting it.
  */
 export const CODE_MOVE_RULE: CodeMoveRule = Object.freeze({
   floorM: 30,
@@ -349,6 +367,22 @@ export const CODE_MOVE_RULE: CodeMoveRule = Object.freeze({
   agreementM: 10,
   minSpanS: 60,
   minSpreadM: 2,
+});
+
+/**
+ * The estimator M5a recommends: the rigid fit. A saved heading error or a
+ * turned poster does not reach it (the residual estimator's detection
+ * changed with both; the rigid fit's did not, at 0-18 degrees and 0-180),
+ * which also means a poster turned in place is never `moved` (§7l D3).
+ * The price: at a 30 m floor its first false alarm came one 2.5 m bias
+ * step earlier than the 20 m residual estimator's at sigma 5 and 10 m.
+ * No turn is fitted below the rule's minimum spread (§7l G2): such evidence
+ * is `undecided` anyway, and a yaw drawn from a swaying visitor's GPS
+ * wander would make the reported offset noise. Verdicts are unchanged.
+ */
+export const CODE_MOVE_ESTIMATOR: DisplacementEstimator = Object.freeze({
+  kind: "rigid",
+  minYawSpreadM: CODE_MOVE_RULE.minSpreadM,
 });
 
 /**
