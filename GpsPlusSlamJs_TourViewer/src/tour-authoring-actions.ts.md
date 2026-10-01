@@ -61,6 +61,10 @@ reads them (the framework's `diagnostics/note` precedent). Plan:
   - `objectDeleted(payload)` - `tourAuthoring/objectDeleted`: `object`,
     `hosted` (a tombstone the Finish applies, or only on this device),
     `arVisitIndex`, `atMs`, `surface`.
+  - `objectDeleteUndone(payload)` (M4 review #5) -
+    `tourAuthoring/objectDeleteUndone`: the same payload as the
+    `objectDeleted` it undoes (the restored object, `hosted`, the visit,
+    the time, the surface), so a replay pairs the two by the object's id.
   - `codeMeasured` gains `replaced` - the stored pose the explicit
     "Re-measure the code (replace its saved position)" replaced; absent for
     every other measurement.
@@ -115,4 +119,4 @@ arStore.dispatch(
   `objectPlaced` and `finished` are in the saved zip, in order.
 - `authoring-settle.test.ts` ("editing placed objects", "re-measuring a
   stored code on purpose"): `objectEdited`, `objectMoved` (with the
-  correction's inputs), `objectDeleted`, and `codeMeasured.replaced`.
+  correction's inputs), `objectDeleted`, `objectDeleteUndone`, and `codeMeasured.replaced`.

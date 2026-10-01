@@ -48,6 +48,7 @@ import {
 } from "./tour-viewer-session.js";
 import { mintPin, objectPoseNue } from "./content-placement.js";
 import { deletedKey, META_KEY, objectKey } from "./draft-persistence.js";
+import { OUTCOME_HOLD_MS } from "./object-editing.js";
 import { WEBXR_TO_NUE } from "gps-plus-slam-app-framework/ar/webxr-nue-basis";
 import {
   correctedAlignment,
@@ -258,6 +259,43 @@ function memoryDraftStore(): {
   return { store, files };
 }
 
+/**
+ * A draft store whose writes wait until `release`, so a test sees the
+ * in-progress state - and which can REFUSE a write (false, as a quota wall
+ * does) or REJECT one (a throw), for the failure branches.
+ */
+function slowDraftStore() {
+  const { store, files } = memoryDraftStore();
+  const held: (() => void)[] = [];
+  const mode = { refuse: false, reject: false };
+  const slow: DraftFileStore = {
+    ...store,
+    put: (key, data) =>
+      new Promise<boolean>((resolve, reject) => {
+        held.push(() => {
+          if (mode.reject) {
+            reject(new Error("the store threw"));
+            return;
+          }
+          if (!mode.refuse) files.set(key, data);
+          resolve(!mode.refuse);
+        });
+      }),
+  };
+  return {
+    store: slow,
+    files,
+    mode,
+    /** Land every write held so far, and what they set off. */
+    release: async (): Promise<void> => {
+      for (let round = 0; round < 5; round += 1) {
+        for (const land of held.splice(0)) land();
+        await flush();
+      }
+    },
+  };
+}
+
 function authoring(options: { store?: DraftFileStore } = {}) {
   /** Whether the AR session is up, as the controller reports it. */
   const device = { live: true };
@@ -325,7 +363,16 @@ function authoring(options: { store?: DraftFileStore } = {}) {
   const pick: {
     fn: (targets: ReadonlyMap<string, Object3D>) => string | null;
   } = { fn: () => null };
+  /** One-shot timers the setup armed (the `schedule` seam), fired by hand. */
+  const timers: { fn: () => void; ms: number; cancelled: boolean }[] = [];
   const seams = {
+    schedule: (fn: () => void, ms: number) => {
+      const timer = { fn, ms, cancelled: false };
+      timers.push(timer);
+      return () => {
+        timer.cancelled = true;
+      };
+    },
     pickObjectInView: (targets: ReadonlyMap<string, Object3D>) =>
       pick.fn(targets),
     canShareZip: () => false,
@@ -486,6 +533,11 @@ function authoring(options: { store?: DraftFileStore } = {}) {
     labels,
     scene,
     pick,
+    timers,
+    /** Fire every armed timer that was not cancelled. */
+    fireTimers: (): void => {
+      for (const t of timers.splice(0)) if (!t.cancelled) t.fn();
+    },
     /** Put the reticle at `local` (odometry-NUE). */
     setReticle: (local: [number, number, number]): void => {
       reticleLocal.set(...local);
@@ -1495,6 +1547,163 @@ describe(
         },
       });
       expect(prevented).toBe(true);
+    });
+
+    // Why these tests matter (M4 review #5 and #6): Delete had no confirm
+    // and no undo, so one mis-tap in AR - where the panel shares the screen
+    // with the scene - lost a hosted note until the creator re-made it. And
+    // the async-UI rule (CLAUDE.md) asks for the in-progress state and the
+    // failure branch of every draft write, which only the edit had tests
+    // for; in AR the outcome also vanished at the next tap, before it could
+    // be read.
+
+    it("offers Undo after deleting a hosted pin, and Undo brings it back to the list, the scene, the draft and the log", async () => {
+      const { store, files } = memoryDraftStore();
+      const a = await withHostedTour([hostedPin("h1", "Gate")], store);
+      const list = a.dom.objectList;
+      list.listHandlers!.remove("h1");
+      await flush();
+      expect(list.lastModel?.undo).toBe(true);
+      expect(files.has(deletedKey("h1"))).toBe(true);
+
+      list.listHandlers!.undo();
+      await flush();
+      expect(a.ctx.deletedObjectIds).toEqual([]);
+      expect(a.ctx.placedPreviews.has("h1")).toBe(true);
+      expect(files.has(deletedKey("h1")), "the tombstone is gone").toBe(false);
+      expect(list.lastModel?.note).toMatch(/Restored "Gate"/);
+      expect(list.lastModel?.undo).toBe(false);
+      const log = logged(a, "tourAuthoring/objectDeleteUndone").at(-1)!.payload;
+      expect(log["hosted"]).toBe(true);
+    });
+
+    it("undoes the delete of an edited hosted pin WITH its edit, and of a pin placed on this device with its record", async () => {
+      const { store, files } = memoryDraftStore();
+      const a = await withHostedTour([hostedPin("h1", "Gate")], store);
+      const list = a.dom.objectList;
+      list.listHandlers!.editText("h1", "Mill");
+      await flush();
+      list.listHandlers!.remove("h1");
+      await flush();
+      list.listHandlers!.undo();
+      await flush();
+      expect(a.ctx.placedObjects.map((p) => p.object)).toMatchObject([
+        { id: "h1", label: "Mill" },
+      ]);
+      expect(JSON.parse(String(files.get(objectKey("h1"))))).toMatchObject({
+        label: "Mill",
+      });
+      expect(files.has(deletedKey("h1"))).toBe(false);
+
+      await a.mint();
+      await a.placePin("Temp", [1, 0, 1]);
+      const id = a.ctx.placedObjects.at(-1)!.object.id;
+      list.listHandlers!.remove(id);
+      await flush();
+      expect(files.has(objectKey(id))).toBe(false);
+      list.listHandlers!.undo();
+      await flush();
+      expect(a.ctx.placedObjects.map((p) => p.object.id)).toEqual(["h1", id]);
+      expect(files.has(objectKey(id)), "its record is written back").toBe(true);
+    });
+
+    it(`withdraws Undo after ${String(OUTCOME_HOLD_MS)} ms, and an expired Undo restores nothing`, async () => {
+      const a = await withHostedTour([hostedPin("h1", "Gate")]);
+      const list = a.dom.objectList;
+      list.listHandlers!.remove("h1");
+      await flush();
+      expect(list.lastModel?.undo).toBe(true);
+      expect(a.timers.at(-1)?.ms).toBe(OUTCOME_HOLD_MS);
+      a.fireTimers();
+      expect(list.lastModel?.undo).toBe(false);
+      list.listHandlers!.undo();
+      await flush();
+      expect(a.ctx.deletedObjectIds).toEqual(["h1"]);
+    });
+
+    it("shows Deleting… until the draft write lands, then the outcome - and says so when the write is refused or throws", async () => {
+      const slow = slowDraftStore();
+      const a = await withHostedTour(
+        [
+          hostedPin("h1", "Gate"),
+          hostedPin("h2", "Mill"),
+          hostedPin("h3", "Oak"),
+        ],
+        slow.store,
+      );
+      await slow.release();
+      const list = a.dom.objectList;
+      list.listHandlers!.remove("h1");
+      await flush();
+      expect(list.lastModel?.note).toBe('Deleting "Gate"…');
+      expect(list.lastModel?.undo, "no Undo before the outcome").toBe(false);
+      await slow.release();
+      expect(list.lastModel?.note).toMatch(
+        /^Deleted "Gate" - it leaves the zip/,
+      );
+
+      slow.mode.refuse = true;
+      list.listHandlers!.remove("h2");
+      await flush();
+      await slow.release();
+      expect(list.lastModel?.note).toMatch(
+        /^Deleted "Mill", but this device could not save a backup copy/,
+      );
+
+      slow.mode.refuse = false;
+      slow.mode.reject = true;
+      list.listHandlers!.remove("h3");
+      await flush();
+      await slow.release();
+      expect(list.lastModel?.note).toMatch(
+        /^Deleted "Oak", but this device could not save a backup copy/,
+      );
+    });
+
+    it("shows Moving… on the row until the draft write lands, then the outcome - and says so when the write is refused", async () => {
+      const slow = slowDraftStore();
+      const a = await withHostedTour([hostedPin("h1", "Gate")], slow.store);
+      await slow.release();
+      await a.mint();
+      await slow.release();
+      const list = a.dom.objectList;
+      a.pick.fn = () => "h1";
+      a.setup.selectInView();
+      a.setReticle([4, 0, 2]);
+      list.listHandlers!.move("h1");
+      await flush();
+      const busy = list.lastModel!.rows[0]!;
+      expect([busy.busy, busy.enabled]).toEqual(["Moving…", false]);
+      await slow.release();
+      expect(list.lastModel!.rows[0]?.busy).toBeNull();
+      expect(list.lastModel?.note).toMatch(/^Moved "Gate" to the ring/);
+
+      slow.mode.refuse = true;
+      a.setReticle([5, 0, 2]);
+      list.listHandlers!.move("h1");
+      await flush();
+      await slow.release();
+      expect(list.lastModel?.note).toMatch(
+        /^Moved "Gate", but this device could not save a backup copy/,
+      );
+    });
+
+    it(`keeps an outcome through a tap that only selects, for ${String(OUTCOME_HOLD_MS)} ms`, async () => {
+      const a = await withHostedTour(
+        [hostedPin("h1", "Gate"), hostedPin("h2", "Mill")],
+        memoryDraftStore().store,
+      );
+      const list = a.dom.objectList;
+      list.listHandlers!.editText("h1", "The old mill");
+      await flush();
+      expect(list.lastModel?.note).toMatch(/Saved "The old mill"/);
+      // The creator's next tap in AR selects something else at once.
+      a.pick.fn = () => "h2";
+      a.setup.selectInView();
+      expect(list.lastModel?.note).toMatch(/Saved "The old mill"/);
+      a.fireTimers();
+      a.setup.selectInView();
+      expect(list.lastModel?.note).toBe("");
     });
   },
 );

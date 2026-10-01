@@ -59,6 +59,7 @@ function state(overrides: Partial<ObjectListState>): ObjectListState {
     busy: new Map(),
     locked: false,
     note: "",
+    undo: false,
     ...overrides,
   };
 }
@@ -117,6 +118,20 @@ describe("objectListModel on the page", () => {
     expect(objectListModel(state({})).hidden).toBe(true);
     // ...but a last outcome ("Deleted ...") still shows with an empty list.
     expect(objectListModel(state({ note: "Deleted." })).hidden).toBe(false);
+  });
+
+  it("offers Undo beside the note while a delete can still be undone, on the page and in AR (M4 review #5)", () => {
+    // Why: a delete had no confirm and no undo, so one mis-tap lost a
+    // hosted note. The Undo lives with the outcome it undoes, and keeps the
+    // list shown even when the delete emptied it.
+    for (const inAr of [false, true]) {
+      const model = objectListModel(
+        state({ inAr, note: 'Deleted "Gate".', undo: true }),
+      );
+      expect(model.undo).toBe(true);
+      expect(model.hidden).toBe(false);
+    }
+    expect(objectListModel(state({ note: "Saved." })).undo).toBe(false);
   });
 
   it("locks a busy row, and every row while a Finish runs", () => {

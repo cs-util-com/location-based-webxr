@@ -279,3 +279,34 @@ test("a tap in AR selects the object under the ring, a tap on the panel does not
   // The fixture's pin stood at 47.50009 N 8.7 E; the reticle is elsewhere.
   expect(moved?.geo.lon).not.toBeCloseTo(8.7, 6);
 });
+
+test("Delete offers Undo beside its outcome, which brings a hosted pin back; the Undo goes when its time is up", async ({
+  page,
+}) => {
+  // M4 review #5: Delete had no confirm and no undo. The page list is the
+  // DOM half of the unit-tested Undo (authoring-settle.test.ts): the button
+  // sits beside the outcome, restores the row, and is withdrawn when the
+  // hold timer (the `schedule` seam, fired by hand) runs out.
+  await openTour(page);
+  await row(page, "Fixture pin").getByTestId("object-delete").click();
+  await expect(page.getByTestId("object-list-note")).toHaveText(
+    /Deleted "Fixture pin"/,
+  );
+  await expect(row(page, "Fixture pin")).toHaveCount(0);
+  await page.getByTestId("object-undo").click();
+  await expect(page.getByTestId("object-list-note")).toHaveText(
+    /Restored "Fixture pin"/,
+  );
+  await expect(
+    row(page, "Fixture pin").getByTestId("object-detail"),
+  ).toHaveText(/in the zip/);
+
+  await row(page, "Fixture pin").getByTestId("object-delete").click();
+  await expect(page.getByTestId("object-undo")).toBeVisible();
+  await page.evaluate(
+    (key) => /** @type {any} */ (window)[key].fireTimers(),
+    TEST_KEY,
+  );
+  await expect(page.getByTestId("object-undo")).toBeHidden();
+  await expect(row(page, "Fixture pin")).toHaveCount(0);
+});

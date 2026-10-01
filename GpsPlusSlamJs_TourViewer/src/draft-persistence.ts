@@ -123,6 +123,20 @@ export async function writeDraftDeletion(
   return true;
 }
 
+/**
+ * Take back a deletion: remove `id`'s tombstone (an Undo, M4 review #5).
+ * A record written for the id BEFORE this call (an edited object's) then
+ * counts again; until then the tombstone outranks it, so an Undo cut short
+ * leaves the object deleted rather than half restored.
+ */
+export async function removeDraftDeletion(
+  store: DraftFileStore,
+  id: string,
+): Promise<boolean> {
+  await store.remove(deletedKey(id));
+  return true;
+}
+
 /** What the meta file holds. */
 interface DraftMeta {
   tourUrl: string;

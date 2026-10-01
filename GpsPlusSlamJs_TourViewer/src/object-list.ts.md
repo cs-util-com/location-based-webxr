@@ -22,6 +22,9 @@ zip's and this device's - with **Edit text**, **Move to the reticle** and
     (a Finish is rebuilding) disables every row.
   - `state.note` - the last action's outcome or failure, shown under the
     list (an `aria-live` region).
+  - `state.undo` - the last delete can still be undone (M4 review #5): the
+    model's `undo` puts an **Undo** button on the note's line, on the page
+    and in AR, and keeps the list shown though the delete emptied it.
 - `ObjectRowModel` - `title` (a pin's text, a photo's caption or "Photo"),
   `detail` ("Pin · in the zip · 4 m from the code"), `selected`, `busy`,
   `canEditText` (pins only), `canMove` (pins only, in AR only), `enabled`.
@@ -29,7 +32,7 @@ zip's and this device's - with **Edit text**, **Move to the reticle** and
 - `createObjectListView(container, doc): ObjectListView` - the DOM view over
   `#object-list`: `bind(handlers)` once, `render(model)` any time.
 - `ObjectListHandlers` - `editText(id, text)`, `move(id)`, `remove(id)`,
-  `clearSelection()`.
+  `clearSelection()`, `undo()`.
 
 ## Invariants & assumptions
 
@@ -51,7 +54,9 @@ zip's and this device's - with **Edit text**, **Move to the reticle** and
   editor keeps its typed text across a redraw anyway, and closes when its
   row disappears or is locked.
 - The heading, hint and note elements persist across redraws: a live
-  region that is replaced announces nothing.
+  region that is replaced announces nothing. The Undo button sits on the
+  note's line but outside the live region, so the outcome is announced
+  rather than the button; the line adds no row over the camera.
 - The distance needs the core's geodesy, which is licence-gated: the page
   constructs its store before any render (tests do the same).
 

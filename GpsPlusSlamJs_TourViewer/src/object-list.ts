@@ -50,6 +50,8 @@ export interface ObjectListState {
   readonly locked: boolean;
   /** The last action's outcome, or a failure. */
   readonly note: string;
+  /** The last delete can still be undone (M4 review #5). */
+  readonly undo: boolean;
 }
 
 interface ObjectRowModel {
@@ -81,6 +83,8 @@ export interface ObjectListModel {
   /** Every row on the page; in AR only the selected one (or none). */
   readonly rows: readonly ObjectRowModel[];
   readonly note: string;
+  /** Offer Undo beside the note: the delete it reports can be undone. */
+  readonly undo: boolean;
 }
 
 /** Said in AR while nothing is selected. */
@@ -157,6 +161,7 @@ export function objectListModel(state: ObjectListState): ObjectListModel {
       hint: hasPins ? MOVE_HINT : "",
       rows,
       note: state.note,
+      undo: state.undo,
     };
   }
   const selected = rows.filter((row) => row.selected);
@@ -166,6 +171,7 @@ export function objectListModel(state: ObjectListState): ObjectListModel {
     hint: selected.length === 0 && count > 0 ? SELECT_HINT : "",
     rows: selected,
     note: state.note,
+    undo: state.undo,
   };
 }
 
@@ -176,6 +182,8 @@ export interface ObjectListHandlers {
   remove(id: string): void;
   /** Deselect (the selected row's "Done"). */
   clearSelection(): void;
+  /** Undo the last delete (the note's "Undo"). */
+  undo(): void;
 }
 
 /** The list as the creator setup drives it. */
@@ -314,7 +322,15 @@ export function createObjectListView(
   note.className = "object-list-note";
   note.dataset["testid"] = "object-list-note";
   note.setAttribute("aria-live", "polite");
-  container.replaceChildren(heading, hint, body, note);
+  // Undo sits with the outcome it undoes (M4 review #5), outside the live
+  // region so a screen reader announces the outcome, not the button.
+  const undo = button("Undo", "object-undo", () => {
+    handlers?.undo();
+  });
+  const noteLine = doc.createElement("div");
+  noteLine.className = "object-list-note-line";
+  noteLine.append(note, undo);
+  container.replaceChildren(heading, hint, body, noteLine);
 
   function redraw(): void {
     const model = current;
@@ -332,6 +348,7 @@ export function createObjectListView(
     hint.textContent = model.hint;
     hint.hidden = model.hint === "";
     note.textContent = model.note;
+    undo.hidden = !model.undo;
     body.replaceChildren();
     const list = doc.createElement("ul");
     list.className = "object-rows";

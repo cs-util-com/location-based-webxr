@@ -95,6 +95,7 @@ import {
 } from "./authoring-draft.js";
 import {
   readDraft,
+  removeDraftDeletion,
   removeDraftObject,
   writeDraftDeletion,
   writeDraftMeta,
@@ -618,6 +619,9 @@ export function wireCreatorSetup(deps: {
       draftWrite(object.id, (store) => writeDraftObject(store, object, blob)),
     saveDraftDeletion: (id) =>
       draftWrite(id, (store) => writeDraftDeletion(store, id)),
+    forgetDraftDeletion: (id) =>
+      draftWrite(id, (store) => removeDraftDeletion(store, id)),
+    schedule: (fn, ms) => seams.schedule(fn, ms),
     forgetDraftObject: (id) => {
       const store = draftStore;
       const tourUrl = draftTourUrl;

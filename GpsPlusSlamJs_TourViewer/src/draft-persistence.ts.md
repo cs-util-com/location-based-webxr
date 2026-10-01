@@ -25,6 +25,10 @@ are the framework's.
   `deleted:<id>`), THEN removes its record and bytes. The tombstone is the
   commit point: `readDraft` lets it outrank a record a crash left behind.
   A refused tombstone returns false and leaves the record alone.
+- `removeDraftDeletion(store, id) -> Promise<true>` (M4 review #5) - takes
+  a deletion back (an Undo): removes the tombstone. A record written for
+  the id BEFORE it (an edited object's) counts again; until then the
+  tombstone outranks it, so an Undo cut short leaves the object deleted.
 - `StoredDraft.storedIds` - EVERY object id the read saw on disk, not
   just the ones that parsed.
   - **It exists because cleanup must cover what the reader refused.** A

@@ -39,6 +39,7 @@ import {
 } from "./object-list.js";
 import {
   objectDeleted,
+  objectDeleteUndone,
   objectEdited,
   objectMoved,
 } from "./tour-authoring-actions.js";
@@ -126,6 +127,11 @@ export interface ObjectEditingDeps {
   readonly saveDraftDeletion: (id: string) => Promise<boolean>;
   /** Drop a record only this device had from the draft. */
   readonly forgetDraftObject: (id: string) => Promise<void>;
+  /** Take a deletion back out of the draft (an Undo); false when it did
+   *  not land. */
+  readonly forgetDraftDeletion: (id: string) => Promise<boolean>;
+  /** A one-shot timer (the app's `schedule` seam): returns the cancel. */
+  readonly schedule: (fn: () => void, ms: number) => () => void;
   /** The set of objects changed: bring the previews in line. */
   readonly syncPreviews: () => void;
   /** The panel should re-read state (placement count, Finish). */
@@ -147,10 +153,49 @@ const SAVED_SUFFIX = "it goes into the zip on the next Finish.";
 const NOT_BACKED_UP =
   "this device could not save a backup copy - finish before closing the page.";
 
+/**
+ * How long an action's outcome stands against a tap that only changes the
+ * selection, and how long a delete's Undo is offered (M4 review #5, #6).
+ *
+ * WHAT IT RESTS ON: reading the outcome, then reaching its button. The
+ * outcomes run 8-17 words ("Deleted the photo - it leaves the zip on the
+ * next Finish." is 11; a refused write's is 17). At 150-250 words a minute
+ * that is 1.9-6.8 s to read, plus about 1-1.5 s to find and tap Undo with
+ * the phone held up in AR - 3-8 s across that range; 8 s covers its slow
+ * end. The common snackbar-with-action timings (4-10 s) sit around it.
+ *
+ * WHAT WOULD REVERSE IT: a field test in which creators reach for Undo after
+ * it went (raise it, or keep Undo until the next action), or in which a held
+ * note is read as describing the newly selected object (lower it).
+ */
+export const OUTCOME_HOLD_MS = 8_000;
+
+/** What an Undo of a delete puts back, captured at the delete. */
+interface DeletedObject {
+  readonly object: TourObject;
+  /** This device's entry for it (an edit, a placement), or null. */
+  readonly placed: PlacedEntry | null;
+  /** Its place in `ctx.placedObjects`, so the Finish order is kept. */
+  readonly index: number;
+  readonly hosted: boolean;
+  /** "the photo" or the pin's quoted text. */
+  readonly name: string;
+}
+
 export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
   const { ctx, arStore, view } = deps;
   let selectedId: string | null = null;
   let note = "";
+  /** The note is still within {@link OUTCOME_HOLD_MS}: a tap that only
+   *  selects leaves it standing. */
+  let held = false;
+  let cancelHold: (() => void) | null = null;
+  /** The last delete, while it can be undone: offered beside its note
+   *  until the hold ends, the note changes, or the zip is rebuilt. */
+  let undoable: {
+    readonly manifest: unknown;
+    readonly run: () => void;
+  } | null = null;
   const busy = new Map<string, string>();
 
   function objects(): AuthoringObject[] {
@@ -170,6 +215,11 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
     if (selectedId !== null && !all.some((o) => o.object.id === selectedId)) {
       selectedId = null;
     }
+    // A Finish applied the delete (the manifest advanced) or another tour
+    // opened: there is nothing left to put it back into.
+    if (undoable !== null && undoable.manifest !== ctx.tourManifest) {
+      undoable = null;
+    }
     view.render(
       objectListModel({
         entries: all,
@@ -179,12 +229,44 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
         busy,
         locked: ctx.finishing,
         note,
+        undo: undoable !== null && !ctx.finishing,
       }),
     );
   }
 
-  function say(text: string): void {
+  function stopHold(): void {
+    cancelHold?.();
+    cancelHold = null;
+    held = false;
+  }
+
+  /**
+   * Show `text` as the list's note, held for {@link OUTCOME_HOLD_MS}
+   * against a tap that only selects (in AR every tap on the scene is one),
+   * and with `undo` offered beside it for as long. Any later note replaces
+   * both.
+   */
+  function say(
+    text: string,
+    undo: {
+      readonly manifest: unknown;
+      readonly run: () => void;
+    } | null = null,
+  ): void {
     note = text;
+    undoable = undo;
+    stopHold();
+    if (text !== "") {
+      held = true;
+      cancelHold = deps.schedule(() => {
+        cancelHold = null;
+        held = false;
+        if (undoable !== null) {
+          undoable = null;
+          render();
+        }
+      }, OUTCOME_HOLD_MS);
+    }
     render();
   }
 
@@ -200,7 +282,10 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
     outcome: (ok: boolean) => string,
   ): Promise<void> {
     busy.set(id, label);
+    // A new action: the previous outcome (and its Undo) give way to it.
     note = "";
+    undoable = null;
+    stopHold();
     render();
     const ok = await write().catch(() => false);
     busy.delete(id);
@@ -353,6 +438,7 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
     const found = find(id);
     if (found === undefined) return;
     const object = found.object;
+    const index = ctx.placedObjects.findIndex((p) => p.object.id === id);
     ctx.placedObjects = ctx.placedObjects.filter((p) => p.object.id !== id);
     if (found.hosted && !ctx.deletedObjectIds.includes(id)) {
       ctx.deletedObjectIds = [...ctx.deletedObjectIds, id];
@@ -372,23 +458,85 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
     const name = object.kind === "pin" ? `"${object.label}"` : "the photo";
     // The row is gone at once; the in-progress state is the note until the
     // draft write settles.
-    note = `Deleting ${name}…`;
-    render();
+    say(`Deleting ${name}…`);
+    const deleted: DeletedObject = {
+      object,
+      placed: found.placed,
+      index,
+      hosted: found.hosted,
+      name,
+    };
+    const manifest = ctx.tourManifest;
     const write = found.hosted
       ? deps.saveDraftDeletion(id)
       : deps.forgetDraftObject(id).then(() => true);
-    void write.then(
-      (ok) => {
+    void write
+      .catch(() => false)
+      .then((ok) => {
+        // Undo is offered with the outcome either way: a delete the draft
+        // did not record is still a delete in memory, and the next Finish.
         say(
           ok
             ? `Deleted ${name} - ${found.hosted ? "it leaves the zip on the next Finish." : "it will not be in the zip."}`
             : `Deleted ${name}, but ${NOT_BACKED_UP}`,
+          {
+            manifest,
+            run: () => {
+              undoDelete(deleted);
+            },
+          },
         );
-      },
-      () => {
-        say(`Deleted ${name}, but ${NOT_BACKED_UP}`);
-      },
+      });
+  }
+
+  /**
+   * Put a deleted object back (M4 review #5): into the lists the Finish
+   * writes, the scene, the draft and the log. The draft gets the record
+   * first (an edited or locally placed object's) and loses the tombstone
+   * after, both in the id's queue: until the tombstone goes it outranks
+   * the record, so an Undo cut short leaves the object deleted rather
+   * than half restored.
+   */
+  function undoDelete(deleted: DeletedObject): void {
+    if (refusedDuringFinish()) return;
+    const id = deleted.object.id;
+    if (deleted.hosted) {
+      ctx.deletedObjectIds = ctx.deletedObjectIds.filter((x) => x !== id);
+    }
+    if (
+      deleted.placed !== null &&
+      !ctx.placedObjects.some((p) => p.object.id === id)
+    ) {
+      const out = [...ctx.placedObjects];
+      out.splice(Math.min(deleted.index, out.length), 0, deleted.placed);
+      ctx.placedObjects = out;
+    }
+    arStore.dispatch(
+      objectDeleteUndone({
+        object: deleted.object,
+        hosted: deleted.hosted,
+        arVisitIndex: ctx.arSessionGeneration,
+        atMs: Date.now(),
+        surface: surface(),
+      }),
     );
+    deps.syncPreviews();
+    deps.renderAuthorReadout();
+    say(`Restoring ${deleted.name}…`);
+    const writes: Promise<boolean>[] = [];
+    if (deleted.placed !== null) {
+      writes.push(
+        deps.saveDraftObject(deleted.placed.object, deleted.placed.blob),
+      );
+    }
+    if (deleted.hosted) writes.push(deps.forgetDraftDeletion(id));
+    void Promise.all(writes.map((w) => w.catch(() => false))).then((oks) => {
+      say(
+        oks.every(Boolean)
+          ? `Restored ${deleted.name}.`
+          : `Restored ${deleted.name}, but ${NOT_BACKED_UP}`,
+      );
+    });
   }
 
   view.bind({
@@ -399,19 +547,29 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
       selectedId = null;
       render();
     },
+    undo: () => {
+      const pending = undoable;
+      undoable = null;
+      pending?.run();
+    },
   });
 
   return {
     render,
     select: (id) => {
       selectedId = id;
-      note = "";
+      // A tap in AR is also how the creator carries on, so it must not
+      // take an outcome off the screen before it could be read (M4 review
+      // #6); once the hold is over it clears it.
+      if (!held) note = "";
       render();
     },
     objects,
     reset: () => {
       selectedId = null;
       note = "";
+      undoable = null;
+      stopHold();
       busy.clear();
       render();
     },

@@ -204,6 +204,15 @@
       .object-list-heading {
         margin: 0;
       }
+      /* The outcome and, after a delete, its Undo on one line: the Undo
+         adds no row over the camera. */
+      .object-list-note-line {
+        align-items: center;
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-2);
+        text-shadow: var(--halo-text);
+      }
       /* The troubleshooting recording's marker: inside #ar-root, so it is
          composited over the camera for the whole recorded session - never
          writing behind the creator's back - and it wears the status line's

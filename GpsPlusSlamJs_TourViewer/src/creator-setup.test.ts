@@ -318,6 +318,9 @@ function wire(
     // three.js: these tests are about what reaches DISK, and a placement
     // must be provable without a renderer.
     seams: {
+      // The object list's outcome hold and Undo window (M4 review #5):
+      // never fired here - these tests are about what reaches disk.
+      schedule: () => () => undefined,
       canShareZip: () => false,
       getScene: () => null,
       getArWorldGroup: () => worldGroup,

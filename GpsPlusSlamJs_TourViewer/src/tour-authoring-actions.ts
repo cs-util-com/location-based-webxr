@@ -229,3 +229,8 @@ export const objectMoved = logAction<ObjectMovedLog>()(
 export const objectDeleted = logAction<ObjectDeletedLog>()(
   "tourAuthoring/objectDeleted",
 );
+/** A delete undone (M4 review #5): the same payload as the delete it
+ *  undoes, so a replay pairs the two by the object's id. */
+export const objectDeleteUndone = logAction<ObjectDeletedLog>()(
+  "tourAuthoring/objectDeleteUndone",
+);
