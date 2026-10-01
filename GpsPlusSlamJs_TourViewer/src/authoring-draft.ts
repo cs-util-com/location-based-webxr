@@ -144,12 +144,19 @@ export function objectContentKey(object: TourObject): string {
  *   TEXT: re-measuring the same poster produces a new measurement under
  *   the same id, so "the zip has a level with this id" is not evidence
  *   that it has THIS measurement.
+ * @param visitCount the AR visits' logs the draft holds (`visit-log.ts`,
+ *   M3b). The zip never carries them, so a draft holding one is never
+ *   spent: a visit that only re-scanned a hosted code leaves nothing else,
+ *   and deleting it lost the summary's only evidence for that code
+ *   (M3a/M3b review #5). Only the author's discard drops visits.
  */
 export function draftIsSpent(
   draft: AuthoringDraft,
   manifest: TourManifest | null,
   hostedLevelJson: string | null = null,
+  visitCount = 0,
 ): boolean {
+  if (visitCount > 0) return false;
   if (draftObjectsNotYetHosted(draft, manifest).length > 0) return false;
   // A deletion the zip has not seen is work too: dropping the draft would
   // bring the deleted object back on the next Finish.
@@ -214,10 +221,12 @@ export function contentEntriesToRemove(
 }
 
 /** Counts of work other than new placements (an edit or a move of an
- *  object the zip carries, and a deletion). */
+ *  object the zip carries, a deletion, and an AR visit's log - which goes
+ *  to the summary, never into the zip). */
 interface OtherWork {
   readonly changed?: number;
   readonly deleted?: number;
+  readonly visits?: number;
 }
 
 function counted(count: number, one: string, many: string): string {
@@ -265,11 +274,22 @@ export function restoreOfferText(
     ["thing you placed", "things you placed"],
     other,
   );
-  if (total === 0) {
+  const visits = other.visits ?? 0;
+  if (visits > 0) {
+    parts.push(
+      counted(
+        visits,
+        "AR visit for the summary map",
+        "AR visits for the summary map",
+      ),
+    );
+  }
+  const all = total + visits;
+  if (all === 0) {
     return "Unsaved work from this tour is still on this device: the code's measured position. Add it back?";
   }
   if (hasLevel) parts.push("the code's measured position");
-  return `Unsaved work from this tour is still on this device: ${listed(parts)}. ${total === 1 ? "Add it back?" : "Add them back?"}`;
+  return `Unsaved work from this tour is still on this device: ${listed(parts)}. ${all === 1 ? "Add it back?" : "Add them back?"}`;
 }
 
 /** What it says once the creator has taken it back. */
@@ -283,11 +303,19 @@ export function restoredText(
     ["placed object", "placed objects"],
     other,
   );
-  if (total === 0) {
+  const visits = other.visits ?? 0;
+  const visitWords = counted(visits, "AR visit", "AR visits");
+  if (total === 0 && visits === 0) {
     return `The code's measured position was restored - Finish is ready without walking to the poster again.`;
   }
   const measured = hasLevel
     ? " The code's measured position came back too, so Finish is ready without walking to the poster again."
     : "";
-  return `${listed(parts)} restored - ${total === 1 ? "it goes" : "they go"} into the zip on the next Finish.${measured}`;
+  // Visits go to the summary, never into the zip: said apart.
+  if (total === 0) {
+    return `${visitWords} restored - the summary after the next Finish shows ${visits === 1 ? "it" : "them"}.${measured}`;
+  }
+  const alsoVisits =
+    visits > 0 ? ` ${visitWords} came back for the summary too.` : "";
+  return `${listed(parts)} restored - ${total === 1 ? "it goes" : "they go"} into the zip on the next Finish.${alsoVisits}${measured}`;
 }

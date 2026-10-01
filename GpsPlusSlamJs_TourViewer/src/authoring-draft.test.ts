@@ -224,6 +224,18 @@ describe("draftIsSpent", () => {
     expect(draftIsSpent(empty, null)).toBe(true);
   });
 
+  it("a draft holding AR visits is NOT spent: the zip never carries them (M3a/M3b review #5)", () => {
+    // A visit that only re-scanned a hosted code leaves nothing else, and
+    // the sweep that follows "spent" deleted its file - the summary's only
+    // evidence for that code. Only a discard drops visits.
+    const empty = { ...draftOf([]), level: null };
+    expect(draftIsSpent(empty, null, null, 1)).toBe(false);
+    expect(
+      draftIsSpent(draftOf([pin("a")]), manifestOf([pin("a")]), "{}", 2),
+    ).toBe(false);
+    expect(draftIsSpent(empty, null, null, 0)).toBe(true);
+  });
+
   it("draftHasUnhostedLevel says when a measurement is worth offering", () => {
     expect(draftHasUnhostedLevel(draftOf([]), null)).toBe(true);
     expect(draftHasUnhostedLevel(draftOf([]), "{}")).toBe(false);
@@ -341,6 +353,21 @@ describe("the words the creator reads", () => {
     );
     expect(restoredText(0, false, { changed: 2, deleted: 0 })).toContain(
       "2 changes",
+    );
+  });
+
+  it("names AR visits apart, and never says they go into the zip", () => {
+    expect(restoreOfferText(0, false, { visits: 2 })).toBe(
+      "Unsaved work from this tour is still on this device: 2 AR visits for the summary map. Add them back?",
+    );
+    expect(restoreOfferText(1, true, { visits: 1 })).toContain(
+      "1 thing you placed, 1 AR visit for the summary map and the code's measured position",
+    );
+    expect(restoredText(0, false, { visits: 1 })).toBe(
+      "1 AR visit restored - the summary after the next Finish shows it.",
+    );
+    expect(restoredText(2, false, { visits: 3 })).toBe(
+      "2 placed objects restored - they go into the zip on the next Finish. 3 AR visits came back for the summary too.",
     );
   });
 

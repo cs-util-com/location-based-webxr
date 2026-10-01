@@ -20,15 +20,17 @@ asked. Pure - the OPFS mechanics are the framework's
   tombstones whose id the hosted manifest still carries.
 - `objectContentKey(object) -> string` - an object's JSON with every key
   sorted: one comparable string whatever order its fields were written in.
-- `draftIsSpent(draft, manifest, hostedLevelJson) -> boolean`.
+- `draftIsSpent(draft, manifest, hostedLevelJson, visitCount = 0) -> boolean`
+  - never spent while it holds an AR visit's log (`visitCount > 0`).
 - `applyObjectChanges(existing, changes, deleted) -> TourObject[]` - what
   the Finish writes: `existing` with each change REPLACING the record with
   its id, the rest of `changes` appended, every deleted id filtered out.
 - `contentEntriesToRemove(existing, deleted, wrap) -> string[]` - the zip
   paths of deleted photos' content files, for the rebuild's removal list.
-- `restoreOfferText(count, hasLevel, { changed, deleted })`,
-  `restoredText(count, hasLevel, { changed, deleted })` - the creator's
-  words; changes and deletions are named apart from new placements.
+- `restoreOfferText(count, hasLevel, { changed, deleted, visits })`,
+  `restoredText(count, hasLevel, { changed, deleted, visits })` - the
+  creator's words; changes, deletions and AR visits are named apart from
+  new placements, and visits are never said to go into the zip.
 
 ## Invariants & assumptions
 
@@ -55,6 +57,14 @@ asked. Pure - the OPFS mechanics are the framework's
 - **A deletion is work until the hosted zip lacks the id**: a draft holding
   only a pending deletion is not spent, and restoring it brings back the
   tombstone, never the object.
+- **An AR visit's log keeps a draft alive until a discard** (M3a/M3b
+  review #5): the zip never carries visits, so no hosted zip can prove them
+  published. A visit that only re-scanned a hosted code leaves nothing
+  else, and judging that draft spent deleted the summary's only evidence
+  for that code. The cost is an offer on every reload of the tour until
+  the author restores or discards it. Reverses if the visits ever go into
+  the zip (M3a results, open question 4): then "the zip carries them" is
+  the proof, as for objects.
 - **The Finish replaces and filters** (`applyObjectChanges`): hosted order
   is kept, a deleted id never comes back whatever the changes hold, and no
   id is written twice (property tests).

@@ -255,7 +255,9 @@ export interface StoredDraft {
   /**
    * The AR visits' logs (M3b), oldest first: what the summary after Finish
    * needs from visits of an earlier page load. Not part of `draft`: a visit
-   * is nothing to offer or to write into the zip. A visit id the meta
+   * is never written into the zip - but it is offered with the draft and
+   * keeps it from counting as spent (`draftIsSpent`, M3a/M3b review #5),
+   * so only a discard drops it. A visit id the meta
    * rejects is skipped like an object's, and its file is among
    * `storedIds`, so a discard or a spent draft sweeps it with the rest.
    */
