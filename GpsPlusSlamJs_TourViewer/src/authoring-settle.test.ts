@@ -206,6 +206,8 @@ function el() {
     /** Fire any other listener with an event (the overlay's
      *  `beforexrselect`). */
     fire: (type: string, event: unknown) => handlers.get(type)?.(event),
+    /** Whether a listener of `type` was added to this element. */
+    listens: (type: string) => handlers.has(type),
     // The object list's view (authoring plan M4): records what the setup
     // binds and draws - the model is tested in object-list.test.ts, the
     // DOM by the Playwright suite.
@@ -1481,6 +1483,12 @@ describe(
     it("moves an earlier visit's pin to the reticle through the code correction, as the settle would", async () => {
       // D10b for editing: the second visit's GPS is 20 m and 30 degrees
       // off; the moved pin must land where the CODE says.
+      //
+      // And the second session's odometry origin is somewhere else (M4
+      // review #8): each WebXR session has its own, so with the code at
+      // the same odometry pose in both visits a move through the MEASURING
+      // visit's code pose instead of this visit's sighting would pass.
+      // Turned 70 degrees and moved 8 m, as the cross-visit settle test.
       const a = authoring();
       a.setAlignment(yawAlignment(0, [0, 400, 0]));
       await a.mint();
@@ -1488,11 +1496,30 @@ describe(
       a.endVisit();
       const codeLocal = mintedOdom(a.dispatched);
       const gate = a.ctx.placedObjects[0]!.object;
+      const origin = new Matrix4().compose(
+        new Vector3(4, -0.3, -7),
+        new Quaternion(...yawQ(70)),
+        new Vector3(1, 1, 1),
+      );
+      const originNue = new Matrix4()
+        .copy(WEBXR_TO_NUE)
+        .multiply(origin)
+        .multiply(new Matrix4().copy(WEBXR_TO_NUE).invert());
       a.beginVisit();
-      a.setAlignment(yawAlignment(30, [20, 401, -8]));
-      a.seeTheCode();
+      a.setAlignment(
+        new Matrix4()
+          .fromArray(yawAlignment(30, [20, 401, -8]))
+          .multiply(originNue.clone().invert())
+          .toArray(),
+      );
+      a.seeTheCode(origin);
       await flush();
-      a.setReticle([4, 0, 2]);
+      // The physical spot at odometry-NUE [4, 0, 2] of the FIRST session,
+      // as this session's odometry reads it.
+      const spotRaw: Pose = { position: [2, 0, -4], rotation: [0, 0, 0, 1] };
+      expect(odomNueFromWebXr(spotRaw).position).toEqual([4, 0, 2]);
+      const spot2 = odomNueFromWebXr(inOrigin(spotRaw, origin)).position;
+      a.setReticle([...spot2]);
       a.dom.objectList.listHandlers!.move(gate.id);
       await flush();
 
@@ -1507,14 +1534,14 @@ describe(
       const log = logged(a, "tourAuthoring/objectMoved").at(-1)!.payload;
       expect(log["basis"]).toBe("code-corrected");
       const reticle = log["reticleOdomNue"] as number[];
-      [4, 0, 2].forEach((v, i) => {
+      spot2.forEach((v, i) => {
         expect(reticle[i]).toBeCloseTo(v, 9);
       });
       expect(log["sighting"]).not.toBeNull();
       // Rigid in AR now, like a new placement - and the visit's own settle
       // keeps it where the move put it.
       expect(
-        a.inWorldGroup("Gate").distanceTo(new Vector3(4, 0, 2)),
+        a.inWorldGroup("Gate").distanceTo(new Vector3(...spot2)),
       ).toBeLessThan(1e-6);
       a.endVisit();
       expect(
@@ -1589,7 +1616,23 @@ describe(
     });
 
     it("cancels the XR select of a tap on the panel, so Delete does not also select what is behind it", () => {
+      // What this pins (M4 review #8): the cancelling listener is the
+      // PANEL's - the overlay element every control of the setup sits in -
+      // and no other element's, so a listener moved to, say, the controls
+      // row (which the object list is not in) fails here. That the
+      // object list's buttons really sit inside the panel, so their
+      // `beforexrselect` bubbles to it, is DOM layout this fake cannot
+      // see: the e2e "a tap in AR selects the object under the ring, a tap
+      // on the panel does not, and Move takes the pin to the reticle"
+      // (object-editing.spec.js) dispatches the event at the Delete button
+      // and asserts no select fired.
       const a = authoring();
+      const listening = (
+        Object.entries(a.dom) as [string, { listens(type: string): boolean }][]
+      )
+        .filter(([, element]) => element.listens("beforexrselect"))
+        .map(([key]) => key);
+      expect(listening).toEqual(["panel"]);
       let prevented = false;
       a.dom.panel.fire("beforexrselect", {
         preventDefault: () => {
