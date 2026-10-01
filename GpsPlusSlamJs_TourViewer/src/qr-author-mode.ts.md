@@ -50,6 +50,16 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   N m from its saved position" (or "turned N°" when only the yaw broke the
   bound) "- a second print or a moved poster? Not used; this visit follows
   GPS".
+- `replaceCodeConfirmText(size | null)` (M4 review #3) - the explicit
+  replace's confirm question. It says what a visitor will see, not only what
+  is stored: the code moves for everyone ("it moves about 3.4 m and turns
+  4°"), notes already placed keep their saved positions, so the ones placed
+  against the old position will appear shifted by about that much - more
+  the further from the code when it also turns. One decimal below 10 m,
+  whole metres above; a turn under 1° is left out (under 0.35 m at 20 m).
+  `null` (no sighting of the code in hand) keeps the words without a
+  number. Moving the earlier notes along with the code is an OPEN owner
+  decision and not offered.
 - `setupHint({ measured, tourOpen, hadLevel, keptStored? })` - what the
   panel says once measured: "Position saved." when no tour is open
   (`codeTourLine` then says what is happening to the code's tour;

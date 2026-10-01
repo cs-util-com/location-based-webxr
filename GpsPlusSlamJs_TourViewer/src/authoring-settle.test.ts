@@ -1529,6 +1529,15 @@ describe(
       expect(a.dom.replaceCodeConfirmText.textContent).toMatch(
         /Everyone who opens the tour/,
       );
+      // With the size this visit sees (M4 review #3): its GPS alignment is
+      // 30 degrees off the visit that stored the code, so the code turns 30
+      // degrees, and earlier notes will appear shifted by it.
+      expect(a.dom.replaceCodeConfirmText.textContent).toMatch(
+        /it moves about \d+(\.\d)? m and turns 30°/,
+      );
+      expect(a.dom.replaceCodeConfirmText.textContent).toMatch(
+        /will appear shifted by about that much/,
+      );
       // Nothing changed yet: the confirm step comes first.
       expect(a.ctx.mintedLevel).toEqual(stored);
       a.dom.replaceCodeYes.click();

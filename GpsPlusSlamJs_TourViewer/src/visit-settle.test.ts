@@ -30,6 +30,7 @@ import {
   planMove,
   planVisitSettle,
   settleAlignment,
+  sightedCodeOffset,
   type CodeMeasurement,
   type CodeSighting,
 } from "./visit-settle.js";
@@ -659,6 +660,34 @@ describe("the code correction's plausibility bound (M2c review #2)", () => {
     expect(refused?.refused?.yawDeg).toBeCloseTo(CORRECTION_MAX_YAW_DEG + 1, 4);
     // The refused choice is the plain visit alignment, not a corrected one.
     expect(refused?.alignment).toEqual(offBy(0, CORRECTION_MAX_YAW_DEG + 1));
+  });
+
+  it("measures the code's offset from its stored pose, in or out of the bound - what an explicit replace moves the code by (M4 review #3)", () => {
+    // Why this test matters: the replace's confirm says how far the code
+    // moves for every visitor, and so how far notes placed against the old
+    // position will appear shifted. That number has to be the one the
+    // correction would use, bound or not: a replace is the creator saying
+    // the stored pose is wrong, typically by more than the bound admits.
+    const input = (alignment: number[]) => ({
+      visit: 1,
+      alignment,
+      zero: ZERO,
+      mintedLevel: stored,
+      measurement: measuredInVisit(0),
+      sighting,
+    });
+    const near = sightedCodeOffset(input(offBy(3, 4)));
+    expect(near?.horizontalM).toBeCloseTo(3, 2);
+    expect(near?.yawDeg).toBeCloseTo(4, 4);
+    expect(sightedCodeOffset(input(offBy(60, 0)))?.horizontalM).toBeCloseTo(
+      60,
+      2,
+    );
+    // No sighting of the level in hand, or no zero: nothing to say.
+    expect(sightedCodeOffset({ ...input(offBy(3, 0)), sighting: null })).toBe(
+      null,
+    );
+    expect(sightedCodeOffset({ ...input(offBy(3, 0)), zero: null })).toBe(null);
   });
 
   it("carries the refusal into the settle plan", () => {

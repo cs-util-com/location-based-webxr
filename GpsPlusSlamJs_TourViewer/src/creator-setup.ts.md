@@ -445,11 +445,16 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
     driver is unchanged (MinimalExample's use stays as it is).
   - **The explicit replace of a stored code** (M2c review #5): offered in
     AR while the level in hand is a stored pose, enabled with the mint gate
-    for that code in view, behind a confirm step that says the code moves
-    for every visitor while placed objects keep their positions. Confirmed,
-    the measurement becomes the reference (`kept: "measurement"`, logged
-    with `replaced`); without it a new measurement of a stored code stays
-    a correction sighting.
+    for that code in view, behind a confirm step (`replaceCodeConfirmText`,
+    M4 review #3) that says the code moves for every visitor - by how much,
+    from this visit's sighting (`sightedCodeOffset`), kept current while
+    the confirm is open - and that notes placed against the old position
+    keep their stored geo and so will appear shifted by about that much.
+    Confirmed, the measurement becomes the reference (`kept:
+"measurement"`, logged with `replaced`); without it a new measurement
+    of a stored code stays a correction sighting. Whether a replace should
+    also move the earlier notes along is an OPEN owner decision; the
+    confirm handler marks where such an option would go.
   - The readout's "N objects placed" counts only objects the zip does not
     carry; an edit of a hosted object is not a placement.
 - Owns the session fields `lastDetectedText`, `activeSizeM`,

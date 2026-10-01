@@ -27,6 +27,7 @@ import {
   planVisitSettle,
   storedGeo,
   settleAlignment,
+  sightedCodeOffset,
   type CodeMeasurement,
   type CodeSighting,
   type CorrectionRefusal,
@@ -121,6 +122,7 @@ import {
   adoptedSizeNote,
   codeTourLine,
   correctionRefusedLine,
+  replaceCodeConfirmText,
   driveReplaceSteps,
   entryHint,
   finishRoute,
@@ -145,11 +147,6 @@ import {
   type TourViewerStore,
 } from "./tour-viewer-session.js";
 import type { Wizard } from "./wizard.js";
-
-/** The explicit replace's confirm question (M4): what changes, and for
- *  whom, in plain words. */
-const REPLACE_CODE_CONFIRM =
-  "Replace the code's saved position with a new measurement? Everyone who opens the tour is lined up with the code, so it moves for them too. Objects already placed keep their own positions.";
 
 /** Said when a new measurement kept the code's stored pose (D10b). */
 const STORED_POSITION_KEPT =
@@ -773,6 +770,22 @@ export function wireCreatorSetup(deps: {
     if (!shown) replaceConfirmOpen = false;
     dom.replaceCodeButton.hidden = !shown || replaceConfirmOpen;
     dom.replaceCodeConfirm.hidden = !(shown && replaceConfirmOpen);
+    // The question states what the replace does to visitors, with its size
+    // as this visit sees the code now (M4 review #3) - kept current while
+    // the confirm is open, since the sighting refines.
+    if (shown && replaceConfirmOpen) {
+      const state = arStore.getState();
+      dom.replaceCodeConfirmText.textContent = replaceCodeConfirmText(
+        sightedCodeOffset({
+          visit: ctx.arSessionGeneration,
+          alignment: selectAlignmentMatrix(state),
+          zero: selectZeroReference(state),
+          mintedLevel: ctx.mintedLevel,
+          measurement: ctx.codeMeasurement,
+          sighting: ctx.visitCodeSighting,
+        }),
+      );
+    }
     // Re-enabled by the live readout when the gate is open.
     dom.replaceCodeButton.disabled = true;
     dom.replaceCodeYes.disabled = true;
@@ -1958,7 +1971,6 @@ export function wireCreatorSetup(deps: {
 
   // The explicit replace: a confirm step first, because it moves the code
   // for everyone who opens the tour (M4).
-  dom.replaceCodeConfirmText.textContent = REPLACE_CODE_CONFIRM;
   dom.replaceCodeButton.addEventListener("click", () => {
     replaceConfirmOpen = true;
     renderAuthorReadout();
@@ -1972,6 +1984,11 @@ export function wireCreatorSetup(deps: {
     // Hidden directly: a re-render would overwrite the "Saving…" line the
     // measurement puts up; its own end re-renders the panel.
     dom.replaceCodeConfirm.hidden = true;
+    // OPEN OWNER DECISION (M4 review #3): whether a replace should also move
+    // the notes placed against the old position along with the code. Not
+    // offered until decided; the confirm says they will appear shifted. An
+    // option would be a second confirm button whose handler moves those
+    // notes by the same correction before this replace.
     measureCode(true);
   });
 

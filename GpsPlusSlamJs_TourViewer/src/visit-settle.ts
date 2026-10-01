@@ -269,14 +269,18 @@ export function settleAlignment(input: SettleAlignmentInput): {
   };
 }
 
-/** The visit's alignment corrected through its sighting of the stored
- *  code, the refusal when the correction breaks the bound, or null when
- *  there is no correction to make. */
-function codeCorrectionOf(
+/** The stored code in hand and this visit's sighting of it, through
+ *  `alignment`, with the size of the correction between the two; null
+ *  without a sighting of the level in hand or a readable stored pose. */
+function sightedStoredCode(
   input: SettleAlignmentInput,
   alignment: readonly number[],
   zero: LatLong,
-): { alignment: number[] } | { refused: CorrectionRefusal } | null {
+): {
+  stored: NonNullable<ReturnType<typeof storedCode>>;
+  codeLocal: NuePose;
+  size: { horizontalM: number; yawDeg: number };
+} | null {
   const { mintedLevel, sighting } = input;
   if (
     mintedLevel === null ||
@@ -290,7 +294,37 @@ function codeCorrectionOf(
   const codeLocal = odomNueFromWebXr(sighting.odomPose);
   const measured = throughAlignment(codeLocal, alignment);
   const size = measured === null ? null : correctionSize(measured, stored.pose);
-  if (size === null) return null;
+  return size === null ? null : { stored, codeLocal, size };
+}
+
+/**
+ * How far, and by how much of a turn, the code as this visit sees it lies
+ * from its stored pose - with no plausibility bound applied. It is what an
+ * explicit replace of the stored pose moves the code by for every visitor,
+ * so what its confirm question states (M4 review #3).
+ *
+ * @returns null without a readable alignment, a zero, a sighting of the
+ *   level in hand in this visit, or a stored pose.
+ */
+export function sightedCodeOffset(
+  input: SettleAlignmentInput,
+): { horizontalM: number; yawDeg: number } | null {
+  const alignment = readAlignment(input.alignment);
+  if (alignment === null || input.zero === null) return null;
+  return sightedStoredCode(input, alignment, input.zero)?.size ?? null;
+}
+
+/** The visit's alignment corrected through its sighting of the stored
+ *  code, the refusal when the correction breaks the bound, or null when
+ *  there is no correction to make. */
+function codeCorrectionOf(
+  input: SettleAlignmentInput,
+  alignment: readonly number[],
+  zero: LatLong,
+): { alignment: number[] } | { refused: CorrectionRefusal } | null {
+  const sighted = sightedStoredCode(input, alignment, zero);
+  if (sighted === null) return null;
+  const { stored, codeLocal, size } = sighted;
   const maxHorizontalM = correctionBoundM(input.gpsAccuracyM, stored.accuracyM);
   if (
     size.horizontalM > maxHorizontalM ||

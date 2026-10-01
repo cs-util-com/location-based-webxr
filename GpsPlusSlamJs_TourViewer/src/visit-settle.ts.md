@@ -62,6 +62,13 @@ draft and logs `tourAuthoring/settled`.
   the code says. Returns `{ object, basis, alignment, refused }`, or null
   without an alignment or a zero. The record keeps its id, text and
   creation time.
+- `sightedCodeOffset(input)` (M4 review #3) - how far, and turned by how
+  much, the code as this visit sees it lies from its stored pose, with NO
+  plausibility bound: what an explicit replace moves the code by for every
+  visitor, so what its confirm states. Null without a readable alignment,
+  a zero, a sighting of the level in hand or a stored pose. Shares its
+  computation with the settle's correction (`sightedStoredCode`), so the
+  two can never disagree about the number.
 - `storedGeo(json)` - a level's stored geo, or null (the object list's
   distance to the code).
 - `planVisitSettle(input): VisitSettle | null` - the settled records by
