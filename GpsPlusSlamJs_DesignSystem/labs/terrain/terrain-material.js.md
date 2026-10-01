@@ -58,6 +58,12 @@
     once per fragment and passed to every direct term: the cloud-shadow
     port replaces its body and nothing else. A sun straight overhead has
     no azimuth, so D's exposure colour is then flat.
+  - Style B's lowland (`naturalLowland`, inside `naturalBase`): `uNatLowlandLight`
+    to `uNatLowland` over 0-`uNatLowlandRampM`, mixed toward `uNatLowlandWood`
+    by the relief spread (`spread`, the aux texture's red, metres:
+    `uNatWoodSpreadM`, `uNatWoodAmount`) and by gullies (`uNatGullyM`,
+    `uNatGullyAmount`). `spread` is read once in `main` and passed to every
+    branch that can draw style B.
   - `globe-albedo` (`uStyle` 4, `terrain-globe-colour.js`): `uAlbedo` (the
     imagery's 1 km grid over the region, read at the far field's
     `regionUv`) under `sunLight`, the light scaled by `detailRatio` of

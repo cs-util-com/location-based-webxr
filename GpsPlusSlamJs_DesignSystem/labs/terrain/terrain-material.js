@@ -104,6 +104,13 @@ uniform float uWaterDeepM;
 uniform vec3 uNoData[2];
 // Style B.
 uniform vec3 uNatLowland;
+uniform vec3 uNatLowlandLight;
+uniform vec3 uNatLowlandWood;
+uniform float uNatLowlandRampM;
+uniform vec2 uNatWoodSpreadM;
+uniform float uNatWoodAmount;
+uniform float uNatGullyM;
+uniform float uNatGullyAmount;
 uniform vec3 uNatForest;
 uniform vec3 uNatMeadow;
 uniform vec3 uNatScree;
@@ -230,14 +237,25 @@ vec2 naturalSnow(float h, vec2 grad, float small) {
   return vec2(above * sticks, above * (1.0 - sticks));
 }
 
+// terrain-styles.js naturalLowland: light fields low down to the mid green
+// higher up, and wood where the land is rugged or in a gully.
+vec3 naturalLowland(float h, float small, float spread) {
+  vec3 col = mix(uNatLowlandLight, uNatLowland, smoothstep(0.0, uNatLowlandRampM, h));
+  float wood = clamp(
+    uNatWoodAmount * smoothstep(uNatWoodSpreadM.x, uNatWoodSpreadM.y, spread)
+      + uNatGullyAmount * smoothstep(0.0, uNatGullyM, -small),
+    0.0, 1.0);
+  return mix(col, uNatLowlandWood, wood);
+}
+
 // terrain-styles.js naturalBaseColour: the cover before any light or lift.
-vec3 naturalBase(float h, vec2 grad, float small, float s) {
+vec3 naturalBase(float h, vec2 grad, float small, float spread, float s) {
   if (h <= 0.0) {
     return mix(uNatSea, uNatSeaDeep, clamp(-h / uNatSeaDeepM, 0.0, 1.0));
   }
   vec4 c = naturalCover(h, grad, small);
   vec2 snow = naturalSnow(h, grad, small);
-  vec3 col = mix(uNatLowland, uNatForest, c.x);
+  vec3 col = mix(naturalLowland(h, small, spread), uNatForest, c.x);
   col = mix(col, uNatMeadow, c.y);
   col = mix(col, uNatScree, c.z);
   col = mix(col, uNatRock, c.w);
@@ -247,9 +265,9 @@ vec3 naturalBase(float h, vec2 grad, float small, float s) {
 }
 
 // terrain-styles.js naturalColour.
-vec3 natural(float h, vec2 grad, float small, float svf, float vis) {
+vec3 natural(float h, vec2 grad, float small, float spread, float svf, float vis) {
   float s = sunShade(grad, vis);
-  vec3 col = naturalBase(h, grad, small, s);
+  vec3 col = naturalBase(h, grad, small, spread, s);
   float light = clamp(uShadow * s + (1.0 - uShadow) * svf, 0.0, uMaxLight);
   col *= light;
   return min(mix(col, vec3(1.0), uLift), vec3(1.0));
@@ -306,12 +324,12 @@ vec2 regionUv() {
 
 // terrain-globe-colour.js globeAlbedoColour; style B where the imagery has
 // no texel (not loaded yet, or a tile failed).
-vec3 globeAlbedo(float h, vec2 grad, float small, float svf, float vis) {
+vec3 globeAlbedo(float h, vec2 grad, float small, float spread, float svf, float vis) {
   vec2 uv = regionUv();
   vec4 albedo = texture2D(uAlbedo, uv);
-  if (albedo.a < 0.5) return natural(h, grad, small, svf, vis);
+  if (albedo.a < 0.5) return natural(h, grad, small, spread, svf, vis);
   float light = sunLight(reliefNormal(grad, uGain), uShadow, svf, vis);
-  float fine = linearLuminance(naturalBase(h, grad, small, 1.0));
+  float fine = linearLuminance(naturalBase(h, grad, small, spread, 1.0));
   float coarse = texture2D(uCoarseLum, uv).r;
   return sunLitColour(albedo.rgb, light * detailRatio(fine, coarse, uAlbedoDetail));
 }
@@ -319,8 +337,8 @@ vec3 globeAlbedo(float h, vec2 grad, float small, float svf, float vis) {
 // terrain-globe-colour.js bandRampColour (through its LUT) under the sun
 // term, as the globe lights its pixels; style B until the drawn region's
 // ramp exists (no imagery yet, or it failed: review 2026-10-01-1650 m6).
-vec3 globeBands(float h, vec2 grad, float small, float svf, float vis) {
-  if (uBandsOn < 0.5) return natural(h, grad, small, svf, vis);
+vec3 globeBands(float h, vec2 grad, float small, float spread, float svf, float vis) {
+  if (uBandsOn < 0.5) return natural(h, grad, small, spread, svf, vis);
   vec3 base = h <= 0.0 && uBandSeaOn > 0.5
     ? uBandSea
     : texture2D(uLutBands, vec2(h / uLutMaxM, 0.5)).rgb;
@@ -388,10 +406,10 @@ vec3 classMix(vec4 w) {
 
 // terrain-globe-classes.js classAlbedo under the sun term, as the globe
 // lights its pixels; style B where the imagery has no texel.
-vec3 globeClasses(float h, vec2 grad, float small, float svf, float vis) {
+vec3 globeClasses(float h, vec2 grad, float small, float spread, float svf, float vis) {
   vec2 uv = regionUv();
   vec4 land = texture2D(uClassLand, uv);
-  if (land.a < 0.5) return natural(h, grad, small, svf, vis);
+  if (land.a < 0.5) return natural(h, grad, small, spread, svf, vis);
   float water = texture2D(uClassWater, uv).r;
   float waterA;
   vec4 a = classAffinities(h, grad, small, waterA);
@@ -421,6 +439,8 @@ void main() {
   }
   float h = d.r + uDatum;
   float small = (a.g * 255.0 - 128.0) * uSmallMPerStep;
+  // The relief spread (style A's green, style B's lowland wood), metres.
+  float spread = a.r * uStdSpanM;
   if (uSnowMask == 1) {
     // Style B's snow weight as grey: the smoke reads the line itself.
     gl_FragColor = vec4(vec3(h <= 0.0 ? 0.0 : naturalSnow(h, d.gb, small).x), 1.0);
@@ -430,15 +450,15 @@ void main() {
   float vis = terrainSunVisibility(vEnu, h, uSun);
   vec3 col;
   if (uStyle == 1) {
-    col = natural(h, d.gb, small, a.b, vis);
+    col = natural(h, d.gb, small, spread, a.b, vis);
   } else if (uStyle == 2) {
     col = swiss(h, d.gb, a.b, vis);
   } else if (uStyle == 4) {
-    col = globeAlbedo(h, d.gb, small, a.b, vis);
+    col = globeAlbedo(h, d.gb, small, spread, a.b, vis);
   } else if (uStyle == 5) {
-    col = globeBands(h, d.gb, small, a.b, vis);
+    col = globeBands(h, d.gb, small, spread, a.b, vis);
   } else if (uStyle == 6) {
-    col = globeClasses(h, d.gb, small, a.b, vis);
+    col = globeClasses(h, d.gb, small, spread, a.b, vis);
   } else {
     if (uStyle == 3) {
       col = h <= 0.0 ? uClaySea : uClay;
@@ -448,7 +468,6 @@ void main() {
       // terrain-style.js landColour: the ramp, mixed toward the green by the
       // relief spread.
       vec3 ramp = texture2D(uLut, vec2(h / uLutMaxM, 0.5)).rgb;
-      float spread = a.r * uStdSpanM;
       col = mix(ramp, uGreen, uGreenAmount * smoothstep(uGreenR.x, uGreenR.y, spread));
     }
     // terrain-styles.js shadeColour (styles A and E), by the four map
@@ -627,6 +646,13 @@ export function createTerrainMaterial(textures, { side, extentM, datum }) {
       uWaterDeepM: { value: PASTEL_ATLAS.waterDeepM },
       uNoData: { value: NO_DATA_COLOURS.map(rgb) },
       uNatLowland: { value: rgb(n.lowland) },
+      uNatLowlandLight: { value: rgb(n.lowlandLight) },
+      uNatLowlandWood: { value: rgb(n.lowlandWood) },
+      uNatLowlandRampM: { value: n.lowlandRampM },
+      uNatWoodSpreadM: { value: new THREE.Vector2(...n.woodSpreadM) },
+      uNatWoodAmount: { value: n.woodAmount },
+      uNatGullyM: { value: n.gullyM },
+      uNatGullyAmount: { value: n.gullyAmount },
       uNatForest: { value: rgb(n.forest) },
       uNatMeadow: { value: rgb(n.meadow) },
       uNatScree: { value: rgb(n.scree) },

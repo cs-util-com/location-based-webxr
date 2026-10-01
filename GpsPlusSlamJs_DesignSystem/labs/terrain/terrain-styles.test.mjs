@@ -25,6 +25,7 @@ import {
   exposureColour,
   naturalBaseColour,
   naturalColour,
+  naturalLowland,
   naturalWeights,
   saturation,
   shadeColour,
@@ -265,7 +266,9 @@ describe("style B's cover below the snow", () => {
     );
   });
   it("lifts toward white by `lift`", () => {
-    const at = (lift) => naturalColour(flatAt(300), { lift });
+    // Above the lowland's light ramp, open flat ground is the mid lowland.
+    const at = (lift) =>
+      naturalColour(flatAt(NATURAL.lowlandRampM + 100), { lift });
     const base = hexToRgb(NATURAL.lowland);
     closeRgb(
       at(0.4),
@@ -290,6 +293,71 @@ describe("style B's cover below the snow", () => {
         gain: 1 + rand() * 4,
         lift: rand() * 0.4,
       });
+      for (const v of col) assert.ok(v >= 0 && v <= 1, `${v} at ${i}`);
+    }
+  });
+});
+
+describe("style B's lowland (globe round-5 §3.3; the owner: plain green)", () => {
+  const y = (c) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  const dE = (a, b) => Math.hypot(...a.map((v, i) => 255 * (v - b[i])));
+  /** Style B as it was: one lowland colour for every lowland post. */
+  const BEFORE = {
+    ...NATURAL,
+    lowland: "#7F9860",
+    lowlandLight: "#7F9860",
+    lowlandWood: "#7F9860",
+  };
+
+  // "The lowest levels read as plain green; like the pastel atlas, they
+  // should be lighter": open low ground is lighter than before, most of
+  // all at sea level, and still green (green its largest channel).
+  it("is lighter than the old plain green low down, and still green", () => {
+    const old = y(hexToRgb("#7F9860"));
+    for (const h of [10, 150, 300, 600]) {
+      const col = naturalLowland(h, 0, 0);
+      assert.ok(y(col) > old + 0.03, `${h} m: ${y(col)} vs ${old}`);
+      assert.ok(col[1] > col[0] && col[1] > col[2], `${h} m green`);
+    }
+    assert.ok(y(naturalLowland(0, 0, 0)) > y(naturalLowland(600, 0, 0)));
+  });
+
+  // "...mixed greens": the colour now varies with the land, where before it
+  // was one colour: rugged land and gullies are wooded (darker), and flat
+  // open land is fields (lighter). Before, every case was the same colour.
+  it("mixes greens by ruggedness, gullies and height, where it was one colour", () => {
+    const flat = naturalLowland(300, 0, 0);
+    const rugged = naturalLowland(300, 0, 220);
+    const gully = naturalLowland(300, -40, 0);
+    assert.ok(dE(flat, rugged) > 25, `rugged ${dE(flat, rugged)}`);
+    assert.ok(dE(flat, gully) > 10, `gully ${dE(flat, gully)}`);
+    assert.ok(y(rugged) < y(flat) && y(gully) < y(flat));
+    const before = (h, small, spread) =>
+      naturalLowland(h, small, spread, BEFORE);
+    assert.deepEqual(before(300, 0, 220), before(10, -40, 0));
+  });
+
+  it("feeds the cover colour below the forest, and changes nothing above it", () => {
+    const p = { ...flatAt(200), spreadM: 220, smallM: -40 };
+    assert.deepEqual(naturalBaseColour(p), naturalLowland(200, -40, 220));
+    // The tree line's forest is unchanged by the lowland's spread.
+    const T = treeLineM(46.56);
+    closeRgb(
+      naturalBaseColour({ ...flatAt(T - NATURAL.edgeM), spreadM: 220 }),
+      hexToRgb(NATURAL.forest),
+      1e-12,
+      "forest",
+    );
+  });
+
+  it("stays a colour for any input (property)", () => {
+    const rand = random(19);
+    for (let i = 0; i < 1000; i++) {
+      const col = naturalLowland(
+        rand() * 2000,
+        (rand() - 0.5) * 400,
+        rand() * 1000,
+      );
       for (const v of col) assert.ok(v >= 0 && v <= 1, `${v} at ${i}`);
     }
   });

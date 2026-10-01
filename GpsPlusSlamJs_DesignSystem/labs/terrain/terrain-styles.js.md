@@ -18,7 +18,12 @@
     (tree line 3750 m below 30°, +130 m a degree from 50° to 30°, +75 m a
     degree from 70° to 50°; snow line 5000 m below 30°, 3000 m at 46°, 0 at
     70°), symmetric about the equator.
-  - `NATURAL`: B's colours (lowland `#7F9860`, forest `#5F7D4A`, meadow
+  - `NATURAL`: B's colours (the lowland: light fields `#B4C38E` at sea
+    level to the mid green `#93AD72` at 600 m, mixed toward the wood
+    `#6F8E57` by the relief spread (0.6 x smoothstep 40-220 m, as style A's
+    green: woods track rugged land) and by gullies (0.3 x smoothstep 0-30 m
+    below the surroundings); before globe round-5 §3.3 one plain
+    `#7F9860`, which the owner read as "plain green"; forest `#5F7D4A`, meadow
     `#A4A776`, scree `#B2A994`, rock `#9A9184`, light rock `#BDB6A8`, snow
     `#F5F7FA`, snow in shade `#C9D6E6`, sea `#7FB0CF` to `#4A7FA8` at
     -200 m) and rules (lines softened over +-150 m, meadow 300 m above the
@@ -28,11 +33,13 @@
     lift toward white 0.2).
   - `naturalWeights(point, offsets?)` -> the lines and the cover weights
     (`forest`, `meadow`, `scree`, `rock`, `bareAboveSnow`, `snow`);
-    `naturalBaseColour(point, offsets?, style?, s = 1)` -> B's cover colour
-    before any light or lift (`s` only cools snow in shade; C1's detail
-    reads it at 1);
+    `naturalLowland(heightM, smallM, spreadM, style?)` -> the lowland
+    colour; `naturalBaseColour(point, offsets?, style?, s = 1)` -> B's cover
+    colour before any light or lift (the point's `spreadM`, the relief
+    spread, 0 when absent; `s` only cools snow in shade; C1's detail reads
+    it at 1);
     `naturalColour(point, options?)` -> sRGB 0-1. A point is `{ heightM,
-gx, gy, smallM, latDeg, svf? }`; the options are the hash's `tree`,
+gx, gy, smallM, latDeg, spreadM?, svf? }`; the options are the hash's `tree`,
     `snow`, `aspect`, `rock`, `lift`, `shadow` and the view's `gain`.
   - `SWISS`: D's ramp (0 m `#B7C8B9` to 4000 m `#FAF8EE`), sea `#B9D3E0`,
     the exposure palette (lit `#FFF673`, shaded `#55967A`, left `#8FB28A`,
@@ -68,8 +75,13 @@ gx, gy, smallM, latDeg, svf? }`; the options are the hash's `tree`,
   the snow-line anchors, continuity and symmetry; B's snow at +-400 m, the
   offsets, the aspect in both hemispheres, snow sliding off, no view
   parameter in the weights, the cover bands, the sea, the lift, a 0-1
-  property over 2000 random inputs; D's palette at full tilts, flat ground
+  property over 2000 random inputs; the lowland lighter than the old
+  plain green and still green, mixed by ruggedness, gullies and height
+  where it was one colour; D's palette at full tilts, flat ground
   equal to the ramp, "higher is lighter", lit warmer than shaded over 500
   random slopes, the lowlands' lower contrast; E's colours and its
   saturation property over 2000 random shades). In the browser:
-  `terrain-styles.smoke.spec.mjs`.
+  `terrain-styles.smoke.spec.mjs` and `terrain-lowland.smoke.spec.mjs`
+  (the drawn lowland against `naturalColour`; its luminance and variety
+  on northern Germany and the Alps against style B as it was, the wood
+  mix swept).

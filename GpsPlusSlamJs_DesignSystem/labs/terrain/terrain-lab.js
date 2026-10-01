@@ -837,6 +837,7 @@ function start() {
               gx: f.gx[i],
               gy: f.gy[i],
               smallM: f.reliefSmall[i],
+              spreadM: f.reliefStd[i],
               latDeg: lat,
             },
             o,
@@ -1428,6 +1429,7 @@ function start() {
         gx: at(f.gx),
         gy: at(f.gy),
         smallM: at(f.reliefSmall),
+        spreadM: at(f.reliefStd),
       };
     },
     /** The far field's grid at ENU metres (sRGB 0-1), or null. */

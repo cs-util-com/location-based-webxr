@@ -103,7 +103,26 @@ export function snowLineM(latDeg) {
 
 /** Style B's colours and rules (research §6.2). */
 export const NATURAL = Object.freeze({
-  lowland: "#7F9860",
+  /**
+   * The lowland (globe round-5 plan §3.3, the owner's feedback 2026-10-01
+   * §4: "the lowest levels read as plain green"; like the pastel atlas,
+   * lighter, mixed greens): light fields at sea level (`lowlandLight`) to
+   * the mid green (`lowland`) at `lowlandRampM`, mixed toward the wood
+   * (`lowlandWood`) where the land is rugged (the relief spread, as style
+   * A's green: woods track rugged land) and in gullies (the small relief
+   * below its surroundings: wooded stream valleys). Before: one plain
+   * #7F9860 everywhere below the forest.
+   */
+  lowland: "#93AD72",
+  lowlandLight: "#B4C38E",
+  lowlandWood: "#6F8E57",
+  lowlandRampM: 600,
+  /** The wood's share by relief spread: none below the first, full above the second (m). */
+  woodSpreadM: Object.freeze([40, 220]),
+  woodAmount: 0.6,
+  /** The wood's share in a gully this far below its surroundings (m), and its weight. */
+  gullyM: 30,
+  gullyAmount: 0.3,
   forest: "#5F7D4A",
   meadow: "#A4A776",
   scree: "#B2A994",
@@ -230,8 +249,33 @@ export function naturalWeights(p, o = {}, style = NATURAL) {
 }
 
 /**
+ * Style B's lowland at a height (m), small relief (m, signed) and relief
+ * spread (m): `lowlandLight` at sea level to `lowland` at `lowlandRampM`,
+ * mixed toward `lowlandWood` by the spread and by gullies (clamped to 1).
+ */
+export function naturalLowland(heightM, smallM, spreadM, style = NATURAL) {
+  const c = (hex) => hexToRgb(hex);
+  const col = mix(
+    c(style.lowlandLight),
+    c(style.lowland),
+    smoothstep(0, style.lowlandRampM, heightM),
+  );
+  const wood = Math.min(
+    1,
+    Math.max(
+      0,
+      style.woodAmount *
+        smoothstep(style.woodSpreadM[0], style.woodSpreadM[1], spreadM) +
+        style.gullyAmount * smoothstep(0, style.gullyM, -smallM),
+    ),
+  );
+  return mix(col, c(style.lowlandWood), wood);
+}
+
+/**
  * Style B's cover colour at one point, before any light or lift: the sea
- * by depth, or the lowland, forest, meadow, scree, rock and snow by
+ * by depth, or the lowland (`naturalLowland`, with the point's `spreadM`,
+ * 0 when absent), forest, meadow, scree, rock and snow by
  * `naturalWeights`. `s` (the light's shade, 1 on open flat ground) only
  * cools the snow in shade. `globe-albedo`'s detail reads it at s 1.
  */
@@ -242,7 +286,11 @@ export function naturalBaseColour(p, o = {}, style = NATURAL, s = 1) {
     return mix(c(style.sea), c(style.seaDeep), t);
   }
   const w = naturalWeights(p, o, style);
-  let col = mix(c(style.lowland), c(style.forest), w.forest);
+  let col = mix(
+    naturalLowland(p.heightM, p.smallM, p.spreadM ?? 0, style),
+    c(style.forest),
+    w.forest,
+  );
   col = mix(col, c(style.meadow), w.meadow);
   col = mix(col, c(style.scree), w.scree);
   col = mix(col, c(style.rock), w.rock);
