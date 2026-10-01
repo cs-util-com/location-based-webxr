@@ -1401,7 +1401,8 @@ function start() {
     toLatLng: (x, y) => frame?.toLatLng({ x, y }) ?? null,
     /**
      * The field the shader reads, bilinear at ENU metres: the absolute
-     * height, the gradient (m/m east, north) and the small relief; null
+     * height, the gradient (m/m east, north), the small relief and the
+     * relief spread (`spreadM`, style B's lowland wood); null
      * before the relief or outside the field.
      */
     fieldAt(x, y) {

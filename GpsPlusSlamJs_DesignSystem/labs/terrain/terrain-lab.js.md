@@ -107,7 +107,7 @@
   and visibility, the error and readout text, and the textures' types),
   `project([x, y, z])`, `projectAll(points)` (one frame for many),
   `toEnu(lat, lng)`, `toLatLng(x, y)`,
-  `fieldAt(x, y)` (the absolute height, gradient and small relief the
+  `fieldAt(x, y)` (the absolute height, gradient, small relief and relief spread the
   shader reads), `farAt(x, y)` (the far-field grid), `albedoAt(x, y)` (the imagery styles' albedo grid), `bandSweep(widths, blockPx = 1)` (globe-bands' sweep over the region's samples, its folds in blocks), `classAt(x, y)` (globe-classes' land colour and water share, bilinear as the shader reads them), `classSweep(settings?)` (globe-classes' class-threshold sweep, `CLASS_SWEEP` by default), `imageryAt(lat, lng)`
   (the decoded imagery), `readPixels(points)` and
   `silhouette(columns, tolerance?)` (the first non-background row per
