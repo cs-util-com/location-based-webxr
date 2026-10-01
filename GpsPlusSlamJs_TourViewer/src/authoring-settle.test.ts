@@ -1592,7 +1592,10 @@ describe(
       const selected = () => list.lastModel!.rows.map((r) => r.id);
       list.listHandlers!.step(1);
       expect(selected()).toEqual(["h1"]);
-      expect(list.lastModel!.chooser).toEqual({ position: "1 of 3" });
+      expect(list.lastModel!.chooser).toEqual({
+        position: "1 of 3",
+        inRow: true,
+      });
       list.listHandlers!.step(1);
       expect(selected()).toEqual(["h2"]);
       list.listHandlers!.step(-1);
@@ -1600,8 +1603,9 @@ describe(
       expect(selected(), "wraps from the first to the last").toEqual(["h3"]);
       list.listHandlers!.step(1);
       expect(selected(), "and from the last to the first").toEqual(["h1"]);
-      // Nothing selected: Previous starts at the last.
-      list.listHandlers!.clearSelection();
+      // Nothing selected (a tap on empty scene): Previous starts at the last.
+      a.pick.fn = () => null;
+      a.setup.selectInView(null);
       list.listHandlers!.step(-1);
       expect(selected()).toEqual(["h3"]);
 

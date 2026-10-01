@@ -59,8 +59,17 @@ interface ObjectRowModel {
   readonly kind: TourObject["kind"];
   /** A pin's text; a photo's caption or "Photo". */
   readonly title: string;
-  /** Kind, where it stands (in the zip, changed, new), distance to the code. */
+  /** On the page: kind, where it stands (in the zip, changed, new) and the
+   *  distance to the code. In AR only the distance. */
   readonly detail: string;
+  /**
+   * In AR: drawn compact - the title, the chooser's position and the
+   * detail on one line of text, and ONE line of buttons with short labels
+   * (the chooser's Previous / Next at its ends). The full row put Edit,
+   * Move, Delete and Done below the first screen of a 360x640 phone with
+   * the code's re-measure offered (ar-layout.spec.js, 2026-10-01).
+   */
+  readonly compact: boolean;
   readonly selected: boolean;
   /** The busy label of an action in flight on this row, or null. */
   readonly busy: string | null;
@@ -90,9 +99,13 @@ export interface ObjectListModel {
    * ("2 of 5") or, before one, the count ("5 objects"): how an object too
    * far, too small or hidden behind another to tap is still selected - and
    * moved, which needs the selection (M4 review #4). Null on the page,
-   * which lists everything, and with no objects.
+   * which lists everything, and with no objects. `inRow`: an object is
+   * selected, and the chooser is drawn INTO its row (no line of its own).
    */
-  readonly chooser: { readonly position: string } | null;
+  readonly chooser: {
+    readonly position: string;
+    readonly inRow: boolean;
+  } | null;
 }
 
 /** Said in AR while nothing is selected. */
@@ -143,11 +156,14 @@ function rowOf(entry: ObjectListEntry, state: ObjectListState): ObjectRowModel {
     id: object.id,
     kind: object.kind,
     title,
-    detail: [
-      object.kind === "pin" ? "Pin" : "Photo",
-      standing(entry),
-      ...(distance === "" ? [] : [distance]),
-    ].join(" · "),
+    detail: state.inAr
+      ? distance
+      : [
+          object.kind === "pin" ? "Pin" : "Photo",
+          standing(entry),
+          ...(distance === "" ? [] : [distance]),
+        ].join(" · "),
+    compact: state.inAr,
     selected: object.id === state.selectedId,
     busy,
     canEditText: object.kind === "pin",
@@ -185,6 +201,7 @@ export function objectListModel(state: ObjectListState): ObjectListModel {
               : count === 1
                 ? "1 object"
                 : `${String(count)} objects`,
+          inRow: index >= 0,
         };
   return {
     hidden: count === 0 && state.note === "",
@@ -202,8 +219,6 @@ export interface ObjectListHandlers {
   editText(id: string, text: string): void;
   move(id: string): void;
   remove(id: string): void;
-  /** Deselect (the selected row's "Done"). */
-  clearSelection(): void;
   /** Undo the last delete (the note's "Undo"). */
   undo(): void;
   /** Select the next (+1) or previous (-1) object (the AR chooser). */
@@ -244,12 +259,9 @@ export function createObjectListView(
     return b;
   }
 
-  function rowElement(row: ObjectRowModel): HTMLLIElement {
-    const li = doc.createElement("li");
-    li.className = "object-row";
-    li.dataset["testid"] = "object-row";
-    li.dataset["objectId"] = row.id;
-    if (row.selected) li.dataset["selected"] = "true";
+  /** A row's text: the title and the detail - in AR on ONE line with the
+   *  chooser's position between them. */
+  function rowText(row: ObjectRowModel, chooserInRow: boolean): HTMLElement[] {
     const title = doc.createElement("span");
     title.className = "object-title";
     title.dataset["testid"] = "object-title";
@@ -258,7 +270,66 @@ export function createObjectListView(
     detail.className = "object-detail hint--dim";
     detail.dataset["testid"] = "object-detail";
     detail.textContent = row.detail;
-    li.append(title, detail);
+    if (!row.compact) return [title, detail];
+    const line = doc.createElement("div");
+    line.className = "object-line";
+    line.append(title, ...(chooserInRow ? [position] : []), detail);
+    return [line];
+  }
+
+  /**
+   * A row's buttons. In AR (compact) short labels - the accessible name
+   * keeps the full one, which contains the visible word (WCAG 2.5.3 "label
+   * in name") - with the chooser's Previous and Next at the ends of the
+   * line when the chooser is drawn into the row.
+   */
+  function rowButtons(
+    row: ObjectRowModel,
+    chooserInRow: boolean,
+  ): HTMLButtonElement[] {
+    const labelled = (
+      short: string,
+      full: string,
+      testId: string,
+      onClick: () => void,
+    ): HTMLButtonElement => {
+      const b = button(row.compact ? short : full, testId, onClick);
+      if (row.compact && short !== full) b.setAttribute("aria-label", full);
+      b.disabled = !row.enabled;
+      return b;
+    };
+    const out: HTMLButtonElement[] = [];
+    if (row.canEditText) {
+      out.push(
+        labelled("Edit", "Edit text", "object-edit", () => {
+          editing = { id: row.id, value: row.title };
+          redraw();
+        }),
+      );
+    }
+    if (row.canMove) {
+      out.push(
+        labelled("Move", "Move to the reticle", "object-move", () => {
+          handlers?.move(row.id);
+        }),
+      );
+    }
+    out.push(
+      labelled("Delete", "Delete", "object-delete", () => {
+        handlers?.remove(row.id);
+      }),
+    );
+    return chooserInRow ? [previous, ...out, next] : out;
+  }
+
+  function rowElement(row: ObjectRowModel): HTMLLIElement {
+    const li = doc.createElement("li");
+    li.className = "object-row";
+    li.dataset["testid"] = "object-row";
+    li.dataset["objectId"] = row.id;
+    if (row.selected) li.dataset["selected"] = "true";
+    const chooserInRow = row.compact && current?.chooser?.inRow === true;
+    li.append(...rowText(row, chooserInRow));
     const actions = doc.createElement("div");
     actions.className = "object-actions";
     if (editing?.id === row.id && row.enabled) {
@@ -286,42 +357,7 @@ export function createObjectListView(
       li.append(actions);
       return li;
     }
-    const add = (b: HTMLButtonElement, busyLabel: string | null): void => {
-      b.disabled = !row.enabled;
-      if (busyLabel !== null) b.textContent = busyLabel;
-      actions.append(b);
-    };
-    if (row.canEditText) {
-      add(
-        button("Edit text", "object-edit", () => {
-          editing = { id: row.id, value: row.title };
-          redraw();
-        }),
-        null,
-      );
-    }
-    if (row.canMove) {
-      add(
-        button("Move to the reticle", "object-move", () => {
-          handlers?.move(row.id);
-        }),
-        null,
-      );
-    }
-    add(
-      button("Delete", "object-delete", () => {
-        handlers?.remove(row.id);
-      }),
-      null,
-    );
-    if (row.selected) {
-      add(
-        button("Done", "object-deselect", () => {
-          handlers?.clearSelection();
-        }),
-        null,
-      );
-    }
+    actions.append(...rowButtons(row, chooserInRow));
     if (row.busy !== null) {
       const busy = doc.createElement("span");
       busy.className = "object-busy";
@@ -346,15 +382,20 @@ export function createObjectListView(
   const chooser = doc.createElement("div");
   chooser.className = "object-chooser";
   chooser.dataset["testid"] = "object-chooser";
+  // ONE pair of chooser buttons and one position, moved between the
+  // chooser's own line and the selected row on each redraw - never two
+  // elements with the same test id.
   const previous = button("‹ Previous", "object-previous", () => {
     handlers?.step(-1);
   });
+  previous.setAttribute("aria-label", "Previous object");
   const position = doc.createElement("span");
   position.className = "object-position";
   position.dataset["testid"] = "object-position";
   const next = button("Next ›", "object-next", () => {
     handlers?.step(1);
   });
+  next.setAttribute("aria-label", "Next object");
   chooser.append(previous, position, next);
   const body = doc.createElement("div");
   const note = doc.createElement("p");
@@ -370,6 +411,18 @@ export function createObjectListView(
   noteLine.className = "object-list-note-line";
   noteLine.append(note, undo);
   container.replaceChildren(heading, hint, chooser, body, noteLine);
+
+  /** The chooser's buttons and position go back on its own line before
+   *  the rows are drawn; a compact selected row takes them over
+   *  (`rowButtons`, `rowText`), with "‹" and "›" for labels there. */
+  function placeChooser(model: ObjectListModel): void {
+    const inRow = model.chooser?.inRow === true;
+    position.textContent = model.chooser?.position ?? "";
+    previous.textContent = inRow ? "‹" : "‹ Previous";
+    next.textContent = inRow ? "›" : "Next ›";
+    chooser.append(previous, position, next);
+    chooser.hidden = model.chooser === null || inRow;
+  }
 
   function redraw(): void {
     const model = current;
@@ -388,8 +441,7 @@ export function createObjectListView(
     hint.hidden = model.hint === "";
     note.textContent = model.note;
     undo.hidden = !model.undo;
-    chooser.hidden = model.chooser === null;
-    position.textContent = model.chooser?.position ?? "";
+    placeChooser(model);
     body.replaceChildren();
     const list = doc.createElement("ul");
     list.className = "object-rows";

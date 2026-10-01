@@ -553,10 +553,6 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
     editText,
     move,
     remove,
-    clearSelection: () => {
-      selectedId = null;
-      render();
-    },
     undo: () => {
       const pending = undoable;
       undoable = null;

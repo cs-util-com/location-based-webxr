@@ -66,7 +66,7 @@ reads them (the framework's `diagnostics/note` precedent). Plan:
     `objectDeleted` it undoes (the restored object, `hosted`, the visit,
     the time, the surface), so a replay pairs the two by the object's id.
   - `codeMeasured` gains `replaced` - the stored pose the explicit
-    "Re-measure the code (replace its saved position)" replaced; absent for
+    "Replace the code's saved position" replaced; absent for
     every other measurement.
 - Each creator carries `.type`, as RTK's do; the payload interfaces are
   module-private (knip), reachable as `Parameters<typeof objectPlaced>[0]`.

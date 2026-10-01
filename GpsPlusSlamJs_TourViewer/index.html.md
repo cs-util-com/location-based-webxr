@@ -74,7 +74,7 @@ The `data-testid` contract the e2e suite drives: `wizard`, `step-host`,
 `replace-code`, `replace-code-confirm` (owns `replace-code-confirm-text`,
 `replace-code-yes`, `replace-code-no`), `object-list` (its rows carry
 `object-row`, `object-title`, `object-detail`, `object-edit`,
-`object-move`, `object-delete`, `object-deselect`, `object-edit-input`,
+`object-move`, `object-delete`, `object-edit-input`,
 `object-edit-save`, `object-edit-cancel`, `object-busy`, and the list
 `object-list-heading`, `object-list-hint`, `object-list-note` and,
 beside it after a delete, `object-undo`; in AR the chooser

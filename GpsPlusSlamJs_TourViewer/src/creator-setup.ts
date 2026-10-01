@@ -238,7 +238,7 @@ export interface CreatorSetupDom {
   /** The placed objects' list with Edit text, Move and Delete (authoring
    *  plan 2026-09-28-0953 §3.4, M4): `object-list.ts`'s view. */
   objectList: ObjectListView;
-  /** The explicit "Re-measure the code (replace its saved position)"
+  /** The explicit "Replace the code's saved position"
    *  (M4; M2c review #5), shown in AR while the level in hand is a stored
    *  pose, and its confirm step. */
   replaceCodeButton: HTMLButtonElement;
@@ -765,7 +765,7 @@ export function wireCreatorSetup(deps: {
   let replaceConfirmOpen = false;
 
   /**
-   * The explicit "Re-measure the code (replace its saved position)"
+   * The explicit "Replace the code's saved position"
    * (authoring plan 2026-09-28-0953 §3.4, M4; M2c review #5): offered in AR
    * while the level in hand is a STORED pose - the only case in which a
    * measurement does not replace it by itself. Enabled with the mint gate
@@ -1841,7 +1841,7 @@ export function wireCreatorSetup(deps: {
   /**
    * Measure the code in view ("Save the measured position"), or - with
    * `replace` - deliberately replace the stored pose in hand with the new
-   * measurement ("Re-measure the code (replace its saved position)",
+   * measurement ("Replace the code's saved position",
    * authoring plan 2026-09-28-0953 §3.4, M4; M2c review #5). Without
    * `replace`, a measurement of a code whose pose is already stored is a
    * correction sighting for this visit (`measurementRole`, D10b).

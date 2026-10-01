@@ -37,7 +37,15 @@ zip's and this device's - with **Edit text**, **Move to the reticle** and
   `‹ Previous` / position / `Next ›` (`object-previous`,
   `object-position`, `object-next`).
 - `ObjectListHandlers` - `editText(id, text)`, `move(id)`, `remove(id)`,
-  `clearSelection()`, `undo()`, `step(1 | -1)` (the chooser).
+  `undo()`, `step(1 | -1)` (the chooser).
+- `ObjectRowModel.compact` - in AR: the row is drawn as ONE line of text
+  (title, the chooser's position, the distance - `detail` holds only the
+  distance in AR) over ONE line of buttons with short labels: `‹`, Edit,
+  Move, Delete, `›` (accessible names "Previous object", "Edit text",
+  "Move to the reticle", "Delete", "Next object"). `chooser.inRow` says the
+  chooser's buttons and position are in the selected row rather than on
+  their own line; the view moves the SAME elements, so no test id is ever
+  doubled.
 
 ## Invariants & assumptions
 
@@ -52,6 +60,13 @@ zip's and this device's - with **Edit text**, **Move to the reticle** and
   where moving happens instead of offering a button that can only fail.
   **The page list still has no Move** (2026-10-01): it needs the reticle,
   which exists only in a session.
+- **The selected state is ONE line of buttons in AR** (2026-10-01). With
+  the chooser on a line of its own and the row's Edit / Move / Delete /
+  Done on two more, the layout e2e found those four below the first screen
+  of a 360x640 phone with the code's re-measure offered. The chooser now
+  joins the selected row, the labels are short, the row's text is one
+  line, and Done is gone: a tap on empty scene clears the selection.
+  Before a selection the chooser keeps its own line (with the hint).
 - **In AR every object can be reached without aiming** (M4 review #4): a
   tap selects through the tapped point with a tolerance
   (`object-pick.ts`), but a far, small or occluded object may still be
@@ -79,7 +94,7 @@ zip's and this device's - with **Edit text**, **Move to the reticle** and
 
 ```ts
 const view = createObjectListView(element("object-list"), document);
-view.bind({ editText, move, remove, clearSelection });
+view.bind({ editText, move, remove, undo, step });
 view.render(
   objectListModel({
     entries,

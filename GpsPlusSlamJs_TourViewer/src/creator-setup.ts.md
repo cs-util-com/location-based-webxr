@@ -129,8 +129,9 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
     - `objectList` (authoring plan 2026-09-28-0953 §3.4, M4) - the
       `object-list.ts` view (`bind`, `render`); `main.ts` builds it over
       `#object-list` inside the panel.
-    - `replaceCode*` - the explicit "Re-measure the code (replace its
-      saved position)" and its confirm step, inside `#setup-controls`.
+    - `replaceCode*` - the explicit "Replace the code's saved
+      position" (a re-measure; its label was shortened to one line for the
+      360x640 overlay, 2026-10-01) and its confirm step, inside `#setup-controls`.
   - `arSessionLive(status)` - whether the controller's status means a
     session is up (`starting` / `running` / `stopping`). Exported because
     `main.ts` hands the same predicate to the wizard, which must not

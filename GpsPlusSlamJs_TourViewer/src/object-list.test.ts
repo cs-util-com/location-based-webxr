@@ -180,16 +180,43 @@ describe("objectListModel in AR", () => {
     const entries = [entry(pin("a")), entry(pin("b")), entry(photo("p"))];
     expect(
       objectListModel(state({ inAr: true, selectedId: "b", entries })).chooser,
-    ).toEqual({ position: "2 of 3" });
+    ).toEqual({ position: "2 of 3", inRow: true });
     expect(objectListModel(state({ inAr: true, entries })).chooser).toEqual({
       position: "3 objects",
+      inRow: false,
     });
     expect(
       objectListModel(state({ inAr: true, entries: [entry(pin("a"))] }))
         .chooser,
-    ).toEqual({ position: "1 object" });
+    ).toEqual({ position: "1 object", inRow: false });
     expect(objectListModel(state({ inAr: true })).chooser).toBeNull();
     expect(objectListModel(state({ entries })).chooser).toBeNull();
+  });
+
+  it("puts the selected object's controls on ONE line in AR: the chooser joins the row, the row is compact, and no Done (360x640, ar-layout.spec.js)", () => {
+    // Why: with the chooser on a line of its own, the selected row's
+    // buttons on two more lines, and the code's re-measure offered, Edit,
+    // Move, Delete and Done fell below the first screen of a 360x640 phone
+    // (the layout e2e, 2026-10-01). In AR the selected state is now one
+    // line of buttons - Previous, Edit, Move, Delete, Next, short labels -
+    // under one line of text: the title, its place and its distance.
+    // Deselecting is a tap on empty scene (Done is gone).
+    const codes = [pin("code", 47.5001).geo];
+    const entries = [entry(pin("a")), entry(pin("b")), entry(photo("p"))];
+    const model = objectListModel(
+      state({ inAr: true, selectedId: "b", entries, codes }),
+    );
+    expect(model.chooser?.inRow).toBe(true);
+    expect(model.rows).toHaveLength(1);
+    expect(model.rows[0]).toMatchObject({
+      compact: true,
+      // Kind and standing are the page's; in AR only how far it is.
+      detail: "11 m from the code",
+    });
+    // The page keeps full rows and no chooser.
+    const page = objectListModel(state({ selectedId: "b", entries, codes }));
+    expect(page.rows.every((r) => !r.compact)).toBe(true);
+    expect(page.rows[1]?.detail).toBe("Pin · in the zip · 11 m from the code");
   });
 
   it("says how to select while nothing is selected", () => {

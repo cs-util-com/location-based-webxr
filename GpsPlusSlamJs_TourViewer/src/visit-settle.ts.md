@@ -52,7 +52,7 @@ draft and logs `tourAuthoring/settled`.
     With a reference kept, the caller keeps it as `mintedLevel`, takes the
     measurement as this visit's sighting, and the visit settles
     `code-corrected`. Replacing a stored pose on purpose is the explicit
-    "Re-measure the code (replace its saved position)" action in
+    "Replace the code's saved position" action in
     `creator-setup.ts` (plan §3.4, M4), which skips this function with a
     confirm step first - never a side effect of measuring.
 - `planMove(input & { object, local })` (M4) - an object moved to `local`

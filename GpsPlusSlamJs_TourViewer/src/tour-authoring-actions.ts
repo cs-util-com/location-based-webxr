@@ -97,7 +97,7 @@ interface CodeMeasuredLog {
    *  setup always sets it; absent in recordings made before it existed. */
   readonly kept?: "measurement" | "level-in-hand" | "hosted-level";
   /** The stored pose this measurement deliberately REPLACED, when the
-   *  creator confirmed "Re-measure the code (replace its saved position)"
+   *  creator confirmed "Replace the code's saved position"
    *  (authoring plan 2026-09-28-0953 §3.4, M4; M2c review #5). Absent for
    *  every other measurement - those never replace a stored pose. */
   readonly replaced?: { readonly id: string; readonly json: string };
