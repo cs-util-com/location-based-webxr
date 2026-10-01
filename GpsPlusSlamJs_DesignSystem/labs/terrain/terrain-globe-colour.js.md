@@ -37,7 +37,7 @@ extentM }, x, y, wx, wy)`: the mean of the lab's posts inside a box,
     `{ mean, p95, n, skipped }` (CIE76): a land sample the ramp cannot
     colour (no land band: a ramp fitted on sea alone) is SKIPPED and
     counted, never judged (it passed `null` to `deltaE76`, a TypeError, on a
-    sea-only fold; PR #531 review); with none judged, mean and p95 are
+    sea-only fold); with none judged, mean and p95 are
     NaN. RangeError for a width outside 10-5000 m.
   - `foldOf(gx, gy, blockPx = 1)`: a sample's fold, a checkerboard of
     `blockPx`-pixel blocks over its global imagery pixel indices.

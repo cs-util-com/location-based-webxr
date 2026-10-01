@@ -80,6 +80,11 @@ function lowlandStats(colours) {
  * The worst-tolerated mean channel error (8-bit) of the drawn style B
  * against `naturalColour`: the relief spread's 8-bit channel (3.9 m a step)
  * and the half-float field. Swept 2-8.
+ *
+ * The margin is thin on the Alps: measured 3.54 there on 2026-10-01
+ * (Germany 0.67), so the Alps row is the likeliest first red. A red here
+ * is first a question of whether the reference or the shader moved (the
+ * logged sweep line shows how close it was), never a reason to widen this.
  */
 const LOWLAND_MEAN_TOLERANCE = 4;
 

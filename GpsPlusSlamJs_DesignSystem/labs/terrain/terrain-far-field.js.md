@@ -20,7 +20,7 @@
     centre, across tile edges; null where a pixel is missing. A water
     pixel (alpha 0, the globe's water mask) reads the colour under the
     mask: the page decodes without premultiplied alpha (`decodeRgba` in
-    terrain-lab.js; a 2D canvas returned it black, DEC-A3 2026-10-01).
+    terrain-lab.js; a 2D canvas returned it black until 2026-10-01).
   - `sampleImageryLand(tiles, lat, lng)` -> `{ rgb, water }`: the
     bilinear colour of the LAND pixels alone (weighted by their alpha; null
     where all four are water) and the bilinear water share (1 - alpha);

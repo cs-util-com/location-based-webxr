@@ -1,14 +1,16 @@
 // @ts-check
 /**
- * The terrain lab's fixes from the M2 T1 milestone review (2026-10-01-1650),
- * and the lake decode fix (DEC-A3), in the browser: m3 (the imagery styles say why they are dark at night)
- * and m6 (globe-bands draws style B until the drawn region's ramp exists,
- * never black or the previous region's ramp).
+ * The terrain lab's imagery-style fixes, in the browser: the imagery
+ * styles say why they are dark at night; globe-bands draws style B until
+ * the drawn region's ramp exists, never black or the previous region's
+ * ramp; the imagery decode keeps the water's colour under the mask; and
+ * the decode survives a lost WebGL context.
  *
- * Why this file matters: both are page behaviour no unit test reaches. A
- * style that opens black at night, or that shows the Alps' colours over
- * the Blue Ridge while the new imagery loads, still draws a plausible map,
- * so only a pixel and a status-line check catch it.
+ * Why this file matters: all four are page behaviour no unit test reaches.
+ * A style that opens black at night, shows the Alps' colours over the Blue
+ * Ridge while the new imagery loads, or draws lakes black, still draws a
+ * plausible map, and a lost decode context only shows on the next place;
+ * so only a pixel, a decode and a status-line check catch them.
  */
 import { expect, test } from "@playwright/test";
 import { fileURLToPath } from "node:url";
@@ -138,7 +140,7 @@ test("an imagery style at night says the sun is down, and stops saying it by day
   expect(errors).toEqual([]);
 });
 
-// DEC-A3 (found by T2, 2026-10-01): the imagery tiles carry the globe's
+// Fixed 2026-10-01: the imagery tiles carry the globe's
 // water mask in their alpha (0 on water, the colour under it kept). The
 // page decoded them through a 2D canvas, which stores premultiplied colour,
 // so every water pixel came back BLACK: globe-albedo (C1, the provisional
@@ -245,15 +247,18 @@ test("the imagery keeps the water's colour under the mask, held to an independen
   const oracleMean = [0, 1, 2].map(
     (c) => lake.reduce((s, p) => s + p.rgb[c], 0) / lake.length,
   );
+  // The 2D-canvas decode is the old path. Whether it reads the lake black
+  // is the BROWSER's choice (a canvas that stores premultiplied colour, as
+  // Chromium's does, keeps nothing under alpha 0), so it is logged as the
+  // precondition that made the old path wrong, not asserted.
   console.log(
     `Lake Constance, ${lake.length} water pixels: oracle mean ${oracleMean.map((v) => v.toFixed(1)).join(", ")}; ` +
       `lab decode worst channel difference ${worst} ` +
-      `(${sweepLine(worst, [0, 1, 2, 3, 4])}); canvas decode RGB sum ${canvasSum}`,
+      `(${sweepLine(worst, [0, 1, 2, 3, 4])}); canvas decode RGB sum ${canvasSum} ` +
+      `(${canvasSum === 0 ? "black: this browser's canvas premultiplies" : "this browser's canvas keeps the colour"})`,
   );
-  // The lab reads what the file holds under the mask...
+  // The lab reads what the file holds under the mask.
   expect(worst).toBeLessThanOrEqual(DECODE_TOLERANCE);
-  // ...where the canvas path reads black (the defect, still there for it).
-  expect(canvasSum).toBe(0);
   // Non-vacuous: the lake's colour is not black in the file.
   expect(Math.max(...oracleMean)).toBeGreaterThan(5);
   // Land pixels: the lab's decode is the canvas's, byte for byte (same

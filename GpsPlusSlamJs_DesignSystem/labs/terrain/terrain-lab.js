@@ -336,7 +336,7 @@ function decodeContext() {
  * The globe imagery's alpha is the globe's water mask (0 on water, the
  * colour under it kept; `GpsPlusSlamJs_Globe/assets/PROVENANCE.md`). A 2D
  * canvas stores premultiplied colour, so it returned every water pixel
- * BLACK and the relief drew lakes near black (DEC-A3, found 2026-10-01).
+ * BLACK and the relief drew lakes near black (fixed 2026-10-01).
  * The globe hands the same tiles to the GPU with `premultiplyAlpha:
  * "none"` (`globe-surface-material.ts.md`); this does the same and reads
  * the texture back: decoded as the elevation decoder does (no colour

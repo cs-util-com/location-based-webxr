@@ -227,10 +227,14 @@ describe("C1's coarse luminance (review 2026-10-01-1650 m5)", () => {
   it("makes the footprint mean of the unclamped detail ratio 1 at every texel (property)", () => {
     const next = random(29);
     const grid = { side: 41, spacingM: 500, extentM: 10_000 };
+    // Fine luminances within a factor 1.5 of each other, so `detailRatio`
+    // stays inside its clamp (0.5-1.6) at any weight: the property is the
+    // unclamped one, checked through the function the shader mirrors.
     const fineLum = Float64Array.from(
       { length: 41 * 41 },
-      () => 0.02 + next() * 0.5,
+      () => 0.2 + next() * 0.1,
     );
+    const [lo, hi] = GLOBE_ALBEDO.ratioRange;
     const footprint = [1700, 2450];
     const side = 8;
     const halfM = 8000;
@@ -262,7 +266,11 @@ describe("C1's coarse luminance (review 2026-10-01-1650 m5)", () => {
         }
         const cl = coarse[r * side + c];
         for (const detail of [0.3, 1]) {
-          const ratios = inside.map((f) => 1 + detail * (f / cl - 1));
+          const ratios = inside.map((f) => detailRatio(f, cl, detail));
+          assert.ok(
+            ratios.every((v) => v > lo && v < hi),
+            `texel ${r},${c} detail ${detail}: a ratio reached the clamp`,
+          );
           const mean = ratios.reduce((a, b) => a + b, 0) / ratios.length;
           close(mean, 1, 1e-6, `texel ${r},${c} detail ${detail}`);
         }
@@ -425,7 +433,7 @@ describe("C3 globe-bands: the band-width sweep", () => {
     assert.ok(rows[0].fit.mean <= rows[2].fit.mean + 1e-9);
   });
 
-  // PR #531 review: a ramp fitted on sea-only samples has no land band, so
+  // A ramp fitted on sea-only samples has no land band, so
   // `bandRampColour` returns its documented null, and the error measure
   // passed that null to deltaE76 (a TypeError). Low ground whose one fold
   // is all sea does exactly this. A ramp that cannot colour a land sample
