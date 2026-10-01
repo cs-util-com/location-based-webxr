@@ -26,11 +26,13 @@ import { GLOBE_ATMOSPHERE } from "./globe-atmosphere-frame.js";
  * The equinox noon, the camera over 91.86°E, 90° east of the subsolar
  * point (1.86°E): the sun is to the west, so the screen's left limb is lit
  * and the right limb is in the night; the terminator runs through the
- * disc's centre. No stars or Milky Way, so space reads black; the clouds
- * pinned in place.
+ * disc's centre. No stars or Milky Way, and navy space pinned off (round 5
+ * made 0.1 the default; every bound here was measured on black space, and
+ * the navy lifts the night limb to about 10 levels), so space reads black;
+ * the clouds pinned in place.
  */
 const VIEW =
-  "at=0,91.86&spinMs=0&turnMs=0&time=2026-03-20T12:00:00Z&cloudDrift=0&stars=0&milkyWay=0";
+  "at=0,91.86&spinMs=0&turnMs=0&time=2026-03-20T12:00:00Z&cloudDrift=0&stars=0&milkyWay=0&space=0";
 
 /** The Earth's disc radius and the canvas size, in drawing-buffer pixels. */
 async function discGeometry(page) {
