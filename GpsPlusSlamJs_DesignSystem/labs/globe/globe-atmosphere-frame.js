@@ -133,6 +133,32 @@ float atmLowestPointMu( vec3 o, vec3 dir, float tEnter, float tEnd ) {
   return abs( dot( dir, normalize( o + dir * t ) ) );
 }`;
 
+/** The median of a list of numbers (NaN for an empty list). */
+const medianOf = (values) => {
+  const sorted = [...values].sort((x, y) => x - y);
+  return sorted.length === 0
+    ? Number.NaN
+    : sorted[Math.floor(sorted.length / 2)];
+};
+
+/**
+ * The lab's line for the march's measured cost on this device (review
+ * 2026-10-01, M2): the median frame time with the pass on and off, to a
+ * tenth of a ms, and their ratio; a plain sentence when the pass is not
+ * supported or a median is not a positive finite number.
+ */
+export function atmosphereCostText({ supported, onMs, offMs }) {
+  if (!supported) {
+    return "Atmosphere: not supported on this device (no float render targets)";
+  }
+  const on = medianOf(onMs);
+  const off = medianOf(offMs);
+  if (!(on > 0 && off > 0 && Number.isFinite(on) && Number.isFinite(off))) {
+    return "Atmosphere: the frame timing failed";
+  }
+  return `Atmosphere: ${on.toFixed(1)} ms a frame on, ${off.toFixed(1)} ms off (x${(on / off).toFixed(2)})`;
+}
+
 /**
  * Per-axis factors from ECEF metres to the model's frame in km, in which
  * the ellipsoid (radii `[a, b, c]` in metres) IS the model's ground sphere

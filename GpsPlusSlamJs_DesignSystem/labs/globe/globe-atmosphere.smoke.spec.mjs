@@ -156,27 +156,32 @@ test("the rim glows on the lit limb only, and veils the day side blue", async ({
 });
 
 /**
- * Where the halo may peak outside the lit edge, as a fraction of the
- * shell's thickness (100 km x k). Physically the limb is brightest a
+ * How far out from the lit edge the halo's SATURATED plateau may reach, as
+ * a fraction of the shell's thickness (100 km x k). Physically the limb is brightest a
  * little above the ground, where a grazing ray's optical depth falls to
  * about 1 (about 20 km for the real air: 8 km scale height, a grazing
  * depth of 7-20 at the ground), and the thicker shell keeps that depth
  * (review B2), so the peak moves out with k. Measured 2026-09-30 with the
- * grazing compensation: a near-white plateau (163-167 levels) from the
- * edge out to under a pixel (17.7 km) at k = 1, about 30 km at 6 and 60 km
- * at 10, its top at 0, 10 and 45 km, then one fall-off (to half by about 150 km at 6, 250 km at 10);
- * no rise near the shell's top (600 / 1000 km). Without the compensation
- * the top sat at the edge. Reported at x0.5, x1, x2.
+ * grazing compensation: a near-white plateau (163-168 levels, saturated
+ * by the tone mapping) from the edge out to under a pixel (17.7 km) at
+ * k = 1, about 30 km at 6 and 60 km at 10, then one fall-off (to half by
+ * about 150 km at 6, 250 km at 10), and no rise near the shell's top (600
+ * / 1000 km). Where the "top" sits inside the plateau is 8-bit noise
+ * (review 2026-10-01 m2), so the plateau ends where the profile first
+ * drops PLATEAU_DROP levels below its maximum, and the fall-off is checked
+ * from there. Reported at x0.5, x1, x2.
  */
 const PEAK_FRACTION = 0.3;
+/** Levels below the maximum that end the saturated plateau. */
+const PLATEAU_DROP = 8;
 
 // WHY: the owner judges the halo's width by eye (DEC-GL4-11: as wide as
 // the reference by default, the thickness slider back down to the physical
 // air); this puts numbers on it. Across the lit edge, the luminance inside
 // the disc and out into space per distance, at both ends of the slider and
 // at the default, and the colour at the brightest point, which must stay
-// blue whatever the width. Out in space the halo rises to one peak near
-// the edge and then falls off; it must not rise again.
+// blue whatever the width. Out in space the halo holds a saturated
+// plateau near the edge and then falls off; it must not rise again.
 test("the rim's profile at both ends of the thickness slider", async ({
   page,
 }) => {
@@ -206,13 +211,17 @@ test("the rim's profile at both ends of the thickness slider", async ({
     );
     const lum = px.map(luminance);
     const out = lum.slice(inside.length);
-    const peakAt = out.indexOf(Math.max(...out));
+    const top = Math.max(...out);
+    const endAt = Math.max(
+      0,
+      out.findIndex((v) => v < top - PLATEAU_DROP),
+    );
     rows.push({
       thickness,
       lum,
       out,
-      peakAt,
-      peakKm: outside[peakAt] ?? 0,
+      endAt,
+      endKm: outside[endAt] ?? 0,
       brightest: px[lum.indexOf(Math.max(...lum))] ?? [0, 0, 0, 0],
     });
   }
@@ -221,11 +230,11 @@ test("the rim's profile at both ends of the thickness slider", async ({
       rows
         .map(
           (row) =>
-            `x${row.thickness}: ${kms.map((km, i) => `${km} ${(row.lum[i] ?? 0).toFixed(0)}`).join(", ")}; halo peak at ${row.peakKm} km (bound ${(PEAK_FRACTION * 100 * row.thickness).toFixed(0)} km: ` +
+            `x${row.thickness}: ${kms.map((km, i) => `${km} ${(row.lum[i] ?? 0).toFixed(0)}`).join(", ")}; plateau ends at ${row.endKm} km (bound ${(PEAK_FRACTION * 100 * row.thickness).toFixed(0)} km: ` +
             [0.5, 1, 2]
               .map(
                 (k) =>
-                  `x${k} ${row.peakKm <= PEAK_FRACTION * 100 * row.thickness * k ? "ok" : "NO"}`,
+                  `x${k} ${row.endKm <= PEAK_FRACTION * 100 * row.thickness * k ? "ok" : "NO"}`,
               )
               .join(" ") +
             `); brightest RGB ${row.brightest.slice(0, 3).join("/")}`,
@@ -233,10 +242,10 @@ test("the rim's profile at both ends of the thickness slider", async ({
         .join("; "),
   );
   for (const row of rows) {
-    // One peak near the edge, then a fall-off with no second rise (1
-    // level of slack for 8-bit rounding).
-    expect(row.peakKm).toBeLessThanOrEqual(PEAK_FRACTION * 100 * row.thickness);
-    for (let i = row.peakAt + 1; i < row.out.length; i++) {
+    // A saturated plateau near the edge, then a fall-off with no second
+    // rise (1 level of slack for 8-bit rounding).
+    expect(row.endKm).toBeLessThanOrEqual(PEAK_FRACTION * 100 * row.thickness);
+    for (let i = row.endAt + 1; i < row.out.length; i++) {
       expect(row.out[i]).toBeLessThanOrEqual((row.out[i - 1] ?? 0) + 1);
     }
     // The rim's brightest point is blue-white, not grey or warm.
@@ -361,6 +370,33 @@ test("the limb at the terminator's crossing", async ({ page }) => {
       `inside on ${fmt(on.inside)}; off ${fmt(off.inside)}; outside on ${fmt(on.outside)}; ` +
       `violet inside ${on.inside.map(violet).join(" ")}, outside ${on.outside.map(violet).join(" ")}`,
   );
+  // The documented range (globe-atmosphere.js.md, reviews B3 and M1/m3):
+  // since the lowest-point weighting the spot at the crossing reads
+  // 33/21/51 just inside and 74/48/74 just outside (violet index 12 and
+  // 26, luminance up to 55; before it, 27/16/45 and 46/35/56, violet 11),
+  // and from 5 degrees into the night the limb is dark (0-3 levels). The
+  // bounds hold the documented values with about a third of headroom, so
+  // a further unnoticed change of the spot fails here; reported at x0.5,
+  // x1, x2.
+  const NIGHT_LUM = 6;
+  const SPOT_VIOLET = 35;
+  const SPOT_LUM = 75;
+  const night = degs
+    .map((d, i) => [d, i])
+    .filter(([d]) => d >= 5)
+    .flatMap(([, i]) => [on.inside[i], on.outside[i]]);
+  const nightMax = Math.max(...night.map(luminance));
+  const spot = [on.inside[degs.indexOf(0)], on.outside[degs.indexOf(0)]];
+  const spotViolet = Math.max(...spot.map(violet));
+  const spotLum = Math.max(...spot.map(luminance));
+  const bounded = (v, bound) =>
+    `${v.toFixed(1)} (bound ${bound}: ${SWEEP.map((k) => `x${k} ${v < bound * k ? "ok" : "NO"}`).join(" ")})`;
+  console.log(
+    `terminator: night limb max ${bounded(nightMax, NIGHT_LUM)}, spot violet ${bounded(spotViolet, SPOT_VIOLET)}, spot luminance ${bounded(spotLum, SPOT_LUM)}`,
+  );
+  expect(nightMax).toBeLessThan(NIGHT_LUM);
+  expect(spotViolet).toBeLessThan(SPOT_VIOLET);
+  expect(spotLum).toBeLessThan(SPOT_LUM);
   expect(errors).toEqual([]);
 });
 
@@ -377,9 +413,17 @@ test("the banding per sample count, against 64 samples", async ({ page }) => {
   const errors = await bootGlobe(page, VIEW);
   const g = await discGeometry(page);
   const r = Math.round(g.rPx);
-  const limb = rowPoints(
+  // Either side of the disc's edge but not across it: the ground-to-space
+  // step at the edge itself is the same at every count, and its exact
+  // pixel moves with the 8-bit rounding, which read as a "ring" of 0.2-5.2
+  // levels at random (review 2026-10-01 m1).
+  const limbIn = rowPoints(
     g,
-    Array.from({ length: 41 }, (_, i) => -(r - 20 + i)),
+    Array.from({ length: 30 }, (_, i) => -(r - 32 + i)),
+  );
+  const limbOut = rowPoints(
+    g,
+    Array.from({ length: 30 }, (_, i) => -(r + 3 + i)),
   );
   const radial = rowPoints(
     g,
@@ -388,7 +432,8 @@ test("the banding per sample count, against 64 samples", async ({ page }) => {
   const profile = async (steps) => {
     await applyHash(page, `${VIEW}&atmoSteps=${steps}`);
     return {
-      limb: await readLum(page, limb),
+      limbIn: await readLum(page, limbIn),
+      limbOut: await readLum(page, limbOut),
       radial: await readLum(page, radial),
     };
   };
@@ -398,7 +443,7 @@ test("the banding per sample count, against 64 samples", async ({ page }) => {
   for (const steps of STEPS) {
     const p = await profile(steps);
     const worst = {};
-    for (const k of /** @type {const} */ (["limb", "radial"])) {
+    for (const k of /** @type {const} */ (["limbIn", "limbOut", "radial"])) {
       worst[k] = {
         error: Math.max(...p[k].map((v, i) => Math.abs(v - reference[k][i]))),
         extraJump: jump(p[k]) - jump(reference[k]),
@@ -411,27 +456,34 @@ test("the banding per sample count, against 64 samples", async ({ page }) => {
       rows
         .map(
           (r) =>
-            `${r.steps}: limb error ${r.limb.error.toFixed(1)} extra step ${r.limb.extraJump.toFixed(1)}, ` +
+            `${r.steps}: limb inside error ${r.limbIn.error.toFixed(1)} extra step ${r.limbIn.extraJump.toFixed(1)}, ` +
+            `limb outside error ${r.limbOut.error.toFixed(1)} extra step ${r.limbOut.extraJump.toFixed(1)}, ` +
             `radial error ${r.radial.error.toFixed(1)} extra step ${r.radial.extraJump.toFixed(1)}`,
         )
         .join("; ") +
-      ` (limb mean ${meanOf(reference.limb).toFixed(1)})`,
+      ` (limb means ${meanOf(reference.limbIn).toFixed(1)} inside, ${meanOf(reference.limbOut).toFixed(1)} outside)`,
   );
-  // At the default count no ring: no step between neighbouring pixels
-  // larger than the reference's own by `RING` levels (reported at x0.5,
-  // x1, x2; measured at most 1.6 at every count, 2026-09-30).
+  // At both defaults (12 samples, 8 on a touch screen) no ring: no step
+  // between neighbouring pixels larger than the reference's own by RING
+  // levels, either side of the edge or across the disc (reported at x0.5,
+  // x1, x2).
   const RING = 4;
-  const atDefault = rows.find((r) => r.steps === GLOBE_ATMOSPHERE.steps);
-  expect(atDefault).toBeDefined();
-  const worstJump = Math.max(
-    atDefault?.limb.extraJump ?? Infinity,
-    atDefault?.radial.extraJump ?? Infinity,
-  );
-  console.log(
-    `ring at ${GLOBE_ATMOSPHERE.steps} steps: worst extra step ${worstJump.toFixed(1)}; ` +
-      SWEEP.map((k) => `x${k} ${worstJump < RING * k ? "ok" : "NO"}`).join(" "),
-  );
-  expect(worstJump).toBeLessThan(RING);
+  for (const steps of [GLOBE_ATMOSPHERE.steps, GLOBE_ATMOSPHERE.coarseSteps]) {
+    const at = rows.find((row) => row.steps === steps);
+    expect(at, `${steps} samples swept`).toBeDefined();
+    const worstJump = Math.max(
+      at?.limbIn.extraJump ?? Infinity,
+      at?.limbOut.extraJump ?? Infinity,
+      at?.radial.extraJump ?? Infinity,
+    );
+    console.log(
+      `ring at ${steps} steps: worst extra step ${worstJump.toFixed(1)}; ` +
+        SWEEP.map((k) => `x${k} ${worstJump < RING * k ? "ok" : "NO"}`).join(
+          " ",
+        ),
+    );
+    expect(worstJump).toBeLessThan(RING);
+  }
   expect(errors).toEqual([]);
 });
 
@@ -591,4 +643,30 @@ test.describe.serial("the sky from inside the drawn shell", () => {
     expect(worst).toBeLessThan(SKY_MATCH);
     expect(r.errors).toEqual([]);
   });
+});
+
+// WHY (review 2026-10-01, M2): the march's cost is only known on the CPU
+// rasteriser; the owner reads it on the phone from the plate. The button
+// must show that it is working (disabled, "Measuring...") and then give
+// the device line both medians, and come back.
+test("the plate measures the atmosphere's cost and shows it in the device line", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const errors = await bootGlobe(page, VIEW);
+  const button = page.locator("[data-atmo-cost]");
+  const idle = (await button.textContent())?.trim();
+  await button.click();
+  await expect(button).toBeDisabled();
+  await expect(button).toHaveText("Measuring...");
+  await expect(button).toBeEnabled({ timeout: 90_000 });
+  await expect(button).toHaveText(idle ?? "");
+  const s = await page.evaluate(() => window.__globeLab.state());
+  console.log(`atmosphere cost on this machine: "${s.atmosphereCost}"`);
+  expect(s.atmosphereCost).toMatch(
+    /^Atmosphere: \d+\.\d ms a frame on, \d+\.\d ms off \(x\d+\.\d\d\)$/,
+  );
+  expect(s.deviceLine).toContain(s.atmosphereCost);
+  expect(s.atmosphere.on).toBe(true);
+  expect(errors).toEqual([]);
 });

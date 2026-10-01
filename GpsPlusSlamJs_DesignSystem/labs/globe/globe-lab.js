@@ -51,6 +51,7 @@ import { handOverUrl } from "/globe/globe-handover.js";
 import { createGlobeAtmosphere } from "./globe-atmosphere.js";
 import {
   GLOBE_ATMOSPHERE,
+  atmosphereCostText,
   defaultAtmosphereSteps,
 } from "./globe-atmosphere-frame.js";
 import {
@@ -69,6 +70,7 @@ const pinButton = document.getElementById("globe-pin");
 const pinStatus = document.getElementById("globe-pin-status");
 const deviceLine = document.getElementById("globe-device");
 const readoutLine = document.getElementById("globe-readout");
+const costButton = document.querySelector("[data-atmo-cost]");
 
 /**
  * The device line (round-3 plan 2026-09-27-0532 §4 F; terrain plan
@@ -79,10 +81,17 @@ const readoutLine = document.getElementById("globe-readout");
  */
 function reportDevice(renderer) {
   const floatLinear = renderer.extensions.has("OES_texture_float_linear");
-  deviceLine.textContent = floatLinear
+  const line = floatLinear
     ? "This device filters float textures (OES_texture_float_linear): yes"
     : "This device filters float textures (OES_texture_float_linear): NO";
-  return { floatLinear };
+  deviceLine.textContent = line;
+  return {
+    floatLinear,
+    /** The device line with the atmosphere's measured cost after it. */
+    showCost(text) {
+      deviceLine.textContent = `${line}. ${text}`;
+    },
+  };
 }
 
 /**
@@ -876,6 +885,8 @@ function start() {
   let pin = null;
   /** A view held by the `pitchView` test hook: the controls do not run. */
   let heldView = false;
+  /** While the plate measures the atmosphere's cost: "on", "off" or null. */
+  let costMode = null;
   const controls = cameraControls(scene, camera, globe, () => {
     flight.yieldToUser(performance.now());
     pin?.cameraTaken();
@@ -1095,8 +1106,9 @@ function start() {
       sky.render(renderer, camera);
     }
     renderer.render(scene, camera);
-    // The air over the Earth and the sky, lit by the same sun.
-    if (params.atmo !== 0) {
+    // The air over the Earth and the sky, lit by the same sun (or, while
+    // its cost is measured, as the measurement says).
+    if (costMode === null ? params.atmo !== 0 : costMode === "on") {
       atmosphere.render(camera, {
         worldFromEcef: globe.tiles.group.matrixWorld,
         sunEcef: globe.surfaceUniforms.uSunEcef.value,
@@ -1105,6 +1117,58 @@ function start() {
     }
   };
   renderer.setAnimationLoop(frame);
+
+  /**
+   * The atmosphere's cost on this device (review 2026-10-01, M2): on 10
+   * animation frames each, alternating, three frames are drawn back to back
+   * with the pass on or off and one pixel read so the GPU has finished;
+   * the medians per frame go to the device line (`atmosphereCostText`).
+   * The plate's button shows "Measuring..." meanwhile and is disabled.
+   */
+  const measureAtmosphereCost = async () => {
+    const onMs = [];
+    const offMs = [];
+    const gl = renderer.getContext();
+    const px = new Uint8Array(4);
+    const time = (mode) => {
+      costMode = mode;
+      frame();
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      const t0 = performance.now();
+      for (let i = 0; i < 3; i++) frame();
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      return (performance.now() - t0) / 3;
+    };
+    try {
+      for (let k = 0; k < 20; k++) {
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        if (k % 2 === 0) onMs.push(time("on"));
+        else offMs.push(time("off"));
+      }
+    } finally {
+      costMode = null;
+    }
+    return atmosphereCostText({
+      supported: atmosphere.supported,
+      onMs,
+      offMs,
+    });
+  };
+  let costText = null;
+  costButton.addEventListener("click", async () => {
+    const label = costButton.textContent;
+    costButton.disabled = true;
+    costButton.textContent = "Measuring...";
+    try {
+      costText = await measureAtmosphereCost();
+    } catch {
+      costText = atmosphereCostText({ supported: true, onMs: [], offMs: [] });
+    } finally {
+      costButton.disabled = false;
+      costButton.textContent = label;
+    }
+    device.showCost(costText);
+  });
 
   const raycaster = new THREE.Raycaster();
   /**
@@ -1261,8 +1325,10 @@ function start() {
       tileRequestsByLevel: tileRequestsByLevel(),
       rendererMemory: { ...renderer.info.memory },
       radiusM: radius,
-      device,
+      device: { floatLinear: device.floatLinear },
       deviceLine: deviceLine.textContent,
+      atmosphereCost: costText,
+      costMeasuring: costButton.disabled,
       activeSources: globe.activeSources(),
       loadingShown: status.loadingShown,
       loadingVisible: !loadingLabel.hidden,

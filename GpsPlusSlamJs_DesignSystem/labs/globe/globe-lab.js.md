@@ -173,6 +173,14 @@
   "NO", from the renderer's own context, bottom left above the credits, so
   the owner can read it on his phone before the terrain dive is built; intensity 5 (DEC-GL4-1), Neutral tone mapping, no ambient
   light, a black sky (plan §7.3).
+- The atmosphere's cost on the device (review 2026-10-01 M2): the plate's
+  "Measure the atmosphere's cost" button alternates 10 animation frames
+  each with the pass on and off, draws three frames back to back on each
+  and reads one pixel so the GPU has finished, and appends the medians to
+  the device line ("Atmosphere: 9.0 ms a frame on, 4.0 ms off (x2.25)",
+  `atmosphereCostText`). The button is disabled and reads "Measuring..."
+  meanwhile; `state().atmosphereCost` and `costMeasuring` report it. On a
+  phone this is the only real-GPU number; under SwiftShader it is relative.
 - The intro (M2, `/globe/globe-target.js`, `/globe/globe-camera.js`):
   - `spin`: from 30°N 15°E, the view's longitude falling 3°/s, so the
     surface moves west to east across the screen as the Earth turns;
@@ -305,7 +313,7 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   `bytesDownloaded` sums the resource timing log's `/globe-assets/`
   entries, whose buffer the page raises to 4000, counting cache hits too;
   `tileRequestsByLevel` counts the distinct imagery tiles requested per
-  pyramid level, index = level, 0-4), `project(lat, lng)` (a
+  pyramid level, index = level, 0-5), `project(lat, lng)` (a
   place's normalised canvas point, for probes at known places),
   `readPixels(points)` (normalised canvas points, read in the same task as
   a render).

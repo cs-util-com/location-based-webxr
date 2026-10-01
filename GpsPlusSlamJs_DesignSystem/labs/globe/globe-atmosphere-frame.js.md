@@ -30,6 +30,11 @@
     sky held about 2.45 times its optical depth at k = 6.
   - `CHAPMAN_GLSL` - the GLSL twins of the three, which the pass's march
     includes.
+  - `atmosphereCostText({ supported, onMs, offMs })` - the lab's line for
+    the march's measured cost (review 2026-10-01 M2): both medians to a
+    tenth of a ms and their ratio; "not supported on this device" without
+    float render targets; "the frame timing failed" when a median is not
+    a positive finite number (never NaN on the screen).
   - `atmosphereLook(input)` - `{ steps, strength, thickness }`, each from
     `input` or the default, the steps rounded; RangeError outside steps
     2-64, strength 0-4, thickness 1-10 or for a non-finite value.

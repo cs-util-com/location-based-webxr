@@ -16,6 +16,7 @@ import { describe, it } from "node:test";
 
 import {
   GLOBE_ATMOSPHERE,
+  atmosphereCostText,
   atmosphereLook,
   defaultAtmosphereSteps,
   ellipsoidToModel,
@@ -169,6 +170,39 @@ describe("lowestPointMu", () => {
     assert.ok(
       Math.abs(lowestPointMu([0, 0, G + 150], [1, 0, 0], 0, 5000)) < 1e-9,
     );
+  });
+});
+
+// Why (review 2026-10-01, M2): the march's cost was only ever measured
+// on the CPU rasteriser; on a phone it is unmeasured. The lab measures it
+// on the device and shows one line (on / off frame time, medians), which
+// must say plainly when it cannot measure rather than print NaN.
+describe("atmosphereCostText", () => {
+  it("names both medians and their ratio, to a tenth of a ms", () => {
+    assert.equal(
+      atmosphereCostText({
+        supported: true,
+        onMs: [9, 8.04, 12],
+        offMs: [4, 4.4, 3],
+      }),
+      "Atmosphere: 9.0 ms a frame on, 4.0 ms off (x2.25)",
+    );
+  });
+  it("says when the pass is not supported or the timings are unusable", () => {
+    assert.equal(
+      atmosphereCostText({ supported: false, onMs: [], offMs: [] }),
+      "Atmosphere: not supported on this device (no float render targets)",
+    );
+    for (const bad of [
+      { supported: true, onMs: [], offMs: [1] },
+      { supported: true, onMs: [Number.NaN], offMs: [1] },
+      { supported: true, onMs: [1], offMs: [0] },
+    ]) {
+      assert.equal(
+        atmosphereCostText(bad),
+        "Atmosphere: the frame timing failed",
+      );
+    }
   });
 });
 

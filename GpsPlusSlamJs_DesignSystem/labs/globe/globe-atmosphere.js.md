@@ -80,11 +80,17 @@
   - The camera ray comes from the view's inverse projection and one 3x3
     (camera rotation, world to ECEF, ECEF to the model's axes); the camera
     position is converted to km on the CPU in double precision.
-  - The terminator's crossing (review B3, measured 2026-09-30 at
-    thickness 6, 17.7 km a pixel): where the terminator meets the edge
-    the limb turns a dim violet (27/16/45 just inside, 46/35/56 just
-    outside), about 5 degrees of the edge wide, and 0-2 levels from 5
-    degrees into the night. It is the twilight the tables describe: the
+  - The terminator's crossing (review B3, thickness 6, 17.7 km a pixel):
+    where the terminator meets the edge the limb turns violet, about 5
+    degrees of the edge wide, and dark (0-3 levels) from 5 degrees into
+    the night. Measured 2026-09-30 with the B2 weighting: 27/16/45 just
+    inside, 46/35/56 just outside (violet index 11 and 11). Since the
+    lowest-point weighting with Mie on its own scale height (review M1/m3,
+    2026-10-01): 33/21/51 inside, 74/48/74 outside (violet 12 and 26,
+    luminance up to 55), and the halo just before the crossing is whiter
+    (142/148/179 at 40 degrees on the lit side, was 110/140/177). A VISIBLE
+    change: the spot is brighter and more violet just outside the edge.
+    The rim spec holds it to this range with about a third of headroom. It is the twilight the tables describe: the
     grazing sun reddened by the air, scattered by blue-favouring
     Rayleigh. ACCEPTED and documented rather than tuned away (a spot, not
     a line along the night limb; no rim on the night side beyond it);
