@@ -7,6 +7,7 @@
 
 export type {
   OsmBlobStore,
+  OsmBlobStoreWarn,
   OpfsOsmBlobStoreOptions,
 } from './opfs-osm-blob-store.js';
 export {

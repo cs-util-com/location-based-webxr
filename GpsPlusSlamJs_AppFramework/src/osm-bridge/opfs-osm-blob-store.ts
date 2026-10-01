@@ -31,11 +31,25 @@
  * @see opfs-osm-blob-store.ts.md
  */
 
-import { createLogger } from '../utils/logger';
-import { writeFileOrAbort } from '../storage/write-file-or-abort';
+// EXTENSIONS ON EVERY IMPORT, AND NO LOGGER. The design system's no-build
+// labs import this file as served TypeScript (the globe warms this cache
+// before it hands over to OsmDemo; round-5 plan 2026-10-01-0945 §3.6). The
+// served routes resolve only `.js` specifiers, and the framework logger
+// imports `@sentry/browser`, which no lab can resolve. So warnings go to an
+// injected `warn` instead (see `OpfsOsmBlobStoreOptions.warn`).
+import { writeFileOrAbort } from '../storage/write-file-or-abort.js';
 import { fileNameFor, keyForFileName } from '../storage/opfs-file-names.js';
 
-const log = createLogger('OsmBlobStore');
+/** Where a store's warnings go: a message and its structured details. */
+export type OsmBlobStoreWarn = (
+  message: string,
+  details: Readonly<Record<string, unknown>>
+) => void;
+
+const consoleWarn: OsmBlobStoreWarn = (message, details) => {
+  // eslint-disable-next-line no-console -- the default sink of an injectable warn; a consumer with the framework logger passes it instead.
+  console.warn('[OsmBlobStore]', message, details);
+};
 
 /**
  * The shape `gps-plus-slam-osm` asks for.
@@ -65,6 +79,13 @@ export interface OpfsOsmBlobStoreOptions {
    * that wants OSM tiles evictable separately from recordings, say.
    */
   readonly directory: FileSystemDirectoryHandle;
+  /**
+   * Where a failed write or listing is reported. Defaults to
+   * `console.warn`. Injected rather than the framework logger so this module
+   * stays importable without Sentry (see the imports). A page that wants the
+   * warnings as Sentry Issues passes `(m, d) => log.warn(m, d)`.
+   */
+  readonly warn?: OsmBlobStoreWarn;
 }
 
 /**
@@ -77,11 +98,13 @@ export interface OpfsOsmBlobStoreOptions {
  */
 export class OpfsOsmBlobStore implements OsmBlobStore {
   private readonly directory: FileSystemDirectoryHandle;
+  private readonly warn: OsmBlobStoreWarn;
 
   readonly stats = { gets: 0, hits: 0, puts: 0, deletes: 0, errors: 0 };
 
   constructor(options: OpfsOsmBlobStoreOptions) {
     this.directory = options.directory;
+    this.warn = options.warn ?? consoleWarn;
   }
 
   async get(key: string): Promise<string | undefined> {
@@ -116,7 +139,7 @@ export class OpfsOsmBlobStore implements OsmBlobStore {
       // A failed write must not fail the fetch that triggered it. The tile is
       // already in hand; losing the cache entry costs one future request.
       this.stats.errors++;
-      log.warn('Could not persist OSM blob; continuing without caching it', {
+      this.warn('Could not persist OSM blob; continuing without caching it', {
         key,
         error,
       });
@@ -141,7 +164,7 @@ export class OpfsOsmBlobStore implements OsmBlobStore {
       }
     } catch (error) {
       this.stats.errors++;
-      log.warn('Could not list OSM blobs', { error });
+      this.warn('Could not list OSM blobs', { error });
     }
     return out;
   }
