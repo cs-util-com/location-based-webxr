@@ -165,67 +165,81 @@ function sweepCell(options: {
 
 const SCENES = 150;
 
+/**
+ * Per-test timeout. The sweep picks 150 scenes in each of 84 cells; it took
+ * 5-25 s, measured run alone with other sessions' suites loading the machine
+ * (2026-10-01). The default 5 s made it fail on load alone, never on the
+ * pick rule.
+ */
+const SWEEP_MS = 60_000;
+
 describe("the pick tolerance (M4 review #4)", () => {
-  it("swept over 0-6 degrees, finger error 1-3 degrees, 2-20 m and 3 or 8 objects", () => {
-    const tolerances = [0, 1, 2, 3, 4, 5, 6];
-    const table: Record<string, Record<number, Rates>> = {};
-    for (const sigmaDeg of [1, 2, 3]) {
-      for (const [near, far] of [
-        [2, 5],
-        [10, 20],
-      ] as const) {
-        for (const objects of [3, 8]) {
-          const key = `sigma ${String(sigmaDeg)} deg, ${String(near)}-${String(far)} m, ${String(objects)} objects`;
-          table[key] = {};
-          for (const toleranceDeg of tolerances) {
-            table[key][toleranceDeg] = sweepCell({
-              toleranceDeg,
-              sigmaDeg,
-              near,
-              far,
-              objects,
-              scenes: SCENES,
-              seed: 7919 * sigmaDeg + near + objects,
-            });
+  it(
+    "swept over 0-6 degrees, finger error 1-3 degrees, 2-20 m and 3 or 8 objects",
+    () => {
+      const tolerances = [0, 1, 2, 3, 4, 5, 6];
+      const table: Record<string, Record<number, Rates>> = {};
+      for (const sigmaDeg of [1, 2, 3]) {
+        for (const [near, far] of [
+          [2, 5],
+          [10, 20],
+        ] as const) {
+          for (const objects of [3, 8]) {
+            const key = `sigma ${String(sigmaDeg)} deg, ${String(near)}-${String(far)} m, ${String(objects)} objects`;
+            table[key] = {};
+            for (const toleranceDeg of tolerances) {
+              table[key][toleranceDeg] = sweepCell({
+                toleranceDeg,
+                sigmaDeg,
+                near,
+                far,
+                objects,
+                scenes: SCENES,
+                seed: 7919 * sigmaDeg + near + objects,
+              });
+            }
           }
         }
       }
-    }
-    if (process.env["PICK_SWEEP_PRINT"] === "1") {
-      for (const [key, row] of Object.entries(table)) {
-        const cells = tolerances
-          .map((t) => {
-            const r = row[t]!;
-            return `${String(t)}: ${(r.hit * 100).toFixed(0)}/${(r.wrong * 100).toFixed(0)}/${(r.emptyPicked * 100).toFixed(0)}`;
-          })
-          .join("  ");
-        process.stdout.write(`${key} | ${cells}\n`);
+      if (process.env["PICK_SWEEP_PRINT"] === "1") {
+        for (const [key, row] of Object.entries(table)) {
+          const cells = tolerances
+            .map((t) => {
+              const r = row[t]!;
+              return `${String(t)}: ${(r.hit * 100).toFixed(0)}/${(r.wrong * 100).toFixed(0)}/${(r.emptyPicked * 100).toFixed(0)}`;
+            })
+            .join("  ");
+          process.stdout.write(`${key} | ${cells}\n`);
+        }
       }
-    }
-    const at = (key: string, t: number): Rates => table[key]![t]!;
-    // Far labels, the realistic finger error (1 degree): the exact ray
-    // alone misses most taps, the chosen tolerance almost none.
-    const far = "sigma 1 deg, 10-20 m, 3 objects";
-    expect(at(far, 0).hit).toBeLessThan(0.4);
-    expect(at(far, PICK_TOLERANCE_DEG).hit).toBeGreaterThan(0.9);
-    // A shakier hand (2 degrees): still a large gain.
-    const shaky = "sigma 2 deg, 10-20 m, 3 objects";
-    expect(at(shaky, PICK_TOLERANCE_DEG).hit).toBeGreaterThan(
-      at(shaky, 0).hit + 0.3,
-    );
-    // ...without picking the wrong object often with 8 close by...
-    expect(
-      at("sigma 2 deg, 10-20 m, 8 objects", PICK_TOLERANCE_DEG).wrong,
-    ).toBeLessThan(0.15);
-    // ...and near labels, already larger than the tolerance on screen,
-    // keep a tap at empty scene beside them empty.
-    const near = Object.entries(table).filter(([key]) => key.includes("2-5 m"));
-    for (const [key, row] of near) {
-      expect(row[PICK_TOLERANCE_DEG]!.emptyPicked, key).toBeLessThan(0.06);
-    }
-    // The trade itself: wrong picks never fall as the tolerance grows.
-    for (const row of Object.values(table)) {
-      expect(row[6]!.wrong).toBeGreaterThanOrEqual(row[0]!.wrong);
-    }
-  });
+      const at = (key: string, t: number): Rates => table[key]![t]!;
+      // Far labels, the realistic finger error (1 degree): the exact ray
+      // alone misses most taps, the chosen tolerance almost none.
+      const far = "sigma 1 deg, 10-20 m, 3 objects";
+      expect(at(far, 0).hit).toBeLessThan(0.4);
+      expect(at(far, PICK_TOLERANCE_DEG).hit).toBeGreaterThan(0.9);
+      // A shakier hand (2 degrees): still a large gain.
+      const shaky = "sigma 2 deg, 10-20 m, 3 objects";
+      expect(at(shaky, PICK_TOLERANCE_DEG).hit).toBeGreaterThan(
+        at(shaky, 0).hit + 0.3,
+      );
+      // ...without picking the wrong object often with 8 close by...
+      expect(
+        at("sigma 2 deg, 10-20 m, 8 objects", PICK_TOLERANCE_DEG).wrong,
+      ).toBeLessThan(0.15);
+      // ...and near labels, already larger than the tolerance on screen,
+      // keep a tap at empty scene beside them empty.
+      const near = Object.entries(table).filter(([key]) =>
+        key.includes("2-5 m"),
+      );
+      for (const [key, row] of near) {
+        expect(row[PICK_TOLERANCE_DEG]!.emptyPicked, key).toBeLessThan(0.06);
+      }
+      // The trade itself: wrong picks never fall as the tolerance grows.
+      for (const row of Object.values(table)) {
+        expect(row[6]!.wrong).toBeGreaterThanOrEqual(row[0]!.wrong);
+      }
+    },
+    SWEEP_MS,
+  );
 });
