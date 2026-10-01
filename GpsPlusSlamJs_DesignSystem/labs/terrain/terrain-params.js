@@ -12,7 +12,7 @@ import {
   SLOPE_BOOST,
 } from "./terrain-exaggeration.js";
 import { FAR_FIELD } from "./terrain-far-field.js";
-import { GLOBE_ALBEDO } from "./terrain-globe-colour.js";
+import { GLOBE_ALBEDO, GLOBE_BANDS } from "./terrain-globe-colour.js";
 import { PASTEL_ATLAS } from "./terrain-style.js";
 import { NATURAL, SWISS, TERRAIN_STYLES } from "./terrain-styles.js";
 
@@ -166,6 +166,8 @@ export const PARAMS = Object.freeze({
    * high-pass over the imagery (0 is the imagery alone).
    */
   detail: { fallback: GLOBE_ALBEDO.detail, min: 0, max: 1 },
+  /** `globe-bands`' band width, metres (the plan's swept range). */
+  band: { fallback: GLOBE_BANDS.widthM, min: 100, max: 800 },
   /** Sky-view directions; 0 turns the term off (a reduced smoke setting). */
   svf: { fallback: 8, min: 0, max: 16 },
   flyMs: { fallback: 12_000, min: 0, max: 60_000 },
@@ -184,6 +186,7 @@ export const STYLE_SHADOW = Object.freeze({
   swiss: LOOK_DEFAULTS.shadow,
   clay: LOOK_DEFAULTS.shadow,
   "globe-albedo": LOOK_DEFAULTS.shadow,
+  "globe-bands": LOOK_DEFAULTS.shadow,
 });
 
 /** Each style's own light (0 map lights, 1 the sun), when the hash has none. */
@@ -195,10 +198,11 @@ export const STYLE_LIGHT = Object.freeze({
   clay: 0,
   // The imagery styles are the globe's colours: under the globe's sun.
   "globe-albedo": 1,
+  "globe-bands": 1,
 });
 
 /** The styles coloured from the globe's imagery. */
-export const IMAGERY_STYLES = new Set(["globe-albedo"]);
+export const IMAGERY_STYLES = new Set(["globe-albedo", "globe-bands"]);
 
 /** A number from the params within its range, or its fallback. */
 function readNumber(params, name, { fallback, min, max }) {

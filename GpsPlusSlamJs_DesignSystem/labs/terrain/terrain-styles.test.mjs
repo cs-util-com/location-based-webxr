@@ -51,13 +51,22 @@ function random(seed) {
 describe("the style registry", () => {
   // DEC-TR-2 and DEC-TR-6: five styles with the plan's letters A-E.
   // Globe round-5 §3.3 adds the styles coloured from the globe imagery
-  // (C1 globe-albedo), each with its own shader branch.
+  // (C1 globe-albedo, C3 globe-bands), each with its own shader branch.
   it("lists A-E in the plan's order, then the imagery styles", () => {
     assert.deepEqual(
       Object.values(TERRAIN_STYLES).map((s) => `${s.letter}:${s.id}`),
-      ["A:pastel", "B:natural", "C:globe", "D:swiss", "E:clay", "C1:globe-albedo"],
+      [
+        "A:pastel",
+        "B:natural",
+        "C:globe",
+        "D:swiss",
+        "E:clay",
+        "C1:globe-albedo",
+        "C3:globe-bands",
+      ],
     );
     assert.equal(SHADER_STYLE["globe-albedo"], 4);
+    assert.equal(SHADER_STYLE["globe-bands"], 5);
   });
   it("gives every style a shader branch; C draws as A", () => {
     for (const id of Object.keys(TERRAIN_STYLES)) {

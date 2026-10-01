@@ -27,6 +27,11 @@
     from `{ heightM, rgb }` samples; `bandRampColour(ramp, h)` (null with no
     land band), `bandRampLut(ramp, LUT)`, `rampFitError(ramp, samples)` ->
     `{ mean, p95, n }` (CIE76). RangeError for a width outside 10-5000 m.
+  - `bandSweep(samples, widthsM)` -> per width `{ widthM, bands, minCount,
+    fit, cv }`: the in-sample error and the two-fold cross-validated one
+    (fitted on the samples of one `fold`, judged on the other). RangeError
+    when a fold is empty. The cross-validated error is the honest number:
+    narrow bands always fit their own pixels better.
   - `deltaE76(a, b)`: CIE76 difference of two sRGB colours (D65).
 - Invariants & assumptions:
   - C1's detail is a scalar on the light, so it is the same albedo lit more
@@ -44,8 +49,8 @@
     the mean height over ITS footprint (what its colour integrates), so
     peaks are averaged down and the ramp's top bands hold the highest
     footprints, not the highest posts.
-  - The imagery level is the far field's `FAR_FIELD.level` (4 on this
-    branch; the globe stream moves it to 5).
+  - The imagery level is the far field's `FAR_FIELD.level` (5, the
+    globe's finest): footprints of about 2.45 km north-south.
 - Examples:
 
   ```js
@@ -60,6 +65,7 @@
   means against hand counts, edge clipping and brute force; the footprint
   sizes; C3's band means in linear light, interpolation, ends, sea, a
   ramp recovered from a height function at every width, the LUT; CIE76
-  against hand-computed L*) and `terrain-globe-colour.smoke.spec.mjs` (C1
+  against hand-computed L*; the sweep's two errors) and `terrain-globe-colour.smoke.spec.mjs` (C1
   at real Alps pixels against its reference; the detail moves pixels but
-  not the region's mean).
+  not the region's mean; C3 against its reference, and the band-width
+  sweep on the Alps and the Blue Ridge, logged).

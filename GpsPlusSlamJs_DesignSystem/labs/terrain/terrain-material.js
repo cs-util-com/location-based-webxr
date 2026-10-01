@@ -145,6 +145,11 @@ uniform vec3 uClaySea;
 uniform sampler2D uAlbedo;
 uniform sampler2D uCoarseLum;
 uniform float uAlbedoDetail;
+// globe-bands (terrain-globe-colour.js): the imagery's ramp by height band
+// over 0-uLutMaxM, and its sea (uBandSeaOn 0 when the region has none).
+uniform sampler2D uLutBands;
+uniform vec3 uBandSea;
+uniform float uBandSeaOn;
 // The far field.
 uniform float uNearW;
 uniform float uFarReliefW;
@@ -289,6 +294,15 @@ vec3 globeAlbedo(float h, vec2 grad, float small, float svf, float vis) {
   return sunLitColour(albedo.rgb, light * detailRatio(fine, coarse, uAlbedoDetail));
 }
 
+// terrain-globe-colour.js bandRampColour (through its LUT) under the sun
+// term, as the globe lights its pixels.
+vec3 globeBands(float h, vec2 grad, float svf, float vis) {
+  vec3 base = h <= 0.0 && uBandSeaOn > 0.5
+    ? uBandSea
+    : texture2D(uLutBands, vec2(h / uLutMaxM, 0.5)).rgb;
+  return sunLitColour(base, sunLight(reliefNormal(grad, uGain), uShadow, svf, vis));
+}
+
 void main() {
   vec4 d = texture2D(uData, vUv);
   vec4 a = texture2D(uAux, vUv);
@@ -314,6 +328,8 @@ void main() {
     col = swiss(h, d.gb, a.b, vis);
   } else if (uStyle == 4) {
     col = globeAlbedo(h, d.gb, small, a.b, vis);
+  } else if (uStyle == 5) {
+    col = globeBands(h, d.gb, a.b, vis);
   } else {
     if (uStyle == 3) {
       col = h <= 0.0 ? uClaySea : uClay;
@@ -415,6 +431,11 @@ export function createScalarTexture(values, side, toHalf) {
     out[i * 4 + 3] = toHalf(1);
   }
   return dataTexture(out, side, side, THREE.HalfFloatType);
+}
+
+/** A ramp's 256 x 1 RGBA8 LUT (`globe-bands`' `bandRampLut`). */
+export function createLutTexture(bytes) {
+  return dataTexture(bytes, bytes.length / 4, 1, THREE.UnsignedByteType);
 }
 
 /** The far field's grid (`terrain-far-field.js`), RGBA bytes, row 0 south. */
@@ -538,6 +559,9 @@ export function createTerrainMaterial(textures, { side, extentM, datum }) {
       uAlbedo: { value: EMPTY_FAR },
       uCoarseLum: { value: EMPTY_FAR },
       uAlbedoDetail: { value: GLOBE_ALBEDO.detail },
+      uLutBands: { value: textures.lut },
+      uBandSea: { value: new THREE.Vector3(0.5, 0.5, 0.5) },
+      uBandSeaOn: { value: 0 },
       uNearW: { value: 1 },
       uFarReliefW: { value: 0 },
       uHalfM: { value: extentM },

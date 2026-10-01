@@ -52,6 +52,11 @@ export const TERRAIN_STYLES = Object.freeze({
     letter: "C1",
     label: "Globe albedo (Blue Marble under the sun)",
   }),
+  "globe-bands": Object.freeze({
+    id: "globe-bands",
+    letter: "C3",
+    label: "Globe bands (Blue Marble per height band)",
+  }),
 });
 
 /** The shader's style switch (`uStyle`). C draws as A, plus the far field. */
@@ -62,6 +67,7 @@ export const SHADER_STYLE = Object.freeze({
   swiss: 2,
   clay: 3,
   "globe-albedo": 4,
+  "globe-bands": 5,
 });
 
 /**

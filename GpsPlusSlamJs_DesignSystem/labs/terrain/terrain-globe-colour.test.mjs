@@ -23,6 +23,7 @@ import {
   bandRamp,
   bandRampColour,
   bandRampLut,
+  bandSweep,
   boxMeanAt,
   deltaE76,
   detailRatio,
@@ -268,6 +269,41 @@ describe("C3 globe-bands: the ramp", () => {
     const at = bandRampColour(ramp, ((5 + 0.5) / 8) * 4000);
     at.forEach((v, i) => assert.equal(lut[5 * 4 + i], Math.round(v * 255)));
     assert.equal(lut[5 * 4 + 3], 255);
+  });
+});
+
+describe("C3 globe-bands: the band-width sweep", () => {
+  // The sweep is how the band width is chosen (plan §3.3: 100-800 m). Its
+  // honest number is the CROSS-VALIDATED error: a ramp fitted on one half
+  // of the pixels, judged on the other, so narrow bands cannot win by
+  // fitting their own noise.
+  it("reports in-sample and two-fold cross-validated errors per width", () => {
+    const next = random(23);
+    const truth = (h) => [0.25 + h / 12_000, 0.45 - h / 15_000, 0.2 + h / 20_000];
+    const samples = Array.from({ length: 4000 }, (_, i) => {
+      const h = next() * 3500;
+      const noise = () => (next() - 0.5) * 0.1;
+      return {
+        heightM: h,
+        rgb: truth(h).map((v) => Math.min(1, Math.max(0, v + noise()))),
+        fold: i % 2,
+      };
+    });
+    const rows = bandSweep(samples, [50, 200, 800]);
+    assert.deepEqual(rows.map((r) => r.widthM), [50, 200, 800]);
+    for (const r of rows) {
+      assert.ok(r.fit.mean > 0 && r.cv.mean > 0, `${r.widthM}`);
+      // Judged on unseen pixels, a ramp never does better than on its own.
+      assert.ok(r.cv.mean >= r.fit.mean - 0.05, `${r.widthM}: ${r.cv.mean} vs ${r.fit.mean}`);
+      assert.ok(r.bands > 0 && r.minCount > 0);
+    }
+    // Narrow bands fit their own pixels at least as well as wide ones.
+    assert.ok(rows[0].fit.mean <= rows[2].fit.mean + 1e-9);
+  });
+
+  it("needs both folds", () => {
+    const samples = [{ heightM: 100, rgb: [0.3, 0.3, 0.3], fold: 0 }];
+    assert.throws(() => bandSweep(samples, [100]), RangeError);
   });
 });
 

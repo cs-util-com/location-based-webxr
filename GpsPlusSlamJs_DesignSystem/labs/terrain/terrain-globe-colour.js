@@ -258,3 +258,34 @@ export function rampFitError(ramp, samples) {
     n: errors.length,
   };
 }
+
+/**
+ * C3's band-width sweep: for each width, the ramp's band count and its
+ * least populated band, its in-sample error (`rampFitError` on all
+ * samples) and its two-fold cross-validated error (fitted on the samples
+ * of one `fold`, 0 or 1, judged on the other, the two means averaged).
+ * RangeError when either fold is empty.
+ */
+export function bandSweep(samples, widthsM) {
+  const folds = [0, 1].map((f) => samples.filter((s) => s.fold === f));
+  if (folds.some((f) => f.length === 0)) {
+    throw new RangeError("the sweep needs samples in both folds");
+  }
+  return widthsM.map((widthM) => {
+    const ramp = bandRamp(samples, { widthM });
+    const counts = ramp.bands.map((b) => b.count);
+    const cross = [0, 1].map((f) =>
+      rampFitError(bandRamp(folds[f], { widthM }), folds[1 - f]),
+    );
+    return {
+      widthM,
+      bands: ramp.bands.length,
+      minCount: counts.length > 0 ? Math.min(...counts) : 0,
+      fit: rampFitError(ramp, samples),
+      cv: {
+        mean: (cross[0].mean + cross[1].mean) / 2,
+        p95: (cross[0].p95 + cross[1].p95) / 2,
+      },
+    };
+  });
+}

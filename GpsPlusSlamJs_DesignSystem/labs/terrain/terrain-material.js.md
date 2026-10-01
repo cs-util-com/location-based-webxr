@@ -65,6 +65,10 @@
     draws style B. `createScalarTexture(values, side, toHalf)` builds the
     footprint texture; `EMPTY_TEXTURE` is the transparent texel both grids
     start from.
+  - `globe-bands` (`uStyle` 5): the region's band ramp (`uLutBands`, 256 x
+    1 over 0-`uLutMaxM`, `createLutTexture`) or its sea colour
+    (`uBandSea`, when `uBandSeaOn`) under `sunLight`, as the globe lights
+    its pixels. Until the page builds the ramp it reads style A's LUT.
   - The snow mask (`uSnowMask` 1) draws B's snow weight as grey in any
     style, for the smoke and for judging the line by eye.
   - Half floats and bytes only (plan §9 finding 13): every texture is

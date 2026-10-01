@@ -55,7 +55,9 @@ side }`: `extentM` includes the padding; `side` counts both edges.
     styles 1: they are the globe's colours under the globe's sun).
   - `detail` (0-1, 0.5): `globe-albedo`'s weight of style B's ramp as a
     luminance high-pass (`terrain-globe-colour.js`).
-  - `IMAGERY_STYLES`: the styles coloured from the globe imagery;
+  - `band` (100-800 m, 300): `globe-bands`' band width (the swept range).
+  - `IMAGERY_STYLES`: the styles coloured from the globe imagery
+    (`globe-albedo`, `globe-bands`);
     `readTerrainParams` sets `imageryOn` for them and for the far field
     (`farOn`), and the page loads the imagery then.
   - `readTerrainParams(hash)`: every PARAMS value, `place`, `style` (one of

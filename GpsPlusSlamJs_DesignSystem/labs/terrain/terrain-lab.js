@@ -61,6 +61,9 @@ import { solarPosition } from "/fw/geo/solar-position.js";
 import { MAP_KEY_LIGHT, sunEnuFromGlobe } from "./terrain-sun.js";
 import {
   GLOBE_ALBEDO,
+  bandRamp,
+  bandRampLut,
+  bandSweep,
   boxMeanAt,
   footprintM,
   linearLuminance,
@@ -92,6 +95,7 @@ import {
 import {
   applyStyle,
   createFarTexture,
+  createLutTexture,
   EMPTY_TEXTURE,
   createScalarTexture,
   createTerrainGeometry,
@@ -633,6 +637,59 @@ function start() {
     coarse: null,
     coarseKey: null,
     coarseMs: null,
+    /** globe-bands: the imagery pixels with their footprint heights. */
+    samples: null,
+    samplesKey: null,
+    samplesMs: null,
+    ramp: null,
+    rampKey: null,
+    lut: null,
+  };
+  /**
+   * globe-bands' samples: every imagery pixel whose footprint lies in the
+   * drawn region, with the mean height (absolute) over that footprint and
+   * a fold (the pixel's checkerboard parity) for the sweep's
+   * cross-validation.
+   */
+  const bandSamples = () => {
+    const f = run.fields;
+    const heights = new Float64Array(f.height.length);
+    for (let i = 0; i < heights.length; i++) {
+      heights[i] = f.height[i] + run.relief.datum;
+    }
+    const sat = summedArea(heights, spec.side);
+    const grid = {
+      side: spec.side,
+      spacingM: spec.spacingM,
+      extentM: spec.extentM,
+    };
+    const lat0 = place.centre.lat;
+    const [wx, wy] = footprintM(FAR_FIELD.level, lat0);
+    const limit = spec.halfExtentM;
+    const out = [];
+    for (const t of far.tiles) {
+      const size = t.width;
+      const degPerPx = 180 / 2 ** t.z / size;
+      for (let py = 0; py < size; py++) {
+        const lat = 90 - (t.y * size + py + 0.5) * degPerPx;
+        for (let px = 0; px < size; px++) {
+          const lng = -180 + (t.x * size + px + 0.5) * degPerPx;
+          const { x, y } = frame.toEnu({ lat, lng });
+          if (Math.abs(x) + wx / 2 > limit || Math.abs(y) + wy / 2 > limit) {
+            continue;
+          }
+          const h = boxMeanAt(sat, grid, x, y, wx, wy);
+          if (h === null) continue;
+          const i = 4 * (py * size + px);
+          out.push({
+            heightM: h,
+            rgb: [t.data[i] / 255, t.data[i + 1] / 255, t.data[i + 2] / 255],
+            fold: (t.x * size + px + t.y * size + py) % 2,
+          });
+        }
+      }
+    }
+    return out;
   };
   const updateGlobeColour = () => {
     if (!material || !spec || far.state !== "ready" || !IMAGERY_STYLES.has(params.style)) {
@@ -713,6 +770,28 @@ function start() {
       globeColour.coarseMs = performance.now() - started;
     }
     u.uCoarseLum.value = globeColour.coarse;
+    if (params.style !== "globe-bands") return;
+    const sKey = JSON.stringify([run.regionId, run.buildId]);
+    if (sKey !== globeColour.samplesKey) {
+      const started = performance.now();
+      globeColour.samples = bandSamples();
+      globeColour.samplesKey = sKey;
+      globeColour.samplesMs = performance.now() - started;
+      globeColour.rampKey = null;
+    }
+    const rKey = JSON.stringify([sKey, params.band]);
+    if (rKey !== globeColour.rampKey) {
+      globeColour.ramp = bandRamp(globeColour.samples, {
+        widthM: params.band,
+      });
+      globeColour.lut?.dispose();
+      globeColour.lut = createLutTexture(bandRampLut(globeColour.ramp));
+      globeColour.rampKey = rKey;
+    }
+    u.uLutBands.value = globeColour.lut;
+    const sea = globeColour.ramp.sea;
+    u.uBandSeaOn.value = sea === null ? 0 : 1;
+    if (sea !== null) u.uBandSea.value.set(...sea);
   };
   window.addEventListener("hashchange", onHash);
   // A drag or a wheel writes the pose into the hash, so the link still
@@ -910,6 +989,7 @@ function start() {
     });
     // The imagery styles show style B until the new region's imagery is in.
     globeColour.coarseKey = null;
+    globeColour.samplesKey = null;
     globeColour.grid = null;
     if (material) {
       material.uniforms.uAlbedo.value = EMPTY_TEXTURE;
@@ -1104,7 +1184,18 @@ function start() {
           albedo: globeColour.albedo !== null,
           coarse: globeColour.coarse !== null,
           coarseMs: globeColour.coarseMs,
+          samples: globeColour.samples?.length ?? 0,
+          samplesMs: globeColour.samplesMs,
+          bands:
+            params.style === "globe-bands" && globeColour.ramp
+              ? globeColour.ramp.bands.map((b) => ({
+                  heightM: Math.round(b.heightM),
+                  count: b.count,
+                  rgb: b.rgb.map((v) => Math.round(v * 255)),
+                }))
+              : null,
         },
+        band: params.band,
         light: params.light,
         sun: {
           enu: sunState.enu.slice(),
@@ -1215,6 +1306,12 @@ function start() {
       far.grid && spec
         ? farFieldAt(far.grid, FAR_FIELD.side, spec.halfExtentM, x, y)
         : null,
+    /**
+     * globe-bands' band-width sweep over the region's samples
+     * (`bandSweep`): null before the samples exist.
+     */
+    bandSweep: (widths) =>
+      globeColour.samples ? bandSweep(globeColour.samples, widths) : null,
     /** The imagery styles' albedo grid at ENU metres (sRGB 0-1), or null. */
     albedoAt: (x, y) =>
       globeColour.grid && spec
