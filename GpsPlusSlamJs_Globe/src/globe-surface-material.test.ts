@@ -88,6 +88,7 @@ describe("patchGlobeSurfaceShader", () => {
       "uGrade",
       "uCloudRelief",
       "uTwilight",
+      "uSunWorld",
     ]) {
       expect(shader.uniforms[name]).toBe(
         uniforms[name as keyof typeof uniforms],
@@ -177,6 +178,10 @@ describe("patchGlobeSurfaceShader", () => {
       expect(count(fs, `uniform float ${name};`)).toBe(1);
     }
     expect(fs).toContain("uGrade * 0.7");
+    // Review m4: the sun on screen comes from the WORLD-space sun (the
+    // view matrix maps world directions), not from the ECEF one.
+    expect(fs).toContain("viewMatrix * vec4( uSunWorld, 0.0 )");
+    expect(fs).not.toContain("viewMatrix * vec4( uSunEcef, 0.0 )");
     expect(fs).toContain("mix( vec3( 1.0 ), globeCloudShade, uCloudRelief )");
     expect(fs).toContain("mix( vec3( 1.0 ), GLOBE_WARM_LIGHTS, uTwilight )");
     expect(fs).toContain("uTwilight * diffuseColor.rgb");

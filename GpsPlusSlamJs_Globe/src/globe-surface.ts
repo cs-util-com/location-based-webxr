@@ -284,6 +284,12 @@ export function createGlobeSurface(
     sun.position
       .copy(surfaceUniforms.uSunEcef.value)
       .transformDirection(tiles.group.matrix);
+    // The world-space sun for the cloud shading (review m4): the ECEF sun
+    // through every group above the tiles, as the light ends up.
+    tiles.group.updateWorldMatrix(true, false);
+    surfaceUniforms.uSunWorld.value
+      .copy(surfaceUniforms.uSunEcef.value)
+      .transformDirection(tiles.group.matrixWorld);
   };
   const setSun = (direction: THREE.Vector3) => {
     const length = direction.length();

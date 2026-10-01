@@ -31,11 +31,17 @@ export const GLOBE_SURFACE_TUNING = {
 export const GLOBE_CLOUD_DRIFT_DEG_PER_S = 0.5;
 
 /** Every tile's program is the same one: three shares it by this key. */
-export const GLOBE_SURFACE_CACHE_KEY = "gps-plus-slam-globe-surface-v4";
+export const GLOBE_SURFACE_CACHE_KEY = "gps-plus-slam-globe-surface-v5";
 
 /** The one uniforms object every tile's shader reads. */
 export interface GlobeSurfaceUniforms {
   readonly uSunEcef: { value: THREE.Vector3 };
+  /**
+   * The same sun in WORLD space (the tiles' placement applied), kept by the
+   * surface; the cloud shading projects it with the view matrix, which
+   * maps world directions (review 2026-10-01, m4).
+   */
+  readonly uSunWorld: { value: THREE.Vector3 };
   readonly uNight: { value: THREE.Texture };
   readonly uClouds: { value: THREE.Texture };
   readonly uNightGain: { value: number };
@@ -69,6 +75,7 @@ export function createGlobeSurfaceUniforms(textures: {
 }): GlobeSurfaceUniforms {
   return {
     uSunEcef: { value: new THREE.Vector3(1, 0, 0) },
+    uSunWorld: { value: new THREE.Vector3(1, 0, 0) },
     uNight: { value: textures.night },
     uClouds: { value: textures.clouds },
     uNightGain: { value: GLOBE_SURFACE_TUNING.nightGain },
@@ -114,6 +121,7 @@ vGeoNormal = objectNormal;`;
 const FRAGMENT_DECLARATIONS = /* glsl */ `
 varying vec3 vGeoNormal;
 uniform vec3 uSunEcef;
+uniform vec3 uSunWorld;
 uniform sampler2D uNight;
 uniform sampler2D uClouds;
 uniform float uNightGain;
@@ -157,7 +165,7 @@ vec2 globeUv = vec2( globeU, globeV );
 float globeCloud = textureGrad( uClouds, globeUv - vec2( uCloudLonOffset * 0.15915494309189535, 0.0 ), globeDx, globeDy ).r;
 vec3 globeNight = textureGrad( uNight, globeUv, globeDx, globeDy ).rgb;
 vec2 globeCloudGrad = vec2( dFdx( globeCloud ), dFdy( globeCloud ) );
-vec2 globeSunView = ( viewMatrix * vec4( uSunEcef, 0.0 ) ).xy;
+vec2 globeSunView = ( viewMatrix * vec4( uSunWorld, 0.0 ) ).xy;
 float globeCloudLit = clamp( 1.0 - 6.0 * dot( globeCloudGrad, globeSunView / max( length( globeSunView ), 1e-6 ) ), 0.65, 1.3 );
 vec3 globeCloudShade = mix( vec3( 0.6, 0.68, 0.8 ), vec3( 1.0 ), smoothstep( 0.15, 0.85, globeCloud ) ) * globeCloudLit;
 diffuseColor.rgb = mix( diffuseColor.rgb, mix( vec3( 1.0 ), globeCloudShade, uCloudRelief ), globeCloud * uCloudOpacity );

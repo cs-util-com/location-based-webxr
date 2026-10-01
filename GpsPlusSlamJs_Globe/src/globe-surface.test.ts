@@ -216,6 +216,43 @@ describe("createGlobeSurface", () => {
     globe.dispose();
   });
 
+  // Review 2026-10-01, m4: the cloud shading compares the clouds' screen
+  // gradient with the sun's direction on screen, via the VIEW matrix, which
+  // maps WORLD directions; the ECEF sun is only the world's while every
+  // group above the tiles is unturned. The surface keeps a world-space sun,
+  // turned exactly as the light is, on setSun and on every update.
+  it("keeps a world-space sun turned as the light is, for the cloud shading", () => {
+    const globe = createGlobeSurface(stubLoader());
+    vi.spyOn(globe.tiles, "update").mockImplementation(() => {});
+    const outer = new THREE.Group();
+    outer.add(globe.group);
+    outer.rotation.set(0.3, -0.7, 1.1);
+    globe.group.rotation.set(-0.2, 0.5, 0.1);
+    globe.tiles.group.rotation.set(-0.4, 0.2, 0.9);
+    globe.tiles.group.updateMatrix();
+    outer.updateMatrixWorld(true);
+    const sunEcef = new THREE.Vector3(0.3, -0.8, 0.5).normalize();
+    globe.setSun(sunEcef);
+    const expected = sunEcef
+      .clone()
+      .transformDirection(globe.tiles.group.matrixWorld);
+    const u = globe.surfaceUniforms.uSunWorld.value;
+    expect(u.distanceTo(expected)).toBeLessThan(1e-9);
+    // A group moved after setSun is followed on the next update.
+    outer.rotation.set(1.0, 0.2, -0.4);
+    outer.updateMatrixWorld(true);
+    const renderer = {
+      getSize: (v: THREE.Vector2) => v.set(100, 100),
+      getDrawingBufferSize: (v: THREE.Vector2) => v.set(100, 100),
+    } as unknown as THREE.WebGLRenderer;
+    globe.update(new THREE.PerspectiveCamera(), renderer);
+    const moved = sunEcef
+      .clone()
+      .transformDirection(globe.tiles.group.matrixWorld);
+    expect(u.distanceTo(moved)).toBeLessThan(1e-9);
+    globe.dispose();
+  });
+
   // The library's setResolutionFromRenderer reads renderer.getSize(), in
   // CSS pixels: at DPR 2 the tiles refined to 2 device pixels of error, one
   // level coarser than the pyramid was sized for (plan §7.2), exactly on the

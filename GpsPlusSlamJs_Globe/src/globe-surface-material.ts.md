@@ -22,7 +22,8 @@ cloudOpacity: 0.8 }`, the defaults (lab parameters `#nightGain=`,
   - `GLOBE_SURFACE_CACHE_KEY` - the program key every tile shares (`-v2`
     since the drift uniform joined the program).
   - `createGlobeSurfaceUniforms({ night, clouds })` returns the one
-    shared uniforms object: `uSunEcef` (unit, ECEF), `uNight`,
+    shared uniforms object: `uSunEcef` (unit, ECEF), `uSunWorld` (the
+    same sun in world space, kept by the surface), `uNight`,
     `uClouds`, `uNightGain`, `uWaterRoughness`, `uCloudOpacity`,
     `uCloudLonOffset` (radians, 0 until the caller sets it).
   - `patchGlobeSurfaceShader(shader, uniforms)` - a pure string transform,
@@ -54,8 +55,11 @@ cloudOpacity: 0.8 }`, the defaults (lab parameters `#nightGain=`,
     by 0.7 at 1), `uCloudRelief` (the clouds whiten towards a shade: blue
     grey where thin, white where thick, lighter on the side facing the sun
     from the coverage's screen-space gradient against the sun's direction
-    in view space, clamped to 0.65-1.3; assumes the tiles' group unturned
-    in the world, as in the lab), `uTwilight` (warm city lights, a faint
+    in view space, clamped to 0.65-1.3; the sun is `uSunWorld`, the ECEF
+    sun turned by every group above the tiles, which the view matrix maps
+    correctly however the tiles are placed: review 2026-10-01 m4, the
+    ECEF sun was right only while those groups were unturned; the program
+    key is v5 since), `uTwilight` (warm city lights, a faint
     blue-grey night side and a soft band just past the terminator, both
     from the ground's own colour, added as emission).
   - `applyGlobeSurface(material, uniforms)` - sets `onBeforeCompile` (the

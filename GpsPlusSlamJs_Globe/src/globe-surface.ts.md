@@ -28,8 +28,10 @@ activeSources(), dispose() }`.
     - `setSun(direction)` sets `surfaceUniforms.uSunEcef` from one ECEF
       direction (any length) and points the light along it as turned by
       `tiles.group`'s placement in `group` (identity in the lab; phase 5
-      re-centres the tiles, and the light must follow them). `update`
-      re-syncs it each frame. RangeError for a zero or non-finite vector.
+      re-centres the tiles, and the light must follow them), and keeps
+      `uSunWorld` (the sun through every group above the tiles, for the
+      cloud shading's screen-space sun; review 2026-10-01 m4). `update`
+      re-syncs both each frame. RangeError for a zero or non-finite vector.
     - `state()` is `{ models, tileErrors, cachedBytes, pendingTiles,
 loadedTiles, refusedTiles, mapsLoaded, mapErrors, mapsTotal }`
       (`load-error` events; the cache's bytes; tiles queued, downloading
