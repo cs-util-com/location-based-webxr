@@ -49,9 +49,12 @@ outlierFalloffExponent: 1, outlierRejectionEnabled: false }`.
   M0b/M2b measured at a 5-8 m bias (M2e milestone review #1; the seam
   contract, rule 3). A fix with no ring (no code holding) changes no
   override.
-- **Merged, not replaced:** the soft keys go over the overrides already set
-  (the action replaces the whole object). Nothing else in the Tour Viewer
-  sets any; the merge keeps that true if something ever does.
+- **Every alignment override in the Tour Viewer is the viewer's.** The
+  entry-start clear wipes every key, so nothing set before the entry
+  survives it. The soft keys then go over whatever is set (the action
+  replaces the whole object), so the merge only protects keys set between
+  the entry's start and its first vote. Nothing else in the Tour Viewer
+  sets any today.
 - **The fix comes first in a tick's batch**, as it did when the fix was
   dispatched and the ring answered it; the core judges each event as a
   single dispatch would, so a malformed fix is dropped alone (with a core
