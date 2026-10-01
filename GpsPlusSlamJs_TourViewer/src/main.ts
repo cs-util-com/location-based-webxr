@@ -316,6 +316,15 @@ const setup = wireCreatorSetup({
     replaceCodeConfirmText: element("replace-code-confirm-text"),
     replaceCodeYes: element("replace-code-yes"),
     replaceCodeNo: element("replace-code-no"),
+    // The moved-code prompt and the replace's undo (plan §3.6, M5b).
+    movePrompt: element("move-prompt"),
+    movePromptText: element("move-prompt-text"),
+    movePromptUse: element("move-prompt-use"),
+    movePromptCopy: element("move-prompt-copy"),
+    movePromptLater: element("move-prompt-later"),
+    moveUndo: element("move-undo"),
+    moveUndoText: element("move-undo-text"),
+    moveUndoButton: element("move-undo-button"),
   },
   // Crash-safe authoring (F13). OPFS, not a file handle: the File System
   // Access pickers do not exist on Chrome for Android, which is the only

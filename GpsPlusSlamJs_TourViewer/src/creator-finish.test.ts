@@ -120,6 +120,14 @@ const DOM_KEYS = [
   "replaceCodeConfirmText",
   "replaceCodeYes",
   "replaceCodeNo",
+  "movePrompt",
+  "movePromptText",
+  "movePromptUse",
+  "movePromptCopy",
+  "movePromptLater",
+  "moveUndo",
+  "moveUndoText",
+  "moveUndoButton",
 ] as const;
 
 function fakeDom(): Record<(typeof DOM_KEYS)[number], FakeEl> {

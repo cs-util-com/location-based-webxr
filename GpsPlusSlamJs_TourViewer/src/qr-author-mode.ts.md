@@ -58,8 +58,8 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   the further from the code when it also turns. One decimal below 10 m,
   whole metres above; a turn under 1° is left out (under 0.35 m at 20 m).
   `null` (no sighting of the code in hand) keeps the words without a
-  number. Moving the earlier notes along with the code is an OPEN owner
-  decision and not offered.
+  number. Notes never move along with the code (owner decision D19), so no
+  such option is offered.
 - `setupHint({ measured, tourOpen, hadLevel, keptStored? })` - what the
   panel says once measured: "Position saved." when no tour is open
   (`codeTourLine` then says what is happening to the code's tour;

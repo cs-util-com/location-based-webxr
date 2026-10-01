@@ -68,6 +68,20 @@ reads them (the framework's `diagnostics/note` precedent). Plan:
   - `codeMeasured` gains `replaced` - the stored pose the explicit
     "Replace the code's saved position" replaced; absent for
     every other measurement.
+- The moved-code prompt (authoring plan §3.6, D20, M5b; §7j #15):
+  - `codeMovePrompted(payload)` - `tourAuthoring/codeMovePrompted`, once
+    per refusal run: `levelId`, `arVisitIndex`, `atMs`, the refusal
+    (`horizontalM`, `northM`/`eastM` - where the visit sees the code minus
+    its saved position - `yawDeg`, `maxHorizontalM`) and how long it
+    lasted (`fixes`, `seconds`, null without readable fix times).
+  - `codeMoveAnswered(payload)` - `tourAuthoring/codeMoveAnswered`: the
+    `answer` (`use-new-spot`, `second-copy`, `not-now`), the spot, whether
+    the saved position was `replaced`, and the `error` when a "Use the new
+    spot" did not replace (null otherwise).
+  - `codeReplaceUndone(payload)` - `tourAuthoring/codeReplaceUndone`: an
+    undo before Finish of any replace - `restored` (the `replaced` of the
+    undone measurement), `undone` (the level taken out of hand),
+    `fromPrompt`.
 - Each creator carries `.type`, as RTK's do; the payload interfaces are
   module-private (knip), reachable as `Parameters<typeof objectPlaced>[0]`.
 - `logAction`, `LogActionCreator`, `AlignmentMatrix` - exported since M1b

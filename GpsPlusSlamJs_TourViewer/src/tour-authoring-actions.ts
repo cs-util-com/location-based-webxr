@@ -201,6 +201,58 @@ interface VisitSettledLog {
   readonly refusedCorrection: CorrectionRefusal | null;
 }
 
+/**
+ * The move prompt (authoring plan 2026-09-28-0953 §3.6, M5b; §7j #15):
+ * asked, because a horizontal refusal of the code in hand lasted. The
+ * refusal and how long it lasted, as the tracker saw them.
+ */
+interface CodeMovePromptedLog {
+  readonly levelId: string;
+  readonly arVisitIndex: number;
+  readonly atMs: number;
+  /** Where this visit sees the code minus its saved position (m). */
+  readonly horizontalM: number;
+  readonly northM: number;
+  readonly eastM: number;
+  readonly yawDeg: number;
+  /** The plausibility bound the refusal broke (m). */
+  readonly maxHorizontalM: number;
+  /** New fixes, and seconds of fix time (null: unreadable), it lasted. */
+  readonly fixes: number;
+  readonly seconds: number | null;
+}
+
+/** The author's answer to the move prompt, and whether the replace
+ *  happened ("Use the new spot" only; a failed one says why). */
+interface CodeMoveAnsweredLog {
+  readonly levelId: string;
+  readonly arVisitIndex: number;
+  readonly atMs: number;
+  readonly answer: "use-new-spot" | "second-copy" | "not-now";
+  readonly horizontalM: number;
+  readonly northM: number;
+  readonly eastM: number;
+  /** The saved position was replaced (true only for a "Use the new spot"
+   *  that reached `codeMeasured` with `replaced`). */
+  readonly replaced: boolean;
+  /** Why a "Use the new spot" did not replace; null otherwise. */
+  readonly error: string | null;
+}
+
+/** A replace of the code's saved position undone before Finish (M5b). */
+interface CodeReplaceUndoneLog {
+  readonly levelId: string;
+  readonly arVisitIndex: number;
+  readonly atMs: number;
+  /** The level back in hand: the `replaced` of the undone measurement. */
+  readonly restored: { readonly id: string; readonly json: string };
+  /** The level the undo took out of hand. */
+  readonly undone: { readonly id: string; readonly json: string } | null;
+  /** The replace came from the move prompt (its spot is then remembered
+   *  as "not-now"), not from the Replace button. */
+  readonly fromPrompt: boolean;
+}
+
 interface FinishedLog {
   readonly levelId: string;
   /** The manifest the rebuilt zip carries. */
@@ -216,6 +268,15 @@ export const codeMeasured = logAction<CodeMeasuredLog>()(
 );
 export const visitSettled = logAction<VisitSettledLog>()(
   "tourAuthoring/settled",
+);
+export const codeMovePrompted = logAction<CodeMovePromptedLog>()(
+  "tourAuthoring/codeMovePrompted",
+);
+export const codeMoveAnswered = logAction<CodeMoveAnsweredLog>()(
+  "tourAuthoring/codeMoveAnswered",
+);
+export const codeReplaceUndone = logAction<CodeReplaceUndoneLog>()(
+  "tourAuthoring/codeReplaceUndone",
 );
 export const authoringFinished = logAction<FinishedLog>()(
   "tourAuthoring/finished",

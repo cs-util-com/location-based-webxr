@@ -295,10 +295,9 @@ export function correctionRefusedLine(refusal: {
  * metres above, where GPS-level error makes decimals noise; a turn below
  * 1° is left out - a note 20 m away moves under 0.35 m for it.
  *
- * Whether the replace should also move the earlier notes along with the
- * code is an OPEN owner decision; until it is made this only says what
- * happens, and offers no such option (see the confirm handler in
- * `creator-setup.ts`).
+ * Notes never move with the code (owner decision D19): each keeps its own
+ * saved position, so this says what happens and offers no option to move
+ * them along.
  */
 export function replaceCodeConfirmText(
   size: { horizontalM: number; yawDeg: number } | null,

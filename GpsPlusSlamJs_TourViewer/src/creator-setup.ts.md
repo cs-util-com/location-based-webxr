@@ -125,13 +125,17 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   - `openDraftStore(key)` resolves this tour's draft namespace, or
     `undefined` where there is no persistence. Injected so the unit tests
     and the e2e can supply one without OPFS.
-  - `CreatorSetupDom { panel; controls; finishBlock; replaceHelp; replaceHelpShare; replaceHelpGeneric; replaceHelpDrive; sizeInput; printPanel; status; mintButton; finishButton; finishStatus; downloadButton; pinButton; pinLabel; pinSave; pinCancel; photoButton; draftOffer; draftOfferText; draftRestore; draftDismiss; draftDiscard; sizeOffer; sizeOfferText; sizeOfferUse; sizeOfferKeep; objectList; replaceCodeButton; replaceCodeConfirm; replaceCodeConfirmText; replaceCodeYes; replaceCodeNo }`
+  - `CreatorSetupDom { panel; controls; finishBlock; replaceHelp; replaceHelpShare; replaceHelpGeneric; replaceHelpDrive; sizeInput; printPanel; status; mintButton; finishButton; finishStatus; downloadButton; pinButton; pinLabel; pinSave; pinCancel; photoButton; draftOffer; draftOfferText; draftRestore; draftDismiss; draftDiscard; sizeOffer; sizeOfferText; sizeOfferUse; sizeOfferKeep; objectList; replaceCodeButton; replaceCodeConfirm; replaceCodeConfirmText; replaceCodeYes; replaceCodeNo; movePrompt; movePromptText; movePromptUse; movePromptCopy; movePromptLater; moveUndo; moveUndoText; moveUndoButton }`
     - `objectList` (authoring plan 2026-09-28-0953 §3.4, M4) - the
       `object-list.ts` view (`bind`, `render`); `main.ts` builds it over
       `#object-list` inside the panel.
     - `replaceCode*` - the explicit "Replace the code's saved
       position" (a re-measure; its label was shortened to one line for the
       360x640 overlay, 2026-10-01) and its confirm step, inside `#setup-controls`.
+    - `movePrompt*` (M5b) - the moved-code prompt and its three answers,
+      inside `#setup-controls`; `moveUndo*` - the replace's Undo, in the
+      panel but outside the controls (it lasts until Finish, on the page
+      too).
   - `arSessionLive(status)` - whether the controller's status means a
     session is up (`starting` / `running` / `stopping`). Exported because
     `main.ts` hands the same predicate to the wizard, which must not
@@ -511,9 +515,43 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
     keep their stored geo and so will appear shifted by about that much.
     Confirmed, the measurement becomes the reference (`kept:
 "measurement"`, logged with `replaced`); without it a new measurement
-    of a stored code stays a correction sighting. Whether a replace should
-    also move the earlier notes along is an OPEN owner decision; the
-    confirm handler marks where such an option would go.
+    of a stored code stays a correction sighting. Notes never move with
+    the code (owner decision D19).
+  - **The moved-code prompt** (authoring plan §3.6 "Authoring (D20 ask
+    once)", M5b; `code-move-prompt.ts` decides WHEN): on every readout
+    render the tracker is fed the latest sighting's refusal (re-judged
+    through the current alignment whenever a fix landed since the last
+    look, `placeEarlierObjects`), its offset (`sightedCodeOffset`), the
+    mint gate's alignment half, the store's fix count and the latest
+    fix's time, and the remembered answers. It asks only for a stored
+    level in hand, in a live session, outside a Finish. A new ask logs
+    `tourAuthoring/codeMovePrompted` once per refusal run.
+    - "Use the new spot" runs the Replace button's `measureCode(true)`
+      behind the same gate (`canMint && codeInViewIsLevelInHand`): the
+      button reads "Using the new spot…" and the other two are disabled
+      until it resolves; `measureCode` resolves with its outcome
+      (`replaced`, `measured`, `kept`, `failed` with a reason,
+      `superseded`). Only `replaced` counts as answered: the visit is
+      recorded as the code's move boundary and the status line says the
+      saved position is the new spot. Anything else says "Could not use the
+      new spot..." in the status line (the AR session's error channel) and
+      the prompt comes back while the refusal stands. Logged as
+      `tourAuthoring/codeMoveAnswered` with `replaced` and `error`.
+    - "It's a second copy" / "Not now": remembered per level and spot
+      (`rememberMoveAnswer`), in memory and in the draft's meta
+      (`moveAnswers`, re-stated by every `recordMeta`, read at tour open
+      whether or not the draft is restored and merged with answers given
+      before it opened); a refused meta write is the backup notice.
+    - **Undo until Finish**: any replace (prompt or Replace button) keeps
+      the level it replaced (`codeMeasured`'s `replaced`) and the
+      measurement that was in hand; Undo puts both back, bumps
+      `mintGeneration` (an in-flight measurement must not land over it),
+      drops the visit's move boundary (re-recording an already logged
+      visit without the mark), counts a prompt's spot as "Not now", logs
+      `tourAuthoring/codeReplaceUndone`, and reads "Undoing…" until the
+      meta write lands, then "back where it was" or that the device could
+      not save it. A Finish that wrote the zip, a tour close, or another
+      level in hand ends it.
   - The readout's "N objects placed" counts only objects the zip does not
     carry; an edit of a hosted object is not a placement.
 - Owns the session fields `lastDetectedText`, `activeSizeM`,
@@ -592,7 +630,15 @@ one landing during a live Finish; a restored object shown once the zero
 arrives), `creator-finish.test.ts` (the settle at
 Finish, once). Editing (M4): `authoring-settle.test.ts` (hosted objects
 rendered and listed, edit, delete, move through the code correction, the
-async states, tap-select, the overlay guard, the explicit replace),
+async states, tap-select, the overlay guard, the explicit replace). The
+moved-code prompt (M5b): `authoring-settle.test.ts` "the moved-code
+prompt" (asked only after the rule's fixes and seconds, logged once; not
+with the gate closed; "Use the new spot" in progress, replaced, logged,
+undoable, and its failure surfaced with the prompt coming back; the other
+two answers remembered in the draft across a reload; Undo in progress,
+restoring the level and dropping the visit's move boundary, its refused
+write surfaced, ended by a Finish), plus the pure `code-move-prompt*`
+tests and the e2e `move-prompt.spec.js` (one per answer).
 `creator-finish.test.ts` (an edit replaces in place; a deletion filters
 the object and takes a deleted photo's jpg out of the archive),
 `creator-setup.test.ts` (a draft's edit and deletion offered and

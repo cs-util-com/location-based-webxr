@@ -272,6 +272,14 @@ describe("the creator measures and mints with the fused pose", () => {
     "replaceCodeConfirmText",
     "replaceCodeYes",
     "replaceCodeNo",
+    "movePrompt",
+    "movePromptText",
+    "movePromptUse",
+    "movePromptCopy",
+    "movePromptLater",
+    "moveUndo",
+    "moveUndoText",
+    "moveUndoButton",
   ] as const;
   function el() {
     const handlers = new Map<string, () => void>();

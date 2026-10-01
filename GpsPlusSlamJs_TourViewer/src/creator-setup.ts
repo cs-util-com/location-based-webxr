@@ -19,9 +19,22 @@ import { usablePhotoFrame } from "./photo-frame.js";
 import {
   authoringFinished,
   codeMeasured,
+  codeMoveAnswered,
+  codeMovePrompted,
+  codeReplaceUndone,
   objectPlaced,
   visitSettled,
 } from "./tour-authoring-actions.js";
+import {
+  MOVE_PROMPT_LABELS,
+  movePromptText,
+  rememberMoveAnswer,
+  trackMovePrompt,
+  type MoveAnswer,
+  type MovePrompt,
+  type MovePromptOnset,
+  type RememberedMoveAnswer,
+} from "./code-move-prompt.js";
 import {
   measurementRole,
   planVisitSettle,
@@ -164,6 +177,12 @@ import type { Wizard } from "./wizard.js";
 const STORED_POSITION_KEPT =
   "Code seen - its saved position stays, and this visit is lined up with it";
 
+/** What a measurement tap became (`measureCode`): the move prompt's
+ *  "Use the new spot" counts as answered only on `replaced` (M5b). */
+type MeasureOutcome =
+  | { readonly kind: "replaced" | "measured" | "kept" | "superseded" }
+  | { readonly kind: "failed"; readonly reason: string };
+
 /** What a visit settled through (`visitSettles` in `wireCreatorSetup`). */
 interface VisitSettleRecord {
   readonly basis: SettleBasis;
@@ -256,6 +275,19 @@ export interface CreatorSetupDom {
   replaceCodeConfirmText: HTMLElement;
   replaceCodeYes: HTMLButtonElement;
   replaceCodeNo: HTMLButtonElement;
+  /** The moved-code prompt (authoring plan 2026-09-28-0953 §3.6, D20,
+   *  M5b): asked in AR once a refusal of the code in hand has lasted, with
+   *  its three answers (`code-move-prompt.ts` decides when). */
+  movePrompt: HTMLElement;
+  movePromptText: HTMLElement;
+  movePromptUse: HTMLButtonElement;
+  movePromptCopy: HTMLButtonElement;
+  movePromptLater: HTMLButtonElement;
+  /** Undo of a replace of the code's saved position, until Finish - in
+   *  AR and on the page. */
+  moveUndo: HTMLElement;
+  moveUndoText: HTMLElement;
+  moveUndoButton: HTMLButtonElement;
 }
 
 /** Properties, not methods: they are handed to the hooks object unbound. */
@@ -618,6 +650,8 @@ export function wireCreatorSetup(deps: {
       // read. (NOT on each placement - `recordPlacement` writes the object
       // file only and never reaches here; PR #456 review.)
       rejected: draftRejected,
+      // The move prompt's answers (M5b), re-stated like the rejections.
+      moveAnswers,
     };
     // Values captured NOW, write ordered by call within this tour. The
     // chain keeps one refused write from breaking the queue behind it.
@@ -842,6 +876,298 @@ export function wireCreatorSetup(deps: {
   /** Whether the explicit replace's confirm step is open. */
   let replaceConfirmOpen = false;
 
+  // -------------------------------------------------------------------------
+  // The moved-code prompt and the replace's undo (authoring plan
+  // 2026-09-28-0953 §3.6 "Authoring (D20 ask once)", milestone M5b). WHEN it
+  // asks is `code-move-prompt.ts`'s; this is the state and the DOM.
+  // -------------------------------------------------------------------------
+
+  /** Where the running horizontal refusal began (the tracker's state). */
+  let moveOnset: MovePromptOnset | null = null;
+  /** The prompt on screen; kept while "Use the new spot" runs. */
+  let movePrompt: MovePrompt | null = null;
+  /** The onset the shown prompt was logged for: one log per ask. */
+  let movePromptLogged: MovePromptOnset | null = null;
+  /** "Use the new spot" in flight. */
+  let moveBusy = false;
+  /** "It's a second copy" and "Not now", per level and spot - read from
+   *  the draft's meta at tour open, re-stated by every meta write. */
+  let moveAnswers: RememberedMoveAnswer[] = [];
+  /** The store's fix count at the last refusal re-evaluation: a new fix
+   *  re-judges the latest sighting through the new alignment. */
+  let moveFixCount = -1;
+  /** Codes moved to a new spot ("Use the new spot"), by the visit that
+   *  moved them: the visit log's move boundary (§7j #12). */
+  const movedInVisit = new Map<string, number>();
+  /**
+   * The latest replace of the code's saved position - the prompt's or the
+   * Replace button's - undoable until Finish: the level it replaced (as
+   * `codeMeasured` logs it in `replaced`) and the measurement in hand with
+   * it. `prompt`: the ask it answered, when it came from the prompt.
+   */
+  let undoable: {
+    levelId: string;
+    replaced: { id: string; json: string };
+    priorMeasurement: CodeMeasurement | null;
+    visit: number;
+    prompt: MovePrompt | null;
+  } | null = null;
+  let undoBusy = false;
+
+  /** The store's GPS fix count and the latest fix's own time. */
+  function fixClock(): { count: number; lastMs: number | null } {
+    const positions = selectGpsPositions(arStore.getState());
+    const last = positions.at(-1) as { timestamp?: unknown } | undefined;
+    const t = last?.timestamp;
+    return {
+      count: positions.length,
+      lastMs: typeof t === "number" && Number.isFinite(t) ? t : null,
+    };
+  }
+
+  /**
+   * Re-run the tracker on the current refusal (re-judged when a fix landed
+   * since the last look), and log a new ask once.
+   */
+  function updateMovePrompt(): void {
+    if (moveBusy) return;
+    const level = ctx.mintedLevel;
+    const clock = fixClock();
+    if (sessionLive() && clock.count !== moveFixCount) {
+      moveFixCount = clock.count;
+      placeEarlierObjects();
+    }
+    const live = sessionLive() && !ctx.finishing && levelInHandIsStored();
+    const refusal = live ? liveRefusal : null;
+    const offset =
+      refusal === null || level === null
+        ? null
+        : (() => {
+            const state = arStore.getState();
+            return sightedCodeOffset({
+              visit: ctx.arSessionGeneration,
+              alignment: selectAlignmentMatrix(state),
+              zero: selectZeroReference(state),
+              mintedLevel: level,
+              measurement: ctx.codeMeasurement,
+              sighting: ctx.visitCodeSighting,
+            });
+          })();
+    const alignment = authorAlignmentInfo();
+    const tracked = trackMovePrompt(moveOnset, {
+      levelId: level?.id ?? null,
+      refusal,
+      offset,
+      gateOpen:
+        alignment.hasMatrix && alignment.sampleCount >= MIN_ALIGNMENT_SAMPLES,
+      fixCount: clock.count,
+      lastFixMs: clock.lastMs,
+      answers: moveAnswers,
+    });
+    moveOnset = tracked.onset;
+    movePrompt = tracked.prompt;
+    if (movePrompt !== null && movePromptLogged !== moveOnset) {
+      movePromptLogged = moveOnset;
+      arStore.dispatch(
+        codeMovePrompted({
+          levelId: movePrompt.levelId,
+          arVisitIndex: ctx.arSessionGeneration,
+          atMs: Date.now(),
+          horizontalM: movePrompt.horizontalM,
+          northM: movePrompt.northM,
+          eastM: movePrompt.eastM,
+          yawDeg: movePrompt.yawDeg,
+          maxHorizontalM: movePrompt.maxHorizontalM,
+          fixes: movePrompt.fixes,
+          seconds: movePrompt.seconds,
+        }),
+      );
+    }
+  }
+
+  /** The prompt and the undo on screen. "Use the new spot" is re-enabled
+   *  by the live readout, with the Replace button's gate. */
+  function renderMovePrompt(): void {
+    updateMovePrompt();
+    dom.movePrompt.hidden = movePrompt === null;
+    if (movePrompt !== null) {
+      dom.movePromptText.textContent = movePromptText(movePrompt.horizontalM);
+    }
+    dom.movePromptUse.textContent = moveBusy
+      ? MOVE_PROMPT_LABELS.using
+      : MOVE_PROMPT_LABELS.use;
+    dom.movePromptUse.disabled = true;
+    dom.movePromptCopy.disabled = moveBusy;
+    dom.movePromptLater.disabled = moveBusy;
+    // Until Finish, and only while the replaced code is still the one in
+    // hand (a size change or another code's measurement ends it).
+    if (undoable !== null && ctx.mintedLevel?.id !== undoable.levelId) {
+      undoable = null;
+    }
+    dom.moveUndo.hidden = (undoable === null && !undoBusy) || ctx.finishing;
+    dom.moveUndoText.textContent = MOVE_PROMPT_LABELS.replacedHint;
+    dom.moveUndoButton.textContent = undoBusy
+      ? MOVE_PROMPT_LABELS.undoing
+      : MOVE_PROMPT_LABELS.undo;
+    dom.moveUndoButton.disabled = undoBusy;
+  }
+
+  function logMoveAnswer(
+    prompt: MovePrompt,
+    answer: "use-new-spot" | MoveAnswer,
+    replaced: boolean,
+    error: string | null,
+  ): void {
+    arStore.dispatch(
+      codeMoveAnswered({
+        levelId: prompt.levelId,
+        arVisitIndex: ctx.arSessionGeneration,
+        atMs: Date.now(),
+        answer,
+        horizontalM: prompt.horizontalM,
+        northM: prompt.northM,
+        eastM: prompt.eastM,
+        replaced,
+        error,
+      }),
+    );
+  }
+
+  /** Remember an answer for the prompt's spot, in memory and in the
+   *  draft's meta (a refused write is the one backup notice). */
+  function rememberAnswer(prompt: MovePrompt, answer: MoveAnswer): void {
+    moveAnswers = rememberMoveAnswer(moveAnswers, {
+      levelId: prompt.levelId,
+      northM: prompt.northM,
+      eastM: prompt.eastM,
+      answer,
+    });
+    if (draftTourUrl === null) return;
+    void recordMeta(draftTourUrl).then((ok) => {
+      if (!ok) noteNoPersistence();
+    });
+  }
+
+  dom.movePromptUse.addEventListener("click", () => {
+    const prompt = movePrompt;
+    if (prompt === null || moveBusy) return;
+    moveBusy = true;
+    // Hidden directly, as the replace's own confirm does: a re-render
+    // would overwrite the "Saving…" line the measurement puts up.
+    dom.movePromptUse.textContent = MOVE_PROMPT_LABELS.using;
+    dom.movePromptUse.disabled = true;
+    dom.movePromptCopy.disabled = true;
+    dom.movePromptLater.disabled = true;
+    void measureCode(true).then((outcome) => {
+      moveBusy = false;
+      const replaced = outcome.kind === "replaced";
+      logMoveAnswer(
+        prompt,
+        "use-new-spot",
+        replaced,
+        outcome.kind === "failed"
+          ? outcome.reason
+          : replaced
+            ? null
+            : outcome.kind,
+      );
+      if (replaced) {
+        // Counted as asked only now (§7j #10); the visit log marks the move.
+        movedInVisit.set(prompt.levelId, ctx.arSessionGeneration);
+        if (undoable !== null) undoable = { ...undoable, prompt };
+        moveOnset = null;
+        ctx.placementNote = MOVE_PROMPT_LABELS.used;
+      } else if (outcome.kind !== "superseded") {
+        // Through the status line, the AR session's error channel; the
+        // refusal still stands, so the prompt comes back.
+        ctx.placementNote = MOVE_PROMPT_LABELS.useFailed;
+      }
+      renderAuthorReadout();
+    });
+  });
+
+  for (const [button, answer] of [
+    [dom.movePromptCopy, "second-copy"],
+    [dom.movePromptLater, "not-now"],
+  ] as const) {
+    button.addEventListener("click", () => {
+      const prompt = movePrompt;
+      if (prompt === null || moveBusy) return;
+      rememberAnswer(prompt, answer);
+      logMoveAnswer(prompt, answer, false, null);
+      movePrompt = null;
+      renderAuthorReadout();
+    });
+  }
+
+  /**
+   * Undo the latest replace (until Finish): the level it replaced is back
+   * in hand with its measurement, the visit loses its move boundary, a
+   * prompt's spot counts as "Not now" (or the refusal it answered would ask
+   * again at once), and the undo waits for the draft's meta - the durable
+   * end state - before saying it is done.
+   */
+  dom.moveUndoButton.addEventListener("click", () => {
+    const u = undoable;
+    if (u === null || undoBusy || ctx.finishing) return;
+    undoBusy = true;
+    undoable = null;
+    const undone = ctx.mintedLevel;
+    // A measurement still in flight must not land over the undo.
+    ctx.mintGeneration += 1;
+    ctx.mintedLevel = u.replaced;
+    ctx.codeMeasurement = u.priorMeasurement;
+    if (movedInVisit.get(u.levelId) === u.visit) {
+      movedInVisit.delete(u.levelId);
+      unmarkLoggedMove(u.visit, u.levelId);
+    }
+    if (u.prompt !== null) {
+      moveAnswers = rememberMoveAnswer(moveAnswers, {
+        levelId: u.prompt.levelId,
+        northM: u.prompt.northM,
+        eastM: u.prompt.eastM,
+        answer: "not-now",
+      });
+    }
+    arStore.dispatch(
+      codeReplaceUndone({
+        levelId: u.levelId,
+        arVisitIndex: ctx.arSessionGeneration,
+        atMs: Date.now(),
+        restored: u.replaced,
+        undone,
+        fromPrompt: u.prompt !== null,
+      }),
+    );
+    placeEarlierObjects();
+    renderAuthorReadout();
+    const written =
+      draftTourUrl === null ? Promise.resolve(true) : recordMeta(draftTourUrl);
+    void written
+      .catch(() => false)
+      .then((ok) => {
+        undoBusy = false;
+        ctx.placementNote = ok
+          ? MOVE_PROMPT_LABELS.undone
+          : MOVE_PROMPT_LABELS.undoNotBackedUp;
+        renderAuthorReadout();
+      });
+  });
+
+  /** A visit already logged with a move of `levelId` loses the mark (an
+   *  undo after the visit ended), in memory and in the draft. */
+  function unmarkLoggedMove(visit: number, levelId: string): void {
+    const visitId = newVisitId(pageId, visit);
+    const entry = visitLog.entries().find((e) => e.visitId === visitId);
+    if (entry === undefined) return;
+    const codes = entry.codes.map((c) => {
+      if (c.levelId !== levelId || c.moved !== true) return c;
+      const { moved: _moved, ...rest } = c;
+      return rest;
+    });
+    recordVisit({ ...entry, codes });
+  }
+
   /**
    * The explicit "Replace the code's saved position"
    * (authoring plan 2026-09-28-0953 §3.4, M4; M2c review #5): offered in AR
@@ -894,6 +1220,7 @@ export function wireCreatorSetup(deps: {
       sessionLive() && !statusExpanded ? "true" : "false";
     renderPlacementButtons();
     renderReplaceCode();
+    renderMovePrompt();
     editing.render();
     // F11: the AR controls belong to the AR session. On the setup page they
     // were a row of greyed-out buttons under "AR not supported", which is
@@ -1003,6 +1330,8 @@ export function wireCreatorSetup(deps: {
     const canReplace = readout.canMint && codeInViewIsLevelInHand();
     dom.replaceCodeButton.disabled = !canReplace;
     dom.replaceCodeYes.disabled = !canReplace;
+    // "Use the new spot" is the same replace, behind the same gate (§7j #10).
+    dom.movePromptUse.disabled = moveBusy || !canReplace;
     const blocked = finishBlockedHint(readiness);
     if (blocked !== "") dom.status.textContent += ` · ${blocked}`;
     if (readiness === "ready" && ctx.session !== null) {
@@ -1936,6 +2265,10 @@ export function wireCreatorSetup(deps: {
         savedLevel === null || savedGeo === null
           ? null
           : { levelId: savedLevel.id, geo: savedGeo },
+      // The move boundary (M5b): the codes this visit moved to a new spot.
+      moved: [...movedInVisit].flatMap(([levelId, v]) =>
+        v === visit ? [levelId] : [],
+      ),
     });
     // A visit with no fix and no code has nothing to show or to combine.
     if (entry.gps.length === 0 && entry.codes.length === 0) return;
@@ -2063,15 +2396,27 @@ export function wireCreatorSetup(deps: {
    * authoring plan 2026-09-28-0953 §3.4, M4; M2c review #5). Without
    * `replace`, a measurement of a code whose pose is already stored is a
    * correction sighting for this visit (`measurementRole`, D10b).
+   *
+   * Resolves with what the tap became, so the move prompt's "Use the new
+   * spot" can say whether the replace happened (M5b, §7j #10): a no-op is
+   * `failed` with the reason, never silence.
    */
-  function measureCode(replace: boolean): void {
-    if (ctx.lastDetectedText === null) return;
+  function measureCode(replace: boolean): Promise<MeasureOutcome> {
+    if (ctx.lastDetectedText === null) {
+      return Promise.resolve({ kind: "failed", reason: "no code in view" });
+    }
     const state = arStore.getState();
     // The readout's result, re-read so a tracking restart since then counts
     // (a cache hit otherwise; milestone review of b4b #1).
     const fused = ctx.fusedPose?.evaluate(ctx.lastDetectedText) ?? null;
     const stablePose = fused?.status === "stable" ? fused.pose : null;
-    if (stablePose === null) return; // the gate lost stability since render
+    if (stablePose === null) {
+      // The gate lost stability since render.
+      return Promise.resolve({
+        kind: "failed",
+        reason: "the code is not measured steadily",
+      });
+    }
     const result = mintQrLevel({
       odomPose: stablePose,
       alignmentMatrix: selectAlignmentMatrix(state),
@@ -2084,7 +2429,7 @@ export function wireCreatorSetup(deps: {
       // Inside the DOM-overlay root - errorBox is a sibling of #ar-root and
       // therefore INVISIBLE during the AR session (milestone review #4).
       dom.status.textContent = result.error;
-      return;
+      return Promise.resolve({ kind: "failed", reason: result.error });
     }
     ctx.finishError = null; // a new measurement supersedes a failed finish
     ctx.placementNote = null;
@@ -2115,20 +2460,22 @@ export function wireCreatorSetup(deps: {
     ctx.codeMeasurement = null;
     dom.status.textContent = "Saving the measured position…";
     dom.finishButton.disabled = true;
-    void (async () => {
+    return (async (): Promise<MeasureOutcome> => {
       let id: string;
       try {
         id = await qrCodeId(mintedText);
       } catch {
-        if (mintGeneration !== ctx.mintGeneration) return;
+        if (mintGeneration !== ctx.mintGeneration) {
+          return { kind: "superseded" };
+        }
         // A failed identity must not lose the reference in hand.
         ctx.mintedLevel = prior.level;
         ctx.codeMeasurement = prior.measurement;
         dom.status.textContent =
           "Could not derive the code's identity - tap the button again.";
-        return;
+        return { kind: "failed", reason: "no code identity" };
       }
-      if (mintGeneration !== ctx.mintGeneration) return;
+      if (mintGeneration !== ctx.mintGeneration) return { kind: "superseded" };
       // The explicit replace applies to the stored pose in hand, and only
       // when the code measured IS that code.
       const replaced = replace && prior.level?.id === id ? prior.level : null;
@@ -2136,7 +2483,7 @@ export function wireCreatorSetup(deps: {
         replaced === null
           ? await hostedCandidate(id, prior.level, openAtTap)
           : null;
-      if (mintGeneration !== ctx.mintGeneration) return;
+      if (mintGeneration !== ctx.mintGeneration) return { kind: "superseded" };
       const role =
         replaced === null
           ? measurementRole({
@@ -2183,14 +2530,25 @@ export function wireCreatorSetup(deps: {
       if (replaced !== null) {
         ctx.placementNote =
           "The code's saved position was replaced with this measurement.";
+        // Undoable until Finish (M5b): the level it replaced, and the
+        // measurement that was in hand with it.
+        undoable = {
+          levelId: id,
+          replaced,
+          priorMeasurement: prior.measurement,
+          visit: measured.arVisitIndex,
+          prompt: null,
+        };
       }
       if (draftTourUrl !== null) void recordMeta(draftTourUrl);
       renderAuthorReadout();
+      if (replaced !== null) return { kind: "replaced" };
+      return { kind: role.kept === "measurement" ? "measured" : "kept" };
     })();
   }
 
   dom.mintButton.addEventListener("click", () => {
-    measureCode(false);
+    void measureCode(false);
   });
 
   // The explicit replace: a confirm step first, because it moves the code
@@ -2208,12 +2566,9 @@ export function wireCreatorSetup(deps: {
     // Hidden directly: a re-render would overwrite the "Saving…" line the
     // measurement puts up; its own end re-renders the panel.
     dom.replaceCodeConfirm.hidden = true;
-    // OPEN OWNER DECISION (M4 review #3): whether a replace should also move
-    // the notes placed against the old position along with the code. Not
-    // offered until decided; the confirm says they will appear shifted. An
-    // option would be a second confirm button whose handler moves those
-    // notes by the same correction before this replace.
-    measureCode(true);
+    // Notes never move with the code (owner decision D19): the confirm
+    // says they will appear shifted.
+    void measureCode(true);
   });
 
   dom.finishButton.addEventListener("click", () => {
@@ -2362,6 +2717,8 @@ export function wireCreatorSetup(deps: {
         );
         syncPreviews();
         wroteZip = true;
+        // Undo lasts until Finish (M5b): the zip carries the new spot now.
+        undoable = null;
         arStore.dispatch(
           authoringFinished({
             levelId: minted.id,
@@ -2546,6 +2903,9 @@ export function wireCreatorSetup(deps: {
       ctx.visitCodeSighting = null;
       storedCodeSightings.clear();
       liveRefusal = null;
+      moveOnset = null;
+      movePrompt = null;
+      moveFixCount = -1;
       previewsWaitForZero = false;
       statusExpanded = false;
       // The previews are disposed by the entry's teardown right after this
@@ -2589,6 +2949,12 @@ export function wireCreatorSetup(deps: {
       // The summary and the visits belonged to the closing tour (M3b).
       deps.summary?.hide();
       visitLog.clear();
+      // And the move prompt's answers, boundaries and undo (M5b).
+      moveAnswers = [];
+      movedInVisit.clear();
+      undoable = null;
+      moveOnset = null;
+      movePrompt = null;
     },
     presentDraftForTour: (tourUrl) => {
       if (!creator) return; // a visitor authors nothing
@@ -2622,6 +2988,12 @@ export function wireCreatorSetup(deps: {
         // Per-tour state: never carry the previous tour's rejections into
         // this one's meta.
         draftRejected = stored?.rejectedIds ?? [];
+        // The move prompt's answers (M5b): read whether or not the draft
+        // is restored - they describe the codes, not the draft's work - and
+        // merged with any given before the draft opened.
+        moveAnswers = [...(stored?.moveAnswers ?? []), ...moveAnswers].reduce<
+          RememberedMoveAnswer[]
+        >((list, answer) => rememberMoveAnswer(list, answer), []);
         // Deletes that did not finish last time. `rejectedIds` is exactly
         // the ids the meta rejects whose files are still on disk, so this
         // is the only thing that reclaims them - and it is safe to repeat,
