@@ -554,8 +554,10 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
       logged visit without the mark, counts a prompt's spot as "Not now", logs
       `tourAuthoring/codeReplaceUndone`, and reads "Undoing…" until the
       meta write lands, then "back where it was" or that the device could
-      not save it. A Finish that wrote the zip, a tour close, or another
-      level in hand ends it.
+      not save it. A Finish that wrote the zip, a tour close, an adopted
+      print size, or another code's level in hand ends it; the moment a
+      measurement leaves no level in hand (its identity hash in flight)
+      does not (M5b review #4).
   - The readout's "N objects placed" counts only objects the zip does not
     carry; an edit of a hosted object is not a placement.
 - Owns the session fields `lastDetectedText`, `activeSizeM`,
@@ -639,7 +641,8 @@ moved-code prompt (M5b): `authoring-settle.test.ts` "the moved-code
 prompt" (asked only after the rule's fixes and seconds, logged once; not
 with the gate closed; "Use the new spot" in progress, replaced, logged,
 undoable, and its failure surfaced with the prompt coming back; a
-Replace-button replace marking the move boundary too; the other
+Replace-button replace marking the move boundary too; Undo kept through a
+later measurement of the same code; the other
 two answers remembered in the draft across a reload; Undo in progress,
 restoring the level and dropping the visit's move boundary, its refused
 write surfaced, ended by a Finish), plus the pure `code-move-prompt*`

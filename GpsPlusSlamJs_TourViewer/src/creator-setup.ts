@@ -1006,8 +1006,15 @@ export function wireCreatorSetup(deps: {
     dom.movePromptCopy.disabled = moveBusy;
     dom.movePromptLater.disabled = moveBusy;
     // Until Finish, and only while the replaced code is still the one in
-    // hand (a size change or another code's measurement ends it).
-    if (undoable !== null && ctx.mintedLevel?.id !== undoable.levelId) {
+    // hand: another code's measurement ends it. NOT while no level is in
+    // hand - a measurement empties it while its identity is computed, and
+    // a render then must not withdraw Undo (M5b review #4); a size change,
+    // which empties it for good, ends Undo itself (`adoptMeasuredSize`).
+    if (
+      undoable !== null &&
+      ctx.mintedLevel !== null &&
+      ctx.mintedLevel.id !== undoable.levelId
+    ) {
       undoable = null;
     }
     dom.moveUndo.hidden = (undoable === null && !undoBusy) || ctx.finishing;
@@ -1974,6 +1981,8 @@ export function wireCreatorSetup(deps: {
     ctx.mintGeneration += 1;
     ctx.mintedLevel = null;
     ctx.codeMeasurement = null;
+    // The level the Undo would restore was measured at the old size.
+    undoable = null;
     endQrPipeline(ctx);
     arStore.dispatch(clearQrMarker({ text: offer.text }));
     startAuthorPipeline();

@@ -2548,6 +2548,30 @@ describe(
       await flush();
     }
 
+    it("keeps Undo through a later measurement of the same code, whose level is briefly not in hand (M5b review #4)", async () => {
+      // Why: a measurement empties the level in hand while its identity
+      // hash is computed; a render in that moment (any fix) read that as
+      // "another level took over" and withdrew Undo for good.
+      const { a, stored, fix } = await secondVisitFarFromTheCode();
+      fix(MOVE_PROMPT_RULE.minFixes);
+      a.dom.movePromptUse.click();
+      await vi.waitFor(() => {
+        expect(a.ctx.mintedLevel?.json).toBeDefined();
+        expect(a.ctx.mintedLevel?.json).not.toBe(stored.json);
+      });
+      await flush();
+      expect(a.dom.moveUndo.hidden).toBe(false);
+      a.setup.renderAuthorReadout();
+      a.dom.mintButton.click();
+      expect(a.ctx.mintedLevel).toBeNull();
+      a.setup.renderAuthorReadout();
+      await vi.waitFor(() => {
+        expect(a.ctx.mintedLevel?.id).toBe(stored.id);
+      });
+      await flush();
+      expect(a.dom.moveUndo.hidden).toBe(false);
+    });
+
     it("marks the visit's move boundary for a Replace-button replace too, not only for the prompt's (M5b review #3)", async () => {
       // Why: the boundary tells the summary which of the code's visits
       // came before the move. A replace moves the code whichever button
