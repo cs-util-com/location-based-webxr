@@ -102,9 +102,12 @@ test("after Finish the page shows each code with its facing line and verdict, an
   const map = page.getByTestId("summary-map");
   await expect(map.locator("path.tv-summary-code")).toHaveCount(1);
   await expect(map.locator("path.tv-summary-facing")).toHaveCount(1);
-  await expect(map.locator("path.tv-summary-pin")).toHaveCount(1);
+  // The fixture tour's own pin and the one just placed: the summary shows
+  // what the rebuilt zip carries.
+  await expect(map.locator("path.tv-summary-pin")).toHaveCount(2);
   await expect(map.locator(".tv-summary-object-label")).toHaveText(
-    "Summary pin",
+    ["Fixture pin", "Summary pin"],
+    { useInnerText: true },
   );
   await expect(map.locator(".tv-summary-code-label")).toHaveText(/^The code: /);
   // The visit's walk survived the store's wipe at the AR exit: its raw
@@ -172,7 +175,8 @@ test("a visitor's page never loads Leaflet", async ({ page }) => {
       },
       { timeout: 20000 },
     )
-    .toMatch(/Code recognised/);
+    // Seen and measured; the lock itself waits for GPS, which no map needs.
+    .toMatch(/Code (recognised|measured)/);
   // The whole visit, AR and all, without one request for the map.
   expect(leafletRequests(urls)).toEqual([]);
   // ...while the page's modules did load (the check sees requests at all).
