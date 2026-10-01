@@ -172,10 +172,18 @@ test("every water polish switch compiles, changes the pond, travels in the addre
 // - gusts: the slopes' spread varies more from patch to patch (the normal
 //   view, top-down, so the sky's own gradient does not count);
 // - anti-tiling: the finest ripples' repetition drops (the normal view).
-// Measured 2026-09-28 at the defaults (record: water polish results):
-// far lap x0.84, far shimmer x0.83, near 0 changed; gusts patch x2.06
-// (top) and x1.09 (lake); tiles repetition see TILE_BOUND. Thresholds sit
-// about half-way between no effect and the measured effect.
+// BOUNDS, each with its sweep (medians over TIMES, 2026-10-01, the
+// distance ramp held while lost variance is on; review fixes record):
+// - far lap and far shimmer below x0.92: at the default varianceScale 1
+//   x0.840 / x0.832 (golden), x0.857 / x0.844 (noon). Swept 0.25 / 0.5 /
+//   1 / 1.5 / 2: golden lap 0.968 / 0.920 / 0.840 / 0.785 / 0.743, noon
+//   0.952 / 0.913 / 0.857 / 0.818 / 0.787 (shimmer within 0.02 of lap), so
+//   the bound fails at 0.5 and below: it gates the default, not any value;
+// - near band: 0 pixels changed at every value;
+// - lake gusts above x1.04: x1.20 at the default depth 0.7 (one time,
+//   2026-09-28: depth 0.4 / 0.7 / 1 gave x1.04 / x1.09 / x1.16, so the
+//   bound fails at 0.4); top-down gusts above x1.5: x2.05;
+// - tiles: repetition drops by 0.080, see TILE_BOUND.
 test("the per-wave tricks: far water turns to sheen, gusts make patches, the finest ripples repeat less", async ({
   page,
 }) => {
@@ -183,6 +191,7 @@ test("the per-wave tricks: far water turns to sheen, gusts make patches, the fin
   const lake = await probe(page, {
     preset: "golden",
     view: "lake",
+    times: TIMES,
     cells: [32],
     configs: {
       off: {},
@@ -194,6 +203,7 @@ test("the per-wave tricks: far water turns to sheen, gusts make patches, the fin
     preset: "noon",
     view: "top",
     h: 60,
+    times: TIMES,
     normals: true,
     rep: [TILE_REP],
     cells: [32],
@@ -449,10 +459,12 @@ const SWEEPS = {
       {
         preset,
         ...LAKE,
+        times: TIMES,
+        perTime: true,
         configs: sweep(
           { lostVariance: true },
           "varianceScale",
-          [0.25, 0.5, 1, 2, 4],
+          [0.25, 0.5, 1, 1.5, 2],
         ),
       },
     ]),

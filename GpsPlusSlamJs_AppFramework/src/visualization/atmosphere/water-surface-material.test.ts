@@ -15,6 +15,7 @@ import fc from 'fast-check';
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 
+import { glslFloat } from '../../utils/glsl-float.js';
 import { AtmosphereHaze } from './atmosphere-haze.js';
 import { CloudShadow } from './cloud-shadow.js';
 import { WATER_POLISH_SWITCHES } from './water-polish.js';
@@ -394,6 +395,50 @@ vec2 waterSlopeAt(vec2 p, float t) {
       );
     }
     expect(keys.size).toBe(WATER_POLISH_SWITCHES.length);
+  });
+
+  // WHY (milestone review finding 1): the distance ramp already turns the
+  // detail the waves lose far away into roughness (0.06 -> 0.22), and
+  // lostVariance adds that same lost variance to alpha^2, so with both the
+  // far water was counted TWICE and "varianceScale 1, the physical value"
+  // was not physical. With lostVariance on, the ramp is held at
+  // roughnessNear and the lost variance alone widens the lobe; every other
+  // switch keeps the ramp.
+  it('holds the distance ramp at roughnessNear while lostVariance is on (no double count)', () => {
+    const { roughnessNear, roughnessFar } = WATER_SURFACE;
+    const ramp = `mix(${glslFloat(roughnessNear)}, ${glslFloat(roughnessFar)}`;
+    const held = `roughnessFactor = max(roughnessFactor, ${glslFloat(roughnessNear)});`;
+    for (const slopeGlsl of [undefined, STUB_WAVES]) {
+      const rough = compile(
+        new WaterSurface({
+          ...(slopeGlsl ? { slopeGlsl } : {}),
+          polish: { lostVariance: true },
+        }).material
+      ).fragmentShader;
+      expect(rough).not.toContain(ramp);
+      expect(rough).toContain(held);
+    }
+    for (const name of WATER_POLISH_SWITCHES.filter(
+      (n) => n !== 'lostVariance'
+    )) {
+      const other = compile(
+        new WaterSurface({ slopeGlsl: STUB_WAVES, polish: { [name]: true } })
+          .material
+      ).fragmentShader;
+      expect(other, name).toContain(ramp);
+    }
+    // The twin says the same, at every distance.
+    fc.assert(
+      fc.property(fc.double({ min: 0, max: 1e5, noNaN: true }), (d) => {
+        expect(waterRoughnessAtDistance(d, { lostVariance: true })).toBe(
+          roughnessNear
+        );
+        expect(waterRoughnessAtDistance(d, { sunSize: true })).toBe(
+          waterRoughnessAtDistance(d)
+        );
+      })
+    );
+    expect(waterRoughnessAtDistance(2000)).toBe(roughnessFar);
   });
 
   it('hooks the built-in waves too', () => {

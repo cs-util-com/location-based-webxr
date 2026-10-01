@@ -149,9 +149,19 @@ export function waterNormal(
   return [-sx / length, 1 / length, -sz / length];
 }
 
-/** Roughness by distance: the lost wave detail reappears as blur. */
-export function waterRoughnessAtDistance(distanceM: number): number {
+/**
+ * Roughness by distance: the lost wave detail reappears as blur. With the
+ * polish's `lostVariance` on, the ramp is HELD at `roughnessNear`: that
+ * trick adds the lost variance to the specular α² itself, so the ramp on
+ * top would count the far water's lost detail twice (milestone review,
+ * finding 1).
+ */
+export function waterRoughnessAtDistance(
+  distanceM: number,
+  polish: WaterPolishFlags = {}
+): number {
   const { roughnessNear, roughnessFar, roughnessRampM } = WATER_SURFACE;
+  if (normalizeWaterPolish(polish).lostVariance) return roughnessNear;
   const t = smoothstep(roughnessRampM[0], roughnessRampM[1], distanceM);
   return roughnessNear + (roughnessFar - roughnessNear) * t;
 }
@@ -195,6 +205,14 @@ const ROUGHNESS = /* glsl */ `#include <roughnessmap_fragment>
 float waterDistance = length(vViewPosition);
 float waterFar = smoothstep(${glslFloat(S.roughnessRampM[0])}, ${glslFloat(S.roughnessRampM[1])}, waterDistance);
 roughnessFactor = max(roughnessFactor, mix(${glslFloat(S.roughnessNear)}, ${glslFloat(S.roughnessFar)}, waterFar));`;
+
+/**
+ * The roughness patch with the polish's `lostVariance` on: the ramp held at
+ * `roughnessNear` (twin: `waterRoughnessAtDistance(d, { lostVariance })`),
+ * because the trick's own α² term replaces it (milestone review, finding 1).
+ */
+const ROUGHNESS_HELD = /* glsl */ `#include <roughnessmap_fragment>
+roughnessFactor = max(roughnessFactor, ${glslFloat(S.roughnessNear)});`;
 
 /** The normal patch; `before` runs first in its block (the polish's fields). */
 const normalPatch = (
@@ -279,6 +297,7 @@ export class WaterSurface {
     this.material.name = 'water-surface';
     const uniforms = this.uniforms;
     const polishUniforms = this.polishUniforms;
+    const heldRamp = this.polish.lostVariance;
     this.material.onBeforeCompile = (shader) => {
       shader.vertexShader = replaceAnchor(
         shader.vertexShader,
@@ -300,7 +319,7 @@ export class WaterSurface {
       shader.fragmentShader = replaceAnchor(
         shader.fragmentShader,
         '#include <roughnessmap_fragment>',
-        ROUGHNESS
+        heldRamp ? ROUGHNESS_HELD : ROUGHNESS
       );
       shader.fragmentShader = replaceAnchor(
         shader.fragmentShader,

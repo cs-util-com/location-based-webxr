@@ -19,8 +19,9 @@ it like any other lit material.
   amplitude, phase; `speedMps` derived from deep-water dispersion).
 - `waterSlope(x, z, t, footprintM?)` → `[∂h/∂x, ∂h/∂z]`, each wave faded
   for a pixel footprint as the shader fades it; `waterNormal(x, z, t)` →
-  unit normal; `waterWaveFade(k, footprintM)`; `waterRoughnessAtDistance(m)`.
-  TS twins of the shader.
+  unit normal; `waterWaveFade(k, footprintM)`;
+  `waterRoughnessAtDistance(m, polish?)` (held at `roughnessNear` when
+  `polish.lostVariance` is on). TS twins of the shader.
 - `class WaterSurface` — `new WaterSurface({ tint?, slopeGlsl? })`:
   - `slopeGlsl`: GLSL that defines `vec2 waterSlopeAt(vec2 p, float t)`
     (world x/z in metres, seconds), REPLACING the six built-in waves (the
@@ -64,6 +65,12 @@ it like any other lit material.
   detail becomes blur instead of shimmer. (A first cut faded all six waves
   together by distance, which left the 3.3 m wave shimmering at 200-300 m;
   M4 review, finding 7.)
+- **With the polish's `lostVariance` on, the distance ramp is HELD at
+  `roughnessNear`.** The ramp is a stand-in for the detail the faded waves
+  lose; `lostVariance` adds exactly that lost variance to the specular α²,
+  so keeping both counted the far water's lost detail twice (water-polish
+  milestone review, finding 1). Every other switch keeps the ramp, and with
+  every switch off the patch is pinned unchanged.
 - `roughnessNear` sits above three's physical-lighting floor (0.0525), so
   the twin says what the GPU draws; a test reads the floor from three.
 - NOT supported: instanced or batched meshes (one wave pattern per

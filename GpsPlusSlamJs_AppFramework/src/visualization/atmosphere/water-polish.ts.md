@@ -12,7 +12,10 @@ water. `WaterSurface` (`water-surface-material.ts`) takes the switches as
 1. `lostVariance`: the slope variance of the waves the anti-aliasing fade
    removed, Σ (1 − fade²)·(A·k)²/2, is added to the specular α² (three:
    α = roughness²). Water whose waves a pixel no longer resolves becomes a
-   soft sheen instead of glitter.
+   soft sheen instead of glitter. It REPLACES the material's distance
+   roughness ramp, which `WaterSurface` holds at `roughnessNear` while this
+   switch is on; with both, the far water's lost detail counted twice
+   (milestone review, finding 1).
 2. `sunSize`: the sun's angular radius (0.2666°) is folded into α² of the
    DIRECT light only, α² + (scale × radius)², so no highlight is narrower
    than the sun's disc.
