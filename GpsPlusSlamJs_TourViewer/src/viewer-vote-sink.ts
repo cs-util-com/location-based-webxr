@@ -1,0 +1,128 @@
+/**
+ * The viewer's one way into the store for code votes, per AR entry (Tour
+ * Viewer authoring plan 2026-09-28-0953 §3.2, M2e; owner decisions D9, D17,
+ * D18; the seam contract in `viewer-placement.ts.md`):
+ *
+ * - **One solve per lock and per keep-alive tick (D18).** A voted lock's
+ *   ring is ONE `recordGpsEventBatch`; a device fix that the keep-alive
+ *   answers travels WITH its ring as one batch, the fix first. Every
+ *   `recordGpsEvent` re-solves over the whole history, so 16 votes as 16
+ *   dispatches cost 16 solves; the core (1.26) stores a batch exactly as
+ *   one-by-one dispatches would and solves once, the compass easing
+ *   compounded per stored event.
+ * - **The soft trimming is a viewer-entry setting, never a global default.**
+ *   The entry starts by clearing every override (`setAlignmentOverrides(null)`
+ *   - `resetGpsSessionData` keeps them, so a previous entry's setting would
+ *   otherwise carry into GPS-only solving the corpus never credited), turns
+ *   the soft kernel on right before its first vote (merged over whatever is
+ *   set, because the action replaces the whole object), and a tour switch
+ *   turns it off again until the next tour's first vote.
+ *
+ * @see viewer-vote-sink.ts.md
+ */
+
+import {
+  recordGpsEvent,
+  recordGpsEventBatch,
+  setAlignmentOverrides,
+  type AlignmentOverrides,
+  type RecordGpsEventPayload,
+} from "gps-plus-slam-app-framework/state";
+
+/**
+ * The solver setting M0c adopted for a session whose alignment a scanned code
+ * holds (plan §3.2, D9): the core's gradual outlier falloff instead of the
+ * hard 5 m trim - every pair keeps a say that shrinks with its residual
+ * beyond r0, so the keep-alive hands the alignment back to GPS without a
+ * jump. Rests on M0c (r0 = 1 m, p = 1 met the rule at a 3, 5, 8 and 15 m
+ * bias with 8 or 16 votes on the 30 m ring and every hold and fade of
+ * 60-180 s; largest step 0.02 m per fix) and M2a (the same through the
+ * store's public path). What reverses it (M0c): p of 1.5 or more (the jump
+ * returns), r0 of 3 m or more (the hold breaks, 0.66 m), the core's own
+ * defaults r0 = 5 m, p = 2 (only blends, 0.76 m). The hard trim has to go
+ * off with it, or both run and it behaves like the hard trim.
+ */
+export const VIEWER_SOFT_TRIM: Readonly<AlignmentOverrides> = Object.freeze({
+  outlierFalloffEnabled: true,
+  outlierFalloffRadiusMeters: 1,
+  outlierFalloffExponent: 1,
+  outlierRejectionEnabled: false,
+});
+
+/** The store surface the sink needs: dispatch, and the current overrides. */
+interface VoteSinkStore {
+  dispatch(
+    action:
+      | ReturnType<typeof recordGpsEvent>
+      | ReturnType<typeof recordGpsEventBatch>
+      | ReturnType<typeof setAlignmentOverrides>,
+  ): unknown;
+  getState(): {
+    readonly gpsData?: {
+      readonly alignmentOverrides?: AlignmentOverrides | null;
+    } | null;
+  };
+}
+
+export interface ViewerVoteSink {
+  /** One voted lock's votes: one batch, the soft trimming on before it. */
+  castLockVotes(votes: readonly RecordGpsEventPayload[]): void;
+  /** One device fix and the keep-alive's ring for it: with a ring, ONE
+   *  batch (the fix first, the soft trimming on before it); without one,
+   *  the plain `recordGpsEvent` and no override change. */
+  recordFix(
+    fix: RecordGpsEventPayload,
+    ring: readonly RecordGpsEventPayload[],
+  ): void;
+  /** A tour closed inside the entry: the soft trimming off again (if this
+   *  entry turned it on); the next vote turns it back on. */
+  endTour(): void;
+}
+
+/**
+ * An AR entry starts: clear every override FIRST - before any fix or vote
+ * of the entry, and on every entry, a plain-AR one included - then hand back
+ * the entry's sink. A no-op on a store without a session zero yet (the core
+ * keeps no overrides before one).
+ */
+export function startEntryVoteSink(store: VoteSinkStore): ViewerVoteSink {
+  store.dispatch(setAlignmentOverrides(null));
+  /** Whether THIS entry turned the soft trimming on (and not off since). */
+  let softOn = false;
+
+  function softBeforeVote(): void {
+    if (softOn) return;
+    const gpsData = store.getState().gpsData;
+    // Without a session zero the core stores neither overrides nor votes,
+    // so there is nothing to turn on yet; the next vote tries again.
+    if (gpsData == null) return;
+    store.dispatch(
+      setAlignmentOverrides({
+        ...(gpsData.alignmentOverrides ?? {}),
+        ...VIEWER_SOFT_TRIM,
+      }),
+    );
+    softOn = true;
+  }
+
+  return {
+    castLockVotes(votes) {
+      if (votes.length === 0) return;
+      softBeforeVote();
+      store.dispatch(recordGpsEventBatch({ events: [...votes] }));
+    },
+    recordFix(fix, ring) {
+      if (ring.length === 0) {
+        store.dispatch(recordGpsEvent(fix));
+        return;
+      }
+      softBeforeVote();
+      store.dispatch(recordGpsEventBatch({ events: [fix, ...ring] }));
+    },
+    endTour() {
+      if (!softOn) return;
+      store.dispatch(setAlignmentOverrides(null));
+      softOn = false;
+    },
+  };
+}

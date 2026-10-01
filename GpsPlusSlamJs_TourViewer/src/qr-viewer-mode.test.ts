@@ -54,7 +54,7 @@ function fakeDeps(
     solvePose: () => null,
     getIntrinsics: () => null,
     getLevels: () => new Map([[TEXT_ID, LEVEL]]),
-    dispatchVote: vi.fn(),
+    dispatchVotes: vi.fn(),
     canAcceptVotes: () => true,
     resolveStablePose: () => null,
     recordDetection: vi.fn(),
@@ -119,9 +119,12 @@ describe("buildViewerControllerConfig", () => {
       config.onDetection?.({ text: TEXT, timestamp: i } as QrDetectionEvent);
       config.dispatchVotes(votes);
     }
-    expect(deps.dispatchVote).toHaveBeenCalledTimes(
-      MAX_VOTED_LOCKS_PER_CODE * votes.length,
-    );
+    // One call per voted lock carrying the lock's WHOLE ring: the viewer
+    // stores it as one batch, one solve (authoring plan D18).
+    expect(deps.dispatchVotes).toHaveBeenCalledTimes(MAX_VOTED_LOCKS_PER_CODE);
+    for (const call of vi.mocked(deps.dispatchVotes).mock.calls) {
+      expect(call[0]).toEqual(votes);
+    }
   });
 
   it("budgets per code, not globally", () => {
@@ -137,7 +140,7 @@ describe("buildViewerControllerConfig", () => {
       timestamp: 99,
     } as QrDetectionEvent);
     config.dispatchVotes(votes);
-    expect(deps.dispatchVote).toHaveBeenCalledTimes(
+    expect(deps.dispatchVotes).toHaveBeenCalledTimes(
       MAX_VOTED_LOCKS_PER_CODE + 1,
     );
   });
@@ -161,7 +164,7 @@ describe("buildViewerControllerConfig", () => {
       timestamp: 99,
     } as QrDetectionEvent);
     config.dispatchVotes(votes);
-    expect(deps.dispatchVote).toHaveBeenCalledTimes(
+    expect(deps.dispatchVotes).toHaveBeenCalledTimes(
       MAX_VOTED_LOCKS_PER_CODE + 1,
     );
   });
@@ -180,7 +183,7 @@ describe("buildViewerControllerConfig", () => {
       config.onDetection?.({ text: TEXT, timestamp: i } as QrDetectionEvent);
       config.dispatchVotes(votes);
     }
-    expect(deps.dispatchVote).not.toHaveBeenCalled();
+    expect(deps.dispatchVotes).not.toHaveBeenCalled();
 
     canAccept = true; // the first fix landed — the FULL budget is available
     for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) {
@@ -190,7 +193,7 @@ describe("buildViewerControllerConfig", () => {
       } as QrDetectionEvent);
       config.dispatchVotes(votes);
     }
-    expect(deps.dispatchVote).toHaveBeenCalledTimes(MAX_VOTED_LOCKS_PER_CODE);
+    expect(deps.dispatchVotes).toHaveBeenCalledTimes(MAX_VOTED_LOCKS_PER_CODE);
   });
 
   it("wires the stability gate the controller skips unconverged votes on", () => {
@@ -322,11 +325,11 @@ describe("buildViewerControllerConfig - the keep-alive (authoring plan M2b)", ()
   function pipeline(canAccept = true) {
     const keepAlive = createViewerKeepAlive();
     const stable = { pose: POSE };
-    const dispatchVote = vi.fn();
+    const dispatchVotes = vi.fn();
     const config = buildViewerControllerConfig(
       fakeDeps({
         keepAlive,
-        dispatchVote,
+        dispatchVotes,
         canAcceptVotes: () => canAccept,
         resolveStablePose: () => stable.pose,
       }),
@@ -336,14 +339,14 @@ describe("buildViewerControllerConfig - the keep-alive (authoring plan M2b)", ()
     const frame = (atMs: number, text = TEXT): boolean => {
       config.onDetection?.({ text, timestamp: atMs } as QrDetectionEvent);
       const pose = config.resolveStablePose?.(text) ?? null;
-      const before = dispatchVote.mock.calls.length;
+      const before = dispatchVotes.mock.calls.length;
       if (pose !== null) {
         config.dispatchVotes([{ odomPosition: pose.position }] as never[]);
       }
       config.onLocked?.({} as never, LEVEL);
-      return dispatchVote.mock.calls.length > before;
+      return dispatchVotes.mock.calls.length > before;
     };
-    return { keepAlive, config, frame, stable, dispatchVote };
+    return { keepAlive, config, frame, stable, dispatchVotes };
   }
   const at = (t: number) => ({ atMs: t, stampMs: t });
   function centroidOf(
@@ -409,9 +412,9 @@ describe("buildViewerControllerConfig - the keep-alive (authoring plan M2b)", ()
     p.stable.pose = MOVED;
     // The re-scan's own frame votes: the budget was re-armed for it.
     expect(p.frame(late)).toBe(true);
-    expect(p.dispatchVote).toHaveBeenLastCalledWith({
-      odomPosition: MOVED.position,
-    });
+    expect(p.dispatchVotes).toHaveBeenLastCalledWith([
+      { odomPosition: MOVED.position },
+    ]);
     expect(p.keepAlive.phase(late)).toEqual({
       kind: "holding",
       text: TEXT,
@@ -447,9 +450,9 @@ describe("buildViewerControllerConfig - the keep-alive (authoring plan M2b)", ()
   });
 
   it("without a keep-alive a spent code stays spent (the budget is the only rule)", () => {
-    const dispatchVote = vi.fn();
+    const dispatchVotes = vi.fn();
     const config = buildViewerControllerConfig(
-      fakeDeps({ dispatchVote, resolveStablePose: () => POSE }),
+      fakeDeps({ dispatchVotes, resolveStablePose: () => POSE }),
     );
     for (let i = 0; i <= MAX_VOTED_LOCKS_PER_CODE; i += 1) {
       const atMs = i === MAX_VOTED_LOCKS_PER_CODE ? T + 20 * 60_000 : T + i;
@@ -458,7 +461,7 @@ describe("buildViewerControllerConfig - the keep-alive (authoring plan M2b)", ()
         config.dispatchVotes([{ v: i }] as never[]);
       }
     }
-    expect(dispatchVote).toHaveBeenCalledTimes(MAX_VOTED_LOCKS_PER_CODE);
+    expect(dispatchVotes).toHaveBeenCalledTimes(MAX_VOTED_LOCKS_PER_CODE);
   });
 
   it("pins the measured hold and fade: two minutes each (owner, D9 applied after M0c)", () => {

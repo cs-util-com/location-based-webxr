@@ -49,7 +49,6 @@ import {
   type Vector3 as NumTriple,
 } from "gps-plus-slam-app-framework/core";
 import {
-  recordGpsEvent,
   selectAlignmentMatrix,
   setZeroPos,
 } from "gps-plus-slam-app-framework/state";
@@ -231,20 +230,20 @@ async function visitorSession(biasM: number) {
   const fix = (p: NumTriple, t: number): void => {
     const nue = webxrToNUE(p);
     const geo = calcGpsCoords(ZERO, [nue[0] + bias[0], 0, nue[2] + bias[1]]);
-    arStore.dispatch(
-      recordGpsEvent({
-        odomPosition: p,
-        odomRotation: [0, 0, 0, 1],
-        rawGpsPoint: {
-          id: `gps-${String(t)}`,
-          latitude: geo.lat,
-          longitude: geo.lon,
-          altitude: ALT + nue[1],
-          latLongAccuracy: 3,
-          timestamp: t,
-        },
-      }),
-    );
+    // Through the page's device-fix path (main.ts: the coordinator's
+    // `recordFix`), where the keep-alive casts its ring with the fix.
+    placement.recordDeviceFix({
+      odomPosition: p,
+      odomRotation: [0, 0, 0, 1],
+      rawGpsPoint: {
+        id: `gps-${String(t)}`,
+        latitude: geo.lat,
+        longitude: geo.lon,
+        altitude: ALT + nue[1],
+        latLongAccuracy: 3,
+        timestamp: t,
+      },
+    });
   };
   /** One camera frame through the real controller. */
   let frameNo = 0;

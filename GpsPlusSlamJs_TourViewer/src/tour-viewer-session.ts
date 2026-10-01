@@ -42,6 +42,7 @@ import type { RenderedTourObjects } from "./content-placement.js";
 import type { FusedTallies, LastEvaluation } from "./qr-debug-readout.js";
 import type { PrintSizeCheck } from "./print-size-check.js";
 import type { QrVoteKeepAlive } from "./qr-vote-keep-alive.js";
+import type { ViewerVoteSink } from "./viewer-vote-sink.js";
 import type { ScanGate } from "./scan-gate.js";
 import type { PlacedImagePlanes } from "./image-planes.js";
 import type { TourViewerSeams } from "./seams.js";
@@ -344,6 +345,13 @@ export interface TourViewerSession {
    *  the pipeline, dropped at AR exit, and reset when its tour closes
    *  ({@link endTourCodeVotes}) - the pipeline outlives a tour switch. */
   viewerVoteBudget: QrVoteBudget | null;
+  /** This visitor AR entry's vote sink (`viewer-vote-sink.ts`, authoring
+   *  plan M2e): created at the entry's start (which clears the solver
+   *  overrides), the way every vote and every keep-alive tick reaches the
+   *  store, turned off by a tour switch ({@link endTourCodeVotes}) and
+   *  dropped at AR exit. Null outside a visitor entry: device fixes then
+   *  take the plain `recordGpsEvent`. */
+  viewerVoteSink: ViewerVoteSink | null;
 
   // --- placement (viewer-placement.ts) ------------------------------------
   /** What the photo placement did — rendered by tour-flow. */
@@ -399,6 +407,7 @@ export function endQrPipeline(ctx: TourViewerSession): void {
   ctx.viewerKeepAlive?.stop();
   ctx.viewerKeepAlive = null;
   ctx.viewerVoteBudget = null;
+  ctx.viewerVoteSink = null;
 }
 
 /**
@@ -408,11 +417,15 @@ export function endQrPipeline(ctx: TourViewerSession): void {
  * pipeline, which outlives the switch, and a reopened tour used to find its
  * code already "voted": its gate passed on a lock that cast nothing, and a
  * spent code never voted again (authoring plan 2026-09-28-0953, M2b
- * review #6).
+ * review #6). The soft trimming goes off with them (M2e; the seam contract,
+ * rule 3): between tours no code holds the alignment, and a GPS-only solve
+ * runs under the setting the corpus credited; the next tour's first vote
+ * turns it back on.
  */
 export function endTourCodeVotes(ctx: TourViewerSession): void {
   ctx.viewerKeepAlive?.stop();
   ctx.viewerVoteBudget?.reset();
+  ctx.viewerVoteSink?.endTour();
 }
 
 export function createTourViewerSession(): TourViewerSession {
@@ -461,6 +474,7 @@ export function createTourViewerSession(): TourViewerSession {
     latestReprojectionPx: null,
     viewerKeepAlive: null,
     viewerVoteBudget: null,
+    viewerVoteSink: null,
     placement: { kind: "idle" },
     viewerPlanesError: null,
     contentError: null,

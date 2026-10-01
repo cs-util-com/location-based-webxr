@@ -30,8 +30,9 @@
  *   frame changed) re-arms that code's budget, so the re-scan votes afresh
  *   from a fresh stable pose (M2b review #1). Under the core's shipped
  *   hard outlier trim the hand-off to GPS above a 5 m bias is one jump
- *   (M0c); the soft trimming that makes it smooth is a per-entry override
- *   the viewer does not dispatch yet (see the sidecar).
+ *   (M0c); the soft trimming that makes it smooth is the per-entry override
+ *   the viewer turns on before an entry's first vote (`viewer-vote-sink.ts`,
+ *   M2e).
  *
  * The level lookup is the deferred NEGATIVE CACHE (delta #8): a scanned
  * code with no `qr/<c>.json` in the open tour resolves a geo-less
@@ -140,8 +141,10 @@ export interface ViewerPipelineDeps {
   /** The open tour's levels (`TourSession.loadQrLevels()`), or null when
    *  no tour is open — every code then reads as unknown. */
   getLevels(): ReadonlyMap<string, QrLevel> | null;
-  /** One synthetic GPS vote → `recordGpsEvent` into the store. */
-  dispatchVote(payload: RecordGpsEventPayload): void;
+  /** One voted lock's synthetic GPS votes, all at once: the viewer stores
+   *  them as ONE `recordGpsEventBatch` - one solve per lock (authoring plan
+   *  2026-09-28-0953 D18; `viewer-vote-sink.ts`). */
+  dispatchVotes(payloads: readonly RecordGpsEventPayload[]): void;
   /** Can the store ACCEPT votes right now? `recordGpsEvent` silently
    *  no-ops until the session zero exists (first real GPS fix) — charging
    *  the budget for dropped votes would tell the visitor "Relocalized"
@@ -313,7 +316,7 @@ export function buildViewerControllerConfig(
       if (text === null) return;
       if (!deps.canAcceptVotes()) return; // budget untouched — see the dep
       if (!voteBudget.tryConsume(text)) return;
-      for (const vote of votes) deps.dispatchVote(vote);
+      deps.dispatchVotes(votes);
       frameVoted = true;
       deps.onVotedLock?.(text, voteBudget.spentFor(text));
     },

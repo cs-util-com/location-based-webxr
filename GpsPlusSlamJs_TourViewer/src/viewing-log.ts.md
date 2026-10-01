@@ -42,12 +42,14 @@ Plan:
   `tracking` (the code was lost in between), when it is another code, or in
   another AR visit. `statusBefore` is `ctx.viewerQrStatus` at the detection,
   which the framework's controller updates only AFTER the frame's votes.
-- **Votes are logged per lock.** The controller dispatches a lock's votes one
-  by one, then reports the voted lock (`qr-viewer-mode.ts`,
-  `dispatchVotes`); the hook collects them in between. The code keep-alive's
-  votes bypass `dispatchVote` on purpose: they are in the raw stream as
-  `gpsData/recordGpsEvent` with `qr-keep` ids, never in a `votesCast` batch
-  (a batch answers "which lock cast these").
+- **Votes are logged per lock.** The pipeline hands a lock's votes over at
+  once (`qr-viewer-mode.ts`, `dispatchVotes`; stored as one
+  `recordGpsEventBatch` since M2e), calling `vote` for each, then reports
+  the voted lock; the hook collects them in between. The code keep-alive's
+  votes bypass it on purpose: they are in the raw stream as the events of a
+  `gpsData/recordGpsEventBatch` with `qr-keep` ids (with the device fix
+  they answer, first), never in a `votesCast` batch (a batch answers "which
+  lock cast these").
 - **The keep-alive is logged per state change, not per frame or fix.**
   The wrapper observes the keep-alive only through its public calls and
   `phase()`, so it does not depend on how the hold is kept:

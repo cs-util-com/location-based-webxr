@@ -1,14 +1,10 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
-import {
-  GPS_POINT_SOURCE_DEVICE,
-  GPS_POINT_SOURCE_SYNTHETIC_QR,
-} from "gps-plus-slam-app-framework/core";
+import { GPS_POINT_SOURCE_SYNTHETIC_QR } from "gps-plus-slam-app-framework/core";
 import type { Pose } from "gps-plus-slam-app-framework/ar/qr/qr-pose";
 import type { RecordGpsEventPayload } from "gps-plus-slam-app-framework/state";
 
 import {
-  createDeviceFixWatch,
   createQrVoteKeepAlive,
   keepAliveShare,
   type KeepAliveSettings,
@@ -380,28 +376,5 @@ describe("createQrVoteKeepAlive - the lifecycle", () => {
         RangeError,
       );
     }
-  });
-});
-
-describe("createDeviceFixWatch", () => {
-  const point = (id: string, source?: string) => ({
-    id,
-    timestamp: T0 + Number(id.replace(/\D/g, "")),
-    ...(source === undefined ? {} : { source }),
-  });
-
-  it("reports each NEW device fix once, and never a synthetic or unknown one", () => {
-    const next = createDeviceFixWatch();
-    expect(next([])).toBeNull();
-    const a = point("gps-1");
-    expect(next([a])).toBe(a.timestamp);
-    expect(next([a])).toBeNull(); // the same fix, seen again
-    const vote = point("qr-2", GPS_POINT_SOURCE_SYNTHETIC_QR);
-    expect(next([a, vote])).toBeNull();
-    const b = point("gps-3", GPS_POINT_SOURCE_DEVICE);
-    expect(next([a, vote, b])).toBe(b.timestamp);
-    // A stamp this version does not know is NOT device (the core's
-    // `gpsPointSourceOf` rule): never round an unknown source toward GPS.
-    expect(next([a, vote, b, point("x-4", "synthetic-beacon")])).toBeNull();
   });
 });

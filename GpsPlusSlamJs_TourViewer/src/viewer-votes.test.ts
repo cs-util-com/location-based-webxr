@@ -26,9 +26,12 @@ import type {
   QrTrackingControllerConfig,
 } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
 import {
+  createGpsPositionHandler,
   qrFrameChanged,
   recordGpsEvent,
+  setAlignmentOverrides,
   setZeroPos,
+  startSession,
   type RecordGpsEventPayload,
 } from "gps-plus-slam-app-framework/state";
 import {
@@ -54,6 +57,7 @@ import {
   endTourCodeVotes,
 } from "./tour-viewer-session.js";
 import { createViewerPlacement } from "./viewer-placement.js";
+import { VIEWER_SOFT_TRIM } from "./viewer-vote-sink.js";
 
 const captured = vi.hoisted(() => ({
   configs: [] as QrTrackingControllerConfig[],
@@ -97,6 +101,8 @@ function viewer() {
   captured.stablePose = CODE_POSE;
   /** The page clock: lock times and fix ARRIVALS (the placement's `now`). */
   const clock = { nowMs: T0 };
+  /** Whether the device has a detector (the next entry reads it). */
+  const device = { detector: true };
   /** The scan gate's escape clock, fired by hand. */
   const scheduled: { run: () => void; delayMs: number }[] = [];
   const seams = {
@@ -104,10 +110,11 @@ function viewer() {
       scheduled.push({ run, delayMs });
       return () => undefined;
     },
-    createQrFrontEnd: () => ({
-      kind: "barcode-detector",
-      detect: () => Promise.resolve(null),
-    }),
+    // A device without a BarcodeDetector makes the entry plain AR.
+    createQrFrontEnd: () =>
+      device.detector
+        ? { kind: "barcode-detector", detect: () => Promise.resolve(null) }
+        : null,
     solveQrPose: () => null,
     getIntrinsics: () => null,
     getScene: () => null,
@@ -179,26 +186,35 @@ function viewer() {
   };
 
   /** One device GPS fix ARRIVING at page time `atMs` and carrying its own
-   *  (Geolocation) time `stampMs` (the session zero on the first). */
+   *  (Geolocation) time `stampMs` (the session zero on the first), through
+   *  the page's device-fix path: the coordinator's `recordFix` is the
+   *  placement's `recordDeviceFix` (main.ts). */
   let fixes = 0;
-  const fix = (atMs: number, stampMs: number = atMs): void => {
+  const fixPayload = (
+    stampMs: number,
+    over: Partial<RecordGpsEventPayload["rawGpsPoint"]> = {},
+  ): RecordGpsEventPayload => ({
+    odomPosition: [fixes * 0.7, 1.4, -fixes * 0.3],
+    odomRotation: [0, 0, 0, 1],
+    rawGpsPoint: {
+      id: `gps-${String(fixes)}`,
+      latitude: ZERO.lat + fixes * 0.000004,
+      longitude: ZERO.lon + fixes * 0.000003,
+      altitude: 401,
+      latLongAccuracy: 3,
+      timestamp: stampMs,
+      ...over,
+    },
+  });
+  const fix = (
+    atMs: number,
+    stampMs: number = atMs,
+    over: Partial<RecordGpsEventPayload["rawGpsPoint"]> = {},
+  ): void => {
     clock.nowMs = atMs;
     if (fixes === 0) arStore.dispatch(setZeroPos(ZERO));
     fixes += 1;
-    arStore.dispatch(
-      recordGpsEvent({
-        odomPosition: [fixes * 0.7, 1.4, -fixes * 0.3],
-        odomRotation: [0, 0, 0, 1],
-        rawGpsPoint: {
-          id: `gps-${String(fixes)}`,
-          latitude: ZERO.lat + fixes * 0.000004,
-          longitude: ZERO.lon + fixes * 0.000003,
-          altitude: 401,
-          latLongAccuracy: 3,
-          timestamp: stampMs,
-        },
-      }),
-    );
+    placement.recordDeviceFix(fixPayload(stampMs, over));
   };
   const positions = () =>
     arStore.getState().gpsData?.gpsEvents?.gpsPositions ?? [];
@@ -216,6 +232,7 @@ function viewer() {
     scheduled,
     escapeButton,
     clickEscape,
+    device,
   };
 }
 
@@ -542,6 +559,219 @@ describe(
       v.clickEscape();
       expect(v.ctx.scanGate).toEqual({ kind: "passed", via: "skipped" });
       expect(v.escapeButton.hidden).toBe(true);
+    });
+  },
+);
+
+/** Every action a caller dispatches into the viewer's store from now on
+ *  (the listener middleware's own dispatches are not callers'). */
+function dispatchLog(v: ReturnType<typeof viewer>) {
+  const spy = vi.spyOn(v.arStore, "dispatch");
+  return {
+    types: () => spy.mock.calls.map(([a]) => a.type),
+    actions: () =>
+      spy.mock.calls.map(
+        ([a]): { type: string; payload?: unknown } =>
+          a as unknown as { type: string; payload?: unknown },
+      ),
+  };
+}
+
+// Why (authoring plan 2026-09-28-0953 D18, M2e): every `recordGpsEvent`
+// re-solves over the whole history, so a lock's 16 votes as 16 dispatches
+// cost 16 solves, and a keep-alive tick 17. The core (1.26) stores a batch
+// exactly as one-by-one dispatches would and solves ONCE; the owner chose
+// one batch per lock and one per keep-alive tick holding the DEVICE fix and
+// its ring. These pin that through the real wiring, without a clock: the
+// cost check is the number of store actions, never wall time.
+describe(
+  "one solve per voted lock and per keep-alive tick (D18, M2e)",
+  { timeout: 30_000 },
+  () => {
+    it("a voted lock stores its whole ring as ONE batch", () => {
+      const v = viewer();
+      v.fix(T0);
+      const log = dispatchLog(v);
+      const before = v.positions().length;
+      v.lock(T0 + 500);
+      expect(log.types().filter((t) => t.startsWith("gpsData/record"))).toEqual(
+        ["gpsData/recordGpsEventBatch"],
+      );
+      expect(v.positions()).toHaveLength(before + VIEWER_VOTE_COUNT);
+    });
+
+    it("a keep-alive tick is exactly ONE store action: the device fix first, then its ring", () => {
+      const v = scanned();
+      const before = v.positions().length;
+      const log = dispatchLog(v);
+      v.fix(T0 + 3000);
+      expect(log.types()).toEqual(["gpsData/recordGpsEventBatch"]);
+      const events = (
+        log.actions()[0]!.payload as { events: RecordGpsEventPayload[] }
+      ).events;
+      expect(events).toHaveLength(1 + VIEWER_VOTE_COUNT);
+      expect(gpsPointSourceOf(events[0]!.rawGpsPoint)).toBe(
+        GPS_POINT_SOURCE_DEVICE,
+      );
+      for (const vote of events.slice(1)) {
+        expect(gpsPointSourceOf(vote.rawGpsPoint)).toBe(
+          GPS_POINT_SOURCE_SYNTHETIC_QR,
+        );
+      }
+      expect(v.positions()).toHaveLength(before + 1 + VIEWER_VOTE_COUNT);
+    });
+
+    it("a fix the keep-alive does not answer is the plain recordGpsEvent: before any vote, after the fade, after AR exit", () => {
+      const v = viewer();
+      const log = dispatchLog(v);
+      v.fix(T0);
+      expect(log.types()).toEqual([
+        "gpsData/setZeroPos",
+        "gpsData/recordGpsEvent",
+      ]);
+      const s = scanned();
+      const lastLock = T0 + 500 + (MAX_VOTED_LOCKS_PER_CODE + 2) * 125;
+      const over =
+        lastLock + VIEWER_KEEP_ALIVE_HOLD_MS + VIEWER_KEEP_ALIVE_FADE_MS;
+      const done = dispatchLog(s);
+      s.fix(over + 1);
+      endQrPipeline(s.ctx);
+      s.fix(over + 2000);
+      expect(done.types()).toEqual([
+        "gpsData/recordGpsEvent",
+        "gpsData/recordGpsEvent",
+      ]);
+    });
+
+    it("a malformed device fix inside a tick is dropped alone by the core: its ring is stored and nothing throws", () => {
+      // Why: a receiver can hand over a fix with a non-finite coordinate.
+      // Sent alone it is the core's problem as before; sent WITH its ring
+      // it must not take the ring down, nor throw out of the GPS callback
+      // (core 1.26 judges each event of a batch as a single dispatch would).
+      const v = scanned();
+      const before = v.positions().length;
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        expect(() => {
+          v.fix(T0 + 3000, T0 + 3000, { latitude: Number.NaN });
+        }).not.toThrow();
+      } finally {
+        warn.mockRestore();
+      }
+      const added = v.positions().slice(before);
+      expect(added).toHaveLength(VIEWER_VOTE_COUNT);
+      for (const vote of added) {
+        expect(gpsPointSourceOf(vote)).toBe(GPS_POINT_SOURCE_SYNTHETIC_QR);
+      }
+    });
+
+    it("the page's composed GPS handler routes each device fix here (main.ts: the coordinator's recordFix)", () => {
+      const v = scanned();
+      v.arStore.dispatch(
+        startSession({
+          contextTag: "tour-viewer",
+          sessionName: "entry",
+          startTime: T0,
+        }),
+      );
+      const handler = createGpsPositionHandler({
+        store: v.arStore,
+        getArPose: () => ({
+          position: { x: 0.2, y: 1.4, z: -0.5 },
+          orientation: { x: 0, y: 0, z: 0, w: 1 },
+        }),
+        recordFix: v.placement.recordDeviceFix,
+      });
+      const log = dispatchLog(v);
+      const before = v.positions().length;
+      handler({
+        lat: ZERO.lat + 0.00001,
+        lon: ZERO.lon,
+        altitude: 401,
+        accuracy: 3,
+        altitudeAccuracy: null,
+        heading: null,
+        speed: null,
+        timestamp: T0 + 3000,
+      });
+      expect(log.types()).toEqual(["gpsData/recordGpsEventBatch"]);
+      expect(v.positions()).toHaveLength(before + 1 + VIEWER_VOTE_COUNT);
+    });
+  },
+);
+
+const overridesOf = (v: ReturnType<typeof viewer>) =>
+  v.arStore.getState().gpsData?.alignmentOverrides ?? null;
+
+// Why (the seam contract in viewer-placement.ts.md; the M2b/M2d review #3):
+// the keep-alive is unsafe under the core's hard trim (B = 5 m fails the
+// rule, 8 m jumps, 15 m never hands off), and the soft kernel M0c credited
+// it with must never outlive the entry that turned it on -
+// `resetGpsSessionData` keeps overrides, and the corpus never credited the
+// soft kernel for GPS-only solving. Replaces `viewer-soft-trim-guard.test.ts`,
+// the tripwire designed to break on the first core that took the keys.
+describe(
+  "the per-entry solver overrides, through the real wiring (M2e)",
+  { timeout: 30_000 },
+  () => {
+    it("the soft trimming goes on right before the entry's first vote - never earlier, and once", () => {
+      const v = viewer();
+      v.fix(T0);
+      expect(overridesOf(v)).toBeNull();
+      const log = dispatchLog(v);
+      v.lock(T0 + 500);
+      v.lock(T0 + 625);
+      expect(
+        log
+          .types()
+          .filter(
+            (t) =>
+              t === setAlignmentOverrides.type ||
+              t.startsWith("gpsData/record"),
+          ),
+      ).toEqual([
+        setAlignmentOverrides.type,
+        "gpsData/recordGpsEventBatch",
+        "gpsData/recordGpsEventBatch",
+      ]);
+      expect(overridesOf(v)).toEqual(VIEWER_SOFT_TRIM);
+    });
+
+    it("every entry starts by clearing them, before its plain-AR return: a plain-AR entry never keeps a previous entry's soft trimming", () => {
+      const v = scanned();
+      expect(overridesOf(v)).toEqual(VIEWER_SOFT_TRIM);
+      endQrPipeline(v.ctx); // AR exit (the store keeps overrides)
+      expect(overridesOf(v)).toEqual(VIEWER_SOFT_TRIM);
+      v.device.detector = false;
+      const log = dispatchLog(v);
+      expect(v.placement.startViewerPipeline()).toBe(false);
+      expect(log.actions()).toEqual([setAlignmentOverrides(null)]);
+      expect(overridesOf(v)).toBeNull();
+      // Its fixes take the plain path and change nothing.
+      v.fix(T0 + 60_000);
+      expect(overridesOf(v)).toBeNull();
+    });
+
+    it("a re-entry WITH a detector starts plain too, and its own first vote turns the soft trimming on", () => {
+      const v = scanned();
+      endQrPipeline(v.ctx);
+      v.placement.startViewerPipeline();
+      expect(overridesOf(v)).toBeNull();
+      v.fix(T0 + 60_000);
+      expect(overridesOf(v)).toBeNull();
+      v.lock(T0 + 61_000);
+      expect(overridesOf(v)).toEqual(VIEWER_SOFT_TRIM);
+    });
+
+    it("a tour switch inside the entry turns it off, and the reopened tour's first vote turns it back on", () => {
+      const v = scanned();
+      endTourCodeVotes(v.ctx);
+      expect(overridesOf(v)).toBeNull();
+      // A fix between tours: no code holds the alignment, the plain solver runs.
+      v.fix(T0 + 5000);
+      expect(overridesOf(v)).toBeNull();
+      v.lock(T0 + 10_000);
+      expect(overridesOf(v)).toEqual(VIEWER_SOFT_TRIM);
     });
   },
 );

@@ -47,9 +47,6 @@ Pure: every time is an argument.
   for a negative elapsed time, which on the hold's one clock is a clock
   step backwards), linear to 0 over the fade, 0 after it and for a
   non-finite value.
-- `createDeviceFixWatch()` - `(positions) => fixTimestamp | null`: the
-  newest stored point's timestamp when it is a device fix not reported
-  before. Keyed by the point's identity (immer keeps stored points stable).
 
 ## Invariants & assumptions
 
@@ -77,12 +74,13 @@ Pure: every time is an argument.
   vote-to-fix ratio the measurement credited whatever the phone's GPS rate
   (a 0.5 Hz phone casts half the votes against half the fixes). A timer
   would drift from that ratio; per camera frame would be ~8x it.
-- **Only device fixes trigger it.** A synthetic vote (the keep-alive's own
-  output, a lock's burst) is never a fix, and neither is a source this
-  version does not know (`gpsPointSourceOf` reads it as `unknown`): rounding
-  an unknown source toward real GPS is the one direction that must not
-  happen. Without the stamp, the watch would answer each of its own votes
-  with another ring.
+- **Only device fixes trigger it.** Since M2e (D18) the trigger is the
+  page's device-fix path itself (`viewer-placement`'s `recordDeviceFix`,
+  the coordinator's `recordFix`), which asks for the ring BEFORE the fix is
+  stored and stores both as one batch. A vote (the keep-alive's own output,
+  a lock's burst) never passes through it, so the keep-alive cannot answer
+  its own votes; until M2e a store watch (`createDeviceFixWatch`, removed)
+  had to tell them apart by their source stamp.
 - **A kept pose carries a hold for one hold window at most** (M2b review
   #1). The config stops evaluating a spent code's fused pose (~10 ms per
   lock, QR near-frontal pose plan §61 #6), so the keep-alive re-votes from
@@ -105,9 +103,10 @@ Pure: every time is an argument.
 - A code whose votes cannot be built (a geo pose with neither heading nor
   rotation, which `parseQrLevel` rejects) is dropped instead of throwing
   into the store listener that asked.
-- Wrong saved codes: with the core's hard trim (today) the votes stay
-  rejectable as outliers; with soft trimming (M2a keys, not yet dispatched)
-  a code saved wrong by up to ~15 m pulls the alignment near it for the hold
+- Wrong saved codes: the viewer runs its entries' votes under soft trimming
+  (core 1.26 keys, turned on before an entry's first vote by
+  `viewer-vote-sink.ts`, M2e), which down-weights but drops no pair, so a
+  code saved wrong by up to ~15 m pulls the alignment near it for the hold
   and fade (~4 minutes), then GPS takes over by time (plan §3.2, §5).
 
 ## Examples
@@ -115,14 +114,12 @@ Pure: every time is an argument.
 ```ts
 const keepAlive = createViewerKeepAlive();
 keepAlive.keep({ text, qrPoseWorld, qrGeo, sizeM }, lockMs); // a voted lock
-const nextDeviceFix = createDeviceFixWatch();
-store.subscribe(() => {
-  const stampMs = nextDeviceFix(selectGpsPositions(store.getState()));
-  if (stampMs === null) return;
-  for (const v of keepAlive.votesForFix({ atMs: Date.now(), stampMs })) {
-    castVote(v);
-  }
+// Each device fix, before it is stored (viewer-placement's recordDeviceFix):
+const ring = keepAlive.votesForFix({
+  atMs: Date.now(),
+  stampMs: fix.rawGpsPoint.timestamp,
 });
+sink.recordFix(fix, ring); // one batch, the fix first (or the plain fix)
 ```
 
 ## Tests
@@ -134,15 +131,15 @@ store.subscribe(() => {
   pose older than the window (and a fresh keep holding again), freshness
   only for the kept code, the arrival clock against a skewed fix stamp both
   ways, a second code taking over, `stop()`, non-finite times, an
-  unbuildable code, settings validation; and the device fix watch (new
-  device fixes once, never synthetic or unknown sources).
+  unbuildable code, settings validation.
 - `qr-viewer-mode.test.ts` - the config hands a voted lock's pose over
   from the first voted lock, and re-arms a spent code the keep-alive does
   not hold from a fresh pose (20 minutes later, after a stop, after another
   code took over) so its re-scan votes from the current pose.
 - `viewer-votes.test.ts` - the wiring with the real store: one ring per
-  device fix, no answer to a synthetic point, stop at AR exit, a new entry,
-  a moved code re-scanned 20 minutes later, a frame change, the fix clock
-  skewed by 5 s and 1 h either way, a tour reopened in the same entry.
+  device fix (stored with the fix as ONE batch, M2e), no answer to a
+  synthetic point, stop at AR exit, a new entry, a moved code re-scanned 20
+  minutes later, a frame change, the fix clock skewed by 5 s and 1 h either
+  way, a tour reopened in the same entry.
 - `viewer-vote-strength.test.ts` - the shipped keep-alive measured through
   this module (the harness's shipped-settings arm).

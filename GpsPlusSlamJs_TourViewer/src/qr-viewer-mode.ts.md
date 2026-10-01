@@ -32,7 +32,9 @@ hasVoted)` is forwarded from every controller lock (no detected-text
   frame's votes, so `onVotedLock` may precede it. Deps: the QR
   device trio (`frontEnd`, `solvePose`, `getIntrinsics` - no pose reader since
   QR perf plan 2026-09-23 M4; each frame carries its capture pose) plus `getLevels` (live, from the open tour),
-  `dispatchVote` (one payload → `recordGpsEvent`), `canAcceptVotes` (the
+  `dispatchVotes` (one voted lock's whole ring at once - the viewer stores
+  it as ONE `recordGpsEventBatch`, one solve per lock, D18 / M2e),
+  `canAcceptVotes` (the
   budget must NOT be charged while the store drops votes — before the
   first GPS fix), `resolveStablePose` (the same convergence gate minting
   uses - the fused pose since plan §60; the controller skips unconverged
@@ -109,7 +111,8 @@ const controller = createQrTrackingController(
   buildViewerControllerConfig({
     ...deviceQuartet,
     getLevels: () => currentLevels,
-    dispatchVote: (p) => store.dispatch(recordGpsEvent(p)),
+    dispatchVotes: (ps) =>
+      store.dispatch(recordGpsEventBatch({ events: [...ps] })),
     ...uiHooks,
   }),
 );

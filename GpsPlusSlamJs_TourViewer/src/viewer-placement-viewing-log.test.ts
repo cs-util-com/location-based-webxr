@@ -187,10 +187,13 @@ describe("the viewer pipeline's tourViewing hooks", () => {
       const h = harness(recording);
       h.lock([vote(0), vote(1)]);
       expect(h.logged).toEqual([]);
+      // The entry's override reset, the detection, the soft trimming before
+      // the entry's first vote, and the lock's votes as one batch (M2e).
       expect(h.dispatchSpy.mock.calls.map(([action]) => action.type)).toEqual([
+        "gpsData/setAlignmentOverrides",
         "qrDetected/recordQrDetection",
-        "gpsData/recordGpsEvent",
-        "gpsData/recordGpsEvent",
+        "gpsData/setAlignmentOverrides",
+        "gpsData/recordGpsEventBatch",
       ]);
     }
   });

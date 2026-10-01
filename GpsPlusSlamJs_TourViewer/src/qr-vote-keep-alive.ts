@@ -23,9 +23,9 @@
  * ({@link QrVoteKeepAlive.holdsFreshPose} is the config's cue).
  *
  * Pure: every time is an argument, so the lifecycle is testable with a fake
- * clock. Dispatching the votes, deciding WHEN a device fix happened
- * ({@link createDeviceFixWatch}) and when the odometry frame changed belong
- * to the caller.
+ * clock. Dispatching the votes (with the fix they answer, as one batch:
+ * `viewer-placement`'s `recordDeviceFix`, D18), deciding WHEN a device fix
+ * happened and when the odometry frame changed belong to the caller.
  *
  * State changes happen in exactly four places: `keep`, `relock`, `stop`, and
  * `votesForFix` dropping a code whose votes cannot be built.
@@ -38,10 +38,6 @@ import {
   type QrGeoPose,
 } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { Pose } from "gps-plus-slam-app-framework/ar/qr/qr-pose";
-import {
-  GPS_POINT_SOURCE_DEVICE,
-  gpsPointSourceOf,
-} from "gps-plus-slam-app-framework/core";
 import type { RecordGpsEventPayload } from "gps-plus-slam-app-framework/state";
 
 /** The builder's minimum for a non-collinear ring. */
@@ -241,31 +237,5 @@ export function createQrVoteKeepAlive(
       kept = null;
       credit = 0;
     },
-  };
-}
-
-/**
- * Watches a store's GPS positions for NEW device fixes - the keep-alive's
- * trigger. Returns the timestamp of the newest stored point when it is a
- * device fix not reported before, else null. A synthetic QR vote (the
- * keep-alive's own output) is never a fix, and neither is a point whose
- * source this version does not know (`gpsPointSourceOf` reads it as
- * `unknown`): rounding an unknown source toward "real GPS" is the one
- * direction that must not happen.
- */
-export function createDeviceFixWatch(): (
-  positions: readonly {
-    readonly source?: string;
-    readonly timestamp: number;
-  }[],
-) => number | null {
-  let lastSeen: unknown = undefined;
-  return (positions) => {
-    const newest = positions.at(-1);
-    if (newest === undefined || newest === lastSeen) return null;
-    lastSeen = newest;
-    return gpsPointSourceOf(newest) === GPS_POINT_SOURCE_DEVICE
-      ? newest.timestamp
-      : null;
   };
 }

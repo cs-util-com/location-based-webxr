@@ -122,10 +122,6 @@ const recording = createAuthoringRecording({
   holdFolder: (name) => holdRecordingFolder(navigator.locks, name),
 });
 const arStore = createTourViewerStore(recording);
-const gpsHandler = createGpsPositionHandler({
-  store: arStore,
-  getArPose: getCurrentArPose,
-});
 const arController = createEnableGpsArController(seams.controllerDeps);
 const ctx = createTourViewerSession();
 ctx.debug = debug;
@@ -470,6 +466,14 @@ hooks.tryPlaceTour = viewer.tryPlaceTour;
 hooks.startScanGate = viewer.startScanGate;
 hooks.resetScanGate = viewer.resetScanGate;
 hooks.reconsiderScanGate = viewer.reconsiderScanGate;
+// Every device fix goes through the viewer placement: while a scanned code's
+// keep-alive holds, the fix and its ring reach the store as ONE batch, one
+// solve (authoring plan 2026-09-28-0953 D18); otherwise as before.
+const gpsHandler = createGpsPositionHandler({
+  store: arStore,
+  getArPose: getCurrentArPose,
+  recordFix: viewer.recordDeviceFix,
+});
 
 const arEntry = wireArEntry({
   ctx,

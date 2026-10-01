@@ -17,14 +17,18 @@ lives here.
   no vote) - and forget it; it also stops and forgets the code keep-alive
   (`viewerKeepAlive`, authoring plan M2b), whose pose belongs to the
   ending session's odometry frame, and forgets the entry's vote budget
-  (`viewerVoteBudget`). `ar-entry.ts`'s `onSessionEnd` calls it.
+  (`viewerVoteBudget`) and vote sink (`viewerVoteSink`; device fixes then
+  take the plain `recordGpsEvent`). `ar-entry.ts`'s `onSessionEnd` calls
+  it.
 - `endTourCodeVotes(ctx)` (authoring plan M2b review #6): a tour closed
   while the AR entry goes on - stop the keep-alive's hold and reset every
   code's vote budget, keeping both objects (the running pipeline holds
   them). Before it, the budget outlived the tour: a reopened tour found its
   code already "voted", so its gate passed on a lock that cast nothing and
-  a spent code never voted or held again. `archive-open.ts`'s teardown
-  calls it.
+  a spent code never voted or held again. Since M2e it also turns the
+  entry's soft trimming off (`viewerVoteSink.endTour()`; the next tour's
+  first vote turns it back on - the seam contract, rule 3, in
+  `viewer-placement.ts.md`). `archive-open.ts`'s teardown calls it.
 - `interface TourViewerSession` - the fields, grouped by owner:
   - the open tour (`archive-open.ts`): `session`, `currentLevels`,
     `openGeneration`;
@@ -63,7 +67,10 @@ lives here.
     by `endQrPipeline` and by a tour close in `archive-open.ts`; the status
     line reads its phase), `viewerVoteBudget` (the per-code vote budget,
     created with the pipeline, forgotten by `endQrPipeline`, reset by
-    `endTourCodeVotes`), `placement`,
+    `endTourCodeVotes`), `viewerVoteSink` (the entry's vote sink,
+    `viewer-vote-sink.ts`: created at every visitor entry's start, which
+    clears the solver overrides; forgotten by `endQrPipeline`; turned off
+    by `endTourCodeVotes`), `placement`,
     `viewerPlanesError`, `imagePlanes`, `imagePlanesLoading`,
     `planesRunGeneration`, `placementUnsubscribe`, `placementAttempted`,
     `joinDeclined`.

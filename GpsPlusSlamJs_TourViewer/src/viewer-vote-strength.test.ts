@@ -76,10 +76,15 @@
  * since owner decision D13 (8 before). `TODAY` is those constants; M0's
  * pins and sweeps run on the explicit `M0_VIEWER` (2 m, 4 votes) so they
  * stay the evidence they were; the `shippedKeepAlive` arm drives the
- * viewer's own keep-alive module. Under today's hard trim, at 16 votes it
+ * viewer's own keep-alive module. Under the hard trim, at 16 votes it
  * meets the rule at B = 3, 5, 8 and 15 m, and above the trim (8, 15 m) it
  * never hands back to GPS within the 60 s after the keep-alive ends: see
  * the M2b block at the bottom (`VOTE_STRENGTH_SWEEP=m2b`).
+ *
+ * M2e (2026-10-01, core 1.26): the `wiring: "sink"` arm drives the viewer's
+ * own vote sink - M0c's soft trimming on before the first vote, one batch
+ * per lock and per keep-alive tick - and meets the rule with a smooth
+ * hand-off at every measured bias and bearing (`VOTE_STRENGTH_SWEEP=m2e`).
  */
 
 import { describe, expect, it } from "vitest";
@@ -122,6 +127,7 @@ import {
   VIEWER_VOTE_COUNT,
 } from "./qr-viewer-mode.js";
 import { createTourViewerStore } from "./tour-viewer-session.js";
+import { startEntryVoteSink, VIEWER_SOFT_TRIM } from "./viewer-vote-sink.js";
 
 // ---------------------------------------------------------------------------
 // Scenario geometry. World frame: NUE metres relative to ORIGIN, Up = absolute
@@ -378,6 +384,20 @@ interface VoteParams {
    * only; replaces the test-local `keepAliveFadeS` schedule.
    */
   shippedKeepAlive?: boolean;
+  /**
+   * M2e, SHIPPED WIRING: every vote and every keep-alive tick goes through the
+   * viewer's own vote sink (`viewer-vote-sink.ts`) exactly as
+   * `viewer-placement` drives it - the entry's override reset first, the
+   * soft trimming (`VIEWER_SOFT_TRIM`) on right before the first vote, one
+   * `recordGpsEventBatch` per voted lock and one per GPS fix the keep-alive
+   * answers (the fix first, then its ring). Needs `shippedKeepAlive`.
+   * Absent: the per-vote `recordGpsEvent` path every earlier arm measured,
+   * under the solver's defaults.
+   */
+  wiring?: "sink";
+  /** M2e: the bias bearing (°); default {@link BIAS_BEARING_DEG} (60°, along
+   *  the code's face). 150° and 330° point toward it. */
+  biasBearingDeg?: number;
 }
 
 interface Measured {
@@ -414,6 +434,8 @@ interface Measured {
   /** Error at the end of the run (the GPS answer is B m, 0°). */
   endM: number;
   endDeg: number;
+  /** The solver overrides the store holds at the end of the run. */
+  overrides: unknown;
 }
 
 /** The viewer's shipped vote constants, through its own dispatch path. */
@@ -443,16 +465,27 @@ function runScenario(p: VoteParams): Measured {
   const store =
     p.store === "viewer" ? createTourViewerStore() : createMeasuredStore();
   const bias: Vector3 = [
-    p.biasM * Math.cos(rad(BIAS_BEARING_DEG)),
+    p.biasM * Math.cos(rad(p.biasBearingDeg ?? BIAS_BEARING_DEG)),
     0,
-    p.biasM * Math.sin(rad(BIAS_BEARING_DEG)),
+    p.biasM * Math.sin(rad(p.biasBearingDeg ?? BIAS_BEARING_DEG)),
   ];
 
   let zero: { lat: number; lon: number } | null = null;
   let votesDispatched = 0;
-  const dispatchVote = (payload: RecordGpsEventPayload): void => {
-    votesDispatched += 1;
-    store.dispatch(recordGpsEvent(payload));
+  if (p.wiring === "sink" && p.shippedKeepAlive !== true) {
+    throw new Error("the shipped wiring runs with the shipped keep-alive");
+  }
+  // The entry's start (`startViewerPipeline`): the sink clears the overrides.
+  const sink = p.wiring === "sink" ? startEntryVoteSink(store) : null;
+  /** One lock's (or one re-vote's) votes: through the sink as ONE batch, or
+   *  one `recordGpsEvent` each as every earlier arm measured them. */
+  const dispatchVotes = (payloads: readonly RecordGpsEventPayload[]): void => {
+    votesDispatched += payloads.length;
+    if (sink !== null) {
+      sink.castLockVotes(payloads);
+      return;
+    }
+    for (const payload of payloads) store.dispatch(recordGpsEvent(payload));
   };
   const canAcceptVotes = (): boolean => store.getState().gpsData?.zero != null;
   const keepAlive =
@@ -467,7 +500,7 @@ function runScenario(p: VoteParams): Measured {
     solvePose: () => null,
     getIntrinsics: () => null,
     getLevels: () => null,
-    dispatchVote,
+    dispatchVotes,
     canAcceptVotes,
     // The votes sit at the TRUE code pose (a perfectly measured code).
     resolveStablePose: () => CODE_POSE_ODOM,
@@ -522,7 +555,7 @@ function runScenario(p: VoteParams): Measured {
       viewerConfig.dispatchVotes(votes);
       viewerConfig.onLocked?.({} as never, level);
     } else if (canAcceptVotes() && replicaBudget.tryConsume(CODE_TEXT)) {
-      for (const v of votes) dispatchVote(v);
+      dispatchVotes(votes);
     }
     return votesDispatched > before;
   };
@@ -549,26 +582,37 @@ function runScenario(p: VoteParams): Measured {
         store.dispatch(setAlignmentOverrides(overrides));
       }
     }
-    store.dispatch(
-      recordGpsEvent({
-        odomPosition: nueToWebxr(odomNueFromWorld(truth)),
-        odomRotation: IDENTITY_Q,
-        rawGpsPoint: {
-          id: `gps-${String(t)}`,
-          latitude: ll.lat,
-          longitude: ll.lon,
-          altitude: measured[1],
-          latLongAccuracy: GPS_ACCURACY_M,
-          timestamp: EPOCH_MS + t,
-        },
-      }),
-    );
-    // The shipped keep-alive answers every device fix (viewer-placement).
-    for (const v of keepAlive?.votesForFix({
-      atMs: EPOCH_MS + t,
-      stampMs: EPOCH_MS + t,
-    }) ?? []) {
-      dispatchVote(v);
+    const fix: RecordGpsEventPayload = {
+      odomPosition: nueToWebxr(odomNueFromWorld(truth)),
+      odomRotation: IDENTITY_Q,
+      rawGpsPoint: {
+        id: `gps-${String(t)}`,
+        latitude: ll.lat,
+        longitude: ll.lon,
+        altitude: measured[1],
+        latLongAccuracy: GPS_ACCURACY_M,
+        timestamp: EPOCH_MS + t,
+      },
+    };
+    // The shipped keep-alive answers every device fix (viewer-placement's
+    // `recordDeviceFix`): through the sink the fix and its ring are one
+    // batch; otherwise the fix, then each vote, as M2b measured them.
+    if (sink !== null) {
+      const ring =
+        keepAlive?.votesForFix({
+          atMs: EPOCH_MS + t,
+          stampMs: EPOCH_MS + t,
+        }) ?? [];
+      votesDispatched += ring.length;
+      sink.recordFix(fix, ring);
+    } else {
+      store.dispatch(recordGpsEvent(fix));
+      const ring =
+        keepAlive?.votesForFix({
+          atMs: EPOCH_MS + t,
+          stampMs: EPOCH_MS + t,
+        }) ?? [];
+      dispatchVotes(ring);
     }
   };
 
@@ -690,7 +734,7 @@ function runScenario(p: VoteParams): Measured {
           ];
     gps(nextGps, pos);
     for (let k = 0; k < (p.revoteBatchesPerFix ?? 0); k += 1) {
-      for (const v of buildVotes(nextGps)) dispatchVote(v);
+      dispatchVotes(buildVotes(nextGps));
     }
     const dt = (nextGps - lastVoteT) / 1000;
     if (keepAlive === undefined && fadeS > 0 && dt < fadeS) {
@@ -698,7 +742,7 @@ function runScenario(p: VoteParams): Measured {
       let k = Math.floor(keepAliveCredit);
       if (p.layout === "line") k -= k % 2;
       if (k >= minKeepAlive) {
-        for (const v of buildVotes(nextGps, k)) dispatchVote(v);
+        dispatchVotes(buildVotes(nextGps, k));
         keepAliveCredit -= k;
       }
     }
@@ -749,6 +793,7 @@ function runScenario(p: VoteParams): Measured {
     maxStepAfterFadeDeg,
     endM: prev.m,
     endDeg: prev.deg,
+    overrides: store.getState().gpsData?.alignmentOverrides ?? null,
   };
 }
 
@@ -1209,9 +1254,11 @@ describe.runIf(SWEEP?.startsWith("m0b") === true)(
  * M2b, the SHIPPED viewer (authoring plan 2026-09-28-0953): the 30 m ring of
  * 16 votes per lock (D13) and the viewer's own keep-alive (hold 120 s after the
  * code's last lock, fade 120 s, one ring per GPS fix) under TODAY's solver -
- * the published core's defaults, hard 5 m outlier trim on. The soft
- * trimming M0c adopted needs M2a's override keys and a core release; until
- * the viewer dispatches them this is what visitors get.
+ * the published core's defaults, hard 5 m outlier trim on, one
+ * `recordGpsEvent` per vote. This was what visitors got until M2e; since
+ * then the viewer turns M0c's soft trimming on and batches its votes (the
+ * M2e block at the bottom, `VOTE_STRENGTH_SWEEP=m2e`), and this block stays
+ * the record of the hard trim.
  *
  * Measured 2026-09-30 at 16 votes (D13; gps-plus-slam-js 1.25.0), swept
  * over the bias (owner rule: a one-value verdict is provisional) and pinned
@@ -1317,3 +1364,80 @@ describe.runIf(SWEEP === "m2b")(
     );
   },
 );
+
+/**
+ * M2e, the SHIPPED WIRING on core 1.26 (authoring plan 2026-09-28-0953 §3.2,
+ * D9/D17/D18): the 30 m ring of 16 votes, the viewer's own keep-alive, and
+ * since M2e the viewer's own vote sink - the entry's override reset, M0c's
+ * soft trimming (`VIEWER_SOFT_TRIM`: falloff on, r0 = 1 m, p = 1, hard trim
+ * off) turned on right before the first vote, one batch per voted lock and
+ * one per keep-alive tick (the fix first, then its ring). This is what a
+ * visitor gets; the M2b block above stays the record of the hard trim.
+ *
+ * Decision rule (plan §3.2): within 0.3 m and 2° right after the scan,
+ * within 0.5 m for 120 s; "smooth" is the pre-registered largest per-fix
+ * step of at most 0.2 m over the whole run (results doc, M2a/M2e).
+ * Parameters held: the M0 scenario's 48 s pre-scan walk, 300 s of biased
+ * GPS after the scan, exact odometry, no GPS noise, no compass (so batching
+ * changes no number, core 1.26 CHANGELOG). Swept: the bias B over 3, 5, 8
+ * and 15 m, and its bearing over 60° (along the code's face), 150° and 330°
+ * (toward it). The long-walk corner (B = 15 m after 15+ minutes, D13/D16)
+ * is the Investigation harness's, not this one's.
+ *
+ * Measured 2026-10-01 (gps-plus-slam-js 1.26.0): every arm meets the rule
+ * and hands off smoothly, with the same numbers to the centimetre at every
+ * bias - the soft kernel at p = 1 gives a residual beyond r0 a say that
+ * falls as 1/r, so a pair's pull (say times residual) no longer grows with
+ * the bias. At every arm: 0.04 m and at most 0.03° right after the scan,
+ * at most 0.07 m / 0.08° over the next 120 s, a largest step of 0.01 m /
+ * 0.01° per fix, and 0.31 m / 0.13-0.17° from the truth 60 s after the
+ * keep-alive ends - the hand-off is smooth but slow (as M0c found), so the
+ * alignment is still far from the GPS answer (B m) at that point. What
+ * would reverse it is M0c's list (p of 1.5 or more, r0 of 3 m or more, a 3°
+ * error in the saved heading), none of which this sweep varies.
+ */
+const SHIPPED_WIRING: VoteParams = { ...SHIPPED, wiring: "sink" };
+
+/** Pre-registered "smooth" hand-off: the largest per-fix step (m). */
+const SMOOTH_STEP_M = 0.2;
+
+describe("the shipped wiring through the harness (M2e)", () => {
+  it("drives the viewer's sink: the soft keys on at the end, the same votes as the per-vote path", () => {
+    // Why this matters: the opt-in pins below measure what visitors get only
+    // if the harness takes the viewer's own sink - the soft keys really on,
+    // and every vote and ring dispatched (batching may not drop any).
+    const short = { biasM: 8, postScanS: 20 };
+    const wired = runScenario({ ...SHIPPED_WIRING, ...short });
+    const perVote = runScenario({ ...SHIPPED, ...short });
+    expect(wired.overrides).toEqual(VIEWER_SOFT_TRIM);
+    expect(perVote.overrides).toBeNull();
+    expect(wired.votesDispatched).toBe(perVote.votesDispatched);
+    expect(meetsRule(wired)).toBe(true);
+  }, 120_000);
+});
+
+describe.runIf(SWEEP === "m2e")("the shipped wiring on core 1.26 (M2e)", () => {
+  const ARMS = [3, 5, 8, 15].flatMap((biasM) =>
+    [60, 150, 330].map((biasBearingDeg) => ({ biasM, biasBearingDeg })),
+  );
+  it.each(ARMS)(
+    "GPS biased $biasM m at $biasBearingDeg°: meets the rule and hands off smoothly",
+    ({ biasM, biasBearingDeg }) => {
+      const m = runScenario({ ...SHIPPED_WIRING, biasM, biasBearingDeg });
+      // stdout, not console.log: vitest swallows a passing test's console.
+      process.stdout.write(
+        `\nm2e B=${String(biasM)} at ${String(biasBearingDeg)}° scan ${m.scanEndM.toFixed(2)} m / ${m.scanEndDeg.toFixed(2)}°, max120 ${m.max120M.toFixed(2)} m / ${m.max120Deg.toFixed(2)}°, step ${m.maxStepM.toFixed(2)} m / ${m.maxStepDeg.toFixed(2)}°, after fade ${m.maxStepAfterFadeM.toFixed(2)} m, end ${m.endM.toFixed(2)} m / ${m.endDeg.toFixed(2)}°, meets ${String(meetsRule(m))}\n`,
+      );
+      expect(m.overrides).toEqual(VIEWER_SOFT_TRIM);
+      expect(meetsRule(m)).toBe(true);
+      expect(m.maxStepM).toBeLessThanOrEqual(SMOOTH_STEP_M);
+      // As measured on 2026-10-01, so a change to the votes, the sink or the
+      // solver shows up as a diff to re-read against the plan.
+      expect(m.scanEndM).toBeCloseTo(0.04, 1);
+      expect(m.max120M).toBeCloseTo(0.07, 1);
+      expect(m.maxStepM).toBeCloseTo(0.01, 1);
+      expect(m.endM).toBeCloseTo(0.31, 1);
+    },
+    1_800_000,
+  );
+});

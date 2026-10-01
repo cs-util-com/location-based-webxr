@@ -64,18 +64,32 @@ recording. Its own module since the flows plan M6.
     the session's); each new evaluation is counted per code into
     `ctx.fusedTallies` (the `?debug=1` readout) and, while the pipeline is
     the session's, kept as `ctx.viewerLastEvaluation` (the visitor hint;
-    plan §66, `qr-debug-readout.ts`). It also starts THIS entry's code
-    keep-alive (`ctx.viewerKeepAlive`, authoring plan M2b): one store
-    subscription casts the keep-alive's votes after every new DEVICE fix
-    (`createDeviceFixWatch`), scheduled by the fix's ARRIVAL on `now` and
-    stamped with its Geolocation time (M2b review #4), through the same
-    `castVote` sink as a lock's votes; stops the keep-alive when the
-    odometry frame changes (`qrDetected.frameEpoch`: the kept pose names a
-    place in the old frame, M2b review #1); and removes itself once that
-    keep-alive is no longer the session's (`endQrPipeline`, the next
-    entry). It creates the entry's vote budget as `ctx.viewerVoteBudget`,
-    which a tour switch resets (`endTourCodeVotes`, M2b review #6). False
-    without a detector (plain AR, still placing photos; no keep-alive).
+    plan §66, `qr-debug-readout.ts`). Its FIRST statement, before the
+    plain-AR return, starts the entry's vote sink
+    (`ctx.viewerVoteSink`, `viewer-vote-sink.ts`, M2e), which clears every
+    solver override. It also starts THIS entry's code keep-alive
+    (`ctx.viewerKeepAlive`, authoring plan M2b) with one store
+    subscription that stops it when the odometry frame changes
+    (`qrDetected.frameEpoch`: the kept pose names a place in the old frame,
+    M2b review #1) and removes itself once that keep-alive is no longer the
+    session's (`endQrPipeline`, the next entry); its votes are cast by
+    `recordDeviceFix`. A lock's votes reach the sink all at once
+    (`dispatchVotes`): one batch per lock. It creates the entry's vote
+    budget as `ctx.viewerVoteBudget`, which a tour switch resets
+    (`endTourCodeVotes`, M2b review #6). False without a detector (plain
+    AR, still placing photos; no keep-alive).
+  - `recordDeviceFix(fix): void` (M2e, D18) - where the page's device GPS
+    fixes go: `main.ts` hands it to `createGpsPositionHandler` as
+    `recordFix`, so the framework coordinator builds the fix (after the
+    session zero) and this decides how it reaches the store. With a viewer
+    entry running it asks the keep-alive for the fix's ring, scheduled by
+    the fix's ARRIVAL on `now` and stamped with its Geolocation time (M2b
+    review #4), and the sink stores the fix and the ring as ONE
+    `recordGpsEventBatch`, the fix first - one solve per tick. Without a
+    ring (no kept code, the fade owing less than 3 votes, a fix time that is
+    not finite) or outside a visitor entry (author mode, after AR exit) it is
+    the plain `recordGpsEvent`. Only device fixes reach it, so the
+    keep-alive never answers a vote.
   - `tryPlaceTour(): void` - the placement trigger (DEC-F3): with a tour
     open and a viewer session live (`ctx.placementUnsubscribe !== null`),
     runs the capture join ONCE per session+tour
@@ -106,36 +120,44 @@ recording. Its own module since the flows plan M6.
 - Votes: `canAcceptVotes` tests the session ZERO, not merely the slice
   (PR #386 review) - votes before the zero would charge the budget while
   `recordGpsEvent` wrote nothing.
-- **`castVote` is the one vote sink** (authoring plan M2b): every viewer
-  vote - a lock's burst and the keep-alive's rings - is dispatched through
-  it, so a per-vote concern has exactly one place to go. Its payloads carry
-  the synthetic-QR source stamp, which is what keeps the keep-alive's own
-  fix listener from answering them.
-- **The seam for the per-entry solver overrides** (plan §3.2, D12; waits for
-  the core release of M2a's soft-trimming keys). The viewer is to run the
+- **The entry's vote sink is the one way a vote reaches the store**
+  (`viewer-vote-sink.ts`; authoring plan M2b, batched in M2e): a lock's
+  ring and each keep-alive tick (with its device fix) are ONE
+  `recordGpsEventBatch` each (D18), so a per-vote concern has exactly one
+  place to go. The votes carry the synthetic-QR source stamp; the keep-alive
+  is triggered only by `recordDeviceFix`, never by a stored point, so it
+  cannot answer its own votes. **The cost check:** a keep-alive tick is
+  exactly one store action (pinned by `viewer-votes.test.ts`, no
+  wall-clock assertion; the CPU numbers are the CPU-cost results' M2f
+  re-measurement). With a `?debug=1` recording running, a keep-alive state
+  change also logs its `tourViewing/keepAlive` action first.
+- **The seam for the per-entry solver overrides** (plan §3.2, D12; WIRED in
+  M2e on core 1.26, `viewer-vote-sink.ts`). The viewer runs the
   soft trimming only for its own AR entries, never as a global default:
   `resetGpsSessionData` keeps overrides across entries, so without a reset
   every later GPS-only solve would run the soft kernel the corpus never
   credited. The contract, exactly (restated after the M2b/M2d milestone
   review #3, which found the keep-alive unsafe under the hard trim: B = 5 m
   fails the rule, 8 m jumps, 15 m never hands off):
-  1. **Clear first, on EVERY entry.** `setAlignmentOverrides(null)` is the
-     first statement of `startViewerPipeline`, BEFORE its early return for
-     a device without a detector: a plain-AR entry must never keep a
-     previous entry's soft setting, and it casts no vote that would clear
-     it later. It runs before any fix or vote of the entry.
-  2. **Soft on at the entry's first vote.** In `castVote`, before the
-     entry's FIRST payload (a flag in `startViewerPipeline`'s closure),
-     `setAlignmentOverrides({ ...current overrides, ...soft keys })` -
-     merged, because the action replaces the whole object. Every viewer
-     vote (a lock's burst, the keep-alive's rings) goes through `castVote`,
-     so no vote reaches the solver under the hard trim once the seam is
-     wired.
-  3. **A tour switch inside one entry turns it off again** (decided here;
-     the coordinator may overrule it in the wiring step):
-     `endTourCodeVotes` also dispatches `setAlignmentOverrides(null)` and
-     re-arms the closure flag, so the next tour's first vote turns soft
-     trimming back on. Reason: M0c credited the soft kernel for a session
+  1. **Clear first, on EVERY entry.** `setAlignmentOverrides(null)` is
+     dispatched by the first statement of `startViewerPipeline`
+     (`startEntryVoteSink`), BEFORE its early return for a device without a
+     detector: a plain-AR entry must never keep a previous entry's soft
+     setting, and it casts no vote that would clear it later. It runs before
+     any fix or vote of the entry.
+  2. **Soft on at the entry's first vote.** The sink dispatches
+     `setAlignmentOverrides({ ...current overrides, ...VIEWER_SOFT_TRIM })`
+     right before the entry's FIRST batch - merged, because the action
+     replaces the whole object (`outlierFalloffEnabled: true`,
+     `outlierFalloffRadiusMeters: 1`, `outlierFalloffExponent: 1`,
+     `outlierRejectionEnabled: false`). Every viewer vote (a lock's ring, a
+     keep-alive tick) goes through the sink, so no vote reaches the solver
+     under the hard trim.
+  3. **A tour switch inside one entry turns it off again** (the M2b fix
+     agent's decision, kept in M2e): `endTourCodeVotes` calls the sink's
+     `endTour()`, which dispatches `setAlignmentOverrides(null)` if this
+     entry turned it on and re-arms the flag, so the next tour's first vote
+     turns soft trimming back on. Reason: M0c credited the soft kernel for a session
      whose alignment a code is holding; between tours no code holds it
      (the keep-alive is stopped, the budget reset), and a GPS-only solve is
      the one the corpus credited. The cost: the closing tour's votes still
@@ -144,15 +166,14 @@ recording. Its own module since the flows plan M6.
      The alternative (keep soft on until AR exit) avoids that one move and
      runs GPS-only solving under an uncredited kernel for the rest of the
      entry.
-     Nothing else in the Tour Viewer dispatches overrides. The vote-strength
-     harness (`viewer-vote-strength.test.ts`) then re-measures the shipped
-     arm under the soft solver. **Until then** `viewer-soft-trim-guard.test.ts`
-     holds the line: it passes only while the installed core REFUSES the soft
-     keys, and breaks (a type error at `typecheck:tests`, and at run time) on
-     the first core that accepts them, so bumping the core forces this wiring.
-     It cannot stop a build that ships the keep-alive under the hard trim
-     before that core exists; only a release rule, or gating the keep-alive
-     off until the seam is wired, can - an owner decision.
+     Nothing else in the Tour Viewer dispatches overrides. Pinned by
+     `viewer-vote-sink.test.ts` (the order and content against the real
+     store) and `viewer-votes.test.ts` (through this module: a plain-AR
+     entry, a re-entry, a tour switch); the vote-strength harness
+     (`viewer-vote-strength.test.ts`, `VOTE_STRENGTH_SWEEP=m2e`) measures
+     the shipped arm through the same sink. These replace
+     `viewer-soft-trim-guard.test.ts`, the tripwire that held while the
+     core refused the keys and broke, as designed, on core 1.26.
 - **The tour's content follows the live alignment - no per-note GPS anchors
   (owner decision D10a, authoring plan 2026-09-28-0953 §3.2, M2d).**
   `tryPlaceContent` hands `renderTourObjects` the scene root
@@ -205,7 +226,7 @@ ctx.placementUnsubscribe = arStore.subscribe(() => viewer.tryPlaceTour());
 real viewer controller config (a lock, then its votes as one batch; no
 second lock for the next tracked frame), and exactly today's dispatches
 without a running recording. Only a lock's votes are batched into
-`votesCast`; the keep-alive's go through `castVote` alone and reach a
+`votesCast`; the keep-alive's go through `recordDeviceFix` alone and reach a
 recording as source-stamped GPS events, its state changes as
 `tourViewing/keepAlive` (the session's keep-alive is the logged one, the AR
 exit's stop included; nothing without a running recording).
@@ -220,7 +241,20 @@ a code re-scanned 20 minutes later votes from where it reads now and the
 keep-alive re-votes from there, a frame change ends the hold (review #1);
 the hold hands over by arrival with the fix clock skewed by 5 s or 1 h
 either way (review #4); a tour reopened in the same entry waits for a real
-vote and holds again (review #6).
+vote and holds again (review #6). M2e: a lock's ring is ONE batch, a
+keep-alive tick is exactly ONE store action (the device fix first, then
+its ring), a fix the keep-alive does not answer is the plain
+`recordGpsEvent`, a malformed fix inside a tick is dropped alone by the
+core, the composed GPS handler (`recordFix`) routes here; and the
+per-entry overrides through this module (soft on right before the first
+vote, a plain-AR entry and a re-entry start cleared, a tour switch turns
+them off until the next tour's first vote).
+
+`viewer-vote-sink.test.ts` (M2e) - the sink against the real store: the
+clear at entry start, the merge before the first vote and once only, a
+keep-alive tick bringing the first vote, a ringless fix changing nothing,
+`endTour`, the soft keys as M0c measured them, one batch per lock, the
+tick's fix-first batch, a malformed fix dropped alone.
 
 `fused-pose-wiring.test.ts` - the votes' stable pose is the fused one (at
 the true rotation where single-frame poses scatter past the old average's
