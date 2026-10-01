@@ -17,8 +17,15 @@ import { fixtureTile, routeAll } from "./terrain-smoke-helpers.mjs";
 import { COMPARE_VARIANTS } from "./terrain-compare.js";
 
 const FULL = process.env.TERRAIN_COMPARE_FULL === "1";
-/** The full table's rows: every `COMPARE_VARIANTS` entry. */
-const ROWS = COMPARE_VARIANTS.length;
+/**
+ * `TERRAIN_COMPARE_ROWS=A,C2` (with FULL) runs those rows only (the page's
+ * `?rows=`; keep the first row A, the frame cost's reference).
+ */
+const PICKED = (process.env.TERRAIN_COMPARE_ROWS ?? "")
+  .split(",")
+  .filter(Boolean);
+/** The full table's rows: every `COMPARE_VARIANTS` entry, or the picked. */
+const ROWS = PICKED.length > 0 ? PICKED.length : COMPARE_VARIANTS.length;
 
 test("the comparison page drives the lab's fly-in and logs every variant's numbers", async ({
   page,
@@ -31,7 +38,12 @@ test("the comparison page drives the lab's fly-in and logs every variant's numbe
     if (m.text().startsWith("compare ")) console.log(m.text());
   });
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto(`/labs/terrain/compare.html${FULL ? "" : "?quick=1"}`);
+  const query = !FULL
+    ? "?quick=1"
+    : PICKED.length > 0
+      ? `?rows=${PICKED.join(",")}`
+      : "";
+  await page.goto(`/labs/terrain/compare.html${query}`);
   await page.waitForFunction(() => window.__terrainCompare?.done, null, {
     timeout: FULL ? 3_500_000 : 580_000,
     polling: 2000,

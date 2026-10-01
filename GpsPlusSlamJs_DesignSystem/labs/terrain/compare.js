@@ -196,9 +196,14 @@ const summary = (diffs) => {
  *   imagery there. Relief shading counts as colour error here.
  * - `footprint`: the render box-averaged in linear light over each imagery
  *   pixel's footprint (`footprintSamples`^2 points over the 2.45 km pixel)
- *   against that one pixel's globe colour: what the globe shows at the
- *   hand-over, where one imagery pixel is a few screen pixels. A footprint
- *   with any point off the canvas or off the field is left out.
+ *   against the globe averaged the same way: what the globe shows over that
+ *   pixel at the hand-over, where one imagery pixel is a few screen pixels,
+ *   each drawn from the filtered (bilinear) imagery. Averaging both sides
+ *   alike removes the per-point relief shading and leaves any shift of the
+ *   footprint's mean. (Against the raw pixel colour instead, the bilinear
+ *   blur of every approach would count as error: the first run read C1 at
+ *   9.0 that way against 8.5 per point.) A footprint with any point off
+ *   the canvas or off the field is left out.
  */
 function handOverDifference(s) {
   const grid = groundGrid(
@@ -220,7 +225,15 @@ function handOverDifference(s) {
     const e = lab().toEnu(centre.lat, centre.lng);
     const [wx, wy] = footprintM(FAR_FIELD.level, centre.lat);
     const pts = lifted(footprintPoints(e.x, e.y, wx, wy, n), s);
-    if (pts.length === n * n) boxes.push({ centre, pts });
+    if (pts.length === n * n) {
+      boxes.push({
+        pts,
+        globe: pts.map((q) => {
+          const ll2 = lab().toLatLng(q.x, q.y);
+          return globeAt(ll2.lat, ll2.lng);
+        }),
+      });
+    }
   }
   const all = [...ground, ...boxes.flatMap((b) => b.pts)];
   const at = lab().projectAll(all.map((p) => [p.x, p.lift, -p.y]));
@@ -237,9 +250,10 @@ function handOverDifference(s) {
   const footprint = boxes.map((b) => {
     const idx = b.pts.map((_, j) => next + j);
     next += b.pts.length;
-    if (!idx.every((i) => on[i])) return Number.NaN;
-    const globe = globeAt(b.centre.lat, b.centre.lng);
-    return globe ? deltaE76(globe, linearMeanSrgb(idx.map(rgb))) : Number.NaN;
+    if (!idx.every((i) => on[i]) || b.globe.some((g) => g === null)) {
+      return Number.NaN;
+    }
+    return deltaE76(linearMeanSrgb(b.globe), linearMeanSrgb(idx.map(rgb)));
   });
   return { point: summary(point), footprint: summary(footprint) };
 }

@@ -32,7 +32,10 @@
        * to keep its posts 3 pixels apart (terrain-compare.js
        * contrastStepM).
        */
+      /* content-box: design.css sizes borders inside (border-box), which
+         made the drawing buffer 798 x 498. */
       #compare-frame {
+        box-sizing: content-box;
         width: 800px;
         height: 500px;
         border: 1px solid #b8c2cc;

@@ -19,11 +19,15 @@
       scale would show the same light on average.
     - `footprint`: for each grid point's imagery pixel, the render
       box-averaged in linear light over that pixel's footprint (5 x 5
-      points over 2.45 x 1.68 km on the Alps) against that ONE pixel's
-      globe colour. At 150 km one imagery pixel is about 3 x 3 drawing
-      pixels across and along the view, so this is what a viewer compares
-      at the hand-over. It removes the per-point relief shading, but keeps
-      any shift of the footprint's mean.
+      points over 2.45 x 1.68 km on the Alps) against the globe's model
+      averaged over the same points. At 150 km one imagery pixel is about
+      3 x 3 drawing pixels, each of which the globe draws from its filtered
+      (bilinear) imagery, so this is what a viewer compares at the
+      hand-over. Averaging both sides alike removes the per-point relief
+      shading and keeps any shift of the footprint's mean. Against the
+      raw pixel colour instead, every approach's bilinear blur would count
+      as error (the first try read C1 at 9.0 that way, against 8.5 per
+      point).
     - The globe's pixel is a MODEL, `sunLitColour(imagery, max(0, sun
 height), sunIntensity)`: flat ground under the globe's sun. That is
       C1's own formula without the slope term, so C1 at detail 0 matches it
