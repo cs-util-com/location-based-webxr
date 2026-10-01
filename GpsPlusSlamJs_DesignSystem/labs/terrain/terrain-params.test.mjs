@@ -17,6 +17,7 @@ import {
   FIELD,
   GPS_PLACE,
   PARAMS,
+  STYLE_LIGHT,
   STYLE_SHADOW,
   TERRAIN_PLACES,
   fieldSpec,
@@ -204,6 +205,23 @@ describe("readTerrainParams", () => {
       readTerrainParams("style=clay&shadow=7").shadow,
       STYLE_SHADOW.clay,
     );
+  });
+
+  // Globe round-5 §3.3: the sun is a choice beside the map lights. Each
+  // style has its own default (the map styles keep their lights, so every
+  // committed view is unchanged); a `light` key overrides it for any style.
+  it("uses the style's own light unless the hash sets one", () => {
+    for (const id of Object.keys(TERRAIN_STYLES)) {
+      assert.equal(readTerrainParams(`style=${id}`).light, STYLE_LIGHT[id], id);
+      assert.equal(readTerrainParams(`style=${id}&light=1`).light, 1, id);
+      assert.equal(readTerrainParams(`style=${id}&light=0`).light, 0, id);
+      assert.equal(
+        readTerrainParams(`style=${id}&light=2`).light,
+        STYLE_LIGHT[id],
+        `${id} out of range`,
+      );
+    }
+    assert.equal(STYLE_LIGHT.pastel, 0);
   });
 
   // Plan §9 finding 11: the far field is off by default (style A matches

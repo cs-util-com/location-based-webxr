@@ -48,6 +48,13 @@ import {
 } from "./terrain-far-field.js";
 import { globeSource } from "/globe/globe-sources.js";
 import {
+  readGlobeClockSetting,
+  sameGlobeClockSetting,
+  startGlobeClock,
+} from "/globe/globe-clock.js";
+import { solarPosition } from "/fw/geo/solar-position.js";
+import { MAP_KEY_LIGHT, sunEnuFromGlobe } from "./terrain-sun.js";
+import {
   CAMERA_PRESETS,
   flyInPose,
   orbitPosition,
@@ -378,6 +385,21 @@ function start() {
 
   let params = readTerrainParams(location.hash.slice(1));
   let appliedHash = location.hash.slice(1);
+  /**
+   * The scene's clock, the globe lab's own (`time=`, `timeScale=`), which
+   * the sun reads with `light` 1 (globe round-5 plan §3.3).
+   */
+  const startClock = (setting) =>
+    startGlobeClock(setting, {
+      epochMs: Date.now(),
+      monoMs: performance.now(),
+    });
+  let clockSetting = readGlobeClockSetting(
+    new URLSearchParams(location.hash.slice(1)),
+  );
+  let clock = startClock(clockSetting);
+  /** The light the relief is drawn with this frame, for the hooks. */
+  const sunState = { enu: [...MAP_KEY_LIGHT], timeMs: null };
   /** The position a press of the pin found; never in the hash. */
   let gpsFix = null;
   /**
@@ -486,6 +508,13 @@ function start() {
    */
   const onHash = () => {
     const next = readTerrainParams(location.hash.slice(1));
+    const nextClock = readGlobeClockSetting(
+      new URLSearchParams(location.hash.slice(1)),
+    );
+    if (!sameGlobeClockSetting(nextClock, clockSetting)) {
+      clockSetting = nextClock;
+      clock = startClock(clockSetting);
+    }
     const moved = next.place !== params.place;
     const recompute = next.svf !== params.svf;
     params = next;
@@ -876,7 +905,22 @@ function start() {
       highKm: params.farHigh,
       lowKm: params.farLow,
     });
+    // The key light: the globe's sun (the globe lab's own call, turned into
+    // this place's frame) with `light` 1, the map styles' light otherwise.
+    if (params.light === 1 && place) {
+      sunState.timeMs = clock.timeAt(now);
+      sunState.enu = sunEnuFromGlobe(
+        solarPosition(sunState.timeMs, 0, 0),
+        place.centre.lat,
+        place.centre.lng,
+      );
+    } else {
+      sunState.timeMs = null;
+      sunState.enu = [...MAP_KEY_LIGHT];
+    }
     if (material) {
+      material.uniforms.uSun.value.set(...sunState.enu);
+      material.uniforms.uLightMode.value = params.light;
       material.uniforms.uExag.value = live.effectiveE;
       material.uniforms.uGain.value = params.shade * live.boost;
       material.uniforms.uNearW.value = live.far.near;
@@ -933,6 +977,12 @@ function start() {
         farOn: params.farOn,
         farState: far.state,
         farWeights: { ...live.far },
+        light: params.light,
+        sun: {
+          enu: sunState.enu.slice(),
+          elevationDeg: (Math.asin(sunState.enu[2]) * 180) / Math.PI,
+          timeMs: sunState.timeMs,
+        },
         hRange: hRange.slice(),
         lines: material
           ? {

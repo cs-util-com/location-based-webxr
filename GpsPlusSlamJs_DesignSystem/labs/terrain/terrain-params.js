@@ -142,6 +142,12 @@ export const PARAMS = Object.freeze({
   far: { fallback: 0, min: 0, max: 1 },
   farHigh: { fallback: FAR_FIELD.highKm, min: 100, max: 5000 },
   farLow: { fallback: FAR_FIELD.lowKm, min: 10, max: 2000 },
+  /**
+   * The light (globe round-5 plan §3.3): 0 the map styles' own lights, 1
+   * the globe's sun at the page's clock (`time=`, as the globe lab's);
+   * with no `light` key, the style's own (`STYLE_LIGHT`).
+   */
+  light: { fallback: 0, min: 0, max: 1 },
   /** Sky-view directions; 0 turns the term off (a reduced smoke setting). */
   svf: { fallback: 8, min: 0, max: 16 },
   flyMs: { fallback: 12_000, min: 0, max: 60_000 },
@@ -155,6 +161,15 @@ export const STYLE_SHADOW = Object.freeze({
   globe: PASTEL_ATLAS.shadow,
   swiss: SWISS.shadow,
   clay: CLAY.shadow,
+});
+
+/** Each style's own light (0 map lights, 1 the sun), when the hash has none. */
+export const STYLE_LIGHT = Object.freeze({
+  pastel: 0,
+  natural: 0,
+  globe: 0,
+  swiss: 0,
+  clay: 0,
 });
 
 /** A number from the params within its range, or its fallback. */
@@ -199,6 +214,11 @@ export function readTerrainParams(hash) {
   const shadowRange = { ...PARAMS.shadow, fallback: null };
   if (readNumber(params, "shadow", shadowRange) === null) {
     out.shadow = STYLE_SHADOW[out.style];
+  }
+  if (
+    readNumber(params, "light", { ...PARAMS.light, fallback: null }) === null
+  ) {
+    out.light = STYLE_LIGHT[out.style];
   }
   if (out.farLow >= out.farHigh) {
     out.notes.push(

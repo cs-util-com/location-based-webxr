@@ -38,8 +38,13 @@ side }`: `extentM` includes the padding; `side` counts both edges.
     - style D: `exposure` (0-0.7, 0.35), `contrast` (the lowlands' share,
       0.2-1, 0.4);
     - the far field: `far` (0/1, 0), `farHigh` (100-5000 km, 1500) and
-      `farLow` (10-2000 km, 300).
+      `farLow` (10-2000 km, 300);
+    - the light (globe round-5 plan §3.3): `light` (0 the map styles' own
+      lights, 1 the globe's sun at the page's clock; with no key, the
+      style's own, `STYLE_LIGHT`). The clock's `time`/`timeScale` are the
+      globe lab's keys, read on the page by `/globe/globe-clock.js`.
   - `STYLE_SHADOW`: each style's own shading strength.
+  - `STYLE_LIGHT`: each style's own light (every map style 0).
   - `readTerrainParams(hash)`: every PARAMS value, `place`, `style` (one of
     `terrain-styles.js`'s `TERRAIN_STYLES`), `farOn` (style C, or `far=1`),
     `preset` (`top`, `oblique`, `low`, `fly` or null), `camera` (from
@@ -59,6 +64,6 @@ side }`: `extentM` includes the padding; `side` counts both edges.
   padding against the sky-view march the lab runs and three blur sigmas, no
   hash key for the steps, the defaults, in-range values, five malformed
   values, the camera triple, presets, the place and style fallbacks (inherited property names included), every
-  style, each style's own shadow and the override, the far field's switch
+  style, each style's own shadow and light and their overrides, the far field's switch
   and its altitude check. `terrain-pipeline.test.mjs` holds each place's
   tile set to its committed fixtures.

@@ -11,7 +11,8 @@
     (`terrain-far-field.js`).
   - `createTerrainMaterial(textures, { side, extentM, datum })`: a
     `ShaderMaterial` whose uniforms the page updates in place: per frame
-    `uExag`, `uGain`, `uNearW` and `uFarReliefW`; per hash through
+    `uExag`, `uGain`, `uNearW`, `uFarReliefW`, `uSun` and
+    `uLightMode`; per hash through
     `applyStyle`; per build the textures and `uDatum`; once `uHalfM`,
     `uFarDeltaM`, `uFarDeltaUv` and `uFar`.
   - `applyStyle(material, params, { shaderStyle, latDeg, hRange })`: the
@@ -43,6 +44,16 @@
     included, since the lab renders with no tone mapping), encoded with
     `sRGBTransferOETF`, and mixed under the near style. A texel the imagery
     could not answer (alpha 0) keeps the near style.
+  - The key light (globe round-5 plan §3.3, `terrain-sun.js`'s
+    `SUN_GLSL`, included whole): `uSun` is unit ENU toward the light, the
+    map light (315°, 45°) or the globe's sun, set per frame by the page;
+    `uLightMode` 1 shades A and E by it alone (`sunRelativeShade`) instead
+    of the four map lights; B and D always read it (`sunShade` is
+    `sunRelativeShade`, which with the map light is their
+    `singleLightShade`). `terrainSunVisibility(vEnu, h, uSun)` is computed
+    once per fragment and passed to every direct term: the cloud-shadow
+    port replaces its body and nothing else. A sun straight overhead has
+    no azimuth, so D's exposure colour is then flat.
   - The snow mask (`uSnowMask` 1) draws B's snow weight as grey in any
     style, for the smoke and for judging the line by eye.
   - Half floats and bytes only (plan §9 finding 13): every texture is

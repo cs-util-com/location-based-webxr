@@ -33,7 +33,14 @@
     grid (`terrain-far-field.js`);
   - each frame: the camera (a preset, the hash's pose, the fly-in, or
     OrbitControls), the smoothed altitude, E, the slope boost and the far
-    field's weights into the shader's uniforms, and the readout.
+    field's weights into the shader's uniforms, and the readout;
+  - the key light each frame (globe round-5 plan §3.3): with `light` 1 the
+    globe's sun, made by the globe lab's own call
+    (`solarPosition(clock time, 0, 0)` from `/fw/geo/solar-position.js`)
+    turned into the place's frame by `terrain-sun.js`'s
+    `sunEnuFromGlobe`, on the globe lab's clock (`time=`, `timeScale=`,
+    `/globe/globe-clock.js`); with `light` 0 the map light
+    (`MAP_KEY_LIGHT`).
 - The control plate and the hash (as in the globe lab): every
   `[data-hash-key]` control writes its key with `replaceState` and applies
   at once; `[data-preset]` buttons choose a camera (a second press of "Fly
@@ -74,7 +81,8 @@
   Marble credit joins it.
 - Test hooks, `window.__terrainLab`: `ready`, `error`, `background`,
   `state()` (the applied hash, the style and its shader branch, the far
-  field's state and weights, the land range, B's lines, the credits text,
+  field's state and weights, the light and the sun (`enu`, `elevationDeg`,
+  `timeMs`, null with the map light), the land range, B's lines, the credits text,
   the region's centre, whether the GPS place awaits a fix, the pin's
   phase, E and its parts, W, the boost, the pose, the flight's samples, the tiles,
   bytes, datum, missing posts and tiles, the relief, the loading history

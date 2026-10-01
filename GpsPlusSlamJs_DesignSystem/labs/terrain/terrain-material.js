@@ -42,6 +42,7 @@ import {
   snowLineM,
   treeLineM,
 } from "./terrain-styles.js";
+import { GLOBE_SUN, MAP_KEY_LIGHT, SUN_GLSL } from "./terrain-sun.js";
 
 const DEG = Math.PI / 180;
 
@@ -119,7 +120,11 @@ uniform vec2 uSnowSlideDeg;
 uniform vec2 uScreeRockDeg;
 uniform float uMaxLight;
 uniform float uLift;
-uniform vec3 uSunDir;
+// The key light (terrain-sun.js): unit ENU toward the sun, or the map
+// styles' classic north-west light; uLightMode 1 shades A and E by it too.
+uniform vec3 uSun;
+uniform float uSunIntensity;
+uniform int uLightMode;
 // Style D.
 uniform vec3 uSwissSea;
 uniform vec3 uExpLight;
@@ -142,6 +147,7 @@ uniform float uFarDeltaUv;
 uniform float uFarDeltaM;
 varying vec2 vUv;
 varying vec2 vEnu;
+${SUN_GLSL}
 
 // terrain-style.js multidirectionalShade: flat ground is exactly 1.
 float shade(vec2 grad) {
@@ -156,10 +162,10 @@ float shade(vec2 grad) {
   return 0.5 * s;
 }
 
-// terrain-styles.js singleLightShade: flat 1, never negative.
-float sunShade(vec2 grad) {
-  vec3 n = normalize(vec3(-grad * uGain, 1.0));
-  return max(0.0, dot(n, uSunDir)) / uSunDir.z;
+// terrain-styles.js singleLightShade for the key light: flat 1 in a clear
+// sky, never negative (terrain-sun.js sunRelativeShade).
+float sunShade(vec2 grad, float vis) {
+  return sunRelativeShade(reliefNormal(grad, uGain), vis);
 }
 
 // terrain-styles.js naturalWeights: x forest, y meadow, z scree, w rock.
@@ -192,8 +198,8 @@ vec2 naturalSnow(float h, vec2 grad, float small) {
 }
 
 // terrain-styles.js naturalColour.
-vec3 natural(float h, vec2 grad, float small, float svf) {
-  float s = sunShade(grad);
+vec3 natural(float h, vec2 grad, float small, float svf, float vis) {
+  float s = sunShade(grad, vis);
   vec3 col;
   if (h <= 0.0) {
     col = mix(uNatSea, uNatSeaDeep, clamp(-h / uNatSeaDeepM, 0.0, 1.0));
@@ -218,7 +224,8 @@ vec3 exposureColour(vec2 nh) {
   vec2 t = nh / uExpFullTilt;
   float len = length(t);
   if (len > 1.0) t /= len;
-  vec2 lh = normalize(uSunDir.xy);
+  // A sun straight overhead has no azimuth: no exposure colour then.
+  vec2 lh = length(uSun.xy) > 1e-6 ? normalize(uSun.xy) : vec2(0.0);
   float a = dot(t, lh);
   float b = t.x * lh.y - t.y * lh.x;
   return uExpFlat
@@ -229,13 +236,13 @@ vec3 exposureColour(vec2 nh) {
 }
 
 // terrain-styles.js swissColour.
-vec3 swiss(float h, vec2 grad, float svf) {
+vec3 swiss(float h, vec2 grad, float svf, float vis) {
   vec3 base = h <= 0.0
     ? uSwissSea
     : texture2D(uLutSwiss, vec2(h / uLutMaxM, 0.5)).rgb;
   vec3 n = normalize(vec3(-grad * uGain, 1.0));
   vec3 col = base * mix(vec3(1.0), exposureColour(n.xy) / uExpFlat, uExposure);
-  float s = sunShade(grad);
+  float s = sunShade(grad, vis);
   float contrast = uHRange.y > uHRange.x
     ? mix(uLowContrast, 1.0, smoothstep(uHRange.x, uHRange.y, h))
     : 1.0;
@@ -260,11 +267,13 @@ void main() {
     gl_FragColor = vec4(vec3(h <= 0.0 ? 0.0 : naturalSnow(h, d.gb, small).x), 1.0);
     return;
   }
+  // The sun's visibility, once per fragment (the cloud-shadow port's seat).
+  float vis = terrainSunVisibility(vEnu, h, uSun);
   vec3 col;
   if (uStyle == 1) {
-    col = natural(h, d.gb, small, a.b);
+    col = natural(h, d.gb, small, a.b, vis);
   } else if (uStyle == 2) {
-    col = swiss(h, d.gb, a.b);
+    col = swiss(h, d.gb, a.b, vis);
   } else {
     if (uStyle == 3) {
       col = h <= 0.0 ? uClaySea : uClay;
@@ -277,8 +286,12 @@ void main() {
       float spread = a.r * uStdSpanM;
       col = mix(ramp, uGreen, uGreenAmount * smoothstep(uGreenR.x, uGreenR.y, spread));
     }
-    // terrain-styles.js shadeColour (styles A and E).
-    float s = shade(d.gb) + uDetail * small / 50.0;
+    // terrain-styles.js shadeColour (styles A and E), by the four map
+    // lights or, with uLightMode 1, by the key light alone.
+    float lit = uLightMode == 1
+      ? sunRelativeShade(reliefNormal(d.gb, uGain), vis)
+      : shade(d.gb);
+    float s = lit + uDetail * small / 50.0;
     col *= mix(vec3(1.0), uShadowTint, uShadow * clamp(1.0 - s, 0.0, 1.0));
     col = mix(col, uHighlightTint, uHighlight * clamp(s - 1.0, 0.0, 1.0));
     col *= mix(1.0, a.b, uAo);
@@ -438,8 +451,11 @@ export function createTerrainMaterial(textures, { side, extentM, datum }) {
       uScreeRockDeg: { value: new THREE.Vector2(...n.screeRockDeg) },
       uMaxLight: { value: n.maxLight },
       uLift: { value: n.lift },
-      // Styles B and D share the classic single light (both 315° / 45°).
-      uSunDir: { value: lightDir(n.lightAzimuthDeg, n.lightAltitudeDeg) },
+      // Styles B and D share the classic single light (both 315° / 45°);
+      // the page points it at the sun with `light` 1.
+      uSun: { value: new THREE.Vector3(...MAP_KEY_LIGHT) },
+      uSunIntensity: { value: GLOBE_SUN.intensity },
+      uLightMode: { value: 0 },
       uSwissSea: { value: rgb(w.sea) },
       uExpLight: { value: rgb(w.exposureLight) },
       uExpShadow: { value: rgb(w.exposureShadow) },
