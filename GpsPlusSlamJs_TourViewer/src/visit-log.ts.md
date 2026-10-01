@@ -38,6 +38,13 @@ one file per visit) so a reload keeps it.
   kept), `entries` (oldest first), `ids`, `clear`.
 - `newVisitId(pageId, generation)`, `thinPath(points, distanceM, spacingM?,
 maxPoints?)`, `maxHorizontalExtentM(positions)`.
+- `deviceSamples({ gpsPositions, odometryPositions })` - THE device-only
+  filter over the store's GPS history: each readable device fix
+  (`{ lat, lng, accuracy? }`), its odometry partner (null when the two
+  arrays are not paired or the position is not finite) and its own
+  `timestampMs` when finite; synthetic code votes left out. The entry
+  builder reads through it, and so do the moved-code estimators
+  (`code-displacement.ts`, D20/M5a), which count evidence in time.
 - Constants: `VISIT_PATH_SPACING_M` (1), `VISIT_PATH_MAX_POINTS` (1,000);
   module-private `VISIT_LOG_VERSION` (1).
 
@@ -131,7 +138,11 @@ combineCodeVisits(codeVisitPoses(log.entries(), levelId));
   code from its last look; the saved pose on that code only, round-tripped,
   an unreadable one costing only itself; `thinPath` (cases and a property); the draft file round trip (case
   and property) and its defensive read; the in-memory log; `codeVisitPoses`
-  into `combineCodeVisits`.
+  into `combineCodeVisits`; `deviceSamples` keeps device fixes with their
+  odometry and time and drops the votes.
+- `code-displacement.test.ts` and the M5a block of
+  `viewer-vote-strength.test.ts` read the store's history (votes present)
+  through `deviceSamples`.
 - `draft-persistence.test.ts`: a visit's file survives a reload, a corrupt
   one costs itself, a rejected one is swept.
 - `authoring-settle.test.ts`: the settle writes one entry per visit into the

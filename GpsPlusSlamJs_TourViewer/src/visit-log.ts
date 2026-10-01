@@ -128,6 +128,8 @@ interface VisitGpsFix {
   readonly latitude?: unknown;
   readonly longitude?: unknown;
   readonly latLongAccuracy?: unknown;
+  /** The fix's own time (epoch ms); read by {@link deviceSamples} only. */
+  readonly timestamp?: unknown;
   readonly source?: string;
 }
 
@@ -245,12 +247,20 @@ function finitePosition(p: readonly number[]): boolean {
   return p.length >= 3 && [p[0], p[1], p[2]].every(isFiniteNumber);
 }
 
-/** The device fixes with readable coordinates, and their odometry
- *  partners (index for index), synthetic code votes left out: a vote's
- *  odometry is the code's corner, not where the creator stood. */
-function deviceSamples(input: VisitLogInput): {
+/**
+ * The device fixes with readable coordinates, and their odometry partners
+ * (index for index), synthetic code votes left out: a vote's odometry is
+ * the code's corner, not where the creator stood. The ONE device-only
+ * filter over the store's GPS history; the moved-code estimators
+ * (`code-displacement.ts`) read through it too, which is why a fix's own
+ * time comes along (`timestampMs`, when finite).
+ */
+export function deviceSamples(
+  input: Pick<VisitLogInput, "gpsPositions" | "odometryPositions">,
+): {
   fix: VisitGpsPoint;
   odom: readonly number[] | null;
+  timestampMs?: number;
 }[] {
   const paired = input.gpsPositions.length === input.odometryPositions.length;
   return input.gpsPositions.flatMap((p, i) => {
@@ -258,7 +268,15 @@ function deviceSamples(input: VisitLogInput): {
     const fix = gpsPoint(p.latitude, p.longitude, p.latLongAccuracy);
     if (fix === null) return [];
     const odom = paired ? (input.odometryPositions[i] ?? null) : null;
-    return [{ fix, odom: odom !== null && finitePosition(odom) ? odom : null }];
+    const sample = {
+      fix,
+      odom: odom !== null && finitePosition(odom) ? odom : null,
+    };
+    return [
+      isFiniteNumber(p.timestamp)
+        ? { ...sample, timestampMs: p.timestamp }
+        : sample,
+    ];
   });
 }
 

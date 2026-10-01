@@ -28,6 +28,7 @@ import {
   buildVisitLogEntry,
   codeVisitPoses,
   createVisitLog,
+  deviceSamples,
   maxHorizontalExtentM,
   newVisitId,
   parseVisitLogEntry,
@@ -258,6 +259,42 @@ describe("buildVisitLogEntry", () => {
     ).toBeUndefined();
     const back = parseVisitLogEntry(serializeVisitLogEntry(entry));
     expect(back!.codes).toEqual(entry.codes);
+  });
+});
+
+describe("deviceSamples", () => {
+  // Why this test matters: the D20 displacement estimators (M5a,
+  // `code-displacement.ts`) read the viewer's GPS history through this ONE
+  // filter, so a synthetic code vote (whose odometry is the code, not the
+  // visitor) never counts as GPS evidence against the code it came from.
+  // They count evidence in TIME, so the fix's own timestamp comes along.
+  it("keeps device fixes with their odometry partner and timestamp, and drops the votes", () => {
+    const samples = deviceSamples({
+      gpsPositions: [
+        { ...fix(0, 0, 4), timestamp: 1_000 },
+        { ...fix(9, 9, 0.05, GPS_POINT_SOURCE_SYNTHETIC_QR), timestamp: 1_500 },
+        { ...fix(2, 0, 6), timestamp: 2_000 },
+        // No usable time: kept, without one.
+        { ...fix(4, 0, 6), timestamp: Number.NaN },
+      ],
+      odometryPositions: [
+        [0, 0, 0],
+        [9, 0, 9],
+        [2, 0, 0],
+        [4, 0, 0],
+      ],
+    });
+    expect(samples.map((s) => s.odom)).toEqual([
+      [0, 0, 0],
+      [2, 0, 0],
+      [4, 0, 0],
+    ]);
+    expect(samples.map((s) => s.timestampMs)).toEqual([
+      1_000,
+      2_000,
+      undefined,
+    ]);
+    expect(samples.map((s) => s.fix.accuracy)).toEqual([4, 6, 6]);
   });
 });
 

@@ -118,19 +118,37 @@ export interface CorrectionRefusal {
  * plus {@link CORRECTION_ACCURACY_FACTOR} times the combined accuracy of
  * the two visits (`hypot`: the correction is the DIFFERENCE of two
  * independent alignment errors).
+ *
+ * `options` exist for the moved-code rule (D20, `code-displacement.ts`),
+ * which shares this bound and whose M5a sweep varies the factor and the
+ * default accuracy; absent or unusable, they are the shipped constants.
  */
 export function correctionBoundM(
   visitAccuracyM: number | null | undefined,
   storedAccuracyM: number | null | undefined,
+  options: {
+    /** Replaces {@link CORRECTION_ACCURACY_FACTOR}; finite and >= 0. */
+    readonly accuracyFactor?: number;
+    /** Replaces {@link CORRECTION_DEFAULT_ACCURACY_M}; finite and > 0. */
+    readonly defaultAccuracyM?: number;
+  } = {},
 ): number {
+  const positive = (v: number | null | undefined): v is number =>
+    typeof v === "number" && Number.isFinite(v) && v > 0;
+  const defaultAccuracyM = positive(options.defaultAccuracyM)
+    ? options.defaultAccuracyM
+    : CORRECTION_DEFAULT_ACCURACY_M;
+  const factor =
+    typeof options.accuracyFactor === "number" &&
+    Number.isFinite(options.accuracyFactor) &&
+    options.accuracyFactor >= 0
+      ? options.accuracyFactor
+      : CORRECTION_ACCURACY_FACTOR;
   const usable = (v: number | null | undefined): number =>
-    typeof v === "number" && Number.isFinite(v) && v > 0
-      ? v
-      : CORRECTION_DEFAULT_ACCURACY_M;
+    positive(v) ? v : defaultAccuracyM;
   return (
     CORRECTION_FLOOR_M +
-    CORRECTION_ACCURACY_FACTOR *
-      Math.hypot(usable(visitAccuracyM), usable(storedAccuracyM))
+    factor * Math.hypot(usable(visitAccuracyM), usable(storedAccuracyM))
   );
 }
 
