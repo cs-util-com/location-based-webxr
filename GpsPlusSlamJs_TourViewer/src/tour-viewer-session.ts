@@ -348,8 +348,8 @@ export interface TourViewerSession {
   /** This visitor AR entry's vote sink (`viewer-vote-sink.ts`, authoring
    *  plan M2e): created at the entry's start (which clears the solver
    *  overrides), the way every vote and every keep-alive tick reaches the
-   *  store, turned off by a tour switch ({@link endTourCodeVotes}) and
-   *  dropped at AR exit. Null outside a visitor entry: device fixes then
+   *  store, kept across a tour switch and dropped at AR exit (the next
+   *  entry's start clears the overrides). Null outside a visitor entry: device fixes then
    *  take the plain `recordGpsEvent`. */
   viewerVoteSink: ViewerVoteSink | null;
 
@@ -417,15 +417,13 @@ export function endQrPipeline(ctx: TourViewerSession): void {
  * pipeline, which outlives the switch, and a reopened tour used to find its
  * code already "voted": its gate passed on a lock that cast nothing, and a
  * spent code never voted again (authoring plan 2026-09-28-0953, M2b
- * review #6). The soft trimming goes off with them (M2e; the seam contract,
- * rule 3): between tours no code holds the alignment, and a GPS-only solve
- * runs under the setting the corpus credited; the next tour's first vote
- * turns it back on.
+ * review #6). The soft trimming stays on (M2e milestone review #1; the seam
+ * contract, rule 3): the closed tour's votes stay in the GPS history until
+ * AR exit, and the hard trim back on them would jump the alignment.
  */
 export function endTourCodeVotes(ctx: TourViewerSession): void {
   ctx.viewerKeepAlive?.stop();
   ctx.viewerVoteBudget?.reset();
-  ctx.viewerVoteSink?.endTour();
 }
 
 export function createTourViewerSession(): TourViewerSession {

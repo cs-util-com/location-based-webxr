@@ -763,15 +763,25 @@ describe(
       expect(overridesOf(v)).toEqual(VIEWER_SOFT_TRIM);
     });
 
-    it("a tour switch inside the entry turns it off, and the reopened tour's first vote turns it back on", () => {
+    // Why (M2e milestone review #1): the closed tour's votes stay in the GPS
+    // history after a switch, so turning the soft kernel off there put the
+    // hard trim back onto them - the regime M0b/M2b measured as a 2.8-5.8 m
+    // jump at a 5-8 m bias. M0c: the viewer keeps the setting for the rest
+    // of the session; only the next entry's start clears it.
+    it("a tour switch inside the entry keeps the soft trimming on until AR exit, and the next entry clears it", () => {
       const v = scanned();
+      const log = dispatchLog(v);
       endTourCodeVotes(v.ctx);
-      expect(overridesOf(v)).toBeNull();
-      // A fix between tours: no code holds the alignment, the plain solver runs.
+      expect(overridesOf(v)).toEqual(VIEWER_SOFT_TRIM);
+      // A fix between tours: the closed tour's votes are still in the solve.
       v.fix(T0 + 5000);
-      expect(overridesOf(v)).toBeNull();
+      expect(overridesOf(v)).toEqual(VIEWER_SOFT_TRIM);
       v.lock(T0 + 10_000);
       expect(overridesOf(v)).toEqual(VIEWER_SOFT_TRIM);
+      expect(log.types()).not.toContain(setAlignmentOverrides.type);
+      endQrPipeline(v.ctx); // AR exit
+      v.placement.startViewerPipeline(); // the next entry
+      expect(overridesOf(v)).toBeNull();
     });
   },
 );

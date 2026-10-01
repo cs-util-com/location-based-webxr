@@ -25,10 +25,10 @@ lives here.
   code's vote budget, keeping both objects (the running pipeline holds
   them). Before it, the budget outlived the tour: a reopened tour found its
   code already "voted", so its gate passed on a lock that cast nothing and
-  a spent code never voted or held again. Since M2e it also turns the
-  entry's soft trimming off (`viewerVoteSink.endTour()`; the next tour's
-  first vote turns it back on - the seam contract, rule 3, in
-  `viewer-placement.ts.md`). `archive-open.ts`'s teardown calls it.
+  a spent code never voted or held again. It leaves the entry's soft
+  trimming on: the closed tour's votes stay in the GPS history until AR
+  exit (the seam contract, rule 3, in `viewer-placement.ts.md`).
+  `archive-open.ts`'s teardown calls it.
 - `interface TourViewerSession` - the fields, grouped by owner:
   - the open tour (`archive-open.ts`): `session`, `currentLevels`,
     `openGeneration`;

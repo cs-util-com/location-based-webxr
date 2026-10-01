@@ -15,8 +15,10 @@
  *   - `resetGpsSessionData` keeps them, so a previous entry's setting would
  *   otherwise carry into GPS-only solving the corpus never credited), turns
  *   the soft kernel on right before its first vote (merged over whatever is
- *   set, because the action replaces the whole object), and a tour switch
- *   turns it off again until the next tour's first vote.
+ *   set, because the action replaces the whole object), and keeps it on
+ *   until AR exit - across a tour switch too: the closed tour's votes stay
+ *   in the GPS history, and the hard trim back on them is the 2.8-5.8 m
+ *   jump M0b/M2b measured at a 5-8 m bias (M0c: keep it for the session).
  *
  * @see viewer-vote-sink.ts.md
  */
@@ -74,9 +76,6 @@ export interface ViewerVoteSink {
     fix: RecordGpsEventPayload,
     ring: readonly RecordGpsEventPayload[],
   ): void;
-  /** A tour closed inside the entry: the soft trimming off again (if this
-   *  entry turned it on); the next vote turns it back on. */
-  endTour(): void;
 }
 
 /**
@@ -87,7 +86,8 @@ export interface ViewerVoteSink {
  */
 export function startEntryVoteSink(store: VoteSinkStore): ViewerVoteSink {
   store.dispatch(setAlignmentOverrides(null));
-  /** Whether THIS entry turned the soft trimming on (and not off since). */
+  /** Whether THIS entry turned the soft trimming on; it stays on until the
+   *  next entry's start clears it. */
   let softOn = false;
 
   function softBeforeVote(): void {
@@ -118,11 +118,6 @@ export function startEntryVoteSink(store: VoteSinkStore): ViewerVoteSink {
       }
       softBeforeVote();
       store.dispatch(recordGpsEventBatch({ events: [fix, ...ring] }));
-    },
-    endTour() {
-      if (!softOn) return;
-      store.dispatch(setAlignmentOverrides(null));
-      softOn = false;
     },
   };
 }

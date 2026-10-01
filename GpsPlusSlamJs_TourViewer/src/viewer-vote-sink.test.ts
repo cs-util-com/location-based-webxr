@@ -154,26 +154,24 @@ describe("an AR entry's vote sink: the per-entry solver overrides (M2e; the seam
     expect(overrides(store)).toBeNull();
   });
 
-  it("a tour switch turns it off again, and the next tour's first vote turns it back on", () => {
+  it("once on, it stays on for the rest of the entry, and only the next entry's start clears it", () => {
+    // Why (M2e milestone review #1): every vote the entry cast stays in the
+    // GPS history until AR exit, so turning the soft kernel off inside the
+    // entry (it used to happen at a tour switch) puts the hard trim back
+    // onto them - the 2.8-5.8 m jump M0b/M2b measured at a 5-8 m bias.
     const { store, log } = storeWithLog();
     const sink = startEntryVoteSink(store);
     sink.castLockVotes(ring(T0 + 500));
     log.length = 0;
 
-    sink.endTour();
-    expect(log).toEqual([setAlignmentOverrides(null)]);
-    expect(overrides(store)).toBeNull();
-    // A second switch with no vote in between has nothing to turn off.
-    sink.endTour();
-    expect(log).toHaveLength(1);
-
+    sink.recordFix(deviceFix(1), []);
+    sink.recordFix(deviceFix(2), ring(T0 + 2000));
     sink.castLockVotes(ring(T0 + 9000));
-    expect(log.map((a) => a.type)).toEqual([
-      setAlignmentOverrides.type,
-      setAlignmentOverrides.type,
-      "gpsData/recordGpsEventBatch",
-    ]);
-    expect(overrides(store)).toMatchObject(VIEWER_SOFT_TRIM);
+    expect(log.map((a) => a.type)).not.toContain(setAlignmentOverrides.type);
+    expect(overrides(store)).toEqual(VIEWER_SOFT_TRIM);
+
+    startEntryVoteSink(store);
+    expect(overrides(store)).toBeNull();
   });
 
   it("the soft keys are the ones M0c measured: kernel on, r0 = 1 m, p = 1, hard trim off", () => {

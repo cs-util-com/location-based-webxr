@@ -15,7 +15,8 @@ both must hold for EVERY vote:
   compounded per stored event).
 - **The per-entry solver overrides** (the seam contract in
   `viewer-placement.ts.md`): clear at the entry's start, the soft trimming
-  on right before the entry's first vote, off again at a tour switch.
+  on right before the entry's first vote, and on until AR exit (a tour
+  switch included).
 
 ## Public API
 
@@ -28,13 +29,10 @@ outlierFalloffExponent: 1, outlierRejectionEnabled: false }`.
   then returns the entry's sink. `store` needs `dispatch` and `getState`
   (the viewer store, or the vote-strength harness's measured store).
   - `castLockVotes(votes)` - one voted lock: the soft trimming on (once per
-    entry or tour), then ONE `recordGpsEventBatch` of the votes. Empty: no-op.
+    entry), then ONE `recordGpsEventBatch` of the votes. Empty: no-op.
   - `recordFix(fix, ring)` - one device fix: with a non-empty ring, the soft
     trimming on (once), then ONE batch `[fix, ...ring]`; with an empty ring,
     the plain `recordGpsEvent(fix)` and no override change.
-  - `endTour()` - a tour closed inside the entry: if this entry turned the
-    soft trimming on, `setAlignmentOverrides(null)` and re-arm, so the next
-    vote turns it on again; otherwise nothing.
 
 ## Invariants & assumptions
 
@@ -43,11 +41,15 @@ outlierFalloffExponent: 1, outlierRejectionEnabled: false }`.
   trimming on first. The keep-alive is unsafe under the hard trim (M2b/M2d
   milestone review #3: B = 5 m fails the rule, 8 m jumps, 15 m never hands
   off).
-- **The soft trimming never outlives its entry or tour.** The core keeps
-  overrides across `resetGpsSessionData`, and the soft kernel was never
-  credited on the corpus for GPS-only solving, so the next entry's start
-  clears them, and so does a tour switch. A fix with no ring (no code
-  holding) changes no override.
+- **The soft trimming never outlives its entry, and is never turned off
+  inside it.** The core keeps overrides across `resetGpsSessionData`, and
+  the soft kernel was never credited on the corpus for GPS-only solving, so
+  the next entry's start clears them. Inside the entry it stays on, a tour
+  switch included: every vote the entry cast stays in the GPS history until
+  AR exit, and the hard trim back on those votes is the 2.8-5.8 m jump
+  M0b/M2b measured at a 5-8 m bias (M2e milestone review #1; the seam
+  contract, rule 3). A fix with no ring (no code holding) changes no
+  override.
 - **Merged, not replaced:** the soft keys go over the overrides already set
   (the action replaces the whole object). Nothing else in the Tour Viewer
   sets any; the merge keeps that true if something ever does.
@@ -69,7 +71,6 @@ outlierFalloffExponent: 1, outlierRejectionEnabled: false }`.
 const sink = startEntryVoteSink(arStore); // clears the overrides
 sink.castLockVotes(lockVotes); // soft on, then one batch
 sink.recordFix(fix, keepAlive.votesForFix({ atMs, stampMs })); // one batch
-sink.endTour(); // a tour switch: soft off until the next vote
 ```
 
 ## Tests
@@ -77,7 +78,8 @@ sink.endTour(); // a tour switch: soft off until the next vote
 - `viewer-vote-sink.test.ts` - against the real viewer store: the clear at
   entry start, the merge right before the first vote and once only, a
   keep-alive tick bringing the first vote, a ringless fix changing nothing,
-  `endTour` (and a second one with nothing to turn off), the soft keys as
+  the soft trimming staying on for the rest of the entry until the next
+  entry's start, the soft keys as
   M0c measured them and accepted by the installed core, one batch per lock,
   the tick's fix-first batch, a malformed fix dropped alone without a throw.
 - `viewer-votes.test.ts` - the same rules through `viewer-placement` (a

@@ -153,19 +153,20 @@ recording. Its own module since the flows plan M6.
      `outlierRejectionEnabled: false`). Every viewer vote (a lock's ring, a
      keep-alive tick) goes through the sink, so no vote reaches the solver
      under the hard trim.
-  3. **A tour switch inside one entry turns it off again** (the M2b fix
-     agent's decision, kept in M2e): `endTourCodeVotes` calls the sink's
-     `endTour()`, which dispatches `setAlignmentOverrides(null)` if this
-     entry turned it on and re-arms the flag, so the next tour's first vote
-     turns soft trimming back on. Reason: M0c credited the soft kernel for a session
-     whose alignment a code is holding; between tours no code holds it
-     (the keep-alive is stopped, the budget reset), and a GPS-only solve is
-     the one the corpus credited. The cost: the closing tour's votes still
-     in the solve meet the hard trim again, which can move the alignment
-     once - at a moment the closing tour's content is torn down anyway.
-     The alternative (keep soft on until AR exit) avoids that one move and
-     runs GPS-only solving under an uncredited kernel for the rest of the
-     entry.
+  3. **Soft stays on until AR exit, a tour switch included** (M2e
+     milestone review #1, reversing the M2b fix agent's off-at-switch
+     choice): `endTourCodeVotes` stops the keep-alive and resets the budget
+     but dispatches no override, and the sink has no way to turn the soft
+     trimming off; only the next entry's start (rule 1) clears it. Reason:
+     the closed tour's votes (up to 160 per code from its locks, plus every
+     keep-alive ring) stay in the GPS history until AR exit, so turning the
+     soft kernel off at the switch puts the hard trim back onto them - the
+     regime M0b/M2b measured as a 2.8-5.8 m jump at a 5-8 m bias - and the
+     M0c results say the viewer keeps the setting for the rest of the
+     session. The cost accepted: between tours, and in the next tour before
+     its first vote, a GPS-only stretch is solved under the soft kernel,
+     which the corpus never credited for GPS-only solving; it is bounded by
+     the entry, and those stretches still hold the closed tour's votes.
      Nothing else in the Tour Viewer dispatches overrides. Pinned by
      `viewer-vote-sink.test.ts` (the order and content against the real
      store) and `viewer-votes.test.ts` (through this module: a plain-AR
