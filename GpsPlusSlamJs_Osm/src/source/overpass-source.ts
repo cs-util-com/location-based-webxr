@@ -449,12 +449,12 @@ export class PermanentOverpassError extends Error {
  * Measured recovery on the public instances is ~30 s, not hours.
  */
 export class RateLimitedError extends Error {
-  constructor(
-    message: string,
-    /** Milliseconds until a slot is expected to be free. May be 0 if unknown. */
-    readonly retryAfterMs: number,
-  ) {
+  /** Milliseconds until a slot is expected to be free. May be 0 if unknown. */
+  readonly retryAfterMs: number;
+
+  constructor(message: string, retryAfterMs: number) {
     super(message);
+    this.retryAfterMs = retryAfterMs;
     this.name = "RateLimitedError";
   }
 }

@@ -575,10 +575,12 @@ describe("the browser PNG decoder", () => {
     vi.stubGlobal(
       "OffscreenCanvas",
       class {
-        constructor(
-          readonly width: number,
-          readonly height: number,
-        ) {}
+        readonly width: number;
+        readonly height: number;
+        constructor(width: number, height: number) {
+          this.width = width;
+          this.height = height;
+        }
         getContext(_id: string, options?: unknown) {
           contextOptions = options;
           return {

@@ -47,15 +47,17 @@ export interface OpenTopoDataOptions {
 }
 
 export class TooManyElevationPointsError extends Error {
-  constructor(
-    readonly requested: number,
-    readonly allowed: number,
-  ) {
+  readonly requested: number;
+  readonly allowed: number;
+
+  constructor(requested: number, allowed: number) {
     super(
       `Refusing to query ${requested} elevation points; the local cap is ${allowed}. ` +
         "OpenTopoData allows 1,000 requests/day GLOBALLY — use a raster provider " +
         "for grids and keep this for centroids.",
     );
+    this.requested = requested;
+    this.allowed = allowed;
     this.name = "TooManyElevationPointsError";
   }
 }

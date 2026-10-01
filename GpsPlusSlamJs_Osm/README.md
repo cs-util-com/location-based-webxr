@@ -203,6 +203,14 @@ pnpm run build         # tsdown -> dist/
 transpiles without type-checking, so `tsc`-only errors pass locally and fail CI.
 Run the full `pnpm test`.
 
+**The source is served without a build, too.** The design system's labs import
+it as TypeScript under `/osm-lib/`, through Node's type stripper, which only
+erases types. So `tsconfig.app.json` sets `erasableSyntaxOnly` (no parameter
+properties, enums or namespaces) and `verbatimModuleSyntax` (a type is
+imported with `type`, or the stripped import asks the browser for a name that
+does not exist), and relative imports carry `.js`. The labs' route table is
+`GpsPlusSlamJs_DesignSystem/serve-routes.mjs`.
+
 ## License
 
 Apache-2.0 for the code in this package. The OpenStreetMap **data** it retrieves

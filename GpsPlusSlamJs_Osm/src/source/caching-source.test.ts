@@ -42,7 +42,10 @@ class CountingSource implements OsmDataSource {
   readonly attribution = "© OpenStreetMap contributors";
   readonly sourceId = "counting";
   calls = 0;
-  constructor(private readonly fetchedAt = 1000) {}
+  private readonly fetchedAt: number;
+  constructor(fetchedAt = 1000) {
+    this.fetchedAt = fetchedAt;
+  }
 
   fetchTile(tile: string): Promise<OsmTileResult> {
     this.calls++;

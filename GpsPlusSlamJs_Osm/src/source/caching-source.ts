@@ -90,11 +90,16 @@ export class CachingSource implements OsmDataSource {
     storeFailures: 0,
   };
 
+  private readonly inner: OsmDataSource;
+  private readonly store: OsmBlobStore;
+
   constructor(
-    private readonly inner: OsmDataSource,
-    private readonly store: OsmBlobStore,
+    inner: OsmDataSource,
+    store: OsmBlobStore,
     options: CachingSourceOptions = {},
   ) {
+    this.inner = inner;
+    this.store = store;
     this.attribution = inner.attribution;
     this.sourceId = `cached(${inner.sourceId})`;
     this.schemaVersion = options.schemaVersion ?? OVERPASS_SCHEMA_VERSION;

@@ -95,11 +95,14 @@ export interface BoundingBox {
 
 /** Thrown for the one input this module genuinely cannot express. */
 export class AntimeridianCellError extends Error {
-  constructor(readonly cell: string) {
+  readonly cell: string;
+
+  constructor(cell: string) {
     super(
       `H3 cell ${cell} crosses the antimeridian; a single Overpass bbox cannot express it. ` +
         `Split the query, or use a source that does not go through a bbox.`,
     );
+    this.cell = cell;
     this.name = "AntimeridianCellError";
   }
 }
