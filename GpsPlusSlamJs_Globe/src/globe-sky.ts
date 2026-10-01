@@ -48,7 +48,7 @@ export const GLOBE_SKY = {
   glowWidthRad: 1.5 * (Math.PI / 180),
   /**
    * The faintest stars drawn by default: 8.5, two magnitudes past the
-   * naked-eye limit (round-5 DEC-GL5-4; the owner's 7.5 of DEC-GL4-1
+   * naked-eye limit (round-5 DEC-GL5-4; 7.5 of DEC-GL4-1
    * before, 6.5 before that).
    */
   starMagLimit: 8.5,

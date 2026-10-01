@@ -118,7 +118,7 @@ describe("createGlobeSky", () => {
   // defaults, so a link without them shows what he chose; round 5
   // (2026-10-01-0945 DEC-GL5-4) took the stars to 8.5. The real sun's
   // 0.533° stays named beside the look's 1°, which is about twice it.
-  it("defaults to the owner's look (DEC-GL4-1, DEC-GL5-4): disc 1°, glow 0.95, stars to 8.5 at gain 4, Milky Way 0.03", () => {
+  it("defaults to the tuned look (DEC-GL4-1, DEC-GL5-4): disc 1°, glow 0.95, stars to 8.5 at gain 4, Milky Way 0.03", () => {
     expect(GLOBE_SKY.realSunDiameterDeg).toBeCloseTo(0.533, 3);
     expect(GLOBE_SKY.sunDiameterDeg).toBe(1);
     expect(GLOBE_SKY.glow).toBe(0.95);

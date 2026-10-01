@@ -195,8 +195,9 @@ function levelFiles(z: number): string[] {
 }
 
 /**
- * One tile's header check: a 256x256 WebP whose RIFF length matches its
- * size on disk (a truncated file fails), and whether it has alpha.
+ * One tile's header check: a `.webp` file holding a 256x256 WebP whose
+ * RIFF length matches its size on disk (a truncated file fails), and
+ * whether it has alpha.
  */
 function checkTile(file: string): { problem: string | null; alpha: boolean } {
   const head = headOf(file);
@@ -204,6 +205,7 @@ function checkTile(file: string): { problem: string | null; alpha: boolean } {
   const riffBytes = riffLength(head);
   const webp = info?.type === "webp" ? info : null;
   const ok =
+    file.endsWith(".webp") &&
     webp !== null &&
     webp.width === 256 &&
     webp.height === 256 &&
