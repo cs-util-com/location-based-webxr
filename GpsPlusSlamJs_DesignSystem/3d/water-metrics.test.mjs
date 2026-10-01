@@ -19,6 +19,7 @@ import {
   identical,
   laplacian,
   meanAbsDiff,
+  medianRecord,
   patchiness,
   repetition,
   sparkles,
@@ -223,6 +224,29 @@ describe("repetition", () => {
     const spread = repetition(half, wide, { ...opts, windows: 3 });
     assert.ok(first > 0.9);
     assert.ok(spread < first - 0.2, `${spread} vs ${first}`);
+  });
+});
+
+// Every verdict is the median over three wave times (milestone review
+// finding 5): the median must be taken field by field through the probe's
+// nested result, and must not let one odd wave pattern decide.
+describe("medianRecord", () => {
+  it("takes the median of every field of same-shaped results", () => {
+    const list = [
+      { a: 1, bands: [{ m: 5 }, { m: 0 }], same: true, rep: 0.2 },
+      { a: 9, bands: [{ m: 4 }, { m: 7 }], same: true, rep: 0.4 },
+      { a: 3, bands: [{ m: 6 }, { m: 1 }], same: false, rep: 0.3 },
+    ];
+    assert.deepEqual(medianRecord(list), {
+      a: 3,
+      bands: [{ m: 5 }, { m: 1 }],
+      same: false,
+      rep: 0.3,
+    });
+    assert.equal(medianRecord([1, 4]), 2.5);
+    assert.equal(medianRecord([{ r: null }, { r: 1 }]).r, null);
+    assert.throws(() => medianRecord([]), RangeError);
+    assert.throws(() => medianRecord(["x"]), RangeError);
   });
 });
 

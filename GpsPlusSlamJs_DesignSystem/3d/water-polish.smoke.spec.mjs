@@ -41,6 +41,12 @@ const KEYS = {
  */
 const TILE_REP = { size: 384, minLag: 16, step: 8, highpass: 16, windows: 5 };
 const TILE_BOUND = 0.015;
+/**
+ * The wave times every gate measures at; each number is the median over
+ * them (milestone review finding 5: one wave pattern decided some
+ * verdicts). 7.3 s is the first cut's single time.
+ */
+const TIMES = [7.3, 12.1, 17.7];
 /** The polish keys named off, for a boot that measures against P50. */
 const OFF_HASH = Object.entries(KEYS)
   .map(([, key]) => `${key}=0`)
@@ -217,19 +223,25 @@ test("the per-wave tricks: far water turns to sheen, gusts make patches, the fin
   expect(errors).toEqual([]);
 });
 
-// WHY (DEC-FB3-9): each lighting trick, measured the same way:
+// WHY (DEC-FB3-9): each lighting trick, measured the same way, each number
+// the median over TIMES:
 // - the sun's size: the one-pixel glints (a pixel brighter than the upper
 //   quartile of its 24 neighbours by 30 levels) in the glitter band, seen
 //   from 40 m looking toward the noon sun, all but vanish;
 // - the body: seen straight down at noon, the water's shading no longer
 //   follows the wave normal (the texture away from the glint drops to a
-//   tenth), and looking toward a low sun, backlit crests add light;
-// - the Fresnel damp over the lost-variance roughness changes no pixel by
-//   more than 6 levels in sum (three's own environment term already damps
-//   rough water; the record's finding).
-// Measured 2026-09-28: sparkles 0.160 per mille -> 0.003; body top-down
-// far-band std x0.10; crest (0.2 against 0) near +3 %, mid +3 %; damp 0.
-test("the lighting tricks: no one-pixel glints, a body lit from above, backlit crests, and a damp that adds nothing", async ({
+//   tenth), and looking toward a low sun, backlit crests add light.
+// BOUNDS, each with what it rests on (medians over TIMES, 2026-10-01):
+// - sparkles, glitter band of 338 100 pixels: margin 30 off 0.071 per
+//   mille (about 24 pixels) -> on 0.009 (about 3); margin 40 0.015 -> 0;
+//   margin 60 0.003 -> 0. The bound (on below a quarter of off) holds at
+//   every margin; the floor (off above 0.05 per mille, about 17 pixels) is
+//   the thin one, so a view that loses its glitter fails loudly there;
+// - body, top-down far-band std x0.037 (bound x0.3; first cut x0.10 at one
+//   time);
+// - crest 0.2 against 0, near + mid mean x1.041 (bound x1.01; crestStrength
+//   0.05 measured +0.7 %, below it, so the bound needs the default 0.2).
+test("the lighting tricks: no one-pixel glints, a body lit from above, backlit crests", async ({
   page,
 }) => {
   const errors = await bootPond(page, "noon");
@@ -237,34 +249,29 @@ test("the lighting tricks: no one-pixel glints, a body lit from above, backlit c
     preset: "noon",
     view: "glint",
     h: 40,
-    margins: [30],
+    times: TIMES,
+    margins: [30, 40, 60],
     configs: { off: {}, sun: { flags: { sunSize: true } } },
   });
   const top = await probe(page, {
     preset: "noon",
     view: "top",
     h: 60,
+    times: TIMES,
     configs: { off: {}, body: { flags: { body: true } } },
   });
   const crest = await probe(page, {
     preset: "golden",
     view: "glint",
     h: 10,
+    times: TIMES,
     configs: {
       noCrest: { flags: { body: true }, params: { crestStrength: 0 } },
       crest: { flags: { body: true } },
     },
   });
-  const damp = await probe(page, {
-    preset: "golden",
-    view: "lake",
-    configs: {
-      rough: { flags: { lostVariance: true } },
-      damp: { flags: { lostVariance: true, fresnelDamp: true } },
-    },
-  });
   console.log(
-    `lighting tricks: ${JSON.stringify(round({ glint, top, crest, damp }))}`,
+    `lighting tricks: ${JSON.stringify(round({ glint, top, crest }))}`,
   );
   const sparkOff = glint.configs.off.bands[1].spark30;
   expect(sparkOff).toBeGreaterThan(5e-5);
@@ -275,7 +282,53 @@ test("the lighting tricks: no one-pixel glints, a body lit from above, backlit c
   expect(lit(crest.configs.crest) / lit(crest.configs.noCrest)).toBeGreaterThan(
     1.01,
   );
-  expect(damp.configs.damp.changed).toBeLessThan(0.01);
+  expect(errors).toEqual([]);
+});
+
+/** The Fresnel damp's constants the gate steps through, 0 being "off". */
+const DAMP_STEPS = [0, 3, 6, 12, 50];
+/**
+ * The far mean at c = 50 over c = 0 must be below this. Measured
+ * 2026-10-01 (lake, golden, medians over TIMES): c = 3/6/12/50 give
+ * x0.999/0.997/0.995/0.978, so the bound sits half-way to the c = 50
+ * drop; c = 12 would not pass it, which is why the gate steps up to 50.
+ */
+const DAMP_BOUND = 0.99;
+
+// WHY (milestone review finding 2): the Fresnel damp must be ABLE to fail.
+// It divides the environment reflection by 1 + c alpha^2, and on P50
+// alpha^2 = r^4 is a few thousandths even over the lost-variance
+// roughness, so at the constant it was described with (6) it moves the
+// far water by well under 1 %: a check that it "adds nothing" would also
+// pass a damp that was broken. This checks what the formula says instead:
+// the far water's mean falls monotonically as c rises (ties allowed, where
+// it moves no 8-bit level), and at c = 50 the drop is clearly visible.
+test("the Fresnel damp darkens the far water monotonically in its constant, visibly at 50", async ({
+  page,
+}) => {
+  const errors = await bootPond(page, "golden");
+  const damp = await probe(page, {
+    preset: "golden",
+    view: "lake",
+    times: TIMES,
+    configs: Object.fromEntries(
+      DAMP_STEPS.map((c) => [
+        `c${c}`,
+        c === 0
+          ? { flags: { lostVariance: true } }
+          : {
+              flags: { lostVariance: true, fresnelDamp: true },
+              params: { fresnelDamp: c },
+            },
+      ]),
+    ),
+  });
+  console.log(`fresnel damp: ${JSON.stringify(round(damp))}`);
+  const far = DAMP_STEPS.map((c) => damp.configs[`c${c}`].bands[2].mean);
+  for (let i = 1; i < far.length; i++) {
+    expect(far[i], `c ${DAMP_STEPS[i]}`).toBeLessThanOrEqual(far[i - 1]);
+  }
+  expect(far.at(-1) / far[0]).toBeLessThan(DAMP_BOUND);
   expect(errors).toEqual([]);
 });
 

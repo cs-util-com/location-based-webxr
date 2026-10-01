@@ -97,9 +97,15 @@ float phase, inout vec2 slope)` with one statement
   light and always has an environment, so neither shows there; wrapping
   `RE_IndirectDiffuse` waits for a caller that has such a light.
 - The noise is an integer-hash value noise (WebGL2 `uint`), no texture.
-- `fresnelDamp` partly double-counts three's own split-sum environment
-  term, which already lowers the reflection of rough water; the stream-W
-  record measures how much it adds.
+- `fresnelDamp` changes little on calm water because α² = r⁴ is small: on
+  P50 it is a few thousandths even over `lostVariance`'s roughness, so
+  1/(1 + 6 α²) stays within a few per cent of 1 at the roughest pixel and
+  the far water's mean moves by well under 1 % (lake view at golden hour,
+  medians over three wave times: c = 3/6/12/50 give -0.1/-0.3/-0.6/-2.2 %;
+  only c = 50 is plainly visible). That is the formula, not three's split-sum
+  environment term: the first cut named that as the reason, and the
+  milestone review corrected it. The look-dev smoke gates that the far
+  mean falls monotonically in c, visibly at c = 50, so a broken damp fails.
 
 ## Examples
 
