@@ -5,8 +5,10 @@
   hand-over continuity metric, the colour approaches built on the globe
   imagery and the later cloud-shadow port share it.
 - Public API:
-  - `GLOBE_SUN.intensity`: the globe surface's sun intensity (5, DEC-GL4-1);
-    a test holds it to `GpsPlusSlamJs_Globe/src/globe-surface.ts`.
+  - `GLOBE_SUN.intensity` (re-exported from `terrain-far-field.js`, where
+    it lives so the far field lights its texels the same way): the globe
+    surface's sun intensity (5, DEC-GL4-1); a test holds it to
+    `GpsPlusSlamJs_Globe/src/globe-surface.ts`.
   - `MIN_SUN_Z`: sin 2°, the floor a relative shade divides by.
   - `sunEnu({ elevationRad, azimuthRad })` -> `[east, north, up]`, unit.
   - `MAP_KEY_LIGHT`: the classic map light (315°, 45° up), styles B and D's.
@@ -22,9 +24,9 @@
   - `sunLight(n, sun, { shadow, svf = 1, visibility = 1 })`: shadow x
     direct + (1 - shadow) x max(0, L.z) x svf. RangeError for a shadow share
     outside 0-1.
-  - `sunLitColour(albedoSrgb, light, intensity = GLOBE_SUN.intensity)`: the
-    globe's pipeline: Lambert (albedo / π x intensity x light), Neutral tone
-    mapping, sRGB.
+  - `sunLitColour(albedoSrgb, light)`: the globe's pipeline: Lambert
+    (albedo / π x intensity x light), Neutral tone mapping, sRGB; the far
+    field's `farColour` is its one implementation.
   - `SUN_GLSL`: the shader's copy, with `terrainSunVisibility(enu, heightM,
 toSun)` returning 1 (the cloud-shadow port's seat). Needs `uSun`,
     `uSunIntensity` and three's tone-mapping chunk.

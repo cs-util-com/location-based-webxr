@@ -303,7 +303,11 @@ void main() {
     vec2 fuv = clamp((vEnu + uHalfM) / (2.0 * uHalfM), 0.0, 1.0);
     vec4 f = texture2D(uFar, fuv);
     if (f.a > 0.5) {
-      vec3 lin = sRGBTransferEOTF(vec4(f.rgb, 1.0)).rgb;
+      // Lit as the globe lights it (farColour): Lambert at its sun's
+      // intensity, straight from above, or by the sun itself with light 1.
+      float farLight = uLightMode == 1 ? max(0.0, uSun.z) : 1.0;
+      vec3 lin = sRGBTransferEOTF(vec4(f.rgb, 1.0)).rgb
+        * uSunIntensity * farLight / 3.141592653589793;
       if (uFarReliefW > 0.0) {
         float hx0 = texture2D(uData, vUv - vec2(uFarDeltaUv, 0.0)).r;
         float hx1 = texture2D(uData, vUv + vec2(uFarDeltaUv, 0.0)).r;

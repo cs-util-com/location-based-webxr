@@ -279,10 +279,12 @@ describe("the sun-lit colour (what the globe draws)", () => {
     want.forEach((v, i) => close(got[i], v, 1e-12, `[${i}]`));
   });
 
-  it("is farColour's 'lit from straight above at π' when light x intensity is π", () => {
+  // One implementation (DEC-H3): the far field's colour at a straight-down
+  // sun is the sun-lit colour at light 1.
+  it("is the far field's colour for the same light", () => {
     const albedo = [0.5, 0.36, 0.2];
-    const got = sunLitColour(albedo, Math.PI / GLOBE_SUN.intensity);
-    farColour(albedo).forEach((v, i) => close(got[i], v, 1e-9, `[${i}]`));
+    assert.deepEqual(sunLitColour(albedo, 1), farColour(albedo));
+    assert.deepEqual(sunLitColour(albedo, 0.4), farColour(albedo, 0.4));
   });
 
   it("is black with no light and never lighter with less light (property)", () => {

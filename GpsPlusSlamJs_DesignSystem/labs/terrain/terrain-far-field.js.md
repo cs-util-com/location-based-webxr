@@ -25,8 +25,10 @@
     as the shader does (bilinear, clamped).
   - `srgbToLinear`, `linearToSrgb` (three's sRGB transfer curves),
     `neutralToneMap(rgb, exposure?)` (three r185's Neutral, line for line)
-    and `farColour(srgb)`: the texel as the globe draws ground lit straight
-    from above (decode, tone map, encode).
+    and `farColour(srgb, light = 1)`: the texel as the globe draws ground
+    under its sun (`GLOBE_SUN.intensity`, Lambert; `light` 1 is lit straight
+    from above; decode, tone map, encode). `GLOBE_SUN`: the globe's sun
+    intensity, held to the globe's source by `terrain-sun.test.mjs`.
   - `farWeights(altitudeM, { on, highKm?, lowKm? })` -> `{ near, relief }`:
     the near style's weight (0 above `highKm`, 1 below `lowKm`) and the far
     field's relief texture (0 above twice `highKm`, 1 below `highKm`); off,
@@ -47,7 +49,8 @@
   - The far field's relief is the ratio of the fine shade to the shade at
     the imagery's own scale (the gradient over +-2 km), so shading the
     imagery already carries is not doubled.
-- Examples: `farColour([0.5, 0.5, 0.5])` is about 0.456 (a mid grey through
+- Examples: `farColour([0.5, 0.5, 0.5])` is about 0.59 (a mid grey lit at the
+  globe's intensity 5 over π, through
   the tone mapping); `farWeights(900_000, { on: true }).near` is 0.5.
 - Tests: `terrain-far-field.test.mjs` (the tiles over the Blue Ridge and
   across tile edges, the region box, pixel centres and tile edges in the

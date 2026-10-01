@@ -12,9 +12,9 @@
  *   grid over the drawn region in the lab's ENU frame (`farFieldGrid`), so
  *   the shader reads it by position, like every other texture of the lab.
  * - WHAT "MATCHES THE GLOBE" MEANS (finding 12): the imagery texel through
- *   the globe's tone mapping (three's Neutral, exposure 1) with nothing
- *   else applied, which is what the globe draws for ground lit straight
- *   from above. `farColour` is that reference; the shader uses three's own
+ *   the globe's tone mapping (three's Neutral, exposure 1) under the
+ *   globe's sun (`GLOBE_SUN`, Lambert), which is what the globe draws for
+ *   ground lit straight from above. `farColour` is that reference; the shader uses three's own
  *   tone-mapping chunk and this file mirrors it for the tests.
  * - THE BLEND follows the (smoothed) camera altitude: the near style's
  *   weight rises from 0 at `highKm` to 1 at `lowKm`, and the far field's
@@ -225,11 +225,21 @@ export function neutralToneMap(rgb, exposure = 1) {
 }
 
 /**
- * The far field's colour for an imagery texel (sRGB 0-1): what the globe
- * draws for it lit from straight above, through its tone mapping.
+ * The globe's sun light (GpsPlusSlamJs_Globe `GLOBE_SURFACE.sunIntensity`,
+ * the owner's 5 since DEC-GL4-1; π in phase 1). A test holds it to the
+ * globe's source.
  */
-export function farColour(srgb) {
-  return neutralToneMap(srgb.map(srgbToLinear)).map((v) =>
+export const GLOBE_SUN = Object.freeze({ intensity: 5 });
+
+/**
+ * The far field's colour for an imagery texel (sRGB 0-1): what the globe
+ * draws for it, three's Lambert under its sun (texel / π x intensity x
+ * `light`, 1 for ground lit straight from above), through its tone
+ * mapping.
+ */
+export function farColour(srgb, light = 1) {
+  const k = (GLOBE_SUN.intensity * Math.max(0, light)) / Math.PI;
+  return neutralToneMap(srgb.map((v) => srgbToLinear(v) * k)).map((v) =>
     Math.min(1, Math.max(0, linearToSrgb(Math.max(0, v)))),
   );
 }

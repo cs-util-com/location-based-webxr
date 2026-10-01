@@ -39,7 +39,9 @@
     is 0 and the far field is off (`uNearW` 1): the T1 smoke's flat-tile
     and tilted-plane checks still hold it to `landColour`.
   - The far field (`uNearW` < 1): the grid's sRGB texel decoded with
-    three's `sRGBTransferEOTF`, its relief ratio faded in by `uFarReliefW`,
+    three's `sRGBTransferEOTF`, lit as the globe lights it (`farColour`:
+    times `uSunIntensity` / π, and with `light` 1 times the sun's height),
+    its relief ratio faded in by `uFarReliefW`,
     tone mapped with three's own `NeutralToneMapping` (the chunk is
     included, since the lab renders with no tone mapping), encoded with
     `sRGBTransferOETF`, and mixed under the near style. A texel the imagery

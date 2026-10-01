@@ -17,6 +17,7 @@ import { describe, it } from "node:test";
 
 import {
   FAR_FIELD,
+  GLOBE_SUN,
   farColour,
   farFieldAt,
   farFieldGrid,
@@ -233,10 +234,25 @@ describe("the tone mapping (three's Neutral, finding 12)", () => {
     close(Math.max(r, g, b), newPeak, 1e-9, "the peak is the new peak");
     assert.ok(r < 1 && g < r && b < g);
   });
-  it("maps a mid grey to a darker grey, and keeps black black", () => {
-    const [v] = farColour([0.5, 0.5, 0.5]);
-    assert.ok(v < 0.5 && v > 0.4, `${v}`);
+  // The globe lights its ground with a sun of intensity 5 (DEC-GL4-1; π in
+  // phase 1, where Lambert's 1/π made "lit from straight above" exactly
+  // the texel). The far field must match the globe it hands over to, so
+  // the texel is lit at 5/π: a mid grey comes out LIGHTER, not darker.
+  it("lights the texel as the globe does: Lambert at its intensity, straight from above", () => {
+    const texel = [0.5, 0.4, 0.2];
+    const want = neutralToneMap(
+      texel.map((v) => (srgbToLinear(v) * GLOBE_SUN.intensity) / Math.PI),
+    ).map((v) => linearToSrgb(Math.max(0, v)));
+    farColour(texel).forEach((v, i) => close(v, want[i], 1e-12, `[${i}]`));
+    const [grey] = farColour([0.5, 0.5, 0.5]);
+    assert.ok(grey > 0.55 && grey < 0.62, `${grey}`);
     assert.deepEqual(farColour([0, 0, 0]), [0, 0, 0]);
+  });
+  it("scales with the sun's light on the ground (0 at night)", () => {
+    assert.deepEqual(farColour([0.5, 0.5, 0.5], 0), [0, 0, 0]);
+    const [low] = farColour([0.5, 0.5, 0.5], 0.3);
+    const [high] = farColour([0.5, 0.5, 0.5], 1);
+    assert.ok(low < high, `${low} ${high}`);
   });
 });
 

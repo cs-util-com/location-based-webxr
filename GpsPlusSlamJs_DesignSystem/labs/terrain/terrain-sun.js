@@ -31,19 +31,11 @@
  *
  * @see terrain-sun.js.md
  */
-import {
-  linearToSrgb,
-  neutralToneMap,
-  srgbToLinear,
-} from "./terrain-far-field.js";
+import { GLOBE_SUN, farColour } from "./terrain-far-field.js";
+
+export { GLOBE_SUN };
 
 const DEG = Math.PI / 180;
-
-/** The globe's sun light (GpsPlusSlamJs_Globe `GLOBE_SURFACE.sunIntensity`). */
-export const GLOBE_SUN = Object.freeze({
-  /** Held to the globe's source by a test (DEC-GL4-1: the owner's 5). */
-  intensity: 5,
-});
 
 /**
  * The least sun height a relative shade divides by (sin 2°): below it a map
@@ -161,18 +153,12 @@ export function sunLight(n, sun, { shadow, svf = 1, visibility = 1 }) {
 
 /**
  * What the globe draws for an albedo (sRGB 0-1) under a light (`sunLight`'s
- * units): three's Lambert, albedo / π x intensity x light, through the
- * Neutral tone mapping, back to sRGB.
+ * units): three's Lambert, albedo / π x `GLOBE_SUN.intensity` x light,
+ * through the Neutral tone mapping, back to sRGB. The far field's
+ * `farColour` is the one implementation (DEC-H3).
  */
-export function sunLitColour(
-  albedoSrgb,
-  light,
-  intensity = GLOBE_SUN.intensity,
-) {
-  const k = (intensity * Math.max(0, light)) / Math.PI;
-  return neutralToneMap(albedoSrgb.map((v) => srgbToLinear(v) * k)).map((v) =>
-    Math.min(1, Math.max(0, linearToSrgb(Math.max(0, v)))),
-  );
+export function sunLitColour(albedoSrgb, light) {
+  return farColour(albedoSrgb, light);
 }
 
 /**

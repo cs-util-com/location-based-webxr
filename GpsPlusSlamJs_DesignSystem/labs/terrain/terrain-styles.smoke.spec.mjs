@@ -499,7 +499,8 @@ test("style C: from far away the terrain is the globe's own colour", async ({
     }
     return out;
   });
-  const lift = (p) => 2 * (p.h - s.datum);
+  // Lifted by the page's own E (the default moved to 3, DEC-GL5-5).
+  const lift = (p) => s.effectiveE * (p.h - s.datum);
   const at = await project(
     page,
     ground.map((p) => [p.x, lift(p), -p.y]),
