@@ -121,6 +121,23 @@ describe("defaultRoutes", () => {
       kind: "forbidden",
     });
   });
+
+  // The Osm library's source imports `h3-js` by its bare name, so a lab that
+  // loads it (the globe's arrival prefetch, round-5 plan 2026-10-01-0945
+  // §3.6) maps that name here in its import map. Without the route the
+  // module graph fails at the first `/osm-lib/` file that needs H3.
+  it("serves h3-js's browser ES build unchanged, with its licence", () => {
+    const h3 = join(REPO, "GpsPlusSlamJs_Osm", "node_modules", "h3-js");
+    assert.deepEqual(resolveDefault("/vendor/h3-js/dist/browser/h3-js.es.js"), {
+      kind: "file",
+      file: join(h3, "dist", "browser", "h3-js.es.js"),
+      typescript: false,
+    });
+    const route = defaultRoutes(REPO).find(
+      (r) => r.prefix === "/vendor/h3-js/",
+    );
+    assert.equal(route?.notice, "LICENSE");
+  });
 });
 
 describe("contentType", () => {

@@ -68,6 +68,17 @@ export function defaultRoutes(repo) {
       dir: join(repo, "GpsPlusSlamJs_Osm", "src"),
       typescript: true,
     },
+    // H3 for the Osm library's source, which imports `h3-js` by its bare
+    // name: a page that loads `/osm-lib/` source needing H3 maps that name
+    // to `dist/browser/h3-js.es.js` here (no imports of its own). First
+    // user: the globe's arrival prefetch (round-5 plan 2026-10-01-0945
+    // §3.6).
+    {
+      prefix: "/vendor/h3-js/",
+      dir: join(repo, "GpsPlusSlamJs_Osm", "node_modules", "h3-js"),
+      typescript: false,
+      notice: "LICENSE",
+    },
     {
       prefix: "/vendor/three/",
       dir: join(repo, "GpsPlusSlamJs_AppFramework", "node_modules", "three"),

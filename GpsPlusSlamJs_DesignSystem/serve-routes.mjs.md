@@ -16,7 +16,10 @@
 - The table (`defaultRoutes`): `/fw/` (the framework's TypeScript),
   `/osm/` (OsmDemo's), `/osm-lib/` (the Osm library's, for the terrain
   lab's Terrarium decoder and ENU frame; terrain plan 2026-09-27-0605 §9
-  finding 2), `/vendor/three/` (with its LICENSE as a notice),
+  finding 2), `/vendor/h3-js/` (the H3 library the Osm source imports by its
+  bare name, for a page that maps `h3-js` to `dist/browser/h3-js.es.js`;
+  its LICENSE as a notice; first user the globe's arrival prefetch, round-5
+  plan 2026-10-01-0945 §3.6), `/vendor/three/` (with its LICENSE as a notice),
   and for the globe lab (W7): `/globe/` (the globe package's TypeScript),
   `/globe-assets/` (its imagery, `copyAll`), `/vendor/3d-tiles-renderer/`
   (the installed library, its LICENSE as a notice).
@@ -36,4 +39,5 @@
   directory index, TypeScript mapping, vendored files, five escape
   attempts (plain, nested, percent-encoded, encoded slash, NUL), MIME types;
   on the real table: `/osm-lib/` reaches the Osm library, `/osm/` still
-  reaches OsmDemo, and an escape out of `/osm-lib/` is refused.
+  reaches OsmDemo, an escape out of `/osm-lib/` is refused, and
+  `/vendor/h3-js/` serves the browser ES build with its LICENSE as a notice.
