@@ -102,12 +102,18 @@ Pure: every time is an argument.
   the kept pose.
 - A code whose votes cannot be built (a geo pose with neither heading nor
   rotation, which `parseQrLevel` rejects) is dropped instead of throwing
-  into the store listener that asked.
+  into the GPS callback that asked (viewer-placement's `recordDeviceFix`).
 - Wrong saved codes: the viewer runs its entries' votes under soft trimming
   (core 1.26 keys, turned on before an entry's first vote by
   `viewer-vote-sink.ts`, M2e), which down-weights but drops no pair, so a
   code saved wrong by up to ~15 m pulls the alignment near it for the hold
-  and fade (~4 minutes), then GPS takes over by time (plan §3.2, §5).
+  and fade (~4 minutes) and beyond: under the p = 1 kernel the pull beyond
+  r0 does not shrink with the offset, so the pull ends only as the votes age
+  out, longer for a larger offset (plan §3.2, §5). Measured in
+  `viewer-vote-strength.test.ts` (M2e milestone review #2): 300 s after the
+  keep-alive ends the code is still 2.29 / 7.29 / 14.16 m from the GPS answer
+  at a 3 / 8 / 15 m offset, and first within 2 m of it after 416 s / 561 s /
+  not within 600 s.
 
 ## Examples
 

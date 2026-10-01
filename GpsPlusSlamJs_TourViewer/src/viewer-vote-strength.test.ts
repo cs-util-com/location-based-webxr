@@ -403,6 +403,8 @@ interface VoteParams {
 interface Measured {
   preScanM: number;
   preScanDeg: number;
+  /** Distance from the GPS answer before the scan (GPS only: about 0). */
+  preScanGpsM: number;
   /** Right after the last VOTED lock. */
   scanEndM: number;
   scanEndDeg: number;
@@ -419,8 +421,9 @@ interface Measured {
   /** GPS positions the store holds at the end of the run: what was actually
    *  STORED, where `votesDispatched` counts before the sink is called. */
   storedPositions: number;
-  /** Error after every post-scan fix; `s` = seconds since the last vote. */
-  trace: { s: number; m: number; deg: number }[];
+  /** Error after every post-scan fix; `s` = seconds since the last vote,
+   *  `gpsM` = the code's distance from where GPS alone puts it (M2e). */
+  trace: { s: number; m: number; deg: number; gpsM: number }[];
   /** Horizontal error of the point 20 m in front of the code's face. */
   scanEndP20M: number;
   max120P20M: number;
@@ -628,6 +631,9 @@ function runScenario(p: VoteParams): Measured {
     e: number;
     signedDeg: number;
     p20M: number;
+    /** Horizontal distance from the GPS answer: the code where a GPS-only
+     *  solve puts it, i.e. shifted by the constant bias. */
+    gpsM: number;
   } => {
     const a = selectAlignmentMatrix(store.getState());
     if (a === null || zero === null) {
@@ -639,6 +645,7 @@ function runScenario(p: VoteParams): Measured {
         e: NaN,
         signedDeg: NaN,
         p20M: NaN,
+        gpsM: NaN,
       };
     }
     const map = (o: Vector3): Vector3 => [
@@ -654,6 +661,15 @@ function runScenario(p: VoteParams): Measured {
       P20_WORLD[1],
     );
     const truth = calcRelativeCoordsInMeters(zero, CODE_GEO, CODE_GEO.alt);
+    const gpsAnswer = calcRelativeCoordsInMeters(
+      zero,
+      worldToLatLon([
+        CODE_WORLD[0] + bias[0],
+        CODE_WORLD[1],
+        CODE_WORLD[2] + bias[2],
+      ]),
+      CODE_GEO.alt,
+    );
     const n = rotY(-rad(CODE_HEADING_DEG) - rad(TRUE_YAW_DEG), [0, 0, 1]);
     const nMapped: Vector3 = [
       a[0] * n[0] + a[4] * n[1] + a[8] * n[2],
@@ -671,6 +687,7 @@ function runScenario(p: VoteParams): Measured {
       e: mapped[2],
       signedDeg: dBearing,
       p20M: Math.hypot(p20Mapped[0] - p20Truth[0], p20Mapped[2] - p20Truth[2]),
+      gpsM: Math.hypot(mapped[0] - gpsAnswer[0], mapped[2] - gpsAnswer[2]),
     };
   };
 
@@ -718,8 +735,8 @@ function runScenario(p: VoteParams): Measured {
       : (p.keepAliveFadeS ?? 0);
   let keepAliveCredit = 0;
   const minKeepAlive = p.layout === "line" ? 2 : 3;
-  const trace: { s: number; m: number; deg: number }[] = [
-    { s: 0, m: scanEnd.m, deg: scanEnd.deg },
+  const trace: Measured["trace"] = [
+    { s: 0, m: scanEnd.m, deg: scanEnd.deg, gpsM: scanEnd.gpsM },
   ];
   for (
     ;
@@ -770,12 +787,13 @@ function runScenario(p: VoteParams): Measured {
     if (dt <= 120) at120M = e.m;
     if (dt >= POST_SCAN_S - 1) at300M = e.m;
     if (dt >= POST_SCAN_S - 1) at300Deg = e.deg;
-    trace.push({ s: dt, m: e.m, deg: e.deg });
+    trace.push({ s: dt, m: e.m, deg: e.deg, gpsM: e.gpsM });
   }
 
   return {
     preScanM: pre.m,
     preScanDeg: pre.deg,
+    preScanGpsM: pre.gpsM,
     scanEndM: scanEnd.m,
     scanEndDeg: scanEnd.deg,
     scanSeconds: (lastVoteT - SCAN_START_MS) / 1000,
@@ -1406,6 +1424,62 @@ const SHIPPED_WIRING: VoteParams = { ...SHIPPED, wiring: "sink" };
 /** Pre-registered "smooth" hand-off: the largest per-fix step (m). */
 const SMOOTH_STEP_M = 0.2;
 
+/** Seconds from the last voted lock to the keep-alive's end (hold + fade). */
+const KEEP_ALIVE_END_S =
+  (VIEWER_KEEP_ALIVE_HOLD_MS + VIEWER_KEEP_ALIVE_FADE_MS) / 1000;
+/**
+ * Biases at and below the soft kernel's r0 (1 m), around the review's 0.5 m,
+ * as measured on 2026-10-01 (gps-plus-slam-js 1.26.0): every number scales
+ * with B (the quadratic regime), where above r0 they were the same at every
+ * bias. `fromGpsEnd`: the distance from the GPS answer at the run's end.
+ */
+const PROBE_PINS = [
+  {
+    biasM: 0.25,
+    scanEndM: 0.009,
+    max120M: 0.017,
+    endM: 0.059,
+    fromGpsEnd: 0.191,
+  },
+  {
+    biasM: 0.5,
+    scanEndM: 0.018,
+    max120M: 0.034,
+    endM: 0.118,
+    fromGpsEnd: 0.382,
+  },
+  { biasM: 1, scanEndM: 0.035, max120M: 0.067, endM: 0.236, fromGpsEnd: 0.764 },
+] as const;
+/**
+ * The hand-off after the keep-alive (M2e milestone review #2), as measured on
+ * 2026-10-01: the distance from the GPS answer (m) at the keep-alive's end
+ * and 300 and 600 s after it, and the seconds after its end until the code is
+ * first within 2, 1 and 0.5 m of it (Infinity: not within the 600 s run).
+ */
+const HANDOFF_PINS = [
+  {
+    biasM: 3,
+    atEnd: 2.81,
+    at300: 2.29,
+    at600: 0.92,
+    within: [416, 545, Infinity],
+  },
+  {
+    biasM: 8,
+    atEnd: 7.81,
+    at300: 7.29,
+    at600: 1.5,
+    within: [561, Infinity, Infinity],
+  },
+  {
+    biasM: 15,
+    atEnd: 14.81,
+    at300: 14.16,
+    at600: 2.81,
+    within: [Infinity, Infinity, Infinity],
+  },
+] as const;
+
 describe("the shipped wiring through the harness (M2e)", () => {
   it("drives the viewer's sink: the soft keys on at the end, the same votes as the per-vote path", () => {
     // Why this matters: the opt-in pins below measure what visitors get only
@@ -1446,6 +1520,78 @@ describe.runIf(SWEEP === "m2e")("the shipped wiring on core 1.26 (M2e)", () => {
       expect(m.max120M).toBeCloseTo(0.07, 1);
       expect(m.maxStepM).toBeCloseTo(0.01, 1);
       expect(m.endM).toBeCloseTo(0.31, 1);
+    },
+    1_800_000,
+  );
+
+  // Why (M2e milestone review #2): every arm above gives the same numbers,
+  // because with noise-free GPS every residual is above r0 = 1 m, where the
+  // p = 1 kernel's pull is constant. Identical numbers could also mean a
+  // harness that no longer responds to the bias at all. A bias at or below
+  // r0 is the quadratic regime, so it must give different numbers.
+  it.each(PROBE_PINS)(
+    "GPS biased $biasM m (at or below r0): the harness responds - numbers that scale with the bias",
+    (pin) => {
+      const { biasM } = pin;
+      const m = runScenario({ ...SHIPPED_WIRING, biasM });
+      process.stdout.write(
+        `\nm2e-r0 B=${String(biasM)} pre-scan from GPS ${m.preScanGpsM.toFixed(2)} m, scan ${m.scanEndM.toFixed(3)} m, max120 ${m.max120M.toFixed(3)} m, step ${m.maxStepM.toFixed(3)} m, end ${m.endM.toFixed(3)} m, from GPS at end ${m.trace.at(-1)!.gpsM.toFixed(3)} m, meets ${String(meetsRule(m))}\n`,
+      );
+      expect(m.overrides).toEqual(VIEWER_SOFT_TRIM);
+      expect(meetsRule(m)).toBe(true);
+      expect(m.preScanGpsM).toBeCloseTo(0, 2); // the metric's zero: GPS only
+      expect(m.scanEndM).toBeCloseTo(pin.scanEndM, 2);
+      expect(m.max120M).toBeCloseTo(pin.max120M, 2);
+      expect(m.endM).toBeCloseTo(pin.endM, 2);
+      expect(m.trace.at(-1)!.gpsM).toBeCloseTo(pin.fromGpsEnd, 2);
+    },
+    1_800_000,
+  );
+
+  // Why (M2e milestone review #2): under the p = 1 kernel the pull beyond
+  // r0 does not shrink with the offset, so the code does NOT hand the
+  // alignment back to GPS by the end of the keep-alive's fade; it lets go
+  // only as its votes age out, and later for a larger offset (M0c: still
+  // 7.4 m off 600 s after at B = 8). This measures that hand-off here: the
+  // distance from the GPS answer (the code where GPS alone puts it) after
+  // the keep-alive's end. Measured 2026-10-01 (HANDOFF_PINS): 300 s after
+  // the end the code is still 76-94% of B away (2.29 / 7.29 / 14.16 m at
+  // B = 3 / 8 / 15); within 2 m after 416 s at B = 3 and 561 s at B = 8,
+  // and not within 600 s at B = 15; 600 s after, 0.92 / 1.50 / 2.81 m. So
+  // the hand-off is smooth (largest step 0.015-0.07 m per fix) but slow,
+  // and slower for a larger offset, at each of the swept 0.5, 1 and 2 m
+  // "handed off" thresholds. This harness's 1.50 m at +600 s, B = 8, is
+  // smaller than M0c's 7.4 m (a different harness and walk); the direction
+  // is the same.
+  it.each(HANDOFF_PINS)(
+    "GPS biased $biasM m: the distance from the GPS answer up to 600 s after the keep-alive ends",
+    (pin) => {
+      const { biasM } = pin;
+      const m = runScenario({
+        ...SHIPPED_WIRING,
+        biasM,
+        postScanS: KEEP_ALIVE_END_S + 600,
+      });
+      const at = (afterEndS: number): number =>
+        m.trace.filter((r) => r.s <= KEEP_ALIVE_END_S + afterEndS).at(-1)!.gpsM;
+      /** Seconds after the keep-alive's end until the code is first within
+       *  `withinM` of the GPS answer; Infinity when never in the run. */
+      const handOffS = (withinM: number): number =>
+        (m.trace.find((r) => r.s >= KEEP_ALIVE_END_S && r.gpsM <= withinM)?.s ??
+          Infinity) - KEEP_ALIVE_END_S;
+      process.stdout.write(
+        `\nm2e-handoff B=${String(biasM)} pre-scan from GPS ${m.preScanGpsM.toFixed(2)} m; from GPS at keep-alive end ${at(0).toFixed(2)} m, +60 s ${at(60).toFixed(2)} m, +300 s ${at(300).toFixed(2)} m, +400 s ${at(400).toFixed(2)} m, +500 s ${at(500).toFixed(2)} m, +600 s ${at(600).toFixed(2)} m; within 2 / 1 / 0.5 m after ${handOffS(2).toFixed(0)} / ${handOffS(1).toFixed(0)} / ${handOffS(0.5).toFixed(0)} s; largest step ${m.maxStepM.toFixed(3)} m\n`,
+      );
+      expect(m.overrides).toEqual(VIEWER_SOFT_TRIM);
+      expect(m.preScanGpsM).toBeCloseTo(0, 2); // the metric's zero: GPS only
+      expect(m.maxStepM).toBeLessThanOrEqual(SMOOTH_STEP_M);
+      expect(at(0)).toBeCloseTo(pin.atEnd, 1);
+      expect(at(300)).toBeCloseTo(pin.at300, 1);
+      expect(at(600)).toBeCloseTo(pin.at600, 1);
+      // Whole seconds: the fixes fall 0.375 s past each whole second here.
+      expect([handOffS(2), handOffS(1), handOffS(0.5)].map(Math.round)).toEqual(
+        pin.within,
+      );
     },
     1_800_000,
   );
