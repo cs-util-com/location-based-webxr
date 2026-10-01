@@ -3,13 +3,17 @@
  *
  * The timed unit is ONE dispatch of a recorded `gpsData/recordGpsEvent` -
  * the same call the live recorder makes per GPS fix, and the one inside which
- * the library runs its alignment solve. Nothing is rebuilt: the recorded
+ * the library runs its alignment solve - or of a `gpsData/recordGpsEventBatch`
+ * (core 1.26: several observations, ONE solve; the Tour Viewer records its
+ * device fixes with the code keep-alive's ring this way), which is a solve
+ * of its own and is timed as one unit. Nothing is rebuilt: the recorded
  * actions are dispatched exactly as the replay engine dispatches them, so
  * there is no second code path for the timing page to drift away from.
  *
- * TWO ACTION TYPES ARE REPLAYED AND THE REST IS DROPPED, deliberately:
- * `gpsData/setZeroPos` (without a session zero the solve does not run at all)
- * and `gpsData/recordGpsEvent` (the fixes). A recording also carries compass
+ * ONLY THE ZERO AND THE GPS ACTIONS ARE REPLAYED AND THE REST IS DROPPED,
+ * deliberately: `gpsData/setZeroPos` (without a session zero the solve does
+ * not run at all) and the fixes (`gpsData/recordGpsEvent`, and
+ * `gpsData/recordGpsEventBatch`). A recording also carries compass
  * opt-ins, frame captures, depth samples and ref points; replaying those would
  * let the RECORDING reconfigure the solve, so a walk captured with an opt-in
  * on would be measuring a different configuration from one captured without
@@ -21,9 +25,12 @@
 
 import type { RecordedAction } from 'gps-plus-slam-app-framework/storage/zip-reader';
 import { setAlignmentOverrides } from 'gps-plus-slam-app-framework/state';
+import {
+  GPS_EVENT_ACTION_TYPES,
+  recordedGpsEventPayloads,
+} from 'gps-plus-slam-app-framework/utils/gps-event-actions';
 import type { TimingArm } from './alignment-timing-arms';
 
-const FIX_ACTION = 'gpsData/recordGpsEvent';
 const ZERO_ACTION = 'gpsData/setZeroPos';
 
 /** Which recorded actions a pass dispatches, and when. */
@@ -37,14 +44,17 @@ export interface TimingReplayPlan {
   readonly durationSeconds: number | null;
 }
 
-/** Read `payload.rawGpsPoint.timestamp` defensively; null when absent. */
+/** The first finite `rawGpsPoint.timestamp` among the GPS events the action
+ *  carries (one for a fix, the batch's events for a batch); null when none. */
 function fixTimestamp(action: RecordedAction): number | null {
-  const payload = action.payload;
-  if (typeof payload !== 'object' || payload === null) return null;
-  const point = (payload as { rawGpsPoint?: unknown }).rawGpsPoint;
-  if (typeof point !== 'object' || point === null) return null;
-  const ts = (point as { timestamp?: unknown }).timestamp;
-  return typeof ts === 'number' && Number.isFinite(ts) ? ts : null;
+  for (const event of recordedGpsEventPayloads(action)) {
+    if (typeof event !== 'object' || event === null) continue;
+    const point = (event as { rawGpsPoint?: unknown }).rawGpsPoint;
+    if (typeof point !== 'object' || point === null) continue;
+    const ts = (point as { timestamp?: unknown }).timestamp;
+    if (typeof ts === 'number' && Number.isFinite(ts)) return ts;
+  }
+  return null;
 }
 
 /**
@@ -70,7 +80,7 @@ export function planTimingReplay(
       pending.push(action);
       continue;
     }
-    if (action.type !== FIX_ACTION) continue;
+    if (!GPS_EVENT_ACTION_TYPES.includes(action.type)) continue;
     if (groups.length === 0) {
       // Everything before the FIRST fix is setup the app pays once per
       // session, so it is dispatched outside the timed span.
