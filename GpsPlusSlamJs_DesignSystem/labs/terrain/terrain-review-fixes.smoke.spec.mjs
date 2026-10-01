@@ -1,7 +1,7 @@
 // @ts-check
 /**
  * The terrain lab's fixes from the M2 T1 milestone review (2026-10-01-1650),
- * in the browser: m3 (the imagery styles say why they are dark at night)
+ * and the lake decode fix (DEC-A3), in the browser: m3 (the imagery styles say why they are dark at night)
  * and m6 (globe-bands draws style B until the drawn region's ramp exists,
  * never black or the previous region's ramp).
  *
@@ -11,6 +11,8 @@
  * so only a pixel and a status-line check catch it.
  */
 import { expect, test } from "@playwright/test";
+import { fileURLToPath } from "node:url";
+import sharp from "sharp";
 
 import {
   applyHash,
@@ -20,7 +22,10 @@ import {
   readPixels,
   routeAll,
   state,
+  sweepLine,
 } from "./terrain-smoke-helpers.mjs";
+import { sampleImagery } from "./terrain-far-field.js";
+import { sunLitColour } from "./terrain-sun.js";
 
 const DAY = "2026-06-21T11:00:00Z";
 const NIGHT = "2026-06-21T23:00:00Z";
@@ -137,17 +142,67 @@ test("an imagery style at night says the sun is down, and stops saying it by day
 // water mask in their alpha (0 on water, the colour under it kept). The
 // page decoded them through a 2D canvas, which stores premultiplied colour,
 // so every water pixel came back BLACK: globe-albedo (C1, the provisional
-// default), the far field and style C drew lakes near black where the
-// globe draws their dark blue. The globe hands the tiles to the GPU with
+// default), the far field and style C drew lakes black where the globe
+// draws their colour. The globe hands the tiles to the GPU with
 // `premultiplyAlpha: "none"`; the lab now reads them back the same way.
-/** Lake Constance's Obersee, inside the Alps region and tile 5/33/7. */
-const LAKE = { lat: 47.56, lng: 9.42 };
-const ALPS_TILE = "/globe-assets/blue-marble-4326/5/33/7.webp";
+//
+// The ORACLE is independent of the browser: sharp (libvips' WebP decoder,
+// the tool GpsPlusSlamJs_Globe's own tests decode these tiles with) reads
+// the same file without premultiplying. Blue Marble's lakes are dark and
+// not blue: Lake Constance is about (2, 13, 0) of 255, so the test holds
+// the lab to the oracle rather than to a guessed colour.
 
-test("the imagery keeps the water's colour under the mask, and C1 draws a lake in it", async ({
+/** The Alps' level-5 tile (it holds Lake Constance), on disk and served. */
+const TILE = { z: 5, x: 33, y: 7 };
+const TILE_URL = `/globe-assets/blue-marble-4326/${TILE.z}/${TILE.x}/${TILE.y}.webp`;
+const TILE_FILE = fileURLToPath(
+  new URL(
+    `../../../GpsPlusSlamJs_Globe/assets/blue-marble-4326/${TILE.z}/${TILE.x}/${TILE.y}.webp`,
+    import.meta.url,
+  ),
+);
+/** Lake Constance's Obersee: the 9 x 9 pixels around it hold open water. */
+const LAKE = { lat: 47.56, lng: 9.42 };
+const DEG_PER_PX = 180 / 2 ** TILE.z / 256;
+
+/**
+ * The most a channel of the lab's decode may differ from the oracle's at
+ * the lake (8-bit): two WebP decoders (Chrome's and libvips') may round
+ * the lossy colour planes differently. Swept 0-4 and logged.
+ */
+const DECODE_TOLERANCE = 2;
+/**
+ * The most a channel of C1's drawn lake pixel may differ from the
+ * oracle's colour lit by the sun term (8-bit): the 1 km albedo grid over
+ * the bilinear imagery, the GPU's 8-bit filtering and the tone curve, as
+ * C1's own reference smoke tolerates (mean 4). Swept 1-6 and logged.
+ */
+const DRAWN_TOLERANCE = 4;
+
+test("the imagery keeps the water's colour under the mask, held to an independent decode, and C1 draws it", async ({
   page,
 }) => {
   test.setTimeout(240_000);
+  // The oracle: the tile file decoded by sharp, never premultiplied.
+  const oracle = await sharp(TILE_FILE)
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  expect(oracle.info.channels).toBe(4);
+  expect(oracle.info.premultiplied).toBe(false);
+  const px0 = Math.floor((LAKE.lng + 180) / DEG_PER_PX) - TILE.x * 256;
+  const py0 = Math.floor((90 - LAKE.lat) / DEG_PER_PX) - TILE.y * 256;
+  /** The lake: every water pixel (oracle alpha 0) of the 9 x 9 window. */
+  const lake = [];
+  for (let dy = -4; dy <= 4; dy++) {
+    for (let dx = -4; dx <= 4; dx++) {
+      const i = 4 * ((py0 + dy) * 256 + px0 + dx);
+      if (oracle.data[i + 3] === 0) {
+        lake.push({ i, rgb: [...oracle.data.subarray(i, i + 3)] });
+      }
+    }
+  }
+  expect(lake.length).toBeGreaterThan(30);
+
   await routeAll(page, fixtureTile);
   const errors = await boot(
     page,
@@ -161,10 +216,8 @@ test("the imagery keeps the water's colour under the mask, and C1 draws a lake i
     null,
     { timeout: 120_000 },
   );
-  // The lab's decode against a 2D-canvas decode of the same tile: land
-  // pixels identical (same bytes, same row order), water pixels coloured
-  // where the canvas returns black.
-  const check = await page.evaluate(async (url) => {
+  // The lab's decode and a 2D-canvas decode of the same served file.
+  const decoded = await page.evaluate(async (url) => {
     const blob = await (await fetch(url)).blob();
     const lab = await window.__terrainLab.decodeRgba(blob);
     const bitmap = await createImageBitmap(blob, {
@@ -174,66 +227,88 @@ test("the imagery keeps the water's colour under the mask, and C1 draws a lake i
     const surface = new OffscreenCanvas(bitmap.width, bitmap.height);
     const context = surface.getContext("2d");
     context.drawImage(bitmap, 0, 0);
-    const canvas = context.getImageData(0, 0, bitmap.width, bitmap.height).data;
-    let land = 0;
-    let landSame = 0;
-    let water = 0;
-    let waterCanvasBlack = 0;
-    let waterLabColoured = 0;
-    for (let i = 0; i < canvas.length; i += 4) {
-      if (lab.data[i + 3] === 255) {
-        land += 1;
-        if ([0, 1, 2, 3].every((c) => lab.data[i + c] === canvas[i + c])) {
-          landSame += 1;
-        }
-      } else if (lab.data[i + 3] === 0) {
-        water += 1;
-        if (canvas[i] + canvas[i + 1] + canvas[i + 2] === 0)
-          waterCanvasBlack += 1;
-        if (lab.data[i] + lab.data[i + 1] + lab.data[i + 2] > 0) {
-          waterLabColoured += 1;
-        }
-      }
+    return {
+      lab: [...lab.data],
+      canvas: [...context.getImageData(0, 0, bitmap.width, bitmap.height).data],
+    };
+  }, TILE_URL);
+  const worst = Math.max(
+    ...lake.flatMap(({ i, rgb }) =>
+      rgb.map((v, c) => Math.abs(decoded.lab[i + c] - v)),
+    ),
+  );
+  const canvasSum = lake.reduce(
+    (s, { i }) =>
+      s + decoded.canvas[i] + decoded.canvas[i + 1] + decoded.canvas[i + 2],
+    0,
+  );
+  const oracleMean = [0, 1, 2].map(
+    (c) => lake.reduce((s, p) => s + p.rgb[c], 0) / lake.length,
+  );
+  console.log(
+    `Lake Constance, ${lake.length} water pixels: oracle mean ${oracleMean.map((v) => v.toFixed(1)).join(", ")}; ` +
+      `lab decode worst channel difference ${worst} ` +
+      `(${sweepLine(worst, [0, 1, 2, 3, 4])}); canvas decode RGB sum ${canvasSum}`,
+  );
+  // The lab reads what the file holds under the mask...
+  expect(worst).toBeLessThanOrEqual(DECODE_TOLERANCE);
+  // ...where the canvas path reads black (the defect, still there for it).
+  expect(canvasSum).toBe(0);
+  // Non-vacuous: the lake's colour is not black in the file.
+  expect(Math.max(...oracleMean)).toBeGreaterThan(5);
+  // Land pixels: the lab's decode is the canvas's, byte for byte (same
+  // bytes, same row order), so the change touches the water only.
+  let landDiffers = 0;
+  for (let i = 0; i < oracle.data.length; i += 4) {
+    if (oracle.data[i + 3] !== 255) continue;
+    if (
+      [0, 1, 2, 3].some((c) => decoded.lab[i + c] !== decoded.canvas[i + c])
+    ) {
+      landDiffers += 1;
     }
-    return {
-      width: lab.width,
-      land,
-      landSame,
-      water,
-      waterCanvasBlack,
-      waterLabColoured,
-    };
-  }, ALPS_TILE);
-  console.log(`decode of ${ALPS_TILE}: ${JSON.stringify(check)}`);
-  expect(check.width).toBe(256);
-  expect(check.water).toBeGreaterThan(50);
-  expect(check.landSame).toBe(check.land);
-  expect(check.waterCanvasBlack).toBe(check.water);
-  expect(check.waterLabColoured).toBeGreaterThan(0.9 * check.water);
-  // The lake in the imagery the page samples, and in C1's pixel there.
-  const lake = await page.evaluate(({ lat, lng }) => {
-    const e = window.__terrainLab.toEnu(lat, lng);
-    return {
-      imagery: window.__terrainLab.imageryAt(lat, lng),
-      field: window.__terrainLab.fieldAt(e.x, e.y),
-      e,
-    };
-  }, LAKE);
+  }
+  expect(landDiffers).toBe(0);
+
+  // C1's drawn pixel at the middle of the lake against the oracle's
+  // imagery there, lit flat by the sun term (detail 0: C1 IS the lit
+  // imagery). The canvas decode would have drawn it black.
+  const centre = lake[Math.floor(lake.length / 2)];
+  const cpx = (centre.i / 4) % 256;
+  const cpy = Math.floor(centre.i / 4 / 256);
+  const at = {
+    lat: 90 - (TILE.y * 256 + cpy + 0.5) * DEG_PER_PX,
+    lng: -180 + (TILE.x * 256 + cpx + 0.5) * DEG_PER_PX,
+  };
+  const albedo = sampleImagery(
+    [{ ...TILE, width: 256, height: 256, data: oracle.data }],
+    at.lat,
+    at.lng,
+  );
   const s = await state(page);
-  const [px] = await readPixels(
+  const want = sunLitColour(albedo, Math.max(0, s.sun.enu[2]), s.sunIntensity);
+  const ground = await page.evaluate(({ lat, lng }) => {
+    const e = window.__terrainLab.toEnu(lat, lng);
+    return { e, field: window.__terrainLab.fieldAt(e.x, e.y) };
+  }, at);
+  const [drawn] = await readPixels(
     page,
     await page.evaluate(
       (p) => window.__terrainLab.projectAll([p]),
-      [lake.e.x, lake.field.heightM - s.datum, -lake.e.y],
+      [ground.e.x, ground.field.heightM - s.datum, -ground.e.y],
     ),
   );
-  console.log(
-    `Lake Constance: imagery ${lake.imagery.map((v) => v.toFixed(3)).join(", ")}, C1 pixel ${px.slice(0, 3).join(", ")}`,
+  const drawnDiff = Math.max(
+    ...want.map((v, c) => Math.abs(Math.round(v * 255) - drawn[c])),
   );
-  // Dark blue, not black: a channel above 15 of 255, blue over red.
-  expect(Math.max(...lake.imagery)).toBeGreaterThan(15 / 255);
-  expect(lake.imagery[2]).toBeGreaterThan(lake.imagery[0]);
-  expect(Math.max(px[0], px[1], px[2])).toBeGreaterThan(15);
-  expect(px[2]).toBeGreaterThan(px[0]);
+  console.log(
+    `C1 at the lake: drawn ${drawn.slice(0, 3).join(", ")}, expected ` +
+      `${want.map((v) => Math.round(v * 255)).join(", ")} ` +
+      `(worst channel ${drawnDiff}: ${sweepLine(drawnDiff, [1, 2, 3, 4, 6])})`,
+  );
+  expect(drawnDiff).toBeLessThanOrEqual(DRAWN_TOLERANCE);
+  // Clearly brighter than the canvas decode's black (sun-lit black is 0).
+  expect(Math.max(drawn[0], drawn[1], drawn[2])).toBeGreaterThan(
+    DRAWN_TOLERANCE,
+  );
   expect(errors).toEqual([]);
 });

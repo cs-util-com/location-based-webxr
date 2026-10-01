@@ -207,6 +207,9 @@ importers:
       prettier:
         specifier: ^3.9.6
         version: 3.9.6
+      sharp:
+        specifier: 0.35.2
+        version: 0.35.2
       stylelint:
         specifier: ^17.15.0
         version: 17.15.0(typescript@6.0.3)
