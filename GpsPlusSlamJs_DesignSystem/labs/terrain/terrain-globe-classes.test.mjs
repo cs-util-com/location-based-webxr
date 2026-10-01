@@ -14,7 +14,7 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
 
-import { srgbToLinear } from "./terrain-far-field.js";
+import { linearToSrgb, srgbToLinear } from "./terrain-far-field.js";
 import { deltaE76 } from "./terrain-globe-colour.js";
 import { snowLineM, treeLineM } from "./terrain-styles.js";
 import { sunLitColour } from "./terrain-sun.js";
@@ -306,5 +306,109 @@ describe("C2: the class-threshold sweep", () => {
     ]);
     assert.ok(row.drift.mean < 0.5, `${row.drift.mean}`);
     assert.ok(row.detail < 0.5, `${row.detail}`);
+  });
+
+  // A region where no footprint lies wholly on land posts with imagery
+  // (here every other post is invalid) has no drift to measure: the row
+  // says so with NaN and n 0, never an undefined percentile.
+  it("reports NaN drift with n 0 when no footprint is wholly on land", () => {
+    const r = region([0.42, 0.44, 0.4]);
+    const valid = new Uint8Array(r.posts.side * r.posts.side);
+    for (let i = 0; i < valid.length; i += 2) valid[i] = 1;
+    const [row] = classSweep({ ...r, posts: { ...r.posts, valid } }, [
+      { label: "sparse" },
+    ]);
+    assert.ok(row.posts > 0, `${row.posts}`);
+    assert.equal(row.drift.n, 0);
+    assert.ok(Number.isNaN(row.drift.mean), `${row.drift.mean}`);
+    assert.ok(Number.isNaN(row.drift.p95), `${row.drift.p95}`);
+    assert.ok(Number.isFinite(row.detail));
+  });
+
+  // The drift is the footprint means' difference: held here to a
+  // brute-force mean over the posts inside each footprint, so the
+  // summed-area arithmetic cannot drift from the box it claims to average.
+  it("matches a brute-force footprint mean (property)", () => {
+    const next = random(13);
+    const side = 21;
+    const n = side * side;
+    const height = Float64Array.from({ length: n }, () => 300 + next() * 3500);
+    const gx = Float64Array.from({ length: n }, () => (next() - 0.5) * 2);
+    const gy = Float64Array.from({ length: n }, () => (next() - 0.5) * 2);
+    const colourAt = (x, y) => [
+      0.2 + 0.1 * Math.sin(x / 3000),
+      0.3 + 0.1 * Math.cos(y / 2000),
+      0.15,
+    ];
+    const reg = {
+      posts: {
+        side,
+        spacingM: 500,
+        extentM: 5000,
+        height,
+        gx,
+        gy,
+        small: new Float64Array(n),
+        valid: new Uint8Array(n).fill(1),
+      },
+      datum: 0,
+      latDeg: LAT,
+      halfM: 4000,
+      footprint: [1700, 2450],
+      coarseSide: 4,
+      imageryAt: (x, y) => ({ land: colourAt(x, y), water: 0 }),
+    };
+    const [row] = classSweep(reg, [{ label: "defaults" }]);
+    const drift = [];
+    const step = (2 * reg.halfM) / reg.coarseSide;
+    for (let r = 0; r < reg.coarseSide; r++) {
+      for (let c = 0; c < reg.coarseSide; c++) {
+        const cx = -reg.halfM + (c + 0.5) * step;
+        const cy = -reg.halfM + (r + 0.5) * step;
+        const fine = [0, 0, 0];
+        const coarse = [0, 0, 0];
+        let k = 0;
+        for (let j = 0; j < side; j++) {
+          for (let i = 0; i < side; i++) {
+            const x = -5000 + i * 500;
+            const y = -5000 + j * 500;
+            if (Math.abs(x - cx) > 850 || Math.abs(y - cy) > 1225) continue;
+            const idx = j * side + i;
+            const land = colourAt(x, y);
+            const out = classAlbedo({
+              land,
+              water: 0,
+              point: {
+                heightM: height[idx],
+                gx: gx[idx],
+                gy: gy[idx],
+                smallM: 0,
+                latDeg: LAT,
+              },
+            });
+            const cc = coarseClassColour(land, 0);
+            for (let ch = 0; ch < 3; ch++) {
+              fine[ch] += srgbToLinear(out.albedo[ch]);
+              coarse[ch] += srgbToLinear(cc[ch]);
+            }
+            k += 1;
+          }
+        }
+        drift.push(
+          deltaE76(
+            fine.map((v) => linearToSrgb(v / k)),
+            coarse.map((v) => linearToSrgb(v / k)),
+          ),
+        );
+      }
+    }
+    // Every footprint of this grid lies inside the drawn region.
+    assert.equal(row.drift.n, 16);
+    close(
+      row.drift.mean,
+      drift.reduce((a, b) => a + b, 0) / drift.length,
+      1e-9,
+      "drift mean",
+    );
   });
 });

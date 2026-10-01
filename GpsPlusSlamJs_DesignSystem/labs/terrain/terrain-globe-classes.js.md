@@ -41,6 +41,10 @@ water }`: the land colour scaled per channel (linear light) by the
 detail, shares }`: the footprint drift (CIE76 between the fine albedo's
     footprint mean and the coarse colour's, over the same posts), the detail (mean CIE76 of a
     post's albedo from the coarse colour) and the mean fine class shares.
+    Only footprints wholly on land posts with imagery count; with none,
+    `drift` is `{ mean: NaN, p95: NaN, n: 0 }`. The footprint means use
+    `summedArea` and `boxMeanAt` from `terrain-globe-colour.js` (DEC-H3:
+    one box mean in the lab).
   - `CLASS_SWEEP`: the sweep's settings, one threshold moved at a time:
     snow line ±300 / ±600 m, tree line ±400 m, rock slope 30-46°, colour
     width 6-24, floor 0.02-0.15.
@@ -74,7 +78,9 @@ detail, shares }`: the footprint drift (CIE76 between the fine albedo's
 - Tests: `terrain-globe-classes.test.mjs` (the weights follow the colour
   and sum to 1; the affinities follow the lines and stay in floor-1; the
   albedo is the imagery with no preference, whitens high and greys steep,
-  sends water to the flat posts; the sweep on a synthetic region) and
+  sends water to the flat posts; the sweep on a synthetic region, its
+  drift held to a brute-force footprint mean, NaN with n 0 when no
+  footprint is wholly on land) and
   `terrain-globe-classes.smoke.spec.mjs` (C2 at real Alps pixels against
   its reference; the region's per-class colours against the prototypes;
   a lake in the mask; the class-threshold sweep on the Alps and the Blue

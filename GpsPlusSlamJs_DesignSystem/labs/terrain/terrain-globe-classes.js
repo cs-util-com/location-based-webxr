@@ -36,7 +36,12 @@
 import { smoothstep } from "./terrain-style.js";
 import { naturalWeights } from "./terrain-styles.js";
 import { linearToSrgb, srgbToLinear } from "./terrain-far-field.js";
-import { deltaE76, srgbToLab } from "./terrain-globe-colour.js";
+import {
+  boxMeanAt,
+  deltaE76,
+  srgbToLab,
+  summedArea,
+} from "./terrain-globe-colour.js";
 import { sunLitColour } from "./terrain-sun.js";
 
 const DEG = Math.PI / 180;
@@ -212,7 +217,9 @@ export function globeClassesColour(input, light, intensity) {
  *   imagery's coarse colour (`coarseClassColour`), both averaged in
  *   linear light over the same imagery footprint around a coarse grid's
  *   texel centres: what the globe would see change at the hand-over (mean,
- *   p95), without the imagery's own variation inside the footprint;
+ *   p95), without the imagery's own variation inside the footprint. Only
+ *   footprints wholly on land posts with imagery count; with none, the
+ *   mean and p95 are NaN and `n` is 0;
  * - `detail`: the mean CIE76 difference between a post's fine albedo and
  *   the coarse colour at the post: how much colour the classes move;
  * - `shares`: the mean fine weight of each class over the posts.
@@ -252,6 +259,7 @@ export function classSweep(region, settings) {
     const c = coarseClassColour(at[i].land, at[i].water);
     for (let ch = 0; ch < 3; ch++) coarseLin[ch][i] = srgbToLinear(c[ch]);
   }
+  const coarseTables = coarseLin.map((values) => summedArea(values, side));
   return settings.map(({ label, o = {}, widthDE }) => {
     const lin = [new Float64Array(n), new Float64Array(n), new Float64Array(n)];
     const count = new Float64Array(n);
@@ -277,28 +285,8 @@ export function classSweep(region, settings) {
       posts0 += 1;
     }
     // Footprint means of the fine albedo, by summed-area tables.
-    const sat = (values) => {
-      const m = side + 1;
-      const t = new Float64Array(m * m);
-      for (let r = 0; r < side; r++) {
-        let row = 0;
-        for (let c = 0; c < side; c++) {
-          row += values[r * side + c];
-          t[(r + 1) * m + c + 1] = t[r * m + c + 1] + row;
-        }
-      }
-      return t;
-    };
-    const tables = [...lin.map(sat), sat(count), ...coarseLin.map(sat)];
-    const boxSum = (t, c0, c1, r0, r1) => {
-      const m = side + 1;
-      return (
-        t[(r1 + 1) * m + c1 + 1] -
-        t[r0 * m + c1 + 1] -
-        t[(r1 + 1) * m + c0] +
-        t[r0 * m + c0]
-      );
-    };
+    const fineTables = lin.map((values) => summedArea(values, side));
+    const countTable = summedArea(count, side);
     const [wx, wy] = footprint;
     const step = (2 * halfM) / coarseSide;
     const drift = [];
@@ -306,37 +294,31 @@ export function classSweep(region, settings) {
       for (let c = 0; c < coarseSide; c++) {
         const x = -halfM + (c + 0.5) * step;
         const y = -halfM + (r + 0.5) * step;
-        const c0 = Math.max(0, Math.ceil((x - wx / 2 + extentM) / spacingM));
-        const c1 = Math.min(
-          side - 1,
-          Math.floor((x + wx / 2 + extentM) / spacingM),
-        );
-        const r0 = Math.max(0, Math.ceil((y - wy / 2 + extentM) / spacingM));
-        const r1 = Math.min(
-          side - 1,
-          Math.floor((y + wy / 2 + extentM) / spacingM),
-        );
-        if (c1 < c0 || r1 < r0) continue;
-        const k = boxSum(tables[3], c0, c1, r0, r1);
-        const box = (c1 - c0 + 1) * (r1 - r0 + 1);
-        // Only footprints wholly on land posts with imagery.
-        if (k < box) continue;
-        const mean = (offset) =>
-          [0, 1, 2].map((ch) =>
-            linearToSrgb(boxSum(tables[offset + ch], c0, c1, r0, r1) / k),
+        // Only footprints wholly on land posts with imagery (every post's
+        // count is 1), so each mean is over the same posts.
+        const whole = boxMeanAt(countTable, posts, x, y, wx, wy);
+        if (whole === null || whole < 1) continue;
+        const mean = (tables) =>
+          tables.map((t) =>
+            linearToSrgb(boxMeanAt(t, posts, x, y, wx, wy) ?? 0),
           );
-        drift.push(deltaE76(mean(0), mean(4)));
+        drift.push(deltaE76(mean(fineTables), mean(coarseTables)));
       }
     }
     drift.sort((a, b) => a - b);
     return {
       label,
       posts: posts0,
-      drift: {
-        mean: drift.reduce((s, v) => s + v, 0) / drift.length,
-        p95: drift[Math.min(drift.length - 1, Math.floor(0.95 * drift.length))],
-        n: drift.length,
-      },
+      drift:
+        drift.length === 0
+          ? { mean: Number.NaN, p95: Number.NaN, n: 0 }
+          : {
+              mean: drift.reduce((s, v) => s + v, 0) / drift.length,
+              p95: drift[
+                Math.min(drift.length - 1, Math.floor(0.95 * drift.length))
+              ],
+              n: drift.length,
+            },
       detail: detailSum / posts0,
       shares: Object.fromEntries(
         [...LAND_CLASSES, "water"].map((name, k) => [name, shares[k] / posts0]),
