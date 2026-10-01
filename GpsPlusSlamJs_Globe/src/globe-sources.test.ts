@@ -12,7 +12,14 @@
  * and each level of the pyramid quadruples the tile count.
  */
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import {
+  closeSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  readSync,
+  statSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
@@ -50,6 +57,13 @@ describe("GLOBE_SOURCES", () => {
 });
 
 describe("the committed imagery", () => {
+  // Why the shape of this test (2026-10-01): with level 5 the pyramid is
+  // 2,730 files, and reading each whole file with three assertions apiece
+  // took 30-35 s under load, at its timeout. Every file is still checked,
+  // but by its first 64 bytes (the WebP header: type, size, alpha) and its
+  // RIFF length against its size on disk (a truncated file fails), with
+  // one assertion per level; the pixels are decoded for a deterministic
+  // sample per level in the next test.
   it("has the complete Blue Marble pyramid, every tile a 256x256 WebP, the water in its alpha", () => {
     const tiles = globeSource("blue-marble");
     const levels = tiles.levels ?? 0;
@@ -57,24 +71,16 @@ describe("the committed imagery", () => {
     expect(globeSource("water-mask").path).toBe(tiles.path);
     expect(globeSource("water-mask").kind).toBe("alpha");
     for (let z = 0; z < levels; z++) {
-      const files: string[] = [];
-      const levelDir = onDisk(tiles.path.split("{z}")[0] + String(z));
-      for (const x of readdirSync(levelDir)) {
-        for (const y of readdirSync(join(levelDir, x)))
-          files.push(join(levelDir, x, y));
-      }
+      const files = levelFiles(z);
       expect(files, `level ${z}`).toHaveLength(2 * 4 ** z);
+      const bad: string[] = [];
       let withWater = 0;
       for (const file of files) {
-        expect(file.endsWith(".webp"), file).toBe(true);
-        const info = imageInfo(readFileSync(file));
-        expect(info, file).toMatchObject({
-          type: "webp",
-          width: 256,
-          height: 256,
-        });
-        if (info?.type === "webp" && info.alpha) withWater += 1;
+        const tile = checkTile(file);
+        if (tile.problem) bad.push(tile.problem);
+        if (tile.alpha) withWater += 1;
       }
+      expect(bad, `level ${z}`).toEqual([]);
       // Most of the Earth is sea: most tiles at every level have water
       // (measured: every tile at levels 0-2, 85 % at level 4).
       expect(withWater / files.length, `level ${z}`).toBeGreaterThan(0.5);
@@ -85,6 +91,39 @@ describe("the committed imagery", () => {
     );
     expect(pacific).toMatchObject({ type: "webp", alpha: true });
   });
+
+  // Why: the header check above cannot see a broken image body. Every
+  // level's files, sorted, are decoded at a fixed stride (about eight a
+  // level, the first and the last included), so a file the encoder or a
+  // copy damaged in the sample fails, and the sample never changes
+  // between runs.
+  it("decodes a fixed sample of every level to 256x256 pixels", async () => {
+    const levels = globeSource("blue-marble").levels ?? 0;
+    const bad: string[] = [];
+    let decoded = 0;
+    for (let z = 0; z < levels; z++) {
+      const files = levelFiles(z);
+      const stride = Math.max(1, Math.floor(files.length / 8));
+      const sample = files.filter(
+        (_, i) => i % stride === 0 || i === files.length - 1,
+      );
+      for (const file of sample) {
+        try {
+          const { info } = await sharp(file)
+            .raw()
+            .toBuffer({ resolveWithObject: true });
+          if (info.width !== 256 || info.height !== 256) {
+            bad.push(`${file}: ${info.width}x${info.height}`);
+          }
+          decoded += 1;
+        } catch (error) {
+          bad.push(`${file}: ${String(error)}`);
+        }
+      }
+    }
+    expect(bad).toEqual([]);
+    expect(decoded).toBeGreaterThan(40);
+  }, 60_000);
 
   // Why (review B7): the water mask is a HARD mask, lossless in the alpha
   // plane (0 water, 255 land), and the colour under the water is kept
@@ -140,6 +179,58 @@ describe("the committed imagery", () => {
     }
   });
 });
+
+/** A level's tile files, sorted (x then y, as written by the fetch script). */
+function levelFiles(z: number): string[] {
+  const tiles = globeSource("blue-marble");
+  const levelDir = onDisk(tiles.path.split("{z}")[0] + String(z));
+  const byNumber = (a: string, b: string) => parseInt(a, 10) - parseInt(b, 10);
+  return readdirSync(levelDir)
+    .sort(byNumber)
+    .flatMap((x) =>
+      readdirSync(join(levelDir, x))
+        .sort(byNumber)
+        .map((y) => join(levelDir, x, y)),
+    );
+}
+
+/**
+ * One tile's header check: a 256x256 WebP whose RIFF length matches its
+ * size on disk (a truncated file fails), and whether it has alpha.
+ */
+function checkTile(file: string): { problem: string | null; alpha: boolean } {
+  const head = headOf(file);
+  const info = imageInfo(head);
+  const riffBytes = riffLength(head);
+  const webp = info?.type === "webp" ? info : null;
+  const ok =
+    webp !== null &&
+    webp.width === 256 &&
+    webp.height === 256 &&
+    riffBytes === statSync(file).size;
+  return {
+    problem: ok ? null : `${file}: ${JSON.stringify(info)}, RIFF ${riffBytes}`,
+    alpha: webp?.alpha === true,
+  };
+}
+
+/** A RIFF file's length from its header (the size field plus its 8 bytes). */
+const riffLength = (head: Uint8Array): number =>
+  head.length < 8
+    ? 0
+    : new DataView(head.buffer, head.byteOffset, 8).getUint32(4, true) + 8;
+
+/** A file's first 64 bytes (a WebP header fits in 30). */
+function headOf(file: string): Uint8Array {
+  const fd = openSync(file, "r");
+  try {
+    const bytes = new Uint8Array(64);
+    const n = readSync(fd, bytes, 0, 64, 0);
+    return bytes.subarray(0, n);
+  } finally {
+    closeSync(fd);
+  }
+}
 
 /**
  * A tile's water pixels (alpha 0) and the sum of their R, G and B, after
