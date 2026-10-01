@@ -14,21 +14,21 @@
   - `linearLuminance(srgb)`: Rec. 709 luminance in linear light.
   - `detailRatio(fineLum, coarseLum, detail)`: 1 + detail x (fine / coarse
     - 1), clamped; 1 for no detail, a black footprint or a non-finite
-    fine value. RangeError for a weight outside 0-1.
+      fine value. RangeError for a weight outside 0-1.
   - `globeAlbedoColour({ albedo, light, fineLum, coarseLum, detail })`:
     `sunLitColour(albedo, light x detailRatio(...))`.
   - `footprintM(level, latDeg, tileSize = 256)` -> `[east-west, north-south]`
     metres of one EPSG:4326 imagery pixel (sphere of the WGS84 equatorial
     radius; 2.45 km north-south at level 5, 4.9 km at level 4).
   - `summedArea(values, side)` and `boxMeanAt(sat, { side, spacingM,
-    extentM }, x, y, wx, wy)`: the mean of the lab's posts inside a box,
+extentM }, x, y, wx, wy)`: the mean of the lab's posts inside a box,
     clipped to the grid, null when none is inside.
   - `bandRamp(samples, { widthM })` -> `{ widthM, bands, sea }`: C3's ramp
     from `{ heightM, rgb }` samples; `bandRampColour(ramp, h)` (null with no
     land band), `bandRampLut(ramp, LUT)`, `rampFitError(ramp, samples)` ->
     `{ mean, p95, n }` (CIE76). RangeError for a width outside 10-5000 m.
   - `bandSweep(samples, widthsM)` -> per width `{ widthM, bands, minCount,
-    fit, cv }`: the in-sample error and the two-fold cross-validated one
+fit, cv }`: the in-sample error and the two-fold cross-validated one
     (fitted on the samples of one `fold`, judged on the other). RangeError
     when a fold is empty. The cross-validated error is the honest number:
     narrow bands always fit their own pixels better.

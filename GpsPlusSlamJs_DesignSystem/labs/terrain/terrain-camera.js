@@ -122,7 +122,9 @@ export function flyInPoseAtAltitude(altitudeM, fly = FLY_IN) {
     throw new RangeError(`altitude must be positive, got ${altitudeM}`);
   }
   const { from, to } = fly;
-  const s = Math.log(altitudeM / from.altitudeM) / Math.log(to.altitudeM / from.altitudeM);
+  const s =
+    Math.log(altitudeM / from.altitudeM) /
+    Math.log(to.altitudeM / from.altitudeM);
   const pose = poseAlong(Math.min(1, Math.max(0, s)), fly);
   return { ...pose, altitudeM };
 }

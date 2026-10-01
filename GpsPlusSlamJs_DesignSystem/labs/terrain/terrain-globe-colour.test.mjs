@@ -91,7 +91,13 @@ describe("C1 globe-albedo: the colour", () => {
       const albedo = [next(), next(), next()];
       const light = next();
       assert.deepEqual(
-        globeAlbedoColour({ albedo, light, fineLum: next(), coarseLum: 0.3, detail: 0 }),
+        globeAlbedoColour({
+          albedo,
+          light,
+          fineLum: next(),
+          coarseLum: 0.3,
+          detail: 0,
+        }),
         sunLitColour(albedo, light),
       );
     }
@@ -117,7 +123,12 @@ describe("C1 globe-albedo: the colour", () => {
   });
 
   it("brightens where the fine ramp is lighter than its footprint, darkens where darker", () => {
-    const base = { albedo: [0.3, 0.35, 0.2], light: 0.6, coarseLum: 0.1, detail: 0.5 };
+    const base = {
+      albedo: [0.3, 0.35, 0.2],
+      light: 0.6,
+      coarseLum: 0.1,
+      detail: 0.5,
+    };
     const y = (c) => linearLuminance(c);
     const flat = y(globeAlbedoColour({ ...base, fineLum: 0.1 }));
     assert.ok(y(globeAlbedoColour({ ...base, fineLum: 0.14 })) > flat);
@@ -142,7 +153,12 @@ describe("box means over a grid (the imagery pixel's footprint)", () => {
 
   it("is clipped to the grid at its edge, and null outside it", () => {
     // Posts at x in {-200, -100}, y in {-200, -100}: rows 0-1, columns 0-1.
-    close(boxMeanAt(sat, grid, -200, -200, 250, 250), (0 + 1 + 5 + 6) / 4, 1e-12, "corner");
+    close(
+      boxMeanAt(sat, grid, -200, -200, 250, 250),
+      (0 + 1 + 5 + 6) / 4,
+      1e-12,
+      "corner",
+    );
     assert.equal(boxMeanAt(sat, grid, 1000, 0, 100, 100), null);
   });
 
@@ -205,11 +221,14 @@ describe("C3 globe-bands: the ramp", () => {
     const low = ramp.bands[0];
     assert.equal(low.count, 2);
     close(low.heightM, 125, 1e-9, "the band's mean height");
-    const want = [0.2, 0.4, 0.2]
-      .map((v, i) => (srgbToLinear(v) + srgbToLinear([0.4, 0.6, 0.2][i])) / 2);
+    const want = [0.2, 0.4, 0.2].map(
+      (v, i) => (srgbToLinear(v) + srgbToLinear([0.4, 0.6, 0.2][i])) / 2,
+    );
     // 1e-4: three's sRGB encoding (exponent 0.41666) is not the exact
     // inverse of its decoding.
-    low.rgb.map(srgbToLinear).forEach((v, i) => close(v, want[i], 1e-4, `[${i}]`));
+    low.rgb
+      .map(srgbToLinear)
+      .forEach((v, i) => close(v, want[i], 1e-4, `[${i}]`));
     sea.forEach((v, i) => close(ramp.sea[i], v, 1e-4, `sea[${i}]`));
   });
 
@@ -224,7 +243,9 @@ describe("C3 globe-bands: the ramp", () => {
     assert.deepEqual(bandRampColour(ramp, 0), bandRampColour(ramp, 500));
     assert.deepEqual(bandRampColour(ramp, 4000), bandRampColour(ramp, 2500));
     const mid = bandRampColour(ramp, 1500).map(srgbToLinear);
-    const want = green.map((v, i) => (srgbToLinear(v) + srgbToLinear(grey[i])) / 2);
+    const want = green.map(
+      (v, i) => (srgbToLinear(v) + srgbToLinear(grey[i])) / 2,
+    );
     mid.forEach((v, i) => close(v, want[i], 1e-4, `mid[${i}]`));
   });
 
@@ -279,7 +300,11 @@ describe("C3 globe-bands: the band-width sweep", () => {
   // fitting their own noise.
   it("reports in-sample and two-fold cross-validated errors per width", () => {
     const next = random(23);
-    const truth = (h) => [0.25 + h / 12_000, 0.45 - h / 15_000, 0.2 + h / 20_000];
+    const truth = (h) => [
+      0.25 + h / 12_000,
+      0.45 - h / 15_000,
+      0.2 + h / 20_000,
+    ];
     const samples = Array.from({ length: 4000 }, (_, i) => {
       const h = next() * 3500;
       const noise = () => (next() - 0.5) * 0.1;
@@ -290,11 +315,17 @@ describe("C3 globe-bands: the band-width sweep", () => {
       };
     });
     const rows = bandSweep(samples, [50, 200, 800]);
-    assert.deepEqual(rows.map((r) => r.widthM), [50, 200, 800]);
+    assert.deepEqual(
+      rows.map((r) => r.widthM),
+      [50, 200, 800],
+    );
     for (const r of rows) {
       assert.ok(r.fit.mean > 0 && r.cv.mean > 0, `${r.widthM}`);
       // Judged on unseen pixels, a ramp never does better than on its own.
-      assert.ok(r.cv.mean >= r.fit.mean - 0.05, `${r.widthM}: ${r.cv.mean} vs ${r.fit.mean}`);
+      assert.ok(
+        r.cv.mean >= r.fit.mean - 0.05,
+        `${r.widthM}: ${r.cv.mean} vs ${r.fit.mean}`,
+      );
       assert.ok(r.bands > 0 && r.minCount > 0);
     }
     // Narrow bands fit their own pixels at least as well as wide ones.

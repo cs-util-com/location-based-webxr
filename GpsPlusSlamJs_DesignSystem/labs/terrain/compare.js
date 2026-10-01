@@ -104,7 +104,12 @@ function lifted(points, s) {
   const out = [];
   for (const p of points) {
     const f = lab().fieldAt(p.x, p.y);
-    if (f) out.push({ ...p, h: f.heightM, lift: s.effectiveE * (f.heightM - s.datum) });
+    if (f)
+      out.push({
+        ...p,
+        h: f.heightM,
+        lift: s.effectiveE * (f.heightM - s.datum),
+      });
   }
   return out;
 }
@@ -151,7 +156,11 @@ function handOverDifference(s) {
       );
     })
     .filter(Number.isFinite);
-  return { mean: stats(diffs).mean, p95: quantile(diffs, 0.95), n: diffs.length };
+  return {
+    mean: stats(diffs).mean,
+    p95: quantile(diffs, 0.95),
+    n: diffs.length,
+  };
 }
 
 /** A capture as a small canvas (the buffer's rows flipped to the top). */
@@ -215,13 +224,17 @@ async function run() {
       const perSun = { contrast: {}, handOver: null };
       out.suns[sun.id] = perSun;
       const hand = flyInPoseAtAltitude(COMPARE_PLAN.handOverKm * 1000);
-      say(`${variant.label}: ${sun.label}, the hand-over at ${COMPARE_PLAN.handOverKm} km`);
+      say(
+        `${variant.label}: ${sun.label}, the hand-over at ${COMPARE_PLAN.handOverKm} km`,
+      );
       let s = await show(captureHash(variant, sun, hand));
       perSun.handOver = handOverDifference(s);
       perSun.sunElevationDeg = s.sun.elevationDeg;
       for (const km of altitudesKm) {
         say(`${variant.label}: ${sun.label}, ${km} km`);
-        s = await show(captureHash(variant, sun, flyInPoseAtAltitude(km * 1000)));
+        s = await show(
+          captureHash(variant, sun, flyInPoseAtAltitude(km * 1000)),
+        );
         perSun.contrast[km] = localContrast(s);
         const cell = document.createElement("td");
         cell.append(thumbnail());
@@ -230,7 +243,9 @@ async function run() {
     }
     // The cost at the day sun, 30 km (or the one altitude of a quick run).
     const costKm = altitudesKm.includes(30) ? 30 : altitudesKm[0];
-    await show(captureHash(variant, suns[0], flyInPoseAtAltitude(costKm * 1000)));
+    await show(
+      captureHash(variant, suns[0], flyInPoseAtAltitude(costKm * 1000)),
+    );
     const ms = lab().frameCost(COMPARE_PLAN.costFrames);
     costA ??= ms;
     out.frameMs = ms;
@@ -283,7 +298,9 @@ async function run() {
         `; cost x${fmt(out.costRatio, 2)} (${fmt(ms, 0)} ms)`,
     );
   }
-  say(`Done: ${variants.length} variants, ${suns.length} suns, ${altitudesKm.length} altitudes.`);
+  say(
+    `Done: ${variants.length} variants, ${suns.length} suns, ${altitudesKm.length} altitudes.`,
+  );
   results.done = true;
 }
 

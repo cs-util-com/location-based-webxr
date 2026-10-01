@@ -35,14 +35,21 @@ describe("the comparison's rows and plan", () => {
       assert.equal(p.style, v.hash.style, v.id);
       assert.deepEqual(p.notes, [], v.id);
     }
-    assert.equal(new Set(COMPARE_VARIANTS.map((v) => v.id)).size, COMPARE_VARIANTS.length);
+    assert.equal(
+      new Set(COMPARE_VARIANTS.map((v) => v.id)).size,
+      COMPARE_VARIANTS.length,
+    );
   });
 
   it("captures 300, 100, 30 and 10 km at a day and a low sun, with the 150 km hand-over", () => {
     assert.deepEqual([...COMPARE_PLAN.altitudesKm], [300, 100, 30, 10]);
-    assert.deepEqual(COMPARE_PLAN.suns.map((s) => s.id), ["day", "low"]);
+    assert.deepEqual(
+      COMPARE_PLAN.suns.map((s) => s.id),
+      ["day", "low"],
+    );
     assert.equal(COMPARE_PLAN.handOverKm, 150);
-    for (const s of COMPARE_PLAN.suns) assert.ok(Number.isFinite(Date.parse(s.time)), s.id);
+    for (const s of COMPARE_PLAN.suns)
+      assert.ok(Number.isFinite(Date.parse(s.time)), s.id);
   });
 
   // The far field is on in every capture only so every row has the
@@ -65,13 +72,21 @@ describe("the comparison's rows and plan", () => {
   it("writes a capture's hash the lab reads back exactly", () => {
     const variant = COMPARE_VARIANTS.find((v) => v.id === "C1-d0.5");
     const sun = COMPARE_PLAN.suns[1];
-    const hash = captureHash(variant, sun, { altitudeM: 30_000, tiltDeg: 52.5, headingDeg: 351.25 });
+    const hash = captureHash(variant, sun, {
+      altitudeM: 30_000,
+      tiltDeg: 52.5,
+      headingDeg: 351.25,
+    });
     const p = readTerrainParams(hash);
     assert.equal(p.place, "alps");
     assert.equal(p.style, "globe-albedo");
     assert.equal(p.detail, 0.5);
     assert.equal(p.light, 1);
-    assert.deepEqual(p.camera, { altitudeM: 30_000, tiltDeg: 52.5, headingDeg: 351.25 });
+    assert.deepEqual(p.camera, {
+      altitudeM: 30_000,
+      tiltDeg: 52.5,
+      headingDeg: 351.25,
+    });
     assert.equal(new URLSearchParams(hash).get("time"), sun.time);
   });
 });

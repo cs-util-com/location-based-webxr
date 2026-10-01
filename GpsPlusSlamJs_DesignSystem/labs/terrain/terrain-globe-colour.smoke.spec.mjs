@@ -84,7 +84,9 @@ test("globe-albedo: the imagery under the sun term, and its detail a high-pass",
   expect(s.shaderStyle).toBe(4);
   expect(s.light).toBe(1);
   expect(s.credits).toContain("Blue Marble");
-  console.log(`globe-albedo: footprint luminance built in ${Math.round(s.globeColour.coarseMs)} ms`);
+  console.log(
+    `globe-albedo: footprint luminance built in ${Math.round(s.globeColour.coarseMs)} ms`,
+  );
   const ground = await sampleGround(page);
   expect(ground.length).toBeGreaterThan(400);
   const at = await page.evaluate(
@@ -152,7 +154,9 @@ test("globe-bands: the imagery's colour per height band, and its band-width swee
       (want) => {
         const s = window.__terrainLab.state();
         if (s.place !== want) return false;
-        return s.farState === "failed" || (s.globeColour.bands?.length ?? 0) > 0;
+        return (
+          s.farState === "failed" || (s.globeColour.bands?.length ?? 0) > 0
+        );
       },
       place,
       { timeout: 120_000 },
@@ -202,7 +206,10 @@ test("globe-bands: the imagery's colour per height band, and its band-width swee
   // not asserted, except that every width gives a ramp.
   for (const place of ["alps", "appalachians"]) {
     if (place !== "alps") {
-      await applyHash(page, `${VIEW.replace("place=alps", `place=${place}`)}&style=globe-bands`);
+      await applyHash(
+        page,
+        `${VIEW.replace("place=alps", `place=${place}`)}&style=globe-bands`,
+      );
       await bandsReady(place);
     }
     const rows = await page.evaluate(
@@ -218,7 +225,9 @@ test("globe-bands: the imagery's colour per height band, and its band-width swee
       expect(r.bands).toBeGreaterThan(0);
     }
     const best = rows.reduce((a, b) => (b.cv.mean < a.cv.mean ? b : a));
-    console.log(`band sweep ${place}: least cross-validated error at ${best.widthM} m`);
+    console.log(
+      `band sweep ${place}: least cross-validated error at ${best.widthM} m`,
+    );
   }
   expect(errors).toEqual([]);
 });

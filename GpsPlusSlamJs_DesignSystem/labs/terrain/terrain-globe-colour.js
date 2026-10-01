@@ -81,7 +81,13 @@ export function detailRatio(fineLum, coarseLum, detail) {
  * @param {{ albedo: number[], light: number, fineLum: number,
  *   coarseLum: number, detail: number }} p
  */
-export function globeAlbedoColour({ albedo, light, fineLum, coarseLum, detail }) {
+export function globeAlbedoColour({
+  albedo,
+  light,
+  fineLum,
+  coarseLum,
+  detail,
+}) {
   return sunLitColour(albedo, light * detailRatio(fineLum, coarseLum, detail));
 }
 
@@ -124,9 +130,15 @@ export function boxMeanAt(sat, grid, x, y, wx, wy) {
   const { side, spacingM, extentM } = grid;
   const eps = 1e-9;
   const c0 = Math.max(0, Math.ceil((x - wx / 2 + extentM) / spacingM - eps));
-  const c1 = Math.min(side - 1, Math.floor((x + wx / 2 + extentM) / spacingM + eps));
+  const c1 = Math.min(
+    side - 1,
+    Math.floor((x + wx / 2 + extentM) / spacingM + eps),
+  );
   const r0 = Math.max(0, Math.ceil((y - wy / 2 + extentM) / spacingM - eps));
-  const r1 = Math.min(side - 1, Math.floor((y + wy / 2 + extentM) / spacingM + eps));
+  const r1 = Math.min(
+    side - 1,
+    Math.floor((y + wy / 2 + extentM) / spacingM + eps),
+  );
   if (c1 < c0 || r1 < r0) return null;
   const n = side + 1;
   const sum =
@@ -217,7 +229,9 @@ export function bandRampColour(ramp, heightM) {
 export function bandRampLut(ramp, { size, maxM } = LUT) {
   const out = new Uint8Array(size * 4);
   for (let i = 0; i < size; i++) {
-    const rgb = bandRampColour(ramp, ((i + 0.5) / size) * maxM) ?? [0.5, 0.5, 0.5];
+    const rgb = bandRampColour(ramp, ((i + 0.5) / size) * maxM) ?? [
+      0.5, 0.5, 0.5,
+    ];
     out.set([...rgb.map((v) => Math.round(v * 255)), 255], i * 4);
   }
   return out;
@@ -229,7 +243,8 @@ function lab(srgb) {
   const x = (0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047;
   const y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
   const z = (0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883;
-  const f = (t) => (t > 216 / 24389 ? Math.cbrt(t) : (24389 / 27 * t + 16) / 116);
+  const f = (t) =>
+    t > 216 / 24389 ? Math.cbrt(t) : ((24389 / 27) * t + 16) / 116;
   const [fx, fy, fz] = [f(x), f(y), f(z)];
   return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
 }

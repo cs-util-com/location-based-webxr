@@ -692,7 +692,12 @@ function start() {
     return out;
   };
   const updateGlobeColour = () => {
-    if (!material || !spec || far.state !== "ready" || !IMAGERY_STYLES.has(params.style)) {
+    if (
+      !material ||
+      !spec ||
+      far.state !== "ready" ||
+      !IMAGERY_STYLES.has(params.style)
+    ) {
       return;
     }
     const u = material.uniforms;
@@ -1317,7 +1322,13 @@ function start() {
     /** The imagery styles' albedo grid at ENU metres (sRGB 0-1), or null. */
     albedoAt: (x, y) =>
       globeColour.grid && spec
-        ? farFieldAt(globeColour.grid, GLOBE_ALBEDO.side, spec.halfExtentM, x, y)
+        ? farFieldAt(
+            globeColour.grid,
+            GLOBE_ALBEDO.side,
+            spec.halfExtentM,
+            x,
+            y,
+          )
         : null,
     /** The decoded imagery itself at a position (sRGB 0-1), or null. */
     imageryAt: (lat, lng) =>

@@ -75,7 +75,9 @@ export const COMPARE_PLAN = Object.freeze({
  */
 export function groundGrid(posts, stepM) {
   if (!(Number.isInteger(posts) && posts >= 1) || !(stepM > 0)) {
-    throw new RangeError(`need posts >= 1 and stepM > 0, got ${posts}, ${stepM}`);
+    throw new RangeError(
+      `need posts >= 1 and stepM > 0, got ${posts}, ${stepM}`,
+    );
   }
   const half = ((posts - 1) * stepM) / 2;
   const out = [];
