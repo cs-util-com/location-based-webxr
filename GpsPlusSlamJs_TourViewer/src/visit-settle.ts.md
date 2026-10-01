@@ -68,7 +68,9 @@ draft and logs `tourAuthoring/settled`.
   visitor, so what its confirm states. Null without a readable alignment,
   a zero, a sighting of the level in hand or a stored pose. Shares its
   computation with the settle's correction (`sightedStoredCode`), so the
-  two can never disagree about the number.
+  two can never disagree about the number. Also `northM`/`eastM`: where
+  this visit sees the code minus its stored position - the spot the move
+  prompt (`code-move-prompt.ts`, M5b) remembers an answer for.
 - `storedGeo(json)` - a level's stored geo, or null (the object list's
   distance to the code).
 - `planVisitSettle(input): VisitSettle | null` - the settled records by

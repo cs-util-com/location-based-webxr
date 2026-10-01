@@ -298,6 +298,8 @@ function sightedStoredCode(
   stored: NonNullable<ReturnType<typeof storedCode>>;
   codeLocal: NuePose;
   size: { horizontalM: number; yawDeg: number };
+  /** Where this visit sees the code minus its stored position (m). */
+  offset: { northM: number; eastM: number };
 } | null {
   const { mintedLevel, sighting } = input;
   if (
@@ -312,24 +314,39 @@ function sightedStoredCode(
   const codeLocal = odomNueFromWebXr(sighting.odomPose);
   const measured = throughAlignment(codeLocal, alignment);
   const size = measured === null ? null : correctionSize(measured, stored.pose);
-  return size === null ? null : { stored, codeLocal, size };
+  if (measured === null || size === null) return null;
+  return {
+    stored,
+    codeLocal,
+    size,
+    offset: {
+      northM: measured.position[0] - stored.pose.position[0],
+      eastM: measured.position[2] - stored.pose.position[2],
+    },
+  };
 }
 
 /**
  * How far, and by how much of a turn, the code as this visit sees it lies
  * from its stored pose - with no plausibility bound applied. It is what an
  * explicit replace of the stored pose moves the code by for every visitor,
- * so what its confirm question states (M4 review #3).
+ * so what its confirm question states (M4 review #3) - and, as `northM`
+ * and `eastM` (where this visit sees the code minus its stored position),
+ * the spot the move prompt remembers an answer for (D20, M5b).
  *
  * @returns null without a readable alignment, a zero, a sighting of the
  *   level in hand in this visit, or a stored pose.
  */
-export function sightedCodeOffset(
-  input: SettleAlignmentInput,
-): { horizontalM: number; yawDeg: number } | null {
+export function sightedCodeOffset(input: SettleAlignmentInput): {
+  horizontalM: number;
+  yawDeg: number;
+  northM: number;
+  eastM: number;
+} | null {
   const alignment = readAlignment(input.alignment);
   if (alignment === null || input.zero === null) return null;
-  return sightedStoredCode(input, alignment, input.zero)?.size ?? null;
+  const sighted = sightedStoredCode(input, alignment, input.zero);
+  return sighted === null ? null : { ...sighted.size, ...sighted.offset };
 }
 
 /** The visit's alignment corrected through its sighting of the stored
