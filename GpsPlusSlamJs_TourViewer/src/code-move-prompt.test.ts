@@ -18,6 +18,7 @@ import { MOVED_CODE_FLOOR_M } from "./code-displacement.js";
 import {
   isHorizontalRefusal,
   MOVE_ANSWERS_MAX,
+  MOVE_PROMPT_LABELS,
   MOVE_PROMPT_RULE,
   movePromptText,
   parseMoveAnswers,
@@ -330,6 +331,15 @@ describe("movePromptText", () => {
   it("names the distance in whole metres", () => {
     expect(movePromptText(41.6)).toBe(
       "This code seems to have moved about 42 m. Use the new spot?",
+    );
+  });
+
+  // Why this test matters (M5b review #5): Undo lives in this page's
+  // memory only - a reload loses it before any Finish - so the hint must
+  // not promise it "until Finish" alone.
+  it("says Undo lasts only while this page stays open", () => {
+    expect(MOVE_PROMPT_LABELS.replacedHint).toBe(
+      "The code's saved position was replaced. Undo is possible until Finish, while this page stays open.",
     );
   });
 });

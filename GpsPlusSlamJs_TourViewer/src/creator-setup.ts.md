@@ -545,7 +545,9 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
       button's - records its visit as the code's move boundary
       (`movedInVisit`, set in `measureCode`; M5b review #3), because
       either moves the code for everyone.
-    - **Undo until Finish**: any replace (prompt or Replace button) keeps
+    - **Undo until Finish, while the page stays open** (memory only: a
+      reload loses it, which the hint says; M5b review #5): any replace
+      (prompt or Replace button) keeps
       the level it replaced (`codeMeasured`'s `replaced`) and the
       measurement that was in hand; Undo puts both back, bumps
       `mintGeneration` (an in-flight measurement must not land over it),

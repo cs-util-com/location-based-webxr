@@ -323,5 +323,5 @@ export const MOVE_PROMPT_LABELS = Object.freeze({
   undoNotBackedUp:
     "Undone here, but this device could not save the change - finish and download before closing the page.",
   replacedHint:
-    "The code's saved position was replaced. Undo is possible until Finish.",
+    "The code's saved position was replaced. Undo is possible until Finish, while this page stays open.",
 });
