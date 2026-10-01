@@ -456,7 +456,12 @@ test("style E: the relief without a hue", async ({ page }) => {
  * Style C's far-field tolerances (plan §9 finding 12), 8-bit per channel:
  * against the far-field grid the shader reads (the texel through the
  * globe's tone mapping) and against the imagery itself (one more bilinear
- * resampling, at 2 km against the imagery's 4.9 km). Swept and reported.
+ * resampling, at 2 km against the imagery's 2.4 km at level 5). Swept and
+ * reported. Each is read at the ENU point under the READ PIXEL'S CENTRE,
+ * not at the probe point: from 2500 km a pixel spans nearly two 2 km grid
+ * cells, and with level 5's detail the probe point and the pixel it lands
+ * in read different cells (12 levels against the grid; level 4's 4.9 km
+ * had been smooth enough to hide it; review 2026-10-01 m7).
  */
 const FAR_GRID_TOLERANCE = 3;
 const FAR_IMAGERY_TOLERANCE = 12;
@@ -494,24 +499,81 @@ test("style C: from far away the terrain is the globe's own colour", async ({
     }
     return out;
   });
+  const lift = (p) => 2 * (p.h - s.datum);
   const at = await project(
     page,
-    ground.map((p) => [p.x, 2 * (p.h - s.datum), -p.y]),
+    ground.map((p) => [p.x, lift(p), -p.y]),
   );
-  const px = await readPixels(page, at);
-  const worst = (key) =>
+  // Where each read pixel's centre lies on the ground: the screen's local
+  // Jacobian from two points 500 m east and north (the view looks
+  // straight down, so it is affine over a pixel), inverted.
+  const east = await project(
+    page,
+    ground.map((p) => [p.x + 500, lift(p), -p.y]),
+  );
+  const north = await project(
+    page,
+    ground.map((p) => [p.x, lift(p), -(p.y + 500)]),
+  );
+  const { w, h } = await page.evaluate(() => {
+    const c = /** @type {HTMLCanvasElement} */ (
+      document.getElementById("terrain-canvas")
+    );
+    return { w: c.width, h: c.height };
+  });
+  const centres = at.map(([u, v]) => {
+    const col = Math.min(w - 1, Math.max(0, Math.floor(u * w)));
+    const row = Math.min(h - 1, Math.max(0, Math.floor((1 - v) * h)));
+    return [(col + 0.5) / w, 1 - (row + 0.5) / h];
+  });
+  const under = ground.map((p, i) => {
+    const [u0, v0] = at[i];
+    const a = (east[i][0] - u0) / 500;
+    const b = (north[i][0] - u0) / 500;
+    const c = (east[i][1] - v0) / 500;
+    const d = (north[i][1] - v0) / 500;
+    const du = centres[i][0] - u0;
+    const dv = centres[i][1] - v0;
+    const det = a * d - b * c;
+    return [p.x + (d * du - b * dv) / det, p.y + (a * dv - c * du) / det];
+  });
+  const atCentres = await page.evaluate(
+    (points) =>
+      points.map(([x, y]) => {
+        const { lat, lng } = window.__terrainLab.toLatLng(x, y);
+        return {
+          grid: window.__terrainLab.farAt(x, y),
+          imagery: window.__terrainLab.imageryAt(lat, lng),
+        };
+      }),
+    under,
+  );
+  const px = await readPixels(page, centres);
+  const pxAtProbe = await readPixels(page, at);
+  const worstOf = (refs, pixels) =>
     Math.max(
-      ...ground.flatMap((p, i) =>
-        farColour(p[key]).map((v, c) =>
-          Math.abs(Math.round(v * 255) - px[i][c]),
+      ...refs.flatMap((ref, i) =>
+        farColour(ref).map((v, c) =>
+          Math.abs(Math.round(v * 255) - pixels[i][c]),
         ),
       ),
     );
-  const gridError = worst("grid");
-  const imageryError = worst("imagery");
+  const gridError = worstOf(
+    atCentres.map((q) => q.grid),
+    px,
+  );
+  const imageryError = worstOf(
+    atCentres.map((q) => q.imagery),
+    px,
+  );
+  const probeGridError = worstOf(
+    ground.map((p) => p.grid),
+    pxAtProbe,
+  );
   console.log(
     `far field: worst channel error against the grid ${gridError} (${sweepLine(gridError, [1, 2, 3, 4, 6])}), ` +
-      `against the imagery ${imageryError} (${sweepLine(imageryError, [4, 8, 12, 16])})`,
+      `against the imagery ${imageryError} (${sweepLine(imageryError, [4, 8, 12, 16])}); ` +
+      `at the probe points instead of the pixel centres ${probeGridError}`,
   );
   expect(gridError).toBeLessThanOrEqual(FAR_GRID_TOLERANCE);
   expect(imageryError).toBeLessThanOrEqual(FAR_IMAGERY_TOLERANCE);
