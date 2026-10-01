@@ -17,6 +17,7 @@ import {
   FIELD,
   GPS_PLACE,
   PARAMS,
+  LOOK_DEFAULTS,
   STYLE_LIGHT,
   STYLE_SHADOW,
   TERRAIN_PLACES,
@@ -115,9 +116,9 @@ describe("fieldSpec", () => {
 });
 
 describe("readTerrainParams", () => {
-  it("reads an empty hash as every default: the slider at 2, auto off", () => {
+  it("reads an empty hash as every default: the slider at 3, auto off", () => {
     const p = readTerrainParams("");
-    assert.equal(p.exag, 2);
+    assert.equal(p.exag, 3);
     assert.equal(p.auto, 0);
     assert.equal(p.place, "appalachians");
     assert.equal(p.style, "pastel");
@@ -192,6 +193,21 @@ describe("readTerrainParams", () => {
     }
     assert.equal(readTerrainParams("place=alps").place, "alps");
     assert.equal(readTerrainParams("place=germany").place, "germany");
+  });
+
+  // DEC-GL5-5 (globe round-5 plan 2026-10-01-0945 §8): the owner's look
+  // values, shadow 0.8, slope gain 1.6 and exaggeration 3, are the lab's
+  // defaults for EVERY style, so every style opens as the owner tuned it.
+  it("opens every style at the owner's look values (DEC-GL5-5)", () => {
+    assert.deepEqual(LOOK_DEFAULTS, { shadow: 0.8, shade: 1.6, exag: 3 });
+    for (const id of Object.keys(TERRAIN_STYLES)) {
+      const p = readTerrainParams(`style=${id}`);
+      assert.deepEqual(
+        [p.shadow, p.shade, p.exag],
+        [LOOK_DEFAULTS.shadow, LOOK_DEFAULTS.shade, LOOK_DEFAULTS.exag],
+        id,
+      );
+    }
   });
 
   // Each style has its own shading strength; a `shadow` key overrides it

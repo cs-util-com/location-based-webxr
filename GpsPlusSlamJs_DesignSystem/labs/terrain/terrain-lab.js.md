@@ -4,7 +4,7 @@
   T1-T3): the Blue Ridge, the Alps, northern Germany or the viewer's GPS
   position from coarse Terrarium tiles in five
   styles (A "Pastel atlas", B "Natural colour", C "Globe blend", D "Swiss
-  classic", E "Clay"), with the exaggeration slider (1-10, default 2), the
+  classic", E "Clay"), with the exaggeration slider (1-10, default 3), the
   "auto" switch (off by default; E = slider x factor, W = 0.43 x altitude),
   orbit and zoom, three camera presets and a scripted fly-in (600 km down
   to 20 km). Served at `/labs/terrain/`; deployed with the other labs by

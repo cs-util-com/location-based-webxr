@@ -74,9 +74,9 @@ test("boots on the committed Blue Ridge tiles, and nothing leaves the machine", 
   // Plan §9 finding 13: half floats and bytes only, no FloatType texture.
   expect(Object.values(s.textureTypes)).not.toContain(s.floatType);
   expect(s.textureTypes.data).toBe(s.halfFloatType);
-  // Default: the slider at 2, auto off, so E is exactly 2.
-  expect(s.effectiveE).toBe(2);
-  expect(s.readout).toContain("Exaggeration 2.0x");
+  // Default: the slider at 3 (DEC-GL5-5), auto off, so E is exactly 3.
+  expect(s.effectiveE).toBe(3);
+  expect(s.readout).toContain("Exaggeration 3.0x");
   // Textured, not a flat colour, over the middle of the region.
   const lum = (
     await page.evaluate(
@@ -188,10 +188,12 @@ test("the auto switch multiplies the slider by the view's factor", async ({
 }) => {
   test.setTimeout(180_000);
   await routeAll(page, fixtureTile);
-  // tau=0: no smoothing, so the factor is the camera's at once.
-  await boot(page, "preset=top&svf=0&tau=0");
+  // tau=0: no smoothing, so the factor is the camera's at once. The slider
+  // is pinned at 2 (the plan's own numbers below), not left at the
+  // default, which DEC-GL5-5 moved to 3.
+  await boot(page, "preset=top&svf=0&tau=0&exag=2");
   expect((await state(page)).effectiveE).toBe(2);
-  await applyHash(page, "preset=top&svf=0&tau=0&auto=1");
+  await applyHash(page, "preset=top&svf=0&tau=0&exag=2&auto=1");
   let s = await state(page);
   // Plan §9 finding 9: W = 0.43 x 580 km, factor (W / 10 km)^0.3 = 2.62,
   // E = 2 x 2.62 = 5.25 (the product is not capped).
@@ -201,7 +203,7 @@ test("the auto switch multiplies the slider by the view's factor", async ({
     /Exaggeration 5\.[23]x \(slider 2 x auto 2\.6\d at a 249 km view\)/,
   );
   // At the low preset (W 8.6 km) the factor is 1 again.
-  await applyHash(page, "preset=low&svf=0&tau=0&auto=1");
+  await applyHash(page, "preset=low&svf=0&tau=0&exag=2&auto=1");
   s = await state(page);
   expect(s.autoFactor).toBe(1);
   expect(s.effectiveE).toBe(2);

@@ -28,10 +28,12 @@ const close = (a, b, eps, what) =>
   assert.ok(Math.abs(a - b) <= eps, `${what}: ${a} vs ${b}`);
 
 describe("the slider", () => {
-  it("runs 1-10 and starts at 2 (DEC-TR-4)", () => {
+  // DEC-TR-4's range; the start moved from 2 to the owner's 3 (globe
+  // round-5 DEC-GL5-5: "rather too strong at first" than too weak).
+  it("runs 1-10 and starts at 3 (DEC-TR-4, DEC-GL5-5)", () => {
     assert.deepEqual(
       [EXAGGERATION.min, EXAGGERATION.max, EXAGGERATION.fallback],
-      [1, 10, 2],
+      [1, 10, 3],
     );
   });
 });

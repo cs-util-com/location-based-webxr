@@ -27,11 +27,11 @@
   - `fieldSpec(place)` -> `{ centre, zoom, halfExtentM, extentM, spacingM,
 side }`: `extentM` includes the padding; `side` counts both edges.
   - `PARAMS`: every numeric key with its default and range:
-    - the view: `exag` (1-10, 2), `auto` (0/1, 0), `autoExp` (0.3), `tau`
-      (0.5 s), `shade` (1), `boostExp` (0.3), `svf` (directions, 8; 0 is
+    - the view: `exag` (1-10, 3), `auto` (0/1, 0), `autoExp` (0.3), `tau`
+      (0.5 s), `shade` (1.6), `boostExp` (0.3), `svf` (directions, 8; 0 is
       off), `flyMs` (12 s);
     - the look: `green` (0.7, styles A and C), `shadow` (0-1; with no key,
-      the style's own: A and C 0.45, B 0.65, D 0.6, E 0.55);
+      the style's own, 0.8 for every style);
     - style B: `tree` and `snow` (line offsets, -1500 to 1500 m, 0),
       `aspect` (poleward snow, 0-600 m, 250), `rock` (28-50°, 38), `lift`
       (0-0.4, 0.2), `snowMask` (0/1, 0: the mask instead of the colours);
@@ -43,7 +43,14 @@ side }`: `extentM` includes the padding; `side` counts both edges.
       lights, 1 the globe's sun at the page's clock; with no key, the
       style's own, `STYLE_LIGHT`). The clock's `time`/`timeScale` are the
       globe lab's keys, read on the page by `/globe/globe-clock.js`.
-  - `STYLE_SHADOW`: each style's own shading strength.
+  - `LOOK_DEFAULTS` `{ shadow: 0.8, shade: 1.6, exag: 3 }`: the owner's look
+    values (globe round-5 plan 2026-10-01-0945 DEC-GL5-5), every style's
+    defaults. Before: exaggeration 2, slope gain 1, and each style's
+    reference shadow (A and C 0.45, B 0.65, D 0.6, E 0.55), which the
+    styles' reference constants (`PASTEL_ATLAS.shadow` and kin) still
+    carry for their unit tests.
+  - `STYLE_SHADOW`: each style's own shading strength (all 0.8 since
+    DEC-GL5-5; the table stays so a style can differ again).
   - `STYLE_LIGHT`: each style's own light (every map style 0).
   - `readTerrainParams(hash)`: every PARAMS value, `place`, `style` (one of
     `terrain-styles.js`'s `TERRAIN_STYLES`), `farOn` (style C, or `far=1`),
@@ -62,7 +69,7 @@ side }`: `extentM` includes the padding; `side` counts both edges.
 - Tests: `terrain-params.test.mjs`: the places and `placeFor` (with and
   without a fix, an invalid fix, `place=gps` without a note), the field's posts, its
   padding against the sky-view march the lab runs and three blur sigmas, no
-  hash key for the steps, the defaults, in-range values, five malformed
+  hash key for the steps, the defaults (DEC-GL5-5's for every style), in-range values, five malformed
   values, the camera triple, presets, the place and style fallbacks (inherited property names included), every
   style, each style's own shadow and light and their overrides, the far field's switch
   and its altitude check. `terrain-pipeline.test.mjs` holds each place's

@@ -3,7 +3,7 @@
  * relief from coarse Terrarium tiles, in five styles (A "Pastel atlas", B
  * "Natural colour", C "Globe blend", D "Swiss classic", E "Clay"), at four
  * places (the Blue Ridge, the Alps, northern Germany and the viewer's GPS
- * position), with an exaggeration slider (1-10, default 2) and an "auto"
+ * position), with an exaggeration slider (1-10, default 3) and an "auto"
  * switch (off by default), orbit and zoom, three camera presets and a
  * scripted fly-in.
  * Every parameter sits on the control plate and in the hash, as in the

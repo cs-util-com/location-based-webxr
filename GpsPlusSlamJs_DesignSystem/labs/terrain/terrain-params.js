@@ -13,7 +13,7 @@ import {
 } from "./terrain-exaggeration.js";
 import { FAR_FIELD } from "./terrain-far-field.js";
 import { PASTEL_ATLAS } from "./terrain-style.js";
-import { CLAY, NATURAL, SWISS, TERRAIN_STYLES } from "./terrain-styles.js";
+import { NATURAL, SWISS, TERRAIN_STYLES } from "./terrain-styles.js";
 
 /**
  * The committed places (DEC-TR-3), each a 256 km region at z8 (plan §9
@@ -109,6 +109,18 @@ export function fieldSpec(place, field = FIELD) {
   };
 }
 
+/**
+ * The owner's look values (globe round-5 plan 2026-10-01-0945 DEC-GL5-5):
+ * the shadow, the slope gain and the exaggeration every style opens with,
+ * "rather too strong at first" than too weak. The styles' own shadow
+ * strengths (`PASTEL_ATLAS.shadow` and kin) stay their references' values.
+ */
+export const LOOK_DEFAULTS = Object.freeze({
+  shadow: 0.8,
+  shade: 1.6,
+  exag: EXAGGERATION.fallback,
+});
+
 /** Every numeric hash key, its default and its range. */
 export const PARAMS = Object.freeze({
   exag: {
@@ -122,11 +134,11 @@ export const PARAMS = Object.freeze({
   /** The altitude smoothing's time constant, seconds (a swept parameter). */
   tau: { fallback: 0.5, min: 0, max: 5 },
   /** The shading gain, and the slope boost's exponent (plan §6). */
-  shade: { fallback: 1, min: 0, max: 3 },
+  shade: { fallback: LOOK_DEFAULTS.shade, min: 0, max: 3 },
   boostExp: { fallback: SLOPE_BOOST.exponent, min: 0.1, max: 0.6 },
   green: { fallback: PASTEL_ATLAS.greenAmount, min: 0, max: 1 },
   /** The shading's strength; with no `shadow` key, the style's own. */
-  shadow: { fallback: PASTEL_ATLAS.shadow, min: 0, max: 1 },
+  shadow: { fallback: LOOK_DEFAULTS.shadow, min: 0, max: 1 },
   /** Style B: tree and snow line offsets (m), their aspect and rock slope. */
   tree: { fallback: 0, min: -1500, max: 1500 },
   snow: { fallback: 0, min: -1500, max: 1500 },
@@ -154,13 +166,17 @@ export const PARAMS = Object.freeze({
 });
 
 const PRESETS = new Set(["top", "oblique", "low", "fly"]);
-/** Each style's own shading strength, used when the hash has no `shadow`. */
+/**
+ * Each style's own shading strength, used when the hash has no `shadow`:
+ * the owner's 0.8 for every style since DEC-GL5-5 (before, each style's
+ * reference value: A and C 0.45, B 0.65, D 0.6, E 0.55).
+ */
 export const STYLE_SHADOW = Object.freeze({
-  pastel: PASTEL_ATLAS.shadow,
-  natural: NATURAL.shadow,
-  globe: PASTEL_ATLAS.shadow,
-  swiss: SWISS.shadow,
-  clay: CLAY.shadow,
+  pastel: LOOK_DEFAULTS.shadow,
+  natural: LOOK_DEFAULTS.shadow,
+  globe: LOOK_DEFAULTS.shadow,
+  swiss: LOOK_DEFAULTS.shadow,
+  clay: LOOK_DEFAULTS.shadow,
 });
 
 /** Each style's own light (0 map lights, 1 the sun), when the hash has none. */

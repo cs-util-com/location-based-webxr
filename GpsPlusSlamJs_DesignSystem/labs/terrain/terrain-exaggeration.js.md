@@ -3,7 +3,8 @@
 - Purpose: the terrain lab's vertical exaggeration E and the shading's slope
   boost (terrain plan 2026-09-27-0605 DEC-TR-4, §6, §9 findings 9, 10, 19).
 - Public API:
-  - `EXAGGERATION` `{ min: 1, max: 10, fallback: 2 }`: the slider.
+  - `EXAGGERATION` `{ min: 1, max: 10, fallback: 3 }`: the slider (3, the
+    owner's look value since globe round-5 DEC-GL5-5; 2 before).
   - `AUTO_RULE` `{ refWidthM: 10 km, exponent: 0.3, cap: 3 }` and
     `autoFactor(widthM, rule?)` = clamp((W / ref)^exponent, 1, cap).
   - `SLOPE_BOOST` `{ refWidthM: 5 km, exponent: 0.3, cap: 5 }` and

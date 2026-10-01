@@ -2,7 +2,8 @@
  * The terrain lab's exaggeration, view width and slope boost (terrain plan
  * 2026-09-27-0605 DEC-TR-4, §6, §9 findings 9, 10 and 19).
  *
- * - The slider sets E directly, 1-10, 2 by default.
+ * - The slider sets E directly, 1-10, 3 by default (the owner's look value,
+ *   globe round-5 DEC-GL5-5; 2 before).
  * - "Auto" is a SWITCH, off by default (the owner rejected "auto on by
  *   default"). On, E = slider x autoFactor(W): the FACTOR is capped at 3,
  *   the product is not, so slider 2 at 250 km reads 5.3x.
@@ -17,7 +18,7 @@
  */
 
 /** The slider (DEC-TR-4). */
-export const EXAGGERATION = Object.freeze({ min: 1, max: 10, fallback: 2 });
+export const EXAGGERATION = Object.freeze({ min: 1, max: 10, fallback: 3 });
 
 /** E = slider x clamp((W / 10 km)^0.3, 1, 3) with auto on (DEC-TR-4). */
 export const AUTO_RULE = Object.freeze({
