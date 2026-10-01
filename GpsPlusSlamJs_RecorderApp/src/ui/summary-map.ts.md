@@ -6,6 +6,16 @@ Leaflet-based 2D map displayed in the session summary panel after a recording en
 
 **User Feedback Reference:** Issue #4 (2026-01-27) - "In the final report screen when I clicked 'Stop' I would like to be able to see the map with the path the user walked."
 
+**The shell lives in the framework since 2026-10-01**
+([summary-map-shell.ts.md](../../../GpsPlusSlamJs_AppFramework/src/visualization/summary-map-shell.ts.md),
+DEC-H3, Tour Viewer authoring plan 2026-09-28-0953 §3.3): the map, the OSM
+basemap, the shared trajectory layers, the fullscreen toggle and the cleanup,
+shared with the Tour Viewer's summary after Finish. This file is the
+recorder's part: its reference-point markers (`drawExtra`), its Tailwind
+classes for the toggle (`fullscreen`), and centring on the final position
+(no `fitPoints`). Behaviour is unchanged by the move; the tests below still
+run against the composed map.
+
 ## Public API
 
 ### `createSummaryMap(container, data): SummaryMapInstance | null`

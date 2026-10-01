@@ -374,6 +374,11 @@ const entryFiles = [
   'src/visualization/lerp-utils.ts',
   'src/visualization/map-data.ts',
   'src/visualization/map-overlay-draw.ts',
+  // The summary map's shell and the OSM basemap layer (moved from the
+  // RecorderApp 2026-10-01, DEC-H3) - deep-imported by the Recorder and,
+  // dynamically, by the Tour Viewer's summary via `./visualization/*`.
+  'src/visualization/osm-tile-layer.ts',
+  'src/visualization/summary-map-shell.ts',
   // Engine-free desktop pointer raycast helper (2026-07-15 replay-harness Part B)
   // — deep-imported by consumer apps (PhysicsDemo) via `./visualization/*`.
   'src/visualization/pointer-picking.ts',
