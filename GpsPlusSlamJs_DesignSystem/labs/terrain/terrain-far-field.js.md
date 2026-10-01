@@ -5,8 +5,9 @@
   §4 style C, §9 findings 11 and 12; research 2026-09-27-0600 §6.3), so the
   later dive from the globe crosses a seam between two images that agree.
 - Public API:
-  - `FAR_FIELD`: level 4 of the globe's pyramid (11.25° tiles, about
-    4.9 km a pixel north-south), 256 px tiles, a 128 x 128 grid over the
+  - `FAR_FIELD`: level 5 of the globe's pyramid, its finest (5.625°
+    tiles, about 2.4 km a pixel north-south; level 4 was 4.9, review
+    2026-10-01 m7), 256 px tiles, a 128 x 128 grid over the
     drawn region (2 km a texel at 256 km), the blend's altitudes (near
     style from 1500 km down to 300 km).
   - `imageryTiles(box, level)`: the EPSG:4326 tiles over a lat/lng box

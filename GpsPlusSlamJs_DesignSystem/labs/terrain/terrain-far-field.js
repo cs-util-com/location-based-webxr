@@ -6,7 +6,8 @@
  * a seam between two images that already agree.
  *
  * - WHICH IMAGERY: the globe's committed EPSG:4326 pyramid (served at
- *   `/globe-assets/`, level 4 is about 2.4 km a pixel), not a new source.
+ *   `/globe-assets/`, level 5, about 2.4 km a pixel north-south; level 4
+ *   is 4.9), not a new source.
  * - HOW IT REACHES THE SHADER: resampled once on the page onto a square
  *   grid over the drawn region in the lab's ENU frame (`farFieldGrid`), so
  *   the shader reads it by position, like every other texture of the lab.
@@ -27,8 +28,8 @@ import { smoothstep } from "./terrain-style.js";
 
 /** The far field's defaults and the imagery it reads. */
 export const FAR_FIELD = Object.freeze({
-  /** The pyramid level read: the finest the globe commits (0-4). */
-  level: 4,
+  /** The pyramid level read: the finest the globe commits (0-5). */
+  level: 5,
   tileSize: 256,
   /** The grid's texels per side over the drawn region (2 km at 256 km). */
   side: 128,

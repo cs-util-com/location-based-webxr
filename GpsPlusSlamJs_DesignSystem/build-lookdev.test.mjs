@@ -457,11 +457,12 @@ describe("buildLookdev with the real terrain lab", () => {
       "osm/heightfield.js",
       "osm/terrain-texture.js",
       // Style C's far field (T2): the globe's source registry and the
-      // imagery it names (the Blue Ridge's level-4 tile).
+      // imagery it names (the Blue Ridge's level-5 tile, the level it
+      // reads since review 2026-10-01 m7).
       "labs/terrain/terrain-far-field.js",
       "labs/terrain/terrain-styles.js",
       "globe/globe-sources.js",
-      "globe-assets/blue-marble-4326/4/8/4.webp",
+      "globe-assets/blue-marble-4326/5/17/9.webp",
       // The GPS place's pin (T3): the framework's locate behaviour.
       "fw/utils/locate-state.js",
     ]) {

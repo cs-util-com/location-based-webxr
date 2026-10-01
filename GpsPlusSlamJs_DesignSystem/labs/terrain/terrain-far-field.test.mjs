@@ -43,6 +43,27 @@ const frameAt = (origin) => {
   };
 };
 
+// Why (review 2026-10-01, m7): the far field must read the finest level
+// the globe commits, or the dive from the globe crosses from 2.4 km
+// texels to 4.9 km ones exactly where it meets the terrain. Level 5 (round
+// 4, DEC-GL4-3): 64 x 32 tiles of 5.625 degrees, about 2.4 km a pixel
+// north-south, near the grid's own 2 km a texel at 256 km.
+describe("FAR_FIELD", () => {
+  it("reads level 5, the globe's finest committed level", () => {
+    assert.equal(FAR_FIELD.level, 5);
+    const kmPerPixel =
+      (180 / 2 ** FAR_FIELD.level / FAR_FIELD.tileSize) * 111.32;
+    assert.ok(kmPerPixel > 2.3 && kmPerPixel < 2.5, `${kmPerPixel}`);
+  });
+  it("finds the level-5 tile over the Blue Ridge", () => {
+    // lng -80: floor(100 / 5.625) = 17; lat 38: floor(52 / 5.625) = 9.
+    assert.deepEqual(
+      imageryTiles({ west: -80, south: 37, east: -79, north: 38 }, 5),
+      [{ z: 5, x: 17, y: 9 }],
+    );
+  });
+});
+
 describe("imageryTiles", () => {
   // Level 4 has 32 x 16 tiles of 11.25°, x from 180° W, y from 90° N.
   it("finds the level-4 tile over the Blue Ridge", () => {

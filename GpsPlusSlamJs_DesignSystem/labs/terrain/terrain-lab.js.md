@@ -27,7 +27,7 @@
     place's latitude for B's lines, the region's land range for D's
     contrast);
   - the far field (style C, or `far=1`): the first time a style needs it,
-    the globe's level-4 Blue Marble tiles over the region are fetched from
+    the globe's level-5 Blue Marble tiles over the region are fetched from
     `/globe-assets/` (the globe's own registry, `globe-sources.ts`),
     decoded without colour management, and resampled onto the far-field
     grid (`terrain-far-field.js`);
